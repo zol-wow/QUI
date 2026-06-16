@@ -87,70 +87,70 @@ do
             local L = MakeLayout(content)
 
             -- General
-            L.headerAt("General")
+            L.headerAt(ns.L["General"])
             local sGen = L.sectionAt()
 
             local layoutOptions = {
-                { text = "Compact", value = "compact" },
-                { text = "Full", value = "full" },
-                { text = "Sleek", value = "sleek" },
+                { text = ns.L["Compact"], value = "compact" },
+                { text = ns.L["Full"], value = "full" },
+                { text = ns.L["Sleek"], value = "sleek" },
             }
             local genLayoutW = GUI:CreateFormDropdown(sGen.frame, nil, layoutOptions, "layoutMode", mpDB, RefreshAll,
-                { description = "Overall timer layout: Compact is a single row; Full shows all key details; Sleek trims non-essentials." })
+                { description = ns.L["Overall timer layout: Compact is a single row; Full shows all key details; Sleek trims non-essentials."] })
             local genScaleW = GUI:CreateFormSlider(sGen.frame, nil, 0.5, 2.0, 0.05, "scale", mpDB, function()
                 local MPlusTimer = _G.QUI_MPlusTimer
                 if MPlusTimer and MPlusTimer.ApplyScale then MPlusTimer:ApplyScale() end
-            end, { deferOnDrag = true, precision = 2, description = "Zoom factor applied to the whole M+ timer panel." })
+            end, { deferOnDrag = true, precision = 2, description = ns.L["Zoom factor applied to the whole M+ timer panel."] })
             sGen.AddRow(
-                row(sGen.frame, "Layout Mode", genLayoutW),
-                row(sGen.frame, "Timer Scale", genScaleW)
+                row(sGen.frame, ns.L["Layout Mode"], genLayoutW),
+                row(sGen.frame, ns.L["Timer Scale"], genScaleW)
             )
 
             local genMaxLenW = GUI:CreateFormSlider(sGen.frame, nil, 0, 40, 1, "maxDungeonNameLength", mpDB, function()
                 local MPlusTimer = _G.QUI_MPlusTimer
                 if MPlusTimer and MPlusTimer.RenderKeyDetails then MPlusTimer:RenderKeyDetails() end
-            end, { description = "Truncate the dungeon name to this many characters. Set to 0 to show the full name." })
+            end, { description = ns.L["Truncate the dungeon name to this many characters. Set to 0 to show the full name."] })
             local genShowTimerW = GUI:CreateFormCheckbox(sGen.frame, nil, "showTimer", mpDB, RefreshLayout,
-                { description = "Show the numeric 'time remaining' text in Full layout mode. Compact/Sleek modes hide it regardless." })
+                { description = ns.L["Show the numeric 'time remaining' text in Full layout mode. Compact/Sleek modes hide it regardless."] })
             sGen.AddRow(
-                row(sGen.frame, "Max Dungeon Name Length", genMaxLenW),
-                row(sGen.frame, "Show Timer Text (Full mode)", genShowTimerW)
+                row(sGen.frame, ns.L["Max Dungeon Name Length"], genMaxLenW),
+                row(sGen.frame, ns.L["Show Timer Text (Full mode)"], genShowTimerW)
             )
 
             local genDeathsW = GUI:CreateFormCheckbox(sGen.frame, nil, "showDeaths", mpDB, RefreshLayout,
-                { description = "Show the deaths counter and penalty time on the timer panel." })
+                { description = ns.L["Show the deaths counter and penalty time on the timer panel."] })
             local genAffixesW = GUI:CreateFormCheckbox(sGen.frame, nil, "showAffixes", mpDB, RefreshLayout,
-                { description = "Show the active weekly affix icons on the timer panel." })
+                { description = ns.L["Show the active weekly affix icons on the timer panel."] })
             sGen.AddRow(
-                row(sGen.frame, "Show Deaths", genDeathsW),
-                row(sGen.frame, "Show Affixes", genAffixesW)
+                row(sGen.frame, ns.L["Show Deaths"], genDeathsW),
+                row(sGen.frame, ns.L["Show Affixes"], genAffixesW)
             )
 
             local genObjW = GUI:CreateFormCheckbox(sGen.frame, nil, "showObjectives", mpDB, RefreshLayout,
-                { description = "Show the boss/objective rows under the timer." })
+                { description = ns.L["Show the boss/objective rows under the timer."] })
             local genBorderW = GUI:CreateFormCheckbox(sGen.frame, nil, "showBorder", mpDB, RefreshSkin,
-                { description = "Draw a border around the whole M+ timer panel." })
+                { description = ns.L["Draw a border around the whole M+ timer panel."] })
             sGen.AddRow(
-                row(sGen.frame, "Show Objectives", genObjW),
-                row(sGen.frame, "Show Border", genBorderW)
+                row(sGen.frame, ns.L["Show Objectives"], genObjW),
+                row(sGen.frame, ns.L["Show Border"], genBorderW)
             )
 
             local objAlignOpts = {
-                { text = "Left", value = "LEFT" },
-                { text = "Center", value = "CENTER" },
-                { text = "Right", value = "RIGHT" },
+                { text = ns.L["Left"], value = "LEFT" },
+                { text = ns.L["Center"], value = "CENTER" },
+                { text = ns.L["Right"], value = "RIGHT" },
             }
             local genObjAlignW = GUI:CreateFormDropdown(sGen.frame, nil, objAlignOpts, "objectiveTextAlign", mpDB, RefreshLayout,
-                { description = "Horizontal alignment of the boss/objective text rows on the timer panel." })
-            sGen.AddRow(row(sGen.frame, "Objective Text Alignment", genObjAlignW))
+                { description = ns.L["Horizontal alignment of the boss/objective text rows on the timer panel."] })
+            sGen.AddRow(row(sGen.frame, ns.L["Objective Text Alignment"], genObjAlignW))
             L.closeSection(sGen)
 
             -- Border
-            L.headerAt("Border")
+            L.headerAt(ns.L["Border"])
             local sBd = L.sectionAt()
             local bdSrcW, bdColW = ns.QUI_BorderControl.Attach(GUI, sBd.frame, mpDB, "", RefreshColors,
-                { label = "Border Color Source", colorLabel = "Border Color", noAlpha = true })
-            sBd.AddRow(row(sBd.frame, "Border Color Source", bdSrcW), row(sBd.frame, "Border Color", bdColW))
+                { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"], noAlpha = true })
+            sBd.AddRow(row(sBd.frame, ns.L["Border Color Source"], bdSrcW), row(sBd.frame, ns.L["Border Color"], bdColW))
             L.closeSection(sBd)
 
             -- Background
@@ -164,7 +164,7 @@ do
                 mpDB.backgroundColor = { fb[1], fb[2], fb[3], fb[4] or 0.95 }
             end
 
-            L.headerAt("Background")
+            L.headerAt(ns.L["Background"])
             local sBg = L.sectionAt()
             local bgColorPicker, bgHideCheck
 
@@ -179,23 +179,23 @@ do
             local bgOverrideW = GUI:CreateFormCheckbox(sBg.frame, nil, "bgOverride", mpDB, function()
                 UpdateBgState()
                 RefreshColors()
-            end, { description = "Use M+ timer-specific background settings instead of the shared skinning background. Enables the controls below." })
+            end, { description = ns.L["Use M+ timer-specific background settings instead of the shared skinning background. Enables the controls below."] })
             bgHideCheck = GUI:CreateFormCheckbox(sBg.frame, nil, "hideBackground", mpDB, function()
                 UpdateBgState()
                 RefreshColors()
-            end, { description = "Hide the backdrop fill behind the M+ timer panel entirely." })
+            end, { description = ns.L["Hide the backdrop fill behind the M+ timer panel entirely."] })
             sBg.AddRow(
-                row(sBg.frame, "Override Global Background", bgOverrideW),
-                row(sBg.frame, "Hide Background", bgHideCheck)
+                row(sBg.frame, ns.L["Override Global Background"], bgOverrideW),
+                row(sBg.frame, ns.L["Hide Background"], bgHideCheck)
             )
 
             bgColorPicker = GUI:CreateFormColorPicker(sBg.frame, nil, "backgroundColor", mpDB, RefreshColors, nil,
-                { description = "Custom background color applied when Override Global Background is on and Hide Background is off." })
+                { description = ns.L["Custom background color applied when Override Global Background is on and Hide Background is off."] })
             local bgOpacityW = GUI:CreateFormSlider(sBg.frame, nil, 0, 1, 0.05, "frameBackgroundOpacity", mpDB, RefreshSkin,
-                { deferOnDrag = true, precision = 2, description = "Opacity of the M+ timer background fill. 0 is fully transparent, 1 is fully opaque." })
+                { deferOnDrag = true, precision = 2, description = ns.L["Opacity of the M+ timer background fill. 0 is fully transparent, 1 is fully opaque."] })
             sBg.AddRow(
-                row(sBg.frame, "Background Color", bgColorPicker),
-                row(sBg.frame, "Panel Opacity", bgOpacityW)
+                row(sBg.frame, ns.L["Background Color"], bgColorPicker),
+                row(sBg.frame, ns.L["Panel Opacity"], bgOpacityW)
             )
 
             UpdateBgState()
@@ -218,53 +218,53 @@ do
                 mpDB.barColor = { fb[1], fb[2], fb[3], fb[4] or 1 }
             end
 
-            L.headerAt("Forces Bar")
+            L.headerAt(ns.L["Forces Bar"])
             local sFB = L.sectionAt()
 
             local fbEnableW = GUI:CreateFormCheckbox(sFB.frame, nil, "forcesBarEnabled", mpDB, RefreshLayout,
-                { description = "Show the trash-count / forces progress element on the timer panel." })
+                { description = ns.L["Show the trash-count / forces progress element on the timer panel."] })
 
             local displayModeOpts = {
-                { text = "Progress Bar", value = "bar" },
-                { text = "Text Only", value = "text" },
+                { text = ns.L["Progress Bar"], value = "bar" },
+                { text = ns.L["Text Only"], value = "text" },
             }
             local fbDisplayW = GUI:CreateFormDropdown(sFB.frame, nil, displayModeOpts, "forcesDisplayMode", mpDB, RefreshLayout,
-                { description = "Render forces progress as a filling bar or as text only." })
+                { description = ns.L["Render forces progress as a filling bar or as text only."] })
             sFB.AddRow(
-                row(sFB.frame, "Show Forces Bar", fbEnableW),
-                row(sFB.frame, "Display Mode", fbDisplayW)
+                row(sFB.frame, ns.L["Show Forces Bar"], fbEnableW),
+                row(sFB.frame, ns.L["Display Mode"], fbDisplayW)
             )
 
             local posOpts = {
-                { text = "After Timer Bars", value = "after_timer" },
-                { text = "Before Timer Bars", value = "before_timer" },
-                { text = "Before Objectives", value = "before_objectives" },
-                { text = "After Objectives", value = "after_objectives" },
+                { text = ns.L["After Timer Bars"], value = "after_timer" },
+                { text = ns.L["Before Timer Bars"], value = "before_timer" },
+                { text = ns.L["Before Objectives"], value = "before_objectives" },
+                { text = ns.L["After Objectives"], value = "after_objectives" },
             }
             local fbPosW = GUI:CreateFormDropdown(sFB.frame, nil, posOpts, "forcesPosition", mpDB, RefreshLayout,
-                { description = "Where the forces bar / text is inserted relative to the timer bars and objective rows." })
+                { description = ns.L["Where the forces bar / text is inserted relative to the timer bars and objective rows."] })
 
             local formatOpts = {
-                { text = "Count (123/273)", value = "count" },
-                { text = "Percentage (45.32%)", value = "percentage" },
-                { text = "Both", value = "both" },
+                { text = ns.L["Count (123/273)"], value = "count" },
+                { text = ns.L["Percentage (45.32%)"], value = "percentage" },
+                { text = ns.L["Both"], value = "both" },
             }
             local fbFmtW = GUI:CreateFormDropdown(sFB.frame, nil, formatOpts, "forcesTextFormat", mpDB, function()
                 local MPlusTimer = _G.QUI_MPlusTimer
                 if MPlusTimer and MPlusTimer.RenderForces then MPlusTimer:RenderForces() end
-            end, { description = "How forces progress is formatted: running count, percent, or both." })
+            end, { description = ns.L["How forces progress is formatted: running count, percent, or both."] })
             sFB.AddRow(
-                row(sFB.frame, "Position", fbPosW),
-                row(sFB.frame, "Text Format", fbFmtW)
+                row(sFB.frame, ns.L["Position"], fbPosW),
+                row(sFB.frame, ns.L["Text Format"], fbFmtW)
             )
 
             local fbAlignW = GUI:CreateFormDropdown(sFB.frame, nil, objAlignOpts, "forcesTextAlign", mpDB, RefreshLayout,
-                { description = "Horizontal alignment of the forces text when Display Mode is Text Only." })
+                { description = ns.L["Horizontal alignment of the forces text when Display Mode is Text Only."] })
             local fbBarHeightW = GUI:CreateFormSlider(sFB.frame, nil, 0, 30, 1, "forcesBarHeight", mpDB, RefreshLayout,
-                { deferOnDrag = true, description = "Height of the forces progress bar. 0 uses the layout's default height (14 Full / 12 Compact / 8 Sleek)." })
+                { deferOnDrag = true, description = ns.L["Height of the forces progress bar. 0 uses the layout's default height (14 Full / 12 Compact / 8 Sleek)."] })
             sFB.AddRow(
-                row(sFB.frame, "Text Alignment", fbAlignW),
-                row(sFB.frame, "Bar Height", fbBarHeightW)
+                row(sFB.frame, ns.L["Text Alignment"], fbAlignW),
+                row(sFB.frame, ns.L["Bar Height"], fbBarHeightW)
             )
 
             local fontList = {}
@@ -276,23 +276,23 @@ do
             end
 
             local fbSizeW = GUI:CreateFormSlider(sFB.frame, nil, 8, 18, 1, "forcesFontSize", mpDB, RefreshLayout,
-                { description = "Font size for the forces-bar text." })
+                { description = ns.L["Font size for the forces-bar text."] })
             if #fontList > 0 then
                 local fbFontW = GUI:CreateFormDropdown(sFB.frame, nil, fontList, "forcesFont", mpDB, RefreshLayout,
-                    { description = "Font used for the forces-bar text." })
+                    { description = ns.L["Font used for the forces-bar text."] })
                 sFB.AddRow(
-                    row(sFB.frame, "Font", fbFontW),
-                    row(sFB.frame, "Font Size", fbSizeW)
+                    row(sFB.frame, ns.L["Font"], fbFontW),
+                    row(sFB.frame, ns.L["Font Size"], fbSizeW)
                 )
             else
-                sFB.AddRow(row(sFB.frame, "Font Size", fbSizeW))
+                sFB.AddRow(row(sFB.frame, ns.L["Font Size"], fbSizeW))
             end
 
             local fbTextColorW = GUI:CreateFormColorPicker(sFB.frame, nil, "forcesTextColor", mpDB, function()
                 local MPlusTimer = _G.QUI_MPlusTimer
                 if MPlusTimer and MPlusTimer.RenderForces then MPlusTimer:RenderForces() end
                 RefreshSkin()
-            end, nil, { description = "Color used for the forces-bar text." })
+            end, nil, { description = ns.L["Color used for the forces-bar text."] })
 
             local fbBarColorPicker
             local fbBarClassW = GUI:CreateFormCheckbox(sFB.frame, nil, "barUseClassColor", mpDB, function()
@@ -300,16 +300,16 @@ do
                     fbBarColorPicker:SetEnabled(not mpDB.barUseClassColor)
                 end
                 RefreshSkin()
-            end, { description = "Tint the forces progress bar with your class color instead of the Bar Fill Color below." })
+            end, { description = ns.L["Tint the forces progress bar with your class color instead of the Bar Fill Color below."] })
             sFB.AddRow(
-                row(sFB.frame, "Text Color", fbTextColorW),
-                row(sFB.frame, "Use Class Color for Bar", fbBarClassW)
+                row(sFB.frame, ns.L["Text Color"], fbTextColorW),
+                row(sFB.frame, ns.L["Use Class Color for Bar"], fbBarClassW)
             )
 
             fbBarColorPicker = GUI:CreateFormColorPicker(sFB.frame, nil, "barColor", mpDB, RefreshSkin, { noAlpha = true },
-                { description = "Fallback fill color for the forces progress bar when Use Class Color for Bar is off." })
+                { description = ns.L["Fallback fill color for the forces progress bar when Use Class Color for Bar is off."] })
             if fbBarColorPicker.SetEnabled then fbBarColorPicker:SetEnabled(not mpDB.barUseClassColor) end
-            sFB.AddRow(row(sFB.frame, "Bar Fill Color", fbBarColorPicker))
+            sFB.AddRow(row(sFB.frame, ns.L["Bar Fill Color"], fbBarColorPicker))
             L.closeSection(sFB)
 
             -- Layout-mode chrome (V3-styled collapsibles)

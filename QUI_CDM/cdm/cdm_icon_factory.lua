@@ -8,6 +8,14 @@ local Resolvers = ns.CDMResolvers
 local Sources = ns.CDMSources
 local Shared = ns.CDMShared
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local CDMIconFactory = {}
 ns.CDMIconFactory = CDMIconFactory
 
@@ -172,8 +180,8 @@ local function CreateIconBare(parent, spellEntry)
     -- Set a default font so SetText() never fires before row styling applies.
     local defaultFont = GetGeneralFont()
     local defaultOutline = GetGeneralFontOutline()
-    icon.DurationText:SetFont(defaultFont, 10, defaultOutline)
-    icon.StackText:SetFont(defaultFont, 10, defaultOutline)
+    CJKFont(icon.DurationText, defaultFont, 10, defaultOutline)
+    CJKFont(icon.StackText, defaultFont, 10, defaultOutline)
 
     -- Metadata
     icon._spellEntry = spellEntry
@@ -299,7 +307,7 @@ local function CreateIcon(parent, spellEntry)
             local _, specName, _, _, _, classToken = GetSpecializationInfoByID(srcSpecID)
             if specName then
                 local label = classToken and ("%s %s"):format(specName, classToken) or specName
-                GameTooltip.AddLine(GameTooltip, ("Source: %s"):format(label), 0.75, 0.85, 1, true)
+                GameTooltip.AddLine(GameTooltip, (ns.L["Source: %s"]):format(label), 0.75, 0.85, 1, true)
             end
         end
         GameTooltip.Show(GameTooltip)

@@ -12,6 +12,10 @@ local QUICore = ns.Addon
 local LSM = ns.LSM
 local Shared = ns.CDMShared
 
+-- NOTE: no local CJKFont helper here — this file's main chunk is at Lua's
+-- 200-local limit, so the CJK-safe font application is inlined at each call
+-- site below via ns.Helpers.ApplyFontWithFallback.
+
 ---------------------------------------------------------------------------
 -- MODULE
 ---------------------------------------------------------------------------
@@ -2559,7 +2563,11 @@ local function ConfigureIcon(icon, rowConfig)
         -- Blizzard-mirrored icons use QUI's native icon.Cooldown.
         local function styleDurationFontString(region)
             if not (region and region.GetObjectType and region:GetObjectType() == "FontString") then return end
-            region:SetFont(durationFont, durationSize, generalOutline)
+            if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+                ns.Helpers.ApplyFontWithFallback(region, durationFont, durationSize, generalOutline)
+            else
+                region:SetFont(durationFont, durationSize, generalOutline)
+            end
             region:SetTextColor(dtc[1], dtc[2], dtc[3], dtc[4] or 1)
             region:Show()
 
@@ -2588,7 +2596,11 @@ local function ConfigureIcon(icon, rowConfig)
         styleCDFontStrings(icon.Cooldown)
 
         -- Also style our DurationText
-        icon.DurationText:SetFont(durationFont, durationSize, generalOutline)
+        if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+            ns.Helpers.ApplyFontWithFallback(icon.DurationText, durationFont, durationSize, generalOutline)
+        else
+            icon.DurationText:SetFont(durationFont, durationSize, generalOutline)
+        end
         icon.DurationText:SetTextColor(dtc[1], dtc[2], dtc[3], dtc[4] or 1)
         icon.DurationText:ClearAllPoints()
         icon.DurationText:SetPoint(dAnchor, icon, dAnchor, dox, doy)
@@ -2629,7 +2641,11 @@ local function ConfigureIcon(icon, rowConfig)
         local sox = rowConfig.stackOffsetX or 0
         local soy = rowConfig.stackOffsetY or 0
 
-        icon.StackText:SetFont(stackFont, stackSize, generalOutline)
+        if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+            ns.Helpers.ApplyFontWithFallback(icon.StackText, stackFont, stackSize, generalOutline)
+        else
+            icon.StackText:SetFont(stackFont, stackSize, generalOutline)
+        end
         icon.StackText:SetTextColor(stc[1], stc[2], stc[3], stc[4] or 1)
         icon.StackText:ClearAllPoints()
         icon.StackText:SetPoint(sAnchor, icon, sAnchor, sox, soy)

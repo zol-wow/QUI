@@ -57,8 +57,8 @@ local function BuildAnchorBlock(tabContent, label, cfg, y, onChange, excludeSelf
 
     -- Enable — full-width (the primary gate).
     local enableW = GUI:CreateFormCheckbox(card.frame, nil, "enabled", cfg, onChange,
-        { description = "Let QUI drive the position of " .. label .. ". Turn off to leave the addon's own anchor behavior intact." })
-    card.AddRow(Shared.BuildSettingRow(card.frame, "Enable Anchoring", enableW))
+        { description = ns.L["Let QUI drive the position of "] .. label .. ns.L[". Turn off to leave the addon's own anchor behavior intact."] })
+    card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Enable Anchoring"], enableW))
 
     -- Anchor To — same registry-driven, categorized + searchable widget the
     -- rest of QUI's movers use. Falls back to a plain dropdown if the helper
@@ -74,27 +74,27 @@ local function BuildAnchorBlock(tabContent, label, cfg, y, onChange, excludeSelf
     else
         anchorW = GUI:CreateFormDropdown(card.frame, nil, {}, "anchorTo", cfg, OnAnchorTargetChange)
     end
-    card.AddRow(Shared.BuildSettingRow(card.frame, "Anchor To", anchorW))
+    card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Anchor To"], anchorW))
 
     -- Container Point + Target Point — paired 9-point dropdowns.
     local srcW = GUI:CreateFormDropdown(card.frame, nil, ANCHOR_POINTS, "sourcePoint", cfg, onChange,
-        { description = "Which corner or edge of " .. label .. " is used as its anchor point." })
+        { description = ns.L["Which corner or edge of "] .. label .. ns.L[" is used as its anchor point."] })
     local dstW = GUI:CreateFormDropdown(card.frame, nil, ANCHOR_POINTS, "targetPoint", cfg, onChange,
-        { description = "Which corner or edge of the target QUI element the container point attaches to." })
+        { description = ns.L["Which corner or edge of the target QUI element the container point attaches to."] })
     card.AddRow(
-        Shared.BuildSettingRow(card.frame, "Container Point", srcW),
-        Shared.BuildSettingRow(card.frame, "Target Point", dstW)
+        Shared.BuildSettingRow(card.frame, ns.L["Container Point"], srcW),
+        Shared.BuildSettingRow(card.frame, ns.L["Target Point"], dstW)
     )
 
     -- X / Y offset — paired sliders. Range matches the Layout Mode panel so
     -- values written in one surface are not display-clamped in the other.
     xW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetX", cfg, onChange, nil,
-        { description = "Horizontal pixel offset from the target anchor point." })
+        { description = ns.L["Horizontal pixel offset from the target anchor point."] })
     yW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetY", cfg, onChange, nil,
-        { description = "Vertical pixel offset from the target anchor point." })
+        { description = ns.L["Vertical pixel offset from the target anchor point."] })
     card.AddRow(
-        Shared.BuildSettingRow(card.frame, "X Offset", xW),
-        Shared.BuildSettingRow(card.frame, "Y Offset", yW)
+        Shared.BuildSettingRow(card.frame, ns.L["X Offset"], xW),
+        Shared.BuildSettingRow(card.frame, ns.L["Y Offset"], yW)
     )
 
     card.Finalize()
@@ -131,7 +131,7 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
     local sections = {}
 
     -- Position section: V3 accent-dot header + card group.
-    Shared.CreateAccentDotLabel(host, "Position", y); y = y - HEADER_GAP
+    Shared.CreateAccentDotLabel(host, ns.L["Position"], y); y = y - HEADER_GAP
     local card = Shared.CreateSettingsCardGroup(host, y)
     card.frame:ClearAllPoints()
     card.frame:SetPoint("TOPLEFT", host, "TOPLEFT", PAD, y)
@@ -152,8 +152,8 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
     end
 
     local enableW = GUI:CreateFormCheckbox(card.frame, nil, "enabled", cfg, Refresh,
-        { description = "Enable QUI-managed anchoring for this container. While off, the container keeps its existing position." })
-    card.AddRow(Shared.BuildSettingRow(card.frame, "Enable", enableW))
+        { description = ns.L["Enable QUI-managed anchoring for this container. While off, the container keeps its existing position."] })
+    card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Enable"], enableW))
 
     local AnchorOpts = ns.QUI_Anchoring_Options
     local anchorW
@@ -165,24 +165,24 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
     else
         anchorW = GUI:CreateFormDropdown(card.frame, nil, {}, "anchorTo", cfg, OnAnchorTargetChange)
     end
-    card.AddRow(Shared.BuildSettingRow(card.frame, "Anchor To", anchorW))
+    card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Anchor To"], anchorW))
 
     local srcW = GUI:CreateFormDropdown(card.frame, nil, ANCHOR_POINTS, "sourcePoint", cfg, Refresh,
-        { description = "Which point on this container is used as the attach point." })
+        { description = ns.L["Which point on this container is used as the attach point."] })
     local dstW = GUI:CreateFormDropdown(card.frame, nil, ANCHOR_POINTS, "targetPoint", cfg, Refresh,
-        { description = "Which point on the target frame this container attaches to." })
+        { description = ns.L["Which point on the target frame this container attaches to."] })
     card.AddRow(
-        Shared.BuildSettingRow(card.frame, "Container Point", srcW),
-        Shared.BuildSettingRow(card.frame, "Target Point", dstW)
+        Shared.BuildSettingRow(card.frame, ns.L["Container Point"], srcW),
+        Shared.BuildSettingRow(card.frame, ns.L["Target Point"], dstW)
     )
 
     xW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetX", cfg, Refresh,
-        { description = "Horizontal pixel offset between container point and target point." })
+        { description = ns.L["Horizontal pixel offset between container point and target point."] })
     yW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetY", cfg, Refresh,
-        { description = "Vertical pixel offset between container point and target point." })
+        { description = ns.L["Vertical pixel offset between container point and target point."] })
     card.AddRow(
-        Shared.BuildSettingRow(card.frame, "X Offset", xW),
-        Shared.BuildSettingRow(card.frame, "Y Offset", yW)
+        Shared.BuildSettingRow(card.frame, ns.L["X Offset"], xW),
+        Shared.BuildSettingRow(card.frame, ns.L["Y Offset"], yW)
     )
 
     card.Finalize()
@@ -226,7 +226,7 @@ local function BuildIntegrationSection(tabContent, y, opts)
     local core = GetCore()
     local db = core and core.db and core.db.profile and core.db.profile[opts.dbKey]
     if not db then
-        local errorLabel = GUI:CreateLabel(tabContent, opts.name .. " anchor database not loaded. Please reload UI.", 12, {1, 0.3, 0.3, 1})
+        local errorLabel = GUI:CreateLabel(tabContent, opts.name .. ns.L[" anchor database not loaded. Please reload UI."], 12, {1, 0.3, 0.3, 1})
         errorLabel:SetPoint("TOPLEFT", PAD, y)
         return y - 24
     end
@@ -261,7 +261,7 @@ local function BuildThirdPartyTab(tabContent)
     local PAD = PADDING
 
     local intro = GUI:CreateLabel(tabContent,
-        "Configure QUI-driven anchoring integrations for supported external addons.",
+        ns.L["Configure QUI-driven anchoring integrations for supported external addons."],
         11, C.textMuted)
     intro:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
     intro:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
@@ -274,12 +274,12 @@ local function BuildThirdPartyTab(tabContent)
         name    = "BigWigs",
         dbKey   = "bigWigs",
         keys    = {
-            {key = "normal",     label = "Normal Bars"},
-            {key = "emphasized", label = "Emphasized Bars"},
+            {key = "normal",     label = ns.L["Normal Bars"]},
+            {key = "emphasized", label = ns.L["Emphasized Bars"]},
         },
         isAvailable        = function() return ns.QUI_BigWigs and ns.QUI_BigWigs:IsAvailable() end,
-        unavailableMessage = "BigWigs not detected. Install and enable BigWigs to use these anchors.",
-        description        = "Anchor BigWigs bar groups to QUI elements. This writes to BigWigs Bars custom anchor points.",
+        unavailableMessage = ns.L["BigWigs not detected. Install and enable BigWigs to use these anchors."],
+        description        = ns.L["Anchor BigWigs bar groups to QUI elements. This writes to BigWigs Bars custom anchor points."],
         applyPosition      = function(k) ns.QUI_BigWigs:ApplyPosition(k) end,
     })
 
@@ -288,14 +288,14 @@ local function BuildThirdPartyTab(tabContent)
         name    = "DandersFrames",
         dbKey   = "dandersFrames",
         keys    = {
-            {key = "party",   label = "Party Frames"},
-            {key = "raid",    label = "Raid Frames"},
-            {key = "pinned1", label = "Pinned Set 1"},
-            {key = "pinned2", label = "Pinned Set 2"},
+            {key = "party",   label = ns.L["Party Frames"]},
+            {key = "raid",    label = ns.L["Raid Frames"]},
+            {key = "pinned1", label = ns.L["Pinned Set 1"]},
+            {key = "pinned2", label = ns.L["Pinned Set 2"]},
         },
         isAvailable        = function() return ns.QUI_DandersFrames and ns.QUI_DandersFrames:IsAvailable() end,
-        unavailableMessage = "DandersFrames not detected. Install and enable DandersFrames to use these anchors.",
-        description        = "Anchor DandersFrames containers to QUI elements. When enabled, QUI controls placement; move them with QUI Layout Mode rather than DandersFrames' own unlock.",
+        unavailableMessage = ns.L["DandersFrames not detected. Install and enable DandersFrames to use these anchors."],
+        description        = ns.L["Anchor DandersFrames containers to QUI elements. When enabled, QUI controls placement; move them with QUI Layout Mode rather than DandersFrames' own unlock."],
         applyPosition      = function(k) ns.QUI_DandersFrames:ApplyPosition(k) end,
     })
 
@@ -305,12 +305,12 @@ local function BuildThirdPartyTab(tabContent)
         name    = "AbilityTimeline",
         dbKey   = "abilityTimeline",
         keys    = {
-            {key = "timeline", label = "Timeline Frame", excludeSelf = "abilityTimelineTimeline"},
-            {key = "bigIcon",  label = "Big Icon Frame", excludeSelf = "abilityTimelineBigIcon"},
+            {key = "timeline", label = ns.L["Timeline Frame"], excludeSelf = "abilityTimelineTimeline"},
+            {key = "bigIcon",  label = ns.L["Big Icon Frame"], excludeSelf = "abilityTimelineBigIcon"},
         },
         isAvailable        = function() return ns.QUI_AbilityTimeline and ns.QUI_AbilityTimeline:IsAvailable() end,
-        unavailableMessage = "AbilityTimeline not detected. Install and enable AbilityTimeline to use these anchors.",
-        description        = "Anchor AbilityTimeline frames to QUI elements. This controls the timeline and big icon frame positions.",
+        unavailableMessage = ns.L["AbilityTimeline not detected. Install and enable AbilityTimeline to use these anchors."],
+        description        = ns.L["Anchor AbilityTimeline frames to QUI elements. This controls the timeline and big icon frame positions."],
         applyPosition      = function(k) ns.QUI_AbilityTimeline:ApplyPosition(k) end,
     })
 

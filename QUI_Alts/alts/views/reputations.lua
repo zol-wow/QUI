@@ -349,7 +349,7 @@ local function Builder(parent)
                 if not (row and row.factionID) then return end
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetText(row.label, 1, 1, 1)
-                GameTooltip:AddLine("Right-click to untrack", 0.6, 0.6, 0.6)
+                GameTooltip:AddLine(ns.L["Right-click to untrack"], 0.6, 0.6, 0.6)
                 GameTooltip:Show()
             end,
             onLeave = function() GameTooltip:Hide() end,

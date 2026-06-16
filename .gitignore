@@ -27,3 +27,8 @@ CLAUDE.md
 /docs/analysis
 /.claire/worktrees
 luac.out
+tools/i18n/_mt/
+
+# Python bytecode
+tools/i18n/__pycache__/
+*.pyc

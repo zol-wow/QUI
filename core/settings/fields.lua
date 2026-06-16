@@ -208,7 +208,7 @@ function Fields.Render(field, ctx, parent)
         end
 
         local stub = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        stub:SetText("Section failed to render.")
+        stub:SetText(ns.L["Section failed to render."])
         stub:SetTextColor(1, 0.35, 0.35, 1)
         local handler = geterrorhandler and geterrorhandler()
         if type(handler) == "function" then

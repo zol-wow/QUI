@@ -187,6 +187,7 @@ _G.C_Item = {
 ---------------------------------------------------------------------------
 local settings = { behavior = { sortKey = "quality" } }
 local ns = { Helpers = { CreateDBGetter = function() return function() return settings end end } }
+(dofile("tests/helpers/locale.lua"))(ns)
 loader.LoadAll(ns, "item_info.lua")
 assert(loadfile("QUI_Bags/bags/ops/sort_planner.lua"))("QUI", ns)
 assert(loadfile("QUI_Bags/bags/ops/shared.lua"))("QUI", ns)

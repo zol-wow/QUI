@@ -11,6 +11,7 @@ local loader = dofile("tests/helpers/load_bags_data.lua")
 loader.InstallBaseStubs()
 
 local ns = loader.LoadAll()
+;(dofile("tests/helpers/locale.lua"))(ns)
 local Store, Summaries = ns.Bags.Store, ns.Bags.Summaries
 
 -- everywhere.lua sits outside the data layer: load compiler + details + it

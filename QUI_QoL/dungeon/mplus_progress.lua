@@ -7,6 +7,16 @@ local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("mplusProgress")
 
+-- CJK-safe font setter: preserves the roman font and only adds CJK fallback
+-- members where available, degrading to plain SetFont otherwise.
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local MPlusProgress = {}
 ns.MPlusProgress = MPlusProgress
 
@@ -160,7 +170,7 @@ local function ApplyNameplateStyle(frame)
     local scale = settings.nameplateTextScale or 1
 
     frame:SetScale(scale)
-    frame.text:SetFont(GetNameplateFont())
+    CJKFont(frame.text, GetNameplateFont())
     frame.text:SetTextColor(r, g, b, a)
 end
 
@@ -180,7 +190,7 @@ local function AcquireNameplateFrame()
     text:SetJustifyH("LEFT")
     text:SetJustifyV("MIDDLE")
     text:SetWordWrap(false)
-    text:SetFont(GetNameplateFont())
+    CJKFont(text, GetNameplateFont())
     frame.text = text
 
     return frame
@@ -298,14 +308,14 @@ function MPlusProgress:AddTooltipProgress(tooltip, unit)
     if percentString == nil then
         local settings = Settings()
         if settings.tooltipShowNoProgress and UnitCanShowNoProgress(unit) then
-            tooltip:AddDoubleLine("M+ Progress:", "No progress", 0.204, 1, 0.6, 0.8, 0.8, 0.8)
+            tooltip:AddDoubleLine(ns.L["M+ Progress:"], ns.L["No progress"], 0.204, 1, 0.6, 0.8, 0.8, 0.8)
             tooltip:Show()
         end
         return
     end
 
     if Helpers.IsSecretValue(percentString) then
-        tooltip:AddDoubleLine("M+ Progress:", percentString, 0.204, 1, 0.6, 1, 1, 1)
+        tooltip:AddDoubleLine(ns.L["M+ Progress:"], percentString, 0.204, 1, 0.6, 1, 1, 1)
     else
         local text = tostring(percentString)
         if text == "" then return end
@@ -321,7 +331,7 @@ function MPlusProgress:AddTooltipProgress(tooltip, unit)
             end
         end
 
-        tooltip:AddDoubleLine("M+ Progress:", text, 0.204, 1, 0.6, 1, 1, 1)
+        tooltip:AddDoubleLine(ns.L["M+ Progress:"], text, 0.204, 1, 0.6, 1, 1, 1)
     end
     tooltip:Show()
 end

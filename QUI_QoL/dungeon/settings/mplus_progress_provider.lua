@@ -78,54 +78,54 @@ do
             local L = MakeLayout(content)
 
             -- General
-            L.headerAt("General")
+            L.headerAt(ns.L["General"])
             local sGen = L.sectionAt()
             local genEnableW = GUI:CreateFormCheckbox(sGen.frame, nil, "enabled", db, Refresh,
-                { description = "Show per-enemy forces contribution on M+ tooltips and nameplates." })
+                { description = ns.L["Show per-enemy forces contribution on M+ tooltips and nameplates."] })
             local genTooltipW = GUI:CreateFormCheckbox(sGen.frame, nil, "tooltipEnabled", db, Refresh,
-                { description = "Add the enemy forces contribution to unit tooltips in active Mythic+ runs." })
+                { description = ns.L["Add the enemy forces contribution to unit tooltips in active Mythic+ runs."] })
             sGen.AddRow(
-                row(sGen.frame, "Enable M+ Mob Progress", genEnableW),
-                row(sGen.frame, "Show Tooltip Progress", genTooltipW)
+                row(sGen.frame, ns.L["Enable M+ Mob Progress"], genEnableW),
+                row(sGen.frame, ns.L["Show Tooltip Progress"], genTooltipW)
             )
 
             local genNameplateW = GUI:CreateFormCheckbox(sGen.frame, nil, "nameplateEnabled", db, Refresh,
-                { description = "Show each visible enemy's forces contribution next to its nameplate." })
-            sGen.AddRow(row(sGen.frame, "Show Nameplate Progress", genNameplateW))
+                { description = ns.L["Show each visible enemy's forces contribution next to its nameplate."] })
+            sGen.AddRow(row(sGen.frame, ns.L["Show Nameplate Progress"], genNameplateW))
             L.closeSection(sGen)
 
             -- Tooltips
-            L.headerAt("Tooltips")
+            L.headerAt(ns.L["Tooltips"])
             local sTT = L.sectionAt()
             local ttCountW = GUI:CreateFormCheckbox(sTT.frame, nil, "tooltipIncludeCount", db, Refresh,
-                { description = "Show the enemy's count contribution when the value is available for Lua to inspect." })
+                { description = ns.L["Show the enemy's count contribution when the value is available for Lua to inspect."] })
             local ttNoProgW = GUI:CreateFormCheckbox(sTT.frame, nil, "tooltipShowNoProgress", db, Refresh,
-                { description = "Show a tooltip line for attackable enemies that do not contribute forces." })
+                { description = ns.L["Show a tooltip line for attackable enemies that do not contribute forces."] })
             sTT.AddRow(
-                row(sTT.frame, "Include Count", ttCountW),
-                row(sTT.frame, "Show No Progress Line", ttNoProgW)
+                row(sTT.frame, ns.L["Include Count"], ttCountW),
+                row(sTT.frame, ns.L["Show No Progress Line"], ttNoProgW)
             )
             L.closeSection(sTT)
 
             -- Nameplates
-            L.headerAt("Nameplates")
+            L.headerAt(ns.L["Nameplates"])
             local sNP = L.sectionAt()
             local formatOpts = {
-                { text = "+2.5%",        value = "+$percent$%" },
-                { text = "2.5%",         value = "$percent$%" },
-                { text = "2.5",          value = "$percent$" },
-                { text = "Forces: 2.5%", value = "Forces: $percent$%" },
+                { text = ns.L["+2.5%"],        value = "+$percent$%" },
+                { text = ns.L["2.5%"],         value = "$percent$%" },
+                { text = ns.L["2.5"],          value = "$percent$" },
+                { text = ns.L["Forces: 2.5%"], value = "Forces: $percent$%" },
             }
             local npFmtW = GUI:CreateFormDropdown(sNP.frame, nil, formatOpts, "nameplateTextFormat", db, Refresh,
-                { description = "How each enemy's forces contribution is shown next to its nameplate." })
+                { description = ns.L["How each enemy's forces contribution is shown next to its nameplate."] })
             local npScaleW = GUI:CreateFormSlider(sNP.frame, nil, 0.5, 2.0, 0.05, "nameplateTextScale", db, Refresh,
-                { deferOnDrag = true, precision = 2, description = "Scale of the M+ progress text attached to nameplates." })
+                { deferOnDrag = true, precision = 2, description = ns.L["Scale of the M+ progress text attached to nameplates."] })
             sNP.AddRow(
-                row(sNP.frame, "Text Format", npFmtW),
-                row(sNP.frame, "Text Scale", npScaleW)
+                row(sNP.frame, ns.L["Text Format"], npFmtW),
+                row(sNP.frame, ns.L["Text Scale"], npScaleW)
             )
 
-            local fontList = { { value = "", text = "(Global Font)" } }
+            local fontList = { { value = "", text = ns.L["(Global Font)"] } }
             if LSM then
                 local names = {}
                 for name in pairs(LSM:HashTable("font")) do names[#names + 1] = name end
@@ -135,26 +135,26 @@ do
                 end
             end
             local npFontW = GUI:CreateFormDropdown(sNP.frame, nil, fontList, "nameplateFont", db, Refresh,
-                { description = "Font for the nameplate progress text. Pick (Global Font) to inherit the UI font." })
+                { description = ns.L["Font for the nameplate progress text. Pick (Global Font) to inherit the UI font."] })
             local npSizeW = GUI:CreateFormSlider(sNP.frame, nil, 8, 18, 1, "nameplateFontSize", db, Refresh,
-                { description = "Font size for the nameplate progress text." })
+                { description = ns.L["Font size for the nameplate progress text."] })
             sNP.AddRow(
-                row(sNP.frame, "Font", npFontW),
-                row(sNP.frame, "Font Size", npSizeW)
+                row(sNP.frame, ns.L["Font"], npFontW),
+                row(sNP.frame, ns.L["Font Size"], npSizeW)
             )
 
             local npXW = GUI:CreateFormSlider(sNP.frame, nil, -100, 100, 1, "nameplateOffsetX", db, Refresh,
-                { description = "Horizontal offset from the right side of the nameplate." })
+                { description = ns.L["Horizontal offset from the right side of the nameplate."] })
             local npYW = GUI:CreateFormSlider(sNP.frame, nil, -100, 100, 1, "nameplateOffsetY", db, Refresh,
-                { description = "Vertical offset from the nameplate anchor." })
+                { description = ns.L["Vertical offset from the nameplate anchor."] })
             sNP.AddRow(
-                row(sNP.frame, "Offset X", npXW),
-                row(sNP.frame, "Offset Y", npYW)
+                row(sNP.frame, ns.L["Offset X"], npXW),
+                row(sNP.frame, ns.L["Offset Y"], npYW)
             )
 
             local npColorW = GUI:CreateFormColorPicker(sNP.frame, nil, "nameplateTextColor", db, Refresh, nil,
-                { description = "Color used for M+ progress text on nameplates." })
-            sNP.AddRow(row(sNP.frame, "Text Color", npColorW))
+                { description = ns.L["Color used for M+ progress text on nameplates."] })
+            sNP.AddRow(row(sNP.frame, ns.L["Text Color"], npColorW))
             L.closeSection(sNP)
 
             -- Layout-mode chrome (no Position collapsible for this provider)

@@ -4,6 +4,18 @@
 -- alignment guides, screen overlay, save/discard popup.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
+
+-- Re-applies a FontString's current font through the CJK-safe family resolver
+-- so Chinese/Korean glyphs render (GameFont* templates are Latin-only).
+local function EnsureCJKFont(fs)
+    if not fs or not fs.GetFont then return fs end
+    local fp, sz, fl = fs:GetFont()
+    if fp and ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, fp, sz, fl)
+    end
+    return fs
+end
+
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 local floor = math.floor
@@ -978,15 +990,15 @@ CreateToolbar = function(ui)
     tabGlow:SetWidth(6)
     tabGlow:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.25)
 
-    local tabChevron = tab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local tabChevron = EnsureCJKFont(tab:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
     tabChevron:SetPoint("BOTTOM", tab, "BOTTOM", 0, 8)
     tabChevron:SetText("\194\171") -- «
     tabChevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
 
     -- "Edit Mode" label on the tab (rotated look via vertical stacking)
-    local tabLabel = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local tabLabel = EnsureCJKFont(tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
     tabLabel:SetPoint("TOP", tab, "TOP", 0, -8)
-    tabLabel:SetText("E\nD\nI\nT\n \nM\nO\nD\nE")
+    tabLabel:SetText(ns.L["E\nD\nI\nT\n \nM\nO\nD\nE"])
     tabLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.7)
     tabLabel:SetJustifyH("CENTER")
     tabLabel:SetSpacing(0)
@@ -1032,9 +1044,9 @@ CreateToolbar = function(ui)
     local panelBorderRight = MakeLine("TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
 
     -- Title
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local title = EnsureCJKFont(panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
     title:SetPoint("TOP", panel, "TOP", 0, -PANEL_PAD)
-    title:SetText("|cff60A5FAEdit Mode|r")
+    title:SetText(ns.L["|cff60A5FAEdit Mode|r"])
     title:SetTextColor(1, 1, 1, 1)
 
     -- Buttons (vertical stack)
@@ -1055,7 +1067,7 @@ CreateToolbar = function(ui)
         btn._colorG = colorG or 0.15
         btn._colorB = colorB or 0.18
 
-        local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local btnText = EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         btnText:SetPoint("CENTER")
         btnText:SetText(label)
         btnText:SetTextColor(1, 1, 1, 1)
@@ -1075,25 +1087,25 @@ CreateToolbar = function(ui)
     end
 
     -- Frames drawer toggle
-    ui._framesBtn = AddButton("Frames", function()
+    ui._framesBtn = AddButton(ns.L["Frames"], function()
         ui:ToggleFramesDrawer()
     end)
 
     -- Snap toggle
-    ui._snapBtn = AddButton("Snap: On", function()
+    ui._snapBtn = AddButton(ns.L["Snap: On"], function()
         ui.snapEnabled = not ui.snapEnabled
         ui:_UpdateToolbarButtons()
         SavePersistedState(ui)
     end)
 
     -- Grid cycle
-    ui._gridBtn = AddButton("Grid: Off", function()
+    ui._gridBtn = AddButton(ns.L["Grid: Off"], function()
         ui:CycleGrid()
         SavePersistedState(ui)
     end)
 
     -- Sync All Fonts & Textures
-    AddButton("Sync Fonts", function()
+    AddButton(ns.L["Sync Fonts"], function()
         local core = ns.Addon
         if not core or not core.db or not core.db.profile then return end
         local profile = core.db.profile
@@ -1135,11 +1147,11 @@ CreateToolbar = function(ui)
         -- Refresh CDM
         if _G.QUI_RefreshCDM then _G.QUI_RefreshCDM() end
 
-        print("|cff34D399QUI:|r Synced all fonts to \"" .. globalFont .. "\" and textures to \"" .. globalTexture .. "\"")
+        print("|cff34D399QUI:|r " .. ns.L["Synced all fonts to "] .. "\"" .. globalFont .. "\" " .. ns.L["and textures to "] .. "\"" .. globalTexture .. "\"")
     end, 0.15, 0.25, 0.4)
 
     -- QUI Settings button
-    AddButton("QUI Settings", function()
+    AddButton(ns.L["QUI Settings"], function()
         local gui = _G.QUI and _G.QUI.GUI
         if gui and gui.Toggle then
             gui:Toggle()
@@ -1148,13 +1160,13 @@ CreateToolbar = function(ui)
     end, 0.15, 0.25, 0.4)
 
     -- Save button (green)
-    ui._saveBtn = AddButton("Save & Close", function()
+    ui._saveBtn = AddButton(ns.L["Save & Close"], function()
         local um = ns.QUI_LayoutMode
         if um then um:SaveAndClose() end
     end, 0.1, 0.5, 0.3)
 
     -- Discard button (red)
-    ui._discardBtn = AddButton("Discard", function()
+    ui._discardBtn = AddButton(ns.L["Discard"], function()
         local um = ns.QUI_LayoutMode
         if um then um:DiscardAndClose() end
     end, 0.5, 0.1, 0.1)
@@ -1425,11 +1437,11 @@ end
 
 function QUI_LayoutMode_UI:_UpdateToolbarButtons()
     if self._snapBtn then
-        self._snapBtn._text:SetText(self.snapEnabled and "Snap: On" or "Snap: Off")
+        self._snapBtn._text:SetText(self.snapEnabled and ns.L["Snap: On"] or ns.L["Snap: Off"])
     end
     if self._gridBtn then
-        local labels = { [0] = "Grid: Off", [1] = "Grid: Dim", [2] = "Grid: Bright" }
-        self._gridBtn._text:SetText(labels[self.gridMode] or "Grid: Off")
+        local labels = { [0] = ns.L["Grid: Off"], [1] = ns.L["Grid: Dim"], [2] = ns.L["Grid: Bright"] }
+        self._gridBtn._text:SetText(labels[self.gridMode] or ns.L["Grid: Off"])
     end
 end
 
@@ -1465,9 +1477,9 @@ CreateSaveDiscardPopup = function(ui)
     MakePopupLine("TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false)
 
     -- Title
-    local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = EnsureCJKFont(popup:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
     title:SetPoint("TOP", popup, "TOP", 0, -14)
-    title:SetText("Unsaved Changes")
+    title:SetText(ns.L["Unsaved Changes"])
     title:SetTextColor(1, 1, 1, 1)
 
     -- Buttons
@@ -1481,7 +1493,7 @@ CreateSaveDiscardPopup = function(ui)
         btnBg:SetColorTexture(r, g, b, 0.9)
         btn._bg = btnBg
 
-        local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local btnText = EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
         btnText:SetPoint("CENTER")
         btnText:SetText(label)
         btnText:SetTextColor(1, 1, 1, 1)
@@ -1497,21 +1509,21 @@ CreateSaveDiscardPopup = function(ui)
     end
 
     -- Save & Exit (green)
-    MakePopupButton("Save & Exit", 130, popup, "TOP", -70, -44, function()
+    MakePopupButton(ns.L["Save & Exit"], 130, popup, "TOP", -70, -44, function()
         popup:Hide()
         local um = ns.QUI_LayoutMode
         if um then um:SaveAndClose() end
     end, 0.1, 0.5, 0.3)
 
     -- Exit Without Saving (red)
-    MakePopupButton("Exit Without Saving", 130, popup, "TOP", 70, -44, function()
+    MakePopupButton(ns.L["Exit Without Saving"], 130, popup, "TOP", 70, -44, function()
         popup:Hide()
         local um = ns.QUI_LayoutMode
         if um then um:DiscardAndClose() end
     end, 0.5, 0.1, 0.1)
 
     -- Cancel (gray)
-    MakePopupButton("Cancel", 100, popup, "TOP", 0, -78, function()
+    MakePopupButton(ns.L["Cancel"], 100, popup, "TOP", 0, -78, function()
         popup:Hide()
     end, 0.2, 0.2, 0.2)
 
@@ -1631,7 +1643,7 @@ CreateFramesDrawer = function(ui)
         bgTex:SetColorTexture(0.2, 0.2, 0.2, 0.9)
         button._bg = bgTex
 
-        local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local label = EnsureCJKFont(button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         label:SetPoint("CENTER")
         label:SetText(text)
         label:SetTextColor(0.8, 0.82, 0.85, 1)
@@ -1659,7 +1671,7 @@ CreateFramesDrawer = function(ui)
     do
         local GUI = _G.QUI and _G.QUI.GUI
         if GUI and GUI.CreateSearchBox then
-            searchBox = GUI:CreateSearchBox(searchContainer, "Search frames…")
+            searchBox = GUI:CreateSearchBox(searchContainer, ns.L["Search frames…"])
             searchBox:SetAllPoints(searchContainer)
             searchBox.onSearch = function(text)
                 drawer._searchFilter = (text or ""):lower()
@@ -1681,15 +1693,15 @@ CreateFramesDrawer = function(ui)
     controls:SetPoint("TOPRIGHT", searchContainer, "BOTTOMRIGHT", 0, -DRAWER_SEARCH_GAP)
     controls:SetHeight(DRAWER_CONTROLS_HEIGHT)
 
-    local controlsLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local controlsLabel = EnsureCJKFont(controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
     controlsLabel:SetPoint("LEFT", 4, 0)
-    controlsLabel:SetText("Layer Visibility")
+    controlsLabel:SetText(ns.L["Layer Visibility"])
     controlsLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
 
-    local hideAllBtn = CreateDrawerActionButton(controls, "HIDE ALL", 74)
+    local hideAllBtn = CreateDrawerActionButton(controls, ns.L["HIDE ALL"], 74)
     hideAllBtn:SetPoint("RIGHT", controls, "RIGHT", -2, 0)
 
-    local showAllBtn = CreateDrawerActionButton(controls, "SHOW ALL", 74)
+    local showAllBtn = CreateDrawerActionButton(controls, ns.L["SHOW ALL"], 74)
     showAllBtn:SetPoint("RIGHT", hideAllBtn, "LEFT", -6, 0)
 
     local function UpdateGlobalButtonsVisual()
@@ -1846,7 +1858,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
     for _, key in ipairs(um._elementOrder) do
         local def = um._elements[key]
         if def then
-            local group = def.group or "Other"
+            local group = def.group or ns.L["Other"]
 
             local include = true
             if searchFilter ~= "" then
@@ -1901,7 +1913,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             g = ACCENT_G,
             b = ACCENT_B,
             a = 1,
-        }) or header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        }) or EnsureCJKFont(header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         if not (UIKit and UIKit.CreateChevronCaret) then
             chevron:SetPoint("LEFT", 4, 0)
             chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
@@ -1909,7 +1921,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
         end
         header._chevron = chevron
 
-        local headerText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local headerText = EnsureCJKFont(header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         headerText:SetPoint("LEFT", chevron, "RIGHT", 4, 0)
         headerText:SetText(group)
         headerText:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
@@ -1963,7 +1975,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             row._bg = rowBg
 
             -- Label
-            local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local label = EnsureCJKFont(row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
             label:SetPoint("LEFT", 12, 0)
             label:SetText(def.label or key)
 
@@ -1986,7 +1998,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 toggleBg:SetAllPoints()
                 toggleBtn._bg = toggleBg
 
-                local toggleText = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                local toggleText = EnsureCJKFont(toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
                 toggleText:SetPoint("CENTER")
                 toggleBtn._text = toggleText
 
@@ -1994,12 +2006,12 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                     local en = um:IsElementEnabled(key)
                     if en then
                         toggleBg:SetColorTexture(0.1, 0.5, 0.3, 0.9)
-                        toggleText:SetText("ON")
+                        toggleText:SetText(ns.L["ON"])
                         toggleText:SetTextColor(1, 1, 1, 1)
                         label:SetTextColor(0.953, 0.957, 0.965, 1)
                     else
                         toggleBg:SetColorTexture(0.3, 0.12, 0.12, 0.9)
-                        toggleText:SetText("OFF")
+                        toggleText:SetText(ns.L["OFF"])
                         toggleText:SetTextColor(0.6, 0.6, 0.6, 1)
                         label:SetTextColor(0.4, 0.42, 0.45, 1)
                     end
@@ -2058,7 +2070,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 showBg:SetAllPoints()
                 showBtn._bg = showBg
 
-                local showText = showBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                local showText = EnsureCJKFont(showBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
                 showText:SetPoint("CENTER")
                 showBtn._text = showText
 
@@ -2070,7 +2082,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                     local shown = um:IsHandleShown(key)
                     if not en then
                         showBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
-                        showText:SetText("SHOW")
+                        showText:SetText(ns.L["SHOW"])
                         showText:SetTextColor(0.35, 0.35, 0.35, 1)
                         showBtn:EnableMouse(false)
                         if soloBtn then
@@ -2089,11 +2101,11 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                         if resetBtn then resetBtn:EnableMouse(true) end
                         if shown then
                             showBg:SetColorTexture(0.15, 0.35, 0.55, 0.9)
-                            showText:SetText("HIDE")
+                            showText:SetText(ns.L["HIDE"])
                             showText:SetTextColor(1, 1, 1, 1)
                         else
                             showBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
-                            showText:SetText("SHOW")
+                            showText:SetText(ns.L["SHOW"])
                             showText:SetTextColor(0.6, 0.6, 0.6, 1)
                         end
                         if soloBtn then
@@ -2161,9 +2173,9 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 soloBg:SetAllPoints()
                 soloBtn._bg = soloBg
 
-                soloText = soloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                soloText = EnsureCJKFont(soloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
                 soloText:SetPoint("CENTER")
-                soloText:SetText("SOLO")
+                soloText:SetText(ns.L["SOLO"])
                 soloBtn._text = soloText
 
                 soloBtn:SetScript("OnClick", function()
@@ -2202,9 +2214,9 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 resetBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
                 resetBtn._bg = resetBg
 
-                resetText = resetBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                resetText = EnsureCJKFont(resetBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
                 resetText:SetPoint("CENTER")
-                resetText:SetText("RESET")
+                resetText:SetText(ns.L["RESET"])
                 resetText:SetTextColor(0.6, 0.6, 0.6, 1)
 
                 resetBtn:SetScript("OnClick", function()
@@ -2262,9 +2274,9 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             addBg:SetAllPoints()
             addBg:SetColorTexture(0.15, 0.17, 0.22, 0)
 
-            local addLabel = addRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local addLabel = EnsureCJKFont(addRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
             addLabel:SetPoint("LEFT", 12, 0)
-            addLabel:SetText("|cff34D399+ Add Datapanel|r")
+            addLabel:SetText(ns.L["|cff34D399+ Add Datapanel|r"])
 
             addRow:SetScript("OnClick", function()
                 local QUICore = ns.Addon
@@ -2315,7 +2327,7 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                     um2:RegisterElement({
                         key = elementKey,
                         label = newConfig.name,
-                        group = "Display",
+                        group = ns.L["Display"],
                         order = 10 + #dtDB.panels,
                         isOwned = true,
                         getFrame = function() return Datapanels and Datapanels.activePanels[newID] end,
@@ -2409,9 +2421,9 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             addTrackerBg:SetAllPoints()
             addTrackerBg:SetColorTexture(0.15, 0.17, 0.22, 0)
 
-            local addTrackerLabel = addTrackerRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local addTrackerLabel = EnsureCJKFont(addTrackerRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
             addTrackerLabel:SetPoint("LEFT", 12, 0)
-            addTrackerLabel:SetText("|cff34D399+ Add CDM Container|r")
+            addTrackerLabel:SetText(ns.L["|cff34D399+ Add CDM Container|r"])
 
             addTrackerRow:SetScript("OnClick", function()
                 if InCombatLockdown() then return end
@@ -2433,10 +2445,10 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
     -- Empty-state placeholder (only when filter is active and zero rows survive)
     if not drawer._emptyStateText then
-        local fs = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local fs = EnsureCJKFont(content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         fs:SetPoint("TOP", content, "TOP", 0, -16)
         fs:SetTextColor(0.55, 0.58, 0.62, 1)
-        fs:SetText("No frames match")
+        fs:SetText(ns.L["No frames match"])
         fs:Hide()
         drawer._emptyStateText = fs
     end

@@ -1002,17 +1002,17 @@ local Breakdown
 -- If Enum.DamageMeterType isn't populated at load (defensive — it should be), the
 -- table is empty and LabelForType falls back to "Type <N>".
 local TYPE_LABEL_NAMES = {
-    DamageDone           = "Damage Done",
-    Dps                  = "DPS",
-    HealingDone          = "Healing Done",
-    Hps                  = "HPS",
-    DamageTaken          = "Damage Taken",
-    AvoidableDamageTaken = "Avoidable Damage Taken",
-    EnemyDamageTaken     = "Enemy Damage Taken",
-    Absorbs              = "Absorbs",
-    Interrupts           = "Interrupts",
-    Dispels              = "Dispels",
-    Deaths               = "Deaths",
+    DamageDone           = ns.L["Damage Done"],
+    Dps                  = ns.L["DPS"],
+    HealingDone          = ns.L["Healing Done"],
+    Hps                  = ns.L["HPS"],
+    DamageTaken          = ns.L["Damage Taken"],
+    AvoidableDamageTaken = ns.L["Avoidable Damage Taken"],
+    EnemyDamageTaken     = ns.L["Enemy Damage Taken"],
+    Absorbs              = ns.L["Absorbs"],
+    Interrupts           = ns.L["Interrupts"],
+    Dispels              = ns.L["Dispels"],
+    Deaths               = ns.L["Deaths"],
 }
 
 local TYPE_LABELS = {}
@@ -1028,7 +1028,7 @@ do
 end
 
 local function LabelForType(damageMeterType)
-    return TYPE_LABELS[damageMeterType] or ("Type " .. tostring(damageMeterType))
+    return TYPE_LABELS[damageMeterType] or (ns.L["Type "] .. tostring(damageMeterType))
 end
 
 -- Tooltip labels for the per-row hover popup. Total/rate are domain-specific
@@ -1039,15 +1039,15 @@ local function TooltipLabelsForType(meterType)
     local T = Enum and Enum.DamageMeterType
     if T then
         if meterType == T.DamageDone or meterType == T.Dps then
-            return "Total Damage", "DPS"
+            return ns.L["Total Damage"], ns.L["DPS"]
         elseif meterType == T.HealingDone or meterType == T.Hps then
-            return "Total Healing", "HPS"
+            return ns.L["Total Healing"], ns.L["HPS"]
         elseif meterType == T.Absorbs then
-            return "Total Absorbs", nil
+            return ns.L["Total Absorbs"], nil
         elseif meterType == T.DamageTaken
             or meterType == T.AvoidableDamageTaken
             or meterType == T.EnemyDamageTaken then
-            return "Total Damage Taken", "DPS"
+            return ns.L["Total Damage Taken"], ns.L["DPS"]
         end
     end
     return LabelForType(meterType), nil
@@ -1058,14 +1058,14 @@ end
 local function LabelForSession(sessionType)
     local S = Enum and Enum.DamageMeterSessionType
     if S then
-        if sessionType == S.Current then return "Current" end
-        if sessionType == S.Overall then return "Overall" end
-        if sessionType == S.Expired then return "Expired" end
+        if sessionType == S.Current then return ns.L["Current"] end
+        if sessionType == S.Overall then return ns.L["Overall"] end
+        if sessionType == S.Expired then return ns.L["Expired"] end
     end
-    if sessionType == 0 then return "Overall" end
-    if sessionType == 1 then return "Current" end
-    if sessionType == 2 then return "Expired" end
-    return "Session " .. tostring(sessionType)
+    if sessionType == 0 then return ns.L["Overall"] end
+    if sessionType == 1 then return ns.L["Current"] end
+    if sessionType == 2 then return ns.L["Expired"] end
+    return ns.L["Session "] .. tostring(sessionType)
 end
 
 -- Per-second meter types (Dps, Hps) display amountPerSecond as the primary
@@ -1346,7 +1346,7 @@ function Window:_AttachRowVisuals(row)
         local ps = src.amountPerSecond
         local psSecret = ps and IsSecret and IsSecret(ps)
         if ps and (psSecret or ps ~= 0) then
-            GameTooltip:AddDoubleLine((rateLabel or "Per Second") .. ":", FormatNumber(ps, "compact"), 1, 1, 1, 1, 1, 1)
+            GameTooltip:AddDoubleLine((rateLabel or ns.L["Per Second"]) .. ":", FormatNumber(ps, "compact"), 1, 1, 1, 1, 1, 1)
         end
 
         -- % of top: the bar is total-based for every meter type, so the
@@ -1359,7 +1359,7 @@ function Window:_AttachRowVisuals(row)
         if not (maxSec or totalSec) and total ~= nil
             and rowSelf._maxAmount and rowSelf._maxAmount > 0 then
             local pct = (total / rowSelf._maxAmount) * 100
-            GameTooltip:AddDoubleLine("% of Top:", string.format("%.1f%%", pct), 1, 1, 1, 1, 1, 1)
+            GameTooltip:AddDoubleLine(ns.L["% of Top:"], string.format("%.1f%%", pct), 1, 1, 1, 1, 1, 1)
         end
 
         -- Combat hint: pairs with the OnClick guard above. Spell breakdown
@@ -1367,7 +1367,7 @@ function Window:_AttachRowVisuals(row)
         -- the user why instead of leaving them to guess.
         if InCombatLockdown and InCombatLockdown() then
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Spell breakdown is hidden during combat", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine(ns.L["Spell breakdown is hidden during combat"], 0.7, 0.7, 0.7)
         end
 
         GameTooltip:Show()
@@ -1540,7 +1540,7 @@ end
 
 function Window:_ApplyHeader()
     if not self.frame or not self.TypeLabel then return end
-    local sessionLabel = self.sessionID ~= nil and "Previous" or LabelForSession(self.sessionType)
+    local sessionLabel = self.sessionID ~= nil and ns.L["Previous"] or LabelForSession(self.sessionType)
     self.TypeLabel:SetText(LabelForType(self.damageMeterType)
         .. " | " .. sessionLabel)
 end
@@ -1620,12 +1620,22 @@ end
 function Window:_ApplyFonts()
     local windowID = self.windowID
 
+    -- CJK-safe font setter: routes through ApplyFontWithFallback when present
+    -- so non-Latin glyphs render, falling back to raw SetFont otherwise.
+    local function applyFont(fs, p, s, o)
+        if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+            ns.Helpers.ApplyFontWithFallback(fs, p, s, o)
+        else
+            fs:SetFont(p, s, o)
+        end
+    end
+
     -- Header font (TypeLabel + SessionTimer share)
     do
         local slot = ResolveAppearance(windowID, "fonts", "header")
         local path, size, outline = ResolveFontSlot(slot)
-        if self.TypeLabel    then self.TypeLabel:SetFont(path, size, outline)    end
-        if self.SessionTimer then self.SessionTimer:SetFont(path, size, outline) end
+        if self.TypeLabel    then applyFont(self.TypeLabel, path, size, outline)    end
+        if self.SessionTimer then applyFont(self.SessionTimer, path, size, outline) end
     end
 
     -- Row fonts (rowName + rowValue)
@@ -1637,15 +1647,15 @@ function Window:_ApplyFonts()
     for i = 1, #self.rows do
         local row = self.rows[i]
         if row then
-            if row.Name  then row.Name:SetFont(nPath, nSize, nOutline)  end
-            if row.Value then row.Value:SetFont(vPath, vSize, vOutline) end
+            if row.Name  then applyFont(row.Name, nPath, nSize, nOutline)  end
+            if row.Value then applyFont(row.Value, vPath, vSize, vOutline) end
         end
     end
     -- Also style the sticky self-row when present.
     if self.stickyRow then
         local r = self.stickyRow
-        if r.Name  then r.Name:SetFont(nPath, nSize, nOutline)  end
-        if r.Value then r.Value:SetFont(vPath, vSize, vOutline) end
+        if r.Name  then applyFont(r.Name, nPath, nSize, nOutline)  end
+        if r.Value then applyFont(r.Value, vPath, vSize, vOutline) end
     end
 end
 
@@ -1717,7 +1727,7 @@ function Window:_OpenConfigMenu()
     end
 
     MenuUtil.CreateContextMenu(owner, function(_, root)
-        root:CreateTitle("Meter Type")
+        root:CreateTitle(ns.L["Meter Type"])
         for _, t in ipairs(METER_TYPES) do
             local typeVal = t
             root:CreateRadio(LabelForType(typeVal),
@@ -1729,20 +1739,20 @@ function Window:_OpenConfigMenu()
                 end)
         end
         root:CreateDivider()
-        root:CreateTitle("Session")
+        root:CreateTitle(ns.L["Session"])
         local S = Enum and Enum.DamageMeterSessionType
         local currentSession = (S and S.Current) or 1
         local overallSession = (S and S.Overall) or 0
 
-        root:CreateRadio("Current",
+        root:CreateRadio(ns.L["Current"],
             function() return self.sessionID == nil and self.sessionType == currentSession end,
             function() SelectSession(currentSession, nil) end)
 
-        root:CreateRadio("Overall",
+        root:CreateRadio(ns.L["Overall"],
             function() return self.sessionID == nil and self.sessionType == overallSession end,
             function() SelectSession(overallSession, nil) end)
 
-        local previousMenu = root:CreateButton("Previous")
+        local previousMenu = root:CreateButton(ns.L["Previous"])
         local sessions
         if C_DamageMeter and C_DamageMeter.GetAvailableCombatSessions then
             local ok, availableSessions = pcall(C_DamageMeter.GetAvailableCombatSessions)
@@ -1752,7 +1762,7 @@ function Window:_OpenConfigMenu()
         end
 
         if not sessions or #sessions == 0 then
-            local none = previousMenu:CreateButton("No previous sessions", function() end)
+            local none = previousMenu:CreateButton(ns.L["No previous sessions"], function() end)
             none:SetEnabled(false)
         else
             for _, availableSession in ipairs(sessions) do
@@ -1762,12 +1772,12 @@ function Window:_OpenConfigMenu()
             end
         end
         root:CreateDivider()
-        root:CreateTitle("Data")
+        root:CreateTitle(ns.L["Data"])
         -- ResetAllCombatSessions is Blizzard's only reset entry point and clears
         -- every session/window globally. It fires DAMAGE_METER_RESET, which the
         -- data layer turns into a full re-fetch; RefreshAll repaints immediately
         -- in case the event lags a frame.
-        root:CreateButton("Reset Data", function()
+        root:CreateButton(ns.L["Reset Data"], function()
             if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
                 C_DamageMeter.ResetAllCombatSessions()
                 Data:ResetCombatClock()
@@ -2039,9 +2049,9 @@ local function AttachWindowResizeOverlay(overlay, frame, window, windowID)
                 GameTooltip:SetOwner(self, tooltipAnchor)
                 local LM = ns.QUI_LayoutMode
                 if LM and LM.IsElementAnchored and LM:IsElementAnchored(overlay._barKey) then
-                    GameTooltip:SetText("Hold Shift to resize (anchored)")
+                    GameTooltip:SetText(ns.L["Hold Shift to resize (anchored)"])
                 else
-                    GameTooltip:SetText("Drag to resize meter window")
+                    GameTooltip:SetText(ns.L["Drag to resize meter window"])
                 end
                 GameTooltip:Show()
             end
@@ -2113,7 +2123,7 @@ end
 local function RegisterWithLayoutMode(window)
     local windowID = window.windowID
     local key      = LayoutKey(windowID)
-    local label    = "Damage Meter " .. windowID
+    local label    = ns.L["Damage Meter"] .. " " .. windowID
 
     -- Layout Mode handle (idempotent: skinner's pattern). Position persistence
     -- flows through the shared frameAnchoring DB — same path as every other
@@ -2123,7 +2133,7 @@ local function RegisterWithLayoutMode(window)
         ns.QUI_LayoutMode:RegisterElement({
             key      = key,
             label    = label,
-            group    = "Display",
+            group    = ns.L["Display"],
             order    = 60,
             isOwned  = true,
             getFrame = function() return window.frame end,
@@ -2256,8 +2266,8 @@ do
                             setSize = setSize,
                             minW = WINDOW_SIZE_MIN_W, maxW = WINDOW_SIZE_MAX_W,
                             minH = WINDOW_SIZE_MIN_H, maxH = WINDOW_SIZE_MAX_H,
-                            widthDescription  = "Damage meter window width in pixels.",
-                            heightDescription = "Damage meter window height in pixels.",
+                            widthDescription  = ns.L["Damage meter window width in pixels."],
+                            heightDescription = ns.L["Damage meter window height in pixels."],
                         }, sections, relayout)
                         relayout()
                     end, function(msg) return msg end)
@@ -2352,7 +2362,7 @@ function Window.New(windowID)
     -- TypeLabel (left side of header): e.g. "Damage Done"
     local typeLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     typeLabel:SetPoint("LEFT", header, "LEFT", 6, 0)
-    typeLabel:SetText("Damage Done")  -- T13/T17 wire this to the actual type
+    typeLabel:SetText(ns.L["Damage Done"])  -- T13/T17 wire this to the actual type
     self.TypeLabel = typeLabel
 
     -- SessionTimer (right side of header): e.g. "[1:24]"
@@ -2381,7 +2391,7 @@ function Window.New(windowID)
         if GameTooltip:IsForbidden() then return end
         GameTooltip:SetOwner(hdr, "ANCHOR_BOTTOM")
         GameTooltip:ClearLines()
-        GameTooltip:AddLine("Right-click for options", 1, 1, 1)
+        GameTooltip:AddLine(ns.L["Right-click for options"], 1, 1, 1)
         GameTooltip:Show()
     end)
     header:SetScript("OnLeave", function()
@@ -2781,9 +2791,9 @@ function Breakdown:_ResolveTargets(meterType)
     local st = self.parentWindow.sessionType
     local sid = self.parentWindow.sessionID
     if meterType == T.EnemyDamageTaken then
-        return Data:GetEnemyAttackers(st, self.source.sourceGUID, self.source.sourceCreatureID, sid), "Attacked By"
+        return Data:GetEnemyAttackers(st, self.source.sourceGUID, self.source.sourceCreatureID, sid), ns.L["Attacked By"]
     elseif meterType == T.DamageDone or meterType == T.Dps then
-        return Data:GetPlayerTargets(st, self.source.name, sid), "Targets"
+        return Data:GetPlayerTargets(st, self.source.name, sid), ns.L["Targets"]
     end
     return nil, nil
 end
@@ -3228,8 +3238,8 @@ end
 -- Implementation pattern: SecureActionButton with a macrotext that calls the
 -- (non-protected) C_DamageMeter reset; binding name uses the CLICK <button>:LeftButton
 -- convention so it shows up in the standard bindings panel.
-_G.BINDING_HEADER_QUI_DAMAGEMETER = "QUI Damage Meter"
-_G["BINDING_NAME_CLICK QUI_DM_ResetBindingTarget:LeftButton"] = "Reset All Sessions"
+_G.BINDING_HEADER_QUI_DAMAGEMETER = ns.L["QUI Damage Meter"]
+_G["BINDING_NAME_CLICK QUI_DM_ResetBindingTarget:LeftButton"] = ns.L["Reset All Sessions"]
 
 local resetBindBtn = CreateFrame("Button", "QUI_DM_ResetBindingTarget", UIParent, "SecureActionButtonTemplate")
 resetBindBtn:Hide()
@@ -3248,7 +3258,7 @@ _G.SLASH_QUI_DM_RESET1 = "/quidmreset"
 _G.SlashCmdList["QUI_DM_RESET"] = function()
     if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
         C_DamageMeter.ResetAllCombatSessions()
-        print("|cff30D1FF[QUI]|r Damage meter sessions reset.")
+        print(ns.L["|cff30D1FF[QUI]|r Damage meter sessions reset."])
     end
 end
 
@@ -3262,19 +3272,19 @@ _G.SlashCmdList["QUI_DM_PERF"] = function(msg)
     if msg == "on" then
         Perf.enabled = true
         Perf:Reset()
-        print("|cff30D1FF[QUI]|r Damage meter perf instrumentation: |cff00ff00ON|r")
+        print(ns.L["|cff30D1FF[QUI]|r Damage meter perf instrumentation: |cff00ff00ON|r"])
     elseif msg == "off" then
         Perf.enabled = false
-        print("|cff30D1FF[QUI]|r Damage meter perf instrumentation: |cffff6060OFF|r")
+        print(ns.L["|cff30D1FF[QUI]|r Damage meter perf instrumentation: |cffff6060OFF|r"])
     elseif msg == "reset" then
         Perf:Reset()
-        print("|cff30D1FF[QUI]|r Damage meter perf buffers reset.")
+        print(ns.L["|cff30D1FF[QUI]|r Damage meter perf buffers reset."])
     else
         if not Perf.enabled then
-            print("|cff30D1FF[QUI]|r Perf is OFF. Run |cffffffff/quidmperf on|r to enable, then re-run to see the summary.")
+            print(ns.L["|cff30D1FF[QUI]|r Perf is OFF. Run |cffffffff/quidmperf on|r to enable, then re-run to see the summary."])
             return
         end
-        print("|cff30D1FF[QUI]|r Damage meter perf summary:")
+        print(ns.L["|cff30D1FF[QUI]|r Damage meter perf summary:"])
         for _, line in ipairs(Perf:Summary()) do print(line) end
     end
 end
@@ -3300,7 +3310,7 @@ end
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
         key = "damageMeter",
-        label = "Damage Meter",
+        label = ns.L["Damage Meter"],
         category = "HUD",
         prefix = "",
         db = function(p)

@@ -59,8 +59,8 @@ function GUI:InitializeOptions()
         ns.QUI_Options.RegisterFeatureTile(frame, {
             id = "welcome",
             icon = "*",
-            name = "Welcome",
-            subtitle = "Getting started · Tips · What's new",
+            name = ns.L["Welcome"],
+            subtitle = ns.L["Getting started · Tips · What's new"],
             featureId = "welcomePage",
             noScroll = false,
         })
@@ -117,7 +117,7 @@ function GUI:InitializeOptions()
 
     -- Tools strip (bottom)
     self:AddToolsStripButton(frame, {
-        id = "cdm_settings", icon = "+", label = "Blizz CDM",
+        id = "cdm_settings", icon = "+", label = ns.L["Blizz CDM"],
         onClick = function()
             if CooldownViewerSettings then
                 CooldownViewerSettings:SetShown(not CooldownViewerSettings:IsShown())
@@ -125,7 +125,7 @@ function GUI:InitializeOptions()
         end,
     })
     self:AddToolsStripButton(frame, {
-        id = "blizz_edit", icon = ">", label = "Blizz Edit",
+        id = "blizz_edit", icon = ">", label = ns.L["Blizz Edit"],
         onClick = function()
             if InCombatLockdown() then return end
             if EditModeManagerFrame then

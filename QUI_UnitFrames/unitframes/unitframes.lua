@@ -8,6 +8,15 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local LSM = ns.LSM
 local Helpers = ns.Helpers
+
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local GetDB = Helpers.CreateDBGetter("quiUnitFrames")
@@ -1372,7 +1381,7 @@ local function UpdateStance(frame)
     local fontPath = GetFontPath()
     local fontOutline = general and general.fontOutline or "OUTLINE"
     local fontSize = stanceSettings.fontSize or 12
-    frame.stanceText:SetFont(fontPath, fontSize, fontOutline)
+    CJKFont(frame.stanceText, fontPath, fontSize, fontOutline)
 
     -- Update position based on current anchor settings
     local anchorInfo = GetTextAnchorInfo(stanceSettings.anchor or "BOTTOM")
@@ -1901,7 +1910,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
         nameText:SetShadowOffset(0, 0)
         nameText:SetPoint(nameAnchorInfo.point, healthBar, nameAnchorInfo.point, nameOffsetX, nameOffsetY)
         nameText:SetJustifyH(nameAnchorInfo.justify)
-        nameText:SetText("Boss " .. bossIndex)
+        nameText:SetText(ns.L["Boss"] .. " " .. bossIndex)
         frame.nameText = nameText
     end
 
@@ -1911,7 +1920,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
         local healthOffsetX = QUICore:PixelRound(settings.healthOffsetX or -4, healthBar)
         local healthOffsetY = QUICore:PixelRound(settings.healthOffsetY or 0, healthBar)
         local healthText = healthBar:CreateFontString(nil, "OVERLAY")
-        healthText:SetFont(GetFontPath(), settings.healthFontSize or 11, GetFontOutline())
+        CJKFont(healthText, GetFontPath(), settings.healthFontSize or 11, GetFontOutline())
         healthText:SetShadowOffset(0, 0)
         healthText:SetPoint(healthAnchorInfo.point, healthBar, healthAnchorInfo.point, healthOffsetX, healthOffsetY)
         healthText:SetJustifyH(healthAnchorInfo.justify)
@@ -1922,7 +1931,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     -- Power text (separate from power bar, for displaying power %)
     local powerAnchorInfo = GetTextAnchorInfo(settings.powerTextAnchor or "BOTTOMRIGHT")
     local powerText = healthBar:CreateFontString(nil, "OVERLAY")
-    powerText:SetFont(GetFontPath(), settings.powerTextFontSize or 10, GetFontOutline())
+    CJKFont(powerText, GetFontPath(), settings.powerTextFontSize or 10, GetFontOutline())
     powerText:SetShadowOffset(0, 0)
     local pOffX = QUICore:PixelRound(settings.powerTextOffsetX or -4, healthBar)
     local pOffY = QUICore:PixelRound(settings.powerTextOffsetY or 2, healthBar)
@@ -2708,7 +2717,7 @@ local function CreateUnitFrame(unit, unitKey)
     local healthOffsetY = QUICore:PixelRound(settings.healthOffsetY or 0, frame)
 
     local healthText = textFrame:CreateFontString(nil, "OVERLAY")
-    healthText:SetFont(fontPath, healthFontSize, fontOutline)
+    CJKFont(healthText, fontPath, healthFontSize, fontOutline)
     healthText:SetPoint(healthAnchorInfo.point, frame, healthAnchorInfo.point, healthOffsetX, healthOffsetY)
     healthText:SetJustifyH(healthAnchorInfo.justify)
     healthText:SetTextColor(1, 1, 1, 1)
@@ -2721,7 +2730,7 @@ local function CreateUnitFrame(unit, unitKey)
     local powerTextOffsetY = QUICore:PixelRound(settings.powerTextOffsetY or 2, frame)
 
     local powerText = textFrame:CreateFontString(nil, "OVERLAY")
-    powerText:SetFont(fontPath, powerTextFontSize, fontOutline)
+    CJKFont(powerText, fontPath, powerTextFontSize, fontOutline)
     powerText:SetPoint(powerAnchorInfo.point, frame, powerAnchorInfo.point, powerTextOffsetX, powerTextOffsetY)
     powerText:SetJustifyH(powerAnchorInfo.justify)
     powerText:SetTextColor(1, 1, 1, 1)
@@ -2770,7 +2779,7 @@ local function CreateUnitFrame(unit, unitKey)
         local fontOutline = general and general.fontOutline or "OUTLINE"
 
         local stanceText = indicatorFrame:CreateFontString(nil, "OVERLAY")
-        stanceText:SetFont(fontPath, 12, fontOutline)
+        CJKFont(stanceText, fontPath, 12, fontOutline)
         stanceText:SetPoint("BOTTOM", frame, "BOTTOM", 0, -2)
         stanceText:SetJustifyH("CENTER")
         stanceText:SetTextColor(1, 1, 1, 1)
@@ -3041,7 +3050,7 @@ function QUI_UF:ShowPreview(unitKey)
                 frame.healthBar:SetMinMaxValues(0, 100)
                 frame.healthBar:SetValue(75 - (i * 5))  -- Vary health for visual distinction
                 if frame.nameText then
-                    frame.nameText:SetText("Boss " .. i)
+                    frame.nameText:SetText(ns.L["Boss"] .. " " .. i)
                 end
                 if frame.healthText then
                     local previewHPPct = 75 - (i * 5)
@@ -3162,13 +3171,13 @@ function QUI_UF:ShowPreview(unitKey)
     -- Set fake name
     if frame.nameText then
         local names = {
-            player = UnitName("player") or "Player",
-            target = "Target Dummy",
-            targettarget = "ToT Name",
-            pet = "Pet Name",
-            focus = "Focus Target",
+            player = UnitName("player") or ns.L["Player"],
+            target = ns.L["Target Dummy"],
+            targettarget = ns.L["ToT Name"],
+            pet = ns.L["Pet Name"],
+            focus = ns.L["Focus Target"],
         }
-        frame.nameText:SetText(names[unitKey] or "Preview")
+        frame.nameText:SetText(names[unitKey] or ns.L["Preview"])
     end
 
     -- Set fake health text
@@ -3515,7 +3524,7 @@ function QUI_UF:RefreshFrame(unitKey)
                     frame.nameText:Show()
                     -- In preview mode, set preview text; otherwise update with real data
                     if self.previewMode[bossKey] then
-                        frame.nameText:SetText("Boss " .. i)
+                        frame.nameText:SetText(ns.L["Boss"] .. " " .. i)
                     else
                         UpdateName(frame)
                     end
@@ -3530,7 +3539,7 @@ function QUI_UF:RefreshFrame(unitKey)
                         healthText:SetShadowOffset(0, 0)
                         frame.healthText = healthText
                     end
-                    frame.healthText:SetFont(GetFontPath(), settings.healthFontSize or 11, GetFontOutline())
+                    CJKFont(frame.healthText, GetFontPath(), settings.healthFontSize or 11, GetFontOutline())
                     local healthAnchorInfo = GetTextAnchorInfo(settings.healthAnchor or "RIGHT")
                     local healthOffsetX = QUICore:PixelRound(settings.healthOffsetX or -4, frame.healthBar)
                     local healthOffsetY = QUICore:PixelRound(settings.healthOffsetY or 0, frame.healthBar)
@@ -3567,7 +3576,7 @@ function QUI_UF:RefreshFrame(unitKey)
                     end
                     local fontPath = GetFontPath()
                     local fontOutline = GetFontOutline()
-                    frame.powerText:SetFont(fontPath, settings.powerTextFontSize or 12, fontOutline)
+                    CJKFont(frame.powerText, fontPath, settings.powerTextFontSize or 12, fontOutline)
                     frame.powerText:ClearAllPoints()
                     local powerAnchorInfo = GetTextAnchorInfo(settings.powerTextAnchor or "BOTTOMRIGHT")
                     local powerOffsetX = QUICore:PixelRound(settings.powerTextOffsetX or -4, frame.healthBar)
@@ -3906,7 +3915,7 @@ function QUI_UF:RefreshFrame(unitKey)
     end
 
     if frame.healthText then
-        frame.healthText:SetFont(fontPath, settings.healthFontSize or 12, fontOutline)
+        CJKFont(frame.healthText, fontPath, settings.healthFontSize or 12, fontOutline)
         frame.healthText:ClearAllPoints()
         local healthAnchorInfo = GetTextAnchorInfo(settings.healthAnchor or "RIGHT")
         frame.healthText:SetPoint(healthAnchorInfo.point, frame, healthAnchorInfo.point, QUICore:PixelRound(settings.healthOffsetX or -4, frame), QUICore:PixelRound(settings.healthOffsetY or 0, frame))
@@ -3934,7 +3943,7 @@ function QUI_UF:RefreshFrame(unitKey)
 
     -- Update power text position and font
     if frame.powerText then
-        frame.powerText:SetFont(fontPath, settings.powerTextFontSize or 12, fontOutline)
+        CJKFont(frame.powerText, fontPath, settings.powerTextFontSize or 12, fontOutline)
         frame.powerText:ClearAllPoints()
         local powerAnchorInfo = GetTextAnchorInfo(settings.powerTextAnchor or "BOTTOMRIGHT")
         frame.powerText:SetPoint(powerAnchorInfo.point, frame, powerAnchorInfo.point, QUICore:PixelRound(settings.powerTextOffsetX or -4, frame), QUICore:PixelRound(settings.powerTextOffsetY or 2, frame))
@@ -4616,11 +4625,11 @@ do
         if not um then return end
 
         local UNIT_KEYS = {
-            { key = "playerFrame", label = "Player Frame",       unit = "player",       order = 1 },
-            { key = "targetFrame", label = "Target Frame",       unit = "target",       order = 2 },
-            { key = "totFrame",    label = "Target of Target",   unit = "targettarget", order = 3 },
-            { key = "focusFrame",  label = "Focus Frame",        unit = "focus",        order = 4 },
-            { key = "petFrame",    label = "Pet Frame",          unit = "pet",          order = 5 },
+            { key = "playerFrame", label = ns.L["Player Frame"],       unit = "player",       order = 1 },
+            { key = "targetFrame", label = ns.L["Target Frame"],       unit = "target",       order = 2 },
+            { key = "totFrame",    label = ns.L["Target of Target"],   unit = "targettarget", order = 3 },
+            { key = "focusFrame",  label = ns.L["Focus Frame"],        unit = "focus",        order = 4 },
+            { key = "petFrame",    label = ns.L["Pet Frame"],          unit = "pet",          order = 5 },
         }
 
         local function GetUFDB()
@@ -4636,7 +4645,7 @@ do
             um:RegisterElement({
                 key = info.key,
                 label = info.label,
-                group = "Unit Frames",
+                group = ns.L["Unit Frames"],
                 order = info.order,
                 isOwned = true,
                 isEnabled = function()
@@ -4690,8 +4699,8 @@ do
         -- Boss frames (single mover for boss1, rest chain by layout settings)
         um:RegisterElement({
             key = "bossFrames",
-            label = "Boss Frames",
-            group = "Unit Frames",
+            label = ns.L["Boss Frames"],
+            group = ns.L["Unit Frames"],
             order = 10,
             isOwned = true,
             isEnabled = function()

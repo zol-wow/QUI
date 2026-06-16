@@ -121,6 +121,7 @@ local ns = {
     Helpers = { GetCore = function() return { db = db } end },
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("core/settings/content/profiles_content.lua"))("QUI", ns)
 local Profiles = ns.QUI_ProfilesOptions
 assert(Profiles and type(Profiles.BuildSpecProfilesContent) == "function",

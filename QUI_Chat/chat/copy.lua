@@ -284,7 +284,7 @@ local function CreateCopyPopup()
     -- can repaint it when the user has switched theme presets between opens.
     local title = urlPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -12)
-    title:SetText("Press Ctrl+C to copy")
+    title:SetText(ns.L["Press Ctrl+C to copy"])
     title:SetTextColor(accent[1], accent[2], accent[3], 1)
     urlPopup.title = title
 
@@ -573,13 +573,13 @@ local function CreateChatCopyFrame()
     -- Title (stored for RefreshPopupAccent on subsequent opens after a theme switch).
     local title = chatCopyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -10)
-    title:SetText("Chat History - Select and Ctrl+C to copy")
+    title:SetText(ns.L["Chat History - Select and Ctrl+C to copy"])
     title:SetTextColor(accent[1], accent[2], accent[3], 1)
     chatCopyFrame.title = title
 
     local hint = chatCopyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
-    hint:SetText("Select all (Ctrl+A) then copy (Ctrl+C)")
+    hint:SetText(ns.L["Select all (Ctrl+A) then copy (Ctrl+C)"])
     hint:SetTextColor(theme.textDim[1], theme.textDim[2], theme.textDim[3], theme.textDim[4] or 1)
     chatCopyFrame.hint = hint
 

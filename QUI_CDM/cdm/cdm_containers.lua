@@ -1753,7 +1753,7 @@ function CDMContainers_API:RegisterDynamicLayoutElement(containerKey, settings)
     um:RegisterElement({
         key = elementKey,
         label = settings.name or containerKey,
-        group = "Cooldown Manager & Custom Tracker Bars",
+        group = ns.L["Cooldown Manager & Custom Tracker Bars"],
         order = 100,  -- custom containers sort after built-in
         isOwned = true,
         isEnabled = function()

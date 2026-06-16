@@ -65,6 +65,7 @@ local ns = {
     },
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_Chat/chat/hyperlinks.lua"))("QUI", ns)
 
 local enterCallbacks = callbacks["ChatFrame.OnHyperlinkEnter"]

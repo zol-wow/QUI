@@ -98,8 +98,8 @@ local function RenderChatLayout(host, options)
             setSize = ChatSetSize,
             minW = CHAT_RESIZE_MIN_W, maxW = CHAT_RESIZE_MAX_W,
             minH = CHAT_RESIZE_MIN_H, maxH = CHAT_RESIZE_MAX_H,
-            widthDescription  = "QUI chat display width in pixels.",
-            heightDescription = "QUI chat display height in pixels.",
+            widthDescription  = ns.L["QUI chat display width in pixels."],
+            heightDescription = ns.L["QUI chat display height in pixels."],
         }, sections, relayout)
         relayout()
     end, function(msg) return msg end)

@@ -612,7 +612,7 @@ local function OnTooltipSetItem(tooltip, data)
     local spellID, color, actionType, requiredStack, needsMore = GetSalvageInfo(itemID, stackCount)
 
     if not spellID and not SalvageLookupBuilt then
-        TooltipHelp("Quick Salvage: open Professions once to initialize prospecting/milling.", CreateColor(1, 1, 0.2))
+        TooltipHelp(ns.L["Quick Salvage: open Professions once to initialize prospecting/milling."], CreateColor(1, 1, 0.2))
         return
     end
 

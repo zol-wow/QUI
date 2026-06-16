@@ -18,6 +18,14 @@
 
 local ADDON_NAME, ns = ...
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local Module = {}
 ns.QUI_UnitFramesCastbarPreview = Module
 
@@ -70,31 +78,31 @@ end
 -- Per-unit cycle scripts
 ---------------------------------------------------------------------------
 
-local CAST_PLAYER     = { kind = "cast",      duration = 2.5, spellName = "Frostbolt",
+local CAST_PLAYER     = { kind = "cast",      duration = 2.5, spellName = ns.L["Frostbolt"],
                           spellIcon = "Interface\\Icons\\Spell_Frost_FrostBolt02" }
-local CHANNEL_PLAYER  = { kind = "channel",   duration = 3.0, spellName = "Mind Flay",
+local CHANNEL_PLAYER  = { kind = "channel",   duration = 3.0, spellName = ns.L["Mind Flay"],
                           spellIcon = "Interface\\Icons\\Spell_Shadow_SiphonMana",
                           ticks = { 0.25, 0.5, 0.75, 1.0 } }
-local EMPOWERED       = { kind = "empowered", duration = 2.5, spellName = "Fire Breath",
+local EMPOWERED       = { kind = "empowered", duration = 2.5, spellName = ns.L["Fire Breath"],
                           spellIcon = "Interface\\Icons\\Ability_Evoker_Firebreath" }
 local GCD_SEGMENT     = { kind = "gcd",       duration = 1.5, spellName = "",
                           spellIcon = nil }
 
 local SCRIPT_TARGET = {
-    { kind = "cast", duration = 2.5, spellName = "Polymorph",
+    { kind = "cast", duration = 2.5, spellName = ns.L["Polymorph"],
       spellIcon = "Interface\\Icons\\Spell_Nature_Polymorph", castType = "interruptible" },
-    { kind = "cast", duration = 3.0, spellName = "Pyroblast",
+    { kind = "cast", duration = 3.0, spellName = ns.L["Pyroblast"],
       spellIcon = "Interface\\Icons\\Spell_Fire_Fireball02",  castType = "notInterruptible" },
 }
 
 local SCRIPTS = {
     target       = SCRIPT_TARGET,
     focus        = SCRIPT_TARGET,
-    pet          = { { kind = "cast", duration = 2.0, spellName = "Cleave",
+    pet          = { { kind = "cast", duration = 2.0, spellName = ns.L["Cleave"],
                        spellIcon = "Interface\\Icons\\Ability_Warrior_Cleave" } },
-    targettarget = { { kind = "cast", duration = 2.0, spellName = "Heroic Strike",
+    targettarget = { { kind = "cast", duration = 2.0, spellName = ns.L["Heroic Strike"],
                        spellIcon = "Interface\\Icons\\Ability_Warrior_HeroicStrike" } },
-    boss         = { { kind = "cast", duration = 4.0, spellName = "Apocalypse",
+    boss         = { { kind = "cast", duration = 4.0, spellName = ns.L["Apocalypse"],
                        spellIcon = "Interface\\Icons\\Achievement_Boss_Lichking" } },
 }
 
@@ -227,7 +235,7 @@ function Module.Build(host)
 
     -- Spell name + time text + empowered stage text
     mock.spellText     = mock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    mock.spellText:SetText("Frostbolt")
+    mock.spellText:SetText(ns.L["Frostbolt"])
     mock.timeText      = mock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     mock.timeText:SetText("1.4s")
     mock.empoweredText = mock:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -373,7 +381,7 @@ function Module.Refresh(mock, unitKey, unitDB, general)
 
     if castDB.showSpellText then
         mock.spellText:Show()
-        mock.spellText:SetFont(fontPath, fontSize, fontOutline)
+        CJKFont(mock.spellText, fontPath, fontSize, fontOutline)
         mock.spellText:SetTextColor(1, 1, 1, 1)
         ApplyTextAnchor(
             mock.spellText, mock, castDB.spellTextAnchor or "LEFT",
@@ -386,7 +394,7 @@ function Module.Refresh(mock, unitKey, unitDB, general)
 
     if castDB.showTimeText then
         mock.timeText:Show()
-        mock.timeText:SetFont(fontPath, fontSize, fontOutline)
+        CJKFont(mock.timeText, fontPath, fontSize, fontOutline)
         mock.timeText:SetTextColor(1, 1, 1, 1)
         ApplyTextAnchor(
             mock.timeText, mock, castDB.timeTextAnchor or "RIGHT",
@@ -420,7 +428,7 @@ function Module.Refresh(mock, unitKey, unitDB, general)
             (castDB.empoweredLevelTextOffsetY or 0) * scale, 4
         )
         local lvlFontSize = math.max(10, math.floor(fontSize * 1.2))
-        mock.empoweredText:SetFont(fontPath, lvlFontSize, fontOutline)
+        CJKFont(mock.empoweredText, fontPath, lvlFontSize, fontOutline)
     else
         mock._showStageNumber = false
         mock.empoweredText:Hide()

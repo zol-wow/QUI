@@ -44,10 +44,10 @@ local function ShowProviderUnavailable(parent, message)
     local GUI = GetGUI()
     local label
     if GUI and GUI.CreateLabel then
-        label = GUI:CreateLabel(parent, message or "Settings are still initializing.", 11, GUI.Colors and GUI.Colors.textMuted)
+        label = GUI:CreateLabel(parent, message or ns.L["Settings are still initializing."], 11, GUI.Colors and GUI.Colors.textMuted)
     else
         label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        label:SetText(message or "Settings are still initializing.")
+        label:SetText(message or ns.L["Settings are still initializing."])
         label:SetTextColor(0.65, 0.65, 0.65, 1)
     end
 

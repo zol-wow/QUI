@@ -145,6 +145,7 @@ local ns = {
 
 -- resource_bars_builders now delegates its panel layout to the shared core
 -- scaffold; load it first (in-game core loads long before this settings file).
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("core/settings_layout_shared.lua"))("QUI", ns)
 assert(loadfile("QUI_ResourceBars/resourcebars/settings/resource_bars_builders.lua"))("QUI", ns)
 

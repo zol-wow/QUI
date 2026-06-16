@@ -284,7 +284,11 @@ function Datapanels:UpdateSlots(panel)
 
         -- Re-applied on pooled reuse too: panel font size / global font can
         -- change between rebuilds.
-        QUICore:SafeSetFont(slot.text, fontPath, fontSize, generalOutline)
+        if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+            ns.Helpers.ApplyFontWithFallback(slot.text, fontPath, fontSize, generalOutline)
+        else
+            QUICore:SafeSetFont(slot.text, fontPath, fontSize, generalOutline)
+        end
         slot.text:SetTextColor(1, 1, 1, 1)
 
         -- Store slot index
@@ -313,7 +317,7 @@ function Datapanels:UpdateSlots(panel)
             QUICore.Datatexts:AttachToSlot(slot, datatextID, panel.config)
         else
             -- Show placeholder for empty slots
-            slot.text:SetText("|cffFFAA00Slot " .. i .. "|r")
+            slot.text:SetText("|cffFFAA00" .. ns.L["Slot "] .. i .. "|r")
             slot.text:Show()
         end
 
@@ -694,7 +698,7 @@ do
                 um:RegisterElement({
                     key = elementKey,
                     label = displayName,
-                    group = "Display",
+                    group = ns.L["Display"],
                     order = order,
                     isOwned = true,
                     getFrame = function()

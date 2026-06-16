@@ -4,6 +4,14 @@ local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
 local UIKit = ns.UIKit
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
@@ -289,7 +297,7 @@ local function StyleCharacterFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     -- the QUI color sticks. Font is stable, set here once per call.
     local tabText = tab.Text or (tab.GetFontString and tab:GetFontString())
     if tabText then
-        tabText:SetFont(GetFontPath(), 12, "")
+        CJKFont(tabText, GetFontPath(), 12, "")
     end
 
     SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
@@ -371,7 +379,7 @@ end
 -- Skin a top-level entry header: name font/color plus collapse-icon atlas hooks
 local function SkinEntryHeader(child, fontPath, sr, sg, sb)
     if child.Name then
-        child.Name:SetFont(fontPath, 13, "")
+        CJKFont(child.Name, fontPath, 13, "")
         child.Name:SetTextColor(sr, sg, sb, 1)
     end
 
@@ -470,7 +478,7 @@ local function SkinReputationEntry(child)
         end
 
         if ReputationBar.BarText then
-            ReputationBar.BarText:SetFont(fontPath, 10, "")
+            CJKFont(ReputationBar.BarText, fontPath, 10, "")
             ReputationBar.BarText:SetTextColor(COLORS.text[1], COLORS.text[2], COLORS.text[3], 1)
         end
 
@@ -491,7 +499,7 @@ local function SkinReputationEntry(child)
         end
 
         if child.Content.Name then
-            child.Content.Name:SetFont(fontPath, 11, "")
+            CJKFont(child.Content.Name, fontPath, 11, "")
         end
     end
 
@@ -533,10 +541,10 @@ local function SkinCurrencyEntry(child)
     -- Style name and count
     if child.Content then
         if child.Content.Name then
-            child.Content.Name:SetFont(fontPath, 11, "")
+            CJKFont(child.Content.Name, fontPath, 11, "")
         end
         if child.Content.Count then
-            child.Content.Count:SetFont(fontPath, 11, "")
+            CJKFont(child.Content.Count, fontPath, 11, "")
         end
     end
 
@@ -719,7 +727,7 @@ local function SkinEquipmentSetEntry(entry)
 
     -- Style the entry text
     if entry.text then
-        entry.text:SetFont(fontPath, 11, "")
+        CJKFont(entry.text, fontPath, 11, "")
         entry.text:SetTextColor(0.9, 0.9, 0.9, 1)
     end
 
@@ -772,7 +780,7 @@ local function StyleEquipMgrButton(btn)
     -- Style text
     local text = btn:GetFontString()
     if text then
-        text:SetFont(fontPath, 11, "")
+        CJKFont(text, fontPath, 11, "")
         text:SetTextColor(0.9, 0.9, 0.9, 1)
     end
 
@@ -811,7 +819,7 @@ local function SkinEquipmentManager()
 
     -- Skin title
     if popup.title then
-        popup.title:SetFont(fontPath, 12, "")
+        CJKFont(popup.title, fontPath, 12, "")
         popup.title:SetTextColor(sr, sg, sb, 1)
     end
 
@@ -892,7 +900,7 @@ local function SkinTitleEntry(button)
 
     -- Style title text
     if button.text then
-        button.text:SetFont(fontPath, 12, "")
+        CJKFont(button.text, fontPath, 12, "")
         button.text:SetTextColor(0.9, 0.9, 0.9, 1)
     end
 
@@ -942,7 +950,7 @@ local function SkinTitleManagerPane()
 
         -- Style title text
         if popup.title then
-            popup.title:SetFont(fontPath, 14, "")
+            CJKFont(popup.title, fontPath, 14, "")
             popup.title:SetTextColor(sr, sg, sb, 1)
         end
 

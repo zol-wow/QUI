@@ -65,11 +65,11 @@ local function BuildKeybindOverridesSection(tabContent, startY)
     local y = startY or 0
     local PAD = Shared.PADDING
 
-    Shared.CreateAccentDotLabel(tabContent, "Keybind Text Overrides", y); y = y - 22
+    Shared.CreateAccentDotLabel(tabContent, ns.L["Keybind Text Overrides"], y); y = y - 22
 
     local overrideInfo = GUI:CreateLabel(
         tabContent,
-        "Drag spells from your spellbook or items from your bags into the drop zone below, then type the exact text you want shown on the CDM icon.",
+        ns.L["Drag spells from your spellbook or items from your bags into the drop zone below, then type the exact text you want shown on the CDM icon."],
         11, C.textMuted
     )
     overrideInfo:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
@@ -81,7 +81,7 @@ local function BuildKeybindOverridesSection(tabContent, startY)
 
     local QUICore = _G.QUI and _G.QUI.QUICore
     if not QUICore or not QUICore.db or not QUICore.db.profile or not QUICore.db.char then
-        local noDataLabel = GUI:CreateLabel(tabContent, "Override storage is not available yet.", 12, C.textMuted)
+        local noDataLabel = GUI:CreateLabel(tabContent, ns.L["Override storage is not available yet."], 12, C.textMuted)
         noDataLabel:SetPoint("TOPLEFT", PAD, y)
         tabContent:SetHeight(math.abs(y) + 60)
         return
@@ -90,28 +90,28 @@ local function BuildKeybindOverridesSection(tabContent, startY)
     -- Enable toggles (CDM + Custom Trackers) paired in a card.
     local toggleCard = Shared.CreateSettingsCardGroup(tabContent, y)
     local cdmToggle = GUI:CreateFormCheckbox(toggleCard.frame, nil, "keybindOverridesEnabledCDM", QUICore.db.profile, RefreshCDMKeybinds,
-        { description = "Apply the custom keybind text overrides below to the CDM essential and utility viewers." })
+        { description = ns.L["Apply the custom keybind text overrides below to the CDM essential and utility viewers."] })
     local trackersToggle = GUI:CreateFormCheckbox(toggleCard.frame, nil, "keybindOverridesEnabledTrackers", QUICore.db.profile, RefreshCustomTrackerKeybinds,
-        { description = "Apply the custom keybind text overrides below to the custom item and spell tracker bars." })
+        { description = ns.L["Apply the custom keybind text overrides below to the custom item and spell tracker bars."] })
     toggleCard.AddRow(
-        Shared.BuildSettingRow(toggleCard.frame, "Enable for CDM", cdmToggle),
-        Shared.BuildSettingRow(toggleCard.frame, "Enable for Custom Trackers", trackersToggle)
+        Shared.BuildSettingRow(toggleCard.frame, ns.L["Enable for CDM"], cdmToggle),
+        Shared.BuildSettingRow(toggleCard.frame, ns.L["Enable for Custom Trackers"], trackersToggle)
     )
     toggleCard.Finalize()
     y = y - toggleCard.frame:GetHeight() - 12
 
-    local charName = UnitName("player") or "Unknown"
+    local charName = UnitName("player") or ns.L["Unknown"]
     local specID = 0
-    local specName = "No Spec"
+    local specName = ns.L["No Spec"]
 
     local function UpdateSpecInfo()
         specID = 0
-        specName = "No Spec"
+        specName = ns.L["No Spec"]
         local specIndex = GetSpecialization()
         if specIndex then
             local currentSpecID, currentSpecName = GetSpecializationInfo(specIndex)
             specID = currentSpecID or 0
-            specName = currentSpecName or "No Spec"
+            specName = currentSpecName or ns.L["No Spec"]
         end
     end
 
@@ -161,10 +161,10 @@ local function BuildKeybindOverridesSection(tabContent, startY)
     dropZone:SetHeight(56)
     UIKit.ApplyPixelBackdrop(dropZone, 1, true, false, { C.accent[1], C.accent[2], C.accent[3], 0.5 }, { 0.05, 0.05, 0.05, 0.4 })
 
-    local dropLabel = GUI:CreateLabel(dropZone, "Drop Spell or Item Here", 12, C.text)
+    local dropLabel = GUI:CreateLabel(dropZone, ns.L["Drop Spell or Item Here"], 12, C.text)
     dropLabel:SetPoint("TOP", 0, -12)
 
-    local dropHint = GUI:CreateLabel(dropZone, "Adds the spell or item to this spec's override list.", 10, C.textMuted)
+    local dropHint = GUI:CreateLabel(dropZone, ns.L["Adds the spell or item to this spec's override list."], 10, C.textMuted)
     dropHint:SetPoint("TOP", dropLabel, "BOTTOM", 0, -4)
 
     y = y - 72
@@ -191,18 +191,18 @@ local function BuildKeybindOverridesSection(tabContent, startY)
 
     local function UpdateHeader()
         UpdateSpecInfo()
-        trackedHeader:SetText(string.format("Overrides for %s, %s spec", charName, specName))
+        trackedHeader:SetText(string.format(ns.L["Overrides for %s, %s spec"], charName, specName))
     end
 
     local function GetDisplayInfo(entry)
         if entry.type == "spell" then
             local spellInfo = C_Spell.GetSpellInfo(entry.id)
-            return spellInfo and spellInfo.name or ("Spell " .. tostring(entry.id)), spellInfo and spellInfo.iconID
+            return spellInfo and spellInfo.name or (ns.L["Spell "] .. tostring(entry.id)), spellInfo and spellInfo.iconID
         end
         local itemName, _, _, _, _, _, _, _, _, itemIcon = C_Item.GetItemInfo(entry.id)
         if itemName then return itemName, itemIcon end
         if C_Item.RequestLoadItemDataByID then C_Item.RequestLoadItemDataByID(entry.id) end
-        return "Item " .. tostring(entry.id), nil
+        return ns.L["Item "] .. tostring(entry.id), nil
     end
 
     local function SaveEntryOverride(entry, keybindText)
@@ -224,15 +224,15 @@ local function BuildKeybindOverridesSection(tabContent, startY)
         row.iconTex:SetPoint("LEFT", 0, 0)
         row.iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-        row.removeBtn = GUI:CreateButton(row, "X", 24, 22, function()
+        row.removeBtn = GUI:CreateButton(row, ns.L["X"], 24, 22, function()
             local entry = row.entryData
             if not entry then return end
             if SaveEntryOverride(entry, nil) then RefreshOverrideList() end
         end)
         row.removeBtn:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-        GUI:AttachTooltip(row.removeBtn, "Remove this keybind override. The action reverts to its default binding.", "Remove Override")
+        GUI:AttachTooltip(row.removeBtn, ns.L["Remove this keybind override. The action reverts to its default binding."], ns.L["Remove Override"])
 
-        row.saveBtn = GUI:CreateButton(row, "Save", 50, 22, function()
+        row.saveBtn = GUI:CreateButton(row, ns.L["Save"], 50, 22, function()
             local entry = row.entryData
             if not entry then return end
             if SaveEntryOverride(entry, row.input:GetText() or "") then
@@ -302,7 +302,7 @@ local function BuildKeybindOverridesSection(tabContent, startY)
         local totalHeight = 0
         if #entries == 0 then
             if not emptyLabel then
-                emptyLabel = GUI:CreateLabel(entryListFrame, "No overrides saved for this spec yet.", 11, C.textMuted)
+                emptyLabel = GUI:CreateLabel(entryListFrame, ns.L["No overrides saved for this spec yet."], 11, C.textMuted)
                 emptyLabel:SetJustifyH("LEFT")
                 emptyLabel:SetWordWrap(true)
                 emptyLabel:SetHeight(32)
@@ -325,7 +325,7 @@ local function BuildKeybindOverridesSection(tabContent, startY)
                 row:SetPoint("RIGHT", entryListFrame, "RIGHT", 0, 0)
 
                 local displayName, iconID = GetDisplayInfo(entry)
-                local typePrefix = (entry.type == "item") and "Item" or "Spell"
+                local typePrefix = (entry.type == "item") and ns.L["Item"] or ns.L["Spell"]
 
                 row.iconTex:SetTexture(iconID or "Interface\\Icons\\INV_Misc_QuestionMark")
                 row.nameLabel:SetText(string.format("%s: %s (%d)", typePrefix, displayName, entry.id))

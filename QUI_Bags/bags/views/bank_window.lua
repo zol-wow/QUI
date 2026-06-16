@@ -26,6 +26,14 @@ local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local BankWindow = {}
 Bags.BankWindow = BankWindow
 
@@ -70,8 +78,8 @@ function BankWindow.BankTypeForBagID(bagID)
 end
 
 function BankWindow.BankTypeLabel(bankType)
-    if bankType == Enum.BankType.Account then return "Warband Bank" end
-    return "Character Bank"
+    if bankType == Enum.BankType.Account then return ns.L["Warband Bank"] end
+    return ns.L["Character Bank"]
 end
 
 function BankWindow.BankTypeForFocus(opts)
@@ -289,7 +297,7 @@ local function ShowRenamePopup(entry)
     if not tab then return end
     local bankType, tabID = entry.bankType, entry.bagID
     StaticPopupDialogs["QUI_BANK_RENAME_TAB"] = {
-        text = "Rename bank tab:",
+        text = ns.L["Rename bank tab:"],
         button1 = ACCEPT,
         button2 = CANCEL,
         hasEditBox = true,
@@ -338,19 +346,19 @@ local function ShowTabSettingsMenu(anchor, entry)
     end
     local F = Enum.BagSlotFlags or {}
     local FLAG_OPTIONS = {
-        { flag = F.ClassEquipment or 2, label = "Equipment" },
-        { flag = F.ClassConsumables or 4, label = "Consumables" },
-        { flag = F.ClassProfessionGoods or 8, label = "Profession Goods" },
-        { flag = F.ClassReagents or 128, label = "Reagents" },
-        { flag = F.ClassJunk or 16, label = "Junk" },
-        { flag = F.ClassQuestItems or 32, label = "Quest Items" },
-        { flag = F.ExpansionCurrent or 256, label = "Current Expansion Only" },
-        { flag = F.ExpansionLegacy or 512, label = "Legacy Expansion Only" },
+        { flag = F.ClassEquipment or 2, label = ns.L["Equipment"] },
+        { flag = F.ClassConsumables or 4, label = ns.L["Consumables"] },
+        { flag = F.ClassProfessionGoods or 8, label = ns.L["Profession Goods"] },
+        { flag = F.ClassReagents or 128, label = ns.L["Reagents"] },
+        { flag = F.ClassJunk or 16, label = ns.L["Junk"] },
+        { flag = F.ClassQuestItems or 32, label = ns.L["Quest Items"] },
+        { flag = F.ExpansionCurrent or 256, label = ns.L["Current Expansion Only"] },
+        { flag = F.ExpansionLegacy or 512, label = ns.L["Legacy Expansion Only"] },
     }
     MenuUtil.CreateContextMenu(anchor, function(_, root)
-        root:CreateTitle((entry.name and entry.name ~= "") and entry.name or "Bank Tab")
-        root:CreateButton("Rename...", function() ShowRenamePopup(entry) end)
-        root:CreateTitle("Auto-Deposit Assignments")
+        root:CreateTitle((entry.name and entry.name ~= "") and entry.name or ns.L["Bank Tab"])
+        root:CreateButton(ns.L["Rename..."], function() ShowRenamePopup(entry) end)
+        root:CreateTitle(ns.L["Auto-Deposit Assignments"])
         for _, o in ipairs(FLAG_OPTIONS) do
             root:CreateCheckbox(o.label,
                 function()
@@ -361,7 +369,7 @@ local function ShowTabSettingsMenu(anchor, entry)
                     local tab = GetTabRecord(entry.bagID)
                     if not tab then return end
                     local name, icon = BankWindow.TabSettingsArgs(tab,
-                        (tab.name and tab.name ~= "") and tab.name or "Tab")
+                        (tab.name and tab.name ~= "") and tab.name or ns.L["Tab"])
                     C_Bank.UpdateBankTabSettings(entry.bankType, entry.bagID,
                         name, icon, bit.bxor(tab.depositFlags or 0, o.flag))
                 end)
@@ -373,7 +381,7 @@ end
 local function ShowMoneyPopup(kind, bankType)
     local depositing = (kind == "deposit")
     StaticPopupDialogs["QUI_BANK_MONEY"] = {
-        text = depositing and "Deposit gold:" or "Withdraw gold:",
+        text = depositing and ns.L["Deposit gold:"] or ns.L["Withdraw gold:"],
         button1 = ACCEPT,
         button2 = CANCEL,
         hasEditBox = true,
@@ -475,13 +483,13 @@ local function CreateTabButton()
     end)
     btn:SetScript("OnEnter", function(self)
         local entry = self._entry
-        local tip = entry and (entry.purchase and "Purchase bank tab"
-            or entry.all and "All tabs in one grid" or entry.name)
+        local tip = entry and (entry.purchase and ns.L["Purchase bank tab"]
+            or entry.all and ns.L["All tabs in one grid"] or entry.name)
         if tip and tip ~= "" then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(tip)
             if entry and not entry.purchase and not entry.all and liveMode then
-                GameTooltip:AddLine("Right-click: rename + auto-deposit assignments.",
+                GameTooltip:AddLine(ns.L["Right-click: rename + auto-deposit assignments."],
                     1, 1, 1, true)
             end
             GameTooltip:Show()
@@ -535,7 +543,7 @@ local function EnsureWindow()
     if win then return win end
     win = Bags.Chassis.CreateWindow({
         name = "QUI_BankWindow",
-        title = BANK or "Bank",
+        title = BANK or ns.L["Bank"],
         getPosition = function()
             local s = GetSettings()
             return s and s.windows and s.windows.bank or nil
@@ -597,43 +605,40 @@ local function EnsureWindow()
     -- footer (live mode only; hidden while browsing cached)
     win._bankMoney = win._footer:CreateFontString(nil, "ARTWORK")
     win._bankMoney:SetPoint("RIGHT", -8, 0)
-    win._bankMoney:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
+    CJKFont(win._bankMoney, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
     -- Footer buttons: anchored dynamically per RenderFooter (the gold pair
     -- and Auto-Deposit hide on bank types that don't support them).
-    win._depositBtn = CreateFooterButton("Deposit Gold", function()
+    win._depositBtn = CreateFooterButton(ns.L["Deposit Gold"], function()
         local bankType = SelectedBankType()
         if not C_Bank.CanDepositMoney(bankType) then return end
         ShowMoneyPopup("deposit", bankType)
-    end, "Put gold into this bank's shared pool (the amount on the right).")
-    win._withdrawBtn = CreateFooterButton("Withdraw Gold", function()
+    end, ns.L["Put gold into this bank's shared pool (the amount on the right)."])
+    win._withdrawBtn = CreateFooterButton(ns.L["Withdraw Gold"], function()
         local bankType = SelectedBankType()
         if not C_Bank.CanWithdrawMoney(bankType) then return end
         ShowMoneyPopup("withdraw", bankType)
-    end, "Take gold out of this bank's shared pool.")
-    win._autoBtn = CreateFooterButton("Auto-Deposit", function()
+    end, ns.L["Take gold out of this bank's shared pool."])
+    win._autoBtn = CreateFooterButton(ns.L["Auto-Deposit"], function()
         local bankType = SelectedBankType()
         -- Doc: DoesBankTypeSupportAutoDeposit(bankType) → bool gates
         -- AutoDepositItemsIntoBank(bankType).
         if C_Bank.DoesBankTypeSupportAutoDeposit(bankType) then
             C_Bank.AutoDepositItemsIntoBank(bankType)
         end
-    end, "Blizzard's assignment sweep: moves items from your bags into tabs"
-        .. " according to each tab's auto-deposit assignments"
-        .. " (right-click a tab to set those).")
+    end, ns.L["Blizzard's assignment sweep: moves items from your bags into tabs according to each tab's auto-deposit assignments (right-click a tab to set those)."])
     -- Deposit All: warband-tab-only (RenderFooter gates on the selected
     -- tab's bank type); Transfers.DepositAllToWarband needs the live
     -- session the footer's live-mode gate already guarantees
-    win._depositAllBtn = CreateFooterButton("Deposit All", function()
+    win._depositAllBtn = CreateFooterButton(ns.L["Deposit All"], function()
         if not Bags.Transfers.IsRunning() then
             Bags.Transfers.DepositAllToWarband()
         end
-    end, "Deposit everything in your bags that the warband bank accepts"
-        .. " (soulbound items stay).")
-    win._depositReagentsBtn = CreateFooterButton("Deposit Reagents", function()
+    end, ns.L["Deposit everything in your bags that the warband bank accepts (soulbound items stay)."])
+    win._depositReagentsBtn = CreateFooterButton(ns.L["Deposit Reagents"], function()
         if not Bags.Transfers.IsRunning() then
             Bags.Transfers.DepositReagents(SelectedBankType())
         end
-    end, "Deposit only crafting reagents from your bags into this bank.")
+    end, ns.L["Deposit only crafting reagents from your bags into this bank."])
 
     -- header: Sort button left of the search box (tab-button construction:
     -- dark bg + centered label + QUI border lines recolored per Refresh;
@@ -653,8 +658,8 @@ local function EnsureWindow()
     sort:SetScript("OnClick", function(self, mouseButton)
         if mouseButton == "RightButton" then
             Bags.Chassis.ShowSortMenu(self, function(root)
-                root:CreateButton("Sort all " .. BankWindow.BankTypeLabel(activeBankType)
-                    .. " tabs (Blizzard sort)", StartSortAllTabs)
+                root:CreateButton(ns.L["Sort all"] .. " " .. BankWindow.BankTypeLabel(activeBankType)
+                    .. " " .. ns.L["tabs (Blizzard sort)"], StartSortAllTabs)
             end)
             return
         end
@@ -662,9 +667,9 @@ local function EnsureWindow()
     end)
     sort:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Sort this " .. BankWindow.BankTypeLabel(activeBankType)
-            .. " tab — " .. Bags.Chassis.SortModeText())
-        GameTooltip:AddLine("Right-click for sort options.", 1, 1, 1, true)
+        GameTooltip:SetText(ns.L["Sort this"] .. " " .. BankWindow.BankTypeLabel(activeBankType)
+            .. " " .. ns.L["tab"] .. " — " .. Bags.Chassis.SortModeText())
+        GameTooltip:AddLine(ns.L["Right-click for sort options."], 1, 1, 1, true)
         GameTooltip:Show()
     end)
     sort:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -674,8 +679,8 @@ local function EnsureWindow()
     -- header: owner selector right of the title; picking an alt renders
     -- their cached bank tabs (warband tabs stay — they're account-wide)
     win._ownerSelect = Bags.OwnerSelect.Attach(win, {
-        title = "Characters",
-        tooltip = "View another character's bank",
+        title = ns.L["Characters"],
+        tooltip = ns.L["View another character's bank"],
         listOwners = function()
             return Bags.OwnerSelect.BuildOwnerList(
                 Bags.Store.ListCharacters(), Bags.Store.GetCurrentCharacterKey())
@@ -709,9 +714,9 @@ local function RenderTabStrip(tabs)
         btn._entry = entry
         local label = "+"
         if entry.all then
-            label = "All"
+            label = ns.L["All"]
         elseif not entry.purchase then
-            label = (entry.name and entry.name ~= "") and entry.name or "Tab"
+            label = (entry.name and entry.name ~= "") and entry.name or ns.L["Tab"]
         end
         btn._label:SetText(label)
         local w = entry.purchase and TAB_H

@@ -76,7 +76,11 @@ local function RefreshCombatText()
     local fontSize = settings.fontSize or 24
     local fontName = settings.useCustomFont and settings.font or GetGlobalFont()
     local fontPath = UIKit.ResolveFontPath(fontName)
-    frame.text:SetFont(fontPath, fontSize, "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(frame.text, fontPath, fontSize, "OUTLINE")
+    else
+        frame.text:SetFont(fontPath, fontSize, "OUTLINE")
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -93,7 +97,11 @@ local function CreateTextFrame()
 
     local text = frame:CreateFontString(nil, "OVERLAY")
     text:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    text:SetFont(Helpers.GetGeneralFont(), 24, Helpers.GetGeneralFontOutline())
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(text, Helpers.GetGeneralFont(), 24, Helpers.GetGeneralFontOutline())
+    else
+        text:SetFont(Helpers.GetGeneralFont(), 24, Helpers.GetGeneralFontOutline())
+    end
     text:SetTextColor(0.376, 0.647, 0.980, 1)  -- QUI sky blue accent
     text:SetJustifyH("CENTER")
     frame.text = text
@@ -161,7 +169,7 @@ end
 ---------------------------------------------------------------------------
 -- Shared render: color/show/fade. Assumes frame exists; caller does enabled gating.
 local function RenderCombatText(settings, message)
-    message = message or "+Combat"
+    message = message or ns.L["+Combat"]
 
     -- Cancel any pending display timer
     if CombatTextState.displayTimer then
@@ -176,7 +184,7 @@ local function RenderCombatText(settings, message)
 
     -- Determine and apply color based on message
     local color
-    if message == "+Combat" then
+    if message == ns.L["+Combat"] then
         color = settings.enterCombatColor or {0.376, 0.647, 0.980, 1}
     else
         color = settings.leaveCombatColor or {0.376, 0.647, 0.980, 1}
@@ -212,11 +220,11 @@ end
 -- Combat event handlers
 ---------------------------------------------------------------------------
 local function OnCombatStart()
-    ShowCombatText("+Combat")
+    ShowCombatText(ns.L["+Combat"])
 end
 
 local function OnCombatEnd()
-    ShowCombatText("-Combat")
+    ShowCombatText(ns.L["-Combat"])
 end
 
 ---------------------------------------------------------------------------

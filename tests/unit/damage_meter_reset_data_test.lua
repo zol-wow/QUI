@@ -20,7 +20,7 @@ assert(menuStart, "could not locate Window:_OpenConfigMenu")
 local menuEnd = src:find("\nfunction Window:", menuStart + 1) or #src
 local menu = src:sub(menuStart, menuEnd)
 
-assert(menu:find('CreateButton%("Reset Data"'),
+assert(menu:find('CreateButton%(ns%.L%["Reset Data"%]'),
     "config menu must expose a 'Reset Data' button")
 assert(menu:find("C_DamageMeter%.ResetAllCombatSessions"),
     "Reset Data must call C_DamageMeter.ResetAllCombatSessions")

@@ -97,7 +97,7 @@ function TooltipCounts.BuildCountLines(counts, getOwnerInfo)
         end
     end
     if #owners >= 2 then
-        lines[#lines + 1] = "Total: " .. grand
+        lines[#lines + 1] = ns.L["Total: "] .. grand
     end
     return lines
 end
@@ -113,7 +113,7 @@ end
 local function GetOwnerInfo(ownerKey)
     local Summaries, Store = Bags.Summaries, Bags.Store
     if ownerKey == Summaries.WARBAND_OWNER then
-        return { label = "Warband", plainTotal = true }
+        return { label = ns.L["Warband"], plainTotal = true }
     end
     local currentKey = Store.GetCurrentCharacterKey()
     -- Character names cannot contain '-', so the first dash splits exactly.

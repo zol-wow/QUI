@@ -83,7 +83,7 @@ PetWarningFrame.text = PetWarningFrame:CreateFontString(nil, "OVERLAY", "GameFon
 PetWarningFrame.text:SetPoint("LEFT", PetWarningFrame.icon, "RIGHT", 10, 0)
 PetWarningFrame.text:SetPoint("RIGHT", PetWarningFrame, "RIGHT", -30, 0)
 PetWarningFrame.text:SetTextColor(1, 0.3, 0.3, 1)
-PetWarningFrame.text:SetText("NO PET!")
+PetWarningFrame.text:SetText(ns.L["NO PET!"])
 
 -- Close button to dismiss warning for rest of fight
 PetWarningFrame.closeBtn = CreateFrame("Button", nil, PetWarningFrame)
@@ -96,7 +96,7 @@ PetWarningFrame.closeBtn.bg:SetColorTexture(0.3, 0.3, 0.3, 0.8)
 
 PetWarningFrame.closeBtn.text = PetWarningFrame.closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 PetWarningFrame.closeBtn.text:SetPoint("CENTER")
-PetWarningFrame.closeBtn.text:SetText("X")
+PetWarningFrame.closeBtn.text:SetText(ns.L["X"])
 PetWarningFrame.closeBtn.text:SetTextColor(0.8, 0.8, 0.8, 1)
 
 PetWarningFrame.closeBtn:SetScript("OnEnter", function(self)
@@ -177,7 +177,7 @@ local function UpdatePetWarningState()
 
     -- Check for missing pet
     if not UnitExists("pet") then
-        PetWarningFrame.text:SetText("NO PET SUMMONED!")
+        PetWarningFrame.text:SetText(ns.L["NO PET SUMMONED!"])
         PetWarningFrame.icon:SetTexture(132599)
         PetWarningFrame:Show()
         if LCG and (currentWarningState ~= "nopet" or not PetWarningFrame.glowActive) then
@@ -191,7 +191,7 @@ local function UpdatePetWarningState()
 
     -- Check for passive stance
     if IsPetOnPassive() then
-        PetWarningFrame.text:SetText("PET IS ON PASSIVE!")
+        PetWarningFrame.text:SetText(ns.L["PET IS ON PASSIVE!"])
         PetWarningFrame.icon:SetTexture(132311)
         PetWarningFrame:Show()
         if LCG and (currentWarningState ~= "passive" or not PetWarningFrame.glowActive) then
@@ -306,7 +306,7 @@ end
 _G.QUI_TogglePetWarningPreview = function(show)
     if show then
         PositionPetWarningFrame()
-        PetWarningFrame.text:SetText("PET WARNING PREVIEW")
+        PetWarningFrame.text:SetText(ns.L["PET WARNING PREVIEW"])
         PetWarningFrame.icon:SetTexture(132599)
         PetWarningFrame:Show()
         if LCG then

@@ -16,11 +16,11 @@ function V2InfoBar.Register(frame)
     Opts.RegisterFeatureTile(frame, {
         id = "infobar",
         icon = "i",
-        name = "Info Bar",
+        name = ns.L["Info Bar"],
         subPages = {
             {
                 id = "infobar",
-                name = "Info Bar",
+                name = ns.L["Info Bar"],
                 sectionNav = true,
                 featureId = "infobar",
                 navRoutes = {
@@ -29,16 +29,16 @@ function V2InfoBar.Register(frame)
                 },
                 searchContext = {
                     tabIndex = 18,
-                    tabName = "Info Bar",
+                    tabName = ns.L["Info Bar"],
                     subTabIndex = 1,
-                    subTabName = "Info Bar",
+                    subTabName = ns.L["Info Bar"],
                 },
                 searchAliases = {
-                    "info bar",
-                    "infobar",
-                    "data bar",
-                    "top bar",
-                    "bottom bar",
+                    ns.L["info bar"],
+                    ns.L["infobar"],
+                    ns.L["data bar"],
+                    ns.L["top bar"],
+                    ns.L["bottom bar"],
                 },
             },
         },

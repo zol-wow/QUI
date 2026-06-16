@@ -16,10 +16,10 @@ local function assertContains(source, needle, message)
 end
 
 assertContains(perBarSource,
-    '{ value = "extraActionButton", text = "Extra Action Button" }',
+    '{ value = "extraActionButton", text = ns.L["Extra Action Button"] }',
     "Per-Bar selector should include the Extra Action Button")
 assertContains(perBarSource,
-    '{ value = "zoneAbility",       text = "Zone Ability" }',
+    '{ value = "zoneAbility",       text = ns.L["Zone Ability"] }',
     "Per-Bar selector should include Zone Ability")
 assertContains(perBarSource,
     '"extraActionButton", "zoneAbility"',
@@ -44,13 +44,13 @@ assertContains(actionBarsSource,
     'local function ShowSpecialButtonReloadPrompt()',
     "Special button management toggles should prompt for reload")
 assertContains(actionBarsSource,
-    'GUI:CreateFormToggle(body, "Enabled", "enabled", barDB, RefreshSpecialButtonEnabled',
+    'GUI:CreateFormToggle(body, ns.L["Enabled"], "enabled", barDB, RefreshSpecialButtonEnabled',
     "Special button Enabled control should use a toggle")
 assertContains(actionBarsSource,
-    'GUI:CreateFormToggle(body, "Hide Artwork", "hideArtwork", barDB, RefreshSpecialButton',
+    'GUI:CreateFormToggle(body, ns.L["Hide Artwork"], "hideArtwork", barDB, RefreshSpecialButton',
     "Special button Hide Artwork control should use a toggle")
 assertContains(actionBarsSource,
-    'GUI:CreateFormSlider(body, "Scale"',
+    'GUI:CreateFormSlider(body, ns.L["Scale"]',
     "Special button Scale control should use a slider")
 assertContains(actionBarsSource,
     '_G.QUI_RefreshExtraButtons',

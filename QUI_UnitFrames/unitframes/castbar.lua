@@ -1627,7 +1627,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
     ClearChannelTickState(castbar)
 
     local castTime = 3.0
-    local spellName = (unitKey == "boss" and bossIndex) and ("Boss " .. bossIndex .. " Cast") or "Preview Cast"
+    local spellName = (unitKey == "boss" and bossIndex) and string.format(ns.L["Boss %d Cast"], bossIndex) or ns.L["Preview Cast"]
     local iconTexture = PREVIEW_ICON_ID
     castbar.isPreviewSimulation = true
     castbar.previewStartTime = GetTime()
@@ -3557,11 +3557,11 @@ do
         if not um then return end
 
         local CASTBAR_ELEMENTS = {
-            { key = "playerCastbar", label = "Player Castbar", unit = "player", order = 1 },
-            { key = "targetCastbar", label = "Target Castbar", unit = "target", order = 2 },
-            { key = "focusCastbar",  label = "Focus Castbar",  unit = "focus",  order = 3 },
-            { key = "petCastbar",    label = "Pet Castbar",    unit = "pet",    order = 4 },
-            { key = "totCastbar",    label = "Target of Target Castbar", unit = "targettarget", order = 5 },
+            { key = "playerCastbar", label = ns.L["Player Castbar"], unit = "player", order = 1 },
+            { key = "targetCastbar", label = ns.L["Target Castbar"], unit = "target", order = 2 },
+            { key = "focusCastbar",  label = ns.L["Focus Castbar"],  unit = "focus",  order = 3 },
+            { key = "petCastbar",    label = ns.L["Pet Castbar"],    unit = "pet",    order = 4 },
+            { key = "totCastbar",    label = ns.L["Target of Target Castbar"], unit = "targettarget", order = 5 },
         }
 
         local function GetCastbarDB(unit)
@@ -3574,7 +3574,7 @@ do
             um:RegisterElement({
                 key = info.key,
                 label = info.label,
-                group = "Castbars",
+                group = ns.L["Castbars"],
                 order = info.order,
                 isOwned = true,
                 isEnabled = function()

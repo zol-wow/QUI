@@ -39,7 +39,7 @@ assertContains(actionBars, "SetHideCountdownNumbers",
     "runtime styler must control C-side countdown visibility")
 assertContains(actionBars, "UpdateCooldownText(button, settings)",
     "button text refresh must apply cooldown duration text settings")
-assertContains(actionBars, 'CreateCollapsible(content, "Cooldown Duration Text"',
+assertContains(actionBars, 'CreateCollapsible(content, ns.L["Cooldown Duration Text"]',
     "per-bar options must expose a Cooldown Duration Text section")
 
 assertContains(preview, "local function SetPreviewCooldownTextStyle",

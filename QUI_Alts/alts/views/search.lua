@@ -31,6 +31,14 @@ local Alts = ns.Alts or {}; ns.Alts = Alts
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local SearchView = {}
 Alts.SearchView = SearchView
 
@@ -164,7 +172,7 @@ local function Builder(parent)
     search:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     search:SetAutoFocus(false)
     search:SetTextInsets(6, 6, 0, 0)
-    search:SetFont(GeneralFont(), 12, GeneralOutline())
+    CJKFont(search, GeneralFont(), 12, GeneralOutline())
     local searchBg = search:CreateTexture(nil, "BACKGROUND")
     searchBg:SetAllPoints()
     searchBg:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -173,7 +181,7 @@ local function Builder(parent)
     UIKit.CreateBorderLines(search)
     local placeholder = search:CreateFontString(nil, "OVERLAY")
     placeholder:SetPoint("LEFT", search, "LEFT", 7, 0)
-    placeholder:SetFont(GeneralFont(), 12, GeneralOutline())
+    CJKFont(placeholder, GeneralFont(), 12, GeneralOutline())
     placeholder:SetTextColor(0.55, 0.55, 0.55, 0.9)
     placeholder:SetText("Search all characters…")
     search._placeholder = placeholder

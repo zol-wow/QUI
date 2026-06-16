@@ -56,9 +56,9 @@ local PREFIX = Bags.OpsShared.PREFIX
 -- applied our moves" (scanners publish after their drain). Character bank
 -- and warband bank tabs are separate scopes so they never sort together.
 local SCOPES = {
-    bags = { first = 0, last = 5, events = { "BagsChanged" }, label = "bags", fallback = 0.5 },
-    characterBank = { first = 6, last = 11, events = { "BankChanged" }, label = "character bank", fallback = 1.5 },
-    warbandBank = { first = 12, last = 16, events = { "WarbandChanged" }, label = "warband bank", fallback = 1.5 },
+    bags = { first = 0, last = 5, events = { "BagsChanged" }, label = ns.L["bags"], fallback = 0.5 },
+    characterBank = { first = 6, last = 11, events = { "BankChanged" }, label = ns.L["character bank"], fallback = 1.5 },
+    warbandBank = { first = 12, last = 16, events = { "WarbandChanged" }, label = ns.L["warband bank"], fallback = 1.5 },
 }
 
 local state = nil -- nil = idle; one run at a time
@@ -192,13 +192,13 @@ local function Finish(ok, reason)
         Bags.Bus.Unsubscribe(ev, run.busHandler)
     end
     if ok then
-        print(("%s Sorted %s: %d move%s in %d pass%s."):format(
+        print(("%s " .. ns.L["Sorted %s: %d move%s in %d pass%s."]):format(
             PREFIX, run.scope.label, run.moved, run.moved == 1 and "" or "s",
             run.passes, run.passes == 1 and "" or "es"))
     elseif reason == "combat" then
-        print(PREFIX .. " Sort aborted: entered combat.")
+        print(PREFIX .. " " .. ns.L["Sort aborted: entered combat."])
     elseif reason == "passes" then
-        print(("%s Sort stopped before converging after %d move%s (locked or restricted slots?)."):format(
+        print(("%s " .. ns.L["Sort stopped before converging after %d move%s (locked or restricted slots?)."]):format(
             PREFIX, run.moved, run.moved == 1 and "" or "s"))
     end -- cancel: silent — user-initiated
     if run.onDone then run.onDone(ok, reason) end

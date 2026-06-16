@@ -52,8 +52,8 @@ end
 ---=================================================================================
 
 Datatexts:Register("reputation", {
-    displayName = "Reputation",
-    category = "Character",
+    displayName = ns.L["Reputation"],
+    category = ns.L["Character"],
     description = "Displays watched faction reputation progress",
 
     OnEnable = function(slotFrame, settings)
@@ -88,7 +88,7 @@ Datatexts:Register("reputation", {
 
         local function Update()
             local r, g, b = GetValueColor()
-            local label = GetLabel("Rep: ", "R: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Rep: "], ns.L["R: "], slotFrame.shortLabel, slotFrame.noLabel)
             local name, cur, total = GetWatchedProgress()
             if not name then
                 text:SetFormattedText(label .. "|cff%02x%02x%02x—|r", r, g, b)
@@ -110,7 +110,7 @@ Datatexts:Register("reputation", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Reputation", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Reputation"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local ar, ag, ab = GetValueColor()
@@ -121,14 +121,14 @@ Datatexts:Register("reputation", {
                 GameTooltip:AddDoubleLine(name, format("%d / %d", cur or 0, total or 0),
                     0.8, 0.8, 0.8, ar, ag, ab)
                 if isParagon then
-                    GameTooltip:AddLine("Paragon", 0.6, 0.6, 0.6)
+                    GameTooltip:AddLine(ns.L["Paragon"], 0.6, 0.6, 0.6)
                 end
             else
-                GameTooltip:AddLine("No faction watched", 0.6, 0.6, 0.6)
+                GameTooltip:AddLine(ns.L["No faction watched"], 0.6, 0.6, 0.6)
             end
 
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Reputation", ar, ag, ab)
+            GameTooltip:AddLine(ns.L["|cffFFFFFFLeft Click:|r Open Reputation"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -156,8 +156,8 @@ Datatexts:Register("reputation", {
 ---=================================================================================
 
 Datatexts:Register("vault", {
-    displayName = "Vault",
-    category = "Character",
+    displayName = ns.L["Vault"],
+    category = ns.L["Character"],
     description = "Displays weekly reward (Great Vault) progress",
 
     OnEnable = function(slotFrame, settings)
@@ -169,10 +169,10 @@ Datatexts:Register("vault", {
         local TYPE_NAMES = {}
         if Enum and Enum.WeeklyRewardChestThresholdType then
             local t = Enum.WeeklyRewardChestThresholdType
-            TYPE_NAMES[t.Raid or -1] = "Raids"
-            TYPE_NAMES[t.Activities or -1] = "Dungeons"
-            TYPE_NAMES[t.RankedPvP or -1] = "PvP"
-            TYPE_NAMES[t.World or -1] = "World"
+            TYPE_NAMES[t.Raid or -1] = ns.L["Raids"]
+            TYPE_NAMES[t.Activities or -1] = ns.L["Dungeons"]
+            TYPE_NAMES[t.RankedPvP or -1] = ns.L["PvP"]
+            TYPE_NAMES[t.World or -1] = ns.L["World"]
         end
 
         local function GetActivities()
@@ -194,7 +194,7 @@ Datatexts:Register("vault", {
             end
 
             local r, g, b = GetValueColor()
-            local label = GetLabel("Vault: ", "V: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Vault: "], ns.L["V: "], slotFrame.shortLabel, slotFrame.noLabel)
             text:SetFormattedText(label .. "|cff%02x%02x%02x%d/%d|r", r, g, b, done, total)
             MarkWidthDirty(slotFrame)
         end
@@ -211,7 +211,7 @@ Datatexts:Register("vault", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Great Vault", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Great Vault"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local ar, ag, ab = GetValueColor()
@@ -222,7 +222,7 @@ Datatexts:Register("vault", {
                 for _, activity in ipairs(activities) do
                     local progress = activity.progress or 0
                     local threshold = activity.threshold or 0
-                    local typeName = TYPE_NAMES[activity.type] or "Activity"
+                    local typeName = TYPE_NAMES[activity.type] or ns.L["Activity"]
                     local rowName = format("%s (%d)", typeName, activity.index or 0)
                     local vr, vg, vb
                     if threshold > 0 and progress >= threshold then
@@ -235,11 +235,11 @@ Datatexts:Register("vault", {
                         0.8, 0.8, 0.8, vr, vg, vb)
                 end
             else
-                GameTooltip:AddLine("No weekly progress data", 0.6, 0.6, 0.6)
+                GameTooltip:AddLine(ns.L["No weekly progress data"], 0.6, 0.6, 0.6)
             end
 
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Great Vault", ar, ag, ab)
+            GameTooltip:AddLine(ns.L["|cffFFFFFFLeft Click:|r Open Great Vault"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -271,8 +271,8 @@ Datatexts:Register("vault", {
 ---=================================================================================
 
 Datatexts:Register("mail", {
-    displayName = "Mail",
-    category = "Character",
+    displayName = ns.L["Mail"],
+    category = ns.L["Character"],
     description = "Displays unread mail notification",
 
     OnEnable = function(slotFrame, settings)
@@ -282,9 +282,9 @@ Datatexts:Register("mail", {
         local text = EnsureText(slotFrame)
 
         local function Update()
-            local label = GetLabel("Mail: ", "M: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Mail: "], ns.L["M: "], slotFrame.shortLabel, slotFrame.noLabel)
             if HasNewMail() then
-                text:SetFormattedText(label .. "|cffffd100New!|r")
+                text:SetFormattedText(label .. "|cffffd100" .. ns.L["New!"] .. "|r")
             else
                 local r, g, b = GetValueColor()
                 text:SetFormattedText(label .. "|cff%02x%02x%02x—|r", r, g, b)
@@ -304,21 +304,21 @@ Datatexts:Register("mail", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Mail", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Mail"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             if HasNewMail() then
-                GameTooltip:AddLine("Unread mail from:", 0.8, 0.8, 0.8)
+                GameTooltip:AddLine(ns.L["Unread mail from:"], 0.8, 0.8, 0.8)
                 local senders = { GetLatestThreeSenders() }
                 if #senders > 0 then
                     for _, sender in ipairs(senders) do
                         GameTooltip:AddLine(sender, 1, 1, 1)
                     end
                 else
-                    GameTooltip:AddLine("Unknown sender", 0.6, 0.6, 0.6)
+                    GameTooltip:AddLine(ns.L["Unknown sender"], 0.6, 0.6, 0.6)
                 end
             else
-                GameTooltip:AddLine("No unread mail", 0.6, 0.6, 0.6)
+                GameTooltip:AddLine(ns.L["No unread mail"], 0.6, 0.6, 0.6)
             end
 
             GameTooltip:Show()
@@ -340,8 +340,8 @@ Datatexts:Register("mail", {
 ---=================================================================================
 
 Datatexts:Register("professions", {
-    displayName = "Professions",
-    category = "Character",
+    displayName = ns.L["Professions"],
+    category = ns.L["Character"],
     description = "Displays primary profession skill levels",
 
     OnEnable = function(slotFrame, settings)
@@ -373,7 +373,7 @@ Datatexts:Register("professions", {
 
         local function Update()
             local r, g, b = GetValueColor()
-            local label = GetLabel("Prof: ", "P: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Prof: "], ns.L["P: "], slotFrame.shortLabel, slotFrame.noLabel)
 
             local prof1, prof2 = GetProfessions()
             local parts = {}
@@ -399,7 +399,7 @@ Datatexts:Register("professions", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Professions", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Professions"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local ar, ag, ab = GetValueColor()
@@ -421,11 +421,11 @@ Datatexts:Register("professions", {
             AddRow(fish)
             AddRow(arch)
             if not any then
-                GameTooltip:AddLine("No professions learned", 0.6, 0.6, 0.6)
+                GameTooltip:AddLine(ns.L["No professions learned"], 0.6, 0.6, 0.6)
             end
 
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Professions", ar, ag, ab)
+            GameTooltip:AddLine(ns.L["|cffFFFFFFLeft Click:|r Open Professions"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)

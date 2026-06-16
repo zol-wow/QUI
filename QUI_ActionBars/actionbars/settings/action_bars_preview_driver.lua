@@ -32,6 +32,14 @@ local GetCore = Helpers and Helpers.GetCore
 local Shared  = ns.QUI_Options
 local GetDB   = Shared and Shared.GetDB
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local ActionBarsPreviewDriver = {}
 ns.QUI_ActionBarsPreviewDriver = ActionBarsPreviewDriver
 
@@ -365,7 +373,7 @@ local function SetPreviewTextStyle(fontString, button, text, fontPath, outline, 
     local height = math.max((fontSize or 10) + 4, 1)
     local point = anchor or "CENTER"
 
-    fontString:SetFont(fontPath, fontSize or 10, outline or "OUTLINE")
+    CJKFont(fontString, fontPath, fontSize or 10, outline or "OUTLINE")
     fontString:SetText(text)
     fontString:SetWidth(width)
     fontString:SetHeight(height)
@@ -400,7 +408,7 @@ local function SetPreviewCooldownTextStyle(cooldown, button, settings, fontPath,
     local point = settings.cooldownTextAnchor or "CENTER"
     local color = settings.cooldownTextColor
 
-    fontString:SetFont(fontPath, fontSize, outline or "OUTLINE")
+    CJKFont(fontString, fontPath, fontSize, outline or "OUTLINE")
     fontString:SetWidth(width)
     fontString:SetHeight(height)
     fontString:ClearAllPoints()

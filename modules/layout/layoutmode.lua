@@ -9,6 +9,18 @@
 --   isOwned = false → separate proxy mover parented to UIParent (synced)
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
+
+-- Re-applies a FontString's current font through the CJK-safe family resolver
+-- so Chinese/Korean glyphs render (GameFont* templates are Latin-only).
+local function EnsureCJKFont(fs)
+    if not fs or not fs.GetFont then return fs end
+    local fp, sz, fl = fs:GetFont()
+    if fp and ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, fp, sz, fl)
+    end
+    return fs
+end
+
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
@@ -446,7 +458,7 @@ end
 function QUI_LayoutMode:Open()
     if self.isActive then return end
     if InCombatLockdown() then
-        print("|cff60A5FAQUI:|r Cannot open Layout Mode during combat.")
+        print("|cff60A5FAQUI:|r " .. ns.L["Cannot open Layout Mode during combat."])
         return
     end
 
@@ -759,7 +771,7 @@ function QUI_LayoutMode:Open()
             if event == "PLAYER_REGEN_DISABLED" then
                 QUI_LayoutMode:_CombatSuspend()
                 QUI_LayoutMode._pendingCombatClose = true
-                print("|cff60A5FAQUI:|r Layout Mode closed (combat). Unsaved changes discarded.")
+                print("|cff60A5FAQUI:|r " .. ns.L["Layout Mode closed (combat). Unsaved changes discarded."])
             elseif event == "PLAYER_REGEN_ENABLED" then
                 C_Timer.After(0.5, function()
                     -- Combat may have re-entered during the deferred window
@@ -782,7 +794,7 @@ function QUI_LayoutMode:Open()
     -- Show first-time tips
     if not self._firstOpenDone then
         self._firstOpenDone = true
-        print("|cff60A5FAQUI Layout Mode:|r Drag to move | Click to select | Arrow keys to nudge | Shift+Drag near edge = anchor | Escape to close")
+        print("|cff60A5FAQUI Layout Mode:|r " .. ns.L["Drag to move | Click to select | Arrow keys to nudge | Shift+Drag near edge = anchor | Escape to close"])
     end
 end
 
@@ -1707,7 +1719,7 @@ end
 --- Commit pending positions to DB and apply.
 CommitPositions = function()
     if InCombatLockdown() then
-        print("|cff60A5FAQUI:|r Cannot save positions during combat. Try again after combat ends.")
+        print("|cff60A5FAQUI:|r " .. ns.L["Cannot save positions during combat. Try again after combat ends."])
         return
     end
 
@@ -1775,7 +1787,7 @@ end
 --- Revert to snapshot positions and apply.
 RevertPositions = function()
     if InCombatLockdown() then
-        print("|cff60A5FAQUI:|r Cannot revert positions during combat.")
+        print("|cff60A5FAQUI:|r " .. ns.L["Cannot revert positions during combat."])
         return
     end
 
@@ -1904,15 +1916,15 @@ AddHandleVisuals = function(handle, def)
     end
 
     -- Label text
-    local label = handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local label = EnsureCJKFont(handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
     label:SetPoint("CENTER", handle, "CENTER", 0, 6)
-    label:SetText(def.label or def.key)
+    label:SetText(ns.L[def.label or def.key])
     label:SetTextColor(1, 1, 1, 1)
     label:SetJustifyH("CENTER")
     handle._label = label
 
     -- Coordinate text
-    local coords = handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local coords = EnsureCJKFont(handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
     coords:SetPoint("CENTER", handle, "CENTER", 0, -8)
     coords:SetTextColor(0.8, 0.8, 0.8, 0.8)
     coords:SetJustifyH("CENTER")
@@ -1920,9 +1932,9 @@ AddHandleVisuals = function(handle, def)
 
     -- Group label (small text at top)
     if def.group then
-        local groupLabel = handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local groupLabel = EnsureCJKFont(handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         groupLabel:SetPoint("TOP", handle, "TOP", 0, -3)
-        groupLabel:SetText(def.group)
+        groupLabel:SetText(ns.L[def.group])
         groupLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.7)
         groupLabel:SetScale(0.85)
         handle._groupLabel = groupLabel
@@ -1939,14 +1951,14 @@ AddHandleScripts = function(handle, def)
         -- Show hint tooltip
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:ClearLines()
-        GameTooltip:AddLine(def.label or self._barKey, 1, 1, 1)
-        GameTooltip:AddLine("Drag to move", 0.7, 0.7, 0.7)
-        GameTooltip:AddLine("Right-click for settings", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(ns.L[def.label or self._barKey], 1, 1, 1)
+        GameTooltip:AddLine(ns.L["Drag to move"], 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(ns.L["Right-click for settings"], 0.7, 0.7, 0.7)
         -- Show unanchor hint if frame is anchored
         local fa = GetFrameAnchoring()
         local entry = fa and fa[self._barKey]
         if entry and type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
-            GameTooltip:AddLine("Middle-click to unanchor", 0.9, 0.6, 0.3)
+            GameTooltip:AddLine(ns.L["Middle-click to unanchor"], 0.9, 0.6, 0.3)
         end
         GameTooltip:Show()
     end)
@@ -2264,13 +2276,13 @@ AddHandleScripts = function(handle, def)
                     end
                     -- Update coordinate display
                     if data.handle._coords then
-                        data.handle._coords:SetText(string.format("X: %d  Y: %d", newOx, newOy))
+                        data.handle._coords:SetText(string.format(ns.L["X: %d  Y: %d"], newOx, newOy))
                     end
                 end
             end
 
             -- Update coordinate display
-            frame._coords:SetText(string.format("X: %d  Y: %d", postSnapOx, postSnapOy))
+            frame._coords:SetText(string.format(ns.L["X: %d  Y: %d"], postSnapOx, postSnapOy))
         end)
     end)
 
@@ -2415,14 +2427,14 @@ AddHandleScripts = function(handle, def)
             local entry = fa and fa[self._barKey]
             local displayOx = entry and entry.offsetX or ox
             local displayOy = entry and entry.offsetY or oy
-            self._coords:SetText(string.format("X: %d  Y: %d", displayOx, displayOy))
+            self._coords:SetText(string.format(ns.L["X: %d  Y: %d"], displayOx, displayOy))
             -- Thicker border for anchored state
             if self._border and self._border.SetLineSize then
                 self._border:SetLineSize(HANDLE_BORDER_SIZE_ANCHORED)
             end
         else
             self._isAnchored = false
-            self._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+            self._coords:SetText(string.format(ns.L["X: %d  Y: %d"], ox, oy))
             -- Normal border for non-anchored state
             if self._border and self._border.SetLineSize then
                 self._border:SetLineSize(HANDLE_BORDER_SIZE)
@@ -2894,7 +2906,7 @@ SyncHandle = function(key)
         ox = entry and entry.offsetX or 0
         oy = entry and entry.offsetY or 0
         handle._isAnchored = true
-        handle._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+        handle._coords:SetText(string.format(ns.L["X: %d  Y: %d"], ox, oy))
         -- Thicker border for anchored handles
         if handle._border and handle._border.SetLineSize then
             handle._border:SetLineSize(HANDLE_BORDER_SIZE_ANCHORED)
@@ -2902,7 +2914,7 @@ SyncHandle = function(key)
     else
         ox, oy = HandleToOffsets(handle)
         handle._isAnchored = false
-        handle._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+        handle._coords:SetText(string.format(ns.L["X: %d  Y: %d"], ox, oy))
         -- Normal border for non-anchored handles
         if handle._border and handle._border.SetLineSize then
             handle._border:SetLineSize(HANDLE_BORDER_SIZE)
@@ -3010,9 +3022,9 @@ function QUI_LayoutMode:NudgeMover(key, dx, dy)
     if handle._isAnchored then
         local fa = GetFrameAnchoring()
         local entry = fa and fa[key]
-        handle._coords:SetText(string.format("X: %d  Y: %d", entry and entry.offsetX or ox, entry and entry.offsetY or oy))
+        handle._coords:SetText(string.format(ns.L["X: %d  Y: %d"], entry and entry.offsetX or ox, entry and entry.offsetY or oy))
     else
-        handle._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+        handle._coords:SetText(string.format(ns.L["X: %d  Y: %d"], ox, oy))
     end
 
     return true
@@ -3041,7 +3053,7 @@ local function OnProfileChanged()
         QUI_LayoutMode._hasChanges = false
         QUI_LayoutMode._pendingPositions = {}
         QUI_LayoutMode:Close(true)
-        print("|cff60A5FAQUI:|r Profile changed. Layout Mode closed — reopen to use new profile positions.")
+        print("|cff60A5FAQUI:|r " .. ns.L["Profile changed. Layout Mode closed — reopen to use new profile positions."])
     end
 end
 
@@ -3102,15 +3114,15 @@ do
         if not um then return end
 
         local DISPLAY_ELEMENTS = {
-            { key = "objectiveTracker", label = "Objective Tracker", frame = "ObjectiveTrackerFrame", order = 2 },
-            { key = "topCenterWidgets", label = "Top Center Widgets", frame = "UIWidgetTopCenterContainerFrame", order = 14, minWidth = 160, minHeight = 24 },
-            { key = "belowMinimapWidgets", label = "Below Minimap Widgets", frame = "UIWidgetBelowMinimapContainerFrame", order = 15, minWidth = 180, minHeight = 24 },
-            { key = "extraActionButton", label = "Extra Ability",   frame = "ExtraActionBarFrame", holder = "QUI_extraActionButtonHolder", order = 5 },
-            { key = "zoneAbility",     label = "Zone Ability",      frame = "ZoneAbilityFrame",    holder = "QUI_zoneAbilityHolder",      order = 6 },
-            { key = "bonusRollFrame",  label = "Bonus Roll",        frame = "BonusRollFrame",      order = 16, minWidth = 200, minHeight = 80 },
+            { key = "objectiveTracker", label = ns.L["Objective Tracker"], frame = "ObjectiveTrackerFrame", order = 2 },
+            { key = "topCenterWidgets", label = ns.L["Top Center Widgets"], frame = "UIWidgetTopCenterContainerFrame", order = 14, minWidth = 160, minHeight = 24 },
+            { key = "belowMinimapWidgets", label = ns.L["Below Minimap Widgets"], frame = "UIWidgetBelowMinimapContainerFrame", order = 15, minWidth = 180, minHeight = 24 },
+            { key = "extraActionButton", label = ns.L["Extra Ability"],   frame = "ExtraActionBarFrame", holder = "QUI_extraActionButtonHolder", order = 5 },
+            { key = "zoneAbility",     label = ns.L["Zone Ability"],      frame = "ZoneAbilityFrame",    holder = "QUI_zoneAbilityHolder",      order = 6 },
+            { key = "bonusRollFrame",  label = ns.L["Bonus Roll"],        frame = "BonusRollFrame",      order = 16, minWidth = 200, minHeight = 80 },
             {
                 key = "equipmentDurability",
-                label = "Equipment Durability",
+                label = ns.L["Equipment Durability"],
                 frame = "DurabilityFrame",
                 order = 17,
                 minWidth = 60,
@@ -3142,7 +3154,7 @@ do
             local regDef = {
                 key = info.key,
                 label = info.label,
-                group = "Display",
+                group = ns.L["Display"],
                 order = info.order,
                 setGameplayHidden = function(hide)
                     local f = (info.holder and _G[info.holder]) or _G[info.frame]
@@ -3322,9 +3334,9 @@ do
                         if GameTooltip then
                             GameTooltip:SetOwner(self, tooltipAnchor)
                             if QUI_LayoutMode:IsElementAnchored(overlay._barKey) then
-                                GameTooltip:SetText("Hold Shift to resize (anchored)")
+                                GameTooltip:SetText(ns.L["Hold Shift to resize (anchored)"])
                             else
-                                GameTooltip:SetText("Drag to resize chat frame")
+                                GameTooltip:SetText(ns.L["Drag to resize chat frame"])
                             end
                             GameTooltip:Show()
                         end
@@ -3400,8 +3412,8 @@ do
 
         um:RegisterElement({
             key = "chatFrame1",
-            label = "Chat Frame",
-            group = "Display",
+            label = ns.L["Chat Frame"],
+            group = ns.L["Display"],
             order = 7,
             isOwned = true,
             -- module on/off lives in Module Addons (addon state + guard flag);
@@ -3582,8 +3594,8 @@ do
                 end
                 um:RegisterElement({
                     key = key,
-                    label = "Chat Window " .. windowID,
-                    group = "Display",
+                    label = ns.L["Chat Window "] .. windowID,
+                    group = ns.L["Display"],
                     order = 7 + windowID, -- after the primary chat element (order 7)
                     isOwned = true,
                     -- No setEnabled: extra windows are created/removed via the
@@ -3695,7 +3707,7 @@ do
 
         local QOL_ELEMENTS = {
             {
-                key = "buffFrame", label = "Buff Frame", group = "Display", order = 3,
+                key = "buffFrame", label = ns.L["Buff Frame"], group = ns.L["Display"], order = 3,
                 frame = "QUI_BuffIconContainer", isOwned = true,
                 dbKey = "buffBorders", enabledField = "enableBuffs",
                 refresh = "QUI_RefreshBuffBorders",
@@ -3711,7 +3723,7 @@ do
                 previewOff = function() if _G.QUI_BuffBordersHidePreview then _G.QUI_BuffBordersHidePreview() end end,
             },
             {
-                key = "debuffFrame", label = "Debuff Frame", group = "Display", order = 4,
+                key = "debuffFrame", label = ns.L["Debuff Frame"], group = ns.L["Display"], order = 4,
                 frame = "QUI_DebuffIconContainer", isOwned = true,
                 dbKey = "buffBorders", enabledField = "enableDebuffs",
                 refresh = "QUI_RefreshBuffBorders",
@@ -3724,13 +3736,13 @@ do
                 previewOff = function() if _G.QUI_BuffBordersHidePreview then _G.QUI_BuffBordersHidePreview() end end,
             },
             {
-                key = "crosshair", label = "Crosshair", group = "QoL", order = 1,
+                key = "crosshair", label = ns.L["Crosshair"], group = ns.L["QoL"], order = 1,
                 frame = "QUI_Crosshair",
                 dbKey = "crosshair", enabledField = "enabled",
                 refresh = "QUI_RefreshCrosshair",
             },
             {
-                key = "skyriding", label = "Skyriding HUD", group = "QoL", order = 2,
+                key = "skyriding", label = ns.L["Skyriding HUD"], group = ns.L["QoL"], order = 2,
                 frame = "QUI_Skyriding",
                 dbKey = "skyriding", enabledField = "enabled",
                 refresh = "QUI_RefreshSkyriding",
@@ -3774,7 +3786,7 @@ do
                 end,
             },
             {
-                key = "xpTracker", label = "XP Tracker", group = "QoL", order = 3,
+                key = "xpTracker", label = ns.L["XP Tracker"], group = ns.L["QoL"], order = 3,
                 frame = "QUI_XPTracker",
                 dbKey = "xpTracker", enabledField = "enabled",
                 refresh = "QUI_RefreshXPTracker",
@@ -3799,7 +3811,7 @@ do
                 end,
             },
             {
-                key = "combatTimer", label = "Combat Timer", group = "Instance", order = 3,
+                key = "combatTimer", label = ns.L["Combat Timer"], group = ns.L["Instance"], order = 3,
                 frame = "QUI_CombatTimer",
                 dbKey = "combatTimer", enabledField = "enabled",
                 refresh = "QUI_RefreshCombatTimer",
@@ -3807,7 +3819,7 @@ do
                 previewOff = function() if _G.QUI_ToggleCombatTimerPreview then _G.QUI_ToggleCombatTimerPreview(false) end end,
             },
             {
-                key = "brezCounter", label = "Brez Counter", group = "Instance", order = 1,
+                key = "brezCounter", label = ns.L["Brez Counter"], group = ns.L["Instance"], order = 1,
                 frame = "QUI_BrezCounter",
                 dbKey = "brzCounter", enabledField = "enabled",
                 refresh = "QUI_RefreshBrezCounter",
@@ -3815,7 +3827,7 @@ do
                 previewOff = function() if _G.QUI_ToggleBrezCounterPreview then _G.QUI_ToggleBrezCounterPreview(false) end end,
             },
             {
-                key = "atonementCounter", label = "Atonement Counter", group = "QoL", order = 9.5,
+                key = "atonementCounter", label = ns.L["Atonement Counter"], group = ns.L["QoL"], order = 9.5,
                 frame = "QUI_AtonementCounter",
                 dbKey = "atonementCounter", enabledField = "enabled",
                 refresh = "QUI_RefreshAtonementCounter",
@@ -3823,7 +3835,7 @@ do
                 previewOff = function() if _G.QUI_ToggleAtonementCounterPreview then _G.QUI_ToggleAtonementCounterPreview(false) end end,
             },
             {
-                key = "mplusTimer", label = "M+ Timer", group = "Instance", order = 2,
+                key = "mplusTimer", label = ns.L["M+ Timer"], group = ns.L["Instance"], order = 2,
                 frame = "QUI_MPlusTimerFrame",
                 dbKey = "mplusTimer", enabledField = "enabled",
                 -- Use child overlay (setupOverlay forces the child overlay
@@ -3838,7 +3850,7 @@ do
                 previewOff = function() local t = _G.QUI_MPlusTimer; if t and t.DisableDemoMode then t:DisableDemoMode() end end,
             },
             {
-                key = "rangeCheck", label = "Range Check", group = "QoL", order = 5,
+                key = "rangeCheck", label = ns.L["Range Check"], group = ns.L["QoL"], order = 5,
                 frame = "QUI_RangeCheckFrame",
                 dbKey = "rangeCheck", enabledField = "enabled",
                 refresh = "QUI_RefreshRangeCheck",
@@ -3846,7 +3858,7 @@ do
                 previewOff = function() if _G.QUI_ToggleRangeCheckPreview then _G.QUI_ToggleRangeCheckPreview(false) end end,
             },
             {
-                key = "actionTracker", label = "Action Tracker", group = "QoL", order = 6,
+                key = "actionTracker", label = ns.L["Action Tracker"], group = ns.L["QoL"], order = 6,
                 frame = "QUI_ActionTracker",
                 dbGetter = function() return GeneralSubDB("actionTracker") end,
                 enabledField = "enabled",
@@ -3855,7 +3867,7 @@ do
                 previewOff = function() if _G.QUI_ToggleActionTrackerPreview then _G.QUI_ToggleActionTrackerPreview(false) end end,
             },
             {
-                key = "focusCastAlert", label = "Focus Cast Alert", group = "QoL", order = 7,
+                key = "focusCastAlert", label = ns.L["Focus Cast Alert"], group = ns.L["QoL"], order = 7,
                 frame = "QUI_FocusCastAlertFrame",
                 dbGetter = function() return GeneralSubDB("focusCastAlert") end,
                 enabledField = "enabled",
@@ -3864,7 +3876,7 @@ do
                 previewOff = function() if _G.QUI_ToggleFocusCastAlertPreview then _G.QUI_ToggleFocusCastAlertPreview(false) end end,
             },
             {
-                key = "petWarning", label = "Pet Warning", group = "QoL", order = 8,
+                key = "petWarning", label = ns.L["Pet Warning"], group = ns.L["QoL"], order = 8,
                 frame = "QUI_PetWarningFrame",
                 dbGetter = function()
                     local db = GetProfileDB()
@@ -3876,7 +3888,7 @@ do
                 previewOff = function() if _G.QUI_TogglePetWarningPreview then _G.QUI_TogglePetWarningPreview(false) end end,
             },
             {
-                key = "preyTracker", label = "Prey Tracker", group = "QoL", order = 9,
+                key = "preyTracker", label = ns.L["Prey Tracker"], group = ns.L["QoL"], order = 9,
                 frame = "QUI_PreyTracker",
                 dbKey = "preyTracker", enabledField = "enabled",
                 refresh = "QUI_RefreshPreyTracker",
@@ -3884,7 +3896,7 @@ do
                 previewOff = function() if _G.QUI_TogglePreyTrackerPreview then _G.QUI_TogglePreyTrackerPreview(false) end end,
             },
             {
-                key = "readyCheck", label = "Ready Check", group = "Instance", order = 4,
+                key = "readyCheck", label = ns.L["Ready Check"], group = ns.L["Instance"], order = 4,
                 frame = nil,
                 blizzFrame = "ReadyCheckFrame",
                 dbGetter = function()
@@ -3894,7 +3906,7 @@ do
                 enabledField = "skinReadyCheck",
             },
             {
-                key = "consumables", label = "Consumable Check", group = "Instance", order = 4.5,
+                key = "consumables", label = ns.L["Consumable Check"], group = ns.L["Instance"], order = 4.5,
                 frame = "QUI_ConsumablesFrame",
                 dbGetter = function()
                     local db = GetProfileDB()
@@ -3905,7 +3917,7 @@ do
                 previewOff = function() if _G.QUI_HideConsumables then _G.QUI_HideConsumables() end end,
             },
             {
-                key = "missingRaidBuffs", label = "Missing Raid Buffs", group = "Instance", order = 5,
+                key = "missingRaidBuffs", label = ns.L["Missing Raid Buffs"], group = ns.L["Instance"], order = 5,
                 frame = "QUI_MissingRaidBuffs",
                 dbKey = "raidBuffs", enabledField = "enabled",
                 refresh = "QUI_RefreshRaidBuffs",
@@ -3913,13 +3925,13 @@ do
                 previewOff = function() local r = ns.RaidBuffs; if r and r.DisablePreview then r:DisablePreview() end end,
             },
             {
-                key = "rotationAssistIcon", label = "Rotation Assist Icon", group = "Cooldown Manager & Custom Tracker Bars", order = 5,
+                key = "rotationAssistIcon", label = ns.L["Rotation Assist Icon"], group = ns.L["Cooldown Manager & Custom Tracker Bars"], order = 5,
                 frame = "QUI_RotationAssistIcon",
                 dbKey = "rotationAssistIcon", enabledField = "enabled",
                 refresh = "QUI_RefreshRotationAssistIcon",
             },
             {
-                key = "totemBar", label = "Totem Bar", group = "Action Bars", order = 20,
+                key = "totemBar", label = ns.L["Totem Bar"], group = ns.L["Action Bars"], order = 20,
                 frame = "QUI_TotemBar",
                 dbKey = "totemBar", enabledField = "enabled",
                 refresh = "QUI_RefreshTotemBar",
@@ -3927,50 +3939,50 @@ do
                 previewOff = function() if _G.QUI_HideTotemBarPreview then _G.QUI_HideTotemBarPreview() end end,
             },
             {
-                key = "partyKeystones", label = "Party Keystones", group = "Instance", order = 6,
+                key = "partyKeystones", label = ns.L["Party Keystones"], group = ns.L["Instance"], order = 6,
                 frame = "QUIKeyTrackerFrame",
                 dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
                 enabledField = "keyTrackerEnabled",
                 refresh = "QUI_RefreshKeyTracker",
             },
             {
-                key = "lootFrame", label = "Loot Frame", group = "Display", order = 7,
+                key = "lootFrame", label = ns.L["Loot Frame"], group = ns.L["Display"], order = 7,
                 frame = "QUI_LootFrame",
                 dbKey = "loot", enabledField = "enabled",
                 requiresReload = true,
             },
             {
-                key = "lootRollAnchor", label = "Loot Roll Anchor", group = "Display", order = 8,
+                key = "lootRollAnchor", label = ns.L["Loot Roll Anchor"], group = ns.L["Display"], order = 8,
                 frame = "QUI_LootRollAnchor",
                 dbKey = "lootRoll", enabledField = "enabled",
                 requiresReload = true,
             },
             {
-                key = "alertAnchor", label = "Alert Anchor", group = "Display", order = 9,
+                key = "alertAnchor", label = ns.L["Alert Anchor"], group = ns.L["Display"], order = 9,
                 frame = "QUI_AlertFrameHolder",
                 dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
                 enabledField = "skinAlerts",
             },
             {
-                key = "toastAnchor", label = "Toast Anchor", group = "Display", order = 10,
+                key = "toastAnchor", label = ns.L["Toast Anchor"], group = ns.L["Display"], order = 10,
                 frame = "QUI_EventToastHolder",
                 dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
                 enabledField = "skinAlerts",
             },
             {
-                key = "bnetToastAnchor", label = "BNet Toast Anchor", group = "Display", order = 11,
+                key = "bnetToastAnchor", label = ns.L["BNet Toast Anchor"], group = ns.L["Display"], order = 11,
                 frame = "QUI_BNetToastHolder",
                 dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
                 enabledField = "skinAlerts",
             },
             {
-                key = "powerBarAlt", label = "Encounter Power Bar", group = "Display", order = 12,
+                key = "powerBarAlt", label = ns.L["Encounter Power Bar"], group = ns.L["Display"], order = 12,
                 frame = "QUI_AltPowerBar",
                 dbGetter = function() return GetProfileDB() and GetProfileDB().general end,
                 enabledField = "skinPowerBarAlt",
             },
             {
-                key = "tooltipAnchor", label = "Tooltip Anchor", group = "Display", order = 13,
+                key = "tooltipAnchor", label = ns.L["Tooltip Anchor"], group = ns.L["Display"], order = 13,
                 frame = "QUI_TooltipAnchor",
                 dbKey = "tooltip", enabledField = "enabled",
             },
@@ -4002,10 +4014,10 @@ do
                         local GUI = QUI and QUI.GUI
                         if GUI then
                             GUI:ShowConfirmation({
-                                title = "Reload UI?",
-                                message = "This change requires a reload to take effect.",
-                                acceptText = "Reload",
-                                cancelText = "Later",
+                                title = ns.L["Reload UI?"],
+                                message = ns.L["This change requires a reload to take effect."],
+                                acceptText = ns.L["Reload"],
+                                cancelText = ns.L["Later"],
                                 onAccept = function() QUI:SafeReload() end,
                             })
                         end
@@ -4316,7 +4328,7 @@ function QUI_LayoutMode:ResetToCenter(key)
 
     -- Update coords display
     if handle._coords then
-        handle._coords:SetText("X: 0  Y: 0")
+        handle._coords:SetText(ns.L["X: 0  Y: 0"])
     end
     -- Show handle if hidden
     if not handle:IsShown() then
@@ -4425,9 +4437,9 @@ _G.QUI_LayoutModeSaveCurrentHandlePosition = function(key)
         if anchorKey then
             local fa = GetFrameAnchoring()
             local entry = fa and fa[key]
-            handle._coords:SetText(string.format("X: %d  Y: %d", entry and entry.offsetX or ox, entry and entry.offsetY or oy))
+            handle._coords:SetText(string.format(ns.L["X: %d  Y: %d"], entry and entry.offsetX or ox, entry and entry.offsetY or oy))
         else
-            handle._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
+            handle._coords:SetText(string.format(ns.L["X: %d  Y: %d"], ox, oy))
         end
     end
 end

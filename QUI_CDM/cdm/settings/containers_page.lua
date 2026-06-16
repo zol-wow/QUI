@@ -17,10 +17,10 @@ local Shared = ns.CDMShared
 
 local BUILTIN_ORDER = { "essential", "utility", "buff", "trackedBar" }
 local BUILTIN_LABELS = {
-    essential = "Essential",
-    utility = "Utility",
-    buff = "Buff Icons",
-    trackedBar = "Buff Bars",
+    essential = ns.L["Essential"],
+    utility = ns.L["Utility"],
+    buff = ns.L["Buff Icons"],
+    trackedBar = ns.L["Buff Bars"],
 }
 function Model.GetContainerOptions()
     local options = {}
@@ -138,12 +138,12 @@ local function RenderEntriesTab(host, state)
 end
 
 local TAB_DEFINITIONS = {
-    { key = "entries", label = "Entries", hostKey = "composer", render = RenderEntriesTab },
-    { key = "layout", label = "Appearance", hostKey = "scroll", render = BuildSchemaRender("RenderLayoutTab", "Appearance") },
-    { key = "filters", label = "Filters", hostKey = "scroll", visible = function(state) return not Model.IsBuiltIn(state.activeContainer) end, render = BuildSchemaRender("RenderFiltersTab", "Filters") },
-    { key = "perspec", label = "Per-Spec", hostKey = "scroll", visible = function(state) return not Model.IsBuiltIn(state.activeContainer) end, render = BuildSchemaRender("RenderPerSpecTab", "Per-Spec") },
-    { key = "effects", label = "Effects", hostKey = "scroll", render = BuildSchemaRender("RenderEffectsTab", "Effects") },
-    { key = "keybinds", label = "Keybinds", hostKey = "scroll", render = BuildSchemaRender("RenderKeybindsTab", "Keybinds") },
+    { key = "entries", label = ns.L["Entries"], hostKey = "composer", render = RenderEntriesTab },
+    { key = "layout", label = ns.L["Appearance"], hostKey = "scroll", render = BuildSchemaRender("RenderLayoutTab", "Appearance") },
+    { key = "filters", label = ns.L["Filters"], hostKey = "scroll", visible = function(state) return not Model.IsBuiltIn(state.activeContainer) end, render = BuildSchemaRender("RenderFiltersTab", "Filters") },
+    { key = "perspec", label = ns.L["Per-Spec"], hostKey = "scroll", visible = function(state) return not Model.IsBuiltIn(state.activeContainer) end, render = BuildSchemaRender("RenderPerSpecTab", "Per-Spec") },
+    { key = "effects", label = ns.L["Effects"], hostKey = "scroll", render = BuildSchemaRender("RenderEffectsTab", "Effects") },
+    { key = "keybinds", label = ns.L["Keybinds"], hostKey = "scroll", render = BuildSchemaRender("RenderKeybindsTab", "Keybinds") },
 }
 
 function Model.GetTabDefinitions()
@@ -203,89 +203,89 @@ local HEADER_GAP = 22
 local SECTION_BOTTOM_PAD = 12
 
 local KEYBIND_ANCHOR_OPTIONS = {
-    { value = "TOPLEFT", text = "Top Left" },
-    { value = "TOPRIGHT", text = "Top Right" },
-    { value = "BOTTOMLEFT", text = "Bottom Left" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
-    { value = "CENTER", text = "Center" },
+    { value = "TOPLEFT", text = ns.L["Top Left"] },
+    { value = "TOPRIGHT", text = ns.L["Top Right"] },
+    { value = "BOTTOMLEFT", text = ns.L["Bottom Left"] },
+    { value = "BOTTOMRIGHT", text = ns.L["Bottom Right"] },
+    { value = "CENTER", text = ns.L["Center"] },
 }
 
 local COLOR_MODE_OPTIONS = {
-    { value = "default", text = "Default (Blizzard)" },
-    { value = "class", text = "Class Color" },
-    { value = "accent", text = "UI Accent Color" },
-    { value = "custom", text = "Custom Color" },
+    { value = "default", text = ns.L["Default (Blizzard)"] },
+    { value = "class", text = ns.L["Class Color"] },
+    { value = "accent", text = ns.L["UI Accent Color"] },
+    { value = "custom", text = ns.L["Custom Color"] },
 }
 
 local GLOW_TYPE_OPTIONS = {
-    { value = "Pixel Glow", text = "Pixel Glow" },
-    { value = "Autocast Shine", text = "Autocast Shine" },
-    { value = "Button Glow", text = "Button Glow" },
-    { value = "Flash", text = "Flash" },
-    { value = "Hammer", text = "Hammer" },
-    { value = "Proc Glow", text = "Proc Glow" },
+    { value = "Pixel Glow", text = ns.L["Pixel Glow"] },
+    { value = "Autocast Shine", text = ns.L["Autocast Shine"] },
+    { value = "Button Glow", text = ns.L["Button Glow"] },
+    { value = "Flash", text = ns.L["Flash"] },
+    { value = "Hammer", text = ns.L["Hammer"] },
+    { value = "Proc Glow", text = ns.L["Proc Glow"] },
 }
 
 local DISPLAY_MODE_OPTIONS = {
-    { value = "always", text = "Always" },
-    { value = "active", text = "Active Only" },
-    { value = "combat", text = "Combat Only" },
+    { value = "always", text = ns.L["Always"] },
+    { value = "active", text = ns.L["Active Only"] },
+    { value = "combat", text = ns.L["Combat Only"] },
 }
 
 local TEXT_ANCHOR_OPTIONS = {
-    { value = "TOPLEFT", text = "Top Left" },
-    { value = "TOP", text = "Top" },
-    { value = "TOPRIGHT", text = "Top Right" },
-    { value = "LEFT", text = "Left" },
-    { value = "CENTER", text = "Center" },
-    { value = "RIGHT", text = "Right" },
-    { value = "BOTTOMLEFT", text = "Bottom Left" },
-    { value = "BOTTOM", text = "Bottom" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
+    { value = "TOPLEFT", text = ns.L["Top Left"] },
+    { value = "TOP", text = ns.L["Top"] },
+    { value = "TOPRIGHT", text = ns.L["Top Right"] },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "CENTER", text = ns.L["Center"] },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "BOTTOMLEFT", text = ns.L["Bottom Left"] },
+    { value = "BOTTOM", text = ns.L["Bottom"] },
+    { value = "BOTTOMRIGHT", text = ns.L["Bottom Right"] },
 }
 
 local AURA_GROWTH_DIRECTION_OPTIONS = {
-    { value = "CENTERED_HORIZONTAL", text = "Centered" },
-    { value = "UP", text = "Grow Up" },
-    { value = "DOWN", text = "Grow Down" },
+    { value = "CENTERED_HORIZONTAL", text = ns.L["Centered"] },
+    { value = "UP", text = ns.L["Grow Up"] },
+    { value = "DOWN", text = ns.L["Grow Down"] },
 }
 
 local INACTIVE_MODE_OPTIONS = {
-    { value = "always", text = "Always Show" },
-    { value = "fade", text = "Fade When Inactive" },
-    { value = "hide", text = "Hide When Inactive" },
+    { value = "always", text = ns.L["Always Show"] },
+    { value = "fade", text = ns.L["Fade When Inactive"] },
+    { value = "hide", text = ns.L["Hide When Inactive"] },
 }
 
 local STACK_DIRECTION_OPTIONS = {
-    { value = true, text = "Up / Right" },
-    { value = false, text = "Down / Left" },
+    { value = true, text = ns.L["Up / Right"] },
+    { value = false, text = ns.L["Down / Left"] },
 }
 
 local BAR_ORIENTATION_OPTIONS = {
-    { value = "horizontal", text = "Horizontal" },
-    { value = "vertical", text = "Vertical" },
+    { value = "horizontal", text = ns.L["Horizontal"] },
+    { value = "vertical", text = ns.L["Vertical"] },
 }
 
 local BAR_FILL_DIRECTION_OPTIONS = {
-    { value = "up", text = "Fill Up" },
-    { value = "down", text = "Fill Down" },
+    { value = "up", text = ns.L["Fill Up"] },
+    { value = "down", text = ns.L["Fill Down"] },
 }
 
 local BAR_ICON_POSITION_OPTIONS = {
-    { value = "top", text = "Top" },
-    { value = "bottom", text = "Bottom" },
+    { value = "top", text = ns.L["Top"] },
+    { value = "bottom", text = ns.L["Bottom"] },
 }
 
 local TRACKER_LAYOUT_DIRECTION_OPTIONS = {
-    { value = "HORIZONTAL", text = "Horizontal" },
-    { value = "VERTICAL", text = "Vertical" },
+    { value = "HORIZONTAL", text = ns.L["Horizontal"] },
+    { value = "VERTICAL", text = ns.L["Vertical"] },
 }
 
 local CUSTOM_BAR_GROW_DIRECTION_OPTIONS = {
-    { value = "RIGHT", text = "Right" },
-    { value = "LEFT", text = "Left" },
-    { value = "DOWN", text = "Down" },
-    { value = "UP", text = "Up" },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "DOWN", text = ns.L["Down"] },
+    { value = "UP", text = ns.L["Up"] },
 }
 
 local function GetGUI()
@@ -588,11 +588,11 @@ local function AppendTrackerGeneralSection(builder, gui, optionsAPI, tracker, co
         tracker.growDirection = tracker.growDirection or "RIGHT"
     end
 
-    builder.Header("General")
+    builder.Header(ns.L["General"])
     local card = builder.Card()
 
     local displayModeDropdown = gui:CreateFormDropdown(card.frame, nil, DISPLAY_MODE_OPTIONS, "iconDisplayMode", tracker, refresh, {
-        description = "When icons appear: always visible, only while the spell is active/on cooldown, or only while in combat.",
+        description = ns.L["When icons appear: always visible, only while the spell is active/on cooldown, or only while in combat."],
     })
 
     if isCustomBar then
@@ -601,19 +601,19 @@ local function AppendTrackerGeneralSection(builder, gui, optionsAPI, tracker, co
             tracker.layoutDirection = (growDirection == "UP" or growDirection == "DOWN") and "VERTICAL" or "HORIZONTAL"
             refresh()
         end, {
-            description = "Direction new icons are added from the anchor. Right/Left builds a horizontal bar, Up/Down builds a vertical bar.",
+            description = ns.L["Direction new icons are added from the anchor. Right/Left builds a horizontal bar, Up/Down builds a vertical bar."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Display Mode", displayModeDropdown),
-            optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDirectionDropdown)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Display Mode"], displayModeDropdown),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Grow Direction"], growDirectionDropdown)
         )
     else
         local layoutDirectionDropdown = gui:CreateFormDropdown(card.frame, nil, TRACKER_LAYOUT_DIRECTION_OPTIONS, "layoutDirection", tracker, refresh, {
-            description = "Whether this container's rows flow horizontally or vertically.",
+            description = ns.L["Whether this container's rows flow horizontally or vertically."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Display Mode", displayModeDropdown),
-            optionsAPI.BuildSettingRow(card.frame, "Layout Direction", layoutDirectionDropdown)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Display Mode"], displayModeDropdown),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Layout Direction"], layoutDirectionDropdown)
         )
     end
 
@@ -623,25 +623,25 @@ local function AppendTrackerGeneralSection(builder, gui, optionsAPI, tracker, co
         end
         refresh()
     end, {
-        description = "Allow icons to receive mouse clicks (tooltips, macros, activation). Turn off to make the container pass clicks through.",
+        description = ns.L["Allow icons to receive mouse clicks (tooltips, macros, activation). Turn off to make the container pass clicks through."],
     })
     local desaturateOnCooldownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "desaturateOnCooldown", tracker, refresh, {
-        description = "Desaturate icons while they are on cooldown so off-cooldown spells stand out visually.",
+        description = ns.L["Desaturate icons while they are on cooldown so off-cooldown spells stand out visually."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Clickable Icons", clickableIconsCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Desaturate On Cooldown", desaturateOnCooldownCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Clickable Icons"], clickableIconsCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Desaturate On Cooldown"], desaturateOnCooldownCheckbox)
     )
 
     local greyOutInactiveCheckbox = gui:CreateFormCheckbox(card.frame, nil, "greyOutInactive", tracker, refresh, {
-        description = "Grey out debuff icons when the debuff is not currently active.",
+        description = ns.L["Grey out debuff icons when the debuff is not currently active."],
     })
     local greyOutInactiveBuffsCheckbox = gui:CreateFormCheckbox(card.frame, nil, "greyOutInactiveBuffs", tracker, refresh, {
-        description = "Grey out buff icons when the buff is not currently active.",
+        description = ns.L["Grey out buff icons when the buff is not currently active."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Grey Out Inactive Debuffs", greyOutInactiveCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Grey Out Inactive Buffs", greyOutInactiveBuffsCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Grey Out Inactive Debuffs"], greyOutInactiveCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Grey Out Inactive Buffs"], greyOutInactiveBuffsCheckbox)
     )
 
     if not isEssential then
@@ -656,14 +656,14 @@ local function AppendTrackerGeneralSection(builder, gui, optionsAPI, tracker, co
             RefreshUtilityAnchor()
             UpdateAnchorBelowEssentialState()
         end, {
-            description = "Anchor this container below the essential container so they stack together.",
+            description = ns.L["Anchor this container below the essential container so they stack together."],
         })
         local anchorGapSlider = gui:CreateFormSlider(card.frame, nil, -200, 200, 1, "anchorGap", tracker, RefreshUtilityAnchor, nil, {
-            description = "Pixel gap between the essential container and this one when Anchor Below Essential is on.",
+            description = ns.L["Pixel gap between the essential container and this one when Anchor Below Essential is on."],
         })
-        anchorGapRow = optionsAPI.BuildSettingRow(card.frame, "Anchor Gap", anchorGapSlider)
+        anchorGapRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor Gap"], anchorGapSlider)
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Anchor Below Essential", anchorBelowEssentialCheckbox),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor Below Essential"], anchorBelowEssentialCheckbox),
             anchorGapRow
         )
         UpdateAnchorBelowEssentialState()
@@ -694,148 +694,148 @@ local function AppendTrackerRowSection(builder, gui, optionsAPI, rowNum, rowData
         })
     end
 
-    builder.Header("Row " .. rowNum)
+    builder.Header(ns.L["Row "] .. rowNum)
     local card = builder.Card()
 
     local iconsInRowSlider = gui:CreateFormSlider(card.frame, nil, 0, 20, 1, "iconCount", rowData, refresh, nil, {
-        description = "How many icons fit in this row before the container moves overflow to the next row.",
+        description = ns.L["How many icons fit in this row before the container moves overflow to the next row."],
     })
     local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 5, 80, 1, "iconSize", rowData, refresh, nil, {
-        description = "Square size of each icon in this row, in pixels.",
+        description = ns.L["Square size of each icon in this row, in pixels."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Icons in Row", iconsInRowSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Icon Size", iconSizeSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Icons in Row"], iconsInRowSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], iconSizeSlider)
     )
 
     local borderSizeSlider = gui:CreateFormSlider(card.frame, nil, 0, 5, 1, "borderSize", rowData, refresh, nil, {
-        description = "Border thickness in pixels around each icon in this row. Set to 0 to hide.",
+        description = ns.L["Border thickness in pixels around each icon in this row. Set to 0 to hide."],
     })
     -- Per-row border color via the central source enum (inherit/theme/class/custom).
     -- Binds rowData.borderColorSource / rowData.borderColor (prefix "").
     local borderSourceWidget, borderColorWidget = ns.QUI_BorderControl.Attach(
         gui, card.frame, rowData, "", refresh,
-        { label = "Border Color Source", colorLabel = "Border Color" }
+        { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"] }
     )
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Border Size", borderSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Border Color Source", borderSourceWidget)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Border Size"], borderSizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Border Color Source"], borderSourceWidget)
     )
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Border Color", borderColorWidget)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Border Color"], borderColorWidget)
     )
 
     local iconZoomSlider = gui:CreateFormSlider(card.frame, nil, 0, 0.2, 0.01, "zoom", rowData, refresh, nil, {
-        description = "Crop the edges of each icon to hide Blizzard's default border. Higher values crop more.",
+        description = ns.L["Crop the edges of each icon to hide Blizzard's default border. Higher values crop more."],
     })
     local paddingSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "padding", rowData, refresh, nil, {
-        description = "Pixel gap between adjacent icons. Negative values overlap icons.",
+        description = ns.L["Pixel gap between adjacent icons. Negative values overlap icons."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Icon Zoom", iconZoomSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Padding", paddingSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Zoom"], iconZoomSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Padding"], paddingSlider)
     )
 
     local rowYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -500, 500, 1, "yOffset", rowData, refresh, nil, {
-        description = "Vertical pixel offset for this row relative to the container's anchor.",
+        description = ns.L["Vertical pixel offset for this row relative to the container's anchor."],
     })
     local rowXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -500, 500, 1, "xOffset", rowData, refresh, nil, {
-        description = "Horizontal pixel offset for this row relative to the container's anchor.",
+        description = ns.L["Horizontal pixel offset for this row relative to the container's anchor."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Row Y-Offset", rowYOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Row X-Offset", rowXOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Row Y-Offset"], rowYOffsetSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Row X-Offset"], rowXOffsetSlider)
     )
 
     local rowOpacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1.0, 0.05, "opacity", rowData, refresh, nil, {
-        description = "Opacity of every icon in this row. 0 is fully transparent, 1 is fully opaque.",
+        description = ns.L["Opacity of every icon in this row. 0 is fully transparent, 1 is fully opaque."],
     })
     local hideDurationTextCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hideDurationText", rowData, refresh, {
-        description = "Hide the duration countdown text on every icon in this row. The swipe animation still plays.",
+        description = ns.L["Hide the duration countdown text on every icon in this row. The swipe animation still plays."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Row Opacity", rowOpacitySlider),
-        optionsAPI.BuildSettingRow(card.frame, "Hide Duration Text", hideDurationTextCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Row Opacity"], rowOpacitySlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Hide Duration Text"], hideDurationTextCheckbox)
     )
 
     local durationTextSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 50, 1, "durationSize", rowData, refresh, nil, {
-        description = "Font size for the duration countdown text on icons in this row.",
+        description = ns.L["Font size for the duration countdown text on icons in this row."],
     })
     local durationAnchorDropdown = gui:CreateFormDropdown(card.frame, nil, TEXT_ANCHOR_OPTIONS, "durationAnchor", rowData, refresh, {
-        description = "Which corner of the icon the duration text is anchored to.",
+        description = ns.L["Which corner of the icon the duration text is anchored to."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Duration Text Size", durationTextSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Anchor Duration To", durationAnchorDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Text Size"], durationTextSizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor Duration To"], durationAnchorDropdown)
     )
 
     local fontOptions = optionsAPI.GetFontList and optionsAPI.GetFontList() or nil
     if fontOptions and #fontOptions > 0 then
         local durationFontDropdown = gui:CreateFormDropdown(card.frame, nil, fontOptions, "durationFont", rowData, refresh, {
-            description = "Font used for the duration countdown text. Leave blank to inherit the global QUI font.",
+            description = ns.L["Font used for the duration countdown text. Leave blank to inherit the global QUI font."],
         })
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Duration Font", durationFontDropdown))
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Font"], durationFontDropdown))
     end
 
     local durationXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -80, 80, 1, "durationOffsetX", rowData, refresh, nil, {
-        description = "Horizontal pixel offset for the duration text from its anchor.",
+        description = ns.L["Horizontal pixel offset for the duration text from its anchor."],
     })
     local durationYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -80, 80, 1, "durationOffsetY", rowData, refresh, nil, {
-        description = "Vertical pixel offset for the duration text from its anchor.",
+        description = ns.L["Vertical pixel offset for the duration text from its anchor."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Duration X-Offset", durationXOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Duration Y-Offset", durationYOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration X-Offset"], durationXOffsetSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Y-Offset"], durationYOffsetSlider)
     )
 
     local durationTextColorPicker = gui:CreateFormColorPicker(card.frame, nil, "durationTextColor", rowData, refresh, nil, {
-        description = "Color used for the duration countdown text.",
+        description = ns.L["Color used for the duration countdown text."],
     })
     local stackTextSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 50, 1, "stackSize", rowData, refresh, nil, {
-        description = "Font size for the stack count text on icons in this row.",
+        description = ns.L["Font size for the stack count text on icons in this row."],
     })
     local hideStackTextCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hideStackText", rowData, refresh, {
-        description = "Hide item counts, item charges, spell charges, and stack count text on every icon in this row.",
+        description = ns.L["Hide item counts, item charges, spell charges, and stack count text on every icon in this row."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Duration Text Color", durationTextColorPicker),
-        optionsAPI.BuildSettingRow(card.frame, "Stack Text Size", stackTextSizeSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Text Color"], durationTextColorPicker),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Text Size"], stackTextSizeSlider)
     )
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Hide Stack Text", hideStackTextCheckbox))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Hide Stack Text"], hideStackTextCheckbox))
 
     if fontOptions and #fontOptions > 0 then
         local stackFontDropdown = gui:CreateFormDropdown(card.frame, nil, fontOptions, "stackFont", rowData, refresh, {
-            description = "Font used for the stack count text. Leave blank to inherit the global QUI font.",
+            description = ns.L["Font used for the stack count text. Leave blank to inherit the global QUI font."],
         })
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Stack Font", stackFontDropdown))
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Font"], stackFontDropdown))
     end
 
     local stackAnchorDropdown = gui:CreateFormDropdown(card.frame, nil, TEXT_ANCHOR_OPTIONS, "stackAnchor", rowData, refresh, {
-        description = "Which corner of the icon the stack count is anchored to.",
+        description = ns.L["Which corner of the icon the stack count is anchored to."],
     })
     local stackXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -80, 80, 1, "stackOffsetX", rowData, refresh, nil, {
-        description = "Horizontal pixel offset for the stack count from its anchor.",
+        description = ns.L["Horizontal pixel offset for the stack count from its anchor."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Anchor Stack To", stackAnchorDropdown),
-        optionsAPI.BuildSettingRow(card.frame, "Stack X-Offset", stackXOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor Stack To"], stackAnchorDropdown),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack X-Offset"], stackXOffsetSlider)
     )
 
     local stackYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -80, 80, 1, "stackOffsetY", rowData, refresh, nil, {
-        description = "Vertical pixel offset for the stack count from its anchor.",
+        description = ns.L["Vertical pixel offset for the stack count from its anchor."],
     })
     local stackTextColorPicker = gui:CreateFormColorPicker(card.frame, nil, "stackTextColor", rowData, refresh, nil, {
-        description = "Color used for the stack count text.",
+        description = ns.L["Color used for the stack count text."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Stack Y-Offset", stackYOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Stack Text Color", stackTextColorPicker)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Y-Offset"], stackYOffsetSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Text Color"], stackTextColorPicker)
     )
 
     local iconShapeSlider = gui:CreateFormSlider(card.frame, nil, 1.0, 2.0, 0.01, "aspectRatioCrop", rowData, refresh, nil, {
-        description = "Aspect ratio crop for icons: 1.0 is square, higher values flatten icons into wider rectangles.",
+        description = ns.L["Aspect ratio crop for icons: 1.0 is square, higher values flatten icons into wider rectangles."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Icon Shape", iconShapeSlider))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Shape"], iconShapeSlider))
 
     builder.CloseCard(card)
 end
@@ -871,13 +871,13 @@ local function ResolveEffectsContext(containerKey)
     local hideKey, hideLabel
     if containerKey == "essential" then
         hideKey = "hideEssential"
-        hideLabel = "Hide on Essential Cooldowns"
+        hideLabel = ns.L["Hide on Essential Cooldowns"]
     elseif containerKey == "utility" then
         hideKey = "hideUtility"
-        hideLabel = "Hide on Utility Cooldowns"
+        hideLabel = ns.L["Hide on Utility Cooldowns"]
     else
         hideKey = "hide_" .. containerKey
-        hideLabel = "Hide Cooldown Effects"
+        hideLabel = ns.L["Hide Cooldown Effects"]
     end
 
     local glowDB = profile.customGlow
@@ -970,7 +970,7 @@ local function BuildEmptyBarPrompt(parent, containerKey)
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", 12, -10)
-    title:SetText("This bar has no entries for your current spec")
+    title:SetText(ns.L["This bar has no entries for your current spec"])
     title:SetTextColor(1, 0.85, 0.55, 1)
 
     local body = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -978,9 +978,7 @@ local function BuildEmptyBarPrompt(parent, containerKey)
     body:SetPoint("RIGHT", frame, "RIGHT", -12, 0)
     body:SetJustifyH("LEFT")
     body:SetText(
-        "Drag spells from your spellbook into the editor below to populate it. "
-        .. "If you imported this bar from an older profile string, the entries may "
-        .. "not have travelled with the export."
+        ns.L["Drag spells from your spellbook into the editor below to populate it. If you imported this bar from an older profile string, the entries may not have travelled with the export."]
     )
 
     local function HideAndRefresh()
@@ -996,12 +994,12 @@ local function BuildEmptyBarPrompt(parent, containerKey)
         return btn
     end
 
-    AddButton("Dismiss", "ghost", function()
+    AddButton(ns.L["Dismiss"], "ghost", function()
         container._legacyResolutionDismissed = true
         HideAndRefresh()
     end)
 
-    AddButton("Delete bar", "ghost", function()
+    AddButton(ns.L["Delete bar"], "ghost", function()
         local db = QUI and QUI.db
         local profile = db and db.profile
         local containers = profile and profile.ncdm and profile.ncdm.containers
@@ -1067,7 +1065,7 @@ local function RenderEntriesSection(sectionHost, ctx)
         return nil
     end
     if not _G.QUI_EmbedCDMComposer then
-        return RenderUnavailableLabel(sectionHost, "CDM Composer unavailable (module not loaded).")
+        return RenderUnavailableLabel(sectionHost, ns.L["CDM Composer unavailable (module not loaded)."])
     end
 
     local _, bannerHeight = BuildEmptyBarPrompt(sectionHost, containerKey)
@@ -1141,7 +1139,7 @@ local function AppendHUDMinWidthSection(builder, gui, optionsAPI)
         end
     end
 
-    builder.Header("HUD Minimum Width (When Anchored)")
+    builder.Header(ns.L["HUD Minimum Width (When Anchored)"])
     local card = builder.Card()
 
     local widthRow
@@ -1155,14 +1153,14 @@ local function AppendHUDMinWidthSection(builder, gui, optionsAPI)
         refresh()
         UpdateMinWidthState()
     end, {
-        description = "Enforce a minimum width on player and target frames when they are anchored to the Cooldown Manager, so they don't collapse when the HUD shrinks.",
+        description = ns.L["Enforce a minimum width on player and target frames when they are anchored to the Cooldown Manager, so they don't collapse when the HUD shrinks."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Enable Minimum Width", enableCheckbox))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Enable Minimum Width"], enableCheckbox))
 
     local widthSlider = gui:CreateFormSlider(card.frame, nil, minWidth, maxWidth, 1, "width", hudMinWidth, refresh, nil, {
-        description = "Pixel width the CDM-anchored HUD should never shrink below.",
+        description = ns.L["Pixel width the CDM-anchored HUD should never shrink below."],
     })
-    widthRow = optionsAPI.BuildSettingRow(card.frame, "Minimum Width", widthSlider)
+    widthRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Minimum Width"], widthSlider)
     card.AddRow(widthRow)
     UpdateMinWidthState()
 
@@ -1180,7 +1178,7 @@ local function RenderLayoutSection(sectionHost, ctx)
     local optionsAPI = GetOptionsAPI()
     local tracker = ResolveTrackerDB(containerKey)
     if not gui or not optionsAPI or not tracker then
-        return RenderUnavailableLabel(sectionHost, "Layout unavailable.")
+        return RenderUnavailableLabel(sectionHost, ns.L["Layout unavailable."])
     end
 
     if containerType == "aura" or containerType == "auraBar" then
@@ -1192,11 +1190,11 @@ local function RenderLayoutSection(sectionHost, ctx)
         local enableCard = builder.Card()
         local enableDescription
         if containerType == "aura" then
-            enableDescription = "Enable this buff icon container. Disabling hides the entire container and all its icons."
+            enableDescription = ns.L["Enable this buff icon container. Disabling hides the entire container and all its icons."]
             tracker.iconDisplayMode = tracker.iconDisplayMode or "active"
             tracker.growthDirection = tracker.growthDirection or "CENTERED_HORIZONTAL"
         else
-            enableDescription = "Enable this tracked bar container. Disabling hides every bar it would otherwise render."
+            enableDescription = ns.L["Enable this tracked bar container. Disabling hides every bar it would otherwise render."]
             tracker.iconDisplayMode = tracker.iconDisplayMode or "active"
             tracker.inactiveMode = tracker.inactiveMode or "hide"
             tracker.orientation = tracker.orientation or "horizontal"
@@ -1207,30 +1205,30 @@ local function RenderLayoutSection(sectionHost, ctx)
         local enableCheckbox = gui:CreateFormCheckbox(enableCard.frame, nil, "enabled", tracker, refresh, {
             description = enableDescription,
         })
-        enableCard.AddRow(optionsAPI.BuildSettingRow(enableCard.frame, "Enable", enableCheckbox))
+        enableCard.AddRow(optionsAPI.BuildSettingRow(enableCard.frame, ns.L["Enable"], enableCheckbox))
         builder.CloseCard(enableCard)
 
         if containerType == "aura" then
-            builder.Header("General")
+            builder.Header(ns.L["General"])
             local generalCard = builder.Card()
             local displayModeDropdown = gui:CreateFormDropdown(generalCard.frame, nil, DISPLAY_MODE_OPTIONS, "iconDisplayMode", tracker, refresh, {
-                description = "When icons appear: always, only when the buff is active, or only while in combat.",
+                description = ns.L["When icons appear: always, only when the buff is active, or only while in combat."],
             })
-            generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, "Display Mode", displayModeDropdown))
+            generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Display Mode"], displayModeDropdown))
             builder.CloseCard(generalCard)
 
             builder.Spacer(6)
-            builder.Header("Appearance")
+            builder.Header(ns.L["Appearance"])
             local appearanceCard = builder.Card()
             local sizeSlider = gui:CreateFormSlider(appearanceCard.frame, nil, 20, 80, 1, "iconSize", tracker, refresh, nil, {
-                description = "Square size of each buff icon in pixels.",
+                description = ns.L["Square size of each buff icon in pixels."],
             })
             local borderSlider = gui:CreateFormSlider(appearanceCard.frame, nil, 0, 8, 1, "borderSize", tracker, refresh, nil, {
-                description = "Border thickness in pixels around each icon. Set to 0 to hide the border.",
+                description = ns.L["Border thickness in pixels around each icon. Set to 0 to hide the border."],
             })
             appearanceCard.AddRow(
-                optionsAPI.BuildSettingRow(appearanceCard.frame, "Icon Size", sizeSlider),
-                optionsAPI.BuildSettingRow(appearanceCard.frame, "Border Size", borderSlider)
+                optionsAPI.BuildSettingRow(appearanceCard.frame, ns.L["Icon Size"], sizeSlider),
+                optionsAPI.BuildSettingRow(appearanceCard.frame, ns.L["Border Size"], borderSlider)
             )
 
             -- Per-container border color via the central source enum
@@ -1238,109 +1236,109 @@ local function RenderLayoutSection(sectionHost, ctx)
             -- tracker.borderColor (prefix ""), matching the cooldown-row control.
             local auraBorderSourceW, auraBorderColorW = ns.QUI_BorderControl.Attach(
                 gui, appearanceCard.frame, tracker, "", refresh,
-                { label = "Border Color Source", colorLabel = "Border Color" }
+                { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"] }
             )
             appearanceCard.AddRow(
-                optionsAPI.BuildSettingRow(appearanceCard.frame, "Border Color Source", auraBorderSourceW),
-                optionsAPI.BuildSettingRow(appearanceCard.frame, "Border Color", auraBorderColorW)
+                optionsAPI.BuildSettingRow(appearanceCard.frame, ns.L["Border Color Source"], auraBorderSourceW),
+                optionsAPI.BuildSettingRow(appearanceCard.frame, ns.L["Border Color"], auraBorderColorW)
             )
 
             local zoomSlider = gui:CreateFormSlider(appearanceCard.frame, nil, 0, 0.2, 0.01, "zoom", tracker, refresh, nil, {
-                description = "Crop the edges of each icon to hide Blizzard's default border. Higher values crop more.",
+                description = ns.L["Crop the edges of each icon to hide Blizzard's default border. Higher values crop more."],
             })
             local paddingSlider = gui:CreateFormSlider(appearanceCard.frame, nil, -20, 20, 1, "padding", tracker, refresh, nil, {
-                description = "Pixel gap between adjacent icons. Negative values overlap icons.",
+                description = ns.L["Pixel gap between adjacent icons. Negative values overlap icons."],
             })
             appearanceCard.AddRow(
-                optionsAPI.BuildSettingRow(appearanceCard.frame, "Icon Zoom", zoomSlider),
-                optionsAPI.BuildSettingRow(appearanceCard.frame, "Icon Padding", paddingSlider)
+                optionsAPI.BuildSettingRow(appearanceCard.frame, ns.L["Icon Zoom"], zoomSlider),
+                optionsAPI.BuildSettingRow(appearanceCard.frame, ns.L["Icon Padding"], paddingSlider)
             )
 
             local opacitySlider = gui:CreateFormSlider(appearanceCard.frame, nil, 0, 1.0, 0.05, "opacity", tracker, refresh, nil, {
-                description = "Opacity of the icons. 0 is fully transparent, 1 is fully opaque.",
+                description = ns.L["Opacity of the icons. 0 is fully transparent, 1 is fully opaque."],
             })
             local aspectRatioSlider = gui:CreateFormSlider(appearanceCard.frame, nil, 1.0, 2.0, 0.01, "aspectRatioCrop", tracker, refresh, nil, {
-                description = "Aspect ratio crop: 1.0 is square, higher values flatten icons into wider rectangles.",
+                description = ns.L["Aspect ratio crop: 1.0 is square, higher values flatten icons into wider rectangles."],
             })
             appearanceCard.AddRow(
-                optionsAPI.BuildSettingRow(appearanceCard.frame, "Opacity", opacitySlider),
-                optionsAPI.BuildSettingRow(appearanceCard.frame, "Icon Shape", aspectRatioSlider)
+                optionsAPI.BuildSettingRow(appearanceCard.frame, ns.L["Opacity"], opacitySlider),
+                optionsAPI.BuildSettingRow(appearanceCard.frame, ns.L["Icon Shape"], aspectRatioSlider)
             )
             builder.CloseCard(appearanceCard)
 
             builder.Spacer(6)
-            builder.Header("Growth & Text")
+            builder.Header(ns.L["Growth & Text"])
             local textCard = builder.Card()
             local growthDropdown = gui:CreateFormDropdown(textCard.frame, nil, AURA_GROWTH_DIRECTION_OPTIONS, "growthDirection", tracker, refresh, {
-                description = "How the icon block grows from its anchor: centered horizontal, stacked up, or stacked down.",
+                description = ns.L["How the icon block grows from its anchor: centered horizontal, stacked up, or stacked down."],
             })
             local durationSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 50, 1, "durationSize", tracker, refresh, nil, {
-                description = "Font size for the duration countdown text on buff icons.",
+                description = ns.L["Font size for the duration countdown text on buff icons."],
             })
             textCard.AddRow(
-                optionsAPI.BuildSettingRow(textCard.frame, "Growth Direction", growthDropdown),
-                optionsAPI.BuildSettingRow(textCard.frame, "Duration Size", durationSizeSlider)
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Growth Direction"], growthDropdown),
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration Size"], durationSizeSlider)
             )
 
             local durationAnchorDropdown = gui:CreateFormDropdown(textCard.frame, nil, TEXT_ANCHOR_OPTIONS, "durationAnchor", tracker, refresh, {
-                description = "Which corner of the icon the duration text is anchored to.",
+                description = ns.L["Which corner of the icon the duration text is anchored to."],
             })
             local durationXSlider = gui:CreateFormSlider(textCard.frame, nil, -20, 20, 1, "durationOffsetX", tracker, refresh, nil, {
-                description = "Horizontal pixel offset for the duration text from its anchor.",
+                description = ns.L["Horizontal pixel offset for the duration text from its anchor."],
             })
             textCard.AddRow(
-                optionsAPI.BuildSettingRow(textCard.frame, "Duration Anchor", durationAnchorDropdown),
-                optionsAPI.BuildSettingRow(textCard.frame, "Duration X Offset", durationXSlider)
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration Anchor"], durationAnchorDropdown),
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration X Offset"], durationXSlider)
             )
 
             local durationYSlider = gui:CreateFormSlider(textCard.frame, nil, -20, 20, 1, "durationOffsetY", tracker, refresh, nil, {
-                description = "Vertical pixel offset for the duration text from its anchor.",
+                description = ns.L["Vertical pixel offset for the duration text from its anchor."],
             })
             local stackSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 50, 1, "stackSize", tracker, refresh, nil, {
-                description = "Font size for the stack count text on buff icons.",
+                description = ns.L["Font size for the stack count text on buff icons."],
             })
             textCard.AddRow(
-                optionsAPI.BuildSettingRow(textCard.frame, "Duration Y Offset", durationYSlider),
-                optionsAPI.BuildSettingRow(textCard.frame, "Stack Size", stackSizeSlider)
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration Y Offset"], durationYSlider),
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack Size"], stackSizeSlider)
             )
 
             local stackAnchorDropdown = gui:CreateFormDropdown(textCard.frame, nil, TEXT_ANCHOR_OPTIONS, "stackAnchor", tracker, refresh, {
-                description = "Which corner of the icon the stack count is anchored to.",
+                description = ns.L["Which corner of the icon the stack count is anchored to."],
             })
             local stackXSlider = gui:CreateFormSlider(textCard.frame, nil, -20, 20, 1, "stackOffsetX", tracker, refresh, nil, {
-                description = "Horizontal pixel offset for the stack count from its anchor.",
+                description = ns.L["Horizontal pixel offset for the stack count from its anchor."],
             })
             textCard.AddRow(
-                optionsAPI.BuildSettingRow(textCard.frame, "Stack Anchor", stackAnchorDropdown),
-                optionsAPI.BuildSettingRow(textCard.frame, "Stack X Offset", stackXSlider)
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack Anchor"], stackAnchorDropdown),
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack X Offset"], stackXSlider)
             )
 
             local stackYSlider = gui:CreateFormSlider(textCard.frame, nil, -20, 20, 1, "stackOffsetY", tracker, refresh, nil, {
-                description = "Vertical pixel offset for the stack count from its anchor.",
+                description = ns.L["Vertical pixel offset for the stack count from its anchor."],
             })
-            textCard.AddRow(optionsAPI.BuildSettingRow(textCard.frame, "Stack Y Offset", stackYSlider))
+            textCard.AddRow(optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack Y Offset"], stackYSlider))
             builder.CloseCard(textCard)
         else
-            builder.Header("General")
+            builder.Header(ns.L["General"])
             local generalCard = builder.Card()
             local displayModeDropdown = gui:CreateFormDropdown(generalCard.frame, nil, DISPLAY_MODE_OPTIONS, "iconDisplayMode", tracker, refresh, {
-                description = "When bars appear: always, only while the tracked buff/debuff is active, or only while in combat.",
+                description = ns.L["When bars appear: always, only while the tracked buff/debuff is active, or only while in combat."],
             })
             local hideIconCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "hideIcon", tracker, refresh, {
-                description = "Hide the spell icon next to each bar, showing just the bar and text.",
+                description = ns.L["Hide the spell icon next to each bar, showing just the bar and text."],
             })
             generalCard.AddRow(
-                optionsAPI.BuildSettingRow(generalCard.frame, "Display Mode", displayModeDropdown),
-                optionsAPI.BuildSettingRow(generalCard.frame, "Hide Icon", hideIconCheckbox)
+                optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Display Mode"], displayModeDropdown),
+                optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Hide Icon"], hideIconCheckbox)
             )
             local hideTextCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "hideText", tracker, refresh, {
-                description = "Hide the duration and spell-name text on every bar in this container.",
+                description = ns.L["Hide the duration and spell-name text on every bar in this container."],
             })
-            generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, "Hide Text", hideTextCheckbox))
+            generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Hide Text"], hideTextCheckbox))
             builder.CloseCard(generalCard)
 
             builder.Spacer(6)
-            builder.Header("Inactive Behavior")
+            builder.Header(ns.L["Inactive Behavior"])
             local inactiveCard = builder.Card()
             local inactiveAlphaRow, desaturateRow, reserveSlotRow
             local function updateInactiveRowState()
@@ -1360,37 +1358,37 @@ local function RenderLayoutSection(sectionHost, ctx)
                 refresh()
                 updateInactiveRowState()
             end, {
-                description = "What happens to bars when the tracked buff is not active: always show, fade to the alpha below, or hide entirely.",
+                description = ns.L["What happens to bars when the tracked buff is not active: always show, fade to the alpha below, or hide entirely."],
             })
             local inactiveAlphaSlider = gui:CreateFormSlider(inactiveCard.frame, nil, 0, 1, 0.05, "inactiveAlpha", tracker, refresh, nil, {
-                description = "Opacity applied to bars when Inactive Buffs mode is Fade. Ignored in Always Show / Hide.",
+                description = ns.L["Opacity applied to bars when Inactive Buffs mode is Fade. Ignored in Always Show / Hide."],
             })
-            inactiveAlphaRow = optionsAPI.BuildSettingRow(inactiveCard.frame, "Inactive Alpha", inactiveAlphaSlider)
+            inactiveAlphaRow = optionsAPI.BuildSettingRow(inactiveCard.frame, ns.L["Inactive Alpha"], inactiveAlphaSlider)
             inactiveCard.AddRow(
-                optionsAPI.BuildSettingRow(inactiveCard.frame, "Inactive Buffs", inactiveModeDropdown),
+                optionsAPI.BuildSettingRow(inactiveCard.frame, ns.L["Inactive Buffs"], inactiveModeDropdown),
                 inactiveAlphaRow
             )
 
             local desaturateCheckbox = gui:CreateFormCheckbox(inactiveCard.frame, nil, "desaturateInactive", tracker, refresh, {
-                description = "Desaturate the icon and bar fill when the tracked buff is inactive. Applies in Always Show and Fade modes.",
+                description = ns.L["Desaturate the icon and bar fill when the tracked buff is inactive. Applies in Always Show and Fade modes."],
             })
             local reserveSlotCheckbox = gui:CreateFormCheckbox(inactiveCard.frame, nil, "reserveSlotWhenInactive", tracker, refresh, {
-                description = "Keep the bar's slot reserved (blank) when hidden, so active bars don't shift position. Only applies in Hide mode.",
+                description = ns.L["Keep the bar's slot reserved (blank) when hidden, so active bars don't shift position. Only applies in Hide mode."],
             })
-            desaturateRow = optionsAPI.BuildSettingRow(inactiveCard.frame, "Desaturate Inactive", desaturateCheckbox)
-            reserveSlotRow = optionsAPI.BuildSettingRow(inactiveCard.frame, "Reserve Slot When Inactive", reserveSlotCheckbox)
+            desaturateRow = optionsAPI.BuildSettingRow(inactiveCard.frame, ns.L["Desaturate Inactive"], desaturateCheckbox)
+            reserveSlotRow = optionsAPI.BuildSettingRow(inactiveCard.frame, ns.L["Reserve Slot When Inactive"], reserveSlotCheckbox)
             inactiveCard.AddRow(desaturateRow, reserveSlotRow)
             builder.CloseCard(inactiveCard)
             updateInactiveRowState()
 
             builder.Spacer(6)
-            builder.Header("Dimensions & Appearance")
+            builder.Header(ns.L["Dimensions & Appearance"])
             local dimensionsCard = builder.Card()
             local heightSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, 2, 48, 1, "barHeight", tracker, refresh, nil, {
-                description = "Height of each bar in pixels.",
+                description = ns.L["Height of each bar in pixels."],
             })
             local widthSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, 100, 400, 1, "barWidth", tracker, refresh, nil, {
-                description = "Width of each bar in pixels. Ignored when Auto Width From Anchor is on.",
+                description = ns.L["Width of each bar in pixels. Ignored when Auto Width From Anchor is on."],
             })
             local barWidthRow, autoWidthOffsetRow
             local function updateAutoWidthState()
@@ -1398,63 +1396,63 @@ local function RenderLayoutSection(sectionHost, ctx)
                 if barWidthRow then barWidthRow:SetEnabled(not autoWidth) end
                 if autoWidthOffsetRow then autoWidthOffsetRow:SetEnabled(autoWidth) end
             end
-            barWidthRow = optionsAPI.BuildSettingRow(dimensionsCard.frame, "Bar Width", widthSlider)
+            barWidthRow = optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Bar Width"], widthSlider)
             dimensionsCard.AddRow(
-                optionsAPI.BuildSettingRow(dimensionsCard.frame, "Bar Height", heightSlider),
+                optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Bar Height"], heightSlider),
                 barWidthRow
             )
 
             local borderSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, 0, 4, 1, "borderSize", tracker, refresh, nil, {
-                description = "Border thickness in pixels around each bar. Set to 0 to hide.",
+                description = ns.L["Border thickness in pixels around each bar. Set to 0 to hide."],
             })
             local spacingSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, 0, 20, 1, "spacing", tracker, refresh, nil, {
-                description = "Pixel gap between adjacent bars in this container.",
+                description = ns.L["Pixel gap between adjacent bars in this container."],
             })
             dimensionsCard.AddRow(
-                optionsAPI.BuildSettingRow(dimensionsCard.frame, "Border Size", borderSlider),
-                optionsAPI.BuildSettingRow(dimensionsCard.frame, "Bar Spacing", spacingSlider)
+                optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Border Size"], borderSlider),
+                optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Bar Spacing"], spacingSlider)
             )
 
             local textSizeSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, 8, 24, 1, "textSize", tracker, refresh, nil, {
-                description = "Font size used for the duration and spell-name text on each bar.",
+                description = ns.L["Font size used for the duration and spell-name text on each bar."],
             })
             local textureOptions = BuildStatusbarTextureOptions()
             if #textureOptions > 0 then
                 local textureDropdown = gui:CreateFormDropdown(dimensionsCard.frame, nil, textureOptions, "texture", tracker, refresh, {
-                    description = "Statusbar texture used for the bar fill.",
+                    description = ns.L["Statusbar texture used for the bar fill."],
                 })
                 dimensionsCard.AddRow(
-                    optionsAPI.BuildSettingRow(dimensionsCard.frame, "Text Size", textSizeSlider),
-                    optionsAPI.BuildSettingRow(dimensionsCard.frame, "Bar Texture", textureDropdown)
+                    optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Text Size"], textSizeSlider),
+                    optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Bar Texture"], textureDropdown)
                 )
             else
-                dimensionsCard.AddRow(optionsAPI.BuildSettingRow(dimensionsCard.frame, "Text Size", textSizeSlider))
+                dimensionsCard.AddRow(optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Text Size"], textSizeSlider))
             end
 
             local autoWidthCheckbox = gui:CreateFormCheckbox(dimensionsCard.frame, nil, "autoWidth", tracker, function()
                 refresh()
                 updateAutoWidthState()
             end, {
-                description = "Stretch bars to match the width of the frame they anchor to (e.g. the player frame).",
+                description = ns.L["Stretch bars to match the width of the frame they anchor to (e.g. the player frame)."],
             })
             local autoWidthOffsetSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, -20, 20, 1, "autoWidthOffset", tracker, refresh, nil, {
-                description = "Pixel adjustment applied to the auto-matched width. Useful for aligning with a frame's inner or outer edge.",
+                description = ns.L["Pixel adjustment applied to the auto-matched width. Useful for aligning with a frame's inner or outer edge."],
             })
-            autoWidthOffsetRow = optionsAPI.BuildSettingRow(dimensionsCard.frame, "Auto Width Adjust", autoWidthOffsetSlider)
+            autoWidthOffsetRow = optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Auto Width Adjust"], autoWidthOffsetSlider)
             dimensionsCard.AddRow(
-                optionsAPI.BuildSettingRow(dimensionsCard.frame, "Auto Width From Anchor", autoWidthCheckbox),
+                optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Auto Width From Anchor"], autoWidthCheckbox),
                 autoWidthOffsetRow
             )
             updateAutoWidthState()
 
             local stackDirectionDropdown = gui:CreateFormDropdown(dimensionsCard.frame, nil, STACK_DIRECTION_OPTIONS, "growUp", tracker, refresh, {
-                description = "Direction new bars are added from the anchor: stacking upward/rightward or downward/leftward.",
+                description = ns.L["Direction new bars are added from the anchor: stacking upward/rightward or downward/leftward."],
             })
-            dimensionsCard.AddRow(optionsAPI.BuildSettingRow(dimensionsCard.frame, "Stack Direction", stackDirectionDropdown))
+            dimensionsCard.AddRow(optionsAPI.BuildSettingRow(dimensionsCard.frame, ns.L["Stack Direction"], stackDirectionDropdown))
             builder.CloseCard(dimensionsCard)
 
             builder.Spacer(6)
-            builder.Header("Colors")
+            builder.Header(ns.L["Colors"])
             local colorCard = builder.Card()
             local barColorRow
             local function updateBarColorState()
@@ -1466,33 +1464,33 @@ local function RenderLayoutSection(sectionHost, ctx)
                 refresh()
                 updateBarColorState()
             end, {
-                description = "Color each bar by the player's class instead of the custom Bar Color below.",
+                description = ns.L["Color each bar by the player's class instead of the custom Bar Color below."],
             })
             local barColorPicker = gui:CreateFormColorPicker(colorCard.frame, nil, "barColor", tracker, refresh, nil, {
-                description = "Fallback bar color used when Use Class Color is off.",
+                description = ns.L["Fallback bar color used when Use Class Color is off."],
             })
-            barColorRow = optionsAPI.BuildSettingRow(colorCard.frame, "Bar Color (Fallback)", barColorPicker)
+            barColorRow = optionsAPI.BuildSettingRow(colorCard.frame, ns.L["Bar Color (Fallback)"], barColorPicker)
             colorCard.AddRow(
-                optionsAPI.BuildSettingRow(colorCard.frame, "Use Class Color", classColorCheckbox),
+                optionsAPI.BuildSettingRow(colorCard.frame, ns.L["Use Class Color"], classColorCheckbox),
                 barColorRow
             )
             updateBarColorState()
 
             local barOpacitySlider = gui:CreateFormSlider(colorCard.frame, nil, 0, 1, 0.05, "barOpacity", tracker, refresh, nil, {
-                description = "Opacity of the bar fill. 0 is fully transparent, 1 is fully opaque.",
+                description = ns.L["Opacity of the bar fill. 0 is fully transparent, 1 is fully opaque."],
             })
             local backgroundColorPicker = gui:CreateFormColorPicker(colorCard.frame, nil, "bgColor", tracker, refresh, nil, {
-                description = "Backdrop color drawn behind the bar fill.",
+                description = ns.L["Backdrop color drawn behind the bar fill."],
             })
             colorCard.AddRow(
-                optionsAPI.BuildSettingRow(colorCard.frame, "Bar Opacity", barOpacitySlider),
-                optionsAPI.BuildSettingRow(colorCard.frame, "Background Color", backgroundColorPicker)
+                optionsAPI.BuildSettingRow(colorCard.frame, ns.L["Bar Opacity"], barOpacitySlider),
+                optionsAPI.BuildSettingRow(colorCard.frame, ns.L["Background Color"], backgroundColorPicker)
             )
 
             local backgroundOpacitySlider = gui:CreateFormSlider(colorCard.frame, nil, 0, 1, 0.1, "bgOpacity", tracker, refresh, nil, {
-                description = "Opacity of the backdrop fill behind the bar.",
+                description = ns.L["Opacity of the backdrop fill behind the bar."],
             })
-            colorCard.AddRow(optionsAPI.BuildSettingRow(colorCard.frame, "Background Opacity", backgroundOpacitySlider))
+            colorCard.AddRow(optionsAPI.BuildSettingRow(colorCard.frame, ns.L["Background Opacity"], backgroundOpacitySlider))
 
             -- Per-container bar border color via the central source enum
             -- (inherit/theme/class/custom). Binds tracker.borderColorSource /
@@ -1500,16 +1498,16 @@ local function RenderLayoutSection(sectionHost, ctx)
             -- ConfigureBar via GetSkinBorderColor(settings, "").
             local barBorderSourceW, barBorderColorW = ns.QUI_BorderControl.Attach(
                 gui, colorCard.frame, tracker, "", refresh,
-                { label = "Border Color Source", colorLabel = "Border Color" }
+                { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"] }
             )
             colorCard.AddRow(
-                optionsAPI.BuildSettingRow(colorCard.frame, "Border Color Source", barBorderSourceW),
-                optionsAPI.BuildSettingRow(colorCard.frame, "Border Color", barBorderColorW)
+                optionsAPI.BuildSettingRow(colorCard.frame, ns.L["Border Color Source"], barBorderSourceW),
+                optionsAPI.BuildSettingRow(colorCard.frame, ns.L["Border Color"], barBorderColorW)
             )
             builder.CloseCard(colorCard)
 
             builder.Spacer(6)
-            builder.Header("Orientation")
+            builder.Header(ns.L["Orientation"])
             local orientationCard = builder.Card()
             local fillDirectionRow, iconPositionRow, showTextRow
             local function updateOrientationRowState()
@@ -1529,25 +1527,25 @@ local function RenderLayoutSection(sectionHost, ctx)
                 refresh()
                 updateOrientationRowState()
             end, {
-                description = "Render bars horizontally (width fills left to right) or vertically (height fills upward). Vertical mode enables the controls below.",
+                description = ns.L["Render bars horizontally (width fills left to right) or vertically (height fills upward). Vertical mode enables the controls below."],
             })
             local fillDirectionDropdown = gui:CreateFormDropdown(orientationCard.frame, nil, BAR_FILL_DIRECTION_OPTIONS, "fillDirection", tracker, refresh, {
-                description = "For vertical bars, whether remaining-duration fills upward (empty to full from the bottom) or downward (full to empty from the top).",
+                description = ns.L["For vertical bars, whether remaining-duration fills upward (empty to full from the bottom) or downward (full to empty from the top)."],
             })
-            fillDirectionRow = optionsAPI.BuildSettingRow(orientationCard.frame, "Fill Direction", fillDirectionDropdown)
+            fillDirectionRow = optionsAPI.BuildSettingRow(orientationCard.frame, ns.L["Fill Direction"], fillDirectionDropdown)
             orientationCard.AddRow(
-                optionsAPI.BuildSettingRow(orientationCard.frame, "Bar Orientation", orientationDropdown),
+                optionsAPI.BuildSettingRow(orientationCard.frame, ns.L["Bar Orientation"], orientationDropdown),
                 fillDirectionRow
             )
 
             local iconPositionDropdown = gui:CreateFormDropdown(orientationCard.frame, nil, BAR_ICON_POSITION_OPTIONS, "iconPosition", tracker, refresh, {
-                description = "For vertical bars, whether the spell icon sits at the top or the bottom of each bar.",
+                description = ns.L["For vertical bars, whether the spell icon sits at the top or the bottom of each bar."],
             })
             local showTextCheckbox = gui:CreateFormCheckbox(orientationCard.frame, nil, "showTextOnVertical", tracker, refresh, {
-                description = "Render the duration and spell-name text on vertical bars. Turn off for icon-only vertical bars.",
+                description = ns.L["Render the duration and spell-name text on vertical bars. Turn off for icon-only vertical bars."],
             })
-            iconPositionRow = optionsAPI.BuildSettingRow(orientationCard.frame, "Icon Position", iconPositionDropdown)
-            showTextRow = optionsAPI.BuildSettingRow(orientationCard.frame, "Show Text (Vertical)", showTextCheckbox)
+            iconPositionRow = optionsAPI.BuildSettingRow(orientationCard.frame, ns.L["Icon Position"], iconPositionDropdown)
+            showTextRow = optionsAPI.BuildSettingRow(orientationCard.frame, ns.L["Show Text (Vertical)"], showTextCheckbox)
             orientationCard.AddRow(iconPositionRow, showTextRow)
             builder.CloseCard(orientationCard)
             updateOrientationRowState()
@@ -1568,9 +1566,9 @@ local function RenderLayoutSection(sectionHost, ctx)
 
         local enableCard = builder.Card()
         local enableCheckbox = gui:CreateFormCheckbox(enableCard.frame, nil, "enabled", tracker, refresh, {
-            description = "Enable this cooldown container. Disabling hides all rows and icons it would otherwise render.",
+            description = ns.L["Enable this cooldown container. Disabling hides all rows and icons it would otherwise render."],
         })
-        enableCard.AddRow(optionsAPI.BuildSettingRow(enableCard.frame, "Enable", enableCheckbox))
+        enableCard.AddRow(optionsAPI.BuildSettingRow(enableCard.frame, ns.L["Enable"], enableCheckbox))
         builder.CloseCard(enableCard)
 
         builder.Spacer(6)
@@ -1593,7 +1591,7 @@ local function RenderLayoutSection(sectionHost, ctx)
         return builder.Height()
     end
 
-    return RenderUnavailableLabel(sectionHost, "Layout unavailable.")
+    return RenderUnavailableLabel(sectionHost, ns.L["Layout unavailable."])
 end
 
 local function RenderFiltersSection(sectionHost, ctx)
@@ -1606,7 +1604,7 @@ local function RenderFiltersSection(sectionHost, ctx)
     end
 
     if not tracker or tracker.builtIn then
-        return RenderUnavailableLabel(sectionHost, "Filters unavailable.")
+        return RenderUnavailableLabel(sectionHost, ns.L["Filters unavailable."])
     end
 
     -- Bar-shape containers expose visibility through the Layout tab's
@@ -1620,12 +1618,12 @@ local function RenderFiltersSection(sectionHost, ctx)
             sectionHost,
             ctx,
             "filters",
-            "Bar containers expose visibility through their Layout display and inactive-behavior settings instead of a separate Filters tab."
+            ns.L["Bar containers expose visibility through their Layout display and inactive-behavior settings instead of a separate Filters tab."]
         )
     end
 
     if not gui or not optionsAPI then
-        return RenderUnavailableLabel(sectionHost, "Filters unavailable.")
+        return RenderUnavailableLabel(sectionHost, ns.L["Filters unavailable."])
     end
 
     local builder = CreateSectionBuilder(sectionHost, ctx, "filters")
@@ -1640,18 +1638,18 @@ local function RenderFiltersSection(sectionHost, ctx)
         RefreshContainer(containerKey)
     end
 
-    builder.Header("Visibility Filters")
+    builder.Header(ns.L["Visibility Filters"])
     local card = builder.Card()
 
     local hideGCDCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hideGCD", tracker, refresh, {
-        description = "Hide icons for spells whose only remaining cooldown is the global cooldown.",
+        description = ns.L["Hide icons for spells whose only remaining cooldown is the global cooldown."],
     })
     local hideNonUsableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hideNonUsable", tracker, refresh, {
-        description = "Hide icons for spells you cannot cast right now (wrong form, out of range, silenced, etc.).",
+        description = ns.L["Hide icons for spells you cannot cast right now (wrong form, out of range, silenced, etc.)."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Hide GCD", hideGCDCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Hide Non-Usable", hideNonUsableCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Hide GCD"], hideGCDCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Hide Non-Usable"], hideNonUsableCheckbox)
     )
 
     local showOnlyOnCooldownCheckbox
@@ -1687,7 +1685,7 @@ local function RenderFiltersSection(sectionHost, ctx)
         updateNoDesaturateState()
         refresh()
     end, {
-        description = "Only show icons while they are on cooldown. Off-cooldown spells are hidden entirely.",
+        description = ns.L["Only show icons while they are on cooldown. Off-cooldown spells are hidden entirely."],
     })
     showOnlyOffCooldownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyWhenOffCooldown", tracker, function()
         if tracker.showOnlyWhenOffCooldown then
@@ -1707,11 +1705,11 @@ local function RenderFiltersSection(sectionHost, ctx)
         updateNoDesaturateState()
         refresh()
     end, {
-        description = "Only show icons when they are off cooldown and ready to cast.",
+        description = ns.L["Only show icons when they are off cooldown and ready to cast."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Only On Cooldown", showOnlyOnCooldownCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Show Only Off Cooldown", showOnlyOffCooldownCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Only On Cooldown"], showOnlyOnCooldownCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Only Off Cooldown"], showOnlyOffCooldownCheckbox)
     )
 
     showOnlyWhenActiveCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyWhenActive", tracker, function()
@@ -1732,14 +1730,14 @@ local function RenderFiltersSection(sectionHost, ctx)
         updateNoDesaturateState()
         refresh()
     end, {
-        description = "Only show icons while the linked buff/debuff is currently active on the player or their target.",
+        description = ns.L["Only show icons while the linked buff/debuff is currently active on the player or their target."],
     })
     local showOnlyInCombatCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyInCombat", tracker, refresh, {
-        description = "Only show icons while you are in combat.",
+        description = ns.L["Only show icons while you are in combat."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Only When Active", showOnlyWhenActiveCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Show Only In Combat", showOnlyInCombatCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Only When Active"], showOnlyWhenActiveCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Only In Combat"], showOnlyInCombatCheckbox)
     )
 
     local dynamicLayoutCheckbox = gui:CreateFormCheckbox(card.frame, nil, "dynamicLayout", tracker, function()
@@ -1748,18 +1746,18 @@ local function RenderFiltersSection(sectionHost, ctx)
         end
         refresh()
     end, {
-        description = "Collapse the row when filters hide icons so remaining icons pack together. Turn off to keep slots reserved in their original positions.",
+        description = ns.L["Collapse the row when filters hide icons so remaining icons pack together. Turn off to keep slots reserved in their original positions."],
     })
     local showItemChargesCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showItemCharges", tracker, refresh, {
-        description = "Show the remaining-charges counter on tracked items and spells with charges.",
+        description = ns.L["Show the remaining-charges counter on tracked items and spells with charges."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Dynamic Layout (Collapse Hidden)", dynamicLayoutCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Show Item Charges", showItemChargesCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Dynamic Layout (Collapse Hidden)"], dynamicLayoutCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Item Charges"], showItemChargesCheckbox)
     )
 
     local showRechargeSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showRechargeSwipe", tracker, refresh, {
-        description = "Show the recharge swipe animation on spells with charges while at least one charge is regenerating.",
+        description = ns.L["Show the recharge swipe animation on spells with charges while at least one charge is regenerating."],
     })
     noDesaturateCheckbox = gui:CreateFormCheckbox(card.frame, nil, "noDesaturateWithCharges", tracker, function()
         if not tracker.showOnlyOnCooldown then
@@ -1770,19 +1768,19 @@ local function RenderFiltersSection(sectionHost, ctx)
         end
         refresh()
     end, {
-        description = "Keep charge-based spells in full color even while regenerating the next charge, ignoring the container's desaturate-on-cooldown rule.",
+        description = ns.L["Keep charge-based spells in full color even while regenerating the next charge, ignoring the container's desaturate-on-cooldown rule."],
     })
-    noDesaturateRow = optionsAPI.BuildSettingRow(card.frame, "No Desaturate With Charges", noDesaturateCheckbox)
+    noDesaturateRow = optionsAPI.BuildSettingRow(card.frame, ns.L["No Desaturate With Charges"], noDesaturateCheckbox)
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Recharge Swipe", showRechargeSwipeCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Recharge Swipe"], showRechargeSwipeCheckbox),
         noDesaturateRow
     )
     updateNoDesaturateState()
 
     local qualityCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showProfessionQuality", tracker, refresh, {
-        description = "Show the profession-quality indicator on crafted item icons in this container.",
+        description = ns.L["Show the profession-quality indicator on crafted item icons in this container."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Show Crafted Item Quality", qualityCheckbox))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Show Crafted Item Quality"], qualityCheckbox))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -1798,7 +1796,7 @@ local function RenderPerSpecSection(sectionHost, ctx)
     end
 
     if not tracker or tracker.builtIn or not gui or not optionsAPI then
-        return RenderUnavailableLabel(sectionHost, "Per-Spec entries unavailable.")
+        return RenderUnavailableLabel(sectionHost, ns.L["Per-Spec entries unavailable."])
     end
 
     local builder = CreateSectionBuilder(sectionHost, ctx, "perspec")
@@ -1806,7 +1804,7 @@ local function RenderPerSpecSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Per-Spec Entries")
+    builder.Header(ns.L["Per-Spec Entries"])
     local card = builder.Card()
     local specSpecificCheckbox = gui:CreateFormCheckbox(card.frame, nil, "specSpecific", tracker, function()
         if ns.CDMSpellData and ns.CDMSpellData.OnSpecSpecificToggled then
@@ -1814,9 +1812,9 @@ local function RenderPerSpecSection(sectionHost, ctx)
         end
         RefreshContainer(containerKey)
     end, {
-        description = "Store separate entry lists per specialization, so each spec shows a different set of tracked spells. The current list is swapped in on spec change.",
+        description = ns.L["Store separate entry lists per specialization, so each spec shows a different set of tracked spells. The current list is swapped in on spec change."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Spec-Specific Entries", specSpecificCheckbox))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Spec-Specific Entries"], specSpecificCheckbox))
     builder.CloseCard(card)
     return builder.Height()
 end
@@ -1835,14 +1833,14 @@ local function RenderEffectsSection(sectionHost, ctx)
             sectionHost,
             ctx,
             "effects",
-            "Buff bar containers do not currently expose separate Effects controls."
+            ns.L["Buff bar containers do not currently expose separate Effects controls."]
         )
     end
 
     if containerType == "aura" then
         local profile = GetProfileDB()
         if not gui or not optionsAPI or not profile then
-            return RenderUnavailableLabel(sectionHost, "Effects unavailable.")
+            return RenderUnavailableLabel(sectionHost, ns.L["Effects unavailable."])
         end
         if type(profile.customGlow) ~= "table" then
             profile.customGlow = {}
@@ -1862,24 +1860,24 @@ local function RenderEffectsSection(sectionHost, ctx)
             return nil
         end
 
-        builder.Header("Effects")
+        builder.Header(ns.L["Effects"])
         local card = builder.Card()
 
         local buffSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showBuffIconSwipe", profile.cooldownSwipe, RefreshSwipe, {
-            description = "Play a swipe animation on buff/debuff icons in this container to represent remaining duration.",
+            description = ns.L["Play a swipe animation on buff/debuff icons in this container to represent remaining duration."],
         })
         local pandemicDebuffCheckbox = gui:CreateFormCheckbox(card.frame, nil, "buffPandemicDebuffEnabled", profile.customGlow, RefreshGlows, {
-            description = "Emit a refresh glow during the pandemic window (last ~30% remaining) of harmful auras like DoTs and debuffs.",
+            description = ns.L["Emit a refresh glow during the pandemic window (last ~30% remaining) of harmful auras like DoTs and debuffs."],
         })
         local pandemicBuffCheckbox = gui:CreateFormCheckbox(card.frame, nil, "buffPandemicBuffEnabled", profile.customGlow, RefreshGlows, {
-            description = "Emit a refresh glow during the pandemic window (last ~30% remaining) of helpful auras like HoTs and self-buffs.",
+            description = ns.L["Emit a refresh glow during the pandemic window (last ~30% remaining) of helpful auras like HoTs and self-buffs."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Buff/Debuff Swipe", buffSwipeCheckbox)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Buff/Debuff Swipe"], buffSwipeCheckbox)
         )
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Pandemic Glow — Debuffs/DoTs", pandemicDebuffCheckbox),
-            optionsAPI.BuildSettingRow(card.frame, "Pandemic Glow — Buffs/HoTs", pandemicBuffCheckbox)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Pandemic Glow — Debuffs/DoTs"], pandemicDebuffCheckbox),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Pandemic Glow — Buffs/HoTs"], pandemicBuffCheckbox)
         )
 
         local overlayColorPicker
@@ -1896,14 +1894,14 @@ local function RenderEffectsSection(sectionHost, ctx)
             RefreshSwipe()
             UpdateOverlayColorState()
         end, {
-            description = "How the buff/debuff overlay is colored: Blizzard default, class color, UI accent, or the custom swatch.",
+            description = ns.L["How the buff/debuff overlay is colored: Blizzard default, class color, UI accent, or the custom swatch."],
         })
         overlayColorPicker = gui:CreateFormColorPicker(card.frame, nil, "overlayColor", profile.cooldownSwipe, RefreshSwipe, nil, {
-            description = "Custom color used for the buff/debuff overlay when Buff Overlay Color is set to Custom.",
+            description = ns.L["Custom color used for the buff/debuff overlay when Buff Overlay Color is set to Custom."],
         })
-        overlayColorRow = optionsAPI.BuildSettingRow(card.frame, "Overlay Custom Color", overlayColorPicker)
+        overlayColorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Overlay Custom Color"], overlayColorPicker)
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Buff Overlay Color", overlayModeDropdown),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Buff Overlay Color"], overlayModeDropdown),
             overlayColorRow
         )
         UpdateOverlayColorState()
@@ -1914,7 +1912,7 @@ local function RenderEffectsSection(sectionHost, ctx)
     local effectsCtx = ResolveEffectsContext(containerKey)
 
     if not gui or not optionsAPI or not effectsCtx then
-        return RenderUnavailableLabel(sectionHost, "Effects unavailable.")
+        return RenderUnavailableLabel(sectionHost, ns.L["Effects unavailable."])
     end
 
     local builder = CreateSectionBuilder(sectionHost, ctx, "effects")
@@ -1922,38 +1920,38 @@ local function RenderEffectsSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Cooldown Swipe")
+    builder.Header(ns.L["Cooldown Swipe"])
     local swipeCard = builder.Card()
     local swipeRadialCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showCooldownSwipe", effectsCtx.swipeDB, RefreshSwipe, {
-        description = "Show the clockwise cooldown swipe animation on icons in this container.",
+        description = ns.L["Show the clockwise cooldown swipe animation on icons in this container."],
     })
     local gcdSwipeCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showGCDSwipe", effectsCtx.swipeDB, RefreshSwipe, {
-        description = "Also play the swipe during global cooldowns. Turn off to reserve the animation for real cooldowns only.",
+        description = ns.L["Also play the swipe during global cooldowns. Turn off to reserve the animation for real cooldowns only."],
     })
     swipeCard.AddRow(
-        optionsAPI.BuildSettingRow(swipeCard.frame, "Radial Darkening", swipeRadialCheckbox),
-        optionsAPI.BuildSettingRow(swipeCard.frame, "GCD Swipe", gcdSwipeCheckbox)
+        optionsAPI.BuildSettingRow(swipeCard.frame, ns.L["Radial Darkening"], swipeRadialCheckbox),
+        optionsAPI.BuildSettingRow(swipeCard.frame, ns.L["GCD Swipe"], gcdSwipeCheckbox)
     )
     local buffSwipeCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showBuffSwipe", effectsCtx.swipeDB, RefreshSwipe, {
-        description = "Play a swipe animation on buff/debuff icons to represent remaining duration.",
+        description = ns.L["Play a swipe animation on buff/debuff icons to represent remaining duration."],
     })
     local cooldownIconAuraPhaseCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showCooldownIconAuraPhase", effectsCtx.swipeDB, RefreshSwipe, {
-        description = "Let cooldown icons show their linked buff/debuff phase before switching to recharge or cooldown.",
+        description = ns.L["Let cooldown icons show their linked buff/debuff phase before switching to recharge or cooldown."],
     })
     local rechargeEdgeCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showRechargeEdge", effectsCtx.swipeDB, RefreshSwipe, {
-        description = "Show a bright edge on the active recharge slice for spells with charges.",
+        description = ns.L["Show a bright edge on the active recharge slice for spells with charges."],
     })
     swipeCard.AddRow(
-        optionsAPI.BuildSettingRow(swipeCard.frame, "Buff/Debuff Swipe", buffSwipeCheckbox),
-        optionsAPI.BuildSettingRow(swipeCard.frame, "Show Buff/Debuff Phase on Cooldown Icons", cooldownIconAuraPhaseCheckbox)
+        optionsAPI.BuildSettingRow(swipeCard.frame, ns.L["Buff/Debuff Swipe"], buffSwipeCheckbox),
+        optionsAPI.BuildSettingRow(swipeCard.frame, ns.L["Show Buff/Debuff Phase on Cooldown Icons"], cooldownIconAuraPhaseCheckbox)
     )
     swipeCard.AddRow(
-        optionsAPI.BuildSettingRow(swipeCard.frame, "Recharge Edge", rechargeEdgeCheckbox)
+        optionsAPI.BuildSettingRow(swipeCard.frame, ns.L["Recharge Edge"], rechargeEdgeCheckbox)
     )
     builder.CloseCard(swipeCard)
     builder.Spacer(10)
 
-    builder.Header("Overlay Color")
+    builder.Header(ns.L["Overlay Color"])
     local overlayCard = builder.Card()
     local overlayColorPicker
     local swipeColorPicker
@@ -1975,44 +1973,44 @@ local function RenderEffectsSection(sectionHost, ctx)
         RefreshSwipe()
         UpdateSwipeColorStates()
     end, {
-        description = "How the buff/debuff overlay is colored: Blizzard default, class color, UI accent, or the custom swatch.",
+        description = ns.L["How the buff/debuff overlay is colored: Blizzard default, class color, UI accent, or the custom swatch."],
     })
     overlayColorPicker = gui:CreateFormColorPicker(overlayCard.frame, nil, "overlayColor", effectsCtx.swipeDB, RefreshSwipe, nil, {
-        description = "Custom color used for the buff/debuff overlay when Buff Overlay Color is set to Custom.",
+        description = ns.L["Custom color used for the buff/debuff overlay when Buff Overlay Color is set to Custom."],
     })
-    overlayColorRow = optionsAPI.BuildSettingRow(overlayCard.frame, "Overlay Custom Color", overlayColorPicker)
+    overlayColorRow = optionsAPI.BuildSettingRow(overlayCard.frame, ns.L["Overlay Custom Color"], overlayColorPicker)
     overlayCard.AddRow(
-        optionsAPI.BuildSettingRow(overlayCard.frame, "Buff Overlay Color", overlayModeDropdown),
+        optionsAPI.BuildSettingRow(overlayCard.frame, ns.L["Buff Overlay Color"], overlayModeDropdown),
         overlayColorRow
     )
     local swipeModeDropdown = gui:CreateFormDropdown(overlayCard.frame, nil, COLOR_MODE_OPTIONS, "swipeColorMode", effectsCtx.swipeDB, function()
         RefreshSwipe()
         UpdateSwipeColorStates()
     end, {
-        description = "How the cooldown swipe is colored: Blizzard default, class color, UI accent, or the custom swatch.",
+        description = ns.L["How the cooldown swipe is colored: Blizzard default, class color, UI accent, or the custom swatch."],
     })
     swipeColorPicker = gui:CreateFormColorPicker(overlayCard.frame, nil, "swipeColor", effectsCtx.swipeDB, RefreshSwipe, nil, {
-        description = "Custom color used for the cooldown swipe when Cooldown Swipe Color is set to Custom.",
+        description = ns.L["Custom color used for the cooldown swipe when Cooldown Swipe Color is set to Custom."],
     })
-    swipeColorRow = optionsAPI.BuildSettingRow(overlayCard.frame, "Swipe Custom Color", swipeColorPicker)
+    swipeColorRow = optionsAPI.BuildSettingRow(overlayCard.frame, ns.L["Swipe Custom Color"], swipeColorPicker)
     overlayCard.AddRow(
-        optionsAPI.BuildSettingRow(overlayCard.frame, "Cooldown Swipe Color", swipeModeDropdown),
+        optionsAPI.BuildSettingRow(overlayCard.frame, ns.L["Cooldown Swipe Color"], swipeModeDropdown),
         swipeColorRow
     )
     UpdateSwipeColorStates()
     builder.CloseCard(overlayCard)
     builder.Spacer(10)
 
-    builder.Header("Hide Cooldown Effects")
+    builder.Header(ns.L["Hide Cooldown Effects"])
     local hideCard = builder.Card()
     local hideCheckbox = gui:CreateFormCheckbox(hideCard.frame, nil, effectsCtx.hideKey, effectsCtx.effectsDB, RefreshCooldownEffects, {
-        description = "Suppress all cooldown effects (swipe, overlay, flash) for this container, even on Blizzard-managed elements driven by the same icons.",
+        description = ns.L["Suppress all cooldown effects (swipe, overlay, flash) for this container, even on Blizzard-managed elements driven by the same icons."],
     })
     hideCard.AddRow(optionsAPI.BuildSettingRow(hideCard.frame, effectsCtx.hideLabel, hideCheckbox))
     builder.CloseCard(hideCard)
     builder.Spacer(10)
 
-    builder.Header("Custom Glow")
+    builder.Header(ns.L["Custom Glow"])
     local glowCard = builder.Card()
     local glowTypeKey = effectsCtx.glowPrefix .. "GlowType"
     local glowColorKey = effectsCtx.glowPrefix .. "Color"
@@ -2046,18 +2044,18 @@ local function RenderEffectsSection(sectionHost, ctx)
         RefreshGlows()
         UpdateGlowWidgetStates()
     end, {
-        description = "Override the Blizzard proc glow with QUI's custom glow style for icons in this container.",
+        description = ns.L["Override the Blizzard proc glow with QUI's custom glow style for icons in this container."],
     })
     local pandemicDebuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicDebuffKey, effectsCtx.glowDB, RefreshGlows, {
-        description = "Emit the custom glow during the pandemic refresh window (last ~30% remaining) of harmful auras like DoTs and debuffs.",
+        description = ns.L["Emit the custom glow during the pandemic refresh window (last ~30% remaining) of harmful auras like DoTs and debuffs."],
     })
     local pandemicBuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicBuffKey, effectsCtx.glowDB, RefreshGlows, {
-        description = "Emit the custom glow during the pandemic refresh window (last ~30% remaining) of helpful auras like HoTs and self-buffs.",
+        description = ns.L["Emit the custom glow during the pandemic refresh window (last ~30% remaining) of helpful auras like HoTs and self-buffs."],
     })
-    glowWidgets.pandemicDebuffRow = optionsAPI.BuildSettingRow(glowCard.frame, "Pandemic Glow — Debuffs/DoTs", pandemicDebuffCheckbox)
-    glowWidgets.pandemicBuffRow = optionsAPI.BuildSettingRow(glowCard.frame, "Pandemic Glow — Buffs/HoTs", pandemicBuffCheckbox)
+    glowWidgets.pandemicDebuffRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Pandemic Glow — Debuffs/DoTs"], pandemicDebuffCheckbox)
+    glowWidgets.pandemicBuffRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Pandemic Glow — Buffs/HoTs"], pandemicBuffCheckbox)
     glowCard.AddRow(
-        optionsAPI.BuildSettingRow(glowCard.frame, "Enable Custom Glow", glowEnableCheckbox)
+        optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Enable Custom Glow"], glowEnableCheckbox)
     )
     glowCard.AddRow(
         glowWidgets.pandemicDebuffRow,
@@ -2067,49 +2065,49 @@ local function RenderEffectsSection(sectionHost, ctx)
         RefreshGlows()
         UpdateGlowWidgetStates()
     end, {
-        description = "Which LibCustomGlow style to render. Pixel/Autocast support line count and thickness; Button/Flash/Hammer ignore those controls.",
+        description = ns.L["Which LibCustomGlow style to render. Pixel/Autocast support line count and thickness; Button/Flash/Hammer ignore those controls."],
     })
     local glowColorPicker = gui:CreateFormColorPicker(glowCard.frame, nil, glowColorKey, effectsCtx.glowDB, RefreshGlows, nil, {
-        description = "Color used for the custom glow effect.",
+        description = ns.L["Color used for the custom glow effect."],
     })
-    glowWidgets.typeRow = optionsAPI.BuildSettingRow(glowCard.frame, "Glow Type", glowTypeDropdown)
-    glowWidgets.colorRow = optionsAPI.BuildSettingRow(glowCard.frame, "Glow Color", glowColorPicker)
+    glowWidgets.typeRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Glow Type"], glowTypeDropdown)
+    glowWidgets.colorRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Glow Color"], glowColorPicker)
     glowCard.AddRow(
         glowWidgets.typeRow,
         glowWidgets.colorRow
     )
     local glowLinesSlider = gui:CreateFormSlider(glowCard.frame, nil, 1, 30, 1, glowLinesKey, effectsCtx.glowDB, RefreshGlows, nil, {
-        description = "Number of glow particles/lines. Only used by Pixel Glow and Autocast Shine.",
+        description = ns.L["Number of glow particles/lines. Only used by Pixel Glow and Autocast Shine."],
     })
     local glowThicknessSlider = gui:CreateFormSlider(glowCard.frame, nil, 1, 10, 1, glowThicknessKey, effectsCtx.glowDB, RefreshGlows, nil, {
-        description = "Thickness of each glow line. Only used by Pixel Glow.",
+        description = ns.L["Thickness of each glow line. Only used by Pixel Glow."],
     })
-    glowWidgets.linesRow = optionsAPI.BuildSettingRow(glowCard.frame, "Lines", glowLinesSlider)
-    glowWidgets.thicknessRow = optionsAPI.BuildSettingRow(glowCard.frame, "Thickness", glowThicknessSlider)
+    glowWidgets.linesRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Lines"], glowLinesSlider)
+    glowWidgets.thicknessRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Thickness"], glowThicknessSlider)
     glowCard.AddRow(
         glowWidgets.linesRow,
         glowWidgets.thicknessRow
     )
     local glowScaleSlider = gui:CreateFormSlider(glowCard.frame, nil, 0.5, 3.0, 0.1, glowScaleKey, effectsCtx.glowDB, RefreshGlows, nil, {
-        description = "Size multiplier for the Autocast Shine glow.",
+        description = ns.L["Size multiplier for the Autocast Shine glow."],
     })
     local glowFrequencySlider = gui:CreateFormSlider(glowCard.frame, nil, 0.1, 2.0, 0.05, glowFrequencyKey, effectsCtx.glowDB, RefreshGlows, nil, {
-        description = "How fast the glow animates. Higher values rotate/pulse faster.",
+        description = ns.L["How fast the glow animates. Higher values rotate/pulse faster."],
     })
-    glowWidgets.scaleRow = optionsAPI.BuildSettingRow(glowCard.frame, "Shine Scale", glowScaleSlider)
-    glowWidgets.frequencyRow = optionsAPI.BuildSettingRow(glowCard.frame, "Animation Speed", glowFrequencySlider)
+    glowWidgets.scaleRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Shine Scale"], glowScaleSlider)
+    glowWidgets.frequencyRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Animation Speed"], glowFrequencySlider)
     glowCard.AddRow(
         glowWidgets.scaleRow,
         glowWidgets.frequencyRow
     )
     local glowXOffsetSlider = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowXOffsetKey, effectsCtx.glowDB, RefreshGlows, nil, {
-        description = "Horizontal pixel offset for the glow effect. Ignored by Button Glow and texture glows.",
+        description = ns.L["Horizontal pixel offset for the glow effect. Ignored by Button Glow and texture glows."],
     })
     local glowYOffsetSlider = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowYOffsetKey, effectsCtx.glowDB, RefreshGlows, nil, {
-        description = "Vertical pixel offset for the glow effect. Ignored by Button Glow and texture glows.",
+        description = ns.L["Vertical pixel offset for the glow effect. Ignored by Button Glow and texture glows."],
     })
-    glowWidgets.xOffsetRow = optionsAPI.BuildSettingRow(glowCard.frame, "X Offset", glowXOffsetSlider)
-    glowWidgets.yOffsetRow = optionsAPI.BuildSettingRow(glowCard.frame, "Y Offset", glowYOffsetSlider)
+    glowWidgets.xOffsetRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["X Offset"], glowXOffsetSlider)
+    glowWidgets.yOffsetRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Y Offset"], glowYOffsetSlider)
     glowCard.AddRow(
         glowWidgets.xOffsetRow,
         glowWidgets.yOffsetRow
@@ -2130,7 +2128,7 @@ local function RenderEffectsSection(sectionHost, ctx)
             if tracker.activeGlowThickness == nil then tracker.activeGlowThickness = 2 end
             if tracker.activeGlowScale == nil then tracker.activeGlowScale = 1.0 end
 
-            builder.Header("Active State")
+            builder.Header(ns.L["Active State"])
             local activeCard = builder.Card()
             local activeWidgets = {}
             local function UpdateActiveGlowWidgetStates()
@@ -2149,33 +2147,33 @@ local function RenderEffectsSection(sectionHost, ctx)
                 RefreshContainer(containerKey)
                 UpdateActiveGlowWidgetStates()
             end, {
-                description = "Detect casts, channels, and active item/spell effects for visibility and active-duration display.",
+                description = ns.L["Detect casts, channels, and active item/spell effects for visibility and active-duration display."],
             })
             local activeGlowCheckbox = gui:CreateFormCheckbox(activeCard.frame, nil, "activeGlowEnabled", tracker, function()
                 RefreshContainer(containerKey)
                 UpdateActiveGlowWidgetStates()
             end, {
-                description = "Glow icons while their spell or item effect is active.",
+                description = ns.L["Glow icons while their spell or item effect is active."],
             })
-            activeWidgets.enableRow = optionsAPI.BuildSettingRow(activeCard.frame, "Enable Active Glow", activeGlowCheckbox)
+            activeWidgets.enableRow = optionsAPI.BuildSettingRow(activeCard.frame, ns.L["Enable Active Glow"], activeGlowCheckbox)
             activeCard.AddRow(
-                optionsAPI.BuildSettingRow(activeCard.frame, "Show Active State", showActiveCheckbox),
+                optionsAPI.BuildSettingRow(activeCard.frame, ns.L["Show Active State"], showActiveCheckbox),
                 activeWidgets.enableRow
             )
             local activeGlowTypeDropdown = gui:CreateFormDropdown(activeCard.frame, nil, GLOW_TYPE_OPTIONS, "activeGlowType", tracker, function()
                 RefreshContainer(containerKey)
                 UpdateActiveGlowWidgetStates()
             end, {
-                description = "Which LibCustomGlow style to use while the entry is active.",
+                description = ns.L["Which LibCustomGlow style to use while the entry is active."],
             })
             local activeGlowColorPicker = gui:CreateFormColorPicker(activeCard.frame, nil, "activeGlowColor", tracker, function()
                 RefreshContainer(containerKey)
                 UpdateActiveGlowWidgetStates()
             end, nil, {
-                description = "Color used for the active-state glow.",
+                description = ns.L["Color used for the active-state glow."],
             })
-            activeWidgets.typeRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Type", activeGlowTypeDropdown)
-            activeWidgets.colorRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Color", activeGlowColorPicker)
+            activeWidgets.typeRow = optionsAPI.BuildSettingRow(activeCard.frame, ns.L["Active Glow Type"], activeGlowTypeDropdown)
+            activeWidgets.colorRow = optionsAPI.BuildSettingRow(activeCard.frame, ns.L["Active Glow Color"], activeGlowColorPicker)
             activeCard.AddRow(
                 activeWidgets.typeRow,
                 activeWidgets.colorRow
@@ -2183,16 +2181,16 @@ local function RenderEffectsSection(sectionHost, ctx)
             local activeGlowLinesSlider = gui:CreateFormSlider(activeCard.frame, nil, 4, 16, 1, "activeGlowLines", tracker, function()
                 RefreshContainer(containerKey)
             end, nil, {
-                description = "Number of glow particles/lines. Only used by Pixel Glow and Autocast Shine.",
+                description = ns.L["Number of glow particles/lines. Only used by Pixel Glow and Autocast Shine."],
             })
             local activeGlowFrequencySlider = gui:CreateFormSlider(activeCard.frame, nil, 0.1, 1.0, 0.05, "activeGlowFrequency", tracker, function()
                 RefreshContainer(containerKey)
             end, nil, {
-                description = "How fast the active glow animates.",
+                description = ns.L["How fast the active glow animates."],
                 precision = 2,
             })
-            activeWidgets.linesRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Lines", activeGlowLinesSlider)
-            activeWidgets.frequencyRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Speed", activeGlowFrequencySlider)
+            activeWidgets.linesRow = optionsAPI.BuildSettingRow(activeCard.frame, ns.L["Active Glow Lines"], activeGlowLinesSlider)
+            activeWidgets.frequencyRow = optionsAPI.BuildSettingRow(activeCard.frame, ns.L["Active Glow Speed"], activeGlowFrequencySlider)
             activeCard.AddRow(
                 activeWidgets.linesRow,
                 activeWidgets.frequencyRow
@@ -2200,15 +2198,15 @@ local function RenderEffectsSection(sectionHost, ctx)
             local activeGlowThicknessSlider = gui:CreateFormSlider(activeCard.frame, nil, 1, 5, 1, "activeGlowThickness", tracker, function()
                 RefreshContainer(containerKey)
             end, nil, {
-                description = "Thickness of each Pixel Glow line.",
+                description = ns.L["Thickness of each Pixel Glow line."],
             })
             local activeGlowScaleSlider = gui:CreateFormSlider(activeCard.frame, nil, 0.5, 2.0, 0.1, "activeGlowScale", tracker, function()
                 RefreshContainer(containerKey)
             end, nil, {
-                description = "Size multiplier for Autocast Shine.",
+                description = ns.L["Size multiplier for Autocast Shine."],
             })
-            activeWidgets.thicknessRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Thickness", activeGlowThicknessSlider)
-            activeWidgets.scaleRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Scale", activeGlowScaleSlider)
+            activeWidgets.thicknessRow = optionsAPI.BuildSettingRow(activeCard.frame, ns.L["Active Glow Thickness"], activeGlowThicknessSlider)
+            activeWidgets.scaleRow = optionsAPI.BuildSettingRow(activeCard.frame, ns.L["Active Glow Scale"], activeGlowScaleSlider)
             activeCard.AddRow(
                 activeWidgets.thicknessRow,
                 activeWidgets.scaleRow
@@ -2219,7 +2217,7 @@ local function RenderEffectsSection(sectionHost, ctx)
         end
     end
 
-    builder.Header("Cast Highlighter")
+    builder.Header(ns.L["Cast Highlighter"])
     local highlighterCard = builder.Card()
     local highlighterRows = {}
     local function UpdateHighlighterWidgetStates()
@@ -2232,24 +2230,24 @@ local function RenderEffectsSection(sectionHost, ctx)
         RefreshHighlighter()
         UpdateHighlighterWidgetStates()
     end, {
-        description = "Flash each spell's icon briefly when you cast it, highlighting exactly which tracked ability just went out.",
+        description = ns.L["Flash each spell's icon briefly when you cast it, highlighting exactly which tracked ability just went out."],
     })
     local highlighterTypeDropdown = gui:CreateFormDropdown(highlighterCard.frame, nil, GLOW_TYPE_OPTIONS, "glowType", effectsCtx.highlighterDB, RefreshHighlighter, {
-        description = "Which LibCustomGlow style to use for the post-cast highlight.",
+        description = ns.L["Which LibCustomGlow style to use for the post-cast highlight."],
     })
-    highlighterRows.type = optionsAPI.BuildSettingRow(highlighterCard.frame, "Glow Type", highlighterTypeDropdown)
+    highlighterRows.type = optionsAPI.BuildSettingRow(highlighterCard.frame, ns.L["Glow Type"], highlighterTypeDropdown)
     highlighterCard.AddRow(
-        optionsAPI.BuildSettingRow(highlighterCard.frame, "Enable Cast Highlighter", highlighterEnableCheckbox),
+        optionsAPI.BuildSettingRow(highlighterCard.frame, ns.L["Enable Cast Highlighter"], highlighterEnableCheckbox),
         highlighterRows.type
     )
     local highlighterColorPicker = gui:CreateFormColorPicker(highlighterCard.frame, nil, "color", effectsCtx.highlighterDB, RefreshHighlighter, nil, {
-        description = "Color used for the post-cast highlight effect.",
+        description = ns.L["Color used for the post-cast highlight effect."],
     })
     local highlighterDurationSlider = gui:CreateFormSlider(highlighterCard.frame, nil, 0.1, 2.0, 0.1, "duration", effectsCtx.highlighterDB, RefreshHighlighter, nil, {
-        description = "How long the highlight stays on the icon after each cast, in seconds.",
+        description = ns.L["How long the highlight stays on the icon after each cast, in seconds."],
     })
-    highlighterRows.color = optionsAPI.BuildSettingRow(highlighterCard.frame, "Highlight Color", highlighterColorPicker)
-    highlighterRows.duration = optionsAPI.BuildSettingRow(highlighterCard.frame, "Highlight Duration", highlighterDurationSlider)
+    highlighterRows.color = optionsAPI.BuildSettingRow(highlighterCard.frame, ns.L["Highlight Color"], highlighterColorPicker)
+    highlighterRows.duration = optionsAPI.BuildSettingRow(highlighterCard.frame, ns.L["Highlight Duration"], highlighterDurationSlider)
     highlighterCard.AddRow(
         highlighterRows.color,
         highlighterRows.duration
@@ -2275,7 +2273,7 @@ local function RenderEffectsSection(sectionHost, ctx)
             end
 
             builder.Spacer(6)
-            builder.Header("Rotation Helper Overlay")
+            builder.Header(ns.L["Rotation Helper Overlay"])
             local rhCard = builder.Card()
             local rhRows = {}
             local function UpdateRotationHelperWidgetStates()
@@ -2287,21 +2285,21 @@ local function RenderEffectsSection(sectionHost, ctx)
                 RefreshRotationHelper()
                 UpdateRotationHelperWidgetStates()
             end, {
-                description = "Highlight the recommended next ability in this cooldown viewer using Blizzard's Assisted Combat suggestion. Requires Starter Build to be enabled in Gameplay > Combat.",
+                description = ns.L["Highlight the recommended next ability in this cooldown viewer using Blizzard's Assisted Combat suggestion. Requires Starter Build to be enabled in Gameplay > Combat."],
             })
             local rhColorPicker = gui:CreateFormColorPicker(rhCard.frame, nil, "rotationHelperColor", viewerDB, RefreshRotationHelper, nil, {
-                description = "Border color drawn around the suggested icon in this viewer.",
+                description = ns.L["Border color drawn around the suggested icon in this viewer."],
             })
-            rhRows.color = optionsAPI.BuildSettingRow(rhCard.frame, "Border Color", rhColorPicker)
+            rhRows.color = optionsAPI.BuildSettingRow(rhCard.frame, ns.L["Border Color"], rhColorPicker)
             rhCard.AddRow(
-                optionsAPI.BuildSettingRow(rhCard.frame, "Show Recommended-Next Border", rhEnableCheckbox),
+                optionsAPI.BuildSettingRow(rhCard.frame, ns.L["Show Recommended-Next Border"], rhEnableCheckbox),
                 rhRows.color
             )
 
             local rhThicknessSlider = gui:CreateFormSlider(rhCard.frame, nil, 1, 6, 1, "rotationHelperThickness", viewerDB, RefreshRotationHelper, nil, {
-                description = "Thickness of the suggestion border in pixels.",
+                description = ns.L["Thickness of the suggestion border in pixels."],
             })
-            rhRows.thickness = optionsAPI.BuildSettingRow(rhCard.frame, "Border Thickness", rhThicknessSlider)
+            rhRows.thickness = optionsAPI.BuildSettingRow(rhCard.frame, ns.L["Border Thickness"], rhThicknessSlider)
             rhCard.AddRow(rhRows.thickness)
             UpdateRotationHelperWidgetStates()
             builder.CloseCard(rhCard)
@@ -2321,7 +2319,7 @@ local function RenderKeybindsSection(sectionHost, ctx)
     end
 
     if not gui or not optionsAPI or not viewerDB then
-        return RenderUnavailableLabel(sectionHost, "Keybind settings unavailable.")
+        return RenderUnavailableLabel(sectionHost, ns.L["Keybind settings unavailable."])
     end
 
     local builder = CreateSectionBuilder(sectionHost, ctx, "keybinds")
@@ -2329,7 +2327,7 @@ local function RenderKeybindsSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Keybinds")
+    builder.Header(ns.L["Keybinds"])
     local card = builder.Card()
 
     local keybindRows = {}
@@ -2346,38 +2344,38 @@ local function RenderKeybindsSection(sectionHost, ctx)
         RefreshKeybinds()
         UpdateKeybindWidgetStates()
     end, {
-        description = "Show the bound key text on each icon in this container.",
+        description = ns.L["Show the bound key text on each icon in this container."],
     })
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, KEYBIND_ANCHOR_OPTIONS, "keybindAnchor", viewerDB, RefreshKeybinds, {
-        description = "Which corner of each icon the keybind text is anchored to.",
+        description = ns.L["Which corner of each icon the keybind text is anchored to."],
     })
-    keybindRows.anchor = optionsAPI.BuildSettingRow(card.frame, "Keybind Anchor", anchorDropdown)
+    keybindRows.anchor = optionsAPI.BuildSettingRow(card.frame, ns.L["Keybind Anchor"], anchorDropdown)
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Keybinds", showCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Keybinds"], showCheckbox),
         keybindRows.anchor
     )
 
     local sizeSlider = gui:CreateFormSlider(card.frame, nil, 6, 18, 1, "keybindTextSize", viewerDB, RefreshKeybinds, nil, {
-        description = "Font size for the keybind text.",
+        description = ns.L["Font size for the keybind text."],
     })
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "keybindTextColor", viewerDB, RefreshKeybinds, nil, {
-        description = "Color used for the keybind text.",
+        description = ns.L["Color used for the keybind text."],
     })
-    keybindRows.size = optionsAPI.BuildSettingRow(card.frame, "Text Size", sizeSlider)
-    keybindRows.color = optionsAPI.BuildSettingRow(card.frame, "Text Color", colorPicker)
+    keybindRows.size = optionsAPI.BuildSettingRow(card.frame, ns.L["Text Size"], sizeSlider)
+    keybindRows.color = optionsAPI.BuildSettingRow(card.frame, ns.L["Text Color"], colorPicker)
     card.AddRow(
         keybindRows.size,
         keybindRows.color
     )
 
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "keybindOffsetX", viewerDB, RefreshKeybinds, nil, {
-        description = "Horizontal pixel offset for the keybind text from its anchor corner.",
+        description = ns.L["Horizontal pixel offset for the keybind text from its anchor corner."],
     })
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "keybindOffsetY", viewerDB, RefreshKeybinds, nil, {
-        description = "Vertical pixel offset for the keybind text from its anchor corner.",
+        description = ns.L["Vertical pixel offset for the keybind text from its anchor corner."],
     })
-    keybindRows.xOffset = optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
-    keybindRows.yOffset = optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
+    keybindRows.xOffset = optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider)
+    keybindRows.yOffset = optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
     card.AddRow(
         keybindRows.xOffset,
         keybindRows.yOffset
@@ -2713,7 +2711,7 @@ local function BuildPreviewBlock(pv)
                     specName = select(2, GetSpecializationInfo(specIndex))
                 end
                 if specName then
-                    local labelText = "Editing entries for: " .. specName
+                    local labelText = ns.L["Editing entries for: "] .. specName
                     if C_ClassTalents then
                         local specID = GetSpecializationInfo(specIndex)
                         local savedID = specID and C_ClassTalents.GetLastSelectedSavedConfigID
@@ -2738,7 +2736,7 @@ local function BuildPreviewBlock(pv)
                         if customName and customName ~= specName then
                             labelText = labelText .. " \226\128\148 " .. customName
                         elseif ordinal then
-                            labelText = labelText .. " \226\128\148 Loadout " .. ordinal
+                            labelText = labelText .. " \226\128\148 " .. ns.L["Loadout "] .. ordinal
                         end
                     end
                     loadoutLabel:SetText(labelText)
@@ -2794,12 +2792,12 @@ local function BuildPreviewBlock(pv)
 
     local perLoadoutToggle = GUI:CreateFormCheckbox(
         leftCol,
-        "Per-Loadout Entries",
+        ns.L["Per-Loadout Entries"],
         "perLoadoutSpec",
         ncdm,
         onPerLoadoutToggle,
         {
-            description = "Maintain a separate spell list per saved talent loadout within each spec. Entries swap automatically when you change loadout. Toggle off preserves your per-loadout data.",
+            description = ns.L["Maintain a separate spell list per saved talent loadout within each spec. Entries swap automatically when you change loadout. Toggle off preserves your per-loadout data."],
         }
     )
     perLoadoutToggle:SetPoint("TOPLEFT", leftCol, "TOPLEFT", LEFT_COL_PAD, -2)
@@ -2838,10 +2836,10 @@ local function BuildPreviewBlock(pv)
         state = State,
         selectedValue = State.activeContainer,
         dropdownStateKey = "_activeContainer",
-        dropdownLabel = "Container",
+        dropdownLabel = ns.L["Container"],
         dropdownOptions = GetContainerOptions(),
         dropdownMeta = {
-            description = "Select which cooldown container to configure. Built-in containers have a reduced tab set; custom containers expose Filters and Per-Spec options.",
+            description = ns.L["Select which cooldown container to configure. Built-in containers have a reduced tab set; custom containers expose Filters and Per-Spec options."],
         },
         dropdownConfig = {
             searchable = true,
@@ -2851,7 +2849,7 @@ local function BuildPreviewBlock(pv)
         headerActions = {
             {
                 key = "new",
-                text = "+ New",
+                text = ns.L["+ New"],
                 width = 90,
                 height = 24,
                 style = "primary",
@@ -2868,7 +2866,7 @@ local function BuildPreviewBlock(pv)
             },
             {
                 key = "delete",
-                text = "Delete",
+                text = ns.L["Delete"],
                 width = 90,
                 height = 24,
                 style = "ghost",

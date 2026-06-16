@@ -14,21 +14,21 @@ end
 local Helpers = ns.Helpers
 
 local BAR_OPTIONS = {
-    { value = "bar1",      text = "Bar 1" },
-    { value = "bar2",      text = "Bar 2" },
-    { value = "bar3",      text = "Bar 3" },
-    { value = "bar4",      text = "Bar 4" },
-    { value = "bar5",      text = "Bar 5" },
-    { value = "bar6",      text = "Bar 6" },
-    { value = "bar7",      text = "Bar 7" },
-    { value = "bar8",      text = "Bar 8" },
-    { value = "stanceBar", text = "Stance Bar" },
-    { value = "petBar",    text = "Pet Bar" },
-    { value = "microMenu", text = "Micro Menu" },
-    { value = "bagBar",    text = "Bag Bar" },
-    { value = "extraActionButton", text = "Extra Action Button" },
-    { value = "zoneAbility",       text = "Zone Ability" },
-    { value = "totemBar",  text = "Totem Bar" },
+    { value = "bar1",      text = ns.L["Bar 1"] },
+    { value = "bar2",      text = ns.L["Bar 2"] },
+    { value = "bar3",      text = ns.L["Bar 3"] },
+    { value = "bar4",      text = ns.L["Bar 4"] },
+    { value = "bar5",      text = ns.L["Bar 5"] },
+    { value = "bar6",      text = ns.L["Bar 6"] },
+    { value = "bar7",      text = ns.L["Bar 7"] },
+    { value = "bar8",      text = ns.L["Bar 8"] },
+    { value = "stanceBar", text = ns.L["Stance Bar"] },
+    { value = "petBar",    text = ns.L["Pet Bar"] },
+    { value = "microMenu", text = ns.L["Micro Menu"] },
+    { value = "bagBar",    text = ns.L["Bag Bar"] },
+    { value = "extraActionButton", text = ns.L["Extra Action Button"] },
+    { value = "zoneAbility",       text = ns.L["Zone Ability"] },
+    { value = "totemBar",  text = ns.L["Totem Bar"] },
 }
 
 local LOOKUP_KEYS = {
@@ -202,7 +202,7 @@ local function BuildControlsSection()
         height = 38,
         fields = {
             Fields.Dropdown({
-                label = "Bar",
+                label = ns.L["Bar"],
                 options = BAR_OPTIONS,
                 state = function(ctx)
                     return ResolveSelectionState(ctx.state)
@@ -222,7 +222,7 @@ local function BuildControlsSection()
                 end,
             }),
             Fields.Button({
-                text = "Apply to All Bars",
+                text = ns.L["Apply to All Bars"],
                 width = 160,
                 height = 26,
                 spacing = 30,

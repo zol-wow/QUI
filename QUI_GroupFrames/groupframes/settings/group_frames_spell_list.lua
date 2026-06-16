@@ -99,7 +99,7 @@ GroupFrameSpellList.CreateMiniToggle = CreateMiniToggle
 
 local BUFF_BLACKLIST_PRESETS = {
     {
-        name = "Raid Buffs",
+        name = ns.L["Raid Buffs"],
         spells = {
             { id = 1459, name = "Arcane Intellect" },
             { id = 6673, name = "Battle Shout" },
@@ -114,7 +114,7 @@ local BUFF_BLACKLIST_PRESETS = {
 
 local DEBUFF_BLACKLIST_PRESETS = {
     {
-        name = "Sated / Exhaustion",
+        name = ns.L["Sated / Exhaustion"],
         spells = {
             { id = 57723, name = "Exhaustion" },
             { id = 57724, name = "Sated" },
@@ -126,7 +126,7 @@ local DEBUFF_BLACKLIST_PRESETS = {
         },
     },
     {
-        name = "Deserter",
+        name = ns.L["Deserter"],
         spells = {
             { id = 26013, name = "Deserter" },
             { id = 71041, name = "Dungeon Deserter" },
@@ -191,7 +191,7 @@ local function RebuildSpellToggleRows(container, listTable, presets, onChange)
 
             row:SetPoint("TOPLEFT", 0, y)
             row:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-            row.text:SetText(spell.name or GetSpellName(spell.id) or ("Spell " .. spell.id))
+            row.text:SetText(spell.name or GetSpellName(spell.id) or (ns.L["Spell"] .. " " .. spell.id))
             if row.toggle then row.toggle:Show() end
             if row.removeBtn then row.removeBtn:Hide() end
 
@@ -237,7 +237,7 @@ local function RebuildSpellToggleRows(container, listTable, presets, onChange)
 
         if headerRow.toggle then headerRow.toggle:Hide() end
         if headerRow.removeBtn then headerRow.removeBtn:Hide() end
-        headerRow.text:SetText("|cFF56D1FFOther|r")
+        headerRow.text:SetText("|cFF56D1FF" .. ns.L["Other"] .. "|r")
         headerRow:SetPoint("TOPLEFT", 0, y)
         headerRow:SetPoint("RIGHT", container, "RIGHT", 0, 0)
         headerRow:Show()
@@ -271,7 +271,7 @@ local function RebuildSpellToggleRows(container, listTable, presets, onChange)
             row:SetPoint("TOPLEFT", 0, y)
             row:SetPoint("RIGHT", container, "RIGHT", 0, 0)
             row.text:SetPoint("RIGHT", row.removeBtn, "LEFT", -4, 0)
-            row.text:SetText(GetSpellName(spellId) or ("Spell " .. spellId))
+            row.text:SetText(GetSpellName(spellId) or (ns.L["Spell"] .. " " .. spellId))
             if row.toggle then row.toggle:Hide() end
             if row.removeBtn then row.removeBtn:Show() end
             row.removeBtn:SetScript("OnClick", function()

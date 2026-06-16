@@ -6,6 +6,7 @@ local ns = {
     UIKit = {},
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 local chunk = assert(loadfile("QUI_Bags/bags/views/chassis.lua"))
 chunk("QUI", ns)
 

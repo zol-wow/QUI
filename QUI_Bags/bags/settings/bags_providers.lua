@@ -64,7 +64,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if name and name ~= "" then
             return string.format("%s (%d)", name, id)
         end
-        return "Currency " .. tostring(id)
+        return ns.L["Currency"] .. " " .. tostring(id)
     end
 
     local function ItemLabel(itemID)
@@ -72,7 +72,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if name and name ~= "" then
             return string.format("%s (%d)", name, itemID)
         end
-        return "Item " .. tostring(itemID)
+        return ns.L["Item"] .. " " .. tostring(itemID)
     end
 
     ---------------------------------------------------------------------------
@@ -182,10 +182,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local G2 = Q and Q.GUI
             if G2 and type(G2.ShowConfirmation) == "function" then
                 G2:ShowConfirmation({
-                    title      = "Reload UI?",
-                    message    = "This change takes full effect after a reload.",
-                    acceptText = "Reload",
-                    cancelText = "Later",
+                    title      = ns.L["Reload UI?"],
+                    message    = ns.L["This change takes full effect after a reload."],
+                    acceptText = ns.L["Reload"],
+                    cancelText = ns.L["Later"],
                     onAccept   = function() if Q and Q.SafeReload then Q:SafeReload() end end,
                 })
             end
@@ -226,169 +226,169 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end,
         })
 
-        L.headerAt("General")
+        L.headerAt(ns.L["General"])
         local g0 = L.sectionAt()
         local moduleW = GUI:CreateFormCheckbox(g0.frame, nil, "enabled", moduleProxy, nil,
-            { description = "QUI's bag takeover. Mirrors the Bags row on the Module Addons page: enabling loads the module (live when possible), disabling hands bags back to Blizzard — a UI reload is prompted for a clean handoff. Everything below applies live while the module is enabled." })
-        g0.AddRow(row(g0.frame, "Enable Bags Module", moduleW))
+            { description = ns.L["QUI's bag takeover. Mirrors the Bags row on the Module Addons page: enabling loads the module (live when possible), disabling hands bags back to Blizzard — a UI reload is prompted for a clean handoff. Everything below applies live while the module is enabled."] })
+        g0.AddRow(row(g0.frame, ns.L["Enable Bags Module"], moduleW))
         L.closeSection(g0)
 
         -- APPEARANCE
-        L.headerAt("Appearance")
+        L.headerAt(ns.L["Appearance"])
         local s1 = L.sectionAt()
         local iconSizeW = GUI:CreateFormSlider(s1.frame, nil, 24, 48, 1, "iconSize", bags.appearance, Refresh,
-            { description = "Pixel size of each item button in the bag, bank, and guild bank windows." })
+            { description = ns.L["Pixel size of each item button in the bag, bank, and guild bank windows."] })
         local columnsW = GUI:CreateFormSlider(s1.frame, nil, 6, 20, 1, "columns", bags.appearance, Refresh,
-            { description = "How many item columns the bag window grid uses." })
-        s1.AddRow(row(s1.frame, "Icon Size", iconSizeW), row(s1.frame, "Columns", columnsW))
+            { description = ns.L["How many item columns the bag window grid uses."] })
+        s1.AddRow(row(s1.frame, ns.L["Icon Size"], iconSizeW), row(s1.frame, ns.L["Columns"], columnsW))
 
         local spacingW = GUI:CreateFormSlider(s1.frame, nil, 0, 8, 1, "spacing", bags.appearance, Refresh,
-            { description = "Pixel gap between item buttons." })
+            { description = ns.L["Pixel gap between item buttons."] })
         local setMarkW = GUI:CreateFormCheckbox(s1.frame, nil, "equipmentSetMark", bags.appearance, Refresh,
-            { description = "Show a small gear icon on items that belong to a saved equipment set (live bag and bank views)." })
-        s1.AddRow(row(s1.frame, "Item Spacing", spacingW), row(s1.frame, "Equipment Set Icon", setMarkW))
+            { description = ns.L["Show a small gear icon on items that belong to a saved equipment set (live bag and bank views)."] })
+        s1.AddRow(row(s1.frame, ns.L["Item Spacing"], spacingW), row(s1.frame, ns.L["Equipment Set Icon"], setMarkW))
 
         local layoutModeW = GUI:CreateFormDropdown(s1.frame, nil, {
-            { value = "flat", text = "Flat Grid" },
-            { value = "categories", text = "Categories" },
+            { value = "flat", text = ns.L["Flat Grid"] },
+            { value = "categories", text = ns.L["Categories"] },
         }, "layoutMode", bags.appearance, Refresh,
-            { description = "Bag window layout. Flat Grid mirrors your real bag slots; Categories groups items under headers (Equipment, Consumables, Trade Goods, ... Junk last; new loot lands in Recent) and hides empty slots — the free count stays in the footer." })
+            { description = ns.L["Bag window layout. Flat Grid mirrors your real bag slots; Categories groups items under headers (Equipment, Consumables, Trade Goods, ... Junk last; new loot lands in Recent) and hides empty slots — the free count stays in the footer."] })
         local reagentW = GUI:CreateFormDropdown(s1.frame, nil, {
-            { value = "separate", text = "Separate Section" },
-            { value = "merged", text = "Merged Into Grid" },
-            { value = "hidden", text = "Hidden" },
+            { value = "separate", text = ns.L["Separate Section"] },
+            { value = "merged", text = ns.L["Merged Into Grid"] },
+            { value = "hidden", text = ns.L["Hidden"] },
         }, "reagentDisplay", bags.appearance, Refresh,
-            { description = "Flat Grid only: show the reagent bag as its own labeled section below the regular bags, merge its slots into the grid, or hide it from the bag window entirely." })
-        s1.AddRow(row(s1.frame, "Layout", layoutModeW), row(s1.frame, "Reagent Bag", reagentW))
+            { description = ns.L["Flat Grid only: show the reagent bag as its own labeled section below the regular bags, merge its slots into the grid, or hide it from the bag window entirely."] })
+        s1.AddRow(row(s1.frame, ns.L["Layout"], layoutModeW), row(s1.frame, ns.L["Reagent Bag"], reagentW))
 
         local bankColsW = GUI:CreateFormSlider(s1.frame, nil, 6, 24, 1, "bankColumns", bags.appearance, Refresh,
-            { description = "How many item columns the bank window grid uses." })
+            { description = ns.L["How many item columns the bank window grid uses."] })
         local guildColsW = GUI:CreateFormSlider(s1.frame, nil, 6, 24, 1, "guildColumns", bags.appearance, Refresh,
-            { description = "How many item columns the guild bank grid uses." })
-        s1.AddRow(row(s1.frame, "Bank Columns", bankColsW), row(s1.frame, "Guild Bank Columns", guildColsW))
+            { description = ns.L["How many item columns the guild bank grid uses."] })
+        s1.AddRow(row(s1.frame, ns.L["Bank Columns"], bankColsW), row(s1.frame, ns.L["Guild Bank Columns"], guildColsW))
 
         local groupEmptyW = GUI:CreateFormCheckbox(s1.frame, nil, "groupEmptySlots", bags.appearance, Refresh,
-            { description = "Flat Grid only: collapse each section's empty slots into a single cell showing the free count." })
+            { description = ns.L["Flat Grid only: collapse each section's empty slots into a single cell showing the free count."] })
         local greyJunkW = GUI:CreateFormCheckbox(s1.frame, nil, "greyJunk", bags.appearance, Refresh,
-            { description = "Desaturate junk (grey-quality) items." })
-        s1.AddRow(row(s1.frame, "Group Empty Slots", groupEmptyW), row(s1.frame, "Grey Out Junk", greyJunkW))
+            { description = ns.L["Desaturate junk (grey-quality) items."] })
+        s1.AddRow(row(s1.frame, ns.L["Group Empty Slots"], groupEmptyW), row(s1.frame, ns.L["Grey Out Junk"], greyJunkW))
 
         local markUnusableW = GUI:CreateFormCheckbox(s1.frame, nil, "markUnusable", bags.appearance, Refresh,
-            { description = "Red-tint items your character cannot use (reads the item tooltip's red text)." })
+            { description = ns.L["Red-tint items your character cannot use (reads the item tooltip's red text)."] })
         local setBorderW = GUI:CreateFormCheckbox(s1.frame, nil, "equipmentSetBorder", bags.appearance, Refresh,
-            { description = "Use a cyan border instead of the quality color on items that belong to a saved equipment set (live views)." })
-        s1.AddRow(row(s1.frame, "Mark Unusable Items", markUnusableW), row(s1.frame, "Equipment Set Border", setBorderW))
+            { description = ns.L["Use a cyan border instead of the quality color on items that belong to a saved equipment set (live views)."] })
+        s1.AddRow(row(s1.frame, ns.L["Mark Unusable Items"], markUnusableW), row(s1.frame, ns.L["Equipment Set Border"], setBorderW))
 
         local contextFadeW = GUI:CreateFormCheckbox(s1.frame, nil, "contextFading", bags.appearance, Refresh,
-            { description = "Fade items that don't match the open context UI (socketing, scrapping, item upgrade)." })
+            { description = ns.L["Fade items that don't match the open context UI (socketing, scrapping, item upgrade)."] })
         local bagSlotsW = GUI:CreateFormCheckbox(s1.frame, nil, "showBagSlots", bags.appearance, Refresh,
-            { description = "Show the bag-slot strip at the top of the bag window: your four bag slots plus the reagent bag slot. Drag a container onto a slot (or click with one on the cursor) to equip or swap it; click an equipped bag to pick it up." })
-        s1.AddRow(row(s1.frame, "Context Fading", contextFadeW), row(s1.frame, "Show Bag Slots", bagSlotsW))
+            { description = ns.L["Show the bag-slot strip at the top of the bag window: your four bag slots plus the reagent bag slot. Drag a container onto a slot (or click with one on the cursor) to equip or swap it; click an equipped bag to pick it up."] })
+        s1.AddRow(row(s1.frame, ns.L["Context Fading"], contextFadeW), row(s1.frame, ns.L["Show Bag Slots"], bagSlotsW))
 
         -- Per-bag hiding (bags 1–4): display-only, mirrors Alt+click on the
         -- bag-slot strip. Numeric keys into the hiddenBags scalar map.
         local hiddenBags = bags.appearance.hiddenBags
         local hide1W = GUI:CreateFormCheckbox(s1.frame, nil, 1, hiddenBags, Refresh,
-            { description = "Hide bag 1's slots from the bag window grid. Display-only: search and sort still cover it." })
+            { description = ns.L["Hide bag 1's slots from the bag window grid. Display-only: search and sort still cover it."] })
         local hide2W = GUI:CreateFormCheckbox(s1.frame, nil, 2, hiddenBags, Refresh,
-            { description = "Hide bag 2's slots from the bag window grid. Display-only: search and sort still cover it." })
-        s1.AddRow(row(s1.frame, "Hide Bag 1", hide1W), row(s1.frame, "Hide Bag 2", hide2W))
+            { description = ns.L["Hide bag 2's slots from the bag window grid. Display-only: search and sort still cover it."] })
+        s1.AddRow(row(s1.frame, ns.L["Hide Bag 1"], hide1W), row(s1.frame, ns.L["Hide Bag 2"], hide2W))
         local hide3W = GUI:CreateFormCheckbox(s1.frame, nil, 3, hiddenBags, Refresh,
-            { description = "Hide bag 3's slots from the bag window grid. Display-only: search and sort still cover it." })
+            { description = ns.L["Hide bag 3's slots from the bag window grid. Display-only: search and sort still cover it."] })
         local hide4W = GUI:CreateFormCheckbox(s1.frame, nil, 4, hiddenBags, Refresh,
-            { description = "Hide bag 4's slots from the bag window grid. Display-only: search and sort still cover it." })
-        s1.AddRow(row(s1.frame, "Hide Bag 3", hide3W), row(s1.frame, "Hide Bag 4", hide4W))
+            { description = ns.L["Hide bag 4's slots from the bag window grid. Display-only: search and sort still cover it."] })
+        s1.AddRow(row(s1.frame, ns.L["Hide Bag 3"], hide3W), row(s1.frame, ns.L["Hide Bag 4"], hide4W))
         L.closeSection(s1)
 
         -- CORNER WIDGETS (per-corner primary + fallback pick)
-        L.headerAt("Icon Corners")
+        L.headerAt(ns.L["Icon Corners"])
         local sc = L.sectionAt()
         local CORNER_OPTS = {
-            { value = "none", text = "None" },
-            { value = "quantity", text = "Quantity" },
-            { value = "item_level", text = "Item Level" },
-            { value = "junk", text = "Junk Coin" },
-            { value = "equipment_set", text = "Equipment Set" },
-            { value = "binding", text = "Binding (BoE/BoA)" },
-            { value = "expansion", text = "Expansion" },
-            { value = "crafting_quality", text = "Crafting Quality (R1-R5)" },
+            { value = "none", text = ns.L["None"] },
+            { value = "quantity", text = ns.L["Quantity"] },
+            { value = "item_level", text = ns.L["Item Level"] },
+            { value = "junk", text = ns.L["Junk Coin"] },
+            { value = "equipment_set", text = ns.L["Equipment Set"] },
+            { value = "binding", text = ns.L["Binding (BoE/BoA)"] },
+            { value = "expansion", text = ns.L["Expansion"] },
+            { value = "crafting_quality", text = ns.L["Crafting Quality (R1-R5)"] },
         }
         local function cornerDD(key, desc)
             return GUI:CreateFormDropdown(sc.frame, nil, CORNER_OPTS, key, bags.appearance.corners, Refresh,
                 { description = desc })
         end
-        sc.AddRow(row(sc.frame, "Top Left", cornerDD("tl1",
-                "Primary widget for the top-left icon corner. The first widget that applies to an item renders.")),
-            row(sc.frame, "Top Left Fallback", cornerDD("tl2",
-                "Shown in the top-left corner when the primary widget doesn't apply to the item.")))
-        sc.AddRow(row(sc.frame, "Top Right", cornerDD("tr1",
-                "Primary widget for the top-right icon corner.")),
-            row(sc.frame, "Top Right Fallback", cornerDD("tr2",
-                "Shown in the top-right corner when the primary widget doesn't apply.")))
-        sc.AddRow(row(sc.frame, "Bottom Left", cornerDD("bl1",
-                "Primary widget for the bottom-left icon corner.")),
-            row(sc.frame, "Bottom Left Fallback", cornerDD("bl2",
-                "Shown in the bottom-left corner when the primary widget doesn't apply.")))
-        sc.AddRow(row(sc.frame, "Bottom Right", cornerDD("br1",
-                "Primary widget for the bottom-right icon corner.")),
-            row(sc.frame, "Bottom Right Fallback", cornerDD("br2",
-                "Shown in the bottom-right corner when the primary widget doesn't apply.")))
+        sc.AddRow(row(sc.frame, ns.L["Top Left"], cornerDD("tl1",
+                ns.L["Primary widget for the top-left icon corner. The first widget that applies to an item renders."])),
+            row(sc.frame, ns.L["Top Left Fallback"], cornerDD("tl2",
+                ns.L["Shown in the top-left corner when the primary widget doesn't apply to the item."])))
+        sc.AddRow(row(sc.frame, ns.L["Top Right"], cornerDD("tr1",
+                ns.L["Primary widget for the top-right icon corner."])),
+            row(sc.frame, ns.L["Top Right Fallback"], cornerDD("tr2",
+                ns.L["Shown in the top-right corner when the primary widget doesn't apply."])))
+        sc.AddRow(row(sc.frame, ns.L["Bottom Left"], cornerDD("bl1",
+                ns.L["Primary widget for the bottom-left icon corner."])),
+            row(sc.frame, ns.L["Bottom Left Fallback"], cornerDD("bl2",
+                ns.L["Shown in the bottom-left corner when the primary widget doesn't apply."])))
+        sc.AddRow(row(sc.frame, ns.L["Bottom Right"], cornerDD("br1",
+                ns.L["Primary widget for the bottom-right icon corner."])),
+            row(sc.frame, ns.L["Bottom Right Fallback"], cornerDD("br2",
+                ns.L["Shown in the bottom-right corner when the primary widget doesn't apply."])))
 
         local cornerFontW = GUI:CreateFormSlider(sc.frame, nil, 8, 16, 1, "cornerFontSize", bags.appearance, Refresh,
-            { description = "Font size of corner text widgets (quantity, item level, binding, expansion)." })
+            { description = ns.L["Font size of corner text widgets (quantity, item level, binding, expansion)."] })
         local qualityTextW = GUI:CreateFormCheckbox(sc.frame, nil, "qualityColorText", bags.appearance, Refresh,
-            { description = "Color corner text (item level, binding) by the item's quality instead of white." })
-        sc.AddRow(row(sc.frame, "Corner Font Size", cornerFontW), row(sc.frame, "Quality-Colored Text", qualityTextW))
+            { description = ns.L["Color corner text (item level, binding) by the item's quality instead of white."] })
+        sc.AddRow(row(sc.frame, ns.L["Corner Font Size"], cornerFontW), row(sc.frame, ns.L["Quality-Colored Text"], qualityTextW))
         L.closeSection(sc)
 
         -- BEHAVIOR
         local sortOptions = {
-            { value = "quality", text = "Quality" },
-            { value = "type", text = "Type" },
-            { value = "name", text = "Name" },
-            { value = "ilvl", text = "Item Level" },
-            { value = "expansion", text = "Expansion" },
+            { value = "quality", text = ns.L["Quality"] },
+            { value = "type", text = ns.L["Type"] },
+            { value = "name", text = ns.L["Name"] },
+            { value = "ilvl", text = ns.L["Item Level"] },
+            { value = "expansion", text = ns.L["Expansion"] },
         }
         local tooltipCountOptions = {
-            { value = "on", text = "Always On" },
-            { value = "off", text = "Off" },
-            { value = "modifier", text = "While Shift Held" },
+            { value = "on", text = ns.L["Always On"] },
+            { value = "off", text = ns.L["Off"] },
+            { value = "modifier", text = ns.L["While Shift Held"] },
         }
 
-        L.headerAt("Behavior")
+        L.headerAt(ns.L["Behavior"])
         local s2 = L.sectionAt()
         local sortKeyW = GUI:CreateFormDropdown(s2.frame, nil, sortOptions, "sortKey", behavior, nil,
-            { description = "Primary ordering the Sort button uses. Quality sorts best-first; the other keys fall back to quality within equal groups. Right-clicking a Sort button changes this too." })
+            { description = ns.L["Primary ordering the Sort button uses. Quality sorts best-first; the other keys fall back to quality within equal groups. Right-clicking a Sort button changes this too."] })
         local sortRevW = GUI:CreateFormCheckbox(s2.frame, nil, "sortReverse", behavior, nil,
-            { description = "Flip the chosen sort order wholesale (worst-first quality, Z-A names, lowest item level first, ...)." })
-        s2.AddRow(row(s2.frame, "Sort Items By", sortKeyW), row(s2.frame, "Reverse Sort Order", sortRevW))
+            { description = ns.L["Flip the chosen sort order wholesale (worst-first quality, Z-A names, lowest item level first, ...)."] })
+        s2.AddRow(row(s2.frame, ns.L["Sort Items By"], sortKeyW), row(s2.frame, ns.L["Reverse Sort Order"], sortRevW))
 
         local tooltipCountsW = GUI:CreateFormDropdown(s2.frame, nil, tooltipCountOptions, "tooltipCounts", behavior, nil,
-            { description = "Show how many of an item you own across characters, bank, mail, and more on item tooltips. 'While Shift Held' shows the counts only while Shift is down." })
+            { description = ns.L["Show how many of an item you own across characters, bank, mail, and more on item tooltips. 'While Shift Held' shows the counts only while Shift is down."] })
         local autoReagentsW = GUI:CreateFormCheckbox(s2.frame, nil, "autoDepositReagents", behavior, nil,
-            { description = "Deposit all crafting reagents from your bags into the warband bank every time you open the bank." })
-        s2.AddRow(row(s2.frame, "Tooltip Item Counts", tooltipCountsW), row(s2.frame, "Auto-Deposit Reagents", autoReagentsW))
+            { description = ns.L["Deposit all crafting reagents from your bags into the warband bank every time you open the bank."] })
+        s2.AddRow(row(s2.frame, ns.L["Tooltip Item Counts"], tooltipCountsW), row(s2.frame, ns.L["Auto-Deposit Reagents"], autoReagentsW))
 
         local glowEnableW = GUI:CreateFormCheckbox(s2.frame, nil, "enabled", behavior.newItemGlow, Refresh,
-            { description = "Highlight recently looted items in the bag window until you mouse over them or the timeout passes." })
+            { description = ns.L["Highlight recently looted items in the bag window until you mouse over them or the timeout passes."] })
         local glowTimeoutW = GUI:CreateFormSlider(s2.frame, nil, 5, 120, 5, "timeoutMinutes", behavior.newItemGlow, nil,
-            { description = "Minutes before a new-item highlight expires on its own." })
-        s2.AddRow(row(s2.frame, "New Item Highlight", glowEnableW), row(s2.frame, "Highlight Timeout (min)", glowTimeoutW))
+            { description = ns.L["Minutes before a new-item highlight expires on its own."] })
+        s2.AddRow(row(s2.frame, ns.L["New Item Highlight"], glowEnableW), row(s2.frame, ns.L["Highlight Timeout (min)"], glowTimeoutW))
         L.closeSection(s2)
 
         -- AUTO-OPEN
-        L.headerAt("Auto-Open")
+        L.headerAt(ns.L["Auto-Open"])
         local s3 = L.sectionAt()
         local autoOpenRows = {
-            { key = "merchant", label = "Merchant", desc = "Open the bag window when you talk to a merchant." },
-            { key = "mail", label = "Mailbox", desc = "Open the bag window at a mailbox." },
-            { key = "auctionHouse", label = "Auction House", desc = "Open the bag window at the auction house." },
-            { key = "trade", label = "Trade", desc = "Open the bag window when a trade starts." },
-            { key = "scrappingMachine", label = "Scrapping Machine", desc = "Open the bag window at a scrapping machine." },
-            { key = "itemUpgrade", label = "Item Upgrade", desc = "Open the bag window at the item upgrade vendor." },
-            { key = "socket", label = "Socketing", desc = "Open the bag window when socketing an item." },
-            { key = "bank", label = "Bank", desc = "Open the bag window alongside the bank window." },
-            { key = "guildBank", label = "Guild Bank", desc = "Open the bag window alongside the guild bank window." },
+            { key = "merchant", label = ns.L["Merchant"], desc = ns.L["Open the bag window when you talk to a merchant."] },
+            { key = "mail", label = ns.L["Mailbox"], desc = ns.L["Open the bag window at a mailbox."] },
+            { key = "auctionHouse", label = ns.L["Auction House"], desc = ns.L["Open the bag window at the auction house."] },
+            { key = "trade", label = ns.L["Trade"], desc = ns.L["Open the bag window when a trade starts."] },
+            { key = "scrappingMachine", label = ns.L["Scrapping Machine"], desc = ns.L["Open the bag window at a scrapping machine."] },
+            { key = "itemUpgrade", label = ns.L["Item Upgrade"], desc = ns.L["Open the bag window at the item upgrade vendor."] },
+            { key = "socket", label = ns.L["Socketing"], desc = ns.L["Open the bag window when socketing an item."] },
+            { key = "bank", label = ns.L["Bank"], desc = ns.L["Open the bag window alongside the bank window."] },
+            { key = "guildBank", label = ns.L["Guild Bank"], desc = ns.L["Open the bag window alongside the guild bank window."] },
         }
         local pendingCell = nil
         for _, def in ipairs(autoOpenRows) do
@@ -408,26 +408,26 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         L.closeSection(s3)
 
         -- JUNK
-        L.headerAt("Junk")
+        L.headerAt(ns.L["Junk"])
         local s4 = L.sectionAt()
         local junkDimW = GUI:CreateFormCheckbox(s4.frame, nil, "dim", behavior.junk, Refresh,
-            { description = "Desaturate junk (gray) items and overlay a coin icon in the bag window." })
+            { description = ns.L["Desaturate junk (gray) items and overlay a coin icon in the bag window."] })
         local sellButtonW = GUI:CreateFormCheckbox(s4.frame, nil, "sellButton", behavior.junk, Refresh,
-            { description = "Show a Sell Junk button in the bag window while a merchant is open." })
-        s4.AddRow(row(s4.frame, "Dim Junk Items", junkDimW), row(s4.frame, "Sell Junk Button", sellButtonW))
+            { description = ns.L["Show a Sell Junk button in the bag window while a merchant is open."] })
+        s4.AddRow(row(s4.frame, ns.L["Dim Junk Items"], junkDimW), row(s4.frame, ns.L["Sell Junk Button"], sellButtonW))
 
         local exclusionWrapper = { selected = "" }
         local exclusionDropdown
         exclusionDropdown = GUI:CreateFormDropdown(s4.frame, nil, BuildExclusionOptions(behavior.junk), "selected", exclusionWrapper, function(value)
             if not value or value == "" then return end
             behavior.junk.exclusions[value] = nil
-            print("|cff60A5FAQUI:|r Removed junk exclusion: " .. ItemLabel(value))
+            print("|cff60A5FAQUI:|r " .. string.format(ns.L["Removed junk exclusion: %s"], ItemLabel(value)))
             exclusionWrapper.selected = ""
             if exclusionDropdown.SetOptions then exclusionDropdown.SetOptions(BuildExclusionOptions(behavior.junk)) end
             if exclusionDropdown.SetValue then exclusionDropdown.SetValue("", true) end
             Refresh()
-        end, { description = "Items excluded from junk dimming and the Sell Junk button. Selecting one removes the exclusion." })
-        s4.AddRow(row(s4.frame, "Remove Exclusion", exclusionDropdown))
+        end, { description = ns.L["Items excluded from junk dimming and the Sell Junk button. Selecting one removes the exclusion."] })
+        s4.AddRow(row(s4.frame, ns.L["Remove Exclusion"], exclusionDropdown))
 
         -- Add-by-ID cell (the currency-bar idiom below): validate via
         -- GetItemInfoInstant (MayReturnNothing per ItemDocumentation — nil
@@ -435,24 +435,24 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local exclAddInput = GUI:CreateFormEditBox(s4.frame, nil, nil, nil, nil, {
             commitOnEnter = false, commitOnFocusLost = false,
             onEscapePressed = function(self) self:ClearFocus() end,
-        }, { description = "Numeric item ID to exclude from junk handling (find IDs on database sites or via item tooltips). Click Add to validate and append it." })
-        local exclAddCell = row(s4.frame, "Add Exclusion by ID", exclAddInput)
-        local exclAddBtn = GUI:CreateButton(exclAddCell, "Add", 70, 22, function()
+        }, { description = ns.L["Numeric item ID to exclude from junk handling (find IDs on database sites or via item tooltips). Click Add to validate and append it."] })
+        local exclAddCell = row(s4.frame, ns.L["Add Exclusion by ID"], exclAddInput)
+        local exclAddBtn = GUI:CreateButton(exclAddCell, ns.L["Add"], 70, 22, function()
             local text = exclAddInput.editBox and exclAddInput.editBox:GetText()
             local id = tonumber(text)
             if not id or id <= 0 or id % 1 ~= 0 then
-                print("|cffff0000QUI:|r Enter a numeric item ID.")
+                print("|cffff0000QUI:|r " .. ns.L["Enter a numeric item ID."])
                 return
             end
             local valid = C_Item and C_Item.GetItemInfoInstant
                 and C_Item.GetItemInfoInstant(id)
             if not valid then
-                print("|cffff0000QUI:|r Unknown item ID: " .. id)
+                print("|cffff0000QUI:|r " .. string.format(ns.L["Unknown item ID: %s"], id))
                 return
             end
             behavior.junk.exclusions[id] = true
             if exclAddInput.editBox then exclAddInput.editBox:SetText("") end
-            print("|cff60A5FAQUI:|r Added junk exclusion: " .. ItemLabel(id))
+            print("|cff60A5FAQUI:|r " .. string.format(ns.L["Added junk exclusion: %s"], ItemLabel(id)))
             if exclusionDropdown.SetOptions then exclusionDropdown.SetOptions(BuildExclusionOptions(behavior.junk)) end
             Refresh()
         end)
@@ -463,16 +463,16 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         L.closeSection(s4)
         PlaceNote(L, content,
-            "Exclusions protect specific items from junk dimming and the Sell Junk button. Add by item ID above; remove via the dropdown.",
+            ns.L["Exclusions protect specific items from junk dimming and the Sell Junk button. Add by item ID above; remove via the dropdown."],
             26)
 
         -- CURRENCY BAR
-        L.headerAt("Currency Bar")
+        L.headerAt(ns.L["Currency Bar"])
         local s5 = L.sectionAt()
         local cbar = bags.currencyBar
         local cbarEnableW = GUI:CreateFormCheckbox(s5.frame, nil, "enabled", cbar, Refresh,
-            { description = "Show a footer row on the bag window with the currencies enabled below." })
-        s5.AddRow(row(s5.frame, "Enable Currency Bar", cbarEnableW))
+            { description = ns.L["Show a footer row on the bag window with the currencies enabled below."] })
+        s5.AddRow(row(s5.frame, ns.L["Enable Currency Bar"], cbarEnableW))
         L.closeSection(s5)
 
         -- Currency list: the shared toggle+reorder section — the same view
@@ -485,10 +485,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             EnsureCurrencyBarLists(cbar)
             ns.QUI_BuildCurrencyOrderSection(L, content, {
                 dtGlobal = cbar,
-                header = "Currencies",
-                hint = "Enabled currencies show on the bag window's bar, in this order.",
-                toggleDescription = "Show this currency on the bag window's currency bar. Use the arrows to reorder.",
-                note = "Lists your backpack-tracked currencies — the same pool as the Currencies datatext.",
+                header = ns.L["Currencies"],
+                hint = ns.L["Enabled currencies show on the bag window's bar, in this order."],
+                toggleDescription = ns.L["Show this currency on the bag window's currency bar. Use the arrows to reorder."],
+                note = ns.L["Lists your backpack-tracked currencies — the same pool as the Currencies datatext."],
                 refresh = Refresh,
                 notify = function(region)
                     if NotifyProviderFor then NotifyProviderFor(region, { structural = true }) end
@@ -499,27 +499,27 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local note = noteRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             note:SetPoint("LEFT", noteRow, "LEFT", 0, 0)
             note:SetTextColor(1, 0.6, 0.1, 1)
-            note:SetText("Enable the Datatexts module addon (Modules page) to configure the currency list.")
+            note:SetText(ns.L["Enable the Datatexts module addon (Modules page) to configure the currency list."])
             L.placeCustom(noteRow, 18)
         end
 
         -- CACHED DATA
-        L.headerAt("Cached Data")
+        L.headerAt(ns.L["Cached Data"])
         local s6 = L.sectionAt()
         local charWrapper = { selected = "" }
         local charDropdown
         charDropdown = GUI:CreateFormDropdown(s6.frame, nil, BuildCharacterOptions(), "selected", charWrapper, function(value)
             if not value or value == "" then return end
             GUI:ShowConfirmation({
-                title = "Delete Cached Character?",
-                message = string.format("Delete the cached inventory data for '%s'?", value),
-                warningText = "This cannot be undone. The cache rebuilds the next time that character logs in.",
-                acceptText = "Delete", cancelText = "Cancel", isDestructive = true,
+                title = ns.L["Delete Cached Character?"],
+                message = string.format(ns.L["Delete the cached inventory data for '%1$s'?"], value),
+                warningText = ns.L["This cannot be undone. The cache rebuilds the next time that character logs in."],
+                acceptText = ns.L["Delete"], cancelText = ns.L["Cancel"], isDestructive = true,
                 onAccept = function()
                     local Store = ns.Bags and ns.Bags.Store
                     if Store and Store.DeleteCharacter then
                         Store.DeleteCharacter(value)
-                        print("|cff60A5FAQUI:|r Deleted cached character: " .. value)
+                        print("|cff60A5FAQUI:|r " .. string.format(ns.L["Deleted cached character: %s"], value))
                     end
                     charWrapper.selected = ""
                     if charDropdown.SetOptions then charDropdown.SetOptions(BuildCharacterOptions()) end
@@ -530,22 +530,22 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     if charDropdown.SetValue then charDropdown.SetValue("", true) end
                 end,
             })
-        end, { description = "Delete a character's cached bags, bank, equipment, mail, and currency data. The current character can't be deleted." })
+        end, { description = ns.L["Delete a character's cached bags, bank, equipment, mail, and currency data. The current character can't be deleted."] })
 
         local guildWrapper = { selected = "" }
         local guildDropdown
         guildDropdown = GUI:CreateFormDropdown(s6.frame, nil, BuildGuildOptions(), "selected", guildWrapper, function(value)
             if not value or value == "" then return end
             GUI:ShowConfirmation({
-                title = "Delete Cached Guild?",
-                message = string.format("Delete the cached guild bank data for '%s'?", value),
-                warningText = "This cannot be undone. The cache rebuilds on the next guild bank visit.",
-                acceptText = "Delete", cancelText = "Cancel", isDestructive = true,
+                title = ns.L["Delete Cached Guild?"],
+                message = string.format(ns.L["Delete the cached guild bank data for '%1$s'?"], value),
+                warningText = ns.L["This cannot be undone. The cache rebuilds on the next guild bank visit."],
+                acceptText = ns.L["Delete"], cancelText = ns.L["Cancel"], isDestructive = true,
                 onAccept = function()
                     local Store = ns.Bags and ns.Bags.Store
                     if Store and Store.DeleteGuild then
                         Store.DeleteGuild(value)
-                        print("|cff60A5FAQUI:|r Deleted cached guild: " .. value)
+                        print("|cff60A5FAQUI:|r " .. string.format(ns.L["Deleted cached guild: %s"], value))
                     end
                     guildWrapper.selected = ""
                     if guildDropdown.SetOptions then guildDropdown.SetOptions(BuildGuildOptions()) end
@@ -556,8 +556,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     if guildDropdown.SetValue then guildDropdown.SetValue("", true) end
                 end,
             })
-        end, { description = "Delete a guild's cached guild bank data." })
-        s6.AddRow(row(s6.frame, "Delete Character Cache", charDropdown), row(s6.frame, "Delete Guild Cache", guildDropdown))
+        end, { description = ns.L["Delete a guild's cached guild bank data."] })
+        s6.AddRow(row(s6.frame, ns.L["Delete Character Cache"], charDropdown), row(s6.frame, ns.L["Delete Guild Cache"], guildDropdown))
         L.closeSection(s6)
 
         L.relayoutSections()

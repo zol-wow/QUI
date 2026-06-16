@@ -496,10 +496,10 @@ end
 local layoutElementsRegistered = false
 
 local DANDERS_ELEMENTS = {
-    { key = "dandersParty",   label = "DF Party",    order = 1, containerKey = "party",   showTest = "ShowTestFrames",     hideTest = "HideTestFrames" },
-    { key = "dandersRaid",    label = "DF Raid",     order = 2, containerKey = "raid",    showTest = "ShowRaidTestFrames", hideTest = "HideRaidTestFrames" },
-    { key = "dandersPinned1", label = "DF Pinned 1", order = 3, containerKey = "pinned1" },
-    { key = "dandersPinned2", label = "DF Pinned 2", order = 4, containerKey = "pinned2" },
+    { key = "dandersParty",   label = ns.L["DF Party"],    order = 1, containerKey = "party",   showTest = "ShowTestFrames",     hideTest = "HideTestFrames" },
+    { key = "dandersRaid",    label = ns.L["DF Raid"],     order = 2, containerKey = "raid",    showTest = "ShowRaidTestFrames", hideTest = "HideRaidTestFrames" },
+    { key = "dandersPinned1", label = ns.L["DF Pinned 1"], order = 3, containerKey = "pinned1" },
+    { key = "dandersPinned2", label = ns.L["DF Pinned 2"], order = 4, containerKey = "pinned2" },
 }
 
 RegisterLayoutModeElements = function()
@@ -529,7 +529,7 @@ RegisterLayoutModeElements = function()
         um:RegisterElement({
             key = elementKey,
             label = info.label,
-            group = "3rd Party",
+            group = ns.L["3rd Party"],
             order = info.order,
             isOwned = false,
             usesCustomPositionPersistence = true,
@@ -563,10 +563,10 @@ RegisterLayoutModeElements = function()
                     local GUI = QUI and QUI.GUI
                     if GUI and GUI.ShowConfirmation then
                         GUI:ShowConfirmation({
-                            title = "Reload UI?",
-                            message = "DandersFrames changes require a reload to take effect.",
-                            acceptText = "Reload",
-                            cancelText = "Later",
+                            title = ns.L["Reload UI?"],
+                            message = ns.L["DandersFrames changes require a reload to take effect."],
+                            acceptText = ns.L["Reload"],
+                            cancelText = ns.L["Later"],
                             onAccept = function() QUI:SafeReload() end,
                         })
                     end

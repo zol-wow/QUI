@@ -44,20 +44,20 @@ do
         end
 
         local anchorOptions = {
-            {value = "TOPLEFT", text = "Top Left"},
-            {value = "TOP", text = "Top"},
-            {value = "TOPRIGHT", text = "Top Right"},
-            {value = "LEFT", text = "Left"},
-            {value = "CENTER", text = "Center"},
-            {value = "RIGHT", text = "Right"},
-            {value = "BOTTOMLEFT", text = "Bottom Left"},
-            {value = "BOTTOM", text = "Bottom"},
-            {value = "BOTTOMRIGHT", text = "Bottom Right"},
+            {value = "TOPLEFT", text = ns.L["Top Left"]},
+            {value = "TOP", text = ns.L["Top"]},
+            {value = "TOPRIGHT", text = ns.L["Top Right"]},
+            {value = "LEFT", text = ns.L["Left"]},
+            {value = "CENTER", text = ns.L["Center"]},
+            {value = "RIGHT", text = ns.L["Right"]},
+            {value = "BOTTOMLEFT", text = ns.L["Bottom Left"]},
+            {value = "BOTTOM", text = ns.L["Bottom"]},
+            {value = "BOTTOMRIGHT", text = ns.L["Bottom Right"]},
         }
 
         local orientationOptions = {
-            {value = "horizontal", text = "Horizontal"},
-            {value = "vertical", text = "Vertical"},
+            {value = "horizontal", text = ns.L["Horizontal"]},
+            {value = "vertical", text = ns.L["Vertical"]},
         }
 
         local LAYOUT_BARS = {
@@ -72,18 +72,18 @@ do
         }
 
         local flyoutDirectionOptions = {
-            {value = "AUTO",  text = "Auto"},
-            {value = "UP",    text = "Up"},
-            {value = "DOWN",  text = "Down"},
-            {value = "LEFT",  text = "Left"},
-            {value = "RIGHT", text = "Right"},
+            {value = "AUTO",  text = ns.L["Auto"]},
+            {value = "UP",    text = ns.L["Up"]},
+            {value = "DOWN",  text = ns.L["Down"]},
+            {value = "LEFT",  text = ns.L["Left"]},
+            {value = "RIGHT", text = ns.L["Right"]},
         }
 
         local totemBarGrowOptions = {
-            {value = "RIGHT", text = "Right"},
-            {value = "LEFT",  text = "Left"},
-            {value = "UP",    text = "Up"},
-            {value = "DOWN",  text = "Down"},
+            {value = "RIGHT", text = ns.L["Right"]},
+            {value = "LEFT",  text = ns.L["Left"]},
+            {value = "UP",    text = ns.L["Up"]},
+            {value = "DOWN",  text = ns.L["Down"]},
         }
 
         local GetTotemBarDB = Helpers.CreateDBGetter("totemBar")
@@ -113,10 +113,10 @@ do
         }
 
         local copyBarOptions = {
-            {value = "bar1", text = "Bar 1"}, {value = "bar2", text = "Bar 2"},
-            {value = "bar3", text = "Bar 3"}, {value = "bar4", text = "Bar 4"},
-            {value = "bar5", text = "Bar 5"}, {value = "bar6", text = "Bar 6"},
-            {value = "bar7", text = "Bar 7"}, {value = "bar8", text = "Bar 8"},
+            {value = "bar1", text = ns.L["Bar 1"]}, {value = "bar2", text = ns.L["Bar 2"]},
+            {value = "bar3", text = ns.L["Bar 3"]}, {value = "bar4", text = ns.L["Bar 4"]},
+            {value = "bar5", text = ns.L["Bar 5"]}, {value = "bar6", text = ns.L["Bar 6"]},
+            {value = "bar7", text = ns.L["Bar 7"]}, {value = "bar8", text = ns.L["Bar 8"]},
         }
 
         local function CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
@@ -136,11 +136,11 @@ do
                 end
             end
 
-            CreateCollapsible(content, "Layout", FORM_ROW + 8, function(body)
+            CreateCollapsible(content, ns.L["Layout"], FORM_ROW + 8, function(body)
                 local sy = -4
-                P(GUI:CreateFormDropdown(body, "Grow Direction",
+                P(GUI:CreateFormDropdown(body, ns.L["Grow Direction"],
                     totemBarGrowOptions, "growDirection", totemDB, RefreshTotemBar,
-                    { description = "Direction the totem bar grows as additional totems are summoned." }), body, sy)
+                    { description = ns.L["Direction the totem bar grows as additional totems are summoned."] }), body, sy)
             end, sections, relayout)
 
             U.BuildPositionCollapsible(content, "totemBar", nil, sections, relayout)
@@ -159,10 +159,10 @@ do
                 local gui = QUI and QUI.GUI
                 if gui and gui.ShowConfirmation then
                     gui:ShowConfirmation({
-                        title = "Reload UI?",
-                        message = "Enabling or disabling this special button requires a UI reload to fully take effect.",
-                        acceptText = "Reload",
-                        cancelText = "Later",
+                        title = ns.L["Reload UI?"],
+                        message = ns.L["Enabling or disabling this special button requires a UI reload to fully take effect."],
+                        acceptText = ns.L["Reload"],
+                        cancelText = ns.L["Later"],
                         onAccept = function()
                             if QUI and QUI.SafeReload then
                                 QUI:SafeReload()
@@ -189,15 +189,15 @@ do
                 ShowSpecialButtonReloadPrompt()
             end
 
-            CreateCollapsible(content, "Button", 3 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, ns.L["Button"], 3 * FORM_ROW + 8, function(body)
                 local sy = -4
-                sy = P(GUI:CreateFormToggle(body, "Enabled", "enabled", barDB, RefreshSpecialButtonEnabled,
-                    { description = "Let QUI manage this button's holder, position, scale, artwork, and mouseover behavior." }), body, sy)
-                sy = P(GUI:CreateFormToggle(body, "Hide Artwork", "hideArtwork", barDB, RefreshSpecialButton,
-                    { description = "Hide the decorative Blizzard artwork around this button while keeping the button itself visible." }), body, sy)
-                P(GUI:CreateFormSlider(body, "Scale",
+                sy = P(GUI:CreateFormToggle(body, ns.L["Enabled"], "enabled", barDB, RefreshSpecialButtonEnabled,
+                    { description = ns.L["Let QUI manage this button's holder, position, scale, artwork, and mouseover behavior."] }), body, sy)
+                sy = P(GUI:CreateFormToggle(body, ns.L["Hide Artwork"], "hideArtwork", barDB, RefreshSpecialButton,
+                    { description = ns.L["Hide the decorative Blizzard artwork around this button while keeping the button itself visible."] }), body, sy)
+                P(GUI:CreateFormSlider(body, ns.L["Scale"],
                     0.5, 2.0, 0.05, "scale", barDB, RefreshSpecialButton, DEFER,
-                    { description = "Scale multiplier applied to this special button frame." }), body, sy)
+                    { description = ns.L["Scale multiplier applied to this special button frame."] }), body, sy)
             end, sections, relayout)
 
             U.BuildPositionCollapsible(content, barKey, nil, sections, relayout)
@@ -293,22 +293,22 @@ do
                 local GUI = QUI and QUI.GUI
                 if GUI and GUI.ShowConfirmation then
                     GUI:ShowConfirmation({
-                        title = "Reload UI?",
-                        message = "Enabling or disabling an action bar requires a UI reload to fully take effect.",
-                        acceptText = "Reload",
-                        cancelText = "Later",
+                        title = ns.L["Reload UI?"],
+                        message = ns.L["Enabling or disabling an action bar requires a UI reload to fully take effect."],
+                        acceptText = ns.L["Reload"],
+                        cancelText = ns.L["Later"],
                         onAccept = function() QUI:SafeReload() end,
                     })
                 end
             end
 
             if TOGGLEABLE_MAIN_BARS[dbKey] then
-                local enabledDesc = (dbKey == "microbar" and "Show or hide the micro menu. Stays in sync with this element's enable toggle in Layout Mode.")
-                    or (dbKey == "bags" and "Show or hide the bag bar. Stays in sync with this element's enable toggle in Layout Mode.")
-                    or "Show or hide this action bar. Bars 2-8 can be individually disabled without affecting the pet or stance bars."
-                CreateCollapsible(content, "Bar", FORM_ROW + 8, function(body)
+                local enabledDesc = (dbKey == "microbar" and ns.L["Show or hide the micro menu. Stays in sync with this element's enable toggle in Layout Mode."])
+                    or (dbKey == "bags" and ns.L["Show or hide the bag bar. Stays in sync with this element's enable toggle in Layout Mode."])
+                    or ns.L["Show or hide this action bar. Bars 2-8 can be individually disabled without affecting the pet or stance bars."]
+                CreateCollapsible(content, ns.L["Bar"], FORM_ROW + 8, function(body)
                     local sy = -4
-                    P(GUI:CreateFormCheckbox(body, "Enabled",
+                    P(GUI:CreateFormCheckbox(body, ns.L["Enabled"],
                         "enabled", barDB, ApplyBarEnabledState,
                         { description = enabledDesc }), body, sy)
                 end, sections, relayout)
@@ -322,17 +322,17 @@ do
                 if barKey == "bar1" then extraRows = extraRows + 1 end
                 if FLYOUT_BARS[barKey] then extraRows = extraRows + 1 end
                 local numRows = 7 + extraRows
-                CreateCollapsible(content, "Layout", numRows * FORM_ROW + 8, function(body)
+                CreateCollapsible(content, ns.L["Layout"], numRows * FORM_ROW + 8, function(body)
                     local sy = -4
 
                     if barKey == "bar1" then
                         sy = P(GUI:CreateFormCheckbox(body,
-                            "Hide Default Paging Arrow", "hidePageArrow", barDB,
+                            ns.L["Hide Default Paging Arrow"], "hidePageArrow", barDB,
                             function(val)
                                 if _G.QUI_ApplyPageArrowVisibility then
                                     _G.QUI_ApplyPageArrowVisibility(val)
                                 end
-                            end, { description = "Hide Blizzard's small paging arrow attached to the main action bar. Only affects Bar 1." }), body, sy)
+                            end, { description = ns.L["Hide Blizzard's small paging arrow attached to the main action bar. Only affects Bar 1."] }), body, sy)
                     end
 
                     if not isMicroBag then
@@ -343,7 +343,7 @@ do
                         end
                     end
 
-                    sy = P(GUI:CreateFormDropdown(body, "Copy Settings From", filteredCopyOptions, nil, nil,
+                    sy = P(GUI:CreateFormDropdown(body, ns.L["Copy Settings From"], filteredCopyOptions, nil, nil,
                         function(sourceKey)
                             local sourceDbKey = SETTINGS_DB_KEY_MAP[sourceKey] or sourceKey
                             local sourceDB = db.bars[sourceDbKey]
@@ -357,11 +357,11 @@ do
                                 for sk, sv in pairs(sourceDB.ownedLayout) do barDB.ownedLayout[sk] = sv end
                             end
                             RefreshActionBars()
-                        end, { description = "Clone another bar's layout, visual, keybind, macro name, and stack count settings onto this bar. Position/anchor is not copied." }), body, sy)
+                        end, { description = ns.L["Clone another bar's layout, visual, keybind, macro name, and stack count settings onto this bar. Position/anchor is not copied."] }), body, sy)
                     end -- isMicroBag guard
 
                     if isMicroBag then
-                        sy = P(GUI:CreateFormCheckbox(body, "Clickthrough",
+                        sy = P(GUI:CreateFormCheckbox(body, ns.L["Clickthrough"],
                             "clickthrough", barDB, function(val)
                                 local btns = ActionBarsOwned.nativeButtons[dbKey]
                                 if btns then
@@ -369,203 +369,203 @@ do
                                         btn:EnableMouse(not val)
                                     end
                                 end
-                            end, { description = "Make this bar ignore mouse clicks so they pass through to whatever is underneath. Useful when placing the bar over the world view." }), body, sy)
+                            end, { description = ns.L["Make this bar ignore mouse clicks so they pass through to whatever is underneath. Useful when placing the bar over the world view."] }), body, sy)
                     end
 
-                    sy = P(GUI:CreateFormDropdown(body, "Orientation",
+                    sy = P(GUI:CreateFormDropdown(body, ns.L["Orientation"],
                         orientationOptions, "orientation", layout, RefreshActionBars,
-                        { description = "Lay out buttons horizontally (left-to-right rows) or vertically (top-to-bottom columns)." }), body, sy)
+                        { description = ns.L["Lay out buttons horizontally (left-to-right rows) or vertically (top-to-bottom columns)."] }), body, sy)
 
-                    sy = P(GUI:CreateFormSlider(body, "Buttons Per Row",
+                    sy = P(GUI:CreateFormSlider(body, ns.L["Buttons Per Row"],
                         1, maxButtons, 1, "columns", layout, RefreshActionBars, DEFER_SIZE,
-                        { description = "How many buttons fit in a single row before wrapping. Pair with Visible Buttons to shape multi-row layouts." }), body, sy)
+                        { description = ns.L["How many buttons fit in a single row before wrapping. Pair with Visible Buttons to shape multi-row layouts."] }), body, sy)
 
-                    sy = P(GUI:CreateFormSlider(body, "Visible Buttons",
+                    sy = P(GUI:CreateFormSlider(body, ns.L["Visible Buttons"],
                         1, maxButtons, 1, "iconCount", layout, RefreshActionBars, DEFER_SIZE,
-                        { description = "How many buttons on this bar are visible. Hidden buttons are still keybindable but not drawn." }), body, sy)
+                        { description = ns.L["How many buttons on this bar are visible. Hidden buttons are still keybindable but not drawn."] }), body, sy)
 
-                    sy = P(GUI:CreateFormSlider(body, "Button Size",
+                    sy = P(GUI:CreateFormSlider(body, ns.L["Button Size"],
                         20, 64, 1, "buttonSize", layout, RefreshActionBars, DEFER_SIZE,
-                        { description = "Square size of each button in pixels." }), body, sy)
+                        { description = ns.L["Square size of each button in pixels."] }), body, sy)
 
-                    sy = P(GUI:CreateFormSlider(body, "Button Spacing",
+                    sy = P(GUI:CreateFormSlider(body, ns.L["Button Spacing"],
                         -10, 10, 1, "buttonSpacing", layout, RefreshActionBars, DEFER_SIZE,
-                        { description = "Pixel gap between adjacent buttons. Negative values overlap buttons for compact layouts." }), body, sy)
+                        { description = ns.L["Pixel gap between adjacent buttons. Negative values overlap buttons for compact layouts."] }), body, sy)
 
-                    sy = P(GUI:CreateFormCheckbox(body, "Grow Upward",
+                    sy = P(GUI:CreateFormCheckbox(body, ns.L["Grow Upward"],
                         "growUp", layout, RefreshActionBars,
-                        { description = "Add new rows above the anchor row instead of below, so the bar grows up from its anchor." }), body, sy)
+                        { description = ns.L["Add new rows above the anchor row instead of below, so the bar grows up from its anchor."] }), body, sy)
 
                     if FLYOUT_BARS[barKey] then
-                        sy = P(GUI:CreateFormCheckbox(body, "Grow Left",
+                        sy = P(GUI:CreateFormCheckbox(body, ns.L["Grow Left"],
                             "growLeft", layout, RefreshActionBars,
-                            { description = "Add new buttons to the left of the anchor instead of the right, so the bar grows leftward." }), body, sy)
+                            { description = ns.L["Add new buttons to the left of the anchor instead of the right, so the bar grows leftward."] }), body, sy)
 
-                        P(GUI:CreateFormDropdown(body, "Flyout Direction",
+                        P(GUI:CreateFormDropdown(body, ns.L["Flyout Direction"],
                             flyoutDirectionOptions, "flyoutDirection", layout,
                             function()
                                 ApplyFlyoutDirection(barKey)
-                            end, { description = "Direction a secure-owned spell flyout opens from buttons on this bar." }), body, sy)
+                            end, { description = ns.L["Direction a secure-owned spell flyout opens from buttons on this bar."] }), body, sy)
                     else
-                        P(GUI:CreateFormCheckbox(body, "Grow Left",
+                        P(GUI:CreateFormCheckbox(body, ns.L["Grow Left"],
                             "growLeft", layout, RefreshActionBars,
-                            { description = "Add new buttons to the left of the anchor instead of the right, so the bar grows leftward." }), body, sy)
+                            { description = ns.L["Add new buttons to the left of the anchor instead of the right, so the bar grows leftward."] }), body, sy)
                     end
                 end, sections, relayout)
             end
 
             -- SECTION: Visual (action bars only — micro/bag buttons are not skinned)
             if SKINNABLE_BAR_KEYS[dbKey] then
-            CreateCollapsible(content, "Visual", 7 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, ns.L["Visual"], 7 * FORM_ROW + 8, function(body)
                 local sy = -4
-                sy = P(GUI:CreateFormSlider(body, "Icon Crop",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Icon Crop"],
                     0.05, 0.15, 0.01, "iconZoom", barDB, RefreshActionBars, DEFER,
-                    { description = "Crop the edges of each icon to hide the default Blizzard border. Higher values crop more." }), body, sy)
+                    { description = ns.L["Crop the edges of each icon to hide the default Blizzard border. Higher values crop more."] }), body, sy)
 
-                sy = P(GUI:CreateFormCheckbox(body, "Show Backdrop",
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Backdrop"],
                     "showBackdrop", barDB, RefreshActionBars,
-                    { description = "Draw a dark backdrop behind this bar to separate it visually from the world." }), body, sy)
+                    { description = ns.L["Draw a dark backdrop behind this bar to separate it visually from the world."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Backdrop Opacity",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Backdrop Opacity"],
                     0, 1, 0.05, "backdropAlpha", barDB, RefreshActionBars, DEFER,
-                    { description = "Opacity of the backdrop fill. 0 is fully transparent, 1 is fully opaque." }), body, sy)
+                    { description = ns.L["Opacity of the backdrop fill. 0 is fully transparent, 1 is fully opaque."] }), body, sy)
 
-                sy = P(GUI:CreateFormCheckbox(body, "Show Gloss",
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Gloss"],
                     "showGloss", barDB, RefreshActionBars,
-                    { description = "Overlay a subtle glossy highlight on each button for a glass-like finish." }), body, sy)
+                    { description = ns.L["Overlay a subtle glossy highlight on each button for a glass-like finish."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Gloss Opacity",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Gloss Opacity"],
                     0, 1, 0.05, "glossAlpha", barDB, RefreshActionBars, DEFER,
-                    { description = "Opacity of the gloss overlay when Show Gloss is on." }), body, sy)
+                    { description = ns.L["Opacity of the gloss overlay when Show Gloss is on."] }), body, sy)
 
-                sy = P(GUI:CreateFormCheckbox(body, "Show Borders",
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Borders"],
                     "showBorders", barDB, RefreshActionBars,
-                    { description = "Draw a thin border around each button on this bar." }), body, sy)
+                    { description = ns.L["Draw a thin border around each button on this bar."] }), body, sy)
 
                 local pressedOptions = {
-                    {value = "off", text = "Off"},
-                    {value = "blizzard", text = "Blizzard Default"},
-                    {value = "qui", text = "QUI"},
+                    {value = "off", text = ns.L["Off"]},
+                    {value = "blizzard", text = ns.L["Blizzard Default"]},
+                    {value = "qui", text = ns.L["QUI"]},
                 }
-                P(GUI:CreateFormDropdown(body, "Pressed Effect",
+                P(GUI:CreateFormDropdown(body, ns.L["Pressed Effect"],
                     pressedOptions, "showFlash", barDB, RefreshActionBars,
-                    { description = "Visual response when a button is pressed. Blizzard Default replays the stock animation; QUI swaps in a subtle overlay; Off disables both." }), body, sy)
+                    { description = ns.L["Visual response when a button is pressed. Blizzard Default replays the stock animation; QUI swaps in a subtle overlay; Off disables both."] }), body, sy)
             end, sections, relayout)
 
             -- SECTION: Keybind Text
-            CreateCollapsible(content, "Keybind Text", 7 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, ns.L["Keybind Text"], 7 * FORM_ROW + 8, function(body)
                 local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Show Keybinds",
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Keybinds"],
                     "showKeybinds", barDB, RefreshActionBars,
-                    { description = "Display the bound key on each button in the corner set below." }), body, sy)
+                    { description = ns.L["Display the bound key on each button in the corner set below."] }), body, sy)
 
-                sy = P(GUI:CreateFormCheckbox(body, "Hide Empty Keybinds",
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Hide Empty Keybinds"],
                     "hideEmptyKeybinds", barDB, RefreshActionBars,
-                    { description = "Only show keybind text on buttons that actually have an ability assigned." }), body, sy)
+                    { description = ns.L["Only show keybind text on buttons that actually have an ability assigned."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Font Size",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Font Size"],
                     8, 18, 1, "keybindFontSize", barDB, RefreshActionBars, DEFER,
-                    { description = "Font size used for the keybind text on this bar's buttons." }), body, sy)
+                    { description = ns.L["Font size used for the keybind text on this bar's buttons."] }), body, sy)
 
-                sy = P(GUI:CreateFormDropdown(body, "Anchor",
+                sy = P(GUI:CreateFormDropdown(body, ns.L["Anchor"],
                     anchorOptions, "keybindAnchor", barDB, RefreshActionBars,
-                    { description = "Which corner of each button the keybind text is anchored to." }), body, sy)
+                    { description = ns.L["Which corner of each button the keybind text is anchored to."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "X-Offset",
+                sy = P(GUI:CreateFormSlider(body, ns.L["X-Offset"],
                     -20, 20, 1, "keybindOffsetX", barDB, RefreshActionBars, DEFER,
-                    { description = "Horizontal pixel offset for the keybind text from its anchor corner." }), body, sy)
+                    { description = ns.L["Horizontal pixel offset for the keybind text from its anchor corner."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Y-Offset",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Y-Offset"],
                     -20, 20, 1, "keybindOffsetY", barDB, RefreshActionBars, DEFER,
-                    { description = "Vertical pixel offset for the keybind text from its anchor corner." }), body, sy)
+                    { description = ns.L["Vertical pixel offset for the keybind text from its anchor corner."] }), body, sy)
 
-                P(GUI:CreateFormColorPicker(body, "Color",
+                P(GUI:CreateFormColorPicker(body, ns.L["Color"],
                     "keybindColor", barDB, RefreshActionBars, nil,
-                    { description = "Color used for the keybind text on this bar." }), body, sy)
+                    { description = ns.L["Color used for the keybind text on this bar."] }), body, sy)
             end, sections, relayout)
 
             -- SECTION: Macro Names
-            CreateCollapsible(content, "Macro Names", 6 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, ns.L["Macro Names"], 6 * FORM_ROW + 8, function(body)
                 local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Show Macro Names",
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Macro Names"],
                     "showMacroNames", barDB, RefreshActionBars,
-                    { description = "Show the macro name (or ability name, if no macro) across the bottom of each button." }), body, sy)
+                    { description = ns.L["Show the macro name (or ability name, if no macro) across the bottom of each button."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Font Size",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Font Size"],
                     8, 18, 1, "macroNameFontSize", barDB, RefreshActionBars, DEFER,
-                    { description = "Font size used for the macro name text." }), body, sy)
+                    { description = ns.L["Font size used for the macro name text."] }), body, sy)
 
-                sy = P(GUI:CreateFormDropdown(body, "Anchor",
+                sy = P(GUI:CreateFormDropdown(body, ns.L["Anchor"],
                     anchorOptions, "macroNameAnchor", barDB, RefreshActionBars,
-                    { description = "Which corner of each button the macro name is anchored to." }), body, sy)
+                    { description = ns.L["Which corner of each button the macro name is anchored to."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "X-Offset",
+                sy = P(GUI:CreateFormSlider(body, ns.L["X-Offset"],
                     -20, 20, 1, "macroNameOffsetX", barDB, RefreshActionBars, DEFER,
-                    { description = "Horizontal pixel offset for the macro name from its anchor corner." }), body, sy)
+                    { description = ns.L["Horizontal pixel offset for the macro name from its anchor corner."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Y-Offset",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Y-Offset"],
                     -20, 20, 1, "macroNameOffsetY", barDB, RefreshActionBars, DEFER,
-                    { description = "Vertical pixel offset for the macro name from its anchor corner." }), body, sy)
+                    { description = ns.L["Vertical pixel offset for the macro name from its anchor corner."] }), body, sy)
 
-                P(GUI:CreateFormColorPicker(body, "Color",
+                P(GUI:CreateFormColorPicker(body, ns.L["Color"],
                     "macroNameColor", barDB, RefreshActionBars, nil,
-                    { description = "Color used for the macro name text on this bar." }), body, sy)
+                    { description = ns.L["Color used for the macro name text on this bar."] }), body, sy)
             end, sections, relayout)
 
             -- SECTION: Stack Count
-            CreateCollapsible(content, "Stack Count", 6 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, ns.L["Stack Count"], 6 * FORM_ROW + 8, function(body)
                 local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Show Counts",
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Counts"],
                     "showCounts", barDB, RefreshActionBars,
-                    { description = "Show the stack count / charge count on each button (e.g. reagent stacks, charge counts)." }), body, sy)
+                    { description = ns.L["Show the stack count / charge count on each button (e.g. reagent stacks, charge counts)."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Font Size",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Font Size"],
                     8, 20, 1, "countFontSize", barDB, RefreshActionBars, DEFER,
-                    { description = "Font size used for the stack count text." }), body, sy)
+                    { description = ns.L["Font size used for the stack count text."] }), body, sy)
 
-                sy = P(GUI:CreateFormDropdown(body, "Anchor",
+                sy = P(GUI:CreateFormDropdown(body, ns.L["Anchor"],
                     anchorOptions, "countAnchor", barDB, RefreshActionBars,
-                    { description = "Which corner of each button the stack count is anchored to." }), body, sy)
+                    { description = ns.L["Which corner of each button the stack count is anchored to."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "X-Offset",
+                sy = P(GUI:CreateFormSlider(body, ns.L["X-Offset"],
                     -20, 20, 1, "countOffsetX", barDB, RefreshActionBars, DEFER,
-                    { description = "Horizontal pixel offset for the stack count from its anchor corner." }), body, sy)
+                    { description = ns.L["Horizontal pixel offset for the stack count from its anchor corner."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Y-Offset",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Y-Offset"],
                     -20, 20, 1, "countOffsetY", barDB, RefreshActionBars, DEFER,
-                    { description = "Vertical pixel offset for the stack count from its anchor corner." }), body, sy)
+                    { description = ns.L["Vertical pixel offset for the stack count from its anchor corner."] }), body, sy)
 
-                P(GUI:CreateFormColorPicker(body, "Color",
+                P(GUI:CreateFormColorPicker(body, ns.L["Color"],
                     "countColor", barDB, RefreshActionBars, nil,
-                    { description = "Color used for the stack count text on this bar." }), body, sy)
+                    { description = ns.L["Color used for the stack count text on this bar."] }), body, sy)
             end, sections, relayout)
 
             -- SECTION: Cooldown Duration Text
-            CreateCollapsible(content, "Cooldown Duration Text", 6 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, ns.L["Cooldown Duration Text"], 6 * FORM_ROW + 8, function(body)
                 local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Show Duration Text",
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Duration Text"],
                     "showCooldownText", barDB, RefreshActionBars,
-                    { description = "Show Blizzard's native cooldown countdown numbers on each button." }), body, sy)
+                    { description = ns.L["Show Blizzard's native cooldown countdown numbers on each button."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Font Size",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Font Size"],
                     8, 24, 1, "cooldownTextFontSize", barDB, RefreshActionBars, DEFER,
-                    { description = "Font size used for cooldown duration text." }), body, sy)
+                    { description = ns.L["Font size used for cooldown duration text."] }), body, sy)
 
-                sy = P(GUI:CreateFormDropdown(body, "Anchor",
+                sy = P(GUI:CreateFormDropdown(body, ns.L["Anchor"],
                     anchorOptions, "cooldownTextAnchor", barDB, RefreshActionBars,
-                    { description = "Which point of each button the cooldown duration text is anchored to." }), body, sy)
+                    { description = ns.L["Which point of each button the cooldown duration text is anchored to."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "X-Offset",
+                sy = P(GUI:CreateFormSlider(body, ns.L["X-Offset"],
                     -20, 20, 1, "cooldownTextOffsetX", barDB, RefreshActionBars, DEFER,
-                    { description = "Horizontal pixel offset for cooldown duration text from its anchor point." }), body, sy)
+                    { description = ns.L["Horizontal pixel offset for cooldown duration text from its anchor point."] }), body, sy)
 
-                sy = P(GUI:CreateFormSlider(body, "Y-Offset",
+                sy = P(GUI:CreateFormSlider(body, ns.L["Y-Offset"],
                     -20, 20, 1, "cooldownTextOffsetY", barDB, RefreshActionBars, DEFER,
-                    { description = "Vertical pixel offset for cooldown duration text from its anchor point." }), body, sy)
+                    { description = ns.L["Vertical pixel offset for cooldown duration text from its anchor point."] }), body, sy)
 
-                P(GUI:CreateFormColorPicker(body, "Color",
+                P(GUI:CreateFormColorPicker(body, ns.L["Color"],
                     "cooldownTextColor", barDB, RefreshActionBars, nil,
-                    { description = "Color used for cooldown duration text on this bar." }), body, sy)
+                    { description = ns.L["Color used for cooldown duration text on this bar."] }), body, sy)
             end, sections, relayout)
             end -- SKINNABLE_BAR_KEYS guard
 

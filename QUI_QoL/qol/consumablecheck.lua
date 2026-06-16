@@ -132,7 +132,7 @@ local CLASS_ENHANCEMENT_CONFIG = {
     ROGUE = {
         MH = {
             source = "spell",
-            label = "Lethal Poison",
+            label = ns.L["Lethal Poison"],
             checkType = "playerAura",
             anyBuffIDs = { [2823] = true, [315584] = true, [8679] = true, [381664] = true },
             spells = {
@@ -144,7 +144,7 @@ local CLASS_ENHANCEMENT_CONFIG = {
         },
         OH = {
             source = "spell",
-            label = "Non-Lethal Poison",
+            label = ns.L["Non-Lethal Poison"],
             checkType = "playerAura",
             anyBuffIDs = { [3408] = true, [5761] = true, [381637] = true },
             spells = {
@@ -159,7 +159,7 @@ local CLASS_ENHANCEMENT_CONFIG = {
         -- Flametongue is OH-only for Enhancement and lives in OHWeapon below.
         MH = {
             source = "spell",
-            label = "Weapon Imbue",
+            label = ns.L["Weapon Imbue"],
             checkType = "weaponEnchant",
             anyEnchantIDs = { [5400] = true, [5401] = true, [6498] = true },
             spells = {
@@ -170,7 +170,7 @@ local CLASS_ENHANCEMENT_CONFIG = {
         -- Resto/Ele with shield equipped
         OHShield = {
             source = "spell",
-            label = "Shield Enchant",
+            label = ns.L["Shield Enchant"],
             checkType = "weaponEnchant",
             anyEnchantIDs = { [7587] = true, [7528] = true },
             spells = {
@@ -181,7 +181,7 @@ local CLASS_ENHANCEMENT_CONFIG = {
         -- Enhancement dual-wielding: Flametongue → OH
         OHWeapon = {
             source = "spell",
-            label = "Offhand Imbue",
+            label = ns.L["Offhand Imbue"],
             checkType = "weaponEnchant",
             anyEnchantIDs = { [5400] = true, [5401] = true, [6498] = true },
             spells = {
@@ -192,7 +192,7 @@ local CLASS_ENHANCEMENT_CONFIG = {
     PALADIN = {
         MH = {
             source = "spell",
-            label = "Weapon Rite",
+            label = ns.L["Weapon Rite"],
             checkType = "weaponEnchant",
             anyEnchantIDs = { [7143] = true, [7144] = true },
             spells = {
@@ -204,7 +204,7 @@ local CLASS_ENHANCEMENT_CONFIG = {
     HUNTER = {
         MH = {
             source = "item",
-            label = "Ammo",
+            label = ns.L["Ammo"],
             checkType = "weaponEnchant",
             items = AMMO_ITEMS,
         },
@@ -299,7 +299,7 @@ local function GetEnhancementLabel(slot)
         if sel and sel.label then return sel.label end
     end
     if config and config.label then return config.label end
-    return "Weapon Oil"
+    return ns.L["Weapon Oil"]
 end
 
 -- Export label function for options panel
@@ -893,7 +893,7 @@ closeButton.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
 
 closeButton.text = closeButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 closeButton.text:SetPoint("CENTER")
-closeButton.text:SetText("Close")
+closeButton.text:SetText(ns.L["Close"])
 closeButton.text:SetTextColor(0.8, 0.8, 0.8, 1)
 
 closeButton:SetScript("OnEnter", function(self)
@@ -930,12 +930,20 @@ local function CreateConsumableButton(parent, index, buttonType, iconID, isClick
 
     button.timeText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     button.timeText:SetPoint("BOTTOM", button, "TOP", 0, 2)
-    button.timeText:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(button.timeText, STANDARD_TEXT_FONT, 9, "OUTLINE")
+    else
+        button.timeText:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+    end
     button.timeText:SetTextColor(1, 1, 1, 1)
 
     button.countText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     button.countText:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
-    button.countText:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(button.countText, STANDARD_TEXT_FONT, 10, "OUTLINE")
+    else
+        button.countText:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+    end
     button.countText:SetTextColor(1, 1, 1, 1)
 
     if isClickable then

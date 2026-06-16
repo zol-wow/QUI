@@ -1505,7 +1505,7 @@ local defaults = {
                 enabled = true,                       -- master toggle for capture + login re-pump
                 retentionDays = 7,                    -- global default retention (1-30)
                 storeWhispers = false,                -- opt-in; warns about Blizzard HistoryKeeper duplicate restoration
-                showSeparators = true,                -- "── Previous session ──" / "── Resumed ──" markers around restored block
+                showSeparators = true,                -- "---- Previous session ----" / "---- Resumed ----" markers around restored block
                 perChannelRetention = {},             -- map: chatTypeKey -> override days. Empty = use default.
                 maxEntries = 5000,                    -- hard FIFO cap; logout pass trims oldest beyond this.
                 excludedChannels = {},                -- set: channelName -> true. Captures from these named channels are dropped before storage.

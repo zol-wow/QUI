@@ -15,7 +15,7 @@ local addCellStart = assert(source:find("local function GetOrCreateAddCell", 1, 
 local addCellEnd = assert(source:find("RefreshAddList = function()", addCellStart, true),
     "add cell factory should appear before RefreshAddList")
 
-local tooltipLine = source:find('GameTooltip:AddLine("Not Learned"', addCellStart, true)
+local tooltipLine = source:find('GameTooltip:AddLine(ns.L["Not Learned"]', addCellStart, true)
 assert(tooltipLine and tooltipLine < addCellEnd,
     "unlearned add entries should show a Not Learned tooltip line")
 assert(source:find("self._isUnlearned", addCellStart, true),

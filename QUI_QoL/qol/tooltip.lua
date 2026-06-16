@@ -1067,7 +1067,7 @@ end
 
 local function GetPlayerItemLevelLabel(playerData)
     if not playerData then
-        return "Player"
+        return ns.L["Player"]
     end
 
     if playerData.specName and playerData.specName ~= "" and playerData.className and playerData.className ~= "" then
@@ -1078,7 +1078,7 @@ local function GetPlayerItemLevelLabel(playerData)
         return playerData.className
     end
 
-    return "Player"
+    return ns.L["Player"]
 end
 
 local function TooltipColorByte(value)
@@ -1262,7 +1262,7 @@ local function AddTooltipTargetInfo(tooltip, unit, state)
     if not targetInfo then return false end
 
     EnsureTooltipInfoSpacer(tooltip, state)
-    AddTooltipInfoLine(tooltip, "Target", targetInfo.name, 0.7, 0.82, 1, targetInfo.valueR, targetInfo.valueG, targetInfo.valueB)
+    AddTooltipInfoLine(tooltip, ns.L["Target"], targetInfo.name, 0.7, 0.82, 1, targetInfo.valueR, targetInfo.valueG, targetInfo.valueB)
     state.targetAdded = true
     TooltipDebugCount("qol.targetAdded")
     return true
@@ -1474,7 +1474,7 @@ local function AddTooltipMountInfo(tooltip, unit, state)
     if state.lastMountName == mountName then return false end
 
     EnsureTooltipInfoSpacer(tooltip, state)
-    AddTooltipInfoLine(tooltip, "Mount", mountName, 0.65, 1, 0.65, 1, 1, 1)
+    AddTooltipInfoLine(tooltip, ns.L["Mount"], mountName, 0.65, 1, 0.65, 1, 1, 1)
     state.lastMountName = mountName
     TooltipDebugCount("qol.mountAdded")
     return true
@@ -1536,7 +1536,7 @@ local function AddUnitTooltipInfoToTooltip(tooltip, unit, settings)
         state.ratingResolved = true
         if rating then
             EnsureTooltipInfoSpacer(tooltip, state)
-            AddTooltipInfoLine(tooltip, "M+ Rating", string.format("%.1f", rating), 0.7, 0.82, 1, r or 1, g or 1, b or 1)
+            AddTooltipInfoLine(tooltip, ns.L["M+ Rating"], string.format("%.1f", rating), 0.7, 0.82, 1, r or 1, g or 1, b or 1)
             state.ratingAdded = true
             TooltipDebugCount("qol.ratingAdded")
             changed = true
@@ -2197,9 +2197,9 @@ local function SetupTooltipHook()
         end
 
         tooltip:AddLine(" ")
-        AddTooltipInfoLine(tooltip, "Spell ID", tostring(spellID), 0.5, 0.8, 1, 1, 1, 1)
+        AddTooltipInfoLine(tooltip, ns.L["Spell ID"], tostring(spellID), 0.5, 0.8, 1, 1, 1, 1)
         if iconID then
-            AddTooltipInfoLine(tooltip, "Icon ID", tostring(iconID), 0.5, 0.8, 1, 1, 1, 1)
+            AddTooltipInfoLine(tooltip, ns.L["Icon ID"], tostring(iconID), 0.5, 0.8, 1, 1, 1, 1)
         end
 
         if not skipShow then
@@ -2218,7 +2218,7 @@ local function SetupTooltipHook()
         tooltipSpellIDAdded[tooltip] = dedupeKey
 
         tooltip:AddLine(" ")
-        AddTooltipInfoLine(tooltip, "Item ID", tostring(itemID), 0.5, 0.8, 1, 1, 1, 1)
+        AddTooltipInfoLine(tooltip, ns.L["Item ID"], tostring(itemID), 0.5, 0.8, 1, 1, 1, 1)
 
         if not skipShow then
             RefreshTooltipLayout(tooltip)

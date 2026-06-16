@@ -23,7 +23,7 @@ function ns.QUI_RenderRelatedFooter(body, related, frame)
 
     local label = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("LEFT", container, "LEFT", 0, 0)
-    label:SetText("Related:")
+    label:SetText(ns.L["Related:"])
     label:SetTextColor(0.6, 0.6, 0.65, 1)
 
     local x = label:GetStringWidth() + 8

@@ -156,6 +156,7 @@ ns.QUI_GroupFrames = {
     raidGroupHeaders = {},
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_GroupFrames/groupframes/groupframes_clickcast.lua"))("QUI", ns)
 local GFCC = assert(ns.QUI_GroupFrameClickCast)
 

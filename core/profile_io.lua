@@ -2354,7 +2354,7 @@ function QUICore:ImportProfileFromString(str, targetProfileName)
         end
         if stripped and #stripped > 0 then
             local count = #stripped
-            print(("|cff60A5FAQUI:|r Auto-fixed %d incompatible setting%s during import."):format(count, count == 1 and "" or "s"))
+            print(ns.L["|cff60A5FAQUI:|r Auto-fixed %d incompatible setting%s during import."]:format(count, count == 1 and "" or "s"))
         end
         payloadOrErr = sanitized
     end

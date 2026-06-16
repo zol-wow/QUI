@@ -74,7 +74,7 @@ if CreateFrame then
 end
 
 -- Options-toggle keybind (Lua-managed; Bindings.xml removed). A hidden named
--- button carries a CLICK binding; the key persists in QUI_DB global and is
+-- button carries a CLICK binding; the key persists in the QUIDB global and is
 -- re-applied each login. Bind: /qui bindkey CTRL-O   Clear: /qui bindkey none
 local toggleOptionsButton = CreateFrame("Button", "QUI_ToggleOptionsButton", UIParent)
 toggleOptionsButton:Hide()
@@ -169,7 +169,7 @@ end
 function QUI:OpenOptions()
     local ok, reason = self:EnsureOptionsLoaded()
     if not ok then
-        print("|cFF56D1FFQUI:|r Options could not be loaded (" .. tostring(reason) .. ").")
+        print("|cFF56D1FFQUI:|r " .. ns.L["Options could not be loaded (%s)."]:format(tostring(reason)))
         return false
     end
 
@@ -178,14 +178,14 @@ function QUI:OpenOptions()
         return true
     end
 
-    print("|cFF56D1FFQUI:|r Options are not available yet. Try again in a moment.")
+    print("|cFF56D1FFQUI:|r " .. ns.L["Options are not available yet. Try again in a moment."])
     return false
 end
 
 function QUI:ShowOptions()
     local ok, reason = self:EnsureOptionsLoaded()
     if not ok then
-        print("|cFF56D1FFQUI:|r Options could not be loaded (" .. tostring(reason) .. ").")
+        print("|cFF56D1FFQUI:|r " .. ns.L["Options could not be loaded (%s)."]:format(tostring(reason)))
         return false
     end
 
@@ -225,12 +225,12 @@ local function CreateBlizzardSettingsPanel()
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetWidth(520)
     desc:SetJustifyH("LEFT")
-    desc:SetText("Open the QUI configuration window.")
+    desc:SetText(ns.L["Open the QUI configuration window."])
 
     local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     btn:SetSize(180, 32)
     btn:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -16)
-    btn:SetText("Open QUI")
+    btn:SetText(ns.L["Open QUI"])
     btn:SetScript("OnClick", OpenQUIOptions)
 
     local category = Settings.RegisterCanvasLayoutCategory(panel, "QUI")
@@ -290,16 +290,14 @@ QUI.defaults = {
 }
 
 function QUI:OnInitialize()
-    -- Migrate old QuaziiUI_DB to QUI_DB if needed
-    if QuaziiUI_DB and not QUI_DB then
-        QUI_DB = QuaziiUI_DB
-    end
-
+    -- Transient early DB so QUI.db is non-nil before QUICore:OnInitialize
+    -- reassigns it to the live "QUIDB" store (core/main.lua). Not persisted:
+    -- the legacy "QUI_DB" SavedVariable was retired.
     ---@type AceDBObject-3.0
-    self.db = LibStub("AceDB-3.0"):New("QUI_DB", self.defaults, "Default")
+    self.db = LibStub("AceDB-3.0"):New("QUI_InitTransientDB", self.defaults, "Default")
 
     -- NOTE: the new-profile seed is registered on the LIVE profile DB in
-    -- core/main.lua (QUICore:OnInitialize / "QUIDB"), not here. This QUI_DB
+    -- core/main.lua (QUICore:OnInitialize / "QUIDB"), not here. This transient
     -- instance is overwritten by QUI.db = self.db there and is not the
     -- profile store, so an OnNewProfile seed on it would never fire for users.
 
@@ -322,7 +320,7 @@ SlashCmdList["QUIKB"] = function()
         -- Fallback to Blizzard's Quick Keybind Mode (no mousewheel support)
         ShowUIPanel(QuickKeybindFrame)
     else
-        print("|cff60A5FAQUI:|r Quick Keybind Mode not available.")
+        print("|cff60A5FAQUI:|r " .. ns.L["Quick Keybind Mode not available."])
     end
 end
 
@@ -332,7 +330,7 @@ SlashCmdList["QUI_CDM"] = function()
     if CooldownViewerSettings then
         CooldownViewerSettings:SetShown(not CooldownViewerSettings:IsShown())
     else
-        print("|cff60A5FAQUI:|r Cooldown Settings not available. Enable CDM first.")
+        print("|cff60A5FAQUI:|r " .. ns.L["Cooldown Settings not available. Enable CDM first."])
     end
 end
 
@@ -345,14 +343,14 @@ function QUI:SlashCommandOpen(input)
         if _G.QUI_ToggleLayoutMode then
             _G.QUI_ToggleLayoutMode()
         else
-            print("|cff60A5FAQUI:|r Layout Mode not loaded yet.")
+            print("|cff60A5FAQUI:|r " .. ns.L["Layout Mode not loaded yet."])
         end
         return
     elseif input and input == "cdm" then
         if _G.QUI_OpenCDMComposer then
             _G.QUI_OpenCDMComposer()
         else
-            print("|cff60A5FAQUI:|r CDM Spell Composer not available. Enable CDM first.")
+            print("|cff60A5FAQUI:|r " .. ns.L["CDM Spell Composer not available. Enable CDM first."])
         end
         return
     elseif input and input:match("^cdm_cache") then
@@ -364,7 +362,7 @@ function QUI:SlashCommandOpen(input)
         local IC   = ns.CDMIcons
         local BR   = ns.CDMBars
         if not SD then
-            print("|cff60A5FAQUI:|r CDM not loaded.")
+            print("|cff60A5FAQUI:|r " .. ns.L["CDM not loaded."])
             return
         end
         if sub == "status" then
@@ -433,7 +431,7 @@ function QUI:SlashCommandOpen(input)
             return
         elseif sub == "reset" then
             if InCombatLockdown() then
-                print("|cff60A5FAQUI:|r cdm_cache reset blocked in combat — try again out of combat.")
+                print("|cff60A5FAQUI:|r " .. ns.L["cdm_cache reset blocked in combat — try again out of combat."])
                 return
             end
             -- Wipe — order doesn't matter, all are independent.
@@ -450,10 +448,10 @@ function QUI:SlashCommandOpen(input)
             -- Force a full repaint even if reconcile didn't add anything.
             if _G.QUI_OnSpellDataChanged then _G.QUI_OnSpellDataChanged() end
             if IC and IC.RequestFullUpdate then IC:RequestFullUpdate() end
-            print("|cff60A5FAQUI:|r cdm_cache reset — caches wiped, full rebuild scheduled.")
+            print("|cff60A5FAQUI:|r " .. ns.L["cdm_cache reset — caches wiped, full rebuild scheduled."])
             return
         else
-            print(("|cff60A5FAQUI:|r unknown cdm_cache subcommand '%s'."):format(tostring(sub)))
+            print("|cff60A5FAQUI:|r " .. ns.L["unknown cdm_cache subcommand '%s'."]:format(tostring(sub)))
             print("  usage: |cFFFFFF00/qui cdm_cache|r [status|reset]")
             return
         end
@@ -464,25 +462,24 @@ function QUI:SlashCommandOpen(input)
         local key = input:match("^bindkey%s+(%S+)")
         local current = self.db.global.toggleOptionsKey or ""
         if not key then
-            print("|cff60A5FAQUI:|r options keybind: " .. (current ~= "" and current or "none")
-                .. " — usage: |cFFFFFF00/qui bindkey CTRL-O|r or |cFFFFFF00/qui bindkey none|r")
+            print("|cff60A5FAQUI:|r " .. ns.L["options keybind: %1$s — usage: |cFFFFFF00/qui bindkey CTRL-O|r or |cFFFFFF00/qui bindkey none|r"]:format(current ~= "" and current or "none"))
             return
         end
         if InCombatLockdown() then
-            print("|cff60A5FAQUI:|r cannot change keybinds in combat.")
+            print("|cff60A5FAQUI:|r " .. ns.L["cannot change keybinds in combat."])
             return
         end
         if key:lower() == "none" or key:lower() == "off" then
             if current ~= "" then SetBinding(current) end
             self.db.global.toggleOptionsKey = ""
-            print("|cff60A5FAQUI:|r options keybind cleared.")
+            print("|cff60A5FAQUI:|r " .. ns.L["options keybind cleared."])
             return
         end
         key = key:upper()
         if current ~= "" and current ~= key then SetBinding(current) end
         self.db.global.toggleOptionsKey = key
         SetBindingClick(key, "QUI_ToggleOptionsButton")
-        print("|cff60A5FAQUI:|r options keybind set to " .. key .. ".")
+        print("|cff60A5FAQUI:|r " .. ns.L["options keybind set to %1$s."]:format(key))
         return
     elseif input and input:match("^gse") then
         -- /qui gse          → dump current override state
@@ -497,7 +494,7 @@ function QUI:SlashCommandOpen(input)
             if _G.QUI_GSEDump then
                 _G.QUI_GSEDump()
             else
-                print("|cff60A5FAQUI:|r GSE compat shim not loaded.")
+                print("|cff60A5FAQUI:|r " .. ns.L["GSE compat shim not loaded."])
             end
         end
         return
@@ -511,7 +508,7 @@ function QUI:SlashCommandOpen(input)
         local Mig = self.Migrations
         local profile = self.db and self.db.profile
         if not (Mig and profile) then
-            print("|cff60A5FAQUI:|r Migration system not available.")
+            print("|cff60A5FAQUI:|r " .. ns.L["Migration system not available."])
             return
         end
         if sub == "status" then
@@ -538,7 +535,7 @@ function QUI:SlashCommandOpen(input)
             end
         elseif sub == "restore" then
             if not Mig.Restore then
-                print("|cff60A5FAQUI:|r Restore not supported by this build.")
+                print("|cff60A5FAQUI:|r " .. ns.L["Restore not supported by this build."])
                 return
             end
             local slotIndex = tonumber(arg) or 1
@@ -549,10 +546,10 @@ function QUI:SlashCommandOpen(input)
                     tostring(info and info.fromVersion or "?")))
                 QUI:SafeReload()
             else
-                print("|cff60A5FAQUI migration:|r " .. tostring(info or "restore failed"))
+                print("|cff60A5FAQUI migration:|r " .. tostring(info or ns.L["restore failed"]))
             end
         else
-            print("|cff60A5FAQUI:|r unknown migration subcommand. Use: status, restore [N]")
+            print("|cff60A5FAQUI:|r " .. ns.L["unknown migration subcommand. Use: status, restore [N]"])
         end
         return
     elseif input and input == "miglog" then
@@ -564,7 +561,7 @@ function QUI:SlashCommandOpen(input)
         -- and then /reload. After login, /qui miglog dumps it.
         local log = _G.QUI_MIGRATION_LOG
         if type(log) ~= "table" or #log == 0 then
-            print("|cff60A5FAQUI:|r migration log is empty.")
+            print("|cff60A5FAQUI:|r " .. ns.L["migration log is empty."])
             print("  Enable with |cFFFFFF00/run QUI_MIGRATION_DEBUG = true|r then |cFFFFFF00/reload|r.")
             return
         end
@@ -575,14 +572,14 @@ function QUI:SlashCommandOpen(input)
         return
     elseif input and input == "miglog clear" then
         _G.QUI_MIGRATION_LOG = {}
-        print("|cff60A5FAQUI:|r migration log cleared.")
+        print("|cff60A5FAQUI:|r " .. ns.L["migration log cleared."])
         return
     elseif input and input == "anchordump" then
         -- Live dump of frameAnchoring entries for the active profile.
         -- Shows both raw SV and proxy-merged values for keys we care about.
         local profile = self.db and self.db.profile
         if not profile then
-            print("|cff60A5FAQUI:|r no profile loaded.")
+            print("|cff60A5FAQUI:|r " .. ns.L["no profile loaded."])
             return
         end
         local raw = self.db.sv and self.db.sv.profiles
@@ -640,7 +637,7 @@ function QUI:SlashCommandOpen(input)
         if _G.QUI_TooltipDebug then
             _G.QUI_TooltipDebug(subcmd, arg)
         else
-            print("|cff60A5FAQUI:|r Tooltip debug sampler not loaded yet.")
+            print("|cff60A5FAQUI:|r " .. ns.L["Tooltip debug sampler not loaded yet."])
         end
         return
     elseif input and input == "tooltipdbg" then
@@ -715,7 +712,7 @@ function QUI:SlashCommandOpen(input)
             end
             _G.QUI_MemAudit(subcmd, arg)
         else
-            print("|cff60A5FAQUI:|r Memory audit not loaded yet.")
+            print("|cff60A5FAQUI:|r " .. ns.L["Memory audit not loaded yet."])
         end
         return
     elseif input and input:match("^diagnose") then
@@ -725,14 +722,14 @@ function QUI:SlashCommandOpen(input)
             local subcmd = input:match("^diagnose%s+(%S+)")
             _G.QUI_DiagnoseEditMode(subcmd)
         else
-            print("|cff60A5FAQUI:|r Edit Mode diagnostic not loaded yet.")
+            print("|cff60A5FAQUI:|r " .. ns.L["Edit Mode diagnostic not loaded yet."])
         end
         return
     elseif input and input == "perf" then
         if _G.QUI_TogglePerfMonitor then
             _G.QUI_TogglePerfMonitor()
         else
-            print("|cff60A5FAQUI:|r Performance Monitor not loaded yet.")
+            print("|cff60A5FAQUI:|r " .. ns.L["Performance Monitor not loaded yet."])
         end
         return
     elseif input and input:match("^combatprof") then
@@ -744,7 +741,7 @@ function QUI:SlashCommandOpen(input)
             local sub = input:match("^combatprof%s+(%S+)")
             _G.QUI_CombatProf(sub)
         else
-            print("|cff60A5FAQUI:|r combat profiler not loaded yet.")
+            print("|cff60A5FAQUI:|r " .. ns.L["combat profiler not loaded yet."])
         end
         return
     end
@@ -759,7 +756,7 @@ end
 
 function QUI:SlashCommandPull(input)
     if not (C_PartyInfo and C_PartyInfo.DoCountdown) then
-        self:Print("Pull countdown is not available on this client.")
+        self:Print(ns.L["Pull countdown is not available on this client."])
         return
     end
 
@@ -776,7 +773,7 @@ function QUI:SlashCommandPull(input)
 
     local ok = C_PartyInfo.DoCountdown(secs)
     if not ok then
-        self:Print("Could not start pull countdown (need to be in a group and have permission).")
+        self:Print(ns.L["Could not start pull countdown (need to be in a group and have permission)."])
     end
 end
 
@@ -795,12 +792,12 @@ function QUI:OnEnable()
     if self.QUICore then
         -- Show intro message if enabled (defaults to true)
         if self.db.profile.chat.showIntroMessage ~= false then
-            print("|cFF30D1FFQUI|r loaded. |cFFFFFF00/qui|r to setup.")
+            print("|cFF30D1FFQUI|r " .. ns.L["loaded. |cFFFFFF00/qui|r to setup."])
             print("|cFF30D1FFQUI REMINDER:|r")
-            print("|cff60A5FA1.|r ENABLE |cFFFFFF00Cooldown Manager|r in Options > Gameplay Enhancement")
-            print("|cff60A5FA2.|r Action Bars & Menu Bar |cFFFFFF00HIDDEN|r on mouseover |cFFFFFF00by default|r. Go to |cFFFFFF00'Actionbars'|r tab in |cFFFFFF00/qui|r to unhide.")
-            print("|cff60A5FA3.|r Use |cFFFFFF00100% Icon Size|r on CDM Essential & Utility bars for best results.")
-            print("|cff60A5FA4.|r Use |cFFFFFF00/qui layout|r to position frames, then click |cFFFFFF00Save|r.")
+            print("|cff60A5FA1.|r " .. ns.L["ENABLE |cFFFFFF00Cooldown Manager|r in Options > Gameplay Enhancement"])
+            print("|cff60A5FA2.|r " .. ns.L["Action Bars & Menu Bar |cFFFFFF00HIDDEN|r on mouseover |cFFFFFF00by default|r. Go to |cFFFFFF00'Actionbars'|r tab in |cFFFFFF00/qui|r to unhide."])
+            print("|cff60A5FA3.|r " .. ns.L["Use |cFFFFFF00100% Icon Size|r on CDM Essential & Utility bars for best results."])
+            print("|cff60A5FA4.|r " .. ns.L["Use |cFFFFFF00/qui layout|r to position frames, then click |cFFFFFF00Save|r."])
         end
     end
 end
@@ -891,7 +888,7 @@ function QUI:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
     if self.DEBUG_MODE then
         local ok, reason = self:EnsureDebugToolsLoaded()
         if not ok then
-            self:Print("|cff60A5FAQUI:|r Debug tools could not be loaded (" .. tostring(reason) .. ").")
+            self:Print("|cff60A5FAQUI:|r " .. ns.L["Debug tools could not be loaded (%s)."]:format(tostring(reason)))
         end
         self:DebugPrint("Debug Mode Enabled")
     end
@@ -919,7 +916,7 @@ function QUI_CompartmentOnEnter(self, button)
     GameTooltip:ClearLines()
     GameTooltip:SetOwner(type(self) ~= "string" and self or button, "ANCHOR_LEFT")
     GameTooltip:AddLine("QUI v" .. QUI.versionString)
-    GameTooltip:AddLine("Left Click: Open Options")
+    GameTooltip:AddLine(ns.L["Left Click: Open Options"])
     GameTooltip:Show()
 end
 

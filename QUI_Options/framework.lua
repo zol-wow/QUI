@@ -353,7 +353,7 @@ local function BuildSearchRouteLabels(info)
     local subTabLabel = info.subTabName
     if (type(subTabLabel) ~= "string" or subTabLabel == "")
         and info.subPageIndex ~= nil then
-        subTabLabel = "Page " .. tostring(info.subPageIndex)
+        subTabLabel = ns.L["Page"] .. " " .. tostring(info.subPageIndex)
     end
 
     local sectionLabel = info.sectionName
@@ -453,7 +453,10 @@ end
 -- this returns — the first query already gets full results. Idempotent and cheap
 -- after the first call; until it loads (or if the addon is absent/disabled),
 -- search degrades gracefully to the tile-seeded routes registered at panel build.
-local SEARCH_CACHE_ADDON = "QUI_OptionsSearch"
+local function SearchCacheAddonName()
+    local loc = GetLocale and GetLocale() or "enUS"
+    return (loc == "enUS") and "QUI_OptionsSearch" or ("QUI_OptionsSearch_" .. loc)
+end
 function GUI:EnsureSearchCacheLoaded()
     if self:HasGeneratedSearchCache() or self._searchCacheLoadAttempted then
         return
@@ -461,7 +464,11 @@ function GUI:EnsureSearchCacheLoaded()
     self._searchCacheLoadAttempted = true
     local loader = (C_AddOns and C_AddOns.LoadAddOn) or LoadAddOn
     if type(loader) == "function" then
-        pcall(loader, SEARCH_CACHE_ADDON)
+        local ok = pcall(loader, SearchCacheAddonName())
+        -- Fallback: missing locale cache (e.g. unshipped) -> English index.
+        if not self:HasGeneratedSearchCache() then
+            pcall(loader, "QUI_OptionsSearch")
+        end
     end
     -- Pre-split, the cache applied at QUI_Options load (before the panel built),
     -- then SeedStaticSearchRoutesFromTiles layered tile/sub-tab routes on top.
@@ -1261,7 +1268,15 @@ local function BindWidgetMethod(container, fn)
 end
 
 local function SetFont(fontString, size, flags, color)
-    fontString:SetFont(GetFontPath(), size or 12, flags or "")
+    -- Route through the per-script CJK fallback (core/utils.lua) so Chinese/
+    -- Korean glyphs render even though the QUI font (Quazii) has none. Degrades
+    -- to a plain SetFont when the family API is unavailable.
+    local H = ns.Helpers
+    if H and H.ApplyFontWithFallback then
+        H.ApplyFontWithFallback(fontString, GetFontPath(), size or 12, flags or "")
+    else
+        fontString:SetFont(GetFontPath(), size or 12, flags or "")
+    end
     if color then
         fontString:SetTextColor(unpack(color))
     end
@@ -1278,7 +1293,7 @@ local function ApplyFontToFrameRecursive(frame, fontPath)
         if region and region.IsObjectType and region:IsObjectType("FontString") and region.GetFont and region.SetFont then
             local _, size, flags = region:GetFont()
             if size and size > 0 then
-                region:SetFont(fontPath, size, flags or "")
+                ns.Helpers.ApplyFontWithFallback(region, fontPath, size, flags or "")
             end
         end
     end
@@ -1428,7 +1443,7 @@ function GUI:CreateInlineEditBox(parent, options)
         editBox:SetHeight(editHeight)
     end
     editBox:SetAutoFocus(false)
-    editBox:SetFont(GetFontPath(), fontSize, "")
+    ns.Helpers.ApplyFontWithFallback(editBox, GetFontPath(), fontSize, "")
     editBox:SetTextColor(C_text_r, C_text_g, C_text_b, C_text_a)
     editBox:SetJustifyH(justifyH)
 
@@ -1561,7 +1576,7 @@ function GUI:ShowConfirmation(options)
         end
 
         confirmDialog.acceptBtn.text = confirmDialog.acceptBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        confirmDialog.acceptBtn.text:SetFont(GetFontPath(), 12, "")
+        ns.Helpers.ApplyFontWithFallback(confirmDialog.acceptBtn.text, GetFontPath(), 12, "")
         confirmDialog.acceptBtn.text:SetPoint("CENTER", 0, 0)
 
         confirmDialog.acceptBtn:SetScript("OnEnter", function(self)
@@ -1580,7 +1595,7 @@ function GUI:ShowConfirmation(options)
         end
 
         confirmDialog.cancelBtn.text = confirmDialog.cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        confirmDialog.cancelBtn.text:SetFont(GetFontPath(), 12, "")
+        ns.Helpers.ApplyFontWithFallback(confirmDialog.cancelBtn.text, GetFontPath(), 12, "")
         confirmDialog.cancelBtn.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
         confirmDialog.cancelBtn.text:SetPoint("CENTER", 0, 0)
 
@@ -1604,7 +1619,7 @@ function GUI:ShowConfirmation(options)
     end
 
     -- Configure for this call
-    confirmDialog.title:SetText(options.title or "Confirm")
+    confirmDialog.title:SetText(options.title or ns.L["Confirm"])
     confirmDialog.message:SetText(options.message or "")
 
     if options.warningText then
@@ -1625,7 +1640,7 @@ function GUI:ShowConfirmation(options)
     confirmDialog:SetHeight(math.max(160, 50 + msgH + warnH + 18 + 28 + 20))
 
     -- Accept button styling
-    confirmDialog.acceptBtn.text:SetText(options.acceptText or "OK")
+    confirmDialog.acceptBtn.text:SetText(options.acceptText or ns.L["OK"])
     if options.isDestructive then
         confirmDialog.acceptBtn.text:SetTextColor(C.warning[1], C.warning[2], C.warning[3], 1)
     else
@@ -1633,7 +1648,7 @@ function GUI:ShowConfirmation(options)
     end
 
     -- Cancel button
-    confirmDialog.cancelBtn.text:SetText(options.cancelText or "Cancel")
+    confirmDialog.cancelBtn.text:SetText(options.cancelText or ns.L["Cancel"])
 
     -- Store callbacks
     confirmDialog._onCancel = options.onCancel
@@ -2315,7 +2330,7 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
     editBox:SetAutoFocus(false)
     do
         local f, _, flags = editBox:GetFont()
-        editBox:SetFont(f or UIKit.ResolveFontPath(GUI:GetFontPath()), 10, flags or "")
+        ns.Helpers.ApplyFontWithFallback(editBox, f or UIKit.ResolveFontPath(GUI:GetFontPath()), 10, flags or "")
     end
     editBox:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     editBox:SetTextInsets(4, 4, 0, 0)
@@ -2614,7 +2629,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     elseif SkinBase and SkinBase.ApplyPixelBackdrop then
         SkinBase.ApplyPixelBackdrop(editBox, 1, true, false, { C.border[1], C.border[2], C.border[3], C.border[4] }, { C.bgContent[1], C.bgContent[2], C.bgContent[3], 1 })
     end
-    editBox:SetFont(GetFontPath(), 10, "")
+    ns.Helpers.ApplyFontWithFallback(editBox, GetFontPath(), 10, "")
     editBox:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     editBox:SetJustifyH("CENTER")
     editBox:SetTextInsets(4, 4, 0, 0)
@@ -3008,7 +3023,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
 
         local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         SetFont(placeholder, 11, "", C.textMuted or {0.6, 0.6, 0.6})
-        placeholder:SetText("Search...")
+        placeholder:SetText(ns.L["Search..."])
         placeholder:SetPoint("LEFT", 0, 0)
         placeholder:SetJustifyH("LEFT")
         searchBox.placeholder = placeholder
@@ -3320,7 +3335,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
             noMatch._btnText:ClearAllPoints()
             noMatch._btnText:SetPoint("CENTER", 0, 0)
             SetFont(noMatch._btnText, 10, "", mutedColor)
-            noMatch._btnText:SetText("No matches")
+            noMatch._btnText:SetText(ns.L["No matches"])
             noMatch:SetScript("OnClick", nil)
             noMatch:SetScript("OnEnter", nil)
             noMatch:SetScript("OnLeave", nil)
@@ -3706,7 +3721,7 @@ function GUI:CreateScrollableTextBox(parent, height, text, options)
     local editBox = CreateFrame("EditBox", nil, scrollFrame)
     editBox:SetMultiLine(true)
     editBox:SetAutoFocus(false)
-    editBox:SetFont(GetFontPath(), fontSize, "")
+    ns.Helpers.ApplyFontWithFallback(editBox, GetFontPath(), fontSize, "")
     editBox:SetTextColor(0.7, 0.75, 0.8, 1)
     editBox:SetWidth(scrollFrame:GetWidth() or 400)
     editBox:SetText(text or "")
@@ -4036,7 +4051,7 @@ function GUI:CreateSearchBox(parent, placeholderText)
     editBox:SetPoint("RIGHT", container, "RIGHT", -24, 0)
     editBox:SetHeight(16)
     editBox:SetAutoFocus(false)
-    editBox:SetFont(GetFontPath(), 10, "")
+    ns.Helpers.ApplyFontWithFallback(editBox, GetFontPath(), 10, "")
     editBox:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     editBox:SetMaxLetters(50)
 
@@ -4048,7 +4063,7 @@ function GUI:CreateSearchBox(parent, placeholderText)
     -- Placeholder text
     local placeholder = editBox:CreateFontString(nil, "OVERLAY")
     SetFont(placeholder, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 1})
-    placeholder:SetText(placeholderText or "Search settings...")
+    placeholder:SetText(placeholderText or ns.L["Search settings..."])
     placeholder:SetPoint("LEFT", 0, 0)
 
     -- Clear button (X)
@@ -4429,28 +4444,28 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
         if searchTerm and searchTerm ~= "" then
             local noResults = content:CreateFontString(nil, "OVERLAY")
             SetFont(noResults, 12, "", C.textMuted)
-            noResults:SetText("No settings match \"" .. searchTerm .. "\"")
+            noResults:SetText(ns.L["No settings match \"%s\""]:format(searchTerm))
             noResults:SetPoint("TOPLEFT", PADDING, y)
             table.insert(content._fontStrings, noResults)
             y = y - 30
 
             local tip = content:CreateFontString(nil, "OVERLAY")
             SetFont(tip, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.7})
-            tip:SetText("Try different keywords")
+            tip:SetText(ns.L["Try different keywords"])
             tip:SetPoint("TOPLEFT", PADDING, y)
             table.insert(content._fontStrings, tip)
             y = y - 30
         else
             local instructions = content:CreateFontString(nil, "OVERLAY")
             SetFont(instructions, 12, "", C.textMuted)
-            instructions:SetText("Search settings — try 'cooldown', 'party', 'action bars'")
+            instructions:SetText(ns.L["Search settings — try 'cooldown', 'party', 'action bars'"])
             instructions:SetPoint("TOPLEFT", PADDING, y)
             table.insert(content._fontStrings, instructions)
             y = y - 20
 
             local hint = content:CreateFontString(nil, "OVERLAY")
             SetFont(hint, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.6})
-            hint:SetText("Shortcut: / or Ctrl+F to focus")
+            hint:SetText(ns.L["Shortcut: / or Ctrl+F to focus"])
             hint:SetPoint("TOPLEFT", PADDING, y)
             table.insert(content._fontStrings, hint)
             y = y - 20
@@ -4464,7 +4479,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     if navResults and #navResults > 0 then
         local navHeader = content:CreateFontString(nil, "OVERLAY")
         SetFont(navHeader, 11, "", C.textMuted)
-        navHeader:SetText("Categories & Sections")
+        navHeader:SetText(ns.L["Categories & Sections"])
         navHeader:SetPoint("TOPLEFT", PADDING, y)
         table.insert(content._fontStrings, navHeader)
         y = y - 20
@@ -4482,14 +4497,14 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
 
             -- Type icon/badge
             local typeBadge = navRow:CreateFontString(nil, "OVERLAY")
-            local typeLabels = {tab = "TAB", subtab = "SUBTAB", section = "SECTION", moduleToggle = "[Module]"}
+            local typeLabels = {tab = ns.L["TAB"], subtab = ns.L["SUBTAB"], section = ns.L["SECTION"], moduleToggle = ns.L["[Module]"]}
             local isModuleToggle = entry.navType == "moduleToggle"
             if isModuleToggle then
                 SetFont(typeBadge, 9, "", C.accent)
             else
                 SetFont(typeBadge, 9, "", C.textMuted)
             end
-            typeBadge:SetText(typeLabels[entry.navType] or "NAV")
+            typeBadge:SetText(typeLabels[entry.navType] or ns.L["NAV"])
             typeBadge:SetPoint("LEFT", 8, 0)
 
             -- Navigation label
@@ -4505,7 +4520,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             if not isModuleToggle then
                 local goText = navRow:CreateFontString(nil, "OVERLAY")
                 SetFont(goText, 10, "", C.accent)
-                goText:SetText("Go >")
+                goText:SetText(ns.L["Go >"])
                 goText:SetPoint("RIGHT", -10, 0)
             end
 
@@ -4633,7 +4648,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
 
             local btnText = goBtn:CreateFontString(nil, "OVERLAY")
             SetFont(btnText, 9, "", C.accent)
-            btnText:SetText("Go >")
+            btnText:SetText(ns.L["Go >"])
             btnText:SetPoint("CENTER", 0, 0)
 
             goBtn:SetScript("OnEnter", function(self)
@@ -4697,6 +4712,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                     crumbBtn:SetWidth(content:GetWidth() - (PADDING * 2) - 8)
 
                     local crumb = crumbBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    SetFont(crumb, 11, "")
                     crumb:SetPoint("LEFT", crumbBtn, "LEFT", 0, 0)
                     crumb:SetText(crumbText)
                     crumb:SetTextColor(0.55, 0.55, 0.6, 1)
@@ -4732,6 +4748,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                 -- Description: muted one-liner under the widget
                 if entry.description and entry.description ~= "" then
                     local desc = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    SetFont(desc, 11, "")
                     desc:SetPoint("TOPLEFT", PADDING + 4, y)
                     desc:SetPoint("RIGHT", content, "RIGHT", -(PADDING + 4), 0)
                     desc:SetText(entry.description)
@@ -4758,7 +4775,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                     fallbackLabel:SetPoint("LEFT", 8, 0)
                     fallbackLabel:SetPoint("RIGHT", -8, 0)
                     fallbackLabel:SetJustifyH("LEFT")
-                    fallbackLabel:SetText(entry.label or "Unknown setting")
+                    fallbackLabel:SetText(entry.label or ns.L["Unknown setting"])
 
                     fallbackRow:SetScript("OnEnter", function(self)
                         self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.12)
@@ -4781,7 +4798,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                     -- Fallback: show label if no builder
                     local fallbackLabel = content:CreateFontString(nil, "OVERLAY")
                     SetFont(fallbackLabel, 11, "", C.textMuted)
-                    fallbackLabel:SetText(entry.label or "Unknown setting")
+                    fallbackLabel:SetText(entry.label or ns.L["Unknown setting"])
                     fallbackLabel:SetPoint("TOPLEFT", PADDING, y)
                     table.insert(content._fontStrings, fallbackLabel)
                     y = y - 24
@@ -4811,7 +4828,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
         label:SetPoint("LEFT", errorRow, "LEFT", 8, 0)
         label:SetPoint("RIGHT", errorRow, "RIGHT", -8, 0)
         label:SetJustifyH("LEFT")
-        label:SetText("Some search results failed to render. Check the Lua error log.")
+        label:SetText(ns.L["Some search results failed to render. Check the Lua error log."])
         table.insert(content._fontStrings, label)
         y = y - 32
     end
@@ -4946,7 +4963,7 @@ function GUI:CreateMainFrame()
     -- Theme preset dropdown
     local themeLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(themeLabel, 10, "", C.textMuted)
-    themeLabel:SetText("Theme")
+    themeLabel:SetText(ns.L["Theme"])
     themeLabel:SetPoint("LEFT", accentSwatch, "RIGHT", 4, 0)
 
     local themeDropBtn = CreateFrame("Button", nil, titleBar)
@@ -5195,14 +5212,141 @@ function GUI:CreateMainFrame()
         accentSwatch:SetAlpha(preset == "Custom" and 1 or 0.5)
     end
 
+    -- Language picker (account-wide; reload required to apply)
+    local LOCALE_NAMES = {
+        enUS = "English",          deDE = "Deutsch",
+        esES = "Español",          esMX = "Español (México)",
+        frFR = "Français",         itIT = "Italiano",
+        koKR = "한국어",            ptBR = "Português",
+        ruRU = "Русский",          zhCN = "简体中文",
+        zhTW = "繁體中文",
+    }
+    local LOCALE_ORDER = {
+        "enUS", "deDE", "esES", "esMX", "frFR", "itIT",
+        "koKR", "ptBR", "ruRU", "zhCN", "zhTW",
+    }
+
+    local function GetSelectedLocale()
+        local g = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.global
+        return (g and g.selectedLocale) or GetLocale()
+    end
+
+    local langLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(langLabel, 10, "", C.textMuted)
+    langLabel:SetText(ns.L["Language"])
+    langLabel:SetPoint("LEFT", themeDropBtn, "RIGHT", 14, 0)
+
+    local langDropBtn = CreateFrame("Button", nil, titleBar)
+    langDropBtn:SetSize(110, 16)
+    langDropBtn:SetPoint("LEFT", langLabel, "RIGHT", 6, 0)
+    UIKit.CreateBackground(langDropBtn, 0.1, 0.1, 0.1, 0.8)
+    UIKit.CreateBorderLines(langDropBtn)
+    UIKit.UpdateBorderLines(langDropBtn, 1, 0.3, 0.3, 0.3, 1)
+
+    local langDropText = langDropBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(langDropText, 10, "", C.text)
+    langDropText:SetPoint("LEFT", 4, 0)
+    langDropText:SetPoint("RIGHT", -14, 0)
+    langDropText:SetJustifyH("LEFT")
+    langDropText:SetWordWrap(false)
+    langDropText:SetText(LOCALE_NAMES[GetSelectedLocale()] or "English")
+
+    local langDropArrow = langDropBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(langDropArrow, 8, "", C.textMuted)
+    langDropArrow:SetText("v")
+    langDropArrow:SetPoint("RIGHT", -3, 0)
+
+    local langMenu = CreateFrame("Frame", nil, langDropBtn)
+    UIKit.CreateBackground(langMenu, 0.08, 0.08, 0.12, 0.95)
+    UIKit.CreateBorderLines(langMenu)
+    UIKit.UpdateBorderLines(langMenu, 1, 0.3, 0.3, 0.3, 1)
+    langMenu:SetFrameStrata("TOOLTIP")
+    langMenu:Hide()
+
+    local function ApplyLocaleSelection(code)
+        local g = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.global
+        if not g then return end
+        g.selectedLocale = code
+        langDropText:SetText(LOCALE_NAMES[code] or code)
+        if QUI.GUI and QUI.GUI.ShowConfirmation then
+            QUI.GUI:ShowConfirmation({
+                title = ns.L["Reload Required"],
+                message = ns.L["Reload the UI to apply the new language?"],
+                acceptText = ns.L["Reload Now"],
+                cancelText = ns.L["Later"],
+                onAccept = function()
+                    if QUI.SafeReload then QUI:SafeReload() else ReloadUI() end
+                end,
+            })
+        end
+    end
+
+    local function BuildLangMenu()
+        for _, child in ipairs({langMenu:GetChildren()}) do
+            child:Hide()
+            child:SetParent(nil)
+        end
+        local itemH = 18
+        langMenu:SetSize(langDropBtn:GetWidth(), #LOCALE_ORDER * itemH + 4)
+        langMenu:ClearAllPoints()
+        langMenu:SetPoint("TOPLEFT", langDropBtn, "BOTTOMLEFT", 0, -2)
+
+        local current = GetSelectedLocale()
+        for i, code in ipairs(LOCALE_ORDER) do
+            local item = CreateFrame("Button", nil, langMenu)
+            item:SetSize(langDropBtn:GetWidth() - 4, itemH)
+            item:SetPoint("TOPLEFT", 2, -(2 + (i - 1) * itemH))
+
+            local itemBg = item:CreateTexture(nil, "BACKGROUND")
+            itemBg:SetAllPoints()
+            itemBg:SetColorTexture(0, 0, 0, 0)
+
+            local itemText = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            SetFont(itemText, 10, "", code == current and C.accent or C.text)
+            itemText:SetText(LOCALE_NAMES[code] or code)
+            itemText:SetPoint("LEFT", 4, 0)
+
+            item:SetScript("OnEnter", function()
+                itemBg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.15)
+            end)
+            item:SetScript("OnLeave", function()
+                itemBg:SetColorTexture(0, 0, 0, 0)
+            end)
+            item:SetScript("OnClick", function()
+                langMenu:Hide()
+                ApplyLocaleSelection(code)
+            end)
+        end
+    end
+
+    langDropBtn:SetScript("OnClick", function()
+        if langMenu:IsShown() then
+            langMenu:Hide()
+        else
+            BuildLangMenu()
+            langMenu:Show()
+        end
+    end)
+    langDropBtn:SetScript("OnEnter", function()
+        UIKit.UpdateBorderLines(langDropBtn, 1, C.accent[1], C.accent[2], C.accent[3], 1)
+    end)
+    langDropBtn:SetScript("OnLeave", function()
+        if not langMenu:IsShown() then
+            UIKit.UpdateBorderLines(langDropBtn, 1, 0.3, 0.3, 0.3, 1)
+        end
+    end)
+    langMenu:SetScript("OnHide", function()
+        UIKit.UpdateBorderLines(langDropBtn, 1, 0.3, 0.3, 0.3, 1)
+    end)
+
     -- Panel Scale (compact inline: label + editbox + slider)
     local scaleContainer = CreateFrame("Frame", nil, titleBar)
     scaleContainer:SetSize(160, 20)
-    scaleContainer:SetPoint("LEFT", themeDropBtn, "RIGHT", 14, 0)
+    scaleContainer:SetPoint("LEFT", langDropBtn, "RIGHT", 14, 0)
 
     local scaleLabel = scaleContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(scaleLabel, 10, "", C.textMuted)
-    scaleLabel:SetText("Panel Scale:")
+    scaleLabel:SetText(ns.L["Panel Scale:"])
     scaleLabel:SetPoint("LEFT", scaleContainer, "LEFT", 0, 0)
 
     local scaleEditBox = CreateFrame("EditBox", nil, scaleContainer)
@@ -5211,7 +5355,7 @@ function GUI:CreateMainFrame()
     UIKit.CreateBackground(scaleEditBox, 0.08, 0.08, 0.08, 1)
     UIKit.CreateBorderLines(scaleEditBox)
     UIKit.UpdateBorderLines(scaleEditBox, 1, 0.25, 0.25, 0.25, 1)
-    scaleEditBox:SetFont(GetFontPath(), 10, "")
+    ns.Helpers.ApplyFontWithFallback(scaleEditBox, GetFontPath(), 10, "")
     scaleEditBox:SetTextColor(C_text_r, C_text_g, C_text_b, C_text_a)
     scaleEditBox:SetJustifyH("CENTER")
     scaleEditBox:SetAutoFocus(false)
@@ -5356,7 +5500,7 @@ function GUI:CreateMainFrame()
     frame.footerBar = footer
 
     -- Left cluster: Reset to Defaults + Reload UI (ghost variant, auto-sized)
-    local resetBtn = GUI:CreateButton(footer, "Reset to Defaults", 0, 22, function()
+    local resetBtn = GUI:CreateButton(footer, ns.L["Reset to Defaults"], 0, 22, function()
         local tileIndex = frame._lastTileIndex
         local tile = tileIndex and frame._tiles and frame._tiles[tileIndex]
         if tile and tile.config and tile.config.onReset then
@@ -5368,7 +5512,7 @@ function GUI:CreateMainFrame()
     resetBtn:SetPoint("LEFT", footer, "LEFT", 18, 0)
     frame._footerResetBtn = resetBtn
 
-    local reloadBtn = GUI:CreateButton(footer, "Reload UI", 0, 22, function()
+    local reloadBtn = GUI:CreateButton(footer, ns.L["Reload UI"], 0, 22, function()
         if QUI and QUI.SafeReload then
             QUI:SafeReload()
         else
@@ -5526,7 +5670,7 @@ function GUI:CreateMainFrame()
 
     resizeHandle:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-        GameTooltip:SetText("Drag to resize", 1, 1, 1)
+        GameTooltip:SetText(ns.L["Drag to resize"], 1, 1, 1)
         GameTooltip:Show()
     end)
 
@@ -5678,7 +5822,7 @@ function GUI:ShowExportPopup(title, exportString)
         popup.hint = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         popup.hint:SetPoint("TOP", popup.title, "BOTTOM", 0, -4)
         SetFont(popup.hint, 11, "", C.textMuted)
-        popup.hint:SetText("Select all (Ctrl+A) then copy (Ctrl+C)")
+        popup.hint:SetText(ns.L["Select all (Ctrl+A) then copy (Ctrl+C)"])
 
         -- Background for edit area
         local editBg = CreateFrame("Frame", nil, popup, "BackdropTemplate")
@@ -5696,7 +5840,7 @@ function GUI:ShowExportPopup(title, exportString)
         local editBox = CreateFrame("EditBox", nil, scrollFrame)
         editBox:SetMultiLine(true)
         editBox:SetAutoFocus(false)
-        editBox:SetFont(GetFontPath(), 11, "")
+        ns.Helpers.ApplyFontWithFallback(editBox, GetFontPath(), 11, "")
         editBox:SetTextColor(0.85, 0.88, 0.92, 1)
         editBox:SetWidth(scrollFrame:GetWidth() - 10)
         editBox:SetScript("OnEscapePressed", function() popup:Hide() end)
@@ -5711,14 +5855,14 @@ function GUI:ShowExportPopup(title, exportString)
         ns.ApplyScrollWheel(scrollFrame)
 
         -- Select All button
-        local selectBtn = self:CreateButton(popup, "Select All", 100, 26, function()
+        local selectBtn = self:CreateButton(popup, ns.L["Select All"], 100, 26, function()
             popup.editBox:SetFocus()
             popup.editBox:HighlightText()
         end)
         selectBtn:SetPoint("BOTTOMLEFT", 12, 10)
 
         -- Close button
-        local closeBtn = self:CreateButton(popup, "Close", 80, 26, function()
+        local closeBtn = self:CreateButton(popup, ns.L["Close"], 80, 26, function()
             popup:Hide()
         end)
         closeBtn:SetPoint("BOTTOMRIGHT", -12, 10)
@@ -5735,7 +5879,7 @@ function GUI:ShowExportPopup(title, exportString)
     end
 
     -- Set content and show
-    ExportPopup.title:SetText(title or "Export")
+    ExportPopup.title:SetText(title or ns.L["Export"])
     ExportPopup.editBox:SetText(exportString or "")
     ExportPopup:Show()
     ExportPopup:Raise()
@@ -5797,7 +5941,7 @@ function GUI:ShowImportPopup(config)
         local editBox = CreateFrame("EditBox", nil, scrollFrame)
         editBox:SetMultiLine(true)
         editBox:SetAutoFocus(false)
-        editBox:SetFont(GetFontPath(), 11, "")
+        ns.Helpers.ApplyFontWithFallback(editBox, GetFontPath(), 11, "")
         editBox:SetTextColor(0.85, 0.88, 0.92, 1)
         editBox:SetWidth(scrollFrame:GetWidth() - 10)
         editBox:SetScript("OnEscapePressed", function() popup:Hide() end)
@@ -5869,32 +6013,32 @@ function GUI:ShowImportPopup(config)
 
     if config.hasMerge then
         -- Merge + Replace All + Cancel layout
-        local mergeBtn = guiRef:CreateButton(ImportPopup, "Merge", 100, 26, function()
+        local mergeBtn = guiRef:CreateButton(ImportPopup, ns.L["Merge"], 100, 26, function()
             DoImport(false)
         end)
         mergeBtn:SetPoint("BOTTOMLEFT", 12, 12)
         table.insert(ImportPopup.buttons, mergeBtn)
 
-        local replaceBtn = guiRef:CreateButton(ImportPopup, "Replace All", 100, 26, function()
+        local replaceBtn = guiRef:CreateButton(ImportPopup, ns.L["Replace All"], 100, 26, function()
             DoImport(true)
         end)
         replaceBtn:SetPoint("LEFT", mergeBtn, "RIGHT", 10, 0)
         table.insert(ImportPopup.buttons, replaceBtn)
 
-        local cancelBtn = guiRef:CreateButton(ImportPopup, "Cancel", 80, 26, function()
+        local cancelBtn = guiRef:CreateButton(ImportPopup, ns.L["Cancel"], 80, 26, function()
             ImportPopup:Hide()
         end)
         cancelBtn:SetPoint("BOTTOMRIGHT", -12, 12)
         table.insert(ImportPopup.buttons, cancelBtn)
     else
         -- Import + Cancel layout
-        local importBtn = guiRef:CreateButton(ImportPopup, "Import", 100, 26, function()
+        local importBtn = guiRef:CreateButton(ImportPopup, ns.L["Import"], 100, 26, function()
             DoImport(false)
         end)
         importBtn:SetPoint("BOTTOMLEFT", 12, 12)
         table.insert(ImportPopup.buttons, importBtn)
 
-        local cancelBtn = guiRef:CreateButton(ImportPopup, "Cancel", 80, 26, function()
+        local cancelBtn = guiRef:CreateButton(ImportPopup, ns.L["Cancel"], 80, 26, function()
             ImportPopup:Hide()
         end)
         cancelBtn:SetPoint("BOTTOMRIGHT", -12, 12)
@@ -5902,8 +6046,8 @@ function GUI:ShowImportPopup(config)
     end
 
     -- Set content and show
-    ImportPopup.title:SetText(config.title or "Import")
-    ImportPopup.hint:SetText(config.hint or "Paste the import string below")
+    ImportPopup.title:SetText(config.title or ns.L["Import"])
+    ImportPopup.hint:SetText(config.hint or ns.L["Paste the import string below"])
     ImportPopup.editBox:SetText("")
     ImportPopup:Show()
     ImportPopup:Raise()
@@ -6034,10 +6178,24 @@ function GUI:AddFeatureTile(frame, config)
 
     -- Name text
     tile.text = tile:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    tile.text:SetFont(tile.text:GetFont(), 11)
+    -- Per-script CJK fallback at size 11, preserving the current roman font
+    -- file. Plain SetFont collapses GameFontNormal's FontFamily to one file
+    -- (no CJK glyphs), so route through the fallback when available.
+    do
+        local curFont = tile.text:GetFont()
+        if Helpers and Helpers.ApplyFontWithFallback then
+            Helpers.ApplyFontWithFallback(tile.text, curFont, 11, "")
+        else
+            tile.text:SetFont(curFont, 11)
+        end
+    end
     tile.text:SetText(config.name)
     tile.text:SetPoint("LEFT", tile, "LEFT", textX, 0)
+    -- Bound the right edge so long (translated) labels truncate inside the
+    -- sidebar instead of bleeding into the content area.
+    tile.text:SetPoint("RIGHT", tile, "RIGHT", -10, 0)
     tile.text:SetJustifyH("LEFT")
+    tile.text:SetWordWrap(false)
     tile.text:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1)
 
     -- Store so V2 init can lay them out (Task 8)
@@ -6093,14 +6251,14 @@ function GUI:BuildTilePage(frame, tile)
 
     local crumb = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(GUI:GetFontPath())
-    crumb:SetFont(fpath or select(1, crumb:GetFont()), 10, "")
+    ns.Helpers.ApplyFontWithFallback(crumb, fpath or select(1, crumb:GetFont()), 10, "")
     crumb:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
     crumb:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
-    crumb:SetText("Settings  >  " .. (tile.config.name or ""))
+    crumb:SetText(ns.L["Settings"] .. "  >  " .. (tile.config.name or ""))
     tile._crumb = crumb
 
     local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetFont(fpath or select(1, title:GetFont()), 15, "")
+    ns.Helpers.ApplyFontWithFallback(title, fpath or select(1, title:GetFont()), 15, "")
     title:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     title:SetPoint("TOPLEFT", crumb, "BOTTOMLEFT", 0, -4)
     title:SetText(tile.config.name or "")
@@ -6108,7 +6266,7 @@ function GUI:BuildTilePage(frame, tile)
 
     if tile.config.subtitle and tile.config.subtitle ~= "" then
         local subtitle = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        subtitle:SetFont(fpath or select(1, subtitle:GetFont()), 11, "")
+        ns.Helpers.ApplyFontWithFallback(subtitle, fpath or select(1, subtitle:GetFont()), 11, "")
         subtitle:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
         subtitle:SetPoint("RIGHT", header, "RIGHT", 0, 0)
@@ -6832,7 +6990,7 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
         end
 
         if tile and tile._crumb and tile.config then
-            local crumbText = "Settings  >  " .. (tile.config.name or "")
+            local crumbText = ns.L["Settings"] .. "  >  " .. (tile.config.name or "")
             if tile.config.subPages and tile.config.subPages[i] and tile.config.subPages[i].name then
                 crumbText = crumbText .. "  >  " .. tile.config.subPages[i].name
             end
@@ -6872,7 +7030,7 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
         btn.label:SetText(sp.name)
         btn.label:SetPoint("CENTER", 0, 0)
         local f, _, fl = btn.label:GetFont()
-        btn.label:SetFont(f or (ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(GUI:GetFontPath())) or f, 11, fl or "")
+        ns.Helpers.ApplyFontWithFallback(btn.label, f or (ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(GUI:GetFontPath())) or f, 11, fl or "")
 
         local labelW = btn.label:GetStringWidth() + 24
         btn:SetWidth(labelW)
@@ -6992,7 +7150,7 @@ function GUI:RenderSectionNav(scrollFrame, body, sections, options)
         local label = chip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetText(section.label or section.id or "?")
         local f, _, fl = label:GetFont()
-        label:SetFont(f or (ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(self:GetFontPath())) or f, 11, fl or "")
+        ns.Helpers.ApplyFontWithFallback(label, f or (ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(self:GetFontPath())) or f, 11, fl or "")
         label:SetPoint("LEFT", CHIP_PAD_X, 0)
         label:SetTextColor(0.7, 0.7, 0.7, 1)
         chip.label = label
@@ -7194,7 +7352,7 @@ function GUI:AddToolsStripButton(frame, config)
 
         local heading = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         heading:SetPoint("TOPLEFT", 4, -6)
-        heading:SetText("TOOLS")
+        heading:SetText(ns.L["TOOLS"])
         heading:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.5)
 
         frame._toolsStrip = strip
@@ -7604,7 +7762,7 @@ function GUI:GetV2Breadcrumb(tabIndex, subTabIndex, sectionName)
     -- Tier 4: still nothing — synthesize a generic breadcrumb so the caller
     -- always has something sensible to display.
     if not tile then
-        local parts = { "Settings" }
+        local parts = { ns.L["Settings"] }
         if sectionName and sectionName ~= "" then table.insert(parts, sectionName) end
         return parts
     end

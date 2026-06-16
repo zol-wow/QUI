@@ -130,7 +130,7 @@ local function showCopyPopup(text)
 
         local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         title:SetPoint("TOP", 0, -10)
-        title:SetText("Diagnostic Output — Ctrl+A then Ctrl+C")
+        title:SetText(ns.L["Diagnostic Output — Ctrl+A then Ctrl+C"])
 
         local scroll = CreateFrame("ScrollFrame", nil, popup, "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", 12, -32)
@@ -149,7 +149,7 @@ local function showCopyPopup(text)
         local close = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
         close:SetSize(80, 22)
         close:SetPoint("BOTTOM", 0, 10)
-        close:SetText("Close")
+        close:SetText(ns.L["Close"])
         close:SetScript("OnClick", function() popup:Hide() end)
     end
     popup._edit:SetText(text or "")
@@ -171,7 +171,7 @@ function Console.CreateOutputPanel(parent)
 
     local caption = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     caption:SetPoint("LEFT", 4, 0)
-    caption:SetText("Diagnostic Output")
+    caption:SetText(ns.L["Diagnostic Output"])
     caption:SetTextColor(0.65, 0.65, 0.65, 1)
 
     local QUI = _G.QUI
@@ -190,10 +190,10 @@ function Console.CreateOutputPanel(parent)
         -- in normal load order; the page renderer guards on GUI before
         -- creating the panel.
         clearBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
-        clearBtn:SetSize(60, 20); clearBtn:SetText("Clear")
+        clearBtn:SetSize(60, 20); clearBtn:SetText(ns.L["Clear"])
         clearBtn:SetScript("OnClick", function() Console.Clear() end)
         copyBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
-        copyBtn:SetSize(60, 20); copyBtn:SetText("Copy")
+        copyBtn:SetSize(60, 20); copyBtn:SetText(ns.L["Copy"])
         copyBtn:SetScript("OnClick", function() showCopyPopup(Console.GetText()) end)
     end
     copyBtn:ClearAllPoints()

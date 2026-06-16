@@ -13,7 +13,7 @@ function ModelKit.RenderUnavailable(host, label, suffix)
 
     local message = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     message:SetPoint("TOPLEFT", 20, -20)
-    message:SetText((label or "Settings") .. (suffix or " unavailable."))
+    message:SetText((label or ns.L["Settings"]) .. (suffix or ns.L[" unavailable."]))
     if message.SetTextColor then
         message:SetTextColor(0.6, 0.6, 0.6, 1)
     end

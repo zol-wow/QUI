@@ -20,7 +20,7 @@ local function BuildSpecProfilesContent(content)
     local y = -10
 
     -- Description
-    local info = GUI:CreateLabel(content, "Manage profiles and auto-switch based on specialization", 11, C.textMuted)
+    local info = GUI:CreateLabel(content, ns.L["Manage profiles and auto-switch based on specialization"], 11, C.textMuted)
     info:SetJustifyH("LEFT")
     info:SetPoint("TOPLEFT", PAD, y)
     info:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
@@ -55,7 +55,7 @@ local function BuildSpecProfilesContent(content)
                 if not seen[preset.profileName] then
                     table.insert(profiles, {
                         value = preset.profileName,
-                        text = preset.profileName .. "  |cff34D399(Preset)|r",
+                        text = preset.profileName .. ns.L["  |cff34D399(Preset)|r"],
                     })
                 end
             end
@@ -89,7 +89,7 @@ local function BuildSpecProfilesContent(content)
         local freshDB = core and core.db
         if freshDB then
             local currentName = freshDB:GetCurrentProfile()
-            if currentProfileName then currentProfileName:SetText(currentName or "Unknown") end
+            if currentProfileName then currentProfileName:SetText(currentName or ns.L["Unknown"]) end
             if profileDropdown and profileDropdown.SetValue then
                 profileDropdown:SetValue(currentName or "Default", true)
             end
@@ -100,7 +100,7 @@ local function BuildSpecProfilesContent(content)
     ---------------------------------------------------------------------------
     -- Current Profile — active/reset paired, movers/factory paired.
     ---------------------------------------------------------------------------
-    Shared.CreateAccentDotLabel(content, "Current Profile", y); y = y - 22
+    Shared.CreateAccentDotLabel(content, ns.L["Current Profile"], y); y = y - 22
 
     local currentCard = Shared.CreateSettingsCardGroup(content, y)
 
@@ -109,11 +109,11 @@ local function BuildSpecProfilesContent(content)
     activeCell:SetHeight(28)
     local activeLabel = activeCell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     activeLabel:SetPoint("LEFT", activeCell, "LEFT", 0, 0)
-    activeLabel:SetText("Active Profile")
+    activeLabel:SetText(ns.L["Active Profile"])
     activeLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     currentProfileName = activeCell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     currentProfileName:SetPoint("RIGHT", activeCell, "RIGHT", 0, 0)
-    currentProfileName:SetText("Loading...")
+    currentProfileName:SetText(ns.L["Loading..."])
     currentProfileName:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
     local function ResetButtonCell(label, onClick)
@@ -123,26 +123,26 @@ local function BuildSpecProfilesContent(content)
         lbl:SetPoint("LEFT", cell, "LEFT", 0, 0)
         lbl:SetText(label)
         lbl:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-        local btn = GUI:CreateButton(cell, "Reset", 100, 22, onClick)
+        local btn = GUI:CreateButton(cell, ns.L["Reset"], 100, 22, onClick)
         btn:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
         return cell
     end
 
-    local resetProfileCell = ResetButtonCell("Reset Profile", function()
+    local resetProfileCell = ResetButtonCell(ns.L["Reset Profile"], function()
         GUI:ShowConfirmation({
-            title = "Reset Profile?", message = "Reset current profile to defaults?",
-            warningText = "This cannot be undone.", acceptText = "Reset", cancelText = "Cancel", isDestructive = true,
+            title = ns.L["Reset Profile?"], message = ns.L["Reset current profile to defaults?"],
+            warningText = ns.L["This cannot be undone."], acceptText = ns.L["Reset"], cancelText = ns.L["Cancel"], isDestructive = true,
             onAccept = function()
                 local core = GetCore(); local dbRef = core and core.db
-                if dbRef then dbRef:ResetProfile(); print("|cff60A5FAQUI:|r Profile reset. Please /reload.") end
+                if dbRef then dbRef:ResetProfile(); print("|cff60A5FAQUI:|r " .. ns.L["Profile reset. Please /reload."]) end
             end,
         })
     end)
 
-    local resetMoversCell = ResetButtonCell("Reset All Positions", function()
+    local resetMoversCell = ResetButtonCell(ns.L["Reset All Positions"], function()
         GUI:ShowConfirmation({
-            title = "Reset All Movers?", message = "Reset all frame positions to defaults?",
-            warningText = "This resets CDM, unit frames, minimap, action bars, data panels, trackers, Blizzard UI Mover panel positions, and all other movable elements. Requires /reload.", acceptText = "Reset All", cancelText = "Cancel", isDestructive = true,
+            title = ns.L["Reset All Movers?"], message = ns.L["Reset all frame positions to defaults?"],
+            warningText = ns.L["This resets CDM, unit frames, minimap, action bars, data panels, trackers, Blizzard UI Mover panel positions, and all other movable elements. Requires /reload."], acceptText = ns.L["Reset All"], cancelText = ns.L["Cancel"], isDestructive = true,
             onAccept = function()
                 local core = GetCore(); local dbRef = core and core.db
                 if not dbRef then return end
@@ -168,7 +168,7 @@ local function BuildSpecProfilesContent(content)
                 if type(p.frameAnchoring) == "table" then local hw = p.frameAnchoring.hudMinWidth; wipe(p.frameAnchoring); p.frameAnchoring.hudMinWidth = hw end
                 if p.blizzardMover and type(p.blizzardMover.frames) == "table" then for _, row in pairs(p.blizzardMover.frames) do if type(row) == "table" then row.point = nil; row.x = nil; row.y = nil; row.scale = nil end end end
                 local bmm = ns.QUI_BlizzardMover; if bmm and bmm.functions and bmm.functions.ClearSessionPositions then bmm.functions.ClearSessionPositions() end
-                print("|cff60A5FAQUI:|r All positions reset. Please /reload.")
+                print("|cff60A5FAQUI:|r " .. ns.L["All positions reset. Please /reload."])
             end,
         })
     end)
@@ -178,17 +178,17 @@ local function BuildSpecProfilesContent(content)
     factoryCell:SetHeight(28)
     local factoryLabel = factoryCell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     factoryLabel:SetPoint("LEFT", factoryCell, "LEFT", 0, 0)
-    factoryLabel:SetText("Factory Reset")
+    factoryLabel:SetText(ns.L["Factory Reset"])
     local errText = GUI and GUI.ERROR_TEXT or {0.9, 0.3, 0.3, 1}
     factoryLabel:SetTextColor(errText[1], errText[2], errText[3], errText[4])
-    local factoryBtn = GUI:CreateButton(factoryCell, "Erase All", 100, 22, function()
+    local factoryBtn = GUI:CreateButton(factoryCell, ns.L["Erase All"], 100, 22, function()
         GUI:ShowConfirmation({
-            title = "Reset All Data?", message = "Erase ALL QUI data and restore fresh-install defaults?",
-            warningText = "Deletes every profile, all global data, and character data. Cannot be undone.",
-            acceptText = "Erase Everything", cancelText = "Cancel", isDestructive = true,
+            title = ns.L["Reset All Data?"], message = ns.L["Erase ALL QUI data and restore fresh-install defaults?"],
+            warningText = ns.L["Deletes every profile, all global data, and character data. Cannot be undone."],
+            acceptText = ns.L["Erase Everything"], cancelText = ns.L["Cancel"], isDestructive = true,
             onAccept = function()
                 local core = GetCore(); local dbRef = core and core.db
-                if dbRef then dbRef:ResetDB(true); print("|cff60A5FAQUI:|r All data erased."); QUI:SafeReload() end
+                if dbRef then dbRef:ResetDB(true); print("|cff60A5FAQUI:|r " .. ns.L["All data erased."]); QUI:SafeReload() end
             end,
         })
     end)
@@ -203,7 +203,7 @@ local function BuildSpecProfilesContent(content)
     ---------------------------------------------------------------------------
     -- Manage Profiles — switch/copy and delete/create in paired rows.
     ---------------------------------------------------------------------------
-    Shared.CreateAccentDotLabel(content, "Manage Profiles", y); y = y - 22
+    Shared.CreateAccentDotLabel(content, ns.L["Manage Profiles"], y); y = y - 22
 
     local manageCard = Shared.CreateSettingsCardGroup(content, y)
 
@@ -223,14 +223,14 @@ local function BuildSpecProfilesContent(content)
                 if not exists then
                     local importData = QUI.imports[preset.key]
                     if not importData or not importData.data then
-                        print("|cffff0000QUI:|r Preset data not found for: " .. value)
+                        print("|cffff0000QUI:|r " .. ns.L["Preset data not found for: "] .. value)
                         return
                     end
                     local ok, msg = core:ImportProfileFromString(importData.data, preset.profileName)
                     if ok then
-                        print("|cff60A5FAQUI:|r Installed and switched to preset profile: " .. value)
+                        print("|cff60A5FAQUI:|r " .. ns.L["Installed and switched to preset profile: "] .. value)
                     else
-                        print("|cffff0000QUI:|r Failed to install preset: " .. (msg or "unknown error"))
+                        print("|cffff0000QUI:|r " .. ns.L["Failed to install preset: "] .. (msg or ns.L["unknown error"]))
                         if freshDB:GetCurrentProfile() ~= current then
                             pcall(freshDB.SetProfile, freshDB, current)
                         end
@@ -243,10 +243,10 @@ local function BuildSpecProfilesContent(content)
 
             freshDB:SetProfile(value)
             if currentProfileName then currentProfileName:SetText(value) end
-            print("|cff60A5FAQUI:|r Switched to profile: " .. value)
+            print("|cff60A5FAQUI:|r " .. ns.L["Switched to profile: "] .. value)
             RefreshProfileDropdowns()
         end
-    end, { description = "Switch to a different profile. Entries tagged (Preset) are installed from QUI's bundled presets on first pick." })
+    end, { description = ns.L["Switch to a different profile. Entries tagged (Preset) are installed from QUI's bundled presets on first pick."] })
     table.insert(profileDropdowns_withPresets, profileDropdown)
 
     local copyWrapper = { selected = "" }
@@ -254,11 +254,11 @@ local function BuildSpecProfilesContent(content)
         local core = GetCore(); local dbRef = core and core.db
         if dbRef and value and value ~= "" then
             dbRef:CopyProfile(value)
-            print("|cff60A5FAQUI:|r Copied settings from: " .. value)
+            print("|cff60A5FAQUI:|r " .. ns.L["Copied settings from: "] .. value)
             copyWrapper.selected = ""
             RefreshProfileDropdowns()
         end
-    end, { description = "Copy every setting from the selected profile into the current profile. Replaces all matching keys in this profile." })
+    end, { description = ns.L["Copy every setting from the selected profile into the current profile. Replaces all matching keys in this profile."] })
     table.insert(profileDropdowns_filtered, copyDropdown)
 
     local deleteWrapper = { selected = "" }
@@ -266,23 +266,23 @@ local function BuildSpecProfilesContent(content)
         local core = GetCore(); local dbRef = core and core.db
         if dbRef and value and value ~= "" then
             if value == dbRef:GetCurrentProfile() then
-                print("|cffff0000QUI:|r Cannot delete the active profile!")
+                print("|cffff0000QUI:|r " .. ns.L["Cannot delete the active profile!"])
                 deleteWrapper.selected = ""
             else
                 local profileToDelete = value
                 GUI:ShowConfirmation({
-                    title = "Delete Profile?", message = string.format("Delete profile '%s'?", profileToDelete),
-                    warningText = "This cannot be undone.", acceptText = "Delete", cancelText = "Cancel", isDestructive = true,
+                    title = ns.L["Delete Profile?"], message = string.format(ns.L["Delete profile '%1$s'?"], profileToDelete),
+                    warningText = ns.L["This cannot be undone."], acceptText = ns.L["Delete"], cancelText = ns.L["Cancel"], isDestructive = true,
                     onAccept = function()
                         local core2 = GetCore(); local dbRef2 = core2 and core2.db
-                        if dbRef2 then dbRef2:DeleteProfile(profileToDelete, true); print("|cff60A5FAQUI:|r Deleted: " .. profileToDelete) end
+                        if dbRef2 then dbRef2:DeleteProfile(profileToDelete, true); print("|cff60A5FAQUI:|r " .. ns.L["Deleted: "] .. profileToDelete) end
                         deleteWrapper.selected = ""
                         RefreshProfileDropdowns()
                     end,
                 })
             end
         end
-    end, { description = "Select a profile to delete. The currently active profile can't be deleted — switch to another profile first." })
+    end, { description = ns.L["Select a profile to delete. The currently active profile can't be deleted — switch to another profile first."] })
     table.insert(profileDropdowns_filtered, deleteDropdown)
 
     -- New-profile cell: BuildSettingRow supplies the label, pin attachment,
@@ -292,9 +292,9 @@ local function BuildSpecProfilesContent(content)
     local newProfileInput = GUI:CreateFormEditBox(manageCard.frame, nil, nil, nil, nil, {
         commitOnEnter = false, commitOnFocusLost = false,
         onEscapePressed = function(self) self:ClearFocus() end,
-    }, { description = "Name for a new profile. Click Create to add it and switch to it immediately." })
-    local createCell = Shared.BuildSettingRow(manageCard.frame, "New Profile", newProfileInput)
-    local createBtn = GUI:CreateButton(createCell, "Create", 70, 22, function()
+    }, { description = ns.L["Name for a new profile. Click Create to add it and switch to it immediately."] })
+    local createCell = Shared.BuildSettingRow(manageCard.frame, ns.L["New Profile"], newProfileInput)
+    local createBtn = GUI:CreateButton(createCell, ns.L["Create"], 70, 22, function()
         local core = GetCore(); local dbRef = core and core.db
         local newName = newProfileInput.editBox and newProfileInput.editBox:GetText()
         if newName and newName ~= "" and dbRef then
@@ -302,7 +302,7 @@ local function BuildSpecProfilesContent(content)
             if currentProfileName then currentProfileName:SetText(newName) end
             if profileDropdown and profileDropdown.SetValue then profileDropdown:SetValue(newName, true) end
             newProfileInput.editBox:SetText("")
-            print("|cff60A5FAQUI:|r Created new profile: " .. newName)
+            print("|cff60A5FAQUI:|r " .. ns.L["Created new profile: "] .. newName)
             RefreshProfileDropdowns()
         end
     end)
@@ -312,11 +312,11 @@ local function BuildSpecProfilesContent(content)
     newProfileInput:SetPoint("RIGHT", createBtn, "LEFT", -8, 0)
 
     manageCard.AddRow(
-        Shared.BuildSettingRow(manageCard.frame, "Switch Profile", profileDropdown),
-        Shared.BuildSettingRow(manageCard.frame, "Copy From", copyDropdown)
+        Shared.BuildSettingRow(manageCard.frame, ns.L["Switch Profile"], profileDropdown),
+        Shared.BuildSettingRow(manageCard.frame, ns.L["Copy From"], copyDropdown)
     )
     manageCard.AddRow(
-        Shared.BuildSettingRow(manageCard.frame, "Delete Profile", deleteDropdown),
+        Shared.BuildSettingRow(manageCard.frame, ns.L["Delete Profile"], deleteDropdown),
         createCell
     )
     manageCard.Finalize()
@@ -331,7 +331,7 @@ local function BuildSpecProfilesContent(content)
     ---------------------------------------------------------------------------
     -- Spec Auto-Switch — enable row full-width, spec dropdowns paired two-up.
     ---------------------------------------------------------------------------
-    Shared.CreateAccentDotLabel(content, "Spec Auto-Switch", y); y = y - 22
+    Shared.CreateAccentDotLabel(content, ns.L["Spec Auto-Switch"], y); y = y - 22
 
     local specCore = GetCore()
     local specDB = specCore and specCore.db
@@ -345,26 +345,26 @@ local function BuildSpecProfilesContent(content)
             local core = GetCore(); local dbRef = core and core.db
             if dbRef and dbRef.SetDualSpecEnabled then
                 dbRef:SetDualSpecEnabled(enableWrapper.enabled)
-                print("|cff60A5FAQUI:|r Spec auto-switch " .. (enableWrapper.enabled and "enabled" or "disabled"))
+                print("|cff60A5FAQUI:|r " .. ns.L["Spec auto-switch "] .. (enableWrapper.enabled and ns.L["enabled"] or ns.L["disabled"]))
             end
-        end, { description = "Automatically switch to a mapped profile whenever you change specialization. Map each spec to a profile below." })
-        specCard.AddRow(Shared.BuildSettingRow(specCard.frame, "Enable Spec Profiles", enableW))
+        end, { description = ns.L["Automatically switch to a mapped profile whenever you change specialization. Map each spec to a profile below."] })
+        specCard.AddRow(Shared.BuildSettingRow(specCard.frame, ns.L["Enable Spec Profiles"], enableW))
 
         local specCells = {}
         local currentSpec = GetSpecialization()
         for i = 1, numSpecs do
             local _, specName = GetSpecializationInfo(i)
             if specName then
-                local displayName = specName .. (i == currentSpec and " (Active)" or "")
+                local displayName = specName .. (i == currentSpec and ns.L[" (Active)"] or "")
                 local currentSpecProfile = specDB:GetDualSpecProfile(i) or ""
                 local specWrapper = { selected = currentSpecProfile }
                 local specDropdown = GUI:CreateFormDropdown(specCard.frame, nil, GetProfileList(), "selected", specWrapper, function(value)
                     local core = GetCore(); local dbRef = core and core.db
                     if dbRef and dbRef.SetDualSpecProfile and value and value ~= "" then
                         dbRef:SetDualSpecProfile(value, i)
-                        print("|cff60A5FAQUI:|r " .. specName .. " will use profile: " .. value)
+                        print("|cff60A5FAQUI:|r " .. specName .. ns.L[" will use profile: "] .. value)
                     end
-                end, { description = "Profile to activate whenever you swap into the " .. specName .. " specialization." })
+                end, { description = ns.L["Profile to activate whenever you swap into the "] .. specName .. ns.L[" specialization."] })
                 table.insert(profileDropdowns_all, specDropdown)
                 specCells[#specCells + 1] = Shared.BuildSettingRow(specCard.frame, displayName, specDropdown)
             end
@@ -376,7 +376,7 @@ local function BuildSpecProfilesContent(content)
         specCard.Finalize()
         y = y - specCard.frame:GetHeight() - SECTION_GAP
     else
-        local noSpec = GUI:CreateLabel(content, "LibDualSpec not available.", 11, C.textMuted)
+        local noSpec = GUI:CreateLabel(content, ns.L["LibDualSpec not available."], 11, C.textMuted)
         noSpec:SetPoint("TOPLEFT", PAD, y)
         y = y - 24
     end

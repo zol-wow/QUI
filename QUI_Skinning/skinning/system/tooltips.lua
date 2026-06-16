@@ -121,12 +121,25 @@ local function SetFontStringSize(fs, size)
     elseif type(curSize) == "number" and math.abs(curSize - size) < 0.5 then
         return  -- already at target size; skip SetFont to avoid relayout
     end
-    pcall(fs.SetFont, fs, path, size, flags or "")
+    if Helpers and Helpers.ApplyFontWithFallback then
+        pcall(Helpers.ApplyFontWithFallback, fs, path, size, flags or "")
+    else
+        pcall(fs.SetFont, fs, path, size, flags or "")
+    end
 end
 
 -- Cache default Font object metrics for reset
 local defaultHeaderFont, defaultHeaderSize, defaultHeaderFlag
 local defaultBodyFont, defaultBodySize, defaultBodyFlag
+-- Track the QUI CJK font-family object last assigned to each GameTooltip font
+-- object so the size/flags fast-skip below cannot bypass the very first
+-- family application. On a non-CJK client Blizzard's stock GameTooltipText /
+-- GameTooltipHeaderText resolve to the same roman path+size we target, which
+-- made the metrics guard skip before our CJK-capable family was ever applied,
+-- leaving CJK glyphs blank when a CJK locale is selected. Comparing against
+-- the family we actually set guarantees one application without re-running it.
+local appliedHeaderFamily, appliedBodyFamily, appliedSmallFamily
+local defaultSmallFont, defaultSmallSize, defaultSmallFlag
 local function CacheDefaultFontMetrics()
     if defaultHeaderFont then return end
     if GameTooltipHeaderText then
@@ -134,6 +147,9 @@ local function CacheDefaultFontMetrics()
     end
     if GameTooltipText then
         defaultBodyFont, defaultBodySize, defaultBodyFlag = GameTooltipText:GetFont()
+    end
+    if GameTooltipTextSmall then
+        defaultSmallFont, defaultSmallSize, defaultSmallFlag = GameTooltipTextSmall:GetFont()
     end
 end
 
@@ -152,10 +168,21 @@ local function ApplyFontSizeViaFontObjects(size)
     if GameTooltipHeaderText and defaultHeaderFont then
         local curFont, curSize, curFlags = GameTooltipHeaderText:GetFont()
         local targetFlags = outline or curFlags or defaultHeaderFlag or ""
-        if curFont ~= font or curFlags ~= targetFlags or not curSize or math.abs(curSize - headerSize) >= 0.5 then
-            local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, headerSize, targetFlags)
+        local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, headerSize, targetFlags)
+        -- Apply when metrics differ OR when our CJK family has not yet been
+        -- assigned to this font object (idempotent once set). The latter forces
+        -- the CJK-capable family on even when Blizzard's stock object already
+        -- resolves to the same roman path+size, so CJK glyphs stop rendering
+        -- blank for CJK-locale users on a non-CJK client. Roman appearance is
+        -- unchanged: the family keeps the same roman path/size we pass in.
+        local needsApply = curFont ~= font or curFlags ~= targetFlags or not curSize
+            or math.abs(curSize - headerSize) >= 0.5
+            or (family ~= nil and appliedHeaderFamily ~= family)
+        if needsApply then
             if family then
-                GameTooltipHeaderText:SetFontObject(family)
+                if pcall(GameTooltipHeaderText.SetFontObject, GameTooltipHeaderText, family) then
+                    appliedHeaderFamily = family
+                end
             else
                 GameTooltipHeaderText:SetFont(font or defaultHeaderFont, headerSize, targetFlags)
             end
@@ -164,12 +191,40 @@ local function ApplyFontSizeViaFontObjects(size)
     if GameTooltipText and defaultBodyFont then
         local curFont, curSize, curFlags = GameTooltipText:GetFont()
         local targetFlags = outline or curFlags or defaultBodyFlag or ""
-        if curFont ~= font or curFlags ~= targetFlags or not curSize or math.abs(curSize - size) >= 0.5 then
-            local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, size, targetFlags)
+        local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, size, targetFlags)
+        local needsApply = curFont ~= font or curFlags ~= targetFlags or not curSize
+            or math.abs(curSize - size) >= 0.5
+            or (family ~= nil and appliedBodyFamily ~= family)
+        if needsApply then
             if family then
-                GameTooltipText:SetFontObject(family)
+                if pcall(GameTooltipText.SetFontObject, GameTooltipText, family) then
+                    appliedBodyFamily = family
+                end
             else
                 GameTooltipText:SetFont(font or defaultBodyFont, size, targetFlags)
+            end
+        end
+    end
+    -- GameTooltipTextSmall backs SmallTextTooltip and small lines. Blizzard
+    -- owns its size, so keep its current height and only swap in a CJK-capable
+    -- family (same roman path/size) so its CJK members are present. Without
+    -- this, small tooltip text renders blank under a CJK locale on a non-CJK
+    -- client. Font-object level (taint-safe, like header/body above).
+    if GameTooltipTextSmall and defaultSmallFont then
+        local curFont, curSize, curFlags = GameTooltipTextSmall:GetFont()
+        local smallSize = (type(curSize) == "number" and curSize)
+            or (type(defaultSmallSize) == "number" and defaultSmallSize) or size
+        local targetFlags = outline or curFlags or defaultSmallFlag or ""
+        local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, smallSize, targetFlags)
+        local needsApply = curFont ~= font or curFlags ~= targetFlags
+            or (family ~= nil and appliedSmallFamily ~= family)
+        if needsApply then
+            if family then
+                if pcall(GameTooltipTextSmall.SetFontObject, GameTooltipTextSmall, family) then
+                    appliedSmallFamily = family
+                end
+            else
+                GameTooltipTextSmall:SetFont(font or defaultSmallFont, smallSize, targetFlags)
             end
         end
     end
@@ -1897,6 +1952,64 @@ ns.QUI_RefreshTooltipFontSize = RefreshAllFonts
 ns.QUI_RefitTooltipChromeToContent = RefitChromeToContent
 ns.QUI_RequestTooltipChromeRefit = RequestTooltipChromeRefit
 
+---------------------------------------------------------------------------
+-- CJK tooltip font fallback (locale-driven, INDEPENDENT of tooltip skinning)
+---------------------------------------------------------------------------
+-- ApplyFontSizeViaFontObjects only runs when tooltip skinning is enabled.
+-- CJK glyph rendering, though, is a correctness requirement for ANY user on a
+-- CJK locale (e.g. a non-CJK client with QUI's language set to zhCN) whether
+-- or not they use QUI's tooltip skin. This applies a CJK-capable font family
+-- to the shared GameTooltip font objects using their CURRENT font/size, so
+-- appearance is unchanged but CJK glyphs render. Covers every GameTooltip
+-- consumer (QUI chat-button tooltips, mover tooltips, item/unit tooltips, ...)
+-- because they all inherit these font objects.
+local CJK_LOCALES = { koKR = true, zhCN = true, zhTW = true }
+local function SelectedLocaleNeedsCJK()
+    local loc = (QUIDB and QUIDB.global and QUIDB.global.selectedLocale)
+        or (GetLocale and GetLocale())
+    return loc ~= nil and CJK_LOCALES[loc] == true
+end
+
+local cjkAppliedFont = setmetatable({}, { __mode = "k" })
+local function EnsureFontObjectCJK(fontObj)
+    if not (fontObj and fontObj.GetFont and fontObj.SetFontObject) then return end
+    if not (Helpers and Helpers.GetFontFamilyObject) then return end
+    local path, size, flags = fontObj:GetFont()
+    if not (path and type(size) == "number" and size > 0) then return end
+    local family = Helpers.GetFontFamilyObject(path, size, flags or "")
+    if not family then return end
+    if cjkAppliedFont[fontObj] == family then return end   -- idempotent
+    -- Font-OBJECT mutation only (never per-line FontStrings): taint-safe, per
+    -- the notes in core/font_system.lua.
+    if pcall(fontObj.SetFontObject, fontObj, family) then
+        cjkAppliedFont[fontObj] = family
+    end
+end
+
+local function EnsureTooltipCJKFallback()
+    if not SelectedLocaleNeedsCJK() then return end
+    EnsureFontObjectCJK(GameTooltipHeaderText)
+    EnsureFontObjectCJK(GameTooltipText)
+    EnsureFontObjectCJK(GameTooltipTextSmall)
+end
+ns.QUI_EnsureTooltipCJKFallback = EnsureTooltipCJKFallback
+
+do
+    -- NOTE: tooltips.lua is a load-on-demand module, so PLAYER_LOGIN may have
+    -- already fired by the time it loads — registering it would never run (and
+    -- is forbidden for LOD modules). Instead drive off the GameTooltip:Show
+    -- post-hook (fires before the first tooltip renders) plus a one-shot timer,
+    -- both idempotent.
+    if type(hooksecurefunc) == "function" and GameTooltip then
+        hooksecurefunc(GameTooltip, "Show", EnsureTooltipCJKFallback)
+    end
+    if ns.WhenLoggedIn then
+        ns.WhenLoggedIn(EnsureTooltipCJKFallback)
+    elseif C_Timer and C_Timer.After then
+        C_Timer.After(1, EnsureTooltipCJKFallback)
+    end
+end
+
 -- Register in the standard skinning refresh path so a global skin-color change
 -- (RefreshAll("skinning")) recolors open tooltips. The ns.QUI_* globals above
 -- remain for tooltip-specific changes driven from the tooltip settings page.
@@ -1912,7 +2025,7 @@ end
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
         key      = "tooltip",
-        label    = "Tooltip",
+        label    = ns.L["Tooltip"],
         category = "Skinning",
         prefix   = "",
         db       = function(p) return p.tooltip end,

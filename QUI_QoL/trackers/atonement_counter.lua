@@ -342,7 +342,11 @@ local function CreateCounterFrame()
 
     local countText = frame:CreateFontString(nil, "OVERLAY")
     countText:SetPoint("CENTER", frame, "CENTER", 0, 1)
-    countText:SetFont(UIKit.ResolveFontPath(), DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(countText, UIKit.ResolveFontPath(), DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    else
+        countText:SetFont(UIKit.ResolveFontPath(), DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    end
     countText:SetJustifyH("CENTER")
     countText:SetJustifyV("MIDDLE")
     countText:SetText("0")
@@ -350,9 +354,9 @@ local function CreateCounterFrame()
 
     frame:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Atonement Counter", 1, 0.82, 0.2)
-        GameTooltip:AddLine(string_format("Active: %d", CounterState.count or 0), 1, 1, 1)
-        GameTooltip:AddLine("Counts only your active Atonements.", 0.8, 0.8, 0.8, true)
+        GameTooltip:SetText(ns.L["Atonement Counter"], 1, 0.82, 0.2)
+        GameTooltip:AddLine(string_format(ns.L["Active: %d"], CounterState.count or 0), 1, 1, 1)
+        GameTooltip:AddLine(ns.L["Counts only your active Atonements."], 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     frame:SetScript("OnLeave", function()
@@ -389,7 +393,11 @@ local function ApplyAppearance()
 
     local fontName = settings.useCustomFont and settings.font or nil
     local fontPath = UIKit.ResolveFontPath(fontName)
-    frame.countText:SetFont(fontPath, settings.fontSize or DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(frame.countText, fontPath, settings.fontSize or DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    else
+        frame.countText:SetFont(fontPath, settings.fontSize or DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    end
 
     if settings.hideIcon then
         frame.icon:Hide()
@@ -583,7 +591,7 @@ end
 
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
-        key = "atonement", label = "Atonement Counter", category = "Trackers", prefix = "",
+        key = "atonement", label = ns.L["Atonement Counter"], category = ns.L["Trackers"], prefix = "",
         db = function(p) return p.atonementCounter end,
         refresh = function() if _G.QUI_RefreshAtonementCounter then _G.QUI_RefreshAtonementCounter() end end,
         legacy = { useClass = "useClassColorBorder", accent = "useAccentColorBorder" },

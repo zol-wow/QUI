@@ -3,11 +3,22 @@
 -- Uses C_AssistedCombat API (Starter Build / Rotation Helper)
 
 local ADDON_NAME, QUI = ... -- QUI = private addon namespace (the table other files call "ns"), not the AceAddon global
+local ns = QUI  -- alias so localization keys use the extractor-recognized ns.L[...] form
 local LSM = QUI.LSM
 
 local GetCore = QUI.Helpers.GetCore
 local IsSecretValue = QUI.Helpers.IsSecretValue
 local ApplyCooldownFromSpell = QUI.Helpers.ApplyCooldownFromSpell
+
+-- CJK-safe font setter: preserves the roman font and only adds CJK fallback
+-- members where available, degrading to plain SetFont otherwise.
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 
 -- Locals for performance
 local GetTime = GetTime
@@ -188,7 +199,7 @@ CreateIconFrame = function()
 
     -- Keybind text
     iconFrame.keybindText = iconFrame:CreateFontString(nil, "OVERLAY")
-    iconFrame.keybindText:SetFont(QUI.Helpers.GetGeneralFont(), 13, QUI.Helpers.GetGeneralFontOutline())
+    CJKFont(iconFrame.keybindText, QUI.Helpers.GetGeneralFont(), 13, QUI.Helpers.GetGeneralFontOutline())
     iconFrame.keybindText:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -2, 2)
     iconFrame.keybindText:SetTextColor(1, 1, 1, 1)
     iconFrame.keybindText:SetShadowOffset(1, -1)
@@ -550,7 +561,7 @@ RefreshIconFrame = function()
         local fontPath = LSM:Fetch("font", fontName) or QUI.Helpers.GetGeneralFont()
         local fontSize = db.keybindSize or 13
         local outline = db.keybindOutline and QUI.Helpers.GetGeneralFontOutline() or ""
-        iconFrame.keybindText:SetFont(fontPath, fontSize, outline)
+        CJKFont(iconFrame.keybindText, fontPath, fontSize, outline)
 
         local color = db.keybindColor or { 1, 1, 1, 1 }
         iconFrame.keybindText:SetTextColor(color[1], color[2], color[3], color[4] or 1)
@@ -713,7 +724,7 @@ end
 
 if QUI.Helpers and QUI.Helpers.BorderRegistry then
     QUI.Helpers.BorderRegistry.Register({
-        key = "rotationAssist", label = "Rotation Assist Icon", category = "Trackers", prefix = "",
+        key = "rotationAssist", label = ns.L["Rotation Assist Icon"], category = ns.L["Trackers"], prefix = "",
         db = function(p) return p.rotationAssistIcon end,
         refresh = function() if _G.QUI_RefreshRotationAssistIcon then _G.QUI_RefreshRotationAssistIcon() end end,
         legacy = {},

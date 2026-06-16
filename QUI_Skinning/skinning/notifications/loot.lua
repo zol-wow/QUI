@@ -8,6 +8,14 @@ local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
 local LSM = ns.LSM
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local tinsert, tremove = tinsert, tremove
 
 -- Module reference
@@ -151,7 +159,7 @@ local function CreateLootSlot(parent, index)
 
     -- Item name
     slot.name = slot:CreateFontString(nil, "OVERLAY")
-    slot.name:SetFont(LSM:Fetch("font", GetGeneralFont()), 11, "OUTLINE")
+    CJKFont(slot.name, LSM:Fetch("font", GetGeneralFont()), 11, "OUTLINE")
     slot.name:SetPoint("LEFT", slot.icon, "RIGHT", 6, 0)
     slot.name:SetPoint("RIGHT", slot, "RIGHT", -40, 0)
     slot.name:SetJustifyH("LEFT")
@@ -159,13 +167,13 @@ local function CreateLootSlot(parent, index)
 
     -- Stack count
     slot.count = slot:CreateFontString(nil, "OVERLAY")
-    slot.count:SetFont(LSM:Fetch("font", GetGeneralFont()), 10, "OUTLINE")
+    CJKFont(slot.count, LSM:Fetch("font", GetGeneralFont()), 10, "OUTLINE")
     SkinBase.SetPixelPoint(slot.count, "BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", -2, 2)
     slot.count:SetTextColor(1, 1, 1)
 
     -- Transmog marker (star icon for uncollected appearances)
     slot.transmogMarker = slot:CreateFontString(nil, "OVERLAY")
-    slot.transmogMarker:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
+    CJKFont(slot.transmogMarker, LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
     slot.transmogMarker:SetPoint("TOPRIGHT", slot, "TOPRIGHT", -4, -4)
     slot.transmogMarker:SetText("*")
     slot.transmogMarker:SetTextColor(1, 0.82, 0)  -- Gold
@@ -226,10 +234,10 @@ local function CreateLootWindow()
 
     -- Header
     frame.header = frame:CreateFontString(nil, "OVERLAY")
-    frame.header:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
+    CJKFont(frame.header, LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
     frame.header:SetPoint("TOP", 0, -8)
     frame.header:SetTextColor(unpack(textColor))
-    frame.header:SetText("Loot")
+    frame.header:SetText(ns.L["Loot"])
 
     -- Dragging
     frame:RegisterForDrag("LeftButton")
@@ -478,7 +486,7 @@ local function CreateRollFrame(index)
 
     -- Item name (larger font) - aligned with icon
     frame.name = frame:CreateFontString(nil, "OVERLAY")
-    frame.name:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
+    CJKFont(frame.name, LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
     frame.name:SetPoint("LEFT", frame.icon, "RIGHT", 8, 0)
     frame.name:SetPoint("RIGHT", frame, "RIGHT", -120, 4)  -- More room for buttons
     frame.name:SetJustifyH("LEFT")
@@ -919,7 +927,7 @@ local function SkinGroupLootHistoryFrame()
             local rbParts = frameParts[ResizeButton]
             if not rbParts then rbParts = {}; frameParts[ResizeButton] = rbParts end
             rbParts.text = ResizeButton:CreateFontString(nil, "OVERLAY")
-            rbParts.text:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
+            CJKFont(rbParts.text, LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
             rbParts.text:SetPoint("CENTER")
             rbParts.text:SetText("v v v")
             rbParts.text:SetTextColor(unpack(textColor))
@@ -1015,7 +1023,7 @@ function Loot:ApplyLootHistoryTheme()
         Helpers.SetFrameBackdropBorderColor(enRbBd, unpack(borderColor))
         local rbParts = frameParts[HistoryFrame.ResizeButton]
         if rbParts and rbParts.text then
-            rbParts.text:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
+            CJKFont(rbParts.text, LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
             rbParts.text:Show()
             rbParts.text:SetTextColor(unpack(textColor))
         end
@@ -1276,16 +1284,16 @@ function Loot:ApplyLootTheme()
 
     Helpers.SetFrameBackdropColor(lootFrame, unpack(bgColor))
     Helpers.SetFrameBackdropBorderColor(lootFrame, unpack(borderColor))
-    lootFrame.header:SetFont(fontPath, 12, "OUTLINE")
+    CJKFont(lootFrame.header, fontPath, 12, "OUTLINE")
     lootFrame.header:SetTextColor(unpack(textColor))
 
     -- Update slot fonts and highlight colors
     for i = 1, MAX_LOOT_SLOTS do
         local slot = lootFrame.slots[i]
         if slot then
-            slot.name:SetFont(fontPath, 11, "OUTLINE")
-            slot.count:SetFont(fontPath, 10, "OUTLINE")
-            slot.transmogMarker:SetFont(fontPath, 12, "OUTLINE")
+            CJKFont(slot.name, fontPath, 11, "OUTLINE")
+            CJKFont(slot.count, fontPath, 10, "OUTLINE")
+            CJKFont(slot.transmogMarker, fontPath, 12, "OUTLINE")
             slot:GetHighlightTexture():SetVertexColor(borderColor[1], borderColor[2], borderColor[3], 0.2)
         end
     end
@@ -1302,7 +1310,7 @@ function Loot:ApplyRollTheme()
             Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], 0.95)
             Helpers.SetFrameBackdropBorderColor(frame, borderColor[1], borderColor[2], borderColor[3], 0.3)  -- Subtle border
             frame.timer:SetStatusBarColor(borderColor[1], borderColor[2], borderColor[3], 1)  -- Accent color
-            frame.name:SetFont(fontPath, 12, "OUTLINE")
+            CJKFont(frame.name, fontPath, 12, "OUTLINE")
         end
     end
 end
@@ -1631,9 +1639,9 @@ function Loot:EnableEditMode()
         -- Add label
         if not lootFrame.editLabel then
             local label = lootFrame:CreateFontString(nil, "OVERLAY")
-            label:SetFont(LSM:Fetch("font", GetGeneralFont()), 10, "OUTLINE")
+            CJKFont(label, LSM:Fetch("font", GetGeneralFont()), 10, "OUTLINE")
             label:SetPoint("BOTTOM", lootFrame, "TOP", 0, 4)
-            label:SetText("QUI Loot Window")
+            label:SetText(ns.L["QUI Loot Window"])
             label:SetTextColor(0.2, 0.8, 0.8)  -- Match border color
             lootFrame.editLabel = label
         end
@@ -1648,9 +1656,9 @@ function Loot:EnableEditMode()
 
         if not rollFrame.editLabel then
             local label = rollFrame:CreateFontString(nil, "OVERLAY")
-            label:SetFont(LSM:Fetch("font", GetGeneralFont()), 10, "OUTLINE")
+            CJKFont(label, LSM:Fetch("font", GetGeneralFont()), 10, "OUTLINE")
             label:SetPoint("BOTTOM", rollFrame, "TOP", 0, 4)
-            label:SetText("QUI Roll Frame")
+            label:SetText(ns.L["QUI Roll Frame"])
             label:SetTextColor(0.2, 0.8, 0.8)  -- Match border color
             rollFrame.editLabel = label
         end

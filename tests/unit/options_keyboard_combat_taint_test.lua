@@ -50,7 +50,11 @@ QUI = {
     },
 }
 
-assert(loadfile("QUI_Options/init.lua"))("QUI_Options", {})
+-- init.lua indexes ns.L["..."] at load (post-i18n); install identity resolver.
+local nsOpt = {}
+local installLocale = dofile("tests/helpers/locale.lua")
+installLocale(nsOpt)
+assert(loadfile("QUI_Options/init.lua"))("QUI_Options", nsOpt)
 
 QUI.GUI:InitializeOptions()
 assert(type(frame.scripts.OnKeyDown) == "function", "options panel should install an OnKeyDown handler")

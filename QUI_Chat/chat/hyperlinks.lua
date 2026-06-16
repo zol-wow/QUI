@@ -77,14 +77,14 @@ end
 -- Ordered: more-specific patterns must precede general fallback for the
 -- same domain so the first match wins.
 local URL_LABELS = {
-    { pattern = "wowhead%.com/spell=",       label = "Wowhead spell" },
-    { pattern = "wowhead%.com/item=",        label = "Wowhead item" },
-    { pattern = "wowhead%.com/quest=",       label = "Wowhead quest" },
-    { pattern = "wowhead%.com/",             label = "Wowhead" },
-    { pattern = "raidbots%.com/sim/",        label = "Raidbots sim" },
-    { pattern = "raidbots%.com/",            label = "Raidbots" },
-    { pattern = "warcraftlogs%.com/reports/", label = "Logs report" },
-    { pattern = "warcraftlogs%.com/",        label = "Logs" },
+    { pattern = "wowhead%.com/spell=",       label = ns.L["Wowhead spell"] },
+    { pattern = "wowhead%.com/item=",        label = ns.L["Wowhead item"] },
+    { pattern = "wowhead%.com/quest=",       label = ns.L["Wowhead quest"] },
+    { pattern = "wowhead%.com/",             label = ns.L["Wowhead"] },
+    { pattern = "raidbots%.com/sim/",        label = ns.L["Raidbots sim"] },
+    { pattern = "raidbots%.com/",            label = ns.L["Raidbots"] },
+    { pattern = "warcraftlogs%.com/reports/", label = ns.L["Logs report"] },
+    { pattern = "warcraftlogs%.com/",        label = ns.L["Logs"] },
 }
 
 function HL.LookupFriendlyLabel(url)
@@ -320,7 +320,7 @@ function HL.ShowPlayerMenu(name, realm)
         UIDropDownMenu_AddButton(info, level)
 
         info = UIDropDownMenu_CreateInfo()
-        info.text = "Whisper"
+        info.text = ns.L["Whisper"]
         info.notCheckable = true
         info.func = function()
             if ChatFrame_SendTell then ChatFrame_SendTell(fullName) end
@@ -328,7 +328,7 @@ function HL.ShowPlayerMenu(name, realm)
         UIDropDownMenu_AddButton(info, level)
 
         info = UIDropDownMenu_CreateInfo()
-        info.text = "Invite to Group"
+        info.text = ns.L["Invite to Group"]
         info.notCheckable = true
         info.func = function()
             if C_PartyInfo and C_PartyInfo.InviteUnit then
@@ -345,7 +345,7 @@ function HL.ShowPlayerMenu(name, realm)
         if not realm or realm == "" or realm == GetRealmName() then
             local resolvedUnit = findUnitForName(name, realm)
             info = UIDropDownMenu_CreateInfo()
-            info.text = "Inspect"
+            info.text = ns.L["Inspect"]
             info.notCheckable = true
             if resolvedUnit then
                 info.disabled = false
@@ -359,8 +359,8 @@ function HL.ShowPlayerMenu(name, realm)
                 end
             else
                 info.disabled = true
-                info.tooltipTitle = "Inspect"
-                info.tooltipText  = "Player not in group/target/mouseover/focus."
+                info.tooltipTitle = ns.L["Inspect"]
+                info.tooltipText  = ns.L["Player not in group/target/mouseover/focus."]
                 info.tooltipOnButton = true
                 ---@type fun(...)
                 info.func = function() end
@@ -369,7 +369,7 @@ function HL.ShowPlayerMenu(name, realm)
         end
 
         info = UIDropDownMenu_CreateInfo()
-        info.text = "Add Friend"
+        info.text = ns.L["Add Friend"]
         info.notCheckable = true
         info.func = function()
             if C_FriendList and C_FriendList.AddFriend then
@@ -379,7 +379,7 @@ function HL.ShowPlayerMenu(name, realm)
         UIDropDownMenu_AddButton(info, level)
 
         info = UIDropDownMenu_CreateInfo()
-        info.text = "Ignore"
+        info.text = ns.L["Ignore"]
         info.notCheckable = true
         info.func = function()
             if C_FriendList and C_FriendList.AddIgnore then

@@ -146,13 +146,13 @@ local function CreateBar()
     -- up saved anchors that referenced the bar before this LOD addon loaded.
     if ns.FRAME_ANCHOR_INFO and not ns.FRAME_ANCHOR_INFO.infoBar then
         ns.FRAME_ANCHOR_INFO.infoBar = {
-            displayName = "Info Bar", category = "Display", order = 11,
+            displayName = ns.L["Info Bar"], category = "Display", order = 11,
         }
     end
     local anchoring = ns.QUI_Anchoring
     if anchoring and anchoring.RegisterAnchorTarget then
         anchoring:RegisterAnchorTarget("infoBar", bar, {
-            displayName = "Info Bar", category = "Display", order = 11,
+            displayName = ns.L["Info Bar"], category = "Display", order = 11,
         })
         if anchoring.ApplyAllFrameAnchors then
             anchoring:ApplyAllFrameAnchors()
@@ -267,7 +267,11 @@ local function CreateSlot(zf, widgetId)
     -- change between rebuilds.
     local general = QUICore.db.profile.general or {}
     local fontPath = LSM:Fetch("font", general.font or "Quazii") or "Fonts\\FRIZQT__.TTF"
-    QUICore:SafeSetFont(slot.text, fontPath, db.fontSize or 12, general.fontOutline or "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(slot.text, fontPath, db.fontSize or 12, general.fontOutline or "OUTLINE")
+    else
+        QUICore:SafeSetFont(slot.text, fontPath, db.fontSize or 12, general.fontOutline or "OUTLINE")
+    end
     slot.text:SetTextColor(1, 1, 1, 1)
 
     local ws = db.widgetSettings and db.widgetSettings[widgetId]

@@ -146,6 +146,7 @@ local ns = {
     },
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 local chunk = assert(loadfile("QUI_Datatexts/datatexts/settings/datatexts_providers.lua"))
 chunk("QUI", ns)
 assert(type(ns.QUI_BuildCurrencyOrderSection) == "function",

@@ -14,6 +14,16 @@ if not openRaidLib then
     return
 end
 
+-- CJK-safe font setter: preserves the roman font and only adds CJK fallback
+-- members where available, degrading to plain SetFont otherwise.
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- SETTINGS ACCESS
 ---------------------------------------------------------------------------
@@ -188,12 +198,12 @@ KeyTrackerFrame:Hide()
 -- Title
 local title = KeyTrackerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 title:SetPoint("TOP", KeyTrackerFrame, "TOP", 0, -2)
-title:SetFont(title:GetFont(), 9, "OUTLINE")
+CJKFont(title, title:GetFont(), 9, "OUTLINE")
 
 -- Update title color with skin
 local function UpdateTitleColor()
     local sr, sg, sb = GetSkinColors()
-    title:SetText("|cff" .. string.format("%02x%02x%02x", sr*255, sg*255, sb*255) .. "Party Keys|r")
+    title:SetText("|cff" .. string.format("%02x%02x%02x", sr*255, sg*255, sb*255) .. ns.L["Party Keys|r"])
 end
 
 -- Apply skin colors (consolidated - called after QUI is loaded)
@@ -239,10 +249,10 @@ end)
 -- Tooltip for key tracker panel
 KeyTrackerFrame:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:AddLine("Party Keys", 1, 1, 1)
+    GameTooltip:AddLine(ns.L["Party Keys"], 1, 1, 1)
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Right-click to refresh", 0.7, 0.7, 0.7)
-    GameTooltip:AddLine("Shift+Drag to move", 0.7, 0.7, 0.7)
+    GameTooltip:AddLine(ns.L["Right-click to refresh"], 0.7, 0.7, 0.7)
+    GameTooltip:AddLine(ns.L["Shift+Drag to move"], 0.7, 0.7, 0.7)
     GameTooltip:Show()
 end)
 KeyTrackerFrame:SetScript("OnLeave", function()
@@ -286,25 +296,25 @@ local function CreateKeystoneButton(parent, yOffset)
     -- Key level text (centered on icon)
     button.keyLevel = button:CreateFontString(nil, "OVERLAY")
     button.keyLevel:SetPoint("CENTER", button.icon, "CENTER", 0, 0)
-    button.keyLevel:SetFont(fontPath, fontSize + 1, "OUTLINE")
+    CJKFont(button.keyLevel, fontPath, fontSize + 1, "OUTLINE")
 
     -- Dungeon short name (right of icon, parented to button)
     button.dungeonName = button:CreateFontString(nil, "OVERLAY")
     button.dungeonName:SetPoint("LEFT", button.icon, "RIGHT", 4, 0)
-    button.dungeonName:SetFont(fontPath, fontSize, "OUTLINE")
+    CJKFont(button.dungeonName, fontPath, fontSize, "OUTLINE")
     button.dungeonName:SetJustifyH("LEFT")
     button.dungeonName:SetWidth(40)  -- Fixed width for alignment
 
     -- Player name (right of dungeon name, parented to button)
     button.playerName = button:CreateFontString(nil, "OVERLAY")
     button.playerName:SetPoint("LEFT", button.dungeonName, "RIGHT", 4, 0)
-    button.playerName:SetFont(fontPath, fontSize, "OUTLINE")
+    CJKFont(button.playerName, fontPath, fontSize, "OUTLINE")
     button.playerName:SetJustifyH("LEFT")
 
     -- Score (right side, parented to button)
     button.score = button:CreateFontString(nil, "OVERLAY")
     button.score:SetPoint("RIGHT", button, "RIGHT", 0, 0)
-    button.score:SetFont(fontPath, fontSize, "OUTLINE")
+    CJKFont(button.score, fontPath, fontSize, "OUTLINE")
     button.score:SetJustifyH("RIGHT")
     button.score:SetJustifyV("MIDDLE")
 
@@ -321,7 +331,7 @@ local function CreateKeystoneButton(parent, yOffset)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:AddLine(self.tooltipDungeon, 1, 1, 1)
             if self.spellID then
-                GameTooltip:AddLine("Click to teleport", 0.5, 1, 0.5)
+                GameTooltip:AddLine(ns.L["Click to teleport"], 0.5, 1, 0.5)
             end
             GameTooltip:Show()
         end
@@ -349,11 +359,11 @@ local function UpdateAllButtonFonts()
     for i = 0, 4 do
         local button = keystoneButtons[i]
         if button then
-            button.keyLevel:SetFont(fontPath, fontSize + 1, "OUTLINE")
-            button.dungeonName:SetFont(fontPath, fontSize, "OUTLINE")
+            CJKFont(button.keyLevel, fontPath, fontSize + 1, "OUTLINE")
+            CJKFont(button.dungeonName, fontPath, fontSize, "OUTLINE")
             button.dungeonName:SetTextColor(tr, tg, tb, ta)
-            button.playerName:SetFont(fontPath, fontSize, "OUTLINE")
-            button.score:SetFont(fontPath, fontSize, "OUTLINE")
+            CJKFont(button.playerName, fontPath, fontSize, "OUTLINE")
+            CJKFont(button.score, fontPath, fontSize, "OUTLINE")
         end
     end
 end
@@ -736,7 +746,7 @@ end
 KeyTrackerFrame:SetScript("OnMouseUp", function(self, button)
     if button == "RightButton" and not InCombatLockdown() then
         RequestKeystones()
-        print("|cFF56D1FFQUI:|r Refreshing party keys...")
+        print(ns.L["|cFF56D1FFQUI:|r Refreshing party keys..."])
     end
 end)
 

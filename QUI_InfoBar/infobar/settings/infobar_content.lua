@@ -91,9 +91,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     -- INFO BAR HELPERS
     ---------------------------------------------------------------------------
     local ZONE_DEFS = {
-        { key = "left",   label = "Left Zone" },
-        { key = "center", label = "Center Zone" },
-        { key = "right",  label = "Right Zone" },
+        { key = "left",   label = ns.L["Left Zone"] },
+        { key = "center", label = ns.L["Center Zone"] },
+        { key = "right",  label = ns.L["Right Zone"] },
     }
 
     -- Survives structural rebuilds (closure scope, like DatatextPanelState).
@@ -148,7 +148,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     -- "Plugins"; tag them so they're recognizable among the
                     -- built-ins in this flat, searchable list.
                     if def.category == "Plugins" then
-                        text = text .. " |cff999999(plugin)|r"
+                        text = text .. " " .. ns.L["|cff999999(plugin)|r"]
                     end
                     opts[#opts + 1] = {
                         value = def.id,
@@ -213,58 +213,58 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- why instead of rendering a silently hollow page.
         if ns.QUI_DatatextsRegistryNotice then
             ns.QUI_DatatextsRegistryNotice(L, content,
-                "The Datatexts module addon is disabled — enable it under Modules to configure datatexts. The Info Bar's widget lists below are empty until it loads.")
+                ns.L["The Datatexts module addon is disabled — enable it under Modules to configure datatexts. The Info Bar's widget lists below are empty until it loads."])
         end
 
         -- GENERAL
-        L.headerAt("General")
+        L.headerAt(ns.L["General"])
         local g = L.sectionAt()
 
         local enW = GUI:CreateFormCheckbox(g.frame, nil, "enabled", db, RefreshInfoBar,
-            { description = "Show the full-width info bar. The Info Bar module itself must also be enabled on the Module Addons page." })
+            { description = ns.L["Show the full-width info bar. The Info Bar module itself must also be enabled on the Module Addons page."] })
         local posW = GUI:CreateFormDropdown(g.frame, nil, {
-            { value = "TOP", text = "Top" },
-            { value = "BOTTOM", text = "Bottom" },
+            { value = "TOP", text = ns.L["Top"] },
+            { value = "BOTTOM", text = ns.L["Bottom"] },
         }, "position", db, RefreshInfoBar,
-            { description = "Pin the bar to the top or the bottom edge of the screen." })
-        g.AddRow(row(g.frame, "Enable Info Bar", enW), row(g.frame, "Bar Position", posW))
+            { description = ns.L["Pin the bar to the top or the bottom edge of the screen."] })
+        g.AddRow(row(g.frame, ns.L["Enable Info Bar"], enW), row(g.frame, ns.L["Bar Position"], posW))
 
         local hW = GUI:CreateFormSlider(g.frame, nil, 16, 40, 1, "height", db, RefreshInfoBar,
-            { description = "Height of the bar in pixels." })
+            { description = ns.L["Height of the bar in pixels."] })
         local fSizeW = GUI:CreateFormSlider(g.frame, nil, 9, 18, 1, "fontSize", db, RefreshInfoBar,
-            { description = "Font size of every widget on the bar." })
-        g.AddRow(row(g.frame, "Bar Height", hW), row(g.frame, "Font Size", fSizeW))
+            { description = ns.L["Font size of every widget on the bar."] })
+        g.AddRow(row(g.frame, ns.L["Bar Height"], hW), row(g.frame, ns.L["Font Size"], fSizeW))
 
         local bgW = GUI:CreateFormSlider(g.frame, nil, 0, 100, 5, "bgOpacity", db, RefreshInfoBar,
-            { description = "Opacity of the bar background (0 transparent, 100 fully opaque)." })
+            { description = ns.L["Opacity of the bar background (0 transparent, 100 fully opaque)."] })
         local borSizeW = GUI:CreateFormSlider(g.frame, nil, 0, 4, 1, "borderSize", db, RefreshInfoBar,
-            { description = "Thickness of the bar's screen-inner edge border. Set to 0 to hide it." })
-        g.AddRow(row(g.frame, "Background Opacity", bgW), row(g.frame, "Border Size (0=hidden)", borSizeW))
+            { description = ns.L["Thickness of the bar's screen-inner edge border. Set to 0 to hide it."] })
+        g.AddRow(row(g.frame, ns.L["Background Opacity"], bgW), row(g.frame, ns.L["Border Size (0=hidden)"], borSizeW))
 
         local borSrcW, borColorW = ns.QUI_BorderControl.Attach(GUI, g.frame, db, "", RefreshInfoBar,
-            { label = "Border Color Source", colorLabel = "Border Color",
-              colorDescription = "Color of the bar's edge border." })
-        g.AddRow(row(g.frame, "Border Color Source", borSrcW), row(g.frame, "Border Color", borColorW))
+            { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"],
+              colorDescription = ns.L["Color of the bar's edge border."] })
+        g.AddRow(row(g.frame, ns.L["Border Color Source"], borSrcW), row(g.frame, ns.L["Border Color"], borColorW))
 
         local spacingW = GUI:CreateFormSlider(g.frame, nil, 4, 30, 1, "widgetSpacing", db, RefreshInfoBar,
-            { description = "Horizontal gap between widgets within a zone." })
+            { description = ns.L["Horizontal gap between widgets within a zone."] })
         local padW = GUI:CreateFormSlider(g.frame, nil, 0, 30, 1, "zonePadding", db, RefreshInfoBar,
-            { description = "Inset between the screen edges and the left/right zones." })
-        g.AddRow(row(g.frame, "Widget Spacing", spacingW), row(g.frame, "Zone Padding", padW))
+            { description = ns.L["Inset between the screen edges and the left/right zones."] })
+        g.AddRow(row(g.frame, ns.L["Widget Spacing"], spacingW), row(g.frame, ns.L["Zone Padding"], padW))
         L.closeSection(g)
 
         -- VISIBILITY
-        L.headerAt("Visibility")
+        L.headerAt(ns.L["Visibility"])
         local vis = L.sectionAt()
         local fadeW = GUI:CreateFormCheckbox(vis.frame, nil, "mouseoverFade", db, RefreshInfoBar,
-            { description = "Fade the bar out when the mouse is not over it." })
+            { description = ns.L["Fade the bar out when the mouse is not over it."] })
         local restW = GUI:CreateFormSlider(vis.frame, nil, 0, 100, 5, "fadeRestOpacity", db, RefreshInfoBar,
-            { description = "Bar opacity while faded out (0 invisible, 100 fully visible)." })
-        vis.AddRow(row(vis.frame, "Mouseover Fade", fadeW), row(vis.frame, "Faded Opacity", restW))
+            { description = ns.L["Bar opacity while faded out (0 invisible, 100 fully visible)."] })
+        vis.AddRow(row(vis.frame, ns.L["Mouseover Fade"], fadeW), row(vis.frame, ns.L["Faded Opacity"], restW))
 
         local combatW = GUI:CreateFormCheckbox(vis.frame, nil, "hideInCombat", db, RefreshInfoBar,
-            { description = "Hide the entire bar while you are in combat." })
-        vis.AddRow(row(vis.frame, "Hide in Combat", combatW))
+            { description = ns.L["Hide the entire bar while you are in combat."] })
+        vis.AddRow(row(vis.frame, ns.L["Hide in Combat"], combatW))
         L.closeSection(vis)
 
         -- ZONES (one editable list per zone; every mutation refreshes the bar
@@ -282,8 +282,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             hintFs:SetJustifyH("LEFT")
             hintFs:SetTextColor(0.6, 0.6, 0.6, 0.8)
             hintFs:SetText(#zoneList > 0
-                and "Drag a row (or use the arrows) to reorder; x removes the widget from the bar."
-                or "No widgets in this zone. Add one below.")
+                and ns.L["Drag a row (or use the arrows) to reorder; x removes the widget from the bar."]
+                or ns.L["No widgets in this zone. Add one below."])
 
             local accR, accG, accB = GetAccent()
             local ZONE_LIST_TOP = 24
@@ -326,7 +326,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     nameFs:SetText(GetWidgetDisplayName(QUICore, widgetId))
                     nameFs:SetTextColor(0.9, 0.9, 0.9, 1)
                 else
-                    nameFs:SetText(tostring(widgetId) .. " (not loaded)")
+                    nameFs:SetText(tostring(widgetId) .. " " .. ns.L["(not loaded)"])
                     nameFs:SetTextColor(0.6, 0.6, 0.6, 1)
                 end
 
@@ -376,7 +376,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     hoverBg:Show()
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:SetText(GetWidgetDisplayName(QUICore, capturedId), accR, accG, accB)
-                    GameTooltip:AddLine("Drag to reorder within this zone, or use the arrows.", 1, 1, 1, true)
+                    GameTooltip:AddLine(ns.L["Drag to reorder within this zone, or use the arrows."], 1, 1, 1, true)
                     GameTooltip:Show()
                 end)
                 r:SetScript("OnLeave", function(self)
@@ -411,7 +411,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     end
                 end)
 
-                local upBtn = makeRowButton("^", -44, "Move up")
+                local upBtn = makeRowButton("^", -44, ns.L["Move up"])
                 upBtn:SetScript("OnClick", function()
                     local curIdx = findCurrentIndex()
                     if curIdx and curIdx > 1 then
@@ -423,7 +423,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end)
                 upBtn:SetAlpha(idx > 1 and 1 or 0.3)
 
-                local downBtn = makeRowButton("v", -24, "Move down")
+                local downBtn = makeRowButton("v", -24, ns.L["Move down"])
                 downBtn:SetScript("OnClick", function()
                     local curIdx = findCurrentIndex()
                     if curIdx and curIdx < #zoneList then
@@ -435,7 +435,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end)
                 downBtn:SetAlpha(idx < #zoneList and 1 or 0.3)
 
-                local removeBtn = makeRowButton("x", -4, "Remove from bar")
+                local removeBtn = makeRowButton("x", -4, ns.L["Remove from bar"])
                 removeBtn:SetScript("OnClick", function()
                     local curIdx = findCurrentIndex()
                     if curIdx then
@@ -448,7 +448,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 ry = ry - ZONE_ROW_HEIGHT
             end
 
-            local addOpts = { { value = "", text = "Add widget..." } }
+            local addOpts = { { value = "", text = ns.L["Add widget..."] } }
             for _, opt in ipairs(GetAvailableWidgetOptions(QUICore, placedSet)) do
                 addOpts[#addOpts + 1] = opt
             end
@@ -460,11 +460,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 zoneList[#zoneList + 1] = val
                 RefreshInfoBar()
                 NotifyStructuralRefresh()
-            end, { description = "Add a widget to the end of this zone. Widgets already placed in any zone are not listed." },
+            end, { description = ns.L["Add a widget to the end of this zone. Widgets already placed in any zone are not listed."] },
                 { searchable = true })
             AttachDropdownTooltip(addDD,
-                "Add a widget to the end of this zone. Widgets already placed in any zone are not listed.",
-                "Add Widget")
+                ns.L["Add a widget to the end of this zone. Widgets already placed in any zone are not listed."],
+                ns.L["Add Widget"])
             addDD:SetPoint("TOPLEFT", zoneFrame, "TOPLEFT", 0, ry - 4)
             addDD:SetPoint("RIGHT", zoneFrame, "RIGHT", -4, 0)
             if addDD.SetValue then addDD:SetValue("", true) end
@@ -474,7 +474,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
 
         -- WIDGET OVERRIDES (per-placed-widget label/width tweaks)
-        L.headerAt("Widget Overrides")
+        L.headerAt(ns.L["Widget Overrides"])
         if #placedList > 0 then
             local selected = InfoBarPageState.selectedWidget
             local selectedValid = false
@@ -501,41 +501,41 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 if not val or val == InfoBarPageState.selectedWidget then return end
                 InfoBarPageState.selectedWidget = val
                 NotifyStructuralRefresh()
-            end, { description = "Pick which placed widget the overrides below apply to." }, { searchable = true })
-            AttachDropdownTooltip(selDD, "Pick which placed widget the overrides below apply to.", "Widget")
+            end, { description = ns.L["Pick which placed widget the overrides below apply to."] }, { searchable = true })
+            AttachDropdownTooltip(selDD, ns.L["Pick which placed widget the overrides below apply to."], ns.L["Widget"])
             if selDD.SetValue then selDD:SetValue(selected, true) end
-            ov.AddRow(row(ov.frame, "Widget", selDD))
+            ov.AddRow(row(ov.frame, ns.L["Widget"], selDD))
 
             local ws = EnsureWidgetSettings(db, selected)
             local shortW = GUI:CreateFormCheckbox(ov.frame, nil, "shortLabel", ws, RefreshInfoBar,
-                { description = "Use the compact label variant for this widget." })
+                { description = ns.L["Use the compact label variant for this widget."] })
             local noLabelW = GUI:CreateFormCheckbox(ov.frame, nil, "noLabel", ws, RefreshInfoBar,
-                { description = "Hide the label and show only the value for this widget." })
-            ov.AddRow(row(ov.frame, "Short Label", shortW), row(ov.frame, "No Label", noLabelW))
+                { description = ns.L["Hide the label and show only the value for this widget."] })
+            ov.AddRow(row(ov.frame, ns.L["Short Label"], shortW), row(ov.frame, ns.L["No Label"], noLabelW))
 
             local minWidthW = GUI:CreateFormSlider(ov.frame, nil, 0, 300, 1, "minWidth", ws, RefreshInfoBar,
-                { description = "Minimum width reserved for this widget in pixels. 0 sizes to content." })
-            ov.AddRow(row(ov.frame, "Minimum Width", minWidthW))
+                { description = ns.L["Minimum width reserved for this widget in pixels. 0 sizes to content."] })
+            ov.AddRow(row(ov.frame, ns.L["Minimum Width"], minWidthW))
 
             local xOffsetW = GUI:CreateFormSlider(ov.frame, nil, -50, 50, 1, "xOffset", ws, RefreshInfoBar,
-                { description = "Horizontal nudge for this widget in pixels. Positive moves it toward the right edge of the screen; neighbor spacing is unaffected." })
-            ov.AddRow(row(ov.frame, "X Offset", xOffsetW))
+                { description = ns.L["Horizontal nudge for this widget in pixels. Positive moves it toward the right edge of the screen; neighbor spacing is unaffected."] })
+            ov.AddRow(row(ov.frame, ns.L["X Offset"], xOffsetW))
 
             local hideIconW = GUI:CreateFormCheckbox(ov.frame, nil, "hideIcon", ws, RefreshInfoBar,
-                { description = "Hide this widget's inline icon and keep the text. Not applied to icon-only widgets (Micro Menu, Travel) — hiding their icon would blank them." })
+                { description = ns.L["Hide this widget's inline icon and keep the text. Not applied to icon-only widgets (Micro Menu, Travel) — hiding their icon would blank them."] })
             local hideTextW = GUI:CreateFormCheckbox(ov.frame, nil, "hideText", ws, RefreshInfoBar,
-                { description = "Hide this widget's text and keep only its icon. Text-only widgets (FPS, Gold, …) become blank." })
-            ov.AddRow(row(ov.frame, "Hide Icon", hideIconW), row(ov.frame, "Hide Text (icon only)", hideTextW))
+                { description = ns.L["Hide this widget's text and keep only its icon. Text-only widgets (FPS, Gold, …) become blank."] })
+            ov.AddRow(row(ov.frame, ns.L["Hide Icon"], hideIconW), row(ov.frame, ns.L["Hide Text (icon only)"], hideTextW))
             local clickThroughW = GUI:CreateFormCheckbox(ov.frame, nil, "clickThrough", ws, RefreshInfoBar,
-                { description = "Disable clicks and tooltips for this widget. Targets text datatexts; Micro Menu and Travel buttons keep their own mouse input." })
-            ov.AddRow(row(ov.frame, "Click-Through (no clicks or tooltip)", clickThroughW))
+                { description = ns.L["Disable clicks and tooltips for this widget. Targets text datatexts; Micro Menu and Travel buttons keep their own mouse input."] })
+            ov.AddRow(row(ov.frame, ns.L["Click-Through (no clicks or tooltip)"], clickThroughW))
             L.closeSection(ov)
         else
             local noteRow = CreateFrame("Frame", nil, content)
             local note = noteRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             note:SetPoint("LEFT", noteRow, "LEFT", 0, 0)
             note:SetTextColor(0.6, 0.6, 0.6, 0.8)
-            note:SetText("Place a widget in a zone to configure per-widget overrides.")
+            note:SetText(ns.L["Place a widget in a zone to configure per-widget overrides."])
             L.placeCustom(noteRow, 18)
         end
 
@@ -556,7 +556,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     end
                 end,
                 notify = function(_region) NotifyStructuralRefresh() end,
-                note = "Order and visibility apply everywhere the Currencies datatext is shown, including datatext panels.",
+                note = ns.L["Order and visibility apply everywhere the Currencies datatext is shown, including datatext panels."],
             })
         end
 
@@ -565,45 +565,45 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- Alts datatext is shown, including datatext panels.)
         if placedSet["alts"] then
             if not profile.datatext then profile.datatext = {} end
-            L.headerAt("Alts Options")
+            L.headerAt(ns.L["Alts Options"])
             local al = L.sectionAt()
             local altW = GUI:CreateFormDropdown(al.frame, nil, {
-                { value = "gold", text = "Total Gold" },
-                { value = "count", text = "Alt Count" },
+                { value = "gold", text = ns.L["Total Gold"] },
+                { value = "count", text = ns.L["Alt Count"] },
             }, "altsMode", profile.datatext, function()
                 RefreshInfoBar()
                 if QUICore and QUICore.Datatexts and QUICore.Datatexts.UpdateAll then
                     QUICore.Datatexts:UpdateAll()
                 end
-            end, { description = "What the Alts datatext shows on the bar: total gold across your tracked alts, or the number of tracked alts. The tooltip always lists every alt. Applies everywhere the Alts datatext is shown, including datatext panels." })
-            al.AddRow(row(al.frame, "Bar Text", altW))
+            end, { description = ns.L["What the Alts datatext shows on the bar: total gold across your tracked alts, or the number of tracked alts. The tooltip always lists every alt. Applies everywhere the Alts datatext is shown, including datatext panels."] })
+            al.AddRow(row(al.frame, ns.L["Bar Text"], altW))
             L.closeSection(al)
         end
 
         -- MICRO MENU
-        L.headerAt("Micro Menu")
+        L.headerAt(ns.L["Micro Menu"])
         local mmButtons = db.micromenu.buttons
         local mm = L.sectionAt()
         local function mmCheckbox(buttonKey, buttonLabel)
             return GUI:CreateFormCheckbox(mm.frame, nil, buttonKey, mmButtons, RefreshInfoBar,
-                { description = "Show the " .. buttonLabel .. " button in the Micro Menu widget." })
+                { description = ns.L["Show the %1$s button in the Micro Menu widget."]:format(buttonLabel) })
         end
-        mm.AddRow(row(mm.frame, "Character", mmCheckbox("character", "Character")),
-            row(mm.frame, "Spellbook", mmCheckbox("spellbook", "Spellbook")))
-        mm.AddRow(row(mm.frame, "Talents", mmCheckbox("talents", "Talents")),
-            row(mm.frame, "Achievements", mmCheckbox("achievements", "Achievements")))
-        mm.AddRow(row(mm.frame, "Collections", mmCheckbox("collections", "Collections")),
-            row(mm.frame, "Group Finder", mmCheckbox("lfg", "Group Finder")))
-        mm.AddRow(row(mm.frame, "Shop", mmCheckbox("shop", "Shop")),
-            row(mm.frame, "Support", mmCheckbox("help", "Support")))
+        mm.AddRow(row(mm.frame, ns.L["Character"], mmCheckbox("character", ns.L["Character"])),
+            row(mm.frame, ns.L["Spellbook"], mmCheckbox("spellbook", ns.L["Spellbook"])))
+        mm.AddRow(row(mm.frame, ns.L["Talents"], mmCheckbox("talents", ns.L["Talents"])),
+            row(mm.frame, ns.L["Achievements"], mmCheckbox("achievements", ns.L["Achievements"])))
+        mm.AddRow(row(mm.frame, ns.L["Collections"], mmCheckbox("collections", ns.L["Collections"])),
+            row(mm.frame, ns.L["Group Finder"], mmCheckbox("lfg", ns.L["Group Finder"])))
+        mm.AddRow(row(mm.frame, ns.L["Shop"], mmCheckbox("shop", ns.L["Shop"])),
+            row(mm.frame, ns.L["Support"], mmCheckbox("help", ns.L["Support"])))
         L.closeSection(mm)
 
         -- TRAVEL
-        L.headerAt("Travel")
+        L.headerAt(ns.L["Travel"])
         local tv = L.sectionAt()
         local hearthW = GUI:CreateFormCheckbox(tv.frame, nil, "useRandomHearth", db.travel, RefreshInfoBar,
-            { description = "Clicking the Travel widget's hearth uses a random owned hearthstone toy instead of the standard Hearthstone." })
-        tv.AddRow(row(tv.frame, "Random Hearthstone Toy", hearthW))
+            { description = ns.L["Clicking the Travel widget's hearth uses a random owned hearthstone toy instead of the standard Hearthstone."] })
+        tv.AddRow(row(tv.frame, ns.L["Random Hearthstone Toy"], hearthW))
         L.closeSection(tv)
 
         L.relayoutSections()

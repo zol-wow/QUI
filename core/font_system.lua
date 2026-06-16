@@ -15,7 +15,18 @@ local Helpers = ns.Helpers
 
 function QUICore:SafeSetFont(fontString, fontPath, size, flags)
     if not fontString then return end
-    fontString:SetFont(fontPath, size, flags or "")
+    -- Route through the CJK-aware family setter so QUI text renders Chinese/
+    -- Korean glyphs regardless of the selected locale (the family keeps the
+    -- given roman font and only adds CJK members — appearance is unchanged for
+    -- Latin users). Degrades to a single-file SetFont when the family API is
+    -- unavailable. This is the addon-wide font choke point, so fixing it here
+    -- gives every SafeSetFont caller (datatext panels, minimap clock, etc.)
+    -- CJK fallback for free.
+    if Helpers and Helpers.ApplyFontWithFallback then
+        Helpers.ApplyFontWithFallback(fontString, fontPath, size, flags or "")
+    else
+        fontString:SetFont(fontPath, size, flags or "")
+    end
     -- Check if font was actually set (GetFont returns nil if failed)
     local actualFont = fontString:GetFont()
     if not actualFont then

@@ -26,6 +26,7 @@ end
 local ns = loader.LoadAll()
 ns.Helpers = { CreateDBGetter = function() return function() return {} end end }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 local chunk = assert(loadfile("QUI_Bags/bags/views/owner_select.lua"))
 chunk("QUI", ns)
 local OwnerSelect = ns.Bags.OwnerSelect

@@ -4,6 +4,18 @@
 -- BuildPositionCollapsible, and PlaceRow used by all settings providers.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
+
+-- Re-applies a FontString's current font through the CJK-safe family resolver
+-- so Chinese/Korean glyphs render (GameFont* templates are Latin-only).
+local function EnsureCJKFont(fs)
+    if not fs or not fs.GetFont then return fs end
+    local fp, sz, fl = fs:GetFont()
+    if fp and ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, fp, sz, fl)
+    end
+    return fs
+end
+
 local Helpers = ns.Helpers
 local LSM = ns.LSM
 local UIKit = ns.UIKit
@@ -213,7 +225,7 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
         dot:SetPoint("TOPLEFT", section, "TOPLEFT", 2, -((HEADER_HEIGHT - 4) / 2))
         dot:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
 
-        local label = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local label = EnsureCJKFont(section:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
         label:SetPoint("LEFT", dot, "RIGHT", 8, 0)
         label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
         label:SetText(title)
@@ -397,7 +409,7 @@ function Utils.BuildPositionCollapsible(content, frameKey, anchorOpts, sections,
     local prevInside = Utils._insidePositionCollapsible
     Utils._insidePositionCollapsible = true
     local ok, err = xpcall(function()
-        Utils.CreateCollapsible(content, "Position", PLACEHOLDER, function(body)
+        Utils.CreateCollapsible(content, ns.L["Position"], PLACEHOLDER, function(body)
             local opts = {}
             if anchorOpts then
                 for k, v in pairs(anchorOpts) do opts[k] = v end
@@ -483,10 +495,10 @@ function Utils.BuildOpenFullSettingsLink(content, providerKey, sections, relayou
     divider:SetHeight(1)
     divider:SetColorTexture(1, 1, 1, 0.06)
 
-    local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local label = EnsureCJKFont(row:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
     label:SetPoint("LEFT", row, "LEFT", 12, -2)
     local tileName = ResolveTileDisplayName(route.tileId)
-    label:SetText("Open " .. tileName .. " settings")
+    label:SetText(ns.L["Open %s settings"]:format(tileName))
     local accent = GUI.Colors and GUI.Colors.accent or { 0.2, 0.83, 0.6, 1 }
     row.label = label
 
@@ -505,7 +517,7 @@ function Utils.BuildOpenFullSettingsLink(content, providerKey, sections, relayou
         g = accent[2],
         b = accent[3],
         a = 1,
-    }) or row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    }) or EnsureCJKFont(row:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
     if not (UIKit and UIKit.CreateChevronCaret) then
         chevron:SetPoint("LEFT", label, "RIGHT", 6, 0)
         chevron:SetText(">")
@@ -576,8 +588,8 @@ function Utils.BuildSizeCollapsible(content, opts, sections, relayout)
     local maxW = opts.maxW or 1400
     local minH = opts.minH or 100
     local maxH = opts.maxH or 900
-    local widthDescription  = opts.widthDescription  or "Frame width in pixels."
-    local heightDescription = opts.heightDescription or "Frame height in pixels."
+    local widthDescription  = opts.widthDescription  or ns.L["Frame width in pixels."]
+    local heightDescription = opts.heightDescription or ns.L["Frame height in pixels."]
 
     local function ReadSize()
         local w, h = opts.getSize()
@@ -601,11 +613,11 @@ function Utils.BuildSizeCollapsible(content, opts, sections, relayout)
 
     local PLACEHOLDER = 2 * Utils.FORM_ROW + 8
     local widthSlider, heightSlider
-    Utils.CreateCollapsible(content, "Frame Size", PLACEHOLDER, function(body)
+    Utils.CreateCollapsible(content, ns.L["Frame Size"], PLACEHOLDER, function(body)
         local sy = -4
-        widthSlider  = GUI:CreateFormSlider(body, "Width",  minW, maxW, 1, "width",  proxy, nil, nil, { description = widthDescription })
+        widthSlider  = GUI:CreateFormSlider(body, ns.L["Width"],  minW, maxW, 1, "width",  proxy, nil, nil, { description = widthDescription })
         sy = Utils.PlaceRow(widthSlider, body, sy)
-        heightSlider = GUI:CreateFormSlider(body, "Height", minH, maxH, 1, "height", proxy, nil, nil, { description = heightDescription })
+        heightSlider = GUI:CreateFormSlider(body, ns.L["Height"], minH, maxH, 1, "height", proxy, nil, nil, { description = heightDescription })
         Utils.PlaceRow(heightSlider, body, sy)
     end, sections, relayout)
 
@@ -639,12 +651,12 @@ function Utils.BuildBackdropBorderSection(content, db, sections, relayout, Refre
     local GUI = QUI and QUI.GUI
     if not GUI then return end
 
-    Utils.CreateCollapsible(content, "Backdrop & Border", 7 * Utils.FORM_ROW + 8, function(body)
+    Utils.CreateCollapsible(content, ns.L["Backdrop & Border"], 7 * Utils.FORM_ROW + 8, function(body)
         local sy = -4
-        sy = Utils.PlaceRow(GUI:CreateFormCheckbox(body, "Show Backdrop", "showBackdrop", db, Refresh,
+        sy = Utils.PlaceRow(GUI:CreateFormCheckbox(body, ns.L["Show Backdrop"], "showBackdrop", db, Refresh,
             { description = "Draw a semi-transparent backdrop behind this frame so it's easier to see against busy scenes." }), body, sy)
-        sy = Utils.PlaceRow(GUI:CreateFormColorPicker(body, "Backdrop Color", "backdropColor", db, Refresh, nil,
-            { description = "Color and opacity used for the backdrop when Show Backdrop is on." }), body, sy)
+        sy = Utils.PlaceRow(GUI:CreateFormColorPicker(body, ns.L["Backdrop Color"], "backdropColor", db, Refresh, nil,
+            { description = ns.L["Color and opacity used for the backdrop when Show Backdrop is on."] }), body, sy)
         sy = Utils.PlaceRow(GUI:CreateFormCheckbox(body, "Hide Border", "hideBorder", db, Refresh,
             { description = "Hide the border outline entirely. Overrides the Border Size, Class Color, Accent Color, and Border Color controls below." }), body, sy)
         sy = Utils.PlaceRow(GUI:CreateFormSlider(body, "Border Size", 1, 5, 0.5, "borderSize", db, Refresh, nil,
@@ -653,7 +665,7 @@ function Utils.BuildBackdropBorderSection(content, db, sections, relayout, Refre
             { description = "Tint the border with your class color. Takes precedence over Accent Color Border and the Border Color swatch." }), body, sy)
         sy = Utils.PlaceRow(GUI:CreateFormCheckbox(body, "Accent Color Border", "useAccentColorBorder", db, Refresh,
             { description = "Tint the border with the QUI accent color. Ignored if Class Color Border is on." }), body, sy)
-        Utils.PlaceRow(GUI:CreateFormColorPicker(body, "Border Color", "borderColor", db, Refresh, nil,
+        Utils.PlaceRow(GUI:CreateFormColorPicker(body, ns.L["Border Color"], "borderColor", db, Refresh, nil,
             { description = "Fallback border color used when neither Class Color nor Accent Color is on." }), body, sy)
     end, sections, relayout)
 end

@@ -15,10 +15,10 @@ local ipairs = ipairs
 local pairs = pairs
 
 local CDM_ELEMENTS = {
-    { key = "cdmEssential", label = "CDM Essential", order = 1 },
-    { key = "cdmUtility", label = "CDM Utility", order = 2 },
-    { key = "buffIcon", label = "Buff Icons", order = 3 },
-    { key = "buffBar", label = "Buff Bars", order = 4 },
+    { key = "cdmEssential", label = ns.L["CDM Essential"], order = 1 },
+    { key = "cdmUtility", label = ns.L["CDM Utility"], order = 2 },
+    { key = "buffIcon", label = ns.L["Buff Icons"], order = 3 },
+    { key = "buffBar", label = ns.L["Buff Bars"], order = 4 },
 }
 
 local CDM_KEY_MAP = Shared.ELEMENT_TO_CONTAINER_MAP
@@ -112,8 +112,8 @@ end
 local function RegisterMasterElement(um)
     um:RegisterElement({
         key = "cdm",
-        label = "Cooldown Manager",
-        group = "Cooldown Manager & Custom Tracker Bars",
+        label = ns.L["Cooldown Manager"],
+        group = ns.L["Cooldown Manager & Custom Tracker Bars"],
         order = -1,
         isOwned = true,
         noHandle = true,
@@ -135,7 +135,7 @@ local function RegisterBuiltInElement(um, info)
     um:RegisterElement({
         key = info.key,
         label = info.label,
-        group = "Cooldown Manager & Custom Tracker Bars",
+        group = ns.L["Cooldown Manager & Custom Tracker Bars"],
         order = info.order,
         isOwned = true,
         isEnabled = function()

@@ -27,6 +27,7 @@ _G.CreateFrame = function() return frame end
 local settings = { enabled = false }
 local registryDefs = {}
 local ns = loader.LoadAll()
+;(dofile("tests/helpers/locale.lua"))(ns)
 ns.Helpers = { CreateDBGetter = function() return function() return settings end end }
 ns.Registry = { Register = function(_, name, def) registryDefs[name] = def end }
 local firstFrameQueue = {}

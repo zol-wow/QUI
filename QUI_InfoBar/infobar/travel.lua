@@ -175,7 +175,7 @@ local function BuildFlyout(frame, slotFrame)
             text:SetPoint("LEFT", row, "LEFT", 6, 0)
             text:SetJustifyH("LEFT")
             text:SetWordWrap(false)
-            text:SetText(label or name or ("Spell " .. spellID))
+            text:SetText(label or name or (ns.L["Spell "] .. spellID))
 
             row:SetScript("OnLeave", function() ScheduleFlyoutHide(frame) end)
         end
@@ -257,8 +257,8 @@ local function BuildSecureWidgets(frame, slotFrame, size)
         end
         GameTooltip:ClearLines()
         GameTooltip:AddLine(displayName, 1, 1, 1)
-        GameTooltip:AddLine("Left click to hearth", 0.6, 0.6, 0.6)
-        GameTooltip:AddLine("Hover for dungeon teleports", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine(ns.L["Left click to hearth"], 0.6, 0.6, 0.6)
+        GameTooltip:AddLine(ns.L["Hover for dungeon teleports"], 0.6, 0.6, 0.6)
         GameTooltip:Show()
     end)
     hearth:SetScript("OnLeave", function()
@@ -268,8 +268,8 @@ local function BuildSecureWidgets(frame, slotFrame, size)
 end
 
 Datatexts:Register("travel", {
-    displayName = "Travel",
-    category = "Interface",
+    displayName = ns.L["Travel"],
+    category = ns.L["Interface"],
     description = "Hearthstone button with dungeon teleport flyout",
 
     OnEnable = function(slotFrame, settings)
@@ -294,14 +294,20 @@ Datatexts:Register("travel", {
             -- Keep the multi-return intact: an `and` short-circuit would
             -- truncate GetFont to one value and pass nil height/flags to SetFont.
             local fp, fs, fl = slotFrame.text:GetFont()
-            if fp then label:SetFont(fp, fs, fl) end
+            if fp then
+                if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+                    ns.Helpers.ApplyFontWithFallback(label, fp, fs, fl)
+                else
+                    label:SetFont(fp, fs, fl)
+                end
+            end
         end
         -- travel draws its own label (not the shared slot.text the central
         -- Hide Text wrapper strips), so honor both toggles here: No Label and
         -- the icon-only Hide Text both blank the word and reclaim its width.
         local labelHidden = slotFrame.noLabel or slotFrame.hideText
         label:SetTextColor(1, 1, 1, 1)
-        label:SetText(labelHidden and "" or "Travel")
+        label:SetText(labelHidden and "" or ns.L["Travel"])
         label:SetPoint("LEFT", frame, "LEFT", 2 + size + gap, 0)
         frame._label = label
 

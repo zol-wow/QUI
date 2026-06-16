@@ -17,6 +17,7 @@ local function loadTile(path)
             end,
         },
     }
+    (dofile("tests/helpers/locale.lua"))(ns)
     local chunk = assert(loadfile(path))
     chunk("QUI", ns)
 

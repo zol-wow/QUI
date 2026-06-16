@@ -9,6 +9,16 @@ local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 local CreateOnUpdateThrottle = Helpers and Helpers.CreateOnUpdateThrottle
+
+-- CJK-safe font setter: preserves the roman font and only adds CJK fallback
+-- members where available, degrading to plain SetFont otherwise.
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 local floor = math.floor
 local format = string.format
 
@@ -64,7 +74,7 @@ local function CreateTimerFrame()
 
     local text = frame:CreateFontString(nil, "OVERLAY")
     text:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    text:SetFont((Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or "Fonts\\FRIZQT__.TTF", 16, "OUTLINE")
+    CJKFont(text, (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or "Fonts\\FRIZQT__.TTF", 16, "OUTLINE")
     text:SetTextColor(1, 1, 1, 1)
     text:SetJustifyH("CENTER")
     text:SetJustifyV("MIDDLE")
@@ -167,7 +177,7 @@ local function UpdateTimerAppearance()
     local fontSize = settings.fontSize or 16
     local fontName = settings.useCustomFont and settings.font or GetGlobalFont()
     local fontPath = UIKit.ResolveFontPath(fontName)
-    frame.text:SetFont(fontPath, fontSize, "OUTLINE")
+    CJKFont(frame.text, fontPath, fontSize, "OUTLINE")
 
     -- Update text color (use class color or custom color)
     local textColor

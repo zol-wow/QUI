@@ -9,6 +9,14 @@ local Helpers = ns.Helpers
 local QUICore = ns.Addon
 local UIKit = ns.UIKit
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local GetCore = ns.Helpers.GetCore
 
 local function GetSkinBase()
@@ -1077,7 +1085,7 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
 
     -- Line 1: Item Name
     overlay.itemName = overlay:CreateFontString(nil, "OVERLAY")
-    overlay.itemName:SetFont(slotFont, slotTextSize, FONT_FLAGS)
+    CJKFont(overlay.itemName, slotFont, slotTextSize, FONT_FLAGS)
     overlay.itemName:SetTextColor(1, 1, 1, 1)  -- Will be colored by quality
     overlay.itemName:SetWordWrap(false)
     overlay.itemName:SetWidth(TEXT_WIDTH)
@@ -1088,7 +1096,7 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
 
     -- Line 2: Item Level + Upgrade Track
     overlay.itemLevel = overlay:CreateFontString(nil, "OVERLAY")
-    overlay.itemLevel:SetFont(slotFont, slotTextSize, FONT_FLAGS)
+    CJKFont(overlay.itemLevel, slotFont, slotTextSize, FONT_FLAGS)
     overlay.itemLevel:SetTextColor(1, 1, 1, 1)
     overlay.itemLevel:SetWordWrap(false)
     if not IsInspectUnit(overlayUnit) then
@@ -1112,7 +1120,7 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
         enchantColor = customEnchantColor or C.enchanted
     end
     overlay.enchant = overlay:CreateFontString(nil, "OVERLAY")
-    overlay.enchant:SetFont(slotFont, slotTextSize, FONT_FLAGS)
+    CJKFont(overlay.enchant, slotFont, slotTextSize, FONT_FLAGS)
     overlay.enchant:SetTextColor(enchantColor[1], enchantColor[2], enchantColor[3], 1)
     overlay.enchant:SetWordWrap(false)
     overlay.enchant:SetWidth(TEXT_WIDTH)
@@ -1344,7 +1352,7 @@ local function UpdateSlotOverlay(overlay, unit)
                 overlay.enchant:SetTextColor(enchantColor[1], enchantColor[2], enchantColor[3], 1)
             else
                 -- Enchantable slot but no enchant - show "No Enchant" in customizable color
-                overlay.enchant:SetText("No Enchant")
+                overlay.enchant:SetText(ns.L["No Enchant"])
                 overlay.enchant:SetTextColor(noEnchantColor[1], noEnchantColor[2], noEnchantColor[3], 1)
             end
             overlay.enchant:Show()
@@ -1927,11 +1935,11 @@ local function ShowCenterILvlTooltip(self)
     end
 
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-    GameTooltip:SetText("Average Item Level")
-    GameTooltip:AddDoubleLine("Equipped", string.format("%.1f", equipped), 1, 1, 1, 1, 1, 1)
-    GameTooltip:AddDoubleLine("Overall", string.format("%.1f", overall), 1, 1, 1, 1, 1, 1)
+    GameTooltip:SetText(ns.L["Average Item Level"])
+    GameTooltip:AddDoubleLine(ns.L["Equipped"], string.format("%.1f", equipped), 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine(ns.L["Overall"], string.format("%.1f", overall), 1, 1, 1, 1, 1, 1)
     if pvp then
-        GameTooltip:AddDoubleLine("PvP iLvl", string.format("%.1f", pvp), 1, 1, 1, 0, 1, 0)
+        GameTooltip:AddDoubleLine(ns.L["PvP iLvl"], string.format("%.1f", pvp), 1, 1, 1, 0, 1, 0)
     end
     GameTooltip:Show()
 end
@@ -1956,13 +1964,13 @@ local function SetupTitleArea()
 
         -- Line 1: Character name
         local nameText = displayFrame:CreateFontString(nil, "OVERLAY")
-        nameText:SetFont(font, 12, "")
+        CJKFont(nameText, font, 12, "")
         nameText:SetPoint("TOPLEFT", displayFrame, "TOPLEFT", 0, 0)
         nameText:SetJustifyH("LEFT")
 
         -- Line 2: Level + Spec (right-aligned near right icons)
         local specText = CharacterFrame:CreateFontString(nil, "OVERLAY")
-        specText:SetFont(font, 12, "")
+        CJKFont(specText, font, 12, "")
         specText:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", -132, -10)  -- Aligned with right slot column
         specText:SetJustifyH("RIGHT")
 
@@ -1979,7 +1987,7 @@ local function SetupTitleArea()
         centerFrame:SetFrameLevel(CharacterFrame:GetFrameLevel() + 10)
 
         local centerText = centerFrame:CreateFontString(nil, "OVERLAY")
-        centerText:SetFont(font, 21, "OUTLINE")  -- Large font
+        CJKFont(centerText, font, 21, "OUTLINE")  -- Large font
         centerText:SetPoint("CENTER")
         centerText:SetJustifyH("CENTER")
 
@@ -2164,18 +2172,18 @@ local function RefreshCharacterPanelFonts()
         local cat = entry.cat
 
         if cat == "sectionHeader" then
-            fs:SetFont(font, math.max(headerSize - 2, 10), "THINOUTLINE")
+            CJKFont(fs, font, math.max(headerSize - 2, 10), "THINOUTLINE")
             fs:SetTextColor(headerColor[1], headerColor[2], headerColor[3], 1)
             fs:SetShadowOffset(0, 0)
             fs:SetText(fs:GetText() or "")
         elseif cat == "statLabel" or cat == "barLabel" then
             local size = (cat == "barLabel") and math.max(statsSize - 2, 7) or math.max(statsSize - 1, 8)
-            fs:SetFont(font, size, "")
+            CJKFont(fs, font, size, "")
             fs:SetTextColor(statsColor[1], statsColor[2], statsColor[3], 1)
             fs:SetShadowOffset(0, 0)
         elseif cat == "statValue" or cat == "barValue" then
             local size = (cat == "barValue") and math.max(statsSize - 2, 7) or math.max(statsSize - 1, 8)
-            fs:SetFont(font, size, "")
+            CJKFont(fs, font, size, "")
             fs:SetShadowOffset(0, 0)
         end
     end
@@ -2227,7 +2235,7 @@ local function RefreshCharacterPanelFonts()
     local validItemNames = {}
     for _, fs in ipairs(trackedItemNameFonts) do
         if fs and fs.SetFont then
-            fs:SetFont(font, slotTextSize, FONT_FLAGS)
+            CJKFont(fs, font, slotTextSize, FONT_FLAGS)
             table.insert(validItemNames, fs)
         end
     end
@@ -2237,7 +2245,7 @@ local function RefreshCharacterPanelFonts()
     local validILvl = {}
     for _, fs in ipairs(trackedILvlFonts) do
         if fs and fs.SetFont then
-            fs:SetFont(font, slotTextSize, FONT_FLAGS)
+            CJKFont(fs, font, slotTextSize, FONT_FLAGS)
             table.insert(validILvl, fs)
         end
     end
@@ -2247,7 +2255,7 @@ local function RefreshCharacterPanelFonts()
     local validEnchants = {}
     for _, fs in ipairs(trackedEnchantFonts) do
         if fs and fs.SetFont then
-            fs:SetFont(font, slotTextSize, FONT_FLAGS)
+            CJKFont(fs, font, slotTextSize, FONT_FLAGS)
             -- Color based on text content
             local text = fs:GetText()
             if text and text == "No Enchant" then
@@ -2313,14 +2321,14 @@ local function CreateStatRow(parent, yOffset)
     end
 
     row.label = row:CreateFontString(nil, "OVERLAY")
-    row.label:SetFont(font, fontSize, "")
+    CJKFont(row.label, font, fontSize, "")
     row.label:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.label:SetTextColor(statsColor[1], statsColor[2], statsColor[3], 1)
     row.label:SetShadowOffset(0, 0)
     TrackFontString(row.label, "statLabel")
 
     row.value = row:CreateFontString(nil, "OVERLAY")
-    row.value:SetFont(font, fontSize, "")
+    CJKFont(row.value, font, fontSize, "")
     row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     row.value:SetTextColor(1, 1, 1, 1)
     row.value:SetShadowOffset(0, 0)
@@ -2353,7 +2361,7 @@ local function CreateSectionHeader(parent, text, yOffset)
     end
 
     local header = parent:CreateFontString(nil, "OVERLAY")
-    header:SetFont(font, fontSize, "THINOUTLINE")
+    CJKFont(header, font, fontSize, "THINOUTLINE")
     header:SetPoint("TOPLEFT", parent, "TOPLEFT", 5, yOffset)
     header:SetTextColor(headerColor[1], headerColor[2], headerColor[3], 1)
     header:SetText(text)
@@ -2407,14 +2415,14 @@ local function CreateStatBar(parent, yOffset, color)
     end
 
     row.label = row:CreateFontString(nil, "OVERLAY")
-    row.label:SetFont(font, barTextSize, "")
+    CJKFont(row.label, font, barTextSize, "")
     row.label:SetPoint("LEFT", row, "LEFT", 0, labelOffset)
     row.label:SetTextColor(statsColor[1], statsColor[2], statsColor[3], 1)
     row.label:SetShadowOffset(0, 0)
     TrackFontString(row.label, "barLabel")
 
     row.value = row:CreateFontString(nil, "OVERLAY")
-    row.value:SetFont(font, barTextSize, "")
+    CJKFont(row.value, font, barTextSize, "")
     row.value:SetPoint("RIGHT", row, "RIGHT", 0, labelOffset)
     row.value:SetTextColor(1, 1, 1, 1)
     row.value:SetShadowOffset(0, 0)
@@ -2581,7 +2589,7 @@ local function UpdateStatsPanel(panel, unit)
 
         -- HEALTH & RESOURCE
         local row = CreateStatRow(scrollChild, y)
-        row.label:SetText("Health")
+        row.label:SetText(ns.L["Health"])
         do
             local hOk, healthMax = pcall(UnitHealthMax, unit)
             if hOk and healthMax then
@@ -2620,15 +2628,15 @@ local function UpdateStatsPanel(panel, unit)
         y = y - 5
 
         -- ATTRIBUTES
-        local _, headerHeight = CreateSectionHeader(scrollChild, "Attributes", y)
+        local _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Attributes"], y)
         y = y - headerHeight
 
         -- Primary stats vary by class, but we show all and let WoW hide irrelevant ones
         local stats = {
-            { label = "Strength", statIndex = 1, func = function() return UnitStat(unit, 1) end },
-            { label = "Agility", statIndex = 2, func = function() return UnitStat(unit, 2) end },
-            { label = "Stamina", statIndex = 3, func = function() return UnitStat(unit, 3) end },
-            { label = "Intellect", statIndex = 4, func = function() return UnitStat(unit, 4) end },
+            { label = ns.L["Strength"], statIndex = 1, func = function() return UnitStat(unit, 1) end },
+            { label = ns.L["Agility"], statIndex = 2, func = function() return UnitStat(unit, 2) end },
+            { label = ns.L["Stamina"], statIndex = 3, func = function() return UnitStat(unit, 3) end },
+            { label = ns.L["Intellect"], statIndex = 4, func = function() return UnitStat(unit, 4) end },
         }
         -- Pull spec primary stat once via non-secret API for visibility filter.
         local specPrimaryStat
@@ -2772,14 +2780,14 @@ local function UpdateStatsPanel(panel, unit)
         y = y - 5
 
     -- SECONDARY STATS
-    _, headerHeight = CreateSectionHeader(scrollChild, "Secondary", y)
+    _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Secondary"], y)
     y = y - headerHeight
 
     local secondaryStats = {
-        { label = "Crit", statKey = "CRIT", percentFunc = function() return GetSpellCritChance("player") end, ratingFunc = function() return GetCombatRating(CR_CRIT_SPELL) end, color = C.crit },
-        { label = "Haste", statKey = "HASTE", percentFunc = function() return UnitSpellHaste("player") end, ratingFunc = function() return GetCombatRating(CR_HASTE_SPELL) end, color = C.haste },
-        { label = "Mastery", statKey = "MASTERY", percentFunc = GetMasteryEffect, ratingFunc = function() return GetCombatRating(CR_MASTERY) end, color = C.mastery },
-        { label = "Versatility", statKey = "VERSATILITY", percentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) + GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) end, combatPercentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) end, ratingFunc = function() return GetCombatRating(CR_VERSATILITY_DAMAGE_DONE) end, color = C.versatility },
+        { label = ns.L["Crit"], statKey = "CRIT", percentFunc = function() return GetSpellCritChance("player") end, ratingFunc = function() return GetCombatRating(CR_CRIT_SPELL) end, color = C.crit },
+        { label = ns.L["Haste"], statKey = "HASTE", percentFunc = function() return UnitSpellHaste("player") end, ratingFunc = function() return GetCombatRating(CR_HASTE_SPELL) end, color = C.haste },
+        { label = ns.L["Mastery"], statKey = "MASTERY", percentFunc = GetMasteryEffect, ratingFunc = function() return GetCombatRating(CR_MASTERY) end, color = C.mastery },
+        { label = ns.L["Versatility"], statKey = "VERSATILITY", percentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) + GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) end, combatPercentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) end, ratingFunc = function() return GetCombatRating(CR_VERSATILITY_DAMAGE_DONE) end, color = C.versatility },
     }
 
     local statFormat = settings.secondaryStatFormat or "percent"
@@ -2910,7 +2918,7 @@ local function UpdateStatsPanel(panel, unit)
     y = y - 5
 
     -- TERTIARY
-    _, headerHeight = CreateSectionHeader(scrollChild, "Tertiary", y)
+    _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Tertiary"], y)
     y = y - headerHeight
 
     local leech = SafeGetStat(GetLifesteal)
@@ -2923,18 +2931,18 @@ local function UpdateStatsPanel(panel, unit)
     end
 
     local tertiaryStats = {
-        { label = "Avoidance", value = FormatPercent(avoidance), statKey = "AVOIDANCE" },
-        { label = "Leech", value = FormatPercent(leech), statKey = "LIFESTEAL" },
-        { label = "Speed", value = FormatPercent(speed), statKey = "SPEED" },
+        { label = ns.L["Avoidance"], value = FormatPercent(avoidance), statKey = "AVOIDANCE" },
+        { label = ns.L["Leech"], value = FormatPercent(leech), statKey = "LIFESTEAL" },
+        { label = ns.L["Speed"], value = FormatPercent(speed), statKey = "SPEED" },
     }
 
     for _, stat in ipairs(tertiaryStats) do
         -- Tertiary rows are gear-dependent. OOC, hide when zero. In combat
         -- we always render — can't compare secrets, and showing 0% briefly
         -- is preferable to a row appearing/disappearing on combat boundary.
-        local hasOocValue = (stat.label == "Avoidance" and avoidance > 0)
-            or (stat.label == "Leech" and leech > 0)
-            or (stat.label == "Speed" and speed > 0)
+        local hasOocValue = (stat.statKey == "AVOIDANCE" and avoidance > 0)
+            or (stat.statKey == "LIFESTEAL" and leech > 0)
+            or (stat.statKey == "SPEED" and speed > 0)
         local shouldShow = secretsOff or hasOocValue
         if shouldShow then
             row = CreateStatRow(scrollChild, y)
@@ -3006,13 +3014,13 @@ local function UpdateStatsPanel(panel, unit)
     y = y - 5
 
     -- ATTACK
-    _, headerHeight = CreateSectionHeader(scrollChild, "Attack", y)
+    _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Attack"], y)
     y = y - headerHeight
 
     local attackStats = {
-        { label = "Attack Power", func = function() return UnitAttackPower(unit) end, format = FormatNumber, statKey = "ATTACK_POWER" },
-        { label = "Spell Power", func = function() return GetSpellBonusDamage(2) end, format = FormatNumber, statKey = "SPELLPOWER" },  -- 2 = Holy, generic spell power
-        { label = "Attack Speed", func = function() return UnitAttackSpeed(unit) end, format = function(v) return string.format("%.2fs", v or 0) end, statKey = "ATTACK_SPEED" },
+        { label = ns.L["Attack Power"], func = function() return UnitAttackPower(unit) end, format = FormatNumber, statKey = "ATTACK_POWER" },
+        { label = ns.L["Spell Power"], func = function() return GetSpellBonusDamage(2) end, format = FormatNumber, statKey = "SPELLPOWER" },  -- 2 = Holy, generic spell power
+        { label = ns.L["Attack Speed"], func = function() return UnitAttackSpeed(unit) end, format = function(v) return string.format("%.2fs", v or 0) end, statKey = "ATTACK_SPEED" },
     }
 
     -- Class-based filter for attack rows so we don't show Spell Power for
@@ -3086,7 +3094,7 @@ local function UpdateStatsPanel(panel, unit)
     y = y - 5
 
     -- DEFENSE
-    _, headerHeight = CreateSectionHeader(scrollChild, "Defense", y)
+    _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Defense"], y)
     y = y - headerHeight
 
     local _, effectiveArmor = SafeGetStatValues(UnitArmor, unit)
@@ -3120,14 +3128,14 @@ local function UpdateStatsPanel(panel, unit)
     end
 
     local defenseStats = {
-        { label = "Armor", value = FormatNumber(effectiveArmor or 0), statKey = "ARMOR" },
-        { label = "Dodge", value = FormatPercent(dodge), statKey = "DODGE" },
-        { label = "Parry", value = FormatPercent(parry), statKey = "PARRY" },
-        { label = "Block", value = FormatPercent(block), statKey = "BLOCK" },
+        { label = ns.L["Armor"], value = FormatNumber(effectiveArmor or 0), statKey = "ARMOR" },
+        { label = ns.L["Dodge"], value = FormatPercent(dodge), statKey = "DODGE" },
+        { label = ns.L["Parry"], value = FormatPercent(parry), statKey = "PARRY" },
+        { label = ns.L["Block"], value = FormatPercent(block), statKey = "BLOCK" },
     }
 
     if isBrewmaster then
-        tinsert(defenseStats, { label = "Stagger", value = FormatPercent(staggerPercent), statKey = "STAGGER" })
+        tinsert(defenseStats, { label = ns.L["Stagger"], value = FormatPercent(staggerPercent), statKey = "STAGGER" })
     end
 
     -- Class-based defense filter for combat (non-secret signal). OOC we
@@ -3187,8 +3195,8 @@ local function UpdateStatsPanel(panel, unit)
                 tooltipTitle = BLOCK_CHANCE
                 tooltipBody = _G.STAT_BLOCK_TOOLTIP or _G.CR_BLOCK_TOOLTIP
             elseif stat.statKey == "STAGGER" then
-                tooltipTitle = _G.STAT_STAGGER or "Stagger"
-                tooltipBody = _G.STAT_STAGGER_TOOLTIP or "Percentage of incoming Physical damage delayed by Stagger."
+                tooltipTitle = _G.STAT_STAGGER or ns.L["Stagger"]
+                tooltipBody = _G.STAT_STAGGER_TOOLTIP or ns.L["Percentage of incoming Physical damage delayed by Stagger."]
             end
 
             statPolicy:ApplyTooltip(row, tooltipTitle, tooltipBody, nil, function()
@@ -3415,7 +3423,7 @@ local function CreateEquipMgrPopup()
     -- Title bar (text only - styling in skinning module)
     local title = equipMgrPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -15)
-    title:SetText("Equipment Manager")
+    title:SetText(ns.L["Equipment Manager"])
     equipMgrPopup.title = title
 
     -- Expose globally for skinning module to access
@@ -3456,7 +3464,7 @@ local function CreateTitlesPopup()
     -- Title bar (text only - styling in skinning module)
     local title = titlesPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -15)
-    title:SetText("Titles")
+    title:SetText(ns.L["Titles"])
     titlesPopup.title = title
 
     -- Expose globally for skinning module to access
@@ -3957,7 +3965,7 @@ local function HookCharacterFrame()
         gearLabel:SetPoint("LEFT", gearIcon, "RIGHT", 4, 0)
         gearLabel:SetPoint("RIGHT", gearBtn, "RIGHT", -6, 0)
         gearLabel:SetJustifyH("LEFT")
-        gearLabel:SetText("Settings")
+        gearLabel:SetText(ns.L["Settings"])
         gearLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
         -- Hover effect
@@ -4021,7 +4029,7 @@ local function HookCharacterFrame()
         -- Title
         local title = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         title:SetPoint("TOP", settingsPanel, "TOP", 0, -8)
-        title:SetText("QUI Character Panel")
+        title:SetText(ns.L["QUI Character Panel"])
         title:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
         -- Close button (X)
@@ -4110,18 +4118,18 @@ local function HookCharacterFrame()
         ---------------------------------------------------------------------------
         -- APPEARANCE Section
         ---------------------------------------------------------------------------
-        local appearHeader = GUI:CreateSectionHeader(scrollChild, "Appearance")
+        local appearHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Appearance"])
         appearHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - appearHeader.gap
         ResetRows()
 
         -- Scale slider (multiplier on base 1.30 scale, range 0.75-1.5)
         local BASE_SCALE = 1.30
-        local scaleSlider = GUI:CreateFormSlider(scrollChild, "Panel Scale", 0.75, 1.5, 0.05, "panelScale", charDB, function()
+        local scaleSlider = GUI:CreateFormSlider(scrollChild, ns.L["Panel Scale"], 0.75, 1.5, 0.05, "panelScale", charDB, function()
             local multiplier = charDB.panelScale or 1.0
             SetCharacterFrameScale(BASE_SCALE * multiplier)
         end, { deferOnDrag = true },
-            { description = "Zoom factor applied to the character panel on top of the base scale. 1.0 leaves the panel at the default QUI size." })
+            { description = ns.L["Zoom factor applied to the character panel on top of the base scale. 1.0 leaves the panel at the default QUI size."] })
         y = PlaceRow(scaleSlider, y)
 
         -- Background color (uses shared skinning background color)
@@ -4129,7 +4137,7 @@ local function HookCharacterFrame()
         local generalDB = core and core.db and core.db.profile and core.db.profile.general
         local bgColorPicker = nil
         if generalDB then
-            bgColorPicker = GUI:CreateFormColorPicker(scrollChild, "Background Color", "skinBgColor", generalDB, function()
+            bgColorPicker = GUI:CreateFormColorPicker(scrollChild, ns.L["Background Color"], "skinBgColor", generalDB, function()
                 -- Update local customBg if we own it
                 if customBg and not IsSkinningHandlingBackground() then
                     local col = generalDB.skinBgColor or C.bg
@@ -4140,7 +4148,7 @@ local function HookCharacterFrame()
                     _G.QUI_RefreshCharacterFrameColors()
                 end
             end, nil,
-                { description = "Background color applied to the character panel. Shared with the global skinning background so character and inspect panels match." })
+                { description = ns.L["Background color applied to the character panel. Shared with the global skinning background so character and inspect panels match."] })
             y = PlaceRow(bgColorPicker, y)
 
             -- Refresh color picker when panel shows (in case color changed in main QUI options)
@@ -4157,29 +4165,29 @@ local function HookCharacterFrame()
         ---------------------------------------------------------------------------
         -- SLOT OVERLAYS Section
         ---------------------------------------------------------------------------
-        local overlayHeader = GUI:CreateSectionHeader(scrollChild, "Slot Overlays")
+        local overlayHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Slot Overlays"])
         overlayHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - overlayHeader.gap
         ResetRows()
 
-        local showItemName = GUI:CreateFormCheckbox(scrollChild, "Show Equipment Name", "showItemName", charDB, RefreshAll,
-            { description = "Show the equipped item's name on each character panel slot overlay." })
+        local showItemName = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Equipment Name"], "showItemName", charDB, RefreshAll,
+            { description = ns.L["Show the equipped item's name on each character panel slot overlay."] })
         y = PlaceRow(showItemName, y)
 
-        local showIlvl = GUI:CreateFormCheckbox(scrollChild, "Show Item Level & Track", "showItemLevel", charDB, RefreshAll,
-            { description = "Show the item level and upgrade track label on each slot overlay." })
+        local showIlvl = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Item Level & Track"], "showItemLevel", charDB, RefreshAll,
+            { description = ns.L["Show the item level and upgrade track label on each slot overlay."] })
         y = PlaceRow(showIlvl, y)
 
-        local showEnchants = GUI:CreateFormCheckbox(scrollChild, "Show Enchant Status", "showEnchants", charDB, RefreshAll,
-            { description = "Show the enchant name on each slot, or a missing-enchant marker if the slot has no enchant." })
+        local showEnchants = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Enchant Status"], "showEnchants", charDB, RefreshAll,
+            { description = ns.L["Show the enchant name on each slot, or a missing-enchant marker if the slot has no enchant."] })
         y = PlaceRow(showEnchants, y)
 
-        local showGems = GUI:CreateFormCheckbox(scrollChild, "Show Gem Indicators", "showGems", charDB, RefreshAll,
-            { description = "Show colored gem dots indicating how many gem slots the item has and whether each is filled." })
+        local showGems = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Gem Indicators"], "showGems", charDB, RefreshAll,
+            { description = ns.L["Show colored gem dots indicating how many gem slots the item has and whether each is filled."] })
         y = PlaceRow(showGems, y)
 
-        local showDura = GUI:CreateFormCheckbox(scrollChild, "Show Durability Bars", "showDurability", charDB, RefreshAll,
-            { description = "Show a small durability bar on each slot overlay that has durability damage." })
+        local showDura = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Durability Bars"], "showDurability", charDB, RefreshAll,
+            { description = ns.L["Show a small durability bar on each slot overlay that has durability damage."] })
         y = PlaceRow(showDura, y)
 
         y = y - 10
@@ -4187,18 +4195,18 @@ local function HookCharacterFrame()
         ---------------------------------------------------------------------------
         -- STATS PANEL Section
         ---------------------------------------------------------------------------
-        local statsPanelHeader = GUI:CreateSectionHeader(scrollChild, "Stats Panel")
+        local statsPanelHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Stats Panel"])
         statsPanelHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - statsPanelHeader.gap
         ResetRows()
 
-        local showTooltips = GUI:CreateFormCheckbox(scrollChild, "Show Stat Tooltips", "showTooltips", charDB, function()
+        local showTooltips = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Stat Tooltips"], "showTooltips", charDB, function()
             RefreshAll()
             -- Force update stats panel to apply tooltip changes
             if statsPanel then
                 UpdateStatsPanel(statsPanel, "player")
             end
-        end, { description = "Show Blizzard's detailed stat tooltip when hovering any row in the QUI stats panel." })
+        end, { description = ns.L["Show Blizzard's detailed stat tooltip when hovering any row in the QUI stats panel."] })
         y = PlaceRow(showTooltips, y)
 
         y = y - 10
@@ -4206,18 +4214,18 @@ local function HookCharacterFrame()
         ---------------------------------------------------------------------------
         -- SECONDARY STATS Section
         ---------------------------------------------------------------------------
-        local secondaryStatsHeader = GUI:CreateSectionHeader(scrollChild, "Secondary Stats")
+        local secondaryStatsHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Secondary Stats"])
         secondaryStatsHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - secondaryStatsHeader.gap
         ResetRows()
 
         local formatOptions = {
-            { value = "percent", text = "Percentage (19.52%)" },
-            { value = "rating", text = "Rating (1,234)" },
-            { value = "both", text = "Both (1,234 (19.5%))" },
+            { value = "percent", text = ns.L["Percentage (19.52%)"] },
+            { value = "rating", text = ns.L["Rating (1,234)"] },
+            { value = "both", text = ns.L["Both (1,234 (19.5%))"] },
         }
-        local secondaryFormat = GUI:CreateFormDropdown(scrollChild, "Display Format", formatOptions, "secondaryStatFormat", charDB, RefreshAll,
-            { description = "How secondary stats (Crit, Haste, Mastery, Versatility) are formatted: percent only, rating only, or both side by side." })
+        local secondaryFormat = GUI:CreateFormDropdown(scrollChild, ns.L["Display Format"], formatOptions, "secondaryStatFormat", charDB, RefreshAll,
+            { description = ns.L["How secondary stats (Crit, Haste, Mastery, Versatility) are formatted: percent only, rating only, or both side by side."] })
         y = PlaceRow(secondaryFormat, y)
 
         y = y - 10
@@ -4225,21 +4233,21 @@ local function HookCharacterFrame()
         ---------------------------------------------------------------------------
         -- TEXT SIZES Section
         ---------------------------------------------------------------------------
-        local textSizeHeader = GUI:CreateSectionHeader(scrollChild, "Text Sizes")
+        local textSizeHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Text Sizes"])
         textSizeHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - textSizeHeader.gap
         ResetRows()
 
-        local slotTextSize = GUI:CreateFormSlider(scrollChild, "Slot Text Size", 6, 40, 1, "slotTextSize", charDB, RefreshAll, nil,
-            { description = "Font size for the text labels on each equipment slot overlay (item name, item level, enchant status)." })
+        local slotTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Slot Text Size"], 6, 40, 1, "slotTextSize", charDB, RefreshAll, nil,
+            { description = ns.L["Font size for the text labels on each equipment slot overlay (item name, item level, enchant status)."] })
         y = PlaceRow(slotTextSize, y)
 
-        local headerTextSize = GUI:CreateFormSlider(scrollChild, "Header Text Size", 6, 40, 1, "headerTextSize", charDB, RefreshAll, nil,
-            { description = "Font size for section headers in the stats panel (Attributes, Secondary Stats, etc.)." })
+        local headerTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Header Text Size"], 6, 40, 1, "headerTextSize", charDB, RefreshAll, nil,
+            { description = ns.L["Font size for section headers in the stats panel (Attributes, Secondary Stats, etc.)."] })
         y = PlaceRow(headerTextSize, y)
 
-        local statsTextSize = GUI:CreateFormSlider(scrollChild, "Stats Text Size", 6, 40, 1, "statsTextSize", charDB, RefreshAll, nil,
-            { description = "Font size for the stat rows under each section header." })
+        local statsTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Stats Text Size"], 6, 40, 1, "statsTextSize", charDB, RefreshAll, nil,
+            { description = ns.L["Font size for the stat rows under each section header."] })
         y = PlaceRow(statsTextSize, y)
 
         y = y - 10
@@ -4247,53 +4255,53 @@ local function HookCharacterFrame()
         ---------------------------------------------------------------------------
         -- TEXT COLORS Section
         ---------------------------------------------------------------------------
-        local textColorHeader = GUI:CreateSectionHeader(scrollChild, "Text Colors")
+        local textColorHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Text Colors"])
         textColorHeader:SetPoint("TOPLEFT", PAD, y)
         y = y - textColorHeader.gap
         ResetRows()
 
-        local statsTextColor = GUI:CreateFormColorPicker(scrollChild, "Stats Text Color", "statsTextColor", charDB, RefreshAll, nil,
-            { description = "Color used for the stat values in the stats panel." })
+        local statsTextColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Stats Text Color"], "statsTextColor", charDB, RefreshAll, nil,
+            { description = ns.L["Color used for the stat values in the stats panel."] })
         y = PlaceRow(statsTextColor, y)
 
         -- Header Class Color toggle
-        local headerClassColor = GUI:CreateFormCheckbox(scrollChild, "Header Class Color", "headerClassColor", charDB, function()
+        local headerClassColor = GUI:CreateFormCheckbox(scrollChild, ns.L["Header Class Color"], "headerClassColor", charDB, function()
             RefreshAll()
             if widgetRefs.headerColor then
                 local alpha = charDB.headerClassColor and 0.4 or 1.0
                 widgetRefs.headerColor:SetAlpha(alpha)
             end
-        end, { description = "Color the stats-panel section headers with your class color instead of the Header Color below." })
+        end, { description = ns.L["Color the stats-panel section headers with your class color instead of the Header Color below."] })
         y = PlaceRow(headerClassColor, y)
 
-        local headerColor = GUI:CreateFormColorPicker(scrollChild, "Header Color", "headerColor", charDB, RefreshAll, nil,
-            { description = "Fallback color for the stats-panel section headers when Header Class Color is off." })
+        local headerColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Header Color"], "headerColor", charDB, RefreshAll, nil,
+            { description = ns.L["Fallback color for the stats-panel section headers when Header Class Color is off."] })
         widgetRefs.headerColor = headerColor
         headerColor:SetAlpha(charDB.headerClassColor and 0.4 or 1.0)
         y = PlaceRow(headerColor, y)
 
         -- Enchant Class Color toggle
-        local enchantClassColor = GUI:CreateFormCheckbox(scrollChild, "Enchant Class Color", "enchantClassColor", charDB, function()
+        local enchantClassColor = GUI:CreateFormCheckbox(scrollChild, ns.L["Enchant Class Color"], "enchantClassColor", charDB, function()
             RefreshAll()
             if widgetRefs.enchantColor then
                 local alpha = charDB.enchantClassColor and 0.4 or 1.0
                 widgetRefs.enchantColor:SetAlpha(alpha)
             end
-        end, { description = "Color the enchant text using your class color instead of the Enchant Text Color below." })
+        end, { description = ns.L["Color the enchant text using your class color instead of the Enchant Text Color below."] })
         y = PlaceRow(enchantClassColor, y)
 
-        local enchantColor = GUI:CreateFormColorPicker(scrollChild, "Enchant Text Color", "enchantTextColor", charDB, RefreshAll, nil,
-            { description = "Fallback color for the enchant text when Enchant Class Color is off." })
+        local enchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Enchant Text Color"], "enchantTextColor", charDB, RefreshAll, nil,
+            { description = ns.L["Fallback color for the enchant text when Enchant Class Color is off."] })
         widgetRefs.enchantColor = enchantColor
         enchantColor:SetAlpha(charDB.enchantClassColor and 0.4 or 1.0)
         y = PlaceRow(enchantColor, y)
 
-        local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, "No Enchant Color", "noEnchantTextColor", charDB, RefreshAll, nil,
-            { description = "Color used for the missing-enchant marker on slots that are not enchanted." })
+        local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["No Enchant Color"], "noEnchantTextColor", charDB, RefreshAll, nil,
+            { description = ns.L["Color used for the missing-enchant marker on slots that are not enchanted."] })
         y = PlaceRow(noEnchantColor, y)
 
-        local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, "Upgrade Track Color", "upgradeTrackColor", charDB, RefreshAll, nil,
-            { description = "Color used for the upgrade-track label (e.g. Explorer 2/8) next to item level." })
+        local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Upgrade Track Color"], "upgradeTrackColor", charDB, RefreshAll, nil,
+            { description = ns.L["Color used for the upgrade-track label (e.g. Explorer 2/8) next to item level."] })
         y = PlaceRow(upgradeTrackColor, y)
 
         y = y - 10
@@ -4304,7 +4312,7 @@ local function HookCharacterFrame()
         ---------------------------------------------------------------------------
         -- Reset Button (at bottom of panel, outside scroll)
         ---------------------------------------------------------------------------
-        local resetBtn = GUI:CreateButton(settingsPanel, "Reset", 80, 24, function()
+        local resetBtn = GUI:CreateButton(settingsPanel, ns.L["Reset"], 80, 24, function()
             -- Reset all settings to defaults (background color is shared via Skinning tab)
             charDB.panelScale = 1.0
             charDB.showItemName = true

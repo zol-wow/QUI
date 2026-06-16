@@ -31,6 +31,7 @@ local ns = {
     } },
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_Chat/chat/hyperlinks.lua"))("QUI", ns)
 local HL = ns.QUI.Chat.Hyperlinks
 assert(type(HL.TryLinkifyCoordsForCapture) == "function", "capture export exists")

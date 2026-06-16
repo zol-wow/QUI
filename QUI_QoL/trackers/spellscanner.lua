@@ -528,7 +528,7 @@ local function ScanSpellFromBuffs(castSpellID, itemID)
 
             -- Notify user in scan mode
             if SpellScanner.scanMode then
-                print(string_format("|cff00ff00QUI:|r Scanned: %s = %.1fs",
+                print(string_format(ns.L["|cff00ff00QUI:|r Scanned: %s = %.1fs"],
                     bestMatch.name, bestMatch.duration))
             end
 
@@ -837,11 +837,11 @@ SLASH_QUISCAN1 = "/quiscan"
 SlashCmdList["QUISCAN"] = function()
     local enabled = SpellScanner.ToggleScanMode()
     if enabled then
-        print("|cff00ff00QUI:|r Scan mode |cff00ff00ENABLED|r")
-        print("|cffff8800-|r Cast abilities to scan their durations")
-        print("|cffff8800-|r Type /quiscan again to stop")
+        print(ns.L["|cff00ff00QUI:|r Scan mode |cff00ff00ENABLED|r"])
+        print(ns.L["|cffff8800-|r Cast abilities to scan their durations"])
+        print(ns.L["|cffff8800-|r Type /quiscan again to stop"])
     else
-        print("|cff00ff00QUI:|r Scan mode |cffff0000DISABLED|r")
+        print(ns.L["|cff00ff00QUI:|r Scan mode |cffff0000DISABLED|r"])
     end
 end
 
@@ -850,31 +850,31 @@ SLASH_QUISCANNED1 = "/quiscanned"
 SlashCmdList["QUISCANNED"] = function()
     local db = GetDB()
     if not db then
-        print("|cffff0000QUI:|r Database not available")
+        print(ns.L["|cffff0000QUI:|r Database not available"])
         return
     end
 
-    print("|cff00ff00QUI Scanned Spells:|r")
+    print(ns.L["|cff00ff00QUI Scanned Spells:|r"])
     local spellCount = 0
     for spellID, data in pairs(db.spells or {}) do
         print(string_format("  [%d] %s = %.1fs", spellID, data.name or "?", data.duration or 0))
         spellCount = spellCount + 1
     end
     if spellCount == 0 then
-        print("  |cff888888(none)|r")
+        print(ns.L["  |cff888888(none)|r"])
     else
-        print(string_format("  |cff888888Total: %d spells|r", spellCount))
+        print(string_format(ns.L["  |cff888888Total: %d spells|r"], spellCount))
     end
 
-    print("|cff00ff00QUI Scanned Items:|r")
+    print(ns.L["|cff00ff00QUI Scanned Items:|r"])
     local itemCount = 0
     for itemID, data in pairs(db.items or {}) do
-        local itemName = C_Item.GetItemNameByID(itemID) or "Item " .. itemID
+        local itemName = C_Item.GetItemNameByID(itemID) or ns.L["Item "] .. itemID
         print(string_format("  [%d] %s = %.1fs", itemID, itemName, data.duration or 0))
         itemCount = itemCount + 1
     end
     if itemCount == 0 then
-        print("  |cff888888(none)|r")
+        print(ns.L["  |cff888888(none)|r"])
     end
 
     -- Show pending queue
@@ -883,7 +883,7 @@ SlashCmdList["QUISCANNED"] = function()
         pendingCount = pendingCount + 1
     end
     if pendingCount > 0 then
-        print(string_format("|cffff8800Pending scanning: %d spells|r", pendingCount))
+        print(string_format(ns.L["|cffff8800Pending scanning: %d spells|r"], pendingCount))
     end
 
     -- Show active buffs
@@ -891,7 +891,7 @@ SlashCmdList["QUISCANNED"] = function()
     for _ in pairs(SpellScanner.activeBuffs) do
         activeCount = activeCount + 1
     end
-    print(string_format("|cff888888Active buffs tracked: %d|r", activeCount))
+    print(string_format(ns.L["|cff888888Active buffs tracked: %d|r"], activeCount))
 end
 
 -- /quiclearscan <spellID|itemID> | all - Remove a scanned entry, or wipe all
@@ -899,13 +899,13 @@ SLASH_QUICLEARSCAN1 = "/quiclearscan"
 SlashCmdList["QUICLEARSCAN"] = function(msg)
     local db = GetDB()
     if not db then
-        print("|cffff0000QUI:|r Database not available")
+        print(ns.L["|cffff0000QUI:|r Database not available"])
         return
     end
 
     local arg = strtrim(msg or "")
     if arg == "" then
-        print("|cffff0000QUI:|r Usage: /quiclearscan <spellID|itemID> | all")
+        print(ns.L["|cffff0000QUI:|r Usage: /quiclearscan <spellID|itemID> | all"])
         return
     end
 
@@ -922,41 +922,41 @@ SlashCmdList["QUICLEARSCAN"] = function(msg)
         wipe(SpellScanner.recentPlayerAuras)
         wipe(SpellScanner.itemCooldownStates)
         print(string_format(
-            "|cff00ff00QUI:|r Cleared all scanner data (%d spells, %d items)",
+            ns.L["|cff00ff00QUI:|r Cleared all scanner data (%d spells, %d items)"],
             spellCount, itemCount))
         return
     end
 
     local id = tonumber(arg)
     if not id then
-        print("|cffff0000QUI:|r Usage: /quiclearscan <spellID|itemID> | all")
+        print(ns.L["|cffff0000QUI:|r Usage: /quiclearscan <spellID|itemID> | all"])
         return
     end
 
     local cleared = false
 
     if db.spells and db.spells[id] then
-        local name = db.spells[id].name or "Unknown"
+        local name = db.spells[id].name or ns.L["Unknown"]
         db.spells[id] = nil
         SpellScanner.activeBuffs[id] = nil
-        print(string_format("|cff00ff00QUI:|r Cleared spell: %s [%d]", name, id))
+        print(string_format(ns.L["|cff00ff00QUI:|r Cleared spell: %s [%d]"], name, id))
         cleared = true
     end
 
     if db.items and db.items[id] then
         local entry = db.items[id]
-        local name = entry.name or "Unknown"
+        local name = entry.name or ns.L["Unknown"]
         local useSpellID = entry.useSpellID
         db.items[id] = nil
         if useSpellID then
             SpellScanner.registeredItemUseSpells[useSpellID] = nil
             SpellScanner.activeBuffs[useSpellID] = nil
         end
-        print(string_format("|cff00ff00QUI:|r Cleared item: %s [%d]", name, id))
+        print(string_format(ns.L["|cff00ff00QUI:|r Cleared item: %s [%d]"], name, id))
         cleared = true
     end
 
     if not cleared then
-        print(string_format("|cffff8800QUI:|r %d not found in scanned spells or items", id))
+        print(string_format(ns.L["|cffff8800QUI:|r %d not found in scanned spells or items"], id))
     end
 end

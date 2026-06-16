@@ -4,6 +4,14 @@ local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
 local Helpers = ns.Helpers
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- KEYSTONE FRAME SKINNING
 ---------------------------------------------------------------------------
@@ -53,7 +61,7 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     -- Style button text
     local text = button:GetFontString()
     if text then
-        text:SetFont(STANDARD_TEXT_FONT, 12, FONT_FLAGS)
+        CJKFont(text, STANDARD_TEXT_FONT, 12, FONT_FLAGS)
         text:SetTextColor(unpack(COLORS.text))
     end
 
@@ -125,17 +133,17 @@ local function SkinKeystoneFrame()
 
     -- Style fonts
     if keystoneFrame.DungeonName then
-        keystoneFrame.DungeonName:SetFont(STANDARD_TEXT_FONT, 22, FONT_FLAGS)
+        CJKFont(keystoneFrame.DungeonName, STANDARD_TEXT_FONT, 22, FONT_FLAGS)
         keystoneFrame.DungeonName:SetTextColor(unpack(COLORS.text))
     end
 
     if keystoneFrame.TimeLimit then
-        keystoneFrame.TimeLimit:SetFont(STANDARD_TEXT_FONT, 16, FONT_FLAGS)
+        CJKFont(keystoneFrame.TimeLimit, STANDARD_TEXT_FONT, 16, FONT_FLAGS)
         keystoneFrame.TimeLimit:SetTextColor(unpack(COLORS.textMuted))
     end
 
     if keystoneFrame.Instructions then
-        keystoneFrame.Instructions:SetFont(STANDARD_TEXT_FONT, 11, FONT_FLAGS)
+        CJKFont(keystoneFrame.Instructions, STANDARD_TEXT_FONT, 11, FONT_FLAGS)
         keystoneFrame.Instructions:SetTextColor(unpack(COLORS.textMuted))
     end
 

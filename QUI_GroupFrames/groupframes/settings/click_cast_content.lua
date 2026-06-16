@@ -5,6 +5,13 @@
 ]]
 
 local ADDON_NAME, ns = ...
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
@@ -384,28 +391,28 @@ local function pairCells(card, cells)
 end
 
 local function BuildClickCastGeneral(L, cc, refreshClickCast, state)
-    L.headerAt("Settings")
-    L.intro("Note: If Clique addon is loaded, QUI click-casting is disabled by default to avoid conflicts.")
+    L.headerAt(ns.L["Settings"])
+    L.intro(ns.L["Note: If Clique addon is loaded, QUI click-casting is disabled by default to avoid conflicts."])
 
     local s = L.sectionAt()
     local enableW = GUI:CreateFormCheckbox(s.frame, nil, "enabled", cc, refreshClickCast,
-        { description = "Master toggle for QUI's click-cast system. When on, clicks and key presses on raid/party/unit frames fire the bindings configured below instead of just targeting." })
+        { description = ns.L["Master toggle for QUI's click-cast system. When on, clicks and key presses on raid/party/unit frames fire the bindings configured below instead of just targeting."] })
     local perSpecW = GUI:CreateFormCheckbox(s.frame, nil, "perSpec", cc, refreshClickCast,
-        { description = "Maintain a separate list of click-cast bindings for each specialization. Bindings you add swap automatically when you change spec." })
+        { description = ns.L["Maintain a separate list of click-cast bindings for each specialization. Bindings you add swap automatically when you change spec."] })
     local perLoadoutW = GUI:CreateFormCheckbox(s.frame, nil, "perLoadout", cc, refreshClickCast,
-        { description = "Also split bindings per talent loadout within each spec, so each saved loadout can have its own click-cast layout. Requires Per-Spec Bindings." })
+        { description = ns.L["Also split bindings per talent loadout within each spec, so each saved loadout can have its own click-cast layout. Requires Per-Spec Bindings."] })
     local smartResW = GUI:CreateFormCheckbox(s.frame, nil, "smartRes", cc, RefreshGF,
-        { description = "When hovering a dead unit, any spell binding is temporarily replaced by your class's resurrection spell if you know one. Restores the original spell when the unit is alive." })
+        { description = ns.L["When hovering a dead unit, any spell binding is temporarily replaced by your class's resurrection spell if you know one. Restores the original spell when the unit is alive."] })
     local tooltipW = GUI:CreateFormCheckbox(s.frame, nil, "showTooltip", cc, RefreshGF,
-        { description = "Append a summary of your current click-cast bindings to the unit tooltip whenever you hover a group frame, so you can see at a glance which click does what." })
+        { description = ns.L["Append a summary of your current click-cast bindings to the unit tooltip whenever you hover a group frame, so you can see at a glance which click does what."] })
 
-    local perLoadoutCell = row(s.frame, "Per-Loadout Bindings", perLoadoutW)
+    local perLoadoutCell = row(s.frame, ns.L["Per-Loadout Bindings"], perLoadoutW)
     pairCells(s, {
-        row(s.frame, "Enable Click-Casting", enableW),
-        row(s.frame, "Per-Spec Bindings", perSpecW),
+        row(s.frame, ns.L["Enable Click-Casting"], enableW),
+        row(s.frame, ns.L["Per-Spec Bindings"], perSpecW),
         perLoadoutCell,
-        row(s.frame, "Smart Resurrection", smartResW),
-        row(s.frame, "Show Binding Tooltip on Hover", tooltipW),
+        row(s.frame, ns.L["Smart Resurrection"], smartResW),
+        row(s.frame, ns.L["Show Binding Tooltip on Hover"], tooltipW),
     })
     L.closeSection(s)
 
@@ -419,15 +426,15 @@ local function BuildClickCastGeneral(L, cc, refreshClickCast, state)
 
     -- Unit Frame click-cast toggles
     if not cc.unitFrames then cc.unitFrames = {} end
-    L.intro("Also apply click-casting to unit frames:")
+    L.intro(ns.L["Also apply click-casting to unit frames:"])
 
     local ufFrames = {
-        { key = "player",       label = "Player",           description = "Let click-cast bindings fire when you click the player unit frame, not just group or nameplate frames." },
-        { key = "target",       label = "Target",           description = "Let click-cast bindings fire when you click the target unit frame." },
-        { key = "targettarget", label = "Target of Target", description = "Let click-cast bindings fire when you click the target-of-target unit frame." },
-        { key = "focus",        label = "Focus",            description = "Let click-cast bindings fire when you click the focus unit frame." },
-        { key = "pet",          label = "Pet",              description = "Let click-cast bindings fire when you click the pet unit frame." },
-        { key = "boss",         label = "Boss",             description = "Let click-cast bindings fire when you click boss unit frames during encounters." },
+        { key = "player",       label = ns.L["Player"],           description = ns.L["Let click-cast bindings fire when you click the player unit frame, not just group or nameplate frames."] },
+        { key = "target",       label = ns.L["Target"],           description = ns.L["Let click-cast bindings fire when you click the target unit frame."] },
+        { key = "targettarget", label = ns.L["Target of Target"], description = ns.L["Let click-cast bindings fire when you click the target-of-target unit frame."] },
+        { key = "focus",        label = ns.L["Focus"],            description = ns.L["Let click-cast bindings fire when you click the focus unit frame."] },
+        { key = "pet",          label = ns.L["Pet"],              description = ns.L["Let click-cast bindings fire when you click the pet unit frame."] },
+        { key = "boss",         label = ns.L["Boss"],             description = ns.L["Let click-cast bindings fire when you click boss unit frames during encounters."] },
     }
 
     local uf = L.sectionAt()
@@ -449,18 +456,18 @@ end
 
 -- Section 2: Global Ping Keybinds
 local function BuildClickCastPings(L, state)
-    L.headerAt("Global Ping Keybinds")
-    L.intro("These keybinds work everywhere: nameplates, world mouseover, or current target. Pings the unit you're looking at.")
+    L.headerAt(ns.L["Global Ping Keybinds"])
+    L.intro(ns.L["These keybinds work everywhere: nameplates, world mouseover, or current target. Pings the unit you're looking at."])
 
     -- Bind directly to Blizzard's native ping binding actions — these
     -- call C_Ping.TogglePingListener / C_Ping.SendMacroPing in secure
     -- context. No SecureActionButtons or /ping macros needed.
     local PING_KEYBIND_ENTRIES = {
-        { binding = "TOGGLEPINGLISTENER", label = "Ping (Contextual)" },
-        { binding = "PINGASSIST",         label = "Ping: Assist" },
-        { binding = "PINGATTACK",         label = "Ping: Attack" },
-        { binding = "PINGWARNING",        label = "Ping: Warning" },
-        { binding = "PINGONMYWAY",        label = "Ping: On My Way" },
+        { binding = "TOGGLEPINGLISTENER", label = ns.L["Ping (Contextual)"] },
+        { binding = "PINGASSIST",         label = ns.L["Ping: Assist"] },
+        { binding = "PINGATTACK",         label = ns.L["Ping: Attack"] },
+        { binding = "PINGWARNING",        label = ns.L["Ping: Warning"] },
+        { binding = "PINGONMYWAY",        label = ns.L["Ping: On My Way"] },
     }
 
     local refreshAllPingRows  -- forward declaration; populated after rows are created
@@ -488,7 +495,7 @@ local function BuildClickCastPings(L, state)
 
         local keyText = captureBtn.text
         if keyText then
-            keyText:SetFont(GUI.FONT_PATH, 11, "")
+            CJKFont(keyText, GUI.FONT_PATH, 11, "")
         end
 
         local function UpdateKeyText()
@@ -497,14 +504,14 @@ local function BuildClickCastPings(L, state)
                 captureBtn:SetText(key1)
                 if keyText then keyText:SetTextColor(C.text[1], C.text[2], C.text[3], 1) end
             else
-                captureBtn:SetText("Not bound")
+                captureBtn:SetText(ns.L["Not bound"])
                 if keyText then keyText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1) end
             end
         end
         table.insert(pingRowUpdaters, UpdateKeyText)
         UpdateKeyText()
 
-        local clearBtn = CreateClickCastButton(widget, "Clear", PING_CLEAR_WIDTH, PING_BUTTON_HEIGHT, function()
+        local clearBtn = CreateClickCastButton(widget, ns.L["Clear"], PING_CLEAR_WIDTH, PING_BUTTON_HEIGHT, function()
             local key1, key2 = GetBindingKey(entry.binding)
             if key1 then SetBinding(key1) end
             if key2 then SetBinding(key2) end
@@ -513,7 +520,7 @@ local function BuildClickCastPings(L, state)
         end)
         clearBtn:SetPoint("LEFT", captureBtn, "RIGHT", 6, 0)
         SetButtonBorder(clearBtn, 1, 1, 1, 0.2)
-        GUI:AttachTooltip(clearBtn, "Remove the current keybind for this ping action. The action stays defined but is no longer bound to a key.", "Clear Binding")
+        GUI:AttachTooltip(clearBtn, ns.L["Remove the current keybind for this ping action. The action stays defined but is no longer bound to a key."], ns.L["Clear Binding"])
 
         captureBtn.isCapturing = false
         captureBtn:EnableKeyboard(false)
@@ -606,7 +613,7 @@ local function BuildClickCastPings(L, state)
                     self.isCapturing = true
                     self:EnableKeyboard(true)
                     SetButtonBorder(self, C.accent[1], C.accent[2], C.accent[3], 1)
-                    captureBtn:SetText("Press a key or click...")
+                    captureBtn:SetText(ns.L["Press a key or click..."])
                     if keyText then keyText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1) end
                 end
                 return
@@ -695,40 +702,40 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     local GFCC = ns.QUI_GroupFrameClickCast
 
     local ACTION_TYPE_OPTIONS = {
-        { value = "spell",        text = "Spell" },
-        { value = "macro",        text = "Macro" },
-        { value = "target",       text = "Target Unit" },
-        { value = "focus",        text = "Set Focus" },
-        { value = "assist",       text = "Assist" },
-        { value = "menu",         text = "Unit Menu" },
-        { value = "ping",         text = "Ping (Contextual)" },
-        { value = "ping_assist",  text = "Ping: Assist" },
-        { value = "ping_attack",  text = "Ping: Attack" },
-        { value = "ping_warning", text = "Ping: Warning" },
-        { value = "ping_onmyway", text = "Ping: On My Way" },
+        { value = "spell",        text = ns.L["Spell"] },
+        { value = "macro",        text = ns.L["Macro"] },
+        { value = "target",       text = ns.L["Target Unit"] },
+        { value = "focus",        text = ns.L["Set Focus"] },
+        { value = "assist",       text = ns.L["Assist"] },
+        { value = "menu",         text = ns.L["Unit Menu"] },
+        { value = "ping",         text = ns.L["Ping (Contextual)"] },
+        { value = "ping_assist",  text = ns.L["Ping: Assist"] },
+        { value = "ping_attack",  text = ns.L["Ping: Attack"] },
+        { value = "ping_warning", text = ns.L["Ping: Warning"] },
+        { value = "ping_onmyway", text = ns.L["Ping: On My Way"] },
     }
     local BINDING_TYPE_OPTIONS = {
-        { value = "mouse", text = "Mouse Button" },
-        { value = "key",   text = "Keyboard Key" },
+        { value = "mouse", text = ns.L["Mouse Button"] },
+        { value = "key",   text = ns.L["Keyboard Key"] },
     }
     local BUTTON_OPTIONS = {
-        { value = "LeftButton",   text = "Left Click" },
-        { value = "RightButton",  text = "Right Click" },
-        { value = "MiddleButton", text = "Middle Click" },
-        { value = "Button4",      text = "Button 4" },
-        { value = "Button5",      text = "Button 5" },
-        { value = "ScrollUp",     text = "Scroll Up" },
-        { value = "ScrollDown",   text = "Scroll Down" },
+        { value = "LeftButton",   text = ns.L["Left Click"] },
+        { value = "RightButton",  text = ns.L["Right Click"] },
+        { value = "MiddleButton", text = ns.L["Middle Click"] },
+        { value = "Button4",      text = ns.L["Button 4"] },
+        { value = "Button5",      text = ns.L["Button 5"] },
+        { value = "ScrollUp",     text = ns.L["Scroll Up"] },
+        { value = "ScrollDown",   text = ns.L["Scroll Down"] },
     }
     local MOD_OPTIONS = {
-        { value = "",              text = "None" },
-        { value = "shift",         text = "Shift" },
-        { value = "ctrl",          text = "Ctrl" },
-        { value = "alt",           text = "Alt" },
-        { value = "shift-ctrl",    text = "Shift+Ctrl" },
-        { value = "shift-alt",     text = "Shift+Alt" },
-        { value = "ctrl-alt",      text = "Ctrl+Alt" },
-        { value = "shift-ctrl-alt", text = "Shift+Ctrl+Alt" },
+        { value = "",              text = ns.L["None"] },
+        { value = "shift",         text = ns.L["Shift"] },
+        { value = "ctrl",          text = ns.L["Ctrl"] },
+        { value = "alt",           text = ns.L["Alt"] },
+        { value = "shift-ctrl",    text = ns.L["Shift+Ctrl"] },
+        { value = "shift-alt",     text = ns.L["Shift+Alt"] },
+        { value = "ctrl-alt",      text = ns.L["Ctrl+Alt"] },
+        { value = "shift-ctrl-alt", text = ns.L["Shift+Ctrl+Alt"] },
     }
     local ACTION_FALLBACK_ICONS = {
         target       = "Interface\\Icons\\Ability_Hunter_SniperShot",
@@ -743,14 +750,14 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         ping_onmyway = "Interface\\Icons\\Ping_Chat_OnMyWay",
     }
     local PING_DISPLAY_NAMES = {
-        ping         = "Ping",
-        ping_assist  = "Ping: Assist",
-        ping_attack  = "Ping: Attack",
-        ping_warning = "Ping: Warning",
-        ping_onmyway = "Ping: On My Way",
+        ping         = ns.L["Ping"],
+        ping_assist  = ns.L["Ping: Assist"],
+        ping_attack  = ns.L["Ping: Attack"],
+        ping_warning = ns.L["Ping: Warning"],
+        ping_onmyway = ns.L["Ping: On My Way"],
     }
 
-    L.headerAt("Bindings")
+    L.headerAt(ns.L["Bindings"])
 
     -- Dynamic block: spec label + current-bindings list + add form. The
     -- add form anchors to the list bottom so it flows down as bindings are
@@ -775,7 +782,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
             if specIndex then
                 local _, specName = GetSpecializationInfo(specIndex)
                 if specName then
-                    local labelText = "Editing bindings for: " .. specName
+                    local labelText = ns.L["Editing bindings for: "] .. specName
                     if cc.perLoadout and C_ClassTalents then
                         local configID = C_ClassTalents.GetActiveConfigID()
                         if configID then
@@ -800,7 +807,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                             if customName and customName ~= specName then
                                 labelText = labelText .. " \226\128\148 " .. customName
                             elseif ordinal then
-                                labelText = labelText .. " \226\128\148 Loadout " .. ordinal
+                                labelText = labelText .. " \226\128\148 " .. ns.L["Loadout"] .. " " .. ordinal
                             end
                         end
                     end
@@ -816,7 +823,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     if specLabel:IsShown() then by = by - 20 end
 
     -- Current bindings list
-    Shared.CreateAccentDotLabel(bindingsBlock, "Current Bindings", by); by = by - 30
+    Shared.CreateAccentDotLabel(bindingsBlock, ns.L["Current Bindings"], by); by = by - 30
 
     local bindingListFrame = CreateFrame("Frame", nil, bindingsBlock)
     bindingListFrame:SetPoint("TOPLEFT", 0, by)
@@ -832,11 +839,11 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     addContainer:SetHeight(400)
     addContainer:EnableMouse(false)
 
-    Shared.CreateAccentDotLabel(addContainer, "Add Binding", 0)
+    Shared.CreateAccentDotLabel(addContainer, ns.L["Add Binding"], 0)
     local ay = -30
 
     -- Drop zone for spellbook/macro drag
-    local dropZone = CreateClickCastButton(addContainer, "Drop a spell or macro here", 1, 68, nil, "primary")
+    local dropZone = CreateClickCastButton(addContainer, ns.L["Drop a spell or macro here"], 1, 68, nil, "primary")
     dropZone:RegisterForClicks("LeftButtonUp")
     SetHeightPx(dropZone, 68)
     dropZone:SetPoint("TOPLEFT", 0, ay)
@@ -846,7 +853,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     local dropLabel = dropZone.text
     if dropLabel then
-        dropLabel:SetFont(GUI.FONT_PATH, 11, "")
+        CJKFont(dropLabel, GUI.FONT_PATH, 11, "")
         dropLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
     end
 
@@ -889,7 +896,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 if body then
                     addState.actionType = "macro"
                     addState.macroText = body
-                    addState.spellName = name or "Macro"
+                    addState.spellName = name or ns.L["Macro"]
                     if macroInput then macroInput:SetText(body) end
                     if actionDrop then actionDrop.SetValue("macro", true) end
                     if macroInputContainer then macroInputContainer:Show() end
@@ -932,22 +939,22 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         if mouseButtonContainer then mouseButtonContainer:SetShown(val == "mouse") end
         if keyCaptureContainer then keyCaptureContainer:SetShown(val == "key") end
         if triggerCell and triggerCell._label then
-            triggerCell._label:SetText(val == "key" and "Key" or "Mouse Button")
+            triggerCell._label:SetText(val == "key" and ns.L["Key"] or ns.L["Mouse Button"])
         end
-    end, { description = "Whether this binding fires on a mouse button (including scroll) or on a keyboard key pressed while hovering a unit frame." })
+    end, { description = ns.L["Whether this binding fires on a mouse button (including scroll) or on a keyboard key pressed while hovering a unit frame."] })
 
     -- Trigger control: the mouse-button dropdown is the cell widget (so it
     -- keeps its search registration); the key-capture button overlays it
     -- and the Binding Type dropdown swaps which is shown.
     local buttonDrop = GUI:CreateFormDropdown(formCard.frame, nil, BUTTON_OPTIONS, "button", addState, nil,
-        { description = "Mouse button or scroll direction this binding fires on when hovering a unit frame. Combine with a modifier below to layer multiple actions onto the same button." })
+        { description = ns.L["Mouse button or scroll direction this binding fires on when hovering a unit frame. Combine with a modifier below to layer multiple actions onto the same button."] })
     mouseButtonContainer = buttonDrop
 
     -- Keyboard key capture (reparented over the dropdown once the cell is built)
     keyCaptureContainer = CreateFrame("Frame", nil, formCard.frame)
     keyCaptureContainer:Hide()
 
-    local keyCaptureBtn = CreateClickCastButton(keyCaptureContainer, "Click to bind a key", 1, 26)
+    local keyCaptureBtn = CreateClickCastButton(keyCaptureContainer, ns.L["Click to bind a key"], 1, 26)
     keyCaptureBtn:SetPoint("LEFT", keyCaptureContainer, "LEFT", 0, 0)
     keyCaptureBtn:SetPoint("RIGHT", keyCaptureContainer, "RIGHT", 0, 0)
     SetHeightPx(keyCaptureBtn, 26)
@@ -956,7 +963,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     local keyCaptureText = keyCaptureBtn.text
     if keyCaptureText then
-        keyCaptureText:SetFont(GUI.FONT_PATH, 11, "")
+        CJKFont(keyCaptureText, GUI.FONT_PATH, 11, "")
         keyCaptureText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
     end
 
@@ -964,7 +971,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     keyCaptureBtn:SetScript("OnClick", function(self)
         self.isCapturing = true
-        keyCaptureBtn:SetText("Press a key...")
+        keyCaptureBtn:SetText(ns.L["Press a key..."])
         if keyCaptureText then keyCaptureText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1) end
         SetButtonBorder(self, C.accent[1], C.accent[2], C.accent[3], 1)
         self:EnableKeyboard(true)
@@ -982,7 +989,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 keyCaptureBtn:SetText(addState.key)
                 if keyCaptureText then keyCaptureText:SetTextColor(C.text[1], C.text[2], C.text[3], 1) end
             else
-                keyCaptureBtn:SetText("Click to bind a key")
+                keyCaptureBtn:SetText(ns.L["Click to bind a key"])
                 if keyCaptureText then keyCaptureText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1) end
             end
             return
@@ -1013,20 +1020,20 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     -- Modifier dropdown
     local modDrop = GUI:CreateFormDropdown(formCard.frame, nil, MOD_OPTIONS, "modifiers", addState, nil,
-        { description = "Modifier key(s) that must be held for this binding to fire. Use None for the unmodified click or key — different modifiers let you stack multiple actions on the same button." })
+        { description = ns.L["Modifier key(s) that must be held for this binding to fire. Use None for the unmodified click or key — different modifiers let you stack multiple actions on the same button."] })
 
     -- Action type dropdown
     actionDrop = GUI:CreateFormDropdown(formCard.frame, nil, ACTION_TYPE_OPTIONS, "actionType", addState, function(val)
         addState.actionType = val
         if spellInputContainer then spellInputContainer:SetShown(val == "spell") end
         if macroInputContainer then macroInputContainer:SetShown(val == "macro") end
-    end, { description = "What this binding does: cast a spell or macro, change target/focus/assist, open the unit menu, or send a ping. Spell and Macro reveal an input below for the spell name or macro body." })
+    end, { description = ns.L["What this binding does: cast a spell or macro, change target/focus/assist, open the unit menu, or send a ping. Spell and Macro reveal an input below for the spell name or macro body."] })
 
-    triggerCell = row(formCard.frame, "Mouse Button", buttonDrop)
+    triggerCell = row(formCard.frame, ns.L["Mouse Button"], buttonDrop)
     keyCaptureContainer:SetParent(triggerCell)
     keyCaptureContainer:SetAllPoints(buttonDrop)
-    formCard.AddRow(row(formCard.frame, "Binding Type", bindingTypeDrop), triggerCell)
-    formCard.AddRow(row(formCard.frame, "Modifier", modDrop), row(formCard.frame, "Action Type", actionDrop))
+    formCard.AddRow(row(formCard.frame, ns.L["Binding Type"], bindingTypeDrop), triggerCell)
+    formCard.AddRow(row(formCard.frame, ns.L["Modifier"], modDrop), row(formCard.frame, ns.L["Action Type"], actionDrop))
     formCard.Finalize()
     ay = ay - formCard.frame:GetHeight() - 8
 
@@ -1038,11 +1045,11 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     local spellLabel = spellInputContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     spellLabel:SetPoint("LEFT", 0, 0)
-    spellLabel:SetText("Spell Name")
+    spellLabel:SetText(ns.L["Spell Name"])
     spellLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
     -- Browse button (right side)
-    local browseBtn = CreateClickCastButton(spellInputContainer, "Browse", 64, 24, nil, "primary")
+    local browseBtn = CreateClickCastButton(spellInputContainer, ns.L["Browse"], 64, 24, nil, "primary")
     SetSizePx(browseBtn, 64, 24)
     browseBtn:SetPoint("RIGHT", spellInputContainer, "RIGHT", 0, 0)
     SetButtonFill(browseBtn, 0.12, 0.12, 0.12, 1)
@@ -1072,7 +1079,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     spellInput:SetPoint("RIGHT", -8, 0)
     spellInput:SetHeight(22)
     spellInput:SetAutoFocus(false)
-    spellInput:SetFont(GUI.FONT_PATH, 11, "")
+    CJKFont(spellInput, GUI.FONT_PATH, 11, "")
     spellInput:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     spellInput:SetText("")
 
@@ -1121,7 +1128,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         rowText:SetPoint("LEFT", rowIcon, "RIGHT", 4, 0)
         rowText:SetPoint("RIGHT", row, "RIGHT", -4, 0)
         rowText:SetJustifyH("LEFT")
-        rowText:SetFont(GUI.FONT_PATH, 11, "")
+        CJKFont(rowText, GUI.FONT_PATH, 11, "")
         rowText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
         row.text = rowText
 
@@ -1206,15 +1213,15 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     -- Title
     local browseTitle = browsePopup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     browseTitle:SetPoint("TOPLEFT", 10, -8)
-    browseTitle:SetText("Browse Spells")
-    browseTitle:SetFont(GUI.FONT_PATH, 12, "")
+    browseTitle:SetText(ns.L["Browse Spells"])
+    CJKFont(browseTitle, GUI.FONT_PATH, 12, "")
     browseTitle:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
     -- Close button
     local browseCloseBtn = CreateClickCastButton(browsePopup, "X", 20, 20, function() browsePopup:Hide() end)
     browseCloseBtn:SetPoint("TOPRIGHT", -6, -6)
     if browseCloseBtn.text then
-        browseCloseBtn.text:SetFont(GUI.FONT_PATH, 11, "")
+        CJKFont(browseCloseBtn.text, GUI.FONT_PATH, 11, "")
     end
 
     -- Search box
@@ -1231,14 +1238,14 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     browseSearch:SetPoint("RIGHT", -8, 0)
     browseSearch:SetHeight(22)
     browseSearch:SetAutoFocus(false)
-    browseSearch:SetFont(GUI.FONT_PATH, 11, "")
+    CJKFont(browseSearch, GUI.FONT_PATH, 11, "")
     browseSearch:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     browseSearch:SetText("")
 
     local browseSearchPlaceholder = browseSearchBg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     browseSearchPlaceholder:SetPoint("LEFT", 8, 0)
-    browseSearchPlaceholder:SetText("Search spells...")
-    browseSearchPlaceholder:SetFont(GUI.FONT_PATH, 11, "")
+    browseSearchPlaceholder:SetText(ns.L["Search spells..."])
+    CJKFont(browseSearchPlaceholder, GUI.FONT_PATH, 11, "")
     browseSearchPlaceholder:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.6)
     browseSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
@@ -1328,7 +1335,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         row.text:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
         row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0)
         row.text:SetJustifyH("LEFT")
-        row.text:SetFont(GUI.FONT_PATH, 11, "")
+        CJKFont(row.text, GUI.FONT_PATH, 11, "")
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
         hl:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.15)
@@ -1357,12 +1364,12 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         -- Chevron indicator
         row.chevron = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         row.chevron:SetPoint("LEFT", 2, 0)
-        row.chevron:SetFont(GUI.FONT_PATH, 10, "")
+        CJKFont(row.chevron, GUI.FONT_PATH, 10, "")
         row.chevron:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.6)
 
         row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         row.text:SetPoint("LEFT", row.chevron, "RIGHT", 4, 0)
-        row.text:SetFont(GUI.FONT_PATH, 10, "")
+        CJKFont(row.text, GUI.FONT_PATH, 10, "")
 
         local hl = row:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints()
@@ -1472,7 +1479,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     local macroLabel = macroInputContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     macroLabel:SetPoint("LEFT", 0, 0)
-    macroLabel:SetText("Macro Text")
+    macroLabel:SetText(ns.L["Macro Text"])
     macroLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
     local macroInputBg = CreateFrame("Frame", nil, macroInputContainer, "BackdropTemplate")
@@ -1488,7 +1495,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     macroInput:SetPoint("RIGHT", -8, 0)
     macroInput:SetHeight(22)
     macroInput:SetAutoFocus(false)
-    macroInput:SetFont(GUI.FONT_PATH, 11, "")
+    CJKFont(macroInput, GUI.FONT_PATH, 11, "")
     macroInput:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     macroInput:SetText("")
     macroInput:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -1535,21 +1542,21 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     -- Add Binding button
     local addBtnY = ay - FORM_ROW
-    local addBtn = GUI:CreateButton(addContainer, "Add Binding", 130, 26, function()
+    local addBtn = GUI:CreateButton(addContainer, ns.L["Add Binding"], 130, 26, function()
         local actionType = addState.actionType
-        if type(actionType) ~= "string" then print("|cFFFF5555[QUI]|r Invalid action type. Please re-select.") return end
+        if type(actionType) ~= "string" then print("|cFFFF5555[QUI]|r " .. ns.L["Invalid action type. Please re-select."]) return end
         local newBinding = { modifiers = addState.modifiers, actionType = actionType }
         if addState.bindingType == "key" then
-            if not addState.key or addState.key == "" then print("|cFFFF5555[QUI]|r Press a key to bind first.") return end
+            if not addState.key or addState.key == "" then print("|cFFFF5555[QUI]|r " .. ns.L["Press a key to bind first."]) return end
             newBinding.key = addState.key
         else
             newBinding.button = addState.button
         end
         if actionType == "spell" then
             local name = addState.spellName
-            if not name or name == "" then print("|cFFFF5555[QUI]|r Enter a spell name.") return end
+            if not name or name == "" then print("|cFFFF5555[QUI]|r " .. ns.L["Enter a spell name."]) return end
             local spellID = C_Spell.GetSpellIDForSpellIdentifier(name)
-            if not spellID then print("|cFFFF5555[QUI]|r Spell not found: " .. name) return end
+            if not spellID then print("|cFFFF5555[QUI]|r " .. ns.L["Spell not found: "] .. name) return end
             -- Store root spell ID so binding survives talent overrides
             local baseID = C_Spell.GetBaseSpell and C_Spell.GetBaseSpell(spellID) or spellID
             newBinding.spellID = baseID
@@ -1557,20 +1564,20 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
             newBinding.spell = rootName or C_Spell.GetSpellName(spellID) or name
         elseif actionType == "macro" then
             local text = addState.macroText
-            if not text or text == "" then print("|cFFFF5555[QUI]|r Enter macro text.") return end
+            if not text or text == "" then print("|cFFFF5555[QUI]|r " .. ns.L["Enter macro text."]) return end
             newBinding.spell = "Macro"
             newBinding.macro = text
         else
             newBinding.spell = actionType
         end
         local ok, err = GFCC:AddBinding(newBinding)
-        if not ok then print("|cFFFF5555[QUI]|r " .. (err or "Failed to add binding.")) return end
+        if not ok then print("|cFFFF5555[QUI]|r " .. (err or ns.L["Failed to add binding."])) return end
         addState.spellName = ""
         addState.macroText = ""
         addState.key = nil
         spellInput:SetText("")
         macroInput:SetText("")
-        keyCaptureBtn:SetText("Click to bind a key")
+        keyCaptureBtn:SetText(ns.L["Click to bind a key"])
         if keyCaptureText then keyCaptureText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1) end
         RefreshBindingList()
     end)
@@ -1594,7 +1601,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
             emptyLabel:SetPoint("TOPLEFT", 0, 0)
             local emptyText = emptyLabel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             emptyText:SetPoint("LEFT", 0, 0)
-            emptyText:SetText("No bindings configured yet.")
+            emptyText:SetText(ns.L["No bindings configured yet."])
             emptyText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
             listY = -28
         else
@@ -1640,8 +1647,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 spellText:SetWidth(140)
                 spellText:SetJustifyH("LEFT")
                 local displayName = spellName or actionType
-                if actionType == "macro" then displayName = "Macro"
-                elseif actionType == "menu" then displayName = "Unit Menu"
+                if actionType == "macro" then displayName = ns.L["Macro"]
+                elseif actionType == "menu" then displayName = ns.L["Unit Menu"]
                 elseif PING_DISPLAY_NAMES[actionType] then displayName = PING_DISPLAY_NAMES[actionType] end
                 spellText:SetText(displayName)
                 spellText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
@@ -1768,7 +1775,7 @@ local function BuildClickCastContent(content)
     -- settings UI writes to the same location the runtime reads from.
     local charDB = QUI and QUI.db and QUI.db.char
     if not charDB then
-        local info = GUI:CreateLabel(content, "Click-cast settings not available.", 12, C.textMuted)
+        local info = GUI:CreateLabel(content, ns.L["Click-cast settings not available."], 12, C.textMuted)
         info:SetPoint("TOPLEFT", PAD, -10)
         content:SetHeight(100)
         return

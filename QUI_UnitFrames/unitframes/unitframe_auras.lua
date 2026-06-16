@@ -7,6 +7,14 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 -- Upvalue caching for hot-path performance
 local pcall = pcall
 local ipairs = ipairs
@@ -143,7 +151,7 @@ local function ApplyAuraIconSettings(icon, auraSettings, isDebuff)
     local stackColor = auraSettings[prefix .. "StackColor"] or auraSettings.stackColor or {1, 1, 1, 1}
 
     if icon.count then
-        icon.count:SetFont(fontPath, stackSize, fontOutline)
+        CJKFont(icon.count, fontPath, stackSize, fontOutline)
         icon.count:ClearAllPoints()
         icon.count:SetPoint(stackAnchor, icon, stackAnchor, stackOffsetX, stackOffsetY)
         icon.count:SetTextColor(stackColor[1] or 1, stackColor[2] or 1, stackColor[3] or 1, stackColor[4] or 1)
@@ -180,7 +188,7 @@ local function ApplyAuraIconSettings(icon, auraSettings, isDebuff)
                 for _, region in ipairs({ icon.cooldown:GetRegions() }) do
                     if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                         if region.SetFont then
-                            region:SetFont(fontPath, durationSize, fontOutline)
+                            CJKFont(region, fontPath, durationSize, fontOutline)
                         end
                         if region.ClearAllPoints and region.SetPoint then
                             region:ClearAllPoints()
@@ -952,7 +960,7 @@ function QUI_UF:ShowAuraPreviewForFrame(frame, unitKey, auraType)
         local stackOffsetY = auraSettings[prefix .. "StackOffsetY"] or auraSettings.stackOffsetY or 1
         local stackColor = auraSettings[prefix .. "StackColor"] or auraSettings.stackColor or {1, 1, 1, 1}
 
-        icon.count:SetFont(fontPath, stackSize, fontOutline)
+        CJKFont(icon.count, fontPath, stackSize, fontOutline)
         icon.count:ClearAllPoints()
         icon.count:SetPoint(stackAnchor, icon, stackAnchor, stackOffsetX, stackOffsetY)
         icon.count:SetTextColor(stackColor[1] or 1, stackColor[2] or 1, stackColor[3] or 1, stackColor[4] or 1)

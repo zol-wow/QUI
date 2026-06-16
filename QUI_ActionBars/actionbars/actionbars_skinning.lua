@@ -4,6 +4,14 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 -- BUTTON SKINNING
 ---------------------------------------------------------------------------
 
@@ -597,7 +605,7 @@ UpdateKeybindText = function(button, settings)
     -- Apply styling
     local fontPath, outline = GetFontSettings()
 
-    hotkey:SetFont(fontPath, settings.keybindFontSize or 11, outline)
+    CJKFont(hotkey, fontPath, settings.keybindFontSize or 11, outline)
 
     local color = settings.keybindColor
     local r = color and color[1] or 1
@@ -638,7 +646,7 @@ function UpdateMacroText(button, settings)
     -- Apply styling
     local fontPath, outline = GetFontSettings()
 
-    name:SetFont(fontPath, settings.macroNameFontSize or 10, outline)
+    CJKFont(name, fontPath, settings.macroNameFontSize or 10, outline)
 
     local color = settings.macroNameColor
     local r = color and color[1] or 1
@@ -668,7 +676,7 @@ function UpdateCountText(button, settings)
     -- Apply styling
     local fontPath, outline = GetFontSettings()
 
-    count:SetFont(fontPath, settings.countFontSize or 14, outline)
+    CJKFont(count, fontPath, settings.countFontSize or 14, outline)
 
     local color = settings.countColor
     local r = color and color[1] or 1
@@ -704,7 +712,7 @@ function UpdateCooldownText(button, settings)
 
     local fontPath, outline = GetFontSettings()
     local fontSize = settings.cooldownTextFontSize or 14
-    text:SetFont(fontPath, fontSize, outline)
+    CJKFont(text, fontPath, fontSize, outline)
 
     local color = settings.cooldownTextColor
     local r = color and color[1] or 1

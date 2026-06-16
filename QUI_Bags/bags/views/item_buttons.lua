@@ -18,6 +18,14 @@ local Bags = ns.Bags or {}; ns.Bags = Bags
 local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local ItemButtons = {}
 Bags.ItemButtons = ItemButtons
 
@@ -187,7 +195,7 @@ function ItemButtons.CreateCached(parent)
     button._icon:SetAllPoints()
     button._count = button:CreateFontString(nil, "OVERLAY")
     button._count:SetPoint("BOTTOMRIGHT", -2, 2)
-    button._count:SetFont(Helpers.GetGeneralFont(), 11, "OUTLINE")
+    CJKFont(button._count, Helpers.GetGeneralFont(), 11, "OUTLINE")
     UIKit.CreateBorderLines(button)
     button:SetScript("OnEnter", function(self)
         if self._link then
@@ -278,7 +286,7 @@ function ItemButtons.CreateGuildLive(parent)
     button._icon:SetAllPoints()
     button._count = button:CreateFontString(nil, "OVERLAY")
     button._count:SetPoint("BOTTOMRIGHT", -2, 2)
-    button._count:SetFont(Helpers.GetGeneralFont(), 11, "OUTLINE")
+    CJKFont(button._count, Helpers.GetGeneralFont(), 11, "OUTLINE")
     UIKit.CreateBorderLines(button)
 
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")

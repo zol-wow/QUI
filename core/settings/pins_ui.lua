@@ -60,11 +60,11 @@ end
 -- Clear All button and the manage-page Unpin All button.
 local function ConfirmUnpinAll(gui)
     gui:ShowConfirmation({
-        title = "Remove all pins?",
-        message = "Unpin every globally pinned setting?",
-        warningText = "Each affected profile will restore its shadowed value where available.",
-        acceptText = "Unpin All",
-        cancelText = "Cancel",
+        title = ns.L["Remove all pins?"],
+        message = ns.L["Unpin every globally pinned setting?"],
+        warningText = ns.L["Each affected profile will restore its shadowed value where available."],
+        acceptText = ns.L["Unpin All"],
+        cancelText = ns.L["Cancel"],
         isDestructive = true,
         onAccept = function()
             Pins:UnpinAll()
@@ -83,7 +83,7 @@ local function SetFont(fontString, size, color)
     if gui and uiKit and type(uiKit.ResolveFontPath) == "function" and type(gui.GetFontPath) == "function" then
         fontPath = uiKit.ResolveFontPath(gui:GetFontPath())
     end
-    fontString:SetFont(fontPath or select(1, fontString:GetFont()), size, "")
+    ns.Helpers.ApplyFontWithFallback(fontString, fontPath or select(1, fontString:GetFont()), size, "")
 
     color = color or GetTextColor()
     fontString:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
@@ -288,14 +288,14 @@ local function ShowPinButtonTooltip(button)
 
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
     if entry and entry.disabled then
-        GameTooltip:SetText("Remove stale pin", accent[1], accent[2], accent[3], 1)
-        GameTooltip:AddLine("This path no longer resolves. Click to remove it.", 1, 1, 1, true)
+        GameTooltip:SetText(ns.L["Remove stale pin"], accent[1], accent[2], accent[3], 1)
+        GameTooltip:AddLine(ns.L["This path no longer resolves. Click to remove it."], 1, 1, 1, true)
     elseif entry then
-        GameTooltip:SetText("Pinned globally", accent[1], accent[2], accent[3], 1)
-        GameTooltip:AddLine("Click to unpin. Edits affect all profiles.", 1, 1, 1, true)
+        GameTooltip:SetText(ns.L["Pinned globally"], accent[1], accent[2], accent[3], 1)
+        GameTooltip:AddLine(ns.L["Click to unpin. Edits affect all profiles."], 1, 1, 1, true)
     else
-        GameTooltip:SetText("Pin across all profiles", accent[1], accent[2], accent[3], 1)
-        GameTooltip:AddLine("Capture the current value and keep it across profile switches.", 1, 1, 1, true)
+        GameTooltip:SetText(ns.L["Pin across all profiles"], accent[1], accent[2], accent[3], 1)
+        GameTooltip:AddLine(ns.L["Capture the current value and keep it across profile switches."], 1, 1, 1, true)
     end
     GameTooltip:Show()
 end
@@ -320,9 +320,9 @@ local function AttachPinnedTooltip(target, widget)
 
         local accent = GetAccentColor()
         if entry.disabled then
-            tooltip:AddLine("Pinned path unavailable. Click the pin to remove it.", 1, 0.82, 0.62, true)
+            tooltip:AddLine(ns.L["Pinned path unavailable. Click the pin to remove it."], 1, 0.82, 0.62, true)
         else
-            tooltip:AddLine("Pinned globally. Edits affect all profiles.", accent[1], accent[2], accent[3], true)
+            tooltip:AddLine(ns.L["Pinned globally. Edits affect all profiles."], accent[1], accent[2], accent[3], true)
         end
     end
 
@@ -346,7 +346,7 @@ local function AttachPinnedTooltip(target, widget)
         local accent = GetAccentColor()
         if not GameTooltip:IsOwned(self) then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(binding and binding.label or "Pinned setting", accent[1], accent[2], accent[3], 1)
+            GameTooltip:SetText(binding and binding.label or ns.L["Pinned setting"], accent[1], accent[2], accent[3], 1)
         end
 
         if type(self._quiTooltipAugment) == "function" then
@@ -816,7 +816,7 @@ local function BuildBreadcrumb(item)
         parts[#parts + 1] = item.sectionName
     end
 
-    return #parts > 0 and table.concat(parts, " > ") or "Pinned setting"
+    return #parts > 0 and table.concat(parts, " > ") or ns.L["Pinned setting"]
 end
 
 local function SortItems(items, mode)
@@ -864,7 +864,7 @@ local function CreateSearchBox(parent, width, onChanged)
 
     local placeholder = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(placeholder, 10, GetMutedColor())
-    placeholder:SetText("Search pinned settings")
+    placeholder:SetText(ns.L["Search pinned settings"])
     placeholder:SetPoint("LEFT", editBox, "LEFT", 2, 0)
     placeholder:SetJustifyH("LEFT")
     frame.placeholder = placeholder
@@ -918,7 +918,7 @@ local function CreateValuePreview(parent, item, width)
     valueText:SetPoint("LEFT", frame, "LEFT", 0, 0)
     valueText:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
     valueText:SetJustifyH("LEFT")
-    valueText:SetText(item.disabled and "Unavailable" or Pins:FormatValue(item.value))
+    valueText:SetText(item.disabled and ns.L["Unavailable"] or Pins:FormatValue(item.value))
     return frame
 end
 
@@ -939,7 +939,7 @@ local function BuildPopupRows(chip)
         empty:SetPoint("RIGHT", popup.content, "RIGHT", -4, 0)
         empty:SetJustifyH("LEFT")
         empty:SetJustifyV("TOP")
-        empty:SetText("No pinned settings yet.")
+        empty:SetText(ns.L["No pinned settings yet."])
         popup.content:SetHeight(48)
         return
     end
@@ -974,7 +974,7 @@ local function BuildPopupRows(chip)
         value:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 6, 4)
         value:SetPoint("RIGHT", row, "RIGHT", -6, 0)
         value:SetJustifyH("LEFT")
-        value:SetText(item.disabled and "Unavailable" or Pins:FormatValue(item.value))
+        value:SetText(item.disabled and ns.L["Unavailable"] or Pins:FormatValue(item.value))
 
         row:SetScript("OnEnter", function() hover:Show() end)
         row:SetScript("OnLeave", function() hover:Hide() end)
@@ -1019,7 +1019,7 @@ local function EnsurePopup(chip)
     local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(title, 11, GetTextColor())
     title:SetPoint("TOPLEFT", popup, "TOPLEFT", 10, -10)
-    title:SetText("Pinned Settings")
+    title:SetText(ns.L["Pinned Settings"])
 
     local body = CreateFrame("Frame", nil, popup)
     body:SetPoint("TOPLEFT", popup, "TOPLEFT", 8, -28)
@@ -1030,12 +1030,12 @@ local function EnsurePopup(chip)
     popup.scroll = scroll
     popup.content = content
 
-    local clearBtn = gui:CreateButton(popup, "Clear All", 74, 20, function()
+    local clearBtn = gui:CreateButton(popup, ns.L["Clear All"], 74, 20, function()
         ConfirmUnpinAll(gui)
     end)
     clearBtn:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 8, 8)
 
-    local openBtn = gui:CreateButton(popup, "Open Full List", 100, 20, function()
+    local openBtn = gui:CreateButton(popup, ns.L["Open Full List"], 100, 20, function()
         popup:Hide()
         Pins:OpenManagePage()
     end)
@@ -1125,7 +1125,7 @@ function Pins:AttachCountChip(header)
     local bgAlpha = count > 0 and 0.1 or 0.04
 
     chip:SetWidth(count >= 100 and 70 or 62)
-    chip.text:SetText(string_format("Pin %d", count))
+    chip.text:SetText(string_format(ns.L["Pin %d"], count))
     chip.text:SetTextColor(textColor[1], textColor[2], textColor[3], count > 0 and 1 or 0.9)
     StyleSurface(chip, bgAlpha, borderColor, borderAlpha)
 
@@ -1167,7 +1167,7 @@ local function BuildPinnedGlobalsRows(state)
 
     if disabledCount > 0 then
         state.staleBanner:Show()
-        state.staleText:SetText(string_format("%d stale pin%s detected.", disabledCount, disabledCount == 1 and "" or "s"))
+        state.staleText:SetText(string_format(ns.L["%d stale pin%s detected."], disabledCount, disabledCount == 1 and "" or "s"))
         state.rowsHost:ClearAllPoints()
         state.rowsHost:SetPoint("TOPLEFT", state.staleBanner, "BOTTOMLEFT", 0, -10)
         state.rowsHost:SetPoint("TOPRIGHT", state.staleBanner, "BOTTOMRIGHT", 0, -10)
@@ -1185,7 +1185,7 @@ local function BuildPinnedGlobalsRows(state)
         empty:SetPoint("TOPLEFT", state.rowsHost, "TOPLEFT", 0, 0)
         empty:SetPoint("RIGHT", state.rowsHost, "RIGHT", 0, 0)
         empty:SetJustifyH("LEFT")
-        empty:SetText(query == "" and "No pinned settings yet." or "No pinned settings match this search.")
+        empty:SetText(query == "" and ns.L["No pinned settings yet."] or ns.L["No pinned settings match this search."])
         state.rowsHost:SetHeight(32)
         state.content:SetHeight(220)
         return
@@ -1217,7 +1217,7 @@ local function BuildPinnedGlobalsRows(state)
             accentBar:SetColorTexture(accent[1], accent[2], accent[3], 1)
         end
 
-        local unpinBtn = gui:CreateButton(cell, item.disabled and "Remove" or "Unpin", 52, 20, function()
+        local unpinBtn = gui:CreateButton(cell, item.disabled and ns.L["Remove"] or ns.L["Unpin"], 52, 20, function()
             if item.disabled then
                 Pins:DropPath(item.path)
             else
@@ -1226,7 +1226,7 @@ local function BuildPinnedGlobalsRows(state)
         end)
         unpinBtn:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
 
-        local jumpBtn = gui:CreateButton(cell, "Jump", 40, 20, function()
+        local jumpBtn = gui:CreateButton(cell, ns.L["Jump"], 40, 20, function()
             Pins:NavigateToPinned(item.path)
         end)
         jumpBtn:SetPoint("RIGHT", unpinBtn, "LEFT", -4, 0)
@@ -1248,7 +1248,7 @@ local function BuildPinnedGlobalsRows(state)
         crumb:SetPoint("RIGHT", valuePreview, "LEFT", -6, 0)
         crumb:SetJustifyH("LEFT")
         crumb:SetWordWrap(false)
-        crumb:SetText(item.disabled and (BuildBreadcrumb(item) .. "  |  stale") or BuildBreadcrumb(item))
+        crumb:SetText(item.disabled and (BuildBreadcrumb(item) .. ns.L["  |  stale"]) or BuildBreadcrumb(item))
 
         return cell
     end
@@ -1326,7 +1326,7 @@ local function BuildPinnedGlobalsContent(content, stateHost, scrollFrame)
     intro:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -8)
     intro:SetPoint("RIGHT", content, "RIGHT", 0, 0)
     intro:SetJustifyH("LEFT")
-    intro:SetText("Pinned settings override the active profile across switches, imports, and resets.")
+    intro:SetText(ns.L["Pinned settings override the active profile across switches, imports, and resets."])
 
     local toolbar = CreateFrame("Frame", nil, content)
     toolbar:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -12)
@@ -1343,9 +1343,9 @@ local function BuildPinnedGlobalsContent(content, stateHost, scrollFrame)
 
     local sortState = { value = "recent" }
     local sortOptions = {
-        { value = "recent", text = "Most recent" },
-        { value = "name", text = "Name" },
-        { value = "feature", text = "Feature" },
+        { value = "recent", text = ns.L["Most recent"] },
+        { value = "name", text = ns.L["Name"] },
+        { value = "feature", text = ns.L["Feature"] },
     }
     local sortDropdown = gui:CreateFormDropdown(toolbar, nil, sortOptions, "value", sortState, function(value)
         state.sortMode = value or "recent"
@@ -1358,7 +1358,7 @@ local function BuildPinnedGlobalsContent(content, stateHost, scrollFrame)
     end
     state.sortDropdown = sortDropdown
 
-    local unpinAll = gui:CreateButton(toolbar, "Unpin All", 82, 20, function()
+    local unpinAll = gui:CreateButton(toolbar, ns.L["Unpin All"], 82, 20, function()
         ConfirmUnpinAll(gui)
     end)
     unpinAll:SetPoint("RIGHT", toolbar, "RIGHT", 0, 0)
@@ -1378,7 +1378,7 @@ local function BuildPinnedGlobalsContent(content, stateHost, scrollFrame)
     staleText:SetJustifyH("LEFT")
     state.staleText = staleText
 
-    local clearStale = gui:CreateButton(staleBanner, "Remove stale", 92, 18, function()
+    local clearStale = gui:CreateButton(staleBanner, ns.L["Remove stale"], 92, 18, function()
         for _, item in ipairs(Pins:List()) do
             if item.disabled then
                 Pins:DropPath(item.path)

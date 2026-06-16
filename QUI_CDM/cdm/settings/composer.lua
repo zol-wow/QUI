@@ -82,6 +82,16 @@ local function GetChromeFontOutline()
     if Helpers and Helpers.GetGeneralFontOutline then return Helpers.GetGeneralFontOutline() end
     return ""
 end
+-- Route raw SetFont through the CJK-fallback path so user-typed CJK text in
+-- EditBoxes renders. EditBoxes expose GetFont/SetFont/SetFontObject so
+-- ApplyFontWithFallback (SetFontObject family) works the same as on FontStrings.
+local function CJKFont(obj, path, size, flags)
+    if Helpers and Helpers.ApplyFontWithFallback then
+        Helpers.ApplyFontWithFallback(obj, path, size, flags)
+    else
+        obj:SetFont(path, size, flags)
+    end
+end
 
 local FRAME_WIDTH = 640
 local FRAME_HEIGHT = 700
@@ -96,10 +106,10 @@ local TAB_HEIGHT = 26
 local BLIZZARD_CDM_ENTRY_SOURCE = "blizzardCDM"
 
 local CONTAINER_LABELS = {
-    essential   = "Essential Cooldowns",
-    utility     = "Utility Cooldowns",
-    buff        = "Buff Icons",
-    trackedBar  = "Buff Bars",
+    essential   = ns.L["Essential Cooldowns"],
+    utility     = ns.L["Utility Cooldowns"],
+    buff        = ns.L["Buff Icons"],
+    trackedBar  = ns.L["Buff Bars"],
 }
 
 local CONTAINER_ORDER = Shared and Shared.BUILTIN_CONTAINER_KEYS
@@ -447,7 +457,7 @@ local function GetEntryIcon(entry)
 end
 
 local function GetEntryName(entry)
-    if not entry then return "Unknown" end
+    if not entry then return ns.L["Unknown"] end
     local etype = entry.type or ResolveEntryType(entry)
     if etype == "spell" then
         -- Try override spell first (hero talent transforms, e.g.,
@@ -462,11 +472,11 @@ local function GetEntryName(entry)
             info = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(entry.id)
             if info and info.name then return info.name end
         end
-        return "Spell #" .. tostring(entry.id or "?")
+        return string.format(ns.L["Spell #%s"], tostring(entry.id or "?"))
     elseif etype == "item" then
         local name = Sources and Sources.QueryItemNameByID and Sources.QueryItemNameByID(entry.id)
         if name then return name end
-        return "Item #" .. tostring(entry.id or "?")
+        return string.format(ns.L["Item #%s"], tostring(entry.id or "?"))
     elseif etype == "slot" then
         local itemID = Sources and Sources.QueryInventoryItemID
             and Sources.QueryInventoryItemID("player", entry.id)
@@ -474,11 +484,11 @@ local function GetEntryName(entry)
             local name = Sources.QueryItemNameByID(itemID)
             if name then return name end
         end
-        return "Trinket Slot " .. tostring(entry.id or "?")
+        return string.format(ns.L["Trinket Slot %s"], tostring(entry.id or "?"))
     elseif etype == "macro" then
-        return entry.macroName or "Macro"
+        return entry.macroName or ns.L["Macro"]
     end
-    return "Unknown"
+    return ns.L["Unknown"]
 end
 
 local function IsEntryDormantOnCurrentPlayer(entry, containerKey)
@@ -646,7 +656,7 @@ local function CreateSearchBox(parent, width, placeholder)
     local _csBR, _csBG, _csBB = GetChromeBgPanel()
     local _csBdR, _csBdG, _csBdB = GetChromeBorder()
     SetSimpleBackdrop(box, _csBR, _csBG, _csBB, 1, _csBdR, _csBdG, _csBdB, 1)
-    box:SetFont(GetChromeFont(), 11, GetChromeFontOutline())
+    CJKFont(box, GetChromeFont(), 11, GetChromeFontOutline())
     box:SetTextInsets(6, 6, 0, 0)
     box:SetAutoFocus(false)
     box:SetMaxLetters(50)
@@ -655,7 +665,7 @@ local function CreateSearchBox(parent, width, placeholder)
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(ph, { fontOnly = true }) end
     ph:SetPoint("LEFT", 6, 0)
     ph:SetTextColor(0.4, 0.4, 0.4, 1)
-    ph:SetText(placeholder or "Search...")
+    ph:SetText(placeholder or ns.L["Search..."])
     box._placeholder = ph
 
     box:SetScript("OnTextChanged", function(self)
@@ -779,7 +789,7 @@ local function BuildPreviewSection(parent)
     local title = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOPLEFT", 8, -6)
-    title:SetText("Live Preview")
+    title:SetText(ns.L["Live Preview"])
     title:SetTextColor(0.6, 0.6, 0.6, 1)
 
     -- Icon grid area
@@ -793,7 +803,7 @@ local function BuildPreviewSection(parent)
     local scaleLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(scaleLabel, { fontOnly = true }) end
     scaleLabel:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 8, 10)
-    scaleLabel:SetText("Preview Scale:")
+    scaleLabel:SetText(ns.L["Preview Scale:"])
     scaleLabel:SetTextColor(0.5, 0.5, 0.5, 1)
 
     local scaleValueText = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1425,28 +1435,28 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
     end
 
     -- Hidden toggle
-    local hiddenCheck = GUI:CreateFormCheckbox(overridePanel, "Hidden", "hidden", proxyDB, OnOverrideChange,
-        { description = "Hide this spell entirely from the CDM viewer. Useful for spells tracked automatically by the spec ruleset that you don't personally care about." })
+    local hiddenCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Hidden"], "hidden", proxyDB, OnOverrideChange,
+        { description = ns.L["Hide this spell entirely from the CDM viewer. Useful for spells tracked automatically by the spec ruleset that you don't personally care about."] })
     PlaceWidget(hiddenCheck)
 
     -- Glow toggle
-    local glowCheck = GUI:CreateFormCheckbox(overridePanel, "Glow Enabled", "glowEnabled", proxyDB, OnOverrideChange,
-        { description = "Allow this spell to show the spell activation overlay glow. Turn off if the glow for this specific spell becomes distracting." })
+    local glowCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Glow Enabled"], "glowEnabled", proxyDB, OnOverrideChange,
+        { description = ns.L["Allow this spell to show the spell activation overlay glow. Turn off if the glow for this specific spell becomes distracting."] })
     PlaceWidget(glowCheck)
 
     -- Proc on Usable toggle (glow when spell is castable: off CD + has resources)
-    local procCheck = GUI:CreateFormCheckbox(overridePanel, "Proc on Usable", "procOnUsable", proxyDB, OnOverrideChange,
-        { description = "Glow this spell whenever it becomes castable, not only on real spell activation overlays." })
+    local procCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Proc on Usable"], "procOnUsable", proxyDB, OnOverrideChange,
+        { description = ns.L["Glow this spell whenever it becomes castable, not only on real spell activation overlays."] })
     PlaceWidget(procCheck)
 
     -- Glow color
     -- For color pickers, we need a real table reference. Use a temp table synced back.
     local glowColorDB = { glowColor = overrides.glowColor or { ACCENT_R, ACCENT_G, ACCENT_B, 1 } }
-    local glowColorPicker = GUI:CreateFormColorPicker(overridePanel, "Glow Color", "glowColor", glowColorDB, function()
+    local glowColorPicker = GUI:CreateFormColorPicker(overridePanel, ns.L["Glow Color"], "glowColor", glowColorDB, function()
         spellData:SetSpellOverride(containerKey, spellID, "glowColor", glowColorDB.glowColor)
         OnOverrideChange()
     end, nil,
-        { description = "Per-spell override for the spell activation overlay glow color. Falls back to the container's glow color when unchanged." })
+        { description = ns.L["Per-spell override for the spell activation overlay glow color. Falls back to the container's glow color when unchanged."] })
     PlaceWidget(glowColorPicker)
 
     -- Bar color override (only for bar-type containers)
@@ -1462,7 +1472,7 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
 
             local barColorEnabled = existingColor ~= nil
             local barColorToggleDB = { barColorOverride = barColorEnabled }
-            local barColorCheck = GUI:CreateFormCheckbox(overridePanel, "Bar Color Override", "barColorOverride", barColorToggleDB, function()
+            local barColorCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Bar Color Override"], "barColorOverride", barColorToggleDB, function()
                 barColorEnabled = barColorToggleDB.barColorOverride
                 if barColorEnabled then
                     containerDB.colorOverrides[spellID] = barColorDB.barColor
@@ -1470,29 +1480,29 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
                     containerDB.colorOverrides[spellID] = nil
                 end
                 OnOverrideChange()
-            end, { description = "Use a per-spell bar color for this aura-bar spell instead of the container's default bar color." })
+            end, { description = ns.L["Use a per-spell bar color for this aura-bar spell instead of the container's default bar color."] })
             PlaceWidget(barColorCheck)
 
-            local barColorPicker = GUI:CreateFormColorPicker(overridePanel, "Bar Color", "barColor", barColorDB, function()
+            local barColorPicker = GUI:CreateFormColorPicker(overridePanel, ns.L["Bar Color"], "barColor", barColorDB, function()
                 if barColorEnabled then
                     containerDB.colorOverrides[spellID] = barColorDB.barColor
                     OnOverrideChange()
                 end
             end, nil,
-                { description = "Per-spell bar color applied when Bar Color Override is on." })
+                { description = ns.L["Per-spell bar color applied when Bar Color Override is on."] })
             PlaceWidget(barColorPicker)
         end
     end
 
     -- Duration text toggle
-    local durCheck = GUI:CreateFormCheckbox(overridePanel, "Hide Duration Text", "hideDurationText", proxyDB, OnOverrideChange,
-        { description = "Hide the numeric countdown on this spell's icon/bar only, while leaving other spells in the container unchanged." })
+    local durCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Hide Duration Text"], "hideDurationText", proxyDB, OnOverrideChange,
+        { description = ns.L["Hide the numeric countdown on this spell's icon/bar only, while leaving other spells in the container unchanged."] })
     PlaceWidget(durCheck)
 
     -- Desaturate Ignore Aura — only for cooldown containers (essential/utility)
     if cType == "cooldown" then
-        local desatIgnoreAura = GUI:CreateFormCheckbox(overridePanel, "Desaturate Ignore Aura", "desaturateIgnoreAura", proxyDB, OnOverrideChange,
-            { description = "Skip the desaturation-while-buff-active behavior for this spell. Turn on if a linked buff causes the icon to appear dimmed when you want it bright." })
+        local desatIgnoreAura = GUI:CreateFormCheckbox(overridePanel, ns.L["Desaturate Ignore Aura"], "desaturateIgnoreAura", proxyDB, OnOverrideChange,
+            { description = ns.L["Skip the desaturation-while-buff-active behavior for this spell. Turn on if a linked buff causes the icon to appear dimmed when you want it bright."] })
         PlaceWidget(desatIgnoreAura)
     end
 
@@ -1500,7 +1510,7 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
     -- routes the slider value through Set/ClearSpellOverride so 0 clears
     -- the override entirely (instead of persisting a literal 0).
     local sizeOverrideDB = { sizeOverride = overrides.sizeOverride or 0 }
-    local sizeSlider = GUI:CreateFormSlider(overridePanel, "Size Override", 0, 80, 1, "sizeOverride", sizeOverrideDB, function()
+    local sizeSlider = GUI:CreateFormSlider(overridePanel, ns.L["Size Override"], 0, 80, 1, "sizeOverride", sizeOverrideDB, function()
         local val = sizeOverrideDB.sizeOverride or 0
         if val <= 0 then
             spellData:ClearSpellOverride(containerKey, spellID, "sizeOverride")
@@ -1508,7 +1518,7 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
             spellData:SetSpellOverride(containerKey, spellID, "sizeOverride", val)
         end
         OnOverrideChange()
-    end, { deferOnDrag = true }, { description = "Per-spell icon size in pixels (0 uses the container default; 1-80 overrides it for this spell only)." })
+    end, { deferOnDrag = true }, { description = ns.L["Per-spell icon size in pixels (0 uses the container default; 1-80 overrides it for this spell only)."] })
     PlaceWidget(sizeSlider)
 
     -- Per-entry "Aura-only display" override (custom containers, item types only).
@@ -1521,14 +1531,14 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
         -- string-valued displayMode field. Same pattern as barColorOverride
         -- above.
         local auraOnlyToggleDB = { auraOnly = entry.displayMode == "auraOnly" }
-        local auraOnlyCheck = GUI:CreateFormCheckbox(overridePanel, "Aura-only display", "auraOnly", auraOnlyToggleDB, function()
+        local auraOnlyCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Aura-only display"], "auraOnly", auraOnlyToggleDB, function()
             if auraOnlyToggleDB.auraOnly then
                 entry.displayMode = "auraOnly"
             else
                 entry.displayMode = nil
             end
             OnOverrideChange()
-        end, { description = "Show only while the buff is active. Hides the cooldown phase entirely." })
+        end, { description = ns.L["Show only while the buff is active. Hides the cooldown phase entirely."] })
         PlaceWidget(auraOnlyCheck)
 
         local itemID = entry.id
@@ -1538,7 +1548,7 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
             hint:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, sy + 4)
             hint:SetPoint("RIGHT", overridePanel, "RIGHT", -8, 0)
             hint:SetJustifyH("LEFT")
-            hint:SetText("Aura will be detected the first time you use this item.")
+            hint:SetText(ns.L["Aura will be detected the first time you use this item."])
             hint:SetTextColor(0.55, 0.55, 0.55, 1)
             sy = sy - 14
         end
@@ -1634,11 +1644,11 @@ local function BuildEntryListSection(parent)
     local title = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOPLEFT", 8, -6)
-    title:SetText("Spell List")
+    title:SetText(ns.L["Spell List"])
     title:SetTextColor(0.6, 0.6, 0.6, 1)
 
     -- Search box
-    searchBox = CreateSearchBox(container, 200, "Filter spells...")
+    searchBox = CreateSearchBox(container, 200, ns.L["Filter spells..."])
     searchBox:SetPoint("TOPRIGHT", container, "TOPRIGHT", -8, -4)
 
     -- Scroll area
@@ -1814,16 +1824,16 @@ local function GetOrCreateEntryCell(index)
             and (tonumber(self._entry.id) or tonumber(self._entry.spellID))
             or nil
         if entryID then
-            GameTooltip:AddLine("ID: " .. tostring(entryID), 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(ns.L["ID: "] .. tostring(entryID), 0.5, 0.5, 0.5)
         end
         if type(self._entry) == "table" and self._entry._legacySpellbookSlot ~= nil then
-            GameTooltip:AddLine("Legacy data — may need review", 0.95, 0.6, 0.2)
+            GameTooltip:AddLine(ns.L["Legacy data — may need review"], 0.95, 0.6, 0.2)
         end
         if self._isUnknownToPlayer then
-            GameTooltip:AddLine("Dormant — not learned on this character", 0.9, 0.6, 0.2)
-            GameTooltip:AddLine("Hidden on the bar; kept in your list", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(ns.L["Dormant — not learned on this character"], 0.9, 0.6, 0.2)
+            GameTooltip:AddLine(ns.L["Hidden on the bar; kept in your list"], 0.5, 0.5, 0.5)
         elseif not IsEntryRegisteredInBlizzCDM(self._entry) then
-            GameTooltip:AddLine("Not added to /cdm", 0.95, 0.6, 0.2)
+            GameTooltip:AddLine(ns.L["Not added to /cdm"], 0.95, 0.6, 0.2)
         end
         -- Source-spec attribution: read from explicit _sourceSpecID
         -- (set by the v32 migration on each migrated entry) or fall
@@ -1837,13 +1847,13 @@ local function GetOrCreateEntryCell(index)
             local _, specName, _, _, _, classToken = GetSpecializationInfoByID(srcSpec)
             if specName then
                 local label = classToken and ("%s %s"):format(specName, classToken) or specName
-                GameTooltip:AddLine(("Source: %s"):format(label), 0.6, 0.85, 1)
+                GameTooltip:AddLine((ns.L["Source: %s"]):format(label), 0.6, 0.85, 1)
             end
         end
         if self._dragTooltipText then
             GameTooltip:AddLine(self._dragTooltipText, 0.5, 0.5, 0.5)
         end
-        GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
+        GameTooltip:AddLine(ns.L["Right-click for options"], 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
     cell:SetScript("OnLeave", function(self)
@@ -2112,7 +2122,7 @@ StopDrag = function()
     if not spellData or not activeContainer then return end
 
     if fromSpecKey ~= targetSpecKey then
-        UIErrorsFrame:AddMessage("Can only reorder within the same source spec", 1.0, 0.3, 0.3, 1.0, 3)
+        UIErrorsFrame:AddMessage(ns.L["Can only reorder within the same source spec"], 1.0, 0.3, 0.3, 1.0, 3)
         UIErrorsFrame:SetFrameStrata("TOOLTIP")
         return
     end
@@ -2144,7 +2154,7 @@ StopDrag = function()
                 end
             end
             if count >= rd.iconCount then
-                UIErrorsFrame:AddMessage("Row " .. targetRow .. " is full (" .. rd.iconCount .. "/" .. rd.iconCount .. ")", 1.0, 0.3, 0.3, 1.0, 3)
+                UIErrorsFrame:AddMessage(string.format(ns.L["Row %1$d is full (%2$d/%3$d)"], targetRow, rd.iconCount, rd.iconCount), 1.0, 0.3, 0.3, 1.0, 3)
                 UIErrorsFrame:SetFrameStrata("TOOLTIP")
                 return
             end
@@ -2234,7 +2244,7 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
     -- Build menu items
     local items = {}
     -- Settings
-    items[#items + 1] = { label = "Settings", color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
+    items[#items + 1] = { label = ns.L["Settings"], color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
         if expandedOverride == entry.id then
             HideOverridePanel(true)
         else
@@ -2274,15 +2284,15 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
             for _, rn in ipairs(activeRowNums) do
                 if rn ~= curRow then
                     local isFull = rowMax[rn] and rowCounts[rn] and rowCounts[rn] >= rowMax[rn]
-                    local lbl = "Move to Row " .. rn
+                    local lbl = string.format(ns.L["Move to Row %d"], rn)
                     if isFull then
-                        lbl = lbl .. "  (Full)"
+                        lbl = lbl .. "  " .. ns.L["(Full)"]
                     end
                     items[#items + 1] = {
                         label = lbl,
                         color = isFull and { 0.4, 0.4, 0.4 } or { ACCENT_R, ACCENT_G, ACCENT_B },
                         action = isFull and function()
-                            UIErrorsFrame:AddMessage("Row " .. rn .. " is full (" .. rowMax[rn] .. "/" .. rowMax[rn] .. ")", 1.0, 0.3, 0.3, 1.0, 3)
+                            UIErrorsFrame:AddMessage(string.format(ns.L["Row %1$d is full (%2$d/%3$d)"], rn, rowMax[rn], rowMax[rn]), 1.0, 0.3, 0.3, 1.0, 3)
                             UIErrorsFrame:SetFrameStrata("TOOLTIP")
                         end or function()
                             if InCombatLockdown() then return end
@@ -2322,7 +2332,7 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
     local allTabKeys = GetAllTabKeys()
     for _, key in ipairs(allTabKeys) do
         if key ~= activeContainer and siblings[ResolveContainerType(key)] then
-            items[#items + 1] = { label = "Move to " .. GetContainerLabel(key), color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
+            items[#items + 1] = { label = string.format(ns.L["Move to %s"], GetContainerLabel(key)), color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
                 if InCombatLockdown() then return end
                 spellData:MoveEntryBetweenContainers(activeContainer, key, entryIndex)
                 C_Timer.After(0.02, function()
@@ -2336,7 +2346,7 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
     end
 
     -- Remove
-    items[#items + 1] = { label = "Remove", color = { 0.9, 0.3, 0.3 }, action = function()
+    items[#items + 1] = { label = ns.L["Remove"], color = { 0.9, 0.3, 0.3 }, action = function()
         if InCombatLockdown() then return end
         local removeIndex = entryIndex
         local removeSpecKey = nil
@@ -2353,7 +2363,7 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
         end)
     end }
 
-    items[#items + 1] = { label = "Remove All Entries", color = { 1.0, 0.2, 0.2 }, action = function()
+    items[#items + 1] = { label = ns.L["Remove All Entries"], color = { 1.0, 0.2, 0.2 }, action = function()
         if ClearActiveContainerEntries() then
             C_Timer.After(0.02, function()
                 RefreshEntryList()
@@ -2570,11 +2580,11 @@ RefreshEntryList = function()
         cell._rowNum = rowNum or nil
         cell._isUnknownToPlayer = not IsEntryUsableOnCurrentPlayer(entry)
         if isCooldown then
-            cell._dragTooltipText = "Drag to reorder or move between rows"
+            cell._dragTooltipText = ns.L["Drag to reorder or move between rows"]
         elseif isCustomBar and db.specSpecific and cell._entrySpecKey then
-            cell._dragTooltipText = "Drag to reorder within this source spec"
+            cell._dragTooltipText = ns.L["Drag to reorder within this source spec"]
         else
-            cell._dragTooltipText = "Drag to reorder"
+            cell._dragTooltipText = ns.L["Drag to reorder"]
         end
         -- Mirrors the tooltip warning: red-tint icons that are usable on
         -- this class but currently absent from Blizzard's CDM viewer.
@@ -2666,9 +2676,9 @@ RefreshEntryList = function()
             local rd = db["row" .. rowNum]
             local maxCount = rd and rd.iconCount or 0
             local isFull = count >= maxCount
-            local headerLabel = "Row " .. rowNum .. "  (" .. count .. "/" .. maxCount .. ")"
+            local headerLabel = string.format(ns.L["Row %1$d  (%2$d/%3$d)"], rowNum, count, maxCount)
             if isFull and count > 0 then
-                headerLabel = headerLabel .. "  |cffff4d4dFull|r"
+                headerLabel = headerLabel .. "  |cffff4d4d" .. ns.L["Full"] .. "|r"
             end
             RenderSectionHeader(headerLabel, count == 0, rowNum)
             if count == 0 then
@@ -2682,7 +2692,7 @@ RefreshEntryList = function()
                 hdr:SetHeight(18)
                 local _eHdrR, _eHdrG, _eHdrB = GetChromeBgPanel()
                 hdr:SetBackdropColor(_eHdrR, _eHdrG, _eHdrB, 0.3)
-                hdr._label:SetText("  (empty — drag or right-click icons to move between rows)")
+                hdr._label:SetText("  " .. ns.L["(empty — drag or right-click icons to move between rows)"])
                 hdr._label:SetTextColor(0.35, 0.35, 0.35, 1)
                 hdr._rowNum = rowNum
                 hdr:Show()
@@ -2695,7 +2705,7 @@ RefreshEntryList = function()
             end
         end
         if #overflowEntries > 0 then
-            RenderSectionHeader("Overflow  (" .. #overflowEntries .. " over row limits)", false)
+            RenderSectionHeader(string.format(ns.L["Overflow  (%d over row limits)"], #overflowEntries), false)
             for _, item in ipairs(overflowEntries) do
                 RenderEntryCell(item.entry, item.idx)
             end
@@ -2703,7 +2713,7 @@ RefreshEntryList = function()
         end
         if #cooldownDormantEntries > 0 then
             RenderSectionHeader(
-                "Dormant — Not Learned on This Character  (" .. #cooldownDormantEntries .. ")",
+                string.format(ns.L["Dormant — Not Learned on This Character  (%d)"], #cooldownDormantEntries),
                 false)
             for _, item in ipairs(cooldownDormantEntries) do
                 RenderEntryCell(item.entry, item.idx)
@@ -2760,7 +2770,7 @@ RefreshEntryList = function()
 
             if #dormantEntries > 0 then
                 RenderSectionHeader(
-                    "Dormant — Not Learned on This Character  (" .. #dormantEntries .. ")",
+                    string.format(ns.L["Dormant — Not Learned on This Character  (%d)"], #dormantEntries),
                     false)
                 if reverse then
                     for i = #dormantEntries, 1, -1 do
@@ -2878,7 +2888,7 @@ local function BuildAddSection(parent)
     local title = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOPLEFT", 8, -6)
-    title:SetText("Add Entries")
+    title:SetText(ns.L["Add Entries"])
     title:SetTextColor(0.6, 0.6, 0.6, 1)
 
     -- Tab bar
@@ -2889,7 +2899,7 @@ local function BuildAddSection(parent)
     container._tabBar = tabBar
 
     -- Search box for add list
-    addSearchBox = CreateSearchBox(container, 180, "Search to add...")
+    addSearchBox = CreateSearchBox(container, 180, ns.L["Search to add..."])
     addSearchBox:SetPoint("TOPRIGHT", container, "TOPRIGHT", -8, -22)
 
     -- Scroll area
@@ -2972,18 +2982,18 @@ local function GetOrCreateAddCell(index)
         GameTooltip:AddLine(name, 1, 1, 1)
         local sid = self._sourceEntry.spellID or self._sourceEntry._entryID or ""
         if sid ~= "" then
-            GameTooltip:AddLine("ID: " .. tostring(sid), 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(ns.L["ID: "] .. tostring(sid), 0.5, 0.5, 0.5)
         end
         if self._isUnlearned then
-            GameTooltip:AddLine("Not Learned", 0.9, 0.6, 0.2)
+            GameTooltip:AddLine(ns.L["Not Learned"], 0.9, 0.6, 0.2)
         end
         if self._isMissingFromCDM then
-            GameTooltip:AddLine("Not added to /cdm", 0.95, 0.6, 0.2)
+            GameTooltip:AddLine(ns.L["Not added to /cdm"], 0.95, 0.6, 0.2)
         end
         if self._isOwned then
-            GameTooltip:AddLine("Already added", 0.6, 0.6, 0.6)
+            GameTooltip:AddLine(ns.L["Already added"], 0.6, 0.6, 0.6)
         else
-            GameTooltip:AddLine("Right-click to add", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(ns.L["Right-click to add"], 0.5, 0.5, 0.5)
         end
         -- Surface "no known aura" hint for item picks whose aura
         -- isn't resolvable yet. HasResolvableAuraForItem returns
@@ -3000,7 +3010,7 @@ local function GetOrCreateAddCell(index)
             if spellData and spellData.HasResolvableAuraForItem
                 and not spellData:HasResolvableAuraForItem(itemIDForHint) then
                 GameTooltip:AddLine(
-                    "No known aura yet — will appear on first use.",
+                    ns.L["No known aura yet — will appear on first use."],
                     0.55, 0.55, 0.55, true)
             end
         end
@@ -3039,7 +3049,7 @@ local function AppendSpellIDSearchCandidate(sourceEntries, filterText)
     local icon = info and info.iconID or 0
     sourceEntries[#sourceEntries + 1] = {
         spellID = asNum,
-        name = name ~= "" and name or ("Spell #" .. tostring(asNum)),
+        name = name ~= "" and name or string.format(ns.L["Spell #%s"], tostring(asNum)),
         icon = icon,
     }
     return true
@@ -3202,11 +3212,11 @@ RefreshAddList = function()
             if not hasSlotEntry(slotID) then
                 local itemID = Sources and Sources.QueryInventoryItemID
                     and Sources.QueryInventoryItemID("player", slotID)
-                local name = slotID == 13 and "Top Trinket (Slot 13)" or "Bottom Trinket (Slot 14)"
+                local name = slotID == 13 and ns.L["Top Trinket (Slot 13)"] or ns.L["Bottom Trinket (Slot 14)"]
                 local icon = 0
                 if itemID then
                     local n = Sources and Sources.QueryItemNameByID and Sources.QueryItemNameByID(itemID)
-                    if n then name = n .. "  (" .. (slotID == 13 and "Top Slot" or "Bottom Slot") .. ")" end
+                    if n then name = n .. "  (" .. (slotID == 13 and ns.L["Top Slot"] or ns.L["Bottom Slot"]) .. ")" end
                     local i = Sources and Sources.QueryItemIconByID and Sources.QueryItemIconByID(itemID)
                     if i then icon = i end
                 end
@@ -3281,7 +3291,7 @@ RefreshAddList = function()
                 end
                 sourceEntries[1] = {
                     spellID = asNum,
-                    name = name ~= "" and name or ("Spell #" .. tostring(asNum)),
+                    name = name ~= "" and name or string.format(ns.L["Spell #%s"], tostring(asNum)),
                     icon = icon,
                 }
             end
@@ -3416,7 +3426,7 @@ RefreshAddList = function()
                                 end
                             end
                             if not targetRow then
-                                UIErrorsFrame:AddMessage("All rows are full — remove a spell or increase row size", 1.0, 0.3, 0.3, 1.0, 3)
+                                UIErrorsFrame:AddMessage(ns.L["All rows are full — remove a spell or increase row size"], 1.0, 0.3, 0.3, 1.0, 3)
                                 UIErrorsFrame:SetFrameStrata("TOOLTIP")
                                 return
                             end
@@ -3522,15 +3532,15 @@ RefreshAddList = function()
     local hintText
     if cellIndex == 0 then
         if activeAddTab == "cooldowns" then
-            hintText = "Type a spell name or numeric Spell ID in the search box above. Numeric IDs are resolved as cooldowns for this bar."
+            hintText = ns.L["Type a spell name or numeric Spell ID in the search box above. Numeric IDs are resolved as cooldowns for this bar."]
         elseif activeAddTab == "auras" then
-            hintText = "Type a buff/debuff name or numeric Spell ID in the search box above. Numeric IDs are resolved as auras for this bar."
+            hintText = ns.L["Type a buff/debuff name or numeric Spell ID in the search box above. Numeric IDs are resolved as auras for this bar."]
         elseif activeAddTab == "by_spell_id" then
-            hintText = "Type a numeric spell ID into the search box above to resolve it."
+            hintText = ns.L["Type a numeric spell ID into the search box above to resolve it."]
         elseif activeAddTab == "active_buffs" then
-            hintText = "No buffs active on you right now. Pop a trinket, potion, or cast a spell, then click this tab again."
+            hintText = ns.L["No buffs active on you right now. Pop a trinket, potion, or cast a spell, then click this tab again."]
         elseif activeAddTab == "active_debuffs" then
-            hintText = "No harmful debuffs on you right now."
+            hintText = ns.L["No harmful debuffs on you right now."]
         end
     end
     if hintText then
@@ -3586,21 +3596,21 @@ local function BuildAddTabs()
     if isBuiltIn then
         if containerType == "cooldown" then
             tabs = {
-                { key = "cdm_spells",    label = "Blizzard CDM" },
-                { key = "all_cooldowns", label = "All Cooldowns" },
-                { key = "items",         label = "Items & Trinkets" },
+                { key = "cdm_spells",    label = ns.L["Blizzard CDM"] },
+                { key = "all_cooldowns", label = ns.L["All Cooldowns"] },
+                { key = "items",         label = ns.L["Items & Trinkets"] },
             }
         elseif containerType == "aura" then
             tabs = {
-                { key = "cdm_spells",     label = "Blizzard CDM" },
-                { key = "other_auras",    label = "Other Auras" },
-                { key = "items",          label = "Items & Trinkets" },
+                { key = "cdm_spells",     label = ns.L["Blizzard CDM"] },
+                { key = "other_auras",    label = ns.L["Other Auras"] },
+                { key = "items",          label = ns.L["Items & Trinkets"] },
             }
         elseif containerType == "auraBar" then
             tabs = {
-                { key = "cdm_spells",     label = "Blizzard CDM" },
-                { key = "other_auras",    label = "Other Auras" },
-                { key = "items",          label = "Items & Trinkets" },
+                { key = "cdm_spells",     label = ns.L["Blizzard CDM"] },
+                { key = "other_auras",    label = ns.L["Other Auras"] },
+                { key = "items",          label = ns.L["Items & Trinkets"] },
             }
         end
     else
@@ -3610,9 +3620,9 @@ local function BuildAddTabs()
         -- the ID with the active tab's kind; text input filters by name) so
         -- it doesn't need its own tab.
         tabs = {
-            { key = "cooldowns", label = "Cooldowns" },
-            { key = "auras",     label = "Auras" },
-            { key = "items",     label = "Items" },
+            { key = "cooldowns", label = ns.L["Cooldowns"] },
+            { key = "auras",     label = ns.L["Auras"] },
+            { key = "items",     label = ns.L["Items"] },
         }
     end
 
@@ -3692,14 +3702,14 @@ local function ShowNewContainerPopup(onCreated)
     local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOP", 0, -10)
-    title:SetText("New Container")
+    title:SetText(ns.L["New Container"])
     title:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
 
     -- Name label + editbox
     local nameLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(nameLabel, { fontOnly = true }) end
     nameLabel:SetPoint("TOPLEFT", 12, -36)
-    nameLabel:SetText("Name:")
+    nameLabel:SetText(ns.L["Name:"])
     nameLabel:SetTextColor(0.7, 0.7, 0.7, 1)
 
     local nameBox = CreateFrame("EditBox", nil, popup, "BackdropTemplate")
@@ -3708,11 +3718,11 @@ local function ShowNewContainerPopup(onCreated)
     local _nbBR, _nbBG, _nbBB = GetChromeBgPanel()
     local _nbBdR, _nbBdG, _nbBdB = GetChromeBorder()
     SkinBase.ApplyPixelBackdrop(nameBox, 1, true, false, { _nbBdR, _nbBdG, _nbBdB, 1 }, { _nbBR, _nbBG, _nbBB, 1 })
-    nameBox:SetFont(GetChromeFont(), 11, GetChromeFontOutline())
+    CJKFont(nameBox, GetChromeFont(), 11, GetChromeFontOutline())
     nameBox:SetTextInsets(6, 6, 0, 0)
     nameBox:SetAutoFocus(false)
     nameBox:SetMaxLetters(30)
-    nameBox:SetText("My Container")
+    nameBox:SetText(ns.L["My Container"])
     nameBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     nameBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
@@ -3720,7 +3730,7 @@ local function ShowNewContainerPopup(onCreated)
     local typeLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(typeLabel, { fontOnly = true }) end
     typeLabel:SetPoint("TOPLEFT", 12, -82)
-    typeLabel:SetText("Type:")
+    typeLabel:SetText(ns.L["Type:"])
     typeLabel:SetTextColor(0.7, 0.7, 0.7, 1)
 
     -- Phase B.3: two unified options. Icons accept any mix of spells,
@@ -3728,8 +3738,8 @@ local function ShowNewContainerPopup(onCreated)
     -- The entry list picker (Items / Cooldowns / Active Buffs / By Spell ID)
     -- lets the user fill in whatever content they want regardless of choice.
     local TYPE_OPTIONS = {
-        { value = "cooldown", text = "Custom Icons" },
-        { value = "auraBar",  text = "Custom Bars" },
+        { value = "cooldown", text = ns.L["Custom Icons"] },
+        { value = "auraBar",  text = ns.L["Custom Bars"] },
     }
 
     local selectedType = "cooldown"
@@ -3771,7 +3781,7 @@ local function ShowNewContainerPopup(onCreated)
     UpdateTypeButtons()
 
     -- Create + Cancel buttons
-    local createBtn = CreateAccentButton(popup, "Create", 120, 26)
+    local createBtn = CreateAccentButton(popup, ns.L["Create"], 120, 26)
     createBtn:SetPoint("BOTTOMLEFT", 12, 12)
     createBtn:SetScript("OnClick", function()
         local name = nameBox:GetText()
@@ -3814,7 +3824,7 @@ local function ShowNewContainerPopup(onCreated)
         popup:Hide()
     end)
 
-    local cancelBtn = CreateSmallButton(popup, "Cancel", 80, 26)
+    local cancelBtn = CreateSmallButton(popup, ns.L["Cancel"], 80, 26)
     cancelBtn:SetPoint("BOTTOMRIGHT", -12, 12)
     cancelBtn:SetScript("OnClick", function()
         popup:Hide()
@@ -3855,15 +3865,15 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     local renameText = renameBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(renameText, { fontOnly = true }) end
     renameText:SetPoint("LEFT", 8, 0)
-    renameText:SetText("Rename")
+    renameText:SetText(ns.L["Rename"])
     renameText:SetTextColor(0.8, 0.8, 0.8, 1)
     renameBtn:SetScript("OnClick", function()
         menu:Hide()
         -- Simple rename via chat input
         StaticPopupDialogs["QUI_RENAME_CONTAINER"] = {
-            text = "Enter new name:",
-            button1 = "OK",
-            button2 = "Cancel",
+            text = ns.L["Enter new name:"],
+            button1 = ns.L["OK"],
+            button2 = ns.L["Cancel"],
             hasEditBox = true,
             maxLetters = 30,
             OnAccept = function(self)
@@ -3904,14 +3914,14 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     local deleteText = deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(deleteText, { fontOnly = true }) end
     deleteText:SetPoint("LEFT", 8, 0)
-    deleteText:SetText("Delete")
+    deleteText:SetText(ns.L["Delete"])
     deleteText:SetTextColor(0.9, 0.3, 0.3, 1)
     deleteBtn:SetScript("OnClick", function()
         menu:Hide()
         StaticPopupDialogs["QUI_DELETE_CONTAINER"] = {
-            text = "Delete this container? This cannot be undone.",
-            button1 = "Delete",
-            button2 = "Cancel",
+            text = ns.L["Delete this container? This cannot be undone."],
+            button1 = ns.L["Delete"],
+            button2 = ns.L["Cancel"],
             OnAccept = function()
                 if ns.CDMContainers and ns.CDMContainers.DeleteContainer then
                     ns.CDMContainers.DeleteContainer(containerKey)
@@ -4040,7 +4050,7 @@ BuildContainerTabs = function()
         newBtn._label:SetPoint("LEFT", 8, 0)
         newBtn._label:SetJustifyH("LEFT")
     end
-    newBtn._label:SetText("+ New")
+    newBtn._label:SetText(ns.L["+ New"])
     newBtn:ClearAllPoints()
     newBtn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", 2, yOff)
     newBtn:SetPoint("RIGHT", tabBar, "RIGHT", -2, 0)
@@ -4069,7 +4079,7 @@ local function BuildFooter(parent)
     footer:SetHeight(32)
 
     -- Reset to Blizzard Defaults
-    local resetBtn = CreateSmallButton(footer, "Reset to Blizzard Defaults", 180, 24)
+    local resetBtn = CreateSmallButton(footer, ns.L["Reset to Blizzard Defaults"], 180, 24)
     resetBtn._label:SetTextColor(0.9, 0.6, 0.2, 1)
     resetBtn:SetPoint("LEFT", footer, "LEFT", 8, 0)
     resetBtn:SetSize(180, 24)
@@ -4093,18 +4103,18 @@ local function BuildFooter(parent)
                     spellData:ResnapshotFromBlizzard(activeContainer)
                 end
                 resetBtn._confirmPending = false
-                resetBtn._label:SetText("Reset to Blizzard Defaults")
+                resetBtn._label:SetText(ns.L["Reset to Blizzard Defaults"])
                 resetBtn._label:SetTextColor(0.9, 0.6, 0.2, 1)
                 C_Timer.After(0.05, RefreshAll_Composer)
             else
                 resetBtn._confirmPending = true
-                resetBtn._label:SetText("Click Again to Confirm")
+                resetBtn._label:SetText(ns.L["Click Again to Confirm"])
                 resetBtn._label:SetTextColor(0.9, 0.3, 0.3, 1)
                 -- Auto-cancel after 3 seconds
                 C_Timer.After(3, function()
                     if resetBtn._confirmPending then
                         resetBtn._confirmPending = false
-                        resetBtn._label:SetText("Reset to Blizzard Defaults")
+                        resetBtn._label:SetText(ns.L["Reset to Blizzard Defaults"])
                         resetBtn._label:SetTextColor(0.9, 0.6, 0.2, 1)
                     end
                 end)
@@ -4116,8 +4126,8 @@ local function BuildFooter(parent)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetFrameStrata("TOOLTIP")
         GameTooltip:SetFrameLevel(250)
-        GameTooltip:SetText("Reset Spell List", 1, 1, 1)
-        GameTooltip:AddLine("Clears all customizations and re-snapshots spells from Blizzard's CDM data.", 0.7, 0.7, 0.7, true)
+        GameTooltip:SetText(ns.L["Reset Spell List"], 1, 1, 1)
+        GameTooltip:AddLine(ns.L["Clears all customizations and re-snapshots spells from Blizzard's CDM data."], 0.7, 0.7, 0.7, true)
         GameTooltip:Show()
     end)
     resetBtn:SetScript("OnLeave", function(self)
@@ -4138,7 +4148,7 @@ function RefreshAll_Composer() -- luacheck: ignore (assigns forward-declared upv
 
     -- Update title
     if composerFrame._title then
-        composerFrame._title:SetText("Spell Manager - " .. GetContainerLabel(activeContainer))
+        composerFrame._title:SetText(string.format(ns.L["Spell Manager - %s"], GetContainerLabel(activeContainer)))
     end
 
     RefreshPreview()

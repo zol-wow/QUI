@@ -145,7 +145,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
         end
 
-        L.headerAt(opts.header or "Currencies")
+        L.headerAt(opts.header or ns.L["Currencies"])
         local currencyFrame = CreateFrame("Frame", nil, content)
         local rowFrames = {}
 
@@ -153,7 +153,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         hintFs:SetPoint("TOPLEFT", currencyFrame, "TOPLEFT", 4, -4)
         hintFs:SetPoint("RIGHT", currencyFrame, "RIGHT", -4, 0)
         hintFs:SetTextColor(0.6, 0.6, 0.6, 0.8)
-        hintFs:SetText(opts.hint or "First 6 enabled are displayed. Use arrows to reorder.")
+        hintFs:SetText(opts.hint or ns.L["First 6 enabled are displayed. Use arrows to reorder."])
 
         local CURRENCY_ROW_HEIGHT = 28
         local function RebuildCurrencyRows()
@@ -189,7 +189,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         refresh()
                         notify(r._cb)
                     end, { description = opts.toggleDescription
-                        or "Toggle this currency in the Currencies datatext. Use the arrows to reorder." })
+                        or ns.L["Toggle this currency in the Currencies datatext. Use the arrows to reorder."] })
                     r._cb:SetPoint("LEFT", 4, 0)
 
                     r._name = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -268,12 +268,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
                 table.sort(rows, function(a, b) return a.text < b.text end)
             end
-            local dd = { { value = "", text = "Track a currency..." } }
+            local dd = { { value = "", text = ns.L["Track a currency..."] } }
             for _, o in ipairs(rows) do dd[#dd + 1] = o end
             return dd
         end
 
-        local trackDesc = "Add a currency you own to Blizzard's backpack-tracked list — the pool every Currencies section uses. Currencies under a collapsed header in the Currency tab aren't listed; expand the header there first."
+        local trackDesc = ns.L["Add a currency you own to Blizzard's backpack-tracked list — the pool every Currencies section uses. Currencies under a collapsed header in the Currency tab aren't listed; expand the header there first."]
         local trackDD
         trackDD = GUI:CreateFormDropdown(currencyFrame, nil, BuildTrackableOptions(), nil, nil, function(val)
             if not val or val == "" then return end
@@ -283,7 +283,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             refresh()
             notify(trackDD)
         end, { description = trackDesc }, { searchable = true })
-        AttachDropdownTooltip(trackDD, trackDesc, "Track a Currency")
+        AttachDropdownTooltip(trackDD, trackDesc, ns.L["Track a Currency"])
 
         local rowCount = math.max(#ordered, 1)
         local listBottom = 24 + rowCount * CURRENCY_ROW_HEIGHT
@@ -299,14 +299,14 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local empty = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             empty:SetPoint("TOPLEFT", currencyFrame, "TOPLEFT", 4, -24)
             empty:SetTextColor(0.6, 0.6, 0.6, 1)
-            empty:SetText(opts.emptyText or "No tracked currencies. Track one below or via the Currency tab.")
+            empty:SetText(opts.emptyText or ns.L["No tracked currencies. Track one below or via the Currency tab."])
         end
 
         local cNoteRow = CreateFrame("Frame", nil, content)
         local cNote = cNoteRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         cNote:SetPoint("LEFT", cNoteRow, "LEFT", 0, 0)
         cNote:SetTextColor(0.6, 0.6, 0.6, 0.8)
-        cNote:SetText(opts.note or "Currencies applies to all panels with the Currencies datatext.")
+        cNote:SetText(opts.note or ns.L["Currencies applies to all panels with the Currencies datatext."])
         L.placeCustom(cNoteRow, 18)
     end
     ns.QUI_BuildCurrencyOrderSection = BuildCurrencyOrderSection
@@ -347,7 +347,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if panelDB.enabled == nil then panelDB.enabled = true end
         if panelDB.locked == nil then panelDB.locked = false end
         if not panelDB.name or panelDB.name == "" then
-            panelDB.name = "Datapanel"
+            panelDB.name = ns.L["Datapanel"]
         end
         if not panelDB.width then panelDB.width = 300 end
         if not panelDB.height then panelDB.height = 22 end
@@ -382,7 +382,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
     local function GetDatatextOptions(addon)
         local dtOptions = {
-            { value = "", text = "(empty)" },
+            { value = "", text = ns.L["(empty)"] },
         }
         if addon and addon.Datatexts then
             local allDatatexts = addon.Datatexts:GetAll()
@@ -391,7 +391,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 -- Third-party LDB feeds register under category "Plugins";
                 -- tag them so they're recognizable among the built-ins.
                 if datatextDef.category == "Plugins" then
-                    text = text .. " |cff999999(plugin)|r"
+                    text = text .. ns.L[" |cff999999(plugin)|r"]
                 end
                 dtOptions[#dtOptions + 1] = {
                     value = datatextDef.id,
@@ -404,14 +404,14 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
     local function GetDatapanelSelectorOptions(profile)
         local opts = {
-            { value = DATATEXT_MINIMAP_KEY, text = "Minimap Panel" },
+            { value = DATATEXT_MINIMAP_KEY, text = ns.L["Minimap Panel"] },
         }
         local dtStore = EnsureCustomDatapanelStore(profile)
         for i, panelDB in ipairs(dtStore.panels) do
             EnsureCustomDatapanelDefaults(panelDB)
             opts[#opts + 1] = {
                 value = panelDB.id,
-                text = panelDB.name or ("Datapanel " .. i),
+                text = panelDB.name or (ns.L["Datapanel"] .. " " .. i),
             }
         end
         return opts
@@ -488,7 +488,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         local newPanel = EnsureCustomDatapanelDefaults({
             id = newID,
-            name = "Datapanel " .. (#dtStore.panels + 1),
+            name = ns.L["Datapanel"] .. " " .. (#dtStore.panels + 1),
         })
         dtStore.panels[#dtStore.panels + 1] = newPanel
         return newPanel
@@ -529,7 +529,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             um:RegisterElement({
                 key = elementKey,
                 label = panelDB.name or panelID,
-                group = "Display",
+                group = ns.L["Display"],
                 order = 10 + #(EnsureCustomDatapanelStore(profile).panels or {}),
                 isOwned = true,
                 getFrame = function()
@@ -642,7 +642,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
     local function GetDatatextDisplayName(addon, datatextID)
         if not datatextID or datatextID == "" then
-            return "(empty)"
+            return ns.L["(empty)"]
         end
         if addon and addon.Datatexts and addon.Datatexts.Get then
             local datatextDef = addon.Datatexts:Get(datatextID)
@@ -730,7 +730,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local dt = EnsureMinimapDatatextConfig(profile)
             return {
                 key = DATATEXT_MINIMAP_KEY,
-                label = "Minimap Panel",
+                label = ns.L["Minimap Panel"],
                 isMinimap = true,
                 positionKey = "datatextPanel",
                 panelDB = dt,
@@ -876,7 +876,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 self.anchorBox:ClearAllPoints()
                 self.anchorBox:SetPoint("TOP", self.canvas, "TOP", 0, 0)
                 self.anchorBox:Show()
-                self.anchorLabel:SetText(cfg.anchorLabel or "Minimap")
+                self.anchorLabel:SetText(cfg.anchorLabel or ns.L["Minimap"])
                 self.panel:ClearAllPoints()
                 self.panel:SetPoint("TOP", self.anchorBox, "BOTTOM", 0, -gap)
             else
@@ -896,11 +896,16 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             self.canvas:SetPoint("CENTER")
             self.canvas:SetScale(scale)
 
-            if not self.emptyText:SetFont(fontPath, math.max(fontSize - 1, 10), fontOutline) then
+            if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+                ns.Helpers.ApplyFontWithFallback(self.emptyText, fontPath, math.max(fontSize - 1, 10), fontOutline)
+            else
+                self.emptyText:SetFont(fontPath, math.max(fontSize - 1, 10), fontOutline)
+            end
+            if not self.emptyText:GetFont() then
                 self.emptyText:SetFont(STANDARD_TEXT_FONT, math.max(fontSize - 1, 10), fontOutline)
             end
             if #activeTexts == 0 then
-                self.emptyText:SetText(cfg.emptyText or "Assign a datatext to preview this panel.")
+                self.emptyText:SetText(cfg.emptyText or ns.L["Assign a datatext to preview this panel."])
                 self.emptyText:Show()
             else
                 self.emptyText:Hide()
@@ -917,7 +922,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     slot:ClearAllPoints()
                     slot:SetPoint("LEFT", self.panel, "LEFT", (i - 1) * slotWidth, 0)
                     slot:SetSize(slotWidth, panelHeight)
-                    if not slot.text:SetFont(fontPath, fontSize, fontOutline) then
+                    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+                        ns.Helpers.ApplyFontWithFallback(slot.text, fontPath, fontSize, fontOutline)
+                    else
+                        slot.text:SetFont(fontPath, fontSize, fontOutline)
+                    end
+                    if not slot.text:GetFont() then
                         slot.text:SetFont(STANDARD_TEXT_FONT, fontSize, fontOutline)
                     end
                     slot.text:SetText(activeTexts[i])
@@ -987,8 +997,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 slotTexts = BuildSlotPreviewTexts(),
                 showAnchor = false,
                 emptyText = selected.isMinimap
-                    and "Assign at least one minimap slot to preview this panel."
-                    or "Assign at least one slot to preview this custom panel.",
+                    and ns.L["Assign at least one minimap slot to preview this panel."]
+                    or ns.L["Assign at least one slot to preview this custom panel."],
             })
         end
 
@@ -1011,10 +1021,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local L = MakeLayout(content)
 
         PlaceRegistryMissingNotice(L, content,
-            "The Datatexts module addon is disabled — enable it under Modules to configure datatexts. The datatext dropdowns below are empty until it loads.")
+            ns.L["The Datatexts module addon is disabled — enable it under Modules to configure datatexts. The datatext dropdowns below are empty until it loads."])
 
         -- PANEL SELECTOR + PREVIEW (custom layout, outside cards)
-        L.headerAt("Panel Selector")
+        L.headerAt(ns.L["Panel Selector"])
         local selectorRow = CreateFrame("Frame", nil, content)
         L.placeCustom(selectorRow, 30)
         local selectorState = { activePanel = selected.key }
@@ -1028,17 +1038,17 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 DatatextPanelState.activePanel = val
                 NotifyStructuralRefresh()
             end,
-            { description = "Pick which datatext panel you want to configure. The minimap panel and every custom datapanel are edited from this same tab." },
+            { description = ns.L["Pick which datatext panel you want to configure. The minimap panel and every custom datapanel are edited from this same tab."] },
             { searchable = true }
         )
         selector:SetPoint("TOPLEFT", selectorRow, "TOPLEFT", 0, 0)
         selector:SetPoint("RIGHT", selectorRow, "RIGHT", -196, 0)
         if selector.SetValue then selector:SetValue(selected.key, true) end
         AttachDropdownTooltip(selector,
-            "Pick which datatext panel you want to configure. The minimap panel and every custom datapanel are edited from this same tab.",
-            "Datatext Panel")
+            ns.L["Pick which datatext panel you want to configure. The minimap panel and every custom datapanel are edited from this same tab."],
+            ns.L["Datatext Panel"])
 
-        local newBtn = GUI:CreateButton(selectorRow, "+ New", 90, 24, function()
+        local newBtn = GUI:CreateButton(selectorRow, ns.L["+ New"], 90, 24, function()
             local newPanel = CreateCustomDatapanel(profile)
             RegisterCustomDatapanelRuntime(newPanel, QUICore, profile)
             DatatextPanelState.activePanel = newPanel.id
@@ -1047,15 +1057,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end, "primary")
         newBtn:SetPoint("TOPRIGHT", selectorRow, "TOPRIGHT", -100, -2)
 
-        local deleteBtn = GUI:CreateButton(selectorRow, "Delete", 90, 24, function()
+        local deleteBtn = GUI:CreateButton(selectorRow, ns.L["Delete"], 90, 24, function()
             if selected.isMinimap then return end
 
             GUI:ShowConfirmation({
-                title = "Delete Panel?",
-                message = "Delete '" .. (selected.label or "Datapanel") .. "'?",
-                warningText = "This cannot be undone.",
-                acceptText = "Delete",
-                cancelText = "Cancel",
+                title = ns.L["Delete Panel?"],
+                message = ns.L["Delete '"] .. (selected.label or ns.L["Datapanel"]) .. ns.L["'?"],
+                warningText = ns.L["This cannot be undone."],
+                acceptText = ns.L["Delete"],
+                cancelText = ns.L["Cancel"],
                 isDestructive = true,
                 onAccept = function()
                     local _, panelIndex, panels = FindCustomDatapanel(profile, selected.key)
@@ -1082,47 +1092,47 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         hint:SetPoint("RIGHT", hintRow, "RIGHT", 0, 0)
         hint:SetTextColor(0.6, 0.6, 0.6, 0.85)
         hint:SetText(selected.isMinimap
-            and "Preview shows the minimap datatext panel only. Width follows your minimap size."
-            or "Sample text preview only. Empty slots collapse just like they do in-game.")
+            and ns.L["Preview shows the minimap datatext panel only. Width follows your minimap size."]
+            or ns.L["Sample text preview only. Empty slots collapse just like they do in-game."])
         hint:SetJustifyH("LEFT")
         L.placeCustom(hintRow, 22)
 
         -- PANEL SETTINGS + SLOT CONFIGURATION
         if selected.isMinimap then
-            L.headerAt("Panel Settings")
+            L.headerAt(ns.L["Panel Settings"])
             local ps = L.sectionAt()
             local enW = GUI:CreateFormCheckbox(ps.frame, nil, "enabled", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "Show the datatext panel anchored below the minimap." })
+                { description = ns.L["Show the datatext panel anchored below the minimap."] })
             local singleW = GUI:CreateFormCheckbox(ps.frame, nil, "forceSingleLine", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "Keep all minimap datatext slots on one row instead of allowing wrap." })
-            ps.AddRow(row(ps.frame, "Enable Minimap Datatext", enW), row(ps.frame, "Force Single Line", singleW))
+                { description = ns.L["Keep all minimap datatext slots on one row instead of allowing wrap."] })
+            ps.AddRow(row(ps.frame, ns.L["Enable Minimap Datatext"], enW), row(ps.frame, ns.L["Force Single Line"], singleW))
 
             local hW = GUI:CreateFormSlider(ps.frame, nil, 18, 50, 1, "height", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "Pixel height reserved per row of minimap datatext." })
+                { description = ns.L["Pixel height reserved per row of minimap datatext."] })
             local bgW = GUI:CreateFormSlider(ps.frame, nil, 0, 100, 5, "bgOpacity", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "Opacity of the minimap datatext background (0 invisible, 100 fully opaque)." })
-            ps.AddRow(row(ps.frame, "Panel Height (Per Row)", hW), row(ps.frame, "Background Transparency", bgW))
+                { description = ns.L["Opacity of the minimap datatext background (0 invisible, 100 fully opaque)."] })
+            ps.AddRow(row(ps.frame, ns.L["Panel Height (Per Row)"], hW), row(ps.frame, ns.L["Background Transparency"], bgW))
 
             local borSizeW = GUI:CreateFormSlider(ps.frame, nil, 0, 8, 1, "borderSize", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "Thickness of the minimap datatext border. Set to 0 to hide it." })
+                { description = ns.L["Thickness of the minimap datatext border. Set to 0 to hide it."] })
             local borSrcW, borColorW = ns.QUI_BorderControl.Attach(GUI, ps.frame, dtGlobal, "", RefreshAllDatatextSurfaces,
-                { label = "Border Color Source", colorLabel = "Border Color",
-                  colorDescription = "Color of the minimap datatext border." })
-            ps.AddRow(row(ps.frame, "Border Size (0=hidden)", borSizeW), row(ps.frame, "Border Color Source", borSrcW))
-            ps.AddRow(row(ps.frame, "Border Color", borColorW))
+                { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"],
+                  colorDescription = ns.L["Color of the minimap datatext border."] })
+            ps.AddRow(row(ps.frame, ns.L["Border Size (0=hidden)"], borSizeW), row(ps.frame, ns.L["Border Color Source"], borSrcW))
+            ps.AddRow(row(ps.frame, ns.L["Border Color"], borColorW))
 
             local offYW = GUI:CreateFormSlider(ps.frame, nil, -40, 40, 1, "offsetY", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "Vertical offset from the minimap. Positive moves up, negative moves down." })
+                { description = ns.L["Vertical offset from the minimap. Positive moves up, negative moves down."] })
             local fSizeW = GUI:CreateFormSlider(ps.frame, nil, 9, 18, 1, "fontSize", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "Font size of the minimap datatext labels and values." })
-            ps.AddRow(row(ps.frame, "Vertical Offset", offYW), row(ps.frame, "Text Size", fSizeW))
+                { description = ns.L["Font size of the minimap datatext labels and values."] })
+            ps.AddRow(row(ps.frame, ns.L["Vertical Offset"], offYW), row(ps.frame, ns.L["Text Size"], fSizeW))
             L.closeSection(ps)
 
             for slotIdx = 1, 3 do
                 local slotKey = "slot" .. slotIdx
                 local slotData = dtGlobal[slotKey]
-                local slotLabel = "Slot " .. slotIdx .. " ("
-                    .. (slotIdx == 1 and "Left" or slotIdx == 2 and "Center" or "Right") .. ")"
+                local slotLabel = ns.L["Slot"] .. " " .. slotIdx .. " ("
+                    .. (slotIdx == 1 and ns.L["Left"] or slotIdx == 2 and ns.L["Center"] or ns.L["Right"]) .. ")"
 
                 L.headerAt(slotLabel)
                 local sc = L.sectionAt()
@@ -1131,155 +1141,155 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     dtGlobal.slots[slotIdx] = val
                     RefreshAllDatatextSurfaces()
                     NotifyStructuralRefresh()
-                end, { description = "Datatext shown in this slot." })
+                end, { description = ns.L["Datatext shown in this slot."] })
                 if slotDD.SetValue then slotDD:SetValue(dtGlobal.slots[slotIdx] or "", true) end
-                sc.AddRow(row(sc.frame, "Datatext", slotDD))
+                sc.AddRow(row(sc.frame, ns.L["Datatext"], slotDD))
 
                 local shortW = GUI:CreateFormCheckbox(sc.frame, nil, "shortLabel", slotData, RefreshAllDatatextSurfaces,
-                    { description = "Use the compact label variant for this slot." })
+                    { description = ns.L["Use the compact label variant for this slot."] })
                 local noLabelW = GUI:CreateFormCheckbox(sc.frame, nil, "noLabel", slotData, RefreshAllDatatextSurfaces,
-                    { description = "Hide the label and show only the value." })
-                sc.AddRow(row(sc.frame, "Short Label", shortW), row(sc.frame, "No Label", noLabelW))
+                    { description = ns.L["Hide the label and show only the value."] })
+                sc.AddRow(row(sc.frame, ns.L["Short Label"], shortW), row(sc.frame, ns.L["No Label"], noLabelW))
 
                 local sxW = GUI:CreateFormSlider(sc.frame, nil, -50, 50, 1, "xOffset", slotData, RefreshAllDatatextSurfaces,
-                    { description = "Horizontal pixel offset for this slot." })
+                    { description = ns.L["Horizontal pixel offset for this slot."] })
                 local syW = GUI:CreateFormSlider(sc.frame, nil, -20, 20, 1, "yOffset", slotData, RefreshAllDatatextSurfaces,
-                    { description = "Vertical pixel offset for this slot." })
-                sc.AddRow(row(sc.frame, "X Offset", sxW), row(sc.frame, "Y Offset", syW))
+                    { description = ns.L["Vertical pixel offset for this slot."] })
+                sc.AddRow(row(sc.frame, ns.L["X Offset"], sxW), row(sc.frame, ns.L["Y Offset"], syW))
                 L.closeSection(sc)
             end
         else
             RegisterCustomDatapanelRuntime(selected.panelDB, QUICore, profile)
 
-            L.headerAt("Panel Settings")
+            L.headerAt(ns.L["Panel Settings"])
             local ps = L.sectionAt()
 
             local nameField = GUI:CreateFormEditBox(ps.frame, nil, "name", selected.panelDB, function()
                 UpdateCustomDatapanelRuntimeLabel(selected.panelDB)
                 RefreshAllDatatextSurfaces()
                 NotifyStructuralRefresh()
-            end, { maxLetters = 48 }, { description = "Name used in the selector and in Layout Mode for this custom datapanel." })
+            end, { maxLetters = 48 }, { description = ns.L["Name used in the selector and in Layout Mode for this custom datapanel."] })
             local enW = GUI:CreateFormCheckbox(ps.frame, nil, "enabled", selected.panelDB, RefreshAllDatatextSurfaces,
-                { description = "Enable or disable this custom datapanel." })
-            ps.AddRow(row(ps.frame, "Panel Name", nameField), row(ps.frame, "Enabled", enW))
+                { description = ns.L["Enable or disable this custom datapanel."] })
+            ps.AddRow(row(ps.frame, ns.L["Panel Name"], nameField), row(ps.frame, ns.L["Enabled"], enW))
 
             local lockW = GUI:CreateFormCheckbox(ps.frame, nil, "locked", selected.panelDB, RefreshAllDatatextSurfaces,
-                { description = "Prevent this panel from being dragged in-game until unlocked." })
+                { description = ns.L["Prevent this panel from being dragged in-game until unlocked."] })
             local widthW = GUI:CreateFormSlider(ps.frame, nil, 100, 800, 1, "width", selected.panelDB, RefreshAllDatatextSurfaces,
-                { description = "Width of this custom datapanel in pixels." })
-            ps.AddRow(row(ps.frame, "Lock Position", lockW), row(ps.frame, "Width", widthW))
+                { description = ns.L["Width of this custom datapanel in pixels."] })
+            ps.AddRow(row(ps.frame, ns.L["Lock Position"], lockW), row(ps.frame, ns.L["Width"], widthW))
 
             local heightW = GUI:CreateFormSlider(ps.frame, nil, 16, 60, 1, "height", selected.panelDB, RefreshAllDatatextSurfaces,
-                { description = "Height of this custom datapanel in pixels." })
+                { description = ns.L["Height of this custom datapanel in pixels."] })
             local numSlotsW = GUI:CreateFormSlider(ps.frame, nil, 1, 8, 1, "numSlots", selected.panelDB, function()
                 EnsureCustomDatapanelDefaults(selected.panelDB)
                 RefreshAllDatatextSurfaces()
                 NotifyStructuralRefresh()
-            end, { description = "How many datatext slots this panel shows. Empty slots stay hidden." })
-            ps.AddRow(row(ps.frame, "Height", heightW), row(ps.frame, "Number of Slots", numSlotsW))
+            end, { description = ns.L["How many datatext slots this panel shows. Empty slots stay hidden."] })
+            ps.AddRow(row(ps.frame, ns.L["Height"], heightW), row(ps.frame, ns.L["Number of Slots"], numSlotsW))
 
             local bgW = GUI:CreateFormSlider(ps.frame, nil, 0, 100, 5, "bgOpacity", selected.panelDB, RefreshAllDatatextSurfaces,
-                { description = "Opacity of the panel background fill (0 transparent, 100 fully opaque)." })
+                { description = ns.L["Opacity of the panel background fill (0 transparent, 100 fully opaque)."] })
             local borSizeW = GUI:CreateFormSlider(ps.frame, nil, 0, 8, 1, "borderSize", selected.panelDB, RefreshAllDatatextSurfaces,
-                { description = "Border thickness in pixels. Set to 0 to hide the border entirely." })
-            ps.AddRow(row(ps.frame, "Background Opacity", bgW), row(ps.frame, "Border Size (0=hidden)", borSizeW))
+                { description = ns.L["Border thickness in pixels. Set to 0 to hide the border entirely."] })
+            ps.AddRow(row(ps.frame, ns.L["Background Opacity"], bgW), row(ps.frame, ns.L["Border Size (0=hidden)"], borSizeW))
 
             local borSrcW, borColorW = ns.QUI_BorderControl.Attach(GUI, ps.frame, selected.panelDB, "", RefreshAllDatatextSurfaces,
-                { label = "Border Color Source", colorLabel = "Border Color",
-                  colorDescription = "Color used for the panel border." })
+                { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"],
+                  colorDescription = ns.L["Color used for the panel border."] })
             local fontSizeW = GUI:CreateFormSlider(ps.frame, nil, 8, 18, 1, "fontSize", selected.panelDB, RefreshAllDatatextSurfaces,
-                { description = "Font size for every datatext slot on this panel." })
-            ps.AddRow(row(ps.frame, "Border Color Source", borSrcW), row(ps.frame, "Font Size", fontSizeW))
-            ps.AddRow(row(ps.frame, "Border Color", borColorW))
+                { description = ns.L["Font size for every datatext slot on this panel."] })
+            ps.AddRow(row(ps.frame, ns.L["Border Color Source"], borSrcW), row(ps.frame, ns.L["Font Size"], fontSizeW))
+            ps.AddRow(row(ps.frame, ns.L["Border Color"], borColorW))
             L.closeSection(ps)
 
             for s = 1, selected.numSlots do
                 local slotSettings = selected.panelDB.slotSettings[s]
-                L.headerAt("Slot " .. s)
+                L.headerAt(ns.L["Slot"] .. " " .. s)
                 local sc = L.sectionAt()
 
                 local slotDD = GUI:CreateFormDropdown(sc.frame, nil, dtOptions, nil, nil, function(val)
                     selected.panelDB.slots[s] = val
                     RefreshAllDatatextSurfaces()
                     NotifyStructuralRefresh()
-                end, { description = "Pick which datatext this slot displays. Empty slots stay hidden and the remaining slots share the width." })
+                end, { description = ns.L["Pick which datatext this slot displays. Empty slots stay hidden and the remaining slots share the width."] })
                 if slotDD.SetValue then slotDD:SetValue(selected.panelDB.slots[s] or "", true) end
-                sc.AddRow(row(sc.frame, "Datatext", slotDD))
+                sc.AddRow(row(sc.frame, ns.L["Datatext"], slotDD))
 
                 local shortW = GUI:CreateFormCheckbox(sc.frame, nil, "shortLabel", slotSettings, RefreshAllDatatextSurfaces,
-                    { description = "Use the compact label variant for this slot." })
+                    { description = ns.L["Use the compact label variant for this slot."] })
                 local noLabelW = GUI:CreateFormCheckbox(sc.frame, nil, "noLabel", slotSettings, RefreshAllDatatextSurfaces,
-                    { description = "Hide the label and show only the value for this slot." })
-                sc.AddRow(row(sc.frame, "Short Label", shortW), row(sc.frame, "No Label", noLabelW))
+                    { description = ns.L["Hide the label and show only the value for this slot."] })
+                sc.AddRow(row(sc.frame, ns.L["Short Label"], shortW), row(sc.frame, ns.L["No Label"], noLabelW))
                 L.closeSection(sc)
             end
         end
 
         -- TEXT STYLING
-        L.headerAt("Text Styling")
+        L.headerAt(ns.L["Text Styling"])
         local ts = L.sectionAt()
         local useClassW = GUI:CreateFormCheckbox(ts.frame, nil, "useClassColor", dtGlobal, RefreshAllDatatextSurfaces,
-            { description = "Color datatext values by your class instead of the custom swatch below." })
+            { description = ns.L["Color datatext values by your class instead of the custom swatch below."] })
         local valColorW = GUI:CreateFormColorPicker(ts.frame, nil, "valueColor", dtGlobal, RefreshAllDatatextSurfaces, nil,
-            { description = "Color used for datatext values when Use Class Color is off." })
-        ts.AddRow(row(ts.frame, "Use Class Color", useClassW), row(ts.frame, "Custom Text Color", valColorW))
+            { description = ns.L["Color used for datatext values when Use Class Color is off."] })
+        ts.AddRow(row(ts.frame, ns.L["Use Class Color"], useClassW), row(ts.frame, ns.L["Custom Text Color"], valColorW))
         L.closeSection(ts)
 
         local noteRow = CreateFrame("Frame", nil, content)
         local note = noteRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         note:SetPoint("LEFT", noteRow, "LEFT", 0, 0)
         note:SetTextColor(0.6, 0.6, 0.6, 0.8)
-        note:SetText("Text Styling applies to every datatext panel.")
+        note:SetText(ns.L["Text Styling applies to every datatext panel."])
         L.placeCustom(noteRow, 18)
 
         -- SPEC DISPLAY (conditional)
         if CountSlotsWithValue(selected.slots, selected.numSlots, "playerspec") then
-            L.headerAt("Spec Display")
+            L.headerAt(ns.L["Spec Display"])
             local sp = L.sectionAt()
             local specOpts = {
-                { value = "icon", text = "Icon Only" },
-                { value = "loadout", text = "Icon + Loadout" },
-                { value = "full", text = "Full (Spec / Loadout)" },
+                { value = "icon", text = ns.L["Icon Only"] },
+                { value = "loadout", text = ns.L["Icon + Loadout"] },
+                { value = "full", text = ns.L["Full (Spec / Loadout)"] },
             }
             local specW = GUI:CreateFormDropdown(sp.frame, nil, specOpts, "specDisplayMode", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "How the Spec datatext renders: just the icon, icon plus loadout, or the full spec and loadout label." })
-            sp.AddRow(row(sp.frame, "Spec Display Mode", specW))
+                { description = ns.L["How the Spec datatext renders: just the icon, icon plus loadout, or the full spec and loadout label."] })
+            sp.AddRow(row(sp.frame, ns.L["Spec Display Mode"], specW))
             L.closeSection(sp)
         end
 
         -- TIME OPTIONS (conditional)
         if CountSlotsWithValue(selected.slots, selected.numSlots, "time") then
-            L.headerAt("Time Options")
+            L.headerAt(ns.L["Time Options"])
             local tm = L.sectionAt()
             local fmtW = GUI:CreateFormDropdown(tm.frame, nil, {
-                { value = "local", text = "Local Time" },
-                { value = "server", text = "Server Time" },
+                { value = "local", text = ns.L["Local Time"] },
+                { value = "server", text = ns.L["Server Time"] },
             }, "timeFormat", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "Whether the Time datatext shows your local system time or realm server time." })
+                { description = ns.L["Whether the Time datatext shows your local system time or realm server time."] })
             local clkW = GUI:CreateFormDropdown(tm.frame, nil, {
-                { value = true, text = "24-Hour Clock" },
-                { value = false, text = "AM/PM" },
+                { value = true, text = ns.L["24-Hour Clock"] },
+                { value = false, text = ns.L["AM/PM"] },
             }, "use24Hour", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "Display time as 24-hour or 12-hour AM/PM." })
-            tm.AddRow(row(tm.frame, "Time Format", fmtW), row(tm.frame, "Clock Format", clkW))
+                { description = ns.L["Display time as 24-hour or 12-hour AM/PM."] })
+            tm.AddRow(row(tm.frame, ns.L["Time Format"], fmtW), row(tm.frame, ns.L["Clock Format"], clkW))
 
             local lkW = GUI:CreateFormSlider(tm.frame, nil, 1, 30, 1, "lockoutCacheMinutes", dtGlobal, nil,
-                { description = "How often raid lockout info is refreshed when shown in the Time tooltip." })
-            tm.AddRow(row(tm.frame, "Lockout Refresh (minutes)", lkW))
+                { description = ns.L["How often raid lockout info is refreshed when shown in the Time tooltip."] })
+            tm.AddRow(row(tm.frame, ns.L["Lockout Refresh (minutes)"], lkW))
             L.closeSection(tm)
         end
 
         -- ALTS OPTIONS (conditional)
         if CountSlotsWithValue(selected.slots, selected.numSlots, "alts") then
-            L.headerAt("Alts Options")
+            L.headerAt(ns.L["Alts Options"])
             local al = L.sectionAt()
             local altOpts = {
-                { value = "gold", text = "Total Gold" },
-                { value = "count", text = "Alt Count" },
+                { value = "gold", text = ns.L["Total Gold"] },
+                { value = "count", text = ns.L["Alt Count"] },
             }
             local altW = GUI:CreateFormDropdown(al.frame, nil, altOpts, "altsMode", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = "What the Alts datatext shows on the bar: total gold across your tracked alts, or the number of tracked alts. The tooltip always lists every alt." })
-            al.AddRow(row(al.frame, "Bar Text", altW))
+                { description = ns.L["What the Alts datatext shows on the bar: total gold across your tracked alts, or the number of tracked alts. The tooltip always lists every alt."] })
+            al.AddRow(row(al.frame, ns.L["Bar Text"], altW))
             L.closeSection(al)
         end
 

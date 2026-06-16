@@ -936,7 +936,7 @@ local function AddSpellToHistory(spellID, castGUID, casting, failed, isChannel)
 
     local entry = {
         spellID = numericSpellID,
-        name = spellName or ("Spell " .. tostring(numericSpellID)),
+        name = spellName or (ns.L["Spell "] .. tostring(numericSpellID)),
         icon = spellIcon or FALLBACK_ICON,
         timestamp = now,
         castGUID = castGUID,
@@ -1215,11 +1215,11 @@ if Helpers and Helpers.BorderRegistry then
     local function dbAccessor(p) return p.general and p.general.actionTracker end
     local function refreshFn() if _G.QUI_RefreshActionTracker then _G.QUI_RefreshActionTracker() end end
     Helpers.BorderRegistry.Register({
-        key = "actionTracker", label = "Action Tracker", category = "Trackers", prefix = "",
+        key = "actionTracker", label = ns.L["Action Tracker"], category = ns.L["Trackers"], prefix = "",
         db = dbAccessor, refresh = refreshFn, legacy = {},
     })
     Helpers.BorderRegistry.Register({
-        key = "actionTrackerIcon", label = "Action Tracker Icons", category = "Trackers", prefix = "icon",
+        key = "actionTrackerIcon", label = ns.L["Action Tracker Icons"], category = ns.L["Trackers"], prefix = "icon",
         db = dbAccessor, refresh = refreshFn,
         legacy = { useClass = "iconBorderUseClassColor" },
     })

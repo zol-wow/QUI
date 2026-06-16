@@ -20,7 +20,7 @@
 -- This headless harness intentionally sets WoW global stubs (string/table
 -- helpers, CreateFrame, Unit* etc.) so bundled libs and addon files load
 -- outside the client. Declare them so luacheck doesn't flag the assignments.
--- luacheck: globals strmatch strfind strsub strlower strupper strrep strtrim strjoin tinsert tremove tconcat wipe geterrorhandler CreateFrame GetRealmName UnitName UnitClass UnitRace UnitFactionGroup GetLocale GetCurrentRegion
+-- luacheck: globals strmatch strfind strsub strlower strupper strrep strtrim strjoin tinsert tremove tconcat wipe geterrorhandler format CreateFrame GetRealmName UnitName UnitClass UnitRace UnitFactionGroup GetLocale GetCurrentRegion
 
 local M = {}
 
@@ -67,6 +67,31 @@ wipe     = function(t) for k in pairs(t) do t[k] = nil end return t end
 geterrorhandler = function() return print end
 
 ----------------------------------------------------------------------------
+-- WoW-style positional string.format (e.g. "%2$s %1$s", "%1$d / %2$d").
+-- Stock Lua 5.1 rejects "%n$" specifiers, but WoW's format supports them and
+-- QUI localization relies on them so translators can reorder arguments. This
+-- shim reorders args for positional specifiers then delegates to native
+-- format; non-positional format strings pass straight through unchanged.
+-- Build-tooling only — never shipped to the WoW client.
+----------------------------------------------------------------------------
+do
+    local rawformat = string.format
+    local function posformat(fmt, ...)
+        if type(fmt) == "string" and fmt:find("%%%d+%$") then
+            local args = { ... }
+            local res = fmt:gsub("%%(%d+)%$([%-%+ #0]*%d*%.?%d*[diouxXeEfgGqcs])",
+                function(idx, conv)
+                    return rawformat("%" .. conv, args[tonumber(idx)])
+                end)
+            return (res:gsub("%%%%", "%%"))
+        end
+        return rawformat(fmt, ...)
+    end
+    string.format = posformat
+    format = posformat
+end
+
+----------------------------------------------------------------------------
 -- WoW API stubs (constants — just have to satisfy module-init reads)
 ----------------------------------------------------------------------------
 function CreateFrame(_)
@@ -83,7 +108,9 @@ function UnitName()          return "TestChar"            end
 function UnitClass()         return nil, "MAGE"           end
 function UnitRace()          return nil, "Human"          end
 function UnitFactionGroup()  return "Alliance"            end
-function GetLocale()         return "enUS"                end
+-- GetLocale honors an injected locale (_G.QUI_TEST_LOCALE) so i18n tooling can
+-- drive locale-aware loads through the shared harness; defaults to "enUS".
+function GetLocale()         return _G.QUI_TEST_LOCALE or "enUS" end
 function GetCurrentRegion()  return 1                      end
 
 -- Combat-secret APIs (12.0+).
@@ -188,6 +215,14 @@ local function LoadCore()
 
     SHARED_NS = {}
     SHARED_NS.Addon = {}  -- profile_io.lua does `local QUICore = ns.Addon`
+
+    -- Localization must precede any string consumer (matches QUI.toc, where
+    -- the locale block loads before core/core.xml). enUS.lua populates the
+    -- base table in ns.LocaleData; locale.lua builds the ns.L metatable that
+    -- settings/options modules index at load time. Without these, ns.L is nil
+    -- and every `ns.L["..."]` errors on load.
+    LoadAddonFile("core/locale/enUS.lua",    "QUI", SHARED_NS)
+    LoadAddonFile("core/locale/locale.lua",  "QUI", SHARED_NS)
 
     -- Load order matches QUI.toc: utils first, then defaults, then
     -- migration / compat / io machinery.

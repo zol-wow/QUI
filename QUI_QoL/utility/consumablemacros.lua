@@ -266,53 +266,53 @@ end
 ---------------------------------------------------------------------------
 
 ConsumableMacros.FLASK_OPTIONS = {
-    { value = "none", text = "None" },
-    { value = "blood_knights", text = "Blood Knights (Haste)" },
-    { value = "shattered_sun", text = "Shattered Sun (Crit)" },
-    { value = "magisters", text = "Magisters (Mastery)" },
-    { value = "resistance", text = "Thalassian Resistance (Vers)" },
+    { value = "none", text = ns.L["None"] },
+    { value = "blood_knights", text = ns.L["Blood Knights (Haste)"] },
+    { value = "shattered_sun", text = ns.L["Shattered Sun (Crit)"] },
+    { value = "magisters", text = ns.L["Magisters (Mastery)"] },
+    { value = "resistance", text = ns.L["Thalassian Resistance (Vers)"] },
 }
 
 ConsumableMacros.POTION_OPTIONS = {
-    { value = "none", text = "None" },
-    { value = "recklessness", text = "Recklessness (Secondary)" },
-    { value = "rampant_abandon", text = "Rampant Abandon (Primary)" },
-    { value = "lights_potential", text = "Light's Potential (Primary, safe)" },
-    { value = "zealotry", text = "Zealotry (Single-target)" },
-    { value = "mana", text = "Mana Potion" },
+    { value = "none", text = ns.L["None"] },
+    { value = "recklessness", text = ns.L["Recklessness (Secondary)"] },
+    { value = "rampant_abandon", text = ns.L["Rampant Abandon (Primary)"] },
+    { value = "lights_potential", text = ns.L["Light's Potential (Primary, safe)"] },
+    { value = "zealotry", text = ns.L["Zealotry (Single-target)"] },
+    { value = "mana", text = ns.L["Mana Potion"] },
 }
 
 ConsumableMacros.HEALTH_OPTIONS = {
-    { value = "none", text = "None" },
-    { value = "silvermoon", text = "Silvermoon Health Potion" },
+    { value = "none", text = ns.L["None"] },
+    { value = "silvermoon", text = ns.L["Silvermoon Health Potion"] },
 }
 
 ConsumableMacros.HEALTHSTONE_OPTIONS = {
-    { value = "none", text = "None" },
-    { value = "healthstone", text = "Healthstone" },
+    { value = "none", text = ns.L["None"] },
+    { value = "healthstone", text = ns.L["Healthstone"] },
 }
 
 ConsumableMacros.AUGMENT_OPTIONS = {
-    { value = "none", text = "None" },
-    { value = "void_touched", text = "Void-Touched Augment Rune" },
+    { value = "none", text = ns.L["None"] },
+    { value = "void_touched", text = ns.L["Void-Touched Augment Rune"] },
 }
 
 ConsumableMacros.VANTUS_OPTIONS = {
-    { value = "none", text = "None" },
-    { value = "radiant", text = "Vantus Rune: Radiant (Vers)" },
+    { value = "none", text = ns.L["None"] },
+    { value = "radiant", text = ns.L["Vantus Rune: Radiant (Vers)"] },
 }
 
 ConsumableMacros.WEAPON_OPTIONS = {
-    { value = "none", text = "None" },
-    { value = "phoenix_oil", text = "Phoenix Oil (Crit + Haste)" },
-    { value = "oil_of_dawn", text = "Oil of Dawn (Absorb Shield)" },
-    { value = "smugglers_edge", text = "Smuggler's Edge (Arcane Damage)" },
-    { value = "whetstone", text = "Whetstone (AP, bladed)" },
-    { value = "weightstone", text = "Weightstone (AP, blunt)" },
-    { value = "hawkeye", text = "Hawkeye (Crit, ranged)" },
-    { value = "lynxeye", text = "Lynxeye (Mastery, ranged)" },
-    { value = "zoomshots", text = "Laced Zoomshots (Nature DoT, ranged)" },
-    { value = "boomshots", text = "Weighted Boomshots (AoE Fire, ranged)" },
+    { value = "none", text = ns.L["None"] },
+    { value = "phoenix_oil", text = ns.L["Phoenix Oil (Crit + Haste)"] },
+    { value = "oil_of_dawn", text = ns.L["Oil of Dawn (Absorb Shield)"] },
+    { value = "smugglers_edge", text = ns.L["Smuggler's Edge (Arcane Damage)"] },
+    { value = "whetstone", text = ns.L["Whetstone (AP, bladed)"] },
+    { value = "weightstone", text = ns.L["Weightstone (AP, blunt)"] },
+    { value = "hawkeye", text = ns.L["Hawkeye (Crit, ranged)"] },
+    { value = "lynxeye", text = ns.L["Lynxeye (Mastery, ranged)"] },
+    { value = "zoomshots", text = ns.L["Laced Zoomshots (Nature DoT, ranged)"] },
+    { value = "boomshots", text = ns.L["Weighted Boomshots (AoE Fire, ranged)"] },
 }
 
 ---------------------------------------------------------------------------
@@ -425,8 +425,8 @@ local function EnsureMacro(macroName, body)
         -- Macro does not exist — create it
         local numGlobal, numChar = GetNumMacros()
         if numChar >= MAX_CHARACTER_MACROS then
-            local msg = "|cffff6666[QUI]|r Could not create macro '" .. macroName
-                .. "': per-character macro slots full (" .. numChar .. "/" .. MAX_CHARACTER_MACROS .. ")."
+            local msg = ns.L["|cffff6666[QUI]|r Could not create macro '"] .. macroName
+                .. ns.L["': per-character macro slots full ("] .. numChar .. "/" .. MAX_CHARACTER_MACROS .. ")."
             DEFAULT_CHAT_FRAME:AddMessage(msg)
             return false
         end
@@ -453,7 +453,7 @@ local function NotifyChange(macroType, newBestID, oldBestID)
         local name = item:GetItemName()
         if name then
             DEFAULT_CHAT_FRAME:AddMessage(
-                "|cff60A5FA[QUI]|r " .. macroType .. " macro updated: |cffffffff" .. name .. "|r"
+                "|cff60A5FA[QUI]|r " .. macroType .. ns.L[" macro updated: |cffffffff"] .. name .. "|r"
             )
         end
     end)

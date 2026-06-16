@@ -10,6 +10,16 @@ local QUICore = ns.Addon
 local LSM = ns.LSM
 local Helpers = ns.Helpers
 local ApplyCooldownFromSpell = Helpers.ApplyCooldownFromSpell
+
+-- CJK-safe font setter: preserves the roman font and only adds CJK fallback
+-- members where available, degrading to plain SetFont otherwise.
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 local IsSecretValue = Helpers.IsSecretValue
 
 -- Constants
@@ -280,7 +290,7 @@ local function ApplyCooldownFont(cooldown, fontSize)
 
     -- Method 1: Direct text property
     if cooldown.text then
-        cooldown.text:SetFont(fontPath, fontSize, "OUTLINE")
+        CJKFont(cooldown.text, fontPath, fontSize, "OUTLINE")
     end
 
     -- Method 2: Iterate through cooldown regions
@@ -288,7 +298,7 @@ local function ApplyCooldownFont(cooldown, fontSize)
     if ok and regions then
         for _, region in ipairs(regions) do
             if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                region:SetFont(fontPath, fontSize, "OUTLINE")
+                CJKFont(region, fontPath, fontSize, "OUTLINE")
             end
         end
     end
@@ -385,19 +395,19 @@ local function CreateSkyridingFrame()
 
     -- Vigor text (left side)
     vigorText = vigorBar:CreateFontString(nil, "OVERLAY")
-    vigorText:SetFont(Helpers.GetGeneralFont(), 11, "OUTLINE")
+    CJKFont(vigorText, Helpers.GetGeneralFont(), 11, "OUTLINE")
     vigorText:SetPoint("LEFT", vigorBar, "LEFT", 4, 0)
     vigorText:SetTextColor(1, 1, 1, 1)
 
     -- Speed text (right side)
     speedText = vigorBar:CreateFontString(nil, "OVERLAY")
-    speedText:SetFont(Helpers.GetGeneralFont(), 11, "OUTLINE")
+    CJKFont(speedText, Helpers.GetGeneralFont(), 11, "OUTLINE")
     speedText:SetPoint("RIGHT", vigorBar, "RIGHT", -4, 0)
     speedText:SetTextColor(1, 1, 1, 1)
 
     -- Second Wind text (alternative display)
     secondWindText = skyridingFrame:CreateFontString(nil, "OVERLAY")
-    secondWindText:SetFont(Helpers.GetGeneralFont(), 10, "OUTLINE")
+    CJKFont(secondWindText, Helpers.GetGeneralFont(), 10, "OUTLINE")
     secondWindText:SetPoint("TOP", skyridingFrame, "BOTTOM", 0, -2)
     secondWindText:SetTextColor(1, 0.8, 0.2, 1)
     secondWindText:Hide()
@@ -690,7 +700,7 @@ local function UpdateSecondWind()
         end
 
     elseif mode == "TEXT" then
-        secondWindText:SetText(string.format("SW: %d/%d", current, max))
+        secondWindText:SetText(string.format(ns.L["SW: %d/%d"], current, max))
         secondWindText:SetTextColor(color[1], color[2], color[3], color[4] or 1)
         secondWindText:Show()
 
@@ -1166,8 +1176,8 @@ local function ApplySettings()
     local vigorFontSize = settings.vigorFontSize or 11
     local speedFontSize = settings.speedFontSize or 11
     local fontPath = Helpers.GetGeneralFont()
-    vigorText:SetFont(fontPath, vigorFontSize, "OUTLINE")
-    speedText:SetFont(fontPath, speedFontSize, "OUTLINE")
+    CJKFont(vigorText, fontPath, vigorFontSize, "OUTLINE")
+    CJKFont(speedText, fontPath, speedFontSize, "OUTLINE")
 
     -- Refresh ability icon cooldown font
     if abilityIconCooldown then

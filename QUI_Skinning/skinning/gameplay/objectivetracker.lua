@@ -43,6 +43,18 @@ end
 
 local GetFontPath = Helpers.GetGeneralFont
 
+-- Route the existing raw SetFont on Blizzard ObjectiveTracker FontStrings
+-- through the CJK-fallback path. These FontStrings were already SetFont'd
+-- (equivalent taint), so the SetFontObject family adds CJK fallback without
+-- new taint exposure. Same args as the original SetFont call.
+local function CJKFont(fs, path, size, flags)
+    if Helpers and Helpers.ApplyFontWithFallback then
+        Helpers.ApplyFontWithFallback(fs, path, size, flags)
+    else
+        fs:SetFont(path, size, flags)
+    end
+end
+
 -- Apply font and color to a single line (objective text)
 -- Returns true if line height was changed (callers use this to avoid unnecessary repositioning)
 -- IMPORTANT: This function must be idempotent. Redundant SetFont calls trigger text
@@ -62,7 +74,7 @@ local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
         local curFont, curSize, curFlags = line.Text:GetFont()
         local fontChanged = curFont ~= fontPath or curSize ~= textFontSize or curFlags ~= targetFlags
         if fontChanged then
-            line.Text:SetFont(fontPath, textFontSize, targetFlags)
+            CJKFont(line.Text, fontPath, textFontSize, targetFlags)
 
             -- Recalculate line height after font change to handle multi-line wrapping.
             -- Only runs when font actually changed; 1px tolerance prevents sub-pixel
@@ -86,7 +98,7 @@ local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
     if line.Dash then
         local curFont, curSize, curFlags = line.Dash:GetFont()
         if curFont ~= fontPath or curSize ~= textFontSize or curFlags ~= targetFlags then
-            line.Dash:SetFont(fontPath, textFontSize, targetFlags)
+            CJKFont(line.Dash, fontPath, textFontSize, targetFlags)
         end
         SafeSetTextColor(line.Dash, textColor)
     end
@@ -104,7 +116,7 @@ local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleCol
         local curFont, curSize, curFlags = block.HeaderText:GetFont()
         local targetFlags = GetFontFlags()
         if curFont ~= fontPath or curSize ~= titleFontSize or curFlags ~= targetFlags then
-            block.HeaderText:SetFont(fontPath, titleFontSize, targetFlags)
+            CJKFont(block.HeaderText, fontPath, titleFontSize, targetFlags)
         end
         SafeSetTextColor(block.HeaderText, titleColor)
     end
@@ -672,7 +684,7 @@ local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, modu
                 local curFont, curSize, curFlags = tracker.Header.Text:GetFont()
                 local targetFlags = GetFontFlags()
                 if curFont ~= fontPath or curSize ~= moduleFontSize or curFlags ~= targetFlags then
-                    tracker.Header.Text:SetFont(fontPath, moduleFontSize, targetFlags)
+                    CJKFont(tracker.Header.Text, fontPath, moduleFontSize, targetFlags)
                 end
                 SafeSetTextColor(tracker.Header.Text, moduleColor)
             end
@@ -695,7 +707,7 @@ local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, modu
             local curFont, curSize, curFlags = TrackerFrame.Header.Text:GetFont()
             local targetFlags = GetFontFlags()
             if curFont ~= fontPath or curSize ~= moduleFontSize or curFlags ~= targetFlags then
-                TrackerFrame.Header.Text:SetFont(fontPath, moduleFontSize, targetFlags)
+                CJKFont(TrackerFrame.Header.Text, fontPath, moduleFontSize, targetFlags)
             end
             SafeSetTextColor(TrackerFrame.Header.Text, moduleColor)
         end
@@ -753,7 +765,7 @@ local function HookLineCreation()
                     local targetFont = GetFontPath()
                     local targetFlags = GetFontFlags()
                     if curFont ~= targetFont or curSize ~= currentTitleSize or curFlags ~= targetFlags then
-                        block.HeaderText:SetFont(targetFont, currentTitleSize, targetFlags)
+                        CJKFont(block.HeaderText, targetFont, currentTitleSize, targetFlags)
                     end
                     SafeSetTextColor(block.HeaderText, currentTitleColor)
                 end

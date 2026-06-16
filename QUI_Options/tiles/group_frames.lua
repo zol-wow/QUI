@@ -13,8 +13,8 @@ function V2.Register(frame)
         featureId = "groupFramesPage",
         id = "group_frames",
         icon = "G",
-        name = "Group Frames",
-        primaryCTA = { label = "Edit in Layout Mode", moverKey = "partyFrames" },
+        name = ns.L["Group Frames"],
+        primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "partyFrames" },
         navRoutes = {
             { tabIndex = 6, subTabIndex = 0, subPageIndex = 1 },
             { tabIndex = 6, subTabIndex = 1, subPageIndex = 1 },
@@ -23,14 +23,14 @@ function V2.Register(frame)
         },
         searchContext = {
             tabIndex = 6,
-            tabName = "Group Frames",
+            tabName = ns.L["Group Frames"],
             subTabIndex = 0,
-            subTabName = "Group Frames",
+            subTabName = ns.L["Group Frames"],
         },
         renderOptions = { surface = "full" },
         relatedSettings = {
-            { label = "Unit Frames", tileId = "unit_frames" },
-            { label = "Raid Buffs",  tileId = "gameplay", subPageIndex = 5 },
+            { label = ns.L["Unit Frames"], tileId = "unit_frames" },
+            { label = ns.L["Raid Buffs"],  tileId = "gameplay", subPageIndex = 5 },
         },
     })
 end

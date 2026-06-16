@@ -283,7 +283,7 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
     -- Section header
     if not options.noHeader then
         local headerName = options.name or frameKey
-        ns.QUI_Options.CreateAccentDotLabel(tabContent, headerName .. " Anchoring", y); y = y - 30
+        ns.QUI_Options.CreateAccentDotLabel(tabContent, headerName .. " " .. ns.L["Anchoring"], y); y = y - 30
     end
 
     -- Anchor To dropdown (uses anchor target registry)
@@ -301,7 +301,7 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
         OnChange()
     end
     local anchorDropdown = self:CreateAnchorDropdown(
-        tabContent, "Anchor To", frameDB, "parent",
+        tabContent, ns.L["Anchor To"], frameDB, "parent",
         PAD + 10, y, nil, OnAnchorTargetChange,
         nil, nil, frameKey  -- excludeSelf
     )
@@ -312,32 +312,32 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
     end
 
     -- From Point dropdown (source anchor)
-    local fromPoint = GUI:CreateFormDropdown(tabContent, "From Point", ninePointOptions, "point", frameDB, OnChange,
-        { description = "Which corner or edge of this frame attaches to the anchor. Together with To Point, this defines how the two frames align." })
+    local fromPoint = GUI:CreateFormDropdown(tabContent, ns.L["From Point"], ninePointOptions, "point", frameDB, OnChange,
+        { description = ns.L["Which corner or edge of this frame attaches to the anchor. Together with To Point, this defines how the two frames align."] })
     fromPoint:SetPoint("TOPLEFT", PAD + 10, y)
     fromPoint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     widgetRefs.fromPoint = fromPoint
     y = y - FORM_ROW
 
     -- To Point dropdown (target anchor)
-    local toPoint = GUI:CreateFormDropdown(tabContent, "To Point", ninePointOptions, "relative", frameDB, OnChange,
-        { description = "Which corner or edge of the anchor target this frame attaches to. Together with From Point, this defines how the two frames align." })
+    local toPoint = GUI:CreateFormDropdown(tabContent, ns.L["To Point"], ninePointOptions, "relative", frameDB, OnChange,
+        { description = ns.L["Which corner or edge of the anchor target this frame attaches to. Together with From Point, this defines how the two frames align."] })
     toPoint:SetPoint("TOPLEFT", PAD + 10, y)
     toPoint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     widgetRefs.toPoint = toPoint
     y = y - FORM_ROW
 
     -- Offset X slider
-    local sliderX = GUI:CreateFormSlider(tabContent, "Offset X", sliderMin, sliderMax, 1, "offsetX", frameDB, OnChange, nil,
-        { description = "Horizontal pixel offset from the anchor point. Positive values move the frame right, negative values move it left." })
+    local sliderX = GUI:CreateFormSlider(tabContent, ns.L["Offset X"], sliderMin, sliderMax, 1, "offsetX", frameDB, OnChange, nil,
+        { description = ns.L["Horizontal pixel offset from the anchor point. Positive values move the frame right, negative values move it left."] })
     sliderX:SetPoint("TOPLEFT", PAD + 10, y)
     sliderX:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     widgetRefs.sliderX = sliderX
     y = y - FORM_ROW
 
     -- Offset Y slider
-    local sliderY = GUI:CreateFormSlider(tabContent, "Offset Y", sliderMin, sliderMax, 1, "offsetY", frameDB, OnChange, nil,
-        { description = "Vertical pixel offset from the anchor point. Positive values move the frame up, negative values move it down." })
+    local sliderY = GUI:CreateFormSlider(tabContent, ns.L["Offset Y"], sliderMin, sliderMax, 1, "offsetY", frameDB, OnChange, nil,
+        { description = ns.L["Vertical pixel offset from the anchor point. Positive values move the frame up, negative values move it down."] })
     sliderY:SetPoint("TOPLEFT", PAD + 10, y)
     sliderY:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     widgetRefs.sliderY = sliderY
@@ -345,15 +345,15 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
 
     -- Auto-width toggle (match anchor target width)
     if options.autoWidth then
-        local autoWidthToggle = GUI:CreateFormToggle(tabContent, "Auto-Width (Match Anchor Target)", "autoWidth", frameDB, OnChange,
-            { description = "Automatically resize this frame to match the width of its anchor target so the two stay visually aligned. Use Width Adjustment below for fine pixel tweaks." })
+        local autoWidthToggle = GUI:CreateFormToggle(tabContent, ns.L["Auto-Width (Match Anchor Target)"], "autoWidth", frameDB, OnChange,
+            { description = ns.L["Automatically resize this frame to match the width of its anchor target so the two stay visually aligned. Use Width Adjustment below for fine pixel tweaks."] })
         autoWidthToggle:SetPoint("TOPLEFT", PAD + 10, y)
         autoWidthToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         widgetRefs.autoWidth = autoWidthToggle
         y = y - FORM_ROW
 
-        local widthAdjust = GUI:CreateFormSlider(tabContent, "Width Adjustment", -20, 20, 1, "widthAdjust", frameDB, OnChange, nil,
-            { description = "Pixel tweak added to the auto-matched width. Useful for overshooting or undershooting the anchor target to account for borders or padding." })
+        local widthAdjust = GUI:CreateFormSlider(tabContent, ns.L["Width Adjustment"], -20, 20, 1, "widthAdjust", frameDB, OnChange, nil,
+            { description = ns.L["Pixel tweak added to the auto-matched width. Useful for overshooting or undershooting the anchor target to account for borders or padding."] })
         widthAdjust:SetPoint("TOPLEFT", PAD + 10, y)
         widthAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         widgetRefs.widthAdjust = widthAdjust
@@ -362,15 +362,15 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
 
     -- Auto-height toggle
     if options.autoHeight then
-        local autoHeightToggle = GUI:CreateFormToggle(tabContent, "Auto-Height (Match CDM Row 1 Icon)", "autoHeight", frameDB, OnChange,
-            { description = "Automatically resize this frame to match the height of the Cooldown Manager's first icon row, so the frame scales with CDM icon size changes." })
+        local autoHeightToggle = GUI:CreateFormToggle(tabContent, ns.L["Auto-Height (Match CDM Row 1 Icon)"], "autoHeight", frameDB, OnChange,
+            { description = ns.L["Automatically resize this frame to match the height of the Cooldown Manager's first icon row, so the frame scales with CDM icon size changes."] })
         autoHeightToggle:SetPoint("TOPLEFT", PAD + 10, y)
         autoHeightToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         widgetRefs.autoHeight = autoHeightToggle
         y = y - FORM_ROW
 
-        local heightAdjust = GUI:CreateFormSlider(tabContent, "Height Adjustment", -20, 20, 1, "heightAdjust", frameDB, OnChange, nil,
-            { description = "Pixel tweak added to the auto-matched height. Useful for overshooting or undershooting the match to account for borders or visual padding." })
+        local heightAdjust = GUI:CreateFormSlider(tabContent, ns.L["Height Adjustment"], -20, 20, 1, "heightAdjust", frameDB, OnChange, nil,
+            { description = ns.L["Pixel tweak added to the auto-matched height. Useful for overshooting or undershooting the match to account for borders or visual padding."] })
         heightAdjust:SetPoint("TOPLEFT", PAD + 10, y)
         heightAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         widgetRefs.heightAdjust = heightAdjust
@@ -379,8 +379,8 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
 
     -- Hide With Anchor toggle
     if options.hideWithParent ~= false then
-        local hideToggle = GUI:CreateFormToggle(tabContent, "Hide With Anchor", "hideWithParent", frameDB, OnChange,
-            { description = "Hide this frame whenever its anchor target is hidden, so dependent frames disappear together with the thing they follow." })
+        local hideToggle = GUI:CreateFormToggle(tabContent, ns.L["Hide With Anchor"], "hideWithParent", frameDB, OnChange,
+            { description = ns.L["Hide this frame whenever its anchor target is hidden, so dependent frames disappear together with the thing they follow."] })
         hideToggle:SetPoint("TOPLEFT", PAD + 10, y)
         hideToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         widgetRefs.hideWithParent = hideToggle
@@ -389,8 +389,8 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
 
     -- Keep In Place toggle
     if options.hideWithParent ~= false then
-        local keepToggle = GUI:CreateFormToggle(tabContent, "Keep In Place When Hidden", "keepInPlace", frameDB, OnChange,
-            { description = "When the anchor target is hidden but this frame stays visible, keep it at its last screen position instead of snapping toward the hidden anchor." })
+        local keepToggle = GUI:CreateFormToggle(tabContent, ns.L["Keep In Place When Hidden"], "keepInPlace", frameDB, OnChange,
+            { description = ns.L["When the anchor target is hidden but this frame stays visible, keep it at its last screen position instead of snapping toward the hidden anchor."] })
         keepToggle:SetPoint("TOPLEFT", PAD + 10, y)
         keepToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         widgetRefs.keepInPlace = keepToggle
@@ -483,7 +483,7 @@ function QUI_Anchoring_Options:CreateAnchorDropdown(parent, label, settingsDB, a
 
     -- Create dropdown using GUI helper (pass optionsFunction for dynamic updates)
     local dropdown = GUI:CreateFormDropdown(parent, label, anchorOptions, anchorKey, settingsDB, onChange,
-        { description = "Which frame this one anchors to. Pick a QUI frame, a Blizzard frame, or the screen; use From Point and To Point below to choose how the two frames align." },
+        { description = ns.L["Which frame this one anchors to. Pick a QUI frame, a Blizzard frame, or the screen; use From Point and To Point below to choose how the two frames align."] },
         { searchable = true, collapsible = true })
     -- Anchor targets may not be registered yet when options build; preserve the saved
     -- value in the display text instead of clearing it.
@@ -597,7 +597,7 @@ function QUI_Anchoring_Options:CreateSnapButtonsRow(parent, label, x, y, snapTar
             function()
                 if not ns.QUI_Anchoring then
                     if onFailure then
-                        onFailure("Anchoring system not available")
+                        onFailure(ns.L["Anchoring system not available"])
                     end
                     return
                 end
@@ -607,7 +607,7 @@ function QUI_Anchoring_Options:CreateSnapButtonsRow(parent, label, x, y, snapTar
 
                 if not frame then
                     if onFailure then
-                        onFailure("Frame not found")
+                        onFailure(ns.L["Frame not found"])
                     end
                     return
                 end
@@ -661,15 +661,15 @@ end
 ---------------------------------------------------------------------------
 function QUI_Anchoring_Options:GetNinePointAnchorOptions()
     return {
-        {value = "TOPLEFT", text = "Top Left"},
-        {value = "TOP", text = "Top Center"},
-        {value = "TOPRIGHT", text = "Top Right"},
-        {value = "LEFT", text = "Center Left"},
-        {value = "CENTER", text = "Center"},
-        {value = "RIGHT", text = "Center Right"},
-        {value = "BOTTOMLEFT", text = "Bottom Left"},
-        {value = "BOTTOM", text = "Bottom Center"},
-        {value = "BOTTOMRIGHT", text = "Bottom Right"},
+        {value = "TOPLEFT", text = ns.L["Top Left"]},
+        {value = "TOP", text = ns.L["Top Center"]},
+        {value = "TOPRIGHT", text = ns.L["Top Right"]},
+        {value = "LEFT", text = ns.L["Center Left"]},
+        {value = "CENTER", text = ns.L["Center"]},
+        {value = "RIGHT", text = ns.L["Center Right"]},
+        {value = "BOTTOMLEFT", text = ns.L["Bottom Left"]},
+        {value = "BOTTOM", text = ns.L["Bottom Center"]},
+        {value = "BOTTOMRIGHT", text = ns.L["Bottom Right"]},
     }
 end
 
@@ -889,16 +889,16 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
         popover:Hide()
     end)
     closeBtn:SetPoint("TOPRIGHT", -2, -2)
-    GUI:AttachTooltip(closeBtn, "Close the advanced anchor editor. Your changes are kept.", "Close")
+    GUI:AttachTooltip(closeBtn, ns.L["Close the advanced anchor editor. Your changes are kept."], ns.L["Close"])
     if closeBtn.text then
         local fontPath = GUI.GetFontPath and GUI:GetFontPath() or "Fonts\\FRIZQT__.TTF"
-        closeBtn.text:SetFont(fontPath, 16, "")
+        Helpers.ApplyFontWithFallback(closeBtn.text, fontPath, 16, "")
     end
 
     -- Title text
     local titleText = popover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     titleText:SetPoint("TOPLEFT", 5, -5)
-    titleText:SetText("Advanced Anchor Settings")
+    titleText:SetText(ns.L["Advanced Anchor Settings"])
     titleText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
     -- Content area (no scrolling needed for max 2 anchors)
@@ -952,13 +952,13 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
             -- Label for anchor pair number
             local label = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             label:SetPoint("LEFT", 5, 0)
-            label:SetText("Anchor " .. i)
+            label:SetText(string.format(ns.L["Anchor %1$d"], i))
             label:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
             -- Source anchor point selector
             local sourceSelector = self:CreateAnchorPointSelector(
                 rowFrame,
-                "Source",
+                ns.L["Source"],
                 anchor,
                 "source",
                 70,
@@ -970,7 +970,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
             -- Target anchor point selector
             local targetSelector = self:CreateAnchorPointSelector(
                 rowFrame,
-                "Target",
+                ns.L["Target"],
                 anchor,
                 "target",
                 70 + selectorSize + spacing,
@@ -989,10 +989,10 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
                     if onChange then onChange() end
                 end)
                 removeButton:SetPoint("RIGHT", -5, 0)
-                GUI:AttachTooltip(removeButton, "Remove this anchor pair from the multi-anchor list.", "Remove Anchor")
+                GUI:AttachTooltip(removeButton, ns.L["Remove this anchor pair from the multi-anchor list."], ns.L["Remove Anchor"])
                 if removeButton.text then
                     local fontPath = GUI.GetFontPath and GUI:GetFontPath() or "Fonts\\FRIZQT__.TTF"
-                    removeButton.text:SetFont(fontPath, 14, "")
+                    Helpers.ApplyFontWithFallback(removeButton.text, fontPath, 14, "")
                     removeButton.text:SetTextColor(0.9, 0.3, 0.3, 1) -- Red tint for remove
                 end
             end
@@ -1017,7 +1017,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
 
                 ns.SkinBase.ApplyPixelBackdrop(addButtonFrame, 1, true, true, { C.accent[1], C.accent[2], C.accent[3], 0.5 }, { C.bg[1] * 1.1, C.bg[2] * 1.1, C.bg[3] * 1.1, 0.3 }, nil, nil, 2)
 
-                popover.addButton = GUI:CreateButton(addButtonFrame, "+ Add Anchor", 100, 22, function()
+                popover.addButton = GUI:CreateButton(addButtonFrame, ns.L["+ Add Anchor"], 100, 22, function()
                     table.insert(anchors, {source = "BOTTOMLEFT", target = "BOTTOMLEFT"})
                     RebuildAnchors()
                     UpdateContentHeight()
@@ -1135,7 +1135,7 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
 
     local presetLabel = presetButtonContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     presetLabel:SetPoint("LEFT", 0, 0)
-    presetLabel:SetText("Anchor point(s):")
+    presetLabel:SetText(ns.L["Anchor point(s):"])
     presetLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
     local buttonWidth = 110
@@ -1172,7 +1172,7 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
 
     -- Above (auto width) - castbar above target, auto width matching
     -- Align first button to match dropdown alignment (180px from left, same as CreateFormDropdown)
-    local presetAboveBtn = GUI:CreateButton(presetButtonContainer, "Above (auto width)", buttonWidth, 24, function()
+    local presetAboveBtn = GUI:CreateButton(presetButtonContainer, ns.L["Above (auto width)"], buttonWidth, 24, function()
         ApplyPreset({
             {source = "BOTTOMLEFT", target = "TOPLEFT"},
             {source = "BOTTOMRIGHT", target = "TOPRIGHT"}
@@ -1181,7 +1181,7 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
     presetAboveBtn:SetPoint("LEFT", presetButtonContainer, "LEFT", 180, 0)
 
     -- Below (auto width) - castbar below target, auto width matching
-    local presetBelowBtn = GUI:CreateButton(presetButtonContainer, "Below (auto width)", buttonWidth, 24, function()
+    local presetBelowBtn = GUI:CreateButton(presetButtonContainer, ns.L["Below (auto width)"], buttonWidth, 24, function()
         ApplyPreset({
             {source = "TOPLEFT", target = "BOTTOMLEFT"},
             {source = "TOPRIGHT", target = "BOTTOMRIGHT"}
@@ -1190,7 +1190,7 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
     presetBelowBtn:SetPoint("LEFT", presetAboveBtn, "RIGHT", buttonSpacing, 0)
 
     -- Left (auto height) - castbar to the left of target, auto height matching
-    local presetLeftBtn = GUI:CreateButton(presetButtonContainer, "Left (auto height)", buttonWidth, 24, function()
+    local presetLeftBtn = GUI:CreateButton(presetButtonContainer, ns.L["Left (auto height)"], buttonWidth, 24, function()
         ApplyPreset({
             {source = "TOPRIGHT", target = "TOPLEFT"},
             {source = "BOTTOMRIGHT", target = "BOTTOMLEFT"}
@@ -1199,7 +1199,7 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
     presetLeftBtn:SetPoint("LEFT", presetBelowBtn, "RIGHT", buttonSpacing, 0)
 
     -- Right (auto height) - castbar to the right of target, auto height matching
-    local presetRightBtn = GUI:CreateButton(presetButtonContainer, "Right (auto height)", buttonWidth, 24, function()
+    local presetRightBtn = GUI:CreateButton(presetButtonContainer, ns.L["Right (auto height)"], buttonWidth, 24, function()
         -- Handler will be replaced by UpdatePresetHandler below
     end)
     presetRightBtn:SetPoint("LEFT", presetLeftBtn, "RIGHT", buttonSpacing, 0)
@@ -1207,7 +1207,7 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
     -- Advanced anchor button (opens popover) - on same row as preset buttons
     local advancedAnchorButton = GUI:CreateButton(
         presetButtonContainer,
-        "Advanced...",
+        ns.L["Advanced..."],
         100,
         24,
         function()
@@ -1216,8 +1216,8 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
     )
     advancedAnchorButton:SetPoint("RIGHT", presetButtonContainer, "RIGHT", 0, 0)
     GUI:AttachTooltip(advancedAnchorButton,
-        "Open the multi-anchor editor to define up to two custom anchor pairs (source point, target frame, target point, offsets). Use this when the presets aren't precise enough.",
-        "Advanced Anchor Settings")
+        ns.L["Open the multi-anchor editor to define up to two custom anchor pairs (source point, target frame, target point, offsets). Use this when the presets aren't precise enough."],
+        ns.L["Advanced Anchor Settings"])
 
     y = y - FORM_ROW
 
@@ -1329,7 +1329,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorDialog(settingsDB, onChange, anc
 
     local titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     titleText:SetPoint("LEFT", 10, 0)
-    titleText:SetText("Advanced Anchor Settings")
+    titleText:SetText(ns.L["Advanced Anchor Settings"])
     titleText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
     -- Close button
@@ -1339,7 +1339,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorDialog(settingsDB, onChange, anc
     closeBtn:SetPoint("RIGHT", -5, 0)
     if closeBtn.text then
         local fontPath = GUI.GetFontPath and GUI:GetFontPath() or "Fonts\\FRIZQT__.TTF"
-        closeBtn.text:SetFont(fontPath, 18, "")
+        Helpers.ApplyFontWithFallback(closeBtn.text, fontPath, 18, "")
     end
 
     -- Scrollable content area
@@ -1412,13 +1412,13 @@ function QUI_Anchoring_Options:CreateMultiAnchorDialog(settingsDB, onChange, anc
             -- Label for anchor pair number
             local label = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             label:SetPoint("LEFT", 0, 0)
-            label:SetText("Anchor " .. i)
+            label:SetText(string.format(ns.L["Anchor %1$d"], i))
             label:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
             -- Source anchor point selector
             local sourceSelector = self:CreateAnchorPointSelector(
                 rowFrame,
-                "Source",
+                ns.L["Source"],
                 anchor,
                 "source",
                 80,
@@ -1430,7 +1430,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorDialog(settingsDB, onChange, anc
             -- Target anchor point selector
             local targetSelector = self:CreateAnchorPointSelector(
                 rowFrame,
-                "Target",
+                ns.L["Target"],
                 anchor,
                 "target",
                 80 + selectorSize + spacing,
@@ -1442,7 +1442,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorDialog(settingsDB, onChange, anc
             -- Remove button (only show if more than 1 anchor)
             local removeButton
             if #anchors > 1 then
-                removeButton = GUI:CreateButton(rowFrame, "Remove", 80, 24, function()
+                removeButton = GUI:CreateButton(rowFrame, ns.L["Remove"], 80, 24, function()
                     table.remove(anchors, i)
                     RebuildAnchors()
                     UpdateContentHeight()
@@ -1464,7 +1464,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorDialog(settingsDB, onChange, anc
         -- Add button (only show if under max)
         if #anchors < maxAnchors then
             if not dialog.addButton then
-                dialog.addButton = GUI:CreateButton(content, "Add Anchor", 100, 24, function()
+                dialog.addButton = GUI:CreateButton(content, ns.L["Add Anchor"], 100, 24, function()
                     table.insert(anchors, {source = "BOTTOMLEFT", target = "BOTTOMLEFT"})
                     RebuildAnchors()
                     UpdateContentHeight()
@@ -1587,13 +1587,13 @@ function QUI_Anchoring_Options:CreateMultiAnchorControls(parent, settingsDB, x, 
             -- Label for anchor pair number
             local label = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             label:SetPoint("LEFT", 0, 0)
-            label:SetText("Anchor " .. i)
+            label:SetText(string.format(ns.L["Anchor %1$d"], i))
             label:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
             -- Source anchor point selector
             local sourceSelector = self:CreateAnchorPointSelector(
                 rowFrame,
-                "Source",
+                ns.L["Source"],
                 anchor,
                 "source",
                 80,
@@ -1605,7 +1605,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorControls(parent, settingsDB, x, 
             -- Target anchor point selector
             local targetSelector = self:CreateAnchorPointSelector(
                 rowFrame,
-                "Target",
+                ns.L["Target"],
                 anchor,
                 "target",
                 80 + selectorSize + spacing,
@@ -1617,7 +1617,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorControls(parent, settingsDB, x, 
             -- Remove button (only show if more than 1 anchor)
             local removeButton
             if #anchors > 1 then
-                removeButton = GUI:CreateButton(rowFrame, "Remove", 80, 24, function()
+                removeButton = GUI:CreateButton(rowFrame, ns.L["Remove"], 80, 24, function()
                     table.remove(anchors, i)
                     RebuildAnchors()
                     if onChange then onChange() end
@@ -1638,7 +1638,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorControls(parent, settingsDB, x, 
         -- Add button (only show if under max)
         if #anchors < maxAnchors then
             if not container.addButton then
-                container.addButton = GUI:CreateButton(container, "Add Anchor", 100, 24, function()
+                container.addButton = GUI:CreateButton(container, ns.L["Add Anchor"], 100, 24, function()
                     table.insert(anchors, {source = "BOTTOMLEFT", target = "BOTTOMLEFT"})
                     RebuildAnchors()
                     if onChange then onChange() end
@@ -1670,11 +1670,11 @@ function QUI_Anchoring_Options:CreateMultiAnchorControls(parent, settingsDB, x, 
 
     local presetLabel = presetContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     presetLabel:SetPoint("LEFT", 0, 0)
-    presetLabel:SetText("Presets:")
+    presetLabel:SetText(ns.L["Presets:"])
     presetLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
     -- Preset 1: Source BOTTOM to Target TOP (castbar below target - "Above Target" means castbar is above, so source is BOTTOM)
-    local preset1Btn = GUI:CreateButton(presetContainer, "Above Target", 120, 24, function()
+    local preset1Btn = GUI:CreateButton(presetContainer, ns.L["Above Target"], 120, 24, function()
         -- Clear existing anchors
         while #anchors > 0 do
             table.remove(anchors, 1)
@@ -1688,7 +1688,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorControls(parent, settingsDB, x, 
     preset1Btn:SetPoint("LEFT", presetLabel, "RIGHT", 10, 0)
 
     -- Preset 2: Source TOP to Target BOTTOM (castbar below target - "Below Target" means castbar is below, so source is TOP)
-    local preset2Btn = GUI:CreateButton(presetContainer, "Below Target", 120, 24, function()
+    local preset2Btn = GUI:CreateButton(presetContainer, ns.L["Below Target"], 120, 24, function()
         -- Clear existing anchors
         while #anchors > 0 do
             table.remove(anchors, 1)
@@ -1729,8 +1729,8 @@ end
 function QUI_Anchoring_Options:CreateAnchorPointControls(parent, settingsDB, x, y, onChange, PAD, FORM_ROW, sourceKey, targetKey, sourceLabel, targetLabel)
     sourceKey = sourceKey or "anchorPoint"
     targetKey = targetKey or "targetAnchorPoint"
-    sourceLabel = sourceLabel or "Source Anchor Point"
-    targetLabel = targetLabel or "Target Anchor Point"
+    sourceLabel = sourceLabel or ns.L["Source Anchor Point"]
+    targetLabel = targetLabel or ns.L["Target Anchor Point"]
 
     -- Initialize defaults if not set
     if not settingsDB[sourceKey] then
@@ -1794,16 +1794,16 @@ function QUI_Anchoring_Options:CreateOffsetControls(parent, settingsDB, x, y, on
     -- Ensure onChange is a function (default to empty function if nil)
     onChange = onChange or function() end
 
-    local offsetXSlider = GUI:CreateFormSlider(parent, "Offset X", -500, 500, 1, "offsetX", settingsDB, onChange, nil,
-        { description = "Horizontal pixel offset from the anchor point. Positive values move the frame right, negative values move it left." })
+    local offsetXSlider = GUI:CreateFormSlider(parent, ns.L["Offset X"], -500, 500, 1, "offsetX", settingsDB, onChange, nil,
+        { description = ns.L["Horizontal pixel offset from the anchor point. Positive values move the frame right, negative values move it left."] })
     if offsetXSlider then
         offsetXSlider:SetPoint("TOPLEFT", x or PAD, y)
         offsetXSlider:SetPoint("RIGHT", parent, "RIGHT", -(x or PAD), 0)
         y = y - FORM_ROW
     end
 
-    local offsetYSlider = GUI:CreateFormSlider(parent, "Offset Y", -500, 500, 1, "offsetY", settingsDB, onChange, nil,
-        { description = "Vertical pixel offset from the anchor point. Positive values move the frame up, negative values move it down." })
+    local offsetYSlider = GUI:CreateFormSlider(parent, ns.L["Offset Y"], -500, 500, 1, "offsetY", settingsDB, onChange, nil,
+        { description = ns.L["Vertical pixel offset from the anchor point. Positive values move the frame up, negative values move it down."] })
     if offsetYSlider then
         offsetYSlider:SetPoint("TOPLEFT", x or PAD, y)
         offsetYSlider:SetPoint("RIGHT", parent, "RIGHT", -(x or PAD), 0)
@@ -1843,7 +1843,7 @@ function QUI_Anchoring_Options:CreateAnchorControls(parent, settingsDB, x, y, on
     anchorKey = anchorKey or "anchorTo"
     anchorsKey = anchorsKey or "anchors"
     maxAnchors = maxAnchors or 2
-    dropdownLabel = dropdownLabel or "Anchor To"
+    dropdownLabel = dropdownLabel or ns.L["Anchor To"]
     offsetMin = offsetMin or -500
     offsetMax = offsetMax or 500
 
@@ -1882,16 +1882,16 @@ function QUI_Anchoring_Options:CreateAnchorControls(parent, settingsDB, x, y, on
     local offsetXSlider, offsetYSlider, offsetY
     if offsetMin ~= -500 or offsetMax ~= 500 then
         -- Custom range - create sliders manually
-        offsetXSlider = GUI:CreateFormSlider(parent, "Offset X", offsetMin, offsetMax, 1, "offsetX", settingsDB, onChange, nil,
-            { description = "Horizontal pixel offset from the anchor point. Positive values move the frame right, negative values move it left." })
+        offsetXSlider = GUI:CreateFormSlider(parent, ns.L["Offset X"], offsetMin, offsetMax, 1, "offsetX", settingsDB, onChange, nil,
+            { description = ns.L["Horizontal pixel offset from the anchor point. Positive values move the frame right, negative values move it left."] })
         if offsetXSlider then
             offsetXSlider:SetPoint("TOPLEFT", x or PAD, presetY)
             offsetXSlider:SetPoint("RIGHT", parent, "RIGHT", -(x or PAD), 0)
             offsetY = presetY - FORM_ROW
         end
 
-        offsetYSlider = GUI:CreateFormSlider(parent, "Offset Y", offsetMin, offsetMax, 1, "offsetY", settingsDB, onChange, nil,
-            { description = "Vertical pixel offset from the anchor point. Positive values move the frame up, negative values move it down." })
+        offsetYSlider = GUI:CreateFormSlider(parent, ns.L["Offset Y"], offsetMin, offsetMax, 1, "offsetY", settingsDB, onChange, nil,
+            { description = ns.L["Vertical pixel offset from the anchor point. Positive values move the frame up, negative values move it down."] })
         if offsetYSlider then
             offsetYSlider:SetPoint("TOPLEFT", x or PAD, offsetY)
             offsetYSlider:SetPoint("RIGHT", parent, "RIGHT", -(x or PAD), 0)

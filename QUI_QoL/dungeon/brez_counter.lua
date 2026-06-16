@@ -150,7 +150,11 @@ local function CreateBrezFrame()
     -- Charges text (bottom-right)
     local chargeText = frame:CreateFontString(nil, "OVERLAY")
     chargeText:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
-    chargeText:SetFont(UIKit.ResolveFontPath(), 14, "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(chargeText, UIKit.ResolveFontPath(), 14, "OUTLINE")
+    else
+        chargeText:SetFont(UIKit.ResolveFontPath(), 14, "OUTLINE")
+    end
     chargeText:SetTextColor(0.3, 1, 0.3, 1)
     chargeText:SetJustifyH("RIGHT")
     chargeText:SetText("0")
@@ -159,7 +163,11 @@ local function CreateBrezFrame()
     -- Timer text (top-left)
     local timerText = frame:CreateFontString(nil, "OVERLAY")
     timerText:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
-    timerText:SetFont(UIKit.ResolveFontPath(), 12, "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(timerText, UIKit.ResolveFontPath(), 12, "OUTLINE")
+    else
+        timerText:SetFont(UIKit.ResolveFontPath(), 12, "OUTLINE")
+    end
     timerText:SetTextColor(1, 1, 1, 1)
     timerText:SetJustifyH("LEFT")
     timerText:SetText("")
@@ -189,7 +197,7 @@ local function CreateBrezFrame()
     -- Tooltip
     frame:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Battle Res Charges", 0.204, 1.0, 0.6)
+        GameTooltip:SetText(ns.L["Battle Res Charges"], 0.204, 1.0, 0.6)
 
         -- Current charges info
         local chargeInfo = C_Spell.GetSpellCharges(REBIRTH_SPELL_ID)
@@ -199,15 +207,15 @@ local function CreateBrezFrame()
             local cooldownDuration = SafeChargeNumber(chargeInfo.cooldownDuration)
             local cooldownStartTime = SafeChargeNumber(chargeInfo.cooldownStartTime)
             if currentCharges and maxCharges then
-                GameTooltip:AddLine(string.format("Charges: %d / %d", currentCharges, maxCharges), 1, 1, 1)
+                GameTooltip:AddLine(string.format(ns.L["Charges: %d / %d"], currentCharges, maxCharges), 1, 1, 1)
             else
-                GameTooltip:AddLine("Charges: ?", 1, 1, 1)
+                GameTooltip:AddLine(ns.L["Charges: ?"], 1, 1, 1)
             end
             if currentCharges and maxCharges and cooldownDuration and cooldownStartTime
                 and currentCharges < maxCharges and cooldownDuration > 0 then
                 local remaining = (cooldownStartTime + cooldownDuration) - GetTime()
                 if remaining > 0 then
-                    GameTooltip:AddLine(string.format("Next charge: %s", FormatTime(remaining)), 0.8, 0.8, 0.8)
+                    GameTooltip:AddLine(string.format(ns.L["Next charge: %s"], FormatTime(remaining)), 0.8, 0.8, 0.8)
                 end
             end
         end
@@ -215,13 +223,13 @@ local function CreateBrezFrame()
         -- Res history
         if #BrezState.resHistory > 0 then
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Res History", 0.204, 1.0, 0.6)
+            GameTooltip:AddLine(ns.L["Res History"], 0.204, 1.0, 0.6)
             for _, entry in ipairs(BrezState.resHistory) do
                 local timeStr = FormatCombatTime(entry.timestamp)
                 local sr, sg, sb = GetClassColorByClass(entry.sourceClass)
                 if entry.spellId == REINCARNATION_SPELL_ID then
                     -- Reincarnation: self-res, no target
-                    local line = string.format("[%s] %s (Reincarnation)", timeStr, entry.source)
+                    local line = string.format(ns.L["[%s] %s (Reincarnation)"], timeStr, entry.source)
                     GameTooltip:AddLine(line, sr, sg, sb)
                 else
                     local tr, tg, tb = GetClassColorByClass(entry.targetClass)
@@ -366,10 +374,18 @@ local function UpdateAppearance()
     local fontPath = UIKit.ResolveFontPath(settings.useCustomFont and settings.font)
 
     local fontSize = settings.fontSize or 14
-    frame.chargeText:SetFont(fontPath, fontSize, "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(frame.chargeText, fontPath, fontSize, "OUTLINE")
+    else
+        frame.chargeText:SetFont(fontPath, fontSize, "OUTLINE")
+    end
 
     local timerFontSize = settings.timerFontSize or 12
-    frame.timerText:SetFont(fontPath, timerFontSize, "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(frame.timerText, fontPath, timerFontSize, "OUTLINE")
+    else
+        frame.timerText:SetFont(fontPath, timerFontSize, "OUTLINE")
+    end
 
     -- Update timer text color
     local timerColor
@@ -499,8 +515,8 @@ local function OnCombatLogEvent()
         local sourceClass = select(2, GetPlayerInfoByGUID(sourceGUID))
         local targetClass = select(2, GetPlayerInfoByGUID(destGUID))
         table.insert(BrezState.resHistory, {
-            source = sourceName or "Unknown",
-            target = destName or "Unknown",
+            source = sourceName or ns.L["Unknown"],
+            target = destName or ns.L["Unknown"],
             spellId = spellId,
             timestamp = GetTime(),
             sourceClass = sourceClass,
@@ -514,8 +530,8 @@ local function OnCombatLogEvent()
     if subEvent == "SPELL_CAST_SUCCESS" and spellId == REINCARNATION_SPELL_ID then
         local sourceClass = select(2, GetPlayerInfoByGUID(sourceGUID))
         table.insert(BrezState.resHistory, {
-            source = sourceName or "Unknown",
-            target = sourceName or "Unknown",
+            source = sourceName or ns.L["Unknown"],
+            target = sourceName or ns.L["Unknown"],
             spellId = REINCARNATION_SPELL_ID,
             timestamp = GetTime(),
             sourceClass = sourceClass,
@@ -674,7 +690,7 @@ end
 
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
-        key = "brezCounter", label = "Brez Counter", category = "Trackers", prefix = "",
+        key = "brezCounter", label = ns.L["Brez Counter"], category = ns.L["Trackers"], prefix = "",
         db = function(p) return p.brzCounter end,
         refresh = function() if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end end,
         legacy = { useClass = "useClassColorBorder", accent = "useAccentColorBorder" },

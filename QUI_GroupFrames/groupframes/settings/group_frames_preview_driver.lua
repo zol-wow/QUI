@@ -16,6 +16,13 @@
     no WoW API call at file scope (loads under a bare test ns).
 ]]
 local _, ns = ...
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 
 local Driver = ns.QUI_GroupFramesPreview or {}
 ns.QUI_GroupFramesPreview = Driver
@@ -448,7 +455,7 @@ local function ApplyName(f, member, nameCfg, font, fontSize, allowed)
     local nt = f.nameText
     if nameCfg.showName == false then nt:Hide(); return end
     nt:Show()
-    nt:SetFont(font, tonumber(nameCfg.nameFontSize) or fontSize, "OUTLINE")
+    CJKFont(nt, font, tonumber(nameCfg.nameFontSize) or fontSize, "OUTLINE")
     local label = member.name
     local maxLen = tonumber(nameCfg.maxNameLength) or 0
     if maxLen > 0 then label = label:sub(1, maxLen) end
@@ -560,7 +567,7 @@ local function ApplyHealthText(f, health, font, allowed)
         return
     end
     ht:Show()
-    ht:SetFont(font, tonumber(health.healthFontSize) or 12, "OUTLINE")
+    CJKFont(ht, font, tonumber(health.healthFontSize) or 12, "OUTLINE")
     ht:SetJustifyH(health.healthJustify or "RIGHT")
     ht:ClearAllPoints()
     local anchor = health.healthAnchor or "RIGHT"
@@ -912,7 +919,7 @@ local function ApplyDefensive(f, healer, allowed, font)
                     end
                     local okT, cdText = pcall(ic._cd.GetCountdownFontString, ic._cd)
                     if okT and cdText and cdText.SetFont then
-                        cdText:SetFont(font, defFontSize, "OUTLINE")
+                        CJKFont(cdText, font, defFontSize, "OUTLINE")
                     end
                 end
             end

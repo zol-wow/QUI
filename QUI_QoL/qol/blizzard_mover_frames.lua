@@ -22,40 +22,40 @@ M._FrameRegistryData = {
 
 	groups = {
 		system = {
-			label = "System",
+			label = ns.L["System"],
 			expanded = true,
 		},
 		character = {
-			label = "Character",
+			label = ns.L["Character"],
 		},
 		housing = {
-			label = "Housing",
+			label = ns.L["Housing"],
 			expanded = true,
 		},
 		activities = {
-			label = "Activities",
+			label = ns.L["Activities"],
 		},
 		world = {
-			label = "World",
+			label = ns.L["World"],
 		},
 		bags = {
-			label = "Bags & Bank",
+			label = ns.L["Bags & Bank"],
 		},
 		vendors = {
-			label = "Vendors",
+			label = ns.L["Vendors"],
 		},
 		professions = {
-			label = "Professions",
+			label = ns.L["Professions"],
 		},
 		addons = {
-			label = "Addons",
+			label = ns.L["Addons"],
 		},
 	},
 
 	frames = {
 		{
 			id = "SettingsPanel",
-			label = "Settings",
+			label = ns.L["Settings"],
 			group = "system",
 			names = { "SettingsPanel" },
 			addon = "Blizzard_Settings",
@@ -63,14 +63,14 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "SplashFrame",
-			label = "What's New",
+			label = ns.L["What's New"],
 			group = "system",
 			names = { "SplashFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "GameMenuFrame",
-			label = "Game Menu",
+			label = ns.L["Game Menu"],
 			group = "system",
 			names = { "GameMenuFrame" },
 			addon = "Blizzard_GameMenu",
@@ -80,7 +80,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "MacroFrame",
-			label = "Macros",
+			label = ns.L["Macros"],
 			group = "system",
 			names = { "MacroFrame" },
 			addon = "Blizzard_MacroUI",
@@ -88,7 +88,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "MacroPopupFrame",
-			label = "Macro Popup",
+			label = ns.L["Macro Popup"],
 			group = "system",
 			names = { "MacroPopupFrame" },
 			addon = "Blizzard_MacroUI",
@@ -96,21 +96,21 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "AddonList",
-			label = "Addon List",
+			label = ns.L["Addon List"],
 			group = "system",
 			names = { "AddonList" },
 			defaultEnabled = true,
 		},
 		{
 			id = "CatalogShopFrame",
-			label = "Blizzard Shop",
+			label = ns.L["Blizzard Shop"],
 			group = "system",
 			names = { "CatalogShopFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "AchievementFrame",
-			label = "Achievements",
+			label = ns.L["Achievements"],
 			group = "character",
 			names = { "AchievementFrame" },
 			addon = "Blizzard_AchievementUI",
@@ -119,7 +119,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "HousingControlsFrame",
-			label = "Housing Controls",
+			label = ns.L["Housing Controls"],
 			group = "housing",
 			names = { "HousingControlsFrame" },
 			addon = "Blizzard_HousingControls",
@@ -128,7 +128,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "HousingDashboardFrame",
-			label = "Housing Dashboard",
+			label = ns.L["Housing Dashboard"],
 			group = "housing",
 			names = { "HousingDashboardFrame" },
 			addon = "Blizzard_HousingDashboard",
@@ -136,7 +136,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "HouseFinderFrame",
-			label = "House Finder",
+			label = ns.L["House Finder"],
 			group = "housing",
 			names = { "HouseFinderFrame" },
 			addon = "Blizzard_HousingHouseFinder",
@@ -144,7 +144,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "HouseListFrame",
-			label = "House List",
+			label = ns.L["House List"],
 			group = "housing",
 			names = { "HouseListFrame" },
 			addon = "Blizzard_HouseList",
@@ -152,7 +152,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "HousingHouseSettingsFrame",
-			label = "Housing Settings",
+			label = ns.L["Housing Settings"],
 			group = "housing",
 			names = { "HousingHouseSettingsFrame" },
 			addon = "Blizzard_HousingHouseSettings",
@@ -160,7 +160,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "AbandonHouseConfirmationDialog",
-			label = "Abandon House",
+			label = ns.L["Abandon House"],
 			group = "housing",
 			names = { "AbandonHouseConfirmationDialog" },
 			addon = "Blizzard_HousingHouseSettings",
@@ -168,7 +168,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "HousingCornerstoneVisitorFrame",
-			label = "Housing Cornerstone Visitor",
+			label = ns.L["Housing Cornerstone Visitor"],
 			group = "housing",
 			names = { "HousingCornerstoneVisitorFrame", "HousingCornerstoneHouseInfoFrame" },
 			addon = "Blizzard_HousingCornerstone",
@@ -176,7 +176,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "HousingModelPreviewFrame",
-			label = "Housing Model Preview",
+			label = ns.L["Housing Model Preview"],
 			group = "housing",
 			names = { "HousingModelPreviewFrame" },
 			addon = "Blizzard_HousingModelPreview",
@@ -184,7 +184,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CharacterFrame",
-			label = "Character",
+			label = ns.L["Character"],
 			group = "character",
 			names = { "CharacterFrame" },
 			defaultEnabled = true,
@@ -207,7 +207,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "PlayerSpellsFrame",
-			label = "Talents & Spells",
+			label = ns.L["Talents & Spells"],
 			group = "character",
 			names = { "PlayerSpellsFrame" },
 			handlesRelative = { "TalentsFrame", "SpecFrame" },
@@ -234,7 +234,7 @@ M._FrameRegistryData = {
 		-- remove this panel again, now genuinely exhaustive.
 		{
 			id = "HeroTalentsSelectionDialog",
-			label = "Hero Talents",
+			label = ns.L["Hero Talents"],
 			group = "character",
 			names = { "HeroTalentsSelectionDialog" },
 			addon = "Blizzard_PlayerSpells",
@@ -244,14 +244,14 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "PVEFrame",
-			label = "Group Finder",
+			label = ns.L["Group Finder"],
 			group = "activities",
 			names = { "PVEFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "PVPMatchResults",
-			label = "PvP Match Results",
+			label = ns.L["PvP Match Results"],
 			group = "activities",
 			names = { "PVPMatchResults" },
 			addon = "Blizzard_PVPMatch",
@@ -259,7 +259,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "QueueStatusButton",
-			label = "Queue Status Button",
+			label = ns.L["Queue Status Button"],
 			group = "activities",
 			names = { "QueueStatusButton" },
 			addon = "Blizzard_QueueStatusFrame",
@@ -276,28 +276,28 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "LFGDungeonReadyDialog",
-			label = "Dungeon Ready Dialog",
+			label = ns.L["Dungeon Ready Dialog"],
 			group = "activities",
 			names = { "LFGDungeonReadyDialog" },
 			defaultEnabled = true,
 		},
 		{
 			id = "LFGListInviteDialog",
-			label = "LFG List Invite Dialog",
+			label = ns.L["LFG List Invite Dialog"],
 			group = "activities",
 			names = { "LFGListInviteDialog" },
 			defaultEnabled = true,
 		},
 		{
 			id = "ReadyCheckFrame",
-			label = "Ready Check",
+			label = ns.L["Ready Check"],
 			group = "activities",
 			names = { "ReadyCheckFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "WeeklyRewardsFrame",
-			label = "Great Vault",
+			label = ns.L["Great Vault"],
 			group = "activities",
 			names = { "WeeklyRewardsFrame" },
 			addon = "Blizzard_WeeklyRewards",
@@ -305,7 +305,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "DelvesCompanionConfigurationFrame",
-			label = "Delves Companion",
+			label = ns.L["Delves Companion"],
 			group = "activities",
 			names = { "DelvesCompanionConfigurationFrame" },
 			addon = "Blizzard_DelvesDashboardUI",
@@ -314,7 +314,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "TransmogFrame",
-			label = "Transmog Frame",
+			label = ns.L["Transmog Frame"],
 			group = "system",
 			names = { "TransmogFrame" },
 			addon = "Blizzard_Transmog",
@@ -322,7 +322,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "DelvesCompanionAbilityListFrame",
-			label = "Delves Companion Abilities",
+			label = ns.L["Delves Companion Abilities"],
 			group = "activities",
 			names = { "DelvesCompanionAbilityListFrame" },
 			addon = "Blizzard_DelvesDashboardUI",
@@ -330,7 +330,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ChallengesKeystoneFrame",
-			label = "Font of Power",
+			label = ns.L["Font of Power"],
 			group = "activities",
 			names = { "ChallengesKeystoneFrame" },
 			addon = "Blizzard_ChallengesUI",
@@ -338,7 +338,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ItemInteractionFrame",
-			label = "Catalyst",
+			label = ns.L["Catalyst"],
 			group = "character",
 			names = { "ItemInteractionFrame" },
 			addon = "Blizzard_ItemInteractionUI",
@@ -346,7 +346,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "PlayerChoiceFrame",
-			label = "Player Choice",
+			label = ns.L["Player Choice"],
 			group = "character",
 			names = { "PlayerChoiceFrame" },
 			addon = "Blizzard_PlayerChoice",
@@ -354,7 +354,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "WorldMapFrame",
-			label = "World Map",
+			label = ns.L["World Map"],
 			group = "world",
 			names = { "WorldMapFrame" },
 			defaultEnabled = true,
@@ -372,7 +372,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "UIWidgetBelowMinimapContainerFrame",
-			label = "Below Minimap Widgets",
+			label = ns.L["Below Minimap Widgets"],
 			group = "world",
 			names = { "UIWidgetBelowMinimapContainerFrame" },
 			addon = "Blizzard_UIWidgets",
@@ -381,7 +381,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "UIWidgetPowerBarContainerFrame",
-			label = "Power Bar Widgets",
+			label = ns.L["Power Bar Widgets"],
 			group = "world",
 			names = { "UIWidgetPowerBarContainerFrame" },
 			addon = "Blizzard_UIWidgets",
@@ -389,7 +389,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "UIWidgetTopCenterContainerFrame",
-			label = "Top Center Widgets",
+			label = ns.L["Top Center Widgets"],
 			group = "world",
 			names = { "UIWidgetTopCenterContainerFrame" },
 			addon = "Blizzard_UIWidgets",
@@ -397,7 +397,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "FlightMapFrame",
-			label = "Flight Map",
+			label = ns.L["Flight Map"],
 			group = "world",
 			names = { "FlightMapFrame" },
 			addon = "Blizzard_FlightMap",
@@ -405,14 +405,14 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ContainerFrameCombinedBags",
-			label = "Combined Bags",
+			label = ns.L["Combined Bags"],
 			group = "bags",
 			names = { "ContainerFrameCombinedBags" },
 			defaultEnabled = true,
 		},
 		{
 			id = "ItemUpgradeFrame",
-			label = "Item Upgrade",
+			label = ns.L["Item Upgrade"],
 			group = "vendors",
 			names = { "ItemUpgradeFrame" },
 			addon = "Blizzard_ItemUpgradeUI",
@@ -428,7 +428,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ExpansionLandingPage",
-			label = "Expansion Landing Page",
+			label = ns.L["Expansion Landing Page"],
 			group = "activities",
 			names = { "ExpansionLandingPage" },
 			addon = "Blizzard_MajorFactions",
@@ -436,7 +436,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "MajorFactionRenownFrame",
-			label = "Renown",
+			label = ns.L["Renown"],
 			group = "activities",
 			names = { "MajorFactionRenownFrame" },
 			handlesRelative = { "HeaderFrame" },
@@ -445,7 +445,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ProfessionsCustomerOrdersFrame",
-			label = "Customer Orders",
+			label = ns.L["Customer Orders"],
 			group = "professions",
 			names = { "ProfessionsCustomerOrdersFrame" },
 			addon = "Blizzard_ProfessionsCustomerOrders",
@@ -453,7 +453,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "MerchantFrame",
-			label = "Merchant",
+			label = ns.L["Merchant"],
 			group = "vendors",
 			names = { "MerchantFrame" },
 			defaultEnabled = true,
@@ -462,7 +462,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "AuctionHouseFrame",
-			label = "Auction House",
+			label = ns.L["Auction House"],
 			group = "vendors",
 			names = { "AuctionHouseFrame" },
 			addon = "Blizzard_AuctionHouseUI",
@@ -470,7 +470,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CurrencyTransferMenu",
-			label = "Currency Transfer",
+			label = ns.L["Currency Transfer"],
 			group = "vendors",
 			names = { "CurrencyTransferMenu" },
 			addon = "Blizzard_TokenUI",
@@ -478,7 +478,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "MailFrame",
-			label = "Mail",
+			label = ns.L["Mail"],
 			group = "vendors",
 			names = { "MailFrame" },
 			addon = "Blizzard_MailFrame",
@@ -489,7 +489,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "OpenMailFrame",
-			label = "Open Mail",
+			label = ns.L["Open Mail"],
 			group = "vendors",
 			names = { "OpenMailFrame" },
 			addon = "Blizzard_MailFrame",
@@ -500,14 +500,14 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ChatConfigFrame",
-			label = "Chat Settings",
+			label = ns.L["Chat Settings"],
 			group = "system",
 			names = { "ChatConfigFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "HelpFrame",
-			label = "Support",
+			label = ns.L["Support"],
 			group = "system",
 			names = { "HelpFrame" },
 			addon = "Blizzard_HelpFrame",
@@ -515,7 +515,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "GarrisonCapacitiveDisplayFrame",
-			label = "Garrison",
+			label = ns.L["Garrison"],
 			group = "activities",
 			names = { "GarrisonCapacitiveDisplayFrame" },
 			addon = "Blizzard_GarrisonUI",
@@ -523,14 +523,14 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "DressUpFrame",
-			label = "Dressing Room",
+			label = ns.L["Dressing Room"],
 			group = "character",
 			names = { "DressUpFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "CommunitiesFrame",
-			label = "Communities",
+			label = ns.L["Communities"],
 			group = "activities",
 			names = { "CommunitiesFrame" },
 			addon = "Blizzard_Communities",
@@ -538,7 +538,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ClubFinderCommunityAndGuildFinderFrame",
-			label = "Community & Guild Finder",
+			label = ns.L["Community & Guild Finder"],
 			group = "activities",
 			names = { "ClubFinderCommunityAndGuildFinderFrame.RequestToJoinFrame" },
 			addon = "Blizzard_Communities",
@@ -546,7 +546,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ClubFinderGuildFinderFrame",
-			label = "Guild Finder",
+			label = ns.L["Guild Finder"],
 			group = "activities",
 			names = { "ClubFinderGuildFinderFrame.RequestToJoinFrame" },
 			addon = "Blizzard_Communities",
@@ -554,7 +554,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CommunitiesGuildLogFrame",
-			label = "Guild Log",
+			label = ns.L["Guild Log"],
 			group = "activities",
 			names = { "CommunitiesGuildLogFrame" },
 			addon = "Blizzard_Communities",
@@ -562,7 +562,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CommunitiesGuildNewsFiltersFrame",
-			label = "Guild News Filters",
+			label = ns.L["Guild News Filters"],
 			group = "activities",
 			names = { "CommunitiesGuildNewsFiltersFrame" },
 			addon = "Blizzard_Communities",
@@ -570,7 +570,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CommunitiesGuildTextEditFrame",
-			label = "Guild Text Edit",
+			label = ns.L["Guild Text Edit"],
 			group = "activities",
 			names = { "CommunitiesGuildTextEditFrame" },
 			addon = "Blizzard_Communities",
@@ -578,7 +578,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CommunitiesRecruitmentDialog",
-			label = "Community Recruitment",
+			label = ns.L["Community Recruitment"],
 			group = "activities",
 			names = { "CommunitiesFrame.RecruitmentDialog" },
 			addon = "Blizzard_Communities",
@@ -586,7 +586,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CommunitiesNotificationSettingsDialog",
-			label = "Community Notification Settings",
+			label = ns.L["Community Notification Settings"],
 			group = "activities",
 			names = { "CommunitiesFrame.NotificationSettingsDialog" },
 			addon = "Blizzard_Communities",
@@ -594,49 +594,49 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "FriendsFrame",
-			label = "Friends",
+			label = ns.L["Friends"],
 			group = "activities",
 			names = { "FriendsFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "FriendsFrameIgnoreList",
-			label = "Ignore List",
+			label = ns.L["Ignore List"],
 			group = "activities",
 			names = { "FriendsFrame.IgnoreListWindow" },
 			defaultEnabled = true,
 		},
 		{
 			id = "RecruitAFriendRewardsFrame",
-			label = "Recruit A Friend Rewards",
+			label = ns.L["Recruit A Friend Rewards"],
 			group = "activities",
 			names = { "RecruitAFriendRewardsFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "RecruitAFriendRecruitmentFrame",
-			label = "Recruit A Friend",
+			label = ns.L["Recruit A Friend"],
 			group = "activities",
 			names = { "RecruitAFriendRecruitmentFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "FriendsFriendsFrame",
-			label = "Friends List",
+			label = ns.L["Friends List"],
 			group = "activities",
 			names = { "FriendsFriendsFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "RaidInfoFrame",
-			label = "Raid Info",
+			label = ns.L["Raid Info"],
 			group = "activities",
 			names = { "RaidInfoFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "AddFriendFrame",
-			label = "Add Friend",
+			label = ns.L["Add Friend"],
 			group = "activities",
 			names = { "AddFriendFrame" },
 			defaultEnabled = true,
@@ -651,14 +651,14 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "BankFrame",
-			label = "Bank",
+			label = ns.L["Bank"],
 			group = "bags",
 			names = { "BankFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "ArtifactFrame",
-			label = "Artifact",
+			label = ns.L["Artifact"],
 			group = "character",
 			names = { "ArtifactFrame" },
 			addon = "Blizzard_ArtifactUI",
@@ -666,7 +666,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CollectionsJournal",
-			label = "Collections",
+			label = ns.L["Collections"],
 			group = "character",
 			names = { "CollectionsJournal" },
 			addon = "Blizzard_Collections",
@@ -674,7 +674,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ProfessionsFrame",
-			label = "Professions",
+			label = ns.L["Professions"],
 			group = "professions",
 			names = { "ProfessionsFrame" },
 			addon = "Blizzard_Professions",
@@ -682,7 +682,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "ProfessionsBookFrame",
-			label = "Professions Book",
+			label = ns.L["Professions Book"],
 			group = "professions",
 			names = { "ProfessionsBookFrame" },
 			addon = "Blizzard_ProfessionsBook",
@@ -690,14 +690,14 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "QuestFrame",
-			label = "Quest",
+			label = ns.L["Quest"],
 			group = "world",
 			names = { "QuestFrame", "GossipFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "StaticPopup",
-			label = "Static Popups",
+			label = ns.L["Static Popups"],
 			group = "system",
 			-- InstanceAbandonPopup is Blizzard's reserved StaticPopup for the M+
 			-- "vote to abandon" prompt. FrameXML hard-anchors it BOTTOMRIGHT and
@@ -711,14 +711,14 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "EventToastManagerFrame",
-			label = "Event Toasts",
+			label = ns.L["Event Toasts"],
 			group = "system",
 			names = { "EventToastManagerFrame" },
 			defaultEnabled = true,
 		},
 		{
 			id = "CalendarFrame",
-			label = "Calendar",
+			label = ns.L["Calendar"],
 			group = "system",
 			names = { "CalendarFrame" },
 			addon = "Blizzard_Calendar",
@@ -726,7 +726,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CalendarViewHolidayFrame",
-			label = "Calendar Holiday",
+			label = ns.L["Calendar Holiday"],
 			group = "system",
 			names = { "CalendarViewHolidayFrame" },
 			addon = "Blizzard_Calendar",
@@ -734,7 +734,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CalendarCreateEventFrame",
-			label = "Calendar Event",
+			label = ns.L["Calendar Event"],
 			group = "system",
 			names = { "CalendarCreateEventFrame" },
 			addon = "Blizzard_Calendar",
@@ -742,7 +742,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "TimeManagerFrame",
-			label = "Time Manager",
+			label = ns.L["Time Manager"],
 			group = "system",
 			names = { "TimeManagerFrame" },
 			addon = "Blizzard_TimeManager",
@@ -750,7 +750,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CovenantSanctumFrame",
-			label = "Covenant Sanctum Frame",
+			label = ns.L["Covenant Sanctum Frame"],
 			group = "activities",
 			names = { "CovenantSanctumFrame" },
 			addon = "Blizzard_CovenantSanctum",
@@ -758,7 +758,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CovenantMissionFrame",
-			label = "Covenant Mission Frame",
+			label = ns.L["Covenant Mission Frame"],
 			group = "activities",
 			names = { "CovenantMissionFrame" },
 			addon = "Blizzard_GarrisonUI",
@@ -766,7 +766,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CovenantRenownFrame",
-			label = "Covenant Renown Frame",
+			label = ns.L["Covenant Renown Frame"],
 			group = "activities",
 			names = { "CovenantRenownFrame" },
 			addon = "Blizzard_CovenantRenown",
@@ -774,7 +774,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "CovenantPreviewFrame",
-			label = "Covenant Preview Frame",
+			label = ns.L["Covenant Preview Frame"],
 			group = "activities",
 			names = { "CovenantPreviewFrame" },
 			addon = "Blizzard_CovenantPreviewUI",
@@ -782,7 +782,7 @@ M._FrameRegistryData = {
 		},
 		{
 			id = "GarrisonLandingPage",
-			label = "Garrison Landing Page",
+			label = ns.L["Garrison Landing Page"],
 			group = "activities",
 			names = { "GarrisonLandingPage" },
 			addon = "Blizzard_GarrisonUI",

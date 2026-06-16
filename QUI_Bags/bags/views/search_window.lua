@@ -18,6 +18,14 @@ local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local SearchWindow = {}
 Bags.SearchWindow = SearchWindow
 
@@ -43,7 +51,7 @@ local searchTimer = nil
 --- "Name-Realm" key, the warband gets a friendly constant, guild keys drop
 --- the registry prefix and gain chat-style brackets.
 function SearchWindow.OwnerLabel(ownerKey)
-    if ownerKey == Bags.Summaries.WARBAND_OWNER then return "Warband" end
+    if ownerKey == Bags.Summaries.WARBAND_OWNER then return ns.L["Warband"] end
     local prefix = Bags.Summaries.GUILD_PREFIX
     if ownerKey:sub(1, #prefix) == prefix then
         return "<" .. ownerKey:sub(#prefix + 1) .. ">"
@@ -95,18 +103,18 @@ local function CreateRow(parent)
 
     local fontPath = Helpers.GetGeneralFont() or STANDARD_TEXT_FONT
     row._name = row:CreateFontString(nil, "ARTWORK")
-    row._name:SetFont(fontPath, 12, "OUTLINE")
+    CJKFont(row._name, fontPath, 12, "OUTLINE")
     row._name:SetPoint("LEFT", row._icon, "RIGHT", 6, 0)
     row._name:SetSize(NAME_W, ROW_H)
     row._name:SetJustifyH("LEFT")
     row._name:SetWordWrap(false)
 
     row._total = row:CreateFontString(nil, "ARTWORK")
-    row._total:SetFont(fontPath, 12, "OUTLINE")
+    CJKFont(row._total, fontPath, 12, "OUTLINE")
     row._total:SetPoint("RIGHT", -4, 0)
 
     row._owners = row:CreateFontString(nil, "ARTWORK")
-    row._owners:SetFont(fontPath, 11, "OUTLINE")
+    CJKFont(row._owners, fontPath, 11, "OUTLINE")
     row._owners:SetTextColor(0.65, 0.65, 0.65)
     row._owners:SetPoint("LEFT", row._name, "RIGHT", 8, 0)
     row._owners:SetPoint("RIGHT", row._total, "LEFT", -8, 0)
@@ -170,7 +178,7 @@ local function EnsureWindow()
     if win then return win end
     win = Bags.Chassis.CreateWindow({
         name = "QUI_SearchEverywhere",
-        title = "Search Everywhere",
+        title = ns.L["Search Everywhere"],
         getPosition = function()
             local s = GetSettings()
             return s and s.windows and s.windows.search or nil
@@ -232,7 +240,7 @@ local function EnsureWindow()
     -- footer: result count / "+N more" / blank-query hint
     win._status = win._footer:CreateFontString(nil, "ARTWORK")
     win._status:SetPoint("LEFT", 8, 0)
-    win._status:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    CJKFont(win._status, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
     win._status:SetTextColor(0.65, 0.65, 0.65)
 
     win:SetContentSize(CONTENT_W, CONTENT_H)
@@ -255,7 +263,7 @@ local function DressRow(row, item)
         row._name:SetTextColor(r, g, b)
     else
         -- details not loaded yet; the next refresh picks the name up
-        row._name:SetText("Item #" .. item.itemID)
+        row._name:SetText(ns.L["Item #"] .. item.itemID)
         row._name:SetTextColor(0.6, 0.6, 0.6)
     end
     row._total:SetText("\195\151" .. item.total) -- ×total
@@ -287,12 +295,12 @@ function SearchWindow.Refresh()
     win._scrollChild:SetHeight(math.max(#results * ROW_H, 1))
     SetScroll(0) -- a new result set always starts at the top
     if results.blank then
-        win._status:SetText("Type to search every cached bag, bank, mailbox, auction and guild vault.")
+        win._status:SetText(ns.L["Type to search every cached bag, bank, mailbox, auction and guild vault."])
     elseif results.truncated then
-        win._status:SetText(#results .. " shown, +" .. results.truncated
-            .. " more \226\128\148 refine the query") -- — em dash
+        win._status:SetText(#results .. " " .. ns.L["shown"] .. ", +" .. results.truncated
+            .. " " .. ns.L["more"] .. " \226\128\148 " .. ns.L["refine the query"]) -- — em dash
     else
-        win._status:SetText(#results .. (#results == 1 and " match" or " matches"))
+        win._status:SetText(#results .. (#results == 1 and " " .. ns.L["match"] or " " .. ns.L["matches"]))
     end
 end
 

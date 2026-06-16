@@ -11,6 +11,14 @@ local ADDON_NAME, ns = ...
 local QUI = QUI
 local LSM = ns.LSM
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- MODULE NAMESPACE
 ---------------------------------------------------------------------------
@@ -291,7 +299,7 @@ local function StyleButton(btn)
     end
 
     -- Duration text
-    btn.duration:SetFont(GetGeneralFont(), db.durationSize or 13, GetGeneralFontOutline())
+    CJKFont(btn.duration, GetGeneralFont(), db.durationSize or 13, GetGeneralFontOutline())
     local dColor = db.durationColor or {1, 1, 1, 1}
     btn.duration:SetTextColor(dColor[1], dColor[2], dColor[3], dColor[4] or 1)
     btn.duration:ClearAllPoints()

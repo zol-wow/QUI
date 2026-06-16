@@ -27,93 +27,93 @@ local function BuildCrosshairTab(tabContent)
         local cr = db.reticle
 
         local reticleStyleOptions = {
-            {value = "dot", text = "Dot"},
-            {value = "cross", text = "Cross"},
-            {value = "chevron", text = "Chevron"},
-            {value = "diamond", text = "Diamond"},
+            {value = "dot", text = ns.L["Dot"]},
+            {value = "cross", text = ns.L["Cross"]},
+            {value = "chevron", text = ns.L["Chevron"]},
+            {value = "diamond", text = ns.L["Diamond"]},
         }
         local ringStyleOptions = {
-            {value = "thin", text = "Thin"},
-            {value = "standard", text = "Standard"},
-            {value = "thick", text = "Thick"},
-            {value = "solid", text = "Solid"},
+            {value = "thin", text = ns.L["Thin"]},
+            {value = "standard", text = ns.L["Standard"]},
+            {value = "thick", text = ns.L["Thick"]},
+            {value = "solid", text = ns.L["Solid"]},
         }
 
-        L.headerAt("Cursor Ring")
+        L.headerAt(ns.L["Cursor Ring"])
         local sCR = L.sectionAt()
 
         local crEnableW = GUI:CreateFormCheckbox(sCR.frame, nil, "enabled", cr, Shared.RefreshReticle,
-            { description = "Show a customizable reticle at the center of your screen for aiming and combat feedback." })
+            { description = ns.L["Show a customizable reticle at the center of your screen for aiming and combat feedback."] })
         local crStyleW = GUI:CreateFormDropdown(sCR.frame, nil, reticleStyleOptions, "reticleStyle", cr, Shared.RefreshReticle,
-            { description = "Shape of the reticle drawn at the center of the cursor ring (dot, cross, chevron, or diamond)." })
+            { description = ns.L["Shape of the reticle drawn at the center of the cursor ring (dot, cross, chevron, or diamond)."] })
         sCR.AddRow(
-            row(sCR.frame, "Enable Reticle", crEnableW),
-            row(sCR.frame, "Reticle Style", crStyleW)
+            row(sCR.frame, ns.L["Enable Reticle"], crEnableW),
+            row(sCR.frame, ns.L["Reticle Style"], crStyleW)
         )
 
         local crRetSizeW = GUI:CreateFormSlider(sCR.frame, nil, 4, 20, 1, "reticleSize", cr, Shared.RefreshReticle,
-            { description = "Pixel size of the center reticle shape." })
+            { description = ns.L["Pixel size of the center reticle shape."] })
         local crRingStyleW = GUI:CreateFormDropdown(sCR.frame, nil, ringStyleOptions, "ringStyle", cr, Shared.RefreshReticle,
-            { description = "Stroke style of the ring that surrounds the reticle." })
+            { description = ns.L["Stroke style of the ring that surrounds the reticle."] })
         sCR.AddRow(
-            row(sCR.frame, "Reticle Size", crRetSizeW),
-            row(sCR.frame, "Ring Style", crRingStyleW)
+            row(sCR.frame, ns.L["Reticle Size"], crRetSizeW),
+            row(sCR.frame, ns.L["Ring Style"], crRingStyleW)
         )
 
         local crRingSizeW = GUI:CreateFormSlider(sCR.frame, nil, 20, 80, 1, "ringSize", cr, Shared.RefreshReticle,
-            { description = "Outer diameter of the cursor ring in pixels." })
+            { description = ns.L["Outer diameter of the cursor ring in pixels."] })
         local crClassW = GUI:CreateFormCheckbox(sCR.frame, nil, "useClassColor", cr, Shared.RefreshReticle,
-            { description = "Tint the reticle with your character's class color instead of the default white." })
+            { description = ns.L["Tint the reticle with your character's class color instead of the default white."] })
         sCR.AddRow(
-            row(sCR.frame, "Ring Size", crRingSizeW),
-            row(sCR.frame, "Use Class Color", crClassW)
+            row(sCR.frame, ns.L["Ring Size"], crRingSizeW),
+            row(sCR.frame, ns.L["Use Class Color"], crClassW)
         )
 
         local crCustomColorW = GUI:CreateFormColorPicker(sCR.frame, nil, "customColor", cr, Shared.RefreshReticle, nil,
-            { description = "Custom color applied to the reticle and ring when Use Class Color is off." })
+            { description = ns.L["Custom color applied to the reticle and ring when Use Class Color is off."] })
         local crInCombatW = GUI:CreateFormSlider(sCR.frame, nil, 0, 1, 0.05, "inCombatAlpha", cr, Shared.RefreshReticle,
-            { precision = 2, description = "Opacity of the reticle while you are in combat. 0 is fully invisible, 1 is fully opaque." })
+            { precision = 2, description = ns.L["Opacity of the reticle while you are in combat. 0 is fully invisible, 1 is fully opaque."] })
         sCR.AddRow(
-            row(sCR.frame, "Custom Color", crCustomColorW),
-            row(sCR.frame, "Combat Opacity", crInCombatW)
+            row(sCR.frame, ns.L["Custom Color"], crCustomColorW),
+            row(sCR.frame, ns.L["Combat Opacity"], crInCombatW)
         )
 
         local crOutCombatW = GUI:CreateFormSlider(sCR.frame, nil, 0, 1, 0.05, "outCombatAlpha", cr, Shared.RefreshReticle,
-            { precision = 2, description = "Opacity of the reticle while you are out of combat." })
+            { precision = 2, description = ns.L["Opacity of the reticle while you are out of combat."] })
         local crHideOocW = GUI:CreateFormCheckbox(sCR.frame, nil, "hideOutOfCombat", cr, Shared.RefreshReticle,
-            { description = "Completely hide the reticle when you are not in combat, ignoring the Out-of-Combat Opacity slider." })
+            { description = ns.L["Completely hide the reticle when you are not in combat, ignoring the Out-of-Combat Opacity slider."] })
         sCR.AddRow(
-            row(sCR.frame, "Out-of-Combat Opacity", crOutCombatW),
-            row(sCR.frame, "Hide Outside Combat", crHideOocW)
+            row(sCR.frame, ns.L["Out-of-Combat Opacity"], crOutCombatW),
+            row(sCR.frame, ns.L["Hide Outside Combat"], crHideOocW)
         )
         L.closeSection(sCR)
 
         -- Cursor Ring — GCD
-        L.headerAt("Cursor Ring — GCD")
+        L.headerAt(ns.L["Cursor Ring — GCD"])
         local sGCD = L.sectionAt()
         local gcdEnableW = GUI:CreateFormCheckbox(sGCD.frame, nil, "gcdEnabled", cr, Shared.RefreshReticle,
-            { description = "Animate a radial sweep around the cursor ring during your global cooldown so you can see when the next ability is available." })
+            { description = ns.L["Animate a radial sweep around the cursor ring during your global cooldown so you can see when the next ability is available."] })
         local gcdFadeW = GUI:CreateFormSlider(sGCD.frame, nil, 0, 1, 0.05, "gcdFadeRing", cr, Shared.RefreshReticle,
-            { precision = 2, description = "Fade the cursor ring itself during the GCD sweep. Higher values fade the ring more as the sweep progresses." })
+            { precision = 2, description = ns.L["Fade the cursor ring itself during the GCD sweep. Higher values fade the ring more as the sweep progresses."] })
         sGCD.AddRow(
-            row(sGCD.frame, "Enable GCD Swipe", gcdEnableW),
-            row(sGCD.frame, "Ring Fade During GCD", gcdFadeW)
+            row(sGCD.frame, ns.L["Enable GCD Swipe"], gcdEnableW),
+            row(sGCD.frame, ns.L["Ring Fade During GCD"], gcdFadeW)
         )
 
         local gcdReverseW = GUI:CreateFormCheckbox(sGCD.frame, nil, "gcdReverse", cr, Shared.RefreshReticle,
-            { description = "Reverse the direction of the GCD sweep animation." })
+            { description = ns.L["Reverse the direction of the GCD sweep animation."] })
         local gcdHideRMBW = GUI:CreateFormCheckbox(sGCD.frame, nil, "hideOnRightClick", cr, Shared.RefreshReticle,
-            { description = "Hide the reticle while you are holding right mouse button to turn the camera." })
+            { description = ns.L["Hide the reticle while you are holding right mouse button to turn the camera."] })
         sGCD.AddRow(
-            row(sGCD.frame, "Reverse Swipe", gcdReverseW),
-            row(sGCD.frame, "Hide on Right-Click", gcdHideRMBW)
+            row(sGCD.frame, ns.L["Reverse Swipe"], gcdReverseW),
+            row(sGCD.frame, ns.L["Hide on Right-Click"], gcdHideRMBW)
         )
         L.closeSection(sGCD)
 
         -- CPU usage note (custom block, no card chrome).
         local note = CreateFrame("Frame", nil, tabContent)
         local noteText = GUI:CreateLabel(note,
-            "Note that cursor replacements consume some CPU resources due to continuous tracking. Negligible on modern CPUs.",
+            ns.L["Note that cursor replacements consume some CPU resources due to continuous tracking. Negligible on modern CPUs."],
             11, C.textMuted)
         noteText:SetPoint("TOPLEFT", note, "TOPLEFT", 6, 0)
         noteText:SetPoint("RIGHT", note, "RIGHT", -6, 0)
@@ -127,32 +127,32 @@ local function BuildCrosshairTab(tabContent)
         local ch = db.crosshair
 
         local strataOptions = {
-            {value = "BACKGROUND", text = "Background"},
-            {value = "LOW", text = "Low"},
-            {value = "MEDIUM", text = "Medium"},
-            {value = "HIGH", text = "High"},
-            {value = "DIALOG", text = "Dialog"},
+            {value = "BACKGROUND", text = ns.L["Background"]},
+            {value = "LOW", text = ns.L["Low"]},
+            {value = "MEDIUM", text = ns.L["Medium"]},
+            {value = "HIGH", text = ns.L["High"]},
+            {value = "DIALOG", text = ns.L["Dialog"]},
         }
 
         -- General
-        L.headerAt("Crosshair — General")
+        L.headerAt(ns.L["Crosshair — General"])
         local sGen = L.sectionAt()
         local genShowW = GUI:CreateFormCheckbox(sGen.frame, nil, "enabled", ch, Shared.RefreshCrosshair,
-            { description = "Show the QUI crosshair at the center of your screen. Useful for Dragonriding, action-camera play, and ranged classes." })
+            { description = ns.L["Show the QUI crosshair at the center of your screen. Useful for Dragonriding, action-camera play, and ranged classes."] })
         local genCombatW = GUI:CreateFormCheckbox(sGen.frame, nil, "onlyInCombat", ch, Shared.RefreshCrosshair,
-            { description = "Only display the crosshair while you are in combat." })
+            { description = ns.L["Only display the crosshair while you are in combat."] })
         sGen.AddRow(
-            row(sGen.frame, "Show Crosshair", genShowW),
-            row(sGen.frame, "Combat Only", genCombatW)
+            row(sGen.frame, ns.L["Show Crosshair"], genShowW),
+            row(sGen.frame, ns.L["Combat Only"], genCombatW)
         )
 
         local genStrataW = GUI:CreateFormDropdown(sGen.frame, nil, strataOptions, "strata", ch, Shared.RefreshCrosshair,
-            { description = "Rendering layer the crosshair is drawn in. Raise this if the crosshair is being covered by other frames." })
-        sGen.AddRow(row(sGen.frame, "Frame Strata", genStrataW))
+            { description = ns.L["Rendering layer the crosshair is drawn in. Raise this if the crosshair is being covered by other frames."] })
+        sGen.AddRow(row(sGen.frame, ns.L["Frame Strata"], genStrataW))
         L.closeSection(sGen)
 
         -- Range Checking — cross-widget enable/disable logic preserved.
-        L.headerAt("Crosshair — Range Checking")
+        L.headerAt(ns.L["Crosshair — Range Checking"])
         local sRC = L.sectionAt()
         local outOfRangeColorPicker, rangeColorCombatOnlyCheck, hideUntilOutOfRangeCheck
         local meleeRangeCheck, midRangeCheck, midRangeColorPicker
@@ -167,7 +167,7 @@ local function BuildCrosshairTab(tabContent)
             end
             if rangeColorCombatOnlyCheck and rangeColorCombatOnlyCheck.SetEnabled then rangeColorCombatOnlyCheck:SetEnabled(val) end
             if hideUntilOutOfRangeCheck and hideUntilOutOfRangeCheck.SetEnabled then hideUntilOutOfRangeCheck:SetEnabled(val) end
-        end, { description = "Tint the crosshair based on your target's range. Enables the melee/mid-range thresholds and color pickers below." })
+        end, { description = ns.L["Tint the crosshair based on your target's range. Enables the melee/mid-range thresholds and color pickers below."] })
 
         if ch.enableMeleeRangeCheck == nil then ch.enableMeleeRangeCheck = true end
 
@@ -176,12 +176,12 @@ local function BuildCrosshairTab(tabContent)
             if midRangeColorPicker and midRangeColorPicker.SetEnabled then
                 midRangeColorPicker:SetEnabled(ch.changeColorOnRange and val and ch.enableMidRangeCheck)
             end
-        end, { description = "Check whether your target is within 5 yards (melee range) and color the crosshair accordingly." })
+        end, { description = ns.L["Check whether your target is within 5 yards (melee range) and color the crosshair accordingly."] })
         if meleeRangeCheck.SetEnabled then meleeRangeCheck:SetEnabled(ch.changeColorOnRange == true) end
 
         sRC.AddRow(
-            row(sRC.frame, "Enable Range Checking", rangeColorCheck),
-            row(sRC.frame, "Melee Range (5 yards)", meleeRangeCheck)
+            row(sRC.frame, ns.L["Enable Range Checking"], rangeColorCheck),
+            row(sRC.frame, ns.L["Melee Range (5 yards)"], meleeRangeCheck)
         )
 
         midRangeCheck = GUI:CreateFormCheckbox(sRC.frame, nil, "enableMidRangeCheck", ch, function(val)
@@ -189,43 +189,43 @@ local function BuildCrosshairTab(tabContent)
             if midRangeColorPicker and midRangeColorPicker.SetEnabled then
                 midRangeColorPicker:SetEnabled(ch.changeColorOnRange and ch.enableMeleeRangeCheck and val)
             end
-        end, { description = "Check whether your target is within the mid-range 25-yard threshold used by Evoker and Demon Hunter specs, and color the crosshair accordingly." })
+        end, { description = ns.L["Check whether your target is within the mid-range 25-yard threshold used by Evoker and Demon Hunter specs, and color the crosshair accordingly."] })
         if midRangeCheck.SetEnabled then midRangeCheck:SetEnabled(ch.changeColorOnRange == true) end
 
         rangeColorCombatOnlyCheck = GUI:CreateFormCheckbox(sRC.frame, nil, "rangeColorInCombatOnly", ch, Shared.RefreshCrosshair,
-            { description = "Only run the range check (and apply tints) while you are in combat." })
+            { description = ns.L["Only run the range check (and apply tints) while you are in combat."] })
         if rangeColorCombatOnlyCheck.SetEnabled then rangeColorCombatOnlyCheck:SetEnabled(ch.changeColorOnRange == true) end
 
         sRC.AddRow(
-            row(sRC.frame, "Mid-Range (25 yards) - Evoker/DDH", midRangeCheck),
-            row(sRC.frame, "Check Only In Combat", rangeColorCombatOnlyCheck)
+            row(sRC.frame, ns.L["Mid-Range (25 yards) - Evoker/DDH"], midRangeCheck),
+            row(sRC.frame, ns.L["Check Only In Combat"], rangeColorCombatOnlyCheck)
         )
 
         hideUntilOutOfRangeCheck = GUI:CreateFormCheckbox(sRC.frame, nil, "hideUntilOutOfRange", ch, Shared.RefreshCrosshair,
-            { description = "Keep the crosshair hidden unless your target is out of range, turning it into a range-warning indicator." })
+            { description = ns.L["Keep the crosshair hidden unless your target is out of range, turning it into a range-warning indicator."] })
         if hideUntilOutOfRangeCheck.SetEnabled then hideUntilOutOfRangeCheck:SetEnabled(ch.changeColorOnRange == true) end
 
         if not ch.outOfRangeColor then ch.outOfRangeColor = { 1, 0.2, 0.2, 1 } end
         outOfRangeColorPicker = GUI:CreateFormColorPicker(sRC.frame, nil, "outOfRangeColor", ch, Shared.RefreshCrosshair, nil,
-            { description = "Color applied to the crosshair when your target is out of the configured range." })
+            { description = ns.L["Color applied to the crosshair when your target is out of the configured range."] })
         if outOfRangeColorPicker.SetEnabled then outOfRangeColorPicker:SetEnabled(ch.changeColorOnRange == true) end
 
         sRC.AddRow(
-            row(sRC.frame, "Only Show When Out of Range", hideUntilOutOfRangeCheck),
-            row(sRC.frame, "Out of Range Color", outOfRangeColorPicker)
+            row(sRC.frame, ns.L["Only Show When Out of Range"], hideUntilOutOfRangeCheck),
+            row(sRC.frame, ns.L["Out of Range Color"], outOfRangeColorPicker)
         )
 
         if ch.midRangeColor == nil then ch.midRangeColor = { 1, 0.6, 0.2, 1 } end
         midRangeColorPicker = GUI:CreateFormColorPicker(sRC.frame, nil, "midRangeColor", ch, Shared.RefreshCrosshair, nil,
-            { description = "Color applied to the crosshair when your target is between the melee (5yd) and mid-range (25yd) thresholds." })
+            { description = ns.L["Color applied to the crosshair when your target is between the melee (5yd) and mid-range (25yd) thresholds."] })
         if midRangeColorPicker.SetEnabled then
             midRangeColorPicker:SetEnabled(ch.changeColorOnRange == true and ch.enableMeleeRangeCheck ~= false and ch.enableMidRangeCheck == true)
         end
-        sRC.AddRow(row(sRC.frame, "Mid-Range Color (between melee & 25yd)", midRangeColorPicker))
+        sRC.AddRow(row(sRC.frame, ns.L["Mid-Range Color (between melee & 25yd)"], midRangeColorPicker))
         L.closeSection(sRC)
 
         -- Appearance
-        L.headerAt("Crosshair — Appearance")
+        L.headerAt(ns.L["Crosshair — Appearance"])
         local sAp = L.sectionAt()
         if not ch.lineColor then
             ch.lineColor = { ch.r or 0.286, ch.g or 0.929, ch.b or 1, ch.a or 1 }
@@ -233,30 +233,30 @@ local function BuildCrosshairTab(tabContent)
         local apLineW = GUI:CreateFormColorPicker(sAp.frame, nil, "lineColor", ch, function()
             ch.r, ch.g, ch.b, ch.a = ch.lineColor[1], ch.lineColor[2], ch.lineColor[3], ch.lineColor[4]
             Shared.RefreshCrosshair()
-        end, nil, { description = "Base color of the crosshair lines. Overridden by range tints when range checking is enabled and applicable." })
+        end, nil, { description = ns.L["Base color of the crosshair lines. Overridden by range tints when range checking is enabled and applicable."] })
 
         local apBorderSrcW, apBorderColW = ns.QUI_BorderControl.Attach(GUI, sAp.frame, ch, "", Shared.RefreshCrosshair,
-            { label = "Outline Color Source", colorLabel = "Outline Color",
-              colorDescription = "Color of the outline drawn around the crosshair lines, used to make the crosshair readable against any background." })
+            { label = ns.L["Outline Color Source"], colorLabel = ns.L["Outline Color"],
+              colorDescription = ns.L["Color of the outline drawn around the crosshair lines, used to make the crosshair readable against any background."] })
 
         sAp.AddRow(
-            row(sAp.frame, "Crosshair Color", apLineW),
-            row(sAp.frame, "Outline Color Source", apBorderSrcW)
+            row(sAp.frame, ns.L["Crosshair Color"], apLineW),
+            row(sAp.frame, ns.L["Outline Color Source"], apBorderSrcW)
         )
-        sAp.AddRow(row(sAp.frame, "Outline Color", apBorderColW))
+        sAp.AddRow(row(sAp.frame, ns.L["Outline Color"], apBorderColW))
 
         local apLenW = GUI:CreateFormSlider(sAp.frame, nil, 5, 50, 1, "size", ch, Shared.RefreshCrosshair,
-            { description = "Length of each crosshair arm in pixels." })
+            { description = ns.L["Length of each crosshair arm in pixels."] })
         local apThickW = GUI:CreateFormSlider(sAp.frame, nil, 1, 10, 1, "thickness", ch, Shared.RefreshCrosshair,
-            { description = "Thickness of the crosshair lines in pixels." })
+            { description = ns.L["Thickness of the crosshair lines in pixels."] })
         sAp.AddRow(
-            row(sAp.frame, "Length", apLenW),
-            row(sAp.frame, "Thickness", apThickW)
+            row(sAp.frame, ns.L["Length"], apLenW),
+            row(sAp.frame, ns.L["Thickness"], apThickW)
         )
 
         local apOutlineW = GUI:CreateFormSlider(sAp.frame, nil, 0, 5, 1, "borderSize", ch, Shared.RefreshCrosshair,
-            { description = "Thickness of the outline drawn around each crosshair line. 0 disables the outline." })
-        sAp.AddRow(row(sAp.frame, "Outline Size", apOutlineW))
+            { description = ns.L["Thickness of the outline drawn around each crosshair line. 0 disables the outline."] })
+        sAp.AddRow(row(sAp.frame, ns.L["Outline Size"], apOutlineW))
         L.closeSection(sAp)
     end
 

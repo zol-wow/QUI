@@ -36,12 +36,12 @@ local function BuildHelpContent(content)
     -- =====================================================
     -- HEADER
     -- =====================================================
-    local title = CreateWrappedLabel(content, "Help & Documentation", 20, C.accent, contentWidth)
+    local title = CreateWrappedLabel(content, ns.L["Help & Documentation"], 20, C.accent, contentWidth)
     title:SetPoint("TOPLEFT", PADDING, y)
     y = y - 28
 
     local subtitle = CreateWrappedLabel(content,
-        "Everything you need to get started and troubleshoot QUI.",
+        ns.L["Everything you need to get started and troubleshoot QUI."],
         12, C.textMuted, contentWidth - PADDING * 2)
     subtitle:SetPoint("TOPLEFT", PADDING, y)
     y = y - (subtitle:GetStringHeight() or 14) - 18
@@ -49,7 +49,7 @@ local function BuildHelpContent(content)
     -- =====================================================
     -- GETTING STARTED
     -- =====================================================
-    Shared.CreateAccentDotLabel(content, "Getting Started", y); y = y - SECTION_LABEL_GAP
+    Shared.CreateAccentDotLabel(content, ns.L["Getting Started"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.GettingStarted then
         for _, step in ipairs(HelpContent.GettingStarted) do
@@ -65,7 +65,7 @@ local function BuildHelpContent(content)
     -- =====================================================
     -- FEATURE GUIDES (flat — no card chrome)
     -- =====================================================
-    Shared.CreateAccentDotLabel(content, "Feature Guides", y); y = y - SECTION_LABEL_GAP
+    Shared.CreateAccentDotLabel(content, ns.L["Feature Guides"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.FeatureGuides then
         for _, guide in ipairs(HelpContent.FeatureGuides) do
@@ -94,7 +94,7 @@ local function BuildHelpContent(content)
     -- =====================================================
     -- SLASH COMMANDS
     -- =====================================================
-    Shared.CreateAccentDotLabel(content, "Slash Commands", y); y = y - SECTION_LABEL_GAP
+    Shared.CreateAccentDotLabel(content, ns.L["Slash Commands"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.SlashCommands then
         for _, cmd in ipairs(HelpContent.SlashCommands) do
@@ -110,7 +110,7 @@ local function BuildHelpContent(content)
     -- =====================================================
     -- TROUBLESHOOTING
     -- =====================================================
-    Shared.CreateAccentDotLabel(content, "Troubleshooting", y); y = y - SECTION_LABEL_GAP
+    Shared.CreateAccentDotLabel(content, ns.L["Troubleshooting"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.Troubleshooting then
         for _, qa in ipairs(HelpContent.Troubleshooting) do
@@ -128,7 +128,7 @@ local function BuildHelpContent(content)
     -- =====================================================
     -- LINKS & RESOURCES
     -- =====================================================
-    Shared.CreateAccentDotLabel(content, "Links & Resources", y); y = y - SECTION_LABEL_GAP
+    Shared.CreateAccentDotLabel(content, ns.L["Links & Resources"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.Links then
         for _, link in ipairs(HelpContent.Links) do

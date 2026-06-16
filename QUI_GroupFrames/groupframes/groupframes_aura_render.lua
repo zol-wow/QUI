@@ -41,6 +41,14 @@ local ADDON_NAME, ns = ...
 local R = ns.QUI_GroupFrameAuraRender or {}
 ns.QUI_GroupFrameAuraRender = R
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- LAZY GLOBAL/HELPER ACCESS
 -- Resolved on first use rather than at file scope so the module loads under a
@@ -169,7 +177,7 @@ local function StyleCountdownText(cd, fontSize)
     if not cd or not cd.GetCountdownFontString then return end
     local ok, cdText = pcall(cd.GetCountdownFontString, cd)
     if not ok or not cdText or not cdText.SetFont then return end
-    cdText:SetFont(GetFontPath(fontSize), fontSize or 9, "OUTLINE")
+    CJKFont(cdText, GetFontPath(fontSize), fontSize or 9, "OUTLINE")
 end
 
 ---------------------------------------------------------------------------

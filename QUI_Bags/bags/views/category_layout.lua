@@ -24,15 +24,15 @@ Bags.CategoryLayout = CategoryLayout
 
 -- Ordered bucket definitions (render order; junk deliberately last).
 CategoryLayout.CATEGORIES = {
-    { key = "recent",      title = "Recent" },
-    { key = "equipment",   title = "Equipment" },
-    { key = "consumables", title = "Consumables" },
-    { key = "trade",       title = "Trade Goods" },
-    { key = "quest",       title = "Quest" },
-    { key = "recipes",     title = "Recipes" },
-    { key = "battlepets",  title = "Battle Pets" },
-    { key = "misc",        title = "Miscellaneous" },
-    { key = "junk",        title = "Junk" },
+    { key = "recent",      title = ns.L["Recent"] },
+    { key = "equipment",   title = ns.L["Equipment"] },
+    { key = "consumables", title = ns.L["Consumables"] },
+    { key = "trade",       title = ns.L["Trade Goods"] },
+    { key = "quest",       title = ns.L["Quest"] },
+    { key = "recipes",     title = ns.L["Recipes"] },
+    { key = "battlepets",  title = ns.L["Battle Pets"] },
+    { key = "misc",        title = ns.L["Miscellaneous"] },
+    { key = "junk",        title = ns.L["Junk"] },
 }
 
 local CLASS_BUCKET = {

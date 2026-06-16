@@ -423,7 +423,11 @@ local function ApplyTabFont(fontString, fallbackSize)
         end
     end
     local outline = (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or ""
-    fontString:SetFont(fontPath, size or 11, outline)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fontString, fontPath, size or 11, outline)
+    else
+        fontString:SetFont(fontPath, size or 11, outline)
+    end
 end
 
 local function ThemeText()
@@ -840,7 +844,7 @@ local function ShowTabContextMenu(inst, btn)
             local TMcl = ns.QUI.Chat.TabManager
             local clTab = TMcl and TMcl.GetWindowTab and TMcl.GetWindowTab(inst.windowID, -btn.frameID)
             if TMcl and TMcl.IsCombatLogTab and TMcl.IsCombatLogTab(clTab) then
-                rootDescription:CreateButton("Combat Log Settings", function()
+                rootDescription:CreateButton(ns.L["Combat Log Settings"], function()
                     if _G.ShowUIPanel and _G.ChatConfigFrame then
                         _G.ShowUIPanel(_G.ChatConfigFrame)
                     end
@@ -849,7 +853,7 @@ local function ShowTabContextMenu(inst, btn)
             end
         end
         if type(btn.frameID) == "string" then
-            rootDescription:CreateButton("Close conversation", function()
+            rootDescription:CreateButton(ns.L["Close conversation"], function()
                 -- Click-time re-read: the button may have been pool-recycled
                 -- while the menu was open. Only act if it's still a
                 -- conversation tab.
@@ -861,10 +865,10 @@ local function ShowTabContextMenu(inst, btn)
             return
         end
         -- Saved-tab branch: QUI settings deep-links, then move/close actions.
-        rootDescription:CreateButton("Filter Settings", function()
+        rootDescription:CreateButton(ns.L["Filter Settings"], function()
             OpenChatSettings(2) -- Filters sub-page
         end)
-        rootDescription:CreateButton("Tab Settings", function()
+        rootDescription:CreateButton(ns.L["Tab Settings"], function()
             OpenChatSettings(1) -- Chat sub-page (tab options live here)
         end)
         -- Saved-tab branch: re-derive the tab index at click time so a
@@ -875,14 +879,14 @@ local function ShowTabContextMenu(inst, btn)
         local nWindows = (Display.GetWindowCount and Display.GetWindowCount()) or 1
         for w = 1, nWindows do
             if w ~= inst.windowID then
-                rootDescription:CreateButton("Move to window " .. w, function()
+                rootDescription:CreateButton(ns.L["Move to window "] .. w, function()
                     local fid = btn.frameID
                     if type(fid) ~= "number" or fid >= 0 then return end
                     MoveTabToWindow(inst, -fid, w)
                 end)
             end
         end
-        rootDescription:CreateButton("Move to new window", function()
+        rootDescription:CreateButton(ns.L["Move to new window"], function()
             local fid = btn.frameID
             if type(fid) ~= "number" or fid >= 0 then return end
             local newID = Display.CreateNewWindow and Display.CreateNewWindow()
@@ -894,7 +898,7 @@ local function ShowTabContextMenu(inst, btn)
             local TM = ns.QUI.Chat.TabManager
             local tabs = TM and TM.GetWindowTabs and TM.GetWindowTabs(inst.windowID)
             if tabs and #tabs <= 1 then
-                rootDescription:CreateButton("Close window", function()
+                rootDescription:CreateButton(ns.L["Close window"], function()
                     if Display.DeleteWindow then Display.DeleteWindow(inst.windowID) end
                 end)
             end

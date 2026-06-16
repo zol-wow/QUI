@@ -15,11 +15,11 @@ ns.QUI_BorderControl = BorderControl
 local function SourceOptions(includeInherit)
     local opts = {}
     if includeInherit ~= false then
-        opts[#opts + 1] = { value = "inherit", text = "Inherit (global)" }
+        opts[#opts + 1] = { value = "inherit", text = ns.L["Inherit (global)"] }
     end
-    opts[#opts + 1] = { value = "theme",  text = "Theme accent" }
-    opts[#opts + 1] = { value = "class",  text = "Class color" }
-    opts[#opts + 1] = { value = "custom", text = "Custom" }
+    opts[#opts + 1] = { value = "theme",  text = ns.L["Theme accent"] }
+    opts[#opts + 1] = { value = "class",  text = ns.L["Class color"] }
+    opts[#opts + 1] = { value = "custom", text = ns.L["Custom"] }
     return opts
 end
 

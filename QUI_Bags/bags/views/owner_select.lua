@@ -34,13 +34,13 @@ function OwnerSelect.BuildOwnerList(keys, currentKey)
     for _, key in ipairs(keys or {}) do
         if key == currentKey then
             seen = true
-            list[#list + 1] = { key = key, label = key .. " (current)" }
+            list[#list + 1] = { key = key, label = key .. " " .. ns.L["(current)"] }
         else
             list[#list + 1] = { key = key, label = key }
         end
     end
     if currentKey and not seen then
-        table.insert(list, 1, { key = currentKey, label = currentKey .. " (current)" })
+        table.insert(list, 1, { key = currentKey, label = currentKey .. " " .. ns.L["(current)"] })
     end
     return list
 end
@@ -88,7 +88,7 @@ function OwnerSelect.Attach(win, opts)
             self:Hide()
             return
         end
-        self._label:SetText(opts.current() or "Select")
+        self._label:SetText(opts.current() or ns.L["Select"])
         self:SetSize(math.max(40, math.ceil(self._label:GetStringWidth()) + 14), 18)
         local sr, sg, sb = Helpers.GetSkinColors()
         UIKit.UpdateBorderLines(self, 1, sr, sg, sb, 0.35)

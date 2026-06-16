@@ -130,9 +130,9 @@ end
 ---------------------------------------------------------------------------
 
 RegisterNonVisualFeature("clickCast", {
-    group        = "Frames",
-    label        = "Click-Cast",
-    caption      = "Mouse and key bindings on unit, party, and raid frames.",
+    group        = ns.L["Frames"],
+    label        = ns.L["Click-Cast"],
+    caption      = ns.L["Mouse and key bindings on unit, party, and raid frames."],
     combatLocked = true,
     isEnabled    = function()
         local db = DBChar("clickCast")()
@@ -161,9 +161,9 @@ RegisterNonVisualFeature("clickCast", {
 -- General > QoL settings panel).
 Register(
     "popupBlocker",
-    "QoL",
-    "Popup Blocker",
-    "Hides Blizzard tutorial popups, micro-button glows, and collection toasts.",
+    ns.L["QoL"],
+    ns.L["Popup Blocker"],
+    ns.L["Hides Blizzard tutorial popups, micro-button glows, and collection toasts."],
     false,
     function() local g = DBGeneral(); return g and g.popupBlocker end,
     "enabled",
@@ -173,9 +173,9 @@ Register(
 -- Quick Salvage: mod-click to disenchant / mill / prospect directly from bags.
 Register(
     "quickSalvage",
-    "QoL",
-    "Quick Salvage",
-    "Alt-click bag items to instantly disenchant, mill, or prospect them.",
+    ns.L["QoL"],
+    ns.L["Quick Salvage"],
+    ns.L["Alt-click bag items to instantly disenchant, mill, or prospect them."],
     false,
     function() local g = DBGeneral(); return g and g.quickSalvage end,
     "enabled",
@@ -185,9 +185,9 @@ Register(
 -- Auto combat log for Mythic+ runs.
 Register(
     "autoCombatLog",
-    "QoL",
-    "Auto Log M+",
-    "Automatically starts and stops combat logging when entering Mythic+ dungeons.",
+    ns.L["QoL"],
+    ns.L["Auto Log M+"],
+    ns.L["Automatically starts and stops combat logging when entering Mythic+ dungeons."],
     false,
     DBGeneral,
     "autoCombatLog",
@@ -197,9 +197,9 @@ Register(
 -- Auto combat log for raid instances.
 Register(
     "autoCombatLogRaid",
-    "QoL",
-    "Auto Log Raids",
-    "Automatically starts and stops combat logging when entering raid instances.",
+    ns.L["QoL"],
+    ns.L["Auto Log Raids"],
+    ns.L["Automatically starts and stops combat logging when entering raid instances."],
     false,
     DBGeneral,
     "autoCombatLogRaid",
@@ -209,9 +209,9 @@ Register(
 -- Reticle: GCD ring + dot drawn at the cursor position.
 Register(
     "reticle",
-    "QoL",
-    "Reticle",
-    "GCD ring and reticle drawn at the cursor for cast timing feedback.",
+    ns.L["QoL"],
+    ns.L["Reticle"],
+    ns.L["GCD ring and reticle drawn at the cursor for cast timing feedback."],
     false,
     DBProfile("reticle"),
     "enabled",
@@ -221,9 +221,9 @@ Register(
 -- M+ Progress: enemy-forces percentages on nameplates and tooltips.
 Register(
     "mplusProgress",
-    "QoL",
-    "M+ Progress",
-    "Displays enemy forces contribution on nameplates and unit tooltips in Mythic+.",
+    ns.L["QoL"],
+    ns.L["M+ Progress"],
+    ns.L["Displays enemy forces contribution on nameplates and unit tooltips in Mythic+."],
     false,
     DBProfile("mplusProgress"),
     "enabled",
@@ -233,9 +233,9 @@ Register(
 -- Combat text: brief enter/leave combat text indicator near screen center.
 Register(
     "combatText",
-    "QoL",
-    "Combat Text",
-    "Shows a brief text flash when entering or leaving combat.",
+    ns.L["QoL"],
+    ns.L["Combat Text"],
+    ns.L["Shows a brief text flash when entering or leaving combat."],
     false,
     DBProfile("combatText"),
     "enabled",
@@ -245,9 +245,9 @@ Register(
 -- Blizzard Frame Mover: modifier-drag repositioning for Blizzard windows.
 Register(
     "blizzardMover",
-    "QoL",
-    "Blizzard Frame Mover",
-    "Enables modifier-drag repositioning and scaling of Blizzard's built-in frames.",
+    ns.L["QoL"],
+    ns.L["Blizzard Frame Mover"],
+    ns.L["Enables modifier-drag repositioning and scaling of Blizzard's built-in frames."],
     false,
     DBProfile("blizzardMover"),
     "enabled",
@@ -263,9 +263,9 @@ Register(
 -- suppresses overlay output on subsequent shows.
 Register(
     "tooltip",
-    "Tooltip",
-    "Tooltip Engine",
-    "Custom tooltip skin, cursor anchoring, item level overlay, and unit info lines.",
+    ns.L["Tooltip"],
+    ns.L["Tooltip Engine"],
+    ns.L["Custom tooltip skin, cursor anchoring, item level overlay, and unit info lines."],
     false,
     DBProfile("tooltip"),
     "enabled",
@@ -285,9 +285,9 @@ do
     end
 
     RegisterNonVisualFeature("consumableMacros", {
-        group        = "QoL",
-        label        = "Consumable Macros",
-        caption      = "Auto-maintains bag-aware macros for flasks, potions, augment runes, and weapon oils.",
+        group        = ns.L["QoL"],
+        label        = ns.L["Consumable Macros"],
+        caption      = ns.L["Auto-maintains bag-aware macros for flasks, potions, augment runes, and weapon oils."],
         combatLocked = false,
         isEnabled    = function()
             local db = GetConsumableMacrosDB()
@@ -321,9 +321,9 @@ end
 -- Character Pane: custom character panel with equipment overlays and stats.
 Register(
     "character",
-    "Character",
-    "Character Pane",
-    "Custom character panel showing item level, enchants, gem slots, and stat overlays.",
+    ns.L["Character"],
+    ns.L["Character Pane"],
+    ns.L["Custom character panel showing item level, enchants, gem slots, and stat overlays."],
     false,
     DBProfile("character"),
     "enabled",
@@ -338,9 +338,9 @@ Register(
 -- displayed below the minimap.
 Register(
     "datatext",
-    "Subsystems",
-    "Datatext Panel",
-    "Info panel below the minimap displaying FPS, latency, durability, time, and more.",
+    ns.L["Subsystems"],
+    ns.L["Datatext Panel"],
+    ns.L["Info panel below the minimap displaying FPS, latency, durability, time, and more."],
     false,
     DBProfile("datatext"),
     "enabled",

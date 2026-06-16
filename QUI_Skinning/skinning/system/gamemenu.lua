@@ -189,7 +189,7 @@ end
 local function GetOrCreateQUIButton()
     if quiButton then return quiButton end
     quiButton = CreateFrame("Button", "QUIGameMenuButton", GameMenuFrame, "UIPanelButtonTemplate")
-    quiButton:SetText("QUI")
+    quiButton:SetText(ns.L["QUI"])
     quiButton:SetSize(160, 30)
     quiButton:SetScript("OnClick", function()
         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
@@ -204,7 +204,7 @@ end
 local function GetOrCreateEditModeButton()
     if editModeButton then return editModeButton end
     editModeButton = CreateFrame("Button", "QUIGameMenuEditModeButton", GameMenuFrame, "UIPanelButtonTemplate")
-    editModeButton:SetText("QUI Edit Mode")
+    editModeButton:SetText(ns.L["QUI Edit Mode"])
     editModeButton:SetSize(160, 30)
     editModeButton:SetScript("OnClick", function()
         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)

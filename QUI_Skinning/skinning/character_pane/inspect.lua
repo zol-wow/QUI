@@ -11,6 +11,14 @@ local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local GetCore = Helpers.GetCore
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local function GetSkinBase()
     return ns.SkinBase
 end
@@ -910,7 +918,7 @@ local function CreateLiteSlotText(slotFrame)
     local fontSize = settings.inspectLiteFontSize or 15
 
     local text = slotFrame:CreateFontString(nil, "OVERLAY")
-    text:SetFont(font, fontSize, "OUTLINE")
+    CJKFont(text, font, fontSize, "OUTLINE")
     text:SetPoint("CENTER", slotFrame, "CENTER", 0, 0)
     text:SetJustifyH("CENTER")
     text:SetJustifyV("MIDDLE")
@@ -938,14 +946,14 @@ local function CreateLiteOverallDisplay()
 
     -- Label text "iLvL:"
     local label = frame:CreateFontString(nil, "OVERLAY")
-    label:SetFont(font, fontSize, "OUTLINE")
+    CJKFont(label, font, fontSize, "OUTLINE")
     label:SetPoint("LEFT", frame, "LEFT", 0, 0)
-    label:SetText("iLvL:")
+    label:SetText(ns.L["iLvL:"])
     label:SetTextColor(0.8, 0.8, 0.8, 1)
 
     -- Value text (colored by quality)
     local value = frame:CreateFontString(nil, "OVERLAY")
-    value:SetFont(font, fontSize, "OUTLINE")
+    CJKFont(value, font, fontSize, "OUTLINE")
     value:SetPoint("LEFT", label, "RIGHT", 4, 0)
 
     frame.label = label
@@ -981,7 +989,7 @@ local function UpdateLiteSlotText(slotName, unit, settings, cachedFont)
 
     -- Update font size in case it changed
     local fontSize = settings.inspectLiteFontSize or 15
-    text:SetFont(font, fontSize, "OUTLINE")
+    CJKFont(text, font, fontSize, "OUTLINE")
 
     -- Check if we should show per-slot ilvl
     if not settings.inspectLiteShowPerSlot then
@@ -1035,10 +1043,10 @@ local function UpdateLiteOverallDisplay(unit, settings, cachedFont)
     -- Update font sizes in case they changed
     local fontSize = settings.inspectLiteOverallFontSize or 11
     if frame.label then
-        frame.label:SetFont(font, fontSize, "OUTLINE")
+        CJKFont(frame.label, font, fontSize, "OUTLINE")
     end
     if frame.value then
-        frame.value:SetFont(font, fontSize, "OUTLINE")
+        CJKFont(frame.value, font, fontSize, "OUTLINE")
     end
 
     -- Update position in case offsets changed
@@ -1155,13 +1163,13 @@ local function SetupInspectTitleArea()
 
         -- Line 1: Target name
         local nameText = displayFrame:CreateFontString(nil, "OVERLAY")
-        nameText:SetFont(font, 12, "")
+        CJKFont(nameText, font, 12, "")
         nameText:SetPoint("TOPLEFT", displayFrame, "TOPLEFT", 0, 0)
         nameText:SetJustifyH("LEFT")
 
         -- Line 2: Level + Spec (right-aligned, spread evenly)
         local specText = InspectFrame:CreateFontString(nil, "OVERLAY")
-        specText:SetFont(font, 12, "")
+        CJKFont(specText, font, 12, "")
         specText:SetPoint("TOPRIGHT", InspectFrame, "TOPRIGHT", -70, -10)
         specText:SetJustifyH("RIGHT")
 
@@ -1178,7 +1186,7 @@ local function SetupInspectTitleArea()
         centerFrame:SetFrameLevel(InspectFrame:GetFrameLevel() + 10)
 
         local centerText = centerFrame:CreateFontString(nil, "OVERLAY")
-        centerText:SetFont(font, 21, "OUTLINE")
+        CJKFont(centerText, font, 21, "OUTLINE")
         centerText:SetPoint("CENTER")
         centerText:SetJustifyH("CENTER")
 
@@ -1438,7 +1446,7 @@ local function CreateInspectSettingsButton()
 
     local gearLabel = gearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     gearLabel:SetPoint("LEFT", gearIcon, "RIGHT", 4, 0)
-    gearLabel:SetText("Settings")
+    gearLabel:SetText(ns.L["Settings"])
     gearLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
     gearBtn:SetScript("OnEnter", function(self)
@@ -1504,7 +1512,7 @@ local function CreateInspectSettingsButton()
     -- Title
     local title = inspectSettingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOP", inspectSettingsPanel, "TOP", 0, -8)
-    title:SetText("QUI Inspect Panel")
+    title:SetText(ns.L["QUI Inspect Panel"])
     title:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
     -- Close button
@@ -1570,13 +1578,13 @@ local function CreateInspectSettingsButton()
         for _, overlay in pairs(inspectOverlays) do
             if overlay then
                 if overlay.itemName and overlay.itemName.SetFont then
-                    overlay.itemName:SetFont(slotFont, slotTextSize, FONT_FLAGS)
+                    CJKFont(overlay.itemName, slotFont, slotTextSize, FONT_FLAGS)
                 end
                 if overlay.itemLevel and overlay.itemLevel.SetFont then
-                    overlay.itemLevel:SetFont(slotFont, slotTextSize, FONT_FLAGS)
+                    CJKFont(overlay.itemLevel, slotFont, slotTextSize, FONT_FLAGS)
                 end
                 if overlay.enchant and overlay.enchant.SetFont then
-                    overlay.enchant:SetFont(slotFont, slotTextSize, FONT_FLAGS)
+                    CJKFont(overlay.enchant, slotFont, slotTextSize, FONT_FLAGS)
                 end
             end
         end
@@ -1605,24 +1613,24 @@ local function CreateInspectSettingsButton()
     ---------------------------------------------------------------------------
     -- APPEARANCE Section
     ---------------------------------------------------------------------------
-    local appearHeader = GUI:CreateSectionHeader(scrollChild, "Appearance")
+    local appearHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Appearance"])
     appearHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - appearHeader.gap
     ResetRows()
 
     -- Scale slider (multiplier on base 1.30 scale, range 0.75-1.5)
-    local scaleSlider = GUI:CreateFormSlider(scrollChild, "Panel Scale", 0.75, 1.5, 0.05, "inspectPanelScale", charDB, function()
+    local scaleSlider = GUI:CreateFormSlider(scrollChild, ns.L["Panel Scale"], 0.75, 1.5, 0.05, "inspectPanelScale", charDB, function()
         local multiplier = charDB.inspectPanelScale or 1.0
         SetInspectScaleDeferred(INSPECT_CONFIG.BASE_SCALE * multiplier)
     end, { deferOnDrag = true },
-        { description = "Zoom factor applied to the inspect panel on top of the base scale. 1.0 leaves the panel at the default QUI size." })
+        { description = ns.L["Zoom factor applied to the inspect panel on top of the base scale. 1.0 leaves the panel at the default QUI size."] })
     y = PlaceRow(scaleSlider, y)
 
     -- Background color (uses shared skinning background color)
     local generalDB = core and core.db and core.db.profile and core.db.profile.general
     local bgColorPicker = nil
     if generalDB then
-        bgColorPicker = GUI:CreateFormColorPicker(scrollChild, "Background Color", "skinBgColor", generalDB, function()
+        bgColorPicker = GUI:CreateFormColorPicker(scrollChild, ns.L["Background Color"], "skinBgColor", generalDB, function()
             -- Refresh inspect skinning module
             if _G.QUI_RefreshInspectColors then
                 _G.QUI_RefreshInspectColors()
@@ -1631,7 +1639,7 @@ local function CreateInspectSettingsButton()
                 _G.QUI_InspectFrameSkinning.Refresh()
             end
         end, nil,
-            { description = "Background color applied to the inspect panel. Shared with the global skinning background so character and inspect panels match." })
+            { description = ns.L["Background color applied to the inspect panel. Shared with the global skinning background so character and inspect panels match."] })
         y = PlaceRow(bgColorPicker, y)
 
         -- Refresh color picker when panel shows
@@ -1648,25 +1656,25 @@ local function CreateInspectSettingsButton()
     ---------------------------------------------------------------------------
     -- SLOT OVERLAYS Section
     ---------------------------------------------------------------------------
-    local overlayHeader = GUI:CreateSectionHeader(scrollChild, "Slot Overlays")
+    local overlayHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Slot Overlays"])
     overlayHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - overlayHeader.gap
     ResetRows()
 
-    local showItemName = GUI:CreateFormCheckbox(scrollChild, "Show Equipment Name", "showInspectItemName", charDB, RefreshInspect,
-        { description = "Show the equipped item's name on each inspect slot overlay." })
+    local showItemName = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Equipment Name"], "showInspectItemName", charDB, RefreshInspect,
+        { description = ns.L["Show the equipped item's name on each inspect slot overlay."] })
     y = PlaceRow(showItemName, y)
 
-    local showIlvl = GUI:CreateFormCheckbox(scrollChild, "Show Item Level", "showInspectItemLevel", charDB, RefreshInspect,
-        { description = "Show the item level on each inspect slot overlay." })
+    local showIlvl = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Item Level"], "showInspectItemLevel", charDB, RefreshInspect,
+        { description = ns.L["Show the item level on each inspect slot overlay."] })
     y = PlaceRow(showIlvl, y)
 
-    local showEnchants = GUI:CreateFormCheckbox(scrollChild, "Show Enchant Status", "showInspectEnchants", charDB, RefreshInspect,
-        { description = "Show the enchant name on each inspect slot, or a missing-enchant marker if the slot has no enchant." })
+    local showEnchants = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Enchant Status"], "showInspectEnchants", charDB, RefreshInspect,
+        { description = ns.L["Show the enchant name on each inspect slot, or a missing-enchant marker if the slot has no enchant."] })
     y = PlaceRow(showEnchants, y)
 
-    local showGems = GUI:CreateFormCheckbox(scrollChild, "Show Gem Indicators", "showInspectGems", charDB, RefreshInspect,
-        { description = "Show colored gem dots indicating how many gem slots the item has and whether each is filled." })
+    local showGems = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Gem Indicators"], "showInspectGems", charDB, RefreshInspect,
+        { description = ns.L["Show colored gem dots indicating how many gem slots the item has and whether each is filled."] })
     y = PlaceRow(showGems, y)
 
     y = y - 10
@@ -1674,13 +1682,13 @@ local function CreateInspectSettingsButton()
     ---------------------------------------------------------------------------
     -- TEXT SIZES Section
     ---------------------------------------------------------------------------
-    local textSizeHeader = GUI:CreateSectionHeader(scrollChild, "Text Sizes")
+    local textSizeHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Text Sizes"])
     textSizeHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - textSizeHeader.gap
     ResetRows()
 
-    local slotTextSize = GUI:CreateFormSlider(scrollChild, "Slot Text Size", 6, 40, 1, "inspectSlotTextSize", charDB, RefreshInspectFonts, nil,
-        { description = "Font size used for the text labels on each inspect slot overlay (item name, item level, enchant status)." })
+    local slotTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Slot Text Size"], 6, 40, 1, "inspectSlotTextSize", charDB, RefreshInspectFonts, nil,
+        { description = ns.L["Font size used for the text labels on each inspect slot overlay (item name, item level, enchant status)."] })
     y = PlaceRow(slotTextSize, y)
 
     y = y - 10
@@ -1688,7 +1696,7 @@ local function CreateInspectSettingsButton()
     ---------------------------------------------------------------------------
     -- TEXT COLORS Section
     ---------------------------------------------------------------------------
-    local textColorHeader = GUI:CreateSectionHeader(scrollChild, "Text Colors")
+    local textColorHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Text Colors"])
     textColorHeader:SetPoint("TOPLEFT", PAD, y)
     y = y - textColorHeader.gap
     ResetRows()
@@ -1697,27 +1705,27 @@ local function CreateInspectSettingsButton()
     local widgetRefs = {}
 
     -- Enchant Class Color toggle
-    local enchantClassColor = GUI:CreateFormCheckbox(scrollChild, "Enchant Class Color", "inspectEnchantClassColor", charDB, function()
+    local enchantClassColor = GUI:CreateFormCheckbox(scrollChild, ns.L["Enchant Class Color"], "inspectEnchantClassColor", charDB, function()
         RefreshInspect()
         if widgetRefs.enchantColor then
             local alpha = charDB.inspectEnchantClassColor and 0.4 or 1.0
             widgetRefs.enchantColor:SetAlpha(alpha)
         end
-    end, { description = "Color the enchant text using the inspected character's class color instead of the Enchant Text Color below." })
+    end, { description = ns.L["Color the enchant text using the inspected character's class color instead of the Enchant Text Color below."] })
     y = PlaceRow(enchantClassColor, y)
 
-    local enchantColor = GUI:CreateFormColorPicker(scrollChild, "Enchant Text Color", "inspectEnchantTextColor", charDB, RefreshInspect, nil,
-        { description = "Fallback color for the enchant text when Enchant Class Color is off." })
+    local enchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Enchant Text Color"], "inspectEnchantTextColor", charDB, RefreshInspect, nil,
+        { description = ns.L["Fallback color for the enchant text when Enchant Class Color is off."] })
     widgetRefs.enchantColor = enchantColor
     enchantColor:SetAlpha(charDB.inspectEnchantClassColor and 0.4 or 1.0)
     y = PlaceRow(enchantColor, y)
 
-    local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, "No Enchant Color", "inspectNoEnchantTextColor", charDB, RefreshInspect, nil,
-        { description = "Color used for the missing-enchant marker on slots that are not enchanted." })
+    local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["No Enchant Color"], "inspectNoEnchantTextColor", charDB, RefreshInspect, nil,
+        { description = ns.L["Color used for the missing-enchant marker on slots that are not enchanted."] })
     y = PlaceRow(noEnchantColor, y)
 
-    local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, "Upgrade Track Color", "inspectUpgradeTrackColor", charDB, RefreshInspect, nil,
-        { description = "Color used for the upgrade-track label (e.g. Explorer 2/8) next to item level." })
+    local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Upgrade Track Color"], "inspectUpgradeTrackColor", charDB, RefreshInspect, nil,
+        { description = ns.L["Color used for the upgrade-track label (e.g. Explorer 2/8) next to item level."] })
     y = PlaceRow(upgradeTrackColor, y)
 
     y = y - 10
@@ -1728,7 +1736,7 @@ local function CreateInspectSettingsButton()
     ---------------------------------------------------------------------------
     -- Reset Button (at bottom of panel, outside scroll)
     ---------------------------------------------------------------------------
-    local resetBtn = GUI:CreateButton(inspectSettingsPanel, "Reset", 80, 24, function()
+    local resetBtn = GUI:CreateButton(inspectSettingsPanel, ns.L["Reset"], 80, 24, function()
         -- Reset all inspect settings to defaults
         charDB.inspectPanelScale = 1.0
         charDB.showInspectItemName = true

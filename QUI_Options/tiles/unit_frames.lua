@@ -13,22 +13,22 @@ function V2.Register(frame)
         featureId = "unitFramesPage",
         id = "unit_frames",
         icon = "U",
-        name = "Unit Frames",
-        primaryCTA = { label = "Edit in Layout Mode", moverKey = "playerFrame" },
+        name = ns.L["Unit Frames"],
+        primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "playerFrame" },
         previewHeight = 220,
         navRoutes = {
             { tabIndex = 5, subTabIndex = 0, subPageIndex = 1 },
         },
         searchContext = {
             tabIndex = 5,
-            tabName = "Unit Frames",
+            tabName = ns.L["Unit Frames"],
             subTabIndex = 0,
-            subTabName = "Unit Frames",
+            subTabName = ns.L["Unit Frames"],
         },
         renderOptions = { surface = "full" },
         relatedSettings = {
-            { label = "Group Frames", tileId = "group_frames" },
-            { label = "Raid Buffs",   tileId = "gameplay", subPageIndex = 5 },
+            { label = ns.L["Group Frames"], tileId = "group_frames" },
+            { label = ns.L["Raid Buffs"],   tileId = "gameplay", subPageIndex = 5 },
         },
     })
 end

@@ -28,36 +28,36 @@ local ATLAS_PREFIX = "UI-HUD-MicroMenu-"
 -- GameMenu kit (no dedicated help micro-button art exists).
 local BUTTONS = {
     {
-        key = "character", label = "Character", portrait = true,
+        key = "character", label = ns.L["Character"], portrait = true,
         onClick = function() ToggleCharacter("PaperDollFrame") end,
     },
     {
-        key = "spellbook", label = "Spellbook",
+        key = "spellbook", label = ns.L["Spellbook"],
         icon = "Interface\\Spellbook\\Spellbook-Icon",
         onClick = function() PlayerSpellsUtil.ToggleSpellBookFrame() end,
     },
     {
-        key = "talents", label = "Talents", atlas = "SpecTalents",
+        key = "talents", label = ns.L["Talents"], atlas = "SpecTalents",
         onClick = function() PlayerSpellsUtil.ToggleClassTalentOrSpecFrame() end,
     },
     {
-        key = "achievements", label = "Achievements", atlas = "Achievements",
+        key = "achievements", label = ns.L["Achievements"], atlas = "Achievements",
         onClick = function() ToggleAchievementFrame() end,
     },
     {
-        key = "collections", label = "Collections", atlas = "Collections",
+        key = "collections", label = ns.L["Collections"], atlas = "Collections",
         onClick = function() ToggleCollectionsJournal() end,
     },
     {
-        key = "lfg", label = "Group Finder", atlas = "Groupfinder",
+        key = "lfg", label = ns.L["Group Finder"], atlas = "Groupfinder",
         onClick = function() PVEFrame_ToggleFrame() end,
     },
     {
-        key = "shop", label = "Shop", atlas = "Shop",
+        key = "shop", label = ns.L["Shop"], atlas = "Shop",
         onClick = function() ToggleStoreUI() end,
     },
     {
-        key = "help", label = "Support", atlas = "GameMenu",
+        key = "help", label = ns.L["Support"], atlas = "GameMenu",
         onClick = function() ToggleHelpFrame() end,
     },
 }
@@ -111,8 +111,8 @@ local function CreateIconButton(parent, def, size)
 end
 
 Datatexts:Register("micromenu", {
-    displayName = "Micro Menu",
-    category = "Interface",
+    displayName = ns.L["Micro Menu"],
+    category = ns.L["Interface"],
     description = "Compact row of interface panel buttons",
 
     OnEnable = function(slotFrame, settings)

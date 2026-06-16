@@ -27,6 +27,7 @@ local Registry = {
 local Schema = { Feature = function(def) return def end }
 
 local ns = { Settings = { Registry = Registry, Schema = Schema } }
+(dofile("tests/helpers/locale.lua"))(ns)
 
 -- _G.QUI surface the row touches: profile DB, GUI confirmation, reload.
 local confirmCalls = {}
@@ -113,6 +114,7 @@ do
         Settings = { Registry = Registry2, Schema = Schema2 },
         QUI_Modules = { NotifyChanged = function() end },
     }
+    (dofile("tests/helpers/locale.lua"))(ns2)
     assert(loadfile("core/addon_manifest.lua"))("QUI", ns2)
     local setCalls2 = {}
     ns2.AddonLoader = {

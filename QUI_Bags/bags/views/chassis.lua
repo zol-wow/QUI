@@ -9,6 +9,14 @@ local Bags = ns.Bags or {}; ns.Bags = Bags
 local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local Chassis = {}
 Bags.Chassis = Chassis
 
@@ -89,7 +97,7 @@ function Chassis.CreatePanelButton(parent, withLabel)
     if withLabel then
         btn._label = btn:CreateFontString(nil, "ARTWORK")
         btn._label:SetPoint("CENTER", 0, 0)
-        btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+        CJKFont(btn._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
     end
     return btn
 end
@@ -134,11 +142,11 @@ local function Reskin(win)
     end
     local fontPath = Helpers.GetGeneralFont() or STANDARD_TEXT_FONT
     local outline = Helpers.GetGeneralFontOutline() or "OUTLINE"
-    win._title:SetFont(fontPath, 13, outline)
-    win._closeText:SetFont(fontPath, 12, outline)
-    win._searchBox:SetFont(fontPath, 12, outline)
+    CJKFont(win._title, fontPath, 13, outline)
+    CJKFont(win._closeText, fontPath, 12, outline)
+    CJKFont(win._searchBox, fontPath, 12, outline)
     if win._searchBox._placeholder then
-        win._searchBox._placeholder:SetFont(fontPath, 12, outline)
+        CJKFont(win._searchBox._placeholder, fontPath, 12, outline)
     end
     if win._searchBox._refreshChrome then
         win._searchBox._refreshChrome(win._searchBox)
@@ -197,7 +205,7 @@ function Chassis.CreateWindow(opts)
     win._header = header
 
     win._title = header:CreateFontString(nil, "ARTWORK")
-    win._title:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 13, Helpers.GetGeneralFontOutline() or "OUTLINE")
+    CJKFont(win._title, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 13, Helpers.GetGeneralFontOutline() or "OUTLINE")
     win._title:SetPoint("LEFT", PAD, 0)
     win._title:SetText(opts.title or "")
 
@@ -206,7 +214,7 @@ function Chassis.CreateWindow(opts)
     close:SetPoint("RIGHT", -6, 0)
     win._closeText = close:CreateFontString(nil, "ARTWORK")
     win._closeText:SetPoint("CENTER", 0, 0)
-    win._closeText:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
+    CJKFont(win._closeText, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
     win._closeText:SetText("X")
     close:SetScript("OnClick", function()
         if opts.onUserClose then opts.onUserClose() else win:Hide() end
@@ -233,10 +241,10 @@ function Chassis.CreateWindow(opts)
     -- font BEFORE SetText: a templateless FontString has none, and
     -- SetText errors ("Font not set") — Reskin re-applies the themed font
     -- later, but creation must not depend on it
-    placeholder:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12,
+    CJKFont(placeholder, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12,
         Helpers.GetGeneralFontOutline() or "OUTLINE")
     placeholder:SetTextColor(0.55, 0.55, 0.55, 0.9)
-    placeholder:SetText(_G.SEARCH or "Search")
+    placeholder:SetText(_G.SEARCH or ns.L["Search"])
     search._placeholder = placeholder
     -- compact mode: narrow at rest, full-width while focused or non-empty
     -- (the expand/collapse pings onChromeChanged so owners re-measure the
@@ -365,11 +373,11 @@ local function GetBagsSettings()
 end
 
 local SORT_MODES = {
-    { key = "quality", label = "Quality" },
-    { key = "type", label = "Type" },
-    { key = "name", label = "Name" },
-    { key = "ilvl", label = "Item Level" },
-    { key = "expansion", label = "Expansion" },
+    { key = "quality", label = ns.L["Quality"] },
+    { key = "type", label = ns.L["Type"] },
+    { key = "name", label = ns.L["Name"] },
+    { key = "ilvl", label = ns.L["Item Level"] },
+    { key = "expansion", label = ns.L["Expansion"] },
 }
 
 function Chassis.SortModeText()
@@ -380,7 +388,7 @@ function Chassis.SortModeText()
         if m.key == key then label = m.label end
     end
     if s and s.behavior and s.behavior.sortReverse then
-        label = label .. " (reversed)"
+        label = label .. " " .. ns.L["(reversed)"]
     end
     return label
 end
@@ -390,7 +398,7 @@ end
 function Chassis.ShowSortMenu(anchor, extra)
     if not (MenuUtil and MenuUtil.CreateContextMenu) then return end
     MenuUtil.CreateContextMenu(anchor, function(_, root)
-        root:CreateTitle("Sort by")
+        root:CreateTitle(ns.L["Sort by"])
         for _, m in ipairs(SORT_MODES) do
             root:CreateRadio(m.label,
                 function()
@@ -402,7 +410,7 @@ function Chassis.ShowSortMenu(anchor, extra)
                     if s and s.behavior then s.behavior.sortKey = m.key end
                 end)
         end
-        root:CreateCheckbox("Reverse order",
+        root:CreateCheckbox(ns.L["Reverse order"],
             function()
                 local s = GetBagsSettings()
                 return s and s.behavior and s.behavior.sortReverse or false
@@ -411,7 +419,7 @@ function Chassis.ShowSortMenu(anchor, extra)
                 local s = GetBagsSettings()
                 if s and s.behavior then s.behavior.sortReverse = not s.behavior.sortReverse end
             end)
-        root:CreateCheckbox("Pack to bottom",
+        root:CreateCheckbox(ns.L["Pack to bottom"],
             function()
                 local s = GetBagsSettings()
                 return s and s.behavior and s.behavior.fillFromBottom or false

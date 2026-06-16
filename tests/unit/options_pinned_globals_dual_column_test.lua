@@ -127,9 +127,10 @@ function pins:UnpinAll() end
 
 local ns = {
     Settings = { Pins = pins },
-    Helpers = { AssetPath = "assets/", DeepCopy = function(v) return v end },
+    Helpers = { AssetPath = "assets/", DeepCopy = function(v) return v end, ApplyFontWithFallback = function() end },
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("core/settings/pins_ui.lua"))("QUI", ns)
 local PinUI = ns.QUI_PinnedSettingsOptions
 assert(PinUI and type(PinUI.BuildPinnedGlobalsContent) == "function",

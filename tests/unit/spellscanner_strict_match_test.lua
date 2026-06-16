@@ -78,6 +78,7 @@ local ns = {
     },
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_QoL/trackers/spellscanner.lua"))("QUI", ns)
 
 local scanner = assert(QUI.SpellScanner, "SpellScanner should be exported")

@@ -21,68 +21,68 @@ local HEADER_GAP = 26
 local SECTION_BOTTOM_PAD = 10
 local DESCRIPTION_TEXT_COLOR = { 0.5, 0.5, 0.5, 1 }
 local LAYOUT_OPTIONS = {
-    { value = "VERTICAL", text = "Vertical (columns)" },
-    { value = "HORIZONTAL", text = "Horizontal (rows)" },
+    { value = "VERTICAL", text = ns.L["Vertical (columns)"] },
+    { value = "HORIZONTAL", text = ns.L["Horizontal (rows)"] },
 }
 local SORT_OPTIONS = {
-    { value = "INDEX", text = "Group Index" },
-    { value = "NAME", text = "Name" },
+    { value = "INDEX", text = ns.L["Group Index"] },
+    { value = "NAME", text = ns.L["Name"] },
 }
 local GROUP_BY_OPTIONS = {
-    { value = "GROUP", text = "Group Number" },
-    { value = "ROLE", text = "Role" },
-    { value = "CLASS", text = "Class" },
-    { value = "NONE", text = "None (Flat List)" },
+    { value = "GROUP", text = ns.L["Group Number"] },
+    { value = "ROLE", text = ns.L["Role"] },
+    { value = "CLASS", text = ns.L["Class"] },
+    { value = "NONE", text = ns.L["None (Flat List)"] },
 }
 local ANCHOR_SIDE_OPTIONS = {
-    { value = "LEFT", text = "Left" },
-    { value = "RIGHT", text = "Right" },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "RIGHT", text = ns.L["Right"] },
 }
 local PET_ANCHOR_OPTIONS = {
-    { value = "BOTTOM", text = "Below Group" },
-    { value = "RIGHT", text = "Right of Group" },
-    { value = "LEFT", text = "Left of Group" },
+    { value = "BOTTOM", text = ns.L["Below Group"] },
+    { value = "RIGHT", text = ns.L["Right of Group"] },
+    { value = "LEFT", text = ns.L["Left of Group"] },
 }
 local SPOTLIGHT_FILTER_OPTIONS = {
-    { value = "ROLE", text = "By Role" },
-    { value = "NAME", text = "By Name" },
+    { value = "ROLE", text = ns.L["By Role"] },
+    { value = "NAME", text = ns.L["By Name"] },
 }
 local HEALTH_DISPLAY_OPTIONS = {
-    { value = "percent", text = "Percentage" },
-    { value = "absolute", text = "Absolute" },
-    { value = "both", text = "Both" },
-    { value = "deficit", text = "Deficit" },
+    { value = "percent", text = ns.L["Percentage"] },
+    { value = "absolute", text = ns.L["Absolute"] },
+    { value = "both", text = ns.L["Both"] },
+    { value = "deficit", text = ns.L["Deficit"] },
 }
 local HEALTH_FILL_OPTIONS = {
-    { value = "HORIZONTAL", text = "Horizontal (Left to Right)" },
-    { value = "VERTICAL", text = "Vertical (Bottom to Top)" },
+    { value = "HORIZONTAL", text = ns.L["Horizontal (Left to Right)"] },
+    { value = "VERTICAL", text = ns.L["Vertical (Bottom to Top)"] },
 }
 local NINE_POINT_OPTIONS = {
-    { value = "TOPLEFT", text = "Top Left" },
-    { value = "TOP", text = "Top" },
-    { value = "TOPRIGHT", text = "Top Right" },
-    { value = "LEFT", text = "Left" },
-    { value = "CENTER", text = "Center" },
-    { value = "RIGHT", text = "Right" },
-    { value = "BOTTOMLEFT", text = "Bottom Left" },
-    { value = "BOTTOM", text = "Bottom" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
+    { value = "TOPLEFT", text = ns.L["Top Left"] },
+    { value = "TOP", text = ns.L["Top"] },
+    { value = "TOPRIGHT", text = ns.L["Top Right"] },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "CENTER", text = ns.L["Center"] },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "BOTTOMLEFT", text = ns.L["Bottom Left"] },
+    { value = "BOTTOM", text = ns.L["Bottom"] },
+    { value = "BOTTOMRIGHT", text = ns.L["Bottom Right"] },
 }
 local TEXT_JUSTIFY_OPTIONS = {
-    { value = "LEFT", text = "Left" },
-    { value = "CENTER", text = "Center" },
-    { value = "RIGHT", text = "Right" },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "CENTER", text = ns.L["Center"] },
+    { value = "RIGHT", text = ns.L["Right"] },
 }
 local AURA_GROW_OPTIONS = {
-    { value = "LEFT", text = "Left" },
-    { value = "RIGHT", text = "Right" },
-    { value = "CENTER", text = "Center" },
-    { value = "UP", text = "Up" },
-    { value = "DOWN", text = "Down" },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "CENTER", text = ns.L["Center"] },
+    { value = "UP", text = ns.L["Up"] },
+    { value = "DOWN", text = ns.L["Down"] },
 }
 local FILTER_MODE_OPTIONS = {
-    { value = "off", text = "Off (Show All)" },
-    { value = "classification", text = "Classification" },
+    { value = "off", text = ns.L["Off (Show All)"] },
+    { value = "classification", text = ns.L["Classification"] },
 }
 -- Tab strip order (after the beta restructure): Spotlight folded into Layout
 -- (raid only) and Dispel Overlay folded into Appearance, so neither is a
@@ -148,9 +148,9 @@ local function ResolveGroupFramesDB(contextMode)
         gfdb = gfdb,
         contextMode = contextMode,
         contextDB = gfdb[contextMode],
-        sourceLabel = contextMode == "raid" and "Raid" or "Party",
+        sourceLabel = contextMode == "raid" and ns.L["Raid"] or ns.L["Party"],
         targetMode = contextMode == "raid" and "party" or "raid",
-        targetLabel = contextMode == "raid" and "Party" or "Raid",
+        targetLabel = contextMode == "raid" and ns.L["Party"] or ns.L["Raid"],
     }
 end
 
@@ -286,7 +286,7 @@ local function GetFontListWithDefault(optionsAPI)
             fonts[#fonts + 1] = DeepCopy(option)
         end
     end
-    table.insert(fonts, 1, { value = "", text = "(Frame Font)" })
+    table.insert(fonts, 1, { value = "", text = ns.L["(Frame Font)"] })
     return fonts
 end
 
@@ -323,50 +323,50 @@ local function AddAuraDurationTextRows(card, gui, optionsAPI, auras, prefix, lab
     end
 
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, showKey, auras, onChange, {
-        description = "Show remaining-time text on " .. string.lower(labelPrefix) .. " icons.",
+        description = string.format(ns.L["Show remaining-time text on %1$s icons."], string.lower(labelPrefix)),
     })
-    local showRow = optionsAPI.BuildSettingRow(card.frame, "Show " .. labelPrefix .. " Duration Text", showCheckbox)
+    local showRow = optionsAPI.BuildSettingRow(card.frame, string.format(ns.L["Show %1$s Duration Text"], labelPrefix), showCheckbox)
 
     local fontDropdown = gui:CreateFormDropdown(card.frame, nil, GetFontListWithDefault(optionsAPI), fontKey, auras, onChange, nil, {
         searchable = true,
     })
-    local fontRow = optionsAPI.BuildSettingRow(card.frame, "Duration Font", fontDropdown)
+    local fontRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Font"], fontDropdown)
     controlledRows[#controlledRows + 1] = fontRow
     card.AddRow(showRow, fontRow)
 
     local fontSizeSlider = gui:CreateFormSlider(card.frame, nil, 6, 24, 1, fontSizeKey, auras, onChange, { deferOnDrag = true }, {
-        description = "Font size used for the remaining-time text.",
+        description = ns.L["Font size used for the remaining-time text."],
     })
-    local fontSizeRow = optionsAPI.BuildSettingRow(card.frame, "Duration Font Size", fontSizeSlider)
+    local fontSizeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Font Size"], fontSizeSlider)
     controlledRows[#controlledRows + 1] = fontSizeRow
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, NINE_POINT_OPTIONS, anchorKey, auras, onChange, {
-        description = "Anchor point for the remaining-time text on each icon.",
+        description = ns.L["Anchor point for the remaining-time text on each icon."],
     })
-    local anchorRow = optionsAPI.BuildSettingRow(card.frame, "Duration Anchor", anchorDropdown)
+    local anchorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Anchor"], anchorDropdown)
     controlledRows[#controlledRows + 1] = anchorRow
     card.AddRow(fontSizeRow, anchorRow)
 
     local offsetXSlider = gui:CreateFormSlider(card.frame, nil, -40, 40, 1, offsetXKey, auras, onChange, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for duration text.",
+        description = ns.L["Horizontal pixel offset for duration text."],
     })
-    local offsetXRow = optionsAPI.BuildSettingRow(card.frame, "Duration X Offset", offsetXSlider)
+    local offsetXRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Duration X Offset"], offsetXSlider)
     controlledRows[#controlledRows + 1] = offsetXRow
     local offsetYSlider = gui:CreateFormSlider(card.frame, nil, -40, 40, 1, offsetYKey, auras, onChange, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for duration text.",
+        description = ns.L["Vertical pixel offset for duration text."],
     })
-    local offsetYRow = optionsAPI.BuildSettingRow(card.frame, "Duration Y Offset", offsetYSlider)
+    local offsetYRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Y Offset"], offsetYSlider)
     controlledRows[#controlledRows + 1] = offsetYRow
     card.AddRow(offsetXRow, offsetYRow)
 
     local useTimeColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, useTimeColorKey, auras, onChange, {
-        description = "Use green/yellow/red time-based duration colors instead of the static text color.",
+        description = ns.L["Use green/yellow/red time-based duration colors instead of the static text color."],
     })
-    local useTimeColorRow = optionsAPI.BuildSettingRow(card.frame, "Use Time-Based Duration Color", useTimeColorCheckbox)
+    local useTimeColorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Use Time-Based Duration Color"], useTimeColorCheckbox)
     controlledRows[#controlledRows + 1] = useTimeColorRow
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, colorKey, auras, onChange, nil, {
-        description = "Static duration text color when time-based coloring is off.",
+        description = ns.L["Static duration text color when time-based coloring is off."],
     })
-    colorRow = optionsAPI.BuildSettingRow(card.frame, "Duration Text Color", colorPicker)
+    colorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Text Color"], colorPicker)
     card.AddRow(useTimeColorRow, colorRow)
 
     updateRows = function()
@@ -515,22 +515,22 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
 
     local enableCheck = gui:CreateFormCheckbox(
         sectionHost,
-        "Enable QUI Group Frames (Req. Reload)",
+        ns.L["Enable QUI Group Frames (Req. Reload)"],
         "enabled",
         groupFrames.gfdb,
         function()
             RefreshGroupFrames(groupFrames.contextMode)
             gui:ShowConfirmation({
-                title = "Reload UI?",
-                message = "Changing the QUI Group Frames enabled state requires a UI reload to take full effect.",
-                acceptText = "Reload",
-                cancelText = "Later",
+                title = ns.L["Reload UI?"],
+                message = ns.L["Changing the QUI Group Frames enabled state requires a UI reload to take full effect."],
+                acceptText = ns.L["Reload"],
+                cancelText = ns.L["Later"],
                 onAccept = function()
                     QUI:SafeReload()
                 end,
             })
         end,
-        { description = "Replace Blizzard's party and raid frames with QUI group frames. Requires a UI reload to take effect." }
+        { description = ns.L["Replace Blizzard's party and raid frames with QUI group frames. Requires a UI reload to take effect."] }
     )
     enableCheck:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -4)
     enableCheck:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, -4)
@@ -548,14 +548,14 @@ local function RenderGeneralCopySettingsSection(sectionHost, ctx)
 
     SetSearchContext(CreateSearchContext("general", groupFrames.contextMode))
 
-    local header = optionsAPI.CreateAccentDotLabel(sectionHost, "Copy Settings", 0)
+    local header = optionsAPI.CreateAccentDotLabel(sectionHost, ns.L["Copy Settings"], 0)
     header:ClearAllPoints()
     header:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, 0)
 
     local description = gui:CreateLabel(
         sectionHost,
-        "Copy all " .. groupFrames.sourceLabel .. " visual settings into " .. groupFrames.targetLabel .. ".",
+        string.format(ns.L["Copy all %1$s visual settings into %2$s."], groupFrames.sourceLabel, groupFrames.targetLabel),
         11,
         (gui.Colors and gui.Colors.textMuted) or { 0.6, 0.6, 0.6, 1 }
     )
@@ -571,15 +571,15 @@ local function RenderGeneralCopySettingsSection(sectionHost, ctx)
 
     local copyButton = gui:CreateButton(
         sectionHost,
-        "Copy All: " .. groupFrames.sourceLabel .. " -> " .. groupFrames.targetLabel,
+        string.format(ns.L["Copy All: %1$s -> %2$s"], groupFrames.sourceLabel, groupFrames.targetLabel),
         220,
         28,
         function()
             gui:ShowConfirmation({
-                title = "Copy All Settings",
-                message = "This will overwrite ALL " .. groupFrames.targetLabel .. " visual settings with " .. groupFrames.sourceLabel .. " settings. Continue?",
-                acceptText = "Copy All",
-                cancelText = "Cancel",
+                title = ns.L["Copy All Settings"],
+                message = string.format(ns.L["This will overwrite ALL %1$s visual settings with %2$s settings. Continue?"], groupFrames.targetLabel, groupFrames.sourceLabel),
+                acceptText = ns.L["Copy All"],
+                cancelText = ns.L["Cancel"],
                 isDestructive = true,
                 onAccept = function()
                     local src = groupFrames.gfdb[groupFrames.contextMode]
@@ -625,8 +625,8 @@ local function RenderAppearanceSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Appearance")
-    builder.Description("Colors, fonts, and portrait styling for " .. groupFrames.sourceLabel .. " group frames.")
+    builder.Header(ns.L["Appearance"])
+    builder.Description(string.format(ns.L["Colors, fonts, and portrait styling for %1$s group frames."], groupFrames.sourceLabel))
 
     local card = builder.Card()
     local refresh = function()
@@ -636,82 +636,82 @@ local function RenderAppearanceSection(sectionHost, ctx)
     local portraitSizeCell
 
     local borderSizeSlider = gui:CreateFormSlider(card.frame, nil, 0, 3, 1, "borderSize", general, refresh, { deferOnDrag = true }, {
-        description = "Border thickness in pixels around each group frame. Set to 0 to hide borders.",
+        description = ns.L["Border thickness in pixels around each group frame. Set to 0 to hide borders."],
     })
     local textureDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.GetTextureList(), "texture", general, refresh, {
-        description = "Health bar texture used for all frames in this group. Supports SharedMedia textures.",
+        description = ns.L["Health bar texture used for all frames in this group. Supports SharedMedia textures."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Border Size", borderSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Texture", textureDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Border Size"], borderSizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Texture"], textureDropdown)
     )
 
     local darkModeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "darkMode", general, refresh, {
-        description = "Invert the frames so missing health is dark and remaining health is colored.",
+        description = ns.L["Invert the frames so missing health is dark and remaining health is colored."],
     })
     local classColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "useClassColor", general, refresh, {
-        description = "Color the health bar by class instead of the default non-class color.",
+        description = ns.L["Color the health bar by class instead of the default non-class color."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Dark Mode", darkModeCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Use Class Color", classColorCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Dark Mode"], darkModeCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Use Class Color"], classColorCheckbox)
     )
 
     local bgColorPicker = gui:CreateFormColorPicker(card.frame, nil, "defaultBgColor", general, refresh, nil, {
-        description = "Backdrop color behind the health fill when Dark Mode is off.",
+        description = ns.L["Backdrop color behind the health fill when Dark Mode is off."],
     })
     local bgOpacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1, 0.05, "defaultBgOpacity", general, refresh, {
         precision = 2,
         deferOnDrag = true,
     }, {
-        description = "Opacity of the default frame background.",
+        description = ns.L["Opacity of the default frame background."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Background Color", bgColorPicker),
-        optionsAPI.BuildSettingRow(card.frame, "Background Opacity", bgOpacitySlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Background Color"], bgColorPicker),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Background Opacity"], bgOpacitySlider)
     )
 
     local darkHealthColorPicker = gui:CreateFormColorPicker(card.frame, nil, "darkModeHealthColor", general, refresh, nil, {
-        description = "Remaining-health fill color when Dark Mode is on.",
+        description = ns.L["Remaining-health fill color when Dark Mode is on."],
     })
     local darkHealthOpacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1, 0.05, "darkModeHealthOpacity", general, refresh, {
         precision = 2,
         deferOnDrag = true,
     }, {
-        description = "Opacity of the remaining-health fill in Dark Mode.",
+        description = ns.L["Opacity of the remaining-health fill in Dark Mode."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Dark Mode Health Color", darkHealthColorPicker),
-        optionsAPI.BuildSettingRow(card.frame, "Dark Mode Health Opacity", darkHealthOpacitySlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Dark Mode Health Color"], darkHealthColorPicker),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Dark Mode Health Opacity"], darkHealthOpacitySlider)
     )
 
     local darkBgColorPicker = gui:CreateFormColorPicker(card.frame, nil, "darkModeBgColor", general, refresh, nil, {
-        description = "Backdrop color shown behind the health fill in Dark Mode.",
+        description = ns.L["Backdrop color shown behind the health fill in Dark Mode."],
     })
     local darkBgOpacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1, 0.05, "darkModeBgOpacity", general, refresh, {
         precision = 2,
         deferOnDrag = true,
     }, {
-        description = "Opacity of the Dark Mode backdrop color.",
+        description = ns.L["Opacity of the Dark Mode backdrop color."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Dark Mode BG Color", darkBgColorPicker),
-        optionsAPI.BuildSettingRow(card.frame, "Dark Mode BG Opacity", darkBgOpacitySlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Dark Mode BG Color"], darkBgColorPicker),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Dark Mode BG Opacity"], darkBgOpacitySlider)
     )
 
     local fontDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.GetFontList(), "font", general, refresh, {
-        description = "Font used for names, health text, and indicators.",
+        description = ns.L["Font used for names, health text, and indicators."],
     })
     local fontSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 20, 1, "fontSize", general, refresh, { deferOnDrag = true }, {
-        description = "Font size used for group-frame text.",
+        description = ns.L["Font size used for group-frame text."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Font", fontDropdown),
-        optionsAPI.BuildSettingRow(card.frame, "Font Size", fontSizeSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Font"], fontDropdown),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Font Size"], fontSizeSlider)
     )
 
     local showTooltipsCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showTooltips", general, refresh, {
-        description = "Show the Blizzard unit tooltip when hovering a group frame.",
+        description = ns.L["Show the Blizzard unit tooltip when hovering a group frame."],
     })
     local function UpdatePortraitCells()
         local alpha = portrait.showPortrait and 1.0 or 0.4
@@ -726,21 +726,21 @@ local function RenderAppearanceSection(sectionHost, ctx)
         refresh()
         UpdatePortraitCells()
     end, {
-        description = "Show a portrait next to each frame.",
+        description = ns.L["Show a portrait next to each frame."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Tooltips on Hover", showTooltipsCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Show Portrait", showPortraitCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Tooltips on Hover"], showTooltipsCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Portrait"], showPortraitCheckbox)
     )
 
     local portraitSideDropdown = gui:CreateFormDropdown(card.frame, nil, ANCHOR_SIDE_OPTIONS, "portraitSide", portrait, refresh, {
-        description = "Which side of the frame the portrait sits on.",
+        description = ns.L["Which side of the frame the portrait sits on."],
     })
-    portraitSideCell = optionsAPI.BuildSettingRow(card.frame, "Portrait Side", portraitSideDropdown)
+    portraitSideCell = optionsAPI.BuildSettingRow(card.frame, ns.L["Portrait Side"], portraitSideDropdown)
     local portraitSizeSlider = gui:CreateFormSlider(card.frame, nil, 16, 60, 1, "portraitSize", portrait, refresh, { deferOnDrag = true }, {
-        description = "Portrait width and height in pixels.",
+        description = ns.L["Portrait width and height in pixels."],
     })
-    portraitSizeCell = optionsAPI.BuildSettingRow(card.frame, "Portrait Size", portraitSizeSlider)
+    portraitSizeCell = optionsAPI.BuildSettingRow(card.frame, ns.L["Portrait Size"], portraitSizeSlider)
     card.AddRow(portraitSideCell, portraitSizeCell)
 
     UpdatePortraitCells()
@@ -776,8 +776,8 @@ local function RenderLayoutSection(sectionHost, ctx)
             groupFrames.gfdb.testMode = {}
         end
 
-        builder.Header("Preview Size")
-        builder.Description("Controls how many placeholder raid members the preview renders.")
+        builder.Header(ns.L["Preview Size"])
+        builder.Description(ns.L["Controls how many placeholder raid members the preview renders."])
 
         local previewCard = builder.Card()
         local previewSlider = gui:CreateFormSlider(previewCard.frame, nil, 5, 40, 5, "raidCount", groupFrames.gfdb.testMode, function()
@@ -793,15 +793,15 @@ local function RenderLayoutSection(sectionHost, ctx)
                 _G.QUI_LayoutModeSyncHandle("raidFrames")
             end
         end, { deferOnDrag = true }, {
-            description = "How many placeholder raid members the test preview renders.",
+            description = ns.L["How many placeholder raid members the test preview renders."],
         })
-        previewCard.AddRow(optionsAPI.BuildSettingRow(previewCard.frame, "Raid Preview Size", previewSlider))
+        previewCard.AddRow(optionsAPI.BuildSettingRow(previewCard.frame, ns.L["Raid Preview Size"], previewSlider))
         builder.CloseCard(previewCard)
         builder.Spacer(10)
     end
 
-    builder.Header("Layout")
-    builder.Description("Arrange the " .. groupFrames.sourceLabel .. " frames and choose how members are grouped.")
+    builder.Header(ns.L["Layout"])
+    builder.Description(string.format(ns.L["Arrange the %1$s frames and choose how members are grouped."], groupFrames.sourceLabel))
 
     local card = builder.Card()
     local refresh = function(structural)
@@ -822,14 +822,14 @@ local function RenderLayoutSection(sectionHost, ctx)
     end
 
     local orientationDropdown = gui:CreateFormDropdown(card.frame, nil, LAYOUT_OPTIONS, "orientation", layout, onOrientationChange, {
-        description = "Orient frames vertically (columns) or horizontally (rows).",
+        description = ns.L["Orient frames vertically (columns) or horizontally (rows)."],
     })
     local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 10, 1, "spacing", layout, refresh, { deferOnDrag = true }, {
-        description = "Pixel gap between frames inside the same group.",
+        description = ns.L["Pixel gap between frames inside the same group."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Layout", orientationDropdown),
-        optionsAPI.BuildSettingRow(card.frame, "Frame Spacing", spacingSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Layout"], orientationDropdown),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Frame Spacing"], spacingSlider)
     )
 
     if groupFrames.contextMode == "raid" then
@@ -838,7 +838,7 @@ local function RenderLayoutSection(sectionHost, ctx)
             refresh(true)
             RequestTabRepaint(ctx)
         end, {
-            description = "How raid members are split into groups before sorting.",
+            description = ns.L["How raid members are split into groups before sorting."],
         })
         if gui.SetWidgetProviderSyncOptions then
             gui:SetWidgetProviderSyncOptions(groupByDropdown, { auto = true, structural = true })
@@ -846,66 +846,66 @@ local function RenderLayoutSection(sectionHost, ctx)
 
         if groupBy ~= "NONE" then
             local groupSpacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 30, 1, "groupSpacing", layout, refresh, { deferOnDrag = true }, {
-                description = "Pixel gap between groups when Group By is not None.",
+                description = ns.L["Pixel gap between groups when Group By is not None."],
             })
             card.AddRow(
-                optionsAPI.BuildSettingRow(card.frame, "Group By", groupByDropdown),
-                optionsAPI.BuildSettingRow(card.frame, "Group Spacing", groupSpacingSlider)
+                optionsAPI.BuildSettingRow(card.frame, ns.L["Group By"], groupByDropdown),
+                optionsAPI.BuildSettingRow(card.frame, ns.L["Group Spacing"], groupSpacingSlider)
             )
         else
             local unitsPerColumnSlider = gui:CreateFormSlider(card.frame, nil, 1, 40, 1, "unitsPerFlat", layout, refresh, { deferOnDrag = true }, {
-                description = "How many units fit in a single column or row before wrapping.",
+                description = ns.L["How many units fit in a single column or row before wrapping."],
             })
             card.AddRow(
-                optionsAPI.BuildSettingRow(card.frame, "Group By", groupByDropdown),
-                optionsAPI.BuildSettingRow(card.frame, "Units Per Column", unitsPerColumnSlider)
+                optionsAPI.BuildSettingRow(card.frame, ns.L["Group By"], groupByDropdown),
+                optionsAPI.BuildSettingRow(card.frame, ns.L["Units Per Column"], unitsPerColumnSlider)
             )
         end
 
         local sortMethodDropdown = gui:CreateFormDropdown(card.frame, nil, SORT_OPTIONS, "sortMethod", layout, refresh, {
-            description = "Sort units by Blizzard group index or alphabetically by name.",
+            description = ns.L["Sort units by Blizzard group index or alphabetically by name."],
         })
         local selfFirstCheckbox = gui:CreateFormCheckbox(card.frame, nil, "raidSelfFirst", groupFrames.gfdb, refresh, {
-            description = "Pin your own frame to the first slot regardless of the sort order.",
+            description = ns.L["Pin your own frame to the first slot regardless of the sort order."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Sort Method", sortMethodDropdown),
-            optionsAPI.BuildSettingRow(card.frame, "Always Show Self First", selfFirstCheckbox)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Sort Method"], sortMethodDropdown),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Always Show Self First"], selfFirstCheckbox)
         )
 
         local sortByRoleCheckbox = gui:CreateFormCheckbox(card.frame, nil, "sortByRole", layout, refresh, {
-            description = "Order tanks first, healers second, and damage dealers last.",
+            description = ns.L["Order tanks first, healers second, and damage dealers last."],
         })
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Sort by Role (Tank > Healer > DPS)", sortByRoleCheckbox))
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Sort by Role (Tank > Healer > DPS)"], sortByRoleCheckbox))
 
         local limitGroupsCheckbox = gui:CreateFormCheckbox(card.frame, nil, "limitGroupsByRaidSize", layout, function()
             refresh(true)
             RequestTabRepaint(ctx)
         end, {
-            description = "Limit visible raid groups by instance size: groups 1-4 in Mythic and 1-6 otherwise.",
+            description = ns.L["Limit visible raid groups by instance size: groups 1-4 in Mythic and 1-6 otherwise."],
         })
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Limit Groups by Raid Size", limitGroupsCheckbox))
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Limit Groups by Raid Size"], limitGroupsCheckbox))
     else
         local showPlayerCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showPlayer", layout, refresh, {
-            description = "Include the player's own frame in the party display.",
+            description = ns.L["Include the player's own frame in the party display."],
         })
         local showSoloCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showSolo", layout, refresh, {
-            description = "Show the party frame while solo with only your own unit visible.",
+            description = ns.L["Show the party frame while solo with only your own unit visible."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Show Player in Group", showPlayerCheckbox),
-            optionsAPI.BuildSettingRow(card.frame, "Show Player Frame When Solo", showSoloCheckbox)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Show Player in Group"], showPlayerCheckbox),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Show Player Frame When Solo"], showSoloCheckbox)
         )
 
         local selfFirstCheckbox = gui:CreateFormCheckbox(card.frame, nil, "partySelfFirst", groupFrames.gfdb, refresh, {
-            description = "Pin your own frame to the first slot regardless of the sort order.",
+            description = ns.L["Pin your own frame to the first slot regardless of the sort order."],
         })
         local sortByRoleCheckbox = gui:CreateFormCheckbox(card.frame, nil, "sortByRole", layout, refresh, {
-            description = "Order tanks first, healers second, and damage dealers last.",
+            description = ns.L["Order tanks first, healers second, and damage dealers last."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Always Show Self First", selfFirstCheckbox),
-            optionsAPI.BuildSettingRow(card.frame, "Sort by Role (Tank > Healer > DPS)", sortByRoleCheckbox)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Always Show Self First"], selfFirstCheckbox),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Sort by Role (Tank > Healer > DPS)"], sortByRoleCheckbox)
         )
     end
 
@@ -936,19 +936,19 @@ local function RenderDimensionsSection(sectionHost, ctx)
     end
 
     if groupFrames.contextMode ~= "raid" then
-        builder.Header("Dimensions")
-        builder.Description("Width and height for each " .. string.lower(groupFrames.sourceLabel) .. " frame.")
+        builder.Header(ns.L["Dimensions"])
+        builder.Description(string.format(ns.L["Width and height for each %1$s frame."], string.lower(groupFrames.sourceLabel)))
 
         local card = builder.Card()
         local widthSlider = gui:CreateFormSlider(card.frame, nil, 80, 400, 1, "partyWidth", dimensions, refresh, { deferOnDrag = true }, {
-            description = "Width of each party frame in pixels.",
+            description = ns.L["Width of each party frame in pixels."],
         })
         local heightSlider = gui:CreateFormSlider(card.frame, nil, 16, 80, 1, "partyHeight", dimensions, refresh, { deferOnDrag = true }, {
-            description = "Height of each party frame in pixels.",
+            description = ns.L["Height of each party frame in pixels."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Width", widthSlider),
-            optionsAPI.BuildSettingRow(card.frame, "Height", heightSlider)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Width"], widthSlider),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Height"], heightSlider)
         )
         builder.CloseCard(card)
         return builder.Height()
@@ -962,25 +962,25 @@ local function RenderDimensionsSection(sectionHost, ctx)
 
         local card = builder.Card()
         local widthSlider = gui:CreateFormSlider(card.frame, nil, widthRange[1], widthRange[2], 1, widthKey, dimensions, refresh, { deferOnDrag = true }, {
-            description = "Frame width used for this raid-size bracket.",
+            description = ns.L["Frame width used for this raid-size bracket."],
         })
         local heightSlider = gui:CreateFormSlider(card.frame, nil, heightRange[1], heightRange[2], 1, heightKey, dimensions, refresh, { deferOnDrag = true }, {
-            description = "Frame height used for this raid-size bracket.",
+            description = ns.L["Frame height used for this raid-size bracket."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Width", widthSlider),
-            optionsAPI.BuildSettingRow(card.frame, "Height", heightSlider)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Width"], widthSlider),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Height"], heightSlider)
         )
         builder.CloseCard(card)
         builder.Spacer(10)
     end
 
-    AddSizeSection("Small Raid (6-15 players)", "smallRaidWidth", { 60, 400 }, "smallRaidHeight", { 14, 100 },
-        "Frame size used when the raid has between 6 and 15 members.")
-    AddSizeSection("Medium Raid (16-25 players)", "mediumRaidWidth", { 50, 300 }, "mediumRaidHeight", { 12, 100 },
-        "Frame size used when the raid has between 16 and 25 members.")
-    AddSizeSection("Large Raid (26-40 players)", "largeRaidWidth", { 40, 250 }, "largeRaidHeight", { 10, 100 },
-        "Frame size used when the raid has between 26 and 40 members.")
+    AddSizeSection(ns.L["Small Raid (6-15 players)"], "smallRaidWidth", { 60, 400 }, "smallRaidHeight", { 14, 100 },
+        ns.L["Frame size used when the raid has between 6 and 15 members."])
+    AddSizeSection(ns.L["Medium Raid (16-25 players)"], "mediumRaidWidth", { 50, 300 }, "mediumRaidHeight", { 12, 100 },
+        ns.L["Frame size used when the raid has between 16 and 25 members."])
+    AddSizeSection(ns.L["Large Raid (26-40 players)"], "largeRaidWidth", { 40, 250 }, "largeRaidHeight", { 10, 100 },
+        ns.L["Frame size used when the raid has between 26 and 40 members."])
     return builder.Height()
 end
 
@@ -1007,8 +1007,8 @@ local function RenderRangePetSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Range Check")
-    builder.Description("Fade units when they move out of your supported spell range.")
+    builder.Header(ns.L["Range Check"])
+    builder.Description(ns.L["Fade units when they move out of your supported spell range."])
 
     local rangeCard = builder.Card()
     local rangeAlphaCell
@@ -1022,25 +1022,25 @@ local function RenderRangePetSection(sectionHost, ctx)
         refresh()
         UpdateRangeCells()
     end, {
-        description = "Fade group frames when the unit is out of range.",
+        description = ns.L["Fade group frames when the unit is out of range."],
     })
     local rangeAlphaSlider = gui:CreateFormSlider(rangeCard.frame, nil, 0.1, 0.8, 0.05, "outOfRangeAlpha", range, refresh, {
         precision = 2,
         deferOnDrag = true,
     }, {
-        description = "Opacity applied to out-of-range frames.",
+        description = ns.L["Opacity applied to out-of-range frames."],
     })
-    rangeAlphaCell = optionsAPI.BuildSettingRow(rangeCard.frame, "Out-of-Range Alpha", rangeAlphaSlider)
+    rangeAlphaCell = optionsAPI.BuildSettingRow(rangeCard.frame, ns.L["Out-of-Range Alpha"], rangeAlphaSlider)
     rangeCard.AddRow(
-        optionsAPI.BuildSettingRow(rangeCard.frame, "Enable Range Check", rangeEnabledCheckbox),
+        optionsAPI.BuildSettingRow(rangeCard.frame, ns.L["Enable Range Check"], rangeEnabledCheckbox),
         rangeAlphaCell
     )
     UpdateRangeCells()
     builder.CloseCard(rangeCard)
     builder.Spacer(10)
 
-    builder.Header("Pet Frames")
-    builder.Description("Show companion frames for pets alongside the main group.")
+    builder.Header(ns.L["Pet Frames"])
+    builder.Description(ns.L["Show companion frames for pets alongside the main group."])
 
     local petCard = builder.Card()
     local petWidthCell
@@ -1062,25 +1062,25 @@ local function RenderRangePetSection(sectionHost, ctx)
         refresh()
         UpdatePetCells()
     end, {
-        description = "Show small frames for group-member pets.",
+        description = ns.L["Show small frames for group-member pets."],
     })
     local petWidthSlider = gui:CreateFormSlider(petCard.frame, nil, 40, 200, 1, "width", pets, refresh, { deferOnDrag = true }, {
-        description = "Width of each pet frame in pixels.",
+        description = ns.L["Width of each pet frame in pixels."],
     })
-    petWidthCell = optionsAPI.BuildSettingRow(petCard.frame, "Pet Frame Width", petWidthSlider)
+    petWidthCell = optionsAPI.BuildSettingRow(petCard.frame, ns.L["Pet Frame Width"], petWidthSlider)
     petCard.AddRow(
-        optionsAPI.BuildSettingRow(petCard.frame, "Enable Pet Frames", petsEnabledCheckbox),
+        optionsAPI.BuildSettingRow(petCard.frame, ns.L["Enable Pet Frames"], petsEnabledCheckbox),
         petWidthCell
     )
 
     local petHeightSlider = gui:CreateFormSlider(petCard.frame, nil, 10, 40, 1, "height", pets, refresh, { deferOnDrag = true }, {
-        description = "Height of each pet frame in pixels.",
+        description = ns.L["Height of each pet frame in pixels."],
     })
-    petHeightCell = optionsAPI.BuildSettingRow(petCard.frame, "Pet Frame Height", petHeightSlider)
+    petHeightCell = optionsAPI.BuildSettingRow(petCard.frame, ns.L["Pet Frame Height"], petHeightSlider)
     local petAnchorDropdown = gui:CreateFormDropdown(petCard.frame, nil, PET_ANCHOR_OPTIONS, "anchorTo", pets, refresh, {
-        description = "Where pet frames are anchored relative to the group.",
+        description = ns.L["Where pet frames are anchored relative to the group."],
     })
-    petAnchorCell = optionsAPI.BuildSettingRow(petCard.frame, "Pet Anchor", petAnchorDropdown)
+    petAnchorCell = optionsAPI.BuildSettingRow(petCard.frame, ns.L["Pet Anchor"], petAnchorDropdown)
     petCard.AddRow(petHeightCell, petAnchorCell)
 
     UpdatePetCells()
@@ -1097,7 +1097,7 @@ local function RenderSpotlightSection(sectionHost, ctx)
     end
 
     if groupFrames.contextMode ~= "raid" then
-        return RenderUnavailableLabel(sectionHost, "Spotlight is only available for Raid frames.")
+        return RenderUnavailableLabel(sectionHost, ns.L["Spotlight is only available for Raid frames."])
     end
 
     local spotlight = EnsureSubTable(groupFrames.contextDB, "spotlight")
@@ -1115,8 +1115,8 @@ local function RenderSpotlightSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Spotlight")
-    builder.Description("Creates a separate frame that pins raid members by role or name to a dedicated group.")
+    builder.Header(ns.L["Spotlight"])
+    builder.Description(ns.L["Creates a separate frame that pins raid members by role or name to a dedicated group."])
 
     -- Dependent rows (everything below the Enable toggle) dither when Spotlight
     -- is disabled. Tracked as they're built; refreshed on every enable change.
@@ -1149,60 +1149,60 @@ local function RenderSpotlightSection(sectionHost, ctx)
     local enableCheckbox = gui:CreateFormCheckbox(enableCard.frame, nil, "enabled", spotlight, function()
         onSpotlightChange()
     end, {
-        description = "Enable a separate Spotlight group for pinned raid members.",
+        description = ns.L["Enable a separate Spotlight group for pinned raid members."],
     })
-    enableCard.AddRow(optionsAPI.BuildSettingRow(enableCard.frame, "Enable Spotlight", enableCheckbox))
+    enableCard.AddRow(optionsAPI.BuildSettingRow(enableCard.frame, ns.L["Enable Spotlight"], enableCheckbox))
     builder.CloseCard(enableCard)
     builder.Spacer(10)
 
-    builder.Header("Filter")
+    builder.Header(ns.L["Filter"])
     local filterCard = builder.Card()
     local filterModeDropdown = gui:CreateFormDropdown(filterCard.frame, nil, SPOTLIGHT_FILTER_OPTIONS, "filterMode", spotlight, function()
         onSpotlightChange(true)
     end, {
-        description = "Pin members by role or by a manual character-name list.",
+        description = ns.L["Pin members by role or by a manual character-name list."],
     })
-    filterCard.AddRow(track(optionsAPI.BuildSettingRow(filterCard.frame, "Filter By", filterModeDropdown)))
+    filterCard.AddRow(track(optionsAPI.BuildSettingRow(filterCard.frame, ns.L["Filter By"], filterModeDropdown)))
 
     if spotlight.filterMode == "ROLE" then
         local tankCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "filterTank", spotlight, onSpotlightChange, {
-            description = "Include tanks in the Spotlight group.",
+            description = ns.L["Include tanks in the Spotlight group."],
         })
         local healerCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "filterHealer", spotlight, onSpotlightChange, {
-            description = "Include healers in the Spotlight group.",
+            description = ns.L["Include healers in the Spotlight group."],
         })
         filterCard.AddRow(
-            track(optionsAPI.BuildSettingRow(filterCard.frame, "Tanks", tankCheckbox)),
-            track(optionsAPI.BuildSettingRow(filterCard.frame, "Healers", healerCheckbox))
+            track(optionsAPI.BuildSettingRow(filterCard.frame, ns.L["Tanks"], tankCheckbox)),
+            track(optionsAPI.BuildSettingRow(filterCard.frame, ns.L["Healers"], healerCheckbox))
         )
     else
         local nameListEdit = gui:CreateFormEditBox(filterCard.frame, nil, "nameList", spotlight, onSpotlightChange, {
             commitOnEnter = true,
             commitOnFocusLost = true,
         }, {
-            description = "Comma-separated character names to pin in Spotlight.",
+            description = ns.L["Comma-separated character names to pin in Spotlight."],
         })
-        filterCard.AddRow(track(optionsAPI.BuildSettingRow(filterCard.frame, "Player Names", nameListEdit)))
+        filterCard.AddRow(track(optionsAPI.BuildSettingRow(filterCard.frame, ns.L["Player Names"], nameListEdit)))
     end
     builder.CloseCard(filterCard)
     builder.Spacer(10)
 
-    builder.Header("Dimensions")
+    builder.Header(ns.L["Dimensions"])
     local dimsCard = builder.Card()
     local widthSlider = gui:CreateFormSlider(dimsCard.frame, nil, 60, 300, 1, "frameWidth", spotlight, onSpotlightChange, { deferOnDrag = true }, {
-        description = "Width of each Spotlight frame in pixels.",
+        description = ns.L["Width of each Spotlight frame in pixels."],
     })
     local heightSlider = gui:CreateFormSlider(dimsCard.frame, nil, 16, 80, 1, "frameHeight", spotlight, onSpotlightChange, { deferOnDrag = true }, {
-        description = "Height of each Spotlight frame in pixels.",
+        description = ns.L["Height of each Spotlight frame in pixels."],
     })
     dimsCard.AddRow(
-        track(optionsAPI.BuildSettingRow(dimsCard.frame, "Width", widthSlider)),
-        track(optionsAPI.BuildSettingRow(dimsCard.frame, "Height", heightSlider))
+        track(optionsAPI.BuildSettingRow(dimsCard.frame, ns.L["Width"], widthSlider)),
+        track(optionsAPI.BuildSettingRow(dimsCard.frame, ns.L["Height"], heightSlider))
     )
     builder.CloseCard(dimsCard)
     builder.Spacer(10)
 
-    builder.Header("Layout")
+    builder.Header(ns.L["Layout"])
     local layoutCard = builder.Card()
     if not spotlight.orientation then
         local growDirection = spotlight.growDirection or "DOWN"
@@ -1212,14 +1212,14 @@ local function RenderSpotlightSection(sectionHost, ctx)
         spotlight.growDirection = spotlight.orientation == "HORIZONTAL" and "RIGHT" or "DOWN"
         onSpotlightChange()
     end, {
-        description = "Stack Spotlight frames vertically (column) or horizontally (row).",
+        description = ns.L["Stack Spotlight frames vertically (column) or horizontally (row)."],
     })
     local spacingSlider = gui:CreateFormSlider(layoutCard.frame, nil, 0, 10, 1, "spacing", spotlight, onSpotlightChange, { deferOnDrag = true }, {
-        description = "Pixel gap between adjacent Spotlight frames.",
+        description = ns.L["Pixel gap between adjacent Spotlight frames."],
     })
     layoutCard.AddRow(
-        track(optionsAPI.BuildSettingRow(layoutCard.frame, "Layout", orientationDropdown)),
-        track(optionsAPI.BuildSettingRow(layoutCard.frame, "Spacing", spacingSlider))
+        track(optionsAPI.BuildSettingRow(layoutCard.frame, ns.L["Layout"], orientationDropdown)),
+        track(optionsAPI.BuildSettingRow(layoutCard.frame, ns.L["Spacing"], spacingSlider))
     )
     builder.CloseCard(layoutCard)
 
@@ -1260,27 +1260,27 @@ local function RenderHealthSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Health Bar")
+    builder.Header(ns.L["Health Bar"])
     local barCard = builder.Card()
     local textureDropdown = gui:CreateFormDropdown(barCard.frame, nil, optionsAPI.GetTextureList(), "texture", general, refresh, {
-        description = "Statusbar texture used for the health bar. Supports SharedMedia textures.",
+        description = ns.L["Statusbar texture used for the health bar. Supports SharedMedia textures."],
     })
     local healthOpacitySlider = gui:CreateFormSlider(barCard.frame, nil, 0, 1, 0.05, "defaultHealthOpacity", general, refresh, { deferOnDrag = true }, {
-        description = "Opacity of the filled portion of the health bar. 1.0 is fully opaque.",
+        description = ns.L["Opacity of the filled portion of the health bar. 1.0 is fully opaque."],
     })
     barCard.AddRow(
-        optionsAPI.BuildSettingRow(barCard.frame, "Health Texture", textureDropdown),
-        optionsAPI.BuildSettingRow(barCard.frame, "Health Opacity", healthOpacitySlider)
+        optionsAPI.BuildSettingRow(barCard.frame, ns.L["Health Texture"], textureDropdown),
+        optionsAPI.BuildSettingRow(barCard.frame, ns.L["Health Opacity"], healthOpacitySlider)
     )
 
     local fillDirectionDropdown = gui:CreateFormDropdown(barCard.frame, nil, HEALTH_FILL_OPTIONS, "healthFillDirection", health, refresh, {
-        description = "Direction the health fill drains toward as the unit loses health.",
+        description = ns.L["Direction the health fill drains toward as the unit loses health."],
     })
-    barCard.AddRow(optionsAPI.BuildSettingRow(barCard.frame, "Fill Direction", fillDirectionDropdown))
+    barCard.AddRow(optionsAPI.BuildSettingRow(barCard.frame, ns.L["Fill Direction"], fillDirectionDropdown))
     builder.CloseCard(barCard)
 
     builder.Spacer(6)
-    builder.Header("Health Text")
+    builder.Header(ns.L["Health Text"])
     local textCard = builder.Card()
     local healthDisplayRow, healthFontRow, healthAnchorRow, healthJustifyRow, healthXRow, healthYRow, healthColorRow
     local function UpdateHealthTextRows()
@@ -1298,51 +1298,51 @@ local function RenderHealthSection(sectionHost, ctx)
         refresh()
         UpdateHealthTextRows()
     end, {
-        description = "Show the unit's health as text on this frame. Use Display Style below to pick the format.",
+        description = ns.L["Show the unit's health as text on this frame. Use Display Style below to pick the format."],
     })
     local healthDisplayDropdown = gui:CreateFormDropdown(textCard.frame, nil, HEALTH_DISPLAY_OPTIONS, "healthDisplayStyle", health, refresh, {
-        description = "How health is formatted: percent only, raw value, value-plus-percent, or deficit.",
+        description = ns.L["How health is formatted: percent only, raw value, value-plus-percent, or deficit."],
     })
-    healthDisplayRow = optionsAPI.BuildSettingRow(textCard.frame, "Display Style", healthDisplayDropdown)
+    healthDisplayRow = optionsAPI.BuildSettingRow(textCard.frame, ns.L["Display Style"], healthDisplayDropdown)
     textCard.AddRow(
-        optionsAPI.BuildSettingRow(textCard.frame, "Show Health Text", showHealthTextCheckbox),
+        optionsAPI.BuildSettingRow(textCard.frame, ns.L["Show Health Text"], showHealthTextCheckbox),
         healthDisplayRow
     )
 
     local healthFontSlider = gui:CreateFormSlider(textCard.frame, nil, 6, 24, 1, "healthFontSize", health, refresh, { deferOnDrag = true }, {
-        description = "Font size used for the health text.",
+        description = ns.L["Font size used for the health text."],
     })
-    healthFontRow = optionsAPI.BuildSettingRow(textCard.frame, "Font Size", healthFontSlider)
+    healthFontRow = optionsAPI.BuildSettingRow(textCard.frame, ns.L["Font Size"], healthFontSlider)
     local healthAnchorDropdown = gui:CreateFormDropdown(textCard.frame, nil, NINE_POINT_OPTIONS, "healthAnchor", health, refresh, {
-        description = "Where on the frame the health text is anchored. X/Y Offset below nudges it from this anchor point.",
+        description = ns.L["Where on the frame the health text is anchored. X/Y Offset below nudges it from this anchor point."],
     })
-    healthAnchorRow = optionsAPI.BuildSettingRow(textCard.frame, "Anchor", healthAnchorDropdown)
+    healthAnchorRow = optionsAPI.BuildSettingRow(textCard.frame, ns.L["Anchor"], healthAnchorDropdown)
     textCard.AddRow(healthFontRow, healthAnchorRow)
 
     local healthJustifyDropdown = gui:CreateFormDropdown(textCard.frame, nil, TEXT_JUSTIFY_OPTIONS, "healthJustify", health, refresh, {
-        description = "Horizontal text alignment within the health text region.",
+        description = ns.L["Horizontal text alignment within the health text region."],
     })
-    healthJustifyRow = optionsAPI.BuildSettingRow(textCard.frame, "Text Justify", healthJustifyDropdown)
+    healthJustifyRow = optionsAPI.BuildSettingRow(textCard.frame, ns.L["Text Justify"], healthJustifyDropdown)
     local healthXSlider = gui:CreateFormSlider(textCard.frame, nil, -100, 100, 1, "healthOffsetX", health, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the health text from its anchor. Positive moves right, negative moves left.",
+        description = ns.L["Horizontal pixel offset for the health text from its anchor. Positive moves right, negative moves left."],
     })
-    healthXRow = optionsAPI.BuildSettingRow(textCard.frame, "X Offset", healthXSlider)
+    healthXRow = optionsAPI.BuildSettingRow(textCard.frame, ns.L["X Offset"], healthXSlider)
     textCard.AddRow(healthJustifyRow, healthXRow)
 
     local healthYSlider = gui:CreateFormSlider(textCard.frame, nil, -100, 100, 1, "healthOffsetY", health, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the health text from its anchor. Positive moves up, negative moves down.",
+        description = ns.L["Vertical pixel offset for the health text from its anchor. Positive moves up, negative moves down."],
     })
-    healthYRow = optionsAPI.BuildSettingRow(textCard.frame, "Y Offset", healthYSlider)
+    healthYRow = optionsAPI.BuildSettingRow(textCard.frame, ns.L["Y Offset"], healthYSlider)
     local healthColorPicker = gui:CreateFormColorPicker(textCard.frame, nil, "healthTextColor", health, refresh, nil, {
-        description = "Color used for the health text.",
+        description = ns.L["Color used for the health text."],
     })
-    healthColorRow = optionsAPI.BuildSettingRow(textCard.frame, "Text Color", healthColorPicker)
+    healthColorRow = optionsAPI.BuildSettingRow(textCard.frame, ns.L["Text Color"], healthColorPicker)
     textCard.AddRow(healthYRow, healthColorRow)
     UpdateHealthTextRows()
     builder.CloseCard(textCard)
 
     builder.Spacer(6)
-    builder.Header("Absorb Shield")
+    builder.Header(ns.L["Absorb Shield"])
     local absorbCard = builder.Card()
     local absorbClassRow, absorbColorRow, absorbOpacityRow
     local function UpdateAbsorbRows()
@@ -1357,34 +1357,34 @@ local function RenderHealthSection(sectionHost, ctx)
         refresh()
         UpdateAbsorbRows()
     end, {
-        description = "Overlay an indicator on the health bar showing the size of incoming damage absorbs.",
+        description = ns.L["Overlay an indicator on the health bar showing the size of incoming damage absorbs."],
     })
     local absorbClassCheckbox = gui:CreateFormCheckbox(absorbCard.frame, nil, "useClassColor", absorbs, function()
         refresh()
         UpdateAbsorbRows()
     end, {
-        description = "Tint the absorb overlay with the unit's class color instead of the Absorb Color swatch below.",
+        description = ns.L["Tint the absorb overlay with the unit's class color instead of the Absorb Color swatch below."],
     })
-    absorbClassRow = optionsAPI.BuildSettingRow(absorbCard.frame, "Use Class Color", absorbClassCheckbox)
+    absorbClassRow = optionsAPI.BuildSettingRow(absorbCard.frame, ns.L["Use Class Color"], absorbClassCheckbox)
     absorbCard.AddRow(
-        optionsAPI.BuildSettingRow(absorbCard.frame, "Show Absorb Shield", absorbEnableCheckbox),
+        optionsAPI.BuildSettingRow(absorbCard.frame, ns.L["Show Absorb Shield"], absorbEnableCheckbox),
         absorbClassRow
     )
 
     local absorbColorPicker = gui:CreateFormColorPicker(absorbCard.frame, nil, "color", absorbs, refresh, nil, {
-        description = "Tint used for the absorb overlay when Use Class Color is off.",
+        description = ns.L["Tint used for the absorb overlay when Use Class Color is off."],
     })
-    absorbColorRow = optionsAPI.BuildSettingRow(absorbCard.frame, "Absorb Color", absorbColorPicker)
+    absorbColorRow = optionsAPI.BuildSettingRow(absorbCard.frame, ns.L["Absorb Color"], absorbColorPicker)
     local absorbOpacitySlider = gui:CreateFormSlider(absorbCard.frame, nil, 0.1, 1, 0.05, "opacity", absorbs, refresh, { deferOnDrag = true }, {
-        description = "Opacity of the absorb shield overlay.",
+        description = ns.L["Opacity of the absorb shield overlay."],
     })
-    absorbOpacityRow = optionsAPI.BuildSettingRow(absorbCard.frame, "Absorb Opacity", absorbOpacitySlider)
+    absorbOpacityRow = optionsAPI.BuildSettingRow(absorbCard.frame, ns.L["Absorb Opacity"], absorbOpacitySlider)
     absorbCard.AddRow(absorbColorRow, absorbOpacityRow)
     UpdateAbsorbRows()
     builder.CloseCard(absorbCard)
 
     builder.Spacer(6)
-    builder.Header("Heal Absorb")
+    builder.Header(ns.L["Heal Absorb"])
     local healAbsorbCard = builder.Card()
     local healAbsorbColorRow, healAbsorbOpacityRow
     local function UpdateHealAbsorbRows()
@@ -1397,27 +1397,27 @@ local function RenderHealthSection(sectionHost, ctx)
         refresh()
         UpdateHealAbsorbRows()
     end, {
-        description = "Overlay an indicator on the health bar showing active heal-absorb effects that must be healed through before real healing lands.",
+        description = ns.L["Overlay an indicator on the health bar showing active heal-absorb effects that must be healed through before real healing lands."],
     })
     local healAbsorbColorPicker = gui:CreateFormColorPicker(healAbsorbCard.frame, nil, "color", healAbsorbs, refresh, nil, {
-        description = "Tint used for the heal-absorb overlay.",
+        description = ns.L["Tint used for the heal-absorb overlay."],
     })
-    healAbsorbColorRow = optionsAPI.BuildSettingRow(healAbsorbCard.frame, "Heal Absorb Color", healAbsorbColorPicker)
+    healAbsorbColorRow = optionsAPI.BuildSettingRow(healAbsorbCard.frame, ns.L["Heal Absorb Color"], healAbsorbColorPicker)
     healAbsorbCard.AddRow(
-        optionsAPI.BuildSettingRow(healAbsorbCard.frame, "Show Heal Absorb", healAbsorbEnableCheckbox),
+        optionsAPI.BuildSettingRow(healAbsorbCard.frame, ns.L["Show Heal Absorb"], healAbsorbEnableCheckbox),
         healAbsorbColorRow
     )
 
     local healAbsorbOpacitySlider = gui:CreateFormSlider(healAbsorbCard.frame, nil, 0.1, 1, 0.05, "opacity", healAbsorbs, refresh, { deferOnDrag = true }, {
-        description = "Opacity of the heal-absorb overlay.",
+        description = ns.L["Opacity of the heal-absorb overlay."],
     })
-    healAbsorbOpacityRow = optionsAPI.BuildSettingRow(healAbsorbCard.frame, "Heal Absorb Opacity", healAbsorbOpacitySlider)
+    healAbsorbOpacityRow = optionsAPI.BuildSettingRow(healAbsorbCard.frame, ns.L["Heal Absorb Opacity"], healAbsorbOpacitySlider)
     healAbsorbCard.AddRow(healAbsorbOpacityRow)
     UpdateHealAbsorbRows()
     builder.CloseCard(healAbsorbCard)
 
     builder.Spacer(6)
-    builder.Header("Heal Prediction")
+    builder.Header(ns.L["Heal Prediction"])
     local healPredictionCard = builder.Card()
     local healPredictionClassRow, healPredictionColorRow, healPredictionOpacityRow
     local function UpdateHealPredictionRows()
@@ -1432,28 +1432,28 @@ local function RenderHealthSection(sectionHost, ctx)
         refresh()
         UpdateHealPredictionRows()
     end, {
-        description = "Overlay an indicator on the health bar showing heals being cast on this unit before they land.",
+        description = ns.L["Overlay an indicator on the health bar showing heals being cast on this unit before they land."],
     })
     local healPredictionClassCheckbox = gui:CreateFormCheckbox(healPredictionCard.frame, nil, "useClassColor", healPrediction, function()
         refresh()
         UpdateHealPredictionRows()
     end, {
-        description = "Tint the heal-prediction overlay with the caster's class color instead of the Heal Prediction Color swatch below.",
+        description = ns.L["Tint the heal-prediction overlay with the caster's class color instead of the Heal Prediction Color swatch below."],
     })
-    healPredictionClassRow = optionsAPI.BuildSettingRow(healPredictionCard.frame, "Use Class Color", healPredictionClassCheckbox)
+    healPredictionClassRow = optionsAPI.BuildSettingRow(healPredictionCard.frame, ns.L["Use Class Color"], healPredictionClassCheckbox)
     healPredictionCard.AddRow(
-        optionsAPI.BuildSettingRow(healPredictionCard.frame, "Show Heal Prediction", healPredictionEnableCheckbox),
+        optionsAPI.BuildSettingRow(healPredictionCard.frame, ns.L["Show Heal Prediction"], healPredictionEnableCheckbox),
         healPredictionClassRow
     )
 
     local healPredictionColorPicker = gui:CreateFormColorPicker(healPredictionCard.frame, nil, "color", healPrediction, refresh, nil, {
-        description = "Tint used for the incoming-heal overlay when Use Class Color is off.",
+        description = ns.L["Tint used for the incoming-heal overlay when Use Class Color is off."],
     })
-    healPredictionColorRow = optionsAPI.BuildSettingRow(healPredictionCard.frame, "Heal Prediction Color", healPredictionColorPicker)
+    healPredictionColorRow = optionsAPI.BuildSettingRow(healPredictionCard.frame, ns.L["Heal Prediction Color"], healPredictionColorPicker)
     local healPredictionOpacitySlider = gui:CreateFormSlider(healPredictionCard.frame, nil, 0.1, 1, 0.05, "opacity", healPrediction, refresh, { deferOnDrag = true }, {
-        description = "Opacity of the incoming-heal overlay.",
+        description = ns.L["Opacity of the incoming-heal overlay."],
     })
-    healPredictionOpacityRow = optionsAPI.BuildSettingRow(healPredictionCard.frame, "Heal Prediction Opacity", healPredictionOpacitySlider)
+    healPredictionOpacityRow = optionsAPI.BuildSettingRow(healPredictionCard.frame, ns.L["Heal Prediction Opacity"], healPredictionOpacitySlider)
     healPredictionCard.AddRow(healPredictionColorRow, healPredictionOpacityRow)
     UpdateHealPredictionRows()
     builder.CloseCard(healPredictionCard)
@@ -1484,8 +1484,8 @@ local function RenderPowerSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Power")
-    builder.Description("Power-bar visibility and coloring for " .. groupFrames.sourceLabel .. " group frames.")
+    builder.Header(ns.L["Power"])
+    builder.Description(string.format(ns.L["Power-bar visibility and coloring for %1$s group frames."], groupFrames.sourceLabel))
 
     local card = builder.Card()
     local heightRow, healerRow, tankRow, usePowerColorRow, customColorRow
@@ -1506,38 +1506,38 @@ local function RenderPowerSection(sectionHost, ctx)
         refresh()
         UpdatePowerRows()
     end, {
-        description = "Show a power bar below the health bar on this frame.",
+        description = ns.L["Show a power bar below the health bar on this frame."],
     })
     local heightSlider = gui:CreateFormSlider(card.frame, nil, 1, 12, 1, "powerBarHeight", power, refresh, { deferOnDrag = true }, {
-        description = "Height of the power bar in pixels. Counted as part of the overall frame height.",
+        description = ns.L["Height of the power bar in pixels. Counted as part of the overall frame height."],
     })
-    heightRow = optionsAPI.BuildSettingRow(card.frame, "Height", heightSlider)
+    heightRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Height"], heightSlider)
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Power Bar", showPowerBarCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Power Bar"], showPowerBarCheckbox),
         heightRow
     )
 
     local healerCheckbox = gui:CreateFormCheckbox(card.frame, nil, "powerBarOnlyHealers", power, refresh, {
-        description = "Restrict the power bar to units specced as healers.",
+        description = ns.L["Restrict the power bar to units specced as healers."],
     })
-    healerRow = optionsAPI.BuildSettingRow(card.frame, "Only Show for Healers", healerCheckbox)
+    healerRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Only Show for Healers"], healerCheckbox)
     local tankCheckbox = gui:CreateFormCheckbox(card.frame, nil, "powerBarOnlyTanks", power, refresh, {
-        description = "Restrict the power bar to units specced as tanks.",
+        description = ns.L["Restrict the power bar to units specced as tanks."],
     })
-    tankRow = optionsAPI.BuildSettingRow(card.frame, "Only Show for Tanks", tankCheckbox)
+    tankRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Only Show for Tanks"], tankCheckbox)
     card.AddRow(healerRow, tankRow)
 
     local usePowerColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "powerBarUsePowerColor", power, function()
         refresh()
         UpdatePowerRows()
     end, {
-        description = "Color the power bar by power type instead of the Custom Color swatch below.",
+        description = ns.L["Color the power bar by power type instead of the Custom Color swatch below."],
     })
-    usePowerColorRow = optionsAPI.BuildSettingRow(card.frame, "Use Power Type Color", usePowerColorCheckbox)
+    usePowerColorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Use Power Type Color"], usePowerColorCheckbox)
     local customColorPicker = gui:CreateFormColorPicker(card.frame, nil, "powerBarColor", power, refresh, nil, {
-        description = "Solid color for the power bar when Use Power Type Color is off.",
+        description = ns.L["Solid color for the power bar when Use Power Type Color is off."],
     })
-    customColorRow = optionsAPI.BuildSettingRow(card.frame, "Custom Color", customColorPicker)
+    customColorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Custom Color"], customColorPicker)
     card.AddRow(usePowerColorRow, customColorRow)
 
     UpdatePowerRows()
@@ -1567,8 +1567,8 @@ local function RenderNameSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Name")
-    builder.Description("Name text placement and styling for " .. groupFrames.sourceLabel .. " group frames.")
+    builder.Header(ns.L["Name"])
+    builder.Description(string.format(ns.L["Name text placement and styling for %1$s group frames."], groupFrames.sourceLabel))
 
     local card = builder.Card()
     local fontSizeRow, anchorRow, justifyRow, maxLengthRow, xOffsetRow, yOffsetRow, useClassColorRow, textColorRow
@@ -1592,54 +1592,54 @@ local function RenderNameSection(sectionHost, ctx)
         refresh()
         UpdateNameRows()
     end, {
-        description = "Show the unit's name on this frame.",
+        description = ns.L["Show the unit's name on this frame."],
     })
     local fontSizeSlider = gui:CreateFormSlider(card.frame, nil, 6, 24, 1, "nameFontSize", name, refresh, { deferOnDrag = true }, {
-        description = "Font size used for the unit's name.",
+        description = ns.L["Font size used for the unit's name."],
     })
-    fontSizeRow = optionsAPI.BuildSettingRow(card.frame, "Font Size", fontSizeSlider)
+    fontSizeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Font Size"], fontSizeSlider)
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Name", showNameCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Name"], showNameCheckbox),
         fontSizeRow
     )
 
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, NINE_POINT_OPTIONS, "nameAnchor", name, refresh, {
-        description = "Where on the frame the name text is anchored. X/Y Offset below nudges it from this anchor point.",
+        description = ns.L["Where on the frame the name text is anchored. X/Y Offset below nudges it from this anchor point."],
     })
-    anchorRow = optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown)
+    anchorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown)
     local justifyDropdown = gui:CreateFormDropdown(card.frame, nil, TEXT_JUSTIFY_OPTIONS, "nameJustify", name, refresh, {
-        description = "Horizontal text alignment within the name text region.",
+        description = ns.L["Horizontal text alignment within the name text region."],
     })
-    justifyRow = optionsAPI.BuildSettingRow(card.frame, "Text Justify", justifyDropdown)
+    justifyRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Text Justify"], justifyDropdown)
     card.AddRow(anchorRow, justifyRow)
 
     local maxLengthSlider = gui:CreateFormSlider(card.frame, nil, 0, 20, 1, "maxNameLength", name, refresh, { deferOnDrag = true }, {
-        description = "Truncate names longer than this many characters. Set to 0 to disable truncation entirely.",
+        description = ns.L["Truncate names longer than this many characters. Set to 0 to disable truncation entirely."],
     })
-    maxLengthRow = optionsAPI.BuildSettingRow(card.frame, "Max Name Length (0 = unlimited)", maxLengthSlider)
+    maxLengthRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Max Name Length (0 = unlimited)"], maxLengthSlider)
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "nameOffsetX", name, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the name text from its anchor. Positive moves right, negative moves left.",
+        description = ns.L["Horizontal pixel offset for the name text from its anchor. Positive moves right, negative moves left."],
     })
-    xOffsetRow = optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
+    xOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider)
     card.AddRow(maxLengthRow, xOffsetRow)
 
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "nameOffsetY", name, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the name text from its anchor. Positive moves up, negative moves down.",
+        description = ns.L["Vertical pixel offset for the name text from its anchor. Positive moves up, negative moves down."],
     })
-    yOffsetRow = optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
+    yOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
     local useClassColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "nameTextUseClassColor", name, function()
         refresh()
         UpdateNameRows()
     end, {
-        description = "Color the name text by the unit's class instead of the Text Color swatch below.",
+        description = ns.L["Color the name text by the unit's class instead of the Text Color swatch below."],
     })
-    useClassColorRow = optionsAPI.BuildSettingRow(card.frame, "Use Class Color", useClassColorCheckbox)
+    useClassColorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Use Class Color"], useClassColorCheckbox)
     card.AddRow(yOffsetRow, useClassColorRow)
 
     local textColorPicker = gui:CreateFormColorPicker(card.frame, nil, "nameTextColor", name, refresh, nil, {
-        description = "Color used for the name when Use Class Color is off.",
+        description = ns.L["Color used for the name when Use Class Color is off."],
     })
-    textColorRow = optionsAPI.BuildSettingRow(card.frame, "Text Color", textColorPicker)
+    textColorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Text Color"], textColorPicker)
     card.AddRow(textColorRow)
 
     UpdateNameRows()
@@ -1670,8 +1670,8 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Private Auras")
-    builder.Description("Private-aura anchors and countdown styling for " .. groupFrames.sourceLabel .. " group frames.")
+    builder.Header(ns.L["Private Auras"])
+    builder.Description(string.format(ns.L["Private-aura anchors and countdown styling for %1$s group frames."], groupFrames.sourceLabel))
 
     local card = builder.Card()
     local controlledRows = {}
@@ -1686,82 +1686,82 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
         refresh()
         UpdatePrivateAuraRows()
     end, {
-        description = "Anchor Blizzard private aura indicators to this frame.",
+        description = ns.L["Anchor Blizzard private aura indicators to this frame."],
     })
     local maxPerFrameSlider = gui:CreateFormSlider(card.frame, nil, 1, 5, 1, "maxPerFrame", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Hard cap on how many private aura slots this frame displays at once.",
+        description = ns.L["Hard cap on how many private aura slots this frame displays at once."],
     })
-    local maxPerFrameRow = optionsAPI.BuildSettingRow(card.frame, "Max Per Frame", maxPerFrameSlider)
+    local maxPerFrameRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Max Per Frame"], maxPerFrameSlider)
     controlledRows[#controlledRows + 1] = maxPerFrameRow
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Enable Private Auras", enableCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Enable Private Auras"], enableCheckbox),
         maxPerFrameRow
     )
 
     local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 10, 40, 1, "iconSize", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Pixel size of each private aura icon.",
+        description = ns.L["Pixel size of each private aura icon."],
     })
-    local iconSizeRow = optionsAPI.BuildSettingRow(card.frame, "Icon Size", iconSizeSlider)
+    local iconSizeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], iconSizeSlider)
     controlledRows[#controlledRows + 1] = iconSizeRow
     local growDirectionDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_GROW_OPTIONS, "growDirection", privateAuras, refresh, {
-        description = "Direction additional private aura icons are added in after the first.",
+        description = ns.L["Direction additional private aura icons are added in after the first."],
     })
-    local growDirectionRow = optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDirectionDropdown)
+    local growDirectionRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Grow Direction"], growDirectionDropdown)
     controlledRows[#controlledRows + 1] = growDirectionRow
     card.AddRow(iconSizeRow, growDirectionRow)
 
     local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 8, 1, "spacing", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Pixel gap between adjacent private aura icons.",
+        description = ns.L["Pixel gap between adjacent private aura icons."],
     })
-    local spacingRow = optionsAPI.BuildSettingRow(card.frame, "Spacing", spacingSlider)
+    local spacingRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Spacing"], spacingSlider)
     controlledRows[#controlledRows + 1] = spacingRow
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, NINE_POINT_OPTIONS, "anchor", privateAuras, refresh, {
-        description = "Where on the frame the first private aura icon is anchored. X/Y Offset below nudges it from this anchor point.",
+        description = ns.L["Where on the frame the first private aura icon is anchored. X/Y Offset below nudges it from this anchor point."],
     })
-    local anchorRow = optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown)
+    local anchorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown)
     controlledRows[#controlledRows + 1] = anchorRow
     card.AddRow(spacingRow, anchorRow)
 
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetX", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the private aura block from its anchor.",
+        description = ns.L["Horizontal pixel offset for the private aura block from its anchor."],
     })
-    local xOffsetRow = optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
+    local xOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider)
     controlledRows[#controlledRows + 1] = xOffsetRow
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetY", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the private aura block from its anchor.",
+        description = ns.L["Vertical pixel offset for the private aura block from its anchor."],
     })
-    local yOffsetRow = optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
+    local yOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
     controlledRows[#controlledRows + 1] = yOffsetRow
     card.AddRow(xOffsetRow, yOffsetRow)
 
     local borderScaleSlider = gui:CreateFormSlider(card.frame, nil, -100, 10, 0.5, "borderScale", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Scale applied to the Blizzard-drawn border around each private aura icon.",
+        description = ns.L["Scale applied to the Blizzard-drawn border around each private aura icon."],
     })
-    local borderScaleRow = optionsAPI.BuildSettingRow(card.frame, "Border Scale", borderScaleSlider)
+    local borderScaleRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Border Scale"], borderScaleSlider)
     controlledRows[#controlledRows + 1] = borderScaleRow
     local showCountdownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showCountdown", privateAuras, refresh, {
-        description = "Show the cooldown swipe animation over private aura icons.",
+        description = ns.L["Show the cooldown swipe animation over private aura icons."],
     })
-    local showCountdownRow = optionsAPI.BuildSettingRow(card.frame, "Show Countdown", showCountdownCheckbox)
+    local showCountdownRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Show Countdown"], showCountdownCheckbox)
     controlledRows[#controlledRows + 1] = showCountdownRow
     card.AddRow(borderScaleRow, showCountdownRow)
 
     local showCountdownNumbersCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showCountdownNumbers", privateAuras, refresh, {
-        description = "Show the remaining-duration countdown text over private aura icons.",
+        description = ns.L["Show the remaining-duration countdown text over private aura icons."],
     })
-    local showCountdownNumbersRow = optionsAPI.BuildSettingRow(card.frame, "Show Countdown Numbers", showCountdownNumbersCheckbox)
+    local showCountdownNumbersRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Show Countdown Numbers"], showCountdownNumbersCheckbox)
     controlledRows[#controlledRows + 1] = showCountdownNumbersRow
     local reverseSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "reverseSwipe", privateAuras, refresh, {
-        description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as the aura ticks down.",
+        description = ns.L["Reverse the swipe direction so the shaded portion grows instead of shrinks as the aura ticks down."],
     })
-    local reverseSwipeRow = optionsAPI.BuildSettingRow(card.frame, "Reverse Swipe", reverseSwipeCheckbox)
+    local reverseSwipeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Reverse Swipe"], reverseSwipeCheckbox)
     controlledRows[#controlledRows + 1] = reverseSwipeRow
     card.AddRow(showCountdownNumbersRow, reverseSwipeRow)
 
     local textScaleSlider = gui:CreateFormSlider(card.frame, nil, 0.5, 1.5, 0.05, "textScale", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Scales the Blizzard-drawn countdown timer and stack-count text. There is no API to size that text directly, so the whole icon is scaled and the icon/border compensated -- lowering this shrinks the text while the icon and border stay at their configured size.",
+        description = ns.L["Scales the Blizzard-drawn countdown timer and stack-count text. There is no API to size that text directly, so the whole icon is scaled and the icon/border compensated -- lowering this shrinks the text while the icon and border stay at their configured size."],
     })
-    local textScaleRow = optionsAPI.BuildSettingRow(card.frame, "Text Scale", textScaleSlider)
+    local textScaleRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Text Scale"], textScaleSlider)
     controlledRows[#controlledRows + 1] = textScaleRow
     card.AddRow(textScaleRow)
 
@@ -1809,8 +1809,8 @@ local function RenderDispelOverlaySection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Dispel Overlay")
-    builder.Description("Dispel overlays, including Blizzard private-dispel markers when available, for " .. groupFrames.sourceLabel .. " group frames.")
+    builder.Header(ns.L["Dispel Overlay"])
+    builder.Description(string.format(ns.L["Dispel overlays, including Blizzard private-dispel markers when available, for %1$s group frames."], groupFrames.sourceLabel))
 
     local dispelCard = builder.Card()
     local dispelRows = {}
@@ -1825,51 +1825,51 @@ local function RenderDispelOverlaySection(sectionHost, ctx)
         refresh()
         UpdateDispelRows()
     end, {
-        description = "Outline the frame border in the dispel type's color when a dispellable debuff or private-dispel marker is active on the unit.",
+        description = ns.L["Outline the frame border in the dispel type's color when a dispellable debuff or private-dispel marker is active on the unit."],
     })
     local borderSizeSlider = gui:CreateFormSlider(dispelCard.frame, nil, 1, 16, 1, "borderSize", dispel, refresh, { deferOnDrag = true }, {
-        description = "Pixel thickness of the dispel border.",
+        description = ns.L["Pixel thickness of the dispel border."],
     })
-    local borderSizeRow = optionsAPI.BuildSettingRow(dispelCard.frame, "Border Size", borderSizeSlider)
+    local borderSizeRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Border Size"], borderSizeSlider)
     dispelRows[#dispelRows + 1] = borderSizeRow
     dispelCard.AddRow(
-        optionsAPI.BuildSettingRow(dispelCard.frame, "Enable Dispel Overlay", dispelEnableCheckbox),
+        optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Enable Dispel Overlay"], dispelEnableCheckbox),
         borderSizeRow
     )
 
     local borderOpacitySlider = gui:CreateFormSlider(dispelCard.frame, nil, 0.1, 1, 0.05, "opacity", dispel, refresh, { deferOnDrag = true }, {
-        description = "Opacity of the dispel-type colored border.",
+        description = ns.L["Opacity of the dispel-type colored border."],
     })
-    local borderOpacityRow = optionsAPI.BuildSettingRow(dispelCard.frame, "Border Opacity", borderOpacitySlider)
+    local borderOpacityRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Border Opacity"], borderOpacitySlider)
     dispelRows[#dispelRows + 1] = borderOpacityRow
     local fillOpacitySlider = gui:CreateFormSlider(dispelCard.frame, nil, 0, 0.5, 0.05, "fillOpacity", dispel, refresh, { deferOnDrag = true }, {
-        description = "Opacity of a color tint applied across the health bar when a dispellable debuff is active.",
+        description = ns.L["Opacity of a color tint applied across the health bar when a dispellable debuff is active."],
     })
-    local fillOpacityRow = optionsAPI.BuildSettingRow(dispelCard.frame, "Fill Opacity", fillOpacitySlider)
+    local fillOpacityRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Fill Opacity"], fillOpacitySlider)
     dispelRows[#dispelRows + 1] = fillOpacityRow
     dispelCard.AddRow(borderOpacityRow, fillOpacityRow)
 
     local magicColorPicker = gui:CreateFormColorPicker(dispelCard.frame, nil, "Magic", dispel.colors, refresh, nil, {
-        description = "Color used when the active dispellable debuff is of Magic type.",
+        description = ns.L["Color used when the active dispellable debuff is of Magic type."],
     })
-    local magicColorRow = optionsAPI.BuildSettingRow(dispelCard.frame, "Magic Color", magicColorPicker)
+    local magicColorRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Magic Color"], magicColorPicker)
     dispelRows[#dispelRows + 1] = magicColorRow
     local curseColorPicker = gui:CreateFormColorPicker(dispelCard.frame, nil, "Curse", dispel.colors, refresh, nil, {
-        description = "Color used when the active dispellable debuff is of Curse type.",
+        description = ns.L["Color used when the active dispellable debuff is of Curse type."],
     })
-    local curseColorRow = optionsAPI.BuildSettingRow(dispelCard.frame, "Curse Color", curseColorPicker)
+    local curseColorRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Curse Color"], curseColorPicker)
     dispelRows[#dispelRows + 1] = curseColorRow
     dispelCard.AddRow(magicColorRow, curseColorRow)
 
     local diseaseColorPicker = gui:CreateFormColorPicker(dispelCard.frame, nil, "Disease", dispel.colors, refresh, nil, {
-        description = "Color used when the active dispellable debuff is of Disease type.",
+        description = ns.L["Color used when the active dispellable debuff is of Disease type."],
     })
-    local diseaseColorRow = optionsAPI.BuildSettingRow(dispelCard.frame, "Disease Color", diseaseColorPicker)
+    local diseaseColorRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Disease Color"], diseaseColorPicker)
     dispelRows[#dispelRows + 1] = diseaseColorRow
     local poisonColorPicker = gui:CreateFormColorPicker(dispelCard.frame, nil, "Poison", dispel.colors, refresh, nil, {
-        description = "Color used when the active dispellable debuff is of Poison type.",
+        description = ns.L["Color used when the active dispellable debuff is of Poison type."],
     })
-    local poisonColorRow = optionsAPI.BuildSettingRow(dispelCard.frame, "Poison Color", poisonColorPicker)
+    local poisonColorRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Poison Color"], poisonColorPicker)
     dispelRows[#dispelRows + 1] = poisonColorRow
     dispelCard.AddRow(diseaseColorRow, poisonColorRow)
 
@@ -1905,7 +1905,7 @@ local function RenderHealerSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Target Highlight")
+    builder.Header(ns.L["Target Highlight"])
     local targetCard = builder.Card()
     local targetColorRow, targetFillRow
     local function UpdateTargetRows()
@@ -1918,21 +1918,21 @@ local function RenderHealerSection(sectionHost, ctx)
         refresh()
         UpdateTargetRows()
     end, {
-        description = "Highlight the frame representing your current target so it stands out in party/raid.",
+        description = ns.L["Highlight the frame representing your current target so it stands out in party/raid."],
     })
     local targetColorPicker = gui:CreateFormColorPicker(targetCard.frame, nil, "color", targetHighlight, refresh, nil, {
-        description = "Color used for the target highlight border and optional fill tint.",
+        description = ns.L["Color used for the target highlight border and optional fill tint."],
     })
-    targetColorRow = optionsAPI.BuildSettingRow(targetCard.frame, "Highlight Color", targetColorPicker)
+    targetColorRow = optionsAPI.BuildSettingRow(targetCard.frame, ns.L["Highlight Color"], targetColorPicker)
     targetCard.AddRow(
-        optionsAPI.BuildSettingRow(targetCard.frame, "Enable Target Highlight", targetEnableCheckbox),
+        optionsAPI.BuildSettingRow(targetCard.frame, ns.L["Enable Target Highlight"], targetEnableCheckbox),
         targetColorRow
     )
 
     local targetFillSlider = gui:CreateFormSlider(targetCard.frame, nil, 0, 0.5, 0.05, "fillOpacity", targetHighlight, refresh, { deferOnDrag = true }, {
-        description = "Opacity of a color tint applied across the targeted unit's health bar.",
+        description = ns.L["Opacity of a color tint applied across the targeted unit's health bar."],
     })
-    targetFillRow = optionsAPI.BuildSettingRow(targetCard.frame, "Fill Opacity", targetFillSlider)
+    targetFillRow = optionsAPI.BuildSettingRow(targetCard.frame, ns.L["Fill Opacity"], targetFillSlider)
     targetCard.AddRow(targetFillRow)
     UpdateTargetRows()
     builder.CloseCard(targetCard)
@@ -1967,8 +1967,8 @@ local function RenderDefensiveSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Defensives")
-    builder.Description("Defensive-cooldown icon strip placement for " .. groupFrames.sourceLabel .. " group frames.")
+    builder.Header(ns.L["Defensives"])
+    builder.Description(string.format(ns.L["Defensive-cooldown icon strip placement for %1$s group frames."], groupFrames.sourceLabel))
 
     local card = builder.Card()
     local controlledRows = {}
@@ -1983,58 +1983,58 @@ local function RenderDefensiveSection(sectionHost, ctx)
         refresh()
         UpdateDefensiveRows()
     end, {
-        description = "Show a dedicated icon strip for active defensive cooldowns on this frame.",
+        description = ns.L["Show a dedicated icon strip for active defensive cooldowns on this frame."],
     })
     local maxIconsSlider = gui:CreateFormSlider(card.frame, nil, 1, 5, 1, "maxIcons", defensive, refresh, { deferOnDrag = true }, {
-        description = "Hard cap on how many defensive icons this frame displays at once.",
+        description = ns.L["Hard cap on how many defensive icons this frame displays at once."],
     })
-    local maxIconsRow = optionsAPI.BuildSettingRow(card.frame, "Max Icons", maxIconsSlider)
+    local maxIconsRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Max Icons"], maxIconsSlider)
     controlledRows[#controlledRows + 1] = maxIconsRow
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Enable Defensive Indicator", enableCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Enable Defensive Indicator"], enableCheckbox),
         maxIconsRow
     )
 
     local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 32, 1, "iconSize", defensive, refresh, { deferOnDrag = true }, {
-        description = "Pixel size of each defensive icon.",
+        description = ns.L["Pixel size of each defensive icon."],
     })
-    local iconSizeRow = optionsAPI.BuildSettingRow(card.frame, "Icon Size", iconSizeSlider)
+    local iconSizeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], iconSizeSlider)
     controlledRows[#controlledRows + 1] = iconSizeRow
     local reverseSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "reverseSwipe", defensive, refresh, {
-        description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as the defensive ticks down.",
+        description = ns.L["Reverse the swipe direction so the shaded portion grows instead of shrinks as the defensive ticks down."],
     })
-    local reverseSwipeRow = optionsAPI.BuildSettingRow(card.frame, "Reverse Swipe", reverseSwipeCheckbox)
+    local reverseSwipeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Reverse Swipe"], reverseSwipeCheckbox)
     controlledRows[#controlledRows + 1] = reverseSwipeRow
     card.AddRow(iconSizeRow, reverseSwipeRow)
 
     local growDirectionDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_GROW_OPTIONS, "growDirection", defensive, refresh, {
-        description = "Direction additional defensive icons are added in after the first.",
+        description = ns.L["Direction additional defensive icons are added in after the first."],
     })
-    local growDirectionRow = optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDirectionDropdown)
+    local growDirectionRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Grow Direction"], growDirectionDropdown)
     controlledRows[#controlledRows + 1] = growDirectionRow
     local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 8, 1, "spacing", defensive, refresh, { deferOnDrag = true }, {
-        description = "Pixel gap between adjacent defensive icons.",
+        description = ns.L["Pixel gap between adjacent defensive icons."],
     })
-    local spacingRow = optionsAPI.BuildSettingRow(card.frame, "Spacing", spacingSlider)
+    local spacingRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Spacing"], spacingSlider)
     controlledRows[#controlledRows + 1] = spacingRow
     card.AddRow(growDirectionRow, spacingRow)
 
     local positionDropdown = gui:CreateFormDropdown(card.frame, nil, NINE_POINT_OPTIONS, "position", defensive, refresh, {
-        description = "Where on the frame the defensive icon strip is anchored. X/Y Offset below nudges it from this anchor point.",
+        description = ns.L["Where on the frame the defensive icon strip is anchored. X/Y Offset below nudges it from this anchor point."],
     })
-    local positionRow = optionsAPI.BuildSettingRow(card.frame, "Position", positionDropdown)
+    local positionRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Position"], positionDropdown)
     controlledRows[#controlledRows + 1] = positionRow
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetX", defensive, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the defensive icons from their anchor.",
+        description = ns.L["Horizontal pixel offset for the defensive icons from their anchor."],
     })
-    local xOffsetRow = optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
+    local xOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider)
     controlledRows[#controlledRows + 1] = xOffsetRow
     card.AddRow(positionRow, xOffsetRow)
 
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetY", defensive, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the defensive icons from their anchor.",
+        description = ns.L["Vertical pixel offset for the defensive icons from their anchor."],
     })
-    local yOffsetRow = optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
+    local yOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
     controlledRows[#controlledRows + 1] = yOffsetRow
     card.AddRow(yOffsetRow)
 
@@ -2042,9 +2042,9 @@ local function RenderDefensiveSection(sectionHost, ctx)
     -- number in UpdateDefensiveIndicator (the count stays the secret-safe native
     -- C-side countdown; only its font is restyled).
     local durationSizeSlider = gui:CreateFormSlider(card.frame, nil, 2, 24, 1, "durationTextSize", defensive, refresh, {}, {
-        description = "Pixel size of the defensive countdown number.",
+        description = ns.L["Pixel size of the defensive countdown number."],
     })
-    local durationSizeRow = optionsAPI.BuildSettingRow(card.frame, "Duration Text Size", durationSizeSlider)
+    local durationSizeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Text Size"], durationSizeSlider)
     controlledRows[#controlledRows + 1] = durationSizeRow
     card.AddRow(durationSizeRow)
 
@@ -2075,7 +2075,7 @@ local function RenderIndicatorsSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Role Icon")
+    builder.Header(ns.L["Role Icon"])
     local roleCard = builder.Card()
     local roleRows = {}
     local function UpdateRoleRows()
@@ -2089,51 +2089,51 @@ local function RenderIndicatorsSection(sectionHost, ctx)
         refresh()
         UpdateRoleRows()
     end, {
-        description = "Show the unit's assigned group role icon on this frame.",
+        description = ns.L["Show the unit's assigned group role icon on this frame."],
     })
     local showTankCheckbox = gui:CreateFormCheckbox(roleCard.frame, nil, "showRoleTank", indicators, refresh, {
-        description = "Include the tank role icon on units specced as tanks.",
+        description = ns.L["Include the tank role icon on units specced as tanks."],
     })
-    local showTankRow = optionsAPI.BuildSettingRow(roleCard.frame, "Show Tank", showTankCheckbox)
+    local showTankRow = optionsAPI.BuildSettingRow(roleCard.frame, ns.L["Show Tank"], showTankCheckbox)
     roleRows[#roleRows + 1] = showTankRow
     roleCard.AddRow(
-        optionsAPI.BuildSettingRow(roleCard.frame, "Show Role Icon", showRoleIconCheckbox),
+        optionsAPI.BuildSettingRow(roleCard.frame, ns.L["Show Role Icon"], showRoleIconCheckbox),
         showTankRow
     )
 
     local showHealerCheckbox = gui:CreateFormCheckbox(roleCard.frame, nil, "showRoleHealer", indicators, refresh, {
-        description = "Include the healer role icon on units specced as healers.",
+        description = ns.L["Include the healer role icon on units specced as healers."],
     })
-    local showHealerRow = optionsAPI.BuildSettingRow(roleCard.frame, "Show Healer", showHealerCheckbox)
+    local showHealerRow = optionsAPI.BuildSettingRow(roleCard.frame, ns.L["Show Healer"], showHealerCheckbox)
     roleRows[#roleRows + 1] = showHealerRow
     local showDPSCheckbox = gui:CreateFormCheckbox(roleCard.frame, nil, "showRoleDPS", indicators, refresh, {
-        description = "Include the DPS role icon on units specced as damage dealers.",
+        description = ns.L["Include the DPS role icon on units specced as damage dealers."],
     })
-    local showDPSRow = optionsAPI.BuildSettingRow(roleCard.frame, "Show DPS", showDPSCheckbox)
+    local showDPSRow = optionsAPI.BuildSettingRow(roleCard.frame, ns.L["Show DPS"], showDPSCheckbox)
     roleRows[#roleRows + 1] = showDPSRow
     roleCard.AddRow(showHealerRow, showDPSRow)
 
     local roleSizeSlider = gui:CreateFormSlider(roleCard.frame, nil, 6, 24, 1, "roleIconSize", indicators, refresh, { deferOnDrag = true }, {
-        description = "Pixel size of the role icon.",
+        description = ns.L["Pixel size of the role icon."],
     })
-    local roleSizeRow = optionsAPI.BuildSettingRow(roleCard.frame, "Icon Size", roleSizeSlider)
+    local roleSizeRow = optionsAPI.BuildSettingRow(roleCard.frame, ns.L["Icon Size"], roleSizeSlider)
     roleRows[#roleRows + 1] = roleSizeRow
     local roleAnchorDropdown = gui:CreateFormDropdown(roleCard.frame, nil, NINE_POINT_OPTIONS, "roleIconAnchor", indicators, refresh, {
-        description = "Where on the frame the role icon is anchored. X/Y Offset below nudges it from this anchor point.",
+        description = ns.L["Where on the frame the role icon is anchored. X/Y Offset below nudges it from this anchor point."],
     })
-    local roleAnchorRow = optionsAPI.BuildSettingRow(roleCard.frame, "Anchor", roleAnchorDropdown)
+    local roleAnchorRow = optionsAPI.BuildSettingRow(roleCard.frame, ns.L["Anchor"], roleAnchorDropdown)
     roleRows[#roleRows + 1] = roleAnchorRow
     roleCard.AddRow(roleSizeRow, roleAnchorRow)
 
     local roleXSlider = gui:CreateFormSlider(roleCard.frame, nil, -100, 100, 1, "roleIconOffsetX", indicators, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the role icon from its anchor.",
+        description = ns.L["Horizontal pixel offset for the role icon from its anchor."],
     })
-    local roleXRow = optionsAPI.BuildSettingRow(roleCard.frame, "X Offset", roleXSlider)
+    local roleXRow = optionsAPI.BuildSettingRow(roleCard.frame, ns.L["X Offset"], roleXSlider)
     roleRows[#roleRows + 1] = roleXRow
     local roleYSlider = gui:CreateFormSlider(roleCard.frame, nil, -100, 100, 1, "roleIconOffsetY", indicators, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the role icon from its anchor.",
+        description = ns.L["Vertical pixel offset for the role icon from its anchor."],
     })
-    local roleYRow = optionsAPI.BuildSettingRow(roleCard.frame, "Y Offset", roleYSlider)
+    local roleYRow = optionsAPI.BuildSettingRow(roleCard.frame, ns.L["Y Offset"], roleYSlider)
     roleRows[#roleRows + 1] = roleYRow
     roleCard.AddRow(roleXRow, roleYRow)
     UpdateRoleRows()
@@ -2156,34 +2156,34 @@ local function RenderIndicatorsSection(sectionHost, ctx)
             refresh()
             UpdateRows()
         end, {
-            description = "Show the " .. title .. " indicator on this unit frame.",
+            description = string.format(ns.L["Show the %1$s indicator on this unit frame."], title),
         })
         local sizeSlider = gui:CreateFormSlider(card.frame, nil, 6, 32, 1, sizeKey, indicators, refresh, { deferOnDrag = true }, {
-            description = "Pixel size of the " .. title .. " indicator.",
+            description = string.format(ns.L["Pixel size of the %1$s indicator."], title),
         })
-        local sizeRow = optionsAPI.BuildSettingRow(card.frame, "Icon Size", sizeSlider)
+        local sizeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], sizeSlider)
         controlledRows[#controlledRows + 1] = sizeRow
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Enable", enableCheckbox),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Enable"], enableCheckbox),
             sizeRow
         )
 
         local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, NINE_POINT_OPTIONS, anchorKey, indicators, refresh, {
-            description = "Where on the frame the " .. title .. " indicator is anchored. X/Y Offset below nudges it from this anchor point.",
+            description = string.format(ns.L["Where on the frame the %1$s indicator is anchored. X/Y Offset below nudges it from this anchor point."], title),
         })
-        local anchorRow = optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown)
+        local anchorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown)
         controlledRows[#controlledRows + 1] = anchorRow
         local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offXKey, indicators, refresh, { deferOnDrag = true }, {
-            description = "Horizontal pixel offset for the " .. title .. " indicator from its anchor.",
+            description = string.format(ns.L["Horizontal pixel offset for the %1$s indicator from its anchor."], title),
         })
-        local xOffsetRow = optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
+        local xOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider)
         controlledRows[#controlledRows + 1] = xOffsetRow
         card.AddRow(anchorRow, xOffsetRow)
 
         local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offYKey, indicators, refresh, { deferOnDrag = true }, {
-            description = "Vertical pixel offset for the " .. title .. " indicator from its anchor.",
+            description = string.format(ns.L["Vertical pixel offset for the %1$s indicator from its anchor."], title),
         })
-        local yOffsetRow = optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
+        local yOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
         controlledRows[#controlledRows + 1] = yOffsetRow
         card.AddRow(yOffsetRow)
 
@@ -2191,12 +2191,12 @@ local function RenderIndicatorsSection(sectionHost, ctx)
         builder.CloseCard(card)
     end
 
-    AddIndicatorCard("Ready Check", "showReadyCheck", "readyCheckSize", "readyCheckAnchor", "readyCheckOffsetX", "readyCheckOffsetY")
-    AddIndicatorCard("Resurrection", "showResurrection", "resurrectionSize", "resurrectionAnchor", "resurrectionOffsetX", "resurrectionOffsetY")
-    AddIndicatorCard("Summon Pending", "showSummonPending", "summonSize", "summonAnchor", "summonOffsetX", "summonOffsetY")
-    AddIndicatorCard("Leader Icon", "showLeaderIcon", "leaderSize", "leaderAnchor", "leaderOffsetX", "leaderOffsetY")
-    AddIndicatorCard("Raid Target Marker", "showTargetMarker", "targetMarkerSize", "targetMarkerAnchor", "targetMarkerOffsetX", "targetMarkerOffsetY")
-    AddIndicatorCard("Phase Icon", "showPhaseIcon", "phaseSize", "phaseAnchor", "phaseOffsetX", "phaseOffsetY")
+    AddIndicatorCard(ns.L["Ready Check"], "showReadyCheck", "readyCheckSize", "readyCheckAnchor", "readyCheckOffsetX", "readyCheckOffsetY")
+    AddIndicatorCard(ns.L["Resurrection"], "showResurrection", "resurrectionSize", "resurrectionAnchor", "resurrectionOffsetX", "resurrectionOffsetY")
+    AddIndicatorCard(ns.L["Summon Pending"], "showSummonPending", "summonSize", "summonAnchor", "summonOffsetX", "summonOffsetY")
+    AddIndicatorCard(ns.L["Leader Icon"], "showLeaderIcon", "leaderSize", "leaderAnchor", "leaderOffsetX", "leaderOffsetY")
+    AddIndicatorCard(ns.L["Raid Target Marker"], "showTargetMarker", "targetMarkerSize", "targetMarkerAnchor", "targetMarkerOffsetX", "targetMarkerOffsetY")
+    AddIndicatorCard(ns.L["Phase Icon"], "showPhaseIcon", "phaseSize", "phaseAnchor", "phaseOffsetX", "phaseOffsetY")
 
     return builder.Height()
 end
@@ -2226,7 +2226,7 @@ local function RenderThreatSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Threat")
+    builder.Header(ns.L["Threat"])
     local threatCard = builder.Card()
     local threatRows = {}
     local function UpdateThreatRows()
@@ -2240,27 +2240,27 @@ local function RenderThreatSection(sectionHost, ctx)
         refresh()
         UpdateThreatRows()
     end, {
-        description = "Outline the frame border when the unit has aggro on an NPC.",
+        description = ns.L["Outline the frame border when the unit has aggro on an NPC."],
     })
     local borderSizeSlider = gui:CreateFormSlider(threatCard.frame, nil, 1, 16, 1, "threatBorderSize", indicators, refresh, { deferOnDrag = true }, {
-        description = "Pixel thickness of the threat border.",
+        description = ns.L["Pixel thickness of the threat border."],
     })
-    local borderSizeRow = optionsAPI.BuildSettingRow(threatCard.frame, "Border Size", borderSizeSlider)
+    local borderSizeRow = optionsAPI.BuildSettingRow(threatCard.frame, ns.L["Border Size"], borderSizeSlider)
     threatRows[#threatRows + 1] = borderSizeRow
     threatCard.AddRow(
-        optionsAPI.BuildSettingRow(threatCard.frame, "Show Threat Border", showThreatCheckbox),
+        optionsAPI.BuildSettingRow(threatCard.frame, ns.L["Show Threat Border"], showThreatCheckbox),
         borderSizeRow
     )
 
     local threatColorPicker = gui:CreateFormColorPicker(threatCard.frame, nil, "threatColor", indicators, refresh, nil, {
-        description = "Color used for the threat border and optional fill tint.",
+        description = ns.L["Color used for the threat border and optional fill tint."],
     })
-    local threatColorRow = optionsAPI.BuildSettingRow(threatCard.frame, "Threat Color", threatColorPicker)
+    local threatColorRow = optionsAPI.BuildSettingRow(threatCard.frame, ns.L["Threat Color"], threatColorPicker)
     threatRows[#threatRows + 1] = threatColorRow
     local threatFillSlider = gui:CreateFormSlider(threatCard.frame, nil, 0, 0.5, 0.05, "threatFillOpacity", indicators, refresh, { deferOnDrag = true }, {
-        description = "Opacity of a color tint applied across the health bar when the unit has aggro. Set to 0 to keep only the border.",
+        description = ns.L["Opacity of a color tint applied across the health bar when the unit has aggro. Set to 0 to keep only the border."],
     })
-    local threatFillRow = optionsAPI.BuildSettingRow(threatCard.frame, "Threat Fill Opacity", threatFillSlider)
+    local threatFillRow = optionsAPI.BuildSettingRow(threatCard.frame, ns.L["Threat Fill Opacity"], threatFillSlider)
     threatRows[#threatRows + 1] = threatFillRow
     threatCard.AddRow(threatColorRow, threatFillRow)
     UpdateThreatRows()
@@ -2273,7 +2273,7 @@ end
 -- the player's specs. Returns the option list plus the current player's specID
 -- (used as the default selection).
 local function BuildSpecBucketOptions()
-    local options = { { value = "*", text = "All Specs" } }
+    local options = { { value = "*", text = ns.L["All Specs"] } }
     local currentSpecID
     local numSpecs = GetNumSpecializations and GetNumSpecializations() or 0
     local currentIndex = GetSpecialization and GetSpecialization() or nil
@@ -2283,7 +2283,7 @@ local function BuildSpecBucketOptions()
             if specID then
                 options[#options + 1] = {
                     value = specID,
-                    text = specName or ("Spec " .. tostring(specID)),
+                    text = specName or string.format(ns.L["Spec %1$s"], tostring(specID)),
                 }
                 if index == currentIndex then
                     currentSpecID = specID
@@ -2365,7 +2365,7 @@ local function RenderAurasSection(sectionHost, ctx)
         return nil
     end
     if not AurasEditor or type(AurasEditor.RenderAuras) ~= "function" then
-        return RenderUnavailableLabel(sectionHost, "Aura settings unavailable.")
+        return RenderUnavailableLabel(sectionHost, ns.L["Aura settings unavailable."])
     end
 
     local auras = EnsureSubTable(groupFrames.contextDB, "auras")
@@ -2451,9 +2451,8 @@ local function RenderAurasSection(sectionHost, ctx)
         end
     end
 
-    builder.Header("Auras")
-    builder.Description("Buff/debuff strips and tracked auras on " .. groupFrames.sourceLabel
-        .. " group frames. A spec either inherits the All Specs bucket or overrides it with its own — never both.")
+    builder.Header(ns.L["Auras"])
+    builder.Description(string.format(ns.L["Buff/debuff strips and tracked auras on %1$s group frames. A spec either inherits the All Specs bucket or overrides it with its own — never both."], groupFrames.sourceLabel))
 
     -- Bind the live preview tiles to the bucket being edited (recomputed on every
     -- section render, so a spec-dropdown switch -> ScheduleTabRepaint -> re-render
@@ -2464,20 +2463,20 @@ local function RenderAurasSection(sectionHost, ctx)
 
     local card = builder.Card()
     local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", auras, refresh, {
-        description = "Master switch for all aura strips and tracked auras on these frames.",
+        description = ns.L["Master switch for all aura strips and tracked auras on these frames."],
     })
     local specDropdown = gui:CreateFormDropdown(card.frame, nil, specOptions, nil, nil, function(value)
         SetSelectedBucket(ctx, groupFrames.contextMode, value)
         ScheduleTabRepaint(ctx)
     end, nil, {
-        description = "Choose which spec to view. \"All Specs\" is the shared bucket; a specific spec either inherits it or overrides it.",
+        description = ns.L["Choose which spec to view. \"All Specs\" is the shared bucket; a specific spec either inherits it or overrides it."],
     })
     if specDropdown.SetValue then
         specDropdown:SetValue(selectedBucket, true)
     end
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Enable Auras", enableCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Editing Spec", specDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Enable Auras"], enableCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Editing Spec"], specDropdown)
     )
 
     -- Per-spec override toggle: only meaningful for a specific spec. ON creates a
@@ -2496,23 +2495,23 @@ local function RenderAurasSection(sectionHost, ctx)
             refresh()
             ScheduleTabRepaint(ctx)
         end, {
-            description = "On: this spec uses its own strips/tracked auras (seeded from All Specs). Off: it inherits the All Specs bucket.",
+            description = ns.L["On: this spec uses its own strips/tracked auras (seeded from All Specs). Off: it inherits the All Specs bucket."],
         })
         if overrideToggle.SetValue then
             overrideToggle:SetValue(overrideOn, true)
         end
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Override All Specs", overrideToggle))
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Override All Specs"], overrideToggle))
     end
     builder.CloseCard(card)
 
     builder.Spacer(6)
-    builder.Header("Tracked Auras")
+    builder.Header(ns.L["Tracked Auras"])
 
     -- A specific spec that is NOT overriding inherits All Specs: show a hint
     -- instead of an editor (editing here would have no bucket to write to, and
     -- creating one would silently start an override).
     if isSpecBucket and not overrideOn then
-        builder.Description("This spec inherits the All Specs settings. Turn on \"Override All Specs\" above to give it its own strips and tracked auras.")
+        builder.Description(ns.L["This spec inherits the All Specs settings. Turn on \"Override All Specs\" above to give it its own strips and tracked auras."])
         return builder.Height()
     end
 

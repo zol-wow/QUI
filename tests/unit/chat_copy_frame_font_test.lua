@@ -99,6 +99,7 @@ local ns = {
     } },
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_Chat/chat/copy.lua"))("QUI", ns)
 local Copy = ns.QUI.Chat.Copy
 local I = ns.QUI.Chat._internals

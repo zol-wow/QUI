@@ -8,6 +8,16 @@ local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
 
+-- CJK-safe font setter: preserves the roman font and only adds CJK fallback
+-- members where available, degrading to plain SetFont otherwise.
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local GetCore = ns.Helpers.GetCore
 
 ---------------------------------------------------------------------------
@@ -207,7 +217,7 @@ local DEFAULTS = {
     forcesPosition = "after_timer",  -- "before_timer" | "after_timer" | "before_objectives" | "after_objectives"
     forcesTextFormat = "both",       -- "count" | "percentage" | "both"
     forcesTextAlign = "LEFT",        -- "LEFT" | "CENTER" | "RIGHT"
-    forcesLabel = "Forces",
+    forcesLabel = ns.L["Forces"],
     forcesFont = "Poppins",
     forcesFontSize = 11,
     forcesBarHeight = 0,             -- 0 = layout default (full 14 / compact 12 / sleek 8)
@@ -327,7 +337,7 @@ function MPlusTimer:CreateFrames()
 
     -- Dungeon name (top, centered)
     local dungeonText = root:CreateFontString(nil, "ARTWORK")
-    dungeonText:SetFont(font, FONT_SIZE_KEY, FONT_FLAGS)
+    CJKFont(dungeonText, font, FONT_SIZE_KEY, FONT_FLAGS)
     dungeonText:SetJustifyH("CENTER")
     dungeonText:SetText("")
     self.frames.dungeonText = dungeonText
@@ -338,7 +348,7 @@ function MPlusTimer:CreateFrames()
     deathsFrame:EnableMouse(true)
 
     local deathsText = deathsFrame:CreateFontString(nil, "ARTWORK")
-    deathsText:SetFont(font, FONT_SIZE_DEATHS, FONT_FLAGS)
+    CJKFont(deathsText, font, FONT_SIZE_DEATHS, FONT_FLAGS)
     deathsText:SetJustifyH("CENTER")
     deathsText:SetJustifyV("MIDDLE")
     deathsText:SetPoint("CENTER", deathsFrame, "CENTER", 0, 0)
@@ -348,12 +358,12 @@ function MPlusTimer:CreateFrames()
         if MPlusTimer.state.deathCount > 0 then
             GameTooltip:SetOwner(frame, "ANCHOR_BOTTOMLEFT")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Deaths", 1, 0.3, 0.3)
+            GameTooltip:AddLine(ns.L["Deaths"], 1, 0.3, 0.3)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddDoubleLine("Total Deaths:", tostring(MPlusTimer.state.deathCount), 1, 1, 1, 1, 1, 1)
-            GameTooltip:AddDoubleLine("Time Lost:", FormatTime(MPlusTimer.state.deathTimeLost), 1, 1, 1, 1, 0.3, 0.3)
+            GameTooltip:AddDoubleLine(ns.L["Total Deaths:"], tostring(MPlusTimer.state.deathCount), 1, 1, 1, 1, 1, 1)
+            GameTooltip:AddDoubleLine(ns.L["Time Lost:"], FormatTime(MPlusTimer.state.deathTimeLost), 1, 1, 1, 1, 0.3, 0.3)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Each death adds 5 seconds to timer", 0.6, 0.6, 0.6)
+            GameTooltip:AddLine(ns.L["Each death adds 5 seconds to timer"], 0.6, 0.6, 0.6)
             GameTooltip:Show()
         end
     end)
@@ -366,14 +376,14 @@ function MPlusTimer:CreateFrames()
 
     -- Timer text (large, center)
     local timerText = root:CreateFontString(nil, "ARTWORK")
-    timerText:SetFont(font, FONT_SIZE_TIMER, FONT_FLAGS)
+    CJKFont(timerText, font, FONT_SIZE_TIMER, FONT_FLAGS)
     timerText:SetJustifyH("CENTER")
     timerText:SetText("0:00 / 0:00")
     self.frames.timerText = timerText
 
     -- Pace text (Sleek mode: shows "+1:24" or "-0:45")
     local paceText = root:CreateFontString(nil, "ARTWORK")
-    paceText:SetFont(font, SLEEK_FONT_SIZE_PACE, FONT_FLAGS)
+    CJKFont(paceText, font, SLEEK_FONT_SIZE_PACE, FONT_FLAGS)
     paceText:SetJustifyH("RIGHT")
     paceText:SetText("")
     paceText:Hide()
@@ -381,14 +391,14 @@ function MPlusTimer:CreateFrames()
 
     -- Key level text
     local keyText = root:CreateFontString(nil, "ARTWORK")
-    keyText:SetFont(font, FONT_SIZE_KEY, FONT_FLAGS)
+    CJKFont(keyText, font, FONT_SIZE_KEY, FONT_FLAGS)
     keyText:SetJustifyH("LEFT")
     keyText:SetText("[0]")
     self.frames.keyText = keyText
 
     -- Affixes text (legacy, hidden when using icons)
     local affixText = root:CreateFontString(nil, "ARTWORK")
-    affixText:SetFont(font, FONT_SIZE_AFFIXES, FONT_FLAGS)
+    CJKFont(affixText, font, FONT_SIZE_AFFIXES, FONT_FLAGS)
     affixText:SetJustifyH("LEFT")
     affixText:SetText("")
     self.frames.affixText = affixText
@@ -456,13 +466,13 @@ function MPlusTimer:CreateFrames()
     self.frames.forcesTextFrame = forcesTextFrame
 
     local forcesLabelText = forcesTextFrame:CreateFontString(nil, "ARTWORK")
-    forcesLabelText:SetFont(font, FONT_SIZE_BAR, FONT_FLAGS)
+    CJKFont(forcesLabelText, font, FONT_SIZE_BAR, FONT_FLAGS)
     forcesLabelText:SetJustifyH("LEFT")
-    forcesLabelText:SetText("Forces:")
+    forcesLabelText:SetText(ns.L["Forces:"])
     self.frames.forcesLabelText = forcesLabelText
 
     local forcesValueText = forcesTextFrame:CreateFontString(nil, "ARTWORK")
-    forcesValueText:SetFont(font, FONT_SIZE_BAR, FONT_FLAGS)
+    CJKFont(forcesValueText, font, FONT_SIZE_BAR, FONT_FLAGS)
     forcesValueText:SetJustifyH("LEFT")
     forcesValueText:SetText("")
     self.frames.forcesValueText = forcesValueText
@@ -514,7 +524,7 @@ function MPlusTimer:CreateFrames()
     self.objectives = {}
     for i = 1, 8 do
         local objText = objectivesFrame:CreateFontString(nil, "ARTWORK")
-        objText:SetFont(font, FONT_SIZE_OBJECTIVE, FONT_FLAGS)
+        CJKFont(objText, font, FONT_SIZE_OBJECTIVE, FONT_FLAGS)
         objText:SetJustifyH("LEFT")
         objText:SetText("")
         self.objectives[i] = objText
@@ -563,7 +573,7 @@ function MPlusTimer:CreateProgressBar(parent, barType)
 
     -- Bar text
     local text = statusBar:CreateFontString(nil, "OVERLAY")
-    text:SetFont(GetGlobalFont(), FONT_SIZE_BAR, FONT_FLAGS)
+    CJKFont(text, GetGlobalFont(), FONT_SIZE_BAR, FONT_FLAGS)
     text:SetPoint("RIGHT", statusBar, "RIGHT", -4, 0)
     text:SetJustifyH("RIGHT")
     bar.text = text
@@ -711,7 +721,7 @@ function MPlusTimer:LayoutForcesBar(anchorTo, x, y, barWidth, barHeight, fontPat
     forces.frame:SetSize(barWidth, barHeight)
     forces.bar:SetPoint("TOPLEFT", 1, -1)
     forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-    forces.text:SetFont(fontPath, fontSize, FONT_FLAGS)
+    CJKFont(forces.text, fontPath, fontSize, FONT_FLAGS)
     if forces.overlay then
         forces.overlay:SetPoint("TOPLEFT", 1, -1)
         forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -725,8 +735,8 @@ function MPlusTimer:LayoutForcesText(pad, yOffset, barWidth, fontPath, fontSize)
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
     frame:SetSize(barWidth, fontSize + 2)
-    self.frames.forcesLabelText:SetFont(fontPath, fontSize, FONT_FLAGS)
-    self.frames.forcesValueText:SetFont(fontPath, fontSize, FONT_FLAGS)
+    CJKFont(self.frames.forcesLabelText, fontPath, fontSize, FONT_FLAGS)
+    CJKFont(self.frames.forcesValueText, fontPath, fontSize, FONT_FLAGS)
     self:AnchorForcesText()
     frame:Show()
 end
@@ -749,7 +759,7 @@ function MPlusTimer:LayoutObjectiveLines(settings, font, fontSize, spacing, pad,
         local line = self.objectives[i]
         line:ClearAllPoints()
         line:SetPoint(anchor, self.frames.objectives, anchor, 0, -objY)
-        line:SetFont(font, fontSize, FONT_FLAGS)
+        CJKFont(line, font, fontSize, FONT_FLAGS)
         line:SetJustifyH(align)
         local objText = line:GetText()
         if objText and objText ~= "" then
@@ -811,13 +821,13 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
 
     self.frames.dungeonText:ClearAllPoints()
     self.frames.dungeonText:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-    self.frames.dungeonText:SetFont(font, COMPACT_FONT_SIZE_HEADER, FONT_FLAGS)
+    CJKFont(self.frames.dungeonText, font, COMPACT_FONT_SIZE_HEADER, FONT_FLAGS)
     self.frames.dungeonText:SetJustifyH("LEFT")
 
     self.frames.deathsFrame:ClearAllPoints()
     self.frames.deathsFrame:SetPoint("TOPRIGHT", self.frames.root, "TOPRIGHT", -pad, -yOffset)
     self.frames.deathsFrame:SetSize(60, COMPACT_FONT_SIZE_DEATHS + 4)
-    self.frames.deathsText:SetFont(font, COMPACT_FONT_SIZE_DEATHS, FONT_FLAGS)
+    CJKFont(self.frames.deathsText, font, COMPACT_FONT_SIZE_DEATHS, FONT_FLAGS)
 
     yOffset = yOffset + COMPACT_FONT_SIZE_HEADER + vSpace
 
@@ -839,7 +849,7 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
     if settings.showTimer then
         self.frames.timerText:ClearAllPoints()
         self.frames.timerText:SetPoint("TOPRIGHT", self.frames.root, "TOPRIGHT", -pad, -yOffset)
-        self.frames.timerText:SetFont(font, COMPACT_FONT_SIZE_TIMER, FONT_FLAGS)
+        CJKFont(self.frames.timerText, font, COMPACT_FONT_SIZE_TIMER, FONT_FLAGS)
         self.frames.timerText:SetJustifyH("RIGHT")
         self.frames.timerText:Show()
     else
@@ -981,14 +991,14 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
 
     self.frames.dungeonText:ClearAllPoints()
     self.frames.dungeonText:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-    self.frames.dungeonText:SetFont(font, SLEEK_FONT_SIZE_HEADER, FONT_FLAGS)
+    CJKFont(self.frames.dungeonText, font, SLEEK_FONT_SIZE_HEADER, FONT_FLAGS)
     self.frames.dungeonText:SetJustifyH("LEFT")
 
     if settings.showDeaths then
         self.frames.deathsFrame:ClearAllPoints()
         self.frames.deathsFrame:SetPoint("TOPRIGHT", self.frames.root, "TOPRIGHT", -pad - (settings.showAffixes and (iconSize * 4 + iconSpacing * 3 + 4) or 0), -yOffset)
         self.frames.deathsFrame:SetSize(40, SLEEK_FONT_SIZE_DEATHS + 2)
-        self.frames.deathsText:SetFont(font, SLEEK_FONT_SIZE_DEATHS, FONT_FLAGS)
+        CJKFont(self.frames.deathsText, font, SLEEK_FONT_SIZE_DEATHS, FONT_FLAGS)
         self.frames.deathsFrame:Show()
     else
         self.frames.deathsFrame:Hide()
@@ -1014,13 +1024,13 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
     if settings.showTimer then
         self.frames.timerText:ClearAllPoints()
         self.frames.timerText:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-        self.frames.timerText:SetFont(font, SLEEK_FONT_SIZE_TIMER, FONT_FLAGS)
+        CJKFont(self.frames.timerText, font, SLEEK_FONT_SIZE_TIMER, FONT_FLAGS)
         self.frames.timerText:SetJustifyH("LEFT")
         self.frames.timerText:Show()
 
         self.frames.paceText:ClearAllPoints()
         self.frames.paceText:SetPoint("TOPRIGHT", self.frames.root, "TOPRIGHT", -pad, -yOffset)
-        self.frames.paceText:SetFont(font, SLEEK_FONT_SIZE_PACE, FONT_FLAGS)
+        CJKFont(self.frames.paceText, font, SLEEK_FONT_SIZE_PACE, FONT_FLAGS)
         self.frames.paceText:Show()
 
         yOffset = yOffset + SLEEK_FONT_SIZE_TIMER + vSpace
@@ -1200,20 +1210,20 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
 
     self.frames.dungeonText:ClearAllPoints()
     self.frames.dungeonText:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-    self.frames.dungeonText:SetFont(font, FONT_SIZE_KEY, FONT_FLAGS)
+    CJKFont(self.frames.dungeonText, font, FONT_SIZE_KEY, FONT_FLAGS)
     self.frames.dungeonText:SetJustifyH("LEFT")
 
     self.frames.deathsFrame:ClearAllPoints()
     self.frames.deathsFrame:SetPoint("TOPRIGHT", self.frames.root, "TOPRIGHT", -pad, -yOffset)
     self.frames.deathsFrame:SetSize(80, FONT_SIZE_DEATHS + 4)
-    self.frames.deathsText:SetFont(font, FONT_SIZE_DEATHS, FONT_FLAGS)
+    CJKFont(self.frames.deathsText, font, FONT_SIZE_DEATHS, FONT_FLAGS)
 
     yOffset = yOffset + FONT_SIZE_KEY + vSpace
 
     if settings.showTimer then
         self.frames.timerText:ClearAllPoints()
         self.frames.timerText:SetPoint("TOP", self.frames.root, "TOP", 0, -yOffset)
-        self.frames.timerText:SetFont(font, FONT_SIZE_TIMER, FONT_FLAGS)
+        CJKFont(self.frames.timerText, font, FONT_SIZE_TIMER, FONT_FLAGS)
         self.frames.timerText:SetJustifyH("CENTER")
         self.frames.timerText:Show()
         yOffset = yOffset + FONT_SIZE_TIMER + vSpace
@@ -1223,7 +1233,7 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
 
     self.frames.keyText:ClearAllPoints()
     self.frames.keyText:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-    self.frames.keyText:SetFont(font, FONT_SIZE_KEY, FONT_FLAGS)
+    CJKFont(self.frames.keyText, font, FONT_SIZE_KEY, FONT_FLAGS)
     self.frames.keyText:SetJustifyH("LEFT")
     self.frames.keyText:Show()
 
@@ -1462,7 +1472,7 @@ function MPlusTimer:RenderDeaths()
                 self.state.deathCount,
                 self.state.deathTimeLost)
         else
-            deathStr = string.format("Deaths: %d (-%s)",
+            deathStr = string.format(ns.L["Deaths: %d (-%s)"],
                 self.state.deathCount,
                 FormatTime(self.state.deathTimeLost))
         end
@@ -1563,7 +1573,7 @@ function MPlusTimer:RenderForces()
     end
 
     if self.frames.forcesLabelText and self.frames.forcesValueText then
-        local label = settings.forcesLabel or "Forces"
+        local label = settings.forcesLabel or ns.L["Forces"]
         self.frames.forcesLabelText:SetText(label .. ":")
         self.frames.forcesValueText:SetText(text)
         self:AnchorForcesText()

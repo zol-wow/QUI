@@ -12,7 +12,7 @@ ns.QUI_BagsTile = V2Bags
 -- next free slot. Route-pair uniqueness is guarded by
 -- tests/unit/options_tile_navroute_collision_test.lua.
 local SEARCH_TAB_INDEX = 19
-local SEARCH_TAB_NAME = "Bags"
+local SEARCH_TAB_NAME = ns.L["Bags"]
 
 function V2Bags.Register(frame)
     local Opts = ns.QUI_Options
@@ -23,11 +23,11 @@ function V2Bags.Register(frame)
     Opts.RegisterFeatureTile(frame, {
         id = "bags",
         icon = "B",
-        name = "Bags",
+        name = ns.L["Bags"],
         subPages = {
             {
                 id = "bags",
-                name = "Bags",
+                name = ns.L["Bags"],
                 sectionNav = true,
                 featureId = "bags",
                 navRoutes = {
@@ -38,7 +38,7 @@ function V2Bags.Register(frame)
                     tabIndex = SEARCH_TAB_INDEX,
                     tabName = SEARCH_TAB_NAME,
                     subTabIndex = 1,
-                    subTabName = "Bags",
+                    subTabName = ns.L["Bags"],
                 },
             },
         },

@@ -182,7 +182,7 @@ local function CreateModuleTogglePill(parent, featureId, entry)
     btn:SetScript("OnEnter", function(self)
         if self._isLocked then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText("Cannot change during combat — leave combat to toggle.", 1, 1, 1, 1, true)
+            GameTooltip:SetText(ns.L["Cannot change during combat — leave combat to toggle."], 1, 1, 1, 1, true)
             GameTooltip:Show()
             return
         end
@@ -328,7 +328,7 @@ local function BuildModulesContent(content)
     -- ----------------------------------------------------------------
     if total == 0 then
         local label = CreateWrappedLabel(content,
-            "No feature toggles registered yet.\nThis panel will populate as features are onboarded.",
+            ns.L["No feature toggles registered yet.\nThis panel will populate as features are onboarded."],
             12, C.textMuted, 500)
         label:SetPoint("TOP", content, "TOP", 0, -60)
         label:SetJustifyH("CENTER")
@@ -342,7 +342,7 @@ local function BuildModulesContent(content)
     -- Step 4: Counts label (top-right)
     -- ----------------------------------------------------------------
     local function CountsText(e, t)
-        return string.format("[%d of %d enabled]", e, t)
+        return string.format(ns.L["[%1$d of %2$d enabled]"], e, t)
     end
 
     local countsLabel = CreateWrappedLabel(content, CountsText(enabled, total),

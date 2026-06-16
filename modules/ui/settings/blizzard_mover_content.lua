@@ -14,15 +14,15 @@ local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
 local MOD_KEY_OPTIONS = {
-    { value = "SHIFT", text = "Shift" },
-    { value = "CTRL",  text = "Ctrl"  },
-    { value = "ALT",   text = "Alt"   },
+    { value = "SHIFT", text = ns.L["Shift"] },
+    { value = "CTRL",  text = ns.L["Ctrl"]  },
+    { value = "ALT",   text = ns.L["Alt"]   },
 }
 
 local PERSIST_OPTIONS = {
-    { value = "close",   text = "Until frame closes" },
-    { value = "lockout", text = "Until logout (session only)" },
-    { value = "reset",   text = "Saved until reset" },
+    { value = "close",   text = ns.L["Until frame closes"] },
+    { value = "lockout", text = ns.L["Until logout (session only)"] },
+    { value = "reset",   text = ns.L["Saved until reset"] },
 }
 
 local function BuildBlizzardMoverTab(tabContent)
@@ -33,7 +33,7 @@ local function BuildBlizzardMoverTab(tabContent)
 
     local bm = db and db.blizzardMover
     if not bm then
-        local err = GUI:CreateLabel(tabContent, "Blizzard Mover settings are unavailable (database not ready).", 12, C.textMuted)
+        local err = GUI:CreateLabel(tabContent, ns.L["Blizzard Mover settings are unavailable (database not ready)."], 12, C.textMuted)
         err:SetPoint("TOPLEFT", PAD, -10)
         return
     end
@@ -52,8 +52,7 @@ local function BuildBlizzardMoverTab(tabContent)
     -- before the user starts configuring.
     local intro = GUI:CreateLabel(
         tabContent,
-        "Hold your move modifier (default Shift) and drag to reposition supported Blizzard windows. "
-            .. "Optional: hold the scale modifier and use the mouse wheel on a panel to resize.",
+        ns.L["Hold your move modifier (default Shift) and drag to reposition supported Blizzard windows. Optional: hold the scale modifier and use the mouse wheel on a panel to resize."],
         11,
         C.textMuted
     )
@@ -66,42 +65,42 @@ local function BuildBlizzardMoverTab(tabContent)
     ---------------------------------------------------------------------------
     -- GENERAL SETTINGS
     ---------------------------------------------------------------------------
-    Shared.CreateAccentDotLabel(tabContent, "General Settings", y); y = y - 22
+    Shared.CreateAccentDotLabel(tabContent, ns.L["General Settings"], y); y = y - 22
     local genCard = Shared.CreateSettingsCardGroup(tabContent, y)
 
     -- Row: Enable + Require modifier (toggles)
     local enableW = GUI:CreateFormCheckbox(genCard.frame, nil, "enabled", bm, refreshMover,
-        { description = "Master toggle for the Blizzard UI Mover. Disable to stop every supported Blizzard window from being draggable or scalable." })
+        { description = ns.L["Master toggle for the Blizzard UI Mover. Disable to stop every supported Blizzard window from being draggable or scalable."] })
     local reqModW = GUI:CreateFormCheckbox(genCard.frame, nil, "requireModifier", bm, nil,
-        { description = "When on, dragging only works while holding the move modifier. When off, any plain left-click drag repositions supported windows." })
+        { description = ns.L["When on, dragging only works while holding the move modifier. When off, any plain left-click drag repositions supported windows."] })
     genCard.AddRow(
-        Shared.BuildSettingRow(genCard.frame, "Enable Blizzard UI Mover", enableW),
-        Shared.BuildSettingRow(genCard.frame, "Require modifier to drag", reqModW)
+        Shared.BuildSettingRow(genCard.frame, ns.L["Enable Blizzard UI Mover"], enableW),
+        Shared.BuildSettingRow(genCard.frame, ns.L["Require modifier to drag"], reqModW)
     )
 
     -- Row: Move modifier + Scale modifier (dropdowns)
     local moveModW = GUI:CreateFormDropdown(genCard.frame, nil, MOD_KEY_OPTIONS, "modifier", bm, nil,
-        { description = "Modifier key that must be held to drag supported Blizzard windows to a new position." })
+        { description = ns.L["Modifier key that must be held to drag supported Blizzard windows to a new position."] })
     local scaleModW = GUI:CreateFormDropdown(genCard.frame, nil, MOD_KEY_OPTIONS, "scaleModifier", bm, function()
         if BM and BM.functions and BM.functions.UpdateScaleWheelCaptureState then
             BM.functions.UpdateScaleWheelCaptureState()
         end
-    end, { description = "Modifier key that must be held while using the mouse wheel to resize a panel." })
+    end, { description = ns.L["Modifier key that must be held while using the mouse wheel to resize a panel."] })
     genCard.AddRow(
-        Shared.BuildSettingRow(genCard.frame, "Move modifier", moveModW),
-        Shared.BuildSettingRow(genCard.frame, "Scale modifier", scaleModW)
+        Shared.BuildSettingRow(genCard.frame, ns.L["Move modifier"], moveModW),
+        Shared.BuildSettingRow(genCard.frame, ns.L["Scale modifier"], scaleModW)
     )
 
     -- Row: Mouse-wheel scaling toggle (full-width — paired with nothing
     -- since the remaining slot is already-dropdown-heavy).
     local scaleOnW = GUI:CreateFormCheckbox(genCard.frame, nil, "scaleEnabled", bm, refreshMover,
-        { description = "Allow resizing supported Blizzard windows by holding the scale modifier and spinning the mouse wheel over them." })
-    genCard.AddRow(Shared.BuildSettingRow(genCard.frame, "Enable mouse-wheel scaling", scaleOnW))
+        { description = ns.L["Allow resizing supported Blizzard windows by holding the scale modifier and spinning the mouse wheel over them."] })
+    genCard.AddRow(Shared.BuildSettingRow(genCard.frame, ns.L["Enable mouse-wheel scaling"], scaleOnW))
 
     -- Row: Position persistence (full-width dropdown with long labels)
     local persistW = GUI:CreateFormDropdown(genCard.frame, nil, PERSIST_OPTIONS, "positionPersistence", bm, refreshMover,
-        { description = "How long a moved window keeps its custom position. Until frame closes resets immediately, Until logout keeps it for the session, and Saved until reset persists across reloads." })
-    genCard.AddRow(Shared.BuildSettingRow(genCard.frame, "Position persistence", persistW))
+        { description = ns.L["How long a moved window keeps its custom position. Until frame closes resets immediately, Until logout keeps it for the session, and Saved until reset persists across reloads."] })
+    genCard.AddRow(Shared.BuildSettingRow(genCard.frame, ns.L["Position persistence"], persistW))
 
     genCard.Finalize()
     y = y - genCard.frame:GetHeight() - SECTION_GAP
@@ -155,7 +154,7 @@ local function BuildBlizzardMoverTab(tabContent)
                     local leftLabel = leftEntry.label or leftEntry.id
                     local leftToggle = GUI:CreateFormCheckbox(card.frame, nil, "enabled", leftRow, function()
                         if BM.functions.RefreshEntry then BM.functions.RefreshEntry(leftEntry) end
-                    end, { description = "Allow the Blizzard UI Mover to handle the " .. leftLabel .. " window. Turn off to leave this frame at its stock position." })
+                    end, { description = ns.L["Allow the Blizzard UI Mover to handle the "] .. leftLabel .. ns.L[" window. Turn off to leave this frame at its stock position."] })
                     local leftCell = Shared.BuildSettingRow(card.frame, leftLabel, leftToggle)
 
                     if rightEntry then
@@ -163,7 +162,7 @@ local function BuildBlizzardMoverTab(tabContent)
                         local rightLabel = rightEntry.label or rightEntry.id
                         local rightToggle = GUI:CreateFormCheckbox(card.frame, nil, "enabled", rightRow, function()
                             if BM.functions.RefreshEntry then BM.functions.RefreshEntry(rightEntry) end
-                        end, { description = "Allow the Blizzard UI Mover to handle the " .. rightLabel .. " window. Turn off to leave this frame at its stock position." })
+                        end, { description = ns.L["Allow the Blizzard UI Mover to handle the "] .. rightLabel .. ns.L[" window. Turn off to leave this frame at its stock position."] })
                         local rightCell = Shared.BuildSettingRow(card.frame, rightLabel, rightToggle)
                         card.AddRow(leftCell, rightCell)
                         i = i + 2
@@ -180,7 +179,7 @@ local function BuildBlizzardMoverTab(tabContent)
     else
         local pending = GUI:CreateLabel(
             tabContent,
-            "Frame list loads after the addon finishes starting up. Reopen this tab if empty.",
+            ns.L["Frame list loads after the addon finishes starting up. Reopen this tab if empty."],
             11,
             C.textMuted
         )

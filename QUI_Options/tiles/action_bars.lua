@@ -16,8 +16,8 @@ function V2.Register(frame)
     Opts.RegisterFeatureTile(frame, {
         id = "action_bars",
         icon = "A",
-        name = "Action Bars",
-        primaryCTA = { label = "Edit in Layout Mode", moverKey = "bar1" },
+        name = ns.L["Action Bars"],
+        primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "bar1" },
         preview = {
             height = 110,
             build = function(pv)
@@ -29,37 +29,37 @@ function V2.Register(frame)
         subPages = {
             {
                 id = "general",
-                name = "General",
+                name = ns.L["General"],
                 featureId = "actionBarsGeneral",
                 navRoutes = { { tabIndex = 8, subTabIndex = 0 } },
                 searchContext = {
                     tabIndex = 8,
-                    tabName = "Action Bars",
+                    tabName = ns.L["Action Bars"],
                     subTabIndex = 0,
-                    subTabName = "General",
+                    subTabName = ns.L["General"],
                 },
             },
             {
                 id = "buffDebuff",
-                name = "Buff/Debuff",
+                name = ns.L["Buff/Debuff"],
                 featureId = "actionBarsBuffDebuff",
                 navRoutes = { { tabIndex = 2, subTabIndex = 4 } },
                 searchContext = {
                     tabIndex = 2,
-                    tabName = "Unit Frames",
+                    tabName = ns.L["Unit Frames"],
                     subTabIndex = 4,
-                    subTabName = "Buff & Debuff",
+                    subTabName = ns.L["Buff & Debuff"],
                 },
             },
             {
                 id = "perBar",
-                name = "Per-Bar",
+                name = ns.L["Per-Bar"],
                 featureId = "actionBarsPerBar",
                 searchContext = {
                     tabIndex = 8,
-                    tabName = "Action Bars",
+                    tabName = ns.L["Action Bars"],
                     subTabIndex = 3,
-                    subTabName = "Per-Bar",
+                    subTabName = ns.L["Per-Bar"],
                 },
             },
         },

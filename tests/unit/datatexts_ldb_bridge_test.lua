@@ -99,6 +99,9 @@ local QUICore = {
     GetPixelSize = function() return 1 end,
 }
 local ns = { Addon = QUICore, Helpers = {}, LSM = { Fetch = function() return nil end } }
+-- datatexts.lua indexes ns.L["..."] at load (post-i18n); install identity resolver.
+local installLocale = dofile(ROOT .. "tests/helpers/locale.lua")
+installLocale(ns)
 
 assert(loadfile(ROOT .. "QUI_Datatexts/datatexts/datatexts.lua"))("QUI_Datatexts", ns)
 local Datatexts = QUICore.Datatexts

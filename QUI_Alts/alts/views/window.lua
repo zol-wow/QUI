@@ -21,6 +21,14 @@ local Alts = ns.Alts or {}; ns.Alts = Alts
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local Window = {}
 Alts.Window = Window
 
@@ -130,11 +138,11 @@ local function Reskin()
 
     local fontPath = Helpers.GetGeneralFont() or STANDARD_TEXT_FONT
     local outline = Helpers.GetGeneralFontOutline() or "OUTLINE"
-    win._title:SetFont(fontPath, 14, outline)
+    CJKFont(win._title, fontPath, 14, outline)
     win._title:SetTextColor(Col("accentLight"))
     for _, t in ipairs(tabs) do
         if t.button then
-            t.button._label:SetFont(fontPath, 11, outline)
+            CJKFont(t.button._label, fontPath, 11, outline)
             SetTabActiveState(t, t.id == activeTab)
         end
     end
@@ -182,7 +190,7 @@ local function BuildSidebarTabs()
         btn._label = btn:CreateFontString(nil, "ARTWORK")
         -- font BEFORE SetText: a templateless FontString has no font and
         -- SetText errors ("Font not set"); Reskin re-applies later.
-        btn._label:SetFont(fontPath, 11, outline)
+        CJKFont(btn._label, fontPath, 11, outline)
         btn._label:SetPoint("LEFT", btn, "LEFT", 10, 0)
         btn._label:SetJustifyH("LEFT")
         btn._label:SetText(t.label)
@@ -243,7 +251,7 @@ local function Build()
 
     win._title = header:CreateFontString(nil, "ARTWORK")
     -- font BEFORE SetText (templateless FontString errors otherwise)
-    win._title:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 14,
+    CJKFont(win._title, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 14,
         Helpers.GetGeneralFontOutline() or "OUTLINE")
     win._title:SetPoint("LEFT", 12, 0)
     win._title:SetText("Alts")

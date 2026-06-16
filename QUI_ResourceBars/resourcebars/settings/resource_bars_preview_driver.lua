@@ -28,6 +28,14 @@
 
 local _, ns = ...
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 -- Lazy lookups for ns.QUI_ResourceBars_Internal (populated in T2).
 -- The actual lookup happens inside Build/Refresh, NOT at file-load time,
 -- because resourcebars.lua may load before or after this file depending
@@ -106,32 +114,32 @@ end
 -- generator, profile tests) loads this file without it, so guard every
 -- load-time reference.
 local POWER_DISPLAY_NAMES = {
-    ["STAGGER"] = "Stagger",
-    ["SOUL"]    = "Soul Fragments",
+    ["STAGGER"] = ns.L["Stagger"],
+    ["SOUL"]    = ns.L["Soul Fragments"],
 }
 local PREVIEW_POWER_MAX_FALLBACKS = {}
 if Enum and Enum.PowerType then
-    POWER_DISPLAY_NAMES[Enum.PowerType.Mana]            = "Mana"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Rage]            = "Rage"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Focus]           = "Focus"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Energy]          = "Energy"
-    POWER_DISPLAY_NAMES[Enum.PowerType.RunicPower]      = "Runic Power"
-    POWER_DISPLAY_NAMES[Enum.PowerType.SoulShards]      = "Soul Shards"
-    POWER_DISPLAY_NAMES[Enum.PowerType.LunarPower]      = "Lunar Power"
-    POWER_DISPLAY_NAMES[Enum.PowerType.HolyPower]       = "Holy Power"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Maelstrom]       = "Maelstrom"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Chi]             = "Chi"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Insanity]        = "Insanity"
-    POWER_DISPLAY_NAMES[Enum.PowerType.ArcaneCharges]   = "Arcane Charges"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Runes]           = "Runes"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Fury]            = "Fury"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Essence]         = "Essence"
-    POWER_DISPLAY_NAMES[Enum.PowerType.ComboPoints]     = "Combo Points"
-    POWER_DISPLAY_NAMES[Enum.PowerType.MaelstromWeapon] = "Maelstrom Weapon"
-    POWER_DISPLAY_NAMES[Enum.PowerType.TipOfTheSpear]   = "Tip of the Spear"
-    POWER_DISPLAY_NAMES[Enum.PowerType.Whirlwind]       = "Whirlwind"
+    POWER_DISPLAY_NAMES[Enum.PowerType.Mana]            = ns.L["Mana"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Rage]            = ns.L["Rage"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Focus]           = ns.L["Focus"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Energy]          = ns.L["Energy"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.RunicPower]      = ns.L["Runic Power"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.SoulShards]      = ns.L["Soul Shards"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.LunarPower]      = ns.L["Lunar Power"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.HolyPower]       = ns.L["Holy Power"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Maelstrom]       = ns.L["Maelstrom"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Chi]             = ns.L["Chi"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Insanity]        = ns.L["Insanity"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.ArcaneCharges]   = ns.L["Arcane Charges"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Runes]           = ns.L["Runes"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Fury]            = ns.L["Fury"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Essence]         = ns.L["Essence"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.ComboPoints]     = ns.L["Combo Points"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.MaelstromWeapon] = ns.L["Maelstrom Weapon"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.TipOfTheSpear]   = ns.L["Tip of the Spear"]
+    POWER_DISPLAY_NAMES[Enum.PowerType.Whirlwind]       = ns.L["Whirlwind"]
     if Enum.PowerType.VengSoulFragments then
-        POWER_DISPLAY_NAMES[Enum.PowerType.VengSoulFragments] = "Soul Fragments"
+        POWER_DISPLAY_NAMES[Enum.PowerType.VengSoulFragments] = ns.L["Soul Fragments"]
     end
 
     PREVIEW_POWER_MAX_FALLBACKS[Enum.PowerType.MaelstromWeapon]   = 10
@@ -302,7 +310,7 @@ local function MakeMockBar(parent, fpath)
     local section = CreateFrame("Frame", nil, parent)
 
     local lbl = section:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if fpath then lbl:SetFont(fpath, 9, "") end
+    if fpath then CJKFont(lbl, fpath, 9, "") end
     lbl:SetTextColor(1, 1, 1, 0.75)
     lbl:SetPoint("TOP", section, "TOP", 0, 0)
     section.lbl = lbl
@@ -335,7 +343,7 @@ local function MakeMockBar(parent, fpath)
     end
 
     local val = section.textFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if fpath then val:SetFont(fpath, 9, "") end
+    if fpath then CJKFont(val, fpath, 9, "") end
     val:SetTextColor(1, 1, 1, 0.9)
     val:SetPoint("CENTER", section.textFrame, "CENTER", 0, 0)
     section.val = val
@@ -426,10 +434,10 @@ function Module.Build(host)
 
     -- "PREVIEW" label
     local lbl = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if fpath then lbl:SetFont(fpath, 8, "") end
+    if fpath then CJKFont(lbl, fpath, 8, "") end
     lbl:SetTextColor(accent[1], accent[2], accent[3], 0.7)
     lbl:SetPoint("TOPLEFT", host, "TOPLEFT", 8, -6)
-    lbl:SetText(("PREVIEW"):gsub(".", "%0 "):sub(1, -2))
+    lbl:SetText((ns.L["PREVIEW"]):gsub(".", "%0 "):sub(1, -2))
 
     -- Primary + secondary mock sections
     local primary = MakeMockBar(host, fpath)
@@ -504,8 +512,8 @@ function Module.Refresh()
     p:Hide()
     s:Hide()
 
-    local primaryInfo   = showPrimary   and { section = p, cfg = pc, textCfg = primaryTextCfg,   resource = primaryResource,   label = POWER_DISPLAY_NAMES[primaryResource]   or "Power" }     or nil
-    local secondaryInfo = showSecondary and { section = s, cfg = sc, textCfg = secondaryTextCfg, resource = secondaryResource, label = POWER_DISPLAY_NAMES[secondaryResource] or "Secondary" } or nil
+    local primaryInfo   = showPrimary   and { section = p, cfg = pc, textCfg = primaryTextCfg,   resource = primaryResource,   label = POWER_DISPLAY_NAMES[primaryResource]   or ns.L["Power"] }     or nil
+    local secondaryInfo = showSecondary and { section = s, cfg = sc, textCfg = secondaryTextCfg, resource = secondaryResource, label = POWER_DISPLAY_NAMES[secondaryResource] or ns.L["Secondary"] } or nil
 
     local orderedSections = {}
     if swapBars then
@@ -544,9 +552,9 @@ function Module.Refresh()
 
         local fontSize = textCfg and math_max(7, math_min(textCfg.textSize or 9, 13)) or 9
         if valueFont then
-            section.val:SetFont(valueFont, fontSize, valueFontOutline)
+            CJKFont(section.val, valueFont, fontSize, valueFontOutline)
         elseif fp then
-            section.val:SetFont(fp, fontSize, "")
+            CJKFont(section.val, fp, fontSize, "")
         end
 
         local textR, textG, textB, textA = 1, 1, 1, 0.9

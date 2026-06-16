@@ -187,7 +187,7 @@ assert(source:find("Helpers.GetGeneralFont", refreshStart, true),
     "Refresh must use Helpers.GetGeneralFont for preview value text")
 assert(source:find("Helpers.GetGeneralFontOutline", refreshStart, true),
     "Refresh must use Helpers.GetGeneralFontOutline for preview value text")
-assert(source:find("section.val:SetFont(valueFont, fontSize, valueFontOutline)", refreshStart, true),
-    "preview value text must apply the runtime general font path and outline")
+assert(source:find("CJKFont(section.val, valueFont, fontSize, valueFontOutline)", refreshStart, true),
+    "preview value text must apply the runtime general font path and outline (via CJK-safe setter)")
 
 print("OK: resourcebars_preview_driver_test (T1-T10)")

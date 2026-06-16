@@ -125,6 +125,7 @@ NUM_CHAT_WINDOWS = 1
 ChatFrame1 = NewFrame()
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("core/uikit.lua"))("QUI", ns)
 assert(loadfile("QUI_Chat/chat/button_bar.lua"))("QUI", ns)
 

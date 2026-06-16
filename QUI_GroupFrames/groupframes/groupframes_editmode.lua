@@ -5,6 +5,13 @@
 ]]
 
 local ADDON_NAME, ns = ...
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
@@ -399,7 +406,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         local healthOffsetY = healthSettings and healthSettings.healthOffsetY or 0
         local healthPadX = math.abs(healthOffsetX)
         local healthText = textFrame:CreateFontString(nil, "OVERLAY")
-        healthText:SetFont(fontPath, healthSettings and healthSettings.healthFontSize or 12, fontOutline)
+        CJKFont(healthText, fontPath, healthSettings and healthSettings.healthFontSize or 12, fontOutline)
         healthText:SetPoint(healthAnchorInfo.leftPoint, frame, healthAnchorInfo.leftPoint, healthPadX, healthOffsetY)
         healthText:SetPoint(healthAnchorInfo.rightPoint, frame, healthAnchorInfo.rightPoint, -healthPadX, healthOffsetY)
         healthText:SetJustifyH(healthAnchorInfo.justify)
@@ -407,7 +414,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         healthText:SetWordWrap(false)
 
         if healthPct == 0 then
-            healthText:SetText("Dead")
+            healthText:SetText(ns.L["Dead"])
             healthText:SetTextColor(0.5, 0.5, 0.5, 1)
             healthBar:SetStatusBarColor(0.5, 0.5, 0.5, 1)
         else
@@ -1350,17 +1357,17 @@ local function CreateGroupMover(moverType)
     -- Position / label text above the mover (on the border overlay so it's on top)
     local fontPath = ns.LSM:Fetch("font", "Quazii") or "Fonts\\FRIZQT__.TTF"
     local posText = border:CreateFontString(nil, "OVERLAY")
-    posText:SetFont(fontPath, 10, "OUTLINE")
+    CJKFont(posText, fontPath, 10, "OUTLINE")
     posText:SetPoint("CENTER", mover, "CENTER", 0, 0)
     posText:SetTextColor(0.2, 0.8, 1, 1)
     mover.posText = posText
 
     -- Hint text
     local hint = border:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hint:SetFont(fontPath, 9, "OUTLINE")
+    CJKFont(hint, fontPath, 9, "OUTLINE")
     hint:SetPoint("TOP", mover, "BOTTOM", 0, -4)
     hint:SetTextColor(0.6, 0.6, 0.6, 1)
-    hint:SetText("Drag to move  |  Arrows to nudge (Shift=10px)")
+    hint:SetText(ns.L["Drag to move  |  Arrows to nudge (Shift=10px)"])
     mover.hint = hint
 
     -- Nudge buttons
@@ -1902,8 +1909,8 @@ do
         -- were retired with the master-toggle consolidation. Positioning only.
         um:RegisterElement({
             key = "partyFrames",
-            label = "Party Frames",
-            group = "Group Frames",
+            label = ns.L["Party Frames"],
+            group = ns.L["Group Frames"],
             order = 1,
             isOwned = true,
             getFrame = function()
@@ -1949,8 +1956,8 @@ do
 
         um:RegisterElement({
             key = "raidFrames",
-            label = "Raid Frames",
-            group = "Group Frames",
+            label = ns.L["Raid Frames"],
+            group = ns.L["Group Frames"],
             order = 2,
             isOwned = true,
             -- positioning only; module on/off in Module Addons
@@ -1993,8 +2000,8 @@ do
         -- Spotlight Frames (separate handle, only visible when enabled)
         um:RegisterElement({
             key = "spotlightFrames",
-            label = "Spotlight",
-            group = "Group Frames",
+            label = ns.L["Spotlight"],
+            group = ns.L["Group Frames"],
             order = 3,
             isOwned = true,
             isEnabled = function()

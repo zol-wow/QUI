@@ -238,7 +238,7 @@ function Transfers.FillReagentBag(onDone)
     local containers = Bags.SortExecutor.BuildContainers({ first = 0, last = 5 })
     local moves = Bags.ReagentFill.Plan(containers, 5)
     if #moves == 0 then
-        print(PREFIX .. " No reagents to move (no reagent bag, no fitting items, or it's full).")
+        print(PREFIX .. " " .. ns.L["No reagents to move (no reagent bag, no fitting items, or it's full)."])
         if onDone then onDone(true) end
         return
     end
@@ -339,14 +339,14 @@ function Transfers.ResolveSendDestination(state)
     if state.bankLive then
         return {
             key = "bank",
-            verb = "Deposit",
+            verb = ns.L["Deposit"],
             bankType = state.bankType or Enum.BankType.Character,
         }
     end
-    if state.guildLive then return { key = "guild", verb = "Deposit" } end
-    if state.tradeOpen then return { key = "trade", verb = "Trade" } end
-    if state.mailSendOpen then return { key = "mail", verb = "Attach" } end
-    if state.merchantOpen then return { key = "merchant", verb = "Sell" } end
+    if state.guildLive then return { key = "guild", verb = ns.L["Deposit"] } end
+    if state.tradeOpen then return { key = "trade", verb = ns.L["Trade"] } end
+    if state.mailSendOpen then return { key = "mail", verb = ns.L["Attach"] } end
+    if state.merchantOpen then return { key = "merchant", verb = ns.L["Sell"] } end
     return nil
 end
 

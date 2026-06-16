@@ -16,6 +16,7 @@ local ns = {
     -- the formatter itself never consults settings.
     Helpers = { CreateDBGetter = function() return function() return nil end end },
 }
+(dofile("tests/helpers/locale.lua"))(ns)
 local chunk = assert(loadfile("QUI_Bags/bags/tooltip_counts.lua"))
 chunk("QUI", ns)
 local TooltipCounts = ns.Bags.TooltipCounts

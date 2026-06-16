@@ -20,6 +20,14 @@ local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local BagWindow = {}
 Bags.BagWindow = BagWindow
 
@@ -83,7 +91,7 @@ local function SendSelection()
     end)
     Bags.Transfers.UseSelected(cells, dest, function(ok, reason)
         if not ok and reason == "busy" then
-            print(Bags.OpsShared.PREFIX .. " another bag operation is already running.")
+            print(Bags.OpsShared.PREFIX .. " " .. ns.L["another bag operation is already running."])
         end
         ClearSelection()
         BagWindow.Refresh()
@@ -167,7 +175,7 @@ local function RenderCategoryHeaders(headers, xOff)
         local fs = catHeaderPool[i]
         if not fs then
             fs = win._body:CreateFontString(nil, "ARTWORK")
-            fs:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+            CJKFont(fs, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
             fs:SetJustifyH("LEFT")
             catHeaderPool[i] = fs
         end
@@ -239,7 +247,7 @@ local function EnsureWindow()
     if win then return win end
     win = Bags.Chassis.CreateWindow({
         name = "QUI_BagWindow",
-        title = BAG_NAME_BACKPACK or "Bags",
+        title = BAG_NAME_BACKPACK or ns.L["Bags"],
         getPosition = function()
             local s = GetSettings()
             return s and s.windows and s.windows.bag or nil
@@ -274,10 +282,10 @@ local function EnsureWindow()
     -- footer: money + free slots
     win._money = win._footer:CreateFontString(nil, "ARTWORK")
     win._money:SetPoint("RIGHT", -8, 0)
-    win._money:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
+    CJKFont(win._money, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
     win._free = win._footer:CreateFontString(nil, "ARTWORK")
     win._free:SetPoint("LEFT", 8, 0)
-    win._free:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
+    CJKFont(win._free, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
 
     -- Bag-slot strip (equip/swap containers): bags 1-4 + reagent bag 5 as
     -- plain INSECURE buttons — the whole interaction is the stock
@@ -296,7 +304,7 @@ local function EnsureWindow()
         b._icon:SetAllPoints()
         b._count = b:CreateFontString(nil, "OVERLAY")
         b._count:SetPoint("BOTTOMRIGHT", -1, 1)
-        b._count:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 10, "OUTLINE")
+        CJKFont(b._count, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 10, "OUTLINE")
         UIKit.CreateBorderLines(b)
         b:RegisterForDrag("LeftButton")
         local function InvSlot()
@@ -311,12 +319,12 @@ local function EnsureWindow()
         local function ShowBagSlotMenu(anchor)
             if not (MenuUtil and MenuUtil.CreateContextMenu) then return end
             MenuUtil.CreateContextMenu(anchor, function(_, root)
-                root:CreateTitle(bagID == 5 and "Reagent Bag" or ("Bag " .. bagID))
+                root:CreateTitle(bagID == 5 and ns.L["Reagent Bag"] or (ns.L["Bag"] .. " " .. bagID))
                 local function sortIgnored()
                     return C_Container.GetBagSlotFlag(bagID,
                         Enum.BagSlotFlags.DisableAutoSort) and true or false
                 end
-                root:CreateCheckbox(BAG_FILTER_CLEANUP or "Ignore This Bag",
+                root:CreateCheckbox(BAG_FILTER_CLEANUP or ns.L["Ignore This Bag"],
                     sortIgnored, function()
                         C_Container.SetBagSlotFlag(bagID,
                             Enum.BagSlotFlags.DisableAutoSort, not sortIgnored())
@@ -326,13 +334,13 @@ local function EnsureWindow()
                         Enum.BagSlotFlags.ExcludeJunkSell) and true or false
                 end
                 root:CreateCheckbox(SELL_ALL_JUNK_ITEMS_EXCLUDE_FLAG
-                    or "Exclude Junk From Selling",
+                    or ns.L["Exclude Junk From Selling"],
                     junkExcluded, function()
                         C_Container.SetBagSlotFlag(bagID,
                             Enum.BagSlotFlags.ExcludeJunkSell, not junkExcluded())
                     end)
                 if bagID >= 1 and bagID <= 4 then
-                    root:CreateCheckbox("Hide From Bag Window",
+                    root:CreateCheckbox(ns.L["Hide From Bag Window"],
                         function() return IsBagHidden(bagID) end,
                         function() ToggleBagHidden(bagID) end)
                 end
@@ -369,13 +377,13 @@ local function EnsureWindow()
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             local inv = InvSlot()
             if not (inv and GameTooltip:SetInventoryItem("player", inv)) then
-                GameTooltip:SetText(bagID == 5 and "Reagent Bag Slot" or "Bag Slot")
+                GameTooltip:SetText(bagID == 5 and ns.L["Reagent Bag Slot"] or ns.L["Bag Slot"])
             end
-            GameTooltip:AddLine("Drag a bag here (or click with one on the cursor) to equip it.",
+            GameTooltip:AddLine(ns.L["Drag a bag here (or click with one on the cursor) to equip it."],
                 1, 1, 1, true)
-            GameTooltip:AddLine("Right-click for sort/junk options.", 1, 1, 1, true)
+            GameTooltip:AddLine(ns.L["Right-click for sort/junk options."], 1, 1, 1, true)
             if bagID >= 1 and bagID <= 4 then
-                GameTooltip:AddLine("Alt+click to hide/show this bag in the grid.", 1, 1, 1, true)
+                GameTooltip:AddLine(ns.L["Alt+click to hide/show this bag in the grid."], 1, 1, 1, true)
             end
             GameTooltip:Show()
         end)
@@ -395,7 +403,7 @@ local function EnsureWindow()
     UIKit.DisablePixelSnap(stBg)
     stripToggle._label = stripToggle:CreateFontString(nil, "ARTWORK")
     stripToggle._label:SetPoint("CENTER", 0, 0)
-    stripToggle._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 10, "OUTLINE")
+    CJKFont(stripToggle._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 10, "OUTLINE")
     UIKit.CreateBorderLines(stripToggle)
     stripToggle:SetScript("OnClick", function()
         local s = GetSettings()
@@ -407,7 +415,7 @@ local function EnsureWindow()
     end)
     stripToggle:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Show/hide the bag-slot strip")
+        GameTooltip:SetText(ns.L["Show/hide the bag-slot strip"])
         GameTooltip:Show()
     end)
     stripToggle:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -433,7 +441,7 @@ local function EnsureWindow()
     sort:SetScript("OnClick", function(self, mouseButton)
         if mouseButton == "RightButton" then
             Bags.Chassis.ShowSortMenu(self, function(root)
-                root:CreateButton("Stack reagents into reagent bag", function()
+                root:CreateButton(ns.L["Stack reagents into reagent bag"], function()
                     Bags.Transfers.FillReagentBag()
                 end)
             end)
@@ -445,8 +453,8 @@ local function EnsureWindow()
     end)
     sort:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Sort bags — " .. Bags.Chassis.SortModeText())
-        GameTooltip:AddLine("Right-click for sort options.", 1, 1, 1, true)
+        GameTooltip:SetText(ns.L["Sort bags"] .. " — " .. Bags.Chassis.SortModeText())
+        GameTooltip:AddLine(ns.L["Right-click for sort options."], 1, 1, 1, true)
         GameTooltip:Show()
     end)
     sort:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -466,7 +474,7 @@ local function EnsureWindow()
         UIKit.DisablePixelSnap(bg)
         btn._label = btn:CreateFontString(nil, "ARTWORK")
         btn._label:SetPoint("CENTER", 0, 0)
-        btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+        CJKFont(btn._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
         btn._label:SetText(label)
         btn:SetSize(18, 18)
         btn:SetPoint("RIGHT", anchorTo, "LEFT", -6, 0)
@@ -481,13 +489,13 @@ local function EnsureWindow()
         return btn
     end
     win._bankBtn = HeaderButton("$", sort,
-        "Bank — live at a banker, cached browse anywhere",
+        ns.L["Bank — live at a banker, cached browse anywhere"],
         function() if QUI_BagsToggleBank then QUI_BagsToggleBank() end end)
     win._guildBtn = HeaderButton("G", win._bankBtn,
-        "Guild bank — live at the vault, cached browse anywhere",
+        ns.L["Guild bank — live at the vault, cached browse anywhere"],
         function() if QUI_BagsToggleGuild then QUI_BagsToggleGuild() end end)
     win._selectBtn = HeaderButton("S", win._guildBtn,
-        "Select mode: mark items, then send the batch to the open bank / guild bank / mail / trade / merchant. Click again to cancel.",
+        ns.L["Select mode: mark items, then send the batch to the open bank / guild bank / mail / trade / merchant. Click again to cancel."],
         function()
             if selectMode then ClearSelection() else selectMode = true end
             BagWindow.Refresh()
@@ -504,8 +512,8 @@ local function EnsureWindow()
     UIKit.DisablePixelSnap(sellBg)
     sell._label = sell:CreateFontString(nil, "ARTWORK")
     sell._label:SetPoint("CENTER", 0, 0)
-    sell._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
-    sell._label:SetText("Sell Junk")
+    CJKFont(sell._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    sell._label:SetText(ns.L["Sell Junk"])
     sell:SetSize(math.max(40, math.ceil(sell._label:GetStringWidth()) + 12), 18)
     sell:SetPoint("LEFT", win._free, "RIGHT", 8, 0)
     sell:SetScript("OnClick", function()
@@ -527,7 +535,7 @@ local function EnsureWindow()
     UIKit.DisablePixelSnap(sendBg)
     send._label = send:CreateFontString(nil, "ARTWORK")
     send._label:SetPoint("CENTER", 0, 0)
-    send._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    CJKFont(send._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
     send:SetPoint("LEFT", sell, "RIGHT", 8, 0)
     UIKit.CreateBorderLines(send)
     send:SetScript("OnClick", SendSelection)
@@ -541,8 +549,8 @@ local function EnsureWindow()
     -- header: owner selector right of the title (the right side is the
     -- sort/search/close cluster); picking an alt renders their cached bags
     win._ownerSelect = Bags.OwnerSelect.Attach(win, {
-        title = "Characters",
-        tooltip = "View another character's bags",
+        title = ns.L["Characters"],
+        tooltip = ns.L["View another character's bags"],
         listOwners = function()
             return Bags.OwnerSelect.BuildOwnerList(
                 Bags.Store.ListCharacters(), Bags.Store.GetCurrentCharacterKey())
@@ -688,7 +696,7 @@ function BagWindow.Refresh()
         if #reagentCells > 0 then
             local gapAbove = contentH > 0 and (snappedGap * 2) or 0
             local headerY = -(contentH + gapAbove)
-            catHeaders = { { title = "Reagents", y = headerY } }
+            catHeaders = { { title = ns.L["Reagents"], y = headerY } }
             local rl = Bags.GridLayout.Compute(#reagentCells, gridOpts)
             local cellTop = headerY - CAT_HEADER_H
             for i, cell in ipairs(reagentCells) do
@@ -870,12 +878,12 @@ function BagWindow.Refresh()
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:SetBagItem(btn:GetBagID(), btn:GetID())
                     GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("Click: select / deselect.", 0.2, 0.82, 1, true)
+                    GameTooltip:AddLine(ns.L["Click: select / deselect."], 0.2, 0.82, 1, true)
                     local dest = SendDestination()
                     local n = SelectedCount()
                     if dest and n > 0 then
-                        GameTooltip:AddLine(("Right-click: %s %d selected item%s."):format(
-                            dest.verb:lower(), n, n == 1 and "" or "s"), 0.2, 0.82, 1, true)
+                        GameTooltip:AddLine((ns.L["Right-click: %s %d selected item%s."]):format(
+                            dest.verb:lower(), n, n == 1 and "" or ns.L["s"]), 0.2, 0.82, 1, true)
                     end
                     GameTooltip:Show()
                 end)
@@ -920,14 +928,14 @@ function BagWindow.Refresh()
                             btn:GetBagID(), btn:GetID())
                         if loc and loc:IsValid()
                             and C_AuctionHouse.IsSellItemValid(loc, false) then
-                            GameTooltip:AddLine("Right-click: sell at the auction house.",
+                            GameTooltip:AddLine(ns.L["Right-click: sell at the auction house."],
                                 0.2, 0.82, 1, true)
                         else
-                            GameTooltip:AddLine("This item can't be put up for auction.",
+                            GameTooltip:AddLine(ns.L["This item can't be put up for auction."],
                                 0.6, 0.6, 0.6, true)
                         end
                     else
-                        GameTooltip:AddLine("Right-click: deposit into the open bank tab.",
+                        GameTooltip:AddLine(ns.L["Right-click: deposit into the open bank tab."],
                             0.2, 0.82, 1, true)
                     end
                     GameTooltip:Show()
@@ -995,7 +1003,7 @@ function BagWindow.Refresh()
         btn:Show()
     end
 
-    win._free:SetText(free .. " free")
+    win._free:SetText(free .. " " .. ns.L["free"])
     UpdateMoneyText()
 
     -- Sell Junk visibility lives at the footer-text update point: shown only

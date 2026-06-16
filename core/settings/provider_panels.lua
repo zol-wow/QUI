@@ -8,15 +8,15 @@ Settings.ProviderPanels = ProviderPanels
 
 local function BuildAnchorOptions()
     return {
-        { value = "TOPLEFT", text = "Top Left" },
-        { value = "TOP", text = "Top" },
-        { value = "TOPRIGHT", text = "Top Right" },
-        { value = "LEFT", text = "Left" },
-        { value = "CENTER", text = "Center" },
-        { value = "RIGHT", text = "Right" },
-        { value = "BOTTOMLEFT", text = "Bottom Left" },
-        { value = "BOTTOM", text = "Bottom" },
-        { value = "BOTTOMRIGHT", text = "Bottom Right" },
+        { value = "TOPLEFT", text = ns.L["Top Left"] },
+        { value = "TOP", text = ns.L["Top"] },
+        { value = "TOPRIGHT", text = ns.L["Top Right"] },
+        { value = "LEFT", text = ns.L["Left"] },
+        { value = "CENTER", text = ns.L["Center"] },
+        { value = "RIGHT", text = ns.L["Right"] },
+        { value = "BOTTOMLEFT", text = ns.L["Bottom Left"] },
+        { value = "BOTTOM", text = ns.L["Bottom"] },
+        { value = "BOTTOMRIGHT", text = ns.L["Bottom Right"] },
     }
 end
 

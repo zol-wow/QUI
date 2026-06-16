@@ -45,20 +45,20 @@ end
 -- Human-readable description for each sub-addon.
 ---------------------------------------------------------------------------
 local DESCS = {
-    QUI_ActionBars   = "Action bars, keybinds, and buff borders.",
-    QUI_CDM          = "Cooldown Manager bars and icons.",
-    QUI_Chat         = "QUI chat display, windows, and whisper tabs.",
-    QUI_GroupFrames  = "Party and raid frames.",
-    QUI_ResourceBars = "Personal resource and power bars.",
-    QUI_UnitFrames   = "Player, target, focus, and boss frames.",
-    QUI_Skinning     = "Blizzard UI reskin — character pane, popups, tooltips.",
-    QUI_Datatexts    = "Datatext registry, providers, and custom datapanels.",
-    QUI_Minimap      = "Minimap reskin and button drawer.",
-    QUI_QoL          = "Quality-of-life features, dungeon tools, and trackers.",
-    QUI_DamageMeter  = "Built-in damage meter.",
-    QUI_InfoBar      = "Full-width top/bottom info bar with datatext widgets.",
-    QUI_Bags         = "Bag, bank, guild bank, and storage windows with a cross-character cache.",
-    QUI_Alts         = "Alt roster window over the account-wide character cache.",
+    QUI_ActionBars   = ns.L["Action bars, keybinds, and buff borders."],
+    QUI_CDM          = ns.L["Cooldown Manager bars and icons."],
+    QUI_Chat         = ns.L["QUI chat display, windows, and whisper tabs."],
+    QUI_GroupFrames  = ns.L["Party and raid frames."],
+    QUI_ResourceBars = ns.L["Personal resource and power bars."],
+    QUI_UnitFrames   = ns.L["Player, target, focus, and boss frames."],
+    QUI_Skinning     = ns.L["Blizzard UI reskin — character pane, popups, tooltips."],
+    QUI_Datatexts    = ns.L["Datatext registry, providers, and custom datapanels."],
+    QUI_Minimap      = ns.L["Minimap reskin and button drawer."],
+    QUI_QoL          = ns.L["Quality-of-life features, dungeon tools, and trackers."],
+    QUI_DamageMeter  = ns.L["Built-in damage meter."],
+    QUI_InfoBar      = ns.L["Full-width top/bottom info bar with datatext widgets."],
+    QUI_Bags         = ns.L["Bag, bank, guild bank, and storage windows with a cross-character cache."],
+    QUI_Alts         = ns.L["Alt roster window over the account-wide character cache."],
 }
 
 ---------------------------------------------------------------------------
@@ -69,10 +69,10 @@ local function ShowReloadPrompt()
     local GUI = QUI and QUI.GUI
     if GUI and type(GUI.ShowConfirmation) == "function" then
         GUI:ShowConfirmation({
-            title      = "Reload UI?",
-            message    = "This change takes full effect after a reload.",
-            acceptText = "Reload",
-            cancelText = "Later",
+            title      = ns.L["Reload UI?"],
+            message    = ns.L["This change takes full effect after a reload."],
+            acceptText = ns.L["Reload"],
+            cancelText = ns.L["Later"],
             onAccept   = function() QUI:SafeReload() end,
         })
     end
@@ -136,20 +136,20 @@ end
 -- Display labels (match the sub-addon TOC titles); search keywords are built
 -- from these, so spaced names keep e.g. "damage meter" findable.
 local LABELS = {
-    QUI_ActionBars   = "Action Bars",
-    QUI_CDM          = "Cooldown Manager",
-    QUI_Chat         = "Chat",
-    QUI_GroupFrames  = "Group Frames",
-    QUI_ResourceBars = "Resource Bars",
-    QUI_UnitFrames   = "Unit Frames",
-    QUI_Skinning     = "Skinning",
-    QUI_Datatexts    = "Datatexts",
-    QUI_Minimap      = "Minimap",
-    QUI_QoL          = "Quality of Life",
-    QUI_DamageMeter  = "Damage Meter",
-    QUI_InfoBar      = "Info Bar",
-    QUI_Bags         = "Bags",
-    QUI_Alts         = "Alts",
+    QUI_ActionBars   = ns.L["Action Bars"],
+    QUI_CDM          = ns.L["Cooldown Manager"],
+    QUI_Chat         = ns.L["Chat"],
+    QUI_GroupFrames  = ns.L["Group Frames"],
+    QUI_ResourceBars = ns.L["Resource Bars"],
+    QUI_UnitFrames   = ns.L["Unit Frames"],
+    QUI_Skinning     = ns.L["Skinning"],
+    QUI_Datatexts    = ns.L["Datatexts"],
+    QUI_Minimap      = ns.L["Minimap"],
+    QUI_QoL          = ns.L["Quality of Life"],
+    QUI_DamageMeter  = ns.L["Damage Meter"],
+    QUI_InfoBar      = ns.L["Info Bar"],
+    QUI_Bags         = ns.L["Bags"],
+    QUI_Alts         = ns.L["Alts"],
 }
 
 ---------------------------------------------------------------------------
@@ -165,11 +165,11 @@ local function ShowDependencyPrompt(folder, depFolder)
     local depLabel = LABELS[depFolder] or depFolder
     if GUI and type(GUI.ShowConfirmation) == "function" then
         GUI:ShowConfirmation({
-            title      = "Dependency Disabled",
-            message    = (label .. " requires the " .. depLabel
-                .. " module addon, which is disabled. Enable " .. depLabel .. " too?"),
-            acceptText = "Enable",
-            cancelText = "Later",
+            title      = ns.L["Dependency Disabled"],
+            message    = (label .. ns.L[" requires the "] .. depLabel
+                .. ns.L[" module addon, which is disabled. Enable "] .. depLabel .. ns.L[" too?"]),
+            acceptText = ns.L["Enable"],
+            cancelText = ns.L["Later"],
             onAccept   = function()
                 local depResult = ns.AddonLoader.SetModuleAddonEnabled(depFolder, true)
                 -- Retry the original module now that the dependency is enabled.
@@ -193,7 +193,7 @@ for _, entry in ipairs(ns.AddonManifest) do
     -- Skip sub-addons not installed in this client.
     if AddonExists(folder) then
         local moduleEntry = {
-            group        = "Module Addons",
+            group        = ns.L["Module Addons"],
             label        = LABELS[folder] or folder:match("^QUI_(.+)$") or folder,
             caption      = DESCS[folder] or "",
             combatLocked = false,

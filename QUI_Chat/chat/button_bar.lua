@@ -45,7 +45,7 @@ local ensureVisibilityHooks
 
 local BUILTINS = {
     qui_options = {
-        label = "QUI",
+        label = ns.L["QUI"],
         action = function()
             if _G.QUI and _G.QUI.OpenOptions then
                 _G.QUI:OpenOptions()
@@ -53,10 +53,10 @@ local BUILTINS = {
                 print("|cFF56D1FFQUI:|r Options are not available yet. Try again in a moment.")
             end
         end,
-        tooltip = "Open QUI options",
+        tooltip = ns.L["Open QUI options"],
     },
     qui_layout = {
-        label = "Layout",
+        label = ns.L["Layout"],
         action = function()
             if _G.QUI_ToggleLayoutMode then
                 _G.QUI_ToggleLayoutMode()
@@ -64,10 +64,10 @@ local BUILTINS = {
                 print("|cff60A5FAQUI:|r Layout Mode not loaded yet.")
             end
         end,
-        tooltip = "Toggle Layout Mode",
+        tooltip = ns.L["Toggle Layout Mode"],
     },
     qui_keybind = {
-        label = "KB",
+        label = ns.L["KB"],
         action = function()
             local LibKeyBound = LibStub and LibStub("LibKeyBound-1.0", true)
             if LibKeyBound then
@@ -78,10 +78,10 @@ local BUILTINS = {
                 print("|cff60A5FAQUI:|r Quick Keybind Mode not available.")
             end
         end,
-        tooltip = "Toggle keybind mode",
+        tooltip = ns.L["Toggle keybind mode"],
     },
     qui_cdm = {
-        label = "CDM",
+        label = ns.L["CDM"],
         action = function()
             if _G.CooldownViewerSettings then
                 _G.CooldownViewerSettings:SetShown(not _G.CooldownViewerSettings:IsShown())
@@ -89,28 +89,28 @@ local BUILTINS = {
                 print("|cff60A5FAQUI:|r Cooldown Settings not available. Enable CDM first.")
             end
         end,
-        tooltip = "Open Cooldown Manager settings",
+        tooltip = ns.L["Open Cooldown Manager settings"],
     },
     social = {
-        label = "Friends",
+        label = ns.L["Friends"],
         action = function()
             if type(_G.ToggleFriendsFrame) == "function" then
                 _G.ToggleFriendsFrame()
             end
         end,
-        tooltip = "Toggle Friends list",
+        tooltip = ns.L["Toggle Friends list"],
     },
     guild = {
-        label = "Guild",
+        label = ns.L["Guild"],
         action = function()
             if type(_G.ToggleGuildFrame) == "function" then
                 _G.ToggleGuildFrame()
             end
         end,
-        tooltip = "Toggle Guild frame",
+        tooltip = ns.L["Toggle Guild frame"],
     },
     reload = {
-        label = "Reload",
+        label = ns.L["Reload"],
         action = function()
             if _G.QUI and type(_G.QUI.SafeReload) == "function" then
                 _G.QUI:SafeReload()
@@ -262,7 +262,11 @@ local function createButton(parent, def, customAction)
         btn:SetSize(60, 18)
         local fs = btn:CreateFontString(nil, "ARTWORK")
         local fontPath = (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
-        fs:SetFont(fontPath, 11, "OUTLINE")
+        if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+            ns.Helpers.ApplyFontWithFallback(fs, fontPath, 11, "OUTLINE")
+        else
+            fs:SetFont(fontPath, 11, "OUTLINE")
+        end
         fs:SetTextColor(0.9, 0.9, 0.9, 1)
         fs:SetPoint("CENTER")
         fs:SetText(def.label or "?")

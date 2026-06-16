@@ -6,6 +6,14 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
+
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 local LSM = ns.LSM
 local LibDBIcon = LibStub("LibDBIcon-1.0", true)
 
@@ -877,8 +885,8 @@ local function CreateClock()
         GameTooltip:AddDoubleLine(TIMEMANAGER_TOOLTIP_REALMTIME, GameTime_GetGameTime(true), 0.8, 0.8, 0.8, 1, 1, 1)
         GameTooltip:AddDoubleLine(TIMEMANAGER_TOOLTIP_LOCALTIME, GameTime_GetLocalTime(true), 0.8, 0.8, 0.8, 1, 1, 1)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Calendar", 0.2, 1, 0.2)
-        GameTooltip:AddLine("|cffFFFFFFRight Click:|r Toggle Clock", 0.2, 1, 0.2)
+        GameTooltip:AddLine(ns.L["|cffFFFFFFLeft Click:|r Open Calendar"], 0.2, 1, 0.2)
+        GameTooltip:AddLine(ns.L["|cffFFFFFFRight Click:|r Toggle Clock"], 0.2, 1, 0.2)
         GameTooltip:Show()
     end)
 
@@ -1413,8 +1421,8 @@ local function CreateGreatVaultButton()
         registerClicks = "LeftButtonUp",
         tooltipAnchor = "ANCHOR_LEFT",
         tooltip = function(self)
-            GameTooltip:AddLine("Great Vault", 1, 1, 1)
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Great Vault", 0.2, 1, 0.2)
+            GameTooltip:AddLine(ns.L["Great Vault"], 1, 1, 1)
+            GameTooltip:AddLine(ns.L["|cffFFFFFFLeft Click:|r Open Great Vault"], 0.2, 1, 0.2)
         end,
         onClick = function()
             ToggleGreatVault()
@@ -1792,24 +1800,24 @@ local function BuildMiddleClickMenu()
     local settings = GetSettings() or {}
 
     return {
-        { text = "QUI Menu", isTitle = true, notCheckable = true },
-        { text = "Achievements", notCheckable = true, func = function()
+        { text = ns.L["QUI Menu"], isTitle = true, notCheckable = true },
+        { text = ns.L["Achievements"], notCheckable = true, func = function()
             if not SafeExecute(ToggleAchievementFrame) then
                 ClickMicroButton("AchievementMicroButton")
             end
         end },
-        { text = "Calendar", notCheckable = true, func = function() SafeExecute(ToggleCalendar) end },
-        { text = "Character Info", notCheckable = true, func = function()
+        { text = ns.L["Calendar"], notCheckable = true, func = function() SafeExecute(ToggleCalendar) end },
+        { text = ns.L["Character Info"], notCheckable = true, func = function()
             if not SafeExecute(function() ToggleCharacter("PaperDollFrame") end) then
                 ClickMicroButton("CharacterMicroButton")
             end
         end },
-        { text = "Chat Channels", notCheckable = true, func = function()
+        { text = ns.L["Chat Channels"], notCheckable = true, func = function()
             if not SafeExecute(ToggleChannelFrame) then
                 ClickMicroButton("ChatFrameChannelButton")
             end
         end },
-        { text = "Clock", notCheckable = true, func = function()
+        { text = ns.L["Clock"], notCheckable = true, func = function()
             if not SafeExecute(TimeManager_Toggle) then
                 SafeExecute(function()
                     if TimeManagerFrame then
@@ -1818,48 +1826,48 @@ local function BuildMiddleClickMenu()
                 end)
             end
         end },
-        { text = "Dungeon Journal", notCheckable = true, func = function()
+        { text = ns.L["Dungeon Journal"], notCheckable = true, func = function()
             if not SafeExecute(ToggleEncounterJournal) then
                 ClickMicroButton("EJMicroButton")
             end
         end },
-        { text = "Guild", notCheckable = true, func = function()
+        { text = ns.L["Guild"], notCheckable = true, func = function()
             if not SafeExecute(ToggleGuildFrame) then
                 ClickMicroButton("GuildMicroButton")
             end
         end },
-        { text = "Looking For Group", notCheckable = true, func = function()
+        { text = ns.L["Looking For Group"], notCheckable = true, func = function()
             if not SafeExecute(PVEFrame_ToggleFrame) then
                 ClickMicroButton("LFDMicroButton")
             end
         end },
-        { text = "Professions", notCheckable = true, func = function()
+        { text = ns.L["Professions"], notCheckable = true, func = function()
             if not SafeExecute(ToggleProfessionsBook) then
                 ClickMicroButton("ProfessionMicroButton")
             end
         end },
-        { text = "Quest Log", notCheckable = true, func = function() SafeExecute(ToggleQuestLog) end },
-        { text = "Shop", notCheckable = true, func = function()
+        { text = ns.L["Quest Log"], notCheckable = true, func = function() SafeExecute(ToggleQuestLog) end },
+        { text = ns.L["Shop"], notCheckable = true, func = function()
             if not SafeExecute(StoreMicroButton_OnClick) then
                 ClickMicroButton("StoreMicroButton")
             end
         end },
-        { text = "Social", notCheckable = true, func = function()
+        { text = ns.L["Social"], notCheckable = true, func = function()
             if not SafeExecute(ToggleFriendsFrame) then
                 ClickMicroButton("SocialsMicroButton")
             end
         end },
-        { text = "Specialization", notCheckable = true, func = function() TryOpenSpecializationTab() end },
-        { text = "Talents", notCheckable = true, func = function() TryOpenTalentsTab() end },
-        { text = "Spellbook", notCheckable = true, func = function()
+        { text = ns.L["Specialization"], notCheckable = true, func = function() TryOpenSpecializationTab() end },
+        { text = ns.L["Talents"], notCheckable = true, func = function() TryOpenTalentsTab() end },
+        { text = ns.L["Spellbook"], notCheckable = true, func = function()
             TryOpenSpellbookTab()
         end },
-        { text = "Warband Collections", notCheckable = true, func = function()
+        { text = ns.L["Warband Collections"], notCheckable = true, func = function()
             if not SafeExecute(ToggleCollectionsJournal) then
                 ClickMicroButton("CollectionsMicroButton")
             end
         end },
-        { text = "Game Menu", notCheckable = true, func = function()
+        { text = ns.L["Game Menu"], notCheckable = true, func = function()
             if InCombatLockdown() then return end
 
             -- Prefer UIPanel flow (ESC-equivalent path used by skin watcher).
@@ -1895,7 +1903,7 @@ local function BuildMiddleClickMenu()
 
             SafeExecute(OpenGameMenu)
         end },
-        { text = "Customer Support", notCheckable = true, func = function()
+        { text = ns.L["Customer Support"], notCheckable = true, func = function()
             if not SafeExecute(ToggleHelpFrame) then
                 ClickMicroButton("HelpMicroButton")
             end
@@ -2013,7 +2021,7 @@ local function ShowMiddleClickMenu(keepPosition)
             if item.checked ~= nil then
                 label = (item.checked and "|cff55ff55[x]|r " or "|cff777777[ ]|r ") .. label
             end
-            row.text:SetFont(fontPath, fontSize, "OUTLINE")
+            CJKFont(row.text, fontPath, fontSize, "OUTLINE")
             row.text:SetText(label)
 
             if item.isTitle then
@@ -2946,8 +2954,8 @@ local function CreateDrawerToggleButton()
             ShowDrawer()
         end
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("Addon Button Drawer")
-        GameTooltip:AddLine("|cffFFFFFFMouseover:|r Open drawer", 0.2, 1, 0.2)
+        GameTooltip:AddLine(ns.L["Addon Button Drawer"])
+        GameTooltip:AddLine(ns.L["|cffFFFFFFMouseover:|r Open drawer"], 0.2, 1, 0.2)
         local total, hidden = 0, 0
         local hiddenButtons = (s and s.buttonDrawer and s.buttonDrawer.hiddenButtons) or {}
         for name in pairs(collectedButtons) do
@@ -4352,8 +4360,8 @@ do
 
         um:RegisterElement({
             key = "minimap",
-            label = "Minimap",
-            group = "Display",
+            label = ns.L["Minimap"],
+            group = ns.L["Display"],
             order = 1,
             -- module on/off lives in Module Addons (addon state); positioning only here
             setGameplayHidden = function(hide)
@@ -4374,8 +4382,8 @@ do
 
         um:RegisterElement({
             key = "datatextPanel",
-            label = "Datatext Panel",
-            group = "Display",
+            label = ns.L["Datatext Panel"],
+            group = ns.L["Display"],
             order = 2,
             isOwned = true,
             getFrame = function()

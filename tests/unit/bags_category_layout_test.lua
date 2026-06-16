@@ -9,6 +9,7 @@
 -- Tradegoods=7, Recipe=9, Questitem=12, Key=13, Miscellaneous=15,
 -- Battlepet=17, Profession=19.
 local ns = {}
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_Bags/bags/views/grid_layout.lua"))("QUI", ns)
 local chunk = assert(loadfile("QUI_Bags/bags/views/category_layout.lua"))
 chunk("QUI", ns)

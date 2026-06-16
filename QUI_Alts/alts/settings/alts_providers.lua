@@ -86,37 +86,37 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local G = Q and Q.GUI
             if G and type(G.ShowConfirmation) == "function" then
                 G:ShowConfirmation({
-                    title      = "Reload UI?",
-                    message    = "This change takes full effect after a reload.",
-                    acceptText = "Reload",
-                    cancelText = "Later",
+                    title      = ns.L["Reload UI?"],
+                    message    = ns.L["This change takes full effect after a reload."],
+                    acceptText = ns.L["Reload"],
+                    cancelText = ns.L["Later"],
                     onAccept   = function() if Q and Q.SafeReload then Q:SafeReload() end end,
                 })
             end
         end
-        L.headerAt("Alts Module")
+        L.headerAt(ns.L["Alts Module"])
         local s0 = L.sectionAt()
         local enableW = GUI:CreateFormCheckbox(s0.frame, nil, "enabled", alts, function()
             Refresh()
             ShowAltsModuleReloadPrompt()
-        end, { description = "Account-wide character tracking window (/alts): roster, professions, reputations, weeklies, and item search across all your characters." })
-        s0.AddRow(row(s0.frame, "Enable Alts Module", enableW))
+        end, { description = ns.L["Account-wide character tracking window (/alts): roster, professions, reputations, weeklies, and item search across all your characters."] })
+        s0.AddRow(row(s0.frame, ns.L["Enable Alts Module"], enableW))
         L.closeSection(s0)
 
         ---------------------------------------------------------------------
         -- ROSTER COLUMNS
         ---------------------------------------------------------------------
-        L.headerAt("Roster Columns")
+        L.headerAt(ns.L["Roster Columns"])
         local s1 = L.sectionAt()
         local columnRows = {
-            { key = "ilvl",        label = "Item level",
-              desc = "Columns shown on the Roster tab; Character and Level always show." },
-            { key = "gold",        label = "Gold" },
-            { key = "played",      label = "Played time" },
-            { key = "rested",      label = "Rested XP" },
-            { key = "zone",        label = "Zone" },
-            { key = "lastSeen",    label = "Last seen" },
-            { key = "professions", label = "Professions" },
+            { key = "ilvl",        label = ns.L["Item level"],
+              desc = ns.L["Columns shown on the Roster tab; Character and Level always show."] },
+            { key = "gold",        label = ns.L["Gold"] },
+            { key = "played",      label = ns.L["Played time"] },
+            { key = "rested",      label = ns.L["Rested XP"] },
+            { key = "zone",        label = ns.L["Zone"] },
+            { key = "lastSeen",    label = ns.L["Last seen"] },
+            { key = "professions", label = ns.L["Professions"] },
         }
         local pendingCol = nil
         for _, def in ipairs(columnRows) do
@@ -138,17 +138,17 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         ---------------------------------------------------------------------
         -- SCANNERS
         ---------------------------------------------------------------------
-        L.headerAt("Scanners")
+        L.headerAt(ns.L["Scanners"])
         local s2 = L.sectionAt()
         local repW = GUI:CreateFormCheckbox(s2.frame, nil, "reputations", alts.scanners, NoRefresh,
-            { description = "Track faction standings on this character." })
+            { description = ns.L["Track faction standings on this character."] })
         local weekW = GUI:CreateFormCheckbox(s2.frame, nil, "weeklies", alts.scanners, NoRefresh,
-            { description = "Track Great Vault, M+ rating, and keystone." })
-        s2.AddRow(row(s2.frame, "Reputations", repW), row(s2.frame, "Weeklies", weekW))
+            { description = ns.L["Track Great Vault, M+ rating, and keystone."] })
+        s2.AddRow(row(s2.frame, ns.L["Reputations"], repW), row(s2.frame, ns.L["Weeklies"], weekW))
 
         local lockW = GUI:CreateFormCheckbox(s2.frame, nil, "lockouts", alts.scanners, NoRefresh,
-            { description = "Track saved instances." })
-        s2.AddRow(row(s2.frame, "Lockouts", lockW))
+            { description = ns.L["Track saved instances."] })
+        s2.AddRow(row(s2.frame, ns.L["Lockouts"], lockW))
         L.closeSection(s2)
 
         ---------------------------------------------------------------------
@@ -209,18 +209,18 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 if filter[e[idField]] == false then hidden = hidden + 1 end
             end
             if hidden == 0 then
-                return string.format("All shown (%d)", #entries)
+                return string.format(ns.L["All shown (%d)"], #entries)
             end
-            return string.format("%d of %d shown", #entries - hidden, #entries)
+            return string.format(ns.L["%d of %d shown"], #entries - hidden, #entries)
         end
 
         local FP = ns.Alts and ns.Alts.FilterPopup
 
-        L.headerAt("Currencies Tab")
+        L.headerAt(ns.L["Currencies Tab"])
         local CV = ns.Alts and ns.Alts.CurrenciesView
         if not (CV and FP) then
             PlaceNote(L, content,
-                "Enable the Alts module (and reload) to configure which currencies the Currencies tab shows.",
+                ns.L["Enable the Alts module (and reload) to configure which currencies the Currencies tab shows."],
                 30)
         else
             local curNames = {}
@@ -236,7 +236,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
             local curEntries = CV.BuildDisplayRows(storeChars, curNames, nil)
             if #curEntries == 0 then
-                PlaceNote(L, content, "No currencies tracked yet.", 26)
+                PlaceNote(L, content, ns.L["No currencies tracked yet."], 26)
             else
                 local sC = L.sectionAt()
                 local btn = MakeFilterDropdown(sC.frame)
@@ -262,17 +262,17 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         Refresh()
                     end,
                 })
-                sC.AddRow(row(sC.frame, "Visible currencies", btn,
-                    "Choose which currencies the Currencies tab lists. Same filter as the tab's own Filter button."))
+                sC.AddRow(row(sC.frame, ns.L["Visible currencies"], btn,
+                    ns.L["Choose which currencies the Currencies tab lists. Same filter as the tab's own Filter button."]))
                 L.closeSection(sC)
             end
         end
 
-        L.headerAt("Reputations Tab")
+        L.headerAt(ns.L["Reputations Tab"])
         local RV = ns.Alts and ns.Alts.ReputationsView
         if not (RV and FP) then
             PlaceNote(L, content,
-                "Enable the Alts module (and reload) to configure which reputations the Reputations tab shows.",
+                ns.L["Enable the Alts module (and reload) to configure which reputations the Reputations tab shows."],
                 30)
         else
             local fNames  = (Store2 and Store2.GetFactionNames  and Store2.GetFactionNames())  or {}
@@ -285,7 +285,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
             end
             if #factionEntries == 0 then
-                PlaceNote(L, content, "No reputations tracked yet.", 26)
+                PlaceNote(L, content, ns.L["No reputations tracked yet."], 26)
             else
                 local sR = L.sectionAt()
                 local btn = MakeFilterDropdown(sR.frame)
@@ -316,8 +316,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         Refresh()
                     end,
                 })
-                sR.AddRow(row(sR.frame, "Visible reputations", btn,
-                    "Choose which reputations the Reputations tab lists. Same filter as the tab's own Filter button."))
+                sR.AddRow(row(sR.frame, ns.L["Visible reputations"], btn,
+                    ns.L["Choose which reputations the Reputations tab lists. Same filter as the tab's own Filter button."]))
                 L.closeSection(sR)
             end
         end
@@ -326,13 +326,13 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- CACHE (character list + delete — alt-tracking design doc scope:
         -- "character-cache management (list + delete)")
         ---------------------------------------------------------------------
-        L.headerAt("Cache")
+        L.headerAt(ns.L["Cache"])
         local Store = ns.Storage and ns.Storage.Store
         local keys = (Store and Store.IsInitialized and Store.IsInitialized()
             and Store.ListCharacters and Store.ListCharacters()) or {}
         if #keys == 0 then
             PlaceNote(L, content,
-                "No characters cached yet. Log a character in and it appears here.",
+                ns.L["No characters cached yet. Log a character in and it appears here."],
                 26)
         else
             local ROW_H = 24
@@ -354,16 +354,16 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 local metaFS = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                 metaFS:SetPoint("LEFT", nameFS, "RIGHT", 8, 0)
                 metaFS:SetTextColor(0.6, 0.6, 0.6, 1)
-                metaFS:SetText(d.level and ("Level " .. d.level) or "")
+                metaFS:SetText(d.level and (ns.L["Level "] .. d.level) or "")
 
                 if key == currentKey then
                     local curFS = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                     curFS:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -6, y0 - 6)
                     curFS:SetTextColor(0.6, 0.6, 0.6, 1)
-                    curFS:SetText("current character")
+                    curFS:SetText(ns.L["current character"])
                 else
                     local delBtn
-                    delBtn = GUI:CreateButton(holder, "Delete", 60, 18, function()
+                    delBtn = GUI:CreateButton(holder, ns.L["Delete"], 60, 18, function()
                         if Store.DeleteCharacter then Store.DeleteCharacter(key) end
                         Refresh()
                         -- structural: the row set changed — rebuild the panel
@@ -371,8 +371,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     end, "ghost")
                     delBtn:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -6, y0 - 3)
                     GUI:AttachTooltip(delBtn,
-                        "Remove this character's cached data (roster, professions, items). It repopulates on that character's next login.",
-                        "Delete " .. key)
+                        ns.L["Remove this character's cached data (roster, professions, items). It repopulates on that character's next login."],
+                        ns.L["Delete "] .. key)
                 end
             end
             L.placeCustom(holder, #keys * ROW_H + 6)

@@ -5,6 +5,14 @@
 local _, QUI = ... -- QUI = private addon namespace (the table other files call "ns"), not the AceAddon global
 local LSM = QUI.LSM
 
+local function CJKFont(fs, p, s, f)
+    if QUI.Helpers and QUI.Helpers.ApplyFontWithFallback then
+        QUI.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local GetCore = QUI.Helpers.GetCore
 
 -- Map resolver keys ("essential"/"utility") to DB profile keys
@@ -1370,7 +1378,7 @@ local function ApplyKeybindToIcon(icon, viewerName)
     end
 
     if iks.font ~= curFont or iks.fontSize ~= fontSize or iks.fontOutline ~= curOutline then
-        iks.text:SetFont(curFont, fontSize, curOutline)
+        CJKFont(iks.text, curFont, fontSize, curOutline)
         iks.font, iks.fontSize, iks.fontOutline = curFont, fontSize, curOutline
     end
 

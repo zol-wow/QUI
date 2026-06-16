@@ -27,6 +27,14 @@ local Bags = ns.Bags or {}; ns.Bags = Bags
 local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local CurrencyBar = {}
 Bags.CurrencyBar = CurrencyBar
 
@@ -74,7 +82,7 @@ local function Update(bar, record, live)
                 seg = { icon = bar:CreateTexture(nil, "ARTWORK") }
                 seg.icon:SetSize(ICON, ICON)
                 seg.amount = bar:CreateFontString(nil, "ARTWORK")
-                seg.amount:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+                CJKFont(seg.amount, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
                 seg.amount:SetPoint("LEFT", seg.icon, "RIGHT", 3, 0)
                 bar._segments[shown] = seg
             end

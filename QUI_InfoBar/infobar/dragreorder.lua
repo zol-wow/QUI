@@ -287,7 +287,7 @@ local function WireSlotDrag(slot)
         if not IsShiftKeyDown() then return end
         if InCombatLockdown() then
             if UIErrorsFrame then
-                UIErrorsFrame:AddMessage("Can't reorder the Info Bar in combat.", 1, 0.3, 0.3)
+                UIErrorsFrame:AddMessage(ns.L["Can't reorder the Info Bar in combat."], 1, 0.3, 0.3)
             end
             return
         end

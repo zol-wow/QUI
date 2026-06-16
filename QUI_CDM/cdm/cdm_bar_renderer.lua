@@ -16,6 +16,14 @@ local Helpers = ns.Helpers
 local QUICore = ns.Addon
 local LSM = ns.LSM
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- MODULE
 ---------------------------------------------------------------------------
@@ -335,7 +343,7 @@ local function CreateBar(parent)
 
     -- Name text (spell name)
     local nameText = textOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
-    nameText:SetFont(GetGeneralFont(), 14, GetGeneralFontOutline())
+    CJKFont(nameText, GetGeneralFont(), 14, GetGeneralFontOutline())
     nameText:SetPoint("LEFT", statusBar, "LEFT", 4, 0)
     nameText:SetJustifyH("LEFT")
     nameText:SetTextColor(1, 1, 1, 1)
@@ -345,7 +353,7 @@ local function CreateBar(parent)
 
     -- Duration text (remaining time)
     local durationText = textOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
-    durationText:SetFont(GetGeneralFont(), 14, GetGeneralFontOutline())
+    CJKFont(durationText, GetGeneralFont(), 14, GetGeneralFontOutline())
     durationText:SetPoint("RIGHT", statusBar, "RIGHT", -4, 0)
     durationText:SetJustifyH("RIGHT")
     durationText:SetTextColor(1, 1, 1, 1)
@@ -761,11 +769,11 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     local showText = not hideText and (not isVertical or showTextOnVertical)
 
     if bar.NameText then
-        bar.NameText:SetFont(generalFont, textSize, generalOutline)
+        CJKFont(bar.NameText, generalFont, textSize, generalOutline)
         bar.NameText:SetAlpha(showText and 1 or 0)
     end
     if bar.DurationText then
-        bar.DurationText:SetFont(generalFont, textSize, generalOutline)
+        CJKFont(bar.DurationText, generalFont, textSize, generalOutline)
         local durationBaseAlpha = showText and 1 or 0
         bar.DurationText:SetAlpha(durationBaseAlpha)
         -- Captured so the curve-driven text-hide path (UpdateOwnedBarAura

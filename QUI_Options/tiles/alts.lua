@@ -12,7 +12,7 @@ ns.QUI_AltsTile = V2Alts
 -- free slot. Route-pair uniqueness is guarded by
 -- tests/unit/options_tile_navroute_collision_test.lua.
 local SEARCH_TAB_INDEX = 20
-local SEARCH_TAB_NAME = "Alts"
+local SEARCH_TAB_NAME = ns.L["Alts"]
 
 function V2Alts.Register(frame)
     local Opts = ns.QUI_Options
@@ -23,11 +23,11 @@ function V2Alts.Register(frame)
     Opts.RegisterFeatureTile(frame, {
         id = "alts",
         icon = "A",
-        name = "Alts",
+        name = ns.L["Alts"],
         subPages = {
             {
                 id = "alts",
-                name = "Alts",
+                name = ns.L["Alts"],
                 sectionNav = true,
                 featureId = "alts",
                 navRoutes = {
@@ -38,7 +38,7 @@ function V2Alts.Register(frame)
                     tabIndex = SEARCH_TAB_INDEX,
                     tabName = SEARCH_TAB_NAME,
                     subTabIndex = 1,
-                    subTabName = "Alts",
+                    subTabName = ns.L["Alts"],
                 },
             },
         },

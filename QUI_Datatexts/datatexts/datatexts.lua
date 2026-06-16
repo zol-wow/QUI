@@ -217,7 +217,7 @@ local function GetTrackedCurrencies()
             table.insert(currencies, {
                 id = tostring(currencyID),
                 currencyID = currencyID,
-                name = info.name or ("Currency " .. tostring(currencyID)),
+                name = info.name or (ns.L["Currency "] .. tostring(currencyID)),
                 quantity = info.quantity,
                 iconFileID = info.iconFileID,
                 maxQuantity = info.maxQuantity,
@@ -250,7 +250,7 @@ function Datatexts:Register(id, datatextDef)
     self.registry[id] = {
         id = id,
         displayName = datatextDef.displayName or id,
-        category = datatextDef.category or "General",
+        category = datatextDef.category or ns.L["General"],
         description = datatextDef.description or "",
         OnEnable = datatextDef.OnEnable,
         OnDisable = datatextDef.OnDisable,
@@ -309,7 +309,7 @@ function Datatexts:AttachToSlot(slotFrame, datatextID, settings)
         if slotFrame.noLabel then
             slotFrame.text:SetText("")
         else
-            slotFrame.text:SetText("|cff666666(empty)")
+            slotFrame.text:SetText("|cff666666" .. ns.L["(empty)"])
         end
         return true
     end
@@ -433,8 +433,8 @@ end
 
 -- Time datatext
 Datatexts:Register("time", {
-    displayName = "Time",
-    category = "System",
+    displayName = ns.L["Time"],
+    category = ns.L["System"],
     description = "Displays current time (local or server)",
 
     OnEnable = function(slotFrame, settings)
@@ -457,7 +457,7 @@ Datatexts:Register("time", {
             end
 
             local r, g, b = GetValueColor()
-            local label = GetLabel("Time: ", "T: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Time: "], ns.L["T: "], slotFrame.shortLabel, slotFrame.noLabel)
             if use24Hour then
                 text:SetFormattedText(label .. "|cff%02x%02x%02x%02d:%02d|r", r, g, b, hour, minute)
             else
@@ -478,7 +478,7 @@ Datatexts:Register("time", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Time", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Time"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local ar, ag, ab = GetValueColor()
@@ -489,7 +489,7 @@ Datatexts:Register("time", {
 
             -- Raid lockouts (from cache)
             if #lockoutCache.instances > 0 then
-                GameTooltip:AddLine("Saved Raid(s)", 1, 0.82, 0)
+                GameTooltip:AddLine(ns.L["Saved Raid(s)"], 1, 0.82, 0)
 
                 for _, instance in ipairs(lockoutCache.instances) do
                     local displayName = instance.difficultyName
@@ -502,7 +502,7 @@ Datatexts:Register("time", {
 
             -- World bosses (from cache)
             if #lockoutCache.worldBosses > 0 then
-                GameTooltip:AddLine("World Bosses", 1, 0.82, 0)
+                GameTooltip:AddLine(ns.L["World Bosses"], 1, 0.82, 0)
                 for _, boss in ipairs(lockoutCache.worldBosses) do
                     GameTooltip:AddDoubleLine(boss.name, FormatTimeRemaining(boss.reset), 0.8, 0.8, 0.8, ar, ag, ab)
                 end
@@ -512,20 +512,20 @@ Datatexts:Register("time", {
             -- Reset timers (using modern C_DateAndTime API)
             local dailyReset = C_DateAndTime.GetSecondsUntilDailyReset and C_DateAndTime.GetSecondsUntilDailyReset()
             if dailyReset and dailyReset > 0 then
-                GameTooltip:AddDoubleLine("Daily Reset", FormatTimeRemaining(dailyReset), 0.8, 0.8, 0.8, ar, ag, ab)
+                GameTooltip:AddDoubleLine(ns.L["Daily Reset"], FormatTimeRemaining(dailyReset), 0.8, 0.8, 0.8, ar, ag, ab)
             end
 
             local weeklyReset = C_DateAndTime.GetSecondsUntilWeeklyReset and C_DateAndTime.GetSecondsUntilWeeklyReset()
             if weeklyReset and weeklyReset > 0 then
-                GameTooltip:AddDoubleLine("Weekly Reset", FormatTimeRemaining(weeklyReset), 0.8, 0.8, 0.8, ar, ag, ab)
+                GameTooltip:AddDoubleLine(ns.L["Weekly Reset"], FormatTimeRemaining(weeklyReset), 0.8, 0.8, 0.8, ar, ag, ab)
             end
 
             -- Realm time (server time)
-            GameTooltip:AddDoubleLine("Realm time:", GameTime_GetGameTime(true), 0.8, 0.8, 0.8, 1, 1, 1)
+            GameTooltip:AddDoubleLine(ns.L["Realm time:"], GameTime_GetGameTime(true), 0.8, 0.8, 0.8, 1, 1, 1)
 
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Calendar", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFRight Click:|r Toggle Clock", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Open Calendar"], ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Right Click:"] .. "|r " .. ns.L["Toggle Clock"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -558,8 +558,8 @@ Datatexts:Register("time", {
 
 -- FPS datatext
 Datatexts:Register("fps", {
-    displayName = "FPS",
-    category = "System",
+    displayName = ns.L["FPS"],
+    category = ns.L["System"],
     description = "Displays frames per second",
 
     OnEnable = function(slotFrame, settings)
@@ -576,7 +576,7 @@ Datatexts:Register("fps", {
             else
                 r, g, b = GetValueColor()
             end
-            local label = GetLabel("FPS: ", "F: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["FPS: "], ns.L["F: "], slotFrame.shortLabel, slotFrame.noLabel)
             text:SetFormattedText(label .. "|cff%02x%02x%02x%d|r", r, g, b, fps)
         end
 
@@ -594,8 +594,8 @@ Datatexts:Register("fps", {
 
 -- Latency datatext
 Datatexts:Register("latency", {
-    displayName = "Latency",
-    category = "System",
+    displayName = ns.L["Latency"],
+    category = ns.L["System"],
     description = "Displays world latency",
 
     OnEnable = function(slotFrame, settings)
@@ -613,7 +613,7 @@ Datatexts:Register("latency", {
             else
                 r, g, b = GetValueColor()
             end
-            local label = GetLabel("MS: ", "M: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["MS: "], ns.L["M: "], slotFrame.shortLabel, slotFrame.noLabel)
             text:SetFormattedText(label .. "|cff%02x%02x%02x%d|r", r, g, b, ms)
         end
 
@@ -631,8 +631,8 @@ Datatexts:Register("latency", {
 
 -- System datatext (combined FPS + MS with latency tooltip)
 Datatexts:Register("system", {
-    displayName = "System",
-    category = "System",
+    displayName = ns.L["System"],
+    category = ns.L["System"],
     description = "FPS and latency display",
 
     OnEnable = function(slotFrame, settings)
@@ -671,11 +671,11 @@ Datatexts:Register("system", {
                     fpsR, fpsG, fpsB, fps, msR, msG, msB, ms)
             elseif slotFrame.shortLabel then
                 -- Short labels: "F: 474 M: 33"
-                displayText = format("F: |cff%02x%02x%02x%d|r M: |cff%02x%02x%02x%d|r",
+                displayText = format(ns.L["F: "] .. "|cff%02x%02x%02x%d|r " .. ns.L["M: "] .. "|cff%02x%02x%02x%d|r",
                     fpsR, fpsG, fpsB, fps, msR, msG, msB, ms)
             else
                 -- Full labels: "FPS: 474 MS: 33"
-                displayText = format("FPS: |cff%02x%02x%02x%d|r MS: |cff%02x%02x%02x%d|r",
+                displayText = format(ns.L["FPS: "] .. "|cff%02x%02x%02x%d|r " .. ns.L["MS: "] .. "|cff%02x%02x%02x%d|r",
                     fpsR, fpsG, fpsB, fps, msR, msG, msB, ms)
             end
 
@@ -690,7 +690,7 @@ Datatexts:Register("system", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("System", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["System"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local ar, ag, ab = GetValueColor()
@@ -700,19 +700,19 @@ Datatexts:Register("system", {
             local currentFps = floor(GetFramerate() + 0.5)
             local _, _, homePing, worldPing = GetNetStats()
 
-            GameTooltip:AddDoubleLine("Framerate:", format("%d fps", currentFps), 0.8, 0.8, 0.8, ar, ag, ab)
-            GameTooltip:AddDoubleLine("Home Latency:", format("%d ms", floor(homePing or 0)), 0.8, 0.8, 0.8, ar, ag, ab)
-            GameTooltip:AddDoubleLine("World Latency:", format("%d ms", floor(worldPing or 0)), 0.8, 0.8, 0.8, ar, ag, ab)
+            GameTooltip:AddDoubleLine(ns.L["Framerate:"], format("%d fps", currentFps), 0.8, 0.8, 0.8, ar, ag, ab)
+            GameTooltip:AddDoubleLine(ns.L["Home Latency:"], format("%d ms", floor(homePing or 0)), 0.8, 0.8, 0.8, ar, ag, ab)
+            GameTooltip:AddDoubleLine(ns.L["World Latency:"], format("%d ms", floor(worldPing or 0)), 0.8, 0.8, 0.8, ar, ag, ab)
 
             -- Bandwidth (only shown when actively downloading)
             if GetAvailableBandwidth then
                 local avail = GetAvailableBandwidth()
                 if avail and avail > 0 then
-                    GameTooltip:AddDoubleLine("Bandwidth:", format("%.2f Mbps", avail), 0.8, 0.8, 0.8, ar, ag, ab)
+                    GameTooltip:AddDoubleLine(ns.L["Bandwidth:"], format("%.2f Mbps", avail), 0.8, 0.8, 0.8, ar, ag, ab)
                     if GetDownloadedPercentage then
                         local pct = GetDownloadedPercentage()
                         if pct and pct > 0 and pct < 1 then
-                            GameTooltip:AddDoubleLine("Downloaded:", format("%d%%", pct * 100), 0.8, 0.8, 0.8, ar, ag, ab)
+                            GameTooltip:AddDoubleLine(ns.L["Downloaded:"], format("%d%%", pct * 100), 0.8, 0.8, 0.8, ar, ag, ab)
                         end
                     end
                 end
@@ -724,13 +724,13 @@ Datatexts:Register("system", {
                 if homeType or worldType then
                     local homeProto = (homeType and homeType == 1) and "IPv6" or "IPv4"
                     local worldProto = (worldType and worldType == 1) and "IPv6" or "IPv4"
-                    GameTooltip:AddDoubleLine("Protocol:", format("Home %s / World %s", homeProto, worldProto), 0.8, 0.8, 0.8, 0.6, 0.6, 0.6)
+                    GameTooltip:AddDoubleLine(ns.L["Protocol:"], format(ns.L["Home %s / World %s"], homeProto, worldProto), 0.8, 0.8, 0.8, 0.6, 0.6, 0.6)
                 end
             end
 
             -- Addon memory usage
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("AddOn Memory", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["AddOn Memory"], 1, 1, 1)
 
             UpdateAddOnMemoryUsage()
             local addons = {}
@@ -770,13 +770,13 @@ Datatexts:Register("system", {
                 GameTooltip:AddDoubleLine(a.name, memStr, 0.8, 0.8, 0.8, mr, mg, mb)
             end
             if #addons > maxDisplay then
-                GameTooltip:AddLine(format("  ... and %d more", #addons - maxDisplay), 0.5, 0.5, 0.5)
+                GameTooltip:AddLine(format(ns.L["  ... and %d more"], #addons - maxDisplay), 0.5, 0.5, 0.5)
             end
 
             -- Total
             GameTooltip:AddLine(" ")
             local totalStr = totalMem >= 1024 and format("%.1f MB", totalMem / 1024) or format("%.0f KB", totalMem)
-            GameTooltip:AddDoubleLine("Total:", totalStr, 1, 1, 1, ar, ag, ab)
+            GameTooltip:AddDoubleLine(ns.L["Total:"], totalStr, 1, 1, 1, ar, ag, ab)
 
             GameTooltip:Show()
         end)
@@ -830,11 +830,11 @@ local function ToggleMute()
 end
 
 local VOLUME_POPUP_ROWS = {
-    { label = "Master",   key = "master" },
-    { label = "SFX",      key = "sfx" },
-    { label = "Music",    key = "music" },
-    { label = "Ambience", key = "ambience" },
-    { label = "Dialog",   key = "dialog" },
+    { label = ns.L["Master"],   key = "master" },
+    { label = ns.L["SFX"],      key = "sfx" },
+    { label = ns.L["Music"],    key = "music" },
+    { label = ns.L["Ambience"], key = "ambience" },
+    { label = ns.L["Dialog"],   key = "dialog" },
 }
 
 local volumePopup
@@ -864,13 +864,17 @@ local function GetVolumePopup()
     local fontOutline = general and general.fontOutline or "OUTLINE"
     local function MakeText(size)
         local fs = popup:CreateFontString(nil, "OVERLAY")
-        QUICore:SafeSetFont(fs, fontPath, size, fontOutline)
+        if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+            ns.Helpers.ApplyFontWithFallback(fs, fontPath, size, fontOutline)
+        else
+            QUICore:SafeSetFont(fs, fontPath, size, fontOutline)
+        end
         return fs
     end
 
     local title = MakeText(12)
     title:SetPoint("TOPLEFT", PAD, -PAD)
-    title:SetText("Volume")
+    title:SetText(ns.L["Volume"])
     popup.title = title
 
     popup.rows = {}
@@ -963,7 +967,7 @@ local function GetVolumePopup()
 
     local muteLabel = MakeText(11)
     muteLabel:SetPoint("LEFT", mute, "RIGHT", 6, 0)
-    muteLabel:SetText("Mute all")
+    muteLabel:SetText(ns.L["Mute all"])
 
     mute:SetScript("OnClick", function()
         ToggleMute()
@@ -1033,8 +1037,8 @@ end
 
 -- Volume datatext
 Datatexts:Register("volume", {
-    displayName = "Volume",
-    category = "System",
+    displayName = ns.L["Volume"],
+    category = ns.L["System"],
     description = "Volume control with scroll wheel adjustment",
 
     OnEnable = function(slotFrame, settings)
@@ -1075,10 +1079,10 @@ Datatexts:Register("volume", {
             end
 
             -- Format display
-            local label = GetLabel("Vol: ", "V: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Vol: "], ns.L["V: "], slotFrame.shortLabel, slotFrame.noLabel)
 
             if muted then
-                text:SetFormattedText("%s|cff%02x%02x%02xMuted|r", label, r, g, b)
+                text:SetFormattedText("%s|cff%02x%02x%02x" .. ns.L["Muted"] .. "|r", label, r, g, b)
             else
                 text:SetFormattedText("%s|cff%02x%02x%02x%d%%|r", label, r, g, b, vol)
             end
@@ -1089,28 +1093,28 @@ Datatexts:Register("volume", {
             if volumePopup and volumePopup:IsShown() then return end
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Volume", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Volume"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             -- Show all volume levels
             local muted = IsMuted()
             if muted then
-                GameTooltip:AddLine("Sound is MUTED", 1, 0.2, 0.2)
+                GameTooltip:AddLine(ns.L["Sound is MUTED"], 1, 0.2, 0.2)
                 GameTooltip:AddLine(" ")
             end
 
-            GameTooltip:AddDoubleLine("Master Volume:", GetVolume("master") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
-            GameTooltip:AddDoubleLine("Music Volume:", GetVolume("music") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
-            GameTooltip:AddDoubleLine("SFX Volume:", GetVolume("sfx") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
-            GameTooltip:AddDoubleLine("Ambience Volume:", GetVolume("ambience") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
-            GameTooltip:AddDoubleLine("Dialog Volume:", GetVolume("dialog") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
+            GameTooltip:AddDoubleLine(ns.L["Master Volume:"], GetVolume("master") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
+            GameTooltip:AddDoubleLine(ns.L["Music Volume:"], GetVolume("music") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
+            GameTooltip:AddDoubleLine(ns.L["SFX Volume:"], GetVolume("sfx") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
+            GameTooltip:AddDoubleLine(ns.L["Ambience Volume:"], GetVolume("ambience") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
+            GameTooltip:AddDoubleLine(ns.L["Dialog Volume:"], GetVolume("dialog") .. "%", 0.7, 0.7, 0.7, 1, 1, 1)
 
             -- Footer hints
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Scroll to adjust volume", 0.5, 0.5, 0.5)
-            GameTooltip:AddLine("Left-Click for volume sliders", 0.5, 0.5, 0.5)
-            GameTooltip:AddLine("Middle-Click to open audio settings", 0.5, 0.5, 0.5)
-            GameTooltip:AddLine("Right-Click to toggle mute", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(ns.L["Scroll to adjust volume"], 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(ns.L["Left-Click for volume sliders"], 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(ns.L["Middle-Click to open audio settings"], 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(ns.L["Right-Click to toggle mute"], 0.5, 0.5, 0.5)
 
             GameTooltip:Show()
         end)
@@ -1195,8 +1199,8 @@ end
 
 -- Gold datatext
 Datatexts:Register("gold", {
-    displayName = "Gold",
-    category = "Character",
+    displayName = ns.L["Gold"],
+    category = ns.L["Character"],
     description = "Displays your current gold (tooltip shows all characters)",
 
     OnEnable = function(slotFrame, settings)
@@ -1227,7 +1231,7 @@ Datatexts:Register("gold", {
         local function Update()
             local money = GetMoney() or 0
             local r, g, b = GetValueColor()
-            local label = GetLabel("Gold: ", "G: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Gold: "], ns.L["G: "], slotFrame.shortLabel, slotFrame.noLabel)
             text:SetFormattedText(label .. "|cff%02x%02x%02x%s|r", r, g, b, FormatGold(money))
         end
 
@@ -1254,13 +1258,13 @@ Datatexts:Register("gold", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Gold", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Gold"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local money = GetMoney() or 0
             local silver = floor((money % 10000) / 100)
             local copper = money % 100
-            GameTooltip:AddDoubleLine("Current:", string.format("%s %ds %dc", FormatGold(money), silver, copper), 0.8, 0.8, 0.8, 1, 1, 1)
+            GameTooltip:AddDoubleLine(ns.L["Current:"], string.format("%s %ds %dc", FormatGold(money), silver, copper), 0.8, 0.8, 0.8, 1, 1, 1)
 
             -- All Characters: storage cache rows, with legacy goldData folded
             -- in read-only as a fallback for characters the cache hasn't seen.
@@ -1280,7 +1284,7 @@ Datatexts:Register("gold", {
                     local currentKey = Store and Store.GetCurrentCharacterKey and Store.GetCurrentCharacterKey()
 
                     GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("All Characters", 1, 1, 1)
+                    GameTooltip:AddLine(ns.L["All Characters"], 1, 1, 1)
                     for _, row in ipairs(rows) do
                         -- Use class color for character name
                         local cr, cg, cb = Helpers.GetClassColor(row.class)
@@ -1291,7 +1295,7 @@ Datatexts:Register("gold", {
                         GameTooltip:AddDoubleLine(displayName, FormatGold(row.money), cr, cg, cb, 1, 1, 1)
                     end
                     GameTooltip:AddLine(" ")
-                    GameTooltip:AddDoubleLine("Total:", FormatGold(AltsData.Total(rows)), ar, ag, ab, 1, 0.82, 0)
+                    GameTooltip:AddDoubleLine(ns.L["Total:"], FormatGold(AltsData.Total(rows)), ar, ag, ab, 1, 0.82, 0)
                 end
             end
 
@@ -1304,8 +1308,8 @@ Datatexts:Register("gold", {
                 local warboundMoney = C_Bank.FetchDepositedMoney(Enum.BankType.Account)
                 if warboundMoney and warboundMoney > 0 then
                     GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("Warbound Bank", 1, 1, 1)
-                    GameTooltip:AddDoubleLine("Account Gold:", FormatGold(warboundMoney), 0.8, 0.8, 0.8, 1, 0.82, 0)
+                    GameTooltip:AddLine(ns.L["Warbound Bank"], 1, 1, 1)
+                    GameTooltip:AddDoubleLine(ns.L["Account Gold:"], FormatGold(warboundMoney), 0.8, 0.8, 0.8, 1, 0.82, 0)
                 end
             end
 
@@ -1313,18 +1317,18 @@ Datatexts:Register("gold", {
             if C_WowTokenPublic and C_WowTokenPublic.GetCurrentMarketPrice then
                 local tokenPrice = C_WowTokenPublic.GetCurrentMarketPrice()
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("WoW Token", 1, 1, 1)
+                GameTooltip:AddLine(ns.L["WoW Token"], 1, 1, 1)
                 if tokenPrice and tokenPrice > 0 then
-                    GameTooltip:AddDoubleLine("Market Price:", FormatGold(tokenPrice), 0.8, 0.8, 0.8, 1, 0.82, 0)
+                    GameTooltip:AddDoubleLine(ns.L["Market Price:"], FormatGold(tokenPrice), 0.8, 0.8, 0.8, 1, 0.82, 0)
                 else
-                    GameTooltip:AddDoubleLine("Market Price:", "Updating...", 0.8, 0.8, 0.8, 0.5, 0.5, 0.5)
+                    GameTooltip:AddDoubleLine(ns.L["Market Price:"], ns.L["Updating..."], 0.8, 0.8, 0.8, 0.5, 0.5, 0.5)
                 end
             end
 
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Currency", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFRight Click:|r Toggle Bags", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFMiddle Click:|r Toggle Alts Window", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Open Currency"], ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Right Click:"] .. "|r " .. ns.L["Toggle Bags"], ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Middle Click:"] .. "|r " .. ns.L["Toggle Alts Window"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1340,7 +1344,7 @@ Datatexts:Register("gold", {
                 if ns.Alts and ns.Alts.IsEnabled and ns.Alts.IsEnabled() and ns.Alts.Window then
                     ns.Alts.Window.Toggle()
                 else
-                    print("|cff00ff00QUI:|r enable the Alts module (Options → Modules) to use the Alts window.")
+                    print("|cff00ff00QUI:|r " .. ns.L["enable the Alts module (Options → Modules) to use the Alts window."])
                 end
             end
         end)
@@ -1363,8 +1367,8 @@ Datatexts:Register("gold", {
 -- the frame/tooltip/click shell. ns.Alts (the Alts window) is an OPTIONAL
 -- runtime dependency — every read is guarded.
 Datatexts:Register("alts", {
-    displayName = "Alts",
-    category = "Character",
+    displayName = ns.L["Alts"],
+    category = ns.L["Character"],
     description = "Alt roster summary from the account-wide cache (left-click opens the Alts window)",
 
     OnEnable = function(slotFrame, settings)
@@ -1393,7 +1397,7 @@ Datatexts:Register("alts", {
         local function Update()
             local characters = BuildCharacters()
             local r, g, b = GetValueColor()
-            local label = GetLabel("Alts: ", "A: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Alts: "], ns.L["A: "], slotFrame.shortLabel, slotFrame.noLabel)
             if not characters then
                 text:SetFormattedText(label .. "|cff%02x%02x%02x%s|r", r, g, b, "—")
                 return
@@ -1440,7 +1444,7 @@ Datatexts:Register("alts", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Alts", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Alts"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local vr, vg, vb = GetValueColor()
@@ -1464,9 +1468,9 @@ Datatexts:Register("alts", {
                 end
 
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddDoubleLine("Total:", FormatGold(AltsData.Total(rows)), ar, ag, ab, 1, 0.82, 0)
+                GameTooltip:AddDoubleLine(ns.L["Total:"], FormatGold(AltsData.Total(rows)), ar, ag, ab, 1, 0.82, 0)
             else
-                GameTooltip:AddLine("Roster cache not ready.", 0.7, 0.7, 0.7)
+                GameTooltip:AddLine(ns.L["Roster cache not ready."], 0.7, 0.7, 0.7)
             end
 
             -- Warbound Bank Gold (verbatim from the gold widget).
@@ -1474,14 +1478,14 @@ Datatexts:Register("alts", {
                 local warboundMoney = C_Bank.FetchDepositedMoney(Enum.BankType.Account)
                 if warboundMoney and warboundMoney > 0 then
                     GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("Warbound Bank", 1, 1, 1)
-                    GameTooltip:AddDoubleLine("Account Gold:", FormatGold(warboundMoney), 0.8, 0.8, 0.8, 1, 0.82, 0)
+                    GameTooltip:AddLine(ns.L["Warbound Bank"], 1, 1, 1)
+                    GameTooltip:AddDoubleLine(ns.L["Account Gold:"], FormatGold(warboundMoney), 0.8, 0.8, 0.8, 1, 0.82, 0)
                 end
             end
 
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Toggle Alts Window", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFRight Click:|r Alts Settings", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Toggle Alts Window"], ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Right Click:"] .. "|r " .. ns.L["Alts Settings"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1509,7 +1513,7 @@ Datatexts:Register("alts", {
                 if ns.Alts and ns.Alts.IsEnabled and ns.Alts.IsEnabled() and ns.Alts.Window then
                     ns.Alts.Window.Toggle()
                 else
-                    print("|cff00ff00QUI:|r enable the Alts module (Options → Modules) to use the Alts window.")
+                    print("|cff00ff00QUI:|r " .. ns.L["enable the Alts module (Options → Modules) to use the Alts window."])
                 end
             elseif button == "RightButton" then
                 OpenAltsSettings()
@@ -1535,8 +1539,8 @@ Datatexts:Register("alts", {
 
 -- Durability datatext
 Datatexts:Register("durability", {
-    displayName = "Durability",
-    category = "Character",
+    displayName = ns.L["Durability"],
+    category = ns.L["Character"],
     description = "Displays lowest equipment durability",
 
     OnEnable = function(slotFrame, settings)
@@ -1547,17 +1551,17 @@ Datatexts:Register("durability", {
 
         local DURABLE_SLOTS = {1, 3, 5, 6, 7, 8, 9, 10, 15, 16, 17}
         local SLOT_NAMES = {
-            [1] = "Head",
-            [3] = "Shoulder",
-            [5] = "Chest",
-            [6] = "Waist",
-            [7] = "Legs",
-            [8] = "Feet",
-            [9] = "Wrist",
-            [10] = "Hands",
-            [15] = "Back",
-            [16] = "Main Hand",
-            [17] = "Off Hand",
+            [1] = ns.L["Head"],
+            [3] = ns.L["Shoulder"],
+            [5] = ns.L["Chest"],
+            [6] = ns.L["Waist"],
+            [7] = ns.L["Legs"],
+            [8] = ns.L["Feet"],
+            [9] = ns.L["Wrist"],
+            [10] = ns.L["Hands"],
+            [15] = ns.L["Back"],
+            [16] = ns.L["Main Hand"],
+            [17] = ns.L["Off Hand"],
         }
 
         local function Update()
@@ -1578,7 +1582,7 @@ Datatexts:Register("durability", {
             else
                 r, g, b = GetValueColor()
             end
-            local label = GetLabel("Gear: ", "D: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Gear: "], ns.L["D: "], slotFrame.shortLabel, slotFrame.noLabel)
             text:SetFormattedText(label .. "|cff%02x%02x%02x%d%%|r", r, g, b, floor(minVal + 0.5))
         end
 
@@ -1593,7 +1597,7 @@ Datatexts:Register("durability", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Durability", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Durability"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             -- Show durability for each slot
@@ -1601,7 +1605,7 @@ Datatexts:Register("durability", {
                 local cur, maxVal = GetInventoryItemDurability(slot)
                 if cur and maxVal and maxVal > 0 then
                     local pct = (cur / maxVal) * 100
-                    local slotName = SLOT_NAMES[slot] or ("Slot " .. slot)
+                    local slotName = SLOT_NAMES[slot] or (ns.L["Slot "] .. slot)
                     local r, g, b
                     if pct <= 25 then
                         r, g, b = 1, 0.2, 0.2  -- Red warning
@@ -1618,7 +1622,7 @@ Datatexts:Register("durability", {
 
             GameTooltip:AddLine(" ")
             local ar, ag, ab = GetValueColor(); ar, ag, ab = ar/255, ag/255, ab/255
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Character", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Open Character"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1649,11 +1653,11 @@ local TIMERUNNING_ICON = "|A:timerunning-glues-icon-small:12:10:0:0|a"
 local MOBILE_ICON = "|TInterface\\ChatFrame\\UI-ChatIcon-ArmoryChat:14:14:0:0:16:16:0:16:0:16:73:177:73|t"
 local WOW_PROJECT_ID = WOW_PROJECT_ID or 1
 local PROJECT_NAMES = {
-    [1] = "Retail",
-    [2] = "Classic Era",
-    [5] = "TBC Classic",
-    [11] = "Wrath Classic",
-    [14] = "Cata Classic",
+    [1] = ns.L["Retail"],
+    [2] = ns.L["Classic Era"],
+    [5] = ns.L["TBC Classic"],
+    [11] = ns.L["Wrath Classic"],
+    [14] = ns.L["Cata Classic"],
 }
 
 -- Check if player is in current group
@@ -1888,8 +1892,8 @@ end
 
 -- Friends datatext
 Datatexts:Register("friends", {
-    displayName = "Friends",
-    category = "Social",
+    displayName = ns.L["Friends"],
+    category = ns.L["Social"],
     description = "Displays online friends count with detailed tooltip",
 
     OnEnable = function(slotFrame, settings)
@@ -1914,7 +1918,7 @@ Datatexts:Register("friends", {
             local total = wowTotal + (bnetTotal or 0)
 
             local r, g, b = GetValueColor()
-            local label = GetLabel("Friends: ", "Fr: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Friends: "], ns.L["Fr: "], slotFrame.shortLabel, slotFrame.noLabel)
             if settings.showTotal then
                 text:SetFormattedText(label .. "|cff%02x%02x%02x%d/%d|r", r, g, b, online, total)
             else
@@ -1948,7 +1952,7 @@ Datatexts:Register("friends", {
 
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine(showNotes and "Friends (Notes)" or "Friends", 1, 1, 1)
+            GameTooltip:AddLine(showNotes and ns.L["Friends (Notes)"] or ns.L["Friends"], 1, 1, 1)
 
             -- Get configured accent color for section headers
             local vr, vg, vb = GetValueColor()
@@ -1963,10 +1967,10 @@ Datatexts:Register("friends", {
                     if note and note ~= "" then
                         return note, 0.9, 0.9, 0.6
                     else
-                        return "No note", 0.5, 0.5, 0.5
+                        return ns.L["No note"], 0.5, 0.5, 0.5
                     end
                 else
-                    return info.zone or "Unknown", 0.7, 0.7, 0.7
+                    return info.zone or ns.L["Unknown"], 0.7, 0.7, 0.7
                 end
             end
 
@@ -1974,7 +1978,7 @@ Datatexts:Register("friends", {
             if #friendsCache.wowFriends > 0 then
                 hasAnyFriends = true
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("WoW Friends", ar, ag, ab)
+                GameTooltip:AddLine(ns.L["WoW Friends"], ar, ag, ab)
 
                 for _, info in ipairs(friendsCache.wowFriends) do
                     local classColor = GetClassColor(info.class) or {r=1, g=1, b=1}
@@ -1997,7 +2001,7 @@ Datatexts:Register("friends", {
             if #friendsCache.bnetRetail > 0 then
                 if hasAnyFriends then GameTooltip:AddLine(" ") end
                 hasAnyFriends = true
-                GameTooltip:AddLine("Battle.net (Retail)", 0.31, 0.69, 0.9)
+                GameTooltip:AddLine(ns.L["Battle.net (Retail)"], 0.31, 0.69, 0.9)
 
                 for _, info in ipairs(friendsCache.bnetRetail) do
                     local classColor = GetClassColor(info.className) or {r=0.8, g=0.8, b=0.8}
@@ -2028,12 +2032,12 @@ Datatexts:Register("friends", {
             if #friendsCache.bnetClassic > 0 then
                 if hasAnyFriends then GameTooltip:AddLine(" ") end
                 hasAnyFriends = true
-                GameTooltip:AddLine("Battle.net (Classic)", 0.6, 0.4, 0.2)
+                GameTooltip:AddLine(ns.L["Battle.net (Classic)"], 0.6, 0.4, 0.2)
 
                 for _, info in ipairs(friendsCache.bnetClassic) do
                     local classColor = GetClassColor(info.className) or {r=0.8, g=0.8, b=0.8}
                     local statusText = info.afk and " |cffFFFF00(AFK)|r" or info.dnd and " |cffFF0000(DND)|r" or ""
-                    local versionName = PROJECT_NAMES[info.wowProjectID] or "Classic"
+                    local versionName = PROJECT_NAMES[info.wowProjectID] or ns.L["Classic"]
 
                     local leftText
                     if info.characterName and info.characterName ~= "" then
@@ -2056,7 +2060,7 @@ Datatexts:Register("friends", {
             if #friendsCache.bnetOther > 0 then
                 if hasAnyFriends then GameTooltip:AddLine(" ") end
                 hasAnyFriends = true
-                GameTooltip:AddLine("Other Games", 0.5, 0.5, 0.5)
+                GameTooltip:AddLine(ns.L["Other Games"], 0.5, 0.5, 0.5)
 
                 for _, info in ipairs(friendsCache.bnetOther) do
                     local statusText = info.afk and " |cffFFFF00(AFK)|r" or info.dnd and " |cffFF0000(DND)|r" or ""
@@ -2066,10 +2070,10 @@ Datatexts:Register("friends", {
                         if info.note and info.note ~= "" then
                             rightText, rr, rg, rb = info.note, 0.9, 0.9, 0.6
                         else
-                            rightText, rr, rg, rb = "No note", 0.5, 0.5, 0.5
+                            rightText, rr, rg, rb = ns.L["No note"], 0.5, 0.5, 0.5
                         end
                     else
-                        local gameName = info.richPresence or info.client or "Online"
+                        local gameName = info.richPresence or info.client or ns.L["Online"]
                         rightText, rr, rg, rb = gameName, 0.5, 0.5, 0.5
                     end
 
@@ -2084,17 +2088,17 @@ Datatexts:Register("friends", {
 
             if not hasAnyFriends then
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("No friends online", 0.7, 0.7, 0.7)
+                GameTooltip:AddLine(ns.L["No friends online"], 0.7, 0.7, 0.7)
             end
 
             GameTooltip:AddLine(" ")
             local ar2, ag2, ab2 = GetValueColor(); ar2, ag2, ab2 = ar2/255, ag2/255, ab2/255
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Friends", ar2, ag2, ab2)
-            GameTooltip:AddLine("|cffFFFFFFRight Click:|r Whisper/Invite Menu", ar2, ag2, ab2)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Open Friends"], ar2, ag2, ab2)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Right Click:"] .. "|r " .. ns.L["Whisper/Invite Menu"], ar2, ag2, ab2)
             if showNotes then
-                GameTooltip:AddLine("|cffFFFFFFRelease Shift:|r Show Zones", ar2, ag2, ab2)
+                GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Release Shift:"] .. "|r " .. ns.L["Show Zones"], ar2, ag2, ab2)
             else
-                GameTooltip:AddLine("|cffFFFFFFHold Shift:|r Show Notes", ar2, ag2, ab2)
+                GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Hold Shift:"] .. "|r " .. ns.L["Show Notes"], ar2, ag2, ab2)
             end
             GameTooltip:Show()
         end
@@ -2134,10 +2138,10 @@ Datatexts:Register("friends", {
                 end
 
                 MenuUtil.CreateContextMenu(self, function(_, root)
-                    root:CreateTitle("Friends Menu")
+                    root:CreateTitle(ns.L["Friends Menu"])
 
                     -- Whisper submenu
-                    local whisperMenu = root:CreateButton("Whisper")
+                    local whisperMenu = root:CreateButton(ns.L["Whisper"])
                     local hasWhisperTargets = false
 
                     -- Add WoW friends to whisper
@@ -2170,7 +2174,7 @@ Datatexts:Register("friends", {
                         hasWhisperTargets = true
                         local classColor = GetClassColor(info.className)
                         local colorCode = classColor and format("|cff%02x%02x%02x", classColor.r*255, classColor.g*255, classColor.b*255) or "|cffffffff"
-                        local versionName = PROJECT_NAMES[info.wowProjectID] or "Classic"
+                        local versionName = PROJECT_NAMES[info.wowProjectID] or ns.L["Classic"]
                         local displayName = info.characterName and info.characterName ~= "" and (colorCode .. info.characterName .. "|r (" .. info.accountName .. ")") or info.accountName
                         -- Capture accountName in local to ensure closure works correctly
                         local whisperName = info.accountName
@@ -2182,7 +2186,7 @@ Datatexts:Register("friends", {
                     -- Add BNet Other Games / App-only friends to whisper
                     for _, info in ipairs(friendsCache.bnetOther) do
                         hasWhisperTargets = true
-                        local gameName = info.richPresence or info.client or "Online"
+                        local gameName = info.richPresence or info.client or ns.L["Online"]
                         local displayName = info.accountName .. " |cff808080(" .. gameName .. ")|r"
                         -- Capture accountName in local to ensure closure works correctly
                         local whisperName = info.accountName
@@ -2192,12 +2196,12 @@ Datatexts:Register("friends", {
                     end
 
                     if not hasWhisperTargets then
-                        local noFriends = whisperMenu:CreateButton("No friends online")
+                        local noFriends = whisperMenu:CreateButton(ns.L["No friends online"])
                         noFriends:SetEnabled(false)
                     end
 
                     -- Invite submenu (only invitable friends)
-                    local inviteMenu = root:CreateButton("Invite")
+                    local inviteMenu = root:CreateButton(ns.L["Invite"])
                     local hasInviteTargets = false
 
                     -- WoW friends
@@ -2229,12 +2233,12 @@ Datatexts:Register("friends", {
                     end
 
                     if not hasInviteTargets then
-                        local noInvite = inviteMenu:CreateButton("No invitable friends")
+                        local noInvite = inviteMenu:CreateButton(ns.L["No invitable friends"])
                         noInvite:SetEnabled(false)
                     end
 
                     root:CreateDivider()
-                    root:CreateButton("Open Friends Panel", function()
+                    root:CreateButton(ns.L["Open Friends Panel"], function()
                         ToggleFriendsFrame(1)
                     end)
                 end)
@@ -2345,8 +2349,8 @@ end
 
 -- Guild datatext
 Datatexts:Register("guild", {
-    displayName = "Guild",
-    category = "Social",
+    displayName = ns.L["Guild"],
+    category = ns.L["Social"],
     description = "Displays online guild members with detailed tooltip",
 
     OnEnable = function(slotFrame, settings)
@@ -2357,13 +2361,13 @@ Datatexts:Register("guild", {
 
         local function Update()
             if not IsInGuild() then
-                text:SetText("No Guild")
+                text:SetText(ns.L["No Guild"])
                 return
             end
 
             local total, online = GetNumGuildMembers()
             local r, g, b = GetValueColor()
-            local label = GetLabel("Guild: ", "Gu: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Guild: "], ns.L["Gu: "], slotFrame.shortLabel, slotFrame.noLabel)
 
             if settings.showGuildName then
                 local guildName = GetGuildInfo("player")
@@ -2411,17 +2415,17 @@ Datatexts:Register("guild", {
             local vr, vg, vb = GetValueColor()
             local ar, ag, ab = vr/255, vg/255, vb/255
 
-            GameTooltip:AddLine((guildName or "Guild") .. (showNotes and " (Notes)" or ""), 1, 1, 1)
+            GameTooltip:AddLine((guildName or ns.L["Guild"]) .. (showNotes and (" " .. ns.L["(Notes)"]) or ""), 1, 1, 1)
 
             local motd = not InCombatLockdown() and GetGuildRosterMOTD()
             if motd and motd ~= "" then
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("MOTD:", 1, 0.8, 0)
+                GameTooltip:AddLine(ns.L["MOTD:"], 1, 0.8, 0)
                 GameTooltip:AddLine(motd, 0.8, 0.8, 0.8, true)
             end
 
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(showNotes and "Online Members (Notes)" or "Online Members", ar, ag, ab)
+            GameTooltip:AddLine(showNotes and ns.L["Online Members (Notes)"] or ns.L["Online Members"], ar, ag, ab)
 
             local memberCount = 0
 
@@ -2429,7 +2433,7 @@ Datatexts:Register("guild", {
                 if memberCount >= MAX_GUILD_TOOLTIP_DISPLAY then
                     local remaining = #guildCache.members - MAX_GUILD_TOOLTIP_DISPLAY
                     if remaining > 0 then
-                        GameTooltip:AddLine(format("... and %d more", remaining), 0.7, 0.7, 0.7)
+                        GameTooltip:AddLine(format(ns.L["... and %d more"], remaining), 0.7, 0.7, 0.7)
                     end
                     break
                 end
@@ -2469,12 +2473,12 @@ Datatexts:Register("guild", {
                         end
                     end
                     if noteText == "" then
-                        rightText, rr, rg, rb = "No note", 0.5, 0.5, 0.5
+                        rightText, rr, rg, rb = ns.L["No note"], 0.5, 0.5, 0.5
                     else
                         rightText, rr, rg, rb = noteText, 0.9, 0.9, 0.6
                     end
                 else
-                    rightText = info.zone or "Unknown"
+                    rightText = info.zone or ns.L["Unknown"]
                     rr, rg, rb = 0.7, 0.7, 0.7
                 end
 
@@ -2489,17 +2493,17 @@ Datatexts:Register("guild", {
             end
 
             if memberCount == 0 then
-                GameTooltip:AddLine("No members online", 0.7, 0.7, 0.7)
+                GameTooltip:AddLine(ns.L["No members online"], 0.7, 0.7, 0.7)
             end
 
             GameTooltip:AddLine(" ")
             local ar2, ag2, ab2 = GetValueColor(); ar2, ag2, ab2 = ar2/255, ag2/255, ab2/255
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Guild", ar2, ag2, ab2)
-            GameTooltip:AddLine("|cffFFFFFFRight Click:|r Whisper/Invite Menu", ar2, ag2, ab2)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Open Guild"], ar2, ag2, ab2)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Right Click:"] .. "|r " .. ns.L["Whisper/Invite Menu"], ar2, ag2, ab2)
             if showNotes then
-                GameTooltip:AddLine("|cffFFFFFFRelease Shift:|r Show Zones", ar2, ag2, ab2)
+                GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Release Shift:"] .. "|r " .. ns.L["Show Zones"], ar2, ag2, ab2)
             else
-                GameTooltip:AddLine("|cffFFFFFFHold Shift:|r Show Notes", ar2, ag2, ab2)
+                GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Hold Shift:"] .. "|r " .. ns.L["Show Notes"], ar2, ag2, ab2)
             end
             GameTooltip:Show()
         end
@@ -2541,10 +2545,10 @@ Datatexts:Register("guild", {
                 local playerName = UnitName("player") .. "-" .. GetNormalizedRealmName()
 
                 MenuUtil.CreateContextMenu(self, function(_, root)
-                    root:CreateTitle("Guild Menu")
+                    root:CreateTitle(ns.L["Guild Menu"])
 
                     -- Whisper submenu
-                    local whisperMenu = root:CreateButton("Whisper")
+                    local whisperMenu = root:CreateButton(ns.L["Whisper"])
                     local hasWhisperTargets = false
 
                     for _, info in ipairs(guildCache.members) do
@@ -2562,12 +2566,12 @@ Datatexts:Register("guild", {
                     end
 
                     if not hasWhisperTargets then
-                        local noMembers = whisperMenu:CreateButton("No members online")
+                        local noMembers = whisperMenu:CreateButton(ns.L["No members online"])
                         noMembers:SetEnabled(false)
                     end
 
                     -- Invite submenu (exclude mobile-only and already grouped)
-                    local inviteMenu = root:CreateButton("Invite")
+                    local inviteMenu = root:CreateButton(ns.L["Invite"])
                     local hasInviteTargets = false
 
                     for _, info in ipairs(guildCache.members) do
@@ -2586,12 +2590,12 @@ Datatexts:Register("guild", {
                     end
 
                     if not hasInviteTargets then
-                        local noInvite = inviteMenu:CreateButton("No invitable members")
+                        local noInvite = inviteMenu:CreateButton(ns.L["No invitable members"])
                         noInvite:SetEnabled(false)
                     end
 
                     root:CreateDivider()
-                    root:CreateButton("Open Guild Panel", function()
+                    root:CreateButton(ns.L["Open Guild Panel"], function()
                         ToggleGuildFrame()
                     end)
                 end)
@@ -2615,8 +2619,8 @@ Datatexts:Register("guild", {
 
 -- Loot Spec datatext
 Datatexts:Register("lootspec", {
-    displayName = "Loot Specialization",
-    category = "Character",
+    displayName = ns.L["Loot Specialization"],
+    category = ns.L["Character"],
     description = "Displays and changes loot specialization",
 
     OnEnable = function(slotFrame, settings)
@@ -2626,7 +2630,7 @@ Datatexts:Register("lootspec", {
         local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
-            local label = GetLabel("Loot: ", "L: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Loot: "], ns.L["L: "], slotFrame.shortLabel, slotFrame.noLabel)
             local specIndex = GetSpecialization()
             if not specIndex then
                 local r, g, b = GetValueColor()
@@ -2682,7 +2686,7 @@ Datatexts:Register("lootspec", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Loot Specialization", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Loot Specialization"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local specIndex = GetSpecialization()
@@ -2706,17 +2710,17 @@ Datatexts:Register("lootspec", {
 
                 if specName then
                     if lootSpec == 0 then
-                        GameTooltip:AddLine(string.format("Current: %s (Auto)", specName), 1, 1, 1)
+                        GameTooltip:AddLine(string.format(ns.L["Current: %s (Auto)"], specName), 1, 1, 1)
                     else
-                        GameTooltip:AddLine(string.format("Current: %s", specName), 1, 1, 1)
+                        GameTooltip:AddLine(string.format(ns.L["Current: %s"], specName), 1, 1, 1)
                     end
                 end
             end
 
             GameTooltip:AddLine(" ")
             local ar, ag, ab = GetValueColor(); ar, ag, ab = ar/255, ag/255, ab/255
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Change Loot Spec", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFShift+Left Click:|r Open Talents", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Change Loot Spec"], ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Shift+Left Click:"] .. "|r " .. ns.L["Open Talents"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2777,8 +2781,8 @@ Datatexts:Register("lootspec", {
 
 -- Bags datatext
 Datatexts:Register("bags", {
-    displayName = "Bags",
-    category = "Character",
+    displayName = ns.L["Bags"],
+    category = ns.L["Character"],
     description = "Displays bag space usage",
 
     OnEnable = function(slotFrame, settings)
@@ -2827,7 +2831,7 @@ Datatexts:Register("bags", {
             end
 
             local r, g, b = GetValueColor()
-            local label = GetLabel("Bags: ", "B: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Bags: "], ns.L["B: "], slotFrame.shortLabel, slotFrame.noLabel)
             text:SetFormattedText(label .. "|cff%02x%02x%02x%d/%d|r", r, g, b, usedSlots, totalSlots)
         end
 
@@ -2843,7 +2847,7 @@ Datatexts:Register("bags", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Bags", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Bags"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local iconString = "|T%s:14:14:0:0:64:64:4:60:4:60|t  %s"
@@ -2880,7 +2884,7 @@ Datatexts:Register("bags", {
 
             GameTooltip:AddLine(" ")
             local ar, ag, ab = GetValueColor(); ar, ag, ab = ar/255, ag/255, ab/255
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Toggle Bags", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Toggle Bags"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2904,8 +2908,8 @@ Datatexts:Register("bags", {
 
 -- Coordinates datatext
 Datatexts:Register("coords", {
-    displayName = "Coordinates",
-    category = "Character",
+    displayName = ns.L["Coordinates"],
+    category = ns.L["Character"],
     description = "Displays player map coordinates",
 
     OnEnable = function(slotFrame, settings)
@@ -2917,7 +2921,7 @@ Datatexts:Register("coords", {
         local function Update()
             local mapID = C_Map.GetBestMapForUnit("player")
             local r, g, b = GetValueColor()
-            local label = GetLabel("Coords: ", "", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["Coords: "], "", slotFrame.shortLabel, slotFrame.noLabel)
 
             if mapID then
                 local pos = C_Map.GetPlayerMapPosition(mapID, "player")
@@ -2941,15 +2945,15 @@ Datatexts:Register("coords", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Coordinates", 1, 1, 1)
-            GameTooltip:AddLine(GetZoneText() or "Unknown", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Coordinates"], 1, 1, 1)
+            GameTooltip:AddLine(GetZoneText() or ns.L["Unknown"], 1, 1, 1)
             local subzone = GetSubZoneText()
             if subzone and subzone ~= "" then
                 GameTooltip:AddLine(subzone, 0.7, 0.7, 0.7)
             end
             GameTooltip:AddLine(" ")
             local ar, ag, ab = GetValueColor(); ar, ag, ab = ar/255, ag/255, ab/255
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Map", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Open Map"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2982,8 +2986,8 @@ local currenciesHookApplied = false
 local activeCurrenciesFrame = nil  -- Track the active currencies frame for hook callback
 
 Datatexts:Register("currencies", {
-    displayName = "Currencies",
-    category = "Character",
+    displayName = ns.L["Currencies"],
+    category = ns.L["Character"],
     description = "Displays backpack currencies (adaptive to slot size)",
 
     OnEnable = function(slotFrame, settings)
@@ -3113,7 +3117,7 @@ Datatexts:Register("currencies", {
                 text:SetText(displayString)
             else
                 local r, g, b = GetValueColor()
-                text:SetFormattedText("|cff%02x%02x%02x%s|r", r, g, b, "No Currencies")
+                text:SetFormattedText("|cff%02x%02x%02x%s|r", r, g, b, ns.L["No Currencies"])
             end
             -- Content-sized host: tell the bar our width changed (the
             -- provider pattern — ldb_bridge/providers_extra do the same).
@@ -3149,7 +3153,7 @@ Datatexts:Register("currencies", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Currencies", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Currencies"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             -- Gold (always shown in tooltip)
@@ -3157,7 +3161,7 @@ Datatexts:Register("currencies", {
             local gold = floor(money / 10000)
             local silver = floor((money % 10000) / 100)
             local copper = money % 100
-            GameTooltip:AddDoubleLine(goldIcon .. " Gold", format("%sg %ds %dc", BreakUpLargeNumbers and BreakUpLargeNumbers(gold) or gold, silver, copper), 1, 0.82, 0, 1, 1, 1)
+            GameTooltip:AddDoubleLine(goldIcon .. " " .. ns.L["Gold"], format("%sg %ds %dc", BreakUpLargeNumbers and BreakUpLargeNumbers(gold) or gold, silver, copper), 1, 0.82, 0, 1, 1, 1)
 
             -- All backpack currencies in configured order
             local orderedCurrencies = GetOrderedCurrencies()
@@ -3172,13 +3176,13 @@ Datatexts:Register("currencies", {
                 end
             else
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("No currencies tracked", 0.7, 0.7, 0.7)
-                GameTooltip:AddLine("Open Currency Panel to add currencies", 0.7, 0.7, 0.7)
+                GameTooltip:AddLine(ns.L["No currencies tracked"], 0.7, 0.7, 0.7)
+                GameTooltip:AddLine(ns.L["Open Currency Panel to add currencies"], 0.7, 0.7, 0.7)
             end
 
             GameTooltip:AddLine(" ")
             local ar, ag, ab = GetValueColor(); ar, ag, ab = ar/255, ag/255, ab/255
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Currency Panel", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Open Currency Panel"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -3236,8 +3240,8 @@ local function GetKeyColor(level)
 end
 
 Datatexts:Register("mythickey", {
-    displayName = "Mythic+ Key",
-    category = "Character",
+    displayName = ns.L["Mythic+ Key"],
+    category = ns.L["Character"],
     description = "Displays current Mythic+ keystone",
 
     OnEnable = function(slotFrame, settings)
@@ -3257,7 +3261,7 @@ Datatexts:Register("mythickey", {
                 text:SetFormattedText("|cff%02x%02x%02x+%d|r |cff%02x%02x%02x%s|r", kr*255, kg*255, kb*255, keystoneLevel, vr, vg, vb, shortName)
             else
                 local r, g, b = GetValueColor()
-                text:SetFormattedText("|cff%02x%02x%02x%s|r", r, g, b, "No Key")
+                text:SetFormattedText("|cff%02x%02x%02x%s|r", r, g, b, ns.L["No Key"])
             end
         end
 
@@ -3274,7 +3278,7 @@ Datatexts:Register("mythickey", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Mythic+ Keystone", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Mythic+ Keystone"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local keystoneLevel = C_MythicPlus.GetOwnedKeystoneLevel()
@@ -3283,14 +3287,14 @@ Datatexts:Register("mythickey", {
             if keystoneLevel and keystoneLevel > 0 and mapID then
                 local name = C_ChallengeMode.GetMapUIInfo(mapID)
                 local r, g, b = GetKeyColor(keystoneLevel)
-                GameTooltip:AddDoubleLine("Current Key:", format("|cff%02x%02x%02x+%d %s|r", r*255, g*255, b*255, keystoneLevel, name or "Unknown"), 1, 1, 1)
+                GameTooltip:AddDoubleLine(ns.L["Current Key:"], format("|cff%02x%02x%02x+%d %s|r", r*255, g*255, b*255, keystoneLevel, name or ns.L["Unknown"]), 1, 1, 1)
             else
-                GameTooltip:AddLine("No keystone in bags", 0.7, 0.7, 0.7)
+                GameTooltip:AddLine(ns.L["No keystone in bags"], 0.7, 0.7, 0.7)
             end
 
             GameTooltip:AddLine(" ")
             local ar, ag, ab = GetValueColor(); ar, ag, ab = ar/255, ag/255, ab/255
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Group Finder", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Open Group Finder"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -3318,8 +3322,8 @@ Datatexts:Register("mythickey", {
 ---=================================================================================
 
 Datatexts:Register("playerspec", {
-    displayName = "Player Spec",
-    category = "Character",
+    displayName = ns.L["Player Spec"],
+    category = ns.L["Character"],
     description = "Displays current spec, talent loadout, and loot spec with switching",
 
     OnEnable = function(slotFrame, settings)
@@ -3400,7 +3404,7 @@ Datatexts:Register("playerspec", {
             -- Check for starter build
             if C_ClassTalents.GetHasStarterBuild() and C_ClassTalents.GetStarterBuildActive() then
                 frame.activeLoadoutID = nil  -- Clear when using starter
-                return "Starter Build"
+                return ns.L["Starter Build"]
             end
 
             -- Try TLM first
@@ -3425,7 +3429,7 @@ Datatexts:Register("playerspec", {
         local function Update()
             local specIndex = GetSpecialization()
             if not specIndex then
-                text:SetText("No Spec")
+                text:SetText(ns.L["No Spec"])
                 return
             end
 
@@ -3502,7 +3506,7 @@ Datatexts:Register("playerspec", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Talent Specialization", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Talent Specialization"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             -- Get configured accent color for headers and active indicators
@@ -3514,12 +3518,12 @@ Datatexts:Register("playerspec", {
             local numSpecs = GetNumSpecializations() or 0
 
             -- Show all specs
-            GameTooltip:AddLine("Specializations", ar, ag, ab)
+            GameTooltip:AddLine(ns.L["Specializations"], ar, ag, ab)
             for i = 1, numSpecs do
                 local specID, specName, _, icon = GetSpecializationInfo(i)
                 if specName then
                     local iconText = format(iconString, icon)
-                    local status = (i == currentSpec) and " " .. activeColor .. "(Active)|r" or ""
+                    local status = (i == currentSpec) and " " .. activeColor .. ns.L["(Active)"] .. "|r" or ""
                     GameTooltip:AddLine(iconText .. " " .. specName .. status, 1, 1, 1)
                 end
             end
@@ -3531,20 +3535,20 @@ Datatexts:Register("playerspec", {
                     local loadouts = GetAllLoadouts(specID)
                     if #loadouts > 0 or C_ClassTalents.GetHasStarterBuild() then
                         GameTooltip:AddLine(" ")
-                        local headerText = hasTLM and "Loadouts (TLM)" or "Loadouts"
+                        local headerText = hasTLM and ns.L["Loadouts (TLM)"] or ns.L["Loadouts"]
                         GameTooltip:AddLine(headerText, ar, ag, ab)
 
                         -- Starter build
                         if C_ClassTalents.GetHasStarterBuild() then
                             local isActive = C_ClassTalents.GetStarterBuildActive()
-                            local status = isActive and " " .. activeColor .. "(Active)|r" or ""
-                            GameTooltip:AddLine("|cff0070DD" .. "Starter Build" .. "|r" .. status, 1, 1, 1)
+                            local status = isActive and " " .. activeColor .. ns.L["(Active)"] .. "|r" or ""
+                            GameTooltip:AddLine("|cff0070DD" .. ns.L["Starter Build"] .. "|r" .. status, 1, 1, 1)
                         end
 
                         for _, loadout in ipairs(loadouts) do
                             local isActive = (loadout.id == frame.activeLoadoutID)
-                            local status = isActive and " " .. activeColor .. "(Active)|r" or ""
-                            local name = loadout.displayName or loadout.name or "Unknown"
+                            local status = isActive and " " .. activeColor .. ns.L["(Active)"] .. "|r" or ""
+                            local name = loadout.displayName or loadout.name or ns.L["Unknown"]
                             -- Mark custom TLM loadouts (explicit == false, nil means unknown)
                             if loadout.isBlizzardLoadout == false then
                                 name = activeColor .. "[TLM]|r " .. name
@@ -3557,11 +3561,11 @@ Datatexts:Register("playerspec", {
 
             -- Show loot spec
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Loot Specialization", ar, ag, ab)
+            GameTooltip:AddLine(ns.L["Loot Specialization"], ar, ag, ab)
             local lootSpec = GetLootSpecialization()
             if lootSpec == 0 then
                 local _, specName = GetSpecializationInfo(currentSpec)
-                GameTooltip:AddLine(format("%s (Auto)", specName or "Current Spec"), 1, 1, 1)
+                GameTooltip:AddLine(format(ns.L["%s (Auto)"], specName or ns.L["Current Spec"]), 1, 1, 1)
             else
                 for i = 1, numSpecs do
                     local specID, specName = GetSpecializationInfo(i)
@@ -3574,10 +3578,10 @@ Datatexts:Register("playerspec", {
 
             GameTooltip:AddLine(" ")
             local ar, ag, ab = GetValueColor(); ar, ag, ab = ar/255, ag/255, ab/255
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Change Spec", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFShift + Left Click:|r Open Talents", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFCtrl + Left Click:|r Change Loadout", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFRight Click:|r Change Loot Spec", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Left Click:"] .. "|r " .. ns.L["Change Spec"], ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Shift + Left Click:"] .. "|r " .. ns.L["Open Talents"], ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Ctrl + Left Click:"] .. "|r " .. ns.L["Change Loadout"], ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFF" .. ns.L["Right Click:"] .. "|r " .. ns.L["Change Loot Spec"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -3605,13 +3609,13 @@ Datatexts:Register("playerspec", {
                     if not specID or not PlayerUtil.CanUseClassTalents() then return end
 
                     MenuUtil.CreateContextMenu(self, function(_, root)
-                        local titleText = hasTLM and "Switch Loadout (TLM)" or "Switch Loadout"
+                        local titleText = hasTLM and ns.L["Switch Loadout (TLM)"] or ns.L["Switch Loadout"]
                         root:CreateTitle(titleText)
 
                         -- Starter build
                         if C_ClassTalents.GetHasStarterBuild() then
                             local isActive = C_ClassTalents.GetStarterBuildActive()
-                            root:CreateButton("|cff0070DDStarter Build|r" .. (isActive and activeMarker or ""), function()
+                            root:CreateButton("|cff0070DD" .. ns.L["Starter Build"] .. "|r" .. (isActive and activeMarker or ""), function()
                                 if not _G.PlayerSpellsFrame then
                                     if _G.PlayerSpellsFrame_LoadUI then
                                         _G.PlayerSpellsFrame_LoadUI()
@@ -3631,7 +3635,7 @@ Datatexts:Register("playerspec", {
                         local loadouts = GetAllLoadouts(specID)
                         for _, loadout in ipairs(loadouts) do
                             local isActive = (loadout.id == frame.activeLoadoutID)
-                            local name = loadout.displayName or loadout.name or "Unknown"
+                            local name = loadout.displayName or loadout.name or ns.L["Unknown"]
                             -- Mark custom TLM loadouts (explicit == false, nil means unknown)
                             if loadout.isBlizzardLoadout == false then
                                 name = accentColor .. "[TLM]|r " .. name
@@ -3646,7 +3650,7 @@ Datatexts:Register("playerspec", {
                     -- Spec menu
                     local numSpecs = GetNumSpecializations() or 0
                     MenuUtil.CreateContextMenu(self, function(_, root)
-                        root:CreateTitle("Switch Specialization")
+                        root:CreateTitle(ns.L["Switch Specialization"])
                         for i = 1, numSpecs do
                             local specID, specName, _, icon = GetSpecializationInfo(i)
                             if specName then
@@ -3654,7 +3658,7 @@ Datatexts:Register("playerspec", {
                                 local isActive = (i == specIndex)
                                 root:CreateButton(iconText .. " " .. specName .. (isActive and activeMarker or ""), function()
                                     if InCombatLockdown() then
-                                        print("|cffFF6B6BQUI:|r Cannot change specialization in combat")
+                                        print("|cffFF6B6BQUI:|r " .. ns.L["Cannot change specialization in combat"])
                                         return
                                     end
                                     C_SpecializationInfo.SetSpecialization(i)
@@ -3669,12 +3673,12 @@ Datatexts:Register("playerspec", {
                 local currentLoot = GetLootSpecialization()
 
                 MenuUtil.CreateContextMenu(self, function(_, root)
-                    root:CreateTitle("Loot Specialization")
+                    root:CreateTitle(ns.L["Loot Specialization"])
 
                     -- Auto option
                     local _, currentSpecName = GetSpecializationInfo(specIndex)
                     local isAuto = (currentLoot == 0)
-                    root:CreateButton(format("%s (Auto)", currentSpecName or "Current") .. (isAuto and activeMarker or ""), function()
+                    root:CreateButton(format(ns.L["%s (Auto)"], currentSpecName or ns.L["Current"]) .. (isAuto and activeMarker or ""), function()
                         SetLootSpecialization(0)
                     end)
 
@@ -3712,8 +3716,8 @@ Datatexts:Register("playerspec", {
 
 -- Experience datatext
 Datatexts:Register("experience", {
-    displayName = "Experience",
-    category = "Character",
+    displayName = ns.L["Experience"],
+    category = ns.L["Character"],
     description = "Displays XP percentage to next level with detailed tooltip",
 
     OnEnable = function(slotFrame, settings)
@@ -3729,9 +3733,9 @@ Datatexts:Register("experience", {
 
             -- Check if at max level
             if level >= maxLevel then
-                local label = GetLabel("XP: ", "X: ", slotFrame.shortLabel, slotFrame.noLabel)
+                local label = GetLabel(ns.L["XP: "], ns.L["X: "], slotFrame.shortLabel, slotFrame.noLabel)
                 local r, g, b = GetValueColor()
-                text:SetFormattedText("%s|cff%02x%02x%02xMax|r", label, r, g, b)
+                text:SetFormattedText("%s|cff%02x%02x%02x" .. ns.L["Max"] .. "|r", label, r, g, b)
                 return
             end
 
@@ -3741,7 +3745,7 @@ Datatexts:Register("experience", {
             if maxXP == 0 then maxXP = 1 end  -- Avoid division by zero
             local percent = floor((currXP / maxXP) * 100 + 0.5)
 
-            local label = GetLabel("XP: ", "X: ", slotFrame.shortLabel, slotFrame.noLabel)
+            local label = GetLabel(ns.L["XP: "], ns.L["X: "], slotFrame.shortLabel, slotFrame.noLabel)
             local r, g, b = GetValueColor()
             text:SetFormattedText("%s|cff%02x%02x%02x%d%%|r", label, r, g, b, percent)
         end
@@ -3750,14 +3754,14 @@ Datatexts:Register("experience", {
         frame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Experience", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Experience"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local level = UnitLevel("player")
             local maxLevel = GetMaxLevelForPlayerExpansion and GetMaxLevelForPlayerExpansion() or MAX_PLAYER_LEVEL or 80
 
             if level >= maxLevel then
-                GameTooltip:AddLine("Maximum level reached!", 0.5, 1, 0.5)
+                GameTooltip:AddLine(ns.L["Maximum level reached!"], 0.5, 1, 0.5)
             else
                 local currXP = UnitXP("player")
                 local maxXP = UnitXPMax("player")
@@ -3771,18 +3775,18 @@ Datatexts:Register("experience", {
                     return s:sub(1, pos) .. s:sub(pos + 1):gsub("(%d%d%d)", ",%1")
                 end
 
-                GameTooltip:AddDoubleLine("Current XP:", FormatNumber(currXP) .. " / " .. FormatNumber(maxXP), 0.7, 0.7, 0.7, 1, 1, 1)
-                GameTooltip:AddDoubleLine("Remaining:", FormatNumber(remaining) .. " to level " .. (level + 1), 0.7, 0.7, 0.7, 1, 1, 1)
+                GameTooltip:AddDoubleLine(ns.L["Current XP:"], FormatNumber(currXP) .. " / " .. FormatNumber(maxXP), 0.7, 0.7, 0.7, 1, 1, 1)
+                GameTooltip:AddDoubleLine(ns.L["Remaining:"], FormatNumber(remaining) .. ns.L[" to level "] .. (level + 1), 0.7, 0.7, 0.7, 1, 1, 1)
 
                 -- Rested XP
                 local exhaustionThreshold = GetXPExhaustion()
                 if exhaustionThreshold and exhaustionThreshold > 0 then
                     GameTooltip:AddLine(" ")
-                    GameTooltip:AddDoubleLine("Rested XP:", FormatNumber(exhaustionThreshold), 0.2, 0.6, 1, 0.2, 0.6, 1)
+                    GameTooltip:AddDoubleLine(ns.L["Rested XP:"], FormatNumber(exhaustionThreshold), 0.2, 0.6, 1, 0.2, 0.6, 1)
 
                     -- Calculate rested bonus as percentage of remaining
                     local restedPercent = floor((exhaustionThreshold / maxXP) * 100 + 0.5)
-                    GameTooltip:AddDoubleLine("Rested Bonus:", restedPercent .. "% of level", 0.2, 0.6, 1, 0.2, 0.6, 1)
+                    GameTooltip:AddDoubleLine(ns.L["Rested Bonus:"], restedPercent .. ns.L["% of level"], 0.2, 0.6, 1, 0.2, 0.6, 1)
                 end
 
                 -- Rest state
@@ -3790,9 +3794,9 @@ Datatexts:Register("experience", {
                 if exhaustionStateName then
                     GameTooltip:AddLine(" ")
                     if exhaustionStateID == 1 then
-                        GameTooltip:AddLine("Rested (150% XP from kills)", 0.2, 0.6, 1)
+                        GameTooltip:AddLine(ns.L["Rested (150% XP from kills)"], 0.2, 0.6, 1)
                     else
-                        GameTooltip:AddLine("Normal XP rate", 0.7, 0.7, 0.7)
+                        GameTooltip:AddLine(ns.L["Normal XP rate"], 0.7, 0.7, 0.7)
                     end
                 end
             end

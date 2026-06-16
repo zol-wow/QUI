@@ -8,7 +8,7 @@ local V2 = {}
 ns.QUI_QoLTile = V2
 
 local SEARCH_TAB_INDEX = 17
-local SEARCH_TAB_NAME = "Quality of Life"
+local SEARCH_TAB_NAME = ns.L["Quality of Life"]
 
 local function SubPage(id, name, featureId, subTabIndex, subTabName)
     local routes = { { tabIndex = SEARCH_TAB_INDEX, subTabIndex = subTabIndex } }
@@ -39,17 +39,17 @@ function V2.Register(frame)
     Opts.RegisterFeatureTile(frame, {
         id = "qol",
         icon = "Q",
-        name = "Quality of Life",
+        name = ns.L["Quality of Life"],
         subPages = {
-            SubPage("fpsPreset",        "FPS Preset",  "fpsPreset",        1,  "FPS Preset"),
-            SubPage("combatText",       "Combat Text", "combatText",       2,  "Combat Text"),
-            SubPage("automation",       "Automation",  "automation",       3,  "Automation"),
-            SubPage("popupBlocker",     "Popups",      "popupBlocker",     4,  "Popups"),
-            SubPage("quickSalvage",     "Salvage",     "quickSalvage",     5,  "Salvage"),
-            SubPage("consumables",      "Consumables", "consumables",      6,  "Consumables"),
-            SubPage("targetDistance",   "Distance",    "targetDistance",   7,  "Distance"),
-            SubPage("quiPanel",         "Panel",       "quiPanel",         8,  "Panel"),
-            SubPage("reloadBehavior",   "Reload",      "reloadBehavior",   9,  "Reload"),
+            SubPage("fpsPreset",        ns.L["FPS Preset"],  "fpsPreset",        1,  ns.L["FPS Preset"]),
+            SubPage("combatText",       ns.L["Combat Text"], "combatText",       2,  ns.L["Combat Text"]),
+            SubPage("automation",       ns.L["Automation"],  "automation",       3,  ns.L["Automation"]),
+            SubPage("popupBlocker",     ns.L["Popups"],      "popupBlocker",     4,  ns.L["Popups"]),
+            SubPage("quickSalvage",     ns.L["Salvage"],     "quickSalvage",     5,  ns.L["Salvage"]),
+            SubPage("consumables",      ns.L["Consumables"], "consumables",      6,  ns.L["Consumables"]),
+            SubPage("targetDistance",   ns.L["Distance"],    "targetDistance",   7,  ns.L["Distance"]),
+            SubPage("quiPanel",         ns.L["Panel"],       "quiPanel",         8,  ns.L["Panel"]),
+            SubPage("reloadBehavior",   ns.L["Reload"],      "reloadBehavior",   9,  ns.L["Reload"]),
         },
     })
 end

@@ -102,6 +102,8 @@ local ns = {
     } },
 }
 
+-- tab_ui.lua indexes ns.L["..."] at load (post-i18n); install identity resolver.
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_Chat/chat/tab_ui.lua"))("QUI", ns)
 local TabUI = ns.QUI.Chat.TabUI
 TabUI.EnsureAttached()

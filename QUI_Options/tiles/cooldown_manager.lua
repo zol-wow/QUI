@@ -13,8 +13,8 @@ function V2.Register(frame)
         featureId = "cooldownManagerContainersPage",
         id = "cooldown_manager",
         icon = "C",
-        name = "Cooldown Manager",
-        primaryCTA = { label = "Edit in Layout Mode", moverKey = "cdmEssential" },
+        name = ns.L["Cooldown Manager"],
+        primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "cdmEssential" },
         previewHeight = 230,
         navRoutes = {
             { tabIndex = 4, subTabIndex = 0, subPageIndex = 1 },
@@ -23,15 +23,15 @@ function V2.Register(frame)
         },
         searchContext = {
             tabIndex = 4,
-            tabName = "Cooldown Manager",
+            tabName = ns.L["Cooldown Manager"],
             subTabIndex = 0,
-            subTabName = "Containers",
+            subTabName = ns.L["Containers"],
         },
         renderOptions = { surface = "full" },
         relatedSettings = {
-            { label = "Buff/Debuff",   tileId = "action_bars", subPageIndex = 2 },
-            { label = "Raid Buffs",    tileId = "gameplay", subPageIndex = 5 },
-            { label = "Resource Bars", tileId = "resource_bars", subPageIndex = 1 },
+            { label = ns.L["Buff/Debuff"],   tileId = "action_bars", subPageIndex = 2 },
+            { label = ns.L["Raid Buffs"],    tileId = "gameplay", subPageIndex = 5 },
+            { label = ns.L["Resource Bars"], tileId = "resource_bars", subPageIndex = 1 },
         },
     })
 end

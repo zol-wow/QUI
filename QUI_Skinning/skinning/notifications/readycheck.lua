@@ -3,6 +3,14 @@ local ADDON_NAME, ns = ...
 local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- READY CHECK FRAME SKINNING
 -- QUI skinning for ReadyCheckFrame
@@ -329,11 +337,11 @@ local function SkinReadyCheckFrame()
     if not SkinBase.GetFrameData(frame, "title") then
         local title = targetFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         title:SetPoint("TOP", targetFrame, "TOP", 0, -8)
-        title:SetFont(STANDARD_TEXT_FONT, 13, FONT_FLAGS)
+        CJKFont(title, STANDARD_TEXT_FONT, 13, FONT_FLAGS)
         if title.SetDrawLayer then title:SetDrawLayer("OVERLAY", 7) end
         SkinBase.SetFrameData(frame, "title", title)
     end
-    SkinBase.GetFrameData(frame, "title"):SetText("Ready Check")
+    SkinBase.GetFrameData(frame, "title"):SetText(ns.L["Ready Check"])
     SkinBase.GetFrameData(frame, "title"):SetTextColor(sr, sg, sb, 1)  -- Use skin color for title
 
     -- Hook Show to reapply hiding and restore position (Blizzard may reset)
@@ -421,7 +429,7 @@ end
 local Helpers = ns.Helpers
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
-        key = "readyCheck", label = "Ready Check", category = "Skinning", prefix = "readyCheck",
+        key = "readyCheck", label = ns.L["Ready Check"], category = "Skinning", prefix = "readyCheck",
         db = function(p) return p.general end,
         refresh = function() if _G.QUI_RefreshReadyCheckColors then _G.QUI_RefreshReadyCheckColors() end end,
         legacy = { override = "readyCheckBorderOverride", useClass = "readyCheckBorderUseClassColor" },

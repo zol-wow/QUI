@@ -15,7 +15,7 @@ local ContextMenu = {}
 InfoBar.ContextMenu = ContextMenu
 
 local ZONE_ORDER = { "left", "center", "right" }
-local ZONE_LABELS = { left = "Left Zone", center = "Center Zone", right = "Right Zone" }
+local ZONE_LABELS = { left = ns.L["Left Zone"], center = ns.L["Center Zone"], right = ns.L["Right Zone"] }
 
 ---------------------------------------------------------------------------
 -- PURE HELPERS (headlessly unit-tested: tests/unit/infobar_contextmenu_test.lua)
@@ -149,23 +149,23 @@ local function OpenInfoBarSettings()
 end
 
 local OVERRIDE_TOGGLES = {
-    { key = "shortLabel",   label = "Short Label" },
-    { key = "noLabel",      label = "No Label" },
-    { key = "hideIcon",     label = "Hide Icon" },
-    { key = "hideText",     label = "Hide Text" },
-    { key = "clickThrough", label = "Click-Through" },
+    { key = "shortLabel",   label = ns.L["Short Label"] },
+    { key = "noLabel",      label = ns.L["No Label"] },
+    { key = "hideIcon",     label = ns.L["Hide Icon"] },
+    { key = "hideText",     label = ns.L["Hide Text"] },
+    { key = "clickThrough", label = ns.L["Click-Through"] },
 }
 
 local function BuildMenu(owner, zoneKey)
     MenuUtil.CreateContextMenu(owner, function(_, root)
-        root:CreateTitle("Info Bar — " .. (ZONE_LABELS[zoneKey] or "Bar"))
+        root:CreateTitle(ns.L["Info Bar"] .. " — " .. (ZONE_LABELS[zoneKey] or ns.L["Bar"]))
         local db = GetDB()
         if not db then return end
         local Datatexts = QUICore.Datatexts
 
         if not Datatexts then
             local note = root:CreateButton(
-                "Datatexts module is disabled — enable it under Modules.",
+                ns.L["Datatexts module is disabled — enable it under Modules."],
                 function() end)
             note:SetEnabled(false)
         else
@@ -173,7 +173,7 @@ local function BuildMenu(owner, zoneKey)
             -- clicked zone, unchecking removes from the owning zone.
             -- Checkboxes respond with MenuResponse.Refresh by default, so
             -- the menu stays open for adding several widgets in a row.
-            local add = root:CreateButton("Add Widget")
+            local add = root:CreateButton(ns.L["Add Widget"])
             for _, cat in ipairs(ContextMenu.BuildCategories(Datatexts:GetAll())) do
                 local catMenu = add:CreateButton(cat.category)
                 for _, w in ipairs(cat.widgets) do
@@ -197,10 +197,10 @@ local function BuildMenu(owner, zoneKey)
             local placed = ContextMenu.PlacedList(db,
                 function(id) return Datatexts:Get(id) end)
             if #placed > 0 then
-                local cfg = root:CreateButton("Configure Widget")
+                local cfg = root:CreateButton(ns.L["Configure Widget"])
                 for _, item in ipairs(placed) do
                     local wMenu = cfg:CreateButton(item.loaded and item.name
-                        or (item.name .. " (not loaded)"))
+                        or (item.name .. " " .. ns.L["(not loaded)"]))
                     if item.loaded then
                         for _, t in ipairs(OVERRIDE_TOGGLES) do
                             wMenu:CreateCheckbox(t.label,
@@ -215,7 +215,7 @@ local function BuildMenu(owner, zoneKey)
                         end
                         wMenu:CreateDivider()
                     end
-                    wMenu:CreateButton("Remove from Bar", function()
+                    wMenu:CreateButton(ns.L["Remove from Bar"], function()
                         ContextMenu.RemoveWidget(db, item.id)
                         RefreshAll()
                     end)
@@ -224,7 +224,7 @@ local function BuildMenu(owner, zoneKey)
         end
 
         root:CreateDivider()
-        root:CreateButton("Info Bar Settings…", OpenInfoBarSettings)
+        root:CreateButton(ns.L["Info Bar Settings…"], OpenInfoBarSettings)
     end)
 end
 

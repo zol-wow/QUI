@@ -29,11 +29,11 @@ assert(src:find("GetCombatSessionSourceFromID", 1, true),
     "breakdowns must support C_DamageMeter.GetCombatSessionSourceFromID")
 assert(src:find("GetAvailableCombatSessions", 1, true),
     "menu must use C_DamageMeter.GetAvailableCombatSessions")
-assert(src:find('root:CreateButton("Previous"', 1, true),
+assert(src:find('root:CreateButton(ns.L["Previous"]', 1, true),
     "Session menu must expose a Previous submenu")
-assert(src:find('root:CreateRadio("Current"', 1, true),
+assert(src:find('root:CreateRadio(ns.L["Current"]', 1, true),
     "Current session row should keep the normal radio selector")
-assert(src:find('root:CreateRadio("Overall"', 1, true),
+assert(src:find('root:CreateRadio(ns.L["Overall"]', 1, true),
     "Overall session row should keep the normal radio selector")
 assert(not src:find("previousMenu:CreateButton(availableSession.name", 1, true),
     "Previous submenu must not pass raw session names directly to menu text")

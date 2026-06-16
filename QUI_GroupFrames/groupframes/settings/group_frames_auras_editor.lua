@@ -1,4 +1,11 @@
 local ADDON_NAME, ns = ...
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 
 -- Unified Auras editor: renders the element list for a single spec bucket of
 -- auras.elements (the v46 model from groupframes_aura_model.lua). Each element
@@ -26,73 +33,73 @@ local SUGGEST_CELL_STRIDE = SUGGEST_CELL_SIZE + SUGGEST_CELL_GAP
 local FALLBACK_ICON = 134400
 
 local NINE_POINT_OPTIONS = {
-    { value = "TOPLEFT", text = "Top Left" },
-    { value = "TOP", text = "Top" },
-    { value = "TOPRIGHT", text = "Top Right" },
-    { value = "LEFT", text = "Left" },
-    { value = "CENTER", text = "Center" },
-    { value = "RIGHT", text = "Right" },
-    { value = "BOTTOMLEFT", text = "Bottom Left" },
-    { value = "BOTTOM", text = "Bottom" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
+    { value = "TOPLEFT", text = ns.L["Top Left"] },
+    { value = "TOP", text = ns.L["Top"] },
+    { value = "TOPRIGHT", text = ns.L["Top Right"] },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "CENTER", text = ns.L["Center"] },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "BOTTOMLEFT", text = ns.L["Bottom Left"] },
+    { value = "BOTTOM", text = ns.L["Bottom"] },
+    { value = "BOTTOMRIGHT", text = ns.L["Bottom Right"] },
 }
 
 local AURA_GROW_OPTIONS = {
-    { value = "LEFT", text = "Left" },
-    { value = "RIGHT", text = "Right" },
-    { value = "CENTER", text = "Center" },
-    { value = "UP", text = "Up" },
-    { value = "DOWN", text = "Down" },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "CENTER", text = ns.L["Center"] },
+    { value = "UP", text = ns.L["Up"] },
+    { value = "DOWN", text = ns.L["Down"] },
 }
 
 local FILTER_MODE_OPTIONS = {
-    { value = "off", text = "Off (Show All)" },
-    { value = "classification", text = "Classification" },
-    { value = "whitelist", text = "Whitelist (Only These Spells)" },
+    { value = "off", text = ns.L["Off (Show All)"] },
+    { value = "classification", text = ns.L["Classification"] },
+    { value = "whitelist", text = ns.L["Whitelist (Only These Spells)"] },
 }
 
 local AURA_TYPE_OPTIONS = {
-    { value = "HELPFUL", text = "Buffs (Helpful)" },
-    { value = "HARMFUL", text = "Debuffs (Harmful)" },
+    { value = "HELPFUL", text = ns.L["Buffs (Helpful)"] },
+    { value = "HARMFUL", text = ns.L["Debuffs (Harmful)"] },
 }
 
 local TRACKED_DISPLAY_OPTIONS = {
-    { value = "icon", text = "Icon" },
-    { value = "square", text = "Colored Square" },
-    { value = "bar", text = "Bar" },
-    { value = "healthTint", text = "Health Bar Tint" },
+    { value = "icon", text = ns.L["Icon"] },
+    { value = "square", text = ns.L["Colored Square"] },
+    { value = "bar", text = ns.L["Bar"] },
+    { value = "healthTint", text = ns.L["Health Bar Tint"] },
 }
 
 local BAR_ORIENTATION_OPTIONS = {
-    { value = "HORIZONTAL", text = "Horizontal" },
-    { value = "VERTICAL", text = "Vertical" },
+    { value = "HORIZONTAL", text = ns.L["Horizontal"] },
+    { value = "VERTICAL", text = ns.L["Vertical"] },
 }
 
 local HEALTH_TINT_ANIMATION_OPTIONS = {
-    { value = "fill", text = "Soft Fill" },
-    { value = "fade", text = "Soft Fade" },
-    { value = "fillFade", text = "Fill + Fade" },
-    { value = "pulse", text = "Subtle Pulse" },
-    { value = "instant", text = "Instant" },
+    { value = "fill", text = ns.L["Soft Fill"] },
+    { value = "fade", text = ns.L["Soft Fade"] },
+    { value = "fillFade", text = ns.L["Fill + Fade"] },
+    { value = "pulse", text = ns.L["Subtle Pulse"] },
+    { value = "instant", text = ns.L["Instant"] },
 }
 
 -- Buff/debuff classification options, keyed by aura type (mirrors the old
 -- Buffs/Debuffs filtering cards).
 local HELPFUL_CLASSIFICATIONS = {
-    { key = "raid", label = "Raid" },
-    { key = "raidInCombat", label = "Raid (In Combat)" },
-    { key = "cancelable", label = "Cancelable" },
-    { key = "notCancelable", label = "Not Cancelable" },
-    { key = "important", label = "Important" },
-    { key = "bigDefensive", label = "Big Defensive" },
-    { key = "externalDefensive", label = "External Defensive" },
+    { key = "raid", label = ns.L["Raid"] },
+    { key = "raidInCombat", label = ns.L["Raid (In Combat)"] },
+    { key = "cancelable", label = ns.L["Cancelable"] },
+    { key = "notCancelable", label = ns.L["Not Cancelable"] },
+    { key = "important", label = ns.L["Important"] },
+    { key = "bigDefensive", label = ns.L["Big Defensive"] },
+    { key = "externalDefensive", label = ns.L["External Defensive"] },
 }
 
 local HARMFUL_CLASSIFICATIONS = {
-    { key = "raid", label = "Raid" },
-    { key = "raidInCombat", label = "Raid (In Combat)" },
-    { key = "crowdControl", label = "Crowd Control" },
-    { key = "important", label = "Important" },
+    { key = "raid", label = ns.L["Raid"] },
+    { key = "raidInCombat", label = ns.L["Raid (In Combat)"] },
+    { key = "crowdControl", label = ns.L["Crowd Control"] },
+    { key = "important", label = ns.L["Important"] },
 }
 
 local function GetGUI()
@@ -139,15 +146,15 @@ local function StyleSpellInputText(GUI, C, box, label, addText)
     local tc = (C and C.text) or { 1, 1, 1, 1 }
     local mc = (C and C.textMuted) or { 1, 1, 1, 0.45 }
     if box then
-        box:SetFont(fp, 12, "")
+        CJKFont(box, fp, 12, "")
         box:SetTextColor(tc[1], tc[2], tc[3], 1)
     end
     if label then
-        label:SetFont(fp, 11, "")
+        CJKFont(label, fp, 11, "")
         label:SetTextColor(mc[1], mc[2], mc[3], mc[4] or 0.45)
     end
     if addText then
-        addText:SetFont(fp, 11, "")
+        CJKFont(addText, fp, 11, "")
         addText:SetTextColor(tc[1], tc[2], tc[3], 1)
     end
 end
@@ -157,17 +164,17 @@ end
 local function GetElementLabel(element)
     if element.mode == "filterStrip" then
         if element.auraType == "HARMFUL" then
-            return "Debuffs", nil
+            return ns.L["Debuffs"], nil
         end
-        return "Buffs", nil
+        return ns.L["Buffs"], nil
     end
 
     local spells = element.spells or {}
     local first = spells[1]
     if not first then
-        return "Tracked (empty)", FALLBACK_ICON
+        return ns.L["Tracked (empty)"], FALLBACK_ICON
     end
-    local name = GetSpellName(first) or ("Spell " .. tostring(first))
+    local name = GetSpellName(first) or (ns.L["Spell"] .. " " .. tostring(first))
     if #spells > 1 then
         name = name .. " +" .. tostring(#spells - 1)
     end
@@ -204,29 +211,29 @@ local function AddPlacementWidgets(ctx, element, includeStrip)
     local onChange = ctx.onChange
 
     if includeStrip then
-        row("Max Icons", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 10, 1, "maxIcons", element, onChange, { deferOnDrag = true }, {
-            description = "Hard cap on how many icons this element displays at once. 0 shows all matches.",
+        row(ns.L["Max Icons"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 10, 1, "maxIcons", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Hard cap on how many icons this element displays at once. 0 shows all matches."],
         }))
     end
-    row("Icon Size", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
-        description = "Pixel size of each icon.",
+    row(ns.L["Icon Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
+        description = ns.L["Pixel size of each icon."],
     }))
-    row("Anchor", GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
-        description = "Where on the frame this element is anchored. X/Y Offset below nudges it from this anchor point.",
+    row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
+        description = ns.L["Where on the frame this element is anchored. X/Y Offset below nudges it from this anchor point."],
     }))
     if includeStrip then
-        row("Grow Direction", GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_GROW_OPTIONS, "growDirection", element, onChange, {
-            description = "Direction additional icons are added in after the first.",
+        row(ns.L["Grow Direction"], GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_GROW_OPTIONS, "growDirection", element, onChange, {
+            description = ns.L["Direction additional icons are added in after the first."],
         }))
-        row("Spacing", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 8, 1, "spacing", element, onChange, { deferOnDrag = true }, {
-            description = "Pixel gap between adjacent icons.",
+        row(ns.L["Spacing"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 8, 1, "spacing", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Pixel gap between adjacent icons."],
         }))
     end
-    row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset from the anchor.",
+    row(ns.L["X Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
+        description = ns.L["Horizontal pixel offset from the anchor."],
     }))
-    row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
-        description = "Vertical pixel offset from the anchor.",
+    row(ns.L["Y Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
+        description = ns.L["Vertical pixel offset from the anchor."],
     }))
 end
 
@@ -235,17 +242,17 @@ local function AddDurationTextWidgets(ctx, element)
     local row = ctx.AddFormRow
     local onChange = ctx.onChange
 
-    row("Hide Duration Swipe", GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideSwipe", element, onChange, {
-        description = "Hide the cooldown swipe animation drawn over icons.",
+    row(ns.L["Hide Duration Swipe"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideSwipe", element, onChange, {
+        description = ns.L["Hide the cooldown swipe animation drawn over icons."],
     }))
-    row("Reverse Swipe", GUI:CreateFormCheckbox(ctx.detailArea, nil, "reverseSwipe", element, onChange, {
-        description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as time passes.",
+    row(ns.L["Reverse Swipe"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "reverseSwipe", element, onChange, {
+        description = ns.L["Reverse the swipe direction so the shaded portion grows instead of shrinks as time passes."],
     }))
-    row("Show Duration Text", GUI:CreateFormCheckbox(ctx.detailArea, nil, "showDurationText", element, onChange, {
-        description = "Show the remaining-time countdown text on each icon.",
+    row(ns.L["Show Duration Text"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "showDurationText", element, onChange, {
+        description = ns.L["Show the remaining-time countdown text on each icon."],
     }))
-    row("Duration Font Size", GUI:CreateFormSlider(ctx.detailArea, nil, 6, 24, 1, "durationFontSize", element, onChange, { deferOnDrag = true }, {
-        description = "Font size used for the remaining-time text.",
+    row(ns.L["Duration Font Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 6, 24, 1, "durationFontSize", element, onChange, { deferOnDrag = true }, {
+        description = ns.L["Font size used for the remaining-time text."],
     }))
 end
 
@@ -257,11 +264,11 @@ local function AddDurationColorWidgets(ctx, element)
     local row = ctx.AddFormRow
     local onChange = ctx.onChange
 
-    row("Color Duration Text", GUI:CreateFormCheckbox(ctx.detailArea, nil, "showDurationColor", element, onChange, {
-        description = "Tint the remaining-time text by how much duration is left (e.g. red when low).",
+    row(ns.L["Color Duration Text"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "showDurationColor", element, onChange, {
+        description = ns.L["Tint the remaining-time text by how much duration is left (e.g. red when low)."],
     }))
-    row("Pulse When Expiring", GUI:CreateFormCheckbox(ctx.detailArea, nil, "showExpiringPulse", element, onChange, {
-        description = "Pulse the icon as the aura nears expiry to draw attention.",
+    row(ns.L["Pulse When Expiring"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "showExpiringPulse", element, onChange, {
+        description = ns.L["Pulse the icon as the aura nears expiry to draw attention."],
     }))
 end
 
@@ -320,7 +327,7 @@ local function AddSpellListEditor(ctx, element, fieldName, title)
 
     local inputLabel = manualRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     inputLabel:SetPoint("LEFT", inputBox, "RIGHT", 4, 0)
-    inputLabel:SetText("Spell ID")
+    inputLabel:SetText(ns.L["Spell ID"])
     inputLabel:SetTextColor(0.5, 0.5, 0.5)
 
     local addManualButton = CreateFrame("Button", nil, manualRow, "BackdropTemplate")
@@ -329,7 +336,7 @@ local function AddSpellListEditor(ctx, element, fieldName, title)
     SkinBase.ApplyPixelBackdrop(addManualButton, 1, true, false, { 0.3, 0.3, 0.3, 1 }, { 0.15, 0.15, 0.15, 1 })
     local addManualText = addManualButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     addManualText:SetPoint("CENTER")
-    addManualText:SetText("Add")
+    addManualText:SetText(ns.L["Add"])
     StyleSpellInputText(GUI, C, inputBox, inputLabel, addManualText)
     local function CommitManual()
         local spellID = tonumber(inputBox:GetText())
@@ -362,11 +369,11 @@ local function AddFilterStripConfig(ctx, element)
     local onChange = ctx.onChange
     local rebuild = ctx.rebuild
 
-    row("Aura Type", GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_TYPE_OPTIONS, "auraType", element, function()
+    row(ns.L["Aura Type"], GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_TYPE_OPTIONS, "auraType", element, function()
         ctx.NotifyChanged()
         rebuild()
     end, {
-        description = "Whether this strip shows helpful buffs or harmful debuffs.",
+        description = ns.L["Whether this strip shows helpful buffs or harmful debuffs."],
     }))
 
     AddPlacementWidgets(ctx, element, true)
@@ -374,25 +381,25 @@ local function AddFilterStripConfig(ctx, element)
     AddDurationColorWidgets(ctx, element)
 
     -- Filtering.
-    row("Filter Mode", GUI:CreateFormDropdown(ctx.detailArea, nil, FILTER_MODE_OPTIONS, "filterMode", element, function()
+    row(ns.L["Filter Mode"], GUI:CreateFormDropdown(ctx.detailArea, nil, FILTER_MODE_OPTIONS, "filterMode", element, function()
         ctx.NotifyChanged()
         rebuild()
     end, {
-        description = "Off shows everything; Classification shows only the categories ticked below; Whitelist shows only the spells you list. The blacklist below always hides its spells, in every mode.",
+        description = ns.L["Off shows everything; Classification shows only the categories ticked below; Whitelist shows only the spells you list. The blacklist below always hides its spells, in every mode."],
         -- Whitelist and the always-on blacklist are spell-list editors (plain
         -- labels, not searchable widgets); surface their names as keywords here so
         -- a search for "whitelist"/"blacklist" lands on this strip's filtering.
         keywords = { "Whitelist", "Blacklist", "filter", "exclude", "include", "spell list" },
     }))
-    row("Only My Auras", GUI:CreateFormCheckbox(ctx.detailArea, nil, "onlyMine", element, onChange, {
-        description = "Only show auras you applied.",
+    row(ns.L["Only My Auras"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "onlyMine", element, onChange, {
+        description = ns.L["Only show auras you applied."],
         keywords = { "Only Mine", "mine only" },
     }))
-    row("Hide Permanent", GUI:CreateFormCheckbox(ctx.detailArea, nil, "hidePermanent", element, onChange, {
-        description = "Hide auras with no remaining duration.",
+    row(ns.L["Hide Permanent"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "hidePermanent", element, onChange, {
+        description = ns.L["Hide auras with no remaining duration."],
     }))
-    row("Deduplicate Defensives", GUI:CreateFormCheckbox(ctx.detailArea, nil, "dedupeDefensives", element, onChange, {
-        description = "Hide icons already shown by another tracked element.",
+    row(ns.L["Deduplicate Defensives"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "dedupeDefensives", element, onChange, {
+        description = ns.L["Hide icons already shown by another tracked element."],
     }))
 
     local filterMode = element.filterMode or "off"
@@ -403,18 +410,18 @@ local function AddFilterStripConfig(ctx, element)
         local list = element.auraType == "HARMFUL" and HARMFUL_CLASSIFICATIONS or HELPFUL_CLASSIFICATIONS
         for _, entry in ipairs(list) do
             row(entry.label, GUI:CreateFormCheckbox(ctx.detailArea, nil, entry.key, element.classifications, onChange, {
-                description = "Include auras Blizzard flags as " .. entry.label .. ".",
+                description = ns.L["Include auras Blizzard flags as "] .. entry.label .. ".",
             }))
         end
     elseif filterMode == "whitelist" then
-        AddSpellListEditor(ctx, element, "whitelist", "Whitelist (only these spells are shown):")
+        AddSpellListEditor(ctx, element, "whitelist", ns.L["Whitelist (only these spells are shown):"])
     end
 
     -- Blacklist is an always-on exclusion: BuildFilterStripMatches applies it
     -- regardless of filterMode (even Off shows everything *except* these), so the
     -- editor is shown unconditionally. Whitelist (the inclusion mode) stays gated
     -- to filterMode == "whitelist" above.
-    AddSpellListEditor(ctx, element, "blacklist", "Blacklist (these spells are always hidden):")
+    AddSpellListEditor(ctx, element, "blacklist", ns.L["Blacklist (these spells are always hidden):"])
 end
 
 local function AddTrackedBarConfig(ctx, element)
@@ -426,41 +433,41 @@ local function AddTrackedBarConfig(ctx, element)
         element.bar = {}
     end
     local bar = element.bar
-    row("Orientation", GUI:CreateFormDropdown(ctx.detailArea, nil, BAR_ORIENTATION_OPTIONS, "orientation", bar, onChange, {
-        description = "Whether the bar drains horizontally or vertically as the aura ticks down.",
+    row(ns.L["Orientation"], GUI:CreateFormDropdown(ctx.detailArea, nil, BAR_ORIENTATION_OPTIONS, "orientation", bar, onChange, {
+        description = ns.L["Whether the bar drains horizontally or vertically as the aura ticks down."],
     }))
-    row("Thickness", GUI:CreateFormSlider(ctx.detailArea, nil, 1, 20, 1, "thickness", bar, onChange, { deferOnDrag = true }, {
-        description = "Pixel thickness of the bar.",
+    row(ns.L["Thickness"], GUI:CreateFormSlider(ctx.detailArea, nil, 1, 20, 1, "thickness", bar, onChange, { deferOnDrag = true }, {
+        description = ns.L["Pixel thickness of the bar."],
     }))
-    row("Width / Height", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 200, 1, "length", bar, onChange, { deferOnDrag = true }, {
-        description = "Pixel length of the bar.",
+    row(ns.L["Width / Height"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 200, 1, "length", bar, onChange, { deferOnDrag = true }, {
+        description = ns.L["Pixel length of the bar."],
     }))
-    row("Match Frame Width / Height", GUI:CreateFormCheckbox(ctx.detailArea, nil, "matchFrameSize", bar, onChange, {
-        description = "Stretch the bar to match the frame size.",
+    row(ns.L["Match Frame Width / Height"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "matchFrameSize", bar, onChange, {
+        description = ns.L["Stretch the bar to match the frame size."],
     }))
-    row("Bar Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", bar, onChange, nil, {
-        description = "Fill color of the bar while the aura is active.",
+    row(ns.L["Bar Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", bar, onChange, nil, {
+        description = ns.L["Fill color of the bar while the aura is active."],
     }))
-    row("Background Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "backgroundColor", bar, onChange, nil, {
-        description = "Color drawn behind the bar fill.",
+    row(ns.L["Background Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "backgroundColor", bar, onChange, nil, {
+        description = ns.L["Color drawn behind the bar fill."],
     }))
-    row("Hide Border", GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideBorder", bar, onChange, {
-        description = "Remove the border drawn around the bar.",
+    row(ns.L["Hide Border"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideBorder", bar, onChange, {
+        description = ns.L["Remove the border drawn around the bar."],
     }))
-    row("Border Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "borderColor", bar, onChange, nil, {
-        description = "Color of the bar's border.",
+    row(ns.L["Border Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "borderColor", bar, onChange, nil, {
+        description = ns.L["Color of the bar's border."],
     }))
-    row("Border Size", GUI:CreateFormSlider(ctx.detailArea, nil, 1, 8, 1, "borderSize", bar, onChange, { deferOnDrag = true }, {
-        description = "Pixel thickness of the bar's border.",
+    row(ns.L["Border Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 1, 8, 1, "borderSize", bar, onChange, { deferOnDrag = true }, {
+        description = ns.L["Pixel thickness of the bar's border."],
     }))
-    row("Low-Time Seconds", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 30, 0.5, "lowTimeThreshold", bar, onChange, {
+    row(ns.L["Low-Time Seconds"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 30, 0.5, "lowTimeThreshold", bar, onChange, {
         precision = 1,
         deferOnDrag = true,
     }, {
-        description = "When remaining duration drops below this, the bar switches to the Low-Time Color.",
+        description = ns.L["When remaining duration drops below this, the bar switches to the Low-Time Color."],
     }))
-    row("Low-Time Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "lowTimeColor", bar, onChange, nil, {
-        description = "Bar color used once the remaining duration crosses the Low-Time threshold.",
+    row(ns.L["Low-Time Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "lowTimeColor", bar, onChange, nil, {
+        description = ns.L["Bar color used once the remaining duration crosses the Low-Time threshold."],
     }))
 end
 
@@ -484,14 +491,14 @@ local function AddPerSpellOnlyMineWidgets(ctx, element)
     end
 
     local header = GUI:CreateLabel(ctx.detailArea,
-        "|cFFAAAAAAPer-Spell Only Mine (overrides the element setting above):|r", 11, C.textMuted)
+        "|cFFAAAAAA" .. ns.L["Per-Spell Only Mine (overrides the element setting above):"] .. "|r", 11, C.textMuted)
     header:SetJustifyH("LEFT")
     add(header, 18, true)
 
     for _, spellID in ipairs(spells) do
-        local label = GetSpellName(spellID) or ("Spell " .. tostring(spellID))
+        local label = GetSpellName(spellID) or (ns.L["Spell"] .. " " .. tostring(spellID))
         row(label, GUI:CreateFormCheckbox(ctx.detailArea, nil, spellID, element.onlyMineSpells, onChange, {
-            description = "Only show this spell when you applied it. Overrides the element-level Only My Cast for this spell.",
+            description = ns.L["Only show this spell when you applied it. Overrides the element-level Only My Cast for this spell."],
         }))
     end
 end
@@ -506,18 +513,18 @@ local function AddTrackedConfig(ctx, element)
     -- was created with (top-level Spell ID box / picker). Spells are added only
     -- from there, one tracked element per spell.
 
-    row("Display Type", GUI:CreateFormDropdown(ctx.detailArea, nil, TRACKED_DISPLAY_OPTIONS, "displayType", element, function()
+    row(ns.L["Display Type"], GUI:CreateFormDropdown(ctx.detailArea, nil, TRACKED_DISPLAY_OPTIONS, "displayType", element, function()
         if element.displayType == "square" and type(element.color) ~= "table" then
             element.color = { 0.2, 0.8, 0.2, 1 }
         end
         ctx.NotifyChanged()
         rebuild()
     end, {
-        description = "How this tracked aura displays: an icon strip, a colored square, a duration bar, or a health-bar tint.",
+        description = ns.L["How this tracked aura displays: an icon strip, a colored square, a duration bar, or a health-bar tint."],
     }))
 
-    row("Only My Cast", GUI:CreateFormCheckbox(ctx.detailArea, nil, "onlyMine", element, onChange, {
-        description = "Only track this aura when you applied it.",
+    row(ns.L["Only My Cast"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "onlyMine", element, onChange, {
+        description = ns.L["Only track this aura when you applied it."],
         -- Per-spell Only Mine overrides (multi-spell strips) render as plain
         -- per-spell checkboxes below; keyword it here so the override is findable.
         keywords = { "Only Mine", "Per-Spell Only Mine", "mine only" },
@@ -525,14 +532,14 @@ local function AddTrackedConfig(ctx, element)
 
     local displayType = element.displayType or "icon"
     if displayType == "bar" then
-        row("Anchor", GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
-            description = "Where on the frame the bar is anchored.",
+        row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
+            description = ns.L["Where on the frame the bar is anchored."],
         }))
-        row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
-            description = "Horizontal pixel offset from the anchor.",
+        row(ns.L["X Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Horizontal pixel offset from the anchor."],
         }))
-        row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
-            description = "Vertical pixel offset from the anchor.",
+        row(ns.L["Y Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Vertical pixel offset from the anchor."],
         }))
         AddTrackedBarConfig(ctx, element)
     elseif displayType == "healthTint" then
@@ -542,30 +549,30 @@ local function AddTrackedConfig(ctx, element)
         if type(element.healthTint) ~= "table" then
             element.healthTint = {}
         end
-        row("Tint Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
-            description = "Color tint applied across the health bar while the aura is active.",
+        row(ns.L["Tint Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
+            description = ns.L["Color tint applied across the health bar while the aura is active."],
         }))
-        row("Tint Animation", GUI:CreateFormDropdown(ctx.detailArea, nil, HEALTH_TINT_ANIMATION_OPTIONS, "animation", element.healthTint, onChange, {
-            description = "How the health-bar tint appears when the aura is detected.",
+        row(ns.L["Tint Animation"], GUI:CreateFormDropdown(ctx.detailArea, nil, HEALTH_TINT_ANIMATION_OPTIONS, "animation", element.healthTint, onChange, {
+            description = ns.L["How the health-bar tint appears when the aura is detected."],
         }))
     elseif displayType == "square" then
         if type(element.color) ~= "table" then
             element.color = { 0.2, 0.8, 0.2, 1 }
         end
-        row("Square Size", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
-            description = "Pixel size of the colored square.",
+        row(ns.L["Square Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Pixel size of the colored square."],
         }))
-        row("Anchor", GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
-            description = "Where on the frame the square is anchored.",
+        row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
+            description = ns.L["Where on the frame the square is anchored."],
         }))
-        row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
-            description = "Horizontal pixel offset from the anchor.",
+        row(ns.L["X Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Horizontal pixel offset from the anchor."],
         }))
-        row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
-            description = "Vertical pixel offset from the anchor.",
+        row(ns.L["Y Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Vertical pixel offset from the anchor."],
         }))
-        row("Square Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
-            description = "Fill color of the colored square.",
+        row(ns.L["Square Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
+            description = ns.L["Fill color of the colored square."],
         }))
     else
         -- icon
@@ -699,11 +706,11 @@ local function RenderDetail(ctx, element)
         ctx.AddDetailWidget(cell, FORM_ROW, span)
     end
 
-    ctx.AddFormRow("Element Enabled", ctx.GUI:CreateFormCheckbox(ctx.detailArea, nil, "enabled", element, function()
+    ctx.AddFormRow(ns.L["Element Enabled"], ctx.GUI:CreateFormCheckbox(ctx.detailArea, nil, "enabled", element, function()
         ctx.NotifyChanged()
         ctx.rebuild()
     end, {
-        description = "Toggle this element. When off, it does not display.",
+        description = ns.L["Toggle this element. When off, it does not display."],
     }), true)
 
     if element.mode == "filterStrip" then
@@ -758,9 +765,9 @@ local function RebuildList(ctx)
         row.name:SetText(nameColor .. label .. "|r")
 
         if element.mode == "filterStrip" then
-            row.badge:SetText("|cFF56D1FFSTRIP|r")
+            row.badge:SetText("|cFF56D1FF" .. ns.L["STRIP"] .. "|r")
         else
-            row.badge:SetText("|cFFC8A2FFTRACKED|r")
+            row.badge:SetText("|cFFC8A2FF" .. ns.L["TRACKED"] .. "|r")
         end
 
         row.enable:SetToggleState(element.enabled ~= false)
@@ -926,7 +933,7 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
     listArea:SetPoint("RIGHT", host, "RIGHT", 0, 0)
     listArea:SetHeight(1)
 
-    local emptyLabel = GUI:CreateLabel(listArea, "No aura elements in this bucket yet. Add one below.", 11, C.textMuted)
+    local emptyLabel = GUI:CreateLabel(listArea, ns.L["No aura elements in this bucket yet. Add one below."], 11, C.textMuted)
     emptyLabel:SetJustifyH("LEFT")
     emptyLabel:Hide()
 
@@ -936,12 +943,12 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
 
     local pickerHeader = listArea:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     pickerHeader:SetJustifyH("LEFT")
-    pickerHeader:SetText("|cFFAAAAAAAdd Tracked Aura (click a suggestion or enter a Spell ID):|r")
+    pickerHeader:SetText("|cFFAAAAAA" .. ns.L["Add Tracked Aura (click a suggestion or enter a Spell ID):"] .. "|r")
 
     -- Add buttons row (Filter strip / Tracked aura).
     local addRow = CreateFrame("Frame", nil, listArea)
     addRow:SetHeight(26)
-    local addStripButton = GUI:CreateButton(addRow, "Add Filter Strip", 130, 22)
+    local addStripButton = GUI:CreateButton(addRow, ns.L["Add Filter Strip"], 130, 22)
     addStripButton:SetPoint("LEFT", 0, 0)
 
     -- Manual spellID input row.
@@ -962,7 +969,7 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
 
     local inputLabel = inputRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     inputLabel:SetPoint("LEFT", inputBox, "RIGHT", 4, 0)
-    inputLabel:SetText("Spell ID")
+    inputLabel:SetText(ns.L["Spell ID"])
     inputLabel:SetTextColor(0.5, 0.5, 0.5)
 
     local addManualButton = CreateFrame("Button", nil, inputRow, "BackdropTemplate")
@@ -971,7 +978,7 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
     SkinBase.ApplyPixelBackdrop(addManualButton, 1, true, false, { 0.3, 0.3, 0.3, 1 }, { 0.15, 0.15, 0.15, 1 })
     local addManualText = addManualButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     addManualText:SetPoint("CENTER")
-    addManualText:SetText("Add")
+    addManualText:SetText(ns.L["Add"])
     StyleSpellInputText(GUI, C, inputBox, inputLabel, addManualText)
 
     local rowPool = {}
@@ -1100,11 +1107,11 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
         row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
         row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        row.name:SetFont((GUI.FONT_PATH) or [[Interface\AddOns\QUI\assets\Quazii.ttf]], 12, "")
+        CJKFont(row.name, (GUI.FONT_PATH) or [[Interface\AddOns\QUI\assets\Quazii.ttf]], 12, "")
         row.name:SetJustifyH("LEFT")
 
         -- Standard QUI ghost button (matches Alts row delete), not a raw red x.
-        row.delete = GUI:CreateButton(row, "Delete", 56, 18)
+        row.delete = GUI:CreateButton(row, ns.L["Delete"], 56, 18)
         row.delete:SetPoint("RIGHT", row, "RIGHT", -6, 0)
 
         row.badge = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -1145,12 +1152,12 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
             if GameTooltip and self._spell then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetFrameStrata("TOOLTIP")
-                GameTooltip:AddLine(self._spell.name or GetSpellName(self._spell.id) or ("Spell " .. tostring(self._spell.id)), 1, 1, 1)
-                GameTooltip:AddLine("ID: " .. tostring(self._spell.id), 0.5, 0.5, 0.5)
+                GameTooltip:AddLine(self._spell.name or GetSpellName(self._spell.id) or (ns.L["Spell"] .. " " .. tostring(self._spell.id)), 1, 1, 1)
+                GameTooltip:AddLine(ns.L["ID: "] .. tostring(self._spell.id), 0.5, 0.5, 0.5)
                 if self._spell.source then
                     GameTooltip:AddLine(self._spell.source, 0.45, 0.65, 0.95)
                 end
-                GameTooltip:AddLine("Click to add", 0.5, 0.5, 0.5)
+                GameTooltip:AddLine(ns.L["Click to add"], 0.5, 0.5, 0.5)
                 GameTooltip:Show()
             end
         end)

@@ -57,26 +57,26 @@ do
             local L = MakeLayout(content)
 
             -- Skinning
-            L.headerAt("Skinning")
+            L.headerAt(ns.L["Skinning"])
             local sSk = L.sectionAt()
             local skinW = GUI:CreateFormCheckbox(sSk.frame, nil, "skinReadyCheck", general, function()
                 GUI:ShowConfirmation({
-                    title = "Reload UI?",
-                    message = "Skinning changes require a reload to take effect.",
-                    acceptText = "Reload",
-                    cancelText = "Later",
+                    title = ns.L["Reload UI?"],
+                    message = ns.L["Skinning changes require a reload to take effect."],
+                    acceptText = ns.L["Reload"],
+                    cancelText = ns.L["Later"],
                     onAccept = function() QUI:SafeReload() end,
                 })
-            end, { description = "Apply QUI styling to the Blizzard ready-check popup. Requires a UI reload to take effect." })
-            sSk.AddRow(row(sSk.frame, "Skin Ready Check Frame", skinW))
+            end, { description = ns.L["Apply QUI styling to the Blizzard ready-check popup. Requires a UI reload to take effect."] })
+            sSk.AddRow(row(sSk.frame, ns.L["Skin Ready Check Frame"], skinW))
             L.closeSection(sSk)
 
             -- Border
-            L.headerAt("Border")
+            L.headerAt(ns.L["Border"])
             local sBd = L.sectionAt()
             local rcSrcW, rcColW = ns.QUI_BorderControl.Attach(GUI, sBd.frame, general, "readyCheck", RefreshColors,
-                { label = "Border Color Source", colorLabel = "Border Color", noAlpha = true })
-            sBd.AddRow(row(sBd.frame, "Border Color Source", rcSrcW), row(sBd.frame, "Border Color", rcColW))
+                { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"], noAlpha = true })
+            sBd.AddRow(row(sBd.frame, ns.L["Border Color Source"], rcSrcW), row(sBd.frame, ns.L["Border Color"], rcColW))
             L.closeSection(sBd)
 
             -- Layout-mode chrome (V3-styled collapsibles)

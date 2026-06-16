@@ -111,15 +111,15 @@ end
 
 -- Nine-point anchor options (used for UI element positioning)
 local NINE_POINT_ANCHOR_OPTIONS = {
-    {value = "TOPLEFT", text = "Top Left"},
-    {value = "TOP", text = "Top"},
-    {value = "TOPRIGHT", text = "Top Right"},
-    {value = "LEFT", text = "Left"},
-    {value = "CENTER", text = "Center"},
-    {value = "RIGHT", text = "Right"},
-    {value = "BOTTOMLEFT", text = "Bottom Left"},
-    {value = "BOTTOM", text = "Bottom"},
-    {value = "BOTTOMRIGHT", text = "Bottom Right"},
+    {value = "TOPLEFT", text = ns.L["Top Left"]},
+    {value = "TOP", text = ns.L["Top"]},
+    {value = "TOPRIGHT", text = ns.L["Top Right"]},
+    {value = "LEFT", text = ns.L["Left"]},
+    {value = "CENTER", text = ns.L["Center"]},
+    {value = "RIGHT", text = ns.L["Right"]},
+    {value = "BOTTOMLEFT", text = ns.L["Bottom Left"]},
+    {value = "BOTTOM", text = ns.L["Bottom"]},
+    {value = "BOTTOMRIGHT", text = ns.L["Bottom Right"]},
 }
 
 ---------------------------------------------------------------------------
@@ -213,7 +213,7 @@ local function GetTextureList()
             table.insert(textures, {value = name, text = name})
         end
     else
-        textures = {{value = "Solid", text = "Solid"}}
+        textures = {{value = "Solid", text = ns.L["Solid"]}}
     end
     return textures
 end
@@ -255,7 +255,7 @@ local function GetFontList()
             end
         end
     else
-        fonts = {{value = "Friz Quadrata TT", text = "Friz Quadrata TT"}}
+        fonts = {{value = "Friz Quadrata TT", text = ns.L["Friz Quadrata TT"]}}
     end
 
     -- Clean up prewarm frame after building the list (no longer needed)
@@ -270,7 +270,7 @@ local function GetFontList()
 end
 
 local function GetSoundList()
-    local sounds = {{value = "None", text = "None"}}
+    local sounds = {{value = "None", text = ns.L["None"]}}
     if LSM then
         for _, name in ipairs(LSM:List("sound") or {}) do
             if name ~= "None" then
@@ -488,7 +488,7 @@ end
 local function CreateWrappedLabel(parent, text, size, color, maxWidth)
     local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     local fontPath = GUI.FONT_PATH or "Fonts\\FRIZQT__.TTF"
-    label:SetFont(fontPath, size or 12, "")
+    Helpers.ApplyFontWithFallback(label, fontPath, size or 12, "")
     label:SetTextColor(unpack(color or GUI.Colors.text))
     label:SetText(text or "")
     label:SetJustifyH("LEFT")
@@ -522,7 +522,7 @@ local function CreateLinkItem(parent, label, url, iconR, iconG, iconB, iconTextu
 
     local fontPath = GUI.FONT_PATH or "Fonts\\FRIZQT__.TTF"
     local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    text:SetFont(fontPath, 11, "")
+    Helpers.ApplyFontWithFallback(text, fontPath, 11, "")
     text:SetTextColor(C.text[1], C.text[2], C.text[3])
     text:SetText(label .. "  |cff999999" .. url .. "|r")
     text:SetPoint("LEFT", icon, "RIGHT", 6, 0)
@@ -534,18 +534,18 @@ local function CreateLinkItem(parent, label, url, iconR, iconG, iconB, iconTextu
     UIKit.ApplyPixelBackdrop(btn, 1, true, false, { C.border[1], C.border[2], C.border[3], 1 }, { 0.15, 0.15, 0.15, 1 })
 
     local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    btnText:SetFont(fontPath, 9, "")
+    Helpers.ApplyFontWithFallback(btnText, fontPath, 9, "")
     btnText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3])
-    btnText:SetText(COPY_ICON .. "COPY")
+    btnText:SetText(COPY_ICON .. ns.L["COPY"])
     btnText:SetPoint("CENTER")
 
     btn:SetScript("OnClick", function()
         if GUI and GUI.ShowExportPopup then
-            GUI:ShowExportPopup(popupTitle or "Copy Link", url)
+            GUI:ShowExportPopup(popupTitle or ns.L["Copy Link"], url)
         end
-        btnText:SetText("OPENED")
+        btnText:SetText(ns.L["OPENED"])
         C_Timer.After(2, function()
-            if btnText then btnText:SetText(COPY_ICON .. "COPY") end
+            if btnText then btnText:SetText(COPY_ICON .. ns.L["COPY"]) end
         end)
     end)
     btn:SetScript("OnEnter", function(self)
@@ -997,7 +997,7 @@ local function CreateAccentDotLabel(parent, text, yOffset)
 
     local label = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(QUI.GUI:GetFontPath())
-    label:SetFont(fpath or select(1, label:GetFont()), 12, "")
+    Helpers.ApplyFontWithFallback(label, fpath or select(1, label:GetFont()), 12, "")
     label:SetPoint("LEFT", dot, "RIGHT", 7, 0)
     label:SetTextColor(ar, ag, ab, 1)
     label:SetText(text or "")
@@ -1165,7 +1165,7 @@ local function CreatePreviewArea(parent, yOffset, height)
     local accent = C.accent or {0.204, 0.827, 0.6, 1}
     local lbl = preview:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(QUI.GUI:GetFontPath())
-    lbl:SetFont(fpath or select(1, lbl:GetFont()), 8, "")
+    Helpers.ApplyFontWithFallback(lbl, fpath or select(1, lbl:GetFont()), 8, "")
     lbl:SetTextColor(accent[1], accent[2], accent[3], 0.7)
     lbl:SetPoint("TOPLEFT", preview, "TOPLEFT", 8, -6)
     local spaced = ("PREVIEW"):gsub(".", "%0 "):sub(1, -2)
@@ -1270,7 +1270,7 @@ local function BuildSettingRow(parent, labelText, widget, desc)
     local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(QUI.GUI:GetFontPath())
 
     local label = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetFont(fpath or select(1, label:GetFont()), 11, "")
+    Helpers.ApplyFontWithFallback(label, fpath or select(1, label:GetFont()), 11, "")
     label:SetTextColor(textCol[1], textCol[2], textCol[3], 1)
     label:SetPoint("LEFT", cell, "LEFT", 0, desc and 5 or 0)
     label:SetJustifyH("LEFT")
@@ -1282,7 +1282,7 @@ local function BuildSettingRow(parent, labelText, widget, desc)
 
     if desc then
         local d = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        d:SetFont(fpath or select(1, d:GetFont()), 9, "")
+        Helpers.ApplyFontWithFallback(d, fpath or select(1, d:GetFont()), 9, "")
         d:SetTextColor(mutedCol[1], mutedCol[2], mutedCol[3], 1)
         d:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -1)
         d:SetText(desc)

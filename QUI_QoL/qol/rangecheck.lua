@@ -8,6 +8,16 @@ local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 local RangeLib = LibStub("LibRangeCheck-3.0", true)
 
+-- CJK-safe font setter: preserves the roman font and only adds CJK fallback
+-- members where available, degrading to plain SetFont otherwise.
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local DEFAULT_SETTINGS = {
     enabled = false,
     combatOnly = false,
@@ -150,24 +160,24 @@ local function FormatRangeText(minRange, maxRange, shortenText)
         if shortenText then
             return string.format("%d-%d", minRange, maxRange)
         end
-        return string.format("%d-%d yd", minRange, maxRange)
+        return string.format(ns.L["%d-%d yd"], minRange, maxRange)
     end
     if maxRange then
         if shortenText then
             return string.format("0-%d", maxRange)
         end
-        return string.format("0-%d yd", maxRange)
+        return string.format(ns.L["0-%d yd"], maxRange)
     end
     if minRange then
         if shortenText then
             return string.format("%d+", minRange)
         end
-        return string.format("%d+ yd", minRange)
+        return string.format(ns.L["%d+ yd"], minRange)
     end
     if shortenText then
         return "--"
     end
-    return "-- yd"
+    return ns.L["-- yd"]
 end
 
 local function CreateRangeFrame()
@@ -185,11 +195,11 @@ local function CreateRangeFrame()
     -- settings; if we used UIKit.CreateText here, the hardcoded 22 would be
     -- recorded and RefreshAllFonts() (UI_SCALE_CHANGED) could revert it.
     local text = frame:CreateFontString(nil, "OVERLAY")
-    text:SetFont(UIKit.ResolveFontPath(), 22, "OUTLINE")
+    CJKFont(text, UIKit.ResolveFontPath(), 22, "OUTLINE")
     text:SetTextColor(1, 1, 1, 1)
     text:SetWordWrap(false)
     text:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    text:SetText("10-25 yd")
+    text:SetText(ns.L["10-25 yd"])
 
     frame:SetScript("OnDragStart", function(self)
         if not state.preview then return end
@@ -231,7 +241,7 @@ local function ApplyAppearance()
     local fontSize = settings.fontSize or 22
 
     state.frame:SetFrameStrata(settings.strata or "MEDIUM")
-    state.text:SetFont(fontPath, fontSize, "OUTLINE")
+    CJKFont(state.text, fontPath, fontSize, "OUTLINE")
 
     if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("rangeCheck")) then
         state.frame:ClearAllPoints()

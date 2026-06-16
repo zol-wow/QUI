@@ -67,7 +67,7 @@ function QUICore:SafeReload()
     if InCombatLockdown() and not (QUI.db and QUI.db.profile and QUI.db.profile.general and QUI.db.profile.general.allowReloadInCombat) then
         if not self.__pendingReload then
             self.__pendingReload = true
-            print("|cFF30D1FFQUI:|r Reload queued - will execute when combat ends.")
+            print("|cFF30D1FFQUI:|r " .. ns.L["Reload queued - will execute when combat ends."])
             EnsureReloadEventFrame(self)
         end
     else
@@ -80,15 +80,15 @@ function QUICore:ShowReloadPopup()
     -- Use QUI's existing confirmation dialog
     if QUI and QUI.GUI and QUI.GUI.ShowConfirmation then
         QUI.GUI:ShowConfirmation({
-            title = "Reload Ready",
-            message = "Combat ended. Click to reload the UI.",
-            acceptText = "Reload Now",
-            cancelText = "Later",
+            title = ns.L["Reload Ready"],
+            message = ns.L["Combat ended. Click to reload the UI."],
+            acceptText = ns.L["Reload Now"],
+            cancelText = ns.L["Later"],
             onAccept = function() ReloadUI() end,
         })
     else
         -- Fallback: print message if GUI not available
-        print("|cFF30D1FFQUI:|r Combat ended. Type /reload to reload.")
+        print("|cFF30D1FFQUI:|r " .. ns.L["Combat ended. Type /reload to reload."])
     end
 end
 
@@ -99,7 +99,7 @@ function QUI:SafeReload()
     else
         -- Fallback if QUICore not loaded
         if InCombatLockdown() and not (self.db and self.db.profile and self.db.profile.general and self.db.profile.general.allowReloadInCombat) then
-            print("|cFF30D1FFQUI:|r Cannot reload during combat.")
+            print("|cFF30D1FFQUI:|r " .. ns.L["Cannot reload during combat."])
         else
             ReloadUI()
         end
@@ -520,7 +520,7 @@ function QUICore:ShowProfileChangeNotification()
     -- The popup was causing an ApplyAllFrameAnchors feedback loop by entering
     -- Edit Mode during the profile transition.
     local profileName = self.db and self.db:GetCurrentProfile() or "Unknown"
-    print(format("|cff60A5FAQUI:|r Profile switched to |cFFFFD700%s|r. Use |cFFFFD700/editmode|r to adjust frame positions.", profileName))
+    print(ns.L["|cff60A5FAQUI:|r Profile switched to |cFFFFD700%s|r. Use |cFFFFD700/editmode|r to adjust frame positions."]:format(profileName))
 end
 
 -- ============================================================================
@@ -761,8 +761,8 @@ function QUICore:CreateMinimapButton()
         end,
         OnTooltipShow = function(tooltip)
             tooltip:SetText("|cFF30D1FFQUI|r")
-            tooltip:AddLine("Left-click to open configuration", 1, 1, 1)
-            tooltip:AddLine("Right-click to toggle Edit Mode", 1, 1, 1)
+            tooltip:AddLine(ns.L["Left-click to open configuration"], 1, 1, 1)
+            tooltip:AddLine(ns.L["Right-click to toggle Edit Mode"], 1, 1, 1)
         end,
     })
 

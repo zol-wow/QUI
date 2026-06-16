@@ -72,7 +72,7 @@ local function BuildBorderColoringTab(tabContent)
     local L = MakeLayout(tabContent)
 
     -- Global Border section
-    L.headerAt("Global Border")
+    L.headerAt(ns.L["Global Border"])
     local sGB = L.sectionAt()
 
     local gbSourceW, gbColorW = ns.QUI_BorderControl.Attach(
@@ -84,22 +84,22 @@ local function BuildBorderColoringTab(tabContent)
         {
             includeInherit   = false,
             noAlpha          = true,
-            label            = "Border Color Source",
-            colorLabel       = "Custom Border Color",
+            label            = ns.L["Border Color Source"],
+            colorLabel       = ns.L["Custom Border Color"],
         }
     )
 
     local gbHideW = GUI:CreateFormCheckbox(sGB.frame, nil, "hideSkinBorders", general,
         RefreshBorderColoring,
-        { description = "Hide the 1px border drawn around all globally skinned frames." }
+        { description = ns.L["Hide the 1px border drawn around all globally skinned frames."] }
     )
 
     sGB.AddRow(
-        row(sGB.frame, "Border Color Source", gbSourceW),
-        row(sGB.frame, "Custom Border Color",  gbColorW)
+        row(sGB.frame, ns.L["Border Color Source"], gbSourceW),
+        row(sGB.frame, ns.L["Custom Border Color"],  gbColorW)
     )
     sGB.AddRow(
-        row(sGB.frame, "Hide Borders", gbHideW)
+        row(sGB.frame, ns.L["Hide Borders"], gbHideW)
     )
     L.closeSection(sGB)
 
@@ -118,7 +118,7 @@ local function BuildBorderColoringTab(tabContent)
     for _, cat in ipairs(CATEGORY_ORDER) do
         local entries = byCategory[cat]
         if entries and #entries > 0 then
-            L.headerAt(cat)
+            L.headerAt(ns.L[cat])
             local sCat = L.sectionAt()
             local cells = {}
             for _, e in ipairs(entries) do
@@ -147,12 +147,12 @@ local function BuildBorderColoringTab(tabContent)
                                 RefreshBorderColoring()
                             end,
                             {
-                                label      = e.label .. " Source (all)",
-                                colorLabel = e.label .. " Color (all)",
+                                label      = e.label .. ns.L[" Source (all)"],
+                                colorLabel = e.label .. ns.L[" Color (all)"],
                             }
                         )
-                        cells[#cells + 1] = row(sCat.frame, e.label .. " Source", srcW)
-                        cells[#cells + 1] = row(sCat.frame, e.label .. " Color",  colW)
+                        cells[#cells + 1] = row(sCat.frame, e.label .. ns.L[" Source"], srcW)
+                        cells[#cells + 1] = row(sCat.frame, e.label .. ns.L[" Color"],  colW)
                     end
                 else
                     local dbTable = type(e.db) == "function" and e.db(profile) or nil
@@ -164,12 +164,12 @@ local function BuildBorderColoringTab(tabContent)
                             e.prefix or "",
                             RefreshBorderColoring,
                             {
-                                label      = e.label .. " Source",
-                                colorLabel = e.label .. " Color",
+                                label      = e.label .. ns.L[" Source"],
+                                colorLabel = e.label .. ns.L[" Color"],
                             }
                         )
-                        cells[#cells + 1] = row(sCat.frame, e.label .. " Source", srcW)
-                        cells[#cells + 1] = row(sCat.frame, e.label .. " Color",  colW)
+                        cells[#cells + 1] = row(sCat.frame, e.label .. ns.L[" Source"], srcW)
+                        cells[#cells + 1] = row(sCat.frame, e.label .. ns.L[" Color"],  colW)
                     end
                 end
             end

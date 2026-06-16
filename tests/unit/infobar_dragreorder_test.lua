@@ -30,6 +30,7 @@ CreateFrame = CreateFrame or function()
 end
 local InfoBar = { ApplyAll = function() end, GetZoneFrames = function() return {} end }
 local ns = { Addon = { InfoBar = InfoBar } }
+(dofile(ROOT .. "tests/helpers/locale.lua"))(ns)
 assert(loadfile(ROOT .. "core/infobar_shared.lua"))("QUI", ns)
 assert(loadfile(ROOT .. "QUI_InfoBar/infobar/contextmenu.lua"))("QUI_InfoBar", ns)
 assert(loadfile(ROOT .. "QUI_InfoBar/infobar/dragreorder.lua"))("QUI_InfoBar", ns)

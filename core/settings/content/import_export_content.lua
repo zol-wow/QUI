@@ -76,7 +76,7 @@ local function CreateImportBanner(parent, title, message, titleColor, bgColor, b
     ApplyImportSurface(frame, bgColor or {0.08, 0.1, 0.14, 0.95}, borderColor or C.border)
 
     local titleText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleText:SetFont((GUI and GUI.GetFontPath and GUI:GetFontPath()) or "Fonts\\FRIZQT__.TTF", 12, "")
+    ns.Helpers.ApplyFontWithFallback(titleText, (GUI and GUI.GetFontPath and GUI:GetFontPath()) or "Fonts\\FRIZQT__.TTF", 12, "")
     titleText:SetTextColor(
         (titleColor or C.accentLight)[1],
         (titleColor or C.accentLight)[2],
@@ -111,9 +111,9 @@ local function BuildImportExportTab(tabContent)
         return raw
     end
 
-    GUI:SetSearchContext({tabIndex = 14, tabName = "Import & Export Strings", subTabIndex = 1, subTabName = "Import/Export"})
+    GUI:SetSearchContext({tabIndex = 14, tabName = ns.L["Import & Export Strings"], subTabIndex = 1, subTabName = ns.L["Import/Export"]})
 
-    local info = GUI:CreateLabel(tabContent, "Import and export QUI profiles", 11, C.textMuted)
+    local info = GUI:CreateLabel(tabContent, ns.L["Import and export QUI profiles"], 11, C.textMuted)
     info:SetPoint("TOPLEFT", PAD, y)
     info:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     info:SetJustifyH("LEFT")
@@ -121,7 +121,7 @@ local function BuildImportExportTab(tabContent)
 
     local validationNote = GUI:CreateLabel(
         tabContent,
-        "Import validates the decoded profile. If analysis fails, reasons are listed and you can strip incompatible settings from a temporary copy, then import the rest.",
+        ns.L["Import validates the decoded profile. If analysis fails, reasons are listed and you can strip incompatible settings from a temporary copy, then import the rest."],
         10,
         C.textMuted
     )
@@ -131,11 +131,11 @@ local function BuildImportExportTab(tabContent)
     y = y - 20
 
     -- Export Section Header
-    Shared.CreateAccentDotLabel(tabContent, "Export Current Profile", y); y = y - 30
+    Shared.CreateAccentDotLabel(tabContent, ns.L["Export Current Profile"], y); y = y - 30
 
     local exportNote = CreateWrappedLabel(
         tabContent,
-        "Generate a full profile string or export only selected categories. Selective exports use the same QUI1 profile format as full exports, so they can be pasted into the import analyzer below.",
+        ns.L["Generate a full profile string or export only selected categories. Selective exports use the same QUI1 profile format as full exports, so they can be pasted into the import analyzer below."],
         10,
         C.textMuted
     )
@@ -246,9 +246,9 @@ local function BuildImportExportTab(tabContent)
         local core = GetCore()
         if core and core.ExportProfileToString then
             local str = core:ExportProfileToString()
-            exportEditBox:SetText(str or "Error generating export string")
+            exportEditBox:SetText(str or ns.L["Error generating export string"])
         else
-            exportEditBox:SetText("QUICore not available")
+            exportEditBox:SetText(ns.L["QUICore not available"])
         end
 
         if selectText then
@@ -259,13 +259,13 @@ local function BuildImportExportTab(tabContent)
     local function RefreshSelectiveExportString(selectText)
         local core = GetCore()
         if not core or not core.ExportProfileSelectionToString then
-            exportEditBox:SetText("QUICore not available")
+            exportEditBox:SetText(ns.L["QUICore not available"])
             return
         end
 
         local selectedIDs = GetSelectedExportCategoryIDs()
         local exportString, exportErr = core:ExportProfileSelectionToString(selectedIDs)
-        exportEditBox:SetText(exportString or exportErr or "Error generating export string")
+        exportEditBox:SetText(exportString or exportErr or ns.L["Error generating export string"])
 
         if selectText then
             FocusExportText()
@@ -290,7 +290,7 @@ local function BuildImportExportTab(tabContent)
         exportCollapsibleSection:SetPoint("TOPLEFT", PAD, y)
         exportCollapsibleSection:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
 
-        Shared.CreateAccentDotLabel(exportCollapsibleSection, "Selective Export", 0)
+        Shared.CreateAccentDotLabel(exportCollapsibleSection, ns.L["Selective Export"], 0)
 
         local body = CreateFrame("Frame", nil, exportCollapsibleSection)
         body:SetPoint("TOPLEFT", exportCollapsibleSection, "TOPLEFT", 0, -28)
@@ -305,7 +305,7 @@ local function BuildImportExportTab(tabContent)
 
         local selectiveExportText = CreateWrappedLabel(
             body,
-            "Parent checkboxes export a whole section. Indented child rows let you export specific subtabs only. Recommended keeps Theme / Fonts / Colors and Layout / Positions unchecked.",
+            ns.L["Parent checkboxes export a whole section. Indented child rows let you export specific subtabs only. Recommended keeps Theme / Fonts / Colors and Layout / Positions unchecked."],
             11,
             C.textMuted
         )
@@ -313,17 +313,17 @@ local function BuildImportExportTab(tabContent)
         selectiveExportText:SetPoint("RIGHT", body, "RIGHT", 0, 0)
         localY = localY - (selectiveExportText:GetStringHeight() or 18) - 12
 
-        local selectAllExportBtn = GUI:CreateButton(body, "SELECT ALL", 110, 24, function()
+        local selectAllExportBtn = GUI:CreateButton(body, ns.L["SELECT ALL"], 110, 24, function()
             ApplyExportSelectionPreset("all")
         end)
         selectAllExportBtn:SetPoint("TOPLEFT", 0, localY)
 
-        local recommendedExportBtn = GUI:CreateButton(body, "RECOMMENDED", 130, 24, function()
+        local recommendedExportBtn = GUI:CreateButton(body, ns.L["RECOMMENDED"], 130, 24, function()
             ApplyExportSelectionPreset("recommended")
         end)
         recommendedExportBtn:SetPoint("LEFT", selectAllExportBtn, "RIGHT", 10, 0)
 
-        local clearExportBtn = GUI:CreateButton(body, "CLEAR", 90, 24, function()
+        local clearExportBtn = GUI:CreateButton(body, ns.L["CLEAR"], 90, 24, function()
             ApplyExportSelectionPreset("clear")
         end)
         clearExportBtn:SetPoint("LEFT", recommendedExportBtn, "RIGHT", 10, 0)
@@ -357,7 +357,7 @@ local function BuildImportExportTab(tabContent)
                     UpdateExportCheckboxStates()
                     UpdateExportActionButtons()
                 end,
-                { description = category.description or ("Include " .. category.label .. " in the exported profile string.") }
+                { description = category.description or (ns.L["Include"] .. " " .. category.label .. " " .. ns.L["in the exported profile string."]) }
             )
             checkbox:SetPoint("TOPLEFT", indent, localY)
             checkbox:SetPoint("RIGHT", body, "RIGHT", 0, 0)
@@ -366,7 +366,7 @@ local function BuildImportExportTab(tabContent)
             local descColor = category.available and C.textMuted or C.warning
             local descText = category.description or ""
             if not category.available then
-                descText = descText ~= "" and (descText .. " Not present in the current profile.") or "Not present in the current profile."
+                descText = descText ~= "" and (descText .. " " .. ns.L["Not present in the current profile."]) or ns.L["Not present in the current profile."]
             end
 
             local desc = CreateWrappedLabel(body, descText, 10, descColor)
@@ -391,7 +391,7 @@ local function BuildImportExportTab(tabContent)
         if availableCount == 0 then
             local noCategories = CreateWrappedLabel(
                 body,
-                "No selective export categories are currently available in this profile.",
+                ns.L["No selective export categories are currently available in this profile."],
                 11,
                 C.textMuted
             )
@@ -402,7 +402,7 @@ local function BuildImportExportTab(tabContent)
 
         local selectiveExportActionNote = CreateWrappedLabel(
             body,
-            "Export Selected writes a partial QUI1 profile string containing only the checked categories. Full Profile regenerates the complete current profile string.",
+            ns.L["Export Selected writes a partial QUI1 profile string containing only the checked categories. Full Profile regenerates the complete current profile string."],
             10,
             C.textMuted
         )
@@ -410,12 +410,12 @@ local function BuildImportExportTab(tabContent)
         selectiveExportActionNote:SetPoint("RIGHT", body, "RIGHT", 0, 0)
         localY = localY - (selectiveExportActionNote:GetStringHeight() or 18) - 14
 
-        exportState.exportSelectedBtn = GUI:CreateButton(body, "EXPORT SELECTED", 170, 28, function()
+        exportState.exportSelectedBtn = GUI:CreateButton(body, ns.L["EXPORT SELECTED"], 170, 28, function()
             RefreshSelectiveExportString(true)
         end)
         exportState.exportSelectedBtn:SetPoint("TOPLEFT", 0, localY)
 
-        local fullExportBtn = GUI:CreateButton(body, "FULL PROFILE", 140, 28, function()
+        local fullExportBtn = GUI:CreateButton(body, ns.L["FULL PROFILE"], 140, 28, function()
             RefreshExportString(true)
         end)
         fullExportBtn:SetPoint("LEFT", exportState.exportSelectedBtn, "RIGHT", 10, 0)
@@ -452,16 +452,16 @@ local function BuildImportExportTab(tabContent)
 
     y = y - 115
 
-    local copyHint = GUI:CreateLabel(postExportContainer, "press Ctrl+C to copy the generated export string", 11, C.textMuted)
+    local copyHint = GUI:CreateLabel(postExportContainer, ns.L["press Ctrl+C to copy the generated export string"], 11, C.textMuted)
     copyHint:SetPoint("TOPLEFT", PAD, y)
 
     y = y - 28
 
     -- Import Section Header (with a paste hint rendered next to the label)
-    local importHeader = Shared.CreateAccentDotLabel(postExportContainer, "Import Profile String", y)
+    local importHeader = Shared.CreateAccentDotLabel(postExportContainer, ns.L["Import Profile String"], y)
 
     -- Paste hint next to header
-    local pasteHint = GUI:CreateLabel(postExportContainer, "press Ctrl+V to paste", 11, C.textMuted)
+    local pasteHint = GUI:CreateLabel(postExportContainer, ns.L["press Ctrl+V to paste"], 11, C.textMuted)
     pasteHint:SetPoint("LEFT", importHeader, "RIGHT", 12, 0)
 
     y = y - 30
@@ -479,19 +479,19 @@ local function BuildImportExportTab(tabContent)
 
     y = y - 110
 
-    local targetProfileInput = GUI:CreateFormEditBox(postExportContainer, "Save As Profile", nil, nil, nil, {
+    local targetProfileInput = GUI:CreateFormEditBox(postExportContainer, ns.L["Save As Profile"], nil, nil, nil, {
         width = 240,
         commitOnEnter = false,
         commitOnFocusLost = false,
         maxLetters = 64,
         onEscapePressed = function(self) self:ClearFocus() end,
-    }, { description = "Optional. Leave empty to overwrite the active profile, or enter a name to import into a named profile instead." })
+    }, { description = ns.L["Optional. Leave empty to overwrite the active profile, or enter a name to import into a named profile instead."] })
     targetProfileInput:SetPoint("TOPLEFT", PAD, y)
     targetProfileInput:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
 
     local targetProfileHint = CreateWrappedLabel(
         postExportContainer,
-        "Optional. Leave this empty to overwrite your current active profile. Enter a name to import into that profile instead.",
+        ns.L["Optional. Leave this empty to overwrite your current active profile. Enter a name to import into that profile instead."],
         10,
         C.textMuted
     )
@@ -508,7 +508,7 @@ local function BuildImportExportTab(tabContent)
 
     local analysisNote = CreateWrappedLabel(
         postExportContainer,
-        "Paste a QUI profile string, analyze it, then choose which categories to import. Unselected categories stay as they are in the target profile.",
+        ns.L["Paste a QUI profile string, analyze it, then choose which categories to import. Unselected categories stay as they are in the target profile."],
         10,
         C.textMuted
     )
@@ -535,10 +535,10 @@ local function BuildImportExportTab(tabContent)
 
     local function ShowReloadPrompt(message)
         GUI:ShowConfirmation({
-            title = "Reload UI?",
-            message = message or "Import complete. Reload UI to apply all changes?",
-            acceptText = "Reload",
-            cancelText = "Later",
+            title = ns.L["Reload UI?"],
+            message = message or ns.L["Import complete. Reload UI to apply all changes?"],
+            acceptText = ns.L["Reload"],
+            cancelText = ns.L["Later"],
             onAccept = function() QUI:SafeReload() end,
         })
     end
@@ -548,9 +548,9 @@ local function BuildImportExportTab(tabContent)
         if printFeedback then
             printFeedback(ok, message, false)
         elseif ok then
-            print("|cff34D399QUI:|r " .. (message or "Import successful"))
+            print("|cff34D399QUI:|r " .. (message or ns.L["Import successful"]))
         else
-            print("|cffff4d4dQUI:|r Import failed: " .. tostring(message or "Unknown error"))
+            print("|cffff4d4dQUI:|r " .. ns.L["Import failed:"] .. " " .. tostring(message or ns.L["Unknown error"]))
         end
     end
 
@@ -687,16 +687,16 @@ local function BuildImportExportTab(tabContent)
         localY = localY - bannerHeight - 14
 
         if isError and type(validationDetail) == "table" and type(validationDetail.errors) == "table" and #validationDetail.errors > 0 then
-            local stripBtn = GUI:CreateButton(content, "STRIP incompatible settings & re-analyze", 300, 28, function()
+            local stripBtn = GUI:CreateButton(content, ns.L["STRIP incompatible settings & re-analyze"], 300, 28, function()
                 local core = GetCore()
                 if not core or not core.SanitizeProfileImportString or not core.BuildProfileImportPreviewFromPayload then
-                    print("|cffff0000QUI: Profile sanitization is not available.|r")
+                    print("|cffff0000QUI: " .. ns.L["Profile sanitization is not available."] .. "|r")
                     return
                 end
                 local ok, payload, prefix, stripped, err = core:SanitizeProfileImportString(importEditBox:GetText())
                 if not ok then
                     local msg = err
-                        or "Could not produce a compatible profile from this string."
+                        or ns.L["Could not produce a compatible profile from this string."]
                     if type(msg) ~= "string" then
                         msg = tostring(msg)
                     end
@@ -705,7 +705,7 @@ local function BuildImportExportTab(tabContent)
                 end
                 local newPreview = core:BuildProfileImportPreviewFromPayload(payload, prefix)
                 if not newPreview then
-                    ClearAnalysis("Sanitization succeeded but preview could not be built.", true)
+                    ClearAnalysis(ns.L["Sanitization succeeded but preview could not be built."], true)
                     return
                 end
                 if type(stripped) == "table" and #stripped > 0 then
@@ -719,15 +719,15 @@ local function BuildImportExportTab(tabContent)
                         analysisState.selected[category.id] = true
                     end
                 end
-                local note = "Incompatible keys were removed so this string matches what the current QUI version expects. Review categories below, then import. Other settings from the string are unchanged."
-                RenderPreview("Import ready (sanitized)", note, newPreview, false, nil)
+                local note = ns.L["Incompatible keys were removed so this string matches what the current QUI version expects. Review categories below, then import. Other settings from the string are unchanged."]
+                RenderPreview(ns.L["Import ready (sanitized)"], note, newPreview, false, nil)
             end)
             stripBtn:SetPoint("TOPLEFT", 0, localY)
             localY = localY - 36
 
             local stripHint = CreateWrappedLabel(
                 content,
-                "Removes only the listed settings from a temporary copy of the import—your pasted text is not modified. Defaults will apply for anything removed.",
+                ns.L["Removes only the listed settings from a temporary copy of the import—your pasted text is not modified. Defaults will apply for anything removed."],
                 10,
                 C.textMuted
             )
@@ -740,7 +740,7 @@ local function BuildImportExportTab(tabContent)
             local removedText = table.concat(preview.sanitizationLog, "\n")
             local sanBanner, sanH = CreateImportBanner(
                 content,
-                "Removed incompatible settings",
+                ns.L["Removed incompatible settings"],
                 removedText,
                 {0.961, 0.620, 0.043, 1},
                 {0.25, 0.18, 0.05, 0.5},
@@ -753,23 +753,23 @@ local function BuildImportExportTab(tabContent)
 
         if preview and type(preview.categories) == "table" then
             -- "Import Everything" button above the collapsible for quick access
-            analysisState.importEverythingBtn = GUI:CreateButton(content, "IMPORT EVERYTHING", 180, 28, function()
+            analysisState.importEverythingBtn = GUI:CreateButton(content, ns.L["IMPORT EVERYTHING"], 180, 28, function()
                 local targetProfileName = GetTargetProfileName()
                 GUI:ShowConfirmation({
-                    title = targetProfileName and "Import Into Profile?" or "Import Entire Profile?",
+                    title = targetProfileName and ns.L["Import Into Profile?"] or ns.L["Import Entire Profile?"],
                     message = targetProfileName
-                        and ("Replace every setting in profile '%s' with this import string?"):format(targetProfileName)
-                        or "Replace your current profile with every setting from this string?",
+                        and (ns.L["Replace every setting in profile '%1$s' with this import string?"]):format(targetProfileName)
+                        or ns.L["Replace your current profile with every setting from this string?"],
                     warningText = targetProfileName
-                        and "If that profile already exists, its settings will be overwritten."
-                        or "This overwrites the whole current profile.",
-                    acceptText = targetProfileName and "Import Into Profile" or "Import Everything",
-                    cancelText = "Cancel",
+                        and ns.L["If that profile already exists, its settings will be overwritten."]
+                        or ns.L["This overwrites the whole current profile."],
+                    acceptText = targetProfileName and ns.L["Import Into Profile"] or ns.L["Import Everything"],
+                    cancelText = ns.L["Cancel"],
                     isDestructive = true,
                     onAccept = function()
                         local core = GetCore()
                         if not core or not core.ImportProfileFromString then
-                            print("|cffff0000QUI: QUICore not available for import.|r")
+                            print("|cffff0000QUI: " .. ns.L["QUICore not available for import."] .. "|r")
                             return
                         end
 
@@ -784,7 +784,7 @@ local function BuildImportExportTab(tabContent)
                         end
                         PrintImportResult(ok, err)
                         if ok then
-                            ShowReloadPrompt("Full profile imported. Reload UI to fully apply the changes?")
+                            ShowReloadPrompt(ns.L["Full profile imported. Reload UI to fully apply the changes?"])
                         end
                     end,
                 })
@@ -792,7 +792,7 @@ local function BuildImportExportTab(tabContent)
             analysisState.importEverythingBtn:SetPoint("TOPLEFT", 0, localY)
             localY = localY - 36
 
-            local orLabel = GUI:CreateLabel(content, "or", 11, C.textMuted)
+            local orLabel = GUI:CreateLabel(content, ns.L["or"], 11, C.textMuted)
             orLabel:SetPoint("TOPLEFT", 0, localY)
             localY = localY - 20
 
@@ -805,7 +805,7 @@ local function BuildImportExportTab(tabContent)
             importCollapsibleSection:SetPoint("TOPLEFT", 0, localY)
             importCollapsibleSection:SetPoint("RIGHT", content, "RIGHT", 0, 0)
 
-            Shared.CreateAccentDotLabel(importCollapsibleSection, "Selective Import", 0)
+            Shared.CreateAccentDotLabel(importCollapsibleSection, ns.L["Selective Import"], 0)
 
             local importBody = CreateFrame("Frame", nil, importCollapsibleSection)
             importBody:SetPoint("TOPLEFT", importCollapsibleSection, "TOPLEFT", 0, -28)
@@ -822,7 +822,7 @@ local function BuildImportExportTab(tabContent)
 
             local summaryText = CreateWrappedLabel(
                 importBody,
-                "Type: " .. tostring(preview.importType or "QUI Profile") .. ". Parent checkboxes import a whole section. Indented child rows let you import specific subtabs only. Recommended keeps Theme / Fonts / Colors and Layout / Positions unchecked.",
+                ns.L["Type:"] .. " " .. tostring(preview.importType or ns.L["QUI Profile"]) .. ". " .. ns.L["Parent checkboxes import a whole section. Indented child rows let you import specific subtabs only. Recommended keeps Theme / Fonts / Colors and Layout / Positions unchecked."],
                 11,
                 C.textMuted
             )
@@ -830,17 +830,17 @@ local function BuildImportExportTab(tabContent)
             summaryText:SetPoint("RIGHT", importBody, "RIGHT", 0, 0)
             innerY = innerY - (summaryText:GetStringHeight() or 18) - 12
 
-            local selectAllBtn = GUI:CreateButton(importBody, "SELECT ALL", 110, 24, function()
+            local selectAllBtn = GUI:CreateButton(importBody, ns.L["SELECT ALL"], 110, 24, function()
                 ApplySelectionPreset("all")
             end)
             selectAllBtn:SetPoint("TOPLEFT", 0, innerY)
 
-            local recommendedBtn = GUI:CreateButton(importBody, "RECOMMENDED", 130, 24, function()
+            local recommendedBtn = GUI:CreateButton(importBody, ns.L["RECOMMENDED"], 130, 24, function()
                 ApplySelectionPreset("recommended")
             end)
             recommendedBtn:SetPoint("LEFT", selectAllBtn, "RIGHT", 10, 0)
 
-            local clearBtn = GUI:CreateButton(importBody, "CLEAR", 90, 24, function()
+            local clearBtn = GUI:CreateButton(importBody, ns.L["CLEAR"], 90, 24, function()
                 ApplySelectionPreset("clear")
             end)
             clearBtn:SetPoint("LEFT", recommendedBtn, "RIGHT", 10, 0)
@@ -874,7 +874,7 @@ local function BuildImportExportTab(tabContent)
                         UpdateCategoryCheckboxStates()
                         UpdateActionButtons()
                     end,
-                    { description = category.description or ("Import the " .. category.label .. " section of the analyzed profile into your current profile.") }
+                    { description = category.description or (ns.L["Import the"] .. " " .. category.label .. " " .. ns.L["section of the analyzed profile into your current profile."]) }
                 )
                 checkbox:SetPoint("TOPLEFT", indent, innerY)
                 checkbox:SetPoint("RIGHT", importBody, "RIGHT", 0, 0)
@@ -883,7 +883,7 @@ local function BuildImportExportTab(tabContent)
                 local descColor = category.available and C.textMuted or C.warning
                 local descText = category.description or ""
                 if not category.available then
-                    descText = descText ~= "" and (descText .. " Not present in this import string.") or "Not present in this import string."
+                    descText = descText ~= "" and (descText .. " " .. ns.L["Not present in this import string."]) or ns.L["Not present in this import string."]
                 end
 
                 local desc = CreateWrappedLabel(importBody, descText, 10, descColor)
@@ -908,7 +908,7 @@ local function BuildImportExportTab(tabContent)
             if availableCount == 0 then
                 local noCategories = CreateWrappedLabel(
                     importBody,
-                    "No selective categories were detected in this string. Try importing everything or use a different QUI profile string.",
+                    ns.L["No selective categories were detected in this string. Try importing everything or use a different QUI profile string."],
                     11,
                     C.textMuted
                 )
@@ -919,7 +919,7 @@ local function BuildImportExportTab(tabContent)
 
             local actionNote = CreateWrappedLabel(
                 importBody,
-                "Import Selected keeps all unchecked categories from the target profile. If a parent section is checked, its child rows are ignored. If Save As Profile is empty, the target is your current profile. Import Everything replaces the whole target profile.",
+                ns.L["Import Selected keeps all unchecked categories from the target profile. If a parent section is checked, its child rows are ignored. If Save As Profile is empty, the target is your current profile. Import Everything replaces the whole target profile."],
                 10,
                 C.textMuted
             )
@@ -927,7 +927,7 @@ local function BuildImportExportTab(tabContent)
             actionNote:SetPoint("RIGHT", importBody, "RIGHT", 0, 0)
             innerY = innerY - (actionNote:GetStringHeight() or 18) - 14
 
-            analysisState.importSelectedBtn = GUI:CreateButton(importBody, "IMPORT SELECTED", 170, 28, function()
+            analysisState.importSelectedBtn = GUI:CreateButton(importBody, ns.L["IMPORT SELECTED"], 170, 28, function()
                 local selectedIDs = GetSelectedCategoryIDs()
                 if #selectedIDs == 0 then
                     return
@@ -935,7 +935,7 @@ local function BuildImportExportTab(tabContent)
 
                 local core = GetCore()
                 if not core or not core.ImportProfileSelectionFromString then
-                    print("|cffff0000QUI: QUICore not available for selective import.|r")
+                    print("|cffff0000QUI: " .. ns.L["QUICore not available for selective import."] .. "|r")
                     return
                 end
 
@@ -955,7 +955,7 @@ local function BuildImportExportTab(tabContent)
                 end
                 PrintImportResult(ok, err)
                 if ok then
-                    ShowReloadPrompt("Selected profile settings imported. Reload UI to fully apply the changes?")
+                    ShowReloadPrompt(ns.L["Selected profile settings imported. Reload UI to fully apply the changes?"])
                 end
             end)
             analysisState.importSelectedBtn:SetPoint("TOPLEFT", 0, innerY)
@@ -979,18 +979,18 @@ local function BuildImportExportTab(tabContent)
         analysisState.selected = {}
         analysisState.activePayload = nil
         RenderPreview(
-            isError and "Import Analysis Failed" or "Analyze Import",
-            message or "Paste a QUI profile string and click Analyze Import to choose what to import.",
+            isError and ns.L["Import Analysis Failed"] or ns.L["Analyze Import"],
+            message or ns.L["Paste a QUI profile string and click Analyze Import to choose what to import."],
             nil,
             isError,
             nil
         )
     end
 
-    local analyzeBtn = GUI:CreateButton(postExportContainer, "ANALYZE IMPORT", 160, 28, function()
+    local analyzeBtn = GUI:CreateButton(postExportContainer, ns.L["ANALYZE IMPORT"], 160, 28, function()
         local core = GetCore()
         if not core or not core.AnalyzeProfileImportString then
-            ClearAnalysis("QUICore is not available for import analysis.", true)
+            ClearAnalysis(ns.L["QUICore is not available for import analysis."], true)
             return
         end
 
@@ -1002,14 +1002,14 @@ local function BuildImportExportTab(tabContent)
                 analysisState.activePayload = nil
                 local detailText = core:DescribeProfileImportValidationErrors(result)
                 RenderPreview(
-                    "Import analysis blocked",
+                    ns.L["Import analysis blocked"],
                     detailText,
                     nil,
                     true,
                     result
                 )
             else
-                ClearAnalysis(result or "Import analysis failed.", true)
+                ClearAnalysis(result or ns.L["Import analysis failed."], true)
             end
             return
         end
@@ -1024,8 +1024,8 @@ local function BuildImportExportTab(tabContent)
         end
 
         RenderPreview(
-            "Import Ready",
-            "Choose the parts of the profile you want to import. Leave categories unchecked to preserve your current settings in those areas.",
+            ns.L["Import Ready"],
+            ns.L["Choose the parts of the profile you want to import. Leave categories unchecked to preserve your current settings in those areas."],
             result,
             false,
             nil
@@ -1033,16 +1033,16 @@ local function BuildImportExportTab(tabContent)
     end)
     analyzeBtn:SetPoint("TOPLEFT", PAD, y)
 
-    local analyzeHint = GUI:CreateLabel(postExportContainer, "Analyze first, then import selected parts or the whole profile.", 11, C.textMuted)
+    local analyzeHint = GUI:CreateLabel(postExportContainer, ns.L["Analyze first, then import selected parts or the whole profile."], 11, C.textMuted)
     analyzeHint:SetPoint("LEFT", analyzeBtn, "RIGHT", 12, 0)
 
     importEditBox:SetScript("OnTextChanged", function(_, userInput)
         if userInput and (analysisState.preview or analysisState.activePayload) then
-            ClearAnalysis("Import string changed. Analyze it again before importing.", false)
+            ClearAnalysis(ns.L["Import string changed. Analyze it again before importing."], false)
         end
     end)
 
-    ClearAnalysis("Paste a QUI profile string and click Analyze Import to choose what to import.", false)
+    ClearAnalysis(ns.L["Paste a QUI profile string and click Analyze Import to choose what to import."], false)
 end
 
 -- PAGE: QUI Import/Export

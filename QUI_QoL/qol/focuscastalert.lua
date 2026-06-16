@@ -10,7 +10,7 @@ local UIKit = ns.UIKit
 
 local DEFAULT_SETTINGS = {
     enabled = false,
-    text = "Focus is casting. Kick!",
+    text = ns.L["Focus is casting. Kick!"],
     anchorTo = "screen", -- "screen", "essential", "focus"
     offsetX = 0,
     offsetY = -120,
@@ -315,7 +315,7 @@ local function ApplyAlertText(template)
     local unitName
     if hasUnit then
         unitName = UnitName("focus")
-        if unitName == nil then unitName = "Focus" end
+        if unitName == nil then unitName = ns.L["Focus"] end
     end
 
     -- Resolve spell name — get raw from API (may be secret, but renderable).
@@ -332,7 +332,7 @@ local function ApplyAlertText(template)
     -- Escape % in replacement values so gsub doesn't interpret them as captures.
     if not IsSecretValue(unitName) and not IsSecretValue(rawSpellName) then
         if hasUnit then
-            text = text:gsub("{unit}", SafePlaceholder(unitName, "Focus"):gsub("%%", "%%%%"))
+            text = text:gsub("{unit}", SafePlaceholder(unitName, ns.L["Focus"]):gsub("%%", "%%%%"))
         end
         if hasSpell then
             text = text:gsub("{spell}", SafePlaceholder(rawSpellName, ""):gsub("%%", "%%%%"))
@@ -375,7 +375,7 @@ local function ApplyAlertText(template)
     if not ok then
         -- Fallback: show without secret placeholders.
         local fallback = template
-        if hasUnit then fallback = fallback:gsub("{unit}", SafePlaceholder(unitName, "Focus")) end
+        if hasUnit then fallback = fallback:gsub("{unit}", SafePlaceholder(unitName, ns.L["Focus"])) end
         if hasSpell then fallback = fallback:gsub("{spell}", "") end
         state.text:SetText(fallback)
     end
@@ -400,9 +400,15 @@ local function ApplyTextStyle()
     if fontOutline == nil then
         fontOutline = Helpers.GetGeneralFontOutline() or DEFAULT_SETTINGS.fontOutline
     end
-    local fontSet = state.text:SetFont(fontPath, fontSize, fontOutline)
-    if not fontSet then
-        state.text:SetFont(FALLBACK_FONT_PATH, fontSize, FALLBACK_FONT_OUTLINE)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        -- ApplyFontWithFallback already falls back to a usable physical font
+        -- internally, so no secondary FALLBACK_FONT_PATH retry is needed here.
+        ns.Helpers.ApplyFontWithFallback(state.text, fontPath, fontSize, fontOutline)
+    else
+        local fontSet = state.text:SetFont(fontPath, fontSize, fontOutline)
+        if not fontSet then
+            state.text:SetFont(FALLBACK_FONT_PATH, fontSize, FALLBACK_FONT_OUTLINE)
+        end
     end
 
     local color
@@ -427,7 +433,11 @@ local function CreateAlertFrame()
     text:SetPoint("CENTER", frame, "CENTER", 0, 0)
     text:SetJustifyH("CENTER")
     text:SetJustifyV("MIDDLE")
-    text:SetFont(FALLBACK_FONT_PATH, DEFAULT_SETTINGS.fontSize, FALLBACK_FONT_OUTLINE)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(text, FALLBACK_FONT_PATH, DEFAULT_SETTINGS.fontSize, FALLBACK_FONT_OUTLINE)
+    else
+        text:SetFont(FALLBACK_FONT_PATH, DEFAULT_SETTINGS.fontSize, FALLBACK_FONT_OUTLINE)
+    end
     text:SetText(DEFAULT_SETTINGS.text)
 
     state.frame = frame

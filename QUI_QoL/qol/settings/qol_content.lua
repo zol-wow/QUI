@@ -91,19 +91,19 @@ end
 
 local function BuildSettingsPanel(L, db)
     if not db.general then return end
-    L.headerAt("Settings Panel")
+    L.headerAt(ns.L["Settings Panel"])
     local s = L.sectionAt()
     local w = GUI:CreateFormCheckbox(s.frame, nil, "showOptionTooltips", db.general, nil,
-        { description = "Show a brief explanation of each setting when you hover over it in this panel." })
-    s.AddRow(row(s.frame, "Show Setting Tooltips", w))
+        { description = ns.L["Show a brief explanation of each setting when you hover over it in this panel."] })
+    s.AddRow(row(s.frame, ns.L["Show Setting Tooltips"], w))
     L.closeSection(s)
 end
 
 local function BuildUIScale(L, db)
     if not db.general then return end
 
-    L.headerAt("UI Scale")
-    L.intro("Global scale factor applied to the entire Blizzard UI. Lower values make elements smaller; the presets below pick pixel-perfect values for common resolutions.")
+    L.headerAt(ns.L["UI Scale"])
+    L.intro(ns.L["Global scale factor applied to the entire Blizzard UI. Lower values make elements smaller; the presets below pick pixel-perfect values for common resolutions."])
 
     local s = L.sectionAt()
     local scaleSlider = GUI:CreateFormSlider(s.frame, nil, 0.3, 2.0, 0.01,
@@ -111,15 +111,15 @@ local function BuildUIScale(L, db)
             if InCombatLockdown() then return end
             UIParent:SetScale(val)
         end, { deferOnDrag = true, precision = 7, editWidth = 58,
-              description = "Global scale factor applied to the entire Blizzard UI." })
-    s.AddRow(row(s.frame, "Global UI Scale", scaleSlider))
+              description = ns.L["Global scale factor applied to the entire Blizzard UI."] })
+    s.AddRow(row(s.frame, ns.L["Global UI Scale"], scaleSlider))
     L.closeSection(s)
 
     local function ApplyPreset(val, name)
         if InCombatLockdown() then return end
         db.general.uiScale = val
         UIParent:SetScale(val)
-        local msg = "|cff60A5FA[QUI]|r UI scale set to " .. val
+        local msg = "|cff60A5FA[QUI]|r " .. ns.L["UI scale set to"] .. " " .. val
         if name then msg = msg .. " (" .. name .. ")" end
         DEFAULT_CHAT_FRAME:AddMessage(msg)
         scaleSlider.SetValue(val, true)
@@ -129,14 +129,14 @@ local function BuildUIScale(L, db)
         local _, height = GetPhysicalScreenSize()
         local scale = 768 / height
         scale = math.max(0.3, math.min(2.0, scale))
-        ApplyPreset(scale, "Auto")
+        ApplyPreset(scale, ns.L["Auto"])
     end
 
     local PRESET_HEIGHT = 86
     local presetBlock = CreateFrame("Frame", nil, nil)
     L.placeCustom(presetBlock, PRESET_HEIGHT)
 
-    local presetLabel = GUI:CreateLabel(presetBlock, "Quick UI Scale Presets:", 12, C.text)
+    local presetLabel = GUI:CreateLabel(presetBlock, ns.L["Quick UI Scale Presets:"], 12, C.text)
     presetLabel:SetPoint("TOPLEFT", presetBlock, "TOPLEFT", 0, 0)
 
     local buttonContainer = CreateFrame("Frame", nil, presetBlock)
@@ -151,7 +151,7 @@ local function BuildUIScale(L, db)
     buttons[2] = GUI:CreateButton(buttonContainer, "1440p", 50, 26, function() ApplyPreset(0.5333333, "1440p") end)
     buttons[3] = GUI:CreateButton(buttonContainer, "1440p+", 50, 26, function() ApplyPreset(0.64, "1440p+") end)
     buttons[4] = GUI:CreateButton(buttonContainer, "4K", 50, 26, function() ApplyPreset(0.3555556, "4K") end)
-    buttons[5] = GUI:CreateButton(buttonContainer, "Auto", 50, 26, AutoScale)
+    buttons[5] = GUI:CreateButton(buttonContainer, ns.L["Auto"], 50, 26, AutoScale)
 
     buttonContainer:SetScript("OnSizeChanged", function(self, width)
         if width and width > 0 then
@@ -169,11 +169,11 @@ local function BuildUIScale(L, db)
     end)
 
     local tooltipData = {
-        { title = "1080p",  desc = "Scale: 0.7111111\nPixel-perfect for 1920x1080" },
-        { title = "1440p",  desc = "Scale: 0.5333333\nPixel-perfect for 2560x1440" },
-        { title = "1440p+", desc = "Scale: 0.64\nQuazii's personal setting - larger and more readable.\nRequires manual adjustment for pixel perfection." },
-        { title = "4K",     desc = "Scale: 0.3555556\nPixel-perfect for 3840x2160" },
-        { title = "Auto",   desc = "Computes pixel-perfect scale based on your resolution.\nFormula: 768 / screen height" },
+        { title = "1080p",  desc = ns.L["Scale: 0.7111111\nPixel-perfect for 1920x1080"] },
+        { title = "1440p",  desc = ns.L["Scale: 0.5333333\nPixel-perfect for 2560x1440"] },
+        { title = "1440p+", desc = ns.L["Scale: 0.64\nQuazii's personal setting - larger and more readable.\nRequires manual adjustment for pixel perfection."] },
+        { title = "4K",     desc = ns.L["Scale: 0.3555556\nPixel-perfect for 3840x2160"] },
+        { title = ns.L["Auto"],   desc = ns.L["Computes pixel-perfect scale based on your resolution.\nFormula: 768 / screen height"] },
     }
     for i, btn in ipairs(buttons) do
         local data = tooltipData[i]
@@ -186,13 +186,13 @@ local function BuildUIScale(L, db)
         btn:HookScript("OnLeave", function() GameTooltip:Hide() end)
     end
 
-    local presetSummary = GUI:CreateLabel(presetBlock, "Hover any preset for details. 1440p+ is Quazii's personal setting.", 11, C.textMuted)
+    local presetSummary = GUI:CreateLabel(presetBlock, ns.L["Hover any preset for details. 1440p+ is Quazii's personal setting."], 11, C.textMuted)
     presetSummary:SetPoint("TOPLEFT", buttonContainer, "BOTTOMLEFT", 0, -8)
     presetSummary:SetPoint("RIGHT", presetBlock, "RIGHT", 0, 0)
     presetSummary:SetJustifyH("LEFT")
 
     local bigPicture = GUI:CreateLabel(presetBlock,
-        "UI scale is highly personal — it depends on your monitor size, resolution, and preference. If you already have a scale you like, stick with it.",
+        ns.L["UI scale is highly personal — it depends on your monitor size, resolution, and preference. If you already have a scale you like, stick with it."],
         11, C.textMuted)
     bigPicture:SetPoint("TOPLEFT", presetSummary, "BOTTOMLEFT", 0, -6)
     bigPicture:SetPoint("RIGHT", presetBlock, "RIGHT", 0, 0)
@@ -229,8 +229,8 @@ local function BuildDefaultFonts(L, db)
         RefreshDefaultTextures()
     end
 
-    L.headerAt("Default Font Settings")
-    L.intro("These settings apply throughout the UI. Individual elements with their own font options will override these defaults.")
+    L.headerAt(ns.L["Default Font Settings"])
+    L.intro(ns.L["These settings apply throughout the UI. Individual elements with their own font options will override these defaults."])
 
     local fontList = {}
     local LSM = ns.LSM
@@ -243,29 +243,29 @@ local function BuildDefaultFonts(L, db)
         fontList = { { value = "Friz Quadrata TT", text = "Friz Quadrata TT" } }
     end
     local outlineOptions = {
-        { value = "", text = "None" },
-        { value = "OUTLINE", text = "Outline" },
-        { value = "THICKOUTLINE", text = "Thick Outline" },
+        { value = "", text = ns.L["None"] },
+        { value = "OUTLINE", text = ns.L["Outline"] },
+        { value = "THICKOUTLINE", text = ns.L["Thick Outline"] },
     }
 
     local s = L.sectionAt()
     local fontW = GUI:CreateFormDropdown(s.frame, nil, fontList, "font", db.general, RefreshDefaultFonts,
-        { description = "Font used as the default across QUI-managed text elements that don't have their own font override." })
+        { description = ns.L["Font used as the default across QUI-managed text elements that don't have their own font override."] })
     local outlineW = GUI:CreateFormDropdown(s.frame, nil, outlineOptions, "fontOutline", db.general, RefreshDefaultFonts,
-        { description = "Default font outline applied to QUI-managed text. Outline helps readability against busy backgrounds." })
-    s.AddRow(row(s.frame, "Default Font", fontW), row(s.frame, "Font Outline", outlineW))
+        { description = ns.L["Default font outline applied to QUI-managed text. Outline helps readability against busy backgrounds."] })
+    s.AddRow(row(s.frame, ns.L["Default Font"], fontW), row(s.frame, ns.L["Font Outline"], outlineW))
 
     local sctW = GUI:CreateFormCheckbox(s.frame, nil, "overrideSCTFont", db.general, RefreshDefaultFonts,
-        { description = "Apply the QUI default font to Blizzard's floating combat text numbers." })
+        { description = ns.L["Apply the QUI default font to Blizzard's floating combat text numbers."] })
     local blizW = GUI:CreateFormCheckbox(s.frame, nil, "applyGlobalFontToBlizzard", db.general, RefreshDefaultAppearance,
-        { description = "Replace Blizzard's default UI fonts with the QUI default font so the whole client shares the same typography." })
-    s.AddRow(row(s.frame, "Override Scrolling Combat Text Font", sctW), row(s.frame, "Apply Font to Blizzard UI", blizW))
+        { description = ns.L["Replace Blizzard's default UI fonts with the QUI default font so the whole client shares the same typography."] })
+    s.AddRow(row(s.frame, ns.L["Override Scrolling Combat Text Font"], sctW), row(s.frame, ns.L["Apply Font to Blizzard UI"], blizW))
     L.closeSection(s)
 end
 
 local function BuildFPSPreset(L, db)
-    L.headerAt("Quazii Recommended FPS Settings")
-    L.intro("Apply Quazii's optimized graphics settings for competitive play. Your current settings are saved when you click Apply — use Restore Previous Settings to revert anytime. Clicking Apply again overwrites the backup.")
+    L.headerAt(ns.L["Quazii Recommended FPS Settings"])
+    L.intro(ns.L["Apply Quazii's optimized graphics settings for competitive play. Your current settings are saved when you click Apply — use Restore Previous Settings to revert anytime. Clicking Apply again overwrites the backup."])
 
     local btnBlock = CreateFrame("Frame", nil, nil)
     L.placeCustom(btnBlock, 60)
@@ -276,15 +276,15 @@ local function BuildFPSPreset(L, db)
     local function UpdateFPSStatus()
         local _, matched, total = Shared.CheckCVarsMatch()
         if matched >= 50 then
-            fpsStatusText:SetText("Settings: All applied")
+            fpsStatusText:SetText(ns.L["Settings: All applied"])
             fpsStatusText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
         else
-            fpsStatusText:SetText(string.format("Settings: %d/%d match", matched, total))
+            fpsStatusText:SetText(string.format(ns.L["Settings: %1$d/%2$d match"], matched, total))
             fpsStatusText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
         end
     end
 
-    local applyFpsBtn = GUI:CreateButton(btnBlock, "Apply FPS Settings", 180, 28, function()
+    local applyFpsBtn = GUI:CreateButton(btnBlock, ns.L["Apply FPS Settings"], 180, 28, function()
         Shared.ApplyQuaziiFPSSettings()
         restoreFpsBtn:SetAlpha(1)
         restoreFpsBtn:Enable()
@@ -293,7 +293,7 @@ local function BuildFPSPreset(L, db)
     applyFpsBtn:SetPoint("TOPLEFT", btnBlock, "TOPLEFT", 0, 0)
     applyFpsBtn:SetPoint("RIGHT", btnBlock, "CENTER", -5, 0)
 
-    restoreFpsBtn = GUI:CreateButton(btnBlock, "Restore Previous Settings", 180, 28, function()
+    restoreFpsBtn = GUI:CreateButton(btnBlock, ns.L["Restore Previous Settings"], 180, 28, function()
         if Shared.RestorePreviousFPSSettings() then
             restoreFpsBtn:SetAlpha(0.5)
             restoreFpsBtn:Disable()
@@ -322,17 +322,17 @@ local function BuildCombatText(L, db)
         if _G.QUI_RefreshCombatText then _G.QUI_RefreshCombatText() end
     end
 
-    L.headerAt("Combat Status Text Indicator")
-    L.intro("Displays '+Combat' or '-Combat' text on screen when entering or leaving combat. Useful for Shadowmeld skips.")
+    L.headerAt(ns.L["Combat Status Text Indicator"])
+    L.intro(ns.L["Displays '+Combat' or '-Combat' text on screen when entering or leaving combat. Useful for Shadowmeld skips."])
 
     local previewBlock = CreateFrame("Frame", nil, nil)
     L.placeCustom(previewBlock, 32)
-    local previewEnterBtn = GUI:CreateButton(previewBlock, "Preview +Combat", 140, 28, function()
+    local previewEnterBtn = GUI:CreateButton(previewBlock, ns.L["Preview +Combat"], 140, 28, function()
         if _G.QUI_PreviewCombatText then _G.QUI_PreviewCombatText("+Combat") end
     end)
     previewEnterBtn:SetPoint("TOPLEFT", previewBlock, "TOPLEFT", 0, 0)
     previewEnterBtn:SetPoint("RIGHT", previewBlock, "CENTER", -5, 0)
-    local previewLeaveBtn = GUI:CreateButton(previewBlock, "Preview -Combat", 140, 28, function()
+    local previewLeaveBtn = GUI:CreateButton(previewBlock, ns.L["Preview -Combat"], 140, 28, function()
         if _G.QUI_PreviewCombatText then _G.QUI_PreviewCombatText("-Combat") end
     end)
     previewLeaveBtn:SetPoint("LEFT", previewBlock, "CENTER", 5, 0)
@@ -341,16 +341,16 @@ local function BuildCombatText(L, db)
 
     local s = L.sectionAt()
     local enableW = GUI:CreateFormCheckbox(s.frame, nil, "enabled", combatTextDB, RefreshCombatText,
-        { description = "Show '+Combat' and '-Combat' floating text when combat starts and ends." })
+        { description = ns.L["Show '+Combat' and '-Combat' floating text when combat starts and ends."] })
     local displayW = GUI:CreateFormSlider(s.frame, nil, 0.3, 3.0, 0.1, "displayTime", combatTextDB, RefreshCombatText,
-        { description = "How long the combat text stays fully visible before starting to fade, in seconds." })
-    s.AddRow(row(s.frame, "Enable Combat Text", enableW), row(s.frame, "Display Time (sec)", displayW))
+        { description = ns.L["How long the combat text stays fully visible before starting to fade, in seconds."] })
+    s.AddRow(row(s.frame, ns.L["Enable Combat Text"], enableW), row(s.frame, ns.L["Display Time (sec)"], displayW))
 
     local fadeW = GUI:CreateFormSlider(s.frame, nil, 0.1, 1.0, 0.05, "fadeTime", combatTextDB, RefreshCombatText,
-        { description = "How long the fade-out animation takes after the display time elapses, in seconds." })
+        { description = ns.L["How long the fade-out animation takes after the display time elapses, in seconds."] })
     local sizeW = GUI:CreateFormSlider(s.frame, nil, 12, 48, 1, "fontSize", combatTextDB, RefreshCombatText,
-        { description = "Font size of the combat text." })
-    s.AddRow(row(s.frame, "Fade Duration (sec)", fadeW), row(s.frame, "Font Size", sizeW))
+        { description = ns.L["Font size of the combat text."] })
+    s.AddRow(row(s.frame, ns.L["Fade Duration (sec)"], fadeW), row(s.frame, ns.L["Font Size"], sizeW))
 
     local fontList = Shared.GetFontList()
     local combatTextFontDropdown
@@ -359,96 +359,96 @@ local function BuildCombatText(L, db)
         if combatTextFontDropdown and combatTextFontDropdown.SetEnabled then
             combatTextFontDropdown:SetEnabled(val)
         end
-    end, { description = "Use a custom font for the combat text instead of inheriting the global QUI default font." })
+    end, { description = ns.L["Use a custom font for the combat text instead of inheriting the global QUI default font."] })
     combatTextFontDropdown = GUI:CreateFormDropdown(s.frame, nil, fontList, "font", combatTextDB, RefreshCombatText,
-        { description = "Custom font used for the combat text when Use Custom Font is enabled." })
+        { description = ns.L["Custom font used for the combat text when Use Custom Font is enabled."] })
     if combatTextFontDropdown.SetEnabled then
         combatTextFontDropdown:SetEnabled(combatTextDB.useCustomFont == true)
     end
-    s.AddRow(row(s.frame, "Use Custom Font", useCustomFontCheck), row(s.frame, "Font", combatTextFontDropdown))
+    s.AddRow(row(s.frame, ns.L["Use Custom Font"], useCustomFontCheck), row(s.frame, ns.L["Font"], combatTextFontDropdown))
 
     local xW = GUI:CreateFormSlider(s.frame, nil, -2000, 2000, 1, "xOffset", combatTextDB, RefreshCombatText,
-        { description = "Horizontal pixel offset of the combat text from the screen center." })
+        { description = ns.L["Horizontal pixel offset of the combat text from the screen center."] })
     local yW = GUI:CreateFormSlider(s.frame, nil, -2000, 2000, 1, "yOffset", combatTextDB, RefreshCombatText,
-        { description = "Vertical pixel offset of the combat text from the screen center." })
-    s.AddRow(row(s.frame, "X Position Offset", xW), row(s.frame, "Y Position Offset", yW))
+        { description = ns.L["Vertical pixel offset of the combat text from the screen center."] })
+    s.AddRow(row(s.frame, ns.L["X Position Offset"], xW), row(s.frame, ns.L["Y Position Offset"], yW))
 
     local enterColorW = GUI:CreateFormColorPicker(s.frame, nil, "enterCombatColor", combatTextDB, RefreshCombatText, nil,
-        { description = "Color of the '+Combat' text shown when entering combat." })
+        { description = ns.L["Color of the '+Combat' text shown when entering combat."] })
     local leaveColorW = GUI:CreateFormColorPicker(s.frame, nil, "leaveCombatColor", combatTextDB, RefreshCombatText, nil,
-        { description = "Color of the '-Combat' text shown when leaving combat." })
-    s.AddRow(row(s.frame, "+Combat Text Color", enterColorW), row(s.frame, "-Combat Text Color", leaveColorW))
+        { description = ns.L["Color of the '-Combat' text shown when leaving combat."] })
+    s.AddRow(row(s.frame, ns.L["+Combat Text Color"], enterColorW), row(s.frame, ns.L["-Combat Text Color"], leaveColorW))
     L.closeSection(s)
 end
 
 local function BuildAutomation(L, generalDB)
     if not generalDB then return end
 
-    L.headerAt("Automation")
-    L.intro("Toggle quality-of-life automation features. These run silently in the background.")
+    L.headerAt(ns.L["Automation"])
+    L.intro(ns.L["Toggle quality-of-life automation features. These run silently in the background."])
 
     local s = L.sectionAt()
     local sellW = GUI:CreateFormCheckbox(s.frame, nil, "sellJunk", generalDB, nil,
-        { description = "Automatically sell grey-quality junk items in your bags when you open a merchant window." })
+        { description = ns.L["Automatically sell grey-quality junk items in your bags when you open a merchant window."] })
     local repairOptions = {
-        { value = "off", text = "Off" },
-        { value = "personal", text = "Personal Gold" },
-        { value = "guild", text = "Guild Bank (fallback to personal)" },
+        { value = "off", text = ns.L["Off"] },
+        { value = "personal", text = ns.L["Personal Gold"] },
+        { value = "guild", text = ns.L["Guild Bank (fallback to personal)"] },
     }
     local repairW = GUI:CreateFormDropdown(s.frame, nil, repairOptions, "autoRepair", generalDB, nil,
-        { description = "Automatically repair durability when you open a repair merchant. Guild mode tries guild bank first." })
-    s.AddRow(row(s.frame, "Sell Junk Items at Vendors", sellW), row(s.frame, "Auto Repair at Vendors", repairW))
+        { description = ns.L["Automatically repair durability when you open a repair merchant. Guild mode tries guild bank first."] })
+    s.AddRow(row(s.frame, ns.L["Sell Junk Items at Vendors"], sellW), row(s.frame, ns.L["Auto Repair at Vendors"], repairW))
 
     local fastLootW = GUI:CreateFormCheckbox(s.frame, nil, "fastAutoLoot", generalDB, nil,
-        { description = "Speed up auto-loot by moving items as fast as the client allows, skipping Blizzard's default per-tick delay." })
+        { description = ns.L["Speed up auto-loot by moving items as fast as the client allows, skipping Blizzard's default per-tick delay."] })
     local inviteOptions = {
-        { value = "off", text = "Off" },
-        { value = "all", text = "Everyone" },
-        { value = "friends", text = "Friends & BNet Only" },
-        { value = "guild", text = "Guild Members Only" },
-        { value = "both", text = "Friends & Guild" },
+        { value = "off", text = ns.L["Off"] },
+        { value = "all", text = ns.L["Everyone"] },
+        { value = "friends", text = ns.L["Friends & BNet Only"] },
+        { value = "guild", text = ns.L["Guild Members Only"] },
+        { value = "both", text = ns.L["Friends & Guild"] },
     }
     local inviteW = GUI:CreateFormDropdown(s.frame, nil, inviteOptions, "autoAcceptInvites", generalDB, nil,
-        { description = "Automatically accept incoming party/raid invites from the chosen set of senders." })
-    s.AddRow(row(s.frame, "Fast Auto Loot", fastLootW), row(s.frame, "Auto Accept Party Invites", inviteW))
+        { description = ns.L["Automatically accept incoming party/raid invites from the chosen set of senders."] })
+    s.AddRow(row(s.frame, ns.L["Fast Auto Loot"], fastLootW), row(s.frame, ns.L["Auto Accept Party Invites"], inviteW))
 
     local roleW = GUI:CreateFormCheckbox(s.frame, nil, "autoRoleAccept", generalDB, nil,
-        { description = "Automatically confirm role checks in LFG using the role you already had selected." })
+        { description = ns.L["Automatically confirm role checks in LFG using the role you already had selected."] })
     local questW = GUI:CreateFormCheckbox(s.frame, nil, "autoAcceptQuest", generalDB, nil,
-        { description = "Automatically accept quests from NPCs without requiring a click." })
-    s.AddRow(row(s.frame, "Auto Accept Role Check", roleW), row(s.frame, "Auto Accept Quests", questW))
+        { description = ns.L["Automatically accept quests from NPCs without requiring a click."] })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Role Check"], roleW), row(s.frame, ns.L["Auto Accept Quests"], questW))
 
     local turnInW = GUI:CreateFormCheckbox(s.frame, nil, "autoTurnInQuest", generalDB, nil,
-        { description = "Automatically hand in completed quests and pick the only available reward when applicable." })
+        { description = ns.L["Automatically hand in completed quests and pick the only available reward when applicable."] })
     local gossipW = GUI:CreateFormCheckbox(s.frame, nil, "autoSelectGossip", generalDB, nil,
-        { description = "When an NPC gossip has a single option, pick it automatically so you skip the popup." })
-    s.AddRow(row(s.frame, "Auto Turn-In Quests", turnInW), row(s.frame, "Auto Select Single Gossip Option", gossipW))
+        { description = ns.L["When an NPC gossip has a single option, pick it automatically so you skip the popup."] })
+    s.AddRow(row(s.frame, ns.L["Auto Turn-In Quests"], turnInW), row(s.frame, ns.L["Auto Select Single Gossip Option"], gossipW))
 
     local pauseW = GUI:CreateFormCheckbox(s.frame, nil, "questHoldShift", generalDB, nil,
-        { description = "Hold Shift while interacting to temporarily disable the quest and gossip automations above." })
+        { description = ns.L["Hold Shift while interacting to temporarily disable the quest and gossip automations above."] })
     local keyW = GUI:CreateFormCheckbox(s.frame, nil, "autoInsertKey", generalDB, nil,
-        { description = "Automatically place your Mythic+ keystone into the font of power when you open the keystone window." })
-    s.AddRow(row(s.frame, "Hold Shift to Pause Quest/Gossip Automation", pauseW), row(s.frame, "Auto Insert M+ Keys", keyW))
+        { description = ns.L["Automatically place your Mythic+ keystone into the font of power when you open the keystone window."] })
+    s.AddRow(row(s.frame, ns.L["Hold Shift to Pause Quest/Gossip Automation"], pauseW), row(s.frame, ns.L["Auto Insert M+ Keys"], keyW))
 
     local logMW = GUI:CreateFormCheckbox(s.frame, nil, "autoCombatLog", generalDB, function()
         if _G.QUI_RefreshAutoCombatLogging then _G.QUI_RefreshAutoCombatLogging() end
-    end, { description = "Turn on combat logging automatically when a Mythic+ run starts, and off when it ends." })
+    end, { description = ns.L["Turn on combat logging automatically when a Mythic+ run starts, and off when it ends."] })
     local logRW = GUI:CreateFormCheckbox(s.frame, nil, "autoCombatLogRaid", generalDB, function()
         if _G.QUI_RefreshAutoCombatLogging then _G.QUI_RefreshAutoCombatLogging() end
-    end, { description = "Turn on combat logging automatically when you zone into a raid instance." })
-    s.AddRow(row(s.frame, "Auto Combat Log in M+", logMW), row(s.frame, "Auto Combat Log in Raids", logRW))
+    end, { description = ns.L["Turn on combat logging automatically when you zone into a raid instance."] })
+    s.AddRow(row(s.frame, ns.L["Auto Combat Log in M+"], logMW), row(s.frame, ns.L["Auto Combat Log in Raids"], logRW))
 
     local telW = GUI:CreateFormCheckbox(s.frame, nil, "mplusTeleportEnabled", generalDB, nil,
-        { description = "Allow clicking on a dungeon icon in the Mythic+ UI to cast its teleport spell if you have it." })
+        { description = ns.L["Allow clicking on a dungeon icon in the Mythic+ UI to cast its teleport spell if you have it."] })
     local delW = GUI:CreateFormCheckbox(s.frame, nil, "autoDeleteConfirm", generalDB, nil,
-        { description = "Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item." })
-    s.AddRow(row(s.frame, "Click-to-Teleport on M+ Tab", telW), row(s.frame, "Auto-Fill DELETE Confirmation Text", delW))
+        { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
+    s.AddRow(row(s.frame, ns.L["Click-to-Teleport on M+ Tab"], telW), row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW))
 
     local ahW = GUI:CreateFormCheckbox(s.frame, nil, "auctionHouseExpansionFilter", generalDB, nil,
-        { description = "Automatically toggle the current expansion filter when you open the Auction House so you only see modern items." })
+        { description = ns.L["Automatically toggle the current expansion filter when you open the Auction House so you only see modern items."] })
     local coW = GUI:CreateFormCheckbox(s.frame, nil, "craftingOrderExpansionFilter", generalDB, nil,
-        { description = "Automatically toggle the current expansion filter when you open the Crafting Orders window." })
-    s.AddRow(row(s.frame, "Auto-Enable AH Expansion Filter", ahW), row(s.frame, "Auto-Enable Crafting Orders Filter", coW))
+        { description = ns.L["Automatically toggle the current expansion filter when you open the Crafting Orders window."] })
+    s.AddRow(row(s.frame, ns.L["Auto-Enable AH Expansion Filter"], ahW), row(s.frame, ns.L["Auto-Enable Crafting Orders Filter"], coW))
     L.closeSection(s)
 end
 
@@ -457,8 +457,8 @@ local function BuildPopupBlocker(L, generalDB)
     if type(generalDB.popupBlocker) ~= "table" then generalDB.popupBlocker = {} end
     local popupDB = generalDB.popupBlocker
 
-    L.headerAt("Popup & Toast Blocker")
-    L.intro("Block selected Blizzard popups, toasts, and reminder alerts (including talent reminders and collection toasts).")
+    L.headerAt(ns.L["Popup & Toast Blocker"])
+    L.intro(ns.L["Block selected Blizzard popups, toasts, and reminder alerts (including talent reminders and collection toasts)."])
 
     local function RefreshPopupBlocker()
         if _G.QUI_RefreshPopupBlocker then _G.QUI_RefreshPopupBlocker() end
@@ -476,37 +476,37 @@ local function BuildPopupBlocker(L, generalDB)
     local enableW = GUI:CreateFormCheckbox(enableSection.frame, nil, "enabled", popupDB, function()
         UpdatePopupToggleState()
         RefreshPopupBlocker()
-    end, { description = "Master toggle for the popup and toast blocker. Individual toggles below are only applied when this is on." })
-    enableSection.AddRow(row(enableSection.frame, "Enable Popup/Toast Blocker", enableW))
+    end, { description = ns.L["Master toggle for the popup and toast blocker. Individual toggles below are only applied when this is on."] })
+    enableSection.AddRow(row(enableSection.frame, ns.L["Enable Popup/Toast Blocker"], enableW))
     L.closeSection(enableSection)
 
     local descriptions = {
-        blockTalentMicroButtonAlerts = "Suppress the pulsing reminder on the talent microbutton that appears when unspent points are available.",
-        blockMicroButtonGlows        = "Suppress the glow animation on every microbutton (collections, achievements, etc.) when new items are detected.",
-        blockHelpTips                = "Suppress the tutorial help tip callouts that Blizzard shows near talent and spellbook buttons.",
-        blockEventToasts             = "Suppress general event toast popups, often triggered by campaign progress or housing updates.",
-        blockMountAlerts             = "Suppress the toast that pops when you learn a new mount.",
-        blockPetAlerts               = "Suppress the toast that pops when you learn a new battle pet.",
-        blockToyAlerts               = "Suppress the toast that pops when you learn a new toy.",
-        blockCosmeticAlerts          = "Suppress the toast that pops when you acquire a new cosmetic item.",
-        blockWarbandSceneAlerts      = "Suppress warband scene notification toasts.",
-        blockEntitlementAlerts       = "Suppress entitlement and recruit-a-friend delivery toast notifications.",
-        blockStaticTalentPopups      = "Suppress the blocking static popups that appear for talent-related confirmations.",
-        blockStaticHousingPopups     = "Suppress the blocking static popups that appear for housing-related confirmations.",
+        blockTalentMicroButtonAlerts = ns.L["Suppress the pulsing reminder on the talent microbutton that appears when unspent points are available."],
+        blockMicroButtonGlows        = ns.L["Suppress the glow animation on every microbutton (collections, achievements, etc.) when new items are detected."],
+        blockHelpTips                = ns.L["Suppress the tutorial help tip callouts that Blizzard shows near talent and spellbook buttons."],
+        blockEventToasts             = ns.L["Suppress general event toast popups, often triggered by campaign progress or housing updates."],
+        blockMountAlerts             = ns.L["Suppress the toast that pops when you learn a new mount."],
+        blockPetAlerts               = ns.L["Suppress the toast that pops when you learn a new battle pet."],
+        blockToyAlerts               = ns.L["Suppress the toast that pops when you learn a new toy."],
+        blockCosmeticAlerts          = ns.L["Suppress the toast that pops when you acquire a new cosmetic item."],
+        blockWarbandSceneAlerts      = ns.L["Suppress warband scene notification toasts."],
+        blockEntitlementAlerts       = ns.L["Suppress entitlement and recruit-a-friend delivery toast notifications."],
+        blockStaticTalentPopups      = ns.L["Suppress the blocking static popups that appear for talent-related confirmations."],
+        blockStaticHousingPopups     = ns.L["Suppress the blocking static popups that appear for housing-related confirmations."],
     }
     local toggles = {
-        { "Block Talent Reminder Alerts (Microbutton)",                  "blockTalentMicroButtonAlerts" },
-        { "Block All Microbutton Glows",                                  "blockMicroButtonGlows" },
-        { "Block Help Tips (talent/spellbook)",                           "blockHelpTips" },
-        { "Block Event Toasts",                                           "blockEventToasts" },
-        { "Block New Mount Toasts",                                       "blockMountAlerts" },
-        { "Block New Pet Toasts",                                         "blockPetAlerts" },
-        { "Block New Toy Toasts",                                         "blockToyAlerts" },
-        { "Block New Cosmetic Toasts",                                    "blockCosmeticAlerts" },
-        { "Block Warband Scene Toasts",                                   "blockWarbandSceneAlerts" },
-        { "Block Entitlement/RAF Delivery Toasts",                        "blockEntitlementAlerts" },
-        { "Block Talent-Related Static Popups",                           "blockStaticTalentPopups" },
-        { "Block Housing-Related Static Popups",                          "blockStaticHousingPopups" },
+        { ns.L["Block Talent Reminder Alerts (Microbutton)"],                  "blockTalentMicroButtonAlerts" },
+        { ns.L["Block All Microbutton Glows"],                                  "blockMicroButtonGlows" },
+        { ns.L["Block Help Tips (talent/spellbook)"],                           "blockHelpTips" },
+        { ns.L["Block Event Toasts"],                                           "blockEventToasts" },
+        { ns.L["Block New Mount Toasts"],                                       "blockMountAlerts" },
+        { ns.L["Block New Pet Toasts"],                                         "blockPetAlerts" },
+        { ns.L["Block New Toy Toasts"],                                         "blockToyAlerts" },
+        { ns.L["Block New Cosmetic Toasts"],                                    "blockCosmeticAlerts" },
+        { ns.L["Block Warband Scene Toasts"],                                   "blockWarbandSceneAlerts" },
+        { ns.L["Block Entitlement/RAF Delivery Toasts"],                        "blockEntitlementAlerts" },
+        { ns.L["Block Talent-Related Static Popups"],                           "blockStaticTalentPopups" },
+        { ns.L["Block Housing-Related Static Popups"],                          "blockStaticHousingPopups" },
     }
 
     local togglesSection = L.sectionAt()
@@ -534,32 +534,32 @@ local function BuildQuickSalvage(L, db)
     local qsDB = db and db.general and db.general.quickSalvage
     if not qsDB then return end
 
-    L.headerAt("Quick Salvage")
-    L.intro("Mill, prospect, or disenchant items with a single click using a modifier key. Requires the corresponding profession.")
+    L.headerAt(ns.L["Quick Salvage"])
+    L.intro(ns.L["Mill, prospect, or disenchant items with a single click using a modifier key. Requires the corresponding profession."])
 
     local s = L.sectionAt()
     local enableW = GUI:CreateFormCheckbox(s.frame, nil, "enabled", qsDB, function()
         if _G.QUI_RefreshQuickSalvage then _G.QUI_RefreshQuickSalvage() end
-    end, { description = "Let you mill, prospect, or disenchant items by holding the modifier key below and clicking them in your bags." })
+    end, { description = ns.L["Let you mill, prospect, or disenchant items by holding the modifier key below and clicking them in your bags."] })
     local modifierOptions = {
-        { value = "ALT", text = "Alt" },
-        { value = "ALTCTRL", text = "Alt + Ctrl" },
-        { value = "ALTSHIFT", text = "Alt + Shift" },
+        { value = "ALT", text = ns.L["Alt"] },
+        { value = "ALTCTRL", text = ns.L["Alt + Ctrl"] },
+        { value = "ALTSHIFT", text = ns.L["Alt + Shift"] },
     }
     local modW = GUI:CreateFormDropdown(s.frame, nil, modifierOptions, "modifier", qsDB, function()
         if _G.QUI_RefreshQuickSalvage then _G.QUI_RefreshQuickSalvage() end
-    end, { description = "Modifier combination you must hold while clicking to trigger milling, prospecting, or disenchanting." })
-    s.AddRow(row(s.frame, "Enable Quick Salvage", enableW), row(s.frame, "Modifier Key", modW))
+    end, { description = ns.L["Modifier combination you must hold while clicking to trigger milling, prospecting, or disenchanting."] })
+    s.AddRow(row(s.frame, ns.L["Enable Quick Salvage"], enableW), row(s.frame, ns.L["Modifier Key"], modW))
     L.closeSection(s)
 
-    L.intro("Milling: Herbs (5+ stack)  |  Prospecting: Ores (5+ stack)  |  Disenchanting: Green+ gear")
+    L.intro(ns.L["Milling: Herbs (5+ stack)  |  Prospecting: Ores (5+ stack)  |  Disenchanting: Green+ gear"])
 end
 
 local function BuildConsumableCheck(L, generalDB)
     if not generalDB then return end
 
-    L.headerAt("Consumable Check")
-    L.intro("Display consumable status icons when triggered by events below. Left-click an icon to use your preferred item; right-click any shown icon to choose or refresh a consumable.")
+    L.headerAt(ns.L["Consumable Check"])
+    L.intro(ns.L["Display consumable status icons when triggered by events below. Left-click an icon to use your preferred item; right-click any shown icon to choose or refresh a consumable."])
 
     local function RefreshConsumables()
         if _G.QUI_RefreshConsumables then _G.QUI_RefreshConsumables() end
@@ -568,75 +568,75 @@ local function BuildConsumableCheck(L, generalDB)
     -- Main toggle + persistent mode
     local s1 = L.sectionAt()
     local enableW = GUI:CreateFormCheckbox(s1.frame, nil, "consumableCheckEnabled", generalDB, nil,
-        { description = "Show a consumables window listing food, flasks, weapon enchants, runes, and healthstones based on the triggers below." })
+        { description = ns.L["Show a consumables window listing food, flasks, weapon enchants, runes, and healthstones based on the triggers below."] })
     local persistW = GUI:CreateFormCheckbox(s1.frame, nil, "consumablePersistent", generalDB, function()
         if generalDB.consumablePersistent then
             if _G.QUI_ShowConsumables then _G.QUI_ShowConsumables() end
         else
             if _G.QUI_HideConsumables then _G.QUI_HideConsumables() end
         end
-    end, { description = "Keep the consumables window visible at all times instead of only showing on trigger events." })
-    s1.AddRow(row(s1.frame, "Enable Consumable Check", enableW), row(s1.frame, "Always Show (Persistent Mode)", persistW))
+    end, { description = ns.L["Keep the consumables window visible at all times instead of only showing on trigger events."] })
+    s1.AddRow(row(s1.frame, ns.L["Enable Consumable Check"], enableW), row(s1.frame, ns.L["Always Show (Persistent Mode)"], persistW))
     L.closeSection(s1)
 
     -- Triggers card
-    L.headerAt("Triggers")
+    L.headerAt(ns.L["Triggers"])
     local s2 = L.sectionAt()
     local trgRC = GUI:CreateFormCheckbox(s2.frame, nil, "consumableOnReadyCheck", generalDB, nil,
-        { description = "Open the consumables window when a Ready Check fires so you can fix any missing buffs." })
+        { description = ns.L["Open the consumables window when a Ready Check fires so you can fix any missing buffs."] })
     local trgD = GUI:CreateFormCheckbox(s2.frame, nil, "consumableOnDungeon", generalDB, nil,
-        { description = "Open the consumables window when you zone into a dungeon." })
-    s2.AddRow(row(s2.frame, "Ready Check", trgRC), row(s2.frame, "Dungeon Entrance", trgD))
+        { description = ns.L["Open the consumables window when you zone into a dungeon."] })
+    s2.AddRow(row(s2.frame, ns.L["Ready Check"], trgRC), row(s2.frame, ns.L["Dungeon Entrance"], trgD))
 
     local trgR = GUI:CreateFormCheckbox(s2.frame, nil, "consumableOnRaid", generalDB, nil,
-        { description = "Open the consumables window when you zone into a raid." })
+        { description = ns.L["Open the consumables window when you zone into a raid."] })
     local trgRez = GUI:CreateFormCheckbox(s2.frame, nil, "consumableOnResurrect", generalDB, nil,
-        { description = "Open the consumables window after a resurrection inside a dungeon or raid to remind you to re-buff." })
-    s2.AddRow(row(s2.frame, "Raid Entrance", trgR), row(s2.frame, "Instanced Resurrect", trgRez))
+        { description = ns.L["Open the consumables window after a resurrection inside a dungeon or raid to remind you to re-buff."] })
+    s2.AddRow(row(s2.frame, ns.L["Raid Entrance"], trgR), row(s2.frame, ns.L["Instanced Resurrect"], trgRez))
     L.closeSection(s2)
 
     -- Buff checks
-    L.headerAt("Buff Checks")
+    L.headerAt(ns.L["Buff Checks"])
     local s3 = L.sectionAt()
     local foodW = GUI:CreateFormCheckbox(s3.frame, nil, "consumableFood", generalDB, nil,
-        { description = "Include a Food Buff slot in the consumables window." })
+        { description = ns.L["Include a Food Buff slot in the consumables window."] })
     local flaskW = GUI:CreateFormCheckbox(s3.frame, nil, "consumableFlask", generalDB, nil,
-        { description = "Include a Flask slot in the consumables window." })
-    s3.AddRow(row(s3.frame, "Food Buff", foodW), row(s3.frame, "Flask Buff", flaskW))
+        { description = ns.L["Include a Flask slot in the consumables window."] })
+    s3.AddRow(row(s3.frame, ns.L["Food Buff"], foodW), row(s3.frame, ns.L["Flask Buff"], flaskW))
 
-    local mhLabel = ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetMHLabel() or "Weapon Oil"
+    local mhLabel = ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetMHLabel() or ns.L["Weapon Oil"]
     local mhW = GUI:CreateFormCheckbox(s3.frame, nil, "consumableOilMH", generalDB, nil,
-        { description = "Include a main-hand weapon enchant slot in the consumables window." })
-    local ohLabel = ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetOHLabel() or "Weapon Oil"
+        { description = ns.L["Include a main-hand weapon enchant slot in the consumables window."] })
+    local ohLabel = ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetOHLabel() or ns.L["Weapon Oil"]
     local ohW = GUI:CreateFormCheckbox(s3.frame, nil, "consumableOilOH", generalDB, nil,
-        { description = "Include an off-hand weapon enchant slot in the consumables window." })
-    s3.AddRow(row(s3.frame, mhLabel .. " (Main Hand)", mhW), row(s3.frame, ohLabel .. " (Off Hand)", ohW))
+        { description = ns.L["Include an off-hand weapon enchant slot in the consumables window."] })
+    s3.AddRow(row(s3.frame, mhLabel .. ns.L[" (Main Hand)"], mhW), row(s3.frame, ohLabel .. ns.L[" (Off Hand)"], ohW))
 
     local runeW = GUI:CreateFormCheckbox(s3.frame, nil, "consumableRune", generalDB, nil,
-        { description = "Include an Augment Rune slot in the consumables window." })
+        { description = ns.L["Include an Augment Rune slot in the consumables window."] })
     local hsW = GUI:CreateFormCheckbox(s3.frame, nil, "consumableHealthstone", generalDB, nil,
-        { description = "Include a Healthstone slot in the consumables window. Only shown when a Warlock is in the group." })
-    s3.AddRow(row(s3.frame, "Augment Rune", runeW), row(s3.frame, "Healthstones", hsW, "Only shows when a Warlock is in the group."))
+        { description = ns.L["Include a Healthstone slot in the consumables window. Only shown when a Warlock is in the group."] })
+    s3.AddRow(row(s3.frame, ns.L["Augment Rune"], runeW), row(s3.frame, ns.L["Healthstones"], hsW, ns.L["Only shows when a Warlock is in the group."]))
     L.closeSection(s3)
 
     -- Expiration warning
-    L.headerAt("Expiration Warning")
+    L.headerAt(ns.L["Expiration Warning"])
     local s4 = L.sectionAt()
     local warnW = GUI:CreateFormCheckbox(s4.frame, nil, "consumableExpirationWarning", generalDB, nil,
-        { description = "Open the consumables window automatically when a tracked buff is close to expiring while you are in instanced content." })
+        { description = ns.L["Open the consumables window automatically when a tracked buff is close to expiring while you are in instanced content."] })
     local threshW = GUI:CreateFormSlider(s4.frame, nil, 60, 600, 30, "consumableExpirationThreshold", generalDB, nil,
-        { description = "How much time must remain on a tracked buff before the expiration warning fires, in seconds." })
-    s4.AddRow(row(s4.frame, "Warn When Buffs Expiring", warnW), row(s4.frame, "Warning Threshold (sec)", threshW))
+        { description = ns.L["How much time must remain on a tracked buff before the expiration warning fires, in seconds."] })
+    s4.AddRow(row(s4.frame, ns.L["Warn When Buffs Expiring"], warnW), row(s4.frame, ns.L["Warning Threshold (sec)"], threshW))
     L.closeSection(s4)
 
     -- Display
-    L.headerAt("Display")
+    L.headerAt(ns.L["Display"])
     local s5 = L.sectionAt()
     local iconW = GUI:CreateFormSlider(s5.frame, nil, 24, 64, 2, "consumableIconSize", generalDB, RefreshConsumables,
-        { description = "Pixel size of each consumable icon in the check window." })
+        { description = ns.L["Pixel size of each consumable icon in the check window."] })
     local scaleW = GUI:CreateFormSlider(s5.frame, nil, 0.5, 3, 0.05, "consumableScale", generalDB, RefreshConsumables,
-        { description = "Overall scale multiplier applied to the consumables window." })
-    s5.AddRow(row(s5.frame, "Icon Size", iconW), row(s5.frame, "Scale", scaleW))
+        { description = ns.L["Overall scale multiplier applied to the consumables window."] })
+    s5.AddRow(row(s5.frame, ns.L["Icon Size"], iconW), row(s5.frame, ns.L["Scale"], scaleW))
     L.closeSection(s5)
 end
 
@@ -644,8 +644,8 @@ local function BuildConsumableMacros(L, generalDB)
     local cmDB = generalDB and generalDB.consumableMacros
     if not cmDB then return end
 
-    L.headerAt("Consumable Macros")
-    L.intro("Auto-create per-character macros that use the best-quality Flask or Potion in your bags. Higher quality variants are tried first (Gold Fleeting > Silver Fleeting > Gold Crafted > Silver Crafted).")
+    L.headerAt(ns.L["Consumable Macros"])
+    L.intro(ns.L["Auto-create per-character macros that use the best-quality Flask or Potion in your bags. Higher quality variants are tried first (Gold Fleeting > Silver Fleeting > Gold Crafted > Silver Crafted)."])
 
     local function Refresh()
         if ns.ConsumableMacros then ns.ConsumableMacros:ForceRefresh() end
@@ -658,54 +658,54 @@ local function BuildConsumableMacros(L, generalDB)
             if cmDB.enabled then ns.ConsumableMacros:ForceRefresh()
             else ns.ConsumableMacros:DeleteMacros() end
         end
-    end, { description = "Create per-character macros that pick the best available consumable from your bags. Disabling this removes the macros." })
+    end, { description = ns.L["Create per-character macros that pick the best available consumable from your bags. Disabling this removes the macros."] })
     local chatW = GUI:CreateFormCheckbox(s1.frame, nil, "chatNotifications", cmDB, nil,
-        { description = "Print a chat message each time the consumable macros are rebuilt so you know which item was chosen." })
-    s1.AddRow(row(s1.frame, "Enable Consumable Macros", enableW), row(s1.frame, "Chat Notifications", chatW))
+        { description = ns.L["Print a chat message each time the consumable macros are rebuilt so you know which item was chosen."] })
+    s1.AddRow(row(s1.frame, ns.L["Enable Consumable Macros"], enableW), row(s1.frame, ns.L["Chat Notifications"], chatW))
     L.closeSection(s1)
 
     -- Dropdowns
-    L.headerAt("Macro Selections")
+    L.headerAt(ns.L["Macro Selections"])
     local s2 = L.sectionAt()
-    local flaskOpts = ns.ConsumableMacros and ns.ConsumableMacros.FLASK_OPTIONS or { { value = "none", text = "None" } }
-    local potionOpts = ns.ConsumableMacros and ns.ConsumableMacros.POTION_OPTIONS or { { value = "none", text = "None" } }
-    local healthOpts = ns.ConsumableMacros and ns.ConsumableMacros.HEALTH_OPTIONS or { { value = "none", text = "None" } }
-    local hsOpts = ns.ConsumableMacros and ns.ConsumableMacros.HEALTHSTONE_OPTIONS or { { value = "none", text = "None" } }
-    local augOpts = ns.ConsumableMacros and ns.ConsumableMacros.AUGMENT_OPTIONS or { { value = "none", text = "None" } }
-    local vantusOpts = ns.ConsumableMacros and ns.ConsumableMacros.VANTUS_OPTIONS or { { value = "none", text = "None" } }
-    local weaponOpts = ns.ConsumableMacros and ns.ConsumableMacros.WEAPON_OPTIONS or { { value = "none", text = "None" } }
+    local flaskOpts = ns.ConsumableMacros and ns.ConsumableMacros.FLASK_OPTIONS or { { value = "none", text = ns.L["None"] } }
+    local potionOpts = ns.ConsumableMacros and ns.ConsumableMacros.POTION_OPTIONS or { { value = "none", text = ns.L["None"] } }
+    local healthOpts = ns.ConsumableMacros and ns.ConsumableMacros.HEALTH_OPTIONS or { { value = "none", text = ns.L["None"] } }
+    local hsOpts = ns.ConsumableMacros and ns.ConsumableMacros.HEALTHSTONE_OPTIONS or { { value = "none", text = ns.L["None"] } }
+    local augOpts = ns.ConsumableMacros and ns.ConsumableMacros.AUGMENT_OPTIONS or { { value = "none", text = ns.L["None"] } }
+    local vantusOpts = ns.ConsumableMacros and ns.ConsumableMacros.VANTUS_OPTIONS or { { value = "none", text = ns.L["None"] } }
+    local weaponOpts = ns.ConsumableMacros and ns.ConsumableMacros.WEAPON_OPTIONS or { { value = "none", text = ns.L["None"] } }
 
     local flaskW = GUI:CreateFormDropdown(s2.frame, nil, flaskOpts, "selectedFlask", cmDB, Refresh,
-        { description = "Flask family the QUI_Flask macro should prefer. The macro always picks the highest-quality variant in your bags." })
+        { description = ns.L["Flask family the QUI_Flask macro should prefer. The macro always picks the highest-quality variant in your bags."] })
     local potW = GUI:CreateFormDropdown(s2.frame, nil, potionOpts, "selectedPotion", cmDB, Refresh,
-        { description = "Combat utility potion (e.g., stat/tempered potions) used by the QUI_Pot macro." })
-    s2.AddRow(row(s2.frame, "Flask Type", flaskW), row(s2.frame, "Potion Type", potW))
+        { description = ns.L["Combat utility potion (e.g., stat/tempered potions) used by the QUI_Pot macro."] })
+    s2.AddRow(row(s2.frame, ns.L["Flask Type"], flaskW), row(s2.frame, ns.L["Potion Type"], potW))
 
     local healthW = GUI:CreateFormDropdown(s2.frame, nil, healthOpts, "selectedHealth", cmDB, Refresh,
-        { description = "Healing potion family used by the QUI_Health macro." })
+        { description = ns.L["Healing potion family used by the QUI_Health macro."] })
     local hsW = GUI:CreateFormDropdown(s2.frame, nil, hsOpts, "selectedHealthstone", cmDB, Refresh,
-        { description = "Healthstone variant used by the QUI_Stone macro." })
-    s2.AddRow(row(s2.frame, "Health Potion", healthW), row(s2.frame, "Healthstone", hsW))
+        { description = ns.L["Healthstone variant used by the QUI_Stone macro."] })
+    s2.AddRow(row(s2.frame, ns.L["Health Potion"], healthW), row(s2.frame, ns.L["Healthstone"], hsW))
 
     local augW = GUI:CreateFormDropdown(s2.frame, nil, augOpts, "selectedAugment", cmDB, Refresh,
-        { description = "Augment rune family used by the QUI_Rune macro." })
+        { description = ns.L["Augment rune family used by the QUI_Rune macro."] })
     local vantusW = GUI:CreateFormDropdown(s2.frame, nil, vantusOpts, "selectedVantus", cmDB, Refresh,
-        { description = "Vantus rune the QUI_Vantus macro should use — useful for raid boss attempt buffs." })
-    s2.AddRow(row(s2.frame, "Augment Rune", augW), row(s2.frame, "Vantus Rune", vantusW))
+        { description = ns.L["Vantus rune the QUI_Vantus macro should use — useful for raid boss attempt buffs."] })
+    s2.AddRow(row(s2.frame, ns.L["Augment Rune"], augW), row(s2.frame, ns.L["Vantus Rune"], vantusW))
 
     local weaponW = GUI:CreateFormDropdown(s2.frame, nil, weaponOpts, "selectedWeapon", cmDB, Refresh,
-        { description = "Weapon oil, stone, or enchant consumable used by the QUI_Weapon macro." })
-    s2.AddRow(row(s2.frame, "Weapon Consumable", weaponW))
+        { description = ns.L["Weapon oil, stone, or enchant consumable used by the QUI_Weapon macro."] })
+    s2.AddRow(row(s2.frame, ns.L["Weapon Consumable"], weaponW))
     L.closeSection(s2)
 
-    L.intro("Creates per-character macros: QUI_Flask, QUI_Pot, QUI_Health, QUI_Stone, QUI_Rune, QUI_Vantus, QUI_Weapon. Drag them to your action bars.")
+    L.intro(ns.L["Creates per-character macros: QUI_Flask, QUI_Pot, QUI_Health, QUI_Stone, QUI_Rune, QUI_Vantus, QUI_Weapon. Drag them to your action bars."])
 end
 
 local function BuildTargetDistance(L, db)
     local rangeCheckDB = db and db.rangeCheck
     if not rangeCheckDB then return end
 
-    L.headerAt("Target Distance Bracket Display")
+    L.headerAt(ns.L["Target Distance Bracket Display"])
 
     local dynamicColorCheck
     local classColorCheck
@@ -729,21 +729,21 @@ local function BuildTargetDistance(L, db)
     local s1 = L.sectionAt()
     local enableW = GUI:CreateFormCheckbox(s1.frame, nil, "enabled", rangeCheckDB, function()
         Shared.RefreshRangeCheck()
-    end, { description = "Show the current target's distance bracket as on-screen text." })
+    end, { description = ns.L["Show the current target's distance bracket as on-screen text."] })
     local previewState = { enabled = _G.QUI_IsRangeCheckPreviewMode and _G.QUI_IsRangeCheckPreviewMode() or false }
     local previewW = GUI:CreateFormCheckbox(s1.frame, nil, "enabled", previewState, function(val)
         if _G.QUI_ToggleRangeCheckPreview then _G.QUI_ToggleRangeCheckPreview(val) end
-    end, { description = "Show a draggable preview frame so you can position the distance bracket display." })
-    s1.AddRow(row(s1.frame, "Enable Distance Bracket Display", enableW), row(s1.frame, "Preview / Move Frame", previewW))
+    end, { description = ns.L["Show a draggable preview frame so you can position the distance bracket display."] })
+    s1.AddRow(row(s1.frame, ns.L["Enable Distance Bracket Display"], enableW), row(s1.frame, ns.L["Preview / Move Frame"], previewW))
 
     local combatW = GUI:CreateFormCheckbox(s1.frame, nil, "combatOnly", rangeCheckDB, function() Shared.RefreshRangeCheck() end,
-        { description = "Only show the distance bracket display while you are in combat." })
+        { description = ns.L["Only show the distance bracket display while you are in combat."] })
     local hostileW = GUI:CreateFormCheckbox(s1.frame, nil, "showOnlyWithTarget", rangeCheckDB, function() Shared.RefreshRangeCheck() end,
-        { description = "Only show the display when you have a hostile target selected." })
-    s1.AddRow(row(s1.frame, "Combat Only", combatW), row(s1.frame, "Only Show With Hostile Target", hostileW))
+        { description = ns.L["Only show the display when you have a hostile target selected."] })
+    s1.AddRow(row(s1.frame, ns.L["Combat Only"], combatW), row(s1.frame, ns.L["Only Show With Hostile Target"], hostileW))
 
     local shortW = GUI:CreateFormCheckbox(s1.frame, nil, "shortenText", rangeCheckDB, function() Shared.RefreshRangeCheck() end,
-        { description = "Use abbreviated distance labels (e.g., Melee/Close/Far) instead of longer phrasing." })
+        { description = ns.L["Use abbreviated distance labels (e.g., Melee/Close/Far) instead of longer phrasing."] })
     dynamicColorCheck = GUI:CreateFormCheckbox(s1.frame, nil, "dynamicColor", rangeCheckDB, function(val)
         if val then
             rangeCheckDB.useClassColor = false
@@ -751,49 +751,49 @@ local function BuildTargetDistance(L, db)
         end
         Shared.RefreshRangeCheck()
         RefreshRangeControls()
-    end, { description = "Change the text color to match the current distance bracket. Overrides Use Class Color." })
-    s1.AddRow(row(s1.frame, "Shorten Text", shortW), row(s1.frame, "Dynamic Color (by bracket)", dynamicColorCheck))
+    end, { description = ns.L["Change the text color to match the current distance bracket. Overrides Use Class Color."] })
+    s1.AddRow(row(s1.frame, ns.L["Shorten Text"], shortW), row(s1.frame, ns.L["Dynamic Color (by bracket)"], dynamicColorCheck))
 
     classColorCheck = GUI:CreateFormCheckbox(s1.frame, nil, "useClassColor", rangeCheckDB, function()
         Shared.RefreshRangeCheck()
         RefreshRangeControls()
-    end, { description = "Color the distance text with your class color. Ignored when Dynamic Color is on." })
+    end, { description = ns.L["Color the distance text with your class color. Ignored when Dynamic Color is on."] })
 
     if not rangeCheckDB.textColor then rangeCheckDB.textColor = { 0.2, 0.95, 0.55, 1 } end
     textColorPicker = GUI:CreateFormColorPicker(s1.frame, nil, "textColor", rangeCheckDB, function() Shared.RefreshRangeCheck() end, nil,
-        { description = "Custom static color used when neither Dynamic Color nor Use Class Color is enabled." })
-    s1.AddRow(row(s1.frame, "Use Class Color", classColorCheck), row(s1.frame, "Text Color", textColorPicker))
+        { description = ns.L["Custom static color used when neither Dynamic Color nor Use Class Color is enabled."] })
+    s1.AddRow(row(s1.frame, ns.L["Use Class Color"], classColorCheck), row(s1.frame, ns.L["Text Color"], textColorPicker))
 
     local fontList = Shared.GetFontList()
     local fontW = GUI:CreateFormDropdown(s1.frame, nil, fontList, "font", rangeCheckDB, function() Shared.RefreshRangeCheck() end,
-        { description = "Font used for the distance text." })
+        { description = ns.L["Font used for the distance text."] })
     local fSizeW = GUI:CreateFormSlider(s1.frame, nil, 8, 48, 1, "fontSize", rangeCheckDB, function() Shared.RefreshRangeCheck() end,
-        { description = "Font size of the distance text." })
-    s1.AddRow(row(s1.frame, "Font", fontW), row(s1.frame, "Font Size", fSizeW))
+        { description = ns.L["Font size of the distance text."] })
+    s1.AddRow(row(s1.frame, ns.L["Font"], fontW), row(s1.frame, ns.L["Font Size"], fSizeW))
 
     local strataOptions = {
-        { value = "BACKGROUND", text = "Background" },
-        { value = "LOW", text = "Low" },
-        { value = "MEDIUM", text = "Medium" },
-        { value = "HIGH", text = "High" },
-        { value = "DIALOG", text = "Dialog" },
+        { value = "BACKGROUND", text = ns.L["Background"] },
+        { value = "LOW", text = ns.L["Low"] },
+        { value = "MEDIUM", text = ns.L["Medium"] },
+        { value = "HIGH", text = ns.L["High"] },
+        { value = "DIALOG", text = ns.L["Dialog"] },
     }
     local strataW = GUI:CreateFormDropdown(s1.frame, nil, strataOptions, "strata", rangeCheckDB, function() Shared.RefreshRangeCheck() end,
-        { description = "Rendering layer for the distance display. Raise this if other frames cover it." })
+        { description = ns.L["Rendering layer for the distance display. Raise this if other frames cover it."] })
     local xW = GUI:CreateFormSlider(s1.frame, nil, -700, 700, 1, "offsetX", rangeCheckDB, function() Shared.RefreshRangeCheck() end,
-        { description = "Horizontal pixel offset of the distance text from its anchor." })
-    s1.AddRow(row(s1.frame, "Frame Strata", strataW), row(s1.frame, "X-Offset", xW))
+        { description = ns.L["Horizontal pixel offset of the distance text from its anchor."] })
+    s1.AddRow(row(s1.frame, ns.L["Frame Strata"], strataW), row(s1.frame, ns.L["X-Offset"], xW))
 
     local yW = GUI:CreateFormSlider(s1.frame, nil, -700, 700, 1, "offsetY", rangeCheckDB, function() Shared.RefreshRangeCheck() end,
-        { description = "Vertical pixel offset of the distance text from its anchor." })
-    s1.AddRow(row(s1.frame, "Y-Offset", yW))
+        { description = ns.L["Vertical pixel offset of the distance text from its anchor."] })
+    s1.AddRow(row(s1.frame, ns.L["Y-Offset"], yW))
     L.closeSection(s1)
 
     RefreshRangeControls()
 end
 
 local function BuildQuiPanel(L, db)
-    L.headerAt("QUI Panel Settings")
+    L.headerAt(ns.L["QUI Panel Settings"])
     local s = L.sectionAt()
 
     local alphaW = GUI:CreateFormSlider(s.frame, nil, 0.3, 1.0, 0.01, "configPanelAlpha", db, function(val)
@@ -802,7 +802,7 @@ local function BuildQuiPanel(L, db)
             local bgColor = GUI.Colors.bg
             mainFrame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], val)
         end
-    end, { description = "Background opacity of the QUI options panel itself." })
+    end, { description = ns.L["Background opacity of the QUI options panel itself."] })
 
     local minimapBtnDB = db and db.minimapButton
     if minimapBtnDB then
@@ -812,23 +812,23 @@ local function BuildQuiPanel(L, db)
                 if dbVal then LibDBIcon:Hide("QUI") else LibDBIcon:Show("QUI") end
             end
             if _G.QUI_RefreshMinimapButtonDrawer then _G.QUI_RefreshMinimapButtonDrawer() end
-        end, { description = "Hide the QUI minimap button. You can still open the options panel via /qui." })
-        s.AddRow(row(s.frame, "Hide QUI Minimap Icon", hideW), row(s.frame, "QUI Panel Transparency", alphaW))
+        end, { description = ns.L["Hide the QUI minimap button. You can still open the options panel via /qui."] })
+        s.AddRow(row(s.frame, ns.L["Hide QUI Minimap Icon"], hideW), row(s.frame, ns.L["QUI Panel Transparency"], alphaW))
     else
-        s.AddRow(row(s.frame, "QUI Panel Transparency", alphaW))
+        s.AddRow(row(s.frame, ns.L["QUI Panel Transparency"], alphaW))
     end
     L.closeSection(s)
 end
 
 local function BuildReloadBehavior(L, db)
-    L.headerAt("Reload Behavior")
-    L.intro("By default, QUI queues /reload until combat ends to prevent taint issues. Enable this to bypass the combat check and reload immediately.")
+    L.headerAt(ns.L["Reload Behavior"])
+    L.intro(ns.L["By default, QUI queues /reload until combat ends to prevent taint issues. Enable this to bypass the combat check and reload immediately."])
 
     if not db.general then return end
     local s = L.sectionAt()
     local w = GUI:CreateFormCheckbox(s.frame, nil, "allowReloadInCombat", db.general, nil,
-        { description = "Bypass QUI's usual combat-end queue and reload immediately when a reload is requested. Can re-introduce taint issues during combat." })
-    s.AddRow(row(s.frame, "Allow Reload During Combat", w))
+        { description = ns.L["Bypass QUI's usual combat-end queue and reload immediately when a reload is requested. Can re-introduce taint issues during combat."] })
+    s.AddRow(row(s.frame, ns.L["Allow Reload During Combat"], w))
     L.closeSection(s)
 end
 

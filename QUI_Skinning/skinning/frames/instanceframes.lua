@@ -4,6 +4,14 @@ local GetCore = ns.Helpers.GetCore
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- INSTANCE FRAMES SKINNING (PVE, Dungeons & Raids, PVP, M+ Dungeons)
 ---------------------------------------------------------------------------
@@ -632,7 +640,7 @@ local function SkinChallengesFrame()
             -- Style labels
             if wi.Child.Label then
                 local fontPath = ns.Helpers.GetGeneralFont()
-                wi.Child.Label:SetFont(fontPath, 14, "OUTLINE")
+                CJKFont(wi.Child.Label, fontPath, 14, "OUTLINE")
             end
         end
     end

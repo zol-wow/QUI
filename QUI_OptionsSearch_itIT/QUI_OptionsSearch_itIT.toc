@@ -1,0 +1,12 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Options Search (itIT)
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## Notes: Load-on-demand localized settings search index for QUI (itIT)
+## Author: Zol
+## Version: 4.0.0-beta55
+## Category: User Interface
+## Group: QUI
+## RequiredDeps: QUI, QUI_Options
+## LoadOnDemand: 1
+
+search_cache.lua

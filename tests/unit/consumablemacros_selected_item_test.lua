@@ -17,6 +17,7 @@ local ns = {
     },
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_QoL/utility/consumablemacros.lua"))("QUI", ns)
 
 local CM = assert(ns.ConsumableMacros, "ConsumableMacros should be exported on ns")

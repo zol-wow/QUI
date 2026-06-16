@@ -38,9 +38,8 @@ ignore = {
 -- Project-defined globals (written to from any file in the addon).
 globals = {
     "QUI",
-    "QUI_DB",
+    "QUIDB",
     "QUI_StorageDB",
-    "QuaziiUI_DB",
     "QUI_MemAudit",
     "QUI_RefreshActionTracker",
     "QUI_ToggleActionTrackerPreview",
@@ -74,7 +73,7 @@ read_globals = {
 
     -- Time, combat, addon lifecycle
     "GetTime", "InCombatLockdown", "UpdateAddOnMemoryUsage", "GetAddOnMemoryUsage",
-    "IsAddOnLoaded", "LoadAddOn", "date",
+    "IsAddOnLoaded", "LoadAddOn", "date", "GetLocale",
     "IsInGroup", "IsInRaid", "IsLoggedIn",
 
     -- CVars, cursor, environment
@@ -164,7 +163,7 @@ EncounterWarningsViewElementMixin EntitlementDeliveredAlertSystem EventToastMana
 FCFTab_UpdateColors FCF_FadeInScrollbar FCF_FadeOutScrollbar FCF_IsTemporaryWindow FCF_OpenNewWindow FCF_PopOutChat FCF_SetChatWindowFontSize FCF_StartAlertFlash
 FCF_Tab_OnClick FCF_UpdateScrollbarAnchors FONT_COLOR_CODE_CLOSE FREE_FOR_ALL_TERRITORY FindSpellBookSlotBySpellID FloatingChatFrame_UpdateScroll FlyoutHasSpell FocusFrame
 FormatUnreadMailTooltip GREEN_FONT_COLOR_CODE GameFontNormal GameMenuFrame GameTimeFrame GameTime_GetGameTime GameTime_GetLocalTime GameTooltipHeaderText
-GameTooltipStatusBar GameTooltipText GameTooltipTextLeft1 GameTooltip_Hide GameTooltip_SetBackdropStyle GameTooltip_SetDefaultAnchor GameTooltip_SetTitle GarrisonBuildingAlertSystem
+GameTooltipStatusBar GameTooltipText GameTooltipTextSmall GameTooltipTextLeft1 GameTooltip_Hide GameTooltip_SetBackdropStyle GameTooltip_SetDefaultAnchor GameTooltip_SetTitle GarrisonBuildingAlertSystem
 GarrisonFollowerAlertSystem GarrisonMissionAlertSystem GarrisonRandomMissionAlertSystem GarrisonShipFollowerAlertSystem GarrisonShipMissionAlertSystem GarrisonTalentAlertSystem GearManagerPopupFrame GetActionCount
 GetActionText GetActionTexture GetAddOnCPUUsage GetAttackPowerForStat GetAvailableBandwidth GetAverageItemLevel GetAvoidance GetBindingAction
 GetBindingText GetBlockChance GetBuildInfo GetCallPetSpellInfo GetChannelList GetChannelName GetChatWindowInfo GetCombatRating

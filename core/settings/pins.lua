@@ -802,7 +802,7 @@ end
 function Pins:FormatValue(value)
     local valueType = type(value)
     if valueType == "boolean" then
-        return value and "On" or "Off"
+        return value and ns.L["On"] or ns.L["Off"]
     end
     if valueType == "number" then
         local rounded = tonumber(value)
@@ -812,11 +812,11 @@ function Pins:FormatValue(value)
         return tostring(value)
     end
     if valueType == "string" then
-        return value ~= "" and value or "(empty)"
+        return value ~= "" and value or ns.L["(empty)"]
     end
     if IsColorValue(value) then
         local alpha = value[4] ~= nil and (", " .. tostring(value[4])) or ""
-        return ("rgb(%s, %s, %s%s)"):format(tostring(value[1]), tostring(value[2]), tostring(value[3]), alpha)
+        return ns.L["rgb(%1$s, %2$s, %3$s%4$s)"]:format(tostring(value[1]), tostring(value[2]), tostring(value[3]), alpha)
     end
     return tostring(value)
 end

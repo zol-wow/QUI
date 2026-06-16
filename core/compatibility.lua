@@ -340,17 +340,4 @@ function QUI:BackwardsCompat()
         -- active char proxy directly.
         self.db.char.devOptionsV2 = nil
     end
-
-    -- Check if old profile-based imports exist
-    if QUI_DB and QUI_DB.profiles and QUI_DB.profiles.Default then
-        self:DebugPrint("Profiles.Default.imports Exists: " .. tostring(not (not QUI_DB.profiles.Default.imports)))
-        self:DebugPrint("global.imports Exists: " .. tostring(not (not self.db.global.imports)))
-        self:DebugPrint("global.imports is {}: " .. tostring(next(self.db.global.imports) == nil))
-
-        -- if imports are in default profile db, and not in global, move them over
-        if QUI_DB.profiles.Default.imports and (not self.db.global.imports or next(self.db.global.imports) == nil) then
-            self:DebugPrint("Import Data found in profile imports but not global imports.")
-            self.db.global.imports = QUI_DB.profiles.Default.imports
-        end
-    end
 end

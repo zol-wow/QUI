@@ -290,7 +290,7 @@ function FullSurface.BuildHeaderActions(headerRow, options)
 
         local button = gui:CreateButton(
             headerRow,
-            definition.text or definition.label or "Action",
+            definition.text or definition.label or ns.L["Action"],
             width,
             height,
             function(...)
@@ -376,7 +376,7 @@ function FullSurface.BuildDropdownPreviewBlock(parent, options)
 
     local dropdown = gui:CreateFormDropdown(
         headerRow,
-        options.dropdownLabel or "Selection",
+        options.dropdownLabel or ns.L["Selection"],
         options.dropdownOptions or {},
         dropdownStateKey,
         dropdownDB,
@@ -565,7 +565,7 @@ function FullSurface.CreateDockedPreviewPanel(opts)
     -- QUI settings font (Quazii) + standard white label color (C.text),
     -- matching the settings text/label convention, via CreateLabel.
     local titleColor = C.text or { 1, 1, 1, 1 }
-    local title = gui:CreateLabel(panel, opts.title or "Preview", 13, titleColor, "TOPLEFT", PAD, -PAD)
+    local title = gui:CreateLabel(panel, opts.title or ns.L["Preview"], 13, titleColor, "TOPLEFT", PAD, -PAD)
     title:SetJustifyH("LEFT")
 
     -- Optional control strip (filter chips, raid-size slider) hosted by the
@@ -653,7 +653,7 @@ function FullSurface.CreateDockedPreviewPanel(opts)
 
     local P = { frame = panel, contentHost = content, controlStrip = controlStrip }
 
-    function P.SetTitle(text) title:SetText(text or "Preview") end
+    function P.SetTitle(text) title:SetText(text or ns.L["Preview"]) end
     function P.Show() panel:Show(); Reflow() end
     function P.Hide() panel:Hide() end
     function P.Resize(contentW, contentH)
@@ -689,7 +689,7 @@ function FullSurface.BuildContextDropdownRow(parent, opts)
     local db = { [stateKey] = opts.selectedValue }
     local dropdown = gui:CreateFormDropdown(
         row,
-        opts.label or "Selection",
+        opts.label or ns.L["Selection"],
         opts.options or {},
         stateKey,
         db,
@@ -743,7 +743,7 @@ function FullSurface.CreateTabStrip(parent, options)
         local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("CENTER", 0, 0)
         local fontPath, _, fontFlags = label:GetFont()
-        label:SetFont(fontPath, labelSize, fontFlags or "")
+        ns.Helpers.ApplyFontWithFallback(label, fontPath, labelSize, fontFlags or "")
         button._label = label
 
         local activeBar = button:CreateTexture(nil, "OVERLAY")

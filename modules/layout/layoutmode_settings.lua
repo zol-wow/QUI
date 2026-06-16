@@ -4,6 +4,18 @@
 -- in Layout Mode. Modules register providers for their frame keys.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
+
+-- Re-applies a FontString's current font through the CJK-safe family resolver
+-- so Chinese/Korean glyphs render (GameFont* templates are Latin-only).
+local function EnsureCJKFont(fs)
+    if not fs or not fs.GetFont then return fs end
+    local fp, sz, fl = fs:GetFont()
+    if fp and ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, fp, sz, fl)
+    end
+    return fs
+end
+
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
@@ -255,12 +267,12 @@ local function CreatePanel()
     end
 
     -- Title text
-    local titleText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local titleText = EnsureCJKFont(panel:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
     titleText:SetPoint("LEFT", titleBg, "LEFT", 12, 0)
     titleText:SetPoint("RIGHT", titleBg, "RIGHT", -32, 0)
     titleText:SetJustifyH("LEFT")
     titleText:SetTextColor(1, 1, 1, 1)
-    titleText:SetText("Settings")
+    titleText:SetText(ns.L["Settings"])
     panel._titleText = titleText
 
     -- Close button
@@ -335,10 +347,10 @@ local function CreatePanel()
     panel._content = content
 
     -- Placeholder message (shown when no provider exists)
-    local placeholder = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local placeholder = EnsureCJKFont(content:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
     placeholder:SetPoint("TOP", content, "TOP", 0, -40)
     placeholder:SetTextColor(0.6, 0.65, 0.7, 1)
-    placeholder:SetText("No settings available for this frame.")
+    placeholder:SetText(ns.L["No settings available for this frame."])
     placeholder:SetJustifyH("CENTER")
     placeholder:Hide()
     panel._placeholder = placeholder
@@ -469,7 +481,7 @@ local function BuildAnchorChainText(key)
             -- Frame has no anchoring entry — it's positioned by layout mode
             local info = ns.FRAME_ANCHOR_INFO and ns.FRAME_ANCHOR_INFO[current]
             local name = info and info.displayName or current
-            table.insert(lines, name .. "  (layout mode)")
+            table.insert(lines, name .. "  (" .. ns.L["layout mode"] .. ")")
             break
         end
 
@@ -481,11 +493,11 @@ local function BuildAnchorChainText(key)
         local name = info and info.displayName or current
 
         if not parent or parent == "disabled" then
-            table.insert(lines, name .. "  (disabled)")
+            table.insert(lines, name .. "  (" .. ns.L["disabled"] .. ")")
             break
         elseif parent == "screen" then
             table.insert(lines, string.format("%s  [%s]", name, pt))
-            table.insert(lines, string.format("  -> Screen  [%s]", rel))
+            table.insert(lines, string.format("  -> " .. ns.L["Screen"] .. "  [%s]", rel))
             break
         else
             local parentInfo = ns.FRAME_ANCHOR_INFO and ns.FRAME_ANCHOR_INFO[parent]
@@ -497,7 +509,7 @@ local function BuildAnchorChainText(key)
     end
 
     if #lines == 0 then
-        return "No anchor chain"
+        return ns.L["No anchor chain"]
     end
 
     return table.concat(lines, "\n")
@@ -618,9 +630,9 @@ local function BuildContent(panel, key)
 
         if customStatus then
             if customStatus.enabled then
-                statusText = "|cff888888Anchoring:|r  |cff34D399Enabled|r"
+                statusText = "|cff888888" .. ns.L["Anchoring:"] .. "|r  |cff34D399" .. ns.L["Enabled"] .. "|r"
             else
-                statusText = "|cff888888Anchoring:|r  |cffFF6666Disabled|r"
+                statusText = "|cff888888" .. ns.L["Anchoring:"] .. "|r  |cffFF6666" .. ns.L["Disabled"] .. "|r"
             end
         else
             local fa
@@ -632,13 +644,13 @@ local function BuildContent(panel, key)
             local isAnchored = type(anchorEntry) == "table"
 
             if not isAnchored then
-                statusText = "|cff888888Anchoring:|r  |cffFF6666Disabled|r"
+                statusText = "|cff888888" .. ns.L["Anchoring:"] .. "|r  |cffFF6666" .. ns.L["Disabled"] .. "|r"
             else
                 local parent = anchorEntry.parent
                 if not parent or parent == "disabled" then
-                    statusText = "|cff888888Anchoring:|r  |cffFF6666Disabled|r"
+                    statusText = "|cff888888" .. ns.L["Anchoring:"] .. "|r  |cffFF6666" .. ns.L["Disabled"] .. "|r"
                 else
-                    statusText = "|cff888888Anchoring:|r  |cff34D399Enabled|r"
+                    statusText = "|cff888888" .. ns.L["Anchoring:"] .. "|r  |cff34D399" .. ns.L["Enabled"] .. "|r"
                 end
             end
         end
@@ -648,9 +660,9 @@ local function BuildContent(panel, key)
             if customStatus.enabled and customStatus.parent then
                 local info = ns.FRAME_ANCHOR_INFO and ns.FRAME_ANCHOR_INFO[customStatus.parent]
                 local parentName = info and info.displayName or customStatus.parent
-                chainText = "Anchored to: " .. parentName
+                chainText = ns.L["Anchored to: "] .. parentName
             else
-                chainText = "No anchor chain"
+                chainText = ns.L["No anchor chain"]
             end
         else
             chainText = BuildAnchorChainText(key)
@@ -680,16 +692,16 @@ local function BuildContent(panel, key)
             g = ACCENT_G,
             b = ACCENT_B,
             a = 1,
-        }) or btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        }) or EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
         if not (UIKit and UIKit.CreateChevronCaret) then
             chevron:SetPoint("LEFT", 2, 0)
             chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
         end
 
-        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local label = EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
         label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
         label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        label:SetText("Anchoring Details")
+        label:SetText(ns.L["Anchoring Details"])
 
         local underline = btn:CreateTexture(nil, "ARTWORK")
         underline:SetHeight(1)
@@ -712,14 +724,14 @@ local function BuildContent(panel, key)
         body:SetAlpha(0)
 
         -- Anchor status line
-        local statusLabel = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local statusLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         statusLabel:SetPoint("TOPLEFT", 8, -6)
         statusLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
         statusLabel:SetJustifyH("LEFT")
         statusLabel:SetText(statusText)
 
         -- Chain text
-        local chainLabel = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local chainLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         chainLabel:SetPoint("TOPLEFT", 8, -(6 + statusLabel:GetStringHeight() + 6))
         chainLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
         chainLabel:SetTextColor(0.85, 0.85, 0.85, 1)
@@ -885,7 +897,7 @@ function QUI_LayoutMode_Settings:Show(key)
     local def = um and um._elements and um._elements[key]
     local label = def and def.label or key
 
-    panel._titleText:SetText("|cff60A5FA" .. label .. "|r Settings")
+    panel._titleText:SetText("|cff60A5FA" .. label .. "|r " .. ns.L["Settings"])
 
     -- New key: rebuild content, only reposition if panel isn't already open
     if self._currentKey ~= key then

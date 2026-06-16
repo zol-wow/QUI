@@ -38,25 +38,25 @@ local function BuildTroubleshootingContent(content)
     })
 
     -- Header
-    local title = CreateWrappedLabel(content, "Tools & Diagnostics",
+    local title = CreateWrappedLabel(content, ns.L["Tools & Diagnostics"],
         20, C.accent, contentWidth)
     title:SetPoint("TOPLEFT", PADDING, y)
     y = y - 28
 
     local subtitle = CreateWrappedLabel(content,
-        "Direct access to QUI's slash-command diagnostics. Output mirrors to chat. Hover any button for details.",
+        ns.L["Direct access to QUI's slash-command diagnostics. Output mirrors to chat. Hover any button for details."],
         12, C.textMuted, contentWidth - PADDING * 2)
     subtitle:SetPoint("TOPLEFT", PADDING, y)
     y = y - (subtitle:GetStringHeight() or 14) - 6
 
     local disclaimer = CreateWrappedLabel(content,
-        "|cffE15D5DButtons with red borders are destructive and require confirmation.|r",
+        ns.L["|cffE15D5DButtons with red borders are destructive and require confirmation.|r"],
         11, C.textMuted, contentWidth - PADDING * 2)
     disclaimer:SetPoint("TOPLEFT", PADDING, y)
     y = y - (disclaimer:GetStringHeight() or 14) - 18
 
     -- Grid section
-    Shared.CreateAccentDotLabel(content, "Diagnostic Commands", y)
+    Shared.CreateAccentDotLabel(content, ns.L["Diagnostic Commands"], y)
     y = y - SECTION_LABEL_GAP
 
     local entries = (HelpContent and HelpContent.Diagnostics) or {}
@@ -71,11 +71,11 @@ local function BuildTroubleshootingContent(content)
         end
         if entry.danger then
             GUI:ShowConfirmation({
-                title         = "Run " .. entry.command .. "?",
-                message       = "This will run a destructive diagnostic command.",
-                warningText   = "This cannot be undone.",
+                title         = ns.L["Run %1$s?"]:format(entry.command),
+                message       = ns.L["This will run a destructive diagnostic command."],
+                warningText   = ns.L["This cannot be undone."],
                 acceptText    = entry.label,
-                cancelText    = "Cancel",
+                cancelText    = ns.L["Cancel"],
                 onAccept      = runIt,
                 isDestructive = true,
             })
@@ -187,7 +187,7 @@ local function BuildTroubleshootingContent(content)
 
     -- Output section anchors relative to grid bottom so it reflows when
     -- the grid height changes (window resize ⇒ different row count).
-    local outLabel = Shared.CreateAccentDotLabel(content, "Diagnostic Output", 0)
+    local outLabel = Shared.CreateAccentDotLabel(content, ns.L["Diagnostic Output"], 0)
     outLabel:ClearAllPoints()
     outLabel:SetPoint("TOPLEFT", grid, "BOTTOMLEFT", 0, -18)
     outLabel:SetPoint("TOPRIGHT", grid, "BOTTOMRIGHT", 0, -18)

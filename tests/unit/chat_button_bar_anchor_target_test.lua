@@ -28,6 +28,7 @@ end
 function _G.hooksecurefunc() end
 _G.UIParent = setmetatable({}, { __index = function() return function() end end })
 
+;(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_Chat/chat/button_bar.lua"))("QUI", ns)
 local BB = ns.QUI.Chat.ButtonBar
 assert(BB and BB._GetBarAnchorFrame, "anchor chooser exported for tests")

@@ -894,7 +894,7 @@ local function SetupFrameClickCast(frame)
             if existingOwner == self then
                 -- Append to existing unit tooltip
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Click-Cast Bindings:", 0.2, 0.83, 0.6)
+                GameTooltip:AddLine(ns.L["Click-Cast Bindings:"], 0.2, 0.83, 0.6)
                 for _, binding in ipairs(activeBindings) do
                     local modLabel = MODIFIER_LABELS[binding.modifiers or ""] or ""
                     local buttonLabel = BUTTON_NAMES[binding.button] or binding.button

@@ -8,6 +8,16 @@ ns.QUI = QUI
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
+-- CJK-safe font setter: preserves the roman font and only adds CJK fallback
+-- members where available, degrading to plain SetFont otherwise.
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- State tracking
 ---------------------------------------------------------------------------
@@ -241,17 +251,17 @@ local function CreateFrame_XPTracker()
 
     -- Header: "Experience" left, "Level X" right
     local headerLeft = detailsFrame:CreateFontString(nil, "OVERLAY")
-    headerLeft:SetFont(fontPath, headerFontSize, fontOutline)
+    CJKFont(headerLeft, fontPath, headerFontSize, fontOutline)
     headerLeft:SetTextColor(0.9, 0.9, 0.9, 1)
     headerLeft:SetPoint("TOPLEFT", detailsFrame, "TOPLEFT", 6, -5)
-    headerLeft:SetText("Experience")
+    headerLeft:SetText(ns.L["Experience"])
     frame.headerLeft = headerLeft
 
     local headerRight = detailsFrame:CreateFontString(nil, "OVERLAY")
-    headerRight:SetFont(fontPath, headerFontSize, fontOutline)
+    CJKFont(headerRight, fontPath, headerFontSize, fontOutline)
     headerRight:SetTextColor(1.0, 0.82, 0.0, 1) -- Gold
     headerRight:SetPoint("TOPRIGHT", detailsFrame, "TOPRIGHT", -6, -5)
-    headerRight:SetText("Level 1")
+    headerRight:SetText(ns.L["Level 1"])
     frame.headerRight = headerRight
 
     -- Stat lines
@@ -260,7 +270,7 @@ local function CreateFrame_XPTracker()
 
     -- Line 1: Completed / Rested
     local line1 = detailsFrame:CreateFontString(nil, "OVERLAY")
-    line1:SetFont(fontPath, fontSize, fontOutline)
+    CJKFont(line1, fontPath, fontSize, fontOutline)
     line1:SetTextColor(0.8, 0.8, 0.8, 1)
     line1:SetPoint("TOPLEFT", detailsFrame, "TOPLEFT", 6, lineY)
     line1:SetPoint("RIGHT", detailsFrame, "RIGHT", -6, 0)
@@ -270,7 +280,7 @@ local function CreateFrame_XPTracker()
 
     -- Line 2: XP/hour + Leveling in
     local line2 = detailsFrame:CreateFontString(nil, "OVERLAY")
-    line2:SetFont(fontPath, fontSize, fontOutline)
+    CJKFont(line2, fontPath, fontSize, fontOutline)
     line2:SetTextColor(0.8, 0.8, 0.8, 1)
     line2:SetPoint("TOPLEFT", detailsFrame, "TOPLEFT", 6, lineY - lineSpacing)
     line2:SetPoint("RIGHT", detailsFrame, "RIGHT", -6, 0)
@@ -280,7 +290,7 @@ local function CreateFrame_XPTracker()
 
     -- Line 3: Level time / Session time
     local line3 = detailsFrame:CreateFontString(nil, "OVERLAY")
-    line3:SetFont(fontPath, fontSize, fontOutline)
+    CJKFont(line3, fontPath, fontSize, fontOutline)
     line3:SetTextColor(0.8, 0.8, 0.8, 1)
     line3:SetPoint("TOPLEFT", detailsFrame, "TOPLEFT", 6, lineY - lineSpacing * 2)
     line3:SetPoint("RIGHT", detailsFrame, "RIGHT", -6, 0)
@@ -335,7 +345,7 @@ local function CreateFrame_XPTracker()
 
     -- Bar text overlay (parented to xpBar so it draws above the bar fill)
     local barText = xpBar:CreateFontString(nil, "OVERLAY")
-    barText:SetFont(fontPath, fontSize - 1, fontOutline)
+    CJKFont(barText, fontPath, fontSize - 1, fontOutline)
     barText:SetTextColor(1, 1, 1, 1)
     barText:SetPoint("CENTER", barContainer, "CENTER", 0, 0)
     barText:SetJustifyH("CENTER")
@@ -454,13 +464,13 @@ local function UpdateDisplay()
     end
 
     -- Header
-    frame.headerLeft:SetText("Experience")
-    frame.headerRight:SetText("Level " .. level)
+    frame.headerLeft:SetText(ns.L["Experience"])
+    frame.headerRight:SetText(ns.L["Level "] .. level)
 
     -- Line 1: Completed / Rested
-    local line1Text = "Completed: " .. FormatPercent(percent)
+    local line1Text = ns.L["Completed: "] .. FormatPercent(percent)
     if restedPercent > 0 then
-        line1Text = line1Text .. "  |  Rested: " .. FormatPercent(restedPercent)
+        line1Text = line1Text .. ns.L["  |  Rested: "] .. FormatPercent(restedPercent)
     end
     frame.line1:SetText(line1Text)
 
@@ -476,9 +486,9 @@ local function UpdateDisplay()
     local line2Text
     if xpPerHour > 0 then
         local secondsToLevel = (remaining / xpPerHour) * 3600
-        line2Text = FormatXP(xpPerHour) .. "/hr  |  Level in: " .. FormatDuration(secondsToLevel)
+        line2Text = FormatXP(xpPerHour) .. ns.L["/hr  |  Level in: "] .. FormatDuration(secondsToLevel)
     else
-        line2Text = "Gathering data..."
+        line2Text = ns.L["Gathering data..."]
     end
     frame.line2:SetText(line2Text)
 
@@ -492,7 +502,7 @@ local function UpdateDisplay()
         levelTime = now - XPTrackerState.levelStartTime
         sessionTime = now - XPTrackerState.sessionStartTime
     end
-    frame.line3:SetText("Level: " .. FormatDuration(levelTime) .. "  |  Session: " .. FormatDuration(sessionTime))
+    frame.line3:SetText(ns.L["Level: "] .. FormatDuration(levelTime) .. ns.L["  |  Session: "] .. FormatDuration(sessionTime))
 
     -- XP Bar
     frame.xpBar:SetMinMaxValues(0, 1)
@@ -523,7 +533,7 @@ local function UpdateDisplay()
         local barTextStr = FormatXP(currentXP) .. "/" .. FormatXP(maxXP)
         barTextStr = barTextStr .. " (" .. FormatXP(remaining) .. ") " .. FormatPercent(percent)
         if restedPercent > 0 then
-            barTextStr = barTextStr .. " (" .. FormatPercent(restedPercent) .. " rested)"
+            barTextStr = barTextStr .. " (" .. FormatPercent(restedPercent) .. ns.L[" rested)"]
         end
         frame.barText:SetText(barTextStr)
         frame.barText:Show()
@@ -585,12 +595,12 @@ local function UpdateAppearance()
     local fontSize = settings.fontSize or 11
 
     local headerFontSize = settings.headerFontSize or 12
-    frame.headerLeft:SetFont(fontPath, headerFontSize, fontOutline)
-    frame.headerRight:SetFont(fontPath, headerFontSize, fontOutline)
-    frame.line1:SetFont(fontPath, fontSize, fontOutline)
-    frame.line2:SetFont(fontPath, fontSize, fontOutline)
-    frame.line3:SetFont(fontPath, fontSize, fontOutline)
-    frame.barText:SetFont(fontPath, fontSize - 1, fontOutline)
+    CJKFont(frame.headerLeft, fontPath, headerFontSize, fontOutline)
+    CJKFont(frame.headerRight, fontPath, headerFontSize, fontOutline)
+    CJKFont(frame.line1, fontPath, fontSize, fontOutline)
+    CJKFont(frame.line2, fontPath, fontSize, fontOutline)
+    CJKFont(frame.line3, fontPath, fontSize, fontOutline)
+    CJKFont(frame.barText, fontPath, fontSize - 1, fontOutline)
 
     -- Line height (reposition stat lines)
     local headerLineHeight = settings.headerLineHeight or 18

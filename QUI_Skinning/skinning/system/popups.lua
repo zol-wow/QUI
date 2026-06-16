@@ -4,6 +4,14 @@ local Helpers = ns.Helpers
 local GetCore = Helpers.GetCore
 local SkinBase = ns.SkinBase
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Context menu + StaticPopup skinning
 --
@@ -110,7 +118,7 @@ end
 local function StyleFontString(fontString, size, r, g, b, a)
     if not fontString or not fontString.SetFont then return end
     local fontPath = Helpers.GetGeneralFont and Helpers.GetGeneralFont() or STANDARD_TEXT_FONT
-    fontString:SetFont(fontPath, size or FONT_SIZE, FONT_FLAGS)
+    CJKFont(fontString, fontPath, size or FONT_SIZE, FONT_FLAGS)
     if fontString.SetTextColor then
         fontString:SetTextColor(r or 0.9, g or 0.9, b or 0.9, a or 1)
     end

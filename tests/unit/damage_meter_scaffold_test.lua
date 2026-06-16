@@ -240,7 +240,7 @@ assert(coreSrc:find("function Window:_ApplyHeader", 1, true)
 -- T5 (Phase 2): ConfigButton wires MenuUtil.CreateContextMenu with type radios
 assert(coreSrc:find("MenuUtil.CreateContextMenu", 1, true),
     "ConfigButton must wire MenuUtil.CreateContextMenu")
-assert(coreSrc:find('root:CreateTitle("Meter Type")', 1, true),
+assert(coreSrc:find('root:CreateTitle(ns.L["Meter Type"])', 1, true),
     "menu must title the Type section")
 assert(coreSrc:find("function Window:_OpenConfigMenu", 1, true)
     or coreSrc:find("Window._OpenConfigMenu = function", 1, true),
@@ -256,7 +256,7 @@ assert(coreSrc:find("root:CreateRadio", 1, true),
     "menu must call root:CreateRadio (looped over METER_TYPES)")
 
 -- T6 (Phase 2): Session subsection in the config menu
-assert(coreSrc:find('root:CreateTitle("Session")', 1, true),
+assert(coreSrc:find('root:CreateTitle(ns.L["Session"])', 1, true),
     "menu must title the Session section")
 assert(coreSrc:find('label%s*=%s*"Current"', 1, false)
     or coreSrc:find('"Current"', 1, true),

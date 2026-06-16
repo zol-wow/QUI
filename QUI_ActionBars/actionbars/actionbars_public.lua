@@ -595,18 +595,18 @@ do
         if not um then return end
 
         local BAR_ELEMENTS = {
-            { key = "bar1", label = "Action Bar 1", order = 1 },
-            { key = "bar2", label = "Action Bar 2", order = 2 },
-            { key = "bar3", label = "Action Bar 3", order = 3 },
-            { key = "bar4", label = "Action Bar 4", order = 4 },
-            { key = "bar5", label = "Action Bar 5", order = 5 },
-            { key = "bar6", label = "Action Bar 6", order = 6 },
-            { key = "bar7", label = "Action Bar 7", order = 7 },
-            { key = "bar8", label = "Action Bar 8", order = 8 },
-            { key = "petBar",    label = "Pet Bar",     order = 9 },
-            { key = "stanceBar", label = "Stance Bar",  order = 10 },
-            { key = "microMenu", label = "Micro Menu",  order = 11 },
-            { key = "bagBar",    label = "Bag Bar",     order = 12 },
+            { key = "bar1", label = ns.L["Action Bar 1"], order = 1 },
+            { key = "bar2", label = ns.L["Action Bar 2"], order = 2 },
+            { key = "bar3", label = ns.L["Action Bar 3"], order = 3 },
+            { key = "bar4", label = ns.L["Action Bar 4"], order = 4 },
+            { key = "bar5", label = ns.L["Action Bar 5"], order = 5 },
+            { key = "bar6", label = ns.L["Action Bar 6"], order = 6 },
+            { key = "bar7", label = ns.L["Action Bar 7"], order = 7 },
+            { key = "bar8", label = ns.L["Action Bar 8"], order = 8 },
+            { key = "petBar",    label = ns.L["Pet Bar"],     order = 9 },
+            { key = "stanceBar", label = ns.L["Stance Bar"],  order = 10 },
+            { key = "microMenu", label = ns.L["Micro Menu"],  order = 11 },
+            { key = "bagBar",    label = ns.L["Bag Bar"],     order = 12 },
         }
 
         local DB_KEY_MAP = {
@@ -618,8 +618,8 @@ do
         -- (addon state); positioning only here
         um:RegisterElement({
             key = "actionBars",
-            label = "Action Bars",
-            group = "Action Bars",
+            label = ns.L["Action Bars"],
+            group = ns.L["Action Bars"],
             order = -1,
             isOwned = true,
             noHandle = true,
@@ -631,8 +631,8 @@ do
         -- Leave Vehicle button — standalone proxy mover (not part of the bar loop)
         um:RegisterElement({
             key = "leaveVehicle",
-            label = "Leave Vehicle",
-            group = "Action Bars",
+            label = ns.L["Leave Vehicle"],
+            group = ns.L["Action Bars"],
             order = 13,
             getFrame = function()
                 return _G.MainMenuBarVehicleLeaveButton
@@ -645,7 +645,7 @@ do
             um:RegisterElement({
                 key = info.key,
                 label = info.label,
-                group = "Action Bars",
+                group = ns.L["Action Bars"],
                 order = info.order,
                 isOwned = true,
                 isEnabled = function()
@@ -674,10 +674,10 @@ do
                         local GUI = QUI and QUI.GUI
                         if GUI and GUI.ShowConfirmation then
                             GUI:ShowConfirmation({
-                                title = "Reload UI?",
-                                message = "Enabling or disabling an action bar requires a UI reload to fully take effect.",
-                                acceptText = "Reload",
-                                cancelText = "Later",
+                                title = ns.L["Reload UI?"],
+                                message = ns.L["Enabling or disabling an action bar requires a UI reload to fully take effect."],
+                                acceptText = ns.L["Reload"],
+                                cancelText = ns.L["Later"],
                                 onAccept = function() QUI:SafeReload() end,
                             })
                         end

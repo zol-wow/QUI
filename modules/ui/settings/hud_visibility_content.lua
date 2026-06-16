@@ -54,7 +54,7 @@ local function BuildHUDVisibilityTab(tabContent)
 
         L.headerAt(title)
         placeHint(L, tabContent,
-            "Uncheck 'Show Always' to use conditional visibility. Hover a setting for details.")
+            ns.L["Uncheck 'Show Always' to use conditional visibility. Hover a setting for details."])
 
         local s = L.sectionAt()
         local conditionCells = {}
@@ -70,27 +70,27 @@ local function BuildHUDVisibilityTab(tabContent)
         local showAlwaysW = GUI:CreateFormCheckbox(s.frame, nil, "showAlways", visTable, function()
             refreshFunc()
             UpdateConditionState()
-        end, { description = "Always keep this HUD element visible. Uncheck to switch to the conditional visibility rules below." })
-        s.AddRow(row(s.frame, "Show Always", showAlwaysW))
+        end, { description = ns.L["Always keep this HUD element visible. Uncheck to switch to the conditional visibility rules below."] })
+        s.AddRow(row(s.frame, ns.L["Show Always"], showAlwaysW))
 
         -- Conditional visibility checkboxes (paired 2-per-row, dim together).
         local condDefs = {
-            { key = "showWhenTargetExists", label = "Show When Target Exists",
-              desc = "Show this HUD element while you have a target selected." },
-            { key = "showInCombat", label = "Show In Combat",
-              desc = "Show this HUD element while you are in combat." },
-            { key = "showInGroup", label = "Show In Group",
-              desc = "Show this HUD element while you are in a party or raid group." },
-            { key = "showInInstance", label = "Show In Instance",
-              desc = "Show this HUD element while you are inside a dungeon, raid, battleground, or scenario." },
-            { key = "showOnMouseover", label = "Show On Mouseover",
-              desc = "Show this HUD element while your cursor is hovering over its anchor area." },
-            { key = "showWhenMounted", label = "Show When Mounted",
-              desc = "Show this HUD element while you are mounted." },
+            { key = "showWhenTargetExists", label = ns.L["Show When Target Exists"],
+              desc = ns.L["Show this HUD element while you have a target selected."] },
+            { key = "showInCombat", label = ns.L["Show In Combat"],
+              desc = ns.L["Show this HUD element while you are in combat."] },
+            { key = "showInGroup", label = ns.L["Show In Group"],
+              desc = ns.L["Show this HUD element while you are in a party or raid group."] },
+            { key = "showInInstance", label = ns.L["Show In Instance"],
+              desc = ns.L["Show this HUD element while you are inside a dungeon, raid, battleground, or scenario."] },
+            { key = "showOnMouseover", label = ns.L["Show On Mouseover"],
+              desc = ns.L["Show this HUD element while your cursor is hovering over its anchor area."] },
+            { key = "showWhenMounted", label = ns.L["Show When Mounted"],
+              desc = ns.L["Show this HUD element while you are mounted."] },
         }
         local extraDescriptions = {
-            showWhenHealthBelow100 = "Show these frames whenever your health is not full.",
-            alwaysShowCastbars     = "Keep castbars visible even when the rest of the unit frame is hidden.",
+            showWhenHealthBelow100 = ns.L["Show these frames whenever your health is not full."],
+            alwaysShowCastbars     = ns.L["Keep castbars visible even when the rest of the unit frame is hidden."],
         }
         if extraChecks then
             for _, ec in ipairs(extraChecks) do
@@ -118,27 +118,27 @@ local function BuildHUDVisibilityTab(tabContent)
 
         -- Fade sliders
         local fadeDurW = GUI:CreateFormSlider(s.frame, nil, 0.1, 1.0, 0.05, "fadeDuration", visTable, refreshFunc,
-            { precision = 2, description = "How many seconds the fade animation takes when this HUD element's visibility changes." })
+            { precision = 2, description = ns.L["How many seconds the fade animation takes when this HUD element's visibility changes."] })
         local fadeOutW = GUI:CreateFormSlider(s.frame, nil, 0, 1.0, 0.05, "fadeOutAlpha", visTable, refreshFunc,
-            { precision = 2, description = "Opacity used while this HUD element is hidden. 0 is fully invisible, 1 is fully opaque." })
+            { precision = 2, description = ns.L["Opacity used while this HUD element is hidden. 0 is fully invisible, 1 is fully opaque."] })
         s.AddRow(
-            row(s.frame, "Fade Duration (sec)", fadeDurW),
-            row(s.frame, "Fade Out Opacity", fadeOutW)
+            row(s.frame, ns.L["Fade Duration (sec)"], fadeDurW),
+            row(s.frame, ns.L["Fade Out Opacity"], fadeOutW)
         )
 
         -- Hide rules
         local hideCells = {}
         local hideDefs = {
-            { key = "hideWhenMounted",         label = "Hide When Mounted",
-              desc = "Hide this HUD element while you are mounted, overriding any Show rules above." },
-            { key = "hideWhenInVehicle",       label = "Hide When In Vehicle",
-              desc = "Hide this HUD element while you are riding a vehicle, overriding any Show rules above." },
-            { key = "hideWhenFlying",          label = "Hide When Flying",
-              desc = "Hide this HUD element while flying on a traditional (non-dynamic) flying mount." },
-            { key = "hideWhenSkyriding",       label = "Hide When Skyriding",
-              desc = "Hide this HUD element while actively skyriding on a dynamic flying mount." },
-            { key = "dontHideInDungeonsRaids", label = "Don't Hide in Dungeons/Raids",
-              desc = "Ignore the mounted, vehicle, flying, and skyriding hide rules while you are inside a dungeon or raid instance." },
+            { key = "hideWhenMounted",         label = ns.L["Hide When Mounted"],
+              desc = ns.L["Hide this HUD element while you are mounted, overriding any Show rules above."] },
+            { key = "hideWhenInVehicle",       label = ns.L["Hide When In Vehicle"],
+              desc = ns.L["Hide this HUD element while you are riding a vehicle, overriding any Show rules above."] },
+            { key = "hideWhenFlying",          label = ns.L["Hide When Flying"],
+              desc = ns.L["Hide this HUD element while flying on a traditional (non-dynamic) flying mount."] },
+            { key = "hideWhenSkyriding",       label = ns.L["Hide When Skyriding"],
+              desc = ns.L["Hide this HUD element while actively skyriding on a dynamic flying mount."] },
+            { key = "dontHideInDungeonsRaids", label = ns.L["Don't Hide in Dungeons/Raids"],
+              desc = ns.L["Ignore the mounted, vehicle, flying, and skyriding hide rules while you are inside a dungeon or raid instance."] },
         }
         for _, def in ipairs(hideDefs) do
             local w = GUI:CreateFormCheckbox(s.frame, nil, def.key, visTable, refreshFunc,
@@ -153,7 +153,7 @@ local function BuildHUDVisibilityTab(tabContent)
     -- ========== CDM Visibility ==========
     if not db.cdmVisibility then db.cdmVisibility = {} end
     BuildVisibilitySection(
-        "CDM Visibility",
+        ns.L["CDM Visibility"],
         db.cdmVisibility,
         function() if _G.QUI_RefreshCDMVisibility then _G.QUI_RefreshCDMVisibility() end end,
         function() if _G.QUI_RefreshCDMMouseover then _G.QUI_RefreshCDMMouseover() end end
@@ -162,20 +162,20 @@ local function BuildHUDVisibilityTab(tabContent)
     -- ========== Unitframes Visibility ==========
     if not db.unitframesVisibility then db.unitframesVisibility = {} end
     BuildVisibilitySection(
-        "Unitframes Visibility",
+        ns.L["Unitframes Visibility"],
         db.unitframesVisibility,
         function() if _G.QUI_RefreshUnitframesVisibility then _G.QUI_RefreshUnitframesVisibility() end end,
         function() if _G.QUI_RefreshUnitframesMouseover then _G.QUI_RefreshUnitframesMouseover() end end,
         {
-            {key = "showWhenHealthBelow100", label = "Show When Health < 100%", default = false},
-            {key = "alwaysShowCastbars", label = "Always Show Castbars", default = false},
+            {key = "showWhenHealthBelow100", label = ns.L["Show When Health < 100%"], default = false},
+            {key = "alwaysShowCastbars", label = ns.L["Always Show Castbars"], default = false},
         }
     )
 
     -- ========== Custom CDM Bars Visibility ==========
     if not db.customTrackersVisibility then db.customTrackersVisibility = {} end
     BuildVisibilitySection(
-        "Custom Items/Spells Bars",
+        ns.L["Custom Items/Spells Bars"],
         db.customTrackersVisibility,
         function() if _G.QUI_RefreshCustomTrackersVisibility then _G.QUI_RefreshCustomTrackersVisibility() end end,
         function() if _G.QUI_RefreshCustomTrackersMouseover then _G.QUI_RefreshCustomTrackersMouseover() end end
@@ -184,7 +184,7 @@ local function BuildHUDVisibilityTab(tabContent)
     -- ========== Action Bars Visibility ==========
     if not db.actionBarsVisibility then db.actionBarsVisibility = {} end
     BuildVisibilitySection(
-        "Action Bars Visibility",
+        ns.L["Action Bars Visibility"],
         db.actionBarsVisibility,
         function() if _G.QUI_RefreshActionBarsVisibility then _G.QUI_RefreshActionBarsVisibility() end end,
         function() if _G.QUI_RefreshActionBarsMouseover then _G.QUI_RefreshActionBarsMouseover() end end
@@ -193,7 +193,7 @@ local function BuildHUDVisibilityTab(tabContent)
     -- ========== Chat Frames Visibility ==========
     if not db.chatVisibility then db.chatVisibility = {} end
     BuildVisibilitySection(
-        "Chat Frames Visibility",
+        ns.L["Chat Frames Visibility"],
         db.chatVisibility,
         function() if _G.QUI_RefreshChatVisibility then _G.QUI_RefreshChatVisibility() end end,
         function() if _G.QUI_RefreshChatMouseover then _G.QUI_RefreshChatMouseover() end end

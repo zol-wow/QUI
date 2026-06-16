@@ -10,6 +10,14 @@
 local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
+
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 local Settings = ns.Settings
 local FullSurface = Settings and Settings.FullSurface
 local ClearFrame = FullSurface and FullSurface.ClearFrame
@@ -154,12 +162,12 @@ end
 -- QUI_RefreshUnitFramePreview).
 ---------------------------------------------------------------------------
 local MOCK_NAMES = {
-    player       = "Player",
-    target       = "Boss Target",
-    focus        = "Raid Focus",
-    targettarget = "Focus Target",
-    pet          = "Voidwalker",
-    boss         = "Boss 1",
+    player       = ns.L["Player"],
+    target       = ns.L["Boss Target"],
+    focus        = ns.L["Raid Focus"],
+    targettarget = ns.L["Focus Target"],
+    pet          = ns.L["Voidwalker"],
+    boss         = ns.L["Boss 1"],
 }
 
 local function GetLSM()
@@ -595,11 +603,11 @@ local function RefreshMock()
     if unitDB.showName ~= false then
         mock._nameText:Show()
         local nameFont = math.max(8, math.min(24, math.floor((unitDB.nameFontSize or 11) * scale + 0.5)))
-        mock._nameText:SetFont(fontPath, nameFont, fontOutline)
+        CJKFont(mock._nameText, fontPath, nameFont, fontOutline)
 
         local rawName
         if State.selectedUnit == "player" then
-            rawName = UnitName("player") or "Player"
+            rawName = UnitName("player") or ns.L["Player"]
         else
             rawName = MOCK_NAMES[State.selectedUnit] or State.selectedUnit
         end
@@ -611,7 +619,7 @@ local function RefreshMock()
         -- Target-only inline ToT suffix (class-colored divider when toggled).
         if State.selectedUnit == "target" and unitDB.showInlineToT then
             local sep = unitDB.totSeparator or " >> "
-            local totName = "TargetOfTarget"
+            local totName = ns.L["TargetOfTarget"]
             local totMax = unitDB.totNameCharLimit or 0
             if totMax > 0 and #totName > totMax then
                 totName = totName:sub(1, totMax)
@@ -644,7 +652,7 @@ local function RefreshMock()
     if unitDB.showHealth ~= false then
         mock._healthText:Show()
         local hFont = math.max(8, math.min(24, math.floor((unitDB.healthFontSize or 11) * scale + 0.5)))
-        mock._healthText:SetFont(fontPath, hFont, fontOutline)
+        CJKFont(mock._healthText, fontPath, hFont, fontOutline)
         -- Health text content is set per-tick by the body preview driver.
 
         local masterOn = general and general.masterColorHealthText
@@ -751,7 +759,7 @@ local function RefreshMock()
                 -- Stack text
                 if showStack then
                     icon._stack:Show()
-                    icon._stack:SetFont(fontPath, math.max(8, math.floor((stackSize or 10) * scale + 0.5)), fontOutline)
+                    CJKFont(icon._stack, fontPath, math.max(8, math.floor((stackSize or 10) * scale + 0.5)), fontOutline)
                     -- Stack text content is set per-tick by the body preview driver.
                     local sc = stackColor or { 1, 1, 1, 1 }
                     icon._stack:SetTextColor(sc[1], sc[2], sc[3], sc[4] or 1)
@@ -764,7 +772,7 @@ local function RefreshMock()
                 -- Duration text
                 if showDur then
                     icon._dur:Show()
-                    icon._dur:SetFont(fontPath, math.max(8, math.floor((durSize or 12) * scale + 0.5)), fontOutline)
+                    CJKFont(icon._dur, fontPath, math.max(8, math.floor((durSize or 12) * scale + 0.5)), fontOutline)
                     -- Duration text content is set per-tick by the body preview driver.
                     local dc = durColor or { 1, 1, 1, 1 }
                     icon._dur:SetTextColor(dc[1], dc[2], dc[3], dc[4] or 1)
@@ -809,7 +817,7 @@ local function RefreshMock()
     if unitDB.showPowerText and powerShown then
         mock._powerText:Show()
         local ptFont = math.max(8, math.min(24, math.floor((unitDB.powerTextFontSize or 10) * scale + 0.5)))
-        mock._powerText:SetFont(fontPath, ptFont, fontOutline)
+        CJKFont(mock._powerText, fontPath, ptFont, fontOutline)
         -- Power text content is set per-tick by the body preview driver.
 
         local usePowerColor = unitDB.powerTextUsePowerColor
@@ -853,8 +861,8 @@ local function RefreshMock()
     if stanceDB and stanceDB.enabled then
         mock._stanceText:Show()
         local sFont = math.max(8, math.floor((stanceDB.fontSize or 12) * scale + 0.5))
-        mock._stanceText:SetFont(fontPath, sFont, fontOutline)
-        mock._stanceText:SetText("Bear Form")
+        CJKFont(mock._stanceText, fontPath, sFont, fontOutline)
+        mock._stanceText:SetText(ns.L["Bear Form"])
         if stanceDB.useClassColor then
             local r, g, b = GetPlayerClassColor()
             mock._stanceText:SetTextColor(r, g, b, 1)
@@ -945,10 +953,10 @@ local function BuildPreviewBlock(pv)
         state = State,
         selectedValue = State.selectedUnit,
         dropdownStateKey = "_selectedUnit",
-        dropdownLabel = "Unit",
+        dropdownLabel = ns.L["Unit"],
         dropdownOptions = type(getUnitOptions) == "function" and getUnitOptions() or {},
         dropdownMeta = {
-            description = "Select which unit frame to configure. Settings in the tabs below apply to the chosen unit.",
+            description = ns.L["Select which unit frame to configure. Settings in the tabs below apply to the chosen unit."],
         },
         onDropdownChanged = function(value)
             SetSelectedUnit(value)

@@ -577,7 +577,7 @@ end
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
         key      = "chat",
-        label    = "Chat",
+        label    = ns.L["Chat"],
         category = "Skinning",
         prefix   = "chat",
         db       = function(p) return p.chat end,

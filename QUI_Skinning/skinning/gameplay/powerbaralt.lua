@@ -4,6 +4,14 @@ local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
 local Helpers = ns.Helpers
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- PLAYER POWER BAR ALT SKINNING
 ---------------------------------------------------------------------------
@@ -192,7 +200,7 @@ local function CreateQUIAltPowerBar()
     -- Create text
     bar.text = bar:CreateFontString(nil, "OVERLAY")
     bar.text:SetPoint("CENTER", bar, "CENTER")
-    bar.text:SetFont(STANDARD_TEXT_FONT, 11, FONT_FLAGS)
+    CJKFont(bar.text, STANDARD_TEXT_FONT, 11, FONT_FLAGS)
     bar.text:SetTextColor(1, 1, 1)
     bar.text:SetJustifyH("CENTER")
 

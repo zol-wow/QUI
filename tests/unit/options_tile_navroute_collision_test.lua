@@ -48,6 +48,7 @@ for _, path in ipairs(ListTileFiles()) do
     check(chunk ~= nil, "compiles: " .. path .. (err and (" (" .. err .. ")") or ""))
     if chunk then
         local ns = { QUI_Options = optsStub }
+        (dofile("tests/helpers/locale.lua"))(ns)
         -- related.lua/help_content.lua read globals at file scope and are
         -- not tile registrars; tolerate load failures, require registrars
         -- via the coverage checks below instead.

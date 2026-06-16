@@ -16,12 +16,12 @@ function V2Minimap.Register(frame)
     Opts.RegisterFeatureTile(frame, {
         id = "minimap",
         icon = "o",
-        name = "Minimap & Datatext",
-        primaryCTA = { label = "Edit in Layout Mode", moverKey = "minimap" },
+        name = ns.L["Minimap & Datatext"],
+        primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "minimap" },
         subPages = {
             {
                 id = "minimap",
-                name = "Minimap",
+                name = ns.L["Minimap"],
                 sectionNav = true,
                 featureId = "minimap",
                 navRoutes = {
@@ -30,21 +30,21 @@ function V2Minimap.Register(frame)
                 },
                 searchContext = {
                     tabIndex = 9,
-                    tabName = "Minimap & Datatext",
+                    tabName = ns.L["Minimap & Datatext"],
                     subTabIndex = 1,
-                    subTabName = "Minimap",
+                    subTabName = ns.L["Minimap"],
                 },
             },
             {
                 id = "datatext",
-                name = "Datatext",
+                name = ns.L["Datatext"],
                 featureId = "datatextPanel",
                 navRoutes = { { tabIndex = 9, subTabIndex = 2 } },
                 searchContext = {
                     tabIndex = 9,
-                    tabName = "Minimap & Datatext",
+                    tabName = ns.L["Minimap & Datatext"],
                     subTabIndex = 2,
-                    subTabName = "Datatext",
+                    subTabName = ns.L["Datatext"],
                 },
             },
         },

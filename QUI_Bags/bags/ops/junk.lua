@@ -154,7 +154,7 @@ function Junk.SellJunk(onDone)
 
     local count = #items
     if count == 0 then
-        print(PREFIX .. " No junk to sell.")
+        print(PREFIX .. " " .. ns.L["No junk to sell."])
         if onDone then onDone(true) end
         return
     end
@@ -162,7 +162,7 @@ function Junk.SellJunk(onDone)
     queue = Bags.Transfers.RateQueue(SELL_INTERVAL, function(ok, reason)
         queue = nil
         if ok then
-            print(("%s Sold %d junk item%s for %s."):format(
+            print(("%s " .. ns.L["Sold %d junk item%s for %s."]):format(
                 PREFIX, count, count == 1 and "" or "s",
                 GetMoneyString(total, true)))
         end

@@ -41,6 +41,14 @@ local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local GuildWindow = {}
 Bags.GuildWindow = GuildWindow
 
@@ -173,7 +181,7 @@ local function ShowPurchasePopup()
     if not cost then return end
     local costText = GetMoneyString and GetMoneyString(cost, true) or tostring(cost)
     StaticPopupDialogs["QUI_GUILDBANK_BUY_TAB"] = {
-        text = "Purchase guild bank tab?\n\n" .. costText,
+        text = ns.L["Purchase guild bank tab?"] .. "\n\n" .. costText,
         button1 = ACCEPT,
         button2 = CANCEL,
         OnAccept = function()
@@ -201,7 +209,7 @@ local function ShowRenamePopup(entry)
     if not tab then return end
     local tabIndex = entry.tab
     StaticPopupDialogs["QUI_GUILDBANK_RENAME_TAB"] = {
-        text = "Rename guild bank tab:",
+        text = ns.L["Rename guild bank tab:"],
         button1 = ACCEPT,
         button2 = CANCEL,
         hasEditBox = true,
@@ -237,7 +245,7 @@ end
 local function ShowMoneyPopup(kind)
     local depositing = (kind == "deposit")
     StaticPopupDialogs["QUI_GUILDBANK_MONEY"] = {
-        text = depositing and "Deposit gold:" or "Withdraw gold:",
+        text = depositing and ns.L["Deposit gold:"] or ns.L["Withdraw gold:"],
         button1 = ACCEPT,
         button2 = CANCEL,
         hasEditBox = true,
@@ -308,7 +316,7 @@ local function RenderItemLog(smf)
     -- the item log is per-tab server data — the All grid has no single tab
     -- to query, so show a hint instead of a misleading/stale log
     if type(selectedTab) ~= "number" then
-        smf:AddMessage("Select a tab to view its item log.")
+        smf:AddMessage(ns.L["Select a tab to view its item log."])
         return
     end
     for i = 1, GetNumGuildBankTransactions(selectedTab) do
@@ -470,9 +478,9 @@ local function CreateTabButton()
         if not entry then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if entry.purchase then
-            GameTooltip:SetText("Purchase guild bank tab")
+            GameTooltip:SetText(ns.L["Purchase guild bank tab"])
         elseif entry.all then
-            GameTooltip:SetText("All tabs in one grid")
+            GameTooltip:SetText(ns.L["All tabs in one grid"])
         else
             local label = (entry.name and entry.name ~= "") and entry.name
                 or ("Tab " .. tostring(entry.tab))
@@ -482,19 +490,19 @@ local function CreateTabButton()
                 -- permission, remaining withdrawals (-1 = unlimited)
                 local _, _, isViewable, canDeposit, _, remainingWithdrawals =
                     GetGuildBankTabInfo(entry.tab)
-                GameTooltip:AddLine(isViewable and "Viewable" or "Not viewable", 0.8, 0.8, 0.8)
-                GameTooltip:AddLine(canDeposit and "Deposits allowed" or "No deposits", 0.8, 0.8, 0.8)
+                GameTooltip:AddLine(isViewable and ns.L["Viewable"] or ns.L["Not viewable"], 0.8, 0.8, 0.8)
+                GameTooltip:AddLine(canDeposit and ns.L["Deposits allowed"] or ns.L["No deposits"], 0.8, 0.8, 0.8)
                 if remainingWithdrawals == -1 then
-                    GameTooltip:AddLine("Withdrawals: no limit", 0.8, 0.8, 0.8)
+                    GameTooltip:AddLine(ns.L["Withdrawals: no limit"], 0.8, 0.8, 0.8)
                 elseif remainingWithdrawals then
-                    GameTooltip:AddLine("Withdrawals left: " .. remainingWithdrawals, 0.8, 0.8, 0.8)
+                    GameTooltip:AddLine(ns.L["Withdrawals left: "] .. remainingWithdrawals, 0.8, 0.8, 0.8)
                 end
             elseif entry.withdrawals then
                 -- cached copy from the last vault visit
                 if entry.withdrawals == -1 then
-                    GameTooltip:AddLine("Withdrawals: no limit", 0.8, 0.8, 0.8)
+                    GameTooltip:AddLine(ns.L["Withdrawals: no limit"], 0.8, 0.8, 0.8)
                 else
-                    GameTooltip:AddLine("Withdrawals left: " .. entry.withdrawals, 0.8, 0.8, 0.8)
+                    GameTooltip:AddLine(ns.L["Withdrawals left: "] .. entry.withdrawals, 0.8, 0.8, 0.8)
                 end
             end
         end
@@ -525,7 +533,7 @@ local function EnsureWindow()
     if win then return win end
     win = Bags.Chassis.CreateWindow({
         name = "QUI_GuildBankWindow",
-        title = GUILD_BANK or "Guild Bank",
+        title = GUILD_BANK or ns.L["Guild Bank"],
         getPosition = function()
             local s = GetSettings()
             return s and s.windows and s.windows.guildbank or nil
@@ -580,13 +588,13 @@ local function EnsureWindow()
     log:Hide()
     win._logPanel = log
 
-    win._itemLogBtn = CreateTextButton(log, "Item Log", function()
+    win._itemLogBtn = CreateTextButton(log, ns.L["Item Log"], function()
         logMode = "item"
         QueryLog()
         GuildWindow.Refresh()
     end)
     win._itemLogBtn:SetPoint("TOPLEFT", 0, 0)
-    win._moneyLogBtn = CreateTextButton(log, "Money Log", function()
+    win._moneyLogBtn = CreateTextButton(log, ns.L["Money Log"], function()
         logMode = "money"
         QueryLog()
         GuildWindow.Refresh()
@@ -613,20 +621,20 @@ local function EnsureWindow()
     -- footer (live mode only; hidden while browsing cached)
     win._guildMoney = win._footer:CreateFontString(nil, "ARTWORK")
     win._guildMoney:SetPoint("RIGHT", -8, 0)
-    win._guildMoney:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
+    CJKFont(win._guildMoney, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
     win._withdrawLimit = win._footer:CreateFontString(nil, "ARTWORK")
     win._withdrawLimit:SetPoint("RIGHT", win._guildMoney, "LEFT", -12, 0)
-    win._withdrawLimit:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
-    win._depositBtn = CreateTextButton(win._footer, "Deposit", function()
+    CJKFont(win._withdrawLimit, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    win._depositBtn = CreateTextButton(win._footer, ns.L["Deposit"], function()
         ShowMoneyPopup("deposit")
     end)
     win._depositBtn:SetPoint("LEFT", 8, 0)
-    win._withdrawBtn = CreateTextButton(win._footer, "Withdraw", function()
+    win._withdrawBtn = CreateTextButton(win._footer, ns.L["Withdraw"], function()
         if not CanWithdrawGuildBankMoney() then return end
         ShowMoneyPopup("withdraw")
     end)
     win._withdrawBtn:SetPoint("LEFT", win._depositBtn, "RIGHT", 4, 0)
-    win._logsBtn = CreateTextButton(win._footer, "Logs", function()
+    win._logsBtn = CreateTextButton(win._footer, ns.L["Logs"], function()
         bodyMode = (bodyMode == "log") and "grid" or "log"
         if bodyMode == "log" then QueryLog() end
         GuildWindow.Refresh()
@@ -638,8 +646,8 @@ local function EnsureWindow()
     -- character's own guild has a cache record — an uncached current guild
     -- is unselectable (nothing to render), so nil is passed instead.
     win._ownerSelect = Bags.OwnerSelect.Attach(win, {
-        title = "Guilds",
-        tooltip = "View another guild bank",
+        title = ns.L["Guilds"],
+        tooltip = ns.L["View another guild bank"],
         listOwners = function()
             local cur = Bags.Store.GetCurrentGuildKey()
             if cur and not Bags.Store.GetGuild(cur) then cur = nil end
@@ -680,10 +688,10 @@ local function RenderTabStrip(tabs)
         btn._entry = entry
         local label = "+"
         if entry.all then
-            label = "All"
+            label = ns.L["All"]
         elseif not entry.purchase then
             label = (entry.name and entry.name ~= "") and entry.name
-                or ("Tab " .. tostring(entry.tab))
+                or (ns.L["Tab"] .. " " .. tostring(entry.tab))
         end
         btn._label:SetText(label)
         local w = entry.purchase and TAB_H
@@ -776,17 +784,17 @@ local function RenderFooter()
     else
         local limit = GetGuildBankWithdrawMoney()
         if limit == -1 then
-            win._withdrawLimit:SetText("Limit: none")
+            win._withdrawLimit:SetText(ns.L["Limit: none"])
         elseif GetMoneyString then
-            win._withdrawLimit:SetText("Limit: " .. GetMoneyString(limit, true))
+            win._withdrawLimit:SetText(ns.L["Limit: "] .. GetMoneyString(limit, true))
         else
-            win._withdrawLimit:SetText("Limit: " .. tostring(limit))
+            win._withdrawLimit:SetText(ns.L["Limit: "] .. tostring(limit))
         end
         win._withdrawLimit:Show()
     end
     win._depositBtn:Show()
     win._withdrawBtn:Show()
-    win._logsBtn._label:SetText(bodyMode == "log" and "Items" or "Logs")
+    win._logsBtn._label:SetText(bodyMode == "log" and ns.L["Items"] or ns.L["Logs"])
     win._logsBtn:Show()
 end
 

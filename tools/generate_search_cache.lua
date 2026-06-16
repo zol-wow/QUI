@@ -1,6 +1,9 @@
 local ADDON_NAME = "QUI"
 local ROOT = "."
-local OUTPUT_PATH = "QUI_OptionsSearch/search_cache.lua"
+local LOCALE = (arg and arg[1]) or "enUS"
+local OUTPUT_PATH = (LOCALE == "enUS")
+    and "QUI_OptionsSearch/search_cache.lua"
+    or  ("QUI_OptionsSearch_%s/search_cache.lua"):format(LOCALE)
 _G.unpack = _G.unpack or table.unpack
 local unpack = _G.unpack
 
@@ -576,7 +579,28 @@ _G.GetFramerate = function()
     return 144
 end
 _G.GetLocale = function()
-    return "enUS"
+    return LOCALE
+end
+-- WoW-style positional string.format (e.g. "%2$s %1$s", "%1$d / %2$d"). Stock
+-- Lua 5.1 rejects "%n$" specifiers but WoW's format supports them and QUI
+-- localization relies on them. This shim reorders args for positional
+-- specifiers then delegates to native format; non-positional strings pass
+-- through unchanged. Also covers ("..."):format(...) via the string table.
+do
+    local rawformat = string.format
+    local function posformat(fmt, ...)
+        if type(fmt) == "string" and fmt:find("%%%d+%$") then
+            local args = { ... }
+            local res = fmt:gsub("%%(%d+)%$([%-%+ #0]*%d*%.?%d*[diouxXeEfgGqcs])",
+                function(idx, conv)
+                    return rawformat("%" .. conv, args[tonumber(idx)])
+                end)
+            return (res:gsub("%%%%", "%%"))
+        end
+        return rawformat(fmt, ...)
+    end
+    string.format = posformat
+    _G.format = posformat
 end
 _G.GetRealmName = function()
     return "Offline"
@@ -896,6 +920,27 @@ local ns = {
     UIKit = {},
     LSM = libs["LibSharedMedia-3.0"],
 }
+
+-- i18n: resolve L["..."] in content files to the target locale so each
+-- generated cache is already in-language. Reuses the runtime resolution order.
+do
+    local data = { enUS = {}, active = nil }
+    local function loadData(path, sink)
+        local chunk = loadfile(path)
+        if not chunk then return end
+        local fakeNs = { LocaleData = {} }
+        pcall(chunk, "QUI", fakeNs)          -- guarded files early-return unless GetLocale()==LOCALE
+        if fakeNs.LocaleData.enUS then data.enUS = fakeNs.LocaleData.enUS end
+        if fakeNs.LocaleData.active then data.active = fakeNs.LocaleData.active end
+    end
+    loadData("core/locale/enUS.lua")
+    if LOCALE ~= "enUS" then loadData(("core/locale/%s.lua"):format(LOCALE)) end
+    ns.L = setmetatable({}, { __index = function(_, key)
+        if data.active then local v = data.active[key]; if v ~= nil then return v end end
+        local b = data.enUS[key]; if b ~= nil then return b end
+        return key
+    end })
+end
 
 local function build_lsm_options(kind, fallback)
     local list = {}
@@ -2025,18 +2070,18 @@ local ACTION_BAR_TOTEM_GROW_OPTIONS = {
 }
 
 local ACTION_BAR_PER_BAR_CAPTURE_BARS = {
-    { key = "bar1", label = "Bar 1", dbKey = "bar1", layout = true, skinnable = true, flyout = true, hidePageArrow = true },
-    { key = "bar2", label = "Bar 2", dbKey = "bar2", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar3", label = "Bar 3", dbKey = "bar3", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar4", label = "Bar 4", dbKey = "bar4", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar5", label = "Bar 5", dbKey = "bar5", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar6", label = "Bar 6", dbKey = "bar6", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar7", label = "Bar 7", dbKey = "bar7", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar8", label = "Bar 8", dbKey = "bar8", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "stanceBar", label = "Stance Bar", dbKey = "stance", layout = true, skinnable = true },
-    { key = "petBar", label = "Pet Bar", dbKey = "pet", layout = true, skinnable = true },
-    { key = "microMenu", label = "Micro Menu", dbKey = "microbar", layout = true, clickthrough = true },
-    { key = "bagBar", label = "Bag Bar", dbKey = "bags", layout = true, clickthrough = true },
+    { key = "bar1", label = ns.L["Bar 1"], dbKey = "bar1", layout = true, skinnable = true, flyout = true, hidePageArrow = true },
+    { key = "bar2", label = ns.L["Bar 2"], dbKey = "bar2", layout = true, skinnable = true, flyout = true, toggleable = true },
+    { key = "bar3", label = ns.L["Bar 3"], dbKey = "bar3", layout = true, skinnable = true, flyout = true, toggleable = true },
+    { key = "bar4", label = ns.L["Bar 4"], dbKey = "bar4", layout = true, skinnable = true, flyout = true, toggleable = true },
+    { key = "bar5", label = ns.L["Bar 5"], dbKey = "bar5", layout = true, skinnable = true, flyout = true, toggleable = true },
+    { key = "bar6", label = ns.L["Bar 6"], dbKey = "bar6", layout = true, skinnable = true, flyout = true, toggleable = true },
+    { key = "bar7", label = ns.L["Bar 7"], dbKey = "bar7", layout = true, skinnable = true, flyout = true, toggleable = true },
+    { key = "bar8", label = ns.L["Bar 8"], dbKey = "bar8", layout = true, skinnable = true, flyout = true, toggleable = true },
+    { key = "stanceBar", label = ns.L["Stance Bar"], dbKey = "stance", layout = true, skinnable = true },
+    { key = "petBar", label = ns.L["Pet Bar"], dbKey = "pet", layout = true, skinnable = true },
+    { key = "microMenu", label = ns.L["Micro Menu"], dbKey = "microbar", layout = true, clickthrough = true },
+    { key = "bagBar", label = ns.L["Bag Bar"], dbKey = "bags", layout = true, clickthrough = true },
 }
 
 local function capture_action_bar_per_bar_setting(bar, section, label, widget_type, db_path, db_key, extra)
@@ -2055,14 +2100,15 @@ local function capture_action_bar_per_bar_setting(bar, section, label, widget_ty
     }, label, widget_type, db_path, db_key, extra)
 end
 
-local function capture_action_bar_text_section(bar, bar_path, section, prefix, toggle_label)
-    local lower_key = section:gsub("%s+", "")
+local function capture_action_bar_text_section(bar, bar_path, section_raw, prefix, toggle_label)
+    local lower_key = section_raw:gsub("%s+", "")
+    local section = ns.L[section_raw]
     capture_action_bar_per_bar_setting(bar, section, toggle_label, "toggle", bar_path, prefix.show)
-    capture_action_bar_per_bar_setting(bar, section, "Font Size", "slider", bar_path, prefix.fontSize, { min = 8, max = section == "Stack Count" and 20 or 18, step = 1 })
-    capture_action_bar_per_bar_setting(bar, section, "Anchor", "dropdown", bar_path, prefix.anchor, { options = ACTION_BAR_ANCHOR_OPTIONS })
-    capture_action_bar_per_bar_setting(bar, section, "X-Offset", "slider", bar_path, prefix.offsetX, { min = -20, max = 20, step = 1 })
-    capture_action_bar_per_bar_setting(bar, section, "Y-Offset", "slider", bar_path, prefix.offsetY, { min = -20, max = 20, step = 1 })
-    capture_action_bar_per_bar_setting(bar, section, "Color", "colorpicker", bar_path, prefix.color)
+    capture_action_bar_per_bar_setting(bar, section, ns.L["Font Size"], "slider", bar_path, prefix.fontSize, { min = 8, max = section_raw == "Stack Count" and 20 or 18, step = 1 })
+    capture_action_bar_per_bar_setting(bar, section, ns.L["Anchor"], "dropdown", bar_path, prefix.anchor, { options = ACTION_BAR_ANCHOR_OPTIONS })
+    capture_action_bar_per_bar_setting(bar, section, ns.L["X-Offset"], "slider", bar_path, prefix.offsetX, { min = -20, max = 20, step = 1 })
+    capture_action_bar_per_bar_setting(bar, section, ns.L["Y-Offset"], "slider", bar_path, prefix.offsetY, { min = -20, max = 20, step = 1 })
+    capture_action_bar_per_bar_setting(bar, section, ns.L["Color"], "colorpicker", bar_path, prefix.color)
     return lower_key
 end
 
@@ -2072,39 +2118,39 @@ local function capture_action_bar_per_bar_settings()
         local layout_path = bar_path .. ".ownedLayout"
 
         if bar.toggleable then
-            capture_action_bar_per_bar_setting(bar, "Bar", "Enabled", "toggle", bar_path, "enabled")
+            capture_action_bar_per_bar_setting(bar, ns.L["Bar"], ns.L["Enabled"], "toggle", bar_path, "enabled")
         end
         if bar.hidePageArrow then
-            capture_action_bar_per_bar_setting(bar, "Bar", "Hide Default Paging Arrow", "toggle", bar_path, "hidePageArrow")
+            capture_action_bar_per_bar_setting(bar, ns.L["Bar"], ns.L["Hide Default Paging Arrow"], "toggle", bar_path, "hidePageArrow")
         end
         if bar.clickthrough then
-            capture_action_bar_per_bar_setting(bar, "Bar", "Clickthrough", "toggle", bar_path, "clickthrough")
+            capture_action_bar_per_bar_setting(bar, ns.L["Bar"], ns.L["Clickthrough"], "toggle", bar_path, "clickthrough")
         end
 
         if bar.layout then
-            capture_action_bar_per_bar_setting(bar, "Layout", "Orientation", "dropdown", layout_path, "orientation", { options = ACTION_BAR_ORIENTATION_OPTIONS })
-            capture_action_bar_per_bar_setting(bar, "Layout", "Buttons Per Row", "slider", layout_path, "columns", { min = 1, max = 12, step = 1 })
-            capture_action_bar_per_bar_setting(bar, "Layout", "Visible Buttons", "slider", layout_path, "iconCount", { min = 1, max = 12, step = 1 })
-            capture_action_bar_per_bar_setting(bar, "Layout", "Button Size", "slider", layout_path, "buttonSize", { min = 20, max = 64, step = 1 })
-            capture_action_bar_per_bar_setting(bar, "Layout", "Button Spacing", "slider", layout_path, "buttonSpacing", { min = 0, max = 12, step = 1 })
-            capture_action_bar_per_bar_setting(bar, "Layout", "Grow Upward", "toggle", layout_path, "growUp")
-            capture_action_bar_per_bar_setting(bar, "Layout", "Grow Left", "toggle", layout_path, "growLeft")
+            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Orientation"], "dropdown", layout_path, "orientation", { options = ACTION_BAR_ORIENTATION_OPTIONS })
+            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Buttons Per Row"], "slider", layout_path, "columns", { min = 1, max = 12, step = 1 })
+            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Visible Buttons"], "slider", layout_path, "iconCount", { min = 1, max = 12, step = 1 })
+            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Button Size"], "slider", layout_path, "buttonSize", { min = 20, max = 64, step = 1 })
+            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Button Spacing"], "slider", layout_path, "buttonSpacing", { min = 0, max = 12, step = 1 })
+            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Grow Upward"], "toggle", layout_path, "growUp")
+            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Grow Left"], "toggle", layout_path, "growLeft")
             if bar.flyout then
-                capture_action_bar_per_bar_setting(bar, "Layout", "Flyout Direction", "dropdown", layout_path, "flyoutDirection", { options = ACTION_BAR_FLYOUT_OPTIONS })
+                capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Flyout Direction"], "dropdown", layout_path, "flyoutDirection", { options = ACTION_BAR_FLYOUT_OPTIONS })
             end
         end
 
         if bar.skinnable then
-            capture_action_bar_per_bar_setting(bar, "Visual", "Icon Crop", "slider", bar_path, "iconZoom", { min = 0.05, max = 0.15, step = 0.01 })
-            capture_action_bar_per_bar_setting(bar, "Visual", "Show Backdrop", "toggle", bar_path, "showBackdrop")
-            capture_action_bar_per_bar_setting(bar, "Visual", "Backdrop Opacity", "slider", bar_path, "backdropAlpha", { min = 0, max = 1, step = 0.05 })
-            capture_action_bar_per_bar_setting(bar, "Visual", "Show Gloss", "toggle", bar_path, "showGloss")
-            capture_action_bar_per_bar_setting(bar, "Visual", "Gloss Opacity", "slider", bar_path, "glossAlpha", { min = 0, max = 1, step = 0.05 })
-            capture_action_bar_per_bar_setting(bar, "Visual", "Show Borders", "toggle", bar_path, "showBorders")
-            capture_action_bar_per_bar_setting(bar, "Visual", "Pressed Effect", "dropdown", bar_path, "showFlash", { options = ACTION_BAR_PRESSED_OPTIONS })
+            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Icon Crop"], "slider", bar_path, "iconZoom", { min = 0.05, max = 0.15, step = 0.01 })
+            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Show Backdrop"], "toggle", bar_path, "showBackdrop")
+            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Backdrop Opacity"], "slider", bar_path, "backdropAlpha", { min = 0, max = 1, step = 0.05 })
+            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Show Gloss"], "toggle", bar_path, "showGloss")
+            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Gloss Opacity"], "slider", bar_path, "glossAlpha", { min = 0, max = 1, step = 0.05 })
+            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Show Borders"], "toggle", bar_path, "showBorders")
+            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Pressed Effect"], "dropdown", bar_path, "showFlash", { options = ACTION_BAR_PRESSED_OPTIONS })
 
-            capture_action_bar_per_bar_setting(bar, "Keybind Text", "Show Keybinds", "toggle", bar_path, "showKeybinds")
-            capture_action_bar_per_bar_setting(bar, "Keybind Text", "Hide Empty Keybinds", "toggle", bar_path, "hideEmptyKeybinds")
+            capture_action_bar_per_bar_setting(bar, ns.L["Keybind Text"], ns.L["Show Keybinds"], "toggle", bar_path, "showKeybinds")
+            capture_action_bar_per_bar_setting(bar, ns.L["Keybind Text"], ns.L["Hide Empty Keybinds"], "toggle", bar_path, "hideEmptyKeybinds")
             capture_action_bar_text_section(bar, bar_path, "Keybind Text", {
                 show = "showKeybinds",
                 fontSize = "keybindFontSize",
@@ -2112,7 +2158,7 @@ local function capture_action_bar_per_bar_settings()
                 offsetX = "keybindOffsetX",
                 offsetY = "keybindOffsetY",
                 color = "keybindColor",
-            }, "Show Keybinds")
+            }, ns.L["Show Keybinds"])
 
             capture_action_bar_text_section(bar, bar_path, "Macro Names", {
                 show = "showMacroNames",
@@ -2121,7 +2167,7 @@ local function capture_action_bar_per_bar_settings()
                 offsetX = "macroNameOffsetX",
                 offsetY = "macroNameOffsetY",
                 color = "macroNameColor",
-            }, "Show Macro Names")
+            }, ns.L["Show Macro Names"])
 
             capture_action_bar_text_section(bar, bar_path, "Stack Count", {
                 show = "showCounts",
@@ -2130,7 +2176,7 @@ local function capture_action_bar_per_bar_settings()
                 offsetX = "countOffsetX",
                 offsetY = "countOffsetY",
                 color = "countColor",
-            }, "Show Counts")
+            }, ns.L["Show Counts"])
         end
     end
 
@@ -2139,14 +2185,14 @@ local function capture_action_bar_per_bar_settings()
         tabName = "Action Bars",
         subTabIndex = 3,
         subTabName = "Per-Bar",
-        sectionName = "Totem Bar - Layout",
+        sectionName = ns.L["Totem Bar"] .. " - " .. ns.L["Layout"],
         tileId = "action_bars",
         subPageIndex = 3,
         featureId = "actionBarsPerBar",
         providerKey = "totemBar",
         category = "frames",
         keywords = { "Grow Direction", "Totem Bar", "Action Bars", "Per-Bar" },
-    }, "Grow Direction", "dropdown", "profile.totemBar", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
+    }, ns.L["Grow Direction"], "dropdown", "profile.totemBar", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
 end
 
 local MINIMAP_CORNER_OPTIONS = {

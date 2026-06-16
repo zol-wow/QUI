@@ -134,6 +134,7 @@ STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 
 -- Load the real SkinBase, then the real button-bar module. button_bar runs
 -- ApplyEnabled() at load -> builds the bar + button with our settings.
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("core/uikit.lua"))("QUI", ns)
 assert(loadfile("QUI_Chat/chat/button_bar.lua"))("QUI", ns)
 

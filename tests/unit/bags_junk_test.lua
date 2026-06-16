@@ -116,6 +116,7 @@ reset()
 -- order; junk uses Transfers.RateQueue and publishes on Bags.Bus).
 ---------------------------------------------------------------------------
 local ns = { Helpers = { CreateDBGetter = function() return function() return settings end end } }
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_Bags/bags/data/bus.lua"))("QUI", ns)
 assert(loadfile("QUI_Bags/bags/ops/shared.lua"))("QUI", ns)
 assert(loadfile("QUI_Bags/bags/ops/transfers.lua"))("QUI", ns)

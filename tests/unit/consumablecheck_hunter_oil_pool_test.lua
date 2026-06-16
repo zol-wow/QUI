@@ -61,6 +61,7 @@ local ns = {
     Utils = { IsInInstancedContent = function() return true end },
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_QoL/qol/consumablecheck.lua"))("QUI", ns)
 local check = assert(ns.ConsumableCheckTest, "consumable check test seam should be exported")
 

@@ -19,7 +19,7 @@ local generalStop = assert(src:find("filters = {", generalStart, true), "filters
 local generalBlock = src:sub(generalStart, generalStop)
 assert(not generalBlock:find('"customDisplayTabs"', 1, true),
     "general Chat preset must not embed the Filters tab editor")
-assert(src:find('CreateChatCustomSection("customDisplayTabs", "Chat Tabs"', 1, true),
+assert(src:find('CreateChatCustomSection("customDisplayTabs", ns.L["Chat Tabs"]', 1, true),
     "QUI tab editor must be labeled as the chat tab settings surface")
 assert(src:find("selectedCustomDisplayTabIndex", 1, true),
     "QUI tab editor selection must persist across provider rebuilds")

@@ -29,6 +29,15 @@ jobs:
             fi
           done
           exit $fail
+      - name: i18n unit tests
+        run: |
+          lua tools/test_i18n_locale.lua
+          lua tools/test_i18n_extract.lua
+          lua tools/test_i18n_format.lua
+      - name: i18n base up to date
+        run: |
+          lua tools/i18n/extract_strings.lua
+          git diff --exit-code core/locale/enUS.lua
 
   lint:
     runs-on: ubuntu-latest

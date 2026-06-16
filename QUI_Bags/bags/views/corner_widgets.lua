@@ -19,6 +19,14 @@ local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 local Helpers = ns.Helpers
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local CornerWidgets = {}
 Bags.CornerWidgets = CornerWidgets
 
@@ -142,7 +150,7 @@ function CornerWidgets.Apply(button, ctx, appearance)
         if payload then
             slot = slot or EnsureCorner(button, c)
             if payload.text then
-                slot.fs:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT,
+                CJKFont(slot.fs, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT,
                     fontSize, "OUTLINE")
                 slot.fs:SetText(payload.text)
                 slot.fs:SetTextColor(payload.r or 1, payload.g or 1, payload.b or 1)

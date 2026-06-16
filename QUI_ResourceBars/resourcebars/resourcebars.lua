@@ -6,6 +6,14 @@ local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
 local GetCore = Helpers.GetCore
+
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 local floor = math.floor
 
 -- Pixel-snap with pre-computed pixel size (avoids per-call GetEffectiveScale in loops)
@@ -2159,7 +2167,7 @@ function QUICore:GetPowerBar()
 
     bar.TextValue = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ApplyPowerBarTextPlacement(bar, cfg)
-    bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
+    CJKFont(bar.TextValue, GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
     bar.TextValue:SetText("0")
 
@@ -2453,7 +2461,7 @@ function QUICore:UpdatePowerBar()
         bar.TextValue:SetText(tostring(displayValue))
     end
 
-    bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
+    CJKFont(bar.TextValue, GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
 
     -- Apply text color
@@ -3048,13 +3056,13 @@ function QUICore:GetSecondaryPowerBar()
 
     bar.TextValue = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ApplyPowerBarTextPlacement(bar, cfg)
-    bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
+    CJKFont(bar.TextValue, GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
     bar.TextValue:SetShadowOffset(0, 0)
     bar.TextValue:SetText("0")
 
     -- Fake decimal for Destro shards
     bar.SoulShardDecimal = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    bar.SoulShardDecimal:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.SoulShardDecimal), GetGeneralFontOutline())
+    CJKFont(bar.SoulShardDecimal, GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.SoulShardDecimal), GetGeneralFontOutline())
     bar.SoulShardDecimal:SetShadowOffset(0, 0)
     bar.SoulShardDecimal:SetText(".")
     bar.SoulShardDecimal:Hide()
@@ -3094,7 +3102,7 @@ function QUICore:CreateFragmentedPowerBars(bar, resource, isVertical)
             local text = fragmentBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             QUICore:SetSnappedPoint(text, "CENTER", fragmentBar, "CENTER", cfg.runeTimerTextX or 0, cfg.runeTimerTextY or 0)
             text:SetJustifyH("CENTER")
-            text:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.runeTimerTextSize or 10, text), GetGeneralFontOutline())
+            CJKFont(text, GetGeneralFont(), QUICore:PixelRound(cfg.runeTimerTextSize or 10, text), GetGeneralFontOutline())
             text:SetShadowOffset(0, 0)
             text:SetText("")
             bar.FragmentedPowerBarTexts[i] = text
@@ -3215,7 +3223,7 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                 if runeText then
                     runeText:ClearAllPoints()
                     QUICore:SetSnappedPoint(runeText, "CENTER", runeFrame, "CENTER", cfg.runeTimerTextX or 0, cfg.runeTimerTextY or 0)
-                    runeText:SetFont(GetGeneralFont(), QUICore:PixelRound(cfg.runeTimerTextSize or 10, runeText), GetGeneralFontOutline())
+                    CJKFont(runeText, GetGeneralFont(), QUICore:PixelRound(cfg.runeTimerTextSize or 10, runeText), GetGeneralFontOutline())
                     runeText:SetShadowOffset(0, 0)
                 end
 
@@ -4385,7 +4393,7 @@ end
 
     -- Apply text styling (pcall-guarded so errors here cannot prevent the bar from showing)
     pcall(function()
-        bar.TextValue:SetFont(GetGeneralFont(), QUICore:PixelRound(textCfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
+        CJKFont(bar.TextValue, GetGeneralFont(), QUICore:PixelRound(textCfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
         bar.TextValue:SetShadowOffset(0, 0)
         ApplyPowerBarTextPlacement(bar, textCfg)
 
@@ -4402,7 +4410,7 @@ end
         end
 
         if bar.SoulShardDecimal then
-            bar.SoulShardDecimal:SetFont(GetGeneralFont(), QUICore:PixelRound(textCfg.textSize or 12, bar.SoulShardDecimal), GetGeneralFontOutline())
+            CJKFont(bar.SoulShardDecimal, GetGeneralFont(), QUICore:PixelRound(textCfg.textSize or 12, bar.SoulShardDecimal), GetGeneralFontOutline())
             bar.SoulShardDecimal:SetShadowOffset(0, 0)
             if textCfg.textUseClassColor then
                 local _, class = UnitClass("player")
@@ -4718,8 +4726,8 @@ do
 
         um:RegisterElement({
             key = "primaryPower",
-            label = "Primary Power",
-            group = "Resource Bars",
+            label = ns.L["Primary Power"],
+            group = ns.L["Resource Bars"],
             order = 1,
             isOwned = true,
             isEnabled = function()
@@ -4744,8 +4752,8 @@ do
 
         um:RegisterElement({
             key = "secondaryPower",
-            label = "Secondary Power",
-            group = "Resource Bars",
+            label = ns.L["Secondary Power"],
+            group = ns.L["Resource Bars"],
             order = 2,
             isOwned = true,
             isEnabled = function()

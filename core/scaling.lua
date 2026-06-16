@@ -300,6 +300,17 @@ local function applyFontInternal(self, fontString, frame, size, fontPath, flags)
     local px = self:GetPixelSize(frame)
     sz = Round(sz / px) * px
 
+    -- Route through the CJK-aware family setter so every UIKit.CreateText
+    -- consumer (castbars and most QUI UI text) renders Chinese/Korean glyphs.
+    -- ApplyFontWithFallback keeps the roman font (only adds CJK members, so
+    -- Latin appearance is unchanged) and degrades to a single-file SetFont
+    -- internally. Mirror the old boolean "ok" via a post-apply GetFont check so
+    -- the caller's scale-refresh registration still works.
+    if Helpers and Helpers.ApplyFontWithFallback then
+        Helpers.ApplyFontWithFallback(fontString, path, sz, outline)
+        return fontString:GetFont() ~= nil
+    end
+
     local ok = fontString:SetFont(path, sz, outline)
     return ok
 end

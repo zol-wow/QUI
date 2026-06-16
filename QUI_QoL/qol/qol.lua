@@ -1041,9 +1041,9 @@ local function UpdateMythicPlusAutoLogging(allowImmediateStop)
             mplusAutoLoggingActive = true
 
             if wasInMythicPlus then
-                print("|cFF30D1FFQUI:|r Combat logging resumed (active M+ detected)")
+                print(ns.L["|cFF30D1FFQUI:|r Combat logging resumed (active M+ detected)"])
             else
-                print("|cFF30D1FFQUI:|r Combat logging started for M+")
+                print(ns.L["|cFF30D1FFQUI:|r Combat logging started for M+"])
             end
         end
     elseif wasInMythicPlus then
@@ -1084,7 +1084,7 @@ local function UpdateRaidAutoLogging()
         -- If disabled while active, only stop if QUI started it.
         if raidAutoLoggingActive and LoggingCombat() then
             LoggingCombat(false)
-            print("|cFF30D1FFQUI:|r Combat logging stopped")
+            print(ns.L["|cFF30D1FFQUI:|r Combat logging stopped"])
         end
         raidAutoLoggingActive = false
         wasInRaidInstance = inRaidInstance
@@ -1097,13 +1097,13 @@ local function UpdateRaidAutoLogging()
         if not LoggingCombat() then
             LoggingCombat(true)
             raidAutoLoggingActive = true
-            print("|cFF30D1FFQUI:|r Combat logging started for raid")
+            print(ns.L["|cFF30D1FFQUI:|r Combat logging started for raid"])
         end
     elseif not inRaidInstance and wasInRaidInstance then
         -- Only stop if QUI started it on raid entry.
         if raidAutoLoggingActive and LoggingCombat() then
             LoggingCombat(false)
-            print("|cFF30D1FFQUI:|r Combat logging stopped")
+            print(ns.L["|cFF30D1FFQUI:|r Combat logging stopped"])
         end
         raidAutoLoggingActive = false
     end

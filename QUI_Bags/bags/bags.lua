@@ -205,11 +205,11 @@ end
 -- luacheck: globals BINDING_NAME_QUI_BAGS_TOGGLE_BANK BINDING_NAME_QUI_BAGS_TOGGLE_GUILD
 -- luacheck: globals QUI_BagsToggle QUI_BagsSearchEverywhere
 -- luacheck: globals QUI_BagsToggleBank QUI_BagsToggleGuild
-BINDING_HEADER_QUIBAGS = "QUI Bags"
-BINDING_NAME_QUI_BAGS_TOGGLE = "Toggle Bags"
-BINDING_NAME_QUI_BAGS_SEARCH_EVERYWHERE = "Search Everywhere"
-BINDING_NAME_QUI_BAGS_TOGGLE_BANK = "Toggle Bank (cached anywhere)"
-BINDING_NAME_QUI_BAGS_TOGGLE_GUILD = "Toggle Guild Bank (cached anywhere)"
+BINDING_HEADER_QUIBAGS = ns.L["QUI Bags"]
+BINDING_NAME_QUI_BAGS_TOGGLE = ns.L["Toggle Bags"]
+BINDING_NAME_QUI_BAGS_SEARCH_EVERYWHERE = ns.L["Search Everywhere"]
+BINDING_NAME_QUI_BAGS_TOGGLE_BANK = ns.L["Toggle Bank (cached anywhere)"]
+BINDING_NAME_QUI_BAGS_TOGGLE_GUILD = ns.L["Toggle Guild Bank (cached anywhere)"]
 
 function QUI_BagsToggle()
     if not Bags.IsActive() then return end

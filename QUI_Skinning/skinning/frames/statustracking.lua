@@ -7,6 +7,14 @@ local _, ns = ...
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local LSM = LibStub("LibSharedMedia-3.0", true)
 
 local FALLBACK_TEXTURE = "Interface\\Buttons\\WHITE8x8"
@@ -150,7 +158,7 @@ local function ApplyBarTextStyle(bar)
     local outline = GetBarTextOutline(g)
     local size = g.statusTrackingBarsBarTextFontSize or 11
     size = math.max(6, math.min(24, size))
-    fs:SetFont(fontPath, size, outline or "")
+    CJKFont(fs, fontPath, size, outline or "")
 
     local c = g.statusTrackingBarsBarTextColor
     if type(c) == "table" then

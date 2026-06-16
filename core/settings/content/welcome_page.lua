@@ -39,7 +39,7 @@ local function BuildWelcomeContent(content)
     -- WELCOME HEADER
     -- =====================================================
     local version = QUI.versionString or "3.00"
-    local title = CreateWrappedLabel(content, "Welcome to QUI", 20, C.accent, contentWidth)
+    local title = CreateWrappedLabel(content, ns.L["Welcome to QUI"], 20, C.accent, contentWidth)
     title:SetPoint("TOPLEFT", PADDING, y)
     y = y - 28
 
@@ -48,7 +48,7 @@ local function BuildWelcomeContent(content)
     y = y - 22
 
     local tagline = CreateWrappedLabel(content,
-        "A comprehensive UI suite for World of Warcraft with custom unit and group frames, cooldown tracking, action bars, anchoring and layout tools, profile import/export, and quality-of-life features.",
+        ns.L["A comprehensive UI suite for World of Warcraft with custom unit and group frames, cooldown tracking, action bars, anchoring and layout tools, profile import/export, and quality-of-life features."],
         12, C.textMuted, contentWidth - PADDING * 2)
     tagline:SetPoint("TOPLEFT", PADDING, y)
     y = y - (tagline:GetStringHeight() or 14) - 14
@@ -56,18 +56,18 @@ local function BuildWelcomeContent(content)
     -- Links (both on one row, parented directly to content)
     local AssetPath = ns.Helpers.AssetPath
     local discordItem = CreateLinkItem(content,
-        "|cff5865F2Discord|r", "https://discord.gg/FFUjA4JXnH",
+        ns.L["|cff5865F2Discord|r"], "https://discord.gg/FFUjA4JXnH",
         0.345, 0.396, 0.949,  -- Discord blurple
         AssetPath .. "discord",
-        "Copy Discord Invite")
+        ns.L["Copy Discord Invite"])
     discordItem:SetPoint("TOPLEFT", PADDING, y)
     discordItem:SetSize(320, 22)
 
     local githubItem = CreateLinkItem(content,
-        "|cffF0F6FCGitHub|r", "https://github.com/zol-wow/QUI",
+        ns.L["|cffF0F6FCGitHub|r"], "https://github.com/zol-wow/QUI",
         0.941, 0.965, 0.988,  -- GitHub light
         AssetPath .. "github",
-        "Copy GitHub URL")
+        ns.L["Copy GitHub URL"])
     githubItem:SetPoint("TOPLEFT", PADDING + 330, y)
     githubItem:SetSize(350, 22)
 
@@ -76,14 +76,14 @@ local function BuildWelcomeContent(content)
     -- =====================================================
     -- QUICK SETUP GUIDE
     -- =====================================================
-    Shared.CreateAccentDotLabel(content, "Quick Setup Guide", y); y = y - 30
+    Shared.CreateAccentDotLabel(content, ns.L["Quick Setup Guide"], y); y = y - 30
 
     local steps = {
-        {num = "1.", text = "Open |cff60A5FA/qui|r to browse settings, then use the Search tab if you are not sure where a system lives"},
-        {num = "2.", text = "If you want a starting point, install a bundled preset from the |cff60A5FAProfiles|r tab or analyze/import a current QUI profile in |cff60A5FAImport & Export Strings|r"},
-        {num = "3.", text = "Use |cff60A5FA/qui layout|r or the |cff60A5FAQUI Edit Mode|r button to move QUI-managed frames, then fine-tune anchors and nudges in |cff60A5FAFrame Positioning|r"},
-        {num = "4.", text = "Use Blizzard Edit Mode only for Blizzard-managed elements that QUI does not replace or anchor for you"},
-        {num = "5.", text = "Type |cff60A5FA/rl|r after profile imports or larger changes when a module asks for a reload"},
+        {num = "1.", text = ns.L["Open |cff60A5FA/qui|r to browse settings, then use the Search tab if you are not sure where a system lives"]},
+        {num = "2.", text = ns.L["If you want a starting point, install a bundled preset from the |cff60A5FAProfiles|r tab or analyze/import a current QUI profile in |cff60A5FAImport & Export Strings|r"]},
+        {num = "3.", text = ns.L["Use |cff60A5FA/qui layout|r or the |cff60A5FAQUI Edit Mode|r button to move QUI-managed frames, then fine-tune anchors and nudges in |cff60A5FAFrame Positioning|r"]},
+        {num = "4.", text = ns.L["Use Blizzard Edit Mode only for Blizzard-managed elements that QUI does not replace or anchor for you"]},
+        {num = "5.", text = ns.L["Type |cff60A5FA/rl|r after profile imports or larger changes when a module asks for a reload"]},
     }
 
     for _, step in ipairs(steps) do
@@ -98,41 +98,41 @@ local function BuildWelcomeContent(content)
     -- =====================================================
     -- FAQ
     -- =====================================================
-    Shared.CreateAccentDotLabel(content, "Frequently Asked Questions", y); y = y - 30
+    Shared.CreateAccentDotLabel(content, ns.L["Frequently Asked Questions"], y); y = y - 30
 
     y = CreateQA(content,
-        "What is QUI?",
-        "QUI is a full UI suite built around QUI 3 systems: custom unit and group frames, Cooldown Manager viewers, action bar styling, anchoring and layout tools, profile import/export, skinning, and quality-of-life modules - all configurable from one options panel.",
+        ns.L["What is QUI?"],
+        ns.L["QUI is a full UI suite built around QUI 3 systems: custom unit and group frames, Cooldown Manager viewers, action bar styling, anchoring and layout tools, profile import/export, skinning, and quality-of-life modules - all configurable from one options panel."],
         y, contentWidth)
 
     y = CreateQA(content,
-        "How do I move and resize frames?",
-        "For QUI-managed elements, use the |cff60A5FAQUI Edit Mode|r button or type |cff60A5FA/qui layout|r to drag frames, then use |cff60A5FAFrame Positioning|r for exact anchors, offsets, and nudging. Use Blizzard Edit Mode only for Blizzard frames that QUI does not replace. You generally do not need to import a separate Edit Mode string to get started anymore.",
+        ns.L["How do I move and resize frames?"],
+        ns.L["For QUI-managed elements, use the |cff60A5FAQUI Edit Mode|r button or type |cff60A5FA/qui layout|r to drag frames, then use |cff60A5FAFrame Positioning|r for exact anchors, offsets, and nudging. Use Blizzard Edit Mode only for Blizzard frames that QUI does not replace. You generally do not need to import a separate Edit Mode string to get started anymore."],
         y, contentWidth)
 
     y = CreateQA(content,
-        "What is QUI Layout Mode?",
-        "Layout Mode is QUI's drag-and-place workflow for QUI-managed frames. It is the fastest way to get elements roughly where you want them on screen. After that, use |cff60A5FAFrame Positioning|r when you want precise anchors, offsets, and nudge controls instead of freeform dragging.",
+        ns.L["What is QUI Layout Mode?"],
+        ns.L["Layout Mode is QUI's drag-and-place workflow for QUI-managed frames. It is the fastest way to get elements roughly where you want them on screen. After that, use |cff60A5FAFrame Positioning|r when you want precise anchors, offsets, and nudge controls instead of freeform dragging."],
         y, contentWidth)
 
     y = CreateQA(content,
-        "What is the Cooldown Manager (CDM)?",
-        "The Cooldown Manager powers QUI's essential and utility cooldown viewers, buff trackers, and tracked bars. Use |cff60A5FA/qui cdm|r to open the CDM Spell Composer and control what gets tracked, then use the Cooldown Manager tab for appearance, glows, keybind text, and custom-entry behavior. If you need Blizzard's viewer settings panel itself, use |cff60A5FA/cdm|r.",
+        ns.L["What is the Cooldown Manager (CDM)?"],
+        ns.L["The Cooldown Manager powers QUI's essential and utility cooldown viewers, buff trackers, and tracked bars. Use |cff60A5FA/qui cdm|r to open the CDM Spell Composer and control what gets tracked, then use the Cooldown Manager tab for appearance, glows, keybind text, and custom-entry behavior. If you need Blizzard's viewer settings panel itself, use |cff60A5FA/cdm|r."],
         y, contentWidth)
 
     y = CreateQA(content,
-        "Coming from QUI 2.x or old Quazii strings?",
-        "Prefer QUI 3 presets or current QUI profile strings over legacy Quazii or Edit Mode strings. QUI 3 has newer layout, anchoring, cooldown, and selective import systems, so older strings can miss settings or conflict with the current defaults.",
+        ns.L["Coming from QUI 2.x or old Quazii strings?"],
+        ns.L["Prefer QUI 3 presets or current QUI profile strings over legacy Quazii or Edit Mode strings. QUI 3 has newer layout, anchoring, cooldown, and selective import systems, so older strings can miss settings or conflict with the current defaults."],
         y, contentWidth)
 
     y = CreateQA(content,
-        "How do I set up keybinds?",
-        "Type |cff60A5FA/kb|r to open the keybind overlay. Hover over any action button and press a key to bind it. Keybind display settings and override text live in the Cooldown Manager tab under Keybinds.",
+        ns.L["How do I set up keybinds?"],
+        ns.L["Type |cff60A5FA/kb|r to open the keybind overlay. Hover over any action button and press a key to bind it. Keybind display settings and override text live in the Cooldown Manager tab under Keybinds."],
         y, contentWidth)
 
     y = CreateQA(content,
-        "How do I report a bug or get help?",
-        "If something still looks wrong after reloading or trying a current QUI 3 preset/profile import, enable Lua errors with |cff60A5FA/console scriptErrors 1|r and report the issue on GitHub (https://github.com/zol-wow/QUI) or ask on Discord (https://discord.gg/FFUjA4JXnH). Links with copy buttons are at the top of this page.",
+        ns.L["How do I report a bug or get help?"],
+        ns.L["If something still looks wrong after reloading or trying a current QUI 3 preset/profile import, enable Lua errors with |cff60A5FA/console scriptErrors 1|r and report the issue on GitHub (https://github.com/zol-wow/QUI) or ask on Discord (https://discord.gg/FFUjA4JXnH). Links with copy buttons are at the top of this page."],
         y, contentWidth)
 
     y = y - 10

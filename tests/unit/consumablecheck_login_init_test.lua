@@ -67,6 +67,7 @@ local ns = {
     WhenLoggedIn = function(fn) if fn then fn() end end,
 }
 
+(dofile("tests/helpers/locale.lua"))(ns)
 assert(loadfile("QUI_QoL/qol/consumablecheck.lua"))("QUI_QoL", ns)
 local check = assert(ns.ConsumableCheckTest, "consumable check test seam should be exported")
 

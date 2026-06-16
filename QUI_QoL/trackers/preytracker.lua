@@ -20,11 +20,11 @@ local GetCore = Helpers.GetCore
 local PREY_WIDGET_TYPE = 31 -- fallback if Enum not available
 local WIDGET_SHOWN = 1      -- fallback for Enum.WidgetShownState.Shown
 local PREY_CURRENCIES = {
-    { id = 3392, name = "Remnant of Anguish" },
-    { id = 3316, name = "Voidlight Marl" },
-    { id = 3383, name = "Adventurer Dawncrest" },
-    { id = 3341, name = "Veteran Dawncrest" },
-    { id = 3343, name = "Champion Dawncrest" },
+    { id = 3392, name = ns.L["Remnant of Anguish"] },
+    { id = 3316, name = ns.L["Voidlight Marl"] },
+    { id = 3383, name = ns.L["Adventurer Dawncrest"] },
+    { id = 3341, name = ns.L["Veteran Dawncrest"] },
+    { id = 3343, name = ns.L["Champion Dawncrest"] },
 }
 local TICK_THIRDS = { 0.333, 0.666 }
 local TICK_QUARTERS = { 0.25, 0.50, 0.75 }
@@ -48,10 +48,10 @@ local function GetPixelSize(frame)
 end
 
 local TEXT_FORMATS = {
-    stage_pct  = function(stage, pct, name) return string_format("Stage %d — %d%%", stage, pct) end,
+    stage_pct  = function(stage, pct, name) return string_format(ns.L["Stage %d — %d%%"], stage, pct) end,
     pct_only   = function(stage, pct, name) return string_format("%d%%", pct) end,
-    stage_only = function(stage, pct, name) return string_format("Stage %d", stage) end,
-    name_pct   = function(stage, pct, name) return string_format("%s — %d%%", name or "Prey", pct) end,
+    stage_only = function(stage, pct, name) return string_format(ns.L["Stage %d"], stage) end,
+    name_pct   = function(stage, pct, name) return string_format("%s — %d%%", name or ns.L["Prey"], pct) end,
 }
 
 ---------------------------------------------------------------------------
@@ -593,7 +593,11 @@ local function CreatePreyBar()
     -- Text
     bar.text = bar:CreateFontString(nil, "OVERLAY")
     bar.text:SetPoint("CENTER", bar, "CENTER")
-    bar.text:SetFont(STANDARD_TEXT_FONT, 11, FONT_FLAGS)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(bar.text, STANDARD_TEXT_FONT, 11, FONT_FLAGS)
+    else
+        bar.text:SetFont(STANDARD_TEXT_FONT, 11, FONT_FLAGS)
+    end
     bar.text:SetTextColor(1, 1, 1)
     bar.text:SetJustifyH("CENTER")
 
@@ -606,29 +610,29 @@ local function CreatePreyBar()
 
         -- Header
         local settings2 = GetSettings()
-        local name = State.preyName or "Prey Hunt"
+        local name = State.preyName or ns.L["Prey Hunt"]
         GameTooltip:AddLine(name, 1, 1, 1)
         if State.activeQuestID then
-            GameTooltip:AddLine(string_format("Stage %d — %d%%", State.currentStage, State.currentProgress), 0.8, 0.8, 0.8)
+            GameTooltip:AddLine(string_format(ns.L["Stage %d — %d%%"], State.currentStage, State.currentProgress), 0.8, 0.8, 0.8)
         end
         if State.difficulty then
-            GameTooltip:AddLine("Difficulty: " .. State.difficulty, 0.7, 0.7, 0.7)
+            GameTooltip:AddLine(ns.L["Difficulty: "] .. State.difficulty, 0.7, 0.7, 0.7)
         end
         if State.preyZoneName then
-            GameTooltip:AddLine("Zone: " .. State.preyZoneName, 0.7, 0.7, 0.7)
+            GameTooltip:AddLine(ns.L["Zone: "] .. State.preyZoneName, 0.7, 0.7, 0.7)
         end
 
         -- Currency section
         if settings2 and settings2.currencyEnabled and HasCurrencyAPI then
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Prey Currencies", 0.9, 0.75, 0.3)
+            GameTooltip:AddLine(ns.L["Prey Currencies"], 0.9, 0.75, 0.3)
             for _, curr in ipairs(PREY_CURRENCIES) do
                 local qty = GetCurrencyQuantity(curr.id)
                 if qty then
                     local sessionDelta = qty - (State.sessionStart[curr.id] or qty)
                     local deltaStr = ""
                     if settings2.currencyShowSession and sessionDelta > 0 then
-                        deltaStr = string_format(" |cff00ff00(+%d session)|r", sessionDelta)
+                        deltaStr = string_format(ns.L[" |cff00ff00(+%d session)|r"], sessionDelta)
                     end
                     GameTooltip:AddDoubleLine(
                         curr.name,
@@ -643,7 +647,7 @@ local function CreatePreyBar()
         -- Preview mode indicator
         if State.isPreviewMode then
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Preview Mode", 1, 0.8, 0)
+            GameTooltip:AddLine(ns.L["Preview Mode"], 1, 0.8, 0)
         end
 
         GameTooltip:Show()
@@ -694,7 +698,11 @@ local function UpdateBarAppearance()
 
     -- Font
     local fontSize = settings.textSize or 11
-    bar.text:SetFont(STANDARD_TEXT_FONT, fontSize, FONT_FLAGS)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(bar.text, STANDARD_TEXT_FONT, fontSize, FONT_FLAGS)
+    else
+        bar.text:SetFont(STANDARD_TEXT_FONT, fontSize, FONT_FLAGS)
+    end
     if settings.showText then
         bar.text:Show()
     else
@@ -1296,15 +1304,23 @@ local function CreateHuntPanel()
 
     panel.title = panel:CreateFontString(nil, "OVERLAY")
     panel.title:SetPoint("TOPLEFT", 6, -6)
-    panel.title:SetFont(Helpers.GetGeneralFont(), 12, Helpers.GetGeneralFontOutline())
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(panel.title, Helpers.GetGeneralFont(), 12, Helpers.GetGeneralFontOutline())
+    else
+        panel.title:SetFont(Helpers.GetGeneralFont(), 12, Helpers.GetGeneralFontOutline())
+    end
     panel.title:SetTextColor(1, 0.82, 0)
-    panel.title:SetText("Available Hunts")
+    panel.title:SetText(ns.L["Available Hunts"])
 
     panel.lines = {}
     for i = 1, 8 do
         local line = panel:CreateFontString(nil, "OVERLAY")
         line:SetPoint("TOPLEFT", 6, -6 - 16 * i)
-        line:SetFont(Helpers.GetGeneralFont(), 11, "")
+        if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+            ns.Helpers.ApplyFontWithFallback(line, Helpers.GetGeneralFont(), 11, "")
+        else
+            line:SetFont(Helpers.GetGeneralFont(), 11, "")
+        end
         line:SetTextColor(0.9, 0.9, 0.9)
         line:SetWidth(208)
         line:SetJustifyH("LEFT")
@@ -1575,8 +1591,8 @@ local function TogglePreview(enable)
         -- Fake data for layout/options preview
         State.progressState = 2  -- stage 3
         State.progressPercent = 67
-        State.preyName = "Prey Hunt Preview"
-        State.difficulty = "Normal"
+        State.preyName = ns.L["Prey Hunt Preview"]
+        State.difficulty = ns.L["Normal"]
         UpdateBarAppearance()
         UpdateBarDisplay()
         bar:Show()
@@ -1763,7 +1779,7 @@ ns.QUI_PreyTracker = {
 
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
-        key = "preyTracker", label = "Prey Tracker", category = "Trackers", prefix = "",
+        key = "preyTracker", label = ns.L["Prey Tracker"], category = ns.L["Trackers"], prefix = "",
         db = function(p) return p.preyTracker end,
         refresh = function() if _G.QUI_RefreshPreyTracker then _G.QUI_RefreshPreyTracker() end end,
         legacy = { override = "borderOverride", useClass = "borderUseClassColor" },

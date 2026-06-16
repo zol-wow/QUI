@@ -8,7 +8,7 @@ local V2 = {}
 ns.QUI_ResourceBarsTile = V2
 
 local SEARCH_TAB_INDEX = 16
-local SEARCH_TAB_NAME = "Resource Bars"
+local SEARCH_TAB_NAME = ns.L["Resource Bars"]
 
 function V2.Register(frame)
     local Opts = ns.QUI_Options
@@ -19,8 +19,8 @@ function V2.Register(frame)
     Opts.RegisterFeatureTile(frame, {
         id = "resource_bars",
         icon = "R",
-        name = "Resource Bars",
-        primaryCTA = { label = "Edit in Layout Mode", moverKey = "primaryPower" },
+        name = ns.L["Resource Bars"],
+        primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "primaryPower" },
         preview = {
             height = 120,
             build = function(pv)
@@ -32,7 +32,7 @@ function V2.Register(frame)
         subPages = {
             {
                 id = "primary",
-                name = "Primary Resource",
+                name = ns.L["Primary Resource"],
                 featureId = "primaryPower",
                 navRoutes = {
                     { tabIndex = SEARCH_TAB_INDEX, subTabIndex = 0 },
@@ -42,19 +42,19 @@ function V2.Register(frame)
                     tabIndex = SEARCH_TAB_INDEX,
                     tabName = SEARCH_TAB_NAME,
                     subTabIndex = 1,
-                    subTabName = "Primary Resource",
+                    subTabName = ns.L["Primary Resource"],
                 },
             },
             {
                 id = "secondary",
-                name = "Secondary Resource",
+                name = ns.L["Secondary Resource"],
                 featureId = "secondaryPower",
                 navRoutes = { { tabIndex = SEARCH_TAB_INDEX, subTabIndex = 2 } },
                 searchContext = {
                     tabIndex = SEARCH_TAB_INDEX,
                     tabName = SEARCH_TAB_NAME,
                     subTabIndex = 2,
-                    subTabName = "Secondary Resource",
+                    subTabName = ns.L["Secondary Resource"],
                 },
             },
         },

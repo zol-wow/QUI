@@ -49,85 +49,85 @@ local function BuildCharacterPaneTab(tabContent)
     ---------------------------------------------------------------------------
     -- ENABLE/DISABLE
     ---------------------------------------------------------------------------
-    L.headerAt("Enable/Disable")
+    L.headerAt(ns.L["Enable/Disable"])
     local sEn = L.sectionAt()
     local enableW = GUI:CreateFormCheckbox(sEn.frame, nil, "enabled", char, function()
         GUI:ShowConfirmation({
-            title = "Reload Required", message = "Character Pane styling requires a UI reload.",
-            acceptText = "Reload Now", cancelText = "Later",
+            title = ns.L["Reload Required"], message = ns.L["Character Pane styling requires a UI reload."],
+            acceptText = ns.L["Reload Now"], cancelText = ns.L["Later"],
             onAccept = function() QUI:SafeReload() end,
         })
-    end, { description = "Enable the QUI character pane overlays including inspect and slot information. Requires a reload to take effect." })
-    sEn.AddRow(row(sEn.frame, "QUI Character Module (Req. Reload)", enableW))
+    end, { description = ns.L["Enable the QUI character pane overlays including inspect and slot information. Requires a reload to take effect."] })
+    sEn.AddRow(row(sEn.frame, ns.L["QUI Character Module (Req. Reload)"], enableW))
     L.closeSection(sEn)
 
     ---------------------------------------------------------------------------
     -- INSPECT FRAME
     ---------------------------------------------------------------------------
-    L.headerAt("Inspect Frame")
+    L.headerAt(ns.L["Inspect Frame"])
     local sIF = L.sectionAt()
     local ifEnableW = GUI:CreateFormCheckbox(sIF.frame, nil, "inspectEnabled", char, function()
         GUI:ShowConfirmation({
-            title = "Reload UI?", message = "Inspect overlay changes require a reload.",
-            acceptText = "Reload", cancelText = "Later",
+            title = ns.L["Reload UI?"], message = ns.L["Inspect overlay changes require a reload."],
+            acceptText = ns.L["Reload"], cancelText = ns.L["Later"],
             onAccept = function() QUI:SafeReload() end,
         })
-    end, { description = "Show item level and enchant overlays on inspected players. Requires a reload to take effect." })
+    end, { description = ns.L["Show item level and enchant overlays on inspected players. Requires a reload to take effect."] })
     local ifShowOverallW = GUI:CreateFormCheckbox(sIF.frame, nil, "inspectLiteShowOverall", char, RefreshInspectLite,
-        { description = "Display the inspected player's overall average item level on the inspect window." })
+        { description = ns.L["Display the inspected player's overall average item level on the inspect window."] })
     sIF.AddRow(
-        row(sIF.frame, "Enable Inspect Overlays (Req. Reload)", ifEnableW),
-        row(sIF.frame, "Show Overall Average iLvl", ifShowOverallW)
+        row(sIF.frame, ns.L["Enable Inspect Overlays (Req. Reload)"], ifEnableW),
+        row(sIF.frame, ns.L["Show Overall Average iLvl"], ifShowOverallW)
     )
 
     local ifOverallSizeW = GUI:CreateFormSlider(sIF.frame, nil, 8, 24, 1, "inspectLiteOverallFontSize", char, RefreshInspectLite,
-        { description = "Font size used for the overall item level label." })
+        { description = ns.L["Font size used for the overall item level label."] })
     local ifOverallXW = GUI:CreateFormSlider(sIF.frame, nil, -100, 100, 1, "inspectLiteOverallOffsetX", char, RefreshInspectLite,
-        { description = "Horizontal pixel offset of the overall item level label from its anchor." })
+        { description = ns.L["Horizontal pixel offset of the overall item level label from its anchor."] })
     sIF.AddRow(
-        row(sIF.frame, "Overall iLvl Font Size", ifOverallSizeW),
-        row(sIF.frame, "Overall iLvl X Offset", ifOverallXW)
+        row(sIF.frame, ns.L["Overall iLvl Font Size"], ifOverallSizeW),
+        row(sIF.frame, ns.L["Overall iLvl X Offset"], ifOverallXW)
     )
 
     local ifOverallYW = GUI:CreateFormSlider(sIF.frame, nil, -100, 100, 1, "inspectLiteOverallOffsetY", char, RefreshInspectLite,
-        { description = "Vertical pixel offset of the overall item level label from its anchor." })
+        { description = ns.L["Vertical pixel offset of the overall item level label from its anchor."] })
     local ifPerSlotShowW = GUI:CreateFormCheckbox(sIF.frame, nil, "inspectLiteShowPerSlot", char, RefreshInspectLite,
-        { description = "Show a per-slot item level number on each piece of gear in the inspect window." })
+        { description = ns.L["Show a per-slot item level number on each piece of gear in the inspect window."] })
     sIF.AddRow(
-        row(sIF.frame, "Overall iLvl Y Offset", ifOverallYW),
-        row(sIF.frame, "Show Per-Slot iLvl", ifPerSlotShowW)
+        row(sIF.frame, ns.L["Overall iLvl Y Offset"], ifOverallYW),
+        row(sIF.frame, ns.L["Show Per-Slot iLvl"], ifPerSlotShowW)
     )
 
     local ifPerSlotSizeW = GUI:CreateFormSlider(sIF.frame, nil, 8, 24, 1, "inspectLiteFontSize", char, RefreshInspectLite,
-        { description = "Font size used for the per-slot item level numbers." })
-    sIF.AddRow(row(sIF.frame, "Per-Slot Font Size", ifPerSlotSizeW))
+        { description = ns.L["Font size used for the per-slot item level numbers."] })
+    sIF.AddRow(row(sIF.frame, ns.L["Per-Slot Font Size"], ifPerSlotSizeW))
     L.closeSection(sIF)
 
     ---------------------------------------------------------------------------
     -- SLOT OVERLAYS
     ---------------------------------------------------------------------------
-    L.headerAt("Slot Overlays")
+    L.headerAt(ns.L["Slot Overlays"])
     local sSO = L.sectionAt()
     local soFontW = GUI:CreateFormDropdown(sSO.frame, nil, Shared.GetFontList(), "enchantFont", char, RefreshInspectLite,
-        { description = "Font used for enchant text labels drawn on character and inspect slots." })
+        { description = ns.L["Font used for enchant text labels drawn on character and inspect slots."] })
     local soScaleW = GUI:CreateFormSlider(sSO.frame, nil, 0.5, 1.5, 0.05, "overlayScale", char, RefreshInspectLite,
-        { precision = 2, description = "Scale multiplier applied to item level and enchant overlays on each gear slot." })
+        { precision = 2, description = ns.L["Scale multiplier applied to item level and enchant overlays on each gear slot."] })
     sSO.AddRow(
-        row(sSO.frame, "Enchant Font", soFontW),
-        row(sSO.frame, "Overlay Scale", soScaleW)
+        row(sSO.frame, ns.L["Enchant Font"], soFontW),
+        row(sSO.frame, ns.L["Overlay Scale"], soScaleW)
     )
 
     local soPadW = GUI:CreateFormSlider(sSO.frame, nil, 0, 10, 1, "slotPadding", char, RefreshInspectLite,
-        { description = "Extra pixel padding between gear slots in the skinned character and inspect panes." })
-    sSO.AddRow(row(sSO.frame, "Slot Padding", soPadW))
+        { description = ns.L["Extra pixel padding between gear slots in the skinned character and inspect panes."] })
+    sSO.AddRow(row(sSO.frame, ns.L["Slot Padding"], soPadW))
     L.closeSection(sSO)
 
     ---------------------------------------------------------------------------
     -- OPEN SETTINGS (button)
     ---------------------------------------------------------------------------
-    L.headerAt("Open Settings")
+    L.headerAt(ns.L["Open Settings"])
     local btnFrame = CreateFrame("Frame", nil, tabContent)
-    local openBtn = GUI:CreateButton(btnFrame, "Open Character Panel", 200, 28, function()
+    local openBtn = GUI:CreateButton(btnFrame, ns.L["Open Character Panel"], 200, 28, function()
         if not CharacterFrame:IsShown() and not InCombatLockdown() then ToggleCharacter("PaperDollFrame") end
         C_Timer.After(0.1, function()
             local sp = _G["QUI_CharSettingsPanel"]

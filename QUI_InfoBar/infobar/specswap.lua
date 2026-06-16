@@ -46,8 +46,8 @@ local function MarkWidthDirty(slotFrame)
 end
 
 Datatexts:Register("specswap", {
-    displayName = "Spec Switch",
-    category = "Character",
+    displayName = ns.L["Spec Switch"],
+    category = ns.L["Character"],
     description = "Current specialization with quick spec/loot-spec switch menus",
 
     OnEnable = function(slotFrame, settings)
@@ -61,7 +61,7 @@ Datatexts:Register("specswap", {
             -- re-drive this until they settle.
             local specIndex = GetSpecialization()
             if not specIndex then
-                text:SetText("No Spec")
+                text:SetText(ns.L["No Spec"])
                 MarkWidthDirty(slotFrame)
                 return
             end
@@ -110,7 +110,7 @@ Datatexts:Register("specswap", {
         slotFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
             GameTooltip:ClearLines()
-            GameTooltip:AddLine("Specialization", 1, 1, 1)
+            GameTooltip:AddLine(ns.L["Specialization"], 1, 1, 1)
             GameTooltip:AddLine(" ")
 
             local ar, ag, ab = GetValueColor()
@@ -122,7 +122,7 @@ Datatexts:Register("specswap", {
                 local _, specName = GetSpecializationInfo(i)
                 if specName then
                     if i == currentSpec then
-                        GameTooltip:AddDoubleLine(specName, "Active",
+                        GameTooltip:AddDoubleLine(specName, ns.L["Active"],
                             1, 1, 1, ar, ag, ab)
                     else
                         GameTooltip:AddLine(specName, 0.6, 0.6, 0.6)
@@ -132,13 +132,13 @@ Datatexts:Register("specswap", {
 
             local lootSpec = GetLootSpecialization()
             if lootSpec == 0 then
-                GameTooltip:AddDoubleLine("Loot", "Current spec",
+                GameTooltip:AddDoubleLine(ns.L["Loot"], ns.L["Current spec"],
                     0.8, 0.8, 0.8, ar, ag, ab)
             else
                 for i = 1, numSpecs do
                     local specID, specName = GetSpecializationInfo(i)
                     if specID == lootSpec then
-                        GameTooltip:AddDoubleLine("Loot", specName,
+                        GameTooltip:AddDoubleLine(ns.L["Loot"], specName,
                             0.8, 0.8, 0.8, ar, ag, ab)
                         break
                     end
@@ -146,8 +146,8 @@ Datatexts:Register("specswap", {
             end
 
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Change Spec", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFRight Click:|r Change Loot Spec", ar, ag, ab)
+            GameTooltip:AddLine(ns.L["|cffFFFFFFLeft Click:|r Change Spec"], ar, ag, ab)
+            GameTooltip:AddLine(ns.L["|cffFFFFFFRight Click:|r Change Loot Spec"], ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -161,7 +161,7 @@ Datatexts:Register("specswap", {
 
             if button == "LeftButton" then
                 MenuUtil.CreateContextMenu(self, function(_, root)
-                    root:CreateTitle("Switch Specialization")
+                    root:CreateTitle(ns.L["Switch Specialization"])
                     local function IsSelected(i)
                         return i == GetSpecialization()
                     end
@@ -181,7 +181,7 @@ Datatexts:Register("specswap", {
                 end)
             elseif button == "RightButton" then
                 MenuUtil.CreateContextMenu(self, function(_, root)
-                    root:CreateTitle("Loot Specialization")
+                    root:CreateTitle(ns.L["Loot Specialization"])
                     local function IsSelected(specID)
                         return GetLootSpecialization() == specID
                     end
@@ -190,7 +190,7 @@ Datatexts:Register("specswap", {
                         SetLootSpecialization(specID)
                     end
                     -- 0 = follow the current spec
-                    root:CreateRadio("Current spec", IsSelected, SetSelected, 0)
+                    root:CreateRadio(ns.L["Current spec"], IsSelected, SetSelected, 0)
                     root:CreateDivider()
                     for i = 1, numSpecs do
                         local specID, specName, _, icon = GetSpecializationInfo(i)

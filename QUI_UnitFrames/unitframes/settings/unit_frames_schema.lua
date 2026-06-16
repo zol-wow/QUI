@@ -41,12 +41,12 @@ local UNIT_SUBTAB_INDEX = {
     boss = 7,
 }
 local UNIT_DISPLAY_NAMES = {
-    player = "Player",
-    target = "Target",
-    targettarget = "Target of Target",
-    pet = "Pet",
-    focus = "Focus",
-    boss = "Boss",
+    player = ns.L["Player"],
+    target = ns.L["Target"],
+    targettarget = ns.L["Target of Target"],
+    pet = ns.L["Pet"],
+    focus = ns.L["Focus"],
+    boss = ns.L["Boss"],
 }
 -- Publish the unit -> display-name map. This file loads before the settings
 -- model in QUI_Options.toc, so the model aliases this single source of truth.
@@ -79,62 +79,62 @@ local TOT_SEPARATOR_OPTIONS = {
     { value = " >>> ", text = ">>>" },
 }
 local HEALTH_STYLE_OPTIONS = {
-    { value = "percent",         text = "Percent Only (75%)" },
-    { value = "absolute",        text = "Value Only (45.2k)" },
-    { value = "both",            text = "Value | Percent" },
-    { value = "both_reverse",    text = "Percent | Value" },
-    { value = "missing_percent", text = "Missing Percent (-25%)" },
-    { value = "missing_value",   text = "Missing Value (-12.5k)" },
+    { value = "percent",         text = ns.L["Percent Only (75%)"] },
+    { value = "absolute",        text = ns.L["Value Only (45.2k)"] },
+    { value = "both",            text = ns.L["Value | Percent"] },
+    { value = "both_reverse",    text = ns.L["Percent | Value"] },
+    { value = "missing_percent", text = ns.L["Missing Percent (-25%)"] },
+    { value = "missing_value",   text = ns.L["Missing Value (-12.5k)"] },
 }
 local HEALTH_DIVIDER_OPTIONS = {
-    { value = " | ", text = "|  (pipe)" },
-    { value = " - ", text = "-  (dash)" },
-    { value = " / ", text = "/  (slash)" },
-    { value = " • ", text = "•  (dot)" },
+    { value = " | ", text = ns.L["|  (pipe)"] },
+    { value = " - ", text = ns.L["-  (dash)"] },
+    { value = " / ", text = ns.L["/  (slash)"] },
+    { value = " • ", text = ns.L["•  (dot)"] },
 }
 local POWER_TEXT_FORMAT_OPTIONS = {
-    { value = "percent", text = "Percent (75%)" },
-    { value = "current", text = "Current (12.5k)" },
-    { value = "both",    text = "Both (12.5k | 75%)" },
+    { value = "percent", text = ns.L["Percent (75%)"] },
+    { value = "current", text = ns.L["Current (12.5k)"] },
+    { value = "both",    text = ns.L["Both (12.5k | 75%)"] },
 }
 local PORTRAIT_SIDE_OPTIONS = {
-    { value = "LEFT", text = "Left" },
-    { value = "RIGHT", text = "Right" },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "RIGHT", text = ns.L["Right"] },
 }
 local PRIVATE_AURA_GROW_OPTIONS = {
-    { value = "RIGHT",  text = "Right" },
-    { value = "LEFT",   text = "Left" },
-    { value = "UP",     text = "Up" },
-    { value = "DOWN",   text = "Down" },
-    { value = "CENTER", text = "Center" },
+    { value = "RIGHT",  text = ns.L["Right"] },
+    { value = "LEFT",   text = ns.L["Left"] },
+    { value = "UP",     text = ns.L["Up"] },
+    { value = "DOWN",   text = ns.L["Down"] },
+    { value = "CENTER", text = ns.L["Center"] },
 }
 local AURA_CORNER_OPTIONS = {
-    { value = "TOPLEFT",     text = "Top Left" },
-    { value = "TOPRIGHT",    text = "Top Right" },
-    { value = "BOTTOMLEFT",  text = "Bottom Left" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
+    { value = "TOPLEFT",     text = ns.L["Top Left"] },
+    { value = "TOPRIGHT",    text = ns.L["Top Right"] },
+    { value = "BOTTOMLEFT",  text = ns.L["Bottom Left"] },
+    { value = "BOTTOMRIGHT", text = ns.L["Bottom Right"] },
 }
 local AURA_GROW_OPTIONS = {
-    { value = "LEFT",  text = "Left" },
-    { value = "RIGHT", text = "Right" },
-    { value = "UP",    text = "Up" },
-    { value = "DOWN",  text = "Down" },
+    { value = "LEFT",  text = ns.L["Left"] },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "UP",    text = ns.L["Up"] },
+    { value = "DOWN",  text = ns.L["Down"] },
 }
 
 -- Filter modifier metadata. *_FLAGS lists (further down) carry just the
 -- key strings used to stamp DB defaults; *_DEFS carry UI-side labels and
 -- tooltips. Two separate lists by design.
 local BUFF_MODIFIER_DEFS = {
-    { key = "PLAYER",         label = "Player",         tooltip = "Show only buffs you applied." },
-    { key = "RAID",           label = "Raid",           tooltip = "Show buffs Blizzard's raid frames would show." },
-    { key = "CANCELABLE",     label = "Cancelable",     tooltip = "Show only buffs you can right-click off." },
-    { key = "NOT_CANCELABLE", label = "Not Cancelable", tooltip = "Show only buffs you cannot right-click off." },
+    { key = "PLAYER",         label = ns.L["Player"],         tooltip = ns.L["Show only buffs you applied."] },
+    { key = "RAID",           label = ns.L["Raid"],           tooltip = ns.L["Show buffs Blizzard's raid frames would show."] },
+    { key = "CANCELABLE",     label = ns.L["Cancelable"],     tooltip = ns.L["Show only buffs you can right-click off."] },
+    { key = "NOT_CANCELABLE", label = ns.L["Not Cancelable"], tooltip = ns.L["Show only buffs you cannot right-click off."] },
 }
 
 local DEBUFF_MODIFIER_DEFS = {
-    { key = "PLAYER",                  label = "Player",         tooltip = "Show only debuffs you applied." },
-    { key = "RAID",                    label = "Raid",           tooltip = "Show debuffs Blizzard's raid frames would show." },
-    { key = "INCLUDE_NAME_PLATE_ONLY", label = "Nameplate Only", tooltip = "Include debuffs flagged as nameplate-only." },
+    { key = "PLAYER",                  label = ns.L["Player"],         tooltip = ns.L["Show only debuffs you applied."] },
+    { key = "RAID",                    label = ns.L["Raid"],           tooltip = ns.L["Show debuffs Blizzard's raid frames would show."] },
+    { key = "INCLUDE_NAME_PLATE_ONLY", label = ns.L["Nameplate Only"], tooltip = ns.L["Include debuffs flagged as nameplate-only."] },
 }
 
 -- "None" is encoded as a sentinel string because the dropdown widget's
@@ -144,17 +144,17 @@ local DEBUFF_MODIFIER_DEFS = {
 local AURA_FILTER_NONE_SENTINEL = "NONE"
 
 local BUFF_EXCLUSIVE_OPTIONS = {
-    { value = AURA_FILTER_NONE_SENTINEL, text = "None"                },
-    { value = "EXTERNAL_DEFENSIVE",      text = "External Defensives" },
-    { value = "BIG_DEFENSIVE",           text = "Big Defensives"      },
-    { value = "IMPORTANT",               text = "Important"           },
+    { value = AURA_FILTER_NONE_SENTINEL, text = ns.L["None"]                },
+    { value = "EXTERNAL_DEFENSIVE",      text = ns.L["External Defensives"] },
+    { value = "BIG_DEFENSIVE",           text = ns.L["Big Defensives"]      },
+    { value = "IMPORTANT",               text = ns.L["Important"]           },
 }
 
 local DEBUFF_EXCLUSIVE_OPTIONS = {
-    { value = AURA_FILTER_NONE_SENTINEL,  text = "None"                },
-    { value = "CROWD_CONTROL",            text = "Crowd Control"       },
-    { value = "RAID_PLAYER_DISPELLABLE",  text = "Player Dispellable"  },
-    { value = "IMPORTANT",                text = "Important"           },
+    { value = AURA_FILTER_NONE_SENTINEL,  text = ns.L["None"]                },
+    { value = "CROWD_CONTROL",            text = ns.L["Crowd Control"]       },
+    { value = "RAID_PLAYER_DISPELLABLE",  text = ns.L["Player Dispellable"]  },
+    { value = "IMPORTANT",                text = ns.L["Important"]           },
 }
 
 local function GetGUI()
@@ -498,10 +498,10 @@ local function RefreshUnitFrames()
 end
 
 local BOSS_GROW_OPTIONS = {
-    { value = "UP",    text = "Up" },
-    { value = "DOWN",  text = "Down" },
-    { value = "LEFT",  text = "Left" },
-    { value = "RIGHT", text = "Right" },
+    { value = "UP",    text = ns.L["Up"] },
+    { value = "DOWN",  text = ns.L["Down"] },
+    { value = "LEFT",  text = ns.L["Left"] },
+    { value = "RIGHT", text = ns.L["Right"] },
 }
 
 local BOSS_GROW_DIRECTIONS_VALID = { UP = true, DOWN = true, LEFT = true, RIGHT = true }
@@ -701,10 +701,10 @@ local function ShowReloadConfirmation()
     end
 
     gui:ShowConfirmation({
-        title = "Reload UI?",
-        message = "Enabling or disabling unit frames requires a UI reload to take effect.",
-        acceptText = "Reload",
-        cancelText = "Later",
+        title = ns.L["Reload UI?"],
+        message = ns.L["Enabling or disabling unit frames requires a UI reload to take effect."],
+        acceptText = ns.L["Reload"],
+        cancelText = ns.L["Later"],
         onAccept = function()
             QUI:SafeReload()
         end,
@@ -728,7 +728,7 @@ local function RenderEnableSection(sectionHost, ctx)
     builder.Row(function(row)
         local checkbox = gui:CreateFormCheckbox(
             row,
-            "Enable Unitframes (Req. Reload)",
+            ns.L["Enable Unitframes (Req. Reload)"],
             "enabled",
             db.ufdb,
             function()
@@ -736,7 +736,7 @@ local function RenderEnableSection(sectionHost, ctx)
                 ShowReloadConfirmation()
             end,
             {
-                description = "Master toggle for QUI unit frames. Turning this off restores the Blizzard default unit frames after a reload.",
+                description = ns.L["Master toggle for QUI unit frames. Turning this off restores the Blizzard default unit frames after a reload."],
             }
         )
         checkbox:SetPoint("TOPLEFT", 0, 0)
@@ -760,8 +760,8 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Default Unit Colors")
-    builder.Description("Colors and opacity applied when Dark Mode is disabled.")
+    builder.Header(ns.L["Default Unit Colors"])
+    builder.Description(ns.L["Colors and opacity applied when Dark Mode is disabled."])
 
     local card = builder.Card()
 
@@ -769,7 +769,7 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         RefreshUnitFrames()
         UpdateDefaultClassDim(ctx, db.general)
     end, {
-        description = "Color player health bars by class. Disables the Default Health Color swatch below while on.",
+        description = ns.L["Color player health bars by class. Disables the Default Health Color swatch below while on."],
     })
 
     local healthColorPicker = gui:CreateFormColorPicker(
@@ -780,12 +780,12 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         RefreshUnitFrames,
         { noAlpha = true },
         {
-            description = "Solid color used for health bars when Use Class Colors is off.",
+            description = ns.L["Solid color used for health bars when Use Class Colors is off."],
         }
     )
-    renderState.defaultCells.healthColor = optionsAPI.BuildSettingRow(card.frame, "Default Health Color", healthColorPicker)
+    renderState.defaultCells.healthColor = optionsAPI.BuildSettingRow(card.frame, ns.L["Default Health Color"], healthColorPicker)
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Use Class Colors", classColors),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Use Class Colors"], classColors),
         renderState.defaultCells.healthColor
     )
 
@@ -797,10 +797,10 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         RefreshUnitFrames,
         { noAlpha = true },
         {
-            description = "Color drawn behind the health bar, visible through the Background Opacity slider.",
+            description = ns.L["Color drawn behind the health bar, visible through the Background Opacity slider."],
         }
     )
-    renderState.defaultCells.bgColor = optionsAPI.BuildSettingRow(card.frame, "Default Background Color", backgroundColorPicker)
+    renderState.defaultCells.bgColor = optionsAPI.BuildSettingRow(card.frame, ns.L["Default Background Color"], backgroundColorPicker)
     local healthOpacity = gui:CreateFormSlider(
         card.frame,
         nil,
@@ -812,12 +812,12 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         RefreshUnitFrames,
         { deferOnDrag = true },
         {
-            description = "Opacity of the filled portion of the health bar. 1.0 is fully opaque.",
+            description = ns.L["Opacity of the filled portion of the health bar. 1.0 is fully opaque."],
         }
     )
     card.AddRow(
         renderState.defaultCells.bgColor,
-        optionsAPI.BuildSettingRow(card.frame, "Health Opacity", healthOpacity)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Health Opacity"], healthOpacity)
     )
 
     local backgroundOpacity = gui:CreateFormSlider(
@@ -831,7 +831,7 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         RefreshUnitFrames,
         { deferOnDrag = true },
         {
-            description = "Opacity of the bar background shown behind the health fill.",
+            description = ns.L["Opacity of the bar background shown behind the health fill."],
         }
     )
     local frameOpacity = gui:CreateFormSlider(
@@ -845,12 +845,12 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         RefreshUnitFrames,
         { deferOnDrag = true },
         {
-            description = "Overall opacity of the unit frame, multiplied on top of the individual bar opacities.",
+            description = ns.L["Overall opacity of the unit frame, multiplied on top of the individual bar opacities."],
         }
     )
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Background Opacity", backgroundOpacity),
-        optionsAPI.BuildSettingRow(card.frame, "Frame Opacity", frameOpacity)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Background Opacity"], backgroundOpacity),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Frame Opacity"], frameOpacity)
     )
 
     builder.CloseCard(card)
@@ -872,8 +872,8 @@ local function RenderDarkModeSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Dark Mode")
-    builder.Description("Instantly applies dark flat colors to all unit frame health bars.")
+    builder.Header(ns.L["Dark Mode"])
+    builder.Description(ns.L["Instantly applies dark flat colors to all unit frame health bars."])
 
     local card = builder.Card()
 
@@ -881,7 +881,7 @@ local function RenderDarkModeSection(sectionHost, ctx)
         RefreshUnitFrames()
         UpdateDarkModeDim(ctx, db.general)
     end, {
-        description = "Apply flat dark colors to every unit frame's health bar. When off, the Default Unit Colors above are used instead.",
+        description = ns.L["Apply flat dark colors to every unit frame's health bar. When off, the Default Unit Colors above are used instead."],
     })
 
     local darkHealthColor = gui:CreateFormColorPicker(
@@ -892,12 +892,12 @@ local function RenderDarkModeSection(sectionHost, ctx)
         RefreshUnitFrames,
         { noAlpha = true },
         {
-            description = "Health bar color used while Dark Mode is on.",
+            description = ns.L["Health bar color used while Dark Mode is on."],
         }
     )
-    renderState.darkCells.healthColor = optionsAPI.BuildSettingRow(card.frame, "Darkmode Health Color", darkHealthColor)
+    renderState.darkCells.healthColor = optionsAPI.BuildSettingRow(card.frame, ns.L["Darkmode Health Color"], darkHealthColor)
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Enable Dark Mode", darkMode),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Enable Dark Mode"], darkMode),
         renderState.darkCells.healthColor
     )
 
@@ -909,10 +909,10 @@ local function RenderDarkModeSection(sectionHost, ctx)
         RefreshUnitFrames,
         { noAlpha = true },
         {
-            description = "Bar background color used while Dark Mode is on.",
+            description = ns.L["Bar background color used while Dark Mode is on."],
         }
     )
-    renderState.darkCells.bgColor = optionsAPI.BuildSettingRow(card.frame, "Darkmode Background Color", darkBackgroundColor)
+    renderState.darkCells.bgColor = optionsAPI.BuildSettingRow(card.frame, ns.L["Darkmode Background Color"], darkBackgroundColor)
     local darkHealthOpacity = gui:CreateFormSlider(
         card.frame,
         nil,
@@ -924,12 +924,12 @@ local function RenderDarkModeSection(sectionHost, ctx)
         RefreshUnitFrames,
         { deferOnDrag = true },
         {
-            description = "Opacity of the health fill while Dark Mode is on.",
+            description = ns.L["Opacity of the health fill while Dark Mode is on."],
         }
     )
     card.AddRow(
         renderState.darkCells.bgColor,
-        optionsAPI.BuildSettingRow(card.frame, "Darkmode Health Opacity", darkHealthOpacity)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Darkmode Health Opacity"], darkHealthOpacity)
     )
 
     local darkBackgroundOpacity = gui:CreateFormSlider(
@@ -943,7 +943,7 @@ local function RenderDarkModeSection(sectionHost, ctx)
         RefreshUnitFrames,
         { deferOnDrag = true },
         {
-            description = "Opacity of the bar background while Dark Mode is on.",
+            description = ns.L["Opacity of the bar background while Dark Mode is on."],
         }
     )
     local darkFrameOpacity = gui:CreateFormSlider(
@@ -957,12 +957,12 @@ local function RenderDarkModeSection(sectionHost, ctx)
         RefreshUnitFrames,
         { deferOnDrag = true },
         {
-            description = "Overall frame opacity while Dark Mode is on, multiplied on top of the individual bar opacities.",
+            description = ns.L["Overall frame opacity while Dark Mode is on, multiplied on top of the individual bar opacities."],
         }
     )
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Darkmode Background Opacity", darkBackgroundOpacity),
-        optionsAPI.BuildSettingRow(card.frame, "Darkmode Frame Opacity", darkFrameOpacity)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Darkmode Background Opacity"], darkBackgroundOpacity),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Darkmode Frame Opacity"], darkFrameOpacity)
     )
 
     builder.CloseCard(card)
@@ -984,37 +984,37 @@ local function RenderTextColorOverridesSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Text Class Color Overrides")
-    builder.Description("Apply class / reaction color to text across ALL unit frames. Recommended for Dark Mode.")
+    builder.Header(ns.L["Text Class Color Overrides"])
+    builder.Description(ns.L["Apply class / reaction color to text across ALL unit frames. Recommended for Dark Mode."])
 
     local card = builder.Card()
 
     local nameText = gui:CreateFormCheckbox(card.frame, nil, "masterColorNameText", db.general, RefreshUnitFrames, {
-        description = "Color every unit frame's name text by class or reaction, overriding per-frame name color settings.",
+        description = ns.L["Color every unit frame's name text by class or reaction, overriding per-frame name color settings."],
     })
     local healthText = gui:CreateFormCheckbox(card.frame, nil, "masterColorHealthText", db.general, RefreshUnitFrames, {
-        description = "Color every unit frame's health text by class or reaction, overriding per-frame health-text color settings.",
+        description = ns.L["Color every unit frame's health text by class or reaction, overriding per-frame health-text color settings."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Color ALL Name Text", nameText),
-        optionsAPI.BuildSettingRow(card.frame, "Color ALL Health Text", healthText)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Color ALL Name Text"], nameText),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Color ALL Health Text"], healthText)
     )
 
     local powerText = gui:CreateFormCheckbox(card.frame, nil, "masterColorPowerText", db.general, RefreshUnitFrames, {
-        description = "Color every unit frame's power text by class or reaction, overriding per-frame power-text color settings.",
+        description = ns.L["Color every unit frame's power text by class or reaction, overriding per-frame power-text color settings."],
     })
     local castbarText = gui:CreateFormCheckbox(card.frame, nil, "masterColorCastbarText", db.general, RefreshUnitFrames, {
-        description = "Color every unit frame's castbar text by class or reaction, overriding per-frame castbar-text color settings.",
+        description = ns.L["Color every unit frame's castbar text by class or reaction, overriding per-frame castbar-text color settings."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Color ALL Power Text", powerText),
-        optionsAPI.BuildSettingRow(card.frame, "Color ALL Castbar Text", castbarText)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Color ALL Power Text"], powerText),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Color ALL Castbar Text"], castbarText)
     )
 
     local targetOfTargetText = gui:CreateFormCheckbox(card.frame, nil, "masterColorToTText", db.general, RefreshUnitFrames, {
-        description = "Color every target-of-target unit frame's text by class or reaction, overriding per-frame target-of-target text color settings.",
+        description = ns.L["Color every target-of-target unit frame's text by class or reaction, overriding per-frame target-of-target text color settings."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Color ALL ToT Text", targetOfTargetText))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Color ALL ToT Text"], targetOfTargetText))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -1033,13 +1033,13 @@ local function RenderTooltipsSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Tooltips")
+    builder.Header(ns.L["Tooltips"])
 
     local card = builder.Card()
     local showTooltips = gui:CreateFormCheckbox(card.frame, nil, "showTooltips", db.unitFramesGeneral, RefreshUnitFrames, {
-        description = "Show the standard unit tooltip when you hover a QUI unit frame. Disable to keep hovers silent.",
+        description = ns.L["Show the standard unit tooltip when you hover a QUI unit frame. Disable to keep hovers silent."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Show Tooltip for Unitframes", showTooltips))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Show Tooltip for Unitframes"], showTooltips))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -1058,14 +1058,14 @@ local function RenderSmootherUpdatesSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Smoother Updates")
-    builder.Description("Enable for maximum smoothness at the cost of extra CPU usage.")
+    builder.Header(ns.L["Smoother Updates"])
+    builder.Description(ns.L["Enable for maximum smoothness at the cost of extra CPU usage."])
 
     local card = builder.Card()
     local smootherAnimation = gui:CreateFormCheckbox(card.frame, nil, "smootherAnimation", db.unitFramesGeneral, RefreshUnitFrames, {
-        description = "Interpolate health and power bar changes frame-by-frame for smoother motion. Costs extra CPU on low-end setups.",
+        description = ns.L["Interpolate health and power bar changes frame-by-frame for smoother motion. Costs extra CPU on low-end setups."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Smoother Animation", smootherAnimation))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Smoother Animation"], smootherAnimation))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -1084,8 +1084,8 @@ local function RenderHostilityColorsSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Hostility Colors")
-    builder.Description("Customize hostile, neutral, and friendly NPC colors.")
+    builder.Header(ns.L["Hostility Colors"])
+    builder.Description(ns.L["Customize hostile, neutral, and friendly NPC colors."])
 
     local card = builder.Card()
 
@@ -1097,7 +1097,7 @@ local function RenderHostilityColorsSection(sectionHost, ctx)
         RefreshUnitFrames,
         { noAlpha = true },
         {
-            description = "Color used for hostile NPC and enemy player health bars.",
+            description = ns.L["Color used for hostile NPC and enemy player health bars."],
         }
     )
     local neutralColor = gui:CreateFormColorPicker(
@@ -1108,12 +1108,12 @@ local function RenderHostilityColorsSection(sectionHost, ctx)
         RefreshUnitFrames,
         { noAlpha = true },
         {
-            description = "Color used for neutral NPC health bars.",
+            description = ns.L["Color used for neutral NPC health bars."],
         }
     )
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Hostile Color", hostileColor),
-        optionsAPI.BuildSettingRow(card.frame, "Neutral Color", neutralColor)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Hostile Color"], hostileColor),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Neutral Color"], neutralColor)
     )
 
     local friendlyColor = gui:CreateFormColorPicker(
@@ -1124,10 +1124,10 @@ local function RenderHostilityColorsSection(sectionHost, ctx)
         RefreshUnitFrames,
         { noAlpha = true },
         {
-            description = "Color used for friendly NPC and cross-faction player health bars.",
+            description = ns.L["Color used for friendly NPC and cross-faction player health bars."],
         }
     )
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Friendly Color", friendlyColor))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Friendly Color"], friendlyColor))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -1149,14 +1149,14 @@ local function RenderFrameEnableSection(sectionHost, ctx)
     builder.Row(function(row)
         local checkbox = gui:CreateFormCheckbox(
             row,
-            "Enable " .. unit.displayName .. " Frame",
+            string.format(ns.L["Enable %1$s Frame"], unit.displayName),
             "enabled",
             unit.unitDB,
             function()
                 ShowReloadConfirmation()
             end,
             {
-                description = "Enable QUI's " .. unit.displayName .. " unit frame. Disabling hands this unit back to the Blizzard default frame after a reload.",
+                description = string.format(ns.L["Enable QUI's %1$s unit frame. Disabling hands this unit back to the Blizzard default frame after a reload."], unit.displayName),
             }
         )
         checkbox:SetPoint("TOPLEFT", 0, 0)
@@ -1182,7 +1182,7 @@ local function RenderFrameStandaloneCastbarSection(sectionHost, ctx)
     builder.Row(function(row)
         local checkbox = gui:CreateFormCheckbox(
             row,
-            "Enable Player Castbar (Standalone Mode)",
+            ns.L["Enable Player Castbar (Standalone Mode)"],
             "standaloneCastbar",
             unit.unitDB,
             function(value)
@@ -1198,10 +1198,10 @@ local function RenderFrameStandaloneCastbarSection(sectionHost, ctx)
                     local confirm = GetGUI()
                     if confirm and type(confirm.ShowConfirmation) == "function" then
                         confirm:ShowConfirmation({
-                            title = "Reload UI?",
-                            message = "A reload is required to restore the default Blizzard player castbar.",
-                            acceptText = "Reload",
-                            cancelText = "Later",
+                            title = ns.L["Reload UI?"],
+                            message = ns.L["A reload is required to restore the default Blizzard player castbar."],
+                            acceptText = ns.L["Reload"],
+                            cancelText = ns.L["Later"],
                             onAccept = function()
                                 QUI:SafeReload()
                             end,
@@ -1210,13 +1210,13 @@ local function RenderFrameStandaloneCastbarSection(sectionHost, ctx)
                 end
             end,
             {
-                description = "Keep the QUI player castbar available even when the QUI Player Frame is disabled. Only takes effect when unit frames are off or the Player Frame itself is off.",
+                description = ns.L["Keep the QUI player castbar available even when the QUI Player Frame is disabled. Only takes effect when unit frames are off or the Player Frame itself is off."],
             }
         )
         checkbox:SetPoint("TOPLEFT", 0, 0)
         checkbox:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     end)
-    builder.Description("Standalone mode keeps the QUI Player Castbar available when Unit Frames are disabled globally or when the Player Frame is disabled. It has no effect while the QUI Player Frame is enabled.")
+    builder.Description(ns.L["Standalone mode keeps the QUI Player Castbar available when Unit Frames are disabled globally or when the Player Frame is disabled. It has no effect while the QUI Player Frame is enabled."])
 
     return builder.Height()
 end
@@ -1235,7 +1235,7 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Frame Size & Appearance")
+    builder.Header(ns.L["Frame Size & Appearance"])
     local card = builder.Card()
 
     local widthCallback = RefreshUnitFrames
@@ -1249,25 +1249,25 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
     end
 
     local widthSlider = gui:CreateFormSlider(card.frame, nil, 100, 500, 1, "width", unit.unitDB, widthCallback, { deferOnDrag = true }, {
-        description = "Frame width in pixels.",
+        description = ns.L["Frame width in pixels."],
     })
     local heightSlider = gui:CreateFormSlider(card.frame, nil, 20, 100, 1, "height", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Frame height in pixels. This is the total frame height, including the power bar if one is shown.",
+        description = ns.L["Frame height in pixels. This is the total frame height, including the power bar if one is shown."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Width", widthSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Height", heightSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Width"], widthSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Height"], heightSlider)
     )
 
     local borderSlider = gui:CreateFormSlider(card.frame, nil, 0, 5, 1, "borderSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Border thickness in pixels around the frame. Set to 0 to hide the border entirely.",
+        description = ns.L["Border thickness in pixels around the frame. Set to 0 to hide the border entirely."],
     })
     local textureDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.GetTextureList(), "texture", unit.unitDB, RefreshUnitFrames, {
-        description = "Statusbar texture used for the health bar. Supports SharedMedia.",
+        description = ns.L["Statusbar texture used for the health bar. Supports SharedMedia."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Border Size", borderSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Bar Texture", textureDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Border Size"], borderSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Bar Texture"], textureDropdown)
     )
 
     -- Per-frame border color (prefix "" -> unit.unitDB.borderColorSource/borderColor).
@@ -1276,15 +1276,15 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
         local borderSrcW, borderColorW = ns.QUI_BorderControl.Attach(
             gui, card.frame, unit.unitDB, "", RefreshUnitFrames,
             {
-                label             = "Border Color Source",
-                colorLabel        = "Border Color",
-                sourceDescription = "Where the frame border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
-                colorDescription  = "Custom frame border color, used when Border Color Source is set to Custom.",
+                label             = ns.L["Border Color Source"],
+                colorLabel        = ns.L["Border Color"],
+                sourceDescription = ns.L["Where the frame border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom."],
+                colorDescription  = ns.L["Custom frame border color, used when Border Color Source is set to Custom."],
             }
         )
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Border Color Source", borderSrcW),
-            optionsAPI.BuildSettingRow(card.frame, "Border Color", borderColorW)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Border Color Source"], borderSrcW),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Border Color"], borderColorW)
         )
     end
 
@@ -1303,24 +1303,24 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
         end
 
         local growDropdown = gui:CreateFormDropdown(card.frame, nil, BOSS_GROW_OPTIONS, "growDirection", unit.unitDB, RefreshBossLayout, {
-            description = "Direction the boss frame group grows from the first frame: Up, Down, Left, or Right.",
+            description = ns.L["Direction the boss frame group grows from the first frame: Up, Down, Left, or Right."],
         })
         local xSpacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "xSpacing", unit.unitDB, RefreshBossLayout, { deferOnDrag = true }, {
-            description = "Horizontal spacing in pixels between adjacent boss frames (used when growing Left or Right).",
+            description = ns.L["Horizontal spacing in pixels between adjacent boss frames (used when growing Left or Right)."],
         })
         local ySpacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "ySpacing", unit.unitDB, RefreshBossLayout, { deferOnDrag = true }, {
-            description = "Vertical spacing in pixels between adjacent boss frames (used when growing Up or Down).",
+            description = ns.L["Vertical spacing in pixels between adjacent boss frames (used when growing Up or Down)."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDropdown),
-            optionsAPI.BuildSettingRow(card.frame, "X Spacing", xSpacingSlider)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Grow Direction"], growDropdown),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["X Spacing"], xSpacingSlider)
         )
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Y Spacing", ySpacingSlider))
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Y Spacing"], ySpacingSlider))
     elseif unitKey == "target" then
         local invertCheckbox = gui:CreateFormCheckbox(card.frame, nil, "invertHealthDirection", unit.unitDB, RefreshUnitFrames, {
-            description = "Fill the target's health bar left-to-right instead of right-to-left, so both the player and target bars grow inward toward the center.",
+            description = ns.L["Fill the target's health bar left-to-right instead of right-to-left, so both the player and target bars grow inward toward the center."],
         })
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Invert Healthbar Direction (LTR)", invertCheckbox))
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Invert Healthbar Direction (LTR)"], invertCheckbox))
     end
 
     builder.CloseCard(card)
@@ -1390,16 +1390,16 @@ local function RenderBarsHealthColorsSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Health Bar Colors")
+    builder.Header(ns.L["Health Bar Colors"])
     if hasHostility then
-        builder.Description("Class color for players, hostility color for NPCs. Custom color is the fallback.")
+        builder.Description(ns.L["Class color for players, hostility color for NPCs. Custom color is the fallback."])
     end
 
     local card = builder.Card()
     local customCell
 
     local classCheckbox = gui:CreateFormCheckbox(card.frame, nil, "useClassColor", unit.unitDB, RefreshUnitFrames, {
-        description = "Color this frame's health bar by class when the unit is a player. Higher priority than Hostility Color or Custom Color.",
+        description = ns.L["Color this frame's health bar by class when the unit is a player. Higher priority than Hostility Color or Custom Color."],
     })
 
     if hasHostility then
@@ -1409,26 +1409,26 @@ local function RenderBarsHealthColorsSection(sectionHost, ctx)
                 SetCompanionCellDim(customCell, unit.unitDB.useHostilityColor)
             end
         end, {
-            description = "Color NPC health bars by hostility using the colors from the Hostility Colors section in General. Disables Custom Color while on.",
+            description = ns.L["Color NPC health bars by hostility using the colors from the Hostility Colors section in General. Disables Custom Color while on."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Use Class Color", classCheckbox),
-            optionsAPI.BuildSettingRow(card.frame, "Use Hostility Color", hostilityCheckbox)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Use Class Color"], classCheckbox),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Use Hostility Color"], hostilityCheckbox)
         )
 
         local customColor = gui:CreateFormColorPicker(card.frame, nil, "customHealthColor", unit.unitDB, RefreshUnitFrames, nil, {
-            description = "Fallback solid color for the health bar when neither class color nor hostility color applies.",
+            description = ns.L["Fallback solid color for the health bar when neither class color nor hostility color applies."],
         })
-        customCell = optionsAPI.BuildSettingRow(card.frame, "Custom Color", customColor)
+        customCell = optionsAPI.BuildSettingRow(card.frame, ns.L["Custom Color"], customColor)
         SetCompanionCellDim(customCell, unit.unitDB.useHostilityColor)
         card.AddRow(customCell)
     else
         local customColor = gui:CreateFormColorPicker(card.frame, nil, "customHealthColor", unit.unitDB, RefreshUnitFrames, nil, {
-            description = "Fallback solid color for the health bar when Use Class Color is off.",
+            description = ns.L["Fallback solid color for the health bar when Use Class Color is off."],
         })
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Use Class Color", classCheckbox),
-            optionsAPI.BuildSettingRow(card.frame, "Custom Color", customColor)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Use Class Color"], classCheckbox),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Custom Color"], customColor)
         )
     end
 
@@ -1451,33 +1451,33 @@ local function RenderBarsAbsorbSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Absorb Indicator")
+    builder.Header(ns.L["Absorb Indicator"])
     local card = builder.Card()
 
     local enabledCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", absorbs, RefreshUnitFrames, {
-        description = "Overlay an indicator on the health bar showing the size of incoming damage absorbs.",
+        description = ns.L["Overlay an indicator on the health bar showing the size of incoming damage absorbs."],
     })
     local opacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1, 0.05, "opacity", absorbs, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Opacity of the absorb shield overlay.",
+        description = ns.L["Opacity of the absorb shield overlay."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Absorb Shields", enabledCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Opacity", opacitySlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Absorb Shields"], enabledCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Opacity"], opacitySlider)
     )
 
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "color", absorbs, RefreshUnitFrames, nil, {
-        description = "Tint used for the absorb overlay.",
+        description = ns.L["Tint used for the absorb overlay."],
     })
     local textureDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.GetTextureList(), "texture", absorbs, RefreshUnitFrames, {
-        description = "Statusbar texture used for the absorb overlay. Stripes or patterned textures make absorbs easier to read at a glance.",
+        description = ns.L["Statusbar texture used for the absorb overlay. Stripes or patterned textures make absorbs easier to read at a glance."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Absorb Color", colorPicker),
-        optionsAPI.BuildSettingRow(card.frame, "Absorb Texture", textureDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Absorb Color"], colorPicker),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Absorb Texture"], textureDropdown)
     )
 
     builder.CloseCard(card)
-    builder.Description("Supports SharedMedia textures. Install the SharedMedia addon to add your own.")
+    builder.Description(ns.L["Supports SharedMedia textures. Install the SharedMedia addon to add your own."])
     return builder.Height()
 end
 
@@ -1496,24 +1496,24 @@ local function RenderBarsHealPredictionSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Heal Prediction")
+    builder.Header(ns.L["Heal Prediction"])
     local card = builder.Card()
 
     local enabledCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", healPrediction, RefreshUnitFrames, {
-        description = "Overlay an indicator on the health bar showing heals being cast on this unit before they land.",
+        description = ns.L["Overlay an indicator on the health bar showing heals being cast on this unit before they land."],
     })
     local opacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1, 0.05, "opacity", healPrediction, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Opacity of the incoming-heal overlay.",
+        description = ns.L["Opacity of the incoming-heal overlay."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Incoming Heals", enabledCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Opacity", opacitySlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Incoming Heals"], enabledCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Opacity"], opacitySlider)
     )
 
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "color", healPrediction, RefreshUnitFrames, { noAlpha = true }, {
-        description = "Tint used for the incoming-heal overlay.",
+        description = ns.L["Tint used for the incoming-heal overlay."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Heal Color", colorPicker))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Heal Color"], colorPicker))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -1533,23 +1533,23 @@ local function RenderBarsPowerSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Power Bar")
+    builder.Header(ns.L["Power Bar"])
     local card = builder.Card()
     local customColorCell
 
     local showPowerCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showPowerBar", unit.unitDB, RefreshUnitFrames, {
-        description = "Show a power bar below the health bar on this frame.",
+        description = ns.L["Show a power bar below the health bar on this frame."],
     })
     local powerHeightSlider = gui:CreateFormSlider(card.frame, nil, 1, 20, 1, "powerBarHeight", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Height of the power bar in pixels. Counted as part of the overall frame Height.",
+        description = ns.L["Height of the power bar in pixels. Counted as part of the overall frame Height."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Power Bar", showPowerCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Power Bar Height", powerHeightSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Power Bar"], showPowerCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Power Bar Height"], powerHeightSlider)
     )
 
     local borderCheckbox = gui:CreateFormCheckbox(card.frame, nil, "powerBarBorder", unit.unitDB, RefreshUnitFrames, {
-        description = "Draw a thin border around the power bar to visually separate it from the health bar above.",
+        description = ns.L["Draw a thin border around the power bar to visually separate it from the health bar above."],
     })
     local usePowerTypeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "powerBarUsePowerColor", unit.unitDB, function()
         RefreshUnitFrames()
@@ -1557,17 +1557,17 @@ local function RenderBarsPowerSection(sectionHost, ctx)
             SetCompanionCellDim(customColorCell, unit.unitDB.powerBarUsePowerColor)
         end
     end, {
-        description = "Color the power bar by power type. Disables the Custom Bar Color swatch below while on.",
+        description = ns.L["Color the power bar by power type. Disables the Custom Bar Color swatch below while on."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Power Bar Border", borderCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Use Power Type Color", usePowerTypeCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Power Bar Border"], borderCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Use Power Type Color"], usePowerTypeCheckbox)
     )
 
     local powerColorPicker = gui:CreateFormColorPicker(card.frame, nil, "powerBarColor", unit.unitDB, RefreshUnitFrames, nil, {
-        description = "Solid color for the power bar when Use Power Type Color is off.",
+        description = ns.L["Solid color for the power bar when Use Power Type Color is off."],
     })
-    customColorCell = optionsAPI.BuildSettingRow(card.frame, "Custom Bar Color", powerColorPicker)
+    customColorCell = optionsAPI.BuildSettingRow(card.frame, ns.L["Custom Bar Color"], powerColorPicker)
     SetCompanionCellDim(customColorCell, unit.unitDB.powerBarUsePowerColor)
     card.AddRow(customColorCell)
 
@@ -1633,9 +1633,9 @@ local function BuildBarsTabFeature(unitKey)
 end
 
 local CASTBAR_TICK_SOURCE_OPTIONS = {
-    { value = "auto",        text = "Auto (Static then Runtime)" },
-    { value = "static",      text = "Static Only" },
-    { value = "runtimeOnly", text = "Runtime Calibration Only" },
+    { value = "auto",        text = ns.L["Auto (Static then Runtime)"] },
+    { value = "static",      text = ns.L["Static Only"] },
+    { value = "runtimeOnly", text = ns.L["Runtime Calibration Only"] },
 }
 
 local CASTBAR_COPY_KEYS = {
@@ -1647,8 +1647,8 @@ local CASTBAR_COPY_KEYS = {
 }
 
 local CASTBAR_UNIT_COPY_LABELS = {
-    player = "Player", target = "Target", targettarget = "ToT",
-    focus = "Focus", pet = "Pet", boss = "Boss",
+    player = ns.L["Player"], target = ns.L["Target"], targettarget = ns.L["ToT"],
+    focus = ns.L["Focus"], pet = ns.L["Pet"], boss = ns.L["Boss"],
 }
 
 local function EnsureCastbarSettings(unitDB, unitKey)
@@ -1782,21 +1782,21 @@ local function RenderCastbarSection(sectionHost, ctx)
     local refresh = RefreshUnitFrames
 
     -- General -----------------------------------------------------------
-    builder.Header("General")
+    builder.Header(ns.L["General"])
     local generalCard = builder.Card()
     local enableCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "enabled", castDB, refresh, {
-        description = "Show the castbar for this unit.",
+        description = ns.L["Show the castbar for this unit."],
     })
     local showIconCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "showIcon", castDB, refresh, {
-        description = "Show the spell icon beside the castbar.",
+        description = ns.L["Show the spell icon beside the castbar."],
     })
     generalCard.AddRow(
-        optionsAPI.BuildSettingRow(generalCard.frame, "Enable Castbar", enableCheckbox),
-        optionsAPI.BuildSettingRow(generalCard.frame, "Show Spell Icon", showIconCheckbox)
+        optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Enable Castbar"], enableCheckbox),
+        optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Show Spell Icon"], showIconCheckbox)
     )
 
     local channelFillCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "channelFillForward", castDB, refresh, {
-        description = "Channeled spells fill the bar from empty to full instead of draining from full to empty.",
+        description = ns.L["Channeled spells fill the bar from empty to full instead of draining from full to empty."],
     })
     if unitKey == "player" then
         local castColorPicker
@@ -1806,86 +1806,86 @@ local function RenderCastbarSection(sectionHost, ctx)
                 castColorPicker:SetEnabled(not castDB.useClassColor)
             end
         end, {
-            description = "Fill the player castbar with your class color. Disables the Castbar Color picker while on.",
+            description = ns.L["Fill the player castbar with your class color. Disables the Castbar Color picker while on."],
         })
         generalCard.AddRow(
-            optionsAPI.BuildSettingRow(generalCard.frame, "Use Class Color", useClassColorCheckbox),
-            optionsAPI.BuildSettingRow(generalCard.frame, "Channel Fills Forward", channelFillCheckbox)
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Use Class Color"], useClassColorCheckbox),
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Channel Fills Forward"], channelFillCheckbox)
         )
 
         castColorPicker = gui:CreateFormColorPicker(generalCard.frame, nil, "color", castDB, refresh, nil, {
-            description = "Base fill color of the castbar. Ignored while Use Class Color is on.",
+            description = ns.L["Base fill color of the castbar. Ignored while Use Class Color is on."],
         })
         if castDB.useClassColor and castColorPicker.SetEnabled then
             castColorPicker:SetEnabled(false)
         end
         local bgColorPicker = gui:CreateFormColorPicker(generalCard.frame, nil, "bgColor", castDB, refresh, nil, {
-            description = "Color of the unfilled portion of the castbar.",
+            description = ns.L["Color of the unfilled portion of the castbar."],
         })
         generalCard.AddRow(
-            optionsAPI.BuildSettingRow(generalCard.frame, "Castbar Color", castColorPicker),
-            optionsAPI.BuildSettingRow(generalCard.frame, "Background Color", bgColorPicker)
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Castbar Color"], castColorPicker),
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Background Color"], bgColorPicker)
         )
     else
-        generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, "Channel Fills Forward", channelFillCheckbox))
+        generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Channel Fills Forward"], channelFillCheckbox))
 
         local castColorPicker = gui:CreateFormColorPicker(generalCard.frame, nil, "color", castDB, refresh, nil, {
-            description = "Base fill color of the castbar. For target/focus, this is the interruptible-cast color.",
+            description = ns.L["Base fill color of the castbar. For target/focus, this is the interruptible-cast color."],
         })
         local bgColorPicker = gui:CreateFormColorPicker(generalCard.frame, nil, "bgColor", castDB, refresh, nil, {
-            description = "Color of the unfilled portion of the castbar.",
+            description = ns.L["Color of the unfilled portion of the castbar."],
         })
         generalCard.AddRow(
-            optionsAPI.BuildSettingRow(generalCard.frame, "Castbar Color", castColorPicker),
-            optionsAPI.BuildSettingRow(generalCard.frame, "Background Color", bgColorPicker)
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Castbar Color"], castColorPicker),
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Background Color"], bgColorPicker)
         )
 
         if unitKey == "target" or unitKey == "focus" then
             local notInterruptiblePicker = gui:CreateFormColorPicker(generalCard.frame, nil, "notInterruptibleColor", castDB, refresh, nil, {
-                description = "Color applied to the castbar when the target is casting something you can't interrupt.",
+                description = ns.L["Color applied to the castbar when the target is casting something you can't interrupt."],
             })
-            generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, "Uninterruptible Cast Color", notInterruptiblePicker))
+            generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Uninterruptible Cast Color"], notInterruptiblePicker))
         end
     end
 
     local textureDropdown = gui:CreateFormDropdown(generalCard.frame, nil, optionsAPI.GetTextureList(), "texture", castDB, refresh, {
-        description = "Statusbar texture used to fill the castbar. Supports SharedMedia.",
+        description = ns.L["Statusbar texture used to fill the castbar. Supports SharedMedia."],
     })
     local borderSlider = gui:CreateFormSlider(generalCard.frame, nil, 0, 5, 1, "borderSize", castDB, refresh, { deferOnDrag = true }, {
-        description = "Thickness of the castbar outline in pixels. 0 hides the outline.",
+        description = ns.L["Thickness of the castbar outline in pixels. 0 hides the outline."],
     })
     generalCard.AddRow(
-        optionsAPI.BuildSettingRow(generalCard.frame, "Bar Texture", textureDropdown),
-        optionsAPI.BuildSettingRow(generalCard.frame, "Border Size", borderSlider)
+        optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Bar Texture"], textureDropdown),
+        optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Border Size"], borderSlider)
     )
 
     if ns.QUI_BorderControl then
         local barBorderSourceW, barBorderColorW = ns.QUI_BorderControl.Attach(
             gui, generalCard.frame, castDB, "", refresh,
             {
-                label             = "Border Color Source",
-                colorLabel        = "Border Color",
-                sourceDescription = "Where the castbar outline gets its color: Inherit (global skin border), Theme accent, Class color, or a Custom color.",
-                colorDescription  = "Custom castbar outline color, used when Border Color Source is set to Custom.",
+                label             = ns.L["Border Color Source"],
+                colorLabel        = ns.L["Border Color"],
+                sourceDescription = ns.L["Where the castbar outline gets its color: Inherit (global skin border), Theme accent, Class color, or a Custom color."],
+                colorDescription  = ns.L["Custom castbar outline color, used when Border Color Source is set to Custom."],
             }
         )
         generalCard.AddRow(
-            optionsAPI.BuildSettingRow(generalCard.frame, "Border Color Source", barBorderSourceW),
-            optionsAPI.BuildSettingRow(generalCard.frame, "Border Color", barBorderColorW)
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Border Color Source"], barBorderSourceW),
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Border Color"], barBorderColorW)
         )
 
         local iconBorderSourceW, iconBorderColorW = ns.QUI_BorderControl.Attach(
             gui, generalCard.frame, castDB, "icon", refresh,
             {
-                label             = "Icon Border Color Source",
-                colorLabel        = "Icon Border Color",
-                sourceDescription = "Where the cast icon border gets its color: Inherit (global skin border), Theme accent, Class color, or a Custom color.",
-                colorDescription  = "Custom cast icon border color, used when Icon Border Color Source is set to Custom.",
+                label             = ns.L["Icon Border Color Source"],
+                colorLabel        = ns.L["Icon Border Color"],
+                sourceDescription = ns.L["Where the cast icon border gets its color: Inherit (global skin border), Theme accent, Class color, or a Custom color."],
+                colorDescription  = ns.L["Custom cast icon border color, used when Icon Border Color Source is set to Custom."],
             }
         )
         generalCard.AddRow(
-            optionsAPI.BuildSettingRow(generalCard.frame, "Icon Border Color Source", iconBorderSourceW),
-            optionsAPI.BuildSettingRow(generalCard.frame, "Icon Border Color", iconBorderColorW)
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Icon Border Color Source"], iconBorderSourceW),
+            optionsAPI.BuildSettingRow(generalCard.frame, ns.L["Icon Border Color"], iconBorderColorW)
         )
     end
 
@@ -1893,212 +1893,212 @@ local function RenderCastbarSection(sectionHost, ctx)
 
     -- GCD (player) ------------------------------------------------------
     if unitKey == "player" then
-        builder.Header("GCD")
+        builder.Header(ns.L["GCD"])
         local gcdCard = builder.Card()
         local showGCDCheckbox = gui:CreateFormCheckbox(gcdCard.frame, nil, "showGCD", castDB, refresh, {
-            description = "Animate the player castbar as a sweep during your global cooldown even when you're not casting.",
+            description = ns.L["Animate the player castbar as a sweep during your global cooldown even when you're not casting."],
         })
         local reverseCheckbox = gui:CreateFormCheckbox(gcdCard.frame, nil, "showGCDReverse", castDB, refresh, {
-            description = "Reverse the direction of the GCD sweep on the castbar.",
+            description = ns.L["Reverse the direction of the GCD sweep on the castbar."],
         })
         gcdCard.AddRow(
-            optionsAPI.BuildSettingRow(gcdCard.frame, "Show GCD as Castbar", showGCDCheckbox),
-            optionsAPI.BuildSettingRow(gcdCard.frame, "Reverse Direction", reverseCheckbox)
+            optionsAPI.BuildSettingRow(gcdCard.frame, ns.L["Show GCD as Castbar"], showGCDCheckbox),
+            optionsAPI.BuildSettingRow(gcdCard.frame, ns.L["Reverse Direction"], reverseCheckbox)
         )
 
         local meleeCheckbox = gui:CreateFormCheckbox(gcdCard.frame, nil, "showGCDMelee", castDB, refresh, {
-            description = "Sweep the GCD during instant melee swings, not just during spell casts.",
+            description = ns.L["Sweep the GCD during instant melee swings, not just during spell casts."],
         })
         local gcdColorPicker = gui:CreateFormColorPicker(gcdCard.frame, nil, "gcdColor", castDB, refresh, nil, {
-            description = "Fill color used for the GCD sweep (separate from the normal cast color).",
+            description = ns.L["Fill color used for the GCD sweep (separate from the normal cast color)."],
         })
         gcdCard.AddRow(
-            optionsAPI.BuildSettingRow(gcdCard.frame, "Show on Melee Swings", meleeCheckbox),
-            optionsAPI.BuildSettingRow(gcdCard.frame, "GCD Bar Color", gcdColorPicker)
+            optionsAPI.BuildSettingRow(gcdCard.frame, ns.L["Show on Melee Swings"], meleeCheckbox),
+            optionsAPI.BuildSettingRow(gcdCard.frame, ns.L["GCD Bar Color"], gcdColorPicker)
         )
         builder.CloseCard(gcdCard)
     end
 
     -- Size --------------------------------------------------------------
-    builder.Header("Size")
+    builder.Header(ns.L["Size"])
     local sizeCard = builder.Card()
     local widthSlider = gui:CreateFormSlider(sizeCard.frame, nil, 50, 2000, 1, "width", castDB, refresh, { deferOnDrag = true }, {
-        description = "Pixel width of the castbar.",
+        description = ns.L["Pixel width of the castbar."],
     })
     local heightSlider = gui:CreateFormSlider(sizeCard.frame, nil, 4, 60, 1, "height", castDB, refresh, { deferOnDrag = true }, {
-        description = "Pixel height of the castbar itself.",
+        description = ns.L["Pixel height of the castbar itself."],
     })
     sizeCard.AddRow(
-        optionsAPI.BuildSettingRow(sizeCard.frame, "Width", widthSlider),
-        optionsAPI.BuildSettingRow(sizeCard.frame, "Bar Height", heightSlider)
+        optionsAPI.BuildSettingRow(sizeCard.frame, ns.L["Width"], widthSlider),
+        optionsAPI.BuildSettingRow(sizeCard.frame, ns.L["Bar Height"], heightSlider)
     )
 
     local iconSizeSlider = gui:CreateFormSlider(sizeCard.frame, nil, 8, 80, 1, "iconSize", castDB, refresh, { deferOnDrag = true }, {
-        description = "Pixel size of the spell icon beside the castbar.",
+        description = ns.L["Pixel size of the spell icon beside the castbar."],
     })
     local iconScaleSlider = gui:CreateFormSlider(sizeCard.frame, nil, 0.5, 2.0, 0.1, "iconScale", castDB, refresh, { deferOnDrag = true }, {
-        description = "Scale multiplier applied to the spell icon. >1 enlarges it relative to the bar.",
+        description = ns.L["Scale multiplier applied to the spell icon. >1 enlarges it relative to the bar."],
     })
     sizeCard.AddRow(
-        optionsAPI.BuildSettingRow(sizeCard.frame, "Icon Size", iconSizeSlider),
-        optionsAPI.BuildSettingRow(sizeCard.frame, "Icon Scale", iconScaleSlider)
+        optionsAPI.BuildSettingRow(sizeCard.frame, ns.L["Icon Size"], iconSizeSlider),
+        optionsAPI.BuildSettingRow(sizeCard.frame, ns.L["Icon Scale"], iconScaleSlider)
     )
 
     local previewCheckbox = gui:CreateFormCheckbox(sizeCard.frame, nil, "previewMode", castDB, refresh, {
-        description = "Render a fake spell on the castbar for visual tuning.",
+        description = ns.L["Render a fake spell on the castbar for visual tuning."],
     })
-    sizeCard.AddRow(optionsAPI.BuildSettingRow(sizeCard.frame, "Castbar Preview", previewCheckbox))
+    sizeCard.AddRow(optionsAPI.BuildSettingRow(sizeCard.frame, ns.L["Castbar Preview"], previewCheckbox))
     builder.CloseCard(sizeCard)
 
     -- Channel Ticks (skip boss/pet) ------------------------------------
     if unitKey ~= "boss" and unitKey ~= "pet" then
-        builder.Header("Channel Ticks")
+        builder.Header(ns.L["Channel Ticks"])
         local tickCard = builder.Card()
         local showTicksCheckbox = gui:CreateFormCheckbox(tickCard.frame, nil, "showChannelTicks", castDB, refresh, {
-            description = "Draw tick marks on the castbar at the moments a channeled spell triggers a tick.",
+            description = ns.L["Draw tick marks on the castbar at the moments a channeled spell triggers a tick."],
         })
         local thicknessSlider = gui:CreateFormSlider(tickCard.frame, nil, 1, 5, 0.5, "channelTickThickness", castDB, refresh, { deferOnDrag = true }, {
-            description = "Thickness of the tick markers, in pixels.",
+            description = ns.L["Thickness of the tick markers, in pixels."],
         })
         tickCard.AddRow(
-            optionsAPI.BuildSettingRow(tickCard.frame, "Show Tick Markers", showTicksCheckbox),
-            optionsAPI.BuildSettingRow(tickCard.frame, "Tick Thickness", thicknessSlider)
+            optionsAPI.BuildSettingRow(tickCard.frame, ns.L["Show Tick Markers"], showTicksCheckbox),
+            optionsAPI.BuildSettingRow(tickCard.frame, ns.L["Tick Thickness"], thicknessSlider)
         )
 
         local sourceDropdown = gui:CreateFormDropdown(tickCard.frame, nil, CASTBAR_TICK_SOURCE_OPTIONS, "channelTickSourcePolicy", castDB, refresh, {
-            description = "Where the tick timings come from. Auto tries QUI's static table first, then live calibration.",
+            description = ns.L["Where the tick timings come from. Auto tries QUI's static table first, then live calibration."],
         })
         local confidenceSlider = gui:CreateFormSlider(tickCard.frame, nil, 0.5, 1.0, 0.05, "channelTickMinConfidence", castDB, refresh, { deferOnDrag = true }, {
-            description = "Minimum calibration confidence required before runtime-detected ticks are drawn.",
+            description = ns.L["Minimum calibration confidence required before runtime-detected ticks are drawn."],
         })
         tickCard.AddRow(
-            optionsAPI.BuildSettingRow(tickCard.frame, "Tick Source", sourceDropdown),
-            optionsAPI.BuildSettingRow(tickCard.frame, "Min Confidence", confidenceSlider)
+            optionsAPI.BuildSettingRow(tickCard.frame, ns.L["Tick Source"], sourceDropdown),
+            optionsAPI.BuildSettingRow(tickCard.frame, ns.L["Min Confidence"], confidenceSlider)
         )
 
         local tickColorPicker = gui:CreateFormColorPicker(tickCard.frame, nil, "channelTickColor", castDB, refresh, nil, {
-            description = "Color of the tick markers drawn on the castbar.",
+            description = ns.L["Color of the tick markers drawn on the castbar."],
         })
-        tickCard.AddRow(optionsAPI.BuildSettingRow(tickCard.frame, "Tick Color", tickColorPicker))
+        tickCard.AddRow(optionsAPI.BuildSettingRow(tickCard.frame, ns.L["Tick Color"], tickColorPicker))
         builder.CloseCard(tickCard)
     end
 
     -- Text & Display ---------------------------------------------------
-    builder.Header("Text & Display")
+    builder.Header(ns.L["Text & Display"])
     local textCard = builder.Card()
     local fontSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 24, 1, "fontSize", castDB, refresh, { deferOnDrag = true }, {
-        description = "Font size used for the spell name and cast time text on the castbar.",
+        description = ns.L["Font size used for the spell name and cast time text on the castbar."],
     })
     local maxLenSlider = gui:CreateFormSlider(textCard.frame, nil, 0, 30, 1, "maxLength", castDB, refresh, { deferOnDrag = true }, {
-        description = "Maximum number of characters shown for the spell name. 0 disables truncation.",
+        description = ns.L["Maximum number of characters shown for the spell name. 0 disables truncation."],
     })
     textCard.AddRow(
-        optionsAPI.BuildSettingRow(textCard.frame, "Font Size", fontSizeSlider),
-        optionsAPI.BuildSettingRow(textCard.frame, "Max Length (0=none)", maxLenSlider)
+        optionsAPI.BuildSettingRow(textCard.frame, ns.L["Font Size"], fontSizeSlider),
+        optionsAPI.BuildSettingRow(textCard.frame, ns.L["Max Length (0=none)"], maxLenSlider)
     )
     builder.CloseCard(textCard)
 
     -- Element Positioning: Icon ----------------------------------------
-    builder.Header("Icon Positioning")
+    builder.Header(ns.L["Icon Positioning"])
     local iconCard = builder.Card()
     local iconAnchorDropdown = gui:CreateFormDropdown(iconCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "iconAnchor", castDB, refresh, {
-        description = "Which edge or corner of the castbar the spell icon attaches to.",
+        description = ns.L["Which edge or corner of the castbar the spell icon attaches to."],
     })
     local iconSpacingSlider = gui:CreateFormSlider(iconCard.frame, nil, -50, 50, 1, "iconSpacing", castDB, refresh, { deferOnDrag = true }, {
-        description = "Pixel gap between the icon and the castbar. Negative values overlap them.",
+        description = ns.L["Pixel gap between the icon and the castbar. Negative values overlap them."],
     })
     iconCard.AddRow(
-        optionsAPI.BuildSettingRow(iconCard.frame, "Icon Anchor", iconAnchorDropdown),
-        optionsAPI.BuildSettingRow(iconCard.frame, "Icon Spacing", iconSpacingSlider)
+        optionsAPI.BuildSettingRow(iconCard.frame, ns.L["Icon Anchor"], iconAnchorDropdown),
+        optionsAPI.BuildSettingRow(iconCard.frame, ns.L["Icon Spacing"], iconSpacingSlider)
     )
 
     local iconBorderSlider = gui:CreateFormSlider(iconCard.frame, nil, 0, 5, 0.1, "iconBorderSize", castDB, refresh, { deferOnDrag = true }, {
-        description = "Thickness of the border drawn around the spell icon, in pixels.",
+        description = ns.L["Thickness of the border drawn around the spell icon, in pixels."],
     })
-    iconCard.AddRow(optionsAPI.BuildSettingRow(iconCard.frame, "Icon Border Size", iconBorderSlider))
+    iconCard.AddRow(optionsAPI.BuildSettingRow(iconCard.frame, ns.L["Icon Border Size"], iconBorderSlider))
     builder.CloseCard(iconCard)
 
     -- Spell Name Text --------------------------------------------------
-    builder.Header("Spell Name Text")
+    builder.Header(ns.L["Spell Name Text"])
     local spellTextCard = builder.Card()
     local spellAnchorDropdown = gui:CreateFormDropdown(spellTextCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "spellTextAnchor", castDB, refresh, {
-        description = "Which edge or corner of the castbar the spell name anchors to.",
+        description = ns.L["Which edge or corner of the castbar the spell name anchors to."],
     })
     local spellShowCheckbox = gui:CreateFormCheckbox(spellTextCard.frame, nil, "showSpellText", castDB, refresh, {
-        description = "Display the spell name on top of the castbar.",
+        description = ns.L["Display the spell name on top of the castbar."],
     })
     spellTextCard.AddRow(
-        optionsAPI.BuildSettingRow(spellTextCard.frame, "Spell Text Anchor", spellAnchorDropdown),
-        optionsAPI.BuildSettingRow(spellTextCard.frame, "Show Spell Text", spellShowCheckbox)
+        optionsAPI.BuildSettingRow(spellTextCard.frame, ns.L["Spell Text Anchor"], spellAnchorDropdown),
+        optionsAPI.BuildSettingRow(spellTextCard.frame, ns.L["Show Spell Text"], spellShowCheckbox)
     )
 
     local spellOffXSlider = gui:CreateFormSlider(spellTextCard.frame, nil, -200, 200, 1, "spellTextOffsetX", castDB, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset of the spell name from its anchor.",
+        description = ns.L["Horizontal pixel offset of the spell name from its anchor."],
     })
     local spellOffYSlider = gui:CreateFormSlider(spellTextCard.frame, nil, -200, 200, 1, "spellTextOffsetY", castDB, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset of the spell name from its anchor.",
+        description = ns.L["Vertical pixel offset of the spell name from its anchor."],
     })
     spellTextCard.AddRow(
-        optionsAPI.BuildSettingRow(spellTextCard.frame, "Spell X Offset", spellOffXSlider),
-        optionsAPI.BuildSettingRow(spellTextCard.frame, "Spell Y Offset", spellOffYSlider)
+        optionsAPI.BuildSettingRow(spellTextCard.frame, ns.L["Spell X Offset"], spellOffXSlider),
+        optionsAPI.BuildSettingRow(spellTextCard.frame, ns.L["Spell Y Offset"], spellOffYSlider)
     )
     builder.CloseCard(spellTextCard)
 
     -- Time Remaining Text ----------------------------------------------
-    builder.Header("Time Remaining Text")
+    builder.Header(ns.L["Time Remaining Text"])
     local timeTextCard = builder.Card()
     local timeAnchorDropdown = gui:CreateFormDropdown(timeTextCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "timeTextAnchor", castDB, refresh, {
-        description = "Which edge or corner of the castbar the time remaining text anchors to.",
+        description = ns.L["Which edge or corner of the castbar the time remaining text anchors to."],
     })
     local timeShowCheckbox = gui:CreateFormCheckbox(timeTextCard.frame, nil, "showTimeText", castDB, refresh, {
-        description = "Display the cast time remaining (e.g. 1.4s) on top of the castbar.",
+        description = ns.L["Display the cast time remaining (e.g. 1.4s) on top of the castbar."],
     })
     timeTextCard.AddRow(
-        optionsAPI.BuildSettingRow(timeTextCard.frame, "Time Text Anchor", timeAnchorDropdown),
-        optionsAPI.BuildSettingRow(timeTextCard.frame, "Show Time Text", timeShowCheckbox)
+        optionsAPI.BuildSettingRow(timeTextCard.frame, ns.L["Time Text Anchor"], timeAnchorDropdown),
+        optionsAPI.BuildSettingRow(timeTextCard.frame, ns.L["Show Time Text"], timeShowCheckbox)
     )
 
     local timeOffXSlider = gui:CreateFormSlider(timeTextCard.frame, nil, -200, 200, 1, "timeTextOffsetX", castDB, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset of the time text from its anchor.",
+        description = ns.L["Horizontal pixel offset of the time text from its anchor."],
     })
     local timeOffYSlider = gui:CreateFormSlider(timeTextCard.frame, nil, -200, 200, 1, "timeTextOffsetY", castDB, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset of the time text from its anchor.",
+        description = ns.L["Vertical pixel offset of the time text from its anchor."],
     })
     timeTextCard.AddRow(
-        optionsAPI.BuildSettingRow(timeTextCard.frame, "Time X Offset", timeOffXSlider),
-        optionsAPI.BuildSettingRow(timeTextCard.frame, "Time Y Offset", timeOffYSlider)
+        optionsAPI.BuildSettingRow(timeTextCard.frame, ns.L["Time X Offset"], timeOffXSlider),
+        optionsAPI.BuildSettingRow(timeTextCard.frame, ns.L["Time Y Offset"], timeOffYSlider)
     )
     builder.CloseCard(timeTextCard)
 
     -- Empowered (player) -----------------------------------------------
     if unitKey == "player" then
-        builder.Header("Empowered Spells")
+        builder.Header(ns.L["Empowered Spells"])
         local empoweredCard = builder.Card()
         local hideTimeCheckbox = gui:CreateFormCheckbox(empoweredCard.frame, nil, "hideTimeTextOnEmpowered", castDB, refresh, {
-            description = "Hide the time remaining text while casting an empowered spell so the stage markers read more clearly.",
+            description = ns.L["Hide the time remaining text while casting an empowered spell so the stage markers read more clearly."],
         })
         local showLevelCheckbox = gui:CreateFormCheckbox(empoweredCard.frame, nil, "showEmpoweredLevel", castDB, refresh, {
-            description = "Display the current empowered stage number on the castbar while casting an empowered spell.",
+            description = ns.L["Display the current empowered stage number on the castbar while casting an empowered spell."],
         })
         empoweredCard.AddRow(
-            optionsAPI.BuildSettingRow(empoweredCard.frame, "Hide Time Text on Empowered", hideTimeCheckbox),
-            optionsAPI.BuildSettingRow(empoweredCard.frame, "Show Stage Number", showLevelCheckbox)
+            optionsAPI.BuildSettingRow(empoweredCard.frame, ns.L["Hide Time Text on Empowered"], hideTimeCheckbox),
+            optionsAPI.BuildSettingRow(empoweredCard.frame, ns.L["Show Stage Number"], showLevelCheckbox)
         )
 
         local levelAnchorDropdown = gui:CreateFormDropdown(empoweredCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "empoweredLevelTextAnchor", castDB, refresh, {
-            description = "Where the current empowered stage number is anchored on the castbar.",
+            description = ns.L["Where the current empowered stage number is anchored on the castbar."],
         })
-        empoweredCard.AddRow(optionsAPI.BuildSettingRow(empoweredCard.frame, "Stage Number Anchor", levelAnchorDropdown))
+        empoweredCard.AddRow(optionsAPI.BuildSettingRow(empoweredCard.frame, ns.L["Stage Number Anchor"], levelAnchorDropdown))
 
         local levelOffXSlider = gui:CreateFormSlider(empoweredCard.frame, nil, -200, 200, 1, "empoweredLevelTextOffsetX", castDB, refresh, { deferOnDrag = true }, {
-            description = "Horizontal pixel offset of the empowered stage text from its anchor.",
+            description = ns.L["Horizontal pixel offset of the empowered stage text from its anchor."],
         })
         local levelOffYSlider = gui:CreateFormSlider(empoweredCard.frame, nil, -200, 200, 1, "empoweredLevelTextOffsetY", castDB, refresh, { deferOnDrag = true }, {
-            description = "Vertical pixel offset of the empowered stage text from its anchor.",
+            description = ns.L["Vertical pixel offset of the empowered stage text from its anchor."],
         })
         empoweredCard.AddRow(
-            optionsAPI.BuildSettingRow(empoweredCard.frame, "Stage Number X Offset", levelOffXSlider),
-            optionsAPI.BuildSettingRow(empoweredCard.frame, "Stage Number Y Offset", levelOffYSlider)
+            optionsAPI.BuildSettingRow(empoweredCard.frame, ns.L["Stage Number X Offset"], levelOffXSlider),
+            optionsAPI.BuildSettingRow(empoweredCard.frame, ns.L["Stage Number Y Offset"], levelOffYSlider)
         )
         builder.CloseCard(empoweredCard)
 
@@ -2118,50 +2118,50 @@ local function RenderCastbarSection(sectionHost, ctx)
             end
         end
 
-        builder.Header("Empowered Stage Colors")
-        builder.Description("Background overlay for each stage of an empowered spell.")
+        builder.Header(ns.L["Empowered Stage Colors"])
+        builder.Description(ns.L["Background overlay for each stage of an empowered spell."])
         local stageCard = builder.Card()
         for i = 1, 5, 2 do
             local widget1 = gui:CreateFormColorPicker(stageCard.frame, nil, i, castDB.empoweredStageColors, refresh, nil, {
-                description = "Background overlay color for empowered stage " .. i .. ".",
+                description = string.format(ns.L["Background overlay color for empowered stage %1$s."], i),
             })
             stagePickers[i] = widget1
-            local row1 = optionsAPI.BuildSettingRow(stageCard.frame, "Stage " .. i, widget1)
+            local row1 = optionsAPI.BuildSettingRow(stageCard.frame, string.format(ns.L["Stage %1$s"], i), widget1)
             local row2
             if i + 1 <= 5 then
                 local widget2 = gui:CreateFormColorPicker(stageCard.frame, nil, i + 1, castDB.empoweredStageColors, refresh, nil, {
-                    description = "Background overlay color for empowered stage " .. (i + 1) .. ".",
+                    description = string.format(ns.L["Background overlay color for empowered stage %1$s."], i + 1),
                 })
                 stagePickers[i + 1] = widget2
-                row2 = optionsAPI.BuildSettingRow(stageCard.frame, "Stage " .. (i + 1), widget2)
+                row2 = optionsAPI.BuildSettingRow(stageCard.frame, string.format(ns.L["Stage %1$s"], i + 1), widget2)
             end
             if row2 then stageCard.AddRow(row1, row2) else stageCard.AddRow(row1) end
         end
         builder.CloseCard(stageCard)
 
-        builder.Header("Empowered Fill Colors")
-        builder.Description("Castbar fill color for each stage of an empowered spell.")
+        builder.Header(ns.L["Empowered Fill Colors"])
+        builder.Description(ns.L["Castbar fill color for each stage of an empowered spell."])
         local fillCard = builder.Card()
         for i = 1, 5, 2 do
             local widget1 = gui:CreateFormColorPicker(fillCard.frame, nil, i, castDB.empoweredFillColors, refresh, nil, {
-                description = "Fill color used for the castbar itself during empowered stage " .. i .. ".",
+                description = string.format(ns.L["Fill color used for the castbar itself during empowered stage %1$s."], i),
             })
             fillPickers[i] = widget1
-            local row1 = optionsAPI.BuildSettingRow(fillCard.frame, "Fill " .. i, widget1)
+            local row1 = optionsAPI.BuildSettingRow(fillCard.frame, string.format(ns.L["Fill %1$s"], i), widget1)
             local row2
             if i + 1 <= 5 then
                 local widget2 = gui:CreateFormColorPicker(fillCard.frame, nil, i + 1, castDB.empoweredFillColors, refresh, nil, {
-                    description = "Fill color used for the castbar itself during empowered stage " .. (i + 1) .. ".",
+                    description = string.format(ns.L["Fill color used for the castbar itself during empowered stage %1$s."], i + 1),
                 })
                 fillPickers[i + 1] = widget2
-                row2 = optionsAPI.BuildSettingRow(fillCard.frame, "Fill " .. (i + 1), widget2)
+                row2 = optionsAPI.BuildSettingRow(fillCard.frame, string.format(ns.L["Fill %1$s"], i + 1), widget2)
             end
             if row2 then fillCard.AddRow(row1, row2) else fillCard.AddRow(row1) end
         end
         builder.CloseCard(fillCard)
 
         builder.Row(function(row)
-            local resetBtn = gui:CreateButton(row, "Reset Empowered Colors to Defaults", 260, 24, function()
+            local resetBtn = gui:CreateButton(row, ns.L["Reset Empowered Colors to Defaults"], 260, 24, function()
                 for i = 1, 5 do
                     if defaultStageColors[i] then
                         local d = defaultStageColors[i]
@@ -2193,16 +2193,16 @@ local function RenderCastbarSection(sectionHost, ctx)
     end
     local copySelector = { selected = copyOptions[1] and copyOptions[1].value or nil }
 
-    builder.Header("Copy Settings")
+    builder.Header(ns.L["Copy Settings"])
     local copyCard = builder.Card()
     local copyDropdown = gui:CreateFormDropdown(copyCard.frame, nil, copyOptions, "selected", copySelector, nil, {
-        description = "Pick another unit's castbar configuration to copy into this one. Click Apply to perform the copy.",
+        description = ns.L["Pick another unit's castbar configuration to copy into this one. Click Apply to perform the copy."],
     })
-    copyCard.AddRow(optionsAPI.BuildSettingRow(copyCard.frame, "Copy From Unit", copyDropdown))
+    copyCard.AddRow(optionsAPI.BuildSettingRow(copyCard.frame, ns.L["Copy From Unit"], copyDropdown))
     builder.CloseCard(copyCard)
 
     builder.Row(function(row)
-        local applyBtn = gui:CreateButton(row, "Apply Copy", 100, 24, function()
+        local applyBtn = gui:CreateButton(row, ns.L["Apply Copy"], 100, 24, function()
             local sourceKey = copySelector.selected
             if not sourceKey then return end
             local sourceUnitDB = unit.ufdb and unit.ufdb[sourceKey]
@@ -2261,46 +2261,46 @@ local function RenderTextNameSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Name Text")
+    builder.Header(ns.L["Name Text"])
     local card = builder.Card()
 
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showName", unit.unitDB, RefreshUnitFrames, {
-        description = "Show the unit's name on this frame.",
+        description = ns.L["Show the unit's name on this frame."],
     })
     local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "nameFontSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Font size used for the unit's name.",
+        description = ns.L["Font size used for the unit's name."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Name", showCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Font Size", sizeSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Name"], showCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Font Size"], sizeSlider)
     )
 
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "nameTextColor", unit.unitDB, RefreshUnitFrames, nil, {
-        description = "Color used for the name when class/reaction coloring is not applied to name text.",
+        description = ns.L["Color used for the name when class/reaction coloring is not applied to name text."],
     })
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "nameAnchor", unit.unitDB, RefreshUnitFrames, {
-        description = "Where on the frame the name text is anchored. X/Y Offset below nudges it from this anchor point.",
+        description = ns.L["Where on the frame the name text is anchored. X/Y Offset below nudges it from this anchor point."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Custom Name Text Color", colorPicker),
-        optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Custom Name Text Color"], colorPicker),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown)
     )
 
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "nameOffsetX", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the name text from its anchor. Positive moves right, negative moves left.",
+        description = ns.L["Horizontal pixel offset for the name text from its anchor. Positive moves right, negative moves left."],
     })
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "nameOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the name text from its anchor. Positive moves up, negative moves down.",
+        description = ns.L["Vertical pixel offset for the name text from its anchor. Positive moves up, negative moves down."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
     )
 
     local maxLengthSlider = gui:CreateFormSlider(card.frame, nil, 0, 30, 1, "maxNameLength", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Truncate names longer than this many characters. Set to 0 to disable truncation entirely.",
+        description = ns.L["Truncate names longer than this many characters. Set to 0 to disable truncation entirely."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Max Length (0 = none)", maxLengthSlider))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Max Length (0 = none)"], maxLengthSlider))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -2320,19 +2320,19 @@ local function RenderTextTargetOfTargetSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Target Of Target Text")
+    builder.Header(ns.L["Target Of Target Text"])
     local card = builder.Card()
     local dividerCell
 
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showInlineToT", unit.unitDB, RefreshUnitFrames, {
-        description = "Append your target's current target to the name text, using the separator and color chosen below.",
+        description = ns.L["Append your target's current target to the name text, using the separator and color chosen below."],
     })
     local separatorDropdown = gui:CreateFormDropdown(card.frame, nil, TOT_SEPARATOR_OPTIONS, "totSeparator", unit.unitDB, RefreshUnitFrames, {
-        description = "Separator string placed between the target's name and its target's name.",
+        description = ns.L["Separator string placed between the target's name and its target's name."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Inline Target-of-Target", showCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "ToT Separator", separatorDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Inline Target-of-Target"], showCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["ToT Separator"], separatorDropdown)
     )
 
     local classColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "totDividerUseClassColor", unit.unitDB, function()
@@ -2341,22 +2341,22 @@ local function RenderTextTargetOfTargetSection(sectionHost, ctx)
             SetCompanionCellDim(dividerCell, unit.unitDB.totDividerUseClassColor)
         end
     end, {
-        description = "Color the separator between target and target-of-target by the target-of-target unit's class or reaction. Disables Custom Divider Color while on.",
+        description = ns.L["Color the separator between target and target-of-target by the target-of-target unit's class or reaction. Disables Custom Divider Color while on."],
     })
     local dividerColorPicker = gui:CreateFormColorPicker(card.frame, nil, "totDividerColor", unit.unitDB, RefreshUnitFrames, nil, {
-        description = "Fallback color for the separator when Color Divider By Class/React is off.",
+        description = ns.L["Fallback color for the separator when Color Divider By Class/React is off."],
     })
-    dividerCell = optionsAPI.BuildSettingRow(card.frame, "Custom Divider Color", dividerColorPicker)
+    dividerCell = optionsAPI.BuildSettingRow(card.frame, ns.L["Custom Divider Color"], dividerColorPicker)
     SetCompanionCellDim(dividerCell, unit.unitDB.totDividerUseClassColor)
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Color Divider By Class/React", classColorCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Color Divider By Class/React"], classColorCheckbox),
         dividerCell
     )
 
     local limitSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "totNameCharLimit", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Maximum characters shown for the target-of-target's name. Set to 0 to show the full name.",
+        description = ns.L["Maximum characters shown for the target-of-target's name. Set to 0 to show the full name."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "ToT Name Character Limit", limitSlider))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["ToT Name Character Limit"], limitSlider))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -2376,57 +2376,57 @@ local function RenderTextHealthSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Health Text")
+    builder.Header(ns.L["Health Text"])
     local card = builder.Card()
 
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showHealth", unit.unitDB, RefreshUnitFrames, {
-        description = "Show the unit's health as text on this frame. Use Display Style below to pick the format.",
+        description = ns.L["Show the unit's health as text on this frame. Use Display Style below to pick the format."],
     })
     local displayDropdown = gui:CreateFormDropdown(card.frame, nil, HEALTH_STYLE_OPTIONS, "healthDisplayStyle", unit.unitDB, RefreshUnitFrames, {
-        description = "How health is formatted: percent only, raw value, value-plus-percent, or missing health as a negative percent/value.",
+        description = ns.L["How health is formatted: percent only, raw value, value-plus-percent, or missing health as a negative percent/value."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Health", showCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Display Style", displayDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Health"], showCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Display Style"], displayDropdown)
     )
 
     local hidePercentCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hideHealthPercentSymbol", unit.unitDB, RefreshUnitFrames, {
-        description = "Drop the % sign from percent-based health text for a cleaner look.",
+        description = ns.L["Drop the % sign from percent-based health text for a cleaner look."],
     })
     local dividerDropdown = gui:CreateFormDropdown(card.frame, nil, HEALTH_DIVIDER_OPTIONS, "healthDivider", unit.unitDB, RefreshUnitFrames, {
-        description = "Character used to separate the two values when Display Style combines value and percent.",
+        description = ns.L["Character used to separate the two values when Display Style combines value and percent."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Hide % Symbol", hidePercentCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Divider", dividerDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Hide % Symbol"], hidePercentCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Divider"], dividerDropdown)
     )
 
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "healthTextColor", unit.unitDB, RefreshUnitFrames, nil, {
-        description = "Color used for the health text when class/reaction coloring is not applied to health text.",
+        description = ns.L["Color used for the health text when class/reaction coloring is not applied to health text."],
     })
     local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "healthFontSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Font size used for the health text.",
+        description = ns.L["Font size used for the health text."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Custom Health Text Color", colorPicker),
-        optionsAPI.BuildSettingRow(card.frame, "Font Size", sizeSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Custom Health Text Color"], colorPicker),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Font Size"], sizeSlider)
     )
 
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "healthAnchor", unit.unitDB, RefreshUnitFrames, {
-        description = "Where on the frame the health text is anchored. X/Y Offset below nudges it from this anchor point.",
+        description = ns.L["Where on the frame the health text is anchored. X/Y Offset below nudges it from this anchor point."],
     })
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "healthOffsetX", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the health text from its anchor. Positive moves right, negative moves left.",
+        description = ns.L["Horizontal pixel offset for the health text from its anchor. Positive moves right, negative moves left."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown),
-        optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider)
     )
 
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "healthOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the health text from its anchor. Positive moves up, negative moves down.",
+        description = ns.L["Vertical pixel offset for the health text from its anchor. Positive moves up, negative moves down."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -2446,23 +2446,23 @@ local function RenderTextPowerSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Power Text")
+    builder.Header(ns.L["Power Text"])
     local card = builder.Card()
     local customColorCell
 
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showPowerText", unit.unitDB, RefreshUnitFrames, {
-        description = "Show the unit's power value as text on the power bar.",
+        description = ns.L["Show the unit's power value as text on the power bar."],
     })
     local formatDropdown = gui:CreateFormDropdown(card.frame, nil, POWER_TEXT_FORMAT_OPTIONS, "powerTextFormat", unit.unitDB, RefreshUnitFrames, {
-        description = "How power is formatted: percent only, raw current value, or both.",
+        description = ns.L["How power is formatted: percent only, raw current value, or both."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Power Text", showCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Display Format", formatDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Power Text"], showCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Display Format"], formatDropdown)
     )
 
     local hidePercentCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hidePowerPercentSymbol", unit.unitDB, RefreshUnitFrames, {
-        description = "Drop the % sign from percent-based power text.",
+        description = ns.L["Drop the % sign from percent-based power text."],
     })
     local usePowerTypeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "powerTextUsePowerColor", unit.unitDB, function()
         RefreshUnitFrames()
@@ -2470,41 +2470,41 @@ local function RenderTextPowerSection(sectionHost, ctx)
             SetCompanionCellDim(customColorCell, unit.unitDB.powerTextUsePowerColor)
         end
     end, {
-        description = "Color the power text by power type. Disables the Custom Power Text Color swatch below while on.",
+        description = ns.L["Color the power text by power type. Disables the Custom Power Text Color swatch below while on."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Hide % Symbol", hidePercentCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Use Power Type Color", usePowerTypeCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Hide % Symbol"], hidePercentCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Use Power Type Color"], usePowerTypeCheckbox)
     )
 
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "powerTextColor", unit.unitDB, RefreshUnitFrames, nil, {
-        description = "Color for the power text when Use Power Type Color is off.",
+        description = ns.L["Color for the power text when Use Power Type Color is off."],
     })
-    customColorCell = optionsAPI.BuildSettingRow(card.frame, "Custom Power Text Color", colorPicker)
+    customColorCell = optionsAPI.BuildSettingRow(card.frame, ns.L["Custom Power Text Color"], colorPicker)
     SetCompanionCellDim(customColorCell, unit.unitDB.powerTextUsePowerColor)
     local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "powerTextFontSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Font size used for the power text.",
+        description = ns.L["Font size used for the power text."],
     })
     card.AddRow(
         customColorCell,
-        optionsAPI.BuildSettingRow(card.frame, "Font Size", sizeSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Font Size"], sizeSlider)
     )
 
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "powerTextAnchor", unit.unitDB, RefreshUnitFrames, {
-        description = "Where on the frame the power text is anchored. X/Y Offset below nudges it from this anchor point.",
+        description = ns.L["Where on the frame the power text is anchored. X/Y Offset below nudges it from this anchor point."],
     })
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "powerTextOffsetX", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the power text from its anchor. Positive moves right, negative moves left.",
+        description = ns.L["Horizontal pixel offset for the power text from its anchor. Positive moves right, negative moves left."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown),
-        optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider)
     )
 
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "powerTextOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the power text from its anchor. Positive moves up, negative moves down.",
+        description = ns.L["Vertical pixel offset for the power text from its anchor. Positive moves up, negative moves down."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -2525,63 +2525,63 @@ local function RenderTextStanceSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Stance / Form Text")
-    builder.Description("Displays current stance, form, or aura.")
+    builder.Header(ns.L["Stance / Form Text"])
+    builder.Description(ns.L["Displays current stance, form, or aura."])
     local card = builder.Card()
 
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", stanceDB, RefreshUnitFrames, {
-        description = "Show a text label on the player frame naming your current stance, shapeshift form, or aura.",
+        description = ns.L["Show a text label on the player frame naming your current stance, shapeshift form, or aura."],
     })
     local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "fontSize", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Font size used for the stance/form text.",
+        description = ns.L["Font size used for the stance/form text."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Stance/Form Text", showCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Font Size", sizeSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Stance/Form Text"], showCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Font Size"], sizeSlider)
     )
 
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "anchor", stanceDB, RefreshUnitFrames, {
-        description = "Where on the player frame the stance/form text is anchored.",
+        description = ns.L["Where on the player frame the stance/form text is anchored."],
     })
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetX", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the stance/form text from its anchor.",
+        description = ns.L["Horizontal pixel offset for the stance/form text from its anchor."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown),
-        optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider)
     )
 
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetY", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the stance/form text from its anchor.",
+        description = ns.L["Vertical pixel offset for the stance/form text from its anchor."],
     })
     local classColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "useClassColor", stanceDB, RefreshUnitFrames, {
-        description = "Color the stance/form text using your class color instead of the Custom Color below.",
+        description = ns.L["Color the stance/form text using your class color instead of the Custom Color below."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Use Class Color", classColorCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Use Class Color"], classColorCheckbox)
     )
 
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "customColor", stanceDB, RefreshUnitFrames, nil, {
-        description = "Fallback color for the stance/form text when Use Class Color is off.",
+        description = ns.L["Fallback color for the stance/form text when Use Class Color is off."],
     })
     local showIconCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showIcon", stanceDB, RefreshUnitFrames, {
-        description = "Show an icon for the active stance/form next to the text.",
+        description = ns.L["Show an icon for the active stance/form next to the text."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Custom Color", colorPicker),
-        optionsAPI.BuildSettingRow(card.frame, "Show Icon", showIconCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Custom Color"], colorPicker),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Icon"], showIconCheckbox)
     )
 
     local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 32, 1, "iconSize", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Pixel size of the stance/form icon.",
+        description = ns.L["Pixel size of the stance/form icon."],
     })
     local iconOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "iconOffsetX", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Horizontal offset between the stance/form icon and its adjacent text.",
+        description = ns.L["Horizontal offset between the stance/form icon and its adjacent text."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Icon Size", iconSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Icon X Offset", iconOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], iconSizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Icon X Offset"], iconOffsetSlider)
     )
 
     builder.CloseCard(card)
@@ -2617,35 +2617,35 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
     local hideSwipeKey = prefix .. "HideSwipe"
     local showKey = (prefix == "debuff") and "showDebuffs" or "showBuffs"
 
-    builder.Header(kind .. " Icons")
+    builder.Header(string.format(ns.L["%1$s Icons"], kind))
     local card = builder.Card()
 
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, showKey, auraDB, refreshAuras, {
-        description = "Show " .. kindLower .. " icons on this unit frame.",
+        description = string.format(ns.L["Show %1$s icons on this unit frame."], kindLower),
     })
     local hideSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, hideSwipeKey, auraDB, refreshAuras, {
-        description = "Hide the clockwise cooldown swipe animation drawn over " .. kindLower .. " icons. Duration text still works if it is enabled below.",
+        description = string.format(ns.L["Hide the clockwise cooldown swipe animation drawn over %1$s icons. Duration text still works if it is enabled below."], kindLower),
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show " .. kind .. "s", showCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Hide Duration Swipe", hideSwipeCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, string.format(ns.L["Show %1$ss"], kind), showCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Hide Duration Swipe"], hideSwipeCheckbox)
     )
 
     local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 12, 50, 1, iconSizeKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Pixel size of each " .. kindLower .. " icon.",
+        description = string.format(ns.L["Pixel size of each %1$s icon."], kindLower),
     })
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_CORNER_OPTIONS, anchorKey, auraDB, refreshAuras, {
-        description = "Which corner of the frame the first " .. kindLower .. " icon is anchored to.",
+        description = string.format(ns.L["Which corner of the frame the first %1$s icon is anchored to."], kindLower),
     })
 
     local growDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_GROW_OPTIONS, growKey, auraDB, refreshAuras, {
-        description = "Direction additional " .. kindLower .. " icons are added in after the first.",
+        description = string.format(ns.L["Direction additional %1$s icons are added in after the first."], kindLower),
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Icon Size", iconSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], iconSizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown)
     )
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDropdown))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Grow Direction"], growDropdown))
 
     -- Filter modifiers + exclusive picker. Defaults are all-disabled
     -- (no filtering); user opts in per-frame.
@@ -2678,7 +2678,7 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
         end
 
         local exclusiveDropdown = gui:CreateFormDropdown(card.frame, nil, exclusiveOptions, "exclusive", filterDB, onExclusiveChange, {
-            description = "Mutually-exclusive category filter. Pick one or None.",
+            description = ns.L["Mutually-exclusive category filter. Pick one or None."],
         })
 
         -- Initial-load visual fix: when DB is nil, the widget's UpdateVisual
@@ -2689,10 +2689,10 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
             and exclusiveDropdown.dropdown
             and exclusiveDropdown.dropdown.selected
         then
-            exclusiveDropdown.dropdown.selected:SetText("None")
+            exclusiveDropdown.dropdown.selected:SetText(ns.L["None"])
         end
 
-        local exclusiveRow = optionsAPI.BuildSettingRow(card.frame, "Exclusive Filter", exclusiveDropdown)
+        local exclusiveRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Exclusive Filter"], exclusiveDropdown)
 
         if pendingRow then
             -- Odd modifier count — pair the leftover modifier with the exclusive dropdown.
@@ -2703,25 +2703,25 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
     end
 
     local maxIconsSlider = gui:CreateFormSlider(card.frame, nil, 1, 32, 1, maxKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Hard cap on how many " .. kindLower .. " icons this frame displays at once.",
+        description = string.format(ns.L["Hard cap on how many %1$s icons this frame displays at once."], kindLower),
     })
     local maxPerRowSlider = gui:CreateFormSlider(card.frame, nil, 0, 16, 1, maxRowKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "How many icons fit in a row before wrapping. Set to 0 to keep them all on a single row.",
+        description = ns.L["How many icons fit in a row before wrapping. Set to 0 to keep them all on a single row."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Max Icons", maxIconsSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Max Per Row (0 = unlimited)", maxPerRowSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Max Icons"], maxIconsSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Max Per Row (0 = unlimited)"], maxPerRowSlider)
     )
 
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offsetXKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the " .. kindLower .. " block from its anchor corner.",
+        description = string.format(ns.L["Horizontal pixel offset for the %1$s block from its anchor corner."], kindLower),
     })
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offsetYKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the " .. kindLower .. " block from its anchor corner.",
+        description = string.format(ns.L["Vertical pixel offset for the %1$s block from its anchor corner."], kindLower),
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
     )
 
     builder.CloseCard(card)
@@ -2750,79 +2750,79 @@ local function RenderAuraTextSection(sectionHost, ctx, prefix, kind)
     end
     local kindLower = string.lower(kind)
 
-    builder.Header(kind .. " Stack & Duration")
+    builder.Header(string.format(ns.L["%1$s Stack & Duration"], kind))
     local card = builder.Card()
 
     local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 10, 1, prefix .. "Spacing", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Pixel gap between adjacent " .. kindLower .. " icons.",
+        description = string.format(ns.L["Pixel gap between adjacent %1$s icons."], kindLower),
     })
     local showStackCheckbox = gui:CreateFormCheckbox(card.frame, nil, prefix .. "ShowStack", auraDB, refreshAuras, {
-        description = "Show the stack count on stacked " .. kindLower .. " icons.",
+        description = string.format(ns.L["Show the stack count on stacked %1$s icons."], kindLower),
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Spacing", spacingSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Stack Show", showStackCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Spacing"], spacingSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Show"], showStackCheckbox)
     )
 
     local stackSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 40, 1, prefix .. "StackSize", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Font size used for the stack count on " .. kindLower .. " icons.",
+        description = string.format(ns.L["Font size used for the stack count on %1$s icons."], kindLower),
     })
     local stackAnchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, prefix .. "StackAnchor", auraDB, refreshAuras, {
-        description = "Which corner of the " .. kindLower .. " icon the stack count is anchored to.",
+        description = string.format(ns.L["Which corner of the %1$s icon the stack count is anchored to."], kindLower),
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Stack Size", stackSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Stack Anchor", stackAnchorDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Size"], stackSizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Anchor"], stackAnchorDropdown)
     )
 
     local stackXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "StackOffsetX", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the stack count from its anchor.",
+        description = ns.L["Horizontal pixel offset for the stack count from its anchor."],
     })
     local stackYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "StackOffsetY", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the stack count from its anchor.",
+        description = ns.L["Vertical pixel offset for the stack count from its anchor."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Stack X Offset", stackXOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Stack Y Offset", stackYOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack X Offset"], stackXOffsetSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Y Offset"], stackYOffsetSlider)
     )
 
     local stackColorPicker = gui:CreateFormColorPicker(card.frame, nil, prefix .. "StackColor", auraDB, refreshAuras, nil, {
-        description = "Color for the stack count text on " .. kindLower .. " icons.",
+        description = string.format(ns.L["Color for the stack count text on %1$s icons."], kindLower),
     })
     local showDurationCheckbox = gui:CreateFormCheckbox(card.frame, nil, prefix .. "ShowDuration", auraDB, refreshAuras, {
-        description = "Show the remaining-duration countdown text on " .. kindLower .. " icons.",
+        description = string.format(ns.L["Show the remaining-duration countdown text on %1$s icons."], kindLower),
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Stack Color", stackColorPicker),
-        optionsAPI.BuildSettingRow(card.frame, "Duration Show", showDurationCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Color"], stackColorPicker),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Show"], showDurationCheckbox)
     )
 
     local durationSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 40, 1, prefix .. "DurationSize", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Font size used for the duration countdown on " .. kindLower .. " icons.",
+        description = string.format(ns.L["Font size used for the duration countdown on %1$s icons."], kindLower),
     })
     local durationAnchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, prefix .. "DurationAnchor", auraDB, refreshAuras, {
-        description = "Which part of the " .. kindLower .. " icon the duration countdown is anchored to.",
+        description = string.format(ns.L["Which part of the %1$s icon the duration countdown is anchored to."], kindLower),
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Duration Size", durationSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Duration Anchor", durationAnchorDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Size"], durationSizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Anchor"], durationAnchorDropdown)
     )
 
     local durationXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "DurationOffsetX", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the duration countdown from its anchor.",
+        description = ns.L["Horizontal pixel offset for the duration countdown from its anchor."],
     })
     local durationYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "DurationOffsetY", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the duration countdown from its anchor.",
+        description = ns.L["Vertical pixel offset for the duration countdown from its anchor."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Duration X Offset", durationXOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Duration Y Offset", durationYOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration X Offset"], durationXOffsetSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Y Offset"], durationYOffsetSlider)
     )
 
     local durationColorPicker = gui:CreateFormColorPicker(card.frame, nil, prefix .. "DurationColor", auraDB, refreshAuras, nil, {
-        description = "Color for the duration countdown text on " .. kindLower .. " icons.",
+        description = string.format(ns.L["Color for the duration countdown text on %1$s icons."], kindLower),
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Duration Color", durationColorPicker))
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Color"], durationColorPicker))
 
     builder.CloseCard(card)
     return builder.Height()
@@ -2997,7 +2997,7 @@ end
 local function RenderPortraitUnavailableSection(sectionHost, ctx)
     local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
     return RenderUnavailableSection(sectionHost, ctx, UnitSupportsPortrait(unitKey),
-        "Portrait", "Portrait is only supported on the Player, Target, and Focus frames.")
+        "Portrait", ns.L["Portrait is only supported on the Player, Target, and Focus frames."])
 end
 
 local function RenderPortraitSettingsSection(sectionHost, ctx)
@@ -3016,62 +3016,62 @@ local function RenderPortraitSettingsSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Portrait")
+    builder.Header(ns.L["Portrait"])
     local card = builder.Card()
 
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showPortrait", unit.unitDB, RefreshUnitFrames, {
-        description = "Show a 3D unit portrait next to this frame. Side, size, gap, and border style are set below.",
+        description = ns.L["Show a 3D unit portrait next to this frame. Side, size, gap, and border style are set below."],
     })
     local sideDropdown = gui:CreateFormDropdown(card.frame, nil, PORTRAIT_SIDE_OPTIONS, "portraitSide", unit.unitDB, RefreshUnitFrames, {
-        description = "Which side of the frame the portrait sits on.",
+        description = ns.L["Which side of the frame the portrait sits on."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Portrait", showCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Portrait Side", sideDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Portrait"], showCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Portrait Side"], sideDropdown)
     )
 
     local sizeSlider = gui:CreateFormSlider(card.frame, nil, 20, 150, 1, "portraitSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Portrait width and height in pixels.",
+        description = ns.L["Portrait width and height in pixels."],
     })
     local borderSlider = gui:CreateFormSlider(card.frame, nil, 0, 5, 1, "portraitBorderSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Border thickness in pixels around the portrait. Set to 0 to hide the border entirely.",
+        description = ns.L["Border thickness in pixels around the portrait. Set to 0 to hide the border entirely."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Portrait Size (Pixels)", sizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Portrait Border", borderSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Portrait Size (Pixels)"], sizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Portrait Border"], borderSlider)
     )
 
     local gapSlider = gui:CreateFormSlider(card.frame, nil, 0, 10, 1, "portraitGap", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Pixel gap between the portrait and the unit frame.",
+        description = ns.L["Pixel gap between the portrait and the unit frame."],
     })
     local offsetXSlider = gui:CreateFormSlider(card.frame, nil, -500, 500, 1, "portraitOffsetX", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Extra horizontal pixel offset applied to the portrait on top of its Side and Gap placement.",
+        description = ns.L["Extra horizontal pixel offset applied to the portrait on top of its Side and Gap placement."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Portrait Gap", gapSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Portrait Offset X", offsetXSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Portrait Gap"], gapSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Portrait Offset X"], offsetXSlider)
     )
 
     local offsetYSlider = gui:CreateFormSlider(card.frame, nil, -500, 500, 1, "portraitOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Extra vertical pixel offset applied to the portrait.",
+        description = ns.L["Extra vertical pixel offset applied to the portrait."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Portrait Offset Y", offsetYSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Portrait Offset Y"], offsetYSlider)
     )
 
     if ns.QUI_BorderControl then
         local borderSourceW, borderColorW = ns.QUI_BorderControl.Attach(
             gui, card.frame, unit.unitDB, "portrait", RefreshUnitFrames,
             {
-                label             = "Border Color Source",
-                colorLabel        = "Border Color",
-                sourceDescription = "Where the portrait ring gets its color: Inherit (global skin border), Theme accent, Class color, or a Custom color.",
-                colorDescription  = "Custom portrait ring color, used when Border Color Source is set to Custom.",
+                label             = ns.L["Border Color Source"],
+                colorLabel        = ns.L["Border Color"],
+                sourceDescription = ns.L["Where the portrait ring gets its color: Inherit (global skin border), Theme accent, Class color, or a Custom color."],
+                colorDescription  = ns.L["Custom portrait ring color, used when Border Color Source is set to Custom."],
             }
         )
         card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Border Color Source", borderSourceW),
-            optionsAPI.BuildSettingRow(card.frame, "Border Color", borderColorW)
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Border Color Source"], borderSourceW),
+            optionsAPI.BuildSettingRow(card.frame, ns.L["Border Color"], borderColorW)
         )
     end
 
@@ -3166,22 +3166,22 @@ local function RenderIndicatorsRestedSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Rested Indicator")
-    builder.Description("Shows when in a rested area (disabled by default).")
+    builder.Header(ns.L["Rested Indicator"])
+    builder.Description(ns.L["Shows when in a rested area (disabled by default)."])
     local card = builder.Card()
     AddIndicatorCardRows(card, optionsAPI, gui, rested, {
-        enable = "Enable Rested Indicator",
-        size = "Rested Icon Size",
-        anchor = "Rested Anchor",
-        x = "Rested X Offset",
-        y = "Rested Y Offset",
+        enable = ns.L["Enable Rested Indicator"],
+        size = ns.L["Rested Icon Size"],
+        anchor = ns.L["Rested Anchor"],
+        x = ns.L["Rested X Offset"],
+        y = ns.L["Rested Y Offset"],
         sizeMin = 8,
         sizeMax = 32,
-        descEnable = "Show the rested icon on the player frame while you're in a rested area.",
-        descSize = "Pixel size of the rested icon.",
-        descAnchor = "Where on the player frame the rested icon is anchored.",
-        descX = "Horizontal pixel offset for the rested icon from its anchor.",
-        descY = "Vertical pixel offset for the rested icon from its anchor.",
+        descEnable = ns.L["Show the rested icon on the player frame while you're in a rested area."],
+        descSize = ns.L["Pixel size of the rested icon."],
+        descAnchor = ns.L["Where on the player frame the rested icon is anchored."],
+        descX = ns.L["Horizontal pixel offset for the rested icon from its anchor."],
+        descY = ns.L["Vertical pixel offset for the rested icon from its anchor."],
     }, "offsetX", "offsetY")
     builder.CloseCard(card)
     return builder.Height()
@@ -3202,22 +3202,22 @@ local function RenderIndicatorsCombatSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Combat Indicator")
-    builder.Description("Shows during combat (disabled by default).")
+    builder.Header(ns.L["Combat Indicator"])
+    builder.Description(ns.L["Shows during combat (disabled by default)."])
     local card = builder.Card()
     AddIndicatorCardRows(card, optionsAPI, gui, combat, {
-        enable = "Enable Combat Indicator",
-        size = "Combat Icon Size",
-        anchor = "Combat Anchor",
-        x = "Combat X Offset",
-        y = "Combat Y Offset",
+        enable = ns.L["Enable Combat Indicator"],
+        size = ns.L["Combat Icon Size"],
+        anchor = ns.L["Combat Anchor"],
+        x = ns.L["Combat X Offset"],
+        y = ns.L["Combat Y Offset"],
         sizeMin = 8,
         sizeMax = 32,
-        descEnable = "Show the combat icon on the player frame while you're in combat.",
-        descSize = "Pixel size of the combat icon.",
-        descAnchor = "Where on the player frame the combat icon is anchored.",
-        descX = "Horizontal pixel offset for the combat icon from its anchor.",
-        descY = "Vertical pixel offset for the combat icon from its anchor.",
+        descEnable = ns.L["Show the combat icon on the player frame while you're in combat."],
+        descSize = ns.L["Pixel size of the combat icon."],
+        descAnchor = ns.L["Where on the player frame the combat icon is anchored."],
+        descX = ns.L["Horizontal pixel offset for the combat icon from its anchor."],
+        descY = ns.L["Vertical pixel offset for the combat icon from its anchor."],
     }, "offsetX", "offsetY")
     builder.CloseCard(card)
     return builder.Height()
@@ -3238,22 +3238,22 @@ local function RenderIndicatorsTargetMarkerSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Target Marker")
-    builder.Description("Shows raid target markers (skull, cross, diamond, etc.) on the unit frame.")
+    builder.Header(ns.L["Target Marker"])
+    builder.Description(ns.L["Shows raid target markers (skull, cross, diamond, etc.) on the unit frame."])
     local card = builder.Card()
     AddIndicatorCardRows(card, optionsAPI, gui, marker, {
-        enable = "Show Target Marker",
-        size = "Marker Size",
-        anchor = "Anchor To",
-        x = "X Offset",
-        y = "Y Offset",
+        enable = ns.L["Show Target Marker"],
+        size = ns.L["Marker Size"],
+        anchor = ns.L["Anchor To"],
+        x = ns.L["X Offset"],
+        y = ns.L["Y Offset"],
         sizeMin = 8,
         sizeMax = 48,
-        descEnable = "Show the unit's raid target icon on this frame when one is assigned.",
-        descSize = "Pixel size of the raid target icon.",
-        descAnchor = "Where on the frame the raid target icon is anchored.",
-        descX = "Horizontal pixel offset for the raid target icon from its anchor.",
-        descY = "Vertical pixel offset for the raid target icon from its anchor.",
+        descEnable = ns.L["Show the unit's raid target icon on this frame when one is assigned."],
+        descSize = ns.L["Pixel size of the raid target icon."],
+        descAnchor = ns.L["Where on the frame the raid target icon is anchored."],
+        descX = ns.L["Horizontal pixel offset for the raid target icon from its anchor."],
+        descY = ns.L["Vertical pixel offset for the raid target icon from its anchor."],
     }, "xOffset", "yOffset")
     builder.CloseCard(card)
     return builder.Height()
@@ -3274,22 +3274,22 @@ local function RenderIndicatorsLeaderSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Leader/Assistant Icon")
-    builder.Description("Shows crown icon for party/raid leader, flag icon for raid assistants.")
+    builder.Header(ns.L["Leader/Assistant Icon"])
+    builder.Description(ns.L["Shows crown icon for party/raid leader, flag icon for raid assistants."])
     local card = builder.Card()
     AddIndicatorCardRows(card, optionsAPI, gui, leader, {
-        enable = "Show Leader/Assistant Icon",
-        size = "Icon Size",
-        anchor = "Anchor To",
-        x = "X Offset",
-        y = "Y Offset",
+        enable = ns.L["Show Leader/Assistant Icon"],
+        size = ns.L["Icon Size"],
+        anchor = ns.L["Anchor To"],
+        x = ns.L["X Offset"],
+        y = ns.L["Y Offset"],
         sizeMin = 8,
         sizeMax = 32,
-        descEnable = "Show a crown icon on the party/raid leader and a flag icon on raid assistants.",
-        descSize = "Pixel size of the leader/assistant icon.",
-        descAnchor = "Where on the frame the leader/assistant icon is anchored.",
-        descX = "Horizontal pixel offset for the leader/assistant icon from its anchor.",
-        descY = "Vertical pixel offset for the leader/assistant icon from its anchor.",
+        descEnable = ns.L["Show a crown icon on the party/raid leader and a flag icon on raid assistants."],
+        descSize = ns.L["Pixel size of the leader/assistant icon."],
+        descAnchor = ns.L["Where on the frame the leader/assistant icon is anchored."],
+        descX = ns.L["Horizontal pixel offset for the leader/assistant icon from its anchor."],
+        descY = ns.L["Vertical pixel offset for the leader/assistant icon from its anchor."],
     }, "xOffset", "yOffset")
     builder.CloseCard(card)
     return builder.Height()
@@ -3310,22 +3310,22 @@ local function RenderIndicatorsClassificationSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Classification Icon")
-    builder.Description("Shows an icon indicating if the unit is Elite, Rare, Rare Elite, or a Boss.")
+    builder.Header(ns.L["Classification Icon"])
+    builder.Description(ns.L["Shows an icon indicating if the unit is Elite, Rare, Rare Elite, or a Boss."])
     local card = builder.Card()
     AddIndicatorCardRows(card, optionsAPI, gui, classification, {
-        enable = "Show Classification Icon",
-        size = "Icon Size",
-        anchor = "Anchor To",
-        x = "X Offset",
-        y = "Y Offset",
+        enable = ns.L["Show Classification Icon"],
+        size = ns.L["Icon Size"],
+        anchor = ns.L["Anchor To"],
+        x = ns.L["X Offset"],
+        y = ns.L["Y Offset"],
         sizeMin = 8,
         sizeMax = 48,
-        descEnable = "Show a classification icon next to elite, rare, rare-elite, and boss NPCs on this unit frame.",
-        descSize = "Pixel size of the classification icon.",
-        descAnchor = "Where on the frame the classification icon is anchored.",
-        descX = "Horizontal pixel offset for the classification icon from its anchor.",
-        descY = "Vertical pixel offset for the classification icon from its anchor.",
+        descEnable = ns.L["Show a classification icon next to elite, rare, rare-elite, and boss NPCs on this unit frame."],
+        descSize = ns.L["Pixel size of the classification icon."],
+        descAnchor = ns.L["Where on the frame the classification icon is anchored."],
+        descX = ns.L["Horizontal pixel offset for the classification icon from its anchor."],
+        descY = ns.L["Vertical pixel offset for the classification icon from its anchor."],
     }, "xOffset", "yOffset")
     builder.CloseCard(card)
     return builder.Height()
@@ -3401,7 +3401,7 @@ end
 local function RenderPrivateAurasUnavailableSection(sectionHost, ctx)
     local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
     return RenderUnavailableSection(sectionHost, ctx, UnitSupportsPrivateAuras(unitKey),
-        "Priv. Auras", "Private Auras are only supported on the Player, Target, and Focus frames.")
+        "Priv. Auras", ns.L["Private Auras are only supported on the Player, Target, and Focus frames."])
 end
 
 local function RenderPrivateAurasSection(sectionHost, ctx)
@@ -3419,81 +3419,81 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header("Private Auras")
-    builder.Description("Shows boss debuffs and other private auras on this unit frame. The client renders the icon, cooldown spiral, and stack/duration text.")
+    builder.Header(ns.L["Private Auras"])
+    builder.Description(ns.L["Shows boss debuffs and other private auras on this unit frame. The client renders the icon, cooldown spiral, and stack/duration text."])
     local card = builder.Card()
 
     local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", privateAuras, RefreshUnitFrames, {
-        description = "Enable private auras on this unit frame.",
+        description = ns.L["Enable private auras on this unit frame."],
     })
     local maxSlider = gui:CreateFormSlider(card.frame, nil, 1, 5, 1, "maxPerFrame", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Maximum number of private-aura icons the client will draw on this frame at once.",
+        description = ns.L["Maximum number of private-aura icons the client will draw on this frame at once."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Enable Private Auras", enableCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Max Per Frame", maxSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Enable Private Auras"], enableCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Max Per Frame"], maxSlider)
     )
 
     local sizeSlider = gui:CreateFormSlider(card.frame, nil, 10, 40, 1, "iconSize", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Pixel size of each private-aura icon.",
+        description = ns.L["Pixel size of each private-aura icon."],
     })
     local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 8, 1, "spacing", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Pixel gap between adjacent private-aura icons.",
+        description = ns.L["Pixel gap between adjacent private-aura icons."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Icon Size", sizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Spacing", spacingSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], sizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Spacing"], spacingSlider)
     )
 
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "anchor", privateAuras, RefreshUnitFrames, {
-        description = "Where on the frame the first private-aura icon is anchored.",
+        description = ns.L["Where on the frame the first private-aura icon is anchored."],
     })
     local growDropdown = gui:CreateFormDropdown(card.frame, nil, PRIVATE_AURA_GROW_OPTIONS, "growDirection", privateAuras, RefreshUnitFrames, {
-        description = "Direction additional private-aura icons are added in after the first.",
+        description = ns.L["Direction additional private-aura icons are added in after the first."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown),
-        optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDropdown)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Grow Direction"], growDropdown)
     )
 
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetX", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the private-aura block from its anchor.",
+        description = ns.L["Horizontal pixel offset for the private-aura block from its anchor."],
     })
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetY", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the private-aura block from its anchor.",
+        description = ns.L["Vertical pixel offset for the private-aura block from its anchor."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
     )
 
     local countdownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showCountdown", privateAuras, RefreshUnitFrames, {
-        description = "Show the clockwise cooldown swipe over each private-aura icon.",
+        description = ns.L["Show the clockwise cooldown swipe over each private-aura icon."],
     })
     local numbersCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showCountdownNumbers", privateAuras, RefreshUnitFrames, {
-        description = "Show the Blizzard-rendered countdown number on each private-aura icon.",
+        description = ns.L["Show the Blizzard-rendered countdown number on each private-aura icon."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Show Countdown Spiral", countdownCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Show Countdown Numbers", numbersCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Countdown Spiral"], countdownCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Countdown Numbers"], numbersCheckbox)
     )
 
     local reverseCheckbox = gui:CreateFormCheckbox(card.frame, nil, "reverseSwipe", privateAuras, RefreshUnitFrames, {
-        description = "Reverse the swipe direction so it fills clockwise as time elapses instead of sweeping away.",
+        description = ns.L["Reverse the swipe direction so it fills clockwise as time elapses instead of sweeping away."],
     })
     local borderSlider = gui:CreateFormSlider(card.frame, nil, -100, 10, 0.5, "borderScale", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Scale applied to the private-aura icon border. Set to -100 to hide the border entirely.",
+        description = ns.L["Scale applied to the private-aura icon border. Set to -100 to hide the border entirely."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Reverse Swipe", reverseCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Border Scale", borderSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Reverse Swipe"], reverseCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Border Scale"], borderSlider)
     )
 
     local frameLevelSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "frameLevel", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Frame-level offset added to the private-aura container so icons render above or below other elements on this frame.",
+        description = ns.L["Frame-level offset added to the private-aura container so icons render above or below other elements on this frame."],
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Frame Level Offset", frameLevelSlider)
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Frame Level Offset"], frameLevelSlider)
     )
 
     builder.CloseCard(card)

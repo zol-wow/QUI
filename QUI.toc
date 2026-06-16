@@ -8,7 +8,7 @@
 ## Author: Zol
 ## Version: 4.0.0-beta55
 ## Category: User Interface
-## SavedVariables: QUI_DB, QUIDB, QUI_StorageDB
+## SavedVariables: QUIDB, QUI_StorageDB
 ## LoadSavedVariablesFirst: 1
 ## OptionalDeps: DandersFrames, BigWigs
 
@@ -68,6 +68,20 @@ libs\LibRangeCheck-3.0\LibRangeCheck-3.0.lua
 
 # == addon init ==
 init.lua
+
+# == localization (must precede any string consumer) ==
+core\locale\enUS.lua
+core\locale\deDE.lua
+core\locale\esES.lua
+core\locale\esMX.lua
+core\locale\frFR.lua
+core\locale\itIT.lua
+core\locale\koKR.lua
+core\locale\ptBR.lua
+core\locale\ruRU.lua
+core\locale\zhCN.lua
+core\locale\zhTW.lua
+core\locale\locale.lua
 
 # == core/core.xml ==
 core\debug_gate.lua

@@ -996,7 +996,7 @@ local function CreateAlertMover()
         -- Mover text
         local text = alertMover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         text:SetPoint("CENTER")
-        text:SetText("Alert Frames")
+        text:SetText(ns.L["Alert Frames"])
         alertMover.text = text
 
         -- Drag handlers
@@ -1132,7 +1132,7 @@ local function CreateEventToastMover()
         -- Mover text
         local text = toastMover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         text:SetPoint("CENTER")
-        text:SetText("Event Toasts")
+        text:SetText(ns.L["Event Toasts"])
         toastMover.text = text
 
         -- Drag handlers
@@ -1227,7 +1227,7 @@ local function CreateBNetToastMover()
         -- Mover text
         local text = bnetToastMover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         text:SetPoint("CENTER")
-        text:SetText("Battle.Net Toasts")
+        text:SetText(ns.L["Battle.Net Toasts"])
         bnetToastMover.text = text
 
         -- Drag handlers
@@ -1362,7 +1362,7 @@ local Helpers = ns.Helpers
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
         key      = "alerts",
-        label    = "Skin Alerts",
+        label    = ns.L["Skin Alerts"],
         category = "Skinning",
         prefix   = "alerts",
         db       = function(p) return p.general end,

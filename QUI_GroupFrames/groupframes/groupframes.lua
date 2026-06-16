@@ -6,6 +6,8 @@
 ]]
 
 local ADDON_NAME, ns = ...
+-- NOTE: CJK-safe font application is inlined at each call site below (not a
+-- local helper) because this file's main chunk is at Lua's 200-local limit.
 local QUICore = ns.Addon
 local LSM = ns.LSM
 local Helpers = ns.Helpers
@@ -944,11 +946,11 @@ local function UpdateHealth(frame)
     -- Centered status text overlay for dead/offline
     if frame.statusText then
         if not isConnected then
-            frame.statusText:SetText("OFFLINE")
+            frame.statusText:SetText(ns.L["OFFLINE"])
             frame.statusText:SetTextColor(COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3])
             frame.statusText:Show()
         elseif isDeadOrGhost then
-            frame.statusText:SetText(isGhost and "GHOST" or "DEAD")
+            frame.statusText:SetText(isGhost and ns.L["GHOST"] or ns.L["DEAD"])
             frame.statusText:SetTextColor(COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3])
             frame.statusText:Show()
             -- Dim the frame slightly for dead units (offline dimming handled in UpdateConnection)
@@ -2120,7 +2122,11 @@ _state.ApplyDefensiveCountdownFont = function(cd, fontSize, isRaid)
     if cd.SetHideCountdownNumbers then pcall(cd.SetHideCountdownNumbers, cd, false) end
     local ok, cdText = pcall(cd.GetCountdownFontString, cd)
     if not ok or not cdText or not cdText.SetFont then return end
-    cdText:SetFont(GetFontPath(isRaid), fontSize or 12, GetFontOutline(isRaid) or "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(cdText, GetFontPath(isRaid), fontSize or 12, GetFontOutline(isRaid) or "OUTLINE")
+    else
+        cdText:SetFont(GetFontPath(isRaid), fontSize or 12, GetFontOutline(isRaid) or "OUTLINE")
+    end
 end
 
 local function UpdateDefensiveIndicator(frame)
@@ -2565,7 +2571,11 @@ local function DecorateGroupFrame(frame)
     -- Centered status text (DEAD / OFFLINE overlay)
     local statusText = frame.statusText or textFrame:CreateFontString(nil, "OVERLAY")
     statusText:ClearAllPoints()
-    statusText:SetFont(GetFontPath(), 14, "OUTLINE")
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(statusText, GetFontPath(), 14, "OUTLINE")
+    else
+        statusText:SetFont(GetFontPath(), 14, "OUTLINE")
+    end
     statusText:SetPoint("CENTER", frame, "CENTER", 0, 0)
     statusText:SetJustifyH("CENTER")
     statusText:SetJustifyV("MIDDLE")
@@ -2623,7 +2633,11 @@ local function DecorateGroupFrame(frame)
 
     local healthText = frame.healthText or textFrame:CreateFontString(nil, "OVERLAY")
     healthText:ClearAllPoints()
-    healthText:SetFont(fontPath, healthFontSize, fontOutline)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(healthText, fontPath, healthFontSize, fontOutline)
+    else
+        healthText:SetFont(fontPath, healthFontSize, fontOutline)
+    end
     local healthPadX = math.abs(healthOffsetX)
     healthText:SetPoint(healthAnchor.leftPoint, frame, healthAnchor.leftPoint, healthPadX, healthOffsetY + healthBottomPad)
     healthText:SetPoint(healthAnchor.rightPoint, frame, healthAnchor.rightPoint, -healthPadX, healthOffsetY + healthBottomPad)

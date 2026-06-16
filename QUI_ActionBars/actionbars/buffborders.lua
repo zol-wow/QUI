@@ -6,6 +6,14 @@
 local _, ns = ...
 local Helpers = ns.Helpers
 
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local GetCore = Helpers.GetCore
 local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
@@ -401,7 +409,7 @@ local function StyleIcon(icon, settings, isBuff, debuffType)
     local outline = GetGeneralFontOutline()
     local fontSize = settings.fontSize or 12
     if icon.Stacks and icon.Stacks.SetFont then
-        icon.Stacks:SetFont(font, fontSize, outline)
+        CJKFont(icon.Stacks, font, fontSize, outline)
     end
 
     -- Stack text positioning (per-frame keys)
@@ -435,7 +443,7 @@ local function StyleIcon(icon, settings, isBuff, debuffType)
     if icon.Cooldown and icon.Cooldown.GetCountdownFontString then
         local cdText = icon.Cooldown:GetCountdownFontString()
         if cdText and cdText.SetFont then
-            cdText:SetFont(font, fontSize, outline)
+            CJKFont(cdText, font, fontSize, outline)
             pcall(cdText.ClearAllPoints, cdText)
             pcall(cdText.SetPoint, cdText, cdAnchor, icon.Cooldown, cdAnchor, cdOffX, cdOffY)
         end
@@ -1508,7 +1516,7 @@ local function CreatePreviewGrid(parent, textures, debuffTypes, settings, prefix
         CreateBorderEdges(icon)
 
         icon.Stacks = icon:CreateFontString(nil, "OVERLAY")
-        icon.Stacks:SetFont(GetGeneralFont(), 10, GetGeneralFontOutline())
+        CJKFont(icon.Stacks, GetGeneralFont(), 10, GetGeneralFontOutline())
         icon.Stacks:SetPoint("BOTTOMRIGHT", -1, 1)
         icon.Stacks:SetText("")
         icon.Stacks:Hide()

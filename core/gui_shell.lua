@@ -191,7 +191,7 @@ local function CreateLinkItemCompat(parent, label, url, iconR, iconG, iconB, ico
     end
     button:SetScript("OnClick", function()
         if StaticPopup_Show then
-            StaticPopup_Show("QUI_COPY_TEXT", popupTitle or "Copy URL", nil, url)
+            StaticPopup_Show("QUI_COPY_TEXT", popupTitle or ns.L["Copy URL"], nil, url)
         elseif url then
             print("|cFF30D1FFQUI:|r " .. tostring(url))
         end

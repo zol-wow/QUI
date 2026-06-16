@@ -11,6 +11,14 @@ ns.UIKit = UIKit
 local LSM = ns.LSM
 local Helpers = ns.Helpers
 local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
+
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 local floor = math.floor
 local max = math.max
 local next = next
@@ -700,7 +708,7 @@ function UIKit.CreateText(parent, fontSize, fontPath, fontOutline, layer)
     if core and core.ApplyFont then
         core:ApplyFont(text, parent, fontSize, path, outline)
     else
-        text:SetFont(path, fontSize, outline)
+        CJKFont(text, path, fontSize, outline)
     end
     text:SetTextColor(1, 1, 1, 1)
     text:SetWordWrap(false)
@@ -1082,7 +1090,7 @@ function UIKit.CreateButton(parent, opts)
             or (gui and gui.GetFontPath and gui:GetFontPath())
             or DEFAULT_FONT
     end
-    button.text:SetFont(fontPath, opts.fontSize or 10, flags or "")
+    CJKFont(button.text, fontPath, opts.fontSize or 10, flags or "")
     button:SetHeight(opts.height or 22)
     if not opts.width or opts.width <= 0 then
         button:SetWidth((button.text:GetStringWidth() or 0) + 24)
@@ -1313,7 +1321,7 @@ function UIKit.CreateTabButton(parent, opts)
 
     btn._label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     btn._label:SetPoint("CENTER")
-    if opts.fontPath then btn._label:SetFont(opts.fontPath, opts.fontSize or 12, opts.fontFlags or "") end
+    if opts.fontPath then CJKFont(btn._label, opts.fontPath, opts.fontSize or 12, opts.fontFlags or "") end
     btn._label:SetText(opts.label or "")
     btn:SetWidth(max(opts.minWidth or 80, (btn._label:GetStringWidth() or 0) + 24))
 
@@ -1822,7 +1830,7 @@ function SkinBase.SkinChromeCloseButton(button, opts)
         end
         SkinBase.SetFrameData(button, key .. "Label", label)
     end
-    label:SetFont(opts.font or STANDARD_TEXT_FONT, opts.fontSize or 11, opts.fontFlags or "OUTLINE")
+    CJKFont(label, opts.font or STANDARD_TEXT_FONT, opts.fontSize or 11, opts.fontFlags or "OUTLINE")
     label:SetText(opts.label or "X")
     local textColor = ResolveChromeColor(opts.textColor, { 1, 1, 1, 1 }, 1)
     label:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
@@ -2759,7 +2767,7 @@ function SkinBase.SkinFontString(fontString, opts)
     end
     size = size or 12
 
-    fontString:SetFont(font, size, outline)
+    CJKFont(fontString, font, size, outline)
     if opts.fontOnly then return end
 
     if fontString.SetTextColor then

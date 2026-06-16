@@ -1,4 +1,11 @@
 local ADDON_NAME, ns = ...
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
 local QUICore = ns.Addon
 local LSM = ns.LSM
 local Helpers = ns.Helpers
@@ -732,7 +739,7 @@ local function CreateBuffIcon(parent, index)
 
     -- Buff count text (e.g., "11/18")
     button.countText = button:CreateFontString(nil, "OVERLAY")
-    button.countText:SetFont(Helpers.GetGeneralFont(), 10, Helpers.GetGeneralFontOutline())
+    CJKFont(button.countText, Helpers.GetGeneralFont(), 10, Helpers.GetGeneralFontOutline())
     button.countText:SetPoint("BOTTOM", button, "BOTTOM", 0, 2)
     button.countText:SetTextColor(1, 1, 1, 1)
     button.countText:Hide()
@@ -752,16 +759,16 @@ local function CreateBuffIcon(parent, index)
             GameTooltip:AddLine(icon.buffData.stat, 0.7, 0.7, 0.7)
             GameTooltip:AddLine(" ")
             if icon.buffData.selfBuff then
-                GameTooltip:AddLine("Self-buff", 0.5, 0.8, 1)
+                GameTooltip:AddLine(ns.L["Self-buff"], 0.5, 0.8, 1)
             else
                 local className = LOCALIZED_CLASS_NAMES_MALE[icon.buffData.providerClass] or icon.buffData.providerClass
-                GameTooltip:AddLine("Provided by: " .. className, 0.5, 0.8, 1)
+                GameTooltip:AddLine(ns.L["Provided by: "] .. className, 0.5, 0.8, 1)
                 if icon.buffCount and icon.buffTotal then
-                    GameTooltip:AddLine(string_format("Buffed: %d/%d", icon.buffCount, icon.buffTotal), 0.7, 1, 0.7)
+                    GameTooltip:AddLine(string_format(ns.L["Buffed: %d/%d"], icon.buffCount, icon.buffTotal), 0.7, 1, 0.7)
                 end
             end
             if icon.isCastable then
-                GameTooltip:AddLine("Click to cast", 0.2, 1, 0.2)
+                GameTooltip:AddLine(ns.L["Click to cast"], 0.2, 1, 0.2)
             end
             GameTooltip:Show()
         end
@@ -929,8 +936,8 @@ local function CreateMainFrame()
     -- Label text
     mainFrame.labelBar.text = mainFrame.labelBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     mainFrame.labelBar.text:SetPoint("CENTER", 0, 0)
-    mainFrame.labelBar.text:SetFont(Helpers.GetGeneralFont(), 10, Helpers.GetGeneralFontOutline())
-    mainFrame.labelBar.text:SetText("Raid Buffs")
+    CJKFont(mainFrame.labelBar.text, Helpers.GetGeneralFont(), 10, Helpers.GetGeneralFontOutline())
+    mainFrame.labelBar.text:SetText(ns.L["Raid Buffs"])
 
     -- Pre-create icon slots
     for i = 1, #RAID_BUFFS do
@@ -1140,7 +1147,7 @@ UpdateDisplay = function()
                 if LSM then
                     countFontPath = LSM:Fetch("font", countFontName) or STANDARD_TEXT_FONT
                 end
-                icon.countText:SetFont(countFontPath, countFontSize, "OUTLINE")
+                CJKFont(icon.countText, countFontPath, countFontSize, "OUTLINE")
 
                 -- Apply color settings
                 local countColor = countSettings.color or { 1, 1, 1, 1 }
@@ -1193,8 +1200,8 @@ UpdateDisplay = function()
         local labelBarHeight = fontSize + 8  -- Font size + padding
         local labelBarGap = 2
 
-        mainFrame.labelBar.text:SetFont(Helpers.GetGeneralFont(), fontSize, Helpers.GetGeneralFontOutline())
-        mainFrame.labelBar.text:SetText("Raid Buffs")
+        CJKFont(mainFrame.labelBar.text, Helpers.GetGeneralFont(), fontSize, Helpers.GetGeneralFontOutline())
+        mainFrame.labelBar.text:SetText(ns.L["Raid Buffs"])
 
         -- Resize frames based on orientation
         local hideLabelBar = settings.hideLabelBar

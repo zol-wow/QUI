@@ -123,11 +123,11 @@ end
 -- via Driver._ChipEnabledInConfig. The raid slider only shows in raid context.
 ---------------------------------------------------------------------------
 local FILTER_DEFS = {
-    { key = "threat",     label = "Threat" },
-    { key = "dispel",     label = "Dispel" },
-    { key = "auras",      label = "Auras" },
-    { key = "indicators", label = "Indicators" },
-    { key = "highlights", label = "Highlights" },
+    { key = "threat",     label = ns.L["Threat"] },
+    { key = "dispel",     label = ns.L["Dispel"] },
+    { key = "auras",      label = ns.L["Auras"] },
+    { key = "indicators", label = ns.L["Indicators"] },
+    { key = "highlights", label = ns.L["Highlights"] },
 }
 
 -- Strip height: 3 card rows (32 each) + gap + one slider row (28) + pad.
@@ -186,7 +186,7 @@ local function BuildControlStrip(panel)
                 _G.QUI_RefreshGroupFramePreview("raid")
             end
         end)
-    local raidRow = optionsAPI.BuildSettingRow(strip, "Raid Size", raidSlider)
+    local raidRow = optionsAPI.BuildSettingRow(strip, ns.L["Raid Size"], raidSlider)
     raidRow:ClearAllPoints()
     raidRow:SetPoint("TOPLEFT", card.frame, "BOTTOMLEFT", 12, -8)
     raidRow:SetPoint("TOPRIGHT", card.frame, "BOTTOMRIGHT", -12, -8)
@@ -231,7 +231,7 @@ local function EnsurePreviewPanel()
 
     local panel = FullSurface.CreateDockedPreviewPanel({
         gui = GUI,
-        title = "Preview",
+        title = ns.L["Preview"],
         idSuffix = "GroupFrames",
         window = win,
         controlStripHeight = STRIP_HEIGHT,
@@ -248,7 +248,7 @@ end
 local function UpdatePreviewTitle()
     local p = State.previewPanel
     if not p then return end
-    p.SetTitle(State.contextMode == "raid" and "Preview — Raid" or "Preview — Party")
+    p.SetTitle(State.contextMode == "raid" and ns.L["Preview — Raid"] or ns.L["Preview — Party"])
 end
 
 local function RefreshPreviewPanel()
@@ -285,7 +285,7 @@ local ContextSelection = FullSurface and FullSurface.CreateSelectionController
                 State.previewPanel.RefreshControlStrip(vdb)
             end
             if State.previewPanel then
-                State.previewPanel.SetTitle(key == "raid" and "Preview — Raid" or "Preview — Party")
+                State.previewPanel.SetTitle(key == "raid" and ns.L["Preview — Raid"] or ns.L["Preview — Party"])
             end
 
             if State.repaintTabs then
@@ -505,12 +505,12 @@ local function BuildTileBody(body, _, _, feature)
             State.contextMode = NormalizeContextMode(State.contextMode)
             FullSurface.BuildContextDropdownRow(body, {
                 gui = GUI,
-                label = "Unit Group",
+                label = ns.L["Unit Group"],
                 stateKey = "_contextMode",
                 selectedValue = State.contextMode,
                 options = type(getContextOptions) == "function" and getContextOptions() or {},
                 meta = {
-                    description = "Switch between Party and Raid frame settings. Spotlight is only available for Raid frames.",
+                    description = ns.L["Switch between Party and Raid frame settings. Spotlight is only available for Raid frames."],
                 },
                 height = DROPDOWN_ROW_H,
                 onChanged = function(value)
