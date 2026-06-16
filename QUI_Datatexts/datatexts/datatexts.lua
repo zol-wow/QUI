@@ -1162,6 +1162,21 @@ Datatexts:Register("volume", {
             end
         end)
 
+        -- This datatext covers the slot with its own mouse-enabled button, which
+        -- would otherwise swallow the slot's Shift-drag reorder (Info Bar layout
+        -- mode wires RegisterForDrag/OnDragStart on the SLOT). Forward drag to
+        -- whatever handler the host/layout system currently has on the slot so
+        -- reorder + detached-panel move keep working.
+        frame:RegisterForDrag("LeftButton")
+        frame:SetScript("OnDragStart", function()
+            local h = slotFrame:GetScript("OnDragStart")
+            if h then h(slotFrame) end
+        end)
+        frame:SetScript("OnDragStop", function()
+            local h = slotFrame:GetScript("OnDragStop")
+            if h then h(slotFrame) end
+        end)
+
         frame.Update = Update
         -- No ticker needed - volume only changes on user interaction
         -- Update is called on scroll/click, and tooltip shows fresh values on hover
