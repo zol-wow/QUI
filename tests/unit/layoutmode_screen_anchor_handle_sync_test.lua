@@ -35,7 +35,7 @@ local syncBlock = layoutmode:sub(syncPos)
 -- Shared anchor-rect helper: prefers the parent's mover handle, falls back
 -- to the parent FRAME's rect (scale-corrected), and maps screen/disabled to
 -- UIParent edges.
-local helperPos = assert(layoutmode:find("local function GetAnchorRectInUIParent(anchorKey)", 1, true),
+local helperPos = assert(layoutmode:find("local function GetAnchorRectInUIParent(anchorKey, seen)", 1, true),
     "shared anchor-rect helper must exist")
 local helper = layoutmode:sub(helperPos, helperPos + 2000)
 assert(helper:find('anchorKey == "screen" or anchorKey == "disabled"', 1, true),

@@ -63,6 +63,18 @@ local function RefreshCDM()
     if _G.QUI_RefreshCustomTrackersVisibility then _G.QUI_RefreshCustomTrackersVisibility() end
 end
 
+-- Layout Mode exit: hide instantly (snap past the fade) so containers don't
+-- linger for a frame. Falls back to the faded refresh if the instant global
+-- isn't present.
+local function RefreshCDMInstant()
+    if ns.RefreshCDMVisibilityInstant then
+        ns.RefreshCDMVisibilityInstant()
+    elseif _G.QUI_RefreshCDMVisibility then
+        _G.QUI_RefreshCDMVisibility()
+    end
+    if _G.QUI_RefreshCustomTrackersVisibility then _G.QUI_RefreshCustomTrackersVisibility() end
+end
+
 
 local function GetViewerFrame(elementKey)
     local viewerKey = CDM_VIEWER_MAP[elementKey]
@@ -108,6 +120,14 @@ local function RegisterMasterElement(um)
         -- module on/off lives in Module Addons (addon state); positioning only here
         setGameplayHidden = SetAllGameplayHidden,
         getFrame = GetFirstViewerFrame,
+        -- On Layout Mode exit, re-evaluate CDM visibility synchronously. The
+        -- containers are force-shown while layout mode is active (the
+        -- IsLayoutModeActive gates in hud_visibility); without an explicit
+        -- refresh here the auto-hide (empty buff bar/icon) only re-applies on
+        -- the next CDM event, so they linger after closing. isActive is already
+        -- cleared by the time onClose fires; the instant variant also snaps
+        -- past the fade so there's no 1-frame lag.
+        onClose = RefreshCDMInstant,
     })
 end
 

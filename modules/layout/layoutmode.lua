@@ -580,6 +580,40 @@ function QUI_LayoutMode:Open()
                         handle:Show()
                     end
                 end
+
+                -- Attach a proxy mover's preview frame to its handle NOW
+                -- (synchronously) rather than waiting for the deferred pass.
+                -- The handle of an anchored element is created hidden and only
+                -- shown after the topological sync positions it; reparenting
+                -- the frame into that hidden handle here makes the frame
+                -- inherit the hidden state, so it never renders for a frame at
+                -- its own module-owned position (e.g. a castbar with
+                -- anchor="none" parked at UIParent center) before snapping to
+                -- the mover. Boss frames keep the deferred multi-frame path.
+                if not handle._isChildOverlay and key ~= "bossFrames" then
+                    local previewFrame = def.getFrame and def.getFrame()
+                    if previewFrame and previewFrame.GetObjectType and previewFrame:IsShown() then
+                        if not handle._savedTargetParent then
+                            handle._savedTargetParent = previewFrame:GetParent()
+                        end
+                        if not handle._savedTargetStrata then
+                            handle._savedTargetStrata = previewFrame:GetFrameStrata()
+                        end
+                        previewFrame:SetParent(handle)
+                        previewFrame:SetFrameStrata("DIALOG")
+                        previewFrame:SetFrameLevel(1)
+                        if _G.QUI_SetFrameLayoutOwned then
+                            _G.QUI_SetFrameLayoutOwned(previewFrame, key)
+                        end
+                        previewFrame:ClearAllPoints()
+                        if def.getCenterOffset then
+                            local cdx, cdy = def.getCenterOffset(handle:GetSize())
+                            previewFrame:SetPoint("CENTER", handle, "CENTER", -cdx, -cdy)
+                        else
+                            previewFrame:SetAllPoints(handle)
+                        end
+                    end
+                end
             end
         end
     end
@@ -1198,14 +1232,22 @@ local function LoadPosition(key)
            entry.offsetY or 0
 end
 
+--- Forward declaration: resolve a registered element's rect purely from its
+--- frameAnchoring chain (no handle, no live frame rect). Defined just below;
+--- GetAnchorRectInUIParent calls it as a last resort and it recurses back in.
+local ComputeAnchoredRectFromChain
+
 --- Resolve an anchor parent's rect (left, right, top, bottom) in UIParent
 --- coords for handle/offset math. Prefers the parent's mover handle (it
 --- reflects the live layout-mode position); falls back to the parent
 --- FRAME's rect when it has no handle (mover hidden, or the parent isn't a
---- layout element — e.g. minimap anchored to the info bar). The sentinel
---- parents screen/disabled both resolve to UIParent edges, mirroring
---- ApplyFrameAnchor's parent resolution.
-local function GetAnchorRectInUIParent(anchorKey)
+--- layout element — e.g. minimap anchored to the info bar); and as a final
+--- resort computes the rect from the parent's own frameAnchoring chain (for
+--- elements whose frame is hidden/unpositioned — e.g. a castbar's unit-frame
+--- parent that isn't shown, which otherwise left the proxy mover stranded at
+--- screen center). The sentinel parents screen/disabled both resolve to
+--- UIParent edges, mirroring ApplyFrameAnchor's parent resolution.
+local function GetAnchorRectInUIParent(anchorKey, seen)
     if not anchorKey then return nil end
     if anchorKey == "screen" or anchorKey == "disabled" then
         return 0, UIParent:GetWidth(), UIParent:GetHeight(), 0
@@ -1230,7 +1272,59 @@ local function GetAnchorRectInUIParent(anchorKey)
             return l, r, t, b
         end
     end
-    return nil
+    -- Neither a positioned handle nor a live frame rect — compute the rect
+    -- from this element's frameAnchoring chain (parent rect + point/offset +
+    -- own size). Resolves anchors to elements whose frame is hidden.
+    return ComputeAnchoredRectFromChain(anchorKey, seen)
+end
+
+--- Compute a registered element's screen rect (l, r, t, b in UIParent coords)
+--- from its frameAnchoring entry alone: resolve the parent rect (recursing
+--- through GetAnchorRectInUIParent so live handles/frames still win), place
+--- this element's `point` corner at the parent's `relative` corner + offsets,
+--- then expand by the element's own size. `seen` guards parent cycles.
+ComputeAnchoredRectFromChain = function(key, seen)
+    local fa = GetFrameAnchoring()
+    local entry = fa and fa[key]
+    if type(entry) ~= "table" or not entry.parent then return nil end
+    if entry.parent == "disabled" then return nil end
+
+    seen = seen or {}
+    if seen[key] then return nil end  -- cycle guard
+    seen[key] = true
+
+    -- This element's own size: prefer def.getSize, else the live (possibly
+    -- hidden) frame's size. Position can be stale/nil but size is reliable.
+    local w, h
+    local def = QUI_LayoutMode._elements and QUI_LayoutMode._elements[key]
+    if def and def.getSize then
+        w, h = def.getSize()
+    end
+    if not (w and h) then
+        local frame = def and def.getFrame and def.getFrame()
+        if frame and frame.GetSize then
+            local ok, fw, fh = pcall(frame.GetSize, frame)
+            if ok and fw and fh then w, h = fw, fh end
+        end
+    end
+    if not w or not h or w <= 0 or h <= 0 then return nil end
+
+    local pL, pR, pT, pB = GetAnchorRectInUIParent(entry.parent or "screen", seen)
+    if not (pL and pR and pT and pB) then return nil end
+
+    local relPt = entry.relative or "CENTER"
+    local pt = entry.point or "CENTER"
+    -- Anchor point on the parent rect.
+    local px, py = (pL + pR) / 2, (pT + pB) / 2
+    if relPt:find("LEFT") then px = pL elseif relPt:find("RIGHT") then px = pR end
+    if relPt:find("TOP") then py = pT elseif relPt:find("BOTTOM") then py = pB end
+    px = px + (entry.offsetX or 0)
+    py = py + (entry.offsetY or 0)
+    -- (px,py) is where this element's `pt` corner sits; derive its center.
+    local cx, cy = px, py
+    if pt:find("LEFT") then cx = px + w / 2 elseif pt:find("RIGHT") then cx = px - w / 2 end
+    if pt:find("TOP") then cy = py - h / 2 elseif pt:find("BOTTOM") then cy = py + h / 2 end
+    return cx - w / 2, cx + w / 2, cy + h / 2, cy - h / 2
 end
 
 --- Re-apply and re-sync every frame anchored (directly or transitively) to
@@ -2469,6 +2563,18 @@ local TEST_CONTAINER_PARENTS = { partyFrames = true, raidFrames = true }
 
 CreateHandle = function(def)
     if def.isOwned and (not def.getSize or def.setupOverlay) then
+        -- Castbars always use proxy movers. Their frame position is owned by
+        -- PositionCastbarByAnchor, which can diverge from the frameAnchoring
+        -- entry (e.g. castbar.anchor="none" parks the frame at UIParent center
+        -- while a saved frameAnchoring override anchors it to its unit frame).
+        -- A child overlay would ride that divergent frame position; the proxy
+        -- path instead drives the handle from the frameAnchoring chain and
+        -- re-glues the frame to it — matching what the runtime anchoring
+        -- system does (it wins last at runtime, but is suspended in layout
+        -- mode). Without this the ToT castbar rendered at screen center.
+        if def.group == "Castbars" then
+            return CreateProxyMover(def)
+        end
         -- Only force proxy mover for elements anchored to parents that use
         -- test containers (party/raid). Other anchored elements (e.g. power
         -- bars anchored to cdmEssential) keep child overlays for accurate sizing.
@@ -2621,11 +2727,37 @@ SyncHandle = function(key)
                     -- would shift boss1 away from the intended anchor point.
                     handle:SetPoint("CENTER", UIParent, "CENTER", centerX, centerY)
                 else
-                    -- Parent handle not positioned yet, fall back to DB offsets
-                    local pt, relPt, ox, oy = LoadPosition(key)
-                    if pt then
+                    -- Parent handle exists but isn't positioned yet (e.g. the
+                    -- parent is itself a deferred proxy, or its frame is hidden
+                    -- — a castbar whose unit frame isn't shown). Resolve the
+                    -- parent rect via the frameAnchoring chain instead of
+                    -- dropping to screen center (the old DB-offset fallback put
+                    -- anchored proxies like totCastbar at CENTER 0,0).
+                    local rL, rR, rT, rB = GetAnchorRectInUIParent(anchorParent)
+                    if rL and rR and rT and rB then
+                        local px, py = (rL + rR) / 2, (rT + rB) / 2
+                        if ptTarget:find("LEFT") then px = rL
+                        elseif ptTarget:find("RIGHT") then px = rR end
+                        if ptTarget:find("TOP") then py = rT
+                        elseif ptTarget:find("BOTTOM") then py = rB end
+                        local cW, cH = handle:GetSize()
+                        local selfOffX, selfOffY = 0, 0
+                        if ptSelf:find("LEFT") then selfOffX = cW / 2
+                        elseif ptSelf:find("RIGHT") then selfOffX = -cW / 2 end
+                        if ptSelf:find("TOP") then selfOffY = -cH / 2
+                        elseif ptSelf:find("BOTTOM") then selfOffY = cH / 2 end
+                        local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
                         handle:ClearAllPoints()
-                        handle:SetPoint("CENTER", UIParent, "CENTER", (ox or 0), (oy or 0))
+                        handle:SetPoint("CENTER", UIParent, "CENTER",
+                            math.floor(px + dbOx + selfOffX - pw / 2 + 0.5),
+                            math.floor(py + dbOy + selfOffY - ph / 2 + 0.5))
+                    else
+                        -- Truly unresolvable: keep the last-resort DB offsets.
+                        local pt, relPt, ox, oy = LoadPosition(key)
+                        if pt then
+                            handle:ClearAllPoints()
+                            handle:SetPoint("CENTER", UIParent, "CENTER", (ox or 0), (oy or 0))
+                        end
                     end
                 end
             else

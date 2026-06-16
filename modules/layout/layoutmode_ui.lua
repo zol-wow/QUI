@@ -153,15 +153,9 @@ function QUI_LayoutMode_UI:Show()
         self._toolbar:Show()
     end
 
-    -- Auto-expand panel + drawer on layout mode entry
-    if self._expandToolbar then
-        self._expandToolbar()
-    end
-    C_Timer.After(0.2, function()
-        if self._drawer and not self._drawer:IsShown() then
-            self:ToggleFramesDrawer()
-        end
-    end)
+    -- Enter collapsed: leave the toolbar panel and frames drawer closed so
+    -- layout mode opens with minimal chrome. The user expands them via the
+    -- toolbar tab / chevron when needed. (Previously auto-expanded on entry.)
 
     if self._nudgeFrame then
         self._nudgeFrame:Show()

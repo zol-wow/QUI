@@ -1536,6 +1536,13 @@ local function ToggleSkyridingPreview(enable)
         if settings and settings.enabled then
             -- Re-apply live state
             RefreshSkyridingState()
+            -- Instant hide on Layout Mode exit: RefreshSkyridingState resolves
+            -- the live visibility but expresses a hide as a fade-to-0, which
+            -- leaves the bar lingering as it fades. Cancel the in-progress fade
+            -- and snap straight to the resolved alpha so it disappears at once.
+            -- Normal gameplay fades (mount/dismount) are unaffected.
+            fadeStart = 0
+            skyridingFrame:SetAlpha(fadeTargetAlpha)
         else
             skyridingFrame:Hide()
         end

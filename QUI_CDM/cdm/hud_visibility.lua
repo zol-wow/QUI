@@ -309,6 +309,27 @@ local function StartCDMFade(targetAlpha)
     CDMVisibility.fadeFrame:SetScript("OnUpdate", OnCDMFadeUpdate)
 end
 
+-- Jump any in-progress CDM fade straight to its resolved target alpha and stop
+-- the animation. Used on Layout Mode exit so the containers hide instantly
+-- instead of fading out (the fade reads as a 1-frame lag). Gameplay fades are
+-- untouched — only the instant refresh path below calls this.
+local function SnapCDMFadeToTarget()
+    local target = ReadNumber(CDMVisibility.fadeTargetAlpha, 1)
+    local frames = CDMVisibility.fadeTargets or GetCDMFrames()
+    for i = #frames, 1, -1 do
+        local frame = frames[i]
+        if frame and frame.SetAlpha and (not frame.IsForbidden or not frame:IsForbidden()) then
+            pcall(frame.SetAlpha, frame, target)
+        end
+    end
+    CDMVisibility.isFading = false
+    CDMVisibility.currentlyHidden = (target < 1)
+    CDMVisibility.fadeTargets = nil
+    if CDMVisibility.fadeFrame then
+        CDMVisibility.fadeFrame:SetScript("OnUpdate", nil)
+    end
+end
+
 -- Update CDM visibility
 UpdateCDMVisibility = function()
     if not IsCDMMasterEnabled() then
@@ -1621,6 +1642,14 @@ end)
 _G.QUI_RefreshCDMVisibility = function()
     _cdmFramesDirty = true
     UpdateCDMVisibility()
+end
+-- Instant variant: resolve visibility then snap past the fade. For Layout Mode
+-- exit, where a fade-out reads as the container lingering for a frame. Exported
+-- on ns (not _G) — only the CDM module's layout registration consumes it.
+ns.RefreshCDMVisibilityInstant = function()
+    _cdmFramesDirty = true
+    UpdateCDMVisibility()
+    SnapCDMFadeToTarget()
 end
 _G.QUI_RefreshCustomTrackersVisibility = UpdateCustomTrackersVisibility
 _G.QUI_RefreshUnitframesVisibility = UpdateUnitframesVisibility
