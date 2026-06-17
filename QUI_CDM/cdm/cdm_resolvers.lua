@@ -8,6 +8,15 @@ local _, ns = ...
 local Helpers = ns.Helpers
 local Shared = ns.CDMShared
 
+-- WoW provides `wipe`; the standalone test harness does not. Mirror the
+-- fallback used by cdm_icon_runtime_refresh.lua so the scratch-reuse helpers
+-- below work in both environments.
+local wipe = wipe or function(tbl)
+    for key in pairs(tbl) do
+        tbl[key] = nil
+    end
+end
+
 local CDMResolvers = {}
 ns.CDMResolvers = CDMResolvers
 local Scheduler = ns.CDMScheduler
@@ -398,6 +407,9 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "CDM_resolveBy_typeRefresh",        counter = true, fn = function() return rb.typeRefresh or 0 end }
     mp[#mp + 1] = { name = "CDM_resolveBy_runtimeTypeRefresh", counter = true, fn = function() return rb.runtimeTypeRefresh or 0 end }
     mp[#mp + 1] = { name = "CDM_resolveBy_iconPlaced",         counter = true, fn = function() return rb.iconPlaced or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_rangeUsable",         counter = true, fn = function() return rb.rangeUsable or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_rangeTarget",         counter = true, fn = function() return rb.rangeTarget or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_rangeCheck",          counter = true, fn = function() return rb.rangeCheck or 0 end }
     mp[#mp + 1] = { name = "CDM_auraProbeHit",            counter = true, fn = function() return resolverStats.auraProbeHit end }
     mp[#mp + 1] = { name = "CDM_auraProbeGuardSkip",      counter = true, fn = function() return resolverStats.auraProbeGuardSkip end }
     mp[#mp + 1] = { name = "CDM_auraProbeExpensiveMiss",  counter = true, fn = function() return resolverStats.auraProbeExpensiveMiss end }
@@ -936,6 +948,59 @@ function CDMResolvers.IsAuraEntry(entry)
     return vt == "buff" or vt == "trackedBar"
 end
 
+-- Reused scratch + hoisted helpers for ResolveAuraActiveState. The old inline
+-- versions allocated two tables AND up to four closures per call on the aura
+-- probe path; module-level scratch (wiped per call) plus module-level helpers
+-- removes all of that GC churn. The capture block (lookup/seen) is fully
+-- consumed before the query block runs, and GetCapturedAuraForLookup iterates
+-- the array synchronously without retaining it, so reuse is safe. Not
+-- re-entrant: no callee re-enters ResolveAuraActiveState.
+local _auraActiveLookupIDs = {}
+local _auraActiveSeenLookup = {}
+local _auraActiveQuerySeen = {}
+
+local function _AuraActiveAddLookup(id)
+    if not id or _auraActiveSeenLookup[id] then return end
+    _auraActiveSeenLookup[id] = true
+    _auraActiveLookupIDs[#_auraActiveLookupIDs + 1] = id
+end
+
+local function _AuraActiveAddMappedLookups(CDMSpellData, id)
+    if not (id and CDMSpellData.GetAuraIDsForSpell) then return end
+    local mappedIDs = CDMSpellData:GetAuraIDsForSpell(id)
+    if mappedIDs then
+        for _, auraID in ipairs(mappedIDs) do _AuraActiveAddLookup(auraID) end
+    end
+end
+
+local function _AuraActiveTryQuery(id)
+    if not id or _auraActiveQuerySeen[id] then return nil end
+    _auraActiveQuerySeen[id] = true
+    if Sources.QueryUnitAuraBySpellID then
+        local auraData = Sources.QueryUnitAuraBySpellID("player", id)
+        if auraData then return auraData end
+    end
+    if Sources.QueryPlayerAuraBySpellID then
+        local auraData = Sources.QueryPlayerAuraBySpellID(id)
+        if auraData then return auraData end
+    end
+    return nil
+end
+
+local function _AuraActiveTryMappedIDs(CDMSpellData, id)
+    if not id then return false end
+    local mappedIDs = CDMSpellData:GetAuraIDsForSpell(id)
+    if mappedIDs then
+        for _, auraID in ipairs(mappedIDs) do
+            local mappedAuraData = _AuraActiveTryQuery(auraID)
+            if mappedAuraData then
+                return true, "player", GetAuraDataInstanceID(mappedAuraData)
+            end
+        end
+    end
+    return false
+end
+
 function CDMResolvers.ResolveAuraActiveState(entry)
     if not entry then return false, nil, nil end
 
@@ -948,27 +1013,15 @@ function CDMResolvers.ResolveAuraActiveState(entry)
     -- differ from the configured cast/ability ID.
     local CDMSpellData = ns.CDMSpellData
     if CDMSpellData and CDMSpellData.GetCapturedAuraForLookup then
-        local lookupIDs = {}
-        local seenLookup = {}
-        local function addLookup(id)
-            if not id or seenLookup[id] then return end
-            seenLookup[id] = true
-            lookupIDs[#lookupIDs + 1] = id
-        end
-        local function addMappedLookups(id)
-            if not (id and CDMSpellData.GetAuraIDsForSpell) then return end
-            local mappedIDs = CDMSpellData:GetAuraIDsForSpell(id)
-            if mappedIDs then
-                for _, auraID in ipairs(mappedIDs) do addLookup(auraID) end
-            end
-        end
-        addLookup(sid)
-        addLookup(entry.spellID)
-        addLookup(entry.id)
-        addMappedLookups(sid)
-        addMappedLookups(entry.spellID)
-        addMappedLookups(entry.id)
-        local captured = CDMSpellData.GetCapturedAuraForLookup(lookupIDs, entry.name)
+        wipe(_auraActiveLookupIDs)
+        wipe(_auraActiveSeenLookup)
+        _AuraActiveAddLookup(sid)
+        _AuraActiveAddLookup(entry.spellID)
+        _AuraActiveAddLookup(entry.id)
+        _AuraActiveAddMappedLookups(CDMSpellData, sid)
+        _AuraActiveAddMappedLookups(CDMSpellData, entry.spellID)
+        _AuraActiveAddMappedLookups(CDMSpellData, entry.id)
+        local captured = CDMSpellData.GetCapturedAuraForLookup(_auraActiveLookupIDs, entry.name)
         local auraInstanceID = captured and captured.auraInstanceID
         if captured and HasOpaqueValue(auraInstanceID) then
             return true, captured.unit or "player", auraInstanceID
@@ -979,47 +1032,21 @@ function CDMResolvers.ResolveAuraActiveState(entry)
     -- enough to classify the aura as active; auraInstanceID is forwarded to
     -- downstream C-side consumers.
     if Sources and (Sources.QueryUnitAuraBySpellID or Sources.QueryPlayerAuraBySpellID) then
-        local seen = {}
-        local function tryQuery(id)
-            if not id or seen[id] then return nil end
-            seen[id] = true
-            if Sources.QueryUnitAuraBySpellID then
-                local auraData = Sources.QueryUnitAuraBySpellID("player", id)
-                if auraData then return auraData end
-            end
-            if Sources.QueryPlayerAuraBySpellID then
-                local auraData = Sources.QueryPlayerAuraBySpellID(id)
-                if auraData then return auraData end
-            end
-            return nil
-        end
+        wipe(_auraActiveQuerySeen)
 
-        local auraData = tryQuery(sid)
+        local auraData = _AuraActiveTryQuery(sid)
         if auraData then return true, "player", GetAuraDataInstanceID(auraData) end
-        auraData = tryQuery(entry.spellID)
+        auraData = _AuraActiveTryQuery(entry.spellID)
         if auraData then return true, "player", GetAuraDataInstanceID(auraData) end
-        auraData = tryQuery(entry.id)
+        auraData = _AuraActiveTryQuery(entry.id)
         if auraData then return true, "player", GetAuraDataInstanceID(auraData) end
 
         if CDMSpellData and CDMSpellData.GetAuraIDsForSpell then
-            local function tryMappedIDs(id)
-                if not id then return false end
-                local mappedIDs = CDMSpellData:GetAuraIDsForSpell(id)
-                if mappedIDs then
-                    for _, auraID in ipairs(mappedIDs) do
-                        local mappedAuraData = tryQuery(auraID)
-                        if mappedAuraData then
-                            return true, "player", GetAuraDataInstanceID(mappedAuraData)
-                        end
-                    end
-                end
-                return false
-            end
-            local active, unit, instID = tryMappedIDs(sid)
+            local active, unit, instID = _AuraActiveTryMappedIDs(CDMSpellData, sid)
             if active then return active, unit, instID end
-            active, unit, instID = tryMappedIDs(entry.spellID)
+            active, unit, instID = _AuraActiveTryMappedIDs(CDMSpellData, entry.spellID)
             if active then return active, unit, instID end
-            active, unit, instID = tryMappedIDs(entry.id)
+            active, unit, instID = _AuraActiveTryMappedIDs(CDMSpellData, entry.id)
             if active then return active, unit, instID end
         end
     end
@@ -1039,6 +1066,29 @@ end
 
 local PLAYER_AURA_CAPTURE_LOOKUP_UNITS = { "player", "pet" }
 
+-- Reused scratch + hoisted helpers for QueryCapturedPlayerAuraDuration; same
+-- rationale as the ResolveAuraActiveState scratch above (kills two tables +
+-- two closures per call). Distinct tables from the ResolveAuraActiveState
+-- scratch, so the two are safe even if both run within one resolve sequence.
+local _capturedDurLookupIDs = {}
+local _capturedDurSeen = {}
+
+local function _CapturedDurAddLookup(id)
+    if ResolverIsSecretValue(id) then return end
+    if id == nil then return end
+    local idType = type(id)
+    if idType ~= "number" and idType ~= "string" then return end
+    if _capturedDurSeen[id] then return end
+    _capturedDurSeen[id] = true
+    _capturedDurLookupIDs[#_capturedDurLookupIDs + 1] = id
+end
+
+local function _CapturedDurAddCooldownAuraLookup(id)
+    if ResolverIsSecretValue(id) or id == nil then return end
+    if not (Sources and Sources.QueryCooldownAuraBySpellID) then return end
+    _CapturedDurAddLookup(Sources.QueryCooldownAuraBySpellID(id))
+end
+
 local function QueryCapturedPlayerAuraDuration(spellID, name)
     if not InCombatLockdown()
        or not (Sources and Sources.QueryAuraDuration) then
@@ -1050,36 +1100,22 @@ local function QueryCapturedPlayerAuraDuration(spellID, name)
         return nil
     end
 
-    local lookupIDs = {}
-    local seen = {}
-    local function addLookup(id)
-        if ResolverIsSecretValue(id) then return end
-        if id == nil then return end
-        local idType = type(id)
-        if idType ~= "number" and idType ~= "string" then return end
-        if seen[id] then return end
-        seen[id] = true
-        lookupIDs[#lookupIDs + 1] = id
-    end
-    local function addCooldownAuraLookup(id)
-        if ResolverIsSecretValue(id) or id == nil then return end
-        if not (Sources and Sources.QueryCooldownAuraBySpellID) then return end
-        addLookup(Sources.QueryCooldownAuraBySpellID(id))
-    end
+    wipe(_capturedDurLookupIDs)
+    wipe(_capturedDurSeen)
 
     if CDMSpellData.GetAuraIDsForSpell and spellID then
         local catalogIDs = CDMSpellData:GetAuraIDsForSpell(spellID)
         if catalogIDs then
             for _, auraID in ipairs(catalogIDs) do
-                addLookup(auraID)
+                _CapturedDurAddLookup(auraID)
             end
         end
     end
-    addCooldownAuraLookup(spellID)
-    addLookup(spellID)
+    _CapturedDurAddCooldownAuraLookup(spellID)
+    _CapturedDurAddLookup(spellID)
 
     local captured = CDMSpellData.GetCapturedAuraForLookup(
-        lookupIDs, name, PLAYER_AURA_CAPTURE_LOOKUP_UNITS, false)
+        _capturedDurLookupIDs, name, PLAYER_AURA_CAPTURE_LOOKUP_UNITS, false)
     local auraInstanceID = captured and captured.auraInstanceID
     if not HasOpaqueValue(auraInstanceID) then
         return nil
@@ -2368,8 +2404,21 @@ local function BuildDurationObjectFromStart(startTime, duration)
     return nil
 end
 
-local function BuildItemDurationSourceID(keySource)
-    return "item-duration:" .. tostring(keySource)
+-- keySource is stable per entry (item/slot identity), so the derived
+-- "item-duration:<key>" string is invariant across ticks. Rebuilding it every
+-- resolve was pure GC churn on the hot item path; cache it on the icon and
+-- only re-concat when the key actually changes.
+local function BuildItemDurationSourceID(icon, keySource)
+    if not icon then
+        return "item-duration:" .. tostring(keySource)
+    end
+    if icon._itemDurSourceKey == keySource and icon._itemDurSourceID then
+        return icon._itemDurSourceID
+    end
+    local sourceID = "item-duration:" .. tostring(keySource)
+    icon._itemDurSourceKey = keySource
+    icon._itemDurSourceID = sourceID
+    return sourceID
 end
 
 local function GetIconItemDurationObject(icon, sourceID, startTime, duration)
@@ -2404,7 +2453,7 @@ local function GetIconItemDurationObject(icon, sourceID, startTime, duration)
 end
 
 local function BuildIconItemDurationObject(icon, keySource, startTime, duration)
-    local sourceID = BuildItemDurationSourceID(keySource)
+    local sourceID = BuildItemDurationSourceID(icon, keySource)
     local durObj = GetIconItemDurationObject(icon, sourceID, startTime, duration)
     if durObj then
         return durObj, sourceID

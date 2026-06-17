@@ -1420,6 +1420,21 @@ local function IsTargetAuraViewerCategory(cdID, stateOrCategory)
     return info and info.selfAura == false
 end
 
+-- Public: true ONLY when the cooldownID/category is a buff/trackedBar aura
+-- viewer whose registered info.selfAura is DEFINITIVELY true (a player self
+-- aura). Returns false for target auras (selfAura == false), non-aura viewers,
+-- and unknown/unregistered selfAura. Callers that SKIP work on a true result
+-- (e.g. the target-change aura pass) must treat false as "cannot prove self"
+-- and re-resolve -- never skip on uncertainty.
+function CDMBlizzMirror.IsSelfAuraViewerCategory(cdID, stateOrCategory)
+    local cat = type(stateOrCategory) == "table"
+        and stateOrCategory.viewerCategory
+        or stateOrCategory
+    if not IsAuraViewerCategory(cdID, cat) then return false end
+    local info = GetInstanceInfo(cdID, cat)
+    return info ~= nil and info.selfAura == true
+end
+
 local function AddDurationSpellCandidate(candidates, seen, spellID)
     if not spellID then return end
     if type(spellID) ~= "number" or spellID <= 0 then return end

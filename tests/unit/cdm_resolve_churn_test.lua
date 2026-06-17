@@ -135,6 +135,9 @@ local expectedProbes = {
     "CDM_resolveBy_typeRefresh",
     "CDM_resolveBy_runtimeTypeRefresh",
     "CDM_resolveBy_iconPlaced",
+    "CDM_resolveBy_rangeUsable",
+    "CDM_resolveBy_rangeTarget",
+    "CDM_resolveBy_rangeCheck",
     "CDM_auraProbeHit",
     "CDM_auraProbeGuardSkip",
     "CDM_auraProbeExpensiveMiss",
@@ -221,6 +224,23 @@ assert(probeValue("CDM_resolveBy_other") == beforeOther2 + 1,
     "after SetResolveCallerTag(nil) the next resolve should count as other")
 assert(probeValue("CDM_resolveBy_catalog") == beforeCatalog,
     "catalog counter must NOT change: tag was reset to nil before the resolve")
+
+---------------------------------------------------------------------------
+-- Test 4b: range/usability visual-policy tags (rangeUsable/rangeTarget/rangeCheck)
+-- account separately and do NOT fall into other.
+---------------------------------------------------------------------------
+for _, tag in ipairs({ "rangeUsable", "rangeTarget", "rangeCheck" }) do
+    local probeName = "CDM_resolveBy_" .. tag
+    local before = probeValue(probeName)
+    local beforeOtherRange = probeValue("CDM_resolveBy_other")
+    setTag(tag)
+    doResolve(70002)
+    setTag(nil)
+    assert(probeValue(probeName) == before + 1,
+        probeName .. " should increment on a " .. tag .. "-tagged resolve")
+    assert(probeValue("CDM_resolveBy_other") == beforeOtherRange,
+        "other must NOT increment for a " .. tag .. "-tagged resolve")
+end
 
 ---------------------------------------------------------------------------
 -- Test 5: aura probe — expensiveMiss path.

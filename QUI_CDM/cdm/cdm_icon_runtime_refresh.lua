@@ -329,6 +329,14 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     function controller:ApplyAuraScope(options)
         options = options or {}
         local includeItems = options.includeItems == true
+        -- Target-change pass: skip icons we can PROVE are player self-auras
+        -- (mirror selfAura == true) -- a target swap can't change them. Anything
+        -- not provably self (non-mirror aura icons, unknown selfAura) falls
+        -- through and re-resolves, so no target aura is ever dropped. See the
+        -- Blizzard CooldownViewer TODO this mirrors (RefreshActiveFramesForTargetChange).
+        local skipSelfAuraFn = options.skipSelfAuraIcons == true
+            and callbacks.isDefinitivelySelfAuraIcon
+            or nil
         local editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "auraScope")
         local refreshed = 0
         setResolveCallerTag("auraScope")
@@ -338,7 +346,8 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 if entry
                     and (isAuraEntry(callbacks, entry)
                         or icon._auraActive == true
-                        or (includeItems and isItemEntry(entry))) then
+                        or (includeItems and isItemEntry(entry)))
+                    and not (skipSelfAuraFn and skipSelfAuraFn(icon)) then
                     clearAuraDurationBinding(callbacks, icon)
                     if controller:ApplyAuraScopedResolvedCooldown(icon, entry, editMode, ncdm, ncdmContainers, inCombatState) then
                         if includeItems and isItemEntry(entry) then
@@ -765,7 +774,12 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     function controller:RunUsabilityRefresh()
         controller:ApplyUsabilityRefresh()
         if callbacks.updateIconRangesForUsabilityEvent then
+            -- The range/usability visual policy resolves cooldown activity state per icon
+            -- (visual-priority + usable-tint) with no tag of its own; scope it here so the
+            -- churn lands in rangeUsable instead of the untagged "other" bucket.
+            setResolveCallerTag("rangeUsable")
             callbacks.updateIconRangesForUsabilityEvent()
+            setResolveCallerTag(nil)
         end
     end
 
@@ -1026,13 +1040,20 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             callbacks.chargeDebug(nil, "EVENT", event, "target-scope-refresh")
         end
         if callbacks.updateAllIconRanges then
+            setResolveCallerTag("rangeTarget")
             callbacks.updateAllIconRanges()
+            setResolveCallerTag(nil)
         end
-        local refreshed = controller:ApplyAuraScope()
-        if refreshed > 0 then
-            if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
-            if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
-        end
+        -- No ApplyAuraScope here -- for EITHER soft-enemy or hard-target change.
+        -- A soft-enemy reticle change cannot alter the player's auras. A
+        -- hard-target change's aura side is ALREADY handled by cdm_spelldata's
+        -- PLAYER_TARGET_CHANGED handler: ReleaseCapturedAurasForUnit("target")
+        -- + NotifyAuraConsumers("target", nil) -> HandleAuraRefresh("target",
+        -- nil) -> a full ApplyAuraScope. Re-resolving the aura scope HERE too
+        -- was a redundant SECOND full aura walk per target change -- and
+        -- tab-targeting on trash fires PLAYER_TARGET_CHANGED constantly, so the
+        -- two full walks compounded into the auraScope/FR_CDM_Icons churn.
+        -- ApplyTargetScope's unique job is the range walk above + usability.
         controller:QueueUsabilityRefresh()
     end
 
@@ -1052,7 +1073,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
         if not updateInfo or updateInfo.isFullUpdate then
             if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
-            controller:ApplyAuraScope({ includeItems = unit == "player" })
+            controller:ApplyAuraScope({ includeItems = unit == "player", skipSelfAuraIcons = unit == "target" })
             if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
         else
             local refreshed = controller:ApplyAuraInstances(unit, updateInfo) or 0
@@ -1121,7 +1142,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
         if event == "SPELL_RANGE_CHECK_UPDATE" then
             if callbacks.updateIconsForSpellRangeEvent then
+                setResolveCallerTag("rangeCheck")
                 callbacks.updateIconsForSpellRangeEvent(arg1, arg2, arg3)
+                setResolveCallerTag(nil)
             end
             return
         end
