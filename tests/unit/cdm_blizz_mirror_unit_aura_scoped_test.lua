@@ -131,7 +131,8 @@ assert(registeredUnitEvents.UNIT_AURA ~= true,
     "mirror consumes UNIT_AURA via cdm_spelldata, never registers its own")
 
 ns.CDMBlizzMirror.ForceRescan()
-assert(auraChildA._quiMirrorBound and auraChildB._quiMirrorBound,
+local childHooksBound = ns.CDMBlizzMirror._childHooksBound
+assert(childHooksBound[auraChildA] and childHooksBound[auraChildB],
     "both aura children should bind on rescan")
 
 local H = ns.CDMBlizzMirror.HandleUnitAuraChanged
