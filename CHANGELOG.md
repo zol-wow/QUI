@@ -8,6 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v4.0.2 - 2026-06-18
+
+### Added
+- added Omnium Folio datatext + mission button drawer option
+- added resourcebars segment-divider (tick) settings in UI
+- added per-bar border color for primary/secondary power bars
+- added chat-specific font settings
+- added icon skins & glow providers (external skin-library support + proc-glow customization)
+
+### Fixed
+- perf(cdm): cut in-combat resolve churn, park idle ticker, skip full resolve on text-only mirror refreshes
+- fix(anchoring): pin protected-target frames to UIParent for combat-safe resize
+- fix(cdm): fix proc-override icon recharge/glow/stack flicker
+- fix(cdm): keep proc-overridden cooldown from going dormant
+- fix(cdm): wire glow/effects settings to the composer live preview
+- fix(groupframes): abbreviate secret health in absolute/both styles
+- fix(gamemenu): unskinned QUI buttons use stock Blizzard look
+- fix(gamemenu): inject QUI buttons when skinning disabled
+- fix(resourcebars): scope segment dividers to secondary + preview parity
+- fix(skinning): stop Blizzard tab/button art + font reverting over QUI skin
+- fix(skinning): stop Group Finder text reverting to Blizzard font
 ## v4.0.1 - 2026-06-16
 
 ### Fixed
