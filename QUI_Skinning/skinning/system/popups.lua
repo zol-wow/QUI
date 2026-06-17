@@ -216,7 +216,10 @@ local function StyleButton(button, prefix)
     })
     SkinBase.SetFrameData(button, "systemPopupBorder", { sr, sg, sb, sa })
 
-    StyleFontString(button.GetFontString and button:GetFontString(), FONT_SIZE, 0.9, 0.9, 0.9, 1)
+    -- Drive the button's font OBJECTS so the QUI font face survives hover
+    -- (StaticPopupButtonTemplate HighlightFont) and disable (DisabledFont);
+    -- RefreshButtonState owns the text COLOR per enable/disable/hover state.
+    SkinBase.ApplyButtonFontObjects(button, { size = FONT_SIZE })
 
     if not SkinBase.GetFrameData(button, "systemPopupHooks") then
         SkinBase.SetFrameData(button, "systemPopupHooks", true)

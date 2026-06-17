@@ -979,10 +979,13 @@ local function UpdateHealth(frame)
                 local pct = GetHealthPct(unit)
                 ok = pcall(frame.healthText.SetFormattedText, frame.healthText, pctFmt, pct)
             elseif style == "absolute" then
+                -- AbbreviateNumbers is SecretArguments="AllowedWhenTainted": it takes
+                -- a secret OR plain value and returns a string. Forward that result
+                -- straight into SetText (also AllowedWhenTainted) and never compare it
+                -- in Lua. No secret gating — this is what the reference unit frames do;
+                -- the old IsSecretValue gate fell back to a raw, unabbreviated number.
                 local hp = UnitHealth(unit, true)
-                if IsSecretValue(hp) then
-                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, "%s", hp)
-                elseif abbr then
+                if abbr then
                     ok = pcall(frame.healthText.SetText, frame.healthText, abbr(hp))
                 else
                     ok = pcall(frame.healthText.SetFormattedText, frame.healthText, "%s", hp)
@@ -991,9 +994,7 @@ local function UpdateHealth(frame)
                 local hp = UnitHealth(unit, true)
                 local pct = GetHealthPct(unit)
                 local bothFmt = healthSettings.hideHealthPercentSymbol and "%s | %.0f" or "%s | %.0f%%"
-                if IsSecretValue(hp) then
-                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, hp, pct)
-                elseif abbr then
+                if abbr then
                     ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, abbr(hp), pct)
                 else
                     ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, hp, pct)

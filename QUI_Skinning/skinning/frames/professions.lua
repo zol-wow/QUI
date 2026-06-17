@@ -35,6 +35,15 @@ local function StyleScrollBoxRow(row)
     SkinBase.SkinScrollRow(row)
     SkinBase.SkinFrameText(row, { recurse = true })
 
+    -- Category header rows revert the QUI font on hover: ProfessionsRecipe
+    -- ListCategoryMixin:OnEnter/OnLeave SetFontObject(GameFontHighlight/Normal_
+    -- NoShadow) on row.Label. Lock it so the QUI font is re-asserted after each
+    -- swap. (Recipe rows recolor via SetVertexColor, not SetFontObject, so the
+    -- hook never fires for them — safe to apply to every row's Label.)
+    if row.Label then
+        SkinBase.LockFontObject(row.Label, { fontOnly = true })
+    end
+
     -- Inset backdrop past the skill-up icon area on recipe rows
     if row.SkillUps then
         local bd = SkinBase.GetBackdrop(row)

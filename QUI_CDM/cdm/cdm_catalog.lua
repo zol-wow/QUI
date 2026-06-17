@@ -240,6 +240,46 @@ local function SelectPreferredSpellID(info, isAuraCategory)
     return nil
 end
 
+-- Persistent (catalog/entry) identity spell id for a cooldown slot.
+--
+-- SelectPreferredSpellID is display-oriented: it prefers the live
+-- info.overrideSpellID so the icon shows the current override art. That id is
+-- wrong for *identity* when the override is a TRANSIENT PROC override — e.g.
+-- Hammer of Light (427453) overriding Wake of Ashes (255647) on a Light's
+-- Guidance proc. The base ability stays independently learned while the proc
+-- is live, so keying identity off the override makes the base drop out of the
+-- learned-cooldown set every proc (the live icon goes dormant / disappears)
+-- and surfaces the proc spell as an "unlearned" phantom entry in the composer.
+--
+-- A PERMANENT TALENT override is the opposite: it converts the base away, so
+-- the base is no longer IsSpellKnown and the override id is the correct
+-- surviving identity (the Death Charge / Augmentation conversion cases the
+-- learned-preferred set exists to handle).
+--
+-- Discriminate on whether the base spellID is still independently known. Only
+-- meaningful for cooldown categories; aura categories keep SelectPreferredSpellID.
+local function SelectPersistentSpellID(info)
+    if not info then return nil end
+    local baseSid = info.spellID
+    if CDMCatalog.IsUsableID(baseSid) then
+        local Sources = GetSources()
+        local baseKnown = Sources and Sources.QueryIsSpellKnownOrPlayerSpell
+            and Sources.QueryIsSpellKnownOrPlayerSpell(baseSid)
+        if baseKnown then
+            return baseSid
+        end
+    end
+    -- Base not independently known (talent conversion) -> the override id is
+    -- the surviving identity.
+    if CDMCatalog.IsUsableID(info.overrideSpellID) then
+        return info.overrideSpellID
+    end
+    if CDMCatalog.IsUsableID(baseSid) then
+        return baseSid
+    end
+    return nil
+end
+
 local function ResolveContainerCategories(containerKey, containerType)
     if containerType == "cooldown" then
         return COOLDOWN_CATEGORIES
@@ -272,7 +312,8 @@ function CDMCatalog.SeedFromBlizzard(containerKind)
         if not info then
             missingInfo = true
         else
-            local sid = SelectPreferredSpellID(info, isAuraCategory)
+            local sid = isAuraCategory and SelectPreferredSpellID(info, true)
+                or SelectPersistentSpellID(info)
             if sid and not seen[sid] then
                 seen[sid] = true
                 entries[#entries + 1] = {
@@ -427,7 +468,10 @@ function CDMCatalog.RebuildCooldownLearnedPreferredIDs(outSet)
             for _, cdID in ipairs(ids) do
                 local info = CDMCatalog.GetCooldownInfo(cdID)
                 if info then
-                    local sid = SelectPreferredSpellID(info, false)
+                    -- Persistent identity (not the live display override): a
+                    -- proc override must not evict its still-learned base from
+                    -- the learned set (else the base icon goes dormant on proc).
+                    local sid = SelectPersistentSpellID(info)
                     if CDMCatalog.IsUsableID(sid) then
                         outSet[sid] = true
                     end
@@ -459,7 +503,8 @@ function CDMCatalog.GetAvailableSpellsForContainer(containerKey, containerType, 
                 if cdInfo then
                     local sid = correctionMap[cdID]
                     if not sid then
-                        sid = SelectPreferredSpellID(cdInfo, isAuraContainer)
+                        sid = isAuraContainer and SelectPreferredSpellID(cdInfo, true)
+                            or SelectPersistentSpellID(cdInfo)
                     end
 
                     if sid and not seen[sid] then

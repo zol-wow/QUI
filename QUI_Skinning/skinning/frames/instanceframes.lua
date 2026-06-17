@@ -12,6 +12,33 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
+-- Recursively re-lock the QUI font on a frame's fontstrings. Unlike the
+-- one-shot SkinFrameText, this hooks each fontstring's SetFontObject (and a
+-- button's SetNormalFontObject) via SkinBase.LockFontObject, so Blizzard's
+-- hover / selection / list re-bind font-object swaps don't revert our font.
+-- Idempotent per object (LockFontObject guards with its own qFontLocked flag),
+-- so it is safe to call repeatedly on pooled rows and on re-skins.
+local function LockFrameTextObjects(frame, maxDepth)
+    if not frame then return end
+    maxDepth = maxDepth or 4
+    if frame.GetObjectType and frame:GetObjectType() == "Button" and frame.SetNormalFontObject then
+        SkinBase.LockFontObject(frame, { fontOnly = true })
+    end
+    if frame.GetRegions then
+        for i = 1, select("#", frame:GetRegions()) do
+            local region = select(i, frame:GetRegions())
+            if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                SkinBase.LockFontObject(region, { fontOnly = true })
+            end
+        end
+    end
+    if maxDepth > 0 and frame.GetChildren then
+        for i = 1, select("#", frame:GetChildren()) do
+            LockFrameTextObjects(select(i, frame:GetChildren()), maxDepth - 1)
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- INSTANCE FRAMES SKINNING (PVE, Dungeons & Raids, PVP, M+ Dungeons)
 ---------------------------------------------------------------------------
@@ -355,6 +382,16 @@ local function SkinLFDFrame()
         SkinBase.SkinDropdown(typeDropdown, { keepArrow = true, insetY = 2 })
     end
 
+    -- Specific-dungeon selection list: pooled ScrollBox rows get their font
+    -- OBJECT swapped on hover/selection/re-bind, reverting the one-shot
+    -- SkinFrameText below. Re-lock the QUI font as each row is acquired.
+    local specificList = LFDQueueFrame.Specific
+    if specificList and specificList.ScrollBox then
+        SkinBase.HookScrollBoxAcquired(specificList.ScrollBox, function(row)
+            LockFrameTextObjects(row, 2)
+        end)
+    end
+
     SkinBase.SkinFrameText(LFDQueueFrame, { recurse = true })
     SkinBase.MarkSkinned(LFDQueueFrame)
 end
@@ -401,6 +438,11 @@ local function SkinRaidFinderFrame()
         selectionDropdown:SetWidth(200)
         SkinBase.SkinDropdown(selectionDropdown, { keepArrow = true, insetY = 2 })
     end
+
+    -- Raid Finder uses a dropdown (no row list), but its queue-frame labels and
+    -- reward fontstrings get their font OBJECT re-asserted on LFG/role updates,
+    -- reverting the one-shot SkinFrameText. Lock the font objects so they stick.
+    LockFrameTextObjects(RaidFinderQueueFrame, 4)
 
     SkinBase.SkinFrameText(RaidFinderQueueFrame, { recurse = true })
     SkinBase.MarkSkinned(RaidFinderQueueFrame)
@@ -514,6 +556,14 @@ local function SkinLFGListFrame()
         if sp.FilterButton then
             SkinBase.SkinButton(sp.FilterButton)
         end
+        -- Search-result rows are pooled ScrollBox buttons whose font OBJECT is
+        -- swapped on hover/selection/re-bind, reverting the one-shot
+        -- SkinFrameText. Re-lock the QUI font as each row is acquired.
+        if sp.ScrollBox then
+            SkinBase.HookScrollBoxAcquired(sp.ScrollBox, function(row)
+                LockFrameTextObjects(row, 2)
+            end)
+        end
     end
 
     -- Style application viewer
@@ -586,6 +636,11 @@ local function StyleDungeonIcon(icon, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SetFrameData(icon.Icon, "backdrop", iconBackdrop)
         end
     end
+
+    -- Lock the QUI font on the tile's level text: Blizzard's SetUp re-asserts
+    -- the font OBJECT on HighestLevel when the tile re-binds, reverting the
+    -- one-shot SkinFrameText. LockFontObject hooks the swap; idempotent.
+    LockFrameTextObjects(icon, 1)
 
     -- Store colors
     SkinBase.SetFrameData(icon, "skinColor", { sr, sg, sb, sa })

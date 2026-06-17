@@ -58,12 +58,11 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local pushed = button:GetPushedTexture()
     if pushed then pushed:SetAlpha(0) end
 
-    -- Style button text
-    local text = button:GetFontString()
-    if text then
-        CJKFont(text, STANDARD_TEXT_FONT, 12, FONT_FLAGS)
-        text:SetTextColor(unpack(COLORS.text))
-    end
+    -- Style button text via the button's font OBJECTS so the QUI font survives
+    -- hover (HighlightFont) and disable (DisabledFont) — StartButton is
+    -- :Disable()d until a keystone is slotted, which would clobber a plain
+    -- SetFont with Blizzard's font object.
+    SkinBase.ApplyButtonFontObjects(button, { size = 12, color = COLORS.text, disabledColor = COLORS.textMuted })
 
     -- Store skin color for hover effects
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })

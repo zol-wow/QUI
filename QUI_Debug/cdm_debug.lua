@@ -940,6 +940,35 @@ function CDMIcons.EventTracePrintWrite(label, icon, value, extra)
         extra and (" " .. extra) or ""))
 end
 
+---------------------------------------------------------------------------
+-- SOURCE-CAUSE PROBE (event-trace)
+-- EventTracePrintWrite logs the icon WRITES (the symptom: StackText churn,
+-- desat thrash). EventTracePrintSource logs the CAUSE: which refresh / glow /
+-- overlay path fired, with its reason. Same _eventTraceSpellID gate, same
+-- per-channel throttle so a refresh storm collapses to one line + throttled=N
+-- instead of flooding. Pass rawAlways=true for discrete events (glow
+-- start/stop) where every occurrence is signal -- a repeated start/stop pair
+-- IS the multi-flash we are hunting.
+---------------------------------------------------------------------------
+function CDMIcons.EventTracePrintSource(channel, sid, msg, rawAlways)
+    if not CDMIcons._eventTraceSpellID then return end
+    local now = GetTime and GetTime() or 0
+    local throttleNote
+    if not rawAlways then
+        local shouldPrint
+        shouldPrint, throttleNote = EventTraceThrottle("src:" .. channel, now)
+        if not shouldPrint then return end
+    end
+    local start = CDMIcons._eventTraceStartedAt or now
+    print(string.format(
+        "|cff60a5fa[cdmsrc]|r +%.3f sid=%s %s=%s%s",
+        now - start,
+        tostring(sid or "?"),
+        channel,
+        msg,
+        throttleNote and (" " .. throttleNote) or ""))
+end
+
 local function InstallIconWriteProbe(icon)
     if not icon or icon._cdmevents_probed then return end
     icon._cdmevents_probed = true
@@ -1126,6 +1155,140 @@ function CDMIcons.EventTraceMaybeProbeIcon(icon)
     if CDMIcons.EventTraceIconMatches(icon, targetID) then
         InstallIconWriteProbe(icon)
     end
+end
+
+---------------------------------------------------------------------------
+-- SOURCE-CAUSE PROBES
+-- Hook the real method/library entry points (not the per-icon writes) so a
+-- single proc trace shows WHERE a refresh or glow originates. Installed once,
+-- lazily, from the events command (runtime modules + LibCustomGlow are loaded
+-- by then). Like the write probes these hooks are permanent (hooksecurefunc
+-- has no inverse) and self-gate on _eventTraceSpellID, so `/cdmdebug spell off`
+-- silences them.
+---------------------------------------------------------------------------
+local _sourceProbesInstalled = false
+function CDMIcons.EventTraceInstallSourceProbes()
+    if _sourceProbesInstalled then return false end
+
+    -- (1) Mirror text-refresh entry. Distinguishes the broad cooldownID==nil
+    -- fallback (a global re-render) from targeted per-cooldown refreshes. A
+    -- burst of targeted refreshes across many cooldownIDs at proc start is the
+    -- "other abilities' stacks/charges flicker"; reason= shows the driver
+    -- (overlay / uses / related-aura / charge-field-bind ...). Called as a
+    -- method, so the hook receives (self, cooldownID, category, reason).
+    if CDMIcons.RequestMirrorTextRefresh then
+        hooksecurefunc(CDMIcons, "RequestMirrorTextRefresh", function(_, cooldownID, category, reason)
+            if not CDMIcons._eventTraceSpellID then return end
+            if cooldownID == nil then
+                CDMIcons.EventTracePrintSource("mrefresh-broad", CDMIcons._eventTraceSpellID,
+                    string.format("cat=%s reason=%s", tostring(category), tostring(reason)))
+            else
+                CDMIcons.EventTracePrintSource("mrefresh", CDMIcons._eventTraceSpellID,
+                    string.format("cd=%s cat=%s reason=%s",
+                        tostring(cooldownID), tostring(category), tostring(reason)))
+            end
+        end)
+    end
+
+    -- (2) Full icon recompute -- hypothesis: a broad UpdateAllCooldowns around
+    -- the proc dragging every icon's text/swipe.
+    if CDMIcons.UpdateAllCooldowns then
+        hooksecurefunc(CDMIcons, "UpdateAllCooldowns", function()
+            CDMIcons.EventTracePrintSource("updateAll", CDMIcons._eventTraceSpellID or "?",
+                "UpdateAllCooldowns")
+        end)
+    end
+
+    -- (3) LibCustomGlow start/stop -- ground truth for the visible flash, gated
+    -- to the traced icon. rawAlways=true so each discrete call prints: a
+    -- repeated stop->start pair IS the multi-flash. All glow types hooked so
+    -- whichever is configured (Button / Pixel / Proc / AutoCast) is caught.
+    local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
+    if LCG then
+        -- Compact the immediate QUI caller chain from debugstack so each glow
+        -- call names the function path that drove it (e.g. which scan/applier).
+        -- debugstack level 2 = the code that called LCG.<name> (hooksecurefunc
+        -- posthook runs on the caller's stack); grab a few frames above it.
+        local function GlowCallerChain()
+            if not debugstack then return "?" end
+            local s = debugstack(2, 6, 0) or ""
+            local frames = {}
+            for path, line in s:gmatch("([%w_]+%.lua):(%d+)") do
+                frames[#frames + 1] = path .. ":" .. line
+                if #frames >= 5 then break end
+            end
+            return #frames > 0 and table.concat(frames, "<-") or "?"
+        end
+        -- Which icon flashes: essential (override path) vs buff (aura path) was
+        -- ambiguous from timestamps alone.
+        local function GlowIconTag(button)
+            local entry = button and button._spellEntry
+            if not entry then return "noentry" end
+            return string.format("cat=%s eid=%s eov=%s",
+                tostring(entry.viewerType),
+                tostring(entry.spellID or entry.id),
+                tostring(entry.overrideSpellID))
+        end
+        local function HookGlow(name)
+            if type(LCG[name]) ~= "function" then return end
+            hooksecurefunc(LCG, name, function(button)
+                local targetID = CDMIcons._eventTraceSpellID
+                if not targetID or not button then return end
+                if not CDMIcons.EventTraceIconMatches(button, targetID) then return end
+                local tracked = ns._OwnedGlows and ns._OwnedGlows.GetGlowState
+                    and ns._OwnedGlows.GetGlowState(button) ~= nil
+                CDMIcons.EventTracePrintSource("glow", targetID,
+                    name .. " tracked=" .. tostring(tracked)
+                        .. " " .. GlowIconTag(button)
+                        .. " via " .. GlowCallerChain(), true)
+            end)
+        end
+        HookGlow("ButtonGlow_Start"); HookGlow("ButtonGlow_Stop")
+        HookGlow("PixelGlow_Start");  HookGlow("PixelGlow_Stop")
+        HookGlow("ProcGlow_Start");   HookGlow("ProcGlow_Stop")
+        HookGlow("AutoCastGlow_Start"); HookGlow("AutoCastGlow_Stop")
+    end
+
+    -- (4) Overlay-driven mirror refresh path + its next-frame C_Timer.After(0)
+    -- retry. Both are called in CDMBlizzMirror.* table form from the event
+    -- handler, so the table hook catches them -- shows whether the overlay
+    -- handler (or its retry) is re-entering the refresh during the flash.
+    local mirror = ns.CDMBlizzMirror
+    if mirror then
+        local function HookMirror(name)
+            if type(mirror[name]) ~= "function" then return end
+            hooksecurefunc(mirror, name, function(arg1)
+                if not CDMIcons._eventTraceSpellID then return end
+                CDMIcons.EventTracePrintSource("overlay", CDMIcons._eventTraceSpellID,
+                    name .. "(" .. tostring(arg1) .. ")")
+            end)
+        end
+        HookMirror("_RunOverlayTargetedRefresh")
+        HookMirror("_ScheduleOverlayTargetedRefresh")
+    end
+
+    -- (5) Glow-driving events. SPELL_ACTIVATION_OVERLAY_GLOW_SHOW/HIDE fire on
+    -- the effects module's own (unexposed) frame, so they are absent from the
+    -- resolver trace timeline -- a glow start/stop could not be correlated to
+    -- its trigger. WoW delivers each event to every registered frame, so an
+    -- independent listener here observes the same SHOW/HIDE without touching
+    -- the runtime: a stop->start pair bracketed by a HIDE then SHOW of the same
+    -- override spell is the multi-flash cause we are testing for.
+    local evFrame = CreateFrame and CreateFrame("Frame")
+    if evFrame and evFrame.RegisterEvent and evFrame.SetScript then
+        evFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+        evFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+        evFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_SHOW")
+        evFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_HIDE")
+        evFrame:SetScript("OnEvent", function(_, event, spellID)
+            if not CDMIcons._eventTraceSpellID then return end
+            CDMIcons.EventTracePrintSource("glow-event", CDMIcons._eventTraceSpellID,
+                event .. " spell=" .. tostring(spellID), true)
+        end)
+    end
+
+    _sourceProbesInstalled = true
+    return true
 end
 
 ---------------------------------------------------------------------------
@@ -1489,6 +1652,10 @@ local function RunCDMDebugEvents(msg, interval)
         "|cff34d399[cdmwrites]|r write-probe installed on %d icon(s)%s. Hooks are permanent (gated by trace state); rerun if icons are recycled.",
         installed,
         raInstalled and " + rotation assistant" or ""))
+
+    local newSourceProbes = CDMIcons.EventTraceInstallSourceProbes()
+    print("|cff34d399[cdmsrc]|r cause probes " .. (newSourceProbes and "installed" or "active")
+        .. " (mrefresh / glow / overlay / updateAll). For raw flash timing use: /cdmdebug spell <name> events 0")
 end
 
 -- Log every isActive/isOnGCD transition that ApplyResolvedCooldown sees for

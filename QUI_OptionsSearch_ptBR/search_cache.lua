@@ -58461,6 +58461,26 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "Cor da Borda",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "Recurso primário",
+            ["tabName"] = "Barras de recurso",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.powerBar",
+                ["featureId"] = "primaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
             ["description"] = "Cor do plano de fundo desenhada atrás do preenchimento.",
             ["featureId"] = "primaryPower",
             ["label"] = "Cor de Fundo",
@@ -58636,6 +58656,44 @@ ns.QUI_SearchCache = {
                 ["step"] = 1,
             },
             ["widgetType"] = "slider",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "Fonte da Cor da Borda",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "Recurso primário",
+            ["tabName"] = "Barras de recurso",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.powerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "primaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "Herdar (global)",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "Destaque do tema",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "cor da classe",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "Personalizado",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
         },
         {
             ["category"] = "frames",
@@ -59099,6 +59157,26 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "Cor da Borda",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Recurso secundário",
+            ["tabName"] = "Barras de recurso",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
             ["description"] = "Cor do plano de fundo desenhada atrás do preenchimento.",
             ["featureId"] = "secondaryPower",
             ["label"] = "Cor de Fundo",
@@ -59248,6 +59326,44 @@ ns.QUI_SearchCache = {
                 ["step"] = 1,
             },
             ["widgetType"] = "slider",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "Fonte da Cor da Borda",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Recurso secundário",
+            ["tabName"] = "Barras de recurso",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "Herdar (global)",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "Destaque do tema",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "cor da classe",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "Personalizado",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
         },
         {
             ["category"] = "frames",

@@ -161,6 +161,10 @@ local specTrackingRetryToken = 0
 local profileCallbackSink = nil
 local lastKnownProfile = nil
 local RefreshAll  -- forward declaration; finalized in REFRESH ALL section
+-- Per-frame coalescing latch for RefreshAll (see the combat-end dedupe guard
+-- in the REFRESH ALL section). File-local so the guard check, the set, and the
+-- C_Timer.After(0) reset closure all share one upvalue.
+local _refreshAllFrameGuard = false
 
 local SPEC_TRACKING_RETRY_DELAY = 0.5
 local SPEC_TRACKING_MAX_RETRIES = 6
@@ -2751,8 +2755,16 @@ local function RunPostLayoutRefresh()
     if _G.QUI_RefreshCooldownSwipe then
         _G.QUI_RefreshCooldownSwipe()
     end
-    if _G.QUI_RefreshCustomGlows then
-        _G.QUI_RefreshCustomGlows()
+    -- Idempotent resync, NOT the full teardown: a post-layout refresh that
+    -- tore every glow down and restarted it replayed the proc-glow AnimIn (a
+    -- visible flash) on each pass. A single proc (e.g. Hammer of Light
+    -- overriding Wake of Ashes) drives several post-layout refreshes in a row,
+    -- so the glow flashed repeatedly. ResyncAllGlows leaves still-valid glows
+    -- untouched; settings changes still go through the full RefreshAllGlows.
+    local glows = ns._OwnedGlows
+    local resync = glows and (glows.ResyncAllGlows or glows.RefreshAllGlows)
+    if resync then
+        resync()
     end
     -- Reapply icon visibility after layout so "active only" display mode
     -- hides inactive icons that LayoutContainer() showed.
@@ -2785,6 +2797,19 @@ RefreshAll = function(forceSync)
         specTrackingPendingRefresh = true
         return
     end
+
+    -- Coalesce duplicate RefreshAll calls within the same frame. At combat end
+    -- (PLAYER_REGEN_ENABLED) more than one drainer can request a refresh in the
+    -- same frame (e.g. a DATA_LOADED spelldata change-callback and the
+    -- spec-tracking finalize). A full rebuild is idempotent, so running it twice
+    -- in one frame is pure waste. The guard clears on the next frame, so
+    -- legitimately spaced refreshes (profile-change 0.2s vs spec-change 0.5s
+    -- timers) are unaffected.
+    if _refreshAllFrameGuard then
+        return
+    end
+    _refreshAllFrameGuard = true
+    C_Timer.After(0, function() _refreshAllFrameGuard = false end)
 
     -- Cancel any pending refresh timers from a prior overlapping RefreshAll call.
     -- This prevents interleaved layouts when e.g. a 0.2s profile-change refresh
@@ -3314,6 +3339,10 @@ function ownedEngine:Initialize()
     -- Wire owned-engine exports that are populated after their modules load.
     if ns._OwnedGlows then
         QUI.CustomGlows = ns._OwnedGlows
+        -- RefreshAllGlows = full teardown+reapply (settings changes). The
+        -- idempotent ResyncAllGlows used by routine post-layout refreshes is
+        -- called directly off ns._OwnedGlows (see RunPostLayoutRefresh) to avoid
+        -- a second _G.QUI_* global.
         _G.QUI_RefreshCustomGlows = ns._OwnedGlows.RefreshAllGlows
         -- No-op effects refresh (owned engine has no effects.lua)
         ---@type fun(...)

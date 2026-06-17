@@ -264,23 +264,13 @@ local function StyleCharacterFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not tab then return end
 
     if not SkinBase.IsStyled(tab) then
-        SkinBase.StripTextures(tab)
-
-        if tab.Left then tab.Left:SetAlpha(0) end
-        if tab.Middle then tab.Middle:SetAlpha(0) end
-        if tab.Right then tab.Right:SetAlpha(0) end
-        if tab.LeftDisabled then tab.LeftDisabled:SetAlpha(0) end
-        if tab.MiddleDisabled then tab.MiddleDisabled:SetAlpha(0) end
-        if tab.RightDisabled then tab.RightDisabled:SetAlpha(0) end
-        if tab.LeftActive then tab.LeftActive:SetAlpha(0) end
-        if tab.MiddleActive then tab.MiddleActive:SetAlpha(0) end
-        if tab.RightActive then tab.RightActive:SetAlpha(0) end
-        if tab.LeftHighlight then tab.LeftHighlight:SetAlpha(0) end
-        if tab.MiddleHighlight then tab.MiddleHighlight:SetAlpha(0) end
-        if tab.RightHighlight then tab.RightHighlight:SetAlpha(0) end
-
+        -- Clamp the Blizzard tab art hidden against re-assertion. A one-shot
+        -- alpha=0 is defeated when PanelTemplates_Select/DeselectTab re-shows or
+        -- re-alphas the slices on selection, leaving Blizzard art on top of the
+        -- QUI backdrop. ClampAllTextures installs a SetAlpha clamp per region.
+        SkinBase.ClampAllTextures(tab)
         local highlight = tab.GetHighlightTexture and tab:GetHighlightTexture()
-        if highlight then highlight:SetAlpha(0) end
+        SkinBase.ClampTextureHidden(highlight)
 
         SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
         local tabBackdrop = SkinBase.GetBackdrop(tab)
@@ -288,17 +278,20 @@ local function StyleCharacterFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SetPixelInsetPoints(tabBackdrop, tab, 3, 3, 3, 0)
         end
 
+        -- Re-assert the art clamp + font synchronously on every selection
+        -- (PanelTemplates re-shows the active slice art and swaps the font
+        -- object). Mark the tab QUI-clamped so the shared global hook covers it.
+        SkinBase.RegisterTabArtClamp(tab)
+
         SkinBase.MarkStyled(tab)
     end
 
-    -- Theme the tab label. PanelTemplates re-asserts Blizzard's yellow tab text
-    -- on select/deselect, but the PanelTemplates_SetTab hook re-runs this +
-    -- UpdateCharacterFrameTabSelectedState (which sets the color) afterward, so
-    -- the QUI color sticks. Font is stable, set here once per call.
-    local tabText = tab.Text or (tab.GetFontString and tab:GetFontString())
-    if tabText then
-        CJKFont(tabText, GetFontPath(), 12, "")
-    end
+    -- Theme the tab label via the button's font OBJECTS. A direct SetFont is
+    -- clobbered the instant you hover (the button applies its HIGHLIGHT font
+    -- object) or select (NORMAL/DISABLED object); driving the objects keeps the
+    -- QUI font across every state. UpdateCharacterFrameTabSelectedState sets the
+    -- selection text color on top afterward.
+    SkinBase.ApplyTabFontObjects(tab, { size = 12 })
 
     SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
@@ -757,7 +750,6 @@ local function StyleEquipMgrButton(btn)
     if not btn or skinnedEntries[btn] then return end
 
     local sr, sg, sb, sa = GetSkinColors()
-    local fontPath = GetFontPath()
 
     -- Store original width
     local origWidth = btn:GetWidth()
@@ -777,12 +769,10 @@ local function StyleEquipMgrButton(btn)
     btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
     btn:SetBackdropBorderColor(sr, sg, sb, 0.5)
 
-    -- Style text
-    local text = btn:GetFontString()
-    if text then
-        CJKFont(text, fontPath, 11, "")
-        text:SetTextColor(0.9, 0.9, 0.9, 1)
-    end
+    -- Style text via the button's font OBJECTS so the QUI font survives hover
+    -- (HighlightFont) and disable (DisabledFont — SaveSet is disabled with no set
+    -- selected); a plain SetFont would be clobbered by Blizzard's font object.
+    SkinBase.ApplyButtonFontObjects(btn, { size = 11, color = { 0.9, 0.9, 0.9, 1 }, disabledColor = { 0.5, 0.5, 0.5, 1 } })
 
     -- Restore width
     btn:SetWidth(origWidth)

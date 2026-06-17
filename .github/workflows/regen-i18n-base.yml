@@ -1,0 +1,64 @@
+name: Regenerate i18n Base
+
+# Auto-regenerates core/locale/enUS.lua (the English locale base extracted
+# from all wrapped UI strings) on every push to qui-beta and commits the
+# result back to the branch. Replaces the old hard "i18n base up to date"
+# gate in lua-tests.yml, which went red whenever a commit added new strings
+# without manually running tools/i18n/extract_strings.lua.
+#
+# Loop prevention: pushes made with the default GITHUB_TOKEN do NOT trigger
+# further workflow runs (per GitHub's default policy). The `[skip ci]` tag on
+# the commit message is belt-and-suspenders for any CI that observes it, and
+# the bot-author check below skips no-op re-runs.
+
+on:
+  push:
+    branches:
+      - qui-beta
+
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if last commit was made by this workflow
+        id: bot-check
+        run: |
+          AUTHOR=$(git log -1 --pretty=%an)
+          if [ "$AUTHOR" = "github-actions[bot]" ]; then
+            echo "Last commit is from the regen bot; skipping to avoid noisy no-op runs."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Lua 5.1
+        if: steps.bot-check.outputs.skip != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Regenerate i18n base
+        if: steps.bot-check.outputs.skip != 'true'
+        run: lua5.1 tools/i18n/extract_strings.lua
+
+      - name: Commit and push if base changed
+        if: steps.bot-check.outputs.skip != 'true'
+        run: |
+          if git diff --quiet -- core/locale/enUS.lua; then
+            echo "i18n base is already up to date; nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/locale/enUS.lua
+          git commit -m "chore(i18n): regenerate enUS base [skip ci]"
+          git push

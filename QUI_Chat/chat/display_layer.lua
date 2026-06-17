@@ -260,10 +260,25 @@ local function ApplyTheme(win)
         else
             smf:SetFading(false)
         end
-        local fontPath = Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont()
+        local globalFont = Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont()
+        local fontCfg = settings and settings.font
+        local custom = fontCfg and fontCfg.useCustom == true
+
+        -- Resolve the font file path. Custom: chosen family (LSM) falling back to
+        -- the global font on a missing-media miss. Else: the global font.
+        local fontPath = globalFont
+        if custom and fontCfg.family and ns.LSM and ns.LSM.Fetch then
+            local resolved = ns.LSM:Fetch("font", fontCfg.family, true)
+            if resolved then fontPath = resolved end
+        end
+
         if fontPath then
+            -- Size: custom -> explicit 8-32 (default 13); else Blizzard native.
             local size = 13
-            if _G.GetChatWindowInfo then
+            if custom then
+                local s = fontCfg.size
+                if type(s) == "number" and s > 0 then size = s end
+            elseif _G.GetChatWindowInfo then
                 local _, winSize = _G.GetChatWindowInfo(1)
                 -- Guard: GetChatWindowInfo can hand back garbage sizes.
                 if type(winSize) == "number" and winSize > 0 and winSize < 64 then
@@ -271,8 +286,8 @@ local function ApplyTheme(win)
                 end
             end
             local flags = ""
-            if settings and settings.font and settings.font.forceOutline then
-                flags = "OUTLINE"
+            if custom and type(fontCfg.outline) == "string" then
+                flags = fontCfg.outline
             end
             -- Prefer a per-script font family so CJK chat (Korean/Chinese
             -- names and messages) falls back to Blizzard fonts instead of

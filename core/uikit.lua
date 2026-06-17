@@ -2421,6 +2421,41 @@ local function NukeTexture(t)
     if t.Hide then t:Hide() end
 end
 
+-- ClampTextureHidden(tex)
+-- Force a texture PERMANENTLY hidden against Blizzard re-assertion. The one-shot
+-- NukeTexture (alpha 0 + clear + Hide) is defeated when Blizzard later re-shows
+-- or re-alphas the region on a state change (tab selection, layout, MarkDirty,
+-- pool re-Init) — the symptom is Blizzard tab/chrome art rendering back on top
+-- of the QUI skin. The SetAlpha clamp (mirrors the GameMenu slice-art clamp in
+-- system/gamemenu.lua) re-zeroes any alpha>0, so the region can never become
+-- visible again. The clamp's own SetAlpha(0) re-fires the hook with a==0, which
+-- the a>0 guard ignores — no recursion. Idempotent per texture.
+function SkinBase.ClampTextureHidden(tex)
+    if not tex then return end
+    NukeTexture(tex)
+    if tex.SetAlpha and not SkinBase.GetFrameData(tex, "qTexClamped") then
+        hooksecurefunc(tex, "SetAlpha", function(self, a)
+            if a and a > 0 then self:SetAlpha(0) end
+        end)
+        SkinBase.SetFrameData(tex, "qTexClamped", true)
+    end
+end
+
+-- ClampAllTextures(frame)
+-- Catch-all: clamp every Texture region on a frame hidden (custom tab templates
+-- expose extra state icons/glows beyond the named PanelTab regions). Skips
+-- FontStrings, so tab labels are untouched. Run BEFORE CreateBackdrop so the
+-- QUI backdrop (a child frame, not a region of this frame) is never matched.
+function SkinBase.ClampAllTextures(frame)
+    if not frame or not frame.GetNumRegions then return end
+    for i = 1, frame:GetNumRegions() do
+        local region = select(i, frame:GetRegions())
+        if region and region.IsObjectType and region:IsObjectType("Texture") then
+            SkinBase.ClampTextureHidden(region)
+        end
+    end
+end
+
 -- PanelTabButtonTemplate's twelve named texture regions
 -- (Blizzard_SharedXML/Mainline/SharedUIPanelTemplates.xml:905-960).
 local PANEL_TAB_TEXTURES = {
@@ -2430,29 +2465,168 @@ local PANEL_TAB_TEXTURES = {
     "LeftDisabled", "MiddleDisabled", "RightDisabled",
 }
 
--- Re-apply the global QUI font to a tab's label when the tab opted in via
--- opts.font. Blizzard re-applies a font OBJECT (face + color) on every
--- selection change, so this runs from RefreshTabSelected as well as on skin.
+-- Shared QUI tab-label font OBJECTS, cached by integer size. A direct SetFont
+-- on the tab's fontstring does NOT survive: a tab is a Button and re-applies its
+-- own font OBJECT on every state change — the HIGHLIGHT object on mouseover, the
+-- NORMAL/DISABLED object on selection — clobbering any SetFont the instant you
+-- hover or switch tabs. Driving the button's three font objects keeps the QUI
+-- font across every state. (Same reason GameMenu drives button font objects —
+-- see system/gamemenu.lua.) Caching by size lets each tab keep its native size.
+-- Shared QUI button/tab font OBJECTS, cached by integer size + color. Returns a
+-- Font object configured with the QUI font face/outline + the given color
+-- (default near-white). nil when _G.CreateFont is unavailable (test harness) so
+-- callers fall back to a direct fontstring SetFont.
+-- Dim grey for disabled button labels (QUI face, but still reads as disabled).
+local DISABLED_TEXT_COLOR = { 0.5, 0.5, 0.5, 1 }
+local buttonFontObjects = {}
+local buttonFontObjCount = 0
+local function ColorKey(c)
+    if type(c) ~= "table" then return "def" end
+    return string.format("%.2f,%.2f,%.2f,%.2f", c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+end
+local function GetButtonFontObject(size, color)
+    if not _G.CreateFont then return nil end
+    size = (type(size) == "number" and size > 0) and size or 12
+    local sizeKey = floor(size + 0.5)
+    local key = sizeKey .. "|" .. ColorKey(color)
+    local obj = buttonFontObjects[key]
+    if not obj then
+        buttonFontObjCount = buttonFontObjCount + 1
+        obj = _G.CreateFont("QUIButtonFontObject" .. buttonFontObjCount)
+        buttonFontObjects[key] = obj
+    end
+    local font = (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or DEFAULT_FONT
+    local outline = (Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or ""
+    local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, sizeKey, outline)
+    if family then
+        obj:SetFontObject(family)   -- inherits per-script CJK fallback
+    else
+        obj:SetFont(font, sizeKey, outline)
+    end
+    if type(color) == "table" then
+        obj:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+    else
+        obj:SetTextColor(0.95, 0.95, 0.95, 1)
+    end
+    return obj
+end
+
+-- ApplyButtonFontObjects(button, opts)
+-- Drive a BUTTON's normal/highlight/disabled font objects to the QUI font so the
+-- label keeps the QUI font across EVERY state. A direct SetFont on the
+-- fontstring is clobbered the instant the button is hovered (HighlightFontObject)
+-- or disabled (DisabledFontObject) — driving the objects is the only durable fix
+-- (same lesson as system/gamemenu.lua). Used by tabs and by SkinButton{font}.
+--   opts.size          : size override (default: label's current size)
+--   opts.color         : normal/highlight text color (default near-white)
+--   opts.disabledColor : disabled text color (default: opts.color — i.e. tabs
+--                        stay readable; SkinButton passes a dim grey so disabled
+--                        buttons still read as disabled)
+-- nil-safe: without CreateFont, only the fontstring SetFont path runs.
+function SkinBase.ApplyButtonFontObjects(button, opts)
+    if not button then return end
+    opts = opts or {}
+    local fs = button.Text or (button.GetFontString and button:GetFontString())
+    local size = opts.size
+    if not size and fs and fs.GetFont then
+        local _, s = fs:GetFont()
+        if type(s) == "number" and s > 0 then size = s end
+    end
+    local normalObj = GetButtonFontObject(size, opts.color)
+    if normalObj then
+        if button.SetNormalFontObject then button:SetNormalFontObject(normalObj) end
+        if button.SetHighlightFontObject then button:SetHighlightFontObject(normalObj) end
+        if button.SetDisabledFontObject then
+            local disObj = GetButtonFontObject(size, opts.disabledColor or opts.color)
+            button:SetDisabledFontObject(disObj or normalObj)
+        end
+    end
+    -- Also set the fontstring directly (non-button tabs + CreateFont-less envs).
+    if fs then
+        SkinBase.SkinFontString(fs, type(opts.color) == "table" and { color = opts.color } or { fontOnly = true })
+    end
+end
+
+-- Back-compat alias for the tab skinners.
+SkinBase.ApplyTabFontObjects = SkinBase.ApplyButtonFontObjects
+
+-- Re-apply the QUI tab font (self-guards on the skinTabFont flag). Runs on skin,
+-- from RefreshTabSelected, and from the selection hooks below.
 local function ReapplyTabFont(tab)
     if not SkinBase.GetFrameData(tab, "skinTabFont") then return end
-    local fs = tab.Text or (tab.GetFontString and tab:GetFontString())
-    SkinBase.SkinFontString(fs)
+    SkinBase.ApplyTabFontObjects(tab)
+end
+
+-- Re-assert the full QUI tab skin (art clamp + font) synchronously after a
+-- selection change. Blizzard re-SHOWS the active/inactive slice textures on
+-- selection (SetTabSelected / PanelTemplates_Select/DeselectTab) — re-clamping
+-- here re-hides them so the default tab art never lands on top of the QUI
+-- backdrop. Guarded on qTabArtClamped so the global PanelTemplates hooks only
+-- ever touch QUI-skinned tabs.
+local function ReassertTabSkin(tab)
+    if not tab or not SkinBase.GetFrameData(tab, "qTabArtClamped") then return end
+    SkinBase.ClampAllTextures(tab)
+    local hl = tab.GetHighlightTexture and tab:GetHighlightTexture()
+    if hl then SkinBase.ClampTextureHidden(hl) end
+    ReapplyTabFont(tab)
+end
+
+-- Legacy PanelTab tabs re-show slice art and swap the font object via
+-- PanelTemplates_Select/DeselectTab on every selection. Re-assert the QUI skin
+-- synchronously after those global helpers. Installed once.
+local panelTabHooked = false
+local function HookPanelTabSkin()
+    if panelTabHooked then return end
+    panelTabHooked = true
+    if PanelTemplates_SelectTab then
+        hooksecurefunc("PanelTemplates_SelectTab", function(tab) ReassertTabSkin(tab) end)
+    end
+    if PanelTemplates_DeselectTab then
+        hooksecurefunc("PanelTemplates_DeselectTab", function(tab) ReassertTabSkin(tab) end)
+    end
+end
+
+-- RegisterTabArtClamp(tab)
+-- Opt a bespoke-skinned PanelTab (CharacterFrame / InspectFrame bottom tabs,
+-- which don't route through SkinTabButton) into the synchronous selection
+-- re-assert: flag it as QUI-clamped and ensure the global PanelTemplates hooks
+-- are installed. Pair with ClampAllTextures + ApplyTabFontObjects at skin time.
+function SkinBase.RegisterTabArtClamp(tab)
+    if not tab then return end
+    SkinBase.SetFrameData(tab, "qTabArtClamped", true)
+    -- Bespoke callers drive QUI tab fonts via ApplyTabFontObjects; flag them so
+    -- the global selection hook re-asserts the font synchronously too.
+    SkinBase.SetFrameData(tab, "skinTabFont", true)
+    HookPanelTabSkin()
 end
 
 function SkinBase.SkinTabButton(tab, opts)
     if not tab or SkinBase.IsStyled(tab) then return end
     opts = opts or {}
 
-    -- Nuke each PanelTabButtonTemplate texture by name (atlas-backed; Show()
-    -- by Blizzard tab-state code wouldn't otherwise affect our alpha=0).
-    for _, name in ipairs(PANEL_TAB_TEXTURES) do
-        NukeTexture(tab[name])
-    end
-    -- Catch-all for non-PanelTab variants (FriendsFrameTabTemplate, etc.)
-    -- that may have differently-named regions.
-    SkinBase.StripTextures(tab)
+    -- Clamp every tab texture hidden. A one-shot alpha=0 is not enough: Blizzard
+    -- re-asserts the tab art on selection/layout changes (SetTabSelected,
+    -- PanelTemplates_Select/DeselectTab, MarkDirty), which would otherwise show
+    -- the default tab art back on top of the QUI backdrop. ClampAllTextures
+    -- installs a SetAlpha clamp on every Texture region (named PanelTab slices,
+    -- *Active/*Highlight variants, and custom-template state icons/glows alike)
+    -- and skips FontStrings, so the label is untouched. Runs before
+    -- CreateBackdrop so the QUI backdrop child frame is never matched.
+    SkinBase.ClampAllTextures(tab)
     local highlight = tab.GetHighlightTexture and tab:GetHighlightTexture()
-    NukeTexture(highlight)
+    SkinBase.ClampTextureHidden(highlight)
+    SkinBase.SetFrameData(tab, "qTabArtClamped", true)
+
+    -- Re-clamp the art on every selection change. Blizzard re-SHOWS the active
+    -- (selected) and inactive slice textures via SetTabSelected /
+    -- PanelTemplates_Select/DeselectTab, so a one-shot clamp at skin time is
+    -- defeated — the active-tab art lands back on top of the QUI backdrop.
+    -- ReassertTabSkin (art + font) runs synchronously after each, no flash.
+    if tab.SetTabSelected and not SkinBase.GetFrameData(tab, "qTabStateHooked") then
+        hooksecurefunc(tab, "SetTabSelected", function(self) ReassertTabSkin(self) end)
+        SkinBase.SetFrameData(tab, "qTabStateHooked", true)
+    end
+    HookPanelTabSkin()
 
     local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
     SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
@@ -2465,14 +2639,18 @@ function SkinBase.SkinTabButton(tab, opts)
         -- the backdrop above them.)
     end
 
-    -- Tab text: by default leave it to Blizzard, which swaps font objects
-    -- between GameFontNormalSmall (yellow/unselected) and GameFontHighlightSmall
-    -- (white/selected) via PanelTemplates_SelectTab. Most QUI frames (e.g. the
-    -- character pane) intentionally keep that. opts.font opts a caller in to the
-    -- global QUI font + themed text instead; because Blizzard re-swaps the font
-    -- object on selection change, RefreshTabSelected re-applies it (the backdrop
-    -- still signals which tab is selected).
-    if opts.font then
+    -- Tab text: apply the global QUI font + themed color by default. Blizzard
+    -- swaps the tab font OBJECT on every selection change (modern TabSystem via
+    -- SetNormalFontObject inside SetTabSelected; legacy via PanelTemplates_
+    -- Select/DeselectTab — GameFontNormalSmall yellow ↔ GameFontHighlightSmall
+    -- white), so the QUI font is re-asserted from those hooks and from
+    -- RefreshTabSelected; the QUI backdrop signals which tab is selected.
+    -- opts.font == false opts a caller out (keep Blizzard's tab font).
+    -- QUI font on tab labels by default (opts.font == false opts out). The
+    -- selection hooks installed above (SetTabSelected / PanelTemplates) re-assert
+    -- it; here we apply the initial state. Hover never reverts because
+    -- ApplyTabFontObjects drives the button's HIGHLIGHT font object too.
+    if opts.font ~= false then
         SkinBase.SetFrameData(tab, "skinTabFont", true)
         ReapplyTabFont(tab)
     end
@@ -2815,6 +2993,40 @@ function SkinBase.SkinFrameText(frame, opts)
     end
 end
 
+---------------------------------------------------------------------------
+-- LockFontObject(obj, opts)
+-- Defeat the "theming re-assert" anti-pattern where a Blizzard frame swaps a
+-- fontstring's (or button's) font OBJECT back to a default on interaction —
+-- e.g. ProfessionsRecipeListCategoryMixin:OnEnter/OnLeave SetFontObject on
+-- hover, or a ScrollBox row button's SetNormalFontObject on re-bind. A one-shot
+-- SkinFontString is reverted by those swaps; this hooks the swap and re-applies
+-- the QUI font right after.
+--   * FontStrings expose SetFontObject → re-apply to the fontstring itself.
+--   * Buttons expose SetNormalFontObject → re-apply to button:GetFontString().
+-- The re-apply uses SkinFontString's SetFont (never SetFontObject), so it does
+-- not re-trigger the hook. Defaults to fontOnly (preserve Blizzard's text
+-- color, just enforce the QUI font face/outline). Idempotent per object.
+---------------------------------------------------------------------------
+function SkinBase.LockFontObject(obj, opts)
+    if not obj or SkinBase.GetFrameData(obj, "qFontLocked") then return end
+    opts = opts or { fontOnly = true }
+
+    if obj.SetFontObject and obj.GetObjectType and obj:GetObjectType() == "FontString" then
+        hooksecurefunc(obj, "SetFontObject", function(self)
+            SkinBase.SkinFontString(self, opts)
+        end)
+    end
+
+    if obj.SetNormalFontObject then
+        hooksecurefunc(obj, "SetNormalFontObject", function(self)
+            local fs = self.GetFontString and self:GetFontString()
+            if fs then SkinBase.SkinFontString(fs, opts) end
+        end)
+    end
+
+    SkinBase.SetFrameData(obj, "qFontLocked", true)
+end
+
 -- Resolve a frame's primary label fontstring (button text / editbox).
 local function GetLabelFontString(frame)
     if not frame then return nil end
@@ -2868,7 +3080,11 @@ function SkinBase.SkinButton(button, opts)
     if opts.font then
         SkinBase.SetFrameData(button, "skinFont", true)
         SkinBase.SetFrameData(button, "skinFontColor", opts.fontColor)
-        SkinBase.SkinFontString(GetLabelFontString(button), { color = opts.fontColor })
+        -- Drive the button's font OBJECTS (not a one-shot SetFont): UIPanel-style
+        -- buttons swap their Highlight font object on hover and Disabled object on
+        -- :Disable(), which would otherwise revert the QUI font face. Dim grey
+        -- disabled color keeps disabled buttons reading as disabled.
+        SkinBase.ApplyButtonFontObjects(button, { color = opts.fontColor, disabledColor = DISABLED_TEXT_COLOR })
     end
     if opts.hover ~= false then AttachHover(button) end
     SkinBase.MarkStyled(button)
@@ -3067,8 +3283,12 @@ function SkinBase.RefreshWidget(frame)
     -- opted in at skin time (SkinButton/SkinEditBox {font=true}).
     if SkinBase.GetFrameData(frame, "skinFont") then
         local color = SkinBase.GetFrameData(frame, "skinFontColor")
-        local target = (kind == "editbox") and frame or GetLabelFontString(frame)
-        SkinBase.SkinFontString(target, { color = color })
+        if kind == "editbox" then
+            SkinBase.SkinFontString(frame, { color = color })
+        else
+            -- Buttons: re-drive font objects so the QUI font survives hover/disable.
+            SkinBase.ApplyButtonFontObjects(frame, { color = color, disabledColor = DISABLED_TEXT_COLOR })
+        end
     end
 end
 

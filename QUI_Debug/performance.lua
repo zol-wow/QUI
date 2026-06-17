@@ -310,7 +310,22 @@ local function StartEventSniffer()
     wipe(eventCounts)
     wipe(eventRates)
     wipe(topEvents)
-    eventSniffer:RegisterAllEvents()
+    -- Register only the events the QUI suite actually handles (generated set in
+    -- event_allowlist.lua) instead of RegisterAllEvents, so the readout is not
+    -- swamped by high-frequency events QUI never touches (UNIT_COMBAT,
+    -- COMBAT_LOG_EVENT_UNFILTERED, COMBAT_TEXT_UPDATE, ...). RegisterEvent
+    -- returns false for protected events and errors on unknown names, so any
+    -- over-harvested token is dropped here. Fall back to RegisterAllEvents if
+    -- the generated list is missing (e.g. running an un-regenerated tree).
+    eventSniffer:UnregisterAllEvents()
+    local allow = ns.QUI_EventAllowlist
+    if allow and #allow > 0 then
+        for i = 1, #allow do
+            pcall(eventSniffer.RegisterEvent, eventSniffer, allow[i])
+        end
+    else
+        eventSniffer:RegisterAllEvents()
+    end
     eventSniffer:SetScript("OnEvent", function(_, event)
         eventCounts[event] = (eventCounts[event] or 0) + 1
     end)

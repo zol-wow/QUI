@@ -58753,6 +58753,64 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "邊框顏色",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "主要資源",
+            ["tabName"] = "資源條",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.powerBar",
+                ["featureId"] = "primaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "邊框顏色來源",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "主要資源",
+            ["tabName"] = "資源條",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.powerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "primaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "繼承（全域）",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "佈景主題強調色",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "職業顏色",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "自訂",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
+        },
+        {
+            ["category"] = "frames",
             ["description"] = "匹配工具冷卻列的寬度並跟隨其可見性。",
             ["featureId"] = "primaryPower",
             ["label"] = "鎖定為工具",
@@ -59385,6 +59443,64 @@ ns.QUI_SearchCache = {
                 ["step"] = 1,
             },
             ["widgetType"] = "slider",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "邊框顏色",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "次要資源",
+            ["tabName"] = "資源條",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "邊框顏色來源",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "次要資源",
+            ["tabName"] = "資源條",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "繼承（全域）",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "佈景主題強調色",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "職業顏色",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "自訂",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
         },
         {
             ["category"] = "frames",

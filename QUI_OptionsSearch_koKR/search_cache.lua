@@ -58606,6 +58606,64 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "테두리 색상",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "주 자원",
+            ["tabName"] = "자원 바",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.powerBar",
+                ["featureId"] = "primaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "테두리 색상 출처",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "주 자원",
+            ["tabName"] = "자원 바",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.powerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "primaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "상속(전역)",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "테마 강조색",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "직업 색상",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "사용자 지정",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
+        },
+        {
+            ["category"] = "frames",
             ["featureId"] = "primaryPower",
             ["label"] = "테두리 크기",
             ["subPageIndex"] = 1,
@@ -59275,6 +59333,64 @@ ns.QUI_SearchCache = {
                 },
             },
             ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "테두리 색상",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "보조 자원",
+            ["tabName"] = "자원 바",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "테두리 색상 출처",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "보조 자원",
+            ["tabName"] = "자원 바",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "상속(전역)",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "테마 강조색",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "직업 색상",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "사용자 지정",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
         },
         {
             ["category"] = "frames",

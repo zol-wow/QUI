@@ -2603,6 +2603,43 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
     end
 end
 
+-- Returns true only when anchoring a child to parentFrame would make the child
+-- anchoring-restricted: i.e. parentFrame is a genuinely protected Blizzard
+-- frame.  UIParent is never restricted.  Insecure (addon-owned) parents never
+-- restrict.  Returns false on any unknown / secret value.
+-- ns.Helpers is used directly here (not the `Helpers` upvalue) because
+-- ParentRestricts can run before QUI_Anchoring:SetHelpers populates `Helpers`.
+local function ParentRestricts(parentFrame)
+    if parentFrame == UIParent then return false end
+    -- IsProtected catches directly-secure targets; IsAnchoringRestricted catches
+    -- the dependent case (e.g. a QUI container hosting SecureActionButton icon
+    -- children), where IsProtected stays false but SetSize is still combat-blocked
+    -- and the restriction propagates to anything anchored to it.
+    return ns.Helpers.FrameIsProtected(parentFrame)
+        or ns.Helpers.FrameIsAnchoringRestricted(parentFrame)
+end
+
+-- Anchor frame's pt to parentFrame's relPt (+x, +y).  For dynamic-size keys
+-- whose parent is protected, pins to UIParent at absolute coords so the frame
+-- is never anchoring-restricted in combat (SetSize stays legal).  Everything
+-- else keeps relative anchoring (free follow from WoW's SetPoint chain).  Never throws.
+--
+-- Follow for the absolute-pin case is event-driven: QUI_UpdateFramesAnchoredTo
+-- re-calls ApplyFrameAnchor (→ AnchorOrPin) when the target moves, re-pinning
+-- with fresh rect coords.  No per-tick loop — protected Blizzard parents are
+-- repositioned out of combat (Edit Mode), covered by ApplyAllFrameAnchors.
+local function AnchorOrPin(key, frame, pt, parentFrame, relPt, x, y)
+    if IsDynamicSizeAnchorKey(key) and ParentRestricts(parentFrame) then
+        -- ns.Helpers used directly: AnchorOrPin can run before SetHelpers populates `Helpers`.
+        -- On hold/false (secret rect not yet readable) the helper leaves the
+        -- existing point untouched; the event-driven follow path retries on the
+        -- next move.
+        ns.Helpers.PinFrameToTargetAbsolute(frame, pt, parentFrame, relPt, x, y)
+        return
+    end
+    SmoothSetPoint(frame, pt, parentFrame, relPt, x, y)
+end
+
 -- Apply a single frame anchor override
 function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     if type(settings) ~= "table" then return end
@@ -2845,7 +2882,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         local GA_FRAC_Y = { TOPLEFT = 1, TOPRIGHT = 1, BOTTOMLEFT = 0, BOTTOMRIGHT = 0 }
         local cornerX = offsetX + (GA_FRAC_X[corner] - 0.5) * (fw - pw)
         local cornerY = offsetY + (GA_FRAC_Y[corner] - 0.5) * (fh - ph)
-        SmoothSetPoint(resolved, corner, parentFrame, corner, cornerX, cornerY)
+        AnchorOrPin(key, resolved, corner, parentFrame, corner, cornerX, cornerY)
 
         -- Self-heal: promote this entry from legacy CENTER format to the
         -- new corner format if we have a real container size. Subsequent
@@ -2947,7 +2984,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         end
         if not FrameAlreadyAtPosition(resolved, "CENTER", parentFrame, "CENTER", centerX, centerY) then
             _editModeReapplyGuard = true
-            pcall(SmoothSetPoint, resolved, "CENTER", parentFrame, "CENTER", centerX, centerY)
+            pcall(AnchorOrPin, key, resolved, "CENTER", parentFrame, "CENTER", centerX, centerY)
             _editModeReapplyGuard = false
         end
     else
@@ -2980,13 +3017,13 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
             )
             if not FrameAlreadyAtPosition(resolved, "CENTER", parentFrame, "CENTER", centerX, centerY) then
                 _editModeReapplyGuard = true
-                pcall(SmoothSetPoint, resolved, "CENTER", parentFrame, "CENTER", centerX, centerY)
+                pcall(AnchorOrPin, key, resolved, "CENTER", parentFrame, "CENTER", centerX, centerY)
                 _editModeReapplyGuard = false
             end
         else
             if not FrameAlreadyAtPosition(resolved, point, parentFrame, relative, offsetX, offsetY) then
                 _editModeReapplyGuard = true
-                pcall(SmoothSetPoint, resolved, point, parentFrame, relative, offsetX, offsetY)
+                pcall(AnchorOrPin, key, resolved, point, parentFrame, relative, offsetX, offsetY)
                 _editModeReapplyGuard = false
             end
         end

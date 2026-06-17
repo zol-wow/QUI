@@ -58437,6 +58437,26 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "Couleur de bordure",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "Ressource principale",
+            ["tabName"] = "Barres de ressource",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.powerBar",
+                ["featureId"] = "primaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
             ["description"] = "Couleur utilisée pour les lignes de marqueurs de seuil personnalisées.",
             ["featureId"] = "primaryPower",
             ["label"] = "Couleur de l'indicateur",
@@ -58745,6 +58765,44 @@ ns.QUI_SearchCache = {
             ["tabName"] = "Barres de ressource",
             ["tileId"] = "resource_bars",
             ["widgetType"] = "editbox",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "Source de couleur de bordure",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "Ressource principale",
+            ["tabName"] = "Barres de ressource",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.powerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "primaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "Hériter (global)",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "Couleur d'accentuation du thème",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "Couleur de classe",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "Personnalisé",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
         },
         {
             ["category"] = "frames",
@@ -59079,6 +59137,26 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "Couleur de bordure",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Ressource secondaire",
+            ["tabName"] = "Barres de ressource",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
             ["description"] = "Couleur utilisée pour les lignes de marqueurs de seuil personnalisées.",
             ["featureId"] = "secondaryPower",
             ["label"] = "Couleur de l'indicateur",
@@ -59390,6 +59468,44 @@ ns.QUI_SearchCache = {
             ["tabName"] = "Barres de ressource",
             ["tileId"] = "resource_bars",
             ["widgetType"] = "editbox",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "Source de couleur de bordure",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Ressource secondaire",
+            ["tabName"] = "Barres de ressource",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "Hériter (global)",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "Couleur d'accentuation du thème",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "Couleur de classe",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "Personnalisé",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
         },
         {
             ["category"] = "frames",

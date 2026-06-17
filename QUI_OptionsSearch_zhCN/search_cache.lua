@@ -58789,6 +58789,64 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "边框颜色",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "主要资源",
+            ["tabName"] = "资源条",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.powerBar",
+                ["featureId"] = "primaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "边框颜色来源",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "主要资源",
+            ["tabName"] = "资源条",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.powerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "primaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "继承（全局）",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "主题强调色",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "职业颜色",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "自定义",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
+        },
+        {
+            ["category"] = "frames",
             ["description"] = "匹配核心冷却行的宽度并随其可见性变化。",
             ["featureId"] = "primaryPower",
             ["label"] = "锁定到核心",
@@ -59425,6 +59483,64 @@ ns.QUI_SearchCache = {
                 ["step"] = 1,
             },
             ["widgetType"] = "slider",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "边框颜色",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "次要资源",
+            ["tabName"] = "资源条",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "边框颜色来源",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "次要资源",
+            ["tabName"] = "资源条",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "继承（全局）",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "主题强调色",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "职业颜色",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "自定义",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
         },
         {
             ["category"] = "frames",

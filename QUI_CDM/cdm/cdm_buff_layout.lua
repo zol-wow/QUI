@@ -223,21 +223,28 @@ local function GetTrackedBarAnchorWidth(anchorTo, anchorFrame)
 end
 
 -- True when the viewer's cached anchor matches the requested anchor exactly,
--- meaning a re-anchor would be a no-op.
-local function anchorCacheMatches(cache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY)
-    return cache ~= nil
-        and cache.anchorTo == anchorTo
-        and cache.placement == placement
-        and cache.anchorFrame == anchorFrame
-        and cache.sourcePoint == sourcePoint
-        and cache.targetPoint == targetPoint
-        and cache.offsetX == offsetX
-        and cache.offsetY == offsetY
+-- meaning a re-anchor would be a no-op.  For absolute (UIParent) pins, px/py
+-- capture the resolved target origin so that a MOVED target invalidates the
+-- cache and triggers a re-pin on the next OnUpdate poll.  A 0.5-pixel
+-- tolerance suppresses float-drift churn.  For relative anchors px/py are the
+-- raw offsets and the tolerance comparison is exact (same effect as before).
+local function anchorCacheMatches(cache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, px, py)
+    if cache == nil then return false end
+    if cache.anchorTo ~= anchorTo then return false end
+    if cache.placement ~= placement then return false end
+    if cache.anchorFrame ~= anchorFrame then return false end
+    if cache.sourcePoint ~= sourcePoint then return false end
+    if cache.targetPoint ~= targetPoint then return false end
+    if abs((cache.px or 0) - (px or 0)) > 0.5 then return false end
+    if abs((cache.py or 0) - (py or 0)) > 0.5 then return false end
+    return true
 end
 
 -- Persist the applied anchor on the viewer's state so the next call can skip a
--- redundant SetPoint. Only called when the SetPoint actually succeeded.
-local function writeAnchorCache(viewer, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY)
+-- redundant SetPoint/pin. Only called when the anchor actually succeeded.
+-- px, py: for absolute (UIParent) pins, the resolved pixel coords returned by
+-- PinFrameToTargetAbsolute; for relative anchors, the raw offsetX/offsetY.
+local function writeAnchorCache(viewer, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, px, py)
     viewerBuffState[viewer] = viewerBuffState[viewer] or {}
     viewerBuffState[viewer].anchorCache = {
         anchorTo = anchorTo,
@@ -245,8 +252,8 @@ local function writeAnchorCache(viewer, anchorTo, placement, anchorFrame, source
         anchorFrame = anchorFrame,
         sourcePoint = sourcePoint,
         targetPoint = targetPoint,
-        offsetX = offsetX,
-        offsetY = offsetY,
+        px = px,
+        py = py,
     }
 end
 
@@ -255,10 +262,11 @@ local function ApplyTrackedBarAnchor(settings)
     if not viewer then return end
     -- Respect centralized frame anchoring overrides
     if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("buffBar") then return end
-    -- Avoid ClearAllPoints/SetPoint churn on protected Blizzard viewers during combat.
-    -- Bypass during the ADDON_LOADED / PEW safe window where protected calls are
-    -- allowed even though InCombatLockdown() returns true on combat /reload.
-    if InCombatLockdown() and not inInitSafeWindow then return end
+    -- No combat bail: positioning now pins the viewer to UIParent at absolute
+    -- coords (Helpers.PinFrameToTargetAbsolute), reading the target's rect only.
+    -- Both are combat-legal, so the OnUpdate poll can re-pin during combat and
+    -- the viewer (UIParent-anchored, never anchoring-restricted) stays
+    -- SetSize-able for in-combat flex.
     -- Don't reposition during Edit Mode — let the user drag/nudge freely.
     -- Blizzard's Edit Mode system handles position save/restore.
     if Helpers.IsEditModeActive() then return end
@@ -321,20 +329,34 @@ local function ApplyTrackedBarAnchor(settings)
     if anchorFrame ~= UIParent and not anchorFrame:IsShown() then return end
 
     local vbs = viewerBuffState[viewer] or {}
-    if anchorCacheMatches(vbs.anchorCache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY) then
-        return
+
+    local ok, px, py
+    if Helpers.FrameIsProtected(anchorFrame) or Helpers.FrameIsAnchoringRestricted(anchorFrame) then
+        -- Protected target: pin to UIParent absolute so the viewer is never
+        -- anchoring-restricted and SetSize flexes in combat.  The returned
+        -- px,py encode the target's current origin so the cache detects when
+        -- the target moves and re-pins on the next OnUpdate tick.
+        ok, px, py = Helpers.PinFrameToTargetAbsolute(viewer, sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
+        if ok and anchorCacheMatches(vbs.anchorCache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, px, py) then
+            return
+        end
+    else
+        -- Insecure target: relative anchoring is taint-safe and follows free.
+        -- Cache keyed on the raw offsets (constant) — skip if unchanged.
+        px, py = offsetX, offsetY
+        if anchorCacheMatches(vbs.anchorCache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, px, py) then
+            return
+        end
+        ok = pcall(function()
+            viewer:ClearAllPoints()
+            viewer:SetPoint(sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
+        end)
     end
 
-    local ok = pcall(function()
-        viewer:ClearAllPoints()
-        viewer:SetPoint(sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
-    end)
-
-    -- Only write cache when the SetPoint actually succeeded.  If pcall
-    -- swallowed an error (e.g., anchor frame not fully initialised), leaving
-    -- the cache empty lets the 20-fps OnUpdate poll retry next tick.
+    -- Only write cache when the anchor succeeded — a held pin (target rect nil/
+    -- secret) must not block the OnUpdate retry loop.
     if ok then
-        writeAnchorCache(viewer, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY)
+        writeAnchorCache(viewer, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, px, py)
     end
 end
 
@@ -343,9 +365,11 @@ local function ApplyBuffIconAnchor(settings)
     if not viewer then return end
     -- Respect centralized frame anchoring overrides
     if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("buffIcon") then return end
-    -- Bypass during the ADDON_LOADED / PEW safe window where protected calls are
-    -- allowed even though InCombatLockdown() returns true on combat /reload.
-    if InCombatLockdown() and not inInitSafeWindow then return end
+    -- No combat bail: positioning now pins the viewer to UIParent at absolute
+    -- coords (Helpers.PinFrameToTargetAbsolute), reading the target's rect only.
+    -- Both are combat-legal, so the OnUpdate poll can re-pin during combat and
+    -- the viewer (UIParent-anchored, never anchoring-restricted) stays
+    -- SetSize-able for in-combat flex.
     if Helpers.IsEditModeActive() then return end
 
     local anchorTo = settings.anchorTo or "disabled"
@@ -411,9 +435,6 @@ local function ApplyBuffIconAnchor(settings)
     if anchorFrame ~= UIParent and not anchorFrame:IsShown() then return end
 
     local vbs = viewerBuffState[viewer] or {}
-    if anchorCacheMatches(vbs.anchorCache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY) then
-        return
-    end
 
     if not vbs.originalPoints then
         local originalPoints = {}
@@ -434,15 +455,33 @@ local function ApplyBuffIconAnchor(settings)
         viewerBuffState[viewer].originalPoints = originalPoints
     end
 
-    local ok = pcall(function()
-        viewer:ClearAllPoints()
-        viewer:SetPoint(sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
-    end)
+    local ok, px, py
+    if Helpers.FrameIsProtected(anchorFrame) or Helpers.FrameIsAnchoringRestricted(anchorFrame) then
+        -- Protected target: pin to UIParent absolute so the viewer is never
+        -- anchoring-restricted and SetSize flexes in combat.  The returned
+        -- px,py encode the target's current origin so the cache detects when
+        -- the target moves and re-pins on the next OnUpdate tick.
+        ok, px, py = Helpers.PinFrameToTargetAbsolute(viewer, sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
+        if ok and anchorCacheMatches(vbs.anchorCache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, px, py) then
+            return
+        end
+    else
+        -- Insecure target: relative anchoring is taint-safe and follows free.
+        -- Cache keyed on the raw offsets (constant) — skip if unchanged.
+        px, py = offsetX, offsetY
+        if anchorCacheMatches(vbs.anchorCache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, px, py) then
+            return
+        end
+        ok = pcall(function()
+            viewer:ClearAllPoints()
+            viewer:SetPoint(sourcePoint, anchorFrame, targetPoint, offsetX, offsetY)
+        end)
+    end
 
-    -- Only write cache when SetPoint succeeded — a failed pcall (e.g., anchor
-    -- frame not fully ready) must not block the OnUpdate retry loop.
+    -- Only write cache when the anchor succeeded — a held pin (target rect nil/
+    -- secret) must not block the OnUpdate retry loop.
     if ok then
-        writeAnchorCache(viewer, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY)
+        writeAnchorCache(viewer, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, px, py)
     end
 end
 
@@ -1325,7 +1364,6 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local addonName = ...
@@ -1375,13 +1413,6 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 LayoutBuffIcons()
             end)
         end
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        -- After combat ends, try to populate if we haven't yet
-        C_Timer.After(0.5, function()
-            ForcePopulateBuffIcons()
-            LayoutBuffIcons()  -- Direct calls
-            LayoutBuffBars()
-        end)
     end
 end)
 

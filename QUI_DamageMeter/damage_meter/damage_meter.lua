@@ -172,6 +172,8 @@ local function MarkDirtyKey(selectorKey, damageMeterType)
         Data._dirty[selectorKey] = bySelector
     end
     bySelector[damageMeterType] = true
+    -- Re-arm the ticker: marking work to do must wake a parked (idle) ticker.
+    Data:WakeTicker()
 end
 
 local function MarkDirty(sessionType, damageMeterType)
@@ -180,6 +182,8 @@ end
 
 local function MarkAllDirty()
     Data._allDirty = true
+    -- Re-arm the ticker so the next pass picks up the full refetch.
+    Data:WakeTicker()
 end
 
 local function MarkCurrentDirty()
@@ -255,6 +259,10 @@ Data._eventFrame:SetScript("OnEvent", function(_, event, arg1, _arg2)
         Data._inCombat = true
         Data._combatStartTime = GetTime()
         Data._combatEndTime   = nil
+        -- Combat drives the live elapsed clock, which must tick smoothly even
+        -- through damage lulls. Re-arm the ticker; it stays awake until combat
+        -- ends and pending work drains (see the park check in OnUpdate).
+        Data:WakeTicker()
     elseif event == "PLAYER_REGEN_ENABLED" then
         Data._inCombat = false
         Data._combatEndTime   = GetTime()
@@ -287,7 +295,25 @@ Data._ticker:SetScript("OnUpdate", function(_, elapsed)
     if Data._tickAccum < cadence then return end
     Data._tickAccum = 0
     Data:Refresh()
+    -- Park when idle: out of combat with no pending work. A hidden frame fires
+    -- no OnUpdate, so this drops the per-frame tick cost entirely while nothing
+    -- can change. Any MarkDirty*/PLAYER_REGEN_DISABLED re-arms via WakeTicker.
+    if not Data._inCombat and not Data._allDirty and not next(Data._dirty) then
+        Data._ticker:Hide()
+    end
 end)
+
+-- Wake a parked (hidden) ticker. Hidden frames run no OnUpdate, so every path
+-- that creates work (dirty marks, combat start) must call this to resume ticks.
+-- Resets the accumulator so a just-woken ticker refreshes promptly rather than
+-- inheriting a stale partial accumulation.
+function Data:WakeTicker()
+    local ticker = self._ticker
+    if ticker and not ticker:IsShown() then
+        self._tickAccum = 0
+        ticker:Show()
+    end
+end
 
 -- Pure helper: takes a raw C_DamageMeter combatSources array and returns a
 -- normalized view. Fields use Blizzard's actual API names (totalAmount,

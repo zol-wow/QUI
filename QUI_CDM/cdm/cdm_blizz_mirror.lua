@@ -52,6 +52,7 @@ local _categoryByFrame     = {}    -- [child frame] = catNum (lazy-init category
 local _childByCooldownFrame = setmetatable({}, { __mode = "k" }) -- [child.Cooldown] = child frame
 local _forceShowingChild    = setmetatable({}, { __mode = "k" }) -- [child] = true for mirror-internal Show()
 local _textOwnerHooked      = setmetatable({}, { __mode = "k" }) -- [Applications/ChargeCount owner] = true
+CDMBlizzMirror._childHooksBound = setmetatable({}, { __mode = "k" }) -- [child] = { cooldownID, category } once hooks are installed
 CDMBlizzMirror._knownShownByFrame = setmetatable({}, { __mode = "k" }) -- [frame/text owner] = last clean Show/Hide/SetShown state
 -- CooldownViewerCooldown info captured from C_CooldownViewer.GetCooldownViewerCooldownInfo:
 --   cooldownID, spellID, overrideSpellID, overrideTooltipSpellID,
@@ -1148,7 +1149,7 @@ function CDMBlizzMirror.GetRawCooldownViewerDebugLines()
                 "wasSetFromAura=" .. FormatRawValue(child and child.wasSetFromAura),
                 "wasSetFromCooldown=" .. FormatRawValue(child and child.wasSetFromCooldown),
                 "wasSetFromCharges=" .. FormatRawValue(child and child.wasSetFromCharges),
-                "bound=" .. FormatRawValue(child and child._quiMirrorBound),
+                "bound=" .. FormatRawValue(child and CDMBlizzMirror._childHooksBound[child] ~= nil),
             }
             lines[#lines + 1] = table.concat(parts, " | ")
         end
@@ -1284,11 +1285,12 @@ end
 --
 -- Blizzard's CDM viewer pools/reuses child frames across rebuilds — a frame
 -- that displayed cooldownID X at bind time may later display cooldownID Y
--- (talent change, spec change, viewer rebuild). `_quiMirrorBound` is set on
--- the frame to avoid re-installing the hook closure, but the closure itself
--- must read `cooldownID` from the live frame each fire — never close over
--- the bind-time cooldownID. State is lazy-initialized so reassigned
--- cooldownIDs that haven't been formally walked still get a state slot.
+-- (talent change, spec change, viewer rebuild). `_childHooksBound` tracks
+-- hook installation and the last bound cooldown identity in a weak side table
+-- so we never add addon-owned fields to Blizzard's frame. The closure itself
+-- must read `cooldownID` from the live frame each fire — never close over the
+-- bind-time cooldownID. State is lazy-initialized so reassigned cooldownIDs
+-- that haven't been formally walked still get a state slot.
 ---------------------------------------------------------------------------
 EnsureState = function(cdID, frame, viewerCategory)
     if not cdID then return nil end
@@ -2310,10 +2312,28 @@ local function BuildAuraProbeLines(cdID, viewerCategory)
     return lines
 end
 
+-- Stack/count TEXT-only mirror-refresh reasons (no aura/active/totem state
+-- flip): these take the light text-repaint path; every other reason --
+-- aura-clear, active-state, related-aura*, totem-*, overlay, uses, AND any
+-- unlisted/unknown reason -- does a full re-resolve (stale-icon safety).
+-- Published on the module table (NOT a chunk-local: this file is at Lua's
+-- 200-local cap) so the unit test verifies the real classification set.
+CDMBlizzMirror._textOnlyMirrorReasons = {
+    ["stack-text"] = true,
+    ["stack-hidden"] = true,
+    ["stack-empty"] = true,
+    ["stack-clear"] = true,
+    ["aura-stack-carry"] = true,
+    ["aura-stack-hidden"] = true,
+    ["charge-field"] = true,
+    ["charge-field-hide"] = true,
+}
+
 RequestMirrorTextRefresh = function(cooldownID, viewerCategory, reason)
     local icons = ns.CDMIcons
     if icons and icons.RequestMirrorTextRefresh then
-        icons:RequestMirrorTextRefresh(cooldownID, viewerCategory, reason)
+        local needsFull = not CDMBlizzMirror._textOnlyMirrorReasons[reason]
+        icons:RequestMirrorTextRefresh(cooldownID, viewerCategory, needsFull)
     end
 end
 
@@ -2898,6 +2918,56 @@ local function RefreshCooldownViewerRelatedAuraStates()
     return changed
 end
 
+CDMBlizzMirror._RefreshCooldownViewerRelatedAuraState = function(cdID, cat)
+    if not (cdID and cat and not IsAuraViewerCategoryName(cat)) then return false end
+    local child = GetInstanceChild(cdID, cat)
+    local s = EnsureState(cdID, child, cat)
+    if not s then return false end
+
+    local hadRelatedAura = s.auraDurObjSource == "aura-related-child"
+        or s.auraInstanceIDSource == "aura-related-child"
+    if CaptureAuraInstanceFromRelatedAuraChildren(cdID, cat) then
+        RequestMirrorTextRefreshForState(cdID, s, "related-aura")
+        return true
+    elseif hadRelatedAura then
+        ClearAuraDurationLane(cdID, s)
+        s.auraInstanceID = nil
+        s.auraInstanceIDSource = nil
+        s.auraUnit = nil
+        s.auraData = nil
+        s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
+        s.lastTouch = GetTime()
+        RequestMirrorTextRefreshForState(cdID, s, "related-aura-clear")
+        return true
+    end
+    return false
+end
+
+CDMBlizzMirror._RefreshOverlayMappedStates = function(spellID)
+    if not spellID then return false end
+    local changed = false
+    local function RefreshMappedCooldown(catName, cdID)
+        if not (catName and cdID) then return end
+        if IsAuraViewerCategoryName(catName) then
+            local child = GetInstanceChild(cdID, catName)
+            if child then
+                RefreshChildSemanticState(child, cdID, false)
+                changed = true
+            end
+        elseif CDMBlizzMirror._RefreshCooldownViewerRelatedAuraState(cdID, catName) then
+            changed = true
+        end
+    end
+
+    for catName, catMap in pairs(_cdIDByCatSpell) do
+        RefreshMappedCooldown(catName, catMap and catMap[spellID])
+    end
+    for catName, directMap in pairs(_directCDIDByCatSpell) do
+        RefreshMappedCooldown(catName, directMap and directMap[spellID])
+    end
+    return changed
+end
+
 local function SetChildPandemicState(child, active)
     local cdID = child and child.cooldownID
     if not cdID then return end
@@ -3171,10 +3241,17 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
     -- Always refresh the bind-time category map and seed state for the
     -- current cooldownID, even if the frame was already bound.
     local catName = CATEGORY_NAMES[viewerCategoryNum]
+    local hookBinding = CDMBlizzMirror._childHooksBound[child]
+    local alreadyBound = hookBinding ~= nil
+    local sameBinding = alreadyBound
+        and hookBinding.cooldownID == cooldownID
+        and hookBinding.category == catName
     _categoryByFrame[child] = viewerCategoryNum
     RegisterCooldownInstance(cooldownID, catName, child, nil)
     EnsureState(cooldownID, child, catName)
-    RefreshChildSemanticState(child, cooldownID, false)
+    if not sameBinding then
+        RefreshChildSemanticState(child, cooldownID, false)
+    end
 
     local cooldownFrame = child.Cooldown
     if cooldownFrame then
@@ -3182,12 +3259,19 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
     end
 
     BindChildTextHooks(child)
-    SyncChildChargeCountFields(child, cooldownID, EnsureState(cooldownID, child, catName), "charge-field-bind")
+    if not sameBinding then
+        SyncChildChargeCountFields(child, cooldownID, EnsureState(cooldownID, child, catName), "charge-field-bind")
+    end
 
-    if child._quiMirrorBound then
+    if alreadyBound then
+        hookBinding.cooldownID = cooldownID
+        hookBinding.category = catName
         return
     end
-    child._quiMirrorBound = true
+    CDMBlizzMirror._childHooksBound[child] = {
+        cooldownID = cooldownID,
+        category = catName,
+    }
 
     -- Cooldown widget hooks — capture active-state transitions on every
     -- Blizzard push, regardless of which Cooldown method the mixin uses.
@@ -3489,7 +3573,7 @@ end
 ---------------------------------------------------------------------------
 -- Discovery walk. OOC-only. Idempotent — re-runs on viewer rebuilds and
 -- only binds new children (existing bindings short-circuit via the
--- `_quiMirrorBound` flag).
+-- `_childHooksBound` side table).
 ---------------------------------------------------------------------------
 local _walkPendingOnRegen = false
 local _coldLoadDeferredMirrorRefreshPending = false
@@ -3723,7 +3807,7 @@ local function BindNewChildren()
                 local child = children[i]
                 local cdID  = child and child.cooldownID
                 if cdID then
-                    local wasBound = child._quiMirrorBound == true
+                    local wasBound = CDMBlizzMirror._childHooksBound[child] ~= nil
                     local bound = BindChildToCatalogCategories(child, cdID, catNum)
                     if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                         CDMBlizzMirror.TaintLog("LazyBind", "cdID", cdID,
@@ -3744,6 +3828,67 @@ local function BindNewChildren()
             end
         end
     end
+end
+
+CDMBlizzMirror._BindMappedChildrenForSpell = function(spellID)
+    if not spellID then return false end
+    if not C_CooldownViewer or not C_CooldownViewer.GetCooldownViewerCategorySet then
+        return false
+    end
+
+    local candidateCooldowns = {}
+    local function AddSpellID(id)
+        if type(id) ~= "number" or id <= 0 then return end
+        for _, catMap in pairs(_cdIDByCatSpell) do
+            local cdID = catMap[id]
+            if cdID then
+                candidateCooldowns[cdID] = true
+            end
+        end
+        for _, directMap in pairs(_directCDIDByCatSpell) do
+            local cdID = directMap[id]
+            if cdID then
+                candidateCooldowns[cdID] = true
+            end
+        end
+    end
+
+    AddSpellID(spellID)
+    if Sources and Sources.QueryBaseSpell then
+        AddSpellID(CleanScalar(Sources.QueryBaseSpell(spellID)))
+    end
+
+    local hasCandidates = false
+    for _ in pairs(candidateCooldowns) do
+        hasCandidates = true
+        break
+    end
+    if not hasCandidates then return false end
+
+    local changed = false
+    for catNum = 0, 3 do
+        local viewerName = CATEGORY_GLOBALS[catNum]
+        local viewer = _G[viewerName]
+        if viewer and viewer.GetChildren then
+            local children = { viewer:GetChildren() }
+            for i = 1, #children do
+                local child = children[i]
+                local cdID = child and child.cooldownID
+                if cdID and candidateCooldowns[cdID] then
+                    local wasBound = CDMBlizzMirror._childHooksBound[child] ~= nil
+                    local bound = BindChildToCatalogCategories(child, cdID, catNum)
+                    changed = bound or changed
+                    if bound and not wasBound then
+                        local categories = ResolveChildCatalogCategories(cdID, CATEGORY_NAMES[catNum])
+                        for _, catName in ipairs(categories) do
+                            FireOnChildBound(cdID, catName)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return changed
 end
 
 CDMBlizzMirror.BindNewChildren = BindNewChildren
@@ -4554,18 +4699,93 @@ function CDMBlizzMirror.HandlePlayerTargetChanged()
     RefreshCooldownViewerRelatedAuraStates()
 end
 
+-- Scoped UNIT_AURA refresh. Blizzard's CooldownViewer:OnUnitAura touches only
+-- the item frames mapped to the changed auraInstanceIDs and full-relayouts only
+-- on isFullUpdate. The mirror used to walk EVERY aura-viewer child plus every
+-- related-aura cooldown child on EVERY UNIT_AURA tick, so one proc's auras
+-- (e.g. Hammer of Light) re-evaluated all icons and flickered charges/stacks
+-- across the whole bar. Scope to the payload like Blizzard; the caller full-
+-- walks only when the payload is missing or is a full update.
+--
+-- Defined on the module table (not a chunk local) to stay under Lua 5.1's
+-- 200-local cap for this file.
+function CDMBlizzMirror._RefreshScopedAuraViewerStates(unit, updateInfo)
+    -- Refresh the aura-viewer child(ren) a single aura spellID maps to. Reuses
+    -- the per-spell map CaptureAurasFromUnitAuraPayload already trusts as the
+    -- primary stamp path, so active-state scoping has parity with capture.
+    local function refreshForSpell(sid)
+        if not sid then return end
+        local buffMap = _directCDIDByCatSpell.buff
+        local cdID = buffMap and buffMap[sid]
+        if cdID then
+            local child = GetInstanceChild(cdID, "buff")
+            if child then RefreshChildSemanticState(child, cdID, false) end
+        end
+        local barMap = _directCDIDByCatSpell.trackedBar
+        cdID = barMap and barMap[sid]
+        if cdID then
+            local child = GetInstanceChild(cdID, "trackedBar")
+            if child then RefreshChildSemanticState(child, cdID, false) end
+        end
+    end
+
+    if type(updateInfo.addedAuras) == "table" then
+        for _, ad in ipairs(updateInfo.addedAuras) do
+            refreshForSpell(GetPayloadAuraSpellID(ad))
+        end
+    end
+    if type(updateInfo.updatedAuraInstanceIDs) == "table"
+        and Sources and Sources.QueryAuraDataByAuraInstanceID then
+        for _, instID in ipairs(updateInfo.updatedAuraInstanceIDs) do
+            local ad = Sources.QueryAuraDataByAuraInstanceID(unit, instID)
+            refreshForSpell(GetPayloadAuraSpellID(ad))
+        end
+    end
+    -- Deactivation: a removed aura carries only its instance ID (no spellID).
+    -- Reverse-map the stamped auraInstanceID to its child via one bounded pass
+    -- over aura-viewer children. Runs only on removal ticks, never on the
+    -- frequent update-only ticks.
+    local removed = updateInfo.removedAuraInstanceIDs
+    if type(removed) == "table" and removed[1] ~= nil then
+        local removedSet = {}
+        for _, id in ipairs(removed) do removedSet[id] = true end
+        for key, child in pairs(_childByInstanceKey) do
+            local cdID = child and child.cooldownID
+            if cdID and IsAuraViewerCategoryName(GetFrameCategoryName(child)) then
+                local s = _mirrorState[key]
+                if s and s.auraInstanceID and removedSet[s.auraInstanceID] then
+                    RefreshChildSemanticState(child, cdID, false)
+                end
+            end
+        end
+    end
+end
+
 function CDMBlizzMirror.HandleUnitAuraChanged(unit, updateInfo)
     -- Catch CooldownViewer children created post-Walk: pet summon, talent
     -- activation, dynamic class spec swaps, etc. all can introduce cdIDs
     -- Blizzard had not surfaced when our last Walk ran.
     BindNewChildren()
 
-    -- Event-driven visibility: Blizzard updates the exact child field for
-    -- aura-viewer cIDs, even for hasAura=false entries that never expose a
-    -- normal auraInstanceID path. Read every aura child on UNIT_AURA instead
-    -- of polling from PackState.
-    RefreshAuraViewerChildActiveStates()
-    RefreshCooldownViewerRelatedAuraStates()
+    -- Event-driven visibility: refresh aura-viewer + related-aura children.
+    -- Scope to the payload (Blizzard parity); full-walk only when we cannot
+    -- scope — no payload (nil) or a full update.
+    if not updateInfo or updateInfo.isFullUpdate then
+        RefreshAuraViewerChildActiveStates()
+        RefreshCooldownViewerRelatedAuraStates()
+    else
+        CDMBlizzMirror._RefreshScopedAuraViewerStates(unit, updateInfo)
+        -- A cooldown only borrows an aura's duration when that aura appears or
+        -- vanishes; pure stack/duration updates cannot change WHICH aura is
+        -- borrowed, so skip the related-aura walk on update-only ticks.
+        local hasAdds = type(updateInfo.addedAuras) == "table"
+            and updateInfo.addedAuras[1] ~= nil
+        local hasRemoves = type(updateInfo.removedAuraInstanceIDs) == "table"
+            and updateInfo.removedAuraInstanceIDs[1] ~= nil
+        if hasAdds or hasRemoves then
+            RefreshCooldownViewerRelatedAuraStates()
+        end
+    end
 
     if not unit then
         CaptureAurasFromUnit("player")
@@ -4659,6 +4879,68 @@ CDMBlizzMirror._RefreshSpellOverridePair = function(baseSpellID, overrideSpellID
     _RebuildSpellNameIndex()
 end
 
+CDMBlizzMirror._RefreshOverlayCooldownInfo = function(spellID)
+    if not spellID then return false end
+    if not (C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo) then
+        return false
+    end
+
+    local baseSpellID
+    if Sources and Sources.QueryBaseSpell then
+        baseSpellID = CleanScalar(Sources.QueryBaseSpell(spellID))
+    end
+
+    local cdID, hostCatName = FindMappedCooldownID(spellID, baseSpellID)
+    if not cdID or not hostCatName then return false end
+
+    local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+    if not info then return false end
+
+    local clean = SanitizeCooldownInfo(cdID, info)
+    local prev = GetInstanceInfo(cdID, hostCatName)
+    local changed = not prev
+        or prev.spellID ~= clean.spellID
+        or prev.overrideSpellID ~= clean.overrideSpellID
+        or prev.overrideTooltipSpellID ~= clean.overrideTooltipSpellID
+        or prev.selfAura ~= clean.selfAura
+        or prev.hasAura ~= clean.hasAura
+        or prev.charges ~= clean.charges
+        or prev.isKnown ~= clean.isKnown
+    if not changed then
+        return false, cdID, hostCatName
+    end
+
+    RegisterCooldownInstance(cdID, hostCatName, GetInstanceChild(cdID, hostCatName), clean)
+    RemoveCooldownIDFromMaps(cdID, hostCatName)
+    MapCooldownInfoIDs(_cdIDByCatSpell[hostCatName], clean, cdID)
+    _RebuildSpellNameIndex()
+    RequestMirrorTextRefresh(cdID, hostCatName, "overlay")
+    return true, cdID, hostCatName
+end
+
+CDMBlizzMirror._RunOverlayTargetedRefresh = function(spellID)
+    if not spellID then return false end
+    CDMBlizzMirror._BindMappedChildrenForSpell(spellID)
+    local refreshedCooldown = CDMBlizzMirror._RefreshOverlayCooldownInfo(spellID)
+    local refreshedState = CDMBlizzMirror._RefreshOverlayMappedStates(spellID)
+    if refreshedState and not refreshedCooldown then
+        RequestMirrorTextRefreshForMappedSpells("overlay", spellID)
+    end
+    return refreshedCooldown or refreshedState
+end
+
+CDMBlizzMirror._ScheduleOverlayTargetedRefresh = function(spellID)
+    if not (spellID and C_Timer and C_Timer.After) then return end
+    CDMBlizzMirror._overlayRefreshTokens = CDMBlizzMirror._overlayRefreshTokens or {}
+    local tokens = CDMBlizzMirror._overlayRefreshTokens
+    tokens[spellID] = (tokens[spellID] or 0) + 1
+    local token = tokens[spellID]
+    C_Timer.After(0, function()
+        if tokens[spellID] ~= token then return end
+        CDMBlizzMirror._RunOverlayTargetedRefresh(spellID)
+    end)
+end
+
 _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     if event == "SPELL_UPDATE_USES" then
         BindNewChildren()
@@ -4670,12 +4952,8 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
 
     if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW"
         or event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
-        BindNewChildren()
-        RefreshAuraViewerChildActiveStates()
-        RefreshCooldownViewerRelatedAuraStates()
-        if not RequestMirrorTextRefreshForMappedSpells("overlay", arg1) then
-            RequestMirrorTextRefresh(nil, nil, "overlay")
-        end
+        CDMBlizzMirror._RunOverlayTargetedRefresh(arg1)
+        CDMBlizzMirror._ScheduleOverlayTargetedRefresh(arg1)
         return
     end
 

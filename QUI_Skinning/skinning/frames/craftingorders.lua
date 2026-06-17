@@ -135,7 +135,10 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.RefreshCategorySelected(button)
             -- Reapply the QUI font: Blizzard's element initializer calls
             -- SetNormalFontObject on every rebind, reverting the label font.
+            -- StyleCategoryRow only re-runs on acquisition/filter-refresh, so
+            -- also lock the font object to re-assert on rebinds in between.
             SkinBase.SkinFontString(button.Text)
+            SkinBase.LockFontObject(button, { fontOnly = true })
         end
         local function RefreshCategoryButtons(self)
             SafeForEachFrame(self, StyleCategoryRow)

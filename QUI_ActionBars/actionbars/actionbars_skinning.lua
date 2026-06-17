@@ -190,7 +190,17 @@ function SuppressProcVisualFrame(frame)
     end
 end
 
+-- Whether QUI should suppress Blizzard's native proc/spell-activation art.
+-- Only suppress when a QUI glow provider will actually draw the glow. When the
+-- glow source is the external skin or Off, leave native/skin art intact.
+local function ShouldSuppressNativeProc()
+    local db = GetDB()
+    local source = db and db.global and db.global.glowSource or "QUI"
+    return source ~= "Skin" and source ~= "Off"
+end
+
 function SuppressButtonProcVisuals(button)
+    if not ShouldSuppressNativeProc() then return end
     if not button then return end
 
     pcall(function()
@@ -259,6 +269,23 @@ UpdateButtonProfessionQuality = function(button, settings)
     overlay:Show()
 end
 
+-- Normalized region table for the external skin bridge / icon_skin. Cached on
+-- the button. Populated from the QUI overlay textures created in SkinButton.
+local function GetButtonRegions(button)
+    local r = button._quiRegions
+    if not r then
+        r = {}
+        button._quiRegions = r
+    end
+    local state = GetFrameState(button)
+    r.Icon     = GetButtonIconTexture(button)
+    r.Border   = state.normal
+    r.Backdrop = state.backdrop
+    r.Gloss    = state.gloss
+    return r
+end
+ActionBarsOwned.GetButtonRegions = GetButtonRegions
+
 -- Apply QUI skin to a single button
 SkinButton = function(button, settings)
     if not button or not settings then
@@ -270,6 +297,23 @@ SkinButton = function(button, settings)
     if not settings.skinEnabled then
         return
     end
+
+    -- Overlay the globally-selected icon skin preset onto the per-bar gloss/
+    -- backdrop knobs. Border + all other knobs stay per-bar. Default = no-op.
+    do
+        local gdb = GetDB()
+        local skinName = gdb and gdb.global and gdb.global.iconSkin or "Default"
+        if skinName ~= "Default" and ns.IconSkin then
+            local preset = ns.IconSkin.Resolve(skinName)
+            settings = setmetatable({
+                showGloss     = preset.gloss and true or false,
+                glossAlpha    = preset.glossAlpha,
+                showBackdrop  = (preset.backdropAlpha or 0) > 0,
+                backdropAlpha = preset.backdropAlpha,
+            }, { __index = settings })
+        end
+    end
+
     local state = GetFrameState(button)
 
     -- Skip if already skinned with same settings (direct field comparison,
@@ -458,6 +502,26 @@ SkinButton = function(button, settings)
             C_Timer.After(0, cachedSkinFn)
         end)
         button._quiArtHooked = true
+    end
+
+    -- External skin library ownership: when the user has enabled external
+    -- skinning and the library is present, hand the button to it and hide
+    -- QUI's own overlay textures so the external skin shows instead of a
+    -- double-skin. When disabled/absent, QUI's in-house skin (drawn above)
+    -- stands. The in-house skin-PRESET selection is applied separately via
+    -- the action-bar settings layer.
+    local db = GetDB()
+    local externalOn = db and db.global and db.global.externalSkinning
+    local Bridge = ns.ExternalSkinBridge
+    if externalOn and Bridge and Bridge.IsAvailable() then
+        Bridge.AddButton("actionbars", button, GetButtonRegions(button))
+        button._quiBridged = true
+        if state.normal   then state.normal:Hide()   end
+        if state.backdrop then state.backdrop:Hide() end
+        if state.gloss    then state.gloss:Hide()    end
+    elseif button._quiBridged and Bridge then
+        Bridge.RemoveButton("actionbars", button)
+        button._quiBridged = nil
     end
 end
 

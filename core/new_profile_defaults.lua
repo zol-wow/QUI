@@ -5207,6 +5207,7 @@ ns.NewProfileSeed = {
         showDifficulty = true,
         showMail = true,
         showMissions = true,
+        missionsInDrawer = false,
         showTracking = true,
         showZoneText = true,
         showZoomButtons = true,

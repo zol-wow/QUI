@@ -137,6 +137,17 @@ local function InvalidateSettingsCache()
     cachedSettings = nil
 end
 
+-- True when the expansion landing page (garrison/mission) button should live in
+-- the button drawer instead of pinned to the minimap. Requires the button to be
+-- shown, the drawer feature enabled, and the user opt-in. When the drawer is
+-- disabled this returns false so the button falls back to the minimap pin.
+local function MissionButtonInDrawer()
+    local s = GetSettings()
+    if not s then return false end
+    return (s.showMissions and s.missionsInDrawer
+        and s.buttonDrawer and s.buttonDrawer.enabled) and true or false
+end
+
 local function SuppressExternalHudChecks(duration)
     local now = (type(GetTime) == "function") and GetTime() or 0
     suppressHudChecksUntil = math.max(suppressHudChecksUntil or 0, now + (duration or HUD_CHECK_SUPPRESS_DURATION))
@@ -1628,6 +1639,9 @@ if ExpansionLandingPageMinimapButton and not expansionButtonHooked then
         C_Timer.After(0, function()
             local s = GetSettings()
             if not s then return end
+            -- In drawer mode the drawer owns the button's parent; don't yank it
+            -- back to the minimap.
+            if MissionButtonInDrawer() then return end
             if s.showMissions and ExpansionLandingPageMinimapButton.title then
                 expansionButtonReparenting = true
                 ExpansionLandingPageMinimapButton:SetParent(Minimap)
@@ -1639,6 +1653,8 @@ if ExpansionLandingPageMinimapButton and not expansionButtonHooked then
         C_Timer.After(0, function()
             local s = GetSettings()
             if not s or not s.showMissions then return end
+            -- In drawer mode the drawer controls positioning; skip the minimap pin.
+            if MissionButtonInDrawer() then return end
             if InCombatLockdown() then return end
             ExpansionLandingPageMinimapButton:ClearAllPoints()
             ExpansionLandingPageMinimapButton:SetPoint("LEFT", Minimap, "LEFT", -5, 0)
@@ -1746,10 +1762,19 @@ local function UpdateButtonVisibility()
     -- and allow the user setting to hide it.
     if ExpansionLandingPageMinimapButton then
         if settings.showMissions and ExpansionLandingPageMinimapButton.title then
-            ExpansionLandingPageMinimapButton:SetParent(Minimap)
-            ExpansionLandingPageMinimapButton:ClearAllPoints()
-            ExpansionLandingPageMinimapButton:SetPoint("LEFT", Minimap, "LEFT", -5, 0)
-            ExpansionLandingPageMinimapButton:Show()
+            if MissionButtonInDrawer() then
+                -- Drawer mode: parent under Minimap so the drawer scan discovers
+                -- it, show it, and let CollectButton take over positioning. Skip
+                -- the minimap LEFT pin. Once collected, CollectButton no-ops
+                -- SetParent/SetPoint so these calls become harmless.
+                ExpansionLandingPageMinimapButton:SetParent(Minimap)
+                ExpansionLandingPageMinimapButton:Show()
+            else
+                ExpansionLandingPageMinimapButton:SetParent(Minimap)
+                ExpansionLandingPageMinimapButton:ClearAllPoints()
+                ExpansionLandingPageMinimapButton:SetPoint("LEFT", Minimap, "LEFT", -5, 0)
+                ExpansionLandingPageMinimapButton:Show()
+            end
         else
             ExpansionLandingPageMinimapButton:SetParent(hiddenButtonParent)
             ExpansionLandingPageMinimapButton:Hide()
@@ -2375,7 +2400,14 @@ local function IsMinimapButton(frame)
     if not frame or not frame.IsObjectType then return false end
     if not (frame:IsObjectType("Frame") or frame:IsObjectType("Button")) then return false end
     local name = frame:GetName()
-    if not name or DRAWER_BLACKLIST[name] then return false end
+    if not name then return false end
+    -- Expansion landing page (garrison/mission) button: blacklisted by default
+    -- because the minimap module pins it. When the user opts it into the drawer
+    -- we collect it explicitly, bypassing the blacklist and secure-frame skip.
+    if name == "ExpansionLandingPageMinimapButton" then
+        return MissionButtonInDrawer() and ExpansionLandingPageMinimapButton.title ~= nil
+    end
+    if DRAWER_BLACKLIST[name] then return false end
     -- Skip Blizzard-owned secure frames
     if issecurevariable(_G, name) then return false end
     -- LibDBIcon buttons
@@ -2400,6 +2432,11 @@ end
 
 local function ShouldSkipDrawerButton(name)
     if not name then return true end
+    -- Mirror the IsMinimapButton exception: the landing page button is only
+    -- collectable when opted into the drawer.
+    if name == "ExpansionLandingPageMinimapButton" then
+        return not MissionButtonInDrawer()
+    end
     if DRAWER_BLACKLIST[name] then return true end
     if name == "LibDBIcon10_QUI" then
         local profile = QUICore and QUICore.db and QUICore.db.profile

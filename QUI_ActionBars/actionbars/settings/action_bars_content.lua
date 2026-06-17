@@ -349,6 +349,85 @@ local function BuildMasterSettingsTab(tabContent)
 
     closeSection(s1)
 
+    -- SKINS & GLOWS (built-in skin preset + proc-glow source/style/color)
+    -- Convert plain name arrays from the registries into dropdown option tables.
+    local function _toOpts(names)
+        local o = {}
+        for _, n in ipairs(names) do o[#o + 1] = { value = n, text = n } end
+        return o
+    end
+
+    headerAt("Skins & Glows")
+    local sSkin = sectionAt()
+
+    local skinNames = (ns.IconSkin and ns.IconSkin.GetSkinList and ns.IconSkin.GetSkinList()) or { "Default" }
+    local glowSources = (ns.IconGlow and ns.IconGlow.GetSourceList and ns.IconGlow.GetSourceList()) or { "QUI", "Off" }
+
+    local extW = GUI:CreateFormToggle(sSkin.frame, nil, "externalSkinning", global, RefreshActionBars,
+        { description = "When an external button-skinning addon is installed, let it skin QUI's action buttons instead of QUI's built-in skin." })
+    local skinDD = GUI:CreateFormDropdown(sSkin.frame, nil, _toOpts(skinNames),
+        "iconSkin", global, RefreshActionBars,
+        { description = "Built-in button skin preset." })
+    sSkin.AddRow(
+        Opts.BuildSettingRow(sSkin.frame, "External Skinning", extW),
+        Opts.BuildSettingRow(sSkin.frame, "Button Skin", skinDD)
+    )
+
+    local glowSrcDD = GUI:CreateFormDropdown(sSkin.frame, nil, _toOpts(glowSources),
+        "glowSource", global, RefreshActionBars,
+        { description = "Where proc / spell-activation glows come from." })
+    local glowStyleDD = GUI:CreateFormDropdown(sSkin.frame, nil,
+        { { value = "Button", text = "Button Glow" }, { value = "Pixel", text = "Pixel Glow" }, { value = "AutoCast", text = "AutoCast" } },
+        "glowStyle", global, RefreshActionBars,
+        { description = "Built-in glow animation style (used when Glow Source is QUI)." })
+    sSkin.AddRow(
+        Opts.BuildSettingRow(sSkin.frame, "Glow Source", glowSrcDD),
+        Opts.BuildSettingRow(sSkin.frame, "Glow Style", glowStyleDD)
+    )
+
+    local glowColorSrcDD = GUI:CreateFormDropdown(sSkin.frame, nil,
+        { { value = "theme", text = "Theme Accent" }, { value = "custom", text = "Custom" } },
+        "glowColorSource", global, RefreshActionBars,
+        { description = "Use the QUI theme accent color for proc glows, or a custom color." })
+    sSkin.AddRow(
+        Opts.BuildSettingRow(sSkin.frame, "Glow Color Source", glowColorSrcDD)
+    )
+
+    local glowColorW = GUI:CreateFormColorPicker(sSkin.frame, nil, "glowColor", global, RefreshActionBars, nil,
+        { description = "Tint for Pixel / AutoCast glows (used when Glow Color Source is Custom)." })
+    sSkin.AddRow(
+        Opts.BuildSettingRow(sSkin.frame, "Glow Color", glowColorW)
+    )
+
+    local glowLinesW = GUI:CreateFormSlider(sSkin.frame, nil, 1, 16, 1, "glowLines", global, RefreshActionBars,
+        { description = "Number of lines drawn around the button for the Pixel glow style." })
+    local glowFreqW = GUI:CreateFormSlider(sSkin.frame, nil, 0.05, 1.0, 0.05, "glowFrequency", global, RefreshActionBars,
+        { description = "Animation speed of the Pixel glow style. Lower is slower." })
+    sSkin.AddRow(
+        Opts.BuildSettingRow(sSkin.frame, "Pixel Glow Lines", glowLinesW),
+        Opts.BuildSettingRow(sSkin.frame, "Glow Speed", glowFreqW)
+    )
+
+    local glowThickW = GUI:CreateFormSlider(sSkin.frame, nil, 1, 5, 1, "glowThickness", global, RefreshActionBars,
+        { description = "Thickness of the lines in the Pixel glow style." })
+    local glowPartW = GUI:CreateFormSlider(sSkin.frame, nil, 1, 12, 1, "glowParticles", global, RefreshActionBars,
+        { description = "Number of particles in the AutoCast glow style." })
+    sSkin.AddRow(
+        Opts.BuildSettingRow(sSkin.frame, "Pixel Glow Thickness", glowThickW),
+        Opts.BuildSettingRow(sSkin.frame, "AutoCast Particles", glowPartW)
+    )
+
+    local glowLengthW = GUI:CreateFormSlider(sSkin.frame, nil, 0, 20, 1, "glowLength", global, RefreshActionBars,
+        { description = "Length of the lines in the Pixel glow style. 0 = auto (library default)." })
+    local glowScaleW = GUI:CreateFormSlider(sSkin.frame, nil, 0.5, 2.0, 0.1, "glowScale", global, RefreshActionBars,
+        { description = "Size of the particles in the AutoCast glow style." })
+    sSkin.AddRow(
+        Opts.BuildSettingRow(sSkin.frame, "Pixel Glow Length", glowLengthW),
+        Opts.BuildSettingRow(sSkin.frame, "AutoCast Scale", glowScaleW)
+    )
+
+    closeSection(sSkin)
+
     -- RANGE & USABILITY (mixed: toggle + color picker paired row)
     headerAt(ns.L["Range & Usability"])
     local s2 = sectionAt()

@@ -536,7 +536,43 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
     enableCheck:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -4)
     enableCheck:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, -4)
 
-    return 42
+    local externalSkinCheck = gui:CreateFormCheckbox(
+        sectionHost,
+        "External Skinning",
+        "externalSkinning",
+        groupFrames.gfdb,
+        function()
+            RefreshGroupFrames(groupFrames.contextMode)
+        end,
+        { description = "When an external button-skinning addon is installed, let it skin group-frame aura icons instead of QUI's own border." }
+    )
+    externalSkinCheck:SetPoint("TOPLEFT", enableCheck, "BOTTOMLEFT", 0, -8)
+    externalSkinCheck:SetPoint("TOPRIGHT", enableCheck, "BOTTOMRIGHT", 0, -8)
+
+    local skinOptions = {}
+    if ns.IconSkin and ns.IconSkin.GetSkinList then
+        for _, name in ipairs(ns.IconSkin.GetSkinList()) do
+            skinOptions[#skinOptions + 1] = { value = name, text = name }
+        end
+    end
+    if #skinOptions == 0 then skinOptions = { { value = "Default", text = "Default" } } end
+
+    local iconSkinDropdown = gui:CreateFormDropdown(
+        sectionHost,
+        "Button Skin",
+        skinOptions,
+        "iconSkin",
+        groupFrames.gfdb,
+        function()
+            RefreshGroupFrames(groupFrames.contextMode)
+        end,
+        nil,
+        { description = "In-house skin preset (gloss + backdrop) for group-frame aura icons. Default keeps QUI's original look." }
+    )
+    iconSkinDropdown:SetPoint("TOPLEFT", externalSkinCheck, "BOTTOMLEFT", 0, -12)
+    iconSkinDropdown:SetPoint("TOPRIGHT", externalSkinCheck, "BOTTOMRIGHT", 0, -12)
+
+    return 142
 end
 
 local function RenderGeneralCopySettingsSection(sectionHost, ctx)

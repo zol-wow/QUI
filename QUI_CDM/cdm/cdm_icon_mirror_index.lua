@@ -20,6 +20,11 @@ local wipe = wipe or function(tbl)
     end
 end
 
+local function setResolveCallerTag(tag)
+    local R = ns.CDMResolvers
+    if R and R.SetResolveCallerTag then R.SetResolveCallerTag(tag) end
+end
+
 local function CountPendingKeys(pendingByCategory)
     local count = 0
     for _, byCooldownID in pairs(pendingByCategory or {}) do
@@ -193,13 +198,15 @@ function CDMIconMirrorIndex.Create(callbacks)
         local editMode, ncdm, ncdmContainers, inCombat
         local batchStarted = false
 
+        setResolveCallerTag("mirrorRefresh")
         for category, byCooldownID in pairs(pendingByCategory) do
-            for cooldownID in pairs(byCooldownID) do
+            for cooldownID, pendingClass in pairs(byCooldownID) do
                 local iconSet = getIconSet(category, cooldownID, false)
                 if iconSet then
                     local mirrorState = callbacks.getMirrorStateByCooldownID
                         and callbacks.getMirrorStateByCooldownID(cooldownID, category)
                         or nil
+                    local drainNeedsFull = pendingClass ~= "text"
                     local keyHadIcon = false
                     for icon in pairs(iconSet) do
                         if icon
@@ -225,7 +232,7 @@ function CDMIconMirrorIndex.Create(callbacks)
                                 end
                                 batchStarted = true
                             end
-                            if callbacks.refreshIcon(icon, editMode, ncdm, ncdmContainers, inCombat) then
+                            if callbacks.refreshIcon(icon, editMode, ncdm, ncdmContainers, inCombat, drainNeedsFull) then
                                 refreshed = refreshed + 1
                             end
                         end
@@ -233,6 +240,7 @@ function CDMIconMirrorIndex.Create(callbacks)
                 end
             end
         end
+        setResolveCallerTag(nil)
 
         if mirrorStatsActive then stats.targeted = stats.targeted + effectiveKeys end
 
@@ -260,7 +268,7 @@ function CDMIconMirrorIndex.Create(callbacks)
         drainRefreshQueue()
     end
 
-    function controller:RequestRefresh(cooldownID, category)
+    function controller:RequestRefresh(cooldownID, category, needsFull)
         if callbacks.isRuntimeEnabled and not callbacks.isRuntimeEnabled() then return end
 
         if not (cooldownID and category) then
@@ -273,7 +281,14 @@ function CDMIconMirrorIndex.Create(callbacks)
             byCooldownID = {}
             controller.pendingByCategory[category] = byCooldownID
         end
-        byCooldownID[cooldownID] = true
+        -- Coalescing rule: "full" is sticky — a text-only refresh never
+        -- downgrades a pending full resolve, and a full resolve always upgrades
+        -- a pending text-only entry. Values: "full" | "text". Default is FULL:
+        -- only an EXPLICIT needsFull==false (a classified stack-text reason)
+        -- takes the light path; nil/unknown stays full so a needed resolve is
+        -- never skipped (stale-icon safety).
+        local cur = byCooldownID[cooldownID]
+        byCooldownID[cooldownID] = (needsFull == false and cur ~= "full") and "text" or "full"
 
         if controller.refreshPending then return end
         controller.refreshPending = true

@@ -133,6 +133,17 @@ function GUI:InitializeOptions()
             end
         end,
     })
+    self:AddToolsStripButton(frame, {
+        id = "layout", label = ns.L["Layout Mode"],
+        onClick = function()
+            if InCombatLockdown and InCombatLockdown() then
+                print("|cff60A5FAQUI:|r Cannot open Layout Mode during combat.")
+                return
+            end
+            if GUI and GUI.Hide then pcall(GUI.Hide, GUI) end
+            if _G.QUI_OpenLayoutMode then _G.QUI_OpenLayoutMode() end
+        end,
+    })
 
     self:SeedStaticSearchRoutesFromTiles(frame)
 

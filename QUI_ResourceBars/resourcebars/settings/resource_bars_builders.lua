@@ -243,6 +243,50 @@ local function BuildIndicatorCard(L, cfg)
 end
 
 ---------------------------------------------------------------------------
+-- SEGMENT DIVIDER (TICK) CARD
+---------------------------------------------------------------------------
+-- Divider lines between discrete resource segments (Holy Power, Chi, combo
+-- points, Soul Shards, etc.). Tick count is derived at render time from the
+-- live UnitPowerMax of the active power type, so the same width covers more
+-- total bar on specs with more segments. No effect on Runes or Essence: those
+-- are fragmented power types and render as separate segments, not ticks.
+local function BuildSegmentCard(L, cfg)
+    L.headerAt(ns.L["Segment Dividers"])
+    local s = L.sectionAt()
+
+    -- Dependent rows are gated on showTicks; forward-declared so the enable
+    -- checkbox's onChange can re-sync them after each toggle.
+    local thickRow, colorRow
+
+    local function SyncTickRows()
+        local on = cfg.showTicks == true
+        if thickRow then thickRow:SetEnabled(on) end
+        if colorRow then colorRow:SetEnabled(on) end
+        RefreshPowerBars()
+    end
+
+    local enableW = GUI:CreateFormCheckbox(s.frame, nil, "showTicks", cfg, SyncTickRows,
+        { description = ns.L["Draw divider lines between resource segments (Holy Power, Chi, combo points, etc.). No effect on Runes or Essence, which render as separate segments."] })
+    local thickW = GUI:CreateFormSlider(s.frame, nil, 1, 10, 1, "tickThickness", cfg, RefreshPowerBars,
+        { description = ns.L["Width of each segment divider in pixels. The same value covers more total bar width on specs with more segments."] })
+    thickRow = row(s.frame, ns.L["Divider Width"], thickW)
+    s.AddRow(
+        row(s.frame, ns.L["Show Segment Dividers"], enableW),
+        thickRow
+    )
+
+    local colorW = GUI:CreateFormColorPicker(s.frame, nil, "tickColor", cfg, RefreshPowerBars, nil,
+        { description = ns.L["Color of the segment divider lines."] })
+    colorRow = row(s.frame, ns.L["Divider Color"], colorW)
+    s.AddRow(colorRow)
+
+    -- Seed initial enabled state from the saved value.
+    SyncTickRows()
+
+    L.closeSection(s)
+end
+
+---------------------------------------------------------------------------
 -- PRIMARY POWER BAR
 ---------------------------------------------------------------------------
 local function BuildPrimaryPowerSettings(content, _key)
@@ -322,6 +366,23 @@ local function BuildPrimaryPowerSettings(content, _key)
         row(s3.frame, ns.L["Bar Texture"], texW),
         row(s3.frame, ns.L["Border Size"], borderW)
     )
+
+    -- Per-bar border color (prefix "" -> primary.borderColorSource/borderColor).
+    if ns.QUI_BorderControl then
+        local borderSrcW, borderColorW = ns.QUI_BorderControl.Attach(
+            GUI, s3.frame, primary, "", RefreshPowerBars,
+            {
+                label             = ns.L["Border Color Source"],
+                colorLabel        = ns.L["Border Color"],
+                sourceDescription = ns.L["Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom."],
+                colorDescription  = ns.L["Custom bar border color, used when Border Color Source is set to Custom."],
+            }
+        )
+        s3.AddRow(
+            row(s3.frame, ns.L["Border Color Source"], borderSrcW),
+            row(s3.frame, ns.L["Border Color"], borderColorW)
+        )
+    end
     L.closeSection(s3)
 
     -- BREAKPOINT INDICATORS
@@ -491,10 +552,30 @@ local function BuildSecondaryPowerSettings(content, _key)
         row(s3.frame, ns.L["Bar Texture"], texW),
         row(s3.frame, ns.L["Border Size"], borderW)
     )
+
+    -- Per-bar border color (prefix "" -> secondary.borderColorSource/borderColor).
+    if ns.QUI_BorderControl then
+        local borderSrcW, borderColorW = ns.QUI_BorderControl.Attach(
+            GUI, s3.frame, secondary, "", RefreshPowerBars,
+            {
+                label             = ns.L["Border Color Source"],
+                colorLabel        = ns.L["Border Color"],
+                sourceDescription = ns.L["Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom."],
+                colorDescription  = ns.L["Custom bar border color, used when Border Color Source is set to Custom."],
+            }
+        )
+        s3.AddRow(
+            row(s3.frame, ns.L["Border Color Source"], borderSrcW),
+            row(s3.frame, ns.L["Border Color"], borderColorW)
+        )
+    end
     L.closeSection(s3)
 
     -- BREAKPOINT INDICATORS
     BuildIndicatorCard(L, secondary)
+
+    -- SEGMENT DIVIDERS
+    BuildSegmentCard(L, secondary)
 
     -- TEXT (with optional per-spec proxy)
     local textProxy = setmetatable({}, {

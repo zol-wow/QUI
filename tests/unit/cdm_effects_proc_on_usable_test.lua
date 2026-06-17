@@ -141,7 +141,9 @@ local ns = {
     },
     CDMSources = {
         QuerySpellUsable = function(spellID)
-            assert(spellID == 12345, "unexpected spell usability query")
+            if spellID ~= 12345 then
+                return false, false
+            end
             return usable, false
         end,
     },
@@ -154,6 +156,8 @@ local ns = {
                 return { procOnUsable = true }
             elseif viewerType == "essential" and spellID == 54321 then
                 return { procOnUsable = true }
+            elseif viewerType == "essential" and spellID == 255937 then
+                return { glowEnabled = false }
             end
         end,
     },
@@ -173,6 +177,11 @@ local ns = {
         ResolveAuraActiveState = function() return false end,
     },
     CDMIcons = {},
+    CDMRuntimeStore = {
+        GetFrameState = function(frame)
+            return frame and frame._cdmRuntimeState or nil
+        end,
+    },
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
@@ -206,5 +215,54 @@ assert(glowStops >= 1, "unusable spell should stop proc-on-usable glow")
 assert(ns._OwnedGlows.activeGlowIcons[icon] == nil, "unusable spell should no longer be tracked as glowing")
 assert(forEachCalls == 0, "steady-state proc-on-usable events should not call ForEachIcon")
 assert(callbackVisits == 0, "steady-state proc-on-usable events should not visit non-proc icons")
+
+local mirrorIcon = {
+    _spellEntry = {
+        spellID = 255937,
+        id = 255937,
+        type = "spell",
+        kind = "cooldown",
+        viewerType = "essential",
+    },
+    _cdmRuntimeState = {
+        mirrorBacked = true,
+        mirrorState = {
+            spellID = 255937,
+            overrideSpellID = 427453,
+        },
+    },
+    IsShown = function() return true end,
+    GetFrameLevel = function() return 1 end,
+    Cooldown = {
+        GetFrameLevel = function() return 1 end,
+    },
+}
+ns.CDMIconFactory.ForEachIcon = function(_, callback)
+    callback(mirrorIcon)
+end
+ns.CDMSources.QueryOverrideSpell = function(spellID)
+    return spellID
+end
+glowStarts = 0
+eventFrame.OnEvent(eventFrame, "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", 427453)
+assert(glowStarts == 1, "mirror override overlay event should glow the base-owned CDM icon")
+assert(ns._OwnedGlows.activeGlowIcons[mirrorIcon] == true,
+    "mirror override overlay event should track the base-owned CDM icon as glowing")
+glowStops = 0
+eventFrame.OnEvent(eventFrame, "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", 427453)
+assert(glowStops >= 1, "mirror override overlay hide should stop the base-owned CDM icon glow")
+assert(ns._OwnedGlows.activeGlowIcons[mirrorIcon] == nil,
+    "mirror override overlay hide should clear the base-owned CDM icon glow")
+
+mirrorIcon._cdmRuntimeState.mirrorState.overrideSpellID = nil
+ns.CDMSources.QueryBaseSpell = function(spellID)
+    if spellID == 427453 then return 255937 end
+    return spellID
+end
+glowStarts = 0
+eventFrame.OnEvent(eventFrame, "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", 427453)
+assert(glowStarts == 1,
+    "override overlay event should glow the base-owned CDM icon before mirror state catches up")
+eventFrame.OnEvent(eventFrame, "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", 427453)
 
 print("OK: cdm_effects_proc_on_usable_test")

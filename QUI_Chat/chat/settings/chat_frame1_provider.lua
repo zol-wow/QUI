@@ -244,7 +244,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         local sectionPresets = {
             general = {
-                "chatModule", "customDisplay", "introMessage", "defaultTab",
+                "chatModule", "customDisplay", "chatFont", "introMessage", "defaultTab",
                 "chatBackground", "inputBoxBackground", "chatBorder", "messageFade",
                 "urlDetection", "chatHyperlinks",
                 "channelColors",
@@ -427,6 +427,50 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 ns.L["Remove the selected chat window and its tabs. Window 1 cannot be deleted; open whisper tabs move to window 1."],
                 ns.L["Delete Chat Window"])
             card.AddRow(row(card.frame, ns.L["Add window"], addWinBtn), row(card.frame, ns.L["Delete selected window"], delWinBtn))
+        end)
+
+        -- Chat Font: master toggle gating a family / size / outline trio. OFF
+        -- inherits the global font + Blizzard-native window size (legacy look).
+        CreateChatSection("chatFont", ns.L["Chat Font"], FORM_ROW * 3 + 8, function(card)
+            if not chat.font then chat.font = {} end
+            local fontList = {}
+            if ns.LSM then
+                for name in pairs(ns.LSM:HashTable("font")) do
+                    table.insert(fontList, { value = name, text = name })
+                end
+                table.sort(fontList, function(a, b) return a.text < b.text end)
+            else
+                fontList = { { value = "Friz Quadrata TT", text = "Friz Quadrata TT" } }
+            end
+            local outlineOptions = {
+                { value = "", text = ns.L["None"] },
+                { value = "OUTLINE", text = ns.L["Outline"] },
+                { value = "THICKOUTLINE", text = ns.L["Thick Outline"] },
+            }
+
+            local familyW, sizeW, outlineW
+            local useCustomW = GUI:CreateFormCheckbox(card.frame, nil, "useCustom", chat.font, function(val)
+                Refresh()
+                if familyW and familyW.SetEnabled then familyW:SetEnabled(val) end
+                if sizeW and sizeW.SetEnabled then sizeW:SetEnabled(val) end
+                if outlineW and outlineW.SetEnabled then outlineW:SetEnabled(val) end
+            end, { description = ns.L["Use a chat-specific font instead of inheriting the global QUI default font and Blizzard's chat font size."] })
+
+            familyW = GUI:CreateFormDropdown(card.frame, nil, fontList, "family", chat.font, Refresh,
+                { description = ns.L["Font family used for chat text when a custom chat font is enabled."] })
+            sizeW = GUI:CreateFormSlider(card.frame, nil, 8, 32, 1, "size", chat.font, Refresh,
+                { description = ns.L["Chat text font size when a custom chat font is enabled."] })
+            outlineW = GUI:CreateFormDropdown(card.frame, nil, outlineOptions, "outline", chat.font, Refresh,
+                { description = ns.L["Outline applied to chat text when a custom chat font is enabled."] })
+
+            local on = chat.font.useCustom == true
+            if familyW.SetEnabled then familyW:SetEnabled(on) end
+            if sizeW.SetEnabled then sizeW:SetEnabled(on) end
+            if outlineW.SetEnabled then outlineW:SetEnabled(on) end
+
+            card.AddRow(row(card.frame, ns.L["Use Custom Font"], useCustomW))
+            card.AddRow(row(card.frame, ns.L["Font Family"], familyW), row(card.frame, ns.L["Font Size"], sizeW))
+            card.AddRow(row(card.frame, ns.L["Font Outline"], outlineW))
         end)
 
         -- Custom Display Tabs (Phase 5)

@@ -16,6 +16,43 @@ do -- spell glow / highlight / assisted rotation
 
 LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
+-- Build the per-surface glow opts for icon_glow from the action-bar DB.
+-- Reused table to avoid per-call allocation (glow events can be frequent).
+local _glowOpts = {}
+local _glowThemeColor = {}
+local function ActionBarGlowOpts(overrideColor)
+    local db = GetDB()
+    local g = db and db.global or nil
+    _glowOpts.source    = (g and g.glowSource)    or "QUI"
+    _glowOpts.style     = (g and g.glowStyle)     or "Button"
+    -- Glow color: assist-highlight override wins; else custom picker or theme accent.
+    local color = overrideColor
+    if not color and g then
+        if g.glowColorSource == "custom" then
+            color = g.glowColor
+        else
+            local r, gg, b
+            if Helpers and Helpers.GetSkinAccentColor then
+                r, gg, b = Helpers.GetSkinAccentColor()
+            end
+            if r then
+                _glowThemeColor[1], _glowThemeColor[2], _glowThemeColor[3], _glowThemeColor[4] = r, gg, b, 1
+                color = _glowThemeColor
+            else
+                color = g.glowColor
+            end
+        end
+    end
+    _glowOpts.color     = color
+    _glowOpts.lines     = g and g.glowLines or nil
+    _glowOpts.frequency = g and g.glowFrequency or nil
+    _glowOpts.length    = (g and g.glowLength and g.glowLength > 0) and g.glowLength or nil
+    _glowOpts.thickness = g and g.glowThickness or nil
+    _glowOpts.particles = g and g.glowParticles or nil
+    _glowOpts.scale     = g and g.glowScale or nil
+    return _glowOpts
+end
+
 -- Extract the spell ID from an action button's current action.
 -- Returns nil for empty slots, items, or if GetActionInfo errors (combat).
 function GetButtonSpellId(button)
@@ -161,19 +198,21 @@ function EnsureSpellIdMap()
 end
 
 function ShowActionButtonGlow(button)
-    if not LCG then return end
+    local IconGlow = ns.IconGlow
+    if not IconGlow then return end
     local state = GetFrameState(button)
     if state.quiProcGlow then return end
     state.quiProcGlow = true
-    LCG.ButtonGlow_Start(button)
+    IconGlow.Start(button, ActionBarGlowOpts(nil))
 end
 
 function HideActionButtonGlow(button)
-    if not LCG then return end
+    local IconGlow = ns.IconGlow
+    if not IconGlow then return end
     local state = GetFrameState(button)
     if not state.quiProcGlow then return end
     state.quiProcGlow = false
-    LCG.ButtonGlow_Stop(button)
+    IconGlow.Stop(button)
 end
 
 -- Update the overlay glow on a single button based on current spell state.
@@ -351,16 +390,17 @@ _assistHighlightScratch = {}   -- reusable scratch table to avoid per-frame allo
 ASSISTED_HIGHLIGHT_COLOR = { 0.2, 0.82, 0.6, 1 }  -- Teal/mint, matches QUI accent
 
 function SetAssistedHighlightShown(button, show)
-    if not LCG then return end
+    local IconGlow = ns.IconGlow
+    if not IconGlow then return end
     local state = GetFrameState(button)
     if show then
         if state.quiAssistedHighlight then return end
         state.quiAssistedHighlight = true
-        LCG.ButtonGlow_Start(button, ASSISTED_HIGHLIGHT_COLOR)
+        IconGlow.Start(button, ActionBarGlowOpts(ASSISTED_HIGHLIGHT_COLOR))
     else
         if not state.quiAssistedHighlight then return end
         state.quiAssistedHighlight = false
-        LCG.ButtonGlow_Stop(button)
+        IconGlow.Stop(button)
     end
 end
 

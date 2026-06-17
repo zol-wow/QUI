@@ -2155,8 +2155,8 @@ function QUICore:GetPowerBar()
     bar.StatusBar:SetStatusBarTexture(tex)
     bar.StatusBar:SetFrameLevel(bar:GetFrameLevel())
 
-    -- BORDER (pixel-perfect) — themed skin border color
-    local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor()
+    -- BORDER (pixel-perfect) — per-bar border color source (inherit/theme/class/custom)
+    local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(cfg, "")
     UIKit.CreateBackdropBorder(bar, cfg.borderSize or 1, sbR, sbG, sbB, sbA)
 
     -- TEXT FRAME (same strata, +2 levels to render above bar content but stay within element's layer band)
@@ -2390,15 +2390,18 @@ function QUICore:UpdatePowerBar()
 
         -- Update border size only when changed (prevents flicker)
         local borderSizePixels = cfg.borderSize or 1
+        local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(cfg, "")
         if bar._cachedBorderSize ~= borderSizePixels then
             if UIKit and UIKit.CreateBackdropBorder then
-                local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor()
                 bar.Border = UIKit.CreateBackdropBorder(bar, borderSizePixels, sbR, sbG, sbB, sbA)
                 if bar.Border then
                     bar.Border:SetShown(borderSizePixels > 0)
                 end
             end
             bar._cachedBorderSize = borderSizePixels
+        elseif bar.Border and bar.Border.SetBackdropBorderColor then
+            -- Size unchanged but color source may have changed: recolor in place.
+            bar.Border:SetBackdropBorderColor(sbR, sbG, sbB, sbA)
         end
     end
 
@@ -3044,8 +3047,8 @@ function QUICore:GetSecondaryPowerBar()
     bar.StatusBar:SetStatusBarTexture(tex)
     bar.StatusBar:SetFrameLevel(bar:GetFrameLevel())
 
-    -- BORDER (pixel-perfect) — themed skin border color
-    local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor()
+    -- BORDER (pixel-perfect) — per-bar border color source (inherit/theme/class/custom)
+    local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(cfg, "")
     UIKit.CreateBackdropBorder(bar, cfg.borderSize or 1, sbR, sbG, sbB, sbA)
 
     -- TEXT FRAME (same strata, +2 levels to render above bar content but stay within element's layer band)
@@ -4244,15 +4247,18 @@ function QUICore:UpdateSecondaryPowerBar()
 
         -- Update border size (pixel-perfect)
         local secBorderSizePixels = cfg.borderSize or 1
+        local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(cfg, "")
         if bar._cachedBorderSize ~= secBorderSizePixels then
             if UIKit and UIKit.CreateBackdropBorder then
-                local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor()
                 bar.Border = UIKit.CreateBackdropBorder(bar, secBorderSizePixels, sbR, sbG, sbB, sbA)
                 if bar.Border then
                     bar.Border:SetShown(secBorderSizePixels > 0)
                 end
             end
             bar._cachedBorderSize = secBorderSizePixels
+        elseif bar.Border and bar.Border.SetBackdropBorderColor then
+            -- Size unchanged but color source may have changed: recolor in place.
+            bar.Border:SetBackdropBorderColor(sbR, sbG, sbB, sbA)
         end
     end
 
@@ -4817,9 +4823,43 @@ end
 
 function QUICore:RefreshPowerBarSkinColors()
     if not (Helpers and Helpers.GetSkinBorderColor) then return end
-    local r, g, b, a = Helpers.GetSkinBorderColor()
-    RecolorPowerBarBorder(self.powerBar, r, g, b, a)
-    RecolorPowerBarBorder(self.secondaryPowerBar, r, g, b, a)
+    local profile = self.db and self.db.profile
+    local pCfg = profile and profile.powerBar
+    local sCfg = profile and profile.secondaryPowerBar
+    local pr, pg, pb, pa = Helpers.GetSkinBorderColor(pCfg, "")
+    local sr, sg, sb, sa = Helpers.GetSkinBorderColor(sCfg, "")
+    RecolorPowerBarBorder(self.powerBar, pr, pg, pb, pa)
+    RecolorPowerBarBorder(self.secondaryPowerBar, sr, sg, sb, sa)
+end
+
+-- Expose the two power bars to the centralized Appearance > Border Coloring page.
+-- prefix "" -> <cfg>.borderColorSource / <cfg>.borderColor (per-bar, mirrors unit frames).
+if Helpers and Helpers.BorderRegistry then
+    local function refreshBorders()
+        if QUICore.RefreshPowerBarSkinColors then
+            QUICore:RefreshPowerBarSkinColors()
+        end
+    end
+
+    Helpers.BorderRegistry.Register({
+        key      = "resourceBarPrimary",
+        label    = "Primary",
+        category = "Resource Bars",
+        prefix   = "",
+        db       = function(p) return p and p.powerBar end,
+        refresh  = refreshBorders,
+        legacy   = { defaultSource = "inherit" },
+    })
+
+    Helpers.BorderRegistry.Register({
+        key      = "resourceBarSecondary",
+        label    = "Secondary",
+        category = "Resource Bars",
+        prefix   = "",
+        db       = function(p) return p and p.secondaryPowerBar end,
+        refresh  = refreshBorders,
+        legacy   = { defaultSource = "inherit" },
+    })
 end
 
 if ns.Registry then

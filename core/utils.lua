@@ -101,6 +101,99 @@ function Helpers.BaseSetPoint(frame, ...)
     if fn then fn(frame, ...) end
 end
 
+-- Point-name → unit fractions across a frame's rect.
+-- fracX: LEFT=0, CENTER=0.5, RIGHT=1.  fracY: BOTTOM=0, CENTER=0.5, TOP=1.
+local PIN_POINT_FRAC = {
+    TOPLEFT     = { 0,   1   }, TOP    = { 0.5, 1   }, TOPRIGHT    = { 1, 1   },
+    LEFT        = { 0,   0.5 }, CENTER = { 0.5, 0.5 }, RIGHT       = { 1, 0.5 },
+    BOTTOMLEFT  = { 0,   0   }, BOTTOM = { 0.5, 0   }, BOTTOMRIGHT = { 1, 0   },
+}
+
+-- Secret/nil-safe numeric read of a frame geometry getter. Returns a number
+-- or nil (nil when unanchored / MayReturnNothing, or when the value is a
+-- secret). Never compares/arithmetics a secret.
+local function ReadGeom(value)
+    if issecretvalue and issecretvalue(value) then return nil end
+    if type(value) ~= "number" then return nil end
+    return value
+end
+
+--- Pin `frame`'s `sourcePoint` onto `target`'s `targetPoint` (+offset) by
+--- anchoring to UIParent at absolute coordinates derived from the target's
+--- current rect. Keeps `frame` insecure (never anchored to `target`), so a
+--- runtime-resizing frame stays SetSize-able in combat while still tracking
+--- the target. Re-call to follow the target as it moves.
+--- @return boolean pinned  true if anchored; false if it held position
+function Helpers.PinFrameToTargetAbsolute(frame, sourcePoint, target, targetPoint, offsetX, offsetY)
+    if not frame or not target then return false end
+    local frac = PIN_POINT_FRAC[targetPoint] or PIN_POINT_FRAC.CENTER
+    local srcPt = PIN_POINT_FRAC[sourcePoint] and sourcePoint or "CENTER"
+
+    local tL = ReadGeom(target:GetLeft())
+    local tR = ReadGeom(target:GetRight())
+    local tT = ReadGeom(target:GetTop())
+    local tB = ReadGeom(target:GetBottom())
+    if not (tL and tR and tT and tB) then return false end
+
+    -- GetEffectiveScale is SecretReturnsForAspect(Scale): bail if secret or zero.
+    local tS = ReadGeom(target:GetEffectiveScale())
+    if not tS or tS == 0 then return false end
+    local uiS = UIParent and ReadGeom(UIParent:GetEffectiveScale())
+    if not uiS or uiS == 0 then return false end
+    local k = tS / uiS
+
+    -- Normalize edges into UIParent space, then interpolate to the point.
+    tL, tR, tB, tT = tL * k, tR * k, tB * k, tT * k
+    local px = tL + (tR - tL) * frac[1] + (offsetX or 0)
+    local py = tB + (tT - tB) * frac[2] + (offsetY or 0)
+
+    -- Idempotency guard: skip ClearAllPoints/SetPoint when the frame is already
+    -- pinned at exactly this position.  GetPoint can return secret/non-number
+    -- values in odd frame states, so we guard every read via ReadGeom and wrap
+    -- the whole call in pcall.  Any failure → fall through and apply normally.
+    if frame.GetNumPoints and frame:GetNumPoints() == 1 and frame.GetPoint then
+        local ok2, p, rel, relP, cx, cy = pcall(frame.GetPoint, frame, 1)
+        if ok2 and p == srcPt and rel == UIParent and relP == "BOTTOMLEFT" then
+            local nx, ny = ReadGeom(cx), ReadGeom(cy)
+            if nx and ny and math.abs(nx - px) <= 0.5 and math.abs(ny - py) <= 0.5 then
+                return true, px, py   -- already pinned, no layout churn
+            end
+        end
+    end
+
+    Helpers.BaseClearAllPoints(frame)
+    Helpers.BaseSetPoint(frame, srcPt, UIParent, "BOTTOMLEFT", px, py)
+    return true, px, py
+end
+
+--- Secret-safe `frame:IsProtected()`. Returns false on missing frame, missing
+--- method, pcall error, or a secret return (relative anchoring is always safe;
+--- absolute-pin is the special case we only want for KNOWN-protected targets).
+--- @return boolean
+function Helpers.FrameIsProtected(frame)
+    if not frame or not frame.IsProtected then return false end
+    local ok, protected = pcall(frame.IsProtected, frame)
+    if not ok then return false end
+    if issecretvalue and issecretvalue(protected) then return false end
+    return protected == true
+end
+
+--- Secret-safe `frame:IsAnchoringRestricted()`. True when the frame is anchored
+--- (transitively) to a protected frame OR hosts a protected anchor-dependent --
+--- e.g. a QUI container whose icons carry SecureActionButtonTemplate children.
+--- In that state IsProtected() stays FALSE but SetSize/SetPoint/Show on the
+--- frame (and on anything anchored to it) are blocked in combat. This is the
+--- companion query to FrameIsProtected for deciding when a runtime-resizing
+--- child must be pinned to UIParent instead of anchored to the target.
+--- @return boolean
+function Helpers.FrameIsAnchoringRestricted(frame)
+    if not frame or not frame.IsAnchoringRestricted then return false end
+    local ok, restricted = pcall(frame.IsAnchoringRestricted, frame)
+    if not ok then return false end
+    if issecretvalue and issecretvalue(restricted) then return false end
+    return restricted == true
+end
+
 --- Safely compare two values (returns false if either is secret)
 --- @param a any First value
 --- @param b any Second value

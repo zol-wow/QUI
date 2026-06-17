@@ -369,8 +369,63 @@ local function CreateIconFrame(parent)
     solid:Hide()
     frame.solidColor = solid
 
+    local backdrop = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+    backdrop:SetColorTexture(0, 0, 0, 1)
+    backdrop:SetAllPoints(frame)
+    frame._quiBackdrop = backdrop
+
+    local glossTex = frame:CreateTexture(nil, "OVERLAY")
+    glossTex:SetTexture(ns.IconSkin and ns.IconSkin.GlossTexture)
+    glossTex:SetBlendMode("ADD")
+    glossTex:SetAllPoints(frame)
+    frame._quiGloss = glossTex
+
     frame:Hide()
     return frame
+end
+
+-- External skin library ownership for aura icons (opt-in). Runs only at frame
+-- acquisition (not the hot per-frame update path). When enabled + the library
+-- is present, hand the icon to it and hide QUI's backdrop border so the
+-- external skin shows; when disabled, remove it if previously added and restore
+-- the QUI border. Self-correcting: a settings change re-renders auras, which
+-- re-acquires icons and re-runs this.
+local function ApplyAuraIconSkinOwnership(frame)
+    if not frame then return end
+    local profile = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
+    local extOn = profile and profile.quiGroupFrames and profile.quiGroupFrames.externalSkinning
+    local Bridge = ns.ExternalSkinBridge
+    if extOn and Bridge and Bridge.IsAvailable() then
+        local r = frame._quiRegions
+        if not r then r = {}; frame._quiRegions = r end
+        r.Icon     = frame.icon
+        r.Cooldown = frame.cooldown
+        Bridge.AddButton("groupauras", frame, r)
+        frame._quiBridged = true
+        if frame.SetBackdropBorderColor then frame:SetBackdropBorderColor(0, 0, 0, 0) end
+        if frame._quiBackdrop then frame._quiBackdrop:Hide() end
+        if frame._quiGloss then frame._quiGloss:Hide() end
+    else
+        if frame._quiBridged and Bridge then
+            Bridge.RemoveButton("groupauras", frame)
+            frame._quiBridged = nil
+            if frame.SetBackdropBorderColor then
+                local br, bg, bb, ba = GetSkinBorderColor()
+                frame:SetBackdropBorderColor(br, bg, bb, ba)
+            end
+        end
+        local skinName = (profile and profile.quiGroupFrames and profile.quiGroupFrames.iconSkin) or "Default"
+        if ns.IconSkin and skinName ~= "Default" then
+            local rr = frame._quiRegions
+            if not rr then rr = {}; frame._quiRegions = rr end
+            rr.Backdrop = frame._quiBackdrop
+            rr.Gloss    = frame._quiGloss
+            ns.IconSkin.ApplySkin(frame, rr, skinName)
+        else
+            if frame._quiBackdrop then frame._quiBackdrop:Hide() end
+            if frame._quiGloss then frame._quiGloss:Hide() end
+        end
+    end
 end
 
 local function AcquireIconFrame(parent)
@@ -378,9 +433,11 @@ local function AcquireIconFrame(parent)
     if item then
         item:SetParent(parent)
         item:ClearAllPoints()
-        return item
+    else
+        item = CreateIconFrame(parent)
     end
-    return CreateIconFrame(parent)
+    ApplyAuraIconSkinOwnership(item)
+    return item
 end
 
 local function ReleaseIconFrame(item)

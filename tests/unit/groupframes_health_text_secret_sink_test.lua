@@ -1,9 +1,14 @@
 -- tests/unit/groupframes_health_text_secret_sink_test.lua
 -- Run: lua tests/unit/groupframes_health_text_secret_sink_test.lua
 --
--- UnitHealth and UnitHealthMissing can return secret values. Health text modes
--- must forward those values to the font string C-side sink without abbreviating
--- or otherwise formatting the secret in Lua.
+-- UnitHealth and UnitHealthMissing can return secret values. AbbreviateNumbers is
+-- SecretArguments="AllowedWhenTainted", so it accepts a secret or plain value and
+-- returns a string; absolute/both pass that result straight into the font string
+-- (SetText / SetFormattedText) and never compare it in Lua (comparing a secret
+-- throws). This matches the reference unit frames, which abbreviate UnitHealth
+-- directly with no secret guard. Deficit keeps its zero-suppressing path and a raw
+-- secret forward. The invariant: a secret may flow THROUGH AbbreviateNumbers into
+-- the C-side sink, but is never bound to a compared local.
 
 local env = dofile("tools/_addon_env.lua")
 
@@ -90,11 +95,10 @@ local function render(style, healthValue, missingValue)
         IsSecretValue = issecretvalue,
         C_StringUtil = nil,
         pcall = pcall,
+        -- AbbreviateNumbers is AllowedWhenTainted: it must accept a secret value
+        -- without erroring, and returns a string (here a deterministic marker).
         AbbreviateNumbers = function(value)
-            if issecretvalue(value) then
-                error("AbbreviateNumbers must not receive secret health", 2)
-            end
-            abbrCalls[#abbrCalls + 1] = value
+            abbrCalls[#abbrCalls + 1] = { value = value, secret = issecretvalue(value) }
             return "abbr:" .. tostring(value)
         end,
     }
@@ -120,36 +124,41 @@ end
 local secretHealth = env.MakeSecret()
 local secretMissing = env.MakeSecret()
 
+-- absolute + secret: secret flows through AbbreviateNumbers into SetText
 do
     local calls, abbrCalls = render("absolute", secretHealth, 2500)
-    assert(#abbrCalls == 0, "absolute mode must not abbreviate secret UnitHealth")
-    assert(calls[#calls].method == "SetFormattedText", "absolute secret should use formatted text sink")
-    assert(calls[#calls][1] == "%s", "absolute secret should use raw string format")
-    assert(calls[#calls][2] == secretHealth, "absolute secret should be forwarded raw")
+    assert(#abbrCalls == 1 and abbrCalls[1].secret,
+        "absolute secret should be abbreviated (AbbreviateNumbers accepts secrets)")
+    assert(calls[#calls].method == "SetText", "absolute should forward into the SetText sink")
+    assert(calls[#calls][1] == "abbr:<secret>", "absolute secret should render the abbreviated result")
 end
 
+-- both + secret: abbreviated secret + percent through SetFormattedText
 do
     local calls, abbrCalls = render("both", secretHealth, 2500)
-    assert(#abbrCalls == 0, "both mode must not abbreviate secret UnitHealth")
-    assert(calls[#calls].method == "SetFormattedText", "both secret should use formatted text sink")
-    assert(calls[#calls][1] == "%s | %.0f%%", "both secret should preserve combined format")
-    assert(calls[#calls][2] == secretHealth, "both mode should forward secret health raw")
-    assert(calls[#calls][3] == 37, "both mode should keep percent argument")
+    assert(#abbrCalls == 1 and abbrCalls[1].secret,
+        "both secret should be abbreviated through AbbreviateNumbers")
+    assert(calls[#calls].method == "SetFormattedText", "both should use the formatted text sink")
+    assert(calls[#calls][1] == "%s | %.0f%%", "both should preserve the combined format")
+    assert(calls[#calls][2] == "abbr:<secret>", "both secret should forward the abbreviated result")
+    assert(calls[#calls][3] == 37, "both should keep the percent argument")
 end
 
+-- deficit + secret: raw forward (deficit retains its zero-suppressing structure)
 do
     local calls, abbrCalls = render("deficit", 10000, secretMissing)
-    assert(#abbrCalls == 0, "deficit mode must not abbreviate secret UnitHealthMissing")
+    assert(#abbrCalls == 0, "deficit secret should not abbreviate (raw forward path)")
     assert(calls[#calls].method == "SetFormattedText", "deficit secret should use formatted text sink")
     assert(calls[#calls][1] == "-%s", "deficit secret should use C-side prefix formatting")
     assert(calls[#calls][2] == secretMissing, "deficit secret should be forwarded raw")
 end
 
+-- absolute + non-secret: abbreviated normally
 do
     local calls, abbrCalls = render("absolute", 12345, 2500)
-    assert(#abbrCalls == 1 and abbrCalls[1] == 12345,
-        "absolute non-secret behavior should still abbreviate")
-    assert(calls[#calls].method == "SetText", "absolute non-secret should keep SetText path")
+    assert(#abbrCalls == 1 and abbrCalls[1].value == 12345 and not abbrCalls[1].secret,
+        "absolute non-secret should abbreviate the raw value")
+    assert(calls[#calls].method == "SetText", "absolute non-secret should use SetText")
     assert(calls[#calls][1] == "abbr:12345", "absolute non-secret should render abbreviated value")
 end
 

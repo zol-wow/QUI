@@ -116,6 +116,18 @@ LSM:Register(BORDER, "Quazii v6 Inverse", quaziiV6InverseTexturePath)
 local absorbStripeTexturePath = AssetPath .. "absorb_stripe"
 LSM:Register(STATUSBAR, "QUI Stripes", absorbStripeTexturePath)
 
+-- Icon-skin media-type. Built-in skins are presets (see core/icon_skin.lua),
+-- not texture files, but registering the NAMES under a dedicated LSM type lets
+-- the options dropdowns enumerate them uniformly and lets third parties add
+-- their own skin names. The "value" is the skin name itself (resolved by
+-- IconSkin.Resolve at apply time).
+if ns.IconSkin then
+    local ICONSKIN = "qui-iconskin"
+    for _, name in ipairs(ns.IconSkin.GetSkinList()) do
+        LSM:Register(ICONSKIN, name, name)
+    end
+end
+
 -- Function to check if our media is registered
 function QUI:CheckMediaRegistration()
     local quaziiFontRegistered = LSM:IsValid(FONT, "Quazii")

@@ -1396,16 +1396,32 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
     end
 
     local overrides = spellData:GetSpellOverride(containerKey, spellID) or {}
+    local defaultTrueOverrides = {
+        glowEnabled = true,
+    }
 
     -- Build a temp table that reads/writes through the override API
     local proxyDB = {}
     setmetatable(proxyDB, {
         __index = function(_, key)
             local ov = spellData:GetSpellOverride(containerKey, spellID)
-            return ov and ov[key]
+            if ov and ov[key] ~= nil then
+                return ov[key]
+            end
+            if defaultTrueOverrides[key] then
+                return true
+            end
+            return nil
         end,
         __newindex = function(_, key, value)
-            if value == nil then
+            local isDefaultValue
+            if defaultTrueOverrides[key] then
+                isDefaultValue = value == true
+            else
+                isDefaultValue = value == nil or value == false
+            end
+
+            if isDefaultValue then
                 spellData:ClearSpellOverride(containerKey, spellID, key)
             else
                 spellData:SetSpellOverride(containerKey, spellID, key, value)

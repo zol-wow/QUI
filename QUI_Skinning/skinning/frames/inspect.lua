@@ -157,23 +157,11 @@ local function StyleInspectFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not SkinBase or not tab then return end
 
     if not SkinBase.IsStyled(tab) then
-        SkinBase.StripTextures(tab)
-
-        if tab.Left then tab.Left:SetAlpha(0) end
-        if tab.Middle then tab.Middle:SetAlpha(0) end
-        if tab.Right then tab.Right:SetAlpha(0) end
-        if tab.LeftDisabled then tab.LeftDisabled:SetAlpha(0) end
-        if tab.MiddleDisabled then tab.MiddleDisabled:SetAlpha(0) end
-        if tab.RightDisabled then tab.RightDisabled:SetAlpha(0) end
-        if tab.LeftActive then tab.LeftActive:SetAlpha(0) end
-        if tab.MiddleActive then tab.MiddleActive:SetAlpha(0) end
-        if tab.RightActive then tab.RightActive:SetAlpha(0) end
-        if tab.LeftHighlight then tab.LeftHighlight:SetAlpha(0) end
-        if tab.MiddleHighlight then tab.MiddleHighlight:SetAlpha(0) end
-        if tab.RightHighlight then tab.RightHighlight:SetAlpha(0) end
-
+        -- Clamp the Blizzard tab art hidden against re-assertion (see the matching
+        -- comment in frames/character.lua StyleCharacterFrameTab).
+        SkinBase.ClampAllTextures(tab)
         local highlight = tab.GetHighlightTexture and tab:GetHighlightTexture()
-        if highlight then highlight:SetAlpha(0) end
+        SkinBase.ClampTextureHidden(highlight)
 
         SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
         local tabBackdrop = SkinBase.GetBackdrop(tab)
@@ -181,8 +169,16 @@ local function StyleInspectFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SetPixelInsetPoints(tabBackdrop, tab, 3, 3, 3, 0)
         end
 
+        -- Re-assert the art clamp + font synchronously on every selection via
+        -- the shared global PanelTemplates hook.
+        SkinBase.RegisterTabArtClamp(tab)
+
         SkinBase.MarkStyled(tab)
     end
+
+    -- Drive the QUI font via the button's font OBJECTS so hover/select can't
+    -- revert it (a direct SetFont is clobbered by the button's state objects).
+    SkinBase.ApplyTabFontObjects(tab)
 
     SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })

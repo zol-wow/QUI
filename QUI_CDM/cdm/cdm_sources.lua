@@ -88,6 +88,19 @@ function CDMSources.QueryOverrideSpell(spellID)
     return _C_GetOverrideSpell(spellID)
 end
 
+-- Is this spell independently learned by the player right now? Covers class/
+-- spec spells (IsSpellKnown) and talent-granted spells (IsPlayerSpell). Used
+-- by the catalog to tell a transient proc override (base still learned) from a
+-- permanent talent conversion (base no longer learned). Non-combat only.
+local _IsSpellKnown = IsSpellKnown
+local _IsPlayerSpell = IsPlayerSpell
+function CDMSources.QueryIsSpellKnownOrPlayerSpell(spellID)
+    if not spellID then return false end
+    if _IsSpellKnown and _IsSpellKnown(spellID) then return true end
+    if _IsPlayerSpell and _IsPlayerSpell(spellID) then return true end
+    return false
+end
+
 function CDMSources.QuerySpellDisplayCount(spellID)
     if not spellID or not _C_GetSpellDisplayCount then return nil end
     return _C_GetSpellDisplayCount(spellID)

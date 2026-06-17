@@ -36,8 +36,8 @@ assertContains(
 
 assertContains(
     source,
-    "SkinBase.StripTextures(tab)",
-    "Bottom tab styling must strip all Blizzard tab texture regions, not only named fields")
+    "SkinBase.ClampAllTextures(tab)",
+    "Bottom tab styling must clamp all Blizzard tab texture regions hidden (not a one-shot alpha=0 that Blizzard re-asserts on selection)")
 
 assertContains(
     source,

@@ -104,7 +104,7 @@ local function BuildBorderColoringTab(tabContent)
     L.closeSection(sGB)
 
     -- Per-module sections grouped by category
-    local CATEGORY_ORDER = { "Skinning", "Unit Frames", "CDM", "Trackers", "HUD" }
+    local CATEGORY_ORDER = { "Skinning", "Unit Frames", "Resource Bars", "CDM", "Trackers", "HUD" }
 
     -- Build category -> entries map
     local byCategory = {}

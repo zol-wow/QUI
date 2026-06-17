@@ -3503,9 +3503,37 @@ end
 -- maps, and FireChangeCallback refreshes display — which re-evaluates the
 -- render-time known filters against fresh spell data. Callers must invoke
 -- this inside their own combat-lockdown guard.
-local function RunReconcileSequence()
-    CDMSpellData:CheckAllDormantSpells()
+-- Order-independent signature of the persistent learned-cooldown set
+-- (_cdmCooldownLearnedPreferred, rebuilt inside ReconcileAllContainers). Its
+-- keys are SelectPersistentSpellID values, which prefer the still-known BASE
+-- spell over a live override -- so a transient proc override (e.g. Hammer of
+-- Light 427453 replacing Wake of Ashes 255937) does NOT move the set, while a
+-- talent/spec change that adds, drops, or converts a learned cooldown does.
+local function LearnedCooldownSignature()
+    local set = CDMSpellData._cdmCooldownLearnedPreferred
+    if type(set) ~= "table" then return "" end
+    local ids = {}
+    for id in pairs(set) do ids[#ids + 1] = id end
+    table.sort(ids)
+    return table.concat(ids, ",")
+end
+
+-- guardUnchanged: when true (the SPELLS_CHANGED debounce path), skip the
+-- expensive FireChangeCallback -> RefreshAll when nothing structural actually
+-- changed -- no dormant spell was folded back AND the persistent learned set is
+-- identical across the rebuild. A proc override fires SPELLS_CHANGED but changes
+-- neither, so it no longer drives a full container rebuild (which flashed glows
+-- and rewrote stack text every proc). Talent/spec changes still move the
+-- learned set, so they fire. Callers that MUST always refresh (cold load,
+-- catalog data load) leave guardUnchanged nil. The render path re-evaluates
+-- known-state live every tick, so a skipped refresh never leaves stale display.
+local function RunReconcileSequence(guardUnchanged)
+    local restored = CDMSpellData:CheckAllDormantSpells()
+    local before = guardUnchanged and LearnedCooldownSignature() or nil
     CDMSpellData:ReconcileAllContainers()
+    if guardUnchanged and not restored and before == LearnedCooldownSignature() then
+        return
+    end
     if FireChangeCallback then
         FireChangeCallback()
     end
@@ -3817,12 +3845,15 @@ local function CompareShelfReturning(a, b)
     return a.id < b.id
 end
 
+-- Returns true if it folded at least one shelved spell back into a list (a
+-- structural change), false otherwise -- lets RunReconcileSequence skip the
+-- expensive display refresh when nothing actually moved.
 function CDMSpellData:CheckDormantSpells(containerKey)
     local db = GetContainerDB(containerKey)
-    if not db then return end
+    if not db then return false end
 
     local shelf = db.dormantSpells
-    if type(shelf) ~= "table" or next(shelf) == nil then return end
+    if type(shelf) ~= "table" or next(shelf) == nil then return false end
 
     -- Builtin containers with ownedSpells == nil haven't snapshotted yet —
     -- creating the list here would suppress SnapshotBlizzardCDM. Leave the
@@ -3830,7 +3861,7 @@ function CDMSpellData:CheckDormantSpells(containerKey)
     -- snapshot semantics, so creating their (possibly per-spec) list is safe.
     local createIfMissing = (db.containerType == "customBar")
     local list = GetMutableEntryList(db, containerKey, createIfMissing)
-    if type(list) ~= "table" then return end
+    if type(list) ~= "table" then return false end
 
     -- Tolerate every historical shelf shape: array of spellIDs, map of
     -- spellID → slot number, map of spellID → { slot, row, kind, seq }.
@@ -3869,6 +3900,7 @@ function CDMSpellData:CheckDormantSpells(containerKey)
         end
     end
 
+    local restoredAny = false
     for _, info in ipairs(returning) do
         if not present[info.id] then
             present[info.id] = true
@@ -3880,23 +3912,30 @@ function CDMSpellData:CheckDormantSpells(containerKey)
                 restored.kind = ResolveEntryKind(restored, containerKey)
             end
             table.insert(list, insertAt, restored)
+            restoredAny = true
         end
     end
 
     db.dormantSpells = {}
     db._dormantSequence = nil
+    return restoredAny
 end
 
 -- Fold any stale dormant shelves back into their lists, across all
 -- container keys. Part of the standard reconcile sequence.
+-- Returns true if any container folded a shelved spell back into its list.
 function CDMSpellData:CheckAllDormantSpells()
     local containerKeys = GetBuiltinContainerKeys()
     if ns.CDMContainers and ns.CDMContainers.GetAllContainerKeys then
         containerKeys = ns.CDMContainers.GetAllContainerKeys()
     end
+    local restoredAny = false
     for _, key in ipairs(containerKeys) do
-        self:CheckDormantSpells(key)
+        if self:CheckDormantSpells(key) then
+            restoredAny = true
+        end
     end
+    return restoredAny
 end
 
 -- Public: read the entry list for a given spec (defaults to current).
@@ -4785,6 +4824,12 @@ function CDMSpellData:Initialize()
     local _spellsChangedToken = 0
     local _cdmViewerReconcileToken = 0
     local _cooldownViewerRebuildPending = false
+    -- Origin tag for the combat-deferred rebuild: true when armed by a
+    -- DATA_LOADED / TABLE_HOTFIXED event (cold-login / hotfix staleness) that
+    -- needs the full container refresh on drain. A proc-override
+    -- (SPELL_OVERRIDE_UPDATED) leaves this false: its display is already
+    -- maintained live in combat, so the drain rebuilds the map only.
+    local _cooldownViewerRebuildNeedsRefresh = false
     local eventFrame = CreateFrame("Frame")
     runtimeEventFrame = eventFrame
     eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
@@ -4850,8 +4895,10 @@ function CDMSpellData:Initialize()
                 end
                 if not InCombatLockdown() then
                     -- Notify containers to refresh display after dormant cleanup
-                    -- removed stale spells from ownedSpells.
-                    RunReconcileSequence()
+                    -- removed stale spells from ownedSpells. guardUnchanged=true:
+                    -- a transient proc override fires SPELLS_CHANGED but changes
+                    -- no structural state, so skip the redundant full refresh.
+                    RunReconcileSequence(true)
                 end
             end)
         elseif event == "PLAYER_EQUIPMENT_CHANGED" then
@@ -4864,6 +4911,18 @@ function CDMSpellData:Initialize()
             or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
             if InCombatLockdown() then
                 _cooldownViewerRebuildPending = true
+                -- Proc-override events fire constantly mid-combat. The procced
+                -- icon stays correct live via the mirror's
+                -- _RefreshSpellOverridePair (cdm_blizz_mirror.lua) and the
+                -- render-time ShouldContainerLayoutPlaceIcon filter, so the
+                -- combat-end drain needs only the cheap spell->cdID map rebuild,
+                -- NOT a full container RefreshAll (the end-of-pull stutter).
+                -- DATA_LOADED / TABLE_HOTFIXED are the cold-login / hotfix
+                -- staleness case that genuinely needs the refresh -- mark those
+                -- for the full path on drain. Mixed arming: refresh wins.
+                if event ~= "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
+                    _cooldownViewerRebuildNeedsRefresh = true
+                end
                 return
             end
             -- Cold-load grace: PLAYER_LOGIN's deferred callback owns the
@@ -4873,7 +4932,20 @@ function CDMSpellData:Initialize()
                 return
             end
             RebuildSpellToCooldownID()
-            FireChangeCallback()
+            -- COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED is a SCOPED proc signal
+            -- (base+override spellID): the mirror's _RefreshSpellOverridePair and
+            -- the renderer's QueueResolvedCooldownForSpellID already update the one
+            -- affected icon. An immediate FireChangeCallback here ran a full
+            -- container RefreshAll on EVERY proc out of combat -- rebuilding every
+            -- icon (BuildIcons re-init) and flashing charge/stack text across the
+            -- whole bar. The in-combat branch above already encodes this same
+            -- distinction (override never arms needsRefresh). Only the catalog
+            -- staleness events (DATA_LOADED / TABLE_HOTFIXED) genuinely need the
+            -- full refresh.
+            local isOverrideUpdate = event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED"
+            if not isOverrideUpdate then
+                FireChangeCallback()
+            end
             -- Cold-login catalog-staleness fix.
             --
             -- On cold-login, catalog entries are first built at PEW from
@@ -4905,14 +4977,24 @@ function CDMSpellData:Initialize()
                         CDMSpellData:RunColdLoadReconcile()
                         return
                     end
-                    RunReconcileSequence()
+                    -- Guard the override-driven reconcile: a transient proc
+                    -- changes no structural state (base-keyed learned signature
+                    -- unchanged, no dormant fold-back), so skip the redundant
+                    -- full refresh -- same guard the SPELLS_CHANGED debounce uses.
+                    -- Catalog data/hotfix events stay unguarded; they genuinely
+                    -- changed the catalog and the cold-login binding fix needs it.
+                    RunReconcileSequence(isOverrideUpdate)
                 end
             end)
         elseif event == "PLAYER_REGEN_ENABLED" then
             if _cooldownViewerRebuildPending then
                 _cooldownViewerRebuildPending = false
+                local needsRefresh = _cooldownViewerRebuildNeedsRefresh
+                _cooldownViewerRebuildNeedsRefresh = false
                 RebuildSpellToCooldownID()
-                FireChangeCallback()
+                if needsRefresh then
+                    FireChangeCallback()
+                end
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
             -- Suppress SPELLS_CHANGED dormant checks during zone transitions.

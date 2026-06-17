@@ -21,7 +21,11 @@
         * Never touches the Blizzard CDM mirror (enforced by
           CDMIconFactory.AcquireForPreview skipping TryBindIconToBlizz).
         * Preview icons/bars are not pooled with runtime frames.
-        * LibCustomGlow keys are scoped to "_QUIComposerPreviewGlow".
+        * Glow is delegated to the shared runtime applier
+          (ns._OwnedGlows.ApplyGlowWithKey) so every glow setting renders
+          exactly as in game; the preview only supplies its own scoped keys
+          ("_QUIComposerPreviewGlow" / "_QUIComposerPreviewActive" /
+          "_QUIComposerPreviewHL") so it never collides with runtime glows.
 ]]
 
 local _, ns = ...
@@ -62,44 +66,142 @@ local state = {
 }
 
 ---------------------------------------------------------------------------
--- Preview-scoped glow helper
--- Uses LibCustomGlow directly with a scoped key so preview glows can
--- never collide with runtime glows on a same-spell icon. The runtime
--- glow key is different; preview exclusively uses "_QUIComposerPreviewGlow".
+-- Preview-scoped glow helpers
+-- The preview paints proc/active/highlighter glows through the SAME runtime
+-- applier (ns._OwnedGlows.ApplyGlowWithKey) so every glow setting — type,
+-- color, lines, thickness, frequency, scale, X/Y offset — is honoured exactly
+-- as it will render in game. Each surface uses its own scoped LibCustomGlow
+-- key so the three can coexist on different icons without colliding (and can
+-- never collide with runtime glows, which use the default key).
 ---------------------------------------------------------------------------
-local PREVIEW_GLOW_KEY = "_QUIComposerPreviewGlow"
+local PREVIEW_GLOW_KEY   = "_QUIComposerPreviewGlow"    -- custom proc glow
+local PREVIEW_ACTIVE_KEY = "_QUIComposerPreviewActive"  -- per-tracker active glow
+local PREVIEW_HL_KEY     = "_QUIComposerPreviewHL"      -- cooldown highlighter flash
 
-local function GetLCG()
-    return LibStub and LibStub("LibCustomGlow-1.0", true) or nil
+-- Map a composer container key to the viewer type GetViewerSettings expects:
+-- built-in containers use capitalized names, custom containers pass their key
+-- verbatim (it is the customGlow settings prefix).
+local function ContainerKeyToViewerType(containerKey)
+    if containerKey == "essential" then return "Essential" end
+    if containerKey == "utility"   then return "Utility"   end
+    return containerKey
 end
 
-local function StartGlow(icon, containerDB)
-    local LCG = GetLCG()
-    if not LCG or not icon then return end
-    local style     = containerDB and containerDB.glowStyle or "pixel"
-    local color     = containerDB and containerDB.glowColor or {1, 1, 0, 1}
-    local lines     = containerDB and containerDB.glowLines or 8
-    local frequency = containerDB and containerDB.glowFrequency or 0.25
-    local thickness = containerDB and containerDB.glowThickness or 2
-    local scale     = containerDB and containerDB.glowScale or 1
+-- Mirror the runtime glow-source gate: "Off" suppresses all QUI glow.
+local function GlowSourceAllows()
+    local profile = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
+    local source = profile and profile.ncdm and profile.ncdm.glowSource or "QUI"
+    return source ~= "Off"
+end
 
-    if style == "pixel" then
-        LCG.PixelGlow_Start(icon, color, lines, frequency, nil, thickness, 0, 0, true, PREVIEW_GLOW_KEY)
-    elseif style == "autocast" then
-        LCG.AutoCastGlow_Start(icon, color, lines, frequency, scale, 0, 0, PREVIEW_GLOW_KEY)
-    else
-        LCG.ButtonGlow_Start(icon, color, frequency)
+-- Start the custom proc glow on an icon using the live customGlow settings for
+-- this container. Returns silently (and stops any existing glow) when custom
+-- glow is disabled for the viewer, so toggling "Enable Custom Glow" updates
+-- the preview live.
+local function StartGlow(icon, containerKey)
+    local Glows = ns._OwnedGlows
+    if not icon or not Glows or not Glows.ApplyGlowWithKey or not Glows.GetViewerSettings then
+        return
+    end
+    if not GlowSourceAllows() then return end
+    local vs = Glows.GetViewerSettings(ContainerKeyToViewerType(containerKey))
+    if not vs then return end  -- custom glow disabled for this viewer
+    Glows.ApplyGlowWithKey(icon, vs, PREVIEW_GLOW_KEY)
+end
+
+-- Stop only the rotating proc glow (used when the glow owner advances; the
+-- icon may still be showing its active glow, which must survive).
+local function StopProcGlow(icon)
+    local Glows = ns._OwnedGlows
+    if icon and Glows and Glows.StopGlowWithKey then
+        Glows.StopGlowWithKey(icon, PREVIEW_GLOW_KEY)
     end
 end
 
-local function StopGlow(icon, _containerDB)
-    local LCG = GetLCG()
-    if not LCG or not icon then return end
-    -- Stop every style defensively — the user may have changed glowStyle
-    -- mid-cycle and we don't know which one is currently active.
-    if LCG.PixelGlow_Stop    then LCG.PixelGlow_Stop(icon, PREVIEW_GLOW_KEY)    end
-    if LCG.AutoCastGlow_Stop then LCG.AutoCastGlow_Stop(icon, PREVIEW_GLOW_KEY) end
-    if LCG.ButtonGlow_Stop   then LCG.ButtonGlow_Stop(icon)                    end
+-- Stop every preview glow surface on an icon (teardown / family switch).
+local function StopGlow(icon)
+    local Glows = ns._OwnedGlows
+    if not icon or not Glows or not Glows.StopGlowWithKey then return end
+    Glows.StopGlowWithKey(icon, PREVIEW_GLOW_KEY)
+    Glows.StopGlowWithKey(icon, PREVIEW_ACTIVE_KEY)
+    Glows.StopGlowWithKey(icon, PREVIEW_HL_KEY)
+end
+
+-- Per-tracker active glow (cooldown containers). Driven during the active
+-- phase so the activeGlow* settings render live.
+local function StartActiveGlow(icon)
+    local db = state.containerDB
+    local Glows = ns._OwnedGlows
+    if not icon or not db or not Glows or not Glows.ApplyGlowWithKey then return end
+    if not db.activeGlowEnabled then return end
+    Glows.ApplyGlowWithKey(icon, {
+        glowType  = db.activeGlowType or "Pixel Glow",
+        color     = db.activeGlowColor or {0.95, 0.95, 0.32, 1},
+        lines     = db.activeGlowLines or 8,
+        frequency = db.activeGlowFrequency or 0.25,
+        thickness = db.activeGlowThickness or 2,
+        scale     = db.activeGlowScale or 1,
+    }, PREVIEW_ACTIVE_KEY)
+end
+
+local function StopActiveGlow(icon)
+    local Glows = ns._OwnedGlows
+    if icon and Glows and Glows.StopGlowWithKey then
+        Glows.StopGlowWithKey(icon, PREVIEW_ACTIVE_KEY)
+    end
+end
+
+-- Cooldown highlighter: the brief on-cast flash. Driven frame-by-frame off
+-- phase elapsed time (no timers) so it self-clears on teardown.
+local function StartHighlighter(icon)
+    local Glows = ns._OwnedGlows
+    local profile = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
+    local hl = profile and profile.cooldownHighlighter
+    if not icon or not hl or not hl.enabled or not Glows or not Glows.ApplyGlowWithKey then
+        return
+    end
+    if not GlowSourceAllows() then return end
+    Glows.ApplyGlowWithKey(icon, {
+        glowType  = hl.glowType or "Pixel Glow",
+        color     = hl.color or {1, 1, 1, 0.8},
+        lines     = hl.lines or 8,
+        frequency = hl.frequency or 0.25,
+        thickness = hl.thickness or 1,
+        scale     = hl.scale or 1,
+    }, PREVIEW_HL_KEY)
+end
+
+local function StopHighlighter(icon)
+    local Glows = ns._OwnedGlows
+    if icon and Glows and Glows.StopGlowWithKey then
+        Glows.StopGlowWithKey(icon, PREVIEW_HL_KEY)
+    end
+end
+
+-- Highlighter flash window length for the preview (seconds of the cooldown
+-- "cast" moment to keep the flash visible). Falls back when unset.
+local function HighlighterDuration()
+    local profile = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
+    local hl = profile and profile.cooldownHighlighter
+    return (hl and hl.duration) or 0.4
+end
+
+-- Apply the live cooldown-swipe draw flags + color to a preview icon's
+-- Cooldown frame, resolved through the same rules as the runtime swipe path.
+-- mode: "cooldown" or "aura".
+local function ApplyPreviewSwipe(icon, mode)
+    if not icon or not icon.Cooldown then return end
+    local resolve = ns._CDM_ResolvePreviewSwipe
+    local profile = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
+    local settings = profile and profile.cooldownSwipe
+    if not resolve or not settings then return end
+    local show, r, g, b, a = resolve(settings, mode)
+    icon.Cooldown:SetDrawSwipe(show and true or false)
+    icon.Cooldown:SetDrawEdge(show and true or false)
+    if show then
+        icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
+    end
+    icon.Cooldown:SetSwipeColor(r, g, b, a)
 end
 
 ---------------------------------------------------------------------------
@@ -158,14 +260,33 @@ local function ApplyCooldownPhase(icon, iconState, phaseName, phaseT)
         -- swipe at frame 0.
         if icon.Cooldown and phaseT < 0.05 then
             icon.Cooldown:SetCooldown(GetTime(), iconState.cooldownDur or 7)
+            ApplyPreviewSwipe(icon, "cooldown")
         end
         if icon.Icon then icon.Icon:SetDesaturated(true) end
         if icon.StackText then icon.StackText:Hide() end
+        StopActiveGlow(icon)
+        -- Highlighter: flash the icon for the "cast" that opened this cooldown.
+        if phaseT <= HighlighterDuration() then
+            if not iconState.hlActive then
+                StartHighlighter(icon)
+                iconState.hlActive = true
+            end
+        elseif iconState.hlActive then
+            StopHighlighter(icon)
+            iconState.hlActive = false
+        end
     elseif phaseName == "ready_glow" then
         if icon.Cooldown then icon.Cooldown:Clear() end
         if icon.Icon then icon.Icon:SetDesaturated(false) end
-        -- Glow is owned by the rotating glowOwner, not every icon.
+        if iconState.hlActive then
+            StopHighlighter(icon)
+            iconState.hlActive = false
+        end
+        -- Proc glow is owned by the rotating glowOwner; the per-tracker active
+        -- glow is shown here so its activeGlow* settings render live.
+        StartActiveGlow(icon)
     elseif phaseName == "charges" then
+        StopActiveGlow(icon)
         -- Charges drain over the 3s phase: 3 → 2 → 1 → hidden. QUI renders
         -- charge count as a single number on StackText (same fontstring,
         -- different data source — see cdm_icon_renderer stackSource == "ChargeCount").
@@ -182,6 +303,11 @@ local function ApplyCooldownPhase(icon, iconState, phaseName, phaseT)
         if icon.Cooldown then icon.Cooldown:Clear() end
         if icon.Icon then icon.Icon:SetDesaturated(false) end
         if icon.StackText then icon.StackText:Hide() end
+        StopActiveGlow(icon)
+        if iconState.hlActive then
+            StopHighlighter(icon)
+            iconState.hlActive = false
+        end
     end
 end
 
@@ -205,6 +331,7 @@ local function ApplyAuraPhase(icon, iconState, phaseName, phaseT)
             -- Re-set the cooldown only on phase entry (phaseT near 0).
             if phaseT < 0.05 then
                 icon.Cooldown:SetCooldown(GetTime(), iconState.cooldownDur or 7)
+                ApplyPreviewSwipe(icon, "aura")
             end
         end
     elseif phaseName == "expiring" then
@@ -297,14 +424,14 @@ local function AdvanceGlowOwner(elapsed)
     if state.glowOwnerT < 1.5 then return end
     state.glowOwnerT = 0
 
-    -- Stop glow on previous owner
+    -- Stop the proc glow on previous owner (leave its active glow intact)
     local prev = state.previewIcons[state.glowOwnerIdx]
-    if prev then StopGlow(prev, state.containerDB) end
+    if prev then StopProcGlow(prev) end
 
     -- Advance index, start glow on new owner
     state.glowOwnerIdx = (state.glowOwnerIdx % #state.previewIcons) + 1
     local next = state.previewIcons[state.glowOwnerIdx]
-    if next then StartGlow(next, state.containerDB) end
+    if next then StartGlow(next, state.containerKey) end
 end
 
 ---------------------------------------------------------------------------
@@ -518,7 +645,7 @@ end
 local function ClearPreviewIcons()
     for _, icon in ipairs(state.previewIcons) do
         if icon then
-            StopGlow(icon, state.containerDB)
+            StopGlow(icon)
             ns.CDMIconFactory.ReleaseForPreview(icon)
             state.iconState[icon] = nil
         end
@@ -566,7 +693,7 @@ end
 function CDMComposerPreview.Teardown()
     for _, icon in ipairs(state.previewIcons) do
         if icon then
-            StopGlow(icon, state.containerDB)
+            StopGlow(icon)
             ns.CDMIconFactory.ReleaseForPreview(icon)
         end
     end

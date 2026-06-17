@@ -10,6 +10,7 @@
 ## LoadOnDemand: 1
 
 bootstrap.lua
+event_allowlist.lua
 performance.lua
 memaudit.lua
 editmode_diagnose.lua

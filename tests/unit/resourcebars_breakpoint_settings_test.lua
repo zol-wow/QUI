@@ -20,6 +20,7 @@ local function newFrame()
         Show = noop,
         EnableMouse = noop,
         SetAlpha = noop,
+        SetEnabled = noop,
         GetHeight = function()
             return 400
         end,

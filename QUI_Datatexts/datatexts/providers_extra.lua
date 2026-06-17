@@ -17,6 +17,8 @@ local C_WeeklyRewards = _G.C_WeeklyRewards
 local GetProfessions = _G.GetProfessions
 local GetProfessionInfo = _G.GetProfessionInfo
 local WeeklyRewards_ShowUI = _G.WeeklyRewards_ShowUI
+local C_Traits = _G.C_Traits
+local C_PlayerInfo = _G.C_PlayerInfo
 
 -- File-local copies of the registry's color/label helpers (locals there by design).
 local function GetValueColor()
@@ -437,6 +439,123 @@ Datatexts:Register("professions", {
             if InCombatLockdown() then return end
             if ToggleProfessionsBook then
                 ToggleProfessionsBook()
+            end
+        end)
+
+        Update()
+        return frame
+    end,
+
+    OnDisable = function(frame)
+        frame:UnregisterAllEvents()
+        frame:SetScript("OnEvent", nil)
+    end,
+})
+
+---=================================================================================
+--- OMNIUM FOLIO DATATEXT (Midnight expansion landing page / Runes of Power)
+---=================================================================================
+-- Launcher + unspent Runes-of-Power counter. The landing page opens via the
+-- insecure global ToggleExpansionLandingPage(); the unspent count comes from the
+-- Runes of Power trait tree (system 48 / tree 1186), mirroring Blizzard's own
+-- Blizzard_MidnightLandingPage CanPurchaseRuneOfPower() logic.
+
+local RUNES_OF_POWER_SYSTEM_ID = 48
+local RUNES_OF_POWER_TREE_ID = 1186
+
+Datatexts:Register("omniumfolio", {
+    displayName = ns.L["Omnium Folio"],
+    category = ns.L["Character"],
+    description = "Opens the Omnium Folio (Midnight landing page) and shows unspent Runes of Power",
+
+    OnEnable = function(slotFrame, settings)
+        local frame = CreateFrame("Frame", nil, slotFrame)
+        frame:SetAllPoints()
+
+        local text = EnsureText(slotFrame)
+
+        -- LE_EXPANSION_MIDNIGHT is a Blizzard global constant; tolerate absence
+        -- on older clients by treating the feature as unavailable.
+        local MIDNIGHT_EXPANSION_ID = _G.LE_EXPANSION_MIDNIGHT
+
+        local function IsUnlocked()
+            if not MIDNIGHT_EXPANSION_ID then return false end
+            if not (C_PlayerInfo and C_PlayerInfo.IsExpansionLandingPageUnlockedForPlayer) then
+                return false
+            end
+            return C_PlayerInfo.IsExpansionLandingPageUnlockedForPlayer(MIDNIGHT_EXPANSION_ID)
+        end
+
+        -- Returns unspent Runes-of-Power points, or nil if the system is
+        -- unavailable (config not yet created, pre-Midnight client).
+        local function GetUnspentPoints()
+            if not (C_Traits and C_Traits.GetConfigIDBySystemID and C_Traits.GetTreeCurrencyInfo) then
+                return nil
+            end
+            -- GetConfigIDBySystemID MayReturnNothing -> nil-check.
+            local configID = C_Traits.GetConfigIDBySystemID(RUNES_OF_POWER_SYSTEM_ID)
+            if not configID then return nil end
+            local currencies = C_Traits.GetTreeCurrencyInfo(configID, RUNES_OF_POWER_TREE_ID, false)
+            if not (currencies and currencies[1]) then return nil end
+            return currencies[1].quantity
+        end
+
+        local function Update()
+            local label = GetLabel(ns.L["Folio: "], ns.L["F: "], slotFrame.shortLabel, slotFrame.noLabel)
+            if not IsUnlocked() then
+                text:SetFormattedText(label .. "|cff888888%s|r", ns.L["Locked"])
+                MarkWidthDirty(slotFrame)
+                return
+            end
+            local unspent = GetUnspentPoints() or 0
+            local r, g, b = GetValueColor()
+            text:SetFormattedText(label .. "|cff%02x%02x%02x%d|r", r, g, b, unspent)
+            MarkWidthDirty(slotFrame)
+        end
+
+        frame.Update = Update
+
+        frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        frame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+        frame:RegisterEvent("TRAIT_TREE_CURRENCY_INFO_UPDATED")
+        frame:SetScript("OnEvent", Update)
+
+        -- Tooltip
+        slotFrame:EnableMouse(true)
+        slotFrame:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+            GameTooltip:ClearLines()
+            GameTooltip:AddLine(_G.MIDNIGHT_LANDING_PAGE_TITLE or ns.L["Omnium Folio"], 1, 1, 1)
+            GameTooltip:AddLine(" ")
+
+            local ar, ag, ab = GetValueColor()
+            ar, ag, ab = ar / 255, ag / 255, ab / 255
+
+            if not IsUnlocked() then
+                GameTooltip:AddLine(ns.L["Not yet unlocked."], 0.6, 0.6, 0.6)
+            else
+                local unspent = GetUnspentPoints()
+                if unspent and unspent > 0 then
+                    GameTooltip:AddLine(_G.OMNIUM_FOLIO_UNSPENT_POINTS or ns.L["You have unspent points."], ar, ag, ab)
+                    GameTooltip:AddDoubleLine(ns.L["Unspent Runes of Power"], unspent, 0.8, 0.8, 0.8, ar, ag, ab)
+                else
+                    GameTooltip:AddLine(ns.L["No unspent Runes of Power."], 0.6, 0.6, 0.6)
+                end
+            end
+
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(ns.L["|cffFFFFFFLeft Click:|r Open Omnium Folio"], ar, ag, ab)
+            GameTooltip:Show()
+        end)
+        slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        -- Click handler: Left = toggle the expansion landing page (insecure global).
+        slotFrame:RegisterForClicks("AnyUp")
+        slotFrame:SetScript("OnClick", function(self, button)
+            if button ~= "LeftButton" then return end
+            if InCombatLockdown() then return end
+            if _G.ToggleExpansionLandingPage then
+                _G.ToggleExpansionLandingPage()
             end
         end)
 

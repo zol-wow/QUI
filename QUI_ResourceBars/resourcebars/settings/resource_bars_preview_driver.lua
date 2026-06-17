@@ -241,7 +241,12 @@ local function ApplyPreviewTicks(section, cfg, resource)
     if not cfg or not cfg.showTicks then return end
     local Internal = GetInternal()
     local tickedPowerTypes = Internal and Internal.tickedPowerTypes
+    local fragmentedPowerTypes = Internal and Internal.fragmentedPowerTypes
     if type(resource) ~= "number" or not tickedPowerTypes or not tickedPowerTypes[resource] then return end
+    -- Parity with the live bar (resourcebars.lua UpdateSecondaryPowerBarTicks):
+    -- fragmented power types (Runes, Essence) render as separate segments, not
+    -- divider ticks, so the live bar suppresses ticks for them. Match that here.
+    if fragmentedPowerTypes and fragmentedPowerTypes[resource] then return end
 
     local max = GetPreviewPowerMax(resource)
     if max < 2 then return end
@@ -371,7 +376,11 @@ local function ApplyPreviewSectionLayout(section, cfg, pv, visibleCount)
     local borderSize = cfg and cfg.borderSize or 0
     local UIKit = ns.UIKit
     if UIKit and UIKit.UpdateBorderLines then
-        UIKit.UpdateBorderLines(section.barFrame, borderSize, 0, 0, 0, 1, borderSize <= 0)
+        local br, bg, bb, ba = 0, 0, 0, 1
+        if ns.Helpers and ns.Helpers.GetSkinBorderColor then
+            br, bg, bb, ba = ns.Helpers.GetSkinBorderColor(cfg, "")
+        end
+        UIKit.UpdateBorderLines(section.barFrame, borderSize, br, bg, bb, ba, borderSize <= 0)
     end
 end
 

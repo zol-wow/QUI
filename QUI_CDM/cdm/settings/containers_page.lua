@@ -439,11 +439,22 @@ local function RefreshKeybinds()
     end
 end
 
+-- Repaint the composer live preview for the active container. Effect/glow/
+-- highlighter/swipe settings drive runtime engines that do not own the preview
+-- pane, so each of their refresh helpers must also poke the preview or those
+-- settings appear inert while editing.
+local function PokePreview()
+    if _G.QUI_RefreshCDMPreview then
+        _G.QUI_RefreshCDMPreview()
+    end
+end
+
 local function RefreshContainer(containerKey)
     if type(containerKey) ~= "string" or containerKey == "" then
         if _G.QUI_RefreshNCDM then
             _G.QUI_RefreshNCDM()
         end
+        PokePreview()
         return
     end
 
@@ -452,30 +463,35 @@ local function RefreshContainer(containerKey)
     elseif _G.QUI_RefreshNCDM then
         _G.QUI_RefreshNCDM()
     end
+    PokePreview()
 end
 
 local function RefreshSwipe()
     if _G.QUI_RefreshCooldownSwipe then
         _G.QUI_RefreshCooldownSwipe()
     end
+    PokePreview()
 end
 
 local function RefreshCooldownEffects()
     if _G.QUI_RefreshCooldownEffects then
         _G.QUI_RefreshCooldownEffects()
     end
+    PokePreview()
 end
 
 local function RefreshGlows()
     if _G.QUI_RefreshCustomGlows then
         _G.QUI_RefreshCustomGlows()
     end
+    PokePreview()
 end
 
 local function RefreshHighlighter()
     if _G.QUI_RefreshCooldownHighlighter then
         _G.QUI_RefreshCooldownHighlighter()
     end
+    PokePreview()
 end
 
 local function PrepareSectionHost(sectionHost, ctx)
@@ -2304,6 +2320,48 @@ local function RenderEffectsSection(sectionHost, ctx)
             UpdateRotationHelperWidgetStates()
             builder.CloseCard(rhCard)
         end
+    end
+
+    -- Global (HUD-wide) skinning toggle. Stored at the ncdm top level so it
+    -- governs every CDM cooldown icon, not just the selected container.
+    local ncdmDB = effectsCtx.profile and effectsCtx.profile.ncdm
+    if type(ncdmDB) == "table" then
+        builder.Spacer(6)
+        builder.Header("Skinning")
+        local skinCard = builder.Card()
+        local extSkinCheckbox = gui:CreateFormCheckbox(skinCard.frame, nil, "externalSkinning", ncdmDB, function()
+            RefreshContainer(containerKey)
+        end, {
+            description = "When an external button-skinning addon is installed, let it skin CDM cooldown icons instead of QUI's own border.",
+        })
+        skinCard.AddRow(optionsAPI.BuildSettingRow(skinCard.frame, "External Skinning", extSkinCheckbox))
+
+        local skinNames = (ns.IconSkin and ns.IconSkin.GetSkinList and ns.IconSkin.GetSkinList()) or { "Default" }
+        local skinOptions = {}
+        for _, name in ipairs(skinNames) do
+            skinOptions[#skinOptions + 1] = { value = name, text = name }
+        end
+        local skinDropdown = gui:CreateFormDropdown(skinCard.frame, nil, skinOptions, "iconSkin", ncdmDB, function()
+            RefreshContainer(containerKey)
+        end, {
+            description = "In-house skin preset (Default/Flat/Minimal/Gloss) applied to CDM cooldown icons when external skinning is off.",
+        })
+        skinCard.AddRow(optionsAPI.BuildSettingRow(skinCard.frame, "Button Skin", skinDropdown))
+
+        local glowSourceNames = (ns.IconGlow and ns.IconGlow.GetSourceList and ns.IconGlow.GetSourceList()) or { "QUI", "Off" }
+        local glowSourceOptions = {}
+        for _, name in ipairs(glowSourceNames) do
+            glowSourceOptions[#glowSourceOptions + 1] = { value = name, text = name }
+        end
+        local glowSourceDropdown = gui:CreateFormDropdown(skinCard.frame, nil, glowSourceOptions, "glowSource", ncdmDB, function()
+            -- RefreshGlows -> RefreshAllGlows re-evaluates the source gate so a
+            -- runtime switch to Off/Skin stops any currently active QUI glow.
+            RefreshGlows()
+        end, {
+            description = "Source of CDM proc/cooldown glow: QUI (native glow), Skin (defer to the external skin's glow when available), or Off.",
+        })
+        skinCard.AddRow(optionsAPI.BuildSettingRow(skinCard.frame, "Glow Source", glowSourceDropdown))
+        builder.CloseCard(skinCard)
     end
 
     return builder.Height()

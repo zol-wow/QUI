@@ -74,6 +74,7 @@ local function SetupDebugInstrumentation()
         displayCountHits = 0,
         spellCountSource = 0,
         spellCountHits = 0,
+        unbatchedSourceCalls = 0,
     }
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_queryCacheBatches", counter = true, fn = function() return runtimeQueryStats.batches end }
@@ -102,6 +103,7 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "CDM_queryCacheOverrideSource", counter = true, fn = function() return runtimeQueryStats.overrideSource end }
     mp[#mp + 1] = { name = "CDM_queryCacheDisplayCountSource", counter = true, fn = function() return runtimeQueryStats.displayCountSource end }
     mp[#mp + 1] = { name = "CDM_queryCacheSpellCountSource", counter = true, fn = function() return runtimeQueryStats.spellCountSource end }
+    mp[#mp + 1] = { name = "CDM_queryUnbatchedSource", counter = true, fn = function() return runtimeQueryStats.unbatchedSourceCalls end }
 end
 if ns.DebugRegister then -- gate contract: core/debug_gate.lua
     ns.DebugRegister(SetupDebugInstrumentation)
@@ -115,6 +117,16 @@ end
 
 function CDMRuntimeQueries.ClearStableCaches()
     wipe(stableOverrideCache)
+end
+
+-- Scoped invalidation: drop the stable override memo for a single spell.
+-- COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED carries the exact (baseSpellID,
+-- overrideSpellID) whose override mapping changed, so the override handler
+-- invalidates only those entries instead of wiping the whole cache on every
+-- SPELLS_CHANGED (which co-fires with every proc override).
+function CDMRuntimeQueries.InvalidateStableOverrideForSpell(spellID)
+    if spellID == nil or IsSecretValue(spellID) then return end
+    stableOverrideCache[spellID] = nil
 end
 
 function CDMRuntimeQueries.PushRuntimeQueryOwner(owner)
@@ -212,7 +224,12 @@ local function ReadRuntimeCache(cacheName, _owner, key, hitStat)
 end
 
 local function StoreRuntimeCache(cacheName, _owner, key, value, sourceStat)
-    if runtimeQueryBatchDepth <= 0 then return value end
+    if runtimeQueryBatchDepth <= 0 then
+        if runtimeQueryStats then
+            runtimeQueryStats.unbatchedSourceCalls = runtimeQueryStats.unbatchedSourceCalls + 1
+        end
+        return value
+    end
     if runtimeQueryStats then runtimeQueryStats[sourceStat] = runtimeQueryStats[sourceStat] + 1 end
     if IsSecretValue(key) then return value end
     local cache = batchSharedCache[cacheName]

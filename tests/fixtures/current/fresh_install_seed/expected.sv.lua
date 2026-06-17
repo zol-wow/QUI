@@ -300,11 +300,28 @@ return {
             countFontSize = 12,
             countOffsetX = 0,
             countOffsetY = 0,
+            externalSkinning = false,
             fastUsabilityUpdates = false,
             glossAlpha = 0.29999999999999999,
+            glowColor = {
+              [1] = 0.20000000000000001,
+              [2] = 0.81999999999999995,
+              [3] = 0.59999999999999998,
+              [4] = 1
+            },
+            glowColorSource = "theme",
+            glowFrequency = 0.25,
+            glowLength = 0,
+            glowLines = 8,
+            glowParticles = 4,
+            glowScale = 1,
+            glowSource = "QUI",
+            glowStyle = "Button",
+            glowThickness = 2,
             hideEmptyKeybinds = false,
             hideEmptySlots = false,
             iconSize = 36,
+            iconSkin = "Default",
             iconZoom = 0.050000000000000003,
             keybindAnchor = "TOPRIGHT",
             keybindColor = {
@@ -674,6 +691,7 @@ return {
           debuffStackTextOffsetY = 1,
           enableBuffs = true,
           enableDebuffs = true,
+          externalSkinning = false,
           fadeBuffFrame = false,
           fadeDebuffFrame = false,
           fadeOutAlpha = 0,
@@ -681,6 +699,7 @@ return {
           fontSize = 12,
           hideBuffFrame = false,
           hideDebuffFrame = false,
+          iconSkin = "Default",
           showBuffBorders = true,
           showDebuffBorders = true
         },
@@ -809,7 +828,9 @@ return {
             enabled = false
           },
           font = {
-            forceOutline = false
+            outline = "",
+            size = 13,
+            useCustom = false
           },
           glass = {
             bgAlpha = 0.25,
@@ -2752,6 +2773,7 @@ return {
           hideMicroMenu = false,
           lock = false,
           middleClickMenuEnabled = true,
+          missionsInDrawer = false,
           position = {
             point = "TOPLEFT",
             relPoint = "BOTTOMLEFT",
@@ -3414,6 +3436,9 @@ return {
             spellOverrides = {},
             usabilityIndicator = true
           },
+          externalSkinning = false,
+          glowSource = "QUI",
+          iconSkin = "Default",
           perLoadoutSpec = false,
           trackedBar = {
             anchorOffsetX = 0,
@@ -3614,6 +3639,13 @@ return {
             [3] = 0.078,
             [4] = 1
           },
+          borderColor = {
+            [1] = 0,
+            [2] = 0,
+            [3] = 0,
+            [4] = 1
+          },
+          borderColorSource = "inherit",
           borderSize = 0,
           colorMode = "power",
           customColor = {
@@ -3899,6 +3931,8 @@ return {
         },
         quiGroupFrames = {
           enabled = false,
+          externalSkinning = false,
+          iconSkin = "Default",
           party = {
             absorbs = {
               color = {
@@ -5934,6 +5968,13 @@ return {
             [3] = 0.078,
             [4] = 0.82999999999999996
           },
+          borderColor = {
+            [1] = 0,
+            [2] = 0,
+            [3] = 0,
+            [4] = 1
+          },
+          borderColorSource = "inherit",
           borderSize = 1,
           colorMode = "power",
           customColor = {
@@ -7968,6 +8009,9 @@ return {
           enabled = false,
           fade = {
             delay = 30
+          },
+          font = {
+            forceOutline = false
           },
           glass = {
             bgAlpha = 1,

@@ -50,6 +50,24 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local function Refresh() if _G.QUI_RefreshMinimap then _G.QUI_RefreshMinimap() end end
         local function RefreshUIHider() if _G.QUI_RefreshUIHider then _G.QUI_RefreshUIHider() end end
 
+        -- Moving the mission button between the minimap and the drawer only
+        -- fully settles after a reload (drawer collection is one-way at runtime),
+        -- so refresh then offer a reload either direction.
+        local function RefreshMissionsDrawer()
+            Refresh()
+            local QUI = _G.QUI
+            local confGUI = QUI and QUI.GUI
+            if confGUI and type(confGUI.ShowConfirmation) == "function" then
+                confGUI:ShowConfirmation({
+                    title      = ns.L["Reload UI?"],
+                    message    = ns.L["This change takes full effect after a reload."],
+                    acceptText = ns.L["Reload"],
+                    cancelText = ns.L["Later"],
+                    onAccept   = function() if QUI.SafeReload then QUI:SafeReload() else ReloadUI() end end,
+                })
+            end
+        end
+
         local layout = MakeLayout(content)
 
         -- GENERAL
@@ -273,6 +291,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local bdHoverW = GUI:CreateFormCheckbox(s7.frame, nil, "openOnMouseover", drawer, Refresh,
             { description = ns.L["Open the drawer automatically when you hover the toggle button. Off requires a click to open."] })
         s7.AddRow(row(s7.frame, ns.L["Enable Button Drawer"], bdEnableW), row(s7.frame, ns.L["Open on Mouseover"], bdHoverW))
+
+        local bdMissionsW = GUI:CreateFormCheckbox(s7.frame, nil, "missionsInDrawer", mm, RefreshMissionsDrawer,
+            { description = ns.L["Place the garrison / mission / expedition report button inside the drawer instead of pinned to the minimap. Requires the drawer enabled and the mission button shown. Prompts for a UI reload to fully apply."] })
+        s7.AddRow(row(s7.frame, ns.L["Mission Button in Drawer"], bdMissionsW))
 
         local bdAnchorW = GUI:CreateFormDropdown(s7.frame, nil, anchorOptions, "anchor", drawer, Refresh,
             { description = ns.L["Which side of the minimap the drawer expands out from."] })
