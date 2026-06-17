@@ -477,8 +477,20 @@ end
 
 local StopGlow
 
-local function ApplyLibCustomGlow(icon, viewerSettings)
+-- Default LibCustomGlow scope key for the runtime cooldown/proc glow. The
+-- composer live preview passes its own scoped key so its glows can never be
+-- confused with runtime glows; both go through the exact same applier below.
+local DEFAULT_GLOW_KEY = "_QUICustomGlow"
+
+-- glowKey scopes every LibCustomGlow/texture frame this call creates so the
+--   same applier can drive both the runtime icons (default key, tracked in
+--   activeGlowIcons) and the preview icons (scoped key, skipTracking=true).
+local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
     if not LCG or not icon then return false end
+
+    glowKey = glowKey or DEFAULT_GLOW_KEY
+    local flashKey  = "_QUIFlash" .. glowKey
+    local hammerKey = "_QUIHammer" .. glowKey
 
     local glowType = viewerSettings.glowType
     local color = viewerSettings.color
@@ -490,11 +502,11 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
     local yOffset = viewerSettings.yOffset or 0
 
     -- Stop any existing glow first
-    StopGlow(icon)
+    StopGlow(icon, glowKey)
 
     if glowType == "Pixel Glow" then
-        LCG.PixelGlow_Start(icon, color, lines, frequency, nil, thickness, 0, 0, true, "_QUICustomGlow")
-        local glowFrame = icon["_PixelGlow_QUICustomGlow"]
+        LCG.PixelGlow_Start(icon, color, lines, frequency, nil, thickness, 0, 0, true, glowKey)
+        local glowFrame = icon["_PixelGlow" .. glowKey]
         if glowFrame then
             glowFrame:ClearAllPoints()
             glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, yOffset)
@@ -503,8 +515,8 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
         end
 
     elseif glowType == "Autocast Shine" then
-        LCG.AutoCastGlow_Start(icon, color, lines, frequency, scale, 0, 0, "_QUICustomGlow")
-        local glowFrame = icon["_AutoCastGlow_QUICustomGlow"]
+        LCG.AutoCastGlow_Start(icon, color, lines, frequency, scale, 0, 0, glowKey)
+        local glowFrame = icon["_AutoCastGlow" .. glowKey]
         if glowFrame then
             glowFrame:ClearAllPoints()
             glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, yOffset)
@@ -517,28 +529,30 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
         EnsureGlowAboveCooldown(icon, icon["_ButtonGlow"])
 
     elseif glowType == "Flash" then
-        local frame = StartTextureGlow(icon, "_QUIFlashGlow", FLASH_TEXTURE, color)
+        local frame = StartTextureGlow(icon, flashKey, FLASH_TEXTURE, color)
         EnsureGlowAboveCooldown(icon, frame)
 
     elseif glowType == "Hammer" then
-        local frame = StartTextureGlow(icon, "_QUIHammerGlow", HAMMER_TEXTURE, color)
+        local frame = StartTextureGlow(icon, hammerKey, HAMMER_TEXTURE, color)
         EnsureGlowAboveCooldown(icon, frame)
 
     elseif glowType == "Proc Glow" then
         LCG.ProcGlow_Start(icon, {
-            key = "_QUICustomGlow",
+            key = glowKey,
             color = color,
             startAnim = true,
             xOffset = xOffset,
             yOffset = viewerSettings.yOffset or 0,
         })
-        local glowFrame = icon["_ProcGlow_QUICustomGlow"]
+        local glowFrame = icon["_ProcGlow" .. glowKey]
         if glowFrame then
             EnsureGlowAboveCooldown(icon, glowFrame)
         end
     end
 
-    activeGlowIcons[icon] = true
+    if not skipTracking then
+        activeGlowIcons[icon] = true
+    end
     return true
 end
 
@@ -572,17 +586,22 @@ local function StartGlow(icon, spellOvr)
     ApplyLibCustomGlow(icon, viewerSettings)
 end
 
-StopGlow = function(icon)
+StopGlow = function(icon, glowKey)
     if not icon then return end
+    glowKey = glowKey or DEFAULT_GLOW_KEY
     if LCG then
-        LCG.PixelGlow_Stop(icon, "_QUICustomGlow")
-        LCG.AutoCastGlow_Stop(icon, "_QUICustomGlow")
+        LCG.PixelGlow_Stop(icon, glowKey)
+        LCG.AutoCastGlow_Stop(icon, glowKey)
         LCG.ButtonGlow_Stop(icon)
-        LCG.ProcGlow_Stop(icon, "_QUICustomGlow")
+        LCG.ProcGlow_Stop(icon, glowKey)
     end
-    StopTextureGlow(icon, "_QUIFlashGlow")
-    StopTextureGlow(icon, "_QUIHammerGlow")
-    activeGlowIcons[icon] = nil
+    StopTextureGlow(icon, "_QUIFlash" .. glowKey)
+    StopTextureGlow(icon, "_QUIHammer" .. glowKey)
+    -- Only the runtime (default-key) glow participates in activeGlowIcons;
+    -- preview glows pass a scoped key and must not touch runtime tracking.
+    if glowKey == DEFAULT_GLOW_KEY then
+        activeGlowIcons[icon] = nil
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1019,6 +1038,18 @@ ns._OwnedGlows = {
     RefreshAllGlows = RefreshAllGlows,
     RebuildGlowSpellMap = RebuildGlowSpellMap,
     GetViewerType = GetViewerType,
+    -- Resolves the customGlow settings table for a viewer ("Essential",
+    -- "Utility", or a custom container prefix); returns nil when that
+    -- viewer's glow is disabled. Used by the composer live preview.
+    GetViewerSettings = GetViewerSettings,
+    -- Key-scoped applier/stopper so the preview can paint glows on its own
+    -- frames through the exact runtime code without touching activeGlowIcons.
+    ApplyGlowWithKey = function(icon, viewerSettings, glowKey)
+        return ApplyLibCustomGlow(icon, viewerSettings, glowKey, true)
+    end,
+    StopGlowWithKey = function(icon, glowKey)
+        return StopGlow(icon, glowKey)
+    end,
     activeGlowIcons = activeGlowIcons,
     ScheduleGlowScan = ScanAllGlows,
     IsSpellCastable = IsSpellCastable,
@@ -1334,6 +1365,34 @@ local function SettingEnabled(value, fallback)
         return Shared.SettingEnabled(value, fallback)
     end
     return value == nil and fallback == true or value == true
+end
+
+-- Resolve the swipe draw state + color for the composer live preview, using
+-- the same ResolveColor + default-fallback rules as the runtime swipe path.
+-- mode: "aura" (overlayColorMode/overlayColor, gated by showBuffSwipe) or
+-- "cooldown" (swipeColorMode/swipeColor, gated by showCooldownSwipe).
+-- Returns showSwipe, r, g, b, a.
+function ns._CDM_ResolvePreviewSwipe(settings, mode)
+    settings = settings or {}
+    local showSwipe
+    if mode == "aura" then
+        showSwipe = SettingEnabled(settings.showBuffSwipe, true)
+    else
+        showSwipe = SettingEnabled(settings.showCooldownSwipe, true)
+    end
+    if not showSwipe then
+        return false, 0, 0, 0, 0
+    end
+
+    local r, g, b, a
+    if mode == "aura" then
+        r, g, b, a = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
+        if not r then r, g, b, a = BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A end
+    else
+        r, g, b, a = ResolveColor(settings.swipeColorMode or "default", settings.swipeColor)
+        if not r then r, g, b, a = CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A end
+    end
+    return true, r, g, b, a or 1
 end
 
 ---------------------------------------------------------------------------

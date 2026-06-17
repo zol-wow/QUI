@@ -439,11 +439,22 @@ local function RefreshKeybinds()
     end
 end
 
+-- Repaint the composer live preview for the active container. Effect/glow/
+-- highlighter/swipe settings drive runtime engines that do not own the preview
+-- pane, so each of their refresh helpers must also poke the preview or those
+-- settings appear inert while editing.
+local function PokePreview()
+    if _G.QUI_RefreshCDMPreview then
+        _G.QUI_RefreshCDMPreview()
+    end
+end
+
 local function RefreshContainer(containerKey)
     if type(containerKey) ~= "string" or containerKey == "" then
         if _G.QUI_RefreshNCDM then
             _G.QUI_RefreshNCDM()
         end
+        PokePreview()
         return
     end
 
@@ -452,30 +463,35 @@ local function RefreshContainer(containerKey)
     elseif _G.QUI_RefreshNCDM then
         _G.QUI_RefreshNCDM()
     end
+    PokePreview()
 end
 
 local function RefreshSwipe()
     if _G.QUI_RefreshCooldownSwipe then
         _G.QUI_RefreshCooldownSwipe()
     end
+    PokePreview()
 end
 
 local function RefreshCooldownEffects()
     if _G.QUI_RefreshCooldownEffects then
         _G.QUI_RefreshCooldownEffects()
     end
+    PokePreview()
 end
 
 local function RefreshGlows()
     if _G.QUI_RefreshCustomGlows then
         _G.QUI_RefreshCustomGlows()
     end
+    PokePreview()
 end
 
 local function RefreshHighlighter()
     if _G.QUI_RefreshCooldownHighlighter then
         _G.QUI_RefreshCooldownHighlighter()
     end
+    PokePreview()
 end
 
 local function PrepareSectionHost(sectionHost, ctx)

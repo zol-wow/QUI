@@ -75,19 +75,28 @@ assert(source:find('_QUIComposerPreviewGlow', 1, true),
 assert(not source:find('"_QUICustomGlow"', 1, true) and not source:find("'_QUICustomGlow'", 1, true),
     "driver must NEVER use the runtime glow key \"_QUICustomGlow\"")
 
--- T7: glow helper accesses LibCustomGlow via LibStub
-assert(source:find('LibStub("LibCustomGlow-1.0"', 1, true),
-    "driver must access LibCustomGlow via LibStub")
+-- T7: glow is delegated to the shared runtime applier (ns._OwnedGlows) so the
+-- preview honours every glow setting — type, color, lines, thickness,
+-- frequency, scale, X/Y offset — exactly as the runtime renders them. The
+-- raw LibCustomGlow dispatch lives once in cdm_effects.lua, NOT here.
+assert(source:find("GetViewerSettings", 1, true),
+    "driver must resolve glow params via ns._OwnedGlows.GetViewerSettings")
+assert(source:find("ApplyGlowWithKey", 1, true),
+    "driver must apply glow via ns._OwnedGlows.ApplyGlowWithKey")
+assert(source:find("StopGlowWithKey", 1, true),
+    "driver must stop glow via ns._OwnedGlows.StopGlowWithKey")
+assert(not source:find("LibStub(", 1, true),
+    "driver must NOT access LibCustomGlow directly; delegate to ns._OwnedGlows")
+assert(not source:find("PixelGlow_Start", 1, true),
+    "driver must NOT re-implement raw LibCustomGlow dispatch")
 
--- T7: helper supports all three glow styles
-for _, style in ipairs({"PixelGlow_Start", "AutoCastGlow_Start", "ButtonGlow_Start"}) do
-    assert(source:find(style, 1, true),
-        "driver must dispatch glow style \"" .. style .. "\"")
-end
-for _, style in ipairs({"PixelGlow_Stop", "AutoCastGlow_Stop", "ButtonGlow_Stop"}) do
-    assert(source:find(style, 1, true),
-        "driver must stop glow style \"" .. style .. "\"")
-end
+-- T7b: effect settings beyond proc glow must also reflect in the preview.
+assert(source:find("ApplyPreviewSwipe", 1, true),
+    "driver must reflect the cooldown swipe color/draw flags in the preview")
+assert(source:find("StartActiveGlow", 1, true),
+    "driver must reflect per-tracker active glow in the preview")
+assert(source:find("StartHighlighter", 1, true),
+    "driver must reflect the cooldown highlighter flash in the preview")
 
 -- T8: cycle script catalog tokens present
 local cooldownTokens = {"cooldown", "ready_glow", "charges", "idle"}
