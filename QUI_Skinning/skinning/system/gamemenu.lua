@@ -248,7 +248,31 @@ local function GetOrCreateEditModeButton()
     return editModeButton
 end
 
-local function PositionCustomButtons(settings, refButton, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+-- Restore a custom button to its stock UIPanelButtonTemplate look. Used when
+-- skinGameMenu is off so our buttons match the unskinned Blizzard menu. Reverses
+-- the one-shot strip/inset/font that SkinButton applied (custom buttons have no
+-- durable alpha-clamp hook, so a plain SetAlpha(1) restores their native art).
+local function RestoreButtonArt(button)
+    if not button then return end
+    local info = buttonState[button]
+    if not info then return end
+    if info.inset then info.inset:Hide() end
+    if info.highlight then info.highlight:SetAlpha(0) end
+    local fs = button.GetFontString and button:GetFontString()
+    for i = 1, select("#", button:GetRegions()) do
+        local r = select(i, button:GetRegions())
+        if r and r.IsObjectType and r:IsObjectType("Texture")
+           and r ~= fs and r ~= info.highlight then
+            r:SetAlpha(1)
+        end
+    end
+    -- Stock UIPanelButtonTemplate per-state fonts.
+    if button.SetNormalFontObject then button:SetNormalFontObject("GameFontNormal") end
+    if button.SetHighlightFontObject then button:SetHighlightFontObject("GameFontHighlight") end
+    if button.SetDisabledFontObject then button:SetDisabledFontObject("GameFontDisable") end
+end
+
+local function PositionCustomButtons(settings, skin, refButton, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
     -- QUI button: anchored to GameMenuFrame's BOTTOM edge (entirely outside
     -- the frame rect so the secure frame never eats its clicks).
     if settings.addQUIButton == false then
@@ -259,7 +283,13 @@ local function PositionCustomButtons(settings, refButton, sr, sg, sb, sa, bgr, b
         b:SetPoint("TOP", GameMenuFrame, "BOTTOM", 0, -2)
         if refButton then b:SetSize(refButton:GetWidth(), refButton:GetHeight()) end
         b:Show()
-        SkinButton(b, false, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+        -- Skin only when the menu is themed; otherwise keep the stock template
+        -- look so the button matches the unskinned Blizzard game menu.
+        if skin then
+            SkinButton(b, false, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+        else
+            RestoreButtonArt(b)
+        end
     end
 
     -- Edit Mode button: below the QUI button when shown, else below the menu.
@@ -272,7 +302,11 @@ local function PositionCustomButtons(settings, refButton, sr, sg, sb, sa, bgr, b
         b:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
         if refButton then b:SetSize(refButton:GetWidth(), refButton:GetHeight()) end
         b:Show()
-        SkinButton(b, false, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+        if skin then
+            SkinButton(b, false, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+        else
+            RestoreButtonArt(b)
+        end
     end
 end
 
@@ -356,7 +390,7 @@ local function OnInitButtons(menu)
     end
 
     if skin then ReassertLevels(minLevel) end
-    PositionCustomButtons(settings, refButton, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+    PositionCustomButtons(settings, skin, refButton, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
     if skin then
         AssertDim(settings)
         ExtendMenuBg()
