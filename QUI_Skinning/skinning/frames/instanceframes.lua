@@ -12,32 +12,11 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
--- Recursively re-lock the QUI font on a frame's fontstrings. Unlike the
--- one-shot SkinFrameText, this hooks each fontstring's SetFontObject (and a
--- button's SetNormalFontObject) via SkinBase.LockFontObject, so Blizzard's
+-- Recursively re-lock the QUI font on a frame's fontstrings so Blizzard's
 -- hover / selection / list re-bind font-object swaps don't revert our font.
--- Idempotent per object (LockFontObject guards with its own qFontLocked flag),
--- so it is safe to call repeatedly on pooled rows and on re-skins.
-local function LockFrameTextObjects(frame, maxDepth)
-    if not frame then return end
-    maxDepth = maxDepth or 4
-    if frame.GetObjectType and frame:GetObjectType() == "Button" and frame.SetNormalFontObject then
-        SkinBase.LockFontObject(frame, { fontOnly = true })
-    end
-    if frame.GetRegions then
-        for i = 1, select("#", frame:GetRegions()) do
-            local region = select(i, frame:GetRegions())
-            if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                SkinBase.LockFontObject(region, { fontOnly = true })
-            end
-        end
-    end
-    if maxDepth > 0 and frame.GetChildren then
-        for i = 1, select("#", frame:GetChildren()) do
-            LockFrameTextObjects(select(i, frame:GetChildren()), maxDepth - 1)
-        end
-    end
-end
+-- Promoted to SkinBase.LockFrameTextObjects (core/uikit.lua) so journals /
+-- achievement reuse the same proven helper; aliased here for existing callers.
+local LockFrameTextObjects = SkinBase.LockFrameTextObjects
 
 ---------------------------------------------------------------------------
 -- INSTANCE FRAMES SKINNING (PVE, Dungeons & Raids, PVP, M+ Dungeons)

@@ -3027,6 +3027,36 @@ function SkinBase.LockFontObject(obj, opts)
     SkinBase.SetFrameData(obj, "qFontLocked", true)
 end
 
+---------------------------------------------------------------------------
+-- LockFrameTextObjects(frame, maxDepth)
+-- Recursively LockFontObject every fontstring (and button label) under a
+-- frame. Unlike the one-shot SkinFrameText, this defeats Blizzard's hover /
+-- selection / list re-bind font-OBJECT swaps so they don't revert the QUI
+-- font. Idempotent per object (LockFontObject guards with qFontLocked), so it
+-- is safe to call repeatedly on pooled rows and on re-skins. maxDepth bounds
+-- the descent (default 4).
+---------------------------------------------------------------------------
+function SkinBase.LockFrameTextObjects(frame, maxDepth)
+    if not frame then return end
+    maxDepth = maxDepth or 4
+    if frame.GetObjectType and frame:GetObjectType() == "Button" and frame.SetNormalFontObject then
+        SkinBase.LockFontObject(frame, { fontOnly = true })
+    end
+    if frame.GetRegions then
+        for i = 1, select("#", frame:GetRegions()) do
+            local region = select(i, frame:GetRegions())
+            if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                SkinBase.LockFontObject(region, { fontOnly = true })
+            end
+        end
+    end
+    if maxDepth > 0 and frame.GetChildren then
+        for i = 1, select("#", frame:GetChildren()) do
+            SkinBase.LockFrameTextObjects(select(i, frame:GetChildren()), maxDepth - 1)
+        end
+    end
+end
+
 -- Resolve a frame's primary label fontstring (button text / editbox).
 local function GetLabelFontString(frame)
     if not frame then return nil end

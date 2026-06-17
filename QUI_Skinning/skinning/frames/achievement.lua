@@ -50,6 +50,23 @@ local function HideAchievementChrome()
     end
 end
 
+-- Category / achievement / stat rows are ScrollBox-pooled and Blizzard swaps
+-- their font OBJECT on hover / selection / re-bind, so the one-shot
+-- SkinFrameText above reverts. Lock each acquired row's fontstrings (and the
+-- initial pass) so the QUI font survives. Idempotent (HookScrollBoxAcquired
+-- guards with qScrollHooked, LockFontObject with qFontLocked).
+local function HookAchievementLists()
+    for _, host in ipairs({ "AchievementFrameCategories", "AchievementFrameAchievements", "AchievementFrameStats" }) do
+        local listFrame = _G[host]
+        local scrollBox = listFrame and listFrame.ScrollBox
+        if scrollBox then
+            SkinBase.HookScrollBoxAcquired(scrollBox, function(row)
+                SkinBase.LockFrameTextObjects(row, 3)
+            end)
+        end
+    end
+end
+
 local function SkinAchievement()
     if not IsSettingEnabled("skinAchievement") then return end
     local frame = _G.AchievementFrame
@@ -65,12 +82,14 @@ local function SkinAchievement()
     end
 
     SkinBase.SkinFrameText(frame, { recurse = true })
+    HookAchievementLists()
     SkinBase.MarkSkinned(frame)
 end
 
 local function RefreshAchievement()
     local frame = _G.AchievementFrame
     if not frame then return end
+    if SkinBase.IsSkinned(frame) then HookAchievementLists() end
     local bd = SkinBase.GetBackdrop(frame)
     if not bd then return end
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()

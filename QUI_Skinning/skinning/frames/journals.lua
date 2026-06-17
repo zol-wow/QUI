@@ -46,6 +46,9 @@ local function SkinPlayerSpellsText(frame)
     if pagedSpellsFrame and pagedSpellsFrame.EnumerateFrames then
         for _, spellFrame in pagedSpellsFrame:EnumerateFrames() do
             SkinBase.SkinFrameText(spellFrame, { recurse = true, chrome = true })
+            -- Spell rows are pooled and Blizzard swaps their font OBJECT on
+            -- hover / page re-bind; lock so the one-shot skin above survives.
+            SkinBase.LockFrameTextObjects(spellFrame, 3)
         end
     end
 end
@@ -73,6 +76,43 @@ local function HookPlayerSpellsTextUpdates(frame)
     SkinBase.SetFrameData(pagedSpellsFrame, "qSpellBookTextHooked", true)
 end
 
+---------------------------------------------------------------------------
+-- Talent tree node text. Talent buttons are pooled lazily and each swaps its
+-- .SpendText font OBJECT on draw, so a one-shot skin reverts. LockFontObject
+-- (via LockFrameTextObjects) makes the QUI font survive those swaps. New /
+-- recycled buttons come through AcquireTalentButton, so hook it (debounced to
+-- one enumerate-and-lock pass per frame) to cover buttons created after init.
+---------------------------------------------------------------------------
+local talentLockPending
+local function LockTalentButtons(talentsFrame)
+    if not IsSettingEnabled("skinSpellBook") then return end
+    if not talentsFrame or not talentsFrame.EnumerateAllTalentButtons then return end
+    for btn in talentsFrame:EnumerateAllTalentButtons() do
+        SkinBase.LockFrameTextObjects(btn, 2)
+    end
+end
+
+local function ScheduleTalentLock(talentsFrame)
+    if talentLockPending then return end
+    talentLockPending = true
+    C_Timer.After(0, function()
+        talentLockPending = false
+        LockTalentButtons(talentsFrame)
+    end)
+end
+
+local function HookTalentButtons(frame)
+    local talentsFrame = frame and frame.TalentsFrame
+    if not talentsFrame or not talentsFrame.AcquireTalentButton then return end
+    if not SkinBase.GetFrameData(talentsFrame, "qTalentTextHooked") then
+        hooksecurefunc(talentsFrame, "AcquireTalentButton", function(self)
+            ScheduleTalentLock(self)
+        end)
+        SkinBase.SetFrameData(talentsFrame, "qTalentTextHooked", true)
+    end
+    ScheduleTalentLock(talentsFrame)
+end
+
 local function SkinPlayerSpells()
     if not IsSettingEnabled("skinSpellBook") then return end
     local frame = _G.PlayerSpellsFrame
@@ -91,8 +131,14 @@ local function SkinPlayerSpells()
             end)
             SkinBase.SetFrameData(frame.TabSystem, "qTabSysHooked", true)
         end
+        -- Tabs swap their font OBJECT on hover/select; lock so the QUI face
+        -- survives (fontOnly keeps the per-state size, just enforces the face).
+        for _, t in ipairs(frame.TabSystem.tabs) do
+            SkinBase.LockFrameTextObjects(t, 2)
+        end
     end
     HookPlayerSpellsTextUpdates(frame)
+    HookTalentButtons(frame)
     SkinPlayerSpellsText(frame)
     SkinBase.MarkSkinned(frame)
 end
@@ -106,6 +152,7 @@ local function RefreshPlayerSpells()
     end
     RefreshBackdropColors(frame)
     HookPlayerSpellsTextUpdates(frame)
+    HookTalentButtons(frame)
     SkinPlayerSpellsText(frame)
 end
 _G.QUI_RefreshSpellBookColors = RefreshPlayerSpells

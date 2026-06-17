@@ -774,6 +774,35 @@ local function HookLineCreation()
         SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked", true)
     end
 
+    -- Hook ObjectiveTrackerBlockMixin:UpdateHighlight to re-assert QUI text colors on hover.
+    -- Blizzard's UpdateHighlight (fired by OnHeaderEnter/OnHeaderLeave) calls SetTextColor on
+    -- the block HeaderText and every objective line/dash, swapping in OBJECTIVE_TRACKER_COLOR
+    -- ("HeaderHighlight"/"Header" + "NormalHighlight"/"Normal"). That clobbers our themed
+    -- title/text colors every time the cursor moves over a quest. Re-apply synchronously
+    -- (no C_Timer defer) so there is no visible flash of Blizzard's color.
+    -- TAINT: runs from mouse-hover scripts, not a secure event context — plain SetTextColor
+    -- on insecure FontStrings is safe; no deferral needed.
+    if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.UpdateHighlight and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "updateHighlightHooked") then
+        hooksecurefunc(ObjectiveTrackerBlockMixin, "UpdateHighlight", function(self)
+            local currentSettings = GetSettings()
+            if not currentSettings or not currentSettings.skinObjectiveTracker then return end
+            local titleColor = currentSettings.objectiveTrackerTitleColor
+            local textColor = currentSettings.objectiveTrackerTextColor
+            if self.HeaderText then
+                SafeSetTextColor(self.HeaderText, titleColor)
+            end
+            if self.usedLines then
+                for _, line in pairs(self.usedLines) do
+                    SafeSetTextColor(line.Text, textColor)
+                    if line.Dash then
+                        SafeSetTextColor(line.Dash, textColor)
+                    end
+                end
+            end
+        end)
+        SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "updateHighlightHooked", true)
+    end
+
     -- Note: POI button glows are hidden via HidePOIButtonGlows() called from ScheduleBackdropUpdate()
 end
 
