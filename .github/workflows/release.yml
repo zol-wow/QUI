@@ -171,6 +171,7 @@ jobs:
             build/QUI/docs
             build/QUI/tests
             build/QUI/tools
+            build/QUI/QUI_Debug
             build/QUI_Debug
             build/QUI/modules/debug
           )
