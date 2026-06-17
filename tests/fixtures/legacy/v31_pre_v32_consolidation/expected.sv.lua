@@ -828,7 +828,9 @@ return {
             enabled = false
           },
           font = {
-            forceOutline = false
+            outline = "",
+            size = 13,
+            useCustom = false
           },
           glass = {
             bgAlpha = 0.25,

@@ -828,7 +828,9 @@ return {
             enabled = false
           },
           font = {
-            forceOutline = false
+            outline = "",
+            size = 13,
+            useCustom = false
           },
           glass = {
             bgAlpha = 0.25,
@@ -8007,6 +8009,9 @@ return {
           enabled = false,
           fade = {
             delay = 30
+          },
+          font = {
+            forceOutline = false
           },
           glass = {
             bgAlpha = 1,

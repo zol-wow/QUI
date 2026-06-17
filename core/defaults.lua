@@ -1447,9 +1447,15 @@ local defaults = {
                 delay = 15,              -- Seconds before fade starts
                 duration = 0.6,          -- Fade animation duration
             },
-            -- Font settings
+            -- Font settings. useCustom OFF (default) = inherit global db.general.font
+            -- + Blizzard-native window size (legacy behavior). ON = use the fields below.
+            -- (Drops the old UI-less forceOutline bool; no migration — AceDB seeds
+            -- these keys on load and the residual forceOutline key is ignored.)
             font = {
-                forceOutline = false,    -- Force font outline
+                useCustom = false,       -- master toggle for chat-specific font
+                family    = nil,         -- LSM font name; nil -> global db.general.font
+                size      = 13,          -- explicit point size when useCustom (range 8-32)
+                outline   = "",          -- "", "OUTLINE", or "THICKOUTLINE"
             },
             -- URL detection and copying
             urls = {
