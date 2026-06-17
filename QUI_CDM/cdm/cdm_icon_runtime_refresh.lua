@@ -29,6 +29,17 @@ local UPDATE_FULL = "full"
 local runtimeRefreshStats -- debug counters; nil until QUI_Debug activates instrumentation
 local measureFn -- profiler hook; bound at debug activation (nil otherwise)
 
+-- Tag the upcoming resolve(s) by calling context so the gated per-caller
+-- counters in cdm_resolvers.lua can attribute ResolveCooldownState volume.
+-- ns.CDMResolvers.SetResolveCallerTag is nil until QUI_Debug activates, so
+-- with debug off this is a single nil-check and the call is skipped entirely
+-- (no hot-path residue). Resolved lazily because CDMResolvers may load after
+-- this module.
+local function setResolveCallerTag(tag)
+    local R = ns.CDMResolvers
+    if R and R.SetResolveCallerTag then R.SetResolveCallerTag(tag) end
+end
+
 local function SetupDebugInstrumentation()
     runtimeRefreshStats = {
         catalogScopeRefreshes = 0,
@@ -320,6 +331,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local includeItems = options.includeItems == true
         local editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "auraScope")
         local refreshed = 0
+        setResolveCallerTag("auraScope")
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
@@ -343,6 +355,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 end
             end
         end
+        setResolveCallerTag(nil)
         endBatch(callbacks)
         return refreshed
     end
@@ -354,6 +367,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local refreshed = false
         local stackTextWritesEnabled = false
         local editMode, ncdm, ncdmContainers, inCombatState
+        setResolveCallerTag("item")
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
@@ -388,6 +402,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 end
             end
         end
+        setResolveCallerTag(nil)
         if stackTextWritesEnabled then
             setStackTextWrites(callbacks, false)
         end
@@ -407,6 +422,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local refreshed = false
         local stackTextWritesEnabled = false
         local editMode, ncdm, ncdmContainers, inCombatState
+        setResolveCallerTag("catalog")
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
@@ -435,6 +451,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 end
             end
         end
+        setResolveCallerTag(nil)
         if stackTextWritesEnabled then
             setStackTextWrites(callbacks, false)
         end
@@ -522,6 +539,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local refreshed = false
         local stackTextWritesEnabled = false
         local editMode, ncdm, ncdmContainers, inCombatState
+        setResolveCallerTag("spellID")
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
@@ -558,6 +576,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 end
             end
         end
+        setResolveCallerTag(nil)
         if stackTextWritesEnabled then
             setStackTextWrites(callbacks, false)
         end
@@ -625,6 +644,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local refreshed = 0
         local batchStarted = false
         local editMode, ncdm, ncdmContainers, inCombatState
+        setResolveCallerTag("aura")
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
@@ -677,6 +697,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 end
             end
         end
+        setResolveCallerTag(nil)
         if batchStarted then
             endBatch(callbacks)
         end
@@ -697,17 +718,11 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         return false
     end
 
-    local function IconHasGCDRenderLock(icon)
-        return icon
-            and icon._showingGCDSwipe == true
-            and icon._showingRealCooldownSwipe ~= true
-            and icon._hasRealCooldownActive ~= true
-    end
-
     function controller:ApplyUsabilityRefresh()
         local refreshed = 0
         local editMode, ncdm, ncdmContainers, inCombatState
         local batchStarted = false
+        setResolveCallerTag("usability")
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
@@ -721,11 +736,12 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                         end
                         batchStarted = true
                     end
-                    local skipCooldownApply = IconHasGCDRenderLock(icon)
-                        and icon._cdDesaturated ~= true
-                    if not skipCooldownApply and callbacks.applyResolvedCooldown then
-                        callbacks.applyResolvedCooldown(icon)
-                    end
+                    -- applyResolvedCooldown (ResolveCooldownState → C_UnitAuras) is intentionally
+                    -- NOT called here. The usable tint is applied by cdm_icon_range_policy.lua via
+                    -- updateIconRangesForUsabilityEvent on the same SPELL_UPDATE_USABLE event;
+                    -- cooldown swipe and desaturation are live C-side (durObj-bound). The full
+                    -- resolve is redundant on the usability path and was the source of ~300 KB/drain
+                    -- of aura-table allocations per SPELL_UPDATE_USABLE batch.
 
                     local containerDB, cType = resolveContainer(callbacks, entry, ncdm, ncdmContainers)
                     if cType ~= "aura" and cType ~= "auraBar" and callbacks.updateContainerVisibility then
@@ -735,6 +751,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 end
             end
         end
+        setResolveCallerTag(nil)
 
         if batchStarted then
             endBatch(callbacks)
@@ -793,6 +810,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local refreshed = false
         local batchStarted = false
         local stackTextWritesEnabled = false
+        setResolveCallerTag("spellQueue")
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
@@ -828,6 +846,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if batchStarted then
             endBatch(callbacks)
         end
+        setResolveCallerTag(nil)
         wipe(state.ids)
 
         if refreshed and callbacks.drainLayoutDirty then
@@ -1110,27 +1129,58 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             controller:QueueUsabilityRefresh()
             return
         end
-        if event == "SPELLS_CHANGED" then
-            -- These three are small table wipes (not the CPU-intensive work the
-            -- SPELLS_CHANGED-is-hot warning targets); they run in combat too
-            -- because non-proc override changes that fire NO glow -- Druid form /
-            -- Warrior stance swaps mid-combat -- flip C_Spell.GetOverrideSpell
-            -- through SPELLS_CHANGED only, and the override cache must stay fresh.
-            -- (Proc overrides that DO glow are additionally covered per-spell by
-            -- the glow-edge clear in cdm_effects.lua.) The genuinely heavy work --
-            -- RebuildCatalog (cdm_resolvers.lua) -- already combat-defers, and
-            -- QueueCatalogScopeRefresh below combat-defers its own scope walk.
-            if callbacks.clearTextureCycleCache then
-                callbacks.clearTextureCycleCache()
-            end
-            if callbacks.clearDurationBindingKeyCache then
-                callbacks.clearDurationBindingKeyCache()
-            end
+        if event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_SHAPESHIFT_FORMS" then
+            -- Form/stance changes alter spell overrides (C_Spell.GetOverrideSpell) but
+            -- do not affect item cooldowns. Re-query overrides immediately; scope to
+            -- spells only (includeItems = false).
             if callbacks.clearStableCaches then
                 callbacks.clearStableCaches()
             end
+            controller:QueueCatalogScopeRefresh({ includeItems = false })
+            return
+        end
+        if event == "SPELLS_CHANGED" then
+            -- SPELLS_CHANGED is a no-payload UniqueEvent (SpellBookDocumentation):
+            -- it cannot say WHICH spell changed, so it must never drive an icon
+            -- re-resolve or a cache wipe. Blizzard pairs a SPELLS_CHANGED with every
+            -- proc override grant/loss, so the old blanket catalog walk + 3-cache
+            -- wipe ran on every proc and flickered charges/stacks across all icons.
+            --
+            -- Every structural cause now flows through its own scoped, payload-
+            -- bearing event that touches only the affected spell(s):
+            --   proc / override   -> COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED(base, override)
+            --                        (scoped cache invalidation + scoped re-resolve below)
+            --   form / stance      -> UPDATE_SHAPESHIFT_FORM / _FORMS
+            --   talent/spec/load   -> TRAIT_CONFIG_UPDATED / PLAYER_SPECIALIZATION_CHANGED / ...
+            --                        (container RefreshAll, guarded on a learned-set delta)
+            --   catalog data/hotfix-> COOLDOWN_VIEWER_DATA_LOADED / _TABLE_HOTFIXED
+            -- The stable override cache is keyed per spellID and is invalidated by
+            -- the override event (the cache's true change signal), so SPELLS_CHANGED
+            -- no longer needs to wipe it. The learned-set reconcile
+            -- (cdm_spelldata RunReconcileSequence) already diffs the learned
+            -- signature and only relayouts when a spell is truly added/removed.
             if runtimeRefreshStats then runtimeRefreshStats.spellsChangedScoped = runtimeRefreshStats.spellsChangedScoped + 1 end
-            controller:QueueCatalogScopeRefresh({ includeItems = true })
+            return
+        end
+        if event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
+            -- Scoped proc-override signal (CooldownViewerDocumentation): arg1 is
+            -- baseSpellID (Nilable=false), arg2 is overrideSpellID (Nilable=true;
+            -- nil = the override is being removed). This is the server's per-spell
+            -- before/after delta for the stable override mapping, so invalidate
+            -- ONLY the affected spell(s)' caches, then re-resolve ONLY the affected
+            -- icon(s) -- never a catalog walk. Runs in combat too
+            -- (QueueResolvedCooldownForSpellID queues there): C_CooldownViewer reads
+            -- + Lua table writes only, no protected frame surface.
+            if callbacks.invalidateSpellCaches then
+                callbacks.invalidateSpellCaches(arg1)
+                if arg2 then callbacks.invalidateSpellCaches(arg2) end
+            end
+            if callbacks.clearDurationBindingKeyCache then
+                -- Single-slot memo reset (O(1)); forces the next duration bind to
+                -- recompute its key against the new override mapping.
+                callbacks.clearDurationBindingKeyCache()
+            end
+            controller:QueueResolvedCooldownForSpellID(arg1, arg2)
             return
         end
         if event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then

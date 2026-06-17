@@ -2310,10 +2310,28 @@ local function BuildAuraProbeLines(cdID, viewerCategory)
     return lines
 end
 
+-- Stack/count TEXT-only mirror-refresh reasons (no aura/active/totem state
+-- flip): these take the light text-repaint path; every other reason --
+-- aura-clear, active-state, related-aura*, totem-*, overlay, uses, AND any
+-- unlisted/unknown reason -- does a full re-resolve (stale-icon safety).
+-- Published on the module table (NOT a chunk-local: this file is at Lua's
+-- 200-local cap) so the unit test verifies the real classification set.
+CDMBlizzMirror._textOnlyMirrorReasons = {
+    ["stack-text"] = true,
+    ["stack-hidden"] = true,
+    ["stack-empty"] = true,
+    ["stack-clear"] = true,
+    ["aura-stack-carry"] = true,
+    ["aura-stack-hidden"] = true,
+    ["charge-field"] = true,
+    ["charge-field-hide"] = true,
+}
+
 RequestMirrorTextRefresh = function(cooldownID, viewerCategory, reason)
     local icons = ns.CDMIcons
     if icons and icons.RequestMirrorTextRefresh then
-        icons:RequestMirrorTextRefresh(cooldownID, viewerCategory, reason)
+        local needsFull = not CDMBlizzMirror._textOnlyMirrorReasons[reason]
+        icons:RequestMirrorTextRefresh(cooldownID, viewerCategory, needsFull)
     end
 end
 
@@ -4676,18 +4694,93 @@ function CDMBlizzMirror.HandlePlayerTargetChanged()
     RefreshCooldownViewerRelatedAuraStates()
 end
 
+-- Scoped UNIT_AURA refresh. Blizzard's CooldownViewer:OnUnitAura touches only
+-- the item frames mapped to the changed auraInstanceIDs and full-relayouts only
+-- on isFullUpdate. The mirror used to walk EVERY aura-viewer child plus every
+-- related-aura cooldown child on EVERY UNIT_AURA tick, so one proc's auras
+-- (e.g. Hammer of Light) re-evaluated all icons and flickered charges/stacks
+-- across the whole bar. Scope to the payload like Blizzard; the caller full-
+-- walks only when the payload is missing or is a full update.
+--
+-- Defined on the module table (not a chunk local) to stay under Lua 5.1's
+-- 200-local cap for this file.
+function CDMBlizzMirror._RefreshScopedAuraViewerStates(unit, updateInfo)
+    -- Refresh the aura-viewer child(ren) a single aura spellID maps to. Reuses
+    -- the per-spell map CaptureAurasFromUnitAuraPayload already trusts as the
+    -- primary stamp path, so active-state scoping has parity with capture.
+    local function refreshForSpell(sid)
+        if not sid then return end
+        local buffMap = _directCDIDByCatSpell.buff
+        local cdID = buffMap and buffMap[sid]
+        if cdID then
+            local child = GetInstanceChild(cdID, "buff")
+            if child then RefreshChildSemanticState(child, cdID, false) end
+        end
+        local barMap = _directCDIDByCatSpell.trackedBar
+        cdID = barMap and barMap[sid]
+        if cdID then
+            local child = GetInstanceChild(cdID, "trackedBar")
+            if child then RefreshChildSemanticState(child, cdID, false) end
+        end
+    end
+
+    if type(updateInfo.addedAuras) == "table" then
+        for _, ad in ipairs(updateInfo.addedAuras) do
+            refreshForSpell(GetPayloadAuraSpellID(ad))
+        end
+    end
+    if type(updateInfo.updatedAuraInstanceIDs) == "table"
+        and Sources and Sources.QueryAuraDataByAuraInstanceID then
+        for _, instID in ipairs(updateInfo.updatedAuraInstanceIDs) do
+            local ad = Sources.QueryAuraDataByAuraInstanceID(unit, instID)
+            refreshForSpell(GetPayloadAuraSpellID(ad))
+        end
+    end
+    -- Deactivation: a removed aura carries only its instance ID (no spellID).
+    -- Reverse-map the stamped auraInstanceID to its child via one bounded pass
+    -- over aura-viewer children. Runs only on removal ticks, never on the
+    -- frequent update-only ticks.
+    local removed = updateInfo.removedAuraInstanceIDs
+    if type(removed) == "table" and removed[1] ~= nil then
+        local removedSet = {}
+        for _, id in ipairs(removed) do removedSet[id] = true end
+        for key, child in pairs(_childByInstanceKey) do
+            local cdID = child and child.cooldownID
+            if cdID and IsAuraViewerCategoryName(GetFrameCategoryName(child)) then
+                local s = _mirrorState[key]
+                if s and s.auraInstanceID and removedSet[s.auraInstanceID] then
+                    RefreshChildSemanticState(child, cdID, false)
+                end
+            end
+        end
+    end
+end
+
 function CDMBlizzMirror.HandleUnitAuraChanged(unit, updateInfo)
     -- Catch CooldownViewer children created post-Walk: pet summon, talent
     -- activation, dynamic class spec swaps, etc. all can introduce cdIDs
     -- Blizzard had not surfaced when our last Walk ran.
     BindNewChildren()
 
-    -- Event-driven visibility: Blizzard updates the exact child field for
-    -- aura-viewer cIDs, even for hasAura=false entries that never expose a
-    -- normal auraInstanceID path. Read every aura child on UNIT_AURA instead
-    -- of polling from PackState.
-    RefreshAuraViewerChildActiveStates()
-    RefreshCooldownViewerRelatedAuraStates()
+    -- Event-driven visibility: refresh aura-viewer + related-aura children.
+    -- Scope to the payload (Blizzard parity); full-walk only when we cannot
+    -- scope — no payload (nil) or a full update.
+    if not updateInfo or updateInfo.isFullUpdate then
+        RefreshAuraViewerChildActiveStates()
+        RefreshCooldownViewerRelatedAuraStates()
+    else
+        CDMBlizzMirror._RefreshScopedAuraViewerStates(unit, updateInfo)
+        -- A cooldown only borrows an aura's duration when that aura appears or
+        -- vanishes; pure stack/duration updates cannot change WHICH aura is
+        -- borrowed, so skip the related-aura walk on update-only ticks.
+        local hasAdds = type(updateInfo.addedAuras) == "table"
+            and updateInfo.addedAuras[1] ~= nil
+        local hasRemoves = type(updateInfo.removedAuraInstanceIDs) == "table"
+            and updateInfo.removedAuraInstanceIDs[1] ~= nil
+        if hasAdds or hasRemoves then
+            RefreshCooldownViewerRelatedAuraStates()
+        end
+    end
 
     if not unit then
         CaptureAurasFromUnit("player")

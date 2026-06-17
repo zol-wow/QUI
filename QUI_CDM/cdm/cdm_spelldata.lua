@@ -4824,6 +4824,12 @@ function CDMSpellData:Initialize()
     local _spellsChangedToken = 0
     local _cdmViewerReconcileToken = 0
     local _cooldownViewerRebuildPending = false
+    -- Origin tag for the combat-deferred rebuild: true when armed by a
+    -- DATA_LOADED / TABLE_HOTFIXED event (cold-login / hotfix staleness) that
+    -- needs the full container refresh on drain. A proc-override
+    -- (SPELL_OVERRIDE_UPDATED) leaves this false: its display is already
+    -- maintained live in combat, so the drain rebuilds the map only.
+    local _cooldownViewerRebuildNeedsRefresh = false
     local eventFrame = CreateFrame("Frame")
     runtimeEventFrame = eventFrame
     eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
@@ -4905,6 +4911,18 @@ function CDMSpellData:Initialize()
             or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
             if InCombatLockdown() then
                 _cooldownViewerRebuildPending = true
+                -- Proc-override events fire constantly mid-combat. The procced
+                -- icon stays correct live via the mirror's
+                -- _RefreshSpellOverridePair (cdm_blizz_mirror.lua) and the
+                -- render-time ShouldContainerLayoutPlaceIcon filter, so the
+                -- combat-end drain needs only the cheap spell->cdID map rebuild,
+                -- NOT a full container RefreshAll (the end-of-pull stutter).
+                -- DATA_LOADED / TABLE_HOTFIXED are the cold-login / hotfix
+                -- staleness case that genuinely needs the refresh -- mark those
+                -- for the full path on drain. Mixed arming: refresh wins.
+                if event ~= "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
+                    _cooldownViewerRebuildNeedsRefresh = true
+                end
                 return
             end
             -- Cold-load grace: PLAYER_LOGIN's deferred callback owns the
@@ -4914,7 +4932,20 @@ function CDMSpellData:Initialize()
                 return
             end
             RebuildSpellToCooldownID()
-            FireChangeCallback()
+            -- COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED is a SCOPED proc signal
+            -- (base+override spellID): the mirror's _RefreshSpellOverridePair and
+            -- the renderer's QueueResolvedCooldownForSpellID already update the one
+            -- affected icon. An immediate FireChangeCallback here ran a full
+            -- container RefreshAll on EVERY proc out of combat -- rebuilding every
+            -- icon (BuildIcons re-init) and flashing charge/stack text across the
+            -- whole bar. The in-combat branch above already encodes this same
+            -- distinction (override never arms needsRefresh). Only the catalog
+            -- staleness events (DATA_LOADED / TABLE_HOTFIXED) genuinely need the
+            -- full refresh.
+            local isOverrideUpdate = event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED"
+            if not isOverrideUpdate then
+                FireChangeCallback()
+            end
             -- Cold-login catalog-staleness fix.
             --
             -- On cold-login, catalog entries are first built at PEW from
@@ -4946,14 +4977,24 @@ function CDMSpellData:Initialize()
                         CDMSpellData:RunColdLoadReconcile()
                         return
                     end
-                    RunReconcileSequence()
+                    -- Guard the override-driven reconcile: a transient proc
+                    -- changes no structural state (base-keyed learned signature
+                    -- unchanged, no dormant fold-back), so skip the redundant
+                    -- full refresh -- same guard the SPELLS_CHANGED debounce uses.
+                    -- Catalog data/hotfix events stay unguarded; they genuinely
+                    -- changed the catalog and the cold-login binding fix needs it.
+                    RunReconcileSequence(isOverrideUpdate)
                 end
             end)
         elseif event == "PLAYER_REGEN_ENABLED" then
             if _cooldownViewerRebuildPending then
                 _cooldownViewerRebuildPending = false
+                local needsRefresh = _cooldownViewerRebuildNeedsRefresh
+                _cooldownViewerRebuildNeedsRefresh = false
                 RebuildSpellToCooldownID()
-                FireChangeCallback()
+                if needsRefresh then
+                    FireChangeCallback()
+                end
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
             -- Suppress SPELLS_CHANGED dormant checks during zone transitions.

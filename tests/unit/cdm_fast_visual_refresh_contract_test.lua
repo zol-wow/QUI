@@ -738,18 +738,47 @@ assertContainsOrdered(
 local spellsChangedBlock = extractBlock(
     iconRuntimeRefresh,
     'if event == "SPELLS_CHANGED" then',
-    'if event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then',
+    'if event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then',
     "SPELLS_CHANGED branch"
 )
-assertContains(
+assertNotContains(
     spellsChangedBlock,
-    "controller:QueueCatalogScopeRefresh({ includeItems = true })",
-    "SPELLS_CHANGED should use scoped catalog refresh instead of scheduling a full icon walk"
+    "QueueCatalogScopeRefresh",
+    "SPELLS_CHANGED must not run a catalog walk (no payload to scope)"
+)
+assertNotContains(
+    spellsChangedBlock,
+    "DeferFullRefresh",
+    "SPELLS_CHANGED must not defer a full re-resolve"
+)
+assertNotContains(
+    spellsChangedBlock,
+    "clearStableCaches",
+    "SPELLS_CHANGED must not blanket-wipe resolver caches (scoped override event owns invalidation)"
 )
 assertNotContains(
     spellsChangedBlock,
     "UPDATE_FULL",
-    "SPELLS_CHANGED should not schedule broad full cooldown walks in combat"
+    "SPELLS_CHANGED should not schedule broad full cooldown walks"
+)
+local overrideBlock = extractBlock(
+    iconRuntimeRefresh,
+    'if event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then',
+    'if event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then',
+    "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED branch"
+)
+assertContainsOrdered(
+    overrideBlock,
+    {
+        "callbacks.invalidateSpellCaches(arg1)",
+        "controller:QueueResolvedCooldownForSpellID(arg1, arg2)",
+    },
+    "override event should scoped-invalidate the affected spell caches and re-resolve only those icons"
+)
+assertNotContains(
+    overrideBlock,
+    "QueueCatalogScopeRefresh",
+    "override event must not run a catalog walk"
 )
 local hotfixBlock = extractBlock(
     iconRuntimeRefresh,

@@ -125,6 +125,7 @@ local highlighterCasts = {}
 local textureClears = 0
 local durationKeyClears = 0
 local stableClears = 0
+local spellCacheInvalidations = {}
 local barAuraRefreshMarks = {}
 local mirrorStates = {
     ["505:essential"] = {
@@ -255,13 +256,21 @@ local controller = module.Create({
     clearStableCaches = function()
         stableClears = stableClears + 1
     end,
+    invalidateSpellCaches = function(spellID)
+        spellCacheInvalidations[#spellCacheInvalidations + 1] = spellID
+    end,
 })
 
 spellIcon._hasCooldownActive = true
 controller:Handle("SPELL_UPDATE_USABLE")
-assert(applied.spell == 1, "usability refresh should re-resolve stale cooldown icons")
+-- applyResolvedCooldown is intentionally NOT called on SPELL_UPDATE_USABLE: the usable
+-- tint is applied by cdm_icon_range_policy.lua (updateIconRangesForUsabilityEvent on the
+-- same event); swipe/desat are live C-side.  Dropping it eliminates ~300 KB/drain of
+-- C_UnitAuras allocations per batch.
+assert(applied.spell == nil, "usability refresh must NOT call applyResolvedCooldown (redundant resolve dropped)")
 assert(applied.idle == nil, "usability refresh should skip idle cooldown icons")
 assert(applied.aura == nil, "usability refresh should skip aura icons")
+assert(visibilityUpdated.spell == 1, "usability refresh should still update container visibility for stale cooldown icons")
 assert(rangeRefreshes == 1, "usability refresh should reconcile range/usability visuals")
 
 reset(applied)
@@ -271,7 +280,8 @@ spellIcon._hasRealCooldownActive = false
 spellIcon._showingGCDSwipe = true
 spellIcon._showingRealCooldownSwipe = nil
 controller:Handle("SPELL_UPDATE_USABLE")
-assert(applied.spell == nil, "usability refresh should not re-resolve and clobber an active GCD swipe")
+-- applyResolvedCooldown is never called in ApplyUsabilityRefresh regardless of GCD state.
+assert(applied.spell == nil, "usability refresh must not call applyResolvedCooldown for a GCD-locked icon")
 assert(visibilityUpdated.spell == 1, "usability refresh should still update visibility for an active GCD swipe")
 assert(rangeRefreshes == 2, "usability refresh should still reconcile range/usability visuals for an active GCD swipe")
 spellIcon._showingGCDSwipe = nil
@@ -456,7 +466,9 @@ assert(rangeRefreshes == rangeRefreshesBeforeTarget + 1,
     "target changes should still refresh icon ranges")
 assert(auraApplied.aura == 1, "target changes should refresh aura entries through aura scope")
 assert(auraApplied.item == nil, "target changes should not run player item-aura scope")
-assert(applied.spell == 1, "target changes should refresh usability-sensitive active cooldown icons")
+-- applyResolvedCooldown is not called in the usability path; visibility still updates.
+assert(applied.spell == nil, "target changes must not call applyResolvedCooldown via the usability path")
+assert(visibilityUpdated.spell == 1, "target changes should still update visibility for active cooldown icons")
 assert(#schedules == schedulesBeforeTarget,
     "target changes should not schedule a broad full cooldown walk")
 assert(barsDirty == true, "target aura refresh should mark bars dirty when aura scope refreshed icons")
@@ -468,34 +480,78 @@ reset(runtimeUpdated)
 reset(visibilityUpdated)
 reset(blingSynced)
 reset(auraApplied)
+-- SPELLS_CHANGED is a no-payload event: it must do NO icon work and NO cache
+-- wipe (it co-fires with every proc override). Structural re-resolves are owned
+-- by the scoped events below. Holds in and out of combat.
 local schedulesBeforeSpellsChanged = #schedules
 local textureClearsBefore = textureClears
 local durationKeyClearsBefore = durationKeyClears
 local stableClearsBefore = stableClears
 inCombat = true
+controller.deferredFullRefresh = false
 controller:Handle("SPELLS_CHANGED")
 controller:Handle("SPELLS_CHANGED")
 assert(next(applied) == nil and next(runtimeUpdated) == nil,
-    "combat SPELLS_CHANGED should coalesce scoped refresh work instead of running immediately")
+    "combat SPELLS_CHANGED must not run any icon work")
 assert(#schedules == schedulesBeforeSpellsChanged,
-    "combat SPELLS_CHANGED should not schedule a broad full cooldown walk")
-assert(textureClears == textureClearsBefore + 2
-    and durationKeyClears == durationKeyClearsBefore + 2
-    and stableClears == stableClearsBefore + 2,
-    "SPELLS_CHANGED should still clear stable resolver caches immediately")
-local queuedFrame = createdFrames[#createdFrames]
-queuedFrame.scripts.OnUpdate(queuedFrame, 0.31)
-assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == 1,
-    "coalesced combat SPELLS_CHANGED should refresh spell-shaped icon runtime state through spell scope")
-assert(runtimeUpdated.item == 1,
-    "coalesced combat SPELLS_CHANGED should refresh item runtime state without a full walk")
-assert(applied.spell == nil,
-    "coalesced combat SPELLS_CHANGED should not use the stackless cooldown-only path")
-assert(auraApplied.aura == nil,
-    "coalesced combat SPELLS_CHANGED should not sweep aura-only icons")
-assert(#schedules == schedulesBeforeSpellsChanged,
-    "drained combat SPELLS_CHANGED scope should still avoid broad full scheduling")
+    "combat SPELLS_CHANGED must not schedule a broad full cooldown walk")
+assert(textureClears == textureClearsBefore
+    and durationKeyClears == durationKeyClearsBefore
+    and stableClears == stableClearsBefore,
+    "SPELLS_CHANGED must not wipe resolver caches (scoped override event owns invalidation)")
+assert(controller.deferredFullRefresh == false,
+    "SPELLS_CHANGED must not defer a full re-resolve (no payload to scope)")
+-- Combat end owes nothing: SPELLS_CHANGED queued no deferred full refresh.
 inCombat = false
+controller:Handle("PLAYER_REGEN_ENABLED")
+assert(#schedules == schedulesBeforeSpellsChanged,
+    "combat end after SPELLS_CHANGED should schedule nothing (no deferred full walk)")
+
+-- Out of combat, SPELLS_CHANGED is still inert.
+reset(applied)
+reset(runtimeUpdated)
+inCombat = false
+local schedulesBeforeOocSpells = #schedules
+local stableBeforeOocSpells = stableClears
+controller:Handle("SPELLS_CHANGED")
+assert(next(applied) == nil and next(runtimeUpdated) == nil,
+    "out-of-combat SPELLS_CHANGED must not re-resolve any icon")
+assert(#schedules == schedulesBeforeOocSpells,
+    "out-of-combat SPELLS_CHANGED must not schedule a catalog walk")
+assert(stableClears == stableBeforeOocSpells,
+    "out-of-combat SPELLS_CHANGED must not wipe the stable override cache")
+
+-- COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED(base, override) re-resolves ONLY the
+-- affected spell icon and scoped-invalidates only its caches.
+reset(applied)
+reset(runtimeUpdated)
+reset(visibilityUpdated)
+reset(stackWriteStates)
+inCombat = false
+local schedulesBeforeOverride = #schedules
+local invalidatedBeforeOverride = #spellCacheInvalidations
+controller:Handle("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", 101, 999)
+assert(runtimeUpdated.spell == 1,
+    "spell override should re-resolve the affected base-spell icon")
+assert(runtimeUpdated.otherSpell == nil and runtimeUpdated.idle == nil,
+    "spell override must not touch unrelated icons")
+assert(#schedules == schedulesBeforeOverride,
+    "spell override must not schedule a broad catalog walk")
+assert(spellCacheInvalidations[invalidatedBeforeOverride + 1] == 101
+    and spellCacheInvalidations[invalidatedBeforeOverride + 2] == 999,
+    "spell override should scoped-invalidate exactly the base and override spell caches")
+
+-- Override removal carries a nil overrideSpellID; the base icon still re-resolves
+-- and only the base cache is invalidated.
+reset(runtimeUpdated)
+inCombat = false
+local invalidatedBeforeRemoval = #spellCacheInvalidations
+controller:Handle("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", 101, nil)
+assert(runtimeUpdated.spell == 1,
+    "override removal (nil overrideSpellID) should still re-resolve the base-spell icon")
+assert(#spellCacheInvalidations == invalidatedBeforeRemoval + 1
+    and spellCacheInvalidations[invalidatedBeforeRemoval + 1] == 101,
+    "override removal should scoped-invalidate only the base spell cache")
 
 local schedulesBeforeHotfix = #schedules
 inCombat = true
@@ -592,6 +648,7 @@ assert(#schedules == schedulesBeforeCastSucceeded,
 
 reset(applied)
 reset(runtimeUpdated)
+reset(visibilityUpdated)
 reset(stackWriteStates)
 inCombat = true
 controller:Handle("SPELL_UPDATE_USABLE")
@@ -602,7 +659,9 @@ assert(queuedFrame and queuedFrame.shown == true, "combat usability refresh shou
 queuedFrame.scripts.OnUpdate(queuedFrame, 0.29)
 assert(next(applied) == nil, "combat usability refresh should wait for the coalescing delay")
 queuedFrame.scripts.OnUpdate(queuedFrame, 0.02)
-assert(applied.spell == 1, "coalesced combat usability refresh should run once")
+-- applyResolvedCooldown is never called in the usability path; container visibility still runs.
+assert(applied.spell == nil, "coalesced combat usability refresh must not call applyResolvedCooldown")
+assert(visibilityUpdated.spell == 1, "coalesced combat usability refresh should still update container visibility")
 assert(queuedFrame.shown == false, "coalesced combat usability refresh should hide its frame")
 
 reset(applied)

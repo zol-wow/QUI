@@ -161,6 +161,10 @@ local specTrackingRetryToken = 0
 local profileCallbackSink = nil
 local lastKnownProfile = nil
 local RefreshAll  -- forward declaration; finalized in REFRESH ALL section
+-- Per-frame coalescing latch for RefreshAll (see the combat-end dedupe guard
+-- in the REFRESH ALL section). File-local so the guard check, the set, and the
+-- C_Timer.After(0) reset closure all share one upvalue.
+local _refreshAllFrameGuard = false
 
 local SPEC_TRACKING_RETRY_DELAY = 0.5
 local SPEC_TRACKING_MAX_RETRIES = 6
@@ -2793,6 +2797,19 @@ RefreshAll = function(forceSync)
         specTrackingPendingRefresh = true
         return
     end
+
+    -- Coalesce duplicate RefreshAll calls within the same frame. At combat end
+    -- (PLAYER_REGEN_ENABLED) more than one drainer can request a refresh in the
+    -- same frame (e.g. a DATA_LOADED spelldata change-callback and the
+    -- spec-tracking finalize). A full rebuild is idempotent, so running it twice
+    -- in one frame is pure waste. The guard clears on the next frame, so
+    -- legitimately spaced refreshes (profile-change 0.2s vs spec-change 0.5s
+    -- timers) are unaffected.
+    if _refreshAllFrameGuard then
+        return
+    end
+    _refreshAllFrameGuard = true
+    C_Timer.After(0, function() _refreshAllFrameGuard = false end)
 
     -- Cancel any pending refresh timers from a prior overlapping RefreshAll call.
     -- This prevents interleaved layouts when e.g. a 0.2s profile-change refresh

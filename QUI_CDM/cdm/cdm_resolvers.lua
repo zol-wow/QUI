@@ -14,6 +14,7 @@ local Scheduler = ns.CDMScheduler
 local Sources = ns.CDMSources
 
 local resolverStats -- debug counters; nil until QUI_Debug activates instrumentation
+local currentResolveCallerTag -- string or nil; set by SetResolveCallerTag before each resolve
 local markFn -- profiler hook; bound at debug activation (nil otherwise)
 local function MemAuditProfilerMark(name)
     if markFn then markFn(name) end
@@ -359,6 +360,18 @@ local function SetupDebugInstrumentation()
         mirrorAuraSkips = 0,
         mirrorStateCacheHits = 0,
         itemDurationIconReuses = 0,
+        resolveBy = {
+            spellID     = 0,
+            aura        = 0,
+            usability   = 0,
+            catalog     = 0,
+            walk        = 0,
+            cooldownOnly = 0,
+            other       = 0,
+        },
+        auraProbeHit           = 0,
+        auraProbeGuardSkip     = 0,
+        auraProbeExpensiveMiss = 0,
     }
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_resolverMirrorAuraQueries", counter = true, fn = function() return resolverStats.mirrorAuraQueries end }
@@ -366,9 +379,36 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "CDM_resolverMirrorStateCacheHits", counter = true, fn = function() return resolverStats.mirrorStateCacheHits end }
     mp[#mp + 1] = { name = "CDM_itemDurationIconReuses", counter = true, fn = function() return resolverStats.itemDurationIconReuses end }
     mp[#mp + 1] = { name = "CDM_textureCycleCache", tbl = _textureCycleCache }
+    local rb = resolverStats.resolveBy
+    mp[#mp + 1] = { name = "CDM_resolveBy_spellID",           counter = true, fn = function() return rb.spellID end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_aura",              counter = true, fn = function() return rb.aura end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_usability",         counter = true, fn = function() return rb.usability end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_catalog",           counter = true, fn = function() return rb.catalog end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_walk",              counter = true, fn = function() return rb.walk end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_cooldownOnly",      counter = true, fn = function() return rb.cooldownOnly end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_other",             counter = true, fn = function() return rb.other end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_item",              counter = true, fn = function() return rb.item or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_auraScope",         counter = true, fn = function() return rb.auraScope or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_spellQueue",        counter = true, fn = function() return rb.spellQueue or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_expiry",            counter = true, fn = function() return rb.expiry or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_mirrorCooldownOnly",counter = true, fn = function() return rb.mirrorCooldownOnly or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_auraScopedCooldown",counter = true, fn = function() return rb.auraScopedCooldown or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_ownedBar",           counter = true, fn = function() return rb.ownedBar or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_mirrorRefresh",      counter = true, fn = function() return rb.mirrorRefresh or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_typeRefresh",        counter = true, fn = function() return rb.typeRefresh or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_runtimeTypeRefresh", counter = true, fn = function() return rb.runtimeTypeRefresh or 0 end }
+    mp[#mp + 1] = { name = "CDM_resolveBy_iconPlaced",         counter = true, fn = function() return rb.iconPlaced or 0 end }
+    mp[#mp + 1] = { name = "CDM_auraProbeHit",            counter = true, fn = function() return resolverStats.auraProbeHit end }
+    mp[#mp + 1] = { name = "CDM_auraProbeGuardSkip",      counter = true, fn = function() return resolverStats.auraProbeGuardSkip end }
+    mp[#mp + 1] = { name = "CDM_auraProbeExpensiveMiss",  counter = true, fn = function() return resolverStats.auraProbeExpensiveMiss end }
     ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
     ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_RuntimeEvents", frame = _runtimeFrame }
     markFn = ns.MemAuditProfilerMark
+    -- Expose the setter only while debug is active; call sites guard with
+    -- `if Resolvers.SetResolveCallerTag then` and skip the call entirely when nil.
+    CDMResolvers.SetResolveCallerTag = function(tag)
+        currentResolveCallerTag = tag
+    end
 end
 if ns.DebugRegister then -- gate contract: core/debug_gate.lua
     ns.DebugRegister(SetupDebugInstrumentation)
@@ -3197,8 +3237,17 @@ local function ResolveCooldownStateCore(context)
     local aura = ResolveAuraRuntimeStateForContext(context, entry, sid, entryIsAura)
     MemAuditProfilerMark("CDM_rsAuraRuntime")
     if ApplyAuraStateToCooldownState(state, aura, sid) then
+        if resolverStats then resolverStats.auraProbeHit = resolverStats.auraProbeHit + 1 end
         MemAuditProfilerMark("CDM_rsReturnAura")
         return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
+    else
+        if resolverStats then
+            if (not entryIsAura) and context.useBuffSwipe == false then
+                resolverStats.auraProbeGuardSkip = resolverStats.auraProbeGuardSkip + 1
+            else
+                resolverStats.auraProbeExpensiveMiss = resolverStats.auraProbeExpensiveMiss + 1
+            end
+        end
     end
 
     if itemID and ResolveItemAuraForContext(state, context, entry, itemID, itemSpellID) then
@@ -3358,7 +3407,16 @@ local function ResolveCooldownStateCore(context)
     return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
 end
 
+-- SetResolveCallerTag is nil until QUI_Debug activates instrumentation; the
+-- if-guards in cdm_icon_renderer.lua and cdm_icon_runtime_refresh.lua
+-- short-circuit to a single nil-check when debug is off (mirrors measureFn/markFn).
+
 function CDMResolvers.ResolveCooldownState(context)
+    if resolverStats then
+        local tag = currentResolveCallerTag or "other"
+        local byTag = resolverStats.resolveBy
+        byTag[tag] = (byTag[tag] or 0) + 1
+    end
     local owner = context and context.owner
     if owner and RuntimeQueries and RuntimeQueries.WithRuntimeQueryOwner then
         return RuntimeQueries.WithRuntimeQueryOwner(owner, ResolveCooldownStateCore, context)

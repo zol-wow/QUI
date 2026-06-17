@@ -53,6 +53,11 @@ local MAX_RECYCLE_POOL_SIZE = 20
 local STATUS_BAR_INTERPOLATION_IMMEDIATE = 0
 local STATUS_BAR_TIMER_REMAINING = 1
 
+local function setResolveCallerTag(tag)
+    local R = ns.CDMResolvers
+    if R and R.SetResolveCallerTag then R.SetResolveCallerTag(tag) end
+end
+
 local function SetStatusBarValue(statusBar, value)
     if Renderers and Renderers.SetStatusBarValue then
         return Renderers.SetStatusBarValue(statusBar, value, 0, 1)
@@ -1220,7 +1225,9 @@ local function UpdateItemBarCooldown(bar, entry)
 
     local resolver = ns.CDMResolvers and ns.CDMResolvers.ResolveCooldownState
     local context = resolver and BuildBarCooldownStateContext(bar, entry, bar._spellID)
+    setResolveCallerTag("ownedBar")
     local r = context and resolver(context)
+    setResolveCallerTag(nil)
     local startTime = r and r.start
     local duration = r and r.duration
 
@@ -1327,7 +1334,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
     if not resolver then return end
     local context = BuildBarCooldownStateContext(bar, entry, spellID)
     if not context then return end
+    setResolveCallerTag("ownedBar")
     local r = resolver(context)
+    setResolveCallerTag(nil)
     if not r then return end
     local count = r.count
     StoreBarRuntimeState(bar, r.mode or (r.isActive and "aura" or "inactive"), r.isActive, {

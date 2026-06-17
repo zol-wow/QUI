@@ -935,7 +935,9 @@ local function ScheduleCooldownExpiryRefreshAt(icon, key, expiresAt)
         -- Re-resolve this icon after its scheduled cooldown expiry. Runtime
         -- spell queries are fresh; the invalidation call is now compatibility.
         if ApplyResolvedCooldown then
+            if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("expiry") end
             ApplyResolvedCooldown(icon)
+            if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag(nil) end
         end
     end
 
@@ -5027,7 +5029,9 @@ local function UpdateCooldownOnlyIcon(icon, entry)
             UpdateIconCooldown(icon)
             return
         end
+        if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("mirrorCooldownOnly") end
         ApplyResolvedCooldown(icon)
+        if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag(nil) end
         SyncCooldownBling(icon)
         return
     end
@@ -5072,6 +5076,7 @@ function CDMIcons:UpdateAllCooldowns()
         ncdmContainers = _ncdmContainers,
         inCombat = inCombat,
     }
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("walk") end
     local walker = GetIconRefreshWalker()
     if walker then
         walker:RefreshAll(context)
@@ -5082,6 +5087,7 @@ function CDMIcons:UpdateAllCooldowns()
             end
         end
     end
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag(nil) end
 
     -- After the per-icon visibility loop, relayout any container whose
     -- filter verdict flipped since the last layout pass.
@@ -5103,6 +5109,7 @@ function CDMIcons:UpdateCooldownOnly()
         ncdmContainers = ncdmContainers,
         inCombat = inCombat,
     }
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("cooldownOnly") end
     local walker = GetIconRefreshWalker()
     if walker then
         walker:RefreshCooldownOnly(context)
@@ -5120,6 +5127,7 @@ function CDMIcons:UpdateCooldownOnly()
             end
         end
     end
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag(nil) end
 
     -- After the per-icon visibility loop, relayout any container whose
     -- filter verdict flipped since the last layout pass.
@@ -5134,6 +5142,7 @@ function CDMIcons:UpdateCooldownsForType(viewerType)
         PrepareCooldownUpdateBatch()
         SetRefreshBatchStackTextWrites(true)
         BeginIconRefreshBatch("type")
+        if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("typeRefresh") end
         local walker = GetIconRefreshWalker()
         if walker then
             walker:RefreshType(viewerType)
@@ -5142,6 +5151,7 @@ function CDMIcons:UpdateCooldownsForType(viewerType)
                 UpdateIconCooldown(icon)
             end
         end
+        if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag(nil) end
         SetRefreshBatchStackTextWrites(false)
         SyncSpellRangeChecks()
         EndIconRefreshBatch()
@@ -5162,6 +5172,7 @@ function CDMIcons:UpdateRuntimeForType(viewerType)
         ncdmContainers = ncdmContainers,
         inCombat = inCombat,
     }
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("runtimeTypeRefresh") end
     local walker = GetIconRefreshWalker()
     if walker and walker.RefreshRuntimeType then
         walker:RefreshRuntimeType(viewerType, context)
@@ -5177,6 +5188,7 @@ function CDMIcons:UpdateRuntimeForType(viewerType)
             end
         end
     end
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag(nil) end
 
     SetRefreshBatchStackTextWrites(false)
     SyncSpellRangeChecks()
@@ -5188,7 +5200,9 @@ function CDMIcons.OnContainerIconPlaced(icon, rowConfig)
     if not icon then return end
     ConfigureIcon(icon, rowConfig)
     BeginIconRefreshBatch("placed")
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("iconPlaced") end
     UpdateIconCooldown(icon)
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag(nil) end
     EndIconRefreshBatch()
 end
 
@@ -5523,6 +5537,8 @@ cdEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 cdEventFrame:RegisterEvent("UPDATE_MACROS")
 cdEventFrame:RegisterEvent("SPELLS_CHANGED")
+cdEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+cdEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
 cdEventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
 cdEventFrame:RegisterEvent("SPELL_RANGE_CHECK_UPDATE")
 cdEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
@@ -5533,6 +5549,10 @@ cdEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 -- Server-side cooldown table hotfix. User /cdm composer edits flow through
 -- the resolver bus CATALOG_REBUILT path, not this event.
 cdEventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
+-- Scoped proc/override signal. Carries (baseSpellID, overrideSpellID) so only the
+-- affected icon re-resolves, instead of leaning on the payload-less SPELLS_CHANGED
+-- (which co-fires with every proc override and used to drive a full catalog walk).
+cdEventFrame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 -- SPELL_UPDATE_COOLDOWN, SPELL_UPDATE_CHARGES / SPELL_UPDATE_USES,
 -- UNIT_SPELLCAST_START, and
 -- UNIT_SPELLCAST_SUCCEEDED are owned by cdm_resolvers.lua, which publishes
@@ -5622,9 +5642,24 @@ local function RunDirtyBarUpdate()
     end
 end
 
-function _resolverRuntimePolicy.RefreshIndexedMirrorIcon(icon, editMode, ncdm, ncdmContainers, inCombat)
+function _resolverRuntimePolicy.RefreshIndexedMirrorIcon(icon, editMode, ncdm, ncdmContainers, inCombat, needsFull)
     local entry = icon and icon._spellEntry
     if not entry then return false end
+
+    local containerDB = ncdm and (ncdm[entry.viewerType]
+        or (ncdmContainers and ncdmContainers[entry.viewerType]))
+
+    -- Stack/text-only refresh: repaint the mirror stack text without the full
+    -- cooldown re-resolve. needsFull is false ONLY for the stack-text family of
+    -- reasons classified in cdm_blizz_mirror.lua RequestMirrorTextRefresh; those
+    -- never flip _auraActive, so the wasAuraActive/buff-layout work is moot and
+    -- UpdateIconCooldown's ResolveCooldownState is pure churn. needsFull nil
+    -- (legacy callers) falls through to the full path -- safe default.
+    if needsFull == false then
+        _resolverRuntimePolicy.ResolveMirrorStackText(icon)
+        UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
+        return true
+    end
 
     local wasAuraActive = icon._auraActive == true
     UpdateIconCooldown(icon)
@@ -5633,8 +5668,6 @@ function _resolverRuntimePolicy.RefreshIndexedMirrorIcon(icon, editMode, ncdm, n
         _resolverRuntimePolicy.RequestBuffIconLayoutRefresh()
     end
 
-    local containerDB = ncdm and (ncdm[entry.viewerType]
-        or (ncdmContainers and ncdmContainers[entry.viewerType]))
     UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
     return true
 end
@@ -5672,12 +5705,15 @@ function _resolverRuntimePolicy.ApplyAuraScopedResolvedCooldown(icon, entry, edi
     if not (icon and entry) then return false end
 
     if icon._blizzMirrorCooldownID and IsAuraEntry(entry) then
+        -- Aura-scope context (UNIT_AURA / target-change re-resolve): always full.
         return _resolverRuntimePolicy.RefreshIndexedMirrorIcon(
-            icon, editMode, ncdm, ncdmContainers, inCombat)
+            icon, editMode, ncdm, ncdmContainers, inCombat, true)
     end
 
     local wasAuraActive = icon._auraActive == true
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("auraScopedCooldown") end
     ApplyResolvedCooldown(icon)
+    if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag(nil) end
 
     local containerDB, cType = ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
     if IsAuraEntry(entry) or cType == "aura" or cType == "auraBar" then
@@ -5797,9 +5833,9 @@ do
         end,
         endBatch = EndIconRefreshBatch,
         drainLayoutDirty = DrainLayoutDirty,
-        refreshIcon = function(icon, editMode, ncdm, ncdmContainers, inCombat)
+        refreshIcon = function(icon, editMode, ncdm, ncdmContainers, inCombat, needsFull)
             return _resolverRuntimePolicy.RefreshIndexedMirrorIcon(
-                icon, editMode, ncdm, ncdmContainers, inCombat)
+                icon, editMode, ncdm, ncdmContainers, inCombat, needsFull)
         end,
         onBound = function(icon)
             if icon._rowConfig then
@@ -5841,9 +5877,9 @@ do
         end
     end
 
-    function CDMIcons:RequestMirrorTextRefresh(cooldownID, category)
+    function CDMIcons:RequestMirrorTextRefresh(cooldownID, category, needsFull)
         if mirrorController then
-            mirrorController:RequestRefresh(cooldownID, category)
+            mirrorController:RequestRefresh(cooldownID, category, needsFull)
         end
     end
 
@@ -5898,7 +5934,7 @@ end
 -- by barTimerGroup independently of ScheduleCDMUpdate.
 local runtimeRefresh
 do
-    runtimeRefresh = ns.CDMIconRuntimeRefresh and ns.CDMIconRuntimeRefresh.Create({
+    local callbacks = {
         isRuntimeEnabled = function()
             return CDMIcons:IsRuntimeEnabled()
         end,
@@ -5933,6 +5969,7 @@ do
         setStackTextWrites = SetRefreshBatchStackTextWrites,
         applyResolvedCooldown = ApplyResolvedCooldown,
         updateIconCooldown = UpdateIconCooldown,
+        -- setResolveCallerTag: nil until SetupDebugInstrumentation assigns it
         applyAuraScopedResolvedCooldown = function(icon, entry, editMode, ncdm, ncdmContainers, inCombat)
             return _resolverRuntimePolicy.ApplyAuraScopedResolvedCooldown(
                 icon, entry, editMode, ncdm, ncdmContainers, inCombat)
@@ -6024,13 +6061,23 @@ do
                 RuntimeQueries.ClearStableCaches()
             end
         end,
+        -- Scoped per-spell cache invalidation for COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED:
+        -- only the spell whose override actually changed is dropped, never a blanket wipe.
+        invalidateSpellCaches = function(spellID)
+            if spellID == nil then return end
+            _textureCycleCache[spellID] = nil
+            if RuntimeQueries and RuntimeQueries.InvalidateStableOverrideForSpell then
+                RuntimeQueries.InvalidateStableOverrideForSpell(spellID)
+            end
+        end,
         isPlayerInCombat = function()
             return InCombatLockdown and InCombatLockdown() or false
         end,
         getCombatQueueDelay = function()
             return updateScheduler and updateScheduler:GetCombatQueueDelay() or 0.3
         end,
-    })
+    }
+    runtimeRefresh = ns.CDMIconRuntimeRefresh and ns.CDMIconRuntimeRefresh.Create(callbacks)
 
     function _resolverRuntimePolicy.HandleRuntimeRefresh(event, arg1, arg2, arg3, frame)
         if runtimeRefresh then

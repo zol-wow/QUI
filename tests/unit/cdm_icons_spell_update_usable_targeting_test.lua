@@ -214,7 +214,11 @@ ns.CDMIconFactory._iconPools.essential = { staleIcon, idleIcon, auraIcon, auraVi
 local icons = assert(ns.CDMIcons, "CDMIcons should be exported")
 icons.HandleRuntimeRefresh("SPELL_UPDATE_USABLE")
 
-assert(resolveCounts.stale == 1, "stale cooldown icon should be re-resolved on SPELL_UPDATE_USABLE")
+-- applyResolvedCooldown (→ ResolveCooldownState) is intentionally NOT called during
+-- ApplyUsabilityRefresh. The usable tint is handled by cdm_icon_range_policy.lua on
+-- the same event; cooldown swipe/desat are live C-side. Dropping the resolve here
+-- eliminates ~300 KB/drain of C_UnitAuras allocations per SPELL_UPDATE_USABLE batch.
+assert(resolveCounts.stale == nil, "stale cooldown icon must NOT be re-resolved on SPELL_UPDATE_USABLE (redundant resolve dropped)")
 assert(resolveCounts.idle == nil, "idle icons should not be re-resolved on SPELL_UPDATE_USABLE")
 assert(resolveCounts.aura == nil, "aura icons should not be re-resolved on SPELL_UPDATE_USABLE")
 assert(usableQueries[88104] == nil, "aura icons should not run usability checks on SPELL_UPDATE_USABLE")
@@ -256,8 +260,10 @@ usabilityFrame.scripts.OnUpdate(usabilityFrame, 0.29)
 assert(resolveCounts.stale == nil,
     "combat SPELL_UPDATE_USABLE should wait for its coalescing interval")
 usabilityFrame.scripts.OnUpdate(usabilityFrame, 0.02)
-assert(resolveCounts.stale == 1,
-    "coalesced combat SPELL_UPDATE_USABLE should re-resolve stale cooldown icons once")
+-- applyResolvedCooldown is not called on the usability path; stale icons still get
+-- visibility updates via updateContainerVisibility.
+assert(resolveCounts.stale == nil,
+    "coalesced combat SPELL_UPDATE_USABLE must NOT call ResolveCooldownState (resolve dropped)")
 assert(usabilityFrame.shown == false,
     "coalesced combat SPELL_UPDATE_USABLE should hide the reusable frame after draining")
 inCombat = false

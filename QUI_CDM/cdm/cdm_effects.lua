@@ -1130,7 +1130,6 @@ eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
 eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_SHOW")
 eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_HIDE")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
 eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 
