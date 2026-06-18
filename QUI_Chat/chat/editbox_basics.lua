@@ -378,23 +378,35 @@ end
 ---------------------------------------------------------------------------
 function RemoveEditBoxStyle(chatFrame)
     if not chatFrame then return end
-    -- Hide backdrop stored in local table
+    local frameName = chatFrame.GetName and chatFrame:GetName()
+    local editBox = chatFrame.editBox or (frameName and _G[frameName .. "EditBox"])
+    if not editBox then return end
+
+    -- Nothing to undo if QUI never styled this editbox: bail before touching the
+    -- backdrop, mouse, alpha, anchors, or font so a foreign chat addon's editbox
+    -- is left exactly as it was. Single gate (vs. per-block guards) keeps "did we
+    -- style this?" in one place; clearing the latch makes a repeat teardown a
+    -- no-op too.
+    local ebState = I.editBoxState[editBox]
+    if not (ebState and ebState.styled) then return end
+    ebState.styled = false
+
+    -- Hide the glass backdrop (only ever created by StyleEditBox).
     if I.editBoxBackdrops[chatFrame] then
         I.editBoxBackdrops[chatFrame]:Hide()
     end
-    -- Restore mouse on the editBox — top mode disables it while unfocused so
-    -- clicks fall through to the tabs, and that state must not survive teardown.
-    local frameName = chatFrame.GetName and chatFrame:GetName()
-    local editBox = chatFrame.editBox or (frameName and _G[frameName .. "EditBox"])
-    if editBox and editBox.EnableMouse then
+
+    -- Restore mouse + visibility on the editBox — top mode disables the mouse
+    -- while unfocused so clicks fall through to the tabs, and that state must not
+    -- survive teardown.
+    if editBox.EnableMouse then
         editBox:EnableMouse(true)
         SetEditBoxVisualShown(editBox, true)
     end
-    if not editBox then return end
 
-    -- Stock restore: the live disable flip must hand back a fully stock
-    -- editbox (no /reload). Inverse of StyleEditBox's strip + reanchor.
-    -- Anchors per FloatingChatFrame.xml's ChatFrameEditBoxTemplate use:
+    -- Stock restore: the live disable flip must hand back a fully stock editbox
+    -- (no /reload). Inverse of StyleEditBox's strip + reanchor. Anchors per
+    -- FloatingChatFrame.xml's ChatFrameEditBoxTemplate use:
     -- TOPLEFT -> chatFrame BOTTOMLEFT (-5,-2), RIGHT -> ScrollBar RIGHT (8,0).
     if editBox.ClearAllPoints and editBox.SetPoint then
         editBox:ClearAllPoints()
@@ -407,40 +419,34 @@ function RemoveEditBoxStyle(chatFrame)
         end
     end
 
-    -- Un-strip the Blizzard chrome StyleEditBox hid/alpha'd, and clear the
-    -- styled latch so a re-enable re-strips.
-    local ebState = I.editBoxState[editBox]
-    if ebState and ebState.styled then
-        ebState.styled = false
-        -- Hand the QUI chat font back to the stock chat font, on the input AND
-        -- each channel-prefix child. RestoreStockEditBoxFont uses SetFont (never
-        -- SetFontObject) so a captured self-referential font object can't
-        -- stack-overflow the client — see its comment.
-        RestoreStockEditBoxFont(editBox)
-        for _, key in ipairs(EDITBOX_HEADER_KEYS) do
-            RestoreStockEditBoxFont(editBox[key])
+    -- Hand the QUI chat font back to the stock chat font, on the input AND each
+    -- channel-prefix child. RestoreStockEditBoxFont uses SetFont (never
+    -- SetFontObject) so a captured self-referential font object can't
+    -- stack-overflow the client — see its comment.
+    RestoreStockEditBoxFont(editBox)
+    for _, key in ipairs(EDITBOX_HEADER_KEYS) do
+        RestoreStockEditBoxFont(editBox[key])
+    end
+    for _, suffix in ipairs(EDITBOX_CHILD_SUFFIXES) do
+        local child = frameName and _G[frameName .. "EditBox" .. suffix]
+        if child and child.Show then
+            child:Show()
         end
-        for _, suffix in ipairs(EDITBOX_CHILD_SUFFIXES) do
-            local child = frameName and _G[frameName .. "EditBox" .. suffix]
-            if child and child.Show then
-                child:Show()
-            end
+    end
+    if editBox.focusLeft then editBox.focusLeft:SetAlpha(1) end
+    if editBox.focusMid then editBox.focusMid:SetAlpha(1) end
+    if editBox.focusRight then editBox.focusRight:SetAlpha(1) end
+    for _, name in ipairs(EDITBOX_TEXTURES) do
+        local tex = editBox[name]
+        if tex and tex.Show then
+            tex:Show()
         end
-        if editBox.focusLeft then editBox.focusLeft:SetAlpha(1) end
-        if editBox.focusMid then editBox.focusMid:SetAlpha(1) end
-        if editBox.focusRight then editBox.focusRight:SetAlpha(1) end
-        for _, name in ipairs(EDITBOX_TEXTURES) do
-            local tex = editBox[name]
-            if tex and tex.Show then
-                tex:Show()
-            end
-        end
-        if editBox.GetRegions then
-            local regions = { editBox:GetRegions() }
-            for _, region in ipairs(regions) do
-                if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-                    region:SetAlpha(1)
-                end
+    end
+    if editBox.GetRegions then
+        local regions = { editBox:GetRegions() }
+        for _, region in ipairs(regions) do
+            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                region:SetAlpha(1)
             end
         end
     end
