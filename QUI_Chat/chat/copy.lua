@@ -499,6 +499,37 @@ local function CleanMessage(message, lineColor)
     if Helpers.IsSecretValue(message) or type(message) ~= "string" then return "" end
 
     local cleaned = message
+    -- BN friend toasts/links carry the friend's name as a |K kstring INSIDE the
+    -- |HBNplayer link (both the link data and the [display]). The chat SMF
+    -- renders kstrings; a plain EditBox cannot, so the generic |K strip below
+    -- would blank the friend's name to "???". The bnID is embedded in the link
+    -- DATA (field 2), so resolve the BNet display name from it and substitute it
+    -- BEFORE the kstring strip. Resolving HERE (copy-window open) rather than at
+    -- capture is deliberate: the friend's BN account info is reliably cached by
+    -- now, whereas at the FRIEND_ONLINE toast it often has not populated yet
+    -- (the account just came online). Use the battleTag truncated at '#'
+    -- ("Devilspit#1846" -> "Devilspit"): in these toasts accountInfo.accountName
+    -- comes back AS THE SAME |K kstring (verified in-game), so it can't be used
+    -- -- it would re-blank to "???". battleTag is the plain, reliably-populated
+    -- field (non-Nilable per BNetAccountInfo docs) and is the friends-list
+    -- display name once the discriminator is dropped. Nil-safe -- leaves the
+    -- match untouched (the |K strip handles the fallback) when unresolved.
+    if _G.C_BattleNet and _G.C_BattleNet.GetAccountInfoByID then
+        cleaned = cleaned:gsub("|HBNplayer:.-:(%d+):.-|h(%b[])|h", function(bnID)
+            local id = tonumber(bnID)
+            if not id then return nil end
+            local ok, info = pcall(_G.C_BattleNet.GetAccountInfoByID, id)
+            if not ok or type(info) ~= "table" then return nil end
+            local bt = info.battleTag
+            if type(bt) ~= "string" or bt == "" or bt:sub(1, 2) == "|K" then return nil end
+            local hash = bt:find("#", 1, true)
+            local name = hash and bt:sub(1, hash - 1) or bt
+            if name ~= "" then
+                return ("[%s]"):format(name)
+            end
+            return nil
+        end)
+    end
     -- Battle.net kstrings (|K...|k) and name-wrap escapes (|W...|w) FIRST:
     -- an EditBox cannot render foreign kstrings — one leaked |K anywhere in
     -- the concatenated text blanks the ENTIRE copy editbox (the SMF renders
