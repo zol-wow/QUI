@@ -228,7 +228,7 @@ local _currentActiveProfile = nil  -- raw sv profile table for the active profil
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 46
+local CURRENT_SCHEMA_VERSION = 47
 
 -- The oldest schema we still migrate incrementally. 3.5.11 (the last major
 -- release before 4.0) shipped schema v31, and migrations v2–v31 were removed
@@ -479,6 +479,36 @@ local function MigrateUnitFrameAuraFilters(profile)
                 auraDB.debuffFilter.modifiers.PLAYER = true
             end
             auraDB.onlyMyDebuffs = nil
+        end
+    end
+end
+
+-- v47: the "IMPORTANT" AuraFilters flag was removed by Blizzard in 12.0.7.
+-- Scrub it from stored unit-frame filter state. The exclusive picker stores the
+-- raw flag string and the render path appends it straight into the filter passed
+-- to C_UnitAuras.GetAuraDataByIndex (unguarded), so a stale "IMPORTANT" would
+-- feed a now-invalid token to a live API call. The per-classification booleans
+-- are no longer read (the code-side map dropped the key), so they are only
+-- deleted here for cleanliness.
+local function ScrubRemovedImportantAuraFilter(profile)
+    local ufdb = profile and profile.quiUnitFrames
+    if type(ufdb) ~= "table" then return end
+
+    for _, unitTbl in pairs(ufdb) do
+        local auraDB = type(unitTbl) == "table" and unitTbl.auras
+        if type(auraDB) == "table" then
+            for _, key in ipairs({ "buffFilter", "debuffFilter" }) do
+                local filterDB = auraDB[key]
+                if type(filterDB) == "table" and filterDB.exclusive == "IMPORTANT" then
+                    filterDB.exclusive = nil
+                end
+            end
+            if type(auraDB.buffClassifications) == "table" then
+                auraDB.buffClassifications.important = nil
+            end
+            if type(auraDB.debuffClassifications) == "table" then
+                auraDB.debuffClassifications.important = nil
+            end
         end
     end
 end
@@ -2781,6 +2811,10 @@ function Migrations.RunOnProfile(profile)
     else
         MigLog("post-mig bar1: NIL (entry removed)")
     end
+
+    -- v47: drop the Blizzard-removed "IMPORTANT" AuraFilters flag from stored
+    -- unit-frame filter state (12.0.7 removed it from Enum AuraFilters).
+    if stored < 47 then ScrubRemovedImportantAuraFilter(profile) end
 
     profile._schemaVersion = CURRENT_SCHEMA_VERSION
     return true

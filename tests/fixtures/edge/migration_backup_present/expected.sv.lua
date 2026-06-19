@@ -672,7 +672,6 @@ return {
           debuffDurationTextOffsetX = 0,
           debuffDurationTextOffsetY = 0,
           debuffFilterCrowdControl = false,
-          debuffFilterImportant = false,
           debuffFilterIncludeNameplateOnly = false,
           debuffFilterPlayer = false,
           debuffFilterRaid = false,
@@ -5057,7 +5056,6 @@ return {
                 cancelable = false,
                 externalDefensive = false,
                 helpful = false,
-                important = false,
                 notCancelable = false
               },
               buffDuration = {
@@ -5110,8 +5108,7 @@ return {
               debuffClassifications = {
                 crowdControl = false,
                 dispellable = false,
-                harmful = false,
-                important = false
+                harmful = false
               },
               debuffDuration = {
                 anchor = "CENTER",
@@ -5407,7 +5404,6 @@ return {
                 cancelable = false,
                 externalDefensive = false,
                 helpful = false,
-                important = false,
                 notCancelable = false
               },
               buffDuration = {
@@ -5459,8 +5455,7 @@ return {
               debuffClassifications = {
                 crowdControl = false,
                 dispellable = false,
-                harmful = false,
-                important = false
+                harmful = false
               },
               debuffDuration = {
                 anchor = "CENTER",
@@ -6421,7 +6416,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 46,
+        _schemaVersion = 47,
         chat = {
           enabled = false
         },

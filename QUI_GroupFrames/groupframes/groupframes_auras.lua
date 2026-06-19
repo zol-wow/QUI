@@ -895,7 +895,6 @@ local BUFF_CLASSIFICATION_MAP = {
     raidInCombat      = "HELPFUL|RAID_IN_COMBAT",
     cancelable        = "HELPFUL|CANCELABLE",
     notCancelable     = "HELPFUL|NOT_CANCELABLE",
-    important         = "HELPFUL|IMPORTANT",
     bigDefensive      = "HELPFUL|BIG_DEFENSIVE",
     externalDefensive = "HELPFUL|EXTERNAL_DEFENSIVE",
 }
@@ -904,7 +903,6 @@ local DEBUFF_CLASSIFICATION_MAP = {
     raid         = "HARMFUL|RAID",
     raidInCombat = "HARMFUL|RAID_IN_COMBAT",
     crowdControl = "HARMFUL|CROWD_CONTROL",
-    important    = "HARMFUL|IMPORTANT",
 }
 
 -- Check if an aura passes whitelist/blacklist filter by spellID.

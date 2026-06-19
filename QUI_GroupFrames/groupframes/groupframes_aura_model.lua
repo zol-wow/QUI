@@ -28,10 +28,10 @@ local DEFAULT_MISSING_RAID_BUFF_CHECKS = {
 
 local function defaultClassifications(auraType)
     if auraType == "HARMFUL" then
-        return { raid = true, raidInCombat = false, crowdControl = true, important = true }
+        return { raid = true, raidInCombat = false, crowdControl = true }
     end
     return { raid = false, raidInCombat = false, cancelable = false, notCancelable = false,
-             important = false, bigDefensive = false, externalDefensive = false }
+             bigDefensive = false, externalDefensive = false }
 end
 
 function Model.NewFilterStripElement(auraType)
@@ -122,7 +122,7 @@ function Model.DefaultStripBucket()
             durationColor = { 1, 1, 1, 1 }, durationUseTimeColor = true,
             showDurationColor = true, showExpiringPulse = true,
             filterMode = "off",
-            classifications = { raid = true, raidInCombat = false, crowdControl = true, important = true },
+            classifications = { raid = true, raidInCombat = false, crowdControl = true },
             whitelist = {}, blacklist = {},
         },
         {
@@ -135,7 +135,7 @@ function Model.DefaultStripBucket()
             durationColor = { 1, 1, 1, 1 }, durationUseTimeColor = true,
             showDurationColor = true, showExpiringPulse = true,
             filterMode = "off", onlyMine = false, hidePermanent = false, dedupeDefensives = true,
-            classifications = { raid = false, raidInCombat = false, cancelable = false, notCancelable = false, important = false, bigDefensive = false, externalDefensive = false },
+            classifications = { raid = false, raidInCombat = false, cancelable = false, notCancelable = false, bigDefensive = false, externalDefensive = false },
             whitelist = {}, blacklist = {},
         },
     }

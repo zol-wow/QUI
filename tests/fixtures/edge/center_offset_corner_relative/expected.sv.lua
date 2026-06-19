@@ -672,7 +672,6 @@ return {
           debuffDurationTextOffsetX = 0,
           debuffDurationTextOffsetY = 0,
           debuffFilterCrowdControl = false,
-          debuffFilterImportant = false,
           debuffFilterIncludeNameplateOnly = false,
           debuffFilterPlayer = false,
           debuffFilterRaid = false,
@@ -5057,7 +5056,6 @@ return {
                 cancelable = false,
                 externalDefensive = false,
                 helpful = false,
-                important = false,
                 notCancelable = false
               },
               buffDuration = {
@@ -5110,8 +5108,7 @@ return {
               debuffClassifications = {
                 crowdControl = false,
                 dispellable = false,
-                harmful = false,
-                important = false
+                harmful = false
               },
               debuffDuration = {
                 anchor = "CENTER",
@@ -5407,7 +5404,6 @@ return {
                 cancelable = false,
                 externalDefensive = false,
                 helpful = false,
-                important = false,
                 notCancelable = false
               },
               buffDuration = {
@@ -5459,8 +5455,7 @@ return {
               debuffClassifications = {
                 crowdControl = false,
                 dispellable = false,
-                harmful = false,
-                important = false
+                harmful = false
               },
               debuffDuration = {
                 anchor = "CENTER",
@@ -6424,7 +6419,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 46,
+        _schemaVersion = 47,
         actionBars = {
           bars = {
             bags = {
@@ -7630,6 +7625,7 @@ return {
             verticalLayout = false
           },
           debuffBottomPadding = 0,
+          debuffFilterImportant = false,
           hideSwipe = true,
           showStacks = true
         },
@@ -14987,6 +14983,9 @@ return {
             anchorGap = 0,
             anchorTo = "essential",
             auras = {
+              buffClassifications = {
+                important = false
+              },
               buffDurationAnchor = "CENTER",
               buffDurationColor = {
                 [1] = 1,
@@ -15007,6 +15006,9 @@ return {
               },
               buffHideSwipe = false,
               buffShowDuration = true,
+              debuffClassifications = {
+                important = false
+              },
               debuffDurationAnchor = "CENTER",
               debuffDurationColor = {
                 [1] = 1,
@@ -15197,6 +15199,9 @@ return {
             anchorTo = "essential",
             auras = {
               buffAnchor = "TOPRIGHT",
+              buffClassifications = {
+                important = false
+              },
               buffDurationAnchor = "CENTER",
               buffDurationColor = {
                 [1] = 1,
@@ -15220,6 +15225,9 @@ return {
               buffMaxPerRow = 0,
               buffShowDuration = true,
               buffSpacing = 0,
+              debuffClassifications = {
+                important = false
+              },
               debuffDurationAnchor = "CENTER",
               debuffDurationColor = {
                 [1] = 1,

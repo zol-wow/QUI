@@ -2165,8 +2165,8 @@ local defaults = {
                     buffFilterMode = "off",
                     debuffFilterMode = "off",
                     buffFilterOnlyMine = true,
-                    buffClassifications = { helpful = false, cancelable = false, notCancelable = false, important = false, bigDefensive = false, externalDefensive = false },
-                    debuffClassifications = { harmful = false, dispellable = false, crowdControl = false, important = false },
+                    buffClassifications = { helpful = false, cancelable = false, notCancelable = false, bigDefensive = false, externalDefensive = false },
+                    debuffClassifications = { harmful = false, dispellable = false, crowdControl = false },
                 },
                 -- Status indicators (player only)
                 indicators = {
@@ -2394,8 +2394,8 @@ local defaults = {
                     buffFilterMode = "off",
                     debuffFilterMode = "off",
                     buffFilterOnlyMine = true,
-                    buffClassifications = { helpful = false, cancelable = false, notCancelable = false, important = false, bigDefensive = false, externalDefensive = false },
-                    debuffClassifications = { harmful = false, dispellable = false, crowdControl = false, important = false },
+                    buffClassifications = { helpful = false, cancelable = false, notCancelable = false, bigDefensive = false, externalDefensive = false },
+                    debuffClassifications = { harmful = false, dispellable = false, crowdControl = false },
                 },
                 -- Target marker (raid icons like skull, cross, etc.)
                 targetMarker = {
@@ -3490,7 +3490,6 @@ local defaults = {
             debuffFilterRaid = false,
             debuffFilterIncludeNameplateOnly = false,
             debuffFilterRaidPlayerDispellable = false,
-            debuffFilterImportant = false,
             debuffFilterCrowdControl = false,
             -- Sort: keys map to SORT_TRANSLATIONS in modules/ui/buffborders.lua.
             -- INDEX = raw API slot order (matches existing behavior pre-3.6).

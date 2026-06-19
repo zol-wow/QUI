@@ -64,7 +64,6 @@ local BUFF_CLASSIFICATION_MAP = {
     helpful           = { "HELPFUL|RAID", "HELPFUL|RAID_IN_COMBAT" },
     cancelable        = "HELPFUL|CANCELABLE",
     notCancelable     = "HELPFUL|NOT_CANCELABLE",
-    important         = "HELPFUL|IMPORTANT",
     bigDefensive      = "HELPFUL|BIG_DEFENSIVE",
     externalDefensive = "HELPFUL|EXTERNAL_DEFENSIVE",
 }
@@ -73,7 +72,6 @@ local DEBUFF_CLASSIFICATION_MAP = {
     harmful     = { "HARMFUL|RAID", "HARMFUL|RAID_IN_COMBAT" },
     dispellable = "HARMFUL|RAID_PLAYER_DISPELLABLE",
     crowdControl = "HARMFUL|CROWD_CONTROL",
-    important    = "HARMFUL|IMPORTANT",
 }
 
 ---------------------------------------------------------------------------

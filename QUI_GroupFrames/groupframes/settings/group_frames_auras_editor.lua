@@ -100,7 +100,6 @@ local HELPFUL_CLASSIFICATIONS = {
     { key = "raidInCombat", label = ns.L["Raid (In Combat)"] },
     { key = "cancelable", label = ns.L["Cancelable"] },
     { key = "notCancelable", label = ns.L["Not Cancelable"] },
-    { key = "important", label = ns.L["Important"] },
     { key = "bigDefensive", label = ns.L["Big Defensive"] },
     { key = "externalDefensive", label = ns.L["External Defensive"] },
 }
@@ -109,7 +108,6 @@ local HARMFUL_CLASSIFICATIONS = {
     { key = "raid", label = ns.L["Raid"] },
     { key = "raidInCombat", label = ns.L["Raid (In Combat)"] },
     { key = "crowdControl", label = ns.L["Crowd Control"] },
-    { key = "important", label = ns.L["Important"] },
 }
 
 local function GetGUI()

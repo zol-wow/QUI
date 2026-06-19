@@ -147,14 +147,12 @@ local BUFF_EXCLUSIVE_OPTIONS = {
     { value = AURA_FILTER_NONE_SENTINEL, text = ns.L["None"]                },
     { value = "EXTERNAL_DEFENSIVE",      text = ns.L["External Defensives"] },
     { value = "BIG_DEFENSIVE",           text = ns.L["Big Defensives"]      },
-    { value = "IMPORTANT",               text = ns.L["Important"]           },
 }
 
 local DEBUFF_EXCLUSIVE_OPTIONS = {
     { value = AURA_FILTER_NONE_SENTINEL,  text = ns.L["None"]                },
     { value = "CROWD_CONTROL",            text = ns.L["Crowd Control"]       },
     { value = "RAID_PLAYER_DISPELLABLE",  text = ns.L["Player Dispellable"]  },
-    { value = "IMPORTANT",                text = ns.L["Important"]           },
 }
 
 local function GetGUI()

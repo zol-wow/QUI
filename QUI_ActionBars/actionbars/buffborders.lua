@@ -153,7 +153,6 @@ local DEBUFF_FILTER_FLAGS = {
     { dbKey = "debuffFilterRaid",                  flag = "RAID" },
     { dbKey = "debuffFilterIncludeNameplateOnly",  flag = "INCLUDE_NAME_PLATE_ONLY" },
     { dbKey = "debuffFilterRaidPlayerDispellable", flag = "RAID_PLAYER_DISPELLABLE" },
-    { dbKey = "debuffFilterImportant",             flag = "IMPORTANT" },
     { dbKey = "debuffFilterCrowdControl",          flag = "CROWD_CONTROL" },
 }
 
