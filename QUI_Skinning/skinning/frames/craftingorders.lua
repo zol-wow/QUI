@@ -25,6 +25,25 @@ end
 local function skinRow(row)
     SkinBase.SkinScrollRow(row)
     SkinBase.SkinFrameText(row, { recurse = true })
+    -- Order/recipe/listing rows are TableBuilder rows whose cell fontstrings are
+    -- built lazily, so the one-shot SkinFrameText above misses cold cells. Lock
+    -- the row subtree (idempotent per object) so the QUI face re-applies on every
+    -- cell rebind — mirrors the Auction House row styler.
+    SkinBase.LockFrameTextObjects(row, 4)
+end
+
+-- Order-table column headers (ProfessionsCrafterTableHeaderStringTemplate, a
+-- ColumnDisplay button) are pool-built lazily and swap their Highlight font
+-- OBJECT on hover. Hook the shared mixin Init once so every header (this window
+-- and the crafter ProfessionsFrame, which use the same template) gets the QUI
+-- font driven onto its font objects right after Blizzard builds it.
+local function HookProfessionTableHeaderFonts()
+    local mixin = _G.ProfessionsCrafterTableHeaderStringMixin
+    if not mixin or mixin.Init == nil or mixin.__quiHeaderFontHooked then return end
+    hooksecurefunc(mixin, "Init", function(self)
+        SkinBase.ApplyButtonFontObjects(self)
+    end)
+    mixin.__quiHeaderFontHooked = true
 end
 
 -- Suppress a category button's default textures (safe to call on every refresh;
@@ -96,7 +115,7 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SkinButton(searchBar.SearchButton, { font = true })
         end
         if searchBar.FavoritesSearchButton then
-            SkinBase.SkinButton(searchBar.FavoritesSearchButton)
+            SkinBase.SkinButton(searchBar.FavoritesSearchButton, { font = true })
         end
         -- Filter dropdown (WowStyle1 dropdown — standard button textures don't apply)
         if searchBar.FilterDropdown then
@@ -139,12 +158,32 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             -- also lock the font object to re-assert on rebinds in between.
             SkinBase.SkinFontString(button.Text)
             SkinBase.LockFontObject(button, { fontOnly = true })
+            -- Init's SetNormalFontObject REPLACES the font object SkinCategoryButton
+            -- drove once (so the once-guard won't re-drive it). Re-drive here on every
+            -- bind so the normal AND hover/disable font objects stay on the QUI face.
+            SkinBase.ApplyButtonFontObjects(button)
         end
         local function RefreshCategoryButtons(self)
             SafeForEachFrame(self, StyleCategoryRow)
         end
 
         SkinBase.HookScrollBoxAcquired(categoryList.ScrollBox, StyleCategoryRow)
+
+        -- The shared element initializer (ProfessionsCustomerOrdersCategoryButtonMixin
+        -- :Init) re-asserts the Blizzard nav-button atlas + normalTexture:SetAlpha(1)
+        -- + SetNormalFontObject on EVERY bind (initial data load, expand/collapse,
+        -- scroll-recycle). Those rebinds DON'T re-fire the acquired-frame callback for
+        -- on-screen buttons, so the stock texture/font flashes back. Hook the mixin
+        -- once so the QUI suppression + skin re-runs right after Blizzard, same layout
+        -- pass — mirrors the AuctionHouseFilterButton_SetUp hook.
+        local catMixin = _G.ProfessionsCustomerOrdersCategoryButtonMixin
+        if catMixin and catMixin.Init and not SkinBase.GetFrameData(categoryList, "categoryInitHooked") then
+            hooksecurefunc(catMixin, "Init", function(self)
+                if not IsEnabled() or self.isSpacer then return end
+                StyleCategoryRow(self)
+            end)
+            SkinBase.SetFrameData(categoryList, "categoryInitHooked", true)
+        end
 
         -- Selecting/deselecting a category invalidates the tree data provider,
         -- which re-runs the element initializer (restoring Blizzard textures) on
@@ -270,7 +309,7 @@ local function SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SkinListContainer(listings.OrderList, skinRow)
         end
         if listings.CloseButton then
-            SkinBase.SkinButton(listings.CloseButton)
+            SkinBase.SkinButton(listings.CloseButton, { font = true })
         end
     end
 end
@@ -292,6 +331,7 @@ local function SkinCraftingOrders()
 
     SkinBase.SkinCloseButton(frame.CloseButton or _G.ProfessionsCustomerOrdersFrameCloseButton)
 
+    HookProfessionTableHeaderFonts()
     SkinTabs(frame)
     SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinMyOrders(frame)

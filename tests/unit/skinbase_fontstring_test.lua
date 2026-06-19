@@ -125,16 +125,17 @@ assert(fs2.color[1] == 1 and fs2.color[2] == 0 and fs2.color[3] == 0,
 SkinBase.SkinFontString(nil)
 SkinBase.SkinFontString({})
 
--- Opt-in SkinButton{font=true} applies the font to the button's fontstring
+-- SkinButton drives the QUI font onto the label BY DEFAULT (font is no longer
+-- opt-in) so the engine's hover/disable font-object swap can't revert it.
 local button = NewFrame()
-SkinBase.SkinButton(button, { font = true })
+SkinBase.SkinButton(button)
 local bfs = button:GetFontString()
-assert(bfs.font == "Interface\\QUIFont.ttf", "SkinButton{font=true} must apply the global font to the button label")
+assert(bfs.font == "Interface\\QUIFont.ttf", "SkinButton must apply the global font to the button label by default")
 
--- SkinButton without font opt must NOT touch the label font (scope discipline)
+-- Explicit { font = false } opts OUT (keep Blizzard's font, scope discipline)
 local plainBtn = NewFrame()
-SkinBase.SkinButton(plainBtn)
-assert(plainBtn:GetFontString().font == nil, "SkinButton without {font=true} must leave the label font untouched")
+SkinBase.SkinButton(plainBtn, { font = false })
+assert(plainBtn:GetFontString().font == nil, "SkinButton{font=false} must leave the label font untouched")
 
 -- RefreshWidget re-applies the QUI font on a live font change (font-skinned only)
 generalFont = "Interface\\NewQUIFont.ttf"
@@ -142,10 +143,10 @@ SkinBase.RefreshWidget(button)
 assert(button:GetFontString().font == "Interface\\NewQUIFont.ttf",
     "RefreshWidget must re-apply the global font to a font-skinned button on live change")
 
--- RefreshWidget must NOT font-touch a widget that did not opt in
+-- RefreshWidget must NOT font-touch a widget that opted out
 SkinBase.RefreshWidget(plainBtn)
 assert(plainBtn:GetFontString().font == nil,
-    "RefreshWidget must not apply a font to a widget that wasn't font-skinned")
+    "RefreshWidget must not apply a font to a widget that opted out of font skinning")
 
 -- Garbage size from GetFont: WoW's FontString:GetFont() returns a non-positive
 -- height for a fontstring whose font never successfully applied (e.g. a header

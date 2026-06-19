@@ -580,6 +580,17 @@ local function SetupCharacterFrameSkinning()
                 SkinBase.SkinFrameText(row, { recurse = true })
             end
         end)
+        -- TokenEntryMixin:Initialize re-SetTexture's CurrencyIcon on every bind,
+        -- resetting our texcoord crop; re-apply after it (acquire fires only once).
+        if _G.TokenEntryMixin and _G.TokenEntryMixin.Initialize
+            and not SkinBase.GetFrameData(TokenFrame, "qTokenIconHooked") then
+            hooksecurefunc(_G.TokenEntryMixin, "Initialize", function(self)
+                if not IsSkinningEnabled() then return end
+                local icon = self.Content and self.Content.CurrencyIcon
+                if icon then icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+            end)
+            SkinBase.SetFrameData(TokenFrame, "qTokenIconHooked", true)
+        end
     end
 
     -- Handle tab switching - show background and hide decorations
@@ -825,6 +836,20 @@ local function SkinEquipmentManager()
         end)
     end
 
+    -- HookScrollBoxAcquired fires once per pool acquisition, but Blizzard's global
+    -- PaperDollEquipmentManagerPane_InitButton re-asserts GREEN/RED/NORMAL text color
+    -- + re-SetTexture's the icon (resetting texcoord) on EVERY data Update without
+    -- re-acquiring. Re-apply our font/color + icon crop after it, once-guarded.
+    if type(_G.PaperDollEquipmentManagerPane_InitButton) == "function"
+        and not SkinBase.GetFrameData(pane, "qEquipInitHooked") then
+        hooksecurefunc("PaperDollEquipmentManagerPane_InitButton", function(button)
+            if not IsSkinningEnabled() or not button then return end
+            RestyleEquipmentSetEntryText(button)
+            if button.icon then button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+        end)
+        SkinBase.SetFrameData(pane, "qEquipInitHooked", true)
+    end
+
     if pane then
         StyleThinScrollBar(pane.ScrollBar or (pane.ScrollBox and pane.ScrollBox.ScrollBar), sr, sg, sb)
     end
@@ -961,6 +986,19 @@ local function SkinTitleManagerPane()
     -- Style ScrollBox entries — fires once per acquisition.
     if pane.ScrollBox then
         SkinBase.HookScrollBoxAcquired(pane.ScrollBox, SkinTitleEntry)
+    end
+
+    -- Blizzard's PaperDollTitlesPane_InitButton re-Shows BgTop/BgMiddle/BgBottom for
+    -- first/last rows on every bind (the acquire-guarded SkinTitleEntry won't re-hide).
+    if type(_G.PaperDollTitlesPane_InitButton) == "function"
+        and not SkinBase.GetFrameData(pane, "qTitleInitHooked") then
+        hooksecurefunc("PaperDollTitlesPane_InitButton", function(button)
+            if not IsSkinningEnabled() or not button then return end
+            if button.BgTop then button.BgTop:Hide() end
+            if button.BgMiddle then button.BgMiddle:Hide() end
+            if button.BgBottom then button.BgBottom:Hide() end
+        end)
+        SkinBase.SetFrameData(pane, "qTitleInitHooked", true)
     end
 
     -- Style scrollbar

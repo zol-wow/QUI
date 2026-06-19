@@ -576,6 +576,13 @@ end
 
 local function HookCollectionsText(frame)
     LockCollectionsText(frame)
+    -- Bottom action buttons (MountJournal.MountButton "MOUNT", PetJournal summon
+    -- buttons, etc.) are MagicButton/UIPanel-style: the engine swaps their
+    -- Highlight/Disabled font OBJECT on hover/disable without calling a setter, so
+    -- LockFrameTextObjects above can't catch it. Drive their font objects.
+    if SkinBase.ApplyButtonFontObjectsDeep then
+        SkinBase.ApplyButtonFontObjectsDeep(frame, 5)
+    end
     LockCollectionsScrollBox(_G.MountJournal and _G.MountJournal.ScrollBox)
     LockCollectionsScrollBox(_G.PetJournal and _G.PetJournal.ScrollBox)
     LockCollectionsScrollBox(_G.HeirloomsJournal and _G.HeirloomsJournal.ScrollBox)

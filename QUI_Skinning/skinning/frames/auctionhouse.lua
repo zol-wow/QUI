@@ -42,6 +42,12 @@ local function SkinAuctionHouseTabs()
 
     SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true })
 
+    -- Lock each main tab's font objects: tab selection/hover re-asserts the stock
+    -- font object, reverting the QUI face (the auctions sub-tabs already do this).
+    for _, tab in ipairs(AuctionHouseFrame.Tabs) do
+        SkinBase.LockFrameTextObjects(tab, 2)
+    end
+
     -- Reposition tabs: left justify and tighten spacing
     local tabs = AuctionHouseFrame.Tabs
     if tabs[1] then
@@ -152,7 +158,7 @@ local function SkinSearchBar()
         -- obscured by the SearchBox EditBox, which captures mouse across its
         -- full rect and can swallow clicks on the overlapping star.
         if searchBar.FavoritesSearchButton then
-            SkinBase.SkinButton(searchBar.FavoritesSearchButton)
+            SkinBase.SkinButton(searchBar.FavoritesSearchButton, { font = true })
             searchBar.FavoritesSearchButton:SetFrameLevel(searchBar.FavoritesSearchButton:GetFrameLevel() + 5)
         end
     end
@@ -174,6 +180,26 @@ local function skinRow(row)
     -- reverting the one-shot SkinFrameText face above. Lock so the QUI face
     -- re-applies on each swap (fontOnly keeps the quality/price text colors).
     SkinBase.LockFrameTextObjects(row, 4)
+end
+
+-- TableBuilder sortable column headers (AuctionHouseTableHeaderStringMixin) are
+-- pooled and re-Init'd on every table relayout (Reset->ConstructHeader->Init), so
+-- SkinListContainer's row hook never reaches them and the one-shot SkinFrameText is
+-- reverted each relayout. One mixin hook covers every list sharing the template.
+local function HookAuctionHeaderSkin()
+    local mixin = _G.AuctionHouseTableHeaderStringMixin
+    if not mixin or mixin.Init == nil or mixin.__quiHeaderSkinHooked then return end
+    hooksecurefunc(mixin, "Init", function(self)
+        if not IsEnabled() then return end
+        -- Suppress the inherited ColumnDisplayButtonShort slice art (keep the sort Arrow)
+        if self.Left then self.Left:SetAlpha(0) end
+        if self.Middle then self.Middle:SetAlpha(0) end
+        if self.Right then self.Right:SetAlpha(0) end
+        local hl = self.GetHighlightTexture and self:GetHighlightTexture()
+        if hl then hl:SetAlpha(0) end
+        SkinBase.ApplyButtonFontObjects(self)
+    end)
+    mixin.__quiHeaderSkinHooked = true
 end
 
 -- Skin browse panel (item list / commodities list)
@@ -323,6 +349,11 @@ local function SkinAuctionsPanel()
         SkinBase.SkinListContainer(auctionsFrame.CommoditiesList, skinRow)
     end
 
+    -- Single-item buy list (same AuctionHouseItemListTemplate: pooled rows + headers)
+    if auctionsFrame.ItemList then
+        SkinBase.SkinListContainer(auctionsFrame.ItemList, skinRow)
+    end
+
     -- Cancel auctions button
     if auctionsFrame.CancelAuctionButton then
         SkinBase.SkinButton(auctionsFrame.CancelAuctionButton, { font = true })
@@ -365,11 +396,11 @@ local function SkinCategoriesList()
         -- Reapply the QUI font: Blizzard's element initializer calls
         -- SetNormalFontObject on every rebind, reverting the label font.
         SkinBase.SkinFontString(button.Text)
-        -- The initializer also fires on SetDataProvider / OnShow / expand-
-        -- collapse rebuilds that DON'T re-run the acquired-frame callback, so
-        -- the one-shot above is missed. Lock the button's SetNormalFontObject
-        -- swap so the QUI face re-applies on every rebind.
         SkinBase.LockFrameTextObjects(button, 2)
+        -- SetUp's SetNormalFontObject REPLACES the font object SkinCategoryButton
+        -- drove once (the once-guard won't re-drive). Re-drive on every bind so the
+        -- normal + hover/disable font objects stay on the QUI face.
+        SkinBase.ApplyButtonFontObjects(button)
     end
     local function RefreshCategoryButtons(self)
         SafeForEachFrame(self, StyleCategoryRow)
@@ -377,6 +408,24 @@ local function SkinCategoriesList()
 
     local scrollBox = categoriesList.ScrollBox
     SkinBase.HookScrollBoxAcquired(scrollBox, StyleCategoryRow)
+
+    -- Texture flash on load/expand: the shared element initializer
+    -- AuctionHouseFilterButton_SetUp re-asserts the Blizzard nav-button atlas and
+    -- normalTexture:SetAlpha(1.0) on EVERY bind (load, expand/collapse,
+    -- scroll-recycle), and those rebinds DON'T re-fire the acquired-frame
+    -- callback for already-visible buttons. Hook the initializer (once) so the
+    -- texture suppression + selected-state backdrop re-run right after Blizzard,
+    -- in the same layout pass — mirrors the LockFrameTextObjects font fix above.
+    if type(_G.AuctionHouseFilterButton_SetUp) == "function"
+        and not SkinBase.GetFrameData(categoriesList, "setupHooked") then
+        hooksecurefunc("AuctionHouseFilterButton_SetUp", function(button)
+            if not IsEnabled() or not button then return end
+            -- Full re-skin after Blizzard's SetUp: re-suppress textures, re-drive
+            -- font objects, re-assert selected backdrop (same layout pass = no flash).
+            StyleCategoryRow(button)
+        end)
+        SkinBase.SetFrameData(categoriesList, "setupHooked", true)
+    end
 
     -- Hook category click to refresh selected states across all visible buttons
     if categoriesList.OnFilterClicked and not SkinBase.GetFrameData(categoriesList, "clickHooked") then
@@ -416,6 +465,7 @@ local function SkinAuctionHouse()
 
     -- Style tabs
     SkinAuctionHouseTabs()
+    HookAuctionHeaderSkin()
 
     -- Skin sub-panels (pcall each so one failure doesn't block the rest)
     pcall(SkinCategoriesList)

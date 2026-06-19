@@ -514,14 +514,26 @@ local function SkinLFGListFrame()
         if cs.FindGroupButton then
             SkinBase.SkinButton(cs.FindGroupButton, { font = true })
         end
-        -- Style category buttons
-        if cs.CategoryButtons then
+        -- Style category buttons. Re-style on every UpdateCategoryButtons: the set
+        -- can grow mid-session (LFGListCategorySelection_AddButton lazily creates new
+        -- buttons), so a one-shot loop misses later additions. The IsStyled guard
+        -- keeps re-runs cheap.
+        local function StyleCategoryButtons()
+            if not cs.CategoryButtons then return end
             for _, catButton in pairs(cs.CategoryButtons) do
                 if catButton and not SkinBase.IsStyled(catButton) then
                     SkinBase.StripTextures(catButton)
-                    SkinBase.SkinButton(catButton)
+                    SkinBase.SkinButton(catButton, { font = true })
                 end
             end
+        end
+        StyleCategoryButtons()
+        if type(_G.LFGListCategorySelection_UpdateCategoryButtons) == "function"
+            and not SkinBase.GetFrameData(cs, "qCatButtonsHooked") then
+            hooksecurefunc("LFGListCategorySelection_UpdateCategoryButtons", function()
+                StyleCategoryButtons()
+            end)
+            SkinBase.SetFrameData(cs, "qCatButtonsHooked", true)
         end
     end
 
@@ -552,11 +564,32 @@ local function SkinLFGListFrame()
         if sp.ScrollBox then
             SkinBase.HookScrollBoxRowFonts(sp.ScrollBox, 2)
         end
+        -- Autocomplete result buttons (lazily created in UpdateAutoComplete) carry
+        -- NormalFont/HighlightFont = stock GameFontHighlightSmall, so the engine
+        -- swaps to the stock highlight font OBJECT on hover — a Lock* SetFontObject
+        -- hook never sees that internal swap. Drive the buttons' font objects after
+        -- every autocomplete rebuild (covers newly created buttons too).
+        if sp.AutoCompleteFrame and type(_G.LFGListSearchPanel_UpdateAutoComplete) == "function"
+            and not SkinBase.GetFrameData(sp, "qAutoCompleteFontHooked") then
+            hooksecurefunc("LFGListSearchPanel_UpdateAutoComplete", function(panel)
+                local acf = panel and panel.AutoCompleteFrame
+                if not acf or not acf.Results then return end
+                for i = 1, #acf.Results do
+                    if acf.Results[i] then SkinBase.ApplyButtonFontObjects(acf.Results[i]) end
+                end
+            end)
+            SkinBase.SetFrameData(sp, "qAutoCompleteFontHooked", true)
+        end
     end
 
     -- Style application viewer
     if LFGListFrame.ApplicationViewer then
         local av = LFGListFrame.ApplicationViewer
+        -- Applicant rows are pooled (LFGListApplicantTemplate) and cold-acquired after
+        -- the one-shot frame skin, so freshly painted rows keep the stock font.
+        if av.ScrollBox then
+            SkinBase.HookScrollBoxRowFonts(av.ScrollBox, 3)
+        end
         if av.RefreshButton then
             SkinBase.SkinButton(av.RefreshButton, { font = true })
         end
@@ -925,6 +958,13 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             bd:SetBackdropBorderColor(sr, sg, sb, sa)
         end
     end)
+
+    -- Row fonts: these pooled rows only SetText their NameText/InfoText/SizeText
+    -- (stock GameFontNormal*) and are cold-acquired after the one-shot frame skin, so
+    -- apply the QUI face here + lock. (Can't add a parallel HookScrollBoxRowFonts on
+    -- the same ScrollBox — the single qScrollHooked flag makes a second hook a no-op.)
+    SkinBase.SkinFrameText(button, { recurse = true })
+    SkinBase.LockFrameTextObjects(button, 2)
 
     SkinBase.MarkStyled(button)
 end

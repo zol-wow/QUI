@@ -53,6 +53,12 @@ local function SkinWeeklyRewards()
     end
 
     SkinBase.SkinFrameText(frame, { recurse = true })
+    -- The "Select Reward" CTA is a UIPanelButton: the engine swaps its Highlight/
+    -- Disabled font OBJECT on hover/disable WITHOUT calling a setter, so LockFontObject
+    -- (setter hook) can't catch it. Drive the button's font objects instead.
+    if frame.SelectRewardButton then
+        SkinBase.ApplyButtonFontObjects(frame.SelectRewardButton)
+    end
     SkinBase.MarkSkinned(frame)
 end
 

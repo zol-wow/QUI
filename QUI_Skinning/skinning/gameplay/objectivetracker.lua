@@ -13,6 +13,8 @@ local GetFontFlags = Helpers.GetGeneralFontOutline
 
 -- Debounce flag to prevent multiple concurrent backdrop updates
 local pendingBackdropUpdate = false
+-- Session-once guard for the scenario stage-block re-suppress hook.
+local scenarioStageHooked = false
 
 local function RunAfterFirstFrame(callback, delay)
     if ns.RunAfterFirstFrame then
@@ -402,6 +404,16 @@ local function ApplyMaxWidth(settings)
 
     -- Hide scenario stage artwork for narrower display
     HideScenarioStageArtwork()
+    -- ScenarioObjectiveTrackerStageMixin:UpdateStageBlock re-shows NormalBG/FinalBG/
+    -- GlowTexture and re-anchors Stage/Name on every stage change; re-run the hide +
+    -- reposition after it, once-installed.
+    if _G.ScenarioObjectiveTrackerStageMixin and _G.ScenarioObjectiveTrackerStageMixin.UpdateStageBlock
+        and not scenarioStageHooked then
+        scenarioStageHooked = true
+        hooksecurefunc(_G.ScenarioObjectiveTrackerStageMixin, "UpdateStageBlock", function()
+            HideScenarioStageArtwork()
+        end)
+    end
 end
 
 -- Update backdrop to match content, respecting max height setting

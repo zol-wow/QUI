@@ -22,6 +22,10 @@ end
 
 local RefreshBackdropColors = SkinBase.RefreshFrameBackdropColors
 
+-- Session-once guard: the ColumnDisplayMixin:LayoutColumns hook (member/applicant
+-- header fonts) is on the shared mixin, so install it a single time.
+local columnDisplayHooked = false
+
 -- Pooled list rows (friends / who / ignore / community roster) are ScrollBox-
 -- recycled and Blizzard re-applies their font OBJECT on every acquire / rebind
 -- / presence update (FriendsFrame.lua, CommunitiesMemberList.lua), reverting a
@@ -62,6 +66,15 @@ local function SkinFriends()
     if _G.FriendsListFrame then HookListRows(_G.FriendsListFrame.ScrollBox) end
     if frame.IgnoreListWindow then HookListRows(frame.IgnoreListWindow.ScrollBox) end
     if _G.WhoFrame then HookListRows(_G.WhoFrame.ScrollBox) end
+    -- WhoFrame sortable column headers swap their Highlight font OBJECT on hover;
+    -- Lock* hooks never see the engine's internal swap, so drive the button font
+    -- objects directly (the only durable fix).
+    if _G.WhoFrame then
+        for i = 1, 4 do
+            local h = _G["WhoFrameColumnHeader" .. i]
+            if h then SkinBase.ApplyButtonFontObjects(h) end
+        end
+    end
     SkinBase.MarkSkinned(frame)
 end
 
@@ -92,6 +105,21 @@ local function SkinCommunities()
     if frame.ApplicantList then HookListRows(frame.ApplicantList.ScrollBox) end
     if frame.GuildBenefitsFrame and frame.GuildBenefitsFrame.Rewards then
         HookListRows(frame.GuildBenefitsFrame.Rewards.ScrollBox)
+    end
+    -- GuildMemberDetailFrame's Remove / GroupInvite are UIPanelButtons: the engine
+    -- swaps their Highlight/Disabled font OBJECT on hover/disable with no setter call,
+    -- so LockFrameTextObjects (setter hook) can't catch it — drive the font objects.
+    if frame.GuildMemberDetailFrame then
+        SkinBase.ApplyButtonFontObjectsDeep(frame.GuildMemberDetailFrame, 3)
+    end
+    -- Member/Applicant column headers are pool-acquired by LayoutColumns AFTER
+    -- skin time, so a one-shot lock finds an empty pool. Hook the shared mixin
+    -- method (once) so the lock runs after the headers exist and on every rebuild.
+    if not columnDisplayHooked and _G.ColumnDisplayMixin and _G.ColumnDisplayMixin.LayoutColumns then
+        hooksecurefunc(_G.ColumnDisplayMixin, "LayoutColumns", function(self)
+            SkinBase.LockFrameTextObjects(self, 1)
+        end)
+        columnDisplayHooked = true
     end
     LockGuildNameAlertText(frame)
     SkinBase.MarkSkinned(frame)

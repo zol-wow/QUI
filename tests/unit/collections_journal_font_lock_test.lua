@@ -70,6 +70,9 @@ ns.SkinBase = {
     LockFrameTextObjects = function(frame, depth)
         calls["lock:" .. tostring(frame.name)] = depth
     end,
+    ApplyButtonFontObjectsDeep = function(frame, depth)
+        calls["btnfont:" .. tostring(frame.name)] = depth
+    end,
     HookScrollBoxAcquired = function(scrollBox, callback)
         scrollHooks[scrollBox] = callback
     end,

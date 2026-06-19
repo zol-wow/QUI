@@ -143,6 +143,8 @@ assertContains(achievement, "SkinBase.HookScrollBoxRowFonts(scrollBox, 3)",
     "Achievement list ScrollBoxes must use the guarded row-font helper, not an unguarded per-acquire re-skin")
 assertContains(achievement, "SkinBase.HookScrollBoxRowFonts(statScrollBox, 3)",
     "Achievement comparison stat ScrollBox must use the guarded row-font helper")
+assertContains(achievement, "SkinBase.HookScrollBoxRowFonts(achScrollBox, 3)",
+    "Achievement comparison achievement-list ScrollBox must lock cold-acquired row fonts")
 assertContains(achievement, "if not SkinBase.GetFrameData(button, \"qListRowFonted\") then",
     "Achievement summary buttons must guard the recursive font pass so the Update hook does not re-walk every refresh")
 assertContains(achievement, "local function LockAchievementSummaryText()",
@@ -196,7 +198,7 @@ assertContains(social, "SkinBase.LockFontObject(alert, { fontOnly = true })",
 
 local interaction = readFile("QUI_Skinning/skinning/frames/interaction.lua")
 local lockCount = 0
-for _ in interaction:gmatch("SkinBase%.LockFrameTextObjects%(frame, 4%)") do
+for _ in interaction:gmatch("SkinBase%.LockFrameTextObjects%(frame, %d%)") do
     lockCount = lockCount + 1
 end
 assert(lockCount >= 4, "Bank/Merchant/Mail/GuildBank skins must lock descendant text objects")

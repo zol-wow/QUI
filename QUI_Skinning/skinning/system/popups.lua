@@ -268,13 +268,20 @@ local function SkinStaticPopup(popup)
     StyleEditBox(popup.editBox or (name and _G[name .. "EditBox"]), "staticPopup")
     SkinBase.SkinFrameText(popup, { recurse = true })
 
+    -- GameDialogMixin:SetupText re-SetFontObject's SubText/Text on every show; lock
+    -- so the QUI face re-applies after each Blizzard re-assert (not only per OnShow).
+    if popup.SubText then SkinBase.LockFontObject(popup.SubText, { fontOnly = true }) end
+    if popup.Text then SkinBase.LockFontObject(popup.Text, { fontOnly = true }) end
+
     if popup.UpdateRecapButton and not SkinBase.GetFrameData(popup, "systemPopupRecapHooked") then
         SkinBase.SetFrameData(popup, "systemPopupRecapHooked", true)
         hooksecurefunc(popup, "UpdateRecapButton", function(self)
-            for i = 1, 4 do
-                RefreshButtonState(self["button" .. i])
-            end
+            -- Resolve buttons the SAME way the main loop does (lowercase parentKey may
+            -- not exist on modern popups; fall back to the global capital-B name).
             local recapName = self.GetName and self:GetName()
+            for i = 1, 4 do
+                RefreshButtonState(self["button" .. i] or (recapName and _G[recapName .. "Button" .. i]))
+            end
             RefreshButtonState(self.ExtraButton or (recapName and _G[recapName .. "ExtraButton"]))
         end)
     end

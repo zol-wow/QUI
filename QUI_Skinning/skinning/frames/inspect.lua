@@ -272,11 +272,13 @@ local function SkinInspectButtons()
     if SkinBase.SkinButton then
         local paperDoll = _G.InspectPaperDollFrame
         local viewButton = paperDoll and paperDoll.ViewButton
-        if viewButton then SkinBase.SkinButton(viewButton) end
+        -- { font = true } drives ViewButton's Normal/Highlight/Disabled font
+        -- objects so the QUI face survives the engine hover/disable swap.
+        if viewButton then SkinBase.SkinButton(viewButton, { font = true }) end
 
         local itemsFrame = _G.InspectPaperDollItemsFrame
         local talentsButton = itemsFrame and itemsFrame.InspectTalents
-        if talentsButton then SkinBase.SkinButton(talentsButton) end
+        if talentsButton then SkinBase.SkinButton(talentsButton, { font = true }) end
     end
 end
 

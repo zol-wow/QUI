@@ -46,9 +46,24 @@ local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
     Helpers.SetFrameBackdropColor(btnBd, bgr, bgg, bgb, 0.8)
     Helpers.SetFrameBackdropBorderColor(btnBd, sr, sg, sb, sa)
 
-    -- Hide default border/normal texture
+    -- Hide default border/normal texture + Mainline icon-frame slot art
     local normalTexture = button:GetNormalTexture()
     if normalTexture then normalTexture:SetAlpha(0) end
+    if button.SlotArt then button.SlotArt:SetAlpha(0) end
+    if button.SlotBackground then button.SlotBackground:SetAlpha(0) end
+
+    -- BaseActionButtonMixin:UpdateButtonArt re-shows SlotArt/SlotBackground and
+    -- re-SetNormalAtlas's (resetting alpha) on every state Update. Re-suppress after
+    -- it, per-button (scoped — never hook the shared mixin), once-guarded.
+    if button.UpdateButtonArt and not SkinBase.GetFrameData(button, "qArtHooked") then
+        hooksecurefunc(button, "UpdateButtonArt", function(self)
+            if self.SlotArt then self.SlotArt:SetAlpha(0) end
+            if self.SlotBackground then self.SlotBackground:SetAlpha(0) end
+            local nt = self.GetNormalTexture and self:GetNormalTexture()
+            if nt then nt:SetAlpha(0) end
+        end)
+        SkinBase.SetFrameData(button, "qArtHooked", true)
+    end
 
     -- Scale the icon to fit
     local icon = button.icon or button.Icon

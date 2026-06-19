@@ -50,7 +50,15 @@ local function SkinBank()
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
     SkinBase.SkinFrameText(frame, { recurse = true })
-    SkinBase.LockFrameTextObjects(frame, 4)
+    -- Depth 6 to match SkinFrameText's reach: the tab-settings icon-selector
+    -- popup's SelectedIconDescription sits at child-depth 5 and is re-fonted via
+    -- SelectedIconDescription:SetFontObject(GameFontHighlightSmall) on icon-select;
+    -- a shallower lock stops one level short and misses it.
+    SkinBase.LockFrameTextObjects(frame, 6)
+    -- Withdraw/Deposit/PurchaseTab are UIPanelButtons: engine swaps Highlight/
+    -- Disabled font OBJECT on hover/disable with no setter call (LockFrameTextObjects
+    -- above can't catch it). Drive the button font objects.
+    SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -125,8 +133,13 @@ local function SkinGuildBank()
     local frame = _G.GuildBankFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
+    -- Bottom PanelTabs (Items/Log/Money Log/Tab Info) re-show slice art + swap font
+    -- via PanelTemplates_Select/DeselectTab on selection; SkinTabGroup installs the
+    -- qTabArtClamped guard so the global PanelTemplates hooks re-clamp them.
+    SkinBase.SkinTabGroup(CollectNumberedTabs("GuildBankFrame", 4), frame)
     SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.LockFrameTextObjects(frame, 4)
+    SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 

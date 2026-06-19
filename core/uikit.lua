@@ -2930,6 +2930,38 @@ local function AttachHover(frame)
     SkinBase.SetFrameData(frame, "qHoverHooked", true)
 end
 
+-- Visible row hover: brighten the backdrop FILL (sits below the row text, so it
+-- reads as a clean row highlight) plus the border. Restores the stored base fill
+-- on leave. For list rows whose native HighlightTexture is stripped, the plain
+-- border-brighten is too subtle — this gives the Blizzard-style row highlight.
+local ROW_HOVER_FILL_BOOST = 0.14
+local function RowFillEnter(self)
+    local bd = SkinBase.GetBackdrop(self)
+    if not bd then return end
+    local f = SkinBase.GetFrameData(self, "rowFill")
+    if f then
+        bd:SetBackdropColor(
+            math.min(f[1] + ROW_HOVER_FILL_BOOST, 1),
+            math.min(f[2] + ROW_HOVER_FILL_BOOST, 1),
+            math.min(f[3] + ROW_HOVER_FILL_BOOST, 1),
+            math.min((f[4] or 0.6) + 0.2, 1))
+    end
+    HoverEnter(self)
+end
+local function RowFillLeave(self)
+    local bd = SkinBase.GetBackdrop(self)
+    if not bd then return end
+    local f = SkinBase.GetFrameData(self, "rowFill")
+    if f then bd:SetBackdropColor(f[1], f[2], f[3], f[4]) end
+    HoverLeave(self)
+end
+local function AttachRowFillHover(frame)
+    if SkinBase.GetFrameData(frame, "qHoverHooked") then return end
+    frame:HookScript("OnEnter", RowFillEnter)
+    frame:HookScript("OnLeave", RowFillLeave)
+    SkinBase.SetFrameData(frame, "qHoverHooked", true)
+end
+
 -- Hover that restores a custom state on leave (vs the plain border reset that
 -- AttachHover/HoverLeave does). Used by selection-state widgets.
 local function AttachHoverWithRestore(frame, restoreFn)
@@ -3092,6 +3124,38 @@ function SkinBase.LockFrameTextObjects(frame, maxDepth)
     end
 end
 
+---------------------------------------------------------------------------
+-- ApplyButtonFontObjectsDeep(frame, maxDepth)
+-- Drive Normal/Highlight/Disabled font OBJECTS to the QUI font for EVERY button
+-- under a frame. LockFrameTextObjects only re-asserts when Blizzard re-CALLS a
+-- Set*FontObject setter (e.g. an element initializer on rebind); it canNOT stop
+-- the engine's INTERNAL hover/disable highlight swap, which switches the shown
+-- font to the button's HighlightFontObject/DisabledFontObject without ever
+-- calling a setter. Driving the button's font objects themselves is the only
+-- durable fix for that swap. Use on skinned frames whose action buttons are not
+-- individually SkinButton{font}'d (collections/journal bottom buttons, etc.).
+-- Guarded per button (qBtnFontDriven) so repeat walks on reskin are cheap.
+-- maxDepth bounds the descent (default 4).
+---------------------------------------------------------------------------
+function SkinBase.ApplyButtonFontObjectsDeep(frame, maxDepth)
+    if not frame then return end
+    maxDepth = maxDepth or 4
+    if frame.GetObjectType then
+        local t = frame:GetObjectType()
+        if (t == "Button" or t == "CheckButton")
+            and frame.GetFontString and frame:GetFontString()
+            and not SkinBase.GetFrameData(frame, "qBtnFontDriven") then
+            SkinBase.ApplyButtonFontObjects(frame)
+            SkinBase.SetFrameData(frame, "qBtnFontDriven", true)
+        end
+    end
+    if maxDepth > 0 and frame.GetChildren then
+        for i = 1, select("#", frame:GetChildren()) do
+            SkinBase.ApplyButtonFontObjectsDeep(select(i, frame:GetChildren()), maxDepth - 1)
+        end
+    end
+end
+
 function SkinBase.LockDropdownText(dropdown, maxDepth)
     if not dropdown then return end
     local text = dropdown.Text or (dropdown.GetFontString and dropdown:GetFontString())
@@ -3149,16 +3213,18 @@ function SkinBase.SkinButton(button, opts)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(button, "skinKind", "button")
     SkinBase.SetFrameData(button, "bgBoost", boost)
-    -- opt-in: restyle the label with the global QUI font (default off so the
-    -- many shared SkinButton callers keep Blizzard fonts unless they ask).
+    -- QUI font on the label BY DEFAULT (opts.font == false opts out), matching
+    -- SkinTab. A skinned button should carry the QUI face; relying on per-caller
+    -- opt-in left most buttons reverting to Blizzard font on hover/disable.
     -- Flagged so RefreshWidget re-applies it on live font/theme changes.
-    if opts.font then
+    if opts.font ~= false then
         SkinBase.SetFrameData(button, "skinFont", true)
         SkinBase.SetFrameData(button, "skinFontColor", opts.fontColor)
         -- Drive the button's font OBJECTS (not a one-shot SetFont): UIPanel-style
         -- buttons swap their Highlight font object on hover and Disabled object on
-        -- :Disable(), which would otherwise revert the QUI font face. Dim grey
-        -- disabled color keeps disabled buttons reading as disabled.
+        -- :Disable() WITHOUT calling a setter (so a Lock* hook never fires) — only
+        -- driving the objects re-faces those swaps. Dim grey disabled color keeps
+        -- disabled buttons reading as disabled.
         SkinBase.ApplyButtonFontObjects(button, { color = opts.fontColor, disabledColor = DISABLED_TEXT_COLOR })
     end
     if opts.hover ~= false then AttachHover(button) end
@@ -3211,7 +3277,13 @@ function SkinBase.SkinScrollRow(row, opts)
     SkinBase.SetFrameData(row, "bgBoost", boost)
     SkinBase.SetFrameData(row, "bgAlpha", bgAlpha)
     SkinBase.SetFrameData(row, "borderAlphaMult", borderAlphaMult)
-    if opts.hover ~= false then AttachHover(row) end
+    SkinBase.SetFrameData(row, "rowFill", {
+        math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), bgAlpha,
+    })
+    if opts.hover ~= false then
+        -- hoverFill = visible fill+border row highlight; default = border-brighten only.
+        if opts.hoverFill then AttachRowFillHover(row) else AttachHover(row) end
+    end
     SkinBase.MarkStyled(row)
 end
 
@@ -3247,6 +3319,12 @@ function SkinBase.SkinCategoryButton(button, opts)
     SkinBase.CreateBackdrop(button, sr, sg, sb, sa)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(button, "skinKind", "category")
+    -- Drive the QUI font onto the button's font objects (default, like SkinButton):
+    -- category buttons swap their Highlight font object on hover with no setter
+    -- call, so only object-driving survives it. opts.font == false opts out.
+    if opts.font ~= false then
+        SkinBase.ApplyButtonFontObjects(button, { disabledColor = DISABLED_TEXT_COLOR })
+    end
     SkinBase.RefreshCategorySelected(button)
     AttachHoverWithRestore(button, SkinBase.RefreshCategorySelected)
     SkinBase.MarkStyled(button)
@@ -3317,6 +3395,12 @@ function SkinBase.SkinListContainer(list, rowStyler)
     end
     if list.ScrollBar and list.ScrollBar.Background then
         list.ScrollBar.Background:Hide()
+    end
+    -- The "no results"/error fontstring is re-SetText'd on state refresh; lock its
+    -- font face so it doesn't render in the stock font after the one-shot pass.
+    if list.ResultsText then
+        SkinBase.SkinFontString(list.ResultsText, { fontOnly = true })
+        SkinBase.LockFontObject(list.ResultsText, { fontOnly = true })
     end
     SkinBase.MarkStyled(list)
 end

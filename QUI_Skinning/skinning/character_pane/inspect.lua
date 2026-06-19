@@ -826,8 +826,22 @@ local function UpdateInspectSlotBorder(slot, unit)
     end
 end
 
+-- InspectPaperDollItemSlotButton_Update re-Shows the IconBorder (SetItemButtonQuality)
+-- on every INSPECT_READY refresh, defeating the once-guarded BlockInspectIconBorder.
+-- Re-suppress after each Update, once-installed for the session.
+local inspectSlotUpdateHooked = false
+local function HookInspectSlotUpdate()
+    if inspectSlotUpdateHooked then return end
+    if type(_G.InspectPaperDollItemSlotButton_Update) ~= "function" then return end
+    inspectSlotUpdateHooked = true
+    hooksecurefunc("InspectPaperDollItemSlotButton_Update", function(button)
+        if button and button.IconBorder then button.IconBorder:SetAlpha(0) end
+    end)
+end
+
 -- Skin all inspect equipment slots
 local function SkinAllInspectSlots()
+    HookInspectSlotUpdate()
     for _, slotName in ipairs(INSPECT_SLOT_NAMES) do
         local slot = _G[slotName]
         if slot then

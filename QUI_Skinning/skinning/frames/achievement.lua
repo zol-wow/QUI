@@ -115,16 +115,27 @@ local function RelightDarkObjectiveText(fs)
     end
 end
 
+-- The criteria/meta rows are framepool-acquired on expand (after the one-shot
+-- recurse) and never under a hooked ScrollBox, so their stock font face is never
+-- replaced. Apply the QUI font here too (lock so it survives later SetFontObject).
+local function RefaceObjectiveText(fs)
+    if not fs then return end
+    SkinBase.SkinFontString(fs, { fontOnly = true })
+    SkinBase.LockFontObject(fs, { fontOnly = true })
+end
+
 local function RecolorObjectivesFrame(objectivesFrame)
     if not objectivesFrame then return end
     if objectivesFrame.criterias then
         for _, criteria in ipairs(objectivesFrame.criterias) do
             RelightDarkObjectiveText(criteria and criteria.Name)
+            RefaceObjectiveText(criteria and criteria.Name)
         end
     end
     if objectivesFrame.metas then
         for _, meta in ipairs(objectivesFrame.metas) do
             RelightDarkObjectiveText(meta and meta.Label)
+            RefaceObjectiveText(meta and meta.Label)
         end
     end
 end
@@ -185,6 +196,14 @@ local function LockAchievementComparisonText()
         -- Guarded per-row font lock (runs the recursive pass once); no manual
         -- ForEachFrame sweep — HookScrollBoxRowFonts already does the initial pass.
         SkinBase.HookScrollBoxRowFonts(statScrollBox, 3)
+    end
+    -- The comparison ACHIEVEMENT list (left side) is a separate pooled ScrollBox
+    -- whose rows (AchievementComparisonTemplate) only SetText/Saturate — never
+    -- SetFontObject — so lazily-acquired rows keep the stock template font face.
+    -- Hook it too so every cold-acquired comparison row gets the QUI font.
+    local achScrollBox = _G.AchievementFrameComparison and _G.AchievementFrameComparison.AchievementContainer and _G.AchievementFrameComparison.AchievementContainer.ScrollBox
+    if achScrollBox then
+        SkinBase.HookScrollBoxRowFonts(achScrollBox, 3)
     end
 end
 

@@ -202,6 +202,14 @@ end
 
 --- Skin Achievement Alert
 local function SkinAchievementAlert(frame)
+    -- Shield.Points re-fonts via SetFontObject on every alert setUp; the install
+    -- below must run BEFORE the IsSkinned early-return (alerts are recycled, so a
+    -- once-only post-return lock would be skipped on later displays). The
+    -- LockFontObject hook persists for the frame's lifetime and defeats every
+    -- later per-setUp revert.
+    if frame and frame.Shield and frame.Shield.Points then
+        SkinBase.LockFontObject(frame.Shield.Points, { fontOnly = true })
+    end
     if not frame or SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
@@ -273,14 +281,29 @@ local function RefreshAlertQualityColor(frame, icon)
     CreateIconBorder(icon, frame, qualityColor)
 end
 
+-- Blizzard's lootItem:Init / LootWonAlertFrame_SetUp re-Shows the background atlas,
+-- IconBorder and SpecRing on EVERY pooled re-use; re-suppress them each time.
+local function SuppressLootWonArt(frame, lootItem)
+    Kill(frame.Background)
+    Kill(frame.glow)
+    Kill(frame.shine)
+    Kill(frame.BGAtlas)
+    Kill(frame.PvPBackground)
+    Kill(lootItem.IconBorder)
+    Kill(lootItem.SpecRing)
+end
+
 --- Skin Loot Won Alert
 local function SkinLootWonAlert(frame)
     if not frame then return end
+    local lootItem = frame.lootItem or frame
 
-    -- Pooled frames: refresh per-item quality border color
+    -- Pooled frames: Blizzard re-shows art + re-SetText's (stock font) on re-use, so
+    -- re-suppress the art, re-apply the QUI font, and refresh the quality border.
     if SkinBase.IsSkinned(frame) then
-        local lootItem = frame.lootItem or frame
+        SuppressLootWonArt(frame, lootItem)
         RefreshAlertQualityColor(frame, lootItem.Icon)
+        SkinBase.SkinFrameText(frame, { recurse = true })
         return
     end
 
@@ -290,15 +313,7 @@ local function SkinLootWonAlert(frame)
         SkinBase.SetFrameData(frame, "hooked", true)
     end
 
-    Kill(frame.Background)
-    Kill(frame.glow)
-    Kill(frame.shine)
-    Kill(frame.BGAtlas)
-    Kill(frame.PvPBackground)
-
-    local lootItem = frame.lootItem or frame
-    Kill(lootItem.IconBorder)
-    Kill(lootItem.SpecRing)
+    SuppressLootWonArt(frame, lootItem)
 
     -- Get quality color from item link
     local qualityColor = GetQualityColor(frame.hyperlink or (lootItem and lootItem.hyperlink))
@@ -316,9 +331,11 @@ end
 local function SkinLootUpgradeAlert(frame)
     if not frame then return end
 
-    -- Pooled frames: refresh per-item quality border color
+    -- Pooled frames: refresh quality border + re-apply the QUI font (templates
+    -- re-SetText in the stock font on re-use).
     if SkinBase.IsSkinned(frame) then
         RefreshAlertQualityColor(frame, frame.Icon)
+        SkinBase.SkinFrameText(frame, { recurse = true })
         return
     end
 
@@ -609,8 +626,14 @@ local function SkinMiscAlert(frame)
         CreateIconBorder(frame.Icon, frame, nil)
     end
 
-    -- Skip structural changes if already skinned (pooled frame)
-    if SkinBase.IsSkinned(frame) then return end
+    -- Skip structural changes if already skinned (pooled frame), but ItemAlertFrameMixin
+    -- :SetUpDisplay re-SetAtlas's IconBorder on every show, reactivating the texture we
+    -- killed — so re-suppress it (and re-font) on each pooled re-use.
+    if SkinBase.IsSkinned(frame) then
+        Kill(frame.IconBorder)
+        SkinBase.SkinFrameText(frame, { recurse = true })
+        return
+    end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -828,7 +851,14 @@ local function SkinBonusRollPrompt(frame)
             SkinBase.SkinFontString(prompt.InfoFrame.Cost)
         end
         if frame.CurrentCountFrame then SkinBase.SkinFontString(frame.CurrentCountFrame.Text) end
-        if frame.RollingFrame then SkinBase.SkinFontString(frame.RollingFrame.Label) end
+        if frame.RollingFrame then
+            SkinBase.SkinFontString(frame.RollingFrame.Label)
+            -- The spinner's reward text is a separate fontstring Blizzard SetText's
+            -- on roll completion; skin it too or it shows in the stock font.
+            if frame.RollingFrame.LootSpinnerFinalText then
+                SkinBase.SkinFontString(frame.RollingFrame.LootSpinnerFinalText)
+            end
+        end
 
         SkinBonusRollPromptButton(prompt.RollButton)
         SkinBonusRollPromptButton(prompt.PassButton)
