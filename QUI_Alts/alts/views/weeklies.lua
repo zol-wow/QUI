@@ -235,6 +235,7 @@ local function Builder(parent)
 
     local view    = { frame = frame }
     local offset  = 0
+    local scrollbar       -- vertical scroll bar (created below)
     local rows    = {}   -- flat display-row list
     local rowPool = {}
     local charCount = 0
@@ -281,7 +282,7 @@ local function Builder(parent)
             local row = rows[offset + i]
             r:ClearAllPoints()
             r:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, -(i - 1) * ROW_H)
-            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, -(i - 1) * ROW_H)
+            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Shared.SCROLLBAR_RESERVE, -(i - 1) * ROW_H)
 
             if not row then
                 r._row = nil -- scaffold contract: hidden rows carry no target
@@ -349,6 +350,7 @@ local function Builder(parent)
             rowPool[i]._row = nil
             rowPool[i]:Hide()
         end
+        if scrollbar then scrollbar:Update(#rows, visible, offset) end
     end
 
     function view.Refresh()
@@ -371,6 +373,14 @@ local function Builder(parent)
         RenderRows()
         footer:SetText(string.format("%d characters", charCount))
     end
+
+    -- vertical scroll bar: rows fill from the top down to the footer line.
+    scrollbar = Shared.CreateScrollBar(frame, {
+        orientation = "vertical",
+        onScroll = function(n) offset = n; RenderRows() end,
+    })
+    scrollbar.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, 0)
+    scrollbar.track:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, FOOTER_H)
 
     -- mouse-wheel scroll
     frame:EnableMouseWheel(true)

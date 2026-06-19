@@ -31,7 +31,9 @@ local UIKit = ns.UIKit
 local EquipmentView = {}
 Alts.EquipmentView = EquipmentView
 
-local ROW_H, HEADER_H = 24, 22
+local ROW_H, HEADER_H = 22, 22
+-- bottom band reserved below the grid: status line + horizontal scroll track.
+local BOTTOM_BAND = 34
 local CELL_PAD = 6
 local SLOT_LABEL_W = 80  -- left column: slot names
 local COL_W = 78         -- one character column
@@ -142,6 +144,7 @@ local function Builder(parent)
 
     local view      = { frame = frame }
     local colOffset = 0      -- first visible character column (0-based)
+    local scrollbar          -- horizontal column scroll bar (created below)
     local slotRows  = {}     -- BuildSlotRows result
     local columns   = {}     -- BuildColumns result
     local cachedChars = {}
@@ -255,7 +258,13 @@ local function Builder(parent)
             end
         end
 
+        -- footer (avg ilvl) floats just below the last slot row, but is
+        -- clamped so it never drops into the bottom band (status line + the
+        -- horizontal scroll track) — that overlap was the reported bug.
+        local bodyH = frame:GetHeight() or 0
         local footY = -(HEADER_H + 2) - #slotRows * ROW_H
+        local minFootY = BOTTOM_BAND - bodyH
+        if footY < minFootY then footY = minFootY end
 
         for c = 1, visible do
             local col = columns[colOffset + c]
@@ -265,7 +274,7 @@ local function Builder(parent)
             header:ClearAllPoints()
             header:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -4)
             footer:ClearAllPoints()
-            footer:SetPoint("TOPLEFT", frame, "TOPLEFT", x, footY - 4)
+            footer:SetPoint("TOPLEFT", frame, "TOPLEFT", x, footY)
 
             if not col then
                 header:Hide()
@@ -320,11 +329,8 @@ local function Builder(parent)
             end
         end
 
-        if #columns > visible then
-            status:SetText(string.format("%d characters (scroll for more)", #columns))
-        else
-            status:SetText(string.format("%d characters", #columns))
-        end
+        status:SetText(string.format("%d characters", #columns))
+        if scrollbar then scrollbar:Update(#columns, visible, colOffset) end
     end
 
     function view.Refresh()
@@ -340,6 +346,15 @@ local function Builder(parent)
         columns  = EquipmentView.BuildColumns(cachedChars)
         RenderGrid()
     end
+
+    -- horizontal scroll bar: spans the character-column area, sitting in the
+    -- bottom band beside the status line. Drag/click jumps the column offset.
+    scrollbar = Shared.CreateScrollBar(frame, {
+        orientation = "horizontal",
+        onScroll = function(n) colOffset = n; RenderGrid() end,
+    })
+    scrollbar.track:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", SLOT_LABEL_W, 4)
+    scrollbar.track:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 4)
 
     -- mouse-wheel: horizontal column scroll (vertical content always fits)
     frame:EnableMouseWheel(true)
