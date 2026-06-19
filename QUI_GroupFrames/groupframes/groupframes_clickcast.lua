@@ -391,6 +391,48 @@ local function UpdateHeaderKeyAttributes()
     end
 end
 
+---------------------------------------------------------------------------
+-- SECURE ACTION PROXIES: target / menu (12.0.7 click-binding gate workaround)
+---------------------------------------------------------------------------
+-- WoW 12.0.7's SecureUnitButton_OnClick gates the native "target" and
+-- "togglemenu" actions behind C_ClickBindings: only Blizzard's default
+-- unmodified left->target and right->menu interactions are registered, so a
+-- click carrying a modifier (or on any other button) that resolves to either
+-- type returns Enum.ClickBindingType.None and is silently dropped -- the click
+-- does nothing. Route those through a hidden child SecureActionButton via the
+-- ungated "click" action: a SecureActionButton's own SecureActionButton_OnClick
+-- has no such gate. `useparent-unit` makes the proxy resolve the unit from the
+-- parent unit button, so it tracks header-managed party/raid children whose
+-- unit reassigns. One proxy per (frame, action); cached weakly. The proxy
+-- frames are permanent (frames can't be destroyed) but harmless -- alpha 0,
+-- mouse disabled, reachable only by the secure delegate.
+local targetProxies = setmetatable({}, { __mode = "k" })
+local menuProxies = setmetatable({}, { __mode = "k" })
+
+local function GetActionProxy(frame, cache, actionType)
+    local proxy = cache[frame]
+    if proxy then return proxy end
+    if InCombatLockdown() then return nil end
+    proxy = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
+    proxy:SetSize(1, 1)
+    proxy:SetAlpha(0)
+    proxy:EnableMouse(false)          -- never catches a real click; only the secure "click" delegate reaches it
+    proxy:RegisterForClicks("AnyUp")
+    proxy:SetAttribute("type", actionType)
+    -- The secure resolver looks up "type" by BUTTON SUFFIX (RightButton->type2);
+    -- the bare "type" may not fall back, so set every button explicitly.
+    for i = 1, 5 do proxy:SetAttribute("type" .. i, actionType) end
+    proxy:SetAttribute("useparent-unit", true)
+    -- Act on the up-click regardless of the "cast on key down" CVar; without
+    -- this the delegated click is skipped on up when ActionButtonUseKeyDown is on.
+    proxy:SetAttribute("useOnKeyDown", false)
+    cache[frame] = proxy
+    return proxy
+end
+
+local function GetTargetProxy(frame) return GetActionProxy(frame, targetProxies, "target") end
+local function GetMenuProxy(frame)   return GetActionProxy(frame, menuProxies, "togglemenu") end
+
 -- Set virtual-button action attributes on a frame for keyboard bindings.
 local function SetFrameKeyAttributes(frame)
     if InCombatLockdown() then return end
@@ -405,13 +447,23 @@ local function SetFrameKeyAttributes(frame)
             frame:SetAttribute("type-" .. vBtn, "macro")
             frame:SetAttribute("macrotext-" .. vBtn, binding.macro)
         elseif actionType == "target" then
-            frame:SetAttribute("type-" .. vBtn, "target")
+            -- Scroll/key triggers are never the default left-click, so a native
+            -- "target" always hits the 12.0.7 gate -- route through the proxy.
+            local proxy = GetTargetProxy(frame)
+            if proxy then
+                frame:SetAttribute("type-" .. vBtn, "click")
+                frame:SetAttribute("clickbutton-" .. vBtn, proxy)
+            end
         elseif actionType == "focus" then
             frame:SetAttribute("type-" .. vBtn, "focus")
         elseif actionType == "assist" then
             frame:SetAttribute("type-" .. vBtn, "assist")
         elseif actionType == "menu" then
-            frame:SetAttribute("type-" .. vBtn, "togglemenu")
+            local proxy = GetMenuProxy(frame)
+            if proxy then
+                frame:SetAttribute("type-" .. vBtn, "click")
+                frame:SetAttribute("clickbutton-" .. vBtn, proxy)
+            end
         elseif actionType:match("^ping") then
             frame:SetAttribute("type-" .. vBtn, "macro")
             frame:SetAttribute("macrotext-" .. vBtn, PING_MACROS[actionType] or "/ping [@mouseover]")
@@ -426,6 +478,7 @@ local function ClearFrameKeyAttributes(frame)
         local vBtn = GetVirtualButtonName(binding)
         frame:SetAttribute("type-" .. vBtn, nil)
         frame:SetAttribute("macrotext-" .. vBtn, nil)
+        frame:SetAttribute("clickbutton-" .. vBtn, nil)
     end
 end
 
@@ -741,13 +794,34 @@ local function SetupFrameClickCast(frame)
             frame:SetAttribute(prefix .. "type" .. btnNum, "macro")
             frame:SetAttribute(prefix .. "macrotext" .. btnNum, binding.macro)
         elseif actionType == "target" then
-            frame:SetAttribute(prefix .. "type" .. btnNum, "target")
+            -- Plain unmodified left-click targets natively via Blizzard's default
+            -- click-binding interaction; every other target trigger is gated in
+            -- 12.0.7 -- route it through the ungated "click" proxy.
+            if prefix == "" and btnNum == "1" then
+                frame:SetAttribute(prefix .. "type" .. btnNum, "target")
+            else
+                local proxy = GetTargetProxy(frame)
+                if proxy then
+                    frame:SetAttribute(prefix .. "type" .. btnNum, "click")
+                    frame:SetAttribute(prefix .. "clickbutton" .. btnNum, proxy)
+                end
+            end
         elseif actionType == "focus" then
             frame:SetAttribute(prefix .. "type" .. btnNum, "focus")
         elseif actionType == "assist" then
             frame:SetAttribute(prefix .. "type" .. btnNum, "assist")
         elseif actionType == "menu" then
-            frame:SetAttribute(prefix .. "type" .. btnNum, "togglemenu")
+            -- Plain unmodified right-click opens the menu natively (default
+            -- interaction); other menu triggers are gated -- use the proxy.
+            if prefix == "" and btnNum == "2" then
+                frame:SetAttribute(prefix .. "type" .. btnNum, "togglemenu")
+            else
+                local proxy = GetMenuProxy(frame)
+                if proxy then
+                    frame:SetAttribute(prefix .. "type" .. btnNum, "click")
+                    frame:SetAttribute(prefix .. "clickbutton" .. btnNum, proxy)
+                end
+            end
         elseif actionType:match("^ping") then
             frame:SetAttribute(prefix .. "type" .. btnNum, "macro")
             frame:SetAttribute(prefix .. "macrotext" .. btnNum, PING_MACROS[actionType] or "/ping [@mouseover]")
@@ -941,6 +1015,7 @@ local function ClearFrameClickCast(frame)
         for _, btnNum in pairs(BUTTON_NUMBERS) do
             frame:SetAttribute(prefix .. "type" .. btnNum, nil)
             frame:SetAttribute(prefix .. "macrotext" .. btnNum, nil)
+            frame:SetAttribute(prefix .. "clickbutton" .. btnNum, nil)
         end
     end
 
