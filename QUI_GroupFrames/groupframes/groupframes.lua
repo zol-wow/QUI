@@ -89,6 +89,7 @@ local _state = {
         UNIT_HEAL_ABSORB_AMOUNT_CHANGED = true,
         UNIT_HEAL_PREDICTION = true,
         UNIT_NAME_UPDATE = true,
+        UNIT_LEVEL = true,
         UNIT_CONNECTION = true,
     },
     unitEventList = {
@@ -101,6 +102,7 @@ local _state = {
         "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
         "UNIT_HEAL_PREDICTION",
         "UNIT_NAME_UPDATE",
+        "UNIT_LEVEL",
         "UNIT_CONNECTION",
     },
     defaultColors = {
@@ -704,6 +706,46 @@ ns.QUI_GroupFrameTextAnchorMap = ANCHOR_MAP
 
 local function GetTextAnchorInfo(anchorName)
     return ANCHOR_MAP[anchorName] or ANCHOR_MAP.LEFT
+end
+
+function _state.FormatLevelText(unit)
+    local ok, text = pcall(function()
+        local level = UnitLevel(unit)
+        if not level then return "" end
+        if level < 0 then return "??" end
+        if level == 0 then return "" end
+        return tostring(level)
+    end)
+    return ok and text or ""
+end
+
+function _state.UpdateLevelText(frame)
+    if not frame or not frame.unit or not frame.levelText then return end
+
+    local nameSettings = GetNameSettings(frame._isRaid)
+    if not nameSettings or nameSettings.showLevel ~= true then
+        frame.levelText:SetText("")
+        frame.levelText:Hide()
+        return
+    end
+
+    if not UnitExists(frame.unit) then
+        frame.levelText:SetText("")
+        frame.levelText:Hide()
+        return
+    end
+
+    local text = _state.FormatLevelText(frame.unit)
+    if text == "" then
+        frame.levelText:SetText("")
+        frame.levelText:Hide()
+        return
+    end
+
+    frame.levelText:SetText(text)
+    local tc = nameSettings.levelTextColor or COLORS.WHITE
+    frame.levelText:SetTextColor(tc[1] or 1, tc[2] or 1, tc[3] or 1, tc[4] or 1)
+    frame.levelText:Show()
 end
 
 ---------------------------------------------------------------------------
@@ -2374,6 +2416,7 @@ local function UpdateFrame(frame)
     UpdateHealth(frame)
     UpdatePower(frame)
     UpdateName(frame)
+    _state.UpdateLevelText(frame)
     UpdateAbsorbs(frame)
     UpdateHealAbsorb(frame)
     UpdateHealPrediction(frame)
@@ -2631,6 +2674,32 @@ local function DecorateGroupFrame(frame)
     nameText:SetTextColor(1, 1, 1, 1)
     nameText:SetWordWrap(false)
     frame.nameText = nameText
+
+    -- Level text
+    local levelText = frame.levelText or textFrame:CreateFontString(nil, "OVERLAY")
+    levelText:ClearAllPoints()
+    local levelFontPath = fontPath
+    if nameSettings and type(nameSettings.levelFont) == "string" and nameSettings.levelFont ~= "" then
+        levelFontPath = LSM:Fetch("font", nameSettings.levelFont, true) or fontPath
+    end
+    Helpers.ApplyFontWithFallback(levelText, levelFontPath, nameSettings and nameSettings.levelFontSize or nameFontSize, fontOutline)
+    local levelAnchor = GetTextAnchorInfo(nameSettings and nameSettings.levelAnchor or "RIGHT")
+    local levelOffsetX = nameSettings and nameSettings.levelOffsetX or -4
+    local levelOffsetY = nameSettings and nameSettings.levelOffsetY or 0
+    local levelBottomPad = levelAnchor.point:find("BOTTOM") and bottomPad or 0
+    local levelPadX = math.abs(levelOffsetX)
+    levelText:SetPoint(levelAnchor.leftPoint, frame, levelAnchor.leftPoint, levelPadX, levelOffsetY + levelBottomPad)
+    levelText:SetPoint(levelAnchor.rightPoint, frame, levelAnchor.rightPoint, -levelPadX, levelOffsetY + levelBottomPad)
+    levelText:SetJustifyH(nameSettings and nameSettings.levelJustify or levelAnchor.justify)
+    levelText:SetJustifyV(levelAnchor.justifyV)
+    levelText:SetTextColor(1, 1, 1, 1)
+    levelText:SetWordWrap(false)
+    if nameSettings and nameSettings.showLevel == true then
+        levelText:Show()
+    else
+        levelText:Hide()
+    end
+    frame.levelText = levelText
 
     -- Health text
     local healthSettings = GetHealthSettings(isRaid)
@@ -5224,7 +5293,13 @@ local function OnEvent(self, event, arg1, ...)
             end
 
         elseif event == "UNIT_NAME_UPDATE" then
-            for i = 1, nFrames do UpdateName(frames[i]) end
+            for i = 1, nFrames do
+                UpdateName(frames[i])
+                _state.UpdateLevelText(frames[i])
+            end
+
+        elseif event == "UNIT_LEVEL" then
+            for i = 1, nFrames do _state.UpdateLevelText(frames[i]) end
 
         elseif event == "UNIT_THREAT_SITUATION_UPDATE" then
             for i = 1, nFrames do UpdateThreat(frames[i]) end

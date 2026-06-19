@@ -2040,6 +2040,14 @@ local defaults = {
                 nameOffsetX = 12,
                 nameOffsetY = 0,
                 maxNameLength = 0,              -- 0 = no limit, otherwise truncate to N characters
+                -- Level text
+                showLevel = false,
+                levelFont = "",                 -- Empty = use the frame font
+                levelFontSize = 16,
+                levelTextColor = { 1, 1, 1, 1 },
+                levelAnchor = "RIGHT",
+                levelOffsetX = -12,
+                levelOffsetY = 0,
                 -- Health text
                 showHealth = true,
                 showHealthPercent = true,
@@ -2264,6 +2272,14 @@ local defaults = {
                 nameOffsetX = -9,
                 nameOffsetY = 0,
                 maxNameLength = 10,              -- 0 = no limit, otherwise truncate to N characters
+                -- Level text
+                showLevel = false,
+                levelFont = "",                 -- Empty = use the frame font
+                levelFontSize = 16,
+                levelTextColor = { 1, 1, 1, 1 },
+                levelAnchor = "LEFT",
+                levelOffsetX = 9,
+                levelOffsetY = 0,
                 -- Inline Target of Target (shows ">> ToT Name" after target name)
                 showInlineToT = false,
                 totSeparator = " >> ",
@@ -2459,6 +2475,14 @@ local defaults = {
                 nameOffsetX = 4,
                 nameOffsetY = 0,
                 maxNameLength = 0,
+                -- Level text
+                showLevel = false,
+                levelFont = "",                 -- Empty = use the frame font
+                levelFontSize = 14,
+                levelTextColor = { 1, 1, 1, 1 },
+                levelAnchor = "RIGHT",
+                levelOffsetX = -4,
+                levelOffsetY = 0,
                 -- Health text
                 showHealth = true,
                 showHealthPercent = true,
@@ -2558,6 +2582,14 @@ local defaults = {
                 nameOffsetX = 4,
                 nameOffsetY = 0,
                 maxNameLength = 0,
+                -- Level text
+                showLevel = false,
+                levelFont = "",                 -- Empty = use the frame font
+                levelFontSize = 10,
+                levelTextColor = { 1, 1, 1, 1 },
+                levelAnchor = "RIGHT",
+                levelOffsetX = -4,
+                levelOffsetY = 0,
                 -- Health text
                 showHealth = true,
                 showHealthPercent = true,
@@ -2665,6 +2697,14 @@ local defaults = {
                 nameOffsetX = 4,
                 nameOffsetY = 0,
                 maxNameLength = 0,
+                -- Level text
+                showLevel = false,
+                levelFont = "",                 -- Empty = use the frame font
+                levelFontSize = 14,
+                levelTextColor = { 1, 1, 1, 1 },
+                levelAnchor = "RIGHT",
+                levelOffsetX = -4,
+                levelOffsetY = 0,
                 -- Health text
                 showHealth = true,
                 showHealthPercent = true,
@@ -2801,6 +2841,14 @@ local defaults = {
                 nameOffsetX = 4,
                 nameOffsetY = 0,
                 maxNameLength = 0,
+                -- Level text
+                showLevel = false,
+                levelFont = "",                 -- Empty = use the frame font
+                levelFontSize = 11,
+                levelTextColor = { 1, 1, 1, 1 },
+                levelAnchor = "RIGHT",
+                levelOffsetX = -4,
+                levelOffsetY = 0,
                 -- Health text
                 showHealth = true,
                 healthDisplayStyle = "both",
@@ -2972,6 +3020,14 @@ local defaults = {
                     maxNameLength = 10,
                     nameTextUseClassColor = false,
                     nameTextColor = { 1, 1, 1, 1 },
+                    showLevel = false,
+                    levelFont = "",                 -- Empty = use the frame font
+                    levelFontSize = 12,
+                    levelAnchor = "RIGHT",
+                    levelJustify = "RIGHT",
+                    levelOffsetX = -4,
+                    levelOffsetY = 0,
+                    levelTextColor = { 1, 1, 1, 1 },
                 },
                 absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.7 },
                 healAbsorbs = { enabled = true, color = { 0.5, 0.1, 0.1 }, opacity = 0.6 },
@@ -3104,6 +3160,14 @@ local defaults = {
                     maxNameLength = 10,
                     nameTextUseClassColor = false,
                     nameTextColor = { 1, 1, 1, 1 },
+                    showLevel = false,
+                    levelFont = "",                 -- Empty = use the frame font
+                    levelFontSize = 12,
+                    levelAnchor = "RIGHT",
+                    levelJustify = "RIGHT",
+                    levelOffsetX = -4,
+                    levelOffsetY = 0,
+                    levelTextColor = { 1, 1, 1, 1 },
                 },
                 absorbs = { enabled = true, color = { 1, 1, 1, 1 }, opacity = 0.7 },
                 healAbsorbs = { enabled = true, color = { 0.5, 0.1, 0.1 }, opacity = 0.6 },

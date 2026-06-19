@@ -149,6 +149,7 @@ function Driver._ChipEnabledInConfig(vdb, chipKey)
         if vdb.targetedSpells and vdb.targetedSpells.enabled ~= false then return true end
         if vdb.pets and vdb.pets.enabled then return true end
         if vdb.name and vdb.name.showName then return true end
+        if vdb.name and vdb.name.showLevel then return true end
         if vdb.health and vdb.health.showHealthText then return true end
         return false
     end
@@ -292,6 +293,7 @@ function Driver._BuildRoster(contextMode, count)
             class     = FAKE_CLASSES[((i - 1) % #FAKE_CLASSES) + 1],
             role      = RoleForIndex(contextMode, i),
             healthPct = HP_PATTERN[((i - 1) % #HP_PATTERN) + 1],
+            level     = 80 - ((i - 1) % 6),
         }
     end
     return out
@@ -340,6 +342,7 @@ local function CreateMockFrame(parent, fakeUnitToken)
     f.powerBar:SetValue(80)
 
     f.nameText   = f:CreateFontString(nil, "OVERLAY")
+    f.levelText  = f:CreateFontString(nil, "OVERLAY")
     f.healthText = f.healthBar:CreateFontString(nil, "OVERLAY")
 
     -- Indicator host: a sub-frame above the aura sub-frames so corner indicators
@@ -492,6 +495,35 @@ local function ApplyName(f, member, nameCfg, font, fontSize, allowed)
         local c = nameCfg.nameTextColor; nt:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1)
     else
         nt:SetTextColor(1, 1, 1)
+    end
+end
+
+-- level text (name.showLevel/levelFont/levelFontSize/levelAnchor/
+--             levelJustify/levelOffsetX/Y/levelTextColor)
+local function ApplyLevel(f, member, nameCfg, font, fontSize, allowed)
+    if allowed == false then
+        if f.levelText then f.levelText:Hide() end
+        return
+    end
+    local lt = f.levelText
+    if nameCfg.showLevel ~= true then lt:Hide(); return end
+    lt:Show()
+    local levelFont = font
+    if ns.LSM and ns.LSM.Fetch and type(nameCfg.levelFont) == "string" and nameCfg.levelFont ~= "" then
+        levelFont = ns.LSM:Fetch("font", nameCfg.levelFont, true) or font
+    end
+    CJKFont(lt, levelFont, tonumber(nameCfg.levelFontSize) or fontSize, "OUTLINE")
+    lt:SetText(tostring(member.level or 80))
+    lt:SetJustifyH(nameCfg.levelJustify or "RIGHT")
+    lt:ClearAllPoints()
+    local anchor = nameCfg.levelAnchor or "RIGHT"
+    lt:SetPoint(anchor, f, anchor,
+        tonumber(nameCfg.levelOffsetX) or 0,
+        BottomPadY(anchor, tonumber(nameCfg.levelOffsetY) or 0, f._bottomPad))
+    if nameCfg.levelTextColor then
+        local c = nameCfg.levelTextColor; lt:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1)
+    else
+        lt:SetTextColor(1, 1, 1)
     end
 end
 
@@ -1082,6 +1114,7 @@ local function ApplyFrameSettings(f, member, vdb, gfdb, contextMode)
     ApplyPowerBar(f, member, vdb.power or {}, general)
     ApplyHealthBar(f, member, general, health)
     ApplyName(f, member, vdb.name or {}, font, fontSize, F.highlights ~= false)
+    ApplyLevel(f, member, vdb.name or {}, font, fontSize, F.highlights ~= false)
     ApplyHealthText(f, health, font, F.highlights ~= false)
     ApplyPortrait(f, vdb.portrait or {})
     ApplyHealthOverlays(f, member, vdb.absorbs, vdb.healAbsorbs, vdb.healPrediction)

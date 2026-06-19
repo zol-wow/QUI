@@ -91,6 +91,18 @@ Settings at `quiUnitFrames.player`. The Player frame is the most feature-rich un
 | `player.nameOffsetY` | number | `0` | Name vertical offset |
 | `player.maxNameLength` | number | `0` | Max name characters (0 = no limit) |
 
+### Level Text
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `player.showLevel` | boolean | `false` | Show unit level text |
+| `player.levelFont` | string | `""` | Level font override (empty = frame font) |
+| `player.levelFontSize` | number | `16` | Level font size |
+| `player.levelTextColor` | color | `{1, 1, 1, 1}` | Level text color |
+| `player.levelAnchor` | string | `"RIGHT"` | Level text anchor point |
+| `player.levelOffsetX` | number | `-12` | Level horizontal offset |
+| `player.levelOffsetY` | number | `0` | Level vertical offset |
+
 ### Health Text
 
 | Setting | Type | Default | Description |

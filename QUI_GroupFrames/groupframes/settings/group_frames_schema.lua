@@ -630,6 +630,9 @@ local function RenderGeneralCopySettingsSection(sectionHost, ctx)
                             dst[key] = DeepCopy(src[key])
                         end
                     end
+                    if groupFrames.targetMode == "raid" and type(dst.name) == "table" then
+                        dst.name.showLevel = false
+                    end
 
                     RefreshGroupFrames(groupFrames.contextMode)
                     NotifyProvider("partyFrames", true)
@@ -1680,6 +1683,94 @@ local function RenderNameSection(sectionHost, ctx)
     card.AddRow(textColorRow)
 
     UpdateNameRows()
+    builder.CloseCard(card)
+    return builder.Height()
+end
+
+local function RenderLevelSection(sectionHost, ctx)
+    local gui = GetGUI()
+    local optionsAPI = GetOptionsAPI()
+    local groupFrames = ResolveGroupFramesDB(ctx and ctx.options and ctx.options.contextMode)
+    if not gui or not optionsAPI or not groupFrames or groupFrames.contextMode ~= "party" then
+        return nil
+    end
+
+    local name = EnsureSubTable(groupFrames.contextDB, "name")
+    if not name then
+        return nil
+    end
+
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("appearance"))
+    if not builder then
+        return nil
+    end
+
+    local refresh = function()
+        RefreshGroupFrames(groupFrames.contextMode)
+    end
+
+    builder.Header(ns.L["Level"])
+    builder.Description(ns.L["Level text placement and styling for party frames."])
+
+    local card = builder.Card()
+    local fontRow, fontSizeRow, anchorRow, justifyRow, xOffsetRow, yOffsetRow, textColorRow
+    local function UpdateLevelRows()
+        local alpha = name.showLevel == true and 1.0 or 0.4
+        if fontRow then fontRow:SetAlpha(alpha) end
+        if fontSizeRow then fontSizeRow:SetAlpha(alpha) end
+        if anchorRow then anchorRow:SetAlpha(alpha) end
+        if justifyRow then justifyRow:SetAlpha(alpha) end
+        if xOffsetRow then xOffsetRow:SetAlpha(alpha) end
+        if yOffsetRow then yOffsetRow:SetAlpha(alpha) end
+        if textColorRow then textColorRow:SetAlpha(alpha) end
+    end
+
+    local showLevelCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showLevel", name, function()
+        refresh()
+        UpdateLevelRows()
+    end, {
+        description = ns.L["Show the unit's level on party frames."],
+    })
+    local fontDropdown = gui:CreateFormDropdown(card.frame, nil, GetFontListWithDefault(optionsAPI), "levelFont", name, refresh, nil, {
+        searchable = true,
+    })
+    fontRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Font"], fontDropdown)
+    card.AddRow(
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Level"], showLevelCheckbox),
+        fontRow
+    )
+
+    local fontSizeSlider = gui:CreateFormSlider(card.frame, nil, 6, 24, 1, "levelFontSize", name, refresh, { deferOnDrag = true }, {
+        description = ns.L["Font size used for the unit level."],
+    })
+    fontSizeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Font Size"], fontSizeSlider)
+    local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, NINE_POINT_OPTIONS, "levelAnchor", name, refresh, {
+        description = ns.L["Where on the frame the level text is anchored. X/Y Offset below nudges it from this anchor point."],
+    })
+    anchorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Anchor"], anchorDropdown)
+    card.AddRow(fontSizeRow, anchorRow)
+
+    local justifyDropdown = gui:CreateFormDropdown(card.frame, nil, TEXT_JUSTIFY_OPTIONS, "levelJustify", name, refresh, {
+        description = ns.L["Horizontal text alignment within the level text region."],
+    })
+    justifyRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Text Justify"], justifyDropdown)
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "levelOffsetX", name, refresh, { deferOnDrag = true }, {
+        description = ns.L["Horizontal pixel offset for the level text from its anchor. Positive moves right, negative moves left."],
+    })
+    xOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level X Offset"], xOffsetSlider)
+    card.AddRow(justifyRow, xOffsetRow)
+
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "levelOffsetY", name, refresh, { deferOnDrag = true }, {
+        description = ns.L["Vertical pixel offset for the level text from its anchor. Positive moves up, negative moves down."],
+    })
+    yOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Y Offset"], yOffsetSlider)
+    local textColorPicker = gui:CreateFormColorPicker(card.frame, nil, "levelTextColor", name, refresh, nil, {
+        description = ns.L["Color used for the level text."],
+    })
+    textColorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Text Color"], textColorPicker)
+    card.AddRow(yOffsetRow, textColorRow)
+
+    UpdateLevelRows()
     builder.CloseCard(card)
     return builder.Height()
 end
@@ -2770,6 +2861,15 @@ local APPEARANCE_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesAppearan
     { id = "dispelOverlay", minHeight = 140, render = RenderDispelOverlaySection },
 })
 
+local APPEARANCE_PARTY_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesAppearancePartyTab", {
+    { id = "appearance", minHeight = 160, render = RenderAppearanceSection },
+    { id = "name", minHeight = 140, render = RenderNameSection },
+    { id = "level", minHeight = 150, render = RenderLevelSection },
+    { id = "power", minHeight = 140, render = RenderPowerSection },
+    { id = "threat", minHeight = 140, render = RenderThreatSection },
+    { id = "dispelOverlay", minHeight = 140, render = RenderDispelOverlaySection },
+})
+
 -- Layout has two variants: party omits Spotlight, raid appends it (folded in
 -- from the old raid-only Spotlight tab). RenderLayoutTab picks per context so
 -- the party Layout tab shows no empty/unavailable Spotlight section.
@@ -2832,7 +2932,9 @@ function GroupFramesSchema.RenderGeneralTab(host, contextMode)
 end
 
 function GroupFramesSchema.RenderAppearanceTab(host, contextMode)
-    return RenderFeatureTab(APPEARANCE_TAB_FEATURE, host, contextMode)
+    local feature = NormalizeContextMode(contextMode) == "party"
+        and APPEARANCE_PARTY_TAB_FEATURE or APPEARANCE_TAB_FEATURE
+    return RenderFeatureTab(feature, host, contextMode)
 end
 
 function GroupFramesSchema.RenderLayoutTab(host, contextMode)

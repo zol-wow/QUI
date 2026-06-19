@@ -4143,6 +4143,18 @@ return {
               spacing = 0
             },
             name = {
+              levelAnchor = "RIGHT",
+              levelFont = "",
+              levelFontSize = 12,
+              levelJustify = "RIGHT",
+              levelOffsetX = -4,
+              levelOffsetY = 0,
+              levelTextColor = {
+                [1] = 1,
+                [2] = 1,
+                [3] = 1,
+                [4] = 1
+              },
               maxNameLength = 10,
               nameAnchor = "LEFT",
               nameFontSize = 12,
@@ -4156,6 +4168,7 @@ return {
                 [4] = 1
               },
               nameTextUseClassColor = false,
+              showLevel = false,
               showName = true
             },
             pets = {
@@ -4438,6 +4451,18 @@ return {
               unitsPerFlat = 5
             },
             name = {
+              levelAnchor = "RIGHT",
+              levelFont = "",
+              levelFontSize = 12,
+              levelJustify = "RIGHT",
+              levelOffsetX = -4,
+              levelOffsetY = 0,
+              levelTextColor = {
+                [1] = 1,
+                [2] = 1,
+                [3] = 1,
+                [4] = 1
+              },
               maxNameLength = 10,
               nameAnchor = "LEFT",
               nameFontSize = 12,
@@ -4451,6 +4476,7 @@ return {
                 [4] = 1
               },
               nameTextUseClassColor = false,
+              showLevel = false,
               showName = true
             },
             pets = {
@@ -4610,6 +4636,17 @@ return {
             height = 36,
             hideHealthPercentSymbol = false,
             hidePowerPercentSymbol = false,
+            levelAnchor = "RIGHT",
+            levelFont = "",
+            levelFontSize = 11,
+            levelOffsetX = -4,
+            levelOffsetY = 0,
+            levelTextColor = {
+              [1] = 1,
+              [2] = 1,
+              [3] = 1,
+              [4] = 1
+            },
             maxNameLength = 0,
             nameAnchor = "LEFT",
             nameFontSize = 11,
@@ -4651,6 +4688,7 @@ return {
               outOfRangeAlpha = 0.40000000000000002
             },
             showHealth = true,
+            showLevel = false,
             showName = true,
             showPowerBar = true,
             showPowerText = false,
@@ -4768,6 +4806,17 @@ return {
               xOffset = -8,
               yOffset = 8
             },
+            levelAnchor = "RIGHT",
+            levelFont = "",
+            levelFontSize = 14,
+            levelOffsetX = -4,
+            levelOffsetY = 0,
+            levelTextColor = {
+              [1] = 1,
+              [2] = 1,
+              [3] = 1,
+              [4] = 1
+            },
             maxNameLength = 0,
             nameAnchor = "LEFT",
             nameFontSize = 14,
@@ -4833,6 +4882,7 @@ return {
             showHealth = true,
             showHealthAbsolute = true,
             showHealthPercent = true,
+            showLevel = false,
             showName = true,
             showPortrait = false,
             showPowerBar = true,
@@ -4980,6 +5030,17 @@ return {
             height = 25,
             hideHealthPercentSymbol = false,
             hidePowerPercentSymbol = false,
+            levelAnchor = "RIGHT",
+            levelFont = "",
+            levelFontSize = 10,
+            levelOffsetX = -4,
+            levelOffsetY = 0,
+            levelTextColor = {
+              [1] = 1,
+              [2] = 1,
+              [3] = 1,
+              [4] = 1
+            },
             maxNameLength = 0,
             nameAnchor = "LEFT",
             nameFontSize = 10,
@@ -5019,6 +5080,7 @@ return {
             showHealth = true,
             showHealthAbsolute = false,
             showHealthPercent = true,
+            showLevel = false,
             showName = true,
             showPowerBar = true,
             showPowerText = false,
@@ -5302,6 +5364,17 @@ return {
               xOffset = -8,
               yOffset = 8
             },
+            levelAnchor = "RIGHT",
+            levelFont = "",
+            levelFontSize = 16,
+            levelOffsetX = -12,
+            levelOffsetY = 0,
+            levelTextColor = {
+              [1] = 1,
+              [2] = 1,
+              [3] = 1,
+              [4] = 1
+            },
             maxNameLength = 0,
             nameAnchor = "LEFT",
             nameFontSize = 16,
@@ -5367,6 +5440,7 @@ return {
             showHealth = true,
             showHealthAbsolute = true,
             showHealthPercent = true,
+            showLevel = false,
             showName = true,
             showPortrait = false,
             showPowerBar = false,
@@ -5628,6 +5702,17 @@ return {
               xOffset = -8,
               yOffset = 8
             },
+            levelAnchor = "LEFT",
+            levelFont = "",
+            levelFontSize = 16,
+            levelOffsetX = 9,
+            levelOffsetY = 0,
+            levelTextColor = {
+              [1] = 1,
+              [2] = 1,
+              [3] = 1,
+              [4] = 1
+            },
             maxNameLength = 10,
             nameAnchor = "RIGHT",
             nameFontSize = 16,
@@ -5694,6 +5779,7 @@ return {
             showHealthAbsolute = true,
             showHealthPercent = true,
             showInlineToT = false,
+            showLevel = false,
             showName = true,
             showPortrait = false,
             showPowerBar = false,
@@ -5789,6 +5875,17 @@ return {
             height = 30,
             hideHealthPercentSymbol = false,
             hidePowerPercentSymbol = false,
+            levelAnchor = "RIGHT",
+            levelFont = "",
+            levelFontSize = 14,
+            levelOffsetX = -4,
+            levelOffsetY = 0,
+            levelTextColor = {
+              [1] = 1,
+              [2] = 1,
+              [3] = 1,
+              [4] = 1
+            },
             maxNameLength = 0,
             nameAnchor = "LEFT",
             nameFontSize = 14,
@@ -5828,6 +5925,7 @@ return {
             showHealth = true,
             showHealthAbsolute = false,
             showHealthPercent = true,
+            showLevel = false,
             showName = true,
             showPowerBar = false,
             showPowerText = false,

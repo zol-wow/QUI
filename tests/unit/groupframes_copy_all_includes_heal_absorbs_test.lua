@@ -27,4 +27,8 @@ assert(body:find("healPrediction%s*=%s*true"), "VISUAL_DB_KEYS should include he
 assert(body:find("healAbsorbs%s*=%s*true"),
     "VISUAL_DB_KEYS should include healAbsorbs so Copy All copies heal-absorb settings")
 
+assert(source:find('groupFrames.targetMode == "raid"', 1, true)
+    and source:find("dst.name.showLevel = false", 1, true),
+    "Copy All should not enable hidden raid level text when copying party settings to raid")
+
 print("OK: groupframes_copy_all_includes_heal_absorbs_test")
