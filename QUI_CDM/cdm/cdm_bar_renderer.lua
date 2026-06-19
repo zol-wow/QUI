@@ -505,12 +505,136 @@ local function EnsureBarTimerRunning()
     end
 end
 
+---------------------------------------------------------------------------
+-- DurationTextBinding (12.0.7+)
+--
+-- Engine-side fontstring countdown driven straight from a LuaDurationObject.
+-- The binding self-ticks C-side (no per-frame Lua poll) and formats secret
+-- durations internally (HasSecretValues / GetFormattedText ConditionalSecret),
+-- so it supersedes the GetRemainingDuration + SetFormattedText poll below.
+-- Items/trinkets feed a non-secret durObj (C_Item.GetItemCooldown ->
+-- C_DurationUtil.CreateDuration -> SetTimeFromStart); spell/aura bars feed the
+-- same object shape, secret in combat — the binding handles both.
+--
+-- Gated on the API existing: pre-12.0.7 clients fall back to the numeric poll.
+---------------------------------------------------------------------------
+local CreateDurationTextBinding = C_DurationUtil and C_DurationUtil.CreateDurationTextBinding
+local CreateSecondsFormatter = C_StringUtil and C_StringUtil.CreateSecondsFormatter
+
+-- Shared formatter (one per session; binding setters take it by reference).
+-- Built lazily so a missing API just leaves the binding text-less rather than
+-- erroring at load.  barDurationFormatter: nil = untried, false = unavailable.
+local barDurationFormatter
+local function GetBarDurationFormatter()
+    if barDurationFormatter ~= nil then
+        return barDurationFormatter or nil
+    end
+    if not CreateSecondsFormatter then
+        barDurationFormatter = false
+        return nil
+    end
+    local ok, fmt = pcall(CreateSecondsFormatter)
+    if not ok or not fmt then
+        barDurationFormatter = false
+        return nil
+    end
+    -- COSMETIC KNOBS (tune in-game): below the ms threshold the binding shows
+    -- one-decimal seconds (eg. "8.7"); above it, whole seconds / clock form.
+    -- Abbreviation mode controls the long-form look ("1m 5s" vs "1:05"); pick
+    -- whichever reads best in the narrow right-aligned slot.
+    if fmt.SetMillisecondsThreshold then
+        pcall(fmt.SetMillisecondsThreshold, fmt, 10)
+    end
+    if fmt.SetDefaultAbbreviation and Enum and Enum.SecondsFormatterAbbreviation then
+        pcall(fmt.SetDefaultAbbreviation, fmt, Enum.SecondsFormatterAbbreviation.OneLetter)
+    end
+    if fmt.SetStripIntervalWhitespace and Enum and Enum.SecondsFormatterIntervalWhitespace then
+        pcall(fmt.SetStripIntervalWhitespace, fmt, Enum.SecondsFormatterIntervalWhitespace.Strip)
+    end
+    barDurationFormatter = fmt
+    return fmt
+end
+
+-- One binding per bar, bound to its DurationText fontstring ONCE.  Returns the
+-- live binding, or nil if the API is absent / setup failed (cached as false so
+-- we don't retry every frame).
+local function EnsureBarDurationBinding(bar)
+    if not CreateDurationTextBinding then return nil end
+    if bar._durTextBinding ~= nil then
+        return bar._durTextBinding or nil
+    end
+    if not bar.DurationText then
+        bar._durTextBinding = false
+        return nil
+    end
+    -- A binding with no formatter can't produce text (CanFormatText == false),
+    -- which would blank the duration slot — worse than the numeric fallback.
+    -- Require the formatter up front; bail to fallback if it's unavailable.
+    local fmt = GetBarDurationFormatter()
+    if not fmt then
+        bar._durTextBinding = false
+        return nil
+    end
+    local ok, binding = pcall(CreateDurationTextBinding)
+    if not ok or not binding or not binding.SetFontString or not binding.SetFormatter then
+        bar._durTextBinding = false
+        return nil
+    end
+    -- DurationText is a CreateFontString FontString == SimpleFontString; pcall
+    -- guards the (unlikely) type rejection so a bad bind degrades to fallback.
+    local okBind = pcall(binding.SetFontString, binding, bar.DurationText)
+    if not okBind then
+        bar._durTextBinding = false
+        return nil
+    end
+    pcall(binding.SetFormatter, binding, fmt)
+    if binding.SetZeroDurationText then pcall(binding.SetZeroDurationText, binding, "") end
+    if binding.SetExpiredText then pcall(binding.SetExpiredText, binding, "") end
+    bar._durTextBinding = binding
+    return binding
+end
+
+-- Stop the binding from ticking (bar inactive / hidden / recycled) and forget
+-- the bound object so the next activation re-arms.  clearText wipes the
+-- fontstring for paths that don't already SetText("") themselves.
+local function DisableBarDurationBinding(bar, clearText)
+    local binding = bar and bar._durTextBinding
+    if binding and binding.SetEnabled then
+        pcall(binding.SetEnabled, binding, false)
+    end
+    if bar then bar._boundDurObj = nil end
+    if clearText and bar and bar.DurationText then
+        bar.DurationText.SetText(bar.DurationText, "")
+    end
+end
+
 local function WriteDurationTextFromDurationObject(bar, durObj)
-    if not (bar and durObj and durObj.GetRemainingDuration
-        and bar.DurationText and not bar._hideDurationText) then
+    if not (bar and durObj and bar.DurationText and not bar._hideDurationText) then
         return false
     end
 
+    -- Preferred path: hand the duration object to the engine-side binding,
+    -- which self-ticks the fontstring C-side and is secret-safe.  Only
+    -- (re)assign on durObj identity change — the OnLoop calls this every
+    -- frame, so the unchanged-object early-out keeps the hot path call-free.
+    local binding = EnsureBarDurationBinding(bar)
+    if binding then
+        if bar._boundDurObj ~= durObj then
+            pcall(binding.SetDuration, binding, durObj)
+            if binding.SetEnabled then
+                pcall(binding.SetEnabled, binding, true)
+            end
+            bar._boundDurObj = durObj
+        end
+        return true
+    end
+
+    -- Fallback (pre-12.0.7): numeric poll.  GetRemainingDuration is secret in
+    -- combat; forward straight to SetFormattedText (C-side format), never
+    -- compare/arith on it in Lua.
+    if not durObj.GetRemainingDuration then
+        return false
+    end
     local remaining = durObj.GetRemainingDuration(durObj)
     bar.DurationText.SetFormattedText(bar.DurationText, "%.1f", remaining)
     return true
@@ -856,6 +980,7 @@ local function ReleaseBar(bar)
     bar._totemNameCache = nil
     bar._hideDurationText = nil
     bar._hasAuraExpirationTime = nil
+    DisableBarDurationBinding(bar)
     bar.NameText:SetText("")
     bar.DurationText:SetText("")
     bar.IconTexture:SetTexture(nil)
@@ -1120,9 +1245,7 @@ local function ClearItemBarInactive(bar, itemID)
     bar._totalDuration = nil
     bar._expirationTime = nil
     ClearStatusBar(bar.StatusBar)
-    if bar.DurationText then
-        bar.DurationText:SetText("")
-    end
+    DisableBarDurationBinding(bar, true)
     StoreBarRuntimeState(bar, "inactive", false, { itemID = itemID })
 end
 
@@ -1388,6 +1511,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
             if bar.PermanentFill then
                 bar.PermanentFill.SetAlpha(bar.PermanentFill, 0)
             end
+            DisableBarDurationBinding(bar)
             if bar.DurationText then
                 bar.DurationText.SetText(bar.DurationText, "")
                 -- Restore the configured base alpha — never override a
@@ -1557,6 +1681,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
         if bar.PermanentFill then
             bar.PermanentFill.SetAlpha(bar.PermanentFill, 0)
         end
+        DisableBarDurationBinding(bar)
         if bar.DurationText then
             bar.DurationText:SetText("")
             -- Restore the configured base alpha — never override a
@@ -1684,6 +1809,7 @@ function CDMBars:LayoutBars(container, settings)
         if editModeActive then
             bar._active = true
             SetStatusBarValue(bar.StatusBar, 0.65)
+            DisableBarDurationBinding(bar)
             if bar.DurationText then
                 bar.DurationText:SetText("0:32")
             end
@@ -1895,6 +2021,7 @@ barTimerGroup:SetScript("OnLoop", function()
         if bar._isOwnedBar and bar._active and bar:IsShown() then
             if bar._hideDurationText then
                 anyActive = true
+                if bar._boundDurObj then DisableBarDurationBinding(bar) end
                 if bar.DurationText then
                     bar.DurationText.SetText(bar.DurationText, "")
                 end
