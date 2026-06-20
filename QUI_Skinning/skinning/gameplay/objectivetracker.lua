@@ -121,8 +121,8 @@ end
 -- TAINT: fires from mouse-hover scripts (insecure), plain SetTextColor on insecure FontStrings
 -- is safe; re-assert synchronously so there is no visible flash of Blizzard's color.
 local function EnsureBlockHighlightHook(block)
-    if not block or block._quiHighlightHooked or not block.UpdateHighlight then return end
-    block._quiHighlightHooked = true
+    if not block or SkinBase.GetFrameData(block, "highlightHooked") or not block.UpdateHighlight then return end
+    SkinBase.SetFrameData(block, "highlightHooked", true)
     hooksecurefunc(block, "UpdateHighlight", function(self)
         local s = GetSettings()
         if not s or not s.skinObjectiveTracker then return end
@@ -554,17 +554,25 @@ local function EnforceWidth()
     end
 end
 
--- Debounced backdrop update to prevent multiple concurrent timers
--- 0.15s delay allows Blizzard's layout pass to complete before we measure
-local function ScheduleBackdropUpdate()
+local function RunObjectiveTrackerPostLayoutUpdate()
+    pendingBackdropUpdate = false
+    EnforceWidth()
+    UpdateBackdropAnchors()
+    HidePOIButtonGlows()
+end
+
+local function DeferObjectiveTrackerPostLayoutUpdate()
     if pendingBackdropUpdate then return end
     pendingBackdropUpdate = true
-    C_Timer.After(0.15, function()
-        pendingBackdropUpdate = false
-        EnforceWidth()
-        UpdateBackdropAnchors()
-        HidePOIButtonGlows()
-    end)
+    -- FrameXML DirtiableMixin:MarkDirty uses RunNextFrame, and our hooks are
+    -- on ObjectiveTrackerContainer:Update / module LayoutContents after layout.
+    -- One frame exits protected hook stacks without a fixed 0.15s guess.
+    C_Timer.After(0, RunObjectiveTrackerPostLayoutUpdate)
+end
+
+-- Debounced backdrop update to prevent multiple concurrent timers.
+local function ScheduleBackdropUpdate()
+    DeferObjectiveTrackerPostLayoutUpdate()
 end
 
 -- Combat-safe gate for ObjectiveTracker layout mutations (width/height/size)
@@ -868,10 +876,8 @@ local function SkinObjectiveTracker()
         end
     end
 
-    -- TAINT SAFETY: Wrapper to defer ScheduleBackdropUpdate from secure context.
-    local function DeferredScheduleBackdropUpdate()
-        C_Timer.After(0, ScheduleBackdropUpdate)
-    end
+    -- TAINT SAFETY: ScheduleBackdropUpdate defers one frame out of hook stacks.
+    local DeferredScheduleBackdropUpdate = DeferObjectiveTrackerPostLayoutUpdate
 
     -- Hook the main container's Update to update backdrop anchors when content changes
     if TrackerFrame.Update and not SkinBase.GetFrameData(TrackerFrame, "updateHooked") then

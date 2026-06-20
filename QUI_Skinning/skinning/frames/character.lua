@@ -201,7 +201,9 @@ end
 -- Hide Blizzard decorative elements on CharacterFrame
 -- NineSlice borders are hooked once so Blizzard cannot re-show them.
 ---------------------------------------------------------------------------
-local nineSliceHooked = {}
+-- Weak-keyed (matches the other per-frame side tables above) so hooked NineSlice
+-- frames can still be garbage-collected; a plain table would pin them forever.
+local nineSliceHooked = Helpers.CreateStateTable()
 
 local function HideNineSlice(nineSlice)
     if not nineSlice then return end
@@ -569,7 +571,7 @@ local function SetupCharacterFrameSkinning()
         SkinBase.HookScrollBoxAcquired(ReputationFrame.ScrollBox, function(row)
             if IsSkinningEnabled() then
                 SkinReputationEntry(row)
-                SkinBase.SkinFrameText(row, { recurse = true })
+                SkinBase.LockPooledRowText(row, 4)
             end
         end)
     end
@@ -577,7 +579,7 @@ local function SetupCharacterFrameSkinning()
         SkinBase.HookScrollBoxAcquired(TokenFrame.ScrollBox, function(row)
             if IsSkinningEnabled() then
                 SkinCurrencyEntry(row)
-                SkinBase.SkinFrameText(row, { recurse = true })
+                SkinBase.LockPooledRowText(row, 4)
             end
         end)
         -- TokenEntryMixin:Initialize re-SetTexture's CurrencyIcon on every bind,
@@ -745,7 +747,6 @@ local function SkinEquipmentSetEntry(entry)
         local border = CreateFrame("Frame", nil, entry, "BackdropTemplate")
         SetExpandedPixelPoints(border, entry.icon, 1)
         ApplyPixelBackdrop(border, 1, false, false, { sr, sg, sb, 1 })
-        border:SetBackdropBorderColor(sr, sg, sb, 1)
         iconBorders[entry.icon] = border
     end
 
@@ -781,8 +782,6 @@ local function StyleEquipMgrButton(btn)
         return
     end
     ApplyPixelBackdrop(btn, 1, true, false, { sr, sg, sb, 0.5 }, { 0.15, 0.15, 0.15, 1 })
-    btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-    btn:SetBackdropBorderColor(sr, sg, sb, 0.5)
 
     -- Style text via the button's font OBJECTS so the QUI font survives hover
     -- (HighlightFont) and disable (DisabledFont — SaveSet is disabled with no set
@@ -792,14 +791,16 @@ local function StyleEquipMgrButton(btn)
     -- Restore width
     btn:SetWidth(origWidth)
 
-    -- Hover effects (capture colors at hook time for consistency)
+    -- Hover effects (capture colors at hook time for consistency). Route through
+    -- SetPixelBackdropColors so a scale refresh mid-hover keeps the hover border
+    -- instead of rebuilding from the stale creation-time state color.
     btn:HookScript("OnEnter", function(self)
         local r, g, b = GetSkinColors()
-        self:SetBackdropBorderColor(r, g, b, 1)
+        SetPixelBackdropColors(self, { r, g, b, 1 })
     end)
     btn:HookScript("OnLeave", function(self)
         local r, g, b = GetSkinColors()
-        self:SetBackdropBorderColor(r, g, b, 0.5)
+        SetPixelBackdropColors(self, { r, g, b, 0.5 })
     end)
 
     skinnedEntries[btn] = true
@@ -1056,19 +1057,14 @@ end
 -- CONSOLIDATED API TABLE
 -- All public functions exposed via single global for clean namespace
 ---------------------------------------------------------------------------
-_G.QUI_CharacterFrameSkinning = {
-    -- Configuration
-    CONFIG = CONFIG,
-
-    -- Core functions
-    IsEnabled = IsSkinningEnabled,
-    SetExtended = SetCharacterFrameBgExtended,
-    Refresh = RefreshCharacterFrameColors,
-
-    -- Skinning functions (called by qui_character.lua)
-    SkinEquipmentManager = SkinEquipmentManager,
-    SkinTitleManager = SkinTitleManagerPane,
-}
+local api = _G.QUI_CharacterFrameSkinning or {}
+api.CONFIG = CONFIG
+api.IsEnabled = IsSkinningEnabled
+api.SetExtended = SetCharacterFrameBgExtended
+api.Refresh = RefreshCharacterFrameColors
+api.SkinEquipmentManager = SkinEquipmentManager
+api.SkinTitleManager = SkinTitleManagerPane
+_G.QUI_CharacterFrameSkinning = api
 
 -- Legacy compatibility alias (deprecated - use QUI_CharacterFrameSkinning table)
 _G.QUI_RefreshCharacterFrameColors = RefreshCharacterFrameColors
@@ -1085,26 +1081,15 @@ end
 ---------------------------------------------------------------------------
 -- INITIALIZATION
 ---------------------------------------------------------------------------
-local function InitializeCharacterFrameSkinning(self)
-    C_Timer.After(0.1, function()
-        SetupCharacterFrameSkinning()
-        SetupTitlePaneHook()
-    end)
-    if self then
-        self:UnregisterEvent("ADDON_LOADED")
-    end
+local characterFrameSkinningInitialized = false
+
+local function InitializeCharacterFrameSkinning()
+    if characterFrameSkinningInitialized or not CharacterFrame then return end
+    characterFrameSkinningInitialized = true
+
+    SetupCharacterFrameSkinning()
+    SetupTitlePaneHook()
 end
 
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" and (addon == "Blizzard_CharacterFrame" or addon == "Blizzard_UIPanels_Game") then
-        InitializeCharacterFrameSkinning(self)
-    end
-end)
-
--- LOD catch-up: this module loads after PLAYER_LOGIN (and possibly after
--- Blizzard_CharacterFrame), so initialize immediately when the frame exists.
-if CharacterFrame and CharacterFrameTab1 then
-    InitializeCharacterFrameSkinning(frame)
-end
+SkinBase.OnAddOnLoaded("Blizzard_CharacterFrame", InitializeCharacterFrameSkinning, 0)
+SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", InitializeCharacterFrameSkinning, 0)

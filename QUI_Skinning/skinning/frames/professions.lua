@@ -33,7 +33,7 @@ local function StyleScrollBoxRow(row)
     if not row.Label and not row.Text and not row.Icon then return end
 
     SkinBase.SkinScrollRow(row)
-    SkinBase.SkinFrameText(row, { recurse = true })
+    SkinBase.LockPooledRowText(row, 4)
 
     -- Category header rows revert the QUI font on hover: ProfessionsRecipe
     -- ListCategoryMixin:OnEnter/OnLeave SetFontObject(GameFontHighlight/Normal_
@@ -45,9 +45,8 @@ local function StyleScrollBoxRow(row)
     end
 
     -- OrderList rows are TableBuilder-backed: cell fontstrings are built lazily and
-    -- re-bind their font on populate/recycle. Lock the row subtree so the QUI face
-    -- re-applies on each cell rebind (mirrors the Auction House row styler).
-    SkinBase.LockFrameTextObjects(row, 4)
+    -- re-bind their font on populate/recycle. LockPooledRowText above does the
+    -- guarded recursive pass once so the QUI face re-applies on each cell rebind.
     -- Backdrop stays full-row (SkinScrollRow's SetAllPoints) so the hover border
     -- brightens the whole row like the Auction House rows. (The old SkillUps inset
     -- left the backdrop covering only a shifted sub-box → partial, dim hover.)
@@ -94,10 +93,10 @@ end
 -- brighten, matching the (working) crafting-orders rows. Covers CraftingPage + Orders.
 local function HookRecipeRowHover()
     local mixin = _G.ProfessionsRecipeListRecipeMixin
-    if not mixin or mixin.OnEnter == nil or mixin.__quiHoverHooked then return end
+    if not mixin or mixin.OnEnter == nil or SkinBase.GetFrameData(mixin, "hoverHooked") then return end
     hooksecurefunc(mixin, "OnEnter", function(self) SkinBase.SetRowHovered(self, true) end)
     hooksecurefunc(mixin, "OnLeave", function(self) SkinBase.SetRowHovered(self, false) end)
-    mixin.__quiHoverHooked = true
+    SkinBase.SetFrameData(mixin, "hoverHooked", true)
 end
 
 local function SkinRecipeList(recipeList)
@@ -354,11 +353,11 @@ end
 -- double-install (the customer-orders skinner installs the same hook).
 local function HookProfessionTableHeaderFonts()
     local mixin = _G.ProfessionsCrafterTableHeaderStringMixin
-    if not mixin or mixin.Init == nil or mixin.__quiHeaderFontHooked then return end
+    if not mixin or mixin.Init == nil or SkinBase.GetFrameData(mixin, "headerFontHooked") then return end
     hooksecurefunc(mixin, "Init", function(self)
         SkinBase.ApplyButtonFontObjects(self)
     end)
-    mixin.__quiHeaderFontHooked = true
+    SkinBase.SetFrameData(mixin, "headerFontHooked", true)
 end
 
 local function SkinProfessions()
@@ -394,8 +393,7 @@ end
 local function UpdatePanelColors(panel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = panel and SkinBase.GetBackdrop(panel)
     if not bd then return end
-    bd:SetBackdropColor(SkinBase.GetDepthColor("SUBPANEL"))
-    bd:SetBackdropBorderColor(sr, sg, sb, sa * 0.3)
+    SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa * 0.3 }, { SkinBase.GetDepthColor("SUBPANEL") })
 end
 
 local function UpdateRecipeListColors(recipeList)
@@ -413,8 +411,7 @@ local function RefreshProfessionsColors()
     -- Main backdrop
     local mainBd = SkinBase.GetBackdrop(frame)
     if mainBd then
-        mainBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        mainBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(mainBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     end
 
     -- Tabs
@@ -499,17 +496,4 @@ end
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
-local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("ADDON_LOADED")
-initFrame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" and addon == "Blizzard_Professions" then
-        C_Timer.After(0.1, SkinProfessions)
-        self:UnregisterEvent("ADDON_LOADED")
-    end
-end)
-
--- If Blizzard_Professions loaded before QUI (e.g. after /reload), skin now
-if SkinBase.IsAddOnFullyLoaded("Blizzard_Professions") then
-    C_Timer.After(0.1, SkinProfessions)
-    initFrame:UnregisterEvent("ADDON_LOADED")
-end
+SkinBase.OnAddOnLoaded("Blizzard_Professions", SkinProfessions, 0)

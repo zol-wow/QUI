@@ -1968,6 +1968,11 @@ local function SetTextureColor(texture, file, r, g, b, a)
 end
 
 local function ManualSetBackdropColor(self, r, g, b, a)
+    -- Sanctioned direct frame state exception: manual/pixel backdrops emulate
+    -- BackdropTemplate's setters on QUI-owned backdrop frames/textures. The
+    -- `_quiBg*` fields are the color cache those setters re-use during scale
+    -- refreshes and theme refreshes; general skinning state still belongs in
+    -- the weak side tables below.
     self._quiBgR, self._quiBgG, self._quiBgB, self._quiBgA = r, g, b, a
     local data = manualBackdropData[self]
     if data then
@@ -1976,6 +1981,9 @@ local function ManualSetBackdropColor(self, r, g, b, a)
 end
 
 local function ManualSetBackdropBorderColor(self, r, g, b, a)
+    -- Same sanctioned backdrop exception as ManualSetBackdropColor: these
+    -- `_quiBorder*` fields are render data for QUI-owned manual backdrops, not
+    -- arbitrary module state on Blizzard frames.
     self._quiBorderR, self._quiBorderG, self._quiBorderB, self._quiBorderA = r, g, b, a
     local data = manualBackdropData[self]
     if data then
@@ -2136,6 +2144,43 @@ function SkinBase.ApplyPixelBackdrop(frame, borderPixels, withBackground, withIn
 end
 
 ---------------------------------------------------------------------------
+-- SetBackdropColors(frame, borderColor, bgColor)
+-- Live-recolor a frame already managed by ApplyPixelBackdrop / CreateBackdrop /
+-- ApplyFullBackdrop (hover/selection/theme-refresh states).
+--
+-- This is the sanctioned replacement for a bare frame:SetBackdropColor /
+-- frame:SetBackdropBorderColor on a managed backdrop. RefreshPixelBackdrop
+-- rebuilds the backdrop from data.borderColor / data.bgColor on every scale
+-- refresh, so a bare setter (which only touches the live textures) is silently
+-- DISCARDED on the next rebuild — the "live recolor reverts on scale refresh"
+-- bug class. SetBackdropColors updates the PERSISTED data and re-renders, so the
+-- new color survives. The render path re-applies the colors through the manual
+-- backdrop setters, which keeps the _quiBg*/_quiBorder* cache coherent.
+--
+--   borderColor / bgColor: {r,g,b,a} tables. Pass nil to leave that component
+--   unchanged (e.g. a hover that only re-tints the border). For CreateBackdrop
+--   frames, pass the child returned by SkinBase.GetBackdrop(frame).
+---------------------------------------------------------------------------
+function SkinBase.SetBackdropColors(frame, borderColor, bgColor)
+    if not frame then return end
+    local data = pixelBackdropData[frame]
+    if not data then
+        -- Not an ApplyPixelBackdrop-managed frame: fall back to the live setters
+        -- so callers still get a visible recolor on a plain BackdropTemplate frame.
+        if bgColor and frame.SetBackdropColor then
+            frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+        end
+        if borderColor and frame.SetBackdropBorderColor then
+            frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+        end
+        return
+    end
+    if borderColor ~= nil then data.borderColor = borderColor end
+    if bgColor ~= nil then data.bgColor = bgColor end
+    RefreshPixelBackdrop(frame)
+end
+
+---------------------------------------------------------------------------
 -- CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 -- Creates (or updates) a pixel-perfect QUI backdrop on the given frame.
 -- Stores the backdrop in a local weak-keyed table (NOT on the frame itself)
@@ -2221,6 +2266,15 @@ end
 -- Skinning state tracking (shared across all skinning modules)
 -- Replaces frame.quiSkinned / frame.quiStyled / frame.quiBackdrop writes
 -- which taint Blizzard frames in Midnight's taint model.
+--
+-- Policy: module state lives in weak-keyed side tables, not on the frame. This
+-- keeps Blizzard/protected frames free of QUI marker fields while still letting
+-- us associate lifecycle flags, hooks, and cached setup data with pooled rows.
+-- The deliberate exception is backdrop render state (`_quiBg*`/`_quiBorder*`)
+-- on QUI-created backdrop frames or addon-owned manual backdrops. Those fields
+-- mirror the BackdropTemplate setter contract and are needed by the sanctioned
+-- SetBackdropColor/SetBackdropBorderColor replacement path above; do not use
+-- them as a general-purpose state channel.
 ---------------------------------------------------------------------------
 local skinnedFrames = Helpers.CreateStateTable()
 local styledFrames = Helpers.CreateStateTable()
@@ -2245,7 +2299,9 @@ function SkinBase.IsStyled(frame)
     return styledFrames[frame]
 end
 
--- Store arbitrary per-frame data (replaces frame.quiXxx = value)
+-- Store arbitrary per-frame data (replaces frame.quiXxx = value). Use this for
+-- flags such as qListRowFonted/qScrollHooked so pooled Blizzard rows can be
+-- re-used without adding new fields to those frames.
 local frameData, getFrameData = Helpers.CreateStateTable()
 
 function SkinBase.SetFrameData(frame, key, value)
@@ -2688,13 +2744,20 @@ function SkinBase.RefreshTabSelected(tab, owner)
     local bg = SkinBase.GetFrameData(tab, "bgColor")
     if not bd or not sc or not bg then return end
 
+    local borderColor, bgColor
     if IsTabSelected(tab, owner) then
-        bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
-        bd:SetBackdropColor(math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1)
+        borderColor = { sc[1], sc[2], sc[3], sc[4] }
+        bgColor = { math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1 }
     else
-        bd:SetBackdropBorderColor(sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6)
-        bd:SetBackdropColor(bg[1], bg[2], bg[3], 0.7)
+        borderColor = { sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6 }
+        bgColor = { bg[1], bg[2], bg[3], 0.7 }
     end
+    -- Persist the selection-state colors into the backdrop data via
+    -- ApplyPixelBackdrop (same geometry CreateBackdrop used), so a scale refresh
+    -- rebuilds with the selection tint instead of reverting to the base color. A
+    -- bare SetBackdrop*Color updates only the live color, which RefreshPixelBackdrop
+    -- discards on its next rebuild.
+    SkinBase.ApplyPixelBackdrop(bd, 1, true, true, borderColor, bgColor)
 end
 
 -- Tab hover: brighten border on enter, restore selected-state coloring on
@@ -2794,7 +2857,7 @@ function SkinBase.RefreshTabGroup(tabs, owner)
 end
 
 ---------------------------------------------------------------------------
--- HookScrollBoxAcquired(scrollBox, callback)
+-- HookScrollBoxAcquired(scrollBox, callback, opts)
 -- Replaces the legacy `hooksecurefunc(scrollBox, "Update", …) +
 -- C_Timer.After(0) + ForEachFrame` triad with the documented
 -- `ScrollUtil.AddAcquiredFrameCallback` API (defined at
@@ -2806,17 +2869,22 @@ end
 -- frame is reused from the pool for a new piece of data), which is what
 -- visual-only skinning needs.
 --
--- TAINT SAFETY: Both the initial iterate-existing pass AND the per-
--- acquisition fire are deferred via C_Timer.After(0). The OnAcquiredFrame
--- callback fires synchronously from Blizzard's secure scroll context, and
--- creating Backdrop frames in that path can propagate taint. The defer
--- also gives Blizzard's initializer time to bind elementData to the row.
+-- TAINT SAFETY: The initial iterate-existing pass is always deferred via
+-- C_Timer.After(0). Per-acquisition callbacks are also deferred by default
+-- because OnAcquiredFrame fires synchronously from Blizzard's secure scroll
+-- context, and creating Backdrop frames in that path can propagate taint. The
+-- defer also gives Blizzard's initializer time to bind elementData to the row.
+--
+-- opts.sync == true is the narrow opt-in for callbacks that only touch
+-- per-instance FontStrings and must run before the pooled row's first paint.
+-- Callback entries keep their own sync policy so mixed sync/deferred helpers
+-- compose on the same ScrollBox.
 --
 -- Idempotent — flagged via SetFrameData(scrollBox, "qScrollHooked").
 ---------------------------------------------------------------------------
 local scrollBoxAcquiredCallbacks = Helpers.CreateStateTable()
 
-function SkinBase.HookScrollBoxAcquired(scrollBox, callback)
+function SkinBase.HookScrollBoxAcquired(scrollBox, callback, opts)
     if not scrollBox or type(callback) ~= "function" then return end
     if not ScrollUtil or not ScrollUtil.AddAcquiredFrameCallback then return end
 
@@ -2825,7 +2893,11 @@ function SkinBase.HookScrollBoxAcquired(scrollBox, callback)
         callbacks = {}
         scrollBoxAcquiredCallbacks[scrollBox] = callbacks
     end
-    callbacks[#callbacks + 1] = callback
+    local entry = {
+        callback = callback,
+        sync = opts and opts.sync == true,
+    }
+    callbacks[#callbacks + 1] = entry
 
     C_Timer.After(0, function()
         if scrollBox.ForEachFrame then
@@ -2835,20 +2907,17 @@ function SkinBase.HookScrollBoxAcquired(scrollBox, callback)
 
     if SkinBase.GetFrameData(scrollBox, "qScrollHooked") then return end
 
-    -- Apply SYNCHRONOUSLY on acquire (no C_Timer.After deferral). A deferred
-    -- apply lands one frame after the row is first painted, so the row shows the
-    -- stock FRIZQT font for a frame before the QUI face appears = the visible
-    -- font "flash" on opening list windows (guild roster, achievements, etc.).
-    -- Running in the acquire callback applies the font before that frame's paint.
-    -- If Blizzard rebinds the row's font object after us, callers pair this with
-    -- LockFontObject, whose SetFontObject hook re-asserts the QUI face — so a
-    -- later rebind can't revert it. SetFont here targets per-instance fontstrings
-    -- (never shared font objects), so it carries no taint.
     ScrollUtil.AddAcquiredFrameCallback(scrollBox, function(_, frame)
         local list = scrollBoxAcquiredCallbacks[scrollBox]
         if not list then return end
-        for _, cb in ipairs(list) do
-            cb(frame)
+        for _, item in ipairs(list) do
+            if item.sync then
+                item.callback(frame)
+            else
+                C_Timer.After(0, function()
+                    item.callback(frame)
+                end)
+            end
         end
     end, scrollBox)
 
@@ -2868,14 +2937,20 @@ end
 -- truth for the pattern — callers MUST use it instead of an inline acquire
 -- callback that re-skins per acquire, or the hitch comes back.
 ---------------------------------------------------------------------------
+function SkinBase.LockPooledRowText(row, depth)
+    if not row or SkinBase.GetFrameData(row, "qListRowFonted") then return end
+    SkinBase.SkinFrameText(row, { recurse = true })
+    SkinBase.LockFrameTextObjects(row, depth or 3)
+    SkinBase.SetFrameData(row, "qListRowFonted", true)
+end
+
 function SkinBase.HookScrollBoxRowFonts(scrollBox, depth)
     if not scrollBox then return end
     SkinBase.HookScrollBoxAcquired(scrollBox, function(row)
         if not row or SkinBase.GetFrameData(row, "qListRowFonted") then return end
-        SkinBase.SkinFrameText(row, { recurse = true })
-        SkinBase.LockFrameTextObjects(row, depth or 3)
-        SkinBase.SetFrameData(row, "qListRowFonted", true)
-    end)
+        SkinBase.LockPooledRowText(row, depth or 3)
+        -- LockPooledRowText owns SkinBase.SetFrameData(row, "qListRowFonted", true).
+    end, { sync = true })
 end
 
 ---------------------------------------------------------------------------

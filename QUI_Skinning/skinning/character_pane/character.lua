@@ -17,6 +17,13 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
+-- Resolve the user's configured general font FACE (falling back to the WoW
+-- default). CJKFont keeps CJK glyph fallback either way; this just ensures the
+-- label uses the QUI font instead of the hardcoded engine default.
+local function GeneralFontFace()
+    return (ns.Helpers and ns.Helpers.GetGeneralFont and ns.Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
+end
+
 local GetCore = ns.Helpers.GetCore
 
 local function GetSkinBase()
@@ -30,6 +37,10 @@ local pendingDecorMode = nil     -- "character" or "other"
 local pendingStatsPanelRefresh = false
 local ScheduleUpdate
 local ApplyCharacterPaneLayout
+
+local function RunAfterCharacterPaneLayoutTick(callback)
+    C_Timer.After(0, callback)
+end
 
 local function AnchorCharacterFrameBottomTabs(firstTabYOffset)
     if not CharacterFrame then return end
@@ -282,6 +293,17 @@ local function ApplyOnePixelBorder(frame, withBackground, borderColor, bgColor)
             borderColor = borderColor,
             bgColor = bgColor,
         })
+    end
+end
+
+-- Live-recolor a frame skinned via ApplyOnePixelBorder. Routes through
+-- SkinBase.SetBackdropColors so a scale refresh keeps the new color; a bare
+-- SetBackdrop*Color is discarded when RefreshPixelBackdrop rebuilds from the
+-- persisted backdrop data.
+local function SetOnePixelBorderColors(frame, borderColor, bgColor)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.SetBackdropColors then
+        skinBase.SetBackdropColors(frame, borderColor, bgColor)
     end
 end
 
@@ -1679,7 +1701,7 @@ local function HideBlizzardDecorations()
     if firstSlot and not (frameState[firstSlot] or EMPTY).equipHooked then
         firstSlot:HookScript("OnEvent", function(self, event)
             if event == "PLAYER_EQUIPMENT_CHANGED" then
-                C_Timer.After(0.1, function()
+                RunAfterCharacterPaneLayoutTick(function()
                     for _, slot in ipairs(allSlots) do
                         UpdateSlotBorder(slot)
                     end
@@ -2013,8 +2035,8 @@ ApplyCharacterPaneLayout = function(force)
     HideBlizzardDecorations()
     CreateCustomBackground()
     SetupTitleArea()
-    -- Delay repositioning to allow Blizzard to finish slot setup first
-    C_Timer.After(0.1, function()
+    -- Let Blizzard's slot setup for the current frame finish before anchoring.
+    RunAfterCharacterPaneLayoutTick(function()
         RepositionSlots()
         RefreshEquipmentSlotBorders()
         PositionModelScene()
@@ -3904,8 +3926,8 @@ local function HookCharacterFrame()
                         RefreshEquipmentSlotBorders()
                     end)
                 end
-                -- Ensure stats panel shows (may not exist yet on first load due to delayed creation)
-                C_Timer.After(0.15, function()
+                -- The layout helper creates statsPanel on the next frame during first open.
+                RunAfterCharacterPaneLayoutTick(function()
                     if statsPanel then
                         statsPanel:Show()
                     end
@@ -3965,18 +3987,18 @@ local function HookCharacterFrame()
         gearLabel:SetPoint("LEFT", gearIcon, "RIGHT", 4, 0)
         gearLabel:SetPoint("RIGHT", gearBtn, "RIGHT", -6, 0)
         gearLabel:SetJustifyH("LEFT")
-        CJKFont(gearLabel, STANDARD_TEXT_FONT, 12, "")
+        CJKFont(gearLabel, GeneralFontFace(), 12, "")
         gearLabel:SetText(ns.L["Settings"])
         gearLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
         -- Hover effect
         gearBtn:SetScript("OnEnter", function(self)
             local r, g, b = GetCharacterAccentColor()
-            self:SetBackdropBorderColor(r, g, b, 1)
+            SetOnePixelBorderColors(self, { r, g, b, 1 })
         end)
         gearBtn:SetScript("OnLeave", function(self)
             local r, g, b = GetCharacterBorderColor()
-            self:SetBackdropBorderColor(r, g, b, 1)
+            SetOnePixelBorderColors(self, { r, g, b, 1 })
         end)
 
         GetState(CharacterFrame).gearBtn = gearBtn
@@ -4030,7 +4052,7 @@ local function HookCharacterFrame()
         -- Title
         local title = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         title:SetPoint("TOP", settingsPanel, "TOP", 0, -8)
-        CJKFont(title, STANDARD_TEXT_FONT, 14, "")
+        CJKFont(title, GeneralFontFace(), 14, "")
         title:SetText(ns.L["QUI Character Panel"])
         title:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
@@ -4342,7 +4364,7 @@ local function HookCharacterFrame()
 
             -- Reload the settings panel to update widget states
             settingsPanel:Hide()
-            C_Timer.After(0.1, function()
+            RunAfterCharacterPaneLayoutTick(function()
                 settingsPanel:Show()
             end)
         end)
@@ -4399,9 +4421,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         -- Note: Blizzard_InspectUI is now hooked by qui_inspect.lua
         if arg1 == "Blizzard_CharacterFrame" then
-            C_Timer.After(0.1, function()
-                HookCharacterFrame()
-            end)
+            HookCharacterFrame()
         end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "UPDATE_INVENTORY_DURABILITY" or
            event == "SOCKET_INFO_UPDATE" or event == "PLAYER_SPECIALIZATION_CHANGED" or

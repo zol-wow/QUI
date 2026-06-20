@@ -5,16 +5,32 @@
 -- when mount/pet/heirloom entries are rebound. The Collections skin must lock
 -- active and future row text, not only skin the parent frame once.
 
--- luacheck: globals _G
+-- luacheck: globals _G hooksecurefunc
 
 local callbacks = {}
 local calls = {}
 local scrollHooks = {}
 local frameData = setmetatable({}, { __mode = "k" })
+local tableHooks = {}
+
+function hooksecurefunc(target, method, callback)
+    assert(type(target) == "table", "collections test only expects table-method hooks")
+    assert(type(method) == "string", "hook method must be named")
+    assert(type(callback) == "function", "hook callback must be callable")
+    local original = assert(target[method], "missing hooked method " .. method)
+    tableHooks[target] = tableHooks[target] or {}
+    tableHooks[target][method] = callback
+    target[method] = function(self, ...)
+        local results = { original(self, ...) }
+        callback(self, ...)
+        return unpack(results)
+    end
+end
 
 local mountRow = { name = "mountRow" }
 local petRow = { name = "petRow" }
-local heirloomRow = { name = "heirloomRow" }
+local heirloomEntry = { name = "heirloomEntry" }
+local heirloomHeader = { name = "heirloomHeader" }
 
 _G.CollectionsJournal = { name = "CollectionsJournal" }
 _G.MountJournal = {
@@ -30,10 +46,13 @@ _G.PetJournal = {
     },
 }
 _G.HeirloomsJournal = {
-    ScrollBox = {
-        name = "HeirloomsJournalScrollBox",
-        ForEachFrame = function(_, callback) callback(heirloomRow) end,
-    },
+    heirloomEntryFrames = { heirloomEntry },
+    heirloomHeaderFrames = { heirloomHeader },
+    AcquireFrame = function(_, framePool, numInUse)
+        return framePool and framePool[numInUse]
+    end,
+    RefreshView = function() end,
+    UpdateButton = function() end,
 }
 
 local ns = {
@@ -117,10 +136,16 @@ assert(calls[_G.CollectionsJournal] and calls[_G.CollectionsJournal].recurse == 
 assert(calls["lock:CollectionsJournal"] == 4, "Collections Journal parent text must be locked")
 assert(calls["lock:mountRow"] == 3, "visible mount rows must be locked")
 assert(calls["lock:petRow"] == 3, "visible pet rows must be locked")
-assert(calls["lock:heirloomRow"] == 3, "visible heirloom rows must be locked")
+assert(calls["lock:heirloomEntry"] == 3, "visible heirloom entry frames must be locked")
+assert(calls["lock:heirloomHeader"] == 3, "visible heirloom header frames must be locked")
 assert(scrollHooks[_G.MountJournal.ScrollBox], "MountJournal ScrollBox must lock acquired rows")
 assert(scrollHooks[_G.PetJournal.ScrollBox], "PetJournal ScrollBox must lock acquired rows")
-assert(scrollHooks[_G.HeirloomsJournal.ScrollBox], "HeirloomsJournal ScrollBox must lock acquired rows")
+assert(tableHooks[_G.HeirloomsJournal] and tableHooks[_G.HeirloomsJournal].AcquireFrame,
+    "HeirloomsJournal must hook AcquireFrame, not a nonexistent ScrollBox")
+assert(tableHooks[_G.HeirloomsJournal] and tableHooks[_G.HeirloomsJournal].RefreshView,
+    "HeirloomsJournal must re-check active pools on RefreshView")
+assert(tableHooks[_G.HeirloomsJournal] and tableHooks[_G.HeirloomsJournal].UpdateButton,
+    "HeirloomsJournal must relock entries after UpdateButton font-object resets")
 
 -- A NEWLY acquired row gets the full recursive lock pass.
 local newMountRow = { name = "newMountRow" }
@@ -134,5 +159,19 @@ assert(calls["lock:newMountRow"] == 3, "newly acquired mount rows must be locked
 calls["lock:mountRow"] = nil
 scrollHooks[_G.MountJournal.ScrollBox](mountRow)
 assert(calls["lock:mountRow"] == nil, "already-fonted rows must NOT re-run the recursive lock pass")
+
+local newHeirloomEntry = { name = "newHeirloomEntry" }
+_G.HeirloomsJournal.heirloomEntryFrames[2] = newHeirloomEntry
+_G.HeirloomsJournal:AcquireFrame(_G.HeirloomsJournal.heirloomEntryFrames, 2)
+assert(calls["lock:newHeirloomEntry"] == 3, "newly acquired heirloom entries must be locked")
+
+local newHeirloomHeader = { name = "newHeirloomHeader" }
+_G.HeirloomsJournal.heirloomHeaderFrames[2] = newHeirloomHeader
+_G.HeirloomsJournal:RefreshView()
+assert(calls["lock:newHeirloomHeader"] == 3, "refreshed heirloom header frames must be locked")
+
+local updatedHeirloomEntry = { name = "updatedHeirloomEntry" }
+_G.HeirloomsJournal:UpdateButton(updatedHeirloomEntry)
+assert(calls["lock:updatedHeirloomEntry"] == 3, "UpdateButton must relock heirloom entry text")
 
 print("OK: collections_journal_font_lock_test")

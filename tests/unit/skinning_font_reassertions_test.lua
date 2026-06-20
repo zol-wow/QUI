@@ -132,8 +132,16 @@ assertContains(journals, "LockCollectionsScrollBox(_G.MountJournal and _G.MountJ
     "Mount Journal pooled rows must lock font-object resets")
 assertContains(journals, "LockCollectionsScrollBox(_G.PetJournal and _G.PetJournal.ScrollBox)",
     "Pet Journal pooled rows must lock font-object resets")
-assertContains(journals, "LockCollectionsScrollBox(_G.HeirloomsJournal and _G.HeirloomsJournal.ScrollBox)",
-    "Heirlooms Journal pooled rows must lock font-object resets")
+assertContains(journals, "local function HookHeirloomsJournal(journal)",
+    "Heirlooms Journal must use its FrameXML owner lifecycle, not a fake ScrollBox")
+assertContains(journals, "HookHeirloomsJournal(_G.HeirloomsJournal)",
+    "Collections refresh must hook the real HeirloomsJournal owner")
+assertContains(journals, "hooksecurefunc(journal, \"AcquireFrame\"",
+    "Heirlooms Journal must lock newly acquired entry/header frames")
+assertContains(journals, "hooksecurefunc(journal, \"RefreshView\"",
+    "Heirlooms Journal must re-check active pools on refresh")
+assertContains(journals, "hooksecurefunc(journal, \"UpdateButton\"",
+    "Heirlooms Journal must relock entries after UpdateButton font-object resets")
 
 local achievement = readFile("QUI_Skinning/skinning/frames/achievement.lua")
 -- Pooled list/stat rows must go through the guarded row-font helper (runs the
@@ -224,17 +232,17 @@ assert(lockCount >= 4, "Bank/Merchant/Mail/GuildBank skins must lock descendant 
 local characterPane = readFile("QUI_Skinning/skinning/character_pane/character.lua")
 local characterSettings = blockBetween(characterPane, "-- \"Settings\" label",
     "-- Close button (X)")
-assertContains(characterSettings, "CJKFont(gearLabel, STANDARD_TEXT_FONT, 12, \"\")",
+assertContains(characterSettings, "CJKFont(gearLabel, GeneralFontFace(), 12, \"\")",
     "Character settings gear label must route through CJK fallback")
-assertContains(characterSettings, "CJKFont(title, STANDARD_TEXT_FONT, 14, \"\")",
+assertContains(characterSettings, "CJKFont(title, GeneralFontFace(), 14, \"\")",
     "Character settings panel title must route through CJK fallback")
 
 local inspectPane = readFile("QUI_Skinning/skinning/character_pane/inspect.lua")
 local inspectSettings = blockBetween(inspectPane, "local gearLabel = gearBtn:CreateFontString",
     "-- Close button")
-assertContains(inspectSettings, "CJKFont(gearLabel, STANDARD_TEXT_FONT, 12, \"\")",
+assertContains(inspectSettings, "CJKFont(gearLabel, GeneralFontFace(), 12, \"\")",
     "Inspect settings gear label must route through CJK fallback")
-assertContains(inspectSettings, "CJKFont(title, STANDARD_TEXT_FONT, 14, \"\")",
+assertContains(inspectSettings, "CJKFont(title, GeneralFontFace(), 14, \"\")",
     "Inspect settings panel title must route through CJK fallback")
 
 ---------------------------------------------------------------------------
@@ -249,8 +257,8 @@ assertContains(readycheck, "SkinBase.ApplyButtonFontObjects(button, { size = 12"
     "ready-check buttons must drive state font objects")
 assertAbsent(readycheck, "text:SetFont(STANDARD_TEXT_FONT, 12, FONT_FLAGS)",
     "ready-check main text must not bypass CJK fallback")
-assertContains(readycheck, "CJKFont(text, STANDARD_TEXT_FONT, 12, FONT_FLAGS)",
-    "ready-check main text must route through CJK fallback")
+assertContains(readycheck, "CJKFont(text, GeneralFontFace(), 12, FONT_FLAGS)",
+    "ready-check main text must route through CJK fallback using the QUI font face")
 
 local tooltips = readFile("QUI_Skinning/skinning/system/tooltips.lua")
 assertContains(tooltips, "if tooltip ~= GameTooltip then",
@@ -265,12 +273,20 @@ assertContains(tooltips, "SkinBase.SkinFrameText(tooltip, { recurse = true })",
 -- list panel routes through it instead of an inline per-acquire re-skin.
 ---------------------------------------------------------------------------
 local uikit = readFile("core/uikit.lua")
+assertContains(uikit, "function SkinBase.LockPooledRowText(row, depth)",
+    "SkinBase must expose one shared guarded row-font lock helper")
+local lockPooledRowText = blockBetween(uikit, "function SkinBase.LockPooledRowText(row, depth)",
+    "\nend\n\nfunction SkinBase.HookScrollBoxRowFonts")
+assertContains(lockPooledRowText, "SkinBase.GetFrameData(row, \"qListRowFonted\")",
+    "LockPooledRowText must guard per row so the recursive font pass runs once")
+assertContains(lockPooledRowText, "SkinBase.SetFrameData(row, \"qListRowFonted\", true)",
+    "LockPooledRowText must mark the row fonted after the one-time pass")
 local rowFontHelper = blockBetween(uikit, "function SkinBase.HookScrollBoxRowFonts(scrollBox, depth)",
     "\nend")
-assertContains(rowFontHelper, "SkinBase.GetFrameData(row, \"qListRowFonted\")",
-    "HookScrollBoxRowFonts must guard per row so the recursive font pass runs once")
-assertContains(rowFontHelper, "SkinBase.SetFrameData(row, \"qListRowFonted\", true)",
-    "HookScrollBoxRowFonts must mark the row fonted after the one-time pass")
+assertContains(rowFontHelper, "SkinBase.LockPooledRowText(row, depth or 3)",
+    "HookScrollBoxRowFonts must route through the shared row-font helper")
+assertContains(rowFontHelper, "{ sync = true }",
+    "HookScrollBoxRowFonts must run pure font locks synchronously before first paint")
 
 for _, frame in ipairs({
     { path = "QUI_Skinning/skinning/frames/journals.lua",       what = "Collections journal rows" },
@@ -281,5 +297,46 @@ for _, frame in ipairs({
     assertContains(src, "SkinBase.HookScrollBoxRowFonts(",
         frame.what .. " must use the guarded row-font helper, not an unguarded per-acquire re-skin")
 end
+
+for _, frame in ipairs({
+    { path = "QUI_Skinning/skinning/frames/auctionhouse.lua",    what = "Auction House rows" },
+    { path = "QUI_Skinning/skinning/frames/craftingorders.lua",  what = "Crafting Orders rows" },
+    { path = "QUI_Skinning/skinning/frames/professions.lua",     what = "Professions rows" },
+    { path = "QUI_Skinning/skinning/frames/character.lua",       what = "Reputation/Currency rows" },
+}) do
+    local src = readFile(frame.path)
+    assertContains(src, "SkinBase.LockPooledRowText(",
+        frame.what .. " must reuse the shared guarded row-font helper")
+end
+
+-- Reputation/Currency pooled rows skin via HookScrollBoxAcquired (they also do
+-- backdrop/icon work), so they route fonts through LockPooledRowText rather than
+-- an inline per-acquire recursive SkinFrameText that would revert on rebind.
+local characterRows = readFile("QUI_Skinning/skinning/frames/character.lua")
+assertContains(characterRows, "SkinReputationEntry(row)\n                SkinBase.LockPooledRowText(row, 4)",
+    "Reputation rows must lock pooled-row text after SkinReputationEntry")
+assertContains(characterRows, "SkinCurrencyEntry(row)\n                SkinBase.LockPooledRowText(row, 4)",
+    "Currency rows must lock pooled-row text after SkinCurrencyEntry")
+
+local ahRow = blockBetween(readFile("QUI_Skinning/skinning/frames/auctionhouse.lua"),
+    "local function skinRow(row)", "end\n\n-- TableBuilder")
+assertContains(ahRow, "SkinBase.LockPooledRowText(row, 4)",
+    "AH row text must route through the shared helper")
+assertAbsent(ahRow, "SkinBase.SkinFrameText(row, { recurse = true })",
+    "AH row text must not do a duplicate recursive pass before LockPooledRowText")
+
+local coRow = blockBetween(readFile("QUI_Skinning/skinning/frames/craftingorders.lua"),
+    "local function skinRow(row)", "end\n\n-- Order-table")
+assertContains(coRow, "SkinBase.LockPooledRowText(row, 4)",
+    "Crafting Orders row text must route through the shared helper")
+assertAbsent(coRow, "SkinBase.SkinFrameText(row, { recurse = true })",
+    "Crafting Orders row text must not do a duplicate recursive pass before LockPooledRowText")
+
+local profRow = blockBetween(readFile("QUI_Skinning/skinning/frames/professions.lua"),
+    "local function StyleScrollBoxRow(row)", "end\n\n---------------------------------------------------------------------------\n-- HIDE DECORATIONS")
+assertContains(profRow, "SkinBase.LockPooledRowText(row, 4)",
+    "Professions row text must route through the shared helper")
+assertAbsent(profRow, "SkinBase.SkinFrameText(row, { recurse = true })",
+    "Professions row text must not do a duplicate recursive pass before LockPooledRowText")
 
 print("OK: skinning_font_reassertions_test")

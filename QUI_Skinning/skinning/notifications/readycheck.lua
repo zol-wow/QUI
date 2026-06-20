@@ -1,4 +1,4 @@
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
@@ -9,6 +9,13 @@ local function CJKFont(fs, p, s, f)
     else
         fs:SetFont(p, s, f)
     end
+end
+
+-- Resolve the user's configured general font FACE (falling back to the WoW
+-- default). CJKFont keeps CJK glyph fallback either way; this just ensures the
+-- label uses the QUI font instead of the hardcoded engine default.
+local function GeneralFontFace()
+    return (ns.Helpers and ns.Helpers.GetGeneralFont and ns.Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
 end
 
 ---------------------------------------------------------------------------
@@ -329,7 +336,7 @@ local function SkinReadyCheckFrame()
     if text then
         text:ClearAllPoints()
         text:SetPoint("TOP", targetFrame, "TOP", 0, -30)
-        CJKFont(text, STANDARD_TEXT_FONT, 12, FONT_FLAGS)
+        CJKFont(text, GeneralFontFace(), 12, FONT_FLAGS)
         if text.SetDrawLayer then text:SetDrawLayer("OVERLAY", 5) end
         text:SetTextColor(0.9, 0.9, 0.9, 1)
     end
@@ -338,7 +345,7 @@ local function SkinReadyCheckFrame()
     if not SkinBase.GetFrameData(frame, "title") then
         local title = targetFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         title:SetPoint("TOP", targetFrame, "TOP", 0, -8)
-        CJKFont(title, STANDARD_TEXT_FONT, 13, FONT_FLAGS)
+        CJKFont(title, GeneralFontFace(), 13, FONT_FLAGS)
         if title.SetDrawLayer then title:SetDrawLayer("OVERLAY", 7) end
         SkinBase.SetFrameData(frame, "title", title)
     end
@@ -441,24 +448,20 @@ end
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
+-- READY_CHECK re-skins the (possibly lazily-shown) ReadyCheckFrame each time a
+-- check starts. The initial skin comes from ns.WhenLoggedIn below; a self-
+-- registered ADDON_LOADED handler is dead under eager LOD and is not used.
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("READY_CHECK")
-eventFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 ~= ADDON_NAME then
-        return
-    end
-    if event == "ADDON_LOADED" then
-        self:UnregisterEvent("ADDON_LOADED")
-    end
+eventFrame:SetScript("OnEvent", function()
     if _G.ReadyCheckFrame then
         SkinReadyCheckFrame()
     end
 end)
 
--- LOD catch-up: PLAYER_LOGIN already fired before this module loads.
--- ns.WhenLoggedIn is nil only in the headless test harness, where the old
--- never-firing PLAYER_LOGIN registration was equally inert.
+-- LOD catch-up: PLAYER_LOGIN already fired before this module loads, so this
+-- runs immediately. ns.WhenLoggedIn is nil only in the headless test harness,
+-- where the old never-firing PLAYER_LOGIN registration was equally inert.
 if ns.WhenLoggedIn then
     ns.WhenLoggedIn(function()
         if _G.ReadyCheckFrame then

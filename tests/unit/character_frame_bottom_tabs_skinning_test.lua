@@ -46,13 +46,13 @@ assertContains(
 
 assertContains(
     source,
-    "addon == \"Blizzard_UIPanels_Game\"",
+    "SkinBase.OnAddOnLoaded(\"Blizzard_UIPanels_Game\", InitializeCharacterFrameSkinning, 0)",
     "Character frame skinning must initialize when the current CharacterFrame addon loads")
 
 assertContains(
     source,
-    "CharacterFrame and CharacterFrameTab1",
-    "Character frame skinning must catch up if CharacterFrame already exists before ADDON_LOADED is observed")
+    "SkinBase.OnAddOnLoaded(\"Blizzard_CharacterFrame\", InitializeCharacterFrameSkinning, 0)",
+    "Character frame skinning must catch up if CharacterFrame is already loaded before ADDON_LOADED is observed")
 
 assertContains(
     source,

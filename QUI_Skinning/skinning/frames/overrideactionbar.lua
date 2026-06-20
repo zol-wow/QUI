@@ -13,6 +13,8 @@ local LEAVE_BUTTON_SIZE = 28  -- Visible leave button
 local RESOURCE_BAR_WIDTH = 12  -- Slim vertical bar
 local RESOURCE_BAR_HEIGHT = 40  -- Match button height
 local pendingOverrideSkin = false
+local pendingOverridePostUpdate = false
+local overrideActionBarLifecycleHooked = false
 
 -- Style action button with QUI theme
 local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
@@ -125,7 +127,7 @@ local function SkinOverrideActionBar()
     if not settings or not settings.skinOverrideActionBar then return end
 
     local bar = _G.OverrideActionBar
-    if not bar or SkinBase.IsSkinned(bar) then return end
+    if not bar then return end
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
         pendingOverrideSkin = true
         return
@@ -242,6 +244,9 @@ local function SkinOverrideActionBar()
     end
 
     SkinBase.SkinFrameText(bar, { recurse = true })
+    -- Lock the QUI font so Blizzard's leave/MicroButton label rebinds can't
+    -- revert the one-shot SkinFrameText pass.
+    SkinBase.LockFrameTextObjects(bar)
     SkinBase.MarkSkinned(bar)
 
     -- BUG-005: Reset MicroMenu to normal position after skinning
@@ -256,6 +261,34 @@ local function SkinOverrideActionBar()
             end
         end)
     end
+end
+
+local function RunOverrideActionBarPostUpdate()
+    pendingOverridePostUpdate = false
+    SkinOverrideActionBar()
+    -- BUG-005: Blizzard's UpdateMicroButtons (called from OnShow/UpdateSkin)
+    -- re-positions MicroMenu using hardcoded offsets that no longer match
+    -- our compact bar size. Reset position here on every bar-state event.
+    if MicroMenu and MicroMenu.ResetMicroMenuPosition and not InCombatLockdown() then
+        MicroMenu:ResetMicroMenuPosition()
+    end
+end
+
+local function DeferOverrideActionBarPostUpdate()
+    if pendingOverridePostUpdate then return end
+    pendingOverridePostUpdate = true
+    -- FrameXML OverrideActionBarMixin:UpdateSkin resets skin, size, actionpage, buttons, and status bars.
+    -- One frame exits the protected controller/update stack without HookScript
+    -- or animation-group hooks on the protected bar.
+    C_Timer.After(0, RunOverrideActionBarPostUpdate)
+end
+
+local function EnsureOverrideActionBarLifecycleHook(bar)
+    if not bar or overrideActionBarLifecycleHooked or not bar.UpdateSkin then return end
+    hooksecurefunc(bar, "UpdateSkin", function()
+        DeferOverrideActionBarPostUpdate()
+    end)
+    overrideActionBarLifecycleHooked = true
 end
 
 -- Refresh colors
@@ -332,6 +365,7 @@ end
 local function HandleBarStateChange()
     local bar = _G.OverrideActionBar
     if not bar then return end
+    EnsureOverrideActionBarLifecycleHook(bar)
 
     local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
     if not settings or not settings.skinOverrideActionBar then return end
@@ -343,16 +377,7 @@ local function HandleBarStateChange()
         return
     end
 
-    -- Defer 0.15s so Blizzard's own OnShow/UpdateSkin run first
-    C_Timer.After(0.15, function()
-        SkinOverrideActionBar()
-        -- BUG-005: Blizzard's UpdateMicroButtons (called from OnShow/UpdateSkin)
-        -- re-positions MicroMenu using hardcoded offsets that no longer match
-        -- our compact bar size. Reset position here on every bar-state event.
-        if MicroMenu and MicroMenu.ResetMicroMenuPosition and not InCombatLockdown() then
-            MicroMenu:ResetMicroMenuPosition()
-        end
-    end)
+    DeferOverrideActionBarPostUpdate()
 end
 
 local frame = CreateFrame("Frame")

@@ -1,4 +1,4 @@
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 local Helpers = ns.Helpers
 local GetCore = Helpers.GetCore
@@ -179,9 +179,12 @@ local function RefreshButtonState(button)
     local border = SkinBase.GetFrameData(button, "systemPopupBorder")
 
     if backdrop then
+        -- Enabled/disabled is a persistent state: route through SetBackdropColors
+        -- so the next scale-refresh rebuild keeps it instead of reverting to the
+        -- creation-time color.
         local bg = enabled and normalBg or disabledBg
-        if bg then backdrop:SetBackdropColor(bg[1], bg[2], bg[3], bg[4]) end
-        if border then backdrop:SetBackdropBorderColor(border[1], border[2], border[3], enabled and border[4] or 0.35) end
+        local borderColor = border and { border[1], border[2], border[3], enabled and border[4] or 0.35 } or nil
+        SkinBase.SetBackdropColors(backdrop, borderColor, bg)
     end
 
     local text = button.GetFontString and button:GetFontString()
@@ -227,8 +230,7 @@ local function StyleButton(button, prefix)
             local bd = SkinBase.GetBackdrop(self)
             local hoverBg = SkinBase.GetFrameData(self, "systemPopupHoverBg")
             local border = SkinBase.GetFrameData(self, "systemPopupBorder")
-            if bd and hoverBg then bd:SetBackdropColor(hoverBg[1], hoverBg[2], hoverBg[3], hoverBg[4]) end
-            if bd and border then bd:SetBackdropBorderColor(border[1], border[2], border[3], border[4]) end
+            if bd then SkinBase.SetBackdropColors(bd, border, hoverBg) end
             local text = self:GetFontString()
             if text and (not self.IsEnabled or self:IsEnabled()) then text:SetTextColor(1, 1, 1, 1) end
         end)
@@ -444,8 +446,6 @@ if ns.Registry then
     })
 end
 
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
 local startupHooksComplete = false
 local function InstallStartupHooks()
     if startupHooksComplete then return true end
@@ -457,14 +457,10 @@ local function InstallStartupHooks()
     return startupHooksComplete
 end
 
-eventFrame:SetScript("OnEvent", function(self, event, addon)
-    if event ~= "ADDON_LOADED" or addon ~= ADDON_NAME then return end
-    InstallStartupHooks()
-    self:UnregisterEvent("ADDON_LOADED")
-end)
-
--- LOD catch-up: PLAYER_LOGIN already fired before this module loads; the old
--- login-time retry runs immediately instead (idempotent with the handler above).
--- ns.WhenLoggedIn is nil only in the headless test harness, where the old
--- never-firing PLAYER_LOGIN registration was equally inert.
+-- This module's own ADDON_LOADED never reliably fires under eager LOD (the addon
+-- is force-loaded during core init, so a self-registered ADDON_LOADED handler is
+-- dead). Install via ns.WhenLoggedIn, which runs immediately because PLAYER_LOGIN
+-- has already fired by the time this module loads. InstallStartupHooks is
+-- idempotent. ns.WhenLoggedIn is nil only in the headless test harness, where the
+-- old self-ADDON_LOADED registration was equally inert.
 if ns.WhenLoggedIn then ns.WhenLoggedIn(InstallStartupHooks) end

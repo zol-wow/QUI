@@ -974,9 +974,9 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end)
 
     -- Row fonts: these pooled rows only SetText their NameText/InfoText/SizeText
-    -- (stock GameFontNormal*) and are cold-acquired after the one-shot frame skin, so
-    -- apply the QUI face here + lock. (Can't add a parallel HookScrollBoxRowFonts on
-    -- the same ScrollBox — the single qScrollHooked flag makes a second hook a no-op.)
+    -- (stock GameFontNormal*) and are cold-acquired after the one-shot frame skin.
+    -- Skin this button directly because the rest of its chrome is styled here.
+    -- HookScrollBoxAcquired composes callbacks through SkinBase.
     SkinBase.SkinFrameText(button, { recurse = true })
     SkinBase.LockFrameTextObjects(button, 2)
 
@@ -1229,8 +1229,8 @@ local function UpdateGroupFinderButtonColors(button, sr, sg, sb, sa, bgr, bgg, b
     local bd = button and SkinBase.GetFrameData(button, "backdrop")
     if not bd then return end
     local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
-    bd:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(bd, btnBgR, btnBgG, btnBgB, 1)
+    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     -- Update icon border if present
     local iconBd = button.icon and SkinBase.GetFrameData(button.icon, "backdrop")
@@ -1291,8 +1291,7 @@ local function RefreshInstanceFramesColors()
     -- Update PVEFrame backdrop
     local pveBd = SkinBase.GetBackdrop(PVEFrame)
     if pveBd then
-        pveBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        pveBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(pveBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     end
 
     -- Update PVE tabs
@@ -1350,8 +1349,7 @@ local function RefreshInstanceFramesColors()
             if LFGListFrame.SearchPanel.SearchBox then
                 local sbBd = SkinBase.GetBackdrop(LFGListFrame.SearchPanel.SearchBox)
                 if sbBd then
-                    sbBd:SetBackdropColor(bgr, bgg, bgb, bga)
-                    sbBd:SetBackdropBorderColor(sr, sg, sb, sa)
+                    SkinBase.SetBackdropColors(sbBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
                 end
             end
         end
@@ -1481,12 +1479,10 @@ end
 local pveHooked = false
 local function HookPVEFrame()
     if pveHooked then return end
-    if _G.PVEFrame then
-        _G.PVEFrame:HookScript("OnShow", function()
-            C_Timer.After(0.1, SkinInstanceFrames)
-        end)
-        pveHooked = true
-    end
+    local PVEFrame = _G.PVEFrame
+    if not PVEFrame then return end
+    PVEFrame:HookScript("OnShow", SkinInstanceFrames)
+    pveHooked = true
 end
 
 local function RunAfterFirstFrame(callback, delay)
@@ -1502,15 +1498,12 @@ local function RunAfterFirstFrame(callback, delay)
     return nil
 end
 
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" then
-        if addon == "Blizzard_PVPUI" or addon == "Blizzard_ChallengesUI" then
-            C_Timer.After(0.1, SkinInstanceFrames)
-        end
-    end
-end)
+SkinBase.OnAddOnLoaded("Blizzard_GroupFinder", function()
+    HookPVEFrame()
+    SkinInstanceFrames()
+end, 0)
+SkinBase.OnAddOnLoaded("Blizzard_PVPUI", SkinInstanceFrames, 0)
+SkinBase.OnAddOnLoaded("Blizzard_ChallengesUI", SkinInstanceFrames, 0)
 
 -- LOD catch-up: first PEW already fired before this module loads; the old
 -- one-shot PLAYER_ENTERING_WORLD init runs via ns.WhenLoggedIn instead.

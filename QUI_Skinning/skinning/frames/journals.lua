@@ -624,6 +624,50 @@ local function LockCollectionsScrollBox(scrollBox)
     SkinBase.HookScrollBoxRowFonts(scrollBox, 3)
 end
 
+local function LockHeirloomFrame(frame)
+    if not frame or SkinBase.GetFrameData(frame, "qHeirloomTextLocked") then return end
+    SkinBase.SkinFrameText(frame, { recurse = true })
+    SkinBase.LockFrameTextObjects(frame, 3)
+    SkinBase.SetFrameData(frame, "qHeirloomTextLocked", true)
+end
+
+local function LockHeirloomsJournal(journal)
+    if not journal then return end
+    if journal.heirloomEntryFrames then
+        for _, frame in ipairs(journal.heirloomEntryFrames) do
+            LockHeirloomFrame(frame)
+        end
+    end
+    if journal.heirloomHeaderFrames then
+        for _, frame in ipairs(journal.heirloomHeaderFrames) do
+            LockHeirloomFrame(frame)
+        end
+    end
+end
+
+local function HookHeirloomsJournal(journal)
+    if not journal or SkinBase.GetFrameData(journal, "qHeirloomsJournalTextHooked") then return end
+
+    if type(journal.AcquireFrame) == "function" then
+        hooksecurefunc(journal, "AcquireFrame", function(_, framePool, numInUse)
+            LockHeirloomFrame(framePool and framePool[numInUse])
+        end)
+    end
+    if type(journal.RefreshView) == "function" then
+        hooksecurefunc(journal, "RefreshView", function(activeJournal)
+            LockHeirloomsJournal(activeJournal)
+        end)
+    end
+    if type(journal.UpdateButton) == "function" then
+        hooksecurefunc(journal, "UpdateButton", function(_, button)
+            LockHeirloomFrame(button)
+        end)
+    end
+
+    SkinBase.SetFrameData(journal, "qHeirloomsJournalTextHooked", true)
+    LockHeirloomsJournal(journal)
+end
+
 local function HookCollectionsText(frame)
     LockCollectionsText(frame)
     -- Bottom action buttons (MountJournal.MountButton "MOUNT", PetJournal summon
@@ -635,7 +679,7 @@ local function HookCollectionsText(frame)
     end
     LockCollectionsScrollBox(_G.MountJournal and _G.MountJournal.ScrollBox)
     LockCollectionsScrollBox(_G.PetJournal and _G.PetJournal.ScrollBox)
-    LockCollectionsScrollBox(_G.HeirloomsJournal and _G.HeirloomsJournal.ScrollBox)
+    HookHeirloomsJournal(_G.HeirloomsJournal)
 
     local wardrobe = _G.WardrobeCollectionFrame
     local sets = wardrobe and wardrobe.SetsCollectionFrame

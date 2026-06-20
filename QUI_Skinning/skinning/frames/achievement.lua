@@ -308,8 +308,7 @@ local function RefreshAchievement()
     local bd = SkinBase.GetBackdrop(frame)
     if not bd then return end
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
-    bd:SetBackdropColor(bgr, bgg, bgb, bga)
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 
 _G.QUI_RefreshAchievementColors = RefreshAchievement

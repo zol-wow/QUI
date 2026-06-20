@@ -236,12 +236,11 @@ end
 -- Style each pooled ScrollBox row as it's acquired (shared by all lists).
 local function skinRow(row)
     SkinBase.SkinScrollRow(row)
-    SkinBase.SkinFrameText(row, { recurse = true })
     -- AH result rows are TableBuilder-backed: each cell re-applies its font
-    -- OBJECT (Number*/Price* font objects) on every populate / scroll-recycle,
-    -- reverting the one-shot SkinFrameText face above. Lock so the QUI face
-    -- re-applies on each swap (fontOnly keeps the quality/price text colors).
-    SkinBase.LockFrameTextObjects(row, 4)
+    -- OBJECT (Number*/Price* font objects) on every populate / scroll-recycle.
+    -- LockPooledRowText does the guarded recursive pass once, then locks so the
+    -- QUI face re-applies on each swap.
+    SkinBase.LockPooledRowText(row, 4)
 end
 
 -- TableBuilder sortable column headers (AuctionHouseTableHeaderStringMixin) are
@@ -250,7 +249,7 @@ end
 -- reverted each relayout. One mixin hook covers every list sharing the template.
 local function HookAuctionHeaderSkin()
     local mixin = _G.AuctionHouseTableHeaderStringMixin
-    if not mixin or mixin.Init == nil or mixin.__quiHeaderSkinHooked then return end
+    if not mixin or mixin.Init == nil or SkinBase.GetFrameData(mixin, "headerSkinHooked") then return end
     hooksecurefunc(mixin, "Init", function(self)
         if not IsEnabled() then return end
         -- Suppress the inherited ColumnDisplayButtonShort slice art (keep the sort Arrow)
@@ -262,7 +261,7 @@ local function HookAuctionHeaderSkin()
         SkinBase.ApplyButtonFontObjects(self)
         SkinBase.LockFrameTextObjects(self, 2)
     end)
-    mixin.__quiHeaderSkinHooked = true
+    SkinBase.SetFrameData(mixin, "headerSkinHooked", true)
 end
 
 -- Skin browse panel (item list / commodities list)
@@ -561,11 +560,12 @@ local function RefreshAuctionHouseColors()
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
-    -- Main backdrop
+    -- Main backdrop. Route through SetBackdropColors so the new theme color is
+    -- written into the persisted backdrop data; a bare setter would be discarded
+    -- by the next scale-refresh rebuild.
     local mainBd = SkinBase.GetBackdrop(AuctionHouseFrame)
     if mainBd then
-        mainBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        mainBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(mainBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     end
 
     -- Tabs
@@ -675,16 +675,4 @@ end
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" and addon == "Blizzard_AuctionHouseUI" then
-        C_Timer.After(0.1, SkinAuctionHouse)
-        self:UnregisterEvent("ADDON_LOADED")
-    end
-end)
-
-if SkinBase.IsAddOnFullyLoaded("Blizzard_AuctionHouseUI") then
-    C_Timer.After(0.1, SkinAuctionHouse)
-    frame:UnregisterEvent("ADDON_LOADED")
-end
+SkinBase.OnAddOnLoaded("Blizzard_AuctionHouseUI", SkinAuctionHouse, 0)

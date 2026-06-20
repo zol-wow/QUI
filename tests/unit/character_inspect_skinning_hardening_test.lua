@@ -34,11 +34,11 @@ local characterLayoutStart = assert(
     characterSource:find("ApplyCharacterPaneLayout = function(force)", 1, true),
     "Character layout entry point should exist")
 local characterLayoutDelayStart = assert(
-    characterSource:find("C_Timer.After(0.1, function()", characterLayoutStart, true),
-    "Character first-open delayed layout block should exist")
+    characterSource:find("RunAfterCharacterPaneLayoutTick(function()", characterLayoutStart, true),
+    "Character first-open next-frame layout block should exist")
 local characterLayoutDelayEnd = assert(
     characterSource:find("    end)", characterLayoutDelayStart, true),
-    "Character first-open delayed layout block should be closed")
+    "Character first-open next-frame layout block should be closed")
 local characterLayoutDelayBlock = characterSource:sub(characterLayoutDelayStart, characterLayoutDelayEnd)
 
 assertContains(
@@ -119,7 +119,7 @@ assertContains(
 assertContains(
     characterLayoutDelayBlock,
     "RefreshEquipmentSlotBorders()",
-    "Character first-open delayed layout must refresh slot borders after slot repositioning")
+    "Character first-open next-frame layout must refresh slot borders after slot repositioning")
 
 assertAbsent(
     characterSource,

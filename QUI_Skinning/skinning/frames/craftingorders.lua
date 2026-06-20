@@ -24,12 +24,10 @@ end
 -- Style each pooled ScrollBox row as it's acquired (shared by all lists).
 local function skinRow(row)
     SkinBase.SkinScrollRow(row)
-    SkinBase.SkinFrameText(row, { recurse = true })
     -- Order/recipe/listing rows are TableBuilder rows whose cell fontstrings are
-    -- built lazily, so the one-shot SkinFrameText above misses cold cells. Lock
-    -- the row subtree (idempotent per object) so the QUI face re-applies on every
-    -- cell rebind — mirrors the Auction House row styler.
-    SkinBase.LockFrameTextObjects(row, 4)
+    -- built lazily. LockPooledRowText does the guarded recursive pass once, then
+    -- locks the row subtree so the QUI face re-applies on every cell rebind.
+    SkinBase.LockPooledRowText(row, 4)
 end
 
 -- Order-table column headers (ProfessionsCrafterTableHeaderStringTemplate, a
@@ -39,11 +37,11 @@ end
 -- font driven onto its font objects right after Blizzard builds it.
 local function HookProfessionTableHeaderFonts()
     local mixin = _G.ProfessionsCrafterTableHeaderStringMixin
-    if not mixin or mixin.Init == nil or mixin.__quiHeaderFontHooked then return end
+    if not mixin or mixin.Init == nil or SkinBase.GetFrameData(mixin, "headerFontHooked") then return end
     hooksecurefunc(mixin, "Init", function(self)
         SkinBase.ApplyButtonFontObjects(self)
     end)
-    mixin.__quiHeaderFontHooked = true
+    SkinBase.SetFrameData(mixin, "headerFontHooked", true)
 end
 
 -- Suppress a category button's default textures (safe to call on every refresh;
@@ -348,8 +346,7 @@ end
 local function UpdatePanelColors(panel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = panel and SkinBase.GetBackdrop(panel)
     if not bd then return end
-    bd:SetBackdropColor(SkinBase.GetDepthColor("SUBPANEL"))
-    bd:SetBackdropBorderColor(sr, sg, sb, sa * 0.3)
+    SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa * 0.3 }, { SkinBase.GetDepthColor("SUBPANEL") })
 end
 
 ---------------------------------------------------------------------------
@@ -365,8 +362,7 @@ local function RefreshCraftingOrdersColors()
     -- Main backdrop
     local mainBd = SkinBase.GetBackdrop(frame)
     if mainBd then
-        mainBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        mainBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(mainBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     end
 
     -- Tabs
@@ -412,8 +408,7 @@ local function RefreshCraftingOrdersColors()
         if form.CurrentListings then
             local listingsBd = SkinBase.GetBackdrop(form.CurrentListings)
             if listingsBd then
-                listingsBd:SetBackdropColor(bgr, bgg, bgb, bga)
-                listingsBd:SetBackdropBorderColor(sr, sg, sb, sa)
+                SkinBase.SetBackdropColors(listingsBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
             end
             SkinBase.RefreshWidget(form.CurrentListings.CloseButton)
         end
@@ -436,16 +431,4 @@ end
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
-local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("ADDON_LOADED")
-initFrame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" and addon == "Blizzard_ProfessionsCustomerOrders" then
-        C_Timer.After(0.1, SkinCraftingOrders)
-        self:UnregisterEvent("ADDON_LOADED")
-    end
-end)
-
-if SkinBase.IsAddOnFullyLoaded("Blizzard_ProfessionsCustomerOrders") then
-    C_Timer.After(0.1, SkinCraftingOrders)
-    initFrame:UnregisterEvent("ADDON_LOADED")
-end
+SkinBase.OnAddOnLoaded("Blizzard_ProfessionsCustomerOrders", SkinCraftingOrders, 0)
