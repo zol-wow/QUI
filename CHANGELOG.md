@@ -9,6 +9,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v4.0.3 - 2026-06-21
+
+### Added
+- added per-bar action bars content based visibility options (including specifically "show on Mythic L'ura")
+- added player level text options to unitframes and groupframes
+- added visible scroll bars on overflow tabs + fix equipment ilvl/status overlap
+- added global default font, CJK fallback, symbol glyphs + readable skinning text
+
+### Fixed
+- perf(cdm): cut in-combat aura/resolve churn + memo queries, drop redundant + self-aura walks
+- perf(ui): reduce tooltip refresh churn
+- fix(cdm): stop loadout swaps from resetting entries when per-loadout is off
+- fix(cdm): mirrored cooldown icon stuck in aura mode after buff ends
+- fix(skinning,cdm): font-revert/template-drift sweep, mail coverage, glow-below-swipe
+- fix(skinning): harden lifecycle and recolors
+- fix(skinning): kill text font/color reverts across skinned frames
+- fix(skinning): reassert QUI font on pool-acquired and re-shown text
+- fix(skinning): re-assert QUI theming Blizzard clobbers on hover/rebind
+- fix(chat): keep player class colors through combat lockdown
+- fix(chat): show BN friend name in copy window instead of ???
+- fix(chat): preserve class color on secret-sender whisper/party lines
+- fix(chat): restore hover tooltips on chat hyperlinks
+- fix(qol): stop action tracker mouse toggle taint in combat
+- fix(clickcast): proxy modified target/menu clicks
+- fix(auras): remove IMPORTANT aura filter (removed in 12.0.7)
+- fix(resourcebars): secondary bar swap recenters anchored position
+- fix(groupframes): keep unit names visible in restricted-identity combat
+- fix(anchoring): don't UIParent-pin a frame that is itself secure
 ## v4.0.2 - 2026-06-18
 
 ### Added
