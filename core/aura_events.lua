@@ -24,6 +24,8 @@ local type = type
 local wipe = wipe
 local tostring = tostring
 local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+local issecretvalue = issecretvalue
 
 ---------------------------------------------------------------------------
 -- DISPATCHER
@@ -175,18 +177,36 @@ end
 -- targettarget, ...) only reach "all" subscribers. Current "all" consumers
 -- want at most two things:
 --   1. `unit == "target"`  — cdm_icons target-debuff refresh
---   2. GameTooltip is shown — tooltip.lua OnUnitAuraChanged
+--   2. The unit the GameTooltip is currently showing — tooltip.lua
+--      OnUnitAuraChanged, which refreshes that one tooltip's mount line.
 --
--- If neither condition holds at event time, no "all" subscriber would do
--- useful work for the event, so we drop it before it even reaches
--- pendingUnits. In raids/M+ this eliminates the overwhelming majority of
--- nameplate UNIT_AURA traffic from the dispatcher loop entirely.
+-- The tooltip consumer self-gates twice: it bails in combat, and it discards
+-- any unit that isn't the one the tooltip is showing (token-equality against
+-- GameTooltip:GetUnit). So passing EVERY non-roster token through whenever a
+-- tooltip happens to be up — the old behaviour — flooded the dispatcher in
+-- raids/M+ (40 enemy nameplates ticking DoTs the instant any tooltip appears),
+-- and every one of those events was then thrown away by the subscriber. That
+-- was a large, sustained FPS drop the moment the cursor touched a unit frame.
+--
+-- Scope the pass to exactly what a subscriber can act on:
+--   * `target` always (cdm path, in and out of combat),
+--   * out of combat, the tooltip's OWN unit token only.
+-- Combat needs nothing else here (the tooltip consumer bails), so we drop the
+-- whole storm with a single InCombatLockdown check before touching the tooltip.
 ---------------------------------------------------------------------------
 local function IsNonRosterEventInteresting(unit)
     if unit == "target" then return true end
+    -- In combat the only "all" consumer bails, so nothing non-target is useful.
+    -- This is the hot path during a pull — keep it a single cheap C call.
+    if InCombatLockdown() then return false end
     local tt = _G.GameTooltip
-    if tt and tt:IsShown() then return true end
-    return false
+    if not (tt and tt:IsShown()) then return false end
+    -- Match the subscriber's own contract: ResolveTooltipUnit() == changedUnit,
+    -- i.e. token equality against GameTooltip:GetUnit()'s unit return.
+    local _, ttUnit = tt:GetUnit()
+    if ttUnit == nil then return false end
+    if issecretvalue and issecretvalue(ttUnit) then return false end
+    return unit == ttUnit
 end
 
 ---------------------------------------------------------------------------

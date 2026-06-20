@@ -854,7 +854,12 @@ local function ShowUnitTooltip(frame)
     GameTooltip:Show()
 end
 
+-- HOVER DEBOUNCE: see the OnEnter hook below. State lives on `_state` (not new
+-- file-scope locals) because this chunk is at WoW's 200-local Lua 5.1 cap.
 local function HideUnitTooltip()
+    local t = _state._tooltipTimer
+    if t then t:Cancel(); _state._tooltipTimer = nil end
+    _state._tooltipPending = nil
     GameTooltip:Hide()
 end
 
@@ -2937,7 +2942,30 @@ local function DecorateGroupFrame(frame)
         frame._quiHooked = true
 
         frame:HookScript("OnEnter", function(self)
-            ShowUnitTooltip(self)
+            -- Debounce: sweeping the cursor across a dense raid grid fires
+            -- OnEnter on every frame crossed, and each show is a full
+            -- GameTooltip:SetUnit teardown+rebuild amplified by QUI's per-show
+            -- skin restyle + QoL post-processing — dozens of rebuilds/sec while
+            -- the mouse moves = the "stutter like crazy" on raid-frame hover.
+            -- Defer the show; OnLeave (HideUnitTooltip) cancels it, so a moving
+            -- cursor builds ZERO tooltips and only a settled cursor builds one.
+            -- C_Timer also lifts the show out of the secure OnEnter context.
+            local general = GetGeneralSettings(self._isRaid)
+            if not general or general.showTooltips == false then return end
+            _state._tooltipPending = self
+            if _state._tooltipTimer then return end
+            _state._tooltipTimer = C_Timer.NewTimer(0.10, function()
+                _state._tooltipTimer = nil
+                local f = _state._tooltipPending
+                _state._tooltipPending = nil
+                -- OnLeave clears _tooltipPending and cancels the timer, so
+                -- reaching here means the cursor never left `f`. IsShown (not the
+                -- secret-tainted IsMouseOver) guards a frame hidden by a roster
+                -- change between scheduling and firing.
+                if f and f.IsShown and f:IsShown() then
+                    ShowUnitTooltip(f)
+                end
+            end)
         end)
         frame:HookScript("OnLeave", HideUnitTooltip)
 
