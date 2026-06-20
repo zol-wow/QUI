@@ -1,6 +1,7 @@
 -- Packaging guard: release packaging must discover every top-level runtime
 -- QUI_* sibling addon with a matching TOC, then verify expected runtime files.
--- Dev-only companions such as QUI_Debug must stay excluded from releases.
+-- Dev-only companions such as QUI_Debug / QUI_Logger must stay excluded from
+-- releases.
 
 local manifest = assert(loadfile("core/addon_manifest.lua"))()
 
@@ -10,6 +11,7 @@ local WORKFLOWS = {
 
 local EXCLUDED_RELEASE_FOLDERS = {
     QUI_Debug = true,
+    QUI_Logger = true,
 }
 
 local function readFile(path)
@@ -57,6 +59,8 @@ end
 
 assert(folders.QUI_Debug, "QUI_Debug should exist in the repo for local diagnostics")
 assert(not releaseFolders.QUI_Debug, "QUI_Debug must not be treated as a release folder")
+assert(folders.QUI_Logger, "QUI_Logger should exist in the repo for local event capture")
+assert(not releaseFolders.QUI_Logger, "QUI_Logger must not be treated as a release folder")
 
 for folder in pairs(releaseFolders) do
     local toc = folder .. "/" .. folder .. ".toc"
@@ -80,6 +84,8 @@ for _, path in ipairs(WORKFLOWS) do
         path .. ": workflow should declare release exclusions")
     assertContains(body, "QUI_Debug",
         path .. ": workflow should exclude debug companion addon")
+    assertContains(body, "QUI_Logger",
+        path .. ": workflow should exclude logger companion addon")
     assertContains(body, "! is_excluded_suite_folder \"$folder\"",
         path .. ": workflow should filter excluded suite folders")
     assertContains(body, '[[ -f "$folder/$folder.toc" ]]',
@@ -90,6 +96,8 @@ for _, path in ipairs(WORKFLOWS) do
         path .. ": workflow should exclude tools from rsync copies")
     assertContains(body, "build/QUI_Debug",
         path .. ": workflow should fail if debug addon is packaged")
+    assertContains(body, "build/QUI_Logger",
+        path .. ": workflow should fail if logger addon is packaged")
     assertContains(body, "Non-runtime directory packaged",
         path .. ": workflow should guard against test/tool/doc directories in build output")
     assertContains(body, 'required_paths+=("build/$folder/$folder.toc")',
