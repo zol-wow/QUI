@@ -201,7 +201,9 @@ end
 -- Hide Blizzard decorative elements on CharacterFrame
 -- NineSlice borders are hooked once so Blizzard cannot re-show them.
 ---------------------------------------------------------------------------
-local nineSliceHooked = {}
+-- Weak-keyed (matches the other per-frame side tables above) so hooked NineSlice
+-- frames can still be garbage-collected; a plain table would pin them forever.
+local nineSliceHooked = Helpers.CreateStateTable()
 
 local function HideNineSlice(nineSlice)
     if not nineSlice then return end
@@ -569,7 +571,7 @@ local function SetupCharacterFrameSkinning()
         SkinBase.HookScrollBoxAcquired(ReputationFrame.ScrollBox, function(row)
             if IsSkinningEnabled() then
                 SkinReputationEntry(row)
-                SkinBase.SkinFrameText(row, { recurse = true })
+                SkinBase.LockPooledRowText(row, 4)
             end
         end)
     end
@@ -577,9 +579,20 @@ local function SetupCharacterFrameSkinning()
         SkinBase.HookScrollBoxAcquired(TokenFrame.ScrollBox, function(row)
             if IsSkinningEnabled() then
                 SkinCurrencyEntry(row)
-                SkinBase.SkinFrameText(row, { recurse = true })
+                SkinBase.LockPooledRowText(row, 4)
             end
         end)
+        -- TokenEntryMixin:Initialize re-SetTexture's CurrencyIcon on every bind,
+        -- resetting our texcoord crop; re-apply after it (acquire fires only once).
+        if _G.TokenEntryMixin and _G.TokenEntryMixin.Initialize
+            and not SkinBase.GetFrameData(TokenFrame, "qTokenIconHooked") then
+            hooksecurefunc(_G.TokenEntryMixin, "Initialize", function(self)
+                if not IsSkinningEnabled() then return end
+                local icon = self.Content and self.Content.CurrencyIcon
+                if icon then icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+            end)
+            SkinBase.SetFrameData(TokenFrame, "qTokenIconHooked", true)
+        end
     end
 
     -- Handle tab switching - show background and hide decorations
@@ -711,18 +724,22 @@ end
 -- EQUIPMENT MANAGER SKINNING
 ---------------------------------------------------------------------------
 
+local function RestyleEquipmentSetEntryText(entry)
+    local text = entry and entry.text
+    if not text then return end
+    CJKFont(text, GetFontPath(), 11, "")
+    if text.SetTextColor then
+        text:SetTextColor(0.9, 0.9, 0.9, 1)
+    end
+end
+
 -- Skin individual equipment set entry
 local function SkinEquipmentSetEntry(entry)
+    if not entry then return end
+    RestyleEquipmentSetEntryText(entry)
     if skinnedEntries[entry] then return end
 
     local sr, sg, sb, sa = GetSkinColors()
-    local fontPath = GetFontPath()
-
-    -- Style the entry text
-    if entry.text then
-        CJKFont(entry.text, fontPath, 11, "")
-        entry.text:SetTextColor(0.9, 0.9, 0.9, 1)
-    end
 
     -- Style the icon with a border
     if entry.icon and not iconBorders[entry.icon] then
@@ -730,7 +747,6 @@ local function SkinEquipmentSetEntry(entry)
         local border = CreateFrame("Frame", nil, entry, "BackdropTemplate")
         SetExpandedPixelPoints(border, entry.icon, 1)
         ApplyPixelBackdrop(border, 1, false, false, { sr, sg, sb, 1 })
-        border:SetBackdropBorderColor(sr, sg, sb, 1)
         iconBorders[entry.icon] = border
     end
 
@@ -766,8 +782,6 @@ local function StyleEquipMgrButton(btn)
         return
     end
     ApplyPixelBackdrop(btn, 1, true, false, { sr, sg, sb, 0.5 }, { 0.15, 0.15, 0.15, 1 })
-    btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-    btn:SetBackdropBorderColor(sr, sg, sb, 0.5)
 
     -- Style text via the button's font OBJECTS so the QUI font survives hover
     -- (HighlightFont) and disable (DisabledFont — SaveSet is disabled with no set
@@ -777,14 +791,16 @@ local function StyleEquipMgrButton(btn)
     -- Restore width
     btn:SetWidth(origWidth)
 
-    -- Hover effects (capture colors at hook time for consistency)
+    -- Hover effects (capture colors at hook time for consistency). Route through
+    -- SetPixelBackdropColors so a scale refresh mid-hover keeps the hover border
+    -- instead of rebuilding from the stale creation-time state color.
     btn:HookScript("OnEnter", function(self)
         local r, g, b = GetSkinColors()
-        self:SetBackdropBorderColor(r, g, b, 1)
+        SetPixelBackdropColors(self, { r, g, b, 1 })
     end)
     btn:HookScript("OnLeave", function(self)
         local r, g, b = GetSkinColors()
-        self:SetBackdropBorderColor(r, g, b, 0.5)
+        SetPixelBackdropColors(self, { r, g, b, 0.5 })
     end)
 
     skinnedEntries[btn] = true
@@ -821,6 +837,20 @@ local function SkinEquipmentManager()
         end)
     end
 
+    -- HookScrollBoxAcquired fires once per pool acquisition, but Blizzard's global
+    -- PaperDollEquipmentManagerPane_InitButton re-asserts GREEN/RED/NORMAL text color
+    -- + re-SetTexture's the icon (resetting texcoord) on EVERY data Update without
+    -- re-acquiring. Re-apply our font/color + icon crop after it, once-guarded.
+    if type(_G.PaperDollEquipmentManagerPane_InitButton) == "function"
+        and not SkinBase.GetFrameData(pane, "qEquipInitHooked") then
+        hooksecurefunc("PaperDollEquipmentManagerPane_InitButton", function(button)
+            if not IsSkinningEnabled() or not button then return end
+            RestyleEquipmentSetEntryText(button)
+            if button.icon then button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+        end)
+        SkinBase.SetFrameData(pane, "qEquipInitHooked", true)
+    end
+
     if pane then
         StyleThinScrollBar(pane.ScrollBar or (pane.ScrollBox and pane.ScrollBox.ScrollBar), sr, sg, sb)
     end
@@ -852,6 +882,7 @@ RefreshEquipmentManagerColors = function()
     if pane and pane.ScrollBox then
         pane.ScrollBox:ForEachFrame(function(entry)
             if not skinnedEntries[entry] then return end
+            RestyleEquipmentSetEntryText(entry)
             if entry.icon and iconBorders[entry.icon] then
                 SetPixelBackdropColors(iconBorders[entry.icon], { sr, sg, sb, 1 })
             end
@@ -958,6 +989,19 @@ local function SkinTitleManagerPane()
         SkinBase.HookScrollBoxAcquired(pane.ScrollBox, SkinTitleEntry)
     end
 
+    -- Blizzard's PaperDollTitlesPane_InitButton re-Shows BgTop/BgMiddle/BgBottom for
+    -- first/last rows on every bind (the acquire-guarded SkinTitleEntry won't re-hide).
+    if type(_G.PaperDollTitlesPane_InitButton) == "function"
+        and not SkinBase.GetFrameData(pane, "qTitleInitHooked") then
+        hooksecurefunc("PaperDollTitlesPane_InitButton", function(button)
+            if not IsSkinningEnabled() or not button then return end
+            if button.BgTop then button.BgTop:Hide() end
+            if button.BgMiddle then button.BgMiddle:Hide() end
+            if button.BgBottom then button.BgBottom:Hide() end
+        end)
+        SkinBase.SetFrameData(pane, "qTitleInitHooked", true)
+    end
+
     -- Style scrollbar
     StyleThinScrollBar(pane.ScrollBar or (pane.ScrollBox and pane.ScrollBox.ScrollBar), sr, sg, sb)
 
@@ -1013,19 +1057,14 @@ end
 -- CONSOLIDATED API TABLE
 -- All public functions exposed via single global for clean namespace
 ---------------------------------------------------------------------------
-_G.QUI_CharacterFrameSkinning = {
-    -- Configuration
-    CONFIG = CONFIG,
-
-    -- Core functions
-    IsEnabled = IsSkinningEnabled,
-    SetExtended = SetCharacterFrameBgExtended,
-    Refresh = RefreshCharacterFrameColors,
-
-    -- Skinning functions (called by qui_character.lua)
-    SkinEquipmentManager = SkinEquipmentManager,
-    SkinTitleManager = SkinTitleManagerPane,
-}
+local api = _G.QUI_CharacterFrameSkinning or {}
+api.CONFIG = CONFIG
+api.IsEnabled = IsSkinningEnabled
+api.SetExtended = SetCharacterFrameBgExtended
+api.Refresh = RefreshCharacterFrameColors
+api.SkinEquipmentManager = SkinEquipmentManager
+api.SkinTitleManager = SkinTitleManagerPane
+_G.QUI_CharacterFrameSkinning = api
 
 -- Legacy compatibility alias (deprecated - use QUI_CharacterFrameSkinning table)
 _G.QUI_RefreshCharacterFrameColors = RefreshCharacterFrameColors
@@ -1042,26 +1081,15 @@ end
 ---------------------------------------------------------------------------
 -- INITIALIZATION
 ---------------------------------------------------------------------------
-local function InitializeCharacterFrameSkinning(self)
-    C_Timer.After(0.1, function()
-        SetupCharacterFrameSkinning()
-        SetupTitlePaneHook()
-    end)
-    if self then
-        self:UnregisterEvent("ADDON_LOADED")
-    end
+local characterFrameSkinningInitialized = false
+
+local function InitializeCharacterFrameSkinning()
+    if characterFrameSkinningInitialized or not CharacterFrame then return end
+    characterFrameSkinningInitialized = true
+
+    SetupCharacterFrameSkinning()
+    SetupTitlePaneHook()
 end
 
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" and (addon == "Blizzard_CharacterFrame" or addon == "Blizzard_UIPanels_Game") then
-        InitializeCharacterFrameSkinning(self)
-    end
-end)
-
--- LOD catch-up: this module loads after PLAYER_LOGIN (and possibly after
--- Blizzard_CharacterFrame), so initialize immediately when the frame exists.
-if CharacterFrame and CharacterFrameTab1 then
-    InitializeCharacterFrameSkinning(frame)
-end
+SkinBase.OnAddOnLoaded("Blizzard_CharacterFrame", InitializeCharacterFrameSkinning, 0)
+SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", InitializeCharacterFrameSkinning, 0)

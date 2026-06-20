@@ -19,6 +19,13 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
+-- Resolve the user's configured general font FACE (falling back to the WoW
+-- default). CJKFont keeps CJK glyph fallback either way; this just ensures the
+-- label uses the QUI font instead of the hardcoded engine default.
+local function GeneralFontFace()
+    return (ns.Helpers and ns.Helpers.GetGeneralFont and ns.Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
+end
+
 local function GetSkinBase()
     return ns.SkinBase
 end
@@ -115,6 +122,17 @@ local function ApplyOnePixelBorder(frame, withBackground, borderColor, bgColor)
             borderColor = borderColor,
             bgColor = bgColor,
         })
+    end
+end
+
+-- Live-recolor a frame skinned via ApplyOnePixelBorder. Routes through
+-- SkinBase.SetBackdropColors so a scale refresh keeps the new color; a bare
+-- SetBackdrop*Color is discarded when RefreshPixelBackdrop rebuilds from the
+-- persisted backdrop data.
+local function SetOnePixelBorderColors(frame, borderColor, bgColor)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.SetBackdropColors then
+        skinBase.SetBackdropColors(frame, borderColor, bgColor)
     end
 end
 
@@ -826,8 +844,22 @@ local function UpdateInspectSlotBorder(slot, unit)
     end
 end
 
+-- InspectPaperDollItemSlotButton_Update re-Shows the IconBorder (SetItemButtonQuality)
+-- on every INSPECT_READY refresh, defeating the once-guarded BlockInspectIconBorder.
+-- Re-suppress after each Update, once-installed for the session.
+local inspectSlotUpdateHooked = false
+local function HookInspectSlotUpdate()
+    if inspectSlotUpdateHooked then return end
+    if type(_G.InspectPaperDollItemSlotButton_Update) ~= "function" then return end
+    inspectSlotUpdateHooked = true
+    hooksecurefunc("InspectPaperDollItemSlotButton_Update", function(button)
+        if button and button.IconBorder then button.IconBorder:SetAlpha(0) end
+    end)
+end
+
 -- Skin all inspect equipment slots
 local function SkinAllInspectSlots()
+    HookInspectSlotUpdate()
     for _, slotName in ipairs(INSPECT_SLOT_NAMES) do
         local slot = _G[slotName]
         if slot then
@@ -1433,9 +1465,9 @@ local function CreateInspectSettingsButton()
     local gearBtn = CreateFrame("Button", "QUI_InspectSettingsBtn", InspectFrame, "BackdropTemplate")
     gearBtn:SetSize(70, 20)
     gearBtn:SetPoint("TOPRIGHT", InspectFrame, "TOPRIGHT", -5, -28)
+    -- ApplyOnePixelBorder already applies and persists these colors; no bare
+    -- follow-up setter (it would be discarded on the next scale-refresh rebuild).
     ApplyOnePixelBorder(gearBtn, true, { C.border[1], C.border[2], C.border[3], 1 }, { 0.1, 0.1, 0.1, 0.8 })
-    gearBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-    gearBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
     gearBtn:SetFrameStrata("HIGH")
     gearBtn:SetFrameLevel(100)
 
@@ -1446,14 +1478,15 @@ local function CreateInspectSettingsButton()
 
     local gearLabel = gearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     gearLabel:SetPoint("LEFT", gearIcon, "RIGHT", 4, 0)
+    CJKFont(gearLabel, GeneralFontFace(), 12, "")
     gearLabel:SetText(ns.L["Settings"])
     gearLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 
     gearBtn:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        SetOnePixelBorderColors(self, { C.accent[1], C.accent[2], C.accent[3], 1 })
     end)
     gearBtn:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+        SetOnePixelBorderColors(self, { C.border[1], C.border[2], C.border[3], 1 })
     end)
 
     GetState(InspectFrame).gearBtn = gearBtn
@@ -1512,6 +1545,7 @@ local function CreateInspectSettingsButton()
     -- Title
     local title = inspectSettingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOP", inspectSettingsPanel, "TOP", 0, -8)
+    CJKFont(title, GeneralFontFace(), 14, "")
     title:SetText(ns.L["QUI Inspect Panel"])
     title:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
@@ -1752,12 +1786,11 @@ local function CreateInspectSettingsButton()
         -- Apply scale (base 1.30 * multiplier 1.0)
         SetInspectScaleDeferred(INSPECT_CONFIG.BASE_SCALE)
 
-        -- Refresh and reload the settings panel
+        -- Refresh and reload the settings panel through its normal OnShow hooks.
         RefreshInspectFonts()
         inspectSettingsPanel:Hide()
-        C_Timer.After(0.1, function()
-            inspectSettingsPanel:Show()
-        end)
+        BuildPanelContent()
+        inspectSettingsPanel:Show()
     end)
     resetBtn:SetPoint("BOTTOM", inspectSettingsPanel, "BOTTOM", 0, 10)
 
@@ -1807,6 +1840,9 @@ ApplyInspectPaneLayout = function(force)
     -- Apply panel scale from settings (base scale 1.30, slider is multiplier)
     SetInspectScaleDeferred(targetScale)
 
+    -- FrameXML InspectFrame_OnEvent calls ShowUIPanel(InspectFrame) before InspectFrame_UpdateTabs()
+    -- on synchronous INSPECT_READY. Run our layout after that event stack so
+    -- Blizzard's tab/button refreshes and paper-doll slot updates finish first.
     C_Timer.After(0.1, function()
         if InCombatLockdown() then
             pendingInspectLayout = true
@@ -2023,37 +2059,79 @@ end
 
 ---------------------------------------------------------------------------
 -- Patch: guildless inspect target crashes Blizzard's Guild tab.
--- InspectGuildFrame_Update (FrameXML, unchanged since 11.0) calls
---   guildRealmName:SetFormattedText(INSPECT_GUILD_REALM, guildRealmName)
--- without checking GetInspectGuildInfo for nil. Inspecting a player with
--- no guild and clicking the Guild tab throws at line 22. Override the
--- global to clear the fields and early-return when there is no guild.
+-- FrameXML calls InspectGuildFrame_Update only from InspectGuildFrame_OnShow
+-- and InspectGuildFrame_OnEvent(INSPECT_READY). Wrap those frame scripts
+-- instead of replacing the global updater, so guilded targets still run
+-- Blizzard's original path unchanged.
 ---------------------------------------------------------------------------
+local function ClearInspectGuildFrame()
+    if InspectGuildFrame.guildName then InspectGuildFrame.guildName:SetText("") end
+    if InspectGuildFrame.guildRealmName then InspectGuildFrame.guildRealmName:SetText("") end
+    if InspectGuildFrame.guildLevel then InspectGuildFrame.guildLevel:SetText("") end
+    if InspectGuildFrame.guildNumMembers then InspectGuildFrame.guildNumMembers:SetText("") end
+    local points = InspectGuildFrame.Points
+    if points and points.SumText then points.SumText:SetText("") end
+end
+
+local function ShouldSkipInspectGuildUpdate()
+    local unit = InspectFrame and InspectFrame.unit
+    if not unit or not (C_PaperDollInfo and C_PaperDollInfo.GetInspectGuildInfo) then
+        return false
+    end
+
+    local ok, _, _, guildName = pcall(C_PaperDollInfo.GetInspectGuildInfo, unit)
+    if not ok then
+        return false
+    end
+
+    if Helpers.IsSecretValue(guildName) then
+        return true
+    end
+
+    return not guildName or guildName == ""
+end
+
 local function PatchInspectGuildNilGuard()
-    local orig = _G.InspectGuildFrame_Update
-    if not orig or not InspectGuildFrame or inspectGuildNilGuard[InspectGuildFrame] then
+    if not InspectGuildFrame or inspectGuildNilGuard[InspectGuildFrame] then
         return
     end
+    if not (InspectGuildFrame.GetScript and InspectGuildFrame.SetScript) then
+        return
+    end
+
+    local originalOnShow = InspectGuildFrame:GetScript("OnShow")
+    local originalOnEvent = InspectGuildFrame:GetScript("OnEvent")
+    if not originalOnShow and not originalOnEvent then
+        return
+    end
+
     inspectGuildNilGuard[InspectGuildFrame] = true
 
-    _G.InspectGuildFrame_Update = function(...)
-        local unit = InspectFrame and InspectFrame.unit
-        if unit and C_PaperDollInfo and C_PaperDollInfo.GetInspectGuildInfo then
-            local ok, achievementPoints, numMembers, guildName = pcall(C_PaperDollInfo.GetInspectGuildInfo, unit)
-            if not ok or Helpers.IsSecretValue(guildName) then
-                guildName = nil
-            end
-            if not guildName then
-                if InspectGuildFrame.guildName then InspectGuildFrame.guildName:SetText("") end
-                if InspectGuildFrame.guildRealmName then InspectGuildFrame.guildRealmName:SetText("") end
-                if InspectGuildFrame.guildLevel then InspectGuildFrame.guildLevel:SetText("") end
-                if InspectGuildFrame.guildNumMembers then InspectGuildFrame.guildNumMembers:SetText("") end
-                local points = InspectGuildFrame.Points
-                if points and points.SumText then points.SumText:SetText("") end
+    if originalOnShow then
+        InspectGuildFrame:SetScript("OnShow", function(self, ...)
+            if ShouldSkipInspectGuildUpdate() then
+                if ButtonFrameTemplate_ShowButtonBar then
+                    ButtonFrameTemplate_ShowButtonBar(InspectFrame)
+                end
+                ClearInspectGuildFrame()
                 return
             end
-        end
-        return orig(...)
+            return originalOnShow(self, ...)
+        end)
+    end
+
+    if originalOnEvent then
+        InspectGuildFrame:SetScript("OnEvent", function(self, event, unit, ...)
+            if event == "INSPECT_READY"
+                and InspectFrame and InspectFrame.unit
+                and UnitGUID and UnitGUID(InspectFrame.unit) == unit
+                and ShouldSkipInspectGuildUpdate()
+            then
+                ClearInspectGuildFrame()
+                return
+            end
+            return originalOnEvent(self, event, unit, ...)
+        end)
     end
 end
 
@@ -2102,7 +2180,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 -- LOD catch-up: Blizzard_InspectUI may have loaded before this module did.
-if C_AddOns.IsAddOnLoaded("Blizzard_InspectUI") then
+local skinBase = GetSkinBase()
+if skinBase and skinBase.IsAddOnFullyLoaded and skinBase.IsAddOnFullyLoaded("Blizzard_InspectUI") then
     HookInspectFrame()
     PatchInspectGuildNilGuard()
 end

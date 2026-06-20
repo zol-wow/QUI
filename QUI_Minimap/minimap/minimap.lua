@@ -2235,6 +2235,28 @@ local function InstallDungeonEyeHooks(btn)
     end
 end
 
+local function TryRestoreDungeonEyeViaBlizzard(btn)
+    if not (btn and btn.UpdatePosition) then return false end
+    if not (MicroMenu and MicroMenuContainer and MicroMenuContainer.GetPosition) then return false end
+
+    local ok, position = pcall(MicroMenuContainer.GetPosition, MicroMenuContainer)
+    local isHorizontal = MicroMenu.isHorizontal
+    if not ok or not position or type(isHorizontal) ~= "boolean" then return false end
+
+    btn:UpdatePosition(position, isHorizontal)
+    return true
+end
+
+local function RestoreDungeonEyeOriginalPoint(btn)
+    if not dungeonEyeOriginalPoint then return end
+
+    btn:ClearAllPoints()
+    local point, relativeTo, relativePoint, x, y = unpack(dungeonEyeOriginalPoint)
+    if point and relativePoint then
+        btn:SetPoint(point, relativeTo, relativePoint, x or 0, y or 0)
+    end
+end
+
 local function RestoreDungeonEye()
     local btn = QueueStatusButton
     if not btn then return end
@@ -2246,15 +2268,10 @@ local function RestoreDungeonEye()
     end
 
     -- Let Blizzard re-anchor via its own method when available; UpdatePosition
-    -- is the original (we hook it instead of replacing it now).
-    if btn.UpdatePosition then
-        btn:UpdatePosition()
-    elseif dungeonEyeOriginalPoint then
-        btn:ClearAllPoints()
-        local point, relativeTo, relativePoint, x, y = unpack(dungeonEyeOriginalPoint)
-        if point and relativePoint then
-            btn:SetPoint(point, relativeTo, relativePoint, x or 0, y or 0)
-        end
+    -- requires the same micro-menu layout args Blizzard passes from
+    -- MicroMenuMixin:UpdateQueueStatusAnchors().
+    if not TryRestoreDungeonEyeViaBlizzard(btn) then
+        RestoreDungeonEyeOriginalPoint(btn)
     end
 
     btn:SetScale(1.0)

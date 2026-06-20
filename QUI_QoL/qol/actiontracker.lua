@@ -708,6 +708,14 @@ local function UpdatePreviewDragState()
     local canDrag = state.preview == true
         and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("actionTracker"))
 
+    -- Drag is a layout-mode-only concern.  EnableMouse is protected during
+    -- combat (TWW 11.0+), so skip no-op re-applies and never toggle in combat;
+    -- layout mode can only be entered out of combat, so the real value is
+    -- always applied via the preview toggle (RefreshAppearance).
+    if state.dragEnabled == canDrag then return end
+    if InCombatLockdown() then return end
+
+    state.dragEnabled = canDrag
     state.frame:EnableMouse(canDrag)
     if not canDrag then
         state.frame:StopMovingOrSizing()
@@ -799,12 +807,10 @@ local function RefreshVisibility(useFadeOut)
         state.fadeOutToken = (state.fadeOutToken or 0) + 1
         state.pendingClearOnFade = false
         state.frame:SetAlpha(1)
-        UpdatePreviewDragState()
         state.frame:Show()
     else
         state.pendingClearOnFade = clearAfterHide
         StopAnimationLoop()
-        UpdatePreviewDragState()
         if useFadeOut and state.frame:IsShown() then
             local token = (state.fadeOutToken or 0) + 1
             state.fadeOutToken = token

@@ -428,8 +428,6 @@ local function BuildBuffDebuffTab(tabContent)
               description = ns.L["Expand results to include auras flagged for nameplate-only display, which are normally hidden from the debuff frame."] },
             { dbKey = "debuffFilterRaidPlayerDispellable", label = ns.L["Only Dispellable by You"],
               description = ns.L["Show only debuffs whose dispel type your class can remove. Patch 12.0.1+."] },
-            { dbKey = "debuffFilterImportant",             label = ns.L["Important Spells Only"],
-              description = ns.L["Show only spells flagged as important by C_Spell.IsSpellImportant. Patch 12.0.1+."] },
             { dbKey = "debuffFilterCrowdControl",          label = ns.L["Crowd Control Only"],
               description = ns.L["Show only crowd-control effects (stuns, fears, roots, etc.). Patch 12.0.1+."] },
         },

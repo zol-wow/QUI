@@ -61,8 +61,8 @@ assertContains(
 
 assertContains(
     source,
-    "InspectFrame and InspectFrameTab1",
-    "Inspect frame skinning must catch up if InspectFrame already exists before ADDON_LOADED is observed")
+    "SkinBase.OnAddOnLoaded(\"Blizzard_InspectUI\"",
+    "Inspect frame skinning must gate through the shared OnAddOnLoaded helper, which catches up immediately if Blizzard_InspectUI already loaded before ADDON_LOADED is observed")
 
 -- Close button + paper-doll action buttons must be skinned (were unskinned:
 -- stock red close X, plain View/Talents buttons showed through the chrome).

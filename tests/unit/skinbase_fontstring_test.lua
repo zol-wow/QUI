@@ -59,7 +59,16 @@ end
 
 CreateFrame = function() return NewFrame() end
 C_Timer = { After = function(_, fn) fn() end }
-function hooksecurefunc() end
+function hooksecurefunc(target, methodName, callback)
+    if type(target) == "table" and type(methodName) == "string" and type(callback) == "function" then
+        local original = target[methodName] or function() end
+        target[methodName] = function(self, ...)
+            local results = { original(self, ...) }
+            callback(self, ...)
+            return unpack(results)
+        end
+    end
+end
 ScrollUtil = { AddAcquiredFrameCallback = function() end }
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 
@@ -116,16 +125,17 @@ assert(fs2.color[1] == 1 and fs2.color[2] == 0 and fs2.color[3] == 0,
 SkinBase.SkinFontString(nil)
 SkinBase.SkinFontString({})
 
--- Opt-in SkinButton{font=true} applies the font to the button's fontstring
+-- SkinButton drives the QUI font onto the label BY DEFAULT (font is no longer
+-- opt-in) so the engine's hover/disable font-object swap can't revert it.
 local button = NewFrame()
-SkinBase.SkinButton(button, { font = true })
+SkinBase.SkinButton(button)
 local bfs = button:GetFontString()
-assert(bfs.font == "Interface\\QUIFont.ttf", "SkinButton{font=true} must apply the global font to the button label")
+assert(bfs.font == "Interface\\QUIFont.ttf", "SkinButton must apply the global font to the button label by default")
 
--- SkinButton without font opt must NOT touch the label font (scope discipline)
+-- Explicit { font = false } opts OUT (keep Blizzard's font, scope discipline)
 local plainBtn = NewFrame()
-SkinBase.SkinButton(plainBtn)
-assert(plainBtn:GetFontString().font == nil, "SkinButton without {font=true} must leave the label font untouched")
+SkinBase.SkinButton(plainBtn, { font = false })
+assert(plainBtn:GetFontString().font == nil, "SkinButton{font=false} must leave the label font untouched")
 
 -- RefreshWidget re-applies the QUI font on a live font change (font-skinned only)
 generalFont = "Interface\\NewQUIFont.ttf"
@@ -133,10 +143,10 @@ SkinBase.RefreshWidget(button)
 assert(button:GetFontString().font == "Interface\\NewQUIFont.ttf",
     "RefreshWidget must re-apply the global font to a font-skinned button on live change")
 
--- RefreshWidget must NOT font-touch a widget that did not opt in
+-- RefreshWidget must NOT font-touch a widget that opted out
 SkinBase.RefreshWidget(plainBtn)
 assert(plainBtn:GetFontString().font == nil,
-    "RefreshWidget must not apply a font to a widget that wasn't font-skinned")
+    "RefreshWidget must not apply a font to a widget that opted out of font skinning")
 
 -- Garbage size from GetFont: WoW's FontString:GetFont() returns a non-positive
 -- height for a fontstring whose font never successfully applied (e.g. a header
@@ -158,5 +168,35 @@ local fsZero = NewFontString(0)
 SkinBase.SkinFontString(fsZero, { fontOnly = true })
 assert(fsZero.size == 12,
     "SkinFontString must fall back to the default size when GetFont reports a zero size")
+
+-- LockFontObject must cover every button font object state Blizzard can swap.
+local stateButton = NewFrame()
+function stateButton:SetNormalFontObject(fontObject) self.normalFontObject = fontObject end
+function stateButton:SetHighlightFontObject(fontObject) self.highlightFontObject = fontObject end
+function stateButton:SetDisabledFontObject(fontObject) self.disabledFontObject = fontObject end
+
+SkinBase.LockFontObject(stateButton, { fontOnly = true })
+local stateFs = stateButton:GetFontString()
+
+stateFs.font = nil
+stateButton:SetNormalFontObject("GameFontNormal")
+assert(stateFs.font == generalFont, "LockFontObject must survive SetNormalFontObject")
+
+stateFs.font = nil
+stateButton:SetHighlightFontObject("GameFontHighlight")
+assert(stateFs.font == generalFont, "LockFontObject must survive SetHighlightFontObject")
+
+stateFs.font = nil
+stateButton:SetDisabledFontObject("GameFontDisable")
+assert(stateFs.font == generalFont, "LockFontObject must survive SetDisabledFontObject")
+
+-- LockFontObject must also cover EditBox-like frames that expose SetFontObject.
+local editBox = NewFrame()
+function editBox:SetFont(font, size, flags) self.font, self.size, self.flags = font, size, flags end
+function editBox:GetFont() return self.font, self.size or 13, self.flags end
+function editBox:SetFontObject(fontObject) self.fontObject = fontObject end
+SkinBase.LockFontObject(editBox, { fontOnly = true })
+editBox:SetFontObject("GameFontNormal")
+assert(editBox.font == generalFont, "LockFontObject must survive EditBox SetFontObject")
 
 print("OK: skinbase_fontstring_test")

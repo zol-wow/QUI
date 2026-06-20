@@ -1273,6 +1273,21 @@ function Helpers.ApplyFontWithFallback(fontString, fontNameOrPath, size, flags)
     fontString:SetFont(fontPath, size or 12, flags)
 end
 
+--- Returns the Blizzard system glyph font for glyph-restricted clients, or nil.
+--- Used to gate path-string font globals (STANDARD_TEXT_FONT) that cannot carry
+--- a per-script FontFamily: on CJK clients the Latin-only QUI font would render
+--- boxes, so callers must leave the Blizzard default instead. ruRU is NOT gated
+--- because Quazii ships Cyrillic glyphs. Reads the locale at call time so tests
+--- (and a mid-session /reload) resolve correctly.
+--- @return string|nil systemFontPath
+function Helpers.GetLocaleGlyphFallback()
+    local loc = GetLocale and GetLocale() or "enUS"
+    if loc == "koKR" then return "Fonts\\2002.TTF"
+    elseif loc == "zhCN" then return "Fonts\\ARKai_T.ttf"
+    elseif loc == "zhTW" then return "Fonts\\blei00d.TTF" end
+    return nil
+end
+
 ---------------------------------------------------------------------------
 -- COLOR/THEME HELPERS
 -- Centralized color utilities for skin system and class colors
@@ -2144,17 +2159,17 @@ function Helpers.PlaceRow(widget, body, sy, rowHeight)
     return sy - (rowHeight or 32)
 end
 
---- Apply default values to a table for any keys that are nil.
---- @param tbl table The target table
---- @param defaults table Key-value pairs of defaults to apply
---- Sets backdrop color AND stores backup fields for orphaned overlay recovery.
---- Use instead of frame:SetBackdropColor() on QUI-owned frames.
+--- Sets backdrop color and stores the sanctioned `_quiBg*` render cache used
+--- by QUI-owned/manual backdrop refresh paths. Do not use these fields for
+--- general frame state; use Helpers.CreateStateTable/SkinBase.SetFrameData for
+--- lifecycle flags on Blizzard frames.
 function Helpers.SetFrameBackdropColor(frame, r, g, b, a)
     frame:SetBackdropColor(r, g, b, a)
     frame._quiBgR, frame._quiBgG, frame._quiBgB, frame._quiBgA = r, g, b, a
 end
 
---- Sets backdrop border color AND stores backup fields for recovery.
+--- Sets backdrop border color and stores the sanctioned `_quiBorder*` render
+--- cache used by QUI-owned/manual backdrop refresh paths.
 function Helpers.SetFrameBackdropBorderColor(frame, r, g, b, a)
     frame:SetBackdropBorderColor(r, g, b, a)
     frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA = r, g, b, a

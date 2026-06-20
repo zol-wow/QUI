@@ -12,32 +12,11 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
--- Recursively re-lock the QUI font on a frame's fontstrings. Unlike the
--- one-shot SkinFrameText, this hooks each fontstring's SetFontObject (and a
--- button's SetNormalFontObject) via SkinBase.LockFontObject, so Blizzard's
+-- Recursively re-lock the QUI font on a frame's fontstrings so Blizzard's
 -- hover / selection / list re-bind font-object swaps don't revert our font.
--- Idempotent per object (LockFontObject guards with its own qFontLocked flag),
--- so it is safe to call repeatedly on pooled rows and on re-skins.
-local function LockFrameTextObjects(frame, maxDepth)
-    if not frame then return end
-    maxDepth = maxDepth or 4
-    if frame.GetObjectType and frame:GetObjectType() == "Button" and frame.SetNormalFontObject then
-        SkinBase.LockFontObject(frame, { fontOnly = true })
-    end
-    if frame.GetRegions then
-        for i = 1, select("#", frame:GetRegions()) do
-            local region = select(i, frame:GetRegions())
-            if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                SkinBase.LockFontObject(region, { fontOnly = true })
-            end
-        end
-    end
-    if maxDepth > 0 and frame.GetChildren then
-        for i = 1, select("#", frame:GetChildren()) do
-            LockFrameTextObjects(select(i, frame:GetChildren()), maxDepth - 1)
-        end
-    end
-end
+-- Promoted to SkinBase.LockFrameTextObjects (core/uikit.lua) so journals /
+-- achievement reuse the same proven helper; aliased here for existing callers.
+local LockFrameTextObjects = SkinBase.LockFrameTextObjects
 
 ---------------------------------------------------------------------------
 -- INSTANCE FRAMES SKINNING (PVE, Dungeons & Raids, PVP, M+ Dungeons)
@@ -170,6 +149,11 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
 
     -- Store colors for hover
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
+
+    if button.name then
+        SkinBase.SkinFontString(button.name, { fontOnly = true })
+    end
+    LockFrameTextObjects(button, 2)
 
     AddSkinColorHoverBorder(button)
 
@@ -372,7 +356,7 @@ local function SkinLFDFrame()
 
     -- Style find group button
     if _G.LFDQueueFrameFindGroupButton then
-        SkinBase.SkinButton(_G.LFDQueueFrameFindGroupButton)
+        SkinBase.SkinButton(_G.LFDQueueFrameFindGroupButton, { font = true })
     end
 
     -- Style type dropdown
@@ -380,6 +364,7 @@ local function SkinLFDFrame()
     if typeDropdown then
         typeDropdown:SetWidth(200)
         SkinBase.SkinDropdown(typeDropdown, { keepArrow = true, insetY = 2 })
+        SkinBase.LockDropdownText(typeDropdown)
     end
 
     -- Specific-dungeon selection list: pooled ScrollBox rows get their font
@@ -387,9 +372,13 @@ local function SkinLFDFrame()
     -- SkinFrameText below. Re-lock the QUI font as each row is acquired.
     local specificList = LFDQueueFrame.Specific
     if specificList and specificList.ScrollBox then
-        SkinBase.HookScrollBoxAcquired(specificList.ScrollBox, function(row)
-            LockFrameTextObjects(row, 2)
-        end)
+        SkinBase.HookScrollBoxRowFonts(specificList.ScrollBox, 2)
+    end
+    -- Follower (story-mode) dungeon list is a SEPARATE ScrollBox with the same
+    -- row font-object revert (LFDFrame.lua:48 / LFDQueueFrameFollowerList_InitButton).
+    local followerList = LFDQueueFrame.Follower
+    if followerList and followerList.ScrollBox then
+        SkinBase.HookScrollBoxRowFonts(followerList.ScrollBox, 2)
     end
 
     SkinBase.SkinFrameText(LFDQueueFrame, { recurse = true })
@@ -429,7 +418,7 @@ local function SkinRaidFinderFrame()
 
     -- Style find raid button
     if _G.RaidFinderFrameFindRaidButton then
-        SkinBase.SkinButton(_G.RaidFinderFrameFindRaidButton)
+        SkinBase.SkinButton(_G.RaidFinderFrameFindRaidButton, { font = true })
     end
 
     -- Style selection dropdown
@@ -437,6 +426,7 @@ local function SkinRaidFinderFrame()
     if selectionDropdown then
         selectionDropdown:SetWidth(200)
         SkinBase.SkinDropdown(selectionDropdown, { keepArrow = true, insetY = 2 })
+        SkinBase.LockDropdownText(selectionDropdown)
     end
 
     -- Raid Finder uses a dropdown (no row list), but its queue-frame labels and
@@ -519,19 +509,31 @@ local function SkinLFGListFrame()
     if LFGListFrame.CategorySelection then
         local cs = LFGListFrame.CategorySelection
         if cs.StartGroupButton then
-            SkinBase.SkinButton(cs.StartGroupButton)
+            SkinBase.SkinButton(cs.StartGroupButton, { font = true })
         end
         if cs.FindGroupButton then
-            SkinBase.SkinButton(cs.FindGroupButton)
+            SkinBase.SkinButton(cs.FindGroupButton, { font = true })
         end
-        -- Style category buttons
-        if cs.CategoryButtons then
+        -- Style category buttons. Re-style on every UpdateCategoryButtons: the set
+        -- can grow mid-session (LFGListCategorySelection_AddButton lazily creates new
+        -- buttons), so a one-shot loop misses later additions. The IsStyled guard
+        -- keeps re-runs cheap.
+        local function StyleCategoryButtons()
+            if not cs.CategoryButtons then return end
             for _, catButton in pairs(cs.CategoryButtons) do
                 if catButton and not SkinBase.IsStyled(catButton) then
                     SkinBase.StripTextures(catButton)
-                    SkinBase.SkinButton(catButton)
+                    SkinBase.SkinButton(catButton, { font = true })
                 end
             end
+        end
+        StyleCategoryButtons()
+        if type(_G.LFGListCategorySelection_UpdateCategoryButtons) == "function"
+            and not SkinBase.GetFrameData(cs, "qCatButtonsHooked") then
+            hooksecurefunc("LFGListCategorySelection_UpdateCategoryButtons", function()
+                StyleCategoryButtons()
+            end)
+            SkinBase.SetFrameData(cs, "qCatButtonsHooked", true)
         end
     end
 
@@ -539,13 +541,13 @@ local function SkinLFGListFrame()
     if LFGListFrame.SearchPanel then
         local sp = LFGListFrame.SearchPanel
         if sp.BackButton then
-            SkinBase.SkinButton(sp.BackButton)
+            SkinBase.SkinButton(sp.BackButton, { font = true })
         end
         if sp.SignUpButton then
-            SkinBase.SkinButton(sp.SignUpButton)
+            SkinBase.SkinButton(sp.SignUpButton, { font = true })
         end
         if sp.RefreshButton then
-            SkinBase.SkinButton(sp.RefreshButton)
+            SkinBase.SkinButton(sp.RefreshButton, { font = true })
         end
         -- Style search box (uses raw CreateBackdrop — keep colors)
         if sp.SearchBox then
@@ -554,29 +556,54 @@ local function SkinLFGListFrame()
         end
         -- Style filter button
         if sp.FilterButton then
-            SkinBase.SkinButton(sp.FilterButton)
+            SkinBase.SkinButton(sp.FilterButton, { font = true })
         end
         -- Search-result rows are pooled ScrollBox buttons whose font OBJECT is
         -- swapped on hover/selection/re-bind, reverting the one-shot
         -- SkinFrameText. Re-lock the QUI font as each row is acquired.
         if sp.ScrollBox then
-            SkinBase.HookScrollBoxAcquired(sp.ScrollBox, function(row)
-                LockFrameTextObjects(row, 2)
+            SkinBase.HookScrollBoxRowFonts(sp.ScrollBox, 2)
+        end
+        -- Autocomplete result buttons (lazily created in UpdateAutoComplete) carry
+        -- NormalFont/HighlightFont = stock GameFontHighlightSmall, so the engine
+        -- swaps to the stock highlight font OBJECT on hover — a Lock* SetFontObject
+        -- hook never sees that internal swap. Drive the buttons' font objects after
+        -- every autocomplete rebuild (covers newly created buttons too).
+        if sp.AutoCompleteFrame and type(_G.LFGListSearchPanel_UpdateAutoComplete) == "function"
+            and not SkinBase.GetFrameData(sp, "qAutoCompleteFontHooked") then
+            hooksecurefunc("LFGListSearchPanel_UpdateAutoComplete", function(panel)
+                local acf = panel and panel.AutoCompleteFrame
+                if not acf or not acf.Results then return end
+                for i = 1, #acf.Results do
+                    if acf.Results[i] then SkinBase.ApplyButtonFontObjects(acf.Results[i]) end
+                end
             end)
+            SkinBase.SetFrameData(sp, "qAutoCompleteFontHooked", true)
         end
     end
 
     -- Style application viewer
     if LFGListFrame.ApplicationViewer then
         local av = LFGListFrame.ApplicationViewer
+        -- Applicant rows are pooled (LFGListApplicantTemplate) and cold-acquired after
+        -- the one-shot frame skin, so freshly painted rows keep the stock font.
+        if av.ScrollBox then
+            SkinBase.HookScrollBoxRowFonts(av.ScrollBox, 3)
+        end
         if av.RefreshButton then
-            SkinBase.SkinButton(av.RefreshButton)
+            SkinBase.SkinButton(av.RefreshButton, { font = true })
         end
         if av.RemoveEntryButton then
-            SkinBase.SkinButton(av.RemoveEntryButton)
+            SkinBase.SkinButton(av.RemoveEntryButton, { font = true })
         end
         if av.EditButton then
-            SkinBase.SkinButton(av.EditButton)
+            SkinBase.SkinButton(av.EditButton, { font = true })
+        end
+        if av.AutoAcceptButton then
+            if av.AutoAcceptButton.Label then
+                SkinBase.SkinFontString(av.AutoAcceptButton.Label, { fontOnly = true })
+            end
+            LockFrameTextObjects(av.AutoAcceptButton, 2)
         end
     end
 
@@ -584,10 +611,10 @@ local function SkinLFGListFrame()
     if LFGListFrame.EntryCreation then
         local ec = LFGListFrame.EntryCreation
         if ec.ListGroupButton then
-            SkinBase.SkinButton(ec.ListGroupButton)
+            SkinBase.SkinButton(ec.ListGroupButton, { font = true })
         end
         if ec.CancelButton then
-            SkinBase.SkinButton(ec.CancelButton)
+            SkinBase.SkinButton(ec.CancelButton, { font = true })
         end
     end
 
@@ -670,6 +697,11 @@ local function StyleAffixIcon(affix, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SetFrameData(affix.Portrait, "backdrop", portraitBackdrop)
         end
     end
+
+    -- The affix "+X%" Percent text re-applies its font OBJECT on every SetUp
+    -- (Blizzard_ChallengesUI.lua:807/809), reverting the one-shot SkinFrameText.
+    -- Lock so the QUI face survives weekly/affix refreshes.
+    LockFrameTextObjects(affix, 2)
 
     SkinBase.MarkStyled(affix)
 end
@@ -800,7 +832,17 @@ end
 local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not button or SkinBase.IsStyled(button) then return end
 
-    -- Hide default textures
+    -- Hide default textures. 12.x activity templates (PVPCasualActivityButton /
+    -- PVPRatedActivityButtonTemplate) draw the button art via NormalTexture /
+    -- PushedTexture / HighlightTexture atlases — there are NO .Bg/.Border/.Ring
+    -- keys. Clear the texture CONTENT (not just alpha): HonorFrameBonusFrame_-
+    -- SetButtonState re-asserts NormalTexture:SetAlpha(1/0.5) on every queue
+    -- refresh, so SetAlpha(0) would be reverted; SetTexture(nil) sticks.
+    if button.NormalTexture then button.NormalTexture:SetTexture(nil) end
+    local pushed = button.GetPushedTexture and button:GetPushedTexture()
+    if pushed then pushed:SetTexture(nil) end
+    if button.HighlightTexture then button.HighlightTexture:SetTexture(nil) end
+    -- Legacy keys (older clients / other templates)
     if button.Bg then button.Bg:Hide() end
     if button.Border then button.Border:Hide() end
     if button.Ring then button.Ring:Hide() end
@@ -850,6 +892,10 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
 
     AddSkinColorHoverBorder(button)
+
+    -- Title / size / type fontstrings use stock GameFont* (FRIZQT); lock the QUI
+    -- face. SetButtonState SetTextColor still drives enabled/disabled coloring.
+    LockFrameTextObjects(button, 2)
 
     SkinBase.MarkStyled(button)
 end
@@ -927,6 +973,13 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
     end)
 
+    -- Row fonts: these pooled rows only SetText their NameText/InfoText/SizeText
+    -- (stock GameFontNormal*) and are cold-acquired after the one-shot frame skin.
+    -- Skin this button directly because the rest of its chrome is styled here.
+    -- HookScrollBoxAcquired composes callbacks through SkinBase.
+    SkinBase.SkinFrameText(button, { recurse = true })
+    SkinBase.LockFrameTextObjects(button, 2)
+
     SkinBase.MarkStyled(button)
 end
 
@@ -1000,6 +1053,10 @@ local function SkinPVPFrame()
         local catButton = PVPQueueFrame["CategoryButton" .. i] or _G["PVPQueueFrameCategoryButton" .. i]
         if catButton then
             StyleGroupFinderButton(catButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            if catButton.Name then
+                SkinBase.SkinFontString(catButton.Name, { fontOnly = true })
+            end
+            LockFrameTextObjects(catButton, 2)
         end
     end
 
@@ -1008,7 +1065,7 @@ local function SkinPVPFrame()
     if HonorFrame then
         -- Queue button
         if _G.HonorFrameQueueButton then
-            SkinBase.SkinButton(_G.HonorFrameQueueButton)
+            SkinBase.SkinButton(_G.HonorFrameQueueButton, { font = true })
         end
 
         -- Type dropdown
@@ -1016,6 +1073,7 @@ local function SkinPVPFrame()
         if typeDropdown then
             typeDropdown:SetWidth(230)
             SkinBase.SkinDropdown(typeDropdown, { keepArrow = true, insetY = 2 })
+            SkinBase.LockDropdownText(typeDropdown)
         end
 
         -- Role icons (handles both 11.x and 12.x API)
@@ -1057,7 +1115,15 @@ local function SkinPVPFrame()
     if ConquestFrame then
         -- Join button
         if _G.ConquestJoinButton then
-            SkinBase.SkinButton(_G.ConquestJoinButton)
+            SkinBase.SkinButton(_G.ConquestJoinButton, { font = true })
+        end
+
+        -- Type dropdown (12.x WowStyle1 DropdownButton, mirrors HonorFrame)
+        local conquestDropdown = ConquestFrame.TypeDropdown or _G.ConquestFrameTypeDropdown
+        if conquestDropdown then
+            conquestDropdown:SetWidth(230)
+            SkinBase.SkinDropdown(conquestDropdown, { keepArrow = true, insetY = 2 })
+            SkinBase.LockDropdownText(conquestDropdown)
         end
 
         -- Role icons (handles both 11.x and 12.x API)
@@ -1106,13 +1172,14 @@ local function SkinPVPFrame()
 
         -- Queue button
         if TrainingGroundsFrame.QueueButton then
-            SkinBase.SkinButton(TrainingGroundsFrame.QueueButton)
+            SkinBase.SkinButton(TrainingGroundsFrame.QueueButton, { font = true })
         end
 
         -- Type dropdown
         if TrainingGroundsFrame.TypeDropdown then
             TrainingGroundsFrame.TypeDropdown:SetWidth(230)
             SkinBase.SkinDropdown(TrainingGroundsFrame.TypeDropdown, { keepArrow = true, insetY = 2 })
+            SkinBase.LockDropdownText(TrainingGroundsFrame.TypeDropdown)
         end
 
         -- Role icons
@@ -1162,8 +1229,8 @@ local function UpdateGroupFinderButtonColors(button, sr, sg, sb, sa, bgr, bgg, b
     local bd = button and SkinBase.GetFrameData(button, "backdrop")
     if not bd then return end
     local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
-    bd:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(bd, btnBgR, btnBgG, btnBgB, 1)
+    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     -- Update icon border if present
     local iconBd = button.icon and SkinBase.GetFrameData(button.icon, "backdrop")
@@ -1224,8 +1291,7 @@ local function RefreshInstanceFramesColors()
     -- Update PVEFrame backdrop
     local pveBd = SkinBase.GetBackdrop(PVEFrame)
     if pveBd then
-        pveBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        pveBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(pveBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     end
 
     -- Update PVE tabs
@@ -1283,8 +1349,7 @@ local function RefreshInstanceFramesColors()
             if LFGListFrame.SearchPanel.SearchBox then
                 local sbBd = SkinBase.GetBackdrop(LFGListFrame.SearchPanel.SearchBox)
                 if sbBd then
-                    sbBd:SetBackdropColor(bgr, bgg, bgb, bga)
-                    sbBd:SetBackdropBorderColor(sr, sg, sb, sa)
+                    SkinBase.SetBackdropColors(sbBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
                 end
             end
         end
@@ -1363,6 +1428,10 @@ local function RefreshInstanceFramesColors()
         local ConquestFrame = _G.ConquestFrame
         if ConquestFrame then
             SkinBase.RefreshWidget(_G.ConquestJoinButton)
+            local conquestDropdown = ConquestFrame.TypeDropdown or _G.ConquestFrameTypeDropdown
+            if conquestDropdown then
+                SkinBase.RefreshWidget(conquestDropdown)
+            end
             -- Activity buttons
             local conquestButtons = { "RatedSoloShuffle", "RatedBGBlitz", "Arena2v2", "Arena3v3", "RatedBG" }
             for _, btnName in ipairs(conquestButtons) do
@@ -1410,12 +1479,10 @@ end
 local pveHooked = false
 local function HookPVEFrame()
     if pveHooked then return end
-    if _G.PVEFrame then
-        _G.PVEFrame:HookScript("OnShow", function()
-            C_Timer.After(0.1, SkinInstanceFrames)
-        end)
-        pveHooked = true
-    end
+    local PVEFrame = _G.PVEFrame
+    if not PVEFrame then return end
+    PVEFrame:HookScript("OnShow", SkinInstanceFrames)
+    pveHooked = true
 end
 
 local function RunAfterFirstFrame(callback, delay)
@@ -1431,15 +1498,12 @@ local function RunAfterFirstFrame(callback, delay)
     return nil
 end
 
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" then
-        if addon == "Blizzard_PVPUI" or addon == "Blizzard_ChallengesUI" then
-            C_Timer.After(0.1, SkinInstanceFrames)
-        end
-    end
-end)
+SkinBase.OnAddOnLoaded("Blizzard_GroupFinder", function()
+    HookPVEFrame()
+    SkinInstanceFrames()
+end, 0)
+SkinBase.OnAddOnLoaded("Blizzard_PVPUI", SkinInstanceFrames, 0)
+SkinBase.OnAddOnLoaded("Blizzard_ChallengesUI", SkinInstanceFrames, 0)
 
 -- LOD catch-up: first PEW already fired before this module loads; the old
 -- one-shot PLAYER_ENTERING_WORLD init runs via ns.WhenLoggedIn instead.

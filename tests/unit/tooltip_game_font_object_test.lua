@@ -88,6 +88,7 @@ end
 
 local eventFrame
 local customFont = "Interface\\AddOns\\QUI\\assets\\Quazii.ttf"
+local gameTooltipSkinFrameTextCalls = 0
 
 _G.UIParent = makeFrame()
 _G.WorldFrame = makeFrame()
@@ -137,7 +138,11 @@ local ns = {
         IsSecretValue = function() return false end,
     },
     SkinBase = {
-        SkinFrameText = function() end,
+        SkinFrameText = function(frame)
+            if frame == _G.GameTooltip then
+                gameTooltipSkinFrameTextCalls = gameTooltipSkinFrameTextCalls + 1
+            end
+        end,
     },
     UIKit = {
         CreateBackground = function()
@@ -170,6 +175,8 @@ assert(GameTooltipHeaderText.size == 15,
     "GameTooltip header Font object should be tooltip font size + 2")
 assert(GameTooltipText.size == 13,
     "GameTooltip body Font object should be tooltip font size")
+assert(gameTooltipSkinFrameTextCalls == 0,
+    "GameTooltip must not route through SkinFrameText/direct FontString SetFont path")
 
 local function readFile(path)
     local fh = assert(io.open(path, "rb"), "failed to open " .. path)

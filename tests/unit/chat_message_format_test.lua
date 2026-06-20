@@ -136,10 +136,59 @@ eq("decorate ambiguate", F.DecorateSender("CHAT_MSG_SAY", "hi", "Bob-Realm"), "B
 eq("decorate class color",
     F.DecorateSender("CHAT_MSG_SAY", "hi", "Bob-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, "Player-1-MAGE"),
     "|cff3fc7ebBob|r")
+-- Truly-unknown player (never resolved, so absent from the name cache) stays
+-- plain. Uses a fresh name -- "Bob-Realm" was seeded MAGE just above, and the
+-- name cache now (correctly) recolors any later line from a known name.
 eq("decorate guid unknown",
-    F.DecorateSender("CHAT_MSG_SAY", "hi", "Bob-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, "Player-9-NONE"),
-    "Bob")
+    F.DecorateSender("CHAT_MSG_SAY", "hi", "Ghost-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, "Player-9-NONE"),
+    "Ghost")
 eq("decorate secret sender", F.DecorateSender("CHAT_MSG_SAY", "hi", secret), nil)
+-- Secret GUID (combat / chat-messaging lockdown): the class still resolves and
+-- colors the name. GetPlayerInfoByGUID is SecretArguments="AllowedWhenTainted",
+-- so the secret GUID passes straight through to the class lookup (stock
+-- raid-chat parity) -- the old IsSecret(guid) gate dropped class colors mid
+-- combat. The class return is a plain string, so the markup builds normally.
+do
+    local secretGuid = setmetatable({}, { __tostring = explode, __concat = explode, __len = explode })
+    secrets[secretGuid] = true
+    local prevGPI = _G.GetPlayerInfoByGUID
+    _G.GetPlayerInfoByGUID = function(gg)
+        if rawequal(gg, secretGuid) then return "Mage", "MAGE" end
+        return prevGPI(gg)
+    end
+    -- guid at a12: "hi"(a1), "Bob-Realm"(a2), a3..a11 = 9 nils, secretGuid(a12)
+    eq("decorate class color secret guid",
+        F.DecorateSender("CHAT_MSG_SAY", "hi", "Bob-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, secretGuid),
+        "|cff3fc7ebBob|r")
+    _G.GetPlayerInfoByGUID = prevGPI
+    secrets[secretGuid] = nil
+end
+
+-- Combat name-cache recovery (the party/raid/guild fix). In live combat the
+-- engine returns NOTHING for a secret GUID (GetPlayerInfoByGUID is
+-- MayReturnNothing under chat-messaging lockdown), so the secret-GUID
+-- passthrough ALONE goes plain -- which is exactly the reported bug. A sender
+-- resolved earlier while non-secret seeds a name->class cache; when the same
+-- name speaks during combat, the class is recovered by name even though the
+-- GUID won't resolve. The default stub returns nothing for an unknown GUID, so
+-- the secret sentinel here naturally resolves to nothing (no GPI override).
+do
+    local secretGuid = setmetatable({}, { __tostring = explode, __concat = explode, __len = explode })
+    secrets[secretGuid] = true
+    -- 1) Seed: non-secret GUID resolves MAGE for sender "Cara-Realm".
+    eq("namecache seed colors",
+        F.DecorateSender("CHAT_MSG_PARTY", "hi", "Cara-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, "Player-1-MAGE"),
+        "|cff3fc7ebCara|r")
+    -- 2) Combat: secret GUID resolves to NOTHING; name cache recovers the class.
+    eq("namecache combat recover",
+        F.DecorateSender("CHAT_MSG_PARTY", "hi", "Cara-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, secretGuid),
+        "|cff3fc7ebCara|r")
+    -- 3) A never-seen sender stays plain -- no false recovery from the cache.
+    eq("namecache unknown stays plain",
+        F.DecorateSender("CHAT_MSG_PARTY", "hi", "Newbie-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, secretGuid),
+        "Newbie")
+    secrets[secretGuid] = nil
+end
 
 -- ============ short mode (channelShorten enabled, letter preset) ============
 
@@ -550,6 +599,73 @@ do
         and j.prefix:find("Bob", 1, true), "player emote: linked sender in prefix")
 
     string.format = realFormat
+end
+
+-- Secret sender + secret GUID in combat: player-name color should still be
+-- preserved by resolving class from the raw GUID, without storing or comparing
+-- the secret identity.
+do
+    local meta = getmetatable(secret)
+    local function sentinel()
+        local s = setmetatable({}, meta)
+        secrets[s] = true
+        return s
+    end
+
+    local secretSender = sentinel()
+    local secretGuid = sentinel()
+    local partyBody = sentinel()
+    local shown = sentinel()
+    local coloredShown = sentinel()
+    local plainLink = sentinel()
+    local coloredLink = sentinel()
+    local plainPrefix = sentinel()
+    local coloredPrefix = sentinel()
+    local plainFinal = sentinel()
+    local coloredFinal = sentinel()
+
+    local prevGPI = _G.GetPlayerInfoByGUID
+    _G.GetPlayerInfoByGUID = function(gg)
+        if rawequal(gg, secretGuid) then return "Mage", "MAGE" end
+        return prevGPI(gg)
+    end
+
+    local realFormat = string.format
+    string.format = function(fmt, ...)
+        local a1, a2 = ...
+        if fmt == "[%s]" and rawequal(a1, secretSender) then
+            return shown
+        elseif fmt == "|c%s%s|r" and a1 == "ff3fc7eb" and rawequal(a2, shown) then
+            return coloredShown
+        elseif fmt == "|Hplayer:%s|h%s|h" and rawequal(a1, secretSender) and rawequal(a2, shown) then
+            return plainLink
+        elseif fmt == "|Hplayer:%s|h%s|h" and rawequal(a1, secretSender) and rawequal(a2, coloredShown) then
+            return coloredLink
+        elseif fmt == "%s%s" and a1 == "" and rawequal(a2, plainLink) then
+            return plainLink
+        elseif fmt == "%s%s" and a1 == "" and rawequal(a2, coloredLink) then
+            return coloredLink
+        elseif fmt == "[P] %s: " and rawequal(a1, plainLink) then
+            return plainPrefix
+        elseif fmt == "[P] %s: " and rawequal(a1, coloredLink) then
+            return coloredPrefix
+        elseif fmt == "%s%s" and rawequal(a1, plainPrefix) and rawequal(a2, partyBody) then
+            return plainFinal
+        elseif fmt == "%s%s" and rawequal(a1, coloredPrefix) and rawequal(a2, partyBody) then
+            return coloredFinal
+        end
+        return realFormat(fmt, ...)
+    end
+
+    local got = F.WrapSecretEventLine("CHAT_MSG_PARTY", {
+        text = partyBody,
+        rawSender = secretSender,
+        rawGuid = secretGuid,
+    })
+
+    string.format = realFormat
+    _G.GetPlayerInfoByGUID = prevGPI
+    assert(rawequal(got, coloredFinal), "secret sender+GUID keeps class-colored prefix")
 end
 
 print("OK: chat_message_format_test")

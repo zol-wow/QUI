@@ -21,6 +21,9 @@ end
 
 local callbacks = {}
 local calls = {}
+local locks = {}
+local tabGroups = {}
+local tabFonts = {}
 local frameData = setmetatable({}, { __mode = "k" })
 local lateHeader = { name = "lateHeader" }
 local lateOverview = { name = "lateOverview" }
@@ -32,6 +35,13 @@ end
 
 _G.EncounterJournal = {
     name = "EncounterJournal",
+    JourneysTab = { name = "JourneysTab" },
+    MonthlyActivitiesTab = { name = "MonthlyActivitiesTab" },
+    suggestTab = { name = "suggestTab" },
+    dungeonsTab = { name = "dungeonsTab" },
+    raidsTab = { name = "raidsTab" },
+    LootJournalTab = { name = "LootJournalTab" },
+    TutorialsTab = { name = "TutorialsTab" },
     encounter = {
         infoFrame = { name = "infoFrame" },
         overviewFrame = {
@@ -84,6 +94,15 @@ ns.SkinBase = {
     SkinFrameText = function(frame, opts)
         calls[frame] = opts or {}
     end,
+    SkinTabGroup = function(tabs, owner)
+        tabGroups[#tabGroups + 1] = { tabs = tabs, owner = owner }
+    end,
+    ApplyButtonFontObjects = function(button)
+        tabFonts[button] = true
+    end,
+    LockFrameTextObjects = function(frame, depth)
+        locks[frame] = depth
+    end,
     MarkSkinned = function(frame)
         calls.marked = frame
     end,
@@ -107,6 +126,17 @@ callbacks.Blizzard_EncounterJournal()
 
 assert(calls.buttonFrame == _G.EncounterJournal, "Encounter Journal must still get QUI frame chrome")
 assert(calls.marked == _G.EncounterJournal, "Encounter Journal must be marked skinned")
+-- Bottom tabs get the FONT fix only — no tab-art reskin (SkinTabGroup).
+assert(#tabGroups == 0, "Encounter Journal bottom tabs must NOT be art-skinned (font-only)")
+local bottomTabKeys = {
+    "JourneysTab", "MonthlyActivitiesTab", "suggestTab", "dungeonsTab",
+    "raidsTab", "LootJournalTab", "TutorialsTab",
+}
+for _, key in ipairs(bottomTabKeys) do
+    local tab = _G.EncounterJournal[key]
+    assert(tabFonts[tab], "Encounter Journal bottom tab must get QUI font objects (hover-safe): " .. key)
+    assert(locks[tab] == 2, "Encounter Journal bottom tab must lock panel-template font swaps: " .. key)
+end
 assert(type(hooks.EncounterJournal_ToggleHeaders) == "function",
     "Encounter Journal skinning must hook section header refreshes")
 assert(type(hooks.EncounterJournal_SetBullets) == "function",
@@ -115,6 +145,7 @@ assert(type(hooks.EncounterJournal_UpdateButtonState) == "function",
     "Encounter Journal skinning must hook Blizzard header color refreshes")
 
 calls = {}
+locks = {}
 _G.EncounterJournal.encounter.usedHeaders[1] = lateHeader
 
 hooks.EncounterJournal_ToggleHeaders()
@@ -123,13 +154,22 @@ assert(calls[lateHeader] and calls[lateHeader].recurse == true and calls[lateHea
     "late Encounter Journal ability headers must receive recursive QUI chrome text styling")
 assert(calls[lateOverview] and calls[lateOverview].recurse == true and calls[lateOverview].chrome == true,
     "late Encounter Journal overview sections must receive recursive QUI chrome text styling")
+assert(locks[lateHeader] == 3,
+    "late Encounter Journal ability headers must lock font-object resets")
+assert(locks[lateOverview] == 3,
+    "late Encounter Journal overview sections must lock font-object resets")
 
 calls = {}
+locks = {}
 hooks.EncounterJournal_UpdateButtonState(lateButton)
 
 assert(calls[lateButton] and calls[lateButton].recurse == true and calls[lateButton].chrome == true,
     "Encounter Journal button text recolored by Blizzard must be restyled")
 assert(calls[lateHeader] and calls[lateHeader].recurse == true and calls[lateHeader].chrome == true,
     "Encounter Journal button parent text must be restyled after Blizzard color refresh")
+assert(locks[lateButton] == 3,
+    "Encounter Journal button text must lock font-object resets")
+assert(locks[lateHeader] == 3,
+    "Encounter Journal button parent text must lock font-object resets")
 
 print("OK: encounter_journal_dynamic_text_test")

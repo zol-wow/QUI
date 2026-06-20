@@ -234,6 +234,140 @@ function ShouldForceShowForSpellBook()
     return fadeSettings and fadeSettings.showWhenSpellBookOpen and IsSpellBookVisible()
 end
 
+local LURA_MYTHIC_ENCOUNTER_ID = 3183
+local MYTHIC_RAID_DIFFICULTY_ID = 16
+local MYTHIC_KEYSTONE_DIFFICULTY_ID = 8
+
+local function NormalizeVisibilityToken(value)
+    if value == nil then return nil end
+    local text = tostring(value)
+    text = text:gsub("^%s+", ""):gsub("%s+$", "")
+    if text == "" then return nil end
+    return text:lower()
+end
+
+function IsActionBarLuraMythicEncounter(encounterID, encounterName, difficultyID)
+    local numericEncounterID = tonumber(encounterID)
+    local numericDifficultyID = tonumber(difficultyID)
+    if numericDifficultyID ~= MYTHIC_RAID_DIFFICULTY_ID then
+        return false
+    end
+    if numericEncounterID == LURA_MYTHIC_ENCOUNTER_ID then
+        return true
+    end
+
+    local name = NormalizeVisibilityToken(encounterName)
+    return name == "midnight falls" or name == "midnight" or name == "l'ura"
+end
+
+local function GetCurrentInstanceContext()
+    local inInstance, instanceType = false, "none"
+    if IsInInstance then
+        local ok, isInInstance, kind = pcall(IsInInstance)
+        if ok then
+            inInstance = isInInstance and true or false
+            instanceType = kind or instanceType
+        end
+    end
+
+    local difficultyID
+    if GetInstanceInfo then
+        local ok, _, infoType, infoDifficultyID = pcall(GetInstanceInfo)
+        if ok then
+            if infoType then instanceType = infoType end
+            difficultyID = tonumber(infoDifficultyID)
+            if infoType and infoType ~= "none" then
+                inInstance = true
+            end
+        end
+    end
+
+    return inInstance, instanceType, difficultyID
+end
+
+local function IsInMythicPlus(difficultyID)
+    if tonumber(difficultyID) == MYTHIC_KEYSTONE_DIFFICULTY_ID then
+        return true
+    end
+    if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive then
+        local ok, active = pcall(C_ChallengeMode.IsChallengeModeActive)
+        if ok and active then return true end
+    end
+    return false
+end
+
+function GetActionBarContentType()
+    local inInstance, instanceType, difficultyID = GetCurrentInstanceContext()
+
+    if not inInstance or instanceType == "none" then
+        return "openWorld"
+    end
+    if instanceType == "party" then
+        return IsInMythicPlus(difficultyID) and "mythicPlus" or "dungeon"
+    end
+    if instanceType == "raid" then
+        return difficultyID == MYTHIC_RAID_DIFFICULTY_ID and "mythicRaid" or "raid"
+    end
+
+    return nil
+end
+
+function ActionBarContentTypeMatches(barSettings)
+    if not barSettings then return false end
+
+    local contentType = GetActionBarContentType()
+    if contentType == "openWorld" then return barSettings.showInOpenWorld and true or false end
+    if contentType == "dungeon" then return barSettings.showInDungeons and true or false end
+    if contentType == "mythicPlus" then return barSettings.showInMythicPlus and true or false end
+    if contentType == "raid" then return barSettings.showInRaids and true or false end
+    if contentType == "mythicRaid" then return barSettings.showInMythicRaids and true or false end
+    return false
+end
+
+function SetActionBarEncounterVisibilityContext(encounterID, encounterName, difficultyID)
+    local state = ActionBarsOwned.contextVisibility or {}
+    ActionBarsOwned.contextVisibility = state
+    state.encounterID = tonumber(encounterID)
+    state.encounterName = encounterName
+    state.difficultyID = tonumber(difficultyID)
+    state.luraMythicEncounterActive = IsActionBarLuraMythicEncounter(encounterID, encounterName, difficultyID)
+end
+
+function ClearActionBarEncounterVisibilityContext(encounterID)
+    local state = ActionBarsOwned.contextVisibility
+    if not state then return end
+    local numericEncounterID = tonumber(encounterID)
+    if numericEncounterID and state.encounterID and numericEncounterID ~= state.encounterID then
+        return
+    end
+    state.encounterID = nil
+    state.encounterName = nil
+    state.difficultyID = nil
+    state.luraMythicEncounterActive = false
+end
+
+function RefreshActionBarContextVisibility()
+    local state = ActionBarsOwned.contextVisibility or {}
+    ActionBarsOwned.contextVisibility = state
+
+    local oldContentType = state.contentType
+    state.contentType = GetActionBarContentType()
+    return oldContentType ~= state.contentType
+end
+
+function ShouldForceShowForActionBarContext(barKey)
+    local barSettings = barKey and GetBarSettings(barKey)
+    if not barSettings then return false end
+
+    local state = ActionBarsOwned.contextVisibility
+    if not state or state.contentType == nil then
+        RefreshActionBarContextVisibility()
+        state = ActionBarsOwned.contextVisibility
+    end
+    return ActionBarContentTypeMatches(barSettings)
+        or (barSettings.showOnLuraMythic and state and state.luraMythicEncounterActive) or false
+end
+
 function GetSpellFlyoutSourceButton(flyout)
     if not flyout then return nil end
 
@@ -302,7 +436,9 @@ function IsSpellFlyoutActiveForBar(barKey)
 end
 
 function ShouldSuspendMouseoverFade(barKey)
-    return ShouldForceShowForSpellBook() or IsSpellFlyoutActiveForBar(barKey)
+    return ShouldForceShowForSpellBook()
+        or ShouldForceShowForActionBarContext(barKey)
+        or IsSpellFlyoutActiveForBar(barKey)
 end
 
 SPELL_UI_FADE_RECHECK_DELAY = 0.1
@@ -799,4 +935,3 @@ ActionBarsOwned.SetBarContainerShown = SetBarContainerShown
 
 env.__declared.EnsureOwnedFlyoutFrame = true
 env.__declared.SyncOwnedFlyoutInfoToHandler = true
-

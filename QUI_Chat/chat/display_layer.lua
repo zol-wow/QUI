@@ -297,6 +297,13 @@ local function ApplyTheme(win)
             -- adopt the same object. In-game CreateFontFamily exists, so the
             -- family branch always wins and the QUI_CustomChatFontObject
             -- global is never built; consumers must read I.chatFontObject.
+            -- Publish the resolved PHYSICAL font (path/size/flags) too. Surfaces
+            -- that can't adopt a SimpleFont family object directly — a copy
+            -- window's template-less EditBox has no base font for the family to
+            -- layer onto, so SetFontObject(family) leaves it on the engine
+            -- default — need the raw triple to SetFont() the QUI font (incl. the
+            -- baked symbol glyphs) themselves.
+            I.chatFontPath, I.chatFontSize, I.chatFontFlags = fontPath, size, flags
             local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fontPath, size, flags)
             if family then
                 smf:SetFontObject(family)
@@ -313,6 +320,7 @@ local function ApplyTheme(win)
         else
             smf:SetFontObject(_G.ChatFontNormal)
             I.chatFontObject = nil
+            I.chatFontPath, I.chatFontSize, I.chatFontFlags = nil, nil, nil
         end
         -- Combat Log tab embeds the real ChatFrame2; mirror font changes onto
         -- it while active (loads after this file — runtime lookup).
@@ -361,16 +369,37 @@ end
 -- Render one entry into a window's SMF. Color override is resolved at RENDER
 -- time via channel_colors' registered resolver (never ChatTypeInfo writes).
 -- Secrets: no resolver call, no operators — straight to AddMessage.
+-- Entries whose r/g/b is the producer's OWN color (addon print(), restored
+-- session separators) -- never re-resolve these from the type key: their k is
+-- just a routing bucket, not a color source.
+local PRODUCER_EVENTS = { ADDMESSAGE = true, BACKFILL = true, HISTORY = true }
+
 local function RenderEntry(win, entry)
     if not win.smf then return end
     local addMessage = win.smf.AddMessage
     if type(addMessage) ~= "function" then return end
     local r, g, b = entry.r or 1, entry.g or 1, entry.b or 1
     if not entry.s then
-        local resolver = ns.QUI.Chat._lineColorResolver
-        if resolver and entry.e then
-            local orR, orG, orB = resolver(entry.e, entry.ch and { [9] = entry.ch } or nil)
-            if orR then r, g, b = orR, orG, orB end
+        -- Type-derived lines (GMOTD/system + CHAT_MSG_* non-channel) resolve
+        -- their color LIVE at render so a line stored before its per-type color
+        -- synced (login GMOTD, replayed history) paints with the current color
+        -- instead of the baked white fallback -- no white-then-heal flash.
+        -- ColorForTypeKey already folds in user overrides, so this supersedes
+        -- the override resolver for those types. Channel lines (per-SLOT color,
+        -- slot number not stored) and producer/separator lines keep their baked
+        -- color and the existing override resolver.
+        local k = entry.k
+        local typeColor = ns.QUI.Chat._typeColorResolver
+        if typeColor and k and not PRODUCER_EVENTS[entry.e]
+            and k ~= "CHANNEL" and k ~= "CHANNEL_NOTICE" then
+            local tr, tg, tb = typeColor(k, entry.ch)
+            if tr then r, g, b = tr, tg, tb end
+        else
+            local resolver = ns.QUI.Chat._lineColorResolver
+            if resolver and entry.e then
+                local orR, orG, orB = resolver(entry.e, entry.ch and { [9] = entry.ch } or nil)
+                if orR then r, g, b = orR, orG, orB end
+            end
         end
     end
     addMessage(win.smf, entry.m, r, g, b)
@@ -533,6 +562,20 @@ local function CreateWindow(id)
         local refFrame = _G.DEFAULT_CHAT_FRAME or _G.ChatFrame1 or self
         _G.SetItemRef(link, text, button, refFrame)
     end)
+    -- Hover tooltips. A bare ScrollingMessageFrame has no OnHyperlinkEnter/
+    -- Leave scripts; Blizzard's ChatFrameMixin wires those in ChatFrame.xml to
+    -- fire EventRegistry "ChatFrame.OnHyperlinkEnter/Leave" (ChatFrame.lua:27).
+    -- The QUI tooltip handler (hyperlinks.lua) listens on those events, so
+    -- without re-firing them from this custom SMF, hovering an item/spell link
+    -- shows nothing. Mirror Blizzard's signature and pass self as the chatFrame.
+    if _G.EventRegistry and _G.EventRegistry.TriggerEvent then
+        smf:SetScript("OnHyperlinkEnter", function(self, link, text, region, boundsLeft, boundsBottom, boundsWidth, boundsHeight)
+            _G.EventRegistry:TriggerEvent("ChatFrame.OnHyperlinkEnter", self, link, text, region, boundsLeft, boundsBottom, boundsWidth, boundsHeight)
+        end)
+        smf:SetScript("OnHyperlinkLeave", function(self)
+            _G.EventRegistry:TriggerEvent("ChatFrame.OnHyperlinkLeave", self)
+        end)
+    end
     -- Clicking the message area marks the window active (editbox follow).
     if smf.HookScript then
         smf:HookScript("OnMouseDown", function()

@@ -42,6 +42,7 @@ Most group frame behavior is configured directly from the main `/qui` page. Clic
 | Sort by | Role, index, or name | Role |
 | Group by | GROUP, ROLE, or CLASS | GROUP |
 | Health display | Percent, absolute, both, or deficit | Percent |
+| Party level text | Optional level number on party frames | Disabled |
 | Max debuff icons | Number of debuff icons shown per frame | 3 |
 | Range check alpha | Opacity for out-of-range members | 0.4 |
 | Click-casting | Enable click-cast bindings | Disabled |
@@ -63,6 +64,7 @@ Most group frame behavior is configured directly from the main `/qui` page. Clic
 
 - Auto-scaling layouts for party, small raid, and large raid contexts
 - Separate party and raid profiles
+- Optional party-frame level text with independent font and placement
 - Click-casting with spec-based bindings
 - Healer-focused indicators like dispels, my-buffs, and defensives
 - Spotlight rules and sorting controls for keeping important players visible

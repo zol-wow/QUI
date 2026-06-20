@@ -70,6 +70,100 @@ local function ResolveChatFontObject()
     return I.chatFontObject or _G.QUI_CustomChatFontObject or _G.ChatFontNormal
 end
 
+-- Apply the QUI chat font to a copy-surface EditBox. These editboxes are created
+-- template-less (no inherited font), which is why every naive approach failed:
+--   * SetFontObject(I.chatFontObject) — the per-script SimpleFont FAMILY the
+--     message frame uses — does NOT render when set as the box's FIRST-EVER font:
+--     with no base font to derive from it leaves the box on the engine default
+--     (the long-standing "copy window has no QUI font / boxed symbols" bug). The
+--     chat-input editbox carries the same family fine only because its template
+--     seeds a base font first.
+--   * Re-running SetFont(physical) on every open renders, but layering the family
+--     on top each time DROPS the font on reopen — repeating SetFont destabilizes
+--     the per-script family re-resolution across opens.
+-- Fix: seed a physical base font ONCE (flag-gated) so the family has something to
+-- attach to, then SetFontObject the family on EVERY refresh. SetFont never repeats
+-- (reopen-stable, and it sidesteps the editbox SetFontObject self-cycle), and the
+-- family gives QUI font + baked symbols (roman member) for Latin plus the Blizzard
+-- fallback members for CJK names from other players. If the family still can't
+-- attach the seeded physical base stands — QUI font + symbols, no CJK, no worse
+-- than before. Falls back to the published font object when no path is published
+-- yet (pre-build / stock chat font).
+local function ApplyCopyFont(editBox)
+    if not editBox then return end
+    if not editBox._quiFontSeeded and editBox.SetFont then
+        local path, size, flags = I.chatFontPath, I.chatFontSize, I.chatFontFlags
+        if type(path) == "string" and path ~= "" and type(size) == "number" and size > 0 then
+            if pcall(editBox.SetFont, editBox, path, size, flags or "") then
+                editBox._quiFontSeeded = true
+            end
+        end
+    end
+    local fo = ResolveChatFontObject()
+    if fo and editBox.SetFontObject then editBox:SetFontObject(fo) end
+end
+
+-- Font for the history frame's ScrollingEditBox control. Its inner editbox is
+-- font-bearing, so the per-script family attaches — BUT the scrollable editbox
+-- re-applies its `fontName` field on relayout, so a bare SetFontObject reverts to
+-- the template default (GameFontHighlight). Set BOTH the fontName field and the
+-- control's font object (mirrors how Blizzard frames drive this template) so the
+-- QUI family sticks: QUI font + baked symbols for Latin, Blizzard fallback members
+-- for CJK names from other players.
+local function ApplyScrollingEditBoxFont(seb)
+    if not seb then return end
+    local fo = ResolveChatFontObject()
+    if not fo then return end
+    local editBox = seb.GetEditBox and seb:GetEditBox()
+    if editBox then editBox.fontName = fo end
+    if seb.SetFontObject then seb:SetFontObject(fo) end
+end
+
+-- QUI-skin a MinimalScrollBar (the ScrollingEditBox gutter bar): hide the stock
+-- atlas thumb/steppers and lay a flat accent thumb, matching the rest of the
+-- chat chrome. The thumb's atlas regions (Middle/Begin/End) are re-set on hover
+-- via OnButtonStateChanged, but SetAtlas does NOT reset alpha — so alpha 0 once
+-- keeps them hidden across states; the flat fill tracks the thumb by anchor.
+local function StyleMinimalScrollBar(bar, accent)
+    if not bar then return end
+    -- Hide the arrow steppers (minimal look).
+    local back = bar.GetBackStepper and bar:GetBackStepper()
+    local fwd = bar.GetForwardStepper and bar:GetForwardStepper()
+    if back then back:SetAlpha(0) end
+    if fwd then fwd:SetAlpha(0) end
+    -- Hide the stock rounded atlas caps (Begin/Middle/End) on both the track and
+    -- the thumb — those are the "weird border" — and replace with flat fills.
+    -- SetAtlas (re-run on thumb hover) does NOT reset alpha, so alpha 0 sticks.
+    local function hideAtlasRegions(region)
+        for _, key in ipairs({ "Begin", "Middle", "End" }) do
+            local r = region and region[key]
+            if r and r.SetAlpha then r:SetAlpha(0) end
+        end
+    end
+    -- Faint always-visible track channel.
+    local track = (bar.GetTrack and bar:GetTrack()) or bar.Track
+    if track then
+        hideAtlasRegions(track)
+        if not track._quiBg then
+            local trackBg = track:CreateTexture(nil, "BACKGROUND")
+            trackBg:SetAllPoints(track)
+            track._quiBg = trackBg
+        end
+        track._quiBg:SetColorTexture(1, 1, 1, 0.08)
+    end
+    -- Flat accent thumb.
+    local thumb = bar.GetThumb and bar:GetThumb()
+    if thumb then
+        hideAtlasRegions(thumb)
+        if not thumb._quiFill then
+            local fill = thumb:CreateTexture(nil, "ARTWORK")
+            fill:SetAllPoints(thumb)
+            thumb._quiFill = fill
+        end
+        thumb._quiFill:SetColorTexture(accent[1], accent[2], accent[3], 0.9)
+    end
+end
+
 local function ResolveTheme()
     if I.GetThemeColors then
         local theme = I.GetThemeColors()
@@ -248,8 +342,12 @@ local function RefreshPopupAccent(popup)
     end
     if popup.editBox then
         popup.editBox:SetTextColor(theme.text[1], theme.text[2], theme.text[3], theme.text[4] or 1)
-        local fo = ResolveChatFontObject()
-        if fo then popup.editBox:SetFontObject(fo) end
+        if popup.scrollingEditBox then
+            ApplyScrollingEditBoxFont(popup.scrollingEditBox)
+            if popup.scrollBar then StyleMinimalScrollBar(popup.scrollBar, accent) end
+        else
+            ApplyCopyFont(popup.editBox)
+        end
     end
     if popup.scrollFrame then
         StyleScrollFrame(popup.scrollFrame)
@@ -303,7 +401,7 @@ local function CreateCopyPopup()
     editBox:SetHeight(22)
     editBox:SetAutoFocus(true)
     editBox:SetTextColor(theme.text[1], theme.text[2], theme.text[3], theme.text[4] or 1)
-    editBox:SetFontObject(ResolveChatFontObject() or ChatFontNormal)
+    ApplyCopyFont(editBox)
     editBox:SetScript("OnEscapePressed", function() urlPopup:Hide() end)
     editBox:SetScript("OnEnterPressed", function() urlPopup:Hide() end)
     urlPopup.editBox = editBox
@@ -401,6 +499,37 @@ local function CleanMessage(message, lineColor)
     if Helpers.IsSecretValue(message) or type(message) ~= "string" then return "" end
 
     local cleaned = message
+    -- BN friend toasts/links carry the friend's name as a |K kstring INSIDE the
+    -- |HBNplayer link (both the link data and the [display]). The chat SMF
+    -- renders kstrings; a plain EditBox cannot, so the generic |K strip below
+    -- would blank the friend's name to "???". The bnID is embedded in the link
+    -- DATA (field 2), so resolve the BNet display name from it and substitute it
+    -- BEFORE the kstring strip. Resolving HERE (copy-window open) rather than at
+    -- capture is deliberate: the friend's BN account info is reliably cached by
+    -- now, whereas at the FRIEND_ONLINE toast it often has not populated yet
+    -- (the account just came online). Use the battleTag truncated at '#'
+    -- ("Devilspit#1846" -> "Devilspit"): in these toasts accountInfo.accountName
+    -- comes back AS THE SAME |K kstring (verified in-game), so it can't be used
+    -- -- it would re-blank to "???". battleTag is the plain, reliably-populated
+    -- field (non-Nilable per BNetAccountInfo docs) and is the friends-list
+    -- display name once the discriminator is dropped. Nil-safe -- leaves the
+    -- match untouched (the |K strip handles the fallback) when unresolved.
+    if _G.C_BattleNet and _G.C_BattleNet.GetAccountInfoByID then
+        cleaned = cleaned:gsub("|HBNplayer:.-:(%d+):.-|h(%b[])|h", function(bnID)
+            local id = tonumber(bnID)
+            if not id then return nil end
+            local ok, info = pcall(_G.C_BattleNet.GetAccountInfoByID, id)
+            if not ok or type(info) ~= "table" then return nil end
+            local bt = info.battleTag
+            if type(bt) ~= "string" or bt == "" or bt:sub(1, 2) == "|K" then return nil end
+            local hash = bt:find("#", 1, true)
+            local name = hash and bt:sub(1, hash - 1) or bt
+            if name ~= "" then
+                return ("[%s]"):format(name)
+            end
+            return nil
+        end)
+    end
     -- Battle.net kstrings (|K...|k) and name-wrap escapes (|W...|w) FIRST:
     -- an EditBox cannot render foreign kstrings — one leaked |K anywhere in
     -- the concatenated text blanks the ENTIRE copy editbox (the SMF renders
@@ -589,29 +718,53 @@ local function CreateChatCopyFrame()
     I.ApplySurfaceStyle(editBg, theme.bgDark, theme.border, 1)
     chatCopyFrame.editBg = editBg
 
-    -- Scroll frame
-    local scrollFrame = CreateFrame("ScrollFrame", "QUI_ChatCopyFrameScroll", editBg, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 8, -8)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -24, 8)
-    StyleScrollFrame(scrollFrame)
-
-    -- Edit box for text selection
-    local editBox = CreateFrame("EditBox", nil, scrollFrame)
-    editBox:SetMultiLine(true)
-    editBox:SetFontObject(ResolveChatFontObject() or ChatFontNormal)
-    editBox:SetWidth(math.max(1, scrollFrame:GetWidth() - 10))
+    -- Selectable text surface: Blizzard's ScrollingEditBoxTemplate, NOT a bare
+    -- EditBox in a ScrollFrame. Two reasons it must be this template:
+    --   1. Its inner EditBox is font-bearing (the template seeds a base font in
+    --      OnLoad), so SetFontObject(I.chatFontObject) — the per-script SimpleFont
+    --      family — actually ATTACHES, giving the QUI font + baked symbols for
+    --      Latin and the Blizzard fallback members for CJK names from others. A
+    --      template-less EditBox silently drops the family (the long-standing
+    --      "copy window has no QUI font" bug).
+    --   2. Its ScrollBox VIRTUALIZES the text, so a large chat history renders
+    --      without the plain-EditBox failure mode where too much text stops the
+    --      font from rendering partway down.
+    local seb = CreateFrame("Frame", "QUI_ChatCopyScrollingEditBox", editBg, "ScrollingEditBoxTemplate")
+    seb:SetPoint("TOPLEFT", 8, -8)
+    seb:SetPoint("BOTTOMRIGHT", -8, 8)
+    local editBox = seb:GetEditBox()
     editBox:SetAutoFocus(false)
     editBox:SetTextColor(theme.text[1], theme.text[2], theme.text[3], theme.text[4] or 1)
-    editBox:SetScript("OnEscapePressed", function() chatCopyFrame:Hide() end)
-    scrollFrame:SetScrollChild(editBox)
-    scrollFrame:SetScript("OnSizeChanged", function(self)
-        editBox:SetWidth(math.max(1, self:GetWidth() - 10))
-    end)
-    if ns.ApplyScrollWheel then
-        ns.ApplyScrollWheel(scrollFrame)
-    end
+    chatCopyFrame.scrollingEditBox = seb
     chatCopyFrame.editBox = editBox
-    chatCopyFrame.scrollFrame = scrollFrame
+    ApplyScrollingEditBoxFont(seb)
+
+    -- The template ships a ScrollBox but no scrollbar; create + bind a
+    -- MinimalScrollBar on the right edge (mouse wheel works regardless).
+    if _G.ScrollUtil and _G.ScrollUtil.RegisterScrollBoxWithScrollBar then
+        local scrollBar = CreateFrame("EventFrame", nil, seb, "MinimalScrollBar")
+        scrollBar:SetPoint("TOPRIGHT", seb, "TOPRIGHT", -1, -2)
+        scrollBar:SetPoint("BOTTOMRIGHT", seb, "BOTTOMRIGHT", -1, 2)
+        local scrollBox = seb:GetScrollBox()
+        _G.ScrollUtil.RegisterScrollBoxWithScrollBar(scrollBox, scrollBar)
+        -- Managed visibility: hide the WHOLE bar (and its track channel) when there
+        -- is nothing to scroll, and reclaim the gutter for the text; show + inset
+        -- when there is. Without this the empty track lingers and reads as a broken
+        -- scrollbar on short histories.
+        if _G.ScrollUtil.AddManagedScrollBarVisibilityBehavior and _G.CreateAnchor then
+            local withBar = {
+                _G.CreateAnchor("TOPLEFT", seb, "TOPLEFT", 0, 0),
+                _G.CreateAnchor("BOTTOMRIGHT", seb, "BOTTOMRIGHT", -16, 0),
+            }
+            local withoutBar = {
+                _G.CreateAnchor("TOPLEFT", seb, "TOPLEFT", 0, 0),
+                _G.CreateAnchor("BOTTOMRIGHT", seb, "BOTTOMRIGHT", 0, 0),
+            }
+            _G.ScrollUtil.AddManagedScrollBarVisibilityBehavior(scrollBox, scrollBar, withBar, withoutBar)
+        end
+        chatCopyFrame.scrollBar = scrollBar
+        StyleMinimalScrollBar(scrollBar, accent)
+    end
 
     -- Close button
     local closeBtn = CreateCloseButton(chatCopyFrame, function() chatCopyFrame:Hide() end)
@@ -647,7 +800,8 @@ local function CreateChatCopyFrame()
     resizeBtn:SetScript("OnMouseDown", function() chatCopyFrame:StartSizing("BOTTOMRIGHT") end)
     resizeBtn:SetScript("OnMouseUp", function()
         chatCopyFrame:StopMovingOrSizing()
-        editBox:SetWidth(scrollFrame:GetWidth())
+        -- ScrollingEditBox reflows on its own OnSizeChanged; forcing UpdateScrollBox
+        -- here snapped the scroll back to the top, so leave it to the widget.
     end)
 
     -- Add to special frames so ESC closes it
@@ -667,27 +821,23 @@ function Copy.ShowCustomCopyFrame(windowID)
     RefreshPopupAccent(frame)
     local lines = GetCustomDisplayLines(windowID)
     local text = #lines > 0 and tconcat(lines, "\n") or "(No copyable messages in custom display)"
-    frame.editBox:SetText(text)
-    frame.editBox:SetWidth(math.max(1, frame.scrollFrame:GetWidth() - 10))
+    -- SetText on the CONTROL routes through the mixin (editBox:ApplyText +
+    -- scrollbox update); the scrollbox virtualizes large histories so the font
+    -- renders all the way down.
+    frame.scrollingEditBox:SetText(text)
     frame:Show()
     frame.editBox:SetFocus()
     if #text <= AUTO_HIGHLIGHT_MAX_CHARS then
         frame.editBox:HighlightText()
     end
-    -- Land on the NEWEST lines (bottom). Deferred a frame: the editbox's
-    -- height (and so the scroll range) settles only after SetText lays out.
-    -- GetVerticalScrollRange may return a SECRET (SecretReturnsForAspect
-    -- ScrollRange) and SetVerticalScroll rejects secret args — guard before
-    -- passing it through.
+    -- Land on the NEWEST lines (bottom). Deferred a frame: the scrollbox extent
+    -- settles only after the text lays out.
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
-            local sf = frame.scrollFrame
-            if not (frame:IsShown() and sf and sf.SetVerticalScroll and sf.GetVerticalScrollRange) then
-                return
-            end
-            local range = sf:GetVerticalScrollRange()
-            if type(range) == "number" and not Helpers.IsSecretValue(range) then
-                sf:SetVerticalScroll(range)
+            local seb = frame.scrollingEditBox
+            local sb = seb and seb.GetScrollBox and seb:GetScrollBox()
+            if frame:IsShown() and sb and sb.ScrollToEnd then
+                sb:ScrollToEnd()
             end
         end)
     end

@@ -439,7 +439,7 @@ end)
 
 -- LOD catch-up: Blizzard_ActionBar loads at startup, long before this module;
 -- the watcher above would never fire for it.
-if C_AddOns.IsAddOnLoaded("Blizzard_ActionBar") then
+if SkinBase.IsAddOnFullyLoaded("Blizzard_ActionBar") then
     RunAfterFirstFrame(function()
         HookManager()
         ApplyAll()

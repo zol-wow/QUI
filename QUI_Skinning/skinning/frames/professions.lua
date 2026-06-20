@@ -33,7 +33,7 @@ local function StyleScrollBoxRow(row)
     if not row.Label and not row.Text and not row.Icon then return end
 
     SkinBase.SkinScrollRow(row)
-    SkinBase.SkinFrameText(row, { recurse = true })
+    SkinBase.LockPooledRowText(row, 4)
 
     -- Category header rows revert the QUI font on hover: ProfessionsRecipe
     -- ListCategoryMixin:OnEnter/OnLeave SetFontObject(GameFontHighlight/Normal_
@@ -44,15 +44,12 @@ local function StyleScrollBoxRow(row)
         SkinBase.LockFontObject(row.Label, { fontOnly = true })
     end
 
-    -- Inset backdrop past the skill-up icon area on recipe rows
-    if row.SkillUps then
-        local bd = SkinBase.GetBackdrop(row)
-        if bd then
-            bd:ClearAllPoints()
-            bd:SetPoint("TOPLEFT", row.SkillUps, "TOPRIGHT", 0, 0)
-            bd:SetPoint("BOTTOMRIGHT")
-        end
-    end
+    -- OrderList rows are TableBuilder-backed: cell fontstrings are built lazily and
+    -- re-bind their font on populate/recycle. LockPooledRowText above does the
+    -- guarded recursive pass once so the QUI face re-applies on each cell rebind.
+    -- Backdrop stays full-row (SkinScrollRow's SetAllPoints) so the hover border
+    -- brightens the whole row like the Auction House rows. (The old SkillUps inset
+    -- left the backdrop covering only a shifted sub-box → partial, dim hover.)
 end
 
 ---------------------------------------------------------------------------
@@ -89,8 +86,22 @@ end
 -- SKIN RECIPE LIST (shared between CraftingPage and OrdersPage)
 ---------------------------------------------------------------------------
 
+-- Recipe rows DON'T fire their OnEnter *script* on hover (HookScript never fires —
+-- verified in-game), so AttachHover's border-brighten never triggers. Blizzard runs
+-- the mixin OnEnter METHOD directly (Init:257/305 + SkillUps OnEnter) — the same path
+-- that bolds the label. Hook the method and route hover to the backdrop border-
+-- brighten, matching the (working) crafting-orders rows. Covers CraftingPage + Orders.
+local function HookRecipeRowHover()
+    local mixin = _G.ProfessionsRecipeListRecipeMixin
+    if not mixin or mixin.OnEnter == nil or SkinBase.GetFrameData(mixin, "hoverHooked") then return end
+    hooksecurefunc(mixin, "OnEnter", function(self) SkinBase.SetRowHovered(self, true) end)
+    hooksecurefunc(mixin, "OnLeave", function(self) SkinBase.SetRowHovered(self, false) end)
+    SkinBase.SetFrameData(mixin, "hoverHooked", true)
+end
+
 local function SkinRecipeList(recipeList)
     if not recipeList then return end
+    HookRecipeRowHover()
 
     -- Hide decorations
     if recipeList.Background then recipeList.Background:SetAlpha(0) end
@@ -159,13 +170,13 @@ local function SkinCraftingPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     -- Buttons
     if craftingPage.CreateButton then
-        SkinBase.SkinButton(craftingPage.CreateButton)
+        SkinBase.SkinButton(craftingPage.CreateButton, { font = true })
     end
     if craftingPage.CreateAllButton then
-        SkinBase.SkinButton(craftingPage.CreateAllButton)
+        SkinBase.SkinButton(craftingPage.CreateAllButton, { font = true })
     end
     if craftingPage.ViewGuildCraftersButton then
-        SkinBase.SkinButton(craftingPage.ViewGuildCraftersButton)
+        SkinBase.SkinButton(craftingPage.ViewGuildCraftersButton, { font = true })
     end
 end
 
@@ -191,17 +202,18 @@ local function SkinOrdersPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
         -- Search / back buttons
         if browseFrame.SearchButton then
-            SkinBase.SkinButton(browseFrame.SearchButton)
+            SkinBase.SkinButton(browseFrame.SearchButton, { font = true })
         end
         if browseFrame.FavoritesSearchButton then
-            SkinBase.SkinButton(browseFrame.FavoritesSearchButton)
+            SkinBase.SkinButton(browseFrame.FavoritesSearchButton, { font = true })
         end
 
         -- Order type tab buttons
         local orderTabs = { browseFrame.PublicOrdersButton, browseFrame.GuildOrdersButton, browseFrame.NpcOrdersButton, browseFrame.PersonalOrdersButton }
         for _, tab in ipairs(orderTabs) do
             if tab then
-                SkinBase.SkinButton(tab)
+                SkinBase.SkinTab(tab, browseFrame, { hover = true })
+                SkinBase.LockFrameTextObjects(tab, 2)
             end
         end
     end
@@ -212,24 +224,29 @@ local function SkinOrdersPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         -- The order view form uses similar structure to the customer orders form
         SkinSubPanel(orderView.OrderDetails, sr, sg, sb, sa)
         SkinSubPanel(orderView.OrderInfo, sr, sg, sb, sa)
+        local noteTitle = orderView.OrderInfo and orderView.OrderInfo.NoteBox and orderView.OrderInfo.NoteBox.NoteTitle
+        if noteTitle then
+            SkinBase.SkinFontString(noteTitle, { fontOnly = true })
+            SkinBase.LockFontObject(noteTitle, { fontOnly = true })
+        end
         -- Buttons
         if orderView.CreateButton then
-            SkinBase.SkinButton(orderView.CreateButton)
+            SkinBase.SkinButton(orderView.CreateButton, { font = true })
         end
         if orderView.StartOrderButton then
-            SkinBase.SkinButton(orderView.StartOrderButton)
+            SkinBase.SkinButton(orderView.StartOrderButton, { font = true })
         end
         if orderView.CompleteOrderButton then
-            SkinBase.SkinButton(orderView.CompleteOrderButton)
+            SkinBase.SkinButton(orderView.CompleteOrderButton, { font = true })
         end
         if orderView.DeclineOrderButton then
-            SkinBase.SkinButton(orderView.DeclineOrderButton)
+            SkinBase.SkinButton(orderView.DeclineOrderButton, { font = true })
         end
         if orderView.ReleaseOrderButton then
-            SkinBase.SkinButton(orderView.ReleaseOrderButton)
+            SkinBase.SkinButton(orderView.ReleaseOrderButton, { font = true })
         end
         if orderView.BackButton then
-            SkinBase.SkinButton(orderView.BackButton)
+            SkinBase.SkinButton(orderView.BackButton, { font = true })
         end
     end
 end
@@ -289,22 +306,22 @@ local function SkinSpecPage(frame)
 
     -- Buttons
     if specPage.ApplyButton then
-        SkinBase.SkinButton(specPage.ApplyButton)
+        SkinBase.SkinButton(specPage.ApplyButton, { font = true })
     end
     if specPage.UnlockTabButton then
-        SkinBase.SkinButton(specPage.UnlockTabButton)
+        SkinBase.SkinButton(specPage.UnlockTabButton, { font = true })
     end
     if specPage.ViewTreeButton then
-        SkinBase.SkinButton(specPage.ViewTreeButton)
+        SkinBase.SkinButton(specPage.ViewTreeButton, { font = true })
     end
     if specPage.BackToPreviewButton then
-        SkinBase.SkinButton(specPage.BackToPreviewButton)
+        SkinBase.SkinButton(specPage.BackToPreviewButton, { font = true })
     end
     if specPage.ViewPreviewButton then
-        SkinBase.SkinButton(specPage.ViewPreviewButton)
+        SkinBase.SkinButton(specPage.ViewPreviewButton, { font = true })
     end
     if specPage.BackToFullTreeButton then
-        SkinBase.SkinButton(specPage.BackToFullTreeButton)
+        SkinBase.SkinButton(specPage.BackToFullTreeButton, { font = true })
     end
 
     -- Detailed view background
@@ -312,10 +329,10 @@ local function SkinSpecPage(frame)
     if detailedView then
         if detailedView.Background then detailedView.Background:SetAlpha(0) end
         if detailedView.SpendPointsButton then
-            SkinBase.SkinButton(detailedView.SpendPointsButton)
+            SkinBase.SkinButton(detailedView.SpendPointsButton, { font = true })
         end
         if detailedView.UnlockPathButton then
-            SkinBase.SkinButton(detailedView.UnlockPathButton)
+            SkinBase.SkinButton(detailedView.UnlockPathButton, { font = true })
         end
     end
 
@@ -330,11 +347,26 @@ end
 -- MAIN ENTRY POINT
 ---------------------------------------------------------------------------
 
+-- Order-table column headers (ProfessionsCrafterTableHeaderStringTemplate) swap
+-- their Highlight font OBJECT on hover; hook the shared mixin Init once so the
+-- QUI font is driven onto every header. Guarded on the mixin table so it cannot
+-- double-install (the customer-orders skinner installs the same hook).
+local function HookProfessionTableHeaderFonts()
+    local mixin = _G.ProfessionsCrafterTableHeaderStringMixin
+    if not mixin or mixin.Init == nil or SkinBase.GetFrameData(mixin, "headerFontHooked") then return end
+    hooksecurefunc(mixin, "Init", function(self)
+        SkinBase.ApplyButtonFontObjects(self)
+    end)
+    SkinBase.SetFrameData(mixin, "headerFontHooked", true)
+end
+
 local function SkinProfessions()
     if not IsEnabled() then return end
 
     local frame = _G.ProfessionsFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
+
+    HookProfessionTableHeaderFonts()
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
@@ -361,8 +393,7 @@ end
 local function UpdatePanelColors(panel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = panel and SkinBase.GetBackdrop(panel)
     if not bd then return end
-    bd:SetBackdropColor(SkinBase.GetDepthColor("SUBPANEL"))
-    bd:SetBackdropBorderColor(sr, sg, sb, sa * 0.3)
+    SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa * 0.3 }, { SkinBase.GetDepthColor("SUBPANEL") })
 end
 
 local function UpdateRecipeListColors(recipeList)
@@ -380,8 +411,7 @@ local function RefreshProfessionsColors()
     -- Main backdrop
     local mainBd = SkinBase.GetBackdrop(frame)
     if mainBd then
-        mainBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        mainBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(mainBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     end
 
     -- Tabs
@@ -412,7 +442,9 @@ local function RefreshProfessionsColors()
         SkinBase.RefreshWidget(bf.FavoritesSearchButton)
         local orderTabs = { bf.PublicOrdersButton, bf.GuildOrdersButton, bf.NpcOrdersButton, bf.PersonalOrdersButton }
         for _, tab in ipairs(orderTabs) do
-            SkinBase.RefreshWidget(tab)
+            if tab then
+                SkinBase.RefreshTabSelected(tab, bf)
+            end
         end
         if ordersPage.OrderView then
             UpdatePanelColors(ordersPage.OrderView.OrderDetails, sr, sg, sb, sa, bgr, bgg, bgb, bga)
@@ -464,17 +496,4 @@ end
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
-local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("ADDON_LOADED")
-initFrame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" and addon == "Blizzard_Professions" then
-        C_Timer.After(0.1, SkinProfessions)
-        self:UnregisterEvent("ADDON_LOADED")
-    end
-end)
-
--- If Blizzard_Professions loaded before QUI (e.g. after /reload), skin now
-if C_AddOns.IsAddOnLoaded("Blizzard_Professions") then
-    C_Timer.After(0.1, SkinProfessions)
-    initFrame:UnregisterEvent("ADDON_LOADED")
-end
+SkinBase.OnAddOnLoaded("Blizzard_Professions", SkinProfessions, 0)

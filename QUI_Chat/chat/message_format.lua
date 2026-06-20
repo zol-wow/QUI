@@ -1,4 +1,4 @@
--- modules/chat/message_format.lua
+-- QUI_Chat/chat/message_format.lua
 -- Blizzard-parity formatter for custom-display lines captured from CHAT_MSG_*
 -- events. Replicates ChatFrameMixin:MessageEventHandler's formatting (vendored
 -- FrameXML: Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua:268-674):
@@ -10,11 +10,12 @@
 -- Payload tables: both entry points take `p`, a table of probed CHAT_MSG_*
 -- args built by message_capture — every possibly-secret field is nil unless
 -- proven non-secret, EXCEPT p.text (BuildEventLine: non-secret string;
--- WrapSecretEventLine: secret) and p.rawSender (may be secret; only ever
--- touched through pcall'd string.format, never a Lua operator).
+-- WrapSecretEventLine: secret), p.rawSender, and p.rawGuid (may be secret;
+-- raw identity values are only ever passed to secret-allowed APIs or fixed
+-- string.format templates, never Lua operators).
 --   p = { text, rawSender, sender, language, channelFull, target, flags,
 --         zoneID, chNum, chBase, chName (registry-resolved display name),
---         lineID, guid, bnID, decorated (DecorateSender output) }
+--         lineID, guid, rawGuid, bnID, decorated (DecorateSender output) }
 --
 -- HARD CONSTRAINT: ChatTypeInfo is READ-ONLY here. Never assign into it and
 -- never call ChangeChatColor.
@@ -70,16 +71,56 @@ end
 -- distinct senders; never invalidated because class is immutable per GUID.)
 local guidClassCache = {}
 
-local function ResolveSenderClass(guid)
-    local cached = guidClassCache[guid]
-    if cached then return cached end
+-- Sender NAME -> englishClass cache. The GUID memo above is UNREACHABLE under
+-- combat / chat-messaging lockdown: the sender GUID arrives as a SECRET value,
+-- which cannot be used as a table key (nor compared), so a class resolved out
+-- of combat can't be looked up by GUID once lockdown hides it. Worse, the only
+-- live resolver, GetPlayerInfoByGUID, is MayReturnNothing=true -- in practice
+-- it returns NOTHING for a secret GUID mid-lockdown (party/raid/guild names go
+-- plain), and "AllowedWhenTainted" only means it won't error, not that it
+-- yields data. The non-secret sender NAME, however, stays usable on
+-- party/raid/guild lines, so we ALSO key class by name: every successful
+-- non-secret resolve seeds it, and when the GUID path yields nothing we recover
+-- the class by name. Plain string keys/values; class is immutable per character
+-- name within a session. (If the NAME is also secret -- e.g. fully restricted
+-- content -- recovery is skipped and coloring degrades to stock best-effort.)
+local nameClassCache = {}
+
+-- A sender name usable as a cache key: a plain, non-secret, non-empty string.
+local function CacheableName(name)
+    if type(name) ~= "string" or name == "" or IsSecret(name) then return nil end
+    return name
+end
+
+local function ResolveSenderClass(guid, name)
     if not _G.GetPlayerInfoByGUID then return nil end
-    -- GetPlayerInfoByGUID: returns localizedClass, englishClass, ... (7 values)
-    -- MayReturnNothing=true when GUID is unknown; pcall ok=true, englishClass=nil.
+    local cname = CacheableName(name)
+    local secret = IsSecret(guid)
+    if not secret then
+        local cached = guidClassCache[guid]
+        if cached then
+            if cname then nameClassCache[cname] = cached end
+            return cached
+        end
+    end
+    -- GetPlayerInfoByGUID: returns localizedClass, englishClass, ... (7 values).
+    -- Secret GUID passes straight through (AllowedWhenTainted); the return is a
+    -- plain string. IsSecret(englishClass) is a belt-and-braces guard: if a
+    -- future client ever marked the return secret, bail rather than throw on
+    -- `~= ""`. MayReturnNothing=true => unknown/declined GUID yields nil.
     local ok, _, englishClass = pcall(_G.GetPlayerInfoByGUID, guid)
-    if ok and type(englishClass) == "string" and englishClass ~= "" then
-        guidClassCache[guid] = englishClass
+    if ok and not IsSecret(englishClass)
+        and type(englishClass) == "string" and englishClass ~= "" then
+        if not secret then guidClassCache[guid] = englishClass end
+        if cname then nameClassCache[cname] = englishClass end
         return englishClass
+    end
+    -- GUID resolution failed: unknown GUID, or (the combat case) a secret GUID
+    -- the engine declines to resolve under lockdown. Recover from the name
+    -- cache if this sender was resolved earlier while non-secret.
+    if cname then
+        local byName = nameClassCache[cname]
+        if byName then return byName end
     end
     return nil
 end
@@ -87,12 +128,18 @@ end
 -- Class color for a sender GUID, gated on the existing classColors setting.
 -- Reads RAID_CLASS_COLORS directly (NOT any custom-color-aware helper — the
 -- chat sender recolor must track Blizzard's class palette).
-local function SenderClassColorStr(guid)
-    if IsSecret(guid) or type(guid) ~= "string" or guid == "" then return nil end
+local function SenderClassColorStr(guid, name)
+    -- A secret GUID is allowed through to the class lookup (ResolveSenderClass
+    -- mirrors Blizzard and feeds it to GetPlayerInfoByGUID); only the
+    -- empty/type sieve is gated off, since `== ""` on a secret would throw.
+    -- `name` (the non-secret sender) backs the combat recovery path when the
+    -- secret GUID won't resolve -- see nameClassCache above.
+    if guid == nil then return nil end
+    if not IsSecret(guid) and (type(guid) ~= "string" or guid == "") then return nil end
     local settings = I.GetSettings and I.GetSettings()
     local mods = settings and settings.modifiers
     if not (mods and mods.classColors and mods.classColors.enabled) then return nil end
-    local englishClass = ResolveSenderClass(guid)
+    local englishClass = ResolveSenderClass(guid, name)
     if not englishClass then return nil end
     local cc = _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[englishClass]
     local colorStr = cc and cc.colorStr
@@ -135,7 +182,12 @@ function Format.DecorateSender(event, ...)
             if ok2 and type(marked) == "string" and marked ~= "" then decorated = marked end
         end
     end
-    local colorStr = SenderClassColorStr(not IsSecret(guid) and guid or nil)
+    -- Pass the GUID through even when secret (AllowedWhenTainted); pass the
+    -- non-secret `sender` too so that when the engine returns nothing for a
+    -- secret GUID under combat lockdown, the class is recovered by name (a
+    -- sender resolved earlier while non-secret) -- keeping raid/party/guild
+    -- names class-colored mid-combat where the bare GUID path goes plain.
+    local colorStr = SenderClassColorStr(guid, sender)
     if colorStr then
         decorated = ("|c%s%s|r"):format(colorStr, decorated)
     end
@@ -270,6 +322,24 @@ function Format.ColorForTypeKey(typeKey, chName)
         return info.r or 1, info.g or 1, info.b or 1
     end
     return 1, 1, 1
+end
+
+-- Render-time type-color resolver (consumed by display_layer.RenderEntry).
+-- Type-derived lines (system lines like GMOTD, and CHAT_MSG_* non-channel
+-- types) bake their color at STORE time via ColorForTypeKey. At login the
+-- per-type color has not synced yet (it arrives in the UPDATE_CHAT_COLOR
+-- burst AFTER the line), so the baked value is the white fallback and the
+-- line paints white until the rebake pass rewrites it -- the "white GMOTD that
+-- self-heals". Resolving the color LIVE at render (same override->ChatTypeInfo
+-- precedence the bake used) means the first paint already carries the synced
+-- color the instant it is available, with no bake-and-rebake flash. This is
+-- the reference addons' live-render model. Channel lines are deliberately
+-- NOT routed here: their color is per-SLOT (ChatTypeInfo.CHANNEL<n>) and the
+-- slot number is not carried on the stored entry, so the baked slot color
+-- stays authoritative for them (display_layer gates CHANNEL/CHANNEL_NOTICE
+-- out and keeps the existing override resolver for channel-name overrides).
+ns.QUI.Chat._typeColorResolver = function(typeKey, chName)
+    return Format.ColorForTypeKey(typeKey, chName)
 end
 
 -- ---------------------------------------------------------------------------
@@ -852,6 +922,13 @@ function Format.WrapSecretEventLine(event, p)
             link = BuildPlayerLink(typeKey, chatGroup, p, ("[%s]"):format(p.decorated or p.sender))
         elseif IsSecret(p.rawSender) then
             local shown = string.format("[%s]", p.rawSender)
+            -- Sender name is secret here, so name recovery can't apply; the
+            -- secret GUID is the only handle (p.sender is nil -> passed for
+            -- signature clarity only).
+            local colorStr = SenderClassColorStr(p.rawGuid or p.guid, p.sender)
+            if colorStr then
+                shown = string.format("|c%s%s|r", colorStr, shown)
+            end
             link = string.format("|Hplayer:%s|h%s|h", p.rawSender, shown)
         end
         if link then

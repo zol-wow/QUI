@@ -1,4 +1,4 @@
-## Interface: 120000, 120001, 120005, 120007
+## Interface: 120000, 120001, 120005, 120007, 120100
 ## Title: |cFF30D1FFQUI|r Skinning
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol
@@ -33,6 +33,7 @@ skinning\frames\auctionhouse.lua
 skinning\frames\craftingorders.lua
 skinning\frames\professions.lua
 skinning\frames\interaction.lua
+skinning\frames\mail.lua
 skinning\frames\social.lua
 skinning\frames\journals.lua
 skinning\frames\achievement.lua

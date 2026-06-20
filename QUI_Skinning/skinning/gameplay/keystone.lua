@@ -12,6 +12,13 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
+-- Resolve the user's configured general font FACE (falling back to the WoW
+-- default). CJKFont keeps CJK glyph fallback either way; this just ensures the
+-- label uses the QUI font instead of the hardcoded engine default.
+local function GeneralFontFace()
+    return (ns.Helpers and ns.Helpers.GetGeneralFont and ns.Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
+end
+
 ---------------------------------------------------------------------------
 -- KEYSTONE FRAME SKINNING
 ---------------------------------------------------------------------------
@@ -132,17 +139,17 @@ local function SkinKeystoneFrame()
 
     -- Style fonts
     if keystoneFrame.DungeonName then
-        CJKFont(keystoneFrame.DungeonName, STANDARD_TEXT_FONT, 22, FONT_FLAGS)
+        CJKFont(keystoneFrame.DungeonName, GeneralFontFace(), 22, FONT_FLAGS)
         keystoneFrame.DungeonName:SetTextColor(unpack(COLORS.text))
     end
 
     if keystoneFrame.TimeLimit then
-        CJKFont(keystoneFrame.TimeLimit, STANDARD_TEXT_FONT, 16, FONT_FLAGS)
+        CJKFont(keystoneFrame.TimeLimit, GeneralFontFace(), 16, FONT_FLAGS)
         keystoneFrame.TimeLimit:SetTextColor(unpack(COLORS.textMuted))
     end
 
     if keystoneFrame.Instructions then
-        CJKFont(keystoneFrame.Instructions, STANDARD_TEXT_FONT, 11, FONT_FLAGS)
+        CJKFont(keystoneFrame.Instructions, GeneralFontFace(), 11, FONT_FLAGS)
         keystoneFrame.Instructions:SetTextColor(unpack(COLORS.textMuted))
     end
 
@@ -170,6 +177,10 @@ local function SkinKeystoneFrame()
         local sc = SkinBase.GetFrameData(f, "skinColor") or { 0.376, 0.647, 0.980, 1 }
         local r, g, b, a = unpack(sc)
         for _, affix in ipairs(f.Affixes) do
+            -- The "+X%" Percent text re-applies its font OBJECT on every SetUp
+            -- (Blizzard_ChallengesUI.lua:807/809); lock so the QUI face survives
+            -- each keystone slot (idempotent via qFontLocked).
+            SkinBase.LockFrameTextObjects(affix, 2)
             if affix.Portrait and not SkinBase.GetFrameData(affix, "border") then
                 if affix.Border then affix.Border:SetAlpha(0) end
                 affix.Portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -200,8 +211,7 @@ local function RefreshKeystoneColors()
     -- Update main frame backdrop
     local ksBd = SkinBase.GetBackdrop(keystoneFrame)
     if ksBd then
-        ksBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        ksBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(ksBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     end
 
     -- Update button backdrop
@@ -251,21 +261,11 @@ end
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, addon)
-    if addon == "Blizzard_ChallengesUI" then
-        if ChallengesKeystoneFrame then
-            SkinKeystoneFrame()
-        end
-        self:UnregisterEvent("ADDON_LOADED")
-    end
-end)
-
--- LOD catch-up: Blizzard_ChallengesUI may have loaded before this module did.
-if C_AddOns.IsAddOnLoaded("Blizzard_ChallengesUI") then
+-- Skin as soon as Blizzard_ChallengesUI is available: OnAddOnLoaded fires
+-- immediately if it loaded before this module (LOD catch-up), otherwise on its
+-- ADDON_LOADED, then unregisters itself.
+SkinBase.OnAddOnLoaded("Blizzard_ChallengesUI", function()
     if ChallengesKeystoneFrame then
         SkinKeystoneFrame()
     end
-    frame:UnregisterEvent("ADDON_LOADED")
-end
+end)

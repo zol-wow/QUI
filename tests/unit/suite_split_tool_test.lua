@@ -29,8 +29,8 @@ assert(T.RewriteOptionsLine([[shared.lua]], manifest) == [[shared.lua]])
 
 -- Sub-addon TOC header
 local hdr = T.BuildHeader({ folder = "QUI_Skinning", class = "lod" },
-    "## Interface: 120000, 120001, 120005, 120007")
-assert(hdr:match("## Interface: 120000, 120001, 120005, 120007"), "interface copied")
+    "## Interface: 120000, 120001, 120005, 120007, 120100")
+assert(hdr:match("## Interface: 120000, 120001, 120005, 120007, 120100"), "interface copied")
 assert(hdr:match("## Dependencies: QUI"), "dep on core")
 assert(hdr:match("## LoadOnDemand: 1"), "lod flag")
 assert(hdr:match("## Group: QUI"), "group")

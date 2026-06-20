@@ -129,7 +129,7 @@ local function BuildCharacterPaneTab(tabContent)
     local btnFrame = CreateFrame("Frame", nil, tabContent)
     local openBtn = GUI:CreateButton(btnFrame, ns.L["Open Character Panel"], 200, 28, function()
         if not CharacterFrame:IsShown() and not InCombatLockdown() then ToggleCharacter("PaperDollFrame") end
-        C_Timer.After(0.1, function()
+        C_Timer.After(0, function()
             local sp = _G["QUI_CharSettingsPanel"]
             if sp then sp:Show() end
         end)

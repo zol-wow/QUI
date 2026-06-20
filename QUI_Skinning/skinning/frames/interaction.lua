@@ -4,14 +4,12 @@
 -- Skins the everyday NPC-interaction and player-storage frames:
 --   - BankFrame        (PortraitFrameTemplate)
 --   - MerchantFrame    (ButtonFrameTemplate)
---   - MailFrame        (ButtonFrameTemplate, LOD via Blizzard_MailFrame)
 --   - GuildBankFrame   (BasicFrameTemplate,  LOD via Blizzard_GuildBankUI)
 --
--- All four lean on SkinBase.SkinButtonFrameTemplate for the standard
+-- All three lean on SkinBase.SkinButtonFrameTemplate for the standard
 -- chrome strip + backdrop + close-button styling. Frame-specific sub-
--- elements (bag slot grids, tab strips, message lists) are deliberately
--- left alone in this initial pass — those land in follow-up commits if
--- they need per-element treatment.
+-- elements (bag slot grids, tab strips, message lists) get explicit coverage
+-- where Blizzard owns them outside the root frame's descendant tree.
 ---------------------------------------------------------------------------
 
 local addonName, ns = ...
@@ -26,7 +24,7 @@ end
 
 ---------------------------------------------------------------------------
 -- Generic refresh: re-apply current skin colors to a previously-skinned
--- frame's QUI backdrop. Used by all four refreshers below.
+-- frame's QUI backdrop. Used by all three refreshers below.
 ---------------------------------------------------------------------------
 local RefreshBackdropColors = SkinBase.RefreshFrameBackdropColors
 
@@ -50,6 +48,15 @@ local function SkinBank()
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
     SkinBase.SkinFrameText(frame, { recurse = true })
+    -- Depth 6 to match SkinFrameText's reach: the tab-settings icon-selector
+    -- popup's SelectedIconDescription sits at child-depth 5 and is re-fonted via
+    -- SelectedIconDescription:SetFontObject(GameFontHighlightSmall) on icon-select;
+    -- a shallower lock stops one level short and misses it.
+    SkinBase.LockFrameTextObjects(frame, 6)
+    -- Withdraw/Deposit/PurchaseTab are UIPanelButtons: engine swaps Highlight/
+    -- Disabled font OBJECT on hover/disable with no setter call (LockFrameTextObjects
+    -- above can't catch it). Drive the button font objects.
+    SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -75,6 +82,7 @@ local function SkinMerchant()
     -- MerchantFrameTab1 (Items), MerchantFrameTab2 (Buyback)
     SkinBase.SkinTabGroup(CollectNumberedTabs("MerchantFrame", 2), frame)
     SkinBase.SkinFrameText(frame, { recurse = true })
+    SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -90,31 +98,6 @@ if ns.Registry then
 end
 
 ---------------------------------------------------------------------------
--- MailFrame (LOD: Blizzard_MailFrame)
----------------------------------------------------------------------------
-local function SkinMail()
-    if not IsSettingEnabled("skinMail") then return end
-    local frame = _G.MailFrame
-    if not frame or SkinBase.IsSkinned(frame) then return end
-    SkinBase.SkinButtonFrameTemplate(frame)
-    -- MailFrameTab1 (Inbox), MailFrameTab2 (Send Mail)
-    SkinBase.SkinTabGroup(CollectNumberedTabs("MailFrame", 2), frame)
-    SkinBase.SkinFrameText(frame, { recurse = true })
-    SkinBase.MarkSkinned(frame)
-end
-
-local function RefreshMail() RefreshBackdropColors(_G.MailFrame) end
-_G.QUI_RefreshMailColors = RefreshMail
-if ns.Registry then
-    ns.Registry:Register("skinMail", {
-        refresh = RefreshMail,
-        priority = 80,
-        group = "skinning",
-        importCategories = { "skinning", "theme" },
-    })
-end
-
----------------------------------------------------------------------------
 -- GuildBankFrame (LOD: Blizzard_GuildBankUI)
 ---------------------------------------------------------------------------
 local function SkinGuildBank()
@@ -122,7 +105,13 @@ local function SkinGuildBank()
     local frame = _G.GuildBankFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
+    -- Bottom PanelTabs (Items/Log/Money Log/Tab Info) re-show slice art + swap font
+    -- via PanelTemplates_Select/DeselectTab on selection; SkinTabGroup installs the
+    -- qTabArtClamped guard so the global PanelTemplates hooks re-clamp them.
+    SkinBase.SkinTabGroup(CollectNumberedTabs("GuildBankFrame", 4), frame)
     SkinBase.SkinFrameText(frame, { recurse = true })
+    SkinBase.LockFrameTextObjects(frame, 4)
+    SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -146,7 +135,6 @@ end
 SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", function()
     SkinBank()
     SkinMerchant()
-end, 0.1)
+end, 0)
 
-SkinBase.OnAddOnLoaded("Blizzard_MailFrame",   SkinMail,      0.1)
-SkinBase.OnAddOnLoaded("Blizzard_GuildBankUI", SkinGuildBank, 0.1)
+SkinBase.OnAddOnLoaded("Blizzard_GuildBankUI", SkinGuildBank, 0)

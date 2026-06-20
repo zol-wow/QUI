@@ -53,6 +53,16 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     ownedEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     ownedEventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+    ownedEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    ownedEventFrame:RegisterEvent("ZONE_CHANGED")
+    ownedEventFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
+    ownedEventFrame:RegisterEvent("PLAYER_DIFFICULTY_CHANGED")
+    ownedEventFrame:RegisterEvent("UPDATE_INSTANCE_INFO")
+    ownedEventFrame:RegisterEvent("CHALLENGE_MODE_START")
+    ownedEventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+    ownedEventFrame:RegisterEvent("CHALLENGE_MODE_RESET")
+    ownedEventFrame:RegisterEvent("ENCOUNTER_START")
+    ownedEventFrame:RegisterEvent("ENCOUNTER_END")
     ownedEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
     ownedEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
     ownedEventFrame:RegisterEvent("UPDATE_EXTRA_ACTIONBAR")
@@ -548,11 +558,20 @@ end
 -- Used by fade/alwaysShow settings that don't need a full bar rebuild.
 _G.QUI_RefreshActionBarFade = function()
     if not ActionBarsOwned.initialized then return end
+    if RefreshActionBarContextVisibility then
+        RefreshActionBarContextVisibility()
+    end
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         local state = GetOwnedBarFadeState(barKey)
         state.isFading = false
         CancelOwnedBarFadeTimers(state)
         SetupOwnedBarMouseover(barKey)
+    end
+    for _, barKey in ipairs({"extraActionButton", "zoneAbility"}) do
+        local state = GetBarFadeState(barKey)
+        state.isFading = false
+        CancelBarFadeTimers(state)
+        SetupBarMouseover(barKey)
     end
 end
 
@@ -721,4 +740,3 @@ do
 
     C_Timer.After(2, RegisterLayoutModeElements)
 end
-

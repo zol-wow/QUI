@@ -534,8 +534,8 @@ local function OnCaptureEvent(_, event, ...)
 
     local typeKey = Format.EventToTypeKey(event)
 
-    -- Probed payload for MessageFormat: every field except text/rawSender is
-    -- nil unless proven non-secret AND well-typed. chName is the registry's
+    -- Probed payload for MessageFormat: every field except text/rawSender/rawGuid
+    -- is nil unless proven non-secret AND well-typed. chName is the registry's
     -- canonical display name (community identifiers resolved) so filters and
     -- rendering agree on one spelling.
     local p = {
@@ -551,6 +551,7 @@ local function OnCaptureEvent(_, event, ...)
         chBase = (not IsSecret(a9)) and type(a9) == "string" and a9 ~= "" and a9 or nil,
         lineID = (not IsSecret(a11)) and type(a11) == "number" and a11 or nil,
         guid = (not IsSecret(a12)) and type(a12) == "string" and a12 ~= "" and a12 or nil,
+        rawGuid = a12,
         bnID = (not IsSecret(a13)) and type(a13) == "number" and a13 or nil,
         suppressIcons = (not IsSecret(a17)) and a17 and true or nil,
     }

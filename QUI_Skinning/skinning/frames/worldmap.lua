@@ -51,6 +51,54 @@ local function ApplyBorderBackdrop(backdrop)
     SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 
+-- Quest-log rows (QuestScrollFrame) are FramePool-pooled (QuestMapFrame.lua:
+-- titleFramePool / objectiveFramePool) and Blizzard re-applies their font
+-- OBJECT + difficulty color on every QuestLogQuests_Update / hover, reverting a
+-- one-shot SkinFrameText. After each layout pass, lock the active pool rows so
+-- the QUI face survives (fontOnly keeps Blizzard's readable difficulty colors).
+-- A pooled quest row only SetText's its fontstrings on bind (Blizzard never
+-- re-CALLS SetFontObject), so the QUI face must be APPLIED (SkinFrameText) on
+-- each cold-acquired row, then locked.
+local function styleQuestRow(f)
+    SkinBase.SkinFrameText(f, { recurse = true })
+    SkinBase.LockFrameTextObjects(f, 2)
+end
+
+-- Section-header rows are BUTTONS with a declared HighlightFont: the engine swaps
+-- to the highlight font OBJECT on hover with no setter call, so also drive the
+-- button font objects (LockFrameTextObjects alone can't beat the object-swap).
+local function styleQuestHeader(f)
+    SkinBase.SkinFrameText(f, { recurse = true })
+    SkinBase.LockFrameTextObjects(f, 2)
+    SkinBase.ApplyButtonFontObjects(f)
+end
+
+local function eachActive(pool, fn)
+    if pool and pool.EnumerateActive then
+        for f in pool:EnumerateActive() do fn(f) end
+    end
+end
+
+local function LockActiveQuestLogRows()
+    local sf = _G.QuestScrollFrame
+    if not sf then return end
+    eachActive(sf.titleFramePool, styleQuestRow)
+    eachActive(sf.objectiveFramePool, styleQuestRow)
+    eachActive(sf.headerFramePool, styleQuestHeader)
+    eachActive(sf.campaignHeaderFramePool, styleQuestHeader)
+    eachActive(sf.campaignHeaderMinimalFramePool, styleQuestHeader)
+    eachActive(sf.covenantCallingsHeaderFramePool, styleQuestHeader)
+end
+
+local function HookQuestLogText(frame)
+    if SkinBase.GetFrameData(frame, "qQuestLogTextHooked") then return end
+    if type(_G.QuestLogQuests_Update) == "function" then
+        hooksecurefunc("QuestLogQuests_Update", LockActiveQuestLogRows)
+        SkinBase.SetFrameData(frame, "qQuestLogTextHooked", true)
+    end
+    LockActiveQuestLogRows()
+end
+
 local function SkinWorldMap()
     if not IsSettingEnabled("skinWorldMap") then return end
     local frame = _G.WorldMapFrame
@@ -71,6 +119,7 @@ local function SkinWorldMap()
     RaiseMapCanvas(frame)
 
     SkinBase.SkinFrameText(frame, { recurse = true })
+    HookQuestLogText(frame)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -93,4 +142,4 @@ if ns.Registry then
     })
 end
 
-SkinBase.OnAddOnLoaded("Blizzard_WorldMap", SkinWorldMap, 0.1)
+SkinBase.OnAddOnLoaded("Blizzard_WorldMap", SkinWorldMap, 0)

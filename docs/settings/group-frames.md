@@ -112,6 +112,14 @@ Unit name text display settings.
 | `name.maxNameLength` | number | `10` | Maximum name characters before truncation |
 | `name.nameTextUseClassColor` | boolean | `false` | Use class color for name text |
 | `name.nameTextColor` | color | `{1, 1, 1, 1}` | Name text color (white) |
+| `name.showLevel` | boolean | `false` | Show unit level text on party frames |
+| `name.levelFont` | string | `""` | Level font override (empty = frame font) |
+| `name.levelFontSize` | number | `12` | Level text font size |
+| `name.levelAnchor` | string | `"RIGHT"` | Level text anchor point |
+| `name.levelJustify` | string | `"RIGHT"` | Level text horizontal alignment |
+| `name.levelOffsetX` | number | `-4` | Level text horizontal offset |
+| `name.levelOffsetY` | number | `0` | Level text vertical offset |
+| `name.levelTextColor` | color | `{1, 1, 1, 1}` | Level text color (white) |
 
 ---
 

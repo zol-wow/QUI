@@ -153,7 +153,6 @@ local DEBUFF_FILTER_FLAGS = {
     { dbKey = "debuffFilterRaid",                  flag = "RAID" },
     { dbKey = "debuffFilterIncludeNameplateOnly",  flag = "INCLUDE_NAME_PLATE_ONLY" },
     { dbKey = "debuffFilterRaidPlayerDispellable", flag = "RAID_PLAYER_DISPELLABLE" },
-    { dbKey = "debuffFilterImportant",             flag = "IMPORTANT" },
     { dbKey = "debuffFilterCrowdControl",          flag = "CROWD_CONTROL" },
 }
 
@@ -1286,7 +1285,7 @@ local function StyleSlotTextRecursive(node, settings, depth)
     for i = 1, numRegions do
         local region = regions and regions[i]
         if region and not IsForbiddenObject(region) and IsObjectTypeSafe(region, "FontString") and region.SetFont then
-            pcall(region.SetFont, region, font, fontSize, outline)
+            pcall(CJKFont, region, font, fontSize, outline)
             -- Reposition duration/stack text using debuff settings
             local text
             if region.GetText then
@@ -1314,7 +1313,7 @@ local function StyleSlotTextRecursive(node, settings, depth)
     if IsObjectTypeSafe(node, "Cooldown") and node.GetCountdownFontString then
         local cdOk, cdText = pcall(node.GetCountdownFontString, node)
         if cdOk and cdText and not IsForbiddenObject(cdText) and cdText.SetFont then
-            pcall(cdText.SetFont, cdText, font, fontSize, outline)
+            pcall(CJKFont, cdText, font, fontSize, outline)
             local anchor = settings.debuffDurationTextAnchor or "CENTER"
             local offX = settings.debuffDurationTextOffsetX or 0
             local offY = settings.debuffDurationTextOffsetY or 0

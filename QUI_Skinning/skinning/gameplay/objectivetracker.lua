@@ -13,6 +13,8 @@ local GetFontFlags = Helpers.GetGeneralFontOutline
 
 -- Debounce flag to prevent multiple concurrent backdrop updates
 local pendingBackdropUpdate = false
+-- Session-once guard for the scenario stage-block re-suppress hook.
+local scenarioStageHooked = false
 
 local function RunAfterFirstFrame(callback, delay)
     if ns.RunAfterFirstFrame then
@@ -107,8 +109,41 @@ end
 
 -- Apply font and color to a block (quest name header + all objective lines)
 -- skipHeight: forwarded to StyleLine — see StyleLine comment for details.
+-- Per-instance UpdateHighlight hook: re-assert QUI text colors on hover.
+-- Blizzard's UpdateHighlight (OnHeaderEnter/Leave) swaps HeaderText + every line/dash to
+-- OBJECTIVE_TRACKER_COLOR, clobbering our themed title/text colors as the cursor moves.
+-- CRITICAL: XML mixin="ObjectiveTrackerBlockMixin" COPIES the mixin's functions onto each
+-- block frame at creation, so hooksecurefunc on the mixin TABLE never fires for blocks that
+-- already exist (e.g. quests tracked at login) — only the instance's own copy runs. Hook the
+-- instance directly so coverage is timing-independent. Called from StyleBlock (covers blocks
+-- present at each skin pass, e.g. login) and from the AddObjective/SetHeader hooks (cover blocks
+-- created later, e.g. quests accepted in-session). Guarded so each block is hooked once.
+-- TAINT: fires from mouse-hover scripts (insecure), plain SetTextColor on insecure FontStrings
+-- is safe; re-assert synchronously so there is no visible flash of Blizzard's color.
+local function EnsureBlockHighlightHook(block)
+    if not block or SkinBase.GetFrameData(block, "highlightHooked") or not block.UpdateHighlight then return end
+    SkinBase.SetFrameData(block, "highlightHooked", true)
+    hooksecurefunc(block, "UpdateHighlight", function(self)
+        local s = GetSettings()
+        if not s or not s.skinObjectiveTracker then return end
+        if self.HeaderText then
+            SafeSetTextColor(self.HeaderText, s.objectiveTrackerTitleColor)
+        end
+        if self.usedLines then
+            for _, line in pairs(self.usedLines) do
+                SafeSetTextColor(line.Text, s.objectiveTrackerTextColor)
+                if line.Dash then
+                    SafeSetTextColor(line.Dash, s.objectiveTrackerTextColor)
+                end
+            end
+        end
+    end)
+end
+
 local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, skipHeight)
     if not block then return end
+
+    EnsureBlockHighlightHook(block)
 
     if titleFontSize > 0 and block.HeaderText then
         -- Idempotent guard: skip SetFont when font is already correct to prevent
@@ -369,6 +404,16 @@ local function ApplyMaxWidth(settings)
 
     -- Hide scenario stage artwork for narrower display
     HideScenarioStageArtwork()
+    -- ScenarioObjectiveTrackerStageMixin:UpdateStageBlock re-shows NormalBG/FinalBG/
+    -- GlowTexture and re-anchors Stage/Name on every stage change; re-run the hide +
+    -- reposition after it, once-installed.
+    if _G.ScenarioObjectiveTrackerStageMixin and _G.ScenarioObjectiveTrackerStageMixin.UpdateStageBlock
+        and not scenarioStageHooked then
+        scenarioStageHooked = true
+        hooksecurefunc(_G.ScenarioObjectiveTrackerStageMixin, "UpdateStageBlock", function()
+            HideScenarioStageArtwork()
+        end)
+    end
 end
 
 -- Update backdrop to match content, respecting max height setting
@@ -509,17 +554,25 @@ local function EnforceWidth()
     end
 end
 
--- Debounced backdrop update to prevent multiple concurrent timers
--- 0.15s delay allows Blizzard's layout pass to complete before we measure
-local function ScheduleBackdropUpdate()
+local function RunObjectiveTrackerPostLayoutUpdate()
+    pendingBackdropUpdate = false
+    EnforceWidth()
+    UpdateBackdropAnchors()
+    HidePOIButtonGlows()
+end
+
+local function DeferObjectiveTrackerPostLayoutUpdate()
     if pendingBackdropUpdate then return end
     pendingBackdropUpdate = true
-    C_Timer.After(0.15, function()
-        pendingBackdropUpdate = false
-        EnforceWidth()
-        UpdateBackdropAnchors()
-        HidePOIButtonGlows()
-    end)
+    -- FrameXML DirtiableMixin:MarkDirty uses RunNextFrame, and our hooks are
+    -- on ObjectiveTrackerContainer:Update / module LayoutContents after layout.
+    -- One frame exits protected hook stacks without a fixed 0.15s guess.
+    C_Timer.After(0, RunObjectiveTrackerPostLayoutUpdate)
+end
+
+-- Debounced backdrop update to prevent multiple concurrent timers.
+local function ScheduleBackdropUpdate()
+    DeferObjectiveTrackerPostLayoutUpdate()
 end
 
 -- Combat-safe gate for ObjectiveTracker layout mutations (width/height/size)
@@ -729,6 +782,7 @@ local function HookLineCreation()
     if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.AddObjective and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked") then
         hooksecurefunc(ObjectiveTrackerBlockMixin, "AddObjective", function(self, objectiveKey)
             local block = self
+            EnsureBlockHighlightHook(block)
             C_Timer.After(0, function()
                 local line = block.usedLines and block.usedLines[objectiveKey]
                 if line then
@@ -754,6 +808,7 @@ local function HookLineCreation()
     if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.SetHeader and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked") then
         hooksecurefunc(ObjectiveTrackerBlockMixin, "SetHeader", function(self)
             local block = self
+            EnsureBlockHighlightHook(block)
             C_Timer.After(0, function()
                 local currentSettings = GetSettings()
                 local currentTitleSize = currentSettings and currentSettings.objectiveTrackerTitleFontSize or 0
@@ -773,6 +828,9 @@ local function HookLineCreation()
         end)
         SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked", true)
     end
+
+    -- Note: the hover-color re-assert is installed per-block-instance in StyleBlock (the mixin-table
+    -- hook approach does not work — XML mixin= copies functions onto each instance at creation).
 
     -- Note: POI button glows are hidden via HidePOIButtonGlows() called from ScheduleBackdropUpdate()
 end
@@ -818,10 +876,8 @@ local function SkinObjectiveTracker()
         end
     end
 
-    -- TAINT SAFETY: Wrapper to defer ScheduleBackdropUpdate from secure context.
-    local function DeferredScheduleBackdropUpdate()
-        C_Timer.After(0, ScheduleBackdropUpdate)
-    end
+    -- TAINT SAFETY: ScheduleBackdropUpdate defers one frame out of hook stacks.
+    local DeferredScheduleBackdropUpdate = DeferObjectiveTrackerPostLayoutUpdate
 
     -- Hook the main container's Update to update backdrop anchors when content changes
     if TrackerFrame.Update and not SkinBase.GetFrameData(TrackerFrame, "updateHooked") then

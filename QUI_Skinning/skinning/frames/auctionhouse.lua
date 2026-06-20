@@ -42,6 +42,12 @@ local function SkinAuctionHouseTabs()
 
     SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true })
 
+    -- Lock each main tab's font objects: tab selection/hover re-asserts the stock
+    -- font object, reverting the QUI face (the auctions sub-tabs already do this).
+    for _, tab in ipairs(AuctionHouseFrame.Tabs) do
+        SkinBase.LockFrameTextObjects(tab, 2)
+    end
+
     -- Reposition tabs: left justify and tighten spacing
     local tabs = AuctionHouseFrame.Tabs
     if tabs[1] then
@@ -53,6 +59,129 @@ local function SkinAuctionHouseTabs()
             tabs[i]:ClearAllPoints()
             tabs[i]:SetPoint("TOPLEFT", tabs[i - 1], "TOPRIGHT", -5, 0)
         end
+    end
+end
+
+-- Return true if `frame` (or an ancestor, up to `depth`) is anchored to `target`
+-- — or to a direct child of `target`. GetPoint MayReturnNothing and can hand back
+-- a secret relativeTo when anchoring is secret, so the whole probe is pcall-wrapped
+-- (== on a secret value throws).
+local function FrameAnchorsTo(frame, target, depth)
+    if not frame or depth < 0 then return false end
+    if frame.GetNumPoints then
+        local ok, hit = pcall(function()
+            for i = 1, frame:GetNumPoints() do
+                local _, rel = frame:GetPoint(i)
+                if rel == target then return true end
+                if rel and rel.GetParent and rel:GetParent() == target then return true end
+            end
+            return false
+        end)
+        if ok and hit then return true end
+    end
+    return FrameAnchorsTo(frame.GetParent and frame:GetParent() or nil, target, depth - 1)
+end
+
+-- Apply the QUI font to bottom tabs added by OTHER addons. These are not children
+-- of AuctionHouseFrame and never enter AuctionHouseFrame.Tabs — they are separate
+-- top-level Buttons (often grouped under an unnamed container) anchored to the AH
+-- frame, so the .Tabs sweep and the global font system both miss them. Detect them
+-- structurally (a shown Button with a fontstring whose own/ancestor anchor targets
+-- AuctionHouseFrame) and drive their font objects. Font-only: art/position
+-- untouched. Per-frame guard keeps the per-open _G walk cheap; the walk only runs
+-- while the AH is open.
+local function FontAuctionHouseExtraTabs()
+    local AuctionHouseFrame = _G.AuctionHouseFrame
+    if not AuctionHouseFrame then return end
+
+    -- Our own + Blizzard tabs (already skinned; keeps the guard flags coherent).
+    if AuctionHouseFrame.Tabs then
+        for _, tab in ipairs(AuctionHouseFrame.Tabs) do
+            if tab and not SkinBase.GetFrameData(tab, "qAHTabFonted") then
+                SkinBase.ApplyButtonFontObjects(tab)
+                SkinBase.LockFrameTextObjects(tab, 2)
+                SkinBase.SetFrameData(tab, "qAHTabFonted", true)
+            end
+        end
+    end
+
+    if not (AuctionHouseFrame.IsShown and AuctionHouseFrame:IsShown()) then return end
+    for _, obj in pairs(_G) do
+        if type(obj) == "table" and obj ~= AuctionHouseFrame
+            and not SkinBase.GetFrameData(obj, "qAHTabFonted") then
+            local ok, isTab = pcall(function()
+                return obj.IsObjectType and obj:IsObjectType("Button")
+                    and obj.GetFontString and obj:GetFontString()
+                    and obj.IsShown and obj:IsShown()
+                    and FrameAnchorsTo(obj, AuctionHouseFrame, 2)
+            end)
+            if ok and isTab then
+                SkinBase.ApplyButtonFontObjects(obj)
+                SkinBase.LockFrameTextObjects(obj, 2)
+                SkinBase.SetFrameData(obj, "qAHTabFonted", true)
+            end
+        end
+    end
+end
+
+local function SkinAuctionHouseAuctionsTabs(auctionsFrame)
+    if not auctionsFrame then return end
+    local tabs = { auctionsFrame.AuctionsTab, auctionsFrame.BidsTab }
+    SkinBase.SkinTabGroup(tabs, auctionsFrame, { font = true })
+    for _, tab in ipairs(tabs) do
+        SkinBase.LockFrameTextObjects(tab, 2)
+    end
+end
+
+local function LockDurationDropdownText(dropdown)
+    if not dropdown then return end
+    local text = dropdown.Text or (dropdown.GetFontString and dropdown:GetFontString())
+    if text then
+        SkinBase.SkinFontString(text, { fontOnly = true })
+        SkinBase.LockFontObject(text, { fontOnly = true })
+    end
+    SkinBase.LockFrameTextObjects(dropdown, 2)
+end
+
+local function LockTokenFrameText(frame)
+    if not frame then return end
+    SkinBase.SkinFrameText(frame, { recurse = true })
+    SkinBase.LockFrameTextObjects(frame, 4)
+
+    for _, key in ipairs({ "BuyoutPrice", "MarketPrice" }) do
+        local fontString = frame[key]
+        if fontString then
+            SkinBase.SkinFontString(fontString, { fontOnly = true })
+            SkinBase.LockFontObject(fontString, { fontOnly = true })
+        end
+    end
+end
+
+local function LockAuctionHouseTokenText()
+    local AuctionHouseFrame = _G.AuctionHouseFrame
+    if not AuctionHouseFrame then return end
+
+    LockTokenFrameText(AuctionHouseFrame.WoWTokenResults)
+    LockTokenFrameText(AuctionHouseFrame.WoWTokenSellFrame)
+
+    local tutorial = AuctionHouseFrame.WoWTokenResults and AuctionHouseFrame.WoWTokenResults.GameTimeTutorial
+    if tutorial then
+        LockTokenFrameText(tutorial)
+        LockTokenFrameText(tutorial.LeftDisplay)
+        LockTokenFrameText(tutorial.RightDisplay)
+    end
+end
+
+local function LockAuctionHouseBuyDialogText()
+    local AuctionHouseFrame = _G.AuctionHouseFrame
+    local notification = AuctionHouseFrame and AuctionHouseFrame.BuyDialog and AuctionHouseFrame.BuyDialog.Notification
+    if not notification then return end
+
+    SkinBase.SkinFrameText(notification, { recurse = true })
+    SkinBase.LockFrameTextObjects(notification, 2)
+    if notification.Text then
+        SkinBase.SkinFontString(notification.Text, { fontOnly = true })
+        SkinBase.LockFontObject(notification.Text, { fontOnly = true })
     end
 end
 
@@ -91,7 +220,7 @@ local function SkinSearchBar()
         -- obscured by the SearchBox EditBox, which captures mouse across its
         -- full rect and can swallow clicks on the overlapping star.
         if searchBar.FavoritesSearchButton then
-            SkinBase.SkinButton(searchBar.FavoritesSearchButton)
+            SkinBase.SkinButton(searchBar.FavoritesSearchButton, { font = true })
             searchBar.FavoritesSearchButton:SetFrameLevel(searchBar.FavoritesSearchButton:GetFrameLevel() + 5)
         end
     end
@@ -107,7 +236,32 @@ end
 -- Style each pooled ScrollBox row as it's acquired (shared by all lists).
 local function skinRow(row)
     SkinBase.SkinScrollRow(row)
-    SkinBase.SkinFrameText(row, { recurse = true })
+    -- AH result rows are TableBuilder-backed: each cell re-applies its font
+    -- OBJECT (Number*/Price* font objects) on every populate / scroll-recycle.
+    -- LockPooledRowText does the guarded recursive pass once, then locks so the
+    -- QUI face re-applies on each swap.
+    SkinBase.LockPooledRowText(row, 4)
+end
+
+-- TableBuilder sortable column headers (AuctionHouseTableHeaderStringMixin) are
+-- pooled and re-Init'd on every table relayout (Reset->ConstructHeader->Init), so
+-- SkinListContainer's row hook never reaches them and the one-shot SkinFrameText is
+-- reverted each relayout. One mixin hook covers every list sharing the template.
+local function HookAuctionHeaderSkin()
+    local mixin = _G.AuctionHouseTableHeaderStringMixin
+    if not mixin or mixin.Init == nil or SkinBase.GetFrameData(mixin, "headerSkinHooked") then return end
+    hooksecurefunc(mixin, "Init", function(self)
+        if not IsEnabled() then return end
+        -- Suppress the inherited ColumnDisplayButtonShort slice art (keep the sort Arrow)
+        if self.Left then self.Left:SetAlpha(0) end
+        if self.Middle then self.Middle:SetAlpha(0) end
+        if self.Right then self.Right:SetAlpha(0) end
+        local hl = self.GetHighlightTexture and self:GetHighlightTexture()
+        if hl then hl:SetAlpha(0) end
+        SkinBase.ApplyButtonFontObjects(self)
+        SkinBase.LockFrameTextObjects(self, 2)
+    end)
+    SkinBase.SetFrameData(mixin, "headerSkinHooked", true)
 end
 
 -- Skin browse panel (item list / commodities list)
@@ -189,6 +343,7 @@ local function SkinSellPanel()
         -- Duration dropdown
         if commoditiesSell.DurationDropdown then
             SkinBase.SkinDropdown(commoditiesSell.DurationDropdown)
+            LockDurationDropdownText(commoditiesSell.DurationDropdown)
         end
         -- Post button
         if commoditiesSell.PostButton then
@@ -214,6 +369,7 @@ local function SkinSellPanel()
         -- Duration dropdown
         if itemSell.DurationDropdown then
             SkinBase.SkinDropdown(itemSell.DurationDropdown)
+            LockDurationDropdownText(itemSell.DurationDropdown)
         end
         -- Post button
         if itemSell.PostButton then
@@ -238,6 +394,7 @@ local function SkinAuctionsPanel()
     if not auctionsFrame then return end
 
     SkinBase.StripTextures(auctionsFrame)
+    SkinAuctionHouseAuctionsTabs(auctionsFrame)
 
     -- Summary list
     if auctionsFrame.SummaryList then
@@ -252,6 +409,11 @@ local function SkinAuctionsPanel()
     -- Commodities auctions list
     if auctionsFrame.CommoditiesList then
         SkinBase.SkinListContainer(auctionsFrame.CommoditiesList, skinRow)
+    end
+
+    -- Single-item buy list (same AuctionHouseItemListTemplate: pooled rows + headers)
+    if auctionsFrame.ItemList then
+        SkinBase.SkinListContainer(auctionsFrame.ItemList, skinRow)
     end
 
     -- Cancel auctions button
@@ -296,6 +458,11 @@ local function SkinCategoriesList()
         -- Reapply the QUI font: Blizzard's element initializer calls
         -- SetNormalFontObject on every rebind, reverting the label font.
         SkinBase.SkinFontString(button.Text)
+        SkinBase.LockFrameTextObjects(button, 2)
+        -- SetUp's SetNormalFontObject REPLACES the font object SkinCategoryButton
+        -- drove once (the once-guard won't re-drive). Re-drive on every bind so the
+        -- normal + hover/disable font objects stay on the QUI face.
+        SkinBase.ApplyButtonFontObjects(button)
     end
     local function RefreshCategoryButtons(self)
         SafeForEachFrame(self, StyleCategoryRow)
@@ -303,6 +470,24 @@ local function SkinCategoriesList()
 
     local scrollBox = categoriesList.ScrollBox
     SkinBase.HookScrollBoxAcquired(scrollBox, StyleCategoryRow)
+
+    -- Texture flash on load/expand: the shared element initializer
+    -- AuctionHouseFilterButton_SetUp re-asserts the Blizzard nav-button atlas and
+    -- normalTexture:SetAlpha(1.0) on EVERY bind (load, expand/collapse,
+    -- scroll-recycle), and those rebinds DON'T re-fire the acquired-frame
+    -- callback for already-visible buttons. Hook the initializer (once) so the
+    -- texture suppression + selected-state backdrop re-run right after Blizzard,
+    -- in the same layout pass — mirrors the LockFrameTextObjects font fix above.
+    if type(_G.AuctionHouseFilterButton_SetUp) == "function"
+        and not SkinBase.GetFrameData(categoriesList, "setupHooked") then
+        hooksecurefunc("AuctionHouseFilterButton_SetUp", function(button)
+            if not IsEnabled() or not button then return end
+            -- Full re-skin after Blizzard's SetUp: re-suppress textures, re-drive
+            -- font objects, re-assert selected backdrop (same layout pass = no flash).
+            StyleCategoryRow(button)
+        end)
+        SkinBase.SetFrameData(categoriesList, "setupHooked", true)
+    end
 
     -- Hook category click to refresh selected states across all visible buttons
     if categoriesList.OnFilterClicked and not SkinBase.GetFrameData(categoriesList, "clickHooked") then
@@ -342,6 +527,15 @@ local function SkinAuctionHouse()
 
     -- Style tabs
     SkinAuctionHouseTabs()
+    -- Re-font on every open so bottom tabs added by other addons still pick up
+    -- the QUI font (per-tab guard keeps it cheap). Deferred one frame: other
+    -- addons create/reshow their tabs in their own AH OnShow, which may run after
+    -- ours, so wait for the frame to settle before walking.
+    FontAuctionHouseExtraTabs()
+    AuctionHouseFrame:HookScript("OnShow", function()
+        C_Timer.After(0, FontAuctionHouseExtraTabs)
+    end)
+    HookAuctionHeaderSkin()
 
     -- Skin sub-panels (pcall each so one failure doesn't block the rest)
     pcall(SkinCategoriesList)
@@ -351,6 +545,8 @@ local function SkinAuctionHouse()
     pcall(SkinAuctionsPanel)
 
     SkinBase.SkinFrameText(AuctionHouseFrame, { recurse = true })
+    LockAuctionHouseTokenText()
+    LockAuctionHouseBuyDialogText()
     SkinBase.MarkSkinned(AuctionHouseFrame)
 end
 
@@ -364,16 +560,21 @@ local function RefreshAuctionHouseColors()
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
-    -- Main backdrop
+    -- Main backdrop. Route through SetBackdropColors so the new theme color is
+    -- written into the persisted backdrop data; a bare setter would be discarded
+    -- by the next scale-refresh rebuild.
     local mainBd = SkinBase.GetBackdrop(AuctionHouseFrame)
     if mainBd then
-        mainBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        mainBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(mainBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     end
 
     -- Tabs
     if AuctionHouseFrame.Tabs then
         SkinBase.RefreshTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame)
+    end
+    if AuctionHouseFrame.AuctionsFrame then
+        local tabs = { AuctionHouseFrame.AuctionsFrame.AuctionsTab, AuctionHouseFrame.AuctionsFrame.BidsTab }
+        SkinBase.RefreshTabGroup(tabs, AuctionHouseFrame.AuctionsFrame)
     end
 
     -- Search bar
@@ -419,6 +620,7 @@ local function RefreshAuctionHouseColors()
         if commoditiesSell.QuantityInput and commoditiesSell.QuantityInput.InputBox then
             SkinBase.RefreshWidget(commoditiesSell.QuantityInput.InputBox)
         end
+        LockDurationDropdownText(commoditiesSell.DurationDropdown)
     end
 
     -- Item sell
@@ -441,6 +643,7 @@ local function RefreshAuctionHouseColors()
         if itemSell.QuantityInput and itemSell.QuantityInput.InputBox then
             SkinBase.RefreshWidget(itemSell.QuantityInput.InputBox)
         end
+        LockDurationDropdownText(itemSell.DurationDropdown)
     end
 
     -- Auctions panel
@@ -451,6 +654,9 @@ local function RefreshAuctionHouseColors()
             SkinBase.RefreshWidget(auctionsFrame.BidFrame.BidButton)
         end
     end
+
+    LockAuctionHouseTokenText()
+    LockAuctionHouseBuyDialogText()
 end
 
 -- Expose refresh function globally
@@ -469,16 +675,4 @@ end
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" and addon == "Blizzard_AuctionHouseUI" then
-        C_Timer.After(0.1, SkinAuctionHouse)
-        self:UnregisterEvent("ADDON_LOADED")
-    end
-end)
-
-if C_AddOns.IsAddOnLoaded("Blizzard_AuctionHouseUI") then
-    C_Timer.After(0.1, SkinAuctionHouse)
-    frame:UnregisterEvent("ADDON_LOADED")
-end
+SkinBase.OnAddOnLoaded("Blizzard_AuctionHouseUI", SkinAuctionHouse, 0)

@@ -1,4 +1,4 @@
-## Interface: 120000, 120001, 120005, 120007
+## Interface: 120000, 120001, 120005, 120007, 120100
 ## Title: |cFF30D1FFQUI|r Minimap
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol

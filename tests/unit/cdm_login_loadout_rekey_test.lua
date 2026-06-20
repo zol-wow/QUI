@@ -162,6 +162,36 @@ do
     )
 end
 
+-- ===== Toggle-off gate: per-loadout save/load must be inert =====
+--
+-- Root cause guarded: the talent-loadout change handler (TRAIT_CONFIG_UPDATED
+-- / SELECTED_LOADOUT_CHANGED / ACTIVE_COMBAT_CONFIG_CHANGED debounce and its
+-- combat/list-update drains) calls Save/LoadLoadoutProfile with the REAL
+-- GetLastSelectedSavedConfigID — it never consults GetEffectiveLoadoutID. With
+-- perLoadoutSpec OFF the live containers must mirror sentinel slot 0, so a
+-- talent-loadout swap that loads a non-zero slot diverges live from slot 0 and
+-- the next /reload (which reloads slot 0) snaps the list back: the user sees
+-- their CDM entries "reset every reload". Both helpers must short-circuit when
+-- the toggle is off so swaps touch no non-zero slot.
+
+do
+    local save = functionBody("local function SaveLoadoutProfile")
+    assert(
+        save:find("perLoadoutSpec", 1, true),
+        "SaveLoadoutProfile must no-op when perLoadoutSpec is off — a talent-"
+            .. "loadout swap must never write a non-zero slot from slot-0 live state"
+    )
+end
+
+do
+    local load = functionBody("local function LoadLoadoutProfile")
+    assert(
+        load:find("perLoadoutSpec", 1, true),
+        "LoadLoadoutProfile must no-op when perLoadoutSpec is off — a talent-"
+            .. "loadout swap must never overwrite slot-0 live state from a non-zero slot"
+    )
+end
+
 -- ===== Profile-switch re-arm =====
 
 do

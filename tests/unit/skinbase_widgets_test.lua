@@ -40,6 +40,9 @@ local function NewFrame(parent)
     function f:GetPushedTexture() self.pushed = self.pushed or NewTexture(); return self.pushed end
     function f:GetNormalTexture() self.normal = self.normal or NewTexture(); return self.normal end
     function f:HookScript(event, fn) self.scripts[event] = fn; hookedScripts[#hookedScripts + 1] = { f = self, event = event, fn = fn } end
+    function f:SetFont(font, size, flags) self.font, self.fontSize, self.fontFlags = font, size, flags end
+    function f:GetFont() return self.font, self.fontSize or 13, self.fontFlags end
+    function f:SetFontObject(fontObject) self.fontObject = fontObject end
     return f
 end
 
@@ -67,6 +70,8 @@ local ns = {
         GetSkinBorderColor = function() return skinColors[1], skinColors[2], skinColors[3], skinColors[4] end,
         GetSkinBgColorWithOverride = function() return skinColors[5], skinColors[6], skinColors[7], skinColors[8] end,
         GetSkinBarColor = function() return 0.5, 0.5, 0.5, 1 end,
+        GetGeneralFont = function() return "Interface\\QUIFont.ttf" end,
+        GetGeneralFontOutline = function() return "OUTLINE" end,
     },
     UIKit = { RegisterScaleRefresh = function() end },
 }
@@ -98,6 +103,12 @@ edit.textures = { NewTexture() }
 SkinBase.SkinEditBox(edit)
 assert(SkinBase.GetFrameData(edit, "skinKind") == "editbox", "SkinEditBox must tag editbox kind")
 assert(edit.textures[1].alpha == 0, "SkinEditBox must strip textures")
+assert(edit.font == "Interface\\QUIFont.ttf", "SkinEditBox must apply the global font by default")
+assert(SkinBase.GetFrameData(edit, "skinFont") == true, "SkinEditBox must opt into font refresh by default")
+
+local editOptOut = NewFrame()
+SkinBase.SkinEditBox(editOptOut, { font = false })
+assert(editOptOut.font == nil, "SkinEditBox{font=false} must preserve the native editbox font")
 
 -- SkinScrollRow: row boost + alpha-multiplied border
 local row = NewFrame()
@@ -141,6 +152,73 @@ assert(#styledRows == 1, "SkinListContainer must style pooled rows via the scrol
 -- SkinListContainer is idempotent (second call is a no-op)
 SkinBase.SkinListContainer(list, function(r) styledRows[#styledRows + 1] = r end)
 assert(#styledRows == 1, "SkinListContainer must be idempotent (no re-styling on repeat call)")
+
+-- HookScrollBoxAcquired composes callbacks registered by different helpers.
+local callbackOrder = {}
+local callbackScrollBox = NewFrame()
+function callbackScrollBox:ForEachFrame(cb) cb("existing") end
+local acquiredCallback
+local timerQueue = {}
+local nextTimer = 1
+C_Timer = { After = function(_, fn) timerQueue[#timerQueue + 1] = fn end }
+local function FlushTimers()
+    while nextTimer <= #timerQueue do
+        local fn = timerQueue[nextTimer]
+        nextTimer = nextTimer + 1
+        fn()
+    end
+end
+ScrollUtil = {
+    AddAcquiredFrameCallback = function(_, callback)
+        acquiredCallback = callback
+    end,
+}
+SkinBase.HookScrollBoxAcquired(callbackScrollBox, function(frame)
+    callbackOrder[#callbackOrder + 1] = "first:" .. frame
+end)
+SkinBase.HookScrollBoxAcquired(callbackScrollBox, function(frame)
+    callbackOrder[#callbackOrder + 1] = "second:" .. frame
+end)
+assert(type(acquiredCallback) == "function", "HookScrollBoxAcquired must install a native acquired callback")
+assert(#callbackOrder == 0, "HookScrollBoxAcquired must defer the existing-row pass")
+FlushTimers()
+assert(table.concat(callbackOrder, ",") == "first:existing,second:existing",
+    "HookScrollBoxAcquired must run every registered callback for existing rows")
+acquiredCallback(nil, "acquired")
+assert(table.concat(callbackOrder, ",") == "first:existing,second:existing",
+    "generic HookScrollBoxAcquired callbacks must defer acquired rows")
+FlushTimers()
+assert(table.concat(callbackOrder, ",") == "first:existing,second:existing,first:acquired,second:acquired",
+    "HookScrollBoxAcquired must run every registered callback for acquired rows after the defer")
+
+-- HookScrollBoxRowFonts opts into sync acquisition because it only touches
+-- per-instance FontStrings and must run before the pooled row's first paint.
+local savedSkinFrameText = SkinBase.SkinFrameText
+local savedLockFrameTextObjects = SkinBase.LockFrameTextObjects
+local rowFontOrder = {}
+SkinBase.SkinFrameText = function(frame)
+    rowFontOrder[#rowFontOrder + 1] = "skin:" .. frame.name
+end
+SkinBase.LockFrameTextObjects = function(frame, depth)
+    rowFontOrder[#rowFontOrder + 1] = "lock:" .. frame.name .. ":" .. depth
+end
+timerQueue = {}
+nextTimer = 1
+local rowFontAcquiredCallback
+local rowFontScrollBox = NewFrame()
+function rowFontScrollBox:ForEachFrame() end
+ScrollUtil = {
+    AddAcquiredFrameCallback = function(_, callback)
+        rowFontAcquiredCallback = callback
+    end,
+}
+SkinBase.HookScrollBoxRowFonts(rowFontScrollBox, 2)
+rowFontAcquiredCallback(nil, { name = "rowFontAcquired" })
+assert(table.concat(rowFontOrder, ",") == "skin:rowFontAcquired,lock:rowFontAcquired:2",
+    "HookScrollBoxRowFonts must lock acquired row text synchronously")
+SkinBase.SkinFrameText = savedSkinFrameText
+SkinBase.LockFrameTextObjects = savedLockFrameTextObjects
+C_Timer = { After = function(_, fn) fn() end }
 
 -- RefreshWidget recolors by kind and updates stored skinColor
 skinColors = { 0.9, 0.8, 0.7, 1, 0.4, 0.5, 0.6, 0.95 }

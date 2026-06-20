@@ -398,6 +398,33 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
     end
 
+    -- Level text
+    if nameSettings and nameSettings.showLevel == true then
+        local levelAnchorInfo = ANCHOR_MAP[nameSettings.levelAnchor or "RIGHT"] or ANCHOR_MAP.RIGHT
+        local levelOffsetX = nameSettings.levelOffsetX or -4
+        local levelOffsetY = nameSettings.levelOffsetY or 0
+        local levelPadX = math.abs(levelOffsetX)
+        local levelText = textFrame:CreateFontString(nil, "OVERLAY")
+        local levelFontPath = fontPath
+        if type(nameSettings.levelFont) == "string" and nameSettings.levelFont ~= "" then
+            levelFontPath = LSM:Fetch("font", nameSettings.levelFont, true) or fontPath
+        end
+        Helpers.ApplyFontWithFallback(levelText, levelFontPath, nameSettings.levelFontSize or 12, fontOutline)
+        levelText:SetPoint(levelAnchorInfo.leftPoint, frame, levelAnchorInfo.leftPoint, levelPadX, levelOffsetY)
+        levelText:SetPoint(levelAnchorInfo.rightPoint, frame, levelAnchorInfo.rightPoint, -levelPadX, levelOffsetY)
+        levelText:SetJustifyH(nameSettings.levelJustify or levelAnchorInfo.justify)
+        levelText:SetJustifyV(levelAnchorInfo.justifyV)
+        levelText:SetWordWrap(false)
+        levelText:SetText(tostring(80 - ((index - 1) % 6)))
+
+        if nameSettings.levelTextColor then
+            local tc = nameSettings.levelTextColor
+            levelText:SetTextColor(tc[1], tc[2], tc[3], tc[4] or 1)
+        else
+            levelText:SetTextColor(1, 1, 1, 1)
+        end
+    end
+
     -- Health text
     local healthSettings = vdb.health
     if not healthSettings or healthSettings.showHealthText ~= false then

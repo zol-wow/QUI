@@ -498,31 +498,30 @@ end
 -- Applied directly to owned icons; no overlay frame needed.
 ---------------------------------------------------------------------------
 
--- Ensure glow frame renders above the Cooldown swipe.
--- LibCustomGlow sets glow at icon:GetFrameLevel() + 8, but HUD layering
--- can push CooldownFrameTemplate above that. Reference the Cooldown frame
--- directly (same pattern as TextOverlay in cdm_icon_renderer.lua:659).
--- Layer order: Cooldown swipe (cdLevel) -> Glow (+1) -> Text (+1) -> ClickButton (+2)
-local function EnsureGlowAboveCooldown(icon, glowFrame)
+-- Place the proc glow LOW in the icon stack: above the icon art/border but
+-- BELOW the Cooldown frame. The swipe and the native countdown numbers both
+-- live on the Cooldown frame (the count on a higher draw layer than the swipe),
+-- so dropping the glow under that frame lets both render on top of it.
+-- Desired order (low -> high): icon art -> proc glow -> swipe -> text.
+-- LibCustomGlow defaults the glow to icon:GetFrameLevel() + 8 (above everything),
+-- so we explicitly push it back down to one below the Cooldown frame.
+local function EnsureGlowBelowSwipe(icon, glowFrame)
     if not glowFrame or not icon or not icon.Cooldown then return end
+    if not (glowFrame.SetFrameLevel and glowFrame.GetFrameLevel) then return end
 
+    -- Glow is a child of the icon, so the icon's own level already draws it
+    -- above the icon art/border; cdLevel - 1 keeps it under the swipe + count.
     local cdLevel = icon.Cooldown:GetFrameLevel()
-    local glowLevel = glowFrame:GetFrameLevel()
-    if glowLevel <= cdLevel then
-        glowLevel = cdLevel + 1
-        glowFrame:SetFrameLevel(glowLevel)
-    end
-
-    -- Keep stack/proc text above glow and click button above text.
-    local CDMIcons = ns.CDMIcons
-    if CDMIcons and CDMIcons.EnsureTextOverlayLevel then
-        CDMIcons:EnsureTextOverlayLevel(icon, glowLevel + 1)
+    local targetLevel = cdLevel - 1
+    if targetLevel < 0 then targetLevel = 0 end
+    if glowFrame:GetFrameLevel() ~= targetLevel then
+        glowFrame:SetFrameLevel(targetLevel)
     end
 end
 -- Expose to subsequent file chunks so the highlighter and other consumers
 -- share the same layer-coordination behavior (was previously a thinner
 -- per-chunk duplicate that skipped the text-overlay anchoring).
-ns._CDM_EnsureGlowAboveCooldown = EnsureGlowAboveCooldown
+ns._CDM_EnsureGlowBelowSwipe = EnsureGlowBelowSwipe
 
 -- Shared helper: create or reuse a pulsing texture overlay on an icon.
 -- key: unique frame key on icon (e.g. "_QUIFlashGlow")
@@ -611,7 +610,7 @@ local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
             glowFrame:ClearAllPoints()
             glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, yOffset)
             glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -yOffset)
-            EnsureGlowAboveCooldown(icon, glowFrame)
+            EnsureGlowBelowSwipe(icon, glowFrame)
         end
 
     elseif glowType == "Autocast Shine" then
@@ -621,20 +620,20 @@ local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
             glowFrame:ClearAllPoints()
             glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, yOffset)
             glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -yOffset)
-            EnsureGlowAboveCooldown(icon, glowFrame)
+            EnsureGlowBelowSwipe(icon, glowFrame)
         end
 
     elseif glowType == "Button Glow" then
         LCG.ButtonGlow_Start(icon, color, frequency)
-        EnsureGlowAboveCooldown(icon, icon["_ButtonGlow"])
+        EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
 
     elseif glowType == "Flash" then
         local frame = StartTextureGlow(icon, flashKey, FLASH_TEXTURE, color)
-        EnsureGlowAboveCooldown(icon, frame)
+        EnsureGlowBelowSwipe(icon, frame)
 
     elseif glowType == "Hammer" then
         local frame = StartTextureGlow(icon, hammerKey, HAMMER_TEXTURE, color)
-        EnsureGlowAboveCooldown(icon, frame)
+        EnsureGlowBelowSwipe(icon, frame)
 
     elseif glowType == "Proc Glow" then
         LCG.ProcGlow_Start(icon, {
@@ -646,7 +645,7 @@ local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
         })
         local glowFrame = icon["_ProcGlow" .. glowKey]
         if glowFrame then
-            EnsureGlowAboveCooldown(icon, glowFrame)
+            EnsureGlowBelowSwipe(icon, glowFrame)
         end
     end
 
@@ -731,7 +730,7 @@ local function EnsurePandemicGlowFrame(icon)
     frame.texture = tex
 
     icon.PandemicGlow = frame
-    EnsureGlowAboveCooldown(icon, frame)
+    EnsureGlowBelowSwipe(icon, frame)
     return frame
 end
 
@@ -823,6 +822,15 @@ IsOverlayed = function(spellID)
         return IsOverlayQueryActive(spellID)
     end
     return false
+end
+
+-- Hand the resolver our authoritative proc-overlay signal so it can tell a
+-- genuine proc override (overlay active -> show ready) from a form/spec override
+-- that shares the base cooldown (no overlay -> show the cooldown swipe). See
+-- IsTransientProcOverrideReady in cdm_resolvers.lua. cdm_resolvers loads before
+-- this file, so CDMResolvers is present.
+if ns.CDMResolvers and ns.CDMResolvers.SetProcOverlayProbe then
+    ns.CDMResolvers.SetProcOverlayProbe(IsOverlayed)
 end
 
 local function EvaluateGlowForIcon(icon)
@@ -1338,12 +1346,11 @@ local function RemoveHighlight(icon)
     activeHighlights[icon] = nil
 end
 
--- Use the canonical EnsureGlowAboveCooldown defined in the effects chunk
--- (exposed via ns._CDM_EnsureGlowAboveCooldown). This was a thinner local
--- duplicate that skipped the text-overlay re-anchoring; unifying ensures
--- the highlighter raises text above glow whenever it raises glow above
--- cooldown.
-local EnsureGlowAboveCooldown = ns._CDM_EnsureGlowAboveCooldown
+-- Use the canonical EnsureGlowBelowSwipe defined in the effects chunk
+-- (exposed via ns._CDM_EnsureGlowBelowSwipe) so the highlighter places its
+-- glow at the same low level (below the cooldown swipe + count) as every
+-- other glow path.
+local EnsureGlowBelowSwipe = ns._CDM_EnsureGlowBelowSwipe
 
 local function ApplyHighlight(icon)
     if not icon or not LCG then return end
@@ -1383,19 +1390,19 @@ local function ApplyHighlight(icon)
 
     if glowType == "Pixel Glow" then
         LCG.PixelGlow_Start(icon, color, lines, frequency, nil, thickness, 0, 0, true, GLOW_KEY)
-        EnsureGlowAboveCooldown(icon, icon["_PixelGlow" .. GLOW_KEY])
+        EnsureGlowBelowSwipe(icon, icon["_PixelGlow" .. GLOW_KEY])
     elseif glowType == "Autocast Shine" then
         LCG.AutoCastGlow_Start(icon, color, lines, frequency, scale, 0, 0, GLOW_KEY)
-        EnsureGlowAboveCooldown(icon, icon["_AutoCastGlow" .. GLOW_KEY])
+        EnsureGlowBelowSwipe(icon, icon["_AutoCastGlow" .. GLOW_KEY])
     elseif glowType == "Button Glow" then
         LCG.ButtonGlow_Start(icon, color, frequency)
-        EnsureGlowAboveCooldown(icon, icon["_ButtonGlow"])
+        EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
 
     elseif glowType == "Flash" then
-        EnsureGlowAboveCooldown(icon, StartTextureGlow(icon, "_QUIFlashHL", FLASH_TEXTURE, color))
+        EnsureGlowBelowSwipe(icon, StartTextureGlow(icon, "_QUIFlashHL", FLASH_TEXTURE, color))
 
     elseif glowType == "Hammer" then
-        EnsureGlowAboveCooldown(icon, StartTextureGlow(icon, "_QUIHammerHL", HAMMER_TEXTURE, color))
+        EnsureGlowBelowSwipe(icon, StartTextureGlow(icon, "_QUIHammerHL", HAMMER_TEXTURE, color))
 
     elseif glowType == "Proc Glow" then
         LCG.ProcGlow_Start(icon, {
@@ -1403,7 +1410,7 @@ local function ApplyHighlight(icon)
             color = color,
             startAnim = true,
         })
-        EnsureGlowAboveCooldown(icon, icon["_ProcGlow" .. GLOW_KEY])
+        EnsureGlowBelowSwipe(icon, icon["_ProcGlow" .. GLOW_KEY])
     end
 
     -- Auto-remove after duration

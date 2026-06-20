@@ -119,6 +119,7 @@ local function Builder(parent)
     local view = { frame = frame }
     local sortKey, sortDesc = "name", false
     local offset = 0
+    local scrollbar          -- vertical scroll bar (created below)
     local data = {}          -- last-built rows
     local activeCols = {}    -- last active-column set
     local headers = {}       -- pooled header buttons (one per COLUMNS slot)
@@ -219,7 +220,9 @@ local function Builder(parent)
     local function ComputeColWidths()
         local total = 0
         for _, col in ipairs(activeCols) do total = total + col.width end
-        local avail = frame:GetWidth() or 0
+        -- reserve the scrollbar gutter so columns squeeze instead of sliding
+        -- under the bar
+        local avail = math.max(0, (frame:GetWidth() or 0) - Shared.SCROLLBAR_RESERVE)
         local scale = (avail > 0 and total > avail) and (avail / total) or 1
         for i, col in ipairs(activeCols) do
             colWidths[i] = math.max(20, math.floor(col.width * scale))
@@ -264,7 +267,7 @@ local function Builder(parent)
             local row = data[offset + i]
             r:ClearAllPoints()
             r:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -(HDR_H + (i - 1) * ROW_H))
-            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, -(HDR_H + (i - 1) * ROW_H))
+            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Shared.SCROLLBAR_RESERVE, -(HDR_H + (i - 1) * ROW_H))
             if not row then
                 r._row = nil -- hidden rows must not retain a clickable target
                 r:Hide()
@@ -299,6 +302,7 @@ local function Builder(parent)
             rowPool[i]._row = nil
             rowPool[i]:Hide()
         end
+        if scrollbar then scrollbar:Update(#data, visible, offset) end
     end
 
     function view.Refresh()
@@ -323,6 +327,14 @@ local function Builder(parent)
         footer:SetText(string.format("%d characters — total %s",
             #data, RD.FormatGold(RD.TotalGold(chars))))
     end
+
+    -- vertical scroll bar: rows sit below the header row, above the footer line.
+    scrollbar = Shared.CreateScrollBar(frame, {
+        orientation = "vertical",
+        onScroll = function(n) offset = n; RenderRows(time()) end,
+    })
+    scrollbar.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -HDR_H)
+    scrollbar.track:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, FOOTER_H)
 
     -- mouse-wheel scroll, clamped to #data - VisibleRows().
     frame:EnableMouseWheel(true)

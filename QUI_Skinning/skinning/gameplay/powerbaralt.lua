@@ -12,6 +12,13 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
+-- Resolve the user's configured general font FACE (falling back to the WoW
+-- default). CJKFont keeps CJK glyph fallback either way; this just ensures the
+-- label uses the QUI font instead of the hardcoded engine default.
+local function GeneralFontFace()
+    return (ns.Helpers and ns.Helpers.GetGeneralFont and ns.Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
+end
+
 ---------------------------------------------------------------------------
 -- PLAYER POWER BAR ALT SKINNING
 ---------------------------------------------------------------------------
@@ -200,7 +207,7 @@ local function CreateQUIAltPowerBar()
     -- Create text
     bar.text = bar:CreateFontString(nil, "OVERLAY")
     bar.text:SetPoint("CENTER", bar, "CENTER")
-    CJKFont(bar.text, STANDARD_TEXT_FONT, 11, FONT_FLAGS)
+    CJKFont(bar.text, GeneralFontFace(), 11, FONT_FLAGS)
     bar.text:SetTextColor(1, 1, 1)
     bar.text:SetJustifyH("CENTER")
 

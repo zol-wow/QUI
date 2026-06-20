@@ -40,6 +40,15 @@ local function RefreshAllFlyouts()
     if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
 end
 
+local function RefreshContextVisibilityFade()
+    if RefreshActionBarContextVisibility then
+        RefreshActionBarContextVisibility()
+    end
+    if _G.QUI_RefreshActionBarFade then
+        _G.QUI_RefreshActionBarFade()
+    end
+end
+
 ---------------------------------------------------------------------------
 -- EVENT COALESCING (elapsed-time gated Show/Hide)
 ---------------------------------------------------------------------------
@@ -483,6 +492,7 @@ function OnOwnedEvent(self, event, ...)
         UpdateStanceBarLayout()
         ApplyAllFlyoutDirections()
         if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
+        RefreshContextVisibilityFade()
         inInitSafeWindow = false
         ns._inInitSafeWindow = false
         -- Second pass after Blizzard frames settle; defer if safe period ended
@@ -507,6 +517,7 @@ function OnOwnedEvent(self, event, ...)
             UpdateStanceBarLayout()
             ApplyAllFlyoutDirections()
             if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
+            RefreshContextVisibilityFade()
         end)
         local db = GetDB()
         if db and db.bars and db.bars.bar1 then
@@ -527,6 +538,30 @@ function OnOwnedEvent(self, event, ...)
                 StartOwnedBarFade(barKey, 1)
             end
         end
+
+    elseif event == "ZONE_CHANGED_NEW_AREA"
+        or event == "ZONE_CHANGED"
+        or event == "ZONE_CHANGED_INDOORS"
+        or event == "PLAYER_DIFFICULTY_CHANGED"
+        or event == "UPDATE_INSTANCE_INFO"
+        or event == "CHALLENGE_MODE_START"
+        or event == "CHALLENGE_MODE_COMPLETED"
+        or event == "CHALLENGE_MODE_RESET" then
+        RefreshContextVisibilityFade()
+
+    elseif event == "ENCOUNTER_START" then
+        local encounterID, encounterName, difficultyID = ...
+        if SetActionBarEncounterVisibilityContext then
+            SetActionBarEncounterVisibilityContext(encounterID, encounterName, difficultyID)
+        end
+        RefreshContextVisibilityFade()
+
+    elseif event == "ENCOUNTER_END" then
+        local encounterID = ...
+        if ClearActionBarEncounterVisibilityContext then
+            ClearActionBarEncounterVisibilityContext(encounterID)
+        end
+        RefreshContextVisibilityFade()
 
     elseif event == "PLAYER_LEVEL_UP" then
         if UpdateLevelSuppressionState() then
@@ -733,4 +768,3 @@ if ns.DebugRegister then -- gate contract: core/debug_gate.lua
 else
     SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
-

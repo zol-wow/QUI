@@ -469,7 +469,7 @@ fadeFrameUpdate = nil
 
 function StartOwnedBarFade(barKey, targetAlpha)
     if targetAlpha < 1 and IsInEditMode() then return end
-    if targetAlpha < 1 and ShouldForceShowForSpellBook() then return end
+    if targetAlpha < 1 and ShouldSuspendMouseoverFade(barKey) then return end
 
     local state = GetOwnedBarFadeState(barKey)
     local fadeSettings = GetFadeSettings()
@@ -588,6 +588,10 @@ function ActionBarsOwned:OnBarMouseEnter(barKey)
         SetOwnedBarAlpha(barKey, 1)
         return
     end
+    if ShouldForceShowForActionBarContext(barKey) then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
 
     if barSettings and barSettings.alwaysShow then return end
 
@@ -625,6 +629,10 @@ function ActionBarsOwned:OnBarMouseLeave(barKey)
         return
     end
     if ShouldForceShowForSpellBook() then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForActionBarContext(barKey) then
         SetOwnedBarAlpha(barKey, 1)
         return
     end
@@ -671,7 +679,7 @@ function ActionBarsOwned:OnBarMouseLeave(barKey)
                     local delay = fadeSettings and fadeSettings.fadeOutDelay or 0.5
                     CancelOwnedBarFadeTimers(linkedState)
                     local function TryLinkedOwnedFade()
-                        if ShouldForceShowForSpellBook() then
+                        if ShouldForceShowForSpellBook() or ShouldForceShowForActionBarContext(linkedKey) then
                             SetOwnedBarAlpha(linkedKey, 1)
                             linkedState.delayTimer = nil
                             return
@@ -708,7 +716,7 @@ function ActionBarsOwned:OnBarMouseLeave(barKey)
                 state.delayTimer = nil
                 return
             end
-            if ShouldForceShowForSpellBook() then
+            if ShouldForceShowForSpellBook() or ShouldForceShowForActionBarContext(barKey) then
                 SetOwnedBarAlpha(barKey, 1)
                 state.delayTimer = nil
                 return
@@ -745,6 +753,10 @@ function SetupOwnedBarMouseover(barKey)
         return
     end
     if ShouldForceShowForSpellBook() then
+        SetOwnedBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForActionBarContext(barKey) then
         SetOwnedBarAlpha(barKey, 1)
         return
     end
@@ -812,4 +824,3 @@ end
 ---------------------------------------------------------------------------
 
 -- (Mirror usability polling and keybind methods removed — handled natively)
-

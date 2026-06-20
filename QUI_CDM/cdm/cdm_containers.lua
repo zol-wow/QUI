@@ -785,6 +785,14 @@ end
 -- saved-loadout the user just switched to).
 local function SaveLoadoutProfile(loadoutID, specID)
     if not specTrackingReady then return end  -- LDEV-05
+    -- Per-loadout storage is inert when the toggle is off. Live containers
+    -- always mirror sentinel slot 0 (LoadOrSnapshotSpecProfile keys slot 0
+    -- when perLoadoutSpec is false), so a talent-loadout swap must never
+    -- write a non-zero slot: doing so diverges the live containers from
+    -- slot 0, and the next /reload — which reloads slot 0 — snaps the user's
+    -- list back, which reads as "my CDM entries reset every reload".
+    local profileDB = GetDB()
+    if not (profileDB and profileDB.perLoadoutSpec) then return end
     SaveSpecProfileToLoadout(specID, loadoutID)
 end
 
@@ -802,6 +810,12 @@ end
 -- D-05's "no auto-fallback to slot 0").
 local function LoadLoadoutProfile(loadoutID, specID, myToken)
     if not specTrackingReady then return false end  -- LDEV-05
+    -- See SaveLoadoutProfile: with the toggle off the live containers track
+    -- sentinel slot 0; never overwrite them from a non-zero loadout slot or
+    -- a talent-loadout swap will desync live from slot 0 until the next
+    -- /reload restores it.
+    local profileDB = GetDB()
+    if not (profileDB and profileDB.perLoadoutSpec) then return false end
     if myToken and myToken ~= loadoutTrackingToken then return false end  -- LDEV-05 abort
     if not specID or specID == 0 then return false end
     if loadoutID == nil then return false end

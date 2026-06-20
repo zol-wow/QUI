@@ -83,9 +83,10 @@ local function CreateOrUpdateBackground()
         customBg:SetAllPoints(InspectFrame)
     end
 
+    -- ApplyPixelBackdrop persists these colors in the backdrop data and applies
+    -- them now; a bare follow-up setter would be redundant and gets discarded on
+    -- the next scale-refresh rebuild.
     SkinBase.ApplyPixelBackdrop(customBg, 1, true, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
-    customBg:SetBackdropColor(bgr, bgg, bgb, bga)
-    customBg:SetBackdropBorderColor(sr, sg, sb, sa)
 
     return customBg
 end
@@ -207,11 +208,13 @@ local function UpdateInspectFrameTabSelectedState()
             local tabID = tab.GetID and tab:GetID()
             local isSelected = selectedTab == i or selectedTab == tabID
             if isSelected then
-                bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
-                bd:SetBackdropColor(math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1)
+                SkinBase.SetBackdropColors(bd,
+                    { sc[1], sc[2], sc[3], sc[4] },
+                    { math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1 })
             else
-                bd:SetBackdropBorderColor(sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6)
-                bd:SetBackdropColor(bg[1], bg[2], bg[3], 0.7)
+                SkinBase.SetBackdropColors(bd,
+                    { sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6 },
+                    { bg[1], bg[2], bg[3], 0.7 })
             end
         end
     end
@@ -272,11 +275,13 @@ local function SkinInspectButtons()
     if SkinBase.SkinButton then
         local paperDoll = _G.InspectPaperDollFrame
         local viewButton = paperDoll and paperDoll.ViewButton
-        if viewButton then SkinBase.SkinButton(viewButton) end
+        -- { font = true } drives ViewButton's Normal/Highlight/Disabled font
+        -- objects so the QUI face survives the engine hover/disable swap.
+        if viewButton then SkinBase.SkinButton(viewButton, { font = true }) end
 
         local itemsFrame = _G.InspectPaperDollItemsFrame
         local talentsButton = itemsFrame and itemsFrame.InspectTalents
-        if talentsButton then SkinBase.SkinButton(talentsButton) end
+        if talentsButton then SkinBase.SkinButton(talentsButton, { font = true }) end
     end
 end
 
@@ -290,6 +295,9 @@ local function SetupInspectFrameSkinning()
     if not InspectFrame then return end
 
     SkinBase.SkinFrameText(InspectFrame, { recurse = true })
+    -- Lock the QUI font onto InspectFrame's labels: Blizzard rebinds fonts when
+    -- the inspect target changes, which reverts a one-shot SkinFrameText pass.
+    SkinBase.LockFrameTextObjects(InspectFrame)
     CreateOrUpdateBackground()
     SkinInspectFrameTabs()
     SkinInspectButtons()
@@ -357,16 +365,13 @@ end
 ---------------------------------------------------------------------------
 -- CONSOLIDATED API TABLE
 ---------------------------------------------------------------------------
-_G.QUI_InspectFrameSkinning = {
-    -- Configuration
-    CONFIG = CONFIG,
-
-    -- Core functions
-    IsEnabled = IsSkinningEnabled,
-    SetExtended = SetInspectFrameBgExtended,
-    Refresh = RefreshInspectFrameColors,
-    RefreshScale = RefreshInspectFrameScale,
-}
+local api = _G.QUI_InspectFrameSkinning or {}
+api.CONFIG = CONFIG
+api.IsEnabled = IsSkinningEnabled
+api.SetExtended = SetInspectFrameBgExtended
+api.Refresh = RefreshInspectFrameColors
+api.RefreshScale = RefreshInspectFrameScale
+_G.QUI_InspectFrameSkinning = api
 
 -- Legacy compatibility alias
 _G.QUI_RefreshInspectColors = RefreshInspectFrameColors
@@ -383,17 +388,8 @@ end
 ---------------------------------------------------------------------------
 -- INITIALIZATION
 ---------------------------------------------------------------------------
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, addon)
-    if addon == "Blizzard_InspectUI" then
-        -- Run immediately: Blizzard's own code shows InspectFrame in the same
-        -- tick as ADDON_LOADED fires, so deferring here races the first OnShow.
-        SetupInspectFrameSkinning()
-        self:UnregisterEvent("ADDON_LOADED")
-    end
-end)
-
-if InspectFrame and InspectFrameTab1 then
-    SetupInspectFrameSkinning()
-end
+-- Skin as soon as Blizzard_InspectUI is available. OnAddOnLoaded fires
+-- immediately if the addon already loaded (catch-up), otherwise synchronously on
+-- its ADDON_LOADED. Run immediately (no defer): Blizzard shows InspectFrame in
+-- the same tick as ADDON_LOADED fires, so deferring would race the first OnShow.
+SkinBase.OnAddOnLoaded("Blizzard_InspectUI", SetupInspectFrameSkinning)

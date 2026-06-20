@@ -38,7 +38,7 @@ QUI's Unit Frames replace the default combat frames with cleaner, more readable 
 
 - Size, texture, colors, and border styling for each frame type
 - Health and power display styles
-- Name formatting and class coloring
+- Name formatting, optional level text, and class coloring
 - Castbars with interrupt and channel support
 - Aura placement, icon count, growth direction, duration text, stack text, and Blizzard-style Helpful/Harmful classification filters
 - Heal prediction, absorb shields, indicators, and class resources

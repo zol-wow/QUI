@@ -724,12 +724,23 @@ local function AuraCaptureFrameOnEvent(self, event, ...)
         return
     end
     if event == "PLAYER_TARGET_CHANGED" then
+        -- Drop the per-target aura memo BEFORE consumers resolve: the target's
+        -- identity (and thus its aura set) changed wholesale with no UNIT_AURA.
+        if ns.CDMSources and ns.CDMSources.InvalidateAuraMemoForUnit then ns.CDMSources.InvalidateAuraMemoForUnit("target") end
         ReleaseCapturedAurasForUnit("target")
         NotifyAuraConsumers("target", nil)
         return
     end
     if event ~= "UNIT_AURA" then return end
     local unit, updateInfo = ...
+    -- Drop the changed aura-memo entries synchronously, before the capture below
+    -- and NotifyAuraConsumers fan out: the consumers (mirror, icons, glows)
+    -- resolve inline and read ns.CDMSources aura queries, which must see
+    -- post-change state. Payload-scoped (updateInfo) so an unrelated aura tick
+    -- doesn't cold-wipe the whole unit's memo every UNIT_AURA.
+    if ns.CDMSources and ns.CDMSources.InvalidateAuraMemoForDelta then
+        ns.CDMSources.InvalidateAuraMemoForDelta(unit, updateInfo)
+    end
     if not updateInfo or updateInfo.isFullUpdate then
         -- isFullUpdate carries no aura list; it's a "rescan everything"
         -- signal. Walk the live aura state directly to repopulate the

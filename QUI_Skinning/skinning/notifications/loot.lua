@@ -826,11 +826,6 @@ local function SkinLootHistoryElement(button)
     hookedLootFrames[button] = true
 end
 
--- Handle scrollbox updates to skin new elements
-local function HandleLootHistoryScrollUpdate(scrollBox)
-    scrollBox:ForEachFrame(SkinLootHistoryElement)
-end
-
 -- Main function to skin GroupLootHistoryFrame
 local function SkinGroupLootHistoryFrame()
     if lootHistorySkinned then return end

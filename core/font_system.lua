@@ -76,6 +76,11 @@ local originalChatFonts = ns.Helpers.CreateStateTable()
 -- chat/objective restore paths). false = not yet captured.
 local originalDamageTextFont = false
 
+-- Pristine Blizzard STANDARD_TEXT_FONT captured once before any QUI override, so
+-- the engine default can be restored when the global font is turned off (mirrors
+-- the DAMAGE_TEXT_FONT capture below). false = not yet captured.
+local originalStandardTextFont = false
+
 local function GetGlobalFontPath()
     if not QUICore.db or not QUICore.db.profile or not QUICore.db.profile.general then
         return QUAZII_FONT_PATH
@@ -295,6 +300,26 @@ function QUICore:ApplyGlobalFontToChatFrames(fontPath, shouldApply)
                 end
             end
         end
+    end
+end
+
+-- TAINT SAFETY: STANDARD_TEXT_FONT is a path-string global read by the engine
+-- when CREATING fonts; setting it never mutates an existing (secure) font
+-- object, so no FontString is tainted. This is the safe alternative to mutating
+-- shared font objects directly. Gated by the global-font toggle AND the locale
+-- glyph gate — on CJK clients the Latin-only QUI font would render boxes, so we
+-- leave the Blizzard default there.
+function QUICore:ApplyGlobalDefaultFont()
+    if not self.db or not self.db.profile or not self.db.profile.general then return end
+    local glyphFallback = Helpers and Helpers.GetLocaleGlyphFallback and Helpers.GetLocaleGlyphFallback()
+    if IsGlobalFontEnabled() and not glyphFallback then
+        if originalStandardTextFont == false then
+            originalStandardTextFont = _G.STANDARD_TEXT_FONT
+        end
+        _G.STANDARD_TEXT_FONT = GetGlobalFontPath()
+    elseif originalStandardTextFont ~= false then
+        _G.STANDARD_TEXT_FONT = originalStandardTextFont
+        originalStandardTextFont = false
     end
 end
 

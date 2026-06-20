@@ -9,6 +9,8 @@
 --   - .Divider1 / .Divider2 (evergreen-weeklyrewards-divider)
 --   - .BorderContainer.Border    (evergreen-weeklyrewards-frame)
 --   - .BorderContainer.TopDecor  (evergreen-weeklyrewards-frame-topdecor)
+--   - .HeaderFrame.HeaderDivider (evergreen-weeklyrewards-header)
+--   - .SelectRewardButton.Background (evergreen-weeklyrewards-frame-selectbutton)
 --   - .Blackout.Texture     (semi-transparent dim during transitions)
 -- Close button lives at WeeklyRewardsFrame.CloseButton.
 ---------------------------------------------------------------------------
@@ -28,6 +30,7 @@ local function HideWeeklyRewardsChrome(frame)
     if frame.BorderShadow then frame.BorderShadow:Hide() end
     if frame.Divider1 then frame.Divider1:Hide() end
     if frame.Divider2 then frame.Divider2:Hide() end
+    if frame.HeaderFrame and frame.HeaderFrame.HeaderDivider then frame.HeaderFrame.HeaderDivider:Hide() end
 
     local bc = frame.BorderContainer
     if bc then
@@ -35,25 +38,57 @@ local function HideWeeklyRewardsChrome(frame)
         if bc.TopDecor then bc.TopDecor:Hide() end
     end
 
+    if frame.SelectRewardButton and frame.SelectRewardButton.Background then
+        frame.SelectRewardButton.Background:Hide()
+    end
+
     -- The .Blackout child is a transient dim overlay during reward selection;
     -- leave it functional (it has its own mouse capture).
 end
 
-local function SkinWeeklyRewards()
-    if not IsSettingEnabled("skinWeeklyRewards") then return end
-    local frame = _G.WeeklyRewardsFrame
-    if not frame or SkinBase.IsSkinned(frame) then return end
+local function ApplyWeeklyRewardsSkin(frame)
+    if not frame or not IsSettingEnabled("skinWeeklyRewards") then return end
 
     HideWeeklyRewardsChrome(frame)
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
-    SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not SkinBase.GetBackdrop(frame) then
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+        SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    end
 
     if frame.CloseButton then
         SkinBase.SkinCloseButton(frame.CloseButton)
     end
 
     SkinBase.SkinFrameText(frame, { recurse = true })
+    -- The "Select Reward" CTA is a UIPanelButton: the engine swaps its Highlight/
+    -- Disabled font OBJECT on hover/disable WITHOUT calling a setter, so LockFontObject
+    -- (setter hook) can't catch it. Drive the button's font objects instead.
+    if frame.SelectRewardButton then
+        SkinBase.ApplyButtonFontObjects(frame.SelectRewardButton)
+    end
     SkinBase.MarkSkinned(frame)
+end
+
+local function HookWeeklyRewardsLifecycle(frame)
+    if not frame or SkinBase.GetFrameData(frame, "lifecycleHooks") then return end
+    SkinBase.SetFrameData(frame, "lifecycleHooks", true)
+
+    if WeeklyRewardsMixin and WeeklyRewardsMixin.Refresh then
+        hooksecurefunc(WeeklyRewardsMixin, "Refresh", function(self)
+            if self == _G.WeeklyRewardsFrame then
+                ApplyWeeklyRewardsSkin(self)
+            end
+        end)
+    end
+end
+
+local function SkinWeeklyRewards()
+    if not IsSettingEnabled("skinWeeklyRewards") then return end
+    local frame = _G.WeeklyRewardsFrame
+    if not frame then return end
+
+    HookWeeklyRewardsLifecycle(frame)
+    ApplyWeeklyRewardsSkin(frame)
 end
 
 local function RefreshWeeklyRewards()
@@ -62,8 +97,7 @@ local function RefreshWeeklyRewards()
     local bd = SkinBase.GetBackdrop(frame)
     if not bd then return end
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
-    bd:SetBackdropColor(bgr, bgg, bgb, bga)
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 
 _G.QUI_RefreshWeeklyRewardsColors = RefreshWeeklyRewards
@@ -76,4 +110,4 @@ if ns.Registry then
     })
 end
 
-SkinBase.OnAddOnLoaded("Blizzard_WeeklyRewards", SkinWeeklyRewards, 0.1)
+SkinBase.OnAddOnLoaded("Blizzard_WeeklyRewards", SkinWeeklyRewards, 0)

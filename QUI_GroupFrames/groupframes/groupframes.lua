@@ -89,6 +89,7 @@ local _state = {
         UNIT_HEAL_ABSORB_AMOUNT_CHANGED = true,
         UNIT_HEAL_PREDICTION = true,
         UNIT_NAME_UPDATE = true,
+        UNIT_LEVEL = true,
         UNIT_CONNECTION = true,
     },
     unitEventList = {
@@ -101,6 +102,7 @@ local _state = {
         "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
         "UNIT_HEAL_PREDICTION",
         "UNIT_NAME_UPDATE",
+        "UNIT_LEVEL",
         "UNIT_CONNECTION",
     },
     defaultColors = {
@@ -706,6 +708,46 @@ local function GetTextAnchorInfo(anchorName)
     return ANCHOR_MAP[anchorName] or ANCHOR_MAP.LEFT
 end
 
+function _state.FormatLevelText(unit)
+    local ok, text = pcall(function()
+        local level = UnitLevel(unit)
+        if not level then return "" end
+        if level < 0 then return "??" end
+        if level == 0 then return "" end
+        return tostring(level)
+    end)
+    return ok and text or ""
+end
+
+function _state.UpdateLevelText(frame)
+    if not frame or not frame.unit or not frame.levelText then return end
+
+    local nameSettings = GetNameSettings(frame._isRaid)
+    if not nameSettings or nameSettings.showLevel ~= true then
+        frame.levelText:SetText("")
+        frame.levelText:Hide()
+        return
+    end
+
+    if not UnitExists(frame.unit) then
+        frame.levelText:SetText("")
+        frame.levelText:Hide()
+        return
+    end
+
+    local text = _state.FormatLevelText(frame.unit)
+    if text == "" then
+        frame.levelText:SetText("")
+        frame.levelText:Hide()
+        return
+    end
+
+    frame.levelText:SetText(text)
+    local tc = nameSettings.levelTextColor or COLORS.WHITE
+    frame.levelText:SetTextColor(tc[1] or 1, tc[2] or 1, tc[3] or 1, tc[4] or 1)
+    frame.levelText:Show()
+end
+
 ---------------------------------------------------------------------------
 -- HELPERS: Health formatting
 ---------------------------------------------------------------------------
@@ -812,7 +854,12 @@ local function ShowUnitTooltip(frame)
     GameTooltip:Show()
 end
 
+-- HOVER DEBOUNCE: see the OnEnter hook below. State lives on `_state` (not new
+-- file-scope locals) because this chunk is at WoW's 200-local Lua 5.1 cap.
 local function HideUnitTooltip()
+    local t = _state._tooltipTimer
+    if t then t:Cancel(); _state._tooltipTimer = nil end
+    _state._tooltipPending = nil
     GameTooltip:Hide()
 end
 
@@ -1160,9 +1207,17 @@ local function UpdateName(frame)
 
     local name = UnitName(unit)
     if name then
+        -- UnitName is SecretWhenUnitIdentityRestricted: in restricted combat it
+        -- returns a secret string, and a bare `#name > maxLen` length pre-check
+        -- throws on a secret, aborting UpdateName and leaving the name blanked for
+        -- the rest of combat. TruncateUTF8 is secret-safe (it format-truncates a
+        -- secret and no-ops when the value is already short), so call it directly
+        -- without a Lua-side length compare; SetText is a secret-safe sink.
         local maxLen = nameSettings and nameSettings.maxNameLength or 10
-        if maxLen > 0 and #name > maxLen then
-            name = Helpers.TruncateUTF8 and Helpers.TruncateUTF8(name, maxLen) or name:sub(1, maxLen)
+        if maxLen > 0 and Helpers.TruncateUTF8 then
+            name = Helpers.TruncateUTF8(name, maxLen)
+        elseif maxLen > 0 and not (issecretvalue and issecretvalue(name)) and #name > maxLen then
+            name = name:sub(1, maxLen)
         end
         frame.nameText:SetText(name)
 
@@ -2366,6 +2421,7 @@ local function UpdateFrame(frame)
     UpdateHealth(frame)
     UpdatePower(frame)
     UpdateName(frame)
+    _state.UpdateLevelText(frame)
     UpdateAbsorbs(frame)
     UpdateHealAbsorb(frame)
     UpdateHealPrediction(frame)
@@ -2624,6 +2680,32 @@ local function DecorateGroupFrame(frame)
     nameText:SetWordWrap(false)
     frame.nameText = nameText
 
+    -- Level text
+    local levelText = frame.levelText or textFrame:CreateFontString(nil, "OVERLAY")
+    levelText:ClearAllPoints()
+    local levelFontPath = fontPath
+    if nameSettings and type(nameSettings.levelFont) == "string" and nameSettings.levelFont ~= "" then
+        levelFontPath = LSM:Fetch("font", nameSettings.levelFont, true) or fontPath
+    end
+    Helpers.ApplyFontWithFallback(levelText, levelFontPath, nameSettings and nameSettings.levelFontSize or nameFontSize, fontOutline)
+    local levelAnchor = GetTextAnchorInfo(nameSettings and nameSettings.levelAnchor or "RIGHT")
+    local levelOffsetX = nameSettings and nameSettings.levelOffsetX or -4
+    local levelOffsetY = nameSettings and nameSettings.levelOffsetY or 0
+    local levelBottomPad = levelAnchor.point:find("BOTTOM") and bottomPad or 0
+    local levelPadX = math.abs(levelOffsetX)
+    levelText:SetPoint(levelAnchor.leftPoint, frame, levelAnchor.leftPoint, levelPadX, levelOffsetY + levelBottomPad)
+    levelText:SetPoint(levelAnchor.rightPoint, frame, levelAnchor.rightPoint, -levelPadX, levelOffsetY + levelBottomPad)
+    levelText:SetJustifyH(nameSettings and nameSettings.levelJustify or levelAnchor.justify)
+    levelText:SetJustifyV(levelAnchor.justifyV)
+    levelText:SetTextColor(1, 1, 1, 1)
+    levelText:SetWordWrap(false)
+    if nameSettings and nameSettings.showLevel == true then
+        levelText:Show()
+    else
+        levelText:Hide()
+    end
+    frame.levelText = levelText
+
     -- Health text
     local healthSettings = GetHealthSettings(isRaid)
     local healthFontSize = healthSettings and healthSettings.healthFontSize or 12
@@ -2860,7 +2942,30 @@ local function DecorateGroupFrame(frame)
         frame._quiHooked = true
 
         frame:HookScript("OnEnter", function(self)
-            ShowUnitTooltip(self)
+            -- Debounce: sweeping the cursor across a dense raid grid fires
+            -- OnEnter on every frame crossed, and each show is a full
+            -- GameTooltip:SetUnit teardown+rebuild amplified by QUI's per-show
+            -- skin restyle + QoL post-processing — dozens of rebuilds/sec while
+            -- the mouse moves = the "stutter like crazy" on raid-frame hover.
+            -- Defer the show; OnLeave (HideUnitTooltip) cancels it, so a moving
+            -- cursor builds ZERO tooltips and only a settled cursor builds one.
+            -- C_Timer also lifts the show out of the secure OnEnter context.
+            local general = GetGeneralSettings(self._isRaid)
+            if not general or general.showTooltips == false then return end
+            _state._tooltipPending = self
+            if _state._tooltipTimer then return end
+            _state._tooltipTimer = C_Timer.NewTimer(0.10, function()
+                _state._tooltipTimer = nil
+                local f = _state._tooltipPending
+                _state._tooltipPending = nil
+                -- OnLeave clears _tooltipPending and cancels the timer, so
+                -- reaching here means the cursor never left `f`. IsShown (not the
+                -- secret-tainted IsMouseOver) guards a frame hidden by a roster
+                -- change between scheduling and firing.
+                if f and f.IsShown and f:IsShown() then
+                    ShowUnitTooltip(f)
+                end
+            end)
         end)
         frame:HookScript("OnLeave", HideUnitTooltip)
 
@@ -5216,7 +5321,13 @@ local function OnEvent(self, event, arg1, ...)
             end
 
         elseif event == "UNIT_NAME_UPDATE" then
-            for i = 1, nFrames do UpdateName(frames[i]) end
+            for i = 1, nFrames do
+                UpdateName(frames[i])
+                _state.UpdateLevelText(frames[i])
+            end
+
+        elseif event == "UNIT_LEVEL" then
+            for i = 1, nFrames do _state.UpdateLevelText(frames[i]) end
 
         elseif event == "UNIT_THREAT_SITUATION_UPDATE" then
             for i = 1, nFrames do UpdateThreat(frames[i]) end

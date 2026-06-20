@@ -131,6 +131,10 @@ local ns = {
             end
             return true
         end,
+        -- character.lua registers its init via SkinBase.OnAddOnLoaded
+        -- (uikit.lua:2930). CharacterFrame is left nil above so auto-init is
+        -- skipped; the stub absorbs the registration without firing it.
+        OnAddOnLoaded = function() end,
     },
     UIKit = {
         RegisterScaleRefresh = function(owner, _, fn)

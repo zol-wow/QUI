@@ -146,6 +146,11 @@ local function Reskin()
             SetTabActiveState(t, t.id == activeTab)
         end
     end
+    -- re-tint the view scroll bars to the current accent (creation-time color
+    -- otherwise goes stale on a theme change until /reload)
+    if ns.AltsViewShared and ns.AltsViewShared.RestyleScrollBars then
+        ns.AltsViewShared.RestyleScrollBars()
+    end
 end
 
 local function SelectTab(id)

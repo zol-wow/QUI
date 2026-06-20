@@ -672,6 +672,31 @@ local function EvictRemovedMirrorStatesForUnit(unit)
     end
 end
 
+-- Authoritative removal: clear the aura lane of EVERY mirror state stamped with
+-- an instance ID in the UNIT_AURA removed list, regardless of viewer category.
+-- removedAuraInstanceIDs is NeverSecret and authoritative, so -- unlike
+-- VerifyStateFreshness, which probes C_UnitAuras.GetAuraDuration and can still
+-- see a live DurationObject on the removal tick -- this clears deterministically.
+-- Covers borrowed cooldown lanes (essential/utility states that borrowed a
+-- buff's duration via aura-related-child) that EvictRemovedMirrorStatesForUnit
+-- (buff/trackedBar only) never touches; without it the cooldown icon stays in
+-- mode=aura and never shows the cooldown swipe once the buff ends (Druid
+-- Stampeding Roar is the reference case). auraInstanceID is NeverSecret, so the
+-- set-membership test is combat-safe. Defined on the module table to stay under
+-- Lua 5.1's 200-local cap for this file.
+CDMBlizzMirror._ClearMirrorStatesForRemovedInstances = function(removed)
+    if type(removed) ~= "table" or removed[1] == nil then return end
+    local removedSet = {}
+    for _, id in ipairs(removed) do
+        if id ~= nil then removedSet[id] = true end
+    end
+    for _, s in pairs(_mirrorState) do
+        if s and s.auraInstanceID and removedSet[s.auraInstanceID] then
+            ClearMirrorAuraState(s.cooldownID, s, "unit-aura-removed")
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Public API surface (read-only).
 ---------------------------------------------------------------------------
@@ -1418,6 +1443,21 @@ local function IsTargetAuraViewerCategory(cdID, stateOrCategory)
     if not IsAuraViewerCategory(cdID, cat) then return false end
     local info = GetInstanceInfo(cdID, cat)
     return info and info.selfAura == false
+end
+
+-- Public: true ONLY when the cooldownID/category is a buff/trackedBar aura
+-- viewer whose registered info.selfAura is DEFINITIVELY true (a player self
+-- aura). Returns false for target auras (selfAura == false), non-aura viewers,
+-- and unknown/unregistered selfAura. Callers that SKIP work on a true result
+-- (e.g. the target-change aura pass) must treat false as "cannot prove self"
+-- and re-resolve -- never skip on uncertainty.
+function CDMBlizzMirror.IsSelfAuraViewerCategory(cdID, stateOrCategory)
+    local cat = type(stateOrCategory) == "table"
+        and stateOrCategory.viewerCategory
+        or stateOrCategory
+    if not IsAuraViewerCategory(cdID, cat) then return false end
+    local info = GetInstanceInfo(cdID, cat)
+    return info ~= nil and info.selfAura == true
 end
 
 local function AddDurationSpellCandidate(candidates, seen, spellID)
@@ -4784,6 +4824,17 @@ function CDMBlizzMirror.HandleUnitAuraChanged(unit, updateInfo)
             and updateInfo.removedAuraInstanceIDs[1] ~= nil
         if hasAdds or hasRemoves then
             RefreshCooldownViewerRelatedAuraStates()
+        end
+        if hasRemoves then
+            -- Authoritative post-borrow clear. Runs AFTER the related-aura
+            -- re-borrow above so a cooldown lane that just re-borrowed a
+            -- removed instance from a not-yet-evicted buff sibling gets nuked
+            -- too. Without this the utility/essential icon stays in mode=aura
+            -- and never shows the cooldown swipe once the buff ends, because
+            -- EvictRemovedMirrorStatesForUnit (below) only verifies
+            -- buff/trackedBar states -- never the borrowed cooldown lane.
+            CDMBlizzMirror._ClearMirrorStatesForRemovedInstances(
+                updateInfo.removedAuraInstanceIDs)
         end
     end
 

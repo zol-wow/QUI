@@ -71,6 +71,7 @@ local function Builder(parent)
 
     local view     = { frame = frame }
     local offset   = 0
+    local scrollbar         -- vertical scroll bar (created below)
     local data     = {}   -- sorted array of { key, name, class, record }
     local rowPool  = {}
 
@@ -123,7 +124,7 @@ local function Builder(parent)
             local row = data[offset + i]
             r:ClearAllPoints()
             r:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, -(HDR_H + (i - 1) * ROW_H))
-            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, -(HDR_H + (i - 1) * ROW_H))
+            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Shared.SCROLLBAR_RESERVE, -(HDR_H + (i - 1) * ROW_H))
 
             if not row then
                 r._row = nil
@@ -160,6 +161,7 @@ local function Builder(parent)
             rowPool[i]._row = nil
             rowPool[i]:Hide()
         end
+        if scrollbar then scrollbar:Update(#data, visible, offset) end
     end
 
     function view.Refresh()
@@ -188,6 +190,14 @@ local function Builder(parent)
         RenderRows()
         footer:SetText(string.format("%d characters", #data))
     end
+
+    -- vertical scroll bar: rows sit below the header row, above the footer line.
+    scrollbar = Shared.CreateScrollBar(frame, {
+        orientation = "vertical",
+        onScroll = function(n) offset = n; RenderRows() end,
+    })
+    scrollbar.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -HDR_H)
+    scrollbar.track:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, FOOTER_H)
 
     -- mouse-wheel scroll
     frame:EnableMouseWheel(true)

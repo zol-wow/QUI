@@ -1814,6 +1814,27 @@ function Window:_OpenConfigMenu()
                 QUI_DamageMeter.WindowManager:RefreshAll()
             end
         end)
+
+        root:CreateDivider()
+        root:CreateTitle(ns.L["Window"])
+        -- SpawnNew handles the 5-window cap, savedvars seeding, and the
+        -- cascade-offset position. CanSpawnNew mirrors the settings UI's
+        -- "+ Add Window" cap gate so the entry greys out at the limit.
+        local newWindow = root:CreateButton(ns.L["New Window"], function()
+            if QUI_DamageMeter.WindowManager:SpawnNew() == nil then
+                print(ns.L["|cff30D1FF[QUI]|r At the 5-window cap; delete one first."])
+            end
+        end)
+        newWindow:SetEnabled(QUI_DamageMeter.WindowManager:CanSpawnNew())
+
+        -- DeleteWindow despawns this window and drops its savedvars + per-window
+        -- overrides. Disabled when this is the only window: deleting it would
+        -- leave no header to right-click, stranding the user with no way to add
+        -- one back outside the settings UI.
+        local deleteWindow = root:CreateButton(ns.L["Delete Window"], function()
+            QUI_DamageMeter.WindowManager:DeleteWindow(self.windowID)
+        end)
+        deleteWindow:SetEnabled(QUI_DamageMeter.WindowManager:Count() > 1)
     end)
 end
 
@@ -3015,6 +3036,13 @@ function WindowManager:Count()
     local n = 0
     for _ in pairs(self.windows) do n = n + 1 end
     return n
+end
+
+-- True while another window can be spawned. Single-sources the MAX_WINDOWS cap
+-- for callers that build UI before SpawnNew (e.g. the header context menu's
+-- "New Window" entry, which greys out at the limit).
+function WindowManager:CanSpawnNew()
+    return self:Count() < MAX_WINDOWS
 end
 
 -- Allocate the lowest unused windowID >= 2 (ID 1 is reserved for the

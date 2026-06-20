@@ -40,6 +40,7 @@ local function SetupDebugInstrumentation()
         chargeDurationQueries = 0,
         chargeDurationActive = 0,
         lossOfControlInfoQueries = 0,
+        lossOfControlInfoHits = 0,
         lossOfControlDurationQueries = 0,
     }
     _G._abCooldownStats = _abCooldownStats -- global alias for actionbars_events.lua (loads after this file per actionbars.xml; picks the alias up in its own gated setup)
@@ -60,6 +61,7 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "AB_chargeDurationQueries", counter = true, fn = function() return _abCooldownStats.chargeDurationQueries end }
     mp[#mp + 1] = { name = "AB_chargeDurationActive", counter = true, fn = function() return _abCooldownStats.chargeDurationActive end }
     mp[#mp + 1] = { name = "AB_lossOfControlInfoQueries", counter = true, fn = function() return _abCooldownStats.lossOfControlInfoQueries end }
+    mp[#mp + 1] = { name = "AB_lossOfControlInfoHits", counter = true, fn = function() return _abCooldownStats.lossOfControlInfoHits end }
     mp[#mp + 1] = { name = "AB_lossOfControlDurationQueries", counter = true, fn = function() return _abCooldownStats.lossOfControlDurationQueries end }
     -- AB_chargeCapabilityCache probe is registered inside the do-block below
     -- (after the gate registration below it) because _buttonChargeAction is
@@ -153,6 +155,12 @@ do
     local _batchChargeMayHaveCharges = {}
     local _batchChargeDurationSeen = {}
     local _batchChargeDurationObject = {}
+    -- LoC cooldown info was the one C_ActionBar query with no batch dedupe:
+    -- GetActionLossOfControlCooldownInfo returns a FRESH table every call and
+    -- fired once per active button per update (~500/sec in raid), dominating AB
+    -- GC churn. Cache it per-batch by action like the cooldown/charge queries.
+    local _batchLoCInfoSeen = {}
+    local _batchLoCInfo = {}
     -- AB_chargeCapabilityCache probe: registered here because _buttonChargeAction
     -- is declared in this do-block, via its own gate registration (the file's
     -- main SetupDebugInstrumentation can't see this local).
@@ -204,6 +212,8 @@ do
         wipe(_batchChargeMayHaveCharges)
         wipe(_batchChargeDurationSeen)
         wipe(_batchChargeDurationObject)
+        wipe(_batchLoCInfoSeen)
+        wipe(_batchLoCInfo)
     end
 
     local function BeginCooldownBatch()
@@ -219,6 +229,8 @@ do
             wipe(_batchChargeMayHaveCharges)
             wipe(_batchChargeDurationSeen)
             wipe(_batchChargeDurationObject)
+            wipe(_batchLoCInfoSeen)
+            wipe(_batchLoCInfo)
         end
         _cooldownBatchActive = true
     end
@@ -425,6 +437,25 @@ do
         return durationObject
     end
 
+    local function GetActionLoCInfo(action)
+        if not C_ActionBar.GetActionLossOfControlCooldownInfo then return DEFAULT_LOC_INFO end
+        local actionCanBeCached = not Helpers.IsSecretValue(action)
+        if actionCanBeCached
+            and _cooldownBatchActive
+            and _batchLoCInfoSeen[action] == _cooldownBatchToken then
+            if _abCooldownStats then _abCooldownStats.lossOfControlInfoHits = _abCooldownStats.lossOfControlInfoHits + 1 end
+            return _batchLoCInfo[action] or DEFAULT_LOC_INFO
+        end
+
+        if _abCooldownStats then _abCooldownStats.lossOfControlInfoQueries = _abCooldownStats.lossOfControlInfoQueries + 1 end
+        local locInfo = C_ActionBar.GetActionLossOfControlCooldownInfo(action) or DEFAULT_LOC_INFO
+        if actionCanBeCached and _cooldownBatchActive then
+            _batchLoCInfoSeen[action] = _cooldownBatchToken
+            _batchLoCInfo[action] = locInfo
+        end
+        return locInfo
+    end
+
     function ActionBarsOwned.UpdateCooldown(button)
         -- Hot path: called every ~100ms for all active buttons. Every
         -- saved Lua op compounds to measurable ms/sec in raid combat.
@@ -459,9 +490,8 @@ do
             _buttonWasActive[button] = true
 
             -- Button is on cooldown and/or recharging a charge — LoC is the
-            -- remaining query.
-            if _abCooldownStats then _abCooldownStats.lossOfControlInfoQueries = _abCooldownStats.lossOfControlInfoQueries + 1 end
-            local locInfo = C_ActionBar.GetActionLossOfControlCooldownInfo(action) or DEFAULT_LOC_INFO
+            -- remaining query (per-batch cached by action; see GetActionLoCInfo).
+            local locInfo = GetActionLoCInfo(action)
 
             local locActive = DecodePotentialSecretBoolean(locInfo.isActive)
             local locReplacesNormal = DecodePotentialSecretBoolean(locInfo.shouldReplaceNormalCooldown)

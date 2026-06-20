@@ -103,6 +103,7 @@ local function Builder(parent)
 
     local view        = { frame = frame }
     local offset      = 0
+    local scrollbar          -- vertical scroll bar (created below)
     local rows        = {}
     local rowPool     = {}
     local selectedKey = nil
@@ -322,7 +323,7 @@ local function Builder(parent)
             local row = rows[offset + i]
             r:ClearAllPoints()
             r:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, topY - (i - 1) * ROW_H)
-            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, topY - (i - 1) * ROW_H)
+            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Shared.SCROLLBAR_RESERVE, topY - (i - 1) * ROW_H)
 
             if not row then
                 r._row = nil
@@ -347,7 +348,7 @@ local function Builder(parent)
                 if info and info.account then text = text .. " (account)" end
                 r._value:ClearAllPoints()
                 r._value:SetPoint("LEFT", r, "LEFT", NAME_W + CELL_PAD, 0)
-                r._value:SetWidth(math.max(1, (frame:GetWidth() or 0) - NAME_W - CELL_PAD * 2))
+                r._value:SetWidth(math.max(1, (frame:GetWidth() or 0) - NAME_W - CELL_PAD * 2 - Shared.SCROLLBAR_RESERVE))
                 r._value:SetText(text)
                 if qty == nil then
                     r._value:SetTextColor(0.5, 0.5, 0.5)
@@ -360,6 +361,7 @@ local function Builder(parent)
         for i = visible + 1, #rowPool do
             rowPool[i]:Hide()
         end
+        if scrollbar then scrollbar:Update(#rows, visible, offset) end
     end
 
     local function ChooseDefaultKey(chars)
@@ -415,6 +417,15 @@ local function Builder(parent)
             footer:SetText(string.format("%d currencies", #rows))
         end
     end
+
+    -- vertical scroll bar: rows start 28px below the top (selector chrome) and
+    -- stop above the footer count line.
+    scrollbar = Shared.CreateScrollBar(frame, {
+        orientation = "vertical",
+        onScroll = function(n) offset = n; RenderRows() end,
+    })
+    scrollbar.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -28)
+    scrollbar.track:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, FOOTER_H)
 
     -- mouse-wheel scroll
     frame:EnableMouseWheel(true)

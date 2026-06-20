@@ -839,7 +839,10 @@ local function GetFixedTimeTextReserveWidth(anchorFrame, currentCastSettings)
             anchorFrame._timeTextReserveProbe = probe
         end
 
-        local ok = pcall(probe.SetFont, probe, safeFontPath, safeFontSize, safeFontFlags)
+        local ok
+        if nsHelpers.ApplyFontWithFallback then
+            ok = pcall(nsHelpers.ApplyFontWithFallback, probe, safeFontPath, safeFontSize, safeFontFlags)
+        end
         if not ok then
             probe:SetFont(GetFontPath(), currentCastSettings.fontSize or 12, GetFontOutline())
         end

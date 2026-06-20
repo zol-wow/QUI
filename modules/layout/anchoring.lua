@@ -2619,18 +2619,39 @@ local function ParentRestricts(parentFrame)
         or ns.Helpers.FrameIsAnchoringRestricted(parentFrame)
 end
 
+-- True when `frame` is ITSELF protected / anchoring-restricted (e.g. a
+-- SecureAuraHeader like the buff/debuff icon containers, which are explicitly
+-- protected by their secure aura children).  Such a frame cannot be
+-- SetPoint/SetSize'd in combat no matter what it is anchored to, so the
+-- absolute-pin trick gains nothing AND throws away the native relative follow.
+-- ns.Helpers used directly: AnchorOrPin can run before SetHelpers populates `Helpers`.
+local function FrameSelfRestricts(frame)
+    if frame == UIParent then return false end
+    return ns.Helpers.FrameIsProtected(frame)
+        or ns.Helpers.FrameIsAnchoringRestricted(frame)
+end
+
 -- Anchor frame's pt to parentFrame's relPt (+x, +y).  For dynamic-size keys
 -- whose parent is protected, pins to UIParent at absolute coords so the frame
 -- is never anchoring-restricted in combat (SetSize stays legal).  Everything
 -- else keeps relative anchoring (free follow from WoW's SetPoint chain).  Never throws.
+--
+-- The pin is taken ONLY when the frame being positioned is itself INSECURE.  A
+-- frame that is itself protected / a SecureAuraHeader (buffFrame/debuffFrame
+-- containers) is already anchoring-restricted by its own secure children:
+-- pinning it is combat-blocked (ClearAllPoints/SetPoint on a protected frame),
+-- and the relative anchor it keeps instead tracks the parent's secure-side
+-- resize natively for free — which the absolute pin could not (the re-pin can't
+-- run in combat, so the frame would freeze at its last out-of-combat position).
 --
 -- Follow for the absolute-pin case is event-driven: QUI_UpdateFramesAnchoredTo
 -- re-calls ApplyFrameAnchor (→ AnchorOrPin) when the target moves, re-pinning
 -- with fresh rect coords.  No per-tick loop — protected Blizzard parents are
 -- repositioned out of combat (Edit Mode), covered by ApplyAllFrameAnchors.
 local function AnchorOrPin(key, frame, pt, parentFrame, relPt, x, y)
-    if IsDynamicSizeAnchorKey(key) and ParentRestricts(parentFrame) then
-        -- ns.Helpers used directly: AnchorOrPin can run before SetHelpers populates `Helpers`.
+    if IsDynamicSizeAnchorKey(key) and ParentRestricts(parentFrame)
+        and not FrameSelfRestricts(frame)
+    then
         -- On hold/false (secret rect not yet readable) the helper leaves the
         -- existing point untouched; the event-driven follow path retries on the
         -- next move.

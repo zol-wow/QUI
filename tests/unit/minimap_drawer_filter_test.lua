@@ -5,6 +5,7 @@ local function noop() end
 
 local Frame = {}
 Frame.__index = Frame
+local createdFrames = {}
 
 local function newFrame(name, objectType, parent)
     return setmetatable({
@@ -44,18 +45,44 @@ function Frame:SetScript(scriptName, handler)
     self.scripts[scriptName] = handler
 end
 
-function Frame:RegisterEvent() end
-function Frame:UnregisterEvent() end
+function Frame:RegisterEvent(event)
+    self.events = self.events or {}
+    self.events[event] = true
+end
+function Frame:UnregisterEvent(event)
+    if self.events then self.events[event] = nil end
+end
 function Frame:Hide() end
 function Frame:Show() end
+function Frame:GetPoint() end
+function Frame:GetWidth() return self.width or 32 end
+function Frame:GetHeight() return self.height or 32 end
+function Frame:SetParent(parent) self.parent = parent end
+function Frame:SetScale(scale) self.scale = scale end
+function Frame:SetSize(width, height) self.width, self.height = width, height end
+function Frame:SetFrameStrata(strata) self.strata = strata end
 
 UIParent = newFrame("UIParent")
 Minimap = newFrame("Minimap", "Frame", UIParent)
 MinimapCluster = newFrame("MinimapCluster", "Frame", UIParent)
 MinimapBackdrop = newFrame("MinimapBackdrop", "Frame", UIParent)
+MicroMenuPositionEnum = { BottomLeft = 1, BottomRight = 2, TopLeft = 3, TopRight = 4 }
+MicroMenuContainer = newFrame("MicroMenuContainer", "Frame", UIParent)
+MicroMenu = newFrame("MicroMenu", "Frame", MicroMenuContainer)
+MicroMenu.isHorizontal = true
+function MicroMenuContainer:GetPosition()
+    return MicroMenuPositionEnum.BottomRight
+end
+QueueStatusButton = newFrame("QueueStatusButton", "Button", MicroMenu)
+function QueueStatusButton:UpdatePosition(microMenuPosition, isMenuHorizontal)
+    assert(microMenuPosition ~= nil, "QueueStatusButton UpdatePosition requires a micro-menu position")
+    self.lastMicroMenuPosition = microMenuPosition
+    self.lastIsMenuHorizontal = isMenuHorizontal
+end
 
 function CreateFrame(_, name, parent)
     local frame = newFrame(name, "Frame", parent or UIParent)
+    createdFrames[#createdFrames + 1] = frame
     if parent and parent.children then
         parent.children[#parent.children + 1] = frame
     end
@@ -93,6 +120,7 @@ local ns = {
             return {
                 enabled = true,
                 buttonDrawer = { enabled = true },
+                dungeonEye = { enabled = false },
             }
         end,
         CreateDBGetter = function()
@@ -147,5 +175,21 @@ local numericButtonPin = newFrame("WaypointMinimapButton42", "Button", Minimap)
 numericButtonPin:SetScript("OnMouseUp", noop)
 assert(isDrawerCandidate(numericButtonPin) == false,
     "numeric minimap button frames should stay on the minimap instead of entering the drawer")
+
+local queueStatusLoadedFrame
+for i = 1, #createdFrames do
+    local frame = createdFrames[i]
+    if frame.events and frame.events.ADDON_LOADED and frame.scripts.OnEvent then
+        queueStatusLoadedFrame = frame
+        break
+    end
+end
+
+assert(queueStatusLoadedFrame, "minimap event frame should listen for ADDON_LOADED")
+queueStatusLoadedFrame.scripts.OnEvent(queueStatusLoadedFrame, "ADDON_LOADED", "Blizzard_QueueStatusFrame")
+assert(QueueStatusButton.lastMicroMenuPosition == MicroMenuPositionEnum.BottomRight,
+    "restoring the dungeon eye should call Blizzard with the current micro-menu position")
+assert(QueueStatusButton.lastIsMenuHorizontal == true,
+    "restoring the dungeon eye should pass the micro-menu orientation")
 
 print("OK: minimap_drawer_filter_test")

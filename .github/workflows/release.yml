@@ -51,6 +51,7 @@ jobs:
           # when it has a matching TOC file, e.g. QUI_Bags/QUI_Bags.toc.
           excluded_suite_folders=(
             QUI_Debug
+            QUI_Logger
           )
 
           common_rsync_excludes=(
@@ -172,7 +173,9 @@ jobs:
             build/QUI/tests
             build/QUI/tools
             build/QUI/QUI_Debug
+            build/QUI/QUI_Logger
             build/QUI_Debug
+            build/QUI_Logger
             build/QUI/modules/debug
           )
 

@@ -50,7 +50,11 @@ local function makeFrame()
     function f:SetMaxLines(n) self.maxLines = n end
     function f:EnableMouseWheel(v) self.wheelEnabled = v end
     function f:SetHyperlinksEnabled() end
-    function f:AddMessage(m, r, g, b) self.added[#self.added + 1] = m end
+    function f:AddMessage(m, r, g, b)
+        self.added[#self.added + 1] = m
+        self.colors = self.colors or {}
+        self.colors[#self.added] = { r, g, b }
+    end
     function f:Clear() self.added = {} end
     function f:ScrollUp() end
     function f:ScrollDown() end
@@ -291,6 +295,35 @@ local secretEntry = { m = secret, r = 1, g = 0.28, b = 0, e = "CHAT_MSG_RAID_WAR
 Store.Append(secretEntry)
 assert(rawequal(smf1.added[#smf1.added], secret), "secret reaches window 1 AddMessage by identity")
 assert(rawequal(smf2.added[#smf2.added], secret), "secret reaches window 2 AddMessage by identity")
+
+-- Render-time TYPE color resolution: a type-derived line (GMOTD/system,
+-- CHAT_MSG_* non-channel) baked with a stale color at store time must paint
+-- with the CURRENT type color at render -- this is what stops the login GMOTD
+-- showing white before the per-type color syncs. Channel + producer lines are
+-- excluded and keep their baked color.
+do
+    ns.QUI.Chat._typeColorResolver = function(typeKey)
+        if typeKey == "GUILD" then return 0.25, 1, 0.25 end
+        return 1, 1, 1
+    end
+    Store.Clear()
+    smf1.added, smf1.colors = {}, {}
+    Display.Rebuild(1, nil)
+    -- GMOTD baked white at store; render must use the live GUILD color.
+    Store.Append({ m = "motd", r = 1, g = 1, b = 1, e = "GUILD_MOTD", k = "GUILD" })
+    local c = smf1.colors[#smf1.added]
+    assert(c[1] == 0.25 and c[2] == 1 and c[3] == 0.25,
+        "GMOTD renders live GUILD color, not baked white: " .. tostring(c[1]) .. "," .. tostring(c[2]) .. "," .. tostring(c[3]))
+    -- Channel line: per-slot color is NOT type-resolved -- keeps baked value.
+    Store.Append({ m = "wts", r = 0.9, g = 0.1, b = 0.1, e = "CHAT_MSG_CHANNEL", k = "CHANNEL", ch = "Trade" })
+    local cc = smf1.colors[#smf1.added]
+    assert(cc[1] == 0.9 and cc[2] == 0.1 and cc[3] == 0.1, "channel line keeps baked per-slot color")
+    -- Producer line (addon print): baked color authoritative, never re-resolved.
+    Store.Append({ m = "addon", r = 0.3, g = 0.3, b = 0.3, e = "ADDMESSAGE", k = "GUILD" })
+    local pc = smf1.colors[#smf1.added]
+    assert(pc[1] == 0.3 and pc[2] == 0.3 and pc[3] == 0.3, "producer line keeps baked color")
+    ns.QUI.Chat._typeColorResolver = nil
+end
 
 -- Rebuild window 1 with filter: only CHANNEL passes
 Store.Clear()

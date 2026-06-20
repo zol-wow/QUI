@@ -5035,6 +5035,27 @@ local function UpdateCooldownOnlyIcon(icon, entry)
         SyncCooldownBling(icon)
         return
     end
+    -- Poll-only idle skip. This is the PERIODIC poll entry
+    -- (walker:RefreshCooldownOnly); event-driven reactivation never comes
+    -- through here — ApplySpellID / ApplyAuraInstances / ApplyItemScope call
+    -- UpdateIconCooldown directly. An icon that last resolved to a stable
+    -- inactive cooldown (no active timer) resolves to the exact same thing
+    -- every tick until an event reactivates it, and that event resolves it
+    -- directly. Re-resolving idle icons here is pure GC churn (the bulk of
+    -- combat allocation when only a few cooldowns are live), so skip it.
+    -- Kept polling: macros (/castsequence re-resolves with no per-step event)
+    -- and aura entries (guard; the walker already excludes aura containers).
+    -- Safety valve: set ns._cdmPollSkipIdle = false in-game to disable.
+    if ns._cdmPollSkipIdle ~= false
+        and icon._resolvedCooldownMode == "inactive"
+        and icon._hasCooldownActive ~= true
+        and entry
+        and entry.type ~= "macro"
+        and not IsAuraEntry(entry) then
+        if durationBindingStats then durationBindingStats.pollIdleSkips = durationBindingStats.pollIdleSkips + 1 end
+        return
+    end
+    if durationBindingStats then durationBindingStats.pollIdleResolved = durationBindingStats.pollIdleResolved + 1 end
     UpdateIconCooldown(icon)
 end
 
@@ -5442,17 +5463,21 @@ local rangePolicy = ns.CDMIconRangePolicy and ns.CDMIconRangePolicy.Create({
         return (cachedDB and (cachedDB[viewerType] or (cachedDB.containers and cachedDB.containers[viewerType])))
             or GetTrackerSettings(viewerType)
     end,
-    querySpellInRange = function(...)
-        return Sources and Sources.QuerySpellInRange and Sources.QuerySpellInRange(...)
+    -- Fixed-arity (not function(...)): these run per distinct spellID per
+    -- usability/range event in combat, and forwarding `...` allocates a vararg
+    -- frame each call. The Sources.Query* signatures are fixed, so spell out
+    -- the params and forward them positionally (multi-return is preserved).
+    querySpellInRange = function(spellID, unit)
+        return Sources and Sources.QuerySpellInRange and Sources.QuerySpellInRange(spellID, unit)
     end,
-    querySpellUsable = function(...)
-        return Sources and Sources.QuerySpellUsable and Sources.QuerySpellUsable(...)
+    querySpellUsable = function(spellID)
+        return Sources and Sources.QuerySpellUsable and Sources.QuerySpellUsable(spellID)
     end,
-    querySpellHasRange = function(...)
-        return Sources and Sources.QuerySpellHasRange and Sources.QuerySpellHasRange(...)
+    querySpellHasRange = function(spellID)
+        return Sources and Sources.QuerySpellHasRange and Sources.QuerySpellHasRange(spellID)
     end,
-    enableSpellRangeCheck = function(...)
-        return Sources and Sources.EnableSpellRangeCheck and Sources.EnableSpellRangeCheck(...)
+    enableSpellRangeCheck = function(spellID, enable)
+        return Sources and Sources.EnableSpellRangeCheck and Sources.EnableSpellRangeCheck(spellID, enable)
     end,
     cooldownHasVisualPriority = function(icon, entry, settings)
         return _resolverRuntimePolicy.CooldownHasVisualPriority(icon, entry, settings, GetTime())
@@ -5761,7 +5786,8 @@ end)
 -- composer's owned catalog.
 
 local function SetupDebugInstrumentation()
-    durationBindingStats = { keyBuilds = 0, keyCacheHits = 0, resolvedStateReuses = 0 }
+    durationBindingStats = { keyBuilds = 0, keyCacheHits = 0, resolvedStateReuses = 0,
+        pollIdleSkips = 0, pollIdleResolved = 0 }
     fullUpdateScheduleStats = {
         total = 0,
         request = 0,
@@ -5776,6 +5802,8 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "CDM_durationBindingKeys", counter = true, fn = function() return durationBindingStats.keyBuilds end }
     mp[#mp + 1] = { name = "CDM_durationBindingKeyCacheHits", counter = true, fn = function() return durationBindingStats.keyCacheHits end }
     mp[#mp + 1] = { name = "CDM_applyResolvedStateReuses", counter = true, fn = function() return durationBindingStats.resolvedStateReuses end }
+    mp[#mp + 1] = { name = "CDM_pollIdleSkips", counter = true, fn = function() return durationBindingStats.pollIdleSkips end }
+    mp[#mp + 1] = { name = "CDM_pollIdleResolved", counter = true, fn = function() return durationBindingStats.pollIdleResolved end }
     mp[#mp + 1] = { name = "CDM_fullUpdateSchedules", counter = true, fn = function() return fullUpdateScheduleStats.total end }
     mp[#mp + 1] = { name = "CDM_fullUpdateScheduleRequest", counter = true, fn = function() return fullUpdateScheduleStats.request end }
     mp[#mp + 1] = { name = "CDM_fullUpdateScheduleMirrorFallback", counter = true, fn = function() return fullUpdateScheduleStats.mirrorFallback end }
@@ -5985,6 +6013,17 @@ do
             local mirror = ns.CDMBlizzMirror
             return mirror and mirror.GetStateByCooldownID
                 and mirror.GetStateByCooldownID(cooldownID, category)
+        end,
+        -- True only when the icon is PROVABLY a player self-aura (mirror viewer
+        -- with selfAura == true). Used to skip such icons on a target-change
+        -- aura pass -- a target swap can't change the player's own auras.
+        -- Conservatively false for non-mirror / unknown-self icons (they
+        -- re-resolve), so it never drops a target aura.
+        isDefinitivelySelfAuraIcon = function(icon)
+            local mirror = ns.CDMBlizzMirror
+            local cdID = icon and icon._blizzMirrorCooldownID
+            if not (mirror and cdID and mirror.IsSelfAuraViewerCategory) then return false end
+            return mirror.IsSelfAuraViewerCategory(cdID, icon._blizzMirrorCategory) == true
         end,
         markBarsForAuraRefresh = function(unit, updateInfo)
             local bars = ns.CDMBars

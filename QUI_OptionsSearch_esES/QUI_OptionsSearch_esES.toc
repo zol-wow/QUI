@@ -1,4 +1,4 @@
-## Interface: 120000, 120001, 120005, 120007
+## Interface: 120000, 120001, 120005, 120007, 120100
 ## Title: |cFF30D1FFQUI|r Options Search (esES)
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Load-on-demand localized settings search index for QUI (esES)

@@ -85,7 +85,7 @@ QUI_ADDONS_DIR="$STAGING_ROOT" "$ADDON_DIR/copy-all.sh" "${copy_args[@]}"
 DEPLOY_DIR_NAMES=("$DEPLOY_NAME")
 while IFS= read -r deploy_dir; do
     deploy_basename="$(basename "$deploy_dir")"
-    if [[ "$deploy_basename" == "${DEPLOY_NAME}_Debug" ]]; then
+    if [[ "$deploy_basename" == "${DEPLOY_NAME}_Debug" || "$deploy_basename" == "${DEPLOY_NAME}_Logger" ]]; then
         continue
     fi
     DEPLOY_DIR_NAMES+=("$deploy_basename")

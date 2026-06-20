@@ -10,7 +10,7 @@ for loc in $LOCALES; do
   mkdir -p "$dir"
   "${LUA_BIN}" tools/generate_search_cache.lua "$loc"
   cat > "${dir}/${dir}.toc" <<EOF
-## Interface: 120000, 120001, 120005, 120007
+## Interface: 120000, 120001, 120005, 120007, 120100
 ## Title: |cFF30D1FFQUI|r Options Search (${loc})
 ## IconTexture: Interface\\AddOns\\QUI\\assets\\QUI
 ## Notes: Load-on-demand localized settings search index for QUI (${loc})

@@ -110,6 +110,8 @@ do
             "showCooldownText", "cooldownTextFontSize", "cooldownTextColor",
             "cooldownTextAnchor", "cooldownTextOffsetX", "cooldownTextOffsetY",
             "showFlash",
+            "showInOpenWorld", "showInDungeons", "showInMythicPlus",
+            "showInRaids", "showInMythicRaids", "showOnLuraMythic",
         }
 
         local copyBarOptions = {
@@ -121,6 +123,12 @@ do
 
         local function CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
             return U.CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
+        end
+
+        local function RefreshActionBarFade()
+            if type(_G.QUI_RefreshActionBarFade) == "function" then
+                _G.QUI_RefreshActionBarFade()
+            end
         end
 
         local function BuildTotemBarSettings(content)
@@ -568,6 +576,28 @@ do
                     { description = ns.L["Color used for cooldown duration text on this bar."] }), body, sy)
             end, sections, relayout)
             end -- SKINNABLE_BAR_KEYS guard
+
+            CreateCollapsible(content, ns.L["Context Visibility"], 6 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Open World"],
+                    "showInOpenWorld", barDB, RefreshActionBarFade,
+                    { description = ns.L["Keep this bar fully visible while you are outdoors or otherwise not inside instanced content."] }), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Dungeons"],
+                    "showInDungeons", barDB, RefreshActionBarFade,
+                    { description = ns.L["Keep this bar fully visible in non-Mythic+ dungeons."] }), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Mythic+"],
+                    "showInMythicPlus", barDB, RefreshActionBarFade,
+                    { description = ns.L["Keep this bar fully visible in Mythic+ dungeons."] }), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Raids"],
+                    "showInRaids", barDB, RefreshActionBarFade,
+                    { description = ns.L["Keep this bar fully visible in non-Mythic raids."] }), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Mythic Raids"],
+                    "showInMythicRaids", barDB, RefreshActionBarFade,
+                    { description = ns.L["Keep this bar fully visible in Mythic raid instances."] }), body, sy)
+                P(GUI:CreateFormCheckbox(body, ns.L["Show On Mythic L'ura"],
+                    "showOnLuraMythic", barDB, RefreshActionBarFade,
+                    { description = ns.L["Keep this bar fully visible during the Mythic L'ura encounter in March on Quel'Danas."] }), body, sy)
+            end, sections, relayout)
 
             -- Position / Anchoring
             U.BuildPositionCollapsible(content, barKey, nil, sections, relayout)

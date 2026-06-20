@@ -24,7 +24,24 @@ end
 -- Style each pooled ScrollBox row as it's acquired (shared by all lists).
 local function skinRow(row)
     SkinBase.SkinScrollRow(row)
-    SkinBase.SkinFrameText(row, { recurse = true })
+    -- Order/recipe/listing rows are TableBuilder rows whose cell fontstrings are
+    -- built lazily. LockPooledRowText does the guarded recursive pass once, then
+    -- locks the row subtree so the QUI face re-applies on every cell rebind.
+    SkinBase.LockPooledRowText(row, 4)
+end
+
+-- Order-table column headers (ProfessionsCrafterTableHeaderStringTemplate, a
+-- ColumnDisplay button) are pool-built lazily and swap their Highlight font
+-- OBJECT on hover. Hook the shared mixin Init once so every header (this window
+-- and the crafter ProfessionsFrame, which use the same template) gets the QUI
+-- font driven onto its font objects right after Blizzard builds it.
+local function HookProfessionTableHeaderFonts()
+    local mixin = _G.ProfessionsCrafterTableHeaderStringMixin
+    if not mixin or mixin.Init == nil or SkinBase.GetFrameData(mixin, "headerFontHooked") then return end
+    hooksecurefunc(mixin, "Init", function(self)
+        SkinBase.ApplyButtonFontObjects(self)
+    end)
+    SkinBase.SetFrameData(mixin, "headerFontHooked", true)
 end
 
 -- Suppress a category button's default textures (safe to call on every refresh;
@@ -96,7 +113,7 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SkinButton(searchBar.SearchButton, { font = true })
         end
         if searchBar.FavoritesSearchButton then
-            SkinBase.SkinButton(searchBar.FavoritesSearchButton)
+            SkinBase.SkinButton(searchBar.FavoritesSearchButton, { font = true })
         end
         -- Filter dropdown (WowStyle1 dropdown — standard button textures don't apply)
         if searchBar.FilterDropdown then
@@ -139,12 +156,32 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             -- also lock the font object to re-assert on rebinds in between.
             SkinBase.SkinFontString(button.Text)
             SkinBase.LockFontObject(button, { fontOnly = true })
+            -- Init's SetNormalFontObject REPLACES the font object SkinCategoryButton
+            -- drove once (so the once-guard won't re-drive it). Re-drive here on every
+            -- bind so the normal AND hover/disable font objects stay on the QUI face.
+            SkinBase.ApplyButtonFontObjects(button)
         end
         local function RefreshCategoryButtons(self)
             SafeForEachFrame(self, StyleCategoryRow)
         end
 
         SkinBase.HookScrollBoxAcquired(categoryList.ScrollBox, StyleCategoryRow)
+
+        -- The shared element initializer (ProfessionsCustomerOrdersCategoryButtonMixin
+        -- :Init) re-asserts the Blizzard nav-button atlas + normalTexture:SetAlpha(1)
+        -- + SetNormalFontObject on EVERY bind (initial data load, expand/collapse,
+        -- scroll-recycle). Those rebinds DON'T re-fire the acquired-frame callback for
+        -- on-screen buttons, so the stock texture/font flashes back. Hook the mixin
+        -- once so the QUI suppression + skin re-runs right after Blizzard, same layout
+        -- pass — mirrors the AuctionHouseFilterButton_SetUp hook.
+        local catMixin = _G.ProfessionsCustomerOrdersCategoryButtonMixin
+        if catMixin and catMixin.Init and not SkinBase.GetFrameData(categoryList, "categoryInitHooked") then
+            hooksecurefunc(catMixin, "Init", function(self)
+                if not IsEnabled() or self.isSpacer then return end
+                StyleCategoryRow(self)
+            end)
+            SkinBase.SetFrameData(categoryList, "categoryInitHooked", true)
+        end
 
         -- Selecting/deselecting a category invalidates the tree data provider,
         -- which re-runs the element initializer (restoring Blizzard textures) on
@@ -233,6 +270,10 @@ local function SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         -- Duration dropdown
         if pc.DurationDropdown then
             SkinBase.SkinDropdown(pc.DurationDropdown)
+            if pc.DurationDropdown.Text then
+                SkinBase.SkinFontString(pc.DurationDropdown.Text, { fontOnly = true })
+            end
+            SkinBase.LockFrameTextObjects(pc.DurationDropdown, 2)
         end
         -- Note edit box
         if pc.NoteEditBox then
@@ -243,9 +284,11 @@ local function SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     -- Dropdowns on the form
     if form.MinimumQuality and form.MinimumQuality.Dropdown then
         SkinBase.SkinDropdown(form.MinimumQuality.Dropdown)
+        SkinBase.LockDropdownText(form.MinimumQuality.Dropdown)
     end
     if form.OrderRecipientDropdown then
         SkinBase.SkinDropdown(form.OrderRecipientDropdown)
+        SkinBase.LockDropdownText(form.OrderRecipientDropdown)
     end
 
     -- Recipient target edit box
@@ -264,7 +307,7 @@ local function SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SkinListContainer(listings.OrderList, skinRow)
         end
         if listings.CloseButton then
-            SkinBase.SkinButton(listings.CloseButton)
+            SkinBase.SkinButton(listings.CloseButton, { font = true })
         end
     end
 end
@@ -286,6 +329,7 @@ local function SkinCraftingOrders()
 
     SkinBase.SkinCloseButton(frame.CloseButton or _G.ProfessionsCustomerOrdersFrameCloseButton)
 
+    HookProfessionTableHeaderFonts()
     SkinTabs(frame)
     SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinMyOrders(frame)
@@ -302,8 +346,7 @@ end
 local function UpdatePanelColors(panel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = panel and SkinBase.GetBackdrop(panel)
     if not bd then return end
-    bd:SetBackdropColor(SkinBase.GetDepthColor("SUBPANEL"))
-    bd:SetBackdropBorderColor(sr, sg, sb, sa * 0.3)
+    SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa * 0.3 }, { SkinBase.GetDepthColor("SUBPANEL") })
 end
 
 ---------------------------------------------------------------------------
@@ -319,8 +362,7 @@ local function RefreshCraftingOrdersColors()
     -- Main backdrop
     local mainBd = SkinBase.GetBackdrop(frame)
     if mainBd then
-        mainBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        mainBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(mainBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     end
 
     -- Tabs
@@ -366,8 +408,7 @@ local function RefreshCraftingOrdersColors()
         if form.CurrentListings then
             local listingsBd = SkinBase.GetBackdrop(form.CurrentListings)
             if listingsBd then
-                listingsBd:SetBackdropColor(bgr, bgg, bgb, bga)
-                listingsBd:SetBackdropBorderColor(sr, sg, sb, sa)
+                SkinBase.SetBackdropColors(listingsBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
             end
             SkinBase.RefreshWidget(form.CurrentListings.CloseButton)
         end
@@ -390,16 +431,4 @@ end
 -- INITIALIZATION
 ---------------------------------------------------------------------------
 
-local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("ADDON_LOADED")
-initFrame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" and addon == "Blizzard_ProfessionsCustomerOrders" then
-        C_Timer.After(0.1, SkinCraftingOrders)
-        self:UnregisterEvent("ADDON_LOADED")
-    end
-end)
-
-if C_AddOns.IsAddOnLoaded("Blizzard_ProfessionsCustomerOrders") then
-    C_Timer.After(0.1, SkinCraftingOrders)
-    initFrame:UnregisterEvent("ADDON_LOADED")
-end
+SkinBase.OnAddOnLoaded("Blizzard_ProfessionsCustomerOrders", SkinCraftingOrders, 0)

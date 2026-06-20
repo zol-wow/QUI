@@ -40,6 +40,14 @@ local Alts = ns.Alts or {}; ns.Alts = Alts
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
+local function CJKFont(fs, p, s, f)
+    if Helpers and Helpers.ApplyFontWithFallback then
+        Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
 local FilterPopup = {}
 Alts.FilterPopup = FilterPopup
 
@@ -212,7 +220,7 @@ function FilterPopup.Attach(opts)
         sb:SetHeight(22)
         sb:SetPoint("TOPLEFT", popup, "TOPLEFT", 6, -6)
         sb:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -6, -6)
-        sb:SetFont(GeneralFont(), 11, GeneralOutline())
+        CJKFont(sb, GeneralFont(), 11, GeneralOutline())
         sb:SetTextInsets(6, 6, 0, 0)
         sb:SetMaxLetters(40)
         UIKit.CreateBackground(sb, 1, 1, 1, 0.06)

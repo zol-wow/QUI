@@ -133,6 +133,9 @@ local mirrorStates = {
         auraUnit = "target",
     },
 }
+-- Names the isDefinitivelySelfAuraIcon stub reports as PROVABLE player
+-- self-auras (mirror selfAura == true). Populated by the target-scope test.
+local selfAuraNames = {}
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
@@ -180,6 +183,9 @@ local controller = module.Create({
     end,
     isAuraEntry = function(entry)
         return entry and entry.kind == "aura"
+    end,
+    isDefinitivelySelfAuraIcon = function(icon)
+        return icon ~= nil and selfAuraNames[icon.name] == true
     end,
     getMirrorStateByCooldownID = function(cooldownID, category)
         return mirrorStates[tostring(cooldownID) .. ":" .. tostring(category)]
@@ -464,16 +470,21 @@ spellIcon._hasCooldownActive = true
 controller:Handle("PLAYER_TARGET_CHANGED")
 assert(rangeRefreshes == rangeRefreshesBeforeTarget + 1,
     "target changes should still refresh icon ranges")
-assert(auraApplied.aura == 1, "target changes should refresh aura entries through aura scope")
+-- ApplyTargetScope no longer runs an aura scope. A target change's aura side is
+-- owned by cdm_spelldata's PLAYER_TARGET_CHANGED handler (ReleaseCapturedAuras +
+-- NotifyAuraConsumers("target", nil) -> a full ApplyAuraScope); doing it here
+-- too was a redundant SECOND full aura walk per target change. The controller's
+-- job on a target change is range + usability only.
+assert(auraApplied.aura == nil, "target changes must NOT run aura scope in the controller (cdm_spelldata owns it)")
 assert(auraApplied.item == nil, "target changes should not run player item-aura scope")
 -- applyResolvedCooldown is not called in the usability path; visibility still updates.
 assert(applied.spell == nil, "target changes must not call applyResolvedCooldown via the usability path")
 assert(visibilityUpdated.spell == 1, "target changes should still update visibility for active cooldown icons")
 assert(#schedules == schedulesBeforeTarget,
     "target changes should not schedule a broad full cooldown walk")
-assert(barsDirty == true, "target aura refresh should mark bars dirty when aura scope refreshed icons")
-assert(dirtyBarRuns == dirtyRunsBeforeTarget + 1,
-    "target aura refresh should run dirty bar updates without a full icon walk")
+assert(barsDirty == false, "target changes must not mark bars dirty in the controller (no aura scope here)")
+assert(dirtyBarRuns == dirtyRunsBeforeTarget,
+    "target changes must not run dirty bar updates in the controller (no aura scope here)")
 
 reset(applied)
 reset(runtimeUpdated)
@@ -686,5 +697,51 @@ inCombat = false
 
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", secretSpellID, nil, "refresh")
 assert(true, "secret spell IDs should be treated as unscoped without Lua comparisons")
+
+---------------------------------------------------------------------------
+-- Target-change aura pass (Option A scoping): a full aura refresh for unit
+-- "target" must SKIP icons we can prove are player self-auras (mirror
+-- selfAura == true), but still re-resolve target-aura icons AND non-mirror
+-- aura icons (which we cannot prove are self). A player-unit full refresh must
+-- skip nothing.
+---------------------------------------------------------------------------
+inCombat = false
+local selfAuraIcon = makeIcon("selfAura", {
+    id = 909, spellID = 909, kind = "aura", type = "spell",
+    viewerType = "buff", containerType = "aura",
+})
+selfAuraIcon._blizzMirrorCooldownID = 909
+selfAuraIcon._blizzMirrorCategory = "buff"
+local targetAuraIcon = makeIcon("targetAura", {
+    id = 910, spellID = 910, kind = "aura", type = "spell",
+    viewerType = "buff", containerType = "aura",
+})
+targetAuraIcon._blizzMirrorCooldownID = 910
+targetAuraIcon._blizzMirrorCategory = "buff"
+local buffPool = iconPools.buff
+buffPool[#buffPool + 1] = selfAuraIcon
+buffPool[#buffPool + 1] = targetAuraIcon
+selfAuraNames.selfAura = true -- only this icon is a PROVABLE self-aura
+
+-- Target full refresh (cdm_spelldata's PLAYER_TARGET_CHANGED path passes nil).
+reset(auraApplied)
+controller:Handle("UNIT_AURA", "target", nil)
+assert(auraApplied.selfAura == nil,
+    "target aura pass must SKIP provable self-aura icons (mirror selfAura==true)")
+assert(auraApplied.targetAura == 1,
+    "target aura pass must re-resolve target-aura (non-self) icons")
+assert(auraApplied.aura == 1,
+    "target aura pass must re-resolve non-mirror aura icons (cannot prove self)")
+
+-- Player full refresh must NOT skip the self-aura icon.
+reset(auraApplied)
+controller:Handle("UNIT_AURA", "player", { isFullUpdate = true })
+assert(auraApplied.selfAura == 1,
+    "player aura pass must still re-resolve self-aura icons (no target scoping)")
+
+-- Restore shared fixtures.
+buffPool[#buffPool] = nil
+buffPool[#buffPool] = nil
+selfAuraNames.selfAura = nil
 
 print("OK: cdm_icon_runtime_refresh_test")

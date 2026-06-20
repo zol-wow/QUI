@@ -182,6 +182,10 @@ function ShowLinkedBarDirect(barKey)
         SetBarAlpha(barKey, 1)
         return
     end
+    if ShouldForceShowForActionBarContext(barKey) then
+        SetBarAlpha(barKey, 1)
+        return
+    end
     if ShouldSuppressMouseoverHideForLevel() then
         SetBarAlpha(barKey, 1)
         return
@@ -211,6 +215,10 @@ function FadeLinkedBarDirect(barKey)
 
     if not barSettings then return end
     if ShouldForceShowForSpellBook() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForActionBarContext(barKey) then
         SetBarAlpha(barKey, 1)
         return
     end
@@ -246,6 +254,11 @@ function FadeLinkedBarDirect(barKey)
             state.delayTimer = nil
             return
         end
+        if ShouldForceShowForActionBarContext(barKey) then
+            SetBarAlpha(barKey, 1)
+            state.delayTimer = nil
+            return
+        end
 
         if IsSpellFlyoutActiveForBar(barKey) then
             SetBarAlpha(barKey, 1)
@@ -275,6 +288,10 @@ function OnBarMouseEnter(barKey)
         return
     end
     if ShouldForceShowForSpellBook() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForActionBarContext(barKey) then
         SetBarAlpha(barKey, 1)
         return
     end
@@ -319,6 +336,10 @@ function OnBarMouseLeave(barKey)
         return
     end
     if ShouldForceShowForSpellBook() then
+        SetBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForActionBarContext(barKey) then
         SetBarAlpha(barKey, 1)
         return
     end
@@ -382,6 +403,11 @@ function OnBarMouseLeave(barKey)
             end
 
             if ShouldForceShowForSpellBook() then
+                SetBarAlpha(barKey, 1)
+                state.delayTimer = nil
+                return
+            end
+            if ShouldForceShowForActionBarContext(barKey) then
                 SetBarAlpha(barKey, 1)
                 state.delayTimer = nil
                 return
@@ -456,6 +482,12 @@ function SetupBarMouseover(barKey)
     end
 
     if ShouldForceShowForSpellBook() then
+        state.isFading = false
+        CancelBarFadeTimers(state)
+        SetBarAlpha(barKey, 1)
+        return
+    end
+    if ShouldForceShowForActionBarContext(barKey) then
         state.isFading = false
         CancelBarFadeTimers(state)
         SetBarAlpha(barKey, 1)
@@ -749,4 +781,3 @@ function SkinBar(barKey)
         end
     end
 end
-

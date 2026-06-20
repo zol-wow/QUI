@@ -1,0 +1,8 @@
+## Interface: 120000, 120001, 120005, 120007, 120100
+## Title: |cFF30D1FFQUI|r Logger (dev)
+## Notes: Dev-only event stream recorder. Not for release.
+## Author: Drew
+## Version: 0.1.0
+## SavedVariablesPerCharacter: QUI_LoggerDB
+
+recorder.lua

@@ -212,7 +212,7 @@ local function ApplyFontSizeViaFontObjects(size)
     -- client. Font-object level (taint-safe, like header/body above).
     if GameTooltipTextSmall and defaultSmallFont then
         local curFont, curSize, curFlags = GameTooltipTextSmall:GetFont()
-        local smallSize = (type(curSize) == "number" and curSize)
+        local smallSize = (type(curSize) == "number" and curSize > 0 and curSize)
             or (type(defaultSmallSize) == "number" and defaultSmallSize) or size
         local targetFlags = outline or curFlags or defaultSmallFlag or ""
         local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, smallSize, targetFlags)
@@ -650,7 +650,9 @@ local function StyleTooltip(tooltip)
     TooltipDebugCount("skin.style")
     local dbg, dbgStart, dbgHeap = TooltipDebugBegin()
     pcall(ApplyTooltipChrome, tooltip)
-    SkinBase.SkinFrameText(tooltip, { recurse = true })
+    if tooltip ~= GameTooltip then
+        SkinBase.SkinFrameText(tooltip, { recurse = true })
+    end
     -- ItemRefTooltip (the item-link tooltip) carries a
     -- UIPanelCloseButtonNoScripts at .CloseButton (ItemRef.xml). Without
     -- restyling it the stock red Blizzard X shows through the otherwise-skinned

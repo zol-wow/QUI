@@ -147,14 +147,12 @@ local BUFF_EXCLUSIVE_OPTIONS = {
     { value = AURA_FILTER_NONE_SENTINEL, text = ns.L["None"]                },
     { value = "EXTERNAL_DEFENSIVE",      text = ns.L["External Defensives"] },
     { value = "BIG_DEFENSIVE",           text = ns.L["Big Defensives"]      },
-    { value = "IMPORTANT",               text = ns.L["Important"]           },
 }
 
 local DEBUFF_EXCLUSIVE_OPTIONS = {
     { value = AURA_FILTER_NONE_SENTINEL,  text = ns.L["None"]                },
     { value = "CROWD_CONTROL",            text = ns.L["Crowd Control"]       },
     { value = "RAID_PLAYER_DISPELLABLE",  text = ns.L["Player Dispellable"]  },
-    { value = "IMPORTANT",                text = ns.L["Important"]           },
 }
 
 local function GetGUI()
@@ -169,6 +167,19 @@ end
 
 local function GetOptionsAPI()
     return ns.QUI_Options
+end
+
+local function GetFontListWithDefault(optionsAPI)
+    local fonts = { { value = "", text = ns.L["(Frame Font)"] } }
+    if optionsAPI and type(optionsAPI.GetFontList) == "function" then
+        for _, option in ipairs(optionsAPI.GetFontList() or {}) do
+            fonts[#fonts + 1] = {
+                value = option.value,
+                text = option.text,
+            }
+        end
+    end
+    return fonts
 end
 
 local function GetProfileDB()
@@ -2306,6 +2317,80 @@ local function RenderTextNameSection(sectionHost, ctx)
     return builder.Height()
 end
 
+local function RenderTextLevelSection(sectionHost, ctx)
+    local gui = GetGUI()
+    local optionsAPI = GetOptionsAPI()
+    local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
+    local unit = ResolveUnitDB(unitKey)
+    if not gui or not optionsAPI or not unit then
+        return nil
+    end
+
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Text"))
+    if not builder then
+        return nil
+    end
+
+    builder.Header(ns.L["Level Text"])
+    local card = builder.Card()
+    local fontRow, sizeRow, colorRow, anchorRow, xOffsetRow, yOffsetRow
+
+    local function UpdateLevelRows()
+        local alpha = unit.unitDB.showLevel == true and 1.0 or 0.4
+        if fontRow then fontRow:SetAlpha(alpha) end
+        if sizeRow then sizeRow:SetAlpha(alpha) end
+        if colorRow then colorRow:SetAlpha(alpha) end
+        if anchorRow then anchorRow:SetAlpha(alpha) end
+        if xOffsetRow then xOffsetRow:SetAlpha(alpha) end
+        if yOffsetRow then yOffsetRow:SetAlpha(alpha) end
+    end
+
+    local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showLevel", unit.unitDB, function()
+        RefreshUnitFrames()
+        UpdateLevelRows()
+    end, {
+        description = ns.L["Show the unit's level on this frame."],
+    })
+    local fontDropdown = gui:CreateFormDropdown(card.frame, nil, GetFontListWithDefault(optionsAPI), "levelFont", unit.unitDB, RefreshUnitFrames, nil, {
+        searchable = true,
+    })
+    fontRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Font"], fontDropdown)
+    card.AddRow(
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Level"], showCheckbox),
+        fontRow
+    )
+
+    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "levelFontSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
+        description = ns.L["Font size used for the unit level."],
+    })
+    sizeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Font Size"], sizeSlider)
+    local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "levelTextColor", unit.unitDB, RefreshUnitFrames, nil, {
+        description = ns.L["Color used for the level text."],
+    })
+    colorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Text Color"], colorPicker)
+    card.AddRow(sizeRow, colorRow)
+
+    local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "levelAnchor", unit.unitDB, RefreshUnitFrames, {
+        description = ns.L["Where on the frame the level text is anchored. X/Y Offset below nudges it from this anchor point."],
+    })
+    anchorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Anchor"], anchorDropdown)
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "levelOffsetX", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
+        description = ns.L["Horizontal pixel offset for the level text from its anchor. Positive moves right, negative moves left."],
+    })
+    xOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level X Offset"], xOffsetSlider)
+    card.AddRow(anchorRow, xOffsetRow)
+
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "levelOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
+        description = ns.L["Vertical pixel offset for the level text from its anchor. Positive moves up, negative moves down."],
+    })
+    yOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Y Offset"], yOffsetSlider)
+    card.AddRow(yOffsetRow)
+
+    UpdateLevelRows()
+    builder.CloseCard(card)
+    return builder.Height()
+end
+
 local function RenderTextTargetOfTargetSection(sectionHost, ctx)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
@@ -2849,7 +2934,7 @@ local function BuildTextTabFeature(unitKey)
         return TEXT_TAB_FEATURES[unitKey]
     end
 
-    local sections = { "name" }
+    local sections = { "name", "level" }
     if unitKey == "target" then
         sections[#sections + 1] = "targetOfTarget"
     end
@@ -2876,6 +2961,12 @@ local function BuildTextTabFeature(unitKey)
                 kind = "custom",
                 minHeight = 118,
                 render = RenderTextNameSection,
+            }),
+            Schema.Section({
+                id = "level",
+                kind = "custom",
+                minHeight = 150,
+                render = RenderTextLevelSection,
             }),
             Schema.Section({
                 id = "targetOfTarget",

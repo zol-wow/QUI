@@ -63,6 +63,26 @@ if anchorOrPinStart then
     check("AnchorOrPin calls SmoothSetPoint on the else/fallback branch",
         funcBody:find("SmoothSetPoint", 1, true) ~= nil)
 
+    -- -------------------------------------------------------------------------
+    -- 3b. AnchorOrPin must NOT pin a frame that is itself protected /
+    --     anchoring-restricted (e.g. buffFrame/debuffFrame SecureAuraHeaders).
+    --     Pinning such a frame is combat-blocked AND loses the native relative
+    --     follow that tracks the parent's secure-side resize. Regression guard
+    --     for: debuffFrame (anchored to buffFrame) frozen on in-combat resize.
+    -- -------------------------------------------------------------------------
+    check("AnchorOrPin gates the pin on `not FrameSelfRestricts(frame)`",
+        funcBody:find("not FrameSelfRestricts(frame)", 1, true) ~= nil)
+
+    local selfStart = src:find("local function FrameSelfRestricts", 1, true)
+    check("anchoring.lua defines local function FrameSelfRestricts", selfStart ~= nil)
+    if selfStart then
+        local sfBody = src:sub(selfStart, selfStart + 600)
+        check("FrameSelfRestricts checks the frame's own FrameIsProtected",
+            sfBody:find("ns.Helpers.FrameIsProtected", 1, true) ~= nil)
+        check("FrameSelfRestricts checks the frame's own FrameIsAnchoringRestricted",
+            sfBody:find("ns.Helpers.FrameIsAnchoringRestricted", 1, true) ~= nil)
+    end
+
     -- ParentRestricts guards UIParent short-circuit first, then delegates.
     local parentRestrictsStart = src:find("local function ParentRestricts", 1, true)
     if parentRestrictsStart then

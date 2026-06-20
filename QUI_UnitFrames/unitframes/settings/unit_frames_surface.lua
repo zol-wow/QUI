@@ -183,6 +183,15 @@ local function ResolveUnitFrameFont()
     return path, outline
 end
 
+local function ResolveElementFont(fontName, fallbackPath)
+    local LSM = GetLSM()
+    if LSM and LSM.Fetch and type(fontName) == "string" and fontName ~= "" then
+        local path = LSM:Fetch("font", fontName, true)
+        if path then return path end
+    end
+    return fallbackPath
+end
+
 local function ResolveStatusBarTexture(name)
     local LSM = GetLSM()
     if LSM and LSM.Fetch and name then
@@ -353,6 +362,10 @@ local function BuildMockFrame(host)
     -- Name text (top-left of the health bar)
     mock._nameText = mock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     mock._nameText:SetJustifyH("LEFT")
+
+    -- Level text (independent position/font controls)
+    mock._levelText = mock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    mock._levelText:SetJustifyH("RIGHT")
 
     -- Health text (right side of health bar)
     mock._healthText = mock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -643,6 +656,36 @@ local function RefreshMock()
         )
     else
         mock._nameText:Hide()
+    end
+
+    -- Level text. Mirrors the runtime's opt-in level string without touching
+    -- name truncation or inline target-of-target text.
+    if unitDB.showLevel == true then
+        mock._levelText:Show()
+        local levelFont = math.max(8, math.min(24, math.floor((unitDB.levelFontSize or unitDB.nameFontSize or 11) * scale + 0.5)))
+        CJKFont(mock._levelText, ResolveElementFont(unitDB.levelFont, fontPath), levelFont, fontOutline)
+
+        local levels = {
+            player = "80",
+            target = "82",
+            focus = "81",
+            targettarget = "80",
+            pet = "80",
+            boss = "??",
+        }
+        mock._levelText:SetText(levels[State.selectedUnit] or "80")
+
+        local lr, lg, lb, la = ResolveTextColor(State.selectedUnit, false, unitDB.levelTextColor)
+        mock._levelText:SetTextColor(lr, lg, lb, la)
+        ApplyTextAnchor(
+            mock._levelText, mock,
+            unitDB.levelAnchor or "RIGHT",
+            (unitDB.levelOffsetX or -4) * scale,
+            (unitDB.levelOffsetY or 0) * scale,
+            inner + 4
+        )
+    else
+        mock._levelText:Hide()
     end
 
     -- Health text. Respects: showHealth, healthDisplayStyle,

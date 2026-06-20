@@ -1968,6 +1968,11 @@ local function SetTextureColor(texture, file, r, g, b, a)
 end
 
 local function ManualSetBackdropColor(self, r, g, b, a)
+    -- Sanctioned direct frame state exception: manual/pixel backdrops emulate
+    -- BackdropTemplate's setters on QUI-owned backdrop frames/textures. The
+    -- `_quiBg*` fields are the color cache those setters re-use during scale
+    -- refreshes and theme refreshes; general skinning state still belongs in
+    -- the weak side tables below.
     self._quiBgR, self._quiBgG, self._quiBgB, self._quiBgA = r, g, b, a
     local data = manualBackdropData[self]
     if data then
@@ -1976,6 +1981,9 @@ local function ManualSetBackdropColor(self, r, g, b, a)
 end
 
 local function ManualSetBackdropBorderColor(self, r, g, b, a)
+    -- Same sanctioned backdrop exception as ManualSetBackdropColor: these
+    -- `_quiBorder*` fields are render data for QUI-owned manual backdrops, not
+    -- arbitrary module state on Blizzard frames.
     self._quiBorderR, self._quiBorderG, self._quiBorderB, self._quiBorderA = r, g, b, a
     local data = manualBackdropData[self]
     if data then
@@ -2136,6 +2144,43 @@ function SkinBase.ApplyPixelBackdrop(frame, borderPixels, withBackground, withIn
 end
 
 ---------------------------------------------------------------------------
+-- SetBackdropColors(frame, borderColor, bgColor)
+-- Live-recolor a frame already managed by ApplyPixelBackdrop / CreateBackdrop /
+-- ApplyFullBackdrop (hover/selection/theme-refresh states).
+--
+-- This is the sanctioned replacement for a bare frame:SetBackdropColor /
+-- frame:SetBackdropBorderColor on a managed backdrop. RefreshPixelBackdrop
+-- rebuilds the backdrop from data.borderColor / data.bgColor on every scale
+-- refresh, so a bare setter (which only touches the live textures) is silently
+-- DISCARDED on the next rebuild — the "live recolor reverts on scale refresh"
+-- bug class. SetBackdropColors updates the PERSISTED data and re-renders, so the
+-- new color survives. The render path re-applies the colors through the manual
+-- backdrop setters, which keeps the _quiBg*/_quiBorder* cache coherent.
+--
+--   borderColor / bgColor: {r,g,b,a} tables. Pass nil to leave that component
+--   unchanged (e.g. a hover that only re-tints the border). For CreateBackdrop
+--   frames, pass the child returned by SkinBase.GetBackdrop(frame).
+---------------------------------------------------------------------------
+function SkinBase.SetBackdropColors(frame, borderColor, bgColor)
+    if not frame then return end
+    local data = pixelBackdropData[frame]
+    if not data then
+        -- Not an ApplyPixelBackdrop-managed frame: fall back to the live setters
+        -- so callers still get a visible recolor on a plain BackdropTemplate frame.
+        if bgColor and frame.SetBackdropColor then
+            frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+        end
+        if borderColor and frame.SetBackdropBorderColor then
+            frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+        end
+        return
+    end
+    if borderColor ~= nil then data.borderColor = borderColor end
+    if bgColor ~= nil then data.bgColor = bgColor end
+    RefreshPixelBackdrop(frame)
+end
+
+---------------------------------------------------------------------------
 -- CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 -- Creates (or updates) a pixel-perfect QUI backdrop on the given frame.
 -- Stores the backdrop in a local weak-keyed table (NOT on the frame itself)
@@ -2221,6 +2266,15 @@ end
 -- Skinning state tracking (shared across all skinning modules)
 -- Replaces frame.quiSkinned / frame.quiStyled / frame.quiBackdrop writes
 -- which taint Blizzard frames in Midnight's taint model.
+--
+-- Policy: module state lives in weak-keyed side tables, not on the frame. This
+-- keeps Blizzard/protected frames free of QUI marker fields while still letting
+-- us associate lifecycle flags, hooks, and cached setup data with pooled rows.
+-- The deliberate exception is backdrop render state (`_quiBg*`/`_quiBorder*`)
+-- on QUI-created backdrop frames or addon-owned manual backdrops. Those fields
+-- mirror the BackdropTemplate setter contract and are needed by the sanctioned
+-- SetBackdropColor/SetBackdropBorderColor replacement path above; do not use
+-- them as a general-purpose state channel.
 ---------------------------------------------------------------------------
 local skinnedFrames = Helpers.CreateStateTable()
 local styledFrames = Helpers.CreateStateTable()
@@ -2245,7 +2299,9 @@ function SkinBase.IsStyled(frame)
     return styledFrames[frame]
 end
 
--- Store arbitrary per-frame data (replaces frame.quiXxx = value)
+-- Store arbitrary per-frame data (replaces frame.quiXxx = value). Use this for
+-- flags such as qListRowFonted/qScrollHooked so pooled Blizzard rows can be
+-- re-used without adding new fields to those frames.
 local frameData, getFrameData = Helpers.CreateStateTable()
 
 function SkinBase.SetFrameData(frame, key, value)
@@ -2688,13 +2744,20 @@ function SkinBase.RefreshTabSelected(tab, owner)
     local bg = SkinBase.GetFrameData(tab, "bgColor")
     if not bd or not sc or not bg then return end
 
+    local borderColor, bgColor
     if IsTabSelected(tab, owner) then
-        bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
-        bd:SetBackdropColor(math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1)
+        borderColor = { sc[1], sc[2], sc[3], sc[4] }
+        bgColor = { math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1 }
     else
-        bd:SetBackdropBorderColor(sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6)
-        bd:SetBackdropColor(bg[1], bg[2], bg[3], 0.7)
+        borderColor = { sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6 }
+        bgColor = { bg[1], bg[2], bg[3], 0.7 }
     end
+    -- Persist the selection-state colors into the backdrop data via
+    -- ApplyPixelBackdrop (same geometry CreateBackdrop used), so a scale refresh
+    -- rebuilds with the selection tint instead of reverting to the base color. A
+    -- bare SetBackdrop*Color updates only the live color, which RefreshPixelBackdrop
+    -- discards on its next rebuild.
+    SkinBase.ApplyPixelBackdrop(bd, 1, true, true, borderColor, bgColor)
 end
 
 -- Tab hover: brighten border on enter, restore selected-state coloring on
@@ -2794,7 +2857,7 @@ function SkinBase.RefreshTabGroup(tabs, owner)
 end
 
 ---------------------------------------------------------------------------
--- HookScrollBoxAcquired(scrollBox, callback)
+-- HookScrollBoxAcquired(scrollBox, callback, opts)
 -- Replaces the legacy `hooksecurefunc(scrollBox, "Update", …) +
 -- C_Timer.After(0) + ForEachFrame` triad with the documented
 -- `ScrollUtil.AddAcquiredFrameCallback` API (defined at
@@ -2806,17 +2869,35 @@ end
 -- frame is reused from the pool for a new piece of data), which is what
 -- visual-only skinning needs.
 --
--- TAINT SAFETY: Both the initial iterate-existing pass AND the per-
--- acquisition fire are deferred via C_Timer.After(0). The OnAcquiredFrame
--- callback fires synchronously from Blizzard's secure scroll context, and
--- creating Backdrop frames in that path can propagate taint. The defer
--- also gives Blizzard's initializer time to bind elementData to the row.
+-- TAINT SAFETY: The initial iterate-existing pass is always deferred via
+-- C_Timer.After(0). Per-acquisition callbacks are also deferred by default
+-- because OnAcquiredFrame fires synchronously from Blizzard's secure scroll
+-- context, and creating Backdrop frames in that path can propagate taint. The
+-- defer also gives Blizzard's initializer time to bind elementData to the row.
+--
+-- opts.sync == true is the narrow opt-in for callbacks that only touch
+-- per-instance FontStrings and must run before the pooled row's first paint.
+-- Callback entries keep their own sync policy so mixed sync/deferred helpers
+-- compose on the same ScrollBox.
 --
 -- Idempotent — flagged via SetFrameData(scrollBox, "qScrollHooked").
 ---------------------------------------------------------------------------
-function SkinBase.HookScrollBoxAcquired(scrollBox, callback)
-    if not scrollBox or SkinBase.GetFrameData(scrollBox, "qScrollHooked") then return end
+local scrollBoxAcquiredCallbacks = Helpers.CreateStateTable()
+
+function SkinBase.HookScrollBoxAcquired(scrollBox, callback, opts)
+    if not scrollBox or type(callback) ~= "function" then return end
     if not ScrollUtil or not ScrollUtil.AddAcquiredFrameCallback then return end
+
+    local callbacks = scrollBoxAcquiredCallbacks[scrollBox]
+    if not callbacks then
+        callbacks = {}
+        scrollBoxAcquiredCallbacks[scrollBox] = callbacks
+    end
+    local entry = {
+        callback = callback,
+        sync = opts and opts.sync == true,
+    }
+    callbacks[#callbacks + 1] = entry
 
     C_Timer.After(0, function()
         if scrollBox.ForEachFrame then
@@ -2824,13 +2905,52 @@ function SkinBase.HookScrollBoxAcquired(scrollBox, callback)
         end
     end)
 
+    if SkinBase.GetFrameData(scrollBox, "qScrollHooked") then return end
+
     ScrollUtil.AddAcquiredFrameCallback(scrollBox, function(_, frame)
-        C_Timer.After(0, function()
-            callback(frame)
-        end)
+        local list = scrollBoxAcquiredCallbacks[scrollBox]
+        if not list then return end
+        for _, item in ipairs(list) do
+            if item.sync then
+                item.callback(frame)
+            else
+                C_Timer.After(0, function()
+                    item.callback(frame)
+                end)
+            end
+        end
     end, scrollBox)
 
     SkinBase.SetFrameData(scrollBox, "qScrollHooked", true)
+end
+
+---------------------------------------------------------------------------
+-- HookScrollBoxRowFonts(scrollBox, depth)
+-- Canonical "lock pooled-row fonts" for a ScrollBox. The recursive
+-- SkinFrameText + LockFrameTextObjects pass is expensive, and LockFrameTextObjects
+-- installs SetFontObject hooks that re-assert the QUI face on every later
+-- Blizzard rebind (acquire / presence / state refresh) — so re-walking + re-
+-- SetFont on EVERY acquire is wasted work, and the synchronous burst of font
+-- realizations across a panel's ScrollBoxes on open is the open-window hitch.
+-- Guard per row (qListRowFonted) so the expensive recursive pass runs ONCE; the
+-- LockFontObject hooks cover every later revert. This is the single source of
+-- truth for the pattern — callers MUST use it instead of an inline acquire
+-- callback that re-skins per acquire, or the hitch comes back.
+---------------------------------------------------------------------------
+function SkinBase.LockPooledRowText(row, depth)
+    if not row or SkinBase.GetFrameData(row, "qListRowFonted") then return end
+    SkinBase.SkinFrameText(row, { recurse = true })
+    SkinBase.LockFrameTextObjects(row, depth or 3)
+    SkinBase.SetFrameData(row, "qListRowFonted", true)
+end
+
+function SkinBase.HookScrollBoxRowFonts(scrollBox, depth)
+    if not scrollBox then return end
+    SkinBase.HookScrollBoxAcquired(scrollBox, function(row)
+        if not row or SkinBase.GetFrameData(row, "qListRowFonted") then return end
+        SkinBase.LockPooledRowText(row, depth or 3)
+        -- LockPooledRowText owns SkinBase.SetFrameData(row, "qListRowFonted", true).
+    end, { sync = true })
 end
 
 ---------------------------------------------------------------------------
@@ -2844,6 +2964,13 @@ end
 -- and the always-loaded ones (Blizzard_UIPanels_Game), since the
 -- already-loaded short-circuit fires immediately.
 ---------------------------------------------------------------------------
+function SkinBase.IsAddOnFullyLoaded(addonName)
+    if not C_AddOns or not C_AddOns.IsAddOnLoaded then return false end
+    local loadedOrLoading, loaded = C_AddOns.IsAddOnLoaded(addonName)
+    if loaded ~= nil then return loaded end
+    return loadedOrLoading == true
+end
+
 function SkinBase.OnAddOnLoaded(addonName, callback, delay)
     delay = delay or 0
     local function fire()
@@ -2854,7 +2981,7 @@ function SkinBase.OnAddOnLoaded(addonName, callback, delay)
         end
     end
 
-    if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded(addonName) then
+    if SkinBase.IsAddOnFullyLoaded(addonName) then
         fire()
         return
     end
@@ -2877,11 +3004,13 @@ local function HoverEnter(self)
     local bd = SkinBase.GetBackdrop(self)
     local sc = SkinBase.GetFrameData(self, "skinColor")
     if bd and sc then
+        -- Brighten the color AND drive the border to FULL alpha on hover (the resting
+        -- border is dimmed, so keeping that alpha made the hover too subtle).
         bd:SetBackdropBorderColor(
             math.min(sc[1] * HOVER_BRIGHTEN, 1),
             math.min(sc[2] * HOVER_BRIGHTEN, 1),
             math.min(sc[3] * HOVER_BRIGHTEN, 1),
-            sc[4])
+            1)
     end
 end
 
@@ -2898,6 +3027,16 @@ local function AttachHover(frame)
     frame:HookScript("OnEnter", HoverEnter)
     frame:HookScript("OnLeave", HoverLeave)
     SkinBase.SetFrameData(frame, "qHoverHooked", true)
+end
+
+-- Public border-brighten toggle for rows whose OnEnter *script* never fires (so
+-- AttachHover's HookScript can't catch hover) but whose mixin OnEnter *method*
+-- does run — e.g. ProfessionsRecipeListRecipeMixin (Init/SkillUps call it directly).
+-- Callers hooksecurefunc the mixin method and route the hover here, so the row's
+-- backdrop border brightens exactly like the (working) crafting-orders rows.
+function SkinBase.SetRowHovered(frame, hovered)
+    if not frame then return end
+    if hovered then HoverEnter(frame) else HoverLeave(frame) end
 end
 
 -- Hover that restores a custom state on leave (vs the plain border reset that
@@ -3001,8 +3140,8 @@ end
 -- hover, or a ScrollBox row button's SetNormalFontObject on re-bind. A one-shot
 -- SkinFontString is reverted by those swaps; this hooks the swap and re-applies
 -- the QUI font right after.
---   * FontStrings expose SetFontObject → re-apply to the fontstring itself.
---   * Buttons expose SetNormalFontObject → re-apply to button:GetFontString().
+--   * FontStrings/EditBoxes expose SetFontObject → re-apply to the object itself.
+--   * Buttons expose Set*FontObject state setters → re-apply to button:GetFontString().
 -- The re-apply uses SkinFontString's SetFont (never SetFontObject), so it does
 -- not re-trigger the hook. Defaults to fontOnly (preserve Blizzard's text
 -- color, just enforce the QUI font face/outline). Idempotent per object.
@@ -3011,20 +3150,97 @@ function SkinBase.LockFontObject(obj, opts)
     if not obj or SkinBase.GetFrameData(obj, "qFontLocked") then return end
     opts = opts or { fontOnly = true }
 
-    if obj.SetFontObject and obj.GetObjectType and obj:GetObjectType() == "FontString" then
+    if obj.SetFontObject and obj.SetFont then
         hooksecurefunc(obj, "SetFontObject", function(self)
             SkinBase.SkinFontString(self, opts)
         end)
     end
 
-    if obj.SetNormalFontObject then
-        hooksecurefunc(obj, "SetNormalFontObject", function(self)
-            local fs = self.GetFontString and self:GetFontString()
-            if fs then SkinBase.SkinFontString(fs, opts) end
-        end)
+    local function LockButtonStateSetter(methodName)
+        if obj[methodName] then
+            hooksecurefunc(obj, methodName, function(self)
+                local fs = self.GetFontString and self:GetFontString()
+                if fs then SkinBase.SkinFontString(fs, opts) end
+            end)
+        end
     end
+    LockButtonStateSetter("SetNormalFontObject")
+    LockButtonStateSetter("SetHighlightFontObject")
+    LockButtonStateSetter("SetDisabledFontObject")
 
     SkinBase.SetFrameData(obj, "qFontLocked", true)
+end
+
+---------------------------------------------------------------------------
+-- LockFrameTextObjects(frame, maxDepth)
+-- Recursively LockFontObject every fontstring (and button label) under a
+-- frame. Unlike the one-shot SkinFrameText, this defeats Blizzard's hover /
+-- selection / list re-bind font-OBJECT swaps so they don't revert the QUI
+-- font. Idempotent per object (LockFontObject guards with qFontLocked), so it
+-- is safe to call repeatedly on pooled rows and on re-skins. maxDepth bounds
+-- the descent (default 4).
+---------------------------------------------------------------------------
+function SkinBase.LockFrameTextObjects(frame, maxDepth)
+    if not frame then return end
+    maxDepth = maxDepth or 4
+    if frame.GetObjectType and frame:GetObjectType() == "Button" and frame.SetNormalFontObject then
+        SkinBase.LockFontObject(frame, { fontOnly = true })
+    end
+    if frame.GetRegions then
+        for i = 1, select("#", frame:GetRegions()) do
+            local region = select(i, frame:GetRegions())
+            if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                SkinBase.LockFontObject(region, { fontOnly = true })
+            end
+        end
+    end
+    if maxDepth > 0 and frame.GetChildren then
+        for i = 1, select("#", frame:GetChildren()) do
+            SkinBase.LockFrameTextObjects(select(i, frame:GetChildren()), maxDepth - 1)
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- ApplyButtonFontObjectsDeep(frame, maxDepth)
+-- Drive Normal/Highlight/Disabled font OBJECTS to the QUI font for EVERY button
+-- under a frame. LockFrameTextObjects only re-asserts when Blizzard re-CALLS a
+-- Set*FontObject setter (e.g. an element initializer on rebind); it canNOT stop
+-- the engine's INTERNAL hover/disable highlight swap, which switches the shown
+-- font to the button's HighlightFontObject/DisabledFontObject without ever
+-- calling a setter. Driving the button's font objects themselves is the only
+-- durable fix for that swap. Use on skinned frames whose action buttons are not
+-- individually SkinButton{font}'d (collections/journal bottom buttons, etc.).
+-- Guarded per button (qBtnFontDriven) so repeat walks on reskin are cheap.
+-- maxDepth bounds the descent (default 4).
+---------------------------------------------------------------------------
+function SkinBase.ApplyButtonFontObjectsDeep(frame, maxDepth)
+    if not frame then return end
+    maxDepth = maxDepth or 4
+    if frame.GetObjectType then
+        local t = frame:GetObjectType()
+        if (t == "Button" or t == "CheckButton")
+            and frame.GetFontString and frame:GetFontString()
+            and not SkinBase.GetFrameData(frame, "qBtnFontDriven") then
+            SkinBase.ApplyButtonFontObjects(frame)
+            SkinBase.SetFrameData(frame, "qBtnFontDriven", true)
+        end
+    end
+    if maxDepth > 0 and frame.GetChildren then
+        for i = 1, select("#", frame:GetChildren()) do
+            SkinBase.ApplyButtonFontObjectsDeep(select(i, frame:GetChildren()), maxDepth - 1)
+        end
+    end
+end
+
+function SkinBase.LockDropdownText(dropdown, maxDepth)
+    if not dropdown then return end
+    local text = dropdown.Text or (dropdown.GetFontString and dropdown:GetFontString())
+    if text then
+        SkinBase.SkinFontString(text, { fontOnly = true })
+        SkinBase.LockFontObject(text, { fontOnly = true })
+    end
+    SkinBase.LockFrameTextObjects(dropdown, maxDepth or 2)
 end
 
 -- Resolve a frame's primary label fontstring (button text / editbox).
@@ -3074,16 +3290,18 @@ function SkinBase.SkinButton(button, opts)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(button, "skinKind", "button")
     SkinBase.SetFrameData(button, "bgBoost", boost)
-    -- opt-in: restyle the label with the global QUI font (default off so the
-    -- many shared SkinButton callers keep Blizzard fonts unless they ask).
+    -- QUI font on the label BY DEFAULT (opts.font == false opts out), matching
+    -- SkinTab. A skinned button should carry the QUI face; relying on per-caller
+    -- opt-in left most buttons reverting to Blizzard font on hover/disable.
     -- Flagged so RefreshWidget re-applies it on live font/theme changes.
-    if opts.font then
+    if opts.font ~= false then
         SkinBase.SetFrameData(button, "skinFont", true)
         SkinBase.SetFrameData(button, "skinFontColor", opts.fontColor)
         -- Drive the button's font OBJECTS (not a one-shot SetFont): UIPanel-style
         -- buttons swap their Highlight font object on hover and Disabled object on
-        -- :Disable(), which would otherwise revert the QUI font face. Dim grey
-        -- disabled color keeps disabled buttons reading as disabled.
+        -- :Disable() WITHOUT calling a setter (so a Lock* hook never fires) — only
+        -- driving the objects re-faces those swaps. Dim grey disabled color keeps
+        -- disabled buttons reading as disabled.
         SkinBase.ApplyButtonFontObjects(button, { color = opts.fontColor, disabledColor = DISABLED_TEXT_COLOR })
     end
     if opts.hover ~= false then AttachHover(button) end
@@ -3103,11 +3321,14 @@ function SkinBase.SkinEditBox(editBox, opts)
     SkinBase.CreateBackdrop(editBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinBase.SetFrameData(editBox, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(editBox, "skinKind", "editbox")
-    -- opt-in: restyle the input text with the global QUI font.
-    if opts.font then
+    -- QUI font by default; dense/native editboxes can opt out with
+    -- { font = false }. LockFontObject covers Blizzard focus/default
+    -- paths that reapply font objects after the initial skin pass.
+    if opts.font ~= false then
         SkinBase.SetFrameData(editBox, "skinFont", true)
         SkinBase.SetFrameData(editBox, "skinFontColor", opts.fontColor)
         SkinBase.SkinFontString(editBox, { color = opts.fontColor })
+        SkinBase.LockFontObject(editBox, { fontOnly = true })
     end
     SkinBase.MarkStyled(editBox)
 end
@@ -3135,6 +3356,9 @@ function SkinBase.SkinScrollRow(row, opts)
     SkinBase.SetFrameData(row, "bgBoost", boost)
     SkinBase.SetFrameData(row, "bgAlpha", bgAlpha)
     SkinBase.SetFrameData(row, "borderAlphaMult", borderAlphaMult)
+    -- Border-brighten on hover (HookScript OnEnter/OnLeave). Rows whose OnEnter
+    -- script never fires (e.g. profession recipe rows) route hover via the mixin
+    -- hook + SkinBase.SetRowHovered instead.
     if opts.hover ~= false then AttachHover(row) end
     SkinBase.MarkStyled(row)
 end
@@ -3171,6 +3395,12 @@ function SkinBase.SkinCategoryButton(button, opts)
     SkinBase.CreateBackdrop(button, sr, sg, sb, sa)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(button, "skinKind", "category")
+    -- Drive the QUI font onto the button's font objects (default, like SkinButton):
+    -- category buttons swap their Highlight font object on hover with no setter
+    -- call, so only object-driving survives it. opts.font == false opts out.
+    if opts.font ~= false then
+        SkinBase.ApplyButtonFontObjects(button, { disabledColor = DISABLED_TEXT_COLOR })
+    end
     SkinBase.RefreshCategorySelected(button)
     AttachHoverWithRestore(button, SkinBase.RefreshCategorySelected)
     SkinBase.MarkStyled(button)
@@ -3199,6 +3429,10 @@ function SkinBase.SkinDropdown(dropdown, opts)
         if dropdown.NineSlice then dropdown.NineSlice:SetAlpha(0) end
         if dropdown.NormalTexture then dropdown.NormalTexture:SetAlpha(0) end
         if dropdown.HighlightTexture then dropdown.HighlightTexture:SetAlpha(0) end
+        -- WowStyle1DropdownTemplate (12.x DropdownButton) draws its frame via a
+        -- .Background atlas (common-dropdown-textholder), not NineSlice/NormalTexture.
+        -- Hide it so the QUI backdrop shows through; the .Arrow is kept.
+        if dropdown.Background then dropdown.Background:SetAlpha(0) end
     else
         SkinBase.StripTextures(dropdown)
     end
@@ -3220,6 +3454,7 @@ function SkinBase.SkinDropdown(dropdown, opts)
     SkinBase.SetFrameData(dropdown, "bgColor", { bgr, bgg, bgb })
     SkinBase.SetFrameData(dropdown, "skinKind", "dropdown")
     SkinBase.SetFrameData(dropdown, "bgBoost", boost)
+    SkinBase.LockDropdownText(dropdown, 2)
     if opts.hover ~= false then AttachHover(dropdown) end
     SkinBase.MarkStyled(dropdown)
 end
@@ -3240,6 +3475,12 @@ function SkinBase.SkinListContainer(list, rowStyler)
     end
     if list.ScrollBar and list.ScrollBar.Background then
         list.ScrollBar.Background:Hide()
+    end
+    -- The "no results"/error fontstring is re-SetText'd on state refresh; lock its
+    -- font face so it doesn't render in the stock font after the one-shot pass.
+    if list.ResultsText then
+        SkinBase.SkinFontString(list.ResultsText, { fontOnly = true })
+        SkinBase.LockFontObject(list.ResultsText, { fontOnly = true })
     end
     SkinBase.MarkStyled(list)
 end
@@ -3280,7 +3521,7 @@ function SkinBase.RefreshWidget(frame)
     end
 
     -- Re-apply the global QUI font on live font/theme changes for widgets that
-    -- opted in at skin time (SkinButton/SkinEditBox {font=true}).
+    -- opted into shared widget font handling at skin time.
     if SkinBase.GetFrameData(frame, "skinFont") then
         local color = SkinBase.GetFrameData(frame, "skinFontColor")
         if kind == "editbox" then

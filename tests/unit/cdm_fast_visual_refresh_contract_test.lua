@@ -1105,8 +1105,8 @@ assertNotContains(
 )
 assertContains(
     auraRefreshBlock,
-    'controller:ApplyAuraScope({ includeItems = unit == "player" })',
-    "full player aura refresh should include item-backed aura icons without walking every icon"
+    'controller:ApplyAuraScope({ includeItems = unit == "player", skipSelfAuraIcons = unit == "target" })',
+    "full aura refresh includes player item-backed icons; target pass skips provable self-aura icons"
 )
 assertContains(
     iconRuntimeRefresh,

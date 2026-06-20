@@ -1234,6 +1234,21 @@ local function ScheduleSwapBootstrap()
     end)
 end
 
+-- Re-capture natural slots after a LIVE anchor change while swap is active.
+-- The continuous capture paths (CaptureNaturalSlotsIfPossible /
+-- ScheduleNaturalSlotCapture) both bail when ShouldSwapBars() is true, so a
+-- user on an always-swap spec who repositions a bar via the anchoring UI would
+-- otherwise keep the stale login-time capture and swap would keep parking the
+-- bar at the OLD slot.  Re-arm the bootstrap so it re-runs the forced-natural
+-- pass and recaptures the new anchored position.  The existing captures are
+-- left intact until the recapture lands, so the bar doesn't flicker to the
+-- config-fallback (≈center) slot in the meantime.
+local function RecaptureNaturalSlotsForSwap()
+    if not ShouldSwapBars() then return end
+    _swapBootstrapDone = false
+    ScheduleSwapBootstrap()
+end
+
 -- Get the primary's natural slot, preferring the live capture taken while
 -- swap was OFF.  Falls back to config-based math when no capture exists yet
 -- (first frame after addon load).  Returns (cx, cy, length, thickness).
@@ -3787,8 +3802,12 @@ function QUICore:UpdateSecondaryPowerBar()
     local bar = self:GetSecondaryPowerBar()
 
     -- Keep swap ownership in sync with the current swap state in case this
-    -- function is invoked without a preceding UpdatePowerBar call.
-    SyncSwapAnchorOwnership(ShouldSwapBars())
+    -- function is invoked without a preceding UpdatePowerBar call.  During the
+    -- bootstrap natural-slot pass we must NOT claim ownership (matches primary's
+    -- UpdatePowerBar): claiming here blocks the anchoring system from placing
+    -- the bar at its saved frame anchor, so the capture would record a stale
+    -- (≈center) position and swap would park the bar there.
+    SyncSwapAnchorOwnership(ShouldSwapBars() and not IsForcingNaturalDuringBootstrap())
 
     if not cfg.enabled then
         local wasShown = bar:IsShown()
@@ -4603,6 +4622,17 @@ local function InitializeResourceBars(self)
         -- before applying swap so swap math sees user-anchored positions
         -- and post-NCDM offsets, not stale cfg defaults.
         ScheduleSwapBootstrap()
+    end)
+
+    -- Live anchor moves while swap is active: the continuous natural-slot
+    -- capture bails on always-swap specs, so re-arm the bootstrap to recapture
+    -- the new anchored position (otherwise swap keeps parking the bar at the
+    -- stale slot).  Fired by the anchoring system whenever a frameAnchoring
+    -- entry changes (Layout Mode drawer / position settings).
+    self:RegisterMessage("QUI_FRAME_ANCHOR_CHANGED", function(_, changedKey)
+        if changedKey == "secondaryPower" or changedKey == "primaryPower" then
+            RecaptureNaturalSlotsForSwap()
+        end
     end)
 
     -- POWER UPDATES — use a raw frame with RegisterUnitEvent("player") so

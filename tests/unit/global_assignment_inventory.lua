@@ -143,7 +143,7 @@ return {
     "QUI_Skinning/skinning/frames/instanceframes.lua::QUI_RefreshInstanceFramesColors",
     "QUI_Skinning/skinning/frames/interaction.lua::QUI_RefreshBankColors",
     "QUI_Skinning/skinning/frames/interaction.lua::QUI_RefreshGuildBankColors",
-    "QUI_Skinning/skinning/frames/interaction.lua::QUI_RefreshMailColors",
+    "QUI_Skinning/skinning/frames/mail.lua::QUI_RefreshMailColors",
     "QUI_Skinning/skinning/frames/interaction.lua::QUI_RefreshMerchantColors",
     "QUI_Skinning/skinning/frames/journals.lua::QUI_RefreshCollectionsColors",
     "QUI_Skinning/skinning/frames/journals.lua::QUI_RefreshEncounterJournalColors",

@@ -687,6 +687,9 @@ function QUICore:OnEnable()
         if self.ApplyGlobalFont then
             self:ApplyGlobalFont()
         end
+        if self.ApplyGlobalDefaultFont then
+            self:ApplyGlobalDefaultFont()
+        end
         -- Mark newly created frames + position overrides. Non-protected frames
         -- positioned immediately; protected frames deferred to PLAYER_REGEN_ENABLED
         -- via pendingAnchoredFrameUpdateAfterCombat in the anchoring system.
@@ -1118,6 +1121,9 @@ function QUICore:RefreshAll()
     -- Also refresh Blizzard UI fonts when global font changes
     if self.ApplyGlobalFont then
         self:ApplyGlobalFont()
+    end
+    if self.ApplyGlobalDefaultFont then
+        self:ApplyGlobalDefaultFont()
     end
     -- Refresh skyriding HUD fonts
     local RefreshSkyriding = _G.QUI_RefreshSkyriding
