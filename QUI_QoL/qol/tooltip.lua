@@ -657,8 +657,20 @@ else
     SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
+-- Reentrancy latch. On Midnight, RefreshTooltipLayout's Show() nudge re-runs
+-- Blizzard's TooltipDataProcessor post-calls (Show -> C rebuild -> SetAttribute
+-- -> AttributeDelegate -> ProcessTooltipPostCalls). Those post-calls land back
+-- in our ID-injection path, which calls RefreshTooltipLayout -> Show() again,
+-- recursing until the C stack overflows. The per-tooltip dedupe can't break it
+-- because each rebuild re-fetches tooltip data with a fresh dataInstanceID, so
+-- the dedupe key differs every cycle. Lua is single-threaded and Show() is
+-- synchronous, so a plain boolean spanning the Show() call suppresses the whole
+-- nested storm.
+local tooltipRefreshInProgress = false
+
 local function RefreshTooltipLayout(tooltip)
     if not tooltip then return end
+    if tooltipRefreshInProgress then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
 
     -- Re-layout of GameTooltip is unsafe while Blizzard widget containers are
@@ -689,7 +701,9 @@ local function RefreshTooltipLayout(tooltip)
     -- is the only reliable nudge on Midnight; the skinning watcher re-hides
     -- NineSlice and the deferred refit below catches the final extents.
     if tooltip == GameTooltip or not alreadyShown then
+        tooltipRefreshInProgress = true
         pcall(tooltip.Show, tooltip)
+        tooltipRefreshInProgress = false
     end
 
     -- After AddLine/AddDoubleLine on a shown Midnight tooltip, the C-side
@@ -2088,6 +2102,13 @@ local function SetupTooltipHook()
     end
 
     local function ShouldProcessTooltipIDs(tooltip)
+        -- Suppress re-fired post-calls during RefreshTooltipLayout's Show()
+        -- nudge. Without this the Show-triggered rebuild re-enters ID injection,
+        -- duplicating lines and recursing into a C stack overflow.
+        if tooltipRefreshInProgress then
+            TooltipDebugCount("qol.idPostSkipped")
+            return false
+        end
         if not ShouldShowTooltipIDs() then
             TooltipDebugCount("qol.idPostSkipped")
             return false
