@@ -16,6 +16,9 @@ local ipairs = ipairs
 -- repo-root and worktree luacheck configs, like providers_extra.lua)
 local PlayerSpellsUtil = _G.PlayerSpellsUtil
 local ToggleStoreUI = _G.ToggleStoreUI
+local ToggleProfessionsBook = _G.ToggleProfessionsBook
+local ToggleQuestLog = _G.ToggleQuestLog
+local ToggleEncounterJournal = _G.ToggleEncounterJournal
 local C_Texture = _G.C_Texture
 
 local ATLAS_PREFIX = "UI-HUD-MicroMenu-"
@@ -41,8 +44,16 @@ local BUTTONS = {
         onClick = function() PlayerSpellsUtil.ToggleClassTalentOrSpecFrame() end,
     },
     {
+        key = "professions", label = ns.L["Professions"], atlas = "Professions",
+        onClick = function() ToggleProfessionsBook() end,
+    },
+    {
         key = "achievements", label = ns.L["Achievements"], atlas = "Achievements",
         onClick = function() ToggleAchievementFrame() end,
+    },
+    {
+        key = "questlog", label = ns.L["Quest Log"], atlas = "Questlog",
+        onClick = function() ToggleQuestLog() end,
     },
     {
         key = "collections", label = ns.L["Collections"], atlas = "Collections",
@@ -51,6 +62,19 @@ local BUTTONS = {
     {
         key = "lfg", label = ns.L["Group Finder"], atlas = "Groupfinder",
         onClick = function() PVEFrame_ToggleFrame() end,
+    },
+    {
+        key = "adventureguide", label = ns.L["Adventure Guide"], atlas = "AdventureGuide",
+        onClick = function() ToggleEncounterJournal() end,
+    },
+    {
+        -- HousingFramesUtil is supplied by a load-on-demand Blizzard addon;
+        -- resolve at click time (nil before the housing UI has loaded).
+        key = "housing", label = ns.L["Housing"], atlas = "Housing",
+        onClick = function()
+            local u = _G.HousingFramesUtil
+            if u and u.ToggleHousingDashboard then u.ToggleHousingDashboard() end
+        end,
     },
     {
         key = "shop", label = ns.L["Shop"], atlas = "Shop",

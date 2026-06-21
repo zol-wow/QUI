@@ -3855,8 +3855,9 @@ local defaults = {
             micromenu = {
                 buttons = {
                     character = true, spellbook = true, talents = true,
-                    achievements = true, collections = true, lfg = true,
-                    shop = false, help = false,
+                    professions = true, achievements = true, questlog = true,
+                    collections = true, lfg = true, adventureguide = true,
+                    housing = true, shop = false, help = false,
                 },
             },
             travel = {

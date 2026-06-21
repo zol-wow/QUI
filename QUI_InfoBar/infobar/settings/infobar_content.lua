@@ -592,8 +592,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             row(mm.frame, ns.L["Spellbook"], mmCheckbox("spellbook", ns.L["Spellbook"])))
         mm.AddRow(row(mm.frame, ns.L["Talents"], mmCheckbox("talents", ns.L["Talents"])),
             row(mm.frame, ns.L["Achievements"], mmCheckbox("achievements", ns.L["Achievements"])))
+        mm.AddRow(row(mm.frame, ns.L["Professions"], mmCheckbox("professions", ns.L["Professions"])),
+            row(mm.frame, ns.L["Quest Log"], mmCheckbox("questlog", ns.L["Quest Log"])))
         mm.AddRow(row(mm.frame, ns.L["Collections"], mmCheckbox("collections", ns.L["Collections"])),
             row(mm.frame, ns.L["Group Finder"], mmCheckbox("lfg", ns.L["Group Finder"])))
+        mm.AddRow(row(mm.frame, ns.L["Housing"], mmCheckbox("housing", ns.L["Housing"])),
+            row(mm.frame, ns.L["Adventure Guide"], mmCheckbox("adventureguide", ns.L["Adventure Guide"])))
         mm.AddRow(row(mm.frame, ns.L["Shop"], mmCheckbox("shop", ns.L["Shop"])),
             row(mm.frame, ns.L["Support"], mmCheckbox("help", ns.L["Support"])))
         L.closeSection(mm)

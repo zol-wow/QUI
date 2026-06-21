@@ -2618,10 +2618,14 @@ return {
           micromenu = {
             buttons = {
               achievements = true,
+              adventureguide = true,
               character = true,
               collections = true,
               help = false,
+              housing = true,
               lfg = true,
+              professions = true,
+              questlog = true,
               shop = false,
               spellbook = true,
               talents = true

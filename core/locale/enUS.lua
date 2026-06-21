@@ -112,6 +112,7 @@ ns.LocaleData.enUS = {
     ["Achievement Frame (Req. Reload)"] = "Achievement Frame (Req. Reload)",
     ["Achievements"] = "Achievements",
     ["Action"] = "Action",
+    ["Adventure Guide"] = "Adventure Guide",
     ["Action Bar 1"] = "Action Bar 1",
     ["Action Bar 2"] = "Action Bar 2",
     ["Action Bar 3"] = "Action Bar 3",
