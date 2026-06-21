@@ -9,8 +9,8 @@
 --     which is what carries NineSlice / Bg / TopTileStreaks / PortraitContainer
 --     / TitleContainer / CloseButton / MaximizeMinimizeFrame.
 --
--- So skinning WorldMapFrame == skinning its BorderFrame, plus killing the
--- BlackoutFrame dim overlay and the InsetBorderTop separator.
+-- So skinning WorldMapFrame == skinning its BorderFrame, plus hiding the
+-- BorderFrame.Underlay texture and the InsetBorderTop separator.
 ---------------------------------------------------------------------------
 
 local addonName, ns = ...
@@ -110,7 +110,8 @@ local function SkinWorldMap()
     -- The shared helper handles chrome strip + backdrop + close button.
     -- BorderFrame is frameStrata="HIGH"; raise ScrollContainer and overlay
     -- controls to that strata so they stay above the full-frame skinned
-    -- backdrop while title controls remain above the canvas at frameLevel 510.
+    -- backdrop while title controls remain above the canvas at
+    -- MAP_OVERLAY_FRAME_LEVEL (200).
     if frame.BorderFrame then
         SkinBase.SkinButtonFrameTemplate(frame.BorderFrame)
         ApplyBorderBackdrop(SkinBase.GetBackdrop(frame.BorderFrame))

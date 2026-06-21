@@ -236,12 +236,17 @@ local function SkinStaticPopup(popup)
 
     local name = popup.GetName and popup:GetName()
     for i = 1, 4 do
-        local button = popup["button" .. i] or (name and _G[name .. "Button" .. i])
+        -- Modern GameDialogMixin exposes popup:GetButton(i) (Blizzard_StaticPopup_Game
+        -- /GameDialog.lua:533); keep the lowercase parentKey + global-name fallbacks for
+        -- legacy popup types that lack the accessor.
+        local button = (popup.GetButton and popup:GetButton(i))
+            or popup["button" .. i] or (name and _G[name .. "Button" .. i])
         StyleButton(button, "staticPopup")
     end
     StyleButton(popup.ExtraButton or (name and _G[name .. "ExtraButton"]), "staticPopup")
 
-    StyleEditBox(popup.editBox or (name and _G[name .. "EditBox"]), "staticPopup")
+    StyleEditBox((popup.GetEditBox and popup:GetEditBox())
+        or popup.editBox or (name and _G[name .. "EditBox"]), "staticPopup")
     -- Single canonical walk faces every fontstring (incl. nested) and applies the
     -- near-white chrome color (was a separate StyleFrameText top-level pass).
     SkinBase.SkinFrameText(popup, { recurse = true, chrome = true, color = { 0.9, 0.9, 0.9, 1 } })
@@ -294,6 +299,7 @@ local function SkinContextMenuFrame(frame, isCompositorMenu)
             local region = select(i, frame:GetRegions())
             if region and region.IsObjectType and region:IsObjectType("Texture") then
                 region:SetColorTexture(bgr, bgg, bgb, 1)
+                SkinBase.DisablePixelSnap(region)
                 region:SetAlpha(bga)
                 SkinBase.SetInsetPixelPoints(region, frame, 1)
             end

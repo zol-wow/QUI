@@ -23,15 +23,6 @@ end
 
 local RefreshBackdropColors = SkinBase.RefreshFrameBackdropColors
 
-local function CollectNumberedTabs(prefix, count)
-    local tabs = {}
-    for i = 1, count do
-        local tab = _G[prefix .. "Tab" .. i]
-        if tab then tabs[#tabs + 1] = tab end
-    end
-    return tabs
-end
-
 local function ClampTexture(texture)
     if not texture then return end
     if SkinBase.ClampTextureHidden then
@@ -185,9 +176,17 @@ end
 
 local function SkinMoneyInputFrame(moneyInput)
     if not moneyInput then return end
-    if moneyInput.GoldBox then SkinBase.SkinEditBox(moneyInput.GoldBox) end
-    if moneyInput.SilverBox then SkinBase.SkinEditBox(moneyInput.SilverBox) end
-    if moneyInput.CopperBox then SkinBase.SkinEditBox(moneyInput.CopperBox) end
+    -- MoneyInputFrameTemplate (Mainline) exposes the edit boxes as parentKey
+    -- gold/silver/copper (Blizzard_MoneyFrame/Mainline/MoneyInputFrame.xml:79/96/111);
+    -- the older LargeMoneyInputFrameTemplate uses GoldBox/SilverBox/CopperBox. The
+    -- previous *Box-only lookups were nil on the Mainline SendMail money input, so
+    -- accept either so both templates get skinned.
+    local gold = moneyInput.gold or moneyInput.GoldBox
+    local silver = moneyInput.silver or moneyInput.SilverBox
+    local copper = moneyInput.copper or moneyInput.CopperBox
+    if gold then SkinBase.SkinEditBox(gold) end
+    if silver then SkinBase.SkinEditBox(silver) end
+    if copper then SkinBase.SkinEditBox(copper) end
 end
 
 local function SkinSendMailArtwork()
@@ -277,7 +276,7 @@ local function SkinMail()
     local frame = _G.MailFrame
     if frame and not SkinBase.IsSkinned(frame) then
         SkinBase.SkinButtonFrameTemplate(frame)
-        SkinBase.SkinTabGroup(CollectNumberedTabs("MailFrame", 2), frame)
+        SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("MailFrame", 2), frame)
         SkinBase.MarkSkinned(frame)
     end
     if frame then

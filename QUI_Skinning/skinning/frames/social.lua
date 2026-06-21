@@ -62,6 +62,13 @@ local function SkinFriends()
     end
     SkinBase.SkinTabGroup(tabs, frame)
     SkinBase.SkinFrameText(frame, { recurse = true })
+    -- Blizzard re-asserts the font OBJECT on the static FriendsFrame labels on
+    -- show / target-change / presence refresh, reverting the one-shot SkinFrameText.
+    SkinBase.LockFrameTextObjects(frame, 4)
+    -- Add/SendMessage/GroupInvite/Who action buttons are UIPanelButtons: the engine
+    -- swaps their Highlight/Disabled font OBJECT on hover/disable with no setter call,
+    -- so LockFrameTextObjects can't catch it — drive the font objects.
+    SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     -- Friends / Ignore / Who pooled list rows (FriendsFrame.lua:312/326/343).
     if _G.FriendsListFrame then HookListRows(_G.FriendsListFrame.ScrollBox) end
     if frame.IgnoreListWindow then HookListRows(frame.IgnoreListWindow.ScrollBox) end
@@ -98,6 +105,13 @@ local function SkinCommunities()
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
     SkinBase.SkinFrameText(frame, { recurse = true })
+    -- Blizzard re-asserts the font OBJECT on the static CommunitiesFrame labels on
+    -- show / target-change / presence refresh, reverting the one-shot SkinFrameText.
+    SkinBase.LockFrameTextObjects(frame, 4)
+    -- Communities action buttons are UIPanelButtons: the engine swaps their
+    -- Highlight/Disabled font OBJECT on hover/disable with no setter call, so
+    -- LockFrameTextObjects can't catch it — drive the font objects.
+    SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     -- Community / guild roster rows (CommunitiesMemberList.lua:459) re-font on
     -- acquire + presence/state refresh.
     if frame.MemberList then HookListRows(frame.MemberList.ScrollBox) end

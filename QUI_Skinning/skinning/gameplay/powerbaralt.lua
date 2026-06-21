@@ -198,7 +198,6 @@ local function CreateQUIAltPowerBar()
     SkinBase.SetFrameData(bar, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(bar, "bgColor", { bgr, bgg, bgb, bga })
     SkinBase.MarkSkinned(bar)
-    SkinBase.SkinFrameText(bar, { recurse = true })
 
     -- Tooltip support
     bar:EnableMouse(true)

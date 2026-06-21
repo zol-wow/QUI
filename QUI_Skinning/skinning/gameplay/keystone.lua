@@ -65,14 +65,17 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         local sc = SkinBase.GetFrameData(self, "skinColor")
         if bd and sc then
             local r, g, b, a = unpack(sc)
-            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
+            -- Persist the brightened hover border: btnBd is a managed
+            -- ApplyPixelBackdrop frame, so a bare setter would be discarded on the
+            -- next scale-refresh rebuild and snap back to the base border mid-hover.
+            SkinBase.SetBackdropColors(bd, { math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a }, nil)
         end
     end)
     button:HookScript("OnLeave", function(self)
         local bd = SkinBase.GetFrameData(self, "backdrop")
         local sc = SkinBase.GetFrameData(self, "skinColor")
         if bd and sc then
-            bd:SetBackdropBorderColor(unpack(sc))
+            SkinBase.SetBackdropColors(bd, sc, nil)
         end
     end)
 end

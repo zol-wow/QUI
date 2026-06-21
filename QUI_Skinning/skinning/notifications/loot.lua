@@ -771,17 +771,10 @@ local function SkinLootHistoryElement(button)
     -- TAINT SAFETY: Use weak-keyed table instead of writing to Blizzard scroll element
     if hookedLootFrames[button] then return end
 
-    -- Strip background textures
+    -- Strip background textures (NameFrame/BorderFrame are parentKey'd under
+    -- BackgroundArtFrame, so this alpha covers them too)
     if button.BackgroundArtFrame then
         button.BackgroundArtFrame:SetAlpha(0)
-    end
-
-    if button.NameFrame then
-        button.NameFrame:SetAlpha(0)
-    end
-
-    if button.BorderFrame then
-        button.BorderFrame:SetAlpha(0)
     end
 
     -- Style the item icon
@@ -1110,7 +1103,7 @@ DisableBlizzardLoot = function()
         end
 
         -- Hide individual roll frames as they're created
-        local numRollFrames = NUM_GROUP_LOOT_FRAMES or 4  -- Default to 4 if not defined
+        local numRollFrames = 4  -- NUM_GROUP_LOOT_FRAMES is file-local in Blizzard's GroupLootFrame.lua
         for i = 1, numRollFrames do
             local frame = _G["GroupLootFrame"..i]
             if frame then

@@ -39,8 +39,9 @@ end
 -- GLOBAL FONT OVERRIDE FOR BLIZZARD UI
 ---------------------------------------------------------------------------
 
--- Fallback to bundled Quazii font (always available, loaded early in media.lua)
-local QUAZII_FONT_PATH = [[Interface\AddOns\QUI\assets\Quazii.ttf]]
+-- Fallback to bundled Quazii font (always available, loaded early in media.lua).
+-- Derive the assets dir from Helpers.AssetPath so a folder rename can't strand it.
+local QUAZII_FONT_PATH = ((Helpers and Helpers.AssetPath) or [[Interface\AddOns\QUI\assets\]]) .. "Quazii.ttf"
 
 -- TAINT SAFETY: Some shared Font objects are unsafe to modify.
 -- Calling SetFont() on Font objects used by secure UI systems (e.g.,
@@ -381,10 +382,18 @@ function QUICore:ApplyGlobalFont()
         -- Hook chat frame font size changes
         if FCF_SetChatWindowFontSize then
             -- TAINT SAFETY: Defer to break taint chain from secure context.
-            hooksecurefunc("FCF_SetChatWindowFontSize", function(chatFrame, fontSize)
+            -- Live signature is FCF_SetChatWindowFontSize(self, chatFrame, fontSize)
+            -- (Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua:882). hooksecurefunc
+            -- forwards the real call args, so the callback must absorb the leading
+            -- self/slider arg — otherwise `chatFrame` receives `self` and the global-font
+            -- re-apply silently targets the wrong object. Mirror Blizzard's nil fallback.
+            hooksecurefunc("FCF_SetChatWindowFontSize", function(_self, chatFrame, fontSize)
                 C_Timer.After(0, function()
                     if not IsGlobalFontEnabled() then return end
                     local fp = GetGlobalFontPath()
+                    if not chatFrame and FCF_GetCurrentChatFrame then
+                        chatFrame = FCF_GetCurrentChatFrame()
+                    end
                     if chatFrame and type(chatFrame.GetFont) == "function" and type(chatFrame.SetFont) == "function" then
                         -- Apply global font directly to ScrollingMessageFrame (not just children)
                         local currentFont, size, flags = chatFrame:GetFont()

@@ -11,7 +11,7 @@
 --   - AchievementFrameCategoriesBG  (parchment for the left category column)
 --   - AchievementFrameWaterMark     (watermark dragon)
 --   - AchievementFrameGuildEmblem{Left,Right}  (hidden by default)
--- Close button lives at AchievementFrameHeader.CloseButton.
+-- Close button is the named global AchievementFrameCloseButton (Mainline).
 ---------------------------------------------------------------------------
 
 local addonName, ns = ...
@@ -279,9 +279,15 @@ local function SkinAchievement()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
     SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
-    local header = _G.AchievementFrameHeader
-    if header and header.CloseButton then
-        SkinBase.SkinCloseButton(header.CloseButton)
+    -- Mainline AchievementFrame's close button is the named global
+    -- AchievementFrameCloseButton (XML name="$parentCloseButton",
+    -- Blizzard_AchievementUI/Mainline:2309). There is no AchievementFrameHeader
+    -- global (that was Cata) and AchievementFrame.Header (parentKey, :1660) has no
+    -- CloseButton child, so the old _G.AchievementFrameHeader.CloseButton lookup
+    -- was always nil-guarded dead and the close X was never skinned.
+    local closeButton = frame.CloseButton or _G.AchievementFrameCloseButton
+    if closeButton then
+        SkinBase.SkinCloseButton(closeButton)
     end
 
     SkinBase.SkinFrameText(frame, { recurse = true })

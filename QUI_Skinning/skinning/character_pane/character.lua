@@ -3332,9 +3332,13 @@ local function UpdateILvlDisplay()
     -- Get spec and class
     local specName = ""
     local className = ""
-    local specIndex = GetSpecialization()
-    if specIndex then
-        local _, specNameLocal = GetSpecializationInfo(specIndex)
+    -- Canonical namespaced API (matches the in-file usage at ~2667). The bare
+    -- GetSpecialization/GetSpecializationInfo globals only exist behind the
+    -- loadDeprecationFallbacks CVar, so call through C_SpecializationInfo directly.
+    local specIndex = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization
+        and C_SpecializationInfo.GetSpecialization()
+    if specIndex and C_SpecializationInfo.GetSpecializationInfo then
+        local _, specNameLocal = C_SpecializationInfo.GetSpecializationInfo(specIndex)
         specName = specNameLocal or ""
     end
     local _, classNameLocal = UnitClass("player")

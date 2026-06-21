@@ -28,17 +28,6 @@ end
 ---------------------------------------------------------------------------
 local RefreshBackdropColors = SkinBase.RefreshFrameBackdropColors
 
--- Collect tabs by global-name pattern: prefix .. "Tab" .. 1..count.
--- Common pattern for legacy PanelTabButtonTemplate frames.
-local function CollectNumberedTabs(prefix, count)
-    local tabs = {}
-    for i = 1, count do
-        local tab = _G[prefix .. "Tab" .. i]
-        if tab then tabs[#tabs + 1] = tab end
-    end
-    return tabs
-end
-
 ---------------------------------------------------------------------------
 -- BankFrame
 ---------------------------------------------------------------------------
@@ -80,7 +69,7 @@ local function SkinMerchant()
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
     -- MerchantFrameTab1 (Items), MerchantFrameTab2 (Buyback)
-    SkinBase.SkinTabGroup(CollectNumberedTabs("MerchantFrame", 2), frame)
+    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("MerchantFrame", 2), frame)
     SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.MarkSkinned(frame)
@@ -108,7 +97,7 @@ local function SkinGuildBank()
     -- Bottom PanelTabs (Items/Log/Money Log/Tab Info) re-show slice art + swap font
     -- via PanelTemplates_Select/DeselectTab on selection; SkinTabGroup installs the
     -- qTabArtClamped guard so the global PanelTemplates hooks re-clamp them.
-    SkinBase.SkinTabGroup(CollectNumberedTabs("GuildBankFrame", 4), frame)
+    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("GuildBankFrame", 4), frame)
     SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.ApplyButtonFontObjectsDeep(frame, 4)

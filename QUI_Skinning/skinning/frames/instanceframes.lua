@@ -732,12 +732,14 @@ local function SkinChallengesFrame()
                 local chest = wi.Child.WeeklyChest
                 if chest.Highlight then chest.Highlight:SetAlpha(0) end
             end
-            -- Style labels
-            if wi.Child.Label then
+            -- Style the weekly-info label. The WeeklyInfo.Child label is parentKey
+            -- "ThisWeekLabel" (Blizzard_ChallengesUI/Mainline:791); there is no .Label
+            -- field, so the prior wi.Child.Label block was a dead no-op.
+            if wi.Child.ThisWeekLabel then
                 -- Canonical face (size>0 guard + CJK fallback); lock so the M+ UI's
                 -- per-SetUp font-object re-assert doesn't revert it.
-                SkinBase.SkinFontString(wi.Child.Label, { size = 14, outline = "OUTLINE", fontOnly = true })
-                SkinBase.LockFontObject(wi.Child.Label)
+                SkinBase.SkinFontString(wi.Child.ThisWeekLabel, { size = 14, outline = "OUTLINE", fontOnly = true })
+                SkinBase.LockFontObject(wi.Child.ThisWeekLabel)
             end
         end
     end
@@ -876,6 +878,7 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
     -- Style selected texture
     if button.SelectedTexture then
         button.SelectedTexture:SetColorTexture(sr, sg, sb, 0.2)
+        SkinBase.DisablePixelSnap(button.SelectedTexture)
     end
 
     -- Style reward icon if present
@@ -951,6 +954,7 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     -- Style selected texture
     if button.SelectedTexture then
         button.SelectedTexture:SetColorTexture(sr, sg, sb, 0.3)
+        SkinBase.DisablePixelSnap(button.SelectedTexture)
         button.SelectedTexture:SetAllPoints()
     end
 
@@ -1239,10 +1243,17 @@ local function UpdateGroupFinderButtonColors(button, sr, sg, sb, sa, bgr, bgg, b
     local bd = button and SkinBase.GetFrameData(button, "backdrop")
     if not bd then return end
     local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
-    Helpers.SetFrameBackdropColor(bd, btnBgR, btnBgG, btnBgB, 1)
-    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
+    -- bd is seeded by ApplyFullBackdrop (StyleGroupFinderButton), so its
+    -- pixelBackdropData.bgColor/.borderColor are non-nil and shadow the _quiBg*/
+    -- _quiBorder* cache on the next scale-refresh rebuild. A Helpers.SetFrameBackdrop*
+    -- write (which only updates _quiBg*) would be discarded, reverting the theme
+    -- recolor; route through SetBackdropColors so the persisted data.* is updated.
+    SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, { btnBgR, btnBgG, btnBgB, 1 })
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
-    -- Update icon border if present
+    -- Update icon border if present. The icon backdrop is created via
+    -- ApplyPixelBackdrop with NO colors (StyleGroupFinderButton), so data.borderColor
+    -- is nil and RefreshPixelBackdrop uses the _quiBorder* fallback that
+    -- Helpers.SetFrameBackdropBorderColor keeps current — that path persists fine.
     local iconBd = button.icon and SkinBase.GetFrameData(button.icon, "backdrop")
     if iconBd then
         Helpers.SetFrameBackdropBorderColor(iconBd, sr, sg, sb, sa)
@@ -1259,6 +1270,7 @@ local function UpdatePVPActivityButtonColors(button, sr, sg, sb, sa, bgr, bgg, b
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     if button.SelectedTexture then
         button.SelectedTexture:SetColorTexture(sr, sg, sb, 0.2)
+        SkinBase.DisablePixelSnap(button.SelectedTexture)
     end
     local rewardIconBd = button.Reward and button.Reward.Icon and SkinBase.GetFrameData(button.Reward.Icon, "backdrop")
     if rewardIconBd then

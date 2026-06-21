@@ -1194,12 +1194,15 @@ function UIKit.CreateCloseButton(parent, opts)
     local xLine1 = close:CreateTexture(nil, "OVERLAY")
     xLine1:SetSize(lineLen, lineWidth)
     xLine1:SetPoint("CENTER")
-    xLine1:SetColorTexture(1, 1, 1, 0.8)
+    -- Thin (1.5px) rotated solid quads rasterize away at fractional screen
+    -- offsets unless pixel-snap is disabled after every SetColorTexture; route
+    -- through ApplyColorTexture (mirrors CreateChevronCaret / manual edges).
+    ApplyColorTexture(xLine1, 1, 1, 1, 0.8)
     xLine1:SetRotation(math.rad(45))
     local xLine2 = close:CreateTexture(nil, "OVERLAY")
     xLine2:SetSize(lineLen, lineWidth)
     xLine2:SetPoint("CENTER")
-    xLine2:SetColorTexture(1, 1, 1, 0.8)
+    ApplyColorTexture(xLine2, 1, 1, 1, 0.8)
     xLine2:SetRotation(math.rad(-45))
     close._xLine1, close._xLine2 = xLine1, xLine2
 
@@ -1208,14 +1211,14 @@ function UIKit.CreateCloseButton(parent, opts)
         local ar, ag, ab = UIKit.GetAccentColor()
         UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 1)
         self._bg:SetVertexColor(ar, ag, ab, 0.15)
-        xLine1:SetColorTexture(ar, ag, ab, 1)
-        xLine2:SetColorTexture(ar, ag, ab, 1)
+        ApplyColorTexture(xLine1, ar, ag, ab, 1)
+        ApplyColorTexture(xLine2, ar, ag, ab, 1)
     end)
     close:SetScript("OnLeave", function(self)
         UIKit.UpdateBorderLines(self, 1, borderRGBA())
         self._bg:SetVertexColor(0.08, 0.08, 0.08, 0.6)
-        xLine1:SetColorTexture(1, 1, 1, 0.8)
-        xLine2:SetColorTexture(1, 1, 1, 0.8)
+        ApplyColorTexture(xLine1, 1, 1, 1, 0.8)
+        ApplyColorTexture(xLine2, 1, 1, 1, 0.8)
     end)
 
     return close
@@ -1840,13 +1843,15 @@ function SkinBase.SkinChromeCloseButton(button, opts)
         local bd = SkinBase.GetFrameData(self, key .. "Border")
         if not bd then return end
         local hoverPalette = SkinBase.GetChromePalette(opts)
-        bd:SetBackdropBorderColor(hoverPalette.accent[1], hoverPalette.accent[2], hoverPalette.accent[3], hoverPalette.accent[4])
+        -- Persist the accent tint so a scale refresh while hovered keeps it
+        -- (the chrome border is an ApplyChromeBackdrop frame with seeded data.*).
+        SkinBase.SetBackdropColors(bd, hoverPalette.accent, nil)
     end)
     button:HookScript("OnLeave", function(self)
         local bd = SkinBase.GetFrameData(self, key .. "Border")
         if not bd then return end
         local restPalette = SkinBase.GetChromePalette(opts)
-        bd:SetBackdropBorderColor(restPalette.border[1], restPalette.border[2], restPalette.border[3], restPalette.border[4])
+        SkinBase.SetBackdropColors(bd, restPalette.border, nil)
     end)
     SkinBase.SetFrameData(button, key .. "Hooked", true)
 end
@@ -2258,8 +2263,11 @@ function SkinBase.RefreshFrameBackdropColors(frame)
     local bd = SkinBase.GetBackdrop(frame)
     if not bd then return end
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
-    bd:SetBackdropColor(bgr, bgg, bgb, bga)
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    -- Route through the persist helper: bd is a CreateBackdrop child whose
+    -- pixelBackdropData.bgColor/.borderColor are seeded non-nil, so a bare
+    -- bd:SetBackdropColor would be discarded on the next scale-refresh rebuild
+    -- (RefreshPixelBackdrop prefers data.* over the _quiBg*/_quiBorder* fallback).
+    SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 
 ---------------------------------------------------------------------------
@@ -2424,14 +2432,14 @@ function SkinBase.SkinCloseButton(closeButton)
         local bd = SkinBase.GetBackdrop(self)
         if bd then
             local r, g, b, a = SkinBase.GetSkinColors()
-            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
+            SkinBase.SetBackdropColors(bd, { math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a }, nil)
         end
     end)
     closeButton:HookScript("OnLeave", function(self)
         local bd = SkinBase.GetBackdrop(self)
         if bd then
             local r, g, b, a = SkinBase.GetSkinColors()
-            bd:SetBackdropBorderColor(r, g, b, a)
+            SkinBase.SetBackdropColors(bd, { r, g, b, a }, nil)
         end
     end)
 
@@ -2812,6 +2820,18 @@ function SkinBase.SkinTab(tab, owner, opts)
         tab:HookScript("OnLeave", function(self) SkinBase.RefreshTabSelected(self, owner) end)
         SkinBase.SetFrameData(tab, "qTabHoverHooked", true)
     end
+end
+
+-- CollectNumberedTabs(prefix, count) — gather the global frame tabs named
+-- "<prefix>Tab1".."<prefix>TabN" into an array (skipping any that don't exist).
+-- Shared by the per-frame skinners that feed SkinTabGroup (Merchant/GuildBank/Mail).
+function SkinBase.CollectNumberedTabs(prefix, count)
+    local tabs = {}
+    for i = 1, count do
+        local tab = _G[prefix .. "Tab" .. i]
+        if tab then tabs[#tabs + 1] = tab end
+    end
+    return tabs
 end
 
 function SkinBase.SkinTabGroup(tabs, owner, opts)
@@ -3563,24 +3583,30 @@ function SkinBase.RefreshWidget(frame)
     if not kind then return end
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
 
+    -- Route theme-refresh recolors through SetBackdropColors so they update the
+    -- persisted pixelBackdropData and survive the next scale-refresh rebuild (a
+    -- bare bd:SetBackdropColor only touches _quiBg*/the live textures, which are
+    -- shadowed by the seeded data.* on rebuild). The SetFrameData skinColor/bgColor
+    -- re-stores stay so a later hover derives from the new colors.
     if kind == "button" or kind == "dropdown" then
         local boost = SkinBase.GetFrameData(frame, "bgBoost") or BG_BOOST_BUTTON
-        bd:SetBackdropColor(math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), 1)
-        bd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(bd,
+            { sr, sg, sb, sa },
+            { math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), 1 })
         SkinBase.SetFrameData(frame, "skinColor", { sr, sg, sb, sa })
         if kind == "dropdown" then
             SkinBase.SetFrameData(frame, "bgColor", { bgr, bgg, bgb })
         end
     elseif kind == "editbox" then
-        bd:SetBackdropColor(bgr, bgg, bgb, bga)
-        bd:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
         SkinBase.SetFrameData(frame, "skinColor", { sr, sg, sb, sa })
     elseif kind == "row" then
         local boost = SkinBase.GetFrameData(frame, "bgBoost") or BG_BOOST_ROW
         local bgAlpha = SkinBase.GetFrameData(frame, "bgAlpha") or 0.6
         local mult = SkinBase.GetFrameData(frame, "borderAlphaMult") or 0.5
-        bd:SetBackdropColor(math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), bgAlpha)
-        bd:SetBackdropBorderColor(sr, sg, sb, sa * mult)
+        SkinBase.SetBackdropColors(bd,
+            { sr, sg, sb, sa * mult },
+            { math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), bgAlpha })
         SkinBase.SetFrameData(frame, "skinColor", { sr, sg, sb, sa * mult })
     elseif kind == "category" then
         SkinBase.SetFrameData(frame, "skinColor", { sr, sg, sb, sa })

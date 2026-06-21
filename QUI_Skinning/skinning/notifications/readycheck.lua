@@ -162,6 +162,9 @@ end
 local function RestyleButtonText(button)
     local text = button and button.GetFontString and button:GetFontString()
     if not text or not text.SetFont then return end
+    -- CJKFont (not bare SetFont/ApplyButtonFontObjects) is load-bearing here: it
+    -- provides the CJK glyph fallback the ready-check labels need and is pinned by
+    -- skinning_font_reassertions_test. Keep re-asserting it on each state refresh.
     local font = (ns.Helpers and ns.Helpers.GetGeneralFont and ns.Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
     CJKFont(text, font, 12, FONT_FLAGS)
     if text.SetDrawLayer then text:SetDrawLayer("OVERLAY", 7) end

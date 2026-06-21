@@ -135,11 +135,6 @@ local function SkinPlayerSpells()
         -- SkinTabGroup already wires the SetTab programmatic-switch refresh via
         -- RegisterOwnerTabRefresh (sets qTabSysHooked), so a manual hook here is dead.
         SkinBase.SkinTabGroup(frame.TabSystem.tabs, frame)
-        -- Tabs swap their font OBJECT on hover/select; lock so the QUI face
-        -- survives (fontOnly keeps the per-state size, just enforces the face).
-        for _, t in ipairs(frame.TabSystem.tabs) do
-            SkinBase.LockFrameTextObjects(t, 2)
-        end
     end
     -- The class / general / pet category tabs live on a SEPARATE TabSystem
     -- (SpellBookFrame.CategoryTabSystem), not frame.TabSystem above. They use
@@ -152,6 +147,7 @@ local function SkinPlayerSpells()
         and spellBookFrame.CategoryTabSystem.tabs
     if categoryTabs then
         for _, t in ipairs(categoryTabs) do
+            SkinBase.ApplyButtonFontObjects(t)
             SkinBase.LockFrameTextObjects(t, 2)
         end
     end

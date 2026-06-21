@@ -233,6 +233,9 @@ local function SkinOrdersPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         for _, tab in ipairs(orderTabs) do
             if tab then
                 SkinBase.SkinTab(tab, browseFrame, { hover = true })
+                -- SkinTab drives the tab font once, but ProfessionsFrame's
+                -- SetTabSelected swaps the font OBJECT on selection; lock to
+                -- re-assert the QUI face (pinned by skinning_font_reassertions_test).
                 SkinBase.LockFrameTextObjects(tab, 2)
             end
         end
