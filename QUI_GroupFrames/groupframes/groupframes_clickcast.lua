@@ -276,19 +276,12 @@ local LEAVE_SNIPPET = [[
 -- group layout) doesn't wipe the active frame's bindings.
 local HIDE_SNIPPET = LEAVE_SNIPPET
 
--- WrapScript pre-body for OnShow — re-arm when a frame is hidden then re-shown
--- UNDER A STATIONARY CURSOR. WoW fires no fresh OnEnter on re-show (the cursor
--- never crossed the frame boundary), so the instant arm path is skipped and only
--- the <=0.2s mouseoverstate tick would re-bind: a dead window where the key falls
--- through to the action bar. RegisterUnitWatch hide/show (phasing, instance layer
--- change, disconnect, roster churn) and secure-header relayout both trigger it.
--- Guarded on IsUnderMouse so a frame showing AWAY from the cursor neither arms
--- itself nor clears the actually-hovered frame's binding (ENTER_SNIPPET's leading
--- ClearBindings run only after this guard passes).
-local SHOW_SNIPPET = [[
-    if not self:IsUnderMouse() then return end
-]] .. ENTER_SNIPPET
-
+-- No OnShow wrap: a frame hidden then re-shown under a stationary cursor is
+-- re-armed by the caster's mouseoverstate driver re-sampling [@mouseover,exists]
+-- (<=0.2s), entirely in the secure environment. We deliberately do NOT mirror an
+-- insecure mouse-over check here -- the mouse-over decision and the keybinding
+-- both belong to the secure side (the prior insecure re-arm reached for the
+-- restricted-only IsUnderMouse on a real frame and crashed).
 local CLEAR_HEADER_BINDINGS_SNIPPET = [[
     self:ClearBindings()
     local caster = self:GetFrameRef("cc-caster")
@@ -346,7 +339,6 @@ local function WrapFrameSecureHandlers(frame)
     SecureHandlerWrapScript(frame, "OnEnter", header, ENTER_SNIPPET)
     SecureHandlerWrapScript(frame, "OnLeave", header, LEAVE_SNIPPET)
     SecureHandlerWrapScript(frame, "OnHide", header, HIDE_SNIPPET)
-    SecureHandlerWrapScript(frame, "OnShow", header, SHOW_SNIPPET)
 
     secureWrappedFrames[frame] = true
 end
@@ -928,14 +920,10 @@ local function SetupFrameClickCast(frame)
                 ClearHeaderOverrideBindings()
             end
         end)
-        frame:HookScript("OnShow", function(self)
-            -- A frame re-shown under a stationary cursor gets no OnEnter, so the
-            -- secure OnShow wrap re-arms the binding; mirror it here so the
-            -- OOC-refresh re-arm target (currentKeyboardFrame, read by
-            -- RefreshHeaderOverrideBindings) stays consistent with it.
-            if not isEnabled then return end
-            if self:IsUnderMouse() then currentKeyboardFrame = self end
-        end)
+        -- No OnShow hook: re-show re-arm is handled secure-side by the caster's
+        -- mouseoverstate driver (see WrapFrameSecureHandlers). currentKeyboardFrame
+        -- is maintained only by the real OnEnter/OnLeave/OnHide pointer events, not
+        -- by an insecure mouse-over poll.
 
         -- Smart resurrection: hook to swap spell when target is dead.
         -- Always install the hook — check db.clickCast.smartRes at runtime
