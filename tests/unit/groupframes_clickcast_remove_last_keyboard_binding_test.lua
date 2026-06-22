@@ -1,11 +1,17 @@
--- tests/unit/groupframes_clickcast_keyboard_dynamic_apply_test.lua
--- Run: lua tests/unit/groupframes_clickcast_keyboard_dynamic_apply_test.lua
+-- tests/unit/groupframes_clickcast_remove_last_keyboard_binding_test.lua
+-- Run: lua tests/unit/groupframes_clickcast_remove_last_keyboard_binding_test.lua
 --
--- Keybound click-cast abilities use secure override bindings established by
--- the wrapped OnEnter snippet, not the mouse-button typeN attributes. Changing
--- a key binding out of combat must update the active override binding on the
--- currently-hovered frame immediately; otherwise the stale key remains active
--- until the frame gets a fresh secure enter cycle or the UI is reloaded.
+-- Regression: removing the LAST keyboard click-cast key while a mouse binding
+-- remained left the caster's stale key attributes (cc-keycount / cc-key /
+-- macrotext) in place, because ApplyGlobalKeyboardBindings bailed on the
+-- "transient empty resolve" guard whenever ANY binding was still configured.
+-- The removed key then re-armed on hover and fired a dead action instead of
+-- falling through to its normal action-bar binding, until a /reload.
+--
+-- Repro: bind U (keyboard) + a mouse binding, hover (U click-casts), remove U,
+-- hover again, press U -> nothing (stale caster override), /reload -> normal.
+-- The fix gates the guard on the spec/loadout CONTEXT being unresolved, not on
+-- "any binding configured", so a resolved-but-empty keyboard list is honored.
 
 local inCombat = false
 local function noop() end
@@ -14,7 +20,6 @@ local SPELL_NAMES = { [774] = "Rejuvenation", [8936] = "Regrowth" }
 local NAME_TO_ID  = { Rejuvenation = 774, Regrowth = 8936 }
 
 local frameMT
-
 local function NewFrame(frameType, name, parent, template)
     local frame = {
         frameType = frameType, name = name, parent = parent, template = template,
@@ -54,8 +59,11 @@ local function NewFrame(frameType, name, parent, template)
                 return function(self, label) return self.frameRefs[label] end
             elseif key == "IsVisible" then
                 return function(self) return self.visible ~= false end
-            elseif key == "IsUnderMouse" then
-                return function(self) return self.underMouse == true end
+            elseif key == "GetMousePosition" then
+                return function(self)
+                    if self.underMouse == true then return 0.5, 0.5 end
+                    return nil
+                end
             elseif key == "Execute" then
                 return function(self, snippet)
                     local loader = loadstring or load
@@ -89,14 +97,6 @@ function UnregisterStateDriver() end
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }
 end
-
--- Run a frame's wrapped secure snippet (self = frame, owner = header). The
--- keyboard key is bound by the OnEnter wrap, edge-driven -- not a state driver.
-local function RunWrap(frame, script)
-    local wrap = assert(frame.secureWraps[script], "frame missing secure wrap: " .. script)
-    local chunk = assert((loadstring or load)("local self, owner = ...\n" .. wrap.preBody))
-    return chunk(frame, wrap.header)
-end
 GameTooltip = { GetOwner = function() return nil end, AddLine = noop, AddDoubleLine = noop, Show = noop }
 _G.wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
 
@@ -126,16 +126,23 @@ local ns = {
     },
 }
 
+-- Shared (perSpec = false) config so the spec/loadout context is always resolved
+-- and an empty keyboard resolve is authoritative. One keyboard key (U) + one
+-- mouse binding -- the mouse binding is what kept the old guard true after U was
+-- removed.
 _G.QUI = {
     db = {
         char = {
             clickCast = {
                 enabled = true,
+                perSpec = false,
                 _migratedFromProfile = true,
                 rootSpellMigrationDone = true,
                 bindings = {
-                    { key = "F", modifiers = "", actionType = "spell",
+                    { key = "U", modifiers = "", actionType = "spell",
                       spell = "Rejuvenation", spellID = 774 },
+                    { button = "LeftButton", modifiers = "", actionType = "spell",
+                      spell = "Regrowth", spellID = 8936 },
                 },
             },
         },
@@ -154,33 +161,45 @@ ns.QUI_GroupFrames = {
 assert(loadfile("QUI_GroupFrames/groupframes/groupframes_clickcast.lua"))("QUI", ns)
 local GFCC = assert(ns.QUI_GroupFrameClickCast)
 
+local function RunWrap(frame, script)
+    local wrap = assert(frame.secureWraps[script], "frame missing secure wrap: " .. script)
+    local chunk = assert((loadstring or load)("local self, owner = ...\n" .. wrap.preBody))
+    return chunk(frame, wrap.header)
+end
+
 GFCC:Initialize()
 GFCC:RegisterAllFrames()
 
--- Keyboard keys are PUBLISHED to the global caster (its cast macros); the
--- OnEnter wrap binds them to the caster on hover, not a state-driver poll.
 local caster = assert(_G.QUI_ClickCastCaster, "caster button should exist for keyboard binding")
-assert(caster:GetAttribute("cc-key1") == "F", "key F should be published to the caster")
-assert(caster:GetAttribute("type-keyf") == "macro", "caster key virtual button should be configured")
 
-inCombat = false
-assert(GFCC:RemoveBinding(1))
-assert(GFCC:AddBinding({ key = "G", modifiers = "", actionType = "spell",
-    spell = "Regrowth", spellID = 8936 }))
-
-assert(caster:GetAttribute("cc-key1") == "G",
-    "BUG: caster should now publish the new G key after changing key bindings")
-assert(caster:GetAttribute("type-keyf") == nil,
-    "BUG: stale F virtual button should be cleared from the caster after rebind")
-assert(caster:GetAttribute("type-keyg") == "macro", "new caster key virtual button should be configured")
-assert(caster:GetAttribute("macrotext-keyg"):find("Regrowth", 1, true),
-    "new caster key virtual button should cast Regrowth")
--- And the OnEnter secure wrap binds the current key (G) to the caster while the
--- cursor is over the registered frame. The wrap exists only on registered click-
--- cast frames, so bare @mouseover (nameplates/world) can never arm a key.
+-- Precondition: U is published to the caster and arms on hover.
+assert((caster:GetAttribute("cc-keycount") or 0) == 1, "precondition: U should be the one published keyboard key")
+assert(caster:GetAttribute("cc-key1") == "U", "precondition: cc-key1 should be U")
+assert(caster:GetAttribute("macrotext-keyu"), "precondition: caster should hold U's cast macro")
 RunWrap(child, "OnEnter")
-assert(caster.overrideBindings.G and caster.overrideBindings.G.button == "keyg",
-    "BUG: hovering should bind the new G key without /reload")
-assert(not caster.overrideBindings.F, "BUG: stale F binding should be gone after rebind")
+assert(caster.overrideBindings.U and caster.overrideBindings.U.button == "keyu",
+    "precondition: hovering should arm U on the caster")
 
-print("OK: groupframes_clickcast_keyboard_dynamic_apply_test")
+-- Remove U (the only keyboard key). A mouse binding remains configured.
+assert(GFCC:RemoveBinding(1))
+
+-- THE FIX: the caster's stale keyboard state for U must be gone -- not protected
+-- by the "any binding configured" guard.
+assert((caster:GetAttribute("cc-keycount") or 0) == 0,
+    "BUG: removing the last keyboard key left a stale cc-keycount on the caster")
+assert(caster:GetAttribute("cc-key1") == nil,
+    "BUG: stale cc-key1 (U) survived removal of the last keyboard key")
+assert(caster:GetAttribute("macrotext-keyu") == nil,
+    "BUG: stale U cast macro survived removal -- key fires a dead action instead of its normal binding")
+
+-- And hovering must NOT re-arm U, so the key falls through to its normal binding.
+RunWrap(child, "OnEnter")
+assert(not caster.overrideBindings.U,
+    "BUG: U re-armed on the caster after removal -- normal binding stays shadowed until /reload")
+
+-- The remaining mouse binding must still be live on the frame (the guard change
+-- must not break the mouse path).
+assert(child:GetAttribute("type1") == "macro" and (child:GetAttribute("macrotext1") or ""):find("Regrowth", 1, true),
+    "the remaining mouse binding should still be applied to the frame")
+
+print("OK: groupframes_clickcast_remove_last_keyboard_binding_test")

@@ -89,9 +89,18 @@ function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
 function GetSpecializationInfo() return specReady and 102 or nil end  -- nil => spec data not ready
 function RegisterStateDriver() end
+function RegisterAttributeDriver() end
 function UnregisterStateDriver() end
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }
+end
+
+-- Run a frame's wrapped secure snippet (self = frame, owner = header). Keyboard
+-- keys are bound edge-driven by the OnEnter wrap, not a state-driver poll.
+local function RunWrap(frame, script)
+    local wrap = assert(frame.secureWraps[script], "frame missing secure wrap: " .. script)
+    local chunk = assert((loadstring or load)("local self, owner = ...\n" .. wrap.preBody))
+    return chunk(frame, wrap.header)
 end
 -- Native ping-binding migration stubs hit on PLAYER_ENTERING_WORLD.
 function GetBindingKey() return nil end
@@ -196,7 +205,7 @@ for _ = 1, 12 do
 end
 
 -- Keyboard click-cast must now be applied: key F published to the global caster
--- with an @mouseover macro, and its mouseoverstate driver binds it on @mouseover.
+-- with an @mouseover macro, and the OnEnter wrap binds it to the caster on hover.
 local caster = assert(_G.QUI_ClickCastCaster,
     "BUG: caster button missing after spec data became ready")
 assert((caster:GetAttribute("cc-keycount") or 0) == 1,
@@ -204,13 +213,11 @@ assert((caster:GetAttribute("cc-keycount") or 0) == 1,
 local mt = caster:GetAttribute("macrotext-keyf")
 assert(mt and mt:find("@mouseover", 1, true),
     "BUG: caster macro for F missing @mouseover cast after cold login")
--- The state driver binds F to the caster while a unit is under the cursor AND
--- the cursor is over a registered frame (the frame-hover gate keeps nameplate /
--- world mouseover from stealing the key off the action bar).
-child.underMouse = true
-local loader = loadstring or load
-assert(loader("local self, newstate = ...\n" .. caster:GetAttribute("_onstate-mouseoverstate")))(caster, "on")
+-- Hovering the registered frame binds F to the caster. The wrap exists only on
+-- registered click-cast frames, so a nameplate / world mouseover can't steal the
+-- key off the action bar.
+RunWrap(child, "OnEnter")
 assert(caster.overrideBindings.F and caster.overrideBindings.F.button == "keyf",
-    "BUG: @mouseover did not bind F to the caster after cold login")
+    "BUG: hovering did not bind F to the caster after cold login")
 
 print("OK: groupframes_clickcast_cold_login_catchup_test")

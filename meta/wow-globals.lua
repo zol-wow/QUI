@@ -595,6 +595,7 @@ RED_FONT_COLOR_CODE = nil ---@type any
 RafRewardDeliveredAlertSystem = nil ---@type any
 RecentTimeDate = nil ---@type any
 RefreshAll_Composer = nil ---@type any
+RegisterAttributeDriver = nil ---@type any
 RegisterStateDriver = nil ---@type any
 ReloadUI = nil ---@type any
 RepairAllItems = nil ---@type any

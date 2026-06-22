@@ -61,8 +61,13 @@ local function NewFrame(frameType, name, parent, template)
                 return function(self, label) return self.frameRefs[label] end
             elseif key == "IsVisible" then
                 return function(self) return self.visible ~= false end
-            elseif key == "IsUnderMouse" then
-                return function(self) return self.underMouse == true end
+            elseif key == "GetMousePosition" then
+                -- Restricted HANDLE:GetMousePosition -- cursor normalized into the
+                -- frame's rect; nil when outside the bounds. self.underMouse = inside.
+                return function(self)
+                    if self.underMouse == true then return 0.5, 0.5 end
+                    return nil
+                end
             elseif key == "Execute" then
                 return function(self, snippet)
                     local loader = loadstring or load
@@ -92,6 +97,7 @@ function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
 function GetSpecializationInfo() return specReady and 102 or 0 end  -- 0 => spec data not ready
 function RegisterStateDriver() end
+function RegisterAttributeDriver() end
 function UnregisterStateDriver() end
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }
@@ -194,23 +200,32 @@ local function loadModule(initialSpecReady, clickCast)
     return eventFrame, child, partyHeader
 end
 
--- Keyboard keys are PUBLISHED to the global caster (QUI_ClickCastCaster); a
--- mouseoverstate state driver binds them only while @mouseover exists. This
--- reports how many keys are published (resolved + applied), i.e. ready to bind.
+-- Keyboard keys are PUBLISHED to the global caster (QUI_ClickCastCaster) as cast
+-- macros; the per-frame OnEnter wrap binds them on hover. This reports how many
+-- keys are published (resolved + applied), i.e. ready to bind.
 local function casterKeyCount()
     local c = _G.QUI_ClickCastCaster
     return (c and c:GetAttribute("cc-keycount")) or 0
 end
 
--- Run the caster's mouseoverstate state-driver snippet with newstate "on"/"off"
--- (simulates a unit coming under / leaving the cursor).
-local function runCasterState(state)
-    local c = _G.QUI_ClickCastCaster
-    if not c then return end
-    local snippet = c:GetAttribute("_onstate-mouseoverstate")
+-- Run a frame's secure wrap pre-body (self = frame, owner = header) -- the
+-- edge-driven bind (OnEnter) / clear (OnLeave) path.
+local function runWrap(frame, script)
+    local wrap = frame.secureWraps[script]
+    if not wrap then return end
+    local loader = loadstring or load
+    assert(loader("local self, owner = ...\n" .. wrap.preBody))(frame, wrap.header)
+end
+
+-- Run the header's clear-only dangling net (self = header). Simulates the
+-- [@mouseover,exists] driver dropping to its false edge (mouseover token churn).
+local function runDangling()
+    local h = _G.QUI_ClickCastHeader
+    if not h then return end
+    local snippet = h:GetAttribute("_onattributechanged")
     if not snippet then return end
     local loader = loadstring or load
-    assert(loader("local self, newstate = ...\n" .. snippet))(c, state)
+    assert(loader("local self, name, value = ...\n" .. snippet))(h, "cc-hasunit", "false")
 end
 
 local function drain(maxTicks)
@@ -225,32 +240,32 @@ local function hover(frame)
     for _, h in ipairs(frame.hooks.OnEnter or {}) do h(frame) end
 end
 
--- Assert key "F" hovercasts: the state driver binds it to the caster (with an
--- @mouseover macro) while a unit is under the cursor AND the cursor is over a
--- registered click-cast frame, and releases it otherwise so the action bar's
--- own keybind fires off-frame (including over nameplates / world units).
-local function assertCasterBindsF()
+-- Assert key "F" hovercasts: the registered frame's OnEnter wrap binds it to the
+-- caster (with an @mouseover macro) on hover, and it releases off-frame so the
+-- action bar's own keybind fires (including over nameplates / world units).
+local function assertCasterBindsF(child)
     local c = assert(_G.QUI_ClickCastCaster, "caster button was never created")
     local mt = c:GetAttribute("macrotext-keyf")
     assert(mt and mt:find("@mouseover", 1, true), "caster macro for F missing @mouseover cast")
-    local hoverFrame = c.frameRefs and c.frameRefs["cc-frame1"]
-    assert(hoverFrame, "registered frames were never published to the caster's frame-hover gate")
-    hoverFrame.underMouse = true
-    runCasterState("on")
+    assert(child and child.secureWraps["OnEnter"],
+        "registered frame missing the secure OnEnter wrap that binds keyboard click-cast")
+    -- Hover the registered frame: the OnEnter wrap binds F to the caster.
+    child.underMouse = true
+    runWrap(child, "OnEnter")
     local b = c.overrideBindings and c.overrideBindings.F
-    assert(b and b.button == "keyf", "@mouseover did not bind F to the caster -- click-cast dead")
-    -- A transient off-tick while the cursor is still over the frame keeps the key
-    -- (guarded release -- the [@mouseover,exists] driver is mouseover-blind, so a
-    -- churning unit token must not strand the binding cleared).
-    runCasterState("off")
+    assert(b and b.button == "keyf", "OnEnter did not bind F to the caster -- click-cast dead")
+    -- A churning mouseover token (dangling false edge) while the cursor is still
+    -- over the frame keeps the key (guarded geometry release -- the
+    -- [@mouseover,exists] driver is mouseover-blind, so a churn must not strand it).
+    runDangling()
     assert(c.overrideBindings and c.overrideBindings.F,
-        "a transient off-tick while still over the frame must keep F (no stranding)")
+        "a false edge while still over the frame must keep F (no stranding)")
     -- Only a real cursor-off release frees the key so the action bar keybind fires.
-    hoverFrame.underMouse = false
-    runCasterState("off")
+    child.underMouse = false
+    runDangling()
     assert(not (c.overrideBindings and c.overrideBindings.F),
-        "off @mouseover with the cursor off the frame must release F so the action bar keybind fires")
-    hoverFrame.underMouse = nil
+        "a false edge with the cursor off the frame must release F so the action bar keybind fires")
+    child.underMouse = nil
 end
 
 ---------------------------------------------------------------------------
@@ -259,7 +274,7 @@ end
 -- re-resolve and (re)bind the key to the caster.
 ---------------------------------------------------------------------------
 do
-    local eventFrame = loadModule(false)
+    local eventFrame, child = loadModule(false)
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
 
     drain(100)  -- exhaust the bounded startup retry with spec never ready
@@ -273,7 +288,7 @@ do
 
     assert(casterKeyCount() == 1, "caster keycount = " .. casterKeyCount()
         .. " -- data-ready signal failed to revive keyboard click-cast")
-    assertCasterBindsF()
+    assertCasterBindsF(child)
     print("OK: PLAYER_TALENT_UPDATE revives keyboard binds after retry exhaustion")
 end
 
@@ -298,7 +313,7 @@ do
     flushAfter()
 
     assert(casterKeyCount() == 1, "on-hover trigger failed to revive keyboard click-cast")
-    assertCasterBindsF()
+    assertCasterBindsF(child)
     print("OK: on-hover trigger revives keyboard binds on demand")
 
     -----------------------------------------------------------------------
@@ -341,7 +356,7 @@ do
 
     assert(casterKeyCount() == 1,
         "per-spec keyboard bindings were not revived after spec data arrived")
-    assertCasterBindsF()
+    assertCasterBindsF(child)
     print("OK: shared mouse fallback does not mask cold per-spec keyboard recovery")
 end
 
@@ -373,34 +388,37 @@ do
 
     assert(casterKeyCount() == 1, "caster keycount = " .. casterKeyCount()
         .. " -- combat-window recovery was dropped (needs /reload)")
-    assertCasterBindsF()
+    assertCasterBindsF(child)
     print("OK: combat-window recovery is durable (revives on PLAYER_REGEN_ENABLED)")
 end
 
 ---------------------------------------------------------------------------
--- Scenario 6: state-driver hovercast — the action bar keeps its own keybind, and
--- click-cast only intercepts the key while a unit is under the cursor. So off a
--- frame the real action-bar ability fires (the caster has RELEASED the key); on a
--- frame the @mouseover cast fires. No /click chaining, no unconditional clause.
+-- Scenario 6: hovercast — the action bar keeps its own keybind, and click-cast
+-- only intercepts the key while the cursor is over a frame. So off a frame the
+-- real action-bar ability fires (the OnLeave wrap RELEASED the key); on a frame
+-- the @mouseover cast fires. No /click chaining, no unconditional clause.
 ---------------------------------------------------------------------------
 do
-    local eventFrame = loadModule(true)  -- spec ready on login
+    local eventFrame, child = loadModule(true)  -- spec ready on login
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
     drain(100)
 
-    assertCasterBindsF()  -- binds F on @mouseover, releases it off @mouseover
+    assertCasterBindsF(child)  -- binds F on hover, releases it off-frame
 
     local mt = _G.QUI_ClickCastCaster:GetAttribute("macrotext-keyf")
     assert(mt:find("@mouseover", 1, true), "caster macro should be an @mouseover cast")
     assert(not mt:find("/click", 1, true),
         "must not chain /click into the bar (nested protected action, combat-unsafe)")
 
-    -- Off @mouseover, F must NOT be bound on the caster, so the action bar's own
-    -- keybind for F is what fires.
-    runCasterState("off")
+    -- Hover binds F; leaving the frame (OnLeave) must release it so the action
+    -- bar's own keybind for F is what fires off-frame.
+    child.underMouse = true
+    runWrap(child, "OnEnter")
+    child.underMouse = false
+    runWrap(child, "OnLeave")
     assert(not (_G.QUI_ClickCastCaster.overrideBindings or {}).F,
-        "off @mouseover the caster must leave F free for the action bar keybind")
-    print("OK: caster hovercasts on @mouseover, releases off it so the action bar keybind fires")
+        "off the frame the caster must leave F free for the action bar keybind")
+    print("OK: caster hovercasts on hover, releases off-frame so the action bar keybind fires")
 end
 
 print("OK: groupframes_clickcast_slow_cold_login_test")

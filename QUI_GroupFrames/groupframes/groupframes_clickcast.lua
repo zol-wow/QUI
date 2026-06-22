@@ -62,8 +62,8 @@ local currentKeyboardFrame = nil
 -- because the OnEnter hook installed in SetupFrameClickCast (below) closes over
 -- both this flag and IsUnresolvedButConfigured, which is defined later.
 local dataReadyRefreshScheduled = false
-local IsUnresolvedButConfigured  -- forward-declared; body assigned after HasConfiguredBindings
-local HasConfiguredBindings      -- forward-declared; used by ApplyGlobalKeyboardBindings (defined above its body)
+local IsUnresolvedButConfigured  -- forward-declared; used by the OnEnter recovery hook above its body
+local HasConfiguredBindings      -- forward-declared; kept local (body defined later, near IsUnresolvedButConfigured)
 
 ---------------------------------------------------------------------------
 -- PING MACROS: /ping [@mouseover] <type> for each ping action type
@@ -200,9 +200,39 @@ end
 ---------------------------------------------------------------------------
 local bindingHeader
 
+-- Clear-only safety net for keyboard overrides. Bindings are armed/cleared by the
+-- per-frame OnEnter/OnLeave/OnHide secure wraps (edge-driven; see ENTER_SNIPPET /
+-- LEAVE_SNIPPET). This [@mouseover,exists] attribute driver catches the one case
+-- those edges miss: a frame that lost the cursor WITHOUT firing OnLeave/OnHide (a
+-- secure unit-button recycled under a stationary cursor, a unit-watch hide). It
+-- NEVER binds -- it only releases a stale override, and only when geometry proves
+-- the cursor has truly left the last-entered frame. Uses GetMousePosition (cursor
+-- normalized into the frame's own rect; a non-nil result means inside) rather than
+-- IsUnderMouse, whose post-12.0 semantics return false for valid in-frame hits and
+-- stranded the override. Runs in the header's managed environment, so it shares
+-- the `currentHoverFrame` env-global the wraps maintain.
+local DANGLING_SNIPPET = [[
+    if name ~= "cc-hasunit" or value ~= "false" then return end
+    if not currentHoverFrame then return end
+    local x, y = currentHoverFrame:GetMousePosition()
+    if x and y and x >= 0 and x <= 1 and y >= 0 and y <= 1 and currentHoverFrame:IsVisible() then
+        return
+    end
+    self:ClearBindings()
+    local caster = self:GetFrameRef("cc-caster")
+    if caster then caster:ClearBindings() end
+    currentHoverFrame = nil
+]]
+
 local function GetBindingHeader()
     if not bindingHeader then
-        bindingHeader = CreateFrame("Frame", "QUI_ClickCastHeader", UIParent, "SecureHandlerBaseTemplate")
+        bindingHeader = CreateFrame("Frame", "QUI_ClickCastHeader", UIParent,
+            "SecureHandlerBaseTemplate,SecureHandlerAttributeTemplate")
+        -- Install the clear-only dangling net (see DANGLING_SNIPPET). The driver
+        -- writes the "cc-hasunit" attribute on a 0.2s-throttled, mouseover-blind
+        -- tick; the handler acts only on the false edge and only ever clears.
+        bindingHeader:SetAttribute("_onattributechanged", DANGLING_SNIPPET)
+        RegisterAttributeDriver(bindingHeader, "cc-hasunit", "[@mouseover,exists] true; false")
     end
     return bindingHeader
 end
@@ -211,9 +241,10 @@ end
 -- `self` = the hovered frame, `owner` = the header (SecureHandlerBaseTemplate).
 -- Two binding sets: per-frame SCROLL-WHEEL keys (header-owned, routed to the
 -- frame's virtual buttons) and KEYBOARD keys (caster-owned, via the header's
--- "cc-caster" frame ref). The keyboard bind here is the instant path — the
--- caster's mouseoverstate driver can't see direct unit->frame transitions
--- (its state stays "on", so it never re-fires) and runs on a 0.2s tick.
+-- "cc-caster" frame ref). This OnEnter wrap is THE keyboard bind path: edge-
+-- driven, fully secure, and it fires in combat. Off-frame the key keeps its
+-- action-bar binding; OnLeave/OnHide release the override, and the header's
+-- clear-only dangling net (DANGLING_SNIPPET) covers a lost-cursor-without-OnLeave.
 -- `currentHoverFrame` (a variable in the header's shared managed environment)
 -- records the active hover so OnLeave/OnHide clear ONLY for that frame —
 -- without it, any frame's leave/hide would wipe the binding the
@@ -258,9 +289,9 @@ local ENTER_SNIPPET = [[
 
 -- WrapScript pre-body for OnLeave. Guard on currentHoverFrame so a stale leave
 -- from a frame we've already moved off of can't clear the active bindings.
--- Releasing the caster here is what returns the keyboard keys to the action
--- bar on a direct frame->unit (e.g. nameplate) transition, where the
--- mouseoverstate driver stays "on" and never fires.
+-- Releasing the caster here is THE clear path: on a direct frame->unit (e.g.
+-- nameplate) transition the cursor crosses the frame boundary, so OnLeave fires
+-- and returns the keyboard keys to the action bar immediately.
 local LEAVE_SNIPPET = [[
     if currentHoverFrame == self then
         owner:ClearBindings()
@@ -276,12 +307,14 @@ local LEAVE_SNIPPET = [[
 -- group layout) doesn't wipe the active frame's bindings.
 local HIDE_SNIPPET = LEAVE_SNIPPET
 
--- No OnShow wrap: a frame hidden then re-shown under a stationary cursor is
--- re-armed by the caster's mouseoverstate driver re-sampling [@mouseover,exists]
--- (<=0.2s), entirely in the secure environment. We deliberately do NOT mirror an
--- insecure mouse-over check here -- the mouse-over decision and the keybinding
--- both belong to the secure side (the prior insecure re-arm reached for the
--- restricted-only IsUnderMouse on a real frame and crashed).
+-- No OnShow wrap: a frame hidden then re-shown under a stationary cursor gets no
+-- OnEnter (the cursor never crossed the frame boundary), so it is re-armed on the
+-- next cursor movement (OnEnter) or by the OOC re-register path
+-- (RefreshHeaderOverrideBindings). We deliberately do NOT poll mouse-over to
+-- re-arm: the prior insecure OnShow re-arm reached for the restricted-only
+-- IsUnderMouse on a real frame and crashed, and a secure-side re-arm here would
+-- reintroduce the same self-clearing tick the edge model exists to avoid. The
+-- header's dangling net only ever clears, never re-arms.
 local CLEAR_HEADER_BINDINGS_SNIPPET = [[
     self:ClearBindings()
     local caster = self:GetFrameRef("cc-caster")
@@ -606,61 +639,17 @@ end
 ---------------------------------------------------------------------------
 -- GLOBAL KEYBOARD CASTER (hover-intercept model)
 -- Keyboard keys are NOT owned by click-cast. The action bar keeps its normal
--- keybind, so off-frame the key fires your real action-bar ability. A secure
--- `mouseoverstate` state driver binds the key (priority override) to a hidden
--- caster button ONLY while a unit is under the cursor (@mouseover), and clears
--- it otherwise — so click-cast intercepts on hover and the action bar takes back
--- over off-hover. The driver + key list are set up ONCE (state-driver execution
--- runs in a clean secure path, dodging the cold-boot taint that killed the old
--- per-hover SetBindingClick); @mouseover in the macro targets the hovered unit.
+-- keybind, so off-frame the key fires your real action-bar ability. The per-frame
+-- OnEnter secure wrap binds the key (priority override) to this hidden caster
+-- button while the cursor is over a registered click-cast frame, and OnLeave/
+-- OnHide (plus the header's clear-only dangling net) release it — so click-cast
+-- intercepts on hover and the action bar takes back over off-hover. Binding is
+-- edge-driven entirely in the secure environment (no state-driver poll deciding
+-- the bind); the caster only holds the per-key cast macros, published once on
+-- binding change. @mouseover in each macro targets the hovered unit.
 ---------------------------------------------------------------------------
 local casterButton
 local casterVBtns = {} -- virtual buttons set last apply, cleared on re-apply
-
--- _onstate-mouseoverstate (self = caster): bind every owned key to the caster
--- while @mouseover exists AND the cursor is over a registered click-cast
--- frame; clear them otherwise (action bar resumes). [@mouseover,exists] alone
--- is also true over nameplates and 3D world units — no macro conditional can
--- tell those apart from frame hover, so the snippet checks the registered
--- frames (published as cc-frame<i> refs) geometrically via IsUnderMouse.
-local CASTER_MOUSEOVER_SNIPPET = [[
-    -- Geometry is authoritative, NOT the mouseover token. The
-    -- [@mouseover,exists] driver is mouseover-blind (SecureStateDriverManager
-    -- ignores UPDATE_MOUSEOVER_UNIT; it re-samples on a 0.2s tick), so a unit
-    -- token that churns in combat flips this to "off" while the cursor has not
-    -- moved. Test "is a registered click-cast frame still under the cursor?".
-    local overFrame = false
-    local fcount = self:GetAttribute("cc-framecount") or 0
-    for i = 1, fcount do
-        local f = self:GetFrameRef("cc-frame" .. i)
-        if f and f:IsVisible() and f:IsUnderMouse() then
-            overFrame = true
-            break
-        end
-    end
-
-    if newstate == "on" then
-        -- Mouseover appeared. Bind ONLY over a real click-cast frame (a nameplate
-        -- / 3D world unit also satisfies [@mouseover,exists] but must not bind).
-        if not overFrame then return end
-        self:ClearBindings()
-        local count = self:GetAttribute("cc-keycount") or 0
-        for i = 1, count do
-            local key = self:GetAttribute("cc-key" .. i)
-            local vbtn = self:GetAttribute("cc-vbtn" .. i)
-            if key and vbtn then
-                self:SetBindingClick(true, key, self, vbtn)
-            end
-        end
-    elseif not overFrame then
-        -- Mouseover gone AND the cursor has truly left every frame: release the
-        -- keys so the action-bar keybind fires again. GUARDED -- while a frame is
-        -- still physically under the cursor a transient off-tick is ignored, so
-        -- the binding can't strand cleared until the next 0.2s tick ("stuck until
-        -- I re-mouseover").
-        self:ClearBindings()
-    end
-]]
 
 local function GetCasterButton()
     if not casterButton then
@@ -668,11 +657,9 @@ local function GetCasterButton()
             "SecureActionButtonTemplate,SecureHandlerStateTemplate")
         casterButton:RegisterForClicks("AnyDown", "AnyUp")
         casterButton:Hide()
-        casterButton:SetAttribute("_onstate-mouseoverstate", CASTER_MOUSEOVER_SNIPPET)
-        RegisterStateDriver(casterButton, "mouseoverstate", "[@mouseover,exists] on; off")
-        -- The hover wraps reach the caster through the header to bind/clear
-        -- keyboard keys on enter/leave (instant, and the only signal for
-        -- direct unit<->frame transitions the state driver never re-fires on).
+        -- The per-frame OnEnter/OnLeave/OnHide secure wraps reach the caster
+        -- through the header's "cc-caster" frame ref to bind/clear the keyboard
+        -- keys on the hover edges. The caster itself only holds the cast macros.
         GetBindingHeader():SetFrameRef("cc-caster", casterButton)
     end
     return casterButton
@@ -699,15 +686,32 @@ local function BuildCasterMacro(binding)
     return nil -- e.g. "menu": handled via togglemenu type attr, no macro
 end
 
+-- True while the spec/loadout context is still landing (cold login): the talent
+-- APIs return nil until populated, so an empty keyboard resolve is untrustworthy
+-- and the last-good caster state should be kept. Once the context IS known, an
+-- empty list is AUTHORITATIVE -- the user removed their last keyboard key, or this
+-- spec simply has none -- and stale caster state must be cleared.
+local function KeyboardContextUnresolved()
+    local db = GetDB()
+    if not db or not db.clickCast or not db.clickCast.perSpec then return false end
+    if not GetCurrentSpecID() then return true end
+    if db.clickCast.perLoadout and not GetStableLoadoutID() then return true end
+    return false
+end
+
 -- Publish the current keyboard keys (key list + per-key macros) to the caster so
--- the state driver can bind them on @mouseover. Set at setup / on binding change,
--- out of combat. The driver itself is registered once in GetCasterButton.
+-- the per-frame OnEnter wrap can bind them on hover. Set at setup / on binding
+-- change, out of combat.
 local function ApplyGlobalKeyboardBindings()
     if InCombatLockdown() then return end
-    -- Don't wipe a good binding on a TRANSIENT empty resolve (spec/loadout data
-    -- momentarily unavailable, e.g. a re-entrant Initialize): keep the last-good
-    -- key list and let the recovery re-resolve.
-    if #globalKeyBindings == 0 and HasConfiguredBindings() then return end
+    -- Keep the last-good key list on a TRANSIENT empty resolve (spec/loadout data
+    -- not landed yet). Gate on the CONTEXT being unresolved, NOT on "any binding
+    -- configured" -- the old HasConfiguredBindings() guard counted mouse/scroll
+    -- bindings too, so removing the last keyboard key while a mouse binding
+    -- remained left the caster's stale key attributes in place. The removed key
+    -- then re-armed on hover and fired a dead action instead of falling through to
+    -- its normal binding, until a /reload rebuilt the caster from scratch.
+    if #globalKeyBindings == 0 and KeyboardContextUnresolved() then return end
     local btn = GetCasterButton()
 
     -- Clear stale per-key attributes from the previous apply.
@@ -751,32 +755,11 @@ local function ClearGlobalKeyboardBindings()
     end
 end
 
--- Registered frames are mirrored onto the caster as frame refs so the
--- mouseoverstate snippet can tell "over a click-cast frame" from "over a
--- nameplate / world unit". Grown incrementally as frames register; reset by
--- RefreshBindings alongside the registeredFrames wipe so frames that don't
--- re-register (e.g. a unit-frame type toggled off) drop out of the gate.
-local casterFrameRefIndex = setmetatable({}, { __mode = "k" })
-local casterFrameRefCount = 0
-
-local function PublishCasterFrameRef(frame)
-    if InCombatLockdown() then return end
-    if casterFrameRefIndex[frame] then return end
-    local btn = GetCasterButton()
-    casterFrameRefCount = casterFrameRefCount + 1
-    casterFrameRefIndex[frame] = casterFrameRefCount
-    btn:SetFrameRef("cc-frame" .. casterFrameRefCount, frame)
-    btn:SetAttribute("cc-framecount", casterFrameRefCount)
-end
-
-local function ResetCasterFrameRefs()
-    wipe(casterFrameRefIndex)
-    casterFrameRefCount = 0
-    if casterButton and not InCombatLockdown() then
-        -- Stale cc-frame<i> refs above the count are never read.
-        casterButton:SetAttribute("cc-framecount", 0)
-    end
-end
+-- No caster frame-hover gate: binding is decided by the per-frame OnEnter wrap,
+-- which only exists on registered click-cast frames, so a bare @mouseover over a
+-- nameplate / world unit can never arm a keyboard key. The old cc-frame<i> ref
+-- list (consumed only by the removed mouseoverstate snippet's geometry gate) is
+-- gone with it.
 
 ---------------------------------------------------------------------------
 -- BUTTON NUMBER HELPER
@@ -865,14 +848,6 @@ local function SetupFrameClickCast(frame)
 
     registeredFrames[frame] = true
 
-    -- Publish the frame to the caster's frame-hover gate. Skipped while the
-    -- caster doesn't exist and no keyboard keys resolved (mouse/scroll-only
-    -- users never need the caster); a later keyboard resolve re-registers
-    -- every frame through RefreshBindings, which lands here again.
-    if casterButton or #globalKeyBindings > 0 then
-        PublishCasterFrameRef(frame)
-    end
-
     -- Only add script hooks once per frame — HookScript is additive and
     -- cannot be removed, so re-hooking on every RefreshBindings would
     -- duplicate tooltip lines and resurrection swaps.
@@ -920,8 +895,8 @@ local function SetupFrameClickCast(frame)
                 ClearHeaderOverrideBindings()
             end
         end)
-        -- No OnShow hook: re-show re-arm is handled secure-side by the caster's
-        -- mouseoverstate driver (see WrapFrameSecureHandlers). currentKeyboardFrame
+        -- No OnShow hook: re-show under a stationary cursor re-arms on the next
+        -- OnEnter (cursor move) or via the OOC re-register path. currentKeyboardFrame
         -- is maintained only by the real OnEnter/OnLeave/OnHide pointer events, not
         -- by an insecure mouse-over poll.
 
@@ -1171,9 +1146,6 @@ function QUI_GFCC:RefreshBindings()
         ClearFrameClickCast(frame)
     end
     wipe(registeredFrames)
-    -- Re-registration below rebuilds the caster's frame-hover gate from
-    -- scratch, so frames that don't come back drop out of it.
-    ResetCasterFrameRefs()
 
     if not enabled then
         -- Disable: clear bindings and mark as disabled

@@ -81,6 +81,7 @@ function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
 function GetSpecializationInfo() return specReady and 102 or nil end
 function RegisterStateDriver() end
+function RegisterAttributeDriver() end
 function UnregisterStateDriver() end
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }

@@ -2,13 +2,14 @@
 -- Run: lua tests/unit/groupframes_clickcast_frame_scope_test.lua
 --
 -- Keyboard click-cast must only intercept keys while the cursor is over a
--- REGISTERED click-cast frame (group/unit frames). The caster's mouseoverstate
--- driver fires on [@mouseover,exists], which is also true for nameplate and
--- 3D world-unit hover -- those must NOT bind the keys (the action bar keeps
--- them). The driver snippet therefore gates on "a registered frame is under
--- the cursor" via the caster's frame refs, and the secure OnEnter/OnLeave
--- wraps bind/clear the caster instantly for direct unit<->frame transitions
--- the driver never re-fires on (its state stays "on").
+-- REGISTERED click-cast frame (group/unit frames). Binding is edge-driven: the
+-- secure OnEnter wrap (which exists ONLY on registered frames) binds the key to
+-- the caster, and OnLeave/OnHide release it. A nameplate or 3D world-unit hover
+-- has no wrap, so it can never bind the key -- the action bar keeps it, by
+-- construction. The header's [@mouseover,exists] attribute driver is a clear-ONLY
+-- safety net (DANGLING_SNIPPET): on the false edge it releases a stale override
+-- only when geometry (GetMousePosition) proves the cursor left the last-entered
+-- frame, so a churning mouseover token can't strand the key.
 
 local inCombat = false
 local function noop() end
@@ -56,8 +57,14 @@ local function NewFrame(frameType, name, parent, template)
                 return function(self, label) return self.frameRefs[label] end
             elseif key == "IsVisible" then
                 return function(self) return self.visible ~= false end
-            elseif key == "IsUnderMouse" then
-                return function(self) return self.underMouse == true end
+            elseif key == "GetMousePosition" then
+                -- Restricted HANDLE:GetMousePosition -- cursor normalized into the
+                -- frame's own rect; nil when outside the bounds or the rect is
+                -- unresolved. self.underMouse drives "inside".
+                return function(self)
+                    if self.underMouse == true then return 0.5, 0.5 end
+                    return nil
+                end
             elseif key == "Execute" then
                 return function(self, snippet)
                     local loader = loadstring or load
@@ -86,6 +93,7 @@ function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
 function GetSpecializationInfo() return 102 end
 function RegisterStateDriver() end
+function RegisterAttributeDriver() end
 function UnregisterStateDriver() end
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }
@@ -153,104 +161,106 @@ GFCC:Initialize()
 GFCC:RegisterAllFrames()
 
 local caster = assert(_G.QUI_ClickCastCaster, "caster button should exist for keyboard binding")
+local header = assert(_G.QUI_ClickCastHeader, "binding header should exist")
 local loader = loadstring or load
 
--- Run the caster's mouseoverstate driver snippet with newstate "on"/"off"
--- (simulates a unit coming under / leaving the cursor).
-local function runCasterState(state)
-    local snippet = assert(caster:GetAttribute("_onstate-mouseoverstate"))
-    assert(loader("local self, newstate = ...\n" .. snippet))(caster, state)
-end
-
--- Run a frame's secure wrap pre-body (self = frame, owner = wrap header).
+-- Run a frame's secure wrap pre-body (self = frame, owner = wrap header). The
+-- wraps run in the header's managed environment, so currentHoverFrame is shared
+-- with the dangling net below -- here, both share the test's global table.
 local function runWrap(frame, script)
     local wrap = frame.secureWraps[script]
     assert(wrap, "frame should have a secure " .. script .. " wrap for keyboard click-cast")
     assert(loader("local self, owner = ...\n" .. wrap.preBody))(frame, wrap.header)
 end
 
----------------------------------------------------------------------------
--- Setup invariants: the registered frame is published to the caster so the
--- secure driver snippet can test "is the cursor over a click-cast frame".
----------------------------------------------------------------------------
-assert((caster:GetAttribute("cc-framecount") or 0) >= 1,
-    "BUG: registered frames were not published to the caster (frame-hover gate has nothing to check)")
-local ref = caster.frameRefs["cc-frame1"]
-assert(ref == child, "BUG: caster frame ref should point at the registered frame")
+-- Run the header's clear-only dangling net (self = header, name/value). Fires
+-- when [@mouseover,exists] drops to false.
+local function runDangling()
+    local snippet = assert(header:GetAttribute("_onattributechanged"),
+        "header should carry the dangling _onattributechanged snippet")
+    assert(loader("local self, name, value = ...\n" .. snippet))(header, "cc-hasunit", "false")
+end
 
 ---------------------------------------------------------------------------
--- Scenario 1 (THE regression): @mouseover exists but the cursor is NOT over
--- any registered frame -- a nameplate or 3D world unit. Keys must NOT bind;
--- the action bar keeps them.
+-- Setup invariants: the registered frame carries the secure OnEnter/OnLeave/
+-- OnHide wraps (the bind/clear edges), and the header carries the clear-only
+-- dangling net. There is NO caster-side frame-hover gate any more.
 ---------------------------------------------------------------------------
-child.underMouse = false
-runCasterState("on")
+assert(child.secureWraps["OnEnter"] and child.secureWraps["OnLeave"],
+    "BUG: registered frame missing the secure hover wraps that bind keyboard click-cast")
+assert(header:GetAttribute("_onattributechanged"),
+    "BUG: header missing the dangling safety-net snippet")
+
+---------------------------------------------------------------------------
+-- Scenario 1 (THE regression): @mouseover exists but the cursor is NOT over a
+-- registered frame -- a nameplate or 3D world unit. Such a hover fires no
+-- OnEnter on any registered frame, so nothing binds: the key stays on the
+-- action bar by construction (no driver can arm it off-frame).
+---------------------------------------------------------------------------
 assert(not caster.overrideBindings.F,
-    "BUG: nameplate/world @mouseover bound the click-cast key -- it must only bind over registered frames")
-print("OK: nameplate/world mouseover does not bind keyboard click-cast")
+    "BUG: a key was bound with nothing hovered -- only an OnEnter over a registered frame may bind")
+print("OK: nameplate/world mouseover cannot bind keyboard click-cast (no wrap, no bind)")
 
 ---------------------------------------------------------------------------
--- Scenario 2: cursor over a registered, visible frame -> the key binds.
+-- Scenario 2: cursor over a registered, visible frame -> OnEnter binds the key.
 ---------------------------------------------------------------------------
 child.underMouse = true
-runCasterState("on")
+runWrap(child, "OnEnter")
 local b = caster.overrideBindings.F
 assert(b and b.button == "keyf",
     "BUG: hovering a registered frame must bind the click-cast key to the caster")
-print("OK: registered-frame mouseover binds keyboard click-cast")
+print("OK: registered-frame OnEnter binds keyboard click-cast")
 
 ---------------------------------------------------------------------------
--- Scenario 3a: a transient driver "off" while the cursor is STILL over the
--- frame (a churning unit token -- the [@mouseover,exists] driver is
--- mouseover-blind and re-sampled on a 0.2s tick) must NOT release the key.
--- Releasing here is what stranded the binding cleared until a re-mouseover.
+-- Scenario 3a: a transient mouseover-token churn while the cursor is STILL over
+-- the frame (the [@mouseover,exists] driver is mouseover-blind, re-sampled on a
+-- 0.2s tick) must NOT release the key. The dangling net checks geometry and
+-- keeps the binding -- this is what un-strands the key.
 ---------------------------------------------------------------------------
-runCasterState("off")          -- child.underMouse still true (from Scenario 2)
+runDangling()                  -- child.underMouse still true (cursor inside)
 assert(caster.overrideBindings.F and caster.overrideBindings.F.button == "keyf",
-    "BUG: a transient off-tick while the cursor is still over the frame must keep the key (no stranding)")
-print("OK: guarded off-tick keeps the key while still over the frame")
+    "BUG: a false-edge while the cursor is still over the frame must keep the key (no stranding)")
+print("OK: dangling net keeps the key while the cursor is still over the frame")
 
 ---------------------------------------------------------------------------
--- Scenario 3b: driver "off" once the cursor has truly left every frame
--- releases the key so the action bar keybind fires.
+-- Scenario 3b: the false edge once the cursor has truly left the frame releases
+-- the key so the action bar keybind fires again.
 ---------------------------------------------------------------------------
 child.underMouse = false
-runCasterState("off")
+runDangling()
 assert(not caster.overrideBindings.F,
-    "off @mouseover with the cursor off every frame must release the key so the action bar keybind fires")
-print("OK: mouseover gone (cursor off the frame) releases the key")
+    "false edge with the cursor off the frame must release the key so the action bar keybind fires")
+print("OK: dangling net releases the key once the cursor has left the frame")
 
 ---------------------------------------------------------------------------
--- Scenario 4: a hidden frame under the cursor does not count (its rect can
--- linger where the cursor is while a nameplate has the actual mouseover).
+-- Scenario 4: a hidden frame must not keep the key. Re-arm, hide the frame,
+-- then run the dangling net: even though the cursor rect still reports inside,
+-- IsVisible() == false forces the release.
 ---------------------------------------------------------------------------
 child.underMouse = true
+runWrap(child, "OnEnter")
+assert(caster.overrideBindings.F, "precondition: re-hovering rebinds the key")
 child.visible = false
-runCasterState("on")
+runDangling()
 assert(not caster.overrideBindings.F,
-    "BUG: a hidden frame's rect must not satisfy the frame-hover gate")
+    "BUG: a hidden frame must release the key even with the cursor rect still inside")
 child.visible = nil
-runCasterState("off")
-print("OK: hidden frames do not satisfy the frame-hover gate")
+print("OK: dangling net releases the key when the frame is hidden")
 
 ---------------------------------------------------------------------------
--- Scenario 5: direct nameplate->frame transition. The driver state stays "on"
--- (no off tick between units) so it never re-fires; the frame's secure OnEnter
--- wrap must bind the caster keys instantly.
+-- Scenario 5: direct nameplate->frame transition. No driver re-fires between
+-- units, so the frame's secure OnEnter wrap is the sole mechanism that binds.
 ---------------------------------------------------------------------------
-child.underMouse = false
-runCasterState("on")              -- hovering the nameplate: no bind
-assert(not caster.overrideBindings.F, "precondition: nameplate hover left keys unbound")
+assert(not caster.overrideBindings.F, "precondition: key unbound after Scenario 4")
 child.underMouse = true
-runWrap(child, "OnEnter")         -- cursor slides onto the frame, driver silent
+runWrap(child, "OnEnter")         -- cursor slides onto the frame
 assert(caster.overrideBindings.F and caster.overrideBindings.F.button == "keyf",
-    "BUG: direct unit->frame transition must bind via the secure OnEnter wrap (driver never re-fires)")
+    "BUG: direct unit->frame transition must bind via the secure OnEnter wrap")
 print("OK: secure OnEnter wrap binds instantly on direct unit->frame transitions")
 
 ---------------------------------------------------------------------------
--- Scenario 6: direct frame->nameplate transition. Driver still "on"; the
--- frame's secure OnLeave wrap must release the keys so the nameplate hover
--- falls through to the action bar.
+-- Scenario 6: direct frame->nameplate transition. The frame's secure OnLeave
+-- wrap must release the keys so the nameplate hover falls to the action bar.
 ---------------------------------------------------------------------------
 child.underMouse = false
 runWrap(child, "OnLeave")
