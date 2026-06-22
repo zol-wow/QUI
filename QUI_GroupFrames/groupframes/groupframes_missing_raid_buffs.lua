@@ -435,6 +435,8 @@ end
 
 local function RefreshUnit(unit)
     if not MRB:HasActiveElements() then return end
+    local pf = ns.QUI_PerfFlags  -- dev A/B harness; nil in normal play
+    if pf and pf.disabled and pf.disabled.missingbuffs then return end
     local GF = ns.QUI_GroupFrames
     local GFA = ns.QUI_GroupFrameAuras
     local frames = GF and GF.unitFrameMap and GF.unitFrameMap[unit]
@@ -449,6 +451,8 @@ end
 
 local function RefreshAll()
     if not MRB:HasActiveElements() then return end
+    local pf = ns.QUI_PerfFlags  -- dev A/B harness; nil in normal play
+    if pf and pf.disabled and pf.disabled.missingbuffs then return end
     if refreshQueued then return end
     refreshQueued = true
     C_Timer.After(0, function()

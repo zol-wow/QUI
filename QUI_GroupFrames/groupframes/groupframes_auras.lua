@@ -597,16 +597,20 @@ local function RemoveAuraFromBucket(cache, bucketName, instID)
     return true
 end
 
-local function ReplaceAuraInBucket(cache, bucketName, instID, auraData)
-    local bucket, indexMap, byInstanceID
+local function ReplaceAuraInBucket(unit, cache, bucketName, instID, auraData)
+    local bucket, indexMap, byInstanceID, bySpellID, byName
     if bucketName == "buffs" then
         bucket = cache.buffs
         indexMap = cache.buffsIndexByID
         byInstanceID = cache.buffsByID
+        bySpellID = cache.buffsBySpellID
+        byName = cache.buffsByName
     else
         bucket = cache.debuffs
         indexMap = cache.debuffsIndexByID
         byInstanceID = cache.debuffsByID
+        bySpellID = cache.debuffsBySpellID
+        byName = cache.debuffsByName
     end
 
     local idx = indexMap[instID]
@@ -614,9 +618,47 @@ local function ReplaceAuraInBucket(cache, bucketName, instID, auraData)
         return false
     end
 
+    -- Repoint the spellID / name maps off the OLD aura object onto the fresh one
+    -- (same instance, new data after a stack/duration change). Clearing by the old
+    -- key first covers the rare case where the updated aura's spellID/name differs,
+    -- so the full RebuildBuffMaps/RebuildDebuffMaps on the updated path is unneeded.
+    local old = bucket[idx]
+    if old then
+        local oldSpell = SafeValue(old.spellId, nil)
+        if oldSpell and bySpellID[oldSpell] == old then bySpellID[oldSpell] = nil end
+        local oldName = SafeValue(old.name, nil)
+        if oldName and byName[oldName] == old then byName[oldName] = nil end
+    end
+
     bucket[idx] = auraData
     byInstanceID[instID] = auraData
-    return true
+    local newSpell = SafeValue(auraData.spellId, nil)
+    if newSpell then bySpellID[newSpell] = auraData end
+    local newName = SafeValue(auraData.name, nil)
+    if newName then byName[newName] = auraData end
+
+    -- Defensive flip detection (buffs only): report a change only when membership
+    -- actually moves, instead of forcing a defensive re-eval on every buff tick.
+    local defensiveChanged = false
+    if bucketName == "buffs" then
+        local was = cache.defensives[instID] == true
+        local isDef = ClassifyDefensive(unit, auraData) == true
+        if isDef ~= was then
+            defensiveChanged = true
+            if isDef then
+                cache.defensives[instID] = true
+                cache.defensiveOrder[#cache.defensiveOrder + 1] = instID
+            else
+                cache.defensives[instID] = nil
+                local order = cache.defensiveOrder
+                for i = #order, 1, -1 do
+                    if order[i] == instID then table.remove(order, i); break end
+                end
+            end
+        end
+    end
+
+    return true, defensiveChanged
 end
 
 local function AppendSlotAuras(unit, dst, ...)
@@ -720,8 +762,6 @@ local function ApplyAuraDelta(unit, updateInfo)
     ResetDeltaSummary()
     local buffsDirty = false
     local debuffsDirty = false
-    local buffFreshUpdated = false
-    local debuffFreshUpdated = false
     cache.defensiveSetChanged = false
     local GetAuraByInstanceID = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
     local nAdded = updateInfo.addedAuras and #updateInfo.addedAuras or 0
@@ -791,17 +831,16 @@ local function ApplyAuraDelta(unit, updateInfo)
                     if not freshAura then
                         return false
                     end
-                    if not ReplaceAuraInBucket(cache, bucketName, instID, freshAura) then
+                    local replaced, defChanged = ReplaceAuraInBucket(unit, cache, bucketName, instID, freshAura)
+                    if not replaced then
                         return false
                     end
                     SummaryAddSpell(freshAura)
                     if bucketName == "buffs" then
                         buffsDirty = true
-                        buffFreshUpdated = true
-                        cache.defensiveSetChanged = true
+                        if defChanged then cache.defensiveSetChanged = true end
                     else
                         debuffsDirty = true
-                        debuffFreshUpdated = true
                     end
                 end
             end
@@ -836,12 +875,10 @@ local function ApplyAuraDelta(unit, updateInfo)
         end
     end
 
-    if buffsDirty and buffFreshUpdated then
-        RebuildBuffMaps(unit, cache)
-    end
-    if debuffsDirty and debuffFreshUpdated then
-        RebuildDebuffMaps(unit, cache)
-    end
+    -- No full RebuildBuffMaps/RebuildDebuffMaps on the updated path: ReplaceAuraInBucket
+    -- now maintains the spellID/name/instance maps and the defensive set incrementally.
+    -- Dispel/defensive classification is spell-fixed, so a stack/duration update can't
+    -- change it -- the add/remove paths already keep playerDispellable/allDispellable current.
     if cache.defensiveSetChanged then
         if auraStats then auraStats.defensiveSetChanges = auraStats.defensiveSetChanges + 1 end
     end
@@ -987,12 +1024,35 @@ local GetFrameAuraSettings
 local _renderCurrentIDs = {}
 
 -- Active player spec (mirrors the editor + the retired pinned-aura module).
+-- Cached on the module table: spec only changes on PLAYER_SPECIALIZATION_CHANGED,
+-- so the two C calls don't belong in the per-frame render path. `false` = the
+-- "computed, no spec" sentinel so a genuinely nil spec isn't recomputed each call.
 local function GetPlayerSpecID()
+    local cached = QUI_GFA._cachedSpecID
+    if cached ~= nil then
+        return cached or nil
+    end
     local specIndex = GetSpecialization and GetSpecialization()
     if specIndex and GetSpecializationInfo then
-        return (GetSpecializationInfo(specIndex))
+        cached = (GetSpecializationInfo(specIndex)) or false
+    else
+        cached = false
     end
-    return nil
+    QUI_GFA._cachedSpecID = cached
+    return cached or nil
+end
+
+-- Invalidate the spec cache on spec/loadout swap and login. Frame held alive by
+-- the event system (no persistent local needed -> no main-chunk upvalue added).
+do
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    f:RegisterEvent("PLAYER_ENTERING_WORLD")
+    f:SetScript("OnEvent", function(_, event, unit)
+        if event == "PLAYER_ENTERING_WORLD" or unit == "player" then
+            QUI_GFA._cachedSpecID = nil
+        end
+    end)
 end
 
 -- Build the ordered, capped match set for a filterStrip element from the shared
@@ -1155,6 +1215,7 @@ end
 -- the generation bumps on any settings change (InvalidateLayout / RefreshAll).
 -- Held weak-keyed so it never lands in SavedVariables and GC'd configs don't leak.
 local _relGeneration = 0
+QUI_GFA._configGeneration = 0  -- public mirror of _relGeneration for the renderer's icon-config gate
 local _relCache = setmetatable({}, { __mode = "k" })
 local function GetAuraRelevance(auras, specID)
     local rel = _relCache[auras]
@@ -1214,6 +1275,8 @@ end
 -- they are). nil = full render (settings refresh / full scan / cold) → all.
 local function RenderFrameElements(frame, cache, dirty)
     if not frame or not frame.unit then return end
+    local pf = ns.QUI_PerfFlags  -- dev A/B harness; nil in normal play
+    if pf and pf.disabled and pf.disabled.auras then return end
     local Render = GetRender()
     if not Render then return end
 
@@ -1640,6 +1703,7 @@ end
 -- about, invalidating the cached dirty-skip descriptors.
 function QUI_GFA:InvalidateLayout()
     _relGeneration = _relGeneration + 1
+    QUI_GFA._configGeneration = _relGeneration
 end
 
 ---------------------------------------------------------------------------
@@ -1652,6 +1716,7 @@ function QUI_GFA:RefreshAll()
     -- Full refresh = settings may have changed; invalidate cached dirty-skip
     -- descriptors so the next render rebuilds them from the current config.
     _relGeneration = _relGeneration + 1
+    QUI_GFA._configGeneration = _relGeneration
     for unit, list in pairs(GF.unitFrameMap) do
         local shouldScan = AnyVisibleFrameHasActiveAuraConsumers(list, #list)
         if shouldScan then

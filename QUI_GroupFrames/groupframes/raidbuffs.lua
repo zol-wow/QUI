@@ -1224,6 +1224,8 @@ UpdateDisplay = function()
 end
 
 local function ThrottledUpdate()
+    local pf = ns.QUI_PerfFlags  -- dev A/B harness; nil in normal play
+    if pf and pf.disabled and pf.disabled.raidbuffs then return end
     local now = GetTime()
     if now - lastUpdate < UPDATE_THROTTLE then return end
     lastUpdate = now
@@ -1305,6 +1307,82 @@ else
     SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
+-- Aura spell IDs whose add/remove/refresh should wake the missing-buff display.
+-- Everything else (the 95%+ of raid aura churn) is filtered out before any work.
+-- Static lists -> built once. Weapon-enchant self-buffs have no aura and are
+-- intentionally excluded (the enchant poller drives those).
+local trackedSpellIDs = {}
+for _, buff in ipairs(RAID_BUFFS) do
+    if buff.buffIDs then
+        for _, id in ipairs(buff.buffIDs) do trackedSpellIDs[id] = true end
+    elseif buff.spellId then
+        trackedSpellIDs[buff.spellId] = true
+    end
+end
+for _, selfBuff in ipairs(SELF_BUFFS) do
+    if selfBuff.anyBuffIDs then
+        for id in pairs(selfBuff.anyBuffIDs) do trackedSpellIDs[id] = true end
+    end
+end
+
+-- Per-unit set of auraInstanceIDs currently held that map to a tracked buff.
+-- Fed by the incremental UNIT_AURA delta; lets removed/updated events (which
+-- carry only instanceIDs, never spellIDs) resolve without an aura rescan.
+local trackedInstances = {}  -- [unit] = { [auraInstanceID] = true }
+
+local function AuraDeltaIsRelevant(unit, updateInfo)
+    -- No payload or a full refresh: can't diff cheaply -> wake, re-derive lazily.
+    if not updateInfo or updateInfo.isFullUpdate then
+        trackedInstances[unit] = nil
+        return true
+    end
+
+    local relevant = false
+    local set = trackedInstances[unit]
+
+    -- Added auras carry spellId (may be secret on other players).
+    local added = updateInfo.addedAuras
+    if added then
+        for i = 1, #added do
+            local ad = added[i]
+            local sid = ad.spellId
+            if sid == nil then
+                -- no spellId: ignore
+            elseif IsSecretValue(sid) then
+                relevant = true  -- can't test a secret spellId; assume relevant
+            elseif trackedSpellIDs[sid] then
+                relevant = true
+                local iid = ad.auraInstanceID
+                if iid and not IsSecretValue(iid) then
+                    set = set or {}
+                    trackedInstances[unit] = set
+                    set[iid] = true
+                end
+            end
+        end
+    end
+
+    -- Removed / updated carry only instanceIDs (NeverSecretContents per API).
+    -- Only the ones we flagged tracked matter.
+    if set then
+        local removed = updateInfo.removedAuraInstanceIDs
+        if removed then
+            for i = 1, #removed do
+                local iid = removed[i]
+                if set[iid] then relevant = true; set[iid] = nil end
+            end
+        end
+        local updated = updateInfo.updatedAuraInstanceIDs
+        if updated then
+            for i = 1, #updated do
+                if set[updated[i]] then relevant = true; break end
+            end
+        end
+    end
+
+    return relevant
+end
+
 -- Subscribe to centralized aura dispatcher
 if ns.AuraEvents then
     -- Roster filter handles player/party/raid membership at the dispatcher
@@ -1312,6 +1390,7 @@ if ns.AuraEvents then
     ns.AuraEvents:Subscribe("roster", function(unit, updateInfo)
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
+        if not AuraDeltaIsRelevant(unit, updateInfo) then return end
         ThrottledUpdate()
     end)
 end

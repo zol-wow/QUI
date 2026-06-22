@@ -80,6 +80,7 @@ local _state = {
     unitEventRegistrationEnabled = false,
     unitEventFrames = {},
     healAbsorbThrottle = {},
+    healthThrottle = {},
     unitEventActive = {
         UNIT_HEALTH = true,
         UNIT_MAXHEALTH = true,
@@ -990,20 +991,31 @@ local function UpdateHealth(frame)
         end
     end
 
-    -- Centered status text overlay for dead/offline
+    -- Centered status text overlay for dead/offline.
+    -- Life-state is plain booleans (secret-normalized in GetUnitLifeState), so a
+    -- dirty-check is safe and skips redundant SetText/Show/Hide/SetAlpha on every
+    -- (now-throttled) health tick — only an actual transition touches the widget.
     if frame.statusText then
-        if not isConnected then
-            frame.statusText:SetText(ns.L["OFFLINE"])
-            frame.statusText:SetTextColor(COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3])
-            frame.statusText:Show()
-        elseif isDeadOrGhost then
-            frame.statusText:SetText(isGhost and ns.L["GHOST"] or ns.L["DEAD"])
-            frame.statusText:SetTextColor(COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3])
-            frame.statusText:Show()
-            -- Dim the frame slightly for dead units (offline dimming handled in UpdateConnection)
-            frame:SetAlpha(0.65)
-        else
-            frame.statusText:Hide()
+        local statusKey
+        if not isConnected then statusKey = 1
+        elseif isDeadOrGhost then statusKey = isGhost and 3 or 2
+        else statusKey = 0 end
+
+        if statusKey ~= frame._lastStatusKey then
+            frame._lastStatusKey = statusKey
+            if statusKey == 1 then
+                frame.statusText:SetText(ns.L["OFFLINE"])
+                frame.statusText:SetTextColor(COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3])
+                frame.statusText:Show()
+            elseif statusKey == 2 or statusKey == 3 then
+                frame.statusText:SetText(statusKey == 3 and ns.L["GHOST"] or ns.L["DEAD"])
+                frame.statusText:SetTextColor(COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3])
+                frame.statusText:Show()
+                -- Dim the frame slightly for dead units (offline dimming handled in UpdateConnection)
+                frame:SetAlpha(0.65)
+            else
+                frame.statusText:Hide()
+            end
         end
     end
 
@@ -5186,6 +5198,7 @@ local function GRU_DeferredWork()
     wipe(powerThrottle)
     wipe(absorbThrottle)
     wipe(_state.healAbsorbThrottle)
+    wipe(_state.healthThrottle)
     wipe(healPredThrottle)
     -- Evict stale aura cache entries for units no longer in the group
     local GFA = ns.QUI_GroupFrameAuras
@@ -5280,7 +5293,15 @@ local function OnEvent(self, event, arg1, ...)
             -- by their own dedicated events (UNIT_ABSORB_AMOUNT_CHANGED,
             -- UNIT_HEAL_ABSORB_AMOUNT_CHANGED, UNIT_HEAL_PREDICTION) — calling
             -- them here doubled work in raids (~150-200 UNIT_HEALTH events/sec).
+            -- Per-unit 100ms coalesce mirrors the power/absorb throttle: UNIT_HEALTH
+            -- was the one high-frequency event with no throttle. GetTime only, no
+            -- value compare (health returns are secret, == would throw).
+            local pf = ns.QUI_PerfFlags  -- dev A/B harness; nil in normal play
+            if pf and pf.disabled and pf.disabled.health then return end
             if not UnitExists(arg1) then return end
+            local now = GetTime()
+            if (now - (_state.healthThrottle[arg1] or 0)) < THROTTLE_INTERVAL then return end
+            _state.healthThrottle[arg1] = now
             for i = 1, nFrames do UpdateHealth(frames[i]) end
 
         elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" then

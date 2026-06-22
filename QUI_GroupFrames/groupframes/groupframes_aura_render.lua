@@ -437,6 +437,11 @@ local function AcquireIconFrame(parent)
         item = CreateIconFrame(parent)
     end
     ApplyAuraIconSkinOwnership(item)
+    -- Constant icon texcoord: set once per acquire, not per render. Recycled icons
+    -- had their cooldown config reset on release, so clear the config stamp to force
+    -- ApplyIconData's per-element block to re-apply.
+    if item.icon then item.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+    item._cfgElement = nil
     return item
 end
 
@@ -707,34 +712,43 @@ end
 ---------------------------------------------------------------------------
 -- ICON DATA WRITE (shared by strip + single icon)
 ---------------------------------------------------------------------------
-local function ApplyIconData(icon, unit, element, auraData)
+local function ApplyIconData(icon, unit, element, auraData, cfgGen, br, bg, bb, ba)
     if icon.solidColor then icon.solidColor:Hide() end
     -- Stash the live aura instance so the runtime fast path (pure stack/
     -- duration updates) can reseat this icon's swipe without a full rebuild.
     icon._auraInstanceID = auraData and auraData.auraInstanceID
     if icon.icon then
         icon.icon:Show()
-        icon.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         local tex = auraData and auraData.icon
-        if tex then icon.icon:SetTexture(tex) end
+        if tex then icon.icon:SetTexture(tex) end  -- TexCoord set once at acquire
     end
 
     local cd = icon.cooldown
     if cd then
-        local showText = element.showDurationText == true
-        if cd.SetDrawSwipe then
-            pcall(cd.SetDrawSwipe, cd, element.hideSwipe ~= true)
-        end
-        if cd.SetReverse then
-            pcall(cd.SetReverse, cd, element.reverseSwipe == true)
-        end
-        -- Duration TEXT is the native C-side countdown (secret-safe). Configure
-        -- visibility/formatter and style its FontString per element font size.
-        ConfigureCountdown(cd, showText)
-        if showText then
-            StyleCountdownText(cd, element.durationFontSize or 9)
+        -- Element-config-derived setters (swipe / reverse / duration-text style) only
+        -- change when the element config changes. Gate on (element, configGen) so
+        -- steady-state renders skip them; the auras module bumps _configGeneration on
+        -- any settings edit, and AcquireIconFrame clears the stamp so recycled icons
+        -- (whose cooldown config was reset on release) always re-apply.
+        if icon._cfgElement ~= element or icon._cfgGen ~= cfgGen then
+            icon._cfgElement = element
+            icon._cfgGen = cfgGen
+            local showText = element.showDurationText == true
+            if cd.SetDrawSwipe then
+                pcall(cd.SetDrawSwipe, cd, element.hideSwipe ~= true)
+            end
+            if cd.SetReverse then
+                pcall(cd.SetReverse, cd, element.reverseSwipe == true)
+            end
+            -- Duration TEXT is the native C-side countdown (secret-safe). Configure
+            -- visibility/formatter and style its FontString per element font size.
+            ConfigureCountdown(cd, showText)
+            if showText then
+                StyleCountdownText(cd, element.durationFontSize or 9)
+            end
         end
 
+        -- Per-aura cooldown timing always applies.
         local dur = auraData and auraData.duration
         local expTime = auraData and auraData.expirationTime
         if dur and expTime then
@@ -751,7 +765,6 @@ local function ApplyIconData(icon, unit, element, auraData)
     end
 
     icon:SetAlpha(1)
-    local br, bg, bb, ba = GetSkinBorderColor()
     icon:SetBackdropBorderColor(br, bg, bb, ba)
 end
 
@@ -847,6 +860,11 @@ function R.RenderIcon(self, frame, element, matches)
     state._offY = offY
     state._bottomPad = bottomPad
 
+    -- Hoisted once per render: the skin border color is identical for every icon,
+    -- and the config generation gates the per-element setters inside ApplyIconData.
+    local br, bg, bb, ba = GetSkinBorderColor()
+    local cfgGen = (ns.QUI_GroupFrameAuras and ns.QUI_GroupFrameAuras._configGeneration) or 0
+
     for idx = 1, count do
         local icon = state.icons[idx]
         if not icon then
@@ -867,7 +885,7 @@ function R.RenderIcon(self, frame, element, matches)
             icon:SetPoint(iconAnchor, frame, anchor, offX + slotX, offY + slotY)
         end
 
-        ApplyIconData(icon, frame.unit, element, ordered[idx])
+        ApplyIconData(icon, frame.unit, element, ordered[idx], cfgGen, br, bg, bb, ba)
         icon:Show()
     end
 

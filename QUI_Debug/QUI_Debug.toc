@@ -12,6 +12,7 @@
 bootstrap.lua
 event_allowlist.lua
 performance.lua
+perftest.lua
 memaudit.lua
 editmode_diagnose.lua
 combat_end_profiler.lua
