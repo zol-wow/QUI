@@ -1,6 +1,6 @@
 -- tests/unit/worldmap_fill_layering_test.lua
 -- Run: lua tests/unit/worldmap_fill_layering_test.lua
-local capturedCallback
+local capturedCallbacks = {}
 local frameState = setmetatable({}, { __mode = "k" })
 local appliedBackdrops = {}
 
@@ -163,12 +163,15 @@ ns.SkinBase = {
         end
     end,
     SkinFrameText = function() end,
-    OnAddOnLoaded = function(_, callback)
-        capturedCallback = callback
+    OnAddOnLoaded = function(addon, callback)
+        capturedCallbacks[addon] = callback
     end,
 }
 
 assert(loadfile("QUI_Skinning/skinning/frames/worldmap.lua"))("QUI", ns)
+-- worldmap.lua registers several addon-loaded callbacks (WorldMap, FlightMap);
+-- target the WorldMap one specifically.
+local capturedCallback = capturedCallbacks["Blizzard_WorldMap"]
 assert(type(capturedCallback) == "function", "World map skinning must register an addon-loaded callback")
 
 capturedCallback()

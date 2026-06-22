@@ -224,14 +224,17 @@ assertContains(social, "SkinBase.LockFontObject(alert, { fontOnly = true })",
 
 local interaction = readFile("QUI_Skinning/skinning/frames/interaction.lua")
 local mail = readFile("QUI_Skinning/skinning/frames/mail.lua")
-local lockCount = 0
-for _ in interaction:gmatch("SkinBase%.LockFrameTextObjects%(frame, %d%)") do
-    lockCount = lockCount + 1
-end
-for _ in mail:gmatch("SkinBase%.LockFrameTextObjects%(frame, %d%)") do
-    lockCount = lockCount + 1
-end
-assert(lockCount >= 4, "Bank/Merchant/Mail/GuildBank skins must lock descendant text objects")
+-- The interaction window skins (Bank/Merchant/Gossip/Quest/GuildBank/Trainer/
+-- Macro) route through the canonical SkinBase.SkinWindow, which BUNDLES the
+-- durable font lock (LockFrameTextObjects) — that bundling is pinned by
+-- skinbase_coverage_verbs_test. So "they lock descendant text" is now verified
+-- by "they go through SkinWindow".
+local skinWindowCount = select(2, interaction:gsub("SkinBase%.SkinWindow%(", ""))
+assert(skinWindowCount >= 5,
+    "interaction window skins must route through SkinBase.SkinWindow (which locks descendant text)")
+-- Mail still locks descendant text directly (bespoke item-button skin).
+local mailLockCount = select(2, mail:gsub("SkinBase%.LockFrameTextObjects%(frame, %d%)", ""))
+assert(mailLockCount >= 1, "Mail skin must lock descendant text objects")
 
 local characterPane = readFile("QUI_Skinning/skinning/character_pane/character.lua")
 local characterSettings = blockBetween(characterPane, "-- \"Settings\" label",

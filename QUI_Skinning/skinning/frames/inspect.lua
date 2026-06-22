@@ -21,7 +21,6 @@ local CONFIG = {
 
 -- Module state
 local customBg = nil
-local inspectTabsHooked = false
 
 ---------------------------------------------------------------------------
 -- Helper: Get skin colors from QUI system
@@ -154,94 +153,15 @@ end
 ---------------------------------------------------------------------------
 -- Skin bottom tabs: Character, PvP, Guild
 ---------------------------------------------------------------------------
-local function StyleInspectFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not SkinBase or not tab then return end
-
-    if not SkinBase.IsStyled(tab) then
-        -- Clamp the Blizzard tab art hidden against re-assertion (see the matching
-        -- comment in frames/character.lua StyleCharacterFrameTab).
-        SkinBase.ClampAllTextures(tab)
-        local highlight = tab.GetHighlightTexture and tab:GetHighlightTexture()
-        SkinBase.ClampTextureHidden(highlight)
-
-        SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
-        local tabBackdrop = SkinBase.GetBackdrop(tab)
-        if tabBackdrop then
-            SkinBase.SetPixelInsetPoints(tabBackdrop, tab, 3, 3, 3, 0)
-        end
-
-        -- Re-assert the art clamp + font synchronously on every selection via
-        -- the shared global PanelTemplates hook.
-        SkinBase.RegisterTabArtClamp(tab)
-
-        SkinBase.MarkStyled(tab)
-    end
-
-    -- Drive the QUI font via the button's font OBJECTS so hover/select can't
-    -- revert it (a direct SetFont is clobbered by the button's state objects).
-    SkinBase.ApplyTabFontObjects(tab)
-
-    SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
-    SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
-end
-
-local function GetInspectFrameSelectedTab()
-    if not InspectFrame then return nil end
-    if PanelTemplates_GetSelectedTab then
-        local selected = PanelTemplates_GetSelectedTab(InspectFrame)
-        if selected then return selected end
-    end
-    return InspectFrame.selectedTab
-end
-
-local function UpdateInspectFrameTabSelectedState()
-    if not SkinBase then return end
-
-    local selectedTab = GetInspectFrameSelectedTab()
-
-    for i = 1, 3 do
-        local tab = _G["InspectFrameTab" .. i]
-        local bd = tab and SkinBase.GetBackdrop(tab)
-        local sc = tab and SkinBase.GetFrameData(tab, "skinColor")
-        local bg = tab and SkinBase.GetFrameData(tab, "bgColor")
-        if bd and sc and bg then
-            local tabID = tab.GetID and tab:GetID()
-            local isSelected = selectedTab == i or selectedTab == tabID
-            if isSelected then
-                SkinBase.SetBackdropColors(bd,
-                    { sc[1], sc[2], sc[3], sc[4] },
-                    { math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1 })
-            else
-                SkinBase.SetBackdropColors(bd,
-                    { sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6 },
-                    { bg[1], bg[2], bg[3], 0.7 })
-            end
-        end
-    end
-end
-
+-- Routes through the canonical SkinBase.SkinTabGroup. The former private
+-- StyleInspectFrameTab + UpdateInspectFrameTabSelectedState pair forked
+-- SkinTabButton/RefreshTabSelected and, worse, used live-only SetBackdropColors
+-- for the selected highlight, so the selection tint was LOST on any scale/theme
+-- rebuild. The shared verb persists it via ApplyPixelBackdrop and keeps these
+-- tabs byte-identical to CharacterFrame's. font=true opts into the QUI tab font +
+-- the canonical selected/unselected label recolor.
 local function SkinInspectFrameTabs()
-    if not SkinBase then return end
-
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
-
-    for i = 1, 3 do
-        local tab = _G["InspectFrameTab" .. i]
-        if tab then
-            StyleInspectFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        end
-    end
-
-    if not inspectTabsHooked and PanelTemplates_SetTab then
-        hooksecurefunc("PanelTemplates_SetTab", function(frame)
-            if frame == InspectFrame then
-                C_Timer.After(0, SkinInspectFrameTabs)
-            end
-        end)
-        inspectTabsHooked = true
-    end
-
-    UpdateInspectFrameTabSelectedState()
+    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("InspectFrame", 3), InspectFrame, { font = true })
 end
 
 ---------------------------------------------------------------------------
@@ -265,8 +185,8 @@ local function SkinInspectButtons()
         SkinBase.SkinChromeCloseButton(InspectFrame.CloseButton, {
             prefix = "inspectFrame",
             stateKey = "inspectClose",
-            label = "X",
-            fontSize = 11,
+            -- glyph + size inherit the unified "×"/14 default (matches every other
+            -- QUI close button); only the chrome inset/palette stay pane-specific.
             fontFlags = "OUTLINE",
             insetPixels = 2,
         })

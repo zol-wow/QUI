@@ -79,19 +79,24 @@ end
 -- Install the standard skinColor-based hover brighten/restore border hooks.
 -- Reads the stored "backdrop"/"skinColor" frame data set by the styler.
 local function AddSkinColorHoverBorder(button)
+    -- The backdrop is data-seeded (StyleGroupFinderButton -> ApplyFullBackdrop),
+    -- so a bare SetBackdropBorderColor is discarded when RefreshPixelBackdrop
+    -- rebuilds on the next scale refresh (border snaps back mid-hover). Route
+    -- the recolor through SkinBase.SetBackdropColors (persists data.* + re-renders,
+    -- border-only via nil bg) and brighten via the shared HoverBrightenColor —
+    -- matching keystone.lua StyleButton and this file's UpdateGroupFinderButtonColors.
     button:HookScript("OnEnter", function(self)
         local bd = SkinBase.GetFrameData(self, "backdrop")
         local sc = SkinBase.GetFrameData(self, "skinColor")
         if bd and sc then
-            local r, g, b, a = unpack(sc)
-            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
+            SkinBase.SetBackdropColors(bd, { SkinBase.HoverBrightenColor(sc[1], sc[2], sc[3], sc[4]) }, nil)
         end
     end)
     button:HookScript("OnLeave", function(self)
         local bd = SkinBase.GetFrameData(self, "backdrop")
         local sc = SkinBase.GetFrameData(self, "skinColor")
         if bd and sc then
-            bd:SetBackdropBorderColor(unpack(sc))
+            SkinBase.SetBackdropColors(bd, { sc[1], sc[2], sc[3], sc[4] }, nil)
         end
     end)
 end
@@ -250,12 +255,9 @@ local function HideLFDDecorations()
         _G.LFDQueueFrameRandomScrollFrameScrollBarBorder:Hide()
     end
 
-    -- Specific dropdown decorations
-    if LFDQueueFrame.Dropdown then
-        if LFDQueueFrame.Dropdown.Left then LFDQueueFrame.Dropdown.Left:SetAlpha(0) end
-        if LFDQueueFrame.Dropdown.Right then LFDQueueFrame.Dropdown.Right:SetAlpha(0) end
-        if LFDQueueFrame.Dropdown.Middle then LFDQueueFrame.Dropdown.Middle:SetAlpha(0) end
-    end
+    -- (Removed dead LFDQueueFrame.Dropdown.Left/Right/Middle:SetAlpha(0) — that
+    -- legacy 3-slice dropdown art no longer exists in 12.x; the live TypeDropdown
+    -- is already skinned canonically elsewhere.)
 
     SkinBase.StripTextures(LFDQueueFrame)
 end
@@ -336,10 +338,11 @@ local function SkinLFDFrame()
             if button.shortageBorder then button.shortageBorder:SetAlpha(0) end
             if button.cover then button.cover:SetAlpha(0) end
             if button.checkButton then
-                -- Style checkbox
-                local check = button.checkButton
-                if check.SetNormalTexture then check:SetNormalTexture("") end
-                if check.SetPushedTexture then check:SetPushedTexture("") end
+                -- Canonical QUI checkbox (was a bare NormalTexture/PushedTexture
+                -- clear that left no QUI box, a flashing hover glow, and an
+                -- un-tinted checkmark). SkinCheckBox hides the box art, draws the
+                -- QUI backdrop, and accent-tints the check.
+                SkinBase.SkinCheckBox(button.checkButton)
             end
             local incentiveIcon = _G["LFDQueueFrameRoleButton" .. role .. "IncentiveIcon"]
             if incentiveIcon then incentiveIcon:SetAlpha(0) end
@@ -399,9 +402,8 @@ local function SkinRaidFinderFrame()
             if button.shortageBorder then button.shortageBorder:SetAlpha(0) end
             if button.cover then button.cover:SetAlpha(0) end
             if button.checkButton then
-                local check = button.checkButton
-                if check.SetNormalTexture then check:SetNormalTexture("") end
-                if check.SetPushedTexture then check:SetPushedTexture("") end
+                -- Canonical QUI checkbox (matches the LFD role buttons above).
+                SkinBase.SkinCheckBox(button.checkButton)
             end
             local incentiveIcon = _G["RaidFinderQueueFrameRoleButton" .. role .. "IncentiveIcon"]
             if incentiveIcon then incentiveIcon:SetAlpha(0) end
@@ -557,10 +559,11 @@ local function SkinLFGListFrame()
         if sp.RefreshButton then
             SkinBase.SkinButton(sp.RefreshButton, { font = true })
         end
-        -- Style search box (uses raw CreateBackdrop — keep colors)
+        -- Canonical editbox (was raw StripTextures + CreateBackdrop with no font
+        -- lock); SkinEditBox adds the QUI backdrop + locks the font + tags it
+        -- "editbox" so RefreshWidget recolors it on theme change.
         if sp.SearchBox then
-            SkinBase.StripTextures(sp.SearchBox)
-            SkinBase.CreateBackdrop(sp.SearchBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            SkinBase.SkinEditBox(sp.SearchBox)
         end
         -- Style filter button
         if sp.FilterButton then
@@ -1116,11 +1119,9 @@ local function SkinPVPFrame()
             end)
         end
 
-        -- Style scroll bar if present
+        -- Canonical thin QUI scrollbar (was a bare Background:Hide()).
         if HonorFrame.SpecificScrollBar then
-            if HonorFrame.SpecificScrollBar.Background then
-                HonorFrame.SpecificScrollBar.Background:Hide()
-            end
+            SkinBase.SkinTrimScrollBar(HonorFrame.SpecificScrollBar)
         end
     end
 
@@ -1211,9 +1212,9 @@ local function SkinPVPFrame()
                 StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             end)
 
-            -- Style scroll bar
-            if specificList.ScrollBar and specificList.ScrollBar.Background then
-                specificList.ScrollBar.Background:Hide()
+            -- Canonical thin QUI scrollbar (was a bare Background:Hide()).
+            if specificList.ScrollBar then
+                SkinBase.SkinTrimScrollBar(specificList.ScrollBar)
             end
         end
 
@@ -1368,12 +1369,7 @@ local function RefreshInstanceFramesColors()
             SkinBase.RefreshWidget(LFGListFrame.SearchPanel.SignUpButton)
             SkinBase.RefreshWidget(LFGListFrame.SearchPanel.RefreshButton)
             SkinBase.RefreshWidget(LFGListFrame.SearchPanel.FilterButton)
-            if LFGListFrame.SearchPanel.SearchBox then
-                local sbBd = SkinBase.GetBackdrop(LFGListFrame.SearchPanel.SearchBox)
-                if sbBd then
-                    SkinBase.SetBackdropColors(sbBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
-                end
-            end
+            SkinBase.RefreshWidget(LFGListFrame.SearchPanel.SearchBox)
         end
         if LFGListFrame.ApplicationViewer then
             SkinBase.RefreshWidget(LFGListFrame.ApplicationViewer.RefreshButton)

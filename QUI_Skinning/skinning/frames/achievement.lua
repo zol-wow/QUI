@@ -252,22 +252,13 @@ local function HookAchievementComparisonText()
 end
 
 -- Bottom tabs (Achievements / Guild / Statistics) — AchievementFrameTab1..3,
--- PanelTemplates tabs. Font-only fix — we DON'T reskin the tab art (left as
--- Blizzard's). A one-shot SkinFrameText is not enough: the engine shows the
--- button's HIGHLIGHT font object on hover with NO setter call, and
--- PanelTemplates_SelectTab swaps the DISABLED font object on selection — both
--- revert to Blizzard fonts. ApplyButtonFontObjects sets all three state font
--- OBJECTS (Normal / Highlight / Disabled) to the QUI font so hover and the
--- selected tab stay QUI; LockFrameTextObjects re-asserts after the SelectTab
--- SetDisabledFontObject swap.
-local function LockAchievementBottomTabFonts()
-    for i = 1, 3 do
-        local tab = _G["AchievementFrameTab" .. i]
-        if tab then
-            SkinBase.ApplyButtonFontObjects(tab)
-            SkinBase.LockFrameTextObjects(tab, 2)
-        end
-    end
+-- PanelTemplates tabs. Route through the canonical SkinBase.SkinTabGroup so they
+-- match EVERY other frame's tabs (QUI backdrop box + selected/unselected tint +
+-- durable font across hover/select), instead of the former font-only treatment
+-- that left the stock parchment tab art and made these the lone divergent tab
+-- strip. SkinTabGroup is idempotent, so re-calling on refresh is cheap.
+local function SkinAchievementBottomTabs()
+    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("AchievementFrame", 3), _G.AchievementFrame, { font = true })
 end
 
 local function SkinAchievement()
@@ -291,7 +282,7 @@ local function SkinAchievement()
     end
 
     SkinBase.SkinFrameText(frame, { recurse = true })
-    LockAchievementBottomTabFonts()
+    SkinAchievementBottomTabs()
     HookAchievementLists()
     HookAchievementListColors()
     HookAchievementObjectiveColors()
@@ -305,7 +296,7 @@ local function RefreshAchievement()
     local frame = _G.AchievementFrame
     if not frame then return end
     if SkinBase.IsSkinned(frame) then
-        LockAchievementBottomTabFonts()
+        SkinAchievementBottomTabs()
         HookAchievementLists()
         HookAchievementListColors()
         HookAchievementObjectiveColors()

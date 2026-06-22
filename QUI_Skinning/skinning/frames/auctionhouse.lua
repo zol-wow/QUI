@@ -205,7 +205,11 @@ local function SkinSearchBar()
             -- top. Lowering our own backdrop is stable; raising the X is not — the
             -- dropdown/menu machinery re-levels its child buttons on show/interaction. The
             -- opt does the same SetFrameLevel(max(0, level-1)) as the old manual block.
-            SkinBase.SkinButton(searchBar.FilterButton, { strip = true, font = true, belowChildren = true })
+            -- WowStyle1FilterDropdownTemplate (a DropdownButton) — route through the
+            -- canonical SkinDropdown (default strip, like every other QUI dropdown)
+            -- so it reads as a dropdown, not a button. belowChildren keeps the QUI
+            -- backdrop below the ClearFiltersButton "X" overlay so it stays on top.
+            SkinBase.SkinDropdown(searchBar.FilterButton, { belowChildren = true })
         end
         -- Search button
         if searchBar.SearchButton then
@@ -510,9 +514,9 @@ local function SkinCategoriesList()
         SkinBase.SetFrameData(categoriesList, "clickHooked", true)
     end
 
-    -- Hide scroll bar background
-    if categoriesList.ScrollBar and categoriesList.ScrollBar.Background then
-        categoriesList.ScrollBar.Background:Hide()
+    -- Canonical thin QUI scrollbar (was a bare Background:Hide()).
+    if categoriesList.ScrollBar then
+        SkinBase.SkinTrimScrollBar(categoriesList.ScrollBar)
     end
 end
 
@@ -556,6 +560,23 @@ local function SkinAuctionHouse()
     SkinBase.SkinFrameText(AuctionHouseFrame, { recurse = true })
     LockAuctionHouseTokenText()
     LockAuctionHouseBuyDialogText()
+
+    -- Item-display icons: crop + quality border. Hook the base item-display
+    -- mixin's icon setter (self = the ItemDisplay button) so every browse / sell /
+    -- auctions item icon is skinned as it is set. Idempotent per mixin + per icon.
+    if SkinBase.SkinIcon and _G.AuctionHouseItemDisplayMixin
+        and not SkinBase.GetFrameData(_G.AuctionHouseItemDisplayMixin, "qAHIconHooked") then
+        hooksecurefunc(_G.AuctionHouseItemDisplayMixin, "SetItemInternal", function(self)
+            if self and self.Icon then
+                local border = SkinBase.SkinIcon(self.Icon)
+                if border and self.IconBorder then
+                    SkinBase.HandleIconBorder(self.IconBorder, border)
+                end
+            end
+        end)
+        SkinBase.SetFrameData(_G.AuctionHouseItemDisplayMixin, "qAHIconHooked", true)
+    end
+
     SkinBase.MarkSkinned(AuctionHouseFrame)
 end
 

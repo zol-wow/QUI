@@ -19,40 +19,23 @@ assertContains(
     "local SkinBase = ns.SkinBase",
     "Inspect frame skinning must use the shared SkinBase tab styling helpers")
 
-assertContains(
-    source,
-    "local function StyleInspectFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)",
-    "Inspect frame skinning must style InspectFrame bottom tabs")
-
+-- InspectFrame bottom tabs must route through the SHARED canonical verb, not the
+-- former private StyleInspectFrameTab fork (which used live-only SetBackdropColors
+-- for the selected highlight and LOST the tint on any scale/theme rebuild).
 assertContains(
     source,
     "local function SkinInspectFrameTabs()",
-    "Inspect frame skinning must enumerate InspectFrame tabs")
+    "Inspect frame skinning must define the bottom-tab skin entry point")
 
 assertContains(
     source,
-    "_G[\"InspectFrameTab\" .. i]",
-    "Inspect tab skinning must cover InspectFrameTab1..3")
+    "SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs(\"InspectFrame\", 3), InspectFrame",
+    "Inspect bottom tabs must route through the canonical SkinBase.SkinTabGroup (covers InspectFrameTab1..3 + persisted selection)")
 
-assertContains(
-    source,
-    "SkinBase.ClampAllTextures(tab)",
-    "Inspect tab skinning must clamp all Blizzard tab textures hidden (not a one-shot alpha=0 that Blizzard re-asserts on selection)")
-
-assertContains(
-    source,
-    "SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)",
-    "Inspect tab skinning must create QUI tab backdrops")
-
-assertContains(
-    source,
-    "hooksecurefunc(\"PanelTemplates_SetTab\"",
-    "Inspect tab selected-state visuals must refresh when Blizzard changes selected tab")
-
-assertContains(
-    source,
-    "frame == InspectFrame",
-    "Inspect PanelTemplates_SetTab hook must only refresh InspectFrame tabs")
+assert(not source:find("local function StyleInspectFrameTab", 1, true),
+    "InspectFrame tabs must not reintroduce the private StyleInspectFrameTab fork; use SkinBase.SkinTabGroup")
+assert(not source:find("SkinBase.SetBackdropColors(bd,", 1, true),
+    "InspectFrame tabs must not use live-only SetBackdropColors for selection (lost on scale rebuild); RefreshTabSelected persists via ApplyPixelBackdrop")
 
 assertContains(
     source,

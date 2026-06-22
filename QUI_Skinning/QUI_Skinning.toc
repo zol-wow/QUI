@@ -29,10 +29,13 @@ skinning\system\popups.lua
 skinning\frames\overrideactionbar.lua
 skinning\gameplay\objectivetracker.lua
 skinning\frames\instanceframes.lua
+skinning\frames\delves.lua
+skinning\frames\pvpmatch.lua
 skinning\frames\auctionhouse.lua
 skinning\frames\craftingorders.lua
 skinning\frames\professions.lua
 skinning\frames\interaction.lua
+skinning\frames\misc_frames.lua
 skinning\frames\mail.lua
 skinning\frames\social.lua
 skinning\frames\journals.lua

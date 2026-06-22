@@ -81,6 +81,41 @@ local function CreateStateTable()
     return tbl, get
 end
 
+-- Model the canonical SkinBase pixel-backdrop engine (core/uikit.lua) that
+-- character.lua's thin ApplyPixelBackdrop / SetPixelBackdropColors shims now
+-- delegate to. Persist border/bg per frame in `pixelData` and re-render on each
+-- scale refresh through the shared snapped 4-texture ApplyTextureBackdrop path.
+-- SetBackdropColors updates the persisted data (NOT a bare setter) so a recolor
+-- survives the next rebuild — the exact contract this test guards.
+local pixelData = setmetatable({}, { __mode = "k" })
+local function ApplyTextureBackdropStub(frame, _bgFile, _edgeFile, _edgeSize, borderColor, bgColor)
+    if bgColor then
+        frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+    else
+        frame:SetBackdropColor(frame._quiBgR or 1, frame._quiBgG or 1, frame._quiBgB or 1, frame._quiBgA)
+    end
+    if borderColor then
+        frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+    else
+        frame:SetBackdropBorderColor(frame._quiBorderR or 1, frame._quiBorderG or 1, frame._quiBorderB or 1, frame._quiBorderA)
+    end
+    return true
+end
+local function RenderPixelBackdrop(frame)
+    local d = pixelData[frame]
+    if not frame or not d then return end
+    local edgeSize = (d.borderPixels or 1) * 0.5
+    local bgColor = d.bgColor
+    if not bgColor and frame._quiBgR ~= nil then
+        bgColor = { frame._quiBgR, frame._quiBgG, frame._quiBgB, frame._quiBgA }
+    end
+    local borderColor = d.borderColor
+    if not borderColor and frame._quiBorderR ~= nil then
+        borderColor = { frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA }
+    end
+    ApplyTextureBackdropStub(frame, false, edgeSize > 0 and "x" or false, edgeSize, borderColor, bgColor)
+end
+
 local ns = {
     Addon = {
         GetPixelSize = function() return 0.5 end,
@@ -120,23 +155,44 @@ local ns = {
     SkinBase = {
         -- Guarded pixel-size entry point (numerically mirrors Addon:GetPixelSize).
         GetPixelSize = function() return 0.5 end,
-        ApplyTextureBackdrop = function(frame, _bgFile, _edgeFile, _edgeSize, borderColor, bgColor)
-            if bgColor then
-                frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-            else
-                frame:SetBackdropColor(frame._quiBgR or 1, frame._quiBgG or 1, frame._quiBgB or 1, frame._quiBgA)
+        ApplyTextureBackdrop = ApplyTextureBackdropStub,
+        -- The canonical engine character.lua's shims delegate to.
+        ApplyPixelBackdrop = function(frame, borderPixels, withBackground, withInsets, borderColor, bgColor)
+            local d = pixelData[frame]
+            if not d then d = {}; pixelData[frame] = d end
+            d.borderPixels = borderPixels or 1
+            d.withBackground = withBackground and true or false
+            d.withInsets = withInsets and true or false
+            d.borderColor = borderColor
+            d.bgColor = bgColor
+            RenderPixelBackdrop(frame)
+            if not d.registered then
+                -- mirror ns.UIKit.RegisterScaleRefresh (append to the captured
+                -- list; `ns` is not yet in scope inside its own initializer).
+                scaleRefreshers[#scaleRefreshers + 1] = { owner = frame, fn = RenderPixelBackdrop }
+                d.registered = true
             end
-            if borderColor then
-                frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-            else
-                frame:SetBackdropBorderColor(frame._quiBorderR or 1, frame._quiBorderG or 1, frame._quiBorderB or 1, frame._quiBorderA)
+        end,
+        SetBackdropColors = function(frame, borderColor, bgColor)
+            local d = pixelData[frame]
+            if not d then
+                if bgColor then frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4]) end
+                if borderColor then frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4]) end
+                return
             end
-            return true
+            if borderColor ~= nil then d.borderColor = borderColor end
+            if bgColor ~= nil then d.bgColor = bgColor end
+            RenderPixelBackdrop(frame)
         end,
         -- character.lua registers its init via SkinBase.OnAddOnLoaded
-        -- (uikit.lua:2930). CharacterFrame is left nil above so auto-init is
+        -- (uikit.lua). CharacterFrame is left nil above so auto-init is
         -- skipped; the stub absorbs the registration without firing it.
         OnAddOnLoaded = function() end,
+        -- Bottom tabs now route through the canonical SkinBase.SkinTabGroup; this
+        -- test only exercises the equipment-manager popup backdrop, so absorb the
+        -- tab calls as no-ops.
+        CollectNumberedTabs = function() return {} end,
+        SkinTabGroup = function() end,
     },
     UIKit = {
         RegisterScaleRefresh = function(owner, _, fn)

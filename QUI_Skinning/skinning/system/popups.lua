@@ -94,7 +94,7 @@ local function HideDecorativeTextures(frame)
     end
 
     for _, key in ipairs({
-        "BG", "Bg", "Background", "Border", "NineSlice", "Inset",
+        "BG", "Bg", "Background", "Border", "NineSlice", "Inset", "TopTileStreaks",
         "LeftBorder", "RightBorder", "TopBorder", "BottomBorder",
         "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
         "PortraitContainer", "TitleContainer",
@@ -318,6 +318,14 @@ local function SkinContextMenuFrame(frame, isCompositorMenu)
         SkinBase.SkinFrameText(frame, { recurse = true })
         if SkinBase.LockFrameTextObjects then
             SkinBase.LockFrameTextObjects(frame, 3)
+        end
+        -- Legacy DropDownList menu entries are Buttons whose template declares a
+        -- HighlightFont OBJECT the engine swaps on hover (and a DisabledFont when
+        -- greyed) with NO setter call; LockFrameTextObjects (setter hook) misses it
+        -- and the entry label reverts to the stock face on mouseover. Driving the
+        -- button font objects is the durable fix.
+        if SkinBase.ApplyButtonFontObjectsDeep then
+            SkinBase.ApplyButtonFontObjectsDeep(frame, 3)
         end
     end
 end

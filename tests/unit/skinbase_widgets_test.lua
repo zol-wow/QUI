@@ -165,7 +165,7 @@ function list.ScrollBox:ForEachFrame(cb) cb(NewFrame()) end
 ScrollUtil = { AddAcquiredFrameCallback = function() end }
 SkinBase.SkinListContainer(list, function(r) styledRows[#styledRows + 1] = r end)
 assert(list.NineSlice.shown == nil or list.NineSlice.shown == false, "SkinListContainer must hide NineSlice")
-assert(list.ScrollBar.Background.visible == false, "SkinListContainer must hide ScrollBar.Background")
+assert(list.ScrollBar.Background.alpha == 0, "SkinListContainer must route the scrollbar through the canonical SkinTrimScrollBar (alpha-0 background, not a bare Hide)")
 assert(#styledRows == 1, "SkinListContainer must style pooled rows via the scroll hook")
 
 -- SkinListContainer is idempotent (second call is a no-op)

@@ -312,6 +312,10 @@ local function SkinLootWonAlert(frame)
     CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(lootItem.Icon, "border"), 4)
 
     SkinBase.SkinFrameText(frame, { recurse = true })
+    -- Durably lock the font OBJECTS so a pool re-use SetFontObject swap re-applies
+    -- the QUI face (idempotent via qFontLocked); the per-reuse SkinFrameText above
+    -- stays as a belt for SetText-only reverts the setter hook can't see.
+    SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -349,6 +353,9 @@ local function SkinLootUpgradeAlert(frame)
     CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(frame.Icon, "border"), 8)
 
     SkinBase.SkinFrameText(frame, { recurse = true })
+    -- Durably lock the font OBJECTS against pool re-use SetFontObject swaps
+    -- (idempotent); the per-reuse SkinFrameText stays as a belt.
+    SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -641,6 +648,9 @@ local function SkinMiscAlert(frame)
     end
 
     SkinBase.SkinFrameText(frame, { recurse = true })
+    -- Durably lock the font OBJECTS against pool re-use SetFontObject swaps
+    -- (idempotent); the per-reuse SkinFrameText stays as a belt.
+    SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 

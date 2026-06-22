@@ -14,35 +14,26 @@ end
 
 local source = readFile("QUI_Skinning/skinning/frames/character.lua")
 
-assertContains(
-    source,
-    "local function StyleCharacterFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)",
-    "Character frame skinning must style the bottom Character/Reputation/Currency tabs")
-
+-- CharacterFrame bottom tabs (Character / Reputation / Currency) must route
+-- through the SHARED canonical verb, not a private fork. The former
+-- StyleCharacterFrameTab / UpdateCharacterFrameTabSelectedState pair was a
+-- byte-for-byte copy of SkinTabButton / RefreshTabSelected and silently drifted
+-- from every other frame's tabs whenever the canonical tab look changed.
 assertContains(
     source,
     "local function SkinCharacterFrameTabs()",
-    "Character frame skinning must enumerate the bottom CharacterFrame tabs")
+    "Character frame skinning must define the bottom-tab skin entry point")
 
 assertContains(
     source,
-    "_G[\"CharacterFrameTab\" .. i]",
-    "Bottom tab skinning must cover CharacterFrameTab1..3")
+    "SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs(\"CharacterFrame\", 3), CharacterFrame",
+    "Bottom CharacterFrame tabs must route through the canonical SkinBase.SkinTabGroup (covers CharacterFrameTab1..3 + selection dispatch + persisted selection tint)")
 
-assertContains(
-    source,
-    "SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)",
-    "Bottom tab styling must create QUI tab backdrops")
-
-assertContains(
-    source,
-    "SkinBase.ClampAllTextures(tab)",
-    "Bottom tab styling must clamp all Blizzard tab texture regions hidden (not a one-shot alpha=0 that Blizzard re-asserts on selection)")
-
-assertContains(
-    source,
-    "hooksecurefunc(\"PanelTemplates_SetTab\"",
-    "Bottom tab selected-state visuals must refresh when Blizzard changes selected tab")
+-- Must NOT reintroduce the private fork (the inconsistency root).
+assert(not source:find("local function StyleCharacterFrameTab", 1, true),
+    "CharacterFrame tabs must not reintroduce the private StyleCharacterFrameTab fork; use SkinBase.SkinTabGroup")
+assert(not source:find("local function UpdateCharacterFrameTabSelectedState", 1, true),
+    "CharacterFrame tabs must not reintroduce the private selection-state fork; RefreshTabSelected (via SkinTabGroup) owns this")
 
 assertContains(
     source,

@@ -76,17 +76,6 @@ local function HideButtonStateTextures(button)
     if button.GetDisabledTexture then ClampTexture(button:GetDisabledTexture()) end
 end
 
-local function InsetButtonBackdrop(button, inset)
-    if not button then return end
-    local backdrop = SkinBase.GetBackdrop(button)
-    if not backdrop then return end
-
-    -- Refreshing inset: re-applies on UI-scale change so the backdrop stays on the
-    -- pixel grid. The one-shot SetInsetPointsPx baked stale screen-unit offsets, and
-    -- its bare-SetPoint fallback was unreachable (the helper is always present).
-    SkinBase.SetInsetPixelPoints(backdrop, button, inset or 0)
-end
-
 local function LowerFrameBackdrop(frame)
     if not frame or not frame.GetFrameLevel then return end
     local backdrop = SkinBase.GetBackdrop(frame)
@@ -144,18 +133,13 @@ end
 local function SkinInboxArtwork()
     HideMailArtwork(_G.InboxFrameBg)
 
-    SkinBase.SkinButton(_G.InboxPrevPageButton)
-    SkinBase.SkinButton(_G.InboxNextPageButton)
-    InsetButtonBackdrop(_G.InboxPrevPageButton, 4)
-    InsetButtonBackdrop(_G.InboxNextPageButton, 4)
-    if _G.InboxPrevPageButton and _G.InboxPrevPageButton.GetNormalTexture then
-        ClampTexture(_G.InboxPrevPageButton:GetNormalTexture())
-    end
-    if _G.InboxNextPageButton and _G.InboxNextPageButton.GetNormalTexture then
-        ClampTexture(_G.InboxNextPageButton:GetNormalTexture())
-    end
-    HideButtonStateTextures(_G.InboxPrevPageButton)
-    HideButtonStateTextures(_G.InboxNextPageButton)
+    -- Canonical directional chevron + QUI backdrop — byte-identical to the merchant
+    -- page arrows. Replaces the former bespoke SkinButton + InsetButtonBackdrop +
+    -- ClampTexture + HideButtonStateTextures stack, which left the raw Blizzard
+    -- spellbook-arrow NormalTexture showing inside a QUI box (the user-reported
+    -- merchant-vs-mail arrow mismatch). SkinNextPrevButton is idempotent.
+    if _G.InboxPrevPageButton then SkinBase.SkinNextPrevButton(_G.InboxPrevPageButton, "prev") end
+    if _G.InboxNextPageButton then SkinBase.SkinNextPrevButton(_G.InboxNextPageButton, "next") end
 end
 
 local function SkinMailItems()
@@ -209,8 +193,12 @@ local function SkinSendMailControls()
     SkinMoneyInputFrame(_G.SendMailMoney)
     SkinBase.SkinButton(_G.SendMailCancelButton)
     SkinBase.SkinButton(_G.SendMailMailButton)
-    SkinBase.SkinButton(_G.SendMailSendMoneyButton)
-    SkinBase.SkinButton(_G.SendMailCODButton)
+    -- Send-money / C.O.D. are RADIO CheckButtons (SendMailRadioButtonTemplate, per
+    -- MailFrame.xml:741/751), NOT push buttons — SkinButton stripped their radio
+    -- art. Route through the canonical checkbox/radio verb (QUI box + accent-tinted
+    -- indicator) so they match every other QUI toggle.
+    if _G.SendMailSendMoneyButton then SkinBase.SkinCheckBox(_G.SendMailSendMoneyButton) end
+    if _G.SendMailCODButton then SkinBase.SkinCheckBox(_G.SendMailCODButton) end
 
     if _G.SendMailFrame then
         SkinBase.SkinFrameText(_G.SendMailFrame, { recurse = true })

@@ -111,6 +111,16 @@ local function SetInsetPixelPoints(region, relativeTo, pixels)
     end
 end
 
+-- DisablePixelSnap delegates to the shared UIKit helper. Solid 1px / inset
+-- color-textures must opt out of texel snapping or they rasterize to nothing
+-- (or seam) at fractional UI scales.
+local function DisablePixelSnap(region)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.DisablePixelSnap then
+        skinBase.DisablePixelSnap(region)
+    end
+end
+
 -- Border chrome delegates to the shared SkinBase policy. Kept as a local name
 -- so existing call sites remain thin per-frame wiring.
 local function ApplyOnePixelBorder(frame, withBackground, borderColor, bgColor)
@@ -1497,12 +1507,13 @@ local function CreateInspectSettingsButton()
     inspectSettingsPanel = CreateFrame("Frame", "QUI_InspectSettingsPanel", InspectFrame, "BackdropTemplate")
     inspectSettingsPanel:SetSize(450, 600)
     inspectSettingsPanel:SetPoint("TOPLEFT", InspectFrame, "TOPRIGHT", 5, 0)
+    -- bg = main QUI options panel background (#0d1117 @ 0.97 alpha) rather than
+    -- the lighter inspect-panel bg, so settings popouts read as the same surface
+    -- as the rest of QUI's settings UI. ApplyOnePixelBorder persists these colors
+    -- in the pixel-backdrop data; a bare SetBackdrop*Color follow-up would be
+    -- discarded when RefreshPixelBackdrop rebuilds on scale refresh, so it is
+    -- omitted (matches the gearBtn precedent above). Live recolor → SetOnePixelBorderColors.
     ApplyOnePixelBorder(inspectSettingsPanel, true, { C.border[1], C.border[2], C.border[3], 1 }, { 0.051, 0.067, 0.09, 0.97 })
-    -- Match the main QUI options panel background (#0d1117 @ 0.97 alpha)
-    -- rather than the lighter inspect-panel bg, so settings popouts feel
-    -- like the same surface as the rest of QUI's settings UI.
-    inspectSettingsPanel:SetBackdropColor(0.051, 0.067, 0.09, 0.97)
-    inspectSettingsPanel:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
     inspectSettingsPanel:SetFrameStrata("DIALOG")
     inspectSettingsPanel:SetFrameLevel(200)
     inspectSettingsPanel:EnableMouse(true)
@@ -1515,6 +1526,7 @@ local function CreateInspectSettingsButton()
     local panelContentBg = inspectSettingsPanel:CreateTexture(nil, "BACKGROUND", nil, 1)
     SetInsetPixelPoints(panelContentBg, inspectSettingsPanel, 1)
     panelContentBg:SetColorTexture(1, 1, 1, 0.02)
+    DisablePixelSnap(panelContentBg)
 
     -- Horizontal accent gradient wash to match the main QUI options panel.
     local panelGlow = inspectSettingsPanel:CreateTexture(nil, "BACKGROUND", nil, 2)
@@ -1555,6 +1567,11 @@ local function CreateInspectSettingsButton()
     local closeBtn = CreateFrame("Button", nil, inspectSettingsPanel, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -3, -3)
     closeBtn:SetScript("OnClick", function() inspectSettingsPanel:Hide() end)
+    do
+        -- Was an unskinned stock red X; route through the canonical close button.
+        local skinBase = GetSkinBase()
+        if skinBase and skinBase.SkinCloseButton then skinBase.SkinCloseButton(closeBtn) end
+    end
 
     -- Scroll frame for settings
     local scrollFrame = CreateFrame("ScrollFrame", nil, inspectSettingsPanel, "UIPanelScrollFrameTemplate")
@@ -1571,6 +1588,9 @@ local function CreateInspectSettingsButton()
     if scrollBar then
         scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", 2, -16)
         scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", 2, 16)
+        -- Canonical thin QUI scrollbar (was only repositioned, left stock art).
+        local skinBase = GetSkinBase()
+        if skinBase and skinBase.SkinTrimScrollBar then skinBase.SkinTrimScrollBar(scrollBar) end
     end
 
     -- Layout constants
@@ -1593,6 +1613,7 @@ local function CreateInspectSettingsButton()
             rowBg:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
             rowBg:SetHeight(FORM_ROW)
             rowBg:SetColorTexture(1, 1, 1, 0.02)
+            DisablePixelSnap(rowBg)
         end
         return currentY - FORM_ROW
     end

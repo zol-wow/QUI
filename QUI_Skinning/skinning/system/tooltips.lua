@@ -212,7 +212,7 @@ local function ApplyFontSizeViaFontObjects(size)
     if GameTooltipTextSmall and defaultSmallFont then
         local curFont, curSize, curFlags = GameTooltipTextSmall:GetFont()
         local smallSize = (type(curSize) == "number" and curSize > 0 and curSize)
-            or (type(defaultSmallSize) == "number" and defaultSmallSize) or size
+            or (type(defaultSmallSize) == "number" and defaultSmallSize > 0 and defaultSmallSize) or size
         local targetFlags = outline or curFlags or defaultSmallFlag or ""
         local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, smallSize, targetFlags)
         local needsApply = curFont ~= font or curFlags ~= targetFlags

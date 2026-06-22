@@ -829,13 +829,10 @@ local function SkinGroupLootHistoryFrame()
 
     local bgColor, borderColor, textColor = GetThemeColors()
 
-    -- Strip Blizzard textures
-    if HistoryFrame.NineSlice then
-        HistoryFrame.NineSlice:SetAlpha(0)
-    end
-    if HistoryFrame.Bg then
-        HistoryFrame.Bg:SetAlpha(0)
-    end
+    -- Strip Blizzard chrome via the canonical helper (NineSlice, Bg,
+    -- TopTileStreaks, portrait, title bg) rather than a hand-picked NineSlice/Bg
+    -- pair — keeps the title text, hides the chrome our backdrop replaces.
+    SkinBase.HidePortraitFrameChrome(HistoryFrame)
 
     -- Apply QUI backdrop
     local hfBd = SkinBase.GetFrameData(HistoryFrame, "backdrop")
@@ -875,8 +872,10 @@ local function SkinGroupLootHistoryFrame()
     -- Style the dropdown if it exists
     local Dropdown = HistoryFrame.EncounterDropdown
     if Dropdown then
-        -- Basic dropdown styling
-        if Dropdown.NineSlice then Dropdown.NineSlice:SetAlpha(0) end
+        -- Canonical dropdown (was a no-op NineSlice alpha — the template draws via a
+        -- .Background atlas, so the stock control showed through). Matches the QUI
+        -- backdrop look every other dropdown (e.g. AH DurationDropdown) gets.
+        SkinBase.SkinDropdown(Dropdown)
     end
 
     -- Style the close button. ClosePanelButton inherits
@@ -926,6 +925,13 @@ local function SkinGroupLootHistoryFrame()
     -- Skin loot history elements as they're acquired from the pool.
     if HistoryFrame.ScrollBox then
         SkinBase.HookScrollBoxAcquired(HistoryFrame.ScrollBox, SkinLootHistoryElement)
+        -- SkinLootHistoryElement only restyles the row icon/border; the row's
+        -- ItemName/winner/roll FontStrings stay at stock GameFontNormal otherwise.
+        -- Route them through the canonical pooled-row font lock (the same single
+        -- source of truth peer modules use) so each acquired row carries the QUI font.
+        if SkinBase.HookScrollBoxRowFonts then
+            SkinBase.HookScrollBoxRowFonts(HistoryFrame.ScrollBox, 3)
+        end
     end
 
     -- Hook Show to re-apply theme each time frame is shown

@@ -573,19 +573,33 @@ local function BuildSkinningTab(tabContent)
     if general.skinAuctionHouse == nil then general.skinAuctionHouse = false end
     if general.skinCraftingOrders == nil then general.skinCraftingOrders = false end
     if general.skinProfessions == nil then general.skinProfessions = false end
+    if general.skinPVPMatch == nil then general.skinPVPMatch = false end
+    if general.skinQuest == nil then general.skinQuest = false end
     if general.skinStatusTrackingBars == nil then general.skinStatusTrackingBars = true end
     if general.skinBank == nil then general.skinBank = false end
     if general.skinMerchant == nil then general.skinMerchant = false end
     if general.skinMail == nil then general.skinMail = false end
     if general.skinGuildBank == nil then general.skinGuildBank = false end
     if general.skinFriends == nil then general.skinFriends = false end
+    if general.skinFlightMap == nil then general.skinFlightMap = false end
+    if general.skinMacro == nil then general.skinMacro = false end
+    if general.skinMirrorTimers == nil then general.skinMirrorTimers = false end
+    if general.skinGossip == nil then general.skinGossip = false end
     if general.skinCommunities == nil then general.skinCommunities = false end
+    if general.skinDelves == nil then general.skinDelves = false end
+    if general.skinDressUp == nil then general.skinDressUp = false end
+    if general.skinItemUpgrade == nil then general.skinItemUpgrade = false end
+    if general.skinSocket == nil then general.skinSocket = false end
+    if general.skinTrade == nil then general.skinTrade = false end
+    if general.skinTabard == nil then general.skinTabard = false end
+    if general.skinGuildRegistrar == nil then general.skinGuildRegistrar = false end
     if general.skinSpellBook == nil then general.skinSpellBook = false end
     if general.skinEncounterJournal == nil then general.skinEncounterJournal = false end
     if general.skinCollections == nil then general.skinCollections = false end
     if general.skinAchievement == nil then general.skinAchievement = false end
     if general.skinWorldMap == nil then general.skinWorldMap = false end
     if general.skinWeeklyRewards == nil then general.skinWeeklyRewards = false end
+    if general.skinTrainer == nil then general.skinTrainer = false end
 
     L.headerAt(ns.L["Skin Blizzard Frames"])
     local sSBF = L.sectionAt()
@@ -598,23 +612,37 @@ local function BuildSkinningTab(tabContent)
         {key="skinCommunities",       label=ns.L["Communities (Req. Reload)"],             dbT=general,         desc=ns.L["Skin the Guilds and Communities window. Requires a reload."]},
         {key="skinContextMenus",      label=ns.L["Context Menus (Req. Reload)"],           dbT=general,         desc=ns.L["Skin right-click context menus and dropdown menu panels. Requires a reload."]},
         {key="skinCraftingOrders",    label=ns.L["Crafting Orders (Req. Reload)"],         dbT=general,         desc=ns.L["Skin the Crafting Orders interface used by professions. Requires a reload."]},
+        {key="skinDelves",            label=ns.L["Delves (Req. Reload)"],                  dbT=general,         desc=ns.L["Skin the Delves companion and difficulty-picker frames (QUI backdrop + fonts; bespoke art kept). Requires a reload."]},
+        {key="skinDressUp",           label=ns.L["Dressing Room (Req. Reload)"],           dbT=general,         desc=ns.L["Skin the dressing-room / try-on window. Requires a reload."]},
+        {key="skinItemUpgrade",       label=ns.L["Item Upgrade (Req. Reload)"],            dbT=general,         desc=ns.L["Skin the item upgrade window. Requires a reload."]},
+        {key="skinSocket",            label=ns.L["Item Socketing (Req. Reload)"],          dbT=general,         desc=ns.L["Skin the gem socketing window. Requires a reload."]},
+        {key="skinTrade",             label=ns.L["Trade Window (Req. Reload)"],            dbT=general,         desc=ns.L["Skin the player-to-player trade window. Requires a reload."]},
+        {key="skinTabard",            label=ns.L["Tabard Designer (Req. Reload)"],         dbT=general,         desc=ns.L["Skin the guild tabard designer window. Requires a reload."]},
+        {key="skinGuildRegistrar",    label=ns.L["Guild Registrar (Req. Reload)"],         dbT=general,         desc=ns.L["Skin the guild registrar (form-a-guild) window. Requires a reload."]},
         {key="skinEncounterJournal",  label=ns.L["Encounter Journal (Req. Reload)"],       dbT=general,         desc=ns.L["Skin the Adventure Guide / Encounter Journal window. Requires a reload."]},
         {key="skinPowerBarAlt",       label=ns.L["Encounter Power Bar (Req. Reload)"],     dbT=general,         desc=ns.L["Skin the alternate power bar some encounters use (e.g., boss add health bars). Requires a reload."]},
+        {key="skinFlightMap",         label=ns.L["Flight Map (Req. Reload)"],              dbT=general,         desc=ns.L["Skin the taxi / flight map's PortraitFrame border (the map canvas itself is unchanged). Requires a reload."]},
         {key="skinFriends",           label=ns.L["Friends List (Req. Reload)"],            dbT=general,         desc=ns.L["Skin the Friends / Ignore / Who window. Requires a reload."]},
+        {key="skinGossip",            label=ns.L["Gossip Dialog (Req. Reload)"],           dbT=general,         desc=ns.L["Skin the NPC gossip / quest-giver dialog window. Requires a reload."]},
         {key="skinGuildBank",         label=ns.L["Guild Bank (Req. Reload)"],              dbT=general,         desc=ns.L["Skin the Guild Bank window. Requires a reload."]},
         {key="skinInspectFrame",      label=ns.L["Inspect Frame (Req. Reload)"],           dbT=general,         desc=ns.L["Skin the Inspect window that opens when you /inspect another player. Requires a reload."]},
         {key="skinInstanceFrames",    label=ns.L["Instance Frames (Req. Reload)"],         dbT=general,         desc=ns.L["Skin the Group Finder, PvP, and Mythic+ instance windows. Requires a reload."]},
         {key="skinKeystoneFrame",     label=ns.L["Keystone Window (Req. Reload)"],         dbT=general,         desc=ns.L["Skin the Mythic+ Keystone insertion and selection window. Requires a reload."]},
         {key="enabled",               label=ns.L["Loot History (Req. Reload)"],            dbT=db.lootResults,  desc=ns.L["Skin the group loot history popup that summarizes recent drops. Requires a reload."]},
+        {key="skinMacro",             label=ns.L["Macro Editor (Req. Reload)"],            dbT=general,         desc=ns.L["Skin the macro editor window and its tabs. Requires a reload."]},
+        {key="skinMirrorTimers",      label=ns.L["Mirror Timers (Req. Reload)"],           dbT=general,         desc=ns.L["Skin the breath / fatigue / exhaustion timer bars with a flat themed fill. Requires a reload."]},
         {key="skinMail",              label=ns.L["Mail (Req. Reload)"],                    dbT=general,         desc=ns.L["Skin the in-game mail window. Requires a reload."]},
         {key="skinMerchant",          label=ns.L["Merchant (Req. Reload)"],                dbT=general,         desc=ns.L["Skin the vendor/merchant window. Requires a reload."]},
         {key="skinOverrideActionBar", label=ns.L["Override Action Bar (Req. Reload)"],     dbT=general,         desc=ns.L["Skin the temporary override bar shown during vehicles and special encounters. Requires a reload."]},
         {key="skinProfessions",       label=ns.L["Professions (Req. Reload)"],             dbT=general,         desc=ns.L["Skin the profession crafting and recipe window. Requires a reload."]},
+        {key="skinPVPMatch",          label=ns.L["PvP Scoreboard (Req. Reload)"],          dbT=general,         desc=ns.L["Skin the post-match PvP scoreboard / results frames (QUI backdrop + fonts). Requires a reload."]},
+        {key="skinQuest",             label=ns.L["Quest Dialog (Req. Reload)"],            dbT=general,         desc=ns.L["Skin the NPC quest detail / progress / reward dialog window. Requires a reload."]},
         {key="skinReadyCheck",        label=ns.L["Ready Check Dialog (Req. Reload)"],      dbT=general,         desc=ns.L["Skin the ready check popup. Requires a reload."]},
         {key="skinCharacterFrame",    label=ns.L["Reputation/Currency (Req. Reload)"],     dbT=general,         desc=ns.L["Skin the reputation and currency tabs of the character pane. Requires a reload."]},
         {key="skinSpellBook",         label=ns.L["Spellbook / Talents (Req. Reload)"],     dbT=general,         desc=ns.L["Skin the combined Spellbook and Talents window (PlayerSpellsFrame). Requires a reload."]},
         {key="skinStaticPopups",      label=ns.L["Static Dialogs (Req. Reload)"],          dbT=general,         desc=ns.L["Skin StaticPopup confirmation dialogs. Requires a reload."]},
         {key="skinStatusTrackingBars",label=ns.L["Status Tracking Bars (Req. Reload)"],    dbT=general,         desc=ns.L["Skin the experience, reputation, and honor bars above the action bar. Requires a reload."]},
+        {key="skinTrainer",           label=ns.L["Trainer (Req. Reload)"],                 dbT=general,         desc=ns.L["Skin the class/profession Trainer window. Requires a reload."]},
         {key="skinWeeklyRewards",     label=ns.L["Weekly Rewards / Great Vault (Req. Reload)"], dbT=general,    desc=ns.L["Skin the Great Vault window. Bespoke evergreen artwork is stripped. Requires a reload."]},
         {key="skinWorldMap",          label=ns.L["World Map (Req. Reload)"],               dbT=general,         desc=ns.L["Skin the World Map's PortraitFrame border (the map canvas itself is unchanged). Requires a reload."]},
     }

@@ -47,8 +47,12 @@ for _, file in ipairs({ auctionHouse, craftingOrders, professions, instanceFrame
 end
 
 -- Professions preserves its three guarded behaviors via SkinBase options
-assertContains(professions, "SkinBase.SkinDropdown(recipeList.FilterDropdown, { noStrip = true, belowChildren = true }",
-    "Professions filter dropdown must use noStrip + belowChildren to preserve the clear-filter X")
+-- Filter dropdown uses DEFAULT strip (matches AH/crafting). WowStyle1FilterDropdown's
+-- clear-filter ResetButton is a child <Button> (survives StripTextures, which only
+-- touches Texture regions), while default strip hides the stock .Background atlas the
+-- old noStrip left showing ("professions filter looks unskinned" bug).
+assertContains(professions, "SkinBase.SkinDropdown(recipeList.FilterDropdown, { belowChildren = true }",
+    "Professions filter dropdown must use the canonical default strip + belowChildren")
 assertContains(professions, "SkinBase.SkinTabGroup(tabs, frame, { hover = true })",
     "Professions main tabs must keep selected-state-aware hover")
 assertContains(professions, "SkinBase.SkinTab(tab, owner, { hover = true })",

@@ -146,3 +146,41 @@ if ns.Registry then
 end
 
 SkinBase.OnAddOnLoaded("Blizzard_WorldMap", SkinWorldMap, 0)
+
+---------------------------------------------------------------------------
+-- FlightMapFrame (taxi map) — same MapCanvasFrameTemplate split as WorldMap:
+-- its BorderFrame carries the PortraitFrameTemplate chrome. LOD: Blizzard_FlightMap.
+---------------------------------------------------------------------------
+local function SkinFlightMap()
+    if not IsSettingEnabled("skinFlightMap") then return end
+    local frame = _G.FlightMapFrame
+    if not frame or SkinBase.IsSkinned(frame) then return end
+
+    if frame.BorderFrame then
+        SkinBase.SkinButtonFrameTemplate(frame.BorderFrame)
+        ApplyBorderBackdrop(SkinBase.GetBackdrop(frame.BorderFrame))
+        if frame.BorderFrame.Underlay then frame.BorderFrame.Underlay:Hide() end
+        if frame.BorderFrame.InsetBorderTop then frame.BorderFrame.InsetBorderTop:Hide() end
+    end
+
+    SkinBase.SkinFrameText(frame, { recurse = true })
+    SkinBase.MarkSkinned(frame)
+end
+
+local function RefreshFlightMap()
+    local frame = _G.FlightMapFrame
+    if not frame or not SkinBase.IsSkinned(frame) then return end
+    if frame.BorderFrame then
+        ApplyBorderBackdrop(SkinBase.GetBackdrop(frame.BorderFrame))
+    end
+end
+if ns.Registry then
+    ns.Registry:Register("skinFlightMap", {
+        refresh = RefreshFlightMap,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end
+
+SkinBase.OnAddOnLoaded("Blizzard_FlightMap", SkinFlightMap, 0)

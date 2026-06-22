@@ -637,35 +637,10 @@ end
 -- setting the correct line height in StyleLine is sufficient — subsequent lines
 -- shift down automatically through the anchor chain.
 
--- Kill all textures in a NineSlice frame
-local function KillNineSlice(nineSlice)
-    if not nineSlice then return end
-
-    -- Hide the frame
-    nineSlice:Hide()
-    nineSlice:SetAlpha(0)
-
-    -- Kill all child textures (corners, edges, center)
-    for _, region in ipairs({nineSlice:GetRegions()}) do
-        if region:IsObjectType("Texture") then
-            region:SetTexture(nil)
-            region:SetAtlas(nil)
-            region:Hide()
-        end
-    end
-
-    -- Kill known NineSlice parts
-    local parts = {"TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
-                   "TopEdge", "BottomEdge", "LeftEdge", "RightEdge", "Center"}
-    for _, part in ipairs(parts) do
-        local tex = nineSlice[part]
-        if tex then
-            tex:SetTexture(nil)
-            tex:SetAtlas(nil)
-            tex:Hide()
-        end
-    end
-end
+-- NineSlice killing now routes through the canonical SkinBase.KillNineSlice
+-- (core/uikit.lua): it clears child + named-part textures via SetTexture(nil)
+-- and hides the frame. The old local copy called SetAtlas(nil), an API
+-- violation — SimpleTextureBase:SetAtlas declares its atlas arg Nilable=false.
 
 -- Resolve edit-mode opacity (0 is valid = transparent, so check for nil)
 local function ResolveBackdropOpacity(bga)
@@ -694,7 +669,7 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
     if not trackerFrame then return end
 
     -- Kill Blizzard's NineSlice completely
-    KillNineSlice(trackerFrame.NineSlice)
+    SkinBase.KillNineSlice(trackerFrame.NineSlice)
 
     -- Hook SetBackgroundAlpha so edit mode opacity also affects our backdrop
     if trackerFrame.SetBackgroundAlpha and not SkinBase.GetFrameData(trackerFrame, "backgroundHooked") then
@@ -882,6 +857,27 @@ local function SkinObjectiveTracker()
 
     -- Hook line creation to style new lines dynamically
     HookLineCreation()
+
+    -- Skin progress-bar fills (texture-only — flat themed fill via SkinStatusBar;
+    -- NO font work, so no interaction with the idempotent-font oscillation guards
+    -- above). Hook each progress-bar mixin's value setter: `self` is the bar
+    -- container, self.Bar is the StatusBar. Future pooled bars created after the
+    -- hook pick up the wrapper via the Mixin copy; SkinStatusBar is idempotent
+    -- (IsStyled), so the frequent SetPercent/SetValue calls only skin once.
+    local function SkinTrackerProgressBar(pb)
+        if pb and pb.Bar then SkinBase.SkinStatusBar(pb.Bar, { backdrop = false }) end
+    end
+    local pbMixins = {
+        { mixin = _G.ObjectiveTrackerProgressBarMixin, method = "SetPercent" },
+        { mixin = _G.BonusObjectiveTrackerProgressBarMixin, method = "SetValue" },
+        { mixin = _G.ScenarioTrackerProgressBarMixin, method = "SetValue" },
+    }
+    for _, pm in ipairs(pbMixins) do
+        if pm.mixin and pm.mixin[pm.method] and not SkinBase.GetFrameData(pm.mixin, "qProgressBarHooked") then
+            hooksecurefunc(pm.mixin, pm.method, SkinTrackerProgressBar)
+            SkinBase.SetFrameData(pm.mixin, "qProgressBarHooked", true)
+        end
+    end
 
     -- Skin main header (minimize button repositioned in ApplyMaxWidth)
     if TrackerFrame.Header then

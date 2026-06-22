@@ -23,12 +23,14 @@ end
 
 local source = readFile("QUI_Skinning/skinning/frames/auctionhouse.lua")
 
--- The belowChildren opt lowers SkinButton's own backdrop to max(0, button level - 1) --
--- the same SetFrameLevel the old manual GetBackdrop/SetFrameLevel block did -- so the
--- clear-filters "X" (a child of FilterButton) stays on top of the QUI backdrop.
+-- The FilterButton is a WowStyle1FilterDropdownTemplate (a DropdownButton), so it
+-- routes through the canonical SkinBase.SkinDropdown (matching every other QUI
+-- dropdown), NOT SkinButton. The belowChildren opt lowers the QUI backdrop to
+-- max(0, button level - 1) so the clear-filters "X" (a child of FilterButton)
+-- stays on top of the QUI backdrop.
 assertContains(
     source,
-    "SkinBase.SkinButton(searchBar.FilterButton, { strip = true, font = true, belowChildren = true })",
+    "SkinBase.SkinDropdown(searchBar.FilterButton, { belowChildren = true })",
     "AH filter backdrop must be lowered below the dropdown's children (belowChildren) so the clear-X stays on top")
 
 print("OK: auctionhouse_filter_clearx_strata_test")

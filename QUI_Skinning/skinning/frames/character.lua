@@ -40,8 +40,6 @@ local customBg = nil
 local iconBorders = Helpers.CreateStateTable()       -- CurrencyIcon/entry.icon → border frame
 local skinnedEntries = Helpers.CreateStateTable()    -- entry → true
 local titleHighlights = Helpers.CreateStateTable()   -- button → highlight texture
-local pixelBackdropState = Helpers.CreateStateTable()
-local characterTabsHooked = false
 
 ---------------------------------------------------------------------------
 -- Helper: Get skin colors from QUI system
@@ -50,60 +48,26 @@ local GetSkinColors = Helpers.CreateSkinColorGetter("characterFrame")
 
 local GetFontPath = Helpers.GetGeneralFont
 
-local function RefreshPixelBackdrop(frame)
-    local state = pixelBackdropState[frame]
-    if not state then return end
-    if not frame then return end
-    local edgeSize = (state.borderPixels or 1) * SkinBase.GetPixelSize(frame, 1)
-    local bgFile = state.withBackground and "Interface\\Buttons\\WHITE8x8" or false
-    local edgeFile = edgeSize > 0 and "Interface\\Buttons\\WHITE8x8" or false
-    -- Match the old SetBackdrop behaviour: with insets, push the bg in by one
-    -- border width so it doesn't paint under the edge.
-    local bgInset = (state.withBackground and state.withInsets) and edgeSize or 0
-    -- Render through the shared snapped 4-texture backdrop (SkinBase render path
-    -- #3) instead of frame:SetBackdrop edge files, which render sub-pixel and
-    -- fail to hug the bar/icon at fractional UI scale. Colour persistence stays
-    -- LOCAL: this runs on every scale refresh and re-applies state.borderColor/
-    -- state.bgColor, so the deliberate local state system is preserved.
-    SkinBase.ApplyTextureBackdrop(frame, bgFile, edgeFile, edgeSize, state.borderColor, state.bgColor, bgInset)
-end
-
+-- Pixel-backdrop application + live recolor route through the canonical SkinBase
+-- engine (pixelBackdropData + the shared "skinningPixelBackdrop" scale-refresh).
+-- These thin local shims keep the existing call sites unchanged while removing
+-- the former divergent local engine (its own pixelBackdropState table, a
+-- "characterFramePixelBackdrop" refresh tag, and a bare-setter twin). The
+-- canonical RefreshPixelBackdrop re-derives edgeSize from SkinBase.GetPixelSize
+-- on every scale refresh and renders via the SAME snapped 4-texture
+-- ApplyTextureBackdrop path (render path #3), so scroll-row elements created
+-- during ScrollBox acquire (before effective scale resolves) still re-hug the
+-- bar/icon at fractional UI scale — the property the local engine existed for.
 local function ApplyPixelBackdrop(frame, borderPixels, withBackground, withInsets, borderColor, bgColor)
-    if not frame or not frame.SetBackdrop then return end
-    local state = pixelBackdropState[frame]
-    if not state then
-        state = {}
-        pixelBackdropState[frame] = state
-    end
-    state.borderPixels = borderPixels or 1
-    state.withBackground = withBackground and true or false
-    state.withInsets = withInsets and true or false
-    state.borderColor = borderColor
-    state.bgColor = bgColor
-    RefreshPixelBackdrop(frame)
-    if UIKit and UIKit.RegisterScaleRefresh and not state.registered then
-        UIKit.RegisterScaleRefresh(frame, "characterFramePixelBackdrop", RefreshPixelBackdrop)
-        state.registered = true
-    end
+    SkinBase.ApplyPixelBackdrop(frame, borderPixels, withBackground, withInsets, borderColor, bgColor)
 end
 
--- Update the persisted colors for a frame skinned via the local ApplyPixelBackdrop
--- so a later scale refresh re-applies the CURRENT colors instead of reverting to
--- the colors captured when the backdrop was first created. Live-recolor paths
--- (theme changes) MUST use this rather than a bare SetBackdrop*Color: the next
--- scale refresh runs RefreshPixelBackdrop, which rebuilds from `state` and would
--- otherwise restore the stale creation-time color.
+-- Live-recolor a frame skinned via ApplyPixelBackdrop. Routes through
+-- SkinBase.SetBackdropColors so the new color persists across the next scale
+-- refresh (a bare SetBackdrop*Color is discarded when RefreshPixelBackdrop
+-- rebuilds from the persisted data).
 local function SetPixelBackdropColors(frame, borderColor, bgColor)
-    if not frame then return end
-    local state = pixelBackdropState[frame]
-    if borderColor and frame.SetBackdropBorderColor then
-        if state then state.borderColor = borderColor end
-        frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-    end
-    if bgColor and frame.SetBackdropColor then
-        if state then state.bgColor = bgColor end
-        frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-    end
+    SkinBase.SetBackdropColors(frame, borderColor, bgColor)
 end
 
 -- Expand a frame `pixels` beyond `relativeTo` on every side. Delegates to the
@@ -119,23 +83,11 @@ local SetExpandedPixelPoints = SkinBase.SetExpandedPixelPoints
 ---------------------------------------------------------------------------
 -- Helper: Style a thin QUI scrollbar
 ---------------------------------------------------------------------------
+-- Delegates to the shared SkinBase.SkinTrimScrollBar (promoted from this very
+-- function). Kept as a thin local so the existing (scrollBar, r, g, b) call
+-- sites stay unchanged.
 local function StyleThinScrollBar(scrollBar, r, g, b)
-    if not scrollBar then return end
-
-    if scrollBar.Track then scrollBar.Track:SetAlpha(0) end
-    if scrollBar.Background then scrollBar.Background:SetAlpha(0) end
-
-    local thumb = scrollBar.ThumbTexture or (scrollBar.GetThumbTexture and scrollBar:GetThumbTexture()) or scrollBar.Thumb
-    if thumb then
-        thumb:SetColorTexture(r, g, b, 0.78)
-        UIKit.DisablePixelSnap(thumb) -- 8px-wide quad vanishes off-grid at fractional scales without this
-        thumb:SetWidth(8 * SkinBase.GetPixelSize(scrollBar, 1))
-    end
-
-    local upBtn = scrollBar.ScrollUpButton or scrollBar.Back
-    local downBtn = scrollBar.ScrollDownButton or scrollBar.Forward
-    if upBtn then upBtn:SetAlpha(0) upBtn:SetSize(1, 1) end
-    if downBtn then downBtn:SetAlpha(0) downBtn:SetSize(1, 1) end
+    SkinBase.SkinTrimScrollBar(scrollBar, { color = r and { r, g, b } or nil })
 end
 
 ---------------------------------------------------------------------------
@@ -264,113 +216,18 @@ end
 ---------------------------------------------------------------------------
 -- Skin bottom tabs: Character, Reputation, Currency
 ---------------------------------------------------------------------------
-local function StyleCharacterFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not tab then return end
-
-    if not SkinBase.IsStyled(tab) then
-        -- Clamp the Blizzard tab art hidden against re-assertion. A one-shot
-        -- alpha=0 is defeated when PanelTemplates_Select/DeselectTab re-shows or
-        -- re-alphas the slices on selection, leaving Blizzard art on top of the
-        -- QUI backdrop. ClampAllTextures installs a SetAlpha clamp per region.
-        SkinBase.ClampAllTextures(tab)
-        local highlight = tab.GetHighlightTexture and tab:GetHighlightTexture()
-        SkinBase.ClampTextureHidden(highlight)
-
-        SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
-        local tabBackdrop = SkinBase.GetBackdrop(tab)
-        if tabBackdrop then
-            SkinBase.SetPixelInsetPoints(tabBackdrop, tab, 3, 3, 3, 0)
-        end
-
-        -- Re-assert the art clamp + font synchronously on every selection
-        -- (PanelTemplates re-shows the active slice art and swaps the font
-        -- object). Mark the tab QUI-clamped so the shared global hook covers it.
-        SkinBase.RegisterTabArtClamp(tab)
-
-        SkinBase.MarkStyled(tab)
-    end
-
-    -- Theme the tab label via the button's font OBJECTS. A direct SetFont is
-    -- clobbered the instant you hover (the button applies its HIGHLIGHT font
-    -- object) or select (NORMAL/DISABLED object); driving the objects keeps the
-    -- QUI font across every state. UpdateCharacterFrameTabSelectedState sets the
-    -- selection text color on top afterward.
-    SkinBase.ApplyTabFontObjects(tab, { size = 12 })
-
-    SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
-    SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
-end
-
-local function GetCharacterFrameSelectedTab()
-    if not CharacterFrame then return nil end
-    if PanelTemplates_GetSelectedTab then
-        local selected = PanelTemplates_GetSelectedTab(CharacterFrame)
-        if selected then return selected end
-    end
-    return CharacterFrame.selectedTab
-end
-
-local function UpdateCharacterFrameTabSelectedState()
-    local selectedTab = GetCharacterFrameSelectedTab()
-
-    for i = 1, 3 do
-        local tab = _G["CharacterFrameTab" .. i]
-        local bd = tab and SkinBase.GetBackdrop(tab)
-        local sc = tab and SkinBase.GetFrameData(tab, "skinColor")
-        local bg = tab and SkinBase.GetFrameData(tab, "bgColor")
-        if bd and sc and bg then
-            local tabID = tab.GetID and tab:GetID()
-            local isSelected = selectedTab == i or selectedTab == tabID
-            local borderColor, bgColor
-            if isSelected then
-                borderColor = { sc[1], sc[2], sc[3], sc[4] }
-                bgColor = { math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1 }
-            else
-                borderColor = { sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6 }
-                bgColor = { bg[1], bg[2], bg[3], 0.7 }
-            end
-            -- Persist the selection-state colors into SkinBase's backdrop data
-            -- (via ApplyPixelBackdrop with the same geometry CreateBackdrop used)
-            -- so a scale refresh re-applies the selection tint instead of
-            -- reverting to the base color. A bare SetBackdrop*Color updates only
-            -- the live color, which RefreshPixelBackdrop discards on rebuild.
-            SkinBase.ApplyPixelBackdrop(bd, 1, true, true, borderColor, bgColor)
-
-            -- Recolor the tab label to match selection state (full skin color
-            -- when active, dimmed when not). Runs after PanelTemplates re-asserts
-            -- Blizzard's yellow, via the PanelTemplates_SetTab hook, so it sticks.
-            local tabText = tab.Text or (tab.GetFontString and tab:GetFontString())
-            if tabText then
-                if isSelected then
-                    tabText:SetTextColor(sc[1], sc[2], sc[3], 1)
-                else
-                    tabText:SetTextColor(sc[1] * 0.7, sc[2] * 0.7, sc[3] * 0.7, 1)
-                end
-            end
-        end
-    end
-end
-
+-- Routes through the canonical SkinBase.SkinTabGroup. The former private
+-- StyleCharacterFrameTab + UpdateCharacterFrameTabSelectedState pair was a
+-- byte-for-byte fork of SkinTabButton + RefreshTabSelected (same ClampAllTextures
+-- + CreateBackdrop(...,0.9) + SetPixelInsetPoints(3,3,3,0) + RegisterTabArtClamp
+-- body, same selected/unselected color math) that silently drifted from every
+-- other frame's tabs. font=true opts into the QUI tab font + the canonical
+-- selected/unselected label recolor (now promoted into RefreshTabSelected, so it
+-- is identical across CharacterFrame, InspectFrame, AH, merchant, etc.).
+-- SkinTabGroup is idempotent and installs the PanelTemplates_SetTab / TabSystem
+-- selection dispatch itself, so re-calling it on each render pass is cheap.
 local function SkinCharacterFrameTabs()
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
-
-    for i = 1, 3 do
-        local tab = _G["CharacterFrameTab" .. i]
-        if tab then
-            StyleCharacterFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        end
-    end
-
-    if not characterTabsHooked and PanelTemplates_SetTab then
-        hooksecurefunc("PanelTemplates_SetTab", function(frame)
-            if frame == CharacterFrame then
-                C_Timer.After(0, SkinCharacterFrameTabs)
-            end
-        end)
-        characterTabsHooked = true
-    end
-
-    UpdateCharacterFrameTabSelectedState()
+    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("CharacterFrame", 3), CharacterFrame, { font = true })
 end
 
 -- Skin a top-level entry header: name font/color plus collapse-icon atlas hooks
@@ -457,6 +314,10 @@ local function SkinReputationEntry(child)
     local ReputationBar = child.Content and child.Content.ReputationBar
     if ReputationBar then
         ReputationBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        -- The solid fill rasterizes away at fractional UI scale without opting
+        -- out of texel snapping (DisablePixelSnap also covers the bar's fill
+        -- texture). Matches StyleThinScrollBar's thumb handling.
+        UIKit.DisablePixelSnap(ReputationBar)
 
         -- Suppress Blizzard's ornate end-cap art + black fill backing.
         -- ReputationBarTemplate (ReputationFrame.xml) draws LeftTexture/RightTexture
@@ -576,6 +437,13 @@ local function SetupCharacterFrameSkinning()
                 SkinBase.LockPooledRowText(row, 4)
             end
         end)
+    end
+    -- The reputation detail popout (ReputationDetailFrame) holds buttons like
+    -- "View Renown" whose HighlightFont OBJECT the engine swaps on hover with no
+    -- setter call; the one-shot SkinFrameText above can't hold the QUI font through
+    -- mouseover. Drive the popout's button font objects (guarded; created on demand).
+    if ReputationFrame and ReputationFrame.ReputationDetailFrame and SkinBase.ApplyButtonFontObjectsDeep then
+        SkinBase.ApplyButtonFontObjectsDeep(ReputationFrame.ReputationDetailFrame, 2)
     end
     if TokenFrame and TokenFrame.ScrollBox then
         SkinBase.HookScrollBoxAcquired(TokenFrame.ScrollBox, function(row)

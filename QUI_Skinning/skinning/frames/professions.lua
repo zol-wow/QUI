@@ -35,6 +35,18 @@ local function StyleScrollBoxRow(row)
     SkinBase.SkinScrollRow(row)
     SkinBase.LockPooledRowText(row, 4)
 
+    -- SkinScrollRow's full-row backdrop sits at the row's OWN frame level (it
+    -- replaced the old SkillUps-inset backdrop that avoided the left edge). On recipe
+    -- rows the SkillUps button (skill-up Icon + count, ProfessionsRecipeList.xml:154)
+    -- can render at/below that level, so the backdrop fill occludes the icon — it
+    -- "disappears". Lower the QUI-OWNED backdrop one level below the row so it can
+    -- never occlude row content (touches only our frame — no Blizzard-frame mutation,
+    -- so no protected-SetFrameLevel taint).
+    local rowBd = SkinBase.GetBackdrop(row)
+    if rowBd and rowBd.SetFrameLevel then
+        rowBd:SetFrameLevel(math.max(0, row:GetFrameLevel() - 1))
+    end
+
     -- Category header rows revert the QUI font on hover: ProfessionsRecipe
     -- ListCategoryMixin:OnEnter/OnLeave SetFontObject(GameFontHighlight/Normal_
     -- NoShadow) on row.Label. Lock it so the QUI font is re-asserted after each
@@ -133,18 +145,23 @@ local function SkinRecipeList(recipeList)
         SkinBase.SkinEditBox(recipeList.SearchBox)
     end
 
-    -- Filter dropdown (don't strip textures — preserves clear-filter X button;
-    -- backdrop sits below child controls)
+    -- Filter dropdown — DEFAULT strip (matches AH/crafting). The clear-filter X
+    -- (ResetButton) is a child <Button> (UIResetButtonTemplate) so StripTextures —
+    -- which only touches Texture REGIONS — leaves it intact, while it DOES strip the
+    -- stock .Background atlas (common-dropdown-classic-b-button) that noStrip used to
+    -- leave showing (the "filter looks unskinned" bug). belowChildren keeps the QUI
+    -- backdrop below the reset X.
     if recipeList.FilterDropdown then
-        SkinBase.SkinDropdown(recipeList.FilterDropdown, { noStrip = true, belowChildren = true })
+        SkinBase.SkinDropdown(recipeList.FilterDropdown, { belowChildren = true })
     end
 
     -- ScrollBox
     if recipeList.ScrollBox then
         SkinBase.HookScrollBoxAcquired(recipeList.ScrollBox, StyleScrollBoxRow)
     end
-    if recipeList.ScrollBar and recipeList.ScrollBar.Background then
-        recipeList.ScrollBar.Background:Hide()
+    -- Canonical thin QUI scrollbar (was a bare Background:Hide()).
+    if recipeList.ScrollBar then
+        SkinBase.SkinTrimScrollBar(recipeList.ScrollBar)
     end
 end
 

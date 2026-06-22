@@ -7,17 +7,16 @@
 -- The bottom tabs (Character/Reputation/Currency) get a SkinBase.CreateBackdrop
 -- frame whose base colors are stored in SkinBase's pixelBackdropData. The
 -- selected-vs-unselected tint (brightened bg for the active tab, dimmed for the
--- rest) was painted by UpdateCharacterFrameTabSelectedState with a BARE
--- bd:SetBackdrop*Color, which updates the live color but not SkinBase's stored
--- data. SkinBase.RefreshPixelBackdrop (fired on any scale refresh) rebuilds from
--- data.bgColor/borderColor -- the BASE colors -- so the selection tint was lost
--- until UpdateCharacterFrameTabSelectedState ran again.
+-- rest) is painted by the canonical SkinBase.RefreshTabSelected through
+-- SkinBase.ApplyPixelBackdrop (same geometry CreateBackdrop used), so the
+-- selection colors become the STORED data and survive a scale-refresh rebuild --
+-- unlike a bare bd:SetBackdrop*Color, which updates only the live color that
+-- SkinBase.RefreshPixelBackdrop discards on its next rebuild.
 --
--- The fix routes the selection-state recolor through SkinBase.ApplyPixelBackdrop
--- (same geometry CreateBackdrop used), so the selection colors become the stored
--- data and survive the rebuild. This test drives the real
--- _G.QUI_CharacterFrameSkinning.Refresh path through the real SkinBase backdrop
--- system and the real UIKit scale refresh.
+-- Since CharacterFrame's tabs migrated off their private fork onto the shared
+-- SkinBase.SkinTabGroup, this also guards that the canonical verb persists the
+-- selection tint. Drives the real _G.QUI_CharacterFrameSkinning.Refresh path
+-- through the real SkinBase backdrop system and the real UIKit scale refresh.
 
 -- luacheck: globals CreateFrame C_Timer hooksecurefunc InCombatLockdown
 -- luacheck: globals CharacterFrame CharacterFrameTab1 CharacterFrameTab2 CharacterFrameTab3
@@ -129,15 +128,21 @@ for i = 1, 3 do
     tab.id = i
     tabs[i] = tab
     _G["CharacterFrameTab" .. i] = tab
-    -- Pre-style so StyleCharacterFrameTab skips StripTextures and just refreshes
-    -- frame data; this establishes the SkinBase backdrop with the BASE colors,
-    -- exactly as StyleCharacterFrameTab would on first skin.
+    -- Simulate the post-first-skin state: SkinBase.SkinTab early-returns on an
+    -- already-styled tab, so pre-establish the backdrop + the skinColor/bgColor/
+    -- skinTabFont frame data exactly as SkinTabButton sets them on first skin.
+    -- SkinTabGroup's refreshAll() then drives the canonical RefreshTabSelected.
     SkinBase.CreateBackdrop(tab, BASE[1], BASE[2], BASE[3], BASE[4], BASE[5], BASE[6], BASE[7], 0.9)
+    SkinBase.SetFrameData(tab, "skinColor", { BASE[1], BASE[2], BASE[3], BASE[4] })
+    SkinBase.SetFrameData(tab, "bgColor", { BASE[5], BASE[6], BASE[7] })
+    SkinBase.SetFrameData(tab, "skinTabFont", true)
     SkinBase.MarkStyled(tab)
 end
 
--- Drive the real refresh path: SkinCharacterFrameTabs -> StyleCharacterFrameTab
--- (sets skinColor/bgColor frame data) -> UpdateCharacterFrameTabSelectedState.
+-- Drive the real refresh path: SkinCharacterFrameTabs -> SkinBase.SkinTabGroup ->
+-- refreshAll() -> RefreshTabSelected (canonical selected/unselected tint, persisted
+-- via ApplyPixelBackdrop). CharacterFrame.selectedTab=1 resolves selection through
+-- IsTabSelected's owner.selectedTab fallback.
 API.Refresh()
 
 local bd1 = SkinBase.GetBackdrop(tabs[1])

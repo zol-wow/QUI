@@ -151,6 +151,16 @@ local function SkinPlayerSpells()
             SkinBase.LockFrameTextObjects(t, 2)
         end
     end
+    -- Spellbook page-turn arrows (PagedSpellsFrame.PagingControls) ship UNSKINNED
+    -- inside the otherwise-skinned window — give them the canonical chevron so they
+    -- match the merchant/mail page arrows. SkinNextPrevButton is idempotent and
+    -- strips via durable alpha, so it survives PagedContent page/state updates.
+    local pagedSpells = spellBookFrame and spellBookFrame.PagedSpellsFrame
+    local paging = pagedSpells and pagedSpells.PagingControls
+    if paging then
+        if paging.PrevPageButton then SkinBase.SkinNextPrevButton(paging.PrevPageButton, "prev") end
+        if paging.NextPageButton then SkinBase.SkinNextPrevButton(paging.NextPageButton, "next") end
+    end
     -- Spec/talent action buttons swap their Highlight/Disabled font OBJECT on
     -- hover/disable with no setter call — SkinFrameText's one-shot face reverts.
     -- Drive the button font objects so the QUI face survives.
@@ -224,6 +234,14 @@ local function SkinEncounterJournalTextFrame(frame)
         SkinBase.SkinFrameText(frame, { recurse = true, chrome = true })
         if SkinBase.LockFrameTextObjects then
             SkinBase.LockFrameTextObjects(frame, 3)
+        end
+        -- Drive descendant BUTTON font OBJECTS too. Boss-list buttons and the
+        -- Adventure-Guide suggest button declare a <HighlightFont> the engine swaps
+        -- on hover with NO setter call, which LockFrameTextObjects (a setter hook)
+        -- cannot see — so their label reverts to the stock Blizzard face on
+        -- mouseover unless the Normal/Highlight/Disabled font objects are driven.
+        if SkinBase.ApplyButtonFontObjectsDeep then
+            SkinBase.ApplyButtonFontObjectsDeep(frame, 3)
         end
     end
 end

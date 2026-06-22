@@ -84,8 +84,10 @@ for _, needle in ipairs({
     "SkinBase.SkinEditBox(_G.SendMailBodyEditBox)",
     "SkinBase.SkinButton(_G.SendMailCancelButton",
     "SkinBase.SkinButton(_G.SendMailMailButton",
-    "SkinBase.SkinButton(_G.SendMailSendMoneyButton",
-    "SkinBase.SkinButton(_G.SendMailCODButton",
+    -- Send-money / C.O.D. are RADIO CheckButtons — canonical checkbox/radio verb,
+    -- not SkinButton (which stripped their radio art).
+    "SkinBase.SkinCheckBox(_G.SendMailSendMoneyButton)",
+    "SkinBase.SkinCheckBox(_G.SendMailCODButton)",
     "_G[\"SendMailAttachment\" .. i]",
     "local function SkinOpenMailFrame()",
     "_G.OpenMailFrame",
@@ -110,7 +112,6 @@ for _, needle in ipairs({
     "local function SkinMailIconButton(button)",
     "local function HideMailButtonDecor(button)",
     "local function HideButtonStateTextures(button)",
-    "local function InsetButtonBackdrop(button, inset)",
     "local function LowerFrameBackdrop(frame)",
     "local function SkinInboxArtwork()",
     "local function SkinSendMailArtwork()",
@@ -120,8 +121,10 @@ for _, needle in ipairs({
     "_G.InboxFrameBg",
     "_G.InboxPrevPageButton",
     "_G.InboxNextPageButton",
-    "InsetButtonBackdrop(_G.InboxPrevPageButton, 4)",
-    "InsetButtonBackdrop(_G.InboxNextPageButton, 4)",
+    -- Inbox page arrows route through the canonical chevron verb (byte-identical
+    -- to the merchant arrows), NOT the former bespoke InsetButtonBackdrop stack.
+    "SkinBase.SkinNextPrevButton(_G.InboxPrevPageButton, \"prev\")",
+    "SkinBase.SkinNextPrevButton(_G.InboxNextPageButton, \"next\")",
     "_G.SendMailHorizontalBarLeft",
     "_G.SendMailHorizontalBarLeft2",
     "_G.SendStationeryBackgroundLeft",

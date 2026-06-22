@@ -60,12 +60,38 @@ local function ApplyWeeklyRewardsSkin(frame)
     end
 
     SkinBase.SkinFrameText(frame, { recurse = true })
-    -- The "Select Reward" CTA is a UIPanelButton: the engine swaps its Highlight/
-    -- Disabled font OBJECT on hover/disable WITHOUT calling a setter, so LockFontObject
-    -- (setter hook) can't catch it. Drive the button's font objects instead.
+    -- Durable font lock + button font objects, matching the canonical window
+    -- treatment (interaction/journals/misc_frames) so Weekly Rewards text and
+    -- buttons don't revert to the Blizzard font on relayout/hover.
+    SkinBase.LockFrameTextObjects(frame, 4)
+    SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
+    -- The "Select Reward" CTA is a UIPanelButton. Give it the QUI backdrop +
+    -- hover/pushed/disabled border (it otherwise renders as bare text over the
+    -- parent backdrop). The engine also swaps its Highlight/Disabled font OBJECT
+    -- on hover/disable WITHOUT calling a setter, so LockFontObject (setter hook)
+    -- can't catch it — drive the button's font objects directly (SkinButton's
+    -- own font is opt-in/off).
     if frame.SelectRewardButton then
+        SkinBase.SkinButton(frame.SelectRewardButton)
         SkinBase.ApplyButtonFontObjects(frame.SelectRewardButton)
     end
+
+    -- Reward item icons: crop + quality border. Hook the item mixin's
+    -- SetDisplayedItem (self = the reward ItemFrame) so dynamically-populated
+    -- rewards are skinned as they appear. Idempotent per mixin + per icon.
+    if SkinBase.SkinIcon and _G.WeeklyRewardActivityItemMixin
+        and not SkinBase.GetFrameData(_G.WeeklyRewardActivityItemMixin, "qRewardIconHooked") then
+        hooksecurefunc(_G.WeeklyRewardActivityItemMixin, "SetDisplayedItem", function(self)
+            if self and self.Icon then
+                local border = SkinBase.SkinIcon(self.Icon)
+                if border and self.IconBorder then
+                    SkinBase.HandleIconBorder(self.IconBorder, border)
+                end
+            end
+        end)
+        SkinBase.SetFrameData(_G.WeeklyRewardActivityItemMixin, "qRewardIconHooked", true)
+    end
+
     SkinBase.MarkSkinned(frame)
 end
 

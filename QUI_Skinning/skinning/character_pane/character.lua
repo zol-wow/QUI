@@ -35,6 +35,8 @@ end
 ---------------------------------------------------------------------------
 local pendingDecorMode = nil     -- "character" or "other"
 local pendingStatsPanelRefresh = false
+local pendingCharacterFrameScale = nil   -- deferred CharacterFrame:SetScale (protected in combat)
+local pendingPaneLayout = false          -- deferred protected pane layout (decor reposition + slot SetScale/SetPoint)
 local ScheduleUpdate
 local ApplyCharacterPaneLayout
 
@@ -62,11 +64,27 @@ end
 local charCombatFrame = CreateFrame("Frame")
 charCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 charCombatFrame:SetScript("OnEvent", function()
-    -- If CharacterFrame closed during combat, nothing to apply
+    -- Apply any deferred CharacterFrame scale first — SetScale is safe now that
+    -- combat ended and does not require the frame to be shown.
+    if pendingCharacterFrameScale then
+        if CharacterFrame then CharacterFrame:SetScale(pendingCharacterFrameScale) end
+        pendingCharacterFrameScale = nil
+    end
+
+    -- If CharacterFrame closed during combat, drop the rest of the queued work
     if not CharacterFrame or not CharacterFrame:IsShown() then
         pendingDecorMode = nil
         pendingStatsPanelRefresh = false
+        pendingPaneLayout = false
         return
+    end
+
+    -- Re-run the deferred protected pane layout (HideBlizzardDecorations +
+    -- slot reposition) now that combat has ended. force=true bypasses the
+    -- layoutApplied guard set when we deferred during combat.
+    if pendingPaneLayout then
+        pendingPaneLayout = false
+        if ApplyCharacterPaneLayout then ApplyCharacterPaneLayout(true) end
     end
 
     if pendingDecorMode then
@@ -98,9 +116,15 @@ charCombatFrame:SetScript("OnEvent", function()
 end)
 
 local function SetCharacterFrameScale(scale)
-    if CharacterFrame then
-        CharacterFrame:SetScale(scale)
+    if not CharacterFrame then return end
+    -- CharacterFrame is a protected UIPanel; SetScale on it taints in combat.
+    -- Defer to the charCombatFrame PLAYER_REGEN_ENABLED handler, mirroring
+    -- inspect.lua SetInspectScaleDeferred.
+    if InCombatLockdown() then
+        pendingCharacterFrameScale = scale
+        return
     end
+    CharacterFrame:SetScale(scale)
 end
 
 -- Blizzard can return protected "secret" stat values in combat and some
@@ -376,9 +400,9 @@ local function StyleCloseButton(button)
     if skinBase and skinBase.SkinChromeCloseButton then
         skinBase.SkinChromeCloseButton(button, {
             stateKey = "characterPaneClose",
-            label = "X",
+            -- glyph + size inherit the unified "×"/14 default (matches every other
+            -- QUI close button); only the chrome inset/palette stay pane-specific.
             font = GetGlobalFont(),
-            fontSize = 11,
             fontFlags = "OUTLINE",
             textColor = C.text,
             borderColor = function() local r, g, b = GetCharacterBorderColor(); return r, g, b, 1 end,
@@ -1483,6 +1507,14 @@ end
 -- Hide Blizzard CharacterFrame decorations
 ---------------------------------------------------------------------------
 local function HideBlizzardDecorations()
+    -- Defensive: repositions protected CharacterFrame children (sidebar tabs,
+    -- close button, bottom tabs) — forbidden in combat. Callers gate via
+    -- ApplyCharacterPaneLayout, but self-defer too in case of a direct caller.
+    if InCombatLockdown() then
+        pendingPaneLayout = true
+        return
+    end
+
     local settings = GetSettings()
 
     -- Main frame decorations (only hide elements specific to Character tab)
@@ -1803,6 +1835,13 @@ local RIGHT_COLUMN_SLOTS = {
 -- Reposition equipment slots into portrait layout
 ---------------------------------------------------------------------------
 local function RepositionSlots()
+    -- Defensive: SetScales/SetPoints protected equipment slots — forbidden in
+    -- combat. Callers gate via ApplyCharacterPaneLayout; self-defer too.
+    if InCombatLockdown() then
+        pendingPaneLayout = true
+        return
+    end
+
     local settings = GetSettings()
     if not CharacterFrameBg then return end  -- Need this frame as anchor
 
@@ -2031,20 +2070,43 @@ ApplyCharacterPaneLayout = function(force)
     -- Only apply once per session (unless forced)
     if layoutApplied and not force then return end
 
-    HideBlizzardDecorations()
+    -- HideBlizzardDecorations repositions protected CharacterFrame children
+    -- (PaperDollSidebarTabs, CloseButton, bottom tabs) and the slot pass
+    -- SetScales/SetPoints the equipment slots — all ADDON_ACTION_FORBIDDEN in
+    -- combat. Defer the protected layout to PLAYER_REGEN_ENABLED (mirrors
+    -- inspect.lua pendingInspectLayout/ApplyInspectPaneLayout); the QUI-owned
+    -- background/title/text skinning below is insecure-safe and runs now.
+    local inCombat = InCombatLockdown()
+    if inCombat then
+        pendingPaneLayout = true
+    else
+        HideBlizzardDecorations()
+    end
+
     CreateCustomBackground()
     SetupTitleArea()
-    -- Let Blizzard's slot setup for the current frame finish before anchoring.
-    RunAfterCharacterPaneLayoutTick(function()
-        RepositionSlots()
-        RefreshEquipmentSlotBorders()
-        PositionModelScene()
-        PositionStatsPanelForLayout()
-    end)
+
+    if not inCombat then
+        -- Let Blizzard's slot setup for the current frame finish before anchoring.
+        RunAfterCharacterPaneLayoutTick(function()
+            RepositionSlots()
+            RefreshEquipmentSlotBorders()
+            PositionModelScene()
+            PositionStatsPanelForLayout()
+        end)
+    end
 
     local skinBase = GetSkinBase()
     if skinBase and CharacterFrame then
         skinBase.SkinFrameText(CharacterFrame, { recurse = true })
+        -- Durably lock the Blizzard fontstrings' font OBJECTS so relayout/rebind
+        -- SetFontObject swaps don't revert the QUI font. A one-shot SkinFrameText
+        -- alone reverts on Blizzard re-face, and RefreshCharacterPanelFonts only
+        -- re-skins QUI-owned arrays. Same SkinFrameText -> LockFrameTextObjects
+        -- pattern the font-reassertions test pins for system/popups.lua.
+        if skinBase.LockFrameTextObjects then
+            skinBase.LockFrameTextObjects(CharacterFrame, 3)
+        end
     end
 
     layoutApplied = true
@@ -2211,9 +2273,14 @@ local function RefreshCharacterPanelFonts()
 
     -- Update section header underlines with header color
     if trackedUnderlines then
+        local sb = GetSkinBase()
         for _, line in ipairs(trackedUnderlines) do
             if line and line.SetColorTexture then
                 line:SetColorTexture(headerColor[1], headerColor[2], headerColor[3], 0.3)
+                -- Re-disable texel snapping: SetColorTexture re-enables the
+                -- engine default, which rasterizes the 1px underline to nothing
+                -- at fractional UI scale (snap was applied at creation only).
+                if sb and sb.DisablePixelSnap then sb.DisablePixelSnap(line) end
             end
         end
     end
@@ -4052,7 +4119,7 @@ local function HookCharacterFrame()
             end
         end
         ApplyPanelGlow()
-        settingsPanel._accentGlow = panelGlow
+        GetState(settingsPanel).accentGlow = panelGlow
         settingsPanel:HookScript("OnShow", ApplyPanelGlow)
 
         -- Title
