@@ -1991,6 +1991,34 @@ local function IsTransientProcOverrideReady(m, sid)
         and Sources.QueryIsSpellKnownOrPlayerSpell(sid) == true
 end
 
+-- When Blizzard's override child is the active display (childIsActive), the
+-- CooldownViewer queries C_Spell.GetSpellCooldown on overrideSpellID via
+-- CooldownViewerItemDataMixin:GetSpellID(). Rotational overrides with their
+-- own cooldown lane (Shadow Priest Void Volley 1242173 during Voidform 228260)
+-- must follow that spell, not the registered base's major cooldown — otherwise
+-- the 2-min Voidform swipe hides when Void Volley is ready. Shared-slot form
+-- overrides (Druid Stampeding Roar 77761 over 106898) still report
+-- isActive=true on the override while recharging, so they keep mode=cooldown.
+local function ResolveActiveOverrideChildCooldownLane(m, sid)
+    if SafeBoolean(m.childIsActive) ~= true then return nil end
+    local overrideSid = m.overrideSpellID
+    if not (overrideSid and sid and overrideSid ~= sid) then return nil end
+    if not (Sources and Sources.QuerySpellCooldown) then return nil end
+
+    if IsTransientProcOverrideReady(m, sid) then
+        return "inactive", nil, nil
+    end
+
+    local overrideCdInfo = Sources.QuerySpellCooldown(overrideSid)
+    if overrideCdInfo and overrideCdInfo.isActive == true then
+        if overrideCdInfo.isOnGCD == true then
+            return "gcd-only", nil, overrideSid
+        end
+        return "cooldown", nil, overrideSid
+    end
+    return "inactive", nil, nil
+end
+
 -- Returns (mode, auraData, cooldownSpellID). cooldownSpellID is the spellID
 -- where an active cooldown was detected (used by BuildMirrorRenderPayload to
 -- acquire the matching DurationObject). It is nil for "aura" and "inactive"
@@ -2034,6 +2062,11 @@ local function DeriveMirrorPayloadMode(m, sid, suppressAura)
     -- curve in cdm_icon_renderer.lua, so a cosmetic isOnGCD wobble here only
     -- affects which swipe shows, never the dark/bright state the user sees.
     local baseOnGCD = cdInfo and cdInfo.isOnGCD
+    local overrideMode, overrideAura, overrideCooldownSid =
+        ResolveActiveOverrideChildCooldownLane(m, sid)
+    if overrideMode then
+        return overrideMode, overrideAura, overrideCooldownSid
+    end
     -- A real (non-GCD) cooldown on the base always wins -- EXCEPT when this is a
     -- transient proc override that is available while its base recharges, where
     -- the "cooldown" we just read is the base's shared slot and Blizzard shows
