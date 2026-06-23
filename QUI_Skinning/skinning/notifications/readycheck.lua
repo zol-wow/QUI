@@ -374,7 +374,6 @@ local function SkinReadyCheckFrame()
     -- unreachable and SetMovable/RegisterForDrag was pointless taint surface on the
     -- protected ReadyCheckFrame — removed.
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

@@ -60,13 +60,24 @@ assertContains(readFile("core/uikit.lua"), "function SkinBase.SkinChromeCloseBut
 assertContains(readFile("core/uikit.lua"), "function SkinBase.CreateSecretAwareStatPolicy",
     "uikit.lua must define the shared secret-aware stat policy")
 
--- 5) Every skinning module routes text through the sweep helper
+-- 5) Every skinning module applies chrome (backdrop or a Skin* chrome helper).
+-- Static text face is now owned by the global font-object override (font_system.lua
+-- ApplyGlobalDefaultFont); per-file SkinFrameText/SkinFontString/ApplyButtonFontObjects
+-- calls are no longer required for all files. Interactive reverts on bare-root surfaces
+-- (tabs/rows/dropdowns/journals) are accepted under the new design.
+--
+-- Chrome contract: every skinning file must call at least one chrome helper
+-- (CreateBackdrop, ApplyPixelBackdrop, ApplyFullBackdrop, SkinWindow,
+--  SkinButtonFrameTemplate, or equivalent). Files that also still explicitly
+-- route text are verified individually in skinning_font_reassertions_test.
 for _, f in ipairs({
     "QUI_Skinning/skinning/frames/achievement.lua", "QUI_Skinning/skinning/frames/auctionhouse.lua",
     "QUI_Skinning/skinning/frames/character.lua", "QUI_Skinning/skinning/frames/craftingorders.lua",
-    "QUI_Skinning/skinning/frames/inspect.lua", "QUI_Skinning/skinning/frames/instanceframes.lua",
+    "QUI_Skinning/skinning/frames/inspect.lua",
+    "QUI_Skinning/skinning/frames/instanceframes.lua",
     "QUI_Skinning/skinning/frames/interaction.lua", "QUI_Skinning/skinning/frames/journals.lua",
-    "QUI_Skinning/skinning/frames/overrideactionbar.lua", "QUI_Skinning/skinning/frames/professions.lua",
+    "QUI_Skinning/skinning/frames/overrideactionbar.lua",
+    "QUI_Skinning/skinning/frames/professions.lua",
     "QUI_Skinning/skinning/frames/social.lua", "QUI_Skinning/skinning/frames/statustracking.lua",
     "QUI_Skinning/skinning/frames/weeklyrewards.lua", "QUI_Skinning/skinning/frames/worldmap.lua",
     "QUI_Skinning/skinning/gameplay/keystone.lua", "QUI_Skinning/skinning/gameplay/mplus_timer.lua",
@@ -77,12 +88,15 @@ for _, f in ipairs({
     "QUI_Skinning/skinning/character_pane/character.lua", "QUI_Skinning/skinning/character_pane/inspect.lua",
 }) do
     local src = readFile(f)
-    -- ApplyButtonFontObjects is also a shared text-skinning helper (it drives the
-    -- button's font OBJECTS via the size|color cache, internally facing via SkinFontString),
-    -- so a file whose only text is button labels may route exclusively through it.
-    assert(src:find("SkinFrameText", 1, true) or src:find("SkinFontString", 1, true)
-        or src:find("ApplyButtonFontObjects", 1, true),
-        f .. " must route text through SkinFrameText/SkinFontString/ApplyButtonFontObjects")
+    assert(
+        src:find("CreateBackdrop", 1, true) or
+        src:find("ApplyPixelBackdrop", 1, true) or
+        src:find("ApplyFullBackdrop", 1, true) or
+        src:find("ApplyTextureBackdrop", 1, true) or
+        src:find("SkinWindow", 1, true) or
+        src:find("SkinButtonFrameTemplate", 1, true) or
+        src:find("ApplyChromeBackdrop", 1, true),
+        f .. " must apply chrome (backdrop or a Skin* chrome helper)")
 end
 
 -- 6) Semantic color tokens preserved (guard against over-zealous color sweep)

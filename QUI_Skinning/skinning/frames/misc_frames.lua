@@ -23,7 +23,7 @@ end
 local function SkinStandardFrame(frame, settingKey)
     if not IsSettingEnabled(settingKey) then return end
     if not frame or SkinBase.IsSkinned(frame) then return end
-    SkinBase.SkinWindow(frame) -- chrome + backdrop + close + durable font trio
+    SkinBase.SkinWindow(frame) -- chrome + backdrop + close (static-text face from global font-object override)
     SkinBase.MarkSkinned(frame)
 end
 

@@ -28,9 +28,9 @@ local columnDisplayHooked = false
 
 -- Pooled list rows (friends / who / ignore / community roster) are ScrollBox-
 -- recycled and Blizzard re-applies their font OBJECT on every acquire / rebind
--- / presence update (FriendsFrame.lua, CommunitiesMemberList.lua), reverting a
--- one-shot SkinFrameText. Lock each acquired row's fontstrings so the QUI face
--- survives (fontOnly keeps Blizzard's class / status text colors).
+-- / presence update (FriendsFrame.lua, CommunitiesMemberList.lua). Lock each
+-- acquired row's fontstrings so the QUI face survives (fontOnly keeps
+-- Blizzard's class / status text colors).
 local function HookListRows(scrollBox, depth)
     -- Guarded per-row font lock (runs the recursive pass once; the LockFontObject
     -- hooks re-assert the QUI face on every later acquire/presence/state rebind).
@@ -127,11 +127,9 @@ local function SkinCommunities()
     -- method (once) so the lock runs after the headers exist and on every rebuild.
     if not columnDisplayHooked and _G.ColumnDisplayMixin and _G.ColumnDisplayMixin.LayoutColumns then
         hooksecurefunc(_G.ColumnDisplayMixin, "LayoutColumns", function(self)
-            SkinBase.LockFrameTextObjects(self, 1)
             -- The sortable column headers are Buttons with a HighlightFont OBJECT
-            -- the engine swaps on hover with no setter call (LockFrameTextObjects
-            -- misses it). Drive their font objects — same treatment the WhoFrame
-            -- headers above already get — so the header label survives mouseover.
+            -- the engine swaps on hover with no setter call. Drive their font
+            -- objects so the header label survives mouseover.
             if SkinBase.ApplyButtonFontObjectsDeep then
                 SkinBase.ApplyButtonFontObjectsDeep(self, 1)
             end

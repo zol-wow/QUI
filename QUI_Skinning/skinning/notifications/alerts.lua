@@ -230,7 +230,6 @@ local function SkinAchievementAlert(frame)
         StyleIcon(frame.Icon.Texture, frame)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -257,7 +256,6 @@ local function SkinCriteriaAlert(frame)
 
     StyleIcon(frame.Icon.Texture, frame)
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -291,7 +289,6 @@ local function SkinLootWonAlert(frame)
     if SkinBase.IsSkinned(frame) then
         SuppressLootWonArt(frame, lootItem)
         RefreshAlertQualityColor(frame, lootItem.Icon)
-        SkinBase.SkinFrameText(frame, { recurse = true })
         return
     end
 
@@ -311,11 +308,6 @@ local function SkinLootWonAlert(frame)
     -- Create backdrop anchored to icon
     CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(lootItem.Icon, "border"), 4)
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
-    -- Durably lock the font OBJECTS so a pool re-use SetFontObject swap re-applies
-    -- the QUI face (idempotent via qFontLocked); the per-reuse SkinFrameText above
-    -- stays as a belt for SetText-only reverts the setter hook can't see.
-    SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -327,7 +319,6 @@ local function SkinLootUpgradeAlert(frame)
     -- re-SetText in the stock font on re-use).
     if SkinBase.IsSkinned(frame) then
         RefreshAlertQualityColor(frame, frame.Icon)
-        SkinBase.SkinFrameText(frame, { recurse = true })
         return
     end
 
@@ -352,10 +343,6 @@ local function SkinLootUpgradeAlert(frame)
     -- Create backdrop
     CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(frame.Icon, "border"), 8)
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
-    -- Durably lock the font OBJECTS against pool re-use SetFontObject swaps
-    -- (idempotent); the per-reuse SkinFrameText stays as a belt.
-    SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -386,7 +373,6 @@ local function SkinMoneyWonAlert(frame)
         SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -407,7 +393,6 @@ local function SkinHonorAwardedAlert(frame)
 
     CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(frame.Icon, "border"), 4)
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -445,7 +430,6 @@ local function SkinNewRecipeLearnedAlert(frame)
         CreateIconBorder(frame.Icon, frame)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -484,7 +468,6 @@ local function SkinDungeonCompletionAlert(frame)
         CreateIconBorder(frame.dungeonTexture, frame)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -524,7 +507,6 @@ local function SkinScenarioAlert(frame)
         CreateIconBorder(frame.dungeonTexture, frame)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -550,7 +532,6 @@ local function SkinWorldQuestCompleteAlert(frame)
         CreateIconBorder(frame.QuestTexture, frame)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -606,7 +587,6 @@ local function SkinLegendaryItemAlert(frame, itemLink)
         end
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -626,7 +606,6 @@ local function SkinMiscAlert(frame)
     -- killed — so re-suppress it (and re-font) on each pooled re-use.
     if SkinBase.IsSkinned(frame) then
         Kill(frame.IconBorder)
-        SkinBase.SkinFrameText(frame, { recurse = true })
         return
     end
 
@@ -647,10 +626,6 @@ local function SkinMiscAlert(frame)
         CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(frame.Icon, "border"), 8)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
-    -- Durably lock the font OBJECTS against pool re-use SetFontObject swaps
-    -- (idempotent); the per-reuse SkinFrameText stays as a belt.
-    SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.MarkSkinned(frame)
 end
 
@@ -687,7 +662,6 @@ local function SkinEntitlementAlert(frame)
         CreateIconBorder(frame.Icon, frame)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     RestyleEntitlementAlertText(frame)
     SkinBase.MarkSkinned(frame)
 end
@@ -715,7 +689,6 @@ local function SkinDigsiteCompleteAlert(frame)
         frame.DigsiteTypeTexture:SetPoint("LEFT", -10, -14)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -748,7 +721,6 @@ local function SkinGuildChallengeAlert(frame)
         SetLargeGuildTabardTextures("player", frame.EmblemIcon)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -782,7 +754,6 @@ local function SkinInvasionAlert(frame)
         end
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

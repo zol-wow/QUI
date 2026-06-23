@@ -2096,19 +2096,6 @@ ApplyCharacterPaneLayout = function(force)
         end)
     end
 
-    local skinBase = GetSkinBase()
-    if skinBase and CharacterFrame then
-        skinBase.SkinFrameText(CharacterFrame, { recurse = true })
-        -- Durably lock the Blizzard fontstrings' font OBJECTS so relayout/rebind
-        -- SetFontObject swaps don't revert the QUI font. A one-shot SkinFrameText
-        -- alone reverts on Blizzard re-face, and RefreshCharacterPanelFonts only
-        -- re-skins QUI-owned arrays. Same SkinFrameText -> LockFrameTextObjects
-        -- pattern the font-reassertions test pins for system/popups.lua.
-        if skinBase.LockFrameTextObjects then
-            skinBase.LockFrameTextObjects(CharacterFrame, 3)
-        end
-    end
-
     layoutApplied = true
 end
 

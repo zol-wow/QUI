@@ -47,9 +47,6 @@ local function SkinSpellRows(frame)
     if pagedSpellsFrame and pagedSpellsFrame.EnumerateFrames then
         for _, spellFrame in pagedSpellsFrame:EnumerateFrames() do
             SkinBase.SkinFrameText(spellFrame, { recurse = true, chrome = true })
-            -- Spell rows are pooled and Blizzard swaps their font OBJECT on
-            -- hover / page re-bind; lock so the one-shot skin above survives.
-            SkinBase.LockFrameTextObjects(spellFrame, 3)
         end
     end
 end
@@ -88,43 +85,6 @@ local function HookPlayerSpellsTextUpdates(frame)
     SkinBase.SetFrameData(pagedSpellsFrame, "qSpellBookTextHooked", true)
 end
 
----------------------------------------------------------------------------
--- Talent tree node text. Talent buttons are pooled lazily and each swaps its
--- .SpendText font OBJECT on draw, so a one-shot skin reverts. LockFontObject
--- (via LockFrameTextObjects) makes the QUI font survive those swaps. New /
--- recycled buttons come through AcquireTalentButton, so hook it (debounced to
--- one enumerate-and-lock pass per frame) to cover buttons created after init.
----------------------------------------------------------------------------
-local talentLockPending
-local function LockTalentButtons(talentsFrame)
-    if not IsSettingEnabled("skinSpellBook") then return end
-    if not talentsFrame or not talentsFrame.EnumerateAllTalentButtons then return end
-    for btn in talentsFrame:EnumerateAllTalentButtons() do
-        SkinBase.LockFrameTextObjects(btn, 2)
-    end
-end
-
-local function ScheduleTalentLock(talentsFrame)
-    if talentLockPending then return end
-    talentLockPending = true
-    C_Timer.After(0, function()
-        talentLockPending = false
-        LockTalentButtons(talentsFrame)
-    end)
-end
-
-local function HookTalentButtons(frame)
-    local talentsFrame = frame and frame.TalentsFrame
-    if not talentsFrame or not talentsFrame.AcquireTalentButton then return end
-    if not SkinBase.GetFrameData(talentsFrame, "qTalentTextHooked") then
-        hooksecurefunc(talentsFrame, "AcquireTalentButton", function(self)
-            ScheduleTalentLock(self)
-        end)
-        SkinBase.SetFrameData(talentsFrame, "qTalentTextHooked", true)
-    end
-    ScheduleTalentLock(talentsFrame)
-end
-
 local function SkinPlayerSpells()
     if not IsSettingEnabled("skinSpellBook") then return end
     local frame = _G.PlayerSpellsFrame
@@ -148,7 +108,6 @@ local function SkinPlayerSpells()
     if categoryTabs then
         for _, t in ipairs(categoryTabs) do
             SkinBase.ApplyButtonFontObjects(t)
-            SkinBase.LockFrameTextObjects(t, 2)
         end
     end
     -- Spellbook page-turn arrows (PagedSpellsFrame.PagingControls) ship UNSKINNED
@@ -195,7 +154,6 @@ local function SkinPlayerSpells()
         DriveButtonFont(frame.TalentsFrame.InspectCopyButton)
     end
     HookPlayerSpellsTextUpdates(frame)
-    HookTalentButtons(frame)
     SkinPlayerSpellsText(frame)
     SkinBase.MarkSkinned(frame)
 end
@@ -213,7 +171,6 @@ local function RefreshPlayerSpells()
         SkinBase.RefreshTabGroup(frame.TabSystem.tabs, frame)
     end
     HookPlayerSpellsTextUpdates(frame)
-    HookTalentButtons(frame)
     SkinPlayerSpellsText(frame)
 end
 _G.QUI_RefreshSpellBookColors = RefreshPlayerSpells
@@ -232,9 +189,6 @@ end
 local function SkinEncounterJournalTextFrame(frame)
     if frame then
         SkinBase.SkinFrameText(frame, { recurse = true, chrome = true })
-        if SkinBase.LockFrameTextObjects then
-            SkinBase.LockFrameTextObjects(frame, 3)
-        end
         -- Drive descendant BUTTON font OBJECTS too. Boss-list buttons and the
         -- Adventure-Guide suggest button declare a <HighlightFont> the engine swaps
         -- on hover with NO setter call, which LockFrameTextObjects (a setter hook)
@@ -278,7 +232,6 @@ local function SkinEncounterJournalBottomTabs(frame)
     if not tabs or #tabs == 0 then return end
     for _, tab in ipairs(tabs) do
         SkinBase.ApplyButtonFontObjects(tab)
-        SkinBase.LockFrameTextObjects(tab, 2)
     end
 end
 
@@ -294,7 +247,6 @@ local function SkinEncounterJournalTutorialsButton(frame)
     local startButton = contents and contents.StartButton
     if not startButton then return end
     SkinBase.ApplyButtonFontObjects(startButton)
-    SkinBase.LockFrameTextObjects(startButton, 2)
 end
 
 local function ScheduleEncounterJournalTextFrame(frame)
@@ -620,13 +572,6 @@ end
 ---------------------------------------------------------------------------
 -- CollectionsJournal
 ---------------------------------------------------------------------------
-local function LockCollectionsText(frame)
-    if SkinBase.LockFrameTextObjects and frame then
-        SkinBase.SkinFrameText(frame, { recurse = true })
-        SkinBase.LockFrameTextObjects(frame, 4)
-    end
-end
-
 local function LockCollectionsScrollBox(scrollBox)
     if not scrollBox then return end
     -- Guarded per-row font lock (recursive pass runs once per pooled row; the
@@ -638,8 +583,6 @@ end
 
 local function LockHeirloomFrame(frame)
     if not frame or SkinBase.GetFrameData(frame, "qHeirloomTextLocked") then return end
-    SkinBase.SkinFrameText(frame, { recurse = true })
-    SkinBase.LockFrameTextObjects(frame, 3)
     SkinBase.SetFrameData(frame, "qHeirloomTextLocked", true)
 end
 
@@ -681,11 +624,11 @@ local function HookHeirloomsJournal(journal)
 end
 
 local function HookCollectionsText(frame)
-    LockCollectionsText(frame)
     -- Bottom action buttons (MountJournal.MountButton "MOUNT", PetJournal summon
     -- buttons, etc.) are MagicButton/UIPanel-style: the engine swaps their
-    -- Highlight/Disabled font OBJECT on hover/disable without calling a setter, so
-    -- LockFrameTextObjects above can't catch it. Drive their font objects.
+    -- Highlight/Disabled font OBJECT on hover/disable without calling a setter.
+    -- Drive their font objects so the QUI face (applied via the global font-object
+    -- override) survives those swaps.
     if SkinBase.ApplyButtonFontObjectsDeep then
         SkinBase.ApplyButtonFontObjectsDeep(frame, 5)
     end
@@ -711,7 +654,6 @@ local function SkinCollections()
         if tab then tabs[#tabs + 1] = tab end
     end
     SkinBase.SkinTabGroup(tabs, frame)
-    SkinBase.SkinFrameText(frame, { recurse = true })
     HookCollectionsText(frame)
     SkinBase.MarkSkinned(frame)
 end

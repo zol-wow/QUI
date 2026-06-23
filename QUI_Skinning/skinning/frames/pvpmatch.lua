@@ -22,7 +22,7 @@ end
 
 local function SkinPVPMatchFrame(frame)
     if not frame or SkinBase.IsSkinned(frame) then return end
-    SkinBase.SkinWindow(frame, { depth = 5 }) -- chrome + backdrop + close + durable font trio
+    SkinBase.SkinWindow(frame, { depth = 5 }) -- chrome + backdrop + close (static-text face from global font-object override)
     SkinBase.MarkSkinned(frame)
 end
 

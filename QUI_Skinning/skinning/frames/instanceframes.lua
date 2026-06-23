@@ -4,12 +4,6 @@ local GetCore = ns.Helpers.GetCore
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
 
--- Recursively re-lock the QUI font on a frame's fontstrings so Blizzard's
--- hover / selection / list re-bind font-object swaps don't revert our font.
--- Promoted to SkinBase.LockFrameTextObjects (core/uikit.lua) so journals /
--- achievement reuse the same proven helper; aliased here for existing callers.
-local LockFrameTextObjects = SkinBase.LockFrameTextObjects
-
 ---------------------------------------------------------------------------
 -- INSTANCE FRAMES SKINNING (PVE, Dungeons & Raids, PVP, M+ Dungeons)
 ---------------------------------------------------------------------------
@@ -150,7 +144,6 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
     if button.name then
         SkinBase.SkinFontString(button.name, { fontOnly = true })
     end
-    LockFrameTextObjects(button, 2)
 
     AddSkinColorHoverBorder(button)
 
@@ -226,7 +219,6 @@ local function SkinPVEFrame()
         end
     end
 
-    SkinBase.SkinFrameText(PVEFrame, { recurse = true })
     SkinBase.MarkSkinned(PVEFrame)
 end
 
@@ -376,7 +368,6 @@ local function SkinLFDFrame()
         SkinBase.HookScrollBoxRowFonts(followerList.ScrollBox, 2)
     end
 
-    SkinBase.SkinFrameText(LFDQueueFrame, { recurse = true })
     SkinBase.MarkSkinned(LFDQueueFrame)
 end
 
@@ -423,12 +414,6 @@ local function SkinRaidFinderFrame()
         SkinBase.LockDropdownText(selectionDropdown)
     end
 
-    -- Raid Finder uses a dropdown (no row list), but its queue-frame labels and
-    -- reward fontstrings get their font OBJECT re-asserted on LFG/role updates,
-    -- reverting the one-shot SkinFrameText. Lock the font objects so they stick.
-    LockFrameTextObjects(RaidFinderQueueFrame, 4)
-
-    SkinBase.SkinFrameText(RaidFinderQueueFrame, { recurse = true })
     SkinBase.MarkSkinned(RaidFinderQueueFrame)
 end
 
@@ -614,7 +599,6 @@ local function SkinLFGListFrame()
             if av.AutoAcceptButton.Label then
                 SkinBase.SkinFontString(av.AutoAcceptButton.Label, { fontOnly = true })
             end
-            LockFrameTextObjects(av.AutoAcceptButton, 2)
         end
     end
 
@@ -629,7 +613,6 @@ local function SkinLFGListFrame()
         end
     end
 
-    SkinBase.SkinFrameText(LFGListFrame, { recurse = true })
     SkinBase.MarkSkinned(LFGListFrame)
 end
 
@@ -675,11 +658,6 @@ local function StyleDungeonIcon(icon, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
     end
 
-    -- Lock the QUI font on the tile's level text: Blizzard's SetUp re-asserts
-    -- the font OBJECT on HighestLevel when the tile re-binds, reverting the
-    -- one-shot SkinFrameText. LockFontObject hooks the swap; idempotent.
-    LockFrameTextObjects(icon, 1)
-
     -- Store colors
     SkinBase.SetFrameData(icon, "skinColor", { sr, sg, sb, sa })
 
@@ -708,11 +686,6 @@ local function StyleAffixIcon(affix, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SetFrameData(affix.Portrait, "backdrop", portraitBackdrop)
         end
     end
-
-    -- The affix "+X%" Percent text re-applies its font OBJECT on every SetUp
-    -- (Blizzard_ChallengesUI.lua:807/809), reverting the one-shot SkinFrameText.
-    -- Lock so the QUI face survives weekly/affix refreshes.
-    LockFrameTextObjects(affix, 2)
 
     SkinBase.MarkStyled(affix)
 end
@@ -788,7 +761,6 @@ local function SkinChallengesFrame()
         end
     end
 
-    SkinBase.SkinFrameText(ChallengesFrame, { recurse = true })
     SkinBase.MarkSkinned(ChallengesFrame)
 end
 
@@ -909,10 +881,6 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
 
     AddSkinColorHoverBorder(button)
 
-    -- Title / size / type fontstrings use stock GameFont* (FRIZQT); lock the QUI
-    -- face. SetButtonState SetTextColor still drives enabled/disabled coloring.
-    LockFrameTextObjects(button, 2)
-
     SkinBase.MarkStyled(button)
 end
 
@@ -994,9 +962,6 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     -- (stock GameFontNormal*) and are cold-acquired after the one-shot frame skin.
     -- Skin this button directly because the rest of its chrome is styled here.
     -- HookScrollBoxAcquired composes callbacks through SkinBase.
-    SkinBase.SkinFrameText(button, { recurse = true })
-    LockFrameTextObjects(button, 2)
-
     SkinBase.MarkStyled(button)
 end
 
@@ -1073,7 +1038,6 @@ local function SkinPVPFrame()
             if catButton.Name then
                 SkinBase.SkinFontString(catButton.Name, { fontOnly = true })
             end
-            LockFrameTextObjects(catButton, 2)
         end
     end
 
@@ -1221,7 +1185,6 @@ local function SkinPVPFrame()
         SkinBase.MarkSkinned(TrainingGroundsFrame)
     end
 
-    SkinBase.SkinFrameText(PVPQueueFrame, { recurse = true })
     SkinBase.MarkSkinned(PVPQueueFrame)
 end
 

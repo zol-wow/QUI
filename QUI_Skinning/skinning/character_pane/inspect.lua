@@ -1896,10 +1896,9 @@ ApplyInspectPaneLayout = function(force)
         end)
     end)
 
-    -- InspectFrame chrome-text durability (recursive SkinFrameText + LockFrameTextObjects
-    -- + tab font objects) is owned by frames/inspect.lua. A second bare, unlocked
-    -- SkinFrameText pass here only re-walks the same subtree and reverts on Blizzard
-    -- font re-binds, so it is intentionally not repeated.
+    -- InspectFrame static-text font face is applied globally via the shared
+    -- font-object override; frames/inspect.lua drives tab font objects.
+    -- No per-frame font walk is needed here.
 
     inspectLayoutApplied = true
 end

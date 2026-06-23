@@ -243,10 +243,6 @@ local function SkinOverrideActionBar()
         Helpers.SetFrameBackdropBorderColor(pbBd, sr, sg, sb, sa)
     end
 
-    SkinBase.SkinFrameText(bar, { recurse = true })
-    -- Lock the QUI font so Blizzard's leave/MicroButton label rebinds can't
-    -- revert the one-shot SkinFrameText pass.
-    SkinBase.LockFrameTextObjects(bar)
     SkinBase.MarkSkinned(bar)
 
     -- BUG-005: Reset MicroMenu to normal position after skinning

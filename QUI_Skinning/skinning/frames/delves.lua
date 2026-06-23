@@ -29,7 +29,7 @@ local function SkinDelvesFrame(frame)
     -- Delves-specific: DialogBorderTemplate's .Border container isn't part of the
     -- standard chrome SkinWindow's HidePortraitFrameChrome hides, so strip it first.
     if frame.Border and SkinBase.StripTextures then SkinBase.StripTextures(frame.Border) end
-    SkinBase.SkinWindow(frame) -- chrome + backdrop + close + durable font trio
+    SkinBase.SkinWindow(frame) -- chrome + backdrop + close (static-text face from global font-object override)
     SkinBase.MarkSkinned(frame)
 end
 

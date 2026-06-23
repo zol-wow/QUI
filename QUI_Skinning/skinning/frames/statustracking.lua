@@ -347,7 +347,6 @@ local function EnsureBarSkinned(bar)
     HookBarUpdate(bar)
     HookBarTextVisibility(bar)
     RefreshBarAppearance(bar)
-    SkinBase.SkinFrameText(bar, { recurse = true })
 end
 
 local function SkinBarContainer(container)

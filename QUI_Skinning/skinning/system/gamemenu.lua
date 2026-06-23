@@ -391,11 +391,7 @@ end
 local function RefreshGameMenuFontSize()
     local settings = GetGeneralSettings()
     if not settings or not settings.skinGameMenu then
-        local core = GetCore()
-        if core and core.ApplyGlobalFontToGameMenu then
-            core:ApplyGlobalFontToGameMenu()
-        end
-        return
+        return -- GameMenu skin off: global font-object override + STANDARD_TEXT_FONT cover what they can
     end
     local fontSize = GetGameMenuFontSize()
     -- Re-drive each skinned button at the new size; the size|color-keyed font-object

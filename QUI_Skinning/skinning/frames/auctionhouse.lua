@@ -43,12 +43,6 @@ local function SkinAuctionHouseTabs()
 
     SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true })
 
-    -- Lock each main tab's font objects: tab selection/hover re-asserts the stock
-    -- font object, reverting the QUI face (the auctions sub-tabs already do this).
-    for _, tab in ipairs(AuctionHouseFrame.Tabs) do
-        SkinBase.LockFrameTextObjects(tab, 2)
-    end
-
     -- Reposition tabs: left justify and tighten spacing
     local tabs = AuctionHouseFrame.Tabs
     if tabs[1] then
@@ -100,7 +94,6 @@ local function FontAuctionHouseExtraTabs()
         for _, tab in ipairs(AuctionHouseFrame.Tabs) do
             if tab and not SkinBase.GetFrameData(tab, "qAHTabFonted") then
                 SkinBase.ApplyButtonFontObjects(tab)
-                SkinBase.LockFrameTextObjects(tab, 2)
                 SkinBase.SetFrameData(tab, "qAHTabFonted", true)
             end
         end
@@ -118,7 +111,6 @@ local function FontAuctionHouseExtraTabs()
             end)
             if ok and isTab then
                 SkinBase.ApplyButtonFontObjects(obj)
-                SkinBase.LockFrameTextObjects(obj, 2)
                 SkinBase.SetFrameData(obj, "qAHTabFonted", true)
             end
         end
@@ -129,9 +121,6 @@ local function SkinAuctionHouseAuctionsTabs(auctionsFrame)
     if not auctionsFrame then return end
     local tabs = { auctionsFrame.AuctionsTab, auctionsFrame.BidsTab }
     SkinBase.SkinTabGroup(tabs, auctionsFrame, { font = true })
-    for _, tab in ipairs(tabs) do
-        SkinBase.LockFrameTextObjects(tab, 2)
-    end
 end
 
 local function LockDurationDropdownText(dropdown)
@@ -141,14 +130,10 @@ local function LockDurationDropdownText(dropdown)
         SkinBase.SkinFontString(text, { fontOnly = true })
         SkinBase.LockFontObject(text, { fontOnly = true })
     end
-    SkinBase.LockFrameTextObjects(dropdown, 2)
 end
 
 local function LockTokenFrameText(frame)
     if not frame then return end
-    SkinBase.SkinFrameText(frame, { recurse = true })
-    SkinBase.LockFrameTextObjects(frame, 4)
-
     for _, key in ipairs({ "BuyoutPrice", "MarketPrice" }) do
         local fontString = frame[key]
         if fontString then
@@ -178,8 +163,6 @@ local function LockAuctionHouseBuyDialogText()
     local notification = AuctionHouseFrame and AuctionHouseFrame.BuyDialog and AuctionHouseFrame.BuyDialog.Notification
     if not notification then return end
 
-    SkinBase.SkinFrameText(notification, { recurse = true })
-    SkinBase.LockFrameTextObjects(notification, 2)
     if notification.Text then
         SkinBase.SkinFontString(notification.Text, { fontOnly = true })
         SkinBase.LockFontObject(notification.Text, { fontOnly = true })
@@ -258,7 +241,6 @@ local function HookAuctionHeaderSkin()
         local hl = self.GetHighlightTexture and self:GetHighlightTexture()
         if hl then hl:SetAlpha(0) end
         SkinBase.ApplyButtonFontObjects(self)
-        SkinBase.LockFrameTextObjects(self, 2)
     end)
     SkinBase.SetFrameData(mixin, "headerSkinHooked", true)
 end
@@ -326,7 +308,6 @@ local function SkinQuantityInputFrame(quantityInput)
     end
     if quantityInput.MaxButton then
         SkinBase.SkinButton(quantityInput.MaxButton, { font = true })
-        SkinBase.LockFrameTextObjects(quantityInput.MaxButton, 2)
     end
 end
 
@@ -468,10 +449,6 @@ local function SkinCategoriesList()
         SkinBase.SkinCategoryButton(button)
         SuppressCategoryTextures(button)
         SkinBase.RefreshCategorySelected(button)
-        -- Reapply the QUI font: Blizzard's element initializer calls SetNormalFontObject
-        -- on every rebind, reverting the label font. ApplyButtonFontObjects below already
-        -- faces+colors button.Text (so a separate SkinFontString here is redundant).
-        SkinBase.LockFrameTextObjects(button, 2)
         -- SetUp's SetNormalFontObject REPLACES the font object SkinCategoryButton
         -- drove once (the once-guard won't re-drive). Re-drive on every bind so the
         -- normal + hover/disable font objects stay on the QUI face.
@@ -557,7 +534,6 @@ local function SkinAuctionHouse()
     pcall(SkinSellPanel)
     pcall(SkinAuctionsPanel)
 
-    SkinBase.SkinFrameText(AuctionHouseFrame, { recurse = true })
     LockAuctionHouseTokenText()
     LockAuctionHouseBuyDialogText()
 

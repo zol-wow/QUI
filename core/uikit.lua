@@ -2685,6 +2685,12 @@ end
 -- nil-safe: without CreateFont, only the fontstring SetFont path runs.
 function SkinBase.ApplyButtonFontObjects(button, opts)
     if not button then return end
+    -- Button face follows the global font toggle (decoupled from skinning).
+    local core = GetCore()
+    if not (core and core.db and core.db.profile and core.db.profile.general
+            and core.db.profile.general.applyGlobalFontToBlizzard) then
+        return
+    end
     opts = opts or {}
     local fs = button.Text or (button.GetFontString and button:GetFontString())
     local size = opts.size
@@ -3240,6 +3246,25 @@ function SkinBase.SkinFontString(fontString, opts)
     end
 end
 
+-- Secret-Hierarchy / forbidden frames reject GetRegions()/GetChildren() in 12.0.7
+-- (SecretReturnsForAspect = Hierarchy). pcall converts the reject into an empty
+-- list instead of an error. Widget containers are skipped to avoid tainting their
+-- FontStrings. Used by every recursive font walk below.
+local function SafeWalkSkip(frame)
+    if not frame then return true end
+    if frame.IsForbidden and frame:IsForbidden() then return true end
+    if frame.widgetType or frame.RegisterForWidgetSet then return true end
+    return false
+end
+local function SafeRegions(frame)
+    local ok, r = pcall(function() return { frame:GetRegions() } end)
+    return ok and r or nil
+end
+local function SafeChildren(frame)
+    local ok, c = pcall(function() return { frame:GetChildren() } end)
+    return ok and c or nil
+end
+
 -- Walk a frame's fontstrings and apply the QUI font. Font is applied to EVERY
 -- fontstring (family/outline only; current size preserved), color is preserved
 -- unless opts.chrome is set (chrome labels take the themed/near-white color via
@@ -3250,9 +3275,11 @@ function SkinBase.SkinFrameText(frame, opts)
     opts = opts or {}
     local fontOpts = opts.chrome and { color = opts.color } or { fontOnly = true }
 
-    if frame.GetRegions then
-        for i = 1, select("#", frame:GetRegions()) do
-            local region = select(i, frame:GetRegions())
+    if SafeWalkSkip(frame) then return end
+
+    local regions = frame.GetRegions and SafeRegions(frame)
+    if regions then
+        for _, region in ipairs(regions) do
             if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                 SkinBase.SkinFontString(region, fontOpts)
             end
@@ -3262,14 +3289,16 @@ function SkinBase.SkinFrameText(frame, opts)
     if opts.recurse and frame.GetChildren then
         local depth = opts.maxDepth or 6
         if depth > 0 then
-            for i = 1, select("#", frame:GetChildren()) do
-                local child = select(i, frame:GetChildren())
-                SkinBase.SkinFrameText(child, {
-                    recurse = true,
-                    maxDepth = depth - 1,
-                    chrome = opts.chrome,
-                    color = opts.color,
-                })
+            local children = SafeChildren(frame)
+            if children then
+                for _, child in ipairs(children) do
+                    SkinBase.SkinFrameText(child, {
+                        recurse = true,
+                        maxDepth = depth - 1,
+                        chrome = opts.chrome,
+                        color = opts.color,
+                    })
+                end
             end
         end
     end
@@ -3329,17 +3358,21 @@ function SkinBase.LockFrameTextObjects(frame, maxDepth)
     if frame.GetObjectType and frame:GetObjectType() == "Button" and frame.SetNormalFontObject then
         SkinBase.LockFontObject(frame, { fontOnly = true })
     end
-    if frame.GetRegions then
-        for i = 1, select("#", frame:GetRegions()) do
-            local region = select(i, frame:GetRegions())
+    if SafeWalkSkip(frame) then return end
+    local regions = frame.GetRegions and SafeRegions(frame)
+    if regions then
+        for _, region in ipairs(regions) do
             if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                 SkinBase.LockFontObject(region, { fontOnly = true })
             end
         end
     end
     if maxDepth > 0 and frame.GetChildren then
-        for i = 1, select("#", frame:GetChildren()) do
-            SkinBase.LockFrameTextObjects(select(i, frame:GetChildren()), maxDepth - 1)
+        local children = SafeChildren(frame)
+        if children then
+            for _, child in ipairs(children) do
+                SkinBase.LockFrameTextObjects(child, maxDepth - 1)
+            end
         end
     end
 end
@@ -3369,9 +3402,13 @@ function SkinBase.ApplyButtonFontObjectsDeep(frame, maxDepth)
             SkinBase.SetFrameData(frame, "qBtnFontDriven", true)
         end
     end
+    if SafeWalkSkip(frame) then return end
     if maxDepth > 0 and frame.GetChildren then
-        for i = 1, select("#", frame:GetChildren()) do
-            SkinBase.ApplyButtonFontObjectsDeep(select(i, frame:GetChildren()), maxDepth - 1)
+        local children = SafeChildren(frame)
+        if children then
+            for _, child in ipairs(children) do
+                SkinBase.ApplyButtonFontObjectsDeep(child, maxDepth - 1)
+            end
         end
     end
 end
@@ -4026,18 +4063,16 @@ end
 ---------------------------------------------------------------------------
 -- SkinWindow(frame, opts)
 -- The SINGLE canonical "skin a Blizzard window" sequence: chrome strip +
--- backdrop + close button + the durable font trio (SkinFrameText ->
--- LockFrameTextObjects -> ApplyButtonFontObjectsDeep), so every window gets
+-- backdrop + close button + button font OBJECTS, so every window gets
 -- UNIFORM treatment in ONE call. Replaces the error-prone per-frame manual
 -- composition of 4-5 helpers (the source of "some frames skinned more than
 -- others"). Every step is individually graceful/guarded, so it works on
 -- ButtonFrameTemplate, PortraitFrameTemplate, InsetFrameTemplate AND bare
 -- custom frames alike.
---   opts.depth        : LockFrameTextObjects + ApplyButtonFontObjectsDeep depth
---                       (default 4)
---   opts.fontDepth    : SkinFrameText recurse depth (default: SkinFrameText's
---                       own default of 6 — kept separate because the initial
---                       font face wants a deeper reach than the object lock)
+-- Static-text face comes from the global font-object override (font_system.lua
+-- ApplyGlobalDefaultFont); SkinFrameText and LockFrameTextObjects are NOT
+-- called here — they are superseded by the global shared-object override.
+--   opts.depth        : ApplyButtonFontObjectsDeep depth (default 4)
 --   opts.tabs         : array of tab buttons -> SkinTabGroup (optional)
 --   opts.tabOwner     : owner for SkinTabGroup (default frame)
 --   opts.scrollBars   : array of scrollbars -> SkinTrimScrollBar (optional)
@@ -4063,10 +4098,8 @@ function SkinBase.SkinWindow(frame, opts)
         SkinBase.SkinTabGroup(opts.tabs, opts.tabOwner or frame)
     end
 
-    -- The durable font trio (initial face + object lock + button state fonts).
-    -- fontDepth nil -> SkinFrameText uses its own default (6).
-    SkinBase.SkinFrameText(frame, { recurse = true, maxDepth = opts.fontDepth })
-    SkinBase.LockFrameTextObjects(frame, depth)
+    -- Button font OBJECTS only (engine hover/disable swap). Static text face
+    -- comes from the global font-object override.
     if not opts.noButtonFonts then
         SkinBase.ApplyButtonFontObjectsDeep(frame, depth)
     end

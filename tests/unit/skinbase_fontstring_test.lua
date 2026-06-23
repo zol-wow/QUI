@@ -88,7 +88,8 @@ local ns = {
     Helpers = {
         CHROME = { BORDER_PX = 1, BG_FALLBACK = { 0.05, 0.05, 0.05, 0.95 }, BORDER_FALLBACK = { 0, 0, 0, 1 }, BUTTON_BOOST = 0.07, SCROLLROW_BOOST = 0.03, DEPTH = { PANEL = { boost = 0, alpha = 0.95 }, SUBPANEL = { boost = 0.04, alpha = 0.85 }, ROW = { boost = 0.07, alpha = 0.75 } } },
         CreateStateTable = CreateStateTable,
-        GetCore = function() return { GetPixelSize = function() return 0.5 end } end,
+        GetCore = function() return { GetPixelSize = function() return 0.5 end,
+            db = { profile = { general = { applyGlobalFontToBlizzard = true } } } } end,
         SafeToNumber = function(v, d) return tonumber(v) or d end,
         GetSkinBorderColor = function() return 0.6, 0.7, 0.8, 1 end,
         GetSkinBgColorWithOverride = function() return 0.1, 0.2, 0.3, 0.9 end,
@@ -198,5 +199,33 @@ function editBox:SetFontObject(fontObject) self.fontObject = fontObject end
 SkinBase.LockFontObject(editBox, { fontOnly = true })
 editBox:SetFontObject("GameFontNormal")
 assert(editBox.font == generalFont, "LockFontObject must survive EditBox SetFontObject")
+
+-- applyGlobalFontToBlizzard = false: ApplyButtonFontObjects must early-return,
+-- leaving the button's fontstring font untouched (no QUI font applied).
+do
+    local ns2 = {
+        Helpers = {
+            CHROME = ns.Helpers.CHROME,
+            CreateStateTable = CreateStateTable,
+            GetCore = function()
+                return { GetPixelSize = function() return 0.5 end,
+                    db = { profile = { general = { applyGlobalFontToBlizzard = false } } } }
+            end,
+            SafeToNumber = ns.Helpers.SafeToNumber,
+            GetSkinBorderColor = ns.Helpers.GetSkinBorderColor,
+            GetSkinBgColorWithOverride = ns.Helpers.GetSkinBgColorWithOverride,
+            GetSkinBarColor = ns.Helpers.GetSkinBarColor,
+            GetGeneralFont = ns.Helpers.GetGeneralFont,
+            GetGeneralFontOutline = ns.Helpers.GetGeneralFontOutline,
+        },
+        UIKit = { RegisterScaleRefresh = function() end },
+    }
+    assert(loadfile("core/uikit.lua"))("QUI", ns2)
+    local SkinBase2 = ns2.SkinBase
+    local flagOffBtn = NewFrame()
+    SkinBase2.SkinButton(flagOffBtn)
+    assert(flagOffBtn:GetFontString().font == nil,
+        "SkinButton must not apply the QUI font when applyGlobalFontToBlizzard is false")
+end
 
 print("OK: skinbase_fontstring_test")

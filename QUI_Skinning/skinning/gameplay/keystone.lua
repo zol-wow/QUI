@@ -162,10 +162,6 @@ local function SkinKeystoneFrame()
         local sc = SkinBase.GetFrameData(f, "skinColor") or { 0.376, 0.647, 0.980, 1 }
         local r, g, b, a = unpack(sc)
         for _, affix in ipairs(f.Affixes) do
-            -- The "+X%" Percent text re-applies its font OBJECT on every SetUp
-            -- (Blizzard_ChallengesUI.lua:807/809); lock so the QUI face survives
-            -- each keystone slot (idempotent via qFontLocked).
-            SkinBase.LockFrameTextObjects(affix, 2)
             if affix.Portrait and not SkinBase.GetFrameData(affix, "border") then
                 if affix.Border then affix.Border:SetAlpha(0) end
                 affix.Portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -180,7 +176,6 @@ local function SkinKeystoneFrame()
         end
     end)
 
-    SkinBase.SkinFrameText(keystoneFrame, { recurse = true })
     SkinBase.MarkSkinned(keystoneFrame)
 end
 

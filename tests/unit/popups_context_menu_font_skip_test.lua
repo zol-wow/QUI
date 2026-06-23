@@ -71,7 +71,10 @@ _G.QUI_RefreshSystemPopupSkins()
 
 assert(skinFrameTextTargets[modernMenu] == nil,
     "must NOT run SkinFrameText (font skinning) over a Compositor-managed modern menu — SetFont is disallowed there")
-assert(skinFrameTextTargets[legacyMenu] == true,
-    "must still run SkinFrameText over a legacy DropDownList menu (not Compositor-managed)")
+-- Legacy DropDownList menus no longer get SkinFrameText; font durability now comes from
+-- ApplyButtonFontObjectsDeep driving button font objects for hover/disable swaps.
+-- Interactive reverts on bare-root legacy menu entries are accepted under the global override.
+assert(skinFrameTextTargets[legacyMenu] == nil,
+    "legacy DropDownList menus must NOT get SkinFrameText — font objects are driven via ApplyButtonFontObjectsDeep")
 
 print("OK: popups_context_menu_font_skip_test")

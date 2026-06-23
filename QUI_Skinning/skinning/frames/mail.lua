@@ -201,8 +201,6 @@ local function SkinSendMailControls()
     if _G.SendMailCODButton then SkinBase.SkinCheckBox(_G.SendMailCODButton) end
 
     if _G.SendMailFrame then
-        SkinBase.SkinFrameText(_G.SendMailFrame, { recurse = true })
-        SkinBase.LockFrameTextObjects(_G.SendMailFrame, 5)
         SkinBase.ApplyButtonFontObjectsDeep(_G.SendMailFrame, 4)
     end
 
@@ -234,8 +232,6 @@ local function SkinOpenMailFrame()
 
     LowerFrameBackdrop(frame)
     SkinOpenMailArtwork()
-    SkinBase.SkinFrameText(frame, { recurse = true })
-    SkinBase.LockFrameTextObjects(frame, 5)
     SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     SkinBase.SkinButton(_G.OpenMailReportSpamButton)
     SkinBase.SkinButton(_G.OpenMailCancelButton)
@@ -269,8 +265,6 @@ local function SkinMail()
     end
     if frame then
         LowerFrameBackdrop(frame)
-        SkinBase.SkinFrameText(frame, { recurse = true })
-        SkinBase.LockFrameTextObjects(frame, 4)
         SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     end
 

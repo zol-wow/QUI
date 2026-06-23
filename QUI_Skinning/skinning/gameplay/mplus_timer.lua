@@ -283,7 +283,6 @@ local function ApplyMPlusTimerSkin()
     -- Store colors for refresh
     SkinBase.MarkSkinned(MPlusTimer.frames.root)
     SkinBase.SetFrameData(MPlusTimer.frames.root, "colors", colors)
-    SkinBase.SkinFrameText(MPlusTimer.frames.root, { recurse = true })
 end
 
 ---------------------------------------------------------------------------

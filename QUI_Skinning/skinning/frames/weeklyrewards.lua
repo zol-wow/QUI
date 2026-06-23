@@ -59,11 +59,6 @@ local function ApplyWeeklyRewardsSkin(frame)
         SkinBase.SkinCloseButton(frame.CloseButton)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
-    -- Durable font lock + button font objects, matching the canonical window
-    -- treatment (interaction/journals/misc_frames) so Weekly Rewards text and
-    -- buttons don't revert to the Blizzard font on relayout/hover.
-    SkinBase.LockFrameTextObjects(frame, 4)
     SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     -- The "Select Reward" CTA is a UIPanelButton. Give it the QUI backdrop +
     -- hover/pushed/disabled border (it otherwise renders as bare text over the

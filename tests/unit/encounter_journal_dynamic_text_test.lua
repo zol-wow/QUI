@@ -21,7 +21,7 @@ end
 
 local callbacks = {}
 local calls = {}
-local locks = {}
+local locks
 local tabGroups = {}
 local tabFonts = {}
 local frameData = setmetatable({}, { __mode = "k" })
@@ -135,7 +135,9 @@ local bottomTabKeys = {
 for _, key in ipairs(bottomTabKeys) do
     local tab = _G.EncounterJournal[key]
     assert(tabFonts[tab], "Encounter Journal bottom tab must get QUI font objects (hover-safe): " .. key)
-    assert(locks[tab] == 2, "Encounter Journal bottom tab must lock panel-template font swaps: " .. key)
+    -- LockFrameTextObjects on bottom tabs was removed; interactive reverts on bare-root
+    -- surfaces (tab font-object swaps via PanelTemplates_SelectTab) are now accepted.
+    -- Font durability comes from ApplyButtonFontObjects driving Normal/Highlight/Disabled objects.
 end
 assert(type(hooks.EncounterJournal_ToggleHeaders) == "function",
     "Encounter Journal skinning must hook section header refreshes")
@@ -154,10 +156,9 @@ assert(calls[lateHeader] and calls[lateHeader].recurse == true and calls[lateHea
     "late Encounter Journal ability headers must receive recursive QUI chrome text styling")
 assert(calls[lateOverview] and calls[lateOverview].recurse == true and calls[lateOverview].chrome == true,
     "late Encounter Journal overview sections must receive recursive QUI chrome text styling")
-assert(locks[lateHeader] == 3,
-    "late Encounter Journal ability headers must lock font-object resets")
-assert(locks[lateOverview] == 3,
-    "late Encounter Journal overview sections must lock font-object resets")
+-- LockFrameTextObjects on late headers/overviews was removed; ApplyButtonFontObjectsDeep
+-- now handles interactive object swaps. Static text durability from global override;
+-- interactive reverts on Encounter Journal surfaces are accepted.
 
 calls = {}
 locks = {}
@@ -167,9 +168,6 @@ assert(calls[lateButton] and calls[lateButton].recurse == true and calls[lateBut
     "Encounter Journal button text recolored by Blizzard must be restyled")
 assert(calls[lateHeader] and calls[lateHeader].recurse == true and calls[lateHeader].chrome == true,
     "Encounter Journal button parent text must be restyled after Blizzard color refresh")
-assert(locks[lateButton] == 3,
-    "Encounter Journal button text must lock font-object resets")
-assert(locks[lateHeader] == 3,
-    "Encounter Journal button parent text must lock font-object resets")
+-- LockFrameTextObjects on late buttons/parents was removed; interactive reverts accepted.
 
 print("OK: encounter_journal_dynamic_text_test")

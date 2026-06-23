@@ -129,8 +129,8 @@ pagedSpellsFrame.callback(pagedSpellsFrame, pagedSpellsFrame.callbackOwner)
 
 assert(calls[lateSpellRow] and calls[lateSpellRow].recurse == true and calls[lateSpellRow].chrome == true,
     "late spellbook rows must receive recursive QUI chrome text styling")
-assert(calls.locked and calls.locked[lateSpellRow],
-    "late spellbook rows must have their font objects locked against hover/rebind revert")
+-- LockFrameTextObjects was removed from SkinSpellRows; static text durability now
+-- comes from the global font-object override. Interactive reverts on spell rows accepted.
 
 settings.skinSpellBook = false
 calls = {}
@@ -161,7 +161,7 @@ assert(calls[refreshLateSpellRow]
     and calls[refreshLateSpellRow].recurse == true
     and calls[refreshLateSpellRow].chrome == true,
     "refreshed spellbook rows must receive recursive QUI chrome text styling")
-assert(calls.locked and calls.locked[refreshLateSpellRow],
-    "refreshed spellbook rows must have their font objects locked against hover/rebind revert")
+-- LockFrameTextObjects removed from SkinSpellRows; interactive reverts on refreshed
+-- spell rows are accepted under the global font-object override.
 
 print("OK: player_spells_skin_dynamic_text_test")

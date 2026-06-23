@@ -179,15 +179,6 @@ local function LockAchievementSummaryText()
     local summary = _G.AchievementFrameSummaryAchievements
     if not summary or not summary.buttons then return end
     for _, button in ipairs(summary.buttons) do
-        -- Font lock runs once per pooled button (AchievementFrameSummary_Update-
-        -- Achievements re-fires this every summary refresh; re-walking the
-        -- recurse pass each time is wasted). The LockFrameTextObjects hooks keep
-        -- the face; only the color must re-assert each refresh.
-        if not SkinBase.GetFrameData(button, "qListRowFonted") then
-            SkinBase.SkinFrameText(button, { recurse = true })
-            SkinBase.LockFrameTextObjects(button, 3)
-            SkinBase.SetFrameData(button, "qListRowFonted", true)
-        end
         RecolorSummaryDescription(button)
     end
 end
@@ -281,7 +272,6 @@ local function SkinAchievement()
         SkinBase.SkinCloseButton(closeButton)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinAchievementBottomTabs()
     HookAchievementLists()
     HookAchievementListColors()

@@ -558,9 +558,6 @@ local function StyleTooltip(tooltip)
     TooltipDebugCount("skin.style")
     local dbg, dbgStart, dbgHeap = TooltipDebugBegin()
     pcall(ApplyTooltipChrome, tooltip)
-    if tooltip ~= GameTooltip then
-        SkinBase.SkinFrameText(tooltip, { recurse = true })
-    end
     -- ItemRefTooltip (the item-link tooltip) carries a
     -- UIPanelCloseButtonNoScripts at .CloseButton (ItemRef.xml). Without
     -- restyling it the stock red Blizzard X shows through the otherwise-skinned

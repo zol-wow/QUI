@@ -62,15 +62,11 @@ local QUAZII_FONT_PATH = ((Helpers and Helpers.AssetPath) or [[Interface\AddOns\
 --
 -- All non-tooltip font overrides are applied PER-INSTANCE:
 --   - Chat frames: per-frame SetFont below
---   - ObjectiveTracker: per-frame ApplyFontToFrameRecursive below
+--   - ObjectiveTracker/GameMenu: covered by ApplyGlobalFontObjects (font-object override)
 
 -- Track if hooks are already set up (one-time per API; some Blizzard frames
 -- are loaded lazily, so hook setup is retried until each target exists).
-local objectiveTrackerFrameHooked = false
-local objectiveTrackerAddObjectiveHooked = false
-local objectiveTrackerSetHeaderHooked = false
 local chatFontHooksInitialized = false
-local originalGlobalFonts = ns.Helpers.CreateStateTable()
 local originalChatFonts = ns.Helpers.CreateStateTable()
 -- Pristine Blizzard DAMAGE_TEXT_FONT captured once before any QUI override, so
 -- the SCT font can be restored when the toggle is turned off (mirrors the
@@ -98,142 +94,95 @@ local function IsGlobalFontEnabled()
         and QUICore.db.profile.general.applyGlobalFontToBlizzard
 end
 
-local function GetGeneralSettings()
-    return QUICore.db and QUICore.db.profile and QUICore.db.profile.general
-end
+-- Shared Blizzard font OBJECTS overridden when the global font is enabled.
+-- Reference-proven leaf set. The bare roots GameFontNormal/GameFontHighlight/
+-- GameFontDisable/GameFontNormalSmall are DELIBERATELY excluded — they are the
+-- most-inherited secure-template roots; the reference avoids them and so do we.
+-- Each name is _G-guarded, so cross-version entries that do not exist on 12.0.7
+-- are silently skipped.
+local FONT_OBJECT_SET = {
+    "AchievementFont_Small", "ChatBubbleFont", "CoreAbilityFont",
+    "DestinyFontHuge", "DestinyFontMed", "ErrorFont",
+    "Fancy12Font", "Fancy14Font", "Fancy22Font", "Fancy24Font",
+    "FriendsFont_11", "FriendsFont_Large", "FriendsFont_Normal", "FriendsFont_Small", "FriendsFont_UserText",
+    "Game10Font_o1", "Game120Font", "Game12Font", "Game13FontShadow",
+    "Game15Font_o1", "Game15Font_Shadow", "Game16Font", "Game17Font_Shadow", "Game18Font",
+    "Game20Font", "Game22Font", "Game24Font", "Game30Font", "Game40Font", "Game42Font",
+    "Game46Font", "Game48Font", "Game48FontShadow", "Game60Font", "Game72Font", "GameFont_Gigantic",
+    "GameFontHighlightHuge2", "GameFontHighlightMedium", "GameFontHighlightSmall2",
+    "GameFontNormalHuge", "GameFontNormalHuge2", "GameFontNormalLarge", "GameFontNormalLarge2",
+    "GameFontNormalMed1", "GameFontNormalMed2", "GameFontNormalMed3", "GameFontNormalSmall2",
+    "InvoiceFont_Med", "InvoiceFont_Small", "MailFont_Large", "MailTextFontNormal",
+    "Number11Font", "Number12Font", "Number12Font_o1", "Number13Font", "Number13FontGray",
+    "Number13FontWhite", "Number13FontYellow", "Number14FontGray", "Number14FontWhite",
+    "Number15Font", "Number18Font", "Number18FontWhite", "NumberFontNormal", "NumberFontNormalSmall",
+    "NumberFont_Outline_Huge", "NumberFont_Outline_Large", "NumberFont_Outline_Med",
+    "NumberFont_OutlineThick_Mono_Small", "NumberFont_Shadow_Med", "NumberFont_Shadow_Small", "NumberFont_Small",
+    "ObjectiveFont", "ObjectiveTrackerFont12", "ObjectiveTrackerFont13", "ObjectiveTrackerFont14",
+    "ObjectiveTrackerFont15", "ObjectiveTrackerFont16", "ObjectiveTrackerFont17", "ObjectiveTrackerFont18",
+    "ObjectiveTrackerFont19", "ObjectiveTrackerFont20", "ObjectiveTrackerFont21", "ObjectiveTrackerFont22",
+    "ObjectiveTrackerHeaderFont", "ObjectiveTrackerLineFont", "PriceFont",
+    "QuestFont", "QuestFont_39", "QuestFont_Enormous", "QuestFont_Huge", "QuestFont_Large",
+    "QuestFont_Larger", "QuestFontNormalSmall", "QuestFont_Shadow_Enormous", "QuestFont_Shadow_Huge",
+    "QuestFont_Shadow_Small", "QuestFont_Shadow_Super_Huge", "QuestFont_Super_Huge", "QuestTitleFont",
+    "ReputationDetailFont", "SpellFont_Small", "SubSpellFont", "SubZoneTextFont",
+    "SystemFont16_Shadow_ThickOutline", "SystemFont_Huge1", "SystemFont_Huge1_Outline", "SystemFont_Huge2",
+    "SystemFont_Large", "SystemFont_LargeNamePlate", "SystemFont_LargeNamePlateFixed",
+    "SystemFont_Med1", "SystemFont_Med2", "SystemFont_Med3",
+    "SystemFont_NamePlate", "SystemFont_NamePlateCastBar", "SystemFont_NamePlateFixed", "SystemFont_NamePlate_Outlined",
+    "SystemFont_Outline", "SystemFont_Outline_Small", "SystemFont_OutlineThick_Huge2", "SystemFont_OutlineThick_WTF",
+    "SystemFont_Shadow_Huge1", "SystemFont_Shadow_Huge2", "SystemFont_Shadow_Huge3", "SystemFont_Shadow_Huge4",
+    "SystemFont_Shadow_Large", "SystemFont_Shadow_Large2", "SystemFont_Shadow_Large_Outline",
+    "SystemFont_Shadow_Med1", "SystemFont_Shadow_Med2", "SystemFont_Shadow_Med3", "SystemFont_Shadow_Small",
+    "SystemFont_Small", "SystemFont_Small2", "SystemFont_Tiny",
+    "WorldMapTextFont", "ZoneTextFont",
+}
 
--- Apply font to a single FontString (preserving size/flags)
-local function ApplyFontToFontString(fontString, fontPath)
-    if not fontString or not fontString.GetFont or not fontString.SetFont then return end
-    if fontString.IsForbidden and fontString:IsForbidden() then return end
-    local currentFont, size, flags = fontString:GetFont()
-    if size and size > 0 then
-        if not originalGlobalFonts[fontString] then
-            -- Capture the original font OBJECT (not just the file) so restore
-            -- can put Blizzard's real FontFamily back losslessly, preserving
-            -- its per-script (CJK) fallback.
-            local originalObject = fontString.GetFontObject and fontString:GetFontObject()
-            originalGlobalFonts[fontString] = { font = currentFont, flags = flags, object = originalObject }
-        end
-        if currentFont ~= fontPath then
-            -- Use a per-script family so Blizzard UI keeps CJK fallback under
-            -- the QUI font; fall back to the single file when unavailable.
-            local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fontPath, size, flags or "")
-            if family and fontString.SetFontObject then
-                fontString:SetFontObject(family)
+-- Pristine {font,size,flags} per object, captured once before first override so
+-- restore (toggle off) is lossless.
+local originalFontObjects = ns.Helpers.CreateStateTable()
+
+-- Apply (shouldApply=true) or restore (false) QUI face + general.fontOutline on
+-- every shared font OBJECT in FONT_OBJECT_SET. Native SIZE is preserved. The
+-- object carries the face, so inheriting FontStrings update without a walk and
+-- survive Blizzard's hover/disable swaps. CJK locales are skipped by the caller.
+function QUICore:ApplyGlobalFontObjects(shouldApply)
+    local fontPath = GetGlobalFontPath()
+    local outline = (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or "OUTLINE"
+    for _, name in ipairs(FONT_OBJECT_SET) do
+        local obj = _G[name]
+        if obj and obj.GetFont and obj.SetFont then
+            if shouldApply then
+                local _, size = obj:GetFont()
+                if size and size > 0 then
+                    -- Capture pristine {font,size,flags} only when we actually
+                    -- apply, so the capture/restore size>0 guards stay symmetric
+                    -- (a size-0 object is never captured, never leaks an entry).
+                    if not originalFontObjects[obj] then
+                        local f, s, fl = obj:GetFont()
+                        originalFontObjects[obj] = { font = f, size = s, flags = fl }
+                    end
+                    -- Outline TIERING: apply the user's outline ONLY to fonts that
+                    -- NATIVELY carry an outline (large/display text — zone, numbers,
+                    -- nameplates). Fonts Blizzard ships WITHOUT an outline (quest,
+                    -- mail, parchment and other dark-fill body text) keep their
+                    -- native flags, so a forced black outline never turns dark body
+                    -- text into a black-on-black blob on a skinned backdrop. Mirrors
+                    -- the reference, which only outlines its display-font tier and
+                    -- leaves body/quest/mail at NONE/SHADOW.
+                    local nativeFlags = originalFontObjects[obj].flags or ""
+                    local applied = nativeFlags:find("OUTLINE") and outline or nativeFlags
+                    obj:SetFont(fontPath, size, applied)
+                end
             else
-                fontString:SetFont(fontPath, size, flags or "")
+                local c = originalFontObjects[obj]
+                if c and c.font and c.size and c.size > 0 then
+                    obj:SetFont(c.font, c.size, c.flags or "")
+                    originalFontObjects[obj] = nil
+                end
             end
         end
     end
-end
-
-local function RestoreFontString(fontString)
-    if not fontString or not fontString.GetFont or not fontString.SetFont then return end
-    if fontString.IsForbidden and fontString:IsForbidden() then return end
-
-    local original = originalGlobalFonts[fontString]
-    if not original then return end
-
-    -- Prefer restoring the original font OBJECT so Blizzard's FontFamily (and
-    -- its CJK fallback) comes back intact; fall back to the file otherwise.
-    if original.object and fontString.SetFontObject then
-        pcall(fontString.SetFontObject, fontString, original.object)
-        originalGlobalFonts[fontString] = nil
-        return
-    end
-
-    if not original.font then
-        originalGlobalFonts[fontString] = nil
-        return
-    end
-
-    local _, size, flags = fontString:GetFont()
-    if size and size > 0 then
-        fontString:SetFont(original.font, size, flags or original.flags or "")
-    end
-    originalGlobalFonts[fontString] = nil
-end
-
-local function ForEachFontStringInFrame(frame, callback)
-    if not frame then return end
-    if frame.IsForbidden and frame:IsForbidden() then return end
-
-    -- Skip UIWidget template frames (have widgetType) and widget containers
-    -- (have RegisterForWidgetSet). Their FontStrings are read by secure
-    -- Blizzard code that fails on tainted GetStringHeight() results.
-    if frame.widgetType or frame.RegisterForWidgetSet then return end
-
-    local okRegions, regions = pcall(function()
-        return { frame:GetRegions() }
-    end)
-    if okRegions then
-        for _, region in ipairs(regions) do
-            if region and region.IsObjectType and region:IsObjectType("FontString") then
-                callback(region)
-            end
-        end
-    end
-
-    local okChildren, children = pcall(function()
-        return { frame:GetChildren() }
-    end)
-    if okChildren then
-        for _, child in ipairs(children) do
-            ForEachFontStringInFrame(child, callback)
-        end
-    end
-end
-
--- Recursively apply font to all FontStrings in a frame
--- TAINT SAFETY: Skips UIWidget containers and widget template frames.
--- Calling SetFont() on widget FontStrings taints them; Blizzard's
--- ProcessWidget → Setup() then gets secret values from GetStringHeight().
-local function ApplyFontToFrameRecursive(frame, fontPath)
-    ForEachFontStringInFrame(frame, function(fontString)
-        ApplyFontToFontString(fontString, fontPath)
-    end)
-end
-
-local function RestoreFontInFrameRecursive(frame)
-    ForEachFontStringInFrame(frame, RestoreFontString)
-end
-
-local function ApplyOrRestoreGlobalFontForFrame(frame, fontPath, shouldApply)
-    if shouldApply then
-        ApplyFontToFrameRecursive(frame, fontPath)
-    else
-        RestoreFontInFrameRecursive(frame)
-    end
-end
-
-function QUICore:ApplyGlobalFontToObjectiveTracker()
-    if not ObjectiveTrackerFrame then return end
-    local settings = GetGeneralSettings()
-    local shouldApply = IsGlobalFontEnabled()
-
-    -- If the objective tracker skin is enabled, its skin module owns tracker
-    -- typography. The global font system should not restore over it when the
-    -- global Blizzard font toggle is turned off.
-    if not shouldApply and settings and settings.skinObjectiveTracker then
-        return
-    end
-
-    ApplyOrRestoreGlobalFontForFrame(ObjectiveTrackerFrame, GetGlobalFontPath(), shouldApply)
-end
-
-function QUICore:ApplyGlobalFontToGameMenu()
-    if not GameMenuFrame then return end
-    local settings = GetGeneralSettings()
-    local shouldApply = IsGlobalFontEnabled()
-
-    -- Game menu skinning has its own font sizing and overlay text. When that
-    -- skin is active, disabling the global font should not undo the skin.
-    if not shouldApply and settings and settings.skinGameMenu then
-        return
-    end
-
-    ApplyOrRestoreGlobalFontForFrame(GameMenuFrame, GetGlobalFontPath(), shouldApply)
 end
 
 -- SetFontObject re-bases a frame's inherited layout props. On a chat
@@ -331,53 +280,14 @@ function QUICore:ApplyGlobalFont()
 
     local fontPath = GetGlobalFontPath()
 
-    -- Hook ObjectiveTracker updates (check if function exists - API varies by expansion)
-    if not objectiveTrackerFrameHooked and ObjectiveTrackerFrame then
-        -- TAINT SAFETY: Defer all work to break taint chain from secure context.
-        if type(ObjectiveTracker_Update) == "function" then
-            hooksecurefunc("ObjectiveTracker_Update", function()
-                C_Timer.After(0, function()
-                    QUICore:ApplyGlobalFontToObjectiveTracker()
-                end)
-            end)
-        else
-            -- Fallback: hook frame's OnShow for expansion versions without ObjectiveTracker_Update
-            ObjectiveTrackerFrame:HookScript("OnShow", function(self)
-                C_Timer.After(0, function()
-                    QUICore:ApplyGlobalFontToObjectiveTracker()
-                end)
-            end)
-        end
-        objectiveTrackerFrameHooked = true
-    end
-
-    if not objectiveTrackerAddObjectiveHooked and ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.AddObjective then
-        hooksecurefunc(ObjectiveTrackerBlockMixin, "AddObjective", function()
-            C_Timer.After(0, function()
-                QUICore:ApplyGlobalFontToObjectiveTracker()
-            end)
-        end)
-        objectiveTrackerAddObjectiveHooked = true
-    end
-
-    if not objectiveTrackerSetHeaderHooked and ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.SetHeader then
-        hooksecurefunc(ObjectiveTrackerBlockMixin, "SetHeader", function()
-            C_Timer.After(0, function()
-                QUICore:ApplyGlobalFontToObjectiveTracker()
-            end)
-        end)
-        objectiveTrackerSetHeaderHooked = true
-    end
-
     -- Set up chat hooks (one-time)
     if not chatFontHooksInitialized then
         chatFontHooksInitialized = true
 
         -- Tooltip font display is handled per-instance by
         -- skinning/system/tooltips.lua (ApplyTooltipFontSizeToFrame).
-        -- Do NOT use ApplyFontToFrameRecursive on tooltips — it walks into
-        -- UIWidget child containers whose FontStrings inherit from shared
-        -- font objects; tainting them breaks GetStringHeight() in combat.
+        -- Do NOT walk tooltip FontStrings directly — UIWidget child containers
+        -- inherit from shared font objects; tainting them breaks GetStringHeight() in combat.
 
         -- Hook chat frame font size changes
         if FCF_SetChatWindowFontSize then
@@ -422,8 +332,12 @@ function QUICore:ApplyGlobalFont()
         end)
     end
 
-    self:ApplyGlobalFontToObjectiveTracker()
-    self:ApplyGlobalFontToGameMenu()
+    -- Shared font-OBJECT override (static text face+outline). CJK clients skip:
+    -- the Latin-only QUI font would render boxes, so leave Blizzard objects.
+    do
+        local glyphFallback = Helpers and Helpers.GetLocaleGlyphFallback and Helpers.GetLocaleGlyphFallback()
+        self:ApplyGlobalFontObjects(shouldApply and not glyphFallback)
+    end
 
     -- Apply to existing chat frames (SetFont on the frame itself for new message persistence)
     self:ApplyGlobalFontToChatFrames(fontPath, shouldApply)

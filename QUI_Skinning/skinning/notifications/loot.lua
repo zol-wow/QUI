@@ -264,7 +264,6 @@ local function CreateLootWindow()
         frame.slots[i] = CreateLootSlot(frame, i)
     end
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     return frame
 end
 

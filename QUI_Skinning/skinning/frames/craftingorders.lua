@@ -336,7 +336,6 @@ local function SkinCraftingOrders()
     SkinMyOrders(frame)
     SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
-    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

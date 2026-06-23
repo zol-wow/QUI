@@ -186,8 +186,12 @@ do
     assert(calls.chrome, "SkinWindow must hide portrait chrome")
     assert(#backdrops == bdCount + 1, "SkinWindow must create a backdrop by default")
     assert(calls.close, "SkinWindow must skin the close button when present")
-    assert(calls.font and calls.lock and calls.btnfont,
-        "SkinWindow must apply the full font trio (SkinFrameText + LockFrameTextObjects + ApplyButtonFontObjectsDeep)")
+    -- Static-text face now comes from the global font-object override (font_system.lua
+    -- ApplyGlobalDefaultFont); SkinFrameText and LockFrameTextObjects are no longer
+    -- called by SkinWindow — only ApplyButtonFontObjectsDeep for interactive swaps.
+    assert(calls.btnfont, "SkinWindow must call ApplyButtonFontObjectsDeep for interactive font objects")
+    assert(not calls.font, "SkinWindow must NOT call SkinFrameText (global object override owns static text)")
+    assert(not calls.lock, "SkinWindow must NOT call LockFrameTextObjects (global object override owns static text)")
 
     -- opts: noBackdrop / noClose / noButtonFonts skip their steps; tabs + scrollBars opt-in
     calls = {}; local n2 = #backdrops
@@ -197,7 +201,10 @@ do
     assert(not calls.btnfont, "SkinWindow{noButtonFonts} must skip button font objects")
     assert(calls.tabs, "SkinWindow{tabs} must skin the tab group")
     assert(calls.scroll, "SkinWindow{scrollBars} must skin the scrollbars")
-    assert(calls.font and calls.lock, "SkinWindow must always apply SkinFrameText + LockFrameTextObjects")
+    -- SkinFrameText and LockFrameTextObjects are superseded by the global object override;
+    -- they are never called by SkinWindow regardless of opts.
+    assert(not calls.font, "SkinWindow must NOT call SkinFrameText (not even via opts)")
+    assert(not calls.lock, "SkinWindow must NOT call LockFrameTextObjects (not even via opts)")
 end
 
 print("skinbase_coverage_verbs_test: OK")

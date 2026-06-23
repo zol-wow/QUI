@@ -214,10 +214,6 @@ local function SetupInspectFrameSkinning()
     if not IsSkinningEnabled() then return end
     if not InspectFrame then return end
 
-    SkinBase.SkinFrameText(InspectFrame, { recurse = true })
-    -- Lock the QUI font onto InspectFrame's labels: Blizzard rebinds fonts when
-    -- the inspect target changes, which reverts a one-shot SkinFrameText pass.
-    SkinBase.LockFrameTextObjects(InspectFrame)
     CreateOrUpdateBackground()
     SkinInspectFrameTabs()
     SkinInspectButtons()

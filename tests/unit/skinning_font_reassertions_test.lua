@@ -85,8 +85,9 @@ local orderTypeTabs = blockBetween(professions, "-- Order type tab buttons",
     "    end\n\n    -- Order view")
 assertContains(orderTypeTabs, "SkinBase.SkinTab(tab, browseFrame, { hover = true })",
     "crafter order type tabs must use durable tab font-object handling")
-assertContains(orderTypeTabs, "SkinBase.LockFrameTextObjects(tab, 2)",
-    "crafter order type tabs must lock SetTabSelected font-object swaps")
+-- LockFrameTextObjects(tab, 2) was removed from the order-type tab loop; SkinTab
+-- owns tab font-object durability via its own selection hooks. Interactive font-object
+-- reverts on bare-root tab surfaces are accepted under the global object override.
 local orderView = blockBetween(professions, "-- Order view (individual order detail)",
     "end\nend\n\n---------------------------------------------------------------------------\n-- SKIN SPEC PAGE")
 assertContains(orderView, "local noteTitle = orderView.OrderInfo and orderView.OrderInfo.NoteBox and orderView.OrderInfo.NoteBox.NoteTitle",
@@ -99,21 +100,19 @@ local pveGroupButtons = blockBetween(instanceFrames, "local function StyleGroupF
     "-- Skin PVEFrame (main container)")
 assertContains(pveGroupButtons, "SkinBase.SkinFontString(button.name, { fontOnly = true })",
     "PVE group finder labels must reapply the QUI font")
-assertContains(pveGroupButtons, "LockFrameTextObjects(button, 2)",
-    "PVE group finder labels must survive GroupFinderFrameButton_SetEnabled font-object swaps")
+-- LockFrameTextObjects(button, 2) was removed from StyleGroupFinderButton;
+-- static text durability from global object override; interactive reverts accepted.
 assertContains(instanceFrames, "SkinBase.SkinFontString(av.AutoAcceptButton.Label, { fontOnly = true })",
     "LFG application auto-accept label must reapply the QUI font")
-assertContains(instanceFrames, "LockFrameTextObjects(av.AutoAcceptButton, 2)",
-    "LFG application auto-accept label must survive dynamic font-object resets")
-local pvpCategories = blockBetween(instanceFrames, "-- Style category buttons",
-    "-- Style Honor frame")
-assertContains(pvpCategories, "LockFrameTextObjects(catButton, 2)",
-    "PVP category buttons must lock Name font-object swaps")
+-- LockFrameTextObjects(av.AutoAcceptButton, 2) was removed; global override owns durability.
+-- LockFrameTextObjects(catButton, 2) was removed from PVP category button styling;
+-- global object override owns static text durability for these bare-root surfaces.
 
 local popups = readFile("QUI_Skinning/skinning/system/popups.lua")
-assertOrdered(popups, "SkinBase.SkinFrameText(frame, { recurse = true })",
-    "SkinBase.LockFrameTextObjects(frame, 3)",
-    "legacy dropdown text must be locked after skinning")
+-- popups.lua: SkinStaticPopup still calls SkinFrameText(chrome=true) for the
+-- per-popup text color pass; LockFrameTextObjects was removed (global override owns durability).
+assertContains(popups, "SkinBase.SkinFrameText(popup, { recurse = true",
+    "StaticPopup must still run a recursive SkinFrameText pass for chrome color")
 assertContains(popups, "StyleButton(popup.ExtraButton or (name and _G[name .. \"ExtraButton\"]), \"staticPopup\")",
     "StaticPopup ExtraButton must use durable button font-object styling")
 assertContains(popups, "RefreshButtonState(self.ExtraButton or (recapName and _G[recapName .. \"ExtraButton\"]))",
@@ -122,16 +121,20 @@ assertContains(popups, "RefreshButtonState(self.ExtraButton or (recapName and _G
 local journals = readFile("QUI_Skinning/skinning/frames/journals.lua")
 local encounterTextFrame = blockBetween(journals, "local function SkinEncounterJournalTextFrame(frame)",
     "local function ScheduleEncounterJournalTextFrame(frame)")
-assertContains(encounterTextFrame, "SkinBase.LockFrameTextObjects(frame, 3)",
-    "Adventure Guide text frames must lock SetFontObject resets after skinning")
-assertContains(journals, "local function LockCollectionsText(frame)",
-    "Collections Journal must have a durable text lock helper")
+-- LockFrameTextObjects(frame, 3) was removed from SkinEncounterJournalTextFrame;
+-- ApplyButtonFontObjectsDeep now handles interactive object swaps for boss-list buttons.
+-- Static text durability from global object override; interactive reverts accepted.
+assertContains(encounterTextFrame, "SkinBase.ApplyButtonFontObjectsDeep(frame, 3)",
+    "Adventure Guide text frames must drive descendant button font objects after skinning")
+-- LockCollectionsText was renamed to LockCollectionsScrollBox (scrollbox-scoped helper).
+assertContains(journals, "local function LockCollectionsScrollBox(scrollBox)",
+    "Collections Journal must have a durable scrollbox text lock helper")
 assertContains(journals, "local function GetEncounterJournalBottomTabs(frame)",
     "Adventure Guide bottom content tabs must be collected explicitly")
 assertContains(journals, "SkinBase.SkinTabGroup(tabs, frame)",
     "Adventure Guide bottom content tabs must be styled as tabs")
-assertContains(journals, "SkinBase.LockFrameTextObjects(tab, 2)",
-    "Adventure Guide bottom content tabs must lock PanelTemplates font-object swaps")
+-- LockFrameTextObjects(tab, 2) was removed from the bottom-tabs loop; interactive
+-- font-object reverts on bare-root tab surfaces are accepted under the global override.
 assertContains(journals, "LockCollectionsScrollBox(_G.MountJournal and _G.MountJournal.ScrollBox)",
     "Mount Journal pooled rows must lock font-object resets")
 assertContains(journals, "LockCollectionsScrollBox(_G.PetJournal and _G.PetJournal.ScrollBox)",
@@ -157,8 +160,11 @@ assertContains(achievement, "SkinBase.HookScrollBoxRowFonts(statScrollBox, 3)",
     "Achievement comparison stat ScrollBox must use the guarded row-font helper")
 assertContains(achievement, "SkinBase.HookScrollBoxRowFonts(achScrollBox, 3)",
     "Achievement comparison achievement-list ScrollBox must lock cold-acquired row fonts")
-assertContains(achievement, "if not SkinBase.GetFrameData(button, \"qListRowFonted\") then",
-    "Achievement summary buttons must guard the recursive font pass so the Update hook does not re-walk every refresh")
+-- Achievement summary buttons no longer use a qListRowFonted guard; LockAchievementSummaryText
+-- calls RecolorSummaryDescription (color re-assert only, no recursive font walk) so re-walk
+-- cost is gone. Verify the summary helper still iterates buttons and recolors descriptions.
+assertContains(achievement, "local function RecolorSummaryDescription(button)",
+    "Achievement summary must have a per-button description recolor helper")
 assertContains(achievement, "local function LockAchievementSummaryText()",
     "Achievement summary buttons must have a durable text lock helper")
 assertContains(achievement, "hooksecurefunc(\"AchievementFrameSummary_UpdateAchievements\"",
@@ -181,14 +187,15 @@ local auctionHeaderSkin = blockBetween(auctionhouse, "local function HookAuction
     "-- Skin browse panel")
 assertContains(auctionHeaderSkin, "SkinBase.ApplyButtonFontObjects(self)",
     "Auction House sort headers must drive normal/highlight/disabled font objects")
-assertContains(auctionHeaderSkin, "SkinBase.LockFrameTextObjects(self, 2)",
-    "Auction House sort headers must lock hover/state font-object resets")
+-- LockFrameTextObjects(self, 2) was removed from HookAuctionHeaderSkin; ApplyButtonFontObjects
+-- drives the font objects directly so hover/disable swaps carry the QUI face. Global override
+-- owns static text durability; interactive reverts on bare-root button surfaces accepted.
 local auctionsTabs = blockBetween(auctionhouse, "local function SkinAuctionHouseAuctionsTabs(auctionsFrame)",
     "local function LockDurationDropdownText(dropdown)")
 assertContains(auctionsTabs, "SkinBase.SkinTabGroup(tabs, auctionsFrame, { font = true })",
     "Auction House inner Auctions/Bids tabs must be skinned as a durable tab group")
-assertContains(auctionsTabs, "SkinBase.LockFrameTextObjects(tab, 2)",
-    "Auction House inner Auctions/Bids tabs must lock PanelTemplates font-object swaps")
+-- LockFrameTextObjects(tab, 2) was removed from SkinAuctionHouseAuctionsTabs; interactive
+-- font-object reverts on bare-root tab surfaces are accepted under the global override.
 local auctionsPanel = blockBetween(auctionhouse, "local function SkinAuctionsPanel()",
     "-- Suppress a category button's default textures")
 assertContains(auctionsPanel, "SkinAuctionHouseAuctionsTabs(auctionsFrame)",
@@ -232,9 +239,10 @@ local mail = readFile("QUI_Skinning/skinning/frames/mail.lua")
 local skinWindowCount = select(2, interaction:gsub("SkinBase%.SkinWindow%(", ""))
 assert(skinWindowCount >= 5,
     "interaction window skins must route through SkinBase.SkinWindow (which locks descendant text)")
--- Mail still locks descendant text directly (bespoke item-button skin).
-local mailLockCount = select(2, mail:gsub("SkinBase%.LockFrameTextObjects%(frame, %d%)", ""))
-assert(mailLockCount >= 1, "Mail skin must lock descendant text objects")
+-- Mail drives interactive button font objects via ApplyButtonFontObjectsDeep (bespoke item-button
+-- skin); LockFrameTextObjects was removed — global override owns static text durability.
+local mailBtnFontCount = select(2, mail:gsub("SkinBase%.ApplyButtonFontObjectsDeep%(", ""))
+assert(mailBtnFontCount >= 1, "Mail skin must drive descendant button font objects via ApplyButtonFontObjectsDeep")
 
 local characterPane = readFile("QUI_Skinning/skinning/character_pane/character.lua")
 local characterSettings = blockBetween(characterPane, "-- \"Settings\" label",
@@ -267,11 +275,13 @@ assertAbsent(readycheck, "text:SetFont(STANDARD_TEXT_FONT, 12, FONT_FLAGS)",
 assertContains(readycheck, "CJKFont(text, GeneralFontFace(), 12, FONT_FLAGS)",
     "ready-check main text must route through CJK fallback using the QUI font face")
 
+-- tooltips.lua: SkinFrameText recurse was removed; tooltip text now comes from the global
+-- font-object override. GameTooltip font sizing is now handled via SetFontObject on
+-- GameTooltipText/GameTooltipHeaderText (taint-safe); SkinFrameText is not called.
+-- Verify the tooltip skin still handles GameTooltip (the main text target).
 local tooltips = readFile("QUI_Skinning/skinning/system/tooltips.lua")
-assertContains(tooltips, "if tooltip ~= GameTooltip then",
-    "GameTooltip must be excluded from recursive SkinFrameText")
-assertContains(tooltips, "SkinBase.SkinFrameText(tooltip, { recurse = true })",
-    "non-GameTooltip tooltip text should still route through the shared text skin")
+assertContains(tooltips, "pcall(GameTooltipText.SetFontObject, GameTooltipText, family)",
+    "GameTooltip body text must size via the taint-safe SetFontObject path")
 
 ---------------------------------------------------------------------------
 -- Shared pooled-row font helper: single source of truth for "lock a ScrollBox's

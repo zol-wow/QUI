@@ -131,13 +131,18 @@ assert(type(callbacks.Blizzard_Collections) == "function", "Collections load hoo
 callbacks.Blizzard_Collections()
 
 assert(calls.buttonFrame == _G.CollectionsJournal, "Collections Journal must still get frame chrome")
-assert(calls[_G.CollectionsJournal] and calls[_G.CollectionsJournal].recurse == true,
-    "Collections Journal must still get recursive text styling")
-assert(calls["lock:CollectionsJournal"] == 4, "Collections Journal parent text must be locked")
+-- Static text face now comes from the global font-object override (font_system.lua
+-- ApplyGlobalDefaultFont); SkinFrameText recurse and LockFrameTextObjects on the
+-- parent frame are no longer called — interactive reverts on bare-root surfaces accepted.
 assert(calls["lock:mountRow"] == 3, "visible mount rows must be locked")
 assert(calls["lock:petRow"] == 3, "visible pet rows must be locked")
-assert(calls["lock:heirloomEntry"] == 3, "visible heirloom entry frames must be locked")
-assert(calls["lock:heirloomHeader"] == 3, "visible heirloom header frames must be locked")
+-- Heirloom frames: LockFrameTextObjects was removed from LockHeirloomFrame.
+-- Static text now from global object override; interactive reverts on heirloom rows accepted.
+-- New contract: the frame is marked qHeirloomTextLocked via SetFrameData.
+assert(ns.SkinBase.GetFrameData(heirloomEntry, "qHeirloomTextLocked"),
+    "visible heirloom entry frames must be marked as locked")
+assert(ns.SkinBase.GetFrameData(heirloomHeader, "qHeirloomTextLocked"),
+    "visible heirloom header frames must be marked as locked")
 assert(scrollHooks[_G.MountJournal.ScrollBox], "MountJournal ScrollBox must lock acquired rows")
 assert(scrollHooks[_G.PetJournal.ScrollBox], "PetJournal ScrollBox must lock acquired rows")
 assert(tableHooks[_G.HeirloomsJournal] and tableHooks[_G.HeirloomsJournal].AcquireFrame,
@@ -163,15 +168,18 @@ assert(calls["lock:mountRow"] == nil, "already-fonted rows must NOT re-run the r
 local newHeirloomEntry = { name = "newHeirloomEntry" }
 _G.HeirloomsJournal.heirloomEntryFrames[2] = newHeirloomEntry
 _G.HeirloomsJournal:AcquireFrame(_G.HeirloomsJournal.heirloomEntryFrames, 2)
-assert(calls["lock:newHeirloomEntry"] == 3, "newly acquired heirloom entries must be locked")
+assert(ns.SkinBase.GetFrameData(newHeirloomEntry, "qHeirloomTextLocked"),
+    "newly acquired heirloom entries must be marked as locked")
 
 local newHeirloomHeader = { name = "newHeirloomHeader" }
 _G.HeirloomsJournal.heirloomHeaderFrames[2] = newHeirloomHeader
 _G.HeirloomsJournal:RefreshView()
-assert(calls["lock:newHeirloomHeader"] == 3, "refreshed heirloom header frames must be locked")
+assert(ns.SkinBase.GetFrameData(newHeirloomHeader, "qHeirloomTextLocked"),
+    "refreshed heirloom header frames must be marked as locked")
 
 local updatedHeirloomEntry = { name = "updatedHeirloomEntry" }
 _G.HeirloomsJournal:UpdateButton(updatedHeirloomEntry)
-assert(calls["lock:updatedHeirloomEntry"] == 3, "UpdateButton must relock heirloom entry text")
+assert(ns.SkinBase.GetFrameData(updatedHeirloomEntry, "qHeirloomTextLocked"),
+    "UpdateButton must mark heirloom entry as locked")
 
 print("OK: collections_journal_font_lock_test")

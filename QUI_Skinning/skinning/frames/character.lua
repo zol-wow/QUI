@@ -419,8 +419,6 @@ local function SetupCharacterFrameSkinning()
     if not IsSkinningEnabled() then return end
     if not CharacterFrame then return end
 
-    SkinBase.SkinFrameText(CharacterFrame, { recurse = true })
-
     -- Create initial background (non-extended for Rep/Currency default)
     CreateOrUpdateBackground()
 
@@ -440,8 +438,7 @@ local function SetupCharacterFrameSkinning()
     end
     -- The reputation detail popout (ReputationDetailFrame) holds buttons like
     -- "View Renown" whose HighlightFont OBJECT the engine swaps on hover with no
-    -- setter call; the one-shot SkinFrameText above can't hold the QUI font through
-    -- mouseover. Drive the popout's button font objects (guarded; created on demand).
+    -- setter call. Drive the popout's button font objects (guarded; created on demand).
     if ReputationFrame and ReputationFrame.ReputationDetailFrame and SkinBase.ApplyButtonFontObjectsDeep then
         SkinBase.ApplyButtonFontObjectsDeep(ReputationFrame.ReputationDetailFrame, 2)
     end
