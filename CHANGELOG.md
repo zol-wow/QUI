@@ -10,6 +10,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v4.0.4 - 2026-06-23
+
+### Added
+- added Delves/Dressing Room/PvP Match surfaces; expand UIKit factory tier
+- added professions, quest log, housing, adventure guide to micro menu
+
+### Fixed
+- fixed friendly boss frames flickering
+- fixed tooltips flickering when fading out
+- improved LFG category button styling and refresh handling
+- refactor(font): override shared font objects instead of per-frame walks
+- fix(anchoring): pin CDM buff-icon container out of restricted anchor family
+- fix(chat): launder hyperlink taint so Copy Character Name works
+- refactor(skinning): consolidate font/backdrop paths, harden persistence
+- fix(skinning): drop tooltip refit, adopt 12.0.7 self-sizing
+- fix(skinning): repair dead skins, backdrop persistence, dead-field lookups
+- fix(cdm): prefer override cooldown lane when child override is active
+- fix(clickcast): edge-driven keyboard binds + clear keys on last-bind removal
+- fix(clickcast): drop insecure OnShow re-arm; keep mouse-over decision secure
+- fix(clickcast): re-arm keyboard binds on transient mouseover-off and re-show
+- perf(groupframes): cut raid-frame cost across 5 hot paths + add A/B harness
+- fix(tooltip): stop C stack overflow from reentrant Show() in layout refresh
+- chore(tools): add font rendering preview check screenshots
 ## v4.0.3 - 2026-06-21
 
 ### Added
