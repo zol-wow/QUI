@@ -700,26 +700,13 @@ local function RefreshTooltipLayout(tooltip)
     -- new FontStrings without updating the Lua-facing line/layout state. Show()
     -- is the only reliable nudge on Midnight; the skinning watcher re-hides
     -- NineSlice and the deferred refit below catches the final extents.
+    -- Show() re-runs the tooltip's own layout (GameTooltip_CalculatePadding on
+    -- 12.0.7), growing it to fit the appended lines. The skinning chrome is pure
+    -- SetAllPoints, so it tracks that new size — no addon-side extent refit.
     if tooltip == GameTooltip or not alreadyShown then
         tooltipRefreshInProgress = true
         pcall(tooltip.Show, tooltip)
         tooltipRefreshInProgress = false
-    end
-
-    -- After AddLine/AddDoubleLine on a shown Midnight tooltip, the C-side
-    -- renders the new FontStrings but tooltip:GetHeight() does not grow.
-    -- The QUI chrome anchored via SetAllPoints tracks the stale height,
-    -- exposing Blizzard's backdrop on the appended lines (Target / M+ Rating).
-    -- The skinning module owns the chrome and re-anchors its bottom past
-    -- the tooltip's reported bottom by the actual FontString overflow.
-    local requestRefit = ns.QUI_RequestTooltipChromeRefit
-    if requestRefit then
-        pcall(requestRefit, tooltip, 3)
-        return
-    end
-    local refit = ns.QUI_RefitTooltipChromeToContent
-    if refit then
-        pcall(refit, tooltip)
     end
 end
 
@@ -1910,13 +1897,7 @@ local function SetupTooltipHook()
     local function HandleUnitExtrasPost(tooltip, settings, unit)
         TooltipDebugCount("qol.unitExtrasPost")
         tooltipPlayerItemLevelGUID[tooltip] = nil
-        local changed = AddUnitTooltipInfoToTooltip(tooltip, unit, settings)
-        if changed then
-            local requestRefit = ns.QUI_RequestTooltipChromeRefit
-            if requestRefit then
-                pcall(requestRefit, tooltip, 2)
-            end
-        end
+        AddUnitTooltipInfoToTooltip(tooltip, unit, settings)
         ScheduleDeferredUnitInfo(tooltip, unit)
     end
 

@@ -285,51 +285,8 @@ end
 local styleFrames = Helpers.CreateStateTable()   -- tooltip → chrome frame
 local hookedTooltips = Helpers.CreateStateTable() -- tooltip → true
 local hookedNineSlices = Helpers.CreateStateTable() -- NineSlice → true
-local tooltipShowTokens = Helpers.CreateStateTable() -- tooltip → show cycle token
-local tooltipOverflowRequests = Helpers.CreateStateTable() -- tooltip → requested show token
-local pendingGameTooltipRestyle = false           -- deferred restyle for GameTooltip
-local gameTooltipRestyleFrame
-local gameTooltipRestyleOnUpdate
-local gameTooltipRestyleActive = false
-local gameTooltipShowToken = 0
-local gameTooltipFontToken = 0
 local suppressNSHook = false                      -- suppress NineSlice hook during intentional re-show
-
-local function GetTooltipShowToken(tooltip)
-    if tooltip == GameTooltip then
-        return gameTooltipShowToken
-    end
-    return tooltipShowTokens[tooltip] or 0
-end
-
-local function AdvanceTooltipShowToken(tooltip)
-    if tooltip == GameTooltip then
-        gameTooltipShowToken = gameTooltipShowToken + 1
-        return gameTooltipShowToken
-    end
-
-    local token = (tooltipShowTokens[tooltip] or 0) + 1
-    tooltipShowTokens[tooltip] = token
-    return token
-end
-
-local function QueueGameTooltipRestyle()
-    if pendingGameTooltipRestyle then
-        TooltipDebugCount("skin.restyleCoalesced")
-        if gameTooltipRestyleFrame and gameTooltipRestyleOnUpdate and not gameTooltipRestyleActive then
-            gameTooltipRestyleActive = true
-            gameTooltipRestyleFrame:SetScript("OnUpdate", gameTooltipRestyleOnUpdate)
-        end
-        return
-    end
-
-    TooltipDebugCount("skin.restyleQueued")
-    pendingGameTooltipRestyle = true
-    if gameTooltipRestyleFrame and gameTooltipRestyleOnUpdate and not gameTooltipRestyleActive then
-        gameTooltipRestyleActive = true
-        gameTooltipRestyleFrame:SetScript("OnUpdate", gameTooltipRestyleOnUpdate)
-    end
-end
+local StyleGameTooltip                            -- forward decl; defined after the shopping-sync helpers
 
 ---------------------------------------------------------------------------
 -- NineSlice Management
@@ -386,9 +343,6 @@ end
 local function HideStyleFrame(tooltip)
     local frame = tooltip and styleFrames[tooltip]
     if frame then
-        if frame.qBridgeBottom then
-            pcall(frame.qBridgeBottom.Hide, frame.qBridgeBottom)
-        end
         frame:Hide()
     end
 end
@@ -473,46 +427,6 @@ local function GetStyleFrame(tooltip)
     return frame
 end
 
-local function ResetChromeOverflowState(frame)
-    if not frame then return end
-    frame.qLastLineIndex = nil
-    frame.qLastLeftFS = nil
-    frame.qExtendX = nil
-    frame.qExtendY = nil
-    frame.qSizingMode = "base"
-end
-
-local function ResetChromeToBase(tooltip, frame)
-    if not tooltip or not frame then return end
-
-    ResetChromeOverflowState(frame)
-    frame.qSizingToken = GetTooltipShowToken(tooltip)
-
-    local bridge = frame.qBridgeBottom
-    if bridge then
-        pcall(bridge.ClearAllPoints, bridge)
-        pcall(bridge.Hide, bridge)
-    end
-
-    pcall(frame.ClearAllPoints, frame)
-    if frame.SetAllPoints then
-        pcall(frame.SetAllPoints, frame)
-    else
-        pcall(frame.SetPoint, frame, "TOPLEFT", tooltip, "TOPLEFT", 0, 0)
-        pcall(frame.SetPoint, frame, "TOPRIGHT", tooltip, "TOPRIGHT", 0, 0)
-        pcall(frame.SetPoint, frame, "BOTTOMLEFT", tooltip, "BOTTOMLEFT", 0, 0)
-        pcall(frame.SetPoint, frame, "BOTTOMRIGHT", tooltip, "BOTTOMRIGHT", 0, 0)
-    end
-end
-
-local function ResetTooltipChromeSizing(tooltip)
-    tooltipOverflowRequests[tooltip] = nil
-    local frame = styleFrames[tooltip]
-    if frame then
-        ResetChromeToBase(tooltip, frame)
-    end
-end
-
 -- Is this tooltip embedded inside a visible parent tooltip?
 local function IsEmbedded(tooltip)
     local ok, parent = pcall(tooltip.GetParent, tooltip)
@@ -593,10 +507,10 @@ local function ApplyTooltipChrome(tooltip)
 
     HideNineSlice(tooltip)
     -- Do NOT call tooltip:SetBackdrop(nil) here.  Clearing the tooltip's
-    -- own backdrop triggers Blizzard to re-call SharedTooltip_SetBackdropStyle
-    -- which re-shows NineSlice and sets pendingGameTooltipRestyle, creating
-    -- an infinite per-frame loop.  Our chrome frame at the same frame level
-    -- covers the tooltip's own backdrop anyway.
+    -- own backdrop triggers Blizzard to re-call SharedTooltip_SetBackdropStyle,
+    -- which re-shows NineSlice and re-enters this styler — a per-frame restyle
+    -- loop.  Our chrome frame at the same frame level covers the tooltip's own
+    -- backdrop anyway.
 
     -- Fall back to NineSlice if dimensions are inaccessible (secret values).
     -- Suppress the NineSlice:Show hook so we don't fight our own fallback.
@@ -623,21 +537,15 @@ local function ApplyTooltipChrome(tooltip)
         frame.bg:SetVertexColor(bgr, bgg, bgb, bga)
     end
     UIKit.UpdateBorderLines(frame, thickness, sr, sg, sb, sa, sa <= 0)
-    ResetChromeToBase(tooltip, frame)
+    -- Chrome is SetAllPoints(tooltip) (set once in GetStyleFrame), so it tracks
+    -- the tooltip's own size live. On 12.0.7 the tooltip sizes itself via the
+    -- internal padding API (GameTooltip_CalculatePadding / SetPadding), including
+    -- after AddLine — so there is nothing for the addon to measure or extend.
+    -- This mirrors the reference suite's frame-relative backdrop.
     frame:Show()
 
     if tooltip.CompareHeader then
         StyleShoppingCompareHeader(tooltip.CompareHeader, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    end
-
-    -- Normal tooltip chrome follows Blizzard's tooltip frame directly.
-    -- Post-show additions explicitly request overflow handling through
-    -- QUI_RequestTooltipChromeRefit; ordinary shows do not run geometry
-    -- inference, avoiding stale size carryover across reused GameTooltip
-    -- content.
-    local refit = tooltipOverflowRequests[tooltip] and ns.QUI_RefitTooltipChromeToContent
-    if refit then
-        pcall(refit, tooltip)
     end
 end
 
@@ -958,50 +866,31 @@ HookTooltipOnShow = function(tooltip)
     if not tooltip or hookedTooltips[tooltip] then return end
     if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
 
-    -- GameTooltip: use HookScript("OnShow"/"OnHide") with protected-
-    -- tooltip detection.  OnShow fires before the first render, so
-    -- NineSlice is hidden before the user ever sees it — no 1-frame flash.
-    -- Protected tooltips (world map, AreaPoiUtil) fall back to NineSlice
-    -- to avoid tainting Blizzard's secure execution context.
+    -- GameTooltip: reference-suite parity model — NO GameTooltip:Show hook and NO deferred
+    -- restyle watcher. GameTooltip chrome is driven entirely by the isolated
+    -- securehooks installed in SetupBackdropStyleHooks (SharedTooltip_SetBackdropStyle,
+    -- GameTooltip_SetBackdropStyle, GameTooltip_SetDefaultAnchor) plus the data
+    -- post-calls, all routed through StyleGameTooltip().
+    --
+    -- WHY the Show hook + watcher were removed: AreaPOI map pins set
+    -- self.UpdateTooltip so GameTooltip_OnUpdate re-runs AreaPoiUtil.TryShowTooltip
+    -- (-> GameTooltip_AddWidgetSet -> UIWidgetTemplate:Setup) every frame while
+    -- hovered. The old per-show Show hook + OnUpdate restyle watcher mutated
+    -- GameTooltip in between those re-runs, tainting the live widget-processing
+    -- stack — Blizzard's secret-value arithmetic (textHeight/GetWidth) then
+    -- threw "tainted by QUI_Skinning". The reference suite mutates the same
+    -- shared font objects and parents the same kind of insecure backdrop child,
+    -- yet does NOT crash — the difference is exactly that it has no Show hook and
+    -- no restyle watcher. NineSlice re-shows are still caught by HookNineSlice
+    -- below (C-side, taint-free), so dropping the watcher costs no flash safety.
     if tooltip == GameTooltip then
         hookedTooltips[tooltip] = true
         HookNineSlice(tooltip)
-
-        -- TAINT SAFETY: Must use hooksecurefunc, NOT HookScript("OnShow").
-        -- HookScript runs addon code INSIDE the Show() call, tainting the
-        -- caller's execution context.  When secure callers (AreaPoiUtil,
-        -- etc.) do Show() then AddWidgetSet() in one Lua stack, the taint
-        -- propagates into widget processing — GetStringHeight() returns
-        -- secret values and UIWidgetTemplateTextWithState:Setup() errors.
-        -- hooksecurefunc runs in a separate taint bubble that does NOT
-        -- propagate back, while still firing before the next rendered frame
-        -- (no 1-frame NineSlice flash).
-        hooksecurefunc(tooltip, "Show", function(self)
-            TooltipDebugCount("skin.gameTooltipShow")
-            AdvanceTooltipShowToken(self)
-            ResetTooltipChromeSizing(self)
-            if not IsEnabled() then
-                FallbackToNineSlice(self)
-                return
-            end
-            ShowExistingChrome(self)
-            -- Always queue a restyle, even when ShowExistingChrome found the
-            -- chrome already stable. The restyle OnUpdate is the path that
-            -- runs RefitChromeToContent once per show cycle, and without it
-            -- chrome offsets (extendY/X) cached from the prior tooltip stay
-            -- on the new tooltip — making NPC/object tooltips render with
-            -- chrome much larger than needed after a player tooltip extended
-            -- it for Target/M+ Rating.
-            QueueGameTooltipRestyle()
-        end)
-
         return
     end
 
     hooksecurefunc(tooltip, "Show", function(self)
         TooltipDebugCount("skin.tooltipShow")
-        AdvanceTooltipShowToken(self)
-        ResetTooltipChromeSizing(self)
         if not IsEnabled() then
             FallbackToNineSlice(self)
             return
@@ -1089,30 +978,14 @@ local function SetupBackdropStyleHooks()
             local ok, objType = pcall(tooltip.GetObjectType, tooltip)
             if not ok or objType ~= "GameTooltip" then return end
 
-            -- TAINT SAFETY: Defer GameTooltip styling to the watcher's
-            -- OnUpdate to avoid modifying frame properties during the
-            -- synchronous show chain.  Callers (AreaPoiUtil, etc.) call
-            -- SharedTooltip_SetBackdropStyle → Show() → AddWidgetSet in
-            -- one Lua stack; any addon property writes here taint the
-            -- execution context, causing secret-value errors in the
-            -- widget layout's GetExtents / GetScaledRect calls.
+            -- GameTooltip is styled synchronously inside this isolated securehook
+            -- (reference-suite model). AreaPoiUtil calls AddWidgetSet BEFORE
+            -- SharedTooltip_SetBackdropStyle, so the widget Setup has already run
+            -- by the time this fires — styling here cannot taint it. StyleGameTooltip
+            -- handles the stable-skip, MoneyFrame bail, protected fallback, and the
+            -- once-per-cycle chrome reset internally.
             if tooltip == GameTooltip then
-                if IsChromeStable(tooltip) then
-                    TooltipDebugCount("skin.backdropStableSkip")
-                    return
-                end
-                -- Quest-reward tooltips (TaskPOI_OnEnter → AddQuestRewardsToTooltip
-                -- → SetTooltipMoney → MoneyFrame_Update) are extremely sensitive
-                -- to any addon touching the tooltip mid-build.  When a MoneyFrame
-                -- child is already attached, skip the restyle entirely so we
-                -- don't taint MoneyFrame_Update's width arithmetic.
-                if HasActiveMoneyFrame(tooltip) then return end
-                -- Immediately suppress NineSlice and show existing overlay
-                -- to prevent 1-frame flash.  These are C-side calls (no Lua
-                -- property writes) so they do not taint the caller's context.
-                if ShowExistingChrome(tooltip) then
-                    QueueGameTooltipRestyle()
-                end
+                StyleGameTooltip(tooltip)
                 return
             end
 
@@ -1141,18 +1014,9 @@ local function SetupBackdropStyleHooks()
             if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
             local ok, objType = pcall(tooltip.GetObjectType, tooltip)
             if not ok or objType ~= "GameTooltip" then return end
-            -- Defer GameTooltip — same taint safety concern as above.
+            -- GameTooltip styled synchronously in this isolated securehook.
             if tooltip == GameTooltip then
-                if IsChromeStable(tooltip) then
-                    TooltipDebugCount("skin.backdropStableSkip")
-                    return
-                end
-                -- Quest-reward MoneyFrame mid-build: bail to avoid tainting
-                -- MoneyFrame_Update's width arithmetic.
-                if HasActiveMoneyFrame(tooltip) then return end
-                if ShowExistingChrome(tooltip) then
-                    QueueGameTooltipRestyle()
-                end
+                StyleGameTooltip(tooltip)
                 return
             end
             local _ns3 = tooltip.NineSlice
@@ -1161,6 +1025,19 @@ local function SetupBackdropStyleHooks()
                 OnTooltipShow(tooltip)
             end
             SafeHookTooltipOnShow(tooltip)
+        end)
+    end
+
+    -- Broad show coverage (reference-suite parity): default-anchored GameTooltip
+    -- shows (mouseover units, many frames) route through GameTooltip_SetDefaultAnchor,
+    -- which need not emit a backdrop-style or data post-call. Style there too so
+    -- dropping the Show hook doesn't leave those tooltips on Blizzard NineSlice.
+    -- securehook = isolated taint context; StyleGameTooltip self-guards.
+    if GameTooltip_SetDefaultAnchor then
+        hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip)
+            if not IsEnabled() or not tooltip then return end
+            if tooltip ~= GameTooltip then return end
+            StyleGameTooltip(tooltip)
         end)
     end
 
@@ -1214,17 +1091,8 @@ local function SetupPostProcessor()
         SafeHookTooltipOnShow(tooltip)
         -- TAINT SAFETY: Defer GameTooltip to the watcher (same as backdrop hooks).
         if tooltip == GameTooltip then
-            if IsChromeStable(tooltip) then
-                TooltipDebugCount("skin.postStableSkip")
-                return
-            end
             TooltipDebugCount("skin.postGameTooltip")
-            -- Quest-reward MoneyFrame mid-build: bail to avoid tainting
-            -- MoneyFrame_Update's width arithmetic.
-            if HasActiveMoneyFrame(tooltip) then return end
-            if ShowExistingChrome(tooltip) then
-                QueueGameTooltipRestyle()
-            end
+            StyleGameTooltip(tooltip)
             return
         end
         if InCombatLockdown() then
@@ -1328,6 +1196,52 @@ local function QueueShoppingTooltipSync()
 end
 
 ---------------------------------------------------------------------------
+-- GameTooltip styling entry (synchronous, reference-suite model)
+---------------------------------------------------------------------------
+-- Single funnel for every GameTooltip styling trigger (SharedTooltip_SetBackdropStyle,
+-- GameTooltip_SetBackdropStyle, GameTooltip_SetDefaultAnchor, the data post-calls).
+-- Runs synchronously inside the caller's isolated securehook — NOT a Show hook and
+-- NOT a deferred OnUpdate watcher — so QUI stays out of the live AreaPOI widget
+-- reprocessing stack that re-runs GameTooltip_AddWidgetSet every frame.
+StyleGameTooltip = function(tooltip)
+    if not tooltip or tooltip ~= GameTooltip then return end
+    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
+    if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+
+    if not IsEnabled() then
+        FallbackToNineSlice(tooltip)
+        return
+    end
+
+    -- Protected/world-map secure owner: addon styling would taint. Fall back.
+    if IsProtectedTooltip(tooltip) then
+        FallbackToNineSlice(tooltip)
+        return
+    end
+
+    -- Reused-chrome fast path: already shown with NineSlice hidden. Chrome is
+    -- SetAllPoints so it already tracks the (re-sized) tooltip — nothing to redo.
+    if IsChromeStable(tooltip) then
+        TooltipDebugCount("skin.backdropStableSkip")
+        return
+    end
+
+    -- Full chrome (combat-aware; re-checks MoneyFrame, falls back to NineSlice
+    -- when dimensions are secret, e.g. widget/POI tooltips). Chrome is pure
+    -- SetAllPoints — no manual extent measuring; the 12.0.7 tooltip sizes itself.
+    OnTooltipShow(tooltip)
+
+    -- Font + CJK family + shopping sync: deferred out of the secure chain.
+    -- QueueFontUpdate fast-skips when the size already matches, so calling it on
+    -- every fresh style is cheap.
+    QueueFontUpdate(tooltip)
+    QueueShoppingTooltipSync()
+    if ns.QUI_EnsureTooltipCJKFallback then
+        ns.QUI_EnsureTooltipCJKFallback()
+    end
+end
+
+---------------------------------------------------------------------------
 -- Initialization
 ---------------------------------------------------------------------------
 
@@ -1353,11 +1267,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     -- Post-combat: restore full tooltip styling and deferred font/layout sync.
     if event == "PLAYER_REGEN_ENABLED" then
         _FlushHookQueue()
-        pendingGameTooltipRestyle = false
-        gameTooltipRestyleActive = false
-        if gameTooltipRestyleFrame then
-            gameTooltipRestyleFrame:SetScript("OnUpdate", nil)
-        end
         if IsEnabled() then
             -- Full restyle of all visible tooltips (both named and dynamic)
             for _, name in ipairs(tooltipsToSkin) do
@@ -1394,76 +1303,13 @@ local function InitializeTooltipSkinning()
 
     RebuildTooltipList()
 
-    -------------------------------------------------------------------
-    -- GameTooltip deferred-restyle handler.
-    -- The Show hook handles initial show styling. This frame processes
-    -- queued backdrop restyles outside the synchronous tooltip build.
-    -------------------------------------------------------------------
-    do
-        gameTooltipRestyleFrame = CreateFrame("Frame")
-        gameTooltipRestyleOnUpdate = function(self)
-            TooltipDebugCount("skin.restyleTick")
-            local dbg, dbgStart, dbgHeap = TooltipDebugBegin()
-            gameTooltipRestyleActive = false
-            self:SetScript("OnUpdate", nil)
-
-            if not pendingGameTooltipRestyle then
-                TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "idle", dbgHeap)
-                return
-            end
-            pendingGameTooltipRestyle = false
-            TooltipDebugCount("skin.restyleRun")
-
-            local shown = GameTooltip:IsShown()
-            if not shown then
-                pendingShoppingTooltipSync = false
-                TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "hidden", dbgHeap)
-                return
-            end
-
-            -- If skinning was disabled mid-show, restore NineSlice.
-            if not IsEnabled() then
-                FallbackToNineSlice(GameTooltip)
-                TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "disabled", dbgHeap)
-                return
-            end
-
-            -- Always re-suppress NineSlice — Blizzard may have re-shown it
-            -- through a code path our SharedTooltip hook didn't catch.
-            HideNineSlice(GameTooltip)
-
-            local _sf = styleFrames[GameTooltip]
-            if not (_sf and _sf:IsShown()) then
-                if not IsProtectedTooltip(GameTooltip) then
-                    OnTooltipShow(GameTooltip)
-                end
-            end
-
-            -- Font sizing: once per show cycle
-            if gameTooltipFontToken ~= gameTooltipShowToken then
-                gameTooltipFontToken = gameTooltipShowToken
-                QueueFontUpdate(GameTooltip)
-                QueueShoppingTooltipSync()
-            end
-
-            -- Only explicit post-show additions run overflow geometry. Normal
-            -- GameTooltip shows stay on base SetAllPoints chrome so prior
-            -- overflow cannot carry into the next hover.
-            local refit = tooltipOverflowRequests[GameTooltip] and ns.QUI_RefitTooltipChromeToContent
-            if refit then
-                pcall(refit, GameTooltip)
-            end
-            TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "run", dbgHeap)
-        end
-        gameTooltipRestyleFrame:SetScript("OnUpdate", nil)
-        if pendingGameTooltipRestyle then
-            gameTooltipRestyleActive = true
-            gameTooltipRestyleFrame:SetScript("OnUpdate", gameTooltipRestyleOnUpdate)
-        end
-
-        -- Do NOT use HookScript("OnHide") here — it taints the secure
-        -- execution context of callers like QuestMapLogTitleButton_OnEnter.
-    end
+    -- No deferred-restyle watcher: GameTooltip is styled synchronously from the
+    -- isolated securehooks via StyleGameTooltip (reference-suite parity). The old
+    -- OnUpdate watcher interleaved with AreaPOI widget reprocessing and tainted
+    -- Blizzard's secret-value widget arithmetic. NineSlice re-shows are caught by
+    -- HookNineSlice (C-side). Chrome is pure SetAllPoints — the 12.0.7 tooltip
+    -- sizes itself (GameTooltip_CalculatePadding / SetPadding), so there is no
+    -- addon-side extent refit to drive.
 
     -- Hook + initial skin
     HookAllTooltips()
@@ -1489,469 +1335,11 @@ if ns.WhenLoggedIn then
 end
 
 ---------------------------------------------------------------------------
--- Chrome Refit (post-AddLine extent recovery)
----------------------------------------------------------------------------
--- Midnight's GameTooltip stopped exposing Lua-callable Layout/MarkDirty/
--- UpdateTooltipSize. After AddLine/AddDoubleLine on a shown tooltip, the
--- C-side renders the new FontStrings but the Lua-facing :GetHeight() does
--- not grow. Our chrome (anchored via SetAllPoints) tracks :GetHeight(), so
--- it ends up shorter than the actual rendered extent — exposing Blizzard's
--- backdrop on the appended lines (Target / M+ Rating).
---
--- RefitChromeToContent measures the lowest visible FontString and extends
--- the chrome's bottom anchor below the tooltip's reported bottom by the
--- overflow delta. Called by qol/tooltip after deferred line additions.
-
--- Walks the tooltip's active line FontStrings and returns:
---   lowestBottom    — lowest visible FontString bottom edge (smallest screen Y)
---   rightmostRight  — rightmost edge of any visible RIGHT-side double-line FontString
---   ttBottom, ttRight
---
--- DIRECTIONAL MEASUREMENT (the result of two false starts):
---
---   Vertical: any visible FontString counts. AddLine on a shown Midnight
---   tooltip doesn't grow GetHeight, so chrome must extend past stale
---   ttBottom to cover appended FontStrings.
---
---   Horizontal: only RIGHT-side FontStrings of double-lines (those with
---   non-empty text) count. LEFT-side FontStrings of wrapping description
---   text return their *natural unwrapped* width (a trinket "Use:" line
---   reports GetRight=2344 while tooltip is rendered at 1317), which once
---   inflated chrome by 1000+px to the right. Right-side FontStrings of
---   double-lines are short non-wrapping text anchored TOPRIGHT to the
---   tooltip — their GetRight is reliable. Empty/hidden right FontStrings
---   on description lines naturally filter out via the IsShown+text check.
---   This catches the QoL case: AddDoubleLine("Mount:", longMountName)
---   appended after Show, where tooltip:GetWidth() doesn't grow on
---   Midnight and the right text spills past the tooltip's reported
---   right edge.
---
--- STALE-STATE SAFETY: Iterate via NumLines+GetLeftLine/GetRightLine
--- (or the named global FontString fallback) instead of GetRegions().
--- GameTooltip pre-allocates FontStrings and reuses them across hovers;
--- a raw GetRegions walk picks up stale FontStrings from previous
--- (taller / wider) tooltips that Blizzard cleared but left IsShown=true.
-
--- Per-call diagnostics: which line drove each axis.
---   Y: lastLeftFS line index (anchor target). Coord absent — we never read it.
---   X: rightmost double-line index + measured right (the X path stays
---      measurement-based; secret rights are filtered out so the diagnostic
---      reflects only non-secret contributions).
-local _diagBottomText
-local _diagWorstRight, _diagWorstRightLine, _diagWorstRightText
-
--- Y axis is anchor-based (no Lua compares on secret coords). MeasureBottom is
--- only kept for the GetNumRegions fallback below; secret bottoms are skipped
--- there to avoid the "compare a secret value" warning, accepting under-extension
--- on those rare specialized tooltips.
-local function MeasureBottom_Fallback(fs, lowest)
-    if not fs then return lowest end
-    local okShown, shown = pcall(fs.IsShown, fs)
-    if okShown and Helpers.IsSecretValue and Helpers.IsSecretValue(shown) then
-        shown = true
-    end
-    if not okShown or shown ~= true then return lowest end
-    local okB, b = pcall(fs.GetBottom, fs)
-    if not okB then return lowest end
-    if Helpers.IsSecretValue and Helpers.IsSecretValue(b) then return lowest end
-    if b == nil then return lowest end
-    if b < lowest then lowest = b end
-    return lowest
-end
-
--- Right-side measurement: only counts FontStrings with non-empty visible text.
--- This filters out the stale/empty right FontStrings on description-only
--- lines, where Blizzard's NumLines includes the line but the right slot is
--- unused. Their phantom widths would otherwise inflate the chrome.
---
--- Secret rights (combat-restricted tooltip data) are skipped — the resulting
--- under-extension on the X axis is rare and visually minor compared to the
--- alternative of emitting the secret-compare warning.
-local function MeasureRightOfDoubleLine(rightFS, rightmost, lineIndex)
-    if not rightFS then return rightmost end
-    local okShown, shown = pcall(rightFS.IsShown, rightFS)
-    if okShown and Helpers.IsSecretValue and Helpers.IsSecretValue(shown) then
-        shown = true
-    end
-    if not okShown or shown ~= true then return rightmost end
-    local okT, text = pcall(rightFS.GetText, rightFS)
-    if not okT then return rightmost end
-    if Helpers.IsSecretValue and Helpers.IsSecretValue(text) then
-        return rightmost
-    end
-    if text == nil then return rightmost end
-    if text == "" then return rightmost end
-    local okR, rx = pcall(rightFS.GetRight, rightFS)
-    if not okR then return rightmost end
-    if Helpers.IsSecretValue and Helpers.IsSecretValue(rx) then return rightmost end
-    if rx == nil then return rightmost end
-    if rx > rightmost then
-        rightmost = rx
-        if lineIndex then
-            _diagWorstRight = rx
-            _diagWorstRightLine = lineIndex
-            _diagWorstRightText = text
-        end
-    end
-    return rightmost
-end
-
--- In restricted M+ tooltips FontString visibility/text can be secret while
--- still rendering. Treat secret line state as usable for vertical anchoring;
--- SetPoint can consume the FontString without Lua reading its coordinates.
-local function IsTooltipLineUsableForVerticalAnchor(fs)
-    if not fs then return false end
-
-    if fs.IsShown then
-        local okShown, shown = pcall(fs.IsShown, fs)
-        if okShown then
-            if Helpers.IsSecretValue and Helpers.IsSecretValue(shown) then
-                return true
-            end
-            if shown == true then
-                return true
-            end
-        end
-    end
-
-    if fs.GetText then
-        local okText, text = pcall(fs.GetText, fs)
-        if okText then
-            if Helpers.IsSecretValue and Helpers.IsSecretValue(text) then
-                return true
-            end
-            return text ~= nil and text ~= ""
-        end
-    end
-
-    return false
-end
-
--- Walk the tooltip's lines once. Returns:
---   lastLeftFS, lastLeftIndex — bottommost rendered line by index. Anchoring
---     chrome's bottom to this FontString lets the C-side anchor engine place
---     chrome correctly even when the FontString's coordinates are secret
---     (combat-restricted unit/aura tooltips), without ever comparing in Lua.
---   rightmost, ttRight        — X-axis path stays measurement-based; secret
---     rights filtered out by MeasureRightOfDoubleLine.
-local function CollectAnchorTargets(tooltip)
-    if not (tooltip and tooltip.NumLines) then return nil end
-    local okCount, count = pcall(tooltip.NumLines, tooltip)
-    if not okCount or not count or count == 0 then return nil end
-
-    local hasGetters = tooltip.GetLeftLine and tooltip.GetRightLine
-    local name
-    if not hasGetters and tooltip.GetName then
-        local okName, n = pcall(tooltip.GetName, tooltip)
-        if okName then name = n end
-    end
-
-    -- Find the bottommost rendered line by index. AddLine appends; lines
-    -- render top-to-bottom. NumLines bounds the active range, so the highest
-    -- visible index = bottommost FontString. This replaces the earlier
-    -- min-by-coordinate scan, which couldn't run when GetBottom returned
-    -- secrets in combat-restricted tooltips.
-    _diagBottomText = nil
-    local lastLeftFS, lastLeftIndex
-    for i = count, 1, -1 do
-        local left
-        if hasGetters then
-            left = tooltip:GetLeftLine(i)
-        elseif name then
-            left = _G[name .. "TextLeft" .. i]
-        end
-        if IsTooltipLineUsableForVerticalAnchor(left) then
-            lastLeftFS = left
-            lastLeftIndex = i
-            local okT, t = pcall(left.GetText, left)
-            if okT then
-                if not (Helpers.IsSecretValue and Helpers.IsSecretValue(t)) and t ~= nil then
-                    _diagBottomText = t
-                end
-            end
-            break
-        end
-    end
-
-    local okRight, ttRight = pcall(tooltip.GetRight, tooltip)
-    if not okRight then ttRight = nil end
-    local rightmost = ttRight
-    _diagWorstRight, _diagWorstRightLine, _diagWorstRightText = nil, nil, nil
-    if not (Helpers.IsSecretValue and Helpers.IsSecretValue(ttRight)) and ttRight ~= nil then
-        for i = 1, count do
-            local right
-            if hasGetters then
-                right = tooltip:GetRightLine(i)
-            elseif name then
-                right = _G[name .. "TextRight" .. i]
-            end
-            rightmost = MeasureRightOfDoubleLine(right, rightmost, i)
-        end
-    else
-        -- ttRight is secret — can't compute extendX in Lua. Caller falls back
-        -- to extendX=0 (chrome stays at tooltip width).
-        ttRight = nil
-        rightmost = nil
-    end
-
-    return lastLeftFS, lastLeftIndex, rightmost, ttRight
-end
-
--- Bridge frame: a 1px-tall strip whose TOP tracks lastLeftFS.BOTTOM and whose
--- LEFT/RIGHT span tooltip width. Chrome's BOTTOMLEFT/BOTTOMRIGHT then anchor
--- to the bridge's TOPLEFT/TOPRIGHT, giving chrome:
---   - tooltip's full horizontal extent at the bottom (so chrome doesn't
---     collapse to the FontString's text width)
---   - vertical extent driven by the FontString's actual rendered position
---     (not the tooltip's stale GetHeight)
--- All four SetPoint calls are C-side and accept secret coordinates natively,
--- so this works under combat taint without any Lua compare on secret values.
-local function GetOrCreateChromeBottomBridge(frame)
-    local bridge = frame.qBridgeBottom
-    if not bridge then
-        bridge = CreateFrame("Frame", nil, frame:GetParent() or UIParent)
-        bridge:SetHeight(1)
-        bridge:Hide()  -- visual-only frame; never shown, used purely for anchoring
-        frame.qBridgeBottom = bridge
-    end
-    return bridge
-end
-
-local function RefitChromeToContent(tooltip)
-    if not tooltip or not IsEnabled() then return end
-    if tooltip.IsForbidden and tooltip:IsForbidden() then return end
-
-    local frame = styleFrames[tooltip]
-    if not frame then return end
-    if not (frame.IsShown and frame:IsShown()) then return end
-
-    TooltipDebugCount("skin.refit")
-
-    local requestToken = tooltipOverflowRequests[tooltip]
-    if requestToken == nil then
-        TooltipDebugCount("skin.refitNoRequest")
-        return
-    end
-
-    local showToken = GetTooltipShowToken(tooltip)
-    if requestToken ~= showToken then
-        tooltipOverflowRequests[tooltip] = nil
-        ResetChromeToBase(tooltip, frame)
-        TooltipDebugCount("skin.refitStaleRequest")
-        return
-    end
-
-    -- Refit state is scoped to the actual tooltip show cycle. That keeps
-    -- monotonic growth useful within one delayed-add pass without carrying
-    -- overflow from one GameTooltip hover into the next.
-    local resetCycle = frame.qSizingMode ~= "overflow" or frame.qSizingToken ~= showToken
-    if resetCycle then
-        ResetChromeOverflowState(frame)
-        frame.qSizingToken = showToken
-        TooltipDebugCount("skin.refitShowReset")
-    end
-
-    -- Anchor-based path (the common case: GameTooltip + ShoppingTooltip + most
-    -- specialized tooltips with a NumLines API).
-    local lastLeftFS, lastLeftIndex, rightmost, ttRight = CollectAnchorTargets(tooltip)
-    if lastLeftFS then
-        -- Y monotonic-grow on integer indices (no Lua compare on secret coords).
-        local effectiveLeftFS = lastLeftFS
-        local effectiveLeftIdx = lastLeftIndex
-        if (not resetCycle) and frame.qLastLineIndex and lastLeftIndex < frame.qLastLineIndex then
-            -- Mid-render IsShown-flicker reported a smaller line count. Keep
-            -- the cached anchor — the bridge already pins to the cached
-            -- FontString and chrome's bottom stays where it was.
-            effectiveLeftFS = frame.qLastLeftFS or lastLeftFS
-            effectiveLeftIdx = frame.qLastLineIndex
-            TooltipDebugCount("skin.refitMonotonicY")
-        end
-
-        -- X overflow: still measurement-based. Secret rights filtered out by
-        -- MeasureRightOfDoubleLine; ttRight=nil when the tooltip's own right
-        -- edge was secret (no extension possible).
-        local extendX = 0
-        if rightmost and ttRight and rightmost > ttRight then
-            extendX = rightmost - ttRight + 4
-        end
-        if (not resetCycle) and frame.qExtendX and extendX < frame.qExtendX then
-            extendX = frame.qExtendX
-            TooltipDebugCount("skin.refitMonotonicX")
-        end
-
-        -- Skip re-applying SetPoint when neither the anchor target nor extendX
-        -- changed. Bridges already track the FontString position.
-        local anchorChanged = (frame.qLastLeftFS ~= effectiveLeftFS)
-        local extendChanged = (frame.qExtendX ~= extendX)
-        if not anchorChanged and not extendChanged then
-            TooltipDebugCount("skin.refitCacheSkip")
-            return
-        end
-
-        frame.qLastLeftFS = effectiveLeftFS
-        frame.qLastLineIndex = effectiveLeftIdx
-        frame.qExtendX = extendX
-        frame.qSizingMode = "overflow"
-
-        if anchorChanged then
-            local bridge = GetOrCreateChromeBottomBridge(frame)
-            pcall(bridge.ClearAllPoints, bridge)
-            pcall(bridge.SetPoint, bridge, "LEFT",  tooltip, "LEFT",  0, 0)
-            pcall(bridge.SetPoint, bridge, "RIGHT", tooltip, "RIGHT", 0, 0)
-            pcall(bridge.SetPoint, bridge, "TOP",   effectiveLeftFS, "BOTTOM", 0, 0)
-        end
-
-        local bridge = frame.qBridgeBottom
-        pcall(frame.ClearAllPoints, frame)
-        pcall(frame.SetPoint, frame, "TOPLEFT",     tooltip, "TOPLEFT",  0, 0)
-        pcall(frame.SetPoint, frame, "TOPRIGHT",    tooltip, "TOPRIGHT", extendX, 0)
-        pcall(frame.SetPoint, frame, "BOTTOMLEFT",  bridge,  "TOPLEFT",  0, -4)
-        pcall(frame.SetPoint, frame, "BOTTOMRIGHT", bridge,  "TOPRIGHT", extendX, -4)
-        TooltipDebugCount("skin.refitApplied")
-
-        local dbg = ns.QUI_TooltipDebug
-        if dbg and dbg.enabled and (anchorChanged or extendX > 6) then
-            local ttName = "?"
-            if tooltip.GetName then
-                local okName, n = pcall(tooltip.GetName, tooltip)
-                if okName and n then ttName = n end
-            end
-            local btxt = _diagBottomText
-            if btxt and #btxt > 40 then btxt = btxt:sub(1, 40) .. "..." end
-            print(string.format(
-                "|cff60A5FA[refit]|r %s anchorLine=%s extendX=%.0f text=%q",
-                ttName, tostring(effectiveLeftIdx), extendX, tostring(btxt or "")))
-            if extendX > 6 and _diagWorstRightLine then
-                local rtxt = _diagWorstRightText
-                if rtxt and #rtxt > 40 then rtxt = rtxt:sub(1, 40) .. "..." end
-                print(string.format(
-                    "  |cffFF8844worstRight:|r line %d R right=%.1f text=%q",
-                    _diagWorstRightLine,
-                    _diagWorstRight or -1,
-                    tostring(rtxt or "")))
-            end
-        end
-        return
-    end
-
-    -- Fallback for specialized tooltips without a NumLines API. These are
-    -- not GameTooltip-style reused frames, so stale FontString carryover is
-    -- not a concern. Bottom only — without NumLines we can't reliably
-    -- distinguish left from right FontStrings.
-    --
-    -- Stays measurement-based; secret bottoms are skipped (under-extending
-    -- chrome on those rare tooltips rather than emitting taint warnings).
-    local okBottom, ttBottom = pcall(tooltip.GetBottom, tooltip)
-    if not okBottom or not ttBottom then
-        TooltipDebugCount("skin.refitNoExtents")
-        return
-    end
-    if Helpers.IsSecretValue and Helpers.IsSecretValue(ttBottom) then
-        TooltipDebugCount("skin.refitNoExtents")
-        return
-    end
-    if not tooltip.GetNumRegions then
-        TooltipDebugCount("skin.refitNoExtents")
-        return
-    end
-    local okCount2, count2 = pcall(tooltip.GetNumRegions, tooltip)
-    if not okCount2 or not count2 then
-        TooltipDebugCount("skin.refitNoExtents")
-        return
-    end
-    local lowestBottom = ttBottom
-    for i = 1, count2 do
-        local r = select(i, tooltip:GetRegions())
-        if r and r.IsObjectType and r:IsObjectType("FontString") then
-            lowestBottom = MeasureBottom_Fallback(r, lowestBottom)
-        end
-    end
-    local extendY = (ttBottom > lowestBottom) and (ttBottom - lowestBottom + 4) or 0
-
-    if (not resetCycle) and frame.qExtendY and extendY < frame.qExtendY then
-        extendY = frame.qExtendY
-        TooltipDebugCount("skin.refitMonotonicY")
-    end
-    if frame.qExtendY == extendY then
-        TooltipDebugCount("skin.refitCacheSkip")
-        return
-    end
-    frame.qExtendY = extendY
-    frame.qSizingMode = "overflow"
-    TooltipDebugCount("skin.refitFallbackApplied")
-
-    pcall(frame.ClearAllPoints, frame)
-    pcall(frame.SetPoint, frame, "TOPLEFT",     tooltip, "TOPLEFT",     0, 0)
-    pcall(frame.SetPoint, frame, "TOPRIGHT",    tooltip, "TOPRIGHT",    0, 0)
-    pcall(frame.SetPoint, frame, "BOTTOMLEFT",  tooltip, "BOTTOMLEFT",  0, -extendY)
-    pcall(frame.SetPoint, frame, "BOTTOMRIGHT", tooltip, "BOTTOMRIGHT", 0, -extendY)
-end
-
-local pendingTooltipChromeRefits = Helpers.CreateStateTable()
-local tooltipChromeRefitFrame
-local tooltipChromeRefitActive = false
-
-local function TooltipIsShownOrSecret(tooltip)
-    if not tooltip or not tooltip.IsShown then return false end
-    local okShown, shown = pcall(tooltip.IsShown, tooltip)
-    if not okShown then return false end
-    if Helpers.IsSecretValue and Helpers.IsSecretValue(shown) then return true end
-    return shown == true
-end
-
-local function FlushTooltipChromeRefits(self)
-    local keepActive = false
-    for tooltip, passes in pairs(pendingTooltipChromeRefits) do
-        local remaining = tonumber(passes) or 1
-        if TooltipIsShownOrSecret(tooltip) then
-            pcall(RefitChromeToContent, tooltip)
-            remaining = remaining - 1
-            if remaining > 0 then
-                pendingTooltipChromeRefits[tooltip] = remaining
-                keepActive = true
-            else
-                pendingTooltipChromeRefits[tooltip] = nil
-            end
-        else
-            pendingTooltipChromeRefits[tooltip] = nil
-        end
-    end
-
-    if keepActive then return end
-    tooltipChromeRefitActive = false
-    self:SetScript("OnUpdate", nil)
-end
-
-local function RequestTooltipChromeRefit(tooltip, passes)
-    if not tooltip or not IsEnabled() then return end
-    if tooltip.IsForbidden and tooltip:IsForbidden() then return end
-
-    tooltipOverflowRequests[tooltip] = GetTooltipShowToken(tooltip)
-
-    passes = tonumber(passes) or 2
-    if passes < 1 then passes = 1 end
-    local current = tonumber(pendingTooltipChromeRefits[tooltip]) or 0
-    if passes > current then
-        pendingTooltipChromeRefits[tooltip] = passes
-    end
-
-    if not tooltipChromeRefitFrame then
-        tooltipChromeRefitFrame = CreateFrame("Frame")
-    end
-    if not tooltipChromeRefitActive then
-        tooltipChromeRefitActive = true
-        tooltipChromeRefitFrame:SetScript("OnUpdate", FlushTooltipChromeRefits)
-    end
-end
-
----------------------------------------------------------------------------
 -- Public API
 ---------------------------------------------------------------------------
 
 ns.QUI_RefreshTooltipSkinColors = RefreshAllColors
 ns.QUI_RefreshTooltipFontSize = RefreshAllFonts
-ns.QUI_RefitTooltipChromeToContent = RefitChromeToContent
-ns.QUI_RequestTooltipChromeRefit = RequestTooltipChromeRefit
 
 ---------------------------------------------------------------------------
 -- CJK tooltip font fallback (locale-driven, INDEPENDENT of tooltip skinning)
@@ -2000,13 +1388,10 @@ ns.QUI_EnsureTooltipCJKFallback = EnsureTooltipCJKFallback
 
 do
     -- NOTE: tooltips.lua is a load-on-demand module, so PLAYER_LOGIN may have
-    -- already fired by the time it loads — registering it would never run (and
-    -- is forbidden for LOD modules). Instead drive off the GameTooltip:Show
-    -- post-hook (fires before the first tooltip renders) plus a one-shot timer,
-    -- both idempotent.
-    if type(hooksecurefunc) == "function" and GameTooltip then
-        hooksecurefunc(GameTooltip, "Show", EnsureTooltipCJKFallback)
-    end
+    -- already fired by the time it loads. Drive CJK off a one-shot login/timer
+    -- pass; the first styled GameTooltip also re-asserts it via StyleGameTooltip
+    -- -> ns.QUI_EnsureTooltipCJKFallback (idempotent). NO GameTooltip:Show hook
+    -- here — see StyleGameTooltip for why QUI no longer hooks Show.
     if ns.WhenLoggedIn then
         ns.WhenLoggedIn(EnsureTooltipCJKFallback)
     elseif C_Timer and C_Timer.After then
