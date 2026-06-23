@@ -167,9 +167,36 @@ function TooltipProvider:GetTopMouseFrame()
     return cachedMouseFrame
 end
 
-function TooltipProvider:IsFrameBlockingMouse()
+local function IsFrameOrChildOf(frame, ancestor)
+    if not frame or not ancestor then return false end
+
+    local depth = 0
+    while frame and depth < 12 do
+        if frame == ancestor then
+            return true
+        end
+        if frame == UIParent then
+            break
+        end
+        if not frame.GetParent then
+            break
+        end
+        -- GetMouseFoci() can return frames whose GetParent errors with "bad self".
+        local ok, parent = pcall(frame.GetParent, frame)
+        if not ok or not parent or parent == frame then
+            break
+        end
+        frame = parent
+        depth = depth + 1
+    end
+
+    return false
+end
+
+function TooltipProvider:IsFrameBlockingMouse(ignoredFrame)
     local focus = self:GetTopMouseFrame()
     if not focus then return false end
+    if ignoredFrame and IsFrameOrChildOf(focus, ignoredFrame) then return false end
     if focus == WorldFrame then return false end
     if IsOPieFrame(focus) then return false end
     -- Some frames (e.g. PingListenerFrame) are forbidden objects

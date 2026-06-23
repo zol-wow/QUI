@@ -994,7 +994,7 @@ local function ShouldKeepTooltipVisible(tooltip)
         return true
     end
 
-    if Provider.IsFrameBlockingMouse and Provider:IsFrameBlockingMouse() then
+    if Provider.IsFrameBlockingMouse and Provider:IsFrameBlockingMouse(tooltip) then
         return true
     end
 
