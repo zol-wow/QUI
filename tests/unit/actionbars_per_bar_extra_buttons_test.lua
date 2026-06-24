@@ -16,6 +16,7 @@ local publicSource = readFile("QUI_ActionBars/actionbars/actionbars_public.lua")
 local mouseoverSource = readFile("QUI_ActionBars/actionbars/actionbars_mouseover.lua")
 local layoutSource = readFile("QUI_ActionBars/actionbars/actionbars_layout.lua")
 local contentSource = readFile("QUI_ActionBars/actionbars/settings/action_bars_content.lua")
+local hudVisibilitySource = readFile("QUI_CDM/cdm/hud_visibility.lua")
 
 local function assertContains(source, needle, message)
     assert(source:find(needle, 1, true), message .. " (missing `" .. needle .. "`)")
@@ -117,6 +118,15 @@ assertContains(layoutSource,
 assertContains(mouseoverSource,
     'ShouldForceShowForActionBarContext(barKey)',
     "Special/non-owned fade path should honor context visibility")
+for _, eventName in ipairs({
+    "PLAYER_STARTED_MOVING",
+    "PLAYER_STOPPED_MOVING",
+    "PLAYER_IMPULSE_APPLIED",
+    "PLAYER_IS_GLIDING_CHANGED",
+}) do
+    assertContains(hudVisibilitySource, 'visibilityEventFrame:RegisterEvent("' .. eventName .. '")',
+        "HUD visibility should refresh action bars when " .. eventName .. " can change flying/skyriding state")
+end
 assertContains(actionBarsSource,
     'ns.L["Context Visibility"]',
     "Per-Bar settings should expose context visibility controls")
