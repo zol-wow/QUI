@@ -1935,6 +1935,40 @@ local function PlayerIsCastingMirrorSpell(m, sid)
     return false
 end
 
+-- Live display spell for icon art / runtime identity. QueryOverrideSpell
+-- (C_Spell.GetOverrideSpell) is authoritative when it flips away from the
+-- registered base (Hammer of Light 427453 over Wake of Ashes 255937). Some proc
+-- overrides only surface on the Blizzard CDM child: childIsActive=true with
+-- overrideSpellID / overrideTooltipSpellID set while GetOverrideSpell stays on
+-- the base (Brewmaster Empty Barrel on Keg Smash 121253 is the reference case).
+function CDMResolvers.ResolveLiveDisplaySpellID(baseSpellID, mirrorState)
+    if not IsUsableMirrorID(baseSpellID) then return nil end
+
+    local registeredBase = (mirrorState and IsUsableMirrorID(mirrorState.spellID))
+        and mirrorState.spellID
+        or baseSpellID
+    local apiOverride = QueryOverrideSpell(baseSpellID)
+    local sid = (IsUsableMirrorID(apiOverride) and apiOverride ~= registeredBase)
+        and apiOverride
+        or baseSpellID
+
+    if not mirrorState or SafeBoolean(mirrorState.childIsActive) ~= true then
+        return sid
+    end
+
+    local tooltipSid = mirrorState.overrideTooltipSpellID
+    if IsUsableMirrorID(tooltipSid) and tooltipSid ~= registeredBase then
+        return tooltipSid
+    end
+
+    local mirrorOverride = mirrorState.overrideSpellID
+    if IsUsableMirrorID(mirrorOverride) and mirrorOverride ~= registeredBase then
+        return mirrorOverride
+    end
+
+    return sid
+end
+
 -- A transient PROC override (e.g. Hammer of Light 427453 overriding Wake of
 -- Ashes 255937 on a Light's Guidance proc) makes the override the AVAILABLE
 -- spell while the base keeps recharging on its own lane. C_Spell.GetSpellCooldown
@@ -1950,14 +1984,6 @@ end
 --   * the base is itself on a REAL (non-GCD) recharge -> the override's reported
 --     cooldown really is the base's shared slot. (Augmentation Breath of Eons'
 --     base reports isOnGCD=true, so it fails this and keeps its handling.)
--- Called only from the base real-cooldown branch, so `sid` is the registered
--- base and is already known to be on a real (non-GCD) recharge. This is a
--- transient proc when an override is currently ACTIVE (m.overrideSpellID, set by
--- Blizzard when the proc replaces the base on the bar) and the base is still
--- INDEPENDENTLY known. Talent conversions (Berserk 50334 -> Incarnation 102558)
--- never reach here -- their base reports isActive=false. m.overrideSpellID /
--- m.spellID are sanitized mirror fields; QueryIsSpellKnownOrPlayerSpell is a
--- non-secret IsSpellKnown/IsPlayerSpell probe.
 local function IsTransientProcOverrideReady(m, sid)
     if not (m and sid) then return false end
     -- Read the override from the LIVE spell-override map (C_Spell.GetOverrideSpell
@@ -2324,7 +2350,8 @@ local function BuildMirrorRenderPayload(
     payload.sourceID = sourceKey
     payload.cooldownID = sourceCooldownID
     payload.category = NormalizeMirrorCategory(m.viewerCategory) or fallbackCategory
-    payload.spellID = sourceSpellID
+    payload.spellID = CDMResolvers.ResolveLiveDisplaySpellID(
+        m.spellID or fallbackSpellID, m) or sourceSpellID
     payload.auraInstanceID = auraInstanceID
     payload.durObj = payloadDurObj
     payload.durationStateUnknown = durationStateUnknown
@@ -3293,7 +3320,9 @@ local function ResolveCooldownStateCore(context)
         or context.runtimeSpellID
         or entry.overrideSpellID or entry.spellID or entry.id
     if sid and not entryIsAura then
-        sid = QueryOverrideSpell(sid) or sid
+        local baseSid = entry.spellID or entry.id or sid
+        sid = CDMResolvers.ResolveLiveDisplaySpellID(baseSid, context.cachedMirrorState)
+            or sid
     end
     state.spellID = sid
     MemAuditProfilerMark("CDM_rsIdentity")

@@ -39,6 +39,8 @@ local cooldownActive = {
 -- Proc overlays: only the Hammer of Light proc is overlay-active.
 local overlayed = { [HOL_OVERRIDE] = true }
 
+local holChildActive
+
 local ns = {
     Helpers = {},
     CDMSources = {
@@ -71,6 +73,7 @@ local ns = {
                     cooldownID = HOL_CDID, mirrorEpoch = 3,
                     spellID = HOL_BASE, overrideSpellID = HOL_OVERRIDE,
                     viewerCategory = "essential",
+                    childIsActive = holChildActive,
                 }
             end
         end,
@@ -109,9 +112,20 @@ assert(sr.durObj == srCooldownDuration,
     "cooldown payload should bind the override's live cooldown duration")
 
 -- Hammer of Light: proc overlay active on the override -> shown ready.
+holChildActive = nil
 local hol = ResolveMode(HOL_CDID, "essential", HOL_BASE, HOL_OVERRIDE)
 assert(hol.mode == "inactive",
     "transient proc override with an active overlay must resolve ready/inactive, got " .. tostring(hol.mode))
+assert(hol.spellID == HOL_OVERRIDE,
+    "live display spell must follow GetOverrideSpell for overlay procs")
+
+-- Same proc shape with an active mirror child (post-4.0.4 path).
+holChildActive = true
+local holChild = ResolveMode(HOL_CDID, "essential", HOL_BASE, HOL_OVERRIDE)
+assert(holChild.mode == "inactive",
+    "overlay proc must stay ready when childIsActive is true, got " .. tostring(holChild.mode))
+assert(holChild.spellID == HOL_OVERRIDE,
+    "childIsActive overlay proc must keep the override display spell")
 
 -- Without any registered probe the override can never be classed a ready proc;
 -- it must fall through to the real cooldown (the safe default).

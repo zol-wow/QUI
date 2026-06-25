@@ -1530,7 +1530,9 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
             or entry.overrideSpellID or entry.spellID or entry.id
     end
     if sid and not entryIsAura then
-        sid = QueryOverrideSpell(sid) or sid
+        local baseSid = entry.spellID or entry.id or sid
+        local mirrorState = mirrorPayload and mirrorPayload.state
+        sid = Resolvers.ResolveLiveDisplaySpellID(baseSid, mirrorState) or sid
     end
     if mirrorBackedDuration == true then
         ApplyMirrorPayloadToIcon(icon, entry, sid or resolvedSpellID, mirrorPayload)
@@ -3097,8 +3099,11 @@ function _resolverRuntimePolicy.SyncBlizzMirrorIconState(icon)
 
     local runtimeSid = entry.spellID or entry.overrideSpellID or entry.id
     if runtimeSid and not IsAuraEntry(entry) then
-        local ovId = QueryOverrideSpell(runtimeSid)
-        if ovId then runtimeSid = ovId end
+        local baseSid = entry.spellID or entry.id or runtimeSid
+        local mirrorState = GetCachedMirrorStateForIcon(icon)
+            or RefreshCachedMirrorStateForIcon(icon)
+        runtimeSid = Resolvers.ResolveLiveDisplaySpellID(baseSid, mirrorState)
+            or runtimeSid
     end
     icon._runtimeSpellID = runtimeSid
     local debugBlizz
@@ -3346,8 +3351,14 @@ local function UpdateIconCooldownOwned(icon)
     -- transforms are always current. Shared across all paths in this function.
     local _runtimeSid = entry.spellID or entry.overrideSpellID or entry.id
     if _runtimeSid and not IsAuraEntry(entry) then
-        local ovId = QueryOverrideSpell(_runtimeSid)
-        if ovId then _runtimeSid = ovId end
+        local baseSid = entry.spellID or entry.id or _runtimeSid
+        local mirrorState
+        if icon._blizzMirrorCooldownID then
+            mirrorState = GetCachedMirrorStateForIcon(icon)
+                or RefreshCachedMirrorStateForIcon(icon)
+        end
+        _runtimeSid = Resolvers.ResolveLiveDisplaySpellID(baseSid, mirrorState)
+            or _runtimeSid
     end
     icon._runtimeSpellID = _runtimeSid
 
