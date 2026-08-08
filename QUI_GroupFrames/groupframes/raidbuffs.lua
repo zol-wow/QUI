@@ -319,9 +319,6 @@ local function IsUnitInRange(unit, rangeYards)
         if safeChecked then
             local safeInRange = SafeBooleanCheck(inRange)
             if safeInRange ~= nil then
-                if rangeYards > 28 and safeInRange then
-                    return true
-                end
                 return safeInRange
             end
         end
@@ -968,6 +965,14 @@ UpdateDisplay = function()
     local isVertical = (growDir == "UP" or growDir == "DOWN" or growDir == "CENTER_V")
     local totalSize = (#missing * iconSize) + ((#missing - 1) * iconSpacing)
 
+    if #buffIcons < #missing then
+        for i = #buffIcons + 1, #missing do
+            buffIcons[i] = CreateBuffIcon(mainFrame.iconContainer, i)
+            buffIcons[i]:Hide()
+        end
+        ApplyIconBorderSettings()
+    end
+
     for i, icon in ipairs(buffIcons) do
         if i <= #missing then
             local buff = missing[i]
@@ -1216,7 +1221,7 @@ local function OnEvent(self, event, ...)
     elseif event == "GROUP_ROSTER_UPDATE" then
         ThrottledUpdate()
     elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then
-        ThrottledUpdate()
+        UpdateDisplay()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         C_Timer.After(1, UpdateDisplay)
     elseif event == "PLAYER_DEAD" or event == "PLAYER_UNGHOST" then
@@ -1263,54 +1268,14 @@ for _, allyBuff in ipairs(ALLY_BUFFS) do
     for _, id in ipairs(allyBuff.ids) do trackedSpellIDs[id] = true end
 end
 
-local trackedInstances = {}
-
-local function AuraDeltaIsRelevant(unit, updateInfo)
-    if not updateInfo or updateInfo.isFullUpdate then
-        trackedInstances[unit] = nil
-        return true
-    end
-
-    local relevant = false
-    local set = trackedInstances[unit]
-
-    local added = updateInfo.addedAuras
-    if added then
-        for i = 1, #added do
-            local ad = added[i]
-            local sid = ad.spellId
-            if sid == nil then
-            elseif IsSecretValue(sid) then
-                relevant = true
-            elseif trackedSpellIDs[sid] then
-                relevant = true
-                local iid = ad.auraInstanceID
-                if iid and not IsSecretValue(iid) then
-                    set = set or {}
-                    trackedInstances[unit] = set
-                    set[iid] = true
-                end
-            end
-        end
-    end
-
-    if set then
-        local removed = updateInfo.removedAuraInstanceIDs
-        if removed then
-            for i = 1, #removed do
-                local iid = removed[i]
-                if set[iid] then relevant = true; set[iid] = nil end
-            end
-        end
-        local updated = updateInfo.updatedAuraInstanceIDs
-        if updated then
-            for i = 1, #updated do
-                if set[updated[i]] then relevant = true; break end
-            end
-        end
-    end
-
-    return relevant
+---@type fun(...): ...
+local AuraDeltaIsRelevant
+if MissingRaidBuffs and MissingRaidBuffs.MakeDeltaRelevanceTracker then
+    AuraDeltaIsRelevant = MissingRaidBuffs.MakeDeltaRelevanceTracker(function()
+        return trackedSpellIDs
+    end, false)
+else
+    AuraDeltaIsRelevant = function() return true end
 end
 
 if ns.AuraEvents then

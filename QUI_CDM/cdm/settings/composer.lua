@@ -16,7 +16,6 @@ local math_max = math.max
 local math_huge = math.huge
 local table_insert = table.insert
 local table_remove = table.remove
-local string_lower = string.lower
 local string_find = string.find
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
@@ -453,6 +452,27 @@ end
 
 local function EntryCountsForCooldownRowCapacity(entry)
     return IsEntryUsableOnCurrentPlayer(entry)
+end
+
+local function CountCooldownRowUsage(db)
+    local activeRowNums, rowCounts, rowMax = {}, {}, {}
+    for r = 1, 3 do
+        local rd = db["row" .. r]
+        if rd and rd.iconCount and rd.iconCount > 0 then
+            activeRowNums[#activeRowNums + 1] = r
+            rowMax[r] = rd.iconCount
+            rowCounts[r] = 0
+        end
+    end
+    for _, e in ipairs(db.ownedSpells or {}) do
+        if e and EntryCountsForCooldownRowCapacity(e) then
+            local r = e.row or (activeRowNums[1] or 1)
+            if rowCounts[r] then
+                rowCounts[r] = rowCounts[r] + 1
+            end
+        end
+    end
+    return activeRowNums, rowCounts, rowMax
 end
 
 local function GetPreviewEntries(containerKey, db)
@@ -1203,6 +1223,7 @@ local overridePanel = nil
 local HideOverridePanel
 
 local function BuildOverridePanel(parent)
+    if overridePanel then return overridePanel end
     local panel = CreateFrame("Frame", "QUI_CDMOverridePanel", UIParent, "BackdropTemplate")
     panel:SetHeight(180)
     panel:SetFrameStrata("TOOLTIP")
@@ -1238,23 +1259,141 @@ local function BuildOverridePanel(parent)
     return panel
 end
 
+local ovUI
+
+local function EnsureOverrideState()
+    if ovUI then return ovUI end
+    local ui = {
+        widgets = {},
+        state = {},
+        glowColorDB = {},
+        barColorDB = {},
+        barColorToggleDB = {},
+        sizeDB = {},
+        auraOnlyDB = {},
+    }
+    local defaultTrueOverrides = {
+        glowEnabled = true,
+    }
+    ui.proxyDB = setmetatable({}, {
+        __index = function(_, key)
+            local spellData = GetCDMSpellData()
+            local ov = spellData and spellData:GetSpellOverride(ui.state.containerKey, ui.state.spellID)
+            if ov and ov[key] ~= nil then
+                return ov[key]
+            end
+            if defaultTrueOverrides[key] then
+                return true
+            end
+            return nil
+        end,
+        __newindex = function(_, key, value)
+            local spellData = GetCDMSpellData()
+            if not spellData then return end
+            local isDefaultValue
+            if defaultTrueOverrides[key] then
+                isDefaultValue = value == true
+            else
+                isDefaultValue = value == nil or value == false
+            end
+
+            if isDefaultValue then
+                spellData:ClearSpellOverride(ui.state.containerKey, ui.state.spellID, key)
+            else
+                spellData:SetSpellOverride(ui.state.containerKey, ui.state.spellID, key, value)
+            end
+        end,
+    })
+    ui.onChange = function()
+        RefreshCDM()
+        C_Timer.After(0.05, RefreshPreview)
+    end
+    ovUI = ui
+    return ui
+end
+
+local function GetOverrideWidget(GUI, key)
+    local ui = ovUI
+    local widget = ui.widgets[key]
+    if widget then return widget end
+
+    if key == "hidden" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Hidden"], "hidden", ui.proxyDB, ui.onChange,
+            { description = ns.L["Hide this spell entirely from the CDM viewer. Useful for spells tracked automatically by the spec ruleset that you don't personally care about."] })
+    elseif key == "glow" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Glow Enabled"], "glowEnabled", ui.proxyDB, ui.onChange,
+            { description = ns.L["Allow this spell to show the spell activation overlay glow. Turn off if the glow for this specific spell becomes distracting."] })
+    elseif key == "proc" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Proc on Usable"], "procOnUsable", ui.proxyDB, ui.onChange,
+            { description = ns.L["Glow this spell whenever it becomes castable, not only on real spell activation overlays."] })
+    elseif key == "glowColor" then
+        widget = GUI:CreateFormColorPicker(overridePanel, ns.L["Glow Color"], "glowColor", ui.glowColorDB, function()
+            local spellData = GetCDMSpellData()
+            if spellData then
+                spellData:SetSpellOverride(ui.state.containerKey, ui.state.spellID, "glowColor", ui.glowColorDB.glowColor)
+            end
+            ui.onChange()
+        end, nil,
+            { description = ns.L["Per-spell override for the spell activation overlay glow color. Falls back to the container's glow color when unchanged."] })
+    elseif key == "barColorToggle" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Bar Color Override"], "barColorOverride", ui.barColorToggleDB, function()
+            local containerDB = ui.state.containerDB
+            if containerDB then
+                if ui.barColorToggleDB.barColorOverride then
+                    containerDB.colorOverrides[ui.state.spellID] = ui.barColorDB.barColor
+                else
+                    containerDB.colorOverrides[ui.state.spellID] = nil
+                end
+            end
+            ui.onChange()
+        end, { description = ns.L["Use a per-spell bar color for this aura-bar spell instead of the container's default bar color."] })
+    elseif key == "barColor" then
+        widget = GUI:CreateFormColorPicker(overridePanel, ns.L["Bar Color"], "barColor", ui.barColorDB, function()
+            local containerDB = ui.state.containerDB
+            if containerDB and ui.barColorToggleDB.barColorOverride then
+                containerDB.colorOverrides[ui.state.spellID] = ui.barColorDB.barColor
+                ui.onChange()
+            end
+        end, nil,
+            { description = ns.L["Per-spell bar color applied when Bar Color Override is on."] })
+    elseif key == "duration" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Hide Duration Text"], "hideDurationText", ui.proxyDB, ui.onChange,
+            { description = ns.L["Hide the numeric countdown on this spell's icon/bar only, while leaving other spells in the container unchanged."] })
+    elseif key == "desat" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Desaturate Ignore Aura"], "desaturateIgnoreAura", ui.proxyDB, ui.onChange,
+            { description = ns.L["Skip the desaturation-while-buff-active behavior for this spell. Turn on if a linked buff causes the icon to appear dimmed when you want it bright."] })
+    elseif key == "size" then
+        widget = GUI:CreateFormSlider(overridePanel, ns.L["Size Override"], 0, 80, 1, "sizeOverride", ui.sizeDB, function()
+            local spellData = GetCDMSpellData()
+            if not spellData then return end
+            local val = ui.sizeDB.sizeOverride or 0
+            if val <= 0 then
+                spellData:ClearSpellOverride(ui.state.containerKey, ui.state.spellID, "sizeOverride")
+            else
+                spellData:SetSpellOverride(ui.state.containerKey, ui.state.spellID, "sizeOverride", val)
+            end
+            ui.onChange()
+        end, { deferOnDrag = true }, { description = ns.L["Per-spell icon size in pixels (0 uses the container default; 1-80 overrides it for this spell only)."] })
+    elseif key == "auraOnly" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Aura-only display"], "auraOnly", ui.auraOnlyDB, function()
+            local entry = ui.state.entry
+            if entry then
+                if ui.auraOnlyDB.auraOnly then
+                    entry.displayMode = "auraOnly"
+                else
+                    entry.displayMode = nil
+                end
+            end
+            ui.onChange()
+        end, { description = ns.L["Show only while the buff is active. Hides the cooldown phase entirely."] })
+    end
+
+    ui.widgets[key] = widget
+    return widget
+end
+
 local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
     if not overridePanel or not entry then return end
-
-    local closeBtn = overridePanel._closeBtn
-    local children = { overridePanel:GetChildren() }
-    for _, child in ipairs(children) do
-        if child ~= closeBtn then
-            child:Hide()
-            child:SetParent(nil)
-        end
-    end
-    local regions = { overridePanel:GetRegions() }
-    for _, region in ipairs(regions) do
-        if region:IsObjectType("FontString") then
-            region:Hide()
-        end
-    end
 
     local GUI = QUI and QUI.GUI
     if not GUI then return end
@@ -1268,160 +1407,101 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
         return
     end
 
+    local ui = EnsureOverrideState()
+    ui.state.containerKey = containerKey
+    ui.state.spellID = spellID
+    ui.state.entry = entry
+    ui.state.containerDB = GetContainerDB(containerKey)
+
     local overrides = spellData:GetSpellOverride(containerKey, spellID) or {}
-    local defaultTrueOverrides = {
-        glowEnabled = true,
-    }
+    ui.glowColorDB.glowColor = overrides.glowColor or { ACCENT_R, ACCENT_G, ACCENT_B, 1 }
+    ui.sizeDB.sizeOverride = overrides.sizeOverride or 0
+    ui.auraOnlyDB.auraOnly = entry.displayMode == "auraOnly"
 
-    local proxyDB = {}
-    setmetatable(proxyDB, {
-        __index = function(_, key)
-            local ov = spellData:GetSpellOverride(containerKey, spellID)
-            if ov and ov[key] ~= nil then
-                return ov[key]
-            end
-            if defaultTrueOverrides[key] then
-                return true
-            end
-            return nil
-        end,
-        __newindex = function(_, key, value)
-            local isDefaultValue
-            if defaultTrueOverrides[key] then
-                isDefaultValue = value == true
-            else
-                isDefaultValue = value == nil or value == false
-            end
-
-            if isDefaultValue then
-                spellData:ClearSpellOverride(containerKey, spellID, key)
-            else
-                spellData:SetSpellOverride(containerKey, spellID, key, value)
-            end
-        end,
-    })
-
-    local function OnOverrideChange()
-        RefreshCDM()
-        C_Timer.After(0.05, RefreshPreview)
+    for _, widget in pairs(ui.widgets) do
+        widget:Hide()
     end
+    if ui.hint then ui.hint:Hide() end
 
-    local titleLabel = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(titleLabel, { fontOnly = true }) end
-    titleLabel:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, -6)
-    titleLabel:SetPoint("RIGHT", overridePanel, "RIGHT", -24, 0)
-    titleLabel:SetJustifyH("LEFT")
+    local titleLabel = ui.title
+    if not titleLabel then
+        titleLabel = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(titleLabel, { fontOnly = true }) end
+        titleLabel:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, -6)
+        titleLabel:SetPoint("RIGHT", overridePanel, "RIGHT", -24, 0)
+        titleLabel:SetJustifyH("LEFT")
+        ui.title = titleLabel
+    end
     titleLabel:SetText(GetEntryName(entry))
     titleLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+    titleLabel:Show()
 
     local sy = -24
     local function PlaceWidget(widget)
+        widget:ClearAllPoints()
         widget:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, sy)
         widget:SetPoint("RIGHT", overridePanel, "RIGHT", -8, 0)
+        if widget.Refresh then
+            widget.Refresh()
+        elseif widget.GetValue and widget.UpdateVisual then
+            widget.UpdateVisual(widget.GetValue())
+        elseif widget.UpdateVisual then
+            widget.UpdateVisual()
+        end
+        widget:Show()
         sy = sy - FORM_ROW
     end
 
-    local hiddenCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Hidden"], "hidden", proxyDB, OnOverrideChange,
-        { description = ns.L["Hide this spell entirely from the CDM viewer. Useful for spells tracked automatically by the spec ruleset that you don't personally care about."] })
-    PlaceWidget(hiddenCheck)
-
-    local glowCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Glow Enabled"], "glowEnabled", proxyDB, OnOverrideChange,
-        { description = ns.L["Allow this spell to show the spell activation overlay glow. Turn off if the glow for this specific spell becomes distracting."] })
-    PlaceWidget(glowCheck)
-
-    local procCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Proc on Usable"], "procOnUsable", proxyDB, OnOverrideChange,
-        { description = ns.L["Glow this spell whenever it becomes castable, not only on real spell activation overlays."] })
-    PlaceWidget(procCheck)
-
-    local glowColorDB = { glowColor = overrides.glowColor or { ACCENT_R, ACCENT_G, ACCENT_B, 1 } }
-    local glowColorPicker = GUI:CreateFormColorPicker(overridePanel, ns.L["Glow Color"], "glowColor", glowColorDB, function()
-        spellData:SetSpellOverride(containerKey, spellID, "glowColor", glowColorDB.glowColor)
-        OnOverrideChange()
-    end, nil,
-        { description = ns.L["Per-spell override for the spell activation overlay glow color. Falls back to the container's glow color when unchanged."] })
-    PlaceWidget(glowColorPicker)
+    PlaceWidget(GetOverrideWidget(GUI, "hidden"))
+    PlaceWidget(GetOverrideWidget(GUI, "glow"))
+    PlaceWidget(GetOverrideWidget(GUI, "proc"))
+    PlaceWidget(GetOverrideWidget(GUI, "glowColor"))
 
     local cType = ResolveContainerType(containerKey)
     if cType == "auraBar" then
-        local containerDB = GetContainerDB(containerKey)
+        local containerDB = ui.state.containerDB
         if containerDB then
             if type(containerDB.colorOverrides) ~= "table" then
                 containerDB.colorOverrides = {}
             end
             local existingColor = containerDB.colorOverrides[spellID]
-            local barColorDB = { barColor = existingColor or (containerDB.barColor and {unpack(containerDB.barColor)}) or { ACCENT_R, ACCENT_G, ACCENT_B, 1 } }
-
-            local barColorEnabled = existingColor ~= nil
-            local barColorToggleDB = { barColorOverride = barColorEnabled }
-            local barColorCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Bar Color Override"], "barColorOverride", barColorToggleDB, function()
-                barColorEnabled = barColorToggleDB.barColorOverride
-                if barColorEnabled then
-                    containerDB.colorOverrides[spellID] = barColorDB.barColor
-                else
-                    containerDB.colorOverrides[spellID] = nil
-                end
-                OnOverrideChange()
-            end, { description = ns.L["Use a per-spell bar color for this aura-bar spell instead of the container's default bar color."] })
-            PlaceWidget(barColorCheck)
-
-            local barColorPicker = GUI:CreateFormColorPicker(overridePanel, ns.L["Bar Color"], "barColor", barColorDB, function()
-                if barColorEnabled then
-                    containerDB.colorOverrides[spellID] = barColorDB.barColor
-                    OnOverrideChange()
-                end
-            end, nil,
-                { description = ns.L["Per-spell bar color applied when Bar Color Override is on."] })
-            PlaceWidget(barColorPicker)
+            ui.barColorDB.barColor = existingColor or (containerDB.barColor and {unpack(containerDB.barColor)}) or { ACCENT_R, ACCENT_G, ACCENT_B, 1 }
+            ui.barColorToggleDB.barColorOverride = existingColor ~= nil
+            PlaceWidget(GetOverrideWidget(GUI, "barColorToggle"))
+            PlaceWidget(GetOverrideWidget(GUI, "barColor"))
         end
     end
 
-    local durCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Hide Duration Text"], "hideDurationText", proxyDB, OnOverrideChange,
-        { description = ns.L["Hide the numeric countdown on this spell's icon/bar only, while leaving other spells in the container unchanged."] })
-    PlaceWidget(durCheck)
+    PlaceWidget(GetOverrideWidget(GUI, "duration"))
 
     if cType == "cooldown" then
-        local desatIgnoreAura = GUI:CreateFormCheckbox(overridePanel, ns.L["Desaturate Ignore Aura"], "desaturateIgnoreAura", proxyDB, OnOverrideChange,
-            { description = ns.L["Skip the desaturation-while-buff-active behavior for this spell. Turn on if a linked buff causes the icon to appear dimmed when you want it bright."] })
-        PlaceWidget(desatIgnoreAura)
+        PlaceWidget(GetOverrideWidget(GUI, "desat"))
     end
 
-    local sizeOverrideDB = { sizeOverride = overrides.sizeOverride or 0 }
-    local sizeSlider = GUI:CreateFormSlider(overridePanel, ns.L["Size Override"], 0, 80, 1, "sizeOverride", sizeOverrideDB, function()
-        local val = sizeOverrideDB.sizeOverride or 0
-        if val <= 0 then
-            spellData:ClearSpellOverride(containerKey, spellID, "sizeOverride")
-        else
-            spellData:SetSpellOverride(containerKey, spellID, "sizeOverride", val)
-        end
-        OnOverrideChange()
-    end, { deferOnDrag = true }, { description = ns.L["Per-spell icon size in pixels (0 uses the container default; 1-80 overrides it for this spell only)."] })
-    PlaceWidget(sizeSlider)
+    PlaceWidget(GetOverrideWidget(GUI, "size"))
 
-    local containerDB = GetContainerDB(containerKey)
+    local containerDB = ui.state.containerDB
     if ns.CDMShared
         and ns.CDMShared.ShouldShowItemDisplayModeRow
         and ns.CDMShared.ShouldShowItemDisplayModeRow(entry, containerKey, containerDB) then
 
-        local auraOnlyToggleDB = { auraOnly = entry.displayMode == "auraOnly" }
-        local auraOnlyCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Aura-only display"], "auraOnly", auraOnlyToggleDB, function()
-            if auraOnlyToggleDB.auraOnly then
-                entry.displayMode = "auraOnly"
-            else
-                entry.displayMode = nil
-            end
-            OnOverrideChange()
-        end, { description = ns.L["Show only while the buff is active. Hides the cooldown phase entirely."] })
-        PlaceWidget(auraOnlyCheck)
+        PlaceWidget(GetOverrideWidget(GUI, "auraOnly"))
 
         local itemID = entry.id
         if spellData.HasResolvableAuraForItem
             and not spellData:HasResolvableAuraForItem(itemID) then
-            local hint = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            local hint = ui.hint
+            if not hint then
+                hint = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+                hint:SetJustifyH("LEFT")
+                hint:SetText(ns.L["Aura will be detected the first time you use this item."])
+                hint:SetTextColor(0.55, 0.55, 0.55, 1)
+                ui.hint = hint
+            end
+            hint:ClearAllPoints()
             hint:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, sy + 4)
             hint:SetPoint("RIGHT", overridePanel, "RIGHT", -8, 0)
-            hint:SetJustifyH("LEFT")
-            hint:SetText(ns.L["Aura will be detected the first time you use this item."])
-            hint:SetTextColor(0.55, 0.55, 0.55, 1)
+            hint:Show()
             sy = sy - 14
         end
     end
@@ -1495,6 +1575,8 @@ local dragState = {
     fromRowNum = nil,
     fromSpecKey = nil,
 }
+
+local StopDrag
 
 local function BuildEntryListSection(parent)
     local container = CreateBackdropFrame(parent)
@@ -1604,16 +1686,12 @@ IsEntryRegisteredInBlizzCDM = function(entry)
     return trackedSet[id] == true
 end
 
-local function GetOrCreateEntryCell(index)
-    if entryCells[index] then return entryCells[index] end
-
-    local cell = CreateFrame("Button", nil, entryListContent, "BackdropTemplate")
+local function CreateGridCellBase(parent)
+    local cell = CreateFrame("Button", nil, parent, "BackdropTemplate")
     cell:SetSize(GRID_CELL_SIZE, GRID_CELL_SIZE)
-    cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    cell:RegisterForDrag("LeftButton")
 
-    local _ecBdR, _ecBdG, _ecBdB = GetChromeBorder()
-    SetSimpleBackdrop(cell, 0, 0, 0, 0, _ecBdR, _ecBdG, _ecBdB, 0.5)
+    local _gcBdR, _gcBdG, _gcBdB = GetChromeBorder()
+    SetSimpleBackdrop(cell, 0, 0, 0, 0, _gcBdR, _gcBdG, _gcBdB, 0.5)
 
     cell._icon = cell:CreateTexture(nil, "ARTWORK")
     cell._icon:SetSize(GRID_ICON_SIZE, GRID_ICON_SIZE)
@@ -1635,6 +1713,16 @@ local function GetOrCreateEntryCell(index)
     cell._highlight = cell:CreateTexture(nil, "HIGHLIGHT")
     cell._highlight:SetAllPoints()
     cell._highlight:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.15)
+
+    return cell
+end
+
+local function GetOrCreateEntryCell(index)
+    if entryCells[index] then return entryCells[index] end
+
+    local cell = CreateGridCellBase(entryListContent)
+    cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    cell:RegisterForDrag("LeftButton")
 
     cell:SetScript("OnEnter", function(self)
         if not self._entry then return end
@@ -1839,8 +1927,6 @@ local function UpdateDropIndicator()
     indicator:Show()
 end
 
-local StopDrag
-
 local function StartDrag(cell, entryIndex, rowNum)
     if InCombatLockdown() then return end
     dragState.active = true
@@ -1934,21 +2020,8 @@ StopDrag = function()
 
         local rd = db["row" .. targetRow]
         if rd and rd.iconCount then
-            local firstActiveRow = nil
-            for r = 1, 3 do
-                local rrd = db["row" .. r]
-                if rrd and rrd.iconCount and rrd.iconCount > 0 then
-                    if not firstActiveRow then firstActiveRow = r end
-                end
-            end
-            local count = 0
-            local spells = db.ownedSpells or {}
-            for _, e in ipairs(spells) do
-                if e and EntryCountsForCooldownRowCapacity(e)
-                    and (e.row or firstActiveRow) == targetRow then
-                    count = count + 1
-                end
-            end
+            local _, rowCounts = CountCooldownRowUsage(db)
+            local count = rowCounts[targetRow] or 0
             if count >= rd.iconCount then
                 if UIErrorsFrame then UIErrorsFrame:AddMessage(string.format(ns.L["Row %1$d is full (%2$d/%3$d)"], targetRow, rd.iconCount, rd.iconCount), 1.0, 0.3, 0.3, 1.0, 3); UIErrorsFrame:SetFrameStrata("TOOLTIP") end
                 return
@@ -2044,26 +2117,7 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
     end }
 
     if isCooldown then
-        local activeRowNums = {}
-        local rowCounts = {}
-        local rowMax = {}
-        local entries_all = db.ownedSpells or {}
-        for r = 1, 3 do
-            local rd = db["row" .. r]
-            if rd and rd.iconCount and rd.iconCount > 0 then
-                activeRowNums[#activeRowNums + 1] = r
-                rowMax[r] = rd.iconCount
-                rowCounts[r] = 0
-            end
-        end
-        for _, e in ipairs(entries_all) do
-            if e and EntryCountsForCooldownRowCapacity(e) then
-                local r = e.row or (activeRowNums[1] or 1)
-                if rowCounts[r] then
-                    rowCounts[r] = rowCounts[r] + 1
-                end
-            end
-        end
+        local activeRowNums, rowCounts, rowMax = CountCooldownRowUsage(db)
         if #activeRowNums > 1 then
             local curRow = entry.row or activeRowNums[1]
             for _, rn in ipairs(activeRowNums) do
@@ -2155,24 +2209,41 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
     local menuWidth = 180
     local menuHeight = #items * itemHeight + 4
 
-    local menu = CreateFrame("Frame", "QUI_EntryContextMenu", UIParent, "BackdropTemplate")
+    local menu = _G.QUI_EntryContextMenu
+    if not menu then
+        menu = CreateFrame("Frame", "QUI_EntryContextMenu", UIParent, "BackdropTemplate")
+        menu:SetFrameStrata("TOOLTIP")
+        menu:SetFrameLevel(300)
+        menu:EnableMouse(true)
+        menu:SetClampedToScreen(true)
+        menu._itemButtons = {}
+        menu:SetScript("OnUpdate", function(self)
+            if not self:IsMouseOver() and (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")) then
+                self:Hide()
+            end
+        end)
+    end
     menu:SetSize(menuWidth, menuHeight)
-    menu:SetFrameStrata("TOOLTIP")
-    menu:SetFrameLevel(300)
     local _ecmBR, _ecmBG, _ecmBB = GetChromeBgMain()
     local _ecmBdR, _ecmBdG, _ecmBdB = GetChromeBorder()
     SkinBase.ApplyPixelBackdrop(menu, 1, true, false, { _ecmBdR, _ecmBdG, _ecmBdB, 1 }, { _ecmBR, _ecmBG, _ecmBB, 0.98 })
-    menu:EnableMouse(true)
+    menu:ClearAllPoints()
     menu:SetPoint("TOPLEFT", anchorCell, "BOTTOMLEFT", 0, -2)
-    menu:SetClampedToScreen(true)
 
     for i, item in ipairs(items) do
-        local btn = CreateFrame("Button", nil, menu)
+        local btn = menu._itemButtons[i]
+        if not btn then
+            btn = CreateFrame("Button", nil, menu)
+            local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(fs, { fontOnly = true }) end
+            fs:SetPoint("LEFT", 8, 0)
+            btn._label = fs
+            menu._itemButtons[i] = btn
+        end
         btn:SetSize(menuWidth - 4, itemHeight)
+        btn:ClearAllPoints()
         btn:SetPoint("TOPLEFT", 2, -(2 + (i - 1) * itemHeight))
-        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(label, { fontOnly = true }) end
-        label:SetPoint("LEFT", 8, 0)
+        local label = btn._label
         label:SetText(item.label)
         local c = item.color or { 0.8, 0.8, 0.8 }
         label:SetTextColor(c[1], c[2], c[3], 1)
@@ -2186,19 +2257,29 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
         btn:SetScript("OnLeave", function()
             label:SetTextColor(c[1], c[2], c[3], 1)
         end)
+        btn:Show()
     end
-
-    menu:SetScript("OnUpdate", function(self)
-        if not self:IsMouseOver() and (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")) then
-            self:Hide()
-        end
-    end)
+    for i = #items + 1, #menu._itemButtons do
+        menu._itemButtons[i]:Hide()
+    end
 
     menu:Show()
 end
 
 RefreshEntryList = function()
     if not entryListContent or not activeContainer then return end
+
+    if entryListContent:GetWidth() < GRID_CELL_STRIDE then
+        if not entryListContent._quiWidthRetryPending
+            and entryListContent:IsVisible() then
+            entryListContent._quiWidthRetryPending = true
+            C_Timer.After(0.05, function()
+                entryListContent._quiWidthRetryPending = nil
+                RefreshEntryList()
+            end)
+        end
+        return
+    end
 
     HideOverridePanel()
     if _G.QUI_EntryContextMenu then _G.QUI_EntryContextMenu:Hide() end
@@ -2251,7 +2332,7 @@ RefreshEntryList = function()
     if type(entries) ~= "table" then entries = {} end
 
     local filterText = searchBox and searchBox:GetText() or ""
-    local lowerFilter = string_lower(filterText)
+    local lowerFilter = Helpers.FoldUTF8(filterText)
     local hasFilter = (filterText ~= "")
 
     local spellData = GetCDMSpellData()
@@ -2267,10 +2348,6 @@ RefreshEntryList = function()
     end
 
     local contentWidth = entryListContent:GetWidth()
-    if contentWidth < GRID_CELL_STRIDE then
-        C_Timer.After(0.01, RefreshEntryList)
-        return
-    end
     local cols = math_floor(contentWidth / GRID_CELL_STRIDE)
     if cols < 1 then cols = 1 end
 
@@ -2324,7 +2401,7 @@ RefreshEntryList = function()
 
     local function RenderEntryCell(entry, idx, rowNum)
         local entryName = GetEntryName(entry)
-        if hasFilter and not string_find(string_lower(entryName), lowerFilter, 1, true) then
+        if hasFilter and not string_find(Helpers.FoldUTF8(entryName), lowerFilter, 1, true) then
             return
         end
 
@@ -2625,12 +2702,21 @@ local function BuildAddSection(parent)
 
     addPanel = container
 
+    local auraRefreshPending = false
     container:RegisterUnitEvent("UNIT_AURA", "player")
     container:SetScript("OnEvent", function(self, event)
         if event == "UNIT_AURA"
            and (activeAddTab == "active_buffs" or activeAddTab == "active_debuffs")
-           and self:IsVisible() then
-            RefreshAddList()
+           and self:IsVisible()
+           and not auraRefreshPending then
+            auraRefreshPending = true
+            C_Timer.After(0.2, function()
+                auraRefreshPending = false
+                if (activeAddTab == "active_buffs" or activeAddTab == "active_debuffs")
+                    and self:IsVisible() then
+                    RefreshAddList()
+                end
+            end)
         end
     end)
 
@@ -2640,33 +2726,8 @@ end
 local function GetOrCreateAddCell(index)
     if addCells[index] then return addCells[index] end
 
-    local cell = CreateFrame("Button", nil, addListContent, "BackdropTemplate")
-    cell:SetSize(GRID_CELL_SIZE, GRID_CELL_SIZE)
+    local cell = CreateGridCellBase(addListContent)
     cell:RegisterForClicks("RightButtonUp")
-
-    local _acBdR, _acBdG, _acBdB = GetChromeBorder()
-    SetSimpleBackdrop(cell, 0, 0, 0, 0, _acBdR, _acBdG, _acBdB, 0.5)
-
-    cell._icon = cell:CreateTexture(nil, "ARTWORK")
-    cell._icon:SetSize(GRID_ICON_SIZE, GRID_ICON_SIZE)
-    cell._icon:SetPoint("CENTER")
-    cell._icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    cell._warnBadge = cell:CreateTexture(nil, "OVERLAY")
-    cell._warnBadge:SetSize(12, 12)
-    cell._warnBadge:SetPoint("TOPRIGHT", cell, "TOPRIGHT", -1, -1)
-    cell._warnBadge:SetColorTexture(0.95, 0.15, 0.15, 1)
-    cell._warnBadge:Hide()
-    cell._warnBadgeText = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(cell._warnBadgeText, { fontOnly = true }) end
-    cell._warnBadgeText:SetPoint("CENTER", cell._warnBadge, "CENTER", 0, 0)
-    cell._warnBadgeText:SetText("!")
-    cell._warnBadgeText:SetTextColor(1, 1, 1, 1)
-    cell._warnBadgeText:Hide()
-
-    cell._highlight = cell:CreateTexture(nil, "HIGHLIGHT")
-    cell._highlight:SetAllPoints()
-    cell._highlight:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.15)
 
     cell:SetScript("OnEnter", function(self)
         if not self._sourceEntry then return end
@@ -2757,6 +2818,18 @@ end
 RefreshAddList = function()
     if not addListContent or not activeContainer then return end
 
+    if addListContent:GetWidth() < GRID_CELL_STRIDE then
+        if not addListContent._quiWidthRetryPending
+            and addListContent:IsVisible() then
+            addListContent._quiWidthRetryPending = true
+            C_Timer.After(0.05, function()
+                addListContent._quiWidthRetryPending = nil
+                RefreshAddList()
+            end)
+        end
+        return
+    end
+
     local spellData = GetCDMSpellData()
     if not spellData then return end
 
@@ -2766,7 +2839,7 @@ RefreshAddList = function()
     end
 
     local filterText = addSearchBox and addSearchBox:GetText() or ""
-    local lowerFilter = string_lower(filterText)
+    local lowerFilter = Helpers.FoldUTF8(filterText)
     local hasFilter = (filterText ~= "")
 
     local sourceEntries = {}
@@ -2987,10 +3060,6 @@ RefreshAddList = function()
     end
 
     local contentWidth = addListContent:GetWidth()
-    if contentWidth < GRID_CELL_STRIDE then
-        C_Timer.After(0.01, RefreshAddList)
-        return
-    end
     local cols = math_floor(contentWidth / GRID_CELL_STRIDE)
     if cols < 1 then cols = 1 end
 
@@ -3001,7 +3070,7 @@ RefreshAddList = function()
     for _, entry in ipairs(sourceEntries) do
         local entryName = entry.name or ""
         local show = true
-        if hasFilter and not string_find(string_lower(entryName), lowerFilter, 1, true) then
+        if hasFilter and not string_find(Helpers.FoldUTF8(entryName), lowerFilter, 1, true) then
             local sidStr = tostring(entry.spellID or "")
             if not string_find(sidStr, filterText, 1, true) then
                 show = false
@@ -3066,22 +3135,10 @@ RefreshAddList = function()
                         local targetRow = nil
                         if IsBuiltInContainer(activeContainer)
                             and ResolveContainerType(activeContainer) == "cooldown" then
-                            local spells = containerDB.ownedSpells or {}
-                            local firstActiveRow = nil
-                            for r = 1, 3 do
-                                local rd = containerDB["row" .. r]
-                                if rd and rd.iconCount and rd.iconCount > 0 then
-                                    if not firstActiveRow then firstActiveRow = r end
-                                    local count = 0
-                                    for _, e in ipairs(spells) do
-                                        if e and EntryCountsForCooldownRowCapacity(e)
-                                            and (e.row or firstActiveRow) == r then
-                                            count = count + 1
-                                        end
-                                    end
-                                    if count < rd.iconCount and not targetRow then
-                                        targetRow = r
-                                    end
+                            local activeRowNums, rowCounts, rowMax = CountCooldownRowUsage(containerDB)
+                            for _, r in ipairs(activeRowNums) do
+                                if rowCounts[r] < rowMax[r] and not targetRow then
+                                    targetRow = r
                                 end
                             end
                             if not targetRow then
@@ -3454,7 +3511,20 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
         _G.QUI_ContainerContextMenu:Hide()
     end
 
-    local menu = CreateFrame("Frame", "QUI_ContainerContextMenu", UIParent, "BackdropTemplate")
+    local menu = _G.QUI_ContainerContextMenu
+    if menu then
+        menu._containerKey = containerKey
+        local _ccmBR, _ccmBG, _ccmBB = GetChromeBgMain()
+        local _ccmBdR, _ccmBdG, _ccmBdB = GetChromeBorder()
+        SkinBase.ApplyPixelBackdrop(menu, 1, true, false, { _ccmBdR, _ccmBdG, _ccmBdB, 1 }, { _ccmBR, _ccmBG, _ccmBB, 0.98 })
+        menu:ClearAllPoints()
+        menu:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -2)
+        menu:Show()
+        return
+    end
+
+    menu = CreateFrame("Frame", "QUI_ContainerContextMenu", UIParent, "BackdropTemplate")
+    menu._containerKey = containerKey
     menu:SetSize(140, 60)
     menu:SetFrameStrata("TOOLTIP")
     menu:SetFrameLevel(300)
@@ -3474,6 +3544,7 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     renameText:SetTextColor(0.8, 0.8, 0.8, 1)
     renameBtn:SetScript("OnClick", function()
         menu:Hide()
+        local key = menu._containerKey
         StaticPopupDialogs["QUI_RENAME_CONTAINER"] = {
             text = ns.L["Enter new name:"],
             button1 = ns.L["OK"],
@@ -3484,7 +3555,7 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
                 local box = self.editBox or self.EditBox
                 local newName = box and box:GetText()
                 if newName and newName ~= "" and ns.CDMContainers then
-                    ns.CDMContainers.RenameContainer(containerKey, newName)
+                    ns.CDMContainers.RenameContainer(key, newName)
                     BuildContainerTabs()
                     RefreshAll_Composer()
                 end
@@ -3492,8 +3563,8 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
             OnShow = function(self)
                 local box = self.editBox or self.EditBox
                 if box then
-                    local db = GetContainerDB(containerKey)
-                    box:SetText(db and db.name or containerKey)
+                    local db = GetContainerDB(key)
+                    box:SetText(db and db.name or key)
                     box:HighlightText()
                 end
             end,
@@ -3521,13 +3592,14 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     deleteText:SetTextColor(0.9, 0.3, 0.3, 1)
     deleteBtn:SetScript("OnClick", function()
         menu:Hide()
+        local key = menu._containerKey
         StaticPopupDialogs["QUI_DELETE_CONTAINER"] = {
             text = ns.L["Delete this container? This cannot be undone."],
             button1 = ns.L["Delete"],
             button2 = ns.L["Cancel"],
             OnAccept = function()
                 if ns.CDMContainers and ns.CDMContainers.DeleteContainer then
-                    ns.CDMContainers.DeleteContainer(containerKey)
+                    ns.CDMContainers.DeleteContainer(key)
                     activeContainer = "essential"
                     BuildContainerTabs()
                     RefreshAll_Composer()

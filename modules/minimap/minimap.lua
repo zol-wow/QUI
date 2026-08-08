@@ -224,251 +224,126 @@ local function ClickMicroButton(...)
     return false
 end
 
-local function TryOpenSpellbookTab()
-    local function FindAndClickSpellbookTabButton(parent, maxDepth, depth)
-        if not parent or depth > maxDepth then return false end
-        local children = { parent:GetChildren() }
-        for i = 1, #children do
-            local child = children[i]
-            if child then
-                if child.IsObjectType and child:IsObjectType("Button") and child.Click then
-                    local label = nil
-                    if child.GetText then
-                        label = child:GetText()
-                    end
-                    if (not label or label == "") and child.Text and child.Text.GetText then
-                        label = child.Text:GetText()
-                    end
-                    if label and label ~= "" then
-                        if (SPELLBOOK and label == SPELLBOOK)
-                            or (SPELLBOOK_ABILITIES_BUTTON and label == SPELLBOOK_ABILITIES_BUTTON)
-                            or (SPELLBOOK and label:find(SPELLBOOK, 1, true)) then
-                            child:Click()
-                            return true
-                        end
-                    end
-                end
-
-                if FindAndClickSpellbookTabButton(child, maxDepth, depth + 1) then
-                    return true
-                end
-            end
-        end
-        return false
-    end
-
-    local function ActivatePlayerSpellsSpellbookTab()
-        local frame = _G.PlayerSpellsFrame
-        if not frame or (frame.IsShown and not frame:IsShown()) then
-            return false
-        end
-
-        if frame.SpellBookFrame then
-            if frame.SpellBookFrame.TabButton and frame.SpellBookFrame.TabButton.Click then
-                frame.SpellBookFrame.TabButton:Click()
-                return true
-            end
-            if frame.SpellBookFrame.Show then
-                frame.SpellBookFrame:Show()
-            end
-        end
-
-        local tabButtonCandidates = {
+local PLAYER_SPELLS_TABS = {
+    spellbook = {
+        subFrame = "SpellBookFrame",
+        labels = { "SPELLBOOK", "SPELLBOOK_ABILITIES_BUTTON" },
+        candidates = {
             "PlayerSpellsFrameSpellBookFrameTabButton",
             "PlayerSpellsFrameSpellBookTabButton",
             "PlayerSpellsSpellBookTabButton",
-        }
-        if ClickMicroButton(unpack(tabButtonCandidates)) then
-            return true
-        end
-
-        if FindAndClickSpellbookTabButton(frame, 4, 0) then
-            return true
-        end
-
-        return false
-    end
-
-    local opened = false
-    if ClickMicroButton("SpellbookMicroButton") then
-        opened = true
-    elseif SafeExecute(function() ToggleSpellBook(BOOKTYPE_SPELL) end) then
-        opened = true
-    else
-        opened = SafeExecute(TogglePlayerSpellsFrame) and true or false
-    end
-
-    local activated = ActivatePlayerSpellsSpellbookTab()
-    if not activated then
-        C_Timer.After(0, ActivatePlayerSpellsSpellbookTab)
-        C_Timer.After(0.05, ActivatePlayerSpellsSpellbookTab)
-        C_Timer.After(0.15, ActivatePlayerSpellsSpellbookTab)
-    end
-
-    return opened or activated
-end
-
-local function TryOpenTalentsTab()
-    local function FindAndClickTalentsTabButton(parent, maxDepth, depth)
-        if not parent or depth > maxDepth then return false end
-        local children = { parent:GetChildren() }
-        for i = 1, #children do
-            local child = children[i]
-            if child then
-                if child.IsObjectType and child:IsObjectType("Button") and child.Click then
-                    local label = nil
-                    if child.GetText then
-                        label = child:GetText()
-                    end
-                    if (not label or label == "") and child.Text and child.Text.GetText then
-                        label = child.Text:GetText()
-                    end
-                    if label and label ~= "" then
-                        if (TALENTS and label == TALENTS)
-                            or (TALENTS and label:find(TALENTS, 1, true)) then
-                            child:Click()
-                            return true
-                        end
-                    end
-                end
-
-                if FindAndClickTalentsTabButton(child, maxDepth, depth + 1) then
-                    return true
-                end
-            end
-        end
-        return false
-    end
-
-    local function ActivatePlayerSpellsTalentsTab()
-        local frame = _G.PlayerSpellsFrame
-        if not frame or (frame.IsShown and not frame:IsShown()) then
-            return false
-        end
-
-        if frame.TalentsFrame then
-            if frame.TalentsFrame.TabButton and frame.TalentsFrame.TabButton.Click then
-                frame.TalentsFrame.TabButton:Click()
-                return true
-            end
-            if frame.TalentsFrame.Show then
-                frame.TalentsFrame:Show()
-            end
-        end
-
-        local tabButtonCandidates = {
+        },
+        micro = { "SpellbookMicroButton" },
+        toggle = function() ToggleSpellBook(BOOKTYPE_SPELL) end,
+    },
+    talents = {
+        subFrame = "TalentsFrame",
+        labels = { "TALENTS" },
+        candidates = {
             "PlayerSpellsFrameTalentsFrameTabButton",
             "PlayerSpellsFrameTalentsTabButton",
             "PlayerSpellsTalentsTabButton",
-        }
-        if ClickMicroButton(unpack(tabButtonCandidates)) then
-            return true
-        end
-
-        if FindAndClickTalentsTabButton(frame, 4, 0) then
-            return true
-        end
-
-        return false
-    end
-
-    local opened = false
-    if ClickMicroButton("TalentMicroButton", "PlayerSpellsMicroButton") then
-        opened = true
-    elseif SafeExecute(ToggleTalentFrame) then
-        opened = true
-    else
-        opened = SafeExecute(TogglePlayerSpellsFrame) and true or false
-    end
-
-    local activated = ActivatePlayerSpellsTalentsTab()
-    if not activated then
-        C_Timer.After(0, ActivatePlayerSpellsTalentsTab)
-        C_Timer.After(0.05, ActivatePlayerSpellsTalentsTab)
-        C_Timer.After(0.15, ActivatePlayerSpellsTalentsTab)
-    end
-
-    return opened or activated
-end
-
-local function TryOpenSpecializationTab()
-    local function FindAndClickSpecTabButton(parent, maxDepth, depth)
-        if not parent or depth > maxDepth then return false end
-        local children = { parent:GetChildren() }
-        for i = 1, #children do
-            local child = children[i]
-            if child then
-                if child.IsObjectType and child:IsObjectType("Button") and child.Click then
-                    local label = nil
-                    if child.GetText then
-                        label = child:GetText()
-                    end
-                    if (not label or label == "") and child.Text and child.Text.GetText then
-                        label = child.Text:GetText()
-                    end
-                    if label and label ~= "" then
-                        if (SPECIALIZATION and label == SPECIALIZATION)
-                            or (SPECIALIZATION and label:find(SPECIALIZATION, 1, true))
-                            or (SPECIALIZATIONS and label:find(SPECIALIZATIONS, 1, true)) then
-                            child:Click()
-                            return true
-                        end
-                    end
-                end
-
-                if FindAndClickSpecTabButton(child, maxDepth, depth + 1) then
-                    return true
-                end
-            end
-        end
-        return false
-    end
-
-    local function ActivatePlayerSpellsSpecializationTab()
-        local frame = _G.PlayerSpellsFrame
-        if not frame or (frame.IsShown and not frame:IsShown()) then
-            return false
-        end
-
-        if frame.SpecFrame then
-            if frame.SpecFrame.TabButton and frame.SpecFrame.TabButton.Click then
-                frame.SpecFrame.TabButton:Click()
-                return true
-            end
-            if frame.SpecFrame.Show then
-                frame.SpecFrame:Show()
-            end
-        end
-
-        local tabButtonCandidates = {
+        },
+        micro = { "TalentMicroButton", "PlayerSpellsMicroButton" },
+        toggle = function() ToggleTalentFrame() end,
+    },
+    specialization = {
+        subFrame = "SpecFrame",
+        labels = { "SPECIALIZATION", "SPECIALIZATIONS" },
+        candidates = {
             "PlayerSpellsFrameSpecFrameTabButton",
             "PlayerSpellsFrameSpecTabButton",
             "PlayerSpellsFrameSpecializationTabButton",
             "PlayerSpellsSpecializationTabButton",
-        }
-        if ClickMicroButton(unpack(tabButtonCandidates)) then
-            return true
-        end
+        },
+        micro = { "PlayerSpellsMicroButton", "TalentMicroButton" },
+    },
+}
 
-        if FindAndClickSpecTabButton(frame, 4, 0) then
-            return true
+local function ActivatePlayerSpellsTab(def)
+    local function MatchesTabLabel(label)
+        for i = 1, #def.labels do
+            local want = _G[def.labels[i]]
+            if want and want ~= "" and (label == want or label:find(want, 1, true)) then
+                return true
+            end
         end
-
         return false
     end
 
+    local function FindAndClickTabButton(parent, maxDepth, depth)
+        if not parent or depth > maxDepth then return false end
+        local children = { parent:GetChildren() }
+        for i = 1, #children do
+            local child = children[i]
+            if child then
+                if child.IsObjectType and child:IsObjectType("Button") and child.Click then
+                    local label = nil
+                    if child.GetText then
+                        label = child:GetText()
+                    end
+                    if (not label or label == "") and child.Text and child.Text.GetText then
+                        label = child.Text:GetText()
+                    end
+                    if label and label ~= "" and MatchesTabLabel(label) then
+                        child:Click()
+                        return true
+                    end
+                end
+
+                if FindAndClickTabButton(child, maxDepth, depth + 1) then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    local frame = _G.PlayerSpellsFrame
+    if not frame or (frame.IsShown and not frame:IsShown()) then
+        return false
+    end
+
+    local sub = frame[def.subFrame]
+    if sub then
+        if sub.TabButton and sub.TabButton.Click then
+            sub.TabButton:Click()
+            return true
+        end
+        if sub.Show then
+            sub:Show()
+        end
+    end
+
+    if ClickMicroButton(unpack(def.candidates)) then
+        return true
+    end
+
+    return FindAndClickTabButton(frame, 4, 0)
+end
+
+local function TryOpenPlayerSpellsTab(key)
+    local def = PLAYER_SPELLS_TABS[key]
+    if not def then return false end
+
     local opened = false
-    if ClickMicroButton("PlayerSpellsMicroButton", "TalentMicroButton") then
+    if ClickMicroButton(unpack(def.micro)) then
+        opened = true
+    elseif def.toggle and SafeExecute(def.toggle) then
         opened = true
     else
         opened = SafeExecute(TogglePlayerSpellsFrame) and true or false
     end
 
-    local activated = ActivatePlayerSpellsSpecializationTab()
+    local function Activate()
+        return ActivatePlayerSpellsTab(def)
+    end
+
+    local activated = Activate()
     if not activated then
-        C_Timer.After(0, ActivatePlayerSpellsSpecializationTab)
-        C_Timer.After(0.05, ActivatePlayerSpellsSpecializationTab)
-        C_Timer.After(0.15, ActivatePlayerSpellsSpecializationTab)
+        C_Timer.After(0, Activate)
+        C_Timer.After(0.05, Activate)
+        C_Timer.After(0.15, Activate)
     end
 
     return opened or activated
@@ -1114,7 +989,7 @@ UpdateZoneTextDisplay = function()
     local text = GetMinimapZoneText()
 
     if zoneConfig.allCaps then
-        text = string.upper(text)
+        text = Helpers.UpperUTF8(text)
     end
 
     zoneTextFont:SetText(text)
@@ -1703,10 +1578,10 @@ local function BuildMiddleClickMenu()
                 ClickMicroButton("SocialsMicroButton")
             end
         end },
-        { text = ns.L["Specialization"], notCheckable = true, func = function() TryOpenSpecializationTab() end },
-        { text = ns.L["Talents"], notCheckable = true, func = function() TryOpenTalentsTab() end },
+        { text = ns.L["Specialization"], notCheckable = true, func = function() TryOpenPlayerSpellsTab("specialization") end },
+        { text = ns.L["Talents"], notCheckable = true, func = function() TryOpenPlayerSpellsTab("talents") end },
         { text = ns.L["Spellbook"], notCheckable = true, func = function()
-            TryOpenSpellbookTab()
+            TryOpenPlayerSpellsTab("spellbook")
         end },
         { text = ns.L["Warband Collections"], notCheckable = true, func = function()
             if not SafeExecute(ToggleCollectionsJournal) then
@@ -3249,7 +3124,10 @@ local function SetupMinimapDragging()
         self:StopMovingOrSizing()
         local point, _, relPoint, x, y = QUICore:SnapFramePosition(self)
         if point then
-            settings.position = {point, relPoint, x, y}
+            local s = GetSettings()
+            if s then
+                s.position = {point, relPoint, x, y}
+            end
         end
         if minimapAnchor and point then
             minimapAnchor:ClearAllPoints()
@@ -3457,38 +3335,46 @@ local autoZoomCurrent = 0
 
 local function SetupAutoZoom()
     local settings = GetSettings()
-    if not settings or not settings.autoZoom then return end
+    if not settings then return end
 
     local function ZoomOut()
         autoZoomCurrent = autoZoomCurrent + 1
         if autoZoomTimer == autoZoomCurrent then
+            autoZoomTimer, autoZoomCurrent = 0, 0
+            local s = GetSettings()
+            if not s or not s.autoZoom then return end
             PersistMinimapZoom(0)
             Minimap:SetZoom(0)
             if Minimap.ZoomIn then Minimap.ZoomIn:Enable() end
             if Minimap.ZoomOut then Minimap.ZoomOut:Disable() end
-            autoZoomTimer, autoZoomCurrent = 0, 0
         end
     end
 
     local function OnZoom()
-        if settings.autoZoom then
+        local s = GetSettings()
+        if s and s.autoZoom then
             autoZoomTimer = autoZoomTimer + 1
             C_Timer.After(10, ZoomOut)
         end
     end
 
-    if Minimap.ZoomIn then
-        Minimap.ZoomIn:HookScript("OnClick", function()
-            C_Timer.After(0, OnZoom)
-        end)
-    end
-    if Minimap.ZoomOut then
-        Minimap.ZoomOut:HookScript("OnClick", function()
-            C_Timer.After(0, OnZoom)
-        end)
+    if not Minimap_Module._autoZoomHooked then
+        Minimap_Module._autoZoomHooked = true
+        if Minimap.ZoomIn then
+            Minimap.ZoomIn:HookScript("OnClick", function()
+                C_Timer.After(0, OnZoom)
+            end)
+        end
+        if Minimap.ZoomOut then
+            Minimap.ZoomOut:HookScript("OnClick", function()
+                C_Timer.After(0, OnZoom)
+            end)
+        end
     end
 
-    OnZoom()
+    if settings.autoZoom then
+        OnZoom()
+    end
 end
 
 local function StartUpdateTickers()
@@ -3697,6 +3583,7 @@ function Minimap_Module:Refresh()
     RefreshButtonDrawer()
     UpdateDungeonEyePosition()
     UpdateMiddleClickMenuOverlayState()
+    SetupAutoZoom()
 
     if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("minimap")) then
         if settings.position and settings.position[1] and settings.position[2] then

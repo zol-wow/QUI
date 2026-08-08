@@ -98,6 +98,13 @@ end
 local function LayoutPips(inst, count, power)
     local size = power.size or 10
     local spacing = power.spacing or 3
+    if inst._layoutCount == count and inst._layoutSize == size
+        and inst._layoutSpacing == spacing then
+        return
+    end
+    inst._layoutCount = count
+    inst._layoutSize = size
+    inst._layoutSpacing = spacing
     local total = (count * size) + ((count - 1) * spacing)
     QUICore:SetPixelPerfectSize(inst.row, total, size)
     for i = 1, MAX_PIPS do
@@ -129,6 +136,7 @@ end
 local function AnchorRow(inst, plate, power)
     local anchorTo = plate.castBar or plate.healthBar
     if not anchorTo then return false end
+    inst._layoutCount = nil
     inst.row:SetParent(plate)
     inst.row:ClearAllPoints()
     inst.row:SetPoint("TOP", anchorTo, "BOTTOM", 0,
@@ -254,14 +262,6 @@ function NPPower.AttachToTarget()
     local inst = EnsureRow()
     AnchorRow(inst, plate, power)
     NPPower.Update()
-end
-
-function NPPower.Refresh()
-    if attachedPlate then
-        NPPower.AttachToTarget()
-    else
-        HideRow()
-    end
 end
 
 local eventFrame = CreateFrame("Frame")

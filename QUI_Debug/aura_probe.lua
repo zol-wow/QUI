@@ -507,6 +507,21 @@ local function EnsureCLEUFrameRegistered()
     return true
 end
 
+local function UnregisterCLEUCallback()
+    if not cleuRegistered then return end
+    if EventRegistry and EventRegistry.UnregisterCallback then
+        EventRegistry:UnregisterCallback("COMBAT_LOG_EVENT_UNFILTERED", cleuOwner)
+    end
+    cleuRegistered = false
+end
+
+local function UnregisterCLEUFrame()
+    if not cleuFrameRegistered then return end
+    cleuOwner:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    cleuOwner:SetScript("OnEvent", nil)
+    cleuFrameRegistered = false
+end
+
 local function SetCLEUEnabled(value, mode, registerMode)
     if value then
         cleuLogAll = mode == "all"
@@ -516,11 +531,13 @@ local function SetCLEUEnabled(value, mode, registerMode)
                 print(CLEU_PREFIX .. " frame registration failed; see /quicleu copy")
                 return
             end
+            UnregisterCLEUCallback()
         else
             if not EnsureCLEURegistered() then
                 print(CLEU_PREFIX .. " unavailable - EventRegistry callback API missing")
                 return
             end
+            UnregisterCLEUFrame()
         end
         cleuEnabled = true
         EnsureOutputFrame()
@@ -532,6 +549,8 @@ local function SetCLEUEnabled(value, mode, registerMode)
         print(CLEU_PREFIX .. " on - " .. cleuMode .. " mode logging " .. (cleuLogAll and "combat-log events" or "player/pet combat-log aura events"))
     else
         cleuEnabled = false
+        UnregisterCLEUCallback()
+        UnregisterCLEUFrame()
         EmitCLEU("disabled", "mode=", cleuMode, "events=", cleuEventCount)
         print(CLEU_PREFIX .. " off")
     end

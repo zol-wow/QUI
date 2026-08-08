@@ -226,6 +226,9 @@ if type(CreateFrame) == "function" then
         db.enabled = false
         provider.set(db)
         recording = false
+        frame:UnregisterAllEvents()
+        registeredAllEvents = false
+        frame:RegisterEvent("ADDON_LOADED")
     end
 
     local function record(event, ...)

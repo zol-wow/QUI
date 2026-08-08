@@ -175,9 +175,6 @@ function QUI:BackwardsCompat()
         }
     end
 
-    if not self.db.global.isDone then
-        self.db.global.isDone = false
-    end
     if not self.db.global.lastVersion then
         self.db.global.lastVersion = 0
     end

@@ -68,9 +68,7 @@ local function RefreshPowerBars()
 end
 
 local function GetCurrentSpecID()
-    local spec = GetSpecialization()
-    if not spec then return 0 end
-    return GetSpecializationInfo(spec) or 0
+    return Helpers.GetCurrentSpecID() or 0
 end
 
 local function NormalizeIndicatorValues(values)
@@ -258,74 +256,83 @@ local function BuildSegmentCard(L, cfg)
     L.closeSection(s)
 end
 
-local function BuildPrimaryPowerSettings(content, _key)
-    local profile = GetProfileDB()
-    local primary = profile and profile.powerBar
-    if not GUI or not primary or not ns.QUI_Options then return 80 end
+local function BuildBarSettings(content, cfg, o)
+    if not GUI or not cfg or not ns.QUI_Options then return 80 end
 
     local L = MakeLayout(content)
 
     L.headerAt(ns.L["Enable"])
     local sEnable = L.sectionAt()
-    local enableW = GUI:CreateFormCheckbox(sEnable.frame, nil, "enabled", primary, RefreshPowerBars,
-        { description = ns.L["Show the primary power bar (mana, rage, energy, focus, runic power, etc.) as a standalone QUI-managed bar."] })
-    sEnable.AddRow(row(sEnable.frame, ns.L["Enable Primary Power Bar"], enableW))
+    local enableW = GUI:CreateFormCheckbox(sEnable.frame, nil, "enabled", cfg, RefreshPowerBars,
+        { description = o.enableDesc })
+    sEnable.AddRow(row(sEnable.frame, o.enableLabel, enableW))
     L.closeSection(sEnable)
 
     L.headerAt(ns.L["General"])
     local s1 = L.sectionAt()
 
-    local visW = GUI:CreateFormDropdown(s1.frame, nil, VISIBILITY_OPTIONS, "visibility", primary, RefreshPowerBars,
-        { description = ns.L["When the primary power bar is visible (always, in combat only, when depleted, etc.)."] })
-    local oriW = GUI:CreateFormDropdown(s1.frame, nil, ORIENTATION_OPTIONS, "orientation", primary, RefreshPowerBars,
+    local visW = GUI:CreateFormDropdown(s1.frame, nil, VISIBILITY_OPTIONS, "visibility", cfg, RefreshPowerBars,
+        { description = o.visibilityDesc })
+    local oriW = GUI:CreateFormDropdown(s1.frame, nil, ORIENTATION_OPTIONS, "orientation", cfg, RefreshPowerBars,
         { description = ns.L["Fill direction: horizontal (left-to-right) or vertical (bottom-to-top)."] })
     s1.AddRow(
         row(s1.frame, ns.L["Visibility"], visW),
         row(s1.frame, ns.L["Orientation"], oriW)
     )
 
-    local autoW = GUI:CreateFormCheckbox(s1.frame, nil, "autoAttach", primary, RefreshPowerBars,
-        { description = ns.L["Automatically attach the bar below the player unit frame. Disable to position the bar freely via the Position controls."] })
-    local standW = GUI:CreateFormCheckbox(s1.frame, nil, "standaloneMode", primary, RefreshPowerBars,
-        { description = ns.L["Keep this bar always visible even when the player unit frame is hidden."] })
-    s1.AddRow(
-        row(s1.frame, ns.L["Auto Attach"], autoW),
-        row(s1.frame, ns.L["Standalone Mode"], standW)
-    )
+    if o.secondary then
+        local autoW = GUI:CreateFormCheckbox(s1.frame, nil, "autoAttach", cfg, RefreshPowerBars,
+            { description = o.autoAttachDesc })
+        local standW = GUI:CreateFormCheckbox(s1.frame, nil, "standaloneMode", cfg, RefreshPowerBars,
+            { description = ns.L["Keep this bar always visible even when the player unit frame is hidden."] })
+        s1.AddRow(
+            row(s1.frame, ns.L["Auto Attach"], autoW),
+            row(s1.frame, ns.L["Standalone Mode"], standW)
+        )
+
+        local swapW = GUI:CreateFormCheckbox(s1.frame, nil, "swapToPrimaryPosition", cfg, RefreshPowerBars,
+            { description = ns.L["When the secondary resource is dominant for your spec, swap it into the primary bar's position for that spec."] })
+        local hidePW = GUI:CreateFormCheckbox(s1.frame, nil, "hidePrimaryOnSwap", cfg, RefreshPowerBars,
+            { description = ns.L["When Swap to Primary Position is active, also hide the primary power bar so both resources aren't shown together."] })
+        s1.AddRow(
+            row(s1.frame, ns.L["Swap to Primary Position"], swapW),
+            row(s1.frame, ns.L["Hide Primary on Swap"], hidePW)
+        )
+
+        local fragW = GUI:CreateFormCheckbox(s1.frame, nil, "showFragmentedPowerBarText", cfg, RefreshPowerBars,
+            { description = ns.L["Display the numeric current/max value on fragmented resources (soul shards, holy power, combo points)."] })
+        s1.AddRow(row(s1.frame, ns.L["Show Fragmented Power Bar Text"], fragW))
+    end
     L.closeSection(s1)
 
     L.headerAt(ns.L["Dimensions"])
     local s2 = L.sectionAt()
 
-    local wW = GUI:CreateFormSlider(s2.frame, nil, 50, 600, 1, "width", primary, RefreshPowerBars,
-        { description = ns.L["Width of the bar in pixels. Ignored when Auto Attach matches the player frame width."] })
-    local hW = GUI:CreateFormSlider(s2.frame, nil, 2, 40, 1, "height", primary, RefreshPowerBars,
+    local wW = GUI:CreateFormSlider(s2.frame, nil, 50, 600, 1, "width", cfg, RefreshPowerBars,
+        { description = o.widthDesc })
+    local hW = GUI:CreateFormSlider(s2.frame, nil, 2, 40, 1, "height", cfg, RefreshPowerBars,
         { description = ns.L["Height of the bar in pixels."] })
     s2.AddRow(
         row(s2.frame, ns.L["Width"], wW),
         row(s2.frame, ns.L["Height"], hW)
     )
 
-    local snapW = GUI:CreateFormSlider(s2.frame, nil, 0, 20, 1, "snapGap", primary, RefreshPowerBars,
-        { description = ns.L["Pixel gap between this bar and the frame it auto-attaches to."] })
-    local xW = GUI:CreateFormSlider(s2.frame, nil, -500, 500, 1, "offsetX", primary, RefreshPowerBars,
-        { description = ns.L["Horizontal pixel offset from the auto-attach anchor (or from its manual position when Auto Attach is off)."] })
+    local xW = GUI:CreateFormSlider(s2.frame, nil, -500, 500, 1, "offsetX", cfg, RefreshPowerBars,
+        { description = o.offsetXDesc })
+    local yW = GUI:CreateFormSlider(s2.frame, nil, -500, 500, 1, "offsetY", cfg, RefreshPowerBars,
+        { description = o.offsetYDesc })
     s2.AddRow(
-        row(s2.frame, ns.L["Snap Gap"], snapW),
-        row(s2.frame, ns.L["X Offset"], xW)
+        row(s2.frame, ns.L["X Offset"], xW),
+        row(s2.frame, ns.L["Y Offset"], yW)
     )
-
-    local yW = GUI:CreateFormSlider(s2.frame, nil, -500, 500, 1, "offsetY", primary, RefreshPowerBars,
-        { description = ns.L["Vertical pixel offset from the auto-attach anchor (or from its manual position when Auto Attach is off)."] })
-    s2.AddRow(row(s2.frame, ns.L["Y Offset"], yW))
     L.closeSection(s2)
 
     L.headerAt(ns.L["Appearance"])
     local s3 = L.sectionAt()
 
-    local texW = GUI:CreateFormDropdown(s3.frame, nil, GetTextureList(), "texture", primary, RefreshPowerBars,
+    local texW = GUI:CreateFormDropdown(s3.frame, nil, GetTextureList(), "texture", cfg, RefreshPowerBars,
         { description = ns.L["Statusbar texture used for the power fill."] })
-    local borderW = GUI:CreateFormSlider(s3.frame, nil, 0, 5, 1, "borderSize", primary, RefreshPowerBars,
+    local borderW = GUI:CreateFormSlider(s3.frame, nil, 0, 5, 1, "borderSize", cfg, RefreshPowerBars,
         { description = ns.L["Border thickness in pixels. Set to 0 to hide the border."] })
     s3.AddRow(
         row(s3.frame, ns.L["Bar Texture"], texW),
@@ -334,7 +341,7 @@ local function BuildPrimaryPowerSettings(content, _key)
 
     if ns.QUI_BorderControl then
         local borderSrcW, borderColorW = ns.QUI_BorderControl.Attach(
-            GUI, s3.frame, primary, "", RefreshPowerBars,
+            GUI, s3.frame, cfg, "", RefreshPowerBars,
             {
                 label             = ns.L["Border Color Source"],
                 colorLabel        = ns.L["Border Color"],
@@ -349,39 +356,77 @@ local function BuildPrimaryPowerSettings(content, _key)
     end
     L.closeSection(s3)
 
-    BuildIndicatorCard(L, primary)
+    BuildIndicatorCard(L, cfg)
+
+    local textTarget = cfg
+    if o.secondary then
+        BuildSegmentCard(L, cfg)
+
+        textTarget = setmetatable({}, {
+            __index = function(_, dbKey)
+                if cfg.textPerSpec then
+                    local specID = GetCurrentSpecID()
+                    if specID ~= 0 then
+                        return EnsureTextSpecOverrides(cfg, specID)[dbKey]
+                    end
+                end
+                return cfg[dbKey]
+            end,
+            __newindex = function(_, dbKey, value)
+                if cfg.textPerSpec then
+                    local specID = GetCurrentSpecID()
+                    if specID ~= 0 then
+                        EnsureTextSpecOverrides(cfg, specID)[dbKey] = value
+                        return
+                    end
+                end
+                cfg[dbKey] = value
+            end,
+        })
+    end
 
     L.headerAt(ns.L["Text"])
     local s4 = L.sectionAt()
 
-    local showTW = GUI:CreateFormCheckbox(s4.frame, nil, "showText", primary, RefreshPowerBars,
+    if o.secondary then
+        local perSpecDesc = ns.L["Store text settings separately per specialization."]
+        if cfg.textPerSpec then
+            local specName = select(2, GetSpecializationInfo(GetSpecialization() or 0)) or ns.L["Unknown"]
+            perSpecDesc = perSpecDesc .. " " .. ns.L["Editing: "] .. specName
+        end
+        local perSpecW = GUI:CreateFormCheckbox(s4.frame, nil, "textPerSpec", cfg, RefreshPowerBars,
+            { description = perSpecDesc })
+        s4.AddRow(row(s4.frame, ns.L["Per-Spec Text Settings"], perSpecW, perSpecDesc))
+    end
+
+    local showTW = GUI:CreateFormCheckbox(s4.frame, nil, "showText", textTarget, RefreshPowerBars,
         { description = ns.L["Show the power value as text on the bar."] })
-    local showPW = GUI:CreateFormCheckbox(s4.frame, nil, "showPercent", primary, RefreshPowerBars,
-        { description = ns.L["Append the percent value after the raw number (e.g. '5000 / 50%')."] })
+    local showPW = GUI:CreateFormCheckbox(s4.frame, nil, "showPercent", textTarget, RefreshPowerBars,
+        { description = o.showPercentDesc })
     s4.AddRow(
         row(s4.frame, ns.L["Show Text"], showTW),
         row(s4.frame, ns.L["Show Percent"], showPW)
     )
 
-    local hidePctW = GUI:CreateFormCheckbox(s4.frame, nil, "hidePercentSymbol", primary, RefreshPowerBars,
+    local hidePctW = GUI:CreateFormCheckbox(s4.frame, nil, "hidePercentSymbol", textTarget, RefreshPowerBars,
         { description = ns.L["Drop the '%' sign from percent text for a cleaner look."] })
-    local alignW = GUI:CreateFormDropdown(s4.frame, nil, TEXT_ALIGN_OPTIONS, "textAlign", primary, RefreshPowerBars,
+    local alignW = GUI:CreateFormDropdown(s4.frame, nil, TEXT_ALIGN_OPTIONS, "textAlign", textTarget, RefreshPowerBars,
         { description = ns.L["Horizontal alignment of the power text on the bar."] })
     s4.AddRow(
         row(s4.frame, ns.L["Hide % Symbol"], hidePctW),
         row(s4.frame, ns.L["Text Alignment"], alignW)
     )
 
-    local sizeW = GUI:CreateFormSlider(s4.frame, nil, 6, 24, 1, "textSize", primary, RefreshPowerBars,
+    local sizeW = GUI:CreateFormSlider(s4.frame, nil, 6, 24, 1, "textSize", textTarget, RefreshPowerBars,
         { description = ns.L["Font size used for the power text."] })
-    local txW = GUI:CreateFormSlider(s4.frame, nil, -50, 50, 1, "textX", primary, RefreshPowerBars,
+    local txW = GUI:CreateFormSlider(s4.frame, nil, -50, 50, 1, "textX", textTarget, RefreshPowerBars,
         { description = ns.L["Horizontal pixel offset for the power text from its alignment point."] })
     s4.AddRow(
         row(s4.frame, ns.L["Text Size"], sizeW),
         row(s4.frame, ns.L["Text X Offset"], txW)
     )
 
-    local tyW = GUI:CreateFormSlider(s4.frame, nil, -50, 50, 1, "textY", primary, RefreshPowerBars,
+    local tyW = GUI:CreateFormSlider(s4.frame, nil, -50, 50, 1, "textY", textTarget, RefreshPowerBars,
         { description = ns.L["Vertical pixel offset for the power text from its alignment point."] })
     s4.AddRow(row(s4.frame, ns.L["Text Y Offset"], tyW))
     L.closeSection(s4)
@@ -389,16 +434,16 @@ local function BuildPrimaryPowerSettings(content, _key)
     L.headerAt(ns.L["Colors"])
     local s5 = L.sectionAt()
 
-    local modeW = GUI:CreateFormDropdown(s5.frame, nil, COLOR_MODE_OPTIONS, "colorMode", primary, RefreshPowerBars,
-        { description = ns.L["How the fill is colored: by power type, class color, or a custom swatch."] })
-    local customW = GUI:CreateFormColorPicker(s5.frame, nil, "customColor", primary, RefreshPowerBars, nil,
+    local modeW = GUI:CreateFormDropdown(s5.frame, nil, COLOR_MODE_OPTIONS, "colorMode", cfg, RefreshPowerBars,
+        { description = o.colorModeDesc })
+    local customW = GUI:CreateFormColorPicker(s5.frame, nil, "customColor", cfg, RefreshPowerBars, nil,
         { description = ns.L["Custom fill color used when Color Mode is set to Custom."] })
     s5.AddRow(
         row(s5.frame, ns.L["Color Mode"], modeW),
         row(s5.frame, ns.L["Custom Color"], customW)
     )
 
-    local bgW = GUI:CreateFormColorPicker(s5.frame, nil, "bgColor", primary, RefreshPowerBars, nil,
+    local bgW = GUI:CreateFormColorPicker(s5.frame, nil, "bgColor", cfg, RefreshPowerBars, nil,
         { description = ns.L["Backdrop color drawn behind the fill."] })
     s5.AddRow(row(s5.frame, ns.L["Background Color"], bgW))
     L.closeSection(s5)
@@ -406,9 +451,9 @@ local function BuildPrimaryPowerSettings(content, _key)
     L.headerAt(ns.L["Lock"])
     local s6 = L.sectionAt()
 
-    local lockEW = GUI:CreateFormCheckbox(s6.frame, nil, "lockedToEssential", primary, RefreshPowerBars,
+    local lockEW = GUI:CreateFormCheckbox(s6.frame, nil, "lockedToEssential", cfg, RefreshPowerBars,
         { description = ns.L["Match the width of the Essential Cooldowns row and ride its visibility."] })
-    local lockUW = GUI:CreateFormCheckbox(s6.frame, nil, "lockedToUtility", primary, RefreshPowerBars,
+    local lockUW = GUI:CreateFormCheckbox(s6.frame, nil, "lockedToUtility", cfg, RefreshPowerBars,
         { description = ns.L["Match the width of the Utility Cooldowns row and ride its visibility."] })
     s6.AddRow(
         row(s6.frame, ns.L["Lock to Essential"], lockEW),
@@ -419,211 +464,38 @@ local function BuildPrimaryPowerSettings(content, _key)
     return L.finish()
 end
 
+local PRIMARY_BAR_OPTS = {
+    enableLabel = ns.L["Enable Primary Power Bar"],
+    enableDesc = ns.L["Show the primary power bar (mana, rage, energy, focus, runic power, etc.) as a standalone QUI-managed bar."],
+    visibilityDesc = ns.L["When the primary power bar is visible (always, in combat only, when depleted, etc.)."],
+    widthDesc = ns.L["Width of the bar in pixels. Ignored when Auto Attach matches the player frame width."],
+    offsetXDesc = ns.L["Horizontal pixel offset from the auto-attach anchor (or from its manual position when Auto Attach is off)."],
+    offsetYDesc = ns.L["Vertical pixel offset from the auto-attach anchor (or from its manual position when Auto Attach is off)."],
+    showPercentDesc = ns.L["Append the percent value after the raw number (e.g. '5000 / 50%')."],
+    colorModeDesc = ns.L["How the fill is colored: by power type, class color, or a custom swatch."],
+}
+
+local SECONDARY_BAR_OPTS = {
+    secondary = true,
+    enableLabel = ns.L["Enable Secondary Power Bar"],
+    enableDesc = ns.L["Show the secondary power bar for classes with an alternate resource (combo points, runes, holy power, etc.)."],
+    visibilityDesc = ns.L["When the secondary power bar is visible (always, in combat only, when depleted, etc.)."],
+    autoAttachDesc = ns.L["Automatically attach the bar below the primary power bar. Disable to position the bar freely via the Position controls."],
+    widthDesc = ns.L["Width of the bar in pixels."],
+    offsetXDesc = ns.L["Horizontal pixel offset from the auto-attach anchor."],
+    offsetYDesc = ns.L["Vertical pixel offset from the auto-attach anchor."],
+    showPercentDesc = ns.L["Append the percent value after the raw number."],
+    colorModeDesc = ns.L["How the fill is colored: by resource type, class color, or a custom swatch."],
+}
+
+local function BuildPrimaryPowerSettings(content, _key)
+    local profile = GetProfileDB()
+    return BuildBarSettings(content, profile and profile.powerBar, PRIMARY_BAR_OPTS)
+end
+
 local function BuildSecondaryPowerSettings(content, _key)
     local profile = GetProfileDB()
-    local secondary = profile and profile.secondaryPowerBar
-    if not GUI or not secondary or not ns.QUI_Options then return 80 end
-
-    local L = MakeLayout(content)
-
-    L.headerAt(ns.L["Enable"])
-    local sEnable = L.sectionAt()
-    local enableW = GUI:CreateFormCheckbox(sEnable.frame, nil, "enabled", secondary, RefreshPowerBars,
-        { description = ns.L["Show the secondary power bar for classes with an alternate resource (combo points, runes, holy power, etc.)."] })
-    sEnable.AddRow(row(sEnable.frame, ns.L["Enable Secondary Power Bar"], enableW))
-    L.closeSection(sEnable)
-
-    L.headerAt(ns.L["General"])
-    local s1 = L.sectionAt()
-
-    local visW = GUI:CreateFormDropdown(s1.frame, nil, VISIBILITY_OPTIONS, "visibility", secondary, RefreshPowerBars,
-        { description = ns.L["When the secondary power bar is visible (always, in combat only, when depleted, etc.)."] })
-    local oriW = GUI:CreateFormDropdown(s1.frame, nil, ORIENTATION_OPTIONS, "orientation", secondary, RefreshPowerBars,
-        { description = ns.L["Fill direction: horizontal (left-to-right) or vertical (bottom-to-top)."] })
-    s1.AddRow(
-        row(s1.frame, ns.L["Visibility"], visW),
-        row(s1.frame, ns.L["Orientation"], oriW)
-    )
-
-    local autoW = GUI:CreateFormCheckbox(s1.frame, nil, "autoAttach", secondary, RefreshPowerBars,
-        { description = ns.L["Automatically attach the bar below the primary power bar. Disable to position the bar freely via the Position controls."] })
-    local standW = GUI:CreateFormCheckbox(s1.frame, nil, "standaloneMode", secondary, RefreshPowerBars,
-        { description = ns.L["Keep this bar always visible even when the player unit frame is hidden."] })
-    s1.AddRow(
-        row(s1.frame, ns.L["Auto Attach"], autoW),
-        row(s1.frame, ns.L["Standalone Mode"], standW)
-    )
-
-    local swapW = GUI:CreateFormCheckbox(s1.frame, nil, "swapToPrimaryPosition", secondary, RefreshPowerBars,
-        { description = ns.L["When the secondary resource is dominant for your spec, swap it into the primary bar's position for that spec."] })
-    local hidePW = GUI:CreateFormCheckbox(s1.frame, nil, "hidePrimaryOnSwap", secondary, RefreshPowerBars,
-        { description = ns.L["When Swap to Primary Position is active, also hide the primary power bar so both resources aren't shown together."] })
-    s1.AddRow(
-        row(s1.frame, ns.L["Swap to Primary Position"], swapW),
-        row(s1.frame, ns.L["Hide Primary on Swap"], hidePW)
-    )
-
-    local fragW = GUI:CreateFormCheckbox(s1.frame, nil, "showFragmentedPowerBarText", secondary, RefreshPowerBars,
-        { description = ns.L["Display the numeric current/max value on fragmented resources (soul shards, holy power, combo points)."] })
-    s1.AddRow(row(s1.frame, ns.L["Show Fragmented Power Bar Text"], fragW))
-    L.closeSection(s1)
-
-    L.headerAt(ns.L["Dimensions"])
-    local s2 = L.sectionAt()
-
-    local wW = GUI:CreateFormSlider(s2.frame, nil, 50, 600, 1, "width", secondary, RefreshPowerBars,
-        { description = ns.L["Width of the bar in pixels."] })
-    local hW = GUI:CreateFormSlider(s2.frame, nil, 2, 40, 1, "height", secondary, RefreshPowerBars,
-        { description = ns.L["Height of the bar in pixels."] })
-    s2.AddRow(
-        row(s2.frame, ns.L["Width"], wW),
-        row(s2.frame, ns.L["Height"], hW)
-    )
-
-    local snapW = GUI:CreateFormSlider(s2.frame, nil, 0, 20, 1, "snapGap", secondary, RefreshPowerBars,
-        { description = ns.L["Pixel gap between this bar and the frame it auto-attaches to."] })
-    local xW = GUI:CreateFormSlider(s2.frame, nil, -500, 500, 1, "offsetX", secondary, RefreshPowerBars,
-        { description = ns.L["Horizontal pixel offset from the auto-attach anchor."] })
-    s2.AddRow(
-        row(s2.frame, ns.L["Snap Gap"], snapW),
-        row(s2.frame, ns.L["X Offset"], xW)
-    )
-
-    local yW = GUI:CreateFormSlider(s2.frame, nil, -500, 500, 1, "offsetY", secondary, RefreshPowerBars,
-        { description = ns.L["Vertical pixel offset from the auto-attach anchor."] })
-    s2.AddRow(row(s2.frame, ns.L["Y Offset"], yW))
-    L.closeSection(s2)
-
-    L.headerAt(ns.L["Appearance"])
-    local s3 = L.sectionAt()
-
-    local texW = GUI:CreateFormDropdown(s3.frame, nil, GetTextureList(), "texture", secondary, RefreshPowerBars,
-        { description = ns.L["Statusbar texture used for the power fill."] })
-    local borderW = GUI:CreateFormSlider(s3.frame, nil, 0, 5, 1, "borderSize", secondary, RefreshPowerBars,
-        { description = ns.L["Border thickness in pixels. Set to 0 to hide the border."] })
-    s3.AddRow(
-        row(s3.frame, ns.L["Bar Texture"], texW),
-        row(s3.frame, ns.L["Border Size"], borderW)
-    )
-
-    if ns.QUI_BorderControl then
-        local borderSrcW, borderColorW = ns.QUI_BorderControl.Attach(
-            GUI, s3.frame, secondary, "", RefreshPowerBars,
-            {
-                label             = ns.L["Border Color Source"],
-                colorLabel        = ns.L["Border Color"],
-                sourceDescription = ns.L["Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom."],
-                colorDescription  = ns.L["Custom bar border color, used when Border Color Source is set to Custom."],
-            }
-        )
-        s3.AddRow(
-            row(s3.frame, ns.L["Border Color Source"], borderSrcW),
-            row(s3.frame, ns.L["Border Color"], borderColorW)
-        )
-    end
-    L.closeSection(s3)
-
-    BuildIndicatorCard(L, secondary)
-
-    BuildSegmentCard(L, secondary)
-
-    local textProxy = setmetatable({}, {
-        __index = function(_, dbKey)
-            if secondary.textPerSpec then
-                local specID = GetCurrentSpecID()
-                if specID ~= 0 then
-                    return EnsureTextSpecOverrides(secondary, specID)[dbKey]
-                end
-            end
-            return secondary[dbKey]
-        end,
-        __newindex = function(_, dbKey, value)
-            if secondary.textPerSpec then
-                local specID = GetCurrentSpecID()
-                if specID ~= 0 then
-                    EnsureTextSpecOverrides(secondary, specID)[dbKey] = value
-                    return
-                end
-            end
-            secondary[dbKey] = value
-        end,
-    })
-
-    L.headerAt(ns.L["Text"])
-    local s4 = L.sectionAt()
-
-    local perSpecDesc = ns.L["Store text settings separately per specialization."]
-    if secondary.textPerSpec then
-        local specName = select(2, GetSpecializationInfo(GetSpecialization() or 0)) or ns.L["Unknown"]
-        perSpecDesc = perSpecDesc .. " " .. ns.L["Editing: "] .. specName
-    end
-    local perSpecW = GUI:CreateFormCheckbox(s4.frame, nil, "textPerSpec", secondary, RefreshPowerBars,
-        { description = perSpecDesc })
-    s4.AddRow(row(s4.frame, ns.L["Per-Spec Text Settings"], perSpecW, perSpecDesc))
-
-    local showTW = GUI:CreateFormCheckbox(s4.frame, nil, "showText", textProxy, RefreshPowerBars,
-        { description = ns.L["Show the power value as text on the bar."] })
-    local showPW = GUI:CreateFormCheckbox(s4.frame, nil, "showPercent", textProxy, RefreshPowerBars,
-        { description = ns.L["Append the percent value after the raw number."] })
-    s4.AddRow(
-        row(s4.frame, ns.L["Show Text"], showTW),
-        row(s4.frame, ns.L["Show Percent"], showPW)
-    )
-
-    local hidePctW = GUI:CreateFormCheckbox(s4.frame, nil, "hidePercentSymbol", textProxy, RefreshPowerBars,
-        { description = ns.L["Drop the '%' sign from percent text for a cleaner look."] })
-    local alignW = GUI:CreateFormDropdown(s4.frame, nil, TEXT_ALIGN_OPTIONS, "textAlign", textProxy, RefreshPowerBars,
-        { description = ns.L["Horizontal alignment of the power text on the bar."] })
-    s4.AddRow(
-        row(s4.frame, ns.L["Hide % Symbol"], hidePctW),
-        row(s4.frame, ns.L["Text Alignment"], alignW)
-    )
-
-    local sizeW = GUI:CreateFormSlider(s4.frame, nil, 6, 24, 1, "textSize", textProxy, RefreshPowerBars,
-        { description = ns.L["Font size used for the power text."] })
-    local txW = GUI:CreateFormSlider(s4.frame, nil, -50, 50, 1, "textX", textProxy, RefreshPowerBars,
-        { description = ns.L["Horizontal pixel offset for the power text from its alignment point."] })
-    s4.AddRow(
-        row(s4.frame, ns.L["Text Size"], sizeW),
-        row(s4.frame, ns.L["Text X Offset"], txW)
-    )
-
-    local tyW = GUI:CreateFormSlider(s4.frame, nil, -50, 50, 1, "textY", textProxy, RefreshPowerBars,
-        { description = ns.L["Vertical pixel offset for the power text from its alignment point."] })
-    s4.AddRow(row(s4.frame, ns.L["Text Y Offset"], tyW))
-    L.closeSection(s4)
-
-    L.headerAt(ns.L["Colors"])
-    local s5 = L.sectionAt()
-
-    local modeW = GUI:CreateFormDropdown(s5.frame, nil, COLOR_MODE_OPTIONS, "colorMode", secondary, RefreshPowerBars,
-        { description = ns.L["How the fill is colored: by resource type, class color, or a custom swatch."] })
-    local customW = GUI:CreateFormColorPicker(s5.frame, nil, "customColor", secondary, RefreshPowerBars, nil,
-        { description = ns.L["Custom fill color used when Color Mode is set to Custom."] })
-    s5.AddRow(
-        row(s5.frame, ns.L["Color Mode"], modeW),
-        row(s5.frame, ns.L["Custom Color"], customW)
-    )
-
-    local bgW = GUI:CreateFormColorPicker(s5.frame, nil, "bgColor", secondary, RefreshPowerBars, nil,
-        { description = ns.L["Backdrop color drawn behind the fill."] })
-    s5.AddRow(row(s5.frame, ns.L["Background Color"], bgW))
-    L.closeSection(s5)
-
-    L.headerAt(ns.L["Lock"])
-    local s6 = L.sectionAt()
-
-    local lockEW = GUI:CreateFormCheckbox(s6.frame, nil, "lockedToEssential", secondary, RefreshPowerBars,
-        { description = ns.L["Match the width of the Essential Cooldowns row and ride its visibility."] })
-    local lockUW = GUI:CreateFormCheckbox(s6.frame, nil, "lockedToUtility", secondary, RefreshPowerBars,
-        { description = ns.L["Match the width of the Utility Cooldowns row and ride its visibility."] })
-    s6.AddRow(
-        row(s6.frame, ns.L["Lock to Essential"], lockEW),
-        row(s6.frame, ns.L["Lock to Utility"], lockUW)
-    )
-    L.closeSection(s6)
-
-    return L.finish()
+    return BuildBarSettings(content, profile and profile.secondaryPowerBar, SECONDARY_BAR_OPTS)
 end
 
 ResourceBarsBuilders.BuildPrimaryPowerSettings = BuildPrimaryPowerSettings

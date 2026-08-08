@@ -471,7 +471,6 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
         function()
             RefreshGroupFrames(groupFrames.contextMode)
         end,
-        nil,
         { description = "In-house skin preset (gloss + backdrop) for group-frame aura icons. Default keeps QUI's original look." }
     )
     iconSkinDropdown:SetPoint("TOPLEFT", externalSkinCheck, "BOTTOMLEFT", 0, -12)
@@ -537,6 +536,11 @@ local function RenderGeneralCopySettingsSection(sectionHost, ctx)
                     end
                     if groupFrames.targetMode == "raid" and type(dst.name) == "table" then
                         dst.name.showLevel = false
+                    end
+
+                    local surface = ns.QUI_GroupFramesSettingsSurface
+                    if surface and type(surface.InvalidateTabBodies) == "function" then
+                        surface.InvalidateTabBodies()
                     end
 
                     RefreshGroupFrames(groupFrames.contextMode)
@@ -937,7 +941,7 @@ local function RenderDimensionsSection(sectionHost, ctx)
 
     if groupFrames.contextMode ~= "raid" then
         builder.Header(ns.L["Dimensions"])
-        builder.Description(string.format(ns.L["Width and height for each %1$s frame."], string.lower(groupFrames.sourceLabel)))
+        builder.Description(string.format(ns.L["Width and height for each %1$s frame."], groupFrames.sourceLabel))
 
         local card = builder.Card()
         local widthSlider = gui:CreateFormSlider(card.frame, nil, 80, 400, 1, "partyWidth", dimensions, refresh, { deferOnDrag = true }, {
@@ -1201,7 +1205,7 @@ local function RenderSpotlightSection(sectionHost, ctx)
     end
 
     local function onSpotlightChange(structural)
-        if spotlight.enabled and not spotlight.filterTank and not spotlight.filterHealer and not spotlight.filterDamager then
+        if spotlight.enabled and not spotlight.filterTank and not spotlight.filterHealer then
             spotlight.filterTank = true
         end
 
@@ -2196,7 +2200,7 @@ local function RenderHealerSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("healer"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("general"))
     if not builder then
         return nil
     end
@@ -2713,7 +2717,7 @@ local function RenderAurasSection(sectionHost, ctx)
     local specDropdown = gui:CreateFormDropdown(card.frame, nil, specOptions, nil, nil, function(value)
         SetSelectedBucket(ctx, groupFrames.contextMode, value)
         ScheduleTabRepaint(ctx)
-    end, nil, {
+    end, {
         description = ns.L["Choose which spec to view. \"All Specs\" is the shared bucket; a specific spec either inherits it or overrides it."],
     })
     if specDropdown.SetValue then

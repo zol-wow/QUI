@@ -61,19 +61,8 @@ end
 
 function CDMIconStackText.Show(icon, value, source, visibilityGate)
     if not icon or not icon.StackText then return false end
-    local setOk = true
-    local setErr = icon.StackText.SetText(icon.StackText, value)
-    if not setOk and icon.StackText.SetFormattedText then
-        setOk = true
-        setErr = icon.StackText.SetFormattedText(icon.StackText, "%s", value)
-    end
-
-    local showOk = false
-    local showErr
-    if setOk then
-        showOk = true
-        showErr = icon.StackText.Show(icon.StackText)
-    end
+    icon.StackText.SetText(icon.StackText, value)
+    icon.StackText.Show(icon.StackText)
 
     local gate = visibilityGate
     if not issecretvalue(gate) and gate == nil and source == "ChargeCount" then
@@ -88,7 +77,7 @@ function CDMIconStackText.Show(icon, value, source, visibilityGate)
         icon._stackTextSource = source
     end
 
-    return setOk, setErr, showOk, showErr
+    return true
 end
 end
 
@@ -584,26 +573,20 @@ function CDMIconStackPolicy.Create(callbacks)
         end
 
         local sink = Sink()
-        local setOk, setErr, showOk, showErr
         if sink and sink.Show then
-            setOk, setErr, showOk, showErr = sink.Show(icon, value, reason)
+            sink.Show(icon, value, reason)
         else
-            setOk = true; setErr = icon.StackText.SetText(icon.StackText, value)
-            showOk = false
-            if setOk then
-                showOk = true; showErr = icon.StackText.Show(icon.StackText)
-            end
+            icon.StackText.SetText(icon.StackText, value)
+            icon.StackText.Show(icon.StackText)
             icon._stackTextSource = reason
         end
         if _G.QUI_CDM_CHARGE_DEBUG then
             if callbacks.debugStackText then
-                callbacks.debugStackText(icon, setOk and "show" or "show-failed", value, reason)
+                callbacks.debugStackText(icon, "show", value, reason)
             end
             if callbacks.chargeDebug then
                 callbacks.chargeDebug(icon._spellEntry and icon._spellEntry.name,
-                    "STACKTEXT apply", "reason=", reason or "nil",
-                    "setOk=", tostring(setOk), "setErr=", tostring(setErr),
-                    "showOk=", tostring(showOk), "showErr=", tostring(showErr))
+                    "STACKTEXT apply", "reason=", reason or "nil")
             end
         end
     end
@@ -920,21 +903,23 @@ function CDMIconVisibilityPolicy.Create(callbacks)
             return not (visibility and visibility.layoutVisible)
         end
 
-        local cooldownState = callbacks.resolveCooldownActivityState
-            and callbacks.resolveCooldownActivityState(icon, entry, containerDB)
-            or {}
-        local effectiveOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
-
         if containerDB.showOnlyInCombat and not inCombat then
             return true
         end
 
-        if containerDB.showOnlyOnCooldown and not effectiveOnCD then
-            return true
-        end
+        if containerDB.showOnlyOnCooldown or containerDB.showOnlyWhenOffCooldown then
+            local cooldownState = callbacks.resolveCooldownActivityState
+                and callbacks.resolveCooldownActivityState(icon, entry, containerDB)
+                or {}
+            local effectiveOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
 
-        if containerDB.showOnlyWhenOffCooldown and effectiveOnCD then
-            return true
+            if containerDB.showOnlyOnCooldown and not effectiveOnCD then
+                return true
+            end
+
+            if containerDB.showOnlyWhenOffCooldown and effectiveOnCD then
+                return true
+            end
         end
 
         if containerDB.showOnlyWhenActive and not icon._auraActive then

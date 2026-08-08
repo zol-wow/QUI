@@ -113,11 +113,6 @@ local function IsBuiltinAuraContainerKey(containerKey)
     return GetBuiltinContainerEntryKind(containerKey) == "aura"
 end
 
-local spellLists = {
-    essential = {},
-    utility   = {},
-    buff      = {},
-}
 local runtimeEventFrame = nil
 local initialized = false
 local FireChangeCallback
@@ -130,6 +125,7 @@ local _capturedAuraBySpellID = {}
 local _capturedAuraByName    = {}
 local _capturedAuraByUnitSpellID = {}
 local _capturedAuraByUnitName    = {}
+local _capturedAuraByUnitInstanceID = {}
 local TARGET_CAPTURED_AURA_FILTERS = { HELPFUL = true, HARMFUL = true }
 local DEFAULT_CAPTURED_AURA_FILTERS = {
     player = "HELPFUL",
@@ -417,6 +413,10 @@ local function CaptureAuraFromPayload(unit, ad, allowCastCorrelation, explicitFi
     if castSID and castSID ~= sid and not _capturedAuraBySpellID[castSID] then
         StoreCapturedSpellKey(unit, castSID, entry)
     end
+    local instMap = GetCapturedUnitMap(_capturedAuraByUnitInstanceID, unit)
+    if instMap then
+        instMap[instID] = entry
+    end
 end
 
 local function ReleaseCapturedAurasForUnit(unit)
@@ -435,6 +435,8 @@ local function ReleaseCapturedAurasForUnit(unit)
     if unitSpellMap then wipe(unitSpellMap) end
     local unitNameMap = _capturedAuraByUnitName[unit]
     if unitNameMap then wipe(unitNameMap) end
+    local unitInstMap = _capturedAuraByUnitInstanceID[unit]
+    if unitInstMap then wipe(unitInstMap) end
 end
 
 local function ReleaseCapturedEntry(entry)
@@ -455,40 +457,30 @@ local function ReleaseCapturedEntry(entry)
             if v == entry then map[k] = nil end
         end
     end
+    local instMap = _capturedAuraByUnitInstanceID[entry.unit]
+    if instMap and entry.auraInstanceID ~= nil
+        and instMap[entry.auraInstanceID] == entry then
+        instMap[entry.auraInstanceID] = nil
+    end
 end
 
 local function ReleaseCapturedAurasByInstanceIDsForUnit(unit, auraInstanceIDs)
     if type(unit) ~= "string" or unit == "" then return false end
     if type(auraInstanceIDs) ~= "table" then return false end
 
-    local removed = {}
-    local hasRemoved = false
-    for _, auraInstanceID in ipairs(auraInstanceIDs) do
-        if auraInstanceID ~= nil then
-            removed[auraInstanceID] = true
-            hasRemoved = true
-        end
-    end
-    if not hasRemoved then return false end
+    local instMap = _capturedAuraByUnitInstanceID[unit]
+    if not instMap then return false end
 
     local released = false
-    local visited = {}
-    local function probe(map)
-        if not map then return end
-        for _, entry in pairs(map) do
-            if entry
-               and entry.unit == unit
-               and not visited[entry]
-               and entry.auraInstanceID ~= nil
-               and removed[entry.auraInstanceID] then
-                visited[entry] = true
+    for _, auraInstanceID in ipairs(auraInstanceIDs) do
+        if auraInstanceID ~= nil then
+            local entry = instMap[auraInstanceID]
+            if entry then
                 ReleaseCapturedEntry(entry)
                 released = true
             end
         end
     end
-    probe(_capturedAuraByUnitSpellID[unit])
-    probe(_capturedAuraByUnitName[unit])
     return released
 end
 
@@ -611,9 +603,8 @@ local function HandleUnitAura(unit, updateInfo)
     if updateInfo.removedAuraInstanceIDs
         and not (issecretvalue and issecretvalue(updateInfo.removedAuraInstanceIDs))
         and #updateInfo.removedAuraInstanceIDs > 0 then
-        if unit == "target" then
-            ReleaseCapturedAurasByInstanceIDsForUnit(unit, updateInfo.removedAuraInstanceIDs)
-        else
+        local released = ReleaseCapturedAurasByInstanceIDsForUnit(unit, updateInfo.removedAuraInstanceIDs)
+        if not released and unit ~= "target" then
             EvictDeadCacheEntriesForUnit(unit)
         end
     end
@@ -2646,10 +2637,7 @@ local function GetEntryListField(db)
 end
 
 local function GetCurrentSpecID()
-    local specIdx = GetSpecialization and GetSpecialization() or nil
-    if not specIdx then return nil end
-    local specID = GetSpecializationInfo and GetSpecializationInfo(specIdx) or nil
-    return type(specID) == "number" and specID or nil
+    return Helpers.GetCurrentSpecID()
 end
 
 local function GetSpecKeyForSpecID(specID)
@@ -3557,11 +3545,7 @@ function CDMSpellData:GetSpellList(viewerType)
         local result = self:BuildSpellListFromOwned(viewerType)
         return result
     end
-    if not IsBuiltinContainerKey(viewerType) then
-        return {}
-    end
-    local list = spellLists[viewerType] or {}
-    return list
+    return {}
 end
 
 function CDMSpellData:InvalidateLearnedCache()

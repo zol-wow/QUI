@@ -289,9 +289,6 @@ local function BuildHarness(opts)
     local ns = LoadCore()
     local AceDB = LibStub("AceDB-3.0")
 
-    -- core/defaults.lua sets ns.defaults (SHARED_NS.defaults); init.lua
-    -- would merge that into QUI.defaults in WoW, but in the harness we use
-    -- ns.defaults directly since we don't load init.lua.
     local defaults = ns.defaults
     if type(defaults) ~= "table" or type(defaults.profile) ~= "table" then
         error("Expected ns.defaults.profile to be a table after LoadCore — check core/defaults.lua")

@@ -43,13 +43,7 @@ local HANDLE_BORDER_SIZE_ANCHORED = 2
 local HANDLE_MIN_SIZE    = 20
 local TINY_THRESHOLD     = 3
 
-local function GetPixelSize(frame)
-    if UIKit and UIKit.GetPixelSize then
-        return UIKit.GetPixelSize(frame)
-    end
-    local core = Helpers.GetCore and Helpers.GetCore()
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-end
+local GetPixelSize = UIKit.GetPixelSize
 
 local function GetPixelLineSize(frame, pixels)
     return (pixels or 1) * GetPixelSize(frame)
@@ -161,6 +155,37 @@ function QUI_LayoutMode:RegisterElement(def)
     end
 end
 
+local function RestoreTargetFrame(handle, def, suspending)
+    if not handle or not handle._savedTargetParent then return end
+
+    local targetFrame = def and def.getFrame and def.getFrame()
+    if targetFrame then
+        ns.SafeCallMethod("best-effort-style", targetFrame, "SetParent", handle._savedTargetParent)
+        if handle._savedTargetStrata then
+            ns.SafeCallMethod("best-effort-style", targetFrame, "SetFrameStrata", handle._savedTargetStrata)
+        end
+        if not suspending and _G.QUI_SetFrameLayoutOwned then
+            _G.QUI_SetFrameLayoutOwned(targetFrame, nil)
+        end
+        local cx, cy = handle:GetCenter()
+        if cx and cy then
+            local hs = handle:GetEffectiveScale() or 1
+            local us = UIParent:GetEffectiveScale() or 1
+            local uw = UIParent:GetWidth() or 0
+            local uh = UIParent:GetHeight() or 0
+            local ox = (cx * hs / us) - (uw / 2)
+            local oy = (cy * hs / us) - (uh / 2)
+            ns.SafeCallMethod("best-effort-style", targetFrame, "ClearAllPoints")
+            ns.SafeCallMethod("best-effort-style", targetFrame, "SetPoint", "CENTER", UIParent, "CENTER", ox, oy)
+        end
+    end
+
+    if not suspending then
+        handle._savedTargetParent = nil
+        handle._savedTargetStrata = nil
+    end
+end
+
 function QUI_LayoutMode:UnregisterElement(key)
     if not key then return end
 
@@ -178,31 +203,7 @@ function QUI_LayoutMode:UnregisterElement(key)
                 self._savedMovableState[key] = nil
             end
         end
-        if handle._savedTargetParent then
-            local targetFrame = def and def.getFrame and def.getFrame()
-            if targetFrame then
-                ns.SafeCallMethod("best-effort-style", targetFrame, "SetParent", handle._savedTargetParent)
-                if handle._savedTargetStrata then
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "SetFrameStrata", handle._savedTargetStrata)
-                end
-                if _G.QUI_SetFrameLayoutOwned then
-                    _G.QUI_SetFrameLayoutOwned(targetFrame, nil)
-                end
-                local cx, cy = handle:GetCenter()
-                if cx and cy then
-                    local hs = handle:GetEffectiveScale() or 1
-                    local us = UIParent:GetEffectiveScale() or 1
-                    local uw = UIParent:GetWidth() or 0
-                    local uh = UIParent:GetHeight() or 0
-                    local ox = (cx * hs / us) - (uw / 2)
-                    local oy = (cy * hs / us) - (uh / 2)
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "ClearAllPoints")
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "SetPoint", "CENTER", UIParent, "CENTER", ox, oy)
-                end
-            end
-            handle._savedTargetParent = nil
-            handle._savedTargetStrata = nil
-        end
+        RestoreTargetFrame(handle, def)
         handle:SetParent(nil)
         self._handles[key] = nil
     end
@@ -293,31 +294,7 @@ function QUI_LayoutMode:SetElementEnabled(key, enabled)
         if def.onClose then ns.SafeCall("bulkhead", def.onClose) end
         local handle = self._handles[key]
         if handle then
-            if handle._savedTargetParent then
-                local targetFrame = def.getFrame and def.getFrame()
-                if targetFrame then
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "SetParent", handle._savedTargetParent)
-                    if handle._savedTargetStrata then
-                        ns.SafeCallMethod("best-effort-style", targetFrame, "SetFrameStrata", handle._savedTargetStrata)
-                    end
-                    if _G.QUI_SetFrameLayoutOwned then
-                        _G.QUI_SetFrameLayoutOwned(targetFrame, nil)
-                    end
-                    local cx, cy = handle:GetCenter()
-                    if cx and cy then
-                        local hs = handle:GetEffectiveScale() or 1
-                        local us = UIParent:GetEffectiveScale() or 1
-                        local uw = UIParent:GetWidth() or 0
-                        local uh = UIParent:GetHeight() or 0
-                        local ox = (cx * hs / us) - (uw / 2)
-                        local oy = (cy * hs / us) - (uh / 2)
-                        ns.SafeCallMethod("best-effort-style", targetFrame, "ClearAllPoints")
-                        ns.SafeCallMethod("best-effort-style", targetFrame, "SetPoint", "CENTER", UIParent, "CENTER", ox, oy)
-                    end
-                end
-                handle._savedTargetParent = nil
-                handle._savedTargetStrata = nil
-            end
+            RestoreTargetFrame(handle, def)
             handle:Hide()
             if handle._isChildOverlay and handle._parentFrame then
                 local saved = self._savedMovableState[key]
@@ -646,32 +623,7 @@ function QUI_LayoutMode:Close(skipSaveCheck)
     self._combatSuspended = false
 
     for key, handle in pairs(self._handles) do
-        if handle._savedTargetParent then
-            local def = self._elements[key]
-            local targetFrame = def and def.getFrame and def.getFrame()
-            if targetFrame then
-                ns.SafeCallMethod("best-effort-style", targetFrame, "SetParent", handle._savedTargetParent)
-                if handle._savedTargetStrata then
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "SetFrameStrata", handle._savedTargetStrata)
-                end
-                if _G.QUI_SetFrameLayoutOwned then
-                    _G.QUI_SetFrameLayoutOwned(targetFrame, nil)
-                end
-                local cx, cy = handle:GetCenter()
-                if cx and cy then
-                    local hs = handle:GetEffectiveScale() or 1
-                    local us = UIParent:GetEffectiveScale() or 1
-                    local uw = UIParent:GetWidth() or 0
-                    local uh = UIParent:GetHeight() or 0
-                    local ox = (cx * hs / us) - (uw / 2)
-                    local oy = (cy * hs / us) - (uh / 2)
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "ClearAllPoints")
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "SetPoint", "CENTER", UIParent, "CENTER", ox, oy)
-                end
-            end
-            handle._savedTargetParent = nil
-            handle._savedTargetStrata = nil
-        end
+        RestoreTargetFrame(handle, self._elements[key])
         if handle._savedBossParents then
             local QUI_UF = ns.QUI_UnitFrames
             local bossFrames = QUI_UF and QUI_UF.frames
@@ -795,26 +747,8 @@ function QUI_LayoutMode:_CombatSuspend()
     self._combatSuspended = true
 
     for key, handle in pairs(self._handles) do
-        if not handle._isChildOverlay and handle._savedTargetParent then
-            local def = self._elements[key]
-            local targetFrame = def and def.getFrame and def.getFrame()
-            if targetFrame then
-                ns.SafeCallMethod("best-effort-style", targetFrame, "SetParent", handle._savedTargetParent)
-                if handle._savedTargetStrata then
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "SetFrameStrata", handle._savedTargetStrata)
-                end
-                local cx, cy = handle:GetCenter()
-                if cx and cy then
-                    local hs = handle:GetEffectiveScale() or 1
-                    local us = UIParent:GetEffectiveScale() or 1
-                    local uw = UIParent:GetWidth() or 0
-                    local uh = UIParent:GetHeight() or 0
-                    local ox = (cx * hs / us) - (uw / 2)
-                    local oy = (cy * hs / us) - (uh / 2)
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "ClearAllPoints")
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "SetPoint", "CENTER", UIParent, "CENTER", ox, oy)
-                end
-            end
+        if not handle._isChildOverlay then
+            RestoreTargetFrame(handle, self._elements[key], true)
         end
     end
 
@@ -1190,7 +1124,7 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
 
                 if growCorner then
                     local def = QUI_LayoutMode._elements[key]
-                    local frame = def and def.frame and _G[def.frame]
+                    local frame = def and def.getFrame and def.getFrame()
                     local fw = frame and (frame._naturalW or (frame.GetWidth and frame:GetWidth())) or 0
                     local fh = frame and (frame._naturalH or (frame.GetHeight and frame:GetHeight())) or 0
                     if fw < 4 then fw = 32 end
@@ -1568,13 +1502,8 @@ AddHandleScripts = function(handle, def)
                 return
             end
 
-            local fa = GetFrameAnchoring()
-            local entry = fa and fa[self._barKey]
-            if entry and type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
-                entry.parent = "disabled"
-                entry.point = "CENTER"
-                entry.relative = "CENTER"
-                QUI_LayoutMode._hasChanges = true
+            if QUI_LayoutMode:IsElementAnchored(self._barKey) then
+                QUI_LayoutMode:DetachElementAnchor(self._barKey)
                 if self._isAnchored then
                     self._isAnchored = false
                     if self._border and self._border.SetLineSize then
@@ -1589,10 +1518,6 @@ AddHandleScripts = function(handle, def)
                 end
                 local settings = ns.QUI_LayoutMode_Settings
                 if settings and settings.Refresh then settings:Refresh() end
-                local QUI = _G.QUI
-                if QUI and QUI.SendMessage then
-                    QUI:SendMessage("QUI_FRAME_ANCHOR_CHANGED", self._barKey)
-                end
             end
         end
     end)
@@ -1996,6 +1921,31 @@ AddHandleScripts = function(handle, def)
     handle:EnableKeyboard(false)
 end
 
+local handleCache = { proxy = {}, overlay = {} }
+
+local function ResetHandleForReuse(handle, def)
+    handle:Hide()
+    handle:ClearAllPoints()
+    handle._selected = false
+    handle._dragging = false
+    handle._isAnchored = nil
+    handle._savedTargetParent = nil
+    handle._savedTargetStrata = nil
+    handle._savedBossParents = nil
+    handle._savedCastbarParents = nil
+    if handle._bg then handle._bg:SetAlpha(HANDLE_BG_ALPHA) end
+    if handle._border then
+        if handle._border.SetLineSize then handle._border:SetLineSize(HANDLE_BORDER_SIZE) end
+        if handle._border.SetColor then handle._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1) end
+    end
+    if handle._coords then handle._coords:SetText("") end
+    if handle._label then handle._label:SetText(ns.L[def.label or def.key]) end
+    if handle._groupLabel and def.group then handle._groupLabel:SetText(ns.L[def.group]) end
+    local LCG = LibStub("LibCustomGlow-1.0", true)
+    if LCG then LCG.PixelGlow_Stop(handle, "_QUILayoutSelect") end
+    AddHandleScripts(handle, def)
+end
+
 CreateChildOverlay = function(def)
     local targetFrame = def.getFrame and def.getFrame()
 
@@ -2003,8 +1953,27 @@ CreateChildOverlay = function(def)
         return CreateProxyMover(def)
     end
 
+    local overlay = handleCache.overlay[def.key]
+    if overlay then
+        ResetHandleForReuse(overlay, def)
+        overlay:SetParent(targetFrame)
+        overlay:SetFrameStrata(HANDLE_STRATA)
+        overlay:SetFrameLevel(100)
+        if def.setupOverlay then
+            def.setupOverlay(overlay, targetFrame)
+        else
+            overlay:SetAllPoints(targetFrame)
+        end
+        overlay._parentFrame = targetFrame
+        QUI_LayoutMode._savedMovableState[def.key] = targetFrame:IsMovable()
+        targetFrame:SetMovable(true)
+        targetFrame:SetClampedToScreen(true)
+        return overlay
+    end
+
     local name = "QUI_Overlay_" .. def.key
-    local overlay = CreateFrame("Button", name, targetFrame)
+    overlay = CreateFrame("Button", name, targetFrame)
+    handleCache.overlay[def.key] = overlay
     overlay:SetFrameStrata(HANDLE_STRATA)
     overlay:SetFrameLevel(100)
 
@@ -2036,8 +2005,19 @@ CreateChildOverlay = function(def)
 end
 
 CreateProxyMover = function(def)
+    local mover = handleCache.proxy[def.key]
+    if mover then
+        ResetHandleForReuse(mover, def)
+        mover:SetParent(UIParent)
+        mover:SetFrameStrata(HANDLE_STRATA)
+        mover:SetFrameLevel(100)
+        mover:SetSize(HANDLE_MIN_SIZE, HANDLE_MIN_SIZE)
+        return mover
+    end
+
     local name = "QUI_Mover_" .. def.key
-    local mover = CreateFrame("Button", name, UIParent)
+    mover = CreateFrame("Button", name, UIParent)
+    handleCache.proxy[def.key] = mover
     mover:SetFrameStrata(HANDLE_STRATA)
     mover:SetFrameLevel(100)
     mover:SetSize(HANDLE_MIN_SIZE, HANDLE_MIN_SIZE)
@@ -2356,7 +2336,7 @@ function QUI_LayoutMode:SyncElement(key)
     SyncHandle(key)
 end
 
-function QUI_LayoutMode:NudgeMover(key, dx, dy)
+function QUI_LayoutMode:NudgeMover(key, dx, dy, deferPersist)
     if InCombatLockdown() then return false end
 
     local handle = self._handles[key]
@@ -2389,6 +2369,11 @@ function QUI_LayoutMode:NudgeMover(key, dx, dy)
                 end
             end
         end
+    end
+
+    if deferPersist then
+        handle._coords:SetText(string.format(ns.L["X: %d  Y: %d"], ox, oy))
+        return true
     end
 
     local anchorKey, anchorPtSelf, anchorPtTarget
@@ -3379,27 +3364,7 @@ function QUI_LayoutMode:ToggleHandlePreview(key)
     local handle = self._handles[key]
 
     if handle and handle:IsShown() then
-        if handle._savedTargetParent then
-            local targetFrame = def.getFrame and def.getFrame()
-            if targetFrame then
-                ns.SafeCallMethod("best-effort-style", targetFrame, "SetParent", handle._savedTargetParent)
-                if _G.QUI_SetFrameLayoutOwned then
-                    _G.QUI_SetFrameLayoutOwned(targetFrame, nil)
-                end
-                local cx, cy = handle:GetCenter()
-                if cx and cy then
-                    local hs = handle:GetEffectiveScale() or 1
-                    local us = UIParent:GetEffectiveScale() or 1
-                    local uw = UIParent:GetWidth() or 0
-                    local uh = UIParent:GetHeight() or 0
-                    local ox = (cx * hs / us) - (uw / 2)
-                    local oy = (cy * hs / us) - (uh / 2)
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "ClearAllPoints")
-                    ns.SafeCallMethod("best-effort-style", targetFrame, "SetPoint", "CENTER", UIParent, "CENTER", ox, oy)
-                end
-            end
-            handle._savedTargetParent = nil
-        end
+        RestoreTargetFrame(handle, def)
         if key == "bossFrames" then
             if handle._savedBossParents then
                 local QUI_UF = ns.QUI_UnitFrames

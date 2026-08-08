@@ -121,7 +121,6 @@ env.__declared.FadeHideEffects = true
 env.__declared.FadeShowEffects = true
 env.__declared.SkinSpellFlyoutButtons = true
 env.__declared.ApplySpellFlyoutButtonStateTextures = true
-env.__declared.ShowOwnedFlyoutForButton = true
 env.__declared.HideOwnedFlyout = true
 PROC_ALERT_REGION_KEYS = {
     "ProcStartFlipbook",
@@ -464,97 +463,21 @@ UpdateKeybindText = function(button, settings)
         return
     end
 
-    local buttonName = button:GetName()
-    local bindingName = nil
+    local buttonFrameState = frameState[button]
+    local bindingName = buttonFrameState and buttonFrameState.bindingCommand
+    if not bindingName then
+        local prefix = BINDING_COMMANDS[GetBarKeyFromButton(button)]
+        local index = prefix and GetButtonIndex(button)
+        if index then
+            bindingName = prefix .. index
+        end
+    end
+
     local abbreviated = nil
-
-    if buttonName then
-        local num
-
-        num = buttonName:match("^ActionButton(%d+)$")
-        if num then bindingName = "ACTIONBUTTON" .. num end
-
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar1Button(%d+)$")
-            if num then bindingName = "ACTIONBUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar2Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR1BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar3Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR2BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar4Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR3BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar5Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR4BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar6Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR5BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar7Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR6BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar8Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR7BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_PetButton(%d+)$")
-            if num then bindingName = "BONUSACTIONBUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_StanceButton(%d+)$")
-            if num then bindingName = "SHAPESHIFTBUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBarBottomRightButton(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR2BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBarBottomLeftButton(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR1BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBarRightButton(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR3BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBarLeftButton(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR4BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBar5Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR5BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBar6Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR6BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBar7Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR7BUTTON" .. num end
-        end
-
-        if bindingName then
-            local key = GetBindingKey(bindingName)
-            if key and ns and ns.FormatKeybind then
-                abbreviated = ns.FormatKeybind(key)
-            end
+    if bindingName then
+        local key = GetBindingKey(bindingName)
+        if key and ns and ns.FormatKeybind then
+            abbreviated = ns.FormatKeybind(key)
         end
     end
 

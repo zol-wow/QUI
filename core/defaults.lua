@@ -703,7 +703,6 @@ local defaults = {
             showInspectGems = true,
 
             panelScale = 1.0,
-            overlayScale = 0.75,
             backgroundColor = {0, 0, 0, 0.762},
             statsTextSize = 13,
             statsTextColor = {1, 1, 1, 1},
@@ -1347,8 +1346,6 @@ local defaults = {
 
         powerBar = {
             enabled           = true,
-            autoAttach        = false,
-            standaloneMode    = false,
             attachTo          = "EssentialCooldownViewer",
             height            = 8,
             borderSize        = 0,
@@ -1384,7 +1381,6 @@ local defaults = {
             },
             lockedToEssential = true,
             lockedToUtility   = false,
-            snapGap           = 5,
             orientation       = "HORIZONTAL",
             visibility        = "always",
         },
@@ -1454,7 +1450,6 @@ local defaults = {
                 [1467] = true,
                 [1473] = true,
             },
-            snapGap       = 5,
             orientation   = "AUTO",
             visibility    = "always",
             showFragmentedPowerBarText = false,
@@ -1644,7 +1639,6 @@ local defaults = {
                     skipSelf = true,
                     highlightColor = { 0.204, 0.831, 0.600, 1 },
                     soundFile = "Sound\\Interface\\RaidWarning.ogg",
-                    flashTab = false,
                 },
                 redundantText = {
                     enabled = false,
@@ -3565,8 +3559,6 @@ local defaults = {
             slot1 = { shortLabel = false, noLabel = false, xOffset = -1, yOffset = 0 },
             slot2 = { shortLabel = false, noLabel = false, xOffset = 6, yOffset = 0 },
             slot3 = { shortLabel = true, noLabel = false, xOffset = 3, yOffset = 0 },
-
-            forceSingleLine = true,
 
             height = 22,
             offsetY = 0,

@@ -16,29 +16,8 @@ local WeeklyRewards_ShowUI = _G.WeeklyRewards_ShowUI
 local C_Traits = _G.C_Traits
 local C_PlayerInfo = _G.C_PlayerInfo
 
-local function GetValueColor()
-    local addon = ns and ns.Addon
-    local db = addon and addon.db and addon.db.profile
-    local dt = db and db.datatext
-    if dt and dt.useClassColor then
-        local _, class = UnitClass("player")
-        -- @secret-policy: collapse-only — UnitClass can return SECRET on 12.1 PTR7
-        if issecretvalue and issecretvalue(class) then class = nil end
-        local color = class and RAID_CLASS_COLORS[class]
-        if color then
-            return floor(color.r * 255), floor(color.g * 255), floor(color.b * 255)
-        end
-    end
-    local c = dt and dt.valueColor or { 0.1, 1.0, 0.1, 1 }
-    return floor(c[1] * 255), floor(c[2] * 255), floor(c[3] * 255)
-end
-
-local function GetLabel(fullLabel, shortLabel, useShortLabel, useNoLabel)
-    if useNoLabel then return "" end
-    if useShortLabel then return shortLabel end
-    return fullLabel
-end
-
+local GetValueColor = Datatexts.GetValueColor
+local GetLabel = Datatexts.GetLabel
 local EnsureText = Datatexts.EnsureText
 
 local function MarkWidthDirty(slotFrame)

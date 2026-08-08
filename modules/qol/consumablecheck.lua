@@ -987,6 +987,7 @@ end
 
 local pickerFrame = nil
 local pickerOverlay = nil
+local pickerCombatHideFrame = nil
 
 local function CreatePickerRow(parent)
     local row = CreateFrame("Button", nil, parent, "SecureActionButtonTemplate")
@@ -1103,12 +1104,14 @@ HideConsumablePicker = function()
         end
         pickerFrame.ownerButton = nil
         if InCombatLockdown() then
-            local f = CreateFrame("Frame")
-            f:RegisterEvent("PLAYER_REGEN_ENABLED")
-            f:SetScript("OnEvent", function(self)
-                self:UnregisterAllEvents()
-                if pickerFrame then pickerFrame:Hide() end
-            end)
+            if not pickerCombatHideFrame then
+                pickerCombatHideFrame = CreateFrame("Frame")
+                pickerCombatHideFrame:SetScript("OnEvent", function(self)
+                    self:UnregisterAllEvents()
+                    if pickerFrame then pickerFrame:Hide() end
+                end)
+            end
+            pickerCombatHideFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         else
             pickerFrame:Hide()
         end
@@ -1553,9 +1556,18 @@ local function CheckWeaponEnchantChanges()
     end
 end
 
+local auraUpdatePending = false
+
+local function RunPendingAuraUpdate()
+    auraUpdatePending = false
+    UpdateConsumables()
+end
+
 ConsumablesFrame:SetScript("OnEvent", function(self, event)
     if event == "UNIT_AURA" then
-        UpdateConsumables()
+        if auraUpdatePending then return end
+        auraUpdatePending = true
+        C_Timer.After(0.2, RunPendingAuraUpdate)
     end
 end)
 

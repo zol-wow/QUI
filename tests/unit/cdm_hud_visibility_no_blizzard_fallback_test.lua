@@ -39,11 +39,20 @@ assert(helper:find("if not IsCDMMasterEnabled() then alpha = 1 end", 1, true),
 
 -- All four CDM alpha-application sites must drive the viewers: the fade tick,
 -- the already-at-target early return, the layout-mode snap, and the
--- curve-driven HP override.
-local count = 0
-for _ in hud:gmatch("ApplyReanchorViewerAlpha%(") do count = count + 1 end
-assert(count >= 5,  -- 1 definition + 4 call sites
-    "expected the viewer fade applied at all 4 CDM alpha sites, found " .. (count - 1) .. " calls")
+-- curve-driven HP override. The first three route through the shared
+-- visibility controller's onAlpha hook, which the CDM controller wires to
+-- ApplyReanchorViewerAlpha; the HP override applies it directly.
+assert(hud:find("onAlpha = function(alpha) ApplyReanchorViewerAlpha(alpha) end", 1, true),
+    "the CDM visibility controller must wire onAlpha to ApplyReanchorViewerAlpha")
+assert(hud:find("ApplyReanchorViewerAlpha(damagedAlpha)", 1, true),
+    "the curve-driven HP override must drive the viewer fade")
+for _, method in ipairs({ "Tick", "StartFade", "Snap" }) do
+    local start = assert(hud:find("function VisibilityController:" .. method .. "(", 1, true),
+        "missing VisibilityController:" .. method)
+    local stop = assert(hud:find("\nend", start, true))
+    assert(hud:sub(start, stop):find("self.onAlpha(", 1, true),
+        "VisibilityController:" .. method .. " must apply the onAlpha hook")
+end
 
 local containers = read("QUI_CDM/cdm/cdm_containers.lua")
 local start = assert(containers:find("function CDMProvider:GetViewerFrames()", 1, true),

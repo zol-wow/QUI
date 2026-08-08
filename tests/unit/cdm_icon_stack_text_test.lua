@@ -33,9 +33,8 @@ local icon = {
     },
 }
 
-local setOk, _, showOk = stackText.Show(icon, secretToken, "Applications")
-assert(setOk == true, "show should report a successful text write")
-assert(showOk == true, "show should report a successful show write")
+local shown = stackText.Show(icon, secretToken, "Applications")
+assert(shown == true, "show should report a successful write")
 assert(writes[1].op == "set" and writes[1].value == secretToken,
     "show should forward secret stack text unchanged")
 assert(writes[2].op == "show", "show should show the stack text FontString")

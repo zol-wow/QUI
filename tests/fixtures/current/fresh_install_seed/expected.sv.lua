@@ -715,7 +715,6 @@ return {
             [3] = 0.314,
             [4] = 1
           },
-          overlayScale = 0.75,
           panelScale = 1,
           secondaryStatFormat = "both",
           showDurability = false,
@@ -836,7 +835,6 @@ return {
             },
             keywordAlert = {
               enabled = false,
-              flashTab = false,
               highlightColor = {
                 [1] = 0.20399999999999999,
                 [2] = 0.83099999999999996,
@@ -1329,7 +1327,6 @@ return {
           font = "Quazii",
           fontOutline = "OUTLINE",
           fontSize = 13,
-          forceSingleLine = true,
           height = 22,
           lockoutCacheMinutes = 5,
           offsetY = 0,
@@ -5538,7 +5535,6 @@ return {
         },
         powerBar = {
           attachTo = "EssentialCooldownViewer",
-          autoAttach = false,
           bgColor = {
             [1] = 0.078,
             [2] = 0.078,
@@ -5582,8 +5578,6 @@ return {
           showPercent = true,
           showText = true,
           showTicks = false,
-          snapGap = 5,
-          standaloneMode = false,
           textAlign = "CENTER",
           textCustomColor = {
             [1] = 1,
@@ -7856,7 +7850,6 @@ return {
           showPercent = false,
           showText = false,
           showTicks = true,
-          snapGap = 5,
           standaloneMode = false,
           swapSpecs = {
             [66] = true,
@@ -8261,7 +8254,6 @@ return {
         }
       },
       imports = {},
-      isDone = false,
       lastVersion = 0,
       specTrackerSpells = {}
     },
@@ -9706,6 +9698,7 @@ return {
             [3] = 0.34999999999999998,
             [4] = 1
           },
+          overlayScale = 0.75,
           showTooltips = true
         },
         chat = {
@@ -10400,6 +10393,7 @@ return {
             [3] = "3376"
           },
           enabled = false,
+          forceSingleLine = true,
           slot1 = {
             xOffset = 0
           },
@@ -12867,6 +12861,7 @@ return {
           ["8:2:Fade Settings"] = true
         },
         powerBar = {
+          autoAttach = false,
           borderSize = 1,
           indicators = {
             perSpec = {
@@ -12895,6 +12890,8 @@ return {
           lockedToEssential = false,
           offsetY = -210,
           showPercent = false,
+          snapGap = 5,
+          standaloneMode = false,
           texture = "Quazii v6",
           tickThickness = 2,
           unthrottledCPU = false,
@@ -13049,6 +13046,7 @@ return {
                       raid = false,
                       raidInCombat = true
                     },
+                    dispelBorderMode = "debuffs",
                     dispelFilterMode = "off",
                     dispelTypes = {},
                     duration = {
@@ -13114,6 +13112,7 @@ return {
                       bigDefensive = true,
                       externalDefensive = true
                     },
+                    dispelBorderMode = "debuffs",
                     dispelFilterMode = "off",
                     dispelTypes = {},
                     duration = {
@@ -13331,6 +13330,7 @@ return {
                       raid = false,
                       raidInCombat = false
                     },
+                    dispelBorderMode = "debuffs",
                     dispelFilterMode = "off",
                     dispelTypes = {},
                     duration = {
@@ -13396,6 +13396,7 @@ return {
                       bigDefensive = true,
                       externalDefensive = true
                     },
+                    dispelBorderMode = "debuffs",
                     dispelFilterMode = "off",
                     dispelTypes = {},
                     duration = {
@@ -15593,6 +15594,7 @@ return {
           lockedToEssential = false,
           lockedToPrimary = true,
           orientation = "HORIZONTAL",
+          snapGap = 5,
           textSize = 14,
           textY = 0,
           tickThickness = 2,

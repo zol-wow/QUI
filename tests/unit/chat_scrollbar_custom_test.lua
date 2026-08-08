@@ -3,7 +3,7 @@
 -- Verifies: lazy attach (per-window instances), scroll-changed callback
 -- registration, thumb/track visibility vs scroll range, jump-to-bottom button
 -- shown only when scrolled up and clicking it scrolls to bottom, idempotent
--- attach, OnWindowDeleted teardown + rebuild, multi-window independence.
+-- attach, multi-window independence.
 
 local createdTextures = {}
 local createdFontStrings = {}
@@ -257,21 +257,28 @@ smfs[1].range, smfs[1].offset = 40, 0
 SB.Update()
 assert(bottomBtn1.shown == false, "window 1: still at bottom, button hidden")
 
--- ── OnWindowDeleted: teardown + rebuild ─────────────────────────────────────
--- Simulate deletion of window 2: windowCount drops back to 1, old instances
--- hidden, new instance for window 1 recreated.
 windowCount = 1
--- Reset the w1 SMF scroll callback slot so we can detect re-registration.
-scrollCbs[1] = nil
+local nBeforeDelete = #created
 SB.OnWindowDeleted()
--- Old track/btn for window 2 must be hidden.
 assert(track2.shown == false,    "OnWindowDeleted: old window-2 track hidden")
 assert(bottomBtn2.shown == false, "OnWindowDeleted: old window-2 button hidden")
--- A new instance for window 1 must have been created and its callback registered.
-assert(scrollCbs[1], "OnWindowDeleted: window-1 scroll callback re-registered")
--- Idempotency after rebuild: another EnsureAttached creates nothing new.
+assert(#created == nBeforeDelete,
+    "OnWindowDeleted must not recreate frames for surviving windows")
+smfs[1].offset = 10
+scrollCbs[1]()
+assert(bottomBtn1.shown == true, "window 1: scrollbar still live after deletion")
+smfs[1].offset = 0
+scrollCbs[1]()
+
+windowCount = 2
+SB.EnsureAttached()
+assert(#created == nBeforeDelete, "re-added window must adopt its pooled scrollbar frames")
+smfs[2].range, smfs[2].offset = 20, 5
+SB.Update()
+assert(track2.shown == true,     "re-added window 2: pooled track shown again")
+assert(bottomBtn2.shown == true, "re-added window 2: pooled button live")
 local nAfter = #created
 SB.EnsureAttached()
-assert(#created == nAfter, "no duplicate frames after OnWindowDeleted rebuild")
+assert(#created == nAfter, "no duplicate frames after delete/re-add cycle")
 
 print("OK: chat_scrollbar_custom_test")

@@ -78,19 +78,19 @@ if Enum and Enum.PowerType then
     POWER_DISPLAY_NAMES[Enum.PowerType.Fury]            = ns.L["Fury"]
     POWER_DISPLAY_NAMES[Enum.PowerType.Essence]         = ns.L["Essence"]
     POWER_DISPLAY_NAMES[Enum.PowerType.ComboPoints]     = ns.L["Combo Points"]
-    POWER_DISPLAY_NAMES[Enum.PowerType.MaelstromWeapon] = ns.L["Maelstrom Weapon"]
-    POWER_DISPLAY_NAMES[Enum.PowerType.TipOfTheSpear]   = ns.L["Tip of the Spear"]
-    POWER_DISPLAY_NAMES[Enum.PowerType.Whirlwind]       = ns.L["Whirlwind"]
-    if Enum.PowerType.VengSoulFragments then
-        POWER_DISPLAY_NAMES[Enum.PowerType.VengSoulFragments] = ns.L["Soul Fragments"]
-    end
+end
 
-    PREVIEW_POWER_MAX_FALLBACKS[Enum.PowerType.MaelstromWeapon]   = 10
-    PREVIEW_POWER_MAX_FALLBACKS[Enum.PowerType.Whirlwind]         = 4
-    PREVIEW_POWER_MAX_FALLBACKS[Enum.PowerType.TipOfTheSpear]     = 3
-    if Enum.PowerType.VengSoulFragments then
-        PREVIEW_POWER_MAX_FALLBACKS[Enum.PowerType.VengSoulFragments] = 6
-    end
+local QUI_POWER = ns.QUI_ResourceBars_Internal and ns.QUI_ResourceBars_Internal.PseudoPowerTypes
+if QUI_POWER then
+    POWER_DISPLAY_NAMES[QUI_POWER.MaelstromWeapon]   = ns.L["Maelstrom Weapon"]
+    POWER_DISPLAY_NAMES[QUI_POWER.TipOfTheSpear]     = ns.L["Tip of the Spear"]
+    POWER_DISPLAY_NAMES[QUI_POWER.Whirlwind]         = ns.L["Whirlwind"]
+    POWER_DISPLAY_NAMES[QUI_POWER.VengSoulFragments] = ns.L["Soul Fragments"]
+
+    PREVIEW_POWER_MAX_FALLBACKS[QUI_POWER.MaelstromWeapon]   = 10
+    PREVIEW_POWER_MAX_FALLBACKS[QUI_POWER.Whirlwind]         = 4
+    PREVIEW_POWER_MAX_FALLBACKS[QUI_POWER.TipOfTheSpear]     = 3
+    PREVIEW_POWER_MAX_FALLBACKS[QUI_POWER.VengSoulFragments] = 6
 end
 
 local BAR_PAD_X                     = 12

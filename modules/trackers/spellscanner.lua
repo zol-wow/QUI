@@ -598,8 +598,14 @@ local function CleanupExpiredBuffs()
     local now = GetTime()
     local hasAny = false
     for spellID, data in pairs(SpellScanner.activeBuffs) do
-        local expirationTime = data.expirationTime
-        if IsCleanNumber(expirationTime) and expirationTime < now then
+        local expired
+        if data.hasAuraInstanceID == true then
+            expired = not AuraInstanceIsStillPresent(data.auraUnit or "player", data.auraInstanceID, true)
+        else
+            local expirationTime = data.expirationTime
+            expired = IsCleanNumber(expirationTime) and expirationTime < now
+        end
+        if expired then
             SpellScanner.activeBuffs[spellID] = nil
         else
             hasAny = true

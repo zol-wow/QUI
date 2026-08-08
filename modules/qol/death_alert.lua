@@ -102,7 +102,7 @@ end
 local function RebuildRoster()
     wipe(tracked)
     wipe(deadState)
-    if not IsInGroup() then return end
+    if not Enabled() then return end
     local units = {}
     if IsInRaid() then
         for i = 1, GetNumGroupMembers() do units[#units + 1] = "raid" .. i end

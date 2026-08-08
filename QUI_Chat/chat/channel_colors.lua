@@ -118,12 +118,8 @@ end
 function ChannelColors.ClearAll()
     local store = getDB()
     if not store then return end
-    for i = 1, #BUILTIN_KEYS do
-        store[BUILTIN_KEYS[i]] = nil
-    end
-    local nameToSlot = buildNameToSlotMap()
-    for name in pairs(nameToSlot) do
-        store[name] = nil
+    for key in pairs(store) do
+        store[key] = nil
     end
 end
 

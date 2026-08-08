@@ -142,6 +142,12 @@ local SWIPE_STYLE_OPTIONS = {
     { value = "vertical", text = ns.L["Vertical"] },
 }
 
+local DISPEL_BORDER_MODE_OPTIONS = {
+    { value = "debuffs", text = ns.L["Debuffs"] },
+    { value = "stealable", text = ns.L["Debuffs + Stealable Buffs"] },
+    { value = "all", text = ns.L["All Auras"] },
+}
+
 local MISSING_RAID_BUFF_OPTIONS = {
     { key = "intellect", label = ns.L["Arcane Intellect (Mage)"] },
     { key = "stamina", label = ns.L["Power Word: Fortitude (Priest)"] },
@@ -318,6 +324,107 @@ local function EffectiveWhatToShow(element)
     return "custom"
 end
 
+local function RefreshDetailWidgetVisual(widget, dbTable, dbKey)
+    if type(widget.Refresh) == "function" then
+        widget.Refresh()
+    elseif type(widget.UpdateVisual) == "function" then
+        if type(widget.GetValue) == "function" then
+            widget.UpdateVisual(widget.GetValue())
+        elseif dbTable and dbKey ~= nil and dbTable[dbKey] ~= nil then
+            widget.UpdateVisual(dbTable[dbKey])
+        end
+    end
+end
+
+local function OptionsFingerprint(options)
+    if type(options) ~= "table" then return "" end
+    local parts = {}
+    for i = 1, #options do
+        local opt = options[i]
+        parts[i] = tostring(opt and (opt.value ~= nil and opt.value or opt.text) or "")
+    end
+    return table.concat(parts, ",")
+end
+
+local function DetailWidgetKey(ctx, kind, dbKey, dbTable, extra)
+    if type(dbTable) == "table" and dbTable._quiTransientOptionsProxy then
+        return table.concat({ "p", tostring(ctx._detailScope), kind, tostring(dbKey), extra or "" }, "\31")
+    end
+    return table.concat({ "s", tostring(dbTable), kind, tostring(dbKey), extra or "" }, "\31")
+end
+
+local function CreateDetailGUI(ctx, GUI)
+    local cache = {}
+
+    local function Acquire(key, dbKey, dbTable, build)
+        local hit = cache[key]
+        if hit then
+            if type(dbTable) == "table" and dbTable._quiTransientOptionsProxy and hit.dbTable ~= dbTable then
+                for k in pairs(hit.dbTable) do
+                    if dbTable[k] == nil then hit.dbTable[k] = nil end
+                end
+                for k, v in pairs(dbTable) do
+                    hit.dbTable[k] = v
+                end
+            end
+            RefreshDetailWidgetVisual(hit.widget, hit.dbTable, hit.dbKey)
+            return hit.widget
+        end
+        local widget = build()
+        if widget then
+            cache[key] = { widget = widget, dbTable = dbTable, dbKey = dbKey }
+        end
+        return widget
+    end
+
+    local wrapper = setmetatable({}, { __index = GUI })
+
+    function wrapper.CreateFormSlider(_, parent, label, minV, maxV, step, dbKey, dbTable, onChange, options, registryInfo)
+        local extra = tostring(minV) .. "\31" .. tostring(maxV) .. "\31" .. tostring(step)
+            .. "\31" .. ((registryInfo and registryInfo.description) or "")
+        return Acquire(DetailWidgetKey(ctx, "slider", dbKey, dbTable, extra), dbKey, dbTable, function()
+            return GUI:CreateFormSlider(parent, label, minV, maxV, step, dbKey, dbTable, onChange, options, registryInfo)
+        end)
+    end
+
+    function wrapper.CreateFormCheckbox(_, parent, label, dbKey, dbTable, onChange, registryInfo)
+        local extra = (registryInfo and registryInfo.description) or ""
+        return Acquire(DetailWidgetKey(ctx, "checkbox", dbKey, dbTable, extra), dbKey, dbTable, function()
+            return GUI:CreateFormCheckbox(parent, label, dbKey, dbTable, onChange, registryInfo)
+        end)
+    end
+
+    function wrapper.CreateFormDropdown(_, parent, label, options, dbKey, dbTable, onChange, registryInfo, opts)
+        local extra = ((registryInfo and registryInfo.description) or "") .. "\31" .. OptionsFingerprint(options)
+        return Acquire(DetailWidgetKey(ctx, "dropdown", dbKey, dbTable, extra), dbKey, dbTable, function()
+            return GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange, registryInfo, opts)
+        end)
+    end
+
+    function wrapper.CreateFormColorPicker(_, parent, label, dbKey, dbTable, onChange, options, registryInfo)
+        local extra = (registryInfo and registryInfo.description) or ""
+        return Acquire(DetailWidgetKey(ctx, "color", dbKey, dbTable, extra), dbKey, dbTable, function()
+            return GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, options, registryInfo)
+        end)
+    end
+
+    function wrapper.CreateLabel(_, parent, text, size, color, anchor, x, y)
+        if anchor ~= nil then
+            return GUI:CreateLabel(parent, text, size, color, anchor, x, y)
+        end
+        local key = table.concat({ "label", tostring(ctx._detailScope), tostring(text), tostring(size) }, "\31")
+        local hit = cache[key]
+        if hit then
+            return hit.widget
+        end
+        local widget = GUI:CreateLabel(parent, text, size, color)
+        cache[key] = { widget = widget }
+        return widget
+    end
+
+    return wrapper
+end
+
 local sectionExpand = {}
 local function sectionState(element)
     local s = sectionExpand[element.id]
@@ -331,46 +438,38 @@ end
 
 local function MakeSectionHeader(ctx, element, sectionKey, labelText)
     local state = sectionState(element)
-    local header = CreateFrame("Button", nil, ctx.detailArea)
-    header:SetHeight(FORM_ROW)
-    local fs = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    local textColor = ctx.C.text or { 1, 1, 1, 1 }
-    CJKFont(fs, ctx.GUI.FONT_PATH or [[Interface\\AddOns\\QUI\\assets\\Quazii.ttf]], 11, "")
-    fs:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
-    fs:SetPoint("LEFT", header, "LEFT", 20, 0)
-    fs:SetText(labelText)
-    local caret
-    if ns.UIKit and ns.UIKit.CreateChevronCaret then
-        caret = ns.UIKit.CreateChevronCaret(header, {
-            point = "LEFT", relativeTo = header, relativePoint = "LEFT",
-            xPixels = 4, sizePixels = 8, collapsedDirection = "right",
-            expanded = state[sectionKey],
-        })
+    local header, caret
+    local cached = ctx._sectionHeaders[sectionKey]
+    if cached then
+        header = cached.header
+        caret = cached.caret
+        cached.fs:SetText(labelText)
+        if caret and ns.UIKit and ns.UIKit.SetChevronCaretExpanded then
+            ns.UIKit.SetChevronCaretExpanded(caret, state[sectionKey])
+        end
+    else
+        header = CreateFrame("Button", nil, ctx.detailArea)
+        header:SetHeight(FORM_ROW)
+        local fs = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local textColor = ctx.C.text or { 1, 1, 1, 1 }
+        CJKFont(fs, ctx.GUI.FONT_PATH or [[Interface\\AddOns\\QUI\\assets\\Quazii.ttf]], 11, "")
+        fs:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+        fs:SetPoint("LEFT", header, "LEFT", 20, 0)
+        fs:SetText(labelText)
+        if ns.UIKit and ns.UIKit.CreateChevronCaret then
+            caret = ns.UIKit.CreateChevronCaret(header, {
+                point = "LEFT", relativeTo = header, relativePoint = "LEFT",
+                xPixels = 4, sizePixels = 8, collapsedDirection = "right",
+                expanded = state[sectionKey],
+            })
+        end
+        ctx._sectionHeaders[sectionKey] = { header = header, fs = fs, caret = caret }
     end
     if ctx._detailSectionCarets then
         ctx._detailSectionCarets[sectionKey] = caret
     end
     header:SetScript("OnClick", function()
-        local expanded = not state[sectionKey]
-        if ctx.SetDetailSectionExpanded then
-            ctx.SetDetailSectionExpanded(sectionKey, expanded)
-        else
-            state[sectionKey] = expanded
-            if caret and ns.UIKit.SetChevronCaretExpanded then
-                ns.UIKit.SetChevronCaretExpanded(caret, expanded)
-            end
-            if not expanded and SpellList and SpellList.CloseBrowsePopup then
-                SpellList.CloseBrowsePopup(ctx.browsePrefix)
-            end
-            if ctx.RelayoutDetail then
-                ctx.RelayoutDetail()
-                if ctx.RelayoutList then
-                    ctx.RelayoutList()
-                end
-            else
-                ctx.rebuild()
-            end
-        end
+        ctx.SetDetailSectionExpanded(sectionKey, not state[sectionKey])
     end)
     ctx.BeginDetailSection(header, FORM_ROW, sectionKey)
 end
@@ -491,6 +590,30 @@ local function AddDispelTooltipWidgets(ctx, element)
         }))
     end
 
+    row(ns.L["Dispel Border Mode"], GUI:CreateFormDropdown(ctx.detailArea, nil, DISPEL_BORDER_MODE_OPTIONS, "dispelBorderMode", element, onChange, {
+        description = ns.L["Which auras get a dispel-type border. All Auras ignores every other border filter, including harmful and helpful checks."],
+    }))
+
+    row(ns.L["Pandemic Glow"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "_pandemicGlow", {
+        _pandemicGlow = type(element.pandemicGlow) == "table",
+        _quiTransientOptionsProxy = true,
+    }, function(checked)
+        if checked and type(element.pandemicGlow) ~= "table" then
+            element.pandemicGlow = { color = { 1, 0.85, 0.2, 1 } }
+        elseif not checked then
+            element.pandemicGlow = nil
+        end
+        ctx.NotifyChanged()
+        rebuild()
+    end, {
+        description = ns.L["Show a glow on each icon while the aura is inside its pandemic refresh window. The game decides when the window is active."],
+    }))
+    if type(element.pandemicGlow) == "table" then
+        row(ns.L["Pandemic Glow Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element.pandemicGlow, onChange, nil, {
+            description = ns.L["Tint and opacity of the pandemic glow."],
+        }))
+    end
+
     row(ns.L["Custom Dispel Ring Colors"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "_customDispelColors", {
         _customDispelColors = type(element.dispelColors) == "table",
         _quiTransientOptionsProxy = true,
@@ -536,9 +659,21 @@ local function AddTextRegionWidgets(ctx, element, key, label)
     if type(element[key]) ~= "table" then element[key] = {} end
     local region = element[key]
 
-    local header = GUI:CreateLabel(ctx.detailArea, "|cFFAAAAAA" .. label .. "|r", 11, C.textMuted)
-    header:SetJustifyH("LEFT")
-    add(header, 18, true)
+    local optionsAPI = GetOptionsAPI()
+    local header
+    if optionsAPI and type(optionsAPI.CreateAccentDotLabel) == "function" then
+        local headerKey = tostring(ctx._detailScope) .. "\31" .. label
+        header = ctx._accentDotLabels[headerKey]
+        if not header then
+            header = optionsAPI.CreateAccentDotLabel(ctx.detailArea, label, 0, true)
+            ctx._accentDotLabels[headerKey] = header
+        end
+        add(header, 26, true)
+    else
+        header = GUI:CreateLabel(ctx.detailArea, "|cFFAAAAAA" .. label .. "|r", 11, C.textMuted)
+        header:SetJustifyH("LEFT")
+        add(header, 18, true)
+    end
 
     row(ns.L["Show"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "show", region, onChange, {
         description = string.format(ns.L["Show the %s on each icon."], label),
@@ -558,30 +693,6 @@ local function AddTextRegionWidgets(ctx, element, key, label)
     row(ns.L["Text Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", region, onChange, nil, {
         description = string.format(ns.L["Color of the %s."], label),
     }))
-
-    if key == "duration" then
-        row(ns.L["Pandemic Color"], GUI:CreateFormCheckbox(ctx.detailArea, nil,
-            "_customPandemicColor", {
-                _customPandemicColor = type(region.pandemicColor) == "table",
-                _quiTransientOptionsProxy = true,
-            }, function(checked)
-                if checked and type(region.pandemicColor) ~= "table" then
-                    region.pandemicColor = { 1, 0.3, 0.3 }
-                elseif not checked then
-                    region.pandemicColor = nil
-                end
-                ctx.NotifyChanged()
-                rebuild()
-            end, {
-                description = ns.L["Recolor the duration text during the last 30% of the aura, its pandemic refresh window."],
-            }))
-        if type(region.pandemicColor) == "table" then
-            row(ns.L["Pandemic Text Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil,
-                "pandemicColor", region, onChange, nil, {
-                    description = ns.L["Duration text color inside the pandemic window."],
-                }))
-        end
-    end
 
     if key == "duration" and ctx.caps and ctx.caps.durationDecimals then
         row(ns.L["Decimals Under 3s"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "decimals", region, onChange, {
@@ -604,56 +715,87 @@ local function AddSpellMapEditor(ctx, map, headerText, onMutate, browseCfg)
         return
     end
 
-    local manualRow = CreateFrame("Frame", nil, ctx.detailArea)
-    manualRow:SetHeight(24)
+    local ed = ctx._spellMapEditors[map]
+    local manualRow, listFrame, browseButton
 
-    local inputBox = CreateFrame("EditBox", nil, manualRow, "BackdropTemplate")
-    inputBox:SetSize(80, 20)
-    inputBox:SetPoint("LEFT", 0, 0)
-    SkinBase.ApplyPixelBackdrop(inputBox, 1, true, false, { 0.25, 0.25, 0.25, 1 }, { 0.06, 0.06, 0.08, 1 })
-    inputBox:SetFontObject("GameFontNormalSmall")
-    inputBox:SetAutoFocus(false)
-    inputBox:SetMaxLetters(10)
-    inputBox:SetTextInsets(4, 4, 0, 0)
-    inputBox:SetScript("OnEscapePressed", function(self)
-        self:ClearFocus()
-    end)
+    if ed then
+        ed.notify = notify
+        manualRow = ed.manualRow
+        listFrame = ed.listFrame
+        browseButton = ed.browseButton
+        ed.inputBox:SetText("")
+        ed.RefreshList()
+    else
+        ed = { notify = notify }
+        ctx._spellMapEditors[map] = ed
 
-    local inputLabel = manualRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    inputLabel:SetPoint("LEFT", inputBox, "RIGHT", 4, 0)
-    inputLabel:SetText(ns.L["Spell ID"])
-    inputLabel:SetTextColor(0.5, 0.5, 0.5)
+        manualRow = CreateFrame("Frame", nil, ctx.detailArea)
+        manualRow:SetHeight(24)
 
-    local addManualButton = CreateFrame("Button", nil, manualRow, "BackdropTemplate")
-    addManualButton:SetSize(40, 20)
-    addManualButton:SetPoint("LEFT", inputLabel, "RIGHT", 8, 0)
-    SkinBase.ApplyPixelBackdrop(addManualButton, 1, true, false, { 0.3, 0.3, 0.3, 1 }, { 0.15, 0.15, 0.15, 1 })
-    local addManualText = addManualButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    addManualText:SetPoint("CENTER")
-    addManualText:SetText(ns.L["Add"])
-    StyleSpellInputText(GUI, C, inputBox, inputLabel, addManualText)
+        local inputBox = CreateFrame("EditBox", nil, manualRow, "BackdropTemplate")
+        inputBox:SetSize(80, 20)
+        inputBox:SetPoint("LEFT", 0, 0)
+        SkinBase.ApplyPixelBackdrop(inputBox, 1, true, false, { 0.25, 0.25, 0.25, 1 }, { 0.06, 0.06, 0.08, 1 })
+        inputBox:SetFontObject("GameFontNormalSmall")
+        inputBox:SetAutoFocus(false)
+        inputBox:SetMaxLetters(10)
+        inputBox:SetTextInsets(4, 4, 0, 0)
+        inputBox:SetScript("OnEscapePressed", function(self)
+            self:ClearFocus()
+        end)
 
-    local listFrame
-    local function RefreshInlineList()
-        if listFrame and type(listFrame.Refresh) == "function" then
-            listFrame:Refresh()
-        else
-            ctx.rebuild()
+        local inputLabel = manualRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        inputLabel:SetPoint("LEFT", inputBox, "RIGHT", 4, 0)
+        inputLabel:SetText(ns.L["Spell ID"])
+        inputLabel:SetTextColor(0.5, 0.5, 0.5)
+
+        local addManualButton = CreateFrame("Button", nil, manualRow, "BackdropTemplate")
+        addManualButton:SetSize(40, 20)
+        addManualButton:SetPoint("LEFT", inputLabel, "RIGHT", 8, 0)
+        SkinBase.ApplyPixelBackdrop(addManualButton, 1, true, false, { 0.3, 0.3, 0.3, 1 }, { 0.15, 0.15, 0.15, 1 })
+        local addManualText = addManualButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        addManualText:SetPoint("CENTER")
+        addManualText:SetText(ns.L["Add"])
+        StyleSpellInputText(GUI, C, inputBox, inputLabel, addManualText)
+
+        listFrame = SpellList.CreateListFrame(ctx.detailArea, map, nil, function()
+            ed.notify()
+        end, function(_, newHeight)
+            ctx.UpdateDetailWidgetHeight(listFrame, newHeight)
+        end)
+
+        ed.RefreshList = function()
+            if listFrame and type(listFrame.Refresh) == "function" then
+                listFrame:Refresh()
+            else
+                ctx.rebuild()
+            end
         end
-    end
 
-    local function CommitManual()
-        local spellID = tonumber(inputBox:GetText())
-        if spellID and spellID > 0 then
-            map[spellID] = true
-            inputBox:SetText("")
-            inputBox:ClearFocus()
-            notify()
-            RefreshInlineList()
+        local function CommitManual()
+            local spellID = tonumber(inputBox:GetText())
+            if spellID and spellID > 0 then
+                map[spellID] = true
+                inputBox:SetText("")
+                inputBox:ClearFocus()
+                ed.notify()
+                ed.RefreshList()
+            end
         end
+        addManualButton:SetScript("OnClick", CommitManual)
+        inputBox:SetScript("OnEnterPressed", CommitManual)
+
+        if browseCfg and browseCfg.key and SpellList.ToggleBrowsePopup then
+            browseButton = GUI:CreateButton(manualRow, ns.L["Browse"], 70, 20)
+            browseButton:ClearAllPoints()
+            browseButton:SetPoint("LEFT", addManualButton, "RIGHT", 8, 0)
+        end
+
+        ed.manualRow = manualRow
+        ed.inputBox = inputBox
+        ed.listFrame = listFrame
+        ed.browseButton = browseButton
     end
-    addManualButton:SetScript("OnClick", CommitManual)
-    inputBox:SetScript("OnEnterPressed", CommitManual)
 
     if browseCfg and browseCfg.key and SpellList.ToggleBrowsePopup then
         local toggleSpell = browseCfg.onToggle or function(spellID)
@@ -672,27 +814,20 @@ local function AddSpellMapEditor(ctx, map, headerText, onMutate, browseCfg)
             end,
             onToggle = function(spellID)
                 toggleSpell(spellID)
-                RefreshInlineList()
+                ed.RefreshList()
             end,
             onClose = browseCfg.onClose,
         }
-        local browseButton = GUI:CreateButton(manualRow, ns.L["Browse"], 70, 20)
-        browseButton:ClearAllPoints()
-        browseButton:SetPoint("LEFT", addManualButton, "RIGHT", 8, 0)
-        browseButton:SetScript("OnClick", function()
-            SpellList.ToggleBrowsePopup(browseCfg.key, browseOpts)
-        end)
+        if browseButton then
+            browseButton:SetScript("OnClick", function()
+                SpellList.ToggleBrowsePopup(browseCfg.key, browseOpts)
+            end)
+        end
         if SpellList.RefreshBrowsePopup then
             SpellList.RefreshBrowsePopup(browseCfg.key, browseOpts)
         end
     end
     add(manualRow, 26, true)
-
-    listFrame = SpellList.CreateListFrame(ctx.detailArea, map, nil, function()
-        notify()
-    end, function(_, newHeight)
-        ctx.UpdateDetailWidgetHeight(listFrame, newHeight)
-    end)
     add(listFrame, math.max(1, listFrame:GetHeight() or 1), true)
 end
 
@@ -714,7 +849,13 @@ end
 local function AddTrackedSpellListEditor(ctx, element)
     if type(element.spells) ~= "table" then element.spells = {} end
 
-    local mapView = {}
+    local mapView = ctx._trackedMapViews[element]
+    if mapView then
+        wipe(mapView)
+    else
+        mapView = {}
+        ctx._trackedMapViews[element] = mapView
+    end
     for _, sid in ipairs(element.spells) do mapView[sid] = true end
 
     AddSpellMapEditor(ctx, mapView,
@@ -981,7 +1122,13 @@ local function AddFilterStripConfig(ctx, element)
             local tokens = element.auraType == "HARMFUL" and HARMFUL_FLAG_TOKENS or HELPFUL_FLAG_TOKENS
             for _, entry in ipairs(tokens) do
                 local cur = element.filterFlags[entry.token]
-                local scratch = { value = (cur == true and "require") or (cur == "exclude" and "exclude") or "off" }
+                local scratchKey = tostring(element.id) .. "\31" .. entry.token
+                local scratch = ctx._flagScratch[scratchKey]
+                if not scratch then
+                    scratch = {}
+                    ctx._flagScratch[scratchKey] = scratch
+                end
+                scratch.value = (cur == true and "require") or (cur == "exclude" and "exclude") or "off"
                 row(entry.label, GUI:CreateFormDropdown(ctx.detailArea, nil, TRI_STATE_OPTIONS, "value", scratch, function()
                     local v = scratch.value
                     if v == "require" then
@@ -1163,6 +1310,8 @@ local function RenderDetail(ctx, element)
         return 0
     end
 
+    ctx._detailScope = element.id or tostring(element)
+
     local detailArea = ctx.detailArea
     ctx.detailY = -2
     ctx._pendingWidget = nil
@@ -1171,7 +1320,11 @@ local function RenderDetail(ctx, element)
 
     local function EmitRow(left, leftH, right, rightH, span)
         local rowH = span and leftH or (right and math.max(leftH, rightH) or leftH)
-        local rowFrame = CreateFrame("Frame", nil, detailArea)
+        local rowFrame = table.remove(ctx._detailRowPool)
+        if not rowFrame then
+            rowFrame = CreateFrame("Frame", nil, detailArea)
+        end
+        rowFrame:Show()
         ctx.RegisterDetailWidget(rowFrame)
         rowFrame:ClearAllPoints()
         rowFrame:SetPoint("TOPLEFT", detailArea, "TOPLEFT", 0, ctx.detailY)
@@ -1182,13 +1335,24 @@ local function RenderDetail(ctx, element)
         rowFrame._quiDetailOwner = detailRows
         detailRows[#detailRows + 1] = rowFrame
 
-        if not span then
-            local bg = rowFrame:CreateTexture(nil, "BACKGROUND")
-            bg:SetAllPoints(rowFrame)
+        if rowFrame._quiColDiv then rowFrame._quiColDiv:Hide() end
+
+        if span then
+            if rowFrame._quiRowBG then rowFrame._quiRowBG:Hide() end
+            rowFrame._quiDetailBackground = nil
+        else
+            local bg = rowFrame._quiRowBG
+            if not bg then
+                bg = rowFrame:CreateTexture(nil, "BACKGROUND")
+                bg:SetAllPoints(rowFrame)
+                rowFrame._quiRowBG = bg
+            end
             bg:SetColorTexture(1, 1, 1, 0)
+            bg:Show()
             rowFrame._quiDetailBackground = bg
         end
 
+        rowFrame._quiLeft = left
         left:SetParent(rowFrame)
         left._quiDetailRow = rowFrame
         left:ClearAllPoints()
@@ -1198,17 +1362,24 @@ local function RenderDetail(ctx, element)
         elseif right then
             left:SetPoint("TOPLEFT", rowFrame, "TOPLEFT", PAD, 0)
             left:SetPoint("TOPRIGHT", rowFrame, "TOP", -(COL_GAP / 2), 0)
+            rowFrame._quiRight = right
             right:SetParent(rowFrame)
             right._quiDetailRow = rowFrame
             right:ClearAllPoints()
             right:SetPoint("TOPLEFT", rowFrame, "TOP", COL_GAP / 2, 0)
             right:SetPoint("TOPRIGHT", rowFrame, "TOPRIGHT", -PAD, 0)
 
-            local cdiv = rowFrame:CreateTexture(nil, "ARTWORK")
+            local cdiv = rowFrame._quiColDiv
+            if not cdiv then
+                cdiv = rowFrame:CreateTexture(nil, "ARTWORK")
+                rowFrame._quiColDiv = cdiv
+            end
+            cdiv:ClearAllPoints()
             cdiv:SetPoint("TOP", rowFrame, "TOP", 0, -6)
             cdiv:SetPoint("BOTTOM", rowFrame, "BOTTOM", 0, 6)
             cdiv:SetWidth(1)
             cdiv:SetColorTexture(1, 1, 1, 0.05)
+            cdiv:Show()
         else
             left:SetPoint("TOPLEFT", rowFrame, "TOPLEFT", PAD, 0)
             left:SetPoint("TOPRIGHT", rowFrame, "TOP", -(COL_GAP / 2), 0)
@@ -1250,10 +1421,17 @@ local function RenderDetail(ctx, element)
 
     local optionsAPI = GetOptionsAPI()
     ctx.AddFormRow = function(label, widget, span)
-        local cell = (optionsAPI and optionsAPI.BuildSettingRow)
-            and optionsAPI.BuildSettingRow(detailArea, label, widget)
-            or widget
-        ctx.AddDetailWidget(cell, FORM_ROW, span)
+        local cell = widget
+        if optionsAPI and optionsAPI.BuildSettingRow then
+            cell = widget._quiSettingCell
+            if not cell then
+                cell = optionsAPI.BuildSettingRow(detailArea, label, widget)
+                if cell and cell ~= widget then
+                    widget._quiSettingCell = cell
+                end
+            end
+        end
+        ctx.AddDetailWidget(cell or widget, FORM_ROW, span)
     end
 
     local function RelayoutDetail()
@@ -1438,11 +1616,6 @@ local function RebuildList(ctx)
         end
         ctx.emptyLabel:Hide()
         ctx.addRow:Hide()
-        ctx.detailArea:ClearAllPoints()
-        ctx.detailArea:SetParent(ctx.listArea)
-        ctx.detailArea:SetPoint("TOPLEFT", ctx.listArea, "TOPLEFT", 0, 0)
-        ctx.detailArea:SetPoint("TOPRIGHT", ctx.listArea, "TOPRIGHT", 0, 0)
-        ctx.detailArea:Show()
         RenderDetail(ctx, element)
         if SpellList and SpellList.EndBrowseScope then
             SpellList.EndBrowseScope(ctx.browsePrefix)
@@ -1459,14 +1632,10 @@ local function RebuildList(ctx)
 
     local C = ctx.C
     local accent = C.accent or { 0.204, 0.827, 0.6, 1 }
-    local listY = 0
 
     for index, element in ipairs(bucket) do
         local row = ctx.AcquireRow()
         row:SetParent(ctx.listArea)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", ctx.listArea, "TOPLEFT", 0, listY)
-        row:SetPoint("TOPRIGHT", ctx.listArea, "TOPRIGHT", 0, listY)
         row:Show()
 
         local label, icon = GetElementLabel(element)
@@ -1523,49 +1692,18 @@ local function RebuildList(ctx)
             table.remove(bucket, index)
             if ctx.selectedIndex == index then
                 ctx.selectedIndex = nil
+            elseif ctx.selectedIndex and ctx.selectedIndex > index then
+                ctx.selectedIndex = ctx.selectedIndex - 1
             end
             ctx.NotifyChanged()
             ctx.rebuild()
         end)
 
         ctx.activeRows[#ctx.activeRows + 1] = row
-        listY = listY - ROW_STEP
 
         if expanded then
-            listY = listY - 2
-            ctx.detailArea:ClearAllPoints()
-            ctx.detailArea:SetParent(ctx.listArea)
-            ctx.detailArea:SetPoint("TOPLEFT", ctx.listArea, "TOPLEFT", PAD, listY)
-            ctx.detailArea:SetPoint("TOPRIGHT", ctx.listArea, "TOPRIGHT", 0, listY)
-            ctx.detailArea:Show()
-            local used = RenderDetail(ctx, element)
-            listY = listY - used - 4
+            RenderDetail(ctx, element)
         end
-    end
-
-    if #bucket == 0 then
-        ctx.emptyLabel:ClearAllPoints()
-        ctx.emptyLabel:SetPoint("TOPLEFT", ctx.listArea, "TOPLEFT", 0, listY)
-        ctx.emptyLabel:Show()
-        listY = listY - 22
-    else
-        ctx.emptyLabel:Hide()
-    end
-
-    if ctx.selectedIndex == nil then
-        ctx.detailArea:Hide()
-    end
-
-    if ctx.hasAddButtons then
-        ctx.UpdateAddStripState()
-        listY = listY - 8
-        ctx.addRow:ClearAllPoints()
-        ctx.addRow:SetPoint("TOPLEFT", ctx.listArea, "TOPLEFT", 0, listY)
-        ctx.addRow:SetPoint("TOPRIGHT", ctx.listArea, "TOPRIGHT", 0, listY)
-        ctx.addRow:Show()
-        listY = listY - 30
-    else
-        ctx.addRow:Hide()
     end
 
     if SpellList and SpellList.EndBrowseScope then
@@ -1651,9 +1789,18 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
     local rowPool = {}
     local activeRows = {}
     local detailWidgets = {}
+    local detailRowPool = {}
+    local detailWidgetBin = CreateFrame("Frame", nil, listArea)
+    detailWidgetBin:Hide()
 
     local ctx = {
         GUI = GUI,
+        _detailRowPool = detailRowPool,
+        _sectionHeaders = {},
+        _accentDotLabels = {},
+        _spellMapEditors = {},
+        _trackedMapViews = {},
+        _flagScratch = {},
         C = C,
         host = host,
         auras = auras,
@@ -1703,9 +1850,22 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
         return RelayoutList(ctx)
     end
 
+    ctx.GUI = CreateDetailGUI(ctx, GUI)
+
     ctx.ClearDetailWidgets = function()
         for _, widget in ipairs(detailWidgets) do
             widget:Hide()
+            widget:ClearAllPoints()
+            if widget._quiLeft then
+                widget._quiLeft:SetParent(detailWidgetBin)
+                widget._quiLeft = nil
+            end
+            if widget._quiRight then
+                widget._quiRight:SetParent(detailWidgetBin)
+                widget._quiRight = nil
+            end
+            widget._quiDetailOwner = nil
+            detailRowPool[#detailRowPool + 1] = widget
         end
         wipe(detailWidgets)
     end

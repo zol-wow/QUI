@@ -100,16 +100,14 @@ local state = {
     inactivityTicker = nil,
 }
 
-local function CopyColor(color, fallback)
+local function NormalizeColor(color, fallback)
     if type(color) ~= "table" then
         return { fallback[1], fallback[2], fallback[3], fallback[4] }
     end
-    return {
-        color[1] or fallback[1],
-        color[2] or fallback[2],
-        color[3] or fallback[3],
-        color[4] or fallback[4],
-    }
+    for i = 1, 4 do
+        if color[i] == nil then color[i] = fallback[i] end
+    end
+    return color
 end
 
 local Clamp = Helpers.Clamp
@@ -142,7 +140,7 @@ local function GetSettings()
     settings.iconSize = math.floor(Clamp(settings.iconSize, 16, 64))
     settings.iconSpacing = math.floor(Clamp(settings.iconSpacing, 0, 24))
     settings.iconHideBorder = settings.iconHideBorder == true
-    settings.iconBorderColor = CopyColor(settings.iconBorderColor, DEFAULT_SETTINGS.iconBorderColor)
+    settings.iconBorderColor = NormalizeColor(settings.iconBorderColor, DEFAULT_SETTINGS.iconBorderColor)
     settings.inactivityFadeEnabled = settings.inactivityFadeEnabled == true
     settings.inactivityFadeSeconds = math.floor(Clamp(settings.inactivityFadeSeconds, 10, 60))
     settings.clearOnInactivity = settings.clearOnInactivity == true
@@ -156,8 +154,8 @@ local function GetSettings()
     end
     settings.invertScrollDirection = settings.invertScrollDirection == true
 
-    settings.backdropColor = CopyColor(settings.backdropColor, DEFAULT_SETTINGS.backdropColor)
-    settings.borderColor = CopyColor(settings.borderColor, DEFAULT_SETTINGS.borderColor)
+    settings.backdropColor = NormalizeColor(settings.backdropColor, DEFAULT_SETTINGS.backdropColor)
+    settings.borderColor = NormalizeColor(settings.borderColor, DEFAULT_SETTINGS.borderColor)
     settings.borderSize = Clamp(settings.borderSize, 0, 5)
 
     return settings

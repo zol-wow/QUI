@@ -375,6 +375,50 @@ local function ResolveScriptKind(containerType)
     return "cooldown"
 end
 
+local iconPool = {}
+local barPool = {}
+
+local function ReleasePreviewIcon(icon)
+    StopGlow(icon)
+    state.iconState[icon] = nil
+    ns.CDMIconFactory.ReleaseForPreview(icon)
+    iconPool[#iconPool + 1] = icon
+end
+
+local function AcquirePreviewIcon(entry)
+    local icon = table.remove(iconPool)
+    if not icon then
+        return ns.CDMIconFactory.AcquireForPreview(state.gridArea, entry)
+    end
+    icon:SetParent(state.gridArea)
+    icon._spellEntry = entry
+    if icon.Icon then
+        icon.Icon:SetDesaturated(false)
+        icon.Icon:SetVertexColor(1, 1, 1, 1)
+        if entry then
+            local texID = ResolveEntryTexture(entry)
+            if texID then icon.Icon:SetTexture(texID) end
+        end
+    end
+    return icon
+end
+
+local function ReleasePreviewBar(bar)
+    state.iconState[bar] = nil
+    bar:Hide()
+    bar:SetParent(nil)
+    barPool[#barPool + 1] = bar
+end
+
+local function AcquirePreviewBar()
+    local bar = table.remove(barPool)
+    if bar then
+        bar:SetParent(state.gridArea)
+        return bar
+    end
+    return ns.CDMBars.CreateForPreview(state.gridArea)
+end
+
 local function RefreshIcons(containerKey, containerDB)
     local entries = GetPreviewEntries(containerKey, containerDB)
     if type(entries) ~= "table" then return end
@@ -382,7 +426,7 @@ local function RefreshIcons(containerKey, containerDB)
     for i, entry in ipairs(entries) do
         local icon = state.previewIcons[i]
         if not icon then
-            icon = ns.CDMIconFactory.AcquireForPreview(state.gridArea, entry)
+            icon = AcquirePreviewIcon(entry)
             state.previewIcons[i] = icon
         else
             icon._spellEntry = entry
@@ -406,8 +450,7 @@ local function RefreshIcons(containerKey, containerDB)
     for i = #entries + 1, #state.previewIcons do
         local icon = state.previewIcons[i]
         if icon then
-            state.iconState[icon] = nil
-            ns.CDMIconFactory.ReleaseForPreview(icon)
+            ReleasePreviewIcon(icon)
             state.previewIcons[i] = nil
         end
     end
@@ -435,7 +478,7 @@ local function RefreshBars(_containerKey, containerDB)
     for i, entry in ipairs(entries) do
         local bar = state.previewBars[i]
         if not bar then
-            bar = ns.CDMBars.CreateForPreview(state.gridArea)
+            bar = AcquirePreviewBar()
             state.previewBars[i] = bar
         end
         bar._spellEntry = entry
@@ -468,9 +511,7 @@ local function RefreshBars(_containerKey, containerDB)
     for i = #entries + 1, #state.previewBars do
         local bar = state.previewBars[i]
         if bar then
-            state.iconState[bar] = nil
-            bar:Hide()
-            bar:SetParent(nil)
+            ReleasePreviewBar(bar)
             state.previewBars[i] = nil
         end
     end
@@ -506,9 +547,7 @@ end
 local function ClearPreviewIcons()
     for _, icon in ipairs(state.previewIcons) do
         if icon then
-            StopGlow(icon)
-            ns.CDMIconFactory.ReleaseForPreview(icon)
-            state.iconState[icon] = nil
+            ReleasePreviewIcon(icon)
         end
     end
     state.previewIcons = {}
@@ -519,9 +558,7 @@ end
 local function ClearPreviewBars()
     for _, bar in ipairs(state.previewBars) do
         if bar then
-            state.iconState[bar] = nil
-            bar:Hide()
-            bar:SetParent(nil)
+            ReleasePreviewBar(bar)
         end
     end
     state.previewBars = {}
@@ -546,20 +583,9 @@ function CDMComposerPreview.Refresh(containerKey)
 end
 
 function CDMComposerPreview.Teardown()
-    for _, icon in ipairs(state.previewIcons) do
-        if icon then
-            StopGlow(icon)
-            ns.CDMIconFactory.ReleaseForPreview(icon)
-        end
-    end
-    for _, bar in ipairs(state.previewBars) do
-        if bar then bar:Hide(); bar:SetParent(nil) end
-    end
-    state.previewIcons = {}
-    state.previewBars  = {}
+    ClearPreviewIcons()
+    ClearPreviewBars()
     state.iconState    = {}
-    state.glowOwnerIdx = 1
-    state.glowOwnerT   = 0
     state.containerKey = nil
     state.containerDB  = nil
     state.scriptKind   = nil

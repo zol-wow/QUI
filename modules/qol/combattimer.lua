@@ -75,7 +75,7 @@ local function FormatTime(seconds)
     local total = floor(seconds)
     if total == _lastTimerSecs then return _lastTimerText end
     _lastTimerSecs = total
-    _lastTimerText = format("%02d:%02d", floor(total / 60), total % 60)
+    _lastTimerText = Helpers.FormatMMSS(total, true)
     return _lastTimerText
 end
 

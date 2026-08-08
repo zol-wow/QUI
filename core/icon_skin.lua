@@ -5,6 +5,7 @@ local IconSkin = { skins = {}, order = {} }
 ns.IconSkin = IconSkin
 
 IconSkin.GlossTexture = ((Helpers and Helpers.AssetPath) or "Interface\\AddOns\\QUI\\assets\\") .. "iconskin\\Gloss"
+IconSkin.FlashTexture = ((Helpers and Helpers.AssetPath) or "Interface\\AddOns\\QUI\\assets\\") .. "iconskin\\Flash"
 
 function IconSkin.RegisterSkin(name, textureSet)
     assert(type(name) == "string" and name ~= "", "skin needs a name")

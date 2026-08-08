@@ -7,11 +7,8 @@ local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
 local function CJKFont(fs, p, s, f)
-    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
-        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
-    else
-        fs:SetFont(p, s, f)
-    end
+    if Bags.CJKFont then return Bags.CJKFont(fs, p, s, f) end
+    fs:SetFont(p, s, f)
 end
 
 local BankWindow = {}
@@ -296,48 +293,17 @@ local function ShowTabSettingsMenu(anchor, entry)
 end
 
 local function ShowMoneyPopup(kind, bankType)
-    local depositing = (kind == "deposit")
-    StaticPopupDialogs["QUI_BANK_MONEY"] = {
-        text = depositing and ns.L["Deposit gold:"] or ns.L["Withdraw gold:"],
-        button1 = ACCEPT,
-        button2 = CANCEL,
-        hasEditBox = true,
-        maxLetters = 10,
-        OnShow = function(self)
-            local box = self.editBox or self.EditBox
-            if box then box:SetText("") end
-        end,
-        OnAccept = function(self)
-            local box = self.editBox or self.EditBox
-            local text = box and box:GetText() or ""
-            if not text:match("^%d+$") then return end
-            local gold = tonumber(text)
-            if not gold then return end
-            gold = math.floor(gold)
-            if gold <= 0 then return end
-            local amount = gold * 10000
-            if depositing then
-                if C_Bank.CanDepositMoney(bankType) then
-                    C_Bank.DepositMoney(bankType, amount)
-                end
-            else
-                if C_Bank.CanWithdrawMoney(bankType) then
-                    C_Bank.WithdrawMoney(bankType, amount)
-                end
+    Bags.Chassis.ShowMoneyPopup("QUI_BANK_MONEY", kind, function(depositing, amount)
+        if depositing then
+            if C_Bank.CanDepositMoney(bankType) then
+                C_Bank.DepositMoney(bankType, amount)
             end
-        end,
-        EditBoxOnEnterPressed = function(box)
-            StaticPopup_OnClick(box:GetParent(), 1)
-        end,
-        EditBoxOnEscapePressed = function(box)
-            box:GetParent():Hide()
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-    StaticPopup_Show("QUI_BANK_MONEY")
+        else
+            if C_Bank.CanWithdrawMoney(bankType) then
+                C_Bank.WithdrawMoney(bankType, amount)
+            end
+        end
+    end)
 end
 
 local function ApplyTabHover(bagID)

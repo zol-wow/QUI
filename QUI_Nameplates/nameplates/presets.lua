@@ -18,18 +18,7 @@ local EXCLUDED_KEYS = {
 }
 NPPresets.EXCLUDED_KEYS = EXCLUDED_KEYS
 
-local function CopyDeep(src)
-    if type(src) ~= "table" then return src end
-    local dst = {}
-    for k, v in pairs(src) do
-        if type(v) == "table" then
-            dst[k] = CopyDeep(v)
-        else
-            dst[k] = v
-        end
-    end
-    return dst
-end
+local CopyDeep = NP.CopyDeep
 NPPresets.CopyDeep = CopyDeep
 
 function NPPresets.Snapshot(settings)
@@ -84,9 +73,7 @@ function NPPresets.GetStarterStyleKeys()
     return { "default", "compact", "chunky" }
 end
 
-local function IsArrayLike(t)
-    return type(t) == "table" and t[1] ~= nil
-end
+local IsArrayLike = NP.IsArrayLike
 
 local function MergeDeep(target, patch)
     for k, v in pairs(patch) do

@@ -11,11 +11,8 @@ local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
 local function CJKFont(fs, p, s, f)
-    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
-        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
-    else
-        fs:SetFont(p, s, f)
-    end
+    if Bags.CJKFont then return Bags.CJKFont(fs, p, s, f) end
+    fs:SetFont(p, s, f)
 end
 
 local BagWindow = {}
@@ -354,13 +351,8 @@ local function EnsureWindow()
         win._bagSlotButtons[i] = b
     end
 
-    local stripToggle = CreateFrame("Button", nil, win._body)
+    local stripToggle = Bags.Chassis.CreatePanelButton(win._body)
     stripToggle:SetSize(14, 14)
-    local stBg = stripToggle:CreateTexture(nil, "BACKGROUND")
-    stBg:SetAllPoints()
-    stBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    stBg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(stBg)
     stripToggle._label = stripToggle:CreateFontString(nil, "ARTWORK")
     stripToggle._label:SetPoint("CENTER", 0, 0)
     CJKFont(stripToggle._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 10, "OUTLINE")
@@ -380,12 +372,7 @@ local function EnsureWindow()
     stripToggle:SetScript("OnLeave", function() GameTooltip:Hide() end)
     win._stripToggle = stripToggle
 
-    local sort = CreateFrame("Button", nil, win._header)
-    local sortBg = sort:CreateTexture(nil, "BACKGROUND")
-    sortBg:SetAllPoints()
-    sortBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    sortBg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(sortBg)
+    local sort = Bags.Chassis.CreatePanelButton(win._header)
     sort._icon = sort:CreateTexture(nil, "ARTWORK")
     sort._icon:SetPoint("TOPLEFT", 1, -1)
     sort._icon:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -417,15 +404,7 @@ local function EnsureWindow()
     win._sortBtn = sort
 
     local function HeaderButton(label, anchorTo, tooltip, onClick)
-        local btn = CreateFrame("Button", nil, win._header)
-        local bg = btn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-        bg:SetVertexColor(0, 0, 0, 0.35)
-        UIKit.DisablePixelSnap(bg)
-        btn._label = btn:CreateFontString(nil, "ARTWORK")
-        btn._label:SetPoint("CENTER", 0, 0)
-        CJKFont(btn._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+        local btn = Bags.Chassis.CreatePanelButton(win._header, true)
         btn._label:SetText(label)
         btn:SetSize(18, 18)
         btn:SetPoint("RIGHT", anchorTo, "LEFT", -6, 0)
@@ -452,15 +431,7 @@ local function EnsureWindow()
             BagWindow.Refresh()
         end)
 
-    local sell = CreateFrame("Button", nil, win._footer)
-    local sellBg = sell:CreateTexture(nil, "BACKGROUND")
-    sellBg:SetAllPoints()
-    sellBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    sellBg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(sellBg)
-    sell._label = sell:CreateFontString(nil, "ARTWORK")
-    sell._label:SetPoint("CENTER", 0, 0)
-    CJKFont(sell._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    local sell = Bags.Chassis.CreatePanelButton(win._footer, true)
     sell._label:SetText(ns.L["Sell Junk"])
     sell:SetSize(math.max(40, math.ceil(sell._label:GetStringWidth()) + 12), 18)
     sell:SetPoint("LEFT", win._free, "RIGHT", 8, 0)
@@ -472,15 +443,7 @@ local function EnsureWindow()
     sell:Hide()
     win._sellBtn = sell
 
-    local send = CreateFrame("Button", nil, win._footer)
-    local sendBg = send:CreateTexture(nil, "BACKGROUND")
-    sendBg:SetAllPoints()
-    sendBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    sendBg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(sendBg)
-    send._label = send:CreateFontString(nil, "ARTWORK")
-    send._label:SetPoint("CENTER", 0, 0)
-    CJKFont(send._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    local send = Bags.Chassis.CreatePanelButton(win._footer, true)
     send:SetPoint("LEFT", sell, "RIGHT", 8, 0)
     UIKit.CreateBorderLines(send)
     send:SetScript("OnClick", SendSelection)

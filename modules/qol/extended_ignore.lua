@@ -7,12 +7,13 @@ local ignoreSet = {}
 local setEmpty = true
 
 -- <<< QUI_TEST_EXTRACT normalize_name
+local Fold = Helpers and Helpers.FoldUTF8 or string.lower
 local function NormalizeName(name)
     if type(name) ~= "string" or name == "" then return nil end
     local base = name:match("^([^-]+)") or name
     base = base:gsub("%s+", "")
     if base == "" then return nil end
-    return base:lower()
+    return Fold(base)
 end
 -- <<< QUI_TEST_EXTRACT normalize_name
 

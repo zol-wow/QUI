@@ -7,17 +7,7 @@ env.SetChunkEnv(1, env)
 ---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
 
 local function PurgeOverrideBarShownExternal()
-    local overrideBar = _G.OverrideActionBar
-    if overrideBar and overrideBar.system then
-        overrideBar.isShownExternal = nil
-        local c = 42
-        repeat
-            if overrideBar[c] == nil then
-                overrideBar[c] = nil
-            end
-            c = c + 1
-        until issecurevariable(overrideBar, "isShownExternal")
-    end
+    PurgeShownExternalTaint(_G.OverrideActionBar)
 end
 
 function ActionBarsOwned:Initialize()

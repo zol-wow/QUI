@@ -745,7 +745,6 @@ SetRaidTargetIconTexture = nil ---@type any
 Settings = nil ---@type any
 SharedTooltip_SetBackdropStyle = nil ---@type any
 ShowHuntPanel = nil ---@type any
-ShowOwnedFlyoutForButton = nil ---@type any
 ShowUIPanel = nil ---@type any
 SkillLineSpecsUnlockedAlertSystem = nil ---@type any
 SkinSpellFlyoutButtons = nil ---@type any

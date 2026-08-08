@@ -105,7 +105,6 @@ plate.npType = "enemyNPC"
 local auraSettings = { enabled = true, elements = {} }
 local typeSettings = { auras = auraSettings }
 settings = { types = { enemyNPC = typeSettings } }
-NPAuras.Build(plate)
 NPAuras.ApplyAppearance(plate)
 
 local pool = plate._quiAuraContainers

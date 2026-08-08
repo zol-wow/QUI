@@ -219,26 +219,13 @@ local LURA_MYTHIC_ENCOUNTER_ID = 3183
 local MYTHIC_RAID_DIFFICULTY_ID = 16
 local MYTHIC_KEYSTONE_DIFFICULTY_ID = 8
 
-local function NormalizeVisibilityToken(value)
-    if value == nil then return nil end
-    local text = tostring(value)
-    text = text:gsub("^%s+", ""):gsub("%s+$", "")
-    if text == "" then return nil end
-    return text:lower()
-end
-
 function IsActionBarLuraMythicEncounter(encounterID, encounterName, difficultyID)
     local numericEncounterID = tonumber(encounterID)
     local numericDifficultyID = tonumber(difficultyID)
     if numericDifficultyID ~= MYTHIC_RAID_DIFFICULTY_ID then
         return false
     end
-    if numericEncounterID == LURA_MYTHIC_ENCOUNTER_ID then
-        return true
-    end
-
-    local name = NormalizeVisibilityToken(encounterName)
-    return name == "midnight falls" or name == "midnight" or name == "l'ura"
+    return numericEncounterID == LURA_MYTHIC_ENCOUNTER_ID
 end
 
 local function GetCurrentInstanceContext()

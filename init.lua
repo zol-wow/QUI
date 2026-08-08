@@ -246,34 +246,7 @@ QUI._presetProfiles = {
     { key = "StarterProfile", profileName = "Starter Profile", description = "QUI's shipped starter layout (same as a fresh install)" },
 }
 
----@type table
-QUI.defaults = {
-    global = {
-        ---@type string
-        toggleOptionsKey = "",
-    },
-    char = {
-        ---@type table
-        debug = {
-            ---@type boolean
-            reload = false
-        },
-        ---@type table
-        ncdm = {
-            essential = {
-                customEntries = { enabled = true, placement = "after", entries = {} },
-            },
-            utility = {
-                customEntries = { enabled = true, placement = "after", entries = {} },
-            },
-        },
-    }
-}
-
 function QUI:OnInitialize()
-    ---@type AceDBObject-3.0
-    self.db = LibStub("AceDB-3.0"):New("QUI_InitTransientDB", self.defaults, "Default")
-
     self:RegisterChatCommand("qui", "SlashCommandOpen")
     self:RegisterChatCommand("quaziiui", "SlashCommandOpen")
     self:RegisterChatCommand("rl", "SlashCommandReload")
@@ -692,7 +665,7 @@ function QUI:UnregisterOptionalPullAlias()
 
     SlashCmdList[QUI_PULL_SLASH_KEY] = nil
     _G["SLASH_" .. QUI_PULL_SLASH_KEY .. "1"] = nil
-    if hash_SlashCmdList and hash_SlashCmdList["/PULL"] == QUI_PULL_SLASH_KEY then
+    if hash_SlashCmdList then
         hash_SlashCmdList["/PULL"] = nil
     end
     self.pullAliasOwned = false

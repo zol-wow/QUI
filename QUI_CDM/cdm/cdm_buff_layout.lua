@@ -597,8 +597,9 @@ local function GetTrackedBarRuntimeEntries()
         return entries
     end
 
+    local children = { viewer:GetChildren() }
     for ci = 1, numChildren do
-        local child = select(ci, viewer:GetChildren())
+        local child = children[ci]
         if child and child ~= selection and child.IsObjectType and child:IsObjectType("Frame")
             and child.Bar and child.Bar.IsObjectType and child.Bar:IsObjectType("StatusBar")
             and (child.cooldownID or child.layoutIndex) then

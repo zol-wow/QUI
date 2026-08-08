@@ -21,11 +21,8 @@ local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
 local function CJKFont(fs, p, s, f)
-    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
-        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
-    else
-        fs:SetFont(p, s, f)
-    end
+    if Bags.CJKFont then return Bags.CJKFont(fs, p, s, f) end
+    fs:SetFont(p, s, f)
 end
 
 local GuildWindow = {}
@@ -172,46 +169,15 @@ local function ShowRenamePopup(entry)
 end
 
 local function ShowMoneyPopup(kind)
-    local depositing = (kind == "deposit")
-    StaticPopupDialogs["QUI_GUILDBANK_MONEY"] = {
-        text = depositing and ns.L["Deposit gold:"] or ns.L["Withdraw gold:"],
-        button1 = ACCEPT,
-        button2 = CANCEL,
-        hasEditBox = true,
-        maxLetters = 10,
-        OnShow = function(self)
-            local box = self.editBox or self.EditBox
-            if box then box:SetText("") end
-        end,
-        OnAccept = function(self)
-            local box = self.editBox or self.EditBox
-            local text = box and box:GetText() or ""
-            if not text:match("^%d+$") then return end
-            local gold = tonumber(text)
-            if not gold then return end
-            gold = math.floor(gold)
-            if gold <= 0 then return end
-            local amount = gold * 10000
-            if depositing then
-                DepositGuildBankMoney(amount)
-            else
-                if CanWithdrawGuildBankMoney() then
-                    WithdrawGuildBankMoney(amount)
-                end
+    Bags.Chassis.ShowMoneyPopup("QUI_GUILDBANK_MONEY", kind, function(depositing, amount)
+        if depositing then
+            DepositGuildBankMoney(amount)
+        else
+            if CanWithdrawGuildBankMoney() then
+                WithdrawGuildBankMoney(amount)
             end
-        end,
-        EditBoxOnEnterPressed = function(box)
-            StaticPopup_OnClick(box:GetParent(), 1)
-        end,
-        EditBoxOnEscapePressed = function(box)
-            box:GetParent():Hide()
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-    StaticPopup_Show("QUI_GUILDBANK_MONEY")
+        end
+    end)
 end
 
 local function ColorName(name)

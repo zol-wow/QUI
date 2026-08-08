@@ -94,6 +94,10 @@ CreateFrame = function()
     function frame:RegisterAllEvents()
         self.allEvents = self.allEvents + 1
     end
+    function frame:UnregisterAllEvents()
+        self.events = {}
+        self.unregisterAll = (self.unregisterAll or 0) + 1
+    end
     function frame:SetScript(name, fn)
         self.scripts[name] = fn
     end
@@ -136,6 +140,8 @@ assert(session.events[1].e == "EVENT_TWO" and session.events[2].e == "EVENT_THRE
 assert(session.dropped == 1, "live recording should track dropped events")
 
 SlashCmdList.QUILOGGER("off")
+assert(frame.unregisterAll == 1, "/quilogger off should unregister all events")
+assert(frame.events.ADDON_LOADED == true, "/quilogger off should keep listening for ADDON_LOADED")
 local count = #session.events
 frame.scripts.OnEvent(frame, "EVENT_FOUR", "four")
 assert(#session.events == count, "/quilogger off should stop recording")

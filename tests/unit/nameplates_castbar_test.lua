@@ -35,7 +35,13 @@ local function NewRegion(parent)
         Show = function(self) self._shown = true end,
         Hide = function(self) self._shown = false end,
         SetText = function(self, t) self._text = t end,
-        SetFormattedText = function(self, fmtStr, v) self._text = string.format(fmtStr, tonumber(v) or 0) end,
+        SetFormattedText = function(self, fmtStr, v)
+            if fmtStr == "%s" then
+                self._text = tostring(v)
+            else
+                self._text = string.format(fmtStr, tonumber(v) or 0)
+            end
+        end,
         SetTextColor = noop, SetFont = noop, SetJustifyH = noop,
     }
 end

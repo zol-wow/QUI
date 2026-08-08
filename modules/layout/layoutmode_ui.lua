@@ -20,11 +20,7 @@ local QUI_LayoutMode_UI = {}
 ns.QUI_LayoutMode_UI = QUI_LayoutMode_UI
 
 local function PixelSize(frame, pixels)
-    if UIKit and UIKit.GetPixelSize then
-        return (pixels or 1) * UIKit.GetPixelSize(frame)
-    end
-    local core = ns.Addon
-    return (pixels or 1) * ((core and core.GetPixelSize and core:GetPixelSize(frame)) or 1)
+    return (pixels or 1) * UIKit.GetPixelSize(frame)
 end
 
 local ACCENT_R, ACCENT_G, ACCENT_B = 0.376, 0.647, 0.980
@@ -468,6 +464,16 @@ local function ShowAnchorLine(ui, handle, targetHandle)
     line:Show()
 end
 
+local function HandleIsNearby(um, targetKey, dragL, dragR, dragT, dragB)
+    local targetHandle = um._handles[targetKey]
+    if not targetHandle then return false end
+    local oL, oR, oT, oB = GetHandleEdges(targetHandle)
+    if not oL then return false end
+    local gapX = math.max(dragL - oR, oL - dragR, 0)
+    local gapY = math.max(dragB - oT, oB - dragT, 0)
+    return gapX <= SNAP_THRESHOLD_ANCHOR and gapY <= SNAP_THRESHOLD_ANCHOR
+end
+
 function QUI_LayoutMode_UI:ApplySnap(handle)
     local um = ns.QUI_LayoutMode
     if not um then return end
@@ -530,35 +536,33 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
             local oCY = oT and oB and (oT + oB) / 2
 
             if oL and oR and oT and oB then
-                local xEdges = {
-                    {dragL, oL}, {dragL, oR}, {dragL, oCX},
-                    {dragR, oL}, {dragR, oR}, {dragR, oCX},
-                    {dragCX, oL}, {dragCX, oR}, {dragCX, oCX},
-                }
-                for idx, pair in ipairs(xEdges) do
-                    local dist = math.abs(pair[1] - pair[2])
-                    if dist < bestDistX then
-                        bestDistX = dist
-                        bestSnapX = pair[2] - (pair[1] - dragL)
-                        snapLineX = pair[2]
-                        bestSnapXKey = key
-                        bestSnapXEdge = idx
+                for i = 1, 3 do
+                    local a = i == 1 and dragL or i == 2 and dragR or dragCX
+                    for j = 1, 3 do
+                        local b = j == 1 and oL or j == 2 and oR or oCX
+                        local dist = math.abs(a - b)
+                        if dist < bestDistX then
+                            bestDistX = dist
+                            bestSnapX = b - (a - dragL)
+                            snapLineX = b
+                            bestSnapXKey = key
+                            bestSnapXEdge = (i - 1) * 3 + j
+                        end
                     end
                 end
 
-                local yEdges = {
-                    {dragT, oT}, {dragT, oB}, {dragT, oCY},
-                    {dragB, oT}, {dragB, oB}, {dragB, oCY},
-                    {dragCY, oT}, {dragCY, oB}, {dragCY, oCY},
-                }
-                for idx, pair in ipairs(yEdges) do
-                    local dist = math.abs(pair[1] - pair[2])
-                    if dist < bestDistY then
-                        bestDistY = dist
-                        bestSnapY = pair[2] - (pair[1] - dragB)
-                        snapLineY = pair[2]
-                        bestSnapYKey = key
-                        bestSnapYEdge = idx
+                for i = 1, 3 do
+                    local a = i == 1 and dragT or i == 2 and dragB or dragCY
+                    for j = 1, 3 do
+                        local b = j == 1 and oT or j == 2 and oB or oCY
+                        local dist = math.abs(a - b)
+                        if dist < bestDistY then
+                            bestDistY = dist
+                            bestSnapY = b - (a - dragB)
+                            snapLineY = b
+                            bestSnapYKey = key
+                            bestSnapYEdge = (i - 1) * 3 + j
+                        end
                     end
                 end
             end
@@ -602,20 +606,11 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
     local anchorTargetKey = nil
 
     if shiftHeld then
-        local function isNearby(targetKey)
-            local targetHandle = um._handles[targetKey]
-            if not targetHandle then return false end
-            local oL, oR, oT, oB = GetHandleEdges(targetHandle)
-            if not oL then return false end
-            local gapX = math.max(dragL - oR, oL - dragR, 0)
-            local gapY = math.max(dragB - oT, oB - dragT, 0)
-            return gapX <= SNAP_THRESHOLD_ANCHOR and gapY <= SNAP_THRESHOLD_ANCHOR
-        end
-
-        if nearX and bestSnapXKey and isNearby(bestSnapXKey) then
+        if nearX and bestSnapXKey and HandleIsNearby(um, bestSnapXKey, dragL, dragR, dragT, dragB) then
             anchorTargetKey = bestSnapXKey
         end
-        if nearY and bestSnapYKey and not anchorTargetKey and isNearby(bestSnapYKey) then
+        if nearY and bestSnapYKey and not anchorTargetKey
+            and HandleIsNearby(um, bestSnapYKey, dragL, dragR, dragT, dragB) then
             anchorTargetKey = bestSnapYKey
         end
     end
@@ -726,6 +721,16 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
     end
 end
 
+local function FlushNudge(frame)
+    local key = frame._nudgePending
+    if not key then return end
+    frame._nudgePending = nil
+    local um = ns.QUI_LayoutMode
+    if um and um.NudgeMover then
+        um:NudgeMover(key, 0, 0)
+    end
+end
+
 CreateNudgeHandler = function(ui)
     local nudge = CreateFrame("Frame", "QUI_LayoutMode_Nudge", UIParent)
     nudge:SetFrameStrata("TOOLTIP")
@@ -795,6 +800,7 @@ CreateNudgeHandler = function(ui)
         self:SetScript("OnUpdate", function(frame, elapsed)
             if not frame._heldKey then
                 frame:SetScript("OnUpdate", nil)
+                FlushNudge(frame)
                 return
             end
 
@@ -810,7 +816,8 @@ CreateNudgeHandler = function(ui)
                 frame._lastNudge = now
                 local umInner = ns.QUI_LayoutMode
                 if umInner and umInner._selectedKey then
-                    umInner:NudgeMover(umInner._selectedKey, frame._nudgeDX, frame._nudgeDY)
+                    umInner:NudgeMover(umInner._selectedKey, frame._nudgeDX, frame._nudgeDY, true)
+                    frame._nudgePending = umInner._selectedKey
                 end
             end
         end)
@@ -820,8 +827,15 @@ CreateNudgeHandler = function(ui)
         if self._heldKey == key then
             self._heldKey = nil
             self:SetScript("OnUpdate", nil)
+            FlushNudge(self)
         end
         self:SetPropagateKeyboardInput(true)
+    end)
+
+    nudge:SetScript("OnHide", function(self)
+        self._heldKey = nil
+        self._nudgePending = nil
+        self:SetScript("OnUpdate", nil)
     end)
 
     ui._nudgeFrame = nudge
@@ -987,8 +1001,6 @@ CreateToolbar = function(ui)
                 elseif k == "fontOutline" and type(v) == "string" then
                     t[k] = globalOutline
                 elseif k == "texture" and type(v) == "string"
-                    and v ~= "Interface\\RaidFrame\\Shield-Fill"
-                    and v ~= "Interface\\Buttons\\WHITE8x8"
                     and not v:find("^Interface\\") then
                     t[k] = globalTexture
                 end
@@ -1485,7 +1497,7 @@ CreateFramesDrawer = function(ui)
             searchBox = GUI:CreateSearchBox(searchContainer, ns.L["Search frames…"])
             searchBox:SetAllPoints(searchContainer)
             searchBox.onSearch = function(text)
-                drawer._searchFilter = (text or ""):lower()
+                drawer._searchFilter = Helpers.FoldUTF8(text)
                 if ui._RebuildDrawer then ui:_RebuildDrawer() end
             end
             searchBox.onClear = function()
@@ -1639,9 +1651,16 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
     local um = ns.QUI_LayoutMode
     if not um then return end
 
+    drawer._headerPool = drawer._headerPool or {}
+    drawer._rowPool = drawer._rowPool or {}
     for _, row in ipairs(drawer._rows) do
         row:Hide()
-        row:SetParent(nil)
+        row:ClearAllPoints()
+        if row._poolKind == "header" then
+            drawer._headerPool[#drawer._headerPool + 1] = row
+        elseif row._poolKind == "row" then
+            drawer._rowPool[#drawer._rowPool + 1] = row
+        end
     end
     drawer._rows = {}
 
@@ -1664,8 +1683,8 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
             local include = true
             if searchFilter ~= "" then
-                local label = (def.label or key or ""):lower()
-                local groupLower = group:lower()
+                local label = Helpers.FoldUTF8(def.label or key)
+                local groupLower = Helpers.FoldUTF8(group)
                 include = (label:find(searchFilter, 1, true) ~= nil)
                     or (groupLower:find(searchFilter, 1, true) ~= nil)
             end
@@ -1693,43 +1712,59 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             isCollapsed = false
         end
 
-        local header = CreateFrame("Button", nil, content)
+        local header = table.remove(drawer._headerPool)
+        if not header then
+            header = CreateFrame("Button", nil, content)
+            header._poolKind = "header"
+
+            local newChevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(header, {
+                point = "LEFT",
+                relativeTo = header,
+                relativePoint = "LEFT",
+                xPixels = 4,
+                yPixels = 0,
+                sizePixels = 10,
+                lineWidthPixels = 6,
+                lineHeightPixels = 1,
+                expanded = not isCollapsed,
+                collapsedDirection = "right",
+                r = ACCENT_R,
+                g = ACCENT_G,
+                b = ACCENT_B,
+                a = 1,
+            }) or EnsureCJKFont(header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+            if not (UIKit and UIKit.CreateChevronCaret) then
+                newChevron:SetPoint("LEFT", 4, 0)
+                newChevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+                newChevron:SetText(isCollapsed and ">" or "v")
+            end
+            header._chevron = newChevron
+
+            local newHeaderText = EnsureCJKFont(header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+            newHeaderText:SetPoint("LEFT", newChevron, "RIGHT", 4, 0)
+            header._text = newHeaderText
+
+            local headerLine = header:CreateTexture(nil, "ARTWORK")
+            headerLine:SetPoint("BOTTOMLEFT", 0, 0)
+            headerLine:SetPoint("BOTTOMRIGHT", 0, 0)
+            headerLine:SetHeight(PixelSize(header, 1))
+            headerLine:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
+            header._line = headerLine
+        end
         header:SetSize(contentWidth, DRAWER_GROUP_HEIGHT)
         drawer._rows[#drawer._rows + 1] = header
 
-        local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(header, {
-            point = "LEFT",
-            relativeTo = header,
-            relativePoint = "LEFT",
-            xPixels = 4,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-            expanded = not isCollapsed,
-            collapsedDirection = "right",
-            r = ACCENT_R,
-            g = ACCENT_G,
-            b = ACCENT_B,
-            a = 1,
-        }) or EnsureCJKFont(header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-        if not (UIKit and UIKit.CreateChevronCaret) then
-            chevron:SetPoint("LEFT", 4, 0)
-            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-            chevron:SetText(isCollapsed and ">" or "v")
-        end
-        header._chevron = chevron
-
-        local headerText = EnsureCJKFont(header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-        headerText:SetPoint("LEFT", chevron, "RIGHT", 4, 0)
+        local chevron = header._chevron
+        local headerText = header._text
         headerText:SetText(group)
         headerText:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-
-        local headerLine = header:CreateTexture(nil, "ARTWORK")
-        headerLine:SetPoint("BOTTOMLEFT", 0, 0)
-        headerLine:SetPoint("BOTTOMRIGHT", 0, 0)
-        headerLine:SetHeight(PixelSize(header, 1))
-        headerLine:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
+        header._line:SetHeight(PixelSize(header, 1))
+        header._line:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
+        if UIKit and UIKit.SetChevronCaretColor then
+            UIKit.SetChevronCaretColor(chevron, ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        elseif chevron.SetTextColor then
+            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        end
 
         header:SetScript("OnEnter", function()
             headerText:SetTextColor(1, 1, 1, 1)
@@ -1759,17 +1794,25 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             local key = elem.key
             local def = elem.def
 
-            local row = CreateFrame("Button", nil, content)
+            local row = table.remove(drawer._rowPool)
+            if not row then
+                row = CreateFrame("Button", nil, content)
+                row._poolKind = "row"
+
+                local rowBg = row:CreateTexture(nil, "BACKGROUND")
+                rowBg:SetAllPoints()
+                row._bg = rowBg
+
+                local newLabel = EnsureCJKFont(row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+                newLabel:SetPoint("LEFT", 12, 0)
+                row._label = newLabel
+            end
             row:SetSize(contentWidth, DRAWER_ROW_HEIGHT)
             drawer._rows[#drawer._rows + 1] = row
 
-            local rowBg = row:CreateTexture(nil, "BACKGROUND")
-            rowBg:SetAllPoints()
-            rowBg:SetColorTexture(0.15, 0.17, 0.22, 0)
-            row._bg = rowBg
+            row._bg:SetColorTexture(0.15, 0.17, 0.22, 0)
 
-            local label = EnsureCJKFont(row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-            label:SetPoint("LEFT", 12, 0)
+            local label = row._label
             label:SetText(def.label or key)
 
             local isEnabled = um:IsElementEnabled(key)
@@ -1782,17 +1825,25 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             end
 
             if hasToggle then
-                local toggleBtn = CreateFrame("Button", nil, row)
-                toggleBtn:SetSize(36, 18)
-                toggleBtn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+                local toggleBtn = row._toggle
+                if not toggleBtn then
+                    toggleBtn = CreateFrame("Button", nil, row)
+                    toggleBtn:SetSize(36, 18)
+                    toggleBtn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 
-                local toggleBg = toggleBtn:CreateTexture(nil, "BACKGROUND")
-                toggleBg:SetAllPoints()
-                toggleBtn._bg = toggleBg
+                    local newToggleBg = toggleBtn:CreateTexture(nil, "BACKGROUND")
+                    newToggleBg:SetAllPoints()
+                    toggleBtn._bg = newToggleBg
 
-                local toggleText = EnsureCJKFont(toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-                toggleText:SetPoint("CENTER")
-                toggleBtn._text = toggleText
+                    local newToggleText = EnsureCJKFont(toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+                    newToggleText:SetPoint("CENTER")
+                    toggleBtn._text = newToggleText
+
+                    row._toggle = toggleBtn
+                end
+                toggleBtn:Show()
+                local toggleBg = toggleBtn._bg
+                local toggleText = toggleBtn._text
 
                 local function UpdateToggleVisual()
                     local en = um:IsElementEnabled(key)
@@ -1842,25 +1893,35 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 end)
 
                 UpdateToggleVisual()
-                row._toggle = toggleBtn
+            elseif row._toggle then
+                row._toggle:Hide()
             end
 
             if not def.noHandle then
-                local showBtn = CreateFrame("Button", nil, row)
-                showBtn:SetSize(40, 18)
-                if row._toggle then
+                local showBtn = row._showBtn
+                if not showBtn then
+                    showBtn = CreateFrame("Button", nil, row)
+                    showBtn:SetSize(40, 18)
+
+                    local newShowBg = showBtn:CreateTexture(nil, "BACKGROUND")
+                    newShowBg:SetAllPoints()
+                    showBtn._bg = newShowBg
+
+                    local newShowText = EnsureCJKFont(showBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+                    newShowText:SetPoint("CENTER")
+                    showBtn._text = newShowText
+
+                    row._showBtn = showBtn
+                end
+                showBtn:ClearAllPoints()
+                if hasToggle then
                     showBtn:SetPoint("RIGHT", row._toggle, "LEFT", -4, 0)
                 else
                     showBtn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
                 end
-
-                local showBg = showBtn:CreateTexture(nil, "BACKGROUND")
-                showBg:SetAllPoints()
-                showBtn._bg = showBg
-
-                local showText = EnsureCJKFont(showBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-                showText:SetPoint("CENTER")
-                showBtn._text = showText
+                showBtn:Show()
+                local showBg = showBtn._bg
+                local showText = showBtn._text
 
                 local soloBtn, soloBg, soloText
                 local resetBtn, resetBg, resetText
@@ -1953,18 +2014,27 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 row._showBtn = showBtn
                 row._updateShowVisual = UpdateShowVisual
 
-                soloBtn = CreateFrame("Button", nil, row)
-                soloBtn:SetSize(40, 18)
-                soloBtn:SetPoint("RIGHT", showBtn, "LEFT", -4, 0)
+                soloBtn = row._soloBtn
+                if not soloBtn then
+                    soloBtn = CreateFrame("Button", nil, row)
+                    soloBtn:SetSize(40, 18)
+                    soloBtn:SetPoint("RIGHT", showBtn, "LEFT", -4, 0)
 
-                soloBg = soloBtn:CreateTexture(nil, "BACKGROUND")
-                soloBg:SetAllPoints()
-                soloBtn._bg = soloBg
+                    soloBg = soloBtn:CreateTexture(nil, "BACKGROUND")
+                    soloBg:SetAllPoints()
+                    soloBtn._bg = soloBg
 
-                soloText = EnsureCJKFont(soloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-                soloText:SetPoint("CENTER")
-                soloText:SetText(ns.L["SOLO"])
-                soloBtn._text = soloText
+                    soloText = EnsureCJKFont(soloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+                    soloText:SetPoint("CENTER")
+                    soloText:SetText(ns.L["SOLO"])
+                    soloBtn._text = soloText
+
+                    row._soloBtn = soloBtn
+                else
+                    soloBg = soloBtn._bg
+                    soloText = soloBtn._text
+                end
+                soloBtn:Show()
 
                 soloBtn:SetScript("OnClick", function()
                     um:SoloHandlePreview(key)
@@ -1992,19 +2062,29 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                 row._soloBtn = soloBtn
                 row._updateSoloVisual = UpdateSoloVisual
 
-                resetBtn = CreateFrame("Button", nil, row)
-                resetBtn:SetSize(44, 18)
-                resetBtn:SetPoint("RIGHT", soloBtn, "LEFT", -4, 0)
+                resetBtn = row._resetBtn
+                if not resetBtn then
+                    resetBtn = CreateFrame("Button", nil, row)
+                    resetBtn:SetSize(44, 18)
+                    resetBtn:SetPoint("RIGHT", soloBtn, "LEFT", -4, 0)
 
-                resetBg = resetBtn:CreateTexture(nil, "BACKGROUND")
-                resetBg:SetAllPoints()
-                resetBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
-                resetBtn._bg = resetBg
+                    resetBg = resetBtn:CreateTexture(nil, "BACKGROUND")
+                    resetBg:SetAllPoints()
+                    resetBg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
+                    resetBtn._bg = resetBg
 
-                resetText = EnsureCJKFont(resetBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-                resetText:SetPoint("CENTER")
-                resetText:SetText(ns.L["RESET"])
-                resetText:SetTextColor(0.6, 0.6, 0.6, 1)
+                    resetText = EnsureCJKFont(resetBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+                    resetText:SetPoint("CENTER")
+                    resetText:SetText(ns.L["RESET"])
+                    resetText:SetTextColor(0.6, 0.6, 0.6, 1)
+                    resetBtn._text = resetText
+
+                    row._resetBtn = resetBtn
+                else
+                    resetBg = resetBtn._bg
+                    resetText = resetBtn._text
+                end
+                resetBtn:Show()
 
                 resetBtn:SetScript("OnClick", function()
                     um:ResetToCenter(key)
@@ -2025,10 +2105,14 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                     end
                 end)
 
-                row._resetBtn = resetBtn
-
                 UpdateShowVisual()
                 UpdateSoloVisual()
+            else
+                if row._showBtn then row._showBtn:Hide() end
+                if row._soloBtn then row._soloBtn:Hide() end
+                if row._resetBtn then row._resetBtn:Hide() end
+                row._updateShowVisual = nil
+                row._updateSoloVisual = nil
             end
 
             row:SetScript("OnClick", function()
@@ -2049,8 +2133,14 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             layerRows[#layerRows + 1] = row
         end
 
-        if group == "Display" then
+        if group == "Display" and drawer._addDatapanelRow then
+            local addRow = drawer._addDatapanelRow
+            addRow:SetSize(contentWidth, DRAWER_ROW_HEIGHT)
+            drawer._rows[#drawer._rows + 1] = addRow
+            allRows[#allRows + 1] = { frame = addRow, group = group, isHeader = false }
+        elseif group == "Display" then
             local addRow = CreateFrame("Button", nil, content)
+            drawer._addDatapanelRow = addRow
             addRow:SetSize(contentWidth, DRAWER_ROW_HEIGHT)
             drawer._rows[#drawer._rows + 1] = addRow
 
@@ -2184,8 +2274,14 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             allRows[#allRows + 1] = { frame = addRow, group = group, isHeader = false }
         end
 
-        if group == "Cooldown Manager & Custom Tracker Bars" then
+        if group == "Cooldown Manager & Custom Tracker Bars" and drawer._addTrackerRow then
+            local addTrackerRow = drawer._addTrackerRow
+            addTrackerRow:SetSize(contentWidth, DRAWER_ROW_HEIGHT)
+            drawer._rows[#drawer._rows + 1] = addTrackerRow
+            allRows[#allRows + 1] = { frame = addTrackerRow, group = group, isHeader = false }
+        elseif group == "Cooldown Manager & Custom Tracker Bars" then
             local addTrackerRow = CreateFrame("Button", nil, content)
+            drawer._addTrackerRow = addTrackerRow
             addTrackerRow:SetSize(contentWidth, DRAWER_ROW_HEIGHT)
             drawer._rows[#drawer._rows + 1] = addTrackerRow
 

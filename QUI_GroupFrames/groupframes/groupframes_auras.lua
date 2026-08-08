@@ -1494,8 +1494,12 @@ if ns.AuraEvents then
         end
 
         if HeavyBudgetAvailable() then
-            _auraDirtyUnits[unit] = nil
-            ProcessUnitAuraSetChange(unit, updateInfo)
+            if _auraDirtyUnits[unit] then
+                _auraDirtyUnits[unit] = nil
+                ProcessUnitAuraSetChange(unit, nil)
+            else
+                ProcessUnitAuraSetChange(unit, updateInfo)
+            end
         else
             _auraDirtyUnits[unit] = true
             if auraStats then auraStats.heavyDeferred = auraStats.heavyDeferred + 1 end

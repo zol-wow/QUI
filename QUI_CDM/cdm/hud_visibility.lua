@@ -5,6 +5,8 @@ local QUICore = ns.Addon
 local UpdateCDMVisibility
 local UpdateCustomTrackersVisibility
 local UpdateUnitframesVisibility
+local UpdateActionBarsVisibility
+local UpdateChatVisibility
 local HookCustomTrackerFrameForMouseover
 
 local _damagedAlphaCurve
@@ -144,20 +146,6 @@ local function ApplyReanchorViewerAlpha(alpha)
     end
 end
 
-local CDMVisibility = {
-    currentlyHidden = false,
-    isFading = false,
-    fadeStart = 0,
-    fadeStartAlpha = 1,
-    fadeTargetAlpha = 1,
-    fadeTargets = nil,
-    fadeFrame = nil,
-    mouseOver = false,
-    mouseoverDetector = nil,
-    hoverCount = 0,
-    leaveTimer = nil,
-}
-
 local function ShouldHideForLocationRules(vis, includeVehicle)
     local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
     if ignoreHideRules then return false end
@@ -168,43 +156,9 @@ local function ShouldHideForLocationRules(vis, includeVehicle)
     return false
 end
 
-local function ShouldCDMBeVisible()
-    if not IsCDMMasterEnabled() then return false end
+local _mouseoverHooked = Helpers.CreateStateTable()
 
-    local vis = GetCDMVisibilitySettings()
-    if not vis then return true end
-
-    if vis.showAlways then
-        if ShouldHideForLocationRules(vis, true) then return false end
-        return true
-    end
-
-    if vis.showWhenTargetExists and UnitExists("target") then return true end
-    if vis.showInCombat and UnitAffectingCombat("player") then return true end
-    if vis.showInGroup and IsPlayerInGroup() then return true end
-    if vis.showInInstance and IsPlayerInInstance() then return true end
-    if vis.showOnMouseover and CDMVisibility.mouseOver then return true end
-    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
-
-    if ShouldHideForLocationRules(vis, true) then return false end
-
-    return false
-end
-
-local function OnCDMFadeUpdate(self)
-    local targetAlpha = ReadNumber(CDMVisibility.fadeTargetAlpha, 1)
-    local vis = GetCDMVisibilitySettings()
-    local duration = (vis and vis.fadeDuration) or 0.2
-    if duration <= 0 then duration = 0.01 end
-
-    local now = GetTime()
-    local elapsedTime = now - CDMVisibility.fadeStart
-    local progress = math.min(elapsedTime / duration, 1)
-
-    local startAlpha = ReadNumber(CDMVisibility.fadeStartAlpha, targetAlpha)
-    local alpha = startAlpha + (targetAlpha - startAlpha) * progress
-
-    local frames = CDMVisibility.fadeTargets or GetCDMFrames()
+local function ApplyFrameListAlpha(frames, alpha)
     for i = #frames, 1, -1 do
         local frame = frames[i]
         local ok = false
@@ -215,87 +169,264 @@ local function OnCDMFadeUpdate(self)
             table.remove(frames, i)
         end
     end
-    ApplyReanchorViewerAlpha(alpha)
+end
 
-    if progress >= 1 then
-        CDMVisibility.isFading = false
-        CDMVisibility.currentlyHidden = (targetAlpha < 1)
-        CDMVisibility.fadeTargets = nil
-        self:SetScript("OnUpdate", nil)
+local function GetFrameAlpha(frame)
+    return frame:GetAlpha()
+end
+
+local VisibilityController = {}
+VisibilityController.__index = VisibilityController
+
+local function CreateVisibilityController(config)
+    config.currentlyHidden = false
+    config.isFading = false
+    config.fadeStart = 0
+    config.fadeStartAlpha = 1
+    config.fadeTargetAlpha = 1
+    config.mouseOver = false
+    config.hoverCount = 0
+    config.leaveDelay = config.leaveDelay or 0.5
+    config.getAlpha = config.getAlpha or GetFrameAlpha
+    config.applyAlpha = config.applyAlpha or ApplyFrameListAlpha
+
+    local controller = setmetatable(config, VisibilityController)
+    controller.fadeTick = function(frame) controller:Tick(frame) end
+    return controller
+end
+
+function VisibilityController:ShouldBeVisible()
+    if self.masterGate and not self.masterGate() then return false end
+
+    local vis = self.getSettings()
+    if not vis then return true end
+
+    if self.forceVisible and self.forceVisible() then return true end
+
+    if vis.showAlways then
+        if ShouldHideForLocationRules(vis, self.includeVehicle) then return false end
+        return true
+    end
+
+    if vis.showWhenTargetExists and UnitExists("target") then return true end
+    if vis.showInCombat and UnitAffectingCombat("player") then return true end
+    if vis.showInGroup and IsPlayerInGroup() then return true end
+    if vis.showInInstance and IsPlayerInInstance() then return true end
+    if vis.showOnMouseover and self.mouseOver then return true end
+    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
+
+    if ShouldHideForLocationRules(vis, self.includeVehicle) then return false end
+
+    return false
+end
+
+function VisibilityController:StopFade()
+    self.isFading = false
+    self.fadeTargets = nil
+    if self.fadeFrame then
+        self.fadeFrame:SetScript("OnUpdate", nil)
     end
 end
 
-local function StartCDMFade(targetAlpha)
-    local frames = GetCDMFrames()
-    if #frames == 0 then return end
+function VisibilityController:Tick(frame)
+    local targetAlpha = ReadNumber(self.fadeTargetAlpha, 1)
 
-    local rawAlpha = frames[1]:GetAlpha()
-    local currentAlpha = ReadNumber(rawAlpha, targetAlpha)
-
-    if math.abs(currentAlpha - targetAlpha) < 0.01 then
-        CDMVisibility.currentlyHidden = (targetAlpha < 1)
-        CDMVisibility.fadeStartAlpha = targetAlpha
-        CDMVisibility.fadeTargetAlpha = targetAlpha
-        ApplyReanchorViewerAlpha(targetAlpha)
+    if self.suppressed and self.suppressed() then
+        self.isFading = false
+        self.currentlyHidden = (targetAlpha < 1)
+        self.fadeTargets = nil
+        frame:SetScript("OnUpdate", nil)
         return
     end
 
-    CDMVisibility.isFading = true
-    CDMVisibility.fadeStart = GetTime()
-    CDMVisibility.fadeStartAlpha = currentAlpha
-    CDMVisibility.fadeTargetAlpha = targetAlpha
-    CDMVisibility.fadeTargets = {}
-    for i = 1, #frames do
-        CDMVisibility.fadeTargets[i] = frames[i]
+    if targetAlpha < 1 and self.forceVisible and self.forceVisible() then
+        self.applyAlpha(self.fadeTargets or self.getFrames(), 1)
+        self.isFading = false
+        self.currentlyHidden = false
+        self.fadeTargetAlpha = 1
+        self.fadeTargets = nil
+        frame:SetScript("OnUpdate", nil)
+        return
     end
 
-    if not CDMVisibility.fadeFrame then
-        CDMVisibility.fadeFrame = CreateFrame("Frame")
+    local vis = self.getSettings()
+    local duration = (vis and vis.fadeDuration) or 0.2
+    if duration <= 0 then duration = 0.01 end
+
+    local progress = math.min((GetTime() - self.fadeStart) / duration, 1)
+    local startAlpha = ReadNumber(self.fadeStartAlpha, targetAlpha)
+    local alpha = startAlpha + (targetAlpha - startAlpha) * progress
+
+    self.applyAlpha(self.fadeTargets or self.getFrames(), alpha)
+    if self.onAlpha then self.onAlpha(alpha) end
+
+    if progress >= 1 then
+        self.isFading = false
+        self.currentlyHidden = (targetAlpha < 1)
+        self.fadeTargets = nil
+        frame:SetScript("OnUpdate", nil)
     end
-    CDMVisibility.fadeFrame:SetScript("OnUpdate", OnCDMFadeUpdate)
 end
 
-local function SnapCDMFadeToTarget()
-    local target = ReadNumber(CDMVisibility.fadeTargetAlpha, 1)
-    local frames = CDMVisibility.fadeTargets or GetCDMFrames()
-    for i = #frames, 1, -1 do
-        local frame = frames[i]
-        if frame then
-            ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetAlpha", target)
+function VisibilityController:StartFade(targetAlpha, framesOverride)
+    if self.suppressed and self.suppressed() then return end
+
+    local frames = framesOverride or self.getFrames()
+    if #frames == 0 then return end
+
+    local forceInstant = (self.forceVisible and self.forceVisible()) and true or false
+    if forceInstant and targetAlpha < 1 then
+        targetAlpha = 1
+    end
+
+    local currentAlpha = ReadNumber(self.getAlpha(frames[1]), targetAlpha)
+
+    if forceInstant or math.abs(currentAlpha - targetAlpha) < 0.01 then
+        if self.instantApply then
+            self.applyAlpha(frames, targetAlpha)
+            self:StopFade()
         end
+        self.currentlyHidden = (targetAlpha < 1)
+        self.fadeStartAlpha = targetAlpha
+        self.fadeTargetAlpha = targetAlpha
+        if self.onAlpha then self.onAlpha(targetAlpha) end
+        return
     end
-    ApplyReanchorViewerAlpha(target)
-    CDMVisibility.isFading = false
-    CDMVisibility.currentlyHidden = (target < 1)
-    CDMVisibility.fadeTargets = nil
-    if CDMVisibility.fadeFrame then
-        CDMVisibility.fadeFrame:SetScript("OnUpdate", nil)
+
+    self.isFading = true
+    self.fadeStart = GetTime()
+    self.fadeStartAlpha = currentAlpha
+    self.fadeTargetAlpha = targetAlpha
+
+    local targets = {}
+    for i = 1, #frames do
+        targets[i] = frames[i]
     end
+    self.fadeTargets = targets
+
+    if not self.fadeFrame then
+        self.fadeFrame = CreateFrame("Frame")
+    end
+    self.fadeFrame:SetScript("OnUpdate", self.fadeTick)
+end
+
+function VisibilityController:Snap()
+    local target = ReadNumber(self.fadeTargetAlpha, 1)
+    self.applyAlpha(self.fadeTargets or self.getFrames(), target)
+    if self.onAlpha then self.onAlpha(target) end
+    self.isFading = false
+    self.currentlyHidden = (target < 1)
+    self.fadeTargets = nil
+    if self.fadeFrame then
+        self.fadeFrame:SetScript("OnUpdate", nil)
+    end
+end
+
+function VisibilityController:MouseoverEnabled()
+    local vis = self.getSettings()
+    return (vis and not vis.showAlways and vis.showOnMouseover) and true or false
+end
+
+function VisibilityController:HookFrame(frame)
+    if not frame or _mouseoverHooked[frame] then return end
+    _mouseoverHooked[frame] = true
+
+    frame:HookScript("OnEnter", function()
+        if self.guardHooks and not self:MouseoverEnabled() then return end
+
+        if self.leaveTimer then
+            self.leaveTimer:Cancel()
+            self.leaveTimer = nil
+        end
+
+        self.hoverCount = self.hoverCount + 1
+        if self.hoverCount == 1 then
+            self.mouseOver = true
+            self.update()
+        end
+    end)
+
+    frame:HookScript("OnLeave", function()
+        if self.guardHooks and not self:MouseoverEnabled() then return end
+
+        self.hoverCount = math.max(0, self.hoverCount - 1)
+        if self.hoverCount == 0 then
+            if self.leaveTimer then
+                self.leaveTimer:Cancel()
+            end
+
+            self.leaveTimer = C_Timer.NewTimer(self.leaveDelay, function()
+                self.leaveTimer = nil
+                if self.hoverCount == 0 then
+                    self.mouseOver = false
+                    self.update()
+                end
+            end)
+        end
+    end)
+end
+
+function VisibilityController:ResetMouseover()
+    if self.mouseoverDetector then
+        self.mouseoverDetector:SetScript("OnUpdate", nil)
+        self.mouseoverDetector:Hide()
+    end
+
+    if self.leaveTimer then
+        self.leaveTimer:Cancel()
+        self.leaveTimer = nil
+    end
+
+    self.mouseOver = false
+    self.hoverCount = 0
+end
+
+function VisibilityController:EnsureDetector()
+    local detector = self.mouseoverDetector or CreateFrame("Frame", nil, UIParent)
+    detector:EnableMouse(false)
+    detector:Show()
+    self.mouseoverDetector = detector
+    return detector
+end
+
+local function IsAddonOwnedCDMMouseoverFrame(frame)
+    return frame
+        and (frame._isQUICDMIcon or frame._quiCdmKey or frame._quiCDMMouseoverTarget)
+end
+
+local CDMVisibility = CreateVisibilityController({
+    getSettings = GetCDMVisibilitySettings,
+    getFrames = GetCDMFrames,
+    masterGate = IsCDMMasterEnabled,
+    includeVehicle = true,
+    guardHooks = true,
+    onAlpha = function(alpha) ApplyReanchorViewerAlpha(alpha) end,
+    update = function() UpdateCDMVisibility() end,
+})
+
+local function SnapCDMFadeToTarget()
+    CDMVisibility:Snap()
 end
 
 UpdateCDMVisibility = function()
     if not IsCDMMasterEnabled() then
-        StartCDMFade(0)
+        CDMVisibility:StartFade(0)
         return
     end
 
     if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
-        StartCDMFade(1)
+        CDMVisibility:StartFade(1)
         return
     end
 
-    local shouldShow = ShouldCDMBeVisible()
+    local shouldShow = CDMVisibility:ShouldBeVisible()
     local vis = GetCDMVisibilitySettings()
 
     local hpCurve = ((not shouldShow) and vis and vis.showWhenHealthBelow100
         and UnitHealthPercent) and GetDamagedAlphaCurve() or nil
     if hpCurve then
         local damagedAlpha = UnitHealthPercent("player", true, hpCurve)
-        if CDMVisibility.fadeFrame then
-            CDMVisibility.fadeFrame:SetScript("OnUpdate", nil)
-        end
-        CDMVisibility.isFading = false
-        CDMVisibility.fadeTargets = nil
+        CDMVisibility:StopFade()
         local frames = GetCDMFrames()
         for i = #frames, 1, -1 do
             local frame = frames[i]
@@ -312,9 +443,9 @@ UpdateCDMVisibility = function()
     end
 
     if shouldShow then
-        StartCDMFade(1)
+        CDMVisibility:StartFade(1)
     else
-        StartCDMFade(vis and vis.fadeOutAlpha or 0)
+        CDMVisibility:StartFade(vis and vis.fadeOutAlpha or 0)
     end
 
     if QUICore then
@@ -327,11 +458,39 @@ UpdateCDMVisibility = function()
     end
 end
 
-local _mouseoverHooked = Helpers.CreateStateTable()
+local function GetCustomTrackersVisibilitySettings()
+    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.customTrackersVisibility then
+        return QUICore.db.profile.customTrackersVisibility
+    end
+    return nil
+end
 
-local function IsAddonOwnedCDMMouseoverFrame(frame)
-    return frame
-        and (frame._isQUICDMIcon or frame._quiCdmKey or frame._quiCDMMouseoverTarget)
+local CustomTrackersVisibility = CreateVisibilityController({
+    getSettings = GetCustomTrackersVisibilitySettings,
+    getFrames = GetCustomTrackerFrames,
+    masterGate = IsCDMMasterEnabled,
+    includeVehicle = true,
+    guardHooks = true,
+    update = function() UpdateCustomTrackersVisibility() end,
+})
+
+UpdateCustomTrackersVisibility = function()
+    if not IsCDMMasterEnabled() then
+        CustomTrackersVisibility:StartFade(0)
+        return
+    end
+
+    if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
+        CustomTrackersVisibility:StartFade(1)
+        return
+    end
+
+    local vis = GetCustomTrackersVisibilitySettings()
+    if CustomTrackersVisibility:ShouldBeVisible() then
+        CustomTrackersVisibility:StartFade(1)
+    else
+        CustomTrackersVisibility:StartFade(vis and vis.fadeOutAlpha or 0)
+    end
 end
 
 local function HookFrameForMouseover(frame)
@@ -343,66 +502,19 @@ local function HookFrameForMouseover(frame)
         return
     end
 
-    _mouseoverHooked[frame] = true
+    CDMVisibility:HookFrame(frame)
+end
 
-    frame:HookScript("OnEnter", function()
-        local vis = GetCDMVisibilitySettings()
-        if not vis or vis.showAlways or not vis.showOnMouseover then return end
+HookCustomTrackerFrameForMouseover = function(frame)
+    if not IsAddonOwnedCDMMouseoverFrame(frame) or _mouseoverHooked[frame] then return end
+    if not IsCustomCDMBarFrame(frame) then return end
 
-        if CDMVisibility.leaveTimer then
-            CDMVisibility.leaveTimer:Cancel()
-            CDMVisibility.leaveTimer = nil
-        end
-
-        CDMVisibility.hoverCount = CDMVisibility.hoverCount + 1
-        if CDMVisibility.hoverCount == 1 then
-            CDMVisibility.mouseOver = true
-            UpdateCDMVisibility()
-        end
-    end)
-
-    frame:HookScript("OnLeave", function()
-        local vis = GetCDMVisibilitySettings()
-        if not vis or vis.showAlways or not vis.showOnMouseover then return end
-
-        CDMVisibility.hoverCount = math.max(0, CDMVisibility.hoverCount - 1)
-
-        if CDMVisibility.hoverCount == 0 then
-            if CDMVisibility.leaveTimer then
-                CDMVisibility.leaveTimer:Cancel()
-            end
-
-            CDMVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
-                CDMVisibility.leaveTimer = nil
-                if CDMVisibility.hoverCount == 0 then
-                    CDMVisibility.mouseOver = false
-                    UpdateCDMVisibility()
-                end
-            end)
-        end
-    end)
+    CustomTrackersVisibility:HookFrame(frame)
 end
 
 local function SetupCDMMouseoverDetector()
-    local vis = GetCDMVisibilitySettings()
-
-    if CDMVisibility.mouseoverDetector then
-        CDMVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
-        CDMVisibility.mouseoverDetector:Hide()
-        CDMVisibility.mouseoverDetector = nil
-    end
-
-    if CDMVisibility.leaveTimer then
-        CDMVisibility.leaveTimer:Cancel()
-        CDMVisibility.leaveTimer = nil
-    end
-
-    CDMVisibility.mouseOver = false
-    CDMVisibility.hoverCount = 0
-
-    if not vis or vis.showAlways or not vis.showOnMouseover then
-        return
-    end
+    CDMVisibility:ResetMouseover()
+    if not CDMVisibility:MouseoverEnabled() then return end
 
     local cdmFrames = GetCDMFrames()
     for _, frame in ipairs(cdmFrames) do
@@ -428,198 +540,12 @@ local function SetupCDMMouseoverDetector()
         end
     end
 
-    local detector = CreateFrame("Frame", nil, UIParent)
-    detector:EnableMouse(false)
-    CDMVisibility.mouseoverDetector = detector
-end
-
-local CustomTrackersVisibility = {
-    currentlyHidden = false,
-    isFading = false,
-    fadeStart = 0,
-    fadeStartAlpha = 1,
-    fadeTargetAlpha = 1,
-    fadeTargets = nil,
-    fadeFrame = nil,
-    mouseOver = false,
-    mouseoverDetector = nil,
-    hoverCount = 0,
-    leaveTimer = nil,
-}
-
-local function GetCustomTrackersVisibilitySettings()
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.customTrackersVisibility then
-        return QUICore.db.profile.customTrackersVisibility
-    end
-    return nil
-end
-
-local function ShouldCustomTrackersBeVisible()
-    if not IsCDMMasterEnabled() then return false end
-
-    local vis = GetCustomTrackersVisibilitySettings()
-    if not vis then return true end
-
-    if vis.showAlways then
-        if ShouldHideForLocationRules(vis, true) then return false end
-        return true
-    end
-
-    if vis.showWhenTargetExists and UnitExists("target") then return true end
-    if vis.showInCombat and UnitAffectingCombat("player") then return true end
-    if vis.showInGroup and IsPlayerInGroup() then return true end
-    if vis.showInInstance and IsPlayerInInstance() then return true end
-    if vis.showOnMouseover and CustomTrackersVisibility.mouseOver then return true end
-    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
-
-    if ShouldHideForLocationRules(vis, true) then return false end
-
-    return false
-end
-
-local function OnCustomTrackersFadeUpdate(self)
-    local targetAlpha = ReadNumber(CustomTrackersVisibility.fadeTargetAlpha, 1)
-    local vis = GetCustomTrackersVisibilitySettings()
-    local duration = (vis and vis.fadeDuration) or 0.2
-    if duration <= 0 then duration = 0.01 end
-
-    local now = GetTime()
-    local elapsedTime = now - CustomTrackersVisibility.fadeStart
-    local progress = math.min(elapsedTime / duration, 1)
-    local startAlpha = ReadNumber(CustomTrackersVisibility.fadeStartAlpha, targetAlpha)
-    local alpha = startAlpha + (targetAlpha - startAlpha) * progress
-
-    local frames = CustomTrackersVisibility.fadeTargets or GetCustomTrackerFrames()
-    for i = #frames, 1, -1 do
-        local frame = frames[i]
-        local ok = false
-        if frame then
-            ok = ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetAlpha", alpha)
-        end
-        if not ok then
-            table.remove(frames, i)
-        end
-    end
-
-    if progress >= 1 then
-        CustomTrackersVisibility.isFading = false
-        CustomTrackersVisibility.currentlyHidden = (targetAlpha < 1)
-        CustomTrackersVisibility.fadeTargets = nil
-        self:SetScript("OnUpdate", nil)
-    end
-end
-
-local function StartCustomTrackersFade(targetAlpha)
-    local frames = GetCustomTrackerFrames()
-    if #frames == 0 then return end
-
-    local rawAlpha = frames[1]:GetAlpha()
-    local currentAlpha = ReadNumber(rawAlpha, targetAlpha)
-    if math.abs(currentAlpha - targetAlpha) < 0.01 then
-        CustomTrackersVisibility.currentlyHidden = (targetAlpha < 1)
-        CustomTrackersVisibility.fadeStartAlpha = targetAlpha
-        CustomTrackersVisibility.fadeTargetAlpha = targetAlpha
-        return
-    end
-
-    CustomTrackersVisibility.isFading = true
-    CustomTrackersVisibility.fadeStart = GetTime()
-    CustomTrackersVisibility.fadeStartAlpha = currentAlpha
-    CustomTrackersVisibility.fadeTargetAlpha = targetAlpha
-    CustomTrackersVisibility.fadeTargets = {}
-    for i = 1, #frames do
-        CustomTrackersVisibility.fadeTargets[i] = frames[i]
-    end
-
-    if not CustomTrackersVisibility.fadeFrame then
-        CustomTrackersVisibility.fadeFrame = CreateFrame("Frame")
-    end
-    CustomTrackersVisibility.fadeFrame:SetScript("OnUpdate", OnCustomTrackersFadeUpdate)
-end
-
-UpdateCustomTrackersVisibility = function()
-    if not IsCDMMasterEnabled() then
-        StartCustomTrackersFade(0)
-        return
-    end
-
-    if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
-        StartCustomTrackersFade(1)
-        return
-    end
-
-    local shouldShow = ShouldCustomTrackersBeVisible()
-    local vis = GetCustomTrackersVisibilitySettings()
-    if shouldShow then
-        StartCustomTrackersFade(1)
-    else
-        StartCustomTrackersFade(vis and vis.fadeOutAlpha or 0)
-    end
-end
-
-HookCustomTrackerFrameForMouseover = function(frame)
-    if not IsAddonOwnedCDMMouseoverFrame(frame) or _mouseoverHooked[frame] then return end
-    if not IsCustomCDMBarFrame(frame) then return end
-
-    _mouseoverHooked[frame] = true
-
-    frame:HookScript("OnEnter", function()
-        local vis = GetCustomTrackersVisibilitySettings()
-        if not vis or vis.showAlways or not vis.showOnMouseover then return end
-
-        if CustomTrackersVisibility.leaveTimer then
-            CustomTrackersVisibility.leaveTimer:Cancel()
-            CustomTrackersVisibility.leaveTimer = nil
-        end
-
-        CustomTrackersVisibility.hoverCount = CustomTrackersVisibility.hoverCount + 1
-        if CustomTrackersVisibility.hoverCount == 1 then
-            CustomTrackersVisibility.mouseOver = true
-            UpdateCustomTrackersVisibility()
-        end
-    end)
-
-    frame:HookScript("OnLeave", function()
-        local vis = GetCustomTrackersVisibilitySettings()
-        if not vis or vis.showAlways or not vis.showOnMouseover then return end
-
-        CustomTrackersVisibility.hoverCount = math.max(0, CustomTrackersVisibility.hoverCount - 1)
-        if CustomTrackersVisibility.hoverCount == 0 then
-            if CustomTrackersVisibility.leaveTimer then
-                CustomTrackersVisibility.leaveTimer:Cancel()
-            end
-
-            CustomTrackersVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
-                CustomTrackersVisibility.leaveTimer = nil
-                if CustomTrackersVisibility.hoverCount == 0 then
-                    CustomTrackersVisibility.mouseOver = false
-                    UpdateCustomTrackersVisibility()
-                end
-            end)
-        end
-    end)
+    CDMVisibility:EnsureDetector()
 end
 
 local function SetupCustomTrackersMouseoverDetector()
-    local vis = GetCustomTrackersVisibilitySettings()
-
-    if CustomTrackersVisibility.mouseoverDetector then
-        CustomTrackersVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
-        CustomTrackersVisibility.mouseoverDetector:Hide()
-        CustomTrackersVisibility.mouseoverDetector = nil
-    end
-
-    if CustomTrackersVisibility.leaveTimer then
-        CustomTrackersVisibility.leaveTimer:Cancel()
-        CustomTrackersVisibility.leaveTimer = nil
-    end
-
-    CustomTrackersVisibility.mouseOver = false
-    CustomTrackersVisibility.hoverCount = 0
-
-    if not vis or vis.showAlways or not vis.showOnMouseover then
-        return
-    end
+    CustomTrackersVisibility:ResetMouseover()
+    if not CustomTrackersVisibility:MouseoverEnabled() then return end
 
     local frames = GetCustomTrackerFrames()
     for _, frame in ipairs(frames) do
@@ -635,23 +561,8 @@ local function SetupCustomTrackersMouseoverDetector()
         end
     end
 
-    local detector = CreateFrame("Frame", nil, UIParent)
-    detector:EnableMouse(false)
-    CustomTrackersVisibility.mouseoverDetector = detector
+    CustomTrackersVisibility:EnsureDetector()
 end
-
-local UnitframesVisibility = {
-    currentlyHidden = false,
-    isFading = false,
-    fadeStart = 0,
-    fadeStartAlpha = 1,
-    fadeTargetAlpha = 1,
-    fadeTargets = nil,
-    fadeFrame = nil,
-    mouseOver = false,
-    mouseoverDetector = nil,
-    leaveTimer = nil,
-}
 
 local function IsUnitframesCombatLocked()
     if InCombatLockdown and InCombatLockdown() then return true end
@@ -669,7 +580,7 @@ local function GetUnitframeFrames()
     local frames = {}
 
     if _G.QUI_UnitFrames then
-        for unitKey, frame in pairs(_G.QUI_UnitFrames) do
+        for _, frame in pairs(_G.QUI_UnitFrames) do
             if frame then
                 table.insert(frames, frame)
             end
@@ -679,7 +590,7 @@ local function GetUnitframeFrames()
     local vis = GetUnitframesVisibilitySettings()
     if not (vis and vis.alwaysShowCastbars) then
         if _G.QUI_Castbars then
-            for unitKey, castbar in pairs(_G.QUI_Castbars) do
+            for _, castbar in pairs(_G.QUI_Castbars) do
                 if castbar then
                     table.insert(frames, castbar)
                 end
@@ -740,137 +651,44 @@ local function ApplyUnitframeVisibilityAlpha(frame, alpha)
     frame:SetAlpha(alpha)
 end
 
-local function ShouldUnitframesBeVisible()
-    local vis = GetUnitframesVisibilitySettings()
-    if not vis then return true end
-
-    if IsUnitframesCombatLocked() then
-        return true
-    end
-
-    if vis.showAlways then
-        if ShouldHideForLocationRules(vis, false) then return false end
-        return true
-    end
-
-    if vis.showWhenTargetExists and UnitExists("target") then return true end
-    if vis.showInCombat and UnitAffectingCombat("player") then return true end
-    if vis.showInGroup and IsPlayerInGroup() then return true end
-    if vis.showInInstance and IsPlayerInInstance() then return true end
-    if vis.showOnMouseover and UnitframesVisibility.mouseOver then return true end
-    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
-
-    if ShouldHideForLocationRules(vis, false) then return false end
-
-    return false
-end
-
-local function OnUnitframesFadeUpdate(self)
-    local targetAlpha = ReadNumber(UnitframesVisibility.fadeTargetAlpha, 1)
-    if targetAlpha < 1 and IsUnitframesCombatLocked() then
-        local frames = UnitframesVisibility.fadeTargets or GetUnitframeFrames()
-        for _, frame in ipairs(frames) do
-            ApplyUnitframeVisibilityAlpha(frame, 1)
-        end
-        UnitframesVisibility.isFading = false
-        UnitframesVisibility.currentlyHidden = false
-        UnitframesVisibility.fadeTargetAlpha = 1
-        UnitframesVisibility.fadeTargets = nil
-        self:SetScript("OnUpdate", nil)
-        return
-    end
-
-    local vis = GetUnitframesVisibilitySettings()
-    local duration = (vis and vis.fadeDuration) or 0.2
-    if duration <= 0 then duration = 0.01 end
-
-    local now = GetTime()
-    local elapsedTime = now - UnitframesVisibility.fadeStart
-    local progress = math.min(elapsedTime / duration, 1)
-
-    local startAlpha = ReadNumber(UnitframesVisibility.fadeStartAlpha, targetAlpha)
-    local alpha = startAlpha + (targetAlpha - startAlpha) * progress
-
-    local frames = UnitframesVisibility.fadeTargets or GetUnitframeFrames()
+local function ApplyUnitframeListAlpha(frames, alpha)
     for _, frame in ipairs(frames) do
         ApplyUnitframeVisibilityAlpha(frame, alpha)
     end
-
-    if progress >= 1 then
-        UnitframesVisibility.isFading = false
-        UnitframesVisibility.currentlyHidden = (targetAlpha < 1)
-        UnitframesVisibility.fadeTargets = nil
-        self:SetScript("OnUpdate", nil)
-    end
 end
 
-local function StartUnitframesFade(targetAlpha, framesOverride)
-    local frames = framesOverride or GetUnitframeFrames()
-    if #frames == 0 then return end
-
-    local forceInstant = IsUnitframesCombatLocked()
-    if targetAlpha < 1 and forceInstant then
-        targetAlpha = 1
-    end
-
-    local rawAlpha = frames[1]:GetAlpha()
-    local currentAlpha = ReadNumber(rawAlpha, targetAlpha)
-
-    if forceInstant or math.abs(currentAlpha - targetAlpha) < 0.01 then
-        for _, frame in ipairs(frames) do
-            ApplyUnitframeVisibilityAlpha(frame, targetAlpha)
-        end
-        if UnitframesVisibility.fadeFrame then
-            UnitframesVisibility.fadeFrame:SetScript("OnUpdate", nil)
-        end
-        UnitframesVisibility.isFading = false
-        UnitframesVisibility.currentlyHidden = (targetAlpha < 1)
-        UnitframesVisibility.fadeStartAlpha = targetAlpha
-        UnitframesVisibility.fadeTargetAlpha = targetAlpha
-        UnitframesVisibility.fadeTargets = nil
-        return
-    end
-
-    UnitframesVisibility.isFading = true
-    UnitframesVisibility.fadeStart = GetTime()
-    UnitframesVisibility.fadeStartAlpha = currentAlpha
-    UnitframesVisibility.fadeTargetAlpha = targetAlpha
-    UnitframesVisibility.fadeTargets = frames
-
-    if not UnitframesVisibility.fadeFrame then
-        UnitframesVisibility.fadeFrame = CreateFrame("Frame")
-    end
-    UnitframesVisibility.fadeFrame:SetScript("OnUpdate", OnUnitframesFadeUpdate)
-end
+local UnitframesVisibility = CreateVisibilityController({
+    getSettings = GetUnitframesVisibilitySettings,
+    getFrames = GetUnitframeFrames,
+    applyAlpha = ApplyUnitframeListAlpha,
+    forceVisible = IsUnitframesCombatLocked,
+    includeVehicle = false,
+    instantApply = true,
+    update = function() UpdateUnitframesVisibility() end,
+})
 
 UpdateUnitframesVisibility = function()
     if (_G.QUI_IsUnitFrameEditModeActive and _G.QUI_IsUnitFrameEditModeActive())
         or Helpers.IsLayoutModeActive() then
-        StartUnitframesFade(1)
+        UnitframesVisibility:StartFade(1)
         return
     end
 
     local vis = GetUnitframesVisibilitySettings()
-    local shouldShow = ShouldUnitframesBeVisible()
+    local shouldShow = UnitframesVisibility:ShouldBeVisible()
 
     local hpCurve = ((not shouldShow) and vis and vis.showWhenHealthBelow100
         and UnitHealthPercent) and GetDamagedAlphaCurve() or nil
     if hpCurve then
         local damagedAlpha = UnitHealthPercent("player", true, hpCurve)
-        for _, frame in ipairs(GetPlayerUnitframes()) do
-            ApplyUnitframeVisibilityAlpha(frame, damagedAlpha)
-        end
+        ApplyUnitframeListAlpha(GetPlayerUnitframes(), damagedAlpha)
 
         local fadeAlpha = vis and vis.fadeOutAlpha or 0
         local nonPlayerFrames = GetUnitframeFramesExcludingPlayer()
         if #nonPlayerFrames > 0 then
-            StartUnitframesFade(fadeAlpha, nonPlayerFrames)
+            UnitframesVisibility:StartFade(fadeAlpha, nonPlayerFrames)
         else
-            if UnitframesVisibility.fadeFrame then
-                UnitframesVisibility.fadeFrame:SetScript("OnUpdate", nil)
-            end
-            UnitframesVisibility.isFading = false
-            UnitframesVisibility.fadeTargets = nil
+            UnitframesVisibility:StopFade()
         end
         return
     end
@@ -884,7 +702,7 @@ UpdateUnitframesVisibility = function()
             targetAlpha = shouldShow and 1 or (vis and vis.fadeOutAlpha or 0)
         end
 
-        for unitKey, castbar in pairs(_G.QUI_Castbars) do
+        for _, castbar in pairs(_G.QUI_Castbars) do
             if castbar then
                 ApplyUnitframeVisibilityAlpha(castbar, targetAlpha)
             end
@@ -892,85 +710,23 @@ UpdateUnitframesVisibility = function()
     end
 
     if shouldShow then
-        StartUnitframesFade(1)
+        UnitframesVisibility:StartFade(1)
     else
-        StartUnitframesFade(vis and vis.fadeOutAlpha or 0)
+        UnitframesVisibility:StartFade(vis and vis.fadeOutAlpha or 0)
     end
 end
 
 local function SetupUnitframesMouseoverDetector()
-    local vis = GetUnitframesVisibilitySettings()
-
-    if UnitframesVisibility.mouseoverDetector then
-        UnitframesVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
-        UnitframesVisibility.mouseoverDetector:Hide()
-        UnitframesVisibility.mouseoverDetector = nil
-    end
-
-    if UnitframesVisibility.leaveTimer then
-        UnitframesVisibility.leaveTimer:Cancel()
-        UnitframesVisibility.leaveTimer = nil
-    end
-    UnitframesVisibility.mouseOver = false
-
-    if not vis or vis.showAlways or not vis.showOnMouseover then
-        return
-    end
+    UnitframesVisibility:ResetMouseover()
+    if not UnitframesVisibility:MouseoverEnabled() then return end
 
     local ufFrames = GetUnitframeFrames()
-    local hoverCount = 0
-
     for _, frame in ipairs(ufFrames) do
-        if frame and not _mouseoverHooked[frame] then
-            _mouseoverHooked[frame] = true
-
-            frame:HookScript("OnEnter", function()
-                if UnitframesVisibility.leaveTimer then
-                    UnitframesVisibility.leaveTimer:Cancel()
-                    UnitframesVisibility.leaveTimer = nil
-                end
-                hoverCount = hoverCount + 1
-                if hoverCount == 1 then
-                    UnitframesVisibility.mouseOver = true
-                    UpdateUnitframesVisibility()
-                end
-            end)
-
-            frame:HookScript("OnLeave", function()
-                hoverCount = math.max(0, hoverCount - 1)
-                if hoverCount == 0 then
-                    if UnitframesVisibility.leaveTimer then
-                        UnitframesVisibility.leaveTimer:Cancel()
-                    end
-                    UnitframesVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
-                        UnitframesVisibility.leaveTimer = nil
-                        if hoverCount == 0 then
-                            UnitframesVisibility.mouseOver = false
-                            UpdateUnitframesVisibility()
-                        end
-                    end)
-                end
-            end)
-        end
+        UnitframesVisibility:HookFrame(frame)
     end
 
-    local detector = CreateFrame("Frame", nil, UIParent)
-    detector:EnableMouse(false)
-    UnitframesVisibility.mouseoverDetector = detector
+    UnitframesVisibility:EnsureDetector()
 end
-
-local ActionBarsVisibility = {
-    currentlyHidden = false,
-    isFading = false,
-    fadeStart = 0,
-    fadeStartAlpha = 1,
-    fadeTargetAlpha = 1,
-    fadeTargets = nil,
-    fadeFrame = nil,
-    mouseOver = false,
-    mouseoverDetector = nil,
-    leaveTimer = nil,
-}
 
 local function GetActionBarsVisibilitySettings()
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.actionBarsVisibility then
@@ -991,110 +747,36 @@ local function GetActionBarFrames()
     return frames
 end
 
-local function ShouldActionBarsBeVisible()
-    local vis = GetActionBarsVisibilitySettings()
-    if not vis then return true end
-
-    if vis.showAlways then
-        if ShouldHideForLocationRules(vis, true) then return false end
-        return true
+local function ApplyActionBarListAlpha(frames, alpha)
+    local setBarAlpha = ns.ActionBarsOwned and ns.ActionBarsOwned.SetBarAlpha
+    for _, entry in ipairs(frames) do
+        if setBarAlpha then
+            ns.SafeCall("best-effort-style", setBarAlpha, entry.barKey, alpha)
+        elseif entry.container then
+            ns.SafeCallMethodIfPresent("best-effort-style", entry.container, "SetAlpha", alpha)
+        end
     end
-
-    if vis.showWhenTargetExists and UnitExists("target") then return true end
-    if vis.showInCombat and UnitAffectingCombat("player") then return true end
-    if vis.showInGroup and IsPlayerInGroup() then return true end
-    if vis.showInInstance and IsPlayerInInstance() then return true end
-    if vis.showOnMouseover and ActionBarsVisibility.mouseOver then return true end
-    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
-
-    if ShouldHideForLocationRules(vis, true) then return false end
-
-    return false
 end
+
+local function GetActionBarEntryAlpha(entry)
+    return entry.container:GetAlpha()
+end
+
+local ActionBarsVisibility = CreateVisibilityController({
+    getSettings = GetActionBarsVisibilitySettings,
+    getFrames = GetActionBarFrames,
+    applyAlpha = ApplyActionBarListAlpha,
+    getAlpha = GetActionBarEntryAlpha,
+    includeVehicle = true,
+    leaveDelay = 0.3,
+    update = function() UpdateActionBarsVisibility() end,
+})
 
 ns.ShouldHideActionBarsForVisibility = function()
     if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
         return false
     end
-    return not ShouldActionBarsBeVisible()
-end
-
-local function ApplyBarAlpha(setBarAlpha, barKey, container, alpha)
-    if setBarAlpha then
-        ns.SafeCall("best-effort-style", setBarAlpha, barKey, alpha)
-    elseif container then
-        ns.SafeCallMethodIfPresent("best-effort-style", container, "SetAlpha", alpha)
-    end
-end
-
-local function OnActionBarsFadeUpdate(self)
-    local targetAlpha = ReadNumber(ActionBarsVisibility.fadeTargetAlpha, 1)
-    local vis = GetActionBarsVisibilitySettings()
-    local duration = (vis and vis.fadeDuration) or 0.2
-    if duration <= 0 then duration = 0.01 end
-
-    local now = GetTime()
-    local elapsedTime = now - ActionBarsVisibility.fadeStart
-    local progress = math.min(elapsedTime / duration, 1)
-
-    local startAlpha = ReadNumber(ActionBarsVisibility.fadeStartAlpha, targetAlpha)
-    local alpha = startAlpha + (targetAlpha - startAlpha) * progress
-
-    local setBarAlpha = ns.ActionBarsOwned and ns.ActionBarsOwned.SetBarAlpha
-    local frames = ActionBarsVisibility.fadeTargets
-    if frames then
-        for _, entry in ipairs(frames) do
-            ApplyBarAlpha(setBarAlpha, entry.barKey, entry.container, alpha)
-        end
-    else
-        local containers = ns.ActionBarsOwned and ns.ActionBarsOwned.containers
-        if containers then
-            for barKey, container in pairs(containers) do
-                ApplyBarAlpha(setBarAlpha, barKey, container, alpha)
-            end
-        end
-    end
-
-    if progress >= 1 then
-        ActionBarsVisibility.isFading = false
-        ActionBarsVisibility.currentlyHidden = (targetAlpha < 1)
-        ActionBarsVisibility.fadeTargets = nil
-        self:SetScript("OnUpdate", nil)
-    end
-end
-
-local function StartActionBarsFade(targetAlpha)
-    local frames = GetActionBarFrames()
-    if #frames == 0 then return end
-
-    local rawAlpha = frames[1].container:GetAlpha()
-    local currentAlpha = ReadNumber(rawAlpha, targetAlpha)
-
-    if math.abs(currentAlpha - targetAlpha) < 0.01 then
-        ActionBarsVisibility.currentlyHidden = (targetAlpha < 1)
-        ActionBarsVisibility.fadeStartAlpha = targetAlpha
-        ActionBarsVisibility.fadeTargetAlpha = targetAlpha
-        return
-    end
-
-    ActionBarsVisibility.isFading = true
-    ActionBarsVisibility.fadeStart = GetTime()
-    ActionBarsVisibility.fadeStartAlpha = currentAlpha
-    ActionBarsVisibility.fadeTargetAlpha = targetAlpha
-    ActionBarsVisibility.fadeTargets = frames
-
-    if not ActionBarsVisibility.fadeFrame then
-        ActionBarsVisibility.fadeFrame = CreateFrame("Frame")
-    end
-    ActionBarsVisibility.fadeFrame:SetScript("OnUpdate", OnActionBarsFadeUpdate)
-end
-
-local function StopActionBarsFade()
-    ActionBarsVisibility.isFading = false
-    ActionBarsVisibility.fadeTargets = nil
-    if ActionBarsVisibility.fadeFrame then
-        ActionBarsVisibility.fadeFrame:SetScript("OnUpdate", nil)
-    end
+    return not ActionBarsVisibility:ShouldBeVisible()
 end
 
 local function IsActionBarMouseoverFadeEnabled()
@@ -1125,91 +807,42 @@ local function IsActionBarMouseoverFadeEnabled()
     return globalFadeEnabled
 end
 
-local function UpdateActionBarsVisibility()
+UpdateActionBarsVisibility = function()
     if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
-        StartActionBarsFade(1)
+        ActionBarsVisibility:StartFade(1)
         return
     end
 
-    local shouldShow = ShouldActionBarsBeVisible()
+    local shouldShow = ActionBarsVisibility:ShouldBeVisible()
     local vis = GetActionBarsVisibilitySettings()
 
     if shouldShow then
         if IsActionBarMouseoverFadeEnabled() then
-            StopActionBarsFade()
+            ActionBarsVisibility:StopFade()
             ActionBarsVisibility.currentlyHidden = false
             if type(_G.QUI_RefreshActionBarFade) == "function" then
                 _G.QUI_RefreshActionBarFade()
             end
         else
-            StartActionBarsFade(1)
+            ActionBarsVisibility:StartFade(1)
         end
     else
-        StartActionBarsFade(vis and vis.fadeOutAlpha or 0)
+        ActionBarsVisibility:StartFade(vis and vis.fadeOutAlpha or 0)
     end
 end
 
 local function SetupActionBarsMouseoverDetector()
-    local vis = GetActionBarsVisibilitySettings()
-
-    if ActionBarsVisibility.mouseoverDetector then
-        ActionBarsVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
-        ActionBarsVisibility.mouseoverDetector:Hide()
-        ActionBarsVisibility.mouseoverDetector = nil
-    end
-
-    if ActionBarsVisibility.leaveTimer then
-        ActionBarsVisibility.leaveTimer:Cancel()
-        ActionBarsVisibility.leaveTimer = nil
-    end
-    ActionBarsVisibility.mouseOver = false
-
-    if not vis or vis.showAlways or not vis.showOnMouseover then
-        return
-    end
+    ActionBarsVisibility:ResetMouseover()
+    if not ActionBarsVisibility:MouseoverEnabled() then return end
 
     local abFrames = GetActionBarFrames()
-    local hoverCount = 0
-
     for _, entry in ipairs(abFrames) do
-        local frame = entry.container
-        if frame and not _mouseoverHooked[frame] then
-            _mouseoverHooked[frame] = true
-
-            frame:HookScript("OnEnter", function()
-                if ActionBarsVisibility.leaveTimer then
-                    ActionBarsVisibility.leaveTimer:Cancel()
-                    ActionBarsVisibility.leaveTimer = nil
-                end
-                hoverCount = hoverCount + 1
-                if hoverCount == 1 then
-                    ActionBarsVisibility.mouseOver = true
-                    UpdateActionBarsVisibility()
-                end
-            end)
-
-            frame:HookScript("OnLeave", function()
-                hoverCount = math.max(0, hoverCount - 1)
-                if hoverCount == 0 then
-                    if ActionBarsVisibility.leaveTimer then
-                        ActionBarsVisibility.leaveTimer:Cancel()
-                    end
-                    ActionBarsVisibility.leaveTimer = C_Timer.NewTimer(0.3, function()
-                        ActionBarsVisibility.leaveTimer = nil
-                        if hoverCount == 0 then
-                            ActionBarsVisibility.mouseOver = false
-                            UpdateActionBarsVisibility()
-                        end
-                    end)
-                end
-            end)
-        end
+        ActionBarsVisibility:HookFrame(entry.container)
     end
 
-    local detector = CreateFrame("Frame", nil, UIParent)
-    detector:EnableMouse(false)
+    local detector = ActionBarsVisibility:EnsureDetector()
     local pollInterval = 0
-    detector:SetScript("OnUpdate", function(self, elapsed)
+    detector:SetScript("OnUpdate", function(_, elapsed)
         pollInterval = pollInterval + elapsed
         if pollInterval < 0.1 then return end
         pollInterval = 0
@@ -1229,28 +862,14 @@ local function SetupActionBarsMouseoverDetector()
                     ActionBarsVisibility.leaveTimer:Cancel()
                     ActionBarsVisibility.leaveTimer = nil
                 end
-                hoverCount = 1
+                ActionBarsVisibility.hoverCount = 1
                 ActionBarsVisibility.mouseOver = true
                 UpdateActionBarsVisibility()
                 return
             end
         end
     end)
-    ActionBarsVisibility.mouseoverDetector = detector
 end
-
-local ChatVisibility = {
-    currentlyHidden = false,
-    isFading = false,
-    fadeStart = 0,
-    fadeStartAlpha = 1,
-    fadeTargetAlpha = 1,
-    fadeTargets = nil,
-    fadeFrame = nil,
-    mouseOver = false,
-    mouseoverDetector = nil,
-    leaveTimer = nil,
-}
 
 local function GetChatVisibilitySettings()
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.chatVisibility then
@@ -1273,165 +892,43 @@ local function GetChatFrames()
     return frames
 end
 
-local function ShouldChatBeVisible()
-    local vis = GetChatVisibilitySettings()
-    if not vis then return true end
-
-    if vis.showAlways then
-        if ShouldHideForLocationRules(vis, true) then return false end
-        return true
-    end
-
-    if vis.showWhenTargetExists and UnitExists("target") then return true end
-    if vis.showInCombat and UnitAffectingCombat("player") then return true end
-    if vis.showInGroup and IsPlayerInGroup() then return true end
-    if vis.showInInstance and IsPlayerInInstance() then return true end
-    if vis.showOnMouseover and ChatVisibility.mouseOver then return true end
-    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
-
-    if ShouldHideForLocationRules(vis, true) then return false end
-
-    return false
-end
-
-local function OnChatFadeUpdate(self)
+local function IsChatSuppressed()
     local Suppress = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.BlizzardSuppress
-    if Suppress and Suppress.IsActive and Suppress.IsActive() then
-        ChatVisibility.isFading = false
-        ChatVisibility.currentlyHidden = (ReadNumber(ChatVisibility.fadeTargetAlpha, 1) < 1)
-        ChatVisibility.fadeTargets = nil
-        self:SetScript("OnUpdate", nil)
-        return
-    end
-    local targetAlpha = ReadNumber(ChatVisibility.fadeTargetAlpha, 1)
-    local vis = GetChatVisibilitySettings()
-    local duration = (vis and vis.fadeDuration) or 0.2
-    if duration <= 0 then duration = 0.01 end
-
-    local now = GetTime()
-    local elapsedTime = now - ChatVisibility.fadeStart
-    local progress = math.min(elapsedTime / duration, 1)
-
-    local startAlpha = ReadNumber(ChatVisibility.fadeStartAlpha, targetAlpha)
-    local alpha = startAlpha + (targetAlpha - startAlpha) * progress
-
-    local frames = ChatVisibility.fadeTargets or GetChatFrames()
-    for _, frame in ipairs(frames) do
-        ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetAlpha", alpha)
-    end
-
-    if progress >= 1 then
-        ChatVisibility.isFading = false
-        ChatVisibility.currentlyHidden = (targetAlpha < 1)
-        ChatVisibility.fadeTargets = nil
-        self:SetScript("OnUpdate", nil)
-    end
+    return (Suppress and Suppress.IsActive and Suppress.IsActive()) and true or false
 end
 
-local function StartChatFade(targetAlpha)
-    local Suppress = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.BlizzardSuppress
-    if Suppress and Suppress.IsActive and Suppress.IsActive() then return end
+local ChatVisibility = CreateVisibilityController({
+    getSettings = GetChatVisibilitySettings,
+    getFrames = GetChatFrames,
+    suppressed = IsChatSuppressed,
+    includeVehicle = true,
+    update = function() UpdateChatVisibility() end,
+})
 
-    local frames = GetChatFrames()
-    if #frames == 0 then return end
-
-    local rawAlpha = frames[1]:GetAlpha()
-    local currentAlpha = ReadNumber(rawAlpha, targetAlpha)
-
-    if math.abs(currentAlpha - targetAlpha) < 0.01 then
-        ChatVisibility.currentlyHidden = (targetAlpha < 1)
-        ChatVisibility.fadeStartAlpha = targetAlpha
-        ChatVisibility.fadeTargetAlpha = targetAlpha
-        return
-    end
-
-    ChatVisibility.isFading = true
-    ChatVisibility.fadeStart = GetTime()
-    ChatVisibility.fadeStartAlpha = currentAlpha
-    ChatVisibility.fadeTargetAlpha = targetAlpha
-    ChatVisibility.fadeTargets = frames
-
-    if not ChatVisibility.fadeFrame then
-        ChatVisibility.fadeFrame = CreateFrame("Frame")
-    end
-    ChatVisibility.fadeFrame:SetScript("OnUpdate", OnChatFadeUpdate)
-end
-
-local function UpdateChatVisibility()
+UpdateChatVisibility = function()
     if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
-        StartChatFade(1)
+        ChatVisibility:StartFade(1)
         return
     end
 
-    local shouldShow = ShouldChatBeVisible()
     local vis = GetChatVisibilitySettings()
-
-    if shouldShow then
-        StartChatFade(1)
+    if ChatVisibility:ShouldBeVisible() then
+        ChatVisibility:StartFade(1)
     else
-        StartChatFade(vis and vis.fadeOutAlpha or 0)
+        ChatVisibility:StartFade(vis and vis.fadeOutAlpha or 0)
     end
 end
 
 local function SetupChatMouseoverDetector()
-    local vis = GetChatVisibilitySettings()
-
-    if ChatVisibility.mouseoverDetector then
-        ChatVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
-        ChatVisibility.mouseoverDetector:Hide()
-        ChatVisibility.mouseoverDetector = nil
-    end
-
-    if ChatVisibility.leaveTimer then
-        ChatVisibility.leaveTimer:Cancel()
-        ChatVisibility.leaveTimer = nil
-    end
-    ChatVisibility.mouseOver = false
-
-    if not vis or vis.showAlways or not vis.showOnMouseover then
-        return
-    end
+    ChatVisibility:ResetMouseover()
+    if not ChatVisibility:MouseoverEnabled() then return end
 
     local chatFrames = GetChatFrames()
-    local hoverCount = 0
-
     for _, frame in ipairs(chatFrames) do
-        if frame and not _mouseoverHooked[frame] then
-            _mouseoverHooked[frame] = true
-
-            frame:HookScript("OnEnter", function()
-                if ChatVisibility.leaveTimer then
-                    ChatVisibility.leaveTimer:Cancel()
-                    ChatVisibility.leaveTimer = nil
-                end
-                hoverCount = hoverCount + 1
-                if hoverCount == 1 then
-                    ChatVisibility.mouseOver = true
-                    UpdateChatVisibility()
-                end
-            end)
-
-            frame:HookScript("OnLeave", function()
-                hoverCount = math.max(0, hoverCount - 1)
-                if hoverCount == 0 then
-                    if ChatVisibility.leaveTimer then
-                        ChatVisibility.leaveTimer:Cancel()
-                    end
-                    ChatVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
-                        ChatVisibility.leaveTimer = nil
-                        if hoverCount == 0 then
-                            ChatVisibility.mouseOver = false
-                            UpdateChatVisibility()
-                        end
-                    end)
-                end
-            end)
-        end
+        ChatVisibility:HookFrame(frame)
     end
 
-    local detector = CreateFrame("Frame", nil, UIParent)
-    detector:EnableMouse(false)
-    ChatVisibility.mouseoverDetector = detector
+    ChatVisibility:EnsureDetector()
 end
 
 local visibilityEventFrame = CreateFrame("Frame")
@@ -1481,7 +978,15 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 
     if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
-        if UpdateUnitframesVisibility then UpdateUnitframesVisibility() end
+        local cdmVis = GetCDMVisibilitySettings()
+        if cdmVis and cdmVis.showWhenHealthBelow100 then
+            UpdateCDMVisibility()
+        end
+        local ufVis = GetUnitframesVisibilitySettings()
+        if ufVis and ufVis.showWhenHealthBelow100 then
+            if UpdateUnitframesVisibility then UpdateUnitframesVisibility() end
+        end
+        return
     end
 
     if event == "ADDON_LOADED" then
@@ -1506,15 +1011,6 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         end)
     end
 
-    if (event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA")
-        and (UnitframesVisibility.currentlyHidden
-            or CustomTrackersVisibility.currentlyHidden
-            or ActionBarsVisibility.currentlyHidden
-            or ChatVisibility.currentlyHidden) then
-        UpdateCDMVisibility()
-        return
-    end
-
     visCoalesceFrame:Show()
 end)
 
@@ -1532,9 +1028,9 @@ _G.QUI_RefreshUnitframesVisibility = UpdateUnitframesVisibility
 _G.QUI_RefreshCDMMouseover = SetupCDMMouseoverDetector
 _G.QUI_RefreshCustomTrackersMouseover = SetupCustomTrackersMouseoverDetector
 _G.QUI_RefreshUnitframesMouseover = SetupUnitframesMouseoverDetector
-_G.QUI_ShouldCDMBeVisible = ShouldCDMBeVisible
-_G.QUI_ShouldCustomTrackersBeVisible = ShouldCustomTrackersBeVisible
-_G.QUI_ShouldUnitframesBeVisible = ShouldUnitframesBeVisible
+_G.QUI_ShouldCDMBeVisible = function() return CDMVisibility:ShouldBeVisible() end
+_G.QUI_ShouldCustomTrackersBeVisible = function() return CustomTrackersVisibility:ShouldBeVisible() end
+_G.QUI_ShouldUnitframesBeVisible = function() return UnitframesVisibility:ShouldBeVisible() end
 _G.QUI_RefreshActionBarsVisibility = UpdateActionBarsVisibility
 _G.QUI_RefreshActionBarsMouseover = SetupActionBarsMouseoverDetector
 _G.QUI_RefreshChatVisibility = UpdateChatVisibility

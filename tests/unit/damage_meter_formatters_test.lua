@@ -56,6 +56,14 @@ end
 local SECRET = {}
 _G.IsSecretValue = function(v) return v == SECRET end
 
+-- FormatDuration delegates its m:ss math to ns.Helpers.FormatMMSS (core/utils.lua).
+-- Load the real one into a stub Helpers table so the extracted chunk runs as shipped.
+local utilsSrc = readAll("core/utils.lua")
+local mmssSrc = utilsSrc:match("(function Helpers%.FormatMMSS.-\nend\n)")
+assert(mmssSrc, "could not locate Helpers.FormatMMSS in core/utils.lua")
+_G.Helpers = { IsSecretValue = _G.IsSecretValue }
+assert(loadstring(mmssSrc))()
+
 local loader = assert(loadstring(extractFormatOpts()
     .. extract("FormatDuration")
     .. extract("FormatNumber")

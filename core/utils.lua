@@ -594,8 +594,12 @@ local function CloneNCDMCustomEntries(source)
 end
 
 local function CreateNCDMSpecTemplate(sharedData)
+    local enabled = true
+    if type(sharedData) == "table" and sharedData.enabled ~= nil then
+        enabled = sharedData.enabled
+    end
     return NormalizeNCDMCustomEntries({
-        enabled = (type(sharedData) == "table" and sharedData.enabled ~= nil) and sharedData.enabled or true,
+        enabled = enabled,
         placement = (type(sharedData) == "table" and sharedData.placement) or "after",
         entries = {},
     })
@@ -1172,6 +1176,21 @@ function Helpers.Clamp(value, minVal, maxVal)
     return value
 end
 
+function Helpers.FormatMMSS(seconds, padMinutes)
+    if Helpers.IsSecretValue(seconds) then
+        if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
+            return C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(seconds), "", "s")
+        end
+        return "" -- @secret-policy: empty-text-degrade
+    end
+    local total = math.floor(tonumber(seconds) or 0)
+    local negative = total < 0
+    if negative then total = -total end
+    local str = string.format(padMinutes and "%02d:%02d" or "%d:%02d",
+        math.floor(total / 60), total % 60)
+    return negative and ("-" .. str) or str
+end
+
 local SOAR_SPELL_ID = 381322
 
 function Helpers.IsPlayerPassenger()
@@ -1257,8 +1276,7 @@ end
 
  function Helpers.TruncateUTF8(text, maxLength)
      if Helpers.IsSecretValue(text) then
-         if not maxLength or maxLength <= 0 then return text end
-         return string.format("%." .. maxLength .. "s", text)
+         return text
      end
      if text == nil then return "" end
      if type(text) ~= "string" then
@@ -1299,6 +1317,53 @@ end
 
      return string.format("%." .. maxLength .. "s", text)
  end
+
+local UTF8_FOLD = {}
+for hi = 0x80, 0x96 do
+    UTF8_FOLD["\195" .. string.char(hi)] = "\195" .. string.char(hi + 0x20)
+end
+for hi = 0x98, 0x9E do
+    UTF8_FOLD["\195" .. string.char(hi)] = "\195" .. string.char(hi + 0x20)
+end
+for hi = 0x90, 0x9F do
+    UTF8_FOLD["\208" .. string.char(hi)] = "\208" .. string.char(hi + 0x20)
+end
+for hi = 0xA0, 0xAF do
+    UTF8_FOLD["\208" .. string.char(hi)] = "\209" .. string.char(hi - 0x20)
+end
+UTF8_FOLD["\208\129"] = "\209\145"
+UTF8_FOLD["\197\146"] = "\197\147"
+
+local UTF8_UNFOLD = {}
+for upper, lower in pairs(UTF8_FOLD) do UTF8_UNFOLD[lower] = upper end
+
+local UTF8_CASED_PAIR = "[\195\197\208\209][\128-\191]"
+
+function Helpers.FoldUTF8(text)
+    if Helpers.IsSecretValue(text) then return text end
+    if text == nil then return "" end
+    if type(text) ~= "string" then
+        text = Helpers.SafeToString(text, "")
+    end
+    text = string.lower(text)
+    if string.find(text, UTF8_CASED_PAIR) then
+        text = string.gsub(text, UTF8_CASED_PAIR, UTF8_FOLD)
+    end
+    return text
+end
+
+function Helpers.UpperUTF8(text)
+    if Helpers.IsSecretValue(text) then return text end
+    if text == nil then return "" end
+    if type(text) ~= "string" then
+        text = Helpers.SafeToString(text, "")
+    end
+    text = string.upper(text)
+    if string.find(text, UTF8_CASED_PAIR) then
+        text = string.gsub(text, UTF8_CASED_PAIR, UTF8_UNFOLD)
+    end
+    return text
+end
 
 function Helpers.CreateStateTable()
     local tbl = setmetatable({}, { __mode = "k" })
@@ -1375,21 +1440,27 @@ function Helpers.IsEditModeShown()
     return EditModeManagerFrame and EditModeManagerFrame:IsShown() or false
 end
 
+local function CombatProtected(frame)
+    if not InCombatLockdown() then return false end
+    if not frame.IsProtected then return false end
+    local protected = frame:IsProtected()
+    if Helpers.IsSecretValue(protected) then return true end -- @secret-policy: report-secret-detected (fail-closed: unprovable = protected)
+    return protected == true
+end
+
 function Helpers.SafeShow(frame)
     if not frame then return false end
-    if frame:IsShown() then return true end
-    if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then
-        return false
-    end
+    local shown = frame.IsShown and frame:IsShown()
+    if not Helpers.IsSecretValue(shown) and shown then return true end -- @secret-policy: defer-until-readable
+    if CombatProtected(frame) then return false end
     return ns.SafeCallMethod("best-effort-style", frame, "Show")
 end
 
 function Helpers.SafeHide(frame)
     if not frame then return false end
-    if not frame:IsShown() then return true end
-    if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then
-        return false
-    end
+    local shown = frame.IsShown and frame:IsShown()
+    if not Helpers.IsSecretValue(shown) and not shown then return true end -- @secret-policy: defer-until-readable
+    if CombatProtected(frame) then return false end
     return ns.SafeCallMethod("best-effort-style", frame, "Hide")
 end
 

@@ -257,8 +257,10 @@ local function OnLootOpened(autoLoot)
             local scale = UIParent:GetEffectiveScale()
             local offsetX = tonumber(db.loot.lootUnderMouseOffsetX) or 0
             local offsetY = tonumber(db.loot.lootUnderMouseOffsetY) or 0
+            lootFrame:ClearAllPoints()
             lootFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", (x / scale) + offsetX, (y / scale) + offsetY)
         elseif not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("lootFrame")) then
+            lootFrame:ClearAllPoints()
             lootFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
         else
             if _G.QUI_ApplyAllFrameAnchors then
@@ -679,12 +681,10 @@ local function SkinLootHistoryElement(button)
             if item.IconBorder and not hookedBorders[item] then
                 hookedBorders[item] = true
                 hooksecurefunc(item.IconBorder, "SetVertexColor", function(self, r, g, b)
-                    C_Timer.After(0, function()
-                        local border = itemBorders[item]
-                        if border then
-                            Helpers.SetFrameBackdropBorderColor(border, r, g, b, 1)
-                        end
-                    end)
+                    local border = itemBorders[item]
+                    if border then
+                        Helpers.SetFrameBackdropBorderColor(border, r, g, b, 1)
+                    end
                 end)
                 item.IconBorder:SetAlpha(0)
             end
@@ -1009,7 +1009,6 @@ function Loot:Initialize()
     end
 
     local eventFrame = CreateFrame("Frame")
-    eventFrame:RegisterEvent("LOOT_READY")
     eventFrame:RegisterEvent("LOOT_OPENED")
     eventFrame:RegisterEvent("LOOT_SLOT_CLEARED")
     eventFrame:RegisterEvent("LOOT_CLOSED")
@@ -1019,7 +1018,7 @@ function Loot:Initialize()
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         local db = GetDB()
 
-        if event == "LOOT_READY" or event == "LOOT_OPENED" then
+        if event == "LOOT_OPENED" then
             if db.loot and db.loot.enabled then
                 OnLootOpened(...)
             end
@@ -1124,7 +1123,6 @@ if ns.Registry then
     })
 end
 
-local lootPreviewActive = false
 local rollPreviewActive = false
 
 function Loot:ShowLootPreview()
@@ -1176,8 +1174,6 @@ function Loot:ShowLootPreview()
     local height = 40 + (#testItems * (SLOT_HEIGHT + SLOT_SPACING))
     ApplyLootFrameHeight(height)
     lootFrame:Show()
-
-    lootPreviewActive = true
 end
 
 function Loot:HideLootPreview()
@@ -1190,7 +1186,6 @@ function Loot:HideLootPreview()
         end)
         lootFrame._previewMode = false
     end
-    lootPreviewActive = false
 end
 
 local PREVIEW_ROLL_ITEMS = {
@@ -1312,57 +1307,17 @@ local editModeActive = false
 local EDIT_BORDER_COLOR = { 0.2, 0.8, 0.8, 1 }
 local EDIT_BORDER_SIZE = 2
 
-local function CreateEditModeBorder(frame)
-    if frame.editBorder then return frame.editBorder end
-
-    local border = {}
-
-    border.top = frame:CreateTexture(nil, "OVERLAY")
-    border.top:SetColorTexture(unpack(EDIT_BORDER_COLOR))
-    SkinBase.DisablePixelSnap(border.top)
-    border.top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    border.top:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    border.top:SetHeight(EDIT_BORDER_SIZE)
-
-    border.bottom = frame:CreateTexture(nil, "OVERLAY")
-    border.bottom:SetColorTexture(unpack(EDIT_BORDER_COLOR))
-    SkinBase.DisablePixelSnap(border.bottom)
-    border.bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-    border.bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    border.bottom:SetHeight(EDIT_BORDER_SIZE)
-
-    border.left = frame:CreateTexture(nil, "OVERLAY")
-    border.left:SetColorTexture(unpack(EDIT_BORDER_COLOR))
-    SkinBase.DisablePixelSnap(border.left)
-    border.left:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    border.left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-    border.left:SetWidth(EDIT_BORDER_SIZE)
-
-    border.right = frame:CreateTexture(nil, "OVERLAY")
-    border.right:SetColorTexture(unpack(EDIT_BORDER_COLOR))
-    SkinBase.DisablePixelSnap(border.right)
-    border.right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    border.right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    border.right:SetWidth(EDIT_BORDER_SIZE)
-
-    frame.editBorder = border
-    return border
-end
-
 local function ShowEditModeBorder(frame)
-    if not frame.editBorder then
-        CreateEditModeBorder(frame)
-    end
-    for _, tex in pairs(frame.editBorder) do
-        tex:Show()
-    end
+    ns.UIKit.CreateBorderLines(frame)
+    ns.UIKit.UpdateBorderLines(frame, EDIT_BORDER_SIZE,
+        EDIT_BORDER_COLOR[1], EDIT_BORDER_COLOR[2], EDIT_BORDER_COLOR[3], EDIT_BORDER_COLOR[4], false)
+    frame.editBorder = true
 end
 
 local function HideEditModeBorder(frame)
     if frame.editBorder then
-        for _, tex in pairs(frame.editBorder) do
-            tex:Hide()
-        end
+        ns.UIKit.UpdateBorderLines(frame, EDIT_BORDER_SIZE,
+            EDIT_BORDER_COLOR[1], EDIT_BORDER_COLOR[2], EDIT_BORDER_COLOR[3], EDIT_BORDER_COLOR[4], true)
     end
 end
 

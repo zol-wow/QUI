@@ -3,13 +3,14 @@ local Bags = ns.Bags or {}; ns.Bags = Bags
 local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 
-local function CJKFont(fs, p, s, f)
+function Bags.CJKFont(fs, p, s, f)
     if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
         ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
     else
         fs:SetFont(p, s, f)
     end
 end
+local CJKFont = Bags.CJKFont
 
 local Chassis = {}
 Bags.Chassis = Chassis
@@ -84,6 +85,42 @@ function Chassis.CreatePanelButton(parent, withLabel)
         CJKFont(btn._label, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
     end
     return btn
+end
+
+function Chassis.ShowMoneyPopup(key, kind, onAccept)
+    local depositing = (kind == "deposit")
+    StaticPopupDialogs[key] = {
+        text = depositing and ns.L["Deposit gold:"] or ns.L["Withdraw gold:"],
+        button1 = ACCEPT,
+        button2 = CANCEL,
+        hasEditBox = true,
+        maxLetters = 10,
+        OnShow = function(self)
+            local box = self.editBox or self.EditBox
+            if box then box:SetText("") end
+        end,
+        OnAccept = function(self)
+            local box = self.editBox or self.EditBox
+            local text = box and box:GetText() or ""
+            if not text:match("^%d+$") then return end
+            local gold = tonumber(text)
+            if not gold then return end
+            gold = math.floor(gold)
+            if gold <= 0 then return end
+            onAccept(depositing, gold * 10000)
+        end,
+        EditBoxOnEnterPressed = function(box)
+            StaticPopup_OnClick(box:GetParent(), 1)
+        end,
+        EditBoxOnEscapePressed = function(box)
+            box:GetParent():Hide()
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+    StaticPopup_Show(key)
 end
 
 function Chassis.MeasureHeaderWidth(controls, opts)

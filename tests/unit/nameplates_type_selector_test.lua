@@ -33,11 +33,24 @@ test("the dropdown offers all six types in resolution order", function()
     end
 end)
 
-test("an unknown key normalizes to the first type", function()
-    if Model.NormalizeTypeKey("nonsense") ~= "petMinion" then
-        fail("unknown keys must fall back to the first option")
+test("an unknown key normalizes to PlateType.DEFAULT_KEY", function()
+    if Model.NormalizeTypeKey("nonsense") ~= NP.PlateType.DEFAULT_KEY then
+        fail("unknown keys must fall back to PlateType.DEFAULT_KEY")
     end
-    if Model.NormalizeTypeKey(nil) ~= "petMinion" then fail("nil must fall back") end
+    if Model.NormalizeTypeKey(nil) ~= NP.PlateType.DEFAULT_KEY then fail("nil must fall back") end
+    if NP.PlateType.DEFAULT_KEY ~= "enemyNPC" then
+        fail("the nameplates page must open on Enemy NPCs, got " .. tostring(NP.PlateType.DEFAULT_KEY))
+    end
+end)
+
+test("normalize falls back to the first option when DEFAULT_KEY is not offered", function()
+    local originalOrder = NP.PlateType.ORDER
+    NP.PlateType.ORDER = { "petMinion", "friendly" }
+    local normalized = Model.NormalizeTypeKey(nil)
+    NP.PlateType.ORDER = originalOrder
+    if normalized ~= "petMinion" then
+        fail("an order without DEFAULT_KEY must fall back to its first entry, got " .. tostring(normalized))
+    end
 end)
 
 test("the six visual tabs are per-type and General/Behavior are not", function()
@@ -49,11 +62,11 @@ test("the six visual tabs are per-type and General/Behavior are not", function()
 end)
 
 test("the surface selection controller round-trips and normalizes the type", function()
-    if Surface.GetSelectedType() ~= "petMinion" then fail("default selection must be petMinion") end
+    if Surface.GetSelectedType() ~= "enemyNPC" then fail("default selection must be enemyNPC") end
     Surface.SetSelectedType("bossElite")
     if Surface.GetSelectedType() ~= "bossElite" then fail("SetSelectedType must update the selection") end
     Surface.SetSelectedType("nonsense")
-    if Surface.GetSelectedType() ~= "petMinion" then fail("an unknown type must normalize back to petMinion") end
+    if Surface.GetSelectedType() ~= "enemyNPC" then fail("an unknown type must normalize back to enemyNPC") end
 end)
 
 test("NavigateSearchEntry selects the type before honouring the tab", function()

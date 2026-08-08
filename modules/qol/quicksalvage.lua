@@ -122,18 +122,12 @@ local function RebuildSalvageLookup()
                         if schematic.recipeType == salvageRecipeType then
                             includeRecipe = true
                         elseif recipeInfo and recipeInfo.alternateVerb then
-                            if (MILLING and recipeInfo.alternateVerb == MILLING) or (PROSPECTING and recipeInfo.alternateVerb == PROSPECTING) then
+                            if MILLING and recipeInfo.alternateVerb == MILLING then
                                 includeRecipe = true
-                                action = (MILLING and recipeInfo.alternateVerb == MILLING) and "milling" or "prospecting"
-                            else
-                                local lowerVerb = string.lower(recipeInfo.alternateVerb)
-                                if string.find(lowerVerb, "mill", 1, true) then
-                                    includeRecipe = true
-                                    action = "milling"
-                                elseif string.find(lowerVerb, "prospect", 1, true) then
-                                    includeRecipe = true
-                                    action = "prospecting"
-                                end
+                                action = "milling"
+                            elseif PROSPECTING and recipeInfo.alternateVerb == PROSPECTING then
+                                includeRecipe = true
+                                action = "prospecting"
                             end
                         end
 
@@ -581,7 +575,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             if not IsModifierActive() and not InCombatLockdown() then
                 SalvageButton:Hide()
             end
-        elseif GameTooltip:IsShown() and IsModifierActive() then
+        elseif GameTooltip:IsShown() and IsModifierActive() and not InCombatLockdown() then
             local owner = GameTooltip:GetOwner()
             if owner and Helpers.SafeValue(owner:IsMouseOver(), false) then
                 if owner.GetSlotAndBagID then

@@ -117,8 +117,9 @@ local env = ns.CDMReanchorRealEnv.BuildEnv({
 })
 
 local entry = { id = 12345, spellID = 12345, viewerType = "essential" }
-local shell = assert(env.mintShell(entry, "essential"), "mintShell returns a hover shell")
-env.positionShell(shell, container, 0, 0, 40, 40, { borderSize = 0 })
+local live = CreateFrame("Frame", nil, container)
+local shell = assert(env.positionClickSlot(container, live, entry, "essential", 0, 0, 40, 40),
+    "positionClickSlot returns a hover click slot")
 
 assert(shell._spellEntry == entry, "reanchored shell keeps the curated CDM entry for tooltip hover")
 assert(shell._quiTooltipContext == "cdm" and shell.__quiTooltipContext == "cdm",

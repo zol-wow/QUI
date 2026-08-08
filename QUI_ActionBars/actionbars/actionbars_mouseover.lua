@@ -8,21 +8,21 @@ env.SetChunkEnv(1, env)
 
 IsInEditMode = ns.Helpers.IsEditModeShown
 
-function GetBarFadeState(barKey)
-    if not ActionBarsOwned.fadeState[barKey] then
-        ActionBarsOwned.fadeState[barKey] = {
-            isFading = false,
-            currentAlpha = 1,
-            targetAlpha = 1,
-            fadeStart = 0,
-            fadeStartAlpha = 1,
-            fadeDuration = 0.3,
-            isMouseOver = false,
-            delayTimer = nil,
-            leaveCheckTimer = nil,
-        }
+GetBarFadeState = GetOwnedBarFadeState
+StartBarFade = StartOwnedBarFade
+
+local function GetFadeButtons(barKey, barState)
+    if not barState.isFading then
+        barState.fadeButtons = nil
+        return GetBarButtons(barKey)
     end
-    return ActionBarsOwned.fadeState[barKey]
+
+    local cached = barState.fadeButtons
+    if not cached then
+        cached = GetBarButtons(barKey)
+        barState.fadeButtons = cached
+    end
+    return cached
 end
 
 function SetBarAlpha(barKey, alpha)
@@ -30,7 +30,8 @@ function SetBarAlpha(barKey, alpha)
         alpha = 1
     end
 
-    local buttons = GetBarButtons(barKey)
+    local barState = GetBarFadeState(barKey)
+    local buttons = GetFadeButtons(barKey, barState)
     local settings = GetGlobalSettings()
     local hideEmptyEnabled = settings and settings.hideEmptySlots
 
@@ -59,66 +60,7 @@ function SetBarAlpha(barKey, alpha)
         ApplyLeaveVehicleButtonVisibilityOverride(alpha < 1 and ShouldKeepLeaveVehicleVisible())
     end
 
-    GetBarFadeState(barKey).currentAlpha = alpha
-end
-
-function StartBarFade(barKey, targetAlpha)
-    if targetAlpha < 1 and IsInEditMode() then return end
-    if targetAlpha < 1 and ShouldSuspendMouseoverFade(barKey) then return end
-
-    local state = GetBarFadeState(barKey)
-    local fadeSettings = GetFadeSettings()
-
-    local duration = targetAlpha > state.currentAlpha
-        and (fadeSettings and fadeSettings.fadeInDuration or 0.2)
-        or (fadeSettings and fadeSettings.fadeOutDuration or 0.3)
-
-    if math.abs(state.currentAlpha - targetAlpha) < 0.01 then
-        state.isFading = false
-        return
-    end
-
-    state.isFading = true
-    state.targetAlpha = targetAlpha
-    state.fadeStart = GetTime()
-    state.fadeStartAlpha = state.currentAlpha
-    state.fadeDuration = duration
-
-    if not ActionBarsOwned.fadeFrame then
-        ActionBarsOwned.fadeFrame = CreateFrame("Frame")
-        ActionBarsOwned.fadeFrame:SetScript("OnUpdate", function(self, elapsed)
-            local now = GetTime()
-            local anyFading = false
-
-            for bKey, bState in pairs(ActionBarsOwned.fadeState) do
-                if bState.isFading then
-                    anyFading = true
-                    local elapsedTime = now - bState.fadeStart
-                    local progress = math.min(elapsedTime / bState.fadeDuration, 1)
-
-                    local easedProgress = progress * (2 - progress)
-
-                    local alpha = bState.fadeStartAlpha +
-                        (bState.targetAlpha - bState.fadeStartAlpha) * easedProgress
-
-                    SetBarAlpha(bKey, alpha)
-
-                    if progress >= 1 then
-                        bState.isFading = false
-                        SetBarAlpha(bKey, bState.targetAlpha)
-                    end
-                end
-            end
-
-            if not anyFading then
-                self:SetScript("OnUpdate", nil)
-                self:Hide()
-            end
-        end)
-        ActionBarsOwned.fadeFrameUpdate = ActionBarsOwned.fadeFrame:GetScript("OnUpdate")
-    end
-    ActionBarsOwned.fadeFrame:SetScript("OnUpdate", ActionBarsOwned.fadeFrameUpdate)
-    ActionBarsOwned.fadeFrame:Show()
+    barState.currentAlpha = alpha
 end
 
 function IsMouseOverBar(barKey)
@@ -138,116 +80,6 @@ function IsMouseOverBar(barKey)
 end
 
 do
-
-function IsMouseOverAnyLinkedBar()
-    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-        if IsMouseOverBar(barKey) then
-            return true
-        end
-    end
-    return false
-end
-
-function ShowLinkedBarDirect(barKey)
-    local barSettings = GetBarSettings(barKey)
-    local fadeSettings = GetFadeSettings()
-
-    if not barSettings then return end
-    if ShouldForceShowForSpellBook() then
-        SetBarAlpha(barKey, 1)
-        return
-    end
-    if ShouldForceShowForActionBarContext(barKey) then
-        SetBarAlpha(barKey, 1)
-        return
-    end
-    if ShouldSuppressMouseoverHideForLevel() then
-        SetBarAlpha(barKey, 1)
-        return
-    end
-    if barSettings.alwaysShow then return end
-
-    local fadeEnabled = barSettings.fadeEnabled
-    if fadeEnabled == nil then
-        fadeEnabled = fadeSettings and fadeSettings.enabled
-    end
-    if not fadeEnabled then return end
-
-    local state = GetBarFadeState(barKey)
-
-    CancelBarFadeTimers(state)
-
-    StartBarFade(barKey, 1)
-end
-
-function FadeLinkedBarDirect(barKey)
-    if IsInEditMode() then return end
-
-    local barSettings = GetBarSettings(barKey)
-    local fadeSettings = GetFadeSettings()
-
-    if not barSettings then return end
-    if ShouldForceShowForSpellBook() then
-        SetBarAlpha(barKey, 1)
-        return
-    end
-    if ShouldForceShowForActionBarContext(barKey) then
-        SetBarAlpha(barKey, 1)
-        return
-    end
-    if ShouldSuppressMouseoverHideForLevel() then
-        SetBarAlpha(barKey, 1)
-        return
-    end
-    if barSettings.alwaysShow then return end
-
-    local fadeEnabled = barSettings.fadeEnabled
-    if fadeEnabled == nil then
-        fadeEnabled = fadeSettings and fadeSettings.enabled
-    end
-    if not fadeEnabled then return end
-
-    local state = GetBarFadeState(barKey)
-    state.isMouseOver = false
-
-    local fadeOutAlpha = barSettings.fadeOutAlpha
-    if fadeOutAlpha == nil then
-        fadeOutAlpha = fadeSettings and fadeSettings.fadeOutAlpha or 0
-    end
-
-    local delay = fadeSettings and fadeSettings.fadeOutDelay or 0.5
-
-    if state.delayTimer then
-        state.delayTimer:Cancel()
-    end
-
-    local function TryLinkedFade()
-        if ShouldForceShowForSpellBook() then
-            SetBarAlpha(barKey, 1)
-            state.delayTimer = nil
-            return
-        end
-        if ShouldForceShowForActionBarContext(barKey) then
-            SetBarAlpha(barKey, 1)
-            state.delayTimer = nil
-            return
-        end
-
-        if IsSpellFlyoutActiveForBar(barKey) then
-            SetBarAlpha(barKey, 1)
-            state.delayTimer = C_Timer.NewTimer(SPELL_UI_FADE_RECHECK_DELAY, TryLinkedFade)
-            return
-        end
-
-        state.delayTimer = nil
-
-        if not IsMouseOverAnyLinkedBar() then
-            StartBarFade(barKey, fadeOutAlpha)
-        end
-    end
-
-    state.delayTimer = C_Timer.NewTimer(delay, TryLinkedFade)
-end
 
 function IsExtraButtonBarFadeActive(barSettings)
     return (barSettings and barSettings.enabled == true
@@ -284,14 +116,6 @@ function OnBarMouseEnter(barKey)
     if not fadeEnabled then return end
 
     state.isMouseOver = true
-
-    if fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey) then
-        for _, linkedKey in ipairs(LINKED_OWNED_BAR_KEYS) do
-            if linkedKey ~= barKey then
-                ShowLinkedBarDirect(linkedKey)
-            end
-        end
-    end
 
     CancelBarFadeTimers(state)
 
@@ -341,15 +165,6 @@ function OnBarMouseLeave(barKey)
         state.leaveCheckTimer = nil
 
         if IsMouseOverBar(barKey) then return end
-        if fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey) then
-            if IsMouseOverAnyLinkedBar() then
-                return
-            end
-            for _, linkedKey in ipairs(LINKED_OWNED_BAR_KEYS) do
-                FadeLinkedBarDirect(linkedKey)
-            end
-            return
-        end
 
         state.isMouseOver = false
 

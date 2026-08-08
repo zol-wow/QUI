@@ -5,7 +5,6 @@ if not NP then return end
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 local QUICore = ns.Addon
-local LSM = ns.LSM
 local CastEngine = ns.CastEngine
 
 local type = type
@@ -20,13 +19,7 @@ NP.Castbar = NPCastbar
 local WHITE8X8 = "Interface\\Buttons\\WHITE8x8"
 local SHIELD_TEXTURE = "Interface\\RaidFrame\\Shield-Overshield"
 
-local function GetBarTexture(name)
-    if LSM and name then
-        local ok, path = pcall(LSM.Fetch, LSM, "statusbar", name, true)
-        if ok and path then return path end
-    end
-    return WHITE8X8
-end
+local GetBarTexture = NP.GetBarTexture
 
 local activeCastPlates = {}
 
@@ -37,6 +30,19 @@ local textTicker = nil
 local function TickCastText()
     for plate in pairs(activeCastPlates) do
         local castBar = plate.castBar
+        if castBar and plate.npCasting and plate.npCastStart and plate.npCastEnd then
+            local now = GetTime()
+            if plate.npChanneled then
+                castBar:SetValue(plate.npCastStart + plate.npCastEnd - now)
+            else
+                castBar:SetValue(now)
+            end
+            if plate.npShowCastTimer then
+                local remaining = plate.npCastEnd - now
+                if remaining < 0 then remaining = 0 end
+                castBar.timeText:SetFormattedText("%.1f", remaining)
+            end
+        end
         if castBar and plate.npShowCastTimer then
             CastEngine.UpdateTimerText(castBar)
         end
@@ -503,7 +509,9 @@ local function StartCast(plate)
     end
 
     pcall(plate.castIcon.SetTexture, plate.castIcon, texture)
-    local okName = pcall(plate.castSpellText.SetText, plate.castSpellText, text or spellName)
+    local castLabel = text
+    if type(castLabel) == "nil" then castLabel = spellName end
+    local okName = pcall(plate.castSpellText.SetFormattedText, plate.castSpellText, "%s", castLabel) -- @secret-safe: SecretReturns name rides the C-side %s sink
     if not okName then plate.castSpellText:SetText("") end
     castBar.timeText:SetText("")
 
@@ -525,12 +533,16 @@ local function RearmCast(plate)
     local spellName, _, _, startTimeMS, endTimeMS, _, _, isChanneled, _, durationObj, hasSecretTiming =
         CastEngine.GetCastInfo(unit)
     local castBar = plate.castBar
-    local canShow, useTimerDriven = CastEngine.ResolveNonPlayerTiming(
+    local canShow, useTimerDriven, startTime, endTime = CastEngine.ResolveNonPlayerTiming(
         spellName, startTimeMS, endTimeMS, durationObj, castBar, hasSecretTiming)
     if not canShow then return end
     castBar.durationObj = durationObj
     if useTimerDriven or durationObj then
         CastEngine.ApplyTimerDriven(castBar, durationObj, isChanneled and 1 or 0)
+        plate.npCastStart, plate.npCastEnd = nil, nil
+    else
+        plate.npCastStart, plate.npCastEnd = startTime, endTime
+        castBar:SetMinMaxValues(startTime or 0, endTime or 1)
     end
     if plate.npKickTickEnabled then
         PinKickTick(plate)

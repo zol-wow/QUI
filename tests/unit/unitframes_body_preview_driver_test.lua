@@ -16,7 +16,7 @@ local source = readAll("QUI_UnitFrames/unitframes/settings/unit_frames_body_prev
 assert(source:find("ns.QUI_UnitFramesBodyPreview", 1, true),
     "driver must publish ns.QUI_UnitFramesBodyPreview")
 
-for _, fnName in ipairs({"Build", "Refresh", "SetSelectedUnit", "Teardown", "GetCurrentPcts"}) do
+for _, fnName in ipairs({"Build", "Refresh", "SetSelectedUnit"}) do
     assert(source:find("function Module." .. fnName, 1, true)
         or source:find("Module." .. fnName .. " = function", 1, true),
         "driver must define Module." .. fnName)

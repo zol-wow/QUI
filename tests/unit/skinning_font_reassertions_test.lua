@@ -139,16 +139,13 @@ assertContains(journals, "LockCollectionsScrollBox(_G.MountJournal and _G.MountJ
     "Mount Journal pooled rows must lock font-object resets")
 assertContains(journals, "LockCollectionsScrollBox(_G.PetJournal and _G.PetJournal.ScrollBox)",
     "Pet Journal pooled rows must lock font-object resets")
-assertContains(journals, "local function HookHeirloomsJournal(journal)",
-    "Heirlooms Journal must use its FrameXML owner lifecycle, not a fake ScrollBox")
-assertContains(journals, "HookHeirloomsJournal(_G.HeirloomsJournal)",
-    "Collections refresh must hook the real HeirloomsJournal owner")
-assertContains(journals, "hooksecurefunc(journal, \"AcquireFrame\"",
-    "Heirlooms Journal must lock newly acquired entry/header frames")
-assertContains(journals, "hooksecurefunc(journal, \"RefreshView\"",
-    "Heirlooms Journal must re-check active pools on refresh")
-assertContains(journals, "hooksecurefunc(journal, \"UpdateButton\"",
-    "Heirlooms Journal must relock entries after UpdateButton font-object resets")
+-- The Heirlooms hooks only stamped a qHeirloomTextLocked marker nothing read —
+-- the font lock itself had already moved to the global font-object override.
+-- They are deleted; these guards keep the dead hooks from coming back.
+assert(not journals:find("HookHeirloomsJournal", 1, true),
+    "journals.lua: dead Heirlooms marker hooks must stay deleted")
+assert(not journals:find("qHeirloomTextLocked", 1, true),
+    "journals.lua: the unread qHeirloomTextLocked marker must stay deleted")
 
 local achievement = readFile("modules/skinning/frames/achievement.lua")
 -- Pooled list/stat rows must go through the guarded row-font helper (runs the

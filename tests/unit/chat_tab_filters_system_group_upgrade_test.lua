@@ -82,11 +82,9 @@ local before = #e1.groups
 eventFrame.OnEvent(eventFrame, "PLAYER_LOGIN")
 assert(#e1.groups == before, "upgrade idempotent")
 
--- Storage API: SaveTabConfig stamps; ResetTab clears
-TF.SaveTabConfig(2, { "GUILD" }, { "Trade" })
-assert(settings.tabs[2].customized == true, "SaveTabConfig stores")
-assert(settings.tabs[2]._groupsVersion == TF.GROUPS_VERSION, "SaveTabConfig stamps version")
-TF.ResetTab(2)
-assert(settings.tabs[2] == nil, "ResetTab clears the stored entry")
+-- The legacy per-Blizzard-frame write API is gone; only the read-side upgrade
+-- of already-stored entries survives.
+assert(TF.SaveTabConfig == nil, "SaveTabConfig must not come back")
+assert(TF.ResetTab == nil, "ResetTab must not come back")
 
 print("OK: chat_tab_filters_system_group_upgrade_test")

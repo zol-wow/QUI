@@ -241,6 +241,11 @@ local addon = {
         GetCore = function()
             return core
         end,
+        GetCurrentSpecID = function()
+            local specIndex = GetSpecialization and GetSpecialization()
+            local specID = specIndex and GetSpecializationInfo and GetSpecializationInfo(specIndex)
+            return type(specID) == "number" and specID or nil
+        end,
         CanAccessTable = function()
             return true
         end,

@@ -145,4 +145,70 @@ assert(multiRenderCounts.entries == 1, "cached multi-host tab should not rerende
 multiState.repaintTabs()
 assert(multiRenderCounts.entries == 2, "explicit repaint should refresh the active cached multi-host tab")
 
+local variantBody = NewFrame()
+local variantState = { activeTab = "frame", selected = "enemyNPC" }
+local variantClicks = {}
+local variantRenders = {}
+local PER_TYPE = { frame = true }
+
+local function CreateVariantTabStrip()
+    local strip = NewFrame()
+    local function Paint(_, _, onClick)
+        variantClicks.frame = function() onClick("frame") end
+        variantClicks.general = function() onClick("general") end
+    end
+    return strip, Paint
+end
+
+FullSurface.BuildScrollTabBody(variantBody, {
+    cacheTabBodies = true,
+    state = variantState,
+    clearFrame = ClearFrame,
+    createTabStrip = CreateVariantTabStrip,
+    resolveVariantKey = function(tabKey)
+        if not PER_TYPE[tabKey] then return nil end
+        return variantState.selected
+    end,
+    getTabs = function()
+        return {
+            { key = "frame", label = "Frame" },
+            { key = "general", label = "General" },
+        }
+    end,
+    getActiveTab = function() return variantState.activeTab end,
+    setActiveTab = function(tabKey) variantState.activeTab = tabKey end,
+    render = function()
+        local key = variantState.activeTab .. "/" .. variantState.selected
+        variantRenders[key] = (variantRenders[key] or 0) + 1
+    end,
+})
+
+assert(variantRenders["frame/enemyNPC"] == 1, "the initial per-type tab should render once")
+
+variantState.selected = "bossElite"
+variantState.repaintTabs(false)
+assert(variantRenders["frame/bossElite"] == 1, "a new type must build its own cached body")
+
+variantState.selected = "enemyNPC"
+variantState.repaintTabs(false)
+assert(variantRenders["frame/enemyNPC"] == 1,
+    "switching back to a built type must reuse its cached body, not tear it down and rebuild")
+
+variantState.selected = "bossElite"
+variantState.repaintTabs(false)
+assert(variantRenders["frame/bossElite"] == 1, "every previously built type stays cached")
+
+variantState.invalidateTabBodies()
+variantState.repaintTabs(false)
+assert(variantRenders["frame/bossElite"] == 2, "an explicit invalidate must still reach every variant")
+variantState.selected = "enemyNPC"
+variantState.repaintTabs(false)
+assert(variantRenders["frame/enemyNPC"] == 2, "an explicit invalidate must reach the variants of every type")
+
+variantClicks.general()
+variantState.selected = "bossElite"
+variantState.repaintTabs(false)
+assert(variantRenders["general/bossElite"] == nil and variantRenders["general/enemyNPC"] == 1,
+    "a tab that is not per-type must share one cached body across every type")
+
 print("OK: options_full_surface_cached_tabs_test")

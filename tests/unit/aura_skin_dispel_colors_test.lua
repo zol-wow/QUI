@@ -42,6 +42,9 @@ _G.InCombatLockdown = function() return false end
 _G.AuraContainerSortMethod = { Default = 1 }
 _G.AuraContainerSortDirection = { Normal = 1 }
 _G.AnchorUtil = { FlowDirection = { Left = -1, Right = 1, Up = 1, Down = -1 }, FlowLayoutAxis = { Horizontal = 0, Vertical = 1 } }
+_G.Enum = _G.Enum or {}
+_G.Enum.CustomAuraButtonDispelTypeTextureStyle = { PreserveAsset = 3, CustomAsset = 4 }
+_G.Enum.CustomAuraButtonDispelTypeStealableFilter = { Stealable = 0, NotStealable = 1 }
 
 local function Stub()
     local t = {}
@@ -80,11 +83,17 @@ local function MakeButton(name)
     function b:SetCancelAuraButtons() end
     function b:SetSize() end
     function b:SetIcon() end
-    function b:AddDispelTypeTexture(_dispel, opts)
+    function b:AddDispelTypeTexture(dispelTexture, opts)
         b._addDispelCalls = (b._addDispelCalls or 0) + 1
-        b._auraBorderOpts = opts
+        b._auraBorderOpts = b._auraBorderOpts or opts
+        b._dispelRegs = b._dispelRegs or {}
+        b._dispelRegs[#b._dispelRegs + 1] = { texture = dispelTexture, opts = opts }
     end
-    function b:ClearDispelTypeTextures() b._clearCalls = (b._clearCalls or 0) + 1 end
+    function b:ClearDispelTypeTextures()
+        b._clearCalls = (b._clearCalls or 0) + 1
+        b._auraBorderOpts = nil
+        b._dispelRegs = {}
+    end
     function b:SetDispelTypeText() end
     -- Engine-faithful tooltip anchor stub: template KeyValues pre-seed
     -- ANCHOR_BOTTOMLEFT,0,0 (Blizzard_AuraButton.xml:11-13) and the setter
@@ -410,6 +419,58 @@ check("disabling external skinning releases the same button",
     bridgeCalls.remove == 1
         and bridgeCalls.removeKey == "groupauras"
         and bridgeCalls.removedButton == externalButton)
+
+local function StyleWith(profile)
+    profile.iconSize = profile.iconSize or 20
+    local c = MakeContainer()
+    AuraSkin.Configure(c, profile, { { key = "s1", filter = "HARMFUL", maxFrameCount = 5 } })
+    return c._birthedButton, c
+end
+
+local modeDefault = StyleWith({})
+check("default mode registers one harmful-only border",
+    modeDefault ~= nil and modeDefault._dispelRegs ~= nil
+        and #modeDefault._dispelRegs == 1
+        and modeDefault._dispelRegs[1].opts.showWhenHarmful == true
+        and modeDefault._dispelRegs[1].opts.showWhenHelpful == false
+        and modeDefault._dispelRegs[1].opts.showAlways == nil
+        and modeDefault._dispelRegs[1].opts.stealableFilter == nil)
+
+local modeAll = StyleWith({ dispelBorderMode = "all" })
+check("mode all sets showAlways on the single registration",
+    modeAll ~= nil and modeAll._dispelRegs ~= nil
+        and #modeAll._dispelRegs == 1
+        and modeAll._dispelRegs[1].opts.showAlways == true)
+
+local stealMap = { Magic = { r = 0, g = 0, b = 1 } }
+local modeSteal, modeStealContainer = StyleWith({ dispelBorderMode = "stealable", dispelColors = stealMap })
+check("mode stealable adds a second helpful-only stealable registration",
+    modeSteal ~= nil and modeSteal._dispelRegs ~= nil
+        and #modeSteal._dispelRegs == 2
+        and modeSteal._dispelRegs[1].texture == modeSteal._quiDispel
+        and modeSteal._dispelRegs[2].texture == modeSteal._quiDispelSteal
+        and modeSteal._dispelRegs[2].opts.showWhenHarmful == false
+        and modeSteal._dispelRegs[2].opts.showWhenHelpful == true
+        and modeSteal._dispelRegs[2].opts.stealableFilter == 0
+        and modeSteal._dispelRegs[2].opts.showAlways == nil)
+check("stealable registration shares the color map with the primary",
+    modeSteal ~= nil and modeSteal._dispelRegs ~= nil
+        and #modeSteal._dispelRegs == 2
+        and modeSteal._dispelRegs[1].opts.customDispelColorMap == stealMap
+        and modeSteal._dispelRegs[2].opts.customDispelColorMap == stealMap)
+
+local modeStealOff = StyleWith({ dispelBorderMode = "stealable", showDispelBorder = false })
+check("showDispelBorder false suppresses both registrations",
+    modeStealOff ~= nil
+        and (modeStealOff._addDispelCalls or 0) == 0
+        and (modeStealOff._dispelRegs == nil or #modeStealOff._dispelRegs == 0))
+
+if modeSteal then
+    AuraSkin.Restyle(modeStealContainer, { iconSize = 20, dispelBorderMode = "debuffs" })
+    check("restyle back to debuffs drops the stealable registration",
+        modeSteal._dispelRegs ~= nil and #modeSteal._dispelRegs == 1
+            and modeSteal._dispelRegs[1].texture == modeSteal._quiDispel)
+end
 
 if fails > 0 then error(fails .. " failure(s) in aura_skin_dispel_colors_test") end
 print("OK: aura_skin_dispel_colors_test (all checks passed)")

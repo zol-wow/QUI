@@ -42,20 +42,24 @@ local function InvalidateTabBodies()
     end
 end
 
+local function IsPerTypeTab(tabKey)
+    local model = ResolveModel()
+    local isPerTypeTab = model and model.IsPerTypeTab
+    return type(isPerTypeTab) == "function" and isPerTypeTab(tabKey) == true
+end
+
+local function ResolveTabVariant(tabKey)
+    if not IsPerTypeTab(tabKey) then return nil end
+    return State.selectedType
+end
+
 local TypeSelection = FullSurface and FullSurface.CreateSelectionController
     and FullSurface.CreateSelectionController(State, {
         stateKey = "selectedType",
         normalize = NormalizeTypeKey,
         afterSet = function()
-            InvalidateTabBodies()
-
-            local activeTab = EnsureTabModel():GetActiveKey()
-            local model = ResolveModel()
-            local isPerTypeTab = model and model.IsPerTypeTab
-            if type(isPerTypeTab) == "function"
-                and isPerTypeTab(activeTab)
-                and State.repaintTabs then
-                State.repaintTabs()
+            if IsPerTypeTab(EnsureTabModel():GetActiveKey()) and State.repaintTabs then
+                State.repaintTabs(false)
             end
 
             if ns.QUI_NameplatesPreviewDriver
@@ -437,6 +441,7 @@ local function BuildTileBody(body, _, _, feature)
         state = State,
         clearFrame = ClearFrame,
         createTabStrip = BuildTabStrip,
+        resolveVariantKey = ResolveTabVariant,
         tabTopOffset = -(DROPDOWN_ROW_H + 8),
         initialize = function()
             State.activeTab = State.activeTab or "general"

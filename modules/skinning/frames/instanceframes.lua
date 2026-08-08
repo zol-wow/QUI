@@ -799,7 +799,8 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     button:HookScript("OnLeave", function(self)
         local bd = SkinBase.GetFrameData(self, "backdrop")
         if bd then
-            bd:SetBackdropBorderColor(sr, sg, sb, sa)
+            local cr, cg, cb, ca = SkinBase.GetSkinColors()
+            Helpers.SetFrameBackdropBorderColor(bd, cr, cg, cb, ca)
         end
     end)
 

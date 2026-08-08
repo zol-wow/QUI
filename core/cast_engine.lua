@@ -95,7 +95,7 @@ function CastEngine.GetDurationSeconds(durationObj)
 end
 
 function CastEngine.ResolveNonPlayerTiming(spellName, startTimeMS, endTimeMS, durationObj, statusBar, hasSecretTiming)
-    if not spellName then
+    if type(spellName) == "nil" then
         return false, false, nil, nil
     end
 
@@ -105,7 +105,7 @@ function CastEngine.ResolveNonPlayerTiming(spellName, startTimeMS, endTimeMS, du
         return true, true, nil, nil
     end
 
-    if startTimeMS and endTimeMS then
+    if not hasSecretTiming and startTimeMS and endTimeMS then
         local success, startTime, endTime = pcall(function()
             return startTimeMS / 1000, endTimeMS / 1000
         end)

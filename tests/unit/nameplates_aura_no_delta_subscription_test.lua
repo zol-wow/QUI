@@ -96,11 +96,6 @@ plate.npType = "enemyNPC"
 local auraSettings = { enabled = true, elements = {} }
 local typeSettings = { auras = auraSettings }
 settings = { types = { enemyNPC = typeSettings } }
-NPAuras.Build(plate)
-if subscribed then
-    fail("Build must not subscribe to aura events on the container path")
-end
-
 NPAuras.ApplyAppearance(plate)
 if subscribed then
     fail("ApplyAppearance must not subscribe to aura events on the container path")

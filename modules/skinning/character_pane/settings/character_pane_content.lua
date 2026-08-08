@@ -90,16 +90,15 @@ local function BuildCharacterPaneTab(tabContent)
     local sSO = L.sectionAt()
     local soFontW = GUI:CreateFormDropdown(sSO.frame, nil, Shared.GetFontList(), "enchantFont", char, RefreshInspectLite,
         { description = ns.L["Font used for enchant text labels drawn on character and inspect slots."] })
-    local soScaleW = GUI:CreateFormSlider(sSO.frame, nil, 0.5, 1.5, 0.05, "overlayScale", char, RefreshInspectLite,
-        { precision = 2, description = ns.L["Scale multiplier applied to item level and enchant overlays on each gear slot."] })
+    local soPadW = GUI:CreateFormSlider(sSO.frame, nil, 0, 10, 1, "slotPadding", char, function()
+        local shared = ns.QUI and ns.QUI.CharacterShared
+        if shared and shared.RepositionSlots then shared.RepositionSlots() end
+        RefreshInspectLite()
+    end, { description = ns.L["Extra pixel padding between gear slots in the skinned character and inspect panes."] })
     sSO.AddRow(
         row(sSO.frame, ns.L["Enchant Font"], soFontW),
-        row(sSO.frame, ns.L["Overlay Scale"], soScaleW)
+        row(sSO.frame, ns.L["Slot Padding"], soPadW)
     )
-
-    local soPadW = GUI:CreateFormSlider(sSO.frame, nil, 0, 10, 1, "slotPadding", char, RefreshInspectLite,
-        { description = ns.L["Extra pixel padding between gear slots in the skinned character and inspect panes."] })
-    sSO.AddRow(row(sSO.frame, ns.L["Slot Padding"], soPadW))
     L.closeSection(sSO)
 
     L.headerAt(ns.L["Open Settings"])

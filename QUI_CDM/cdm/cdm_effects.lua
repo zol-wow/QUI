@@ -255,6 +255,9 @@ end
 
 local GetSettings = Helpers.CreateDBGetter("customGlow")
 
+local _pandemicDebuffKeys = {}
+local _pandemicBuffKeys = {}
+
 local function IsPandemicMirroringEnabled(icon)
     if not icon or not icon._spellEntry then return false end
 
@@ -264,8 +267,14 @@ local function IsPandemicMirroringEnabled(icon)
     local viewerType = icon._spellEntry.viewerType
     if not viewerType then return false end
 
-    local debuffKey = viewerType .. "PandemicDebuffEnabled"
-    local buffKey   = viewerType .. "PandemicBuffEnabled"
+    local debuffKey = _pandemicDebuffKeys[viewerType]
+    local buffKey   = _pandemicBuffKeys[viewerType]
+    if not debuffKey then
+        debuffKey = viewerType .. "PandemicDebuffEnabled"
+        buffKey   = viewerType .. "PandemicBuffEnabled"
+        _pandemicDebuffKeys[viewerType] = debuffKey
+        _pandemicBuffKeys[viewerType]   = buffKey
+    end
     local debuffOn = settings[debuffKey] ~= false
     local buffOn   = settings[buffKey]   ~= false
 
@@ -643,13 +652,9 @@ UpdatePandemicGlow = function(icon)
     if frame.texture
        and durObj.IsZero
        and C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
-local okZ = true; local isZero = durObj.IsZero(durObj)
-        if okZ then
-local okA = true; local gate = C_CurveUtil.EvaluateColorValueFromBoolean(isZero, 0, 1)
-            if okA then
-                frame.texture.SetAlpha(frame.texture, gate)
-            end
-        end
+        local isZero = durObj.IsZero(durObj)
+        local gate = C_CurveUtil.EvaluateColorValueFromBoolean(isZero, 0, 1)
+        frame.texture.SetAlpha(frame.texture, gate)
     end
 
     frame:SetAlpha(durObj:EvaluateRemainingPercent(curve))
@@ -1065,14 +1070,20 @@ local function DisableRuntime()
     StopAllTrackedGlows()
 end
 
+local _pandemicVisited = {}
+
 local function HandleUnitAuraChanged(_unit, _updateInfo)
     if not IsCDMRuntimeEnabled() then return end
 
+    wipe(_pandemicVisited)
     for _, icons in pairs(spellIdToGlowIcons) do
         for i = 1, #icons do
             local icon = icons[i]
-            if icon and icon:IsShown() and icon._spellEntry then
-                UpdatePandemicGlow(icon)
+            if icon and not _pandemicVisited[icon] then
+                _pandemicVisited[icon] = true
+                if icon:IsShown() and icon._spellEntry then
+                    UpdatePandemicGlow(icon)
+                end
             end
         end
     end
@@ -1172,7 +1183,14 @@ local function StopAllGlows(icon)
     if not icon or not LCG then return end
     LCG.PixelGlow_Stop(icon, GLOW_KEY)
     LCG.AutoCastGlow_Stop(icon, GLOW_KEY)
-    LCG.ButtonGlow_Stop(icon)
+    if icon[GLOW_KEY] then
+        icon[GLOW_KEY] = nil
+        LCG.ButtonGlow_Stop(icon)
+        if activeGlowIcons[icon] then
+            activeGlowIcons[icon] = nil
+            SyncGlowForIcon(icon)
+        end
+    end
     LCG.ProcGlow_Stop(icon, GLOW_KEY)
     StopTextureGlow(icon, "_QUIFlashHL")
     StopTextureGlow(icon, "_QUIHammerHL")
@@ -1225,8 +1243,11 @@ local function ApplyHighlight(icon)
         LCG.AutoCastGlow_Start(icon, color, lines, frequency, scale, 0, 0, GLOW_KEY)
         EnsureGlowBelowSwipe(icon, icon["_AutoCastGlow" .. GLOW_KEY])
     elseif glowType == "Button Glow" then
-        LCG.ButtonGlow_Start(icon, color, frequency)
-        EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
+        if not icon["_ButtonGlow"] then
+            LCG.ButtonGlow_Start(icon, color, frequency)
+            icon[GLOW_KEY] = true
+            EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
+        end
 
     elseif glowType == "Flash" then
         EnsureGlowBelowSwipe(icon, StartTextureGlow(icon, "_QUIFlashHL", FLASH_TEXTURE, color))

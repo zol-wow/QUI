@@ -131,10 +131,6 @@ ApplyElementPass = function(plate, allowCreate)
     })
 end
 
-function NPAuras.Build(plate)
-    ApplyElementPass(plate, true)
-end
-
 function NPAuras.ApplyAppearance(plate)
     if InCombatLockdown() then
         local ok = ns.SafeCall("best-effort-style", ApplyElementPass, plate, true)

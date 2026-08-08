@@ -221,14 +221,7 @@ local function FireLoadoutChangeCallbacks()
 end
 
 local function GetCurrentSpecID()
-    if not GetSpecialization then return nil end
-    local specIndex = GetSpecialization()
-    if not specIndex then return nil end
-    if GetSpecializationInfo then
-        local specID = GetSpecializationInfo(specIndex)
-        return specID
-    end
-    return nil
+    return Helpers.GetCurrentSpecID()
 end
 
 local function NormalizeLoadoutID(loadoutID)
@@ -928,13 +921,10 @@ end
 
 local function RunCrossSessionDetection(specID)
     local db = GetSpecStateDB(true)
-    if not db or not specID or specID == 0 then return false, false end
+    if not db or not specID or specID == 0 then return false end
 
     local lastSpecID = db._lastSpecID
     local currentCharKey = GetCurrentCharacterKey()
-    local detected = lastSpecID ~= nil and lastSpecID ~= specID
-    local readyNow = true
-    local shouldLoadActiveSpec = true
     local profileDB = GetDB()
     local profileCharKey = profileDB and profileDB._lastSpecCharKey
     local liveStateOwnedByCurrentChar = (not profileCharKey) or profileCharKey == currentCharKey
@@ -945,18 +935,16 @@ local function RunCrossSessionDetection(specID)
         _previousSpecID = oldPrevious
     end
 
-    if shouldLoadActiveSpec then
-        if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
-        if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
-            ns.CDMSpellData:InvalidateLearnedCache()
-        end
-
-        specTrackingRetryToken = specTrackingRetryToken + 1
-        readyNow = LoadOrSnapshotSpecProfile(specID, 1, specTrackingRetryToken)
+    if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
+    if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
+        ns.CDMSpellData:InvalidateLearnedCache()
     end
+
+    specTrackingRetryToken = specTrackingRetryToken + 1
+    local readyNow = LoadOrSnapshotSpecProfile(specID, 1, specTrackingRetryToken)
     db._lastSpecID = specID
     db._lastSpecCharKey = currentCharKey
-    return readyNow, detected
+    return readyNow
 end
 
 local function ScheduleInitialSpecTrackingRetry(attempt, retryToken)
@@ -2074,6 +2062,39 @@ local function RefreshCustomBarRuntimeAfterLayout(trackerKey, settings)
     postLayoutRuntimeRefreshing[trackerKey] = nil
 end
 
+local function ApplyViewerMetrics(vs, metrics, containerKey)
+    local maxRowWidth = metrics.iconWidth or 0
+    local proxyTotalHeight = metrics.totalHeight or 0
+
+    vs.cdmIconWidth = maxRowWidth
+    vs.cdmRawContentWidth = metrics.rawContentWidth or 0
+    vs.cdmTotalHeight = proxyTotalHeight
+    vs.cdmProxyYOffset = metrics.proxyYOffset or 0
+    vs.cdmRow1IconHeight = metrics.row1IconHeight or 0
+    vs.cdmRow1BorderSize = metrics.row1BorderSize or 0
+    vs.cdmBottomRowBorderSize = metrics.bottomRowBorderSize or 0
+    vs.cdmBottomRowYOffset = metrics.bottomRowYOffset or 0
+    vs.cdmRow1Width = metrics.row1Width or maxRowWidth
+    vs.cdmBottomRowWidth = metrics.bottomRowWidth or maxRowWidth
+    vs.cdmRawRow1Width = metrics.rawRow1Width or (metrics.rawContentWidth or 0)
+    vs.cdmRawBottomRowWidth = metrics.rawBottomRowWidth or (metrics.rawContentWidth or 0)
+    vs.cdmPotentialRow1Width = metrics.potentialRow1Width or maxRowWidth
+    vs.cdmPotentialBottomRowWidth = metrics.potentialBottomRowWidth or maxRowWidth
+
+    local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
+    if ncdm and maxRowWidth > 0 then
+        if containerKey == "essential" then
+            ncdm._lastEssentialWidth = maxRowWidth
+            ncdm._lastEssentialHeight = proxyTotalHeight
+        elseif containerKey == "utility" then
+            ncdm._lastUtilityWidth = maxRowWidth
+            ncdm._lastUtilityHeight = proxyTotalHeight
+        end
+    end
+
+    return maxRowWidth, proxyTotalHeight
+end
+
 local function LayoutContainer(trackerKey)
     if not IsCDMRuntimeEnabled() then
         return
@@ -2351,36 +2372,7 @@ local function LayoutContainer(trackerKey)
         ns.CDMIcons.OnContainerIconPlaced(icon, rowConfig)
     end
 
-    local metrics = layoutPlan.metrics
-    local maxRowWidth = metrics.iconWidth or 0
-    local proxyTotalHeight = metrics.totalHeight or 0
-
-    vs.cdmIconWidth = maxRowWidth
-    vs.cdmRawContentWidth = metrics.rawContentWidth or 0
-    vs.cdmTotalHeight = proxyTotalHeight
-    vs.cdmProxyYOffset = metrics.proxyYOffset or 0
-
-    local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
-    if ncdm and maxRowWidth > 0 then
-        if trackerKey == "essential" then
-            ncdm._lastEssentialWidth = maxRowWidth
-            ncdm._lastEssentialHeight = proxyTotalHeight
-        elseif trackerKey == "utility" then
-            ncdm._lastUtilityWidth = maxRowWidth
-            ncdm._lastUtilityHeight = proxyTotalHeight
-        end
-    end
-
-    vs.cdmRow1IconHeight = metrics.row1IconHeight or 0
-    vs.cdmRow1BorderSize = metrics.row1BorderSize or 0
-    vs.cdmBottomRowBorderSize = metrics.bottomRowBorderSize or 0
-    vs.cdmBottomRowYOffset = metrics.bottomRowYOffset or 0
-    vs.cdmRow1Width = metrics.row1Width or maxRowWidth
-    vs.cdmBottomRowWidth = metrics.bottomRowWidth or maxRowWidth
-    vs.cdmRawRow1Width = metrics.rawRow1Width or (metrics.rawContentWidth or 0)
-    vs.cdmRawBottomRowWidth = metrics.rawBottomRowWidth or (metrics.rawContentWidth or 0)
-    vs.cdmPotentialRow1Width = metrics.potentialRow1Width or maxRowWidth
-    vs.cdmPotentialBottomRowWidth = metrics.potentialBottomRowWidth or maxRowWidth
+    local maxRowWidth, proxyTotalHeight = ApplyViewerMetrics(vs, layoutPlan.metrics, trackerKey)
 
     if maxRowWidth > 0 and proxyTotalHeight > 0 then
         container:SetSize(maxRowWidth, proxyTotalHeight)
@@ -3037,33 +3029,7 @@ function ownedEngine:BootstrapReanchorRuntime()
             onMetrics = function(container, metrics)
                 local vs = viewerState[container]
                 if not vs then return end
-                local maxRowWidth = metrics.iconWidth or 0
-                local proxyTotalHeight = metrics.totalHeight or 0
-                vs.cdmIconWidth = maxRowWidth
-                vs.cdmRawContentWidth = metrics.rawContentWidth or 0
-                vs.cdmTotalHeight = proxyTotalHeight
-                vs.cdmProxyYOffset = metrics.proxyYOffset or 0
-                vs.cdmRow1IconHeight = metrics.row1IconHeight or 0
-                vs.cdmRow1BorderSize = metrics.row1BorderSize or 0
-                vs.cdmBottomRowBorderSize = metrics.bottomRowBorderSize or 0
-                vs.cdmBottomRowYOffset = metrics.bottomRowYOffset or 0
-                vs.cdmRow1Width = metrics.row1Width or maxRowWidth
-                vs.cdmBottomRowWidth = metrics.bottomRowWidth or maxRowWidth
-                vs.cdmRawRow1Width = metrics.rawRow1Width or (metrics.rawContentWidth or 0)
-                vs.cdmRawBottomRowWidth = metrics.rawBottomRowWidth or (metrics.rawContentWidth or 0)
-                vs.cdmPotentialRow1Width = metrics.potentialRow1Width or maxRowWidth
-                vs.cdmPotentialBottomRowWidth = metrics.potentialBottomRowWidth or maxRowWidth
-                local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
-                if ncdm and maxRowWidth > 0 then
-                    local mkey = container._quiCdmKey
-                    if mkey == "essential" then
-                        ncdm._lastEssentialWidth = maxRowWidth
-                        ncdm._lastEssentialHeight = proxyTotalHeight
-                    elseif mkey == "utility" then
-                        ncdm._lastUtilityWidth = maxRowWidth
-                        ncdm._lastUtilityHeight = proxyTotalHeight
-                    end
-                end
+                ApplyViewerMetrics(vs, metrics, container._quiCdmKey)
             end,
         })
         return ns.CDMReanchorBoot.BuildRuntime(env)
@@ -3315,6 +3281,36 @@ function ownedEngine:Initialize()
         end
     end)
 
+    local function DrainPendingLoadoutSwitch(cacheConfigID)
+        pendingLoadoutRefresh = false
+        loadoutTrackingToken = loadoutTrackingToken + 1
+        local drainToken = loadoutTrackingToken
+
+        local drainSpecID = GetCurrentSpecID()
+        if not drainSpecID then return end
+
+        SaveLoadoutProfile(_previousLoadoutID, drainSpecID)
+        local newConfigID = nil
+        if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
+            newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(drainSpecID)
+        end
+        _previousLoadoutID = newConfigID
+        _lastKnownSavedConfigID = newConfigID
+
+        if cacheConfigID then
+            local charNcdm = GetCharNcdmDB(true)
+            if charNcdm and newConfigID and newConfigID ~= NO_SAVED_LOADOUT_ID then
+                if type(charNcdm._lastLoadoutConfigID) ~= "table" then
+                    charNcdm._lastLoadoutConfigID = {}
+                end
+                charNcdm._lastLoadoutConfigID[drainSpecID] = newConfigID
+            end
+        end
+
+        LoadLoadoutProfile(newConfigID, drainSpecID, drainToken)
+        FireLoadoutChangeCallbacks()
+    end
+
     local eventFrame = CreateFrame("Frame")
     runtimeEventFrame = eventFrame
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -3507,21 +3503,7 @@ function ownedEngine:Initialize()
                 and specTrackingReady
                 and not InCombatLockdown()
             then
-                pendingLoadoutRefresh = false
-                loadoutTrackingToken = loadoutTrackingToken + 1
-                local hydrationToken = loadoutTrackingToken
-                local hydrateSpecID = GetCurrentSpecID()
-                if hydrateSpecID then
-                    SaveLoadoutProfile(_previousLoadoutID, hydrateSpecID)
-                    local newConfigID = nil
-                    if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
-                        newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(hydrateSpecID)
-                    end
-                    _previousLoadoutID = newConfigID
-                    _lastKnownSavedConfigID = newConfigID
-                    LoadLoadoutProfile(newConfigID, hydrateSpecID, hydrationToken)
-                    FireLoadoutChangeCallbacks()
-                end
+                DrainPendingLoadoutSwitch(false)
             end
         elseif event == "PLAYER_REGEN_ENABLED" then
             if ns._cdmReanchorHooks and ns._cdmReanchorHooks.ReassertViewerGlue then
@@ -3548,31 +3530,7 @@ function ownedEngine:Initialize()
             end
 
             if pendingLoadoutRefresh and loadoutListReady and specTrackingReady then
-                pendingLoadoutRefresh = false
-                loadoutTrackingToken = loadoutTrackingToken + 1
-                local drainToken = loadoutTrackingToken
-
-                local drainSpecID = GetCurrentSpecID()
-                if drainSpecID then
-                    SaveLoadoutProfile(_previousLoadoutID, drainSpecID)
-                    local newConfigID = nil
-                    if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
-                        newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(drainSpecID)
-                    end
-                    _previousLoadoutID = newConfigID
-                    _lastKnownSavedConfigID = newConfigID
-
-                    local charNcdm = GetCharNcdmDB(true)
-                    if charNcdm and newConfigID and newConfigID ~= NO_SAVED_LOADOUT_ID then
-                        if type(charNcdm._lastLoadoutConfigID) ~= "table" then
-                            charNcdm._lastLoadoutConfigID = {}
-                        end
-                        charNcdm._lastLoadoutConfigID[drainSpecID] = newConfigID
-                    end
-
-                    LoadLoadoutProfile(newConfigID, drainSpecID, drainToken)
-                    FireLoadoutChangeCallbacks()
-                end
+                DrainPendingLoadoutSwitch(true)
             end
 
             if _containerMouseSyncPending and not InCombatLockdown() then

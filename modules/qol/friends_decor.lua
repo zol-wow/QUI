@@ -62,10 +62,6 @@ end)
 if ns.WhenLoggedIn then
     ns.WhenLoggedIn(function()
         InstallHook()
-        ---@diagnostic disable-next-line: empty-block
-        if not hooked and C_AddOns and C_AddOns.IsAddOnLoaded
-            and not C_AddOns.IsAddOnLoaded("Blizzard_FriendsFrame") then
-        end
     end)
 end
 

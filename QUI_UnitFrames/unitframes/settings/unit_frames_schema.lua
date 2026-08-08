@@ -1524,7 +1524,6 @@ local function EnsureCastbarSettings(unitDB, unitKey)
         unitDB.castbar = {}
     end
     local castDB = unitDB.castbar
-    local defaultShowChannelTicks = (unitKey == "player")
 
     if castDB.enabled == nil then castDB.enabled = true end
     castDB.fontSize = castDB.fontSize or 12
@@ -1534,11 +1533,8 @@ local function EnsureCastbarSettings(unitDB, unitKey)
     castDB.width = castDB.width or 250
     if castDB.widthAdjustment == nil then castDB.widthAdjustment = 0 end
     castDB.borderSize = castDB.borderSize or 1
-    castDB.iconBorderSize = castDB.iconBorderSize or 2
     if castDB.borderColorSource == nil then castDB.borderColorSource = "inherit" end
-    if castDB.borderColor == nil then castDB.borderColor = { 0, 0, 0, 1 } end
     if castDB.iconBorderColorSource == nil then castDB.iconBorderColorSource = "inherit" end
-    if castDB.iconBorderColor == nil then castDB.iconBorderColor = { 0, 0, 0, 1 } end
     castDB.texture = castDB.texture or "Solid"
     if castDB.useClassColor == nil then castDB.useClassColor = false end
     if castDB.color == nil then
@@ -1547,28 +1543,8 @@ local function EnsureCastbarSettings(unitDB, unitKey)
         castDB.color[4] = 1
     end
     if castDB.bgColor == nil then castDB.bgColor = { 0.149, 0.149, 0.149, 1 } end
-    if castDB.notInterruptibleColor == nil then castDB.notInterruptibleColor = { 0.7, 0.2, 0.2, 1 } end
-    if castDB.gcdColor == nil then
-        castDB.gcdColor = { castDB.color[1], castDB.color[2], castDB.color[3], castDB.color[4] or 1 }
-    end
-    if castDB.showChannelTicks == nil then castDB.showChannelTicks = defaultShowChannelTicks end
-    castDB.channelTickThickness = castDB.channelTickThickness or 1
-    castDB.channelTickColor = castDB.channelTickColor or { 1, 1, 1, 0.9 }
-    castDB.channelTickMinConfidence = castDB.channelTickMinConfidence or 0.7
-    castDB.channelTickSourcePolicy = castDB.channelTickSourcePolicy or "auto"
     if castDB.channelFillForward == nil then castDB.channelFillForward = false end
     if castDB.maxLength == nil then castDB.maxLength = 0 end
-    if castDB.iconAnchor == nil then castDB.iconAnchor = "LEFT" end
-    if castDB.iconSpacing == nil then castDB.iconSpacing = 0 end
-    if castDB.showIcon == nil then castDB.showIcon = true end
-    if castDB.spellTextAnchor == nil then castDB.spellTextAnchor = "LEFT" end
-    if castDB.spellTextOffsetX == nil then castDB.spellTextOffsetX = 4 end
-    if castDB.spellTextOffsetY == nil then castDB.spellTextOffsetY = 0 end
-    if castDB.showSpellText == nil then castDB.showSpellText = true end
-    if castDB.timeTextAnchor == nil then castDB.timeTextAnchor = "RIGHT" end
-    if castDB.timeTextOffsetX == nil then castDB.timeTextOffsetX = -4 end
-    if castDB.timeTextOffsetY == nil then castDB.timeTextOffsetY = 0 end
-    if castDB.showTimeText == nil then castDB.showTimeText = true end
     if castDB.previewMode == nil then castDB.previewMode = false end
 
     if not castDB.anchor then
@@ -1581,17 +1557,12 @@ local function EnsureCastbarSettings(unitDB, unitKey)
         castDB.lockedToFrame = nil
     end
 
-    if unitKey == "player" then
-        if castDB.showGCD == nil then castDB.showGCD = false end
-        if castDB.showGCDReverse == nil then castDB.showGCDReverse = false end
-        if castDB.showGCDMelee == nil then castDB.showGCDMelee = (castDB.showGCDMeleeOnly == true) end
-        if castDB.hideTimeTextOnEmpowered == nil then castDB.hideTimeTextOnEmpowered = false end
-        if castDB.empoweredLevelTextAnchor == nil then castDB.empoweredLevelTextAnchor = "CENTER" end
-        if castDB.empoweredLevelTextOffsetX == nil then castDB.empoweredLevelTextOffsetX = 0 end
-        if castDB.empoweredLevelTextOffsetY == nil then castDB.empoweredLevelTextOffsetY = 0 end
-        if castDB.showEmpoweredLevel == nil then castDB.showEmpoweredLevel = false end
-        if type(castDB.empoweredStageColors) ~= "table" then castDB.empoweredStageColors = {} end
-        if type(castDB.empoweredFillColors) ~= "table" then castDB.empoweredFillColors = {} end
+    local castbarModule = ns.QUI_Castbar
+    if castbarModule and castbarModule.InitializeDefaultSettings then
+        castbarModule.InitializeDefaultSettings(castDB, unitKey)
+    end
+    if castDB.gcdColor == nil then
+        castDB.gcdColor = { castDB.color[1], castDB.color[2], castDB.color[3], castDB.color[4] or 1 }
     end
 
     return castDB

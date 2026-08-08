@@ -61,7 +61,7 @@ local function CollectVisibleModules()
 
     table.sort(groupOrder)
     for i, name in ipairs(groupOrder) do
-        if name == "Module Addons" and i > 1 then
+        if name == ns.L["Module Addons"] and i > 1 then
             table.remove(groupOrder, i)
             table.insert(groupOrder, 1, name)
             break

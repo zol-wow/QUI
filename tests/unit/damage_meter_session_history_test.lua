@@ -46,6 +46,13 @@ assert(src:find("availableSession.name", 1, true),
 assert(src:find("self.sessionID = nil", 1, true),
     "Window runtime state must initialize sessionID to nil")
 
+-- FormatDuration delegates its m:ss math to ns.Helpers.FormatMMSS (core/utils.lua).
+-- Load the real one into a stub Helpers table so the extracted chunk runs as shipped.
+local mmssSrc = readAll("core/utils.lua"):match("(function Helpers%.FormatMMSS.-\nend\n)")
+assert(mmssSrc, "could not locate Helpers.FormatMMSS in core/utils.lua")
+_G.Helpers = { IsSecretValue = function() return false end }
+assert(loadstring(mmssSrc))()
+
 local fmtStart = src:find("local function FormatDuration", 1, true)
 assert(fmtStart, "could not locate FormatDuration helper")
 local labelAssign = src:find("QUI_DamageMeter.BuildPreviousSessionLabel", fmtStart, true)

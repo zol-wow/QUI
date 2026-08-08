@@ -198,19 +198,23 @@ local function migrateSV(sv)
     sv._migrated = migratedFlag
 end
 
+local cachedSV
+
 local function getSV()
-    if type(_G.QUI_ChatHistory) ~= "table" then
-        _G.QUI_ChatHistory = {
+    local sv = _G.QUI_ChatHistory
+    if sv and sv == cachedSV then return sv end
+    if type(sv) ~= "table" then
+        sv = {
             schemaVersion = SCHEMA_VERSION,
             current = {},
             chunks = {},
             count = 0,
             totalCount = 0,
         }
+        _G.QUI_ChatHistory = sv
     end
-
-    local sv = _G.QUI_ChatHistory
     migrateSV(sv)
+    cachedSV = sv
     return sv
 end
 
@@ -305,9 +309,11 @@ function Storage.AppendLive(entry, maxEntries)
     local sv = getSV()
     sv.current[#sv.current + 1] = entry
     rotateCurrent(sv, false)
-    refreshCount(sv)
+    local total = (tonumber(sv.count) or 0) + 1
+    sv.count = total
+    sv.totalCount = total
     local cap = tonumber(maxEntries) or DEFAULT_MAX_ENTRIES
-    if sv.count > cap + HOT_ROTATE_AT then
+    if total > cap + HOT_ROTATE_AT then
         Storage.Cap(cap)
     end
 end
@@ -454,6 +460,20 @@ local function maxRetentionDays(settings)
     return days
 end
 
+local function minRetentionDays(settings)
+    local days = tonumber(settings and settings.retentionDays) or 7
+    local perChannel = settings and settings.perChannelRetention
+    if type(perChannel) == "table" then
+        for _, value in pairs(perChannel) do
+            local channelDays = tonumber(value)
+            if channelDays and channelDays < days then
+                days = channelDays
+            end
+        end
+    end
+    return days
+end
+
 local function keepByRetention(entry, settings, now)
     if type(entry) ~= "table" or not entry.t then return false end
     local days = tonumber(settings and settings.retentionDays) or 7
@@ -531,14 +551,35 @@ function Storage.Prune(settings)
         sv.current[i] = nil
     end
 
+    local strictestAllowed = now - minRetentionDays(settings) * 86400
+
     write = 0
     for i = 1, #sv.chunks do
         local chunk = sv.chunks[i]
-        if (tonumber(chunk.last) or 0) >= oldestAllowed then
+        if (tonumber(chunk.last) or 0) < oldestAllowed then
+            chunkCache[chunk] = nil
+        elseif (tonumber(chunk.first) or 0) >= strictestAllowed then
             write = write + 1
             sv.chunks[write] = chunk
         else
-            chunkCache[chunk] = nil
+            local decoded = decodeChunk(chunk)
+            local kept = {}
+            for j = 1, #decoded do
+                if keepByRetention(decoded[j], settings, now) then
+                    kept[#kept + 1] = decoded[j]
+                end
+            end
+            if #kept == #decoded then
+                write = write + 1
+                sv.chunks[write] = chunk
+            else
+                chunkCache[chunk] = nil
+                local replacement = makeChunk(kept)
+                if replacement then
+                    write = write + 1
+                    sv.chunks[write] = replacement
+                end
+            end
         end
     end
     for i = #sv.chunks, write + 1, -1 do

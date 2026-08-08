@@ -5,7 +5,6 @@ local Helpers = ns.Helpers
 
 local crosshairFrame, horizLine, vertLine, horizBorder, vertBorder
 
-local rangeCheckFrame
 
 local isOutOfRange = false
 local isOutOfMidRange = false
@@ -117,13 +116,6 @@ end
 
 local function UpdateRangeChecking()
     if not crosshairFrame then return end
-
-    if not rangeCheckFrame then
-        rangeCheckFrame = CreateFrame("Frame", "QUI_CrosshairRangeCheck", UIParent)
-        rangeCheckFrame:SetSize(1, 1)
-        rangeCheckFrame:SetPoint("CENTER")
-        rangeCheckFrame:Show()
-    end
 
     local settings = GetSettings()
     if settings and settings.enabled and settings.changeColorOnRange then

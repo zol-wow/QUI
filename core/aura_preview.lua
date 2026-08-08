@@ -104,6 +104,7 @@ local function AcquireIcon(host, pool, index, profile, richIcon)
             SetRegionShown(f._quiBackdrop, false)
             SetRegionShown(f._quiGloss, false)
             SetRegionShown(f._quiDispel, false)
+            SetRegionShown(f._quiPandemic, false)
             SetRegionShown(f._quiDuration, false)
             SetRegionShown(f._quiCount, false)
             SetRegionShown(f._quiCooldown, false)
@@ -147,8 +148,10 @@ local function ApplyIconSample(frame, element, profile, index, opts)
     end
 
     local dispel = frame._quiDispel
+    local mode = profile.dispelBorderMode
     local r, g, b, a
-    if profile.showDispelBorder ~= false and element.auraType == "HARMFUL" then
+    if profile.showDispelBorder ~= false
+        and (element.auraType == "HARMFUL" or mode == "all" or mode == "stealable") then
         local resolve = (opts and opts.dispelColor) or DefaultDispelColor
         r, g, b, a = resolve(element, index, profile)
     end
@@ -157,6 +160,12 @@ local function ApplyIconSample(frame, element, profile, index, opts)
         SetRegionShown(dispel, true)
     else
         SetRegionShown(dispel, false)
+    end
+
+    local pandemic = frame._quiPandemic
+    if pandemic then
+        local glow = profile.pandemicGlow
+        SetRegionShown(pandemic, type(glow) == "table" and type(glow.color) == "table")
     end
 end
 

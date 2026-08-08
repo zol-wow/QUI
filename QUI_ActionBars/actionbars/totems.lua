@@ -641,7 +641,6 @@ end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-initFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
 initFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 initFrame:SetScript("OnEvent", function(self, event)
@@ -659,11 +658,6 @@ initFrame:SetScript("OnEvent", function(self, event)
         C_Timer.After(0.6, function()
             TotemBar:Refresh()
         end)
-    elseif event == "PLAYER_TOTEM_UPDATE" then
-        local db = GetDB()
-        if db and db.enabled then
-            TotemBar:Refresh()
-        end
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         local db = GetDB()
         if db and db.enabled then

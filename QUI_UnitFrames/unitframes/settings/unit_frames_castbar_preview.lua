@@ -110,7 +110,7 @@ local function ApplySegmentEntry(mock, seg)
 
     local name = seg.spellName or ""
     local maxLen = castDB.maxLength or 0
-    if maxLen > 0 and #name > maxLen then name = name:sub(1, maxLen) end
+    if maxLen > 0 then name = ns.Helpers.TruncateUTF8(name, maxLen) end
     if castDB.showSpellText then mock.spellText:SetText(name) end
 
     if castDB.showIcon and seg.spellIcon then

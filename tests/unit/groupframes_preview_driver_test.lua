@@ -487,9 +487,10 @@ test("spotlight frames are pooled across refreshes", function()
     file:close()
     assert(source:find("local f = state.spotlightPool[i]", 1, true))
     assert(source:find("state.spotlightPool[i] = f", 1, true))
-    assert(source:find("if state.spotlightPool then", 1, true))
-    assert(source:find("state.spotlightPool = {}", 1, true),
-        "teardown must release the complete Spotlight pool")
+    assert(source:find("for i = #sample + 1, #state.spotlightPool do", 1, true),
+        "a refresh must release every pooled Spotlight frame past the new sample")
+    assert(source:find("for _, f in ipairs(state.spotlightPool) do", 1, true),
+        "disabling Spotlight must release the complete pool")
 end)
 
 test("party target companion uses all four live anchor mappings and gap", function()

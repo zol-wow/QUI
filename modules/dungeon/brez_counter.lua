@@ -8,15 +8,6 @@ local UIKit = ns.UIKit
 local REBIRTH_SPELL_ID = 20484
 local REBIRTH_ICON_ID = 136080
 
-local BREZ_SPELL_IDS = {
-    [20484]  = true,
-    [61999]  = true,
-    [95750]  = true,
-    [391054] = true,
-    [345130] = true,
-    [385403] = true,
-    [384893] = true,
-}
 local REINCARNATION_SPELL_ID = 21169
 
 local VALID_DIFFICULTIES = {
@@ -65,9 +56,7 @@ end
 
 local function FormatTime(seconds)
     if seconds <= 0 then return "" end
-    local mins = math.floor(seconds / 60)
-    local secs = math.floor(seconds % 60)
-    return string.format("%d:%02d", mins, secs)
+    return Helpers.FormatMMSS(seconds)
 end
 
 local function FormatCombatTime(timestamp)
@@ -80,9 +69,7 @@ local function FormatCombatTime(timestamp)
     if baseTime == 0 then return "0:00" end
     local elapsed = timestamp - baseTime
     if elapsed < 0 then elapsed = 0 end
-    local mins = math.floor(elapsed / 60)
-    local secs = math.floor(elapsed % 60)
-    return string.format("%d:%02d", mins, secs)
+    return Helpers.FormatMMSS(elapsed)
 end
 
 local GetClassColorByClass = Helpers.GetClassColor
@@ -424,39 +411,6 @@ local function EvaluateVisibility()
     end
 end
 
-local function OnCombatLogEvent()
-    local _, subEvent, _, sourceGUID, sourceName, _, _, destGUID, destName, _, _, spellId = CombatLogGetCurrentEventInfo()
-
-    if not spellId then return end
-
-    if subEvent == "SPELL_RESURRECT" and BREZ_SPELL_IDS[spellId] then
-        local sourceClass = select(2, GetPlayerInfoByGUID(sourceGUID))
-        local targetClass = select(2, GetPlayerInfoByGUID(destGUID))
-        table.insert(BrezState.resHistory, {
-            source = sourceName or ns.L["Unknown"],
-            target = destName or ns.L["Unknown"],
-            spellId = spellId,
-            timestamp = GetTime(),
-            sourceClass = sourceClass,
-            targetClass = targetClass,
-        })
-        UpdateDisplay()
-    end
-
-    if subEvent == "SPELL_CAST_SUCCESS" and spellId == REINCARNATION_SPELL_ID then
-        local sourceClass = select(2, GetPlayerInfoByGUID(sourceGUID))
-        table.insert(BrezState.resHistory, {
-            source = sourceName or ns.L["Unknown"],
-            target = sourceName or ns.L["Unknown"],
-            spellId = REINCARNATION_SPELL_ID,
-            timestamp = GetTime(),
-            sourceClass = sourceClass,
-            targetClass = sourceClass,
-        })
-        UpdateDisplay()
-    end
-end
-
 local function ResetHistory()
     wipe(BrezState.resHistory)
 end
@@ -557,8 +511,6 @@ if ns.WhenLoggedIn then
         EvaluateVisibility()
     end)
 end
-
-EventRegistry:RegisterCallback("COMBAT_LOG_EVENT_UNFILTERED", OnCombatLogEvent, eventFrame)
 
 _G.QUI_RefreshBrezCounter = RefreshBrezCounter
 _G.QUI_ToggleBrezCounterPreview = TogglePreview

@@ -734,38 +734,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
-    function controller:RefreshCooldownVisualsForSpellID(eventSpellID, eventBaseSpellID)
-        local spellIDs = {}
-        local hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventSpellID)
-        hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventBaseSpellID) or hasSpellIDs
-        if not hasSpellIDs then return false end
-
-        local editMode, ncdm, ncdmContainers, inCombatState
-        if callbacks.prepareBatch then
-            editMode, ncdm, ncdmContainers, inCombatState = callbacks.prepareBatch()
-        end
-        local refreshed = false
-
-        for _, pool in pairs(getIconPools(callbacks)) do
-            for _, icon in ipairs(pool) do
-                local entry = icon and icon._spellEntry
-                if entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs) then
-                    local containerDB, cType = resolveContainer(callbacks, entry, ncdm, ncdmContainers)
-                    if cType ~= "aura" and cType ~= "auraBar" and callbacks.updateContainerVisibility then
-                        callbacks.updateContainerVisibility(icon, entry, containerDB, editMode, inCombatState)
-                        refreshed = true
-                    end
-                end
-            end
-        end
-
-        if refreshed and callbacks.drainLayoutDirty then
-            callbacks.drainLayoutDirty()
-        end
-
-        return refreshed
-    end
-
     local function drainSpellQueue()
         local state = controller.spellQueue
         disarmQueue(state)

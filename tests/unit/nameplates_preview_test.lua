@@ -511,7 +511,7 @@ test("the simplified strip previews through the shared render-mode function", fu
     local baselineIcons = ShownIcons()
     if baselineIcons == 0 then fail("fixture: auras must draw before the strip") end
 
-    settings.types.petMinion.renderMode = "simplified"
+    typeSettings.renderMode = "simplified"
     Repaint()
 
     if statePlate.npRenderMode ~= "simplified" then
@@ -529,7 +529,7 @@ test("the simplified strip previews through the shared render-mode function", fu
         fail("a simplified plate draws no auras, so the preview must blank them, got " .. ShownIcons())
     end
 
-    settings.types.petMinion.renderMode = "bars"
+    typeSettings.renderMode = "bars"
     Repaint()
 
     for _, key in ipairs({ "healthText", "npLevelText", "powerBar", "castBar", "npRaidMarker", "npTargetGlow",

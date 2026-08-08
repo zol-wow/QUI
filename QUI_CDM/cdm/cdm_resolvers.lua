@@ -768,10 +768,6 @@ local function ResolveCooldownActivityStateCore(icon, entry, containerDB, now, r
 
     ApplyChargeRuntimeFallback(state, entry, spellID, isItemLike)
 
-    if state.hasCharges then
-        return state
-    end
-
     return state
 end
 

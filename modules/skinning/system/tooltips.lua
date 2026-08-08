@@ -685,18 +685,7 @@ local function ResolveDotPath(path)
     return obj
 end
 
-local SafeHookTooltipOnShow, HookTooltipOnShow
-
-local _pendingHookQueue = {}
-local _pendingHookTimerActive = false
-local function _FlushHookQueue()
-    _pendingHookTimerActive = false
-    for i = 1, #_pendingHookQueue do
-        local tt = _pendingHookQueue[i]
-        _pendingHookQueue[i] = nil
-        if tt then HookTooltipOnShow(tt) end
-    end
-end
+local HookTooltipOnShow
 
 local _pendingFontSet = {}
 local _pendingFontTimerActive = false
@@ -723,20 +712,6 @@ local function QueueFontUpdate(tooltip)
     if not _pendingFontTimerActive then
         _pendingFontTimerActive = true
         C_Timer.After(0, _FlushPendingFonts)
-    end
-end
-
-SafeHookTooltipOnShow = function(tooltip)
-    if hookedTooltips[tooltip] then return end
-    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
-    if InCombatLockdown() then
-        _pendingHookQueue[#_pendingHookQueue + 1] = tooltip
-        if not _pendingHookTimerActive then
-            _pendingHookTimerActive = true
-            C_Timer.After(0, _FlushHookQueue)
-        end
-    else
-        HookTooltipOnShow(tooltip)
     end
 end
 
@@ -811,7 +786,7 @@ local function DiscoverAndSkin(tooltip)
     if not tooltip then return end
     if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
-    SafeHookTooltipOnShow(tooltip)
+    HookTooltipOnShow(tooltip)
     if IsEnabled() and not InCombatLockdown() then
         StyleTooltip(tooltip)
     end
@@ -869,7 +844,7 @@ local function SetupBackdropStyleHooks()
                 if not (_sf2 and _sf2:IsShown() and (not _ns2 or not _ns2:IsShown())) then
                     OnTooltipShow(tooltip)
                 end
-                SafeHookTooltipOnShow(tooltip)
+                HookTooltipOnShow(tooltip)
             end
         end)
     end
@@ -890,7 +865,7 @@ local function SetupBackdropStyleHooks()
             if not (_sf3 and _sf3:IsShown() and (not _ns3 or not _ns3:IsShown())) then
                 OnTooltipShow(tooltip)
             end
-            SafeHookTooltipOnShow(tooltip)
+            HookTooltipOnShow(tooltip)
         end)
     end
 
@@ -952,7 +927,7 @@ local function SetupPostProcessor()
                 FallbackToNineSlice(tooltip)
                 return
             end
-            SafeHookTooltipOnShow(tooltip)
+            HookTooltipOnShow(tooltip)
             TooltipDebugCount("skin.postGameTooltip")
             StyleGameTooltip(tooltip)
             return
@@ -961,7 +936,7 @@ local function SetupPostProcessor()
             TooltipDebugCount("skin.protectedTooltipSkipped")
             return
         end
-        SafeHookTooltipOnShow(tooltip)
+        HookTooltipOnShow(tooltip)
         if InCombatLockdown() then
             CombatRefreshTooltip(tooltip)
         else
@@ -1058,7 +1033,7 @@ local function FlushShoppingTooltipSync()
     for i = 1, 2 do
         local st = _G["ShoppingTooltip" .. i]
         if st and st:IsShown() then
-            SafeHookTooltipOnShow(st)
+            HookTooltipOnShow(st)
             OnTooltipShow(st)
         end
     end
@@ -1082,11 +1057,6 @@ StyleGameTooltip = function(tooltip)
     end
 
     if GetTooltipOwnerRestriction(tooltip) == "forbidden" then
-        FallbackToNineSlice(tooltip)
-        return
-    end
-
-    if HasActiveWidgetContainer(tooltip) then
         FallbackToNineSlice(tooltip)
         return
     end
@@ -1129,7 +1099,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
 
     if event == "PLAYER_REGEN_ENABLED" then
-        _FlushHookQueue()
         if IsEnabled() then
             for _, name in ipairs(tooltipsToSkin) do
                 local tooltip = _G[name]

@@ -328,9 +328,28 @@ local function RunFixture(fx)
     return {
         finalSV = finalSV,
         expected = expected,
+        postMigration = postMigration,
+        exportString = exportString,
+        postImport = postImport,
         checkpointIssues = checkpointIssues,
         invariantFailures = invariantFailures,
     }
+end
+
+local function WriteCheckpoints(fx, payload)
+    if FileExists(fx.files.postMigration) then
+        PrettyPrint.WriteFile(fx.files.postMigration, payload.postMigration)
+    end
+    if FileExists(fx.files.postImport) then
+        PrettyPrint.WriteFile(fx.files.postImport, payload.postImport)
+    end
+    if FileExists(fx.files.export) then
+        local f = io.open(fx.files.export, "w")
+        if f then
+            f:write(payload.exportString)
+            f:close()
+        end
+    end
 end
 
 ----------------------------------------------------------------------------
@@ -395,6 +414,7 @@ for _, fx in ipairs(fixtures) do
         elseif #diff > 0 then
             if options.update then
                 PrettyPrint.WriteFile(fx.files.expected, payload.finalSV)
+                WriteCheckpoints(fx, payload)
                 io.stdout:write(Green("UPDATED") .. " (" .. elapsed .. "ms)\n")
                 io.stdout:write(DeepCompare.FormatDiff(diff) .. "\n")
                 passed = passed + 1
@@ -411,6 +431,18 @@ for _, fx in ipairs(fixtures) do
             failures[#failures + 1] = { fx = fx, kind = "invariants",
                                          invariantFailures = payload.invariantFailures }
             if options.bail then break end
+        elseif #(payload.checkpointIssues or {}) > 0 then
+            if options.update then
+                WriteCheckpoints(fx, payload)
+                io.stdout:write(Green("UPDATED") .. " (" .. elapsed .. "ms) — checkpoints\n")
+                passed = passed + 1
+            else
+                failed = failed + 1
+                io.stdout:write(Red("FAIL ") .. " (" .. elapsed .. "ms) — checkpoints\n")
+                failures[#failures + 1] = { fx = fx, kind = "checkpoints",
+                                             checkpointIssues = payload.checkpointIssues }
+                if options.bail then break end
+            end
         else
             passed = passed + 1
             io.stdout:write(Green("ok   ") .. " (" .. elapsed .. "ms)\n")
@@ -435,6 +467,11 @@ if #failures > 0 then
             io.stdout:write(DeepCompare.FormatDiff(f.diff) .. "\n")
             for _, ci in ipairs(f.checkpointIssues or {}) do
                 io.stdout:write("\n    checkpoint " .. ci.label .. " also differs:\n")
+                io.stdout:write(DeepCompare.FormatDiff(ci.diff) .. "\n")
+            end
+        elseif f.kind == "checkpoints" then
+            for _, ci in ipairs(f.checkpointIssues) do
+                io.stdout:write("    checkpoint " .. ci.label .. " differs:\n")
                 io.stdout:write(DeepCompare.FormatDiff(ci.diff) .. "\n")
             end
         elseif f.kind == "invariants" then

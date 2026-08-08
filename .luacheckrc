@@ -297,7 +297,6 @@ local additional_writable_globals = {
     "SLASH_QUISCANNED1",
     "SLASH_QUITABFILTERS1",
     "ShowHuntPanel",
-    "ShowOwnedFlyoutForButton",
     "SkinSpellFlyoutButtons",
     "StaticPopupDialogs",
     "TalkingHeadFrame",

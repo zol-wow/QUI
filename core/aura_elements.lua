@@ -220,6 +220,17 @@ function E.NormalizeElement(e)
         if e.auraType == nil then e.auraType = "HELPFUL" end
         if type(e.border) ~= "table" then e.border = { thickness = 2 } end
     end
+    if e.dispelBorderMode ~= "stealable" and e.dispelBorderMode ~= "all" then
+        e.dispelBorderMode = "debuffs"
+    end
+    local dur = e.duration
+    if type(dur) == "table" and type(dur.pandemicColor) == "table" then
+        if e.pandemicGlow == nil then
+            local c = dur.pandemicColor
+            e.pandemicGlow = { color = { c[1] or 1, c[2] or 0.85, c[3] or 0.2, 1 } }
+        end
+        dur.pandemicColor = nil
+    end
     if e.applyToRoles == nil then e.applyToRoles = "all" end
     return e
 end

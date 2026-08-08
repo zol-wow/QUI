@@ -649,84 +649,100 @@ local function AdvanceButton(pb, elapsed)
 end
 
 function ActionBarsPreviewDriver.Build(host, options)
-    if state.ticker then
-        if state.host == host then
-            state.autoHeight = options or state.autoHeight
-            return
-        end
+    if state.host == host then
+        state.autoHeight = options or state.autoHeight
+        return
+    end
+    if state.host then
         ActionBarsPreviewDriver.Teardown()
     end
     state.host = host
     state.autoHeight = options
 
-    local previewHost = CreateFrame("Frame", nil, host)
+    local previewHost = state.previewHost
+    if previewHost then
+        previewHost:SetParent(host)
+        previewHost:ClearAllPoints()
+    else
+        previewHost = CreateFrame("Frame", nil, host)
+        state.previewHost = previewHost
+    end
     previewHost:SetPoint("TOPLEFT",  host, "TOPLEFT",  12, -30)
     previewHost:SetPoint("TOPRIGHT", host, "TOPRIGHT", -12, -30)
     previewHost:SetPoint("BOTTOM",   host, "BOTTOM",   0,  12)
-    state.previewHost = previewHost
+    previewHost:Show()
 
-    for i = 1, MAX_PREVIEW_BUTTONS do
-        local b = CreateFrame("Frame", nil, previewHost)
+    if #state.previewButtons > 0 then
+        for _, pb in ipairs(state.previewButtons) do
+            InitButtonState(pb)
+        end
+    else
+        for i = 1, MAX_PREVIEW_BUTTONS do
+            local b = CreateFrame("Frame", nil, previewHost)
 
-        local backdrop = b:CreateTexture(nil, "BACKGROUND", nil, -8)
-        backdrop:SetAllPoints(b)
-        backdrop:SetColorTexture(0, 0, 0, 1)
+            local backdrop = b:CreateTexture(nil, "BACKGROUND", nil, -8)
+            backdrop:SetAllPoints(b)
+            backdrop:SetColorTexture(0, 0, 0, 1)
 
-        local icon = b:CreateTexture(nil, "ARTWORK")
-        icon:SetAllPoints(b)
+            local icon = b:CreateTexture(nil, "ARTWORK")
+            icon:SetAllPoints(b)
 
-        local normal = b:CreateTexture(nil, "OVERLAY", nil, 1)
-        normal:SetAllPoints(b)
-        normal:SetTexture(PREVIEW_TEXTURES.normal)
-        normal:SetVertexColor(0, 0, 0, 1)
+            local normal = b:CreateTexture(nil, "OVERLAY", nil, 1)
+            normal:SetAllPoints(b)
+            normal:SetTexture(PREVIEW_TEXTURES.normal)
+            normal:SetVertexColor(0, 0, 0, 1)
 
-        local gloss = b:CreateTexture(nil, "OVERLAY", nil, 2)
-        gloss:SetAllPoints(b)
-        gloss:SetTexture(PREVIEW_TEXTURES.gloss)
-        gloss:SetBlendMode("ADD")
-        gloss:Hide()
+            local gloss = b:CreateTexture(nil, "OVERLAY", nil, 2)
+            gloss:SetAllPoints(b)
+            gloss:SetTexture(PREVIEW_TEXTURES.gloss)
+            gloss:SetBlendMode("ADD")
+            gloss:Hide()
 
-        local hotkey = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        hotkey:SetWordWrap(false)
-        hotkey:SetShadowOffset(1, -1)
-        if hotkey.SetMaxLines then hotkey:SetMaxLines(1) end
+            local hotkey = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            hotkey:SetWordWrap(false)
+            hotkey:SetShadowOffset(1, -1)
+            if hotkey.SetMaxLines then hotkey:SetMaxLines(1) end
 
-        local name = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        name:SetWordWrap(false)
-        name:SetShadowOffset(1, -1)
-        if name.SetMaxLines then name:SetMaxLines(1) end
+            local name = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            name:SetWordWrap(false)
+            name:SetShadowOffset(1, -1)
+            if name.SetMaxLines then name:SetMaxLines(1) end
 
-        local count = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        count:SetWordWrap(false)
-        count:SetShadowOffset(1, -1)
-        if count.SetMaxLines then count:SetMaxLines(1) end
+            local count = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            count:SetWordWrap(false)
+            count:SetShadowOffset(1, -1)
+            if count.SetMaxLines then count:SetMaxLines(1) end
 
-        local cooldown = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
-        cooldown:SetAllPoints(b)
-        cooldown:SetDrawSwipe(true)
-        cooldown:SetHideCountdownNumbers(false)
-        cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
-        cooldown:SetSwipeColor(0, 0, 0, 0.8)
-        cooldown:SetDrawBling(false)
-        cooldown:EnableMouse(false)
-        cooldown:Hide()
+            local cooldown = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
+            cooldown:SetAllPoints(b)
+            cooldown:SetDrawSwipe(true)
+            cooldown:SetHideCountdownNumbers(false)
+            cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
+            cooldown:SetSwipeColor(0, 0, 0, 0.8)
+            cooldown:SetDrawBling(false)
+            cooldown:EnableMouse(false)
+            cooldown:Hide()
 
-        state.previewButtons[i] = {
-            frame    = b,
-            icon     = icon,
-            backdrop = backdrop,
-            normal   = normal,
-            gloss    = gloss,
-            hotkey   = hotkey,
-            name     = name,
-            count    = count,
-            cooldown = cooldown,
-            idx      = i,
-        }
-        InitButtonState(state.previewButtons[i])
+            state.previewButtons[i] = {
+                frame    = b,
+                icon     = icon,
+                backdrop = backdrop,
+                normal   = normal,
+                gloss    = gloss,
+                hotkey   = hotkey,
+                name     = name,
+                count    = count,
+                cooldown = cooldown,
+                idx      = i,
+            }
+            InitButtonState(state.previewButtons[i])
+        end
     end
 
-    state.ticker = CreateFrame("Frame", nil, host)
+    if not state.ticker then
+        state.ticker = CreateFrame("Frame", nil, previewHost)
+    end
+    state.ticker:Show()
     state.ticker:SetScript("OnUpdate", function(_, elapsed)
         for _, pb in ipairs(state.previewButtons) do
             AdvanceButton(pb, elapsed)
@@ -981,11 +997,12 @@ function ActionBarsPreviewDriver.Teardown()
         StopGlow(pb)
         if pb.cooldown then pb.cooldown:Clear(); pb.cooldown:Hide() end
     end
-    if state.ticker then state.ticker:SetScript("OnUpdate", nil) end
-    state.ticker = nil
+    if state.ticker then
+        state.ticker:SetScript("OnUpdate", nil)
+        state.ticker:Hide()
+    end
+    if state.previewHost then state.previewHost:Hide() end
     state.host = nil
-    state.previewHost = nil
-    state.previewButtons = {}
     state.buttonState    = {}
     state.layoutCount    = 0
     state.autoHeight     = nil

@@ -99,13 +99,12 @@ do
 
     local function GetVisibleButtonCount(barKey)
         if not barKey then return nil end
-        local visibleCounts = ActionBarsOwned._visibleButtonCounts
+        local cached = ActionBarsOwned._visibleButtonCounts[barKey]
+        if cached then return cached end
         local buttons = ActionBarsOwned.nativeButtons and ActionBarsOwned.nativeButtons[barKey]
         local buttonCount = buttons and #buttons or BUTTON_COUNTS[barKey] or 12
         local _, _, iconCount = GetOwnedLayout(barKey)
-        local count = ClampVisibleButtonCount(barKey, iconCount, buttonCount)
-        visibleCounts[barKey] = count
-        return count
+        return ClampVisibleButtonCount(barKey, iconCount, buttonCount)
     end
 
     IsButtonInsideVisibleLayout = function(button, barKey)
@@ -327,17 +326,94 @@ LayoutNativeButtons = function(barKey)
     }
 end
 
-function SaveContainerPosition(barKey) end
+local function GetContainerAnchorKey(barKey)
+    return (barKey == "pet" and "petBar")
+        or (barKey == "stance" and "stanceBar")
+        or (barKey == "microbar" and "microMenu")
+        or (barKey == "bags" and "bagBar")
+        or barKey
+end
+
+local function ContainerMovedFromBarFrame(barKey, container)
+    local barFrame = GetBarFrame(barKey)
+    if not barFrame then return false end
+    local okC, cp, crt, crp, cx, cy = ns.SafeCallMethod("best-effort-style", container, "GetPoint", 1)
+    local okB, bp, brt, brp, bx, by = ns.SafeCallMethod("best-effort-style", barFrame, "GetPoint", 1)
+    if not okC or not okB then return false end
+    if Helpers.HasSecretValue(cp, crt, crp, cx, cy)
+        or Helpers.HasSecretValue(bp, brt, brp, bx, by) then
+        -- @secret-policy: reject-secret-value — secret anchor data cannot be compared; treat as unmoved, skip persisting
+        return false
+    end
+    if not cp or not bp then return false end
+    return cp ~= bp or crt ~= brt or crp ~= brp
+        or math.abs((tonumber(cx) or 0) - (tonumber(bx) or 0)) > 0.5
+        or math.abs((tonumber(cy) or 0) - (tonumber(by) or 0)) > 0.5
+end
+
+function SaveContainerPosition(barKey)
+    local container = ActionBarsOwned.containers[barKey]
+    if not container then return end
+
+    local anchorKey = GetContainerAnchorKey(barKey)
+    local core = GetCore()
+    local profile = core and core.db and core.db.profile
+    if not profile then return end
+
+    local fa = profile.frameAnchoring
+    local entry = type(fa) == "table" and rawget(fa, anchorKey) or nil
+    if type(entry) ~= "table" then entry = nil end
+    if entry and entry.parent and entry.parent ~= "screen" then return end
+
+    if not entry and not ContainerMovedFromBarFrame(barKey, container) then return end
+
+    local point, relPoint, x, y
+    if core.SnapFramePosition then
+        local sp, _, srp, sx, sy = core:SnapFramePosition(container)
+        point, relPoint, x, y = sp, srp, sx, sy
+    end
+    if not point then
+        local fp, _, frp, fx, fy = container:GetPoint(1)
+        point, relPoint, x, y = fp, frp, fx, fy
+    end
+    if Helpers.HasSecretValue(point, relPoint, x, y) then return end
+    if not point then return end
+
+    if type(fa) ~= "table" then
+        fa = {}
+        profile.frameAnchoring = fa
+    end
+    if not entry then
+        entry = {
+            parent = "screen",
+            sizeStable = true,
+            autoWidth = false,
+            autoHeight = false,
+            hideWithParent = false,
+            keepInPlace = true,
+            widthAdjust = 0,
+            heightAdjust = 0,
+        }
+        fa[anchorKey] = entry
+    end
+    entry.point = point
+    entry.relative = relPoint or point
+    entry.offsetX = tonumber(x) or 0
+    entry.offsetY = tonumber(y) or 0
+
+    if _G.QUI_ApplyFrameAnchor then
+        _G.QUI_ApplyFrameAnchor(anchorKey)
+    end
+    if _G.QUI and _G.QUI.SendMessage then
+        _G.QUI:SendMessage("QUI_FRAME_ANCHOR_CHANGED", anchorKey)
+    end
+end
 
 function RestoreContainerPosition(barKey)
     local container = ActionBarsOwned.containers[barKey]
     if not container then return false end
 
-    local anchorKey = (barKey == "pet" and "petBar")
-        or (barKey == "stance" and "stanceBar")
-        or (barKey == "microbar" and "microMenu")
-        or (barKey == "bags" and "bagBar")
-        or barKey
+    local anchorKey = GetContainerAnchorKey(barKey)
     if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(anchorKey) then
         return true
     end
@@ -481,11 +557,12 @@ function StartOwnedBarFade(barKey, targetAlpha)
                     local progress = math.min(elapsedTime / bState.fadeDuration, 1)
                     local easedProgress = progress * (2 - progress)
                     local a = bState.fadeStartAlpha + (bState.targetAlpha - bState.fadeStartAlpha) * easedProgress
-                    SetOwnedBarAlpha(bKey, a)
+                    local applyAlpha = ActionBarsOwned.containers[bKey] and SetOwnedBarAlpha or SetBarAlpha
+                    applyAlpha(bKey, a)
 
                     if progress >= 1 then
                         bState.isFading = false
-                        SetOwnedBarAlpha(bKey, bState.targetAlpha)
+                        applyAlpha(bKey, bState.targetAlpha)
                     end
                 end
             end
@@ -500,17 +577,7 @@ function StartOwnedBarFade(barKey, targetAlpha)
     fadeFrame:Show()
 end
 
-function CancelOwnedBarFadeTimers(state)
-    if not state then return end
-    if state.delayTimer then
-        state.delayTimer:Cancel()
-        state.delayTimer = nil
-    end
-    if state.leaveCheckTimer then
-        state.leaveCheckTimer:Cancel()
-        state.leaveCheckTimer = nil
-    end
-end
+CancelOwnedBarFadeTimers = CancelBarFadeTimers
 
 function IsLinkedBar(barKey)
     for _, key in ipairs(LINKED_OWNED_BAR_KEYS) do

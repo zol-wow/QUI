@@ -77,7 +77,7 @@ function Datatexts:UnregisterSharedTicker(frame)
     end
 end
 
-local function GetValueColor()
+function Datatexts.GetValueColor()
     local addon = ns and ns.Addon
     local db = addon and addon.db and addon.db.profile
     if not db then return 26, 255, 26 end
@@ -100,8 +100,9 @@ local function GetValueColor()
     local c = dt.valueColor or {0.1, 1.0, 0.1, 1}
     return floor(c[1] * 255), floor(c[2] * 255), floor(c[3] * 255)
 end
+local GetValueColor = Datatexts.GetValueColor
 
-local function GetLabel(fullLabel, shortLabel, useShortLabel, useNoLabel)
+function Datatexts.GetLabel(fullLabel, shortLabel, useShortLabel, useNoLabel)
     if useNoLabel then
         return ""
     end
@@ -110,6 +111,7 @@ local function GetLabel(fullLabel, shortLabel, useShortLabel, useNoLabel)
     end
     return fullLabel
 end
+local GetLabel = Datatexts.GetLabel
 
 local lockoutCache = {
     lastUpdate = 0,
@@ -123,14 +125,8 @@ local function GetLockoutCacheTTL()
     return max(1, minutes) * 60
 end
 
-local function RefreshLockoutCache()
-    local now = GetTime()
-    if now - lockoutCache.lastUpdate < GetLockoutCacheTTL() then
-        return
-    end
-
-    RequestRaidInfo()
-    lockoutCache.lastUpdate = now
+local function RebuildLockoutCache()
+    lockoutCache.lastUpdate = GetTime()
 
     wipe(lockoutCache.instances)
     local numSaved = GetNumSavedInstances() or 0
@@ -159,6 +155,17 @@ local function RefreshLockoutCache()
             end
         end
     end
+end
+
+local lockoutWatcher = CreateFrame("Frame")
+lockoutWatcher:RegisterEvent("UPDATE_INSTANCE_INFO")
+lockoutWatcher:SetScript("OnEvent", RebuildLockoutCache)
+
+local function RefreshLockoutCache()
+    if GetTime() - lockoutCache.lastUpdate < GetLockoutCacheTTL() then
+        return
+    end
+    RequestRaidInfo()
 end
 
 local function FormatTimeRemaining(seconds)
@@ -269,11 +276,19 @@ function Datatexts:AttachToSlot(slotFrame, datatextID, settings)
         return true
     end
 
-    local success, instance = ns.SafeCall("best-effort-style", datatextDef.OnEnable, slotFrame, settings or {})
+    local recycled = slotFrame._datatextFrames and slotFrame._datatextFrames[datatextID]
+    local success, instance = ns.SafeCall("best-effort-style", datatextDef.OnEnable, slotFrame, settings or {}, recycled)
 
     if not success then
         print("|cffff0000QUI:|r Failed to enable datatext '" .. datatextID .. "': " .. tostring(instance))
         return false
+    end
+
+    if instance then
+        instance._quiDatatextActive = true
+        if instance == recycled then
+            instance:Show()
+        end
     end
 
     if slotFrame.RegisterForClicks then
@@ -316,8 +331,9 @@ local function QueueCombatTeardown(frame)
             combatDeferredTeardown = nil
             if not list then return end
             for _, frame in ipairs(list) do
-                frame:Hide()
-                frame:SetParent(nil)
+                if not frame._quiDatatextActive then
+                    frame:Hide()
+                end
             end
         end)
     end
@@ -338,11 +354,15 @@ function Datatexts:DetachFromSlot(slotFrame)
     slotFrame:SetScript("OnLeave", nil)
 
     if instance.frame then
+        self:UnregisterSharedTicker(instance.frame)
+        instance.frame:UnregisterAllEvents()
+        instance.frame._quiDatatextActive = nil
+        slotFrame._datatextFrames = slotFrame._datatextFrames or {}
+        slotFrame._datatextFrames[instance.id] = instance.frame
         if InCombatLockdown() and instance.frame:IsProtected() then
             QueueCombatTeardown(instance.frame)
         else
             instance.frame:Hide()
-            instance.frame:SetParent(nil)
         end
     end
 
@@ -368,8 +388,8 @@ Datatexts:Register("time", {
     category = ns.L["System"],
     description = "Displays current time (local or server)",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -483,8 +503,8 @@ Datatexts:Register("fps", {
     category = ns.L["System"],
     description = "Displays frames per second",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -518,15 +538,15 @@ Datatexts:Register("latency", {
     category = ns.L["System"],
     description = "Displays world latency",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
-            local _, _, home = GetNetStats()
-            local ms = floor(home or 0)
+            local _, _, _, world = GetNetStats()
+            local ms = floor(world or 0)
             local r, g, b
             if ms > 100 then
                 r, g, b = 255, 51, 51
@@ -554,8 +574,8 @@ Datatexts:Register("system", {
     category = ns.L["System"],
     description = "FPS and latency display",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -924,8 +944,8 @@ Datatexts:Register("volume", {
     category = ns.L["System"],
     description = "Volume control with scroll wheel adjustment",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Button", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Button", nil, slotFrame)
         frame:SetAllPoints()
         frame:EnableMouse(true)
         frame:EnableMouseWheel(true)
@@ -1076,8 +1096,8 @@ Datatexts:Register("gold", {
     category = ns.L["Character"],
     description = "Displays your current gold (tooltip shows all characters)",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -1223,8 +1243,8 @@ Datatexts:Register("alts", {
     category = ns.L["Character"],
     description = "Alt roster summary from the account-wide cache (left-click opens the Alts window)",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -1381,8 +1401,8 @@ Datatexts:Register("durability", {
     category = ns.L["Character"],
     description = "Displays lowest equipment durability",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -1709,8 +1729,8 @@ Datatexts:Register("friends", {
     category = ns.L["Social"],
     description = "Displays online friends count with detailed tooltip",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -1745,7 +1765,8 @@ Datatexts:Register("friends", {
         frame:RegisterEvent("BN_FRIEND_INFO_CHANGED")
         frame:RegisterEvent("BN_CONNECTED")
         frame:RegisterEvent("BN_DISCONNECTED")
-        frame:SetScript("OnEvent", function()
+        frame:SetScript("OnEvent", function(_, event)
+            if event == "MODIFIER_STATE_CHANGED" then return end
             friendsCache.lastUpdate = 0
             Update()
         end)
@@ -2127,8 +2148,8 @@ Datatexts:Register("guild", {
     category = ns.L["Social"],
     description = "Displays online guild members with detailed tooltip",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -2162,6 +2183,7 @@ Datatexts:Register("guild", {
         frame:RegisterEvent("GUILD_ROSTER_UPDATE")
         frame:RegisterEvent("PLAYER_GUILD_UPDATE")
         frame:SetScript("OnEvent", function(self, event, unit)
+            if event == "MODIFIER_STATE_CHANGED" then return end
             if event == "PLAYER_GUILD_UPDATE" and unit and unit ~= "player" then
                 return
             end
@@ -2388,8 +2410,8 @@ Datatexts:Register("lootspec", {
     category = ns.L["Character"],
     description = "Displays and changes loot specialization",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -2535,8 +2557,8 @@ Datatexts:Register("bags", {
     category = ns.L["Character"],
     description = "Displays bag space usage",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -2652,8 +2674,8 @@ Datatexts:Register("coords", {
     category = ns.L["Character"],
     description = "Displays player map coordinates",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -2723,8 +2745,8 @@ Datatexts:Register("currencies", {
     category = ns.L["Character"],
     description = "Displays backpack currencies (adaptive to slot size)",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -2943,8 +2965,8 @@ Datatexts:Register("mythickey", {
     category = ns.L["Character"],
     description = "Displays current Mythic+ keystone",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -3018,8 +3040,8 @@ Datatexts:Register("playerspec", {
     category = ns.L["Character"],
     description = "Displays current spec, talent loadout, and loot spec with switching",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Frame", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
         local text = Datatexts.EnsureText(slotFrame)
@@ -3377,8 +3399,8 @@ Datatexts:Register("experience", {
     category = ns.L["Character"],
     description = "Displays XP percentage to next level with detailed tooltip",
 
-    OnEnable = function(slotFrame, settings)
-        local frame = CreateFrame("Button", nil, slotFrame)
+    OnEnable = function(slotFrame, settings, recycled)
+        local frame = recycled or CreateFrame("Button", nil, slotFrame)
         frame:SetAllPoints()
         frame:EnableMouse(true)
 

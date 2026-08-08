@@ -86,9 +86,12 @@ local function FontAuctionHouseExtraTabs()
     end
 
     if not (AuctionHouseFrame.IsShown and AuctionHouseFrame:IsShown()) then return end
-    for _, obj in pairs(_G) do
-        if type(obj) == "table" and obj ~= AuctionHouseFrame
-            and not SkinBase.GetFrameData(obj, "qAHTabFonted") then
+    if not AuctionHouseFrame.GetChildren then return end
+    local children = { AuctionHouseFrame:GetChildren() }
+    for i = 1, #children do
+        local obj = children[i]
+        if not (issecretvalue and issecretvalue(obj)) -- @secret-policy: reject-secret-value (hierarchy-secret child is never a skinnable tab)
+            and type(obj) == "table" and not SkinBase.GetFrameData(obj, "qAHTabFonted") then
             local ok, isTab = pcall(function()
                 return obj.IsObjectType and obj:IsObjectType("Button")
                     and obj.GetFontString and obj:GetFontString()

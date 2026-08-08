@@ -12,6 +12,19 @@ local function GetGUI()
     return nil
 end
 
+local anchorLiveUpdaters = {}
+local anchorListenerInstalled = false
+local function EnsureAnchorChangedListener()
+    if anchorListenerInstalled then return end
+    local QUI = _G.QUI
+    if not (QUI and QUI.RegisterMessage) then return end
+    anchorListenerInstalled = true
+    QUI:RegisterMessage("QUI_FRAME_ANCHOR_CHANGED", function(_, changedKey)
+        local update = anchorLiveUpdaters[changedKey]
+        if update then update() end
+    end)
+end
+
 local function GetColors()
     local GUI = GetGUI()
     if GUI and GUI.Colors then
@@ -285,41 +298,34 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
 
     y = y - 2
 
-    local listenerRegistered = false
-    local function RegisterLiveUpdates()
-        if listenerRegistered then return end
-        listenerRegistered = true
-        local QUI = _G.QUI
-        if QUI and QUI.RegisterMessage then
-            QUI:RegisterMessage("QUI_FRAME_ANCHOR_CHANGED", function(_, changedKey, data)
-                if changedKey ~= frameKey then return end
-                local db = self:GetFrameDB(frameKey)
-                if not db then return end
-                if widgetRefs.sliderX and widgetRefs.sliderX.SetValue then
-                    widgetRefs.sliderX:SetValue(db.offsetX or 0, true)
-                end
-                if widgetRefs.sliderY and widgetRefs.sliderY.SetValue then
-                    widgetRefs.sliderY:SetValue(db.offsetY or 0, true)
-                end
-                if widgetRefs.anchorDropdown and widgetRefs.anchorDropdown.SetValue then
-                    widgetRefs.anchorDropdown:SetValue(db.parent or "screen", true)
-                end
-                if widgetRefs.fromPoint and widgetRefs.fromPoint.SetValue then
-                    widgetRefs.fromPoint:SetValue(db.point or "CENTER", true)
-                end
-                if widgetRefs.toPoint and widgetRefs.toPoint.SetValue then
-                    widgetRefs.toPoint:SetValue(db.relative or "CENTER", true)
-                end
-            end)
+    local function ApplyLiveValues()
+        local db = self:GetFrameDB(frameKey)
+        if not db then return end
+        if widgetRefs.sliderX and widgetRefs.sliderX.SetValue then
+            widgetRefs.sliderX:SetValue(db.offsetX or 0, true)
+        end
+        if widgetRefs.sliderY and widgetRefs.sliderY.SetValue then
+            widgetRefs.sliderY:SetValue(db.offsetY or 0, true)
+        end
+        if widgetRefs.anchorDropdown and widgetRefs.anchorDropdown.SetValue then
+            widgetRefs.anchorDropdown:SetValue(db.parent or "screen", true)
+        end
+        if widgetRefs.fromPoint and widgetRefs.fromPoint.SetValue then
+            widgetRefs.fromPoint:SetValue(db.point or "CENTER", true)
+        end
+        if widgetRefs.toPoint and widgetRefs.toPoint.SetValue then
+            widgetRefs.toPoint:SetValue(db.relative or "CENTER", true)
         end
     end
 
+    local function RegisterLiveUpdates()
+        EnsureAnchorChangedListener()
+        anchorLiveUpdaters[frameKey] = ApplyLiveValues
+    end
+
     local function UnregisterLiveUpdates()
-        if not listenerRegistered then return end
-        listenerRegistered = false
-        local QUI = _G.QUI
-        if QUI and QUI.UnregisterMessage then
-            pcall(QUI.UnregisterMessage, QUI, "QUI_FRAME_ANCHOR_CHANGED")
+        if anchorLiveUpdaters[frameKey] == ApplyLiveValues then
+            anchorLiveUpdaters[frameKey] = nil
         end
     end
 

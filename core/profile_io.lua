@@ -1571,6 +1571,16 @@ local function DeserializeProfileImportPayload(str)
     return true, payload, prefix, nil
 end
 
+local function SchemaFloorError(payload)
+    local floor = ns.Migrations and ns.Migrations.MIN_SUPPORTED_SCHEMA
+    local importedSchema = tonumber(type(payload) == "table" and payload._schemaVersion)
+    if floor and importedSchema and importedSchema > 0 and importedSchema < floor then
+        return ("This profile is too old to import. Minimum supported version is %d; this profile is %d.")
+            :format(floor, importedSchema)
+    end
+    return nil
+end
+
 local function ParseProfileImportString(core, str)
     if not core or not core.db or not core.db.profile then
         return false, "No profile loaded."
@@ -1586,11 +1596,9 @@ local function ParseProfileImportString(core, str)
         return false, payloadErr or "Import failed profile validation."
     end
 
-    local floor = ns.Migrations and ns.Migrations.MIN_SUPPORTED_SCHEMA
-    local importedSchema = tonumber(payload._schemaVersion)
-    if floor and importedSchema and importedSchema > 0 and importedSchema < floor then
-        return false, ("This profile is too old to import. Minimum supported version is %d; this profile is %d.")
-            :format(floor, importedSchema)
+    local floorErr = SchemaFloorError(payload)
+    if floorErr then
+        return false, floorErr
     end
 
     return true, payload, prefix
@@ -2260,6 +2268,11 @@ function QUICore:SanitizeProfileImportString(str)
     local ok, payload, prefix, decodeErr = DeserializeProfileImportPayload(str)
     if not ok then
         return false, nil, nil, nil, decodeErr or "Could not read import string."
+    end
+
+    local floorErr = SchemaFloorError(payload)
+    if floorErr then
+        return false, nil, prefix, nil, floorErr
     end
 
     local sok, sanitized, stripped, serr = SanitizeProfilePayload(self, payload)

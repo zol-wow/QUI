@@ -131,14 +131,12 @@ local function CleanupRuntime(runtime)
     end
 
     if type(runtime.sectionHosts) == "table" then
-        for sectionId, sectionHost in pairs(runtime.sectionHosts) do
+        for _, sectionHost in pairs(runtime.sectionHosts) do
             if sectionHost then
                 CleanupFrame(sectionHost)
                 if sectionHost.Hide then sectionHost:Hide() end
                 if sectionHost.ClearAllPoints then sectionHost:ClearAllPoints() end
-                if sectionHost.SetParent then sectionHost:SetParent(nil) end
             end
-            runtime.sectionHosts[sectionId] = nil
         end
     end
 
@@ -320,6 +318,7 @@ local function RenderSection(runtime, sectionId)
         sectionHost = CreateFrame("Frame", nil, runtime.host)
         runtime.sectionHosts[sectionId] = sectionHost
     end
+    sectionHost:Show()
 
     CleanupFrame(sectionHost)
 
@@ -403,6 +402,11 @@ function Schema:RenderFeature(feature, host, options)
 
     local state = self:GetFeatureState(feature, host, options)
     local sectionOrder = surface.sections or feature.sectionOrder or {}
+    local sectionHosts = rawget(host, "_quiSettingsSectionHosts")
+    if type(sectionHosts) ~= "table" then
+        sectionHosts = {}
+        host._quiSettingsSectionHosts = sectionHosts
+    end
     local runtime = {
         feature = feature,
         host = host,
@@ -413,7 +417,7 @@ function Schema:RenderFeature(feature, host, options)
         width = options.width or (host.GetWidth and host:GetWidth()) or 760,
         sectionOrder = sectionOrder,
         sectionsById = feature.sectionsById or {},
-        sectionHosts = {},
+        sectionHosts = sectionHosts,
         sectionHeights = {},
     }
 

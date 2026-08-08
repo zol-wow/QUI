@@ -60,15 +60,7 @@ local function IsCharacterPaneEnabled()
     return not (settings and settings.enabled == false)
 end
 
-local function MaskNativeStatsPane()
-    if not CharacterStatsPane then return end
-    ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "Show")
-    ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 0)
-    ns.SafeCallMethodIfPresent("best-effort-style", CharacterStatsPane, "EnableMouse", false)
-    if CharacterStatsPane.ClassBackground then
-        ns.SafeCallMethod("best-effort-style", CharacterStatsPane.ClassBackground, "SetAlpha", 0)
-    end
-end
+local MaskNativeStatsPane = ns.QUI_MaskNativeStatsPane
 
 local function RestoreNativeStatsPane()
     if not CharacterStatsPane then return end

@@ -14,6 +14,7 @@ local tconcat = table.concat
 local AUTO_HIGHLIGHT_MAX_CHARS = 8000
 local COPY_BUTTON_SIZE = 24
 local COPY_BUTTON_FRAME_LEVEL = 100
+local COPY_HOVER_POLL_INTERVAL = 0.1
 local COPY_GLYPH_STROKE = 2
 
 local urlPopup = nil
@@ -674,7 +675,14 @@ local function ApplyCustomCopyButtonMode(button, container)
         container._quiCopyHovered = false
         container:SetScript("OnEnter", nil)
         container:SetScript("OnLeave", nil)
-        container:SetScript("OnUpdate", function(self)
+        container._quiCopyPollT = 0
+        container:SetScript("OnUpdate", function(self, elapsed)
+            local t = self._quiCopyPollT + (elapsed or COPY_HOVER_POLL_INTERVAL)
+            if t < COPY_HOVER_POLL_INTERVAL then
+                self._quiCopyPollT = t
+                return
+            end
+            self._quiCopyPollT = 0
             local over = (self.IsMouseOver and self:IsMouseOver()) or false
             if over ~= self._quiCopyHovered then
                 self._quiCopyHovered = over

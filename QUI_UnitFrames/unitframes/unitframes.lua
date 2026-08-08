@@ -273,19 +273,6 @@ local function EnsurePlayerCastbarSettings(db)
     return db.player.castbar
 end
 
-local function DestroyManagedCastbar(castbar)
-    if not castbar then return end
-    if castbar.UnregisterAllEvents then
-        castbar:UnregisterAllEvents()
-    end
-    castbar:SetScript("OnUpdate", nil)
-    castbar:SetScript("OnEvent", nil)
-    castbar:SetScript("OnDragStart", nil)
-    castbar:SetScript("OnDragStop", nil)
-    castbar:Hide()
-    castbar:ClearAllPoints()
-end
-
 local function ApplyStandalonePlayerCastbarMode()
     local db = GetDB()
     if not db or not db.player then return false end
@@ -307,7 +294,9 @@ local function ApplyStandalonePlayerCastbarMode()
     end
 
     if castbar and not hasPlayerFrame then
-        DestroyManagedCastbar(castbar)
+        if QUI_Castbar and QUI_Castbar.DestroyCastbar then
+            QUI_Castbar.DestroyCastbar(castbar)
+        end
         QUI_UF.castbars.player = nil
     end
 
@@ -453,19 +442,20 @@ end
 
 local GetUnitClassColor = Helpers.GetUnitClassColor
 
+local TEXT_ANCHOR_MAP = {
+    TOPLEFT     = { point = "TOPLEFT",     justify = "LEFT" },
+    TOP         = { point = "TOP",         justify = "CENTER" },
+    TOPRIGHT    = { point = "TOPRIGHT",    justify = "RIGHT" },
+    LEFT        = { point = "LEFT",        justify = "LEFT" },
+    CENTER      = { point = "CENTER",      justify = "CENTER" },
+    RIGHT       = { point = "RIGHT",       justify = "RIGHT" },
+    BOTTOMLEFT  = { point = "BOTTOMLEFT",  justify = "LEFT" },
+    BOTTOM      = { point = "BOTTOM",      justify = "CENTER" },
+    BOTTOMRIGHT = { point = "BOTTOMRIGHT", justify = "RIGHT" },
+}
+
 local function GetTextAnchorInfo(anchor)
-    local anchorMap = {
-        TOPLEFT     = { point = "TOPLEFT",     justify = "LEFT" },
-        TOP         = { point = "TOP",         justify = "CENTER" },
-        TOPRIGHT    = { point = "TOPRIGHT",    justify = "RIGHT" },
-        LEFT        = { point = "LEFT",        justify = "LEFT" },
-        CENTER      = { point = "CENTER",      justify = "CENTER" },
-        RIGHT       = { point = "RIGHT",       justify = "RIGHT" },
-        BOTTOMLEFT  = { point = "BOTTOMLEFT",  justify = "LEFT" },
-        BOTTOM      = { point = "BOTTOM",      justify = "CENTER" },
-        BOTTOMRIGHT = { point = "BOTTOMRIGHT", justify = "RIGHT" },
-    }
-    return anchorMap[anchor] or anchorMap.LEFT
+    return TEXT_ANCHOR_MAP[anchor] or TEXT_ANCHOR_MAP.LEFT
 end
 
 local function ResolveTextFont(fontName, fallbackPath)
@@ -489,39 +479,7 @@ local function FormatUnitLevelText(unit)
     return ok and text or ""
 end
 
-local function TruncateName(name, maxLength)
-    if IsSecretValue(name) then
-        if not maxLength or maxLength <= 0 then return name end
-        return string_format("%." .. maxLength .. "s", name)
-    end
-    if not name or type(name) ~= "string" then return name end
-    if not maxLength or maxLength <= 0 then return name end
-
-    local nameLen = #name
-
-    if nameLen <= maxLength then
-        return name
-    end
-
-    local byte = string.byte
-    local i = 1
-    local c = 0
-    while i <= nameLen and c < maxLength do
-        c = c + 1
-        local b = byte(name, i)
-        if b < 0x80 then
-            i = i + 1
-        elseif b < 0xE0 then
-            i = i + 2
-        elseif b < 0xF0 then
-            i = i + 3
-        else
-            i = i + 4
-        end
-    end
-
-    return string.sub(name, 1, i - 1)
-end
+local TruncateName = Helpers.TruncateUTF8
 
 QUI_UF.TruncateName = TruncateName
 
@@ -779,6 +737,11 @@ local function UpdateHealth(frame)
     end
 end
 
+local function ApplyAbsorbVisAlphas(frame, clampedBool, visAlpha)
+    frame.attachedVisHelper:SetAlphaFromBoolean(clampedBool, 0, visAlpha)
+    frame.overflowVisHelper:SetAlphaFromBoolean(clampedBool, visAlpha, 0)
+end
+
 local function UpdateAbsorbs(frame)
     if not frame or not frame.healthBar then return end
     if not frame.absorbBar then return end
@@ -849,38 +812,32 @@ local function UpdateAbsorbs(frame)
             end
             local calc = frame.absorbCalculator
 
-            ns.SafeCall("sink-forward", function() calc:SetDamageAbsorbClampMode(1) end)
+            ns.SafeCallMethod("sink-forward", calc, "SetDamageAbsorbClampMode", 1)
 
             local maximumHealthMode = Enum and Enum.UnitMaximumHealthMode
             if maximumHealthMode and calc.SetMaximumHealthMode then
-                ns.SafeCall("sink-forward", function() calc:SetMaximumHealthMode(maximumHealthMode.Default or 0) end)
+                ns.SafeCallMethod("sink-forward", calc, "SetMaximumHealthMode", maximumHealthMode.Default or 0)
             end
 
             UnitGetDetailedHealPrediction(unit, nil, calc)
 
-            local results = { pcall(function() return calc:GetDamageAbsorbs() end) }
-            local success = results[1]
+            local success, clampedAmount, clampedBool = ns.SafeCallMethod("sink-forward", calc, "GetDamageAbsorbs")
 
             if success then
-                clampedAbsorbs = results[2]
+                clampedAbsorbs = clampedAmount
 
                 if maximumHealthMode and maximumHealthMode.WithAbsorbs and calc.SetMaximumHealthMode then
-                    ns.SafeCall("sink-forward", function() calc:SetMaximumHealthMode(maximumHealthMode.WithAbsorbs) end)
+                    ns.SafeCallMethod("sink-forward", calc, "SetMaximumHealthMode", maximumHealthMode.WithAbsorbs)
                 end
 
                 local visCurve = GetPredictionVisibilityCurve()
                 local visAlpha = 1
                 if visCurve then
-                    local visOK, visResult = pcall(function()
-                        return calc:EvaluateCurrentHealthPercent(visCurve)
-                    end)
+                    local visOK, visResult = ns.SafeCallMethod("sink-forward", calc, "EvaluateCurrentHealthPercent", visCurve)
                     if visOK then visAlpha = visResult end
                 end
 
-                pcall(function()
-                    frame.attachedVisHelper:SetAlphaFromBoolean(results[3], 0, visAlpha)
-                    frame.overflowVisHelper:SetAlphaFromBoolean(results[3], visAlpha, 0)
-                end)
+                ns.SafeCall("sink-forward", ApplyAbsorbVisAlphas, frame, clampedBool, visAlpha)
             end
         end
 
@@ -1502,6 +1459,127 @@ QUI_UF._GetUnitSettings = GetUnitSettings
 QUI_UF._GetGeneralSettings = GetGeneralSettings
 QUI_UF._UpdateFrame = UpdateFrame
 
+local function BuildFrameBars(frame, unit, unitKey, settings, general, width, height, useClassBg)
+    local skinBgR, skinBgG, skinBgB = 0.1, 0.1, 0.1
+    if Helpers and Helpers.GetSkinBgColor then skinBgR, skinBgG, skinBgB = Helpers.GetSkinBgColor() end
+    local bgColor = { skinBgR, skinBgG, skinBgB, 0.9 }
+    if general and general.darkMode then
+        bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
+    end
+    if useClassBg and settings and settings.useClassColorBg and UnitIsPlayer(unit) then
+        local cr, cg, cb = GetUnitClassColor(unit)
+        if cr then bgColor = { cr, cg, cb, bgColor[4] or 1 } end
+    end
+
+    local borderPx = settings.borderSize or 1
+    local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, frame) or 0
+
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = borderSize > 0 and "Interface\\Buttons\\WHITE8x8" or nil,
+        edgeSize = borderSize > 0 and borderSize or nil,
+    })
+    Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
+    if borderSize > 0 then
+        local skinBorderR, skinBorderG, skinBorderB, skinBorderA = 0, 0, 0, 1
+        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor(settings, "") end
+        Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, skinBorderA)
+    end
+
+    local powerHeight = settings.showPowerBar and QUICore:PixelRound(settings.powerBarHeight or 4, frame) or 0
+    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
+    local healthBar = CreateFrame("StatusBar", nil, frame)
+    healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
+    healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
+    healthBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+    healthBar:SetMinMaxValues(0, 100)
+    healthBar:SetValue(100)
+    healthBar:EnableMouse(false)
+    frame.healthBar = healthBar
+    ApplyHealthFillDirection(frame, settings)
+    CacheHealthBarExtents(frame, settings, width, height)
+
+    if unitKey == "player" or unitKey == "target" then
+        local predictionSettings = settings.healPrediction or {}
+        local healPredictionBar = CreateFrame("StatusBar", nil, healthBar)
+        healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+        healPredictionBar:SetFrameLevel(healthBar:GetFrameLevel() + 1)
+        healPredictionBar:SetPoint("TOP", healthBar, "TOP", 0, 0)
+        healPredictionBar:SetPoint("BOTTOM", healthBar, "BOTTOM", 0, 0)
+        healPredictionBar:SetMinMaxValues(0, 1)
+        healPredictionBar:SetValue(0)
+        local pc = predictionSettings.color or { 0.2, 1, 0.2 }
+        local pa = predictionSettings.opacity or 0.5
+        healPredictionBar:SetStatusBarColor(pc[1] or 0.2, pc[2] or 1, pc[3] or 0.2, pa)
+        healPredictionBar:Hide()
+        frame.healPredictionBar = healPredictionBar
+    end
+
+    local absorbSettings = settings.absorbs or {}
+    local absorbBar = CreateFrame("StatusBar", nil, healthBar)
+    absorbBar:SetStatusBarTexture(GetAbsorbTexturePath(absorbSettings.texture))
+    local absorbBarTex = absorbBar:GetStatusBarTexture()
+    if absorbBarTex then
+        absorbBarTex:SetHorizTile(false)
+        absorbBarTex:SetVertTile(false)
+        absorbBarTex:SetTexCoord(0, 1, 0, 1)
+    end
+    local ac = absorbSettings.color or { 1, 1, 1 }
+    local aa = absorbSettings.opacity or 0.7
+    absorbBar:SetStatusBarColor(ac[1], ac[2], ac[3], aa)
+    absorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 1)
+    absorbBar:SetPoint("TOP", healthBar, "TOP", 0, 0)
+    absorbBar:SetPoint("BOTTOM", healthBar, "BOTTOM", 0, 0)
+    absorbBar:SetMinMaxValues(0, 1)
+    absorbBar:SetValue(0)
+    absorbBar:Hide()
+    frame.absorbBar = absorbBar
+
+    local healAbsorbBar = CreateFrame("StatusBar", nil, healthBar)
+    healAbsorbBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+    healAbsorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 2)
+    healAbsorbBar:SetAllPoints(healthBar)
+    healAbsorbBar:SetMinMaxValues(0, 1)
+    healAbsorbBar:SetValue(0)
+    healAbsorbBar:SetStatusBarColor(0.6, 0.1, 0.1, 0.8)
+    healAbsorbBar:SetReverseFill(true)
+    frame.healAbsorbBar = healAbsorbBar
+
+    if general and general.darkMode then
+        local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
+        healthBar:SetStatusBarColor(c[1], c[2], c[3], c[4] or 1)
+    else
+        local r, g, b, a = GetHealthBarColor(unit, settings)
+        healthBar:SetStatusBarColor(r, g, b, a)
+    end
+
+    if settings.showPowerBar then
+        local powerBar = CreateFrame("StatusBar", nil, frame)
+        powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
+        powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
+        powerBar:SetHeight(powerHeight)
+        powerBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+        powerBar:SetMinMaxValues(0, 100)
+        powerBar:SetValue(100)
+        local powerColor = settings.powerBarColor or { 0, 0.5, 1, 1 }
+        powerBar:SetStatusBarColor(powerColor[1], powerColor[2], powerColor[3], powerColor[4] or 1)
+        powerBar:EnableMouse(false)
+        frame.powerBar = powerBar
+
+        if settings.powerBarBorder ~= false then
+            local separator = powerBar:CreateTexture(nil, "OVERLAY")
+            separator:SetHeight(QUICore:GetPixelSize(powerBar))
+            separator:SetPoint("BOTTOMLEFT", powerBar, "TOPLEFT", 0, 0)
+            separator:SetPoint("BOTTOMRIGHT", powerBar, "TOPRIGHT", 0, 0)
+            separator:SetTexture("Interface\\Buttons\\WHITE8x8")
+            separator:SetVertexColor(0, 0, 0, 1)
+            frame.powerBarSeparator = separator
+        end
+    end
+
+    return healthBar
+end
+
 local UpdateBossRangeAlpha, SeedBossFrameRangeAlpha
 
 local function CreateBossFrame(unit, frameKey, bossIndex)
@@ -1550,101 +1628,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
         SeedBossFrameRangeAlpha(self)
     end)
 
-    local skinBgR, skinBgG, skinBgB = 0.1, 0.1, 0.1
-    if Helpers and Helpers.GetSkinBgColor then skinBgR, skinBgG, skinBgB = Helpers.GetSkinBgColor() end
-    local bgColor = { skinBgR, skinBgG, skinBgB, 0.9 }
-    if general and general.darkMode then
-        bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
-    end
-
-    local borderPx = settings.borderSize or 1
-    local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, frame) or 0
-
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = borderSize > 0 and "Interface\\Buttons\\WHITE8x8" or nil,
-        edgeSize = borderSize > 0 and borderSize or nil,
-    })
-    Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
-    if borderSize > 0 then
-        local skinBorderR, skinBorderG, skinBorderB, skinBorderA = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor(settings, "") end
-        Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, skinBorderA)
-    end
-
-    local powerHeight = settings.showPowerBar and QUICore:PixelRound(settings.powerBarHeight or 4, frame) or 0
-    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
-    local healthBar = CreateFrame("StatusBar", nil, frame)
-    healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
-    healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
-    healthBar:SetStatusBarTexture(GetTexturePath(settings.texture))
-    healthBar:SetMinMaxValues(0, 100)
-    healthBar:SetValue(100)
-    healthBar:EnableMouse(false)
-    frame.healthBar = healthBar
-    ApplyHealthFillDirection(frame, settings)
-    CacheHealthBarExtents(frame, settings, width, height)
-    local absorbSettings = settings.absorbs or {}
-    local absorbBar = CreateFrame("StatusBar", nil, healthBar)
-    absorbBar:SetStatusBarTexture(GetAbsorbTexturePath(absorbSettings.texture))
-    local absorbBarTex = absorbBar:GetStatusBarTexture()
-    if absorbBarTex then
-        absorbBarTex:SetHorizTile(false)
-        absorbBarTex:SetVertTile(false)
-        absorbBarTex:SetTexCoord(0, 1, 0, 1)
-    end
-    local ac = absorbSettings.color or { 1, 1, 1 }
-    local aa = absorbSettings.opacity or 0.7
-    absorbBar:SetStatusBarColor(ac[1], ac[2], ac[3], aa)
-    absorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 1)
-    absorbBar:SetPoint("TOP", healthBar, "TOP", 0, 0)
-    absorbBar:SetPoint("BOTTOM", healthBar, "BOTTOM", 0, 0)
-    absorbBar:SetMinMaxValues(0, 1)
-    absorbBar:SetValue(0)
-    absorbBar:Hide()
-    frame.absorbBar = absorbBar
-
-    local healAbsorbBar = CreateFrame("StatusBar", nil, healthBar)
-    healAbsorbBar:SetStatusBarTexture(GetTexturePath(settings.texture))
-    healAbsorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 2)
-    healAbsorbBar:SetAllPoints(healthBar)
-    healAbsorbBar:SetMinMaxValues(0, 1)
-    healAbsorbBar:SetValue(0)
-    healAbsorbBar:SetStatusBarColor(0.6, 0.1, 0.1, 0.8)
-    healAbsorbBar:SetReverseFill(true)
-    frame.healAbsorbBar = healAbsorbBar
-
-    if general and general.darkMode then
-        local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
-        healthBar:SetStatusBarColor(c[1], c[2], c[3], c[4] or 1)
-    else
-        local r, g, b, a = GetHealthBarColor(unit, settings)
-        healthBar:SetStatusBarColor(r, g, b, a)
-    end
-
-    if settings.showPowerBar then
-        local powerBar = CreateFrame("StatusBar", nil, frame)
-        powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
-        powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
-        powerBar:SetHeight(powerHeight)
-        powerBar:SetStatusBarTexture(GetTexturePath(settings.texture))
-        local powerColor = settings.powerBarColor or { 0, 0.5, 1, 1 }
-        powerBar:SetStatusBarColor(powerColor[1], powerColor[2], powerColor[3], powerColor[4] or 1)
-        powerBar:SetMinMaxValues(0, 100)
-        powerBar:SetValue(100)
-        powerBar:EnableMouse(false)
-        frame.powerBar = powerBar
-
-        if settings.powerBarBorder ~= false then
-            local separator = powerBar:CreateTexture(nil, "OVERLAY")
-            separator:SetHeight(QUICore:GetPixelSize(powerBar))
-            separator:SetPoint("BOTTOMLEFT", powerBar, "TOPLEFT", 0, 0)
-            separator:SetPoint("BOTTOMRIGHT", powerBar, "TOPRIGHT", 0, 0)
-            separator:SetTexture("Interface\\Buttons\\WHITE8x8")
-            separator:SetVertexColor(0, 0, 0, 1)
-            frame.powerBarSeparator = separator
-        end
-    end
+    local healthBar = BuildFrameBars(frame, unit, "boss", settings, general, width, height)
 
     local bossNameSettings = GetNameSettings(settings)
     if bossNameSettings.showName then
@@ -2127,122 +2111,7 @@ local function CreateUnitFrame(unit, unitKey)
         RegisterStateDriver(frame, "visibility", "[@" .. unit .. ",exists] show; hide")
     end
 
-    local skinBgR, skinBgG, skinBgB = 0.1, 0.1, 0.1
-    if Helpers and Helpers.GetSkinBgColor then skinBgR, skinBgG, skinBgB = Helpers.GetSkinBgColor() end
-    local bgColor = { skinBgR, skinBgG, skinBgB, 0.9 }
-    if general and general.darkMode then
-        bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
-    end
-    if settings and settings.useClassColorBg and UnitIsPlayer(unit) then
-        local cr, cg, cb = GetUnitClassColor(unit)
-        if cr then bgColor = { cr, cg, cb, bgColor[4] or 1 } end
-    end
-
-    local borderPx = settings.borderSize or 1
-    local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, frame) or 0
-
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = borderSize > 0 and "Interface\\Buttons\\WHITE8x8" or nil,
-        edgeSize = borderSize > 0 and borderSize or nil,
-    })
-    Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
-    if borderSize > 0 then
-        local skinBorderR, skinBorderG, skinBorderB, skinBorderA = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor(settings, "") end
-        Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, skinBorderA)
-    end
-
-    local powerHeight = settings.showPowerBar and QUICore:PixelRound(settings.powerBarHeight or 4, frame) or 0
-    local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
-    local healthBar = CreateFrame("StatusBar", nil, frame)
-    healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
-    healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
-    healthBar:SetStatusBarTexture(GetTexturePath(settings.texture))
-    healthBar:SetMinMaxValues(0, 100)
-    healthBar:SetValue(100)
-    healthBar:EnableMouse(false)
-    frame.healthBar = healthBar
-    ApplyHealthFillDirection(frame, settings)
-    CacheHealthBarExtents(frame, settings, width, height)
-
-    if unitKey == "player" or unitKey == "target" then
-        local predictionSettings = settings.healPrediction or {}
-        local healPredictionBar = CreateFrame("StatusBar", nil, healthBar)
-        healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
-        healPredictionBar:SetFrameLevel(healthBar:GetFrameLevel() + 1)
-        healPredictionBar:SetPoint("TOP", healthBar, "TOP", 0, 0)
-        healPredictionBar:SetPoint("BOTTOM", healthBar, "BOTTOM", 0, 0)
-        healPredictionBar:SetMinMaxValues(0, 1)
-        healPredictionBar:SetValue(0)
-        local pc = predictionSettings.color or { 0.2, 1, 0.2 }
-        local pa = predictionSettings.opacity or 0.5
-        healPredictionBar:SetStatusBarColor(pc[1] or 0.2, pc[2] or 1, pc[3] or 0.2, pa)
-        healPredictionBar:Hide()
-        frame.healPredictionBar = healPredictionBar
-    end
-
-    local absorbSettings = settings.absorbs or {}
-    local absorbBar = CreateFrame("StatusBar", nil, healthBar)
-    absorbBar:SetStatusBarTexture(GetAbsorbTexturePath(absorbSettings.texture))
-    local absorbBarTex = absorbBar:GetStatusBarTexture()
-    if absorbBarTex then
-        absorbBarTex:SetHorizTile(false)
-        absorbBarTex:SetVertTile(false)
-        absorbBarTex:SetTexCoord(0, 1, 0, 1)
-    end
-    local ac = absorbSettings.color or { 1, 1, 1 }
-    local aa = absorbSettings.opacity or 0.7
-    absorbBar:SetStatusBarColor(ac[1], ac[2], ac[3], aa)
-    absorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 1)
-    absorbBar:SetPoint("TOP", healthBar, "TOP", 0, 0)
-    absorbBar:SetPoint("BOTTOM", healthBar, "BOTTOM", 0, 0)
-    absorbBar:SetMinMaxValues(0, 1)
-    absorbBar:SetValue(0)
-    absorbBar:Hide()
-    frame.absorbBar = absorbBar
-
-    local healAbsorbBar = CreateFrame("StatusBar", nil, healthBar)
-    healAbsorbBar:SetStatusBarTexture(GetTexturePath(settings.texture))
-    healAbsorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 2)
-    healAbsorbBar:SetAllPoints(healthBar)
-    healAbsorbBar:SetMinMaxValues(0, 1)
-    healAbsorbBar:SetValue(0)
-    healAbsorbBar:SetStatusBarColor(0.6, 0.1, 0.1, 0.8)
-    healAbsorbBar:SetReverseFill(true)
-    frame.healAbsorbBar = healAbsorbBar
-
-    if general and general.darkMode then
-        local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
-        healthBar:SetStatusBarColor(c[1], c[2], c[3], c[4] or 1)
-    else
-        local r, g, b, a = GetHealthBarColor(unit, settings)
-        healthBar:SetStatusBarColor(r, g, b, a)
-    end
-
-    if settings.showPowerBar then
-        local powerBar = CreateFrame("StatusBar", nil, frame)
-        powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
-        powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
-        powerBar:SetHeight(powerHeight)
-        powerBar:SetStatusBarTexture(GetTexturePath(settings.texture))
-        powerBar:SetMinMaxValues(0, 100)
-        powerBar:SetValue(100)
-        local powerColor = settings.powerBarColor or { 0, 0.5, 1, 1 }
-        powerBar:SetStatusBarColor(powerColor[1], powerColor[2], powerColor[3], powerColor[4] or 1)
-        powerBar:EnableMouse(false)
-        frame.powerBar = powerBar
-
-        if settings.powerBarBorder ~= false then
-            local separator = powerBar:CreateTexture(nil, "OVERLAY")
-            separator:SetHeight(QUICore:GetPixelSize(powerBar))
-            separator:SetPoint("BOTTOMLEFT", powerBar, "TOPLEFT", 0, 0)
-            separator:SetPoint("BOTTOMRIGHT", powerBar, "TOPRIGHT", 0, 0)
-            separator:SetTexture("Interface\\Buttons\\WHITE8x8")
-            separator:SetVertexColor(0, 0, 0, 1)
-            frame.powerBarSeparator = separator
-        end
-    end
+    local healthBar = BuildFrameBars(frame, unit, unitKey, settings, general, width, height, true)
 
     if settings.showPortrait then
         local portrait = CreateFrame("Button", nil, frame, "SecureUnitButtonTemplate, BackdropTemplate")
@@ -2462,7 +2331,9 @@ local function CreateUnitFrame(unit, unitKey)
     frame:RegisterUnitEvent("UNIT_LEVEL", unit)
     frame:RegisterEvent("PLAYER_TARGET_CHANGED")
     frame:RegisterEvent("PLAYER_FOCUS_CHANGED")
-    frame:RegisterEvent("UNIT_PET")
+    if unitKey == "pet" then
+        frame:RegisterUnitEvent("UNIT_PET", "player")
+    end
     frame:RegisterEvent("UNIT_TARGET")
     frame:RegisterEvent("RAID_TARGET_UPDATE")
 
@@ -2480,10 +2351,6 @@ local function CreateUnitFrame(unit, unitKey)
         frame:RegisterEvent("PLAYER_REGEN_DISABLED")
         frame:RegisterEvent("PLAYER_REGEN_ENABLED")
         frame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
-    end
-
-    if unitKey == "target" then
-        frame:RegisterUnitEvent("UNIT_FLAGS", unit)
     end
 
     local _freqPower = QUI_UF.PowerCoalesce.NewState()
@@ -2541,10 +2408,6 @@ local function CreateUnitFrame(unit, unitKey)
         elseif event == "PLAYER_UPDATE_RESTING"
                or event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
             if self.unitKey == "player" then
-                UpdateIndicators(self)
-            end
-        elseif event == "UNIT_FLAGS" then
-            if self.unitKey == "target" then
                 UpdateIndicators(self)
             end
         elseif event == "UPDATE_SHAPESHIFT_FORM" then
@@ -3237,9 +3100,6 @@ function QUI_UF:RefreshFrame(unitKey)
                     end
                 end
 
-                if self.editModeActive then
-                    self:RestoreEditOverlayIfNeeded(bossKey)
-                end
             end
         end
         RefreshBossRangeCheck()
@@ -3618,10 +3478,6 @@ function QUI_UF:RefreshFrame(unitKey)
         elseif not castbar and QUI_Castbar and QUI_Castbar.CreateCastbar then
             self.castbars[unitKey] = QUI_Castbar:CreateCastbar(frame, unitKey, unitKey)
         end
-    end
-
-    if self.editModeActive then
-        self:RestoreEditOverlayIfNeeded(unitKey)
     end
 
     if Helpers.IsEditModeActive() then

@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.i18n.lua_literal import unescape_lua_string
+from tools.i18n.translate_delta import lua_bin
 
 ENUS = "core/locale/enUS.lua"
 STATE = "tools/i18n/state.json"
@@ -61,7 +62,7 @@ def format_gate(table):
     with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False, encoding="utf-8") as tf:
         tf.write(pairs); p = tf.name
     chk = subprocess.run(
-        ["lua5.1", "-e",
+        [lua_bin(), "-e",
          f'local V=assert(loadfile("tools/i18n/validate_format.lua"))();'
          f'local d=V.validate(assert(loadfile("{p}"))());'
          f'if #d>0 then for _,x in ipairs(d) do io.stderr:write(x.key.."\\n") end os.exit(1) end'],

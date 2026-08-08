@@ -481,6 +481,21 @@ local function HideTalentReminderAlerts()
     end
 end
 
+local function HookAlertOnShow(alertFrame, alsoCheckTalentAlerts)
+    if not alertFrame or _quiPopupBlockerHooked[alertFrame] then return end
+    alertFrame:HookScript("OnShow", function(self)
+        C_Timer.After(0, function()
+            if not self or not self.Hide then return end
+            if IsMicrobarEffectivelyHidden()
+                or IsPopupBlockEnabled("blockMicroButtonGlows")
+                or (alsoCheckTalentAlerts and IsPopupBlockEnabled("blockTalentMicroButtonAlerts")) then
+                    self:Hide()
+            end
+        end)
+    end)
+    _quiPopupBlockerHooked[alertFrame] = true
+end
+
 local function HookTalentReminderAlerts()
     if not mainMenuAlertHooked and type(MainMenuMicroButton_ShowAlert) == "function" then
         hooksecurefunc("MainMenuMicroButton_ShowAlert", function(button)
@@ -498,50 +513,15 @@ local function HookTalentReminderAlerts()
     end
 
     for _, alertName in ipairs(talentMicroButtonAlertCandidates) do
-        local alertFrame = _G[alertName]
-        if alertFrame and not _quiPopupBlockerHooked[alertFrame] then
-            alertFrame:HookScript("OnShow", function(self)
-                C_Timer.After(0, function()
-                    if not self or not self.Hide then return end
-                    if IsMicrobarEffectivelyHidden()
-                        or IsPopupBlockEnabled("blockMicroButtonGlows")
-                        or IsPopupBlockEnabled("blockTalentMicroButtonAlerts") then
-                            self:Hide()
-                    end
-                end)
-            end)
-            _quiPopupBlockerHooked[alertFrame] = true
-        end
+        HookAlertOnShow(_G[alertName], true)
     end
 
     for _, buttonName in ipairs(allMicroButtonNames) do
-        local alertFrame = _G[buttonName .. "Alert"]
-        if alertFrame and not _quiPopupBlockerHooked[alertFrame] then
-            alertFrame:HookScript("OnShow", function(self)
-                C_Timer.After(0, function()
-                    if not self or not self.Hide then return end
-                    if IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows") then
-                        self:Hide()
-                    end
-                end)
-            end)
-            _quiPopupBlockerHooked[alertFrame] = true
-        end
+        HookAlertOnShow(_G[buttonName .. "Alert"], false)
     end
 
     for _, alertName in ipairs(extraAlertFrameNames) do
-        local alertFrame = _G[alertName]
-        if alertFrame and not _quiPopupBlockerHooked[alertFrame] then
-            alertFrame:HookScript("OnShow", function(self)
-                C_Timer.After(0, function()
-                    if not self or not self.Hide then return end
-                    if IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows") then
-                        self:Hide()
-                    end
-                end)
-            end)
-            _quiPopupBlockerHooked[alertFrame] = true
-        end
+        HookAlertOnShow(_G[alertName], false)
     end
 
     if not microButtonPulseHooked then
@@ -589,9 +569,6 @@ local function HookTalentReminderAlerts()
     end
 end
 
-local function RefreshHelpTipSuppression()
-end
-
 local function SweepMicroButtonHelpTips()
     local suppress = IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows")
 
@@ -613,8 +590,20 @@ local helpTipSweepEvents = {
     "QUEST_LOG_UPDATE",
 }
 local helpTipSweepFrame = CreateFrame("Frame")
+local helpTipSweepPending = false
+local function RunHelpTipSweep()
+    helpTipSweepPending = false
+    SweepMicroButtonHelpTips()
+end
 helpTipSweepFrame:SetScript("OnEvent", function()
-    C_Timer.After(0.1, SweepMicroButtonHelpTips)
+    if helpTipSweepPending then return end
+    if not (IsMicrobarEffectivelyHidden()
+        or IsPopupBlockEnabled("blockMicroButtonGlows")
+        or IsPopupBlockEnabled("blockHelpTips")) then
+        return
+    end
+    helpTipSweepPending = true
+    C_Timer.After(0.1, RunHelpTipSweep)
 end)
 
 local function RefreshHelpTipSweeper()
@@ -631,7 +620,6 @@ local function RefreshPopupBlocker()
 
     HideEventToasts()
     HideTalentReminderAlerts()
-    RefreshHelpTipSuppression()
     RefreshHelpTipSweeper()
 end
 
@@ -698,7 +686,7 @@ end
 
 local function IsFriendOrBNet(name)
     if not name then return false end
-    if C_FriendList.IsFriend(name) then return true end
+    if C_FriendList.GetFriendInfo(name) then return true end
     local numBNetTotal = BNGetNumFriends()
     for i = 1, numBNetTotal do
         local accountInfo = C_BattleNet.GetFriendAccountInfo(i)

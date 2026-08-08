@@ -1146,13 +1146,17 @@ function M.functions.createHooks(root, entry)
 		local watcher = CreateFrame("Frame")
 		watcher:SetScript("OnUpdate", function()
 			local isShown = root:IsShown()
-			if isShown and refreshDynamicHandles then refreshDynamicHandles() end
-			if isShown and not wasShown then
+			local becameShown = isShown and not wasShown
+			local becameHidden = not isShown and wasShown
+			wasShown = isShown
+			if not db or not db.enabled then return end
+			if becameShown then
+				if refreshDynamicHandles then refreshDynamicHandles() end
 				reconcileOpenPositionOnShow(panel, root)
 				if not c.blizzardAnchors then rememberAnchors(root) end
 				M.functions.applyFrameSettings(root, panel)
 				reassertTicks = 5
-			elseif not isShown and wasShown then
+			elseif becameHidden then
 				clearOpenPosition(panel, root)
 				if not panel.skipOnHide
 					and (db.positionPersistence or "reset") == "close"
@@ -1165,9 +1169,9 @@ function M.functions.createHooks(root, entry)
 					c.applyingLayout = false
 				end
 			end
-			wasShown = isShown
 			if reassertTicks > 0 then
 				reassertTicks = reassertTicks - 1
+				if refreshDynamicHandles then refreshDynamicHandles() end
 				reassertLayout(root)
 			elseif isShown and panel.reassertOnDrift and savedPositionDrifted(root) then
 				reassertLayout(root)

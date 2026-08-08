@@ -52,6 +52,18 @@ regenWatcher:SetScript("OnEvent", function()
     end
 end)
 
+local function PanelShouldShow(config)
+    if not config.enabled then return false end
+    if config.slots then
+        for i = 1, (config.numSlots or 3) do
+            if config.slots[i] and config.slots[i] ~= "" then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 function Datapanels:CreatePanel(panelID, config)
     if self.activePanels[panelID] then
         Warn("Panel '" .. panelID .. "' already exists!")
@@ -119,17 +131,7 @@ function Datapanels:CreatePanel(panelID, config)
 
     self.activePanels[panelID] = panel
 
-    local hasDatatext = false
-    if config.slots then
-        for i = 1, (config.numSlots or 3) do
-            if config.slots[i] and config.slots[i] ~= "" then
-                hasDatatext = true
-                break
-            end
-        end
-    end
-
-    if config.enabled and hasDatatext then
+    if PanelShouldShow(config) then
         panel:Show()
     else
         panel:Hide()
@@ -295,7 +297,7 @@ function Datapanels:UpdatePanel(panelID)
 
     self:UpdateSlots(panel)
 
-    if panel.config.enabled then
+    if PanelShouldShow(panel.config) then
         panel:Show()
     else
         panel:Hide()
@@ -351,16 +353,33 @@ function Datapanels:RefreshAll()
         return
     end
 
-    for panelID, panel in pairs(self.activePanels) do
-        self:DeletePanel(panelID)
+    local db = QUICore.db.profile.quiDatatexts
+    local wanted = {}
+    if db and db.panels then
+        for _, panelConfig in ipairs(db.panels) do
+            if panelConfig.id then
+                wanted[panelConfig.id] = true
+            end
+        end
     end
 
-    local db = QUICore.db.profile.quiDatatexts
+    for panelID in pairs(self.activePanels) do
+        if not wanted[panelID] then
+            self:DeletePanel(panelID)
+        end
+    end
+
     if not db or not db.panels then return end
 
     for _, panelConfig in ipairs(db.panels) do
         if panelConfig.id then
-            self:CreatePanel(panelConfig.id, panelConfig)
+            local panel = self.activePanels[panelConfig.id]
+            if panel then
+                panel.config = panelConfig
+                self:UpdatePanel(panelConfig.id)
+            else
+                self:CreatePanel(panelConfig.id, panelConfig)
+            end
         end
     end
 

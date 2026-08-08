@@ -240,13 +240,7 @@ local sidebarTabHooked = Helpers.CreateStateTable()
 local sidebarTabBaseWidth = nil
 local sidebarTabBaseHeight = nil
 
-local function GetPixelSize(frame)
-    local skinBase = GetSkinBase()
-    if skinBase and skinBase.GetPixelSize then
-        return skinBase.GetPixelSize(frame, 1)
-    end
-    return QUICore:GetPixelSize(frame)
-end
+local GetPixelSize = UIKit.GetPixelSize
 
 local function SetInsetPixelPoints(region, relativeTo, pixels)
     local skinBase = GetSkinBase()
@@ -927,7 +921,8 @@ local function GetGemInfo(unit, slotId)
             local gemSubType, gemIcon
             if GetItemInfo then
                 local ok, subType, icon = pcall(function()
-                    return select(7, GetItemInfo(gemLink)), select(10, GetItemInfo(gemLink))
+                    local itemSubType, _, _, itemTexture = select(7, GetItemInfo(gemLink))
+                    return itemSubType, itemTexture
                 end)
                 if ok then
                     if not Helpers.IsSecretValue(subType) then gemSubType = subType end
@@ -1043,8 +1038,15 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
     else
         enchantColor = customEnchantColor or C.enchanted
     end
+    local enchantFont = slotFont
+    if settings.enchantFont and ns.LSM then
+        local enchantFontPath = ns.LSM:Fetch("font", settings.enchantFont)
+        if enchantFontPath then
+            enchantFont = enchantFontPath
+        end
+    end
     overlay.enchant = overlay:CreateFontString(nil, "OVERLAY")
-    CJKFont(overlay.enchant, slotFont, slotTextSize, FONT_FLAGS)
+    CJKFont(overlay.enchant, enchantFont, slotTextSize, FONT_FLAGS)
     overlay.enchant:SetTextColor(enchantColor[1], enchantColor[2], enchantColor[3], 1)
     overlay.enchant:SetWordWrap(false)
     overlay.enchant:SetWidth(TEXT_WIDTH)
@@ -1605,7 +1607,7 @@ local function RepositionSlots()
     local settings = GetSettings()
     if not CharacterFrameBg then return end
 
-    local vpad = 14
+    local vpad = 14 + (tonumber(settings and settings.slotPadding) or 0)
     local SLOT_SCALE = 0.90
 
     local allSlots = {
@@ -1818,27 +1820,7 @@ ApplyCharacterPaneLayout = function(force)
     layoutApplied = true
 end
 
-local currentOverlayScale = nil
-
-local function InitializeCharacterOverlays(forceRecreate)
-    local settings = GetSettings()
-    local newScale = 1.0
-
-    if characterPaneInitialized and currentOverlayScale == newScale and not forceRecreate then
-        return
-    end
-
-    if characterPaneInitialized and currentOverlayScale ~= newScale then
-        for slotId, overlay in pairs(slotOverlays) do
-            if overlay then
-                overlay:Hide()
-                overlay:SetParent(nil)
-            end
-        end
-        slotOverlays = {}
-        characterPaneInitialized = false
-    end
-
+local function InitializeCharacterOverlays()
     if characterPaneInitialized then return end
 
     for _, slotInfo in ipairs(EQUIPMENT_SLOTS) do
@@ -1848,7 +1830,6 @@ local function InitializeCharacterOverlays(forceRecreate)
         end
     end
 
-    currentOverlayScale = newScale
     characterPaneInitialized = true
 end
 
@@ -2009,9 +1990,9 @@ local function RefreshCharacterPanelFonts()
     local validEnchants = {}
     for _, fs in ipairs(trackedEnchantFonts) do
         if fs and fs.SetFont then
-            CJKFont(fs, font, slotTextSize, FONT_FLAGS)
+            CJKFont(fs, enchantFont, slotTextSize, FONT_FLAGS)
             local text = fs:GetText()
-            if text and text == "No Enchant" then
+            if text and text == ns.L["No Enchant"] then
                 fs:SetTextColor(noEnchantColor[1], noEnchantColor[2], noEnchantColor[3], 1)
             elseif text then
                 fs:SetTextColor(enchantColor[1], enchantColor[2], enchantColor[3], 1)
@@ -2051,9 +2032,21 @@ local function CreateStatRow(parent, yOffset)
     local rowHeight = 14
     local fontSize = math.max(statsSize - 1, 8)
 
-    local row = CreateFrame("Frame", nil, parent)
+    parent.statRowPool = parent.statRowPool or {}
+    parent.statRowUsed = (parent.statRowUsed or 0) + 1
+    local row = parent.statRowPool[parent.statRowUsed]
+    if not row then
+        row = CreateFrame("Frame", nil, parent)
+        row.label = row:CreateFontString(nil, "OVERLAY")
+        row.label:SetPoint("LEFT", row, "LEFT", 0, 0)
+        row.value = row:CreateFontString(nil, "OVERLAY")
+        row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        parent.statRowPool[parent.statRowUsed] = row
+    end
+
     row:SetSize(parent:GetWidth() - 10, rowHeight)
     row:SetPoint("TOPLEFT", 5, yOffset)
+    row.tooltip, row.tooltip2, row.tooltip3 = nil, nil, nil
 
     if settings.showTooltips then
         row:EnableMouse(true)
@@ -2065,20 +2058,19 @@ local function CreateStatRow(parent, yOffset)
         row:SetScript("OnLeave", nil)
     end
 
-    row.label = row:CreateFontString(nil, "OVERLAY")
     CJKFont(row.label, font, fontSize, "")
-    row.label:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.label:SetTextColor(statsColor[1], statsColor[2], statsColor[3], 1)
     row.label:SetShadowOffset(0, 0)
+    row.label:Show()
     TrackFontString(row.label, "statLabel")
 
-    row.value = row:CreateFontString(nil, "OVERLAY")
     CJKFont(row.value, font, fontSize, "")
-    row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     row.value:SetTextColor(1, 1, 1, 1)
     row.value:SetShadowOffset(0, 0)
+    row.value:Show()
     TrackFontString(row.value, "statValue")
 
+    row:Show()
     return row
 end
 
@@ -2101,27 +2093,38 @@ local function CreateSectionHeader(parent, text, yOffset)
         headerColor = settings.headerColor or {0.376, 0.647, 0.980}
     end
 
-    local header = parent:CreateFontString(nil, "OVERLAY")
+    parent.sectionHeaderPool = parent.sectionHeaderPool or {}
+    parent.sectionHeaderUsed = (parent.sectionHeaderUsed or 0) + 1
+    local entry = parent.sectionHeaderPool[parent.sectionHeaderUsed]
+    if not entry then
+        local newHeader = parent:CreateFontString(nil, "OVERLAY")
+        local newLine = parent:CreateTexture(nil, "ARTWORK")
+        newLine:SetPoint("TOPLEFT", newHeader, "BOTTOMLEFT", 0, -2)
+        newLine:SetPoint("RIGHT", parent, "RIGHT", -5, 0)
+        if UIKit and UIKit.DisablePixelSnap then
+            UIKit.DisablePixelSnap(newLine)
+        end
+        if UIKit and UIKit.RegisterScaleRefresh then
+            UIKit.RegisterScaleRefresh(newLine, "characterPaneSectionUnderline", function(owner)
+                owner:SetHeight(GetPixelSize(owner))
+            end)
+        end
+        entry = { header = newHeader, line = newLine }
+        parent.sectionHeaderPool[parent.sectionHeaderUsed] = entry
+    end
+
+    local header, line = entry.header, entry.line
     CJKFont(header, font, fontSize, "THINOUTLINE")
     header:SetPoint("TOPLEFT", parent, "TOPLEFT", 5, yOffset)
     header:SetTextColor(headerColor[1], headerColor[2], headerColor[3], 1)
     header:SetText(text)
     header:SetShadowOffset(0, 0)
+    header:Show()
     TrackFontString(header, "sectionHeader")
 
-    local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetHeight(GetPixelSize(line))
-    line:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -2)
-    line:SetPoint("RIGHT", parent, "RIGHT", -5, 0)
     line:SetColorTexture(headerColor[1], headerColor[2], headerColor[3], 0.3)
-    if UIKit and UIKit.DisablePixelSnap then
-        UIKit.DisablePixelSnap(line)
-    end
-    if UIKit and UIKit.RegisterScaleRefresh then
-        UIKit.RegisterScaleRefresh(line, "characterPaneSectionUnderline", function(owner)
-            owner:SetHeight(GetPixelSize(owner))
-        end)
-    end
+    line:Show()
     table.insert(trackedUnderlines, line)
 
     local spacingAfterHeader = 4
@@ -2139,9 +2142,29 @@ local function CreateStatBar(parent, yOffset, color)
     local labelOffset = 2
     local barOffset = 1
 
-    local row = CreateFrame("Frame", nil, parent)
+    parent.statBarPool = parent.statBarPool or {}
+    parent.statBarUsed = (parent.statBarUsed or 0) + 1
+    local row = parent.statBarPool[parent.statBarUsed]
+    if not row then
+        row = CreateFrame("Frame", nil, parent)
+        row.label = row:CreateFontString(nil, "OVERLAY")
+        row.label:SetPoint("LEFT", row, "LEFT", 0, labelOffset)
+        row.value = row:CreateFontString(nil, "OVERLAY")
+        row.value:SetPoint("RIGHT", row, "RIGHT", 0, labelOffset)
+        row.bar = CreateFrame("StatusBar", nil, row)
+        row.bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, barOffset)
+        row.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, barOffset)
+        row.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        row.bar:SetMinMaxValues(0, 100)
+        local barBg = row.bar:CreateTexture(nil, "BACKGROUND")
+        barBg:SetAllPoints()
+        barBg:SetColorTexture(0, 0, 0, 0.4)
+        parent.statBarPool[parent.statBarUsed] = row
+    end
+
     row:SetSize(parent:GetWidth() - 10, rowHeight)
     row:SetPoint("TOPLEFT", 5, yOffset)
+    row.tooltip, row.tooltip2, row.tooltip3 = nil, nil, nil
 
     if settings.showTooltips then
         row:EnableMouse(true)
@@ -2153,32 +2176,23 @@ local function CreateStatBar(parent, yOffset, color)
         row:SetScript("OnLeave", nil)
     end
 
-    row.label = row:CreateFontString(nil, "OVERLAY")
     CJKFont(row.label, font, barTextSize, "")
-    row.label:SetPoint("LEFT", row, "LEFT", 0, labelOffset)
     row.label:SetTextColor(statsColor[1], statsColor[2], statsColor[3], 1)
     row.label:SetShadowOffset(0, 0)
+    row.label:Show()
     TrackFontString(row.label, "barLabel")
 
-    row.value = row:CreateFontString(nil, "OVERLAY")
     CJKFont(row.value, font, barTextSize, "")
-    row.value:SetPoint("RIGHT", row, "RIGHT", 0, labelOffset)
     row.value:SetTextColor(1, 1, 1, 1)
     row.value:SetShadowOffset(0, 0)
+    row.value:Show()
     TrackFontString(row.value, "barValue")
 
-    row.bar = CreateFrame("StatusBar", nil, row)
     row.bar:SetSize(row:GetWidth(), barHeight)
-    row.bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, barOffset)
-    row.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, barOffset)
-    row.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    row.bar:SetMinMaxValues(0, 100)
     row.bar:SetStatusBarColor(color[1], color[2], color[3], color[4])
+    row.bar:SetValue(0)
 
-    local barBg = row.bar:CreateTexture(nil, "BACKGROUND")
-    barBg:SetAllPoints()
-    barBg:SetColorTexture(0, 0, 0, 0.4)
-
+    row:Show()
     return row
 end
 
@@ -2211,6 +2225,7 @@ local function MaskNativeStatsPane()
         ns.SafeCallMethod("best-effort-style", CharacterStatsPane.ClassBackground, "SetAlpha", 0)
     end
 end
+ns.QUI_MaskNativeStatsPane = MaskNativeStatsPane
 
 local function UpdateStatsPanel(panel, unit)
     if not panel or not panel.scrollChild then return end
@@ -2246,30 +2261,19 @@ local function UpdateStatsPanel(panel, unit)
         wipe(trackedFontStrings)
         wipe(trackedUnderlines)
 
-        local children = {scrollChild:GetChildren()}
-        for i = #children, 1, -1 do
-            local frame = children[i]
-            if frame then
+        if scrollChild.statRowPool then
+            for _, frame in ipairs(scrollChild.statRowPool) do
                 frame:Hide()
-                frame:SetParent(nil)
-                if frame.SetScript then
-                    frame:SetScript("OnShow", nil)
-                    frame:SetScript("OnHide", nil)
-                    frame:SetScript("OnUpdate", nil)
-                end
             end
         end
-
-        local regions = {scrollChild:GetRegions()}
-        for i = #regions, 1, -1 do
-            local region = regions[i]
-            if region then
-                region:Hide()
-                if region.SetText then
-                    region:SetText("")
-                end
+        if scrollChild.statBarPool then
+            for _, frame in ipairs(scrollChild.statBarPool) do
+                frame:Hide()
             end
         end
+        scrollChild.statRowUsed = 0
+        scrollChild.statBarUsed = 0
+        scrollChild.sectionHeaderUsed = 0
 
         local y = -5
         local ROW_HEIGHT = 14
@@ -3104,22 +3108,20 @@ ScheduleUpdate = function()
     end)
 end
 
-local function CreateEquipMgrPopup()
-    if equipMgrPopup then return equipMgrPopup end
-
+local function CreateSidePopup(globalName, titleText)
     local PANEL_WIDTH_EXTENSION = 55
-    equipMgrPopup = CreateFrame("Frame", "QUI_EquipMgrPopup", UIParent, "BackdropTemplate")
-    equipMgrPopup:SetSize(205, 400)
-    equipMgrPopup:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", PANEL_WIDTH_EXTENSION + 10, 0)
-    equipMgrPopup:SetFrameStrata("DIALOG")
-    equipMgrPopup:EnableMouse(true)
-    equipMgrPopup:SetMovable(true)
-    equipMgrPopup:RegisterForDrag("LeftButton")
-    equipMgrPopup:SetScript("OnDragStart", equipMgrPopup.StartMoving)
-    equipMgrPopup:SetScript("OnDragStop", equipMgrPopup.StopMovingOrSizing)
-    equipMgrPopup:Hide()
+    local popup = CreateFrame("Frame", globalName, UIParent, "BackdropTemplate")
+    popup:SetSize(205, 400)
+    popup:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", PANEL_WIDTH_EXTENSION + 10, 0)
+    popup:SetFrameStrata("DIALOG")
+    popup:EnableMouse(true)
+    popup:SetMovable(true)
+    popup:RegisterForDrag("LeftButton")
+    popup:SetScript("OnDragStart", popup.StartMoving)
+    popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
+    popup:Hide()
 
-    equipMgrPopup:SetBackdrop({
+    popup:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
         tile = true,
@@ -3128,47 +3130,25 @@ local function CreateEquipMgrPopup()
         insets = { left = 8, right = 8, top = 8, bottom = 8 }
     })
 
-    local title = equipMgrPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -15)
-    title:SetText(ns.L["Equipment Manager"])
-    equipMgrPopup.title = title
+    title:SetText(titleText)
+    popup.title = title
 
-    _G.QUI_EquipMgrPopup = equipMgrPopup
+    _G[globalName] = popup
 
+    return popup
+end
+
+local function CreateEquipMgrPopup()
+    if equipMgrPopup then return equipMgrPopup end
+    equipMgrPopup = CreateSidePopup("QUI_EquipMgrPopup", ns.L["Equipment Manager"])
     return equipMgrPopup
 end
 
 local function CreateTitlesPopup()
     if titlesPopup then return titlesPopup end
-
-    local PANEL_WIDTH_EXTENSION = 55
-    titlesPopup = CreateFrame("Frame", "QUI_TitlesPopup", UIParent, "BackdropTemplate")
-    titlesPopup:SetSize(205, 400)
-    titlesPopup:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", PANEL_WIDTH_EXTENSION + 10, 0)
-    titlesPopup:SetFrameStrata("DIALOG")
-    titlesPopup:EnableMouse(true)
-    titlesPopup:SetMovable(true)
-    titlesPopup:RegisterForDrag("LeftButton")
-    titlesPopup:SetScript("OnDragStart", titlesPopup.StartMoving)
-    titlesPopup:SetScript("OnDragStop", titlesPopup.StopMovingOrSizing)
-    titlesPopup:Hide()
-
-    titlesPopup:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true,
-        tileSize = 32,
-        edgeSize = 32,
-        insets = { left = 8, right = 8, top = 8, bottom = 8 }
-    })
-
-    local title = titlesPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -15)
-    title:SetText(ns.L["Titles"])
-    titlesPopup.title = title
-
-    _G.QUI_TitlesPopup = titlesPopup
-
+    titlesPopup = CreateSidePopup("QUI_TitlesPopup", ns.L["Titles"])
     return titlesPopup
 end
 
@@ -3942,7 +3922,7 @@ eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
 eventFrame:RegisterEvent("SOCKET_INFO_UPDATE")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-eventFrame:RegisterEvent("UNIT_STATS")
+eventFrame:RegisterUnitEvent("UNIT_STATS", "player")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("INSPECT_READY")
 eventFrame:RegisterEvent("PLAYER_AVG_ITEM_LEVEL_UPDATE")
@@ -4018,6 +3998,7 @@ QUI.CharacterShared = {
     CreateSlotOverlay = CreateSlotOverlay,
     UpdateAllSlotOverlays = UpdateAllSlotOverlays,
     ScheduleUpdate = ScheduleUpdate,
+    RepositionSlots = RepositionSlots,
     GetSlotItemLevel = GetSlotItemLevel,
     GetILvlColor = GetILvlColor,
     AbbreviateClassName = AbbreviateClassName,

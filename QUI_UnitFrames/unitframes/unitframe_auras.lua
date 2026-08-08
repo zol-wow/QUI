@@ -243,7 +243,7 @@ local function SetupAuraTracking(frame)
     elseif unit == "focus" then
         frame:RegisterEvent("PLAYER_FOCUS_CHANGED")
     elseif unit == "pet" then
-        frame:RegisterEvent("UNIT_PET")
+        frame:RegisterUnitEvent("UNIT_PET", "player")
     elseif unit == "targettarget" then
         frame:RegisterEvent("PLAYER_TARGET_CHANGED")
         frame:RegisterEvent("UNIT_TARGET")
@@ -266,7 +266,7 @@ local function SetupAuraTracking(frame)
             UpdateAuras(self)
         elseif event == "UNIT_PET" and frameUnit == "pet" then
             UpdateAuras(self)
-        elseif event == "UNIT_TARGET" and frameUnit == "targettarget" then
+        elseif event == "UNIT_TARGET" and arg1 == "target" and frameUnit == "targettarget" then
             UpdateAuras(self)
         end
     end)

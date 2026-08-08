@@ -175,4 +175,3 @@ tiles\bags.lua
 tiles\alts.lua
 tiles\global.lua
 tiles\help.lua
-blizzard_options.lua

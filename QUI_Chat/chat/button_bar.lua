@@ -295,6 +295,30 @@ local function createButton(parent, def, customAction)
     return btn
 end
 
+local function acquireButton(bar, def, key, used)
+    local cache = bar._quiButtonCache
+    if not cache then
+        cache = {}
+        bar._quiButtonCache = cache
+    end
+    local list = cache[key]
+    if not list then
+        list = {}
+        cache[key] = list
+    end
+    local n = (used[key] or 0) + 1
+    used[key] = n
+    local btn = list[n]
+    if btn then
+        btn:SetParent(bar)
+        applySkin(btn)
+    else
+        btn = createButton(bar, def)
+        list[n] = btn
+    end
+    return btn
+end
+
 local function GetSafeFrameHeight(frame, fallback)
     fallback = fallback or 100
     if not frame or not frame.GetHeight then return fallback end
@@ -398,6 +422,7 @@ local function buildBar(chatFrame, frameID, config)
     bar:Show()
 
     local widgets = {}
+    local used = {}
     if type(config.items) == "table" then
         for i = 1, #config.items do
             local item = config.items[i]
@@ -407,15 +432,16 @@ local function buildBar(chatFrame, frameID, config)
                     local hasIcon    = type(item.icon) == "string" and item.icon ~= ""
                     local hasCommand = type(item.slashCommand) == "string" and item.slashCommand ~= ""
                     if item.visible ~= false and hasCommand and (hasLabel or hasIcon) then
-                        widgets[#widgets + 1] = createButton(bar, {
+                        local key = "c\1" .. (item.label or "") .. "\1" .. (item.icon or "") .. "\1" .. item.slashCommand
+                        widgets[#widgets + 1] = acquireButton(bar, {
                             label     = item.label,
                             tooltip   = item.slashCommand,
                             icon      = item.icon,
                             macroText = item.slashCommand,
-                        })
+                        }, key, used)
                     end
                 elseif item.visible and BUILTINS[item.id] then
-                    widgets[#widgets + 1] = createButton(bar, BUILTINS[item.id])
+                    widgets[#widgets + 1] = acquireButton(bar, BUILTINS[item.id], "b\1" .. item.id, used)
                 end
             end
         end

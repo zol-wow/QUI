@@ -41,6 +41,11 @@ local LOOKUP_KEYS = {
 
 local SPECIAL_BUTTON_OPTION_KEYS = { extraActionButton = true, zoneAbility = true }
 
+local SETTINGS_DB_KEY_MAP = {
+    petBar = "pet", stanceBar = "stance",
+    microMenu = "microbar", bagBar = "bags",
+}
+
 local VALID_BAR_KEYS = {}
 for _, option in ipairs(BAR_OPTIONS) do
     VALID_BAR_KEYS[option.value] = true
@@ -116,15 +121,16 @@ end
 
 local function CopySelectedBarToAll(selectionKey)
     local bars = GetBars()
-    local source = bars and bars[selectionKey]
+    local sourceKey = SETTINGS_DB_KEY_MAP[selectionKey] or selectionKey
+    local source = bars and bars[sourceKey]
     if not source then
         return
     end
 
     local sourceIsSpecial = SPECIAL_BUTTON_OPTION_KEYS[selectionKey] == true
     for _, option in ipairs(BAR_OPTIONS) do
-        local destinationKey = option.value
-        if destinationKey ~= selectionKey and bars[destinationKey] then
+        local destinationKey = SETTINGS_DB_KEY_MAP[option.value] or option.value
+        if destinationKey ~= sourceKey and bars[destinationKey] then
             local destinationIsSpecial = SPECIAL_BUTTON_OPTION_KEYS[destinationKey] == true
             if sourceIsSpecial == destinationIsSpecial then
                 for key, value in pairs(source) do

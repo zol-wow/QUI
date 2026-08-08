@@ -275,34 +275,35 @@ do
         CDMContainers = { GetContainer = function() return container end },
         isInCombat = function() return inCombat end,
     })
+    local live = {}
 
     shellEnv.beginShellPass(container)
-    local first = shellEnv.mintShell({ spellID = 1 }, "essential")
-    local second = shellEnv.mintShell({ spellID = 2 }, "essential")
+    local first = shellEnv.positionClickSlot(container, live, { spellID = 1 }, "essential", 0, 0, 40, 40)
+    local second = shellEnv.positionClickSlot(container, live, { spellID = 2 }, "essential", 0, 0, 40, 40)
     shellEnv.endShellPass(container)
-    assert(first and second and first ~= second, "initial shell pass mints two shells")
+    assert(first and second and first ~= second, "initial shell pass mints two click slots")
     assert((first.hideCount or 0) == 0 and (second.hideCount or 0) == 0,
-        "active shells are not hidden at the end of their generation")
+        "active slots are not hidden at the end of their generation")
 
     inCombat = true
     shellEnv.beginShellPass(container)
-    local reused = shellEnv.mintShell({ spellID = 3 }, "essential")
-    local clearCountBeforeCombatPosition = reused.clearCount or 0
-    local positionedInCombat = shellEnv.positionShell(reused, container, 1, 2, 40, 40, { borderSize = 0 })
+    local clearCountBeforeCombatPosition = first.clearCount or 0
+    local positionedInCombat = shellEnv.positionClickSlot(container, live, { spellID = 3 }, "essential", 1, 2, 40, 40)
     shellEnv.endShellPass(container)
-    assert(reused == first, "next generation reuses the first shell by slot")
-    assert(positionedInCombat == false and (reused.clearCount or 0) == clearCountBeforeCombatPosition,
-        "combat shell pass reuses existing shells without protected layout writes")
+    assert(first._spellEntry and first._spellEntry.spellID == 3,
+        "next generation reuses the first slot by index")
+    assert(positionedInCombat == nil and (first.clearCount or 0) == clearCountBeforeCombatPosition,
+        "combat shell pass reuses existing slots without protected layout writes")
     assert((second.hideCount or 0) == 0,
-        "stale surplus shell cleanup is deferred while combat is active")
+        "stale surplus slot cleanup is deferred while combat is active")
 
     inCombat = false
     shellEnv.beginShellPass(container)
-    local reusedAgain = shellEnv.mintShell({ spellID = 4 }, "essential")
+    local reusedAgain = shellEnv.positionClickSlot(container, live, { spellID = 4 }, "essential", 0, 0, 40, 40)
     shellEnv.endShellPass(container)
-    assert(reusedAgain == first, "out-of-combat generation keeps reusing the active shell")
+    assert(reusedAgain == first, "out-of-combat generation keeps reusing the active slot")
     assert((second.hideCount or 0) == 1,
-        "stale surplus shell is hidden once cleanup runs out of combat")
+        "stale surplus slot is hidden once cleanup runs out of combat")
 
     _G.CreateFrame = oldCreateFrame
 end

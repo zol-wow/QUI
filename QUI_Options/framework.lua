@@ -1058,6 +1058,35 @@ local function GetRegisteredSection(tabIndex, subTabIndex, sectionName)
     return registry and registry[sectionName] or nil
 end
 
+function GUI.RegisterSectionEntry(tabIndex, subTabIndex, title, frame, contentParent)
+    local numKey = GetSectionRegistryKey(tabIndex, subTabIndex)
+
+    local scrollParent = nil
+    local current = contentParent
+    while current do
+        if current.GetVerticalScroll and current.SetVerticalScroll then
+            scrollParent = current
+            break
+        end
+        current = current:GetParent()
+    end
+
+    if not GUI.SectionRegistry[numKey] then
+        GUI.SectionRegistry[numKey] = {}
+    end
+    if not GUI.SectionRegistryOrder[numKey] then
+        GUI.SectionRegistryOrder[numKey] = {}
+    end
+    if not GUI.SectionRegistry[numKey][title] then
+        table.insert(GUI.SectionRegistryOrder[numKey], title)
+    end
+    GUI.SectionRegistry[numKey][title] = {
+        frame = frame,
+        scrollParent = scrollParent,
+        contentParent = contentParent,
+    }
+end
+
 function GUI:ScrollToRegisteredSection(tabIndex, subTabIndex, sectionName, opts)
     local entry = GetRegisteredSection(tabIndex, subTabIndex, sectionName)
     if not entry or not entry.frame then return false end
@@ -1261,6 +1290,47 @@ function GUI:CreateButton(parent, text, width, height, onClick, variant)
     })
 end
 
+local function ApplyFallbackPixelBorder(field, r, g, b, a, gray)
+    if not field._fallbackBorder then
+        field._fallbackBorder = {
+            top = field:CreateTexture(nil, "OVERLAY"),
+            bottom = field:CreateTexture(nil, "OVERLAY"),
+            left = field:CreateTexture(nil, "OVERLAY"),
+            right = field:CreateTexture(nil, "OVERLAY"),
+        }
+        for _, edge in pairs(field._fallbackBorder) do
+            edge:SetTexture("Interface\\Buttons\\WHITE8x8")
+        end
+    end
+
+    local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(field)) or 1
+    local border = field._fallbackBorder
+
+    border.top:ClearAllPoints()
+    border.top:SetPoint("TOPLEFT", field, "TOPLEFT", 0, 0)
+    border.top:SetPoint("TOPRIGHT", field, "TOPRIGHT", 0, 0)
+    border.top:SetHeight(px)
+
+    border.bottom:ClearAllPoints()
+    border.bottom:SetPoint("BOTTOMLEFT", field, "BOTTOMLEFT", 0, 0)
+    border.bottom:SetPoint("BOTTOMRIGHT", field, "BOTTOMRIGHT", 0, 0)
+    border.bottom:SetHeight(px)
+
+    border.left:ClearAllPoints()
+    border.left:SetPoint("TOPLEFT", border.top, "BOTTOMLEFT", 0, 0)
+    border.left:SetPoint("BOTTOMLEFT", border.bottom, "TOPLEFT", 0, 0)
+    border.left:SetWidth(px)
+
+    border.right:ClearAllPoints()
+    border.right:SetPoint("TOPRIGHT", border.top, "BOTTOMRIGHT", 0, 0)
+    border.right:SetPoint("BOTTOMRIGHT", border.bottom, "TOPRIGHT", 0, 0)
+    border.right:SetWidth(px)
+
+    for _, edge in pairs(border) do
+        edge:SetVertexColor(r or gray, g or gray, b or gray, a or 1)
+    end
+end
+
 function GUI:CreateInlineEditBox(parent, options)
     options = options or {}
     local UIKit = ns.UIKit
@@ -1292,47 +1362,6 @@ function GUI:CreateInlineEditBox(parent, options)
         bg:SetVertexColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
     end
 
-    local function ApplyFallbackBorder(r, g, b, a)
-        if not field._fallbackBorder then
-            field._fallbackBorder = {
-                top = field:CreateTexture(nil, "OVERLAY"),
-                bottom = field:CreateTexture(nil, "OVERLAY"),
-                left = field:CreateTexture(nil, "OVERLAY"),
-                right = field:CreateTexture(nil, "OVERLAY"),
-            }
-            for _, edge in pairs(field._fallbackBorder) do
-                edge:SetTexture("Interface\\Buttons\\WHITE8x8")
-            end
-        end
-
-        local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(field)) or 1
-        local border = field._fallbackBorder
-
-        border.top:ClearAllPoints()
-        border.top:SetPoint("TOPLEFT", field, "TOPLEFT", 0, 0)
-        border.top:SetPoint("TOPRIGHT", field, "TOPRIGHT", 0, 0)
-        border.top:SetHeight(px)
-
-        border.bottom:ClearAllPoints()
-        border.bottom:SetPoint("BOTTOMLEFT", field, "BOTTOMLEFT", 0, 0)
-        border.bottom:SetPoint("BOTTOMRIGHT", field, "BOTTOMRIGHT", 0, 0)
-        border.bottom:SetHeight(px)
-
-        border.left:ClearAllPoints()
-        border.left:SetPoint("TOPLEFT", border.top, "BOTTOMLEFT", 0, 0)
-        border.left:SetPoint("BOTTOMLEFT", border.bottom, "TOPLEFT", 0, 0)
-        border.left:SetWidth(px)
-
-        border.right:ClearAllPoints()
-        border.right:SetPoint("TOPRIGHT", border.top, "BOTTOMRIGHT", 0, 0)
-        border.right:SetPoint("BOTTOMRIGHT", border.bottom, "TOPRIGHT", 0, 0)
-        border.right:SetWidth(px)
-
-        for _, edge in pairs(border) do
-            edge:SetVertexColor(r or 0.25, g or 0.25, b or 0.25, a or 1)
-        end
-    end
-
     function field:SetFieldBorderColor(r, g, b, a)
         if UIKit and UIKit.UpdateBorderLines then
             if not self._pixelBorderReady and UIKit.CreateBorderLines then
@@ -1341,7 +1370,7 @@ function GUI:CreateInlineEditBox(parent, options)
             end
             UIKit.UpdateBorderLines(self, 1, r, g, b, a, false)
         else
-            ApplyFallbackBorder(r, g, b, a)
+            ApplyFallbackPixelBorder(field, r, g, b, a, 0.25)
         end
     end
     field:SetFieldBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
@@ -1500,12 +1529,13 @@ function GUI:ShowConfirmation(options)
         end)
 
         confirmDialog:SetScript("OnKeyDown", function(self, key)
+            local locked = InCombatLockdown()
             if key == "ESCAPE" then
-                self:SetPropagateKeyboardInput(false)
+                if not locked then self:SetPropagateKeyboardInput(false) end
                 if self._onCancel then self._onCancel() end
                 self:Hide()
             else
-                self:SetPropagateKeyboardInput(true)
+                if not locked then self:SetPropagateKeyboardInput(true) end
             end
         end)
     end
@@ -1613,34 +1643,7 @@ function GUI:CreateSectionHeader(parent, text)
             end
 
             if not suppressedAtCreation and not GUI._suppressSearchRegistration and GUI._searchContext.tabIndex and text then
-                local tabIndex = GUI._searchContext.tabIndex
-                local subTabIndex = GUI._searchContext.subTabIndex or 0
-                local numKey = tabIndex * 10000 + subTabIndex
-
-                local scrollParent = nil
-                local current = parent
-                while current do
-                    if current.GetVerticalScroll and current.SetVerticalScroll then
-                        scrollParent = current
-                        break
-                    end
-                    current = current:GetParent()
-                end
-
-                if not GUI.SectionRegistry[numKey] then
-                    GUI.SectionRegistry[numKey] = {}
-                end
-                if not GUI.SectionRegistryOrder[numKey] then
-                    GUI.SectionRegistryOrder[numKey] = {}
-                end
-                if not GUI.SectionRegistry[numKey][text] then
-                    table.insert(GUI.SectionRegistryOrder[numKey], text)
-                end
-                GUI.SectionRegistry[numKey][text] = {
-                    frame = container,
-                    scrollParent = scrollParent,
-                    contentParent = parent,
-                }
+                GUI.RegisterSectionEntry(GUI._searchContext.tabIndex, GUI._searchContext.subTabIndex, text, container, parent)
             end
         end
     end
@@ -1754,6 +1757,226 @@ local function CreateDropdownScrollBody(menuFrame)
     scrollFrame:SetScript("OnScrollRangeChanged", function() UpdateThumb() end)
 
     return scrollFrame, scrollContent, scrollBar, UpdateThumb
+end
+
+local DROPDOWN_SEARCH_BOX_HEIGHT = 28
+
+local sharedDropdownMenu
+
+local function GetSharedDropdownMenu()
+    if sharedDropdownMenu then return sharedDropdownMenu end
+
+    local Kit = ns.UIKit
+    local useUIKitBorders = Kit
+        and Kit.CreateBackground
+        and Kit.CreateBorderLines
+        and Kit.UpdateBorderLines
+    local menu = CreateFrame("Frame", nil, UIParent, useUIKitBorders and nil or "BackdropTemplate")
+    if useUIKitBorders then
+        menu.bg = Kit.CreateBackground(menu, C.bg[1], C.bg[2], C.bg[3], 1)
+        Kit.CreateBorderLines(menu)
+        Kit.UpdateBorderLines(menu, 1, 1, 1, 1, 0.2, false)
+    elseif SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(menu, 1, true, false, { 1, 1, 1, 0.2 }, { C.bg[1], C.bg[2], C.bg[3], 1 })
+    end
+    menu:SetFrameStrata("TOOLTIP")
+    menu:SetClipsChildren(true)
+    menu:Hide()
+
+    local scrollFrame, scrollContent, scrollBar, updateThumb = CreateDropdownScrollBody(menu)
+    menu.scrollFrame = scrollFrame
+    menu.scrollContent = scrollContent
+    menu.scrollBar = scrollBar
+    menu.updateThumb = updateThumb
+    menu.UpdateScrollInset = function()
+        if scrollBar:IsShown() then
+            scrollFrame:SetPoint("BOTTOMRIGHT", -(DROPDOWN_SCROLLBAR_WIDTH + 2), 0)
+        else
+            scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
+        end
+    end
+
+    local searchContainer = CreateFrame("Frame", nil, menu)
+    searchContainer:SetHeight(DROPDOWN_SEARCH_BOX_HEIGHT)
+    searchContainer:SetPoint("TOPLEFT", 0, 0)
+    searchContainer:SetPoint("TOPRIGHT", 0, 0)
+    searchContainer:Hide()
+    menu.searchContainer = searchContainer
+
+    local searchBg = searchContainer:CreateTexture(nil, "BACKGROUND")
+    searchBg:SetAllPoints()
+    searchBg:SetColorTexture(0.06, 0.06, 0.06, 1)
+
+    local searchBorder = searchContainer:CreateTexture(nil, "ARTWORK")
+    searchBorder:SetHeight(1)
+    searchBorder:SetPoint("BOTTOMLEFT", searchContainer, "BOTTOMLEFT", 0, 0)
+    searchBorder:SetPoint("BOTTOMRIGHT", searchContainer, "BOTTOMRIGHT", 0, 0)
+    searchBorder:SetColorTexture(0.25, 0.25, 0.25, 1)
+
+    local searchBox = CreateFrame("EditBox", nil, searchContainer)
+    searchBox:SetPoint("TOPLEFT", 8, -2)
+    searchBox:SetPoint("BOTTOMRIGHT", -8, 2)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetFontObject(GameFontNormal)
+    SetFont(searchBox, 11, "", C.text)
+    searchBox:SetMaxLetters(50)
+    menu.searchBox = searchBox
+    searchContainer.searchBox = searchBox
+
+    local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(placeholder, 11, "", C.textMuted or {0.6, 0.6, 0.6})
+    placeholder:SetText(ns.L["Search..."])
+    placeholder:SetPoint("LEFT", 0, 0)
+    placeholder:SetJustifyH("LEFT")
+    searchBox.placeholder = placeholder
+
+    searchBox:SetScript("OnEditFocusGained", function()
+        searchBorder:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.6)
+    end)
+    searchBox:SetScript("OnEditFocusLost", function()
+        searchBorder:SetColorTexture(0.25, 0.25, 0.25, 1)
+    end)
+    searchBox:SetScript("OnEscapePressed", function(self)
+        self:SetText("")
+        self:ClearFocus()
+    end)
+    searchBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+    end)
+    searchBox:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        local owner = menu._owner
+        if not owner then return end
+        local txt = self:GetText()
+        owner.searchText = txt or ""
+        if self.placeholder then
+            self.placeholder:SetShown(txt == nil or txt == "")
+        end
+        if menu._ownerBuildMenu then
+            menu._ownerBuildMenu()
+            C_Timer.After(0, function() menu.updateThumb(); menu.UpdateScrollInset() end)
+        end
+    end)
+
+    menu._headerPool = {}
+    menu._buttonPool = {}
+    menu._headerIdx = 0
+    menu._buttonIdx = 0
+
+    local closeTimer = 0
+    menu:SetScript("OnShow", function(self)
+        closeTimer = 0
+        self.__checkElapsed = 0
+        self:SetScript("OnUpdate", function(frame, elapsed)
+            frame.__checkElapsed = (frame.__checkElapsed or 0) + elapsed
+            if frame.__checkElapsed < 0.066 then return end
+            local deltaTime = frame.__checkElapsed
+            frame.__checkElapsed = 0
+
+            if searchBox:IsShown() and searchBox:HasFocus() then
+                closeTimer = 0
+                return
+            end
+
+            local ownerDropdown = frame._ownerDropdown
+            local isOverDropdown = ownerDropdown and ownerDropdown:IsMouseOver()
+            local isOverMenu = frame:IsMouseOver()
+            if not isOverDropdown and not isOverMenu then
+                closeTimer = closeTimer + deltaTime
+                if closeTimer > 0.15 then
+                    frame:Hide()
+                end
+            else
+                closeTimer = 0
+            end
+        end)
+    end)
+
+    menu:SetScript("OnHide", function(self)
+        self:SetScript("OnUpdate", nil)
+        closeTimer = 0
+        searchBox:SetText("")
+        searchBox:ClearFocus()
+        local owner = self._owner
+        if owner then owner.searchText = "" end
+    end)
+
+    sharedDropdownMenu = menu
+    return menu
+end
+
+local function ResetSharedMenuItems(menu)
+    for i = 1, menu._headerIdx do menu._headerPool[i]:Hide() end
+    for i = 1, menu._buttonIdx do menu._buttonPool[i]:Hide() end
+    menu._headerIdx = 0
+    menu._buttonIdx = 0
+    for _, child in ipairs({menu.scrollContent:GetChildren()}) do child:Hide() end
+end
+
+local function AcquireSharedMenuHeader(menu)
+    menu._headerIdx = menu._headerIdx + 1
+    local f = menu._headerPool[menu._headerIdx]
+    if not f then
+        f = CreateFrame("Button", nil, menu.scrollContent)
+        f._headerText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        f._headerText:SetPoint("LEFT", 4, 0)
+        f._chevron1 = f:CreateTexture(nil, "OVERLAY")
+        f._chevron1:SetSize(5, 1)
+        f._chevron2 = f:CreateTexture(nil, "OVERLAY")
+        f._chevron2:SetSize(5, 1)
+        menu._headerPool[menu._headerIdx] = f
+    end
+    f._chevron1:Hide()
+    f._chevron2:Hide()
+    f:ClearAllPoints()
+    f:Show()
+    return f
+end
+
+local function AcquireSharedMenuButton(menu)
+    menu._buttonIdx = menu._buttonIdx + 1
+    local f = menu._buttonPool[menu._buttonIdx]
+    if not f then
+        f = CreateFrame("Button", nil, menu.scrollContent)
+        f._selectedBg = f:CreateTexture(nil, "BACKGROUND")
+        f._selectedBg:SetAllPoints(f)
+        f._selectedBg:SetColorTexture(0.204, 0.827, 0.6, 0.04)
+        f._selectedBg:Hide()
+        f._hoverBg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+        f._hoverBg:SetAllPoints(f)
+        f._hoverBg:SetColorTexture(0.204, 0.827, 0.6, 0.08)
+        f._hoverBg:Hide()
+        f._selectedBar = f:CreateTexture(nil, "OVERLAY")
+        f._selectedBar:SetWidth(2)
+        f._selectedBar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+        f._selectedBar:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+        f._selectedBar:Hide()
+        f._btnText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        f._btnText:SetPoint("LEFT", 8, 0)
+        menu._buttonPool[menu._buttonIdx] = f
+    end
+    f:ClearAllPoints()
+    f:Show()
+    return f
+end
+
+local function AcquireSharedMenuFor(menu, container, dropdown, searchable, buildMenu)
+    menu._owner = container
+    menu._ownerDropdown = dropdown
+    menu._ownerBuildMenu = buildMenu
+    if searchable then
+        menu.searchContainer:Show()
+        menu.scrollFrame:SetPoint("TOPLEFT", 0, -DROPDOWN_SEARCH_BOX_HEIGHT)
+        SetFont(menu.searchBox, 11, "", C.text)
+        SetFont(menu.searchBox.placeholder, 11, "", C.textMuted or {0.6, 0.6, 0.6})
+        menu.searchBox:SetText("")
+        menu.searchBox.placeholder:SetShown(true)
+        container.searchText = ""
+    else
+        menu.searchContainer:Hide()
+        menu.scrollFrame:SetPoint("TOPLEFT", 0, 0)
+    end
+    menu.scrollBar.thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
 end
 
 local FORM_ROW_HEIGHT = 28
@@ -2049,46 +2272,6 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
         fieldBg:SetVertexColor(C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
     end
 
-    local function UpdateFallbackBorder(r, g, b, a)
-        if not field._fallbackBorder then
-            field._fallbackBorder = {
-                top = field:CreateTexture(nil, "OVERLAY"),
-                bottom = field:CreateTexture(nil, "OVERLAY"),
-                left = field:CreateTexture(nil, "OVERLAY"),
-                right = field:CreateTexture(nil, "OVERLAY"),
-            }
-            for _, edge in pairs(field._fallbackBorder) do
-                edge:SetTexture("Interface\\Buttons\\WHITE8x8")
-            end
-        end
-
-        local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(field)) or 1
-        local border = field._fallbackBorder
-        border.top:ClearAllPoints()
-        border.top:SetPoint("TOPLEFT", field, "TOPLEFT", 0, 0)
-        border.top:SetPoint("TOPRIGHT", field, "TOPRIGHT", 0, 0)
-        border.top:SetHeight(px)
-
-        border.bottom:ClearAllPoints()
-        border.bottom:SetPoint("BOTTOMLEFT", field, "BOTTOMLEFT", 0, 0)
-        border.bottom:SetPoint("BOTTOMRIGHT", field, "BOTTOMRIGHT", 0, 0)
-        border.bottom:SetHeight(px)
-
-        border.left:ClearAllPoints()
-        border.left:SetPoint("TOPLEFT", border.top, "BOTTOMLEFT", 0, 0)
-        border.left:SetPoint("BOTTOMLEFT", border.bottom, "TOPLEFT", 0, 0)
-        border.left:SetWidth(px)
-
-        border.right:ClearAllPoints()
-        border.right:SetPoint("TOPRIGHT", border.top, "BOTTOMRIGHT", 0, 0)
-        border.right:SetPoint("BOTTOMRIGHT", border.bottom, "TOPRIGHT", 0, 0)
-        border.right:SetWidth(px)
-
-        for _, edge in pairs(border) do
-            edge:SetVertexColor(r or 0.35, g or 0.35, b or 0.35, a or 1)
-        end
-    end
-
     local function SetFieldBorderColor(r, g, b, a)
         if UIKit and UIKit.UpdateBorderLines then
             if not field._pixelBorderReady and UIKit.CreateBorderLines then
@@ -2097,7 +2280,7 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
             end
             UIKit.UpdateBorderLines(field, 1, r, g, b, a, false)
         else
-            UpdateFallbackBorder(r, g, b, a)
+            ApplyFallbackPixelBorder(field, r, g, b, a, 0.35)
         end
     end
     SetFieldBorderColor(1, 1, 1, 0.2)
@@ -2667,7 +2850,6 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     opts = opts or {}
     local searchable = opts.searchable or false
     local collapsible = opts.collapsible or false
-    local SEARCH_BOX_HEIGHT = 28
     local UIKit = ns.UIKit
     local useUIKitBorders = UIKit
         and UIKit.CreateBackground
@@ -2731,80 +2913,17 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         SetDropdownBorderColor(1, 1, 1, 0.2)
     end)
 
-    local menuFrame = CreateFrame("Frame", nil, UIParent, useUIKitBorders and nil or "BackdropTemplate")
-    if useUIKitBorders then
-        menuFrame.bg = UIKit.CreateBackground(menuFrame, C.bg[1], C.bg[2], C.bg[3], 1)
-        UIKit.CreateBorderLines(menuFrame)
-        UIKit.UpdateBorderLines(menuFrame, 1, 1, 1, 1, 0.2, false)
-    elseif SkinBase and SkinBase.ApplyPixelBackdrop then
-        SkinBase.ApplyPixelBackdrop(menuFrame, 1, true, false, { 1, 1, 1, 0.2 }, { C.bg[1], C.bg[2], C.bg[3], 1 })
-    end
-    menuFrame:SetFrameStrata("TOOLTIP")
-    menuFrame:SetClipsChildren(true)
-    menuFrame:Hide()
-
-    dropdown:HookScript("OnHide", function() menuFrame:Hide() end)
-
-    local scrollFrame, scrollContent, scrollBar, updateThumb = CreateDropdownScrollBody(menuFrame)
-    menuFrame.scrollContent = scrollContent
-
-    local searchBox
-    if searchable then
-        scrollFrame:SetPoint("TOPLEFT", 0, -SEARCH_BOX_HEIGHT)
-
-        local searchContainer = CreateFrame("Frame", nil, menuFrame)
-        searchContainer:SetHeight(SEARCH_BOX_HEIGHT)
-        searchContainer:SetPoint("TOPLEFT", 0, 0)
-        searchContainer:SetPoint("TOPRIGHT", 0, 0)
-
-        local searchBg = searchContainer:CreateTexture(nil, "BACKGROUND")
-        searchBg:SetAllPoints()
-        searchBg:SetColorTexture(0.06, 0.06, 0.06, 1)
-
-        local searchBorder = searchContainer:CreateTexture(nil, "ARTWORK")
-        searchBorder:SetHeight(1)
-        searchBorder:SetPoint("BOTTOMLEFT", searchContainer, "BOTTOMLEFT", 0, 0)
-        searchBorder:SetPoint("BOTTOMRIGHT", searchContainer, "BOTTOMRIGHT", 0, 0)
-        searchBorder:SetColorTexture(0.25, 0.25, 0.25, 1)
-
-        searchBox = CreateFrame("EditBox", nil, searchContainer)
-        searchBox:SetPoint("TOPLEFT", 8, -2)
-        searchBox:SetPoint("BOTTOMRIGHT", -8, 2)
-        searchBox:SetAutoFocus(false)
-        searchBox:SetFontObject(GameFontNormal)
-        SetFont(searchBox, 11, "", C.text)
-        searchBox:SetMaxLetters(50)
-
-        local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(placeholder, 11, "", C.textMuted or {0.6, 0.6, 0.6})
-        placeholder:SetText(ns.L["Search..."])
-        placeholder:SetPoint("LEFT", 0, 0)
-        placeholder:SetJustifyH("LEFT")
-        searchBox.placeholder = placeholder
-
-        searchBox:SetScript("OnEditFocusGained", function(self)
-            searchBorder:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.6)
-        end)
-        searchBox:SetScript("OnEditFocusLost", function(self)
-            searchBorder:SetColorTexture(0.25, 0.25, 0.25, 1)
-        end)
-        searchBox:SetScript("OnEscapePressed", function(self)
-            self:SetText("")
-            self:ClearFocus()
-        end)
-        searchBox:SetScript("OnEnterPressed", function(self)
-            self:ClearFocus()
-        end)
-
-        searchContainer.searchBox = searchBox
-    end
-
     container.dropdown = dropdown
-    container.menuFrame = menuFrame
     container.options = options or {}
     container.collapsedHeaders = {}
     container.searchText = ""
-    container.searchBox = searchBox
+
+    dropdown:HookScript("OnHide", function()
+        local menu = sharedDropdownMenu
+        if menu and menu._owner == container then
+            menu:Hide()
+        end
+    end)
 
     if collapsible then
         for _, opt in ipairs(container.options) do
@@ -2843,72 +2962,10 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         end
     end
 
-    local function UpdateScrollInset()
-        if scrollBar:IsShown() then
-            scrollFrame:SetPoint("BOTTOMRIGHT", -(DROPDOWN_SCROLLBAR_WIDTH + 2), 0)
-        else
-            scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
-        end
-    end
-
-    local headerPool = {}
-    local buttonPool = {}
-    local headerPoolIdx, buttonPoolIdx = 0, 0
-
-    local function AcquireHeader()
-        headerPoolIdx = headerPoolIdx + 1
-        local f = headerPool[headerPoolIdx]
-        if not f then
-            f = CreateFrame("Button", nil, scrollContent)
-            f._headerText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            f._headerText:SetPoint("LEFT", 4, 0)
-            if collapsible then
-                f._chevron1 = f:CreateTexture(nil, "OVERLAY")
-                f._chevron1:SetSize(5, 1)
-                f._chevron2 = f:CreateTexture(nil, "OVERLAY")
-                f._chevron2:SetSize(5, 1)
-            end
-            headerPool[headerPoolIdx] = f
-        end
-        f:ClearAllPoints()
-        f:Show()
-        return f
-    end
-
-    local function AcquireButton()
-        buttonPoolIdx = buttonPoolIdx + 1
-        local f = buttonPool[buttonPoolIdx]
-        if not f then
-            f = CreateFrame("Button", nil, scrollContent)
-            f._selectedBg = f:CreateTexture(nil, "BACKGROUND")
-            f._selectedBg:SetAllPoints(f)
-            f._selectedBg:SetColorTexture(0.204, 0.827, 0.6, 0.04)
-            f._selectedBg:Hide()
-            f._hoverBg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
-            f._hoverBg:SetAllPoints(f)
-            f._hoverBg:SetColorTexture(0.204, 0.827, 0.6, 0.08)
-            f._hoverBg:Hide()
-            f._selectedBar = f:CreateTexture(nil, "OVERLAY")
-            f._selectedBar:SetWidth(2)
-            f._selectedBar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-            f._selectedBar:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
-            f._selectedBar:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
-            f._selectedBar:Hide()
-            f._btnText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            f._btnText:SetPoint("LEFT", 8, 0)
-            buttonPool[buttonPoolIdx] = f
-        end
-        f:ClearAllPoints()
-        f:Show()
-        return f
-    end
-
     local function BuildMenu()
-        for i = 1, headerPoolIdx do headerPool[i]:Hide() end
-        for i = 1, buttonPoolIdx do buttonPool[i]:Hide() end
-        headerPoolIdx = 0
-        buttonPoolIdx = 0
-        for _, child in ipairs({scrollContent:GetChildren()}) do child:Hide() end
+        local menu = GetSharedDropdownMenu()
+        local scrollContent = menu.scrollContent
+        ResetSharedMenuItems(menu)
 
         local yOff = -4
         local itemHeight = 22
@@ -2921,7 +2978,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         local mutedColor = C.textMuted or {0.6, 0.6, 0.6}
 
         if isFiltering then
-            scrollFrame:SetVerticalScroll(0)
+            menu.scrollFrame:SetVerticalScroll(0)
         end
 
         for i, opt in ipairs(container.options) do
@@ -2940,7 +2997,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                     end
                     if not hasMatch then
                     else
-                        local header = AcquireHeader()
+                        local header = AcquireSharedMenuHeader(menu)
                         if visibleCount > 0 then yOff = yOff - 4 end
                         header:SetHeight(headerHeight)
                         header:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, yOff)
@@ -2958,7 +3015,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                     end
                 else
                     local isCollapsed = collapsible and container.collapsedHeaders[currentHeader]
-                    local header = AcquireHeader()
+                    local header = AcquireSharedMenuHeader(menu)
                     if visibleCount > 0 then yOff = yOff - 4 end
                     header:SetHeight(headerHeight)
                     header:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, yOff)
@@ -2997,7 +3054,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                         header:SetScript("OnClick", function()
                             container.collapsedHeaders[headerName] = not container.collapsedHeaders[headerName]
                             BuildMenu()
-                            C_Timer.After(0, function() updateThumb(); UpdateScrollInset() end)
+                            C_Timer.After(0, function() menu.updateThumb(); menu.UpdateScrollInset() end)
                         end)
                         header:SetScript("OnEnter", function()
                             header._headerText:SetTextColor(C_accent_r, C_accent_g, C_accent_b, 0.8)
@@ -3025,7 +3082,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                 if isCollapsed then
                 elseif isFiltering and not opt.text:lower():find(filterText, 1, true) then
                 else
-                    local btn = AcquireButton()
+                    local btn = AcquireSharedMenuButton(menu)
                     btn:SetHeight(itemHeight)
                     btn:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, yOff)
                     btn:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -4, yOff)
@@ -3037,6 +3094,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                     local isSelected = (container.selectedValue == opt.value)
                     if isSelected then
                         btn._selectedBg:Show()
+                        btn._selectedBar:SetColorTexture(C_accent_r, C_accent_g, C_accent_b, 1)
                         btn._selectedBar:Show()
                         btn._btnText:SetTextColor(C_accent_r, C_accent_g, C_accent_b, 1)
                     else
@@ -3048,7 +3106,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
 
                     btn:SetScript("OnClick", function()
                         SetValue(opt.value)
-                        menuFrame:Hide()
+                        menu:Hide()
                     end)
                     btn:SetScript("OnEnter", function(self)
                         self._hoverBg:Show()
@@ -3063,7 +3121,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         end
 
         if isFiltering and visibleCount == 0 then
-            local noMatch = AcquireButton()
+            local noMatch = AcquireSharedMenuButton(menu)
             noMatch:SetHeight(itemHeight)
             noMatch:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, -10)
             noMatch:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -4, -10)
@@ -3082,73 +3140,27 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
 
         local totalHeight = math.abs(yOff) + 4
         local maxHeight = (maxVisibleItems * itemHeight) + 8
-        local searchOffset = searchable and SEARCH_BOX_HEIGHT or 0
+        local searchOffset = searchable and DROPDOWN_SEARCH_BOX_HEIGHT or 0
 
         scrollContent:SetHeight(totalHeight)
         scrollContent:SetWidth(dropdown:GetWidth() - 4)
-        menuFrame:SetHeight(math.min(totalHeight, maxHeight) + searchOffset)
-    end
-
-    if searchBox then
-        searchBox:SetScript("OnTextChanged", function(self, userInput)
-            if not userInput then return end
-            local txt = self:GetText()
-            container.searchText = txt or ""
-            if self.placeholder then
-                self.placeholder:SetShown(txt == nil or txt == "")
-            end
-            BuildMenu()
-            C_Timer.After(0, function() updateThumb(); UpdateScrollInset() end)
-        end)
+        menu:SetHeight(math.min(totalHeight, maxHeight) + searchOffset)
     end
 
     dropdown:SetScript("OnClick", function()
-        if menuFrame:IsShown() then
-            menuFrame:Hide()
-        else
-            BuildMenu()
-            PositionDropdownMenu(menuFrame, dropdown, menuFrame:GetHeight())
-            menuFrame:Show()
-            C_Timer.After(0, function() updateThumb(); UpdateScrollInset() end)
+        local menu = GetSharedDropdownMenu()
+        if menu:IsShown() and menu._owner == container then
+            menu:Hide()
+            return
         end
-    end)
-
-    local closeTimer = 0
-    menuFrame:HookScript("OnShow", function()
-        closeTimer = 0
-        menuFrame.__checkElapsed = 0
-        menuFrame:SetScript("OnUpdate", function(self, elapsed)
-            self.__checkElapsed = (self.__checkElapsed or 0) + elapsed
-            if self.__checkElapsed < 0.066 then return end
-            local deltaTime = self.__checkElapsed
-            self.__checkElapsed = 0
-
-            if searchBox and searchBox:HasFocus() then
-                closeTimer = 0
-                return
-            end
-
-            local isOverDropdown = dropdown:IsMouseOver()
-            local isOverMenu = self:IsMouseOver()
-            if not isOverDropdown and not isOverMenu then
-                closeTimer = closeTimer + deltaTime
-                if closeTimer > 0.15 then
-                    self:Hide()
-                end
-            else
-                closeTimer = 0
-            end
-        end)
-    end)
-
-    menuFrame:HookScript("OnHide", function()
-        menuFrame:SetScript("OnUpdate", nil)
-        closeTimer = 0
-        if searchBox then
-            searchBox:SetText("")
-            searchBox:ClearFocus()
-            container.searchText = ""
+        if menu:IsShown() then
+            menu:Hide()
         end
+        AcquireSharedMenuFor(menu, container, dropdown, searchable, BuildMenu)
+        BuildMenu()
+        PositionDropdownMenu(menu, dropdown, menu:GetHeight())
+        menu:Show()
+        C_Timer.After(0, function() menu.updateThumb(); menu.UpdateScrollInset() end)
     end)
 
     local function SetOptions(newOptions)
@@ -3173,8 +3185,6 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
             dropdown.selected:SetText(tostring(currentVal))
         elseif not found then
             dropdown.selected:SetText("")
-            container.selectedValue = nil
-            if dbTable and dbKey then dbTable[dbKey] = "" end
         end
     end
 
@@ -3381,23 +3391,6 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     return container
 end
 
-local CreateFormEditBoxModern = GUI.CreateFormEditBox
-local CreateInlineEditBoxModern = GUI.CreateInlineEditBox
-
-function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options, registryInfo)
-    if CreateFormEditBoxModern then
-        return CreateFormEditBoxModern(self, parent, label, dbKey, dbTable, onChange, options, registryInfo)
-    end
-    return nil
-end
-
-function GUI:CreateInlineEditBox(parent, options)
-    if CreateInlineEditBoxModern then
-        return CreateInlineEditBoxModern(self, parent, options)
-    end
-    return nil
-end
-
 function GUI:CreateScrollableTextBox(parent, height, text, options)
     options = options or {}
     local bgColor = options.bgColor or {0.05, 0.07, 0.1, 0.9}
@@ -3448,7 +3441,7 @@ local SEARCH_MIN_CHARS = 2
 local SEARCH_MAX_RESULTS = 30
 
 local function NormalizeSearchText(text)
-    text = (text or ""):lower()
+    text = ns.Helpers.FoldUTF8(text)
     text = text:gsub("[%z\1-\31]", " ")
     text = text:gsub("[_%-%./\\&]+", " ")
     text = text:gsub("%s+", " ")
@@ -3537,18 +3530,18 @@ function GUI:PrepareSearchEntry(entry, localize)
         end
     end
 
-    entry._rawLabel = tostring(entry.label or ""):lower()
+    entry._rawLabel = ns.Helpers.FoldUTF8(entry.label)
     entry._normLabel = NormalizeSearchText(entry.label)
 
     if type(entry.sourceLabel) == "string" then
-        entry._rawSourceLabel = entry.sourceLabel:lower()
+        entry._rawSourceLabel = ns.Helpers.FoldUTF8(entry.sourceLabel)
         entry._normSourceLabel = NormalizeSearchText(entry.sourceLabel)
     end
 
     if type(entry.keywords) == "table" then
         local raw, normalized = {}, {}
         for index, keyword in ipairs(entry.keywords) do
-            raw[index] = tostring(keyword or ""):lower()
+            raw[index] = ns.Helpers.FoldUTF8(keyword)
             normalized[index] = NormalizeSearchText(keyword)
         end
         entry._rawKeywords = raw
@@ -3564,7 +3557,7 @@ function GUI:PrepareSearchEntry(entry, localize)
             entry.subTabName or "",
             entry.sectionName or "",
         }, " ")
-        entry._rawContext = context:lower()
+        entry._rawContext = ns.Helpers.FoldUTF8(context)
         entry._normContext = NormalizeSearchText(context)
     else
         entry._rawContext = nil
@@ -3628,13 +3621,13 @@ end
 
 local function BuildSearchTerms(searchTerm)
     local synExpand = ns.QUI_SearchSynonyms and ns.QUI_SearchSynonyms.Expand
-    local raw = (searchTerm or ""):lower()
+    local raw = ns.Helpers.FoldUTF8(searchTerm)
     local normalized = NormalizeSearchText(searchTerm)
     local seen = {}
     local out = {}
 
     local function AddTerm(term, penalty)
-        local rawTerm = (term or ""):lower()
+        local rawTerm = ns.Helpers.FoldUTF8(term)
         local normalizedTerm = NormalizeSearchText(term)
         if rawTerm == "" and normalizedTerm == "" then return end
 
@@ -4266,39 +4259,55 @@ end
 function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     if not content then return end
 
-    if GUI.TeardownFrameTree then
-        GUI:TeardownFrameTree(content)
-    else
-        local kids = { content:GetChildren() }
-        for _, child in ipairs(kids) do
-            UnregisterWidgetInstance(child)
-            child:Hide()
-            child:SetParent(nil)
+    local cache = content._searchRenderCache
+    if not cache then
+        cache = {
+            widgets = {},
+            navRows = {},
+            goButtons = {},
+            crumbs = {},
+            fallbackRows = {},
+            fs = {},
+            tex = {},
+        }
+        content._searchRenderCache = cache
+    end
+    for _, w in pairs(cache.widgets) do w:Hide(); w:ClearAllPoints() end
+    for _, r in pairs(cache.navRows) do r:Hide(); r:ClearAllPoints() end
+    for _, b in pairs(cache.goButtons) do b:Hide(); b:ClearAllPoints() end
+    for _, b in pairs(cache.crumbs) do b:Hide(); b:ClearAllPoints() end
+    for _, r in pairs(cache.fallbackRows) do r:Hide(); r:ClearAllPoints() end
+    for _, fs in ipairs(cache.fs) do fs:Hide() end
+    for _, tex in ipairs(cache.tex) do tex:Hide() end
+    cache.fsUsed = 0
+    cache.texUsed = 0
+    if content._searchErrorRow then content._searchErrorRow:Hide() end
+
+    local function AcquireFS()
+        cache.fsUsed = cache.fsUsed + 1
+        local fs = cache.fs[cache.fsUsed]
+        if not fs then
+            fs = content:CreateFontString(nil, "OVERLAY")
+            cache.fs[cache.fsUsed] = fs
         end
+        fs:ClearAllPoints()
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(false)
+        fs:Show()
+        return fs
     end
 
-    if content._fontStrings then
-        for _, fs in ipairs(content._fontStrings) do
-            fs:Hide()
-            fs:SetText("")
+    local function AcquireTex()
+        cache.texUsed = cache.texUsed + 1
+        local tex = cache.tex[cache.texUsed]
+        if not tex then
+            tex = content:CreateTexture(nil, "ARTWORK")
+            cache.tex[cache.texUsed] = tex
         end
+        tex:ClearAllPoints()
+        tex:Show()
+        return tex
     end
-    content._fontStrings = {}
-
-    if content._textures then
-        for _, tex in ipairs(content._textures) do
-            tex:Hide()
-        end
-    end
-    content._textures = {}
-
-    if content._clickButtons then
-        for _, btn in ipairs(content._clickButtons) do
-            btn:Hide()
-            btn:SetParent(nil)
-        end
-    end
-    content._clickButtons = {}
 
     local y = -10
     local PADDING = 15
@@ -4308,32 +4317,28 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
 
     if not hasResults then
         if searchTerm and searchTerm ~= "" then
-            local noResults = content:CreateFontString(nil, "OVERLAY")
+            local noResults = AcquireFS()
             SetFont(noResults, 12, "", C.textMuted)
             noResults:SetText(ns.L["No settings match \"%s\""]:format(searchTerm))
             noResults:SetPoint("TOPLEFT", PADDING, y)
-            table.insert(content._fontStrings, noResults)
             y = y - 30
 
-            local tip = content:CreateFontString(nil, "OVERLAY")
+            local tip = AcquireFS()
             SetFont(tip, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.7})
             tip:SetText(ns.L["Try different keywords"])
             tip:SetPoint("TOPLEFT", PADDING, y)
-            table.insert(content._fontStrings, tip)
             y = y - 30
         else
-            local instructions = content:CreateFontString(nil, "OVERLAY")
+            local instructions = AcquireFS()
             SetFont(instructions, 12, "", C.textMuted)
             instructions:SetText(ns.L["Search settings — try 'cooldown', 'party', 'action bars'"])
             instructions:SetPoint("TOPLEFT", PADDING, y)
-            table.insert(content._fontStrings, instructions)
             y = y - 20
 
-            local hint = content:CreateFontString(nil, "OVERLAY")
+            local hint = AcquireFS()
             SetFont(hint, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.6})
             hint:SetText(ns.L["Shortcut: / or Ctrl+F to focus"])
             hint:SetPoint("TOPLEFT", PADDING, y)
-            table.insert(content._fontStrings, hint)
             y = y - 20
         end
 
@@ -4342,82 +4347,96 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     end
 
     if navResults and #navResults > 0 then
-        local navHeader = content:CreateFontString(nil, "OVERLAY")
+        local navHeader = AcquireFS()
         SetFont(navHeader, 11, "", C.textMuted)
         navHeader:SetText(ns.L["Categories & Sections"])
         navHeader:SetPoint("TOPLEFT", PADDING, y)
-        table.insert(content._fontStrings, navHeader)
         y = y - 20
 
         for _, navResult in ipairs(navResults) do
             local entry = navResult.data
 
-            local navRow = CreateFrame("Button", nil, content, "BackdropTemplate")
+            local navKey = BuildMergedSearchIdentity(GUI, entry)
+            local navRow = cache.navRows[navKey]
+            if not navRow then
+                navRow = CreateFrame("Button", nil, content, "BackdropTemplate")
+                if SkinBase and SkinBase.ApplyPixelBackdrop then
+                    SkinBase.ApplyPixelBackdrop(navRow, 1, true, false, { 0.2, 0.22, 0.25, 0.6 }, { 0.12, 0.14, 0.17, 0.8 })
+                end
+
+                local typeBadge = navRow:CreateFontString(nil, "OVERLAY")
+                local typeLabels = {tab = ns.L["TAB"], subtab = ns.L["SUBTAB"], section = ns.L["SECTION"], moduleToggle = ns.L["[Module]"]}
+                local isModuleToggle = entry.navType == "moduleToggle"
+                if isModuleToggle then
+                    SetFont(typeBadge, 9, "", C.accent)
+                else
+                    SetFont(typeBadge, 9, "", C.textMuted)
+                end
+                typeBadge:SetText(typeLabels[entry.navType] or ns.L["NAV"])
+                typeBadge:SetPoint("LEFT", 8, 0)
+
+                local navLabel = navRow:CreateFontString(nil, "OVERLAY")
+                SetFont(navLabel, 11, "", C.text)
+                navLabel:SetText(entry.label or "")
+                navLabel:SetPoint("LEFT", typeBadge, "RIGHT", 10, 0)
+                navLabel:SetPoint("RIGHT", navRow, "RIGHT", -50, 0)
+                navLabel:SetJustifyH("LEFT")
+                navLabel:SetWordWrap(false)
+
+                if not isModuleToggle then
+                    local goText = navRow:CreateFontString(nil, "OVERLAY")
+                    SetFont(goText, 10, "", C.accent)
+                    goText:SetText(ns.L["Go >"])
+                    goText:SetPoint("RIGHT", -10, 0)
+                end
+
+                if isModuleToggle and entry.featureId then
+                    local registry = ns.Settings and ns.Settings.Registry
+                    local feature = registry
+                        and type(registry.GetFeature) == "function"
+                        and registry:GetFeature(entry.featureId)
+                        or nil
+                    if feature and feature.moduleEntry
+                       and ns.QUI_ModulesPage and ns.QUI_ModulesPage.CreateModuleTogglePill then
+                        local pill = ns.QUI_ModulesPage.CreateModuleTogglePill(navRow, feature.id, feature.moduleEntry)
+                        pill:SetPoint("RIGHT", navRow, "RIGHT", -8, 0)
+                        navRow._pill = pill
+
+                        pill:SetScript("OnMouseDown", function()
+                            navRow._suppressNavigate = true
+                        end)
+                        pill:HookScript("OnClick", function(self)
+                            if self._refresh then self._refresh() end
+                        end)
+                    end
+                end
+
+                navRow:SetScript("OnEnter", function(self)
+                    self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
+                    self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
+                end)
+                navRow:SetScript("OnLeave", function(self)
+                    self:SetBackdropColor(0.12, 0.14, 0.17, 0.8)
+                    self:SetBackdropBorderColor(0.2, 0.22, 0.25, 0.6)
+                end)
+
+                navRow:SetScript("OnClick", function(self)
+                    if self._suppressNavigate then
+                        self._suppressNavigate = false
+                        return
+                    end
+                    GUI:NavigateSearchResult(self._navEntry)
+                end)
+
+                cache.navRows[navKey] = navRow
+            elseif navRow._pill and navRow._pill._refresh then
+                navRow._pill._refresh()
+            end
+
+            navRow._navEntry = entry
             navRow:SetSize(content:GetWidth() - (PADDING * 2), 26)
             navRow:SetPoint("TOPLEFT", PADDING, y)
-            if SkinBase and SkinBase.ApplyPixelBackdrop then
-                SkinBase.ApplyPixelBackdrop(navRow, 1, true, false, { 0.2, 0.22, 0.25, 0.6 }, { 0.12, 0.14, 0.17, 0.8 })
-            end
-
-            local typeBadge = navRow:CreateFontString(nil, "OVERLAY")
-            local typeLabels = {tab = ns.L["TAB"], subtab = ns.L["SUBTAB"], section = ns.L["SECTION"], moduleToggle = ns.L["[Module]"]}
-            local isModuleToggle = entry.navType == "moduleToggle"
-            if isModuleToggle then
-                SetFont(typeBadge, 9, "", C.accent)
-            else
-                SetFont(typeBadge, 9, "", C.textMuted)
-            end
-            typeBadge:SetText(typeLabels[entry.navType] or ns.L["NAV"])
-            typeBadge:SetPoint("LEFT", 8, 0)
-
-            local navLabel = navRow:CreateFontString(nil, "OVERLAY")
-            SetFont(navLabel, 11, "", C.text)
-            navLabel:SetText(entry.label or "")
-            navLabel:SetPoint("LEFT", typeBadge, "RIGHT", 10, 0)
-            navLabel:SetPoint("RIGHT", navRow, "RIGHT", -50, 0)
-            navLabel:SetJustifyH("LEFT")
-            navLabel:SetWordWrap(false)
-
-            if not isModuleToggle then
-                local goText = navRow:CreateFontString(nil, "OVERLAY")
-                SetFont(goText, 10, "", C.accent)
-                goText:SetText(ns.L["Go >"])
-                goText:SetPoint("RIGHT", -10, 0)
-            end
-
-            if isModuleToggle and entry.featureId then
-                local registry = ns.Settings and ns.Settings.Registry
-                local feature = registry
-                    and type(registry.GetFeature) == "function"
-                    and registry:GetFeature(entry.featureId)
-                    or nil
-                if feature and feature.moduleEntry
-                   and ns.QUI_ModulesPage and ns.QUI_ModulesPage.CreateModuleTogglePill then
-                    local pill = ns.QUI_ModulesPage.CreateModuleTogglePill(navRow, feature.id, feature.moduleEntry)
-                    pill:SetPoint("RIGHT", navRow, "RIGHT", -8, 0)
-
-                    pill:SetScript("OnMouseDown", function()
-                        navRow._suppressNavigate = true
-                    end)
-                end
-            end
-
-            navRow:SetScript("OnEnter", function(self)
-                self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
-                self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
-            end)
-            navRow:SetScript("OnLeave", function(self)
-                self:SetBackdropColor(0.12, 0.14, 0.17, 0.8)
-                self:SetBackdropBorderColor(0.2, 0.22, 0.25, 0.6)
-            end)
-
-            navRow:SetScript("OnClick", function()
-                if navRow._suppressNavigate then
-                    navRow._suppressNavigate = false
-                    return
-                end
-                GUI:NavigateSearchResult(entry)
-            end)
+            navRow:Show()
 
             y = y - 30
         end
@@ -4425,11 +4444,10 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
         y = y - 10
 
         if results and #results > 0 then
-            local sep = content:CreateTexture(nil, "ARTWORK")
+            local sep = AcquireTex()
             sep:SetPoint("TOPLEFT", PADDING, y + 5)
             sep:SetSize(content:GetWidth() - (PADDING * 2), 1)
             sep:SetColorTexture(0.3, 0.32, 0.35, 0.5)
-            table.insert(content._textures, sep)
             y = y - 15
         end
     end
@@ -4473,47 +4491,51 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
         local group = groupedResults[groupKey]
         local groupData = group.data
 
-        local header = content:CreateFontString(nil, "OVERLAY")
+        local header = AcquireFS()
         SetFont(header, 12, "", C.accentLight)
         header:SetText(groupKey)
         header:SetPoint("TOPLEFT", PADDING, y)
-        table.insert(content._fontStrings, header)
 
         if GUI.ResolveSearchNavigation and GUI:ResolveSearchNavigation(groupData) then
-            local goBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
-            goBtn:SetSize(36, 16)
-            goBtn:SetPoint("LEFT", header, "RIGHT", 8, 0)
-            if SkinBase and SkinBase.ApplyPixelBackdrop then
-                SkinBase.ApplyPixelBackdrop(goBtn, 1, true, false, { C.accent[1], C.accent[2], C.accent[3], 0.5 }, { C.accent[1], C.accent[2], C.accent[3], 0.15 })
+            local goBtn = cache.goButtons[groupKey]
+            if not goBtn then
+                goBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+                goBtn:SetSize(36, 16)
+                if SkinBase and SkinBase.ApplyPixelBackdrop then
+                    SkinBase.ApplyPixelBackdrop(goBtn, 1, true, false, { C.accent[1], C.accent[2], C.accent[3], 0.5 }, { C.accent[1], C.accent[2], C.accent[3], 0.15 })
+                end
+
+                local btnText = goBtn:CreateFontString(nil, "OVERLAY")
+                SetFont(btnText, 9, "", C.accent)
+                btnText:SetText(ns.L["Go >"])
+                btnText:SetPoint("CENTER", 0, 0)
+
+                goBtn:SetScript("OnEnter", function(self)
+                    self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.3)
+                    self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
+                end)
+                goBtn:SetScript("OnLeave", function(self)
+                    self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
+                    self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
+                end)
+
+                goBtn:SetScript("OnClick", function(self)
+                    GUI:NavigateSearchResult(self._navEntry)
+                end)
+
+                cache.goButtons[groupKey] = goBtn
             end
-
-            local btnText = goBtn:CreateFontString(nil, "OVERLAY")
-            SetFont(btnText, 9, "", C.accent)
-            btnText:SetText(ns.L["Go >"])
-            btnText:SetPoint("CENTER", 0, 0)
-
-            goBtn:SetScript("OnEnter", function(self)
-                self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.3)
-                self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
-            end)
-            goBtn:SetScript("OnLeave", function(self)
-                self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
-                self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
-            end)
-
-            local clickEntry = groupData
-            goBtn:SetScript("OnClick", function()
-                GUI:NavigateSearchResult(clickEntry)
-            end)
+            goBtn._navEntry = groupData
+            goBtn:SetPoint("LEFT", header, "RIGHT", 8, 0)
+            goBtn:Show()
         end
 
         y = y - 24
 
-        local sep = content:CreateTexture(nil, "ARTWORK")
+        local sep = AcquireTex()
         sep:SetPoint("TOPLEFT", PADDING, y + 2)
         sep:SetSize(content:GetWidth() - (PADDING * 2), 1)
         sep:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.3)
-        table.insert(content._textures, sep)
         y = y - 12
 
         for _, result in ipairs(group.entries) do
@@ -4521,6 +4543,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
 
             local widget = nil
             if entry.widgetBuilder or entry.widgetDescriptor then
+                local entryKey = BuildMergedSearchIdentity(GUI, entry)
                 local crumbParts
                 if GUI.GetSearchBreadcrumb then
                     crumbParts = GUI:GetSearchBreadcrumb(entry)
@@ -4543,38 +4566,56 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                 local DESC_HEIGHT = 16
 
                 if crumbText ~= "" then
-                    local crumbBtn = CreateFrame("Button", nil, content)
+                    local crumbBtn = cache.crumbs[entryKey]
+                    if not crumbBtn then
+                        crumbBtn = CreateFrame("Button", nil, content)
+
+                        local crumb = crumbBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        SetFont(crumb, 11, "")
+                        crumb:SetPoint("LEFT", crumbBtn, "LEFT", 0, 0)
+                        crumb:SetTextColor(0.55, 0.55, 0.6, 1)
+                        crumb:SetJustifyH("LEFT")
+                        crumbBtn._crumb = crumb
+
+                        crumbBtn:SetScript("OnEnter", function() crumb:SetTextColor(1, 1, 1, 1) end)
+                        crumbBtn:SetScript("OnLeave", function() crumb:SetTextColor(0.55, 0.55, 0.6, 1) end)
+
+                        crumbBtn:SetScript("OnClick", function(self)
+                            local clickEntry = self._navEntry
+                            GUI:NavigateSearchResult(clickEntry, {
+                                scrollToLabel = clickEntry.label,
+                                pulse = true,
+                            })
+                        end)
+
+                        cache.crumbs[entryKey] = crumbBtn
+                    end
+                    crumbBtn._navEntry = entry
+                    crumbBtn._crumb:SetText(crumbText)
                     crumbBtn:SetPoint("TOPLEFT", content, "TOPLEFT", PADDING + 4, y - 2)
                     crumbBtn:SetHeight(14)
                     crumbBtn:SetWidth(content:GetWidth() - (PADDING * 2) - 8)
-
-                    local crumb = crumbBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    SetFont(crumb, 11, "")
-                    crumb:SetPoint("LEFT", crumbBtn, "LEFT", 0, 0)
-                    crumb:SetText(crumbText)
-                    crumb:SetTextColor(0.55, 0.55, 0.6, 1)
-                    crumb:SetJustifyH("LEFT")
-
-                    crumbBtn:SetScript("OnEnter", function() crumb:SetTextColor(1, 1, 1, 1) end)
-                    crumbBtn:SetScript("OnLeave", function() crumb:SetTextColor(0.55, 0.55, 0.6, 1) end)
-
-                    local clickEntry = entry
-                    crumbBtn:SetScript("OnClick", function()
-                        GUI:NavigateSearchResult(clickEntry, {
-                            scrollToLabel = clickEntry.label,
-                            pulse = true,
-                        })
-                    end)
-
-                    table.insert(content._fontStrings, crumb)
-                    table.insert(content._clickButtons, crumbBtn)
+                    crumbBtn:Show()
                     y = y - CRUMB_HEIGHT
                 end
 
-                if entry.widgetBuilder then
-                    widget = entry.widgetBuilder(content)
+                widget = cache.widgets[entryKey]
+                if widget then
+                    widget:Show()
+                    if widget.Refresh then
+                        widget.Refresh()
+                    elseif widget.UpdateVisual and widget.GetValue then
+                        widget.UpdateVisual(widget.GetValue())
+                    end
                 else
-                    widget = GUI:CreateSearchWidgetFromDescriptor(content, entry)
+                    if entry.widgetBuilder then
+                        widget = entry.widgetBuilder(content)
+                    else
+                        widget = GUI:CreateSearchWidgetFromDescriptor(content, entry)
+                    end
+                    if widget then
+                        cache.widgets[entryKey] = widget
+                    end
                 end
                 if widget then
                     widget:SetPoint("TOPLEFT", PADDING, y)
@@ -4583,7 +4624,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                 end
 
                 if entry.description and entry.description ~= "" then
-                    local desc = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    local desc = AcquireFS()
                     SetFont(desc, 11, "")
                     desc:SetPoint("TOPLEFT", PADDING + 4, y)
                     desc:SetPoint("RIGHT", content, "RIGHT", -(PADDING + 4), 0)
@@ -4591,7 +4632,6 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                     desc:SetTextColor(0.7, 0.7, 0.72, 1)
                     desc:SetJustifyH("LEFT")
                     desc:SetWordWrap(true)
-                    table.insert(content._fontStrings, desc)
                     y = y - DESC_HEIGHT
                 end
             end
@@ -4599,43 +4639,51 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             if not widget then
                 local hasRoute = GUI.ResolveSearchNavigation and GUI:ResolveSearchNavigation(entry)
                 if hasRoute then
-                    local fallbackRow = CreateFrame("Button", nil, content, "BackdropTemplate")
+                    local fallbackKey = BuildMergedSearchIdentity(GUI, entry)
+                    local fallbackRow = cache.fallbackRows[fallbackKey]
+                    if not fallbackRow then
+                        fallbackRow = CreateFrame("Button", nil, content, "BackdropTemplate")
+                        if SkinBase and SkinBase.ApplyPixelBackdrop then
+                            SkinBase.ApplyPixelBackdrop(fallbackRow, 1, true, false, { 0.2, 0.22, 0.25, 0.45 }, { 0.12, 0.14, 0.17, 0.55 })
+                        end
+
+                        local fallbackLabel = fallbackRow:CreateFontString(nil, "OVERLAY")
+                        SetFont(fallbackLabel, 11, "", C.textMuted)
+                        fallbackLabel:SetPoint("LEFT", 8, 0)
+                        fallbackLabel:SetPoint("RIGHT", -8, 0)
+                        fallbackLabel:SetJustifyH("LEFT")
+                        fallbackRow._label = fallbackLabel
+
+                        fallbackRow:SetScript("OnEnter", function(self)
+                            self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.12)
+                            self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.45)
+                            fallbackLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                        end)
+                        fallbackRow:SetScript("OnLeave", function(self)
+                            self:SetBackdropColor(0.12, 0.14, 0.17, 0.55)
+                            self:SetBackdropBorderColor(0.2, 0.22, 0.25, 0.45)
+                            fallbackLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                        end)
+                        fallbackRow:SetScript("OnClick", function(self)
+                            GUI:NavigateSearchResult(self._navEntry, {
+                                scrollToLabel = self._navEntry.label,
+                                pulse = true,
+                            })
+                        end)
+
+                        cache.fallbackRows[fallbackKey] = fallbackRow
+                    end
+                    fallbackRow._navEntry = entry
+                    fallbackRow._label:SetText(entry.label or ns.L["Unknown setting"])
                     fallbackRow:SetSize(content:GetWidth() - (PADDING * 2), 24)
                     fallbackRow:SetPoint("TOPLEFT", PADDING, y)
-                    if SkinBase and SkinBase.ApplyPixelBackdrop then
-                        SkinBase.ApplyPixelBackdrop(fallbackRow, 1, true, false, { 0.2, 0.22, 0.25, 0.45 }, { 0.12, 0.14, 0.17, 0.55 })
-                    end
-
-                    local fallbackLabel = fallbackRow:CreateFontString(nil, "OVERLAY")
-                    SetFont(fallbackLabel, 11, "", C.textMuted)
-                    fallbackLabel:SetPoint("LEFT", 8, 0)
-                    fallbackLabel:SetPoint("RIGHT", -8, 0)
-                    fallbackLabel:SetJustifyH("LEFT")
-                    fallbackLabel:SetText(entry.label or ns.L["Unknown setting"])
-
-                    fallbackRow:SetScript("OnEnter", function(self)
-                        self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.12)
-                        self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.45)
-                        fallbackLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-                    end)
-                    fallbackRow:SetScript("OnLeave", function(self)
-                        self:SetBackdropColor(0.12, 0.14, 0.17, 0.55)
-                        self:SetBackdropBorderColor(0.2, 0.22, 0.25, 0.45)
-                        fallbackLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
-                    end)
-                    fallbackRow:SetScript("OnClick", function()
-                        GUI:NavigateSearchResult(entry, {
-                            scrollToLabel = entry.label,
-                            pulse = true,
-                        })
-                    end)
+                    fallbackRow:Show()
                     y = y - 28
                 else
-                    local fallbackLabel = content:CreateFontString(nil, "OVERLAY")
+                    local fallbackLabel = AcquireFS()
                     SetFont(fallbackLabel, 11, "", C.textMuted)
                     fallbackLabel:SetText(entry.label or ns.L["Unknown setting"])
                     fallbackLabel:SetPoint("TOPLEFT", PADDING, y)
-                    table.insert(content._fontStrings, fallbackLabel)
                     y = y - 24
                 end
             end
@@ -4650,20 +4698,26 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     GUI._suppressSearchRegistration = false
 
     if not ok then
-        local errorRow = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        local errorRow = content._searchErrorRow
+        if not errorRow then
+            errorRow = CreateFrame("Frame", nil, content, "BackdropTemplate")
+            if SkinBase and SkinBase.ApplyPixelBackdrop then
+                SkinBase.ApplyPixelBackdrop(errorRow, 1, true, false, { 1, 0.25, 0.25, 0.65 }, { 0.25, 0.05, 0.05, 0.75 })
+            end
+
+            local label = errorRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            SetFont(label, 11, "", {1, 0.45, 0.45, 1})
+            label:SetPoint("LEFT", errorRow, "LEFT", 8, 0)
+            label:SetPoint("RIGHT", errorRow, "RIGHT", -8, 0)
+            label:SetJustifyH("LEFT")
+            label:SetText(ns.L["Some search results failed to render. Check the Lua error log."])
+
+            content._searchErrorRow = errorRow
+        end
+        errorRow:ClearAllPoints()
         errorRow:SetSize(content:GetWidth() - (PADDING * 2), 28)
         errorRow:SetPoint("TOPLEFT", PADDING, y)
-        if SkinBase and SkinBase.ApplyPixelBackdrop then
-            SkinBase.ApplyPixelBackdrop(errorRow, 1, true, false, { 1, 0.25, 0.25, 0.65 }, { 0.25, 0.05, 0.05, 0.75 })
-        end
-
-        local label = errorRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        SetFont(label, 11, "", {1, 0.45, 0.45, 1})
-        label:SetPoint("LEFT", errorRow, "LEFT", 8, 0)
-        label:SetPoint("RIGHT", errorRow, "RIGHT", -8, 0)
-        label:SetJustifyH("LEFT")
-        label:SetText(ns.L["Some search results failed to render. Check the Lua error log."])
-        table.insert(content._fontStrings, label)
+        errorRow:Show()
         y = y - 32
     end
 
@@ -5179,6 +5233,7 @@ function GUI:CreateMainFrame()
         ClampPanelToScreen()
         if QUI.QUICore and QUI.QUICore.db then
             QUI.QUICore.db.profile.configPanelScale = value
+            QUI.QUICore._preservedPanelScale = value
         end
         return value
     end
@@ -5891,6 +5946,25 @@ function GUI:AddFeatureTile(frame, config)
     return tile
 end
 
+local function installRegisterSection(targetBody)
+    targetBody._sections = {}
+    function targetBody:RegisterSection(id, label, frame)
+        if type(id) ~= "string" or id == "" or not frame then return end
+        local resolvedLabel = (type(label) == "string" and label ~= "") and label or id
+        for j, existing in ipairs(self._sections) do
+            if existing.id == id then
+                self._sections[j] = { id = id, label = resolvedLabel, frame = frame }
+                return
+            end
+        end
+        self._sections[#self._sections + 1] = {
+            id = id,
+            label = resolvedLabel,
+            frame = frame,
+        }
+    end
+end
+
 function GUI:BuildTilePage(frame, tile)
     if not tile or tile._built then return end
 
@@ -5973,22 +6047,7 @@ function GUI:BuildTilePage(frame, tile)
             body = container
         end
 
-        body._sections = {}
-        function body:RegisterSection(id, label, frame)
-            if type(id) ~= "string" or id == "" or not frame then return end
-            local resolvedLabel = (type(label) == "string" and label ~= "") and label or id
-            for j, existing in ipairs(self._sections) do
-                if existing.id == id then
-                    self._sections[j] = { id = id, label = resolvedLabel, frame = frame }
-                    return
-                end
-            end
-            self._sections[#self._sections + 1] = {
-                id = id,
-                label = resolvedLabel,
-                frame = frame,
-            }
-        end
+        installRegisterSection(body)
 
         tile.config.buildFunc(body)
 
@@ -6477,25 +6536,6 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
             contentRoot = CreateFrame("Frame", nil, container)
             contentRoot:SetPoint("TOPLEFT", preview, "BOTTOMLEFT", 0, -8)
             contentRoot:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-        end
-
-        local function installRegisterSection(targetBody)
-            targetBody._sections = {}
-            function targetBody:RegisterSection(id, label, frame)
-                if type(id) ~= "string" or id == "" or not frame then return end
-                local resolvedLabel = (type(label) == "string" and label ~= "") and label or id
-                for j, existing in ipairs(self._sections) do
-                    if existing.id == id then
-                        self._sections[j] = { id = id, label = resolvedLabel, frame = frame }
-                        return
-                    end
-                end
-                self._sections[#self._sections + 1] = {
-                    id = id,
-                    label = resolvedLabel,
-                    frame = frame,
-                }
-            end
         end
 
         local scrollFrame, contentBody
@@ -7240,15 +7280,18 @@ function GUI:PulseWidget(widget)
         pulse:SetAlpha(0)
         widget._pulseOverlay = pulse
     end
-    if pulse._anim then pulse._anim:Stop() end
-    local ag = pulse:CreateAnimationGroup()
-    local fadeIn = ag:CreateAnimation("Alpha")
-    fadeIn:SetFromAlpha(0); fadeIn:SetToAlpha(1); fadeIn:SetDuration(0.1); fadeIn:SetOrder(1)
-    local hold = ag:CreateAnimation("Alpha")
-    hold:SetFromAlpha(1); hold:SetToAlpha(1); hold:SetDuration(0.2); hold:SetOrder(2)
-    local fadeOut = ag:CreateAnimation("Alpha")
-    fadeOut:SetFromAlpha(1); fadeOut:SetToAlpha(0); fadeOut:SetDuration(0.3); fadeOut:SetOrder(3)
-    pulse._anim = ag
+    local ag = pulse._anim
+    if not ag then
+        ag = pulse:CreateAnimationGroup()
+        local fadeIn = ag:CreateAnimation("Alpha")
+        fadeIn:SetFromAlpha(0); fadeIn:SetToAlpha(1); fadeIn:SetDuration(0.1); fadeIn:SetOrder(1)
+        local hold = ag:CreateAnimation("Alpha")
+        hold:SetFromAlpha(1); hold:SetToAlpha(1); hold:SetDuration(0.2); hold:SetOrder(2)
+        local fadeOut = ag:CreateAnimation("Alpha")
+        fadeOut:SetFromAlpha(1); fadeOut:SetToAlpha(0); fadeOut:SetDuration(0.3); fadeOut:SetOrder(3)
+        pulse._anim = ag
+    end
+    ag:Stop()
     ag:Play()
 end
 

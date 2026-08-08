@@ -96,17 +96,4 @@ SurfaceFeatures:Register({
         resolve = ResolveContextMode,
         method = "SetContextMode",
     },
-    searchNavigate = function(entry, context)
-        local surface = GetSurface()
-        if surface and type(surface.NavigateSearchEntry) == "function" then
-            local handled = surface.NavigateSearchEntry(entry)
-            if handled and type(context) == "table"
-                and type(context.opts) == "table"
-                and type(surface.GetSearchRoot) == "function" then
-                context.opts.searchRoot = surface.GetSearchRoot()
-            end
-            return handled
-        end
-        return false
-    end,
 })

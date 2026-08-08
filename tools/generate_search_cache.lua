@@ -156,9 +156,6 @@ local function should_load_script(path)
     if path:match("^libs/") or path:match("^importstrings/") then
         return false
     end
-    if path == "QUI_Options/blizzard_options.lua" then
-        return false
-    end
 
     if path == "core/utils.lua"
         or path == "core/infobar_shared.lua"
@@ -2801,7 +2798,6 @@ local function capture_minimap_datatext_settings()
     capture_minimap_setting("Drawer Appearance", "Border Color", "colorpicker", "profile.minimap.buttonDrawer", "borderColor", { options = { noAlpha = true } })
 
     capture_datatext_setting("Panel Settings", "Enable Minimap Datatext", "toggle", "profile.datatext", "enabled")
-    capture_datatext_setting("Panel Settings", "Force Single Line", "toggle", "profile.datatext", "forceSingleLine")
     capture_datatext_setting("Panel Settings", "Panel Height (Per Row)", "slider", "profile.datatext", "height", { min = 18, max = 50, step = 1 })
     capture_datatext_setting("Panel Settings", "Background Transparency", "slider", "profile.datatext", "bgOpacity", { min = 0, max = 100, step = 5 })
     capture_datatext_setting("Panel Settings", "Border Size (0=hidden)", "slider", "profile.datatext", "borderSize", { min = 0, max = 8, step = 1 })

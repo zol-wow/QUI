@@ -1131,9 +1131,6 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
             rechargeActive, hasCharges, hasChargesRemaining, resolvedState)
     end
 
-    local stackTextWritesAllowed = CDMIcons.ShouldAllowStackTextWrites
-        and CDMIcons.ShouldAllowStackTextWrites() == true
-
     if hasRenderableCooldown ~= true or mode == "inactive" then
         CancelCooldownExpiryRefresh(icon)
         if mode == "aura"
@@ -1630,7 +1627,7 @@ local function GetMacroTooltipSpell(body)
     end
     if name then
         name = name:match("^(.-)%s*$")
-        if name and name ~= "" then return name:lower() end
+        if name and name ~= "" then return Helpers.FoldUTF8(name) end
     end
     return nil
 end
@@ -1652,12 +1649,12 @@ local function FindMacroForSpell(spellID, overrideSpellID)
     if spellID and Sources and Sources.QuerySpellInfo then
         local info = Sources.QuerySpellInfo(spellID)
         local name = info and info.name
-        if type(name) == "string" then names[name:lower()] = true end
+        if type(name) == "string" then names[Helpers.FoldUTF8(name)] = true end
     end
     if overrideSpellID and overrideSpellID ~= spellID and Sources and Sources.QuerySpellInfo then
         local info = Sources.QuerySpellInfo(overrideSpellID)
         local name = info and info.name
-        if type(name) == "string" then names[name:lower()] = true end
+        if type(name) == "string" then names[Helpers.FoldUTF8(name)] = true end
     end
     if not next(names) then
         _macroCache[cacheKey] = false
@@ -1695,7 +1692,7 @@ local function FindMacroForSpell(spellID, overrideSpellID)
             if body then
                 local tooltipSpell = GetMacroTooltipSpell(body)
                 if (not tooltipSpell) or names[tooltipSpell] then
-                    local lowerBody = body:lower()
+                    local lowerBody = Helpers.FoldUTF8(body)
                     for name in pairs(names) do
                         if lowerBody:find(name, 1, true) then
                             _macroCache[cacheKey] = macroName
@@ -2962,7 +2959,8 @@ local function UpdateIconCooldownOwned(icon)
             elseif not InCombatLockdown() and not runtimeHasCharges then
                 _resolverRuntimePolicy.HideIconStackText(icon, "api-stack-nil")
             end
-        elseif entry.type == "trinket" or entry.type == "slot" then
+        elseif stackTextWritesAllowed and not _chargeCountForwarded
+            and (entry.type == "trinket" or entry.type == "slot") then
             local stackVal
             local stackSource
             if resolvedMode == "aura" and icon._auraActive == true then
@@ -3001,7 +2999,7 @@ local function UpdateIconCooldownOwned(icon)
             elseif not InCombatLockdown() then
                 _resolverRuntimePolicy.HideIconStackText(icon, "item-aura-stack-nil")
             end
-        elseif entry.type ~= "item" then
+        elseif stackTextWritesAllowed and not _chargeCountForwarded and entry.type ~= "item" then
             local stackVal = GetAuraApplicationsForSpell(_runtimeSid, entry, icon)
             if _resolverRuntimePolicy.ValueIsPresent(stackVal) then
                 local displayText
@@ -3775,141 +3773,10 @@ local function RefreshAllIcon(icon, context)
     if entry then
         local containerDB = ncdm
             and (ncdm[entry.viewerType] or (ncdmContainers and ncdmContainers[entry.viewerType]))
-        local displayMode = containerDB and containerDB.iconDisplayMode or "always"
-        local entryIsAura = IsAuraEntry(entry)
 
-        if isHiddenOverride then
-            if icon:IsShown() then icon:Hide() end
-        elseif editMode then
-            icon:SetAlpha(1)
-            icon:Show()
-        elseif entryIsAura then
-            local isActive = icon._auraActive
-            local effectiveMode = displayMode
-            if effectiveMode == "combat" then
-                effectiveMode = inCombat and "always" or "active"
-            end
+        UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
 
-            if IsCustomBarContainer(containerDB) then
-                local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(
-                    icon, entry, containerDB, GetRefreshBatchTime())
-                local shouldShow = visibility.renderVisible
-                if effectiveMode == "active" and not isActive then
-                    local keepForGlow = false
-                    if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
-                        keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
-                    end
-                    shouldShow = shouldShow and keepForGlow
-                elseif effectiveMode ~= "always" and effectiveMode ~= "active" then
-                    shouldShow = false
-                end
-
-                local filterHidesNow = not visibility.layoutVisible
-                MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
-                ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
-                if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
-                    CDMIcons.DebugIconEvent(icon, "show",
-                        "shouldShow=", tostring(shouldShow),
-                        "shown=", tostring(icon:IsShown()),
-                        "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
-                        "displayMode=", tostring(displayMode),
-                        "effectiveMode=", tostring(effectiveMode),
-                        "filterHidden=", tostring(filterHidesNow),
-                        "auraActive=", tostring(isActive),
-                        "dynamic=", tostring(containerDB and containerDB.dynamicLayout))
-                end
-                _resolverRuntimePolicy.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
-                SyncCooldownBling(icon)
-            else
-                if effectiveMode == "always" then
-                    local rowOpacity = icon._rowOpacity or 1
-                    icon:SetAlpha(rowOpacity)
-                    if not icon:IsShown() then icon:Show() end
-                elseif effectiveMode == "active" then
-                    if isActive then
-                        local rowOpacity = icon._rowOpacity or 1
-                        icon:SetAlpha(rowOpacity)
-                        if not icon:IsShown() then icon:Show() end
-                    else
-                        if icon:IsShown() then icon:Hide() end
-                    end
-                end
-            end
-        else
-            local cooldownState = _resolverRuntimePolicy.ResolveIconCooldownActivityState(
-                icon, entry, containerDB, GetRefreshBatchTime())
-            local isOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
-
-            local effectiveMode = displayMode
-            if effectiveMode == "combat" then
-                effectiveMode = (UnitAffectingCombat and UnitAffectingCombat("player")) and "always" or "active"
-            end
-
-            if IsCustomBarContainer(containerDB) then
-                local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(
-                    icon, entry, containerDB, GetRefreshBatchTime())
-                local shouldShow = visibility.renderVisible
-                if effectiveMode == "active" and not visibility.isOnCooldown and not visibility.rechargeActive then
-                    local keepForGlow = false
-                    if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
-                        keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
-                    end
-                    shouldShow = shouldShow and keepForGlow
-                elseif effectiveMode ~= "always" and effectiveMode ~= "active" then
-                    shouldShow = false
-                end
-
-                local filterHidesNow = not visibility.layoutVisible
-                MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
-                ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
-                if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
-                    CDMIcons.DebugIconEvent(icon, "show",
-                        "shouldShow=", tostring(shouldShow),
-                        "shown=", tostring(icon:IsShown()),
-                        "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
-                        "effectiveMode=", tostring(effectiveMode),
-                        "filterHidden=", tostring(filterHidesNow),
-                        "dynamic=", tostring(containerDB and containerDB.dynamicLayout))
-                end
-                _resolverRuntimePolicy.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
-                SyncCooldownBling(icon)
-            else
-                local shouldShow
-                if effectiveMode == "always" then
-                    shouldShow = true
-                elseif effectiveMode == "active" then
-                    if isOnCD then
-                        shouldShow = true
-                    else
-                        local keepForGlow = false
-                        if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
-                            keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
-                        end
-                        shouldShow = keepForGlow
-                    end
-                else
-                    shouldShow = false
-                end
-
-                local filterHidesNow = ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
-                if filterHidesNow then shouldShow = false end
-                MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
-                ApplyIconVisibility(icon, shouldShow, containerDB and containerDB.dynamicLayout)
-                if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
-                    CDMIcons.DebugIconEvent(icon, "show",
-                        "shouldShow=", tostring(shouldShow),
-                        "shown=", tostring(icon:IsShown()),
-                        "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
-                        "effectiveMode=", tostring(effectiveMode),
-                        "filterHidden=", tostring(filterHidesNow),
-                        "isOnCD=", tostring(isOnCD),
-                        "isOnCooldown=", tostring(cooldownState and cooldownState.isOnCooldown),
-                        "rechargeActive=", tostring(cooldownState and cooldownState.rechargeActive),
-                        "hasChargesRemaining=", tostring(cooldownState and cooldownState.hasChargesRemaining),
-                        "dynamic=", tostring(containerDB and containerDB.dynamicLayout))
-                end
-            end
-
+        if not isHiddenOverride and not editMode and not IsAuraEntry(entry) then
             local greyOutDebuffs = containerDB and containerDB.greyOutInactive
             local greyOutBuffs = containerDB and containerDB.greyOutInactiveBuffs
             local shouldGreyOut = false
@@ -3982,7 +3849,6 @@ local function RefreshAllIcon(icon, context)
                 icon._greyedOut = nil
             end
         end
-        SyncCooldownBling(icon)
     end
 end
 

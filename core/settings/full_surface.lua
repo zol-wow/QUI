@@ -1188,10 +1188,14 @@ function FullSurface.BuildScrollTabBody(body, options)
     local tabBodyCache = {}
 
     local function GetTabCacheKey(tabKey)
-        if tabKey == nil then
-            return "__nil"
+        local key = (tabKey == nil) and "__nil" or tostring(tabKey)
+        if type(options.resolveVariantKey) == "function" then
+            local variant = options.resolveVariantKey(tabKey)
+            if variant ~= nil then
+                key = key .. "\31" .. tostring(variant)
+            end
         end
-        return tostring(tabKey)
+        return key
     end
 
     local function CreateCachedTabBody(tabKey)
@@ -1215,6 +1219,7 @@ function FullSurface.BuildScrollTabBody(body, options)
             container = container,
             content = content or container,
             scrollFrame = scrollFrame,
+            tabKey = tabKey,
             rendered = false,
         }
         tabBodyCache[cacheKey] = cached
@@ -1254,16 +1259,10 @@ function FullSurface.BuildScrollTabBody(body, options)
             return
         end
 
-        if tabKey ~= nil then
-            local cached = tabBodyCache[GetTabCacheKey(tabKey)]
-            if cached then
+        for _, cached in pairs(tabBodyCache) do
+            if tabKey == nil or cached.tabKey == tabKey then
                 cached.rendered = false
             end
-            return
-        end
-
-        for _, cached in pairs(tabBodyCache) do
-            cached.rendered = false
         end
     end
 

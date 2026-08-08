@@ -124,6 +124,15 @@ function NP.ResolveFont(plate)
     return path, outline
 end
 
+function NP.GetBarTexture(name)
+    local LSM = ns.LSM
+    if LSM and name then
+        local ok, path = pcall(LSM.Fetch, LSM, "statusbar", name, true)
+        if ok and path then return path end
+    end
+    return "Interface\\Buttons\\WHITE8x8"
+end
+
 function NP:GetPlateAnchor(unit)
     if not unit then return nil end
     local plate = NP.plates[unit]
@@ -158,6 +167,7 @@ NP.CopyDeep = CopyDeep
 local function IsArrayLike(t)
     return type(t) == "table" and rawget(t, 1) ~= nil
 end
+NP.IsArrayLike = IsArrayLike
 
 local function MergeLegacyPatch(dst, patch)
     for k, v in pairs(patch) do

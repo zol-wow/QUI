@@ -122,6 +122,22 @@ local function BuildNavigateProxy(spec)
     end
 end
 
+local function BuildSearchNavigateProxy(spec)
+    return function(entry, context)
+        local surface = ResolveSurface(spec)
+        if surface and type(surface.NavigateSearchEntry) == "function" then
+            local handled = surface.NavigateSearchEntry(entry)
+            if handled and type(context) == "table"
+                and type(context.opts) == "table"
+                and type(surface.GetSearchRoot) == "function" then
+                context.opts.searchRoot = surface.GetSearchRoot()
+            end
+            return handled
+        end
+        return false
+    end
+end
+
 function SurfaceFeatures:Register(spec)
     local registry = Settings.Registry
     if not registry or type(registry.RegisterFeature) ~= "function" then
@@ -160,6 +176,10 @@ function SurfaceFeatures:Register(spec)
 
     if type(feature.onNavigate) ~= "function" then
         feature.onNavigate = BuildNavigateProxy(spec)
+    end
+
+    if type(feature.searchNavigate) ~= "function" then
+        feature.searchNavigate = BuildSearchNavigateProxy(spec)
     end
 
     return registry:RegisterFeature(feature)

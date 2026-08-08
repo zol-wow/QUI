@@ -104,7 +104,6 @@ local sampleCount = 0
 local currentCPU = 0
 local currentCPUPct = 0
 local memoryHistory = {}
-local cpuHistory = {}
 
 local cpuAPITier
 local lastScriptCPU = 0
@@ -370,11 +369,7 @@ local function FormatMemory(kb)
     return format("%.1f KB", kb)
 end
 
-local function FormatTime(seconds)
-    local m = math.floor(seconds / 60)
-    local s = math.floor(seconds % 60)
-    return format("%d:%02d", m, s)
-end
+local FormatTime = Helpers.FormatMMSS
 
 local function PushHistory(history, value)
     history[#history + 1] = value
@@ -424,7 +419,6 @@ local function Sample()
     SnapshotModuleRates(SAMPLE_INTERVAL)
 
     PushHistory(memoryHistory, currentMem)
-    PushHistory(cpuHistory, currentCPUPct)
 end
 
 local function UpdateGraph()
@@ -768,7 +762,6 @@ local function ResetSession()
     lastScriptCPU = 0
     lastScriptTime = 0
     memoryHistory = {}
-    cpuHistory = {}
     wipe(eventCounts)
     wipe(eventRates)
     wipe(topEvents)

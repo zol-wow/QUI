@@ -36,9 +36,11 @@ local function ShowRealmNames()
     return (settings and settings.modifiers and settings.modifiers.showRealmNames) == true
 end
 
-local guidClassCache = {}
+local CLASS_CACHE_CAP = 2000
 
-local nameClassCache = {}
+local guidClassCache, guidClassCount = {}, 0
+
+local nameClassCache, nameClassCount = {}, 0
 
 local function CacheableName(name)
     if type(name) ~= "string" or name == "" or IsSecret(name) then return nil end
@@ -48,7 +50,14 @@ end
 local function StoreNameClass(name, englishClass)
     if IsSecret(englishClass) or type(englishClass) ~= "string" or englishClass == "" then return end
     local key = CacheableName(name)
-    if key then nameClassCache[key] = englishClass end
+    if not key then return end
+    if nameClassCache[key] == nil then
+        if nameClassCount >= CLASS_CACHE_CAP then
+            nameClassCache, nameClassCount = {}, 0
+        end
+        nameClassCount = nameClassCount + 1
+    end
+    nameClassCache[key] = englishClass
 end
 
 local function StoreNameClassAliases(name, englishClass)
@@ -95,6 +104,12 @@ end
 local function StoreGuidClass(guid, englishClass)
     if IsSecret(guid) or type(guid) ~= "string" or guid == "" then return end
     if IsSecret(englishClass) or type(englishClass) ~= "string" or englishClass == "" then return end
+    if guidClassCache[guid] == nil then
+        if guidClassCount >= CLASS_CACHE_CAP then
+            guidClassCache, guidClassCount = {}, 0
+        end
+        guidClassCount = guidClassCount + 1
+    end
     guidClassCache[guid] = englishClass
 end
 

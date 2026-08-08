@@ -99,31 +99,30 @@ settings = { types = { enemyNPC = typeSettings } }
 
 do
     local prewarmPlate = NewPlate()
-    NPAuras.Build(prewarmPlate)
+    NPAuras.ApplyAppearance(prewarmPlate)
     if prewarmPlate._quiAuraContainers ~= nil then
-        fail("Build on a plate with no unit (the genuine prewarm state) must not create containers")
+        fail("ApplyAppearance on a plate with no unit (the genuine prewarm state) must not create containers")
     end
 end
 
 do
     local buildOnlyPlate = NewPlate()
     buildOnlyPlate.unit = "nameplate2"
-    NPAuras.Build(buildOnlyPlate)
+    NPAuras.ApplyAppearance(buildOnlyPlate)
     local buildPool = buildOnlyPlate._quiAuraContainers
     if not buildPool or #buildPool ~= 3 then
-        fail("Build alone (no ApplyAppearance) must create the container pool, got "
+        fail("first ApplyAppearance must create the container pool, got "
             .. tostring(buildPool and #buildPool))
     end
     for i = 1, 3 do
-        if buildPool[i]._unit ~= "nameplate2" then fail("Build alone must bind the unit on container " .. i) end
-        if buildPool[i]._shown ~= true then fail("Build alone must show container " .. i) end
+        if buildPool[i]._unit ~= "nameplate2" then fail("first ApplyAppearance must bind the unit on container " .. i) end
+        if buildPool[i]._shown ~= true then fail("first ApplyAppearance must show container " .. i) end
     end
 end
 
 local plate = NewPlate()
 plate.unit = "nameplate1"
 
-NPAuras.Build(plate)
 NPAuras.ApplyAppearance(plate)
 
 local pool = plate._quiAuraContainers

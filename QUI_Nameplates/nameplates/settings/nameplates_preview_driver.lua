@@ -55,8 +55,10 @@ end
 local function SelectedType()
     if selectedType then return selectedType end
     local np = NP()
-    local order = np and np.PlateType and np.PlateType.ORDER
-    return (order and order[1]) or "enemyNPC"
+    local plateType = np and np.PlateType
+    return (plateType and plateType.DEFAULT_KEY)
+        or (plateType and plateType.ORDER and plateType.ORDER[1])
+        or "enemyNPC"
 end
 
 local function PreviewState()

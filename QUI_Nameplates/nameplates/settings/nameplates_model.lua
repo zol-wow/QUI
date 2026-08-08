@@ -4,9 +4,13 @@ local Model = ns.QUI_NameplatesSettingsModel or {}
 ns.QUI_NameplatesSettingsModel = Model
 local ModelKit = ns.Settings and ns.Settings.ModelKit
 
-local function ResolveTypeOrder()
+local function ResolvePlateType()
     local NP = ns.QUI_Nameplates
-    local plateType = NP and NP.PlateType
+    return NP and NP.PlateType or nil
+end
+
+local function ResolveTypeOrder()
+    local plateType = ResolvePlateType()
     local order = plateType and plateType.ORDER
     if type(order) == "table" then
         return order
@@ -49,7 +53,12 @@ function Model.NormalizeTypeKey(typeKey)
         return typeKey
     end
     local order = ResolveTypeOrder()
-    return order and order[1] or nil
+    if not order then return nil end
+    local default = ResolvePlateType().DEFAULT_KEY
+    for _, key in ipairs(order) do
+        if key == default then return default end
+    end
+    return order[1]
 end
 
 function Model.IsPerTypeTab(tabKey)

@@ -63,6 +63,20 @@ local function OnLeave()
     GameTooltip:Hide()
 end
 
+local function SetSecretPercentText(text, powerName)
+    if not text then return end
+    if type(UnitPowerPercent) ~= "function" or not (CurveConstants and CurveConstants.ScaleTo100) then
+        text:SetText("") -- @secret-policy: empty-text-degrade
+        return
+    end
+    local perc = UnitPowerPercent("player", ALTERNATE_POWER_INDEX, false, CurveConstants.ScaleTo100)
+    if powerName then
+        text:SetFormattedText("%s: %.0f%%", powerName, perc) -- @secret-policy: sink-passthrough
+    else
+        text:SetFormattedText("%.0f%%", perc) -- @secret-policy: sink-passthrough
+    end
+end
+
 local function UpdateBar(self)
     local barInfo = GetUnitPowerBarInfo("player")
 
@@ -78,6 +92,7 @@ local function UpdateBar(self)
             -- @secret-policy: sink-passthrough — StatusBar SetMinMaxValues/
             self:SetMinMaxValues(barInfo.minPower or 0, maxPower)
             self:SetValue(power)
+            SetSecretPercentText(self.text, powerName)
             self:Show()
             return
         end

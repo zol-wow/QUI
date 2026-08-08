@@ -456,65 +456,10 @@ local function SetCursorFollowActive(tooltip, active)
 end
 
 local function HasActiveWidgetContainer(tooltip)
-    if Helpers.HasTaintedWidgetContainer then
-        TooltipDebugCount("qol.widgetScan")
-        local active = Helpers.HasTaintedWidgetContainer(tooltip)
-        if active then TooltipDebugCount("qol.widgetHit") end
-        return active
-    end
-
-    if not tooltip or not tooltip.GetChildren or not tooltip.GetNumChildren then return false end
     TooltipDebugCount("qol.widgetScan")
-
-    local okCount, numChildren = pcall(tooltip.GetNumChildren, tooltip)
-    if not okCount or not numChildren then return false end
-
-    for i = 1, numChildren do
-        local child = select(i, tooltip:GetChildren())
-        if child and (child.RegisterForWidgetSet or child.shownWidgetCount ~= nil or child.widgetSetID ~= nil) then
-            local widgetSetID = child.widgetSetID
-            if widgetSetID ~= nil then
-                TooltipDebugCount("qol.widgetHit")
-                return true
-            end
-
-            local shownWidgetCount = child.shownWidgetCount
-            if shownWidgetCount ~= nil then
-                if Helpers.IsSecretValue(shownWidgetCount) then
-                    TooltipDebugCount("qol.widgetHit")
-                    return true -- @secret-policy: keep-native-when-unknown
-                end
-                shownWidgetCount = tonumber(shownWidgetCount)
-                if shownWidgetCount and shownWidgetCount > 0 then
-                    TooltipDebugCount("qol.widgetHit")
-                    return true
-                end
-            end
-
-            local numWidgetsShowing = child.numWidgetsShowing
-            if numWidgetsShowing ~= nil then
-                if Helpers.IsSecretValue(numWidgetsShowing) then
-                    TooltipDebugCount("qol.widgetHit")
-                    return true -- @secret-policy: keep-native-when-unknown
-                end
-                numWidgetsShowing = tonumber(numWidgetsShowing)
-                if numWidgetsShowing and numWidgetsShowing > 0 then
-                    TooltipDebugCount("qol.widgetHit")
-                    return true
-                end
-            end
-
-            if child.IsShown then
-                local okShown, shown = pcall(child.IsShown, child)
-                if okShown and shown then
-                    TooltipDebugCount("qol.widgetHit")
-                    return true
-                end
-            end
-        end
-    end
-
-    return false
+    local active = Helpers.HasTaintedWidgetContainer(tooltip)
+    if active then TooltipDebugCount("qol.widgetHit") end
+    return active
 end
 
 local function HasActiveMoneyFrame(tooltip)
@@ -679,9 +624,6 @@ local function RefreshTooltipLayout(tooltip)
             return
         end
         if HasActiveWidgetContainer(tooltip) then
-            return
-        end
-        if Helpers.HasTaintedWidgetContainer and Helpers.HasTaintedWidgetContainer(tooltip) then
             return
         end
     end
@@ -1585,7 +1527,7 @@ local function AddUnitTooltipInfoToTooltip(tooltip, unit, settings)
         state.ratingResolved = true
         if rating then
             EnsureTooltipInfoSpacer(tooltip, state)
-            AddTooltipInfoLine(tooltip, ns.L["M+ Rating"], string.format("%.1f", rating), 0.7, 0.82, 1, r or 1, g or 1, b or 1)
+            AddTooltipInfoLine(tooltip, ns.L["M+ Rating"], string.format("%d", rating), 0.7, 0.82, 1, r or 1, g or 1, b or 1)
             state.ratingAdded = true
             TooltipDebugCount("qol.ratingAdded")
             changed = true
@@ -1889,7 +1831,7 @@ local function SetupTooltipHook()
 
     local connectedRealmSet
     local function NormalizeRealmName(name)
-        return (name:gsub("[%s%-']", "")):lower()
+        return Helpers.FoldUTF8((name:gsub("[%s%-']", "")))
     end
     local function IsConnectedRealm(realm)
         if not connectedRealmSet then
@@ -2421,13 +2363,6 @@ local function SetupTooltipHook()
         end
     end
 
-    local function TryAddAuraSpellIDFromTooltipData(tooltip, data)
-        local spellID = ResolveSpellIDFromTooltipData(tooltip, data, true)
-        if spellID then
-            AddSpellIDToTooltip(tooltip, spellID, data, false)
-        end
-    end
-
     local function TryAddItemIDFromTooltipData(tooltip, data)
         local itemID = ResolveItemIDFromTooltipData(tooltip, data, true)
         if itemID then
@@ -2455,7 +2390,7 @@ local function SetupTooltipHook()
             TooltipDebugCount("qol.auraPost")
             if InCombatLockdown() then return end
             if not ShouldProcessTooltipIDs(tooltip) then return end
-            ns.SafeCall("bulkhead", TryAddAuraSpellIDFromTooltipData, tooltip, data)
+            ns.SafeCall("bulkhead", TryAddSpellIDFromTooltipData, tooltip, data)
         end)
     end
 

@@ -183,4 +183,47 @@ do
     _G.EditModePresetLayoutManager = nil
 end
 
+---------------------------------------------------------------------------
+-- Loop breaker: forced reload at most once per unresolved correction, then
+-- manual instructions each login until the layout comes back clean.
+---------------------------------------------------------------------------
+local staleLayout = function()
+    return { activeLayout = 1, layouts = {
+        { systems = mkSystems({ [1] = { { setting = ENUMS.visSetting, value = 2 } } }) },
+    } }
+end
+
+do
+    local ns4 = {}
+    savedLayouts, popupsShown = {}, {}
+    _G.QUIDB = {}
+    layoutInfoToReturn = staleLayout()
+    loadChunk("QUI_CDM/cdm/cdm_editmode_policy.lua", "cdm_editmode_policy.lua")("QUI", ns4)
+    eventHandler(nil, "PLAYER_ENTERING_WORLD")
+    assert(#savedLayouts == 1, "first unresolved correction -> save attempted")
+    assert(popupsShown[1] == "QUI_CDM_EDITMODE_RELOAD", "first unresolved correction -> forced reload prompt")
+    assert(_G.QUIDB.cdmEditModeSavePending == true, "save-pending flag latched")
+end
+
+do
+    local ns5 = {}
+    savedLayouts, popupsShown = {}, {}
+    layoutInfoToReturn = staleLayout()
+    loadChunk("QUI_CDM/cdm/cdm_editmode_policy.lua", "cdm_editmode_policy.lua")("QUI", ns5)
+    eventHandler(nil, "PLAYER_ENTERING_WORLD")
+    assert(popupsShown[1] == "QUI_CDM_EDITMODE_MANUAL", "still unresolved next session -> manual instructions, no reload loop")
+    assert(_G.QUIDB.cdmEditModeSavePending == true, "save-pending flag stays latched while unresolved")
+end
+
+do
+    local ns6 = {}
+    savedLayouts, popupsShown = {}, {}
+    layoutInfoToReturn = { activeLayout = 1, layouts = { { systems = mkSystems({}) } } }
+    loadChunk("QUI_CDM/cdm/cdm_editmode_policy.lua", "cdm_editmode_policy.lua")("QUI", ns6)
+    eventHandler(nil, "PLAYER_ENTERING_WORLD")
+    assert(#savedLayouts == 0 and #popupsShown == 0, "settled layout -> no save, no prompt")
+    assert(_G.QUIDB.cdmEditModeSavePending == nil, "settled layout re-arms the loop breaker")
+    _G.QUIDB = nil
+end
+
 print("OK: cdm_editmode_policy_test")

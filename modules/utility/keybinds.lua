@@ -136,10 +136,7 @@ local function GetViewerKeybindContext(viewerName)
 end
 
 local function GetCurrentSpecID()
-    local specIndex = GetSpecialization()
-    if not specIndex then return 0 end
-    local specID = GetSpecializationInfo(specIndex)
-    return specID or 0
+    return QUI.Helpers.GetCurrentSpecID() or 0
 end
 
 local function GetSharedOverrides()
@@ -227,6 +224,22 @@ local function GetBindingNameFromActionSlot(slot)
     return nil
 end
 
+local BAR_BUTTON_BINDINGS = {
+    { "^QUI_Bar1Button(%d+)$", "ACTIONBUTTON" },
+    { "^QUI_Bar2Button(%d+)$", "MULTIACTIONBAR1BUTTON" },
+    { "^QUI_Bar3Button(%d+)$", "MULTIACTIONBAR2BUTTON" },
+    { "^QUI_Bar4Button(%d+)$", "MULTIACTIONBAR3BUTTON" },
+    { "^QUI_Bar5Button(%d+)$", "MULTIACTIONBAR4BUTTON" },
+    { "^QUI_Bar6Button(%d+)$", "MULTIACTIONBAR5BUTTON" },
+    { "^QUI_Bar7Button(%d+)$", "MULTIACTIONBAR6BUTTON" },
+    { "^QUI_Bar8Button(%d+)$", "MULTIACTIONBAR7BUTTON" },
+    { "ActionButton(%d+)$", "ACTIONBUTTON" },
+    { "MultiBarBottomLeftButton(%d+)$", "MULTIACTIONBAR1BUTTON" },
+    { "MultiBarBottomRightButton(%d+)$", "MULTIACTIONBAR2BUTTON" },
+    { "MultiBarRightButton(%d+)$", "MULTIACTIONBAR3BUTTON" },
+    { "MultiBarLeftButton(%d+)$", "MULTIACTIONBAR4BUTTON" },
+}
+
 local function GetKeybindFromActionButton(button, actionSlot)
     if not button then return nil end
 
@@ -258,85 +271,17 @@ local function GetKeybindFromActionButton(button, actionSlot)
             return FormatKeybind(key1)
         end
 
-        if buttonName:match("^QUI_Bar1Button(%d+)$") then
-            local num = tonumber(buttonName:match("^QUI_Bar1Button(%d+)$"))
+        for i = 1, #BAR_BUTTON_BINDINGS do
+            local entry = BAR_BUTTON_BINDINGS[i]
+            local num = buttonName:match(entry[1])
             if num then
-                key1 = GetBindingKey("ACTIONBUTTON" .. num)
+                key1 = GetBindingKey(entry[2] .. num)
                 if key1 then return FormatKeybind(key1) end
+                return nil
             end
-        elseif buttonName:match("^QUI_Bar2Button(%d+)$") then
-            local num = tonumber(buttonName:match("^QUI_Bar2Button(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR1BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("^QUI_Bar3Button(%d+)$") then
-            local num = tonumber(buttonName:match("^QUI_Bar3Button(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR2BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("^QUI_Bar4Button(%d+)$") then
-            local num = tonumber(buttonName:match("^QUI_Bar4Button(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR3BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("^QUI_Bar5Button(%d+)$") then
-            local num = tonumber(buttonName:match("^QUI_Bar5Button(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR4BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("^QUI_Bar6Button(%d+)$") then
-            local num = tonumber(buttonName:match("^QUI_Bar6Button(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR5BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("^QUI_Bar7Button(%d+)$") then
-            local num = tonumber(buttonName:match("^QUI_Bar7Button(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR6BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("^QUI_Bar8Button(%d+)$") then
-            local num = tonumber(buttonName:match("^QUI_Bar8Button(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR7BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("ActionButton(%d+)$") then
-            local num = tonumber(buttonName:match("ActionButton(%d+)$"))
-            if num then
-                key1 = GetBindingKey("ACTIONBUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("MultiBarBottomLeftButton(%d+)$") then
-            local num = tonumber(buttonName:match("MultiBarBottomLeftButton(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR1BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("MultiBarBottomRightButton(%d+)$") then
-            local num = tonumber(buttonName:match("MultiBarBottomRightButton(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR2BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("MultiBarRightButton(%d+)$") then
-            local num = tonumber(buttonName:match("MultiBarRightButton(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR3BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("MultiBarLeftButton(%d+)$") then
-            local num = tonumber(buttonName:match("MultiBarLeftButton(%d+)$"))
-            if num then
-                key1 = GetBindingKey("MULTIACTIONBAR4BUTTON" .. num)
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("^BT4Button(%d+)$") then
+        end
+
+        if buttonName:match("^BT4Button(%d+)$") then
             local num = tonumber(buttonName:match("^BT4Button(%d+)$"))
             if num then
                 key1 = GetBindingKey("CLICK " .. buttonName .. ":Keybind")
@@ -1642,8 +1587,8 @@ local function ApplyRotationHelperToIcon(icon, settings, nextSpellID, nextBaseSp
                 isNextSpell = true
             end
         end
-        if not isNextSpell and iconSpellID then
-            local okBase, resolvedBase = pcall(FindBaseSpellByID, iconSpellID)
+        if not isNextSpell and iconSpellID and C_SpellBook and C_SpellBook.FindBaseSpellByID then
+            local okBase, resolvedBase = pcall(C_SpellBook.FindBaseSpellByID, iconSpellID)
             if okBase and resolvedBase and resolvedBase ~= iconSpellID then
                 if resolvedBase == nextSpellID or (nextBaseSpellID and resolvedBase == nextBaseSpellID) then
                     isNextSpell = true
@@ -1696,20 +1641,11 @@ local function UpdateViewerRotationHelper(viewerName, nextSpellID, nextBaseSpell
         end
     end
 
-    local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
-    if not viewer then
-        ProcessReanchored()
-        return
+    local children = GetViewerChildren(viewerName)
+    if not children then return end
+    for i = 1, #children do
+        ApplyRotationHelperToIcon(children[i], settings, nextSpellID, nextBaseSpellID)
     end
-    local container = viewer.viewerFrame or viewer
-    local n = select('#', container:GetChildren())
-    for i = 1, n do
-        local child = select(i, container:GetChildren())
-        if child then
-            ApplyRotationHelperToIcon(child, settings, nextSpellID, nextBaseSpellID)
-        end
-    end
-    ProcessReanchored()
 end
 
 local function UpdateAllRotationHelpers(overrideSpellID, baseSpellID)

@@ -526,7 +526,8 @@ local function ApplyHideSettings()
         if hideErrors and hideInfo then
             UIErrorsFrame:Hide()
             UIErrorsFrame:EnableMouse(false)
-            UIErrorsFrame:UnregisterAllEvents()
+            UIErrorsFrame:UnregisterEvent("UI_ERROR_MESSAGE")
+            UIErrorsFrame:UnregisterEvent("UI_INFO_MESSAGE")
         else
             UIErrorsFrame:Show()
             UIErrorsFrame:EnableMouse(false)

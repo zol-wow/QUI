@@ -409,7 +409,7 @@ RebuildBrowseRows = function(filter)
     local opts = browse.opts
     local accent = popup._accent
     local text = popup._text
-    local lower = (type(filter) == "string" and filter ~= "" and filter:lower()) or nil
+    local lower = (type(filter) == "string" and filter ~= "" and ns.Helpers.FoldUTF8(filter)) or nil
     local headerIndex, spellIndex = 0, 0
     local y = 0
     local seen = {}
@@ -421,7 +421,7 @@ RebuildBrowseRows = function(filter)
             if id and not seen[id] then
                 local name = spell.name or GetSpellName(id) or (ns.L["Spell"] .. " " .. tostring(id))
                 if not lower
-                    or name:lower():find(lower, 1, true)
+                    or ns.Helpers.FoldUTF8(name):find(lower, 1, true)
                     or tostring(id):find(lower, 1, true) then
                     seen[id] = true
                     if not headerPlaced then
@@ -526,7 +526,7 @@ function SpellList.CloseBrowsePopup(prefix)
     end
 end
 
-local function RebuildSpellToggleRows(container, listTable, presets, onChange)
+local function RebuildSpellToggleRows(container, listTable, onChange)
     if type(listTable) ~= "table" then
         container:SetHeight(1)
         return
@@ -540,145 +540,55 @@ local function RebuildSpellToggleRows(container, listTable, presets, onChange)
     container._rows = container._rows or {}
 
     local rowHeight = 26
-    local headerHeight = 22
     local y = 0
     local rowIndex = 0
-    local presetSpellIds = {}
-
-    for _, preset in ipairs(presets or {}) do
-        rowIndex = rowIndex + 1
-        local headerRow = container._rows[rowIndex]
-        if not headerRow then
-            headerRow = CreateFrame("Frame", nil, container)
-            headerRow:SetHeight(headerHeight)
-            headerRow.text = headerRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            headerRow.text:SetPoint("LEFT", 2, 0)
-            headerRow.text:SetJustifyH("LEFT")
-            container._rows[rowIndex] = headerRow
-        end
-
-        if headerRow.toggle then headerRow.toggle:Hide() end
-        if headerRow.removeBtn then headerRow.removeBtn:Hide() end
-        headerRow.text:SetText("|cFF56D1FF" .. preset.name .. "|r")
-        headerRow:SetPoint("TOPLEFT", 0, y)
-        headerRow:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-        headerRow:Show()
-        y = y - headerHeight
-
-        for _, spell in ipairs(preset.spells or {}) do
-            presetSpellIds[spell.id] = true
-            rowIndex = rowIndex + 1
-            local row = container._rows[rowIndex]
-            if not row then
-                row = CreateFrame("Frame", nil, container)
-                row:SetHeight(rowHeight)
-                row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                row.text:SetPoint("LEFT", 8, 0)
-                row.text:SetPoint("RIGHT", row, "RIGHT", -44, 0)
-                row.text:SetJustifyH("LEFT")
-                row.toggle = CreateMiniToggle(row)
-                row.toggle:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-                container._rows[rowIndex] = row
-            end
-
-            row:SetPoint("TOPLEFT", 0, y)
-            row:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-            row.text:SetText(spell.name or GetSpellName(spell.id) or (ns.L["Spell"] .. " " .. spell.id))
-            if row.toggle then row.toggle:Show() end
-            if row.removeBtn then row.removeBtn:Hide() end
-
-            local spellId = spell.id
-            row.toggle:SetToggleState(listTable[spellId] == true)
-            row.toggle:SetScript("OnClick", function()
-                local enabled = listTable[spellId] ~= true
-                if enabled then
-                    listTable[spellId] = true
-                else
-                    listTable[spellId] = nil
-                end
-                row.toggle:SetToggleState(enabled)
-                if onChange then
-                    onChange()
-                end
-            end)
-
-            row:Show()
-            y = y - rowHeight
-        end
-    end
 
     local extras = {}
     for spellId in pairs(listTable) do
-        if not presetSpellIds[spellId] then
-            extras[#extras + 1] = spellId
-        end
+        extras[#extras + 1] = spellId
     end
     table.sort(extras)
 
-    if #extras > 0 then
-        if presets and #presets > 0 then
-            rowIndex = rowIndex + 1
-            local headerRow = container._rows[rowIndex]
-            if not headerRow then
-                headerRow = CreateFrame("Frame", nil, container)
-                headerRow:SetHeight(headerHeight)
-                headerRow.text = headerRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                headerRow.text:SetPoint("LEFT", 2, 0)
-                headerRow.text:SetJustifyH("LEFT")
-                container._rows[rowIndex] = headerRow
-            end
-
-            if headerRow.toggle then headerRow.toggle:Hide() end
-            if headerRow.removeBtn then headerRow.removeBtn:Hide() end
-            headerRow.text:SetText("|cFF56D1FF" .. ns.L["Other"] .. "|r")
-            headerRow:SetPoint("TOPLEFT", 0, y)
-            headerRow:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-            headerRow:Show()
-            y = y - headerHeight
-        end
-
-        for _, spellId in ipairs(extras) do
-            rowIndex = rowIndex + 1
-            local row = container._rows[rowIndex]
-            if not row then
-                row = CreateFrame("Frame", nil, container)
-                row:SetHeight(rowHeight)
-                row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                row.text:SetPoint("LEFT", 8, 0)
-                row.text:SetJustifyH("LEFT")
-                row.removeBtn = CreateFrame("Button", nil, row)
-                row.removeBtn:SetSize(18, 18)
-                row.removeBtn:SetPoint("RIGHT", -2, 0)
-                row.removeBtnText = row.removeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                row.removeBtnText:SetPoint("CENTER")
-                row.removeBtnText:SetText("x")
-                row.removeBtnText:SetTextColor(0.8, 0.3, 0.3)
-                row.removeBtn:SetScript("OnEnter", function()
-                    row.removeBtnText:SetTextColor(1, 0.4, 0.4)
-                end)
-                row.removeBtn:SetScript("OnLeave", function()
-                    row.removeBtnText:SetTextColor(0.8, 0.3, 0.3)
-                end)
-                container._rows[rowIndex] = row
-            end
-
-            row:SetPoint("TOPLEFT", 0, y)
-            row:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-            row.text:SetPoint("RIGHT", row.removeBtn, "LEFT", -4, 0)
-            row.text:SetText(GetSpellName(spellId) or (ns.L["Spell"] .. " " .. spellId))
-            if row.toggle then row.toggle:Hide() end
-            if row.removeBtn then row.removeBtn:Show() end
-            row.removeBtn:SetScript("OnClick", function()
-                listTable[spellId] = nil
-                RebuildSpellToggleRows(container, listTable, presets, onChange)
-                if onChange then
-                    onChange()
-                end
+    for _, spellId in ipairs(extras) do
+        rowIndex = rowIndex + 1
+        local row = container._rows[rowIndex]
+        if not row then
+            row = CreateFrame("Frame", nil, container)
+            row:SetHeight(rowHeight)
+            row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.text:SetPoint("LEFT", 8, 0)
+            row.text:SetJustifyH("LEFT")
+            row.removeBtn = CreateFrame("Button", nil, row)
+            row.removeBtn:SetSize(18, 18)
+            row.removeBtn:SetPoint("RIGHT", -2, 0)
+            row.removeBtnText = row.removeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.removeBtnText:SetPoint("CENTER")
+            row.removeBtnText:SetText("x")
+            row.removeBtnText:SetTextColor(0.8, 0.3, 0.3)
+            row.removeBtn:SetScript("OnEnter", function()
+                row.removeBtnText:SetTextColor(1, 0.4, 0.4)
             end)
-
-            row:Show()
-            y = y - rowHeight
+            row.removeBtn:SetScript("OnLeave", function()
+                row.removeBtnText:SetTextColor(0.8, 0.3, 0.3)
+            end)
+            container._rows[rowIndex] = row
         end
+
+        row:SetPoint("TOPLEFT", 0, y)
+        row:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+        row.text:SetPoint("RIGHT", row.removeBtn, "LEFT", -4, 0)
+        row.text:SetText(GetSpellName(spellId) or (ns.L["Spell"] .. " " .. spellId))
+        row.removeBtn:Show()
+        row.removeBtn:SetScript("OnClick", function()
+            listTable[spellId] = nil
+            RebuildSpellToggleRows(container, listTable, onChange)
+            if onChange then
+                onChange()
+            end
+        end)
+
+        row:Show()
+        y = y - rowHeight
     end
 
     for i = rowIndex + 1, #container._rows do
@@ -712,7 +622,7 @@ function SpellList.CreateListFrame(parent, listTable, presets, onChange, onLayou
     frame:SetHeight(1)
     frame._onLayoutChanged = onLayoutChanged
     function frame:Refresh()
-        RebuildSpellToggleRows(self, listTable, presets, onChange)
+        RebuildSpellToggleRows(self, listTable, onChange)
     end
     frame:Refresh()
     return frame

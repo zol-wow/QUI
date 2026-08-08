@@ -941,6 +941,7 @@ local function ReleaseBar(bar)
     bar._auraInstanceID = nil
     bar._blzChild = nil
     bar._blzCooldownID = nil
+    bar._blzChildMissAt = nil
     bar._cSideFill = nil
     bar._preferDurObjFill = nil
     bar._forceTimerDurationRebind = nil
@@ -1047,6 +1048,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
                     bar._spellID = entry.overrideSpellID or entry.spellID or entry.id
                     bar._blzChild = entry._blzFrame or bar._blzChild
                     bar._blzCooldownID = entry._blzFrame and entry.cooldownID or bar._blzCooldownID
+                    if entry._blzFrame then bar._blzChildMissAt = nil end
                 end
                 self:UpdateOwnedBarAura(bar)
             end
@@ -1069,6 +1071,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
 
         bar._blzChild = entry._blzFrame
         bar._blzCooldownID = entry._blzFrame and entry.cooldownID or nil
+        bar._blzChildMissAt = nil
 
         if bar.IconTexture and spellID and not bar._isTotemInstance then
             local texID = entry.iconTexture
@@ -1369,8 +1372,9 @@ local function FindBlzChildByCooldownID(cooldownID)
     if not viewer or not viewer.GetChildren then return nil end
     local ok, numChildren = pcall(viewer.GetNumChildren, viewer)
     if not ok or not numChildren then return nil end
+    local children = { viewer:GetChildren() }
     for ci = 1, numChildren do
-        local child = select(ci, viewer:GetChildren())
+        local child = children[ci]
         if child and child.Bar then
             local cid = child.cooldownID
             if not (issecretvalue and issecretvalue(cid)) and cid == cooldownID then
@@ -1380,6 +1384,8 @@ local function FindBlzChildByCooldownID(cooldownID)
     end
     return nil
 end
+
+local BLZ_CHILD_MISS_RETRY = 0.25
 
 local function GetPairedBlzChild(bar)
     local wantCid = bar._blzCooldownID
@@ -1391,8 +1397,14 @@ local function GetPairedBlzChild(bar)
             return blz
         end
     end
+    local now = GetTime()
+    local missAt = bar._blzChildMissAt
+    if missAt and (now - missAt) < BLZ_CHILD_MISS_RETRY then
+        return nil
+    end
     local found = FindBlzChildByCooldownID(wantCid)
     bar._blzChild = found
+    bar._blzChildMissAt = not found and now or nil
     return found
 end
 
@@ -1827,12 +1839,6 @@ function CDMBars:LayoutBars(container, settings)
             if effectiveDisplayMode == "active" then
                 if not bar._active then
                     shouldShow = false
-                end
-            elseif effectiveDisplayMode == "always" then
-                if not bar._active then
-                    if inactiveMode == "hide" and not reserveSlotWhenInactive then
-                        shouldShow = false
-                    end
                 end
             else
                 if not bar._active then

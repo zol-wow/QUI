@@ -275,17 +275,23 @@ function MPlusProgress:UpdateNameplates()
         return
     end
 
+    local handled = State.handledNameplateUnits
+    if handled then wipe(handled) else handled = {}; State.handledNameplateUnits = handled end
+
     if C_NamePlate and C_NamePlate.GetNamePlates then
         for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
             local unit = GetPlateUnitToken(plate)
             if unit then
+                handled[unit] = true
                 self:UpdateNameplateValue(unit)
             end
         end
     end
 
     for unit in pairs(State.activeNameplates) do
-        self:UpdateNameplateValue(unit)
+        if not handled[unit] then
+            self:UpdateNameplateValue(unit)
+        end
     end
 end
 

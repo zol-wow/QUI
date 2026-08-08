@@ -38,7 +38,6 @@ local lastVigorCharges = -1
 local lastMaxCharges = -1
 local lastSecondWind = -1
 local isGliding = false
-local canGlide = false
 local groundedTime = 0
 local fadeStart = 0
 local fadeStartAlpha = 1
@@ -897,7 +896,6 @@ local function UpdateVisibility()
 
     local gliding, canGlideNow, _ = GetGlidingInfo()
     isGliding = gliding
-    canGlide = canGlideNow
 
     local visibility = settings.visibility or "FLYING_ONLY"
     local fadeDelay = settings.fadeDelay or 1
@@ -1231,7 +1229,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
         RefreshSkyridingState()
     elseif event == "PLAYER_CAN_GLIDE_CHANGED" then
-        canGlide = arg1
         if arg1 then EnsureSkyridingFrame() end
         if skyridingFrame then UpdateVisibility() end
     elseif event == "PLAYER_IS_GLIDING_CHANGED" then

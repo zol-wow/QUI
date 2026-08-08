@@ -197,7 +197,7 @@ check("subsection headers use the normal QUI text palette",
     and editor:find("fs:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)", 1, true) ~= nil)
 check("subsection toggles locally reflow retained detail rows",
     editor:find("ctx.BeginDetailSection(header, FORM_ROW, sectionKey)", 1, true) ~= nil
-    and editor:find("ctx.RelayoutDetail()", 1, true) ~= nil
+    and editor:find("RelayoutDetail()", 1, true) ~= nil
     and editor:find("ctx.RelayoutList()", 1, true) ~= nil)
 check("What to Show Custom latches manual mode and opens Advanced",
     editor:find("state.manualCustom = true", 1, true) ~= nil

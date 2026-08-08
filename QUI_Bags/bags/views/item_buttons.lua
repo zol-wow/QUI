@@ -11,11 +11,8 @@ local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 
 local function CJKFont(fs, p, s, f)
-    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
-        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
-    else
-        fs:SetFont(p, s, f)
-    end
+    if Bags.CJKFont then return Bags.CJKFont(fs, p, s, f) end
+    fs:SetFont(p, s, f)
 end
 
 local ItemButtons = {}
@@ -412,6 +409,10 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
 end
 
 local unusableCache = {}
+
+function ItemButtons.InvalidateUnusableCache()
+    wipe(unusableCache)
+end
 
 function ItemButtons.IsUnusable(bagID, slot, link)
     if link and unusableCache[link] ~= nil then return unusableCache[link] end

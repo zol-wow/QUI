@@ -891,10 +891,7 @@ function UIKit.CreateButton(parent, opts)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(opts.width or 120, opts.height or 22)
 
-    if not button._pixelBorderReady then
-        UIKit.CreateBorderLines(button)
-        button._pixelBorderReady = true
-    end
+    UIKit.CreateBorderLines(button)
 
     local hoverBg = button:CreateTexture(nil, "BACKGROUND")
     hoverBg:SetAllPoints(button)
@@ -1972,8 +1969,9 @@ end
 
 function SkinBase.StripTextures(frame)
     if not frame then return end
-    for i = 1, frame:GetNumRegions() do
-        local region = select(i, frame:GetRegions())
+    local regions = { frame:GetRegions() }
+    for i = 1, #regions do
+        local region = regions[i]
         if region and region:IsObjectType("Texture") then
             region:SetAlpha(0)
         end
@@ -1982,8 +1980,9 @@ end
 
 function SkinBase.StripTexturesExcept(frame, preserve)
     if not frame or not frame.GetNumRegions then return end
-    for i = 1, select("#", frame:GetRegions()) do
-        local region = select(i, frame:GetRegions())
+    local regions = { frame:GetRegions() }
+    for i = 1, #regions do
+        local region = regions[i]
         if region and region.IsObjectType and region:IsObjectType("Texture") then
             if not (preserve and preserve[region]) then
                 region:SetAlpha(0)
@@ -2077,8 +2076,9 @@ end
 
 function SkinBase.ClampAllTextures(frame)
     if not frame or not frame.GetNumRegions then return end
-    for i = 1, frame:GetNumRegions() do
-        local region = select(i, frame:GetRegions())
+    local regions = { frame:GetRegions() }
+    for i = 1, #regions do
+        local region = regions[i]
         if region and region.IsObjectType and region:IsObjectType("Texture") then
             SkinBase.ClampTextureHidden(region)
         end
@@ -2093,8 +2093,9 @@ function SkinBase.KillNineSlice(nineSlice, durable)
     if not nineSlice then return end
 
     if nineSlice.GetNumRegions then
-        for i = 1, select("#", nineSlice:GetRegions()) do
-            local region = select(i, nineSlice:GetRegions())
+        local regions = { nineSlice:GetRegions() }
+        for i = 1, #regions do
+            local region = regions[i]
             if region and region.IsObjectType and region:IsObjectType("Texture") then
                 if region.SetTexture then region:SetTexture(nil) end
                 if region.SetShown then region:SetShown(false) end

@@ -251,7 +251,7 @@ local function MigLog(fmt, ...)
     _G.QUI_MIGRATION_LOG[#_G.QUI_MIGRATION_LOG + 1] = line
 end
 
-local function ResetCastbarPreviewModes(profile)
+function Migrations.ResetCastbarPreviewModes(profile)
     if not profile or not profile.quiUnitFrames then
         return
     end
@@ -1476,7 +1476,7 @@ function Migrations.RunOnProfile(profile)
         end
     end
 
-    ResetCastbarPreviewModes(profile)
+    Migrations.ResetCastbarPreviewModes(profile)
 
     if stored >= CURRENT_SCHEMA_VERSION then
         MigLog("RunOnProfile: stored >= current, NOTHING TO DO")
@@ -1530,8 +1530,7 @@ function Migrations.Run(db)
         end
 
         local pins = ns.Settings and ns.Settings.Pins
-        if pins and type(pins.IsAutoApplySuppressed) == "function"
-            and not pins:IsAutoApplySuppressed() then
+        if pins then
             if type(pins.PrepareActiveProfileForApply) == "function" then
                 pins:PrepareActiveProfileForApply(db)
             end
@@ -1547,8 +1546,7 @@ function Migrations.Run(db)
     local result = Migrations.RunOnProfile(db.profile)
 
     local pins = ns.Settings and ns.Settings.Pins
-    if pins and type(pins.IsAutoApplySuppressed) == "function"
-        and not pins:IsAutoApplySuppressed() then
+    if pins then
         if type(pins.PrepareActiveProfileForApply) == "function" then
             pins:PrepareActiveProfileForApply(db)
         end

@@ -110,6 +110,11 @@ local ns = {
             return tbl, function(key) local s = tbl[key]; if not s then s = {}; tbl[key] = s end; return s end
         end,
         DeepCopy = DeepCopy,
+        GetCurrentSpecID = function()
+            local specIndex = GetSpecialization and GetSpecialization()
+            local specID = specIndex and GetSpecializationInfo and GetSpecializationInfo(specIndex)
+            return type(specID) == "number" and specID or nil
+        end,
     },
 }
 

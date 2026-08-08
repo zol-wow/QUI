@@ -138,10 +138,11 @@ local function MarkAllDirty()
 end
 
 local function MarkCurrentDirty()
-    if Enum and Enum.DamageMeterType then
-        for _, v in pairs(Enum.DamageMeterType) do MarkDirty(1, v) end
-    else
-        for t = 0, 10 do MarkDirty(1, t) end
+    local key = QUI_DamageMeter.SessionKey(1, nil)
+    local bySelector = Data._cache[key]
+    if not bySelector then return end
+    for damageMeterType in pairs(bySelector) do
+        MarkDirtyKey(key, damageMeterType)
     end
 end
 
@@ -221,6 +222,7 @@ Data._eventFrame:SetScript("OnEvent", function(_, event, arg1, _arg2)
         Data._combatEndTime   = nil
         Data._currentDurPin   = 0
         Data:WakeTicker()
+        if Data._onChange then Data:_onChange() end
     elseif event == "PLAYER_REGEN_ENABLED" then
         Data._inCombat = false
         Data._combatEndTime   = GetTime()
@@ -228,6 +230,7 @@ Data._eventFrame:SetScript("OnEvent", function(_, event, arg1, _arg2)
         if C_Timer and C_Timer.After then
             C_Timer.After(0.5, MarkAllDirty)
         end
+        if Data._onChange then Data:_onChange() end
     end
 end)
 
@@ -733,19 +736,9 @@ local function IsHealingType(meterType)
 end
 
 local function FormatDuration(seconds)
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(seconds) then
-        if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
-            local s = C_StringUtil.TruncateWhenZero(seconds)
-            return C_StringUtil.WrapString(s, "", "s")
-        end
-        return "" -- @secret-policy: empty-text-degrade
-    end
-    if not seconds then return "" end
-    if seconds == 0 then return "" end
-    local s = math.floor(seconds)
-    local m = math.floor(s / 60)
-    local r = s % 60
-    return string.format("%d:%02d", m, r)
+    local isSecret = Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(seconds)
+    if not isSecret and (not seconds or seconds == 0) then return "" end
+    return Helpers.FormatMMSS(seconds)
 end
 
 local function BuildPreviousSessionLabel(availableSession)
@@ -1074,13 +1067,9 @@ local function ShouldReapplyAppearance(appliedRev, currentRev)
 end
 QUI_DamageMeter.ShouldReapplyAppearance = ShouldReapplyAppearance
 
-function Window:_AttachRowVisuals(row)
-    local windowID = self.windowID
-    local barH = ResolveAppearance(windowID, "barHeight") or 18
-
-    local iconSize = barH
+local function AttachRowVisuals(row, barH)
     row.Icon = row:CreateTexture(nil, "ARTWORK")
-    row.Icon:SetSize(iconSize, iconSize)
+    row.Icon:SetSize(barH, barH)
     row.Icon:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
@@ -1112,6 +1101,13 @@ function Window:_AttachRowVisuals(row)
     row.Value:SetPoint("RIGHT", row.Bar, "RIGHT", -4, 0)
     row.Value:SetJustifyH("RIGHT")
     row.Value:SetText("")
+end
+
+function Window:_AttachRowVisuals(row)
+    local windowID = self.windowID
+    local barH = ResolveAppearance(windowID, "barHeight") or 18
+
+    AttachRowVisuals(row, barH)
 
     row:EnableMouse(true)
     row:RegisterForClicks("AnyUp")
@@ -1697,7 +1693,10 @@ function Window:Refresh()
 
     local s = GetSettings()
     local ws = s and s.windows and s.windows[self.windowID]
-    if ws and ws.hidden then
+    local visibility = s and s.visibility
+    if (ws and ws.hidden)
+        or visibility == "hidden"
+        or (visibility == "inCombat" and not Data._inCombat) then
         self.frame:Hide()
         return
     elseif not self.frame:IsShown() then
@@ -2210,40 +2209,6 @@ local function AnchorBreakdownTo(popup, row, anchorMode)
     end
 end
 
-function Breakdown:_AttachBreakdownRowVisuals(row, barH)
-    row.Icon = row:CreateTexture(nil, "ARTWORK")
-    row.Icon:SetSize(barH, barH)
-    row.Icon:SetPoint("LEFT", row, "LEFT", 0, 0)
-    row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    row.Bar = CreateFrame("StatusBar", nil, row)
-    row.Bar:SetPoint("LEFT",  row.Icon, "RIGHT", 2, 0)
-    row.Bar:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-    row.Bar:SetPoint("TOP", row, "TOP", 0, 0)
-    row.Bar:SetPoint("BOTTOM", row, "BOTTOM", 0, 0)
-    row.Bar:SetStatusBarTexture(BAR_TEXTURE)
-    row.Bar:SetMinMaxValues(0, 1)
-    row.Bar:SetValue(0)
-
-    row.BarBg = row.Bar:CreateTexture(nil, "BACKGROUND")
-    row.BarBg:SetAllPoints(row.Bar)
-    do
-        local _r, _g, _b = 0.05, 0.05, 0.05
-        if SkinBase and SkinBase.GetDepthColor then
-            _r, _g, _b = SkinBase.GetDepthColor("ROW")
-        end
-        row.BarBg:SetColorTexture(_r or 0.05, _g or 0.05, _b or 0.05, 0.55)
-    end
-
-    row.Name = row.Bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.Name:SetPoint("LEFT", row.Bar, "LEFT", 4, 0)
-    row.Name:SetJustifyH("LEFT")
-
-    row.Value = row.Bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.Value:SetPoint("RIGHT", row.Bar, "RIGHT", -4, 0)
-    row.Value:SetJustifyH("RIGHT")
-end
-
 function Breakdown:_BuildRow(index)
     local barH = ResolveAppearance(self.parentWindowID, "barHeight") or 18
     local barGap = ResolveAppearance(self.parentWindowID, "barSpacing") or 2
@@ -2259,7 +2224,7 @@ function Breakdown:_BuildRow(index)
         row:SetPoint("TOP", self.rows[index - 1], "BOTTOM", 0, -barGap)
     end
 
-    self:_AttachBreakdownRowVisuals(row, barH)
+    AttachRowVisuals(row, barH)
     row:Hide()
     return row
 end
@@ -2278,7 +2243,7 @@ function Breakdown:_BuildTargetRow(index)
         row:SetPoint("TOP", self.targetRows[index - 1], "BOTTOM", 0, -barGap)
     end
 
-    self:_AttachBreakdownRowVisuals(row, barH)
+    AttachRowVisuals(row, barH)
     row:Hide()
     return row
 end

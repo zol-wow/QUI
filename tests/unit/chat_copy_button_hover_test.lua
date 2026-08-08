@@ -122,6 +122,16 @@ container.mouseOver = true
 container.scripts.OnUpdate(container)
 assert(button.shown == true, "re-armed poll shows the button again")
 
+local polls = 0
+local realIsMouseOver = container.IsMouseOver
+container.IsMouseOver = function(s) polls = polls + 1 return realIsMouseOver(s) end
+container.scripts.OnUpdate(container, 0.04)
+container.scripts.OnUpdate(container, 0.04)
+assert(polls == 0, "sub-interval frames must not poll IsMouseOver")
+container.scripts.OnUpdate(container, 0.04)
+assert(polls == 1, "poll runs once the interval accumulates")
+container.IsMouseOver = realIsMouseOver
+
 -- Hidden mode hides and clears the stale poll
 settings.copyButtonMode = "hidden"
 Copy.EnsureCustomCopyButton()

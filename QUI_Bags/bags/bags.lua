@@ -21,6 +21,9 @@ local UI_EVENTS = {
     "ITEM_LOCK_CHANGED",
     "BAG_UPDATE_COOLDOWN",
     "EQUIPMENT_SETS_CHANGED",
+    "PLAYER_LEVEL_UP",
+    "SKILL_LINES_CHANGED",
+    "PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_REGEN_DISABLED",
     "GUILDBANKFRAME_OPENED",
     "GUILDBANKFRAME_CLOSED",
@@ -64,7 +67,7 @@ local function StopUI()
     Bags.GuildTakeover.Revert()
 end
 
-eventFrame:SetScript("OnEvent", function(_, event, arg1)
+eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "BANKFRAME_OPENED" then
         Bags.BankTakeover.OnBankOpened()
         if Bags.Transfers and Bags.Transfers.AutoDepositReagentsOnOpen then
@@ -91,12 +94,23 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         end
     elseif event == "ITEM_LOCK_CHANGED" or event == "BAG_UPDATE_COOLDOWN"
         or event == "EQUIPMENT_SETS_CHANGED" then
+        local changed = {}
+        if event == "ITEM_LOCK_CHANGED" and arg2 then changed[1] = arg1 end
+        if Bags.BagWindow.IsShown() then
+            Storage.Bus.Publish("BagsChanged", Storage.Store.GetCurrentCharacterKey(), changed)
+        end
+        if Bags.BankWindow.IsShown() then
+            Storage.Bus.Publish("BankChanged", Storage.Store.GetCurrentCharacterKey(), {})
+            Storage.Bus.Publish("WarbandChanged", {})
+        end
+    elseif event == "PLAYER_LEVEL_UP" or event == "SKILL_LINES_CHANGED"
+        or (event == "PLAYER_SPECIALIZATION_CHANGED" and arg1 == "player") then
+        if Bags.ItemButtons then Bags.ItemButtons.InvalidateUnusableCache() end
         if Bags.BagWindow.IsShown() then
             Storage.Bus.Publish("BagsChanged", Storage.Store.GetCurrentCharacterKey(), {})
         end
         if Bags.BankWindow.IsShown() then
             Storage.Bus.Publish("BankChanged", Storage.Store.GetCurrentCharacterKey(), {})
-            Storage.Bus.Publish("WarbandChanged", {})
         end
     elseif event == "PLAYER_REGEN_DISABLED" then
         if Bags.SortExecutor then Bags.SortExecutor.OnCombat() end

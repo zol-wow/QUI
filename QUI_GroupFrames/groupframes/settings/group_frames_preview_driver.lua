@@ -539,8 +539,12 @@ local function ApplyHealthText(f, health)
     local hideSymbol = health.hideHealthPercentSymbol
     ht:SetText(FormatHealthText(style, f._healthPct or 100, hideSymbol))
     ht:Show()
+    local lastShown
     f._UpdateHealthText = function(pct)
-        ht:SetText(FormatHealthText(style, pct or 0, hideSymbol))
+        local shown = math.floor((pct or 0) + 0.5)
+        if shown == lastShown then return end
+        lastShown = shown
+        ht:SetText(FormatHealthText(style, shown, hideSymbol))
     end
 end
 
@@ -1018,16 +1022,6 @@ local function GetMockDimensions(vdb, contextMode, count)
     return Chrome.FrameDimensions(vdb, Chrome.DimensionMode(count, contextMode))
 end
 
-local function ReleaseFrames()
-    local Render = ns.QUI_GroupFrameAuraRender
-    for _, f in ipairs(state.framePool or {}) do
-        if Render and Render.ReleaseAll then Render:ReleaseAll(f) end
-        f:Hide()
-    end
-    state.frames = {}
-    state.auraFrames = {}
-end
-
 local INDICATOR_DEMO = {
     [1] = { leader = true, targetMarker = true },
     [2] = { phase = true },
@@ -1189,9 +1183,6 @@ function Driver._RenderSpotlight(root, vdb, gfdb, now, gridRight)
         if sp.filterHealer then
             sample[#sample+1] = { role = "HEALER", class = "PRIEST", name = "Healena", healthPct = 76 }
         end
-        if sp.filterDamager then
-            sample[#sample+1] = { role = "DAMAGER", class = "MAGE", name = "Frostina", healthPct = 68 }
-        end
         if #sample == 0 then
             sample[1] = { role = "TANK", class = "PALADIN", name = "Lightbeam", healthPct = 82 }
         end
@@ -1244,6 +1235,10 @@ function Driver._RenderGroupLabels(vdb, layout, count)
         host = CreateFrame("Frame", nil, state.root)
         host:SetAllPoints(state.root)
         state.groupLabelHost = host
+    elseif host:GetParent() ~= state.root then
+        host:SetParent(state.root)
+        host:ClearAllPoints()
+        host:SetAllPoints(state.root)
     end
     host:SetFrameLevel((state.root:GetFrameLevel() or 0) + 100)
     host:Show()
@@ -1397,27 +1392,15 @@ function Driver.RefreshAuras()
     end
 end
 
-function Driver.Build(host)
+function Driver.Build(host, contextMode)
     state.host = host
     Driver._EnsureRoot()
     Driver._EnsureTicker()
-    Driver.Refresh(state.contextMode)
-end
-
-function Driver.Teardown()
-    ReleaseFrames()
-    if state.spotlightPool then
-        for _, f in ipairs(state.spotlightPool) do f:Hide(); f:SetParent(nil) end
-        state.spotlightPool = {}
-    end
-    state.spotlightFrames = {}
-    if state.root then state.root:Hide() end
-    if state.ticker then state.ticker:Hide() end
+    Driver.Refresh(contextMode or state.contextMode)
 end
 
 _G.QUI_BuildGroupFramePreview = function(host, contextMode)
-    Driver.Build(host)
-    Driver.Refresh(contextMode)
+    Driver.Build(host, contextMode)
 end
 local function FlushPreviewRefresh()
     state._refreshScheduled = false

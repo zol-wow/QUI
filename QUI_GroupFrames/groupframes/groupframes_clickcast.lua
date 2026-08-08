@@ -498,9 +498,7 @@ local function ResolveSpellName(binding)
 end
 
 local function GetCurrentSpecID()
-    local specIndex = GetSpecialization()
-    if not specIndex then return nil end
-    local specID = GetSpecializationInfo(specIndex)
+    local specID = Helpers.GetCurrentSpecID()
     if specID and specID ~= 0 then return specID end
     return nil
 end
@@ -900,8 +898,8 @@ local function SetupFrameClickCast(frame)
 
         frame:HookScript("OnEnter", function()
             if not isEnabled then return end
-            if #globalKeyBindings > 0 then return end
             if KeyboardContextUnresolved() then return end
+            if not IsUnresolvedButConfigured() then return end
             C_Timer.After(0, function()
                 if not isEnabled then return end
                 if InCombatLockdown() then

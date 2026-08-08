@@ -1036,9 +1036,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local ps = L.sectionAt()
             local enW = GUI:CreateFormCheckbox(ps.frame, nil, "enabled", dtGlobal, RefreshAllDatatextSurfaces,
                 { description = ns.L["Show the datatext panel anchored below the minimap."] })
-            local singleW = GUI:CreateFormCheckbox(ps.frame, nil, "forceSingleLine", dtGlobal, RefreshAllDatatextSurfaces,
-                { description = ns.L["Keep all minimap datatext slots on one row instead of allowing wrap."] })
-            ps.AddRow(row(ps.frame, ns.L["Enable Minimap Datatext"], enW), row(ps.frame, ns.L["Force Single Line"], singleW))
+            ps.AddRow(row(ps.frame, ns.L["Enable Minimap Datatext"], enW))
 
             local hW = GUI:CreateFormSlider(ps.frame, nil, 18, 50, 1, "height", dtGlobal, RefreshAllDatatextSurfaces,
                 { description = ns.L["Pixel height reserved per row of minimap datatext."] })

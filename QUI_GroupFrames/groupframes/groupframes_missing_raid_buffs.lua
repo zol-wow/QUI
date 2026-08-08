@@ -43,7 +43,6 @@ end
 local GetAuraDataByIndex = C_UnitAuras and C_UnitAuras.GetAuraDataByIndex
 
 local _allyBuffIDs = nil
-local _allyTrackedInstances = {}
 
 local RAID_BUFFS = {
     { key = "intellect", ids = { 1459, 432778 }, label = "Arcane Intellect", providerClass = "MAGE", iconSpellID = 1459 },
@@ -530,6 +529,10 @@ function MRB._groupUnitsProbe()
 end
 
 function MRB._spellKnownProbe(buffOrID)
+    local haveCSpellBook = C_SpellBook and C_SpellBook.IsSpellKnown
+    if not haveCSpellBook and not IsPlayerSpell and not IsSpellKnown then
+        return true
+    end
     local ids, icon
     if type(buffOrID) == "table" then
         ids = buffOrID.ids
@@ -538,6 +541,10 @@ function MRB._spellKnownProbe(buffOrID)
         ids = { buffOrID }
     end
     local function tryID(id)
+        if haveCSpellBook then
+            local ok, v = pcall(C_SpellBook.IsSpellKnown, id)
+            if ok and v == true then return true end
+        end
         if IsPlayerSpell then
             local ok, v = pcall(IsPlayerSpell, id)
             if ok and v == true then return true end
@@ -554,7 +561,7 @@ function MRB._spellKnownProbe(buffOrID)
             if tryID(ids[i]) then return true end
         end
     end
-    return true
+    return false
 end
 
 function MRB:PlayerIsProviderSpec(buff)
@@ -705,63 +712,73 @@ local function RefreshAll()
     end)
 end
 
-local function AllyDeltaIsRelevant(unit, updateInfo)
-    if not updateInfo or updateInfo.isFullUpdate then
-        _allyTrackedInstances[unit] = nil
-        return true
-    end
-
-    if not _allyBuffIDs then
-        local ally = ns.QUI_AllyBuffs
-        if not ally then return true end
-        _allyBuffIDs = {}
-        for i = 1, #ally do
-            for _, id in ipairs(ally[i].ids) do
-                _allyBuffIDs[id] = true
-            end
+function MRB.MakeDeltaRelevanceTracker(getIDSet, nilSpellIsRelevant)
+    local instances = {}
+    return function(unit, updateInfo)
+        if not updateInfo or updateInfo.isFullUpdate then
+            instances[unit] = nil
+            return true
         end
-    end
 
-    local relevant = false
-    local set = _allyTrackedInstances[unit]
+        local idSet = getIDSet()
+        if not idSet then return true end
 
-    local added = updateInfo.addedAuras
-    if added then
-        for i = 1, #added do
-            local ad = added[i]
-            local sid = ad.spellId
-            if sid == nil or IsSecretValue(sid) then
-                relevant = true
-            elseif _allyBuffIDs[sid] then
-                relevant = true
-                local iid = ad.auraInstanceID
-                if iid and not IsSecretValue(iid) then
-                    set = set or {}
-                    _allyTrackedInstances[unit] = set
-                    set[iid] = true
+        local relevant = false
+        local set = instances[unit]
+
+        local added = updateInfo.addedAuras
+        if added then
+            for i = 1, #added do
+                local ad = added[i]
+                local sid = ad.spellId
+                if IsSecretValue(sid) then
+                    relevant = true
+                elseif sid == nil then
+                    if nilSpellIsRelevant then relevant = true end
+                elseif idSet[sid] then
+                    relevant = true
+                    local iid = ad.auraInstanceID
+                    if iid and not IsSecretValue(iid) then
+                        set = set or {}
+                        instances[unit] = set
+                        set[iid] = true
+                    end
                 end
             end
         end
-    end
 
-    if set then
-        local removed = updateInfo.removedAuraInstanceIDs
-        if removed then
-            for i = 1, #removed do
-                local iid = removed[i]
-                if set[iid] then relevant = true; set[iid] = nil end
+        if set then
+            local removed = updateInfo.removedAuraInstanceIDs
+            if removed then
+                for i = 1, #removed do
+                    local iid = removed[i]
+                    if set[iid] then relevant = true; set[iid] = nil end
+                end
+            end
+            local updated = updateInfo.updatedAuraInstanceIDs
+            if updated then
+                for i = 1, #updated do
+                    if set[updated[i]] then relevant = true; break end
+                end
             end
         end
-        local updated = updateInfo.updatedAuraInstanceIDs
-        if updated then
-            for i = 1, #updated do
-                if set[updated[i]] then relevant = true; break end
-            end
-        end
-    end
 
-    return relevant
+        return relevant
+    end
 end
+
+local AllyDeltaIsRelevant = MRB.MakeDeltaRelevanceTracker(function()
+    if _allyBuffIDs then return _allyBuffIDs end
+    local ally = ns.QUI_AllyBuffs
+    if not ally then return nil end
+    _allyBuffIDs = {}
+    for i = 1, #ally do
+        for _, id in ipairs(ally[i].ids) do
+            _allyBuffIDs[id] = true
+        end
+    end
+    return _allyBuffIDs
+end, true)
 MRB._allyDeltaIsRelevant = AllyDeltaIsRelevant
 
 local function EnsureEventFrame()

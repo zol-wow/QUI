@@ -136,21 +136,13 @@ assert(calls.buttonFrame == _G.CollectionsJournal, "Collections Journal must sti
 -- parent frame are no longer called — interactive reverts on bare-root surfaces accepted.
 assert(calls["lock:mountRow"] == 3, "visible mount rows must be locked")
 assert(calls["lock:petRow"] == 3, "visible pet rows must be locked")
--- Heirloom frames: LockFrameTextObjects was removed from LockHeirloomFrame.
--- Static text now from global object override; interactive reverts on heirloom rows accepted.
--- New contract: the frame is marked qHeirloomTextLocked via SetFrameData.
-assert(ns.SkinBase.GetFrameData(heirloomEntry, "qHeirloomTextLocked"),
-    "visible heirloom entry frames must be marked as locked")
-assert(ns.SkinBase.GetFrameData(heirloomHeader, "qHeirloomTextLocked"),
-    "visible heirloom header frames must be marked as locked")
+-- Heirloom frames: the whole lock path is gone. LockFrameTextObjects had
+-- already been dropped in favour of the global font-object override, leaving
+-- three permanent hooks that only stamped a marker nothing read.
+assert(not tableHooks[_G.HeirloomsJournal],
+    "HeirloomsJournal must not be hooked for a marker nothing reads")
 assert(scrollHooks[_G.MountJournal.ScrollBox], "MountJournal ScrollBox must lock acquired rows")
 assert(scrollHooks[_G.PetJournal.ScrollBox], "PetJournal ScrollBox must lock acquired rows")
-assert(tableHooks[_G.HeirloomsJournal] and tableHooks[_G.HeirloomsJournal].AcquireFrame,
-    "HeirloomsJournal must hook AcquireFrame, not a nonexistent ScrollBox")
-assert(tableHooks[_G.HeirloomsJournal] and tableHooks[_G.HeirloomsJournal].RefreshView,
-    "HeirloomsJournal must re-check active pools on RefreshView")
-assert(tableHooks[_G.HeirloomsJournal] and tableHooks[_G.HeirloomsJournal].UpdateButton,
-    "HeirloomsJournal must relock entries after UpdateButton font-object resets")
 
 -- A NEWLY acquired row gets the full recursive lock pass.
 local newMountRow = { name = "newMountRow" }
@@ -164,22 +156,5 @@ assert(calls["lock:newMountRow"] == 3, "newly acquired mount rows must be locked
 calls["lock:mountRow"] = nil
 scrollHooks[_G.MountJournal.ScrollBox](mountRow)
 assert(calls["lock:mountRow"] == nil, "already-fonted rows must NOT re-run the recursive lock pass")
-
-local newHeirloomEntry = { name = "newHeirloomEntry" }
-_G.HeirloomsJournal.heirloomEntryFrames[2] = newHeirloomEntry
-_G.HeirloomsJournal:AcquireFrame(_G.HeirloomsJournal.heirloomEntryFrames, 2)
-assert(ns.SkinBase.GetFrameData(newHeirloomEntry, "qHeirloomTextLocked"),
-    "newly acquired heirloom entries must be marked as locked")
-
-local newHeirloomHeader = { name = "newHeirloomHeader" }
-_G.HeirloomsJournal.heirloomHeaderFrames[2] = newHeirloomHeader
-_G.HeirloomsJournal:RefreshView()
-assert(ns.SkinBase.GetFrameData(newHeirloomHeader, "qHeirloomTextLocked"),
-    "refreshed heirloom header frames must be marked as locked")
-
-local updatedHeirloomEntry = { name = "updatedHeirloomEntry" }
-_G.HeirloomsJournal:UpdateButton(updatedHeirloomEntry)
-assert(ns.SkinBase.GetFrameData(updatedHeirloomEntry, "qHeirloomTextLocked"),
-    "UpdateButton must mark heirloom entry as locked")
 
 print("OK: collections_journal_font_lock_test")

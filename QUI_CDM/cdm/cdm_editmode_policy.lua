@@ -91,27 +91,55 @@ function CDMEditModePolicy.Enforce()
     })
 
     _applied = true
-    if not changed then return end
+    if not changed then
+        local db = _G.QUIDB
+        if db then db.cdmEditModeSavePending = nil end
+        return
+    end
 
     C_EditMode.SaveLayouts(layoutInfo)
 
-    if _G.StaticPopupDialogs and _G.StaticPopup_Show then
-        _G.StaticPopupDialogs["QUI_CDM_EDITMODE_RELOAD"] = {
-            text = "QUI has reset stale Cooldown Manager Edit Mode settings"
-                .. " (viewers must be Always visible with Hide-When-Inactive on"
-                .. " for cooldown tracking to work).\n\nReload now to apply?",
-            button1 = "Reload UI",
-            button2 = _G.CANCEL or "Cancel",
-            OnAccept = function()
-                if _G.ReloadUI then _G.ReloadUI() end
-            end,
+    if not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then return end
+
+    local db = _G.QUIDB
+    local savePending = db and db.cdmEditModeSavePending
+    if db then db.cdmEditModeSavePending = true end
+
+    if savePending then
+        _G.StaticPopupDialogs["QUI_CDM_EDITMODE_MANUAL"] = {
+            text = "QUI could not save the Cooldown Manager Edit Mode settings,"
+                .. " so they must be set by hand:\n\n"
+                .. "1. Disable the Cooldown Manager in QUI options and reload.\n"
+                .. "2. Open Edit Mode and set each Cooldown Manager viewer's"
+                .. " Visibility to Always.\n"
+                .. "3. On Tracked Buffs and Tracked Bars, enable Hide When Inactive.\n"
+                .. "4. Save the layout, leave Edit Mode, and re-enable the"
+                .. " Cooldown Manager.\n\n"
+                .. "This notice repeats each login until the layout is correct.",
+            button1 = _G.OKAY or "Okay",
             timeout = 0,
             whileDead = 1,
             hideOnEscape = 1,
             preferredIndex = 3,
         }
-        _G.StaticPopup_Show("QUI_CDM_EDITMODE_RELOAD")
+        _G.StaticPopup_Show("QUI_CDM_EDITMODE_MANUAL")
+        return
     end
+
+    _G.StaticPopupDialogs["QUI_CDM_EDITMODE_RELOAD"] = {
+        text = "QUI has updated your Cooldown Manager Edit Mode settings"
+            .. " (viewers must be Always visible with Hide When Inactive on"
+            .. " for cooldown tracking to work).\n\nA UI reload is required"
+            .. " to apply them.",
+        button1 = "Reload UI",
+        OnAccept = function()
+            if _G.ReloadUI then _G.ReloadUI() end
+        end,
+        timeout = 0,
+        whileDead = 1,
+        preferredIndex = 3,
+    }
+    _G.StaticPopup_Show("QUI_CDM_EDITMODE_RELOAD")
 end
 
 local enforceFrame = CreateFrame("Frame")

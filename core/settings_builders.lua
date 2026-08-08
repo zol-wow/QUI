@@ -358,7 +358,12 @@ local function ApplyDualColumnLayout(section)
     table.sort(layoutItems, function(a, b)
         local ay = a._quiDualColumnOriginalY
         local by = b._quiDualColumnOriginalY
-        if type(ay) == "number" and type(by) == "number" and ay ~= by then
+        local aNum = type(ay) == "number"
+        local bNum = type(by) == "number"
+        if aNum ~= bNum then
+            return aNum
+        end
+        if aNum and ay ~= by then
             return ay > by
         end
 

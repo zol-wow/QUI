@@ -6,26 +6,6 @@ env.SetChunkEnv(1, env)
 
 ---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
 
-local function SuppressManagedBarFrame(barFrame)
-    if barFrame.system then
-        barFrame.isShownExternal = nil
-        local c = 42
-        repeat
-            if barFrame[c] == nil then
-                barFrame[c] = nil
-            end
-            c = c + 1
-        until issecurevariable(barFrame, "isShownExternal")
-    end
-    barFrame:UnregisterAllEvents()
-    barFrame:SetParent(hiddenBarParent)
-    if barFrame.HideBase then
-        barFrame:HideBase()
-    else
-        barFrame:Hide()
-    end
-end
-
 function GetOriginalBlizzButtons(barKey)
     local buttons = {}
     local pattern = BUTTON_PATTERNS[barKey]
@@ -311,7 +291,7 @@ function BuildBar(barKey)
         buttons = BuildStandardOwnedButtons(container, barKey)
     elseif barKey == "pet" or barKey == "stance" then
         if barFrame then
-            SuppressManagedBarFrame(barFrame)
+            HideManagedBlizzardBarFrame(barFrame, true)
         end
 
         if barKey ~= "pet" then
@@ -376,7 +356,7 @@ function BuildBar(barKey)
         end
     elseif barKey == "microbar" then
         if barFrame then
-            SuppressManagedBarFrame(barFrame)
+            HideManagedBlizzardBarFrame(barFrame, true)
         end
 
         local origLayout = MicroMenu and MicroMenu.Layout
@@ -632,7 +612,7 @@ function BuildBar(barKey)
         end
     elseif barKey == "bags" then
         if barFrame then
-            SuppressManagedBarFrame(barFrame)
+            HideManagedBlizzardBarFrame(barFrame, true)
         end
 
         local bagButtons = GetBarButtons("bags")
@@ -724,7 +704,7 @@ function BuildBar(barKey)
             if not btns then return end
             for _, btn in ipairs(btns) do
                 local st = GetFrameState(btn)
-                st.skinKey = nil
+                st.sk_sz = nil
                 SkinButton(btn, capturedSettings)
                 UpdateButtonText(btn, capturedSettings)
                 UpdateEmptySlotVisibility(btn, capturedSettings)
@@ -738,7 +718,8 @@ function BuildBar(barKey)
                 local state = GetFrameState(btn)
                 state.bindingCommand = prefix .. i
                 state.keybindMethods = true
-                if LKB then
+                if LKB and not state.lkbHooked then
+                    state.lkbHooked = true
                     btn:HookScript("OnEnter", function(self)
                         if LKB:IsShown() then
                             local bf = LKB.frame

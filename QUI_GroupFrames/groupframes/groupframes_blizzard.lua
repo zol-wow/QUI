@@ -161,12 +161,12 @@ end
 
 local function RestoreUnitFrameEvents(frame)
     if not frame or not strippedFrames[frame] then return end
+    strippedFrames[frame] = nil
     ns.SafeCall("best-effort-style", function()
         if CompactUnitFrame_UpdateUnitEvents then
             CompactUnitFrame_UpdateUnitEvents(frame)
         end
     end)
-    strippedFrames[frame] = nil
 end
 
 local function StripBlizzardGroupEvents()

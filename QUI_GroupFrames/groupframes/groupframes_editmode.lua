@@ -34,6 +34,7 @@ local testFrames = {}
 local testContainer = nil
 local testContainers = {}
 local testFramesByType = {}
+local reuseContainers = {}
 local groupMover = nil
 local raidMover = nil
 local spotlightHeader = nil
@@ -92,6 +93,132 @@ local function GetPreviewSpecID()
     return nil
 end
 
+local testShellPool = {}
+local testShellCount = 0
+local activeRecycle
+
+local RECYCLE_KINDS = { "frames", "backdropFrames", "bars", "textures", "strings" }
+
+local function RecycleStart(frame)
+    local rc = frame._quiRecycle
+    if not rc then
+        rc = {}
+        for _, kind in ipairs(RECYCLE_KINDS) do rc[kind] = {} end
+        frame._quiRecycle = rc
+    end
+    rc.n = { frames = 0, backdropFrames = 0, bars = 0, textures = 0, strings = 0 }
+    activeRecycle = rc
+end
+
+local function RecycleFinish()
+    local rc = activeRecycle
+    if not rc then return end
+    for _, kind in ipairs(RECYCLE_KINDS) do
+        local list = rc[kind]
+        for i = rc.n[kind] + 1, #list do
+            list[i]:Hide()
+        end
+    end
+    activeRecycle = nil
+end
+
+local function RecycledFrame(parent, template)
+    local rc = activeRecycle
+    local key = template and "backdropFrames" or "frames"
+    local n = rc.n[key] + 1
+    rc.n[key] = n
+    local f = rc[key][n]
+    if not f then
+        f = CreateFrame("Frame", nil, parent, template)
+        rc[key][n] = f
+    else
+        f:SetParent(parent)
+        f:ClearAllPoints()
+        f:Show()
+    end
+    return f
+end
+
+local function RecycledBar(parent)
+    local rc = activeRecycle
+    local n = rc.n.bars + 1
+    rc.n.bars = n
+    local bar = rc.bars[n]
+    if not bar then
+        bar = CreateFrame("StatusBar", nil, parent)
+        rc.bars[n] = bar
+    else
+        bar:SetParent(parent)
+        bar:ClearAllPoints()
+        bar:SetOrientation("HORIZONTAL")
+        bar:SetAlpha(1)
+        bar:Show()
+    end
+    bar:SetFrameLevel(parent:GetFrameLevel() + 1)
+    return bar
+end
+
+local function RecycledTexture(parent, layer, sublevel)
+    local rc = activeRecycle
+    local n = rc.n.textures + 1
+    rc.n.textures = n
+    local tex = rc.textures[n]
+    if not tex then
+        tex = parent:CreateTexture(nil, layer, nil, sublevel)
+        rc.textures[n] = tex
+    else
+        tex:SetParent(parent)
+        tex:SetDrawLayer(layer, sublevel or 0)
+        tex:ClearAllPoints()
+        tex:SetTexCoord(0, 1, 0, 1)
+        tex:SetVertexColor(1, 1, 1, 1)
+        tex:Show()
+    end
+    return tex
+end
+
+local function RecycledFontString(parent, layer)
+    local rc = activeRecycle
+    local n = rc.n.strings + 1
+    rc.n.strings = n
+    local fs = rc.strings[n]
+    if not fs then
+        fs = parent:CreateFontString(nil, layer)
+        rc.strings[n] = fs
+    else
+        fs:SetParent(parent)
+        fs:ClearAllPoints()
+        fs:SetText("")
+        fs:Show()
+    end
+    return fs
+end
+
+local function AcquireTestShell(parent)
+    local frame = table.remove(testShellPool)
+    if frame then
+        frame._quiPooled = nil
+        frame:SetParent(parent)
+        frame:ClearAllPoints()
+        local Chrome = ns.QUI_GroupFrameChrome
+        if Chrome and Chrome.HideDispelTypeIcons then
+            Chrome.HideDispelTypeIcons(frame)
+        end
+    else
+        testShellCount = testShellCount + 1
+        frame = CreateFrame("Frame", "QUI_TestFrame" .. testShellCount, parent, "BackdropTemplate")
+        frame._quiTestShell = true
+    end
+    return frame
+end
+
+local function ReleaseTestShell(frame)
+    if frame._quiPooled then return end
+    frame._quiPooled = true
+    frame:Hide()
+    testShellPool[#testShellPool + 1] = frame
+end
+
 local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, px, texturePath, frameType)
     local Model = ns.QUI_GroupFramesAuraModel
     if not Model or not Model.ActiveElementsForSpec then return end
@@ -136,7 +263,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
                 rowDir = (type(anchor) == "string" and anchor:find("BOTTOM")) and "UP" or "DOWN"
             end
             for i = 1, count do
-                local iconFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+                local iconFrame = RecycledFrame(frame, "BackdropTemplate")
                 iconFrame:SetSize(iconSize, iconSize)
                 iconFrame:SetFrameLevel(auraLevel)
                 local slotX, slotY = 0, 0
@@ -149,7 +276,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
                 iconFrame:SetPoint(iconAnchor, frame, anchor, offX + slotX, offY + slotY)
                 local iconPx = QUICore.GetPixelSize and QUICore:GetPixelSize(iconFrame) or px
                 ns.SkinBase.ApplyPixelBackdrop(iconFrame, 1, true, false, { borderR, borderG, borderB, 1 }, { 0, 0, 0, 1 })
-                local tex = iconFrame:CreateTexture(nil, "ARTWORK")
+                local tex = RecycledTexture(iconFrame, "ARTWORK")
                 tex:SetPoint("TOPLEFT", iconPx, -iconPx)
                 tex:SetPoint("BOTTOMRIGHT", -iconPx, iconPx)
                 tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -163,13 +290,13 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             local offY = element.offsetY or 0
             if anchor:find("BOTTOM") then offY = offY + powerHeight end
             local color = element.color or { 0.5, 0.5, 0.5, 1 }
-            local sq = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            local sq = RecycledFrame(frame, "BackdropTemplate")
             sq:SetSize(size, size)
             sq:SetFrameLevel(auraLevel)
             sq:ClearAllPoints()
             sq:SetPoint(anchor, frame, anchor, offX, offY)
             ns.SkinBase.ApplyPixelBackdrop(sq, 1, false, false, { 0, 0, 0, 1 })
-            local fill = sq:CreateTexture(nil, "ARTWORK")
+            local fill = RecycledTexture(sq, "ARTWORK")
             fill:SetAllPoints()
             fill:SetColorTexture(color[1] or 0.5, color[2] or 0.5, color[3] or 0.5, color[4] or 1)
 
@@ -185,7 +312,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             local offY = barCfg.offsetY or element.offsetY or 0
             if anchor:find("BOTTOM") then offY = offY + powerHeight end
             local color = (barCfg.color) or element.color or { 0.2, 0.8, 0.2, 1 }
-            local bar = CreateFrame("StatusBar", nil, frame)
+            local bar = RecycledBar(frame)
             bar:SetSize(width, height)
             bar:SetFrameLevel(auraLevel + 1)
             bar:ClearAllPoints()
@@ -195,7 +322,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             bar:SetMinMaxValues(0, 1)
             bar:SetValue(0.66)
             bar:SetStatusBarColor(color[1] or 0.2, color[2] or 0.8, color[3] or 0.2, color[4] or 1)
-            local bg = bar:CreateTexture(nil, "BACKGROUND")
+            local bg = RecycledTexture(bar, "BACKGROUND")
             bg:SetAllPoints()
             bg:SetColorTexture(0, 0, 0, 0.28)
 
@@ -203,7 +330,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             local hb = frame.healthBar
             if hb then
                 local color = element.color or { 0.2, 0.8, 0.2, 1 }
-                local tint = hb:CreateTexture(nil, "OVERLAY")
+                local tint = RecycledTexture(hb, "OVERLAY")
                 tint:SetAllPoints(hb)
                 tint:SetColorTexture(color[1] or 0.2, color[2] or 0.8, color[3] or 0.2, (color[4] or 1) * 0.4)
             end
@@ -212,7 +339,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             local anchorTo = frame.healthBar or frame
             local color = element.color or { 0.2, 0.8, 0.2, 1 }
             local size = math.max(1, (element.border and element.border.thickness) or 2)
-            local outline = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            local outline = RecycledFrame(frame, "BackdropTemplate")
             outline:SetFrameLevel(auraLevel + 2)
             outline:ClearAllPoints()
             outline:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", -size, size)
@@ -248,7 +375,8 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     else w, h = dims and dims.largeRaidWidth or 140, dims and dims.largeRaidHeight or 24
     end
 
-    local frame = CreateFrame("Frame", "QUI_TestFrame" .. index, parent, "BackdropTemplate")
+    local frame = AcquireTestShell(parent)
+    RecycleStart(frame)
     frame:SetSize(w, h)
 
     local general = vdb.general
@@ -284,7 +412,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     local textureName = general and general.texture or "Quazii v5"
     local texturePath = LSM:Fetch("statusbar", textureName) or "Interface\\TargetingFrame\\UI-StatusBar"
 
-    local healthBar = CreateFrame("StatusBar", nil, frame)
+    local healthBar = RecycledBar(frame)
     healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
     healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
     healthBar:SetStatusBarTexture(texturePath)
@@ -307,7 +435,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     end
 
     if showPower then
-        local powerBar = CreateFrame("StatusBar", nil, frame)
+        local powerBar = RecycledBar(frame)
         powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
         powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
         powerBar:SetHeight(powerHeight)
@@ -321,12 +449,12 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             powerBar:SetStatusBarColor(pc[1], pc[2], pc[3], pc[4] or 1)
         end
 
-        local powerBg = powerBar:CreateTexture(nil, "BACKGROUND")
+        local powerBg = RecycledTexture(powerBar, "BACKGROUND")
         powerBg:SetAllPoints()
         powerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
         powerBg:SetVertexColor(0.05, 0.05, 0.05, 0.9)
 
-        local sep = powerBar:CreateTexture(nil, "OVERLAY")
+        local sep = RecycledTexture(powerBar, "OVERLAY")
         sep:SetHeight(px)
         sep:SetPoint("BOTTOMLEFT", powerBar, "TOPLEFT", 0, 0)
         sep:SetPoint("BOTTOMRIGHT", powerBar, "TOPRIGHT", 0, 0)
@@ -334,7 +462,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         sep:SetVertexColor(0, 0, 0, 1)
     end
 
-    local textFrame = CreateFrame("Frame", nil, frame)
+    local textFrame = RecycledFrame(frame)
     textFrame:SetAllPoints()
     textFrame:SetFrameLevel(frame:GetFrameLevel() + CHROME_LEVELS.TEXT)
 
@@ -350,7 +478,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         local nameOffsetX = nameSettings and nameSettings.nameOffsetX or 4
         local nameOffsetY = nameSettings and nameSettings.nameOffsetY or 0
         local namePadX = math.abs(nameOffsetX)
-        local nameText = textFrame:CreateFontString(nil, "OVERLAY")
+        local nameText = RecycledFontString(textFrame, "OVERLAY")
         Helpers.ApplyFontWithFallback(nameText, fontPath, nameSettings and nameSettings.nameFontSize or 12, fontOutline)
         nameText:SetPoint(nameAnchorInfo.leftPoint, frame, nameAnchorInfo.leftPoint, namePadX, nameOffsetY)
         nameText:SetPoint(nameAnchorInfo.rightPoint, frame, nameAnchorInfo.rightPoint, -namePadX, nameOffsetY)
@@ -385,7 +513,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         local levelOffsetX = nameSettings.levelOffsetX or -4
         local levelOffsetY = nameSettings.levelOffsetY or 0
         local levelPadX = math.abs(levelOffsetX)
-        local levelText = textFrame:CreateFontString(nil, "OVERLAY")
+        local levelText = RecycledFontString(textFrame, "OVERLAY")
         local levelFontPath = fontPath
         if type(nameSettings.levelFont) == "string" and nameSettings.levelFont ~= "" then
             levelFontPath = LSM:Fetch("font", nameSettings.levelFont, true) or fontPath
@@ -412,7 +540,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         local healthOffsetX = healthSettings and healthSettings.healthOffsetX or -4
         local healthOffsetY = healthSettings and healthSettings.healthOffsetY or 0
         local healthPadX = math.abs(healthOffsetX)
-        local healthText = textFrame:CreateFontString(nil, "OVERLAY")
+        local healthText = RecycledFontString(textFrame, "OVERLAY")
         CJKFont(healthText, fontPath, healthSettings and healthSettings.healthFontSize or 12, fontOutline)
         healthText:SetPoint(healthAnchorInfo.leftPoint, frame, healthAnchorInfo.leftPoint, healthPadX, healthOffsetY)
         healthText:SetPoint(healthAnchorInfo.rightPoint, frame, healthAnchorInfo.rightPoint, -healthPadX, healthOffsetY)
@@ -461,7 +589,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         local ROLE_TOGGLE_KEY = ns.QUI_GroupFrameRoleToggleKey
         local toggleKey = ROLE_TOGGLE_KEY[role]
         if not toggleKey or indSettings[toggleKey] ~= false then
-            local roleIcon = textFrame:CreateTexture(nil, "OVERLAY")
+            local roleIcon = RecycledTexture(textFrame, "OVERLAY")
             roleIcon:SetSize(indSettings.roleIconSize or 12, indSettings.roleIconSize or 12)
             local roleAnchor = indSettings.roleIconAnchor or "TOPLEFT"
             roleIcon:SetPoint(roleAnchor, frame, roleAnchor, indSettings.roleIconOffsetX or 2, indSettings.roleIconOffsetY or -2)
@@ -485,7 +613,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
 
         if prev.readyCheck and indSettings.showReadyCheck ~= false then
-            local rc = textFrame:CreateTexture(nil, "OVERLAY")
+            local rc = RecycledTexture(textFrame, "OVERLAY")
             local rcSize = indSettings.readyCheckSize or 16
             rc:SetSize(rcSize, rcSize)
             IndPoint(rc, "readyCheckAnchor", "readyCheckOffsetX", "readyCheckOffsetY", "CENTER", 0, 0)
@@ -493,7 +621,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
 
         if prev.resurrection and indSettings.showResurrection ~= false then
-            local ri = textFrame:CreateTexture(nil, "OVERLAY")
+            local ri = RecycledTexture(textFrame, "OVERLAY")
             local riSize = indSettings.resurrectionSize or 16
             ri:SetSize(riSize, riSize)
             IndPoint(ri, "resurrectionAnchor", "resurrectionOffsetX", "resurrectionOffsetY", "CENTER", 0, 0)
@@ -501,7 +629,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
 
         if prev.summonPending and indSettings.showSummonPending ~= false then
-            local si = textFrame:CreateTexture(nil, "OVERLAY")
+            local si = RecycledTexture(textFrame, "OVERLAY")
             local siSize = indSettings.summonSize or 20
             si:SetSize(siSize, siSize)
             IndPoint(si, "summonAnchor", "summonOffsetX", "summonOffsetY", "CENTER", 16, 0)
@@ -509,7 +637,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
 
         if prev.leader and indSettings.showLeaderIcon ~= false then
-            local li = textFrame:CreateTexture(nil, "OVERLAY")
+            local li = RecycledTexture(textFrame, "OVERLAY")
             local liSize = indSettings.leaderSize or 12
             li:SetSize(liSize, liSize)
             IndPoint(li, "leaderAnchor", "leaderOffsetX", "leaderOffsetY", "TOP", 0, 6)
@@ -517,7 +645,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
 
         if prev.raidMarker and indSettings.showTargetMarker ~= false then
-            local rm = textFrame:CreateTexture(nil, "OVERLAY")
+            local rm = RecycledTexture(textFrame, "OVERLAY")
             local rmSize = indSettings.targetMarkerSize or 14
             rm:SetSize(rmSize, rmSize)
             IndPoint(rm, "targetMarkerAnchor", "targetMarkerOffsetX", "targetMarkerOffsetY", "TOPRIGHT", -2, -2)
@@ -526,7 +654,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
 
         if prev.phaseIcon and indSettings.showPhaseIcon ~= false then
-            local pi = textFrame:CreateTexture(nil, "OVERLAY")
+            local pi = RecycledTexture(textFrame, "OVERLAY")
             local piSize = indSettings.phaseSize or 16
             pi:SetSize(piSize, piSize)
             IndPoint(pi, "phaseAnchor", "phaseOffsetX", "phaseOffsetY", "BOTTOMLEFT", 2, 2)
@@ -534,7 +662,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
 
         if prev.threatBorder and indSettings.showThreatBorder ~= false then
-            local threatOverlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            local threatOverlay = RecycledFrame(frame, "BackdropTemplate")
             threatOverlay:SetAllPoints()
             threatOverlay:SetFrameLevel(baseLevel + CHROME_LEVELS.THREAT)
             local tc = indSettings.threatColor or { 1, 0, 0, 0.8 }
@@ -547,7 +675,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         if prev.targetHighlight then
             local th = healerSettings.targetHighlight
             if th and th.enabled ~= false then
-                local highlight = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+                local highlight = RecycledFrame(frame, "BackdropTemplate")
                 highlight:SetPoint("TOPLEFT", -px, px)
                 highlight:SetPoint("BOTTOMRIGHT", px, -px)
                 highlight:SetFrameLevel(baseLevel + CHROME_LEVELS.TARGET)
@@ -561,7 +689,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             if dsp then
                 local sampleType = dsp.scope == "ALL_TYPED" and "Bleed" or "Magic"
                 if dsp.enabled ~= false then
-                    local dispel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+                    local dispel = RecycledFrame(frame, "BackdropTemplate")
                     dispel:SetPoint("TOPLEFT", -px, px)
                     dispel:SetPoint("BOTTOMRIGHT", px, -px)
                     dispel:SetFrameLevel(baseLevel + CHROME_LEVELS.DISPEL)
@@ -603,7 +731,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             ac = absorbSettings.color or {1, 1, 1, 1}
         end
         local aa = absorbSettings.opacity or 0.3
-        local absorbOverlay = healthBar:CreateTexture(nil, "OVERLAY", nil, 1)
+        local absorbOverlay = RecycledTexture(healthBar, "OVERLAY", 1)
         absorbOverlay:SetTexture("Interface\\RaidFrame\\Shield-Fill")
         absorbOverlay:SetVertexColor(ac[1], ac[2], ac[3], aa)
         absorbOverlay:SetPoint("TOPLEFT", healthBar, "TOPLEFT", fillRight, 0)
@@ -619,7 +747,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             hc = healPredSettings.color or {0.2, 1, 0.2}
         end
         local ha = healPredSettings.opacity or 0.5
-        local healOverlay = healthBar:CreateTexture(nil, "OVERLAY", nil, 1)
+        local healOverlay = RecycledTexture(healthBar, "OVERLAY", 1)
         healOverlay:SetTexture(texturePath)
         healOverlay:SetVertexColor(hc[1], hc[2], hc[3], ha)
         local healStart = fillRight + (absorbSettings and absorbSettings.enabled ~= false and absorbW or 0)
@@ -628,6 +756,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         healOverlay:SetWidth(healPredW)
     end
 
+    RecycleFinish()
     frame:Show()
     return frame
 end
@@ -636,7 +765,7 @@ local function DestroyTestFrames(onlyType)
     if onlyType then
         local frames = testFramesByType[onlyType]
         if frames then
-            for _, frame in ipairs(frames) do frame:Hide(); frame:SetParent(nil) end
+            for _, frame in ipairs(frames) do ReleaseTestShell(frame) end
             wipe(frames)
         end
         testFramesByType[onlyType] = nil
@@ -649,17 +778,24 @@ local function DestroyTestFrames(onlyType)
             testContainer = testContainers.party or testContainers.raid
         end
         if keepContainer then
-            keepContainer._reuseContainer = true
+            reuseContainers[#reuseContainers + 1] = keepContainer
         end
     else
-        for _, frame in ipairs(testFrames) do frame:Hide(); frame:SetParent(nil) end
+        for _, frame in ipairs(testFrames) do
+            if frame._quiTestShell then
+                ReleaseTestShell(frame)
+            else
+                frame:Hide()
+                frame:SetParent(nil)
+            end
+        end
         wipe(testFrames)
         for _, frames in pairs(testFramesByType) do
-            for _, frame in ipairs(frames) do frame:Hide(); frame:SetParent(nil) end
+            for _, frame in ipairs(frames) do ReleaseTestShell(frame) end
         end
         wipe(testFramesByType)
         for _, container in pairs(testContainers) do
-            container._reuseContainer = true
+            reuseContainers[#reuseContainers + 1] = container
         end
         wipe(testContainers)
         testContainer = nil
@@ -687,17 +823,10 @@ function QUI_GFEM:EnableTestMode(previewType)
         count = db.testMode and db.testMode.partyCount or 5
     end
 
-    local container
-    local children = { UIParent:GetChildren() }
-    for _, child in ipairs(children) do
-        if child._reuseContainer then
-            container = child
-            container._reuseContainer = nil
-            break
-        end
-    end
-
-    if not container then
+    local container = table.remove(reuseContainers)
+    if container then
+        container:SetParent(UIParent)
+    else
         container = CreateFrame("Frame", nil, UIParent)
     end
 
@@ -836,13 +965,11 @@ function QUI_GFEM:EnableTestMode(previewType)
 end
 
 local function CleanupReuseContainers()
-    local children = { UIParent:GetChildren() }
-    for _, child in ipairs(children) do
-        if child._reuseContainer then
-            child._reuseContainer = nil
-            child:Hide()
-            child:SetParent(nil)
-        end
+    for i = #reuseContainers, 1, -1 do
+        local container = reuseContainers[i]
+        reuseContainers[i] = nil
+        container:Hide()
+        container:SetParent(nil)
     end
 end
 
@@ -1638,8 +1765,7 @@ end
 function QUI_GFEM:DestroySpotlightHeader()
     if spotlightContainer and spotlightContainer._previewFrames then
         for _, f in ipairs(spotlightContainer._previewFrames) do
-            f:Hide()
-            f:SetParent(nil)
+            ReleaseTestShell(f)
         end
         spotlightContainer._previewFrames = nil
     end

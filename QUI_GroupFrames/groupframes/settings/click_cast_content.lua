@@ -1,4 +1,5 @@
 local ADDON_NAME, ns = ...
+local FoldUTF8 = ns.Helpers.FoldUTF8
 local function CJKFont(fs, p, s, f)
     if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
         ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
@@ -607,6 +608,270 @@ local function BuildClickCastPings(L, state)
     end
 end
 
+local browsePopupHandle
+
+local function EnsureBrowsePopup()
+    if browsePopupHandle then return browsePopupHandle end
+
+    local browsePopup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    browsePopup:SetSize(320, 400)
+    browsePopup:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    browsePopup:SetFrameStrata("TOOLTIP")
+    browsePopup:SetFrameLevel(1000)
+    browsePopup:SetToplevel(true)
+    browsePopup:SetMovable(true)
+    browsePopup:EnableMouse(true)
+    browsePopup:RegisterForDrag("LeftButton")
+    browsePopup:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    browsePopup:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    ApplyPixelBackdrop(browsePopup, 1, true)
+    browsePopup:SetBackdropColor(0.06, 0.06, 0.06, 0.97)
+    browsePopup:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
+    browsePopup:Hide()
+
+    local browseTitle = browsePopup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    browseTitle:SetPoint("TOPLEFT", 10, -8)
+    browseTitle:SetText(ns.L["Browse Spells"])
+    CJKFont(browseTitle, GUI.FONT_PATH, 12, "")
+    browseTitle:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+
+    local browseCloseBtn = CreateClickCastButton(browsePopup, "X", 20, 20, function() browsePopup:Hide() end)
+    browseCloseBtn:SetPoint("TOPRIGHT", -6, -6)
+    if browseCloseBtn.text then
+        CJKFont(browseCloseBtn.text, GUI.FONT_PATH, 11, "")
+    end
+
+    local browseSearchBg = CreateFrame("Frame", nil, browsePopup, "BackdropTemplate")
+    browseSearchBg:SetPoint("TOPLEFT", 8, -28)
+    browseSearchBg:SetPoint("RIGHT", browsePopup, "RIGHT", -8, 0)
+    SetHeightPx(browseSearchBg, 24)
+    ApplyPixelBackdrop(browseSearchBg, 1, true)
+    browseSearchBg:SetBackdropColor(0.08, 0.08, 0.08, 1)
+    browseSearchBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+
+    local browseSearch = CreateFrame("EditBox", nil, browseSearchBg)
+    browseSearch:SetPoint("LEFT", 8, 0)
+    browseSearch:SetPoint("RIGHT", -8, 0)
+    browseSearch:SetHeight(22)
+    browseSearch:SetAutoFocus(false)
+    CJKFont(browseSearch, GUI.FONT_PATH, 11, "")
+    browseSearch:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+    browseSearch:SetText("")
+
+    local browseSearchPlaceholder = browseSearchBg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    browseSearchPlaceholder:SetPoint("LEFT", 8, 0)
+    browseSearchPlaceholder:SetText(ns.L["Search spells..."])
+    CJKFont(browseSearchPlaceholder, GUI.FONT_PATH, 11, "")
+    browseSearchPlaceholder:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.6)
+    browseSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    local SCROLLBAR_WIDTH = 4
+    local SCROLL_STEP = 24
+
+    local browseScroll = CreateFrame("ScrollFrame", nil, browsePopup)
+    browseScroll:SetPoint("TOPLEFT", 8, -58)
+    browseScroll:SetPoint("BOTTOMRIGHT", -(8 + SCROLLBAR_WIDTH + 2), 8)
+
+    local browseScrollChild = CreateFrame("Frame", nil, browseScroll)
+    browseScrollChild:SetWidth(browseScroll:GetWidth() or 296)
+    browseScrollChild:SetHeight(1)
+    browseScroll:SetScrollChild(browseScrollChild)
+
+    local browseScrollBar = CreateFrame("Frame", nil, browsePopup)
+    browseScrollBar:SetWidth(SCROLLBAR_WIDTH)
+    browseScrollBar:SetPoint("TOPRIGHT", browsePopup, "TOPRIGHT", -8, -58)
+    browseScrollBar:SetPoint("BOTTOMRIGHT", browsePopup, "BOTTOMRIGHT", -8, 8)
+    browseScrollBar:Hide()
+
+    local browseThumb = browseScrollBar:CreateTexture(nil, "OVERLAY")
+    browseThumb:SetWidth(SCROLLBAR_WIDTH)
+    browseThumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
+
+    local function UpdateBrowseThumb()
+        local contentH = browseScrollChild:GetHeight()
+        local frameH = browseScroll:GetHeight()
+        if contentH <= frameH or frameH <= 0 then
+            browseScrollBar:Hide()
+            return
+        end
+        browseScrollBar:Show()
+        local trackH = browseScrollBar:GetHeight()
+        if trackH <= 0 then return end
+        local thumbH = math.max(20, (frameH / contentH) * trackH)
+        browseThumb:SetHeight(thumbH)
+        local scrollMax = contentH - frameH
+        local okScroll, scrollCur = pcall(browseScroll.GetVerticalScroll, browseScroll)
+        scrollCur = (okScroll and scrollCur) or 0
+        local ratio = (scrollMax > 0) and (scrollCur / scrollMax) or 0
+        local yOff = -ratio * (trackH - thumbH)
+        browseThumb:ClearAllPoints()
+        browseThumb:SetPoint("TOP", browseScrollBar, "TOP", 0, yOff)
+    end
+
+    browseScroll:EnableMouseWheel(true)
+    browseScroll:SetScript("OnMouseWheel", function(self, delta)
+        local okCur, currentScroll = pcall(self.GetVerticalScroll, self)
+        if not okCur then return end
+        local contentH = browseScrollChild:GetHeight()
+        local frameH = self:GetHeight()
+        local maxScroll = math.max(0, contentH - frameH)
+        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
+        self:SetVerticalScroll(newScroll)
+        UpdateBrowseThumb()
+    end)
+    browseScroll:SetScript("OnScrollRangeChanged", function() UpdateBrowseThumb() end)
+
+    browseScroll:SetScript("OnSizeChanged", function(self, w)
+        browseScrollChild:SetWidth(w or 296)
+    end)
+
+    local BROWSE_ROW_H = 24
+    local browseRows = {}
+    local browseRowIndex = 0
+    local expandedTabs = {}
+
+    local function GetOrCreateSpellRow()
+        browseRowIndex = browseRowIndex + 1
+        local row = browseRows[browseRowIndex]
+        if row and row.isSpellRow then
+            row:ClearAllPoints()
+            row:Show()
+            return row
+        end
+        row = CreateFrame("Button", nil, browseScrollChild)
+        row.isSpellRow = true
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(18, 18)
+        row.icon:SetPoint("LEFT", 4, 0)
+        row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.text:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
+        row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.text:SetJustifyH("LEFT")
+        CJKFont(row.text, GUI.FONT_PATH, 11, "")
+        local hl = row:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.15)
+        row:SetScript("OnClick", function(self)
+            if self.spellName then
+                if browsePopupHandle and browsePopupHandle.onPick then
+                    browsePopupHandle.onPick(self.spellName)
+                end
+                browsePopup:Hide()
+            end
+        end)
+        browseRows[browseRowIndex] = row
+        return row
+    end
+
+    local function GetOrCreateHeaderRow()
+        browseRowIndex = browseRowIndex + 1
+        local row = browseRows[browseRowIndex]
+        if row and not row.isSpellRow then
+            row:ClearAllPoints()
+            row:Show()
+            return row
+        end
+        row = CreateFrame("Button", nil, browseScrollChild)
+        row.isSpellRow = false
+
+        row.chevron = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.chevron:SetPoint("LEFT", 2, 0)
+        CJKFont(row.chevron, GUI.FONT_PATH, 10, "")
+        row.chevron:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.6)
+
+        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.text:SetPoint("LEFT", row.chevron, "RIGHT", 4, 0)
+        CJKFont(row.text, GUI.FONT_PATH, 10, "")
+
+        local hl = row:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.08)
+
+        browseRows[browseRowIndex] = row
+        return row
+    end
+
+    local BuildBrowseList
+
+    local function BuildBrowseListImpl(filter)
+        for _, row in ipairs(browseRows) do row:Hide() end
+        browseRowIndex = 0
+
+        local spells = EnsureSpellCache()
+        local lower = filter and filter ~= "" and FoldUTF8(filter) or nil
+        local by = 0
+        local currentTab = nil
+
+        local ignoreCollapse = lower ~= nil
+
+        for _, entry in ipairs(spells) do
+            if not lower or FoldUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldUTF8(entry.baseName):find(lower, 1, true)) then
+                if entry.tab ~= currentTab then
+                    currentTab = entry.tab
+                    local isCollapsed = not ignoreCollapse and not expandedTabs[currentTab]
+                    local headerRow = GetOrCreateHeaderRow()
+                    headerRow:SetHeight(BROWSE_ROW_H)
+                    headerRow:SetPoint("TOPLEFT", 0, by)
+                    headerRow:SetPoint("RIGHT", browseScrollChild, "RIGHT", 0, 0)
+                    headerRow.text:SetText(currentTab)
+                    headerRow.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
+                    headerRow.chevron:SetText(isCollapsed and ">" or "v")
+                    headerRow.tabName = currentTab
+                    headerRow:SetScript("OnClick", function(self)
+                        expandedTabs[self.tabName] = not expandedTabs[self.tabName]
+                        BuildBrowseList(browseSearch:GetText())
+                    end)
+                    by = by - BROWSE_ROW_H
+                end
+
+                if not (not ignoreCollapse and not expandedTabs[currentTab]) then
+                    local row = GetOrCreateSpellRow()
+                    row:SetHeight(BROWSE_ROW_H)
+                    row:SetPoint("TOPLEFT", 0, by)
+                    row:SetPoint("RIGHT", browseScrollChild, "RIGHT", 0, 0)
+                    row.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                    local display = entry.baseName and (entry.name .. "  |cFF888888(" .. entry.baseName .. ")|r") or entry.name
+                    row.text:SetText(display)
+                    row.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                    row.spellName = entry.name
+                    by = by - BROWSE_ROW_H
+                end
+            end
+        end
+
+        browseScrollChild:SetHeight(math.max(1, math.abs(by)))
+        browseScroll:SetVerticalScroll(0)
+        C_Timer.After(0, UpdateBrowseThumb)
+    end
+
+    BuildBrowseList = BuildBrowseListImpl
+
+    local browseSearchTimer = nil
+    browseSearch:SetScript("OnTextChanged", function(self, userInput)
+        local txt = self:GetText()
+        browseSearchPlaceholder:SetShown(not txt or txt == "")
+        if not userInput then return end
+        if browseSearchTimer then browseSearchTimer:Cancel() end
+        browseSearchTimer = C_Timer.NewTimer(0.15, function()
+            browseSearchTimer = nil
+            BuildBrowseList(txt)
+        end)
+    end)
+
+    browsePopup:SetScript("OnHide", function()
+        browseSearch:SetText("")
+        browseSearchPlaceholder:Show()
+    end)
+
+    browsePopupHandle = {
+        popup = browsePopup,
+        search = browseSearch,
+        build = BuildBrowseList,
+    }
+    return browsePopupHandle
+end
+
 local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     local GFCC = ns.QUI_GroupFrameClickCast
 
@@ -1042,10 +1307,10 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     local function ShowAutocomplete(searchText)
         if not searchText or #searchText < 2 then acMenu:Hide() return end
         local spells = EnsureSpellCache()
-        local lower = searchText:lower()
+        local lower = FoldUTF8(searchText)
         local matches = {}
         for _, entry in ipairs(spells) do
-            if entry.name:lower():find(lower, 1, true) or (entry.baseName and entry.baseName:lower():find(lower, 1, true)) then
+            if FoldUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldUTF8(entry.baseName):find(lower, 1, true)) then
                 matches[#matches + 1] = entry
                 if #matches >= MAX_AC_ROWS then break end
             end
@@ -1086,250 +1351,12 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         C_Timer.After(0.1, function() acMenu:Hide() end)
     end)
 
-    local browsePopup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-    browsePopup:SetSize(320, 400)
-    browsePopup:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    browsePopup:SetFrameStrata("TOOLTIP")
-    browsePopup:SetFrameLevel(1000)
-    browsePopup:SetToplevel(true)
-    browsePopup:SetMovable(true)
-    browsePopup:EnableMouse(true)
-    browsePopup:RegisterForDrag("LeftButton")
-    browsePopup:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    browsePopup:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    ApplyPixelBackdrop(browsePopup, 1, true)
-    browsePopup:SetBackdropColor(0.06, 0.06, 0.06, 0.97)
-    browsePopup:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
-    browsePopup:Hide()
-
-    local browseTitle = browsePopup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    browseTitle:SetPoint("TOPLEFT", 10, -8)
-    browseTitle:SetText(ns.L["Browse Spells"])
-    CJKFont(browseTitle, GUI.FONT_PATH, 12, "")
-    browseTitle:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-
-    local browseCloseBtn = CreateClickCastButton(browsePopup, "X", 20, 20, function() browsePopup:Hide() end)
-    browseCloseBtn:SetPoint("TOPRIGHT", -6, -6)
-    if browseCloseBtn.text then
-        CJKFont(browseCloseBtn.text, GUI.FONT_PATH, 11, "")
+    local browse = EnsureBrowsePopup()
+    local browsePopup = browse.popup
+    browse.onPick = function(spellName)
+        spellInput:SetText(spellName)
+        addState.spellName = spellName
     end
-
-    local browseSearchBg = CreateFrame("Frame", nil, browsePopup, "BackdropTemplate")
-    browseSearchBg:SetPoint("TOPLEFT", 8, -28)
-    browseSearchBg:SetPoint("RIGHT", browsePopup, "RIGHT", -8, 0)
-    SetHeightPx(browseSearchBg, 24)
-    ApplyPixelBackdrop(browseSearchBg, 1, true)
-    browseSearchBg:SetBackdropColor(0.08, 0.08, 0.08, 1)
-    browseSearchBg:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
-
-    local browseSearch = CreateFrame("EditBox", nil, browseSearchBg)
-    browseSearch:SetPoint("LEFT", 8, 0)
-    browseSearch:SetPoint("RIGHT", -8, 0)
-    browseSearch:SetHeight(22)
-    browseSearch:SetAutoFocus(false)
-    CJKFont(browseSearch, GUI.FONT_PATH, 11, "")
-    browseSearch:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-    browseSearch:SetText("")
-
-    local browseSearchPlaceholder = browseSearchBg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    browseSearchPlaceholder:SetPoint("LEFT", 8, 0)
-    browseSearchPlaceholder:SetText(ns.L["Search spells..."])
-    CJKFont(browseSearchPlaceholder, GUI.FONT_PATH, 11, "")
-    browseSearchPlaceholder:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.6)
-    browseSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-    local SCROLLBAR_WIDTH = 4
-    local SCROLL_STEP = 24
-
-    local browseScroll = CreateFrame("ScrollFrame", nil, browsePopup)
-    browseScroll:SetPoint("TOPLEFT", 8, -58)
-    browseScroll:SetPoint("BOTTOMRIGHT", -(8 + SCROLLBAR_WIDTH + 2), 8)
-
-    local browseScrollChild = CreateFrame("Frame", nil, browseScroll)
-    browseScrollChild:SetWidth(browseScroll:GetWidth() or 296)
-    browseScrollChild:SetHeight(1)
-    browseScroll:SetScrollChild(browseScrollChild)
-
-    local browseScrollBar = CreateFrame("Frame", nil, browsePopup)
-    browseScrollBar:SetWidth(SCROLLBAR_WIDTH)
-    browseScrollBar:SetPoint("TOPRIGHT", browsePopup, "TOPRIGHT", -8, -58)
-    browseScrollBar:SetPoint("BOTTOMRIGHT", browsePopup, "BOTTOMRIGHT", -8, 8)
-    browseScrollBar:Hide()
-
-    local browseThumb = browseScrollBar:CreateTexture(nil, "OVERLAY")
-    browseThumb:SetWidth(SCROLLBAR_WIDTH)
-    browseThumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
-
-    local function UpdateBrowseThumb()
-        local contentH = browseScrollChild:GetHeight()
-        local frameH = browseScroll:GetHeight()
-        if contentH <= frameH or frameH <= 0 then
-            browseScrollBar:Hide()
-            return
-        end
-        browseScrollBar:Show()
-        local trackH = browseScrollBar:GetHeight()
-        if trackH <= 0 then return end
-        local thumbH = math.max(20, (frameH / contentH) * trackH)
-        browseThumb:SetHeight(thumbH)
-        local scrollMax = contentH - frameH
-        local okScroll, scrollCur = pcall(browseScroll.GetVerticalScroll, browseScroll)
-        scrollCur = (okScroll and scrollCur) or 0
-        local ratio = (scrollMax > 0) and (scrollCur / scrollMax) or 0
-        local yOff = -ratio * (trackH - thumbH)
-        browseThumb:ClearAllPoints()
-        browseThumb:SetPoint("TOP", browseScrollBar, "TOP", 0, yOff)
-    end
-
-    browseScroll:EnableMouseWheel(true)
-    browseScroll:SetScript("OnMouseWheel", function(self, delta)
-        local okCur, currentScroll = pcall(self.GetVerticalScroll, self)
-        if not okCur then return end
-        local contentH = browseScrollChild:GetHeight()
-        local frameH = self:GetHeight()
-        local maxScroll = math.max(0, contentH - frameH)
-        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
-        self:SetVerticalScroll(newScroll)
-        UpdateBrowseThumb()
-    end)
-    browseScroll:SetScript("OnScrollRangeChanged", function() UpdateBrowseThumb() end)
-
-    browseScroll:SetScript("OnSizeChanged", function(self, w)
-        browseScrollChild:SetWidth(w or 296)
-    end)
-
-    local BROWSE_ROW_H = 24
-    local browseRows = {}
-    local browseRowIndex = 0
-    local expandedTabs = {}
-
-    local function GetOrCreateSpellRow()
-        browseRowIndex = browseRowIndex + 1
-        local row = browseRows[browseRowIndex]
-        if row and row.isSpellRow then
-            row:ClearAllPoints()
-            row:Show()
-            return row
-        end
-        row = CreateFrame("Button", nil, browseScrollChild)
-        row.isSpellRow = true
-        row.icon = row:CreateTexture(nil, "ARTWORK")
-        row.icon:SetSize(18, 18)
-        row.icon:SetPoint("LEFT", 4, 0)
-        row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row.text:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-        row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-        row.text:SetJustifyH("LEFT")
-        CJKFont(row.text, GUI.FONT_PATH, 11, "")
-        local hl = row:CreateTexture(nil, "HIGHLIGHT")
-        hl:SetAllPoints()
-        hl:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.15)
-        row:SetScript("OnClick", function(self)
-            if self.spellName then
-                spellInput:SetText(self.spellName)
-                addState.spellName = self.spellName
-                browsePopup:Hide()
-            end
-        end)
-        browseRows[browseRowIndex] = row
-        return row
-    end
-
-    local function GetOrCreateHeaderRow()
-        browseRowIndex = browseRowIndex + 1
-        local row = browseRows[browseRowIndex]
-        if row and not row.isSpellRow then
-            row:ClearAllPoints()
-            row:Show()
-            return row
-        end
-        row = CreateFrame("Button", nil, browseScrollChild)
-        row.isSpellRow = false
-
-        row.chevron = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row.chevron:SetPoint("LEFT", 2, 0)
-        CJKFont(row.chevron, GUI.FONT_PATH, 10, "")
-        row.chevron:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.6)
-
-        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row.text:SetPoint("LEFT", row.chevron, "RIGHT", 4, 0)
-        CJKFont(row.text, GUI.FONT_PATH, 10, "")
-
-        local hl = row:CreateTexture(nil, "HIGHLIGHT")
-        hl:SetAllPoints()
-        hl:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.08)
-
-        browseRows[browseRowIndex] = row
-        return row
-    end
-
-    local BuildBrowseList
-
-    local function BuildBrowseListImpl(filter)
-        for _, row in ipairs(browseRows) do row:Hide() end
-        browseRowIndex = 0
-
-        local spells = EnsureSpellCache()
-        local lower = filter and filter ~= "" and filter:lower() or nil
-        local by = 0
-        local currentTab = nil
-
-        local ignoreCollapse = lower ~= nil
-
-        for _, entry in ipairs(spells) do
-            if not lower or entry.name:lower():find(lower, 1, true) or (entry.baseName and entry.baseName:lower():find(lower, 1, true)) then
-                if entry.tab ~= currentTab then
-                    currentTab = entry.tab
-                    local isCollapsed = not ignoreCollapse and not expandedTabs[currentTab]
-                    local headerRow = GetOrCreateHeaderRow()
-                    headerRow:SetHeight(BROWSE_ROW_H)
-                    headerRow:SetPoint("TOPLEFT", 0, by)
-                    headerRow:SetPoint("RIGHT", browseScrollChild, "RIGHT", 0, 0)
-                    headerRow.text:SetText(currentTab)
-                    headerRow.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
-                    headerRow.chevron:SetText(isCollapsed and ">" or "v")
-                    headerRow.tabName = currentTab
-                    headerRow:SetScript("OnClick", function(self)
-                        expandedTabs[self.tabName] = not expandedTabs[self.tabName]
-                        BuildBrowseList(browseSearch:GetText())
-                    end)
-                    by = by - BROWSE_ROW_H
-                end
-
-                if not (not ignoreCollapse and not expandedTabs[currentTab]) then
-                    local row = GetOrCreateSpellRow()
-                    row:SetHeight(BROWSE_ROW_H)
-                    row:SetPoint("TOPLEFT", 0, by)
-                    row:SetPoint("RIGHT", browseScrollChild, "RIGHT", 0, 0)
-                    row.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-                    local display = entry.baseName and (entry.name .. "  |cFF888888(" .. entry.baseName .. ")|r") or entry.name
-                    row.text:SetText(display)
-                    row.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-                    row.spellName = entry.name
-                    by = by - BROWSE_ROW_H
-                end
-            end
-        end
-
-        browseScrollChild:SetHeight(math.max(1, math.abs(by)))
-        browseScroll:SetVerticalScroll(0)
-        C_Timer.After(0, UpdateBrowseThumb)
-    end
-
-    BuildBrowseList = BuildBrowseListImpl
-
-    local browseSearchTimer = nil
-    browseSearch:SetScript("OnTextChanged", function(self, userInput)
-        local txt = self:GetText()
-        browseSearchPlaceholder:SetShown(not txt or txt == "")
-        if not userInput then return end
-        if browseSearchTimer then browseSearchTimer:Cancel() end
-        browseSearchTimer = C_Timer.NewTimer(0.15, function()
-            browseSearchTimer = nil
-            BuildBrowseList(txt)
-        end)
-    end)
 
     browseBtn:SetScript("OnClick", function()
         if browsePopup:IsShown() then
@@ -1337,15 +1364,10 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
             return
         end
         RebuildSpellCache()
-        browseSearch:SetText("")
-        BuildBrowseList(nil)
+        browse.search:SetText("")
+        browse.build(nil)
         browsePopup:Show()
         browsePopup:Raise()
-    end)
-
-    browsePopup:SetScript("OnHide", function()
-        browseSearch:SetText("")
-        browseSearchPlaceholder:Show()
     end)
 
     ay = ay - FORM_ROW
@@ -1470,26 +1492,76 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     addBtn:SetPoint("TOPLEFT", 0, addBtnY)
     addContainer:SetHeight(math.abs(addBtnY) + 36)
 
-    RefreshBindingList = function()
-        for _, child in ipairs({bindingListFrame:GetChildren()}) do
-            child:Hide()
-            child:SetParent(nil)
+    local bindingRows = {}
+    local bindingEmptyLabel
+
+    local function AcquireBindingRow(index)
+        local row = bindingRows[index]
+        if row then
+            row:Show()
+            return row
         end
+        row = CreateFrame("Frame", nil, bindingListFrame)
+        row:SetSize(400, 28)
+        row:SetPoint("TOPLEFT", 0, -30 * (index - 1))
+        local iconTex = row:CreateTexture(nil, "ARTWORK")
+        iconTex:SetSize(24, 24)
+        iconTex:SetPoint("LEFT", 0, 0)
+        iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        row.iconTex = iconTex
+        local comboText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        comboText:SetPoint("LEFT", iconTex, "RIGHT", 6, 0)
+        comboText:SetWidth(140)
+        comboText:SetJustifyH("LEFT")
+        row.comboText = comboText
+        local spellText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        spellText:SetPoint("LEFT", comboText, "RIGHT", 8, 0)
+        spellText:SetWidth(140)
+        spellText:SetJustifyH("LEFT")
+        row.spellText = spellText
+        local removeBtn = CreateClickCastButton(row, "X", 22, 22, function()
+            GFCC:RemoveBinding(row.bindingIndex)
+            RefreshBindingList()
+        end)
+        if removeBtn.text then
+            removeBtn.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.7)
+        end
+        removeBtn:SetScript("OnEnter", function(self)
+            SetButtonBorder(self, C.accent[1], C.accent[2], C.accent[3], 1)
+            SetButtonHover(self, true, C.accent[1], C.accent[2], C.accent[3], 0.08)
+            if self.text then self.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1) end
+        end)
+        removeBtn:SetScript("OnLeave", function(self)
+            SetButtonBorder(self, 0.3, 0.3, 0.3, 1)
+            SetButtonHover(self, false)
+            if self.text then self.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.7) end
+        end)
+        removeBtn:SetPoint("LEFT", spellText, "RIGHT", 8, 0)
+        row.removeBtn = removeBtn
+        bindingRows[index] = row
+        return row
+    end
+
+    RefreshBindingList = function()
         UpdateSpecLabel()
         local buttonNames = GFCC:GetButtonNames()
         local modLabels  = GFCC:GetModifierLabels()
         local bindings   = GFCC:GetEditableBindings()
         local listY = 0
         if #bindings == 0 then
-            local emptyLabel = CreateFrame("Frame", nil, bindingListFrame)
-            emptyLabel:SetSize(300, 28)
-            emptyLabel:SetPoint("TOPLEFT", 0, 0)
-            local emptyText = emptyLabel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            emptyText:SetPoint("LEFT", 0, 0)
-            emptyText:SetText(ns.L["No bindings configured yet."])
-            emptyText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+            if not bindingEmptyLabel then
+                bindingEmptyLabel = CreateFrame("Frame", nil, bindingListFrame)
+                bindingEmptyLabel:SetSize(300, 28)
+                bindingEmptyLabel:SetPoint("TOPLEFT", 0, 0)
+                local emptyText = bindingEmptyLabel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                emptyText:SetPoint("LEFT", 0, 0)
+                emptyText:SetText(ns.L["No bindings configured yet."])
+                emptyText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+            end
+            bindingEmptyLabel:Show()
             listY = -28
         else
+            if bindingEmptyLabel then bindingEmptyLabel:Hide() end
             for i, binding in ipairs(bindings) do
                 local actionType = binding.actionType
                 if type(actionType) ~= "string" then actionType = "spell" end
@@ -1500,13 +1572,9 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                     local currentName = C_Spell.GetSpellName(resolvedSpellID)
                     if currentName then spellName = currentName end
                 end
-                local row = CreateFrame("Frame", nil, bindingListFrame)
-                row:SetSize(400, 28)
-                row:SetPoint("TOPLEFT", 0, listY)
-                local iconTex = row:CreateTexture(nil, "ARTWORK")
-                iconTex:SetSize(24, 24)
-                iconTex:SetPoint("LEFT", 0, 0)
-                iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                local row = AcquireBindingRow(i)
+                row.bindingIndex = i
+                local iconTex = row.iconTex
                 if actionType == "spell" and spellName then
                     local lookupID = resolvedSpellID or C_Spell.GetSpellIDForSpellIdentifier(spellName)
                     if lookupID then
@@ -1520,16 +1588,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 end
                 local modLabel = modLabels[binding.modifiers or ""] or ""
                 local triggerLabel = binding.key or (buttonNames[binding.button] or binding.button)
-                local comboText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                comboText:SetPoint("LEFT", iconTex, "RIGHT", 6, 0)
-                comboText:SetWidth(140)
-                comboText:SetJustifyH("LEFT")
-                comboText:SetText(modLabel .. triggerLabel)
-                comboText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-                local spellText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                spellText:SetPoint("LEFT", comboText, "RIGHT", 8, 0)
-                spellText:SetWidth(140)
-                spellText:SetJustifyH("LEFT")
+                row.comboText:SetText(modLabel .. triggerLabel)
+                row.comboText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
                 local displayName = spellName or actionType
                 if actionType == "macro" then displayName = ns.L["Macro"]
                 elseif actionType == "menu" then displayName = ns.L["Unit Menu"]
@@ -1539,27 +1599,19 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 elseif binding.enemy then
                     displayName = displayName .. " " .. ns.L["(enemy)"]
                 end
-                spellText:SetText(displayName)
-                spellText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
-                local removeBtn = CreateClickCastButton(row, "X", 22, 22, function() GFCC:RemoveBinding(i) RefreshBindingList() end)
-                if removeBtn.text then
-                    removeBtn.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.7)
+                row.spellText:SetText(displayName)
+                row.spellText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                if row.removeBtn.text then
+                    row.removeBtn.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.7)
                 end
-                SetButtonFill(removeBtn, 0.1, 0.1, 0.1, 0.8)
-                SetButtonBorder(removeBtn, 0.3, 0.3, 0.3, 1)
-                removeBtn:SetScript("OnEnter", function(self)
-                    SetButtonBorder(self, C.accent[1], C.accent[2], C.accent[3], 1)
-                    SetButtonHover(self, true, C.accent[1], C.accent[2], C.accent[3], 0.08)
-                    if self.text then self.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1) end
-                end)
-                removeBtn:SetScript("OnLeave", function(self)
-                    SetButtonBorder(self, 0.3, 0.3, 0.3, 1)
-                    SetButtonHover(self, false)
-                    if self.text then self.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 0.7) end
-                end)
-                removeBtn:SetPoint("LEFT", spellText, "RIGHT", 8, 0)
+                SetButtonFill(row.removeBtn, 0.1, 0.1, 0.1, 0.8)
+                SetButtonBorder(row.removeBtn, 0.3, 0.3, 0.3, 1)
+                SetButtonHover(row.removeBtn, false)
                 listY = listY - 30
             end
+        end
+        for i = #bindings + 1, #bindingRows do
+            bindingRows[i]:Hide()
         end
         local listHeight = math.max(20, math.abs(listY))
         bindingListFrame:SetHeight(listHeight)

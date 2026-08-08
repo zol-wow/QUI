@@ -2,7 +2,6 @@ local ADDON_NAME, ns = ...
 
 local Settings = ns.Settings
 local ProviderPanels = Settings and Settings.ProviderPanels
-local Helpers = ns.Helpers
 if not ProviderPanels or type(ProviderPanels.RegisterAfterLoad) ~= "function" then
     return
 end
@@ -13,21 +12,6 @@ local function CJKFont(fs, p, s, f)
     else
         fs:SetFont(p, s, f)
     end
-end
-
-local function IsChatLayoutLockedDown()
-    local I = ns.QUI and ns.QUI.Chat and ns.QUI.Chat._internals
-    return (type(InCombatLockdown) == "function" and InCombatLockdown())
-        or (I and I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown())
-end
-
-local function GetPixelSize(frame)
-    local uikit = ns.UIKit
-    if uikit and uikit.GetPixelSize then
-        return uikit.GetPixelSize(frame)
-    end
-    local core = ns.Addon
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
 end
 
 local function CollectJoinedChannelNames()
@@ -1266,7 +1250,6 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     skipSelf = true,
                     highlightColor = { 0.204, 0.831, 0.600, 1 },
                     soundFile = "Sound\\Interface\\RaidWarning.ogg",
-                    flashTab = false,
                 }
             end
             local ka = chat.modifiers.keywordAlert
@@ -1296,8 +1279,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             card.AddRow(row(card.frame, ns.L["Trigger on my first name"], firstNameCb), row(card.frame, ns.L["Trigger on my guild name"], guildNameCb))
 
             local skipSelfCb = TrackKeywordControl(GUI:CreateFormCheckbox(card.frame, nil, "skipSelf", ka, Refresh, { description = ns.L["Don't trigger alerts for messages you send yourself. Recommended on."] }))
-            local flashTabCb = TrackKeywordControl(GUI:CreateFormCheckbox(card.frame, nil, "flashTab", ka, Refresh, { description = ns.L["Briefly flash the chat tab in addition to highlighting the matched text."] }))
-            card.AddRow(row(card.frame, ns.L["Skip my own messages"], skipSelfCb), row(card.frame, ns.L["Flash chat tab on alert"], flashTabCb))
+            card.AddRow(row(card.frame, ns.L["Skip my own messages"], skipSelfCb))
 
             local highlightColorPicker = TrackKeywordControl(GUI:CreateFormColorPicker(card.frame, nil, "highlightColor", ka, Refresh, nil, { description = ns.L["Color used to wrap matched keywords in chat output."] }))
 
@@ -1923,94 +1905,146 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
 
             local lastTotalHeight = 0
+            local soundRows = {}
+            local spareSoundEntries = {}
+            local soundAddButton
+            local RebuildSoundEntries
 
-            local function RebuildSoundEntries()
-                soundEntriesContainer:SetHeight(0)
+            local function GetFirstAvailableChannel()
+                local used = {}
+                for _, e in ipairs(chat.newMessageSound.entries) do
+                    if e.channel then used[e.channel] = true end
+                end
+                for _, o in ipairs(ALL_CHANNEL_OPTIONS) do
+                    if not used[o.value] then return o.value end
+                end
+                return nil
+            end
+
+            local function RemoveSoundEntry(index)
+                local entries = chat.newMessageSound.entries
+                local n = #entries
+                if not entries[index] then return end
+                for j = index, n - 1 do
+                    entries[j].channel = entries[j + 1].channel
+                    entries[j].sound = entries[j + 1].sound
+                end
+                spareSoundEntries[#spareSoundEntries + 1] = entries[n]
+                entries[n] = nil
+            end
+
+            local function AddSoundEntry(channel)
+                local entries = chat.newMessageSound.entries
+                local e = table.remove(spareSoundEntries) or {}
+                e.channel = channel
+                e.sound = "None"
+                entries[#entries + 1] = e
+            end
+
+            local function ChannelOptionsForRow(entries, i)
+                local channelOpts = GetChannelOptionsForEntry(entries, i)
+                if #channelOpts == 0 then
+                    local entry = entries[i]
+                    channelOpts = {{value = entry.channel or "guild_officer", text = entry.channel or "guild_officer"}}
+                end
+                return channelOpts
+            end
+
+            local function CreateSoundRow(i, entry)
+                local entries = chat.newMessageSound.entries
+                local entryRow = CreateFrame("Frame", nil, soundEntriesContainer)
+                entryRow:SetPoint("TOPLEFT", 0, -((i - 1) * (FORM_ROW * 2 + 4)))
+                entryRow:SetPoint("RIGHT", soundEntriesContainer, "RIGHT", 0, 0)
+                entryRow:SetHeight(FORM_ROW * 2)
+
+                local function OnChannelChange()
+                    Refresh()
+                    RebuildSoundEntries()
+                end
+                local channelDropdown = GUI:CreateFormDropdown(entryRow, ns.L["Channel"], ChannelOptionsForRow(entries, i), "channel", entry, OnChannelChange, { description = ns.L["Chat channel this sound entry listens for. Each channel can only be assigned to one entry."] })
+                if GUI.SetWidgetProviderSyncOptions then
+                    GUI:SetWidgetProviderSyncOptions(channelDropdown, { auto = true, structural = true })
+                end
+                channelDropdown:SetPoint("TOPLEFT", 0, 0)
+                channelDropdown:SetPoint("RIGHT", entryRow, "RIGHT", -80, 0)
+
+                local soundDropdown = GUI:CreateFormDropdown(entryRow, ns.L["Sound"], U.GetSoundList(), "sound", entry, Refresh, { description = ns.L["Sound to play when a message arrives on this channel."] })
+                soundDropdown:SetPoint("TOPLEFT", 0, -FORM_ROW)
+                soundDropdown:SetPoint("RIGHT", entryRow, "RIGHT", -80, 0)
+
+                local removeBtn
+                removeBtn = GUI:CreateButton(entryRow, "X", 24, 22, function()
+                    RemoveSoundEntry(i)
+                    RebuildSoundEntries()
+                    Refresh()
+                    NotifyProviderFor(removeBtn, { structural = true })
+                end)
+                GUI:AttachTooltip(removeBtn,
+                    ns.L["Remove this channel/sound pairing. New messages on this channel will stop playing a sound."],
+                    ns.L["Remove Entry"])
+                removeBtn:SetPoint("RIGHT", entryRow, "RIGHT", 0, -FORM_ROW/2)
+
+                return {
+                    frame = entryRow,
+                    entry = entry,
+                    channelDropdown = channelDropdown,
+                    soundDropdown = soundDropdown,
+                    removeBtn = removeBtn,
+                }
+            end
+
+            function RebuildSoundEntries()
+                local entries = chat.newMessageSound.entries
+                if not entries then return end
                 for i = #soundDependentControls, 1, -1 do
                     soundDependentControls[i] = nil
                 end
-                for _, child in ipairs({ soundEntriesContainer:GetChildren() }) do
-                    child:Hide()
-                    child:SetParent(nil)
-                end
 
-                local entries = chat.newMessageSound.entries
-                if not entries then return end
-
-                local rowY = 0
                 for i, entry in ipairs(entries) do
-                    local entryRow = CreateFrame("Frame", nil, soundEntriesContainer)
-                    entryRow:SetPoint("TOPLEFT", 0, -rowY)
-                    entryRow:SetPoint("RIGHT", soundEntriesContainer, "RIGHT", 0, 0)
-                    entryRow:SetHeight(FORM_ROW)
-
-                    local channelOpts = GetChannelOptionsForEntry(entries, i)
-                    if #channelOpts == 0 then
-                        channelOpts = {{value = entry.channel or "guild_officer", text = entry.channel or "guild_officer"}}
+                    local soundRow = soundRows[i]
+                    if soundRow and soundRow.entry ~= entry then
+                        soundRow.frame:Hide()
+                        soundRow = nil
                     end
-
-                    local function OnChannelChange()
-                        Refresh()
-                        RebuildSoundEntries()
+                    if not soundRow then
+                        soundRow = CreateSoundRow(i, entry)
+                        soundRows[i] = soundRow
+                    else
+                        soundRow.channelDropdown:SetOptions(ChannelOptionsForRow(entries, i))
+                        soundRow.soundDropdown:SetOptions(U.GetSoundList())
+                        soundRow.frame:Show()
                     end
-                    local channelDropdown = TrackSoundControl(GUI:CreateFormDropdown(entryRow, ns.L["Channel"], channelOpts, "channel", entry, OnChannelChange, { description = ns.L["Chat channel this sound entry listens for. Each channel can only be assigned to one entry."] }))
-                    if GUI.SetWidgetProviderSyncOptions then
-                        GUI:SetWidgetProviderSyncOptions(channelDropdown, { auto = true, structural = true })
-                    end
-                    channelDropdown:SetPoint("TOPLEFT", 0, 0)
-                    channelDropdown:SetPoint("RIGHT", entryRow, "RIGHT", -80, 0)
-
-                    local soundList = U.GetSoundList()
-                    local soundDropdown = TrackSoundControl(GUI:CreateFormDropdown(entryRow, ns.L["Sound"], soundList, "sound", entry, Refresh, { description = ns.L["Sound to play when a message arrives on this channel."] }))
-                    soundDropdown:SetPoint("TOPLEFT", 0, -FORM_ROW)
-                    soundDropdown:SetPoint("RIGHT", entryRow, "RIGHT", -80, 0)
-
-                    local removeBtn
-                    removeBtn = GUI:CreateButton(entryRow, "X", 24, 22, function()
-                        table.remove(entries, i)
-                        RebuildSoundEntries()
-                        Refresh()
-                        NotifyProviderFor(removeBtn, { structural = true })
-                    end)
-                    GUI:AttachTooltip(removeBtn,
-                        ns.L["Remove this channel/sound pairing. New messages on this channel will stop playing a sound."],
-                        ns.L["Remove Entry"])
-                    TrackSoundControl(removeBtn)
-                    removeBtn:SetPoint("RIGHT", entryRow, "RIGHT", 0, -FORM_ROW/2)
-
-                    entryRow:SetHeight(FORM_ROW * 2)
-                    rowY = rowY + FORM_ROW * 2 + 4
+                    TrackSoundControl(soundRow.channelDropdown)
+                    TrackSoundControl(soundRow.soundDropdown)
+                    TrackSoundControl(soundRow.removeBtn)
+                end
+                for i = #entries + 1, #soundRows do
+                    soundRows[i].frame:Hide()
                 end
 
-                soundEntriesContainer:SetHeight(rowY)
+                local rowY = #entries * (FORM_ROW * 2 + 4)
 
-                local function GetFirstAvailableChannel()
-                    local used = {}
-                    for _, e in ipairs(chat.newMessageSound.entries) do
-                        if e.channel then used[e.channel] = true end
+                if GetFirstAvailableChannel() then
+                    if not soundAddButton then
+                        soundAddButton = GUI:CreateButton(soundEntriesContainer, ns.L["+ Add Channel + Sound"], 180, 24, function()
+                            local channel = GetFirstAvailableChannel()
+                            if not channel then return end
+                            AddSoundEntry(channel)
+                            RebuildSoundEntries()
+                            Refresh()
+                            NotifyProviderFor(soundAddButton, { structural = true })
+                        end)
+                        GUI:AttachTooltip(soundAddButton,
+                            ns.L["Add another channel-to-sound pairing. Pick the channel and the sound to play when a new message arrives there."],
+                            ns.L["Add Channel + Sound"])
                     end
-                    for _, o in ipairs(ALL_CHANNEL_OPTIONS) do
-                        if not used[o.value] then return o.value end
-                    end
-                    return nil
-                end
-
-                local nextChannel = GetFirstAvailableChannel()
-                if nextChannel then
-                    local addBtn
-                    addBtn = TrackSoundControl(GUI:CreateButton(soundEntriesContainer, ns.L["+ Add Channel + Sound"], 180, 24, function()
-                        local channel = GetFirstAvailableChannel()
-                        if not channel then return end
-                        table.insert(chat.newMessageSound.entries, { channel = channel, sound = "None" })
-                        RebuildSoundEntries()
-                        Refresh()
-                        NotifyProviderFor(addBtn, { structural = true })
-                    end))
-                    GUI:AttachTooltip(addBtn,
-                        ns.L["Add another channel-to-sound pairing. Pick the channel and the sound to play when a new message arrives there."],
-                        ns.L["Add Channel + Sound"])
-                    addBtn:SetPoint("TOPLEFT", 0, -rowY - 4)
+                    soundAddButton:ClearAllPoints()
+                    soundAddButton:SetPoint("TOPLEFT", 0, -rowY - 4)
+                    soundAddButton:Show()
+                    TrackSoundControl(soundAddButton)
                     rowY = rowY + 28
+                elseif soundAddButton then
+                    soundAddButton:Hide()
                 end
                 soundEntriesContainer:SetHeight(rowY)
                 soundEntriesContainer._quiDualColumnRowHeight = math.max(FORM_ROW, rowY)

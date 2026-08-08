@@ -262,17 +262,25 @@ local function ApplyGSEButtonIcon(btn, buttonName)
     end
 end
 
-local function UpdateQUIButtonsForSequence(sequenceName)
-    if not sequenceName then return end
+local function ForEachQUIActionButton(callback)
     for bar = 1, 8 do
         for slot = 1, 12 do
             local buttonName = "QUI_Bar" .. bar .. "Button" .. slot
             local btn = _G[buttonName]
-            if btn and btn.GetAttribute and btn:GetAttribute("gse-button") == sequenceName then
-                ApplyGSEButtonIcon(btn, buttonName)
+            if btn then
+                callback(buttonName, btn)
             end
         end
     end
+end
+
+local function UpdateQUIButtonsForSequence(sequenceName)
+    if not sequenceName then return end
+    ForEachQUIActionButton(function(buttonName, btn)
+        if btn.GetAttribute and btn:GetAttribute("gse-button") == sequenceName then
+            ApplyGSEButtonIcon(btn, buttonName)
+        end
+    end)
 end
 
 local function SetSequenceLiveIcon(sequenceName, iconID)
@@ -412,18 +420,6 @@ local function RefreshQUIOverrides()
     end
     if _G.QUI_RefreshActionBars then
         _G.QUI_RefreshActionBars()
-    end
-end
-
-local function ForEachQUIActionButton(callback)
-    for bar = 1, 8 do
-        for slot = 1, 12 do
-            local buttonName = "QUI_Bar" .. bar .. "Button" .. slot
-            local btn = _G[buttonName]
-            if btn then
-                callback(buttonName, btn)
-            end
-        end
     end
 end
 
@@ -750,22 +746,23 @@ end
 
 local function HookRightClickAllQUIButtons()
     if not _G.GSE then return end
-    for bar = 1, 8 do
-        for slot = 1, 12 do
-            local name = "QUI_Bar" .. bar .. "Button" .. slot
-            local btn = _G[name]
-            if btn then
-                HookRightClickOnce(btn, name)
-            end
-        end
-    end
+    ForEachQUIActionButton(function(buttonName, btn)
+        HookRightClickOnce(btn, buttonName)
+    end)
 end
 
 local castTraceFrame = CreateFrame("Frame")
-castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
-castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
-castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED_QUIET", "player")
+local function SetCastTraceRegistered(enabled)
+    if enabled then
+        castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
+        castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+        castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
+        castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED_QUIET", "player")
+    else
+        castTraceFrame:UnregisterAllEvents()
+    end
+end
+SetCastTraceRegistered(DEBUG_GSE)
 castTraceFrame:SetScript("OnEvent", function(_, event, _, _, arg3, arg4)
     if not DEBUG_GSE then return end
     local spellID
@@ -929,6 +926,7 @@ local function ToggleDebug(force)
     else
         DEBUG_GSE = not DEBUG_GSE
     end
+    SetCastTraceRegistered(DEBUG_GSE)
     InstallAllDebugHooks()
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage(string.format(

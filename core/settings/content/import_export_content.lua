@@ -633,20 +633,20 @@ local function BuildImportExportTab(tabContent)
     local function RenderPreview(title, message, preview, isError, validationDetail)
         previewHost._importCollapsible = nil
 
-        if previewHost.content then
-            previewHost.content:Hide()
-            previewHost.content:SetParent(nil)
-        end
-
         analysisState.checkboxByID = {}
         analysisState.importSelectedBtn = nil
         analysisState.importEverythingBtn = nil
 
-        local content = CreateFrame("Frame", nil, previewHost)
-        content:SetPoint("TOPLEFT", 0, 0)
-        content:SetPoint("RIGHT", previewHost, "RIGHT", 0, 0)
+        local content = previewHost.content
+        if content then
+            GUI:TeardownFrameTree(content)
+        else
+            content = CreateFrame("Frame", nil, previewHost)
+            content:SetPoint("TOPLEFT", 0, 0)
+            content:SetPoint("RIGHT", previewHost, "RIGHT", 0, 0)
+            previewHost.content = content
+        end
         content:SetHeight(1)
-        previewHost.content = content
 
         local localY = -6
         local banner, bannerHeight = CreateImportBanner(

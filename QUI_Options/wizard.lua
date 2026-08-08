@@ -12,6 +12,8 @@ local frame
 local bodyHost
 local activeBody
 local currentPage = 1
+local pageBodies = {}
+local contentGen = 0
 
 local PAGES
 local RenderPage
@@ -41,6 +43,7 @@ local function CombatBlocked()
 end
 
 local function MarkApplied(line)
+    contentGen = contentGen + 1
     for _, existing in ipairs(Wizard.applied) do
         if existing == line then return end
     end
@@ -458,10 +461,14 @@ RenderPage = function(index)
 
     if activeBody then
         activeBody:Hide()
-        activeBody:SetParent(nil)
     end
-    activeBody = CreateFrame("Frame", nil, bodyHost)
-    activeBody:SetAllPoints(bodyHost)
+    local body = pageBodies[index]
+    if not body then
+        body = CreateFrame("Frame", nil, bodyHost)
+        body:SetAllPoints(bodyHost)
+        pageBodies[index] = body
+    end
+    activeBody = body
 
     frame.title:SetText(page.title or "")
     frame.progress:SetText(index .. " / " .. #PAGES)
@@ -472,7 +479,18 @@ RenderPage = function(index)
         frame.nextBtn:SetText(page.nextLabel or L["Next"])
     end
 
-    page.build(activeBody)
+    if body._builtGen ~= contentGen then
+        if body._builtGen ~= nil then
+            local GUI = GetGUI()
+            if GUI and GUI.TeardownFrameTree then
+                GUI:TeardownFrameTree(body)
+            end
+            body._fallbackBox = nil
+        end
+        body._builtGen = contentGen
+        page.build(body)
+    end
+    body:Show()
 end
 
 function Wizard:Show()
@@ -482,6 +500,7 @@ function Wizard:Show()
     end
     if not EnsureFrame() then return end
     wipe(self.applied)
+    contentGen = contentGen + 1
     RenderPage(1)
     frame:Show()
 end

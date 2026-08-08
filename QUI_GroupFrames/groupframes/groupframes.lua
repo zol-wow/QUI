@@ -957,10 +957,8 @@ local function UpdateName(frame)
     if not IsSecretValue(name) and not name then return end
 
     local maxLen = nameSettings and nameSettings.maxNameLength or 10
-    if maxLen > 0 and Helpers.TruncateUTF8 then
+    if maxLen > 0 then
         name = Helpers.TruncateUTF8(name, maxLen)
-    elseif maxLen > 0 and not (issecretvalue and issecretvalue(name)) and #name > maxLen then
-        name = name:sub(1, maxLen)
     end
     frame.nameText:SetText(name)
 
@@ -1029,8 +1027,11 @@ local function UpdateAbsorbs(frame, _unit, _maxHP)
         local ac = vdb.absorbs.color or COLORS.WHITE
         ar, ag, ab = ac[1], ac[2], ac[3]
     end
-    if ar ~= frame._lastAbsorbColorR or aa ~= frame._lastAbsorbColorA then
+    if ar ~= frame._lastAbsorbColorR or ag ~= frame._lastAbsorbColorG
+        or ab ~= frame._lastAbsorbColorB or aa ~= frame._lastAbsorbColorA then
         frame._lastAbsorbColorR = ar
+        frame._lastAbsorbColorG = ag
+        frame._lastAbsorbColorB = ab
         frame._lastAbsorbColorA = aa
         frame.absorbBar:SetStatusBarColor(ar, ag, ab, aa)
     end
@@ -1072,8 +1073,11 @@ local function UpdateHealAbsorb(frame, _unit, _maxHP)
 
     local ha = vdb.healAbsorbs.opacity or 0.6
     local hc = vdb.healAbsorbs.color or _state.defaultColors.healAbsorb
-    if hc[1] ~= frame._lastHealAbsorbColorR or ha ~= frame._lastHealAbsorbColorA then
+    if hc[1] ~= frame._lastHealAbsorbColorR or hc[2] ~= frame._lastHealAbsorbColorG
+        or hc[3] ~= frame._lastHealAbsorbColorB or ha ~= frame._lastHealAbsorbColorA then
         frame._lastHealAbsorbColorR = hc[1]
+        frame._lastHealAbsorbColorG = hc[2]
+        frame._lastHealAbsorbColorB = hc[3]
         frame._lastHealAbsorbColorA = ha
         frame.healAbsorbBar:SetStatusBarColor(hc[1], hc[2], hc[3], ha)
     end
@@ -1145,8 +1149,11 @@ local function UpdateHealPrediction(frame, _unit, _maxHP)
             pr, pg, pb = 0.2, 1, 0.2
         end
     end
-    if pr ~= frame._lastHealPredColorR or pa ~= frame._lastHealPredColorA then
+    if pr ~= frame._lastHealPredColorR or pg ~= frame._lastHealPredColorG
+        or pb ~= frame._lastHealPredColorB or pa ~= frame._lastHealPredColorA then
         frame._lastHealPredColorR = pr
+        frame._lastHealPredColorG = pg
+        frame._lastHealPredColorB = pb
         frame._lastHealPredColorA = pa
         frame.healPredictionBar:SetStatusBarColor(pr, pg, pb, pa)
     end
@@ -1905,12 +1912,7 @@ local function DecorateGroupFrame(frame)
                 _state.unitGuidCache[self] = newGuid
             end
 
-            if oldGuid and newGuid and oldGuid == newGuid then
-                if oldUnit == value then
-                    return
-                end
-                return
-            end
+            if oldGuid and newGuid and oldGuid == newGuid then return end
 
             UpdateFrame(self)
         end)
@@ -2902,22 +2904,52 @@ local function CreateHeaders()
     partyRoot:Hide()
 end
 
-local function CreateSpotlightHeader()
-    local db = GetSettings()
-    if not db then return end
-    local spot = db.raid and db.raid.spotlight
-    if not spot or not spot.enabled then return end
-    if InCombatLockdown() and not _state.inInitSafeWindow then return end
+local function InitSpotlightChildren(header, force)
+    if not header then return 0 end
 
-    if QUI_GF.spotlightContainer then return end
+    local s = GetSettings()
+    s = s and s.raid and s.raid.spotlight
+    local fw = s and s.frameWidth or 180
+    local fh = s and s.frameHeight or 36
 
+    local initialized = 0
+    local i = 1
+    while true do
+        local child = header:GetAttribute("child" .. i)
+        if not child then break end
+        if force then child._quiDecorated = nil end
+        if not child._quiDecorated then
+            child:SetSize(fw, fh)
+            QUI_GF:InitializeHeaderChild(child)
+            initialized = initialized + 1
+        end
+        i = i + 1
+    end
+
+    if initialized > 0 then
+        local GFCC = ns.QUI_GroupFrameClickCast
+        if GFCC and GFCC.RegisterFrame and GFCC:IsEnabled() then
+            local j = 1
+            while true do
+                local child = header:GetAttribute("child" .. j)
+                if not child then break end
+                GFCC:RegisterFrame(child)
+                j = j + 1
+            end
+        end
+    end
+
+    return initialized
+end
+
+local _parkedSpotlight = nil
+
+local function ApplySpotlightHeaderConfig(container, header, spot)
     local w = spot.frameWidth or 180
     local h = spot.frameHeight or 36
 
-    local container = CreateFrame("Frame", "QUI_SpotlightContainer", UIParent)
     container:SetSize(w, h)
-    container:SetMovable(true)
-    container:SetClampedToScreen(true)
+    container:ClearAllPoints()
 
     local faDB = QUI.db and QUI.db.profile and QUI.db.profile.frameAnchoring
     local saved = faDB and faDB.spotlightFrames
@@ -2932,13 +2964,18 @@ local function CreateSpotlightHeader()
 
     local initConfigFunc = ns.QUI_GroupFrameIconLayout.HEADER_INIT_CONFIG_FUNC
 
-    local header = CreateFrame("Frame", "QUI_SpotlightRTHeader", container, "SecureGroupHeaderTemplate")
     header:SetAttribute("template", "SecureUnitButtonTemplate,BackdropTemplate,PingableUnitFrameTemplate")
     header.QUI_OnChildCreated = QUI_GF.HeaderChildCreated
     header:SetAttribute("initialConfigFunction", initConfigFunc)
     header:SetAttribute("showRaid", true)
     header:SetAttribute("showParty", false)
+    header:ClearAllPoints()
     header:SetPoint("TOPLEFT")
+
+    header:SetAttribute("roleFilter", nil)
+    header:SetAttribute("groupBy", nil)
+    header:SetAttribute("groupingOrder", nil)
+    header:SetAttribute("nameList", nil)
 
     local filterMode = spot.filterMode or "ROLE"
     if filterMode == "ROLE" then
@@ -2960,6 +2997,10 @@ local function CreateSpotlightHeader()
     header:SetAttribute("_initialAttribute-unit-width", w)
     header:SetAttribute("_initialAttribute-unit-height", h)
 
+    header:SetAttribute("point", nil)
+    header:SetAttribute("xOffset", nil)
+    header:SetAttribute("yOffset", nil)
+
     local spacing = spot.spacing or 2
     local grow = spot.growDirection or "DOWN"
     if grow == "DOWN" then
@@ -2975,6 +3016,32 @@ local function CreateSpotlightHeader()
         header:SetAttribute("point", "RIGHT")
         header:SetAttribute("xOffset", -spacing)
     end
+end
+
+local function CreateSpotlightHeader()
+    local db = GetSettings()
+    if not db then return end
+    local spot = db.raid and db.raid.spotlight
+    if not spot or not spot.enabled then return end
+    if InCombatLockdown() and not _state.inInitSafeWindow then return end
+
+    local container = QUI_GF.spotlightContainer
+    local header = QUI_GF.spotlightHeader
+
+    if not container and _parkedSpotlight then
+        container = _parkedSpotlight.container
+        header = _parkedSpotlight.header
+        _parkedSpotlight = nil
+    end
+
+    if not container then
+        container = CreateFrame("Frame", "QUI_SpotlightContainer", UIParent)
+        container:SetMovable(true)
+        container:SetClampedToScreen(true)
+        header = CreateFrame("Frame", "QUI_SpotlightRTHeader", container, "SecureGroupHeaderTemplate")
+    end
+
+    ApplySpotlightHeaderConfig(container, header, spot)
 
     QUI_GF.spotlightHeader = header
     QUI_GF.spotlightContainer = container
@@ -2983,31 +3050,7 @@ local function CreateSpotlightHeader()
     header:Show()
 
     C_Timer.After(0, function()
-        local h = QUI_GF.spotlightHeader
-        if not h then return end
-        local s = GetSettings()
-        s = s and s.raid and s.raid.spotlight
-        local fw = s and s.frameWidth or 180
-        local fh = s and s.frameHeight or 36
-        local i = 1
-        while true do
-            local child = h:GetAttribute("child" .. i)
-            if not child then break end
-            child._quiDecorated = nil
-            child:SetSize(fw, fh)
-            QUI_GF:InitializeHeaderChild(child)
-            i = i + 1
-        end
-        local GFCC = ns.QUI_GroupFrameClickCast
-        if GFCC and GFCC.RegisterFrame and GFCC:IsEnabled() then
-            local j = 1
-            while true do
-                local child = h:GetAttribute("child" .. j)
-                if not child then break end
-                GFCC:RegisterFrame(child)
-                j = j + 1
-            end
-        end
+        InitSpotlightChildren(QUI_GF.spotlightHeader, true)
     end)
 end
 
@@ -3023,9 +3066,13 @@ local function DestroySpotlightHeader()
         container:Hide()
         QUI_GF.spotlightContainer = nil
     end
+    if container and header then
+        _parkedSpotlight = { container = container, header = header }
+    end
 end
 
 function QUI_GF:RecreateSpotlightHeader()
+    if InCombatLockdown() then return end
     DestroySpotlightHeader()
     CreateSpotlightHeader()
 end
@@ -3517,35 +3564,7 @@ local function UpdateHeaderVisibility()
             QUI_GF.spotlightContainer:Show()
             if QUI_GF.spotlightHeader then QUI_GF.spotlightHeader:Show() end
             C_Timer.After(0.2, function()
-                local h = QUI_GF.spotlightHeader
-                if not h then return end
-                local s = GetSettings()
-                s = s and s.raid and s.raid.spotlight
-                local fw = s and s.frameWidth or 180
-                local fh = s and s.frameHeight or 36
-                local newCount = 0
-                local i = 1
-                while true do
-                    local child = h:GetAttribute("child" .. i)
-                    if not child then break end
-                    if not child._quiDecorated then
-                        child:SetSize(fw, fh)
-                        QUI_GF:InitializeHeaderChild(child)
-                        newCount = newCount + 1
-                    end
-                    i = i + 1
-                end
-                if newCount > 0 then
-                    local GFCC = ns.QUI_GroupFrameClickCast
-                    if GFCC and GFCC.RegisterFrame and GFCC:IsEnabled() then
-                        local j = 1
-                        while true do
-                            local child = h:GetAttribute("child" .. j)
-                            if not child then break end
-                            GFCC:RegisterFrame(child)
-                            j = j + 1
-                        end
-                    end
+                if InitSpotlightChildren(QUI_GF.spotlightHeader) > 0 then
                     RebuildUnitFrameMap()
                     QUI_GF:RefreshAllFrames()
                 end
@@ -3840,8 +3859,13 @@ local function CheckUnitRange(unit)
     if isSelf then return true end
     if not UnitExists(unit) then return true end
 
-    if UnitPhaseReason and UnitPhaseReason(unit) then
-        return false
+    if UnitPhaseReason then
+        -- @secret-policy: collapse-only — restricted phase treated as unphased so the range tick proceeds
+        local phaseReason = UnitPhaseReason(unit)
+        if IsSecretValue(phaseReason) then phaseReason = nil end
+        if phaseReason ~= nil then
+            return false
+        end
     end
 
     local connected = UnitIsConnected(unit)
@@ -4514,7 +4538,6 @@ local function UnregisterEvents()
 end
 
 UpdateSelectiveEvents = function()
-    local db = GetSettings()
     local mode = GetGroupMode()
     local isRaid = (mode ~= "party")
 

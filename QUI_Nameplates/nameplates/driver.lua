@@ -37,6 +37,22 @@ local SUPPRESS_CHILD_KEYS = {
     "SoftTargetFrame",
 }
 
+local CASTBAR_UNIT_EVENTS = {
+    "UNIT_SPELLCAST_INTERRUPTED",
+    "UNIT_SPELLCAST_DELAYED",
+    "UNIT_SPELLCAST_CHANNEL_START",
+    "UNIT_SPELLCAST_CHANNEL_UPDATE",
+    "UNIT_SPELLCAST_CHANNEL_STOP",
+    "UNIT_SPELLCAST_EMPOWER_START",
+    "UNIT_SPELLCAST_EMPOWER_UPDATE",
+    "UNIT_SPELLCAST_EMPOWER_STOP",
+    "UNIT_SPELLCAST_INTERRUPTIBLE",
+    "UNIT_SPELLCAST_NOT_INTERRUPTIBLE",
+    "UNIT_SPELLCAST_START",
+    "UNIT_SPELLCAST_STOP",
+    "UNIT_SPELLCAST_FAILED",
+}
+
 local function PinAlphaZero(unitFrame)
     if alphaLock[unitFrame] then return end
     local record = suppression[unitFrame]
@@ -96,7 +112,12 @@ local function RestoreBlizzardArt(base)
 
     local castBar = unitFrame.castBar
         or (unitFrame.CastBarsContainer and unitFrame.CastBarsContainer.castBar)
-    if castBar and castBar.OnLoad == nil and castBar.RegisterEvent then
+    if castBar and castBar.RegisterUnitEvent and castBar.unit then
+        local unit = castBar.unit
+        for i = 1, #CASTBAR_UNIT_EVENTS do
+            castBar:RegisterUnitEvent(CASTBAR_UNIT_EVENTS[i], unit)
+        end
+        castBar:RegisterEvent("PLAYER_ENTERING_WORLD")
     end
     pcall(unitFrame.SetAlpha, unitFrame, 1)
 end
@@ -328,7 +349,6 @@ local function BuildPlate()
 
     NPHealth.Build(plate)
     NP.Castbar.Build(plate)
-    NP.Auras.Build(plate)
     if NPExtras.BuildPlate then
         NPExtras.BuildPlate(plate)
     end

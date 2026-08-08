@@ -371,6 +371,21 @@ local function InstallProfilerWrappers()
     return true
 end
 
+local function RestoreProfilerWrappers()
+    for scopeName, info in pairs(profilerWrappers) do
+        if info.owner[info.methodName] == info.wrapper then
+            info.owner[info.methodName] = info.original
+        end
+        profilerWrappers[scopeName] = nil
+    end
+    for scopeName, info in pairs(profilerFrameWrappers) do
+        if info.frame:GetScript(info.scriptType) == info.wrapper then
+            info.frame:SetScript(info.scriptType, info.original)
+        end
+        profilerFrameWrappers[scopeName] = nil
+    end
+end
+
 local profilerRowLimit = 16
 
 local function DrainProfilerRows()
@@ -886,6 +901,7 @@ local function ToggleAuto(arg)
     if arg == "off" or arg == "0" or arg == "stop" then
         autoEnabled = false
         profilerActive = false
+        RestoreProfilerWrappers()
         DrainProfilerRows()
         autoFrame:Hide()
         autoLastSnap = nil
@@ -916,6 +932,7 @@ local function ToggleAuto(arg)
         else
             autoEnabled = false
             profilerActive = false
+            RestoreProfilerWrappers()
             DrainProfilerRows()
             autoFrame:Hide()
             autoLastSnap = nil

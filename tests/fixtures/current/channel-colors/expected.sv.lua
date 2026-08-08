@@ -715,7 +715,6 @@ return {
             [3] = 0.314,
             [4] = 1
           },
-          overlayScale = 0.75,
           panelScale = 1,
           secondaryStatFormat = "both",
           showDurability = false,
@@ -836,7 +835,6 @@ return {
             },
             keywordAlert = {
               enabled = false,
-              flashTab = false,
               highlightColor = {
                 [1] = 0.20399999999999999,
                 [2] = 0.83099999999999996,
@@ -1329,7 +1327,6 @@ return {
           font = "Quazii",
           fontOutline = "OUTLINE",
           fontSize = 13,
-          forceSingleLine = true,
           height = 22,
           lockoutCacheMinutes = 5,
           offsetY = 0,
@@ -5538,7 +5535,6 @@ return {
         },
         powerBar = {
           attachTo = "EssentialCooldownViewer",
-          autoAttach = false,
           bgColor = {
             [1] = 0.078,
             [2] = 0.078,
@@ -5582,8 +5578,6 @@ return {
           showPercent = true,
           showText = true,
           showTicks = false,
-          snapGap = 5,
-          standaloneMode = false,
           textAlign = "CENTER",
           textCustomColor = {
             [1] = 1,
@@ -7856,7 +7850,6 @@ return {
           showPercent = false,
           showText = false,
           showTicks = true,
-          snapGap = 5,
           standaloneMode = false,
           swapSpecs = {
             [66] = true,
@@ -8261,7 +8254,6 @@ return {
         }
       },
       imports = {},
-      isDone = false,
       lastVersion = 0,
       specTrackerSpells = {}
     },

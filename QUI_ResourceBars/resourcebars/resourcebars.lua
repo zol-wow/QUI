@@ -197,11 +197,13 @@ local function ApplyPowerBarTextPlacement(bar, cfg)
     end
 end
 
-Enum.PowerType.MaelstromWeapon = 100
-Enum.PowerType.VengSoulFragments = 101
-Enum.PowerType.Whirlwind = 102
-Enum.PowerType.TipOfTheSpear = 103
-Enum.PowerType.RenewingMistCharges = 104
+local QUI_POWER = {
+    MaelstromWeapon = 100,
+    VengSoulFragments = 101,
+    Whirlwind = 102,
+    TipOfTheSpear = 103,
+    RenewingMistCharges = 104,
+}
 
 local function IsSecretSpellcastPayload(spellID, castGUID)
     if not issecretvalue then return false end
@@ -766,11 +768,11 @@ local tickedPowerTypes = {
     [Enum.PowerType.HolyPower] = true,
     [Enum.PowerType.Runes] = true,
     [Enum.PowerType.SoulShards] = true,
-    [Enum.PowerType.MaelstromWeapon] = true,
-    [Enum.PowerType.VengSoulFragments] = true,
-    [Enum.PowerType.Whirlwind] = true,
-    [Enum.PowerType.TipOfTheSpear] = true,
-    [Enum.PowerType.RenewingMistCharges] = true,
+    [QUI_POWER.MaelstromWeapon] = true,
+    [QUI_POWER.VengSoulFragments] = true,
+    [QUI_POWER.Whirlwind] = true,
+    [QUI_POWER.TipOfTheSpear] = true,
+    [QUI_POWER.RenewingMistCharges] = true,
 }
 if VDH_SOUL_FRAGMENTS_POWER then
     tickedPowerTypes[VDH_SOUL_FRAGMENTS_POWER] = true
@@ -857,11 +859,11 @@ local instantFeedbackTypes = {
     [Enum.PowerType.ArcaneCharges] = true,
     [Enum.PowerType.Essence] = true,
     [Enum.PowerType.SoulShards] = true,
-    [Enum.PowerType.MaelstromWeapon] = true,
-    [Enum.PowerType.VengSoulFragments] = true,
-    [Enum.PowerType.Whirlwind] = true,
-    [Enum.PowerType.TipOfTheSpear] = true,
-    [Enum.PowerType.RenewingMistCharges] = true,
+    [QUI_POWER.MaelstromWeapon] = true,
+    [QUI_POWER.VengSoulFragments] = true,
+    [QUI_POWER.Whirlwind] = true,
+    [QUI_POWER.TipOfTheSpear] = true,
+    [QUI_POWER.RenewingMistCharges] = true,
 }
 if VDH_SOUL_FRAGMENTS_POWER then
     instantFeedbackTypes[VDH_SOUL_FRAGMENTS_POWER] = true
@@ -884,23 +886,18 @@ local druidSpecResource = {
     [4] = Enum.PowerType.Mana,
 }
 
-local SwapCandidateSpecs = {
-    { specID = 102,  name = "Balance",      classColor = "FF7C0A" },
-    { specID = 251,  name = "Frost",        classColor = "C41E3A" },
-    { specID = 1467, name = "Devastation",  classColor = "33937F" },
-    { specID = 1473, name = "Augmentation", classColor = "33937F" },
-    { specID = 66,   name = "Protection",   classColor = "F48CBA" },
-    { specID = 70,   name = "Retribution",  classColor = "F48CBA" },
-    { specID = 265,  name = "Affliction",   classColor = "8788EE" },
-    { specID = 266,  name = "Demonology",   classColor = "8788EE" },
-    { specID = 267,  name = "Destruction",  classColor = "8788EE" },
-    { specID = 263,  name = "Enhancement",  classColor = "0070DD" },
+local SwapCandidateSpecByID = {
+    [102] = true,
+    [251] = true,
+    [1467] = true,
+    [1473] = true,
+    [66] = true,
+    [70] = true,
+    [265] = true,
+    [266] = true,
+    [267] = true,
+    [263] = true,
 }
-ns.SwapCandidateSpecs = SwapCandidateSpecs
-local SwapCandidateSpecByID = {}
-for _, info in ipairs(SwapCandidateSpecs) do
-    SwapCandidateSpecByID[info.specID] = true
-end
 
 local function IsSwapCandidateSpec(specID)
     return specID and SwapCandidateSpecByID[specID] or false
@@ -929,22 +926,33 @@ local function ShouldHidePrimaryOnSwap()
     return (swapEnabled and hideEnabled) or false
 end
 
+local function ViewerLayoutIsVertical(viewerKey)
+    local viewer = GetCDMViewerFrame(viewerKey)
+    local vs = viewer and GetViewerState(viewer)
+    return (vs and vs.layoutDir) == "VERTICAL"
+end
+
+local function ResolveIsVertical(cfg, primaryCfg)
+    local orientation = cfg.orientation or "AUTO"
+    if orientation ~= "AUTO" then return orientation == "VERTICAL" end
+    if cfg.lockedToEssential then
+        return ViewerLayoutIsVertical("essential")
+    elseif cfg.lockedToUtility then
+        return ViewerLayoutIsVertical("utility")
+    elseif cfg.lockedToPrimary and primaryCfg then
+        if primaryCfg.lockedToEssential then
+            return ViewerLayoutIsVertical("essential")
+        elseif primaryCfg.lockedToUtility then
+            return ViewerLayoutIsVertical("utility")
+        end
+    end
+    return false
+end
+
 local function GetPrimaryEffectiveVertical()
     local cfg = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.powerBar
     if not cfg then return false end
-    local orientation = cfg.orientation or "AUTO"
-    if orientation == "VERTICAL" then return true end
-    if orientation == "HORIZONTAL" then return false end
-    if cfg.lockedToEssential then
-        local viewer = GetCDMViewerFrame("essential")
-        local vs = viewer and GetViewerState(viewer)
-        return (vs and vs.layoutDir) == "VERTICAL"
-    elseif cfg.lockedToUtility then
-        local viewer = GetCDMViewerFrame("utility")
-        local vs = viewer and GetViewerState(viewer)
-        return (vs and vs.layoutDir) == "VERTICAL"
-    end
-    return false
+    return ResolveIsVertical(cfg)
 end
 
 local function ResolveBarLength(width)
@@ -1464,7 +1472,7 @@ end
 local secondaryResources = {
         ["DEATHKNIGHT"] = Enum.PowerType.Runes,
         ["DEMONHUNTER"] = {
-            [581] = VDH_SOUL_FRAGMENTS_POWER or Enum.PowerType.VengSoulFragments,
+            [581] = VDH_SOUL_FRAGMENTS_POWER or QUI_POWER.VengSoulFragments,
             [1480] = "SOUL",
         },
         ["DRUID"]       = {
@@ -1473,7 +1481,7 @@ local secondaryResources = {
         },
         ["EVOKER"]      = Enum.PowerType.Essence,
         ["HUNTER"]      = {
-            [255] = Enum.PowerType.TipOfTheSpear,
+            [255] = QUI_POWER.TipOfTheSpear,
         },
         ["MAGE"]        = {
             [62]   = Enum.PowerType.ArcaneCharges,
@@ -1481,7 +1489,7 @@ local secondaryResources = {
         ["MONK"]        = {
             [268]  = "STAGGER",
             [269]  = Enum.PowerType.Chi,
-            [270]  = Enum.PowerType.RenewingMistCharges,
+            [270]  = QUI_POWER.RenewingMistCharges,
         },
         ["PALADIN"]     = Enum.PowerType.HolyPower,
         ["PRIEST"]      = {
@@ -1490,11 +1498,11 @@ local secondaryResources = {
         ["ROGUE"]       = Enum.PowerType.ComboPoints,
         ["SHAMAN"]      = {
             [262]  = Enum.PowerType.Mana,
-            [263]  = Enum.PowerType.MaelstromWeapon,
+            [263]  = QUI_POWER.MaelstromWeapon,
         },
         ["WARLOCK"]     = Enum.PowerType.SoulShards,
         ["WARRIOR"]     = {
-            [72] = Enum.PowerType.Whirlwind,
+            [72] = QUI_POWER.Whirlwind,
         },
 }
 
@@ -1555,7 +1563,7 @@ local function GetResourceColor(resource)
             else
                 customColor = pc.stagger
             end
-        elseif resource == "SOUL" or resource == Enum.PowerType.VengSoulFragments or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER) then
+        elseif resource == "SOUL" or resource == QUI_POWER.VengSoulFragments or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER) then
             customColor = pc.soulFragments
         elseif resource == Enum.PowerType.SoulShards then
             customColor = pc.soulShards
@@ -1594,13 +1602,13 @@ local function GetResourceColor(resource)
             customColor = pc.fury
         elseif resource == Enum.PowerType.Maelstrom then
             customColor = pc.maelstrom
-        elseif resource == Enum.PowerType.MaelstromWeapon then
+        elseif resource == QUI_POWER.MaelstromWeapon then
             customColor = pc.maelstromWeapon or pc.maelstrom
-        elseif resource == Enum.PowerType.Whirlwind then
+        elseif resource == QUI_POWER.Whirlwind then
             customColor = pc.whirlwind
-        elseif resource == Enum.PowerType.TipOfTheSpear then
+        elseif resource == QUI_POWER.TipOfTheSpear then
             customColor = pc.tipOfTheSpear
-        elseif resource == Enum.PowerType.RenewingMistCharges then
+        elseif resource == QUI_POWER.RenewingMistCharges then
             customColor = pc.renewingMistCharges or pc.renewingMist or pc.chi or pc.mana
         elseif resource == Enum.PowerType.LunarPower then
             customColor = pc.lunarPower
@@ -1771,31 +1779,31 @@ local function GetSecondaryResourceValue(resource)
         end
     end
 
-    if resource == Enum.PowerType.VengSoulFragments then
+    if resource == QUI_POWER.VengSoulFragments then
         local current = SafeNumberOrNil(C_Spell.GetSpellCastCount(228477)) or 0
         local max = 6
 
         return max, current, current, "number"
     end
 
-    if resource == Enum.PowerType.MaelstromWeapon then
+    if resource == QUI_POWER.MaelstromWeapon then
         local max, current = MaelstromWeaponTracker:GetStacks()
         return max, current, current, "number"
     end
 
-    if resource == Enum.PowerType.Whirlwind then
+    if resource == QUI_POWER.Whirlwind then
         local max, current = WhirlwindTracker:GetStacks()
         if not max then return nil, nil, nil, nil end
         return max, current, current, "number"
     end
 
-    if resource == Enum.PowerType.TipOfTheSpear then
+    if resource == QUI_POWER.TipOfTheSpear then
         local max, current = TipOfTheSpearTracker:GetStacks()
         if not max then return nil, nil, nil, nil end
         return max, current, current, "number"
     end
 
-    if resource == Enum.PowerType.RenewingMistCharges then
+    if resource == QUI_POWER.RenewingMistCharges then
         local max, current, startTime, duration, chargeModRate = GetRenewingMistCharges()
         if not max then return nil, nil, nil, nil end
 
@@ -1872,9 +1880,7 @@ local function GetSecondaryResourceValue(resource)
 end
 
 local function GetCurrentSpecID()
-    local spec = GetSpecialization()
-    if not spec then return 0 end
-    return GetSpecializationInfo(spec) or 0
+    return Helpers.GetCurrentSpecID() or 0
 end
 
 local TEXT_SPEC_KEYS = {
@@ -1908,6 +1914,7 @@ local function GetSecondaryTextConfig(cfg)
 end
 
 ns.QUI_ResourceBars_Internal = {
+    PseudoPowerTypes        = QUI_POWER,
     GetBarTexture           = GetBarTexture,
     tickedPowerTypes        = tickedPowerTypes,
     fragmentedPowerTypes    = fragmentedPowerTypes,
@@ -2070,6 +2077,33 @@ function QUICore:GetPowerBar()
     return bar
 end
 
+local function LayoutSegmentDividers(bar, anchor, count, tickPx, tickThickness, tc, isVertical, offsetOf, crossSize)
+    for i = 1, count do
+        local tick = bar.ticks[i]
+        if not tick then
+            tick = bar:CreateTexture(nil, "OVERLAY")
+            bar.ticks[i] = tick
+        end
+        tick:SetColorTexture(tc[1], tc[2], tc[3], tc[4] or 1)
+        tick:ClearAllPoints()
+
+        if isVertical then
+            tick:SetPoint("BOTTOM", anchor, "BOTTOM", 0, snapPx(offsetOf(i) - (tickThickness / 2), tickPx))
+            tick:SetSize(crossSize, tickThickness)
+        else
+            tick:SetPoint("LEFT", anchor, "LEFT", snapPx(offsetOf(i) - (tickThickness / 2), tickPx), 0)
+            tick:SetSize(tickThickness, crossSize)
+        end
+        tick:Show()
+    end
+
+    for i = count + 1, #bar.ticks do
+        if bar.ticks[i] then
+            bar.ticks[i]:Hide()
+        end
+    end
+end
+
 function QUICore:UpdatePowerBarValue(forceShown)
     local db = self.db and self.db.profile
     local cfg = db and db.powerBar
@@ -2187,20 +2221,7 @@ function QUICore:UpdatePowerBar()
         SafeSetFrameLevel(bar.TextFrame, frameLevel + 2)
     end
 
-    local orientation = cfg.orientation or "AUTO"
-    local isVertical = (orientation == "VERTICAL")
-
-    if orientation == "AUTO" then
-        if cfg.lockedToEssential then
-            local viewer = GetCDMViewerFrame("essential")
-            local vs = GetViewerState(viewer)
-            isVertical = (vs and vs.layoutDir) == "VERTICAL"
-        elseif cfg.lockedToUtility then
-            local viewer = GetCDMViewerFrame("utility")
-            local vs = GetViewerState(viewer)
-            isVertical = (vs and vs.layoutDir) == "VERTICAL"
-        end
-    end
+    local isVertical = ResolveIsVertical(cfg)
 
     bar.StatusBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
 
@@ -2356,50 +2377,16 @@ function QUICore:UpdatePowerBarTicks(bar, resource, max)
     local height = bar:GetHeight()
     if width <= 0 or height <= 0 then return end
 
-    local orientation = cfg.orientation or "AUTO"
-    local isVertical = (orientation == "VERTICAL")
-    if orientation == "AUTO" then
-        if cfg.lockedToEssential then
-            local viewer = GetCDMViewerFrame("essential")
-            local vs = GetViewerState(viewer)
-            isVertical = (vs and vs.layoutDir) == "VERTICAL"
-        elseif cfg.lockedToUtility then
-            local viewer = GetCDMViewerFrame("utility")
-            local vs = GetViewerState(viewer)
-            isVertical = (vs and vs.layoutDir) == "VERTICAL"
-        end
-    end
+    local isVertical = ResolveIsVertical(cfg)
 
     local tickPx = QUICore:GetPixelSize(bar)
-    local tickThickness = (cfg.tickThickness or 1) * tickPx
-    local tc = cfg.tickColor or { 0, 0, 0, 1 }
-    local needed = max - 1
-    for i = 1, needed do
-        local tick = bar.ticks[i]
-        if not tick then
-            tick = bar:CreateTexture(nil, "OVERLAY")
-            bar.ticks[i] = tick
-        end
-        tick:SetColorTexture(tc[1], tc[2], tc[3], tc[4] or 1)
-        tick:ClearAllPoints()
-
-        if isVertical then
-            local y = (i / max) * height
-            tick:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, snapPx(y - (tickThickness / 2), tickPx))
-            tick:SetSize(width, tickThickness)
-        else
-            local x = (i / max) * width
-            tick:SetPoint("LEFT", bar.StatusBar, "LEFT", snapPx(x - (tickThickness / 2), tickPx), 0)
-            tick:SetSize(tickThickness, height)
-        end
-        tick:Show()
-    end
-
-    for i = needed + 1, #bar.ticks do
-        if bar.ticks[i] then
-            bar.ticks[i]:Hide()
-        end
-    end
+    LayoutSegmentDividers(bar, bar.StatusBar, max - 1, tickPx,
+        (cfg.tickThickness or 1) * tickPx,
+        cfg.tickColor or { 0, 0, 0, 1 },
+        isVertical,
+        isVertical and function(i) return (i / max) * height end
+            or function(i) return (i / max) * width end,
+        isVertical and width or height)
 end
 
 function QUICore:UpdatePowerBarIndicators(bar, max, isVertical)
@@ -2415,92 +2402,160 @@ function QUICore:UpdatePowerBarIndicators(bar, max, isVertical)
     UpdateBarIndicatorLines(bar, bar.indicatorLines, values, max, thickness, color, isVertical)
 end
 
-_G.QUI_UpdateLockedPowerBar = function()
-    if InCombatLockdown() then return end
-    if _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive() then return end
+local LOCKED_BAR_VARIANTS = {
+    primaryEssential = {
+        cfgKey = "powerBar", lockKey = "lockedToEssential", viewerKey = "essential",
+        defaultThickness = 6, safe = true, side = 1, computeY = false,
+        vEdgeKey = "bottomRowBorderSize", vPadBorder = true, vFudgeX = -4,
+        rowWidth = GetRawRow1Width, rowBorderKey = "row1BorderSize",
+        writeX = "offsetX", writeY = "offsetY",
+    },
+    primaryUtility = {
+        cfgKey = "powerBar", lockKey = "lockedToUtility", viewerKey = "utility",
+        defaultThickness = 6, side = -1, computeY = false,
+        vEdgeKey = "row1BorderSize", vPadBorder = true, vFudgeX = 1,
+        rowWidth = GetRawBottomRowWidth, rowBorderKey = "bottomRowBorderSize",
+        writeX = "offsetX", writeY = "offsetY",
+    },
+    secondaryEssential = {
+        cfgKey = "secondaryPowerBar", lockKey = "lockedToEssential", viewerKey = "essential",
+        defaultThickness = 8, side = 1, computeY = true,
+        vEdgeKey = "bottomRowBorderSize", vPadBorder = true, vFudgeX = -4, hFudgeY = -1,
+        rowWidth = GetRawRow1Width, rowBorderKey = "row1BorderSize",
+        writeX = "lockedBaseX", writeY = "lockedBaseY",
+    },
+    secondaryUtility = {
+        cfgKey = "secondaryPowerBar", lockKey = "lockedToUtility", viewerKey = "utility",
+        defaultThickness = 8, side = -1, computeY = true,
+        vPadBorder = false, vFudgeX = 0, hFudgeY = 1,
+        rowWidth = GetRawBottomRowWidth, rowBorderKey = "bottomRowBorderSize",
+        writeX = "lockedBaseX", writeY = "lockedBaseY",
+    },
+}
 
+local function ComputeLockedBarGeometry(v)
     local core = GetCore()
     if not core or not core.db then return end
 
-    local cfg = core.db.profile.powerBar
-    if not cfg.enabled or not cfg.lockedToEssential then return end
+    local cfg = core.db.profile[v.cfgKey]
+    if not cfg.enabled or not cfg[v.lockKey] then return end
 
-    local essentialViewer = GetCDMViewerFrame("essential")
-    if not essentialViewer or not essentialViewer:IsShown() then return end
+    local viewer = GetCDMViewerFrame(v.viewerKey)
+    if not viewer or not viewer:IsShown() then return end
 
-    local evs = GetViewerState(essentialViewer)
-    local isVerticalCDM = (evs and evs.layoutDir) == "VERTICAL"
+    local vs = GetViewerState(viewer)
+    local isVerticalCDM = (vs and vs.layoutDir) == "VERTICAL"
 
     local newWidth, newOffsetX, newOffsetY
     local barBorderSize = cfg.borderSize or 1
+    local barThickness = cfg.height or v.defaultThickness
 
-    local savedW, savedH = GetSavedViewerDims("essential")
+    local savedW, savedH = GetSavedViewerDims(v.viewerKey)
 
     if isVerticalCDM then
-        local totalHeight = (evs and evs.totalHeight) or savedH
+        local totalHeight = (vs and vs.totalHeight) or savedH
         if not totalHeight or totalHeight <= 0 then return end
 
-        local topBottomBorderSize = (evs and evs.row1BorderSize) or 0
-        local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
+        local row1BorderSize = (vs and vs.row1BorderSize) or 0
+        local targetWidth = totalHeight + (2 * row1BorderSize) - (2 * barBorderSize)
         newWidth = math_floor(targetWidth + 0.5)
 
-        local essentialCenterX = Helpers.SafeValue(essentialViewer:GetCenter(), nil)
-        local _, essentialCenterY = essentialViewer:GetCenter()
-        essentialCenterY = Helpers.SafeValue(essentialCenterY, nil)
-        local screenCenterX = Helpers.SafeValue(UIParent:GetCenter(), nil)
-        local _, screenCenterY = UIParent:GetCenter()
-        screenCenterY = Helpers.SafeValue(screenCenterY, nil)
-        local totalWidth = (evs and evs.iconWidth) or savedW
+        local centerX, centerY = viewer:GetCenter()
+        local screenCenterX, screenCenterY = UIParent:GetCenter()
+        if v.safe then
+            centerX = Helpers.SafeValue(centerX, nil)
+            centerY = Helpers.SafeValue(centerY, nil)
+            screenCenterX = Helpers.SafeValue(screenCenterX, nil)
+            screenCenterY = Helpers.SafeValue(screenCenterY, nil)
+        end
+        local totalWidth = (vs and vs.iconWidth) or savedW
         if totalWidth <= 0 then return end
-        local barThickness = cfg.height or 6
 
-        if essentialCenterX and essentialCenterY and screenCenterX and screenCenterY then
-            local rightColBorderSize = (evs and evs.bottomRowBorderSize) or 0
-            local cdmVisualRight = essentialCenterX + (totalWidth / 2) + rightColBorderSize
+        if centerX and centerY and screenCenterX and screenCenterY then
+            local edgeBorderSize = (v.vEdgeKey and vs and vs[v.vEdgeKey]) or 0
+            local edgePad = v.vPadBorder and barBorderSize or 0
+            local powerBarCenterX
+            if v.side > 0 then
+                powerBarCenterX = centerX + (totalWidth / 2) + edgeBorderSize + (barThickness / 2) + edgePad
+            else
+                powerBarCenterX = centerX - (totalWidth / 2) - edgeBorderSize - (barThickness / 2) - edgePad
+            end
 
-            local powerBarCenterX = cdmVisualRight + (barThickness / 2) + barBorderSize
-
-            newOffsetX = math_floor(powerBarCenterX - screenCenterX + 0.5) - 4
-            newOffsetY = math_floor(essentialCenterY - screenCenterY + 0.5)
+            newOffsetX = math_floor(powerBarCenterX - screenCenterX + 0.5) + v.vFudgeX
+            newOffsetY = math_floor(centerY - screenCenterY + 0.5)
         end
     else
-        local rowWidth = GetRawRow1Width(evs) or savedW
+        local rowWidth = v.rowWidth(vs) or savedW
         if not rowWidth or rowWidth <= 0 then return end
 
-        local row1BorderSize = (evs and evs.row1BorderSize) or 0
-        local targetWidth = rowWidth + (2 * row1BorderSize) - (2 * barBorderSize)
+        local rowBorderSize = (vs and vs[v.rowBorderKey]) or 0
+        local targetWidth = rowWidth + (2 * rowBorderSize) - (2 * barBorderSize)
         newWidth = math_floor(targetWidth + 0.5)
 
-        local rawCenterX = Helpers.SafeValue(essentialViewer:GetCenter(), nil)
-        local rawScreenX = Helpers.SafeValue(UIParent:GetCenter(), nil)
-        if rawCenterX and rawScreenX then
-            local essentialCenterX = math_floor(rawCenterX + 0.5)
-            local screenCenterX = math_floor(rawScreenX + 0.5)
-            newOffsetX = essentialCenterX - screenCenterX
+        if v.computeY then
+            local rawCenterX, rawCenterY = viewer:GetCenter()
+            local rawScreenX, rawScreenY = UIParent:GetCenter()
+
+            if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
+                local viewerCenterX = math_floor(rawCenterX + 0.5)
+                local viewerCenterY = math_floor(rawCenterY + 0.5)
+                local screenCenterX = math_floor(rawScreenX + 0.5)
+                local screenCenterY = math_floor(rawScreenY + 0.5)
+                newOffsetX = viewerCenterX - screenCenterX
+                local totalHeight = (vs and vs.totalHeight) or savedH
+                if totalHeight > 0 then
+                    local powerBarCenterY
+                    if v.side > 0 then
+                        powerBarCenterY = viewerCenterY + (totalHeight / 2) + rowBorderSize + (barThickness / 2) + barBorderSize
+                    else
+                        powerBarCenterY = viewerCenterY - (totalHeight / 2) - rowBorderSize - (barThickness / 2) - barBorderSize
+                    end
+                    newOffsetY = math_floor(powerBarCenterY - screenCenterY + 0.5) + v.hFudgeY
+                end
+            end
+        else
+            local rawCenterX = viewer:GetCenter()
+            local rawScreenX = UIParent:GetCenter()
+            if v.safe then
+                rawCenterX = Helpers.SafeValue(rawCenterX, nil)
+                rawScreenX = Helpers.SafeValue(rawScreenX, nil)
+            end
+            if rawCenterX and rawScreenX then
+                newOffsetX = math_floor(rawCenterX + 0.5) - math_floor(rawScreenX + 0.5)
+            end
         end
     end
 
     local needsUpdate = false
+    if newWidth and cfg.width ~= newWidth then
+        cfg.width = newWidth
+        needsUpdate = true
+    end
+    if newOffsetX and cfg[v.writeX] ~= newOffsetX then
+        cfg[v.writeX] = newOffsetX
+        needsUpdate = true
+    end
+    if newOffsetY and cfg[v.writeY] ~= newOffsetY then
+        cfg[v.writeY] = newOffsetY
+        needsUpdate = true
+    end
+    return needsUpdate
+end
+
+_G.QUI_UpdateLockedPowerBar = function()
+    if InCombatLockdown() then return end
+    if _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive() then return end
+
+    local needsUpdate = ComputeLockedBarGeometry(LOCKED_BAR_VARIANTS.primaryEssential)
+    if needsUpdate == nil then return end
+
     if not _primaryLockedReady then
         _primaryLockedReady = true
         needsUpdate = true
     end
 
-    if newWidth and cfg.width ~= newWidth then
-        cfg.width = newWidth
-        needsUpdate = true
-    end
-    if newOffsetX and cfg.offsetX ~= newOffsetX then
-        cfg.offsetX = newOffsetX
-        needsUpdate = true
-    end
-    if newOffsetY and cfg.offsetY ~= newOffsetY then
-        cfg.offsetY = newOffsetY
-        needsUpdate = true
-    end
-
     if needsUpdate then
-        core:UpdatePowerBar()
+        GetCore():UpdatePowerBar()
     end
 end
 
@@ -2508,84 +2563,16 @@ _G.QUI_UpdateLockedPowerBarToUtility = function()
     if InCombatLockdown() then return end
     if _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive() then return end
 
-    local core = GetCore()
-    if not core or not core.db then return end
+    local needsUpdate = ComputeLockedBarGeometry(LOCKED_BAR_VARIANTS.primaryUtility)
+    if needsUpdate == nil then return end
 
-    local cfg = core.db.profile.powerBar
-    if not cfg.enabled or not cfg.lockedToUtility then return end
-
-    local utilityViewer = GetCDMViewerFrame("utility")
-    if not utilityViewer or not utilityViewer:IsShown() then return end
-
-    local uvs = GetViewerState(utilityViewer)
-    local isVerticalCDM = (uvs and uvs.layoutDir) == "VERTICAL"
-
-    local newWidth, newOffsetX, newOffsetY
-    local barBorderSize = cfg.borderSize or 1
-
-    local savedW, savedH = GetSavedViewerDims("utility")
-
-    if isVerticalCDM then
-        local totalHeight = (uvs and uvs.totalHeight) or savedH
-        if not totalHeight or totalHeight <= 0 then return end
-
-        local row1BorderSize = (uvs and uvs.row1BorderSize) or 0
-        local targetWidth = totalHeight + (2 * row1BorderSize) - (2 * barBorderSize)
-        newWidth = math_floor(targetWidth + 0.5)
-
-        local utilityCenterX, utilityCenterY = utilityViewer:GetCenter()
-        local screenCenterX, screenCenterY = UIParent:GetCenter()
-        local totalWidth = (uvs and uvs.iconWidth) or savedW
-        if totalWidth <= 0 then return end
-        local barThickness = cfg.height or 6
-
-        if utilityCenterX and utilityCenterY and screenCenterX and screenCenterY then
-            local row1BorderSizePos = (uvs and uvs.row1BorderSize) or 0
-            local cdmVisualLeft = utilityCenterX - (totalWidth / 2) - row1BorderSizePos
-
-            local powerBarCenterX = cdmVisualLeft - (barThickness / 2) - barBorderSize
-
-            newOffsetX = math_floor(powerBarCenterX - screenCenterX + 0.5) + 1
-            newOffsetY = math_floor(utilityCenterY - screenCenterY + 0.5)
-        end
-    else
-        local rowWidth = GetRawBottomRowWidth(uvs) or savedW
-        if not rowWidth or rowWidth <= 0 then return end
-
-        local bottomRowBorderSize = (uvs and uvs.bottomRowBorderSize) or 0
-        local targetWidth = rowWidth + (2 * bottomRowBorderSize) - (2 * barBorderSize)
-        newWidth = math_floor(targetWidth + 0.5)
-
-        local rawCenterX = utilityViewer:GetCenter()
-        local rawScreenX = UIParent:GetCenter()
-        if rawCenterX and rawScreenX then
-            local utilityCenterX = math_floor(rawCenterX + 0.5)
-            local screenCenterX = math_floor(rawScreenX + 0.5)
-            newOffsetX = utilityCenterX - screenCenterX
-        end
-    end
-
-    local needsUpdate = false
     if not _primaryLockedReady then
         _primaryLockedReady = true
         needsUpdate = true
     end
 
-    if newWidth and cfg.width ~= newWidth then
-        cfg.width = newWidth
-        needsUpdate = true
-    end
-    if newOffsetX and cfg.offsetX ~= newOffsetX then
-        cfg.offsetX = newOffsetX
-        needsUpdate = true
-    end
-    if newOffsetY and cfg.offsetY ~= newOffsetY then
-        cfg.offsetY = newOffsetY
-        needsUpdate = true
-    end
-
     if needsUpdate then
-        core:UpdatePowerBar()
+        GetCore():UpdatePowerBar()
     end
 end
 
@@ -2601,92 +2588,16 @@ _G.QUI_UpdateLockedSecondaryPowerBar = function()
     if InCombatLockdown() then return end
     if _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive() then return end
 
-    local core = GetCore()
-    if not core or not core.db then return end
+    local needsUpdate = ComputeLockedBarGeometry(LOCKED_BAR_VARIANTS.secondaryEssential)
+    if needsUpdate == nil then return end
 
-    local cfg = core.db.profile.secondaryPowerBar
-    if not cfg.enabled or not cfg.lockedToEssential then return end
-
-    local essentialViewer = GetCDMViewerFrame("essential")
-    if not essentialViewer or not essentialViewer:IsShown() then return end
-
-    local evs = GetViewerState(essentialViewer)
-    local isVerticalCDM = (evs and evs.layoutDir) == "VERTICAL"
-
-    local newWidth, newOffsetX, newOffsetY
-    local barBorderSize = cfg.borderSize or 1
-    local barThickness = cfg.height or 8
-    local savedW, savedH = GetSavedViewerDims("essential")
-
-    if isVerticalCDM then
-        local totalHeight = (evs and evs.totalHeight) or savedH
-        if not totalHeight or totalHeight <= 0 then return end
-
-        local topBottomBorderSize = (evs and evs.row1BorderSize) or 0
-        local targetWidth = totalHeight + (2 * topBottomBorderSize) - (2 * barBorderSize)
-        newWidth = math_floor(targetWidth + 0.5)
-
-        local essentialCenterX, essentialCenterY = essentialViewer:GetCenter()
-        local screenCenterX, screenCenterY = UIParent:GetCenter()
-        local totalWidth = (evs and evs.iconWidth) or savedW
-        if totalWidth <= 0 then return end
-
-        if essentialCenterX and essentialCenterY and screenCenterX and screenCenterY then
-            local rightColBorderSize = (evs and evs.bottomRowBorderSize) or 0
-            local cdmVisualRight = essentialCenterX + (totalWidth / 2) + rightColBorderSize
-
-            local powerBarCenterX = cdmVisualRight + (barThickness / 2) + barBorderSize
-
-            newOffsetX = math_floor(powerBarCenterX - screenCenterX + 0.5) - 4
-            newOffsetY = math_floor(essentialCenterY - screenCenterY + 0.5)
-        end
-    else
-        local rowWidth = GetRawRow1Width(evs) or savedW
-        if not rowWidth or rowWidth <= 0 then return end
-
-        local row1BorderSize = (evs and evs.row1BorderSize) or 0
-        local targetWidth = rowWidth + (2 * row1BorderSize) - (2 * barBorderSize)
-        newWidth = math_floor(targetWidth + 0.5)
-
-        local rawCenterX, rawCenterY = essentialViewer:GetCenter()
-        local rawScreenX, rawScreenY = UIParent:GetCenter()
-
-        if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-            local essentialCenterX = math_floor(rawCenterX + 0.5)
-            local essentialCenterY = math_floor(rawCenterY + 0.5)
-            local screenCenterX = math_floor(rawScreenX + 0.5)
-            local screenCenterY = math_floor(rawScreenY + 0.5)
-            newOffsetX = essentialCenterX - screenCenterX
-            local totalHeight = (evs and evs.totalHeight) or savedH
-            if totalHeight > 0 then
-                local cdmVisualTop = essentialCenterY + (totalHeight / 2) + row1BorderSize
-                local powerBarCenterY = cdmVisualTop + (barThickness / 2) + barBorderSize
-                newOffsetY = math_floor(powerBarCenterY - screenCenterY + 0.5) - 1
-            end
-        end
-    end
-
-    local needsUpdate = false
     if not _secondaryLockedReady then
         _secondaryLockedReady = true
         needsUpdate = true
     end
 
-    if newWidth and cfg.width ~= newWidth then
-        cfg.width = newWidth
-        needsUpdate = true
-    end
-    if newOffsetX and cfg.lockedBaseX ~= newOffsetX then
-        cfg.lockedBaseX = newOffsetX
-        needsUpdate = true
-    end
-    if newOffsetY and cfg.lockedBaseY ~= newOffsetY then
-        cfg.lockedBaseY = newOffsetY
-        needsUpdate = true
-    end
-
     if needsUpdate then
-        core:UpdateSecondaryPowerBar()
+        GetCore():UpdateSecondaryPowerBar()
     end
 end
 
@@ -2694,86 +2605,11 @@ _G.QUI_UpdateLockedSecondaryPowerBarToUtility = function()
     if InCombatLockdown() then return end
     if _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive() then return end
 
-    local core = GetCore()
-    if not core or not core.db then return end
+    local needsUpdate = ComputeLockedBarGeometry(LOCKED_BAR_VARIANTS.secondaryUtility)
+    if needsUpdate == nil then return end
 
-    local cfg = core.db.profile.secondaryPowerBar
-    if not cfg.enabled or not cfg.lockedToUtility then return end
-
-    local utilityViewer = GetCDMViewerFrame("utility")
-    if not utilityViewer or not utilityViewer:IsShown() then return end
-
-    local uvs = GetViewerState(utilityViewer)
-    local isVerticalCDM = (uvs and uvs.layoutDir) == "VERTICAL"
-
-    local newWidth, newOffsetX, newOffsetY
-    local barBorderSize = cfg.borderSize or 1
-    local barThickness = cfg.height or 8
-    local savedW, savedH = GetSavedViewerDims("utility")
-
-    if isVerticalCDM then
-        local totalHeight = (uvs and uvs.totalHeight) or savedH
-        if not totalHeight or totalHeight <= 0 then return end
-
-        local row1BorderSize = (uvs and uvs.row1BorderSize) or 0
-        local targetWidth = totalHeight + (2 * row1BorderSize) - (2 * barBorderSize)
-        newWidth = math_floor(targetWidth + 0.5)
-
-        local utilityCenterX, utilityCenterY = utilityViewer:GetCenter()
-        local screenCenterX, screenCenterY = UIParent:GetCenter()
-        local totalWidth = (uvs and uvs.iconWidth) or savedW
-        if totalWidth <= 0 then return end
-
-        if utilityCenterX and utilityCenterY and screenCenterX and screenCenterY then
-            local cdmVisualLeft = utilityCenterX - (totalWidth / 2)
-
-            local powerBarCenterX = cdmVisualLeft - (barThickness / 2)
-
-            newOffsetX = math_floor(powerBarCenterX - screenCenterX + 0.5)
-            newOffsetY = math_floor(utilityCenterY - screenCenterY + 0.5)
-        end
-    else
-        local rowWidth = GetRawBottomRowWidth(uvs) or savedW
-        if not rowWidth or rowWidth <= 0 then return end
-
-        local bottomRowBorderSize = (uvs and uvs.bottomRowBorderSize) or 0
-        local targetWidth = rowWidth + (2 * bottomRowBorderSize) - (2 * barBorderSize)
-        newWidth = math_floor(targetWidth + 0.5)
-
-        local rawCenterX, rawCenterY = utilityViewer:GetCenter()
-        local rawScreenX, rawScreenY = UIParent:GetCenter()
-
-        if rawCenterX and rawCenterY and rawScreenX and rawScreenY then
-            local utilityCenterX = math_floor(rawCenterX + 0.5)
-            local utilityCenterY = math_floor(rawCenterY + 0.5)
-            local screenCenterX = math_floor(rawScreenX + 0.5)
-            local screenCenterY = math_floor(rawScreenY + 0.5)
-            newOffsetX = utilityCenterX - screenCenterX
-            local totalHeight = (uvs and uvs.totalHeight) or savedH
-            if totalHeight > 0 then
-                local cdmVisualBottom = utilityCenterY - (totalHeight / 2) - bottomRowBorderSize
-                local powerBarCenterY = cdmVisualBottom - (barThickness / 2) - barBorderSize
-                newOffsetY = math_floor(powerBarCenterY - screenCenterY + 0.5) + 1
-            end
-        end
-    end
-
-    local needsUpdate = false
     if not _secondaryLockedReady then
         _secondaryLockedReady = true
-        needsUpdate = true
-    end
-
-    if newWidth and cfg.width ~= newWidth then
-        cfg.width = newWidth
-        needsUpdate = true
-    end
-    if newOffsetX and cfg.lockedBaseX ~= newOffsetX then
-        cfg.lockedBaseX = newOffsetX
-        needsUpdate = true
-    end
-    if newOffsetY and cfg.lockedBaseY ~= newOffsetY then
-        cfg.lockedBaseY = newOffsetY
         needsUpdate = true
     end
 
@@ -2907,9 +2743,10 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
 
     bar.StatusBar:SetAlpha(0)
 
-    local tex = LSM:Fetch("statusbar", GetDefaultTexture())
-    for i = 1, maxPower do
-        if bar.FragmentedPowerBars[i] then
+    local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
+    if bar._quiFragmentTexture ~= tex then
+        bar._quiFragmentTexture = tex
+        for i = 1, #bar.FragmentedPowerBars do
             bar.FragmentedPowerBars[i]:SetStatusBarTexture(tex)
         end
     end
@@ -3004,34 +2841,13 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
 
         if cfg.showTicks then
             local runeTickPx = QUICore:GetPixelSize(bar)
-            local tickThickness = (cfg.tickThickness or 1) * runeTickPx
-            local tc = cfg.tickColor or { 0, 0, 0, 1 }
-            for i = 1, maxPower - 1 do
-                local tick = bar.ticks[i]
-                if not tick then
-                    tick = bar:CreateTexture(nil, "OVERLAY")
-                    bar.ticks[i] = tick
-                end
-                tick:SetColorTexture(tc[1], tc[2], tc[3], tc[4] or 1)
-
-                tick:ClearAllPoints()
-                if isVertical then
-                    local y = i * fragmentedBarHeight
-                    tick:SetPoint("BOTTOM", bar, "BOTTOM", 0, snapPx(y - (tickThickness / 2), runeTickPx))
-                    tick:SetSize(barWidth, tickThickness)
-                else
-                    local x = i * fragmentedBarWidth
-                    tick:SetPoint("LEFT", bar, "LEFT", snapPx(x - (tickThickness / 2), runeTickPx), 0)
-                    tick:SetSize(tickThickness, barHeight)
-                end
-                tick:Show()
-            end
-
-            for i = maxPower, #bar.ticks do
-                if bar.ticks[i] then
-                    bar.ticks[i]:Hide()
-                end
-            end
+            LayoutSegmentDividers(bar, bar, maxPower - 1, runeTickPx,
+                (cfg.tickThickness or 1) * runeTickPx,
+                cfg.tickColor or { 0, 0, 0, 1 },
+                isVertical,
+                isVertical and function(i) return i * fragmentedBarHeight end
+                    or function(i) return i * fragmentedBarWidth end,
+                isVertical and barWidth or barHeight)
         else
             for _, tick in ipairs(bar.ticks) do
                 tick:Hide()
@@ -3129,34 +2945,13 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
 
         if cfg.showTicks then
             local essTickPx = QUICore:GetPixelSize(bar)
-            local tickThickness = (cfg.tickThickness or 1) * essTickPx
-            local tc = cfg.tickColor or { 0, 0, 0, 1 }
-            for i = 1, maxPower - 1 do
-                local tick = bar.ticks[i]
-                if not tick then
-                    tick = bar:CreateTexture(nil, "OVERLAY")
-                    bar.ticks[i] = tick
-                end
-                tick:SetColorTexture(tc[1], tc[2], tc[3], tc[4] or 1)
-
-                tick:ClearAllPoints()
-                if isVertical then
-                    local y = i * fragmentedBarHeight
-                    tick:SetPoint("BOTTOM", bar, "BOTTOM", 0, snapPx(y - (tickThickness / 2), essTickPx))
-                    tick:SetSize(barWidth, tickThickness)
-                else
-                    local x = i * fragmentedBarWidth
-                    tick:SetPoint("LEFT", bar, "LEFT", snapPx(x - (tickThickness / 2), essTickPx), 0)
-                    tick:SetSize(tickThickness, barHeight)
-                end
-                tick:Show()
-            end
-
-            for i = maxPower, #bar.ticks do
-                if bar.ticks[i] then
-                    bar.ticks[i]:Hide()
-                end
-            end
+            LayoutSegmentDividers(bar, bar, maxPower - 1, essTickPx,
+                (cfg.tickThickness or 1) * essTickPx,
+                cfg.tickColor or { 0, 0, 0, 1 },
+                isVertical,
+                isVertical and function(i) return i * fragmentedBarHeight end
+                    or function(i) return i * fragmentedBarWidth end,
+                isVertical and barWidth or barHeight)
         else
             for _, tick in ipairs(bar.ticks) do
                 tick:Hide()
@@ -3263,7 +3058,7 @@ local function RenewingMistChargeOnUpdate(bar, delta)
     if renewingMistUpdateElapsed < 0.05 then return end
     renewingMistUpdateElapsed = 0
 
-    if GetSecondaryResource() ~= Enum.PowerType.RenewingMistCharges then
+    if GetSecondaryResource() ~= QUI_POWER.RenewingMistCharges then
         bar:SetScript("OnUpdate", nil)
         renewingMistUpdateRunning = false
         return
@@ -3330,32 +3125,7 @@ function QUICore:UpdateSecondaryPowerBarTicks(bar, resource, max)
     local height = bar:GetHeight()
     if width <= 0 or height <= 0 then return end
 
-    local orientation = cfg.orientation or "AUTO"
-    local isVertical = (orientation == "VERTICAL")
-    if orientation == "AUTO" then
-        if cfg.lockedToEssential then
-            local viewer = GetCDMViewerFrame("essential")
-            local vs = GetViewerState(viewer)
-            isVertical = (vs and vs.layoutDir) == "VERTICAL"
-        elseif cfg.lockedToUtility then
-            local viewer = GetCDMViewerFrame("utility")
-            local vs = GetViewerState(viewer)
-            isVertical = (vs and vs.layoutDir) == "VERTICAL"
-        elseif cfg.lockedToPrimary then
-            local primaryCfg = self.db.profile.powerBar
-            if primaryCfg then
-                if primaryCfg.lockedToEssential then
-                    local viewer = GetCDMViewerFrame("essential")
-                    local vs = GetViewerState(viewer)
-                    isVertical = (vs and vs.layoutDir) == "VERTICAL"
-                elseif primaryCfg.lockedToUtility then
-                    local viewer = GetCDMViewerFrame("utility")
-                    local vs = GetViewerState(viewer)
-                    isVertical = (vs and vs.layoutDir) == "VERTICAL"
-                end
-            end
-        end
-    end
+    local isVertical = ResolveIsVertical(cfg, self.db.profile.powerBar)
 
     local displayMax = max
     if resource == Enum.PowerType.SoulShards then
@@ -3368,35 +3138,13 @@ function QUICore:UpdateSecondaryPowerBarTicks(bar, resource, max)
     end
 
     local genTickPx = QUICore:GetPixelSize(bar)
-    local tickThickness = (cfg.tickThickness or 1) * genTickPx
-    local tc = cfg.tickColor or { 0, 0, 0, 1 }
-    local needed = displayMax - 1
-    for i = 1, needed do
-        local tick = bar.ticks[i]
-        if not tick then
-            tick = bar:CreateTexture(nil, "OVERLAY")
-            bar.ticks[i] = tick
-        end
-        tick:SetColorTexture(tc[1], tc[2], tc[3], tc[4] or 1)
-        tick:ClearAllPoints()
-
-        if isVertical then
-            local y = (i / displayMax) * height
-            tick:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, snapPx(y - (tickThickness / 2), genTickPx))
-            tick:SetSize(width, tickThickness)
-        else
-            local x = (i / displayMax) * width
-            tick:SetPoint("LEFT", bar.StatusBar, "LEFT", snapPx(x - (tickThickness / 2), genTickPx), 0)
-            tick:SetSize(tickThickness, height)
-        end
-        tick:Show()
-    end
-
-    for i = needed + 1, #bar.ticks do
-        if bar.ticks[i] then
-            bar.ticks[i]:Hide()
-        end
-    end
+    LayoutSegmentDividers(bar, bar.StatusBar, displayMax - 1, genTickPx,
+        (cfg.tickThickness or 1) * genTickPx,
+        cfg.tickColor or { 0, 0, 0, 1 },
+        isVertical,
+        isVertical and function(i) return (i / displayMax) * height end
+            or function(i) return (i / displayMax) * width end,
+        isVertical and width or height)
 end
 
 function QUICore:UpdateSecondaryPowerBarIndicators(bar, max, isVertical)
@@ -3496,7 +3244,7 @@ function QUICore:UpdateSecondaryPowerBarValue(forceShown)
     local resource = GetSecondaryResource()
     if not resource then return nil end
 
-    if resource ~= Enum.PowerType.RenewingMistCharges and renewingMistUpdateRunning then
+    if resource ~= QUI_POWER.RenewingMistCharges and renewingMistUpdateRunning then
         bar:SetScript("OnUpdate", nil)
         renewingMistUpdateRunning = false
     end
@@ -3542,7 +3290,7 @@ function QUICore:UpdateSecondaryPowerBarValue(forceShown)
         return nil
     end
 
-    if resource == Enum.PowerType.RenewingMistCharges then
+    if resource == QUI_POWER.RenewingMistCharges then
         local _, rawCurrent, startTime, duration = GetRenewingMistCharges()
         local shouldAnimate = rawCurrent and rawCurrent < max and startTime and startTime > 0 and duration and duration > 0
         if shouldAnimate and not renewingMistUpdateRunning then
@@ -3671,7 +3419,7 @@ function QUICore:UpdateSecondaryPowerBar()
         return
     end
 
-    if resource ~= Enum.PowerType.RenewingMistCharges and renewingMistUpdateRunning then
+    if resource ~= QUI_POWER.RenewingMistCharges and renewingMistUpdateRunning then
         bar:SetScript("OnUpdate", nil)
         renewingMistUpdateRunning = false
     end
@@ -3699,33 +3447,7 @@ function QUICore:UpdateSecondaryPowerBar()
         SafeSetFrameLevel(bar.TextFrame, frameLevel + 2)
     end
 
-    local orientation = cfg.orientation or "AUTO"
-    local isVertical = (orientation == "VERTICAL")
-
-    if orientation == "AUTO" then
-        if cfg.lockedToEssential then
-            local viewer = GetCDMViewerFrame("essential")
-            local vs = GetViewerState(viewer)
-            isVertical = (vs and vs.layoutDir) == "VERTICAL"
-        elseif cfg.lockedToUtility then
-            local viewer = GetCDMViewerFrame("utility")
-            local vs = GetViewerState(viewer)
-            isVertical = (vs and vs.layoutDir) == "VERTICAL"
-        elseif cfg.lockedToPrimary then
-            local primaryCfg = self.db.profile.powerBar
-            if primaryCfg then
-                if primaryCfg.lockedToEssential then
-                    local viewer = GetCDMViewerFrame("essential")
-                    local vs = GetViewerState(viewer)
-                    isVertical = (vs and vs.layoutDir) == "VERTICAL"
-                elseif primaryCfg.lockedToUtility then
-                    local viewer = GetCDMViewerFrame("utility")
-                    local vs = GetViewerState(viewer)
-                    isVertical = (vs and vs.layoutDir) == "VERTICAL"
-                end
-            end
-        end
-    end
+    local isVertical = ResolveIsVertical(cfg, self.db.profile.powerBar)
 
     bar.StatusBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
 
@@ -3908,7 +3630,13 @@ function QUICore:UpdateSecondaryPowerBar()
             local anchorHeight = anchor:GetHeight()
             if not anchorWidth or anchorWidth <= 1 or not anchorHeight or anchorHeight <= 1 then
                 SafeHide(bar)
-                C_Timer.After(0.5, function() self:UpdateSecondaryPowerBar() end)
+                if not bar._autoAttachDeferred then
+                    bar._autoAttachDeferred = true
+                    C_Timer.After(0.5, function()
+                        bar._autoAttachDeferred = nil
+                        self:UpdateSecondaryPowerBar()
+                    end)
+                end
                 return
             end
         end
@@ -4199,22 +3927,32 @@ function QUICore:OnUnitAura(_, _, updateInfo)
         updateInfo = nil
     end
     local resource = GetSecondaryResource()
-    if resource == Enum.PowerType.MaelstromWeapon then
+    if resource == QUI_POWER.MaelstromWeapon then
         MaelstromWeaponTracker:Resync()
+    elseif not (resource == QUI_POWER.VengSoulFragments
+        or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER)
+        or resource == "SOUL"
+        or resource == QUI_POWER.Whirlwind
+        or resource == QUI_POWER.TipOfTheSpear) then
+        return
+    end
+    local bar = self.secondaryPowerBar
+    if not bar then
         self:UpdateSecondaryPowerBar()
         return
     end
-    if resource == Enum.PowerType.VengSoulFragments
-        or (VDH_SOUL_FRAGMENTS_POWER and resource == VDH_SOUL_FRAGMENTS_POWER)
-        or resource == "SOUL"
-        or resource == Enum.PowerType.Whirlwind
-        or resource == Enum.PowerType.TipOfTheSpear then
-        self:UpdateSecondaryPowerBar()
+    local vType, vMax = self:UpdateSecondaryPowerBarValue()
+    if bar:IsShown()
+        and vType == bar._cachedAuraValueType
+        and vMax == bar._cachedAuraValueMax then
+        return
     end
+    bar._cachedAuraValueType, bar._cachedAuraValueMax = vType, vMax
+    self:UpdateSecondaryPowerBar()
 end
 
 function QUICore:OnSpellChargeUpdate(event, spellID)
-    if GetSecondaryResource() == Enum.PowerType.RenewingMistCharges then
+    if GetSecondaryResource() == QUI_POWER.RenewingMistCharges then
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             if Helpers.IsSecretValue(spellID) then
                 -- @secret-policy: refresh-without-attribution — the cast

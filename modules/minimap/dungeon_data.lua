@@ -214,9 +214,9 @@ local function GetShortName(mapID)
         end
         local firstWord = name:match("^(%S+)")
         if firstWord and #firstWord <= 6 then
-            return firstWord:upper()
+            return ns.Helpers.UpperUTF8(firstWord)
         end
-        return name:sub(1, 4):upper()
+        return ns.Helpers.UpperUTF8(ns.Helpers.TruncateUTF8(name, 4))
     end
     return "???"
 end
@@ -230,7 +230,7 @@ local function GetDungeonData(mapID)
     local name = GetDungeonName(mapID)
     if name then
         return {
-            short = NAME_TO_SHORT[name] or name:sub(1, 4):upper(),
+            short = NAME_TO_SHORT[name] or ns.Helpers.UpperUTF8(ns.Helpers.TruncateUTF8(name, 4)),
             spellID = GetTeleportSpellID(mapID)
         }
     end

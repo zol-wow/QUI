@@ -763,7 +763,16 @@ eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
 eventFrame:RegisterEvent("RAID_TARGET_UPDATE")
 eventFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
-eventFrame:SetScript("OnEvent", function(_, event)
+eventFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+eventFrame:SetScript("OnEvent", function(_, event, unit)
+    if event == "NAME_PLATE_UNIT_REMOVED" then
+        local token = NP.Plain(unit, "string")
+        if token then
+            questCache[token] = nil
+            titleCache[token] = nil
+        end
+        return
+    end
     if event == "PLAYER_TARGET_CHANGED" then
         if NP.IsEnabled() then OnTargetChanged() end
         return

@@ -54,13 +54,7 @@ local BORDER_SIZE = 1
 
 local SCROLL_STEP = 60
 
-local function GetPixelSize(frame)
-    if UIKit and UIKit.GetPixelSize then
-        return UIKit.GetPixelSize(frame)
-    end
-    local core = ns.Addon
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-end
+local GetPixelSize = UIKit.GetPixelSize
 
 local function GetPixelLineSize(frame, pixels)
     return (pixels or 1) * GetPixelSize(frame)
@@ -382,8 +376,15 @@ local function ClearContent(panel)
     end
 
     for _, child in pairs({content:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
+        if child == panel._infoSection then
+            if UIKit and UIKit.CancelValueAnimation then
+                UIKit.CancelValueAnimation(child, "anchoringInfo")
+            end
+            child:Hide()
+        else
+            child:Hide()
+            child:SetParent(nil)
+        end
     end
     for _, region in pairs({content:GetRegions()}) do
         if region ~= panel._placeholder then
@@ -598,82 +599,107 @@ local function BuildContent(panel, key)
             chainText = BuildAnchorChainText(key)
         end
 
-        local infoSection = CreateFrame("Frame", nil, content)
         local HEADER_HEIGHT = U.HEADER_HEIGHT or 24
+        local infoSection = panel._infoSection
 
-        local btn = CreateFrame("Button", nil, infoSection)
-        btn:SetPoint("TOPLEFT", 0, 0)
-        btn:SetPoint("TOPRIGHT", 0, 0)
-        btn:SetHeight(HEADER_HEIGHT)
+        if not infoSection then
+            infoSection = CreateFrame("Frame", nil, content)
+            panel._infoSection = infoSection
+            infoSection._sectionTitle = "Anchoring Details"
 
-        local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
-            point = "LEFT",
-            relativeTo = btn,
-            relativePoint = "LEFT",
-            xPixels = 2,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-            expanded = true,
-            collapsedDirection = "right",
-            r = ACCENT_R,
-            g = ACCENT_G,
-            b = ACCENT_B,
-            a = 1,
-        }) or EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
-        if not (UIKit and UIKit.CreateChevronCaret) then
-            chevron:SetPoint("LEFT", 2, 0)
-            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            local btn = CreateFrame("Button", nil, infoSection)
+            btn:SetPoint("TOPLEFT", 0, 0)
+            btn:SetPoint("TOPRIGHT", 0, 0)
+            btn:SetHeight(HEADER_HEIGHT)
+            infoSection._btn = btn
+
+            local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
+                point = "LEFT",
+                relativeTo = btn,
+                relativePoint = "LEFT",
+                xPixels = 2,
+                yPixels = 0,
+                sizePixels = 10,
+                lineWidthPixels = 6,
+                lineHeightPixels = 1,
+                expanded = true,
+                collapsedDirection = "right",
+                r = ACCENT_R,
+                g = ACCENT_G,
+                b = ACCENT_B,
+                a = 1,
+            }) or EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
+            if not (UIKit and UIKit.CreateChevronCaret) then
+                chevron:SetPoint("LEFT", 2, 0)
+                chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            end
+            infoSection._chevron = chevron
+
+            local titleLabel = EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
+            titleLabel:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
+            titleLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            titleLabel:SetText(ns.L["Anchoring Details"])
+            infoSection._titleLabel = titleLabel
+
+            local underline = btn:CreateTexture(nil, "ARTWORK")
+            underline:SetHeight(1)
+            underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+            underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+            underline:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
+
+            local bodyClip = CreateFrame("ScrollFrame", nil, infoSection)
+            bodyClip:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
+            bodyClip:SetPoint("RIGHT", infoSection, "RIGHT", 0, 0)
+            bodyClip:SetHeight(0)
+            bodyClip:Hide()
+            infoSection._bodyClip = bodyClip
+
+            local body = CreateFrame("Frame", nil, bodyClip)
+            body:SetWidth(1)
+            bodyClip:SetScrollChild(body)
+            bodyClip:SetScript("OnSizeChanged", function(self, width)
+                body:SetWidth(math.max(width or 1, 1))
+            end)
+            body:SetAlpha(0)
+            infoSection._body = body
+
+            local statusLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+            statusLabel:SetPoint("TOPLEFT", 8, -6)
+            statusLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+            statusLabel:SetJustifyH("LEFT")
+            infoSection._statusLabel = statusLabel
+
+            local chainLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+            chainLabel:SetPoint("TOPLEFT", 8, -(6 + statusLabel:GetStringHeight() + 6))
+            chainLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+            chainLabel:SetTextColor(0.85, 0.85, 0.85, 1)
+            chainLabel:SetJustifyH("LEFT")
+            chainLabel:SetJustifyV("TOP")
+            chainLabel:SetWordWrap(true)
+            chainLabel:SetSpacing(3)
+            infoSection._chainLabel = chainLabel
         end
 
-        local label = EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
-        label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
-        label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        label:SetText(ns.L["Anchoring Details"])
+        local btn = infoSection._btn
+        local chevron = infoSection._chevron
+        local label = infoSection._titleLabel
+        local bodyClip = infoSection._bodyClip
+        local body = infoSection._body
+        local statusLabel = infoSection._statusLabel
+        local chainLabel = infoSection._chainLabel
 
-        local underline = btn:CreateTexture(nil, "ARTWORK")
-        underline:SetHeight(1)
-        underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
-        underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
-        underline:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
-
-        local bodyClip = CreateFrame("ScrollFrame", nil, infoSection)
-        bodyClip:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
-        bodyClip:SetPoint("RIGHT", infoSection, "RIGHT", 0, 0)
-        bodyClip:SetHeight(0)
-        bodyClip:Hide()
-
-        local body = CreateFrame("Frame", nil, bodyClip)
-        body:SetWidth(1)
-        bodyClip:SetScrollChild(body)
-        bodyClip:SetScript("OnSizeChanged", function(self, width)
-            body:SetWidth(math.max(width or 1, 1))
-        end)
-        body:SetAlpha(0)
-
-        local statusLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-        statusLabel:SetPoint("TOPLEFT", 8, -6)
-        statusLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
-        statusLabel:SetJustifyH("LEFT")
+        infoSection:Show()
         statusLabel:SetText(statusText)
-
-        local chainLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         chainLabel:SetPoint("TOPLEFT", 8, -(6 + statusLabel:GetStringHeight() + 6))
-        chainLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
-        chainLabel:SetTextColor(0.85, 0.85, 0.85, 1)
-        chainLabel:SetJustifyH("LEFT")
-        chainLabel:SetJustifyV("TOP")
-        chainLabel:SetWordWrap(true)
-        chainLabel:SetSpacing(3)
         chainLabel:SetText(chainText)
 
         local bodyHeight = 6 + statusLabel:GetStringHeight() + 6 + chainLabel:GetStringHeight() + 10
         body:SetHeight(bodyHeight)
 
         infoSection._expanded = true
-        infoSection._sectionTitle = "Anchoring Details"
-        if not (UIKit and UIKit.CreateChevronCaret) then
+        if UIKit and UIKit.SetChevronCaretExpanded then
+            UIKit.SetChevronCaretExpanded(chevron, true)
+        elseif chevron.SetText then
             chevron:SetText("v")
         end
         bodyClip:Show()

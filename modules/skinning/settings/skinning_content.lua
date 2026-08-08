@@ -48,16 +48,20 @@ local function QueueAccentPanelRefresh()
 end
 
 local function WatchAccentPickerClose()
-    if not GUI.RefreshAccentColor or GUI._accentPickerWatcher then return end
-    local watcher = CreateFrame("Frame")
-    GUI._accentPickerWatcher = watcher
-    watcher:SetScript("OnUpdate", function(self)
-        if not ColorPickerFrame:IsShown() then
-            self:SetScript("OnUpdate", nil)
-            GUI._accentPickerWatcher = nil
-            QueueAccentPanelRefresh()
-        end
-    end)
+    if not GUI.RefreshAccentColor then return end
+    local watcher = GUI._accentPickerWatcher
+    if not watcher then
+        watcher = CreateFrame("Frame")
+        watcher:Hide()
+        watcher:SetScript("OnUpdate", function(self)
+            if not ColorPickerFrame:IsShown() then
+                self:Hide()
+                QueueAccentPanelRefresh()
+            end
+        end)
+        GUI._accentPickerWatcher = watcher
+    end
+    watcher:Show()
 end
 
 local function BuildThemePresetOptions()

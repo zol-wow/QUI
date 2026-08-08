@@ -8,16 +8,13 @@ Settings.Pins = Pins
 
 local abs = math.abs
 local ipairs = ipairs
-local next = next
 local pairs = pairs
 local rawget = rawget
 local setmetatable = setmetatable
-local table_insert = table.insert
 local table_remove = table.remove
 local tonumber = tonumber
 local tostring = tostring
 local type = type
-local wipe = wipe
 
 local PIN_STORE_VERSION = 1
 local STALE_MISS_LIMIT = 3
@@ -25,7 +22,6 @@ local STALE_MISS_LIMIT = 3
 Pins._subscribers = Pins._subscribers or {}
 Pins._subscriptionSeq = Pins._subscriptionSeq or 0
 Pins._profilePathCache = Pins._profilePathCache or setmetatable({}, { __mode = "k" })
-Pins._autoApplySuppressed = Pins._autoApplySuppressed or 0
 
 local function GetTimeStamp()
     if type(time) == "function" then
@@ -761,7 +757,9 @@ end
 
 function Pins:Broadcast(path)
     NotifySubscribersForPath(self._subscribers[path], path)
-    NotifySubscribersForPath(self._subscribers["*"], path)
+    if path ~= "*" then
+        NotifySubscribersForPath(self._subscribers["*"], path)
+    end
 end
 
 function Pins:Subscribe(path, callback, owner)
@@ -795,10 +793,6 @@ function Pins:Unsubscribe(token)
             end
         end
     end
-end
-
-function Pins:IsAutoApplySuppressed()
-    return (self._autoApplySuppressed or 0) > 0
 end
 
 function Pins:UpdateEntryMetadata(entry, descriptor, options)

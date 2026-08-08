@@ -251,8 +251,6 @@ function CDMReanchorBoot.BuildRuntime(env)
         endAuraMirrorPass = env.endAuraMirrorPass,
         applySize = MakeApplySize(env),
         decorate = env.decorate,
-        mintShell = env.mintShell,
-        positionShell = env.positionShell,
         positionClickSlot = env.positionClickSlot,
         ensureLiveTooltip = env.ensureLiveTooltip,
         hideLiveTooltip = env.hideLiveTooltip,

@@ -132,7 +132,7 @@ assert(loadfile("QUI_Nameplates/nameplates/plate_type.lua"))("QUI_Nameplates", n
     NP.Extras = { GetContext = function() return { instanceKind = "world" } end }
     assert(loadfile("QUI_Nameplates/nameplates/plate_auras.lua"))("QUI_Nameplates", ns)
     local plate = { unit = "nameplate1", npType = "enemyNPC", healthBar = {} }
-    return records, plate, function() NP.Auras.Build(plate) end, 3
+    return records, plate, function() NP.Auras.ApplyAppearance(plate) end, 3
 end
 
 local function HelpfulGroup(records)

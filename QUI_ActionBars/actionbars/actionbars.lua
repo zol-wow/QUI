@@ -22,11 +22,6 @@ inInitSafeWindow = false
 
 IS_MIDNIGHT = select(4, GetBuildInfo()) >= 120000
 
-GetActionCount = GetActionCount
-if IS_MIDNIGHT then
-    GetActionCount = function() return 0 end
-end
-
 TEXTURE_PATH = (ns.Helpers and ns.Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[iconskin\]]
 TEXTURES = {
     normal = TEXTURE_PATH .. "Normal",
@@ -36,12 +31,6 @@ TEXTURES = {
     checked = TEXTURE_PATH .. "Checked",
     flash = TEXTURE_PATH .. "Flash",
 }
-
-ICON_TEXCOORD = {0.07, 0.93, 0.07, 0.93}
-
-RANGE_INDICATOR = RANGE_INDICATOR or "●"
-VISUAL_REFRESH_DELAY = 0.05
-WORLD_INITIAL_REFRESH_DELAY = 0.5
 
 BAR_FRAMES = {
     bar1 = "MainActionBar",
@@ -302,16 +291,12 @@ function ActionBarsOwned.SafeUpdate(self)
             or IsAutoRepeatAction(action)
         )
         if shouldFlash then
-            if not self.flashing then
-                if ActionButton_StartFlash then
-                    ns.SafeCall("best-effort-style", ActionButton_StartFlash, self)
-                end
+            if self.flashing ~= 1 then
+                ns.SafeCallMethodIfPresent("best-effort-style", self, "StartFlash")
             end
         else
-            if self.flashing then
-                if ActionButton_StopFlash then
-                    ns.SafeCall("best-effort-style", ActionButton_StopFlash, self)
-                end
+            if self.flashing == 1 then
+                ns.SafeCallMethodIfPresent("best-effort-style", self, "StopFlash")
             end
         end
     else
@@ -340,10 +325,8 @@ function ActionBarsOwned.SafeUpdate(self)
         if self.LevelLinkLockIcon then
             self.LevelLinkLockIcon:SetShown(false)
         end
-        if self.flashing then
-            if ActionButton_StopFlash then
-                ns.SafeCall("best-effort-style", ActionButton_StopFlash, self)
-            end
+        if self.flashing == 1 then
+            ns.SafeCallMethodIfPresent("best-effort-style", self, "StopFlash")
         end
         ns.SafeCallMethodIfPresent("best-effort-style", self, "UpdateFlyout")
         UpdateAssistedCombatRotationFrame(self)
@@ -357,6 +340,19 @@ hiddenBarParent:Hide()
 ---@type fun(...)
 noop = function() end
 
+function PurgeShownExternalTaint(frame)
+    if not frame or not frame.system then return end
+
+    frame.isShownExternal = nil
+    local c = 42
+    repeat
+        if frame[c] == nil then
+            frame[c] = nil
+        end
+        c = c + 1
+    until issecurevariable(frame, "isShownExternal")
+end
+
 function HideManagedBlizzardBarFrame(frame, clearEvents)
     if not frame then return end
 
@@ -364,16 +360,7 @@ function HideManagedBlizzardBarFrame(frame, clearEvents)
         frame:UnregisterAllEvents()
     end
 
-    if frame.system then
-        frame.isShownExternal = nil
-        local c = 42
-        repeat
-            if frame[c] == nil then
-                frame[c] = nil
-            end
-            c = c + 1
-        until issecurevariable(frame, "isShownExternal")
-    end
+    PurgeShownExternalTaint(frame)
 
     frame:SetParent(hiddenBarParent)
     if frame.HideBase then

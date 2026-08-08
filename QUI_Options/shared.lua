@@ -485,41 +485,11 @@ end
 local COLLAPSIBLE_HEADER_HEIGHT = 24
 local COLLAPSIBLE_FORM_ROW = 32
 
-local function GetSectionRegistryKey(tabIndex, subTabIndex)
-    return (tabIndex or 0) * 10000 + (subTabIndex or 0)
-end
-
-local function FindScrollParent(frame)
-    local current = frame
-    while current do
-        if current.GetVerticalScroll and current.SetVerticalScroll then
-            return current
-        end
-        current = current:GetParent()
-    end
-    return nil
-end
-
 local function RegisterCollapsibleSection(parent, section)
     local title = section and section._sectionTitle
     local context = section and section._searchContext
     if not title or not context or not context.tabIndex then return end
-
-    local tabIndex = context.tabIndex
-    local subTabIndex = context.subTabIndex or 0
-    local numKey = GetSectionRegistryKey(tabIndex, subTabIndex)
-    local scrollParent = FindScrollParent(parent)
-
-    GUI.SectionRegistry[numKey] = GUI.SectionRegistry[numKey] or {}
-    GUI.SectionRegistryOrder[numKey] = GUI.SectionRegistryOrder[numKey] or {}
-    if not GUI.SectionRegistry[numKey][title] then
-        table.insert(GUI.SectionRegistryOrder[numKey], title)
-    end
-    GUI.SectionRegistry[numKey][title] = {
-        frame = section,
-        scrollParent = scrollParent,
-        contentParent = parent,
-    }
+    GUI.RegisterSectionEntry(context.tabIndex, context.subTabIndex, title, section, parent)
 end
 
 local function MeasureBodyContentHeight(body)
@@ -544,22 +514,51 @@ local function MeasureBodyContentHeight(body)
     return math.ceil(maxOffset + 4)
 end
 
+local COLLAPSIBLE_CARD_GAP = 6
+local COLLAPSIBLE_CARD_PAD = 8
+
+local function BuildCollapsibleChrome(parent, title, contentHeight, buildCard)
+    local section = CreateFrame("Frame", nil, parent)
+
+    local ar, ag, ab = GetCollapsibleAccent()
+
+    local dot = section:CreateTexture(nil, "OVERLAY")
+    dot:SetSize(4, 4)
+    dot:SetPoint("TOPLEFT", section, "TOPLEFT", 2, -((COLLAPSIBLE_HEADER_HEIGHT - 4) / 2))
+    dot:SetColorTexture(ar, ag, ab, 1)
+
+    local label = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("LEFT", dot, "RIGHT", 8, 0)
+    label:SetTextColor(ar, ag, ab, 1)
+    label:SetText(title)
+
+    local underline = section:CreateTexture(nil, "ARTWORK")
+    underline:SetHeight(1)
+    underline:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
+    underline:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
+    underline:SetColorTexture(ar, ag, ab, 0.3)
+
+    buildCard(section)
+
+    local body = CreateFrame("Frame", nil, section)
+    body:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + COLLAPSIBLE_CARD_GAP + COLLAPSIBLE_CARD_PAD))
+    body:SetPoint("RIGHT", section, "RIGHT", 0, 0)
+    body:SetHeight(contentHeight)
+
+    section._expanded = true
+    section._contentHeight = contentHeight
+    section._body = body
+
+    return section, body
+end
+
 local function CreateCollapsiblePage(parent, pad, topOffset)
     local PAD = pad or PADDING
     local startY = topOffset or -10
     local sections = {}
-    local controlsHeight = 28
-    local controlsGap = 8
-    local db = GetDB()
-    if db then
-        db.optionsPanelCollapsibleStates = db.optionsPanelCollapsibleStates or {}
-        GUI._optionsCollapsibleStates = db.optionsPanelCollapsibleStates
-    else
-        GUI._optionsCollapsibleStates = GUI._optionsCollapsibleStates or {}
-    end
 
     local function relayout()
-        local cy = startY - controlsHeight - controlsGap
+        local cy = startY
         for _, s in ipairs(sections) do
             s:ClearAllPoints()
             s:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, cy)
@@ -569,9 +568,6 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
         end
         parent:SetHeight(math.abs(cy) + 20)
     end
-
-    controlsHeight = 0
-    controlsGap = 0
 
     local function CreateCollapsible(title, contentHeight, buildFunc)
         local suppressedAtCreation = GUI._suppressSearchRegistration
@@ -585,51 +581,21 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
             GUI:SetSearchSection(title)
         end
 
-        local CARD_GAP = 6
-        local CARD_PAD = 8
-
-        local section = CreateFrame("Frame", nil, parent)
+        local section, body = BuildCollapsibleChrome(parent, title, contentHeight, function(host)
+            local cardBg = CreateFrame("Frame", nil, host)
+            cardBg:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + COLLAPSIBLE_CARD_GAP))
+            cardBg:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
+            local fill = cardBg:CreateTexture(nil, "BACKGROUND")
+            fill:SetAllPoints(cardBg)
+            fill:SetColorTexture(1, 1, 1, 0.02)
+            if ns.UIKit and ns.UIKit.CreateBorderLines then
+                ns.UIKit.CreateBorderLines(cardBg)
+                ns.UIKit.UpdateBorderLines(cardBg, 1, 1, 1, 1, 0.12, false)
+            end
+        end)
         section._sectionTitle = title
         section._searchContext = searchContext
-
-        local ar, ag, ab = GetCollapsibleAccent()
-
-        local dot = section:CreateTexture(nil, "OVERLAY")
-        dot:SetSize(4, 4)
-        dot:SetPoint("TOPLEFT", section, "TOPLEFT", 2, -((COLLAPSIBLE_HEADER_HEIGHT - 4) / 2))
-        dot:SetColorTexture(ar, ag, ab, 1)
-
-        local label = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        label:SetPoint("LEFT", dot, "RIGHT", 8, 0)
-        label:SetTextColor(ar, ag, ab, 1)
-        label:SetText(title)
-
-        local underline = section:CreateTexture(nil, "ARTWORK")
-        underline:SetHeight(1)
-        underline:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
-        underline:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
-        underline:SetColorTexture(ar, ag, ab, 0.3)
-
-        local cardBg = CreateFrame("Frame", nil, section)
-        cardBg:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP))
-        cardBg:SetPoint("BOTTOMRIGHT", section, "BOTTOMRIGHT", 0, 0)
-        local fill = cardBg:CreateTexture(nil, "BACKGROUND")
-        fill:SetAllPoints(cardBg)
-        fill:SetColorTexture(1, 1, 1, 0.02)
-        if ns.UIKit and ns.UIKit.CreateBorderLines then
-            ns.UIKit.CreateBorderLines(cardBg)
-            ns.UIKit.UpdateBorderLines(cardBg, 1, 1, 1, 1, 0.12, false)
-        end
-
-        local body = CreateFrame("Frame", nil, section)
-        body:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP + CARD_PAD))
-        body:SetPoint("RIGHT", section, "RIGHT", 0, 0)
-        body:SetHeight(contentHeight)
         body._logicalSection = section
-
-        section._expanded = true
-        section._contentHeight = contentHeight
-        section._body = body
 
         local function RefreshContentHeight()
             if type(body._contentHeight) == "number" and body._contentHeight > 0 then
@@ -642,7 +608,7 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
             end
             local bh = section._contentHeight or contentHeight
             body:SetHeight(bh)
-            section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP + (CARD_PAD * 2) + bh)
+            section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + COLLAPSIBLE_CARD_GAP + (COLLAPSIBLE_CARD_PAD * 2) + bh)
         end
         section.RefreshContentHeight = RefreshContentHeight
 
@@ -669,13 +635,6 @@ local function CreateTilePage(parent, pad, topOffset)
     local PAD = pad or PADDING
     local startY = topOffset or -10
     local sections = {}
-    local db = GetDB()
-    if db then
-        db.optionsPanelCollapsibleStates = db.optionsPanelCollapsibleStates or {}
-        GUI._optionsCollapsibleStates = db.optionsPanelCollapsibleStates
-    else
-        GUI._optionsCollapsibleStates = GUI._optionsCollapsibleStates or {}
-    end
 
     local function relayout()
         local cy = startY
@@ -716,60 +675,30 @@ local function CreateTilePage(parent, pad, topOffset)
 end
 
 local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
-    local CARD_GAP = 6
-    local CARD_PAD = 8
+    local section, body = BuildCollapsibleChrome(parent, title, contentHeight, function(host)
+        local cardBg = host:CreateTexture(nil, "BACKGROUND")
+        cardBg:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + COLLAPSIBLE_CARD_GAP))
+        cardBg:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
+        cardBg:SetColorTexture(1, 1, 1, 0.02)
 
-    local section = CreateFrame("Frame", nil, parent)
-
-    local ar, ag, ab = GetCollapsibleAccent()
-
-    local dot = section:CreateTexture(nil, "OVERLAY")
-    dot:SetSize(4, 4)
-    dot:SetPoint("TOPLEFT", section, "TOPLEFT", 2, -((COLLAPSIBLE_HEADER_HEIGHT - 4) / 2))
-    dot:SetColorTexture(ar, ag, ab, 1)
-
-    local label = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("LEFT", dot, "RIGHT", 8, 0)
-    label:SetTextColor(ar, ag, ab, 1)
-    label:SetText(title)
-
-    local underline = section:CreateTexture(nil, "ARTWORK")
-    underline:SetHeight(1)
-    underline:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
-    underline:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -COLLAPSIBLE_HEADER_HEIGHT)
-    underline:SetColorTexture(ar, ag, ab, 0.3)
-
-    local cardBg = section:CreateTexture(nil, "BACKGROUND")
-    cardBg:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP))
-    cardBg:SetPoint("BOTTOMRIGHT", section, "BOTTOMRIGHT", 0, 0)
-    cardBg:SetColorTexture(1, 1, 1, 0.02)
-
-    local function Hairline()
-        local t = section:CreateTexture(nil, "BORDER")
-        t:SetColorTexture(1, 1, 1, 0.06)
-        return t
-    end
-    local cardTop = Hairline(); cardTop:SetHeight(1)
-    cardTop:SetPoint("TOPLEFT", cardBg, "TOPLEFT", 0, 0)
-    cardTop:SetPoint("TOPRIGHT", cardBg, "TOPRIGHT", 0, 0)
-    local cardBot = Hairline(); cardBot:SetHeight(1)
-    cardBot:SetPoint("BOTTOMLEFT", cardBg, "BOTTOMLEFT", 0, 0)
-    cardBot:SetPoint("BOTTOMRIGHT", cardBg, "BOTTOMRIGHT", 0, 0)
-    local cardLeft = Hairline(); cardLeft:SetWidth(1)
-    cardLeft:SetPoint("TOPLEFT", cardBg, "TOPLEFT", 0, 0)
-    cardLeft:SetPoint("BOTTOMLEFT", cardBg, "BOTTOMLEFT", 0, 0)
-    local cardRight = Hairline(); cardRight:SetWidth(1)
-    cardRight:SetPoint("TOPRIGHT", cardBg, "TOPRIGHT", 0, 0)
-    cardRight:SetPoint("BOTTOMRIGHT", cardBg, "BOTTOMRIGHT", 0, 0)
-
-    local body = CreateFrame("Frame", nil, section)
-    body:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP + CARD_PAD))
-    body:SetPoint("RIGHT", section, "RIGHT", 0, 0)
-    body:SetHeight(contentHeight)
-
-    section._expanded = true
-    section._contentHeight = contentHeight
-    section._body = body
+        local function Hairline()
+            local t = host:CreateTexture(nil, "BORDER")
+            t:SetColorTexture(1, 1, 1, 0.06)
+            return t
+        end
+        local cardTop = Hairline(); cardTop:SetHeight(1)
+        cardTop:SetPoint("TOPLEFT", cardBg, "TOPLEFT", 0, 0)
+        cardTop:SetPoint("TOPRIGHT", cardBg, "TOPRIGHT", 0, 0)
+        local cardBot = Hairline(); cardBot:SetHeight(1)
+        cardBot:SetPoint("BOTTOMLEFT", cardBg, "BOTTOMLEFT", 0, 0)
+        cardBot:SetPoint("BOTTOMRIGHT", cardBg, "BOTTOMRIGHT", 0, 0)
+        local cardLeft = Hairline(); cardLeft:SetWidth(1)
+        cardLeft:SetPoint("TOPLEFT", cardBg, "TOPLEFT", 0, 0)
+        cardLeft:SetPoint("BOTTOMLEFT", cardBg, "BOTTOMLEFT", 0, 0)
+        local cardRight = Hairline(); cardRight:SetWidth(1)
+        cardRight:SetPoint("TOPRIGHT", cardBg, "TOPRIGHT", 0, 0)
+        cardRight:SetPoint("BOTTOMRIGHT", cardBg, "BOTTOMRIGHT", 0, 0)
+    end)
 
     local function RefreshContentHeight()
         if type(body._contentHeight) == "number" and body._contentHeight > 0 then
@@ -782,7 +711,7 @@ local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
         end
         local bh = section._contentHeight or contentHeight
         body:SetHeight(bh)
-        section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + CARD_GAP + (CARD_PAD * 2) + bh)
+        section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + COLLAPSIBLE_CARD_GAP + (COLLAPSIBLE_CARD_PAD * 2) + bh)
         if onResize then onResize() end
     end
     section.RefreshContentHeight = RefreshContentHeight
@@ -827,7 +756,7 @@ Options.RefreshCrosshair = RefreshCrosshair
 Options.RefreshReticle = RefreshReticle
 Options.RefreshRangeCheck = RefreshRangeCheck
 
-local function CreateAccentDotLabel(parent, text, yOffset)
+local function CreateAccentDotLabel(parent, text, yOffset, skipSectionNav)
     local ar, ag, ab = GetCollapsibleAccent()
 
     local container = CreateFrame("Frame", nil, parent)
@@ -857,7 +786,7 @@ local function CreateAccentDotLabel(parent, text, yOffset)
     container._label = label
     container._separator = sep
 
-    if type(text) == "string" and text ~= "" then
+    if type(text) == "string" and text ~= "" and not skipSectionNav then
         local target = parent
         while target do
             if type(target.RegisterSection) == "function" then

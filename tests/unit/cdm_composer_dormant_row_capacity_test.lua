@@ -86,20 +86,25 @@ assert(source:find("source = entry.source", 1, true),
 assert(spellDataSource:find('normalized.source ~= BLIZZARD_CDM_ENTRY_SOURCE', 1, true),
     "manual aura spell IDs must not be treated as dormant just because they are absent from Blizzard CDM")
 
+local usageHelperStart = assert(source:find("local function CountCooldownRowUsage", 1, true),
+    "shared row-usage counter should exist")
+assert(source:find("EntryCountsForCooldownRowCapacity(e)", usageHelperStart, true),
+    "shared row-usage counting should skip dormant entries")
+
 local stopDragStart = assert(source:find("StopDrag = function()", 1, true),
     "StopDrag should exist")
-assert(source:find("EntryCountsForCooldownRowCapacity(e)", stopDragStart, true),
-    "drag-to-row capacity checks should skip dormant entries")
+assert(source:find("CountCooldownRowUsage(", stopDragStart, true),
+    "drag-to-row capacity checks should route through the shared dormant-aware counter")
 
 local contextMenuStart = assert(source:find("local function ShowEntryContextMenu", 1, true),
     "entry context menu should exist")
-assert(source:find("EntryCountsForCooldownRowCapacity(e)", contextMenuStart, true),
-    "context-menu row capacity checks should skip dormant entries")
+assert(source:find("CountCooldownRowUsage(", contextMenuStart, true),
+    "context-menu row capacity checks should route through the shared dormant-aware counter")
 
 local addStart = assert(source:find("RefreshAddList = function()", 1, true),
     "RefreshAddList should exist")
-assert(source:find("EntryCountsForCooldownRowCapacity(e)", addStart, true),
-    "right-click add row selection should skip dormant entries")
+assert(source:find("CountCooldownRowUsage(", addStart, true),
+    "right-click add row selection should route through the shared dormant-aware counter")
 
 local splitStart = assert(source:find("local splitDormant = not (isCustomBar and db.specSpecific)", refreshStart, true),
     "RefreshEntryList should document the dormant split for non-row containers")

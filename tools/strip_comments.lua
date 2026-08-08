@@ -52,7 +52,7 @@ end
 -- Walk the source and return every comment span as {s, e, multiline}. Strings
 -- and long brackets are skipped wholesale so a `--` inside them never counts.
 local function lexComments(src)
-    local spans, n, i = {}, #src, 1
+    local spans, strings, n, i = {}, {}, #src, 1
     while i <= n do
         local c = src:sub(i, i)
         if c == "-" and src:sub(i + 1, i + 1) == "-" then
@@ -87,6 +87,7 @@ local function lexComments(src)
             local level, bodyStart = longBracketLevel(src, i)
             if level then
                 local _, closeEnd = src:find("]" .. string.rep("=", level) .. "]", bodyStart, true)
+                strings[#strings + 1] = { s = i, e = closeEnd or n }
                 i = (closeEnd or n) + 1
             else
                 i = i + 1
@@ -95,7 +96,7 @@ local function lexComments(src)
             i = i + 1
         end
     end
-    return spans
+    return spans, strings
 end
 
 local function buildLineIndex(src)
@@ -337,22 +338,40 @@ local function applyRemovals(src, ranges)
     return table.concat(out)
 end
 
+local function longStringLines(text)
+    local _, strings = lexComments(text)
+    local protected = {}
+    if #strings == 0 then return protected end
+    local starts = buildLineIndex(text)
+    for _, sp in ipairs(strings) do
+        for ln = lineOf(starts, sp.s), lineOf(starts, sp.e) do
+            protected[ln] = true
+        end
+    end
+    return protected
+end
+
 -- Removing a comment that sat between two blank-line separators leaves a double
 -- blank behind. Collapse those, trim trailing whitespace, normalise the ends.
 local function tidy(text)
-    local lines = {}
+    local protected = longStringLines(text)
+    local lines, keep, n = {}, {}, 0
     for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-        lines[#lines + 1] = (line:gsub("[ \t\r]+$", ""))
+        n = n + 1
+        keep[n] = protected[n] == true
+        lines[n] = keep[n] and line or (line:gsub("[ \t\r]+$", ""))
     end
-    while #lines > 0 and lines[#lines] == "" do table.remove(lines) end
-    while #lines > 0 and lines[1] == "" do table.remove(lines, 1) end
+    while #lines > 0 and lines[#lines] == "" and not keep[#lines] do
+        table.remove(lines); table.remove(keep)
+    end
+    while #lines > 0 and lines[1] == "" and not keep[1] do
+        table.remove(lines, 1); table.remove(keep, 1)
+    end
 
     local out = {}
-    for _, line in ipairs(lines) do
-        if line == "" and out[#out] == "" then
-            -- swallow: at most one blank line in a row
-        else
-            out[#out + 1] = line
+    for i = 1, #lines do
+        if lines[i] ~= "" or keep[i] or out[#out] ~= "" then
+            out[#out + 1] = lines[i]
         end
     end
     if #out == 0 then return "" end

@@ -30,6 +30,15 @@ STATE = "tools/i18n/state.json"
 # and on every PR, and reddens release.yml's gates barrier, which leaves a tag
 # with ZERO published artifacts.
 LUA = os.environ.get("LUA") or shutil.which("lua5.1") or shutil.which("lua")
+LUAC = os.environ.get("LUAC") or shutil.which("luac5.1") or shutil.which("luac")
+
+
+def luac_bin():
+    if not LUAC:
+        raise SystemExit(
+            "no Lua compiler found. Looked at $LUAC, then luac5.1, then luac "
+            "on PATH.")
+    return LUAC
 
 
 def lua_bin():
@@ -415,7 +424,7 @@ def main():
             f'[{json.dumps(k, ensure_ascii=False)}]={json.dumps(existing[k], ensure_ascii=False)},' for k in existing) + "}"
         with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False, encoding="utf-8") as tf:
             tf.write(pairs); tf_path = tf.name
-        chk = subprocess.run(["lua5.1","-e",
+        chk = subprocess.run([lua_bin(),"-e",
             f'local V=assert(loadfile("tools/i18n/validate_format.lua"))();'
             f'local d=V.validate(assert(loadfile("{tf_path}"))());'
             f'if #d>0 then for _,x in ipairs(d) do io.stderr:write(x.key.."\\n") end os.exit(1) end'],

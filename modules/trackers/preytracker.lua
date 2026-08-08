@@ -18,7 +18,7 @@ local PREY_CURRENCIES = {
 }
 local TICK_THIRDS = { 0.333, 0.666 }
 local TICK_QUARTERS = { 0.25, 0.50, 0.75 }
-local UPDATE_THROTTLE = 0.1
+local UPDATE_THROTTLE = 1
 local AMBUSH_PATTERN = "ambush"
 
 local FONT_FLAGS = "OUTLINE"
@@ -29,13 +29,7 @@ local SPARK_HEIGHT_MULT = 2.5
 local DEFAULT_FALLBACK_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 local string_format = string.format
 
-local function GetPixelSize(frame)
-    if UIKit and UIKit.GetPixelSize then
-        return UIKit.GetPixelSize(frame)
-    end
-    local core = GetCore and GetCore()
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-end
+local GetPixelSize = UIKit.GetPixelSize
 
 local TEXT_FORMATS = {
     stage_pct  = function(stage, pct, name) return string_format(ns.L["Stage %d — %d%%"], stage, pct) end,
@@ -1073,7 +1067,7 @@ local function TriggerAmbushAlert()
     if settings.ambushGlowEnabled and LCG then
         LCG.PixelGlow_Start(bar, { 1, 0.3, 0, 1 }, 14, 0.25, nil, 2)
         C_Timer.After(duration, function()
-            if bar and LCG then
+            if bar and LCG and GetTime() >= State.ambushActiveUntil then
                 LCG.PixelGlow_Stop(bar)
             end
         end)

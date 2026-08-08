@@ -63,24 +63,28 @@ function GUI:ResolveThemePreset(presetName)
             return preset.color[1], preset.color[2], preset.color[3]
         end
     end
+
     if presetName == "Class Colored" then
         local _, class = UnitClass("player")
         -- @secret-policy: collapse-only — UnitClass can return SECRET on 12.1 PTR7
         if issecretvalue and issecretvalue(class) then class = nil end
-        local color = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+        local color = class and ns.Helpers and ns.Helpers.GetClassColorTable(class)
         if color then return color.r, color.g, color.b end
         return 0.376, 0.647, 0.980
     end
+
     if presetName == "Faction Auto" then
         local faction = UnitFactionGroup("player")
         if faction == "Horde" then return 0.780, 0.192, 0.192 end
         return 0.267, 0.467, 0.800
     end
+
     if presetName == "Custom" then
         local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile
-        local c = db and db.general and db.general.addonAccentColor
-        if c then return c[1], c[2], c[3] end
+        local custom = db and db.general and db.general.addonAccentColor
+        if custom then return custom[1], custom[2], custom[3] end
     end
+
     return 0.376, 0.647, 0.980
 end
 
@@ -102,4 +106,8 @@ function GUI:ApplyAccentColor(r, g, b)
     C.tabSelected[1], C.tabSelected[2], C.tabSelected[3] = r, g, b
     C.borderAccent[1], C.borderAccent[2], C.borderAccent[3] = r, g, b
     C.sectionHeader[1], C.sectionHeader[2], C.sectionHeader[3] = C.accentLight[1], C.accentLight[2], C.accentLight[3]
+
+    if type(self.RefreshCachedColors) == "function" then
+        self:RefreshCachedColors()
+    end
 end

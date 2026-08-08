@@ -77,43 +77,6 @@ MPlusTimer.frames = {}
 MPlusTimer.bars = {}
 MPlusTimer.objectives = {}
 
-MPlusTimer.state = {
-    inChallenge = false,
-    demoModeActive = false,
-    timerStarted = false,
-    timerLoopRunning = false,
-
-    timer = 0,
-    timeLimit = 0,
-    timeLimits = {},
-    completionTimeMs = 0,
-    challengeCompleted = false,
-    completedOnTime = false,
-
-    level = 0,
-    affixes = {},
-    affixIDs = {},
-    mapID = nil,
-    dungeonName = "",
-
-    deathCount = 0,
-    deathTimeLost = 0,
-
-    currentCount = 0,
-    totalCount = 0,
-    currentPercent = 0,
-    pullCount = 0,
-    pullPercent = 0,
-    forcesCompleted = false,
-    forcesCompletionTime = nil,
-
-    objectivesList = {},
-
-    currentTargetTier = 3,
-    currentTargetTime = 0,
-    paceOffset = 0,
-}
-
 local defaultState = {
     inChallenge = false,
     demoModeActive = false,
@@ -145,7 +108,10 @@ local defaultState = {
     paceOffset = 0,
 }
 
+MPlusTimer.state = ns.Helpers.DeepCopy(defaultState)
+
 local pendingObjectiveTrackerHide = false
+local objectiveTrackerHideDeferral
 
 local function HideScenarioObjectiveTracker()
     if not ScenarioObjectiveTracker then
@@ -156,14 +122,15 @@ local function HideScenarioObjectiveTracker()
             return
         end
         pendingObjectiveTrackerHide = true
-        local frame = CreateFrame("Frame")
-        frame:RegisterEvent("PLAYER_REGEN_ENABLED")
-        frame:SetScript("OnEvent", function(self)
-            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-            self:SetScript("OnEvent", nil)
-            pendingObjectiveTrackerHide = false
-            HideScenarioObjectiveTracker()
-        end)
+        if not objectiveTrackerHideDeferral then
+            objectiveTrackerHideDeferral = CreateFrame("Frame")
+            objectiveTrackerHideDeferral:SetScript("OnEvent", function(self)
+                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                pendingObjectiveTrackerHide = false
+                HideScenarioObjectiveTracker()
+            end)
+        end
+        objectiveTrackerHideDeferral:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
     ScenarioObjectiveTracker:Hide()
@@ -250,16 +217,7 @@ local function GetForcesFont()
     return fontPath, fontSize
 end
 
-local function FormatTime(seconds)
-    if not seconds then return "0:00" end
-    seconds = math.floor(seconds)
-    local negative = seconds < 0
-    seconds = math.abs(seconds)
-    local mins = math.floor(seconds / 60)
-    local secs = seconds % 60
-    local str = string.format("%d:%02d", mins, secs)
-    return negative and ("-" .. str) or str
-end
+local FormatTime = Helpers.FormatMMSS
 
 local DeepCopy = ns.Helpers.DeepCopy
 
@@ -267,11 +225,8 @@ local Clamp = Helpers.Clamp
 
 local function FormatPaceOffset(seconds)
     if not seconds then return "" end
-    local absSeconds = math.abs(seconds)
-    local mins = math.floor(absSeconds / 60)
-    local secs = absSeconds % 60
     local prefix = seconds >= 0 and "+" or "-"
-    return string.format("%s%d:%02d", prefix, mins, secs)
+    return prefix .. Helpers.FormatMMSS(math.abs(seconds))
 end
 
 function MPlusTimer:CreateFrames()
@@ -660,6 +615,44 @@ function MPlusTimer:LayoutForcesText(pad, yOffset, barWidth, fontPath, fontSize)
     frame:Show()
 end
 
+function MPlusTimer:HideForces()
+    self.bars.forces.frame:Hide()
+    if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
+end
+
+function MPlusTimer:BeginForcesPlacement(settings, pad, vSpace, barWidth, layoutBarHeight)
+    local forces = self._forcesPlacement
+    if not forces then
+        forces = {}
+        self._forcesPlacement = forces
+    end
+    forces.enabled = settings.forcesBarEnabled ~= false
+    forces.position = settings.forcesPosition or "after_timer"
+    forces.displayMode = settings.forcesDisplayMode or "bar"
+    forces.pad = pad
+    forces.vSpace = vSpace
+    forces.barWidth = barWidth
+    forces.fontPath, forces.fontSize = GetForcesFont()
+    forces.barHeight = GetForcesBarHeight(settings, layoutBarHeight)
+    if self.frames.forcesTextFrame then
+        self.frames.forcesTextFrame:Hide()
+    end
+    return forces
+end
+
+function MPlusTimer:PlaceForces(forces, yOffset, anchorTo, x, y, barAdvance)
+    if forces.displayMode == "text" then
+        self.bars.forces.frame:Hide()
+        if self.frames.forcesTextFrame then
+            self:LayoutForcesText(forces.pad, yOffset, forces.barWidth, forces.fontPath, forces.fontSize)
+        end
+        return yOffset + forces.fontSize + 2 + forces.vSpace
+    end
+    if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
+    self:LayoutForcesBar(anchorTo, x, y, forces.barWidth, forces.barHeight, forces.fontPath, forces.fontSize)
+    return yOffset + barAdvance
+end
+
 function MPlusTimer:LayoutObjectiveLines(settings, font, fontSize, spacing, pad, yOffset)
     local align = settings.objectiveTextAlign
     if align ~= "CENTER" and align ~= "RIGHT" then align = "LEFT" end
@@ -722,15 +715,7 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
         self.bars[i].frame:Show()
     end
 
-    local forcesEnabled = settings.forcesBarEnabled ~= false
-    local forcesPos = settings.forcesPosition or "after_timer"
-    local forcesDisplayMode = settings.forcesDisplayMode or "bar"
-    local forcesFontPath, forcesFontSize = GetForcesFont()
-    local forcesBarHeight = GetForcesBarHeight(settings, barHeight)
-
-    if self.frames.forcesTextFrame then
-        self.frames.forcesTextFrame:Hide()
-    end
+    local forces = self:BeginForcesPlacement(settings, pad, vSpace, barWidth, barHeight)
 
     local yOffset = pad
 
@@ -779,21 +764,10 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
     self.frames.keyText:Hide()
     self.frames.affixText:Hide()
 
-    if forcesEnabled and forcesPos == "before_timer" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + barPad
-        end
+    if forces.enabled and forces.position == "before_timer" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + barPad)
     else
-        self.bars.forces.frame:Hide()
-        if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
+        self:HideForces()
     end
 
     self.frames.bars:ClearAllPoints()
@@ -828,50 +802,20 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
 
     yOffset = yOffset + barHeight + barPad
 
-    if forcesEnabled and forcesPos == "after_timer" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.bars, 0, -(barHeight + barPad), barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + barPad
-        end
+    if forces.enabled and forces.position == "after_timer" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.bars, 0, -(barHeight + barPad), forces.barHeight + barPad)
     end
 
     yOffset = yOffset + vSpace
 
-    if forcesEnabled and forcesPos == "before_objectives" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + barPad + vSpace
-        end
+    if forces.enabled and forces.position == "before_objectives" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + barPad + vSpace)
     end
 
     yOffset = yOffset + self:LayoutObjectiveLines(settings, font, COMPACT_FONT_SIZE_OBJECTIVE, objSpace, pad, yOffset)
 
-    if forcesEnabled and forcesPos == "after_objectives" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + barPad
-        end
+    if forces.enabled and forces.position == "after_objectives" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + barPad)
     end
 
     yOffset = yOffset + pad
@@ -892,15 +836,7 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
 
     self.frames.root:SetWidth(frameWidth)
 
-    local forcesEnabled = settings.forcesBarEnabled ~= false
-    local forcesPos = settings.forcesPosition or "after_timer"
-    local forcesDisplayMode = settings.forcesDisplayMode or "bar"
-    local forcesFontPath, forcesFontSize = GetForcesFont()
-    local forcesBarHeight = GetForcesBarHeight(settings, barHeight)
-
-    if self.frames.forcesTextFrame then
-        self.frames.forcesTextFrame:Hide()
-    end
+    local forces = self:BeginForcesPlacement(settings, pad, vSpace, barWidth, barHeight)
 
     local yOffset = pad
 
@@ -961,21 +897,10 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
         self.bars[i].frame:Hide()
     end
 
-    if forcesEnabled and forcesPos == "before_timer" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + vSpace
-        end
+    if forces.enabled and forces.position == "before_timer" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + vSpace)
     else
-        self.bars.forces.frame:Hide()
-        if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
+        self:HideForces()
     end
 
     self.frames.sleekBar:ClearAllPoints()
@@ -987,32 +912,12 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
 
     yOffset = yOffset + barHeight + vSpace
 
-    if forcesEnabled and forcesPos == "after_timer" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + vSpace
-        end
+    if forces.enabled and forces.position == "after_timer" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + vSpace)
     end
 
-    if forcesEnabled and forcesPos == "before_objectives" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + vSpace
-        end
+    if forces.enabled and forces.position == "before_objectives" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + vSpace)
     end
 
     if settings.showObjectives then
@@ -1022,18 +927,8 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
         self.frames.objectives:Hide()
     end
 
-    if forcesEnabled and forcesPos == "after_objectives" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + vSpace
-        end
+    if forces.enabled and forces.position == "after_objectives" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + vSpace)
     end
 
     yOffset = yOffset + pad
@@ -1111,15 +1006,7 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
         self.bars[i].frame:Show()
     end
 
-    local forcesEnabled = settings.forcesBarEnabled ~= false
-    local forcesPos = settings.forcesPosition or "after_timer"
-    local forcesDisplayMode = settings.forcesDisplayMode or "bar"
-    local forcesFontPath, forcesFontSize = GetForcesFont()
-    local forcesBarHeight = GetForcesBarHeight(settings, barHeight)
-
-    if self.frames.forcesTextFrame then
-        self.frames.forcesTextFrame:Hide()
-    end
+    local forces = self:BeginForcesPlacement(settings, pad, vSpace, barWidth, barHeight)
 
     local yOffset = pad
 
@@ -1171,21 +1058,10 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
 
     yOffset = yOffset + math.max(FONT_SIZE_KEY, iconSize) + vSpace + 2
 
-    if forcesEnabled and forcesPos == "before_timer" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + barPad
-        end
+    if forces.enabled and forces.position == "before_timer" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + barPad)
     else
-        self.bars.forces.frame:Hide()
-        if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
+        self:HideForces()
     end
 
     self.frames.bars:ClearAllPoints()
@@ -1220,50 +1096,20 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
 
     yOffset = yOffset + barHeight + barPad
 
-    if forcesEnabled and forcesPos == "after_timer" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.bars, 0, -(barHeight + barPad), barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + barPad
-        end
+    if forces.enabled and forces.position == "after_timer" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.bars, 0, -(barHeight + barPad), forces.barHeight + barPad)
     end
 
     yOffset = yOffset + vSpace
 
-    if forcesEnabled and forcesPos == "before_objectives" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + barPad + vSpace
-        end
+    if forces.enabled and forces.position == "before_objectives" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + barPad + vSpace)
     end
 
     yOffset = yOffset + self:LayoutObjectiveLines(settings, font, FONT_SIZE_OBJECTIVE, objSpace, pad, yOffset)
 
-    if forcesEnabled and forcesPos == "after_objectives" then
-        if forcesDisplayMode == "text" then
-            self.bars.forces.frame:Hide()
-            if self.frames.forcesTextFrame then
-                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
-            end
-            yOffset = yOffset + forcesFontSize + 2 + vSpace
-        else
-            if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
-            yOffset = yOffset + forcesBarHeight + barPad
-        end
+    if forces.enabled and forces.position == "after_objectives" then
+        yOffset = self:PlaceForces(forces, yOffset, self.frames.root, pad, -yOffset, forces.barHeight + barPad)
     end
 
     yOffset = yOffset + pad
@@ -1339,7 +1185,7 @@ function MPlusTimer:RenderTimer()
             local barMax = limit - nextLimit
             local timeRemaining = limit - self.state.timer
             local barElapsed = barMax - timeRemaining
-            local barValue = Clamp(barElapsed / barMax, 0, 1)
+            local barValue = barMax > 0 and Clamp(barElapsed / barMax, 0, 1) or 0
 
             self.bars[i].bar:SetValue(barValue)
 

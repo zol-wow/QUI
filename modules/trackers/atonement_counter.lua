@@ -65,6 +65,11 @@ local refreshQueued = false
 local refreshFrame = CreateFrame("Frame")
 refreshFrame:Hide()
 
+local auraStateCache = {}
+local dirtyAuraGuids = {}
+local auraCacheInvalid = true
+local appearanceDirty = true
+
 local function SafeBoolean(value)
     if IsSecretValue(value) or value == nil then
         return nil
@@ -261,13 +266,35 @@ local function UnitHasPlayerAtonement(unit)
     return false
 end
 
+local function UnitAtonementState(unit)
+    local guid = UnitGUID and UnitGUID(unit)
+    if IsSecretValue(guid) then
+        guid = nil -- @secret-policy: reject-secret-ids
+    end
+    if guid then
+        local cached = auraStateCache[guid]
+        if cached ~= nil and not dirtyAuraGuids[guid] then
+            if cached == "unknown" then
+                return nil
+            end
+            return cached
+        end
+    end
+    local has = UnitHasPlayerAtonement(unit)
+    if guid then
+        auraStateCache[guid] = has == nil and "unknown" or has
+        dirtyAuraGuids[guid] = nil
+    end
+    return has
+end
+
 local function CountActiveAtonements()
     if not IsDisciplinePriest() then
         return 0, false
     end
 
     local count, unknown = 0, false
-    local has = UnitHasPlayerAtonement("player")
+    local has = UnitAtonementState("player")
     if has then
         count = count + 1
     elseif has == nil then
@@ -281,7 +308,7 @@ local function CountActiveAtonements()
             if IsSecretValue(isPlayer) then isPlayer = false end
             if not ok then isPlayer = false end
             if not isPlayer then
-                has = UnitHasPlayerAtonement(unit)
+                has = UnitAtonementState(unit)
                 if has then
                     count = count + 1
                 elseif has == nil then
@@ -291,7 +318,7 @@ local function CountActiveAtonements()
         end
     elseif IsInGroup() then
         for i = 1, GetNumGroupMembers() - 1 do
-            has = UnitHasPlayerAtonement("party" .. i)
+            has = UnitAtonementState("party" .. i)
             if has then
                 count = count + 1
             elseif has == nil then
@@ -476,7 +503,10 @@ local function UpdateCounterDisplay()
         return
     end
 
-    ApplyAppearance()
+    if appearanceDirty then
+        ApplyAppearance()
+        appearanceDirty = false
+    end
 
     if not ShouldShowCounter(settings) then
         CounterState.frame:Hide()
@@ -512,12 +542,43 @@ local function UpdateCounterDisplay()
     CounterState.frame:Show()
 end
 
-local function RefreshAtonementCounter()
+local function RunQueuedRefresh()
     refreshQueued = false
+    if auraCacheInvalid then
+        wipe(auraStateCache)
+        wipe(dirtyAuraGuids)
+        auraCacheInvalid = false
+    end
     UpdateCounterDisplay()
 end
 
+local function RefreshAtonementCounter()
+    auraCacheInvalid = true
+    appearanceDirty = true
+    RunQueuedRefresh()
+end
+
 local function QueueRefresh()
+    auraCacheInvalid = true
+    if refreshQueued then
+        return
+    end
+    refreshQueued = true
+    refreshFrame:Show()
+end
+
+local function QueueUnitRefresh(unit)
+    if not auraCacheInvalid then
+        local guid = UnitGUID and UnitGUID(unit)
+        if IsSecretValue(guid) then
+            guid = nil -- @secret-policy: reject-secret-ids
+        end
+        if guid then
+            dirtyAuraGuids[guid] = true
+        else
+            auraCacheInvalid = true
+        end
+    end
     if refreshQueued then
         return
     end
@@ -527,7 +588,7 @@ end
 
 refreshFrame:SetScript("OnUpdate", function(self)
     self:Hide()
-    RefreshAtonementCounter()
+    RunQueuedRefresh()
 end)
 
 local function TogglePreview(enable)
@@ -544,7 +605,7 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 ns.AuraEvents:Subscribe("roster", function(unit)
     if not IsDisciplinePriest() then return end
-    QueueRefresh()
+    QueueUnitRefresh(unit)
 end)
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")

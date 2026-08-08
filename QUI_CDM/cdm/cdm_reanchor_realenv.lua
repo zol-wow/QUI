@@ -546,40 +546,6 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         overlay:EnableMouse(false)
     end
 
-    local function mintShell(_entry, containerKey)
-        local container = getContainerFor(containerKey)
-        if not (container and container.CreateTexture) then return nil end
-        local p = getShellPool(container)
-        local nextIndex = (p.used or 0) + 1
-        local shell = p.list[nextIndex]
-        if not shell then
-            if not canMutateProtectedShells(container) then
-                p.cleanupPending = true
-                return nil
-            end
-            shell = CreateFrame("Frame", nil, container)
-            shell._quiCdmShell = true
-            shell.Border = shell:CreateTexture(nil, "BACKGROUND", nil, -8)
-            p.list[nextIndex] = shell
-        elseif shell.IsShown and not shell:IsShown() and not canMutateProtectedShells(shell) then
-            p.cleanupPending = true
-            return nil
-        end
-        p.used = nextIndex
-        shell._quiCdmShellGeneration = p.generation or 0
-        local tooltipContext = getShellTooltipContext(containerKey)
-        shell._spellEntry = _entry
-        shell._quiTooltipContext = tooltipContext
-        shell.__quiTooltipContext = tooltipContext
-        shell.__customTrackerIcon = nil
-        if canMutateProtectedShells(shell) then
-            ensureShellTooltip(shell)
-        end
-        if shell.Show and ((not shell.IsShown) or not shell:IsShown()) then
-            shell:Show()
-        end
-        return shell
-    end
     local function mintClickSlot(_entry, containerKey)
         local container = getContainerFor(containerKey)
         if not container then return nil end
@@ -612,33 +578,6 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
             slot:Show()
         end
         return slot
-    end
-    local function positionShell(shell, container, x, y, w, h, rowConfig)
-        if not (shell and shell.ClearAllPoints) then return end
-        if not canMutateProtectedShells(shell) then
-            return false
-        end
-        shell:ClearAllPoints()
-        shell:SetPoint("CENTER", container, "CENTER", x, y)
-        if w and h and shell.SetSize then shell:SetSize(w, h) end
-        local borderSize = (type(rowConfig) == "table" and rowConfig.borderSize) or 0
-        local tex = shell.Border
-        if borderSize > 0 and tex then
-            local bs = (Core and Core.Pixels) and Core:Pixels(borderSize, shell) or borderSize
-            local r, g, b, a = 0, 0, 0, 1
-            if Helpers and Helpers.GetSkinBorderColor then
-                r, g, b, a = Helpers.GetSkinBorderColor(rowConfig, "")
-            end
-            tex:SetColorTexture(r, g, b, a)
-            tex:ClearAllPoints()
-            tex:SetPoint("TOPLEFT", shell, "TOPLEFT", -bs, bs)
-            tex:SetPoint("BOTTOMRIGHT", shell, "BOTTOMRIGHT", bs, -bs)
-            tex:Show()
-        elseif tex then
-            tex:Hide()
-        end
-        raiseHoverOverlay(shell)
-        return true
     end
     local function positionClickSlot(container, live, entry, containerKey, x, y, w, h)
         if not (container and live and w and h) then return nil end
@@ -910,8 +849,6 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         end,
         decorate = decorate,
         applyChrome = applyChrome,
-        mintShell = mintShell,
-        positionShell = positionShell,
         positionClickSlot = positionClickSlot,
         beginAuraMirrorPass = beginAuraMirrorPass,
         acquireAuraMirror = acquireAuraMirror,

@@ -216,9 +216,6 @@ local ContextSelection = FullSurface and FullSurface.CreateSelectionController
         normalize = NormalizeContextMode,
         afterSet = function(key)
             EnsureTabModel():ApplyNormalized()
-            if State.invalidateTabBodies then
-                State.invalidateTabBodies()
-            end
 
             if _G.QUI_RefreshGroupFramePreview then
                 _G.QUI_RefreshGroupFramePreview(key)
@@ -232,7 +229,7 @@ local ContextSelection = FullSurface and FullSurface.CreateSelectionController
             end
 
             if State.repaintTabs then
-                State.repaintTabs()
+                State.repaintTabs(false)
             end
         end,
     })
@@ -447,6 +444,7 @@ local function BuildTileBody(body, _, _, feature)
         state = State,
         clearFrame = ClearFrame,
         createTabStrip = BuildTabStrip,
+        resolveVariantKey = function() return State.contextMode end,
         tabTopOffset = -(DROPDOWN_ROW_H + 8),
         initialize = function()
             State.activeTab = State.activeTab or "general"
@@ -527,7 +525,14 @@ local function HidePreview()
     if State.previewPanel then State.previewPanel.Hide() end
 end
 
+local function InvalidateTabBodies()
+    if State.invalidateTabBodies then
+        State.invalidateTabBodies()
+    end
+end
+
 ns.QUI_GroupFramesSettingsSurface = {
+    InvalidateTabBodies = InvalidateTabBodies,
     SetContextMode = SetContextMode,
     GetContextMode = GetContextMode,
     SetActiveTab = SetActiveTab,

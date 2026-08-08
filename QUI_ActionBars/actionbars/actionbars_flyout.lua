@@ -457,21 +457,22 @@ SyncOwnedFlyoutInfoToHandler = function()
 
     UpdateOwnedFlyoutInfo()
     local maxNumSlots = 0
-    local data = "QUI_FlyoutInfo = newtable();\n"
+    local lines = { "QUI_FlyoutInfo = newtable();\n" }
     for flyoutID, info in pairs(ownedFlyoutInfo) do
         if info and info.slots and #info.slots > 0 then
             if #info.slots > maxNumSlots then
                 maxNumSlots = #info.slots
             end
 
-            data = data .. ("QUI_FlyoutInfo[%d] = newtable();QUI_FlyoutInfo[%d].slots = newtable();\n"):format(flyoutID, flyoutID)
+            lines[#lines + 1] = ("QUI_FlyoutInfo[%d] = newtable();QUI_FlyoutInfo[%d].slots = newtable();\n"):format(flyoutID, flyoutID)
             for slotID, slotInfo in ipairs(info.slots) do
                 local spellID = (slotInfo and type(slotInfo.spellID) == "number" and slotInfo.spellID > 0) and slotInfo.spellID or 0
-                data = data .. ("QUI_FlyoutInfo[%d].slots[%d] = newtable();QUI_FlyoutInfo[%d].slots[%d].spellID = %d;QUI_FlyoutInfo[%d].slots[%d].isKnown = %s;\n")
+                lines[#lines + 1] = ("QUI_FlyoutInfo[%d].slots[%d] = newtable();QUI_FlyoutInfo[%d].slots[%d].spellID = %d;QUI_FlyoutInfo[%d].slots[%d].isKnown = %s;\n")
                     :format(flyoutID, slotID, flyoutID, slotID, spellID, flyoutID, slotID, slotInfo and slotInfo.isKnown and "true" or "nil")
             end
         end
     end
+    local data = table.concat(lines)
 
     if maxNumSlots > #ownedFlyoutButtons then
         for i = #ownedFlyoutButtons + 1, maxNumSlots do
@@ -494,32 +495,6 @@ do
     cdEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
     cdEventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
     cdEventFrame:SetScript("OnEvent", UpdateAllOwnedFlyoutButtonCooldowns)
-end
-
-ShowOwnedFlyoutForButton = function(parentButton)
-    if not USE_OWNED_FLYOUT or not parentButton then
-        return false
-    end
-
-    local action = parentButton.action
-    if not action then
-        HideOwnedFlyout()
-        return false
-    end
-
-    local actionType, flyoutID = GetActionInfo(action)
-    if actionType ~= "flyout" or not flyoutID then
-        HideOwnedFlyout()
-        return false
-    end
-
-    SyncOwnedFlyoutInfoToHandler()
-    local flyout = EnsureOwnedFlyoutFrame()
-    if not flyout then return false end
-
-    flyout:SetAttribute("flyoutParentHandle", parentButton)
-    flyout:RunAttribute("HandleFlyout", flyoutID)
-    return flyout:IsShown()
 end
 
 end

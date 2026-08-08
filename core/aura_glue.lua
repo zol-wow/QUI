@@ -70,6 +70,8 @@ function G.ElementProfile(element, overrides)
         borderColor  = element.borderColor,
         dispelColors = element.dispelColors,
         dispelAssets = element.dispelAssets,
+        pandemicGlow = element.pandemicGlow,
+        dispelBorderMode = element.dispelBorderMode,
         tooltipAnchor       = element.tooltipAnchor,
         tooltipAnchorX      = element.tooltipAnchorX,
         tooltipAnchorY      = element.tooltipAnchorY,

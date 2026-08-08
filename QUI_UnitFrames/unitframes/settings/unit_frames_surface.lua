@@ -56,6 +56,17 @@ local State = {
 local TabModel
 local EnsureTabModel
 
+local function IsPerUnitTab(tabKey)
+    local model = ResolveModel()
+    local isPerUnitTab = model and model.IsPerUnitTab
+    return type(isPerUnitTab) == "function" and isPerUnitTab(tabKey) == true
+end
+
+local function ResolveTabVariant(tabKey)
+    if not IsPerUnitTab(tabKey) then return nil end
+    return State.selectedUnit
+end
+
 local UnitSelection = FullSurface and FullSurface.CreateSelectionController
     and FullSurface.CreateSelectionController(State, {
         stateKey = "selectedUnit",
@@ -70,17 +81,8 @@ local UnitSelection = FullSurface and FullSurface.CreateSelectionController
                 _G.QUI_RefreshUnitFramePreview()
             end
 
-            if State.invalidateTabBodies then
-                State.invalidateTabBodies()
-            end
-
-            local activeTab = EnsureTabModel():GetActiveKey()
-            local model = ResolveModel()
-            local isPerUnitTab = model and model.IsPerUnitTab
-            if type(isPerUnitTab) == "function"
-                and isPerUnitTab(activeTab)
-                and State.repaintTabs then
-                State.repaintTabs()
+            if IsPerUnitTab(EnsureTabModel():GetActiveKey()) and State.repaintTabs then
+                State.repaintTabs(false)
             end
         end,
     })
@@ -1034,6 +1036,9 @@ local function BuildPreviewBlock(pv, opts)
             if not previewHostForBlock or not previewMockForBlock then return end
             State.previewHost = previewHostForBlock
             State.previewMock = previewMockForBlock
+            if ns.QUI_UnitFramesBodyPreview and ns.QUI_UnitFramesBodyPreview.Build then
+                ns.QUI_UnitFramesBodyPreview.Build(previewMockForBlock)
+            end
             RefreshMock()
         end)
     end
@@ -1069,6 +1074,7 @@ local function BuildTileBody(body, _, _, feature)
         state = State,
         clearFrame = ClearFrame,
         createTabStrip = BuildTabStrip,
+        resolveVariantKey = ResolveTabVariant,
         initialize = function()
             State.activeTab = State.activeTab or "general"
         end,

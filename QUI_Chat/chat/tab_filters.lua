@@ -79,24 +79,6 @@ local function upgradeAllStoredEntries()
     end
 end
 
-function TF.SaveTabConfig(frameID, groups, channels)
-    local settings = I.GetSettings and I.GetSettings()
-    if not settings then return end
-    settings.tabs = settings.tabs or {}
-    settings.tabs[frameID] = {
-        customized = true,
-        groups = groups or {},
-        channels = channels or {},
-        _groupsVersion = GROUPS_VERSION,
-    }
-end
-
-function TF.ResetTab(frameID)
-    local settings = I.GetSettings and I.GetSettings()
-    if not settings or not settings.tabs then return end
-    settings.tabs[frameID] = nil
-end
-
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")

@@ -524,7 +524,7 @@ do
                     {value = "blizzard", text = ns.L["Blizzard Default"]},
                     {value = "qui", text = ns.L["QUI"]},
                 }
-                if barDB.showFlash == "qui" then barDB.showFlash = "qui" end
+                if barDB.showFlash == true then barDB.showFlash = "qui" end
                 P(GUI:CreateFormDropdown(body, ns.L["Pressed Effect"],
                     pressedOptions, "showFlash", barDB, RefreshActionBars,
                     { description = ns.L["Visual response when a button is pressed. Blizzard Default replays the stock animation; QUI swaps in a subtle overlay; Off disables both."] }), body, sy)

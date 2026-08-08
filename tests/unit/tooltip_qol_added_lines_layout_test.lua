@@ -17,7 +17,7 @@ local forbiddenDoubleLines = {
     'tooltip:AddDoubleLine(label, string.format("%.1f", itemLevel)',
     'tooltip:AddDoubleLine("Target:", targetInfo.name',
     'tooltip:AddDoubleLine("Mount:", mountName',
-    'tooltip:AddDoubleLine("M+ Rating:", string.format("%.1f", rating)',
+    'tooltip:AddDoubleLine("M+ Rating:", string.format("%d", rating)',
     'tooltip:AddDoubleLine("Spell ID:", tostring(spellID)',
     'tooltip:AddDoubleLine("Icon ID:", tostring(iconID)',
     'tooltip:AddDoubleLine("Item ID:", tostring(itemID)',
@@ -32,7 +32,7 @@ local requiredInfoLines = {
     'AddTooltipInfoLine(tooltip, label, string.format("%.1f", itemLevel)',
     'AddTooltipInfoLine(tooltip, ns.L["Target"], targetInfo.name',
     'AddTooltipInfoLine(tooltip, ns.L["Mount"], mountValue',
-    'AddTooltipInfoLine(tooltip, ns.L["M+ Rating"], string.format("%.1f", rating)',
+    'AddTooltipInfoLine(tooltip, ns.L["M+ Rating"], string.format("%d", rating)',
     'AddTooltipInfoLine(tooltip, ns.L["Spell ID"], tostring(spellID)',
     'AddTooltipInfoLine(tooltip, ns.L["Icon ID"], tostring(iconID)',
     'AddTooltipInfoLine(tooltip, ns.L["Item ID"], tostring(itemID)',
@@ -272,6 +272,7 @@ local function runHideFadeSelfFocusRegression()
                 return settings
             end,
             IsSecretValue = function() return false end,
+            HasTaintedWidgetContainer = function() return false end,
             SafeToNumber = function(value, fallback)
                 local number = tonumber(value)
                 if number == nil then return fallback end

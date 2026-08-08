@@ -175,7 +175,7 @@ local CHANNEL_TICK_STATIC_DB = {
 local CHANNEL_TICK_RUNTIME_CACHE = {}
 local CHANNEL_TICK_ACTIVE_BY_GUID = {}
 local CHANNEL_TICK_EVENT_FRAME = CreateFrame("Frame")
-local CHANNEL_TICK_EVENT_REGISTERED = false
+local CHANNEL_TICK_CLEU_SANCTIONED = false
 
 local CHANNEL_TICK_SUBEVENTS = {
     SPELL_PERIODIC_DAMAGE = true,
@@ -326,6 +326,8 @@ local function InitializeDefaultSettings(castSettings, unitKey)
         end
     end
 end
+
+QUI_Castbar.InitializeDefaultSettings = InitializeDefaultSettings
 
 local function GetSizingValues(castSettings, frame)
     local barHeight = QUICore:PixelRound(castSettings.height or 25, frame)
@@ -526,31 +528,11 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
 
     anchorFrame:ClearAllPoints()
 
-    if anchor == "essential" then
+    if anchor == "essential" or anchor == "utility" then
         local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
         local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
         local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
-        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
-        if viewer then
-            local bottomRowYOffset = 0
-            local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer)
-            if (vs and vs.layoutDir) ~= "VERTICAL" then
-                bottomRowYOffset = QUICore:PixelRound((vs and vs.bottomRowYOffset) or 0, anchorFrame)
-            end
-            anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
-            anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
-        else
-            if unitFrame then
-                anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
-            else
-                anchorFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
-            end
-        end
-    elseif anchor == "utility" then
-        local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
-        local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
-        local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
-        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility")
+        local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(anchor)
         if viewer then
             local bottomRowYOffset = 0
             local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(viewer)
@@ -1160,10 +1142,9 @@ local function OnChannelTickCombatLogEvent()
 end
 
 local function EnsureChannelTickEventRegistration()
-    if CHANNEL_TICK_EVENT_REGISTERED then return end
+    if not CHANNEL_TICK_CLEU_SANCTIONED then return end
     if not EventRegistry or type(EventRegistry.RegisterFrameEventAndCallback) ~= "function" then return end
     EventRegistry:RegisterFrameEventAndCallback("COMBAT_LOG_EVENT_UNFILTERED", OnChannelTickCombatLogEvent, CHANNEL_TICK_EVENT_FRAME)
-    CHANNEL_TICK_EVENT_REGISTERED = true
 end
 
 local function StartChannelTickObservation(bar, spellID, spellName, startTime, endTime)
@@ -1386,7 +1367,7 @@ local function UpdateChannelTicksForCurrentCast(bar, castSettings, castContext)
     end
 
     local sourcePolicy = GetChannelTickSourcePolicy(castSettings)
-    if sourcePolicy ~= CHANNEL_TICK_SOURCE_POLICY_STATIC then
+    if sourcePolicy ~= CHANNEL_TICK_SOURCE_POLICY_STATIC and CHANNEL_TICK_CLEU_SANCTIONED then
         StartChannelTickObservation(
             bar,
             castContext.spellID,
@@ -2168,6 +2149,7 @@ local TryApplyDeferredCastbarRefresh
 
 local function HandleNoCast(castbar, castSettings, isPlayer, onUpdateHandler)
     C_Timer.After(0.1, function()
+        if castbar._quiDestroyed then return end
         local active, readable = ReadCastActivity(castbar.unit)
         if readable and not active then
             if isPlayer then
@@ -2210,6 +2192,9 @@ local function GetGCDCooldownInfo()
     end
 
     local info = C_Spell.GetSpellCooldown(GCD_SPELL_ID)
+    if type(info) ~= "table" then
+        return nil, nil
+    end
 
     local startTime = SafeToNumber(info.startTime)
     local duration = SafeToNumber(info.duration)
@@ -2936,8 +2921,9 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
 
             local remaining = self.endTime - now
             if self.timeText then
-                UpdateThrottledText(self, elapsed, self.timeText, remaining)
-                UpdateTimeTextColor(self, self.unit)
+                if UpdateThrottledText(self, elapsed, self.timeText, remaining) then
+                    UpdateTimeTextColor(self, self.unit)
+                end
             end
         elseif self.isPreviewSimulation then
             if not self.previewStartTime or not self.previewEndTime then
@@ -3168,6 +3154,8 @@ local function DestroyCastbar(castbar)
     castbar:Hide()
     castbar:ClearAllPoints()
 end
+
+QUI_Castbar.DestroyCastbar = DestroyCastbar
 
 local function IsRealCastActive(unit)
     if not unit then return false end

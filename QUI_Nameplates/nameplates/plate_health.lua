@@ -5,7 +5,6 @@ if not NP then return end
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 local QUICore = ns.Addon
-local LSM = ns.LSM
 local IsSecretValue = Helpers.IsSecretValue
 
 local type = type
@@ -28,13 +27,7 @@ NP.Health = NPHealth
 
 local WHITE8X8 = "Interface\\Buttons\\WHITE8x8"
 
-local function GetBarTexture(name)
-    if LSM and name then
-        local ok, path = pcall(LSM.Fetch, LSM, "statusbar", name, true)
-        if ok and path then return path end
-    end
-    return WHITE8X8
-end
+local GetBarTexture = NP.GetBarTexture
 
 local function GetHealthPct(unit)
     if type(UnitHealthPercent) == "function" then

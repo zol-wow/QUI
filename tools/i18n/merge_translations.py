@@ -40,7 +40,7 @@ os.chdir(REPO)
 sys.path.insert(0, str(REPO))
 
 from tools.i18n.translate_delta import (  # noqa: E402
-    read_enus, load_existing, write_locale, sha1, STATE, LOCALES,
+    read_enus, load_existing, write_locale, sha1, STATE, LOCALES, lua_bin, luac_bin,
 )
 
 # Mirrors validate_format.lua's SPEC pattern (no space-flag, positional kept).
@@ -116,7 +116,7 @@ def main():
         tf.write(pairs)
         tf_path = tf.name
     chk = subprocess.run(
-        ["lua5.1", "-e",
+        [lua_bin(), "-e",
          'local V=assert(loadfile("tools/i18n/validate_format.lua"))();'
          f'local d=V.validate(assert(loadfile("{tf_path}"))());'
          'if #d>0 then for _,x in ipairs(d) do io.stderr:write(x.key.."\\n") end os.exit(1) end'],
@@ -136,9 +136,9 @@ def main():
     # or every ID past the drift point resolves to the wrong English string.
     # Integer-keys-only is the second half of that proof: a table still keyed
     # by English text is the retired format and would resolve to nothing.
-    subprocess.run(["luac5.1", "-p", f"core/locale/{loc}.lua"], check=True)
+    subprocess.run([luac_bin(), "-p", f"core/locale/{loc}.lua"], check=True)
     subprocess.run(
-        ["lua5.1", "-e",
+        [lua_bin(), "-e",
          f'GetLocale = function() return "{loc}" end; QUIDB = nil;'
          f'local ns = {{}};'
          f'assert(loadfile("core/locale/enUS.lua"))("QUI", ns);'

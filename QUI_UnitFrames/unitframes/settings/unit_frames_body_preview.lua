@@ -93,11 +93,15 @@ local function ApplyAuraDynamics(pool)
     for _, icon in ipairs(pool) do
         if icon:IsShown() then
             local st = EnsureAuraState(icon)
-            if icon._stack and icon._stack:IsShown() then
+            if icon._stack and icon._stack:IsShown() and st.shownStack ~= st.stack then
+                st.shownStack = st.stack
                 icon._stack:SetText(tostring(st.stack))
             end
-            if icon._dur and icon._dur:IsShown() then
-                icon._dur:SetText(string.format("%.0fs", math.max(0, st.duration)))
+            local secs = math.max(0, st.duration)
+            local shownSecs = math.floor(secs + 0.5)
+            if icon._dur and icon._dur:IsShown() and st.shownSecs ~= shownSecs then
+                st.shownSecs = shownSecs
+                icon._dur:SetText(string.format("%.0fs", secs))
             end
         end
     end
@@ -116,7 +120,9 @@ local function ApplyDynamics(mock, healthPct, powerPct, healPredPct, absorbPct)
         mock._healthBar:SetWidth(math.max(1, barAreaW * healthPct))
     end
 
-    if mock._healthText and mock._healthText:IsShown() then
+    local healthInt = math.floor(healthPct * 100)
+    if mock._healthText and mock._healthText:IsShown() and state.shownHealth ~= healthInt then
+        state.shownHealth = healthInt
         mock._healthText:SetText(Module.FormatHealthText(
             unitDB.healthDisplayStyle or "percent",
             unitDB.hideHealthPercentSymbol,
@@ -129,8 +135,10 @@ local function ApplyDynamics(mock, healthPct, powerPct, healPredPct, absorbPct)
         mock._powerBar:SetWidth(barAreaW * powerPct)
     end
 
+    local powerInt = math.floor(powerPct * 100)
     if mock._powerText and unitDB.showPowerText and unitDB.showPowerBar
-        and mock._powerText:IsShown() then
+        and mock._powerText:IsShown() and state.shownPower ~= powerInt then
+        state.shownPower = powerInt
         mock._powerText:SetText(Module.FormatPowerText(
             unitDB.powerTextFormat or "percent",
             unitDB.hidePowerPercentSymbol,
@@ -201,9 +209,12 @@ function Module.FormatPowerText(format, hideSymbol, pct)
 end
 
 function Module.Build(mock)
-    if state.ticker then return end
     state.mock = mock
     local host = mock and mock.GetParent and mock:GetParent() or nil
+    if state.ticker then
+        state.ticker:SetParent(host)
+        return
+    end
     state.ticker = CreateFrame("Frame", nil, host)
     state.ticker:SetScript("OnUpdate", function(_, elapsed)
         AdvanceCycle(elapsed)
@@ -214,6 +225,8 @@ end
 
 function Module.Refresh(unitDB, _general)
     state.lastUnitDB = unitDB
+    state.shownHealth = nil
+    state.shownPower = nil
 
     local mock = state.mock
     if mock then
@@ -239,19 +252,4 @@ function Module.SetSelectedUnit(unitKey)
 
     state.cycle.t = 0
     state.auraStates = {}
-end
-
-function Module.Teardown()
-    if state.ticker then
-        state.ticker:SetScript("OnUpdate", nil)
-    end
-    state.mock       = nil
-    state.ticker     = nil
-    state.auraStates = {}
-    state.cycle      = { t = 0 }
-end
-
-function Module.GetCurrentPcts()
-    local h, p, hp, ab = ComputePcts(state.cycle.t)
-    return { health = h, power = p, healPred = hp, absorb = ab }
 end

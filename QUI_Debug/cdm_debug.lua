@@ -1110,16 +1110,13 @@ local function DumpDebugIcon(icon)
             "displayMode=", tostring(containerDB.iconDisplayMode))
     end
     if icon.Icon and icon.Icon.GetTexture then
-local okTex = true; local tex = icon.Icon.GetTexture(icon.Icon)
-        print(P, "  iconTexture=", okTex and tostring(tex) or "err")
+        print(P, "  iconTexture=", tostring(icon.Icon.GetTexture(icon.Icon)))
     end
     if icon.StackText and icon.StackText.GetText then
-local okStack = true; local stack = icon.StackText.GetText(icon.StackText)
-        print(P, "  stackText=", okStack and tostring(tostring(stack)) or "err")
+        print(P, "  stackText=", tostring(icon.StackText.GetText(icon.StackText)))
     end
     if icon.DurationText and icon.DurationText.GetText then
-local okDur = true; local dur = icon.DurationText.GetText(icon.DurationText)
-        print(P, "  durationText=", okDur and tostring(tostring(dur)) or "err")
+        print(P, "  durationText=", tostring(icon.DurationText.GetText(icon.DurationText)))
     end
 end
 
@@ -1245,16 +1242,13 @@ function CDMIcons._OnBarUpdate(bar)
           "totemSlot=", tostring(bar._totemSlot),
           "instanceKey=", tostring(bar._instanceKey))
     if bar.NameText then
-local okName = true; local curName = bar.NameText.GetText(bar.NameText)
-        print(P, "  owned NameText=", okName and tostring(curName) or "err")
+        print(P, "  owned NameText=", tostring(bar.NameText.GetText(bar.NameText)))
     end
     if bar.DurationText then
-local okDur = true; local curDur = bar.DurationText.GetText(bar.DurationText)
-        print(P, "  owned DurationText=", okDur and tostring(curDur) or "err")
+        print(P, "  owned DurationText=", tostring(bar.DurationText.GetText(bar.DurationText)))
     end
     if bar.IconTexture and bar.IconTexture.GetTexture then
-local okTex = true; local tex = bar.IconTexture.GetTexture(bar.IconTexture)
-        print(P, "  owned IconTexture=", okTex and tostring(tex) or "err")
+        print(P, "  owned IconTexture=", tostring(bar.IconTexture.GetTexture(bar.IconTexture)))
     end
 end
 
@@ -1464,12 +1458,26 @@ local function CDMGCDParseRequest(msg)
     return text, duration, once, false
 end
 
-local function CDMGCDStopWatch(silent)
-    local frame = CDMIcons._gcdWatchFrame
-    if frame and frame.SetScript then
-        frame:SetScript("OnUpdate", nil)
+local watchFrames = {}
+
+local function AcquireWatchFrame(key)
+    local frame = watchFrames[key]
+    if not frame then
+        if not CreateFrame then return nil end
+        frame = CreateFrame("Frame")
+        watchFrames[key] = frame
     end
-    CDMIcons._gcdWatchFrame = nil
+    frame:SetScript("OnUpdate", nil)
+    return frame
+end
+
+local function StopWatchFrame(key)
+    local frame = watchFrames[key]
+    if frame then frame:SetScript("OnUpdate", nil) end
+end
+
+local function CDMGCDStopWatch(silent)
+    StopWatchFrame("gcd")
     if not silent then
         print("|cffffaa00[cdmgcd]|r watch stopped.")
     end
@@ -1534,20 +1542,18 @@ local function CDMGCDPrintWatchSample(elapsed, needle, targetID)
 end
 
 local function CDMGCDStartWatch(text, needle, targetID, duration)
-    CDMGCDStopWatch(true)
-    if not (CreateFrame and GetTime) then
+    local frame = GetTime and AcquireWatchFrame("gcd")
+    if not frame then
         print("|cffffaa00[cdmgcd]|r watch unavailable.")
         return
     end
 
-    local frame = CreateFrame("Frame")
     local startTime = GetTime()
     local nextSample = 0
     local sampleCount = 0
     local lastMatches = 0
     local interval = 0.2
 
-    CDMIcons._gcdWatchFrame = frame
     print(string.format(
         "|cff34d399[cdmgcd]|r watching '%s' for %.1fs - cast/use it now",
         text,
@@ -1568,9 +1574,6 @@ local function CDMGCDStartWatch(text, needle, targetID, duration)
 
         if elapsed >= duration then
             self:SetScript("OnUpdate", nil)
-            if CDMIcons._gcdWatchFrame == self then
-                CDMIcons._gcdWatchFrame = nil
-            end
             print(string.format(
                 "|cff34d399[cdmgcd]|r ended samples=%d matches=%d",
                 sampleCount,
@@ -1816,7 +1819,11 @@ local function RunCDMDebugFlicker(msg)
     local samples = {}
     local lastSig = nil
     local startTime = GetTime()
-    local frame = CreateFrame("Frame")
+    local frame = AcquireWatchFrame("flicker")
+    if not frame then
+        print("|cffffaa00[cdmflicker]|r sampler unavailable.")
+        return
+    end
 
     local function snapshot()
         local now = GetTime() - startTime
@@ -1851,11 +1858,7 @@ local function RunCDMDebugFlicker(msg)
 end
 
 local function CDMItemAuraStopWatch(silent)
-    local frame = CDMIcons._itemAuraWatchFrame
-    if frame and frame.SetScript then
-        frame:SetScript("OnUpdate", nil)
-    end
-    CDMIcons._itemAuraWatchFrame = nil
+    StopWatchFrame("itemaura")
     if not silent then
         print("|cffffaa00[cdmaura]|r watch stopped.")
     end
@@ -2002,13 +2005,16 @@ local function RunCDMDebugItemAura(msg, seconds)
         targetText,
         duration))
 
-    local frame = CreateFrame("Frame")
+    local frame = AcquireWatchFrame("itemaura")
+    if not frame then
+        print("|cffffaa00[cdmaura]|r watch unavailable.")
+        return
+    end
     local startTime = GetTime()
     local lastSigByIcon = {}
     local transitionCount = 0
     local nextSample = 0
     local interval = 0.05
-    CDMIcons._itemAuraWatchFrame = frame
 
     frame:SetScript("OnUpdate", function(self)
         local elapsed = GetTime() - startTime
@@ -2026,9 +2032,6 @@ local function RunCDMDebugItemAura(msg, seconds)
 
         if elapsed >= duration then
             self:SetScript("OnUpdate", nil)
-            if CDMIcons._itemAuraWatchFrame == self then
-                CDMIcons._itemAuraWatchFrame = nil
-            end
             print(string.format(
                 "|cff34d399[cdmaura]|r ended icons=%d transitions=%d",
                 #matched,
@@ -2471,14 +2474,14 @@ local function RunCDMDebugClean()
         composer.CollectKnownCDMSpellIDs(knownSpells)
     end
     if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
-local okT = true; local numTabs = C_SpellBook.GetNumSpellBookSkillLines()
+        local numTabs = C_SpellBook.GetNumSpellBookSkillLines()
         if numTabs then
             for tab = 1, numTabs do
-local okL = true; local sli = C_SpellBook.GetSpellBookSkillLineInfo(tab)
+                local sli = C_SpellBook.GetSpellBookSkillLineInfo(tab)
                 if sli then
                     local offset = sli.itemIndexOffset or 0
                     for i = 1, (sli.numSpellBookItems or 0) do
-local okI = true; local ii = C_SpellBook.GetSpellBookItemInfo(offset + i, Enum.SpellBookSpellBank.Player)
+                        local ii = C_SpellBook.GetSpellBookItemInfo(offset + i, Enum.SpellBookSpellBank.Player)
                         if ii and ii.spellID then knownSpells[ii.spellID] = true end
                     end
                 end
@@ -2657,7 +2660,7 @@ local _chargeDebugThrottle = {}
 function CDMDebug.Charge(spellName, ...)
     if not _G.QUI_CDM_CHARGE_DEBUG then return end
     local filter = _G.QUI_CDM_CHARGE_DEBUG
-    if type(filter) == "string" and spellName and not spellName:find(filter) then return end
+    if type(filter) == "string" and spellName and not spellName:find(filter, 1, true) then return end
     local tag = select(1, ...) or ""
     if tag == "FWD path:" or tag == "SKIP API path:" or tag == "API path:" or tag == "FWD path CLEAR:"
         or tag == "DESAT charged check:" or tag == "DESAT result:" then
@@ -2679,10 +2682,10 @@ function CDMIcons.DebugStackText(icon, action, value, reason)
     local okShown, shown = false, nil
     local okText, text = false, nil
     if icon then
-okShown = true; shown = icon.IsShown(icon)
+        okShown = true; shown = icon.IsShown(icon)
     end
     if icon and icon.StackText and icon.StackText.GetText then
-okText = true; text = icon.StackText.GetText(icon.StackText)
+        okText = true; text = icon.StackText.GetText(icon.StackText)
     end
     CDMDebug.Charge(entry and entry.name,
         "STACKTEXT", action,
@@ -3033,6 +3036,8 @@ local function RunCDMDebugSpell(msg)
         RunCDMDebugTrace("")
         CDMGCDStopWatch(false)
         CDMItemAuraStopWatch(false)
+        StopWatchFrame("flicker")
+        print("|cffffaa00[cdmflicker]|r sampler stopped.")
         return
     end
 

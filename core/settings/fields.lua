@@ -20,20 +20,8 @@ function Fields.Define(kind, definition)
     return field
 end
 
-function Fields.Checkbox(definition)
-    return Fields.Define("checkbox", definition)
-end
-
-function Fields.Slider(definition)
-    return Fields.Define("slider", definition)
-end
-
 function Fields.Dropdown(definition)
     return Fields.Define("dropdown", definition)
-end
-
-function Fields.Color(definition)
-    return Fields.Define("color", definition)
 end
 
 function Fields.Button(definition)
@@ -46,10 +34,6 @@ end
 
 function Fields.Custom(definition)
     return Fields.Define("custom", definition)
-end
-
-function Fields.Section(definition)
-    return Fields.Define("section", definition)
 end
 
 local function ResolveValue(value, ctx, field, parent)

@@ -7,6 +7,10 @@ ns.AuraSkin = AuraSkin
 _G.QUI = _G.QUI or {}
 _G.QUI.AuraSkin = AuraSkin
 
+local DISPEL_STYLES = Enum and Enum.CustomAuraButtonDispelTypeTextureStyle
+local STYLE_PRESERVE_ASSET = (DISPEL_STYLES and DISPEL_STYLES.PreserveAsset) or 3
+local STYLE_CUSTOM_ASSET = (DISPEL_STYLES and DISPEL_STYLES.CustomAsset) or 4
+
 local function AurasAreSecret()
     return C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()
 end
@@ -73,6 +77,13 @@ local function buildButtonArt(button)
     if dispel.DisablePixelSnap then dispel:DisablePixelSnap() end
     button._quiDispel = dispel
 
+    local steal = button:CreateTexture(nil, "BORDER")
+    steal:SetAllPoints(button)
+    steal:SetColorTexture(1, 1, 1, 1)
+    if steal.DisablePixelSnap then steal:DisablePixelSnap() end
+    if steal.Hide then steal:Hide() end
+    button._quiDispelSteal = steal
+
     local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
     icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
@@ -92,6 +103,18 @@ local function buildButtonArt(button)
     gloss:SetAllPoints(button)
     if gloss.Hide then gloss:Hide() end
     button._quiGloss = gloss
+
+    local pandemic = button:CreateTexture(nil, "OVERLAY")
+    if ns.IconSkin and pandemic.SetTexture then pandemic:SetTexture(ns.IconSkin.FlashTexture) end
+    if pandemic.SetBlendMode then pandemic:SetBlendMode("ADD") end
+    pandemic:SetAllPoints(button)
+    if pandemic.SetVertexColor then pandemic:SetVertexColor(1, 0.85, 0.2, 1) end
+    if pandemic.SetAlpha then pandemic:SetAlpha(0) end
+    if pandemic.Hide then pandemic:Hide() end
+    button._quiPandemic = pandemic
+    if button.AddPandemicRegion then
+        button:AddPandemicRegion(pandemic)
+    end
 
     local symbol = button:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
     symbol:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
@@ -185,83 +208,16 @@ local function DurationFormatter()
     return pandemicFormatter or nil
 end
 
-local function HasCurveSupport()
-    return C_CurveUtil and C_CurveUtil.CreateColorCurve and CreateColor
-        and Enum and Enum.LuaCurveType
-end
-
-local function ResolveBaseColor(color)
-    if type(color) == "table" then
-        return color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
-    end
-    return 1, 1, 1, 1
-end
-
-local function PandemicCurve(baseColor, pandemicColor)
-    if not HasCurveSupport() then return nil end
-    local br, bg, bb, ba = ResolveBaseColor(baseColor)
-    local curve = C_CurveUtil.CreateColorCurve()
-    curve:SetType(Enum.LuaCurveType.Step)
-    curve:AddPoint(0.0, CreateColor(pandemicColor[1] or 1, pandemicColor[2] or 0,
-        pandemicColor[3] or 0, pandemicColor[4] or 1))
-    curve:AddPoint(0.3, CreateColor(br, bg, bb, ba))
-    return curve
-end
-
-local function FlatColorCurve(baseColor)
-    if not HasCurveSupport() then return nil end
-    local br, bg, bb, ba = ResolveBaseColor(baseColor)
-    local curve = C_CurveUtil.CreateColorCurve()
-    curve:SetType(Enum.LuaCurveType.Step)
-    curve:AddPoint(0.0, CreateColor(br, bg, bb, ba))
-    return curve
-end
-
-local function DurationOptionsBase(profile)
+function AuraSkin.BuildDurationTextOptions(profile)
     local durS = (profile and profile.duration) or {}
     local opts = {}
     if durS.decimals == true then
         opts.textFormatter = DurationFormatter()
     end
-    return durS, opts
-end
-
-local function BindDurationTextColor(opts, curve)
-    if curve and Enum and Enum.DurationTextBindingProperty then
-        opts.textColor = {
-            curve = curve,
-            property = Enum.DurationTextBindingProperty.RemainingPercent,
-        }
-    end
     return opts
 end
 
-function AuraSkin.BuildDurationTextOptions(profile)
-    local durS, opts = DurationOptionsBase(profile)
-    if type(durS.pandemicColor) == "table" then
-        BindDurationTextColor(opts, PandemicCurve(durS.color, durS.pandemicColor))
-    end
-    return opts
-end
-
-function AuraSkin.BuildDurationClearCurveOptions(profile)
-    local durS, opts = DurationOptionsBase(profile)
-    return BindDurationTextColor(opts, FlatColorCurve(durS.color))
-end
-
-function AuraSkin.ResolveDurationTextOptions(button, profile)
-    local durS = (profile and profile.duration) or {}
-    if type(durS.pandemicColor) == "table" then
-        local opts = AuraSkin.BuildDurationTextOptions(profile)
-        if button then
-            button._quiPandemicCurved = (opts.textColor ~= nil) or nil
-        end
-        return opts
-    end
-    if button and button._quiPandemicCurved then
-        button._quiPandemicCurved = nil
-        return AuraSkin.BuildDurationClearCurveOptions(profile)
-    end
+function AuraSkin.ResolveDurationTextOptions(_button, profile)
     return AuraSkin.BuildDurationTextOptions(profile)
 end
 
@@ -295,26 +251,60 @@ local function styleButton(button, profile)
 
     local dispel = button._quiDispel
     if dispel and button.ClearDispelTypeTextures and button.AddDispelTypeTexture then
+        local mode = profile.dispelBorderMode
         local borderOpts = {
-            style = 3,
+            style = STYLE_PRESERVE_ASSET,
             showWhenHarmful = true,
             showWhenHelpful = false,
         }
+        if mode == "all" then
+            borderOpts.showAlways = true
+        end
         if type(profile.dispelColors) == "table" then
             borderOpts.customDispelColorMap = profile.dispelColors
         elseif profile.dispelColorCurve then
             borderOpts.customDispelColorCurve = profile.dispelColorCurve
         end
         if type(profile.dispelAssets) == "table" then
-            borderOpts.style = 4
+            borderOpts.style = STYLE_CUSTOM_ASSET
             borderOpts.customDispelAssetMap = profile.dispelAssets
         end
+        local steal = button._quiDispelSteal
         button:ClearDispelTypeTextures()
         if button._quiBridged or profile.showDispelBorder == false then
             if dispel.Hide then dispel:Hide() end
+            if steal and steal.Hide then steal:Hide() end
         else
             if dispel.Show then dispel:Show() end
             button:AddDispelTypeTexture(dispel, borderOpts)
+            local filters = Enum and Enum.CustomAuraButtonDispelTypeStealableFilter
+            if mode == "stealable" and steal and filters then
+                local stealOpts = {
+                    style = borderOpts.style,
+                    showWhenHarmful = false,
+                    showWhenHelpful = true,
+                    stealableFilter = filters.Stealable,
+                    customDispelColorMap = borderOpts.customDispelColorMap,
+                    customDispelColorCurve = borderOpts.customDispelColorCurve,
+                    customDispelAssetMap = borderOpts.customDispelAssetMap,
+                }
+                if steal.Show then steal:Show() end
+                button:AddDispelTypeTexture(steal, stealOpts)
+            elseif steal and steal.Hide then
+                steal:Hide()
+            end
+        end
+    end
+
+    local pandemic = button._quiPandemic
+    if pandemic then
+        local glow = profile.pandemicGlow
+        if type(glow) == "table" and type(glow.color) == "table" then
+            local c = glow.color
+            if pandemic.SetVertexColor then pandemic:SetVertexColor(c[1] or 1, c[2] or 0.85, c[3] or 0.2, 1) end
+            if pandemic.SetAlpha then pandemic:SetAlpha(c[4] or 1) end
+        elseif pandemic.SetAlpha then
+            pandemic:SetAlpha(0)
         end
     end
 

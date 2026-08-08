@@ -3,6 +3,7 @@ local Helpers = ns.Helpers
 local GetDB = Helpers.CreateDBGetter("quiUnitFrames")
 
 local pcall = pcall
+local issecretvalue = issecretvalue or function() return false end
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local C_Timer = C_Timer
@@ -129,25 +130,40 @@ local function QueuePlayerCastingBarSuppression()
     end)
 end
 
+local castbarHideWatcher
+local castbarWatcherCanIdle = false
+
+local function CastbarWatcherOnUpdate()
+    if Helpers.IsEditModeActive() then return end
+
+    local frame = PlayerCastingBarFrame
+    if not frame then return end
+
+    local ok, isShown = ns.SafeCallMethod("best-effort-style", frame, "IsShown")
+    if not ok or issecretvalue(isShown) then return end
+    if isShown then
+        QueuePlayerCastingBarSuppression()
+    elseif castbarWatcherCanIdle then
+        castbarHideWatcher:Hide()
+    end
+end
+
+local function ResumeCastbarHideWatcher()
+    if castbarHideWatcher then
+        castbarHideWatcher:Show()
+    end
+end
+
 local function EnsurePlayerCastbarHideWatcher()
     if _blizzFrameGuards.castbarShowHooked then return end
     _blizzFrameGuards.castbarShowHooked = true
 
-    local castbarHideWatcher = CreateFrame("Frame", nil, UIParent)
-    castbarHideWatcher:SetScript("OnUpdate", function()
-        if Helpers.IsEditModeActive() then return end
+    castbarHideWatcher = CreateFrame("Frame", nil, UIParent)
+    castbarHideWatcher:SetScript("OnUpdate", CastbarWatcherOnUpdate)
 
-        local frame = PlayerCastingBarFrame
-        if not frame then return end
-
-        local isShown = false
-        local ok = ns.SafeCall("best-effort-style", function()
-            isShown = frame:IsShown()
-        end)
-        if ok and isShown then
-            QueuePlayerCastingBarSuppression()
-        end
-    end)
+    local hooked = ns.SafeCallMethodIfPresent("best-effort-style", PlayerCastingBarFrame,
+        "HookScript", "OnShow", ResumeCastbarHideWatcher)
+    castbarWatcherCanIdle = hooked == true
 end
 
 local function HideBlizzardSecondaryUnitVisuals(frame, globalPrefix)
@@ -240,7 +256,9 @@ function QUI_UF:HideBlizzardFrames()
         SuppressBlizzardPetFrame()
     end
 
-    HideBlizzardFocusVisuals()
+    if db.focus and db.focus.enabled then
+        HideBlizzardFocusVisuals()
+    end
 
     if db.boss and db.boss.enabled then
         if BossTargetFrameContainer and not _blizzFrameGuards.bossContainerRemovedFromManaged then

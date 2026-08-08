@@ -611,5 +611,24 @@ do
         tostring(excluded.nameplateOnly))
 end
 
+do
+    local folded = { duration = { pandemicColor = { 0.9, 0.1, 0.1 } } }
+    E.NormalizeElement(folded)
+    check("pandemic fold: duration.pandemicColor scrubbed", folded.duration.pandemicColor == nil)
+    check("pandemic fold: color seeds pandemicGlow",
+        type(folded.pandemicGlow) == "table" and folded.pandemicGlow.color[1] == 0.9
+            and folded.pandemicGlow.color[2] == 0.1 and folded.pandemicGlow.color[4] == 1)
+
+    local kept = { duration = { pandemicColor = { 0.9, 0.1, 0.1 } },
+        pandemicGlow = { color = { 0.2, 0.2, 1, 1 } } }
+    E.NormalizeElement(kept)
+    check("pandemic fold: existing pandemicGlow not clobbered",
+        kept.pandemicGlow.color[1] == 0.2 and kept.duration.pandemicColor == nil)
+
+    local plain = { duration = { show = true } }
+    E.NormalizeElement(plain)
+    check("pandemic fold: no old key means no seeded glow", plain.pandemicGlow == nil)
+end
+
 print("aura_elements_model_test " .. (failures == 0 and "OK" or "FAILED"))
 os.exit(failures == 0 and 0 or 1)

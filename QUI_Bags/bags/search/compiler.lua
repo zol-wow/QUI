@@ -4,6 +4,12 @@ local Bags = ns.Bags or {}; ns.Bags = Bags
 local Search = {}
 Bags.Search = Search
 
+local function Fold(text)
+    local helpers = ns.Helpers
+    if helpers and helpers.FoldUTF8 then return helpers.FoldUTF8(text) end
+    return (text or ""):lower()
+end
+
 local function triAnd(a, b)
     if a == false or b == false then return false end
     if a == nil or b == nil then return nil end
@@ -103,7 +109,7 @@ local function MakeTermMatcher(term)
     local needle = term
     local nameCheck = function(d)
         if d.name == nil then return nil end
-        return d.name:lower():find(needle, 1, true) ~= nil
+        return Fold(d.name):find(needle, 1, true) ~= nil
     end
     if not prefixChecks then
         return nameCheck
@@ -129,7 +135,7 @@ local function CompileUncached(query)
                 token = token:sub(2)
             end
             if token ~= "" then
-                local m = MakeTermMatcher(token:lower())
+                local m = MakeTermMatcher(token)
                 if negate then
                     local inner = m
                     m = function(d) return triNot(inner(d)) end
@@ -160,13 +166,18 @@ local function CompileUncached(query)
     end
 end
 
-local cache = {}
+local CACHE_CAP = 64
+local cache, cacheCount = {}, 0
 
 function Search.Compile(query)
-    query = (query or ""):match("^%s*(.-)%s*$")
+    query = Fold(query):match("^%s*(.-)%s*$")
     local hit = cache[query]
     if hit then return hit end
+    if cacheCount >= CACHE_CAP then
+        cache, cacheCount = {}, 0
+    end
     local m = CompileUncached(query)
     cache[query] = m
+    cacheCount = cacheCount + 1
     return m
 end

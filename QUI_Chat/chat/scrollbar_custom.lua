@@ -133,6 +133,9 @@ end
 
 local function CreateInstance(windowID, container, smf)
     local sb = {}
+    sb.windowID = windowID
+    sb.container = container
+    container._quiScrollbar = sb
     instances[windowID] = sb
     local trackName = (windowID == 1) and "QUI_CustomChatScrollbar" or nil
     local btnName   = (windowID == 1) and "QUI_CustomChatJumpBottom" or nil
@@ -158,9 +161,9 @@ local function CreateInstance(windowID, container, smf)
     CreateJumpGlyph(sb.bottomBtn)
     PaintJumpGlyph(sb.bottomBtn)
     sb.bottomBtn:SetScript("OnClick", function()
-        local frame = GetSMF(windowID)
+        local frame = GetSMF(sb.windowID)
         if frame and frame.ScrollToBottom then frame:ScrollToBottom() end
-        UpdateInstance(windowID)
+        UpdateInstance(sb.windowID)
     end)
 
     sb.track:EnableMouse(true)
@@ -168,8 +171,8 @@ local function CreateInstance(windowID, container, smf)
         sb.track:SetHitRectInsets(0, -TRACK_INSET, 0, 0)
     end
     sb.track:SetScript("OnMouseDown", function(self)
-        JumpToCursor(windowID)
-        self:SetScript("OnUpdate", function() JumpToCursor(windowID) end)
+        JumpToCursor(sb.windowID)
+        self:SetScript("OnUpdate", function() JumpToCursor(sb.windowID) end)
     end)
     sb.track:SetScript("OnMouseUp", function(self)
         self:SetScript("OnUpdate", nil)
@@ -179,7 +182,7 @@ local function CreateInstance(windowID, container, smf)
     end)
 
     if smf.SetOnScrollChangedCallback then
-        smf:SetOnScrollChangedCallback(function() UpdateInstance(windowID) end)
+        smf:SetOnScrollChangedCallback(function() UpdateInstance(sb.windowID) end)
     end
 
     if smf.AddOnDisplayRefreshedCallback and not smf._quiDisplayRefreshHooked then
@@ -202,18 +205,38 @@ function Scrollbar.EnsureAttached()
         local container = Display.GetContainer(windowID)
         local smf = GetSMF(windowID)
         if container and smf and not instances[windowID] then
-            CreateInstance(windowID, container, smf)
+            local sb = container._quiScrollbar
+            if sb then
+                sb.windowID = windowID
+                instances[windowID] = sb
+            else
+                CreateInstance(windowID, container, smf)
+            end
         end
     end
     Scrollbar.Update()
 end
 
 function Scrollbar.OnWindowDeleted()
-    for _, sb in pairs(instances) do
-        if sb.track then sb.track:Hide() end
-        if sb.bottomBtn then sb.bottomBtn:Hide() end
+    local Display = ns.QUI.Chat.DisplayLayer
+    if not (Display and Display.GetWindowCount) then return end
+    local liveWindowByContainer = {}
+    for windowID = 1, Display.GetWindowCount() do
+        local container = Display.GetContainer(windowID)
+        if container then liveWindowByContainer[container] = windowID end
     end
-    instances = {}
+    local kept = {}
+    for _, sb in pairs(instances) do
+        local windowID = liveWindowByContainer[sb.container]
+        if windowID then
+            sb.windowID = windowID
+            kept[windowID] = sb
+        else
+            if sb.track then sb.track:Hide() end
+            if sb.bottomBtn then sb.bottomBtn:Hide() end
+        end
+    end
+    instances = kept
     Scrollbar.EnsureAttached()
 end
 

@@ -238,14 +238,16 @@ function QUICore:OnProfileChanged(event, db, profileKey)
 
     local currentProfile = self.db:GetCurrentProfile()
     local effectiveProfileKey = profileKey
-    if event == "OnProfileCopied" or event == "OnProfileReset" then
+    local isCopyOrReset = event == "OnProfileCopied" or event == "OnProfileReset"
+    if isCopyOrReset then
         effectiveProfileKey = currentProfile
     end
     if type(effectiveProfileKey) ~= "string" or effectiveProfileKey == "" then
         effectiveProfileKey = currentProfile
     end
 
-    if effectiveProfileKey == self._lastKnownProfile and effectiveProfileKey == currentProfile then
+    if not isCopyOrReset
+        and effectiveProfileKey == self._lastKnownProfile and effectiveProfileKey == currentProfile then
         return
     end
     self._lastKnownProfile = effectiveProfileKey
@@ -293,7 +295,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
                     if ok then
                         FinalizeProfileScale(QUICore._pendingUIScale)
                         QUICore._pendingUIScale = nil
-                        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                        self:UnregisterAllEvents()
                     end
                 end
             end)
@@ -372,19 +374,8 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         end)
     end
 
-    if self.db.profile.quiUnitFrames then
-        for _, unitKey in ipairs({"player", "target", "focus", "pet", "targettarget"}) do
-            local unitDB = self.db.profile.quiUnitFrames[unitKey]
-            if unitDB and unitDB.castbar then
-                unitDB.castbar.previewMode = false
-            end
-        end
-        for i = 1, 8 do
-            local bossDB = self.db.profile.quiUnitFrames["boss" .. i]
-            if bossDB and bossDB.castbar then
-                bossDB.castbar.previewMode = false
-            end
-        end
+    if ns.Migrations and ns.Migrations.ResetCastbarPreviewModes then
+        ns.Migrations.ResetCastbarPreviewModes(self.db.profile)
     end
 
     if _G.QUI_RefreshSpecProfilesTab then
@@ -485,9 +476,14 @@ function QUICore:RegisterLayoutModeExit(callback)
 end
 
 function QUICore:RegisterPostEnable(callback)
-    if type(callback) == "function" then
-        table.insert(self._postEnableCallbacks, callback)
+    if type(callback) ~= "function" then
+        return
     end
+    if self._didEnable then
+        ns.SafeCall("bulkhead", callback, self)
+        return
+    end
+    table.insert(self._postEnableCallbacks, callback)
 end
 
 function QUICore:OnEnable()
@@ -812,6 +808,7 @@ function QUICore:SetupEncounterWarningsSecretValuePatch()
 
     local patched = TryPatch()
 
+    self._didEnable = true
     for _, callback in ipairs(self._postEnableCallbacks or {}) do
         ns.SafeCall("bulkhead", callback, self)
     end
