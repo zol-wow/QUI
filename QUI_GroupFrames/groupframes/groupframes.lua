@@ -3927,6 +3927,8 @@ local function CheckUnitRange(unit)
     return true
 end
 
+QUI_GF.CheckUnitRange = CheckUnitRange
+
 local function ApplyRangeAlpha(frame, inRange, outAlpha)
     if frame.SetAlphaFromBoolean then
         frame:SetAlphaFromBoolean(inRange, 1, outAlpha)
