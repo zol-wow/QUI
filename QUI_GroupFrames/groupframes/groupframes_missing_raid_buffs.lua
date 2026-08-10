@@ -22,6 +22,7 @@ local GetNumGroupMembers = GetNumGroupMembers
 local InCombatLockdown = InCombatLockdown
 local GetSpecialization = GetSpecialization
 local GetSpecializationInfo = GetSpecializationInfo
+local C_SpecializationInfo = C_SpecializationInfo
 local IsPlayerSpell = IsPlayerSpell
 local IsSpellKnown = IsSpellKnown
 local CreateFrame = CreateFrame
@@ -280,9 +281,11 @@ local function GetBuffName(buff)
             name = resolved
         end
     end
-    name = name or buff.label
-    nameCache[buff.key] = name
-    return name
+    if name then
+        nameCache[buff.key] = name
+        return name
+    end
+    return buff.label
 end
 
 local function GetBuffIcon(buff)
@@ -298,26 +301,28 @@ local function GetBuffIcon(buff)
         local ok, resolved = pcall(GetSpellTexture, spellID)
         if ok and resolved then icon = resolved end
     end
-    icon = icon or 134400
-    iconCache[spellID] = icon
-    return icon
+    if icon then
+        iconCache[spellID] = icon
+        return icon
+    end
+    return 134400
 end
 
 local function GetSyntheticAura(buff)
     local aura = syntheticAuraCache[buff.key]
-    if aura then return aura end
-
-    aura = {
-        auraInstanceID = "QUI_MissingRaidBuff_" .. buff.key,
-        spellId = buff.iconSpellID or buff.ids[1],
-        name = GetBuffName(buff),
-        icon = GetBuffIcon(buff),
-        duration = 0,
-        expirationTime = 0,
-        isHelpful = true,
-        isHarmful = false,
-    }
-    syntheticAuraCache[buff.key] = aura
+    if not aura then
+        aura = {
+            auraInstanceID = "QUI_MissingRaidBuff_" .. buff.key,
+            spellId = buff.iconSpellID or buff.ids[1],
+            duration = 0,
+            expirationTime = 0,
+            isHelpful = true,
+            isHarmful = false,
+        }
+        syntheticAuraCache[buff.key] = aura
+    end
+    aura.name = GetBuffName(buff)
+    aura.icon = GetBuffIcon(buff)
     return aura
 end
 
@@ -478,21 +483,31 @@ function MRB:UnitHasMyBuff(unit, ids)
     return false
 end
 
-local function UnitInKnownRange(unit)
-    if unit == "player" then return true end
+function MRB._rangeProbe(unit)
+    local GF = ns.QUI_GroupFrames
+    if GF and GF.CheckUnitRange then
+        local ok, inRange = pcall(GF.CheckUnitRange, unit)
+        if not ok or IsSecretValue(inRange) then return false end
+        return inRange ~= false
+    end
     if UnitInRange then
         local ok, inRange, checked = pcall(UnitInRange, unit)
-        if ok then
-            if IsSecretValue(inRange) or IsSecretValue(checked) then
-            elseif checked and inRange == false then
-                return false
-            end
-        end
+        if not ok then return false end
+        -- @secret-policy: reject-secret-value
+        if IsSecretValue(inRange) then return false end
+        -- @secret-policy: reject-secret-value
+        if IsSecretValue(checked) then return false end
+        if checked and inRange == false then return false end
     end
     return true
 end
 
-local function UnitEligible(unit)
+local function UnitInKnownRange(unit)
+    if MRB._isPlayerUnitProbe(unit) then return true end
+    return MRB._rangeProbe(unit) == true
+end
+
+local function UnitEligible(unit, skipRange)
     if not unit or not SafeBoolean(UnitExists, unit, false) then return false end
     if SafeBoolean(UnitIsDeadOrGhost, unit, true) then return false end
     if SafeBoolean(UnitIsConnected, unit, false) == false then return false end
@@ -501,18 +516,21 @@ local function UnitEligible(unit)
         local ok, canAssist = pcall(UnitCanAssist, "player", unit)
         if not ok or IsSecretValue(canAssist) or not canAssist then return false end
     end
-    if not UnitInKnownRange(unit) then return false end
+    if not skipRange and not UnitInKnownRange(unit) then return false end
     return true
 end
 
-function MRB._eligibleProbe(unit) return UnitEligible(unit) end
+function MRB._eligibleProbe(unit, skipRange) return UnitEligible(unit, skipRange) end
 
 function MRB._specProbe()
-    if not GetSpecialization then return nil end
-    local idx = GetSpecialization()
+    local getSpec = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization)
+        or GetSpecialization
+    local getSpecInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo)
+        or GetSpecializationInfo
+    if not getSpec or not getSpecInfo then return nil end
+    local idx = getSpec()
     if not idx then return nil end
-    local specID = GetSpecializationInfo and GetSpecializationInfo(idx) or nil
-    return specID
+    return (getSpecInfo(idx))
 end
 
 function MRB._groupUnitsProbe()
@@ -576,7 +594,7 @@ function MRB:AnyEligibleAllyHasMyBuff(ids)
     local sawUnknown = false
     for i = 1, #units do
         local unit = units[i]
-        if MRB._eligibleProbe(unit) then
+        if MRB._eligibleProbe(unit, true) then
             local has = MRB:UnitHasMyBuff(unit, ids)
             if has == true then
                 return true
