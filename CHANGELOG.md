@@ -4,6 +4,69 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.0.0 - 2026-08-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+The 5.0.0 line, released. Nameplates become their own addon, nameplates and
+group frames and unit frames move onto one shared aura engine, the suite drops
+from 22 addon folders to 11, and QUI adapts to 12.1's stricter rules about what
+an addon is allowed to read. Everything below landed across alpha1 to beta4; the
+per-build entries under this one carry the full detail.
+
+### Added
+
+- **Nameplates are their own addon**, with a setup wizard and a settings preview
+  that renders a real plate 1:1 and follows whatever you are editing.
+- **Every plate type gets its own config** — pets and minions, friendly units,
+  bosses and elites, minor and trivial units, enemy players and enemy NPCs —
+  picked from a dropdown with a Copy From control.
+- **Target indicators** (arrow, brackets and glow line), class power pips on the
+  target plate, execute-threshold health colouring and threat colour mapping.
+- **A nameplate Visibility tab** with an enemy-plate master toggle, friendly NPCs
+  exposed, and Minions nesting Guardians, Pets and Totems on both sides.
+  `Show In Instances` is a never / name-only / always choice.
+- **Pandemic glow on aura icons**, driven by the game's own pandemic region
+  rather than a timer QUI approximates, so it stays in step with the real
+  duration.
+- **Dispel borders and stealable buffs come from the game.** An aura element can
+  be set to `Debuffs + Stealable Buffs` or `All Auras`.
+
+### Changed
+
+- **One aura engine drives nameplates, group frames and unit frames**, so an
+  element configured on one behaves the same on the others.
+- **Name-only is a real render mode** — QUI draws the name and hides the bar and
+  aura containers instead of restyling Blizzard's own text.
+- **The suite is 11 addon folders instead of 22.** Locales ship packed, so only
+  the language in use is ever compiled, and login memory drops by roughly 2.3 MB.
+- **Settings search is 2.5–3x faster.** One English index ships instead of ten
+  translated copies, and typing the English term still finds the translated row
+  on non-English clients.
+- **The options panel opens instantly**, building on the first frame after login,
+  and moving between settings tabs reuses the page it already built.
+- **Every non-English locale is actually translated now.** Nine of the ten had
+  been falling back to English for roughly 900 strings each.
+- **Atonement tracking no longer reads the combat log.** 12.1 closed combat log
+  events to addons, so the counter watches auras directly.
+
+### Removed
+
+- **The Brez counter's resurrection list.** Naming who battle-rezzed whom needed
+  combat log events, which 12.1 does not give addons. The charge count, the
+  recharge timer and the per-pull tally are unaffected.
+
+### Upgrading
+
+4.x to 5.0 is an install over the top: the same addon folders and the same saved
+variables (`QUIDB` and `QUI_StorageDB`), so nothing moves by hand. Profiles
+migrate to the current schema on first login and are backed up beforehand —
+`/qui migration status` and `/qui migration restore` expose those backups.
+
+If you hand-installed 5.0.0-alpha29 or earlier, the eleven `QUI_OptionsSearch`
+folders are left behind after updating. Nothing loads them; delete them.
+
 ## v5.0.0-beta4 - 2026-08-11
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
