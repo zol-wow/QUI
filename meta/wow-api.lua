@@ -7325,6 +7325,10 @@ function C_HousingBlueprint.RequestBlueprintContentsForContext(shareCode, option
 ---@param shareCode? string
 ---@param ... any
 function C_HousingBlueprint.StartImportRoomBlueprint(shareCode, ...) end
+---@param inputShareCode? string
+---@param ... any
+---@return string updatedShareCode
+function C_HousingBlueprint.UpdateBlueprintStringFromInput(inputShareCode, ...) end
 
 C_HousingCatalog = {}
 --- Creates a new instance of a HousingCatalog searcher; This can be used to asynchronously search/filter the HousingCatalog without affecting/being restricted by the filter state of other Housing Catalog UI displays

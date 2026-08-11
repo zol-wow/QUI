@@ -1216,6 +1216,7 @@ return {
     ["C_HousingBlueprint.RequestBlueprintContents"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_HousingBlueprint.RequestBlueprintContentsForContext"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_HousingBlueprint.StartImportRoomBlueprint"] = { secretArguments = "AllowedWhenUntainted" },
+    ["C_HousingBlueprint.UpdateBlueprintStringFromInput"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_HousingCatalog.DeletePreviewCartDecor"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_HousingCatalog.DestroyEntry"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_HousingCatalog.GetAllVariantInfosForEntry"] = { secretArguments = "AllowedWhenUntainted" },
