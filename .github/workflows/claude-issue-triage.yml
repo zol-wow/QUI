@@ -115,20 +115,21 @@ jobs:
 
             QUI is a World of Warcraft 12.1 addon suite written in Lua 5.1.
 
-            1. LABEL. Add labels with `gh issue edit`. Use ONLY these — no
-               others exist and inventing one makes the command fail:
-                 kind:      bug, enhancement, question, documentation
-                 module:    module:actionbars, module:bags, module:cdm,
-                            module:chat, module:damagemeter, module:groupframes,
-                            module:options, module:resourcebars,
-                            module:unitframes
-                 other:     needs-info, duplicate
-               Add exactly one kind label. Add a module label only when the
-               issue clearly names a module or describes a symptom you can trace
-               to one — read the relevant QUI_*/ directory to check rather
-               than guessing from a keyword. No module label is better than a
-               wrong one. Add `needs-info` when repro steps, the WoW build, or
-               the error text are missing and would be needed to act.
+            1. LABEL. Add labels with `gh issue edit`. Use ONLY these — they
+               are the only labels this repository has, and inventing one makes
+               the command fail:
+                 bug, enhancement, question, documentation, duplicate
+               Add exactly one of bug / enhancement / question / documentation.
+               Never add `invalid`, `wontfix`, `help wanted`, or
+               `good first issue` — those are Drew's calls, not yours.
+
+               There are no module labels here. Name the module you traced the
+               issue to in your comment instead, and read the relevant QUI_*/
+               directory to check rather than guessing from a keyword — no
+               module attribution is better than a wrong one. Likewise there is
+               no needs-info label: when repro steps, the WoW build, or the
+               error text are missing and would be needed to act, say exactly
+               that in your comment.
 
             2. DEDUPE. Run `gh issue list --state all --limit 60` and read the
                titles. If something looks like the same underlying report, add
@@ -147,7 +148,7 @@ jobs:
                costs Drew more time than no diagnosis.
 
                If the issue is a usage question rather than a defect, answer it
-               outright from the code — the setting, the `/dui` path to it, or
+               outright from the code — the setting, the `/qui` path to it, or
                the reason the current behavior is intentional. Then skip to the
                comment; there is nothing to fix.
 
