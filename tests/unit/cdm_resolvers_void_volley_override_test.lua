@@ -3,9 +3,9 @@
 -- luacheck: globals InCombatLockdown geterrorhandler CreateFrame issecretvalue
 --
 -- Shadow Priest Void Volley replaces Voidform on the essential icon while
--- Voidform is active. Blizzard's CooldownViewer queries the override spell's
--- cooldown lane (CooldownViewerItemDataMixin:GetSpellID). The base Voidform
--- major cooldown must not paint over a ready or recharging Void Volley.
+-- Voidform is active. The resolver queries the override spell's cooldown lane
+-- via the icon's runtime spellID (_runtimeSpellID), so a ready or recharging
+-- Void Volley surfaces its own state instead of the base Voidform cooldown.
 
 local function noop() end
 
@@ -15,7 +15,7 @@ function CreateFrame()
     return { RegisterEvent = noop, RegisterUnitEvent = noop, SetScript = noop }
 end
 
-local VF_BASE, VF_OVERRIDE, VF_CDID = 228260, 1242173, 8801
+local VF_BASE, VF_OVERRIDE = 228260, 1242173
 local vfVolleyCooldownDuration = { token = "void-volley-cooldown-duration" }
 local vfMajorCooldownDuration = { token = "voidform-major-cooldown-duration" }
 
@@ -46,20 +46,6 @@ local ns = {
         QueryIsSpellKnownOrPlayerSpell = function() return true end,
         QuerySpellInfo = function() return nil end,
     },
-    CDMBlizzMirror = {
-        GetStateByCooldownID = function(cooldownID, viewerCategory)
-            if cooldownID == VF_CDID and viewerCategory == "essential" then
-                return {
-                    cooldownID = VF_CDID,
-                    mirrorEpoch = 4,
-                    spellID = VF_BASE,
-                    overrideSpellID = VF_OVERRIDE,
-                    viewerCategory = "essential",
-                    childIsActive = true,
-                }
-            end
-        end,
-    },
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
@@ -81,8 +67,6 @@ local function ResolveMode()
         skipAuraPhase = false,
         showGCDSwipe = true,
     })
-    context.mirrorCooldownID = VF_CDID
-    context.mirrorCategory = "essential"
     return ns.CDMResolvers.ResolveCooldownState(context)
 end
 
@@ -100,26 +84,5 @@ assert(recharging.mode == "cooldown",
         .. tostring(recharging.mode))
 assert(recharging.durObj == vfVolleyCooldownDuration,
     "override cooldown lane must bind the override DurationObject")
-
--- After Voidform ends the child drops; the major cooldown should surface again.
-cooldownActive[VF_OVERRIDE] = false
-ns.CDMBlizzMirror.GetStateByCooldownID = function(cooldownID, viewerCategory)
-    if cooldownID == VF_CDID and viewerCategory == "essential" then
-        return {
-            cooldownID = VF_CDID,
-            mirrorEpoch = 5,
-            spellID = VF_BASE,
-            overrideSpellID = VF_BASE,
-            viewerCategory = "essential",
-            childIsActive = false,
-        }
-    end
-end
-local majorCd = ResolveMode()
-assert(majorCd.mode == "cooldown",
-    "without an active override child the base major cooldown must show, got "
-        .. tostring(majorCd.mode))
-assert(majorCd.durObj == vfMajorCooldownDuration,
-    "base major cooldown must bind the base DurationObject")
 
 print("cdm_resolvers_void_volley_override_test: PASS")

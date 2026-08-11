@@ -12,7 +12,7 @@ local source = readAll("QUI_CDM/cdm/cdm_icon_renderer.lua")
 
 local configureStart = assert(source:find("local function ConfigureIcon(icon, rowConfig)", 1, true),
     "ConfigureIcon must exist")
-local configureEnd = assert(source:find("-- Per-spell overrides", configureStart, true),
+local configureEnd = assert(source:find("local spellOvr = GetIconSpellOverride(icon)", configureStart, true),
     "ConfigureIcon duration/stack styling section must be locatable")
 local configureBody = source:sub(configureStart, configureEnd)
 

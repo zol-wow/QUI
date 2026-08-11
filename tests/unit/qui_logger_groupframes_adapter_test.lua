@@ -31,6 +31,10 @@ assert(built.ctx.R ~= nil,       "ctx.R must be the render module")
 assert(built.ctx.Model ~= nil,   "ctx.Model must be the model module")
 assert(built.ctx.frame ~= nil,   "ctx.frame must be the synthetic unit frame")
 assert(built.ctx.auraCache ~= nil, "ctx.auraCache must be the aura cache")
+assert(rawget(built.ctx.frame, "unit") == nil,
+    "aura replay frame must not create the ping-sensitive .unit field")
+assert(built.ctx.frame.previewUnit == "player",
+    "aura replay frame must use the previewUnit accessor path")
 
 local R = built.ctx.R
 assert(type(R.Dispatch)  == "function", "R.Dispatch must be a function")
@@ -93,8 +97,8 @@ assert(mappedCount > 0, "at least one mapped event must appear in counts with co
 -- skip branch, which is ~0 but present). The real gate is that no adapter
 -- method was called for it — checked indirectly by the callback probe below.
 -- A._lastUnmappedCount increments for each skipped event.
-assert(A._lastUnmappedCount == nil or A._lastUnmappedCount >= 0,
-    "unmapped count must be non-negative")
+assert(type(A._lastUnmappedCount) == "number" and A._lastUnmappedCount >= 1,
+    "the replayed ZZZ_UNMAPPED_GF event must be counted as skipped")
 
 -- 6. PROVE a real group-frame function ran on UNIT_AURA:
 --    opts.onCallback("RenderIcon") must fire >= 1 time after UNIT_AURA dispatch,
@@ -115,6 +119,8 @@ assert(dispatchCount > 0 or renderIconCount > 0,
     "after UNIT_AURA dispatch, R.Dispatch or R.RenderIcon callback must fire " ..
     "(Dispatch=" .. dispatchCount .. " RenderIcon=" .. renderIconCount ..
     ") -- proves event reached real group-frame render code")
+assert(rawget(built.ctx.frame, "_quiAuraRender") ~= nil,
+    "UNIT_AURA must pass the unit guard and create real renderer side state")
 
 print(string.format(
     "OK: qui_logger_groupframes_adapter_test  [R.Dispatch=%d  R.RenderIcon=%d]",

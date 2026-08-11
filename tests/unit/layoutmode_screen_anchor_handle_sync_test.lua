@@ -92,7 +92,7 @@ assert(saveBlock:find("resolved ~= elFrame", 1, true),
 -- the real frame inside it — ForceReapply/ApplyFrameAnchor rips the
 -- SetAllPoints glue, which would leave the frame behind on the next drag.
 assert(syncBlock:find("targetFrame:GetParent() == handle", 1, true)
-    and syncBlock:find("pcall(targetFrame.SetAllPoints, targetFrame, handle)", 1, true),
+    and syncBlock:find('ns.SafeCallMethod("best-effort-style", targetFrame, "SetAllPoints", handle)', 1, true),
     "SyncHandle must re-glue the frame to its handle after repositioning")
 
 -- The circular frame:GetCenter() fallback must come AFTER (not instead of)
@@ -102,7 +102,7 @@ local fallbackPos = assert(syncBlock:find("local frame = def.getFrame and def.ge
 assert(fallbackPos > rectPos, "anchor-rect branch must take priority over the frame-center fallback")
 
 -- 2 + 3. Minimap mirror-ownership and HUD-latch guards.
-local minimap = readAll("QUI_Minimap/minimap/minimap.lua")
+local minimap = readAll("modules/minimap/minimap.lua")
 
 local ownsPos = assert(minimap:find("local function MirrorOwnsMinimap()", 1, true),
     "anchor-proxy mirror must gate on Minimap geometry ownership")

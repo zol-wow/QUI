@@ -16,7 +16,7 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local source = readFile("QUI_Skinning/skinning/frames/character.lua")
+local source = readFile("modules/skinning/frames/character.lua")
 
 assertAbsent(source, "C_Timer.After(0.1",
     "Character frame initialization must not use a fixed 0.1s catch-up timer")

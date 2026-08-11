@@ -48,8 +48,6 @@ local UNIT_DISPLAY_NAMES = {
     focus = ns.L["Focus"],
     boss = ns.L["Boss"],
 }
--- Publish the unit -> display-name map. This file loads before the settings
--- model in QUI_Options.toc, so the model aliases this single source of truth.
 ns.QUI_UnitFramesUnitDisplayNames = UNIT_DISPLAY_NAMES
 local UNIT_SURFACE_TABS = {
     ["Frame"] = "frame",
@@ -59,7 +57,6 @@ local UNIT_SURFACE_TABS = {
     ["Icons"] = "icons",
     ["Indicators"] = "indicators",
     ["Portrait"] = "portrait",
-    ["Priv. Auras"] = "privateAuras",
 }
 local FRAME_TAB_FEATURES = {}
 local BARS_TAB_FEATURES = {}
@@ -68,7 +65,6 @@ local TEXT_TAB_FEATURES = {}
 local ICONS_TAB_FEATURES = {}
 local PORTRAIT_TAB_FEATURES = {}
 local INDICATORS_TAB_FEATURES = {}
-local PRIVATE_AURAS_TAB_FEATURES = {}
 local TOT_SEPARATOR_OPTIONS = {
     { value = " >> ",  text = ">>" },
     { value = " > ",   text = ">" },
@@ -101,66 +97,10 @@ local PORTRAIT_SIDE_OPTIONS = {
     { value = "LEFT", text = ns.L["Left"] },
     { value = "RIGHT", text = ns.L["Right"] },
 }
-local PRIVATE_AURA_GROW_OPTIONS = {
-    { value = "RIGHT",  text = ns.L["Right"] },
-    { value = "LEFT",   text = ns.L["Left"] },
-    { value = "UP",     text = ns.L["Up"] },
-    { value = "DOWN",   text = ns.L["Down"] },
-    { value = "CENTER", text = ns.L["Center"] },
-}
-local AURA_CORNER_OPTIONS = {
-    { value = "TOPLEFT",     text = ns.L["Top Left"] },
-    { value = "TOPRIGHT",    text = ns.L["Top Right"] },
-    { value = "BOTTOMLEFT",  text = ns.L["Bottom Left"] },
-    { value = "BOTTOMRIGHT", text = ns.L["Bottom Right"] },
-}
-local AURA_GROW_OPTIONS = {
-    { value = "LEFT",  text = ns.L["Left"] },
-    { value = "RIGHT", text = ns.L["Right"] },
-    { value = "UP",    text = ns.L["Up"] },
-    { value = "DOWN",  text = ns.L["Down"] },
-}
-
--- Filter modifier metadata. *_FLAGS lists (further down) carry just the
--- key strings used to stamp DB defaults; *_DEFS carry UI-side labels and
--- tooltips. Two separate lists by design.
-local BUFF_MODIFIER_DEFS = {
-    { key = "PLAYER",         label = ns.L["Player"],         tooltip = ns.L["Show only buffs you applied."] },
-    { key = "RAID",           label = ns.L["Raid"],           tooltip = ns.L["Show buffs Blizzard's raid frames would show."] },
-    { key = "CANCELABLE",     label = ns.L["Cancelable"],     tooltip = ns.L["Show only buffs you can right-click off."] },
-    { key = "NOT_CANCELABLE", label = ns.L["Not Cancelable"], tooltip = ns.L["Show only buffs you cannot right-click off."] },
-}
-
-local DEBUFF_MODIFIER_DEFS = {
-    { key = "PLAYER",                  label = ns.L["Player"],         tooltip = ns.L["Show only debuffs you applied."] },
-    { key = "RAID",                    label = ns.L["Raid"],           tooltip = ns.L["Show debuffs Blizzard's raid frames would show."] },
-    { key = "INCLUDE_NAME_PLATE_ONLY", label = ns.L["Nameplate Only"], tooltip = ns.L["Include debuffs flagged as nameplate-only."] },
-}
-
--- "None" is encoded as a sentinel string because the dropdown widget's
--- UpdateVisual early-returns on nil values (visual would be blank).
--- The widget's onChange normalizes the sentinel back to nil before the
--- render-path reads it, so DB stays nil-canonical.
-local AURA_FILTER_NONE_SENTINEL = "NONE"
-
-local BUFF_EXCLUSIVE_OPTIONS = {
-    { value = AURA_FILTER_NONE_SENTINEL, text = ns.L["None"]                },
-    { value = "EXTERNAL_DEFENSIVE",      text = ns.L["External Defensives"] },
-    { value = "BIG_DEFENSIVE",           text = ns.L["Big Defensives"]      },
-}
-
-local DEBUFF_EXCLUSIVE_OPTIONS = {
-    { value = AURA_FILTER_NONE_SENTINEL,  text = ns.L["None"]                },
-    { value = "CROWD_CONTROL",            text = ns.L["Crowd Control"]       },
-    { value = "RAID_PLAYER_DISPELLABLE",  text = ns.L["Player Dispellable"]  },
-}
-
 local function GetGUI()
     return QUI and QUI.GUI or nil
 end
 
--- Dim a companion settings cell when a higher-priority color toggle is on
--- (the custom-color row greys to 0.4 alpha while the override is active).
 local function SetCompanionCellDim(cell, dimmed)
     cell:SetAlpha(dimmed and 0.4 or 1.0)
 end
@@ -245,6 +185,15 @@ local function UnitHasHostilityColors(unitKey)
         or unitKey == "boss"
 end
 
+local function UnitPolarity(unitKey)
+    if unitKey == "player" or unitKey == "pet" then
+        return "friendly"
+    elseif unitKey == "boss" then
+        return "hostile"
+    end
+    return nil
+end
+
 local function UnitHasHealPrediction(unitKey)
     return unitKey == "player" or unitKey == "target"
 end
@@ -294,10 +243,6 @@ local function EnsurePlayerStanceSettings(unitDB)
 end
 
 local function UnitSupportsPortrait(unitKey)
-    return unitKey == "player" or unitKey == "target" or unitKey == "focus"
-end
-
-local function UnitSupportsPrivateAuras(unitKey)
     return unitKey == "player" or unitKey == "target" or unitKey == "focus"
 end
 
@@ -403,102 +348,6 @@ local function EnsureClassificationIndicatorSettings(unitDB)
     return unitDB.classificationIcon
 end
 
-local function EnsurePrivateAurasSettings(unitDB)
-    if type(unitDB.privateAuras) ~= "table" then
-        unitDB.privateAuras = {
-            enabled = true,
-            maxPerFrame = 3,
-            iconSize = 22,
-            growDirection = "RIGHT",
-            spacing = 2,
-            anchor = "TOPLEFT",
-            anchorOffsetX = 0,
-            anchorOffsetY = 0,
-            showCountdown = true,
-            showCountdownNumbers = true,
-            reverseSwipe = false,
-            borderScale = 1,
-            frameLevel = 50,
-        }
-    end
-    return unitDB.privateAuras
-end
-
--- Build a filter sub-table { modifiers = {…false}, exclusive = nil } if absent.
--- modifierFlags is a sequence of flag-name strings (no values).
-local function EnsureFilterDB(parent, key, modifierFlags)
-    if type(parent[key]) ~= "table" then
-        parent[key] = {}
-    end
-    local filterDB = parent[key]
-    if type(filterDB.modifiers) ~= "table" then
-        filterDB.modifiers = {}
-    end
-    for _, flag in ipairs(modifierFlags) do
-        if filterDB.modifiers[flag] == nil then
-            filterDB.modifiers[flag] = false
-        end
-    end
-    return filterDB
-end
-
-local BUFF_MODIFIER_FLAGS   = { "PLAYER", "RAID", "CANCELABLE", "NOT_CANCELABLE" }
-local DEBUFF_MODIFIER_FLAGS = { "PLAYER", "RAID", "INCLUDE_NAME_PLATE_ONLY" }
-
-local function EnsureAuraSettings(unitDB, unitKey)
-    if type(unitDB.auras) ~= "table" then
-        unitDB.auras = {}
-    end
-
-    local auraDB = unitDB.auras
-    if auraDB.showBuffs == nil then auraDB.showBuffs = false end
-    if auraDB.showDebuffs == nil then auraDB.showDebuffs = false end
-    if auraDB.iconSize == nil then auraDB.iconSize = 22 end
-    if auraDB.buffIconSize == nil then auraDB.buffIconSize = 22 end
-    if auraDB.debuffAnchor == nil then auraDB.debuffAnchor = "TOPLEFT" end
-    if auraDB.debuffGrow == nil then auraDB.debuffGrow = "RIGHT" end
-    if auraDB.debuffOffsetX == nil then auraDB.debuffOffsetX = 0 end
-    if auraDB.debuffOffsetY == nil then auraDB.debuffOffsetY = 2 end
-    if auraDB.buffAnchor == nil then auraDB.buffAnchor = "BOTTOMLEFT" end
-    if auraDB.buffGrow == nil then auraDB.buffGrow = "RIGHT" end
-    if auraDB.buffOffsetX == nil then auraDB.buffOffsetX = 0 end
-    if auraDB.buffOffsetY == nil then auraDB.buffOffsetY = -2 end
-    if auraDB.debuffMaxIcons == nil then auraDB.debuffMaxIcons = 16 end
-    if auraDB.buffMaxIcons == nil then auraDB.buffMaxIcons = 16 end
-    if auraDB.debuffMaxPerRow == nil then auraDB.debuffMaxPerRow = 0 end
-    if auraDB.buffMaxPerRow == nil then auraDB.buffMaxPerRow = 0 end
-    if auraDB.debuffHideSwipe == nil then auraDB.debuffHideSwipe = false end
-    if auraDB.buffHideSwipe == nil then auraDB.buffHideSwipe = false end
-    EnsureFilterDB(auraDB, "buffFilter",   BUFF_MODIFIER_FLAGS)
-    EnsureFilterDB(auraDB, "debuffFilter", DEBUFF_MODIFIER_FLAGS)
-    return auraDB
-end
-
-local function EnsureAuraTextSettings(auraDB, prefix)
-    local defaults = {
-        Spacing = 2,
-        ShowStack = true,
-        StackSize = 10,
-        StackAnchor = "BOTTOMRIGHT",
-        StackOffsetX = -1,
-        StackOffsetY = 1,
-        StackColor = { 1, 1, 1, 1 },
-        ShowDuration = true,
-        DurationSize = 12,
-        DurationAnchor = "CENTER",
-        DurationOffsetX = 0,
-        DurationOffsetY = 0,
-        DurationColor = { 1, 1, 1, 1 },
-    }
-
-    for key, value in pairs(defaults) do
-        local fullKey = prefix .. key
-        if auraDB[fullKey] == nil then
-            auraDB[fullKey] = value
-        end
-    end
-end
-
 local function RefreshUnitFrames()
     if _G.QUI_RefreshUnitFrames then
         _G.QUI_RefreshUnitFrames()
@@ -517,8 +366,6 @@ local BOSS_GROW_OPTIONS = {
 
 local BOSS_GROW_DIRECTIONS_VALID = { UP = true, DOWN = true, LEFT = true, RIGHT = true }
 
--- Refresh boss frames after a layout setting changes: rebuild the frames,
--- re-chain boss2-5 off boss1, and resync the grouped layout-mode mover.
 local function RefreshBossLayout()
     RefreshUnitFrames()
     local unitFrames = ns.QUI_UnitFrames
@@ -546,7 +393,8 @@ local function SetSearchContext(searchContext)
 end
 
 local function CreateUnitSearchContext(unitKey, subTabName)
-    return {
+    local SearchRoute = ns.Settings and ns.Settings.SearchRoute
+    local searchContext = {
         tabIndex = 5,
         tabName = "Unit Frames",
         subTabIndex = UNIT_SUBTAB_INDEX[unitKey] or 2,
@@ -557,6 +405,10 @@ local function CreateUnitSearchContext(unitKey, subTabName)
         surfaceTabKey = UNIT_SURFACE_TABS[subTabName],
         surfaceUnitKey = unitKey,
     }
+    if SearchRoute and type(SearchRoute.Apply) == "function" then
+        return SearchRoute.Apply(searchContext)
+    end
+    return searchContext
 end
 
 local function PrepareSectionHost(sectionHost, ctx)
@@ -633,6 +485,10 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
     function builder.CloseCard(card)
         card.Finalize()
         y = y - card.frame:GetHeight()
+    end
+
+    function builder.Spacer(amount)
+        y = y - (amount or 10)
     end
 
     function builder.Row(build)
@@ -1281,8 +1137,6 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, ns.L["Bar Texture"], textureDropdown)
     )
 
-    -- Per-frame border color (prefix "" -> unit.unitDB.borderColorSource/borderColor).
-    -- Same keys exposed in Appearance > Border Coloring > Unit Frames > "Frame".
     if ns.QUI_BorderControl then
         local borderSrcW, borderColorW = ns.QUI_BorderControl.Attach(
             gui, card.frame, unit.unitDB, "", RefreshUnitFrames,
@@ -1300,8 +1154,6 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
     end
 
     if unitKey == "boss" then
-        -- Seed the directional spacing keys from the legacy single spacing so
-        -- existing profiles keep their customized boss spacing.
         local legacySpacing = unit.unitDB.spacing or 35
         if not BOSS_GROW_DIRECTIONS_VALID[unit.unitDB.growDirection] then
             unit.unitDB.growDirection = "DOWN"
@@ -1672,7 +1524,6 @@ local function EnsureCastbarSettings(unitDB, unitKey)
         unitDB.castbar = {}
     end
     local castDB = unitDB.castbar
-    local defaultShowChannelTicks = (unitKey == "player")
 
     if castDB.enabled == nil then castDB.enabled = true end
     castDB.fontSize = castDB.fontSize or 12
@@ -1682,11 +1533,8 @@ local function EnsureCastbarSettings(unitDB, unitKey)
     castDB.width = castDB.width or 250
     if castDB.widthAdjustment == nil then castDB.widthAdjustment = 0 end
     castDB.borderSize = castDB.borderSize or 1
-    castDB.iconBorderSize = castDB.iconBorderSize or 2
     if castDB.borderColorSource == nil then castDB.borderColorSource = "inherit" end
-    if castDB.borderColor == nil then castDB.borderColor = { 0, 0, 0, 1 } end
     if castDB.iconBorderColorSource == nil then castDB.iconBorderColorSource = "inherit" end
-    if castDB.iconBorderColor == nil then castDB.iconBorderColor = { 0, 0, 0, 1 } end
     castDB.texture = castDB.texture or "Solid"
     if castDB.useClassColor == nil then castDB.useClassColor = false end
     if castDB.color == nil then
@@ -1695,28 +1543,8 @@ local function EnsureCastbarSettings(unitDB, unitKey)
         castDB.color[4] = 1
     end
     if castDB.bgColor == nil then castDB.bgColor = { 0.149, 0.149, 0.149, 1 } end
-    if castDB.notInterruptibleColor == nil then castDB.notInterruptibleColor = { 0.7, 0.2, 0.2, 1 } end
-    if castDB.gcdColor == nil then
-        castDB.gcdColor = { castDB.color[1], castDB.color[2], castDB.color[3], castDB.color[4] or 1 }
-    end
-    if castDB.showChannelTicks == nil then castDB.showChannelTicks = defaultShowChannelTicks end
-    castDB.channelTickThickness = castDB.channelTickThickness or 1
-    castDB.channelTickColor = castDB.channelTickColor or { 1, 1, 1, 0.9 }
-    castDB.channelTickMinConfidence = castDB.channelTickMinConfidence or 0.7
-    castDB.channelTickSourcePolicy = castDB.channelTickSourcePolicy or "auto"
     if castDB.channelFillForward == nil then castDB.channelFillForward = false end
     if castDB.maxLength == nil then castDB.maxLength = 0 end
-    if castDB.iconAnchor == nil then castDB.iconAnchor = "LEFT" end
-    if castDB.iconSpacing == nil then castDB.iconSpacing = 0 end
-    if castDB.showIcon == nil then castDB.showIcon = true end
-    if castDB.spellTextAnchor == nil then castDB.spellTextAnchor = "LEFT" end
-    if castDB.spellTextOffsetX == nil then castDB.spellTextOffsetX = 4 end
-    if castDB.spellTextOffsetY == nil then castDB.spellTextOffsetY = 0 end
-    if castDB.showSpellText == nil then castDB.showSpellText = true end
-    if castDB.timeTextAnchor == nil then castDB.timeTextAnchor = "RIGHT" end
-    if castDB.timeTextOffsetX == nil then castDB.timeTextOffsetX = -4 end
-    if castDB.timeTextOffsetY == nil then castDB.timeTextOffsetY = 0 end
-    if castDB.showTimeText == nil then castDB.showTimeText = true end
     if castDB.previewMode == nil then castDB.previewMode = false end
 
     if not castDB.anchor then
@@ -1729,17 +1557,12 @@ local function EnsureCastbarSettings(unitDB, unitKey)
         castDB.lockedToFrame = nil
     end
 
-    if unitKey == "player" then
-        if castDB.showGCD == nil then castDB.showGCD = false end
-        if castDB.showGCDReverse == nil then castDB.showGCDReverse = false end
-        if castDB.showGCDMelee == nil then castDB.showGCDMelee = (castDB.showGCDMeleeOnly == true) end
-        if castDB.hideTimeTextOnEmpowered == nil then castDB.hideTimeTextOnEmpowered = false end
-        if castDB.empoweredLevelTextAnchor == nil then castDB.empoweredLevelTextAnchor = "CENTER" end
-        if castDB.empoweredLevelTextOffsetX == nil then castDB.empoweredLevelTextOffsetX = 0 end
-        if castDB.empoweredLevelTextOffsetY == nil then castDB.empoweredLevelTextOffsetY = 0 end
-        if castDB.showEmpoweredLevel == nil then castDB.showEmpoweredLevel = false end
-        if type(castDB.empoweredStageColors) ~= "table" then castDB.empoweredStageColors = {} end
-        if type(castDB.empoweredFillColors) ~= "table" then castDB.empoweredFillColors = {} end
+    local castbarModule = ns.QUI_Castbar
+    if castbarModule and castbarModule.InitializeDefaultSettings then
+        castbarModule.InitializeDefaultSettings(castDB, unitKey)
+    end
+    if castDB.gcdColor == nil then
+        castDB.gcdColor = { castDB.color[1], castDB.color[2], castDB.color[3], castDB.color[4] or 1 }
     end
 
     return castDB
@@ -1797,7 +1620,6 @@ local function RenderCastbarSection(sectionHost, ctx)
 
     local refresh = RefreshUnitFrames
 
-    -- General -----------------------------------------------------------
     builder.Header(ns.L["General"])
     local generalCard = builder.Card()
     local enableCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "enabled", castDB, refresh, {
@@ -1907,7 +1729,6 @@ local function RenderCastbarSection(sectionHost, ctx)
 
     builder.CloseCard(generalCard)
 
-    -- GCD (player) ------------------------------------------------------
     if unitKey == "player" then
         builder.Header(ns.L["GCD"])
         local gcdCard = builder.Card()
@@ -1935,7 +1756,6 @@ local function RenderCastbarSection(sectionHost, ctx)
         builder.CloseCard(gcdCard)
     end
 
-    -- Size --------------------------------------------------------------
     builder.Header(ns.L["Size"])
     local sizeCard = builder.Card()
     local widthSlider = gui:CreateFormSlider(sizeCard.frame, nil, 50, 2000, 1, "width", castDB, refresh, { deferOnDrag = true }, {
@@ -1966,7 +1786,6 @@ local function RenderCastbarSection(sectionHost, ctx)
     sizeCard.AddRow(optionsAPI.BuildSettingRow(sizeCard.frame, ns.L["Castbar Preview"], previewCheckbox))
     builder.CloseCard(sizeCard)
 
-    -- Channel Ticks (skip boss/pet) ------------------------------------
     if unitKey ~= "boss" and unitKey ~= "pet" then
         builder.Header(ns.L["Channel Ticks"])
         local tickCard = builder.Card()
@@ -1999,7 +1818,6 @@ local function RenderCastbarSection(sectionHost, ctx)
         builder.CloseCard(tickCard)
     end
 
-    -- Text & Display ---------------------------------------------------
     builder.Header(ns.L["Text & Display"])
     local textCard = builder.Card()
     local fontSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 24, 1, "fontSize", castDB, refresh, { deferOnDrag = true }, {
@@ -2014,7 +1832,6 @@ local function RenderCastbarSection(sectionHost, ctx)
     )
     builder.CloseCard(textCard)
 
-    -- Element Positioning: Icon ----------------------------------------
     builder.Header(ns.L["Icon Positioning"])
     local iconCard = builder.Card()
     local iconAnchorDropdown = gui:CreateFormDropdown(iconCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "iconAnchor", castDB, refresh, {
@@ -2034,7 +1851,6 @@ local function RenderCastbarSection(sectionHost, ctx)
     iconCard.AddRow(optionsAPI.BuildSettingRow(iconCard.frame, ns.L["Icon Border Size"], iconBorderSlider))
     builder.CloseCard(iconCard)
 
-    -- Spell Name Text --------------------------------------------------
     builder.Header(ns.L["Spell Name Text"])
     local spellTextCard = builder.Card()
     local spellAnchorDropdown = gui:CreateFormDropdown(spellTextCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "spellTextAnchor", castDB, refresh, {
@@ -2060,7 +1876,6 @@ local function RenderCastbarSection(sectionHost, ctx)
     )
     builder.CloseCard(spellTextCard)
 
-    -- Time Remaining Text ----------------------------------------------
     builder.Header(ns.L["Time Remaining Text"])
     local timeTextCard = builder.Card()
     local timeAnchorDropdown = gui:CreateFormDropdown(timeTextCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "timeTextAnchor", castDB, refresh, {
@@ -2086,7 +1901,6 @@ local function RenderCastbarSection(sectionHost, ctx)
     )
     builder.CloseCard(timeTextCard)
 
-    -- Empowered (player) -----------------------------------------------
     if unitKey == "player" then
         builder.Header(ns.L["Empowered Spells"])
         local empoweredCard = builder.Card()
@@ -2200,7 +2014,6 @@ local function RenderCastbarSection(sectionHost, ctx)
         end)
     end
 
-    -- Copy From Other Unit ---------------------------------------------
     local copyOptions = {}
     for _, k in ipairs({ "player", "target", "targettarget", "focus", "pet", "boss" }) do
         if k ~= unitKey then
@@ -2678,7 +2491,39 @@ local function RenderTextStanceSection(sectionHost, ctx)
     return builder.Height()
 end
 
-local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
+local function GetAuraSelectedElementIndex(ctx, unitKey)
+    local state = ctx and ctx.state
+    local store = state and state._aurasSelectedElement
+    return store and store[unitKey or "*"]
+end
+
+local function SetAuraSelectedElementIndex(ctx, unitKey, index)
+    local state = ctx and ctx.state
+    if type(state) ~= "table" then
+        return
+    end
+    local store = state._aurasSelectedElement
+    if type(store) ~= "table" then
+        store = {}
+        state._aurasSelectedElement = store
+    end
+    store[unitKey or "*"] = (type(index) == "number" and index) or nil
+end
+
+local function ScheduleAuraSectionRepaint(ctx)
+    if not ctx or type(ctx.RerenderSection) ~= "function" then
+        return
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            ctx:RerenderSection("auraElements")
+        end)
+    else
+        ctx:RerenderSection("auraElements")
+    end
+end
+
+local function RenderAuraElementsSection(sectionHost, ctx)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
     local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
@@ -2687,7 +2532,16 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
         return nil
     end
 
-    local auraDB = EnsureAuraSettings(unit.unitDB, unitKey)
+    local AurasEditor = ns.QUI_AuraElementsEditor
+    if not AurasEditor or type(AurasEditor.RenderAuras) ~= "function" then
+        return nil
+    end
+
+    if type(unit.unitDB.auras) ~= "table" then
+        unit.unitDB.auras = {}
+    end
+    local auraDB = unit.unitDB.auras
+
     local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Icons"))
     if not builder then
         return nil
@@ -2696,242 +2550,61 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
     local refreshAuras = function()
         RefreshUnitAuras(unitKey)
     end
-    local kindLower = string.lower(kind)
-    local anchorKey = prefix .. "Anchor"
-    local growKey = prefix .. "Grow"
-    local maxKey = prefix .. "MaxIcons"
-    local maxRowKey = prefix .. "MaxPerRow"
-    local offsetXKey = prefix .. "OffsetX"
-    local offsetYKey = prefix .. "OffsetY"
-    local iconSizeKey = (prefix == "debuff") and "iconSize" or "buffIconSize"
-    local hideSwipeKey = prefix .. "HideSwipe"
-    local showKey = (prefix == "debuff") and "showDebuffs" or "showBuffs"
 
-    builder.Header(string.format(ns.L["%1$s Icons"], kind))
-    local card = builder.Card()
+    builder.Header(ns.L["Auras"])
+    builder.Description(ns.L["Buff/debuff strips and tracked auras displayed on this unit frame."])
 
-    local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, showKey, auraDB, refreshAuras, {
-        description = string.format(ns.L["Show %1$s icons on this unit frame."], kindLower),
-    })
-    local hideSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, hideSwipeKey, auraDB, refreshAuras, {
-        description = string.format(ns.L["Hide the clockwise cooldown swipe animation drawn over %1$s icons. Duration text still works if it is enabled below."], kindLower),
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, string.format(ns.L["Show %1$ss"], kind), showCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Hide Duration Swipe"], hideSwipeCheckbox)
-    )
+    local UnitFrameAuras = ns.QUI_UnitFrameAuras
+    local topOffset = -(builder.Height(0) or 0)
+    local editorHost = CreateFrame("Frame", nil, sectionHost)
+    editorHost:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, topOffset)
+    editorHost:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, topOffset)
+    editorHost:SetHeight(1)
 
-    local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 12, 50, 1, iconSizeKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = string.format(ns.L["Pixel size of each %1$s icon."], kindLower),
-    })
-    local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_CORNER_OPTIONS, anchorKey, auraDB, refreshAuras, {
-        description = string.format(ns.L["Which corner of the frame the first %1$s icon is anchored to."], kindLower),
-    })
-
-    local growDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_GROW_OPTIONS, growKey, auraDB, refreshAuras, {
-        description = string.format(ns.L["Direction additional %1$s icons are added in after the first."], kindLower),
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], iconSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown)
-    )
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Grow Direction"], growDropdown))
-
-    -- Filter modifiers + exclusive picker. Defaults are all-disabled
-    -- (no filtering); user opts in per-frame.
-    local filterKey = (prefix == "debuff") and "debuffFilter" or "buffFilter"
-    local modifierDefs = (prefix == "debuff") and DEBUFF_MODIFIER_DEFS or BUFF_MODIFIER_DEFS
-    local exclusiveOptions = (prefix == "debuff") and DEBUFF_EXCLUSIVE_OPTIONS or BUFF_EXCLUSIVE_OPTIONS
-    local filterDB = auraDB[filterKey]
-    if filterDB and type(filterDB.modifiers) == "table" then
-        local pendingRow = nil
-        for _, modDef in ipairs(modifierDefs) do
-            local checkbox = gui:CreateFormCheckbox(card.frame, nil, modDef.key, filterDB.modifiers, refreshAuras, {
-                description = modDef.tooltip,
-            })
-            local row = optionsAPI.BuildSettingRow(card.frame, modDef.label, checkbox)
-            if pendingRow then
-                card.AddRow(pendingRow, row)
-                pendingRow = nil
+    local editorMounted = false
+    local editorHeight
+    local height = AurasEditor.RenderAuras(editorHost, auraDB, "*", refreshAuras, {
+        forceSelectedIndex = GetAuraSelectedElementIndex(ctx, unitKey),
+        capabilities = {
+            elementTypes        = { filterStrip = true, tracked = true },
+            trackedDisplayTypes = { icon = true, square = true, bar = true },
+            cancelEligible      = (unitKey == "player"),
+            allowSpecOverride   = false,
+            roleGate            = false,
+            defaultBucketFn     = UnitFrameAuras and UnitFrameAuras.DefaultUnitAuraBucket,
+            unitPolarity        = UnitPolarity(unitKey),
+        },
+        onSelectionChanged = function(index)
+            SetAuraSelectedElementIndex(ctx, unitKey, index)
+        end,
+        onLayoutChanged = function(newHeight)
+            if type(newHeight) ~= "number" then
+                return
+            end
+            local previousHeight = editorHeight
+            editorHeight = newHeight
+            if not editorMounted or previousHeight == nil or previousHeight == newHeight then
+                return
+            end
+            local sectionHeight = ctx.runtime
+                and ctx.runtime.sectionHeights
+                and ctx.runtime.sectionHeights.auraElements
+            if type(ctx.ResizeSection) == "function" and type(sectionHeight) == "number" then
+                ctx:ResizeSection("auraElements", sectionHeight + (newHeight - previousHeight))
             else
-                pendingRow = row
+                ScheduleAuraSectionRepaint(ctx)
             end
-        end
-
-        -- Translate the NONE sentinel back to nil at write time so the
-        -- render-path's `if filterDB.exclusive then` check stays accurate.
-        local function onExclusiveChange(val)
-            if val == AURA_FILTER_NONE_SENTINEL then
-                filterDB.exclusive = nil
-            end
-            refreshAuras()
-        end
-
-        local exclusiveDropdown = gui:CreateFormDropdown(card.frame, nil, exclusiveOptions, "exclusive", filterDB, onExclusiveChange, {
-            description = ns.L["Mutually-exclusive category filter. Pick one or None."],
-        })
-
-        -- Initial-load visual fix: when DB is nil, the widget's UpdateVisual
-        -- early-returns and the displayed text stays blank. Manually paint
-        -- "None" so the user sees a sane default value.
-        if filterDB.exclusive == nil
-            and exclusiveDropdown
-            and exclusiveDropdown.dropdown
-            and exclusiveDropdown.dropdown.selected
-        then
-            exclusiveDropdown.dropdown.selected:SetText(ns.L["None"])
-        end
-
-        local exclusiveRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Exclusive Filter"], exclusiveDropdown)
-
-        if pendingRow then
-            -- Odd modifier count — pair the leftover modifier with the exclusive dropdown.
-            card.AddRow(pendingRow, exclusiveRow)
-        else
-            card.AddRow(exclusiveRow)
-        end
-    end
-
-    local maxIconsSlider = gui:CreateFormSlider(card.frame, nil, 1, 32, 1, maxKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = string.format(ns.L["Hard cap on how many %1$s icons this frame displays at once."], kindLower),
+        end,
     })
-    local maxPerRowSlider = gui:CreateFormSlider(card.frame, nil, 0, 16, 1, maxRowKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = ns.L["How many icons fit in a row before wrapping. Set to 0 to keep them all on a single row."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Max Icons"], maxIconsSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Max Per Row (0 = unlimited)"], maxPerRowSlider)
-    )
+    editorMounted = true
+    height = (type(height) == "number" and height > 0) and height
+        or (editorHost.GetHeight and editorHost:GetHeight())
+        or 1
+    height = math.max(1, height)
+    editorHost:SetHeight(height)
+    builder.Spacer(height)
 
-    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offsetXKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = string.format(ns.L["Horizontal pixel offset for the %1$s block from its anchor corner."], kindLower),
-    })
-    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offsetYKey, auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = string.format(ns.L["Vertical pixel offset for the %1$s block from its anchor corner."], kindLower),
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
-    )
-
-    builder.CloseCard(card)
     return builder.Height()
-end
-
-local function RenderAuraTextSection(sectionHost, ctx, prefix, kind)
-    local gui = GetGUI()
-    local optionsAPI = GetOptionsAPI()
-    local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
-    local unit = ResolveUnitDB(unitKey)
-    if not gui or not optionsAPI or not unit or unitKey == "pet" then
-        return nil
-    end
-
-    local auraDB = EnsureAuraSettings(unit.unitDB, unitKey)
-    EnsureAuraTextSettings(auraDB, prefix)
-
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Icons"))
-    if not builder then
-        return nil
-    end
-
-    local refreshAuras = function()
-        RefreshUnitAuras(unitKey)
-    end
-    local kindLower = string.lower(kind)
-
-    builder.Header(string.format(ns.L["%1$s Stack & Duration"], kind))
-    local card = builder.Card()
-
-    local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 10, 1, prefix .. "Spacing", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = string.format(ns.L["Pixel gap between adjacent %1$s icons."], kindLower),
-    })
-    local showStackCheckbox = gui:CreateFormCheckbox(card.frame, nil, prefix .. "ShowStack", auraDB, refreshAuras, {
-        description = string.format(ns.L["Show the stack count on stacked %1$s icons."], kindLower),
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Spacing"], spacingSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Show"], showStackCheckbox)
-    )
-
-    local stackSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 40, 1, prefix .. "StackSize", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = string.format(ns.L["Font size used for the stack count on %1$s icons."], kindLower),
-    })
-    local stackAnchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, prefix .. "StackAnchor", auraDB, refreshAuras, {
-        description = string.format(ns.L["Which corner of the %1$s icon the stack count is anchored to."], kindLower),
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Size"], stackSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Anchor"], stackAnchorDropdown)
-    )
-
-    local stackXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "StackOffsetX", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = ns.L["Horizontal pixel offset for the stack count from its anchor."],
-    })
-    local stackYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "StackOffsetY", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = ns.L["Vertical pixel offset for the stack count from its anchor."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack X Offset"], stackXOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Y Offset"], stackYOffsetSlider)
-    )
-
-    local stackColorPicker = gui:CreateFormColorPicker(card.frame, nil, prefix .. "StackColor", auraDB, refreshAuras, nil, {
-        description = string.format(ns.L["Color for the stack count text on %1$s icons."], kindLower),
-    })
-    local showDurationCheckbox = gui:CreateFormCheckbox(card.frame, nil, prefix .. "ShowDuration", auraDB, refreshAuras, {
-        description = string.format(ns.L["Show the remaining-duration countdown text on %1$s icons."], kindLower),
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Stack Color"], stackColorPicker),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Show"], showDurationCheckbox)
-    )
-
-    local durationSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 40, 1, prefix .. "DurationSize", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = string.format(ns.L["Font size used for the duration countdown on %1$s icons."], kindLower),
-    })
-    local durationAnchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, prefix .. "DurationAnchor", auraDB, refreshAuras, {
-        description = string.format(ns.L["Which part of the %1$s icon the duration countdown is anchored to."], kindLower),
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Size"], durationSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Anchor"], durationAnchorDropdown)
-    )
-
-    local durationXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "DurationOffsetX", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = ns.L["Horizontal pixel offset for the duration countdown from its anchor."],
-    })
-    local durationYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "DurationOffsetY", auraDB, refreshAuras, { deferOnDrag = true }, {
-        description = ns.L["Vertical pixel offset for the duration countdown from its anchor."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration X Offset"], durationXOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Y Offset"], durationYOffsetSlider)
-    )
-
-    local durationColorPicker = gui:CreateFormColorPicker(card.frame, nil, prefix .. "DurationColor", auraDB, refreshAuras, nil, {
-        description = string.format(ns.L["Color for the duration countdown text on %1$s icons."], kindLower),
-    })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Duration Color"], durationColorPicker))
-
-    builder.CloseCard(card)
-    return builder.Height()
-end
-
-local function RenderDebuffIconsSection(sectionHost, ctx)
-    return RenderAuraIconsSection(sectionHost, ctx, "debuff", "Debuff")
-end
-
-local function RenderDebuffTextSection(sectionHost, ctx)
-    return RenderAuraTextSection(sectionHost, ctx, "debuff", "Debuff")
-end
-
-local function RenderBuffIconsSection(sectionHost, ctx)
-    return RenderAuraIconsSection(sectionHost, ctx, "buff", "Buff")
-end
-
-local function RenderBuffTextSection(sectionHost, ctx)
-    return RenderAuraTextSection(sectionHost, ctx, "buff", "Buff")
 end
 
 local function BuildTextTabFeature(unitKey)
@@ -3009,20 +2682,11 @@ local function BuildIconsTabFeature(unitKey)
         return ICONS_TAB_FEATURES[unitKey]
     end
 
-    local sections = {
-        "debuffIcons",
-        "buffIcons",
-    }
-    if unitKey ~= "pet" then
-        table.insert(sections, 2, "debuffText")
-        sections[#sections + 1] = "buffText"
-    end
-
     local feature = Schema.Feature({
         id = "unitFramesIconsTab:" .. unitKey,
         surfaces = {
             unitFrameTab = {
-                sections = sections,
+                sections = { "auraElements" },
                 padding = 10,
                 sectionGap = 14,
                 topPadding = 10,
@@ -3031,28 +2695,10 @@ local function BuildIconsTabFeature(unitKey)
         },
         sections = {
             Schema.Section({
-                id = "debuffIcons",
+                id = "auraElements",
                 kind = "custom",
-                minHeight = 162,
-                render = RenderDebuffIconsSection,
-            }),
-            Schema.Section({
-                id = "debuffText",
-                kind = "custom",
-                minHeight = 196,
-                render = RenderDebuffTextSection,
-            }),
-            Schema.Section({
-                id = "buffIcons",
-                kind = "custom",
-                minHeight = 162,
-                render = RenderBuffIconsSection,
-            }),
-            Schema.Section({
-                id = "buffText",
-                kind = "custom",
-                minHeight = 196,
-                render = RenderBuffTextSection,
+                minHeight = 200,
+                render = RenderAuraElementsSection,
             }),
         },
     })
@@ -3061,9 +2707,6 @@ local function BuildIconsTabFeature(unitKey)
     return feature
 end
 
--- Shared "this feature isn't available on this unit" placeholder section.
--- Returns nil when the unit DOES support the feature (caller renders the real
--- section instead); otherwise paints the message and returns the section height.
 local function RenderUnavailableSection(sectionHost, ctx, supported, surfaceName, message)
     if supported then
         return nil
@@ -3494,151 +3137,6 @@ local function BuildIndicatorsTabFeature(unitKey)
     return feature
 end
 
-local function RenderPrivateAurasUnavailableSection(sectionHost, ctx)
-    local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
-    return RenderUnavailableSection(sectionHost, ctx, UnitSupportsPrivateAuras(unitKey),
-        "Priv. Auras", ns.L["Private Auras are only supported on the Player, Target, and Focus frames."])
-end
-
-local function RenderPrivateAurasSection(sectionHost, ctx)
-    local gui = GetGUI()
-    local optionsAPI = GetOptionsAPI()
-    local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
-    local unit = ResolveUnitDB(unitKey)
-    if not gui or not optionsAPI or not unit or not UnitSupportsPrivateAuras(unitKey) then
-        return nil
-    end
-
-    local privateAuras = EnsurePrivateAurasSettings(unit.unitDB)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Priv. Auras"))
-    if not builder then
-        return nil
-    end
-
-    builder.Header(ns.L["Private Auras"])
-    builder.Description(ns.L["Shows boss debuffs and other private auras on this unit frame. The client renders the icon, cooldown spiral, and stack/duration text."])
-    local card = builder.Card()
-
-    local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", privateAuras, RefreshUnitFrames, {
-        description = ns.L["Enable private auras on this unit frame."],
-    })
-    local maxSlider = gui:CreateFormSlider(card.frame, nil, 1, 5, 1, "maxPerFrame", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = ns.L["Maximum number of private-aura icons the client will draw on this frame at once."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Enable Private Auras"], enableCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Max Per Frame"], maxSlider)
-    )
-
-    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 10, 40, 1, "iconSize", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = ns.L["Pixel size of each private-aura icon."],
-    })
-    local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 8, 1, "spacing", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = ns.L["Pixel gap between adjacent private-aura icons."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], sizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Spacing"], spacingSlider)
-    )
-
-    local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "anchor", privateAuras, RefreshUnitFrames, {
-        description = ns.L["Where on the frame the first private-aura icon is anchored."],
-    })
-    local growDropdown = gui:CreateFormDropdown(card.frame, nil, PRIVATE_AURA_GROW_OPTIONS, "growDirection", privateAuras, RefreshUnitFrames, {
-        description = ns.L["Direction additional private-aura icons are added in after the first."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Anchor"], anchorDropdown),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Grow Direction"], growDropdown)
-    )
-
-    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetX", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = ns.L["Horizontal pixel offset for the private-aura block from its anchor."],
-    })
-    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetY", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = ns.L["Vertical pixel offset for the private-aura block from its anchor."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
-    )
-
-    local countdownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showCountdown", privateAuras, RefreshUnitFrames, {
-        description = ns.L["Show the clockwise cooldown swipe over each private-aura icon."],
-    })
-    local numbersCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showCountdownNumbers", privateAuras, RefreshUnitFrames, {
-        description = ns.L["Show the Blizzard-rendered countdown number on each private-aura icon."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Countdown Spiral"], countdownCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Countdown Numbers"], numbersCheckbox)
-    )
-
-    local reverseCheckbox = gui:CreateFormCheckbox(card.frame, nil, "reverseSwipe", privateAuras, RefreshUnitFrames, {
-        description = ns.L["Reverse the swipe direction so it fills clockwise as time elapses instead of sweeping away."],
-    })
-    local borderSlider = gui:CreateFormSlider(card.frame, nil, -100, 10, 0.5, "borderScale", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = ns.L["Scale applied to the private-aura icon border. Set to -100 to hide the border entirely."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Reverse Swipe"], reverseCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Border Scale"], borderSlider)
-    )
-
-    local frameLevelSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "frameLevel", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = ns.L["Frame-level offset added to the private-aura container so icons render above or below other elements on this frame."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Frame Level Offset"], frameLevelSlider)
-    )
-
-    builder.CloseCard(card)
-    return builder.Height()
-end
-
-local function BuildPrivateAurasTabFeature(unitKey)
-    if PRIVATE_AURAS_TAB_FEATURES[unitKey] then
-        return PRIVATE_AURAS_TAB_FEATURES[unitKey]
-    end
-
-    local sections
-    if UnitSupportsPrivateAuras(unitKey) then
-        sections = { "privateAuras" }
-    else
-        sections = { "unsupported" }
-    end
-
-    local feature = Schema.Feature({
-        id = "unitFramesPrivateAurasTab:" .. unitKey,
-        surfaces = {
-            unitFrameTab = {
-                sections = sections,
-                padding = 10,
-                sectionGap = 14,
-                topPadding = 10,
-                bottomPadding = 40,
-            },
-        },
-        sections = {
-            Schema.Section({
-                id = "unsupported",
-                kind = "custom",
-                minHeight = 60,
-                render = RenderPrivateAurasUnavailableSection,
-            }),
-            Schema.Section({
-                id = "privateAuras",
-                kind = "custom",
-                minHeight = 180,
-                render = RenderPrivateAurasSection,
-            }),
-        },
-    })
-
-    PRIVATE_AURAS_TAB_FEATURES[unitKey] = feature
-    return feature
-end
-
 local GENERAL_TAB_FEATURE = Schema.Feature({
     id = "unitFramesGeneralTab",
     createState = function()
@@ -3711,10 +3209,6 @@ local GENERAL_TAB_FEATURE = Schema.Feature({
         }),
     },
 })
-
-function UnitFramesSchema.GetGeneralTabFeature()
-    return GENERAL_TAB_FEATURE
-end
 
 function UnitFramesSchema.RenderGeneralTab(host)
     if not host then
@@ -3885,28 +3379,6 @@ function UnitFramesSchema.RenderIndicatorsTab(host, unitKey)
     end
 
     return Renderer:RenderFeature(BuildIndicatorsTabFeature(unitKey), host, {
-        surface = "unitFrameTab",
-        width = width,
-        unitKey = unitKey,
-    }) ~= nil
-end
-
-function UnitFramesSchema.RenderPrivateAurasTab(host, unitKey)
-    if not host then
-        return false
-    end
-
-    local unit = ResolveUnitDB(unitKey)
-    if not unit then
-        return false
-    end
-
-    local width = host.GetWidth and host:GetWidth() or 0
-    if type(width) ~= "number" or width <= 0 then
-        width = 760
-    end
-
-    return Renderer:RenderFeature(BuildPrivateAurasTabFeature(unitKey), host, {
         surface = "unitFrameTab",
         width = width,
         unitKey = unitKey,

@@ -212,22 +212,39 @@ local function LoadCore()
     -- BackwardsCompat can call self:DebugPrint() without erroring.
     _G.QUI = _G.QUI or {}
     _G.QUI.DebugPrint = _G.QUI.DebugPrint or function() end
+    -- init.lua isn't loaded here; provide the raw loader registry so
+    -- importstrings/starter_profile.lua can register and
+    -- core/new_profile_defaults.lua can decode the seed (no QUI.imports
+    -- memoizing proxy in the harness — the module falls back to the loader).
+    _G.QUI._importLoaders = _G.QUI._importLoaders or {}
 
     SHARED_NS = {}
     SHARED_NS.Addon = {}  -- profile_io.lua does `local QUICore = ns.Addon`
 
     -- Localization must precede any string consumer (matches QUI.toc, where
     -- the locale block loads before core/core.xml). enUS.lua populates the
-    -- base table in ns.LocaleData; locale.lua builds the ns.L metatable that
-    -- settings/options modules index at load time. Without these, ns.L is nil
-    -- and every `ns.L["..."]` errors on load.
+    -- ordered key array in ns.LocaleData; locale.lua builds the ns.L metatable
+    -- that settings/options modules index at load time. Without these, ns.L is
+    -- nil and every `ns.L["..."]` errors on load. No overlay is loaded here, so
+    -- ns.L resolves every key to itself (English), which is what the harness
+    -- and the search-cache generator want.
     LoadAddonFile("core/locale/enUS.lua",    "QUI", SHARED_NS)
     LoadAddonFile("core/locale/locale.lua",  "QUI", SHARED_NS)
 
     -- Load order matches QUI.toc: utils first, then defaults, then
-    -- migration / compat / io machinery.
+    -- migration / compat / io machinery. safecall.lua defines ns.SafeCall
+    -- used (in function bodies, evaluated lazily) by utils.lua/migrations.lua
+    -- /profile_io.lua below — load it first so LoadCore()'s harness ns has
+    -- SafeCall available before anything in this list could invoke it.
+    LoadAddonFile("core/safecall.lua",       "QUI", SHARED_NS)
     LoadAddonFile("core/utils.lua",          "QUI", SHARED_NS)
     LoadAddonFile("core/ns_export_guard.lua", "QUI", SHARED_NS)
+    LoadAddonFile("core/aura_elements.lua",  "QUI", SHARED_NS)
+    LoadAddonFile("core/aura_context.lua",   "QUI", SHARED_NS)
+    LoadAddonFile("core/aura_wizard.lua",    "QUI", SHARED_NS)
+    LoadAddonFile("core/dispel_roles.lua",   "QUI", SHARED_NS)
+    LoadAddonFile("core/aura_glue.lua",      "QUI", SHARED_NS)
+    LoadAddonFile("importstrings/starter_profile.lua", "QUI", SHARED_NS)
     LoadAddonFile("core/new_profile_defaults.lua", "QUI", SHARED_NS)
     LoadAddonFile("core/border_registry.lua", "QUI", SHARED_NS)
     LoadAddonFile("core/defaults.lua",       "QUI", SHARED_NS)
@@ -272,9 +289,6 @@ local function BuildHarness(opts)
     local ns = LoadCore()
     local AceDB = LibStub("AceDB-3.0")
 
-    -- core/defaults.lua sets ns.defaults (SHARED_NS.defaults); init.lua
-    -- would merge that into QUI.defaults in WoW, but in the harness we use
-    -- ns.defaults directly since we don't load init.lua.
     local defaults = ns.defaults
     if type(defaults) ~= "table" or type(defaults.profile) ~= "table" then
         error("Expected ns.defaults.profile to be a table after LoadCore — check core/defaults.lua")

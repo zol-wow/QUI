@@ -101,7 +101,7 @@ ns.Bags.Takeover = {
 }
 
 -- Scanner + window stubs share the ordered session log.
-ns.Bags.ScanGuild = {
+ns.Storage.ScanGuild = {
     OnGuildBankOpened = function() sessionLog[#sessionLog + 1] = "scan-open" end,
     OnGuildBankClosed = function() sessionLog[#sessionLog + 1] = "scan-close" end,
 }

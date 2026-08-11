@@ -55,7 +55,9 @@ local ns = {
         QueryBaseSpell = function() return nil end,
     },
     CDMContainers = { GetAllContainerKeys = function() return { "essential" } end },
-    CDMComposer = {
+    -- Runtime reads ns.CDMCatalog directly; ns.CDMComposer is only the alias
+    -- that ships in the LoadOnDemand options addon.
+    CDMCatalog = {
         -- allowUnlearned superset: ALWAYS lists Time Skip, even after it goes
         -- passive. Dormancy must not rely on this map.
         RebuildBlizzardCatalogMaps = function(spellToCDID, inCooldowns)

@@ -64,7 +64,7 @@ end
 local function decode(str)
     if type(str) ~= "string" then return nil, "not a string: " .. tostring(str) end
     str = str:gsub("%s+", "")
-    local prefix = str:match("^([A-Z][A-Z0-9]*%d):")
+    local prefix = str:match("^([A-Za-z][A-Za-z0-9]*%d):")
     if prefix then str = str:sub(#prefix + 2) end
     local compressed = LibDeflate:DecodeForPrint(str)
     if not compressed then return nil, "DecodeForPrint failed" end

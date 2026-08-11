@@ -5,43 +5,123 @@ on:
     tags:
       - 'v*'
 
+# Least privilege by default. Only the job that publishes the GitHub Release
+# gets contents: write; the packaging and announcement jobs never need it.
 permissions:
-  contents: write
+  contents: read
+
+# Two runs for the same tag would race on the same Release and post the
+# announcement twice.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
+  # ---------------------------------------------------------------------------
+  # The tag is the single source of truth for version and channel. Parsing it
+  # once and exposing outputs keeps the later jobs from re-deriving it (and from
+  # disagreeing about it).
+  # ---------------------------------------------------------------------------
+  meta:
+    name: Resolve version and channel
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_type: ${{ steps.version.outputs.release_type }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Lua 5.1
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.1
-
-      - name: Get version from tag
+      - name: Parse tag
         id: version
         run: |
+          set -euo pipefail
           TAG="${GITHUB_REF#refs/tags/}"
-          echo "version=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${TAG}" >> "$GITHUB_OUTPUT"
 
           # Determine release channel from tag suffix
           if [[ "$TAG" == *-alpha* ]]; then
-            echo "release_type=alpha" >> $GITHUB_OUTPUT
-            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "release_type=alpha" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
           elif [[ "$TAG" == *-beta* ]]; then
-            echo "release_type=beta" >> $GITHUB_OUTPUT
-            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "release_type=beta" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
-            echo "release_type=release" >> $GITHUB_OUTPUT
-            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "release_type=release" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Generate search cache
+          echo "tag ${TAG}"
+
+  # ---------------------------------------------------------------------------
+  # Nothing publishes until this passes. Lua Tests / Profile Tests / taint-check
+  # also fire on the tag, but they run CONCURRENTLY with this workflow, so before
+  # the split it was possible — and it happened on v5.0.0-alpha29 — for the
+  # upload to finish while a gate was still running.
+  #
+  # tools/test.sh is the same nine-gate suite used locally, so a release is held
+  # to exactly the bar a push is.
+  # ---------------------------------------------------------------------------
+  gates:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: leafo/gh-actions-lua@6919171ccf181b826f44b9bca76307b577217377 # v13
+        with:
+          luaVersion: "5.1"
+      - uses: leafo/gh-actions-luarocks@e65774a6386cb4f24e293dca7fc4ff89165b64c5 # v4
+      - name: Install luacheck
+        run: luarocks install luacheck
+      - name: Compile-check all Lua under 5.1
+        run: bash tools/check_compile.sh
+      - name: Taint analyzer self-test
+        run: lua tools/test_taint.lua --self-test
+      - name: Full gate suite
+        run: bash tools/test.sh
+
+  # ---------------------------------------------------------------------------
+  # Produces the two artifacts every later job consumes: the addon zip and the
+  # release notes. Splitting this out is what makes `gh run rerun --failed`
+  # safe — a CurseForge hiccup re-runs only that job instead of rebuilding,
+  # recreating the Release and re-announcing.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Package addon
+    runs-on: ubuntu-latest
+    needs: [meta, gates]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: leafo/gh-actions-lua@6919171ccf181b826f44b9bca76307b577217377 # v13
+        with:
+          luaVersion: "5.1"
+
+      # The zip must be the committed tree, not whatever the generators happen
+      # to emit at release time. Regenerate, diff, then restore: any drift is a
+      # hard failure instead of a silent divergence between the shipped addon
+      # and the repository it claims to be built from.
+      - name: Generated files match the committed tree
         run: |
-          lua5.1 tools/generate_search_cache.lua
-          lua5.1 tools/audit_search_cache.lua
+          set -euo pipefail
+          # gen_all_caches.sh already runs extract_strings.lua AND
+          # stamp_enus_keyset.py. Re-running the extractor bare here would undo
+          # the stamp — it rewrites the whole file and cannot compute the
+          # `-- keyset:` checksum itself — and the diff below would then report
+          # a stale enUS.lua on every tag.
+          bash tools/i18n/gen_all_caches.sh
+
+          if ! git diff --quiet -- '*/search_cache.lua' core/locale/enUS.lua; then
+            echo "::error::Generated files are stale on this tag. Run 'bash tools/i18n/gen_all_caches.sh' and commit before tagging."
+            git diff --stat -- '*/search_cache.lua' core/locale/enUS.lua
+            exit 1
+          fi
+
+          # Restore only what the generators are allowed to touch — never a bare
+          # `git checkout .`, which would silently discard anything else in the
+          # tree. (No TOC is generated any more: gen_all_caches.sh emitted the
+          # ten per-locale addon TOCs until those addons were retired.)
+          git checkout -- '*/search_cache.lua' core/locale/enUS.lua
+
+      - name: Audit search cache
+        run: lua tools/audit_search_cache.lua
 
       - name: Create addon zip
         run: |
@@ -145,18 +225,23 @@ jobs:
             build/QUI_Options/framework.lua
             build/QUI_Options/shared.lua
             build/QUI_Options/tiles/action_bars.lua
+            # The generated search index. It used to be its own LoadOnDemand
+            # folder (QUI_OptionsSearch); it ships packed inside the options
+            # addon now, so it needs an explicit entry rather than a case below.
+            build/QUI_Options/search_cache.lua
+            build/QUI/core/locale/enUS.lua
+            build/QUI/core/locale/deDE.lua
+            build/QUI/core/locale/zhTW.lua
+            build/QUI/core/locale/locale.lua
           )
 
+          # Every shipped suite folder is a real addon with a bootstrap. The one
+          # exception used to be QUI_OptionsSearch, a folder that existed
+          # solely to hold the generated index; the index is packed inside
+          # QUI_Options now and is asserted above.
           for folder in "${suite_folders[@]}"; do
             required_paths+=("build/$folder/$folder.toc")
-            case "$folder" in
-              QUI_OptionsSearch*)
-                required_paths+=("build/$folder/search_cache.lua")
-                ;;
-              *)
-                required_paths+=("build/$folder/bootstrap.lua")
-                ;;
-            esac
+            required_paths+=("build/$folder/bootstrap.lua")
           done
 
           for required_path in "${required_paths[@]}"; do
@@ -201,7 +286,7 @@ jobs:
           # Stamp every shipped .toc's "## Version:" from the release tag so the
           # packaged addon always matches the tag (the tag is the single source
           # of truth) no matter what the committed .toc files happen to read.
-          toc_version="${{ steps.version.outputs.version }}"
+          toc_version="${{ needs.meta.outputs.version }}"
           toc_version="${toc_version#v}"   # v4.0.0-beta9 -> 4.0.0-beta9
           for toc in build/QUI/QUI.toc build/*/QUI_*.toc; do
             sed -i "s/^## Version:.*/## Version: ${toc_version}/" "$toc"
@@ -214,81 +299,208 @@ jobs:
           done
 
           # create the zip from inside build/ so the paths are QUI/... QUI_Options/... etc.
-          rm -f QUI-${{ steps.version.outputs.version }}.zip
+          rm -f QUI-${{ needs.meta.outputs.version }}.zip
           cd build
-          zip -r ../QUI-${{ steps.version.outputs.version }}.zip QUI "${suite_folders[@]}"
+          zip -r ../QUI-${{ needs.meta.outputs.version }}.zip QUI "${suite_folders[@]}"
 
+      # A missing CHANGELOG section used to degrade silently to the body
+      # "Release <tag>", which is only noticeable once it has been published to
+      # GitHub, CurseForge and Discord. It is now a hard failure: the heading is
+      # trivial to add before tagging and impossible to fix afterwards.
       - name: Extract changelog for release
-        id: changelog
         run: |
-          # Extract the section for this version from CHANGELOG.md
-          # Looks for ## [vX.Y.Z] or ## vX.Y.Z and captures until next ## or EOF
-          VERSION="${{ steps.version.outputs.version }}"
+          set -euo pipefail
+          VERSION="${{ needs.meta.outputs.version }}"
 
-          if [ -f CHANGELOG.md ]; then
-            NOTES=$(awk -v ver="$VERSION" '
-              /^## / {
-                if (found) exit
-                if ($0 ~ ver) { found=1; next }
-              }
-              found { print }
-            ' CHANGELOG.md)
-
-            if [ -z "$NOTES" ]; then
-              NOTES="Release $VERSION"
-            fi
-          else
-            NOTES="Release $VERSION"
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::error::CHANGELOG.md is missing; cannot build release notes for ${VERSION}."
+            exit 1
           fi
 
-          echo "$NOTES" > release_notes.txt
+          # Match the tag LITERALLY. The previous extractor interpolated the raw
+          # tag into an awk regex, where every "." is a wildcard, and matched on
+          # bare substring, so "v5.0.0-alpha2" also matched the "v5.0.0-alpha29"
+          # heading. The trailing character class is what stops that.
+          ver_re=$(printf '%s' "$VERSION" | sed -e 's/[].^$*+?()[{}|\\]/\\&/g')
+
+          # Passed through the environment, NOT awk -v: -v processes escape
+          # sequences, which strips the backslashes and collapses the pattern
+          # into a single bracket expression that matches nothing.
+          export DUI_NOTES_PAT="^## \\[?${ver_re}\\]?([^[:alnum:].-]|\$)"
+
+          notes=$(awk '
+            BEGIN { pat = ENVIRON["DUI_NOTES_PAT"] }
+            /^## / { if (found) exit; if ($0 ~ pat) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG.md has no section for ${VERSION}. Add a '## ${VERSION}' heading, then delete and re-push the tag."
+            exit 1
+          fi
+
+          printf '%s\n' "$notes" > release_notes.txt
+          echo "extracted $(wc -l < release_notes.txt) lines of notes"
+
+      - name: Upload release payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-payload
+          path: |
+            QUI-${{ needs.meta.outputs.version }}.zip
+            release_notes.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # The only job holding contents: write, and the point of no return: once this
+  # succeeds the release exists publicly, so everything downstream is written to
+  # tolerate failure rather than to gate on it.
+  # ---------------------------------------------------------------------------
+  github-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [meta, build]
+    permissions:
+      contents: write
+    steps:
+      - name: Download release payload
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-payload
 
       - name: Create GitHub Release
-        id: create_release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
-          files: QUI-${{ steps.version.outputs.version }}.zip
+          files: QUI-${{ needs.meta.outputs.version }}.zip
           body_path: release_notes.txt
           draft: false
-          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          prerelease: ${{ needs.meta.outputs.prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  curseforge:
+    name: Upload to CurseForge
+    runs-on: ubuntu-latest
+    needs: [meta, build, github-release]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download release payload
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-payload
 
       - name: Upload to CurseForge
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
+          set -euo pipefail
           CHANGELOG=$(cat release_notes.txt)
-          # CurseForge WoW Retail game version IDs:
-          # 12.0.0 = 13924, 12.0.1 = 14422, 12.0.5 = 15855
-          METADATA=$(jq -cn \
-            --arg changelog "$CHANGELOG" \
-            --arg name "QUI-${{ steps.version.outputs.version }}" \
-            --arg reltype "${{ steps.version.outputs.release_type }}" \
-            '{
-              changelog: $changelog,
-              changelogType: "markdown",
-              displayName: $name,
-              gameVersions: [13924,14422,15855],
-              releaseType: $reltype
-            }')
+
+          # Resolve the CurseForge game-version ID for the client build the
+          # TOC actually declares (## Interface: 120100 -> "12.1.0"), so the
+          # upload never silently advertises a stale patch. If the lookup
+          # fails (CF is flaky — never block a release on it), fall back to
+          # gameVersionNames with the SAME TOC-derived name: the Upload API
+          # resolves names server-side, so a transient lookup failure can
+          # never republish under an older patch's static IDs.
+          INTERFACE=$(grep -m1 '^## Interface:' QUI.toc | tr -d '\r' | awk '{print $3}')
+          MAJOR=$((INTERFACE / 10000))
+          MINOR=$(((INTERFACE / 100) % 100))
+          PATCHV=$((INTERFACE % 100))
+          VERSION_NAME="${MAJOR}.${MINOR}.${PATCHV}"
+          echo "TOC interface ${INTERFACE} -> game version ${VERSION_NAME}"
+
+          GAME_VERSIONS=$(curl -sf -H "X-Api-Token: ${CF_API_TOKEN}" \
+            "https://wow.curseforge.com/api/game/versions" \
+            | jq -c --arg v "$VERSION_NAME" '[.[] | select(.name == $v) | .id]' 2>/dev/null || echo '[]')
+          if [ -z "$GAME_VERSIONS" ] || [ "$(printf '%s' "$GAME_VERSIONS" | jq 'length')" -eq 0 ]; then
+            echo "::warning::CurseForge game-version lookup for ${VERSION_NAME} failed; falling back to gameVersionNames"
+            METADATA=$(jq -cn \
+              --arg changelog "$CHANGELOG" \
+              --arg name "QUI-${{ needs.meta.outputs.version }}" \
+              --arg reltype "${{ needs.meta.outputs.release_type }}" \
+              --arg vname "$VERSION_NAME" \
+              '{
+                changelog: $changelog,
+                changelogType: "markdown",
+                displayName: $name,
+                gameVersionNames: [$vname],
+                releaseType: $reltype
+              }')
+            echo "Publishing with gameVersionNames=[\"${VERSION_NAME}\"]"
+          else
+            echo "Publishing with gameVersions=${GAME_VERSIONS}"
+            METADATA=$(jq -cn \
+              --arg changelog "$CHANGELOG" \
+              --arg name "QUI-${{ needs.meta.outputs.version }}" \
+              --arg reltype "${{ needs.meta.outputs.release_type }}" \
+              --argjson versions "$GAME_VERSIONS" \
+              '{
+                changelog: $changelog,
+                changelogType: "markdown",
+                displayName: $name,
+                gameVersions: $versions,
+                releaseType: $reltype
+              }')
+          fi
 
           printf '%s\n' "$METADATA" | jq -e . >/dev/null
-          
-          curl --fail-with-body -X POST \
+
+          # CurseForge upload failures are usually transient. Retry rather than
+          # leaving a published GitHub Release with no CurseForge file.
+          zip_file="QUI-${{ needs.meta.outputs.version }}.zip"
+          attempt=1
+          until curl --fail-with-body -X POST \
             "https://wow.curseforge.com/api/projects/${{ secrets.CF_PROJECT_ID }}/upload-file" \
             -H "X-Api-Token: ${CF_API_TOKEN}" \
             --form-string "metadata=${METADATA}" \
-            -F "file=@QUI-${{ steps.version.outputs.version }}.zip"
+            -F "file=@${zip_file}"
+          do
+            if [ "$attempt" -ge 3 ]; then
+              echo "::error::CurseForge upload failed after ${attempt} attempts."
+              exit 1
+            fi
+            echo "::warning::CurseForge upload attempt ${attempt} failed; retrying."
+            sleep $((attempt * 20))
+            attempt=$((attempt + 1))
+          done
 
-      - name: Notify Discord
+  # ---------------------------------------------------------------------------
+  # Announces whenever the GitHub Release actually exists — including when the
+  # CurseForge upload failed. Before the split this step inherited the default
+  # if: success(), so a CF failure meant a published release reached nobody.
+  #
+  # One channel per release type, so a tag only ever reaches the audience it
+  # was cut for. A stable tag is the exception: it posts twice, the full
+  # changelog to the release channel and a short headline to announcements.
+  # ---------------------------------------------------------------------------
+  notify:
+    name: Notify Discord
+    runs-on: ubuntu-latest
+    needs: [meta, github-release, curseforge]
+    if: always() && needs.github-release.result == 'success'
+    steps:
+      - name: Download release payload
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-payload
+
+      - name: Post to Discord
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DISCORD_DEV_WEBHOOK: ${{ secrets.DISCORD_DEV_WEBHOOK_URL }}
-          VERSION: ${{ steps.version.outputs.version }}
-          RELEASE_TYPE: ${{ steps.version.outputs.release_type }}
+          DISCORD_RELEASE_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_ANNOUNCE_WEBHOOK: ${{ secrets.DISCORD_ANNOUNCE_WEBHOOK_URL }}
+          DISCORD_BETA_WEBHOOK: ${{ secrets.DISCORD_BETA_WEBHOOK_URL }}
+          DISCORD_ALPHA_WEBHOOK: ${{ secrets.DISCORD_ALPHA_WEBHOOK_URL }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          RELEASE_TYPE: ${{ needs.meta.outputs.release_type }}
+          CF_RESULT: ${{ needs.curseforge.result }}
           REPO: ${{ github.repository }}
         run: |
+          if [ "$CF_RESULT" != "success" ]; then
+            echo "::warning::CurseForge job result was '${CF_RESULT}' — announcing the GitHub Release anyway."
+          fi
+
           # Read the extracted changelog
           CHANGELOG=$(cat release_notes.txt)
 
@@ -301,43 +513,74 @@ jobs:
             CHANGELOG="${CHANGELOG:0:4000}... *(Changelog truncated, view GitHub release for full notes)*"
           fi
 
-          # Pick webhook and message based on release type
-          if [ "$RELEASE_TYPE" = "release" ]; then
-            WEBHOOK="$DISCORD_WEBHOOK"
-            LABEL="New QUI Release"
-            EMOJI="🚀"
-            COLOR=3447003
-            FOOTER="\n\n💖 *A massive thank you to everyone using the addon, raising issues, requesting new features, testing tirelessly, contributing merge requests, and supporting development via Ko-Fi or PayPal!*\n\n"
-          else
-            WEBHOOK="$DISCORD_DEV_WEBHOOK"
-            CHANNEL_LABEL=$(echo "$RELEASE_TYPE" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')
-            LABEL="New QUI ${CHANNEL_LABEL}"
-            EMOJI="🧪"
-            COLOR=16761095
-            if [[ "$RELEASE_TYPE" =~ ^[aeiou] ]]; then ARTICLE="an"; else ARTICLE="a"; fi
-            FOOTER="\n\n⚠️ *This is ${ARTICLE} ${RELEASE_TYPE} build — expect bugs. Please report issues on GitHub!*\n\n"
-          fi
+          # Post payload $2 to webhook $1, naming the destination $3 for the log.
+          # An unset webhook warns instead of failing: by this point the GitHub
+          # release has already succeeded, so a missing secret must not turn a
+          # shipped release red. A configured webhook that Discord rejects still
+          # fails the step (--fail-with-body).
+          post() {
+            local webhook="$1" payload="$2" name="$3"
+            if [ -z "$webhook" ]; then
+              echo "::warning::no webhook configured for $name — announcement skipped"
+              return 0
+            fi
+            echo "posting to $name"
+            curl --fail-with-body -sS -H "Content-Type: application/json" -d "$payload" "$webhook"
+            echo
+          }
 
-          # Use jq to safely format the multi-line text into valid JSON
-          JSON_PAYLOAD=$(jq -n \
-            --arg version "$VERSION" \
-            --arg url "$RELEASE_URL" \
-            --arg zip "$ZIP_URL" \
-            --arg changelog "$CHANGELOG" \
-            --arg label "$LABEL" \
-            --arg emoji "$EMOJI" \
-            --arg footer "$FOOTER" \
-            --argjson color "$COLOR" \
-            '{
-              content: "\($emoji) **\($label):** \($version)\n\n📥 **[Download \($version) zip](\($zip))**\n🔗 [View Release on GitHub](\($url))\($footer)",
-              embeds: [
-                {
-                  title: "Changelog",
-                  description: $changelog,
-                  color: $color
-                }
-              ]
-            }')
+          # Content block + changelog embed. $1 label, $2 emoji, $3 footer, $4 colour.
+          full_payload() {
+            jq -n \
+              --arg version "$VERSION" \
+              --arg url "$RELEASE_URL" \
+              --arg zip "$ZIP_URL" \
+              --arg changelog "$CHANGELOG" \
+              --arg label "$1" \
+              --arg emoji "$2" \
+              --arg footer "$3" \
+              --argjson color "$4" \
+              '{
+                content: "\($emoji) **\($label):** \($version)\n\n📥 **[Download \($version) zip](\($zip))**\n🔗 [View Release on GitHub](\($url))\($footer)",
+                embeds: [
+                  {
+                    title: "Changelog",
+                    description: $changelog,
+                    color: $color
+                  }
+                ]
+              }'
+          }
 
-          # Send the request to Discord
-          curl -H "Content-Type: application/json" -d "$JSON_PAYLOAD" $WEBHOOK
+          case "$RELEASE_TYPE" in
+            release)
+              FOOTER="\n\n💖 *A massive thank you to everyone using the addon, raising issues, requesting new features, testing tirelessly, contributing merge requests, and supporting development via Ko-Fi or PayPal!*\n\n"
+              post "$DISCORD_RELEASE_WEBHOOK" \
+                "$(full_payload 'New QUI Release' '🚀' "$FOOTER" 3447003)" \
+                'release channel'
+
+              # Announcements gets the headline only. The full notes stay one
+              # click away, so the announcement channel remains skimmable.
+              ANNOUNCE=$(jq -n \
+                --arg version "$VERSION" \
+                --arg url "$RELEASE_URL" \
+                --arg zip "$ZIP_URL" \
+                '{ content: "🚀 **QUI \($version)** is out.\n\n📥 **[Download the zip](\($zip))**\n🔗 [Release notes](\($url))" }')
+              post "$DISCORD_ANNOUNCE_WEBHOOK" "$ANNOUNCE" 'announcements'
+              ;;
+            beta)
+              FOOTER="\n\n⚠️ *This is a beta build — expect bugs. Please report issues on GitHub!*\n\n"
+              post "$DISCORD_BETA_WEBHOOK" \
+                "$(full_payload 'New QUI Beta' '🧪' "$FOOTER" 16761095)" \
+                'beta channel'
+              ;;
+            alpha)
+              FOOTER="\n\n⚠️ *This is an alpha build — expect bugs. Please report issues on GitHub!*\n\n"
+              post "$DISCORD_ALPHA_WEBHOOK" \
+                "$(full_payload 'New QUI Alpha' '🧪' "$FOOTER" 16761095)" \
+                'alpha channel'
+              ;;
+            *)
+              echo "::warning::unknown release type '$RELEASE_TYPE' — no Discord announcement sent"
+              ;;
+          esac

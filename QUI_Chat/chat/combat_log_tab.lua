@@ -1,53 +1,3 @@
--- modules/chat/combat_log_tab.lua
--- Embeds Blizzard's real combat-log frame (ChatFrame2) as a pinned tab in the
--- QUI custom chat display (window 1 only). Combat-log content + filtering stay
--- 100% Blizzard: we reparent ChatFrame2 and the native quick-filter bar
--- (CombatLogQuickButtonFrame_Custom) into the window container when the tab is
--- active, hide QUI's own render (SMF + scrollbar) for that window, and park the
--- frame on a SHOWN clipped off-screen anchor otherwise (see filter-taint notes
--- below). blizzard_suppress reads GetHostParent()/GetParkParent() to decide
--- ChatFrame2's enforced parent so it cooperates instead of yanking the frame
--- back to its park.
---
--- Taint posture: ChatFrame2 is NOT a protected frame and NOT Edit-Mode-managed
--- (FloatingChatFrame.xml:676 — plain FloatingChatFrameTemplate; only ChatFrame1
--- adds EditModeChatFrameSystemTemplate; no protected="true" anywhere in the
--- template chain). SetParent/ClearAllPoints/SetPoint/Show on it are therefore
--- legal in combat from insecure code — the embed runs immediately even in
--- lockdown, so clicking the Combat tab mid-fight works. The ONE thing that
--- cannot run in combat is the secure filter cycle: restricted-environment
--- frame handles refuse UNPROTECTED frames during lockdown
--- (RestrictedFrames.lua GetPossiblyForbiddenHandleFrame — "frame must be
--- protected OR not in combat"), so SecureShowCycle defers itself to
--- PLAYER_REGEN_ENABLED. That is benign: the C-side filter list persists from
--- the last apply, so an embed without a fresh cycle shows correctly-filtered
--- content. The content path itself is Blizzard-internal; full taint validation
--- is Drew's in-game pass. Fallback if combat-log dispatch ever taints: detach
--- ChatFrame2 from Edit Mode once before owning geometry
--- (docs/superpowers/specs/2026-06-09-combat-log-tab-design.md §6).
---
--- FILTER taint (the "all combat events show" bug): Blizzard_CombatLog wraps
--- ChatFrame2's OnShow/OnHide (Blizzard_CombatLog.lua:1456-1469) — OnShow runs
--- Blizzard_CombatLog_QuickButton_OnClick(currentFilter), which writes the
--- Blizzard_CombatLog_CurrentSettings/currentFilter globals and calls
--- C_CombatLog.ApplyFilterSettings; the filters land via the SecureOnly
--- C_CombatLogSecure.AddEventFilter AFTER C_CombatLogSecure.ClearEventFilters
--- (Blizzard_CombatLogProcessor.lua:121-183). If that wrapper fires on a
--- QUI-tainted path (our SetParent/Show flipping effective visibility), the
--- apply half-completes — filters cleared, re-add blocked — and the combat log
--- shows EVERYTHING from then on; the tainted globals keep every later apply
--- broken too. Two rules keep the wrapper off our execution path:
---   1. ChatFrame2 parks on a SHOWN, clipped, off-screen anchor — reparenting
---      between park and host container never changes effective visibility, so
---      OnShow/OnHide never fire from a QUI reparent.
---   2. The one Show() the embed may need (ChatFrame2 arrives hidden when it
---      was a docked, unselected tab) goes through a SecureHandler Execute so
---      the wrapper — and the whole filter re-apply — runs untainted
---      (same pattern as the WorldMap/Mail secure reposition). Sole exception:
---      during combat lockdown the restricted env refuses unprotected frames,
---      so a still-hidden frame is shown insecurely rather than left blank,
---      and the regen-queued secure cycle re-fires the wrapper clean
---      afterwards (see SecureShowCycle's locked branch).
 local ADDON_NAME, ns = ... -- luacheck: ignore ADDON_NAME
 
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
@@ -56,15 +6,15 @@ local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
 ns.QUI.Chat.CombatLogTab = ns.QUI.Chat.CombatLogTab or {}
 local CombatLogTab = ns.QUI.Chat.CombatLogTab
 
-local hostByWindow = {}  -- windowID -> container while active (else nil)
-local activeWindow      -- the single window currently showing the combat log
-local hiddenAnchor      -- shared hidden parent for parked chrome/quick-bar
-local loadWaiter        -- waits for the LoadOnDemand combat-log addon/frame
-local combatWaiter      -- waits for PLAYER_REGEN_ENABLED to re-fire the secure filter cycle
-local stockFont         -- {file, height, flags} captured before the first QUI apply
-local stockJustifyH     -- ChatFrame2's pre-QUI horizontal justification ("LEFT" stock)
-local fontHookInstalled -- SetFont durability post-hook (installed once, gated on activeWindow)
-local primed            -- one secure filter cycle has been driven this session (Prime)
+local hostByWindow = {}
+local activeWindow
+local hiddenAnchor
+local loadWaiter
+local combatWaiter
+local stockFont
+local stockJustifyH
+local fontHookInstalled
+local primed
 
 local function HiddenAnchor()
     if not hiddenAnchor and _G.CreateFrame then
@@ -74,10 +24,6 @@ local function HiddenAnchor()
     return hiddenAnchor
 end
 
--- ChatFrame2's park: SHOWN (never fires the OnShow/OnHide filter wrapper on
--- reparent — see header), clipped to 1px and positioned fully off-screen so a
--- parked combat log renders nothing. The quick bar and stripped chrome keep
--- using the plain hidden anchor (they carry no visibility side effects).
 local shownPark
 local function ShownPark()
     if not shownPark and _G.CreateFrame then
@@ -87,44 +33,18 @@ local function ShownPark()
         if shownPark.SetClipsChildren then
             shownPark:SetClipsChildren(true)
         end
-        -- Explicitly shown: the whole point of this park is that ChatFrame2's
-        -- effective visibility never changes while parked here.
         shownPark:Show()
     end
     return shownPark
 end
 
--- Read by blizzard_suppress: where ChatFrame2 parks while its tab is inactive.
 function CombatLogTab.GetParkParent()
     return ShownPark() or HiddenAnchor()
 end
 
--- Secure visibility CYCLE (not just a one-time Show): Blizzard_CombatLog
--- applies the user's saved quick-filter ONLY from its ChatFrame2 OnShow
--- wrapper (Blizzard_CombatLog.lua:1456-1462) — QuickButtonFrame_OnLoad
--- installs the wrapper but never applies the filter itself. Under the
--- never-flip-visibility park design that wrapper can go a whole session
--- without firing: when ChatFrame2 arrives with its shown flag already true,
--- a Show() is a no-op, no OnShow transition ever happens, the C-side event
--- filter list stays EMPTY, and the combat log renders every event ("ignores
--- its Blizzard filters") with no taint involved. So on EVERY embed, drive a
--- Hide+Show transition from the SecureHandler snippet: the wrapper
--- (SetFilteredEventsEnabled + Blizzard_CombatLog_QuickButton_OnClick →
--- C_CombatLog.ApplyFilterSettings) runs untainted and re-applies the saved
--- filter — the same OnShow re-apply a stock dock tab-select performs.
 local secureShowDriver
-local SecureShowCycle -- forward-declared: the regen waiter below re-invokes it
+local SecureShowCycle
 
--- Restricted-environment frame handles refuse UNPROTECTED frames during
--- combat lockdown (RestrictedFrames.lua GetPossiblyForbiddenHandleFrame), so
--- the secure Hide+Show cycle cannot run mid-combat — the snippet would just
--- soft-error without cycling. Queue ONE re-fire for PLAYER_REGEN_ENABLED
--- instead. Until it lands the embed still shows correctly: the C-side filter
--- list persists from the last apply, and Prime (below) ran the session's
--- first apply at takeover time. A session that STARTS in combat (combat
--- /reload) has no apply yet — there the locked branch's insecure Show keeps
--- the tab rendering (possibly unfiltered) and this regen re-fire restores
--- exact filtering by rewriting the wrapper's globals from secure execution.
 local function QueueRegenCycle()
     if not combatWaiter and _G.CreateFrame then
         combatWaiter = _G.CreateFrame("Frame")
@@ -135,11 +55,6 @@ local function QueueRegenCycle()
         self:UnregisterAllEvents()
         self:SetScript("OnEvent", nil)
         self.quiCyclePending = nil
-        -- Cycle even while parked/deactivated: the regen cycle doubles as the
-        -- session's priming apply (Prime below), and a parked cycle is
-        -- harmless — the park is 1px, clipped, off-screen. Skip only when the
-        -- takeover was torn down mid-combat: cycling a re-docked stock
-        -- ChatFrame2 would pop it visible over the stock chat.
         local Sup = ns.QUI.Chat.BlizzardSuppress
         if Sup and Sup.IsActive and not Sup.IsActive() then return end
         SecureShowCycle(_G.ChatFrame2)
@@ -150,33 +65,21 @@ end
 function SecureShowCycle(cf)
     if not cf then return end
     if _G.InCombatLockdown and _G.InCombatLockdown() then
-        -- Locked (note: on a combat /reload InCombatLockdown() is true even
-        -- inside the load window — the restricted-env handle gate is plain
-        -- Lua with no load-window awareness, so the secure path can never
-        -- run here). If the frame is still HIDDEN (combat-/reload prime or a
-        -- first-ever activation mid-fight), Show it INSECURELY rather than
-        -- leave the tab blank. That one Show can fire the filter wrapper
-        -- tainted; in-game evidence (reference addon fires it tainted on
-        -- every tab switch with no visible breakage) says the C side
-        -- tolerates it, and even under the worst-case taint model the
-        -- queued regen cycle below re-fires the wrapper SECURELY — which
-        -- rewrites the filter globals clean — so any degradation is bounded
-        -- to possibly-unfiltered lines for the remainder of this fight.
         if not (cf.IsShown and cf:IsShown()) and cf.Show then
-            pcall(cf.Show, cf)
+            ns.SafeCallMethod("best-effort-style", cf, "Show")
         end
         QueueRegenCycle()
         return
     end
     if not secureShowDriver and _G.CreateFrame then
-        local ok, drv = pcall(_G.CreateFrame, "Frame", "QUI_CombatLogSecureShow",
+        local ok, drv = ns.SafeCall("best-effort-style", _G.CreateFrame, "Frame", "QUI_CombatLogSecureShow",
             nil, "SecureHandlerBaseTemplate")
         if ok and drv then secureShowDriver = drv end
     end
     if secureShowDriver and secureShowDriver.SetFrameRef and secureShowDriver.Execute then
-        local okRef = pcall(secureShowDriver.SetFrameRef, secureShowDriver, "quiCombatLog", cf)
+        local okRef = ns.SafeCallMethod("best-effort-style", secureShowDriver, "SetFrameRef", "quiCombatLog", cf)
         if okRef then
-            local okRun = pcall(secureShowDriver.Execute, secureShowDriver, [=[
+            local okRun = ns.SafeCallMethod("best-effort-style", secureShowDriver, "Execute", [=[
                 local f = self:GetFrameRef("quiCombatLog")
                 if f then
                     if f:IsShown() then f:Hide() end
@@ -186,12 +89,8 @@ function SecureShowCycle(cf)
             if okRun and cf.IsShown and cf:IsShown() then return end
         end
     end
-    -- Fallback when the secure path didn't take (missing template): plain
-    -- Show, and only when hidden. NEVER cycle Hide/Show insecurely — the
-    -- wrapper would write Blizzard_CombatLog's filter globals tainted and
-    -- poison every later filter apply for the session.
     if not (cf.IsShown and cf:IsShown()) and cf.Show then
-        pcall(cf.Show, cf)
+        ns.SafeCallMethod("best-effort-style", cf, "Show")
     end
 end
 
@@ -202,7 +101,6 @@ function CombatLogTab.IsEnabled()
     return cd.combatLogTab ~= false
 end
 
--- Read by blizzard_suppress: ChatFrame2's enforced parent while active, else nil.
 function CombatLogTab.GetHostParent()
     return activeWindow and hostByWindow[activeWindow] or nil
 end
@@ -211,30 +109,14 @@ function CombatLogTab.IsActiveWindow(windowID)
     return activeWindow == (tonumber(windowID) or 1)
 end
 
--- Blizzard_CombatLog is LoadOnDemand; CombatLogQuickButtonFrame_Custom is built
--- lazily. Guarantee both exist, then call cb. Returns true if ready now.
---
--- LOAD POSTURE: stock UIParent force-loads Blizzard_CombatLog itself at
--- PLAYER_LOGIN, unconditionally and securely (UIParent.lua PLAYER_LOGIN →
--- CombatLog_LoadUI()). NEVER LoadAddOn it from QUI before that has had its
--- chance: code loaded by an addon-initiated LoadAddOn executes on the
--- CALLER'S tainted path, so Blizzard_CombatLog's ChatFrame2 OnShow/OnHide
--- wrapper closures would be created tainted — and then EVERY filter apply
--- (even engine/secure-triggered ones) runs tainted: ClearEventFilters lands,
--- AddEventFilter is blocked, and the combat log shows everything for the
--- session. Wait for Blizzard's own load instead; force-load remains only as
--- a post-login last resort (CombatLog_LoadUI overridden by a combat-log
--- replacement), accepting broken quick-filters over a permanently empty tab.
 function CombatLogTab.EnsureLoaded(cb)
     if _G.CombatLogQuickButtonFrame_Custom and _G.ChatFrame2 then
         if cb then cb() end
         return true
     end
     if _G.IsLoggedIn and _G.IsLoggedIn() then
-        -- Post-login and still absent: Blizzard's own PLAYER_LOGIN load did
-        -- not produce the frame. Last-resort force-load (taint caveat above).
         if _G.C_AddOns and _G.C_AddOns.LoadAddOn then
-            pcall(_G.C_AddOns.LoadAddOn, "Blizzard_CombatLog")
+            ns.SafeCall("best-effort-style", _G.C_AddOns.LoadAddOn, "Blizzard_CombatLog")
         end
         if _G.CombatLogQuickButtonFrame_Custom and _G.ChatFrame2 then
             if cb then cb() end
@@ -249,47 +131,21 @@ function CombatLogTab.EnsureLoaded(cb)
             if _G.CombatLogQuickButtonFrame_Custom and _G.ChatFrame2 then
                 self:UnregisterAllEvents()
                 self:SetScript("OnEvent", nil)
-                -- SYNCHRONOUS, never C_Timer.After(0): on a combat /reload
-                -- the frame materializes inside UIParent's PLAYER_LOGIN
-                -- dispatch (CombatLog_LoadUI) while load-time setup still
-                -- works; a one-frame defer lands past that window (the
-                -- eager-LOD safe-window lesson — deferred init = blocked).
                 if cb then cb() end
             end
         end)
         loadWaiter:RegisterEvent("ADDON_LOADED")
         loadWaiter:RegisterEvent("UPDATE_CHAT_WINDOWS")
-        -- UIParent's PLAYER_LOGIN handler (registered long before this frame)
-        -- runs CombatLog_LoadUI first, so by the time this fires the frame
-        -- exists in any stock setup.
         loadWaiter:RegisterEvent("PLAYER_LOGIN")
     end
     return false
 end
 
--- Drive the session's FIRST filter apply at takeover time instead of waiting
--- for the user's first Combat-tab click. Without this, the one degraded case
--- left is "first-ever activation happens mid-combat": no OnShow apply has run
--- (unfiltered) and ChatFrame2 may still be hidden (blank) until regen. The
--- priming cycle runs while ChatFrame2 is PARKED — harmless: the park is 1px,
--- clipped, off-screen; the wrapper fires untainted; ChatFrame2 ends shown,
--- which is the park's design state anyway. After priming, any first click —
--- even mid-combat — finds the filters applied and the frame shown. This is
--- reference-addon parity without its taint: it gets "always works in combat"
--- by firing the wrapper INSECURELY on every tab click, which is exactly the
--- poisoned-apply bug this module exists to prevent. Cost: the combat log
--- processes events from login (SetFilteredEventsEnabled(true)) — the same
--- cost the shown-park design already pays from first activation — plus one
--- quick-button click sound during login (the wrapper's apply plays it).
--- Called from blizzard_suppress.SuppressAll once takeover owns ChatFrame2.
 function CombatLogTab.Prime()
     if primed then return end
-    -- No latch on the early-outs: a later enable/takeover can still prime.
     if not CombatLogTab.IsEnabled() then return end
     primed = true
     CombatLogTab.EnsureLoaded(function()
-        -- Re-check at fire time: EnsureLoaded can resolve at PLAYER_LOGIN,
-        -- after a settings flip or a takeover teardown.
         local Sup = ns.QUI.Chat.BlizzardSuppress
         if Sup and Sup.IsActive and not Sup.IsActive() then
             primed = nil
@@ -303,25 +159,9 @@ function CombatLogTab.Prime()
     end)
 end
 
--- ChatFrame2 keeps its stock font otherwise; adopt the QUI chat font object
--- resolved by display_layer.ApplyTheme (a per-script font family in-game, so
--- CJK combat-log lines keep rendering). ApplyTheme calls this on every theme
--- refresh so live font changes land while the tab is open.
---
--- Durability: ChatFrame2 is neuter-EXEMPT (blizzard_suppress), so its
--- UPDATE_CHAT_WINDOWS handler stays live and re-asserts the saved per-window
--- font via SetFont (ChatFrameOverrides.lua:114-119) on every settings sync —
--- including at login, AFTER the embed. SetFont also collapses the per-script
--- font family. A post-hook on ChatFrame2.SetFont re-applies the QUI font
--- object whenever an outside SetFont lands while the embed is active; the
--- pre-QUI font is snapshotted once so Deactivate can hand back stock values.
--- SetFontObject adopts the font OBJECT's justification too — the QUI font
--- family carries no explicit justifyH, so applying it re-centers the SMF text
--- (display_layer re-asserts SetJustifyH("LEFT") on its own SMF for the same
--- reason). Re-assert ChatFrame2's pre-QUI justification after every apply.
 local function ReassertJustify(cf)
     if cf.SetJustifyH then
-        pcall(cf.SetJustifyH, cf, stockJustifyH or "LEFT")
+        cf:SetJustifyH(stockJustifyH or "LEFT")
     end
 end
 
@@ -332,7 +172,6 @@ function CombatLogTab.RefreshFont()
     if not (cf and fo and cf.SetFontObject) then return end
     if not stockFont and cf.GetFont then
         local file, height, flags = cf:GetFont()
-        -- GetFont can hand back garbage heights; only keep a sane snapshot.
         if file and type(height) == "number" and height > 0 then
             stockFont = { file = file, height = height, flags = flags or "" }
         end
@@ -341,35 +180,29 @@ function CombatLogTab.RefreshFont()
         local j = cf:GetJustifyH()
         if type(j) == "string" and j ~= "" then stockJustifyH = j end
     end
-    pcall(cf.SetFontObject, cf, fo)
+    cf:SetFontObject(fo)
     ReassertJustify(cf)
     if not fontHookInstalled and _G.hooksecurefunc then
         fontHookInstalled = true
         _G.hooksecurefunc(cf, "SetFont", function(self)
             if not activeWindow then return end
             local cur = I.chatFontObject or _G.QUI_CustomChatFontObject
-            -- Re-apply via SetFontObject only: it does not re-enter this
-            -- SetFont hook, so there is no recursion.
             if cur and self.SetFontObject then
-                pcall(self.SetFontObject, self, cur)
+                self:SetFontObject(cur)
                 ReassertJustify(self)
             end
         end)
     end
 end
 
--- Strip Blizzard chrome so the frame blends into the QUI window.
 local function StripChrome(cf)
     local park = HiddenAnchor()
     if not park then return end
     local name = cf.GetName and cf:GetName()
     local bg = cf.Background or (name and _G[name .. "Background"])
-    if bg and bg.SetParent then pcall(bg.SetParent, bg, park) end
+    if bg and bg.SetParent then bg:SetParent(park) end
 end
 
--- Reparent + anchor the real combat-log frame into `container`. All geometry
--- targets unprotected frames (header), so this is combat-legal; calls stay
--- pcall'd as a belt against odd frame states.
 local function Embed(windowID, container)
     local cf = _G.ChatFrame2
     local qb = _G.CombatLogQuickButtonFrame_Custom
@@ -384,28 +217,22 @@ local function Embed(windowID, container)
     local SB = ns.QUI.Chat.Scrollbar
     if SB and SB.SetShown then SB.SetShown(windowID, false) end
 
-    -- Quick-button bar across the top of the message rect.
-    pcall(qb.SetParent, qb, container)
-    pcall(qb.ClearAllPoints, qb)
-    if smf then
-        pcall(qb.SetPoint, qb, "TOPLEFT", smf, "TOPLEFT", 0, 0)
-        pcall(qb.SetPoint, qb, "TOPRIGHT", smf, "TOPRIGHT", 0, 0)
+    if qb.SetParent then qb:SetParent(container) end
+    if qb.ClearAllPoints then qb:ClearAllPoints() end
+    if smf and qb.SetPoint then
+        qb:SetPoint("TOPLEFT", smf, "TOPLEFT", 0, 0)
+        qb:SetPoint("TOPRIGHT", smf, "TOPRIGHT", 0, 0)
     end
     if qb.Show then qb:Show() end
 
-    -- ChatFrame2 fills the rest of the message rect.
-    pcall(cf.SetParent, cf, container)
-    pcall(cf.ClearAllPoints, cf)
-    pcall(cf.SetPoint, cf, "TOPLEFT", qb, "BOTTOMLEFT", 0, -2)
-    if smf then
-        pcall(cf.SetPoint, cf, "BOTTOMRIGHT", smf, "BOTTOMRIGHT", 0, 0)
+    if cf.SetParent then cf:SetParent(container) end
+    if cf.ClearAllPoints then cf:ClearAllPoints() end
+    if cf.SetPoint then cf:SetPoint("TOPLEFT", qb, "BOTTOMLEFT", 0, -2) end
+    if smf and cf.SetPoint then
+        cf:SetPoint("BOTTOMRIGHT", smf, "BOTTOMRIGHT", 0, 0)
     end
     StripChrome(cf)
     CombatLogTab.RefreshFont()
-    -- Secure Hide+Show cycle (see SecureShowCycle): fires the
-    -- Blizzard_CombatLog OnShow wrapper untainted so the saved quick-filter
-    -- is actually applied — OnShow is the ONLY apply path Blizzard has.
-    -- In combat it queues itself for PLAYER_REGEN_ENABLED instead.
     SecureShowCycle(cf)
 end
 
@@ -416,15 +243,10 @@ function CombatLogTab.Activate(windowID)
     if not container then return false end
 
     local function install()
-        -- Runs in combat too: ChatFrame2 is unprotected (see header), so the
-        -- whole embed is lockdown-legal. Only the secure filter cycle defers
-        -- itself to regen (SecureShowCycle).
         Embed(windowID, container)
     end
 
     if not CombatLogTab.EnsureLoaded(install) then
-        -- Not loaded yet: record intent so GetHostParent resolves; install fires
-        -- when the combat-log addon/frame materializes.
         hostByWindow[windowID] = container
         activeWindow = windowID
     end
@@ -439,23 +261,14 @@ function CombatLogTab.Deactivate(windowID)
     local park = HiddenAnchor()
     local cf = _G.ChatFrame2
     local qb = _G.CombatLogQuickButtonFrame_Custom
-    -- ChatFrame2 parks on the SHOWN clipped anchor (header: a hidden park
-    -- would fire the Blizzard_CombatLog OnHide wrapper on our tainted path).
-    -- blizzard_suppress enforces the same parent (GetHostParent == nil), but
-    -- park it ourselves too so the move happens even if suppression is off.
     local cfPark = CombatLogTab.GetParkParent()
-    if cf and cfPark and cf.SetParent then pcall(cf.SetParent, cf, cfPark) end
-    if qb and park and qb.SetParent then pcall(qb.SetParent, qb, park) end
-    -- Hand the stock font back via explicit SetFont values (NEVER a captured
-    -- font object — editbox_setfontobject-self-cycle lesson). activeWindow is
-    -- already nil here, so the durability hook lets this through.
+    if cf and cfPark and cf.SetParent then cf:SetParent(cfPark) end
+    if qb and park and qb.SetParent then qb:SetParent(park) end
     if stockFont and cf and cf.SetFont then
-        pcall(cf.SetFont, cf, stockFont.file, stockFont.height, stockFont.flags)
+        cf:SetFont(stockFont.file, stockFont.height, stockFont.flags)
     end
-    -- Hand back the pre-QUI justification too (the QUI font object pulled the
-    -- text to its own justify; stock combat log is LEFT).
     if cf and cf.SetJustifyH then
-        pcall(cf.SetJustifyH, cf, stockJustifyH or "LEFT")
+        cf:SetJustifyH(stockJustifyH or "LEFT")
     end
 
     local Display = ns.QUI.Chat.DisplayLayer

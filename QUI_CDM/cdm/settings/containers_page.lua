@@ -1,5 +1,3 @@
--- containers_page.lua
--- Consolidated CDM settings page. Former file chunks remain scoped to preserve Lua 5.1 local limits.
 do
 -- Inlined from containers_page_model.lua
 local _, ns = ...
@@ -191,11 +189,6 @@ local CDM_SEARCH_TILE_ID = "cooldown_manager"
 local CDM_SEARCH_FEATURE_ID = "cooldownManagerContainersPage"
 local CDM_SEARCH_SUB_PAGE_INDEX = 1
 
--- Legacy profile.viewers.* sub-table key names. These predate the QUI-native
--- container kinds ("essential" / "utility") and are still the on-disk DB key
--- shape across compatibility, defaults, fixtures, docs, and import strings.
--- Concatenated so the spec-§5 grep gate doesn't trip on a literal substring
--- match -- these are DB key names, not runtime references to Blizzard frames.
 local LEGACY_VIEWER_KEY_ESSENTIAL = "Essential" .. "CooldownViewer"
 local LEGACY_VIEWER_KEY_UTILITY = "Utility" .. "CooldownViewer"
 
@@ -232,17 +225,7 @@ local DISPLAY_MODE_OPTIONS = {
     { value = "combat", text = ns.L["Combat Only"] },
 }
 
-local TEXT_ANCHOR_OPTIONS = {
-    { value = "TOPLEFT", text = ns.L["Top Left"] },
-    { value = "TOP", text = ns.L["Top"] },
-    { value = "TOPRIGHT", text = ns.L["Top Right"] },
-    { value = "LEFT", text = ns.L["Left"] },
-    { value = "CENTER", text = ns.L["Center"] },
-    { value = "RIGHT", text = ns.L["Right"] },
-    { value = "BOTTOMLEFT", text = ns.L["Bottom Left"] },
-    { value = "BOTTOM", text = ns.L["Bottom"] },
-    { value = "BOTTOMRIGHT", text = ns.L["Bottom Right"] },
-}
+local TEXT_ANCHOR_OPTIONS = ns.QUI_SettingsLayoutShared.BuildNinePointAnchorOptions()
 
 local AURA_GROWTH_DIRECTION_OPTIONS = {
     { value = "CENTERED_HORIZONTAL", text = ns.L["Centered"] },
@@ -288,9 +271,6 @@ local CUSTOM_BAR_GROW_DIRECTION_OPTIONS = {
     { value = "UP", text = ns.L["Up"] },
 }
 
--- Per-row horizontal growth for Essential/Utility rows. "inherit" reproduces
--- the container's existing centered layout exactly; the others align a row that
--- is narrower than the widest row to the left/right of the container box.
 local ROW_GROW_DIRECTION_OPTIONS = {
     { value = "inherit", text = ns.L["Inherit (Container Default)"] },
     { value = "CENTERED", text = ns.L["Centered"] },
@@ -449,10 +429,6 @@ local function RefreshKeybinds()
     end
 end
 
--- Repaint the composer live preview for the active container. Effect/glow/
--- highlighter/swipe settings drive runtime engines that do not own the preview
--- pane, so each of their refresh helpers must also poke the preview or those
--- settings appear inert while editing.
 local function PokePreview()
     if _G.QUI_RefreshCDMPreview then
         _G.QUI_RefreshCDMPreview()
@@ -718,8 +694,6 @@ local function AppendTrackerRowSection(builder, gui, optionsAPI, rowNum, rowData
             stackAnchor = "BOTTOMRIGHT",
             opacity = 1.0,
         })
-        -- Per-row growth direction is an essential/utility multi-row feature only;
-        -- customBar is single-row and has its own container-level Grow Direction.
         if containerType ~= "customBar" then
             Helpers.EnsureDefaults(rowData, { growDirection = "inherit" })
         end
@@ -742,8 +716,6 @@ local function AppendTrackerRowSection(builder, gui, optionsAPI, rowNum, rowData
     local borderSizeSlider = gui:CreateFormSlider(card.frame, nil, 0, 5, 1, "borderSize", rowData, refresh, nil, {
         description = ns.L["Border thickness in pixels around each icon in this row. Set to 0 to hide."],
     })
-    -- Per-row border color via the central source enum (inherit/theme/class/custom).
-    -- Binds rowData.borderColorSource / rowData.borderColor (prefix "").
     local borderSourceWidget, borderColorWidget = ns.QUI_BorderControl.Attach(
         gui, card.frame, rowData, "", refresh,
         { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"] }
@@ -944,15 +916,6 @@ local function ResolveEffectsContext(containerKey)
     }
 end
 
-----------------------------------------------------------------------------
--- Empty-bar prompt — shown above the Entries composer when a spec-specific
--- container has no entries for the current spec. Migration v32(d) clears
--- stale container.entries instead of promoting them, so the typical
--- post-import failure mode is "bar exists but is empty" rather than "bar
--- has bad entries that need triage." This prompt tells the user how to
--- populate the bar (drag from spellbook) or delete it. Banner state comes
--- purely from container state.
-----------------------------------------------------------------------------
 local function ContainerHasEntriesForCurrentSpec(containerKey, container)
     if type(container) ~= "table" then return false end
     if type(container.entries) == "table" and #container.entries > 0 then
@@ -977,10 +940,6 @@ local function BuildEmptyBarPrompt(parent, containerKey)
     local container = containers and containers[containerKey]
     if type(container) ~= "table" then return nil, 0 end
 
-    -- Only show on spec-specific bars (V2 specSpecific / legacy specSpecificSpells)
-    -- that genuinely have nothing to render. Bars with entries — either in
-    -- container.entries (non-spec-specific) or in per-spec storage (spec-specific
-    -- with data) — render the composer normally without the prompt.
     if not (container.specSpecific or container.specSpecificSpells) then
         return nil, 0
     end
@@ -1066,8 +1025,6 @@ local function BuildEmptyBarPrompt(parent, containerKey)
             end
         end
 
-        -- Per-spec storage was keyed by container key; without the container
-        -- those entries are orphaned data.
         if db and type(db.global) == "table" and type(db.global.ncdm) == "table"
            and type(db.global.ncdm.specTrackerSpells) == "table"
         then
@@ -1077,7 +1034,6 @@ local function BuildEmptyBarPrompt(parent, containerKey)
         HideAndRefresh()
     end)
 
-    -- Right-align buttons in a row below the body text.
     if #buttons > 0 then
         local x = -12
         for i = #buttons, 1, -1 do
@@ -1123,8 +1079,6 @@ local function RenderEntriesSection(sectionHost, ctx)
                 _G.QUI_EmbedCDMComposer(host, containerKey)
             end,
         }
-        -- When no banner, keep the legacy behaviour of rendering directly
-        -- into sectionHost (avoids creating an unnecessary wrapper frame).
         if bannerHeight <= 0 then
             opts.host = sectionHost
         end
@@ -1271,9 +1225,6 @@ local function RenderLayoutSection(sectionHost, ctx)
                 optionsAPI.BuildSettingRow(appearanceCard.frame, ns.L["Border Size"], borderSlider)
             )
 
-            -- Per-container border color via the central source enum
-            -- (inherit/theme/class/custom). Binds tracker.borderColorSource /
-            -- tracker.borderColor (prefix ""), matching the cooldown-row control.
             local auraBorderSourceW, auraBorderColorW = ns.QUI_BorderControl.Attach(
                 gui, appearanceCard.frame, tracker, "", refresh,
                 { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"] }
@@ -1363,9 +1314,6 @@ local function RenderLayoutSection(sectionHost, ctx)
             })
             textCard.AddRow(optionsAPI.BuildSettingRow(textCard.frame, ns.L["Show Absorb Amount"], showAbsorbCheckbox))
 
-            -- Buff-apply pop: only the built-in buff viewer ("buff") renders it
-            -- at runtime, so the toggle is shown only for that container to
-            -- avoid a dead switch on custom aura containers.
             if containerKey == "buff" then
                 local growOnApplyCheckbox = gui:CreateFormCheckbox(textCard.frame, nil, "growOnApply", tracker, refresh, {
                     description = ns.L["Briefly scale a buff icon up then settle it when the buff is first applied, for a subtle pop. Off by default."],
@@ -1547,10 +1495,6 @@ local function RenderLayoutSection(sectionHost, ctx)
             })
             colorCard.AddRow(optionsAPI.BuildSettingRow(colorCard.frame, ns.L["Background Opacity"], backgroundOpacitySlider))
 
-            -- Per-container bar border color via the central source enum
-            -- (inherit/theme/class/custom). Binds tracker.borderColorSource /
-            -- tracker.borderColor (prefix ""); resolved in cdm_bar_renderer's
-            -- ConfigureBar via GetSkinBorderColor(settings, "").
             local barBorderSourceW, barBorderColorW = ns.QUI_BorderControl.Attach(
                 gui, colorCard.frame, tracker, "", refresh,
                 { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"] }
@@ -1662,10 +1606,6 @@ local function RenderFiltersSection(sectionHost, ctx)
         return RenderUnavailableLabel(sectionHost, ns.L["Filters unavailable."])
     end
 
-    -- Bar-shape containers expose visibility through the Layout tab's
-    -- inactive-mode controls (hide / dim / always show). Icon-shape
-    -- containers — including former customBar containers, which are
-    -- icon-shape with single-row layout — get the full filter set.
     local shape = (ns.CDMContainers and ns.CDMContainers.GetContainerShape
         and ns.CDMContainers.GetContainerShape(containerKey)) or "icon"
     if shape == "bar" then
@@ -1832,7 +1772,6 @@ local function RenderFiltersSection(sectionHost, ctx)
     )
     updateNoDesaturateState()
 
-    -- Aura swipe is custom-bar only (the radial swipe on a bar tracking a buff).
     if tracker.containerType == "customBar" then
         local showAuraSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showAuraSwipe", tracker, refresh, {
             description = ns.L["On a custom bar tracking an aura, draw a radial swipe that drains with the aura's remaining duration."],
@@ -2375,8 +2314,6 @@ local function RenderEffectsSection(sectionHost, ctx)
         end
     end
 
-    -- Global (HUD-wide) skinning toggle. Stored at the ncdm top level so it
-    -- governs every CDM cooldown icon, not just the selected container.
     local ncdmDB = effectsCtx.profile and effectsCtx.profile.ncdm
     if type(ncdmDB) == "table" then
         builder.Spacer(6)
@@ -2407,8 +2344,6 @@ local function RenderEffectsSection(sectionHost, ctx)
             glowSourceOptions[#glowSourceOptions + 1] = { value = name, text = name }
         end
         local glowSourceDropdown = gui:CreateFormDropdown(skinCard.frame, nil, glowSourceOptions, "glowSource", ncdmDB, function()
-            -- RefreshGlows -> RefreshAllGlows re-evaluates the source gate so a
-            -- runtime switch to Off/Skin stops any currently active QUI glow.
             RefreshGlows()
         end, {
             description = "Source of CDM proc/cooldown glow: QUI (native glow), Skin (defer to the external skin's glow when available), or Off.",
@@ -2593,28 +2528,6 @@ do
 local _, ns = ...
 local Settings = ns.Settings
 if QUI and QUI.GUI and Settings and Settings.FullSurface then
---[[
-    QUI Options V2 — Cooldown Manager tile
-    Two sub-pages: Containers (dropdown-driven per-container editor with
-    dynamic tabs) and Defaults (global toggles).
-
-    Layout:
-
-        [Container ▼]         [+ New]  [Delete]
-        ────────────────────────────────────────
-        LIVE PREVIEW
-        ────────────────────────────────────────
-        Entries │ Layout │ Filters │ Per-Spec │ Effects │ Position
-        ────────────────────────────────────────
-        (active tab renders here)
-
-    The dropdown + buttons live INSIDE the tile-level preview block so
-    they stay visible while the user switches sub-tabs. The sub-page
-    body only owns the tab strip + content host.
-
-    Filters / Per-Spec tabs only surface for custom containers; built-ins
-    get a trimmed Entries / Layout / Effects / Position strip.
-]]
 
 local QUI = QUI
 local GUI = QUI.GUI
@@ -2622,12 +2535,6 @@ local C = GUI.Colors
 local FullSurface = Settings and Settings.FullSurface
 local ClearFrame = FullSurface and FullSurface.ClearFrame
 
--- File-scoped snapshot of db.profile.ncdm.perLoadoutSpec used to detect
--- the false→true transition in the toggle onChange handler. The framework
--- writes dbTable[dbKey] = newValue BEFORE calling onChange, so reading the
--- DB inside onChange gives the NEW value. This upvalue captures the OLD
--- value by being set at BuildPreviewBlock entry and updated at the end of
--- every onChange call.
 local _lastPerLoadoutSpecValue = false
 
 local function ResolveModel(feature)
@@ -2641,27 +2548,18 @@ local function ResolveModel(feature)
     return ns.QUI_CooldownManagerSettingsModel
 end
 
----------------------------------------------------------------------------
--- Module state — shared between the tile-level preview (which owns the
--- dropdown + buttons) and the sub-page body (which owns the tab strip +
--- content host). Set at Register time; read/written from callbacks on
--- both surfaces.
----------------------------------------------------------------------------
 local State = {
     activeContainer = nil,
     activeTab = "entries",
-    dropdown = nil,         -- widget (preview header)
-    deleteBtn = nil,        -- widget (preview header)
-    activeBody = nil,       -- current tab body frame
-    repaintTabs = nil,      -- set by BuildTileBody; refreshes the tab strip + active body
+    dropdown = nil,
+    deleteBtn = nil,
+    activeBody = nil,
+    repaintTabs = nil,
 }
 
 local TabModel
 local EnsureTabModel
 
----------------------------------------------------------------------------
--- Container enumeration & labels
----------------------------------------------------------------------------
 local function GetContainerOptions()
     local model = ResolveModel()
     local getOptions = model and model.GetContainerOptions
@@ -2688,11 +2586,6 @@ end
 
 local ResetBody
 
----------------------------------------------------------------------------
--- SetActiveContainer — fires everywhere: updates dropdown widget, tab
--- strip (if bound), tab content (if bound), hoisted preview. The state
--- module hands out no-ops until the sub-page wires its callbacks.
----------------------------------------------------------------------------
 local ContainerSelection = FullSurface and FullSurface.CreateSelectionController
     and FullSurface.CreateSelectionController(State, {
         stateKey = "activeContainer",
@@ -2740,11 +2633,6 @@ local function SetActiveTab(tabKey)
     end
 end
 
----------------------------------------------------------------------------
--- ClearFrame helper — wipes a frame's children + regions. Also scrubs
--- any composer-layout cache flag so the composer rebuilds when the
--- Entries tab is reshown.
----------------------------------------------------------------------------
 function ResetBody(frame)
     if ClearFrame then
         ClearFrame(frame)
@@ -2753,32 +2641,6 @@ function ResetBody(frame)
     frame._hideComposerNav = nil
 end
 
----------------------------------------------------------------------------
--- PREVIEW BLOCK — top row (per-loadout toggle + context label) +
--- preview area (dropdown + buttons + visual preview).
--- Called by framework_v2 via tile.config.preview.build. The preview
--- frame is anchored above the sub-page tabs so dropdown + preview
--- persist across sub-tab switches.
---
--- Layout:
---   [☐ Per-Loadout Entries                                         ]
---   [Editing entries for: Spec — Loadout                           ]
---   [Container ▼]                                  [+ New] [Delete]
---   ────────────────────────────────────────────────────────────────
---                          LIVE PREVIEW
----------------------------------------------------------------------------
-
--- Fixed-size box at TOP-LEFT of the preview area holding the per-loadout
--- toggle (above) and the active-context label (below). NOT full-height —
--- the preview frame reclaims the full pv width BELOW this column via
--- post-build re-anchoring of the framework's previewHost.
---
--- WIDTH NOTE: GUI:CreateFormToggle hard-codes the switch widget at
--- container.LEFT + 180 (label width 170 + 10px gap), and the switch
--- itself is 26px wide. So the toggle's content extends to LEFT+206.
--- LEFT_COL_WIDTH must be at least 206 + 2*LEFT_COL_PAD = 222 or the
--- switch widget paints past leftCol's right edge into the dropdown row.
--- 240 leaves a comfortable margin and reads cleanly in-game.
 local LEFT_COL_WIDTH = 240
 local LEFT_COL_HEIGHT = 50
 local LEFT_COL_PAD = 8
@@ -2786,32 +2648,17 @@ local LEFT_COL_PAD = 8
 local function BuildPreviewBlock(pv)
     State.activeContainer = NormalizeContainerKey(State.activeContainer)
 
-    -- Seed _lastPerLoadoutSpecValue from the current DB state so the
-    -- onChange handler can detect the false→true transition correctly.
     local ncdm = QUI and QUI.db and QUI.db.profile and QUI.db.profile.ncdm
     _lastPerLoadoutSpecValue = ncdm and ncdm.perLoadoutSpec or false
 
-    ---------------------------------------------------------------------------
-    -- Left column — fixed-size 200x50 box at top-left holding the toggle
-    -- (above) and the active-context label (below). Doesn't span pv's full
-    -- height, so the preview frame can reclaim full width below it.
-    ---------------------------------------------------------------------------
     local leftCol = CreateFrame("Frame", nil, pv)
     leftCol:SetPoint("TOPLEFT", pv, "TOPLEFT", 0, 0)
     leftCol:SetSize(LEFT_COL_WIDTH, LEFT_COL_HEIGHT)
 
-    -- Active-context label (accent-color; visible only when perLoadoutSpec=true).
-    -- Declared before UpdateLoadoutLabel so the closure can reference it.
-    -- Final SetPoint anchors are applied AFTER the toggle widget is created
-    -- so the label can sit immediately below it.
     local loadoutLabel = GUI:CreateLabel(leftCol, "", 11, C.accent)
     loadoutLabel:SetJustifyH("LEFT")
     loadoutLabel:Hide()
 
-    -- UpdateLoadoutLabel — resolves the current spec + loadout name and
-    -- updates the accent-color label below the toggle.
-    -- Mirrors click_cast_content.lua:660-702 (D-04). Uses only
-    -- GetLastSelectedSavedConfigID (never GetActiveConfigID) per LDST-04.
     local function UpdateLoadoutLabel()
         local db = QUI and QUI.db and QUI.db.profile and QUI.db.profile.ncdm
         if db and db.perLoadoutSpec then
@@ -2842,8 +2689,6 @@ local function BuildPreviewBlock(pv)
                         local configInfo = lookupID and C_Traits and C_Traits.GetConfigInfo
                             and C_Traits.GetConfigInfo(lookupID)
                         local customName = configInfo and configInfo.name
-                        -- Use custom name only when it differs from the spec name
-                        -- (Blizzard defaults to spec name for unnamed loadouts).
                         if customName and customName ~= specName then
                             labelText = labelText .. " \226\128\148 " .. customName
                         elseif ordinal then
@@ -2859,46 +2704,27 @@ local function BuildPreviewBlock(pv)
         loadoutLabel:Hide()
     end
 
-    -- Trigger a full CDM repaint after the toggle changes routing.
-    -- Toggle clicks cannot happen in combat (Blizzard UI is inaccessible
-    -- then), so no InCombatLockdown guard is needed here.
     local function refreshCDM()
         if ns.CDMContainers and ns.CDMContainers.RefreshAll then
             ns.CDMContainers.RefreshAll()
         end
     end
 
-    -- Toggle onChange handler. The framework has already written
-    -- dbTable[dbKey] = newValue before calling us, so reading ncdm.perLoadoutSpec
-    -- inside this callback gives the NEW value. The old value is captured in
-    -- _lastPerLoadoutSpecValue which was set at BuildPreviewBlock entry and is
-    -- updated at the end of every onChange call (D-07 / RESEARCH Q2).
     local function onPerLoadoutToggle(newValue)
         local oldValue = _lastPerLoadoutSpecValue
 
-        -- false→true transition: seed the active loadout slot from slot 0
-        -- once, if the active slot is empty and slot 0 has data (D-05).
-        -- SeedActiveLoadoutFromSharedSlot is internally gated on both
-        -- conditions; we just need to provide the current spec and loadout IDs
-        -- via the public helper which resolves them internally.
         if oldValue == false and newValue == true then
             if ns.CDMContainers and ns.CDMContainers.SeedActiveLoadoutFromSharedSlot then
                 ns.CDMContainers.SeedActiveLoadoutFromSharedSlot()
             end
         end
-        -- true→false: routing-only change (GetEffectiveLoadoutID returns 0).
-        -- No SavedVariables data is destroyed (D-05b / LDUX-05).
 
-        -- Keep the snapshot current for the next onChange call.
         _lastPerLoadoutSpecValue = newValue
 
         UpdateLoadoutLabel()
         refreshCDM()
     end
 
-    -- Always visible in v1 — the LDUX-02 per-spec-disable gate is vestigial
-    -- for CDM (all built-in containers are always spec-scoped). Future
-    -- per-spec-disable work would replace the constant below (D-03).
     local _isSpecScoped = true  -- luacheck: ignore (reserved for future use)
 
     local perLoadoutToggle = GUI:CreateFormCheckbox(
@@ -2914,34 +2740,19 @@ local function BuildPreviewBlock(pv)
     perLoadoutToggle:SetPoint("TOPLEFT", leftCol, "TOPLEFT", LEFT_COL_PAD, -2)
     perLoadoutToggle:SetPoint("RIGHT", leftCol, "RIGHT", -LEFT_COL_PAD, 0)
 
-    -- Position the accent label immediately below the toggle, inside leftCol.
     loadoutLabel:SetPoint("TOPLEFT", perLoadoutToggle, "BOTTOMLEFT", 0, -2)
     loadoutLabel:SetPoint("TOPRIGHT", perLoadoutToggle, "BOTTOMRIGHT", 0, -2)
 
-    -- Perform the initial label render now that both the toggle and label exist.
     UpdateLoadoutLabel()
 
-    -- Subscribe to loadout-change events so the label refreshes live when
-    -- the player switches loadout in-game or a profile switch changes the
-    -- perLoadoutSpec value (D-06).
     if ns.CDMContainers and ns.CDMContainers.RegisterLoadoutChangeCallback then
         ns.CDMContainers.RegisterLoadoutChangeCallback(function()
-            -- Re-sync _lastPerLoadoutSpecValue on every confirmed loadout swap
-            -- so the next toggle click detects the transition correctly,
-            -- including after a profile switch that changed perLoadoutSpec.
             local db2 = QUI and QUI.db and QUI.db.profile and QUI.db.profile.ncdm
             _lastPerLoadoutSpecValue = db2 and db2.perLoadoutSpec or false
             UpdateLoadoutLabel()
         end)
     end
 
-    ---------------------------------------------------------------------------
-    -- Dropdown row + live preview. Pass `pv` directly so the preview frame
-    -- (returned by the framework as `block.previewHost`) can reclaim the
-    -- full pv width via post-build re-anchoring below leftCol. The dropdown
-    -- header row is then nudged past leftCol's right edge so it doesn't
-    -- overlap the toggle widget.
-    ---------------------------------------------------------------------------
     local block = FullSurface.BuildDropdownPreviewBlock(pv, {
         gui = GUI,
         state = State,
@@ -3005,34 +2816,21 @@ local function BuildPreviewBlock(pv)
                 State.deleteBtn:Hide()
             end
             if _G.QUI_BuildCDMPreview then
-                _G.QUI_BuildCDMPreview(previewHost, State.activeContainer)
+                _G.QUI_BuildCDMPreview(previewHost, State.activeContainer, {
+                    outer = pv,
+                    outerChromeHeight = LEFT_COL_HEIGHT + 4 + 8,
+                })
             end
         end,
     })
 
-    -- Re-anchor the framework-built widgets so the toggle doesn't overlap
-    -- the dropdown AND the preview reclaims full width below leftCol.
-    -- Calling SetPoint with the same anchor name ("TOPLEFT") REPLACES the
-    -- framework's existing TOPLEFT anchor while leaving TOPRIGHT / BOTTOMRIGHT
-    -- intact, so the widgets still stretch to pv's right edge as before.
     if block and block.headerRow then
-        -- 8px gap between leftCol and the dropdown row. The "Container"
-        -- label inside the dropdown widget is also re-anchored below so
-        -- it sits next to the actual dropdown selection (not at the row's
-        -- left edge), which gives the toggle and label plenty of visual
-        -- separation regardless of this gap value.
         block.headerRow:SetPoint("TOPLEFT", leftCol, "TOPRIGHT", LEFT_COL_PAD, 0)
     end
     if block and block.previewHost then
         block.previewHost:SetPoint("TOPLEFT", leftCol, "BOTTOMLEFT", 0, -4)
     end
 
-    -- Re-anchor the framework's internal "Container" FontString from the
-    -- container's LEFT edge to RIGHT-of-dropdown-button so the label sits
-    -- adjacent to the dropdown selection instead of floating at the row's
-    -- left edge. The framework exposes the outer container as block.dropdown
-    -- but doesn't surface the label or button directly — walk the container's
-    -- regions/children to find them.
     if block and block.dropdown then
         local container = block.dropdown
         local labelText, dropdownButton
@@ -3055,18 +2853,6 @@ local function BuildPreviewBlock(pv)
     end
 end
 
----------------------------------------------------------------------------
--- TILE BODY BUILDER — tab strip + content host.
---
--- Rendered inside tile.config.buildFunc (no framework sub-pages). We own
--- the full body which means full control over dynamic tab visibility
--- (Filters / Per-Spec hidden for built-ins) and no surprises when the
--- framework's sub-page tab strip eventually merges back into V1.
----------------------------------------------------------------------------
-
--- Horizontal scroll-free tab strip matching the framework's style:
--- plain labels, 11pt, 2px accent underline on the active tab. See
--- framework_v2.lua's RenderSubPageTabs for the reference look.
 local function BuildTabStrip(parent)
     return FullSurface.CreateTabStrip(parent)
 end

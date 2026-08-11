@@ -1,0 +1,4026 @@
+local ADDON_NAME, ns = ...
+local QUI = ns.QUI or {}
+ns.QUI = QUI
+local Helpers = ns.Helpers
+local QUICore = ns.Addon
+local UIKit = ns.UIKit
+
+local function CJKFont(fs, p, s, f)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
+    else
+        fs:SetFont(p, s, f)
+    end
+end
+
+local function GeneralFontFace()
+    return (ns.Helpers and ns.Helpers.GetGeneralFont and ns.Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
+end
+
+local GetCore = ns.Helpers.GetCore
+
+local function GetSkinBase()
+    return ns.SkinBase
+end
+
+local pendingDecorMode = nil
+local pendingStatsPanelRefresh = false
+local pendingCharacterFrameScale = nil
+local pendingPaneLayout = false
+local ScheduleUpdate
+local ApplyCharacterPaneLayout
+
+local function RunAfterCharacterPaneLayoutTick(callback)
+    C_Timer.After(0, callback)
+end
+
+local function AnchorCharacterFrameBottomTabs(firstTabYOffset)
+    if not CharacterFrame then return end
+
+    if CharacterFrameTab1 then
+        CharacterFrameTab1:ClearAllPoints()
+        CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, firstTabYOffset)
+    end
+    if CharacterFrameTab2 and CharacterFrameTab1 then
+        CharacterFrameTab2:ClearAllPoints()
+        CharacterFrameTab2:SetPoint("TOPLEFT", CharacterFrameTab1, "TOPRIGHT", -5, 0)
+    end
+    if CharacterFrameTab3 and CharacterFrameTab2 then
+        CharacterFrameTab3:ClearAllPoints()
+        CharacterFrameTab3:SetPoint("TOPLEFT", CharacterFrameTab2, "TOPRIGHT", -5, 0)
+    end
+end
+
+local charCombatFrame = CreateFrame("Frame")
+charCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+charCombatFrame:SetScript("OnEvent", function()
+    if pendingCharacterFrameScale then
+        if CharacterFrame then CharacterFrame:SetScale(pendingCharacterFrameScale) end
+        pendingCharacterFrameScale = nil
+    end
+
+    if not CharacterFrame or not CharacterFrame:IsShown() then
+        pendingDecorMode = nil
+        pendingStatsPanelRefresh = false
+        pendingPaneLayout = false
+        return
+    end
+
+    if pendingPaneLayout then
+        pendingPaneLayout = false
+        if ApplyCharacterPaneLayout then ApplyCharacterPaneLayout(true) end
+    end
+
+    if pendingDecorMode then
+        local skinHandles = _G.QUI_CharacterFrameSkinning
+        if pendingDecorMode == "other" then
+            if not (skinHandles and skinHandles.SetExtended) then
+                if CharacterFramePortrait then CharacterFramePortrait:Show() end
+                if CharacterFrame.Background then CharacterFrame.Background:Show() end
+                if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Show() end
+                if CharacterFrameBg then CharacterFrameBg:Show() end
+            end
+        elseif pendingDecorMode == "character" then
+            if not (skinHandles and skinHandles.SetExtended) then
+                if CharacterFramePortrait then CharacterFramePortrait:Hide() end
+                if CharacterFrame.Background then CharacterFrame.Background:Hide() end
+                if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Hide() end
+                if CharacterFrameBg then CharacterFrameBg:Hide() end
+            end
+        end
+        pendingDecorMode = nil
+    end
+
+    if pendingStatsPanelRefresh then
+        pendingStatsPanelRefresh = false
+        if ScheduleUpdate then
+            C_Timer.After(0, ScheduleUpdate)
+        end
+    end
+end)
+
+local function SetCharacterFrameScale(scale)
+    if not CharacterFrame then return end
+    if InCombatLockdown() then
+        pendingCharacterFrameScale = scale
+        return
+    end
+    CharacterFrame:SetScale(scale)
+end
+
+local function AreCharacterStatsSecretsDisabled()
+    local ok, healthMax = pcall(UnitHealthMax, "player")
+    if not ok or Helpers.IsSecretValue(healthMax) then
+        return true
+    end
+
+    local statBase, healthStat
+    ok, statBase, healthStat = pcall(UnitStat, "player", 3)
+    if not ok or Helpers.IsSecretValue(statBase) or Helpers.IsSecretValue(healthStat) then
+        return true
+    end
+
+    if GetCombatRating and CR_CRIT_SPELL then
+        local critRating
+        ok, critRating = pcall(GetCombatRating, CR_CRIT_SPELL)
+        if not ok or Helpers.IsSecretValue(critRating) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local EQUIPMENT_SLOTS = {
+    { name = "Head", id = INVSLOT_HEAD, side = "left" },
+    { name = "Neck", id = INVSLOT_NECK, side = "left" },
+    { name = "Shoulder", id = INVSLOT_SHOULDER, side = "left" },
+    { name = "Back", id = INVSLOT_BACK, side = "left" },
+    { name = "Chest", id = INVSLOT_CHEST, side = "left" },
+    { name = "Shirt", id = INVSLOT_BODY, side = "left" },
+    { name = "Tabard", id = INVSLOT_TABARD, side = "left" },
+    { name = "Wrist", id = INVSLOT_WRIST, side = "left" },
+    { name = "MainHand", id = INVSLOT_MAINHAND, side = "bottom" },
+    { name = "SecondaryHand", id = INVSLOT_OFFHAND, side = "bottom" },
+    { name = "Hands", id = INVSLOT_HAND, side = "right" },
+    { name = "Waist", id = INVSLOT_WAIST, side = "right" },
+    { name = "Legs", id = INVSLOT_LEGS, side = "right" },
+    { name = "Feet", id = INVSLOT_FEET, side = "right" },
+    { name = "Finger0", id = INVSLOT_FINGER1, side = "right" },
+    { name = "Finger1", id = INVSLOT_FINGER2, side = "right" },
+    { name = "Trinket0", id = INVSLOT_TRINKET1, side = "right" },
+    { name = "Trinket1", id = INVSLOT_TRINKET2, side = "right" },
+}
+
+local C = {
+    bg = { 0.067, 0.094, 0.153, 0.95 },
+    bgLight = { 0.122, 0.161, 0.216, 1 },
+    accent = { 0.376, 0.647, 0.980, 1 },
+    text = { 0.953, 0.957, 0.965, 1 },
+    textMuted = { 0.6, 0.65, 0.7, 1 },
+    border = { 0.2, 0.25, 0.3, 1 },
+
+    health = { 0.937, 0.267, 0.267, 1 },
+    mana = { 0.231, 0.510, 0.965, 1 },
+    crit = { 0.976, 0.451, 0.086, 1 },
+    haste = { 0.918, 0.702, 0.031, 1 },
+    mastery = { 0.545, 0.361, 0.965, 1 },
+    versatility = { 0.024, 0.714, 0.831, 1 },
+
+    enchanted = { 0.376, 0.647, 0.980, 1 },
+    missing = { 0.6, 0.6, 0.6, 0.7 },
+}
+
+local GEM_COLORS = {
+    Red = { 1, 0.2, 0.2, 1 },
+    Blue = { 0.2, 0.4, 1, 1 },
+    Yellow = { 1, 0.8, 0.2, 1 },
+    Meta = { 0.8, 0.8, 0.8, 1 },
+    Prismatic = { 1, 1, 1, 1 },
+    Hydraulic = { 0.2, 0.8, 0.8, 1 },
+    Cogwheel = { 0.7, 0.7, 0.7, 1 },
+    Domination = { 0.6, 0.2, 0.8, 1 },
+    Tinker = { 0.4, 0.8, 0.4, 1 },
+    Primordial = { 0.4, 0.6, 0.8, 1 },
+}
+
+local CLASS_ABBREVIATIONS = {
+    ["Demon Hunter"] = "DH",
+    ["Death Knight"] = "DK",
+}
+
+local function AbbreviateClassName(className)
+    return CLASS_ABBREVIATIONS[className] or className
+end
+
+local characterPaneInitialized = false
+local slotOverlays = {}
+local statsPanel = nil
+local pendingUpdate = false
+local updatingStatsPanel = false
+
+local frameState, GetState = Helpers.CreateStateTable()
+local EMPTY = {}
+
+local CreateStatsPanel
+
+local defaultSettings = {
+    enabled = true,
+    showItemName = true,
+    showItemLevel = true,
+    showEnchants = true,
+    showGems = true,
+    showGemSummary = false,
+    showDurability = false,
+    inspectEnabled = true,
+    showModelBackground = true,
+    secondaryStatFormat = "both",
+    showTooltips = false,
+    showInspectItemName = true,
+    showInspectItemLevel = true,
+    showInspectEnchants = true,
+    showInspectGems = true,
+}
+
+local function GetSettings()
+    local settings = Helpers.GetModuleDB("character")
+    return settings or defaultSettings
+end
+
+local trackedEnchantFonts = {}
+local trackedILvlFonts = {}
+local trackedItemNameFonts = {}
+
+local function GetGlobalFont()
+    return Helpers.GetGeneralFont()
+end
+
+local sidebarTabBorders = Helpers.CreateStateTable()
+local sidebarTabHooked = Helpers.CreateStateTable()
+local sidebarTabBaseWidth = nil
+local sidebarTabBaseHeight = nil
+
+local GetPixelSize = UIKit.GetPixelSize
+
+local function SetInsetPixelPoints(region, relativeTo, pixels)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.SetInsetPixelPoints then
+        skinBase.SetInsetPixelPoints(region, relativeTo, pixels)
+    end
+end
+
+local function ApplyOnePixelBorder(frame, withBackground, borderColor, bgColor)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.ApplyChromeBackdrop then
+        skinBase.ApplyChromeBackdrop(frame, {
+            withBackground = withBackground,
+            withInsets = withBackground,
+            borderColor = borderColor,
+            bgColor = bgColor,
+        })
+    end
+end
+
+local function SetOnePixelBorderColors(frame, borderColor, bgColor)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.SetBackdropColors then
+        skinBase.SetBackdropColors(frame, borderColor, bgColor)
+    end
+end
+
+local function SetSlotBorderPoints(borderFrame, slot)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.SetExpandedPixelPoints then
+        skinBase.SetExpandedPixelPoints(borderFrame, slot, 1)
+        return
+    end
+
+    local px = GetPixelSize(borderFrame)
+    borderFrame:ClearAllPoints()
+    borderFrame:SetPoint("TOPLEFT", slot, "TOPLEFT", -px, px)
+    borderFrame:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", px, -px)
+end
+
+local function ApplySlotPixelBackdrop(borderFrame, borderColor)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.ApplyChromeBackdrop then
+        skinBase.ApplyChromeBackdrop(borderFrame, {
+            withBackground = false,
+            withInsets = false,
+            borderColor = borderColor,
+            borderPixels = 1,
+        })
+        return
+    end
+
+    ApplyOnePixelBorder(borderFrame, false, borderColor)
+end
+
+local function GetCharacterChromePalette()
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.GetChromePalette then
+        return skinBase.GetChromePalette({
+            borderFallback = C.border,
+            accentFallback = C.accent,
+            bgFallback = C.bg,
+        })
+    end
+    return {
+        border = C.border,
+        accent = C.accent,
+        bg = C.bg,
+    }
+end
+
+local function GetCharacterBorderColor()
+    local color = GetCharacterChromePalette().border
+    return color[1], color[2], color[3], color[4] or 1
+end
+
+local function GetCharacterAccentColor()
+    local color = GetCharacterChromePalette().accent
+    return color[1], color[2], color[3], color[4] or 1
+end
+
+local function GetCharacterBgColor()
+    local color = GetCharacterChromePalette().bg
+    return color[1], color[2], color[3], color[4] or 0.95
+end
+
+local function StyleCloseButton(button)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.SkinChromeCloseButton then
+        skinBase.SkinChromeCloseButton(button, {
+            stateKey = "characterPaneClose",
+            font = GetGlobalFont(),
+            fontFlags = "OUTLINE",
+            textColor = C.text,
+            borderColor = function() local r, g, b = GetCharacterBorderColor(); return r, g, b, 1 end,
+            accentColor = function() local r, g, b = GetCharacterAccentColor(); return r, g, b, 1 end,
+            bgColor = function() return GetCharacterBgColor() end,
+            insetPixels = 2,
+        })
+    end
+end
+
+local function GetSidebarTabIcon(tab, index)
+    if not tab then return nil end
+    if tab.Icon then
+        return tab.Icon
+    end
+
+    if index then
+        local explicitIcon = _G["PaperDollSidebarTab" .. index .. "Icon"]
+        if explicitIcon then
+            return explicitIcon
+        end
+    end
+
+    local name = tab.GetName and tab:GetName()
+    local namedIcon = name and _G[name .. "Icon"]
+    return namedIcon or tab.icon or (tab.GetNormalTexture and tab:GetNormalTexture())
+end
+
+local function GetSidebarTabIndex(tab)
+    if not (tab and tab.GetID) then return nil end
+
+    local ok, id = pcall(tab.GetID, tab)
+    if not ok or Helpers.IsSecretValue(id) then return nil end
+    id = tonumber(id)
+    return id and id > 0 and id or nil
+end
+
+local function IsSidebarFrameShown(tab)
+    local index = GetSidebarTabIndex(tab)
+    if not index or type(_G.GetPaperDollSideBarFrame) ~= "function" then return false end
+
+    local ok, frame = ns.SafeCall("best-effort-style", _G.GetPaperDollSideBarFrame, index)
+    return ok and frame and frame.IsShown and frame:IsShown()
+end
+
+local function IsSidebarTabActive(tab)
+    if not tab then return false end
+    if tab.GetChecked and tab:GetChecked() then return true end
+    if tab.IsSelected and tab:IsSelected() then return true end
+    if tab.SelectedTexture and tab.SelectedTexture.IsShown and tab.SelectedTexture:IsShown() then return true end
+    if IsSidebarFrameShown(tab) then return true end
+    if tab.Hider and tab.Hider.IsShown and not tab.Hider:IsShown() then return true end
+    return false
+end
+
+local function UpdateSidebarTabBorder(tab)
+    local border = tab and sidebarTabBorders[tab]
+    if not border then return end
+
+    if IsSidebarTabActive(tab) then
+        local r, g, b = GetCharacterAccentColor()
+        SetOnePixelBorderColors(border, { r, g, b, 1 })
+    else
+        local r, g, b = GetCharacterBorderColor()
+        SetOnePixelBorderColors(border, { r, g, b, 1 })
+    end
+end
+
+local function FixSidebarTabRegionCoords(tex, x1)
+    if x1 ~= 0.16001 then
+        tex:SetTexCoord(0.16001, 0.86, 0.16, 0.86)
+    end
+end
+
+local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
+    if not tab then return end
+
+    if uniformWidth and uniformHeight and uniformWidth > 0 and uniformHeight > 0 then
+        QUICore:SetPixelPerfectSize(tab, uniformWidth, uniformHeight)
+    end
+
+    local icon = GetSidebarTabIcon(tab, index)
+    if icon then
+        icon:ClearAllPoints()
+        icon:SetAllPoints()
+        QUICore:ApplyPixelSnapping(icon)
+    end
+
+    if tab.Highlight then
+        tab.Highlight:SetColorTexture(1, 1, 1, 0.3)
+        tab.Highlight:ClearAllPoints()
+        tab.Highlight:SetAllPoints(tab)
+    end
+
+    if tab.Hider then
+        tab.Hider:SetColorTexture(0, 0, 0, 0.8)
+    end
+
+    if tab.TabBg and tab.TabBg.Hide then
+        tab.TabBg:Hide()
+    end
+
+    local border = sidebarTabBorders[tab]
+    if not border then
+        border = CreateFrame("Frame", nil, tab, "BackdropTemplate")
+        border:SetFrameLevel(tab:GetFrameLevel() + 15)
+        border:EnableMouse(false)
+        sidebarTabBorders[tab] = border
+    end
+    border:ClearAllPoints()
+    local borderPx = QUICore:GetPixelSize(border)
+    border:SetPoint("TOPLEFT", tab, "TOPLEFT", -borderPx, borderPx)
+    border:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", borderPx, -borderPx)
+
+    if tab.Hider then
+        tab.Hider:ClearAllPoints()
+        tab.Hider:SetAllPoints(border)
+    end
+
+    ApplyOnePixelBorder(border, false)
+    UpdateSidebarTabBorder(tab)
+
+    if index == 1 and not (frameState[tab] or EMPTY).sidebarTexCoordHooked then
+        for _, region in next, { tab:GetRegions() } do
+            if region and region.SetTexCoord then
+                region:SetTexCoord(0.16, 0.86, 0.16, 0.86)
+                hooksecurefunc(region, "SetTexCoord", FixSidebarTabRegionCoords)
+            end
+        end
+        GetState(tab).sidebarTexCoordHooked = true
+    end
+
+    if sidebarTabHooked[tab] then return end
+    tab:HookScript("OnEnter", function(self)
+        local r, g, b = GetCharacterAccentColor()
+        local bd = sidebarTabBorders[self]
+        if bd then SetOnePixelBorderColors(bd, { r, g, b, 1 }) end
+    end)
+    tab:HookScript("OnLeave", function(self)
+        UpdateSidebarTabBorder(self)
+    end)
+    tab:HookScript("OnClick", function()
+        C_Timer.After(0, function()
+            for i = 1, 3 do
+                UpdateSidebarTabBorder(_G["PaperDollSidebarTab" .. i])
+            end
+        end)
+    end)
+    sidebarTabHooked[tab] = true
+end
+
+local function StyleSidebarTabs()
+    local tabs = { _G.PaperDollSidebarTab1, _G.PaperDollSidebarTab2, _G.PaperDollSidebarTab3 }
+
+    if not sidebarTabBaseWidth or not sidebarTabBaseHeight then
+        local refTab = tabs[1]
+        if refTab and refTab.GetWidth and refTab.GetHeight then
+            sidebarTabBaseWidth = math.floor((refTab:GetWidth() or 24) + 0.5)
+            sidebarTabBaseHeight = math.floor((refTab:GetHeight() or 24) + 0.5)
+        else
+            sidebarTabBaseWidth, sidebarTabBaseHeight = 24, 24
+        end
+    end
+
+    if CharacterFrame and sidebarTabBaseWidth and sidebarTabBaseHeight then
+        local spacing = 0
+        local totalWidth = (sidebarTabBaseWidth * 3) + (spacing * 2)
+        local leftX = -38 - math.floor(totalWidth / 2)
+        local topY = -40
+
+        for index, tab in ipairs(tabs) do
+            if tab then
+                tab:ClearAllPoints()
+                tab:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", leftX + ((index - 1) * (sidebarTabBaseWidth + spacing)), topY)
+            end
+        end
+
+        if PaperDollSidebarTabs and tabs[1] and tabs[3] then
+            PaperDollSidebarTabs:ClearAllPoints()
+            PaperDollSidebarTabs:SetPoint("TOPLEFT", tabs[1], "TOPLEFT", 0, 0)
+            PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", tabs[3], "BOTTOMRIGHT", 0, 0)
+        end
+    end
+
+    for index, tab in ipairs(tabs) do
+        if tab then
+            StyleSidebarTab(tab, index, sidebarTabBaseWidth, sidebarTabBaseHeight)
+        end
+    end
+end
+
+local function GetItemQualityColorRGB(quality)
+    return Helpers.GetItemQualityColor(quality)
+end
+
+local function FormatNumber(num)
+    if Helpers.IsSecretValue(num) then
+        return "--" -- @secret-policy: encode-secret-as-placeholder
+    end
+
+    num = tonumber(num) or 0
+    if num == 0 then return "0" end
+
+    if num >= 1000000 then
+        return string.format("%.1fM", num / 1000000)
+    elseif num >= 1000 then
+        return string.format("%.1fK", num / 1000)
+    else
+        return tostring(math.floor(num))
+    end
+end
+
+local function FormatPercent(value, decimals)
+    decimals = decimals or 2
+
+    if Helpers.IsSecretValue(value) then
+        return "--" -- @secret-policy: encode-secret-as-placeholder
+    end
+
+    value = tonumber(value) or 0
+    return string.format("%." .. decimals .. "f%%", value)
+end
+
+local TOOLTIP_LINE_TYPE_GEM_SOCKET = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.GemSocket or 3
+local TOOLTIP_LINE_TYPE_ENCHANT = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemEnchantmentPermanent or 15
+local TOOLTIP_LINE_TYPE_ITEM_LEVEL = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemLevel or 31
+local TOOLTIP_LINE_TYPE_UPGRADE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemUpgradeLevel or 32
+
+local PERMANENT_ENCHANT_EQUIP_LOCS = {
+    INVTYPE_HEAD = true,
+    INVTYPE_SHOULDER = true,
+    INVTYPE_CHEST = true,
+    INVTYPE_ROBE = true,
+    INVTYPE_FEET = true,
+    INVTYPE_FINGER = true,
+    INVTYPE_LEGS = true,
+    INVTYPE_WEAPON = true,
+    INVTYPE_2HWEAPON = true,
+    INVTYPE_WEAPONMAINHAND = true,
+    INVTYPE_WEAPONOFFHAND = true,
+    INVTYPE_RANGED = true,
+    INVTYPE_RANGEDRIGHT = true,
+}
+
+local function IsInspectUnit(unit)
+    return unit and unit ~= "player"
+end
+
+local function CleanTooltipText(text)
+    if text == nil or Helpers.IsSecretValue(text) then return "" end
+    if type(text) ~= "string" then text = tostring(text) end
+
+    text = text:gsub("|c%x%x%x%x%x%x%x%x", "")
+    text = text:gsub("|r", "")
+    text = text:gsub("|A.-|a", "")
+    text = text:gsub("|T.-|t", "")
+    return text:match("^%s*(.-)%s*$") or ""
+end
+
+local function ReadableNumber(value)
+    if value == nil or Helpers.IsSecretValue(value) then return nil end
+    return tonumber(value)
+end
+
+local function GetReadableInventoryItemLink(unit, slotId)
+    if not unit or not slotId or not GetInventoryItemLink then return nil end
+
+    local ok, itemLink = pcall(GetInventoryItemLink, unit, slotId)
+    if not ok or Helpers.IsSecretValue(itemLink) then
+        return nil
+    end
+
+    return itemLink
+end
+
+local function GetItemIDFromLink(itemLink)
+    if not itemLink or Helpers.IsSecretValue(itemLink) then return nil end
+
+    if GetItemInfoInstant then
+        local ok, itemID = ns.SafeCall("best-effort-style", GetItemInfoInstant, itemLink)
+        itemID = ok and ReadableNumber(itemID) or nil
+        if itemID and itemID > 0 then return itemID end
+    end
+
+    if type(itemLink) == "string" then
+        return tonumber(itemLink:match("item:(%d+)"))
+    end
+
+    return nil
+end
+
+local function GetInventoryTooltipData(unit, slotId)
+    if not (C_TooltipInfo and C_TooltipInfo.GetInventoryItem) then return nil end
+
+    local ok, tooltipData = pcall(C_TooltipInfo.GetInventoryItem, unit, slotId)
+    if not ok or Helpers.IsSecretValue(tooltipData) then return nil end
+    if type(tooltipData) ~= "table" or not Helpers.CanAccessTable(tooltipData) then return nil end
+    if type(tooltipData.lines) ~= "table" or not Helpers.CanAccessTable(tooltipData.lines) then return nil end
+
+    return tooltipData
+end
+
+local function MatchItemLevelText(text)
+    text = CleanTooltipText(text)
+    if text == "" then return nil end
+
+    local pattern = ITEM_LEVEL and ITEM_LEVEL:gsub("%%d", "(%%d+)") or "Item Level (%d+)"
+    local ilvl = text:match(pattern)
+    ilvl = ReadableNumber(ilvl)
+    return ilvl and ilvl > 0 and ilvl or nil
+end
+
+local function MatchUpgradeText(text)
+    text = CleanTooltipText(text)
+    if text == "" then return nil, nil, nil end
+
+    if ITEM_UPGRADE_FRAME_CURRENT_UPGRADE_FORMAT_STRING then
+        local pattern = ITEM_UPGRADE_FRAME_CURRENT_UPGRADE_FORMAT_STRING:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
+        local track, current, max = text:match(pattern)
+        if track and current and max then
+            return track:match("^%s*(.-)%s*$"), current, max
+        end
+    end
+
+    local track, current, max = text:match("Upgrade Level:%s*(.+)%s+(%d+)%s*/%s*(%d+)")
+    if track and current and max then
+        return track:match("^%s*(.-)%s*$"), current, max
+    end
+
+    track, current, max = text:match(": (.+)%s+(%d+)%s*/%s*(%d+)")
+    if track and current and max then
+        return track:match("^%s*(.-)%s*$"), current, max
+    end
+
+    return nil, nil, nil
+end
+
+local function MatchEnchantText(text)
+    text = CleanTooltipText(text)
+    if text == "" then return nil end
+
+    local enchant
+    if ENCHANTED_TOOLTIP_LINE then
+        local prefix, suffix = ENCHANTED_TOOLTIP_LINE:match("^(.-)%%s(.-)$")
+        if prefix then
+            prefix = prefix:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+            suffix = suffix:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+            enchant = text:match("^%s*" .. prefix .. "(.+)" .. suffix .. "%s*$")
+        end
+    end
+    enchant = enchant or text:match("Enchanted:%s*(.+)")
+    enchant = enchant or text
+
+    enchant = CleanTooltipText(enchant)
+    enchant = enchant:gsub("^Enchant%s+.-%s*%-%s*", "")
+    enchant = enchant:match("^%s*(.-)%s*$")
+
+    return enchant ~= "" and enchant or nil
+end
+
+local function GetItemEquipLoc(itemLink)
+    if not itemLink or Helpers.IsSecretValue(itemLink) then return nil end
+
+    if C_Item and C_Item.GetItemInfo then
+        local ok, equipLoc = pcall(function()
+            return select(9, C_Item.GetItemInfo(itemLink))
+        end)
+        if ok and not Helpers.IsSecretValue(equipLoc) and equipLoc then
+            return equipLoc
+        end
+    end
+
+    if GetItemInfo then
+        local ok, equipLoc = pcall(function()
+            return select(9, GetItemInfo(itemLink))
+        end)
+        if ok and not Helpers.IsSecretValue(equipLoc) then
+            return equipLoc
+        end
+    end
+
+    return nil
+end
+
+local function CanItemUsePermanentEnchant(itemLink)
+    local equipLoc = GetItemEquipLoc(itemLink)
+    if equipLoc then
+        return PERMANENT_ENCHANT_EQUIP_LOCS[equipLoc] == true
+    end
+
+    return false
+end
+
+local function GetSlotItemLevel(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
+    if not itemLink then return nil end
+
+    local itemID = GetItemIDFromLink(itemLink)
+    if itemID and C_Item and C_Item.RequestLoadItemDataByID then
+        local cached = true
+        if C_Item.IsItemDataCachedByID then
+            local ok, isCached = ns.SafeCall("best-effort-style", C_Item.IsItemDataCachedByID, itemID)
+            cached = ok and isCached
+        end
+        if not cached then
+            C_Item.RequestLoadItemDataByID(itemID)
+        end
+    end
+
+    if C_Item and C_Item.GetDetailedItemLevelInfo then
+        local ok, actualItemLevel, _, sparseItemLevel = ns.SafeCall("best-effort-style", C_Item.GetDetailedItemLevelInfo, itemLink)
+        if ok then
+            actualItemLevel = ReadableNumber(actualItemLevel)
+            if actualItemLevel and actualItemLevel > 0 then
+                return actualItemLevel
+            end
+            sparseItemLevel = ReadableNumber(sparseItemLevel)
+            if sparseItemLevel and sparseItemLevel > 0 then
+                return sparseItemLevel
+            end
+        end
+    end
+
+    if C_Item and C_Item.GetItemInfo then
+        local ok, ilvl = ns.SafeCall("best-effort-style", function()
+            return select(4, C_Item.GetItemInfo(itemLink))
+        end)
+        ilvl = ok and ReadableNumber(ilvl) or nil
+        if ilvl and ilvl > 0 then
+            return ilvl
+        end
+    end
+
+    local tooltipData = GetInventoryTooltipData(unit, slotId)
+    if tooltipData then
+        for _, line in ipairs(tooltipData.lines) do
+            local lineType = ReadableNumber(line.type)
+            if lineType == TOOLTIP_LINE_TYPE_ITEM_LEVEL then
+                local ilvl = MatchItemLevelText(line.leftText)
+                if ilvl then return ilvl end
+            end
+        end
+        for _, line in ipairs(tooltipData.lines) do
+            local ilvl = MatchItemLevelText(line.leftText)
+            if ilvl then
+                return ilvl
+            end
+        end
+    end
+
+    return nil
+end
+
+local function GetSlotItemQuality(unit, slotId)
+    local ok, quality = pcall(function()
+        return GetInventoryItemQuality(unit, slotId)
+    end)
+    if ok and not Helpers.IsSecretValue(quality) then
+        return quality
+    end
+    return nil
+end
+
+local function GetEnchantText(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
+    if not itemLink then return nil, nil end
+
+    local isEnchantable = CanItemUsePermanentEnchant(itemLink)
+
+    local tooltipData = GetInventoryTooltipData(unit, slotId)
+    if tooltipData then
+        for _, line in ipairs(tooltipData.lines) do
+            local lineType = ReadableNumber(line.type)
+            if lineType == TOOLTIP_LINE_TYPE_ENCHANT then
+                local enchant = MatchEnchantText(line.leftText)
+                if enchant then
+                    return enchant, true
+                end
+            end
+        end
+
+        for _, line in ipairs(tooltipData.lines) do
+            local leftText = CleanTooltipText(line.leftText)
+            local enchant = MatchEnchantText(leftText)
+            if enchant and leftText:find("Enchanted", 1, true) then
+                return enchant, true
+            end
+        end
+    end
+
+    return nil, isEnchantable
+end
+
+local function GetUpgradeTrack(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
+    if not itemLink then return nil, nil, nil end
+
+    if C_Item and C_Item.GetItemUpgradeInfo then
+        local ok, upgradeInfo = pcall(C_Item.GetItemUpgradeInfo, itemLink)
+        if ok and type(upgradeInfo) == "table" and Helpers.CanAccessTable(upgradeInfo) then
+            local track = upgradeInfo.trackString
+            if Helpers.IsSecretValue(track) then track = nil end
+            local current = ReadableNumber(upgradeInfo.currentLevel)
+            local max = ReadableNumber(upgradeInfo.maxLevel)
+            if track and track ~= "" and current and max and max > 0 then
+                return track, tostring(current), tostring(max)
+            end
+        end
+    end
+
+    local tooltipData = GetInventoryTooltipData(unit, slotId)
+    if not tooltipData then
+        return nil, nil, nil
+    end
+
+    for _, line in ipairs(tooltipData.lines) do
+        local lineType = ReadableNumber(line.type)
+        if lineType == TOOLTIP_LINE_TYPE_UPGRADE then
+            local track, current, max = MatchUpgradeText(line.leftText)
+            if track and current and max then
+                return track, current, max
+            end
+        end
+    end
+
+    for _, line in ipairs(tooltipData.lines) do
+        local track, current, max = MatchUpgradeText(line.leftText)
+        if track and current and max then
+            return track, current, max
+        end
+    end
+
+    return nil, nil, nil
+end
+
+local function GetGemInfo(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
+    if not itemLink then return {}, 0 end
+
+    local gems = {}
+    local totalSockets = 0
+
+    if C_Item and C_Item.GetItemNumSockets then
+        local ok, socketCount = ns.SafeCall("best-effort-style", C_Item.GetItemNumSockets, itemLink)
+        if ok then
+            socketCount = ReadableNumber(socketCount)
+            if socketCount then
+                totalSockets = math.max(totalSockets, socketCount)
+            end
+        end
+    end
+
+    local tooltipData = GetInventoryTooltipData(unit, slotId)
+    if tooltipData then
+        local tooltipSockets = 0
+        for _, line in ipairs(tooltipData.lines) do
+            local lineType = ReadableNumber(line.type)
+            if lineType == TOOLTIP_LINE_TYPE_GEM_SOCKET then
+                tooltipSockets = tooltipSockets + 1
+            end
+        end
+        totalSockets = math.max(totalSockets, tooltipSockets)
+    end
+
+    local filledCount = 0
+    local maxGemSlots = math.max(totalSockets, 4)
+    for i = 1, maxGemSlots do
+        local gemName, gemLink
+        if C_Item and C_Item.GetItemGem then
+            local ok, name, link = pcall(C_Item.GetItemGem, itemLink, i)
+            if ok then
+                if not Helpers.IsSecretValue(name) then gemName = name end
+                if not Helpers.IsSecretValue(link) then gemLink = link end
+            end
+        elseif GetItemGem then
+            local ok, name, link = pcall(GetItemGem, itemLink, i)
+            if ok then
+                if not Helpers.IsSecretValue(name) then gemName = name end
+                if not Helpers.IsSecretValue(link) then gemLink = link end
+            end
+        end
+
+        if gemLink and not Helpers.IsSecretValue(gemLink) then
+            filledCount = filledCount + 1
+
+            local gemSubType, gemIcon
+            if GetItemInfo then
+                local ok, subType, icon = pcall(function()
+                    local itemSubType, _, _, itemTexture = select(7, GetItemInfo(gemLink))
+                    return itemSubType, itemTexture
+                end)
+                if ok then
+                    if not Helpers.IsSecretValue(subType) then gemSubType = subType end
+                    if not Helpers.IsSecretValue(icon) then gemIcon = icon end
+                end
+            end
+
+            if not gemIcon and C_Item and C_Item.GetItemIconByID then
+                local gemID = GetItemIDFromLink(gemLink)
+                if gemID then
+                    local ok, icon = pcall(C_Item.GetItemIconByID, gemID)
+                    if ok then
+                        if not Helpers.IsSecretValue(icon) then gemIcon = icon end
+                    end
+                end
+            end
+
+            table.insert(gems, {
+                link = gemLink,
+                icon = gemIcon,
+                type = gemSubType or gemName or "Prismatic",
+                filled = true,
+            })
+        end
+    end
+
+    if totalSockets < filledCount then
+        totalSockets = filledCount
+    end
+
+    local emptySockets = totalSockets - filledCount
+    for i = 1, emptySockets do
+        table.insert(gems, {
+            link = nil,
+            icon = nil,
+            type = "Empty",
+            filled = false,
+        })
+    end
+
+    return gems, totalSockets
+end
+
+local function GetSlotDurability(slotId)
+    local current, max = GetInventoryItemDurability(slotId)
+    if current and max and max > 0 then
+        return current, max, (current / max) * 100
+    end
+    return nil, nil, nil
+end
+
+local function CreateSlotOverlay(slotFrame, slotInfo, unit)
+    if not slotFrame then return nil end
+    local overlayUnit = unit or "player"
+
+    local settings = GetSettings()
+    local scale = 1.0
+
+    local ITEM_LEVEL_FONT = math.floor(12 * scale)
+    local ENCHANT_FONT = math.floor(9 * scale)
+    local ENCHANT_WIDTH_LEFT = math.floor(110 * scale)
+    local ENCHANT_WIDTH_RIGHT = math.floor(75 * scale)
+    local GEM_SIZE = math.floor(12 * scale)
+    local GEM_SPACING = math.floor(2 * scale)
+
+    local overlay = CreateFrame("Frame", nil, slotFrame)
+    overlay:SetAllPoints(slotFrame)
+    overlay:SetFrameLevel(slotFrame:GetFrameLevel() + 10)
+    overlay:SetClipsChildren(false)
+    overlay.unit = overlayUnit
+
+    local slotFont = GetGlobalFont()
+    local slotTextSize
+    if IsInspectUnit(overlayUnit) then
+        slotTextSize = settings.inspectSlotTextSize or 12
+    else
+        slotTextSize = settings.slotTextSize or ENCHANT_FONT
+    end
+    local TEXT_WIDTH = math.floor(140 * scale)
+    local FONT_FLAGS = "OUTLINE"
+
+    overlay.itemName = overlay:CreateFontString(nil, "OVERLAY")
+    CJKFont(overlay.itemName, slotFont, slotTextSize, FONT_FLAGS)
+    overlay.itemName:SetTextColor(1, 1, 1, 1)
+    overlay.itemName:SetWordWrap(false)
+    overlay.itemName:SetWidth(TEXT_WIDTH)
+    if not IsInspectUnit(overlayUnit) then
+        table.insert(trackedItemNameFonts, overlay.itemName)
+    end
+
+    overlay.itemLevel = overlay:CreateFontString(nil, "OVERLAY")
+    CJKFont(overlay.itemLevel, slotFont, slotTextSize, FONT_FLAGS)
+    overlay.itemLevel:SetTextColor(1, 1, 1, 1)
+    overlay.itemLevel:SetWordWrap(false)
+    if not IsInspectUnit(overlayUnit) then
+        table.insert(trackedILvlFonts, overlay.itemLevel)
+    end
+
+    local enchantColor
+    local useClassColor = IsInspectUnit(overlayUnit) and settings.inspectEnchantClassColor or settings.enchantClassColor
+    local customEnchantColor = IsInspectUnit(overlayUnit) and settings.inspectEnchantTextColor or settings.enchantTextColor
+    if useClassColor then
+        local _, class = UnitClass(overlayUnit)
+        -- @secret-policy: collapse-only — skin falls back to neutral styling
+        local classIsSecret = issecretvalue and issecretvalue(class)
+        if classIsSecret then class = nil end
+        local classColor = Helpers.GetClassColorTable(class)
+        if classColor then
+            enchantColor = {classColor.r, classColor.g, classColor.b}
+        else
+            enchantColor = customEnchantColor or C.enchanted
+        end
+    else
+        enchantColor = customEnchantColor or C.enchanted
+    end
+    local enchantFont = slotFont
+    if settings.enchantFont and ns.LSM then
+        local enchantFontPath = ns.LSM:Fetch("font", settings.enchantFont)
+        if enchantFontPath then
+            enchantFont = enchantFontPath
+        end
+    end
+    overlay.enchant = overlay:CreateFontString(nil, "OVERLAY")
+    CJKFont(overlay.enchant, enchantFont, slotTextSize, FONT_FLAGS)
+    overlay.enchant:SetTextColor(enchantColor[1], enchantColor[2], enchantColor[3], 1)
+    overlay.enchant:SetWordWrap(false)
+    overlay.enchant:SetWidth(TEXT_WIDTH)
+    if not IsInspectUnit(overlayUnit) then
+        table.insert(trackedEnchantFonts, overlay.enchant)
+    end
+
+    if slotInfo.side == "left" then
+        overlay.itemName:SetPoint("TOPLEFT", overlay, "TOPRIGHT", 4, 2)
+        overlay.itemName:SetJustifyH("LEFT")
+        overlay.itemLevel:SetPoint("TOPLEFT", overlay.itemName, "BOTTOMLEFT", 0, -1)
+        overlay.itemLevel:SetJustifyH("LEFT")
+        overlay.enchant:SetPoint("TOPLEFT", overlay.itemLevel, "BOTTOMLEFT", 0, -1)
+        overlay.enchant:SetJustifyH("LEFT")
+    elseif slotInfo.side == "right" then
+        overlay.itemName:SetPoint("TOPRIGHT", overlay, "TOPLEFT", -4, 2)
+        overlay.itemName:SetJustifyH("RIGHT")
+        overlay.itemLevel:SetPoint("TOPRIGHT", overlay.itemName, "BOTTOMRIGHT", 0, -1)
+        overlay.itemLevel:SetJustifyH("RIGHT")
+        overlay.enchant:SetPoint("TOPRIGHT", overlay.itemLevel, "BOTTOMRIGHT", 0, -1)
+        overlay.enchant:SetJustifyH("RIGHT")
+    elseif slotInfo.id == INVSLOT_MAINHAND then
+        overlay.itemName:SetPoint("TOPRIGHT", overlay, "TOPLEFT", -4, 2)
+        overlay.itemName:SetJustifyH("RIGHT")
+        overlay.itemLevel:SetPoint("TOPRIGHT", overlay.itemName, "BOTTOMRIGHT", 0, -1)
+        overlay.itemLevel:SetJustifyH("RIGHT")
+        overlay.enchant:SetPoint("TOPRIGHT", overlay.itemLevel, "BOTTOMRIGHT", 0, -1)
+        overlay.enchant:SetJustifyH("RIGHT")
+    else
+        overlay.itemName:SetPoint("TOPLEFT", overlay, "TOPRIGHT", 4, 2)
+        overlay.itemName:SetJustifyH("LEFT")
+        overlay.itemLevel:SetPoint("TOPLEFT", overlay.itemName, "BOTTOMLEFT", 0, -1)
+        overlay.itemLevel:SetJustifyH("LEFT")
+        overlay.enchant:SetPoint("TOPLEFT", overlay.itemLevel, "BOTTOMLEFT", 0, -1)
+        overlay.enchant:SetJustifyH("LEFT")
+    end
+
+    overlay.gems = {}
+    for i = 1, 4 do
+        local gem = overlay:CreateTexture(nil, "OVERLAY")
+        gem:SetSize(GEM_SIZE, GEM_SIZE)
+        gem:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+        if slotInfo.side == "left" then
+            local yOffset = (i - 1) * (GEM_SIZE + GEM_SPACING)
+            gem:SetPoint("TOPRIGHT", overlay, "TOPLEFT", -2, -yOffset)
+        elseif slotInfo.side == "right" then
+            local yOffset = (i - 1) * (GEM_SIZE + GEM_SPACING)
+            gem:SetPoint("TOPLEFT", overlay, "TOPRIGHT", 2, -yOffset)
+        elseif slotInfo.id == INVSLOT_MAINHAND then
+            local yOffset = (i - 1) * (GEM_SIZE + GEM_SPACING)
+            gem:SetPoint("TOPLEFT", overlay, "TOPRIGHT", 2, -yOffset)
+        else
+            local yOffset = (i - 1) * (GEM_SIZE + GEM_SPACING)
+            gem:SetPoint("TOPRIGHT", overlay, "TOPLEFT", -2, -yOffset)
+        end
+        gem:Hide()
+
+        overlay.gems[i] = gem
+    end
+
+    overlay.currentScale = scale
+
+    overlay.durabilityBar = CreateFrame("StatusBar", nil, overlay)
+    overlay.durabilityBar:SetSize(3, slotFrame:GetHeight() - 4)
+    overlay.durabilityBar:SetPoint("LEFT", overlay, "LEFT", 2, 0)
+    overlay.durabilityBar:SetOrientation("VERTICAL")
+    overlay.durabilityBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    overlay.durabilityBar:SetMinMaxValues(0, 100)
+    overlay.durabilityBar:SetStatusBarColor(0.2, 0.8, 0.2, 1)
+    overlay.durabilityBar:Hide()
+
+    local duraBg = overlay.durabilityBar:CreateTexture(nil, "BACKGROUND")
+    duraBg:SetAllPoints()
+    duraBg:SetColorTexture(0, 0, 0, 0.5)
+
+    overlay.slotInfo = slotInfo
+    return overlay
+end
+
+local function UpdateSlotOverlay(overlay, unit)
+    if not overlay or not overlay.slotInfo then return end
+    unit = unit or overlay.unit or "player"
+
+    local settings = GetSettings()
+    if not settings.enabled then
+        overlay:Hide()
+        return
+    end
+
+    local isInspect = IsInspectUnit(unit)
+    local showItemName, showItemLevel, showEnchants, showGems
+    if isInspect then
+        showItemName = settings.showInspectItemName ~= false
+        showItemLevel = settings.showInspectItemLevel ~= false
+        showEnchants = settings.showInspectEnchants ~= false
+        showGems = settings.showInspectGems ~= false
+    else
+        showItemName = settings.showItemName ~= false
+        showItemLevel = settings.showItemLevel ~= false
+        showEnchants = settings.showEnchants ~= false
+        showGems = settings.showGems ~= false
+    end
+
+    local slotId = overlay.slotInfo.id
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
+
+    if not itemLink then
+        overlay:Hide()
+        return
+    end
+
+    overlay:Show()
+
+    local itemName
+    if C_Item and C_Item.GetItemInfo then
+        local ok, name = pcall(C_Item.GetItemInfo, itemLink)
+        if ok and not Helpers.IsSecretValue(name) then
+            itemName = name
+        end
+    end
+    if not itemName and GetItemInfo then
+        local ok, name = pcall(GetItemInfo, itemLink)
+        if ok and not Helpers.IsSecretValue(name) then
+            itemName = name
+        end
+    end
+    local quality = GetSlotItemQuality(unit, slotId)
+    local r, g, b = GetItemQualityColorRGB(quality)
+
+    if overlay.itemName then
+        if showItemName and itemName then
+            overlay.itemName:SetText(itemName)
+            overlay.itemName:SetTextColor(r, g, b, 1)
+            overlay.itemName:Show()
+        else
+            overlay.itemName:Hide()
+        end
+    end
+
+    if showItemLevel then
+        local itemLevel = GetSlotItemLevel(unit, slotId)
+
+        if itemLevel then
+            local track, current, max = GetUpgradeTrack(unit, slotId)
+            local ilvlText
+            if track and current and max then
+                local trackColor = isInspect and settings.inspectUpgradeTrackColor or settings.upgradeTrackColor
+                trackColor = trackColor or {0.98, 0.60, 0.35, 1}
+                local trackHex = string.format("%02x%02x%02x",
+                    math.floor(trackColor[1] * 255),
+                    math.floor(trackColor[2] * 255),
+                    math.floor(trackColor[3] * 255))
+                local slotSide = overlay.slotInfo and overlay.slotInfo.side
+                local slotId = overlay.slotInfo and overlay.slotInfo.id
+                if slotSide == "right" or slotId == INVSLOT_MAINHAND then
+                    ilvlText = string.format("|cff%s(%s %s/%s)|r %d", trackHex, track, current, max, itemLevel)
+                else
+                    ilvlText = string.format("%d |cff%s(%s %s/%s)|r", itemLevel, trackHex, track, current, max)
+                end
+            else
+                ilvlText = tostring(itemLevel)
+            end
+            overlay.itemLevel:SetText(ilvlText)
+            overlay.itemLevel:SetTextColor(1, 1, 1, 1)
+            overlay.itemLevel:Show()
+        else
+            overlay.itemLevel:Hide()
+        end
+    else
+        overlay.itemLevel:Hide()
+    end
+
+    if showEnchants then
+        local enchantText, isEnchantable = GetEnchantText(unit, slotId)
+        local enchantColor
+        local useClassColor = isInspect and settings.inspectEnchantClassColor or settings.enchantClassColor
+        local customEnchantColor = isInspect and settings.inspectEnchantTextColor or settings.enchantTextColor
+        local noEnchantColor = isInspect and settings.inspectNoEnchantTextColor or settings.noEnchantTextColor
+        noEnchantColor = noEnchantColor or {0.5, 0.5, 0.5}
+        if useClassColor then
+            local _, class = UnitClass(unit)
+            -- @secret-policy: collapse-only — skin falls back to neutral styling
+            local classIsSecret = issecretvalue and issecretvalue(class)
+            if classIsSecret then class = nil end
+            local classColor = Helpers.GetClassColorTable(class)
+            if classColor then
+                enchantColor = {classColor.r, classColor.g, classColor.b}
+            else
+                enchantColor = customEnchantColor or C.enchanted
+            end
+        else
+            enchantColor = customEnchantColor or C.enchanted
+        end
+
+        if isEnchantable then
+            if enchantText then
+                overlay.enchant:SetText(enchantText)
+                overlay.enchant:SetTextColor(enchantColor[1], enchantColor[2], enchantColor[3], 1)
+            else
+                overlay.enchant:SetText(ns.L["No Enchant"])
+                overlay.enchant:SetTextColor(noEnchantColor[1], noEnchantColor[2], noEnchantColor[3], 1)
+            end
+            overlay.enchant:Show()
+        else
+            overlay.enchant:Hide()
+        end
+    else
+        overlay.enchant:Hide()
+    end
+
+    if showGems then
+        local gems, totalSockets = GetGemInfo(unit, slotId)
+        for i, gemTex in ipairs(overlay.gems) do
+            if gems[i] then
+                if gems[i].filled then
+                    local gemIcon = gems[i].icon
+                    if gemIcon and gemIcon ~= 0 and type(gemIcon) == "number" then
+                        gemTex:SetTexture(gemIcon)
+                        gemTex:SetDesaturated(false)
+                        gemTex:SetVertexColor(1, 1, 1, 1)
+                        gemTex:Show()
+                    else
+                        local gemType = gems[i].type or "Prismatic"
+                        local color = GEM_COLORS[gemType] or GEM_COLORS.Prismatic
+                        gemTex:SetColorTexture(color[1], color[2], color[3], color[4])
+                        gemTex:SetDesaturated(false)
+                        gemTex:Show()
+                    end
+                else
+                    gemTex:SetTexture("Interface\\ItemSocketingFrame\\UI-EmptySocket-Prismatic")
+                    gemTex:SetDesaturated(true)
+                    gemTex:SetVertexColor(0.6, 0.6, 0.6, 0.9)
+                    gemTex:Show()
+                end
+            else
+                gemTex:Hide()
+            end
+        end
+    else
+        for _, gemTex in ipairs(overlay.gems) do
+            gemTex:Hide()
+        end
+    end
+
+    if settings.showDurability and unit == "player" then
+        local current, max, pct = GetSlotDurability(slotId)
+        if pct then
+            overlay.durabilityBar:SetValue(pct)
+            if pct > 50 then
+                overlay.durabilityBar:SetStatusBarColor(0.2, 0.8, 0.2, 1)
+            elseif pct > 25 then
+                overlay.durabilityBar:SetStatusBarColor(0.8, 0.8, 0.2, 1)
+            else
+                overlay.durabilityBar:SetStatusBarColor(0.8, 0.2, 0.2, 1)
+            end
+            overlay.durabilityBar:Show()
+        else
+            overlay.durabilityBar:Hide()
+        end
+    else
+        overlay.durabilityBar:Hide()
+    end
+end
+
+local layoutApplied = false
+local customBg = nil
+local equipMgrPopup = nil
+local titlesPopup = nil
+local allEquipmentSlots = {}
+local UpdateEquipmentSlotBorder = nil
+
+local function RefreshEquipmentSlotBorders()
+    if #allEquipmentSlots == 0 or not UpdateEquipmentSlotBorder then return end
+
+    for _, slot in ipairs(allEquipmentSlots) do
+        local borderFrame = slot and (frameState[slot] or EMPTY).borderFrame
+        if borderFrame then
+            SetSlotBorderPoints(borderFrame, slot)
+        end
+        UpdateEquipmentSlotBorder(slot)
+    end
+end
+
+local function IsSkinningHandlingBackground()
+    local skinningAPI = _G.QUI_CharacterFrameSkinning
+    return skinningAPI and skinningAPI.IsEnabled and skinningAPI.IsEnabled()
+end
+
+local function HideBlizzardDecorations()
+    if InCombatLockdown() then
+        pendingPaneLayout = true
+        return
+    end
+
+    local settings = GetSettings()
+
+    if CharacterFrame.TopTileStreaks then CharacterFrame.TopTileStreaks:Hide() end
+
+    if CharacterFrameTitleText then CharacterFrameTitleText:Hide() end
+    if CharacterFrame.TitleText then CharacterFrame.TitleText:Hide() end
+
+    if PaperDollSidebarTabs then
+        if PaperDollSidebarTabs.DecorLeft then PaperDollSidebarTabs.DecorLeft:Hide() end
+        if PaperDollSidebarTabs.DecorRight then PaperDollSidebarTabs.DecorRight:Hide() end
+        PaperDollSidebarTabs:ClearAllPoints()
+        PaperDollSidebarTabs:SetPoint("TOP", CharacterFrame, "TOPRIGHT", -38, -30)
+        StyleSidebarTabs()
+    end
+
+    if CharacterFrame.CloseButton then
+        CharacterFrame.CloseButton:ClearAllPoints()
+        CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 52, -5)
+        StyleCloseButton(CharacterFrame.CloseButton)
+    end
+
+    AnchorCharacterFrameBottomTabs(-48)
+
+    if CharacterFrameInset then
+        if CharacterFrameInset.NineSlice then CharacterFrameInset.NineSlice:Hide() end
+        if CharacterFrameInset.Bg then CharacterFrameInset.Bg:SetAlpha(0) end
+    end
+
+    if CharacterFrameInsetRight then
+        if CharacterFrameInsetRight.Bg then CharacterFrameInsetRight.Bg:SetAlpha(0) end
+        if CharacterFrameInsetRight.NineSlice then CharacterFrameInsetRight.NineSlice:Hide() end
+    end
+
+    if CharacterStatsPane then
+        ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 0)
+        ns.SafeCallMethodIfPresent("best-effort-style", CharacterStatsPane, "EnableMouse", false)
+        if CharacterStatsPane.ClassBackground then
+            ns.SafeCallMethod("best-effort-style", CharacterStatsPane.ClassBackground, "SetAlpha", 0)
+        end
+    end
+
+    local innerBorders = {
+        "PaperDollInnerBorderBottom", "PaperDollInnerBorderBottom2",
+        "PaperDollInnerBorderBottomLeft", "PaperDollInnerBorderBottomRight",
+        "PaperDollInnerBorderLeft", "PaperDollInnerBorderRight",
+        "PaperDollInnerBorderTop", "PaperDollInnerBorderTopLeft",
+        "PaperDollInnerBorderTopRight",
+    }
+    for _, borderName in ipairs(innerBorders) do
+        local border = _G[borderName]
+        if border then border:Hide() end
+    end
+
+    local slotFrames = {
+        "CharacterBackSlotFrame", "CharacterChestSlotFrame", "CharacterFeetSlotFrame",
+        "CharacterFinger0SlotFrame", "CharacterFinger1SlotFrame", "CharacterHandsSlotFrame",
+        "CharacterHeadSlotFrame", "CharacterLegsSlotFrame", "CharacterMainHandSlotFrame",
+        "CharacterNeckSlotFrame", "CharacterSecondaryHandSlotFrame", "CharacterShirtSlotFrame",
+        "CharacterShoulderSlotFrame", "CharacterTabardSlotFrame", "CharacterTrinket0SlotFrame",
+        "CharacterTrinket1SlotFrame", "CharacterWaistSlotFrame", "CharacterWristSlotFrame",
+    }
+    for _, frameName in ipairs(slotFrames) do
+        local frame = _G[frameName]
+        if frame then
+            frame:Hide()
+            if not (frameState[frame] or EMPTY).hideHooked then
+                hooksecurefunc(frame, "Show", function(self)
+                    C_Timer.After(0, function()
+                        if self and self.Hide then self:Hide() end
+                    end)
+                end)
+                GetState(frame).hideHooked = true
+            end
+        end
+    end
+
+    local function BlockIconBorder(iconBorder)
+        if not iconBorder or (frameState[iconBorder] or EMPTY).blocked then return end
+        GetState(iconBorder).blocked = true
+        iconBorder:SetAlpha(0)
+        if iconBorder.SetTexture then iconBorder:SetTexture(nil) end
+        Helpers.DeferredSetAtlasBlock(iconBorder, false)
+    end
+
+    local function SkinEquipmentSlot(slot)
+        if not slot then return end
+
+        local normalTex = slot:GetNormalTexture()
+        if normalTex then normalTex:SetAlpha(0) end
+
+        if slot.BottomRightSlotTexture then
+            slot.BottomRightSlotTexture:Hide()
+        end
+
+        local preserve = {
+            [slot.icon or false] = true,
+            [slot.Icon or false] = true,
+            [slot.ItemContextOverlay or false] = true,
+            [slot.IconOverlay or false] = true,
+            [slot.IconOverlay2 or false] = true,
+            [slot.searchOverlay or false] = true,
+            [slot.IconQuestTexture or false] = true,
+        }
+        for i = 1, select("#", slot:GetRegions()) do
+            local region = select(i, slot:GetRegions())
+            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                if not preserve[region] then
+                    region:SetAlpha(0)
+                end
+            end
+        end
+
+        if slot.IconBorder then
+            BlockIconBorder(slot.IconBorder)
+        end
+
+        local iconTex = slot.icon or slot.Icon
+        if iconTex and iconTex.SetTexCoord then
+            iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        end
+
+        if not (frameState[slot] or EMPTY).borderFrame then
+            local borderFrame = CreateFrame("Frame", nil, slot, "BackdropTemplate")
+            borderFrame:SetFrameLevel(slot:GetFrameLevel() + 10)
+            SetSlotBorderPoints(borderFrame, slot)
+            ApplySlotPixelBackdrop(borderFrame)
+            GetState(slot).borderFrame = borderFrame
+        end
+    end
+
+    local function UpdateSlotBorder(slot)
+        local borderFrame = slot and (frameState[slot] or EMPTY).borderFrame
+        if not borderFrame then return end
+
+        local slotID = slot:GetID()
+
+        local ok, quality = pcall(GetInventoryItemQuality, "player", slotID)
+        if not ok or Helpers.IsSecretValue(quality) then
+            quality = nil
+        end
+
+        local r, g, b = GetCharacterBorderColor()
+        if quality and quality >= 0 then
+            r, g, b = C_Item.GetItemQualityColor(quality)
+        end
+
+        ApplySlotPixelBackdrop(borderFrame, { r, g, b, 1 })
+        borderFrame:Show()
+    end
+
+    local equipmentSlotNames = {
+        "CharacterHeadSlot", "CharacterNeckSlot", "CharacterShoulderSlot",
+        "CharacterBackSlot", "CharacterChestSlot", "CharacterShirtSlot",
+        "CharacterTabardSlot", "CharacterWristSlot", "CharacterHandsSlot",
+        "CharacterWaistSlot", "CharacterLegsSlot", "CharacterFeetSlot",
+        "CharacterFinger0Slot", "CharacterFinger1Slot",
+        "CharacterTrinket0Slot", "CharacterTrinket1Slot",
+        "CharacterMainHandSlot", "CharacterSecondaryHandSlot",
+    }
+
+    local allSlots = {}
+    for _, slotName in ipairs(equipmentSlotNames) do
+        local slot = _G[slotName]
+        if slot then
+            SkinEquipmentSlot(slot)
+            UpdateSlotBorder(slot)
+            table.insert(allSlots, slot)
+        end
+    end
+
+    allEquipmentSlots = allSlots
+    UpdateEquipmentSlotBorder = UpdateSlotBorder
+
+    local firstSlot = allSlots[1]
+    if firstSlot and not (frameState[firstSlot] or EMPTY).equipHooked then
+        firstSlot:HookScript("OnEvent", function(self, event)
+            if event == "PLAYER_EQUIPMENT_CHANGED" then
+                RunAfterCharacterPaneLayoutTick(function()
+                    for _, slot in ipairs(allSlots) do
+                        UpdateSlotBorder(slot)
+                    end
+                end)
+            end
+        end)
+        GetState(firstSlot).equipHooked = true
+    end
+
+    local modelBgs = {
+        "CharacterModelFrameBackgroundTopLeft", "CharacterModelFrameBackgroundBotLeft",
+        "CharacterModelFrameBackgroundTopRight", "CharacterModelFrameBackgroundBotRight",
+        "CharacterModelFrameBackgroundOverlay",
+    }
+    for _, bgName in ipairs(modelBgs) do
+        local bg = _G[bgName]
+        if bg then bg:Hide() end
+    end
+
+    if CharacterModelScene and CharacterModelScene.ControlFrame then
+        CharacterModelScene.ControlFrame:Hide()
+    end
+end
+
+local function CreateCustomBackground()
+    local settings = GetSettings()
+
+    local skinningAPI = _G.QUI_CharacterFrameSkinning
+    if skinningAPI and skinningAPI.IsEnabled and skinningAPI.IsEnabled() then
+        if skinningAPI.SetExtended then
+            skinningAPI.SetExtended(true)
+        end
+    else
+        local sr, sg, sb, sa = GetCharacterBorderColor()
+        local bgr, bgg, bgb, bga = GetCharacterBgColor()
+
+        if not customBg then
+            customBg = CreateFrame("Frame", "QUI_CharacterFrameBg_CharPane", CharacterFrame, "BackdropTemplate")
+            customBg:SetFrameStrata("BACKGROUND")
+            customBg:SetFrameLevel(0)
+            customBg:EnableMouse(false)
+        end
+        ApplyOnePixelBorder(customBg, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
+
+        local PANEL_HEIGHT_EXTENSION = 50
+        local PANEL_WIDTH_EXTENSION = 55
+        customBg:ClearAllPoints()
+        customBg:SetPoint("TOPLEFT", CharacterFrame, "TOPLEFT", 0, 0)
+        customBg:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT", PANEL_WIDTH_EXTENSION, -PANEL_HEIGHT_EXTENSION)
+
+        customBg:Show()
+    end
+
+    local BASE_SCALE = 1.30
+    local scaleMultiplier = settings.panelScale or 1.0
+    SetCharacterFrameScale(BASE_SCALE * scaleMultiplier)
+end
+
+local LEFT_COLUMN_SLOTS = {
+    "CharacterHeadSlot",
+    "CharacterNeckSlot",
+    "CharacterShoulderSlot",
+    "CharacterBackSlot",
+    "CharacterChestSlot",
+    "CharacterWristSlot",
+}
+
+local RIGHT_COLUMN_SLOTS = {
+    "CharacterHandsSlot",
+    "CharacterWaistSlot",
+    "CharacterLegsSlot",
+    "CharacterFeetSlot",
+    "CharacterFinger0Slot",
+    "CharacterFinger1Slot",
+    "CharacterTrinket0Slot",
+    "CharacterTrinket1Slot",
+}
+
+local function RepositionSlots()
+    if InCombatLockdown() then
+        pendingPaneLayout = true
+        return
+    end
+
+    local settings = GetSettings()
+    if not CharacterFrameBg then return end
+
+    local vpad = 14 + (tonumber(settings and settings.slotPadding) or 0)
+    local SLOT_SCALE = 0.90
+
+    local allSlots = {
+        CharacterHeadSlot, CharacterNeckSlot, CharacterShoulderSlot,
+        CharacterBackSlot, CharacterChestSlot, CharacterShirtSlot,
+        CharacterTabardSlot, CharacterWristSlot,
+        CharacterHandsSlot, CharacterWaistSlot, CharacterLegsSlot,
+        CharacterFeetSlot, CharacterFinger0Slot, CharacterFinger1Slot,
+        CharacterTrinket0Slot, CharacterTrinket1Slot,
+        CharacterMainHandSlot, CharacterSecondaryHandSlot,
+    }
+
+    for _, slot in ipairs(allSlots) do
+        if slot then slot:SetScale(SLOT_SCALE) end
+    end
+
+    CharacterHeadSlot:ClearAllPoints()
+    CharacterHeadSlot:SetPoint("TOPLEFT", CharacterFrameBg, "TOPLEFT", 20, -30)
+
+    CharacterNeckSlot:ClearAllPoints()
+    CharacterNeckSlot:SetPoint("TOPLEFT", CharacterHeadSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterShoulderSlot:ClearAllPoints()
+    CharacterShoulderSlot:SetPoint("TOPLEFT", CharacterNeckSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterBackSlot:ClearAllPoints()
+    CharacterBackSlot:SetPoint("TOPLEFT", CharacterShoulderSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterChestSlot:ClearAllPoints()
+    CharacterChestSlot:SetPoint("TOPLEFT", CharacterBackSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterShirtSlot:ClearAllPoints()
+    CharacterShirtSlot:SetPoint("TOPLEFT", CharacterChestSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterTabardSlot:ClearAllPoints()
+    CharacterTabardSlot:SetPoint("TOPLEFT", CharacterShirtSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterHandsSlot:ClearAllPoints()
+    CharacterHandsSlot:SetPoint("TOPLEFT", CharacterFrameBg, "TOPLEFT", 413, -30)
+
+    CharacterWaistSlot:ClearAllPoints()
+    CharacterWaistSlot:SetPoint("TOPLEFT", CharacterHandsSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterLegsSlot:ClearAllPoints()
+    CharacterLegsSlot:SetPoint("TOPLEFT", CharacterWaistSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterFeetSlot:ClearAllPoints()
+    CharacterFeetSlot:SetPoint("TOPLEFT", CharacterLegsSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterFinger0Slot:ClearAllPoints()
+    CharacterFinger0Slot:SetPoint("TOPLEFT", CharacterFeetSlot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterFinger1Slot:ClearAllPoints()
+    CharacterFinger1Slot:SetPoint("TOPLEFT", CharacterFinger0Slot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterTrinket0Slot:ClearAllPoints()
+    CharacterTrinket0Slot:SetPoint("TOPLEFT", CharacterFinger1Slot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterTrinket1Slot:ClearAllPoints()
+    CharacterTrinket1Slot:SetPoint("TOPLEFT", CharacterTrinket0Slot, "BOTTOMLEFT", 0, -vpad)
+
+    CharacterWristSlot:ClearAllPoints()
+    CharacterWristSlot:SetPoint("TOP", CharacterTrinket1Slot, "TOP", 0, 0)
+    CharacterWristSlot:SetPoint("LEFT", CharacterHeadSlot, "LEFT", 0, 0)
+
+    CharacterMainHandSlot:ClearAllPoints()
+    CharacterMainHandSlot:SetPoint("BOTTOM", CharacterFrameBg, "BOTTOM", -102, -29)
+
+    CharacterSecondaryHandSlot:ClearAllPoints()
+    CharacterSecondaryHandSlot:SetPoint("LEFT", CharacterMainHandSlot, "RIGHT", 30, 0)
+end
+
+local function PositionModelScene()
+    local settings = GetSettings()
+    if not CharacterModelScene then return end
+
+    CharacterModelScene:ClearAllPoints()
+    CharacterModelScene:SetPoint("TOPLEFT", CharacterFrame, "TOPLEFT", 86, -85)
+    CharacterModelScene:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT", -204, 65)
+    CharacterModelScene:SetFrameLevel(2)
+    CharacterModelScene:Show()
+
+end
+
+local function PositionStatsPanelForLayout()
+    local settings = GetSettings()
+
+    local justCreated = false
+    if not statsPanel then
+        statsPanel = CreateStatsPanel(CharacterFrame, "player")
+        justCreated = true
+    end
+
+    if statsPanel then
+        statsPanel:ClearAllPoints()
+        statsPanel:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 42, -70)
+        statsPanel:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT", 42, -45)
+        statsPanel:SetWidth(160)
+        statsPanel:SetFrameLevel(10)
+        statsPanel:Show()
+
+        if justCreated then
+            C_Timer.After(0.05, ScheduleUpdate)
+        end
+    end
+end
+
+local function GetPlayerAverageItemLevels()
+    local overall, equipped, pvp = GetAverageItemLevel()
+    overall = tonumber(overall) or 0
+    equipped = tonumber(equipped) or overall
+    pvp = tonumber(pvp)
+    return overall, equipped, pvp
+end
+
+local function ShowCenterILvlTooltip(self)
+    if not self then return end
+
+    local overall = tonumber(self.cachedOverallILvl)
+    local equipped = tonumber(self.cachedEquippedILvl)
+    local pvp = tonumber(self.cachedPvpILvl)
+
+    if not overall or not equipped then
+        overall, equipped, pvp = GetPlayerAverageItemLevels()
+    end
+
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+    GameTooltip:SetText(ns.L["Average Item Level"])
+    GameTooltip:AddDoubleLine(ns.L["Equipped"], string.format("%.1f", equipped), 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine(ns.L["Overall"], string.format("%.1f", overall), 1, 1, 1, 1, 1, 1)
+    if pvp then
+        GameTooltip:AddDoubleLine(ns.L["PvP iLvl"], string.format("%.1f", pvp), 1, 1, 1, 0, 1, 0)
+    end
+    GameTooltip:Show()
+end
+
+local function SetupTitleArea()
+    local font = GetGlobalFont()
+
+    if CharacterLevelText then
+        CharacterLevelText:Hide()
+    end
+
+    if not (frameState[CharacterFrame] or EMPTY).ilvlDisplay then
+        local displayFrame = CreateFrame("Frame", nil, CharacterFrame)
+        displayFrame:SetSize(400, 30)
+        displayFrame:SetPoint("TOPLEFT", CharacterFrame, "TOPLEFT", 19, -10)
+        displayFrame:SetFrameLevel(CharacterFrame:GetFrameLevel() + 10)
+
+        local nameText = displayFrame:CreateFontString(nil, "OVERLAY")
+        CJKFont(nameText, font, 12, "")
+        nameText:SetPoint("TOPLEFT", displayFrame, "TOPLEFT", 0, 0)
+        nameText:SetJustifyH("LEFT")
+
+        local specText = CharacterFrame:CreateFontString(nil, "OVERLAY")
+        CJKFont(specText, font, 12, "")
+        specText:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", -132, -10)
+        specText:SetJustifyH("RIGHT")
+
+        displayFrame.text = nameText
+        displayFrame.specText = specText
+        GetState(CharacterFrame).ilvlDisplay = displayFrame
+    end
+
+    if not (frameState[CharacterFrame] or EMPTY).centerILvl then
+        local centerFrame = CreateFrame("Frame", nil, CharacterFrame)
+        centerFrame:SetSize(200, 20)
+        centerFrame:SetPoint("TOP", CharacterFrame, "TOP", -62, -10)
+        centerFrame:SetFrameLevel(CharacterFrame:GetFrameLevel() + 10)
+
+        local centerText = centerFrame:CreateFontString(nil, "OVERLAY")
+        CJKFont(centerText, font, 21, "OUTLINE")
+        centerText:SetPoint("CENTER")
+        centerText:SetJustifyH("CENTER")
+
+        centerFrame:EnableMouse(true)
+        centerFrame:SetScript("OnEnter", ShowCenterILvlTooltip)
+        centerFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        centerFrame.text = centerText
+        GetState(CharacterFrame).centerILvl = centerFrame
+    end
+end
+
+ApplyCharacterPaneLayout = function(force)
+    local settings = GetSettings()
+    if not settings.enabled then return end
+
+    if layoutApplied and not force then return end
+
+    local inCombat = InCombatLockdown()
+    if inCombat then
+        pendingPaneLayout = true
+    else
+        HideBlizzardDecorations()
+    end
+
+    CreateCustomBackground()
+    SetupTitleArea()
+
+    if not inCombat then
+        RunAfterCharacterPaneLayoutTick(function()
+            RepositionSlots()
+            RefreshEquipmentSlotBorders()
+            PositionModelScene()
+            PositionStatsPanelForLayout()
+        end)
+    end
+
+    layoutApplied = true
+end
+
+local function InitializeCharacterOverlays()
+    if characterPaneInitialized then return end
+
+    for _, slotInfo in ipairs(EQUIPMENT_SLOTS) do
+        local slotFrame = _G["Character" .. slotInfo.name .. "Slot"]
+        if slotFrame then
+            slotOverlays[slotInfo.id] = CreateSlotOverlay(slotFrame, slotInfo)
+        end
+    end
+
+    characterPaneInitialized = true
+end
+
+local function UpdateAllSlotOverlays(unit, overlayTable)
+    overlayTable = overlayTable or slotOverlays
+    unit = unit or "player"
+
+    for _, overlay in pairs(overlayTable) do
+        UpdateSlotOverlay(overlay, unit)
+    end
+end
+
+CreateStatsPanel = function(parent, unit)
+    local settings = GetSettings()
+
+    local panel = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    panel:SetSize(200, 400)
+
+    panel:SetBackdrop(nil)
+
+    local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
+    scrollFrame:SetPoint("TOPLEFT", 5, -5)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -5, 5)
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local current = self:GetVerticalScroll() or 0
+        local maxScroll = self:GetVerticalScrollRange() or 0
+        local new = math.max(0, math.min(maxScroll, current - delta * 20))
+        self:SetVerticalScroll(new)
+    end)
+
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(130, 1)
+    scrollFrame:SetScrollChild(scrollChild)
+
+    panel.scrollFrame = scrollFrame
+    panel.scrollChild = scrollChild
+    panel.unit = unit
+
+    return panel
+end
+
+local trackedFontStrings = {}
+local trackedUnderlines = {}
+
+local function TrackFontString(fontString, category)
+    table.insert(trackedFontStrings, { fs = fontString, cat = category })
+end
+
+local function RefreshCharacterPanelFonts()
+    local settings = GetSettings()
+    local font = GetGlobalFont()
+
+    local statsSize = settings.statsTextSize or (settings.textSize and math.floor(11 * settings.textSize)) or 11
+    local statsColor = settings.statsTextColor or settings.textColor or {0.953, 0.957, 0.965}
+    local headerSize = settings.headerTextSize or (settings.headerSize and math.floor(12 * settings.headerSize)) or 12
+
+    local headerColor
+    if settings.headerClassColor then
+        local _, class = UnitClass("player")
+        local classColor = Helpers.GetClassColorTable(class)
+        if classColor then
+            headerColor = {classColor.r, classColor.g, classColor.b}
+        else
+            headerColor = settings.headerColor or {0.376, 0.647, 0.980}
+        end
+    else
+        headerColor = settings.headerColor or {0.376, 0.647, 0.980}
+    end
+
+    local validStrings = {}
+    for _, entry in ipairs(trackedFontStrings) do
+        if entry.fs and entry.fs.SetFont then
+            table.insert(validStrings, entry)
+        end
+    end
+    trackedFontStrings = validStrings
+
+    for _, entry in ipairs(trackedFontStrings) do
+        local fs = entry.fs
+        local cat = entry.cat
+
+        if cat == "sectionHeader" then
+            CJKFont(fs, font, math.max(headerSize - 2, 10), "THINOUTLINE")
+            fs:SetTextColor(headerColor[1], headerColor[2], headerColor[3], 1)
+            fs:SetShadowOffset(0, 0)
+            fs:SetText(fs:GetText() or "")
+        elseif cat == "statLabel" or cat == "barLabel" then
+            local size = (cat == "barLabel") and math.max(statsSize - 2, 7) or math.max(statsSize - 1, 8)
+            CJKFont(fs, font, size, "")
+            fs:SetTextColor(statsColor[1], statsColor[2], statsColor[3], 1)
+            fs:SetShadowOffset(0, 0)
+        elseif cat == "statValue" or cat == "barValue" then
+            local size = (cat == "barValue") and math.max(statsSize - 2, 7) or math.max(statsSize - 1, 8)
+            CJKFont(fs, font, size, "")
+            fs:SetShadowOffset(0, 0)
+        end
+    end
+
+    if trackedUnderlines then
+        local sb = GetSkinBase()
+        for _, line in ipairs(trackedUnderlines) do
+            if line and line.SetColorTexture then
+                line:SetColorTexture(headerColor[1], headerColor[2], headerColor[3], 0.3)
+                if sb and sb.DisablePixelSnap then sb.DisablePixelSnap(line) end
+            end
+        end
+    end
+
+    local enchantSize = settings.enchantTextSize or 10
+    local noEnchantColor = settings.noEnchantTextColor or {0.5, 0.5, 0.5}
+
+    local enchantColor
+    if settings.enchantClassColor then
+        local _, class = UnitClass("player")
+        local classColor = Helpers.GetClassColorTable(class)
+        if classColor then
+            enchantColor = {classColor.r, classColor.g, classColor.b}
+        else
+            enchantColor = settings.enchantTextColor or {0.376, 0.647, 0.980}
+        end
+    else
+        enchantColor = settings.enchantTextColor or {0.376, 0.647, 0.980}
+    end
+
+    local enchantFont = font
+    if settings.enchantFont then
+        local LSM = ns.LSM
+        if LSM then
+            local fontPath = LSM:Fetch("font", settings.enchantFont)
+            if fontPath then
+                enchantFont = fontPath
+            end
+        end
+    end
+
+    local slotTextSize = settings.slotTextSize or 10
+    local FONT_FLAGS = "OUTLINE"
+
+    local validItemNames = {}
+    for _, fs in ipairs(trackedItemNameFonts) do
+        if fs and fs.SetFont then
+            CJKFont(fs, font, slotTextSize, FONT_FLAGS)
+            table.insert(validItemNames, fs)
+        end
+    end
+    trackedItemNameFonts = validItemNames
+
+    local validILvl = {}
+    for _, fs in ipairs(trackedILvlFonts) do
+        if fs and fs.SetFont then
+            CJKFont(fs, font, slotTextSize, FONT_FLAGS)
+            table.insert(validILvl, fs)
+        end
+    end
+    trackedILvlFonts = validILvl
+
+    local validEnchants = {}
+    for _, fs in ipairs(trackedEnchantFonts) do
+        if fs and fs.SetFont then
+            CJKFont(fs, enchantFont, slotTextSize, FONT_FLAGS)
+            local text = fs:GetText()
+            if text and text == ns.L["No Enchant"] then
+                fs:SetTextColor(noEnchantColor[1], noEnchantColor[2], noEnchantColor[3], 1)
+            elseif text then
+                fs:SetTextColor(enchantColor[1], enchantColor[2], enchantColor[3], 1)
+            end
+            table.insert(validEnchants, fs)
+        end
+    end
+    trackedEnchantFonts = validEnchants
+end
+
+_G.QUI_RefreshCharacterPanelFonts = RefreshCharacterPanelFonts
+
+local function ShowStatTooltip(self)
+    local settings = GetSettings()
+    if not settings.showTooltips then
+        return
+    end
+    if not self.tooltip then
+        return
+    end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(self.tooltip)
+    if self.tooltip2 then
+        GameTooltip:AddLine(self.tooltip2, NORMAL_FONT_COLOR.r, NORMAL_FONT_COLOR.g, NORMAL_FONT_COLOR.b, true)
+    end
+    if self.tooltip3 then
+        GameTooltip:AddLine(self.tooltip3, NORMAL_FONT_COLOR.r, NORMAL_FONT_COLOR.g, NORMAL_FONT_COLOR.b, true)
+    end
+    GameTooltip:Show()
+end
+
+local function CreateStatRow(parent, yOffset)
+    local settings = GetSettings()
+    local font = GetGlobalFont()
+    local statsSize = settings.statsTextSize or 11
+    local statsColor = settings.statsTextColor or {0.953, 0.957, 0.965}
+    local rowHeight = 14
+    local fontSize = math.max(statsSize - 1, 8)
+
+    parent.statRowPool = parent.statRowPool or {}
+    parent.statRowUsed = (parent.statRowUsed or 0) + 1
+    local row = parent.statRowPool[parent.statRowUsed]
+    if not row then
+        row = CreateFrame("Frame", nil, parent)
+        row.label = row:CreateFontString(nil, "OVERLAY")
+        row.label:SetPoint("LEFT", row, "LEFT", 0, 0)
+        row.value = row:CreateFontString(nil, "OVERLAY")
+        row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        parent.statRowPool[parent.statRowUsed] = row
+    end
+
+    row:SetSize(parent:GetWidth() - 10, rowHeight)
+    row:SetPoint("TOPLEFT", 5, yOffset)
+    row.tooltip, row.tooltip2, row.tooltip3 = nil, nil, nil
+
+    if settings.showTooltips then
+        row:EnableMouse(true)
+        row:SetScript("OnEnter", ShowStatTooltip)
+        row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    else
+        row:EnableMouse(false)
+        row:SetScript("OnEnter", nil)
+        row:SetScript("OnLeave", nil)
+    end
+
+    CJKFont(row.label, font, fontSize, "")
+    row.label:SetTextColor(statsColor[1], statsColor[2], statsColor[3], 1)
+    row.label:SetShadowOffset(0, 0)
+    row.label:Show()
+    TrackFontString(row.label, "statLabel")
+
+    CJKFont(row.value, font, fontSize, "")
+    row.value:SetTextColor(1, 1, 1, 1)
+    row.value:SetShadowOffset(0, 0)
+    row.value:Show()
+    TrackFontString(row.value, "statValue")
+
+    row:Show()
+    return row
+end
+
+local function CreateSectionHeader(parent, text, yOffset)
+    local settings = GetSettings()
+    local font = GetGlobalFont()
+    local headerSize = settings.headerTextSize or 12
+    local fontSize = math.max(headerSize - 2, 10)
+    local headerHeight = 14
+    local headerColor
+    if settings.headerClassColor then
+        local _, class = UnitClass("player")
+        local classColor = Helpers.GetClassColorTable(class)
+        if classColor then
+            headerColor = {classColor.r, classColor.g, classColor.b}
+        else
+            headerColor = settings.headerColor or {0.376, 0.647, 0.980}
+        end
+    else
+        headerColor = settings.headerColor or {0.376, 0.647, 0.980}
+    end
+
+    parent.sectionHeaderPool = parent.sectionHeaderPool or {}
+    parent.sectionHeaderUsed = (parent.sectionHeaderUsed or 0) + 1
+    local entry = parent.sectionHeaderPool[parent.sectionHeaderUsed]
+    if not entry then
+        local newHeader = parent:CreateFontString(nil, "OVERLAY")
+        local newLine = parent:CreateTexture(nil, "ARTWORK")
+        newLine:SetPoint("TOPLEFT", newHeader, "BOTTOMLEFT", 0, -2)
+        newLine:SetPoint("RIGHT", parent, "RIGHT", -5, 0)
+        if UIKit and UIKit.DisablePixelSnap then
+            UIKit.DisablePixelSnap(newLine)
+        end
+        if UIKit and UIKit.RegisterScaleRefresh then
+            UIKit.RegisterScaleRefresh(newLine, "characterPaneSectionUnderline", function(owner)
+                owner:SetHeight(GetPixelSize(owner))
+            end)
+        end
+        entry = { header = newHeader, line = newLine }
+        parent.sectionHeaderPool[parent.sectionHeaderUsed] = entry
+    end
+
+    local header, line = entry.header, entry.line
+    CJKFont(header, font, fontSize, "THINOUTLINE")
+    header:SetPoint("TOPLEFT", parent, "TOPLEFT", 5, yOffset)
+    header:SetTextColor(headerColor[1], headerColor[2], headerColor[3], 1)
+    header:SetText(text)
+    header:SetShadowOffset(0, 0)
+    header:Show()
+    TrackFontString(header, "sectionHeader")
+
+    line:SetHeight(GetPixelSize(line))
+    line:SetColorTexture(headerColor[1], headerColor[2], headerColor[3], 0.3)
+    line:Show()
+    table.insert(trackedUnderlines, line)
+
+    local spacingAfterHeader = 4
+    return header, headerHeight + spacingAfterHeader
+end
+
+local function CreateStatBar(parent, yOffset, color)
+    local settings = GetSettings()
+    local font = GetGlobalFont()
+    local statsSize = settings.statsTextSize or 11
+    local statsColor = settings.statsTextColor or {0.953, 0.957, 0.965}
+    local barTextSize = math.max(statsSize - 2, 7)
+    local rowHeight = 16
+    local barHeight = 3
+    local labelOffset = 2
+    local barOffset = 1
+
+    parent.statBarPool = parent.statBarPool or {}
+    parent.statBarUsed = (parent.statBarUsed or 0) + 1
+    local row = parent.statBarPool[parent.statBarUsed]
+    if not row then
+        row = CreateFrame("Frame", nil, parent)
+        row.label = row:CreateFontString(nil, "OVERLAY")
+        row.label:SetPoint("LEFT", row, "LEFT", 0, labelOffset)
+        row.value = row:CreateFontString(nil, "OVERLAY")
+        row.value:SetPoint("RIGHT", row, "RIGHT", 0, labelOffset)
+        row.bar = CreateFrame("StatusBar", nil, row)
+        row.bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, barOffset)
+        row.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, barOffset)
+        row.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        row.bar:SetMinMaxValues(0, 100)
+        local barBg = row.bar:CreateTexture(nil, "BACKGROUND")
+        barBg:SetAllPoints()
+        barBg:SetColorTexture(0, 0, 0, 0.4)
+        parent.statBarPool[parent.statBarUsed] = row
+    end
+
+    row:SetSize(parent:GetWidth() - 10, rowHeight)
+    row:SetPoint("TOPLEFT", 5, yOffset)
+    row.tooltip, row.tooltip2, row.tooltip3 = nil, nil, nil
+
+    if settings.showTooltips then
+        row:EnableMouse(true)
+        row:SetScript("OnEnter", ShowStatTooltip)
+        row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    else
+        row:EnableMouse(false)
+        row:SetScript("OnEnter", nil)
+        row:SetScript("OnLeave", nil)
+    end
+
+    CJKFont(row.label, font, barTextSize, "")
+    row.label:SetTextColor(statsColor[1], statsColor[2], statsColor[3], 1)
+    row.label:SetShadowOffset(0, 0)
+    row.label:Show()
+    TrackFontString(row.label, "barLabel")
+
+    CJKFont(row.value, font, barTextSize, "")
+    row.value:SetTextColor(1, 1, 1, 1)
+    row.value:SetShadowOffset(0, 0)
+    row.value:Show()
+    TrackFontString(row.value, "barValue")
+
+    row.bar:SetSize(row:GetWidth(), barHeight)
+    row.bar:SetStatusBarColor(color[1], color[2], color[3], color[4])
+    row.bar:SetValue(0)
+
+    row:Show()
+    return row
+end
+
+local function FinalizeStatsPanelLayout(panel, scrollChild, yOffset)
+    local contentHeight = math.abs(yOffset) + 20
+    scrollChild:SetHeight(contentHeight)
+
+    panel:SetScale(0.92)
+
+    local scrollFrame = panel.scrollFrame
+    if scrollFrame then
+        C_Timer.After(0.01, function()
+            local okScroll, maxScroll = pcall(scrollFrame.GetVerticalScrollRange, scrollFrame)
+            if okScroll and not Helpers.IsSecretValue(maxScroll) then
+                maxScroll = tonumber(maxScroll) or 0
+                if maxScroll <= 1 then
+                    scrollFrame:SetVerticalScroll(0)
+                end
+            end
+        end)
+    end
+end
+
+local function MaskNativeStatsPane()
+    if not CharacterStatsPane then return end
+    ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "Show")
+    ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 0)
+    ns.SafeCallMethodIfPresent("best-effort-style", CharacterStatsPane, "EnableMouse", false)
+    if CharacterStatsPane.ClassBackground then
+        ns.SafeCallMethod("best-effort-style", CharacterStatsPane.ClassBackground, "SetAlpha", 0)
+    end
+end
+ns.QUI_MaskNativeStatsPane = MaskNativeStatsPane
+
+local function UpdateStatsPanel(panel, unit)
+    if not panel or not panel.scrollChild then return end
+
+    if InCombatLockdown() then
+        pendingStatsPanelRefresh = true
+    end
+
+    if updatingStatsPanel then return end
+    updatingStatsPanel = true
+
+    local success = ns.SafeCall("best-effort-style", function()
+        local settings = GetSettings()
+        MaskNativeStatsPane()
+        panel:Show()
+
+        local scrollChild = panel.scrollChild
+        unit = unit or panel.unit or "player"
+
+        for _, entry in ipairs(trackedFontStrings) do
+            if entry.fs and entry.fs.Hide then
+                entry.fs:Hide()
+                entry.fs:SetText("")
+            end
+        end
+
+        for _, line in ipairs(trackedUnderlines) do
+            if line and line.Hide then
+                line:Hide()
+            end
+        end
+
+        wipe(trackedFontStrings)
+        wipe(trackedUnderlines)
+
+        if scrollChild.statRowPool then
+            for _, frame in ipairs(scrollChild.statRowPool) do
+                frame:Hide()
+            end
+        end
+        if scrollChild.statBarPool then
+            for _, frame in ipairs(scrollChild.statBarPool) do
+                frame:Hide()
+            end
+        end
+        scrollChild.statRowUsed = 0
+        scrollChild.statBarUsed = 0
+        scrollChild.sectionHeaderUsed = 0
+
+        local y = -5
+        local ROW_HEIGHT = 14
+        local SECTION_GAP = 8
+        local BAR_HEIGHT = 16
+
+        local statPolicy = GetSkinBase().CreateSecretAwareStatPolicy({
+            unit = unit,
+            secretDetector = AreCharacterStatsSecretsDisabled,
+        })
+        local SafeGetStat = function(func, ...)
+            return statPolicy:GetNumber(func, 0, ...)
+        end
+        local SafeGetStatValues = function(func, ...)
+            return statPolicy:GetNumbers(func, ...)
+        end
+        local GetStatOrNil = function(func, ...)
+            return statPolicy:GetRaw(func, ...)
+        end
+        local secretsOff = statPolicy.secretsRestricted
+
+        local row = CreateStatRow(scrollChild, y)
+        row.label:SetText(ns.L["Health"])
+        do
+            local hOk, healthMax = pcall(UnitHealthMax, unit)
+            if hOk and (Helpers.IsSecretValue(healthMax) or healthMax) then
+                row.value:SetFormattedText("%s", healthMax)
+            end
+        end
+        row.value:SetTextColor(C.health[1], C.health[2], C.health[3], 1)
+        statPolicy:ApplyTooltip(row, HEALTH, (unit == "player") and STAT_HEALTH_TOOLTIP or STAT_HEALTH_PET_TOOLTIP, nil, function()
+            local healthMaxRaw = GetStatOrNil(UnitHealthMax, unit)
+            if healthMaxRaw then
+                row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, HEALTH).." "..BreakUpLargeNumbers(healthMaxRaw)..FONT_COLOR_CODE_CLOSE
+            end
+        end)
+        y = y - ROW_HEIGHT
+
+        local powerType, powerToken = UnitPowerType(unit)
+        local powerName = _G[powerToken] or (powerToken and powerToken:gsub("_", " "):lower():gsub("(%a)([%w]*)", function(a, b) return a:upper()..b end)) or "Power"
+
+        row = CreateStatRow(scrollChild, y)
+        row.label:SetText(powerName)
+        do
+            local pOk, powerMax = pcall(UnitPowerMax, unit, powerType)
+            if pOk and (Helpers.IsSecretValue(powerMax) or powerMax) then
+                row.value:SetFormattedText("%s", powerMax)
+            end
+        end
+        row.value:SetTextColor(C.mana[1], C.mana[2], C.mana[3], 1)
+        statPolicy:ApplyTooltip(row, _G[powerToken] or powerName, _G["STAT_"..powerToken.."_TOOLTIP"], nil, function()
+            local powerMaxRaw = GetStatOrNil(UnitPowerMax, unit, powerType)
+            if powerMaxRaw then
+                row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, powerName).." "..BreakUpLargeNumbers(powerMaxRaw)..FONT_COLOR_CODE_CLOSE
+            end
+        end)
+        y = y - ROW_HEIGHT
+
+        y = y - 5
+
+        local _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Attributes"], y)
+        y = y - headerHeight
+
+        local stats = {
+            { label = ns.L["Strength"], statIndex = 1, func = function() return UnitStat(unit, 1) end },
+            { label = ns.L["Agility"], statIndex = 2, func = function() return UnitStat(unit, 2) end },
+            { label = ns.L["Stamina"], statIndex = 3, func = function() return UnitStat(unit, 3) end },
+            { label = ns.L["Intellect"], statIndex = 4, func = function() return UnitStat(unit, 4) end },
+        }
+        local specPrimaryStat
+        if unit == "player" and C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then
+            local sp = C_SpecializationInfo.GetSpecialization()
+            if sp and C_SpecializationInfo.GetSpecializationInfo then
+                local okSI, _, _, _, _, _, primary = ns.SafeCall("best-effort-style", C_SpecializationInfo.GetSpecializationInfo, sp, false, false, nil, UnitSex(unit))
+                if okSI then specPrimaryStat = primary end
+            end
+        end
+
+        for _, stat in ipairs(stats) do
+            local statValue, effectiveStat, posBuff, negBuff = SafeGetStatValues(UnitStat, unit, stat.statIndex)
+
+            local shouldShow
+            if secretsOff then
+                shouldShow = stat.statIndex == 3
+                    or (specPrimaryStat and specPrimaryStat == stat.statIndex)
+                    or (not specPrimaryStat)
+            else
+                shouldShow = effectiveStat and effectiveStat > 0
+            end
+
+            if shouldShow then
+                row = CreateStatRow(scrollChild, y)
+                row.label:SetText(stat.label)
+
+                local uOk, _, eff = pcall(UnitStat, unit, stat.statIndex)
+                if uOk and (Helpers.IsSecretValue(eff) or eff) then
+                    row.value:SetFormattedText("%s", eff)
+                end
+
+                statPolicy:ApplyTooltip(
+                    row,
+                    _G["SPELL_STAT"..stat.statIndex.."_NAME"] or stat.label,
+                    _G["DEFAULT_STAT"..stat.statIndex.."_TOOLTIP"],
+                    nil,
+                    function()
+                    local statName = _G["SPELL_STAT"..stat.statIndex.."_NAME"]
+                    local tooltipText = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, statName).." "
+                    local effectiveStatDisplay = BreakUpLargeNumbers(effectiveStat)
+
+                    if (posBuff == 0) and (negBuff == 0) then
+                        row.tooltip = tooltipText..effectiveStatDisplay..FONT_COLOR_CODE_CLOSE
+                    else
+                        tooltipText = tooltipText..effectiveStatDisplay
+                        if (posBuff > 0 or negBuff < 0) then
+                            tooltipText = tooltipText.." ("..BreakUpLargeNumbers(statValue - posBuff - negBuff)..FONT_COLOR_CODE_CLOSE
+                        end
+                        if (posBuff > 0) then
+                            tooltipText = tooltipText..FONT_COLOR_CODE_CLOSE..GREEN_FONT_COLOR_CODE.."+"..BreakUpLargeNumbers(posBuff)..FONT_COLOR_CODE_CLOSE
+                        end
+                        if (negBuff < 0) then
+                            tooltipText = tooltipText..RED_FONT_COLOR_CODE.." "..BreakUpLargeNumbers(negBuff)..FONT_COLOR_CODE_CLOSE
+                        end
+                        if (posBuff > 0 or negBuff < 0) then
+                            tooltipText = tooltipText..HIGHLIGHT_FONT_COLOR_CODE..")"..FONT_COLOR_CODE_CLOSE
+                        end
+                        row.tooltip = tooltipText
+                    end
+
+                    row.tooltip2 = _G["DEFAULT_STAT"..stat.statIndex.."_TOOLTIP"]
+
+                    if unit == "player" then
+                        ns.SafeCall("best-effort-style", function()
+                            local _, unitClass = UnitClass("player")
+                            unitClass = strupper(unitClass)
+                            local primaryStat, spec, role
+                            spec = C_SpecializationInfo.GetSpecialization()
+                            if spec then
+                                role = GetSpecializationRole(spec)
+                                -- @secret-policy: collapse-only — nil sex = default spec name
+                                local playerSex = UnitSex("player")
+                                if issecretvalue and issecretvalue(playerSex) then playerSex = nil end
+                                primaryStat = select(6, C_SpecializationInfo.GetSpecializationInfo(spec, false, false, nil, playerSex))
+                            end
+
+                            if stat.statIndex == 1 then
+                                if GetAttackPowerForStat then
+                                    local attackPower = GetAttackPowerForStat(1, effectiveStat)
+                                    if HasAPEffectsSpellPower and HasAPEffectsSpellPower() then
+                                        row.tooltip2 = STAT_TOOLTIP_BONUS_AP_SP
+                                    end
+                                    if (not primaryStat or primaryStat == 1) then
+                                        row.tooltip2 = format(row.tooltip2 or STAT_TOOLTIP_BONUS_AP, BreakUpLargeNumbers(attackPower))
+                                        if role == "TANK" and GetParryChanceFromAttribute then
+                                            local increasedParryChance = GetParryChanceFromAttribute()
+                                            if not Helpers.IsSecretValue(increasedParryChance) then
+                                                if increasedParryChance and increasedParryChance > 0 then
+                                                    row.tooltip2 = row.tooltip2.."|n|n"..format(CR_PARRY_BASE_STAT_TOOLTIP, increasedParryChance)
+                                                end
+                                            end
+                                        end
+                                    else
+                                        row.tooltip2 = STAT_NO_BENEFIT_TOOLTIP
+                                    end
+                                end
+                            elseif stat.statIndex == 2 then
+                                if (not primaryStat or primaryStat == 2) then
+                                    if HasAPEffectsSpellPower and HasAPEffectsSpellPower() then
+                                        row.tooltip2 = STAT_TOOLTIP_BONUS_AP_SP
+                                    else
+                                        row.tooltip2 = STAT_TOOLTIP_BONUS_AP
+                                    end
+                                    if role == "TANK" and GetDodgeChanceFromAttribute then
+                                        local increasedDodgeChance = GetDodgeChanceFromAttribute()
+                                        if not Helpers.IsSecretValue(increasedDodgeChance) then
+                                            if increasedDodgeChance and increasedDodgeChance > 0 then
+                                                row.tooltip2 = row.tooltip2.."|n|n"..format(CR_DODGE_BASE_STAT_TOOLTIP, increasedDodgeChance)
+                                            end
+                                        end
+                                    end
+                                else
+                                    row.tooltip2 = STAT_NO_BENEFIT_TOOLTIP
+                                end
+                            elseif stat.statIndex == 3 then
+                                if UnitHPPerStamina and GetUnitMaxHealthModifier then
+                                    row.tooltip2 = format(row.tooltip2, BreakUpLargeNumbers(((effectiveStat*UnitHPPerStamina("player")))*GetUnitMaxHealthModifier("player")))
+                                end
+                            elseif stat.statIndex == 4 then
+                                if HasAPEffectsSpellPower and HasAPEffectsSpellPower() then
+                                    row.tooltip2 = STAT_NO_BENEFIT_TOOLTIP
+                                elseif HasSPEffectsAttackPower and HasSPEffectsAttackPower() then
+                                    row.tooltip2 = STAT_TOOLTIP_BONUS_AP_SP
+                                elseif (not primaryStat or primaryStat == 4) then
+                                    row.tooltip2 = format(row.tooltip2, math.max(0, effectiveStat))
+                                else
+                                    row.tooltip2 = STAT_NO_BENEFIT_TOOLTIP
+                                end
+                            end
+                        end)
+                    end
+                end)
+
+                y = y - ROW_HEIGHT
+            end
+        end
+
+        y = y - 5
+
+    _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Secondary"], y)
+    y = y - headerHeight
+
+    local secondaryStats = {
+        { label = ns.L["Crit"], statKey = "CRIT", percentFunc = function() return GetSpellCritChance("player") end, ratingFunc = function() return GetCombatRating(CR_CRIT_SPELL) end, color = C.crit },
+        { label = ns.L["Haste"], statKey = "HASTE", percentFunc = function() return UnitSpellHaste("player") end, ratingFunc = function() return GetCombatRating(CR_HASTE_SPELL) end, color = C.haste },
+        { label = ns.L["Mastery"], statKey = "MASTERY", percentFunc = GetMasteryEffect, ratingFunc = function() return GetCombatRating(CR_MASTERY) end, color = C.mastery },
+        { label = ns.L["Versatility"], statKey = "VERSATILITY", percentFunc = function()
+            local a = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE)
+            local b = GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE)
+            if Helpers.IsSecretValue(a) then return nil end -- @secret-policy: reject-secret-value
+            if Helpers.IsSecretValue(b) then return nil end -- @secret-policy: reject-secret-value
+            return a + b
+        end, combatPercentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) end, ratingFunc = function() return GetCombatRating(CR_VERSATILITY_DAMAGE_DONE) end, color = C.versatility },
+    }
+
+    local statFormat = settings.secondaryStatFormat or "percent"
+
+    for _, stat in ipairs(secondaryStats) do
+        row = CreateStatBar(scrollChild, y, stat.color)
+        row.label:SetText(stat.label)
+
+        local percentFunc = stat.percentFunc
+        if secretsOff and stat.combatPercentFunc then
+            percentFunc = stat.combatPercentFunc
+        end
+        local pctOk, pct = pcall(percentFunc)
+        local ratingOk, rating = pcall(stat.ratingFunc)
+        local pctHas = pctOk and (Helpers.IsSecretValue(pct) or pct)
+        local ratingHas = ratingOk and (Helpers.IsSecretValue(rating) or rating)
+        if statFormat == "percent" then
+            if pctHas then row.value:SetFormattedText("%.2f%%", pct) end
+        elseif statFormat == "rating" then
+            if ratingHas then row.value:SetFormattedText("%s", rating) end
+        else
+            if pctHas and ratingHas then
+                row.value:SetFormattedText("%s (%.2f%%)", rating, pct)
+            elseif pctHas then
+                row.value:SetFormattedText("%.2f%%", pct)
+            end
+        end
+
+        if pctHas then
+            ns.SafeCallMethod("sink-forward", row.bar, "SetValue", pct)
+        end
+
+        local tooltipTitle = stat.label
+        local tooltipBody
+        if stat.statKey == "CRIT" then
+            tooltipBody = STAT_CRITICAL_STRIKE_TOOLTIP
+        elseif stat.statKey == "HASTE" then
+            local _, class = UnitClass(unit)
+            -- @secret-policy: collapse-only — concat throws on secret; safe fallback in all branches
+            if issecretvalue and issecretvalue(class) then class = nil end
+            tooltipBody = class and _G["STAT_HASTE_"..class.."_TOOLTIP"] or STAT_HASTE_TOOLTIP
+        elseif stat.statKey == "MASTERY" then
+            tooltipBody = STAT_MASTERY_TOOLTIP
+        elseif stat.statKey == "VERSATILITY" then
+            tooltipBody = STAT_VERSATILITY_TOOLTIP
+        end
+
+        statPolicy:ApplyTooltip(row, tooltipTitle, tooltipBody, nil, function()
+            if stat.statKey == "CRIT" then
+                local extraCritChance = SafeGetStat(GetCombatRatingBonus, CR_CRIT_SPELL)
+                local extraCritRating = SafeGetStat(GetCombatRating, CR_CRIT_SPELL)
+                row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_CRITICAL_STRIKE)..FONT_COLOR_CODE_CLOSE
+                if GetCritChanceProvidesParryEffect and GetCritChanceProvidesParryEffect() and GetCombatRatingBonusForCombatRatingValue then
+                    local critParryBonus = SafeGetStat(GetCombatRatingBonusForCombatRatingValue, CR_PARRY, extraCritRating)
+                    row.tooltip2 = format(CR_CRIT_PARRY_RATING_TOOLTIP, BreakUpLargeNumbers(extraCritRating), extraCritChance, critParryBonus)
+                        .. "\n\n" .. format(CR_CRIT_TOOLTIP, BreakUpLargeNumbers(extraCritRating), extraCritChance)
+                else
+                    row.tooltip2 = format(CR_CRIT_TOOLTIP, BreakUpLargeNumbers(extraCritRating), extraCritChance)
+                end
+            elseif stat.statKey == "HASTE" then
+                local _, class = UnitClass(unit)
+                -- @secret-policy: collapse-only — concat throws on secret; safe fallback in all branches
+                if issecretvalue and issecretvalue(class) then class = nil end
+                local hasteRating = SafeGetStat(GetCombatRating, CR_HASTE_SPELL)
+                local hasteBonus = SafeGetStat(GetCombatRatingBonus, CR_HASTE_SPELL)
+                row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_HASTE)..FONT_COLOR_CODE_CLOSE
+                row.tooltip2 = class and _G["STAT_HASTE_"..class.."_TOOLTIP"] or STAT_HASTE_TOOLTIP
+                row.tooltip2 = row.tooltip2 .. format(STAT_HASTE_BASE_TOOLTIP, BreakUpLargeNumbers(hasteRating), hasteBonus)
+            elseif stat.statKey == "MASTERY" then
+                local mastery, bonusCoeff = SafeGetStatValues(GetMasteryEffect)
+                local masteryRating = SafeGetStat(GetCombatRating, CR_MASTERY)
+                local masteryBonus = SafeGetStat(GetCombatRatingBonus, CR_MASTERY) * (bonusCoeff or 1)
+                local primaryTalentTree = GetSpecialization and GetSpecialization()
+                row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_MASTERY)..FONT_COLOR_CODE_CLOSE
+                local spellDesc = ""
+                if primaryTalentTree and GetSpecializationMasterySpells then
+                    local masterySpell, masterySpell2 = GetSpecializationMasterySpells(primaryTalentTree)
+                    if masterySpell and C_Spell and C_Spell.GetSpellDescription then
+                        spellDesc = C_Spell.GetSpellDescription(masterySpell) or ""
+                    end
+                    if masterySpell2 and C_Spell and C_Spell.GetSpellDescription then
+                        local desc2 = C_Spell.GetSpellDescription(masterySpell2)
+                        if desc2 and desc2 ~= "" then
+                            spellDesc = spellDesc .. "\n" .. desc2
+                        end
+                    end
+                end
+                local ratingText
+                if STAT_MASTERY_TOOLTIP then
+                    local ok, result = ns.SafeCall("report", format, STAT_MASTERY_TOOLTIP, BreakUpLargeNumbers(masteryRating), masteryBonus)
+                    if ok then ratingText = result end
+                end
+                if not ratingText then
+                    ratingText = format("Your %s Mastery rating adds an additional %.2F%% mastery.", BreakUpLargeNumbers(masteryRating), masteryBonus)
+                end
+                if spellDesc ~= "" then
+                    row.tooltip2 = spellDesc .. "\n\n" .. ratingText
+                else
+                    row.tooltip2 = ratingText
+                end
+            elseif stat.statKey == "VERSATILITY" then
+                if GetStatOrNil(GetCombatRatingBonus, CR_VERSATILITY_DAMAGE_DONE) == nil
+                    or GetStatOrNil(GetVersatilityBonus, CR_VERSATILITY_DAMAGE_DONE) == nil then
+                    return
+                end
+                local versatility = SafeGetStat(GetCombatRating, CR_VERSATILITY_DAMAGE_DONE)
+                local versatilityDamageBonus = SafeGetStat(GetCombatRatingBonus, CR_VERSATILITY_DAMAGE_DONE) + SafeGetStat(GetVersatilityBonus, CR_VERSATILITY_DAMAGE_DONE)
+                local versatilityDamageTakenReduction = SafeGetStat(GetCombatRatingBonus, CR_VERSATILITY_DAMAGE_TAKEN) + SafeGetStat(GetVersatilityBonus, CR_VERSATILITY_DAMAGE_TAKEN)
+                row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_VERSATILITY)..FONT_COLOR_CODE_CLOSE
+                row.tooltip2 = format(CR_VERSATILITY_TOOLTIP, versatilityDamageBonus, versatilityDamageTakenReduction, BreakUpLargeNumbers(versatility), versatilityDamageBonus, versatilityDamageTakenReduction)
+            end
+        end)
+
+        y = y - BAR_HEIGHT
+    end
+
+    y = y - 5
+
+    _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Tertiary"], y)
+    y = y - headerHeight
+
+    local leech = SafeGetStat(GetLifesteal)
+    local speed = SafeGetStat(GetSpeed)
+    local avoidance = 0
+    if GetAvoidance then
+        avoidance = SafeGetStat(GetAvoidance)
+    elseif GetCombatRatingBonus and CR_AVOIDANCE then
+        avoidance = SafeGetStat(GetCombatRatingBonus, CR_AVOIDANCE)
+    end
+
+    local tertiaryStats = {
+        { label = ns.L["Avoidance"], value = FormatPercent(avoidance), statKey = "AVOIDANCE" },
+        { label = ns.L["Leech"], value = FormatPercent(leech), statKey = "LIFESTEAL" },
+        { label = ns.L["Speed"], value = FormatPercent(speed), statKey = "SPEED" },
+    }
+
+    for _, stat in ipairs(tertiaryStats) do
+        local hasOocValue = (stat.statKey == "AVOIDANCE" and avoidance > 0)
+            or (stat.statKey == "LIFESTEAL" and leech > 0)
+            or (stat.statKey == "SPEED" and speed > 0)
+        local shouldShow = secretsOff or hasOocValue
+        if shouldShow then
+            row = CreateStatRow(scrollChild, y)
+            row.label:SetText(stat.label)
+
+            local valueFn
+            if stat.statKey == "AVOIDANCE" and GetAvoidance then
+                valueFn = GetAvoidance
+            elseif stat.statKey == "AVOIDANCE" then
+                valueFn = function() return GetCombatRatingBonus(CR_AVOIDANCE) end
+            elseif stat.statKey == "LIFESTEAL" then
+                valueFn = GetLifesteal
+            elseif stat.statKey == "SPEED" then
+                valueFn = GetSpeed
+            end
+            if valueFn then
+                local vOk, v = pcall(valueFn)
+                if vOk and v then row.value:SetFormattedText("%.2f%%", v) end
+            end
+
+            local tooltipTitle, tooltipBody
+            if stat.statKey == "AVOIDANCE" then
+                tooltipTitle = _G.STAT_AVOIDANCE or "Avoidance"
+                tooltipBody = _G.CR_AVOIDANCE_TOOLTIP_BASE or "Reduces damage taken from area effects."
+            elseif stat.statKey == "LIFESTEAL" then
+                tooltipTitle = STAT_LIFESTEAL
+                tooltipBody = _G.STAT_LIFESTEAL_TOOLTIP or _G.CR_LIFESTEAL_TOOLTIP
+            elseif stat.statKey == "SPEED" then
+                tooltipTitle = STAT_SPEED
+                tooltipBody = _G.STAT_SPEED_TOOLTIP or _G.CR_SPEED_TOOLTIP
+            end
+
+            statPolicy:ApplyTooltip(row, tooltipTitle, tooltipBody, nil, function()
+                if stat.statKey == "AVOIDANCE" then
+                    local avoidanceValue = 0
+                    if GetAvoidance then
+                        avoidanceValue = SafeGetStat(GetAvoidance)
+                    elseif GetCombatRatingBonus and CR_AVOIDANCE then
+                        avoidanceValue = SafeGetStat(GetCombatRatingBonus, CR_AVOIDANCE)
+                    end
+
+                    local avoidanceLabel = _G.STAT_AVOIDANCE or "Avoidance"
+                    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE .. format(PAPERDOLLFRAME_TOOLTIP_FORMAT, avoidanceLabel) .. " " .. format("%.2F%%", avoidanceValue) .. FONT_COLOR_CODE_CLOSE
+
+                    local avoidanceRating = (GetCombatRating and CR_AVOIDANCE) and SafeGetStat(GetCombatRating, CR_AVOIDANCE) or 0
+                    local avoidanceBonus = (GetCombatRatingBonus and CR_AVOIDANCE) and SafeGetStat(GetCombatRatingBonus, CR_AVOIDANCE) or avoidanceValue
+                    if _G.CR_AVOIDANCE_TOOLTIP then
+                        row.tooltip2 = format(CR_AVOIDANCE_TOOLTIP, BreakUpLargeNumbers(avoidanceRating), avoidanceBonus)
+                    else
+                        row.tooltip2 = format("Reduces damage taken from area effects by %.2F%%.", avoidanceBonus)
+                    end
+                elseif stat.statKey == "LIFESTEAL" then
+                    local lifesteal = SafeGetStat(GetLifesteal)
+                    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE .. format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_LIFESTEAL) .. " " .. format("%.2F%%", lifesteal) .. FONT_COLOR_CODE_CLOSE
+                    row.tooltip2 = format(CR_LIFESTEAL_TOOLTIP, BreakUpLargeNumbers(SafeGetStat(GetCombatRating, CR_LIFESTEAL)), SafeGetStat(GetCombatRatingBonus, CR_LIFESTEAL))
+                elseif stat.statKey == "SPEED" then
+                    local speedValue = SafeGetStat(GetSpeed)
+                    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE .. format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_SPEED) .. " " .. format("%.2F%%", speedValue) .. FONT_COLOR_CODE_CLOSE
+                    row.tooltip2 = format(CR_SPEED_TOOLTIP, BreakUpLargeNumbers(SafeGetStat(GetCombatRating, CR_SPEED)), SafeGetStat(GetCombatRatingBonus, CR_SPEED))
+                end
+            end)
+
+            y = y - ROW_HEIGHT
+        end
+    end
+
+    y = y - 5
+
+    _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Attack"], y)
+    y = y - headerHeight
+
+    local attackStats = {
+        { label = ns.L["Attack Power"], func = function() return UnitAttackPower(unit) end, format = FormatNumber, statKey = "ATTACK_POWER" },
+        { label = ns.L["Spell Power"], func = function() return GetSpellBonusDamage(2) end, format = FormatNumber, statKey = "SPELLPOWER" },
+        { label = ns.L["Attack Speed"], func = function() return UnitAttackSpeed(unit) end, format = function(v) return string.format("%.2fs", v or 0) end, statKey = "ATTACK_SPEED" },
+    }
+
+    local classFilter = {}
+    do
+        local _, cls = UnitClass(unit)
+        -- @secret-policy: collapse-only — skin falls back to neutral styling
+        if issecretvalue and issecretvalue(cls) then cls = nil end
+        local casterClasses = { MAGE = true, PRIEST = true, WARLOCK = true }
+        local hybridClasses = { DRUID = true, PALADIN = true, SHAMAN = true, EVOKER = true, MONK = true }
+        classFilter.ATTACK_POWER = not casterClasses[cls]
+        classFilter.SPELLPOWER   = casterClasses[cls] or hybridClasses[cls]
+        classFilter.ATTACK_SPEED = true
+    end
+
+    for _, stat in ipairs(attackStats) do
+        local value = SafeGetStat(stat.func)
+        local shouldShow
+        if secretsOff then
+            shouldShow = classFilter[stat.statKey] ~= false
+        else
+            shouldShow = value and value > 0
+        end
+        if shouldShow then
+            row = CreateStatRow(scrollChild, y)
+            row.label:SetText(stat.label)
+
+            local fmtStr = (stat.statKey == "ATTACK_SPEED") and "%.2fs" or "%s"
+            local vOk, v = pcall(stat.func)
+            if vOk and (Helpers.IsSecretValue(v) or v) then row.value:SetFormattedText(fmtStr, v) end
+
+            local tooltipTitle, tooltipBody
+            if stat.statKey == "ATTACK_POWER" then
+                tooltipTitle = MELEE_ATTACK_POWER
+                tooltipBody = MELEE_ATTACK_POWER_TOOLTIP
+            elseif stat.statKey == "SPELLPOWER" then
+                tooltipTitle = STAT_SPELLPOWER
+                tooltipBody = STAT_SPELLPOWER_TOOLTIP
+            elseif stat.statKey == "ATTACK_SPEED" then
+                tooltipTitle = ATTACK_SPEED
+                tooltipBody = _G.STAT_ATTACK_SPEED_BASE_TOOLTIP
+            end
+
+            statPolicy:ApplyTooltip(row, tooltipTitle, tooltipBody, nil, function()
+                if stat.statKey == "ATTACK_POWER" then
+                    if PaperDollFormatStat then
+                        local base, posBuff, negBuff = SafeGetStatValues(UnitAttackPower, unit)
+                        local damageBonus = BreakUpLargeNumbers(math.max((base+posBuff+negBuff), 0)/ATTACK_POWER_MAGIC_NUMBER)
+                        local tag, tooltip = MELEE_ATTACK_POWER, MELEE_ATTACK_POWER_TOOLTIP
+                        local valueText, tooltipText = PaperDollFormatStat(tag, base, posBuff, negBuff)
+                        row.tooltip = tooltipText
+                        row.tooltip2 = format(tooltip, damageBonus)
+                    end
+                elseif stat.statKey == "SPELLPOWER" then
+                    row.tooltip = STAT_SPELLPOWER
+                    row.tooltip2 = STAT_SPELLPOWER_TOOLTIP
+                elseif stat.statKey == "ATTACK_SPEED" then
+                    local speed = SafeGetStat(UnitAttackSpeed, unit)
+                    local displaySpeed = format("%.2F", speed)
+                    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, ATTACK_SPEED).." "..displaySpeed..FONT_COLOR_CODE_CLOSE
+                    local meleeHaste = SafeGetStat(GetMeleeHaste)
+                    row.tooltip2 = format(STAT_ATTACK_SPEED_BASE_TOOLTIP, BreakUpLargeNumbers(meleeHaste))
+                end
+            end)
+
+            y = y - ROW_HEIGHT
+        end
+    end
+
+    y = y - 5
+
+    _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Defense"], y)
+    y = y - headerHeight
+
+    local _, effectiveArmor = SafeGetStatValues(UnitArmor, unit)
+    local dodge = SafeGetStat(GetDodgeChance)
+    local parry = SafeGetStat(GetParryChance)
+    local block = SafeGetStat(GetBlockChance)
+    local staggerPercent = 0
+    local _, classTag = UnitClass(unit)
+    -- @secret-policy: collapse-only — skin falls back to neutral styling
+    if issecretvalue and issecretvalue(classTag) then classTag = nil end
+    local isBrewmaster = false
+
+    if classTag == "MONK" and unit == "player" and GetSpecialization and GetSpecializationInfo then
+        local specIndex = GetSpecialization()
+        if specIndex then
+            local specID = select(1, GetSpecializationInfo(specIndex))
+            isBrewmaster = (specID == 268)
+        end
+    end
+
+    if isBrewmaster then
+        if C_PaperDollInfo and C_PaperDollInfo.GetStaggerPercentage then
+            staggerPercent = SafeGetStat(C_PaperDollInfo.GetStaggerPercentage, unit)
+        elseif GetStaggerPercentage then
+            staggerPercent = SafeGetStat(GetStaggerPercentage, unit)
+        elseif UnitStagger then
+            local staggerAmount = SafeGetStat(UnitStagger, unit)
+            local maxHealth = SafeGetStat(UnitHealthMax, unit)
+            if maxHealth > 0 then
+                staggerPercent = (staggerAmount / maxHealth) * 100
+            end
+        end
+    end
+
+    local defenseStats = {
+        { label = ns.L["Armor"], value = FormatNumber(effectiveArmor or 0), statKey = "ARMOR" },
+        { label = ns.L["Dodge"], value = FormatPercent(dodge), statKey = "DODGE" },
+        { label = ns.L["Parry"], value = FormatPercent(parry), statKey = "PARRY" },
+        { label = ns.L["Block"], value = FormatPercent(block), statKey = "BLOCK" },
+    }
+
+    if isBrewmaster then
+        tinsert(defenseStats, { label = ns.L["Stagger"], value = FormatPercent(staggerPercent), statKey = "STAGGER" })
+    end
+
+    local defenseFilter = {}
+    do
+        local plate = (classTag == "WARRIOR" or classTag == "PALADIN" or classTag == "DEATHKNIGHT")
+        local shieldUser = (classTag == "WARRIOR" or classTag == "PALADIN" or classTag == "SHAMAN")
+        defenseFilter.ARMOR   = true
+        defenseFilter.DODGE   = (classTag ~= "WARLOCK" and classTag ~= "MAGE" and classTag ~= "PRIEST")
+        defenseFilter.PARRY   = plate or (classTag == "ROGUE") or (classTag == "DEATHKNIGHT") or (classTag == "MONK") or (classTag == "DEMONHUNTER")
+        defenseFilter.BLOCK   = shieldUser
+        defenseFilter.STAGGER = isBrewmaster
+    end
+
+    for _, stat in ipairs(defenseStats) do
+        local shouldShow
+        if secretsOff then
+            shouldShow = defenseFilter[stat.statKey] ~= false
+        else
+            shouldShow = true
+        end
+        if shouldShow then
+            row = CreateStatRow(scrollChild, y)
+            row.label:SetText(stat.label)
+
+            if stat.statKey == "ARMOR" then
+                local aOk, _, aEff = pcall(UnitArmor, unit)
+                if aOk and (Helpers.IsSecretValue(aEff) or aEff) then row.value:SetFormattedText("%s", aEff) end
+            elseif stat.statKey == "STAGGER" then
+                if C_PaperDollInfo and C_PaperDollInfo.GetStaggerPercentage then
+                    local sOk, s = pcall(C_PaperDollInfo.GetStaggerPercentage, unit)
+                    if sOk and (Helpers.IsSecretValue(s) or s) then row.value:SetFormattedText("%.2f%%", s) end
+                end
+            else
+                local valueFn = stat.statKey == "DODGE" and GetDodgeChance
+                            or  stat.statKey == "PARRY" and GetParryChance
+                            or  stat.statKey == "BLOCK" and GetBlockChance
+                if valueFn then
+                    local vOk, v = pcall(valueFn)
+                    if vOk and (Helpers.IsSecretValue(v) or v) then row.value:SetFormattedText("%.2f%%", v) end
+                end
+            end
+
+            local tooltipTitle, tooltipBody
+            if stat.statKey == "ARMOR" then
+                tooltipTitle = ARMOR
+                tooltipBody = _G.STAT_ARMOR_TOOLTIP
+            elseif stat.statKey == "DODGE" then
+                tooltipTitle = DODGE_CHANCE
+                tooltipBody = _G.STAT_DODGE_TOOLTIP or _G.CR_DODGE_TOOLTIP
+            elseif stat.statKey == "PARRY" then
+                tooltipTitle = PARRY_CHANCE
+                tooltipBody = _G.STAT_PARRY_TOOLTIP or _G.CR_PARRY_TOOLTIP
+            elseif stat.statKey == "BLOCK" then
+                tooltipTitle = BLOCK_CHANCE
+                tooltipBody = _G.STAT_BLOCK_TOOLTIP or _G.CR_BLOCK_TOOLTIP
+            elseif stat.statKey == "STAGGER" then
+                tooltipTitle = _G.STAT_STAGGER or ns.L["Stagger"]
+                tooltipBody = _G.STAT_STAGGER_TOOLTIP or ns.L["Percentage of incoming Physical damage delayed by Stagger."]
+            end
+
+            statPolicy:ApplyTooltip(row, tooltipTitle, tooltipBody, nil, function()
+                if stat.statKey == "ARMOR" then
+                    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, ARMOR).." "..BreakUpLargeNumbers(effectiveArmor)..FONT_COLOR_CODE_CLOSE
+                    if PaperDollFrame_GetArmorReduction then
+                        local armorReduction = PaperDollFrame_GetArmorReduction(effectiveArmor, UnitEffectiveLevel(unit))
+                        row.tooltip2 = format(STAT_ARMOR_TOOLTIP, armorReduction)
+                        if PaperDollFrame_GetArmorReductionAgainstTarget then
+                            local armorReductionAgainstTarget = PaperDollFrame_GetArmorReductionAgainstTarget(effectiveArmor)
+                            if armorReductionAgainstTarget then
+                                row.tooltip3 = format(STAT_ARMOR_TARGET_TOOLTIP, armorReductionAgainstTarget)
+                            end
+                        end
+                    end
+                elseif stat.statKey == "DODGE" then
+                    local chance = SafeGetStat(GetDodgeChance)
+                    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, DODGE_CHANCE).." "..string.format("%.2F", chance).."%"..FONT_COLOR_CODE_CLOSE
+                    row.tooltip2 = format(CR_DODGE_TOOLTIP, SafeGetStat(GetCombatRating, CR_DODGE), SafeGetStat(GetCombatRatingBonus, CR_DODGE))
+                elseif stat.statKey == "PARRY" then
+                    local chance = SafeGetStat(GetParryChance)
+                    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, PARRY_CHANCE).." "..string.format("%.2F", chance).."%"..FONT_COLOR_CODE_CLOSE
+                    row.tooltip2 = format(CR_PARRY_TOOLTIP, SafeGetStat(GetCombatRating, CR_PARRY), SafeGetStat(GetCombatRatingBonus, CR_PARRY))
+                elseif stat.statKey == "BLOCK" then
+                    local chance = SafeGetStat(GetBlockChance)
+                    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, BLOCK_CHANCE).." "..string.format("%.2F", chance).."%"..FONT_COLOR_CODE_CLOSE
+                    if GetShieldBlock and PaperDollFrame_GetArmorReduction then
+                        local shieldBlockArmor = SafeGetStat(GetShieldBlock)
+                        local blockArmorReduction = PaperDollFrame_GetArmorReduction(shieldBlockArmor, UnitEffectiveLevel(unit))
+                        row.tooltip2 = CR_BLOCK_TOOLTIP:format(blockArmorReduction)
+                        if PaperDollFrame_GetArmorReductionAgainstTarget then
+                            local blockArmorReductionAgainstTarget = PaperDollFrame_GetArmorReductionAgainstTarget(shieldBlockArmor)
+                            if blockArmorReductionAgainstTarget then
+                                row.tooltip3 = format(STAT_BLOCK_TARGET_TOOLTIP, blockArmorReductionAgainstTarget)
+                            end
+                        end
+                    end
+                elseif stat.statKey == "STAGGER" then
+                    local staggerLabel = _G.STAT_STAGGER or "Stagger"
+                    row.tooltip = HIGHLIGHT_FONT_COLOR_CODE .. format(PAPERDOLLFRAME_TOOLTIP_FORMAT, staggerLabel) .. " " .. format("%.2F%%", staggerPercent) .. FONT_COLOR_CODE_CLOSE
+                    row.tooltip2 = _G.STAT_STAGGER_TOOLTIP or "Percentage of incoming Physical damage delayed by Stagger."
+                end
+            end)
+
+            y = y - ROW_HEIGHT
+        end
+    end
+
+        if settings.showGemSummary then
+            y = y - 5
+            _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Gems"], y)
+            y = y - headerHeight
+
+            local colorCounts, colorOrder = {}, {}
+            local emptyCount = 0
+            for _, slot in ipairs(EQUIPMENT_SLOTS) do
+                local gems = GetGemInfo(unit, slot.id)
+                for _, gem in ipairs(gems) do
+                    if gem.filled then
+                        local key = gem.type or "Prismatic"
+                        if not colorCounts[key] then
+                            colorCounts[key] = 0
+                            colorOrder[#colorOrder + 1] = key
+                        end
+                        colorCounts[key] = colorCounts[key] + 1
+                    else
+                        emptyCount = emptyCount + 1
+                    end
+                end
+            end
+            table.sort(colorOrder)
+
+            if #colorOrder == 0 and emptyCount == 0 then
+                local row = CreateStatRow(scrollChild, y)
+                row.label:SetText(ns.L["No sockets"])
+                row.value:SetText("")
+                y = y - ROW_HEIGHT
+            else
+                for _, key in ipairs(colorOrder) do
+                    local row = CreateStatRow(scrollChild, y)
+                    row.label:SetText(key)
+                    local gc = GEM_COLORS[key]
+                    if gc then
+                        row.label:SetTextColor(gc[1], gc[2], gc[3], gc[4] or 1)
+                    end
+                    row.value:SetText(colorCounts[key])
+                    y = y - ROW_HEIGHT
+                end
+                if emptyCount > 0 then
+                    local row = CreateStatRow(scrollChild, y)
+                    row.label:SetText(ns.L["Empty Sockets"])
+                    row.label:SetTextColor(1, 0.35, 0.35, 1)
+                    row.value:SetText(emptyCount)
+                    y = y - ROW_HEIGHT
+                end
+            end
+        end
+
+        FinalizeStatsPanelLayout(panel, scrollChild, y)
+    end)
+
+    updatingStatsPanel = false
+
+    if not success then
+        if panel then ns.SafeCallMethod("best-effort-style", panel, "Hide") end
+        if CharacterStatsPane then
+            ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 1)
+            ns.SafeCallMethodIfPresent("best-effort-style", CharacterStatsPane, "EnableMouse", true)
+            if CharacterStatsPane.ClassBackground then
+                ns.SafeCallMethod("best-effort-style", CharacterStatsPane.ClassBackground, "SetAlpha", 1)
+            end
+        end
+    end
+end
+
+local function GetILvlColor(ilvl)
+    if ilvl >= 285 then
+        return 1, 0.5, 0
+    elseif ilvl >= 275 then
+        return 0.64, 0.21, 0.93
+    elseif ilvl >= 265 then
+        return 0, 0.44, 0.87
+    elseif ilvl >= 255 then
+        return 0, 1, 0
+    elseif ilvl >= 245 then
+        return 1, 1, 1
+    else
+        return 0.62, 0.62, 0.62
+    end
+end
+
+local function UpdateILvlDisplay()
+    if not CharacterFrame or not (frameState[CharacterFrame] or EMPTY).ilvlDisplay then return end
+
+    local settings = GetSettings()
+    if not settings.enabled then return end
+
+    local displayFrame = (frameState[CharacterFrame] or EMPTY).ilvlDisplay
+    if not displayFrame.text then return end
+
+    local rawName = UnitName("player")
+    local name = "Unknown"
+    if not Helpers.IsSecretValue(rawName) then
+        name = rawName or "Unknown"
+    end
+    local level = UnitLevel("player") or 0
+    local overall, equipped, pvp = GetPlayerAverageItemLevels()
+    local ilvlStr = string.format("%.0f", equipped)
+
+    local specName = ""
+    local className = ""
+    local specIndex = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization
+        and C_SpecializationInfo.GetSpecialization()
+    if specIndex and C_SpecializationInfo.GetSpecializationInfo then
+        local _, specNameLocal = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+        specName = specNameLocal or ""
+    end
+    local _, classNameLocal, classIdLocal = UnitClass("player")
+    -- @secret-policy: collapse-only — falls back to neutral (uncolored) text
+    if issecretvalue and issecretvalue(classNameLocal) then classNameLocal = nil end
+    if issecretvalue and issecretvalue(classIdLocal) then classIdLocal = nil end
+    if classNameLocal then
+        local classInfo = classIdLocal and C_CreatureInfo.GetClassInfo(classIdLocal)
+        className = classInfo and classInfo.className or classNameLocal
+    end
+
+    local classColor = Helpers.GetClassColorTable(classNameLocal)
+    local r, g, b = 1, 1, 1
+    if classColor then
+        r, g, b = classColor.r, classColor.g, classColor.b
+    end
+
+    displayFrame.text:SetText(name)
+    displayFrame.text:SetTextColor(r, g, b, 1)
+
+    if displayFrame.specText then
+        local specLine = string.format("%d %s %s", level, specName, AbbreviateClassName(className))
+        displayFrame.specText:SetText(specLine)
+        displayFrame.specText:SetTextColor(r, g, b, 1)
+    end
+
+    local centerFrame = (frameState[CharacterFrame] or EMPTY).centerILvl
+    if centerFrame and centerFrame.text then
+        centerFrame.cachedOverallILvl = overall
+        centerFrame.cachedEquippedILvl = equipped
+        centerFrame.cachedPvpILvl = pvp
+
+        local eR, eG, eB = GetILvlColor(equipped)
+        local oR, oG, oB = GetILvlColor(overall)
+
+        local equippedHex = string.format("%02x%02x%02x", math.floor(eR*255), math.floor(eG*255), math.floor(eB*255))
+        local overallHex = string.format("%02x%02x%02x", math.floor(oR*255), math.floor(oG*255), math.floor(oB*255))
+        local equippedStr = string.format("%.1f", equipped)
+        local overallStr = string.format("%.1f", overall)
+
+        local centerStr = string.format("|cff%s%s  |  |cff%s%s|r", equippedHex, equippedStr, overallHex, overallStr)
+        centerFrame.text:SetText(centerStr)
+    end
+end
+
+ScheduleUpdate = function()
+    if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
+    if pendingUpdate then return end
+    pendingUpdate = true
+
+    C_Timer.After(0.05, function()
+        pendingUpdate = false
+
+        if CharacterFrame and CharacterFrame:IsShown() and PaperDollFrame and PaperDollFrame:IsShown() then
+            UpdateAllSlotOverlays("player", slotOverlays)
+            UpdateILvlDisplay()
+            if statsPanel then
+                local equipMgrOpen = PaperDollFrame.EquipmentManagerPane
+                                     and PaperDollFrame.EquipmentManagerPane:IsShown()
+                if not equipMgrOpen then
+                    UpdateStatsPanel(statsPanel, "player")
+                end
+            end
+        end
+
+        if ns.QUI.InspectPane and ns.QUI.InspectPane.UpdateInspectFrame then
+            ns.QUI.InspectPane.UpdateInspectFrame()
+        end
+    end)
+end
+
+local function CreateSidePopup(globalName, titleText)
+    local PANEL_WIDTH_EXTENSION = 55
+    local popup = CreateFrame("Frame", globalName, UIParent, "BackdropTemplate")
+    popup:SetSize(205, 400)
+    popup:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", PANEL_WIDTH_EXTENSION + 10, 0)
+    popup:SetFrameStrata("DIALOG")
+    popup:EnableMouse(true)
+    popup:SetMovable(true)
+    popup:RegisterForDrag("LeftButton")
+    popup:SetScript("OnDragStart", popup.StartMoving)
+    popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
+    popup:Hide()
+
+    popup:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true,
+        tileSize = 32,
+        edgeSize = 32,
+        insets = { left = 8, right = 8, top = 8, bottom = 8 }
+    })
+
+    local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -15)
+    title:SetText(titleText)
+    popup.title = title
+
+    _G[globalName] = popup
+
+    return popup
+end
+
+local function CreateEquipMgrPopup()
+    if equipMgrPopup then return equipMgrPopup end
+    equipMgrPopup = CreateSidePopup("QUI_EquipMgrPopup", ns.L["Equipment Manager"])
+    return equipMgrPopup
+end
+
+local function CreateTitlesPopup()
+    if titlesPopup then return titlesPopup end
+    titlesPopup = CreateSidePopup("QUI_TitlesPopup", ns.L["Titles"])
+    return titlesPopup
+end
+
+local function RestoreCharacterPanePopoutPane(pane)
+    if not pane then return end
+
+    pane:Hide()
+
+    local state = frameState[pane] or EMPTY
+    if state.originalParent then
+        pane:SetParent(state.originalParent)
+    end
+end
+
+local function RestoreCharacterPanePopouts()
+    if equipMgrPopup then
+        equipMgrPopup:Hide()
+    end
+
+    if titlesPopup then
+        titlesPopup:Hide()
+    end
+
+    RestoreCharacterPanePopoutPane(PaperDollFrame and PaperDollFrame.EquipmentManagerPane)
+    RestoreCharacterPanePopoutPane(PaperDollFrame and PaperDollFrame.TitleManagerPane)
+end
+
+local SIDEBAR_TAB_ACTIVE_TEXCOORDS = {0.01562500, 0.79687500, 0.78906250, 0.95703125}
+local SIDEBAR_TAB_INACTIVE_TEXCOORDS = {0.01562500, 0.79687500, 0.61328125, 0.78125000}
+
+local function SetRegionShown(region, shown)
+    if not region then return end
+
+    if region.SetShown then
+        region:SetShown(shown)
+    elseif shown then
+        region:Show()
+    else
+        region:Hide()
+    end
+end
+
+local function SetSidebarTabSelected(tab, selected)
+    if not tab then return end
+
+    if tab.SetChecked then
+        tab:SetChecked(selected)
+    end
+    ns.SafeCallMethodIfPresent("best-effort-style", tab, "SetSelected", selected)
+
+    SetRegionShown(tab.Hider, not selected)
+    SetRegionShown(tab.Highlight, not selected)
+
+    if tab.TabBg and tab.TabBg.SetTexCoord then
+        local coords = selected and SIDEBAR_TAB_ACTIVE_TEXCOORDS or SIDEBAR_TAB_INACTIVE_TEXCOORDS
+        tab.TabBg:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+    end
+
+    local selectedTexture = tab.SelectedTexture
+    if selectedTexture then
+        if selectedTexture.SetShown then
+            selectedTexture:SetShown(selected)
+        elseif selected then
+            selectedTexture:Show()
+        else
+            selectedTexture:Hide()
+        end
+    end
+
+    local selectedBar = tab.SelectedBar
+    if selectedBar then
+        if selectedBar.SetShown then
+            selectedBar:SetShown(selected)
+        elseif selected then
+            selectedBar:Show()
+        else
+            selectedBar:Hide()
+        end
+    end
+end
+
+local function SelectCharacterStatsSidebarTab()
+    if not PaperDollSidebarTab1 then return end
+
+    if type(_G.PaperDollFrame_SetSidebar) == "function" then
+        ns.SafeCall("best-effort-style", _G.PaperDollFrame_SetSidebar, PaperDollSidebarTab1, 1)
+    elseif CharacterStatsPane and CharacterStatsPane.Show then
+        CharacterStatsPane:Show()
+    end
+
+    if type(_G.PaperDollFrame_UpdateSidebarTabs) == "function" then
+        ns.SafeCall("best-effort-style", _G.PaperDollFrame_UpdateSidebarTabs)
+    end
+
+    SetSidebarTabSelected(PaperDollSidebarTab1, true)
+    SetSidebarTabSelected(PaperDollSidebarTab2, false)
+    SetSidebarTabSelected(PaperDollSidebarTab3, false)
+
+    for i = 1, 3 do
+        UpdateSidebarTabBorder(_G["PaperDollSidebarTab" .. i])
+    end
+end
+
+local characterFrameHooked = false
+
+local function HookCharacterFrame()
+    if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
+    if not CharacterFrame then return end
+    if characterFrameHooked then return end
+    characterFrameHooked = true
+
+    local gearBtn, settingsPanel
+
+    CharacterFrame:HookScript("OnShow", function()
+        C_Timer.After(0.01, function()
+            if PaperDollFrame and PaperDollFrame:IsShown() then
+                ApplyCharacterPaneLayout()
+                InitializeCharacterOverlays()
+                ScheduleUpdate()
+            else
+                if not IsSkinningHandlingBackground() and customBg then
+                    customBg:Hide()
+                end
+                if statsPanel then statsPanel:Hide() end
+                for _, overlay in pairs(slotOverlays) do
+                    if overlay then overlay:Hide() end
+                end
+                RestoreCharacterPanePopouts()
+                if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Hide() end
+                if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Hide() end
+                SetCharacterFrameScale(1.0)
+            end
+        end)
+    end)
+
+    CharacterFrame:HookScript("OnHide", function()
+        layoutApplied = false
+
+        GameTooltip:Hide()
+
+        RestoreCharacterPanePopouts()
+    end)
+
+    if CharacterStatsPane then
+        hooksecurefunc(CharacterStatsPane, "Show", function()
+            C_Timer.After(0, function()
+                local settings = GetSettings()
+                if settings.enabled and CharacterStatsPane then
+                    MaskNativeStatsPane()
+                end
+            end)
+        end)
+    end
+
+    if type(_G.PaperDollFrame_UpdateSidebarTabs) == "function" and not (frameState[CharacterFrame] or EMPTY).sidebarSkinHooked then
+        hooksecurefunc("PaperDollFrame_UpdateSidebarTabs", function()
+            C_Timer.After(0, function()
+                local settings = GetSettings()
+                if settings.enabled and CharacterFrame and CharacterFrame:IsShown() and PaperDollFrame and PaperDollFrame:IsShown() then
+                    StyleSidebarTabs()
+                end
+            end)
+        end)
+        GetState(CharacterFrame).sidebarSkinHooked = true
+    end
+
+    if PaperDollSidebarTab3 and not (frameState[PaperDollSidebarTab3] or EMPTY).hooked then
+        PaperDollSidebarTab3:HookScript("OnClick", function()
+            local settings = GetSettings()
+            if not settings.enabled then return end
+
+            RestoreCharacterPanePopouts()
+
+            local popup = CreateEquipMgrPopup()
+
+            local pane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
+            if pane then
+                if not (frameState[pane] or EMPTY).originalParent then
+                    GetState(pane).originalParent = pane:GetParent()
+                end
+
+                pane:SetParent(popup)
+                pane:ClearAllPoints()
+                pane:SetPoint("TOPLEFT", popup, "TOPLEFT", 5, -30)
+                pane:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -5, 5)
+                pane:Show()
+
+                if pane.ScrollBox then
+                    pane.ScrollBox:ClearAllPoints()
+                    pane.ScrollBox:SetPoint("TOPLEFT", pane, "TOPLEFT", 5, -35)
+                    pane.ScrollBox:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -25, 5)
+                end
+
+                popup:Show()
+
+                local skinningAPI = _G.QUI_CharacterFrameSkinning
+                if skinningAPI and skinningAPI.SkinEquipmentManager then
+                    skinningAPI.SkinEquipmentManager()
+                end
+            end
+
+        end)
+        GetState(PaperDollSidebarTab3).hooked = true
+    end
+
+    if PaperDollSidebarTab2 and not (frameState[PaperDollSidebarTab2] or EMPTY).hooked then
+        PaperDollSidebarTab2:HookScript("OnClick", function()
+            local settings = GetSettings()
+            if not settings.enabled then return end
+
+            RestoreCharacterPanePopouts()
+
+            local popup = CreateTitlesPopup()
+
+            local pane = PaperDollFrame and PaperDollFrame.TitleManagerPane
+            if pane then
+                if not (frameState[pane] or EMPTY).originalParent then
+                    GetState(pane).originalParent = pane:GetParent()
+                end
+
+                pane:SetParent(popup)
+                pane:ClearAllPoints()
+                pane:SetPoint("TOPLEFT", popup, "TOPLEFT", 5, -30)
+                pane:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -5, 5)
+                pane:Show()
+
+                if pane.ScrollBox then
+                    pane.ScrollBox:ClearAllPoints()
+                    pane.ScrollBox:SetPoint("TOPLEFT", pane, "TOPLEFT", 5, -5)
+                    pane.ScrollBox:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -25, 5)
+                end
+
+                popup:Show()
+
+                local skinningAPI = _G.QUI_CharacterFrameSkinning
+                if skinningAPI and skinningAPI.SkinTitleManager then
+                    skinningAPI.SkinTitleManager()
+                end
+            end
+        end)
+        GetState(PaperDollSidebarTab2).hooked = true
+    end
+
+    if GearManagerPopupFrame then
+        GearManagerPopupFrame:SetFrameStrata("DIALOG")
+        if GearManagerPopupFrame.IconSelector then
+            GearManagerPopupFrame.IconSelector:SetFrameStrata("FULLSCREEN")
+        end
+
+        hooksecurefunc(GearManagerPopupFrame, "Show", function(self)
+            C_Timer.After(0, function()
+                if self and equipMgrPopup and equipMgrPopup:IsShown() then
+                    self:ClearAllPoints()
+                    self:SetPoint("TOPLEFT", equipMgrPopup, "TOPRIGHT", 5, 0)
+                end
+            end)
+        end)
+    end
+
+    if PaperDollSidebarTab1 then
+        PaperDollSidebarTab1:HookScript("OnClick", function()
+            local settings = GetSettings()
+
+            RestoreCharacterPanePopouts()
+            SelectCharacterStatsSidebarTab()
+
+            if settings.enabled and statsPanel then
+                statsPanel:Show()
+            end
+        end)
+    end
+
+    local function AdjustForNonCharacterTab()
+        AnchorCharacterFrameBottomTabs(2)
+        if CharacterFrame.CloseButton then
+            CharacterFrame.CloseButton:ClearAllPoints()
+            CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", -3, -5)
+        end
+    end
+
+    local function RestoreCharacterTabPositions()
+        AnchorCharacterFrameBottomTabs(-48)
+        if CharacterFrame.CloseButton then
+            CharacterFrame.CloseButton:ClearAllPoints()
+            CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 52, -5)
+        end
+    end
+
+    local function HideCustomElements()
+        if statsPanel then statsPanel:Hide() end
+        for _, overlay in pairs(slotOverlays) do
+            if overlay then overlay:Hide() end
+        end
+        RestoreCharacterPanePopouts()
+        if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Hide() end
+        if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Hide() end
+        if (frameState[CharacterFrame] or EMPTY).gearBtn then (frameState[CharacterFrame] or EMPTY).gearBtn:Hide() end
+        if (frameState[CharacterFrame] or EMPTY).settingsPanel then (frameState[CharacterFrame] or EMPTY).settingsPanel:Hide() end
+
+        if IsSkinningHandlingBackground() then
+            local skinningAPI = _G.QUI_CharacterFrameSkinning
+            if skinningAPI and skinningAPI.SetExtended then
+                skinningAPI.SetExtended(false)
+            end
+        else
+            if customBg then customBg:Hide() end
+            if InCombatLockdown() then
+                pendingDecorMode = "other"
+            else
+                if CharacterFramePortrait then CharacterFramePortrait:Show() end
+                if CharacterFrame.Background then CharacterFrame.Background:Show() end
+                if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Show() end
+                if CharacterFrameBg then CharacterFrameBg:Show() end
+            end
+        end
+
+        SetCharacterFrameScale(1.0)
+        AdjustForNonCharacterTab()
+    end
+
+    if ReputationFrame then
+        ReputationFrame:HookScript("OnShow", HideCustomElements)
+    end
+
+    if TokenFrame then
+        TokenFrame:HookScript("OnShow", HideCustomElements)
+    end
+
+    if PaperDollFrame then
+        PaperDollFrame:HookScript("OnShow", function()
+            local settings = GetSettings()
+            if settings.enabled then
+                RestoreCharacterPanePopouts()
+                SelectCharacterStatsSidebarTab()
+
+                RestoreCharacterTabPositions()
+                local BASE_SCALE = 1.30
+                local scaleMultiplier = settings.panelScale or 1.0
+                SetCharacterFrameScale(BASE_SCALE * scaleMultiplier)
+
+                if not layoutApplied then
+                    ApplyCharacterPaneLayout()
+                    InitializeCharacterOverlays()
+                end
+
+                if IsSkinningHandlingBackground() then
+                    local skinningAPI = _G.QUI_CharacterFrameSkinning
+                    if skinningAPI and skinningAPI.SetExtended then
+                        skinningAPI.SetExtended(true)
+                    end
+                else
+                    if customBg then customBg:Show() end
+                    if InCombatLockdown() then
+                        pendingDecorMode = "character"
+                    else
+                        if CharacterFramePortrait then CharacterFramePortrait:Hide() end
+                        if CharacterFrame.Background then CharacterFrame.Background:Hide() end
+                        if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Hide() end
+                        if CharacterFrameBg then CharacterFrameBg:Hide() end
+                    end
+                end
+
+                MaskNativeStatsPane()
+                if statsPanel then statsPanel:Show() end
+                for _, overlay in pairs(slotOverlays) do
+                    if overlay then overlay:Show() end
+                end
+                if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Show() end
+                if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Show() end
+                if (frameState[CharacterFrame] or EMPTY).gearBtn then (frameState[CharacterFrame] or EMPTY).gearBtn:Show() end
+                ScheduleUpdate()
+                if #allEquipmentSlots > 0 and UpdateEquipmentSlotBorder then
+                    C_Timer.After(0.05, function()
+                        RefreshEquipmentSlotBorders()
+                    end)
+                end
+                RunAfterCharacterPaneLayoutTick(function()
+                    if statsPanel then
+                        statsPanel:Show()
+                    end
+                end)
+            end
+        end)
+    end
+
+    if CharacterFrameTab1 and not (frameState[CharacterFrameTab1] or EMPTY).popoutRestoreHooked then
+        CharacterFrameTab1:HookScript("OnClick", function()
+            RestoreCharacterPanePopouts()
+            SelectCharacterStatsSidebarTab()
+        end)
+        GetState(CharacterFrameTab1).popoutRestoreHooked = true
+    end
+
+    local settings = GetSettings()
+    if not settings.enabled then
+        if (frameState[CharacterFrame] or EMPTY).gearBtn then
+            (frameState[CharacterFrame] or EMPTY).gearBtn:Hide()
+        end
+        if (frameState[CharacterFrame] or EMPTY).settingsPanel then
+            (frameState[CharacterFrame] or EMPTY).settingsPanel:Hide()
+        end
+        return
+    end
+
+    if not (frameState[CharacterFrame] or EMPTY).gearBtn then
+        gearBtn = CreateFrame("Button", "QUI_CharacterSettingsBtn", CharacterFrame, "BackdropTemplate")
+        QUICore:SetPixelPerfectSize(gearBtn, 118, 20)
+        QUICore:SetPixelPerfectPoint(gearBtn, "TOPRIGHT", CharacterFrame, "TOPRIGHT", 6, -6)
+        local br, bg, bb = GetCharacterBorderColor()
+        ApplyOnePixelBorder(gearBtn, true, { br, bg, bb, 1 }, { 0.1, 0.1, 0.1, 0.8 })
+        gearBtn:SetFrameStrata("HIGH")
+        gearBtn:SetFrameLevel(100)
+
+        local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
+        gearIcon:SetSize(14, 14)
+        gearIcon:SetPoint("LEFT", gearBtn, "LEFT", 5, 0)
+        gearIcon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
+
+        local gearLabel = gearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        gearLabel:SetPoint("LEFT", gearIcon, "RIGHT", 4, 0)
+        gearLabel:SetPoint("RIGHT", gearBtn, "RIGHT", -6, 0)
+        gearLabel:SetJustifyH("LEFT")
+        CJKFont(gearLabel, GeneralFontFace(), 12, "")
+        gearLabel:SetText(ns.L["Settings"])
+        gearLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+
+        gearBtn:SetScript("OnEnter", function(self)
+            local r, g, b = GetCharacterAccentColor()
+            SetOnePixelBorderColors(self, { r, g, b, 1 })
+        end)
+        gearBtn:SetScript("OnLeave", function(self)
+            local r, g, b = GetCharacterBorderColor()
+            SetOnePixelBorderColors(self, { r, g, b, 1 })
+        end)
+
+        GetState(CharacterFrame).gearBtn = gearBtn
+
+        settingsPanel = CreateFrame("Frame", "QUI_CharSettingsPanel", CharacterFrame, "BackdropTemplate")
+        settingsPanel:SetSize(450, 600)
+        settingsPanel:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 53, 0)
+        ApplyOnePixelBorder(settingsPanel, true, { C.border[1], C.border[2], C.border[3], 1 }, { 0.051, 0.067, 0.09, 0.97 })
+        settingsPanel:SetFrameStrata("DIALOG")
+        settingsPanel:SetFrameLevel(200)
+        settingsPanel:EnableMouse(true)
+        settingsPanel:Hide()
+        GetState(CharacterFrame).settingsPanel = settingsPanel
+
+        local panelContentBg = settingsPanel:CreateTexture(nil, "BACKGROUND", nil, 1)
+        SetInsetPixelPoints(panelContentBg, settingsPanel, 1)
+        panelContentBg:SetColorTexture(1, 1, 1, 0.02)
+
+        local panelGlow = settingsPanel:CreateTexture(nil, "BACKGROUND", nil, 2)
+        SetInsetPixelPoints(panelGlow, settingsPanel, 1)
+        panelGlow:SetTexture("Interface\\BUTTONS\\WHITE8x8")
+        local function ApplyPanelGlow()
+            local gr, gg, gb = GetCharacterAccentColor()
+            if panelGlow.SetGradient and CreateColor then
+                local ok = pcall(function()
+                    panelGlow:SetGradient("HORIZONTAL",
+                        CreateColor(gr, gg, gb, 0.06),
+                        CreateColor(gr, gg, gb, 0))
+                end)
+                if not ok then
+                    panelGlow:SetColorTexture(gr, gg, gb, 0.04)
+                end
+            else
+                panelGlow:SetColorTexture(gr, gg, gb, 0.04)
+            end
+        end
+        ApplyPanelGlow()
+        GetState(settingsPanel).accentGlow = panelGlow
+        settingsPanel:HookScript("OnShow", ApplyPanelGlow)
+
+        local title = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOP", settingsPanel, "TOP", 0, -8)
+        CJKFont(title, GeneralFontFace(), 14, "")
+        title:SetText(ns.L["QUI Character Panel"])
+        title:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+
+        local closeBtn = CreateFrame("Button", nil, settingsPanel, "UIPanelCloseButton")
+        closeBtn:SetPoint("TOPRIGHT", -3, -3)
+        closeBtn:SetScript("OnClick", function() settingsPanel:Hide() end)
+        StyleCloseButton(closeBtn)
+
+        local scrollFrame = CreateFrame("ScrollFrame", nil, settingsPanel)
+        scrollFrame:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 5, -28)
+        scrollFrame:SetPoint("BOTTOMRIGHT", settingsPanel, "BOTTOMRIGHT", -5, 40)
+        scrollFrame:EnableMouseWheel(true)
+        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+            local current = self:GetVerticalScroll() or 0
+            local maxScroll = self:GetVerticalScrollRange() or 0
+            local new = math.max(0, math.min(maxScroll, current - delta * 30))
+            self:SetVerticalScroll(new)
+        end)
+
+        local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+        scrollChild:SetWidth(440)
+        scrollChild:SetHeight(1)
+        scrollFrame:SetScrollChild(scrollChild)
+
+        local panelContentBuilt = false
+        local function BuildPanelContent()
+            if panelContentBuilt then return true end
+
+            local GUI = _G.QUI and _G.QUI.GUI
+            if GUI and type(GUI.EnsureWidgetAPI) == "function" then
+                GUI = GUI:EnsureWidgetAPI()
+            end
+            if not (GUI and type(GUI.HasWidgetAPI) == "function" and GUI:HasWidgetAPI()) then
+                return false
+            end
+
+            panelContentBuilt = true
+
+            local settings = GetSettings()
+            local charDB = settings
+
+        local PAD = 8
+        local FORM_ROW = 28
+        local y = -5
+
+        local function RefreshAll()
+            if _G.QUI_RefreshCharacterPanelFonts then
+                _G.QUI_RefreshCharacterPanelFonts()
+            end
+            ScheduleUpdate()
+        end
+
+        local _rowIdx = 0
+        local function ResetRows() _rowIdx = 0 end
+        local function PlaceRow(widget, currentY)
+            widget:SetPoint("TOPLEFT", PAD, currentY)
+            widget:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
+            _rowIdx = _rowIdx + 1
+            if (_rowIdx % 2) == 0 then
+                local rowBg = scrollChild:CreateTexture(nil, "BACKGROUND")
+                rowBg:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", PAD, currentY)
+                rowBg:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
+                rowBg:SetHeight(FORM_ROW)
+                rowBg:SetColorTexture(1, 1, 1, 0.02)
+            end
+            return currentY - FORM_ROW
+        end
+
+        local widgetRefs = {}
+
+        local appearHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Appearance"])
+        appearHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - appearHeader.gap
+        ResetRows()
+
+        local BASE_SCALE = 1.30
+        local scaleSlider = GUI:CreateFormSlider(scrollChild, ns.L["Panel Scale"], 0.75, 1.5, 0.05, "panelScale", charDB, function()
+            local multiplier = charDB.panelScale or 1.0
+            SetCharacterFrameScale(BASE_SCALE * multiplier)
+        end, { deferOnDrag = true },
+            { description = ns.L["Zoom factor applied to the character panel on top of the base scale. 1.0 leaves the panel at the default QUI size."] })
+        y = PlaceRow(scaleSlider, y)
+
+        local core = GetCore()
+        local generalDB = core and core.db and core.db.profile and core.db.profile.general
+        local bgColorPicker = nil
+        if generalDB then
+            bgColorPicker = GUI:CreateFormColorPicker(scrollChild, ns.L["Background Color"], "skinBgColor", generalDB, function()
+                if customBg and not IsSkinningHandlingBackground() then
+                    local col = generalDB.skinBgColor or C.bg
+                    SetOnePixelBorderColors(customBg, nil, { col[1], col[2], col[3], col[4] or 0.95 })
+                end
+                if _G.QUI_RefreshCharacterFrameColors then
+                    _G.QUI_RefreshCharacterFrameColors()
+                end
+            end, nil,
+                { description = ns.L["Background color applied to the character panel. Shared with the global skinning background so character and inspect panels match."] })
+            y = PlaceRow(bgColorPicker, y)
+
+            settingsPanel:HookScript("OnShow", function()
+                if bgColorPicker and bgColorPicker.swatch and generalDB and generalDB.skinBgColor then
+                    local col = generalDB.skinBgColor
+                    bgColorPicker.swatch:SetBackdropColor(col[1], col[2], col[3], col[4] or 1)
+                end
+            end)
+        end
+
+        y = y - 10
+
+        local overlayHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Slot Overlays"])
+        overlayHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - overlayHeader.gap
+        ResetRows()
+
+        local showItemName = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Equipment Name"], "showItemName", charDB, RefreshAll,
+            { description = ns.L["Show the equipped item's name on each character panel slot overlay."] })
+        y = PlaceRow(showItemName, y)
+
+        local showIlvl = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Item Level & Track"], "showItemLevel", charDB, RefreshAll,
+            { description = ns.L["Show the item level and upgrade track label on each slot overlay."] })
+        y = PlaceRow(showIlvl, y)
+
+        local showEnchants = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Enchant Status"], "showEnchants", charDB, RefreshAll,
+            { description = ns.L["Show the enchant name on each slot, or a missing-enchant marker if the slot has no enchant."] })
+        y = PlaceRow(showEnchants, y)
+
+        local showGems = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Gem Indicators"], "showGems", charDB, RefreshAll,
+            { description = ns.L["Show colored gem dots indicating how many gem slots the item has and whether each is filled."] })
+        y = PlaceRow(showGems, y)
+
+        local showGemSummary = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Gem Summary in Stats"], "showGemSummary", charDB, RefreshAll,
+            { description = ns.L["Add a Gems section to the stats panel with socketed-gem counts per color and an empty-socket tally."] })
+        y = PlaceRow(showGemSummary, y)
+
+        local showDura = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Durability Bars"], "showDurability", charDB, RefreshAll,
+            { description = ns.L["Show a small durability bar on each slot overlay that has durability damage."] })
+        y = PlaceRow(showDura, y)
+
+        y = y - 10
+
+        local statsPanelHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Stats Panel"])
+        statsPanelHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - statsPanelHeader.gap
+        ResetRows()
+
+        local showTooltips = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Stat Tooltips"], "showTooltips", charDB, function()
+            RefreshAll()
+            if statsPanel then
+                UpdateStatsPanel(statsPanel, "player")
+            end
+        end, { description = ns.L["Show Blizzard's detailed stat tooltip when hovering any row in the QUI stats panel."] })
+        y = PlaceRow(showTooltips, y)
+
+        y = y - 10
+
+        local secondaryStatsHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Secondary Stats"])
+        secondaryStatsHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - secondaryStatsHeader.gap
+        ResetRows()
+
+        local formatOptions = {
+            { value = "percent", text = ns.L["Percentage (19.52%)"] },
+            { value = "rating", text = ns.L["Rating (1,234)"] },
+            { value = "both", text = ns.L["Both (1,234 (19.5%))"] },
+        }
+        local secondaryFormat = GUI:CreateFormDropdown(scrollChild, ns.L["Display Format"], formatOptions, "secondaryStatFormat", charDB, RefreshAll,
+            { description = ns.L["How secondary stats (Crit, Haste, Mastery, Versatility) are formatted: percent only, rating only, or both side by side."] })
+        y = PlaceRow(secondaryFormat, y)
+
+        y = y - 10
+
+        local textSizeHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Text Sizes"])
+        textSizeHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - textSizeHeader.gap
+        ResetRows()
+
+        local slotTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Slot Text Size"], 6, 40, 1, "slotTextSize", charDB, RefreshAll, nil,
+            { description = ns.L["Font size for the text labels on each equipment slot overlay (item name, item level, enchant status)."] })
+        y = PlaceRow(slotTextSize, y)
+
+        local headerTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Header Text Size"], 6, 40, 1, "headerTextSize", charDB, RefreshAll, nil,
+            { description = ns.L["Font size for section headers in the stats panel (Attributes, Secondary Stats, etc.)."] })
+        y = PlaceRow(headerTextSize, y)
+
+        local statsTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Stats Text Size"], 6, 40, 1, "statsTextSize", charDB, RefreshAll, nil,
+            { description = ns.L["Font size for the stat rows under each section header."] })
+        y = PlaceRow(statsTextSize, y)
+
+        y = y - 10
+
+        local textColorHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Text Colors"])
+        textColorHeader:SetPoint("TOPLEFT", PAD, y)
+        y = y - textColorHeader.gap
+        ResetRows()
+
+        local statsTextColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Stats Text Color"], "statsTextColor", charDB, RefreshAll, nil,
+            { description = ns.L["Color used for the stat values in the stats panel."] })
+        y = PlaceRow(statsTextColor, y)
+
+        local headerClassColor = GUI:CreateFormCheckbox(scrollChild, ns.L["Header Class Color"], "headerClassColor", charDB, function()
+            RefreshAll()
+            if widgetRefs.headerColor then
+                local alpha = charDB.headerClassColor and 0.4 or 1.0
+                widgetRefs.headerColor:SetAlpha(alpha)
+            end
+        end, { description = ns.L["Color the stats-panel section headers with your class color instead of the Header Color below."] })
+        y = PlaceRow(headerClassColor, y)
+
+        local headerColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Header Color"], "headerColor", charDB, RefreshAll, nil,
+            { description = ns.L["Fallback color for the stats-panel section headers when Header Class Color is off."] })
+        widgetRefs.headerColor = headerColor
+        headerColor:SetAlpha(charDB.headerClassColor and 0.4 or 1.0)
+        y = PlaceRow(headerColor, y)
+
+        local enchantClassColor = GUI:CreateFormCheckbox(scrollChild, ns.L["Enchant Class Color"], "enchantClassColor", charDB, function()
+            RefreshAll()
+            if widgetRefs.enchantColor then
+                local alpha = charDB.enchantClassColor and 0.4 or 1.0
+                widgetRefs.enchantColor:SetAlpha(alpha)
+            end
+        end, { description = ns.L["Color the enchant text using your class color instead of the Enchant Text Color below."] })
+        y = PlaceRow(enchantClassColor, y)
+
+        local enchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Enchant Text Color"], "enchantTextColor", charDB, RefreshAll, nil,
+            { description = ns.L["Fallback color for the enchant text when Enchant Class Color is off."] })
+        widgetRefs.enchantColor = enchantColor
+        enchantColor:SetAlpha(charDB.enchantClassColor and 0.4 or 1.0)
+        y = PlaceRow(enchantColor, y)
+
+        local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["No Enchant Color"], "noEnchantTextColor", charDB, RefreshAll, nil,
+            { description = ns.L["Color used for the missing-enchant marker on slots that are not enchanted."] })
+        y = PlaceRow(noEnchantColor, y)
+
+        local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Upgrade Track Color"], "upgradeTrackColor", charDB, RefreshAll, nil,
+            { description = ns.L["Color used for the upgrade-track label (e.g. Explorer 2/8) next to item level."] })
+        y = PlaceRow(upgradeTrackColor, y)
+
+        y = y - 10
+
+        scrollChild:SetHeight(math.abs(y) + 20)
+
+        local resetBtn = GUI:CreateButton(settingsPanel, ns.L["Reset"], 80, 24, function()
+            charDB.panelScale = 1.0
+            charDB.showItemName = true
+            charDB.showItemLevel = true
+            charDB.showEnchants = true
+            charDB.showGems = true
+            charDB.showDurability = false
+            charDB.secondaryStatFormat = "both"
+            charDB.slotTextSize = 12
+            charDB.headerTextSize = 12
+            charDB.statsTextSize = 12
+            charDB.statsTextColor = {0.953, 0.957, 0.965}
+            charDB.headerClassColor = true
+            charDB.headerColor = {0.376, 0.647, 0.980}
+            charDB.enchantClassColor = true
+            charDB.enchantTextColor = {0.376, 0.647, 0.980}
+            charDB.noEnchantTextColor = {0.5, 0.5, 0.5}
+            charDB.upgradeTrackColor = {0.98, 0.60, 0.35, 1}
+
+            SetCharacterFrameScale(1.30)
+
+            RefreshAll()
+
+            settingsPanel:Hide()
+            RunAfterCharacterPaneLayoutTick(function()
+                settingsPanel:Show()
+            end)
+        end)
+        resetBtn:SetPoint("BOTTOM", settingsPanel, "BOTTOM", 0, 10)
+
+            return true
+        end
+
+        gearBtn:SetScript("OnClick", function()
+            if settingsPanel:IsShown() then
+                settingsPanel:Hide()
+                return
+            end
+            BuildPanelContent()
+            settingsPanel:Show()
+        end)
+    end
+
+    CharacterFrame:HookScript("OnHide", function()
+        if (frameState[CharacterFrame] or EMPTY).settingsPanel then
+            (frameState[CharacterFrame] or EMPTY).settingsPanel:Hide()
+        end
+    end)
+end
+
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+eventFrame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
+eventFrame:RegisterEvent("SOCKET_INFO_UPDATE")
+eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+eventFrame:RegisterUnitEvent("UNIT_STATS", "player")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("INSPECT_READY")
+eventFrame:RegisterEvent("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+eventFrame:RegisterEvent("ENCOUNTER_START")
+eventFrame:RegisterEvent("ENCOUNTER_END")
+eventFrame:RegisterEvent("CHALLENGE_MODE_START")
+eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+eventFrame:RegisterEvent("CHALLENGE_MODE_RESET")
+eventFrame:RegisterEvent("PVP_MATCH_ACTIVE")
+
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 == "Blizzard_CharacterFrame" then
+            HookCharacterFrame()
+        end
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "UPDATE_INVENTORY_DURABILITY" or
+           event == "SOCKET_INFO_UPDATE" or event == "PLAYER_SPECIALIZATION_CHANGED" or
+           event == "UNIT_STATS" or event == "PLAYER_AVG_ITEM_LEVEL_UPDATE" or
+           event == "ENCOUNTER_START" or event == "ENCOUNTER_END" or
+           event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_COMPLETED" or
+           event == "CHALLENGE_MODE_RESET" or event == "PVP_MATCH_ACTIVE" then
+        ScheduleUpdate()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        C_Timer.After(0.5, function()
+            if CharacterFrame then
+                HookCharacterFrame()
+                ScheduleUpdate()
+            end
+        end)
+    elseif event == "INSPECT_READY" then
+        ScheduleUpdate()
+    end
+end)
+
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        C_Timer.After(0.5, function()
+            if CharacterFrame then
+                HookCharacterFrame()
+                ScheduleUpdate()
+            end
+        end)
+    end)
+end
+
+_G.QUI_RefreshCharacterPane = function()
+    if CharacterFrame then
+        if CharacterFrame.CloseButton then
+            StyleCloseButton(CharacterFrame.CloseButton)
+        end
+        StyleSidebarTabs()
+    end
+    ScheduleUpdate()
+end
+
+QUI.CharacterPane = {
+    Refresh = function()
+        ScheduleUpdate()
+    end,
+
+    GetSettings = GetSettings,
+}
+
+ns.CharacterPane = QUI.CharacterPane
+
+QUI.CharacterShared = {
+    EQUIPMENT_SLOTS = EQUIPMENT_SLOTS,
+    C = C,
+
+    GetSettings = GetSettings,
+    GetGlobalFont = GetGlobalFont,
+
+    CreateSlotOverlay = CreateSlotOverlay,
+    UpdateAllSlotOverlays = UpdateAllSlotOverlays,
+    ScheduleUpdate = ScheduleUpdate,
+    RepositionSlots = RepositionSlots,
+    GetSlotItemLevel = GetSlotItemLevel,
+    GetILvlColor = GetILvlColor,
+    AbbreviateClassName = AbbreviateClassName,
+
+    CleanTooltipText = CleanTooltipText,
+    ReadableNumber = ReadableNumber,
+    GetReadableInventoryItemLink = GetReadableInventoryItemLink,
+    GetInventoryTooltipData = GetInventoryTooltipData,
+    MatchItemLevelText = MatchItemLevelText,
+}
+
+if ns.Registry then
+    ns.Registry:Register("character", {
+        refresh = _G.QUI_RefreshCharacterPane,
+        priority = 45,
+        group = "character",
+        importCategories = { "skinning" },
+    })
+    ns.Registry:Register("characterSkin", {
+        refresh = _G.QUI_RefreshCharacterPane,
+        priority = 45,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end

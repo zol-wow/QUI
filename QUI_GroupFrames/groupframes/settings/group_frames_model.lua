@@ -46,10 +46,6 @@ local RenderHealth = BuildSchemaRender("RenderHealthTab", ns.L["Health"])
 local RenderIndicators = BuildSchemaRender("RenderIndicatorsTab", ns.L["Indicators"])
 local RenderAuras = BuildSchemaRender("RenderAurasTab", ns.L["Auras"])
 
--- Order only; the tab strip wraps these across rows responsively by window
--- width (group_frames_surface.lua uses wrapRows), so no explicit row field.
--- Spotlight was folded into Layout (raid only) and Dispel Overlay into
--- Appearance, so neither is a standalone tab any more.
 local TAB_DEFINITIONS = {
     { key = "general", label = ns.L["General"], render = RenderGeneral },
     { key = "appearance", label = ns.L["Appearance"], render = RenderAppearance },

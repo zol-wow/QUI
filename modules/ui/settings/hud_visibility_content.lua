@@ -1,8 +1,3 @@
---[[
-    QUI Options - HUD Visibility Tab (Appearance tile sub-page). Migrated to
-    V3 body pattern.
-]]
-
 local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
@@ -16,7 +11,6 @@ local MakeLayout = ns.QUI_ModulesSettingsLayout.MakeLayout
 local row = ns.QUI_ModulesSettingsLayout.Row
 local pairCells = ns.QUI_ModulesSettingsLayout.PairCells
 
--- Add a muted hint paragraph between a header and a card.
 local function placeHint(L, parent, text)
     local f = CreateFrame("Frame", nil, parent)
     local lbl = GUI:CreateLabel(f, text, 11, C.textMuted)
@@ -33,9 +27,6 @@ local function BuildHUDVisibilityTab(tabContent)
 
     local L = MakeLayout(tabContent)
 
-    ---------------------------------------------------------------------------
-    -- Shared builder for visibility sections (CDM, Unitframes, etc.)
-    ---------------------------------------------------------------------------
     local function BuildVisibilitySection(title, visTable, refreshFunc, mouseoverRefreshGlobal, extraChecks)
         if visTable.showAlways == nil then visTable.showAlways = true end
         if visTable.showWhenTargetExists == nil then visTable.showWhenTargetExists = false end
@@ -66,14 +57,12 @@ local function BuildHUDVisibilityTab(tabContent)
             end
         end
 
-        -- Show Always (full-width, sole row)
         local showAlwaysW = GUI:CreateFormCheckbox(s.frame, nil, "showAlways", visTable, function()
             refreshFunc()
             UpdateConditionState()
         end, { description = ns.L["Always keep this HUD element visible. Uncheck to switch to the conditional visibility rules below."] })
         s.AddRow(row(s.frame, ns.L["Show Always"], showAlwaysW))
 
-        -- Conditional visibility checkboxes (paired 2-per-row, dim together).
         local condDefs = {
             { key = "showWhenTargetExists", label = ns.L["Show When Target Exists"],
               desc = ns.L["Show this HUD element while you have a target selected."] },
@@ -116,7 +105,6 @@ local function BuildHUDVisibilityTab(tabContent)
         pairCells(s, conditionCells)
         UpdateConditionState()
 
-        -- Fade sliders
         local fadeDurW = GUI:CreateFormSlider(s.frame, nil, 0.1, 1.0, 0.05, "fadeDuration", visTable, refreshFunc,
             { precision = 2, description = ns.L["How many seconds the fade animation takes when this HUD element's visibility changes."] })
         local fadeOutW = GUI:CreateFormSlider(s.frame, nil, 0, 1.0, 0.05, "fadeOutAlpha", visTable, refreshFunc,
@@ -126,7 +114,6 @@ local function BuildHUDVisibilityTab(tabContent)
             row(s.frame, ns.L["Fade Out Opacity"], fadeOutW)
         )
 
-        -- Hide rules
         local hideCells = {}
         local hideDefs = {
             { key = "hideWhenMounted",         label = ns.L["Hide When Mounted"],
@@ -150,7 +137,6 @@ local function BuildHUDVisibilityTab(tabContent)
         L.closeSection(s)
     end
 
-    -- ========== CDM Visibility ==========
     if not db.cdmVisibility then db.cdmVisibility = {} end
     BuildVisibilitySection(
         ns.L["CDM Visibility"],
@@ -162,7 +148,6 @@ local function BuildHUDVisibilityTab(tabContent)
         }
     )
 
-    -- ========== Unitframes Visibility ==========
     if not db.unitframesVisibility then db.unitframesVisibility = {} end
     BuildVisibilitySection(
         ns.L["Unitframes Visibility"],
@@ -175,7 +160,6 @@ local function BuildHUDVisibilityTab(tabContent)
         }
     )
 
-    -- ========== Custom CDM Bars Visibility ==========
     if not db.customTrackersVisibility then db.customTrackersVisibility = {} end
     BuildVisibilitySection(
         ns.L["Custom Items/Spells Bars"],
@@ -184,7 +168,6 @@ local function BuildHUDVisibilityTab(tabContent)
         function() if _G.QUI_RefreshCustomTrackersMouseover then _G.QUI_RefreshCustomTrackersMouseover() end end
     )
 
-    -- ========== Action Bars Visibility ==========
     if not db.actionBarsVisibility then db.actionBarsVisibility = {} end
     BuildVisibilitySection(
         ns.L["Action Bars Visibility"],
@@ -193,7 +176,6 @@ local function BuildHUDVisibilityTab(tabContent)
         function() if _G.QUI_RefreshActionBarsMouseover then _G.QUI_RefreshActionBarsMouseover() end end
     )
 
-    -- ========== Chat Frames Visibility ==========
     if not db.chatVisibility then db.chatVisibility = {} end
     BuildVisibilitySection(
         ns.L["Chat Frames Visibility"],
@@ -205,7 +187,6 @@ local function BuildHUDVisibilityTab(tabContent)
     L.finish()
 end
 
--- Export
 ns.QUI_HUDVisibilityOptions = {
     BuildHUDVisibilityTab = BuildHUDVisibilityTab
 }

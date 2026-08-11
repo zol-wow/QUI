@@ -1,26 +1,21 @@
----------------------------------------------------------------------------
--- Bags views: window chassis. Shared shell for bag/bank/guild windows:
--- QUI pixel backdrop + border, title, drag + position persistence, close
--- button, search box, ESC-close (UISpecialFrames), live skin recolor.
--- Pure UI: reads settings via callbacks the owner provides; no data access.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 
-local function CJKFont(fs, p, s, f)
+function Bags.CJKFont(fs, p, s, f)
     if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
         ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
     else
         fs:SetFont(p, s, f)
     end
 end
+local CJKFont = Bags.CJKFont
 
 local Chassis = {}
 Bags.Chassis = Chassis
 
-local windows = {} -- name → window (for ReskinAll)
+local windows = {}
 
 local HEADER_H = 28
 local FOOTER_H = 22
@@ -63,11 +58,6 @@ local function ClampInteger(value, fallback, minValue, maxValue)
     return n
 end
 
---- Build a window's one-shot ScheduleRefresh closure. The returned function
---- installs an OnUpdate that clears itself and calls refresh() on the next
---- frame, guarded so it never double-schedules while one is pending. The
---- window's OnUpdate is owned exclusively by this closure. getWin returns the
---- (lazily created) chassis window; refresh is the window's Refresh entry.
 function Chassis.MakeScheduleRefresh(getWin, refresh)
     return function()
         local win = getWin()
@@ -82,11 +72,6 @@ function Chassis.MakeScheduleRefresh(getWin, refresh)
     end
 end
 
---- Build the shared dark-panel button preamble: a Button with a 35%-black
---- WHITE8x8 background (pixel-snap disabled). When withLabel is true a
---- centered ARTWORK label (general font, 11px OUTLINE) is created and stashed
---- on btn._label. Callers add their own border lines, sizing, text, scripts,
---- and click registration so per-button ordering stays exactly as before.
 function Chassis.CreatePanelButton(parent, withLabel)
     local btn = CreateFrame("Button", nil, parent)
     local bg = btn:CreateTexture(nil, "BACKGROUND")
@@ -102,8 +87,42 @@ function Chassis.CreatePanelButton(parent, withLabel)
     return btn
 end
 
---- Measure the minimum width needed for a horizontal header control row.
---- Hidden/nil controls are ignored; opts = { leftPad, rightPad, gap }.
+function Chassis.ShowMoneyPopup(key, kind, onAccept)
+    local depositing = (kind == "deposit")
+    StaticPopupDialogs[key] = {
+        text = depositing and ns.L["Deposit gold:"] or ns.L["Withdraw gold:"],
+        button1 = ACCEPT,
+        button2 = CANCEL,
+        hasEditBox = true,
+        maxLetters = 10,
+        OnShow = function(self)
+            local box = self.editBox or self.EditBox
+            if box then box:SetText("") end
+        end,
+        OnAccept = function(self)
+            local box = self.editBox or self.EditBox
+            local text = box and box:GetText() or ""
+            if not text:match("^%d+$") then return end
+            local gold = tonumber(text)
+            if not gold then return end
+            gold = math.floor(gold)
+            if gold <= 0 then return end
+            onAccept(depositing, gold * 10000)
+        end,
+        EditBoxOnEnterPressed = function(box)
+            StaticPopup_OnClick(box:GetParent(), 1)
+        end,
+        EditBoxOnEscapePressed = function(box)
+            box:GetParent():Hide()
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+    StaticPopup_Show(key)
+end
+
 function Chassis.MeasureHeaderWidth(controls, opts)
     opts = opts or {}
     local leftPad = opts.leftPad or PAD
@@ -121,7 +140,6 @@ function Chassis.MeasureHeaderWidth(controls, opts)
     return width
 end
 
---- Shallow-copy appearance settings and clamp render-critical dimensions.
 function Chassis.ClampAppearance(appearance)
     local src = appearance or {}
     local out = {}
@@ -157,11 +175,6 @@ function Chassis.ReskinAll()
     for _, win in pairs(windows) do Reskin(win) end
 end
 
---- opts: { name (global, required), title, onClose(win) -- fires on ANY hide (incl. parent hides/cinematics), not only user closes,
----         onUserClose() -- X-button clicks route here when provided (owner's close path: sound, opener clearing); absent → plain win:Hide(),
----         onSearchChanged(text), getPosition() → {point,x,y}, setPosition(point,x,y),
----         compactSearch (bool: search renders narrow until focused/non-empty),
----         onChromeChanged() -- header geometry changed (search expand/collapse); owners re-measure }
 function Chassis.CreateWindow(opts)
     if opts.name and windows[opts.name] then
         return windows[opts.name]
@@ -175,14 +188,12 @@ function Chassis.CreateWindow(opts)
     if win.SetDontSavePosition then win:SetDontSavePosition(true) end
     win:Hide()
 
-    -- shell: solid bg + 1px QUI border
     win._bg = win:CreateTexture(nil, "BACKGROUND")
     win._bg:SetAllPoints()
     win._bg:SetTexture("Interface\\Buttons\\WHITE8x8")
     UIKit.DisablePixelSnap(win._bg)
     win._border = UIKit.CreateBackdropBorder(win, 1, 1, 1, 1, 1)
 
-    -- header: drag region + title + close
     local header = CreateFrame("Frame", nil, win)
     header:SetPoint("TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", 0, 0)
@@ -195,7 +206,7 @@ function Chassis.CreateWindow(opts)
     header:SetScript("OnDragStop", function()
         win:StopMovingOrSizing()
         local point, _, _, x, y = win:GetPoint()
-        if not point then return end -- GetPoint is MayReturnNothing per API docs
+        if not point then return end
         local core = Helpers.GetCore()
         if core and core.PixelRound then
             x, y = core:PixelRound(x), core:PixelRound(y)
@@ -221,7 +232,6 @@ function Chassis.CreateWindow(opts)
     end)
     win._close = close
 
-    -- search box (header, left of close)
     local search = CreateFrame("EditBox", nil, header)
     search:SetSize(140, HEADER_H - 10)
     search:SetPoint("RIGHT", close, "LEFT", -8, 0)
@@ -232,23 +242,14 @@ function Chassis.CreateWindow(opts)
     searchBg:SetTexture("Interface\\Buttons\\WHITE8x8")
     searchBg:SetVertexColor(0, 0, 0, 0.35)
     UIKit.DisablePixelSnap(searchBg)
-    -- Border + ghost label: a bare dark strip reads as dead chrome, not an
-    -- input. 1px QUI border (accent while focused, dim skin color
-    -- otherwise) + "Search" placeholder while empty and unfocused.
     UIKit.CreateBorderLines(search)
     local placeholder = search:CreateFontString(nil, "OVERLAY")
     placeholder:SetPoint("LEFT", search, "LEFT", 5, 0)
-    -- font BEFORE SetText: a templateless FontString has none, and
-    -- SetText errors ("Font not set") — Reskin re-applies the themed font
-    -- later, but creation must not depend on it
     CJKFont(placeholder, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12,
         Helpers.GetGeneralFontOutline() or "OUTLINE")
     placeholder:SetTextColor(0.55, 0.55, 0.55, 0.9)
     placeholder:SetText(_G.SEARCH or ns.L["Search"])
     search._placeholder = placeholder
-    -- compact mode: narrow at rest, full-width while focused or non-empty
-    -- (the expand/collapse pings onChromeChanged so owners re-measure the
-    -- header width and re-render)
     local SEARCH_FULL_W, SEARCH_COMPACT_W = 140, 70
     local function UpdateSearchWidth(self)
         if not opts.compactSearch then return end
@@ -294,15 +295,11 @@ function Chassis.CreateWindow(opts)
     win._searchBox = search
     RefreshSearchChrome(search)
 
-    -- body (content region between header and footer)
     local body = CreateFrame("Frame", nil, win)
     body:SetPoint("TOPLEFT", PAD, -HEADER_H)
     body:SetPoint("BOTTOMRIGHT", -PAD, FOOTER_H)
     win._body = body
 
-    -- footer (money / free slots text, owner-populated). Height is
-    -- dynamic: owners that wrap footer controls into extra rows on narrow
-    -- windows grow it via SetFooterHeight below.
     local footerH = FOOTER_H
     local footer = CreateFrame("Frame", nil, win)
     footer:SetPoint("BOTTOMLEFT", 0, 0)
@@ -315,19 +312,15 @@ function Chassis.CreateWindow(opts)
         if opts.onClose then opts.onClose(win) end
     end)
 
-    -- ESC-close
     if opts.name and not tContains(UISpecialFrames, opts.name) then
         tinsert(UISpecialFrames, opts.name)
     end
 
-    --- size the window so the body content area is contentW x contentH
     function win:SetContentSize(contentW, contentH)
         self._contentW, self._contentH = contentW, contentH
         self:SetSize(contentW + PAD * 2, contentH + HEADER_H + footerH)
     end
 
-    --- grow/shrink the footer (multi-row footers); keeps the body content
-    --- area intact by re-applying the last SetContentSize
     function win:SetFooterHeight(h)
         if h == footerH then return end
         footerH = h
@@ -353,16 +346,6 @@ function Chassis.CreateWindow(opts)
     return win
 end
 
----------------------------------------------------------------------------
--- Shared sort-mode context menu (bag + bank sort buttons' right-click).
--- Writes the same behavior.sortKey/sortReverse the options page binds.
--- House MenuUtil idiom (bag-slot menu precedent); CreateRadio(text,
--- isSelected, setSelected, data) verified in the vendored
--- Blizzard_Menu/11_0_0_MenuImplementationGuide.lua.
----------------------------------------------------------------------------
--- Lazy: chassis has no load-time settings dependency (the header-width
--- unit test loads this file with a minimal Helpers stub); the getter
--- resolves on first menu/tooltip use, which only happens in-game.
 local getBagsSettings
 local function GetBagsSettings()
     if not getBagsSettings then
@@ -393,8 +376,6 @@ function Chassis.SortModeText()
     return label
 end
 
---- Right-click menu for a sort button. extra(root) appends owner-specific
---- entries (bank: "Sort all tabs"; bags: "Stack reagents").
 function Chassis.ShowSortMenu(anchor, extra)
     if not (MenuUtil and MenuUtil.CreateContextMenu) then return end
     MenuUtil.CreateContextMenu(anchor, function(_, root)
@@ -432,7 +413,6 @@ function Chassis.ShowSortMenu(anchor, extra)
     end)
 end
 
--- live theme recolor (second Registry entry: skinning group)
 if ns.Registry then
     ns.Registry:Register("bagsSkin", {
         refresh = Chassis.ReskinAll,

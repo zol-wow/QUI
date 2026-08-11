@@ -4,7 +4,7 @@ Standalone Lua tests live in `tests/unit/` and are run individually from the
 repo root, for example:
 
 ```sh
-lua tests/unit/cdm_bus_test.lua
+lua tests/unit/addon_loader_test.lua
 ```
 
 Taint analyzer project config lives in `tests/.taintrc.lua`.

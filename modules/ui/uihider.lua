@@ -1,11 +1,6 @@
--- uihider.lua
--- Provides checkboxes to hide various Blizzard UI elements
--- Settings persist across sessions and apply on reload/login
-
 local _, ns = ...
 local Helpers = ns.Helpers
 
--- Default settings
 local DEFAULTS = {
     hideObjectiveTrackerAlways = false,
     keepTrackerInDelvesScenarios = false,
@@ -39,38 +34,28 @@ local DEFAULTS = {
 local pendingObjectiveTrackerHide = false
 local pendingApplyHideSettings = false
 
--- CompactRaidFrameManager: hidden-parent approach (no hooks on secure frame)
 local _crfHidden = false
 local _crfOrigParent = nil
 local _crfHideParent = nil
 
--- TAINT SAFETY: Track hook state in a local weak-keyed table, NOT on Blizzard
--- frames. Writing _QUI_* properties to secure frames taints them in Midnight's
--- taint model, causing ADDON_ACTION_FORBIDDEN and secret-value errors.
 local hookedSecureFrames = Helpers.CreateStateTable()
 
--- During Edit Mode, all hide rules are suspended so frames remain visible
--- for positioning. Re-applied automatically when Edit Mode exits.
 local IsInEditMode = Helpers.IsEditModeShown
 
--- Get settings from AceDB via shared helper
 local function GetSettings()
     local uiHider = Helpers.GetModuleSettings("uiHider", DEFAULTS)
     if not uiHider then return nil end
 
-    -- Backwards compatibility: migrate old hideObjectiveTracker to hideObjectiveTrackerAlways
     if uiHider.hideObjectiveTracker ~= nil then
         if uiHider.hideObjectiveTrackerAlways == nil then
             uiHider.hideObjectiveTrackerAlways = uiHider.hideObjectiveTracker
         end
-        uiHider.hideObjectiveTracker = nil  -- Remove old key
+        uiHider.hideObjectiveTracker = nil
     end
 
-    -- Migrate old hideObjectiveTrackerInInstances to new per-type system
     if uiHider.hideObjectiveTrackerInInstances ~= nil then
         if not uiHider.hideObjectiveTrackerInstanceTypes then
             if uiHider.hideObjectiveTrackerInInstances then
-                -- User had it enabled: enable all instance types
                 uiHider.hideObjectiveTrackerInstanceTypes = {
                     mythicPlus = true,
                     mythicDungeon = true,
@@ -82,7 +67,6 @@ local function GetSettings()
                     arena = true,
                 }
             else
-                -- User had it disabled: only enable raids by default
                 uiHider.hideObjectiveTrackerInstanceTypes = {
                     mythicPlus = false,
                     mythicDungeon = false,
@@ -95,9 +79,8 @@ local function GetSettings()
                 }
             end
         end
-        uiHider.hideObjectiveTrackerInInstances = nil  -- Remove old key
+        uiHider.hideObjectiveTrackerInInstances = nil
     elseif not uiHider.hideObjectiveTrackerInstanceTypes then
-        -- Fresh install: all instance types disabled by default
         uiHider.hideObjectiveTrackerInstanceTypes = {
             mythicPlus = false,
             mythicDungeon = false,
@@ -113,31 +96,26 @@ local function GetSettings()
     return uiHider
 end
 
--- Helper: Check if player is in a Mythic+ dungeon (difficulty 8)
 local function IsInMythicPlus()
     local _, instanceType, difficulty = GetInstanceInfo()
     return instanceType == "party" and difficulty == 8
 end
 
--- Helper: Check if player is in a Normal dungeon (difficulty 1)
 local function IsInNormalDungeon()
     local _, instanceType, difficulty = GetInstanceInfo()
     return instanceType == "party" and difficulty == 1
 end
 
--- Helper: Check if player is in a Heroic dungeon (difficulty 2)
 local function IsInHeroicDungeon()
     local _, instanceType, difficulty = GetInstanceInfo()
     return instanceType == "party" and difficulty == 2
 end
 
--- Helper: Check if player is in a Mythic dungeon (difficulty 23, not M+)
 local function IsInMythicDungeon()
     local _, instanceType, difficulty = GetInstanceInfo()
     return instanceType == "party" and difficulty == 23
 end
 
--- Helper: Check if player is in a Follower dungeon (difficulty 205)
 local function IsInFollowerDungeon()
     local inInstance, instanceType = IsInInstance()
     if not inInstance or instanceType ~= "party" then
@@ -147,14 +125,12 @@ local function IsInFollowerDungeon()
     return difficulty == 205
 end
 
--- Helper: Check if should hide objective tracker based on current instance
 local function ShouldHideInCurrentInstance(instanceTypes)
     if not instanceTypes then return false end
 
     local inInstance, instanceType = IsInInstance()
     if not inInstance or not instanceType then return false end
 
-    -- Special handling for "party" type: check specific dungeon difficulties
     if instanceType == "party" then
         if IsInFollowerDungeon() and instanceTypes.followerDungeon then
             return true
@@ -167,7 +143,6 @@ local function ShouldHideInCurrentInstance(instanceTypes)
         elseif IsInHeroicDungeon() and instanceTypes.heroicDungeon then
             return true
         end
-    -- For other instance types, use the checkbox setting directly
     elseif instanceTypes[instanceType] then
         return true
     end
@@ -175,42 +150,31 @@ local function ShouldHideInCurrentInstance(instanceTypes)
     return false
 end
 
--- Helper: Whether the player is currently in a Delve or a Scenario.
--- READ-ONLY API access only; defensive against absent/restricted C_ namespaces
--- so this never errors and never taints the hide/show path.
 local function IsInDelveOrScenario()
-    -- Delve: HasActiveDelve() -> bool; GetTieredEntranceType() -> number,
-    -- where TieredEntranceType.Delve == 1 (DelvesConstantsDocumentation).
     local delves = _G.C_DelvesUI
     if delves then
         if delves.HasActiveDelve then
-            local ok, active = pcall(delves.HasActiveDelve)
+            local ok, active = ns.SafeCall("report", delves.HasActiveDelve)
             if ok and active then return true end
         end
         if delves.GetTieredEntranceType then
-            local ok, entranceType = pcall(delves.GetTieredEntranceType)
+            local ok, entranceType = ns.SafeCall("report", delves.GetTieredEntranceType)
             if ok and entranceType == 1 then return true end
         end
     end
 
-    -- Scenario: GetScenarioInfo() returns a table while in a scenario, nil
-    -- otherwise (delves also register here, which is fine — keep either way).
     if C_ScenarioInfo and C_ScenarioInfo.GetScenarioInfo then
-        local ok, info = pcall(C_ScenarioInfo.GetScenarioInfo)
+        local ok, info = ns.SafeCall("report", C_ScenarioInfo.GetScenarioInfo)
         if ok and info then return true end
     end
 
     return false
 end
 
--- Whether the objective tracker should be hidden for the given settings table:
--- either always-hidden, or hidden for the current instance type.
 local function ShouldHideObjectiveTracker(s)
     local wouldHide = s.hideObjectiveTrackerAlways
         or ShouldHideInCurrentInstance(s.hideObjectiveTrackerInstanceTypes)
 
-    -- Opt-in override: keep the tracker visible in delves/scenarios so their
-    -- objectives stay readable even when autohide would otherwise hide it.
     if wouldHide and s.keepTrackerInDelvesScenarios and IsInDelveOrScenario() then
         return false
     end
@@ -218,29 +182,22 @@ local function ShouldHideObjectiveTracker(s)
     return wouldHide
 end
 
--- Apply hide/show commands based on saved settings
 local function ApplyHideSettings()
     local settings = GetSettings()
     if not settings then
         return
     end
 
-    -- Suspend hide rules during Edit Mode so all frames remain visible for
-    -- positioning. Settings are re-applied when Edit Mode exits via callback.
     if IsInEditMode() then
         return
     end
 
-    -- TAINT SAFETY: Many Blizzard frames below are protected. Manipulating them
-    -- during combat causes ADDON_ACTION_FORBIDDEN errors. Defer the entire
-    -- function to PLAYER_REGEN_ENABLED when in combat.
     if InCombatLockdown() then
         pendingApplyHideSettings = true
         return
     end
     pendingApplyHideSettings = false
 
-    -- Objective Tracker (Quest Tracker)
     if ObjectiveTrackerFrame then
         local shouldHide = ShouldHideObjectiveTracker(settings)
 
@@ -249,22 +206,16 @@ local function ApplyHideSettings()
                 pendingObjectiveTrackerHide = true
             else
                 ObjectiveTrackerFrame:Hide()
-                ObjectiveTrackerFrame:EnableMouse(false)  -- Prevent hidden frame from blocking clicks
+                ObjectiveTrackerFrame:EnableMouse(false)
                 pendingObjectiveTrackerHide = false
             end
 
-            -- Hook Show() to prevent Blizzard from showing it again (quest updates, boss fights, etc.)
             local otState = hookedSecureFrames[ObjectiveTrackerFrame]
             if not otState then otState = {}; hookedSecureFrames[ObjectiveTrackerFrame] = otState end
             if not otState.showHooked then
                 otState.showHooked = true
                 hooksecurefunc(ObjectiveTrackerFrame, "Show", function(self)
-                    -- Don't fight Edit Mode — let frames stay visible for positioning
                     if IsInEditMode() then return end
-                    -- Immediately hide the frame visually to prevent a 1-frame flash.
-                    -- The deferred C_Timer.After(0) is still needed to safely call
-                    -- Hide() without tainting secure Blizzard code, but setting alpha
-                    -- to 0 right away ensures the player never sees the flash.
                     local s = GetSettings()
                     if s then
                         if ShouldHideObjectiveTracker(s) then
@@ -272,7 +223,6 @@ local function ApplyHideSettings()
                         end
                     end
 
-                    -- Break secure call chains before enforcing hidden state
                     C_Timer.After(0, function()
                         if IsInEditMode() then return end
                         local s2 = GetSettings()
@@ -284,7 +234,7 @@ local function ApplyHideSettings()
                                 end
 
                                 self:Hide()
-                                self:EnableMouse(false)  -- Prevent hidden frame from blocking clicks
+                                self:EnableMouse(false)
                                 pendingObjectiveTrackerHide = false
                             end
                         end
@@ -294,14 +244,13 @@ local function ApplyHideSettings()
         else
             pendingObjectiveTrackerHide = false
             if not InCombatLockdown() then
-                ObjectiveTrackerFrame:SetAlpha(1)  -- Restore alpha in case it was zeroed
+                ObjectiveTrackerFrame:SetAlpha(1)
                 ObjectiveTrackerFrame:Show()
-                ObjectiveTrackerFrame:EnableMouse(true)  -- Restore mouse when shown
+                ObjectiveTrackerFrame:EnableMouse(true)
             end
         end
     end
 
-    -- Minimap Border (Top)
     if MinimapCluster and MinimapCluster.BorderTop then
         if settings.hideMinimapBorder then
         MinimapCluster.BorderTop:Hide()
@@ -310,7 +259,6 @@ local function ApplyHideSettings()
         end
     end
 
-    -- Time Manager Clock Button
     if TimeManagerClockButton then
         if settings.hideTimeManager then
         TimeManagerClockButton:Hide()
@@ -319,19 +267,16 @@ local function ApplyHideSettings()
         end
     end
 
-    -- Game Time Frame (Calendar Button)
     if GameTimeFrame then
         if settings.hideGameTime then
             GameTimeFrame:Hide()
         else
             GameTimeFrame:Show()
         end
-        -- Hook Show() to prevent Blizzard from re-showing when hidden
         local gtState = hookedSecureFrames[GameTimeFrame]
         if not gtState then gtState = {}; hookedSecureFrames[GameTimeFrame] = gtState end
         if not gtState.showHooked then
             gtState.showHooked = true
-            -- TAINT SAFETY: Defer to break taint chain from secure context.
             hooksecurefunc(GameTimeFrame, "Show", function(self)
                 C_Timer.After(0, function()
                     if IsInEditMode() then return end
@@ -344,22 +289,10 @@ local function ApplyHideSettings()
         end
     end
 
-    -- Compact Raid Frame Manager
-    -- TAINT SAFETY: CompactRaidFrameManager is a secure frame. NEVER hook its
-    -- methods (Show, SetAlpha, etc.) or the global CompactRaidFrameManager_UpdateShown.
-    -- hooksecurefunc injects addon code into the secure execution chain, tainting
-    -- it. When the user later opens the game menu, the taint propagates through
-    -- ShowUIPanel → GameMenuFrame callback → ADDON_ACTION_FORBIDDEN.
-    --
-    -- Instead, reparent to a hidden frame out of combat. A hidden parent prevents
-    -- the frame from rendering without touching any secure properties. No hooks,
-    -- no taint.
     if CompactRaidFrameManager then
         if InCombatLockdown() then
-            -- Skip protected operations during combat
         elseif settings.hideRaidFrameManager then
             if not _crfHidden then
-                -- Create the hidden parent once
                 if not _crfHideParent then
                     _crfHideParent = CreateFrame("Frame")
                     _crfHideParent:Hide()
@@ -376,7 +309,6 @@ local function ApplyHideSettings()
         end
     end
 
-    -- Minimap Zone Text
     if MinimapZoneText then
         if settings.hideMinimapZoneText then
             MinimapZoneText:Hide()
@@ -385,25 +317,18 @@ local function ApplyHideSettings()
         end
     end
 
-    -- Mail Icon is now controlled by Minimap module (showMail setting)
-
-    -- Buff Frame Collapse Button (uses alpha approach for persistence)
     if BuffFrame and BuffFrame.CollapseAndExpandButton then
         local btn = BuffFrame.CollapseAndExpandButton
         if settings.hideBuffCollapseButton then
-            -- Set alpha to 0 on all textures
             if btn.NormalTexture then btn.NormalTexture:SetAlpha(0) end
             if btn.PushedTexture then btn.PushedTexture:SetAlpha(0) end
             if btn.HighlightTexture then btn.HighlightTexture:SetAlpha(0) end
-            -- Disable mouse interaction
             btn:EnableMouse(false)
 
-            -- Hook SetAlpha on textures to prevent Blizzard from resetting
             local btnState = hookedSecureFrames[btn]
             if not btnState then btnState = {}; hookedSecureFrames[btn] = btnState end
             if not btnState.alphaHooked then
                 btnState.alphaHooked = true
-                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 local function BlockAlpha(texture)
                     C_Timer.After(0, function()
                         if not texture then return end
@@ -419,7 +344,6 @@ local function ApplyHideSettings()
                 if btn.HighlightTexture then hooksecurefunc(btn.HighlightTexture, "SetAlpha", BlockAlpha) end
             end
         else
-            -- Restore visibility
             if btn.NormalTexture then btn.NormalTexture:SetAlpha(1) end
             if btn.PushedTexture then btn.PushedTexture:SetAlpha(1) end
             if btn.HighlightTexture then btn.HighlightTexture:SetAlpha(1) end
@@ -427,29 +351,25 @@ local function ApplyHideSettings()
         end
     end
 
-    -- Friendly Player/NPC Nameplates
-    -- TAINT SAFETY: Defer SetCVar calls via C_Timer.After(0) to break taint
-    -- chain. Synchronous SetCVar triggers OnNamePlateAdded in the current
-    -- (possibly tainted) execution context, causing SetNamePlateHitTestFrame
-    -- and CompactUnitFrame_UpdateHealPrediction errors.
     do
-        local hidePlayers = settings.hideFriendlyPlayerNameplates
-        local hideNPCs = settings.hideFriendlyNPCNameplates
+        local profile = Helpers.GetProfile()
+        local friendly = profile and profile.nameplates and profile.nameplates.friendly
+        local showPlayers = not friendly or friendly.enabled ~= false
+        local showNPCs = showPlayers and (not friendly or friendly.showNPCs ~= false)
         C_Timer.After(0, function()
-            SetCVar("nameplateShowFriendlyPlayers", hidePlayers and "0" or "1")
-            SetCVar("nameplateShowFriendlyNPCs", hideNPCs and "0" or "1")
+            local npCVars = ns.QUI_NameplatesCVars
+            if npCVars and npCVars.IsActive and npCVars:IsActive() then
+                return
+            end
+            SetCVar("nameplateShowFriendlyPlayers", showPlayers and "1" or "0")
+            SetCVar("nameplateShowFriendlyNpcs", showNPCs and "1" or "0")
         end)
     end
 
-    -- Talking Head Frame
-    -- Fix: TalkingHeadFrame captures mouse even when not showing content,
-    -- blocking clicks on panels that open near its position.
-    -- We disable mouse on the frame and its children when idle.
     if TalkingHeadFrame then
         local thState = hookedSecureFrames[TalkingHeadFrame]
         if not thState then thState = {}; hookedSecureFrames[TalkingHeadFrame] = thState end
 
-        -- Child sub-frames whose mouse state mirrors the parent's.
         local talkingHeadChildren = {
             "MainFrame",
             "PortraitFrame",
@@ -467,12 +387,10 @@ local function ApplyHideSettings()
             end
         end
 
-        -- Helper to disable mouse on TalkingHeadFrame and children
         local function DisableTalkingHeadMouse()
             SetTalkingHeadMouse(false)
         end
 
-        -- Helper to re-enable mouse when showing content
         local function EnableTalkingHeadMouse()
             SetTalkingHeadMouse(true)
         end
@@ -481,10 +399,8 @@ local function ApplyHideSettings()
             TalkingHeadFrame:Hide()
             DisableTalkingHeadMouse()
 
-            -- Hook Show() to keep it hidden
             if not thState.showHooked then
                 thState.showHooked = true
-                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(TalkingHeadFrame, "Show", function(self)
                     C_Timer.After(0, function()
                         if IsInEditMode() then return end
@@ -497,24 +413,17 @@ local function ApplyHideSettings()
                 end)
             end
         else
-            -- Not hiding, but still manage mouse to prevent blocking
-            -- Disable mouse when idle, re-enable when content plays
             if not thState.mouseManaged then
                 thState.mouseManaged = true
 
-                -- Initially disable mouse (no content showing)
                 DisableTalkingHeadMouse()
 
-                -- Re-enable mouse when a talking head starts playing
-                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(TalkingHeadFrame, "PlayCurrent", function()
                     C_Timer.After(0, function()
                         EnableTalkingHeadMouse()
                     end)
                 end)
 
-                -- Disable mouse when the talking head finishes/hides
-                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 TalkingHeadFrame:HookScript("OnHide", function()
                     C_Timer.After(0, function()
                         DisableTalkingHeadMouse()
@@ -523,10 +432,8 @@ local function ApplyHideSettings()
             end
         end
 
-        -- Talking Head Mute (hook PlayCurrent once)
         if not thState.muteHooked then
             thState.muteHooked = true
-            -- TAINT SAFETY: Defer to break taint chain from secure context.
             hooksecurefunc(TalkingHeadFrame, "PlayCurrent", function()
                 C_Timer.After(0, function()
                     local s = GetSettings()
@@ -539,17 +446,14 @@ local function ApplyHideSettings()
         end
     end
 
-    -- Experience Bar and Reputation Bar (handled separately via individual bar hiding)
     if StatusTrackingBarManager then
         local hideXP = settings.hideExperienceBar
         local hideRep = settings.hideReputationBar
 
-        -- Use Blizzard's BarsEnum if available, fallback to known values
         local BarsEnum = StatusTrackingBarInfo and StatusTrackingBarInfo.BarsEnum
         local BARS_ENUM_EXPERIENCE = BarsEnum and BarsEnum.Experience or 4
         local BARS_ENUM_REPUTATION = BarsEnum and BarsEnum.Reputation or 1
 
-        -- Helper function to hide individual bars based on type
         local function HideStatusBars()
             if IsInEditMode() then return end
             local s = GetSettings()
@@ -558,17 +462,13 @@ local function ApplyHideSettings()
             local doHideXP = s.hideExperienceBar
             local doHideRep = s.hideReputationBar
 
-            -- If both are hidden, hide the entire manager
             if doHideXP and doHideRep then
                 StatusTrackingBarManager:Hide()
                 return
             end
 
-            -- Show the manager if it was hidden
             StatusTrackingBarManager:Show()
 
-            -- Blizzard uses barContainers (visual slots) that display bars based on shownBarIndex
-            -- Each container can show one bar type at a time, determined by priority
             if StatusTrackingBarManager.barContainers then
                 for _, container in ipairs(StatusTrackingBarManager.barContainers) do
                     local shownBarIndex = container.shownBarIndex
@@ -590,13 +490,11 @@ local function ApplyHideSettings()
         local stbState = hookedSecureFrames[StatusTrackingBarManager]
         if not stbState then stbState = {}; hookedSecureFrames[StatusTrackingBarManager] = stbState end
 
-        -- If both are hidden, just hide the entire manager
         if hideXP and hideRep then
             StatusTrackingBarManager:Hide()
 
             if not stbState.showHooked then
                 stbState.showHooked = true
-                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(StatusTrackingBarManager, "Show", function(self)
                     C_Timer.After(0, function()
                         if IsInEditMode() then return end
@@ -608,13 +506,11 @@ local function ApplyHideSettings()
                 end)
             end
         elseif hideXP or hideRep then
-            -- Show the manager but hide individual bars
             StatusTrackingBarManager:Show()
             if StatusTrackingBarManager.barContainers then
                 HideStatusBars()
             end
 
-            -- Hook UpdateBarsShown to re-hide bars after Blizzard updates
             if not stbState.barsHooked then
                 stbState.barsHooked = true
                 hooksecurefunc(StatusTrackingBarManager, "UpdateBarsShown", function()
@@ -622,10 +518,8 @@ local function ApplyHideSettings()
                 end)
             end
         end
-        -- else: Do nothing - let other addons/Blizzard manage the bar when QUI isn't hiding
     end
 
-    -- UIErrorsFrame (error and info messages)
     if UIErrorsFrame then
         local hideErrors = settings.hideErrorMessages
         local hideInfo = settings.hideInfoMessages
@@ -633,7 +527,8 @@ local function ApplyHideSettings()
         if hideErrors and hideInfo then
             UIErrorsFrame:Hide()
             UIErrorsFrame:EnableMouse(false)
-            UIErrorsFrame:UnregisterAllEvents()
+            UIErrorsFrame:UnregisterEvent("UI_ERROR_MESSAGE")
+            UIErrorsFrame:UnregisterEvent("UI_INFO_MESSAGE")
         else
             UIErrorsFrame:Show()
             UIErrorsFrame:EnableMouse(false)
@@ -652,13 +547,6 @@ local function ApplyHideSettings()
         end
     end
 
-    -- World Map Blackout (dark overlay behind fullscreen map)
-    -- TAINT SAFETY: Do NOT call SetAlpha/EnableMouse on WorldMapFrame children
-    -- from insecure code. EnableMouse taints the frame, and when WorldMapFrame
-    -- later runs secureexecuterange over its data providers (e.g. QuestDataProvider
-    -- acquiring pins), the taint propagates to the secure SetPassThroughButtons
-    -- call on each pin, producing ADDON_ACTION_BLOCKED. State drivers mutate
-    -- visibility through a secure handler and do not taint.
     if WorldMapFrame and WorldMapFrame.BlackoutFrame and not InCombatLockdown() then
         local boState = hookedSecureFrames[WorldMapFrame.BlackoutFrame]
         if not boState then boState = {}; hookedSecureFrames[WorldMapFrame.BlackoutFrame] = boState end
@@ -674,18 +562,14 @@ local function ApplyHideSettings()
         end
     end
 
-    -- Player Frame: Hide when in a party/raid group
-    -- Try QUI's custom player frame first, fall back to Blizzard's PlayerFrame
     local QUI_UF = ns and ns.QUI_UnitFrames
     local playerFrame = (QUI_UF and QUI_UF.frames and QUI_UF.frames.player) or PlayerFrame
     if playerFrame and not InCombatLockdown() then
         local pfState = hookedSecureFrames[playerFrame]
         if not pfState then pfState = {}; hookedSecureFrames[playerFrame] = pfState end
         if settings.hidePlayerFrameInParty then
-            -- [group] matches party or raid
             RegisterStateDriver(playerFrame, "visibility", "[group] hide; show")
         elseif pfState.partyHideActive then
-            -- Remove our state driver and restore default visibility
             UnregisterStateDriver(playerFrame, "visibility")
             playerFrame:Show()
         end
@@ -693,11 +577,6 @@ local function ApplyHideSettings()
     end
 end
 
--- Initialize
--- Note: ApplyHideSettings is called from core/main.lua OnEnable()
--- This ensures AceDB is initialized before we try to read settings
-
--- Event frame for instance detection, raid permission changes, and addon loading
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -719,10 +598,7 @@ end
 eventFrame:SetScript("OnEvent", function(self, event, addon)
     local settings = GetSettings()
 
-    -- Handle Blizzard_TalkingHeadUI loading (it's load-on-demand)
-    -- Apply TalkingHeadFrame mouse fix when it loads
     if event == "ADDON_LOADED" and addon == "Blizzard_TalkingHeadUI" then
-        -- Re-apply settings now that TalkingHeadFrame exists
         if settings then
             _G.QUI_RefreshUIHider()
         end
@@ -738,10 +614,6 @@ eventFrame:SetScript("OnEvent", function(self, event, addon)
         return
     end
 
-    -- Handle raid permission/role changes - re-evaluate player frame visibility.
-    -- CompactRaidFrameManager re-hide is handled by the hidden-parent reparent
-    -- in ApplyHideSettings — no hooks needed.
-    -- BUG-008: Wrap in C_Timer.After(0) to break taint chain from secure event context
     if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED" then
         if settings and settings.hidePlayerFrameInParty then
             C_Timer.After(0, function()
@@ -753,9 +625,8 @@ eventFrame:SetScript("OnEvent", function(self, event, addon)
         return
     end
 
-    -- Vehicle/pet battle data bar hiding
     if event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
-        local unit = addon  -- first arg is unit for these events
+        local unit = addon
         if unit ~= "player" then return end
         if settings and settings.hideDataBarsInVehicle and StatusTrackingBarManager then
             C_Timer.After(0, function()
@@ -787,19 +658,15 @@ eventFrame:SetScript("OnEvent", function(self, event, addon)
         return
     end
 
-    -- Refresh all hide settings when entering new zones/instances
-    -- This ensures hooks are properly set up for ObjectiveTrackerFrame and other elements
     if settings then
         ApplyHideSettings()
     end
 end)
 
--- Export to QUI namespace
 QUI.UIHider = {
     ApplySettings = ApplyHideSettings,
 }
 
--- Global function for config panel to call
 _G.QUI_RefreshUIHider = function()
     ApplyHideSettings()
 end
@@ -813,19 +680,11 @@ if ns.Registry then
     })
 end
 
----------------------------------------------------------------------------
--- EDIT MODE INTEGRATION
--- Temporarily restore hidden frames during Edit Mode so they remain visible
--- for positioning. Re-apply hide settings when Edit Mode exits.
----------------------------------------------------------------------------
-
--- Show all frames that QUI's hider has hidden (called on Edit Mode enter)
 local function ShowAllHiddenForEditMode()
     if InCombatLockdown() then return end
     local settings = GetSettings()
     if not settings then return end
 
-    -- ObjectiveTracker
     if ObjectiveTrackerFrame then
         local wasHidden = ShouldHideObjectiveTracker(settings)
         if wasHidden then
@@ -835,7 +694,6 @@ local function ShowAllHiddenForEditMode()
         end
     end
 
-    -- Player Frame
     if settings.hidePlayerFrameInParty then
         local QUI_UF = ns and ns.QUI_UnitFrames
         local playerFrame = (QUI_UF and QUI_UF.frames and QUI_UF.frames.player) or PlayerFrame
@@ -845,33 +703,27 @@ local function ShowAllHiddenForEditMode()
         end
     end
 
-    -- Minimap Border
     if MinimapCluster and MinimapCluster.BorderTop and settings.hideMinimapBorder then
         MinimapCluster.BorderTop:Show()
     end
 
-    -- Time Manager Clock
     if TimeManagerClockButton and settings.hideTimeManager then
         TimeManagerClockButton:Show()
     end
 
-    -- Game Time (Calendar)
     if GameTimeFrame and settings.hideGameTime then
         GameTimeFrame:Show()
     end
 
-    -- Compact Raid Frame Manager — reparent back for edit mode visibility
     if CompactRaidFrameManager and settings.hideRaidFrameManager and _crfHidden then
         CompactRaidFrameManager:SetParent(_crfOrigParent or UIParent)
         _crfHidden = false
     end
 
-    -- Minimap Zone Text
     if MinimapZoneText and settings.hideMinimapZoneText then
         MinimapZoneText:Show()
     end
 
-    -- Buff Frame Collapse Button
     if BuffFrame and BuffFrame.CollapseAndExpandButton and settings.hideBuffCollapseButton then
         local btn = BuffFrame.CollapseAndExpandButton
         if btn.NormalTexture then btn.NormalTexture:SetAlpha(1) end
@@ -880,11 +732,6 @@ local function ShowAllHiddenForEditMode()
         btn:EnableMouse(true)
     end
 
-    -- Talking Head
-    -- Only show during edit mode if Blizzard's .Selection is active (i.e., user
-    -- has Talking Head enabled in edit mode settings).  When disabled, showing
-    -- the frame would create an invisible mouse-blocking area over action bars.
-    -- Keep EnableMouse(false) — Blizzard's .Selection handles edit mode clicks.
     if TalkingHeadFrame and settings.hideTalkingHead then
         local sel = TalkingHeadFrame.Selection
         if sel and sel:IsShown() then
@@ -892,7 +739,6 @@ local function ShowAllHiddenForEditMode()
         end
     end
 
-    -- Status Tracking Bars (XP / Reputation)
     if StatusTrackingBarManager then
         if settings.hideExperienceBar and settings.hideReputationBar then
             StatusTrackingBarManager:Show()
@@ -905,8 +751,6 @@ local function ShowAllHiddenForEditMode()
         end
     end
 
-    -- World Map Blackout: temporarily release the state driver for edit mode.
-    -- ApplyHideSettings re-registers it on exit.
     if WorldMapFrame and WorldMapFrame.BlackoutFrame and not InCombatLockdown() then
         local boState = hookedSecureFrames[WorldMapFrame.BlackoutFrame]
         if boState and boState.blackoutHidden then
@@ -916,7 +760,6 @@ local function ShowAllHiddenForEditMode()
         end
     end
 
-    -- UIErrors (restore event registration temporarily)
     if UIErrorsFrame then
         if settings.hideErrorMessages and settings.hideInfoMessages then
             UIErrorsFrame:Show()
@@ -930,7 +773,6 @@ local function ShowAllHiddenForEditMode()
     end
 end
 
--- Register Edit Mode enter/exit callbacks (deferred to ensure core is ready)
 C_Timer.After(1.5, function()
     local core = Helpers.GetCore and Helpers.GetCore()
     if not core or not core.RegisterEditModeEnter then return end

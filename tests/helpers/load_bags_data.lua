@@ -1,28 +1,20 @@
--- Compatibility shim: the bags data layer moved to core/storage (ns.Storage).
--- Existing bags tests load through here and read ns.Bags.*; alias after load.
+-- The bags data layer lives in core/storage (ns.Storage); bags tests reach
+-- it through the shared storage loader via this entry point. The old
+-- ns.Bags.* aliases are gone (storage_compat.lua retired) — tests read
+-- storage as ns.Storage.* and drive the drainer by assigning
+-- ns.Storage.RequestDrain directly (scan closures capture the Storage TABLE
+-- and look the function up at call time). Bags-internal exports
+-- (ns.Bags.Junk, .Transfers, .BagWindow, ...) are created by their own
+-- module files; the empty table here just keeps early readers index-safe.
 local StorageLoader = dofile("tests/helpers/load_storage_data.lua")
+
 local M = {}
 M.DATA_FILES = StorageLoader.DATA_FILES
 M.InstallBaseStubs = StorageLoader.InstallBaseStubs
 
 function M.LoadAll(ns, upto)
     ns = StorageLoader.LoadAll(ns, upto)
-    local S = ns.Storage or {}
     ns.Bags = ns.Bags or {}
-    for _, name in ipairs({
-        "Bus", "Store", "Summaries", "ItemInfo", "ScanCommon",
-        "ScanBags", "ScanBank", "ScanGuild", "ScanMail",
-        "ScanEquipped", "ScanCurrencies", "ScanAuctions",
-    }) do
-        if S[name] ~= nil then ns.Bags[name] = S[name] end
-    end
-    -- RequestDrain is owned by the core collection driver
-    -- (core/storage/collector.lua), which is NOT loaded in these headless
-    -- tests — so Storage.RequestDrain has no real owner here. Tests drive the
-    -- drainer by assigning ns.Bags.RequestDrain. scan_common closures capture
-    -- the Storage TABLE and look up .RequestDrain at call time, so install a
-    -- live proxy that forwards to the test-assigned ns.Bags.RequestDrain.
-    S.RequestDrain = function(...) return ns.Bags.RequestDrain and ns.Bags.RequestDrain(...) end
     return ns
 end
 

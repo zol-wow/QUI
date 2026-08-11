@@ -15,8 +15,8 @@ ns.Storage = { Store = {}, Bus = {} }
 -- equipment.lua calls Alts.Window.RegisterTab at file end; stub it.
 ns.Alts = { Window = { RegisterTab = function() end } }
 
-assert(loadfile("QUI_Alts/alts/views/shared.lua"))("QUI", ns)
-assert(loadfile("QUI_Alts/alts/views/equipment.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/shared.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/equipment.lua"))("QUI", ns)
 
 local EV = ns.Alts.EquipmentView
 assert(EV, "EquipmentView exported")

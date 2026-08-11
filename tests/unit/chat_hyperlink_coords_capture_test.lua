@@ -38,12 +38,12 @@ assert(type(HL.TryLinkifyCoordsForCapture) == "function", "capture export exists
 
 -- paren form wraps
 local out = HL.TryLinkifyCoordsForCapture("meet at (45.6, 78.9) now")
-assert(out:find("|Haddon:quaziiuichat:waypoint:45.6:78.9|h[(45.6, 78.9)]|h", 1, true),
+assert(out:find("|Haddon:quichat:waypoint:45.6:78.9|h[(45.6, 78.9)]|h", 1, true),
     "paren coords wrapped, got: " .. out)
 
 -- square form wraps
 out = HL.TryLinkifyCoordsForCapture("boss at [45, 78]")
-assert(out:find("|Haddon:quaziiuichat:waypoint:45:78|h[[45, 78]]|h", 1, true),
+assert(out:find("|Haddon:quichat:waypoint:45:78|h[[45, 78]]|h", 1, true),
     "square coords wrapped, got: " .. out)
 
 -- no double-wrap

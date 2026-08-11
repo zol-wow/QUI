@@ -1,9 +1,3 @@
---[[
-    QUI Options — Blizzard UI Mover (Appearance tile sub-page)
-    Migrated to V3 body pattern (CreateAccentDotLabel + CreateSettingsCardGroup
-    + BuildSettingRow).
-]]
-
 local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
@@ -48,8 +42,6 @@ local function BuildBlizzardMoverTab(tabContent)
 
     local y = -10
 
-    -- Intro paragraph — muted label, full width, describes the feature
-    -- before the user starts configuring.
     local intro = GUI:CreateLabel(
         tabContent,
         ns.L["Hold your move modifier (default Shift) and drag to reposition supported Blizzard windows. Optional: hold the scale modifier and use the mouse wheel on a panel to resize."],
@@ -62,13 +54,9 @@ local function BuildBlizzardMoverTab(tabContent)
     intro:SetWordWrap(true)
     y = y - 44
 
-    ---------------------------------------------------------------------------
-    -- GENERAL SETTINGS
-    ---------------------------------------------------------------------------
     Shared.CreateAccentDotLabel(tabContent, ns.L["General Settings"], y); y = y - 22
     local genCard = Shared.CreateSettingsCardGroup(tabContent, y)
 
-    -- Row: Enable + Require modifier (toggles)
     local enableW = GUI:CreateFormCheckbox(genCard.frame, nil, "enabled", bm, refreshMover,
         { description = ns.L["Master toggle for the Blizzard UI Mover. Disable to stop every supported Blizzard window from being draggable or scalable."] })
     local reqModW = GUI:CreateFormCheckbox(genCard.frame, nil, "requireModifier", bm, nil,
@@ -78,7 +66,6 @@ local function BuildBlizzardMoverTab(tabContent)
         Shared.BuildSettingRow(genCard.frame, ns.L["Require modifier to drag"], reqModW)
     )
 
-    -- Row: Move modifier + Scale modifier (dropdowns)
     local moveModW = GUI:CreateFormDropdown(genCard.frame, nil, MOD_KEY_OPTIONS, "modifier", bm, nil,
         { description = ns.L["Modifier key that must be held to drag supported Blizzard windows to a new position."] })
     local scaleModW = GUI:CreateFormDropdown(genCard.frame, nil, MOD_KEY_OPTIONS, "scaleModifier", bm, function()
@@ -91,13 +78,10 @@ local function BuildBlizzardMoverTab(tabContent)
         Shared.BuildSettingRow(genCard.frame, ns.L["Scale modifier"], scaleModW)
     )
 
-    -- Row: Mouse-wheel scaling toggle (full-width — paired with nothing
-    -- since the remaining slot is already-dropdown-heavy).
     local scaleOnW = GUI:CreateFormCheckbox(genCard.frame, nil, "scaleEnabled", bm, refreshMover,
         { description = ns.L["Allow resizing supported Blizzard windows by holding the scale modifier and spinning the mouse wheel over them."] })
     genCard.AddRow(Shared.BuildSettingRow(genCard.frame, ns.L["Enable mouse-wheel scaling"], scaleOnW))
 
-    -- Row: Position persistence (full-width dropdown with long labels)
     local persistW = GUI:CreateFormDropdown(genCard.frame, nil, PERSIST_OPTIONS, "positionPersistence", bm, refreshMover,
         { description = ns.L["How long a moved window keeps its custom position. Until frame closes resets immediately, Until logout keeps it for the session, and Saved until reset persists across reloads."] })
     genCard.AddRow(Shared.BuildSettingRow(genCard.frame, ns.L["Position persistence"], persistW))
@@ -105,11 +89,6 @@ local function BuildBlizzardMoverTab(tabContent)
     genCard.Finalize()
     y = y - genCard.frame:GetHeight() - SECTION_GAP
 
-    ---------------------------------------------------------------------------
-    -- PER-GROUP FRAME TOGGLES — dynamically populated from the Blizzard
-    -- Mover module's group list. Each group gets its own accent-dot label
-    -- + card group; entries within pair 2-per-row.
-    ---------------------------------------------------------------------------
     local function ensureFrameRow(entry)
         bm.frames = bm.frames or {}
         local row = bm.frames[entry.id]
@@ -123,10 +102,6 @@ local function BuildBlizzardMoverTab(tabContent)
         return row
     end
 
-    -- Self-heal: the mover registry is populated lazily (see InitRegistry's
-    -- deferred boot in blizzard_mover.lua). Ensure it's built before we read the
-    -- group list so opening this page never shows an empty toggle list, whatever
-    -- the load order was. InitRegistry is idempotent (guarded by registryInitialized).
     if BM and BM.functions and BM.functions.InitRegistry then
         BM.functions.InitRegistry()
     end
@@ -135,8 +110,6 @@ local function BuildBlizzardMoverTab(tabContent)
         for _, group in ipairs(BM.functions.GetGroups()) do
             local entries = BM.functions.GetEntriesForGroup(group.id) or {}
             if #entries > 0 then
-                -- The "addons" group uses a search-friendly label tagged
-                -- separately; every other group gets an accent-dot label.
                 if group.id == "addons" then
                     GUI:SetSearchSection("Addons")
                 end
@@ -144,7 +117,6 @@ local function BuildBlizzardMoverTab(tabContent)
 
                 local card = Shared.CreateSettingsCardGroup(tabContent, y)
 
-                -- Pair entries 2-per-row; unpaired trailing entry gets full width.
                 local i = 1
                 while i <= #entries do
                     local leftEntry = entries[i]

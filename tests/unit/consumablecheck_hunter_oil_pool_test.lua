@@ -62,7 +62,7 @@ local ns = {
 }
 
 (dofile("tests/helpers/locale.lua"))(ns)
-assert(loadfile("QUI_QoL/qol/consumablecheck.lua"))("QUI", ns)
+assert(loadfile("modules/qol/consumablecheck.lua"))("QUI", ns)
 local check = assert(ns.ConsumableCheckTest, "consumable check test seam should be exported")
 
 -- Pool widening: a Hunter's main hand now considers both ammo and oils.

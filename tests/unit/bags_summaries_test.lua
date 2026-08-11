@@ -3,7 +3,7 @@
 -- luacheck: globals QUI_StorageDB
 local loader = dofile("tests/helpers/load_bags_data.lua")
 local ns = loader.LoadAll() -- everything, incl. summaries' bus self-subscription
-local Store, Summaries, Bus = ns.Bags.Store, ns.Bags.Summaries, ns.Bags.Bus
+local Store, Summaries, Bus = ns.Storage.Store, ns.Storage.Summaries, ns.Storage.Bus
 
 local function entry(itemID, count) return { itemID = itemID, count = count, quality = 1 } end
 

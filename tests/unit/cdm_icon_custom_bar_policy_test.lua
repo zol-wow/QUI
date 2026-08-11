@@ -16,7 +16,7 @@ Enum = {
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_custom_bar_policy.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_custom_bar_policy.lua")("QUI", ns)
 
 local policyModule = assert(ns.CDMIconCustomBarPolicy, "CDMIconCustomBarPolicy should be exported")
 

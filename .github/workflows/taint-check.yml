@@ -15,6 +15,21 @@ jobs:
           luaVersion: "5.1"
       - name: Run analyzer self-test
         run: lua tools/test_taint.lua --self-test
+      - name: Analyzer unit tests
+        run: |
+          set -u
+          fail=0
+          for t in tests/taint/*_test.lua tests/taint/parser/parser_test.lua; do
+            echo "::group::$t"
+            if lua "$t"; then
+              echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              echo "::error file=$t::Test failed"
+              fail=1
+            fi
+          done
+          exit $fail
 
   api-index-sync:
     name: api-index in sync with corpus
@@ -35,33 +50,63 @@ jobs:
             exit 1
           fi
 
-  strict-mode:
-    name: Strict-mode enforcement
+  # Sharded across 12 runners. Analysis is per-file independent, so each shard
+  # takes a disjoint slice of the corpus (see --shard in tools/test_taint.lua)
+  # and the union is the same set of files an unsharded run would analyze.
+  # Measured before sharding: 182s of analysis behind 9s of checkout + Lua
+  # setup, which made this job the entire CI critical path -- every other
+  # workflow in the repo finishes in 7-58s.
+  #
+  # Strict enforcement and the advisory artifact are ONE job because they are
+  # one analysis. They always ran the same analyzer over the same corpus and
+  # differed only in renderer and severity filter, so splitting them paid for
+  # the whole corpus twice; --json-out archives the unfiltered set from the
+  # same pass that gates stdout. Merging halved the job count, which is what
+  # bought the room to go 6 -> 12 shards.
+  #
+  # Why 12: branches are pushed one at a time, so a wave is this workflow plus
+  # Lua Tests (2), Profile Tests (1) and the two regen workflows -- 7 fixed jobs
+  # against the Free plan's 20-concurrent-job cap, leaving 13 slots. Past ~12
+  # the run is mostly overhead anyway: each shard pays ~9s of checkout + Lua
+  # setup no matter how small its slice, and at 12 the slowest shard is already
+  # down to ~18s of analysis.
+  #
+  # No `needs: self-test`. Gating cost 11s plus ~8s of scheduling latency on
+  # EVERY run to save 12 wasted jobs on the rare run where the analyzer itself
+  # is broken -- and Actions minutes are free on this public repo, so the
+  # savings were worth nothing. This job now starts immediately; api-index-sync
+  # keeps its gate because it is not on the critical path.
+  #
+  # fail-fast: false is load-bearing. The default cancels sibling shards on the
+  # first failure, which would report one shard's strict findings and hide the
+  # rest -- you would fix those, push, and discover the next batch.
+  analyze:
+    name: Taint analysis
     runs-on: ubuntu-latest
-    needs: self-test
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v6
       - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
-      - name: Strict-mode analyzer
-        run: lua tools/test_taint.lua --report github --strict-only
-
-  advisory-report:
-    name: Advisory report (informational)
-    runs-on: ubuntu-latest
-    needs: self-test
-    if: always()
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v6
-      - uses: leafo/gh-actions-lua@v13
-        with:
-          luaVersion: "5.1"
-      - name: Generate JSON report
-        run: lua tools/test_taint.lua --report json > taint-report.json || true
-      - name: Upload report artifact
+      # Strict findings fail the step via the analyzer's exit code; the
+      # advisory set is archived either way, so `if: always()` on the upload
+      # keeps the report available on exactly the runs you need it for.
+      - name: Analyze shard ${{ matrix.shard }}
+        run: |
+          lua tools/test_taint.lua \
+            --report github --strict-only \
+            --json-out taint-report.json \
+            --shard ${{ matrix.shard }}/12
+      # Each shard uploads its own artifact: actions/upload-artifact rejects a
+      # duplicate name, and --json-out covers only this shard's files. Anything
+      # consuming these has to read all twelve and concatenate.
+      - name: Upload advisory report artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: taint-report
+          name: taint-report-${{ matrix.shard }}
           path: taint-report.json

@@ -5,9 +5,10 @@
 -- headlessly; the suite asserts source structure -- see cdm_buff_anchor_uiparent_pin_test).
 --
 -- Buff layout maintains icon placement live during combat via UNIT_AURA and a
--- 10fps OnUpdate poll. ForcePopulateBuffIcons is a no-op stub. The
--- PLAYER_REGEN_ENABLED combat-end repopulate/relayout branch is therefore
--- redundant and was contributing to the end-of-pull FPS stutter.
+-- 10fps OnUpdate poll. ForcePopulateBuffIcons was a no-op stub and has since
+-- been deleted entirely (dead code cleanup). The PLAYER_REGEN_ENABLED
+-- combat-end repopulate/relayout branch is therefore redundant and was
+-- contributing to the end-of-pull FPS stutter.
 --
 -- Contract:
 --   - eventFrame must NOT register PLAYER_REGEN_ENABLED

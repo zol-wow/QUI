@@ -9,5 +9,26 @@
         "libs",
         "tools",
         "tests"
+    ],
+    "diagnostics.disable": [
+        "cast-local-type",
+        "duplicate-set-field",
+        "inject-field",
+        "need-check-nil",
+        "redefined-local",
+        "undefined-field",
+        "unused-function",
+        "unused-local",
+        "unused-vararg"
+    ],
+    "diagnostics.globals": [
+        "BigWigs",
+        "BigWigsLoader",
+        "DandersFrames_GetPinnedContainer",
+        "DandersFrames_GetRaidContainer",
+        "DandersFrames_IsReady",
+        "GSE",
+        "GSEOptions",
+        "RaiderIO"
     ]
 }

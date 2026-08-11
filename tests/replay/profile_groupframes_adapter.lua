@@ -158,12 +158,27 @@ end
 -- Load the aura sub-modules
 -- -----------------------------------------------------------------------
 local function loadSubModules()
-    local ns = {}
+    local ns = {
+        -- Aura-only replay frames are preview-style synthetic objects. Keep the
+        -- same accessor contract as live GroupFrames without creating `.unit`.
+        QUI_GroupFrames = {
+            GetFrameUnit = function(frame) return frame and frame.previewUnit end,
+        },
+    }
+    -- The GF model file is now a compatibility SHIM delegating to the shared
+    -- core element model (ns.AuraElements) -- load core/aura_elements.lua
+    -- (pure Lua, headless-safe) into the same ns FIRST so the shim's __index
+    -- delegation resolves.
+    assert(loadfile("core/aura_elements.lua"))("QUI", ns)
+    -- Real core/safecall.lua: groupframes_aura_render.lua (Task 45a) routes
+    -- its countdown/reseat sink calls through ns.SafeCall("sink-forward", ...).
+    assert(loadfile("core/safecall.lua"))("QUI", ns)
     assert(loadfile("QUI_GroupFrames/groupframes/groupframes_aura_model.lua"))(
         "QUI_GroupFrames", ns)
     assert(loadfile("QUI_GroupFrames/groupframes/groupframes_aura_render.lua"))(
         "QUI_GroupFrames", ns)
-    assert(ns.QUI_GroupFramesAuraModel,   "aura model must load")
+    assert(ns.AuraElements,               "core element model must load")
+    assert(ns.QUI_GroupFramesAuraModel,   "aura model shim must load")
     assert(ns.QUI_GroupFrameAuraRender,   "aura render must load")
     return ns
 end
@@ -171,7 +186,7 @@ end
 -- -----------------------------------------------------------------------
 -- Build a synthetic unit frame + aura cache
 -- The synthetic frame mimics the shape groupframes_aura_render.lua expects:
---   frame.unit       = "player"
+--   frame.previewUnit = "player"
 --   frame._bottomPad = 0
 --   frame:GetFrameLevel() => number
 --   frame:GetWidth()      => number
@@ -179,7 +194,20 @@ end
 local function buildSyntheticFrame(ns)
     -- Use the CreateFrame stub that was just installed
     local frame = CreateFrame("Frame") -- luacheck: ignore
-    frame.unit       = "player"
+    setmetatable(frame, {
+        __index = function(_, key)
+            if key == "unit" then
+                error("aura GroupFrames replay read the forbidden frame.unit field", 2)
+            end
+        end,
+        __newindex = function(t, key, value)
+            if key == "unit" then
+                error("aura GroupFrames replay wrote the forbidden frame.unit field", 2)
+            end
+            rawset(t, key, value)
+        end,
+    })
+    frame.previewUnit = "player"
     frame._bottomPad = 0
     -- ns.SkinBase must be a TABLE (render module does: SkinBase() -> ns.SkinBase)
     ns.SkinBase = { ApplyPixelBackdrop = function() end }
@@ -683,11 +711,16 @@ local function buildFullNs(onCB)
         QUI_GroupFrames          = nil,
         -- Optional modules that groupframes.lua checks with guards:
         QUI_GroupFrameAuraRender    = nil,
-        QUI_GroupFramePrivateAuras  = nil,
         QUI_GroupFrameBlizzard      = nil,
         QUI_GroupFrameEditMode      = nil,
         QUI_GroupFrameClickCast     = nil,
     }
+
+    -- Real core/safecall.lua: groupframes_aura_render.lua (Task 45a) routes
+    -- its countdown/reseat sink calls through ns.SafeCall("sink-forward", ...).
+    -- issecretvalue is absent in this harness, so safecall.lua's own
+    -- documented fallback (treat as never-secret) applies.
+    assert(loadfile("core/safecall.lua"))("QUI", ns)
 
     return ns, onCB
 end
@@ -854,6 +887,12 @@ local function loadFullGroupFrames(opts)
     --   local initFrame = CreateFrame("Frame")
     --   initFrame:RegisterEvent("ADDON_LOADED")
     --   initFrame:SetScript("OnEvent", fn)               → capturedHandlers[?]
+    -- Shared frame chrome first (QUI.toc loads it before any sub-addon):
+    -- groupframes.lua reads ns.QUI_GroupFrameChrome at file scope.
+    local chromeLoader = assert(loadfile("core/group_frame_chrome.lua"),
+        "core/group_frame_chrome.lua must exist")
+    chromeLoader("QUI", ns)
+
     local loader = assert(loadfile("QUI_GroupFrames/groupframes/groupframes.lua"),
         "QUI_GroupFrames/groupframes/groupframes.lua must exist")
     loader("QUI_GroupFrames", ns)
@@ -949,13 +988,25 @@ local function buildFullSyntheticFrame(opts)
         return t
     end
 
-    local frame = {
-        unit        = "raid1",
+    local frame = setmetatable({
+        _secureUnit = "raid1",
         _isRaid     = true,
         _shown      = false,
         _level      = 1,
         _w = 180, _h = 36,
-    }
+    }, {
+        __index = function(_, key)
+            if key == "unit" then
+                error("full GroupFrames replay read the forbidden frame.unit field", 2)
+            end
+        end,
+        __newindex = function(t, key, value)
+            if key == "unit" then
+                error("full GroupFrames replay wrote the forbidden frame.unit field", 2)
+            end
+            rawset(t, key, value)
+        end,
+    })
     -- Sub-regions that Update* functions read
     frame.healthBar         = makeBar("healthBar")
     frame.powerBar          = makeBar("powerBar")
@@ -978,6 +1029,9 @@ local function buildFullSyntheticFrame(opts)
     frame.SetFrameLevel     = function(self, l) self._level = l end
     frame.GetWidth          = function(self) return self._w end
     frame.GetHeight         = function(self) return self._h end
+    frame.GetAttribute      = function(self, key)
+        if key == "unit" then return self._secureUnit end
+    end
     return frame
 end
 
@@ -1040,7 +1094,8 @@ local function buildFullScope(opts)
 
     -- Build synthetic unit frame and inject into unitFrameMap
     local syntheticFrame = buildFullSyntheticFrame(opts)
-    QUI_GF.unitFrameMap["raid1"] = { syntheticFrame }
+    QUI_GF.SetFrameUnit(syntheticFrame, "raid1")
+    QUI_GF.AddFrameToMap("raid1", syntheticFrame)
 
     local onEvent    = mainHandler.fn
     local eventFrame = mainHandler.frame

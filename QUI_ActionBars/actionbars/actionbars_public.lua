@@ -4,42 +4,19 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
--- Clear OverrideActionBar.isShownExternal and re-run the untaint dance until
--- the field reads secure again. Edit Mode / Blizzard_ActionBar may have written
--- a tainted show flag; left in place it propagates through ActionBarController
--- on re-show. Shared by Initialize and the ADDON_LOADED handler, which ran this
--- identical loop.
-local function PurgeOverrideBarShownExternal()
-    local overrideBar = _G.OverrideActionBar
-    if overrideBar and overrideBar.system then
-        overrideBar.isShownExternal = nil
-        local c = 42
-        repeat
-            if overrideBar[c] == nil then
-                overrideBar[c] = nil
-            end
-            c = c + 1
-        until issecurevariable(overrideBar, "isShownExternal")
-    end
-end
+---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
 
----------------------------------------------------------------------------
--- PUBLIC API
----------------------------------------------------------------------------
+local function PurgeOverrideBarShownExternal()
+    PurgeShownExternalTaint(_G.OverrideActionBar)
+end
 
 function ActionBarsOwned:Initialize()
     if self.initialized then return end
 
     self.initialized = true
 
-    -- Patch LibKeyBound Binder methods to work with unified frameState
     PatchLibKeyBoundForMidnight()
 
-    -- Re-register events
-    -- ACTIONBAR_SLOT_CHANGED not registered here — only registered during
-    -- drag operations (ACTIONBAR_SHOWGRID).  Blizzard fires slot 0 constantly
-    -- even while idle, and all non-drag scenarios are already covered by
-    -- SPELLS_CHANGED, SafeSyncAction, UPDATE_SHAPESHIFT_FORM, etc.
     ownedEventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
     ownedEventFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
     ownedEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
@@ -81,11 +58,8 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("PET_BATTLE_CLOSE")
     ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_ADDED")
     ownedEventFrame:RegisterEvent("LOSS_OF_CONTROL_UPDATE")
-    -- Spell activation overlay glow (proc abilities)
     ownedEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
     ownedEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
-    -- Events that QUI handles centrally — per-button events are
-    -- unregistered on QUI-created buttons.
     ownedEventFrame:RegisterEvent("SPELLS_CHANGED")
     ownedEventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
     ownedEventFrame:RegisterEvent("SPELL_FLYOUT_UPDATE")
@@ -99,25 +73,12 @@ function ActionBarsOwned:Initialize()
     end
     ownedEventFrame:Show()
 
-    -- Build all managed bars (1-8 + pet/stance)
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         BuildBar(barKey)
     end
 
-    -- Let Blizzard's OverrideActionBar display natively during vehicle /
-    -- override / possess states.  QUI's bar1 is hidden during those states
-    -- by a secure visibility state driver (see HideBar1DuringOverride
-    -- below), so there's no visual conflict.  Keybinds pass through to
-    -- Blizzard's native override bar because ApplyBarOverrideBindings bails
-    -- for bar1 when IsVehicleBarActive() is true, leaving the default
-    -- ACTIONBUTTON1..6 -> OverrideActionBarButton1..6 remap intact.
-    --
-    -- We still clean isShownExternal on OverrideActionBar to prevent
-    -- Edit Mode from writing a tainted show flag that could propagate
-    -- through ActionBarController on re-show.
     PurgeOverrideBarShownExternal()
 
-    -- Suppress PossessActionBar (mind control bar) — can overlap QUI bars
     local possessBar = _G.PossessActionBar or _G.PossessBarFrame
     if possessBar then
         possessBar:UnregisterAllEvents()
@@ -125,22 +86,14 @@ function ActionBarsOwned:Initialize()
         possessBar:Hide()
     end
 
-    -- Suppress NPE (New Player Experience) tutorials that reference
-    -- original Blizzard action buttons.  Without this, the tutorial
-    -- system tries to find ActionButton1 etc. which are suppressed.
     if _G.AddSpellToActionBar then
         _G.AddSpellToActionBar = noop
     end
     if _G.AddClassSpellToActionBar then
         _G.AddClassSpellToActionBar = noop
     end
-    -- Enable the auto-push watcher so spells still go to bars
-    if _G.AutoPushSpellWatcher and _G.AutoPushSpellWatcher.Start then
-        pcall(_G.AutoPushSpellWatcher.Start, _G.AutoPushSpellWatcher)
-    end
+    ns.SafeCallMethodIfPresent("report", _G.AutoPushSpellWatcher, "Start")
 
-    -- Clear override bindings when entering player housing (housing has
-    -- its own keybinds).  Restore when leaving.
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("HouseEditor.StateUpdated", function(_, state)
             if InCombatLockdown() then
@@ -162,21 +115,14 @@ function ActionBarsOwned:Initialize()
         end, "QUI_ActionBars")
     end
 
-    -- Register pet/stance-specific events
     ownedEventFrame:RegisterEvent("PET_BAR_UPDATE")
     ownedEventFrame:RegisterEvent("PET_BAR_UPDATE_COOLDOWN")
     ownedEventFrame:RegisterEvent("PET_UI_UPDATE")
     ownedEventFrame:RegisterEvent("UNIT_PET")
 
-    -- Update pet bar visibility based on current pet state
     UpdatePetBarVisibility()
     UpdateStanceBarLayout()
 
-    -- Blizzard bars are fully disposed (hidden + events unregistered).
-    -- QUI creates fresh buttons with SetOverrideBindingClick for keybinds.
-
-    -- Spellbook hover highlight — show which action bar button has a spell
-    -- when hovering that spell in the spellbook.
     if _G.UpdateOnBarHighlightMarksBySpell then
         hooksecurefunc("UpdateOnBarHighlightMarksBySpell", function(spellID)
             ActionBarsOwned.spellHighlight.type = "spell"
@@ -199,37 +145,21 @@ function ActionBarsOwned:Initialize()
         hooksecurefunc("ActionBarController_UpdateAllSpellHighlights", ActionBarsOwned.UpdateAllSpellHighlights)
     end
 
-    -- Assisted combat rotation (one-button rotation arrow overlay).
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", function()
-            local okSpell, newSpell = pcall(C_AssistedCombat.GetNextCastSpell, false)
+            local okSpell, newSpell = ns.SafeCall("best-effort-style", C_AssistedCombat.GetNextCastSpell, false)
             if not okSpell then newSpell = nil end
-            -- Dedupe: Blizzard fires this every OnUpdate frame under soft
-            -- targeting; if the rotation spell hasn't actually changed,
-            -- skip entirely.
             if newSpell == ActionBarsOwned._lastAssistRotationSpell then return end
             ActionBarsOwned._lastAssistRotationSpell = newSpell
             if newSpell then ActionBarsOwned._assistedCombatEverActive = true end
             ActionBarsOwned.UpdateAllAssistedCombatRotation()
-            -- The rotation button's icon needs to update too — SafeUpdate
-            -- overrides the arrow texture with the recommended spell.
-            -- Immediate flush: spell changes are low-frequency.
             ScheduleABVisualUpdate(false, true)
-            -- Keybind overlays share this signal — they don't need their own
-            -- callback since they react to the same recommendation change.
-            -- (RotationAssistIcon self-registers in rotationassist.lua.)
             local kb = ns.Keybinds
-            if kb and kb.UpdateAllRotationHelpers then pcall(kb.UpdateAllRotationHelpers) end
+            if kb and kb.UpdateAllRotationHelpers then ns.SafeCall("bulkhead", kb.UpdateAllRotationHelpers) end
         end, "QUI_ActionBars_AssistedCombat")
 
-        -- Assisted combat highlight (marching ants on the next-cast button).
-        -- Process immediately in the callback — no dirty-flag deferral.
-        -- Soft targeting causes constant nil→spell→nil→spell oscillation.
-        -- Nil means "no recommendation right now" (target lost, soft-target
-        -- gap) — NOT "rotation disabled".  Ignore nil to avoid flicker.
-        -- Highlights refresh on HIDEGRID or PLAYER_REGEN_ENABLED.
         EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", function()
-            local okHL, nextSpell = pcall(C_AssistedCombat.GetNextCastSpell, false)
+            local okHL, nextSpell = ns.SafeCall("best-effort-style", C_AssistedCombat.GetNextCastSpell, false)
             if not okHL then nextSpell = nil end
             if not nextSpell then return end
             if nextSpell == ActionBarsOwned._lastAssistHighlightSpell then return end
@@ -238,56 +168,28 @@ function ActionBarsOwned:Initialize()
         end, "QUI_ActionBars_AssistedHighlight")
     end
 
-    -- Direct hook on AssistedCombatManager — catches the spell-change at
-    -- the source even when no bar button hosts the assist slot (the
-    -- EventRegistry event above doesn't reliably fire in that case).
-    -- Drives the SafeUpdate texture-race refresh and keybind overlays.
-    -- (RotationAssistIcon self-registers its own hook in rotationassist.lua.)
     if AssistedCombatManager and AssistedCombatManager.UpdateAllAssistedHighlightFramesForSpell then
         hooksecurefunc(AssistedCombatManager, "UpdateAllAssistedHighlightFramesForSpell", function(_, spellID)
             if not spellID then return end
             local Helpers = ns.Helpers
             local isSecret = Helpers and Helpers.IsSecretValue(spellID)
 
-            -- Resolve the talent-transformed display spell.  Blizzard may
-            -- recommend a base spell ID while talents have replaced it with
-            -- an override (or vice versa).  Resolve both directions so
-            -- downstream matching works regardless of which ID the API returns.
             local resolvedID = spellID
             if not isSecret then
-                -- Forward: base → current override (e.g., Thunder Clap → Thunder Blast)
-                local okOvr, overrideID = pcall(C_Spell.GetOverrideSpell, spellID)
+                local okOvr, overrideID = ns.SafeCall("best-effort-style", C_Spell.GetOverrideSpell, spellID)
                 if okOvr and overrideID and overrideID ~= spellID then
                     resolvedID = overrideID
                 end
             end
 
-            -- ForceUpdateAction → SafeUpdate races the C-side texture write:
-            -- SafeUpdate reads GetActionTexture before the new value is
-            -- committed, showing the PREVIOUS spell icon.  This hook fires
-            -- AFTER the C-side completes, so schedule an immediate visual
-            -- refresh to re-read the now-correct texture.
             ScheduleABVisualUpdate(false, true)
-            -- Pass both the resolved override and the original base so the
-            -- matcher can check either direction.  Secret values pass through
-            -- safely — tonumber() returns nil for secrets, so no match = no
-            -- overlay, no crash.
             local kb = ns.Keybinds
             if kb and kb.UpdateAllRotationHelpers then
-                pcall(kb.UpdateAllRotationHelpers, resolvedID, spellID)
+                ns.SafeCall("bulkhead", kb.UpdateAllRotationHelpers, resolvedID, spellID)
             end
         end)
     end
 
-    -- No overlay scaling hooks needed — buttons stay at their natural 45x45
-    -- size and the container's SetScale handles visual resize. Blizzard overlays
-    -- work naturally because button dimensions match what they expect.
-
-    -- Hook ActionButton_Update to refresh text/visibility (but NOT force re-skin).
-    -- PERF: Removed skinKey = nil force-reset — the field-comparison dedup in
-    -- SkinButton handles this naturally without string.format overhead.
-    -- Actual artwork re-skinning is handled by per-button UpdateButtonArt hooks
-    -- installed during BuildBar (fires less often, deferred via C_Timer).
     if ActionButton_Update then
         hooksecurefunc("ActionButton_Update", function(button)
             if InCombatLockdown() then return end
@@ -303,19 +205,14 @@ function ActionBarsOwned:Initialize()
         end)
     end
 
-    -- Setup usability polling
     ActionBarsOwned.UpdateUsabilityPolling()
 
-    -- Register Edit Mode callbacks
     local core = GetCore()
     if core and core.RegisterEditModeEnter then
         core:RegisterEditModeEnter(OnEditModeEnter)
         core:RegisterEditModeExit(OnEditModeExit)
     end
 
-    -- Hook tooltip suppression for QUI action bar buttons.
-    -- PERF: This fires on EVERY tooltip in the game.  Fast-exit via cached
-    -- setting + O(1) skinnedButtons lookup instead of DB walk + string match.
     ActionBarsOwned._suppressTooltips = false
     function ActionBarsOwned:RefreshTooltipSuppressCache()
         local global = GetGlobalSettings()
@@ -331,26 +228,20 @@ function ActionBarsOwned:Initialize()
         tooltip:ClearLines()
     end)
 
-    -- Hook spellbook visibility for the mouseover fade system. The player
-    -- spells UI can be created lazily, so we also hook its toggle functions
-    -- and retry once the panel is actually opening.
     ActionBarsOwned.EnsureSpellBookVisibilityHooks()
     ActionBarsOwned.HookSpellBookToggleFunction("ToggleSpellBook")
     ActionBarsOwned.HookSpellBookToggleFunction("TogglePlayerSpellsFrame")
     ActionBarsOwned.ScheduleSpellBookVisibilityRefresh()
 
-    -- Initialize extra buttons
     inInitSafeWindow = true
     InitializeExtraButtons()
     inInitSafeWindow = false
 
-    -- Apply page arrow visibility
     local db = GetDB()
     if db and db.bars and db.bars.bar1 then
         ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
     end
 
-    -- Hide bars that are disabled in DB
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         local barDB = GetBarSettings(barKey)
         if barDB and barDB.enabled == false then
@@ -362,14 +253,6 @@ function ActionBarsOwned:Initialize()
         end
     end
 
-    -- Apply layout-mode hidden state during the addon-load safe window.
-    -- The bar containers use SecureHandlerStateTemplate + RegisterStateDriver,
-    -- which makes SetAttribute protected during combat. Layout Mode's
-    -- EnforceGameplayVisibility runs at PLAYER_ENTERING_WORLD+3s — past the
-    -- safe window — so applying hidden state from there triggers
-    -- ADDON_ACTION_BLOCKED on a combat /reload. Apply it here while the
-    -- safe window is open, and pre-mark _gameplayHidden so the later pass
-    -- treats the work as already done and skips the redundant SetAttribute.
     local profile = Helpers.GetProfile()
     local hiddenHandles = profile and profile.layoutMode and profile.layoutMode.hiddenHandles
     if hiddenHandles then
@@ -416,11 +299,8 @@ function ActionBarsOwned:Refresh()
         BuildBar(barKey)
     end
 
-    -- Patch LibKeyBound Binder methods to work without method injection on Midnight
     PatchLibKeyBoundForMidnight()
 
-    -- Hook tooltip suppression for action buttons (once only — hooksecurefunc is permanent)
-    -- NOTE: Synchronous — deferring causes tooltip flash before hide.
     if not ActionBarsOwned._refreshHooksInstalled then
         ActionBarsOwned._refreshHooksInstalled = true
         hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
@@ -435,10 +315,6 @@ function ActionBarsOwned:Refresh()
             end
         end)
 
-        -- Modern retail (post-rename): proc swirl is created lazily by
-        -- ActionButtonSpellAlertManager:ShowAlert. Hook the manager so we
-        -- catch the alert frame the moment it exists, both for the default
-        -- alert and the AssistedCombatRotationFrame's separate alert.
         if ActionButtonSpellAlertManager and ActionButtonSpellAlertManager.ShowAlert then
             hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", function(_, actionButton)
                 if not actionButton then return end
@@ -450,9 +326,6 @@ function ActionBarsOwned:Refresh()
                 end
             end)
         end
-        -- Legacy global path — kept as a fallback for clients that still
-        -- expose ActionButton_ShowOverlayGlow before the SpellAlertManager
-        -- refactor.
         if type(ActionButton_ShowOverlayGlow) == "function" then
             hooksecurefunc("ActionButton_ShowOverlayGlow", function(button)
                 if ActionBarsOwned.skinnedButtons[button] then
@@ -462,20 +335,17 @@ function ActionBarsOwned:Refresh()
         end
     end
 
-    -- Initial skin pass
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         SkinBar(barKey)
     end
     ActionBarsOwned.HookSpellFlyoutSkinning()
 
-    -- Apply bar layout settings (spacing, empty slot visibility)
     ApplyAllBarSpacing()
     ApplyAllFlyoutDirections()
     if SyncOwnedFlyoutInfoToHandler then
         SyncOwnedFlyoutInfoToHandler()
     end
 
-    -- Hide bars that are disabled in DB
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         local barDB = GetBarSettings(barKey)
         if barDB and barDB.enabled == false then
@@ -487,18 +357,12 @@ function ActionBarsOwned:Refresh()
         end
     end
 
-    -- Refresh pet/stance conditional visibility
     UpdatePetBarVisibility()
     UpdateStanceBarLayout()
 
     ActionBarsOwned.UpdateUsabilityPolling()
     if self.RefreshTooltipSuppressCache then self:RefreshTooltipSuppressCache() end
 end
-
-
----------------------------------------------------------------------------
--- GLOBAL REFRESH FUNCTION
----------------------------------------------------------------------------
 
 _G.QUI_RefreshActionBars = function()
     if InCombatLockdown() then
@@ -511,11 +375,6 @@ _G.QUI_RefreshActionBars = function()
     end
 end
 
--- Apply the `useOnKeyDown` profile setting to all QUI action bar
--- buttons. SetAttribute on a secure frame is protected during combat,
--- so defer to PLAYER_REGEN_ENABLED when locked down. Empowered spells
--- are unaffected — pressAndHoldAction + typerelease="actionrelease"
--- handle the press/release flow independently of this attribute.
 _G.QUI_ApplyUseOnKeyDown = function()
     if InCombatLockdown() then
         ActionBarsOwned.pendingUseOnKeyDownUpdate = true
@@ -554,8 +413,6 @@ _G.QUI_ReapplyActionBarBindings = function()
     RefreshNativeKeybinds()
 end
 
--- Lightweight refresh: only re-evaluate mouseover fade state for all bars.
--- Used by fade/alwaysShow settings that don't need a full bar rebuild.
 _G.QUI_RefreshActionBarFade = function()
     if not ActionBarsOwned.initialized then return end
     if RefreshActionBarContextVisibility then
@@ -575,10 +432,6 @@ _G.QUI_RefreshActionBarFade = function()
     end
 end
 
----------------------------------------------------------------------------
--- INITIALIZATION
----------------------------------------------------------------------------
-
 initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:SetScript("OnEvent", function(self, event, addonName)
@@ -594,20 +447,12 @@ initFrame:SetScript("OnEvent", function(self, event, addonName)
                 ApplyPageArrowVisibility(db.bars.bar1.hidePageArrow)
             end)
         end
-        -- OverrideActionBar is intentionally left visible so Blizzard can
-        -- display vehicle/override abilities natively; QUI bar1 hides
-        -- during those states via its qui_overridevisibility state driver.
-        -- Clean isShownExternal here (Blizzard_ActionBar may have just
-        -- created it) so Edit Mode writes don't taint ActionBarController.
         PurgeOverrideBarShownExternal()
     elseif ActionBarsOwned.HandleSpellBookAddonLoaded then
         ActionBarsOwned.HandleSpellBookAddonLoaded(addonName)
     end
 end)
 
----------------------------------------------------------------------------
--- UNLOCK MODE ELEMENT REGISTRATION
----------------------------------------------------------------------------
 do
     local function RegisterLayoutModeElements()
         local um = ns.QUI_LayoutMode
@@ -633,8 +478,6 @@ do
             microMenu = "microbar", bagBar = "bags",
         }
 
-        -- Master action bars element — module on/off lives in Module Addons
-        -- (addon state); positioning only here
         um:RegisterElement({
             key = "actionBars",
             label = ns.L["Action Bars"],
@@ -647,7 +490,6 @@ do
             end,
         })
 
-        -- Leave Vehicle button — standalone proxy mover (not part of the bar loop)
         um:RegisterElement({
             key = "leaveVehicle",
             label = ns.L["Leave Vehicle"],

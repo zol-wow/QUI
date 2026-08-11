@@ -1,7 +1,14 @@
 name: Regenerate Search Cache
 
-# Auto-regenerates QUI_OptionsSearch/search_cache.lua on every push to
-# options-v2-phase1 and commits the result back to the branch.
+# Auto-regenerates QUI_Options/search_cache.lua on every push to
+# beta or alpha and commits the result back to the branch.
+#
+# Scoped to the working branches on purpose. main keeps the hard staleness
+# gate in lua-tests.yml, so a stale cache can never land there; beta and
+# alpha get the cache fixed for them instead. The gate is switched off on
+# exactly these two branches — if it ran here too the two would fight, the
+# gate reddening the push and this bot's follow-up commit turning it green.
+# Keep the branch list here and the exclusion in lua-tests.yml in sync.
 #
 # Loop prevention: pushes made with the default GITHUB_TOKEN do NOT
 # trigger further workflow runs (per GitHub's default policy). The
@@ -11,7 +18,18 @@ name: Regenerate Search Cache
 on:
   push:
     branches:
-      - options-v2-phase1
+      - beta
+      - alpha
+
+# Shared with regen-i18n-base.yml. Both bots fire on the same push to beta or
+# alpha and both commit to that branch, so without a common group they race and
+# whichever pushes second is rejected as non-fast-forward. Same group name plus
+# cancel-in-progress: false queues them instead. The checkout below then takes
+# the branch tip rather than the triggering SHA, so the queued run builds on the
+# other bot's commit instead of forking from underneath it.
+concurrency:
+  group: regen-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   regen:
@@ -22,6 +40,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.ref_name }}
           fetch-depth: 1
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -51,13 +70,13 @@ jobs:
       - name: Commit and push if cache changed
         if: steps.bot-check.outputs.skip != 'true'
         run: |
-          if git diff --quiet -- QUI_OptionsSearch/search_cache.lua; then
+          if git diff --quiet -- QUI_Options/search_cache.lua; then
             echo "Search cache is already up to date; nothing to commit."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add QUI_OptionsSearch/search_cache.lua
+          git add QUI_Options/search_cache.lua
           git commit -m "chore(options): regenerate search cache [skip ci]"
           git push

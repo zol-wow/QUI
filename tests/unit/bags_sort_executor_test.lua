@@ -258,7 +258,7 @@ do
     assert(#timers == 1, "each yield must schedule exactly one fallback timer")
 
     -- bus event wins the race → batch 2 (the last swap) + a fresh yield
-    ns.Bags.Bus.Publish("BagsChanged", "k", { 0 })
+    ns.Storage.Bus.Publish("BagsChanged", "k", { 0 })
     assert(pickups == 12, "batch 2 must issue the remaining move")
     -- the stale batch-1 fallback timer must NOT double-trigger a pass
     local stale = timers[1]
@@ -267,7 +267,7 @@ do
     assert(pickups == 12 and doneCalls == 0, "stale fallback timer must be a no-op")
 
     -- next trigger re-plans → empty plan → converged
-    ns.Bags.Bus.Publish("BagsChanged", "k", { 0 })
+    ns.Storage.Bus.Publish("BagsChanged", "k", { 0 })
     assert(doneCalls == 1 and doneOk == true and doneReason == nil,
         "convergence must call onDone(true) exactly once")
     assert(not Exec.IsRunning(), "executor must be idle after convergence")
@@ -312,7 +312,7 @@ do
     bag(0, 3, { [1] = item(901, 15, 20), [2] = item(901, 10, 20) })
     local doneOk, doneCalls = nil, 0
     assert(Exec.Start("bags", function(ok) doneOk, doneCalls = ok, doneCalls + 1 end))
-    while Exec.IsRunning() do ns.Bags.Bus.Publish("BagsChanged", "k", { 0 }) end
+    while Exec.IsRunning() do ns.Storage.Bus.Publish("BagsChanged", "k", { 0 }) end
     assert(doneCalls == 1 and doneOk == true, "merge run must converge")
     assert(flatten(0) == "901x20,901x5,-", "capped merge layout wrong: " .. flatten(0))
 end
@@ -336,13 +336,13 @@ do
     assert(doneCalls == 0 and Exec.IsRunning(), "deferred move must keep the run alive")
 
     -- still locked: another pass defers again, run stays alive
-    ns.Bags.Bus.Publish("BagsChanged", "k", { 0 })
+    ns.Storage.Bus.Publish("BagsChanged", "k", { 0 })
     assert(pickups == 2 and Exec.IsRunning(), "locked move must stay deferred")
 
     -- unlock → next pass completes the deferred move, then converges
     locks[key(0, 4)] = nil
-    ns.Bags.Bus.Publish("BagsChanged", "k", { 0 })
-    ns.Bags.Bus.Publish("BagsChanged", "k", { 0 })
+    ns.Storage.Bus.Publish("BagsChanged", "k", { 0 })
+    ns.Storage.Bus.Publish("BagsChanged", "k", { 0 })
     assert(doneCalls == 1 and doneOk == true, "run must converge after unlock")
     assert(flatten(0) == "4x1,3x1,2x1,1x1", "final layout wrong: " .. flatten(0))
 end
@@ -367,7 +367,7 @@ do
         "combat must abort with onDone(false, 'combat')")
     assert(not Exec.IsRunning(), "combat abort must clear the running state")
     -- neither the bus nor the pending fallback may issue further moves
-    ns.Bags.Bus.Publish("BagsChanged", "k", { 0 })
+    ns.Storage.Bus.Publish("BagsChanged", "k", { 0 })
     fireTimers()
     assert(pickups == before, "no moves may issue after a combat abort")
     -- idle OnCombat is a no-op
@@ -420,7 +420,7 @@ do
     assert(doneCalls == 1 and doneOk == false and doneReason == "cancel",
         "Cancel must abort with onDone(false, 'cancel')")
     assert(not Exec.IsRunning(), "Cancel must clear the running state")
-    ns.Bags.Bus.Publish("BagsChanged", "k", { 0 })
+    ns.Storage.Bus.Publish("BagsChanged", "k", { 0 })
     fireTimers()
     assert(pickups == before, "no moves may issue after Cancel")
     -- idle Cancel is a no-op
@@ -443,7 +443,7 @@ do
     bagFlags[key(1, Enum.BagSlotFlags.DisableAutoSort)] = true
     local doneCalls = 0
     assert(Exec.Start("bags", function() doneCalls = doneCalls + 1 end))
-    while Exec.IsRunning() do ns.Bags.Bus.Publish("BagsChanged", "k", { 0 }) end
+    while Exec.IsRunning() do ns.Storage.Bus.Publish("BagsChanged", "k", { 0 }) end
     assert(doneCalls == 1, "ignored-flag run must converge")
     assert(flatten(0) == "1x1,-", "ignored backpack must stay untouched: " .. flatten(0))
     assert(flatten(1) == "2x1,-", "DisableAutoSort bag must stay untouched: " .. flatten(1))
@@ -466,9 +466,9 @@ do
     assert(pickups > 0, "character bank sort must issue moves")
     -- a BagsChanged event must NOT advance a bank run
     local mid = pickups
-    ns.Bags.Bus.Publish("BagsChanged", "k", { 0 })
+    ns.Storage.Bus.Publish("BagsChanged", "k", { 0 })
     assert(pickups == mid and doneCalls == 0, "BagsChanged must not drive a character bank run")
-    while Exec.IsRunning() do ns.Bags.Bus.Publish("BankChanged", "k", { 6 }) end
+    while Exec.IsRunning() do ns.Storage.Bus.Publish("BankChanged", "k", { 6 }) end
     assert(doneCalls == 1 and doneOk == true, "character bank run must converge")
     assert(flatten(6) == "3x1,2x1,1x1", "character bank tab 6 layout wrong: " .. flatten(6))
     assert(flatten(7) == "-,-", "character bank tab 7 should be drained into tab 6: " .. flatten(7))
@@ -483,9 +483,9 @@ do
     assert(Exec.Start("warbandBank", function(ok) doneOk, doneCalls = ok, doneCalls + 1 end))
     assert(pickups > 0, "warband bank sort must issue moves")
     mid = pickups
-    ns.Bags.Bus.Publish("BankChanged", "k", { 6 })
+    ns.Storage.Bus.Publish("BankChanged", "k", { 6 })
     assert(pickups == mid and doneCalls == 0, "BankChanged must not drive a warband bank run")
-    while Exec.IsRunning() do ns.Bags.Bus.Publish("WarbandChanged", { 12 }) end
+    while Exec.IsRunning() do ns.Storage.Bus.Publish("WarbandChanged", { 12 }) end
     assert(doneCalls == 1 and doneOk == true, "warband bank run must converge")
     assert(flatten(12) == "3x1,2x1,1x1", "warband bank tab 12 layout wrong: " .. flatten(12))
     assert(flatten(13) == "-,-", "warband bank tab 13 should be drained into tab 12: " .. flatten(13))
@@ -498,7 +498,7 @@ do
     doneOk, doneCalls = nil, 0
     assert(Exec.Start("characterBank", function(ok) doneOk, doneCalls = ok, doneCalls + 1 end,
         { tabID = 7 }))
-    while Exec.IsRunning() do ns.Bags.Bus.Publish("BankChanged", "k", { 7 }) end
+    while Exec.IsRunning() do ns.Storage.Bus.Publish("BankChanged", "k", { 7 }) end
     assert(doneCalls == 1 and doneOk == true, "selected character bank tab run must converge")
     assert(flatten(7) == "2x1,1x1,-", "selected tab 7 layout wrong: " .. flatten(7))
     assert(flatten(6) == "3x1,-", "tab 6 must stay untouched by selected tab 7 sort: " .. flatten(6))
@@ -521,7 +521,7 @@ do
     bag(0, 3, { [1] = item(950), [2] = item(1) })
     local doneOk, doneCalls = nil, 0
     assert(Exec.Start("bags", function(ok) doneOk, doneCalls = ok, doneCalls + 1 end))
-    while Exec.IsRunning() do ns.Bags.Bus.Publish("BagsChanged", "k", { 0 }) end
+    while Exec.IsRunning() do ns.Storage.Bus.Publish("BagsChanged", "k", { 0 }) end
     assert(doneCalls == 1 and doneOk == true, "pending-data run must converge")
     assert(flatten(0) == "1x1,950x1,-",
         "pending item must sort last without error: " .. flatten(0))
@@ -543,11 +543,11 @@ do
     assert(Exec.Start("bags", function() doneCalls = doneCalls + 1 end))
     assert(pickups == 10, "precondition: batch 1 issued, run waiting")
     -- empty ping (the bags.lua lock/cooldown route): no re-plan
-    ns.Bags.Bus.Publish("BagsChanged", "k", {})
+    ns.Storage.Bus.Publish("BagsChanged", "k", {})
     assert(pickups == 10 and doneCalls == 0,
         "an empty BagsChanged ping must not trigger a re-plan")
     -- scanner-shaped publish: drives batch 2
-    ns.Bags.Bus.Publish("BagsChanged", "k", { 0 })
+    ns.Storage.Bus.Publish("BagsChanged", "k", { 0 })
     assert(pickups == 12, "a non-empty BagsChanged must drive the re-plan")
     Exec.Cancel()
 
@@ -559,10 +559,10 @@ do
     doneCalls = 0
     assert(Exec.Start("warbandBank", function(ok) doneOk, doneCalls = ok, doneCalls + 1 end))
     local mid = pickups
-    ns.Bags.Bus.Publish("WarbandChanged", {})
+    ns.Storage.Bus.Publish("WarbandChanged", {})
     assert(pickups == mid and doneCalls == 0,
         "an empty WarbandChanged ping must not trigger a re-plan")
-    while Exec.IsRunning() do ns.Bags.Bus.Publish("WarbandChanged", { 12 }) end
+    while Exec.IsRunning() do ns.Storage.Bus.Publish("WarbandChanged", { 12 }) end
     assert(doneCalls == 1 and doneOk == true,
         "non-empty WarbandChanged publishes must drive the bank run to convergence")
 end
@@ -593,7 +593,7 @@ do
     -- gate lifted: the same Start goes through
     local doneCalls = 0
     assert(Exec.Start("bags", function() doneCalls = doneCalls + 1 end))
-    while Exec.IsRunning() do ns.Bags.Bus.Publish("BagsChanged", "k", { 0 }) end
+    while Exec.IsRunning() do ns.Storage.Bus.Publish("BagsChanged", "k", { 0 }) end
     assert(doneCalls == 1 and pickups > 0,
         "Start must proceed once the sibling ops are idle")
 end
@@ -619,7 +619,7 @@ do
 
     local doneOk
     assert(Exec.Start("bags", function(ok) doneOk = ok end))
-    while Exec.IsRunning() do ns.Bags.Bus.Publish("BagsChanged", "k", { 0, 5 }) end
+    while Exec.IsRunning() do ns.Storage.Bus.Publish("BagsChanged", "k", { 0, 5 }) end
     assert(doneOk == true, "reagent sort must converge")
 
     -- reagent bag must hold ONLY reagents; the sword must be gone from it.

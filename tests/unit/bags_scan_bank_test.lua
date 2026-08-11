@@ -30,8 +30,8 @@ end
 _G.C_Bank.FetchDepositedMoney = function() return 123456 end
 
 local ns = loader.LoadAll(nil, "scan_bank.lua")
-ns.Bags.RequestDrain = function() end
-local Store, ScanBank, Bus = ns.Bags.Store, ns.Bags.ScanBank, ns.Bags.Bus
+ns.Storage.RequestDrain = function() end
+local Store, ScanBank, Bus = ns.Storage.Store, ns.Storage.ScanBank, ns.Storage.Bus
 
 _G.QUI_StorageDB = nil
 Store.Initialize()
@@ -81,11 +81,11 @@ assert(Store.GetCurrentCharacter().bankTabs[6] ~= nil, "char bank must still sca
 accountLocked = nil
 ScanBank.RefreshTabMetadata()
 local drainRequests = 0
-ns.Bags.RequestDrain = function() drainRequests = drainRequests + 1 end
+ns.Storage.RequestDrain = function() drainRequests = drainRequests + 1 end
 contents[7] = { [1] = { itemID = 707070, stackCount = 1, hyperlink = "|Hitem:707070|h[p]|h", quality = nil, iconFileID = 2, isBound = false } }
 ScanBank.MarkDirty(7)
 ScanBank.Drain()
-ns.Bags.ItemInfo.OnItemDataLoadResult(707070, false)
+ns.Storage.ItemInfo.OnItemDataLoadResult(707070, false)
 assert(drainRequests == 0, "failed load must not request a drain")
 assert(ScanBank.Drain() == false, "failed load must not re-mark the tab")
 -- a NEW pending round: re-mark manually and let the success path run
@@ -93,7 +93,7 @@ contents[7][1] = { itemID = 717171, stackCount = 1, hyperlink = "|Hitem:717171|h
 ScanBank.MarkDirty(7)
 ScanBank.Drain()
 contents[7][1].quality = 2
-ns.Bags.ItemInfo.OnItemDataLoadResult(717171, true)
+ns.Storage.ItemInfo.OnItemDataLoadResult(717171, true)
 assert(drainRequests == 1, "successful load must request a drain")
 assert(ScanBank.Drain() == true, "successful load must re-mark the tab")
 assert(Store.GetCurrentCharacter().bankTabs[7].slots[1].quality == 2, "rescan should pick up quality")
@@ -101,7 +101,7 @@ assert(Store.GetCurrentCharacter().bankTabs[7].slots[1].quality == 2, "rescan sh
 -- Test 6: synchronous load-result during drain must not lose the re-mark
 local realRequest = _G.C_Item.RequestLoadItemDataByID
 _G.C_Item.RequestLoadItemDataByID = function(itemID)
-    ns.Bags.ItemInfo.OnItemDataLoadResult(itemID, true)
+    ns.Storage.ItemInfo.OnItemDataLoadResult(itemID, true)
 end
 contents[7] = { [1] = { itemID = 808080, stackCount = 1, hyperlink = "|Hitem:808080|h[r]|h", quality = nil, iconFileID = 2, isBound = false } }
 ScanBank.MarkDirty(7)

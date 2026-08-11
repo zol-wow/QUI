@@ -126,7 +126,6 @@ local function makeCallbacks(iconPool)
         end,
         scheduleUpdate = noop,
         requestStackTextUpdate = noop,
-        noteChargeDurationObjectsUpdated = noop,
         recordRecentPlayerSpellCast = noop,
         getHighlighter = function() return { OnPlayerCastSucceeded = noop } end,
         setBarsDirty = noop,

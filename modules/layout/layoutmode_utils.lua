@@ -1,12 +1,5 @@
----------------------------------------------------------------------------
--- QUI Layout Mode — Shared Provider Utilities
--- Canonical implementations of CreateCollapsible, StandardRelayout,
--- BuildPositionCollapsible, and PlaceRow used by all settings providers.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 
--- Re-applies a FontString's current font through the CJK-safe family resolver
--- so Chinese/Korean glyphs render (GameFont* templates are Latin-only).
 local function EnsureCJKFont(fs)
     if not fs or not fs.GetFont then return fs end
     local fp, sz, fl = fs:GetFont()
@@ -23,9 +16,6 @@ local UIKit = ns.UIKit
 local Utils = {}
 ns.QUI_LayoutMode_Utils = Utils
 
----------------------------------------------------------------------------
--- SHARED CONSTANTS
----------------------------------------------------------------------------
 Utils.ACCENT_R, Utils.ACCENT_G, Utils.ACCENT_B = 0.376, 0.647, 0.980
 
 function Utils:RefreshAccentColor()
@@ -40,17 +30,8 @@ Utils.HEADER_HEIGHT = 24
 Utils.FORM_ROW = 32
 Utils.PADDING = 0
 
--- PROVIDER → V2 TILE MAPPING (legacy fallback)
--- Retained as a last-resort bucket when a provider key does not resolve
--- through the shared settings registry. It is currently empty and only
--- exists as a safety net for unmigrated surfaces.
----------------------------------------------------------------------------
 Utils.PROVIDER_TO_V2 = {
 }
-
----------------------------------------------------------------------------
--- DB / LSM HELPERS
----------------------------------------------------------------------------
 
 function Utils.GetProfileDB()
     local core = Helpers.GetCore()
@@ -91,16 +72,9 @@ function Utils.GetSoundList()
     return sounds
 end
 
----------------------------------------------------------------------------
--- ALTERNATING ROW BACKGROUNDS
--- Lays a subtle white-tint strip behind every other direct child of `body`,
--- ordered top-down by current GetTop(). Matches the row-striping rhythm
--- used by QUI_Options.CreateSettingsCardGroup in the main settings window.
----------------------------------------------------------------------------
 function Utils.ApplyAlternatingRowBackgrounds(body)
     if not body or not body.GetNumChildren then return end
 
-    -- Tear down any previous strips so re-measures don't stack textures.
     if body._quiAltRowStrips then
         for i = 1, #body._quiAltRowStrips do
             local t = body._quiAltRowStrips[i]
@@ -137,10 +111,6 @@ function Utils.ApplyAlternatingRowBackgrounds(body)
     end
 end
 
----------------------------------------------------------------------------
--- STANDARD RELAYOUT
----------------------------------------------------------------------------
-
 function Utils.StandardRelayout(content, sections)
     local cy = -8
     for _, s in ipairs(sections) do
@@ -152,53 +122,23 @@ function Utils.StandardRelayout(content, sections)
     content:SetHeight(math.abs(cy) + 16)
 end
 
----------------------------------------------------------------------------
--- CREATE COLLAPSIBLE SECTION
----------------------------------------------------------------------------
-
--- V3 card group: always-visible accent-dot header + subtle card body.
--- Signature preserved for backwards compatibility with every provider caller.
--- Legacy `_expanded`/`SetExpanded` fields kept as static no-ops so the old
--- expansion-state save path (layoutmode_settings.lua) stays harmless.
 function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
-    -- Layout Mode position-only rendering: suppress every collapsible except
-    -- the one nested inside Utils.BuildPositionCollapsible. Set by the layout
-    -- mode settings panel before invoking the shared renderer.
     if Utils._layoutModePositionOnly and not Utils._insidePositionCollapsible then
         return nil
     end
     Utils:RefreshAccentColor()
     local ACCENT_R, ACCENT_G, ACCENT_B = Utils.ACCENT_R, Utils.ACCENT_G, Utils.ACCENT_B
     local baseHeaderHeight = Utils.HEADER_HEIGHT
-    -- Headerless mode: consume a one-shot flag set by renderer section filters for
-    -- single-entry whitelists (the tile tab already names the section).
     local headerless = Utils._nextHeaderless == true
     Utils._nextHeaderless = false
-    -- Borderless mode: skip cardBg + hairline borders for tile-tab rendering.
-    -- Tile tabs already frame the content; the outer card is redundant there.
     local borderless = Utils._nextBorderless == true or Utils._useMinimalDrawerChrome == true
     Utils._nextBorderless = false
     local HEADER_HEIGHT = headerless and 0 or baseHeaderHeight
-    local CARD_GAP = headerless and 0 or 6     -- space between header underline and card top
-    local CARD_PAD = 8     -- vertical padding inside card
-    -- Body keeps full section width to preserve widget layout math used by
-    -- anchoring sliders and other builders that compute offsets from the
-    -- body's left/right edges. The card bg spans the same width for a flush
-    -- look; only vertical padding is applied.
+    local CARD_GAP = headerless and 0 or 6
+    local CARD_PAD = 8
 
     local section = CreateFrame("Frame", nil, parent)
 
-    -- Auto-register this collapsible as a section on any V2 settings sub-page
-    -- body that opted in via sectionNav. Walks up the parent chain because
-    -- BuildFeatureTabPage wraps the renderer in an intermediate host frame.
-    -- Headerless sections have no visible title to chip; skip them.
-    -- _sectionsAuthoritative tells us BuildFeatureStackPage is in charge of
-    -- registration (one chip per featureId titleRow); skip nested registers.
-    --
-    -- Also stamp the section title onto the GUI search context so that any
-    -- pinnable widget bound inside buildFunc carries the right sectionName.
-    -- Without this, bindings inherit a stale sectionName from whatever was
-    -- last set, which surfaces as misrouted Jump-to-setting clicks on pins.
     if not headerless and type(title) == "string" and title ~= "" then
         local GUI = QUI and QUI.GUI
         if GUI and type(GUI.SetSearchSection) == "function" then
@@ -219,7 +159,6 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
     end
 
     if not headerless then
-        -- Header: accent dot + title + 1px accent underline
         local dot = section:CreateTexture(nil, "OVERLAY")
         dot:SetSize(4, 4)
         dot:SetPoint("TOPLEFT", section, "TOPLEFT", 2, -((HEADER_HEIGHT - 4) / 2))
@@ -238,7 +177,6 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
     end
 
     if not borderless then
-        -- Card surface: subtle bg fill + 1px border hairlines below header
         local cardBg = section:CreateTexture(nil, "BACKGROUND")
         cardBg:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(HEADER_HEIGHT + CARD_GAP))
         cardBg:SetPoint("BOTTOMRIGHT", section, "BOTTOMRIGHT", 0, 0)
@@ -263,17 +201,13 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
         cardRight:SetPoint("BOTTOMRIGHT", cardBg, "BOTTOMRIGHT", 0, 0)
     end
 
-    -- Body: widgets get parented here. Full section width so existing widget
-    -- positioning math (e.g. anchoring sliders anchored to body RIGHT) stays
-    -- correct. Vertical CARD_PAD gives breathing room inside the card surface.
     local body = CreateFrame("Frame", nil, section)
     body:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(HEADER_HEIGHT + CARD_GAP + CARD_PAD))
     body:SetPoint("RIGHT", section, "RIGHT", 0, 0)
     body:SetHeight(contentHeight)
     body._logicalSection = section
 
-    -- Public state
-    section._expanded = true         -- V3: always visible. Kept true so legacy save-path is harmless.
+    section._expanded = true
     section._contentHeight = contentHeight
     section._body = body
     section._sectionTitle = title
@@ -312,11 +246,8 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
         section:SetHeight(HEADER_HEIGHT + CARD_GAP + (CARD_PAD * 2) + bh)
     end
 
-    -- Exposed so BuildPositionCollapsible (and any other caller that mutates
-    -- body height directly) can request a remeasure.
     section.RefreshContentHeight = RefreshContentHeight
 
-    -- Legacy shim: always-expanded, but keep the signature so nothing crashes.
     section.SetExpanded = function(self, _expanded, skipRelayout)
         RefreshContentHeight()
         if not skipRelayout and relayout then relayout() end
@@ -335,30 +266,11 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
     return section
 end
 
----------------------------------------------------------------------------
--- SUPPRESSED PROVIDER LAYOUT (Layout Mode position-only)
----------------------------------------------------------------------------
-
--- Layout Mode renders a mover's shared-provider body in position-only mode so
--- right-click shows ONLY the Position controls + the "Open ... settings" link.
--- CreateCollapsible already self-suppresses when Utils._layoutModePositionOnly
--- is set, but the V3 body primitives (CreateAccentDotLabel +
--- CreateSettingsCardGroup, driven by each provider's local MakeLayout) do not,
--- so those bodies would render every section. Each provider's MakeLayout returns
--- THIS inert layout instead when the flag is on: it mirrors the MakeLayout
--- contract (headerAt / sectionAt / closeSection / placeCustom / sections /
--- relayoutSections) so the build body runs unchanged, but the section builders
--- are no-ops, custom blocks are hidden, and the appended Position collapsible +
--- settings link are the only things laid out. Any widgets the body still creates
--- against sectionAt().frame land on a hidden throwaway frame that ClearContent's
--- child sweep reclaims on the next drawer rebuild.
 function Utils.MakeSuppressedProviderLayout(content)
     local sections = {}
     ---@type fun(...)
     local noop = function() end
 
-    -- Hidden host for widgets the provider body creates against sectionAt().frame.
-    -- Parented to content so ClearContent releases it (and its descendants).
     local trash = CreateFrame("Frame", nil, content)
     trash:Hide()
     trash:SetSize(1, 1)
@@ -375,8 +287,6 @@ function Utils.MakeSuppressedProviderLayout(content)
         headerAt = noop,
         sectionAt = function() return stubSection end,
         closeSection = noop,
-        -- Custom blocks are created by the body before placeCustom is called;
-        -- hide them so they do not float at the default anchor.
         placeCustom = function(frame)
             if frame and frame.Hide then frame:Hide() end
         end,
@@ -396,10 +306,6 @@ function Utils.MakeSuppressedProviderLayout(content)
 
     return L
 end
-
----------------------------------------------------------------------------
--- BUILD POSITION COLLAPSIBLE
----------------------------------------------------------------------------
 
 function Utils.BuildPositionCollapsible(content, frameKey, anchorOpts, sections, relayout)
     local AnchorOpts = ns.QUI_Anchoring_Options
@@ -433,10 +339,6 @@ function Utils.BuildPositionCollapsible(content, frameKey, anchorOpts, sections,
     end
 end
 
----------------------------------------------------------------------------
--- OPEN FULL SETTINGS LINK
----------------------------------------------------------------------------
-
 local function ResolveTileDisplayName(tileId)
     local GUI = QUI and QUI.GUI
     local frame = GUI and GUI.MainFrame
@@ -450,14 +352,6 @@ local function ResolveTileDisplayName(tileId)
     return tileId
 end
 
---[[
-    Utils.BuildOpenFullSettingsLink(content, providerKey, sections, relayout)
-
-    Renders a clickable "Open [Tile] settings" link row as the last section
-    of a Layout Mode provider panel. Clicking closes Layout Mode, opens /qui,
-    and navigates V2 to the mapped tile + sub-page. No-op for providers
-    without a V2 mapping.
-]]
 function Utils.BuildOpenFullSettingsLink(content, providerKey, sections, relayout)
     local Settings = ns.Settings
     local Nav = Settings and Settings.Nav
@@ -538,17 +432,17 @@ function Utils.BuildOpenFullSettingsLink(content, providerKey, sections, relayou
     row:SetScript("OnLeave", function() SetLinkColor(accent[1], accent[2], accent[3], 1) end)
     row:SetScript("OnClick", function()
         if feature and type(feature.onNavigate) == "function" then
-            pcall(feature.onNavigate, providerKey, route, {
+            ns.SafeCall("bulkhead", feature.onNavigate, providerKey, route, {
                 source = "layoutmode",
             })
         end
         if _G.QUI_ToggleLayoutMode then
-            pcall(_G.QUI_ToggleLayoutMode)
+            ns.SafeCall("bulkhead", _G.QUI_ToggleLayoutMode)
         end
         if QUI and QUI.SlashCommandOpen then
-            pcall(QUI.SlashCommandOpen, QUI, "")
+            QUI:SlashCommandOpen("")
         elseif GUI and GUI.Toggle then
-            pcall(GUI.Toggle, GUI)
+            GUI:Toggle()
         end
         local frame = GUI and GUI.MainFrame
         if frame and GUI.FindV2TileByID and GUI.SelectFeatureTile then
@@ -562,20 +456,9 @@ function Utils.BuildOpenFullSettingsLink(content, providerKey, sections, relayou
     if relayout then relayout() end
 end
 
----------------------------------------------------------------------------
--- WIDGET ROW HELPER (delegates to Helpers)
----------------------------------------------------------------------------
-
 Utils.PlaceRow = Helpers.PlaceRow
 Utils.EnsureDefaults = Helpers.EnsureDefaults
 
----------------------------------------------------------------------------
--- FRAME SIZE SECTION
--- Width/Height sliders bound through a proxy table. Used by Layout Mode
--- mover panels for resizable frames (damage meter windows, ChatFrame1).
--- opts.getSize() must return (width, height); opts.setSize(w, h) applies +
--- persists. Caller controls clamps and persistence path.
----------------------------------------------------------------------------
 function Utils.BuildSizeCollapsible(content, opts, sections, relayout)
     local GUI = QUI and QUI.GUI
     if not GUI or type(opts) ~= "table"
@@ -621,53 +504,17 @@ function Utils.BuildSizeCollapsible(content, opts, sections, relayout)
         Utils.PlaceRow(heightSlider, body, sy)
     end, sections, relayout)
 
-    -- Corner-drag resize grips change the live frame size directly, but these
-    -- sliders read the live size only at build time — so without a re-sync the
-    -- panel keeps showing the pre-drag value. Register a refresher the grips
-    -- call on mouse-up. Only one mover drawer is open at a time, so a single
-    -- module-level slot is sufficient; the most recently built size section
-    -- wins, which is exactly the element whose grips can fire.
     Utils._activeSizeSliderRefresh = function()
         if widthSlider and widthSlider.SetValue then widthSlider:SetValue(proxy.width) end
         if heightSlider and heightSlider.SetValue then heightSlider:SetValue(proxy.height) end
     end
 end
 
--- Called by resize grips (ChatFrame1, damage meter windows) after a corner
--- drag so the Layout Mode Frame Size sliders re-read the live dimensions.
--- Safe no-op when no size section is currently built.
 function Utils.RefreshActiveSizeSliders()
     local fn = Utils._activeSizeSliderRefresh
     if type(fn) ~= "function" then return end
     local ok, err = pcall(fn)
     if not ok and geterrorhandler then geterrorhandler()(err) end
-end
-
----------------------------------------------------------------------------
--- BACKDROP & BORDER SECTION (shared by combatTimer, brezCounter)
----------------------------------------------------------------------------
-
-function Utils.BuildBackdropBorderSection(content, db, sections, relayout, Refresh)
-    local GUI = QUI and QUI.GUI
-    if not GUI then return end
-
-    Utils.CreateCollapsible(content, ns.L["Backdrop & Border"], 7 * Utils.FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = Utils.PlaceRow(GUI:CreateFormCheckbox(body, ns.L["Show Backdrop"], "showBackdrop", db, Refresh,
-            { description = "Draw a semi-transparent backdrop behind this frame so it's easier to see against busy scenes." }), body, sy)
-        sy = Utils.PlaceRow(GUI:CreateFormColorPicker(body, ns.L["Backdrop Color"], "backdropColor", db, Refresh, nil,
-            { description = ns.L["Color and opacity used for the backdrop when Show Backdrop is on."] }), body, sy)
-        sy = Utils.PlaceRow(GUI:CreateFormCheckbox(body, "Hide Border", "hideBorder", db, Refresh,
-            { description = "Hide the border outline entirely. Overrides the Border Size, Class Color, Accent Color, and Border Color controls below." }), body, sy)
-        sy = Utils.PlaceRow(GUI:CreateFormSlider(body, "Border Size", 1, 5, 0.5, "borderSize", db, Refresh, nil,
-            { description = "Border thickness in pixels. Ignored while Hide Border is on." }), body, sy)
-        sy = Utils.PlaceRow(GUI:CreateFormCheckbox(body, "Class Color Border", "useClassColorBorder", db, Refresh,
-            { description = "Tint the border with your class color. Takes precedence over Accent Color Border and the Border Color swatch." }), body, sy)
-        sy = Utils.PlaceRow(GUI:CreateFormCheckbox(body, "Accent Color Border", "useAccentColorBorder", db, Refresh,
-            { description = "Tint the border with the QUI accent color. Ignored if Class Color Border is on." }), body, sy)
-        Utils.PlaceRow(GUI:CreateFormColorPicker(body, ns.L["Border Color"], "borderColor", db, Refresh, nil,
-            { description = "Fallback border color used when neither Class Color nor Accent Color is on." }), body, sy)
-    end, sections, relayout)
 end
 
 do

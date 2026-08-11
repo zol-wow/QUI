@@ -108,6 +108,17 @@ function ClearInspectPlayer() end
 local ns = {
     Helpers = {
         IsSecretValue = function() return false end,
+        -- Real core/utils.lua helpers used by the module (secret-fold to
+        -- nil / nil-compare); the harness never feeds a secret, so these
+        -- behave as identity / plain == exactly like the shipped Helpers.
+        SafeValue = function(value, fallback)
+            if issecretvalue and issecretvalue(value) then return fallback end
+            return value
+        end,
+        SafeCompare = function(a, b)
+            if issecretvalue and (issecretvalue(a) or issecretvalue(b)) then return nil end
+            return a == b
+        end,
         GetModuleDB = function(name)
             if name == "tooltip" then
                 return { enabled = true, showPlayerItemLevel = true }
@@ -115,8 +126,15 @@ local ns = {
             return nil
         end,
     },
+    SafeCall = function(_policy, fn, ...)
+        return pcall(fn, ...)
+    end,
+    SafeCallMethod = function(_policy, obj, name, ...)
+        return pcall(function(...) return obj[name](obj, ...) end, ...)
+    end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
 }
-assert(loadfile("QUI_QoL/qol/tooltip_inspect.lua"))("QUI_QoL", ns)
+assert(loadfile("modules/qol/tooltip_inspect.lua"))("QUI_QoL", ns)
 local TooltipInspect = assert(ns.TooltipInspect, "module must export ns.TooltipInspect")
 
 ------------------------------------------------------------------------------

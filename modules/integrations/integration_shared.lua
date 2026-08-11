@@ -1,19 +1,8 @@
---[[
-    QUI Integration Shared Helpers
-    Shared resolution logic used by the third-party integration modules.
-    Loaded before each consumer in QUI.toc.
-]]
-
 local ADDON_NAME, ns = ...
 
 local IntegrationShared = {}
 ns.QUI_IntegrationShared = IntegrationShared
 
----------------------------------------------------------------------------
--- ANCHOR FRAME RESOLUTION
--- Resolves a QUI element name to its live frame. Shared verbatim across the
--- three integration modules.
----------------------------------------------------------------------------
 function IntegrationShared.GetAnchorFrame(anchorName)
     if not anchorName or anchorName == "disabled" then
         return nil
@@ -21,7 +10,6 @@ function IntegrationShared.GetAnchorFrame(anchorName)
 
     local QUICore = ns.Addon
 
-    -- Hardcoded QUI element map
     if anchorName == "essential" then
         return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
     elseif anchorName == "utility" then
@@ -38,7 +26,6 @@ function IntegrationShared.GetAnchorFrame(anchorName)
         return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.target
     end
 
-    -- Registry fallback
     if ns.QUI_Anchoring and ns.QUI_Anchoring.GetAnchorTarget then
         return ns.QUI_Anchoring:GetAnchorTarget(anchorName)
     end
@@ -46,15 +33,6 @@ function IntegrationShared.GetAnchorFrame(anchorName)
     return nil
 end
 
----------------------------------------------------------------------------
--- ANCHORED-FRAMES HOOK / RETRY
--- Each integration module owns its own retry timer + hook-installed flag.
--- These factories build per-module closures so the bookkeeping stays distinct
--- while the (previously copy-pasted) bodies live in one place.
----------------------------------------------------------------------------
-
--- Returns a QueueRetry function that debounces a 1s retry calling
--- ns[moduleName]:ApplyAllPositions(). State is captured per call site.
 function IntegrationShared.MakeQueueRetry(moduleName)
     local retryTimer
     return function()

@@ -1,23 +1,13 @@
---[[
-    QUI BigWigs Integration Module
-    Anchors BigWigs normal/emphasized bars to QUI elements via proxy frames.
-]]
-
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 
----------------------------------------------------------------------------
--- MODULE TABLE
----------------------------------------------------------------------------
 local QUI_BigWigs = {}
 ns.QUI_BigWigs = QUI_BigWigs
 
--- Pending combat/deferred updates
 local pendingUpdate = false
 
--- Proxy frames for BigWigs custom anchor points
 local PROXY_NAMES = {
     normal = "QUI_BigWigs_NormalAnchorProxy",
     emphasized = "QUI_BigWigs_EmphasizedAnchorProxy",
@@ -26,9 +16,6 @@ local PROXY_NAMES = {
 local proxies = {}
 local originalPositions = {}
 
----------------------------------------------------------------------------
--- DATABASE ACCESS
----------------------------------------------------------------------------
 local function GetDB()
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.bigWigs then
         return QUICore.db.profile.bigWigs
@@ -36,9 +23,6 @@ local function GetDB()
     return nil
 end
 
----------------------------------------------------------------------------
--- BIGWIGS AVAILABILITY
----------------------------------------------------------------------------
 local function GetBarsPlugin()
     if type(BigWigs) ~= "table" or type(BigWigs.GetPlugin) ~= "function" then
         return nil
@@ -65,18 +49,13 @@ function QUI_BigWigs:IsAvailable()
     return false
 end
 
----------------------------------------------------------------------------
--- PROXY FRAMES (via UIKit.CreateAnchorProxy)
----------------------------------------------------------------------------
 local function BigWigsAnchorResolver(proxy, source)
-    -- Prefer SetAllPoints for exact mirror; fall back to center-based positioning
-    -- when the source frame restricts SetAllPoints (e.g. protected frames).
-    local ok = pcall(function()
+    local ok = ns.SafeCall("defer-ooc", function()
         proxy:ClearAllPoints()
         proxy:SetAllPoints(source)
     end)
     if not ok then
-        pcall(function()
+        ns.SafeCall("defer-ooc", function()
             local cx, cy = source:GetCenter()
             cx = Helpers.SafeValue(cx, nil)
             cy = Helpers.SafeValue(cy, nil)
@@ -112,7 +91,6 @@ local function EnsureProxy(key, anchorFrame)
     return proxy
 end
 
-
 local QueueRetry = ns.QUI_IntegrationShared.MakeQueueRetry("QUI_BigWigs")
 
 local function ClonePosition(pos)
@@ -143,18 +121,11 @@ local function TryInstallAnchoredFramesHook()
     return true
 end
 
----------------------------------------------------------------------------
--- ANCHOR FRAME RESOLUTION
----------------------------------------------------------------------------
 function QUI_BigWigs:GetAnchorFrame(anchorName)
     return ns.QUI_IntegrationShared.GetAnchorFrame(anchorName)
 end
 
----------------------------------------------------------------------------
--- APPLY TO BIGWIGS
----------------------------------------------------------------------------
 local function TriggerBigWigsProfileUpdate()
-    -- Preferred path: loader callback bus
     if type(BigWigsLoader) == "table" and type(BigWigsLoader.SendMessage) == "function" then
         local ok = pcall(BigWigsLoader.SendMessage, BigWigsLoader, "BigWigs_ProfileUpdate")
         if ok then
@@ -162,7 +133,6 @@ local function TriggerBigWigsProfileUpdate()
         end
     end
 
-    -- Fallback path: Bars plugin callback bus
     local bars = GetBarsPlugin()
     if bars and type(bars.SendMessage) == "function" then
         local ok = pcall(bars.SendMessage, bars, "BigWigs_ProfileUpdate")
@@ -174,8 +144,6 @@ local function TriggerBigWigsProfileUpdate()
     return false
 end
 
--- Resolve the Bars plugin + the position array for the given key, ensuring the
--- position array exists. Returns (bars, pos, positionKey) or nil.
 local function ResolveBarsProfilePos(key)
     local bars = GetBarsPlugin()
     if not bars or not bars.db or not bars.db.profile then
@@ -202,7 +170,6 @@ local function ApplyBarsProfilePosition(key, cfg, proxyName)
         db.backupPositions = {}
     end
 
-    -- Cache the user's pre-QUI position once so disable can restore it.
     if not originalPositions[key] and pos[5] ~= proxyName then
         originalPositions[key] = ClonePosition(pos)
     end
@@ -243,7 +210,6 @@ local function RestoreBarsProfilePosition(key, proxyName)
         pos[4] = source[4]
         pos[5] = source[5]
     elseif pos[5] == proxyName then
-        -- Fallback away from our proxy when no source/default is known.
         pos[1] = "CENTER"
         pos[2] = "CENTER"
         pos[3] = 0
@@ -256,9 +222,6 @@ local function RestoreBarsProfilePosition(key, proxyName)
     return TriggerBigWigsProfileUpdate()
 end
 
----------------------------------------------------------------------------
--- POSITIONING
----------------------------------------------------------------------------
 function QUI_BigWigs:ApplyPosition(key)
     local db = GetDB()
     if not db or not db[key] then
@@ -301,9 +264,6 @@ function QUI_BigWigs:ApplyAllPositions()
     self:ApplyPosition("emphasized")
 end
 
----------------------------------------------------------------------------
--- INITIALIZE
----------------------------------------------------------------------------
 function QUI_BigWigs:Initialize()
     if not self:IsAvailable() then
         return
@@ -312,9 +272,6 @@ function QUI_BigWigs:Initialize()
     self:ApplyAllPositions()
 end
 
----------------------------------------------------------------------------
--- EVENT HANDLING
----------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1)

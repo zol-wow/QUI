@@ -1,5 +1,5 @@
 local ROOT = "."
-local CACHE_PATH = "QUI_OptionsSearch/search_cache.lua"
+local CACHE_PATH = "QUI_Options/search_cache.lua"
 
 -- Manual override for features that legitimately emit zero declarative
 -- settings but can't be detected structurally — i.e., ProviderFeatures:Register
@@ -44,7 +44,11 @@ local function collect_lua_files()
     local files = {}
     for line in pipe:lines() do
         line = normalize_path(line)
-        if line ~= "" then
+        -- The generated cache now lives inside QUI_Options, which this
+        -- discovery walks. It is data, not a registration site; scanning it
+        -- would be pure cost and could invent references out of its own
+        -- serialized strings.
+        if line ~= "" and line ~= CACHE_PATH then
             files[#files + 1] = line
         end
     end
@@ -193,6 +197,44 @@ local function scan_source_features(files)
     return registered, tile_refs, imperative_features, no_search_features, scan_errors
 end
 
+-- The cache ships as a long-bracket STRING of POSITIONAL rows plus a schema
+-- header: row[i] is the field named schema[i]. Everything below this function
+-- reads records by field name, so rows are rehydrated here, indexing each row
+-- by its schema position.
+--
+-- `false` is the pinned absent marker -- the emitter reserves it (pack_emit.rows
+-- raises rather than write a literal false into a slot) precisely so that this
+-- inversion is exact and no row can be truncated by a trailing nil.
+local function rehydrate_rows(rows, order, group)
+    if type(rows) ~= "table" then
+        return nil, ("%s: %s is not an array of rows"):format(CACHE_PATH, group)
+    end
+    if type(order) ~= "table" or #order == 0 then
+        return nil, ("%s: schema.%s is missing or empty"):format(CACHE_PATH, group)
+    end
+
+    local out = {}
+    for index = 1, #rows do
+        local row = rows[index]
+        if type(row) ~= "table" then
+            return nil, ("%s: %s row %d is not a table"):format(CACHE_PATH, group, index)
+        end
+        if #row ~= #order then
+            return nil, ("%s: %s row %d has arity %d, schema declares %d")
+                :format(CACHE_PATH, group, index, #row, #order)
+        end
+        local record = {}
+        for slot = 1, #order do
+            local value = row[slot]
+            if value ~= false then
+                record[order[slot]] = value
+            end
+        end
+        out[index] = record
+    end
+    return out
+end
+
 local function load_cache()
     local ns = {}
     local chunk, err = loadfile(CACHE_PATH)
@@ -203,10 +245,38 @@ local function load_cache()
     if not ok then
         return nil, run_err
     end
-    if type(ns.QUI_SearchCache) ~= "table" then
-        return nil, CACHE_PATH .. " did not define ns.QUI_SearchCache"
+    if type(ns.QUI_SearchCachePacked) ~= "string" then
+        return nil, CACHE_PATH .. " did not define ns.QUI_SearchCachePacked"
     end
-    return ns.QUI_SearchCache
+    local schema = ns.QUI_SearchCacheSchema
+    if type(schema) ~= "table" then
+        return nil, CACHE_PATH .. " did not define ns.QUI_SearchCacheSchema"
+    end
+
+    -- core/pack.lua is the single place that loadstrings a packed payload, and
+    -- it raises unless the result is a table.
+    local pack_ns = {}
+    local pack_chunk, pack_err = loadfile("core/pack.lua")
+    if not pack_chunk then
+        return nil, pack_err
+    end
+    pack_chunk("QUI", pack_ns)
+
+    local unpacked
+    ok, unpacked = pcall(pack_ns.Unpack, ns.QUI_SearchCachePacked, "@" .. CACHE_PATH)
+    if not ok then
+        return nil, unpacked
+    end
+
+    local cache = { version = unpacked.version }
+    for _, group in ipairs({ "settings", "navigation" }) do
+        local records, rehydrate_err = rehydrate_rows(unpacked[group], schema[group], group)
+        if not records then
+            return nil, rehydrate_err
+        end
+        cache[group] = records
+    end
+    return cache
 end
 
 local function count_by_feature(entries)
@@ -252,14 +322,10 @@ end
 local function entry_haystack(entry)
     local parts = {
         entry.label or "",
+        entry.sourceLabel or "",
         entry.tabName or "",
         entry.subTabName or "",
         entry.sectionName or "",
-        entry.featureId or "",
-        entry.providerKey or "",
-        entry.category or "",
-        entry.surfaceTabKey or "",
-        entry.surfaceUnitKey or "",
     }
     if type(entry.keywords) == "table" then
         for _, keyword in ipairs(entry.keywords) do
@@ -302,8 +368,72 @@ local function count_query_hits(cache, query)
     return total
 end
 
+-- Tile -> the file whose TAB_DEFINITIONS list is that tile's live tab set.
+-- Scanned textually, in keeping with the rest of this tool (it is a source
+-- scanner, not a loader). NOTE the group/unit *_schema.lua files also contain
+-- the literal "TAB_DEFINITIONS"; the model paths below are the authoritative
+-- ones and are named explicitly for that reason.
+local TILE_TAB_SOURCES = {
+    group_frames = "QUI_GroupFrames/groupframes/settings/group_frames_model.lua",
+    unit_frames = "QUI_UnitFrames/unitframes/settings/unit_frames_model.lua",
+    nameplates = "QUI_Nameplates/nameplates/settings/nameplates_model.lua",
+    cooldown_manager = "QUI_CDM/cdm/settings/containers_page.lua",
+}
+
+-- surfaceTabKey is set from whatever key the schema's context factory was
+-- called with, and a few call sites pass a SECTION key rather than a tab key.
+-- Those resolve to their host tab via subTabIndex, so they are legal -- but
+-- they are not tabs and must not be treated as dead routes.
+-- group_frames_schema.lua:2250 calls CreateSearchContext("healer"); the healer
+-- section lives inside the General tab.
+local SECTION_SURFACE_KEYS = {
+    ["group_frames::healer"] = true,
+}
+
+local function collect_live_tab_keys(path)
+    local text, err = read_file(path)
+    if not text then
+        return nil, err
+    end
+    local block = text:match("local TAB_DEFINITIONS = (%b{})")
+    if not block then
+        return nil, "no TAB_DEFINITIONS table in " .. path
+    end
+    -- Strip comments before scanning: a commented-out entry must read as
+    -- ABSENT. Scanning raw text makes `-- { key = "auras", ... }` register as
+    -- a live tab, so the guard would pass a disabled tab whose cache rows now
+    -- point nowhere -- exactly the failure it exists to catch. This also
+    -- strips a `--` appearing inside a string literal, but the failure mode
+    -- of that is dropping a key, which makes the guard STRICTER (a false
+    -- "dead route" to investigate), never blinder. Erring toward false
+    -- positives is the right bias for a safety check.
+    local scannable = block:gsub("%-%-[^\n]*", "")
+    local keys = {}
+    for key in scannable:gmatch("key%s*=%s*[\"']([%w_]+)[\"']") do
+        keys[key] = true
+    end
+    if not next(keys) then
+        return nil, "TAB_DEFINITIONS in " .. path .. " yielded no keys"
+    end
+    return keys
+end
+
+-- Test seam: tests/unit/search_cache_route_guard_test.lua needs to exercise
+-- collect_live_tab_keys directly, against throwaway fixture files, without
+-- paying for -- or risking the os.exit side effects of -- the full CLI run
+-- that merely loading this script would otherwise trigger (file discovery,
+-- cache loading, argument validation). Passing this sentinel as the chunk's
+-- first argument (loadfile(path)(LIB_MODE_SENTINEL)) short-circuits straight
+-- to a small library table before any of that runs. Normal CLI invocation
+-- (`lua tools/audit_search_cache.lua ...`) never passes this, so it is a
+-- no-op for the tool's real usage.
+if ... == "__AUDIT_SEARCH_CACHE_LIB_MODE__" then
+    return { collect_live_tab_keys = collect_live_tab_keys }
+end
+
 local args = { ... }
 local strict_tiles = false
+local strict_routes = false
 local verbose = false
 local queries = {}
 
@@ -312,6 +442,8 @@ while index <= #args do
     local arg = args[index]
     if arg == "--strict-tiles" then
         strict_tiles = true
+    elseif arg == "--strict-routes" then
+        strict_routes = true
     elseif arg == "--verbose" then
         verbose = true
     elseif arg == "--query" then
@@ -320,7 +452,7 @@ while index <= #args do
     elseif arg:match("^%-%-query=") then
         queries[#queries + 1] = arg:match("^%-%-query=(.*)$") or ""
     elseif arg == "--help" or arg == "-h" then
-        print("Usage: lua tools/audit_search_cache.lua [--strict-tiles] [--verbose] [--query TEXT]")
+        print("Usage: lua tools/audit_search_cache.lua [--strict-tiles] [--strict-routes] [--verbose] [--query TEXT]")
         print("Run from the repository root after lua tools/generate_search_cache.lua.")
         os.exit(0)
     else
@@ -394,6 +526,45 @@ for _, query in ipairs(queries) do
         errors[#errors + 1] = "query has zero cache hits: " .. query
     elseif verbose then
         print("query hits: " .. query .. "=" .. tostring(hits))
+    end
+end
+
+if strict_routes then
+    local live_tabs, resolve_errors = {}, {}
+    for tile, path in pairs(TILE_TAB_SOURCES) do
+        local keys, tab_err = collect_live_tab_keys(path)
+        if keys then
+            live_tabs[tile] = keys
+        else
+            resolve_errors[#resolve_errors + 1] = tile .. ": " .. tostring(tab_err)
+        end
+    end
+    for _, message in ipairs(resolve_errors) do
+        errors[#errors + 1] = "cannot resolve live tabs: " .. message
+    end
+
+    -- Report coverage rather than silently checking a subset.
+    local checked, skipped_tiles = 0, {}
+    for _, group in ipairs({ "settings", "navigation" }) do
+        for _, entry in ipairs(cache[group] or {}) do
+            local tile, key = entry.tileId, entry.surfaceTabKey
+            if type(key) == "string" and key ~= "" and type(tile) == "string" then
+                local tabs = live_tabs[tile]
+                if not tabs then
+                    skipped_tiles[tile] = true
+                elseif not tabs[key] and not SECTION_SURFACE_KEYS[tile .. "::" .. key] then
+                    checked = checked + 1
+                    errors[#errors + 1] = ("dead surface route: %s group=%s tileId=%s surfaceTabKey=%s label=%s")
+                        :format(tostring(entry.featureId), group, tile, key, tostring(entry.label))
+                else
+                    checked = checked + 1
+                end
+            end
+        end
+    end
+    print("  route check: " .. tostring(checked) .. " rows verified against live TAB_DEFINITIONS")
+    for tile in pairs(skipped_tiles) do
+        print("  route check SKIPPED (no TAB_DEFINITIONS source mapped): " .. tile)
     end
 end
 

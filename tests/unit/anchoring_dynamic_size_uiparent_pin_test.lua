@@ -46,7 +46,7 @@ check("AnchorOrPin start found", anchorOrPinStart ~= nil)
 
 if anchorOrPinStart then
     -- Extract a generous chunk of the function (up to ~50 lines)
-    local funcBody = src:sub(anchorOrPinStart, anchorOrPinStart + 2000)
+    local funcBody = src:sub(anchorOrPinStart, anchorOrPinStart + 2600)
 
     check("AnchorOrPin gates on IsDynamicSizeAnchorKey(key)",
         funcBody:find("IsDynamicSizeAnchorKey(key)", 1, true) ~= nil)
@@ -103,8 +103,8 @@ end
 -- -------------------------------------------------------------------------
 -- 4. ApplyFrameAnchor: the four converted sites now call AnchorOrPin,
 --    and SmoothSetPoint is NOT called directly for those sites.
---    Verify: direct calls (AnchorOrPin() and pcall(AnchorOrPin,...)) total == 4.
---    SmoothSetPoint still exists in the file (boss-array branch & others).
+--    Verify: direct calls (AnchorOrPin() and ns.SafeCall(policy, AnchorOrPin,...))
+--    total == 4. SmoothSetPoint still exists in the file (boss-array branch & others).
 -- -------------------------------------------------------------------------
 -- Count direct calls: "AnchorOrPin(key," pattern.
 -- NOTE: the "local function AnchorOrPin(key," definition line also matches this
@@ -114,9 +114,10 @@ for _ in src:gmatch("AnchorOrPin%(key,") do
     directCalls = directCalls + 1
 end
 directCalls = directCalls - 1  -- subtract 1 for the definition line
--- Count pcall-wrapped calls: "pcall(AnchorOrPin," pattern
+-- Count SafeCall-wrapped calls: 'ns.SafeCall("...", AnchorOrPin, ' pattern
+-- (Task 45d converted the prior bare 'pcall(AnchorOrPin,' sites to this form).
 local pcallCalls = 0
-for _ in src:gmatch("pcall%(AnchorOrPin,") do
+for _ in src:gmatch('ns%.SafeCall%("[%w%-]+",%s*AnchorOrPin,') do
     pcallCalls = pcallCalls + 1
 end
 local totalAnchorOrPinCalls = directCalls + pcallCalls
@@ -141,6 +142,49 @@ if updateFuncStart then
         updateBody:find('"buffIcon"', 1, true) ~= nil)
     check("buffBar is in the QUI_UpdateFramesAnchoredTo in-combat whitelist",
         updateBody:find('"buffBar"', 1, true) ~= nil)
+    check("buffFrame is in the QUI_UpdateFramesAnchoredTo in-combat whitelist",
+        updateBody:find('"buffFrame"', 1, true) ~= nil)
+    check("debuffFrame is in the QUI_UpdateFramesAnchoredTo in-combat whitelist",
+        updateBody:find('"debuffFrame"', 1, true) ~= nil)
+end
+
+-- -------------------------------------------------------------------------
+-- 5b. Split player aura frames are both first-class anchor targets.
+-- -------------------------------------------------------------------------
+check("debuffFrame is a dynamic reanchor key",
+    src:find("debuffFrame = true", src:find("local DYNAMIC_REANCHOR_KEYS", 1, true) or 1, true) ~= nil)
+
+local frameResolversStart = src:find("local FRAME_RESOLVERS = {", 1, true)
+check("FRAME_RESOLVERS table found", frameResolversStart ~= nil)
+if frameResolversStart then
+    check("FRAME_RESOLVERS has buffFrame resolver",
+        src:find("buffFrame = function()", frameResolversStart, true) ~= nil and
+        src:find('"QUI_BuffIconContainer"', frameResolversStart, true) ~= nil)
+    check("FRAME_RESOLVERS has debuffFrame resolver",
+        src:find("debuffFrame = function()", frameResolversStart, true) ~= nil and
+        src:find('"QUI_DebuffIconContainer"', frameResolversStart, true) ~= nil)
+end
+
+local anchorInfoStart = src:find("local FRAME_ANCHOR_INFO = {", 1, true)
+check("FRAME_ANCHOR_INFO table found", anchorInfoStart ~= nil)
+if anchorInfoStart then
+    local infoBody = src:sub(anchorInfoStart, anchorInfoStart + 7000)
+    check("FRAME_ANCHOR_INFO lists buffFrame",
+        infoBody:find("buffFrame", 1, true) ~= nil and
+        infoBody:find("Buff Frame", 1, true) ~= nil)
+    check("FRAME_ANCHOR_INFO lists debuffFrame",
+        infoBody:find("debuffFrame", 1, true) ~= nil and
+        infoBody:find("Debuff Frame", 1, true) ~= nil)
+end
+
+local dynSizeStart = src:find("local DYNAMIC_SIZE_ANCHOR_KEYS = {", 1, true)
+check("DYNAMIC_SIZE_ANCHOR_KEYS table found", dynSizeStart ~= nil)
+if dynSizeStart then
+    local dynBody = src:sub(dynSizeStart, dynSizeStart + 1800)
+    check("buffFrame is a dynamic-size anchor key",
+        dynBody:find("buffFrame = true", 1, true) ~= nil)
+    check("debuffFrame is a dynamic-size anchor key",
+        dynBody:find("debuffFrame = true", 1, true) ~= nil)
 end
 
 -- -------------------------------------------------------------------------

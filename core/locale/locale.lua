@@ -1,29 +1,27 @@
 local ADDON_NAME, ns = ...
 
--- Locale data is populated before this file by core/locale/enUS.lua (base,
--- always) and the active core/locale/<locale>.lua (guarded; sets .active only
--- when GetLocale() matches). Both write into ns.LocaleData.
 local data = ns.LocaleData or {}
 ns.LocaleData = data
 
-local base   = data.enUS or {}
-local localizationEnabled = true
-if type(ns.IsLocalizationEnabled) == "function" then
-    localizationEnabled = ns.IsLocalizationEnabled()
+local keys   = data.keys or {}
+local active = data.active
+
+local ids = {}
+if active then
+    for index = 1, #keys do
+        ids[keys[index]] = index
+    end
 end
 
-local active = localizationEnabled and data.active or nil -- nil on enUS clients / unknown locales
-
--- Resolution: active translation -> enUS base -> the literal key.
--- Never returns nil, so an un-extracted or untranslated string renders English.
 ns.L = setmetatable({}, {
     __index = function(_, key)
         if active then
-            local v = active[key]
-            if v ~= nil then return v end
+            local id = ids[key]
+            if id then
+                local v = active[id]
+                if v ~= nil then return v end
+            end
         end
-        local b = base[key]
-        if b ~= nil then return b end
         return key
     end,
 })

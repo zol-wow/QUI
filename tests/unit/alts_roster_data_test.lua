@@ -1,7 +1,7 @@
 -- tests/unit/alts_roster_data_test.lua
 -- Run: lua tests/unit/alts_roster_data_test.lua
 local ns = {}
-local chunk = assert(loadfile("QUI_Alts/alts/roster_data.lua"))
+local chunk = assert(loadfile("modules/alts/roster_data.lua"))
 chunk("QUI", ns)
 local RD = ns.Alts.RosterData
 

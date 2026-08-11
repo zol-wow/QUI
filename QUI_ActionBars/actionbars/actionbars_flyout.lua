@@ -4,11 +4,13 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
-do -- spell flyout skinning
+---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
+
+do
 
 spellFlyoutSkinHooked = false
 
-do -- owned spell flyout (retail migration)
+do
 
 USE_OWNED_FLYOUT = (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE)
 ActionBarsOwned.useOwnedFlyout = USE_OWNED_FLYOUT
@@ -33,10 +35,10 @@ function ApplyOwnedFlyoutButtonVisuals(button, spellID)
         local texture
         if spellID then
             if C_Spell and C_Spell.GetSpellTexture then
-                local ok, result = pcall(C_Spell.GetSpellTexture, spellID)
+                local ok, result = ns.SafeCall("best-effort-style", C_Spell.GetSpellTexture, spellID)
                 if ok then texture = result end
             elseif GetSpellTexture then
-                local ok, result = pcall(GetSpellTexture, spellID)
+                local ok, result = ns.SafeCall("best-effort-style", GetSpellTexture, spellID)
                 if ok then texture = result end
             end
         end
@@ -50,11 +52,6 @@ function ApplyOwnedFlyoutButtonVisuals(button, spellID)
     if button.Name then button.Name:SetText("") end
     if button.Count then button.Count:SetText("") end
 
-    -- State textures + hit rect are static button-level setup, applied once
-    -- at button creation in EnsureOwnedFlyoutButton. Re-running here would
-    -- call SetHitRectInsets from the tainted secure-CallMethod context that
-    -- triggers this update, and that method is protected on SecureAction
-    -- buttons.
     if InCombatLockdown() then return end
     local sourceButton = ownedFlyout and ownedFlyout:GetParent()
     local settings = GetOwnedFlyoutSettings(sourceButton)
@@ -63,9 +60,6 @@ function ApplyOwnedFlyoutButtonVisuals(button, spellID)
     end
 end
 
--- DurationObject-driven CD swipe for popup buttons (no `action` slot, so the
--- ActionBarsOwned action-cooldown loop can't drive these — we mirror Blizzard
--- spell cooldowns directly via the only remaining secret-safe setter).
 function UpdateOwnedFlyoutButtonCooldown(button)
     if not button then return end
     local cooldown = button.cooldown or button.Cooldown
@@ -81,21 +75,14 @@ function UpdateOwnedFlyoutButtonCooldown(button)
     local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
     local chargeInfo = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
 
-    -- This runs via secure CallMethod from the flyout snippet, so any field
-    -- on cdInfo / chargeInfo may be secret. Comparing secret numbers errors;
-    -- coerce through Helpers before gating display.
-    local cur = Helpers.SafeToNumber(chargeInfo and chargeInfo.currentCharges, 0)
-    local max = Helpers.SafeToNumber(chargeInfo and chargeInfo.maxCharges, 0)
+    local cur = Helpers.SafeToNumber(chargeInfo and chargeInfo.currentCharges, 0) -- @secret-safe: SpellChargeInfo container is a plain table-or-nil; the secret-capable field goes to the unwrap
+    local max = Helpers.SafeToNumber(chargeInfo and chargeInfo.maxCharges, 0) -- @secret-safe: SpellChargeInfo container is a plain table-or-nil; maxCharges is NeverSecret and goes to the unwrap
     local showCharge = max > 0 and cur < max
 
-    local enabled = Helpers.SafeValue(cdInfo and cdInfo.isEnabled, false)
-    local dur     = Helpers.SafeToNumber(cdInfo and cdInfo.duration, 0)
-    local showNormal = enabled and dur > 0
+    local showNormal = Helpers.SafeValue(cdInfo and cdInfo.isActive, false) -- @secret-safe: SpellCooldownInfo container is a plain table-or-nil; isActive is NeverSecret and goes to the unwrap
 
     if showNormal then
-        -- ignoreGCD=true so the flyout button's swipe tracks the spell's
-        -- real cooldown instead of being masked by the 1.5s GCD sweep.
-        local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID, true)
+        local ok, durObj = ns.SafeCall("best-effort-style", C_Spell.GetSpellCooldownDuration, spellID, true)
         if ok and durObj then
             cooldown:SetCooldownFromDurationObject(durObj)
         else
@@ -114,7 +101,7 @@ function UpdateOwnedFlyoutButtonCooldown(button)
             cd:SetFrameLevel(button:GetFrameLevel())
             button.chargeCooldown = cd
         end
-        local ok, durObj = pcall(C_Spell.GetSpellChargeDuration, spellID)
+        local ok, durObj = ns.SafeCall("best-effort-style", C_Spell.GetSpellChargeDuration, spellID)
         if ok and durObj then
             button.chargeCooldown:SetCooldownFromDurationObject(durObj)
         else
@@ -147,22 +134,11 @@ EnsureOwnedFlyoutFrame = function()
 
     ownedFlyout = CreateFrame("Frame", "QUI_SpellFlyout", UIParent, "SecureHandlerBaseTemplate")
     ownedFlyout:SetFrameStrata("DIALOG")
-    -- Lock the strata. The secure HandleFlyout snippet reparents this frame
-    -- onto the clicked action button (self:SetParent(parent)). A non-fixed
-    -- frame *inherits its new parent's strata* on reparent (see Blizzard's
-    -- PlayerCastingBarFrame: SetFixedFrameStrata(false) is commented "Inherit
-    -- parent strata"), which would drop the flyout from DIALOG down to the
-    -- action bar's strata and let group/raid frames render on top of it.
-    -- Fixing the strata makes DIALOG survive every reparent.
     if ownedFlyout.SetFixedFrameStrata then
         ownedFlyout:SetFixedFrameStrata(true)
     end
     ownedFlyout:SetClampedToScreen(true)
     ownedFlyout:Hide()
-    -- Background tint lives directly on the flyout frame's BACKGROUND layer, not
-    -- on a separate child frame. A sibling child frame shares the popup buttons'
-    -- frame level, so its texture can draw *over* the button icons and dim them;
-    -- a parent's own draw layers always render beneath its child button frames.
     ownedFlyout.BackgroundTex = ownedFlyout:CreateTexture(nil, "BACKGROUND")
     ownedFlyout.BackgroundTex:SetAllPoints()
     ownedFlyout.BackgroundTex:SetColorTexture(0, 0, 0, 0.35)
@@ -391,11 +367,35 @@ function PopulateOwnedFlyoutInfoEntry(info, flyoutID, numSlots, isKnown)
     end
 end
 
+local ownedFlyoutIDScratch = {}
+local function CollectOwnedFlyoutIDs(out)
+    wipe(out)
+    if not (C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines) then return out end
+    local playerBank = Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
+    local flyoutType = Enum.SpellBookItemType and Enum.SpellBookItemType.Flyout or 4
+    for lineIndex = 1, C_SpellBook.GetNumSpellBookSkillLines() do
+        local lineInfo = C_SpellBook.GetSpellBookSkillLineInfo(lineIndex)
+        if lineInfo and lineInfo.numSpellBookItems then
+            for i = 1, lineInfo.numSpellBookItems do
+                local slotIndex = (lineInfo.itemIndexOffset or 0) + i
+                local itemType, actionID = C_SpellBook.GetSpellBookItemType(slotIndex, playerBank)
+                if (itemType == flyoutType or itemType == "FLYOUT")
+                    and type(actionID) == "number" and actionID > 0 then
+                    out[#out + 1] = actionID
+                end
+            end
+        end
+    end
+    return out
+end
+
 function DiscoverOwnedFlyoutInfo()
     wipe(ownedFlyoutInfo)
 
-    for flyoutID = 1, 300 do
-        local ok, _, _, numSlots, isKnown = pcall(GetFlyoutInfo, flyoutID)
+    CollectOwnedFlyoutIDs(ownedFlyoutIDScratch)
+    for i = 1, #ownedFlyoutIDScratch do
+        local flyoutID = ownedFlyoutIDScratch[i]
+        local ok, _, _, numSlots, isKnown = ns.SafeCall("best-effort-style", GetFlyoutInfo, flyoutID)
         if ok and type(numSlots) == "number" and numSlots > 0 then
             local info = { slots = {} }
             PopulateOwnedFlyoutInfoEntry(info, flyoutID, numSlots, isKnown)
@@ -414,8 +414,10 @@ function UpdateOwnedFlyoutInfo()
 
     local seen = ownedFlyoutSeen
     wipe(seen)
-    for flyoutID = 1, 300 do
-        local ok, _, _, numSlots, isKnown = pcall(GetFlyoutInfo, flyoutID)
+    CollectOwnedFlyoutIDs(ownedFlyoutIDScratch)
+    for i = 1, #ownedFlyoutIDScratch do
+        local flyoutID = ownedFlyoutIDScratch[i]
+        local ok, _, _, numSlots, isKnown = ns.SafeCall("best-effort-style", GetFlyoutInfo, flyoutID)
         if ok and type(numSlots) == "number" and numSlots > 0 then
             local info = ownedFlyoutInfo[flyoutID] or { slots = {} }
             PopulateOwnedFlyoutInfoEntry(info, flyoutID, numSlots, isKnown)
@@ -455,21 +457,22 @@ SyncOwnedFlyoutInfoToHandler = function()
 
     UpdateOwnedFlyoutInfo()
     local maxNumSlots = 0
-    local data = "QUI_FlyoutInfo = newtable();\n"
+    local lines = { "QUI_FlyoutInfo = newtable();\n" }
     for flyoutID, info in pairs(ownedFlyoutInfo) do
         if info and info.slots and #info.slots > 0 then
             if #info.slots > maxNumSlots then
                 maxNumSlots = #info.slots
             end
 
-            data = data .. ("QUI_FlyoutInfo[%d] = newtable();QUI_FlyoutInfo[%d].slots = newtable();\n"):format(flyoutID, flyoutID)
+            lines[#lines + 1] = ("QUI_FlyoutInfo[%d] = newtable();QUI_FlyoutInfo[%d].slots = newtable();\n"):format(flyoutID, flyoutID)
             for slotID, slotInfo in ipairs(info.slots) do
                 local spellID = (slotInfo and type(slotInfo.spellID) == "number" and slotInfo.spellID > 0) and slotInfo.spellID or 0
-                data = data .. ("QUI_FlyoutInfo[%d].slots[%d] = newtable();QUI_FlyoutInfo[%d].slots[%d].spellID = %d;QUI_FlyoutInfo[%d].slots[%d].isKnown = %s;\n")
+                lines[#lines + 1] = ("QUI_FlyoutInfo[%d].slots[%d] = newtable();QUI_FlyoutInfo[%d].slots[%d].spellID = %d;QUI_FlyoutInfo[%d].slots[%d].isKnown = %s;\n")
                     :format(flyoutID, slotID, flyoutID, slotID, spellID, flyoutID, slotID, slotInfo and slotInfo.isKnown and "true" or "nil")
             end
         end
     end
+    local data = table.concat(lines)
 
     if maxNumSlots > #ownedFlyoutButtons then
         for i = #ownedFlyoutButtons + 1, maxNumSlots do
@@ -487,8 +490,6 @@ SyncOwnedFlyoutInfoToHandler = function()
 end
 
 do
-    -- Mirror SPELL_UPDATE_COOLDOWN/CHARGES into popup-button swipes while the
-    -- flyout is open. No-op when hidden — OnHide path already clears.
     local cdEventFrame = CreateFrame("Frame")
     cdEventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
     cdEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
@@ -496,33 +497,7 @@ do
     cdEventFrame:SetScript("OnEvent", UpdateAllOwnedFlyoutButtonCooldowns)
 end
 
-ShowOwnedFlyoutForButton = function(parentButton)
-    if not USE_OWNED_FLYOUT or not parentButton then
-        return false
-    end
-
-    local action = parentButton.action
-    if not action then
-        HideOwnedFlyout()
-        return false
-    end
-
-    local actionType, flyoutID = GetActionInfo(action)
-    if actionType ~= "flyout" or not flyoutID then
-        HideOwnedFlyout()
-        return false
-    end
-
-    SyncOwnedFlyoutInfoToHandler()
-    local flyout = EnsureOwnedFlyoutFrame()
-    if not flyout then return false end
-
-    flyout:SetAttribute("flyoutParentHandle", parentButton)
-    flyout:RunAttribute("HandleFlyout", flyoutID)
-    return flyout:IsShown()
 end
-
-end -- do (owned spell flyout)
 
 function IsSpellFlyoutButtonFrame(button, flyout)
     if not button then return false end
@@ -678,7 +653,6 @@ SkinSpellFlyoutButtons = function()
         SkinButton(button, settings)
     end
 
-    -- Rebuild flyout background extents after resizing popup buttons.
     if flyout.Layout then
         flyout:Layout()
     end
@@ -698,11 +672,8 @@ end
 
 ActionBarsOwned.HookSpellFlyoutSkinning = HookSpellFlyoutSkinning
 
-end -- do (spell flyout skinning)
+end
 
----------------------------------------------------------------------------
--- PAGE ARROW VISIBILITY
----------------------------------------------------------------------------
 do
 
 function CollectPageArrowFrames()
@@ -765,7 +736,6 @@ ApplyPageArrowVisibility = function(hide)
             frame:Hide()
             if not ebs.pageArrowShowHooked[frame] then
                 ebs.pageArrowShowHooked[frame] = true
-                -- TAINT SAFETY: Defer to break taint chain from secure context.
                 hooksecurefunc(frame, "Show", function(self)
                     C_Timer.After(0, function()
                         local db = GetDB()
@@ -785,4 +755,4 @@ end
 
 _G.QUI_ApplyPageArrowVisibility = ApplyPageArrowVisibility
 
-end -- do (page arrow visibility)
+end

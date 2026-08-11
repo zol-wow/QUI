@@ -23,8 +23,8 @@ local function blockForId(source, id)
     return source:match(pattern)
 end
 
-local mover = readFile("QUI_QoL/qol/blizzard_mover.lua")
-local frames = readFile("QUI_QoL/qol/blizzard_mover_frames.lua")
+local mover = readFile("modules/qol/blizzard_mover.lua")
+local frames = readFile("modules/qol/blizzard_mover_frames.lua")
 
 -- 1. The dialog is a mover panel again, opting into the proxy + deferred re-assert.
 local dialog = assert(blockForId(frames, "HeroTalentsSelectionDialog"),

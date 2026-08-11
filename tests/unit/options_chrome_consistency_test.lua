@@ -75,12 +75,9 @@ do
     -- Hardcoded 0.1,0.1,0.1,1 grid bg must be gone
     assertAbsent(src, "SetBackdropColor%(0%.1, 0%.1, 0%.1, 1%)",
         "anchoring_shared_content.lua: SetBackdropColor(0.1,0.1,0.1,1) must be replaced by GUI.GRID_BG")
-
-    -- Must reference GUI.DIALOG_BUTTON_BG and GUI.GRID_BG
-    assertContains(src, "GUI.DIALOG_BUTTON_BG",
-        "anchoring_shared_content.lua: must reference GUI.DIALOG_BUTTON_BG")
-    assertContains(src, "GUI.GRID_BG",
-        "anchoring_shared_content.lua: must reference GUI.GRID_BG")
+    -- (The GUI.DIALOG_BUTTON_BG / GUI.GRID_BG consumers here were the legacy
+    -- multi-anchor dialog/popover chain, deleted as dead code; the absence
+    -- checks above still guard against raw-literal reintroduction.)
 end
 
 -- ===========================================================================

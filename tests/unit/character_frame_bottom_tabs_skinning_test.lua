@@ -12,7 +12,7 @@ local function assertContains(text, needle, reason)
     assert(text:find(needle, 1, true), reason)
 end
 
-local source = readFile("QUI_Skinning/skinning/frames/character.lua")
+local source = readFile("modules/skinning/frames/character.lua")
 
 -- CharacterFrame bottom tabs (Character / Reputation / Currency) must route
 -- through the SHARED canonical verb, not a private fork. The former

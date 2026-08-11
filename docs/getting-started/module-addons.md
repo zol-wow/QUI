@@ -7,7 +7,7 @@ nav_order: 3
 
 # Module Addons
 
-QUI 4 is a suite. The main `QUI` folder provides shared settings, layout, profiles, storage, and core services. Feature folders such as `QUI_Chat`, `QUI_Bags`, `QUI_InfoBar`, and `QUI_Alts` provide the larger systems around that core.
+QUI 4 is a suite. The main `QUI` folder provides shared settings, layout, profiles, storage, and core services. Feature folders such as `QUI_Chat`, `QUI_Bags`, and `QUI_UI` provide the larger systems around that core.
 
 ## Where To Manage Modules
 

@@ -27,7 +27,7 @@ _G.C_Container.GetContainerItemInfo = function(bagID, slot)
 end
 
 local ns = loader.LoadAll(nil, "scan_common.lua")
-local ScanCommon = ns.Bags.ScanCommon
+local ScanCommon = ns.Storage.ScanCommon
 
 -- Test 1: full container read with exact entry shape
 local pending = {}

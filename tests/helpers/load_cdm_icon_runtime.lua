@@ -18,7 +18,7 @@ return function(ns)
     end
 
     if not ns.CDMAuraRuntime then
-        loadChunk("QUI_CDM/cdm/cdm_spelldata.lua", "cdm_aura_runtime.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_aura.lua", "cdm_aura_runtime.lua")("QUI", ns)
     end
 
     if not ns.CDMRuntimeQueries then
@@ -34,40 +34,37 @@ return function(ns)
     end
 
     if not ns.CDMIconStackText then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_stack_text.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_stack_text.lua")("QUI", ns)
     end
     if not ns.CDMIconStackPolicy then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_stack_policy.lua")("QUI", ns)
-    end
-    if not ns.CDMIconMirrorIndex then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_mirror_index.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_stack_policy.lua")("QUI", ns)
     end
     if not ns.CDMIconRuntimeRefresh then
         loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_runtime_refresh.lua")("QUI", ns)
     end
     if not ns.CDMIconUpdateScheduler then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_update_scheduler.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_refresh.lua", "cdm_icon_update_scheduler.lua")("QUI", ns)
     end
     if not ns.CDMIconRefreshBatch then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_refresh_batch.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_refresh.lua", "cdm_icon_refresh_batch.lua")("QUI", ns)
     end
     if not ns.CDMIconRefreshWalker then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_refresh_walker.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_refresh.lua", "cdm_icon_refresh_walker.lua")("QUI", ns)
     end
     if not ns.CDMIconItemVisualPolicy then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_item_visual_policy.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_item_visual_policy.lua")("QUI", ns)
     end
     if not ns.CDMIconVisibilityPolicy then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_visibility_policy.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_visibility_policy.lua")("QUI", ns)
     end
     if not ns.CDMIconRangePolicy then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_range_policy.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_range_policy.lua")("QUI", ns)
     end
     if not ns.CDMIconCooldownPolicy then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_cooldown_policy.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_cooldown_policy.lua")("QUI", ns)
     end
     if not ns.CDMIconCustomBarPolicy then
-        loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_custom_bar_policy.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_custom_bar_policy.lua")("QUI", ns)
     end
 
     return ns

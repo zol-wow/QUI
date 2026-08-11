@@ -1,15 +1,3 @@
--- modules/chat/scrollbar_custom.lua
--- Slim scroll indicator + jump-to-bottom button for the custom chat display.
--- Click-to-jump: clicking the track moves the scroll position to the cursor's
--- Y fraction within the track (bottom = newest / offset 0; top = full range).
--- Track drag: holding the mouse button down installs an OnUpdate that keeps
--- tracking the cursor, giving smooth drag behaviour. Driven by the SMF's own
--- scroll-changed callback.
--- Per-window instances: each windowID gets its own track/thumb/bottomBtn trio
--- stored in the `instances` table. EnsureAttached() walks all live windows and
--- creates any missing entries; OnWindowDeleted() hides every instance and
--- rebuilds from scratch (id compaction shuffles all ids, so we wipe + rebuild
--- rather than trying to re-point closures that captured old windowIDs by value).
 local ADDON_NAME, ns = ...
 
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
@@ -18,9 +6,9 @@ local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
 ns.QUI.Chat.Scrollbar = ns.QUI.Chat.Scrollbar or {}
 local Scrollbar = ns.QUI.Chat.Scrollbar
 
-local instances = {} -- windowID -> { track, thumb, bottomBtn }
+local instances = {}
 local TRACK_WIDTH = 8
-local TRACK_INSET = 3 -- gap from the container's right edge to the track
+local TRACK_INSET = 3
 local MIN_THUMB = 12
 local JUMP_GLYPH_STROKE = 1
 
@@ -83,8 +71,6 @@ end
 
 local function UpdateInstance(windowID)
     local sb = instances[windowID]
-    -- While the combat-log tab owns this window, the embedded ChatFrame2 covers
-    -- the message area (QUI's SMF is hidden); keep our scrollbar hidden too.
     local CL = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.CombatLogTab
     if sb and CL and CL.IsActiveWindow and CL.IsActiveWindow(windowID) then
         if sb.track then sb.track:SetShown(false) end
@@ -107,7 +93,6 @@ local function UpdateInstance(windowID)
     local thumbH = math.max(MIN_THUMB, h * (1 / (1 + range / 25)))
     sb.thumb:SetHeight(thumbH)
     sb.thumb:ClearAllPoints()
-    -- Two-anchor form: sets both X edges so the thumb fills the track width.
     sb.thumb:SetPoint("BOTTOMRIGHT", sb.track, "BOTTOMRIGHT", 0, (h - thumbH) * frac)
     sb.thumb:SetPoint("BOTTOMLEFT", sb.track, "BOTTOMLEFT", 0, (h - thumbH) * frac)
     sb.bottomBtn:SetShown(offset > 0)
@@ -119,8 +104,6 @@ function Scrollbar.Update()
     end
 end
 
--- Immediate show/hide of a window's scrollbar trio, used by combat-log tab
--- activation. On re-show, the next UpdateInstance recomputes proper visibility.
 function Scrollbar.SetShown(windowID, shown)
     local sb = instances[tonumber(windowID) or 1]
     if not sb then return end
@@ -129,10 +112,6 @@ function Scrollbar.SetShown(windowID, shown)
     if sb.bottomBtn then sb.bottomBtn:SetShown(shown) end
 end
 
--- Jump the scroll offset to the cursor's position on the track (bottom of
--- the track = newest / offset 0; top = full range).
--- QUI-owned chain anchored to UIParent: scale/anchor secrets can't occur
--- here; plain nil/zero guards suffice.
 local function JumpToCursor(windowID)
     local sb = instances[windowID]
     local smf = GetSMF(windowID)
@@ -154,6 +133,9 @@ end
 
 local function CreateInstance(windowID, container, smf)
     local sb = {}
+    sb.windowID = windowID
+    sb.container = container
+    container._quiScrollbar = sb
     instances[windowID] = sb
     local trackName = (windowID == 1) and "QUI_CustomChatScrollbar" or nil
     local btnName   = (windowID == 1) and "QUI_CustomChatJumpBottom" or nil
@@ -166,7 +148,6 @@ local function CreateInstance(windowID, container, smf)
     bg:SetPoint("BOTTOMRIGHT", sb.track, "BOTTOMRIGHT", 0, 0)
     bg:SetColorTexture(1, 1, 1, 0.06)
     sb.thumb = sb.track:CreateTexture(nil, "ARTWORK")
-    -- Initial anchors: both X edges fill the track; Y repositioned in Update.
     sb.thumb:SetPoint("BOTTOMRIGHT", sb.track, "BOTTOMRIGHT", 0, 0)
     sb.thumb:SetPoint("BOTTOMLEFT", sb.track, "BOTTOMLEFT", 0, 0)
     sb.thumb:SetHeight(MIN_THUMB)
@@ -180,26 +161,18 @@ local function CreateInstance(windowID, container, smf)
     CreateJumpGlyph(sb.bottomBtn)
     PaintJumpGlyph(sb.bottomBtn)
     sb.bottomBtn:SetScript("OnClick", function()
-        local frame = GetSMF(windowID)
+        local frame = GetSMF(sb.windowID)
         if frame and frame.ScrollToBottom then frame:ScrollToBottom() end
-        UpdateInstance(windowID)
+        UpdateInstance(sb.windowID)
     end)
 
-    -- Click-to-jump + drag: keep the clickable hit rect aligned to the visible
-    -- track so the grab zone matches what's drawn. Left inset 0 -> the hit area
-    -- doesn't bleed past the bar's left edge into the message text; right inset
-    -- -TRACK_INSET -> it reaches the window edge (covering the bar plus the dead
-    -- gutter beside it) without spilling off-frame. (The old -5/-5 padding made
-    -- the hit area 18px wide -- 5px over the text, 2px past the frame -- against
-    -- an 8px bar, so the drag zone no longer matched the bar's actual width.)
     sb.track:EnableMouse(true)
     if sb.track.SetHitRectInsets then
-        -- Safe: the track is a QUI-owned, unprotected frame.
         sb.track:SetHitRectInsets(0, -TRACK_INSET, 0, 0)
     end
     sb.track:SetScript("OnMouseDown", function(self)
-        JumpToCursor(windowID)
-        self:SetScript("OnUpdate", function() JumpToCursor(windowID) end)
+        JumpToCursor(sb.windowID)
+        self:SetScript("OnUpdate", function() JumpToCursor(sb.windowID) end)
     end)
     sb.track:SetScript("OnMouseUp", function(self)
         self:SetScript("OnUpdate", nil)
@@ -208,28 +181,10 @@ local function CreateInstance(windowID, container, smf)
         self:SetScript("OnUpdate", nil)
     end)
 
-    -- SetOnScrollChangedCallback is a single-slot setter, not an adder: the
-    -- new closure REPLACES any previous one on this SMF. After OnWindowDeleted
-    -- rebuilds, the old instance's closure is unreachable (never called),
-    -- so there is no risk of a stale closure updating a dead instance.
     if smf.SetOnScrollChangedCallback then
-        smf:SetOnScrollChangedCallback(function() UpdateInstance(windowID) end)
+        smf:SetOnScrollChangedCallback(function() UpdateInstance(sb.windowID) end)
     end
 
-    -- Display-refreshed callback: fired by the SMF on every RefreshDisplay
-    -- (AddMessage, relayout, ScrollToBottom) -- crucially even when the scroll
-    -- OFFSET does not change. New lines arriving while the view is pinned to the
-    -- bottom grow GetMaxScrollRange() without moving GetScrollOffset(), so the
-    -- scroll-changed callback never fires and the thumb keeps its stale (too
-    -- tall) size until the next manual scroll. This recomputes the thumb on
-    -- every refresh so it shrinks as backlog accumulates in real time.
-    --
-    -- Unlike SetOnScrollChangedCallback, AddOnDisplayRefreshedCallback is an
-    -- ADDER with no remover, and windows 2+ reuse a pooled SMF across
-    -- delete/recreate -- so it must attach at most ONCE per SMF (the flag
-    -- persists on the frame object through pooling). The closure can't capture
-    -- windowID by value (a pooled shell's id changes), so it resolves the live
-    -- id by matching the SMF at call time.
     if smf.AddOnDisplayRefreshedCallback and not smf._quiDisplayRefreshHooked then
         smf._quiDisplayRefreshHooked = true
         smf:AddOnDisplayRefreshedCallback(function(self)
@@ -250,25 +205,41 @@ function Scrollbar.EnsureAttached()
         local container = Display.GetContainer(windowID)
         local smf = GetSMF(windowID)
         if container and smf and not instances[windowID] then
-            CreateInstance(windowID, container, smf)
+            local sb = container._quiScrollbar
+            if sb then
+                sb.windowID = windowID
+                instances[windowID] = sb
+            else
+                CreateInstance(windowID, container, smf)
+            end
         end
     end
     Scrollbar.Update()
 end
 
--- Window deletion shuffles ids; these closures capture windowID by VALUE,
--- so the whole map is rebuilt rather than re-pointed.
 function Scrollbar.OnWindowDeleted()
-    for _, sb in pairs(instances) do
-        if sb.track then sb.track:Hide() end
-        if sb.bottomBtn then sb.bottomBtn:Hide() end
+    local Display = ns.QUI.Chat.DisplayLayer
+    if not (Display and Display.GetWindowCount) then return end
+    local liveWindowByContainer = {}
+    for windowID = 1, Display.GetWindowCount() do
+        local container = Display.GetContainer(windowID)
+        if container then liveWindowByContainer[container] = windowID end
     end
-    instances = {}
+    local kept = {}
+    for _, sb in pairs(instances) do
+        local windowID = liveWindowByContainer[sb.container]
+        if windowID then
+            sb.windowID = windowID
+            kept[windowID] = sb
+        else
+            if sb.track then sb.track:Hide() end
+            if sb.bottomBtn then sb.bottomBtn:Hide() end
+        end
+    end
+    instances = kept
     Scrollbar.EnsureAttached()
 end
 
--- Re-apply the theme accent (skin-refresh path; creation-time color
--- otherwise goes stale until /reload).
 function Scrollbar.Restyle()
     local accent = GetAccent()
     for _, sb in pairs(instances) do

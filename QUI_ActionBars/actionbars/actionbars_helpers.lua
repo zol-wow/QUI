@@ -4,9 +4,7 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
----------------------------------------------------------------------------
--- DB ACCESSORS
----------------------------------------------------------------------------
+---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
 
 GetDB = Helpers.CreateDBGetter("actionBars")
 
@@ -16,7 +14,7 @@ function GetSafeActionSlot(button)
     if action == nil or Helpers.IsSecretValue(action) then
         return nil
     end
-    local ok, numericAction = pcall(tonumber, action)
+    local ok, numericAction = ns.SafeCall("best-effort-style", tonumber, action)
     if not ok or type(numericAction) ~= "number" or numericAction < 1 then
         return nil
     end
@@ -39,7 +37,7 @@ function GetFadeSettings()
 end
 
 effectiveSettingsCache = {}
-local effectiveSettingsCacheStats -- debug counters; nil until QUI_Debug activates instrumentation
+local effectiveSettingsCacheStats
 
 local function SetupDebugInstrumentation()
     effectiveSettingsCacheStats = { hits = 0, builds = 0, invalidations = 0 }
@@ -48,10 +46,10 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "AB_settingsCacheBuilds",        counter = true, fn = function() return effectiveSettingsCacheStats.builds end }
     mp[#mp + 1] = { name = "AB_settingsCacheInvalidations", counter = true, fn = function() return effectiveSettingsCacheStats.invalidations end }
 end
-if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+if ns.DebugRegister then
     ns.DebugRegister(SetupDebugInstrumentation)
 else
-    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+    SetupDebugInstrumentation()
 end
 
 function InvalidateEffectiveSettingsCache(barKey)
@@ -66,7 +64,6 @@ function InvalidateEffectiveSettingsCache(barKey)
     end
 end
 
--- Effective settings (global merged with per-bar overrides)
 function GetEffectiveSettings(barKey)
     local global = GetGlobalSettings()
     if not global then return nil end
@@ -102,15 +99,6 @@ end
 ActionBarsOwned.GetEffectiveSettings = GetEffectiveSettings
 ActionBarsOwned.InvalidateEffectiveSettingsCache = InvalidateEffectiveSettingsCache
 
----------------------------------------------------------------------------
--- HELPERS
----------------------------------------------------------------------------
-
--- Safe wrappers for APIs that may return secret values on Midnight.
--- Use only truthiness tests (if X then) — never comparison operators
--- (==, ~=, >) — so secret booleans/numbers pass through without error.
--- No pcall needed since truthiness evaluation never triggers the
--- secret-value error (only comparisons and arithmetic do).
 SafeHasAction = function(action)
     if HasAction(action) then return true end
     return false
@@ -127,20 +115,15 @@ HasButtonContent = function(button, action)
 end
 
 function SafeIsActionInRange(action)
-    -- Returns: true (in range), false (out of range), nil (no range data).
-    -- pcall guards against internal errors; truthiness tests are safe for
-    -- secret values.  The `== nil` check is safe because Lua never invokes
-    -- __eq metamethods when comparing against nil (different types).
     local ok, val = pcall(IsActionInRange, action)
     if not ok then return nil end
-    if val then return true end        -- truthy → in range
-    if val == nil then return nil end  -- nil → no range data
-    return false                       -- falsy non-nil → out of range
+    if val then return true end
+    if val == nil then return nil end
+    return false
 end
 
 function SafeIsUsableAction(action)
     local usable, noMana = IsUsableAction(action)
-    -- Convert via truthiness (and/or), not comparison
     return (usable and true or false), (noMana and true or false)
 end
 
@@ -160,8 +143,6 @@ function ShouldSuppressMouseoverHideForLevel()
 end
 
 function IsLeaveVehicleButtonVisible()
-    -- Only apply when player is actually in a vehicle; prevents bar1 staying visible
-    -- when keepLeaveVehicleVisible is enabled but player is not in a vehicle
     if not (UnitInVehicle and UnitInVehicle("player")) then
         return false
     end
@@ -238,32 +219,19 @@ local LURA_MYTHIC_ENCOUNTER_ID = 3183
 local MYTHIC_RAID_DIFFICULTY_ID = 16
 local MYTHIC_KEYSTONE_DIFFICULTY_ID = 8
 
-local function NormalizeVisibilityToken(value)
-    if value == nil then return nil end
-    local text = tostring(value)
-    text = text:gsub("^%s+", ""):gsub("%s+$", "")
-    if text == "" then return nil end
-    return text:lower()
-end
-
 function IsActionBarLuraMythicEncounter(encounterID, encounterName, difficultyID)
     local numericEncounterID = tonumber(encounterID)
     local numericDifficultyID = tonumber(difficultyID)
     if numericDifficultyID ~= MYTHIC_RAID_DIFFICULTY_ID then
         return false
     end
-    if numericEncounterID == LURA_MYTHIC_ENCOUNTER_ID then
-        return true
-    end
-
-    local name = NormalizeVisibilityToken(encounterName)
-    return name == "midnight falls" or name == "midnight" or name == "l'ura"
+    return numericEncounterID == LURA_MYTHIC_ENCOUNTER_ID
 end
 
 local function GetCurrentInstanceContext()
     local inInstance, instanceType = false, "none"
     if IsInInstance then
-        local ok, isInInstance, kind = pcall(IsInInstance)
+        local ok, isInInstance, kind = ns.SafeCall("report", IsInInstance)
         if ok then
             inInstance = isInInstance and true or false
             instanceType = kind or instanceType
@@ -272,7 +240,7 @@ local function GetCurrentInstanceContext()
 
     local difficultyID
     if GetInstanceInfo then
-        local ok, _, infoType, infoDifficultyID = pcall(GetInstanceInfo)
+        local ok, _, infoType, infoDifficultyID = ns.SafeCall("report", GetInstanceInfo)
         if ok then
             if infoType then instanceType = infoType end
             difficultyID = tonumber(infoDifficultyID)
@@ -290,7 +258,7 @@ local function IsInMythicPlus(difficultyID)
         return true
     end
     if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive then
-        local ok, active = pcall(C_ChallengeMode.IsChallengeModeActive)
+        local ok, active = ns.SafeCall("report", C_ChallengeMode.IsChallengeModeActive)
         if ok and active then return true end
     end
     return false
@@ -379,9 +347,6 @@ function GetSpellFlyoutSourceButton(flyout)
     return sourceButton
 end
 
--- Map a button's global name to its bar key by prefix pattern. Shared tail of
--- GetSpellFlyoutSourceBarKey and GetBarKeyFromButton — keep the prefix table in
--- one place so the two callers cannot drift.
 local function ResolveBarKeyFromButtonName(name)
     if not name then return nil end
 
@@ -478,7 +443,6 @@ function GetFontSettings()
     return fontPath, outline
 end
 
--- Determine bar key from button name
 function GetBarKeyFromButton(button)
     if button and button._quiBarKey then return button._quiBarKey end
 
@@ -487,7 +451,6 @@ function GetBarKeyFromButton(button)
     return ResolveBarKeyFromButtonName(name)
 end
 
--- Get button index from button name
 function GetButtonIndex(button)
     if not button then return nil end
     local index = button._quiButtonIndex
@@ -515,8 +478,6 @@ function GetBarFrame(barKey)
 end
 
 function GetBarButtons(barKey)
-    -- If the native engine has built this bar, return our managed buttons
-    -- instead of looking up Blizzard globals (which may be hidden/reparented).
     local native = ActionBarsOwned.nativeButtons[barKey]
     if native and #native > 0 then
         return native
@@ -524,7 +485,6 @@ function GetBarButtons(barKey)
 
     local buttons = {}
 
-    -- Special handling for non-standard bars
     if barKey == "microbar" then
         for _, name in ipairs(MICRO_BUTTON_NAMES) do
             local btn = _G[name]
@@ -559,7 +519,6 @@ function GetBarButtons(barKey)
         return buttons
     end
 
-    -- Standard bars with numbered buttons
     local pattern = BUTTON_PATTERNS[barKey]
     local count = BUTTON_COUNTS[barKey] or 12
     if not pattern then return buttons end
@@ -575,14 +534,6 @@ function GetBarButtons(barKey)
     return buttons
 end
 
----------------------------------------------------------------------------
--- MIDNIGHT LIBKEYBOUND COMPATIBILITY
--- On Midnight (12.0+) we cannot inject methods onto secure action buttons
--- without spreading taint. Instead we override LibKeyBound's Binder methods
--- to consult our external frameState table for binding commands.
--- UNIFIED: keybind registration writes to this same frameState.
----------------------------------------------------------------------------
-
 libKeyBoundPatched = false
 
 function PatchLibKeyBoundForMidnight()
@@ -595,13 +546,11 @@ function PatchLibKeyBoundForMidnight()
     libKeyBoundPatched = true
     local Binder = LibKeyBound.Binder
 
-    -- Helper: get binding command from our external state
     local function GetBindingCommand(button)
         local state = frameState[button]
         return state and state.bindingCommand
     end
 
-    -- Override SetKey: use our frameState binding command when button lacks SetKey
     function Binder:SetKey(button, key)
         if InCombatLockdown() then
             UIErrorsFrame:AddMessage(LibKeyBound.L.CannotBindInCombat, 1, 0.3, 0.3, 1, UIERRORS_HOLD_TIME)
@@ -630,7 +579,6 @@ function PatchLibKeyBoundForMidnight()
         UIErrorsFrame:AddMessage(msg, 1, 1, 1, 1, UIERRORS_HOLD_TIME)
     end
 
-    -- Override ClearBindings: use our frameState binding command
     function Binder:ClearBindings(button)
         if InCombatLockdown() then
             UIErrorsFrame:AddMessage(LibKeyBound.L.CannotBindInCombat, 1, 0.3, 0.3, 1, UIERRORS_HOLD_TIME)
@@ -662,7 +610,6 @@ function PatchLibKeyBoundForMidnight()
         UIErrorsFrame:AddMessage(msg, 1, 1, 1, 1, UIERRORS_HOLD_TIME)
     end
 
-    -- Override GetBindings: use our frameState binding command
     local origGetBindings = Binder.GetBindings
     function Binder:GetBindings(button)
         local command = GetBindingCommand(button)
@@ -681,7 +628,6 @@ function PatchLibKeyBoundForMidnight()
         return origGetBindings(self, button)
     end
 
-    -- Override FreeKey: check our frameState binding command for conflict resolution
     local origFreeKey = Binder.FreeKey
     function Binder:FreeKey(button, key)
         local command = GetBindingCommand(button)
@@ -697,11 +643,8 @@ function PatchLibKeyBoundForMidnight()
         end
     end
 
-    -- Wrap LibKeyBound:Set — only override for buttons tracked in our frameState;
-    -- delegate to the original for everything else so future library updates apply.
     local origSet = LibKeyBound.Set
     function LibKeyBound:Set(button, ...)
-        -- If the button has no entry in our state, let the original handle it
         if not button or not GetBindingCommand(button) then
             return origSet(self, button, ...)
         end
@@ -712,7 +655,6 @@ function PatchLibKeyBoundForMidnight()
                 bindFrame.button = button
                 bindFrame:SetAllPoints(button)
 
-                -- Get hotkey text from our external state
                 local hotkeyText
                 local cmd = GetBindingCommand(button)
                 if cmd then
@@ -737,8 +679,6 @@ function PatchLibKeyBoundForMidnight()
         end
     end
 
-    -- Wrap Binder:OnEnter — only override for our frameState buttons; delegate
-    -- to the original for everything else.
     local origOnEnter = Binder.OnEnter
     function Binder:OnEnter()
         local button = self.button
@@ -770,8 +710,6 @@ function PatchLibKeyBoundForMidnight()
     end
 end
 
--- Register keybind command for LibKeyBound quickbind support.
--- Sets bindingCommand in frameState so the patched Binder can find it.
 function AddKeybindMethods(button, barKey)
     local prefix = BINDING_COMMANDS[barKey]
     if not prefix then return end
@@ -782,22 +720,14 @@ function AddKeybindMethods(button, barKey)
     state.keybindMethods = true
 end
 
--- Check if the cursor is holding a placeable action (for drag preview)
 function CursorHasPlaceableAction()
     local infoType = GetCursorInfo()
     return infoType == "spell" or infoType == "item" or infoType == "macro"
         or infoType == "petaction" or infoType == "mount" or infoType == "flyout"
 end
 
--- Visual refresh after secure drag pickup/place.
--- PickupAction/PlaceAction are handled entirely by the secure
--- WrapScript pre-bodies (see button setup) which return
--- "action", slot to the secure framework.  These Lua hooks only
--- refresh button visuals after the secure handler completes.
 function OwnedButton_PostDrag(self)
     ActionBarsOwned.SafeUpdate(self)
-    -- Immediate re-skin to prevent blank flash between SafeUpdate stripping
-    -- Blizzard artwork and the deferred SkinButton restoring QUI textures.
     local bk = GetBarKeyFromButton(self)
     local s = bk and GetEffectiveSettings(bk)
     if s then
@@ -807,7 +737,6 @@ function OwnedButton_PostDrag(self)
         UpdateButtonText(self, s)
         UpdateEmptySlotVisibility(self, s)
     end
-    -- Slot data may lag by one frame after pickup/place — refresh again
     C_Timer.After(0, function()
         ActionBarsOwned.SafeUpdate(self)
         if s then
@@ -820,10 +749,6 @@ function OwnedButton_PostDrag(self)
     end)
 end
 
----------------------------------------------------------------------------
--- CONTAINER FACTORY
----------------------------------------------------------------------------
-
 function CreateBarContainer(barKey)
     local containerName = "QUI_ActionBar_" .. barKey
     local container = CreateFrame("Frame", containerName, UIParent, "SecureHandlerStateTemplate")
@@ -832,24 +757,6 @@ function CreateBarContainer(barKey)
     container:Show()
     container:SetClampedToScreen(true)
 
-    -- Override / vehicle / possess / petbattle visibility gate.
-    --
-    -- Blizzard's OverrideActionBar and the pet battle UI take over input
-    -- during those states; leaving any QUI bar visible would draw
-    -- duplicate or empty icons.  We can't use the reserved "visibility"
-    -- state driver because it unconditionally Show()s the frame when the
-    -- macro doesn't match, which would clobber bars the user has
-    -- disabled (bar7/8 off, no-stance stance bar, etc.).
-    --
-    -- Instead, use a custom state handler that hides on override but
-    -- only re-shows when the frame's "qui-user-shown" attribute is true.
-    -- Lua code that controls visibility (disable, GetNumShapeshiftForms)
-    -- sets qui-user-shown alongside Show/Hide calls via
-    -- SetBarContainerShown() below.
-    --
-    -- Pet bar additionally folds the [nopet] macro condition into its
-    -- driver below so pet summon/dismiss flips visibility from inside
-    -- the secure snippet (works in combat without any tainted Lua).
     container:SetAttribute("qui-user-shown", true)
     container:SetAttribute("_onstate-quioverride", [[
         if newstate == "hide" then
@@ -861,9 +768,6 @@ function CreateBarContainer(barKey)
     local driver = "[overridebar][vehicleui][possessbar][petbattle] hide; show"
     if barKey == "pet" then
         driver = "[overridebar][vehicleui][possessbar][petbattle][nopet] hide; show"
-        -- The [nopet] secure driver flips Show/Hide asynchronously when pet
-        -- status changes (including in combat). Notify dependents (e.g.
-        -- stance bar anchored to petBar) so they re-anchor when that happens.
         local function notifyAnchor()
             if _G.QUI_UpdateFramesAnchoredTo then
                 _G.QUI_UpdateFramesAnchoredTo("petBar")
@@ -877,10 +781,6 @@ function CreateBarContainer(barKey)
     return container
 end
 
--- Central helper for toggling a bar container's intended visibility.
--- Sets the qui-user-shown attribute so the override/vehicle state driver
--- knows whether to re-show the bar on exit, and calls Show/Hide to apply
--- the change immediately (when out of combat).
 function SetBarContainerShown(container, shown)
     if not container then return end
     container:SetAttribute("qui-user-shown", shown and true or false)

@@ -38,8 +38,15 @@ LANG_NAMES = {
 
 
 def read_enus():
+    """The ordered English key list from enUS.lua's `ns.LocaleData.keys` array.
+
+    Rows are `    "key",` since the overlays went positional (they were
+    `["key"] = "key"` identity pairs before). `[^"]` rather than `.` on
+    purpose: Lua's %q writes an embedded newline as a backslash followed by an
+    ACTUAL newline byte, and `.` does not cross a newline without re.DOTALL.
+    """
     txt = ENUS.read_text(encoding="utf-8")
-    keys = re.findall(r'\["((?:\\.|[^"])*)"\]\s*=', txt)
+    keys = re.findall(r'\n    "((?:\\.|[^"])*)",', txt)
     return [unescape_lua_string(k) for k in keys]
 
 
@@ -71,7 +78,7 @@ def prompt_for(loc, keys):
         "- Preserve printf/Lua format specifiers exactly: %1$s, %2$d, %s, %d, %%, etc. "
         "Do not add, remove, or change specifiers.\n"
         "- Preserve WoW UI escapes exactly: |cff... color codes, |r, |T...|t, |H...|h.\n"
-        "- Preserve slash commands and code/config tokens exactly, such as /qui, /reload, dbKey, CVar, API names, IDs, and enum-like values.\n"
+        "- Preserve slash commands and code/config tokens exactly, such as /dui, /reload, dbKey, CVar, API names, IDs, and enum-like values.\n"
         "- Keep addon/proper names such as QUI and Blizzard unchanged unless the localized WoW client normally translates that term.\n"
         "- Keep the tone terse and natural for in-game settings labels and descriptions.\n"
         "- Translate human-readable English only.\n\n"

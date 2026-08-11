@@ -272,8 +272,6 @@ local function buildController(ns, pools, wrap)
 
         requestStackTextUpdate = w("requestStackTextUpdate", function() end),
 
-        noteChargeDurationObjectsUpdated = w("noteChargeDurationObjectsUpdated", function() end),
-
         recordRecentPlayerSpellCast = w("recordRecentPlayerSpellCast", function() end),
 
         getHighlighter = w("getHighlighter", function()
@@ -421,6 +419,12 @@ function A.ProfileSession(controller, events)
     -- Remove unmapped entries from churn/counts so they don't pollute
     -- the per-event attribution (they were counted but got 0 work).
     -- Expose unmapped total via stats field on the module.
+    for _, ev in ipairs(events) do
+        if not A.EVENT_MAP[ev.e] then
+            churn[ev.e] = nil
+            counts[ev.e] = nil
+        end
+    end
     A._lastUnmappedCount = unmappedCount
 
     local rep = P.report(churn, counts)

@@ -58,7 +58,7 @@ local customBarDB = {
 local essentialDB = {
     builtIn = true,
     ownedSpells = {
-        { type = "spell", id = FIRE_BREATH, kind = "cooldown" },
+        { type = "spell", id = FIRE_BREATH, kind = "cooldown", row = 2, source = "blizzardCDM" },
         { type = "spell", id = QUELL, kind = "cooldown" },
         { type = "item", id = HEALTHSTONE },
     },
@@ -138,6 +138,12 @@ local built = ns.CDMSpellData:BuildSpellListFromOwned("essential")
 local builtIDs = {}
 for _, resolved in ipairs(built) do
     builtIDs[resolved.id] = true
+    if resolved.id == FIRE_BREATH then
+        assert(resolved.source == "blizzardCDM",
+            "BuildSpellListFromOwned must preserve Blizzard CDM provenance on resolved entries")
+        assert(resolved._assignedRow == 2,
+            "BuildSpellListFromOwned must preserve saved row assignment on resolved entries")
+    end
 end
 assert(builtIDs[FIRE_BREATH], "known spell must render")
 assert(builtIDs[HEALTHSTONE], "item entries must always render")

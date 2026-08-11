@@ -1,12 +1,3 @@
---[[
-    QUI Totem Bar — Owned Engine
-    Creates addon-owned totem buttons instead of hooking Blizzard's TotemFrame.
-    Steals events from TotemFrame to prevent it from updating, then drives
-    our own icons via GetTotemInfo / GetTotemTimeLeft.
-    Works for any class the game uses TotemFrame for (Shaman totems,
-    Brewmaster guardians, etc.).
-]]
-
 local ADDON_NAME, ns = ...
 local QUI = QUI
 local LSM = ns.LSM
@@ -19,9 +10,6 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
----------------------------------------------------------------------------
--- MODULE NAMESPACE
----------------------------------------------------------------------------
 local TotemBar = {}
 ns.QUI_TotemBar = TotemBar
 
@@ -32,15 +20,6 @@ local ApplyCooldownFromStart = Helpers.ApplyCooldownFromStart
 local MAX_SLOTS = MAX_TOTEMS or 4
 local BASE_CROP = 0.08
 
----------------------------------------------------------------------------
--- COMBAT-SAFE SHOW / HIDE
--- Buttons are configured once at creation (EnableMouse(true) +
--- SetPassThroughButtons("LeftButton","MiddleButton")) so left/middle world
--- clicks pass through always, while right-click is intercepted for the
--- destroytotem secure action. Per-slot visibility is alpha-only — no
--- protected calls per refresh, so combat refreshes are silent. The
--- container-level mouse toggle (for drag-to-move) is still gated below.
----------------------------------------------------------------------------
 local pendingReconcile = false
 
 local function SafeShowButton(btn)
@@ -53,30 +32,21 @@ local function SafeHideButton(btn)
     btn.active = false
 end
 
----------------------------------------------------------------------------
--- DATABASE ACCESS
----------------------------------------------------------------------------
 local GetDB = Helpers.CreateDBGetter("totemBar")
 
----------------------------------------------------------------------------
--- FONT HELPERS
----------------------------------------------------------------------------
 local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 
--- Performance: cache frequently-called globals as locals
 local CreateFrame = CreateFrame
 local UIParent = UIParent
 local ipairs = ipairs
 local pcall = pcall
 local InCombatLockdown = InCombatLockdown
+local UnitClass = UnitClass
 local C_Timer = C_Timer
 local math_floor = math.floor
 local string_format = string.format
 
----------------------------------------------------------------------------
--- EVENTS TO STEAL FROM BLIZZARD'S TotemFrame
----------------------------------------------------------------------------
 local STOLEN_EVENTS = {
     "PLAYER_TOTEM_UPDATE",
     "PLAYER_ENTERING_WORLD",
@@ -84,9 +54,6 @@ local STOLEN_EVENTS = {
     "PLAYER_TALENT_UPDATE",
 }
 
----------------------------------------------------------------------------
--- GROW DIRECTION HELPERS
----------------------------------------------------------------------------
 local function GrowAnchor(growDir)
     if growDir == "RIGHT" then return "LEFT"
     elseif growDir == "LEFT" then return "RIGHT"
@@ -110,9 +77,6 @@ local function GetAnchorPosition(frame, anchor)
     return x, y
 end
 
----------------------------------------------------------------------------
--- DURATION FORMATTING
----------------------------------------------------------------------------
 local function FormatDuration(seconds)
     if seconds >= 60 then
         return string_format("%dm", math_floor(seconds / 60))
@@ -124,11 +88,11 @@ local function FormatDuration(seconds)
     return ""
 end
 
----------------------------------------------------------------------------
--- TOTEM SLOT PRIORITIES
----------------------------------------------------------------------------
 local function GetSlotPriorities()
-    if SHAMAN_TOTEM_PRIORITIES then
+    local _, class = UnitClass("player")
+    -- @secret-policy: collapse-only — a restricted class token falls back to
+    if Helpers.IsSecretValue(class) then class = nil end
+    if class == "SHAMAN" and SHAMAN_TOTEM_PRIORITIES then
         return SHAMAN_TOTEM_PRIORITIES
     elseif STANDARD_TOTEM_PRIORITIES then
         return STANDARD_TOTEM_PRIORITIES
@@ -154,24 +118,16 @@ local function SetTotemDismissSlot(btn, slot)
     btn._secureTotemSlot = slot
 end
 
----------------------------------------------------------------------------
--- CONTAINER + BUTTON CREATION
----------------------------------------------------------------------------
 local container = CreateFrame("Frame", "QUI_TotemBar", UIParent)
 container:SetFrameStrata("MEDIUM")
 container:SetSize(1, 1)
 container:SetMovable(true)
--- Mouse is enabled only while the bar is visible (see ShowContainer/HideContainer).
--- Otherwise the empty MAX_SLOTS-wide invisible rect would block world clicks.
 container:EnableMouse(false)
 container:RegisterForDrag("LeftButton")
 container:SetClampedToScreen(true)
 container:SetAlpha(0)
 container.visible = false
 
--- Container is a protected frame (it parents SecureActionButtonTemplate
--- children), so EnableMouse is protected in combat. Toggle is deferred via
--- pendingReconcile when locked down; alpha + visible flag remain combat-safe.
 local function ShowContainer()
     container:SetAlpha(1)
     container.visible = true
@@ -197,43 +153,29 @@ TotemBar.buttons = {}
 TotemBar.ticker = nil
 TotemBar.enabled = false
 
--- Create one button per totem slot
 for i = 1, MAX_SLOTS do
     local btn = CreateFrame("Button", "QUI_TotemBarButton" .. i, container, "SecureActionButtonTemplate")
     btn:SetSize(36, 36)
+    btn:SetFrameLevel(container:GetFrameLevel() + i)
     btn:SetAlpha(0)
-    -- Mouse is enabled permanently OOC; left/middle clicks fall through to
-    -- the world frame, while right-click is intercepted for destroytotem.
-    -- Avoids touching protected mouse-state in combat (was the
-    -- ADDON_ACTION_BLOCKED source).
     btn:EnableMouse(true)
     btn:SetPassThroughButtons("LeftButton", "MiddleButton")
     btn.active = false
-    -- Register both directions so SecureActionButton_OnClick fires for
-    -- whichever matches the ActionButtonUseKeyDown CVar (default 1 = key-down
-    -- on modern clients). Registering only "RightButtonUp" silently no-ops
-    -- the secure action for users with the default CVar — same bug as
-    -- Blizzard's stock TotemFrame.
     btn:RegisterForClicks("RightButtonDown", "RightButtonUp")
     SetTotemDismissSlot(btn, i)
 
-    -- Icon texture
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
     btn.icon:SetAllPoints()
 
-    -- Cooldown frame
     btn.cooldown = CreateFrame("Cooldown", "QUI_TotemBarCD" .. i, btn, "CooldownFrameTemplate")
     btn.cooldown:SetAllPoints()
     btn.cooldown:SetDrawEdge(false)
 
-    -- Border (behind icon)
     btn.border = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
     btn.border:SetColorTexture(0, 0, 0, 1)
 
-    -- Duration text
     btn.duration = btn:CreateFontString(nil, "OVERLAY")
 
-    -- Tooltip
     btn:SetScript("OnEnter", function(self)
         if self.slot then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -249,28 +191,22 @@ for i = 1, MAX_SLOTS do
     TotemBar.buttons[i] = btn
 end
 
----------------------------------------------------------------------------
--- STYLE A SINGLE BUTTON
----------------------------------------------------------------------------
 local function StyleButton(btn)
     local db = GetDB()
     if not db or not btn then return end
 
     local size = db.iconSize or 36
-    -- Avoid SetSize during combat (can cause layout issues).
     if not InCombatLockdown() then
         btn:SetSize(size, size)
     end
 
-    -- Icon texcoord crop + zoom
     local zoom = db.zoom or 0
     local left = BASE_CROP + zoom
     local right = 1 - BASE_CROP - zoom
     btn.icon:SetTexCoord(left, right, left, right)
 
-    -- Cooldown swipe
     local cd = btn.cooldown
-    pcall(function()
+    ns.SafeCall("best-effort-style", function()
         cd:SetSwipeTexture("Interface\\Buttons\\WHITE8x8")
         cd:SetUseCircularEdge(false)
         local lowTC = { x = 0, y = 0 }
@@ -280,13 +216,12 @@ local function StyleButton(btn)
 
     if db.showSwipe ~= false then
         local swipeColor = db.swipeColor or {0, 0, 0, 0.6}
-        pcall(cd.SetSwipeColor, cd, swipeColor[1], swipeColor[2], swipeColor[3], swipeColor[4])
-        pcall(cd.SetDrawSwipe, cd, true)
+        ns.SafeCallMethod("best-effort-style", cd, "SetSwipeColor", swipeColor[1], swipeColor[2], swipeColor[3], swipeColor[4])
+        ns.SafeCallMethod("best-effort-style", cd, "SetDrawSwipe", true)
     else
-        pcall(cd.SetDrawSwipe, cd, false)
+        ns.SafeCallMethod("best-effort-style", cd, "SetDrawSwipe", false)
     end
 
-    -- Border
     local bs = db.borderSize or 2
     if bs > 0 then
         local bpx = (QUICore and QUICore.Pixels) and QUICore:Pixels(bs, btn) or bs
@@ -298,7 +233,6 @@ local function StyleButton(btn)
         btn.border:Hide()
     end
 
-    -- Duration text
     CJKFont(btn.duration, GetGeneralFont(), db.durationSize or 13, GetGeneralFontOutline())
     local dColor = db.durationColor or {1, 1, 1, 1}
     btn.duration:SetTextColor(dColor[1], dColor[2], dColor[3], dColor[4] or 1)
@@ -317,9 +251,6 @@ local function StyleButton(btn)
     end
 end
 
----------------------------------------------------------------------------
--- LAYOUT VISIBLE BUTTONS
----------------------------------------------------------------------------
 local function LayoutButtons()
     if InCombatLockdown() then
         pendingReconcile = true
@@ -332,12 +263,6 @@ local function LayoutButtons()
     local spacing = db.spacing or 4
     local iconSize = db.iconSize or 36
 
-    -- Active buttons pack from the growth edge (offset = visibleCount-based),
-    -- inactive buttons are pre-positioned at their slot offset so they still
-    -- have a valid anchor if they activate mid-combat (secure SetPoint is
-    -- protected in combat). LayoutButtons is a no-op in combat, so the
-    -- in-combat activation shows at the pre-positioned slot until combat ends,
-    -- at which point this function re-runs and repacks to the growth edge.
     local visibleCount = 0
     for i = 1, MAX_SLOTS do
         local btn = TotemBar.buttons[i]
@@ -361,19 +286,11 @@ local function LayoutButtons()
         end
     end
 
-    -- Container is always sized to the full bar extent (all MAX_SLOTS) so
-    -- the anchor engine sees a stable rect. This is the critical piece: the
-    -- original code sized to visibleCount which caused the anchor to jump
-    -- every time a totem dropped or expired, because sizeStable/tiny-frame
-    -- inflation fallbacks recomputed offsets against the changing rect.
     if growDir == "RIGHT" or growDir == "LEFT" then
         container:SetSize(MAX_SLOTS * iconSize + (MAX_SLOTS - 1) * spacing, iconSize)
     else
         container:SetSize(iconSize, MAX_SLOTS * iconSize + (MAX_SLOTS - 1) * spacing)
     end
-    -- Re-apply anchor so the engine picks up the new container size. With the
-    -- fixed MAX_SLOTS sizing above the rect rarely changes, but reapplying is
-    -- cheap and covers OOC growDirection / iconSize config changes.
     local anchoring = ns.QUI_Anchoring
     if anchoring and anchoring.ApplyFrameAnchor and QUICore
        and QUICore.db and QUICore.db.profile and QUICore.db.profile.frameAnchoring then
@@ -384,9 +301,6 @@ local function LayoutButtons()
     end
 end
 
----------------------------------------------------------------------------
--- UPDATE ALL TOTEM SLOTS
----------------------------------------------------------------------------
 local function UpdateTotems()
     if TotemBar.previewing then return end
     local db = GetDB()
@@ -402,40 +316,30 @@ local function UpdateTotems()
         SetTotemDismissSlot(btn, slot)
 
         local haveTotem, name, startTime, duration, icon = GetTotemInfo(slot)
-        -- Detect active totem: OOC values are readable, combat values are secret.
-        -- Secret booleans (haveTotem) can't be truthiness-tested.
-        -- In Lua, 0 is truthy — can't use plain truthiness on GetTotemTimeLeft.
-        -- Use pcall comparison: non-secret 0 correctly yields false,
-        -- secret values error (caught by pcall → assume active in combat).
         local isActive = false
         if not InCombatLockdown() then
-            -- OOC: safe to compare (pcall guards edge cases during combat transitions
-            -- where InCombatLockdown() returns false but values are already secret)
             local ok, val = pcall(function()
+                -- @secret-safe: comparisons run INSIDE pcall — a secret value's throw is caught, ok=false falls through to inactive
                 return haveTotem and icon and icon ~= 0 and duration and duration > 0
             end)
             isActive = ok and val
         else
-            -- Combat: try comparison inside pcall
             local tok, timeLeft = pcall(GetTotemTimeLeft, slot)
-            if tok and timeLeft then
-                local cok, positive = pcall(function() return timeLeft > 0 end)
-                if cok then
-                    isActive = positive  -- non-secret: true if > 0
-                else
-                    isActive = true  -- secret: active totem (expired data is non-secret)
+            if tok then
+                if Helpers.IsSecretValue(timeLeft) then
+                    isActive = true
+                elseif timeLeft then
+                    isActive = timeLeft > 0
                 end
             end
         end
 
-
         if isActive then
-            pcall(btn.icon.SetTexture, btn.icon, icon)
-            -- Prefer DurationObject API for swipe (secret-safe)
+            ns.SafeCallMethod("sink-forward", btn.icon, "SetTexture", icon)
             local cd = btn.cooldown
             local durObj = nil
             if GetTotemDuration then
-                local dok, fetchedDurObj = pcall(GetTotemDuration, slot)
+                local dok, fetchedDurObj = ns.SafeCall("best-effort-style", GetTotemDuration, slot)
                 if dok and fetchedDurObj then
                     durObj = fetchedDurObj
                 end
@@ -454,8 +358,6 @@ local function UpdateTotems()
 
     LayoutButtons()
 
-    -- Show/hide container via alpha (Show/Hide is protected — secure children).
-    -- Mouse follows visibility so a hidden bar doesn't intercept world clicks.
     if hasActive then
         if not container.visible then
             ShowContainer()
@@ -466,7 +368,6 @@ local function UpdateTotems()
         end
     end
 
-    -- Manage duration ticker
     if hasActive then
         if not TotemBar.ticker then
             TotemBar.ticker = C_Timer.NewTicker(0.5, function()
@@ -475,21 +376,17 @@ local function UpdateTotems()
                 for j = 1, MAX_SLOTS do
                     local b = TotemBar.buttons[j]
                     if b.active and b.slot and b.duration then
-                        -- GetTotemTimeLeft returns secret values in combat.
-                        -- Use DurationObject API when available, fallback to
-                        -- SetFormattedText which handles secrets C-side.
                         local shown = false
                         if GetTotemDuration then
-                            local dok, durObj = pcall(GetTotemDuration, b.slot)
+                            local dok, durObj = ns.SafeCall("best-effort-style", GetTotemDuration, b.slot)
                             if dok and durObj and durObj.GetRemainingDuration then
                                 local rok, rem = pcall(durObj.GetRemainingDuration, durObj)
                                 if rok and rem then
-                                    -- rem may be secret — use SetFormattedText (C-side)
                                     local isSecret = Helpers.IsSecretValue(rem)
                                     if not isSecret and rem > 0 then
                                         b.duration:SetText(FormatDuration(rem))
                                     elseif isSecret then
-                                        pcall(b.duration.SetFormattedText, b.duration, "%.0f", rem)
+                                        ns.SafeCallMethod("sink-forward", b.duration, "SetFormattedText", "%.0f", rem)
                                     else
                                         b.duration:SetText("")
                                     end
@@ -499,12 +396,11 @@ local function UpdateTotems()
                         end
                         if not shown then
                             local ok, remaining = pcall(GetTotemTimeLeft, b.slot)
-                            if ok and remaining then
-                                local isSecret = Helpers.IsSecretValue(remaining)
-                                if not isSecret and remaining > 0 then
+                            if ok then
+                                if Helpers.IsSecretValue(remaining) then
+                                    ns.SafeCallMethod("sink-forward", b.duration, "SetFormattedText", "%.0f", remaining)
+                                elseif remaining and remaining > 0 then
                                     b.duration:SetText(FormatDuration(remaining))
-                                elseif isSecret then
-                                    pcall(b.duration.SetFormattedText, b.duration, "%.0f", remaining)
                                 else
                                     b.duration:SetText("")
                                 end
@@ -524,13 +420,9 @@ local function UpdateTotems()
     end
 end
 
----------------------------------------------------------------------------
--- POSITIONING
----------------------------------------------------------------------------
 local function PositionContainer()
     if InCombatLockdown() then return end
 
-    -- Skip if anchoring engine manages this frame
     if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("totemBar") then return end
 
     local db = GetDB()
@@ -543,22 +435,14 @@ local function PositionContainer()
     container:SetPoint(anchor, UIParent, "CENTER", offsetX, offsetY)
 end
 
----------------------------------------------------------------------------
--- ENABLE / DISABLE — EVENT STEALING
----------------------------------------------------------------------------
 local function StealEvents()
     local tf = TotemFrame
     if not tf then return end
-    -- Keep PLAYER_TOTEM_UPDATE so Blizzard's TotemFrame stays internally consistent
     for _, event in ipairs(STOLEN_EVENTS) do
         if event ~= "PLAYER_TOTEM_UPDATE" then
-            pcall(tf.UnregisterEvent, tf, event)
+            ns.SafeCallMethod("defer-ooc", tf, "UnregisterEvent", event)
         end
     end
-    -- Alpha 0 hides TotemFrame visually while keeping it "shown" so its
-    -- event handler runs. Mouse disable is OOC-only (Blizzard's totemButtons
-    -- are SecureActionButtonTemplate — EnableMouse is protected in combat);
-    -- if we entered combat before reaching this, reconcile on PLAYER_REGEN_ENABLED.
     tf:SetAlpha(0)
     if InCombatLockdown() then
         pendingReconcile = true
@@ -567,7 +451,7 @@ local function StealEvents()
     tf:EnableMouse(false)
     if tf.totemButtons then
         for _, tbtn in ipairs(tf.totemButtons) do
-            pcall(tbtn.EnableMouse, tbtn, false)
+            ns.SafeCallMethod("defer-ooc", tbtn, "EnableMouse", false)
         end
     end
 end
@@ -576,19 +460,17 @@ local function RestoreEvents()
     local tf = TotemFrame
     if not tf then return end
     for _, event in ipairs(STOLEN_EVENTS) do
-        pcall(tf.RegisterEvent, tf, event)
+        ns.SafeCallMethod("defer-ooc", tf, "RegisterEvent", event)
     end
     tf:SetAlpha(1)
     if not InCombatLockdown() then
         tf:EnableMouse(true)
         if tf.totemButtons then
             for _, tbtn in ipairs(tf.totemButtons) do
-                pcall(tbtn.EnableMouse, tbtn, true)
+                ns.SafeCallMethod("defer-ooc", tbtn, "EnableMouse", true)
             end
         end
-        if tf.Update then
-            pcall(tf.Update, tf)
-        end
+        ns.SafeCallMethodIfPresent("defer-ooc", tf, "Update")
     else
         pendingReconcile = true
     end
@@ -601,7 +483,6 @@ local function Enable()
 
     StealEvents()
     PositionContainer()
-    -- Alpha managed by UpdateTotems; just ensure container is in the frame tree
     if not container:IsShown() then container:Show() end
 
     container:RegisterEvent("PLAYER_TOTEM_UPDATE")
@@ -623,14 +504,12 @@ local function Disable()
     RestoreEvents()
 end
 
--- Event handler on our container
 container:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_TOTEM_UPDATE" then
         UpdateTotems()
     end
 end)
 
--- Drag handlers on the container
 container:SetScript("OnDragStart", function(self)
     local db = GetDB()
     if db and not db.locked then
@@ -658,9 +537,6 @@ container:SetScript("OnDragStop", function(self)
     PositionContainer()
 end)
 
----------------------------------------------------------------------------
--- PUBLIC API
----------------------------------------------------------------------------
 function TotemBar:Refresh()
     local db = GetDB()
     if not db or not db.enabled then
@@ -677,13 +553,10 @@ function TotemBar:Hide()
     Disable()
 end
 
----------------------------------------------------------------------------
--- PREVIEW (mock totems shown on the container's own buttons)
----------------------------------------------------------------------------
 local MOCK_TOTEM_ICONS = {
-    136098, -- Healing Stream Totem
-    136013, -- Capacitor Totem
-    136108, -- Tremor Totem
+    136098,
+    136013,
+    136108,
 }
 local MOCK_DURATIONS = {"42", "1:15", "8.2"}
 
@@ -721,7 +594,6 @@ end
 
 function TotemBar:ShowPreview()
     self.previewing = true
-    -- Ensure container is visible and positioned even if disabled
     PositionContainer()
     if not container:IsShown() then container:Show() end
     ShowContainer()
@@ -732,7 +604,6 @@ function TotemBar:HidePreview()
     if not self.previewing then return end
     self.previewing = false
     ClearMockTotems()
-    -- Restore real state
     if self.enabled then
         UpdateTotems()
     else
@@ -744,9 +615,6 @@ function TotemBar:IsPreviewShown()
     return self.previewing
 end
 
----------------------------------------------------------------------------
--- GLOBAL CALLBACKS (for options / layout mode)
----------------------------------------------------------------------------
 _G.QUI_RefreshTotemBar = function()
     TotemBar:Refresh()
     if TotemBar:IsPreviewShown() then
@@ -757,7 +625,6 @@ end
 _G.QUI_ShowTotemBarPreview = function()
     TotemBar:ShowPreview()
 end
-
 
 _G.QUI_HideTotemBarPreview = function()
     TotemBar:HidePreview()
@@ -772,17 +639,12 @@ if ns.Registry then
     })
 end
 
----------------------------------------------------------------------------
--- INITIALIZATION
----------------------------------------------------------------------------
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-initFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
 initFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 initFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_ENABLED" then
-        -- Reconcile button layout after combat
         if pendingReconcile and TotemBar.enabled then
             pendingReconcile = false
             UpdateTotems()
@@ -796,13 +658,7 @@ initFrame:SetScript("OnEvent", function(self, event)
         C_Timer.After(0.6, function()
             TotemBar:Refresh()
         end)
-    elseif event == "PLAYER_TOTEM_UPDATE" then
-        local db = GetDB()
-        if db and db.enabled then
-            TotemBar:Refresh()
-        end
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        -- TotemFrame usage can change with spec (e.g. Brewmaster vs other monks).
         local db = GetDB()
         if db and db.enabled then
             TotemBar:Refresh()

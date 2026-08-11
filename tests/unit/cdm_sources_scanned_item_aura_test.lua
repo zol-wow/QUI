@@ -88,6 +88,11 @@ local ns = {
             return nil
         end,
     },
+    -- core/safecall.lua stub: silent pcall swallow matches the pre-SafeCall
+    -- shape these tests were written against.
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
@@ -117,9 +122,14 @@ assert(info.expiration == 180 and info.duration == 20, "spell fallback should ca
 assert(registered[2].itemID == 3001 and registered[2].useSpellID == 9003,
     "spell fallback query should register tracked item use spell")
 
+-- 12.1: GetAuraDuration gained RequiresUnitAuraAccess=true — it THROWS when aura
+-- data is secret (the state a secret auraInstanceID signals). QueryAuraDuration
+-- must reject a secret instance ID up front (return nil) rather than forward it to
+-- the C getter, which would error in combat. (Pre-12.1 this passed through and
+-- returned a secret DurationObject; that contract no longer exists.)
 local queriedDuration = sources.QueryAuraDuration("player", secretAuraInstanceID)
-assert(queriedDuration == durationObject, "secret aura instance IDs should pass through to duration query")
-assert(durationQueries[1].auraInstanceID == secretAuraInstanceID,
-    "duration query should preserve secret aura instance identity")
+assert(queriedDuration == nil, "secret aura instance IDs must be rejected, not forwarded to the duration query")
+assert(durationQueries[1] == nil,
+    "the duration getter must NOT be invoked with a secret aura instance ID")
 
 print("OK: cdm_sources_scanned_item_aura_test")

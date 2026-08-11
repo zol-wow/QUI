@@ -10,10 +10,11 @@
 --                       charge > cooldown > gcd-only when
 --                       Show Buff/Debuff Phase on Cooldown Icons is off.
 --
--- Mirror state now owns event-driven attribution only (aura instance,
--- totem ownership, registration metadata). Mode and durObj are derived
--- by the resolver at evaluation time from C_Spell.GetSpellCooldown,
--- C_UnitAuras, and registration flags.
+-- Mode and durObj are derived by the resolver at evaluation time from the
+-- live APIs: C_Spell.GetSpellCooldown, C_Spell.GetSpellCharges, and the
+-- aura runtime (CDMAuraRuntime.ResolveState). The Blizzard-mirror pipeline
+-- has been removed, so aura attribution now flows exclusively through the
+-- aura runtime.
 
 local function noop() end
 
@@ -32,86 +33,12 @@ local chargeDur = { token = "charge-dur" }
 local cooldownDur = { token = "cooldown-dur" }
 local gcdDur = { token = "gcd-dur" }
 
-local states = {}
-local function makeState(cooldownID, category, opts)
-    opts = opts or {}
-    states[category .. ":" .. cooldownID] = {
-        cooldownID = cooldownID,
-        viewerCategory = category,
-        mirrorEpoch = 1,
-        spellID = cooldownID,
-        hasAura = opts.hasAura,
-        charges = opts.charges,
-        selfAura = opts.selfAura,
-        auraInstanceID = opts.auraInstanceID,
-        hasAuraInstanceID = opts.auraInstanceID and true or false,
-        auraUnit = opts.auraUnit,
-        auraDurObj = opts.auraDurObj,
-        auraDurObjSource = opts.auraDurObj and "aura-duration" or nil,
-        totemDurObj = opts.totemDurObj,
-        totemDurObjSource = opts.totemDurObj and "totem-duration" or nil,
-        childIsActive = opts.childIsActive,
-    }
-end
-
--- Scenario A: cooldown entry with active aura + active cooldown
-makeState(50001, "essential", {
-    hasAura = true,
-    auraInstanceID = 1001,
-    auraUnit = "player",
-    auraDurObj = auraDur,
-})
--- Scenario B: cooldown entry with active aura + charge + cooldown
-makeState(50002, "essential", {
-    hasAura = true,
-    charges = true,
-    auraInstanceID = 1002,
-    auraUnit = "player",
-    auraDurObj = auraDur,
-})
--- Scenario C: charge + cooldown, no aura
-makeState(50003, "essential", {
-    charges = true,
-})
--- Scenario D: cooldown + (no GCD), no aura
-makeState(50004, "essential", {})
--- Scenario E: gcd-only, no aura
-makeState(50005, "essential", {})
--- Scenario F: aura-viewer entry with aura
-makeState(50006, "buff", {
-    hasAura = true,
-    auraInstanceID = 1006,
-    auraUnit = "player",
-    auraDurObj = auraDur,
-})
--- Scenario G: utility cooldown entry with aura captured by runtime
-makeState(50007, "utility", {
-    charges = true,
-    hasAura = false,
-    childIsActive = true,
-})
-makeState(50007, "buff", {
-    hasAura = true,
-    auraInstanceID = 7007,
-    auraUnit = "player",
-    auraDurObj = auraDur,
-})
-
--- Scenario H: cooldown entry with hook-cached cooldownDurObj. The resolver
--- must prefer the cached durObj over QuerySpellCooldownDuration (which the
--- mock leaves nil to simulate the API lag we're papering over).
-local cachedCooldownDur = { token = "cached-cooldown-dur" }
-makeState(50008, "essential", {})
-states["essential:50008"].cooldownDurObj = cachedCooldownDur
-states["essential:50008"].cooldownDurObjSource = "live-cooldown"
-
 local ns = {
     Helpers = {
         IsSecretValue = function() return false end,
         SafeValue = function(v) return v end,
     },
     CDMSources = {
-        QueryMirroredCooldownState = function() return nil end,
         QuerySpellCooldown = function(spellID)
             -- Scenarios A, B: aura up but cooldown is also rolling
             if spellID == 50001 or spellID == 50002 then
@@ -133,12 +60,6 @@ local ns = {
             if spellID == 50006 then
                 return { isActive = false, isOnGCD = false }
             end
-            -- Scenario H: real cooldown rolling, isOnGCD=false. The resolver
-            -- should bind cachedCooldownDur (from mirror), not call
-            -- QuerySpellCooldownDuration.
-            if spellID == 50008 then
-                return { isActive = true, isOnGCD = false }
-            end
             return nil
         end,
         QuerySpellCharges = function(spellID)
@@ -154,15 +75,19 @@ local ns = {
             if spellID == 50004 and ignoreGCD == true then
                 return cooldownDur
             end
-            if (spellID == 50001 or spellID == 50002) and ignoreGCD == true then
+            if spellID == 50001 and ignoreGCD == true then
                 return cooldownDur
             end
-            -- After the mode-collapse refactor (Task 1-5), charge spells
-            -- with a rolling recharge are classified as mode="cooldown" and
-            -- the resolver calls QueryDuration → QuerySpellCooldownDuration
-            -- with ignoreGCD=true. WoW's real API returns the recharge
-            -- timer here for a charge spell whose regen IS the cooldown,
-            -- so mirror that for scenarios C and G.
+            -- After the mode-collapse refactor, charge spells with a rolling
+            -- recharge are classified as mode="cooldown" and the resolver calls
+            -- QueryDuration → QuerySpellCooldownDuration with ignoreGCD=true.
+            -- For spells whose regen IS the cooldown (scenarios C, G, and the
+            -- disabled-aura 50002 case) WoW returns the recharge timer here, so
+            -- mirror that. Note 50002 is intentionally absent: it is a multi-
+            -- charge spell whose regular cooldown duration is a zero/unavailable
+            -- DurationObject while a charge is regenerating, so the charge
+            -- branch is the only thing that can bind a usable swipe (mirroring
+            -- Blizzard CooldownViewer's CheckCacheCooldownValuesFromCharges).
             if (spellID == 50003 or spellID == 50007) and ignoreGCD == true then
                 return chargeDur
             end
@@ -174,36 +99,39 @@ local ns = {
             end
             return nil
         end,
-        QueryAuraDataByAuraInstanceID = function(unit, auraInstanceID)
-            if unit == "player" and (auraInstanceID == 1001 or auraInstanceID == 1002 or auraInstanceID == 1006) then
-                return { auraInstanceID = auraInstanceID, isFromPlayerOrPlayerPet = true }
-            end
-            return nil
-        end,
-    },
-    CDMBlizzMirror = {
-        GetStateByCooldownID = function(cooldownID, category)
-            return states[tostring(category) .. ":" .. tostring(cooldownID)]
-        end,
-        HasChildForCooldownID = function(cooldownID, category)
-            return states[tostring(category) .. ":" .. tostring(cooldownID)] ~= nil
-        end,
-        GetCooldownIDForViewer = function(spellID, viewerType)
-            if spellID == 50007 and viewerType == "buff" then
-                return 50007
-            end
-            return nil
-        end,
-        GetDirectCooldownIDForViewer = function() return nil end,
     },
     CDMAuraRuntime = {
+        -- Live aura attribution: returns the active aura facts for the spells
+        -- that have an aura up. The resolver's aura probe is gated on
+        -- useBuffSwipe (cooldown entries skip it when aura phase is off), so
+        -- this mock can answer unconditionally.
         ResolveState = function(params)
-            if params and params.spellID == 50007 then
+            local spellID = params and params.spellID
+            if spellID == 50001 then
                 return {
-                    isActive = true,
-                    durObj = auraDur,
-                    auraInstanceID = 7007,
-                    auraUnit = "player",
+                    isActive = true, durObj = auraDur,
+                    auraInstanceID = 1001, auraUnit = "player",
+                    resolvedAuraSpellID = 50001,
+                }
+            end
+            if spellID == 50002 then
+                return {
+                    isActive = true, durObj = auraDur,
+                    auraInstanceID = 1002, auraUnit = "player",
+                    resolvedAuraSpellID = 50002,
+                }
+            end
+            if spellID == 50006 then
+                return {
+                    isActive = true, durObj = auraDur,
+                    auraInstanceID = 1006, auraUnit = "player",
+                    resolvedAuraSpellID = 50006,
+                }
+            end
+            if spellID == 50007 then
+                return {
+                    isActive = true, durObj = auraDur,
+                    auraInstanceID = 7007, auraUnit = "player",
                     resolvedAuraSpellID = 50007,
                 }
             end
@@ -228,20 +156,18 @@ local function entry(spellID)
     }
 end
 
-local function resolveState(e, cooldownID, category, spellID)
+local function resolveState(e, spellID, category)
     return resolvers.ResolveCooldownState({
         entry = e,
         runtimeSpellID = spellID,
-        mirrorCooldownID = cooldownID,
-        mirrorCategory = category,
-        containerKey = category,
+        containerKey = category or e.viewerType,
         useBuffSwipe = true,
+        showGCDSwipe = true,
     })
 end
 
 -- Scenario A: aura up + cooldown rolling → aura mode by default
-local state = resolveState(entry(50001), 50001, "essential", 50001)
-assert(state and state.mirrorBacked == true, "scenario A: state should be mirror-backed")
+local state = resolveState(entry(50001), 50001, "essential")
 assert(state.mode == "aura",
     "scenario A: cooldown entry with aura up should resolve to aura mode (got " .. tostring(state.mode) .. ")")
 assert(state.durObj == auraDur,
@@ -249,8 +175,7 @@ assert(state.durObj == auraDur,
 assert(state.active == true, "scenario A: payload should be active")
 
 -- Scenario B: aura up + charge + cooldown → aura mode by default
-state = resolveState(entry(50002), 50002, "essential", 50002)
-assert(state and state.mirrorBacked == true, "scenario B: state should be mirror-backed")
+state = resolveState(entry(50002), 50002, "essential")
 assert(state.mode == "aura",
     "scenario B: aura + charge + cooldown should resolve to aura mode (got " .. tostring(state.mode) .. ")")
 assert(state.durObj == auraDur,
@@ -260,9 +185,8 @@ assert(state.durObj == auraDur,
 -- refactor, the resolver no longer publishes mode=="charge"; a rolling
 -- recharge is classified as mode=="cooldown" and the icon renderer is
 -- responsible for charge-aware desaturation via its own
--- chargesRemaining query (Task 8).
-state = resolveState(entry(50003), 50003, "essential", 50003)
-assert(state and state.mirrorBacked == true, "scenario C: state should be mirror-backed")
+-- chargesRemaining query.
+state = resolveState(entry(50003), 50003, "essential")
 assert(state.mode == "cooldown",
     "scenario C: charge spell with recharge rolling should resolve to cooldown mode (got " .. tostring(state.mode) .. ")")
 assert(state.durObj == chargeDur,
@@ -271,16 +195,14 @@ assert(state.isOnCooldown == true,
     "scenario C: charge spell with recharge rolling should publish isOnCooldown")
 
 -- Scenario D: cooldown, no aura, no charge
-state = resolveState(entry(50004), 50004, "essential", 50004)
-assert(state and state.mirrorBacked == true, "scenario D: state should be mirror-backed")
+state = resolveState(entry(50004), 50004, "essential")
 assert(state.mode == "cooldown",
     "scenario D: cooldown entry with real CD should resolve to cooldown mode (got " .. tostring(state.mode) .. ")")
 assert(state.durObj == cooldownDur,
     "scenario D: cooldown entry with real CD should carry the cooldown DurationObject")
 
 -- Scenario E: gcd-only floor
-state = resolveState(entry(50005), 50005, "essential", 50005)
-assert(state and state.mirrorBacked == true, "scenario E: state should be mirror-backed")
+state = resolveState(entry(50005), 50005, "essential")
 assert(state.mode == "gcd-only",
     "scenario E: cooldown entry with only GCD should resolve to gcd-only mode (got " .. tostring(state.mode) .. ")")
 assert(state.durObj == gcdDur,
@@ -294,8 +216,7 @@ local auraEntry = {
     kind = "aura",
     viewerType = "buff",
 }
-state = resolveState(auraEntry, 50006, "buff", 50006)
-assert(state and state.mirrorBacked == true, "scenario F: aura-viewer state should be mirror-backed")
+state = resolveState(auraEntry, 50006, "buff")
 assert(state.mode == "aura",
     "scenario F: aura-viewer entry with aura lane should resolve to aura mode (got " .. tostring(state.mode) .. ")")
 assert(state.durObj == auraDur,
@@ -308,10 +229,9 @@ utilityEntry.hasCharges = true
 state = resolvers.ResolveCooldownState({
     entry = utilityEntry,
     runtimeSpellID = 50007,
-    mirrorCooldownID = 50007,
-    mirrorCategory = "utility",
     containerKey = "utility",
     useBuffSwipe = true,
+    showGCDSwipe = true,
 })
 
 assert(state and state.mode == "aura",
@@ -325,11 +245,10 @@ assert(state.auraActive == true,
 state = resolvers.ResolveCooldownState({
     entry = utilityEntry,
     runtimeSpellID = 50007,
-    mirrorCooldownID = 50007,
-    mirrorCategory = "utility",
     containerKey = "utility",
     useBuffSwipe = false,
     skipAuraPhase = true,
+    showGCDSwipe = true,
 })
 
 -- After the mode-collapse refactor, a rolling recharge is classified as
@@ -346,11 +265,10 @@ local function resolveIcon(spellID)
     local resolved = resolvers.ResolveCooldownState({
         entry = e,
         runtimeSpellID = spellID,
-        mirrorCooldownID = spellID,
-        mirrorCategory = "essential",
         containerKey = "essential",
         useBuffSwipe = showCooldownIconAuraPhase ~= false,
         skipAuraPhase = showCooldownIconAuraPhase == false,
+        showGCDSwipe = true,
     })
     return resolved.durObj, resolved.mode
 end
@@ -372,28 +290,35 @@ assert(durObj == cooldownDur,
 
 durObj, mode = resolveIcon(50002)
 -- aura+charge+cooldown with aura phase skipped resolves to the cooldown
--- lane (mode=="cooldown"). For multi-charge spells the resolver now binds
--- the charge-duration DurationObject in preference to the regular
--- cooldown duration, mirroring Blizzard CooldownViewer's
--- CheckCacheCooldownValuesFromCharges precedence. For spells whose
--- recharge IS the cooldown (Death Charge is the reference case) the
--- regular cooldown duration is a zero DurationObject and the charge
--- branch is the only thing that can bind a usable swipe.
+-- lane (mode=="cooldown"). For multi-charge spells the resolver binds the
+-- charge-duration DurationObject in preference to the regular cooldown
+-- duration, mirroring Blizzard CooldownViewer's
+-- CheckCacheCooldownValuesFromCharges precedence. For spells whose recharge
+-- IS the cooldown (Death Charge is the reference case) the regular cooldown
+-- duration is a zero DurationObject and the charge branch is the only thing
+-- that can bind a usable swipe.
 assert(mode == "cooldown",
     "disabled cooldown-icon aura phase should resolve aura+charge+cooldown to cooldown mode (got " .. tostring(mode) .. ")")
 assert(durObj == chargeDur,
     "disabled cooldown-icon aura phase should carry the charge-duration DurationObject "
     .. "(charges take precedence over the spell cooldown per Blizzard CV)")
 
--- Scenario H: hook-cached cooldown durObj is preferred over the API.
-state = resolveState(entry(50008), 50008, "essential", 50008)
-assert(state and state.mirrorBacked == true, "scenario H: state should be mirror-backed")
-assert(state.mode == "cooldown",
-    "scenario H: real CD with no aura should resolve to cooldown mode (got "
-    .. tostring(state.mode) .. ")")
-assert(state.durObj == cachedCooldownDur,
-    "scenario H: resolver must bind the hook-cached cooldownDurObj instead "
-    .. "of polling QuerySpellCooldownDuration (got "
-    .. tostring(state.durObj and state.durObj.token or state.durObj) .. ")")
+-- Independent skipAuraPhase gate (regression for the reanchor aura-phase
+-- override): skipAuraPhase=true must skip the aura phase even when
+-- useBuffSwipe is NOT false. Proves the resolver consults skipAuraPhase
+-- directly, not only via the useBuffSwipe coupling.
+local indep = resolvers.ResolveCooldownState({
+    entry = entry(50001),
+    runtimeSpellID = 50001,
+    containerKey = "essential",
+    useBuffSwipe = true,
+    skipAuraPhase = true,
+    showGCDSwipe = true,
+})
+assert(indep and indep.mode == "cooldown",
+    "skipAuraPhase=true must skip aura phase independent of useBuffSwipe (got "
+    .. tostring(indep and indep.mode) .. ")")
+assert(indep.durObj == cooldownDur,
+    "skipAuraPhase gate must carry the cooldown DurationObject")
 
 print("OK: cdm_aura_priority_integration_test")

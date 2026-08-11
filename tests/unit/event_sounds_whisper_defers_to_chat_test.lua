@@ -55,7 +55,7 @@ local ns = {
     },
 }
 
-assert(loadfile("QUI_QoL/qol/event_sounds.lua"))("QUI_QoL", ns)
+assert(loadfile("modules/qol/event_sounds.lua"))("QUI_QoL", ns)
 assert(type(onEvent) == "function", "event_sounds must install an OnEvent handler")
 
 local function fire(event) onEvent(nil, event) end

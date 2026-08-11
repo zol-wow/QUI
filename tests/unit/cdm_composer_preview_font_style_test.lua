@@ -14,7 +14,7 @@ local rowsStart = assert(source:find("local function ReadPreviewConfigValue", 1,
     "preview row config helper must exist")
 local buildRowsStart = assert(source:find("local function BuildPreviewRows", rowsStart, true),
     "BuildPreviewRows helper must exist")
-local rowsEnd = assert(source:find("-- SORT_PREVIEW_ENTRIES", rowsStart, true),
+local rowsEnd = assert(source:find("local function SortPreviewEntries(", rowsStart, true),
     "preview row config section terminator must exist")
 local rowsBody = source:sub(rowsStart, rowsEnd)
 
@@ -38,7 +38,7 @@ end
 
 local styleStart = assert(source:find("local function StylePreviewIconsImpl", 1, true),
     "StylePreviewIconsImpl helper must exist")
-local styleEnd = assert(source:find("-- LayoutPreviewBarsImpl", styleStart, true),
+local styleEnd = assert(source:find("local function LayoutPreviewBarsImpl(", styleStart, true),
     "StylePreviewIconsImpl section terminator must exist")
 local styleBody = source:sub(styleStart, styleEnd)
 

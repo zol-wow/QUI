@@ -1,62 +1,30 @@
----------------------------------------------------------------------------
--- Bags views: currency bar. A footer-adjacent row on the BAG window showing
--- the user's settings-listed currencies as icon + amount segments. Config
--- is the shared currency-section model (currencyBar.currencyOrder array +
--- currencyBar.currencyEnabled map, STRING ids — the same shape the Info
--- Bar/datatext Currencies settings edit): render order ∩ enabled==true. A
--- pre-migration profile (settings page never opened) may still carry the
--- legacy currencyBar.currencies [id]=true set — rendered sorted until the
--- options page migrates it.
---
--- Data (verified, CurrencyInfoDocumentation.lua): C_CurrencyInfo.
--- GetCurrencyInfo(id) → CurrencyInfo { iconFileID (fileID), quantity
--- (number), ... }, MayReturnNothing — unknown IDs are skipped. Icon/identity
--- always come from the live struct; the AMOUNT is mode-aware: live mode uses
--- the struct's quantity, cached browsing uses the viewed character's
--- scanner-cached map (rec.currencies[id], scan_currencies.lua — zero
--- quantities are pruned there, so absent = 0).
---
--- Update cadence: the bag window's Refresh calls bar:Update() (which also
--- returns the extra content height for SetContentSize), and bag_window
--- subscribes CurrenciesChanged → ScheduleRefresh, so scanner drains land
--- here. Hidden (height 0) when disabled, list empty, or nothing renderable.
--- Clicks do nothing.
---
--- Hovering a segment shows a warband breakdown tooltip: account-wide
--- currencies (CurrencyInfo.isAccountWide) show the live quantity as the
--- warband total; per-character currencies list every scanned character's
--- amount (Storage rec.currencies, class-colored) plus the sum.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage
 local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
 local function CJKFont(fs, p, s, f)
-    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
-        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
-    else
-        fs:SetFont(p, s, f)
-    end
+    if Bags.CJKFont then return Bags.CJKFont(fs, p, s, f) end
+    fs:SetFont(p, s, f)
 end
 
 local CurrencyBar = {}
 Bags.CurrencyBar = CurrencyBar
 
-local BAR_H = 18   -- extra content height while shown
+local BAR_H = 18
 local ICON = 14
-local SEG_GAP = 12 -- gap between segments
+local SEG_GAP = 12
 local MAX_TOOLTIP_ROWS = 12
 
 local function FormatQty(qty)
     return BreakUpLargeNumbers and BreakUpLargeNumbers(qty) or tostring(qty)
 end
 
---- BAG-02: warband/multi-character breakdown for the hovered currency.
 local function ShowBreakdownTooltip(hit)
     local id = hit._currencyID
     if not id then return end
-    local info = C_CurrencyInfo.GetCurrencyInfo(id) -- MayReturnNothing
+    local info = C_CurrencyInfo.GetCurrencyInfo(id)
     if not info then return end
 
     GameTooltip:SetOwner(hit, "ANCHOR_TOP")
@@ -64,11 +32,10 @@ local function ShowBreakdownTooltip(hit)
     GameTooltip:AddLine(info.name or "", 1, 1, 1)
 
     if info.isAccountWide then
-        -- Account-wide: the live quantity IS the warband total.
         GameTooltip:AddDoubleLine(ns.L["Warband (account-wide)"],
             FormatQty(info.quantity or 0), 0.8, 0.8, 0.8, 1, 1, 1)
     else
-        local Store = Bags.Store
+        local Store = Storage.Store
         if Store and Store.ListCharacters then
             local rows, total = {}, 0
             for _, key in ipairs(Store.ListCharacters()) do
@@ -102,9 +69,6 @@ local function ShowBreakdownTooltip(hit)
     GameTooltip:Show()
 end
 
---- Re-render from settings + the viewed record. `live` mirrors the window's
---- mode (viewedCharacter == nil). Returns the content height the window must
---- reserve above the footer (0 when hidden).
 local function Update(bar, record, live)
     local s = GetSettings()
     local cfg = s and s.currencyBar
@@ -119,7 +83,6 @@ local function Update(bar, record, live)
             end
         end
         if #ids == 0 and type(cfg.currencies) == "table" then
-            -- legacy pre-migration set: everything listed, sorted
             for id in pairs(cfg.currencies) do ids[#ids + 1] = id end
             table.sort(ids)
         end
@@ -128,7 +91,7 @@ local function Update(bar, record, live)
     local shown = 0
     local x = 0
     for _, id in ipairs(ids) do
-        local info = C_CurrencyInfo.GetCurrencyInfo(id) -- MayReturnNothing
+        local info = C_CurrencyInfo.GetCurrencyInfo(id)
         if info then
             local qty
             if live then
@@ -144,7 +107,6 @@ local function Update(bar, record, live)
                 seg.amount = bar:CreateFontString(nil, "ARTWORK")
                 CJKFont(seg.amount, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
                 seg.amount:SetPoint("LEFT", seg.icon, "RIGHT", 3, 0)
-                -- hover region for the warband breakdown tooltip
                 seg.hit = CreateFrame("Frame", nil, bar)
                 seg.hit:SetHeight(BAR_H)
                 seg.hit:EnableMouse(true)
@@ -184,15 +146,13 @@ local function Update(bar, record, live)
     return BAR_H
 end
 
---- Build the bar on a chassis window (EnsureWindow-time, bag window only).
---- Anchors above the footer across the body's width; starts hidden.
 function CurrencyBar.Attach(win)
     local bar = CreateFrame("Frame", nil, win)
     bar:SetPoint("BOTTOMLEFT", win._footer, "TOPLEFT", 8, 0)
     bar:SetPoint("BOTTOMRIGHT", win._footer, "TOPRIGHT", -8, 0)
     bar:SetHeight(BAR_H)
     bar:Hide()
-    bar._segments = {} -- pooled { icon = Texture, amount = FontString }
+    bar._segments = {}
     bar.Update = Update
     win._currencyBar = bar
     return bar

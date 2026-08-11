@@ -7,17 +7,7 @@ local ProviderPanels = Settings.ProviderPanels or {}
 Settings.ProviderPanels = ProviderPanels
 
 local function BuildAnchorOptions()
-    return {
-        { value = "TOPLEFT", text = ns.L["Top Left"] },
-        { value = "TOP", text = ns.L["Top"] },
-        { value = "TOPRIGHT", text = ns.L["Top Right"] },
-        { value = "LEFT", text = ns.L["Left"] },
-        { value = "CENTER", text = ns.L["Center"] },
-        { value = "RIGHT", text = ns.L["Right"] },
-        { value = "BOTTOMLEFT", text = ns.L["Bottom Left"] },
-        { value = "BOTTOM", text = ns.L["Bottom"] },
-        { value = "BOTTOMRIGHT", text = ns.L["Bottom Right"] },
-    }
+    return ns.QUI_SettingsLayoutShared.BuildNinePointAnchorOptions()
 end
 
 function ProviderPanels:GetContext()

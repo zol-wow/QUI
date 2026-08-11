@@ -15,7 +15,7 @@ _G.GetRealmName = function() return "Aerie Peak" end
 
 local loader = dofile("tests/helpers/load_bags_data.lua")
 local ns = loader.LoadAll(nil, "store.lua")
-local Store = ns.Bags.Store
+local Store = ns.Storage.Store
 
 _G.QUI_StorageDB = nil
 Store.Initialize()

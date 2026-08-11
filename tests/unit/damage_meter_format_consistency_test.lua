@@ -34,12 +34,25 @@ local function extractFormatOpts()
     return chunk .. "\n"
 end
 
--- Static guard: FormatNumber must NOT mention any taint-branch helper. If
--- someone reintroduces an IsSecretValue / TruncateWhenZero branch, this fires
--- before the runtime assertions even start.
+-- Static guard: FormatNumber must not FORMAT-branch on secrecy — secret and
+-- non-secret amounts go through the SAME single Blizzard dispatch (one
+-- AbbreviateNumbers call site, one BreakUpLargeNumbers call site). The ONE
+-- sanctioned IsSecretValue use is the probe guarding the nil compare:
+-- `secret == nil` throws in-game, so the compare must be probe-dominated
+-- (2026-07-19 probe-order discipline; the old blanket "no IsSecretValue"
+-- pin enforced a crash shape).
 local formatNumberSrc = extract("FormatNumber")
-assert(not formatNumberSrc:find("IsSecretValue"),
-    "FormatNumber must not branch on IsSecretValue — both paths go through Blizzard")
+assert(formatNumberSrc:find("not IsSecretValue(amount) and amount == nil", 1, true),
+    "FormatNumber's nil compare must be probe-dominated (guard-then-compare)")
+local _, isvCount = formatNumberSrc:gsub("IsSecretValue%(", "")
+assert(isvCount == 1,
+    "FormatNumber may use IsSecretValue exactly once — the nil-compare guard, never a format branch")
+local _, abbrevCount = formatNumberSrc:gsub("AbbreviateNumbers%(", "")
+assert(abbrevCount == 1,
+    "exactly one AbbreviateNumbers call site — secret and non-secret share it")
+local _, bulnCount = formatNumberSrc:gsub("BreakUpLargeNumbers%(", "")
+assert(bulnCount == 1,
+    "exactly one BreakUpLargeNumbers call site — secret and non-secret share it")
 assert(not formatNumberSrc:find("TruncateWhenZero"),
     "FormatNumber must not route through TruncateWhenZero — that emits raw integers")
 assert(not formatNumberSrc:find("== 0"),
@@ -69,8 +82,9 @@ local FormatNumber = loader()
 
 -- Sentinel that masquerades as a secret-tagged value. Real ConditionalSecret
 -- objects are userdata; for dispatch purposes any non-nil value works because
--- FormatNumber never inspects the input.
+-- FormatNumber never inspects the input beyond the probe.
 local SECRET = setmetatable({}, { __tostring = function() return "<secret>" end })
+_G.IsSecretValue = function(v) return v == SECRET end
 
 -- ---- compact: secret and non-secret share the same opts table ----
 

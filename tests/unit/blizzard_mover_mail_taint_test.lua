@@ -13,7 +13,7 @@ local function blockForId(source, id)
     return source:match(pattern)
 end
 
-local frameRegistry = readFile("QUI_QoL/qol/blizzard_mover_frames.lua")
+local frameRegistry = readFile("modules/qol/blizzard_mover_frames.lua")
 
 local mailBlock = assert(blockForId(frameRegistry, "MailFrame"), "MailFrame registry entry should exist")
 assert(mailBlock:find("secureFrame = true", 1, true), "MailFrame must use secure-frame watcher mode")
@@ -126,9 +126,16 @@ local ns = {
             return profile
         end,
     },
+    SafeCall = function(_policy, fn, ...)
+        return pcall(fn, ...)
+    end,
+    SafeCallMethod = function(_policy, obj, name, ...)
+        return pcall(function(...) return obj[name](obj, ...) end, ...)
+    end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
 }
 
-assert(loadfile("QUI_QoL/qol/blizzard_mover.lua"))("QUI", ns)
+assert(loadfile("modules/qol/blizzard_mover.lua"))("QUI", ns)
 local mover = assert(ns.QUI_BlizzardMover, "Blizzard mover module should load")
 mover.functions.InitDB()
 

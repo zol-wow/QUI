@@ -16,9 +16,9 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local source = readFile("QUI_Skinning/skinning/character_pane/inspect.lua")
-local inspectGuildFrame = readFile("tests/framexml/Interface/AddOns/Blizzard_InspectUI/InspectGuildFrame.lua")
-local inspectFrame = readFile("tests/framexml/Interface/AddOns/Blizzard_InspectUI/Blizzard_InspectUI.lua")
+local source = readFile("modules/skinning/character_pane/inspect.lua")
+local inspectGuildFrame = readFile("tests/framexml/Interface/AddOns/Blizzard_InspectUI/Mainline/InspectGuildFrame.lua")
+local inspectFrame = readFile("tests/framexml/Interface/AddOns/Blizzard_InspectUI/Mainline/Blizzard_InspectUI.lua")
 local paperDollDocs = readFile("tests/api-docs/blizzard/PaperDollInfoDocumentation.lua")
 
 assertContains(
@@ -55,7 +55,7 @@ local guildGuardStart = assert(
     source:find("local function PatchInspectGuildNilGuard()", 1, true),
     "Inspect guild nil guard should exist")
 local guildGuardEnd = assert(
-    source:find("---------------------------------------------------------------------------\n-- Event frame for inspect-specific events", guildGuardStart, true),
+    source:find("local eventFrame = CreateFrame(\"Frame\")", guildGuardStart, true),
     "Inspect guild nil guard block should end before the event frame")
 local guildGuardBlock = source:sub(guildGuardStart, guildGuardEnd)
 
@@ -106,7 +106,7 @@ local layoutStart = assert(
     source:find("ApplyInspectPaneLayout = function(force)", 1, true),
     "Inspect layout entry point should exist")
 local layoutEnd = assert(
-    source:find("end\n\n---------------------------------------------------------------------------\n-- Initialize slot overlays for inspect frame", layoutStart, true),
+    source:find("local function InitializeInspectOverlays()", layoutStart, true),
     "Inspect layout block should end before overlay initialization")
 local layoutBlock = source:sub(layoutStart, layoutEnd)
 

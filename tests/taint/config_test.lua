@@ -63,3 +63,25 @@ assert_eq(cfg3.coverage.secretArguments_restricted, true,
     "secretArguments_restricted default preserved through partial coverage override")
 
 print("config test passed")
+
+-- Round-23 element keys
+do
+    local cfg = Config.loadFromString(nil)
+    assert(cfg.coverage.conditionalSecretContents == true,
+        "conditionalSecretContents coverage defaults ON")
+    assert(type(cfg.element_secret_functions) == "table",
+        "element_secret_functions default present")
+    assert(type(cfg.element_container_params) == "table",
+        "element_container_params default present")
+    local merged = Config.loadFromString([[return {
+        element_secret_functions = { "Sources.QueryUnitAuras" },
+        element_container_params = { CopyReadableAuras = { 1 } },
+    }]])
+    assert(merged.element_secret_functions[1] == "Sources.QueryUnitAuras",
+        "element_secret_functions merges")
+    assert(merged.element_container_params.CopyReadableAuras[1] == 1,
+        "element_container_params merges")
+    assert(merged.coverage.conditionalSecretContents == true,
+        "partial config keeps coverage default")
+end
+print("config element keys test passed")

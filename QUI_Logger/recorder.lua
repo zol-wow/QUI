@@ -1,7 +1,4 @@
--- QUI_Logger/recorder.lua
--- Dev-only event recorder. Pure funcs are unit-tested; live wiring runs
--- only when WoW globals exist (guarded), so this file loads under plain lua.
--- luacheck: globals QUI_LoggerDB SLASH_QLOG1
+-- luacheck: globals QUI_LoggerDB SLASH_QUILOGGER1
 local addonName, ns = ...
 
 local DEFAULT_LIMITS = {
@@ -85,7 +82,6 @@ function ns.SanitizeArg(v, opts, depth)
         local ok, copy = pcall(sanitizeTable, v, limits, depth)
         return ok and copy or "<unstorable-table>"
     end
-    -- userdata / function / thread / secret values: never store the live ref.
     return "<" .. tv .. ">"
 end
 
@@ -182,7 +178,6 @@ function ns.StatusString(db)
     return string.format("sessions=%d events=%d", #sessions, events)
 end
 
--- Live wiring: only with WoW globals present.
 if type(CreateFrame) == "function" then
     ns._dateFn = date
     local limits = ns.GetLimits()
@@ -231,20 +226,15 @@ if type(CreateFrame) == "function" then
         db.enabled = false
         provider.set(db)
         recording = false
+        frame:UnregisterAllEvents()
+        registeredAllEvents = false
+        frame:RegisterEvent("ADDON_LOADED")
     end
 
     local function record(event, ...)
         if recording then appendRecord(event, ...) end
     end
 
-    -- NOTE: COMBAT_LOG_EVENT_UNFILTERED is NOT capturable from an addon in 12.0
-    -- (Midnight). CLEU was removed from the addon environment: Frame:RegisterEvent
-    -- for it raises ADDON_ACTION_FORBIDDEN, the public CombatLogGetCurrentEventInfo
-    -- is gone from the API docs, and combat data moved to the Blizzard-only
-    -- COMBAT_LOG_EVENT_INTERNAL_UNFILTERED / C_CombatLogInternal plus the aggregate
-    -- C_DamageMeter API. RegisterAllEvents also never delivered CLEU. For raw
-    -- combat-log capture use the client's own /combatlog (writes
-    -- WoWCombatLog-*.txt), which is not addon-gated.
     frame:RegisterEvent("ADDON_LOADED")
     if recording then registerAllEvents() end
 
@@ -270,8 +260,8 @@ if type(CreateFrame) == "function" then
         record(event, ...)
     end)
 
-    SLASH_QLOG1 = "/qlog"
-    SlashCmdList["QLOG"] = function(msg)
+    SLASH_QUILOGGER1 = "/quilogger"
+    SlashCmdList["QUILOGGER"] = function(msg)
         msg = (msg or ""):lower():gsub("%s+", "")
         if msg == "clear" then
             ns.ClearDB(QUI_LoggerDB)

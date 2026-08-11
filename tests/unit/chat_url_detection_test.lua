@@ -42,6 +42,10 @@ local ns = {
         IsSecretValue = function() return false end,
         HasSecretValue = function() return false end,
     },
+    -- core/safecall.lua stub (Task 45b ns-mock precedent).
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
     UIKit = {},
     QUI = {
         Chat = {
@@ -65,22 +69,22 @@ local function assertContains(name, haystack, needle)
 end
 
 do
-    local text, changed = makeURLsClickable("Join discord.gg/FFUjA4JXnH")
+    local text, changed = makeURLsClickable("Join discord.gg/J9Q87C9CM8")
     assert(changed == true, "bare discord invite should be linkified")
     assertContains(
         "bare discord invite",
         text,
-        "|Haddon:quaziiuichat:url:discord.gg/FFUjA4JXnH|h[discord.gg/FFUjA4JXnH]|h"
+        "|Haddon:quichat:url:discord.gg/J9Q87C9CM8|h[discord.gg/J9Q87C9CM8]|h"
     )
 end
 
 do
-    local text, changed = makeURLsClickable("Join (https://discord.gg/FFUjA4JXnH).")
+    local text, changed = makeURLsClickable("Join (https://discord.gg/J9Q87C9CM8).")
     assert(changed == true, "parenthesized discord invite should be linkified")
     assertContains(
         "parenthesized discord invite",
         text,
-        "|Haddon:quaziiuichat:url:https://discord.gg/FFUjA4JXnH|h[https://discord.gg/FFUjA4JXnH]|h"
+        "|Haddon:quichat:url:https://discord.gg/J9Q87C9CM8|h[https://discord.gg/J9Q87C9CM8]|h"
     )
     assertContains("trailing punctuation", text, "|h|r).")
 end

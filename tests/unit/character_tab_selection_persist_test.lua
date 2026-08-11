@@ -102,6 +102,11 @@ local ns = {
             frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA = r, g, b, a
         end,
     },
+    -- core/safecall.lua stub: silent pcall swallow matches the pre-SafeCall
+    -- shape these tests were written against.
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
 }
 
 CreateFrame = function() return NewFrame() end
@@ -113,7 +118,7 @@ function InCombatLockdown() return false end
 assert(loadfile("core/uikit.lua"))("QUI", ns)
 local SkinBase = ns.SkinBase
 assert(type(SkinBase) == "table", "SkinBase must load from uikit.lua")
-assert(loadfile("QUI_Skinning/skinning/frames/character.lua"))("QUI", ns)
+assert(loadfile("modules/skinning/frames/character.lua"))("QUI", ns)
 
 local API = _G.QUI_CharacterFrameSkinning
 assert(type(API) == "table" and type(API.Refresh) == "function",

@@ -1,34 +1,17 @@
--- modules/chat/tab_ui.lua
--- Visual tab bar for the custom chat display. Each window gets its own bar
--- frame and independent state (active tab, unread counts, drag state). Saved
--- QUI tabs (customDisplay.windows[w].tabs) are the primary runtime tab source.
--- Conversation tabs ("conv:<key>" frameIDs) are session-only; the
--- ConversationManager module that supplies them lands in a later task — all
--- ns.QUI.Chat.ConversationManager references are nil-safe runtime lookups.
--- Clicking a tab swaps the display filter via TabManager (lossless store
--- rebuild). Inactive tabs show an unread badge (accent-colored count of
--- messages matching that tab's filter since it was last active).
--- Custom tabs use negative frameIDs (-i for tabs[i]).
--- Custom tabs drag to reorder; conversation tabs use middle-click to close.
---
--- Layout note: the bar sits just above its container. The bar frame itself is
--- NOT mouse-enabled — only the buttons are — so the row does not create a
--- large invisible hit area around the chat frame.
 local ADDON_NAME, ns = ... -- luacheck: ignore ADDON_NAME
 local Helpers = ns.Helpers
 
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
     "QUI Chat: tab_ui.lua loaded before chat.lua. Check chat.xml — chat.lua must precede tab_ui.lua.")
 
+---@type fun(...) -- the `or` fallback is narrower than Helpers.IsSecretValue(value)
 local IsSecret = ns.Helpers and ns.Helpers.IsSecretValue or function() return false end
 
 ns.QUI.Chat.TabUI = ns.QUI.Chat.TabUI or {}
 local TabUI = ns.QUI.Chat.TabUI
 
--- Per-window instances. Keyed by windowID; each inst owns its bar frame,
--- live buttons, recycle pool, active id, unread counts, drag state.
 local instances = {}
-TabUI._instances = instances -- for unit tests
+TabUI._instances = instances
 
 local function GetInstance(windowID)
     windowID = tonumber(windowID) or 1
@@ -38,13 +21,13 @@ local function GetInstance(windowID)
             windowID = windowID,
             buttons = {},
             pool = {},
-            unread = {},      -- frameID -> count while inactive
+            unread = {},
             activeID = nil,
             pendingActivationID = nil,
             activeCustomSig = nil,
             draggingBtn = nil,
             dragIndicator = nil,
-            scrollOffset = 0, -- zero-based first visible tab index
+            scrollOffset = 0,
             visibleFirst = nil,
             visibleLast = nil,
             hasOverflow = false,
@@ -57,8 +40,6 @@ local function GetInstance(windowID)
     return inst
 end
 
--- Resolve a (possibly nil/string) windowID to a valid 1..count window and
--- return its tab-bar instance. Falls back to window 1 when out of range.
 local function ResolveInstance(windowID)
     local Display = ns.QUI.Chat.DisplayLayer
     local count = Display and Display.GetWindowCount and Display.GetWindowCount() or 0
@@ -74,14 +55,13 @@ local function CustomTabSignature(t)
     local parts = { tostring(t.name or ""), t.invert and "1" or "0" }
     if type(t.groups) == "table" then
         local keys = {}
-        for k in pairs(t.groups) do keys[#keys + 1] = tostring(k) end
+        for k, v in pairs(t.groups) do
+            keys[#keys + 1] = tostring(k) .. (v and "=1" or "=0")
+        end
         table.sort(keys)
         parts[#parts + 1] = "g:" .. table.concat(keys, ",")
     end
     if type(t.channels) == "table" then
-        -- Channel keys persist with explicit false on deselect; the signature
-        -- must encode the VALUE too or a check->uncheck edit (same key set)
-        -- would never re-derive the active filter.
         local keys = {}
         for k, v in pairs(t.channels) do
             keys[#keys + 1] = tostring(k) .. (v and "=1" or "=0")
@@ -91,17 +71,15 @@ local function CustomTabSignature(t)
     end
     return table.concat(parts, "|")
 end
+TabUI._CustomTabSignature = CustomTabSignature
 
--- Drag-reorder (custom tabs only).
--- Drop slot for a release at cursorX, given the ordered custom buttons'
--- horizontal midpoints (same coordinate space as cursorX). Returns 1..n+1.
 local function ComputeDropIndex(positions, cursorX)
     for i = 1, #positions do
         if cursorX < positions[i].mid then return i end
     end
     return #positions + 1
 end
-TabUI._ComputeDropIndex = ComputeDropIndex -- for unit tests
+TabUI._ComputeDropIndex = ComputeDropIndex
 
 local BAR_HEIGHT = 18
 local PAD_X = 0
@@ -111,14 +89,6 @@ local TAB_BADGE_RESERVED_WIDTH = 30
 local TAB_BADGE_RIGHT_PAD = 6
 local DRAG_INDICATOR_WIDTH = 2
 
--- Reorder display position `from` -> `to` (both indices into the on-bar
--- order, which mixes saved and conversation tabs). TabManager.MoveDisplayEntry
--- owns the order mutation — and rewrites the stored saved-tab array in place
--- when their relative order changes; persistence is the mutation. This wrapper
--- remaps the per-window unread badges and active id around it: saved-tab
--- frameIDs are -<stored index>, so they MOVE when the stored order changes —
--- snapshot by tab identity, re-key after. Conversation ids ("conv:<key>") are
--- identity-stable and need no remap. Returns moved, savedChanged.
 local function ReorderDisplayTab(inst, from, to)
     local TM = ns.QUI.Chat.TabManager
     if not (TM and TM.MoveDisplayEntry and TM.GetWindowTabs) then return false end
@@ -140,8 +110,6 @@ local function ReorderDisplayTab(inst, from, to)
     if activeTab then
         for i = 1, n do
             if tabs[i] == activeTab then
-                -- Signature is definition-based, so following the moved tab
-                -- never triggers Rebuild's re-derive (no scroll reset).
                 inst.activeID = -i
                 break
             end
@@ -149,8 +117,6 @@ local function ReorderDisplayTab(inst, from, to)
     end
     return moved, savedChanged
 end
--- Test export: the test calls _ReorderDisplayTab(from, to) on the module-level
--- TabUI; we shim it to use window 1's instance.
 TabUI._ReorderDisplayTab = function(from, to)
     return ReorderDisplayTab(GetInstance(1), from, to)
 end
@@ -158,8 +124,6 @@ end
 local ApplyTextureColor
 local CreateSolidTexture
 
--- Every tab on the bar reorders: saved tabs (-index) and conversation tabs
--- ("conv:<key>") share one display-order space.
 local function IsReorderableID(frameID)
     return (type(frameID) == "number" and frameID < 0)
         or (type(frameID) == "string" and frameID:sub(1, 5) == "conv:")
@@ -169,21 +133,13 @@ local function ReorderableButtonMidpoints(inst)
     local positions = {}
     for i = 1, #inst.buttons do
         local b = inst.buttons[i]
-        -- Hidden buttons have no reliable rect after windowed overflow layout,
-        -- so measure only visible reorderable buttons and retain their real
-        -- display index for the reorder operation.
         if IsReorderableID(b.frameID) and (not b.IsShown or b:IsShown()) then
-            -- GetLeft: MayReturnNothing + SecretWhenAnchoringSecret.
-            -- GetWidth: SecretWhenAnchoringSecret + ConstSecretAccessor.
-            -- Both: guard type=="number" before arithmetic.
             local left = b.GetLeft and b:GetLeft()
             local w    = b.GetWidth and b:GetWidth()
             if type(left) == "number" and not IsSecret(left)
                and type(w) == "number" and not IsSecret(w) then
                 positions[#positions + 1] = { mid = left + w / 2, button = b, displayIndex = i }
             else
-                -- Any unmeasurable button would compress slot indices relative
-                -- to tab indices, producing a misaligned reorder. Abort entirely.
                 return {}
             end
         end
@@ -212,11 +168,10 @@ end
 
 local function CursorXForButton(btn)
     local cx = _G.GetCursorPosition and _G.GetCursorPosition()
-    -- GetEffectiveScale: SecretReturnsForAspect=Scale — guard secrets.
     local scale = btn and btn.GetEffectiveScale and btn:GetEffectiveScale()
     if type(cx) ~= "number" or IsSecret(cx) then return nil end
     if type(scale) ~= "number" or IsSecret(scale) or scale <= 0 then return nil end
-    return cx / scale -- same space as GetLeft (scrollbar uses this pattern)
+    return cx / scale
 end
 
 local function PositionDragIndicator(inst, insertPos, positions)
@@ -287,8 +242,6 @@ local function OnTabDragStop(self)
     if not cx then return end
     local positions = ReorderableButtonMidpoints(inst)
     if #positions < 2 then return end
-    -- `from` is the dragged button's real display index, while positions may
-    -- contain only the visible slice during windowed overflow layout.
     local from
     for i = 1, #positions do
         if positions[i].button == self then from = positions[i].displayIndex; break end
@@ -301,13 +254,10 @@ local function OnTabDragStop(self)
     local moved, savedChanged = ReorderDisplayTab(inst, from, to)
     if moved then
         TabUI.Rebuild()
-        -- Saved tab order changed in-game: a cached options panel must rebuild.
-        -- (Conversation-only moves are session state — nothing to re-render.)
         if savedChanged and I.NotifyChatSettingsChanged then I.NotifyChatSettingsChanged() end
     end
 end
 
--- Rebuild/pool-recycle mid-drag hides the button: abort cleanly.
 local function OnTabDragAbort(self)
     local inst = self._inst
     if not inst then return end
@@ -481,10 +431,6 @@ local function NormalizeFrameID(frameID)
     return frameID
 end
 
--- Tab scroll state: when the tabs outgrow the bar, a later layout pass will
--- window the visible range and keep hidden tabs in inst.buttons so unread
--- counting, activation and pruning see the full tab list.
--- inst.firstHidden = index of the first hidden button, nil when all fit.
 local LayoutInstance
 
 local SCROLL_CONTROL_WIDTH = 24
@@ -650,7 +596,6 @@ LayoutInstance = function(inst)
     RestyleScrollControls(inst)
 end
 
--- Forward declaration so TabUI.ActivateConversation can reference it.
 local RebuildInstance
 
 local function EnsureFrameIDVisible(inst, frameID)
@@ -688,8 +633,6 @@ local function ActivateFrameID(inst, frameID, userInitiated)
     end
     if not target then return false end
 
-    -- Combat-log tab routing: deactivate a previously-active embed when
-    -- switching away. (Re)activation happens in the saved-tab branch below.
     local TM_cl = ns.QUI.Chat.TabManager
     local CL_tab = ns.QUI.Chat.CombatLogTab
     local newIsCombatLog = false
@@ -705,9 +648,6 @@ local function ActivateFrameID(inst, frameID, userInitiated)
     inst.unread[frameID] = nil
     UpdateBadge(inst, target)
 
-    -- Editbox follow is USER intent only: rebuild/fallback activations must
-    -- never steal the active window (EnsureAttached fans out over all
-    -- windows; the last one iterated would otherwise win).
     if userInitiated then
         local Display = ns.QUI.Chat.DisplayLayer
         if Display and Display.SetActiveWindow then
@@ -717,7 +657,6 @@ local function ActivateFrameID(inst, frameID, userInitiated)
 
     local TabManager = ns.QUI.Chat.TabManager
     if type(frameID) == "string" then
-        -- Conversation tab ("conv:<key>").
         local key = frameID:sub(6)
         if TabManager and TabManager.SetActiveConversation then
             TabManager.SetActiveConversation(inst.windowID, key)
@@ -727,13 +666,9 @@ local function ActivateFrameID(inst, frameID, userInitiated)
             Conv.PreTargetEditBox(key)
         end
     elseif TabManager and TabManager.SetActiveTab then
-        -- Saved tab: negative ID -i addresses windows[w].tabs[i]. Record the
-        -- signature BEFORE SetActiveTab so the first Rebuild after activation
-        -- does not treat it as a definition change and re-derive.
         local t = TabManager.GetWindowTab and TabManager.GetWindowTab(inst.windowID, -frameID) or nil
         inst.activeCustomSig = CustomTabSignature(t)
         TabManager.SetActiveTab(inst.windowID, t)
-        -- Combat-log tab: embed the real ChatFrame2 into this window.
         if newIsCombatLog and CL_tab and CL_tab.Activate then
             CL_tab.Activate(inst.windowID)
             inst.combatLogActive = true
@@ -762,8 +697,6 @@ function TabUI.ActivateFrameID(windowID, frameID)
     return ActivateFrameID(inst, frameID, true)
 end
 
--- Select a conversation tab (rebuilds the bar first so a just-created
--- conversation's button exists, then activates it).
 function TabUI.ActivateConversation(windowID, key)
     local inst = ResolveInstance(windowID)
     if not inst.bar then
@@ -774,19 +707,11 @@ function TabUI.ActivateConversation(windowID, key)
     return ActivateFrameID(inst, "conv:" .. key, true)
 end
 
--- A window's tab-bar frame (layoutmode's per-window mover overlay needs its
--- height for the top inset; bars 2+ are unnamed so a global lookup can't work).
 function TabUI.GetBar(windowID)
     local inst = instances[tonumber(windowID) or 1]
     return inst and inst.bar
 end
 
--- Brief attention pulse on a conversation tab created without focus-steal.
--- Uses C_Timer.NewTicker's iterations argument (6 ticks = 3 dim/bright
--- cycles at 0.35 s each). Tick count is tracked in the callback so the
--- final tick can nil the handle and restore full alpha without a separate
--- After (which would fire after pool-recycle and corrupt the recycled button).
--- :Cancel() is only needed in the pool-recycle path to abort early.
 function TabUI.FlashConversation(windowID, key)
     local inst = instances[tonumber(windowID) or 1]
     if not inst then return end
@@ -801,8 +726,6 @@ function TabUI.FlashConversation(windowID, key)
                 ticks = ticks + 1
                 shown = not shown
                 if ticks >= 6 then
-                    -- Final tick: restore and clear handle before ticker
-                    -- self-stops so recycle sees a clean button immediately.
                     btn._quiFlashTicker = nil
                     btn:SetAlpha(1)
                 else
@@ -814,10 +737,6 @@ function TabUI.FlashConversation(windowID, key)
     end
 end
 
--- Move a saved tab's config table to another window. The source window must
--- keep at least one tab (delete the window via settings if you want it gone).
--- When the target was just created by "Move to new window", its placeholder
--- seed tab is replaced instead of appended-after.
 local function MoveTabToWindow(inst, tabIndex, targetWindowID, replaceSeed)
     local TM = ns.QUI.Chat.TabManager
     if not (TM and TM.GetWindowTabs) then return end
@@ -833,22 +752,14 @@ local function MoveTabToWindow(inst, tabIndex, targetWindowID, replaceSeed)
         toTabs[#toTabs + 1] = tab
     end
     TabUI.Rebuild()
-    -- Saved tab config changed in-game: bump the settings provider revision
-    -- so a cached options panel rebuilds its window/tab lists.
     if I.NotifyChatSettingsChanged then I.NotifyChatSettingsChanged() end
 end
-TabUI._MoveTabToWindow = MoveTabToWindow -- for unit tests
+TabUI._MoveTabToWindow = MoveTabToWindow
 
--- Deep-link the options UI to the Chat & Tooltips tile / sub-page.
--- subPageIndex: 1 = Chat (tab settings), 2 = Filters
--- (keep in sync with QUI_Options/tiles/chat_tooltips.lua subPages order).
 local function OpenChatSettings(subPageIndex)
     local QUI = _G.QUI
     if not (QUI and type(QUI.OpenOptions) == "function") then return end
     QUI:OpenOptions()
-    -- A cold open LoadAddOns QUI_Options synchronously, but the shell builds
-    -- over the first frame; navigate next frame (the infobar deep-link pattern,
-    -- QUI_InfoBar/infobar/contextmenu.lua:155).
     C_Timer.After(0, function()
         local gui = _G.QUI and _G.QUI.GUI
         local frame = gui and gui.MainFrame
@@ -862,11 +773,7 @@ end
 
 local function ShowTabContextMenu(inst, btn)
     if not (_G.MenuUtil and _G.MenuUtil.CreateContextMenu) then return end
-    -- MenuUtil.CreateContextMenu(owner, generator) —
-    -- tests/framexml/Interface/AddOns/Blizzard_Menu/MenuUtil.lua:153.
     _G.MenuUtil.CreateContextMenu(btn, function(owner, rootDescription)
-        -- Combat-log tab: delegate filtering to Blizzard's combat-log config;
-        -- omit move/close (pinned to window 1).
         if type(btn.frameID) == "number" and btn.frameID < 0 then
             local TMcl = ns.QUI.Chat.TabManager
             local clTab = TMcl and TMcl.GetWindowTab and TMcl.GetWindowTab(inst.windowID, -btn.frameID)
@@ -881,9 +788,6 @@ local function ShowTabContextMenu(inst, btn)
         end
         if type(btn.frameID) == "string" then
             rootDescription:CreateButton(ns.L["Close conversation"], function()
-                -- Click-time re-read: the button may have been pool-recycled
-                -- while the menu was open. Only act if it's still a
-                -- conversation tab.
                 local fid = btn.frameID
                 if type(fid) ~= "string" then return end
                 local Conv = ns.QUI.Chat.ConversationManager
@@ -891,16 +795,12 @@ local function ShowTabContextMenu(inst, btn)
             end)
             return
         end
-        -- Saved-tab branch: QUI settings deep-links, then move/close actions.
         rootDescription:CreateButton(ns.L["Filter Settings"], function()
-            OpenChatSettings(2) -- Filters sub-page
+            OpenChatSettings(2)
         end)
         rootDescription:CreateButton(ns.L["Tab Settings"], function()
-            OpenChatSettings(1) -- Chat sub-page (tab options live here)
+            OpenChatSettings(1)
         end)
-        -- Saved-tab branch: re-derive the tab index at click time so a
-        -- Rebuild that reorders tabs while the menu is open doesn't act on
-        -- a stale snapshot.
         local Display = ns.QUI.Chat.DisplayLayer
         if not Display then return end
         local nWindows = (Display.GetWindowCount and Display.GetWindowCount()) or 1
@@ -919,8 +819,6 @@ local function ShowTabContextMenu(inst, btn)
             local newID = Display.CreateNewWindow and Display.CreateNewWindow()
             if newID then MoveTabToWindow(inst, -fid, newID, true) end
         end)
-        -- Spec: a non-primary window can be closed from its tab bar once
-        -- it's down to its last tab (full deletion lives in settings).
         if inst.windowID > 1 then
             local TM = ns.QUI.Chat.TabManager
             local tabs = TM and TM.GetWindowTabs and TM.GetWindowTabs(inst.windowID)
@@ -1001,8 +899,8 @@ RebuildInstance = function(inst)
         end
         btn.frameID = frameID
         btn.filter = filter
-        btn.labelColor = labelColor -- conversation tabs tint by whisper color
-        btn._inst = inst -- re-bind on pool reuse (buttons never migrate between instances)
+        btn.labelColor = labelColor
+        btn._inst = inst
         btn.label:SetText(label)
         btn._quiTabLabel = type(label) == "string" and label or nil
         local sw = btn.label.GetStringWidth and btn.label:GetStringWidth()
@@ -1010,19 +908,15 @@ RebuildInstance = function(inst)
             + (TAB_LABEL_PAD_X * 2)
             + TAB_BADGE_RESERVED_WIDTH
         btn:SetWidth(w)
-        btn._quiTabW = w -- LayoutInstance positions from this, post-pass
+        btn._quiTabW = w
         btn:Show()
-        btn:SetAlpha(1) -- pool-reuse safety: clear any drag-dim or flash-dim on recycle
+        btn:SetAlpha(1)
         if btn._quiFlashTicker then btn._quiFlashTicker:Cancel(); btn._quiFlashTicker = nil end
         StyleButton(btn, frameID == inst.activeID)
         UpdateBadge(inst, btn)
         inst.buttons[#inst.buttons + 1] = btn
     end
 
-    -- One ordered pass over saved + conversation tabs. TabManager owns the
-    -- mixed display order (session reorder overlay; saved tabs keep their
-    -- relative order in the stored array). The synthesis fallback — saved
-    -- order, then conversations — covers partial managers (stubbed tests).
     local TM = ns.QUI.Chat.TabManager
     local Conv = ns.QUI.Chat.ConversationManager
     local entries
@@ -1042,7 +936,6 @@ RebuildInstance = function(inst)
             end)
         end
     end
-    -- Whisper chat color, read-only from ChatTypeInfo (never written).
     local wc = _G.ChatTypeInfo and _G.ChatTypeInfo.WHISPER
     local tint = wc and { wc.r or 1, wc.g or 0.5, wc.b or 1, 1 } or nil
     for i = 1, #entries do
@@ -1057,11 +950,8 @@ RebuildInstance = function(inst)
         end
     end
 
-    -- Position the row before activation reconciliation.
-    -- (its fallback path can return out of this rebuild early).
     LayoutInstance(inst)
 
-    -- Prune unread for tabs that no longer exist.
     local live = {}
     for i = 1, #inst.buttons do
         if inst.buttons[i].frameID then live[inst.buttons[i].frameID] = true end
@@ -1070,9 +960,6 @@ RebuildInstance = function(inst)
         if not live[fid] then inst.unread[fid] = nil end
     end
 
-    -- Active tab no longer exists -> fall back to the first tab; if a live
-    -- saved tab is active, re-derive its filter only on definition change
-    -- (cosmetic refreshes must not scroll-reset).
     local activeLive = false
     for i = 1, #inst.buttons do
         if inst.buttons[i].frameID == inst.activeID then
@@ -1117,9 +1004,6 @@ function TabUI.Rebuild()
 end
 
 function TabUI.OnWindowDeleted(windowID)
-    -- Window IDs shifted down in Display; rebuild the instance map. Bars are
-    -- parented to their (pooled/hidden or live) containers, so dropping the
-    -- stale instances and re-attaching is safe and cheap.
     local stale = instances[windowID]
     if stale and stale.bar then stale.bar:Hide() end
     local maxID = 0
@@ -1149,18 +1033,12 @@ local function ConfigureBarScripts(inst)
     end)
 end
 
--- Create or re-parent inst.bar onto container, then anchor and level it.
--- Returns immediately if the bar already has the right parent (idempotent).
 local function AttachBar(inst, container, name)
     if not inst.bar then
         inst.bar = CreateFrame("Frame", name, container)
         inst.bar:SetHeight(BAR_HEIGHT)
-        -- Bar width follows the container (anchored both sides below): re-run
-        -- the overflow layout whenever it resolves or the window resizes.
         ConfigureBarScripts(inst)
     elseif inst.bar:GetParent() ~= container then
-        -- Recycled instance slot pointing at a new container (window
-        -- deletion shuffle): re-parent before re-anchoring.
         inst.bar:SetParent(container)
         ConfigureBarScripts(inst)
     else
@@ -1179,8 +1057,6 @@ end
 function TabUI.EnsureAttached()
     local Display = ns.QUI.Chat.DisplayLayer
     if not (Display and Display.GetWindowCount) then
-        -- Single-window fallback: if Display only exposes GetContainer (old API
-        -- or test stub), attach window 1 directly.
         local container = Display and Display.GetContainer and Display.GetContainer()
         if not container then return end
         AttachBar(GetInstance(1), container, "QUI_CustomChatTabBar")
@@ -1198,7 +1074,7 @@ function TabUI.EnsureAttached()
         if Store and Store.OnAppend then
             storeSubscribed = true
             Store.OnAppend(function(entry)
-                if entry.s then return end -- never classify secrets
+                if entry.s then return end
                 if entry.e == "HISTORY" or entry.e == "BACKFILL" then return end
                 for _, inst in pairs(instances) do
                     local n = #inst.buttons
@@ -1214,8 +1090,6 @@ function TabUI.EnsureAttached()
                                 changed = true
                             end
                         end
-                        -- Hidden tabs can't show their own badge; refresh the
-                        -- scroll controls so unread state remains visible.
                         if changed then RestyleScrollControls(inst) end
                     end
                 end

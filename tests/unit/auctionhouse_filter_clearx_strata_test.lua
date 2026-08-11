@@ -21,7 +21,7 @@ local function assertContains(text, needle, reason)
     assert(text:find(needle, 1, true), reason)
 end
 
-local source = readFile("QUI_Skinning/skinning/frames/auctionhouse.lua")
+local source = readFile("modules/skinning/frames/auctionhouse.lua")
 
 -- The FilterButton is a WowStyle1FilterDropdownTemplate (a DropdownButton), so it
 -- routes through the canonical SkinBase.SkinDropdown (matching every other QUI

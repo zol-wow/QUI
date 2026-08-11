@@ -27,15 +27,17 @@ This corpus fills that gap.
 
 The canonical vendoring source is the `live` branch of
 [`Gethe/wow-ui-source`](https://github.com/Gethe/wow-ui-source), which
-tracks retail FrameXML within hours of each patch. An online mirror with
+tracks retail FrameXML within hours of each patch. Pre-release patches
+(e.g. 12.1 before it goes live) ship on the `ptr` branch — swap `--branch
+live` for `--branch ptr` in the refresh command when vendoring those. An online mirror with
 web-grep is also available at
 <https://www.townlong-yak.com/framexml/live/>.
 
 ## Current snapshot
 
-- **Patch:** 12.0.7.68453 (Midnight)
-- **Source branch:** `live`
-- **Vendored on:** 2026-07-07
+- **Patch:** 12.1.0.69214 (Midnight 12.1 PTR)
+- **Source branch:** `ptr` (Gethe/wow-ui-source)
+- **Vendored on:** 2026-08-10
 
 The exact patch version is recorded in `version.txt` at the root of this
 directory and should always match the snapshot.

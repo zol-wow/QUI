@@ -1,16 +1,3 @@
---[[
-    QUI CDM Containers + Layout Engine (Owned Engine)
-
-    All three trackers (Essential/Utility/Buff) use addon-owned containers
-    with addon-owned icon frames created by the CDMIcons factory.
-    Blizzard viewers are hidden (alpha=0). Only Blizzard CooldownFrames
-    are adopted onto addon-owned icons for taint-safe rendering.
-
-    Visibility is handled by hud_visibility.lua.
-    Initialization is driven by the local provider bridge calling Initialize()
-    at ADDON_LOADED (safe window for combat /reload support).
-]]
-
 -- luacheck: globals RegisterEventCallback
 
 local ADDON_NAME, ns = ...
@@ -21,7 +8,6 @@ local LSM = ns.LSM
 local CDMLayout = ns.CDMLayout
 local Shared = ns.CDMShared
 
--- Upvalue caching for hot-path performance
 local type = type
 local pairs = pairs
 local ipairs = ipairs
@@ -43,7 +29,7 @@ local function BuildLinkedSpellIDsFingerprint(linkedSpellIDs)
     local parts = {}
     for i, linkedID in ipairs(linkedSpellIDs) do
         if issecretvalue and issecretvalue(linkedID) then
-            parts[i] = "secret"
+            parts[i] = "secret" -- @secret-policy: encode-secret-as-placeholder
         else
             parts[i] = tostring(linkedID or 0)
         end
@@ -60,35 +46,19 @@ local function GetBuiltinCooldownContainerKeys()
     return FALLBACK_BUILTIN_COOLDOWN_CONTAINER_KEYS
 end
 
----------------------------------------------------------------------------
--- ADDON_LOADED / PLAYER_ENTERING_WORLD safe window flag: during a combat
--- /reload, InCombatLockdown() returns true but protected calls are still
--- allowed inside the synchronous event handler body. RefreshAll and other
--- combat-gated paths check this flag to bypass their combat guards during
--- the safe window so the initial layout renders.
----------------------------------------------------------------------------
 local inInitSafeWindow = false
 
----------------------------------------------------------------------------
--- CONSTANTS
----------------------------------------------------------------------------
 local HUD_MIN_WIDTH_DEFAULT = Helpers.HUD_MIN_WIDTH_DEFAULT or 200
 local SETTINGS_FEATURE_ID = "cooldownManagerContainersPage"
 local registeredSettingsLookupKeys = {}
 local ANCHOR_KEY_MAP
--- Forward decl: defined later in the file but called from CreateContainer/
--- DeleteContainer above its definition. Without this, those callers would
--- bind the name as a global (nil) at parse time and crash on invocation.
 local SyncSettingsFeatureLookups
 
----------------------------------------------------------------------------
--- STATE
----------------------------------------------------------------------------
-local containers = {}  -- { essential = frame, utility = frame, buff = frame }
-local viewerState = {} -- keyed by container frame
-local buffFingerprint = nil  -- fingerprint string for buff icon rebuild skipping
-local applying = {}    -- re-entry guard per tracker
-local refreshTimers = {} -- stored timer handles so overlapping RefreshAll calls cancel prior timers
+local containers = {}
+local viewerState = {}
+local buffFingerprint = nil
+local applying = {}
+local refreshTimers = {}
 local postLayoutRuntimeRefreshing = {}
 local initialized = false
 local runtimeEventFrame = nil
@@ -97,9 +67,8 @@ local SyncContainerMouseState
 local SyncAllContainerMouseStates
 local ApplyUtilityAnchor
 
--- Anchor proxy for Utility below Essential
 local UtilityAnchorProxy = nil
-local CreateContainer  -- forward declaration; assigned in CONTAINER CREATION section
+local CreateContainer
 
 local function CancelRefreshTimers()
     for i, handle in pairs(refreshTimers) do
@@ -110,9 +79,70 @@ local function CancelRefreshTimers()
     end
 end
 
----------------------------------------------------------------------------
--- DB ACCESS
----------------------------------------------------------------------------
+local IsCooldownViewerReady
+local initialReanchorDoneByKey = {}
+local REANCHOR_KEYS = { "essential", "utility", "buff" }
+local refreshAllReanchorBatchActive = false
+local refreshAllReanchorBatchCounts
+
+local function ResetInitialReanchorDone()
+    for key in pairs(initialReanchorDoneByKey) do
+        initialReanchorDoneByKey[key] = nil
+    end
+end
+
+local function MarkInitialReanchorDone(key)
+    if key then
+        initialReanchorDoneByKey[key] = true
+    end
+end
+
+local function IsInitialReanchorDone(key)
+    return initialReanchorDoneByKey[key] == true
+end
+
+local function RefreshReanchoredBuiltin(boot, key, allowCachedBatch)
+    if not (boot and boot.RefreshBuiltin) then return nil end
+    local result
+    if boot.RefreshBuiltins then
+        local counts
+        if allowCachedBatch and refreshAllReanchorBatchActive
+            and refreshAllReanchorBatchCounts then
+            counts = refreshAllReanchorBatchCounts
+        else
+            counts = boot:RefreshBuiltins(REANCHOR_KEYS) or {}
+            if refreshAllReanchorBatchActive then
+                refreshAllReanchorBatchCounts = counts
+            end
+        end
+        result = counts[key] or 0
+    else
+        result = boot:RefreshBuiltin(key)
+    end
+    if not IsCooldownViewerReady or IsCooldownViewerReady() then
+        if boot.RefreshBuiltins then
+            for i = 1, #REANCHOR_KEYS do MarkInitialReanchorDone(REANCHOR_KEYS[i]) end
+        else
+            MarkInitialReanchorDone(key)
+        end
+    end
+    return result
+end
+
+local function BlankReanchoredNativeItemFrame(frame)
+    if not frame then return end
+    if frame.SetAlpha then frame:SetAlpha(0) end
+
+    local cd = frame.Cooldown
+    if not cd then
+        local ok, cooldown = ns.SafeCallMethodIfPresent("best-effort-style", frame, "GetCooldownFrame")
+        if ok then cd = cooldown end
+    end
+    if cd and cd.SetDrawSwipe then
+        cd:SetDrawSwipe(false)
+    end
+end
+
 local GetDB = Helpers.CreateDBGetter("ncdm")
 
 local function GetTrackerSettings(trackerKey)
@@ -148,54 +178,34 @@ local function GetHUDMinWidth()
     return false, HUD_MIN_WIDTH_DEFAULT
 end
 
----------------------------------------------------------------------------
--- SPEC PROFILE SAVE / LOAD
--- Save and restore per-spec ownedSpells + removedSpells so each spec
--- keeps its own spell configuration across spec changes.
----------------------------------------------------------------------------
-local CDMContainers_API  -- forward declaration; table created in CONTAINER MANAGEMENT API section
-local _previousSpecID = nil  -- Track outgoing spec for save-on-switch
+local CDMContainers_API
+local _previousSpecID = nil
 local specTrackingReady = false
 local specTrackingPendingRefresh = false
 local specTrackingRetryToken = 0
 local profileCallbackSink = nil
 local lastKnownProfile = nil
-local RefreshAll  -- forward declaration; finalized in REFRESH ALL section
--- Per-frame coalescing latch for RefreshAll (see the combat-end dedupe guard
--- in the REFRESH ALL section). File-local so the guard check, the set, and the
--- C_Timer.After(0) reset closure all share one upvalue.
+local RefreshAll
 local _refreshAllFrameGuard = false
 
 local SPEC_TRACKING_RETRY_DELAY = 0.5
 local SPEC_TRACKING_MAX_RETRIES = 6
 
--- Loadout tracking upvalues (parallel to spec tracking block above; D-11).
--- These are file-scoped so the OnEvent dispatcher and debounce closures
--- in this same file can close over them without forward-reference issues.
-local _previousLoadoutID = nil       -- outgoing loadout ID; used by save-on-switch (mirrors _previousSpecID)
-local _lastKnownSavedConfigID = nil  -- before/after compare filter: distinguishes loadout swap vs in-place talent edit
-local _lastKnownHeroSubTree = nil    -- active hero SubTreeID last reconciled (in-place hero-swap detection)
-local loadoutListReady = false       -- flipped true by TRAIT_CONFIG_LIST_UPDATED
-local pendingLoadoutRefresh = false  -- combat-deferred save/load flag; drained by PLAYER_REGEN_ENABLED
-local loadoutTrackingToken = 0       -- abort-on-supersede token (parallels specTrackingRetryToken at line 130)
-local loadoutDebounceTimer = nil     -- C_Timer.NewTimer handle; :Cancel() on new event; NOT C_Timer.After
-local NO_SAVED_LOADOUT_ID = -2       -- Constants.TraitConsts.STARTER_BUILD_TRAIT_CONFIG_ID; nil and -2 both resolve to slot 0
+local _previousLoadoutID = nil
+local _lastKnownSavedConfigID = nil
+local _lastKnownHeroSubTree = nil
+local loadoutListReady = false
+local pendingLoadoutRefresh = false
+local loadoutTrackingToken = 0
+local loadoutDebounceTimer = nil
+local NO_SAVED_LOADOUT_ID = -2
 local pendingClassTalentSwitchSpecID = nil
 local pendingClassTalentSwitchLoadoutSpecID = nil
 local pendingClassTalentSwitchLoadoutID = nil
 local classTalentSwitchCallbacksRegistered = false
-local _hydratedLoadoutID = nil       -- slot the live containers were last hydrated FROM (provisional until the initial latch confirms it against the live API)
-local _initialLoadoutResolved = false -- one-shot latch: GetLastSelectedSavedConfigID answered and the hydrated slot was confirmed or re-keyed (ResolveInitialLoadoutSlot)
+local _hydratedLoadoutID = nil
+local _initialLoadoutResolved = false
 
--- Phase 2 / D-06: Live-refresh subscribers (settings label hook).
--- Subscribers register via ns.CDMContainers.RegisterLoadoutChangeCallback
--- and fire after every confirmed loadout-swap drain:
---   1. Out-of-combat debounce callback completes (line ~3178)
---   2. TRAIT_CONFIG_LIST_UPDATED drains a pending refresh (line ~3222)
---   3. PLAYER_REGEN_ENABLED drains a combat-deferred swap (line ~3266)
---   4. SyncCurrentProfileSpecState re-initialises on profile switch (line ~882)
--- Each dispatch wraps subscribers in pcall so a throwing subscriber
--- cannot break the event loop.
 local _loadoutChangeCallbacks = {}
 
 local function RegisterLoadoutChangeCallback(fn)
@@ -206,19 +216,12 @@ end
 
 local function FireLoadoutChangeCallbacks()
     for i = 1, #_loadoutChangeCallbacks do
-        pcall(_loadoutChangeCallbacks[i])
+        ns.SafeCall("bulkhead", _loadoutChangeCallbacks[i])
     end
 end
 
 local function GetCurrentSpecID()
-    if not GetSpecialization then return nil end
-    local specIndex = GetSpecialization()
-    if not specIndex then return nil end
-    if GetSpecializationInfo then
-        local specID = GetSpecializationInfo(specIndex)
-        return specID
-    end
-    return nil
+    return Helpers.GetCurrentSpecID()
 end
 
 local function NormalizeLoadoutID(loadoutID)
@@ -227,10 +230,6 @@ local function NormalizeLoadoutID(loadoutID)
     return loadoutID
 end
 
--- Active hero-talent SubTreeID, or -1 when none (low level / specs without
--- hero talents). Mirrors cdm_spelldata's _HeroSubTreeKey so storage-side and
--- render-side agree on the bucket key. GetActiveHeroTalentSpec returns a
--- stable SubTreeID (Nilable), not an ephemeral staging config.
 local function GetCurrentHeroSubTree()
     local id = C_ClassTalents and C_ClassTalents.GetActiveHeroTalentSpec
         and C_ClassTalents.GetActiveHeroTalentSpec()
@@ -354,11 +353,17 @@ end
 local function GetCurrentCharacterKey()
     if not UnitName then return nil end
     local name, realm = UnitName("player")
+    if issecretvalue and issecretvalue(name) then return nil end -- @secret-policy: reject-secret-ids
+    if issecretvalue and issecretvalue(realm) then realm = nil end
     if type(name) ~= "string" or name == "" then
         return nil
     end
     if type(realm) ~= "string" or realm == "" then
-        realm = GetRealmName and GetRealmName() or nil
+        realm = nil
+        if GetRealmName then
+            realm = GetRealmName()
+            if issecretvalue and issecretvalue(realm) then realm = nil end
+        end
     end
     if type(realm) ~= "string" or realm == "" then
         return name
@@ -369,7 +374,7 @@ end
 local function GetCurrentProfileName()
     local db = QUICore and QUICore.db
     if db and db.GetCurrentProfile then
-        local ok, profileName = pcall(db.GetCurrentProfile, db)
+        local ok, profileName = ns.SafeCallMethod("best-effort-style", db, "GetCurrentProfile")
         if ok and type(profileName) == "string" and profileName ~= "" then
             return profileName
         end
@@ -394,11 +399,6 @@ local function GetSpecStateDB(create)
     return GetCharNcdmDB(create) or GetDB()
 end
 
--- A single AceDB profile shared across characters means the live CDM
--- container (profile.ncdm) is shared too. _lastSpecCharKey records which
--- character last reconciled it. When that owner is a different character the
--- live container holds the other character's (possibly other class's) spells
--- and must be reloaded for the current character before it is shown.
 local function LiveContainerOwnedByOtherCharacter()
     local profileDB = GetDB()
     local owner = profileDB and profileDB._lastSpecCharKey
@@ -425,12 +425,6 @@ local function GetSpecProfileStore(create)
     return charNcdm._specProfilesByProfile[profileName]
 end
 
--- Pre-loadout container keys. Used by GetSpecLoadoutProfileStore's
--- in-place migration probe to detect the legacy 3-dim shape
--- (container keys directly under store[specID]) versus the new 4-dim
--- shape (integer loadoutID subkeys under store[specID]).
--- Custom user container keys (user-generated strings) cannot collide
--- with these four built-in container key names.
 local LEGACY_CONTAINER_KEYS = {
     essential  = true,
     utility    = true,
@@ -438,14 +432,6 @@ local LEGACY_CONTAINER_KEYS = {
     trackedBar = true,
 }
 
--- Resolve an effective loadout ID for storage keying (D-06).
--- Returns 0 (sentinel) when:
---   * perLoadoutSpec toggle is OFF
---   * GetLastSelectedSavedConfigID returns nil (e.g., login before TRAIT_CONFIG_LIST_UPDATED fires)
---   * Result is NO_SAVED_LOADOUT_ID (-2 = STARTER_BUILD_TRAIT_CONFIG_ID)
--- Returns the saved configID otherwise.
--- NEVER calls GetActiveConfigID itself — that is forbidden by LDST-04 (creates
--- orphaned keys from ephemeral staging configs that change each session).
 local function GetEffectiveLoadoutIDForSpec(specID)
     local profileDB = GetDB()
     if not profileDB or not profileDB.perLoadoutSpec then return 0 end
@@ -461,12 +447,6 @@ local function GetEffectiveLoadoutIDForSpec(specID)
         savedID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
     end
 
-    -- Combat-reload fast path (LDEV-04): when the live API is unavailable
-    -- or returns nil (e.g. during ADDON_LOADED before TRAIT_CONFIG_LIST_UPDATED
-    -- fires), fall back to the char-DB cached configID for this spec.
-    -- STARTER_BUILD_TRAIT_CONFIG_ID (-2) is a legitimate "no saved loadout"
-    -- state, not a missing-API state, so it bypasses the cache and routes
-    -- to slot 0 directly.
     if not savedID then
         local charNcdm = GetCharNcdmDB(false)
         local cache = charNcdm and charNcdm._lastLoadoutConfigID
@@ -480,7 +460,6 @@ local function GetEffectiveLoadoutIDForSpec(specID)
     return NormalizeLoadoutID(savedID)
 end
 
--- Resolve the current effective loadout ID for storage keying.
 local function GetEffectiveLoadoutID()
     return GetEffectiveLoadoutIDForSpec(GetCurrentSpecID())
 end
@@ -510,28 +489,11 @@ local function RegisterClassTalentSwitchCallbacks()
     end)
 end
 
--- Access the 4-dim loadout-scoped store slot for a (specID, loadoutID) pair.
--- Performs in-place read-time migration of the legacy 3-dim shape on
--- first access: when container keys (essential/utility/buff/trackedBar)
--- appear directly under store[specID], they are re-wrapped under
--- store[specID] = { [0] = <legacySpecSlot> } so the toggle-off sentinel
--- slot 0 receives the data (LDST-03).
---
--- Per D-05: does NOT auto-fallback to slot 0 when store[specID][loadoutID]
--- is empty, does NOT lazy-copy slot 0 contents. The toggle's first-enable
--- seed action is Phase 2's responsibility.
---
--- Returns nil when create=false and the slot doesn't exist; returns the
--- (possibly newly-created) slot table when create=true.
 local function GetSpecLoadoutProfileStore(specID, loadoutID, create)
     if not specID or specID == 0 then return nil end
     local store = GetSpecProfileStore(create)
     if not store then return nil end
 
-    -- In-place read-time migration probe: detect pre-loadout shape
-    -- (LEGACY_CONTAINER_KEYS directly under store[specID]) and re-wrap
-    -- the existing table under sentinel slot 0. The same table is
-    -- reused by reference — no deep-copy, no AceDB-default mangling.
     local specSlot = store[specID]
     if type(specSlot) == "table" then
         local isLegacyShape = false
@@ -559,42 +521,18 @@ local function GetSpecLoadoutProfileStore(specID, loadoutID, create)
     return store[specID][loadoutID]
 end
 
--- Phase 2 / D-05: One-shot first-enable seed.
--- Called by ns.CDMContainers.SeedActiveLoadoutFromSharedSlot from the
--- settings toggle when perLoadoutSpec transitions false → true. Copies
--- store[specID][0] container data into store[specID][activeLoadoutID]
--- via CopyTable, but ONLY when BOTH:
---   (a) the active loadout slot is absent or empty (no user data to overwrite)
---   (b) slot 0 has at least one container with data to copy
---
--- D-05b (true→false) is routing-only and never reaches this function —
--- the toggle handler in settings/containers_page.lua only fires this on
--- the false→true edge.
---
--- D-05a (combat-reload edge case where GetLastSelectedSavedConfigID
--- returns nil): no special-case handling needed — GetEffectiveLoadoutID
--- already falls back to db.char.ncdm._lastLoadoutConfigID[specID] when
--- the live API is unavailable, so the seed targets the correct slot.
 local function SeedActiveLoadoutFromSharedSlot()
     if not specTrackingReady then return end
 
     local specID = GetCurrentSpecID()
     if not specID or specID == 0 then return end
 
-    -- GetEffectiveLoadoutID returns 0 when perLoadoutSpec is off OR when
-    -- no saved loadout is resolvable. The toggle handler sets
-    -- perLoadoutSpec=true BEFORE calling this fn, so 0 here means
-    -- "no saved loadout" — there's nothing to seed.
     local loadoutID = GetEffectiveLoadoutID()
     if loadoutID == 0 then return end
 
-    -- (a) Active slot must be absent OR empty. GetSpecLoadoutProfileStore
-    -- returns nil when the slot doesn't exist; an empty table also counts
-    -- as "no user data" so seeding is safe.
     local targetSlot = GetSpecLoadoutProfileStore(specID, loadoutID, false)
-    if targetSlot and next(targetSlot) ~= nil then return end -- non-empty → don't overwrite
+    if targetSlot and next(targetSlot) ~= nil then return end
 
-    -- (b) Slot 0 must have at least one container with real spell data.
     local sourceSlot = GetSpecLoadoutProfileStore(specID, 0, false)
     if not sourceSlot then return end
 
@@ -611,9 +549,6 @@ local function SeedActiveLoadoutFromSharedSlot()
     end
     if not hasData then return end
 
-    -- Both gates passed — materialise the target slot and per-container copy.
-    -- Matches the existing CDM save/load CopyTable-per-container style
-    -- at lines 537-539 (LoadLoadoutProfile read path).
     local destSlot = GetSpecLoadoutProfileStore(specID, loadoutID, true)
     if not destSlot then return end
 
@@ -641,13 +576,6 @@ local function StampActiveProfileSpecOwner(specID)
     db._lastSpecCharKey = GetCurrentCharacterKey()
 end
 
--- Custom (customBar) containers keep their curated list in `entries`. The
--- spec/loadout profile machinery neither saves them (SaveSpecProfile keys on
--- ownedSpells ~= nil, which customs never set) nor restores them — so it must
--- never clear or overwrite their state either. Wiping a custom container's
--- dormantSpells here destroyed the recovery record of any spell the dormant
--- pass had shelved (e.g. a talent interrupt shelved by a login-timing race),
--- making the loss permanent.
 local function IsSpecManagedContainer(containerDB)
     return containerDB ~= nil and containerDB.containerType ~= "customBar"
 end
@@ -711,9 +639,6 @@ local function SaveSpecProfileToLoadout(specID, loadoutID)
     if loadoutID == nil then
         return
     end
-    -- Callers may pass a raw GetLastSelectedSavedConfigID result, which can
-    -- be STARTER_BUILD_TRAIT_CONFIG_ID (-2). Storage slots are normalized
-    -- (0 = no saved loadout) — never key a literal -2 slot.
     loadoutID = NormalizeLoadoutID(loadoutID)
 
     local store = GetSpecLoadoutProfileStore(specID, loadoutID, true)
@@ -731,10 +656,6 @@ local function SaveSpecProfileToLoadout(specID, loadoutID)
             specData[key] = {
                 ownedSpells = CopyTable(containerDB.ownedSpells),
                 removedSpells = CopyTable(containerDB.removedSpells or {}),
-                -- dormantSpells is no longer persisted: the shelf is a
-                -- legacy recovery surface, always folded back into the
-                -- list and emptied by CheckAllDormantSpells. Restore paths
-                -- still read it from old saves.
             }
             if type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells > 0 then
                 hasAnySpells = true
@@ -742,17 +663,7 @@ local function SaveSpecProfileToLoadout(specID, loadoutID)
         end
     end
 
-    -- Only persist when there are actual spells. If all containers are
-    -- empty (e.g. snapshot failed on login), leave the existing saved
-    -- profile untouched — it may contain good data from a previous session
-    -- that we'll need when the user swaps back to this spec.
     if hasAnySpells then
-        -- store IS store[specID][loadoutID] (the loadout slot). Write the
-        -- per-container map directly INTO this leaf table. Wholesale slot
-        -- replacement is fine because GetSpecLoadoutProfileStore returned a
-        -- fresh table when create=true and the slot was empty; when it
-        -- returned an existing slot, replacing its containers wholesale
-        -- preserves sibling loadouts under store[specID][otherLoadoutID].
         for k, v in pairs(specData) do
             store[k] = v
         end
@@ -765,10 +676,6 @@ local function SaveSpecProfile(specID)
 end
 
 local function SaveCurrentSpecProfile()
-    -- Use _previousSpecID, not GetCurrentSpecID(). By the time
-    -- PLAYER_SPECIALIZATION_CHANGED fires the current spec is already
-    -- the NEW spec — saving under GetCurrentSpecID() would store the
-    -- outgoing spec's data under the incoming spec's key.
     local loadoutID = _previousLoadoutID
     if loadoutID == nil then
         loadoutID = GetEffectiveLoadoutIDForSpec(_previousSpecID)
@@ -776,56 +683,25 @@ local function SaveCurrentSpecProfile()
     SaveSpecProfileToLoadout(_previousSpecID, loadoutID)
 end
 
--- Save the current live container state into the (specID, loadoutID) slot.
--- Used during a loadout swap to persist the OUTGOING loadout's containers
--- BEFORE loading the incoming loadout. Mirror of SaveSpecProfile (line ~381)
--- but indexed by an explicit loadoutID instead of GetEffectiveLoadoutID()
--- — because at swap time _previousLoadoutID is the outgoing slot, NOT the
--- value GetEffectiveLoadoutID() returns (which already reflects the new
--- saved-loadout the user just switched to).
 local function SaveLoadoutProfile(loadoutID, specID)
-    if not specTrackingReady then return end  -- LDEV-05
-    -- Per-loadout storage is inert when the toggle is off. Live containers
-    -- always mirror sentinel slot 0 (LoadOrSnapshotSpecProfile keys slot 0
-    -- when perLoadoutSpec is false), so a talent-loadout swap must never
-    -- write a non-zero slot: doing so diverges the live containers from
-    -- slot 0, and the next /reload — which reloads slot 0 — snaps the user's
-    -- list back, which reads as "my CDM entries reset every reload".
+    if not specTrackingReady then return end
     local profileDB = GetDB()
     if not (profileDB and profileDB.perLoadoutSpec) then return end
     SaveSpecProfileToLoadout(specID, loadoutID)
 end
 
--- Load saved containers from the (specID, loadoutID) slot into live state.
--- Used during a loadout swap to restore the INCOMING loadout's containers
--- AFTER saving the outgoing loadout. Mirror of the savedProfile branch of
--- LoadOrSnapshotSpecProfile (line ~516 post-Plan-01).
---
--- myToken: caller passes the token snapshot taken before scheduling; the
--- helper aborts if a newer event has bumped loadoutTrackingToken in the
--- meantime (D-11 / LDEV-05).
---
--- Returns true if a profile was loaded; false if the slot was empty (no
--- destructive clear in that case — leaves current containers intact per
--- D-05's "no auto-fallback to slot 0").
 local function LoadLoadoutProfile(loadoutID, specID, myToken)
-    if not specTrackingReady then return false end  -- LDEV-05
-    -- See SaveLoadoutProfile: with the toggle off the live containers track
-    -- sentinel slot 0; never overwrite them from a non-zero loadout slot or
-    -- a talent-loadout swap will desync live from slot 0 until the next
-    -- /reload restores it.
+    if not specTrackingReady then return false end
     local profileDB = GetDB()
     if not (profileDB and profileDB.perLoadoutSpec) then return false end
-    if myToken and myToken ~= loadoutTrackingToken then return false end  -- LDEV-05 abort
+    if myToken and myToken ~= loadoutTrackingToken then return false end
     if not specID or specID == 0 then return false end
     if loadoutID == nil then return false end
-    -- Same -2 keying hazard as SaveSpecProfileToLoadout: normalize at entry.
     loadoutID = NormalizeLoadoutID(loadoutID)
 
     local store = GetSpecLoadoutProfileStore(specID, loadoutID, false)
-    if not store then return false end  -- empty slot: per D-05, leave containers as-is
+    if not store then return false end
 
-    -- Validate the saved slot actually contains spell data.
     local containerKeys = CDMContainers_API:GetAllContainerKeys()
     local profileHasSpells = false
     for _, key in ipairs(containerKeys) do
@@ -835,9 +711,8 @@ local function LoadLoadoutProfile(loadoutID, specID, myToken)
             break
         end
     end
-    if not profileHasSpells then return false end  -- D-05: don't clear, just bail
+    if not profileHasSpells then return false end
 
-    -- Restore each container's spell lists from the saved slot.
     for _, key in ipairs(containerKeys) do
         local containerDB = GetTrackerSettings(key)
         if IsSpecManagedContainer(containerDB) then
@@ -848,9 +723,6 @@ local function LoadLoadoutProfile(loadoutID, specID, myToken)
                 containerDB.dormantSpells = CopyTable(savedContainer.dormantSpells or {})
                 containerDB._dormantSequence = savedContainer.dormantSequence or 0
             else
-                -- Container exists now but wasn't in this loadout slot.
-                -- Mirror LoadOrSnapshotSpecProfile (line ~527-532): clear
-                -- so stale spells from the previous loadout don't leak.
                 ClearContainerSpecState(containerDB)
             end
         end
@@ -860,24 +732,11 @@ local function LoadLoadoutProfile(loadoutID, specID, myToken)
         ns.CDMSpellData:CheckAllDormantSpells()
         ns.CDMSpellData:ReconcileAllContainers()
     end
-    if RefreshAll then RefreshAll() end  -- Q10: containers must re-render for the new loadout slot
-    -- Live containers now hold this slot's data.
+    if RefreshAll then RefreshAll() end
     _hydratedLoadoutID = loadoutID
     return true
 end
 
--- Login-time authoritative loadout resolution (event-driven latch).
--- GetLastSelectedSavedConfigID is CVar-backed: per Blizzard_ClassTalentsFrame
--- ("CVars are unloaded when we leave the world, so we have to refresh last
--- selected configID after entering the world") it reads nil at ADDON_LOADED
--- on initial login and only becomes readable around PLAYER_ENTERING_WORLD /
--- PLAYER_TALENT_UPDATE / SELECTED_LOADOUT_CHANGED / TRAIT_CONFIG_LIST_UPDATED.
--- The ADDON_LOADED hydration therefore keys off the char-DB cache (warm =
--- correct, loadouts cannot change while logged out); this latch re-checks
--- once the live API answers and re-keys the containers when the provisional
--- slot was wrong (cold cache resolved sentinel slot 0).
--- One-shot per login/profile-switch; in-session swaps are handled by the
--- TRAIT_CONFIG_UPDATED / SELECTED_LOADOUT_CHANGED debounce.
 local function ResolveInitialLoadoutSlot()
     if _initialLoadoutResolved then return end
     if not specTrackingReady then return end
@@ -885,7 +744,6 @@ local function ResolveInitialLoadoutSlot()
     local profileDB = GetDB()
     if not profileDB then return end
     if not profileDB.perLoadoutSpec then
-        -- Toggle off: everything lives in sentinel slot 0; nothing to re-key.
         _initialLoadoutResolved = true
         return
     end
@@ -897,15 +755,12 @@ local function ResolveInitialLoadoutSlot()
     if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
         savedID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
     end
-    if savedID == nil then return end  -- CVars not loaded yet; a later wake-up re-checks
+    if savedID == nil then return end
 
     _initialLoadoutResolved = true
 
-    -- Seed the hero-sub-tree baseline so the first in-place hero swap is
-    -- detected against a known value (not nil).
     _lastKnownHeroSubTree = GetCurrentHeroSubTree()
 
-    -- Prime the db.char fast-path cache (combat-reload recovery, LDEV-04).
     if savedID ~= NO_SAVED_LOADOUT_ID then
         local charNcdm = GetCharNcdmDB(true)
         if charNcdm then
@@ -920,27 +775,16 @@ local function ResolveInitialLoadoutSlot()
     local hydratedSlot = _hydratedLoadoutID or 0
 
     if resolvedSlot == hydratedSlot then
-        -- Provisional hydration keyed the right slot — adopt baselines.
         _lastKnownSavedConfigID = savedID
         _previousLoadoutID = resolvedSlot
         return
     end
 
     if InCombatLockdown() then
-        -- Combat /reload with a cold cache: defer the re-key. The
-        -- PLAYER_REGEN_ENABLED drain re-resolves fresh and runs the
-        -- save/load as an atomic pair (_previousLoadoutID still points at
-        -- the hydrated slot, so the outgoing save cannot contaminate the
-        -- authoritative slot).
         pendingLoadoutRefresh = true
         return
     end
 
-    -- Re-key: the live containers hold hydratedSlot's data. Save it back to
-    -- the slot it came FROM (never into the authoritative slot — that would
-    -- overwrite the user's real per-loadout settings with provisional data),
-    -- then load the authoritative slot. An empty authoritative slot leaves
-    -- the live containers as-is (D-05 seeding semantics, same as a swap).
     loadoutTrackingToken = loadoutTrackingToken + 1
     local myToken = loadoutTrackingToken
     SaveLoadoutProfile(_hydratedLoadoutID, specID)
@@ -964,18 +808,11 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
 
     local containerKeys = CDMContainers_API:GetAllContainerKeys()
     local loadoutID = GetEffectiveLoadoutID()
-    -- Record which slot this hydration keys off. Until ResolveInitialLoadoutSlot
-    -- confirms it against the live API this is provisional — and
-    -- _previousLoadoutID must point at it so any interim save returns the data
-    -- to the slot it came from, never into a slot it was not loaded from.
     _hydratedLoadoutID = loadoutID
     _previousLoadoutID = loadoutID
     local store = GetSpecLoadoutProfileStore(specID, loadoutID, false)
-    local savedProfile = store  -- store IS the loadout leaf; no extra [specID] index needed
+    local savedProfile = store
 
-    -- Validate the saved profile actually contains spell data. An empty
-    -- profile (all containers nil/empty) was likely persisted from a failed
-    -- snapshot — discard it so we fall through to fresh snapshot below.
     if savedProfile then
         local profileHasSpells = false
         for _, key in ipairs(containerKeys) do
@@ -986,8 +823,6 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
             end
         end
         if not profileHasSpells then
-            -- Discard the empty loadout slot via the parent store. `store` is
-            -- the loadout leaf, so wiping store[specID] would do nothing useful.
             local parentStore = GetSpecProfileStore(false)
             if parentStore and parentStore[specID] then
                 parentStore[specID][loadoutID] = nil
@@ -996,12 +831,6 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
         end
     end
 
-    -- Upgrade path for the active character/profile: if no scoped spec store
-    -- exists yet, seed it from the current live container state only when the
-    -- shared profile state is stamped for this character and this exact spec.
-    -- Legacy unstamped profiles may seed on same-spec login; during a spec
-    -- switch, _previousSpecID is the outgoing spec, so missing incoming
-    -- profiles must fall through to a fresh snapshot.
     if not savedProfile then
         local currentCharKey = GetCurrentCharacterKey()
         local profileCharKey = db._lastSpecCharKey
@@ -1016,7 +845,6 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
                     specData[key] = {
                         ownedSpells = CopyTable(containerDB.ownedSpells),
                         removedSpells = CopyTable(containerDB.removedSpells or {}),
-                        -- dormantSpells no longer persisted (see SaveSpecProfile).
                     }
                     if type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells > 0 then
                         hasAnySpells = true
@@ -1026,8 +854,6 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
             if hasAnySpells then
                 store = GetSpecLoadoutProfileStore(specID, loadoutID, true)
                 if store then
-                    -- Same shape as SaveSpecProfile: write per-container into
-                    -- the loadout slot leaf.
                     for k, v in pairs(specData) do
                         store[k] = v
                     end
@@ -1038,7 +864,6 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
     end
 
     if savedProfile then
-        -- Restore each container's ownedSpells, removedSpells, and dormantSpells from saved profile
         for _, key in ipairs(containerKeys) do
             local containerDB = GetTrackerSettings(key)
             if IsSpecManagedContainer(containerDB) then
@@ -1049,31 +874,20 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
                     containerDB.dormantSpells = CopyTable(savedContainer.dormantSpells or {})
                     containerDB._dormantSequence = savedContainer.dormantSequence or 0
                 else
-                    -- Container exists now but wasn't in the saved profile
-                    -- (e.g. custom container created after the profile was
-                    -- saved). Clear it so stale spells from the previous
-                    -- spec don't leak through.
                     ClearContainerSpecState(containerDB)
                 end
             end
         end
-        -- Fold any dormant-shelf records carried by an old saved profile
-        -- back into the restored lists before the first RefreshAll. Foreign
-        -- spec/class spells in a shared profile are NOT removed — the
-        -- render-time known filters simply skip them for this character.
         if ns.CDMSpellData then
             ns.CDMSpellData:CheckAllDormantSpells()
         end
         StampActiveProfileSpecOwner(specID)
         return true
     else
-        -- No saved profile for this spec — fresh snapshot from Blizzard CDM
         if ns.CDMSpellData then
             for _, key in ipairs(containerKeys) do
                 local containerDB = GetTrackerSettings(key)
                 if IsSpecManagedContainer(containerDB) then
-                    -- Clear all spec-scoped state so a first-time snapshot never
-                    -- inherits removals/dormant entries from a different class/spec.
                     ClearContainerSpecState(containerDB)
                 end
             end
@@ -1105,50 +919,32 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
     end
 end
 
--- Initialize the previous spec ID on first load.
--- Also detects spec/class changes across login sessions (e.g. switching
--- characters that share the same AceDB profile) and performs a spec
--- profile save/load so stale spells from another class never display.
-
--- Cross-session detection extracted so the 1.0s retry can re-run it.
--- Returns profile hydration readiness and whether a spec mismatch was detected.
 local function RunCrossSessionDetection(specID)
     local db = GetSpecStateDB(true)
-    if not db or not specID or specID == 0 then return false, false end
+    if not db or not specID or specID == 0 then return false end
 
     local lastSpecID = db._lastSpecID
     local currentCharKey = GetCurrentCharacterKey()
-    local detected = lastSpecID ~= nil and lastSpecID ~= specID
-    local readyNow = true
-    local shouldLoadActiveSpec = true
     local profileDB = GetDB()
     local profileCharKey = profileDB and profileDB._lastSpecCharKey
     local liveStateOwnedByCurrentChar = (not profileCharKey) or profileCharKey == currentCharKey
     if lastSpecID and lastSpecID ~= specID and liveStateOwnedByCurrentChar then
-        -- Save stale ownedSpells under the old spec before overwriting
         local oldPrevious = _previousSpecID
         _previousSpecID = lastSpecID
         SaveCurrentSpecProfile()
         _previousSpecID = oldPrevious
     end
 
-    if shouldLoadActiveSpec then
-        -- Invalidate caches before hydrating the active spec. Even when the
-        -- spec ID did not change, the profile's live containers may belong
-        -- to a different character sharing the same AceDB profile.
-        if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
-        if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
-            ns.CDMSpellData:InvalidateLearnedCache()
-        end
-
-        -- Load the correct spec profile (or fresh snapshot if first time).
-        specTrackingRetryToken = specTrackingRetryToken + 1
-        readyNow = LoadOrSnapshotSpecProfile(specID, 1, specTrackingRetryToken)
+    if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
+    if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
+        ns.CDMSpellData:InvalidateLearnedCache()
     end
-    -- Persist the current spec ID for next session
+
+    specTrackingRetryToken = specTrackingRetryToken + 1
+    local readyNow = LoadOrSnapshotSpecProfile(specID, 1, specTrackingRetryToken)
     db._lastSpecID = specID
     db._lastSpecCharKey = currentCharKey
-    return readyNow, detected
+    return readyNow
 end
 
 local function ScheduleInitialSpecTrackingRetry(attempt, retryToken)
@@ -1184,19 +980,6 @@ local function InitSpecTracking()
     specTrackingPendingRefresh = false
     _previousSpecID = GetCurrentSpecID()
 
-    -- On a combat /reload, GetCurrentSpecID() returns nil during the
-    -- ADDON_LOADED safe window because Blizzard hasn't re-stamped the
-    -- spec APIs yet. Spec can't change in combat, so the spec ID
-    -- persisted from the previous session is still valid. Falling back
-    -- to it lets the synchronous safe-window RefreshAll fire
-    -- immediately; without this, the spec only resolves at the 1s
-    -- retry, which runs outside the safe window and gets stuck behind
-    -- combat lockdown until PLAYER_REGEN_ENABLED — making CDM invisible
-    -- for the entire combat /reload. Cross-session character swap
-    -- protection (the original reason for the spec gate) is preserved:
-    -- _lastSpecID lives in character state, with a guarded legacy profile
-    -- fallback for old combat reloads, and RunCrossSessionDetection still
-    -- reconciles if the spec changed while logged out.
     if (not _previousSpecID) or _previousSpecID == 0 then
         local db = GetSpecStateDB(false)
         local cached = db and db._lastSpecID
@@ -1225,9 +1008,6 @@ local function InitSpecTracking()
         specTrackingReady = readyNow
         return readyNow
     else
-        -- GetSpecializationInfo isn't ready yet (returns 0 or nil during early
-        -- load). Retry after a short delay — and re-run cross-session detection
-        -- so character/spec switches across sessions are still caught.
         specTrackingPendingRefresh = true
         specTrackingRetryToken = specTrackingRetryToken + 1
         local retryToken = specTrackingRetryToken
@@ -1261,12 +1041,8 @@ local function SyncCurrentProfileSpecState(event, _, profileKey)
         return
     end
 
-    -- Cancel any stale async spec-load retries before hydrating the new profile.
     specTrackingRetryToken = specTrackingRetryToken + 1
 
-    -- Cancel any stale loadout debounce/drain from the previous profile.
-    -- The new profile may have perLoadoutSpec set differently; reset all
-    -- loadout state so the first event after switch re-primes from scratch.
     if loadoutDebounceTimer then
         loadoutDebounceTimer:Cancel()
         loadoutDebounceTimer = nil
@@ -1275,28 +1051,16 @@ local function SyncCurrentProfileSpecState(event, _, profileKey)
     _previousLoadoutID = nil
     _lastKnownSavedConfigID = nil
     pendingLoadoutRefresh = false
-    -- Re-arm the initial-loadout latch: the new profile may have
-    -- perLoadoutSpec set differently, and its hydration below re-keys the
-    -- live containers from scratch.
     _hydratedLoadoutID = nil
     _initialLoadoutResolved = false
-    -- NOTE: loadoutListReady is intentionally NOT reset — the talent list is
-    -- a Blizzard-side session global, not profile-scoped. Resetting it would
-    -- block all subsequent loadout drains until TRAIT_CONFIG_LIST_UPDATED fires.
-    -- NOTE: db.char.ncdm._lastLoadoutConfigID is intentionally NOT cleared —
-    -- it is the persistent fast-path cache for combat-reload recovery.
 
     local specReadyNow = InitSpecTracking()
     if not specReadyNow then
         specTrackingPendingRefresh = true
     end
 
-    -- Mid-session profile switches run with live APIs: resolve immediately.
-    -- At login (LibDualSpec switches the profile around PEW) this may still
-    -- read nil — the event wake-ups re-check.
     ResolveInitialLoadoutSlot()
 
-    -- Phase 2 / D-06: profile switch may change perLoadoutSpec; refresh subscribers.
     FireLoadoutChangeCallbacks()
 end
 
@@ -1318,9 +1082,6 @@ local function RegisterProfileCallbacks()
     lastKnownProfile = QUICore.db:GetCurrentProfile()
 end
 
----------------------------------------------------------------------------
--- BUILT-IN CONTAINER KEYS (ordered)
----------------------------------------------------------------------------
 local BUILTIN_KEYS = Shared and Shared.BUILTIN_CONTAINER_KEYS
     or { "essential", "utility", "buff", "trackedBar" }
 
@@ -1332,10 +1093,6 @@ local BUILTIN_NAMES = Shared and Shared.BUILTIN_CONTAINER_LABELS
         trackedBar = "Buff Bars",
     }
 
--- Legacy 4-value taxonomy. Kept for backward-compat reads on profiles where
--- the v33 schema bump has not yet stamped db.shape. New code should use
--- BUILTIN_SHAPES + GetContainerShape (shape-only) and CDMSpellData.ResolveEntryKind
--- (entry-only) instead.
 local BUILTIN_CONTAINER_TYPES = Shared and Shared.BUILTIN_CONTAINER_TYPES
     or {
         essential  = "cooldown",
@@ -1344,10 +1101,6 @@ local BUILTIN_CONTAINER_TYPES = Shared and Shared.BUILTIN_CONTAINER_TYPES
         trackedBar = "auraBar",
     }
 
--- Shape is a layout/render concern — does the container draw icons or
--- StatusBars. Independent of whether entries are auras or cooldowns.
--- Only trackedBar is a true StatusBar today (real bar mirror); essential,
--- utility, buff, and migrated customBar containers all render as icons.
 local BUILTIN_SHAPES = Shared and Shared.BUILTIN_CONTAINER_SHAPES
     or {
         essential  = "icon",
@@ -1356,11 +1109,6 @@ local BUILTIN_SHAPES = Shared and Shared.BUILTIN_CONTAINER_SHAPES
         trackedBar = "bar",
     }
 
----------------------------------------------------------------------------
--- Resolve container shape ("icon" or "bar") for a given container key.
--- Reads db.shape if present, else falls back to BUILTIN_SHAPES, else
--- infers from legacy containerType (auraBar → bar; everything else → icon).
----------------------------------------------------------------------------
 local function GetContainerShape(viewerType)
     if not viewerType then return "icon" end
 
@@ -1405,28 +1153,22 @@ local function ShouldDeferContainerLayoutInCombat(trackerKey, settings)
         return false
     end
 
-    -- Built-in essential/utility wrap Blizzard CDM viewer children whose
-    -- start/dur become "secret" in combat — laying out then would taint.
     if trackerKey == "essential" or trackerKey == "utility" then
         return true
     end
 
-    -- Clickable custom bars wire SecureActionButton children on each icon;
-    -- reflowing them in combat would taint.
-    -- Non-clickable custom cooldown bars are addon-owned with no secure
-    -- attributes, so they may relayout in combat — required for filter
-    -- flips (Mana Tea becoming usable, etc.) to collapse the bar without
-    -- waiting for PLAYER_REGEN_ENABLED.
     if settings and settings.clickableIcons then
+        return true
+    end
+
+    if ns.CDMIconFactory and ns.CDMIconFactory.PoolHasProtectedIcon
+        and ns.CDMIconFactory:PoolHasProtectedIcon(trackerKey) then
         return true
     end
 
     return false
 end
 
----------------------------------------------------------------------------
--- CONTAINER DEFAULTS BY TYPE (used when creating new custom containers)
----------------------------------------------------------------------------
 local function GetDefaultsByContainerType(containerType)
     if containerType == "cooldown" then
         return {
@@ -1471,7 +1213,6 @@ local function GetDefaultsByContainerType(containerType)
             dormantSpells = {},
             spellOverrides = {},
             iconDisplayMode = "always",
-            -- Keybind display
             showKeybinds = false,
             keybindTextSize = 12,
             keybindTextColor = { 1, 0.82, 0, 1 },
@@ -1550,31 +1291,23 @@ local function GetDefaultsByContainerType(containerType)
     return {}
 end
 
----------------------------------------------------------------------------
--- CONTAINER MANAGEMENT API
--- Dynamic container creation, deletion, rename, query.
----------------------------------------------------------------------------
 CDMContainers_API = {}
 
---- Generate a unique container key for custom containers.
 local function GenerateContainerKey()
     return "custom_" .. time() .. "_" .. math.random(1000, 9999)
 end
 
---- Get all containers from the unified table, ordered: built-in first, then custom by key.
 function CDMContainers_API:GetContainers()
     local db = GetDB()
     local ct = db and db.containers
     if not ct then return {} end
 
     local result = {}
-    -- Built-in containers first, in canonical order
     for _, key in ipairs(BUILTIN_KEYS) do
         if ct[key] then
             result[#result + 1] = { key = key, settings = ct[key] }
         end
     end
-    -- Custom containers sorted alphabetically by key
     local customKeys = {}
     for key in pairs(ct) do
         if not BUILTIN_NAMES[key] then
@@ -1588,7 +1321,6 @@ function CDMContainers_API:GetContainers()
     return result
 end
 
---- Get settings for a specific container from the unified table.
 function CDMContainers_API:GetContainerSettings(key)
     local db = GetDB()
     if not db then return nil end
@@ -1598,7 +1330,6 @@ function CDMContainers_API:GetContainerSettings(key)
     return db[key] or nil
 end
 
---- Filter containers by containerType.
 function CDMContainers_API:GetContainersByType(containerType)
     local all = self:GetContainers()
     local result = {}
@@ -1611,21 +1342,6 @@ function CDMContainers_API:GetContainersByType(containerType)
     return result
 end
 
---- Create a new custom container. Returns the new containerKey.
---
--- Custom containers persist `containerType = "customBar"` to match the
--- legacy customBar migration (core/migrations.lua:2611) and the storage
--- contract enforced by GetEntryListField (cdm_spelldata.lua:3782-3786) —
--- entries live under `db.entries`, not `db.ownedSpells`. Downstream readers
--- (cdm_icon_renderer.lua BuildIcons at :9025, composer RefreshPreview /
--- RefreshEntryList / RefreshAddList) gate on `containerType == "customBar"`
--- to choose `entries`; without it, AddEntry would store entries that no
--- renderer reads, leaving the bar visually empty.
---
--- The `containerType` argument is the SHAPE hint (Custom Icons vs Custom
--- Bars) and is consumed locally to pick visual defaults; the shape itself
--- lives in `settings.shape`. Per-entry kind is on each entry (entry.kind),
--- independent of containerType.
 function CDMContainers_API:CreateContainer(name, containerType)
     if InCombatLockdown() then return nil end
     if not name or name == "" then name = "Custom" end
@@ -1641,44 +1357,33 @@ function CDMContainers_API:CreateContainer(name, containerType)
     settings.name = name
     settings.containerType = "customBar"
     settings.shape = (shapeHint == "auraBar") and "bar" or "icon"
-    settings.entries = {}  -- custom bars start empty; entries (not ownedSpells)
+    settings.entries = {}
     settings.ownedSpells = nil
 
     db.containers[key] = settings
 
-    -- Also write to top-level ncdm[key] for backward compat with existing code paths
     db[key] = settings
 
-    -- Create the container frame
     local frameName = "QUI_CDM_" .. key
     local frame = RegisterContainerFrame(key, CreateContainer(frameName))
-    -- Position at center initially with a minimum size so the mover is visible.
-    -- Override alpha=0 from CreateContainer (hud_visibility handles built-in containers,
-    -- but custom containers created during edit mode need to be visible immediately).
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     frame:SetSize(100, 40)
     frame:SetAlpha(1)
     frame:Show()
 
-    -- Save initial position to DB so RestoreContainerPosition and layout mode find it
     settings.pos = { ox = 0, oy = 0 }
 
-    -- Register icon pool for the new container
     if ns.CDMIconFactory then
         ns.CDMIconFactory:EnsurePool(key)
     end
 
-    -- Register layout mode element dynamically
     self:RegisterDynamicLayoutElement(key, settings)
 
-    -- Register frame resolver dynamically
     self:RegisterDynamicFrameResolver(key, settings)
 
-    -- Invalidate caches
     if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
 
-    -- Refresh layout mode movers if layout mode is active
     local um = ns.QUI_LayoutMode
     if um and um.RefreshMovers then
         um:RefreshMovers()
@@ -1689,7 +1394,27 @@ function CDMContainers_API:CreateContainer(name, containerType)
     return key
 end
 
---- Delete a custom container. Returns true on success.
+-- >>> QUI_TEST_EXTRACT PurgeContainerSatellites (sentinels used by
+local function PurgeContainerSatellites(profile, containerKey)
+    if type(profile) ~= "table" or type(containerKey) ~= "string" then return end
+    local glow = profile.customGlow
+    if type(glow) == "table" then
+        for k in pairs(glow) do
+            if type(k) == "string" and k:sub(1, #containerKey) == containerKey then
+                glow[k] = nil
+            end
+        end
+    end
+    if type(profile.cooldownEffects) == "table" then
+        profile.cooldownEffects["hide_" .. containerKey] = nil
+    end
+    if type(profile.frameAnchoring) == "table" then
+        profile.frameAnchoring["cdmCustom_" .. containerKey] = nil
+    end
+end
+-- <<< QUI_TEST_EXTRACT PurgeContainerSatellites
+ns.CDMPurgeContainerSatellites = PurgeContainerSatellites
+
 function CDMContainers_API:DeleteContainer(containerKey)
     if InCombatLockdown() then return false end
 
@@ -1697,13 +1422,16 @@ function CDMContainers_API:DeleteContainer(containerKey)
     if not db or not db.containers then return false end
     local settings = db.containers[containerKey]
     if not settings then return false end
-    if settings.builtIn then return false end  -- cannot delete built-in
+    if settings.builtIn then return false end
 
-    -- Remove from DB
     db.containers[containerKey] = nil
     db[containerKey] = nil
 
-    -- Destroy the frame
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    if profile then
+        PurgeContainerSatellites(profile, containerKey)
+    end
+
     local frame = containers[containerKey]
     if frame then
         frame:Hide()
@@ -1713,23 +1441,19 @@ function CDMContainers_API:DeleteContainer(containerKey)
         viewerState[frame] = nil
     end
 
-    -- Release icon pool
     if ns.CDMIconFactory then
         ns.CDMIconFactory:ClearPool(containerKey)
     end
 
-    -- Unregister layout mode element
     local um = ns.QUI_LayoutMode
     if um and um.UnregisterElement then
         um:UnregisterElement("cdmCustom_" .. containerKey)
     end
 
-    -- Unregister frame resolver
     if _G.QUI_UnregisterFrameResolver then
         _G.QUI_UnregisterFrameResolver("cdmCustom_" .. containerKey)
     end
 
-    -- Invalidate caches
     if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
 
     SyncSettingsFeatureLookups()
@@ -1737,7 +1461,6 @@ function CDMContainers_API:DeleteContainer(containerKey)
     return true
 end
 
---- Rename a container. Updates both DB and layout mode label.
 function CDMContainers_API:RenameContainer(containerKey, newName)
     if not newName or newName == "" then return false end
 
@@ -1748,7 +1471,6 @@ function CDMContainers_API:RenameContainer(containerKey, newName)
 
     settings.name = newName
 
-    -- Update layout mode label if registered
     local um = ns.QUI_LayoutMode
     if um and um.UpdateElementLabel then
         um:UpdateElementLabel("cdmCustom_" .. containerKey, newName)
@@ -1757,12 +1479,10 @@ function CDMContainers_API:RenameContainer(containerKey, newName)
     return true
 end
 
---- Get the container frame for a given key.
 function CDMContainers_API:GetContainer(key)
     return containers[key]
 end
 
---- Register a layout mode element for a custom container.
 function CDMContainers_API:RegisterDynamicLayoutElement(containerKey, settings)
     local um = ns.QUI_LayoutMode
     if not um then return end
@@ -1772,7 +1492,7 @@ function CDMContainers_API:RegisterDynamicLayoutElement(containerKey, settings)
         key = elementKey,
         label = settings.name or containerKey,
         group = ns.L["Cooldown Manager & Custom Tracker Bars"],
-        order = 100,  -- custom containers sort after built-in
+        order = 100,
         isOwned = true,
         isEnabled = function()
             local s = GetTrackerSettings(containerKey)
@@ -1796,9 +1516,7 @@ function CDMContainers_API:RegisterDynamicLayoutElement(containerKey, settings)
 
 end
 
---- Register a frame resolver in the anchoring system for a custom container.
 function CDMContainers_API:RegisterDynamicFrameResolver(containerKey, settings)
-    -- Register via the global hook that anchoring.lua exposes
     if _G.QUI_RegisterFrameResolver then
         local resolverKey = "cdmCustom_" .. containerKey
         _G.QUI_RegisterFrameResolver(resolverKey, {
@@ -1810,14 +1528,11 @@ function CDMContainers_API:RegisterDynamicFrameResolver(containerKey, settings)
     end
 end
 
---- Get all container keys (built-in + custom), in order.
 function CDMContainers_API:GetAllContainerKeys()
     local db = GetDB()
     local ct = db and db.containers
     if not ct then return BUILTIN_KEYS end
 
-    -- Always include all built-in keys — they live at ncdm[key], not
-    -- in ncdm.containers, so checking ct[key] would exclude them.
     local result = {}
     for _, key in ipairs(BUILTIN_KEYS) do
         result[#result + 1] = key
@@ -1835,9 +1550,6 @@ function CDMContainers_API:GetAllContainerKeys()
     return result
 end
 
----------------------------------------------------------------------------
--- HELPER: Update locked power bars and castbars
----------------------------------------------------------------------------
 local function UpdateLockedBarsForViewer(trackerKey)
     if trackerKey == "essential" then
         if _G.QUI_UpdateLockedPowerBar then _G.QUI_UpdateLockedPowerBar() end
@@ -1855,12 +1567,9 @@ local function UpdateAllLockedBars()
     UpdateLockedBarsForViewer("utility")
 end
 
--- UTILITY ANCHOR PROXY
----------------------------------------------------------------------------
 local function GetUtilityAnchorProxy()
     if not UtilityAnchorProxy then
         UtilityAnchorProxy = UIKit.CreateAnchorProxy(nil, {
-            -- Utility↔Essential spacing must track live Essential bounds in combat.
             combatFreeze = false,
             mirrorVisibility = false,
             sizeResolver = function(source)
@@ -1885,14 +1594,11 @@ local function UpdateUtilityAnchorProxy()
     return proxy
 end
 
----------------------------------------------------------------------------
--- CONTAINER CREATION
----------------------------------------------------------------------------
 CreateContainer = function(name)
     local frame = CreateFrame("Frame", name, UIParent)
     frame:SetSize(1, 1)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    frame:SetAlpha(0)  -- start invisible; hud_visibility fades in after icons are built
+    frame:SetAlpha(0)
     frame:Show()
     if not frame._quiAlphaMouseHooked then
         frame._quiAlphaMouseHooked = true
@@ -1914,7 +1620,6 @@ RegisterContainerFrame = function(key, frame)
     return frame
 end
 
--- Tracker key → frameAnchoring key mapping
 ANCHOR_KEY_MAP = {
     essential  = "cdmEssential",
     utility    = "cdmUtility",
@@ -1970,10 +1675,6 @@ function SyncSettingsFeatureLookups(featureId)
     return true
 end
 
--- Save a QUI container's current position to the DB.
--- Called after Edit Mode exit so positions persist across sessions.
--- Also updates frameAnchoring offsets (if enabled) so the anchoring
--- system doesn't overwrite the container with stale values on next refresh.
 local function SaveContainerPosition(trackerKey)
     local container = containers[trackerKey]
     if not container then return end
@@ -1990,9 +1691,6 @@ local function SaveContainerPosition(trackerKey)
         local oy = cy - sy
         db.pos = { ox = ox, oy = oy }
 
-        -- Keep frameAnchoring in sync so ApplyAllFrameAnchors uses the
-        -- updated position instead of overwriting with a stale offset.
-        -- Only sync when parent is screen (offsets are UIParent-center based).
         local anchorKey = ANCHOR_KEY_MAP[trackerKey] or ("cdmCustom_" .. trackerKey)
         if anchorKey then
             local profile = QUICore and QUICore.db and QUICore.db.profile
@@ -2001,8 +1699,6 @@ local function SaveContainerPosition(trackerKey)
             if settings and settings.enabled ~= false then
                 local parent = settings.parent or "screen"
                 if parent == "screen" or parent == "disabled" then
-                    -- ox/oy are center offsets; CDMLayout converts them back
-                    -- to point/relative offsets for non-center anchors.
                     local vs = viewerState[container]
                     local frameW = (vs and (vs.cdmIconWidth or vs.row1Width)) or (container:GetWidth() or 1) or 1
                     local frameH = (vs and vs.cdmTotalHeight) or (container:GetHeight() or 1)
@@ -2019,24 +1715,14 @@ local function SaveContainerPosition(trackerKey)
     end
 end
 
--- Restore a QUI container's position from the DB.
--- Checks frameAnchoring first (if enabled with screen parent, its offsets
--- are the authoritative source since it would overwrite us on next refresh).
--- Falls back to ncdm.pos.  Returns true if a position was applied.
 local function RestoreContainerPosition(container, trackerKey)
     if not container then return false end
 
-    -- During layout mode, handles own frame positions — skip restoring
-    -- from DB so we don't yank the container away from its mover.
     local anchorKey = ANCHOR_KEY_MAP[trackerKey] or ("cdmCustom_" .. trackerKey)
     if anchorKey and _G.QUI_IsLayoutModeManaged and _G.QUI_IsLayoutModeManaged(anchorKey) then
         return true
     end
 
-    -- If the centralized frame anchoring system has an enabled override for
-    -- this CDM key with a screen parent, use its CENTER offsets directly.
-    -- When anchored to another frame (e.g. "playerFrame"), the offsets are
-    -- relative to that parent — let the anchoring system handle it later.
     if anchorKey then
         local profile = QUICore and QUICore.db and QUICore.db.profile
         local anchoringDB = profile and profile.frameAnchoring
@@ -2050,13 +1736,10 @@ local function RestoreContainerPosition(container, trackerKey)
                 container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
                 return true
             end
-            -- Anchored to another frame — return true to skip Blizzard seeding;
-            -- the anchoring system will position us on the next refresh pass.
             return true
         end
     end
 
-    -- Fall back to ncdm.pos
     local db = GetTrackerSettings(trackerKey)
     if not db or not db.pos then return false end
     local ox = db.pos.ox
@@ -2069,8 +1752,6 @@ local function RestoreContainerPosition(container, trackerKey)
     return false
 end
 
--- Restore container position from DB.  If no saved position exists
--- (first-ever init), the container stays at screen center (0,0).
 local function InitContainerPosition(container, trackerKey)
     RestoreContainerPosition(container, trackerKey)
 end
@@ -2086,7 +1767,7 @@ local function EnsureContainerBootstrapSize(container, trackerKey)
 end
 
 local function InitContainers()
-    if containers.essential then return end -- already created
+    if containers.essential then return end
 
     RegisterContainerFrame("essential", CreateContainer("QUI_EssentialContainer"))
     RegisterContainerFrame("utility", CreateContainer("QUI_UtilityContainer"))
@@ -2095,13 +1776,11 @@ local function InitContainers()
 
     InitContainerPosition(containers.essential, "essential")
     InitContainerPosition(containers.utility, "utility")
-    -- Buff: skip position init when anchored — ApplyBuffIconAnchor manages position.
     local db = GetDB()
     local anchorTo = db and db.buff and db.buff.anchorTo or "disabled"
     if anchorTo == "disabled" then
         InitContainerPosition(containers.buff, "buff")
     end
-    -- TrackedBar: skip position init when anchored — ApplyTrackedBarAnchor manages position.
     local barAnchorTo = db and db.trackedBar and db.trackedBar.anchorTo or "disabled"
     if barAnchorTo == "disabled" then
         InitContainerPosition(containers.trackedBar, "trackedBar")
@@ -2112,20 +1791,11 @@ local function InitContainers()
     EnsureContainerBootstrapSize(containers.buff, "buff")
     EnsureContainerBootstrapSize(containers.trackedBar, "trackedBar")
 
-    -- Phase G: Create frames for any custom containers in the unified table.
-    -- Phase B.3: customBar containers (migrated from legacy custom trackers)
-    -- are rendered by the unified CDM renderer like any other custom
-    -- container — no filter needed.
     if db and db.containers then
         for key, settings in pairs(db.containers) do
             if not BUILTIN_NAMES[key]
                and not containers[key]
                and settings then
-                -- Repair custom containers that pre-date the customBar
-                -- contract fix: those saved with containerType=nil + entries
-                -- accidentally in ownedSpells (created before CreateContainer
-                -- was corrected). Without this, AddEntry's storage and
-                -- BuildIcons' read site disagree and the bar renders empty.
                 if settings.builtIn == false and settings.containerType == nil then
                     settings.containerType = "customBar"
                     if type(settings.ownedSpells) == "table" and #settings.ownedSpells > 0
@@ -2137,35 +1807,25 @@ local function InitContainers()
                 local frameName = "QUI_CDM_" .. key
                 local frame = RegisterContainerFrame(key, CreateContainer(frameName))
                 InitContainerPosition(frame, key)
-                -- Ensure icon pool exists
                 if ns.CDMIconFactory then
                     ns.CDMIconFactory:EnsurePool(key)
                 end
-                -- Register frame resolver so the anchoring system can find
-                -- this container (hideWithParent, anchor chains, etc.)
                 CDMContainers_API:RegisterDynamicFrameResolver(key, settings)
             end
         end
     end
 end
 
--- Deferred init for buff container (viewer may load after us)
--- The addon-owned CDM buff icon container is created in InitContainers().
--- This function ensures it exists and notifies CDMBuffLayout.
 local function InitBuffContainer()
     if not containers.buff then
-        -- InitContainers hasn't run yet -- create the container now
         RegisterContainerFrame("buff", CreateContainer("QUI_CDMBuffIconContainer"))
     end
-    -- Restore position from DB (or seed from Blizzard viewer on first-ever init).
-    -- Skip when anchored — ApplyBuffIconAnchor manages position.
     local db = GetDB()
     local anchorTo = db and db.buff and db.buff.anchorTo or "disabled"
     if anchorTo == "disabled" then
         InitContainerPosition(containers.buff, "buff")
     end
     if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
-    -- Notify CDM buff layout to set up hooks on the new container.
     if ns.CDMBuffLayout and ns.CDMBuffLayout.OnContainerReady then
         C_Timer.After(0.1, function()
             ns.CDMBuffLayout:OnContainerReady()
@@ -2173,16 +1833,10 @@ local function InitBuffContainer()
     end
 end
 
--- Forward declarations needed by LayoutContainer (Edit Mode guards).
 local _editModeActive = false
 local _disabledMouseFrames = {}
-local _forceLayoutKey = nil  -- set temporarily to bypass edit mode check for one container
+local _forceLayoutKey = nil
 local _containerMouseSyncPending = false
--- Combat-deferred CHALLENGE_MODE_START recovery flag. The key-start
--- reconcile + refresh cannot run during combat lockdown; when the
--- player pulls before it fires, this records that recovery is owed so
--- PLAYER_REGEN_ENABLED can drain it (drained at line ~5402). Without this, an
--- in-combat key start dropped the recovery permanently (stale until /reload).
 local _challengeModeRecoveryPending = false
 
 local function IsCDMMouseoverFadeEnabled()
@@ -2299,6 +1953,29 @@ local function SyncContainerIconsForVisibility(containerKey, hidden, hoverOnly)
             SyncClickButtonForVisibility(icon, containerKey, hidden)
         end
     end
+
+    local container = containers and containers[containerKey]
+    if not (container and container.GetChildren) then
+        return
+    end
+
+    local children = { container:GetChildren() }
+    for _, child in ipairs(children) do
+        if child and child._quiCdmShell then
+            if hidden then
+                if hoverOnly then
+                    SetFrameHoverOnly(child)
+                else
+                    SetFrameMouseDisabled(child)
+                end
+            else
+                SetIconMouseDefault(child)
+            end
+            if containerKey == "essential" or containerKey == "utility" then
+                SyncClickButtonForVisibility(child, containerKey, hidden)
+            end
+        end
+    end
 end
 
 local function SyncContainerBarsForVisibility(container)
@@ -2385,26 +2062,52 @@ local function RefreshCustomBarRuntimeAfterLayout(trackerKey, settings)
     postLayoutRuntimeRefreshing[trackerKey] = nil
 end
 
----------------------------------------------------------------------------
--- CORE: Layout icons in a container
--- Ported from cdm_viewer.lua:1069-1554 for addon-owned containers.
----------------------------------------------------------------------------
+local function ApplyViewerMetrics(vs, metrics, containerKey)
+    local maxRowWidth = metrics.iconWidth or 0
+    local proxyTotalHeight = metrics.totalHeight or 0
+
+    vs.cdmIconWidth = maxRowWidth
+    vs.cdmRawContentWidth = metrics.rawContentWidth or 0
+    vs.cdmTotalHeight = proxyTotalHeight
+    vs.cdmProxyYOffset = metrics.proxyYOffset or 0
+    vs.cdmRow1IconHeight = metrics.row1IconHeight or 0
+    vs.cdmRow1BorderSize = metrics.row1BorderSize or 0
+    vs.cdmBottomRowBorderSize = metrics.bottomRowBorderSize or 0
+    vs.cdmBottomRowYOffset = metrics.bottomRowYOffset or 0
+    vs.cdmRow1Width = metrics.row1Width or maxRowWidth
+    vs.cdmBottomRowWidth = metrics.bottomRowWidth or maxRowWidth
+    vs.cdmRawRow1Width = metrics.rawRow1Width or (metrics.rawContentWidth or 0)
+    vs.cdmRawBottomRowWidth = metrics.rawBottomRowWidth or (metrics.rawContentWidth or 0)
+    vs.cdmPotentialRow1Width = metrics.potentialRow1Width or maxRowWidth
+    vs.cdmPotentialBottomRowWidth = metrics.potentialBottomRowWidth or maxRowWidth
+
+    local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
+    if ncdm and maxRowWidth > 0 then
+        if containerKey == "essential" then
+            ncdm._lastEssentialWidth = maxRowWidth
+            ncdm._lastEssentialHeight = proxyTotalHeight
+        elseif containerKey == "utility" then
+            ncdm._lastUtilityWidth = maxRowWidth
+            ncdm._lastUtilityHeight = proxyTotalHeight
+        end
+    end
+
+    return maxRowWidth, proxyTotalHeight
+end
+
 local function LayoutContainer(trackerKey)
-    if not IsCDMRuntimeEnabled() then return end
+    if not IsCDMRuntimeEnabled() then
+        return
+    end
 
     local container = containers[trackerKey]
-    if not container then return end
+    if not container then
+        return
+    end
 
-    -- Aura containers may rebuild during combat. Cooldown containers can have
-    -- SecureActionButton children for click-to-cast, so their visibility/layout
-    -- work is deferred until combat ends.
-
-    -- Edit Mode: containers are visible with overlays but skip layout
-    -- to avoid flicker while the user is looking at overlays.  Icons are
-    -- already rendered.  RefreshAll() on Edit Mode exit rebuilds everything.
-    -- Exception: _forceLayoutKey allows the Composer to force layout for
-    -- a specific container during edit mode (so it resizes when spells change).
-    if _editModeActive and trackerKey ~= _forceLayoutKey then return end
+    if _editModeActive and trackerKey ~= _forceLayoutKey then
+        return
+    end
 
     local settings = GetTrackerSettings(trackerKey)
     if ShouldDeferContainerLayoutInCombat(trackerKey, settings) then
@@ -2412,8 +2115,6 @@ local function LayoutContainer(trackerKey)
         return
     end
 
-    -- Built-in containers default to enabled when no settings exist
-    -- or when enabled is nil (never explicitly disabled by user).
     if not settings then
         if BUILTIN_NAMES[trackerKey] then
             settings = { enabled = true }
@@ -2427,13 +2128,11 @@ local function LayoutContainer(trackerKey)
         return
     end
 
-    -- Re-entry guard
-    if applying[trackerKey] then return end
+    if applying[trackerKey] then
+        return
+    end
     applying[trackerKey] = true
 
-    -- Respect "hide with anchor" — the anchoring system hid this container
-    -- because its anchor parent is hidden. Let layout proceed (so icons stay
-    -- up-to-date) but don't re-show the container.
     local anchorHidden = false
     if _G.QUI_IsFrameHiddenByAnchor then
         local anchorKey = ANCHOR_KEY_MAP[trackerKey] or ("cdmCustom_" .. trackerKey)
@@ -2444,7 +2143,6 @@ local function LayoutContainer(trackerKey)
         container:Show()
     end
 
-    -- Apply HUD layer priority
     local hudLayering = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.hudLayering
     local layerPriority = hudLayering and hudLayering[trackerKey] or 5
     if QUICore and QUICore.GetHUDFrameLevel then
@@ -2458,14 +2156,9 @@ local function LayoutContainer(trackerKey)
         vs = viewerState[container]
     end
 
-    -- Store layout direction for external consumers; placement math lives in CDMLayout.
     local layoutDirection = settings.layoutDirection or "HORIZONTAL"
     vs.cdmLayoutDirection = layoutDirection
 
-    -- Buff tracker: create addon-owned icons via icon factory, adopt
-    -- Blizzard CooldownFrames for taint-safe aura display.
-    -- Blizzard's children stay in the hidden viewer (alpha=0).
-    -- CDMBuffLayout handles positioning and styling of addon-owned icons.
     if trackerKey == "buff" then
         InitBuffContainer()
         container = containers.buff
@@ -2474,20 +2167,18 @@ local function LayoutContainer(trackerKey)
             return
         end
 
-        -- Ensure buff container has a minimum size so overlays and anchor
-        -- proxies have valid bounds before any buffs are active. Sizing is
-        -- driven by the owned-layout bounds cached by LayoutBuffIcons() via
-        -- QUI_SetCDMViewerBounds(); never sourced from Blizzard's viewer
-        -- (which can report one-icon bounds and clip overlapping slot icons).
         local cw = (container:GetWidth() or 0)
         local ch = (container:GetHeight() or 0)
         if cw <= 1 or ch <= 1 then
             EnsureContainerBootstrapSize(container, "buff")
         end
 
-        -- Fingerprint: skip rebuild when the same buff spellIDs are active.
-        -- Aura events fire on stack/duration changes too, but the icon set
-        -- only changes when buffs are gained or lost.
+        if ns._cdmBoot then
+            RefreshReanchoredBuiltin(ns._cdmBoot, "buff", true)
+            applying[trackerKey] = false
+            return
+        end
+
         local spellData = ns.CDMSpellData and ns.CDMSpellData:GetSpellList("buff") or {}
         local parts = {}
         for i, entry in ipairs(spellData) do
@@ -2504,7 +2195,6 @@ local function LayoutContainer(trackerKey)
 
         local currentPool = ns.CDMIconFactory and ns.CDMIconFactory:GetIconPool("buff") or {}
         if fingerprint == (buffFingerprint or "") and #currentPool > 0 then
-            -- Same buff set -- skip destructive rebuild
             applying[trackerKey] = false
             return
         end
@@ -2515,11 +2205,8 @@ local function LayoutContainer(trackerKey)
             return
         end
 
-        -- Build addon-owned icons (adopts Blizzard CooldownFrames)
         local allIcons = ns.CDMIcons:BuildIcons("buff", container)
         for _, icon in ipairs(allIcons) do
-            -- During Edit Mode, new icons need mouse disabled so clicks
-            -- reach Blizzard's .Selection in secure context.
             if Helpers.IsEditModeActive() then
                 icon:Show()
                 icon:EnableMouse(false)
@@ -2529,26 +2216,51 @@ local function LayoutContainer(trackerKey)
 
         applying[trackerKey] = false
 
-        -- Apply full visibility rules before buff icon layout so the
-        -- CDM buff layout pass measures and positions the final shown/hidden
-        -- set, instead of laying out once pre-visibility and again after
-        -- active-only filtering settles.
         if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
             ns.CDMIcons:UpdateAllCooldowns()
         end
-        -- Position and style icons immediately once visibility has settled
-        -- for this rebuild batch.
         if ns.CDMBuffLayout and ns.CDMBuffLayout.OnLayoutReady then
             ns.CDMBuffLayout:OnLayoutReady()
         end
         return
     end
 
-    -- Build icons via the icon factory (essential/utility only)
+    if ns._cdmBoot and (trackerKey == "essential" or trackerKey == "utility") then
+        RefreshReanchoredBuiltin(ns._cdmBoot, trackerKey, true)
+        applying[trackerKey] = false
+
+        RefreshCustomBarRuntimeAfterLayout(trackerKey, settings)
+        if trackerKey == "essential" then
+            local db = GetDB()
+            if db and db.utility and db.utility.anchorBelowEssential then
+                C_Timer.After(0.05, function()
+                    if InCombatLockdown() then return end
+                    if ApplyUtilityAnchor then
+                        ApplyUtilityAnchor()
+                    end
+                end)
+            end
+        end
+        if vs and not vs.cdmUpdatePending then
+            vs.cdmUpdatePending = true
+            C_Timer.After(0.05, function()
+                vs.cdmUpdatePending = nil
+                if InCombatLockdown() then return end
+                UpdateLockedBarsForViewer(trackerKey)
+                if _G.QUI_UpdateCDMAnchoredUnitFrames then
+                    _G.QUI_UpdateCDMAnchoredUnitFrames()
+                end
+                if _G.QUI_UpdateViewerKeybinds then
+                    _G.QUI_UpdateViewerKeybinds(trackerKey)
+                end
+            end)
+        end
+        return
+    end
+
     local allIcons = ns.CDMIcons:BuildIcons(trackerKey, container)
     local totalCapacity = CDMLayout and CDMLayout.GetTotalIconCapacity and CDMLayout.GetTotalIconCapacity(settings) or 0
 
-    -- Determine display mode for hidden-spell layout handling
     local displayMode = settings.iconDisplayMode or "always"
     local effectiveDisplayMode = displayMode
     if effectiveDisplayMode == "combat" then
@@ -2556,13 +2268,8 @@ local function LayoutContainer(trackerKey)
     end
     local CDMSpellData = ns.CDMSpellData
 
-    -- Select icons to layout (up to capacity)
     local editModeActive = Helpers.IsEditModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
-    -- When dynamicLayout is on (default), visibility filters must drop
-    -- icons at layout time so row width / centering collapse around the
-    -- missing slot. Otherwise filters hide the icon after layout and
-    -- leave a gap in the bar.
     local dynamicLayoutEnabled
     if settings.containerType == "customBar" then
         dynamicLayoutEnabled = settings.dynamicLayout == true
@@ -2575,8 +2282,6 @@ local function LayoutContainer(trackerKey)
         local icon = allIcons[i]
         local skipIcon = false
 
-        -- In "active" display mode, skip hidden-override icons entirely
-        -- (no space reserved). In "always" mode they still occupy a slot.
         if not editModeActive and effectiveDisplayMode == "active" and CDMSpellData then
             local entry = icon._spellEntry
             if entry then
@@ -2592,13 +2297,6 @@ local function LayoutContainer(trackerKey)
             end
         end
 
-        -- Drop filtered icons (e.g. Hide Non-Usable items with 0 count,
-        -- Show Only On Cooldown when off-cd) so the layout collapses.
-        -- inCombat reflects whether layout is running mid-fight; for non-
-        -- clickable custom cooldown bars ShouldDeferContainerLayoutInCombat
-        -- now allows that path so filter flips during combat (mana-tea
-        -- becoming usable, etc.) trigger a re-anchor instead of waiting
-        -- for PLAYER_REGEN_ENABLED.
         if not skipIcon and not editModeActive
            and dynamicLayoutEnabled and ShouldPlaceLayoutIcon then
             local entry = icon._spellEntry
@@ -2626,7 +2324,6 @@ local function LayoutContainer(trackerKey)
         end
     end
 
-    -- Hide overflow icons
     for i = totalCapacity + 1, #allIcons do
         if allIcons[i] then
             allIcons[i]:Hide()
@@ -2639,8 +2336,6 @@ local function LayoutContainer(trackerKey)
         return
     end
 
-    -- HUD min-width floor is computed here because it depends on broader HUD
-    -- profile state; the layout module only receives the resulting scalar.
     local minWidthEnabled, minWidth = GetHUDMinWidth()
     local applyHUDMinWidth = minWidthEnabled
         and (trackerKey == "essential" or trackerKey == "utility")
@@ -2677,40 +2372,8 @@ local function LayoutContainer(trackerKey)
         ns.CDMIcons.OnContainerIconPlaced(icon, rowConfig)
     end
 
-    local metrics = layoutPlan.metrics
-    local maxRowWidth = metrics.iconWidth or 0
-    local proxyTotalHeight = metrics.totalHeight or 0
+    local maxRowWidth, proxyTotalHeight = ApplyViewerMetrics(vs, layoutPlan.metrics, trackerKey)
 
-    -- Store dimensions in viewer state
-    vs.cdmIconWidth = maxRowWidth
-    vs.cdmRawContentWidth = metrics.rawContentWidth or 0
-    vs.cdmTotalHeight = proxyTotalHeight
-    vs.cdmProxyYOffset = metrics.proxyYOffset or 0
-
-    -- Persist for next reload
-    local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
-    if ncdm and maxRowWidth > 0 then
-        if trackerKey == "essential" then
-            ncdm._lastEssentialWidth = maxRowWidth
-            ncdm._lastEssentialHeight = proxyTotalHeight
-        elseif trackerKey == "utility" then
-            ncdm._lastUtilityWidth = maxRowWidth
-            ncdm._lastUtilityHeight = proxyTotalHeight
-        end
-    end
-
-    vs.cdmRow1IconHeight = metrics.row1IconHeight or 0
-    vs.cdmRow1BorderSize = metrics.row1BorderSize or 0
-    vs.cdmBottomRowBorderSize = metrics.bottomRowBorderSize or 0
-    vs.cdmBottomRowYOffset = metrics.bottomRowYOffset or 0
-    vs.cdmRow1Width = metrics.row1Width or maxRowWidth
-    vs.cdmBottomRowWidth = metrics.bottomRowWidth or maxRowWidth
-    vs.cdmRawRow1Width = metrics.rawRow1Width or (metrics.rawContentWidth or 0)
-    vs.cdmRawBottomRowWidth = metrics.rawBottomRowWidth or (metrics.rawContentWidth or 0)
-    vs.cdmPotentialRow1Width = metrics.potentialRow1Width or maxRowWidth
-    vs.cdmPotentialBottomRowWidth = metrics.potentialBottomRowWidth or maxRowWidth
-
-    -- Size the container to match content bounds
     if maxRowWidth > 0 and proxyTotalHeight > 0 then
         container:SetSize(maxRowWidth, proxyTotalHeight)
     end
@@ -2718,12 +2381,10 @@ local function LayoutContainer(trackerKey)
     applying[trackerKey] = false
     RefreshCustomBarRuntimeAfterLayout(trackerKey, settings)
 
-    -- Trigger Utility anchor after Essential layout
     if trackerKey == "essential" then
         local db = GetDB()
         if db and db.utility and db.utility.anchorBelowEssential then
             C_Timer.After(0.05, function()
-                -- Skip during combat — PLAYER_REGEN_ENABLED RefreshAll handles recovery
                 if InCombatLockdown() then return end
                 if ApplyUtilityAnchor then
                     ApplyUtilityAnchor()
@@ -2732,12 +2393,10 @@ local function LayoutContainer(trackerKey)
         end
     end
 
-    -- Update dependent systems (debounced)
     if not vs.cdmUpdatePending then
         vs.cdmUpdatePending = true
         C_Timer.After(0.05, function()
             vs.cdmUpdatePending = nil
-            -- Skip during combat — PLAYER_REGEN_ENABLED RefreshAll handles recovery
             if InCombatLockdown() then return end
             UpdateLockedBarsForViewer(trackerKey)
             if _G.QUI_UpdateCDMAnchoredUnitFrames then
@@ -2750,13 +2409,6 @@ local function LayoutContainer(trackerKey)
     end
 end
 
----------------------------------------------------------------------------
--- REFRESH ALL
----------------------------------------------------------------------------
--- Post-layout work shared by both sync and async paths: re-apply locked
--- bars, anchored unit frames, mouseover state, swipe/glow, range poll, icon
--- visibility, and container mouse state. Same body, same order; previously
--- duplicated inline.
 local function RunPostLayoutRefresh()
     UpdateAllLockedBars()
     if _G.QUI_UpdateCDMAnchoredUnitFrames then
@@ -2765,23 +2417,14 @@ local function RunPostLayoutRefresh()
     if _G.QUI_RefreshCDMMouseover then
         _G.QUI_RefreshCDMMouseover()
     end
-    -- Apply swipe settings and glow state to newly created/rebuilt icons.
     if _G.QUI_RefreshCooldownSwipe then
         _G.QUI_RefreshCooldownSwipe()
     end
-    -- Idempotent resync, NOT the full teardown: a post-layout refresh that
-    -- tore every glow down and restarted it replayed the proc-glow AnimIn (a
-    -- visible flash) on each pass. A single proc (e.g. Hammer of Light
-    -- overriding Wake of Ashes) drives several post-layout refreshes in a row,
-    -- so the glow flashed repeatedly. ResyncAllGlows leaves still-valid glows
-    -- untouched; settings changes still go through the full RefreshAllGlows.
     local glows = ns._OwnedGlows
     local resync = glows and (glows.ResyncAllGlows or glows.RefreshAllGlows)
     if resync then
         resync()
     end
-    -- Reapply icon visibility after layout so "active only" display mode
-    -- hides inactive icons that LayoutContainer() showed.
     if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
         ns.CDMIcons:UpdateAllCooldowns()
     end
@@ -2802,46 +2445,23 @@ RefreshAll = function(forceSync)
         return
     end
 
-    -- Defer to combat end — rebuilding destroys the current layout.
-    -- A follow-up refresh on PLAYER_REGEN_ENABLED routes here and provides
-    -- recovery after combat lockdown ends.
-    -- Exception: during the ADDON_LOADED / PEW safe window, protected calls
-    -- are allowed even though InCombatLockdown() reports true on /reload.
     if InCombatLockdown() and not inInitSafeWindow then
         specTrackingPendingRefresh = true
         return
     end
 
-    -- Coalesce duplicate RefreshAll calls within the same frame. At combat end
-    -- (PLAYER_REGEN_ENABLED) more than one drainer can request a refresh in the
-    -- same frame (e.g. a DATA_LOADED spelldata change-callback and the
-    -- spec-tracking finalize). A full rebuild is idempotent, so running it twice
-    -- in one frame is pure waste. The guard clears on the next frame, so
-    -- legitimately spaced refreshes (profile-change 0.2s vs spec-change 0.5s
-    -- timers) are unaffected.
     if _refreshAllFrameGuard then
         return
     end
     _refreshAllFrameGuard = true
     C_Timer.After(0, function() _refreshAllFrameGuard = false end)
 
-    -- Cancel any pending refresh timers from a prior overlapping RefreshAll call.
-    -- This prevents interleaved layouts when e.g. a 0.2s profile-change refresh
-    -- races against a 0.5s spec-change refresh.
     CancelRefreshTimers()
-
-    if ns.CDMSpellData then
-        ns.CDMSpellData:UpdateCVar()
-    end
 
     applying["essential"] = false
     applying["utility"] = false
     applying["buff"] = false
 
-    -- Restore container positions from the (possibly new) profile DB.
-    -- LayoutContainer only sizes containers and positions icons within them —
-    -- it never calls SetPoint on the container itself. Without this, containers
-    -- keep the previous profile's screen position after a profile/spec switch.
     local allKeys = CDMContainers_API:GetAllContainerKeys()
     for _, trackerKey in ipairs(allKeys) do
         local container = containers[trackerKey]
@@ -2852,13 +2472,13 @@ RefreshAll = function(forceSync)
 
     SyncSettingsFeatureLookups()
 
-    -- Buff fingerprint is NOT reset here. Owned spell lists are kept in sync
-    -- by composer changes — the fingerprint comparison in LayoutContainer("buff")
-    -- will detect any actual change and rebuild. Unconditional reset causes a
-    -- visible flash (ClearPool + BuildIcons destroys and recreates all icons
-    -- even when nothing changed).
+    refreshAllReanchorBatchActive = true
+    refreshAllReanchorBatchCounts = nil
+    if ns._cdmBoot and ns._cdmBoot.RefreshBuiltins then
+        InitBuffContainer()
+        RefreshReanchoredBuiltin(ns._cdmBoot, "essential", false)
+    end
 
-    -- Collect custom container keys for layout
     local customKeys = {}
     local db2 = GetDB()
     if db2 and db2.containers then
@@ -2871,9 +2491,6 @@ RefreshAll = function(forceSync)
     end
 
     if forceSync then
-        -- Synchronous layout: runs inline to leverage the ADDON_LOADED safe
-        -- window on combat /reload while InCombatLockdown() still reports true.
-        -- No timer stagger needed — nothing to interleave on initial boot.
         LayoutContainer("essential")
         LayoutContainer("utility")
         if ApplyUtilityAnchor then
@@ -2884,6 +2501,8 @@ RefreshAll = function(forceSync)
             LayoutContainer(key)
         end
         RunPostLayoutRefresh()
+        refreshAllReanchorBatchActive = false
+        refreshAllReanchorBatchCounts = nil
     else
         refreshTimers[1] = C_Timer.NewTimer(0.01, function()
             refreshTimers[1] = nil
@@ -2901,7 +2520,6 @@ RefreshAll = function(forceSync)
             LayoutContainer("buff")
         end)
 
-        -- Layout custom containers (staggered after built-in)
         local customTimerStart = 4
         for ci, key in ipairs(customKeys) do
             local timerIdx = customTimerStart + ci
@@ -2911,10 +2529,11 @@ RefreshAll = function(forceSync)
             end)
         end
 
-        -- Run shared post-layout work after all per-container timers complete.
         local finalTimerDelay = 0.10 + #customKeys * 0.01
         refreshTimers[100] = C_Timer.NewTimer(finalTimerDelay, function()
             refreshTimers[100] = nil
+            refreshAllReanchorBatchActive = false
+            refreshAllReanchorBatchCounts = nil
             if InCombatLockdown() and not inInitSafeWindow then
                 specTrackingPendingRefresh = true
                 return
@@ -2924,9 +2543,6 @@ RefreshAll = function(forceSync)
     end
 end
 
----------------------------------------------------------------------------
--- UTILITY ANCHOR: Position Utility container below Essential
----------------------------------------------------------------------------
 ApplyUtilityAnchor = function()
     if not IsCDMRuntimeEnabled() then return end
 
@@ -2946,7 +2562,6 @@ ApplyUtilityAnchor = function()
         return
     end
 
-    -- Respect centralized frame anchoring overrides
     if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("cdmUtility") then
         return
     end
@@ -2964,13 +2579,12 @@ ApplyUtilityAnchor = function()
 
     local anchorParent = UpdateUtilityAnchorProxy() or essContainer
 
-    local ok = pcall(function()
+    local ok = ns.SafeCall("best-effort-style", function()
         utilContainer:ClearAllPoints()
         utilContainer:SetPoint("TOP", anchorParent, "BOTTOM", 0, -totalOffset)
     end)
 
     if not ok then
-        -- Fallback: center on screen
         utilContainer:ClearAllPoints()
         utilContainer:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
         utilSettings.anchorBelowEssential = false
@@ -2978,9 +2592,6 @@ ApplyUtilityAnchor = function()
     end
 end
 
----------------------------------------------------------------------------
--- VIEWER STATE API (backward compatible with old cdm_viewer.lua API)
----------------------------------------------------------------------------
 local _stateSnapshots = Helpers.CreateStateTable()
 
 local function GetViewerState(viewer)
@@ -3037,36 +2648,24 @@ local function RefreshViewerFromBounds(viewer, trackerKey)
     end
 end
 
--- Callback for spell data changes (essential/utility)
 _G.QUI_OnSpellDataChanged = function()
     if initialized then
         RefreshAll()
     end
 end
 
--- Force layout for a specific container during edit mode (used by Composer)
--- and for settings-driven refreshes (RefreshContainer in containers_page_schema).
 _G.QUI_ForceLayoutContainer = function(containerKey)
     if not containerKey or not initialized then return end
     if not IsCDMRuntimeEnabled() then return end
     _forceLayoutKey = containerKey
     LayoutContainer(containerKey)
     _forceLayoutKey = nil
-    -- Reapply icon visibility after layout — mirrors RefreshAll's pattern
-    -- (see "Reapply icon visibility after layout" call in RefreshAll above).
-    -- LayoutContainer() Show()'s every laid-out icon and the buff path can
-    -- short-circuit on its fingerprint, so without an explicit pass here
-    -- container-level settings like iconDisplayMode = "active" don't take
-    -- effect until the next event-scheduled CDM update tick — that's the
-    -- gap users perceive as "this dropdown needs /reload".
     if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
         ns.CDMIcons:UpdateAllCooldowns()
     end
-    -- Ensure container stays visible during edit mode even if layout found 0 icons
     local container = containers[containerKey]
     if container and _editModeActive then
         container:Show()
-        -- Re-sync the layout mode mover handle to match the updated container size/position
         local elementKey = BUILTIN_NAMES[containerKey] and containerKey or ("cdmCustom_" .. containerKey)
         if _G.QUI_LayoutModeSyncHandle then
             _G.QUI_LayoutModeSyncHandle(elementKey)
@@ -3074,17 +2673,6 @@ _G.QUI_ForceLayoutContainer = function(containerKey)
     end
 end
 
--- Force a clean buff-container rebuild, bypassing the fingerprint / build-
--- signature skip caches. Both caches key only on the configured buff spell set,
--- not on the Blizzard catalog/mirror resolution state, so a buff whose viewer
--- child Blizzard creates lazily (a childless trackedBar self-buff such as an
--- Augmentation Evoker's Ebon Might) only becomes resolvable after the catalog
--- settles. On a cold boot that settle happens after the initial buff layout, and
--- because the configured spell set is unchanged the stale pool is reused — so the
--- icon never gets built until a /reload. Invoked from the CDM cold-load finalize
--- once the catalog + mirror are confirmed ready: this rebuilds the pool against
--- live data, and the normal UNIT_AURA visibility pass then shows the icon on
--- activation.
 local function RebuildBuffContainer()
     if not initialized then return end
     buffFingerprint = nil
@@ -3096,29 +2684,14 @@ local function RebuildBuffContainer()
     end
 end
 
--- Callback for buff aura events (from hooks on Blizzard buff children).
--- Runs LayoutContainer to rebuild buff icons, then notifies buffbar.
 _G.QUI_OnBuffDataChanged = function()
     if initialized and not applying["buff"] then
         LayoutContainer("buff")
     end
 end
 
--- EDIT MODE INTEGRATION
--- During Edit Mode, QUI containers stay visible with overlays. Clicking an
--- overlay opens Blizzard CDM settings. Nudge buttons handle pixel-precise
--- positioning. Positions save to DB on exit. Blizzard's own viewers are
--- managed by Blizzard's Edit Mode and untouched by QUI.
----------------------------------------------------------------------------
-
--- _editModeActive and _disabledMouseFrames are forward-declared above
--- LayoutContainer (they are referenced inside it).
 _G.QUI_IsCDMEditModeActive = function() return _editModeActive end
 
--- Disable mouse on a container and all its icon pool children so clicks
--- reach the QUI overlay.
--- EnableMouse(false) removes the frame from hit testing entirely — the
--- WoW C-side input system skips it.
 local function DisableMouseForEditMode(viewerType)
     local container = containers[viewerType]
     if not container then return end
@@ -3126,18 +2699,15 @@ local function DisableMouseForEditMode(viewerType)
     container:EnableMouse(false)
     _disabledMouseFrames[container] = "container"
 
-    -- Disable mouse on all icons/bars in this pool
     local pool = ns.CDMIconFactory and ns.CDMIconFactory:GetIconPool(viewerType) or {}
     for _, icon in ipairs(pool) do
         icon:EnableMouse(false)
         _disabledMouseFrames[icon] = "icon"
-        -- Hide click-to-cast buttons so they don't intercept edit mode clicks
         if icon.clickButton and not InCombatLockdown() then
             icon.clickButton:EnableMouse(false)
             icon.clickButton:Hide()
         end
     end
-    -- Also disable mouse on owned bar frames (trackedBar)
     if viewerType == "trackedBar" and ns.CDMBars then
         local bars = ns.CDMBars:GetActiveBars()
         for _, bar in ipairs(bars) do
@@ -3147,7 +2717,6 @@ local function DisableMouseForEditMode(viewerType)
     end
 end
 
--- Restore mouse on all frames we disabled
 local function RestoreMouseAfterEditMode()
     for frame, mouseRole in pairs(_disabledMouseFrames) do
         if mouseRole == "icon" then
@@ -3158,7 +2727,6 @@ local function RestoreMouseAfterEditMode()
     end
     wipe(_disabledMouseFrames)
 
-    -- Re-enable click-to-cast buttons for built-in cooldown icons.
     if not InCombatLockdown() and ns.CDMIconFactory then
         for _, viewerType in ipairs(GetBuiltinCooldownContainerKeys()) do
             local pool = ns.CDMIconFactory:GetIconPool(viewerType) or {}
@@ -3166,7 +2734,6 @@ local function RestoreMouseAfterEditMode()
                 if icon.clickButton then
                     icon.clickButton:EnableMouse(true)
                 end
-                -- Notify the icon runtime that container interaction is live again.
                 if ns.CDMIcons.OnContainerIconInteractionRestored then
                     ns.CDMIcons.OnContainerIconInteractionRestored(icon, viewerType)
                 end
@@ -3177,9 +2744,6 @@ local function RestoreMouseAfterEditMode()
     SyncAllContainerMouseStates(true)
 end
 
--- Force all buff icons to full alpha (called on edit mode enter).
--- The 0.5s ticker also sets alpha 1 during edit mode, but this
--- provides immediate visibility without waiting for the next tick.
 local function ForceBuffIconsVisible()
     local pool = ns.CDMIconFactory and ns.CDMIconFactory:GetIconPool("buff") or {}
     for _, icon in ipairs(pool) do
@@ -3191,16 +2755,8 @@ end
 _G.QUI_OnEditModeEnterCDM = function()
     if not IsCDMRuntimeEnabled() then return end
 
-    -- Rebuild BEFORE setting _editModeActive, because LayoutContainer bails
-    -- out when _editModeActive is true. This ensures buff icons exist for
-    -- the user to see during edit mode.
     LayoutContainer("buff")
 
-    -- Force trackedBar container visible and populated before Edit Mode
-    -- so the overlay/mover is visible and draggable (not 1x1).
-    -- CDMBars:Refresh() is called directly because LayoutBuffBars() bails
-    -- when Blizzard's Edit Mode is active (IsEditModeActive() is already true
-    -- at this point — Blizzard fires the callback before we get here).
     if containers.trackedBar then
         containers.trackedBar:Show()
         containers.trackedBar:SetAlpha(1)
@@ -3210,14 +2766,11 @@ _G.QUI_OnEditModeEnterCDM = function()
             local tbSettings = db and db.trackedBar
             if tbSettings then
                 ns.CDMBars:Refresh(containers.trackedBar, tbSettings, tbSettings.barWidth)
-                -- Force all tracked bars visible for Edit Mode so the mover
-                -- shows the full expected area (not just active buffs).
                 ns.CDMBars:ForceAllActive()
                 ns.CDMBars:LayoutBars(containers.trackedBar, tbSettings)
             end
         end
 
-        -- Final fallback: if Refresh didn't size it (no CDMBars or no settings)
         local cw = (containers.trackedBar:GetWidth() or 0)
         local ch = (containers.trackedBar:GetHeight() or 0)
         if cw <= 1 or ch <= 1 then
@@ -3231,30 +2784,22 @@ _G.QUI_OnEditModeEnterCDM = function()
 
     _editModeActive = true
 
-    -- Force buff icons visible immediately (don't wait for ticker).
     ForceBuffIconsVisible()
 
-    -- Re-run buff layout so the owned container (and its layout mode
-    -- mover) sizes to match every now-visible icon, mirroring the
-    -- trackedBar path above. Without this, the mover reflects only the
-    -- pre-ForceBuffIconsVisible count and clips icons during layout mode.
     if ns.CDMBuffLayout and ns.CDMBuffLayout.OnLayoutReady then
         ns.CDMBuffLayout:OnLayoutReady()
     end
 
-    -- Disable mouse on QUI icon frames so overlay catches clicks.
     DisableMouseForEditMode("essential")
     DisableMouseForEditMode("utility")
     DisableMouseForEditMode("buff")
     DisableMouseForEditMode("trackedBar")
-    -- Also disable for custom containers
     for key in pairs(containers) do
         if not BUILTIN_NAMES[key] then
             DisableMouseForEditMode(key)
         end
     end
 
-    -- Show overlays on QUI containers (containers stay visible).
     local QUICore = ns.Addon
     if QUICore and QUICore.ShowViewerOverlays then
         QUICore:ShowViewerOverlays()
@@ -3268,28 +2813,20 @@ _G.QUI_OnEditModeExitCDM = function()
 
     _editModeActive = false
 
-    -- Persist container positions to DB.
     SaveContainerPosition("essential")
     SaveContainerPosition("utility")
     SaveContainerPosition("buff")
     SaveContainerPosition("trackedBar")
-    -- Also save custom container positions
     for key in pairs(containers) do
         if not BUILTIN_NAMES[key] then
             SaveContainerPosition(key)
         end
     end
 
-    -- Restore mouse on icon frames.
     RestoreMouseAfterEditMode()
 
-    -- Refresh layout (reapply positions, rebuild icons).
     RefreshAll()
 
-    -- RefreshAll uses staggered timers (0.01–0.10s) to rebuild layouts.
-    -- After the last timer completes, force a full refresh of anchors
-    -- and locked resource bars so dependent frames pick up the correct
-    -- QUI container dimensions.
     C_Timer.After(0.5, function()
         if _G.QUI_ApplyAllFrameAnchors then
             _G.QUI_ApplyAllFrameAnchors()
@@ -3298,19 +2835,12 @@ _G.QUI_OnEditModeExitCDM = function()
         if _G.QUI_UpdateCDMAnchoredUnitFrames then
             _G.QUI_UpdateCDMAnchoredUnitFrames()
         end
-        -- Force icon visibility update so "active only" display mode hides
-        -- inactive icons that LayoutContainer() unconditionally showed.
         if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
             ns.CDMIcons:UpdateAllCooldowns()
         end
     end)
 end
 
----------------------------------------------------------------------------
--- NCDM COMPATIBILITY TABLE
--- Provides a Refresh() and LayoutViewer() interface for backward-compatible
--- consumer access.
----------------------------------------------------------------------------
 local NCDM = {
     initialized = false,
 }
@@ -3321,12 +2851,8 @@ NCDM.LayoutViewer = function(name, key)
     LayoutContainer(key or name)
 end
 
----------------------------------------------------------------------------
--- ENGINE TABLE (provider contract)
----------------------------------------------------------------------------
 local ownedEngine = {}
 
--- Viewer key → container key mapping
 local VIEWER_KEY_MAP = {
     essential = "essential",
     utility   = "utility",
@@ -3334,37 +2860,289 @@ local VIEWER_KEY_MAP = {
     buffBar   = "trackedBar",
 }
 
----------------------------------------------------------------------------
--- Initialize: called by the local provider bridge during ADDON_LOADED
----------------------------------------------------------------------------
+local EDIT_LOCK_KEYS = { "essential", "utility", "buff", "trackedBar" }
+local reanchorHooksReadyFrame
+local reanchorHooksReadyQueued = false
+local reanchorHooksReadyMarkDirty = false
+
+IsCooldownViewerReady = function()
+    local catalog = ns.CDMCatalog
+    if catalog and catalog.IsCooldownViewerReady then
+        return catalog.IsCooldownViewerReady()
+    end
+
+    local api = _G.C_CooldownViewer
+    if not api then return false end
+    if not api.IsCooldownViewerAvailable then return true end
+    local ok, ready = pcall(api.IsCooldownViewerAvailable)
+    return ok and ready == true
+end
+
+local function QueueReanchorHooksWhenCooldownViewerReady(markDirty)
+    if markDirty then
+        reanchorHooksReadyMarkDirty = true
+    end
+    if reanchorHooksReadyQueued then return true end
+    if not CreateFrame then return false end
+
+    reanchorHooksReadyQueued = true
+    if not reanchorHooksReadyFrame then
+        reanchorHooksReadyFrame = CreateFrame("Frame")
+    end
+    reanchorHooksReadyFrame:RegisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
+    reanchorHooksReadyFrame:SetScript("OnEvent", function(self, event)
+        if event ~= "COOLDOWN_VIEWER_DATA_LOADED" then return end
+        self:UnregisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
+        self:SetScript("OnEvent", nil)
+        reanchorHooksReadyQueued = false
+        if not IsCooldownViewerReady() then return end
+        local canMarkDirty = (not InCombatLockdown) or not InCombatLockdown()
+        local queuedMarkDirty = reanchorHooksReadyMarkDirty or canMarkDirty
+        reanchorHooksReadyMarkDirty = false
+        ownedEngine:RefreshReanchorRuntimeHooks(queuedMarkDirty)
+    end)
+    return true
+end
+
+local _reanchorGlowOverlays = setmetatable({}, { __mode = "k" })
+local REANCHOR_PROC_GLOW_KEY = "_QUICDMReanchorProcGlow"
+
+local function EnsureReanchorGlowOverlay(frame)
+    if not (frame and CreateFrame) then return nil end
+    local o = _reanchorGlowOverlays[frame]
+    if not o then
+        o = CreateFrame("Frame", nil, frame)
+        if o.SetAllPoints then o:SetAllPoints(frame) end
+        _reanchorGlowOverlays[frame] = o
+    end
+    return o
+end
+ns._CDMEnsureReanchorGlowOverlay = EnsureReanchorGlowOverlay
+
+function ownedEngine:InstallReanchorProcGlowHooks(boot)
+    if not (ns.CDMReanchorProcGlow and boot and boot.GetEntryForFrame) then return false end
+    local manager = _G.ActionButtonSpellAlertManager
+    if not manager then return false end
+    local pg = ns._cdmReanchorProcGlow
+    if not pg then
+        pg = ns.CDMReanchorProcGlow.New({
+            getEntryForFrame = function(frame) return boot:GetEntryForFrame(frame) end,
+            ensureOverlay = EnsureReanchorGlowOverlay,
+            resolveGlow = function(entry)
+                local OG = ns._OwnedGlows
+                return OG and OG.ResolveGlowForEntry and OG.ResolveGlowForEntry(entry) or nil
+            end,
+            startGlow = function(overlay, viewerSettings)
+                local OG = ns._OwnedGlows
+                if OG and OG.ApplyGlowWithKey then
+                    OG.ApplyGlowWithKey(overlay, viewerSettings, REANCHOR_PROC_GLOW_KEY)
+                end
+            end,
+            stopGlow = function(overlay)
+                local OG = ns._OwnedGlows
+                if OG and OG.StopGlowWithKey then
+                    OG.StopGlowWithKey(overlay, REANCHOR_PROC_GLOW_KEY)
+                end
+            end,
+            hooksecurefunc = hooksecurefunc,
+        })
+        ns._cdmReanchorProcGlow = pg
+    end
+    return pg:Install(manager)
+end
+
+function ownedEngine:RefreshReanchorRuntimeHooks(markDirty)
+    local boot = ns._cdmBoot
+    local wiring = boot and boot.wiring
+    if not (wiring and wiring.GetViewerForKey) then return false end
+    if not IsCooldownViewerReady() then
+        QueueReanchorHooksWhenCooldownViewerReady(markDirty)
+        return false
+    end
+
+    local function getViewer(key)
+        return wiring:GetViewerForKey(key)
+    end
+
+    local touched = false
+    local hk = ns._cdmReanchorHooks
+    if hk then
+        hk:InstallViewerHooks(getViewer)
+        if hk.InstallViewerGlue then
+            hk:InstallViewerGlue(getViewer,
+                function(key)
+                    return CDMContainers_API and CDMContainers_API:GetContainer(key) or nil
+                end,
+                { essential = true, utility = true },
+                function()
+                    return (not InCombatLockdown()) or ns._inInitSafeWindow == true
+                end)
+        end
+        if hk.InstallGlobalMixinHooks and hk:InstallGlobalMixinHooks() then
+            touched = true
+        end
+        if hk.InstallIndexSubscription then
+            hk:InstallIndexSubscription(ns.CDMIndex)
+        end
+        if markDirty then
+            hk:MarkAllDirty()
+        end
+        touched = true
+    end
+    local thk = ns._cdmTrackedBarLifecycleHooks
+    if thk then
+        thk:InstallViewerHooks(getViewer)
+        if thk.InstallGlobalMixinHooks and thk:InstallGlobalMixinHooks() then
+            touched = true
+        end
+        if markDirty then
+            thk:MarkAllDirty()
+        end
+        touched = true
+    end
+
+    local el = ns._cdmReanchorEditLock
+    if el then
+        el:Install(getViewer)
+        touched = true
+    end
+
+    if self:InstallReanchorProcGlowHooks(boot) then
+        touched = true
+    end
+
+    return touched
+end
+
+function ownedEngine:BootstrapReanchorRuntime()
+    if not (ns.CDMReanchorBoot and ns.CDMReanchorRealEnv) then return end
+    ResetInitialReanchorDone()
+    local ok, boot = ns.SafeCall("best-effort-style", function()
+        local env = ns.CDMReanchorRealEnv.BuildEnv({
+            getSettings = GetTrackerSettings,
+            resolveAdditional = function(key)
+                if ns.CDMIcons and ns.CDMIcons.ResolveCustomSpellEntries then
+                    return ns.CDMIcons.ResolveCustomSpellEntries(key)
+                end
+                return {}
+            end,
+            onMetrics = function(container, metrics)
+                local vs = viewerState[container]
+                if not vs then return end
+                ApplyViewerMetrics(vs, metrics, container._quiCdmKey)
+            end,
+        })
+        return ns.CDMReanchorBoot.BuildRuntime(env)
+    end)
+    if ok and boot then
+        ns._cdmBoot = boot
+        if ns.CDMReanchorHooks then
+            local scheduleActiveState = ns.CDMReanchorHooks.CreateActiveStateScheduler(CreateFrame)
+            local hk = ns.CDMReanchorHooks.New({
+                refresh = function(key) return RefreshReanchoredBuiltin(boot, key) end,
+                refreshMany = function()
+                    return RefreshReanchoredBuiltin(boot, "essential")
+                end,
+                keys = REANCHOR_KEYS,
+                schedule = function(fn) C_Timer.After(0.05, fn) end,
+                scheduleActiveState = scheduleActiveState,
+                immediateRefreshLayoutKeys = { buff = true },
+                immediateAcquireKeys = { buff = true },
+                blank = BlankReanchoredNativeItemFrame,
+                blankKeys = { buff = true, essential = true, utility = true },
+                isClaimed = function(frame)
+                    local bridge = boot.bridge
+                    return (bridge and bridge.IsClaimed and bridge:IsClaimed(frame)) or false
+                end,
+                installGuard = function(frame)
+                    local bridge = boot.bridge
+                    if bridge and bridge.InstallAnchorGuard then
+                        bridge:InstallAnchorGuard(frame)
+                    end
+                end,
+                installGuardKeys = { essential = true, utility = true },
+                isInitWindow = function() return ns._inInitSafeWindow == true end,
+                isInitialReanchorDone = IsInitialReanchorDone,
+            })
+            ns._cdmReanchorHooks = hk
+
+            local trackedHooks = ns.CDMReanchorHooks.New({
+                refresh = function(key)
+                    if ns.CDMBuffLayout and ns.CDMBuffLayout.LayoutBars then
+                        ns.CDMBuffLayout.LayoutBars()
+                        MarkInitialReanchorDone(key or "trackedBar")
+                    end
+                end,
+                keys = { "trackedBar" },
+                hooksecurefunc = hooksecurefunc,
+                schedule = function(fn) C_Timer.After(0.05, fn) end,
+                scheduleActiveState = scheduleActiveState,
+                immediateRefreshLayoutKeys = { trackedBar = true },
+                immediateAcquireKeys = { trackedBar = true },
+                blank = BlankReanchoredNativeItemFrame,
+                blankKeys = { trackedBar = true },
+                isInitWindow = function() return ns._inInitSafeWindow == true end,
+                isInitialReanchorDone = IsInitialReanchorDone,
+            })
+            ns._cdmTrackedBarLifecycleHooks = trackedHooks
+            self:RefreshReanchorRuntimeHooks(false)
+
+            if EventRegistry and EventRegistry.RegisterCallback
+               and not ns._cdmReanchorSettingsCallbacksInstalled then
+                ns._cdmReanchorSettingsCallbacksInstalled = true
+                ns._cdmReanchorSettingsCallbackOwner = {}
+                local function reanchorAfterSettings()
+                    if ns._cdmReanchorHooks then
+                        ns._cdmReanchorHooks:MarkAllDirty()
+                    end
+                    if ns._cdmTrackedBarLifecycleHooks then
+                        ns._cdmTrackedBarLifecycleHooks:MarkAllDirty()
+                    end
+                end
+                EventRegistry:RegisterCallback("CooldownViewerSettings.OnShow",
+                    reanchorAfterSettings, ns._cdmReanchorSettingsCallbackOwner)
+                EventRegistry:RegisterCallback("CooldownViewerSettings.OnHide",
+                    reanchorAfterSettings, ns._cdmReanchorSettingsCallbackOwner)
+            end
+        end
+        self:InstallReanchorProcGlowHooks(boot)
+        if ns.CDMReanchorEditLock then
+            local el = ns.CDMReanchorEditLock.New({
+                hooksecurefunc = hooksecurefunc,
+                keys = EDIT_LOCK_KEYS,
+                getDialog = function() return _G.EditModeSystemSettingsDialog end,
+            })
+            local wiring = boot.wiring
+            if wiring and wiring.GetViewerForKey then
+                el:Install(function(key) return wiring:GetViewerForKey(key) end)
+            end
+            ns._cdmReanchorEditLock = el
+        end
+    else
+        ns._cdmBootError = (not ok and tostring(boot))
+            or "BuildRuntime returned nil"
+        print("|cffff4444QUI:|r " .. ns.L["CDM re-anchor bootstrap failed; using legacy rendering."]
+            .. " " .. ns._cdmBootError)
+    end
+end
+
 function ownedEngine:Initialize()
     if not IsCDMRuntimeEnabled() then
         return
     end
 
-    -- During a combat /reload this runs inside the ADDON_LOADED safe window
-    -- where protected calls are allowed even though InCombatLockdown() returns
-    -- true. Set the flag before spell-data bootstrap so Blizzard CDM loading
-    -- and the initial scans are not skipped.
     inInitSafeWindow = true
     local previousInitSafeWindow = ns._inInitSafeWindow
     ns._inInitSafeWindow = true
 
-    -- Wire owned-engine exports that are populated after their modules load.
     if ns._OwnedGlows then
         QUI.CustomGlows = ns._OwnedGlows
-        -- RefreshAllGlows = full teardown+reapply (settings changes). The
-        -- idempotent ResyncAllGlows used by routine post-layout refreshes is
-        -- called directly off ns._OwnedGlows (see RunPostLayoutRefresh) to avoid
-        -- a second _G.QUI_* global.
         _G.QUI_RefreshCustomGlows = ns._OwnedGlows.RefreshAllGlows
-        -- No-op effects refresh (owned engine has no effects.lua)
-        ---@type fun(...)
-        _G.QUI_RefreshCooldownEffects = function() end
     end
     if ns._OwnedSwipe then
         QUI.CooldownSwipe = ns._OwnedSwipe
         _G.QUI_RefreshCooldownSwipe = ns._OwnedSwipe.Apply
+        _G.QUI_RefreshCooldownEffects = ns._OwnedSwipe.Apply
     end
 
     if ns.Registry then
@@ -3388,15 +3166,10 @@ function ownedEngine:Initialize()
         })
     end
 
-    -- Bootstrap spell data harvesting
     if ns.CDMSpellData then
         ns.CDMSpellData:Initialize()
     end
 
-    -- Phase A CDM Overhaul: Snapshot Blizzard CDM spell lists into owned DB.
-    -- This runs after spell data init so the scan lists are populated.
-    -- Only snapshots containers that haven't been snapshotted yet (ownedSpells == nil).
-    -- Deferred to allow Blizzard viewers to fully populate.
     local function RetrySnapshotBuiltInContainers(attempt)
         if InCombatLockdown() then return end
         if not ns.CDMSpellData then return end
@@ -3427,8 +3200,6 @@ function ownedEngine:Initialize()
         RetrySnapshotBuiltInContainers(1)
     end)
 
-    -- Ensure built-in containers with DB tables have enabled=true
-    -- (the table may exist from Composer/snapshot without explicit enabled).
     local ncdmDB = GetDB()
     if ncdmDB then
         for _, key in ipairs({"buff", "trackedBar"}) do
@@ -3438,48 +3209,27 @@ function ownedEngine:Initialize()
         end
     end
 
-    -- Create containers immediately (addon-owned frames, no external dependency).
     InitContainers()
     InitBuffContainer()
 
     initialized = true
     NCDM.initialized = true
 
-    -- Initialize spec tracking for save-on-switch. If the current spec is not
-    -- available yet, delay the first meaningful layout until the profile swap
-    -- / fresh snapshot has finished to avoid rendering another character's CDs.
     local specReadyNow = InitSpecTracking()
     RegisterProfileCallbacks()
 
-    -- Invalidate visibility frame cache so hud_visibility picks up new containers
     if ns.InvalidateCDMFrameCache then
         ns.InvalidateCDMFrameCache()
     end
 
-    -- Build the Blizzard CDM mirror catalog NOW, inside the safe window, so
-    -- BuildIcons → TryBindIconToBlizz can resolve cooldownIDs for every
-    -- Blizzard-mirrored icon. The mirror's own PLAYER_LOGIN / PLAYER_ENTERING_WORLD
-    -- Walk fires on a separate event frame and can run after this window has
-    -- closed; on a combat /reload it would otherwise bail until combat ends.
-    if ns.CDMBlizzMirror and ns.CDMBlizzMirror.ForceRescan then
-        ns.CDMBlizzMirror.ForceRescan()
-    end
+    self:BootstrapReanchorRuntime()
 
-    -- Synchronous initial layout: leverages the ADDON_LOADED safe window on
-    -- combat /reload (InCombatLockdown() still returns true). If Blizzard viewers
-    -- aren't populated yet (first login), layout produces empty containers —
-    -- the deferred re-layout below fills them once spell data arrives.
     if specReadyNow then
         RefreshAll(true)
     else
         specTrackingPendingRefresh = true
     end
 
-    -- Synchronous post-layout: apply frame anchoring overrides NOW while
-    -- still in the ADDON_LOADED safe window.
-    -- Containers anchored to other frames (e.g. utility→essential) need
-    -- the anchoring system to set their position. This MUST be synchronous
-    -- because deferred timers fire after the safe window closes.
     if _G.QUI_ApplyAllFrameAnchors then
         _G.QUI_ApplyAllFrameAnchors()
     end
@@ -3492,10 +3242,6 @@ function ownedEngine:Initialize()
         end)
     end
 
-    -- Apply HUD visibility now that containers exist (covers /reload while mounted).
-    -- Containers start at alpha=0 (CreateContainer). Set the correct target
-    -- alpha instantly so StartCDMFade sees "already at target" and skips
-    -- the animation — prevents a flash of fully-visible icons popping in.
     local shouldShow = _G.QUI_ShouldCDMBeVisible and _G.QUI_ShouldCDMBeVisible()
     local targetAlpha
     if shouldShow then
@@ -3514,27 +3260,57 @@ function ownedEngine:Initialize()
         _G.QUI_RefreshCDMVisibility()
     end
 
-    -- Close the safe window — subsequent C_Timer callbacks run outside the
-    -- ADDON_LOADED handler and must respect combat lockdown normally.
     inInitSafeWindow = false
     ns._inInitSafeWindow = previousInitSafeWindow
 
-    -- Deferred re-layout: catches first-login cases where Blizzard viewers
-    -- populate after us, or where the immediate scan found empty data.
     C_Timer.After(1.0, function()
         if not InCombatLockdown() then
             RefreshAll()
         end
     end)
 
-    -- Defensive: refresh all after Blizzard's layout system has fully settled.
     C_Timer.After(3.0, function()
         if initialized and not InCombatLockdown() then
             RefreshAll()
         end
     end)
 
-    -- Register runtime events (spec change, zone change, cinematics, addon loads)
+    C_Timer.After(6.0, function()
+        if initialized and not InCombatLockdown() then
+            RefreshAll()
+        end
+    end)
+
+    local function DrainPendingLoadoutSwitch(cacheConfigID)
+        pendingLoadoutRefresh = false
+        loadoutTrackingToken = loadoutTrackingToken + 1
+        local drainToken = loadoutTrackingToken
+
+        local drainSpecID = GetCurrentSpecID()
+        if not drainSpecID then return end
+
+        SaveLoadoutProfile(_previousLoadoutID, drainSpecID)
+        local newConfigID = nil
+        if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
+            newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(drainSpecID)
+        end
+        _previousLoadoutID = newConfigID
+        _lastKnownSavedConfigID = newConfigID
+
+        if cacheConfigID then
+            local charNcdm = GetCharNcdmDB(true)
+            if charNcdm and newConfigID and newConfigID ~= NO_SAVED_LOADOUT_ID then
+                if type(charNcdm._lastLoadoutConfigID) ~= "table" then
+                    charNcdm._lastLoadoutConfigID = {}
+                end
+                charNcdm._lastLoadoutConfigID[drainSpecID] = newConfigID
+            end
+        end
+
+        LoadLoadoutProfile(newConfigID, drainSpecID, drainToken)
+        FireLoadoutChangeCallbacks()
+    end
+
     local eventFrame = CreateFrame("Frame")
     runtimeEventFrame = eventFrame
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -3542,12 +3318,6 @@ function ownedEngine:Initialize()
     eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
     eventFrame:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED")
     eventFrame:RegisterEvent("TRAIT_CONFIG_LIST_UPDATED")
-    -- Login-time wake-ups for the initial spec/loadout resolution latch
-    -- (Blizzard_ClassTalentsFrame pattern): PLAYER_TALENT_UPDATE is the
-    -- "talent/spec data now readable" signal Blizzard retries
-    -- CheckSetSelectedConfigID from when the spec is nil at PEW;
-    -- SELECTED_LOADOUT_CHANGED is the precise "saved-loadout selection
-    -- changed" signal it re-reads GetLastSelectedSavedConfigID from.
     eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
     eventFrame:RegisterEvent("SELECTED_LOADOUT_CHANGED")
     eventFrame:RegisterEvent("SPECIALIZATION_CHANGE_CAST_FAILED")
@@ -3565,56 +3335,34 @@ function ownedEngine:Initialize()
             return
         end
 
-        if event == "ADDON_LOADED" and arg1 == "Blizzard_CooldownManager" then
-            -- Viewer just loaded -- grab it as buff container
+        local viewerAddon = ns.CDMCooldownViewerAddon
+        local cooldownViewerLoaded = (viewerAddon and viewerAddon.IsViewerAddon and viewerAddon.IsViewerAddon(arg1))
+            or arg1 == "Blizzard_CooldownViewer"
+
+        if event == "ADDON_LOADED" and cooldownViewerLoaded then
             InitBuffContainer()
+            ownedEngine:RefreshReanchorRuntimeHooks(not InCombatLockdown())
             if initialized then
                 if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
                 RefreshAll()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
             local isLogin, isReload = arg1, arg2
+            ownedEngine:RefreshReanchorRuntimeHooks((not isReload) and not InCombatLockdown())
             if isReload then
-                -- Second layout pass during combat /reload safe window.
-                -- Catches Blizzard viewer children that populated after
-                -- the initial ADDON_LOADED scan. PEW fires inside the
-                -- safe window: protected calls are allowed even though
-                -- InCombatLockdown() returns true on combat /reload.
                 local pewPreviousInitSafeWindow = ns._inInitSafeWindow
                 inInitSafeWindow = true
                 ns._inInitSafeWindow = true
-                if ns.CDMBlizzMirror and ns.CDMBlizzMirror.ForceRescan then
-                    ns.CDMBlizzMirror.ForceRescan()
-                end
                 RefreshAll(true)
                 if _G.QUI_ApplyAllFrameAnchors then
                     _G.QUI_ApplyAllFrameAnchors()
                 end
                 inInitSafeWindow = false
                 ns._inInitSafeWindow = pewPreviousInitSafeWindow
-                -- /reload keeps CVars loaded, so the saved configID is
-                -- readable now; on a combat /reload with a mismatched cache
-                -- the latch defers the re-key to PLAYER_REGEN_ENABLED.
                 ResolveInitialLoadoutSlot()
             elseif isLogin then
-                -- CVars (and thus GetLastSelectedSavedConfigID) are loaded
-                -- once we are in the world (Blizzard_ClassTalentsFrame
-                -- refreshes its selected configID at this exact event) —
-                -- resolve the authoritative loadout slot immediately rather
-                -- than waiting for the deferred self-heal below.
                 ResolveInitialLoadoutSlot()
-                -- Fresh login (or character switch): fold any stale dormant
-                -- shelves and reconcile before the first meaningful
-                -- RefreshAll fires from the deferred timer. Cross-class/spec
-                -- spells are never removed — the render-time known filters
-                -- skip them for this character.
                 C_Timer.After(0.5, function()
-                    -- Self-heal: a peaceful login fires no PLAYER_REGEN_ENABLED,
-                    -- so if spec tracking deferred during the load window (spec
-                    -- APIs not ready at init) or its 1s retry was cancelled by an
-                    -- early profile/loadout event, re-run it now. Without this a
-                    -- shared-profile live container can keep rendering a previous
-                    -- character's spells until the first combat ends.
                     if not specTrackingReady then
                         specTrackingReady = InitSpecTracking()
                         if not specTrackingReady then
@@ -3622,16 +3370,7 @@ function ownedEngine:Initialize()
                             return
                         end
                     end
-                    -- Spec may only have become readable in the self-heal
-                    -- above — give the loadout latch another chance before
-                    -- the reconcile pass renders.
                     ResolveInitialLoadoutSlot()
-                    -- Deterministic cross-character guard: with a profile shared
-                    -- across alts, force a reconcile when the live container is
-                    -- still owned by another character so we never render their
-                    -- spells. RunCrossSessionDetection only keys "changed" off the
-                    -- per-character spec id (which never differs for the same
-                    -- toon), so this char-key mismatch is the authoritative signal.
                     if not InCombatLockdown() and LiveContainerOwnedByOtherCharacter() then
                         local specID = GetCurrentSpecID()
                         if specID and specID ~= 0 then
@@ -3646,42 +3385,30 @@ function ownedEngine:Initialize()
                     end
                 end)
             elseif not isReload then
-                -- Zone transition: harmless one-shot backstop in case the
-                -- trait system initialized unusually late at login.
                 ResolveInitialLoadoutSlot()
                 C_Timer.After(0.3, RefreshAll)
             end
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
             local newSpecID = ConsumePendingClassTalentSpecSwitchID() or GetCurrentSpecID()
-            -- Guard: Blizzard can fire this event multiple times for a single
-            -- spec change. Skip the duplicate if we already processed it.
             if not newSpecID or newSpecID ~= _previousSpecID then
-                -- Save outgoing spec profile before loading the new one
                 if _previousSpecID and _previousSpecID ~= 0 then
                     SaveCurrentSpecProfile()
                 end
-                -- Invalidate caches immediately — old spec data is stale
                 if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
                 if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
                     ns.CDMSpellData:InvalidateLearnedCache()
                 end
-                -- Load the new spec profile synchronously so the DB is never in a
-                -- stale state. This eliminates the race where SPELLS_CHANGED fires
-                -- before the profile swap and corrupts spell lists.
                 specTrackingReady = false
                 specTrackingPendingRefresh = true
                 specTrackingRetryToken = specTrackingRetryToken + 1
                 local readyNow = LoadOrSnapshotSpecProfile(newSpecID, 1, specTrackingRetryToken)
                 _previousSpecID = newSpecID
                 _previousLoadoutID = GetEffectiveLoadoutIDForSpec(newSpecID)
-                -- Persist for cross-session detection.
                 local specDB = GetSpecStateDB(true)
                 if specDB then
                     specDB._lastSpecID = newSpecID
                     specDB._lastSpecCharKey = GetCurrentCharacterKey()
                 end
-                -- Profile is now correct — SPELLS_CHANGED can safely run
-                -- dormant/reconcile on the new spec's data.
                 buffFingerprint = nil
                 if readyNow then
                     specTrackingReady = true
@@ -3691,15 +3418,9 @@ function ownedEngine:Initialize()
             end
         elseif event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_COMBAT_CONFIG_CHANGED"
             or event == "SELECTED_LOADOUT_CHANGED" then
-            -- Before the initial latch resolves, any of these doubles as a
-            -- login wake-up (GetLastSelectedSavedConfigID may have just become
-            -- readable). One-shot guard inside; cheap no-op afterwards.
             if not _initialLoadoutResolved then
                 ResolveInitialLoadoutSlot()
             end
-            -- All three events route through one debounce timer. Cancel any
-            -- prior fire so a rapid sequence (e.g. talent edit immediately
-            -- followed by save) collapses to a single save/load pair.
             if loadoutDebounceTimer then loadoutDebounceTimer:Cancel() end
 
             loadoutTrackingToken = loadoutTrackingToken + 1
@@ -3707,7 +3428,7 @@ function ownedEngine:Initialize()
 
             loadoutDebounceTimer = C_Timer.NewTimer(0.5, function()
                 loadoutDebounceTimer = nil
-                if myToken ~= loadoutTrackingToken then return end  -- newer event superseded us
+                if myToken ~= loadoutTrackingToken then return end
                 if not specTrackingReady then
                     pendingLoadoutRefresh = true
                     return
@@ -3716,42 +3437,27 @@ function ownedEngine:Initialize()
                 local specID = GetCurrentSpecID()
                 if not specID then return end
 
-                -- In-place hero-talent swap shares the saved configID, so the
-                -- configID filter below would skip it. Routed through
-                -- ns.CDMContainers (an upvalue this closure already holds via
-                -- `ns`) instead of referencing the hero-subtree locals directly:
-                -- Initialize sits at WoW's 60-upvalue-per-function ceiling, so
-                -- adding any new upvalue here fails the whole file to compile.
                 if ns.CDMContainers and ns.CDMContainers.ReconcileOnHeroSubTreeChange then
                     ns.CDMContainers.ReconcileOnHeroSubTreeChange()
                 end
 
-                -- Re-resolve the saved-loadout ID fresh inside the callback.
-                -- NEVER use the event payload's configID for the storage key
-                -- (it's the active staging config, not the persistent saved one).
                 local newConfigID = ConsumePendingClassTalentLoadoutIDForSpec(specID)
                 if newConfigID == nil and C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
                     newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
                 end
 
-                -- Filter: in-place talent edit (saved ID unchanged) — ignore.
-                -- Only proceed when the saved-loadout selection actually changed.
                 if newConfigID == _lastKnownSavedConfigID then return end
 
-                -- Real loadout swap detected.
                 if InCombatLockdown() then
-                    -- Defer save/load; PLAYER_REGEN_ENABLED drains as an atomic pair.
                     pendingLoadoutRefresh = true
                     return
                 end
 
-                -- Save outgoing, load incoming as a unit (D-10 / LDEV-03).
                 SaveLoadoutProfile(_previousLoadoutID, specID)
 
                 _previousLoadoutID = newConfigID
                 _lastKnownSavedConfigID = newConfigID
 
-                -- Prime the db.char fast-path cache for combat-reload (LDEV-04).
                 local charNcdm = GetCharNcdmDB(true)
                 if charNcdm then
                     if type(charNcdm._lastLoadoutConfigID) ~= "table" then
@@ -3761,17 +3467,9 @@ function ownedEngine:Initialize()
                 end
 
                 LoadLoadoutProfile(newConfigID, specID, myToken)
-                FireLoadoutChangeCallbacks()  -- Phase 2 / D-06
+                FireLoadoutChangeCallbacks()
             end)
         elseif event == "PLAYER_TALENT_UPDATE" then
-            -- Blizzard's login-time "talent/spec data now readable" signal:
-            -- Blizzard_ClassTalentsFrame registers this when
-            -- PlayerUtil.GetCurrentSpecID() is still nil and re-runs
-            -- CheckSetSelectedConfigID from it. Use it the same way — an
-            -- event-driven wake-up for spec tracking that deferred during the
-            -- load window (instead of relying solely on blind timer retries),
-            -- then run the initial-loadout latch. Both are one-shot guarded,
-            -- so later in-session fires are cheap no-ops.
             if not specTrackingReady then
                 local readyNow = InitSpecTracking()
                 specTrackingReady = readyNow
@@ -3785,8 +3483,6 @@ function ownedEngine:Initialize()
         elseif event == "TRAIT_CONFIG_LIST_UPDATED" then
             loadoutListReady = true
 
-            -- Prime the db.char fast-path cache for the current spec
-            -- as soon as the live API becomes available (LDEV-04).
             local specID = GetCurrentSpecID()
             if specID and C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
                 local configID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
@@ -3801,39 +3497,23 @@ function ownedEngine:Initialize()
                 end
             end
 
-            -- Initial-login resolution: verify the provisionally-hydrated slot
-            -- against the now-readable saved configID and re-key when it was
-            -- wrong. Replaces the old silent baseline adoption
-            -- (_lastKnownSavedConfigID/_previousLoadoutID = configID with no
-            -- hydrated-slot comparison and no reload), which left a cold-cache
-            -- slot-0 hydration rendered all session and then saved it into the
-            -- real loadout's slot.
             ResolveInitialLoadoutSlot()
 
-            -- If a swap-or-init was deferred at login (before the list was
-            -- ready), drain it now — but only when out of combat. The combat
-            -- branch is handled by PLAYER_REGEN_ENABLED.
             if pendingLoadoutRefresh
                 and specTrackingReady
                 and not InCombatLockdown()
             then
-                pendingLoadoutRefresh = false
-                loadoutTrackingToken = loadoutTrackingToken + 1
-                local hydrationToken = loadoutTrackingToken
-                local hydrateSpecID = GetCurrentSpecID()
-                if hydrateSpecID then
-                    SaveLoadoutProfile(_previousLoadoutID, hydrateSpecID)
-                    local newConfigID = nil
-                    if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
-                        newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(hydrateSpecID)
-                    end
-                    _previousLoadoutID = newConfigID
-                    _lastKnownSavedConfigID = newConfigID
-                    LoadLoadoutProfile(newConfigID, hydrateSpecID, hydrationToken)
-                    FireLoadoutChangeCallbacks()  -- Phase 2 / D-06a
-                end
+                DrainPendingLoadoutSwitch(false)
             end
         elseif event == "PLAYER_REGEN_ENABLED" then
+            if ns._cdmReanchorHooks and ns._cdmReanchorHooks.ReassertViewerGlue then
+                ns._cdmReanchorHooks:ReassertViewerGlue()
+            end
+
+            if ns._cdmBoot and ns._cdmBoot.DrainPendingCombatRefresh then
+                ns._cdmBoot:DrainPendingCombatRefresh()
+            end
+
             local readyNow = specTrackingReady
             if not specTrackingReady then
                 readyNow = InitSpecTracking()
@@ -3849,34 +3529,8 @@ function ownedEngine:Initialize()
                 FinalizeSpecTracking()
             end
 
-            -- Drain deferred loadout save/load (D-10 / LDEV-03).
-            -- Save AND load happen as a unit: never load without saving outgoing first.
             if pendingLoadoutRefresh and loadoutListReady and specTrackingReady then
-                pendingLoadoutRefresh = false
-                loadoutTrackingToken = loadoutTrackingToken + 1
-                local drainToken = loadoutTrackingToken
-
-                local drainSpecID = GetCurrentSpecID()
-                if drainSpecID then
-                    SaveLoadoutProfile(_previousLoadoutID, drainSpecID)
-                    local newConfigID = nil
-                    if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
-                        newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(drainSpecID)
-                    end
-                    _previousLoadoutID = newConfigID
-                    _lastKnownSavedConfigID = newConfigID
-
-                    local charNcdm = GetCharNcdmDB(true)
-                    if charNcdm and newConfigID and newConfigID ~= NO_SAVED_LOADOUT_ID then
-                        if type(charNcdm._lastLoadoutConfigID) ~= "table" then
-                            charNcdm._lastLoadoutConfigID = {}
-                        end
-                        charNcdm._lastLoadoutConfigID[drainSpecID] = newConfigID
-                    end
-
-                    LoadLoadoutProfile(newConfigID, drainSpecID, drainToken)
-                    FireLoadoutChangeCallbacks()  -- Phase 2 / D-06
-                end
+                DrainPendingLoadoutSwitch(true)
             end
 
             if _containerMouseSyncPending and not InCombatLockdown() then
@@ -3884,10 +3538,6 @@ function ownedEngine:Initialize()
                 SyncAllContainerMouseStates(true)
             end
 
-            -- Drain a CHALLENGE_MODE_START recovery that was deferred because
-            -- the key started in combat. Mirrors the reconcile + refresh the
-            -- CHALLENGE_MODE_START handler runs out of combat, so an
-            -- in-combat key start no longer needs a /reload to recover.
             if _challengeModeRecoveryPending and not InCombatLockdown() then
                 _challengeModeRecoveryPending = false
                 if ns.CDMSpellData then
@@ -3897,15 +3547,6 @@ function ownedEngine:Initialize()
                 RefreshAll()
             end
         elseif event == "CHALLENGE_MODE_START" then
-            -- Reconcile + refresh after the key-start zone transition.
-            -- Entries are never shelved anymore, but the render-time known
-            -- filters may have hidden icons while WoW APIs were temporarily
-            -- stale during the transition — a fresh reconcile + refresh
-            -- re-evaluates them against settled data.
-            -- If already in combat (the player pulled before this fires),
-            -- defer to PLAYER_REGEN_ENABLED via _challengeModeRecoveryPending —
-            -- otherwise the recovery is lost and the display stays stale until
-            -- /reload.
             C_Timer.After(0.5, function()
                 if not IsCDMRuntimeEnabled() then return end
                 if InCombatLockdown() then
@@ -3922,7 +3563,6 @@ function ownedEngine:Initialize()
         elseif event == "ZONE_CHANGED_NEW_AREA" then
             C_Timer.After(0.3, RefreshAll)
         elseif event == "CINEMATIC_STOP" or event == "STOP_MOVIE" then
-            -- After cinematics, refresh everything and invalidate frame cache
             C_Timer.After(0.3, function()
                 if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
                 RefreshAll()
@@ -3939,7 +3579,7 @@ function ownedEngine:Initialize()
     ns.DebugRegister(function()
         ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
         ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Containers", frame = eventFrame }
-    end) -- gate contract: core/debug_gate.lua — runs immediately if QUI_Debug already active
+    end)
 end
 
 function ownedEngine:DisableRuntime()
@@ -3948,11 +3588,9 @@ function ownedEngine:DisableRuntime()
     specTrackingPendingRefresh = false
     specTrackingRetryToken = specTrackingRetryToken + 1
     inInitSafeWindow = false
+    ResetInitialReanchorDone()
     CancelRefreshTimers()
 
-    -- Loadout state teardown (parallels the spec-tracking lines above).
-    -- A live debounce timer would fire into a nil runtimeEventFrame after
-    -- DisableRuntime returns; bump the token and cancel the timer here.
     if loadoutDebounceTimer then
         loadoutDebounceTimer:Cancel()
         loadoutDebounceTimer = nil
@@ -3979,18 +3617,14 @@ function ownedEngine:Refresh()
 end
 
 function ownedEngine:GetViewerFrame(key)
-    -- Always return QUI containers (visible in/out of Edit Mode).
     local containerKey = VIEWER_KEY_MAP[key]
     if containerKey then
         local container = containers[containerKey]
         if container then return container end
     end
-    -- Phase G: Direct container lookup for custom container keys
     if containers[key] then
         return containers[key]
     end
-    -- No QUI container yet (engine pre-init or unknown key): the provider
-    -- handles Blizzard-frame pre-init resolution above this layer.
     return nil
 end
 
@@ -4000,7 +3634,6 @@ function ownedEngine:GetViewerFrames()
     if containers.utility then frames[#frames + 1] = containers.utility end
     if containers.buff then frames[#frames + 1] = containers.buff end
     if containers.trackedBar then frames[#frames + 1] = containers.trackedBar end
-    -- Include custom containers
     for key, frame in pairs(containers) do
         if not BUILTIN_NAMES[key] and frame then
             frames[#frames + 1] = frame
@@ -4022,13 +3655,11 @@ function ownedEngine:RefreshViewerFromBounds(viewer, trackerKey)
 end
 
 function ownedEngine:GetIconState(icon)
-    -- Owned icons are addon-created; state is on the icon itself (no external table)
     if not icon then return nil end
     return icon._spellEntry and icon or nil
 end
 
 function ownedEngine:ClearIconState(icon)
-    -- No external state table for owned icons; release handled by CDMIconFactory.
     if not icon then return end
     if ns.CDMIconFactory then
         ns.CDMIconFactory:ReleaseIcon(icon)
@@ -4048,7 +3679,6 @@ function ownedEngine:ApplyUtilityAnchor()
 end
 
 function ownedEngine:IsSelectionKeepVisible(sel)
-    -- Owned frames don't use Blizzard's .Selection overlay
     return false
 end
 
@@ -4057,7 +3687,6 @@ function ownedEngine:GetNCDM()
 end
 
 function ownedEngine:GetCustomCDM()
-    -- CustomCDM is defined in cdm_icon_renderer.lua; access via CDMIcons module
     return ns.CDMIcons and ns.CDMIcons.CustomCDM or nil
 end
 
@@ -4065,11 +3694,6 @@ function ownedEngine:LayoutViewer(name, key)
     LayoutContainer(key or name)
 end
 
----------------------------------------------------------------------------
--- PROVIDER / GLOBAL BRIDGE
----------------------------------------------------------------------------
--- Formerly cdm_provider.lua. There is one CDM engine, so the provider seam
--- lives beside the owned engine and closes over it directly.
 local CDMProvider = {
     initialized = false,
     disabled = false,
@@ -4116,8 +3740,7 @@ function CDMProvider:GetViewerFrame(key)
         if frame then return frame end
     end
 
-    local blizzName = BLIZZARD_FRAME_KEYS[key]
-    return blizzName and _G[blizzName] or nil
+    return nil
 end
 
 function CDMProvider:GetViewerFrames()
@@ -4129,13 +3752,7 @@ function CDMProvider:GetViewerFrames()
         return ownedEngine:GetViewerFrames()
     end
 
-    local frames = {}
-    for _, blizzName in pairs(BLIZZARD_FRAME_KEYS) do
-        if _G[blizzName] then
-            frames[#frames + 1] = _G[blizzName]
-        end
-    end
-    return frames
+    return self.emptyFrames
 end
 
 local GLOBAL_WIRE_MAP = {
@@ -4233,6 +3850,18 @@ _G.QUI_IsCDMMasterEnabled = function()
     return CDMProvider:IsRuntimeEnabled()
 end
 
+_G.QUI_GetReanchoredCDMFrames = function(viewerName)
+    local boot = ns._cdmBoot
+    if not boot or not boot.GetReanchoredFrames then return nil end
+    return boot:GetReanchoredFrames(viewerName)
+end
+
+_G.QUI_ResolveCDMFrameEntry = function(frame)
+    local boot = ns._cdmBoot
+    if not boot or not boot.GetEntryForFrame then return nil end
+    return boot:GetEntryForFrame(frame)
+end
+
 ns.CDMProvider = CDMProvider
 
 local providerEventFrame = CreateFrame("Frame")
@@ -4244,26 +3873,115 @@ providerEventFrame:SetScript("OnEvent", function(self, event, addonName)
     end
 end)
 
----------------------------------------------------------------------------
----------------------------------------------------------------------------
--- NAMESPACE EXPORT
----------------------------------------------------------------------------
--- Phase B.3 diagnostic: expose to _G so /run can poke the panel for
--- provider/mover checks without needing the private ns.
 _G.QUI_DebugCDM = _G.QUI_DebugCDM or {}
 _G.QUI_DebugCDM.GetLayoutSettings = function() return ns.QUI_LayoutMode_Settings end
 _G.QUI_DebugCDM.GetLayoutMode = function() return ns.QUI_LayoutMode end
 _G.QUI_DebugCDM.GetContainersAPI = function() return CDMContainers_API end
+_G.QUI_DebugCDM.BuffState = function()
+    local function say(...) print("|cFF30D1FF[BuffState]|r", ...) end
+    say("catalogReady:", IsCooldownViewerReady() and true or false,
+        " initialReanchorDone(buff):", IsInitialReanchorDone("buff") and true or false,
+        " boot:", ns._cdmBoot and true or false,
+        " hooks:", ns._cdmReanchorHooks and true or false)
+    local viewer = _G.BuffIconCooldownViewer
+    if ns._cdmReanchorHooks and viewer then
+        say("viewerHooked:", ns._cdmReanchorHooks._hooked[viewer] and true or false)
+    end
+    local curated = {}
+    if ns.CDMSpellData and ns.CDMSpellData.BuildSpellListFromOwned then
+        local ok, list = pcall(ns.CDMSpellData.BuildSpellListFromOwned, ns.CDMSpellData, "buff")
+        if ok and type(list) == "table" then curated = list end
+    end
+    say("curated:", #curated)
+    local query = ns.CDMSources and ns.CDMSources.QueryPlayerAuraBySpellID
+    for i = 1, #curated do
+        local e = curated[i]
+        local sid = e.overrideSpellID or e.spellID or e.id
+        local live = false
+        if query and type(sid) == "number" then
+            local ok, aura = pcall(query, sid)
+            live = (ok and aura ~= nil) and true or false
+        end
+        say(("  entry %d: id=%s spellID=%s auraLive=%s"):format(
+            i, tostring(e.id), tostring(sid), tostring(live)))
+    end
+    local reg = _G.QUI_GetReanchoredCDMFrames and _G.QUI_GetReanchoredCDMFrames("buff")
+    say("claimedRegistry:", reg and #reg or 0)
+    local settings = GetTrackerSettings("buff")
+    say("iconDisplayMode:", tostring(settings and settings.iconDisplayMode))
+    local runtime = ns._cdmBoot and ns._cdmBoot.runtime
+    local diag = runtime and runtime.GetLastDiag and runtime:GetLastDiag("buff")
+    if diag then
+        if diag.earlyReturn then
+            say(("lastPass: seq=%d at=%s EARLY-RETURN=%s"):format(
+                diag.seq or -1, tostring(diag.at), diag.earlyReturn))
+        else
+            say(("lastPass: seq=%d at=%s mode=%s filter=%s edit=%s probe=%s"):format(
+                diag.seq or -1, tostring(diag.at), tostring(diag.displayMode),
+                tostring(diag.filterInactive), tostring(diag.editing),
+                tostring(diag.auraProbe)))
+            say(("  curated=%d matched=%d frameless=%d additional=%d"):format(
+                diag.curated or -1, diag.matched or -1,
+                diag.frameless or -1, diag.additional or -1))
+            say(("  nativeClaimed=%d staleNative=%d fallbackLive=%d minted=%d mintFailed=%d"):format(
+                diag.nativeClaimed or -1, diag.staleNative or -1,
+                diag.fallbackLive or -1, diag.minted or -1, diag.mintFailed or -1))
+            say(("  entriesOut=%d planNil=%s positioned=%s"):format(
+                diag.entriesOut or -1, tostring(diag.planNil), tostring(diag.positioned)))
+        end
+        if _G.GetTime and diag.at then
+            say(("  passAge: %.1fs ago"):format(_G.GetTime() - diag.at))
+        end
+    else
+        say("lastPass: NO DIAG (no refresh pass has run)")
+    end
+    local ledger = runtime and runtime._mintedOwnedByKey and runtime._mintedOwnedByKey["buff"]
+    say("ownedLedger:", ledger and #ledger or 0)
+    for i = 1, (ledger and #ledger or 0) do
+        local icon = ledger[i]
+        local okV, shown = pcall(icon.IsShown, icon)
+        local okAl, alpha = pcall(icon.GetAlpha, icon)
+        local okW, w = pcall(icon.GetWidth, icon)
+        local okP, np = pcall(icon.GetNumPoints, icon)
+        say(("  owned %d: shown=%s alpha=%s w=%s points=%s"):format(
+            i,
+            okV and tostring(shown) or "ERR",
+            okAl and tostring(alpha) or "ERR",
+            okW and tostring(w) or "ERR",
+            okP and tostring(np) or "ERR"))
+    end
+    if viewer and viewer.GetItemFrames then
+        local okItems, items = pcall(viewer.GetItemFrames, viewer)
+        if okItems and type(items) == "table" then
+            say("nativeItems:", #items)
+            for i = 1, #items do
+                local f = items[i]
+                local okC, cid = pcall(f.GetCooldownID, f)
+                local okS, sid = pcall(f.GetSpellID, f)
+                local okA, act = pcall(f.IsActive, f)
+                local okV, shown = pcall(f.IsShown, f)
+                local okAl, alpha = pcall(f.GetAlpha, f)
+                say(("  item %d: cd=%s spell=%s info=%s active=%s shown=%s alpha=%s"):format(
+                    i,
+                    okC and tostring(cid) or "ERR",
+                    okS and tostring(sid) or "ERR",
+                    f.cooldownInfo and "yes" or "NO",
+                    okA and tostring(act) or "ERR",
+                    okV and tostring(shown) or "ERR",
+                    okAl and tostring(alpha) or "ERR"))
+            end
+        end
+    end
+end
 
 ns.CDMContainers = {
     GetContainer = function(viewerType) return containers[viewerType] end,
     LayoutContainer = LayoutContainer,
     RefreshAll = RefreshAll,
     RebuildBuffContainer = RebuildBuffContainer,
-    -- In-place hero-talent swap detection, called from the loadout debounce in
-    -- ownedEngine:Initialize. Lives on this table -- not as a direct Initialize
-    -- upvalue -- because Initialize is at WoW's 60-upvalue-per-function ceiling;
-    -- the closure reaches it via the `ns` upvalue it already holds.
+    RefreshReanchorRuntimeHooks = function(markDirty)
+        return ownedEngine:RefreshReanchorRuntimeHooks(markDirty)
+    end,
     ReconcileOnHeroSubTreeChange = function()
         local current = GetCurrentHeroSubTree()
         if current == _lastKnownHeroSubTree then return end
@@ -4285,7 +4003,6 @@ ns.CDMContainers = {
         if containerKey == "trackedBar" then return "buffBar"     end
         return "cdmCustom_" .. containerKey
     end,
-    -- Phase G: Container management API
     CreateContainer = function(name, containerType) return CDMContainers_API:CreateContainer(name, containerType) end,
     DeleteContainer = function(key) return CDMContainers_API:DeleteContainer(key) end,
     RenameContainer = function(key, name) return CDMContainers_API:RenameContainer(key, name) end,
@@ -4295,21 +4012,10 @@ ns.CDMContainers = {
     GetAllContainerKeys = function() return CDMContainers_API:GetAllContainerKeys() end,
     RegisterDynamicLayoutElement = function(key, settings) return CDMContainers_API:RegisterDynamicLayoutElement(key, settings) end,
     SyncSettingsFeatureLookups = SyncSettingsFeatureLookups,
-    -- Save current spec's ownedSpells to the scoped spec profile store (called after Composer mutations).
-    -- Guard: refuse to save while spec tracking is still initialising — the live
-    -- containerDB may still hold stale data from a previous character/spec.
     SaveActiveSpecProfile = function()
         if not specTrackingReady then return end
         SaveSpecProfile(GetCurrentSpecID())
     end,
-    -- Clear imported ownedSpells and re-snapshot from Blizzard CDM for the
-    -- current spec. Called after profile import so foreign-class spells are
-    -- replaced with the player's actual abilities. Custom (customBar)
-    -- containers are skipped: they keep their list in `entries` (the
-    -- ownedSpells wipe is a no-op and SnapshotBlizzardCDM ignores them);
-    -- their foreign imported entries simply don't render on this character
-    -- (render-time known filter) and stay available for manual removal in
-    -- the composer.
     ResnapshotForCurrentSpec = function()
         if not ns.CDMSpellData then return end
         local containerKeys = CDMContainers_API:GetAllContainerKeys()
@@ -4327,13 +4033,7 @@ ns.CDMContainers = {
         end
     end,
 
-    -- Phase 2 / D-05: First-enable seed. Called from the perLoadoutSpec
-    -- toggle handler in modules/cdm/settings/containers_page.lua
-    -- ONLY on the false→true transition. No-op if guards fail.
     SeedActiveLoadoutFromSharedSlot = SeedActiveLoadoutFromSharedSlot,
 
-    -- Phase 2 / D-06: Live-refresh subscription. The settings active-context
-    -- label registers here so it updates after every confirmed loadout swap
-    -- without polling. Subscribers fire with no arguments.
     RegisterLoadoutChangeCallback = RegisterLoadoutChangeCallback,
 }

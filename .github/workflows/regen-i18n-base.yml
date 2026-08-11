@@ -1,10 +1,21 @@
 name: Regenerate i18n Base
 
 # Auto-regenerates core/locale/enUS.lua (the English locale base extracted
-# from all wrapped UI strings) on every push to qui-beta and commits the
-# result back to the branch. Replaces the old hard "i18n base up to date"
-# gate in lua-tests.yml, which went red whenever a commit added new strings
-# without manually running tools/i18n/extract_strings.lua.
+# from all wrapped UI strings) on every push to beta or alpha and commits the
+# result back to the branch. When that regen moves the key SET, it also
+# re-slots the ten positional translation overlays onto the new key array and
+# commits all eleven files together — see the regen step for why splitting
+# those two is a red branch rather than a stale one.
+#
+# Scoped to the working branches, exactly like regen-search-cache.yml. Both
+# generated files follow one rule: main is hard-gated in lua-tests.yml so
+# nothing stale can land there, and beta/alpha get fixed for them instead.
+# No bot ever commits to main, so cutting a release commit and tagging it
+# cannot race a bot push.
+#
+# Localization is unconditional here — there is no feature flag anywhere in
+# the tree that disables it — so a stale locale base is a real defect on any
+# branch, which is why main gets a hard gate rather than no coverage.
 #
 # Loop prevention: pushes made with the default GITHUB_TOKEN do NOT trigger
 # further workflow runs (per GitHub's default policy). The `[skip ci]` tag on
@@ -14,7 +25,16 @@ name: Regenerate i18n Base
 on:
   push:
     branches:
-      - qui-beta
+      - beta
+      - alpha
+
+# Shared with regen-search-cache.yml — see the comment there. Both bots commit
+# to the same branch on a beta or alpha push, so they must queue rather than
+# race, and the checkout below must take the branch tip rather than the
+# triggering SHA so the queued run builds on the other bot's commit.
+concurrency:
+  group: regen-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   regen:
@@ -25,6 +45,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.ref_name }}
           fetch-depth: 1
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -47,18 +68,60 @@ jobs:
 
       - name: Regenerate i18n base
         if: steps.bot-check.outputs.skip != 'true'
-        run: lua5.1 tools/i18n/extract_strings.lua
+        # Three commands, always together.
+        #
+        # 1+2. extract_strings.lua rewrites the whole file and has no SHA-256
+        # available (Lua 5.1), so the `-- keyset:` checksum line is stamped
+        # from Python afterwards. Running the generator alone would commit an
+        # enUS.lua with that line DELETED, and
+        # tests/unit/locale_keyset_checksum_test.lua — which is what keeps the
+        # ten positional overlays honest about their ID assignment — would go
+        # red on the bot's own commit.
+        #
+        # 3. The same failure one step further out. The overlays are
+        # POSITIONAL: slot N holds the translation of enUS key N. Adding or
+        # removing a single ns.L string renumbers every slot after it, so an
+        # enUS regen committed ALONE leaves the ten overlays carrying the old
+        # `-- keyset:` and that same test goes red — on alpha/beta, where the
+        # locale format gates deliberately carry no branch exclusion (they only
+        # read, so they had no bot to race), and the bot cannot clear what it
+        # just caused. Before the overlays became positional this was harmless:
+        # a key missing from an overlay simply fell back to English.
+        #
+        # reslot_overlays.py's default `--ref HEAD` is exactly right here.
+        # Nothing is committed yet at this point, so HEAD is still the
+        # pre-regen commit and the old key array it re-slots FROM is the one
+        # the committed overlays were actually numbered against. It needs no
+        # translation API key — no new translation happens, only a change of
+        # slot number — and when the key set did not move it says so and writes
+        # nothing, which keeps the "nothing to commit" path below intact.
+        run: |
+          lua5.1 tools/i18n/extract_strings.lua
+          python3 tools/i18n/stamp_enus_keyset.py
+          python3 tools/i18n/reslot_overlays.py
 
-      - name: Commit and push if base changed
+      - name: Commit and push if the locale files changed
         if: steps.bot-check.outputs.skip != 'true'
         run: |
-          if git diff --quiet -- core/locale/enUS.lua; then
+          # Widened from core/locale/enUS.lua to the whole directory: a re-slot
+          # rewrites all ten overlays, and committing the regenerated base
+          # WITHOUT them is precisely the red state the step above exists to
+          # avoid. A re-slot that changed nothing leaves all ten unmodified, so
+          # the no-op path below is unaffected.
+          if git diff --quiet -- core/locale/; then
             echo "i18n base is already up to date; nothing to commit."
             exit 0
           fi
 
+          # The overlays only move when the key set moved, so name them in the
+          # commit message only when they actually did.
+          message="chore(i18n): regenerate enUS base [skip ci]"
+          if ! git diff --quiet -- core/locale/ ':(exclude)core/locale/enUS.lua'; then
+            message="chore(i18n): regenerate enUS base + re-slot overlays [skip ci]"
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add core/locale/enUS.lua
-          git commit -m "chore(i18n): regenerate enUS base [skip ci]"
+          git add core/locale/
+          git commit -m "$message"
           git push

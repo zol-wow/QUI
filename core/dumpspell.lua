@@ -1,15 +1,6 @@
---[[
-    QUI /qspell — print everything we can about a spell.
-
-    Usage: /qspell <spellID | spell link | partial name>
-    Examples:
-        /qspell 1953
-        /qspell [Blink]              (shift-click a spell into chat)
-        /qspell ice barrier
-]]
-
 local ADDON_NAME, ns = ...
 local Helpers = ns and ns.Helpers
+---@type fun(...) -- the `or` fallback is narrower than Helpers.SafeValue(value, fallback)
 local SafeValue = Helpers and Helpers.SafeValue or function(v) return v end
 
 local PREFIX = "|cff34D399[QSpell]|r "
@@ -24,17 +15,12 @@ local function row(label, value)
 end
 local function header(text) print(("%s%s%s"):format(LABEL_COLOR, text, RESET)) end
 
--- Resolve a user argument into a spellID. Accepts a number, a |Hspell:ID|h
--- hyperlink, or a partial name lookup against the player's spellbook via
--- C_Spell.GetSpellIDForSpellIdentifier (preferred) or GetSpellInfo by name.
 local function ResolveSpellID(arg)
     if arg == nil or arg == "" then return nil end
     local n = tonumber(arg)
     if n then return n end
-    -- Hyperlink: |Hspell:12345:0|h[Name]|h or just spell:12345
     local linkID = arg:match("|Hspell:(%d+)") or arg:match("spell:(%d+)")
     if linkID then return tonumber(linkID) end
-    -- Try a name lookup
     if C_Spell and C_Spell.GetSpellIDForSpellIdentifier then
         local ok, id = pcall(C_Spell.GetSpellIDForSpellIdentifier, arg)
         if ok and id then return id end
@@ -129,7 +115,6 @@ local function DumpTiming(spellID)
             row("charges.modRate", SafeValue(ch.chargeModRate, nil))
         end
     end
-    -- Cooldown duration (DurationObject in 12.x — secret-safe)
     if C_Spell and C_Spell.GetSpellCooldownDuration then
         local dur = tryCall(C_Spell.GetSpellCooldownDuration, spellID)
         row("GetSpellCooldownDuration", dur and "<DurationObject>" or nil)
@@ -170,12 +155,12 @@ local function DumpDescription(spellID)
     end
 end
 
-SLASH_QUI_QSPELL1 = "/qspell"
+SLASH_QUI_QSPELL1 = "/quispell"
 SlashCmdList["QUI_QSPELL"] = function(msg)
     local arg = msg and strtrim(msg) or ""
     local spellID = ResolveSpellID(arg)
     if not spellID then
-        p("Usage: /qspell <spellID | spell link | partial name>")
+        p("Usage: /quispell <spellID | spell link | partial name>")
         return
     end
     p(("Dumping spell |cffFFD100%d|r"):format(spellID))

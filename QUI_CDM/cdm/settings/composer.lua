@@ -1,13 +1,3 @@
---[[
-    QUI CDM Spell Composer
-
-    Full container editor popup with live preview, layout configuration,
-    entry management, and per-entry override settings. Opens from Layout
-    Mode via the "Open Spell Manager" button on CDM containers.
-
-    Singleton frame: only one instance, reused across container switches.
-]]
-
 local _, ns = ...
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
@@ -26,21 +16,15 @@ local math_max = math.max
 local math_huge = math.huge
 local table_insert = table.insert
 local table_remove = table.remove
-local string_lower = string.lower
 local string_find = string.find
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local C_Timer = C_Timer
 local Sources = ns.CDMSources
 
--- Forward declaration: defined below, called from earlier function bodies.
 local RefreshAll_Composer
 
----------------------------------------------------------------------------
--- CONSTANTS
----------------------------------------------------------------------------
--- Accent color: resolved from current theme at open time via RefreshAccentColor()
-local ACCENT_R, ACCENT_G, ACCENT_B = 0.376, 0.647, 0.980  -- fallback (Sky Blue)
+local ACCENT_R, ACCENT_G, ACCENT_B = 0.376, 0.647, 0.980
 
 local function RefreshAccentColor()
     local GUI = QUI and QUI.GUI
@@ -50,10 +34,6 @@ local function RefreshAccentColor()
     end
 end
 
--- Skin chrome colors — resolved lazily so they pick up the active skin.
--- PANEL = main panel bg tier; SUBPANEL = darker nav/container bg tier;
--- BORDER = themed gray border. Resolved at paint-time rather than at
--- module load so late-loading skins are honored.
 local function GetChromeBgPanel()
     local r, g, b = 0.08, 0.08, 0.1
     if SkinBase and SkinBase.GetDepthColor then r, g, b = SkinBase.GetDepthColor("PANEL") end
@@ -82,9 +62,6 @@ local function GetChromeFontOutline()
     if Helpers and Helpers.GetGeneralFontOutline then return Helpers.GetGeneralFontOutline() end
     return ""
 end
--- Route raw SetFont through the CJK-fallback path so user-typed CJK text in
--- EditBoxes renders. EditBoxes expose GetFont/SetFont/SetFontObject so
--- ApplyFontWithFallback (SetFontObject family) works the same as on FontStrings.
 local function CJKFont(obj, path, size, flags)
     if Helpers and Helpers.ApplyFontWithFallback then
         Helpers.ApplyFontWithFallback(obj, path, size, flags)
@@ -99,7 +76,7 @@ local NAV_WIDTH = 120
 local GRID_CELL_SIZE = 36
 local GRID_ICON_SIZE = 28
 local GRID_GAP = 2
-local GRID_CELL_STRIDE = GRID_CELL_SIZE + GRID_GAP  -- 38
+local GRID_CELL_STRIDE = GRID_CELL_SIZE + GRID_GAP
 local SECTION_HEADER_HEIGHT = 20
 local FORM_ROW = 36
 local TAB_HEIGHT = 26
@@ -123,9 +100,6 @@ local CONTAINER_TYPES = Shared and Shared.BUILTIN_CONTAINER_TYPES
         trackedBar  = "auraBar",
     }
 
--- Phase G: Resolve container type for any key (built-in or custom).
--- Forward-declared here so all functions below can use it.
--- GetContainerDB is defined in the DB ACCESS section below.
 local function ResolveContainerType(containerKey)
     if Shared and Shared.GetContainerType then
         local containerType = Shared.GetContainerType(containerKey)
@@ -139,11 +113,6 @@ local function ResolveContainerType(containerKey)
     return "cooldown"
 end
 
--- Returns the implied entry kind ("aura" | "cooldown") for a container based
--- on its container type. Built-in containers have a fixed kind that every
--- entry inherits (essential/utility = cooldown; buff/trackedBar = aura).
--- Custom bars and other mixed-kind containers return nil — callers must
--- determine kind from the active add-source tab.
 local function GetContainerImpliedKind(containerKey)
     local ctype = ResolveContainerType(containerKey)
     if Shared and Shared.GetEntryKindForContainerType then
@@ -155,25 +124,21 @@ local function GetContainerImpliedKind(containerKey)
 end
 
 local GetContainerDB
-local AssignCooldownRowsByCapacity
 
----------------------------------------------------------------------------
--- CATALOG WRAPPERS
---
--- Settings-time catalog work is centralized in CDMCatalog. Composer keeps
--- these wrapper names because settings and runtime modules already call
--- them directly.
----------------------------------------------------------------------------
 function ns.CDMComposer.SeedFromBlizzard(containerKind)
     local catalog = ns.CDMCatalog
     if catalog and catalog.SeedFromBlizzard then
-        local entries, ready = catalog.SeedFromBlizzard(containerKind)
-        if ready and AssignCooldownRowsByCapacity then
-            AssignCooldownRowsByCapacity(entries, containerKind)
-        end
-        return entries, ready
+        return catalog.SeedFromBlizzard(containerKind)
     end
     return {}, false
+end
+
+function ns.CDMComposer.AssignCooldownRowsByCapacity(entries, containerKey)
+    local catalog = ns.CDMCatalog
+    if catalog and catalog.AssignCooldownRowsByCapacity then
+        return catalog.AssignCooldownRowsByCapacity(entries, containerKey)
+    end
+    return entries
 end
 
 function ns.CDMComposer.RebuildBlizzardCatalogMaps(spellToCDID, inCooldowns, inAuras, abilityToAura, auraIDsForSpell)
@@ -189,6 +154,22 @@ function ns.CDMComposer.RebuildCooldownLearnedPreferredIDs(outSet)
     local catalog = ns.CDMCatalog
     if catalog and catalog.RebuildCooldownLearnedPreferredIDs then
         return catalog.RebuildCooldownLearnedPreferredIDs(outSet)
+    end
+    return false
+end
+
+function ns.CDMComposer.RebuildAuraLearnedFamilyIDs(outSet)
+    local catalog = ns.CDMCatalog
+    if catalog and catalog.RebuildAuraLearnedFamilyIDs then
+        return catalog.RebuildAuraLearnedFamilyIDs(outSet)
+    end
+    return false
+end
+
+function ns.CDMComposer.RebuildClassApplicableSpellIDs(outSet)
+    local catalog = ns.CDMCatalog
+    if catalog and catalog.RebuildClassApplicableSpellIDs then
+        return catalog.RebuildClassApplicableSpellIDs(outSet)
     end
     return false
 end
@@ -210,28 +191,18 @@ function ns.CDMComposer.CollectKnownCDMSpellIDs(out)
     return out or {}
 end
 
+local composerFrame = nil
+local activeContainer = nil
+local entryCells = {}
+local addCells = {}
+local sectionHeaders = {}
+local expandedOverride = nil
+local searchBox = nil
+local addSearchBox = nil
+local activeAddTab = nil
+local containerTabs = {}
+local BuildContainerTabs
 
----------------------------------------------------------------------------
--- STATE
----------------------------------------------------------------------------
-local composerFrame = nil      -- singleton
-local activeContainer = nil    -- current container key
-local entryCells = {}          -- pooled entry grid cells
-local addCells = {}            -- pooled add-source grid cells
-local sectionHeaders = {}      -- pooled section header frames
-local expandedOverride = nil   -- spellID of expanded override panel (or nil)
--- Preview icon/bar frames are owned by ns.CDMComposerPreview (the live
--- preview driver). Composer.lua no longer holds raw texture/bar tables;
--- it supplies the layout/style impls below as globals the driver calls.
-local searchBox = nil          -- search editbox for entry list
-local addSearchBox = nil       -- search editbox for add list
-local activeAddTab = nil       -- current add-source tab name
-local containerTabs = {}       -- tab button frames
-local BuildContainerTabs       -- forward declaration; assigned in CONTAINER TABS section
-
----------------------------------------------------------------------------
--- DB ACCESS
----------------------------------------------------------------------------
 local function GetNcdmDB()
     if Shared and Shared.GetNcdmDB then
         local ncdm = Shared.GetNcdmDB()
@@ -304,18 +275,10 @@ local function RefreshActiveContainerDormancy()
     end
 end
 
----------------------------------------------------------------------------
--- REFRESH HELPERS
----------------------------------------------------------------------------
 local function RefreshCDM()
-    -- Force layout for the active container even during edit mode.
-    -- FireChangeCallback (from the data layer) already triggers RefreshAll
-    -- for broad state sync.  Only force-layout the specific container here
-    -- to avoid cascading double-refreshes that cause icon flicker.
     if activeContainer and _G.QUI_ForceLayoutContainer then
         _G.QUI_ForceLayoutContainer(activeContainer)
     end
-    -- Buff bar icons/bars need an explicit poke after layout mutation.
     if _G.QUI_RefreshCDMBuffLayout then _G.QUI_RefreshCDMBuffLayout() end
 end
 
@@ -333,13 +296,6 @@ local function NotifyComposerEntriesChanged(rebuildCatalog)
     end
 end
 
----------------------------------------------------------------------------
--- ENTRY HELPERS
----------------------------------------------------------------------------
--- Some legacy customTrackers entries predate the typed schema and arrive
--- with entry.type == nil. Detect whether the id looks like an item first
--- (items are a finite namespace), then fall back to spell. Cached so the
--- lookup only runs once per entry.
 local function ResolveEntryType(entry)
     if not entry then return nil end
     if entry.type then return entry.type end
@@ -355,19 +311,6 @@ local function ResolveEntryType(entry)
         return "spell"
     end
     return nil
-end
-
-local function GetCooldownRowLimits(db)
-    local rows = {}
-    if type(db) ~= "table" then return rows end
-    for r = 1, 3 do
-        local rowData = db["row" .. r]
-        local iconCount = rowData and tonumber(rowData.iconCount)
-        if iconCount and iconCount > 0 then
-            rows[#rows + 1] = { rowNum = r, max = iconCount }
-        end
-    end
-    return rows
 end
 
 local function FindCooldownRowWithRoom(activeRowNums, rowCounts, rowMax, preferredRow)
@@ -399,35 +342,6 @@ local function FindCooldownRowWithRoom(activeRowNums, rowCounts, rowMax, preferr
     return nil
 end
 
-AssignCooldownRowsByCapacity = function(entries, containerKey)
-    if type(entries) ~= "table" or ResolveContainerType(containerKey) ~= "cooldown" then
-        return entries
-    end
-
-    local db = GetContainerDB and GetContainerDB(containerKey)
-    local rows = GetCooldownRowLimits(db)
-    if #rows == 0 then return entries end
-
-    local rowIdx = 1
-    local rowUsed = 0
-    for _, entry in ipairs(entries) do
-        if type(entry) == "table" then
-            local row = rows[rowIdx]
-            if row and rowUsed < row.max then
-                entry.row = row.rowNum
-                rowUsed = rowUsed + 1
-                if rowUsed >= row.max then
-                    rowIdx = rowIdx + 1
-                    rowUsed = 0
-                end
-            else
-                entry.row = nil
-            end
-        end
-    end
-    return entries
-end
-
 local function GetEntryIcon(entry)
     if not entry then return "Interface\\Icons\\INV_Misc_QuestionMark" end
     local etype = entry.type or ResolveEntryType(entry)
@@ -452,6 +366,11 @@ local function GetEntryIcon(entry)
                 if texID then return texID end
             end
         end
+    elseif etype == "consumable" then
+        local Catalog = ns.CDMCatalog
+        local meta = Catalog and Catalog.GetConsumableCategoryMeta
+            and Catalog.GetConsumableCategoryMeta(entry.id)
+        if meta and meta.icon then return meta.icon end
     end
     return "Interface\\Icons\\INV_Misc_QuestionMark"
 end
@@ -460,14 +379,11 @@ local function GetEntryName(entry)
     if not entry then return ns.L["Unknown"] end
     local etype = entry.type or ResolveEntryType(entry)
     if etype == "spell" then
-        -- Try override spell first (hero talent transforms, e.g.,
-        -- Divine Toll → Holy Bulwark) so the name matches the icon.
         local displayID = entry.id
         local oid = Sources and Sources.QueryOverrideSpell and Sources.QueryOverrideSpell(entry.id)
         if oid and oid ~= entry.id then displayID = oid end
         local info = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(displayID)
         if info and info.name then return info.name end
-        -- Fallback to base ID if override lookup failed
         if displayID ~= entry.id then
             info = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(entry.id)
             if info and info.name then return info.name end
@@ -487,6 +403,13 @@ local function GetEntryName(entry)
         return string.format(ns.L["Trinket Slot %s"], tostring(entry.id or "?"))
     elseif etype == "macro" then
         return entry.macroName or ns.L["Macro"]
+    elseif etype == "consumable" then
+        local Catalog = ns.CDMCatalog
+        local meta = Catalog and Catalog.GetConsumableCategoryMeta
+            and Catalog.GetConsumableCategoryMeta(entry.id)
+        local L = ns.L
+        return (meta and ((L and L[meta.name]) or meta.name))
+            or ("Category " .. tostring(entry.id or "?"))
     end
     return ns.L["Unknown"]
 end
@@ -507,19 +430,49 @@ local function IsEntryDormantOnCurrentPlayer(entry, containerKey)
     return spellData:IsSpellKnown(entry.id) ~= true
 end
 
--- True if the entry is castable / usable by the player currently logged in.
--- Items, slots, macros are always considered usable here. Spell dormancy is
--- delegated to CDMSpellData so cooldown entries use spell knownness while
--- aura entries use the same per-character CDM aura catalog gate as runtime.
+local function IsEntryApplicableOnCurrentPlayer(entry, containerKey)
+    if type(entry) ~= "table" then return true end
+    if entry.type ~= "spell" then return true end
+    if type(entry.id) ~= "number" then return true end
+    local spellData = ns.CDMSpellData
+    if spellData and type(spellData.IsEntryApplicableForContainer) == "function" then
+        return spellData:IsEntryApplicableForContainer(
+            containerKey or activeContainer, entry) == true
+    end
+    return true
+end
+
 local function IsEntryUsableOnCurrentPlayer(entry, containerKey)
     if type(entry) ~= "table" then return true end
     if entry.type ~= "spell" then return true end
     if type(entry.id) ~= "number" then return true end
-    return not IsEntryDormantOnCurrentPlayer(entry, containerKey)
+    return IsEntryApplicableOnCurrentPlayer(entry, containerKey)
+        and not IsEntryDormantOnCurrentPlayer(entry, containerKey)
 end
 
 local function EntryCountsForCooldownRowCapacity(entry)
     return IsEntryUsableOnCurrentPlayer(entry)
+end
+
+local function CountCooldownRowUsage(db)
+    local activeRowNums, rowCounts, rowMax = {}, {}, {}
+    for r = 1, 3 do
+        local rd = db["row" .. r]
+        if rd and rd.iconCount and rd.iconCount > 0 then
+            activeRowNums[#activeRowNums + 1] = r
+            rowMax[r] = rd.iconCount
+            rowCounts[r] = 0
+        end
+    end
+    for _, e in ipairs(db.ownedSpells or {}) do
+        if e and EntryCountsForCooldownRowCapacity(e) then
+            local r = e.row or (activeRowNums[1] or 1)
+            if rowCounts[r] then
+                rowCounts[r] = rowCounts[r] + 1
+            end
+        end
+    end
+    return activeRowNums, rowCounts, rowMax
 end
 
 local function GetPreviewEntries(containerKey, db)
@@ -539,21 +492,12 @@ local function GetPreviewEntries(containerKey, db)
     return activeEntries
 end
 
----------------------------------------------------------------------------
--- FRAME FACTORY HELPERS
----------------------------------------------------------------------------
 local function CreateBackdropFrame(parent, level)
     local f = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     if level then f:SetFrameLevel(level) end
     return f
 end
 
--- Explicit bg + 4 border textures. Avoids Blizzard's
--- Blizzard_SharedXML/Backdrop.lua SetupTextureCoordinates → GetWidth
--- recursion (C stack overflow) that can fire when SetBackdrop runs on a
--- frame inside a UIPanelScrollFrameTemplate child at certain
--- width/height/effectiveScale combinations. Mirrors the backdrop helper in
--- modules/cdm/settings/containers_page.lua.
 local function SetSimpleBackdrop(frame, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
     local bg = frame._bg
     if not bg then
@@ -588,10 +532,6 @@ local function SetSimpleBackdrop(frame, bgR, bgG, bgB, bgA, borderR, borderG, bo
         border[i]:SetColorTexture(er, eg, eb, ea)
     end
 
-    -- Compatibility shims so callers can keep using SetBackdropColor /
-    -- SetBackdropBorderColor (e.g. hover highlights). Override the
-    -- BackdropTemplate methods (if present) — write to our textures
-    -- instead, since we never called Blizzard's SetBackdrop.
     if not frame._setBackdropShimmed then
         frame.SetBackdropColor = function(self, r, g, b, a)
             if self._bg then self._bg:SetColorTexture(r, g, b, a or 1) end
@@ -693,28 +633,21 @@ local function CreateSearchBox(parent, width, placeholder)
     return box
 end
 
----------------------------------------------------------------------------
--- SCROLL FRAME BUILDER
--- Creates a basic scroll frame with mousewheel support. Returns the
--- scroll frame and the content frame to parent children into.
----------------------------------------------------------------------------
 local function CreateScrollArea(parent, width, height)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent)
     scrollFrame:SetSize(width, height)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetWidth(width - 12) -- leave room for scrollbar
-    content:SetHeight(1) -- will be set dynamically
+    content:SetWidth(width - 12)
+    content:SetHeight(1)
     scrollFrame:SetScrollChild(content)
 
-    -- Keep content width in sync when scroll frame is resized by anchors
     scrollFrame:SetScript("OnSizeChanged", function(self, w)
         if w and w > 16 then
             content:SetWidth(w - 12)
         end
     end)
 
-    -- Scroll bar track + thumb
     local track = CreateFrame("Frame", nil, parent)
     track:SetWidth(4)
     track:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", 0, 0)
@@ -741,7 +674,6 @@ local function CreateScrollArea(parent, width, height)
         if scrollPos < 0 then scrollPos = 0 end
         scrollFrame:SetVerticalScroll(scrollPos)
 
-        -- Update thumb position and visibility
         if maxScroll <= 0 then
             track:Hide()
         else
@@ -773,15 +705,101 @@ local function CreateScrollArea(parent, width, height)
     return scrollFrame, content
 end
 
----------------------------------------------------------------------------
--- LIVE PREVIEW
----------------------------------------------------------------------------
 local previewFrame = nil
-local previewScale = 1.5
+local PREVIEW_SCALE = 1.5
+local PREVIEW_INITIAL_HEIGHT = 180
+local PREVIEW_INNER_CHROME_HEIGHT = 32
+local PREVIEW_MIN_CONTENT_HEIGHT = 60
+local PREVIEW_CONTENT_VERTICAL_PADDING = 2
 
-local function BuildPreviewSection(parent)
+local function IncludePreviewBounds(object, bounds, onlyWhenShown)
+    if not object then return end
+    if onlyWhenShown and object.IsShown and not object:IsShown() then return end
+
+    local top = object.GetTop and object:GetTop()
+    local bottom = object.GetBottom and object:GetBottom()
+    if top and bottom then
+        bounds.top = bounds.top and math_max(bounds.top, top) or top
+        bounds.bottom = bounds.bottom and math.min(bounds.bottom, bottom) or bottom
+    end
+end
+
+local function MeasurePreviewContentHeight()
+    local driver = ns.CDMComposerPreview
+    local frames = driver and driver.GetContentFrames and driver.GetContentFrames()
+    if type(frames) ~= "table" then return 0 end
+
+    local bounds = {}
+    for _, frame in ipairs(frames) do
+        if frame then
+            IncludePreviewBounds(frame, bounds, false)
+            IncludePreviewBounds(frame.Border, bounds, true)
+            IncludePreviewBounds(frame.BorderContainer, bounds, true)
+        end
+    end
+
+    if not bounds.top or not bounds.bottom then return 0 end
+    return math_max(0, bounds.top - bounds.bottom)
+        + PREVIEW_CONTENT_VERTICAL_PADDING * 2
+end
+
+local function ResizePreviewToContent(container)
+    if not container or not container._previewAutoHeight then return end
+
+    local outer = container._previewOuter or container
+    if not outer or not outer.SetHeight then return end
+
+    local contentHeight = MeasurePreviewContentHeight()
+    local chromeHeight = container._previewChromeHeight or PREVIEW_INNER_CHROME_HEIGHT
+    local desiredHeight = math_floor(contentHeight + chromeHeight + 0.5)
+    desiredHeight = math_max(container._previewMinHeight or 0, desiredHeight)
+    if container._previewMaxHeight then
+        desiredHeight = math.min(container._previewMaxHeight, desiredHeight)
+    end
+
+    local currentHeight = outer.GetHeight and outer:GetHeight() or 0
+    if math_abs(currentHeight - desiredHeight) <= 0.5 then return end
+
+    outer._previewAutoHeightApplying = true
+    outer:SetHeight(desiredHeight)
+    outer._previewAutoHeightApplying = nil
+
+    local driver = ns.CDMComposerPreview
+    if driver and driver.Relayout then
+        driver.Relayout()
+    end
+end
+
+local function RequestPreviewAutoHeight(container)
+    if not container or not container._previewAutoHeight
+        or container._previewAutoHeightPending then
+        return
+    end
+
+    container._previewAutoHeightPending = true
+    local function Apply()
+        container._previewAutoHeightPending = nil
+        ResizePreviewToContent(container)
+    end
+
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, Apply)
+    else
+        Apply()
+    end
+end
+
+local function BuildPreviewSection(parent, autoHeightOptions)
+    autoHeightOptions = autoHeightOptions or {}
     local container = CreateBackdropFrame(parent)
-    container:SetHeight(180)
+    container:SetHeight(PREVIEW_INITIAL_HEIGHT)
+    container._previewAutoHeight = autoHeightOptions.autoHeight ~= false
+    container._previewOuter = autoHeightOptions.outer or container
+    container._previewChromeHeight = PREVIEW_INNER_CHROME_HEIGHT
+        + (autoHeightOptions.outerChromeHeight or 0)
+    container._previewMinHeight = autoHeightOptions.minHeight
+        or (container._previewChromeHeight + PREVIEW_MIN_CONTENT_HEIGHT)
+    container._previewMaxHeight = autoHeightOptions.maxHeight
     local _bpsBR, _bpsBG, _bpsBB = GetChromeBgSubpanel()
     local _bpsBdR, _bpsBdG, _bpsBdB = GetChromeBorder()
     SetSimpleBackdrop(container, _bpsBR, _bpsBG, _bpsBB, 1, _bpsBdR, _bpsBdG, _bpsBdB, 1)
@@ -792,91 +810,26 @@ local function BuildPreviewSection(parent)
     title:SetText(ns.L["Live Preview"])
     title:SetTextColor(0.6, 0.6, 0.6, 1)
 
-    -- Icon grid area
     local gridArea = CreateFrame("Frame", nil, container)
     gridArea:SetPoint("TOPLEFT", 8, -24)
-    gridArea:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, 36)
+    gridArea:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, 8)
     gridArea:SetClipsChildren(true)
     container._gridArea = gridArea
-
-    -- Scale slider area
-    local scaleLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(scaleLabel, { fontOnly = true }) end
-    scaleLabel:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 8, 10)
-    scaleLabel:SetText(ns.L["Preview Scale:"])
-    scaleLabel:SetTextColor(0.5, 0.5, 0.5, 1)
-
-    local scaleValueText = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(scaleValueText, { fontOnly = true }) end
-    scaleValueText:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, 10)
-    scaleValueText:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-
-    -- Slider track
-    local sliderTrack = CreateFrame("Button", nil, container)
-    sliderTrack:SetHeight(6)
-    sliderTrack:SetPoint("LEFT", scaleLabel, "RIGHT", 8, 0)
-    sliderTrack:SetPoint("RIGHT", scaleValueText, "LEFT", -8, 0)
-
-    local trackBg = sliderTrack:CreateTexture(nil, "BACKGROUND")
-    trackBg:SetAllPoints()
-    trackBg:SetColorTexture(0.15, 0.15, 0.15, 1)
-
-    local trackFill = sliderTrack:CreateTexture(nil, "ARTWORK")
-    trackFill:SetPoint("LEFT")
-    trackFill:SetHeight(6)
-    trackFill:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
-
-    local function UpdateScaleVisual()
-        local pct = (previewScale - 0.5) / 2.5
-        trackFill:SetWidth(math_max(1, sliderTrack:GetWidth() * pct))
-        scaleValueText:SetText(string.format("%.1fx", previewScale))
-    end
-
-    sliderTrack:SetScript("OnClick", function(self)
-        local x = select(1, GetCursorPosition()) / self:GetEffectiveScale()
-        local left = self:GetLeft()
-        local w = self:GetWidth()
-        local pct = (x - left) / w
-        pct = math_max(0, math.min(1, pct))
-        previewScale = 0.5 + pct * 2.5
-        previewScale = math_floor(previewScale * 10 + 0.5) / 10
-        UpdateScaleVisual()
-        if ns.CDMComposerPreview and ns.CDMComposerPreview.SetScale then
-            ns.CDMComposerPreview.SetScale(previewScale)
-        end
-        if composerFrame and composerFrame._refreshPreview then
-            composerFrame._refreshPreview()
-        end
-    end)
-
-    container._updateScaleVisual = UpdateScaleVisual
     previewFrame = container
 
-    -- Hand the grid area off to the live preview driver so it owns the
-    -- icon/bar frames and the cycle ticker. The driver is idempotent on
-    -- repeated Build calls — only the first one creates the ticker.
     if ns.CDMComposerPreview and ns.CDMComposerPreview.Build then
         ns.CDMComposerPreview.Build(container._gridArea)
     end
     if ns.CDMComposerPreview and ns.CDMComposerPreview.SetScale then
-        ns.CDMComposerPreview.SetScale(previewScale)
+        ns.CDMComposerPreview.SetScale(PREVIEW_SCALE)
     end
 
-    -- Composer-close path: when the preview frame hides (composer popup
-    -- closes, tile tabs away, options panel closes), tear down any
-    -- preview-scoped icons/bars/glow so nothing leaks.
     container:SetScript("OnHide", function()
         if ns.CDMComposerPreview and ns.CDMComposerPreview.Teardown then
             ns.CDMComposerPreview.Teardown()
         end
     end)
 
-    -- Symmetric to the OnHide teardown above. The options window is hidden (not
-    -- destroyed) on close and tiles are built once and cached, so re-showing the
-    -- preview host -- reopening the panel on the CDM page, tabbing back, or
-    -- reopening the composer -- does NOT rebuild it. The preview was torn down on
-    -- the matching hide, so re-arm it here; otherwise it stays blank until a
-    -- manual container switch calls RefreshPreview.
     container:SetScript("OnShow", function()
         if _G.QUI_RefreshCDMPreview then
             _G.QUI_RefreshCDMPreview()
@@ -886,32 +839,11 @@ local function BuildPreviewSection(parent)
     return container
 end
 
--- Forward declarations (needed by drag-and-drop which is defined between these two)
 local RefreshPreview
 local RefreshEntryList
 local RefreshAddList
--- Forward-declared so RefreshPreview (defined below) can capture it as an
--- upvalue; the assignment lives further down with GetOrCreateEntryCell.
 local IsEntryRegisteredInBlizzCDM
 
----------------------------------------------------------------------------
--- PREVIEW LAYOUT / STYLE IMPLS
---
--- These local functions are the row/column layout math the live preview
--- driver (ns.CDMComposerPreview, defined in composer_preview_driver.lua)
--- delegates to. The driver owns the actual icon/bar frames now; composer
--- exposes positioning + per-row styling so the existing layout logic stays
--- in one place (here) and the driver doesn't have to re-derive it.
---
--- Globals exposed at file scope (see below):
---   _G.QUI_LayoutCDMPreviewIcons(icons, containerKey, scale)
---   _G.QUI_LayoutCDMPreviewBars(bars, containerDB, scale)
---   _G.QUI_StyleCDMPreviewIcons(icons, containerKey, scale)
---   _G.QUI_GetCDMContainerDB(containerKey)
----------------------------------------------------------------------------
-
--- BUILD_PREVIEW_ROWS — shared row-info builder used by both the layout and
--- the style impls so they see exactly the same row sizing.
 local function ReadPreviewConfigValue(primary, secondary, key, fallback)
     if type(primary) == "table" and primary[key] ~= nil then
         return primary[key]
@@ -925,8 +857,6 @@ end
 local function ApplyPreviewIconTextConfig(rowInfo, primary, secondary, defaults)
     defaults = defaults or {}
 
-    -- Resolve the per-row icon border via the central source enum so the
-    -- preview matches the live renderer (inherit/theme/class/custom).
     local borderSrcTable = (type(primary) == "table" and primary) or secondary
     local pbr, pbg, pbb, pba
     if Helpers and type(Helpers.GetSkinBorderColor) == "function" then
@@ -1028,8 +958,6 @@ local function BuildPreviewRows(db, containerType, isCustomBar, entries, scale)
     return rows
 end
 
--- SORT_PREVIEW_ENTRIES — assigns cooldown entries into per-row buckets so
--- the preview matches the on-screen row breakdown.
 local function SortPreviewEntries(entries, rows, isCooldown, isCustomBar, db)
     if isCooldown and #rows > 1 then
         local buckets = {}
@@ -1078,10 +1006,6 @@ local function SortPreviewEntries(entries, rows, isCooldown, isCustomBar, db)
     return entries
 end
 
--- LayoutPreviewIconsImpl — positions the driver's acquired icon frames
--- using the existing row/column math. icons[i] is a Frame (with .Icon /
--- .Border children); we set the FRAME's size + anchor and let the
--- factory-built textures follow.
 local function LayoutPreviewIconsImpl(icons, containerKey, scale)
     if type(icons) ~= "table" then return end
     if not containerKey then return end
@@ -1093,17 +1017,15 @@ local function LayoutPreviewIconsImpl(icons, containerKey, scale)
     if type(entries) ~= "table" then return end
 
     local containerType = ResolveContainerType(containerKey) or "cooldown"
-    -- Bar containers are handled by LayoutPreviewBarsImpl, not here.
     if containerType == "auraBar" or db.shape == "bar" then return end
 
-    scale = scale or previewScale or 1.5
+    scale = scale or PREVIEW_SCALE
     local ROW_GAP_PREVIEW = 5 * scale * 0.5
 
     local isCooldown = (containerType == "cooldown")
     local rows = BuildPreviewRows(db, containerType, isCustomBar, entries, scale)
     entries = SortPreviewEntries(entries, rows, isCooldown, isCustomBar, db)
 
-    -- Total height for vertical centering
     local totalHeight = 0
     local numRows = 0
     local entryCheck = 1
@@ -1172,9 +1094,6 @@ local function LayoutPreviewIconsImpl(icons, containerKey, scale)
     end
 end
 
--- StylePreviewIconsImpl — applies the production icon row style plus the
--- per-icon registration tint that the original RefreshPreview inlined.
--- Driver calls this after layout.
 local function StylePreviewIconsImpl(icons, containerKey, scale)
     if type(icons) ~= "table" then return end
     if not containerKey then return end
@@ -1188,7 +1107,7 @@ local function StylePreviewIconsImpl(icons, containerKey, scale)
     local containerType = ResolveContainerType(containerKey) or "cooldown"
     if containerType == "auraBar" or db.shape == "bar" then return end
 
-    scale = scale or previewScale or 1.5
+    scale = scale or PREVIEW_SCALE
     local isCooldown = (containerType == "cooldown")
     local rows = BuildPreviewRows(db, containerType, isCustomBar, entries, scale)
     entries = SortPreviewEntries(entries, rows, isCooldown, isCustomBar, db)
@@ -1211,7 +1130,6 @@ local function StylePreviewIconsImpl(icons, containerKey, scale)
                     if ns.CDMIcons and ns.CDMIcons.OnIconRowConfigApplied then
                         ns.CDMIcons.OnIconRowConfigApplied(icon, rowInfo)
                     end
-                    -- Border
                     if icon.Border then
                         icon.Border:ClearAllPoints()
                         icon.Border:SetPoint("TOPLEFT", icon, "TOPLEFT", -bSize, bSize)
@@ -1219,7 +1137,6 @@ local function StylePreviewIconsImpl(icons, containerKey, scale)
                         icon.Border:SetColorTexture(bc[1] or 0, bc[2] or 0, bc[3] or 0, bc[4] or 1)
                         icon.Border:Show()
                     end
-                    -- Icon vertex tint signals "not registered in /cdm".
                     if icon.Icon then
                         if IsEntryRegisteredInBlizzCDM and IsEntryRegisteredInBlizzCDM(entry) then
                             icon.Icon:SetVertexColor(1, 1, 1)
@@ -1233,15 +1150,12 @@ local function StylePreviewIconsImpl(icons, containerKey, scale)
     end
 end
 
--- LayoutPreviewBarsImpl — vertically stacks the driver's acquired bar
--- frames. Per-bar styling (color, fill, text) is handled by CDMBars
--- .ConfigureBar (driver-side) and the cycle script.
 local function LayoutPreviewBarsImpl(bars, containerDB, scale, containerKey)
     if type(bars) ~= "table" or type(containerDB) ~= "table" then return end
     local entries = GetPreviewEntries(containerKey or activeContainer, containerDB)
     if type(entries) ~= "table" then return end
 
-    scale = scale or previewScale or 1.5
+    scale = scale or PREVIEW_SCALE
 
     local barHeight = (containerDB.barHeight or 25) * scale * 0.5
     local barWidth  = (containerDB.barWidth or 215) * scale * 0.5
@@ -1280,9 +1194,6 @@ local function LayoutPreviewBarsImpl(bars, containerDB, scale, containerKey)
     end
 end
 
--- Expose the impls at file scope so the live preview driver
--- (composer_preview_driver.lua) can reach them. The driver loads after
--- composer.lua and calls these globals at refresh time.
 _G.QUI_LayoutCDMPreviewIcons = LayoutPreviewIconsImpl
 _G.QUI_LayoutCDMPreviewBars = LayoutPreviewBarsImpl
 _G.QUI_StyleCDMPreviewIcons = StylePreviewIconsImpl
@@ -1298,33 +1209,21 @@ RefreshPreview = function()
 
     RefreshActiveContainerDormancy()
 
-    -- GetContainerDB is intentionally read here so legacy spec-refresh
-    -- assertions still see the access (and so any DB-resolution side
-    -- effect — dormant rebuilds, etc. — fires before the driver paints).
     local db = GetContainerDB(activeContainer)
     if not db then return end
 
-    -- Driver owns the icon/bar frames; just trigger Refresh. The driver
-    -- reads its own container DB through _G.QUI_GetCDMContainerDB.
     if ns.CDMComposerPreview and ns.CDMComposerPreview.Refresh then
         ns.CDMComposerPreview.Refresh(activeContainer)
     end
 
-    if previewFrame._updateScaleVisual then
-        previewFrame._updateScaleVisual()
-    end
+    RequestPreviewAutoHeight(previewFrame)
 end
 
----------------------------------------------------------------------------
--- PER-ENTRY OVERRIDE PANEL
----------------------------------------------------------------------------
 local overridePanel = nil
-local HideOverridePanel  -- forward declaration
+local HideOverridePanel
 
 local function BuildOverridePanel(parent)
-    -- Parent to UIParent so the panel renders above everything, including
-    -- the composer frame itself. Uses FULLSCREEN_DIALOG strata to guarantee
-    -- it sits on top of the TOOLTIP-strata composer.
+    if overridePanel then return overridePanel end
     local panel = CreateFrame("Frame", "QUI_CDMOverridePanel", UIParent, "BackdropTemplate")
     panel:SetHeight(180)
     panel:SetFrameStrata("TOOLTIP")
@@ -1337,7 +1236,6 @@ local function BuildOverridePanel(parent)
     panel:SetScript("OnDragStart", function(self) self:StartMoving() end)
     panel:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
-    -- Close button (X) in upper-right — raised above the panel's drag layer
     local closeBtn = SkinBase.CreateCloseButton(panel, {
         size = 20,
         point = "TOPRIGHT", x = -2, y = -2,
@@ -1347,12 +1245,10 @@ local function BuildOverridePanel(parent)
     closeBtn:RegisterForClicks("AnyUp")
     panel._closeBtn = closeBtn
 
-    -- ESC to close
     if not tContains(UISpecialFrames, "QUI_CDMOverridePanel") then
         tinsert(UISpecialFrames, "QUI_CDMOverridePanel")
     end
 
-    -- Also clear expandedOverride state when hidden by any means
     panel:SetScript("OnHide", function()
         expandedOverride = nil
     end)
@@ -1363,25 +1259,141 @@ local function BuildOverridePanel(parent)
     return panel
 end
 
+local ovUI
+
+local function EnsureOverrideState()
+    if ovUI then return ovUI end
+    local ui = {
+        widgets = {},
+        state = {},
+        glowColorDB = {},
+        barColorDB = {},
+        barColorToggleDB = {},
+        sizeDB = {},
+        auraOnlyDB = {},
+    }
+    local defaultTrueOverrides = {
+        glowEnabled = true,
+    }
+    ui.proxyDB = setmetatable({}, {
+        __index = function(_, key)
+            local spellData = GetCDMSpellData()
+            local ov = spellData and spellData:GetSpellOverride(ui.state.containerKey, ui.state.spellID)
+            if ov and ov[key] ~= nil then
+                return ov[key]
+            end
+            if defaultTrueOverrides[key] then
+                return true
+            end
+            return nil
+        end,
+        __newindex = function(_, key, value)
+            local spellData = GetCDMSpellData()
+            if not spellData then return end
+            local isDefaultValue
+            if defaultTrueOverrides[key] then
+                isDefaultValue = value == true
+            else
+                isDefaultValue = value == nil or value == false
+            end
+
+            if isDefaultValue then
+                spellData:ClearSpellOverride(ui.state.containerKey, ui.state.spellID, key)
+            else
+                spellData:SetSpellOverride(ui.state.containerKey, ui.state.spellID, key, value)
+            end
+        end,
+    })
+    ui.onChange = function()
+        RefreshCDM()
+        C_Timer.After(0.05, RefreshPreview)
+    end
+    ovUI = ui
+    return ui
+end
+
+local function GetOverrideWidget(GUI, key)
+    local ui = ovUI
+    local widget = ui.widgets[key]
+    if widget then return widget end
+
+    if key == "hidden" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Hidden"], "hidden", ui.proxyDB, ui.onChange,
+            { description = ns.L["Hide this spell entirely from the CDM viewer. Useful for spells tracked automatically by the spec ruleset that you don't personally care about."] })
+    elseif key == "glow" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Glow Enabled"], "glowEnabled", ui.proxyDB, ui.onChange,
+            { description = ns.L["Allow this spell to show the spell activation overlay glow. Turn off if the glow for this specific spell becomes distracting."] })
+    elseif key == "proc" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Proc on Usable"], "procOnUsable", ui.proxyDB, ui.onChange,
+            { description = ns.L["Glow this spell whenever it becomes castable, not only on real spell activation overlays."] })
+    elseif key == "glowColor" then
+        widget = GUI:CreateFormColorPicker(overridePanel, ns.L["Glow Color"], "glowColor", ui.glowColorDB, function()
+            local spellData = GetCDMSpellData()
+            if spellData then
+                spellData:SetSpellOverride(ui.state.containerKey, ui.state.spellID, "glowColor", ui.glowColorDB.glowColor)
+            end
+            ui.onChange()
+        end, nil,
+            { description = ns.L["Per-spell override for the spell activation overlay glow color. Falls back to the container's glow color when unchanged."] })
+    elseif key == "barColorToggle" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Bar Color Override"], "barColorOverride", ui.barColorToggleDB, function()
+            local containerDB = ui.state.containerDB
+            if containerDB then
+                if ui.barColorToggleDB.barColorOverride then
+                    containerDB.colorOverrides[ui.state.spellID] = ui.barColorDB.barColor
+                else
+                    containerDB.colorOverrides[ui.state.spellID] = nil
+                end
+            end
+            ui.onChange()
+        end, { description = ns.L["Use a per-spell bar color for this aura-bar spell instead of the container's default bar color."] })
+    elseif key == "barColor" then
+        widget = GUI:CreateFormColorPicker(overridePanel, ns.L["Bar Color"], "barColor", ui.barColorDB, function()
+            local containerDB = ui.state.containerDB
+            if containerDB and ui.barColorToggleDB.barColorOverride then
+                containerDB.colorOverrides[ui.state.spellID] = ui.barColorDB.barColor
+                ui.onChange()
+            end
+        end, nil,
+            { description = ns.L["Per-spell bar color applied when Bar Color Override is on."] })
+    elseif key == "duration" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Hide Duration Text"], "hideDurationText", ui.proxyDB, ui.onChange,
+            { description = ns.L["Hide the numeric countdown on this spell's icon/bar only, while leaving other spells in the container unchanged."] })
+    elseif key == "desat" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Desaturate Ignore Aura"], "desaturateIgnoreAura", ui.proxyDB, ui.onChange,
+            { description = ns.L["Skip the desaturation-while-buff-active behavior for this spell. Turn on if a linked buff causes the icon to appear dimmed when you want it bright."] })
+    elseif key == "size" then
+        widget = GUI:CreateFormSlider(overridePanel, ns.L["Size Override"], 0, 80, 1, "sizeOverride", ui.sizeDB, function()
+            local spellData = GetCDMSpellData()
+            if not spellData then return end
+            local val = ui.sizeDB.sizeOverride or 0
+            if val <= 0 then
+                spellData:ClearSpellOverride(ui.state.containerKey, ui.state.spellID, "sizeOverride")
+            else
+                spellData:SetSpellOverride(ui.state.containerKey, ui.state.spellID, "sizeOverride", val)
+            end
+            ui.onChange()
+        end, { deferOnDrag = true }, { description = ns.L["Per-spell icon size in pixels (0 uses the container default; 1-80 overrides it for this spell only)."] })
+    elseif key == "auraOnly" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Aura-only display"], "auraOnly", ui.auraOnlyDB, function()
+            local entry = ui.state.entry
+            if entry then
+                if ui.auraOnlyDB.auraOnly then
+                    entry.displayMode = "auraOnly"
+                else
+                    entry.displayMode = nil
+                end
+            end
+            ui.onChange()
+        end, { description = ns.L["Show only while the buff is active. Hides the cooldown phase entirely."] })
+    end
+
+    ui.widgets[key] = widget
+    return widget
+end
+
 local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
     if not overridePanel or not entry then return end
-
-    -- Clear old contents — preserve close button
-    local closeBtn = overridePanel._closeBtn
-    local children = { overridePanel:GetChildren() }
-    for _, child in ipairs(children) do
-        if child ~= closeBtn then
-            child:Hide()
-            child:SetParent(nil)
-        end
-    end
-    -- Hide dynamically created font strings only (not backdrop textures)
-    local regions = { overridePanel:GetRegions() }
-    for _, region in ipairs(regions) do
-        if region:IsObjectType("FontString") then
-            region:Hide()
-        end
-    end
 
     local GUI = QUI and QUI.GUI
     if not GUI then return end
@@ -1395,177 +1407,101 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
         return
     end
 
+    local ui = EnsureOverrideState()
+    ui.state.containerKey = containerKey
+    ui.state.spellID = spellID
+    ui.state.entry = entry
+    ui.state.containerDB = GetContainerDB(containerKey)
+
     local overrides = spellData:GetSpellOverride(containerKey, spellID) or {}
-    local defaultTrueOverrides = {
-        glowEnabled = true,
-    }
+    ui.glowColorDB.glowColor = overrides.glowColor or { ACCENT_R, ACCENT_G, ACCENT_B, 1 }
+    ui.sizeDB.sizeOverride = overrides.sizeOverride or 0
+    ui.auraOnlyDB.auraOnly = entry.displayMode == "auraOnly"
 
-    -- Build a temp table that reads/writes through the override API
-    local proxyDB = {}
-    setmetatable(proxyDB, {
-        __index = function(_, key)
-            local ov = spellData:GetSpellOverride(containerKey, spellID)
-            if ov and ov[key] ~= nil then
-                return ov[key]
-            end
-            if defaultTrueOverrides[key] then
-                return true
-            end
-            return nil
-        end,
-        __newindex = function(_, key, value)
-            local isDefaultValue
-            if defaultTrueOverrides[key] then
-                isDefaultValue = value == true
-            else
-                isDefaultValue = value == nil or value == false
-            end
-
-            if isDefaultValue then
-                spellData:ClearSpellOverride(containerKey, spellID, key)
-            else
-                spellData:SetSpellOverride(containerKey, spellID, key, value)
-            end
-        end,
-    })
-
-    local function OnOverrideChange()
-        RefreshCDM()
-        C_Timer.After(0.05, RefreshPreview)
+    for _, widget in pairs(ui.widgets) do
+        widget:Hide()
     end
+    if ui.hint then ui.hint:Hide() end
 
-    -- Spell name title
-    local titleLabel = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(titleLabel, { fontOnly = true }) end
-    titleLabel:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, -6)
-    titleLabel:SetPoint("RIGHT", overridePanel, "RIGHT", -24, 0)
-    titleLabel:SetJustifyH("LEFT")
+    local titleLabel = ui.title
+    if not titleLabel then
+        titleLabel = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(titleLabel, { fontOnly = true }) end
+        titleLabel:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, -6)
+        titleLabel:SetPoint("RIGHT", overridePanel, "RIGHT", -24, 0)
+        titleLabel:SetJustifyH("LEFT")
+        ui.title = titleLabel
+    end
     titleLabel:SetText(GetEntryName(entry))
     titleLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+    titleLabel:Show()
 
     local sy = -24
     local function PlaceWidget(widget)
+        widget:ClearAllPoints()
         widget:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, sy)
         widget:SetPoint("RIGHT", overridePanel, "RIGHT", -8, 0)
+        if widget.Refresh then
+            widget.Refresh()
+        elseif widget.GetValue and widget.UpdateVisual then
+            widget.UpdateVisual(widget.GetValue())
+        elseif widget.UpdateVisual then
+            widget.UpdateVisual()
+        end
+        widget:Show()
         sy = sy - FORM_ROW
     end
 
-    -- Hidden toggle
-    local hiddenCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Hidden"], "hidden", proxyDB, OnOverrideChange,
-        { description = ns.L["Hide this spell entirely from the CDM viewer. Useful for spells tracked automatically by the spec ruleset that you don't personally care about."] })
-    PlaceWidget(hiddenCheck)
+    PlaceWidget(GetOverrideWidget(GUI, "hidden"))
+    PlaceWidget(GetOverrideWidget(GUI, "glow"))
+    PlaceWidget(GetOverrideWidget(GUI, "proc"))
+    PlaceWidget(GetOverrideWidget(GUI, "glowColor"))
 
-    -- Glow toggle
-    local glowCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Glow Enabled"], "glowEnabled", proxyDB, OnOverrideChange,
-        { description = ns.L["Allow this spell to show the spell activation overlay glow. Turn off if the glow for this specific spell becomes distracting."] })
-    PlaceWidget(glowCheck)
-
-    -- Proc on Usable toggle (glow when spell is castable: off CD + has resources)
-    local procCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Proc on Usable"], "procOnUsable", proxyDB, OnOverrideChange,
-        { description = ns.L["Glow this spell whenever it becomes castable, not only on real spell activation overlays."] })
-    PlaceWidget(procCheck)
-
-    -- Glow color
-    -- For color pickers, we need a real table reference. Use a temp table synced back.
-    local glowColorDB = { glowColor = overrides.glowColor or { ACCENT_R, ACCENT_G, ACCENT_B, 1 } }
-    local glowColorPicker = GUI:CreateFormColorPicker(overridePanel, ns.L["Glow Color"], "glowColor", glowColorDB, function()
-        spellData:SetSpellOverride(containerKey, spellID, "glowColor", glowColorDB.glowColor)
-        OnOverrideChange()
-    end, nil,
-        { description = ns.L["Per-spell override for the spell activation overlay glow color. Falls back to the container's glow color when unchanged."] })
-    PlaceWidget(glowColorPicker)
-
-    -- Bar color override (only for bar-type containers)
     local cType = ResolveContainerType(containerKey)
     if cType == "auraBar" then
-        local containerDB = GetContainerDB(containerKey)
+        local containerDB = ui.state.containerDB
         if containerDB then
             if type(containerDB.colorOverrides) ~= "table" then
                 containerDB.colorOverrides = {}
             end
             local existingColor = containerDB.colorOverrides[spellID]
-            local barColorDB = { barColor = existingColor or (containerDB.barColor and {unpack(containerDB.barColor)}) or { ACCENT_R, ACCENT_G, ACCENT_B, 1 } }
-
-            local barColorEnabled = existingColor ~= nil
-            local barColorToggleDB = { barColorOverride = barColorEnabled }
-            local barColorCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Bar Color Override"], "barColorOverride", barColorToggleDB, function()
-                barColorEnabled = barColorToggleDB.barColorOverride
-                if barColorEnabled then
-                    containerDB.colorOverrides[spellID] = barColorDB.barColor
-                else
-                    containerDB.colorOverrides[spellID] = nil
-                end
-                OnOverrideChange()
-            end, { description = ns.L["Use a per-spell bar color for this aura-bar spell instead of the container's default bar color."] })
-            PlaceWidget(barColorCheck)
-
-            local barColorPicker = GUI:CreateFormColorPicker(overridePanel, ns.L["Bar Color"], "barColor", barColorDB, function()
-                if barColorEnabled then
-                    containerDB.colorOverrides[spellID] = barColorDB.barColor
-                    OnOverrideChange()
-                end
-            end, nil,
-                { description = ns.L["Per-spell bar color applied when Bar Color Override is on."] })
-            PlaceWidget(barColorPicker)
+            ui.barColorDB.barColor = existingColor or (containerDB.barColor and {unpack(containerDB.barColor)}) or { ACCENT_R, ACCENT_G, ACCENT_B, 1 }
+            ui.barColorToggleDB.barColorOverride = existingColor ~= nil
+            PlaceWidget(GetOverrideWidget(GUI, "barColorToggle"))
+            PlaceWidget(GetOverrideWidget(GUI, "barColor"))
         end
     end
 
-    -- Duration text toggle
-    local durCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Hide Duration Text"], "hideDurationText", proxyDB, OnOverrideChange,
-        { description = ns.L["Hide the numeric countdown on this spell's icon/bar only, while leaving other spells in the container unchanged."] })
-    PlaceWidget(durCheck)
+    PlaceWidget(GetOverrideWidget(GUI, "duration"))
 
-    -- Desaturate Ignore Aura — only for cooldown containers (essential/utility)
     if cType == "cooldown" then
-        local desatIgnoreAura = GUI:CreateFormCheckbox(overridePanel, ns.L["Desaturate Ignore Aura"], "desaturateIgnoreAura", proxyDB, OnOverrideChange,
-            { description = ns.L["Skip the desaturation-while-buff-active behavior for this spell. Turn on if a linked buff causes the icon to appear dimmed when you want it bright."] })
-        PlaceWidget(desatIgnoreAura)
+        PlaceWidget(GetOverrideWidget(GUI, "desat"))
     end
 
-    -- Size override (0 = use container default, 1-80 = px). Proxy DB
-    -- routes the slider value through Set/ClearSpellOverride so 0 clears
-    -- the override entirely (instead of persisting a literal 0).
-    local sizeOverrideDB = { sizeOverride = overrides.sizeOverride or 0 }
-    local sizeSlider = GUI:CreateFormSlider(overridePanel, ns.L["Size Override"], 0, 80, 1, "sizeOverride", sizeOverrideDB, function()
-        local val = sizeOverrideDB.sizeOverride or 0
-        if val <= 0 then
-            spellData:ClearSpellOverride(containerKey, spellID, "sizeOverride")
-        else
-            spellData:SetSpellOverride(containerKey, spellID, "sizeOverride", val)
-        end
-        OnOverrideChange()
-    end, { deferOnDrag = true }, { description = ns.L["Per-spell icon size in pixels (0 uses the container default; 1-80 overrides it for this spell only)."] })
-    PlaceWidget(sizeSlider)
+    PlaceWidget(GetOverrideWidget(GUI, "size"))
 
-    -- Per-entry "Aura-only display" override (custom containers, item types only).
-    local containerDB = GetContainerDB(containerKey)
+    local containerDB = ui.state.containerDB
     if ns.CDMShared
         and ns.CDMShared.ShouldShowItemDisplayModeRow
         and ns.CDMShared.ShouldShowItemDisplayModeRow(entry, containerKey, containerDB) then
 
-        -- Proxy table bridges the boolean form-checkbox to the entry's
-        -- string-valued displayMode field. Same pattern as barColorOverride
-        -- above.
-        local auraOnlyToggleDB = { auraOnly = entry.displayMode == "auraOnly" }
-        local auraOnlyCheck = GUI:CreateFormCheckbox(overridePanel, ns.L["Aura-only display"], "auraOnly", auraOnlyToggleDB, function()
-            if auraOnlyToggleDB.auraOnly then
-                entry.displayMode = "auraOnly"
-            else
-                entry.displayMode = nil
-            end
-            OnOverrideChange()
-        end, { description = ns.L["Show only while the buff is active. Hides the cooldown phase entirely."] })
-        PlaceWidget(auraOnlyCheck)
+        PlaceWidget(GetOverrideWidget(GUI, "auraOnly"))
 
         local itemID = entry.id
         if spellData.HasResolvableAuraForItem
             and not spellData:HasResolvableAuraForItem(itemID) then
-            local hint = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            local hint = ui.hint
+            if not hint then
+                hint = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+                hint:SetJustifyH("LEFT")
+                hint:SetText(ns.L["Aura will be detected the first time you use this item."])
+                hint:SetTextColor(0.55, 0.55, 0.55, 1)
+                ui.hint = hint
+            end
+            hint:ClearAllPoints()
             hint:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, sy + 4)
             hint:SetPoint("RIGHT", overridePanel, "RIGHT", -8, 0)
-            hint:SetJustifyH("LEFT")
-            hint:SetText(ns.L["Aura will be detected the first time you use this item."])
-            hint:SetTextColor(0.55, 0.55, 0.55, 1)
+            hint:Show()
             sy = sy - 14
         end
     end
@@ -1573,7 +1509,6 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
     local totalHeight = math_abs(sy) + 32
     overridePanel:SetHeight(totalHeight)
 
-    -- Position at cursor location
     overridePanel:ClearAllPoints()
     overridePanel:SetWidth(270)
     overridePanel:SetClampedToScreen(true)
@@ -1596,10 +1531,6 @@ HideOverridePanel = function(clearState)
     end
 end
 
----------------------------------------------------------------------------
--- CONTAINER KEY HELPERS (needed by entry list callbacks below)
----------------------------------------------------------------------------
--- Phase G: Build the ordered list of all container keys for tabs
 local function GetAllTabKeys()
     if ns.CDMContainers and ns.CDMContainers.GetContainers then
         local all = ns.CDMContainers.GetContainers()
@@ -1612,7 +1543,6 @@ local function GetAllTabKeys()
     return CONTAINER_ORDER
 end
 
--- Phase G: Get display name for a container key
 local function GetContainerLabel(containerKey)
     if CONTAINER_LABELS[containerKey] then return CONTAINER_LABELS[containerKey] end
 
@@ -1628,7 +1558,6 @@ local function GetContainerLabel(containerKey)
     return containerKey
 end
 
--- Phase G: Is this a built-in container?
 local function IsBuiltInContainer(containerKey)
     if Shared and Shared.IsBuiltinContainerKey then
         return Shared.IsBuiltinContainerKey(containerKey)
@@ -1636,20 +1565,18 @@ local function IsBuiltInContainer(containerKey)
     return CONTAINER_LABELS[containerKey] ~= nil
 end
 
----------------------------------------------------------------------------
--- ENTRY LIST (Bottom Section)
----------------------------------------------------------------------------
 local entryListScroll = nil
 local entryListContent = nil
 
--- Drag state (must be before BuildEntryListSection and GetOrCreateEntryCell)
 local dragState = {
     active = false,
     fromIndex = nil,
     fromCell = nil,
-    fromRowNum = nil,  -- row number the dragged entry belongs to
-    fromSpecKey = nil, -- source bucket for spec-specific custom bars
+    fromRowNum = nil,
+    fromSpecKey = nil,
 }
+
+local StopDrag
 
 local function BuildEntryListSection(parent)
     local container = CreateBackdropFrame(parent)
@@ -1663,19 +1590,16 @@ local function BuildEntryListSection(parent)
     title:SetText(ns.L["Spell List"])
     title:SetTextColor(0.6, 0.6, 0.6, 1)
 
-    -- Search box
     searchBox = CreateSearchBox(container, 200, ns.L["Filter spells..."])
     searchBox:SetPoint("TOPRIGHT", container, "TOPRIGHT", -8, -4)
 
-    -- Scroll area
-    local scrollF, content = CreateScrollArea(container, 10, 10) -- sized later
+    local scrollF, content = CreateScrollArea(container, 10, 10)
     scrollF:SetPoint("TOPLEFT", 4, -28)
     scrollF:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -4, 4)
 
     entryListScroll = scrollF
     entryListContent = content
 
-    -- Catch mouse-up on scroll frame to stop drag even if cursor leaves a row
     scrollF:EnableMouse(true)
     scrollF:SetScript("OnMouseUp", function(_, button)
         if button == "LeftButton" and dragState.active then
@@ -1688,13 +1612,6 @@ local function BuildEntryListSection(parent)
     return container
 end
 
--- Tracked-spell sets: which spellIDs the user has currently enabled in
--- Blizzard's /cdm customization UI, grouped by container family. Built
--- lazily from CDMCatalog.GetTrackedCategorySet (the Blizzard settings
--- data provider, not the raw API category set) and invalidated whenever
--- ScheduleComposerCDMRefresh runs — that fires on
--- CooldownViewerSettings.OnDataChanged, which is the event Blizzard
--- emits when the user toggles a spell in the /cdm config panel.
 local _trackedSpellSets = {}
 local function InvalidateTrackedSpellSets()
     _trackedSpellSets = {}
@@ -1704,8 +1621,6 @@ local function GetTrackedSpellSet(family)
     if family ~= "cooldown" and family ~= "aura" and family ~= "auraBar" then
         return nil
     end
-    -- aura and auraBar share the same categories (2 + 3), so cache under
-    -- a single "aura" key to avoid rebuilding twice.
     local cacheKey = (family == "auraBar") and "aura" or family
     local cached = _trackedSpellSets[cacheKey]
     if cached then return cached end
@@ -1749,13 +1664,6 @@ local function GetTrackedSpellSet(family)
     return set
 end
 
--- True if the entry is currently in the user's Blizzard /cdm for the
--- container family the composer is editing. Family-grouped: cooldown
--- family covers essential+utility, aura family covers buff-icon+buff-bar.
--- Non-spell entries, unknown families, and user-managed spell entries return
--- true so they are not flagged. The warning is meaningful only for entries
--- that originated from Blizzard CDM and later disappeared from the user's
--- tracked viewer set.
 IsEntryRegisteredInBlizzCDM = function(entry)
     if not entry then return true end
     local etype = entry.type or ResolveEntryType(entry)
@@ -1769,40 +1677,27 @@ IsEntryRegisteredInBlizzCDM = function(entry)
     if family ~= "cooldown" and family ~= "aura" and family ~= "auraBar" then
         return true
     end
-    -- Skip flagging for spells that aren't in the category's API set at
-    -- all (QUI's non-CDM picker tabs — All Cooldowns, Spell ID, etc.).
     if type(spellData.IsSpellInCDMCategory) == "function"
        and not spellData:IsSpellInCDMCategory(id, family) then
         return true
     end
-    -- For spells that ARE in the category, the user is expected to have
-    -- them enabled in /cdm — flag the entry red if they don't.
     local trackedSet = GetTrackedSpellSet(family)
     if not trackedSet then return true end
     return trackedSet[id] == true
 end
 
-local function GetOrCreateEntryCell(index)
-    if entryCells[index] then return entryCells[index] end
-
-    local cell = CreateFrame("Button", nil, entryListContent, "BackdropTemplate")
+local function CreateGridCellBase(parent)
+    local cell = CreateFrame("Button", nil, parent, "BackdropTemplate")
     cell:SetSize(GRID_CELL_SIZE, GRID_CELL_SIZE)
-    cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    cell:RegisterForDrag("LeftButton")
 
-    -- Border (dim by default)
-    local _ecBdR, _ecBdG, _ecBdB = GetChromeBorder()
-    SetSimpleBackdrop(cell, 0, 0, 0, 0, _ecBdR, _ecBdG, _ecBdB, 0.5)
+    local _gcBdR, _gcBdG, _gcBdB = GetChromeBorder()
+    SetSimpleBackdrop(cell, 0, 0, 0, 0, _gcBdR, _gcBdG, _gcBdB, 0.5)
 
-    -- Icon
     cell._icon = cell:CreateTexture(nil, "ARTWORK")
     cell._icon:SetSize(GRID_ICON_SIZE, GRID_ICON_SIZE)
     cell._icon:SetPoint("CENTER")
     cell._icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-    -- "Not added to /cdm" warning badge: a small red circle with "!"
-    -- in the top-right corner. Anchored above the icon so it stays
-    -- visible regardless of icon tinting.
     cell._warnBadge = cell:CreateTexture(nil, "OVERLAY")
     cell._warnBadge:SetSize(12, 12)
     cell._warnBadge:SetPoint("TOPRIGHT", cell, "TOPRIGHT", -1, -1)
@@ -1815,14 +1710,20 @@ local function GetOrCreateEntryCell(index)
     cell._warnBadgeText:SetTextColor(1, 1, 1, 1)
     cell._warnBadgeText:Hide()
 
-    -- Highlight overlay
     cell._highlight = cell:CreateTexture(nil, "HIGHLIGHT")
     cell._highlight:SetAllPoints()
     cell._highlight:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.15)
 
-    -- Tooltip + border highlight on hover (suppressed during drag).
-    -- Missing-from-/cdm cells stay red on hover instead of accent so
-    -- the warning state remains obvious while inspecting the tooltip.
+    return cell
+end
+
+local function GetOrCreateEntryCell(index)
+    if entryCells[index] then return entryCells[index] end
+
+    local cell = CreateGridCellBase(entryListContent)
+    cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    cell:RegisterForDrag("LeftButton")
+
     cell:SetScript("OnEnter", function(self)
         if not self._entry then return end
         if dragState.active then return end
@@ -1851,10 +1752,6 @@ local function GetOrCreateEntryCell(index)
         elseif not IsEntryRegisteredInBlizzCDM(self._entry) then
             GameTooltip:AddLine(ns.L["Not added to /cdm"], 0.95, 0.6, 0.2)
         end
-        -- Source-spec attribution: read from explicit _sourceSpecID
-        -- (set by the v32 migration on each migrated entry) or fall
-        -- back to the per-spec storage key the aggregated reader
-        -- attached at render time.
         local entry = self._entry
         local srcSpec = type(entry) == "table"
             and (entry._sourceSpecID or tonumber(entry._renderSpecKey))
@@ -1890,15 +1787,12 @@ end
 local function GetOrCreateSectionHeader(index)
     if sectionHeaders[index] then return sectionHeaders[index] end
 
-    -- Explicit bg texture instead of SetBackdrop — avoid Blizzard's
-    -- SetupTextureCoordinates recursion on scroll-child descendants.
     local f = CreateFrame("Frame", nil, entryListContent)
     f:SetHeight(SECTION_HEADER_HEIGHT)
     local fBg = f:CreateTexture(nil, "BACKGROUND")
     fBg:SetAllPoints(f)
     fBg:SetColorTexture(0, 0, 0, 0)
     f._bg = fBg
-    -- Compatibility shim — callers still use SetBackdropColor for highlights.
     f.SetBackdropColor = function(self, r, g, b, a)
         if self._bg then self._bg:SetColorTexture(r, g, b, a or 1) end
     end
@@ -1912,9 +1806,6 @@ local function GetOrCreateSectionHeader(index)
     return f
 end
 
----------------------------------------------------------------------------
--- DRAG AND DROP REORDERING (adapted for icon grid)
----------------------------------------------------------------------------
 local dropIndicator = nil
 
 local function GetOrCreateDropIndicator()
@@ -1929,9 +1820,6 @@ local function GetOrCreateDropIndicator()
     return line
 end
 
--- Find which entry index and row the cursor is nearest in the grid.
--- Returns targetIdx (insert-before position in ownedSpells), targetRow (row number or nil),
---         bestCell, bestSide ("left"/"right"), isHeaderDrop (boolean).
 local function GetDropTarget()
     if not entryListContent then return nil, nil end
     local scale = entryListContent:GetEffectiveScale()
@@ -1939,11 +1827,8 @@ local function GetDropTarget()
     cursorX = cursorX / scale
     cursorY = cursorY / scale
 
-    -- Check section headers first — if cursor is over a row header (especially empty rows),
-    -- treat it as a drop target for that row.
     for _, hdr in ipairs(sectionHeaders) do
         if hdr:IsShown() and hdr._rowNum and hdr:IsMouseOver() then
-            -- Drop into this row — use a sentinel index; StopDrag handles row-only drops
             return nil, hdr._rowNum, hdr, nil, true
         end
     end
@@ -1952,7 +1837,7 @@ local function GetDropTarget()
     local bestRow = nil
     local bestDist = math.huge
     local bestCell = nil
-    local bestSide = nil  -- "left" or "right"
+    local bestSide = nil
     for i, cell in ipairs(entryCells) do
         if cell:IsShown() and cell._entryIndex then
             local cl = cell:GetLeft()
@@ -1988,7 +1873,6 @@ local function UpdateDropIndicator()
 
     local targetIdx, targetRow, bestCell, bestSide, isHeaderDrop = GetDropTarget()
 
-    -- Always clear previously highlighted header first
     if dragState._highlightedHeader and dragState._highlightedHeader ~= bestCell then
         local hdr = dragState._highlightedHeader
         if hdr:GetHeight() <= 18 then
@@ -2001,19 +1885,16 @@ local function UpdateDropIndicator()
     end
 
     if isHeaderDrop and bestCell then
-        -- Hovering over a row header (empty row) — show a horizontal bar
         indicator:ClearAllPoints()
         indicator:SetHeight(2)
         indicator:SetPoint("TOPLEFT", bestCell, "BOTTOMLEFT", 0, -1)
         indicator:SetPoint("TOPRIGHT", bestCell, "BOTTOMRIGHT", 0, -1)
         indicator:Show()
-        -- Highlight the header
         bestCell:SetBackdropColor(ACCENT_R * 0.2, ACCENT_G * 0.2, ACCENT_B * 0.2, 0.9)
         dragState._highlightedHeader = bestCell
         return
     end
 
-    -- Not over a header — clear if still set
     if dragState._highlightedHeader then
         local hdr = dragState._highlightedHeader
         if hdr:GetHeight() <= 18 then
@@ -2035,8 +1916,6 @@ local function UpdateDropIndicator()
         return
     end
 
-    -- Anchor centered on the cell edge so the indicator is never clipped
-    -- outside the scroll content area (especially at the first cell in a row)
     indicator:ClearAllPoints()
     indicator:SetWidth(2)
     indicator:SetHeight(GRID_CELL_SIZE)
@@ -2048,8 +1927,6 @@ local function UpdateDropIndicator()
     indicator:Show()
 end
 
-local StopDrag  -- forward declaration
-
 local function StartDrag(cell, entryIndex, rowNum)
     if InCombatLockdown() then return end
     dragState.active = true
@@ -2057,10 +1934,7 @@ local function StartDrag(cell, entryIndex, rowNum)
     dragState.fromCell = cell
     dragState.fromRowNum = rowNum or nil
     dragState.fromSpecKey = cell and cell._entrySpecKey or nil
-    -- Highlight the dragged cell
     cell:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-    -- Hide highlight textures on all other cells so hover glow doesn't
-    -- compete with the drop indicator during drag
     for _, c in ipairs(entryCells) do
         if c ~= cell and c._highlight then
             c._highlight:Hide()
@@ -2085,20 +1959,17 @@ StopDrag = function()
     local cell = dragState.fromCell
     local fromRowNum = dragState.fromRowNum
 
-    -- Restore cell border
     if cell then
         local _r, _g, _b = GetChromeBorder()
         cell:SetBackdropBorderColor(_r, _g, _b, 0.5)
     end
 
-    -- Restore highlight textures on all cells
     for _, c in ipairs(entryCells) do
         if c._highlight then
             c._highlight:Show()
         end
     end
 
-    -- Dismiss any lingering tooltip
     GameTooltip:Hide()
 
     if dropIndicator then dropIndicator:Hide() end
@@ -2111,7 +1982,6 @@ StopDrag = function()
     local fromSpecKey = dragState.fromSpecKey
     local targetSpecKey = targetCell and targetCell._entrySpecKey or nil
 
-    -- Clean up all header highlights (reset every header to its default color)
     local _stopHdrR, _stopHdrG, _stopHdrB = GetChromeBgPanel()
     for _, hdr in ipairs(sectionHeaders) do
         if hdr:IsShown() then
@@ -2131,15 +2001,13 @@ StopDrag = function()
     dragState.fromSpecKey = nil
 
     if not fromIdx then return end
-    -- Need either a cell target or a row header target
     if not targetIdx and not targetRow then return end
 
     local spellData = GetCDMSpellData()
     if not spellData or not activeContainer then return end
 
     if fromSpecKey ~= targetSpecKey then
-        UIErrorsFrame:AddMessage(ns.L["Can only reorder within the same source spec"], 1.0, 0.3, 0.3, 1.0, 3)
-        UIErrorsFrame:SetFrameStrata("TOOLTIP")
+        if UIErrorsFrame then UIErrorsFrame:AddMessage(ns.L["Can only reorder within the same source spec"], 1.0, 0.3, 0.3, 1.0, 3); UIErrorsFrame:SetFrameStrata("TOOLTIP") end
         return
     end
 
@@ -2147,38 +2015,20 @@ StopDrag = function()
     local crossRow = isCooldown and targetRow and fromRowNum and targetRow ~= fromRowNum
 
     if crossRow then
-        -- Cross-row drag: change entry's row and reorder within the target row
         local db = GetContainerDB(activeContainer)
         if not db then return end
 
-        -- Capacity check: is the target row full?
         local rd = db["row" .. targetRow]
         if rd and rd.iconCount then
-            local firstActiveRow = nil
-            for r = 1, 3 do
-                local rrd = db["row" .. r]
-                if rrd and rrd.iconCount and rrd.iconCount > 0 then
-                    if not firstActiveRow then firstActiveRow = r end
-                end
-            end
-            local count = 0
-            local spells = db.ownedSpells or {}
-            for _, e in ipairs(spells) do
-                if e and EntryCountsForCooldownRowCapacity(e)
-                    and (e.row or firstActiveRow) == targetRow then
-                    count = count + 1
-                end
-            end
+            local _, rowCounts = CountCooldownRowUsage(db)
+            local count = rowCounts[targetRow] or 0
             if count >= rd.iconCount then
-                UIErrorsFrame:AddMessage(string.format(ns.L["Row %1$d is full (%2$d/%3$d)"], targetRow, rd.iconCount, rd.iconCount), 1.0, 0.3, 0.3, 1.0, 3)
-                UIErrorsFrame:SetFrameStrata("TOOLTIP")
+                if UIErrorsFrame then UIErrorsFrame:AddMessage(string.format(ns.L["Row %1$d is full (%2$d/%3$d)"], targetRow, rd.iconCount, rd.iconCount), 1.0, 0.3, 0.3, 1.0, 3); UIErrorsFrame:SetFrameStrata("TOOLTIP") end
                 return
             end
         end
 
-        -- Set the row first
         spellData:SetEntryRow(activeContainer, fromIdx, targetRow)
-        -- If we have a specific position (cell drop, not header drop), reorder
         if targetIdx then
             local adjustedTarget = targetIdx
             if targetIdx > fromIdx then
@@ -2194,7 +2044,6 @@ StopDrag = function()
             RefreshPreview()
         end)
     else
-        -- Same-row or non-row reorder
         if not targetIdx or targetIdx == fromIdx or targetIdx == fromIdx + 1 then
             return
         end
@@ -2213,9 +2062,6 @@ StopDrag = function()
     end
 end
 
----------------------------------------------------------------------------
--- ENTRY CONTEXT MENU (right-click on grid cell)
----------------------------------------------------------------------------
 local function ClearSpecTrackerEntries(containerKey)
     local globalDB = ns.Addon and ns.Addon.db and ns.Addon.db.global
     local specTrackerSpells = globalDB and globalDB.ncdm and globalDB.ncdm.specTrackerSpells
@@ -2257,9 +2103,7 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
     local db = GetContainerDB(activeContainer)
     if not db then return end
 
-    -- Build menu items
     local items = {}
-    -- Settings
     items[#items + 1] = { label = ns.L["Settings"], color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
         if expandedOverride == entry.id then
             HideOverridePanel(true)
@@ -2272,29 +2116,8 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
         end
     end }
 
-    -- Row move (cooldown containers with 2+ rows) — show one item per other row
     if isCooldown then
-        local activeRowNums = {}
-        local rowCounts = {}
-        local rowMax = {}
-        local entries_all = db.ownedSpells or {}
-        for r = 1, 3 do
-            local rd = db["row" .. r]
-            if rd and rd.iconCount and rd.iconCount > 0 then
-                activeRowNums[#activeRowNums + 1] = r
-                rowMax[r] = rd.iconCount
-                rowCounts[r] = 0
-            end
-        end
-        -- Count entries per row
-        for _, e in ipairs(entries_all) do
-            if e and EntryCountsForCooldownRowCapacity(e) then
-                local r = e.row or (activeRowNums[1] or 1)
-                if rowCounts[r] then
-                    rowCounts[r] = rowCounts[r] + 1
-                end
-            end
-        end
+        local activeRowNums, rowCounts, rowMax = CountCooldownRowUsage(db)
         if #activeRowNums > 1 then
             local curRow = entry.row or activeRowNums[1]
             for _, rn in ipairs(activeRowNums) do
@@ -2307,10 +2130,7 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
                     items[#items + 1] = {
                         label = lbl,
                         color = isFull and { 0.4, 0.4, 0.4 } or { ACCENT_R, ACCENT_G, ACCENT_B },
-                        action = isFull and function()
-                            UIErrorsFrame:AddMessage(string.format(ns.L["Row %1$d is full (%2$d/%3$d)"], rn, rowMax[rn], rowMax[rn]), 1.0, 0.3, 0.3, 1.0, 3)
-                            UIErrorsFrame:SetFrameStrata("TOOLTIP")
-                        end or function()
+                        action = isFull and function() if UIErrorsFrame then UIErrorsFrame:AddMessage(string.format(ns.L["Row %1$d is full (%2$d/%3$d)"], rn, rowMax[rn], rowMax[rn]), 1.0, 0.3, 0.3, 1.0, 3); UIErrorsFrame:SetFrameStrata("TOOLTIP") end end or function()
                             if InCombatLockdown() then return end
                             spellData:SetEntryRow(activeContainer, entryIndex, rn)
                             C_Timer.After(0.02, function()
@@ -2325,9 +2145,6 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
         end
     end
 
-    -- Move to sibling container — items can cross the cooldown/aura
-    -- family boundary (kind is auto-rewritten in MoveEntryBetweenContainers);
-    -- spells/macros stay within their family.
     local containerType = ResolveContainerType(activeContainer)
     local SPELL_SIBLING_TYPES = {
         cooldown = { cooldown = true },
@@ -2361,7 +2178,6 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
         end
     end
 
-    -- Remove
     items[#items + 1] = { label = ns.L["Remove"], color = { 0.9, 0.3, 0.3 }, action = function()
         if InCombatLockdown() then return end
         local removeIndex = entryIndex
@@ -2393,24 +2209,41 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
     local menuWidth = 180
     local menuHeight = #items * itemHeight + 4
 
-    local menu = CreateFrame("Frame", "QUI_EntryContextMenu", UIParent, "BackdropTemplate")
+    local menu = _G.QUI_EntryContextMenu
+    if not menu then
+        menu = CreateFrame("Frame", "QUI_EntryContextMenu", UIParent, "BackdropTemplate")
+        menu:SetFrameStrata("TOOLTIP")
+        menu:SetFrameLevel(300)
+        menu:EnableMouse(true)
+        menu:SetClampedToScreen(true)
+        menu._itemButtons = {}
+        menu:SetScript("OnUpdate", function(self)
+            if not self:IsMouseOver() and (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")) then
+                self:Hide()
+            end
+        end)
+    end
     menu:SetSize(menuWidth, menuHeight)
-    menu:SetFrameStrata("TOOLTIP")
-    menu:SetFrameLevel(300)
     local _ecmBR, _ecmBG, _ecmBB = GetChromeBgMain()
     local _ecmBdR, _ecmBdG, _ecmBdB = GetChromeBorder()
     SkinBase.ApplyPixelBackdrop(menu, 1, true, false, { _ecmBdR, _ecmBdG, _ecmBdB, 1 }, { _ecmBR, _ecmBG, _ecmBB, 0.98 })
-    menu:EnableMouse(true)
+    menu:ClearAllPoints()
     menu:SetPoint("TOPLEFT", anchorCell, "BOTTOMLEFT", 0, -2)
-    menu:SetClampedToScreen(true)
 
     for i, item in ipairs(items) do
-        local btn = CreateFrame("Button", nil, menu)
+        local btn = menu._itemButtons[i]
+        if not btn then
+            btn = CreateFrame("Button", nil, menu)
+            local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(fs, { fontOnly = true }) end
+            fs:SetPoint("LEFT", 8, 0)
+            btn._label = fs
+            menu._itemButtons[i] = btn
+        end
         btn:SetSize(menuWidth - 4, itemHeight)
+        btn:ClearAllPoints()
         btn:SetPoint("TOPLEFT", 2, -(2 + (i - 1) * itemHeight))
-        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(label, { fontOnly = true }) end
-        label:SetPoint("LEFT", 8, 0)
+        local label = btn._label
         label:SetText(item.label)
         local c = item.color or { 0.8, 0.8, 0.8 }
         label:SetTextColor(c[1], c[2], c[3], 1)
@@ -2424,24 +2257,29 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
         btn:SetScript("OnLeave", function()
             label:SetTextColor(c[1], c[2], c[3], 1)
         end)
+        btn:Show()
     end
-
-    menu:SetScript("OnUpdate", function(self)
-        if not MouseIsOver(self) and (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")) then
-            self:Hide()
-        end
-    end)
+    for i = #items + 1, #menu._itemButtons do
+        menu._itemButtons[i]:Hide()
+    end
 
     menu:Show()
 end
 
----------------------------------------------------------------------------
-
----------------------------------------------------------------------------
--- REFRESH ENTRY LIST (icon grid layout)
----------------------------------------------------------------------------
 RefreshEntryList = function()
     if not entryListContent or not activeContainer then return end
+
+    if entryListContent:GetWidth() < GRID_CELL_STRIDE then
+        if not entryListContent._quiWidthRetryPending
+            and entryListContent:IsVisible() then
+            entryListContent._quiWidthRetryPending = true
+            C_Timer.After(0.05, function()
+                entryListContent._quiWidthRetryPending = nil
+                RefreshEntryList()
+            end)
+        end
+        return
+    end
 
     HideOverridePanel()
     if _G.QUI_EntryContextMenu then _G.QUI_EntryContextMenu:Hide() end
@@ -2449,23 +2287,11 @@ RefreshEntryList = function()
     local db = GetContainerDB(activeContainer)
     if not db then return end
 
-    -- Fold any stale dormant-shelf records back into the list before
-    -- reading entries, so a container opened right after login/import
-    -- shows recovered spells without waiting for the data layer's
-    -- SPELLS_CHANGED debounce.
     RefreshActiveContainerDormancy()
 
-    -- customBar containers store their active entry list under `entries`
-    -- (mixed spell/item/slot/macro types), not the CDM-native `ownedSpells`.
     local isCustomBar = (db.containerType == "customBar")
 
     local entries
-    -- Aggregated view for spec-specific customBar containers: pull entries
-    -- from every spec's list in db.global.ncdm.specTrackerSpells[key] so
-    -- the user can see (and right-click → Remove) entries from any spec
-    -- regardless of which spec they're currently on. Each entry carries
-    -- render-time source metadata that the right-click menu and tooltip read;
-    -- the entry itself stays in its per-spec list (so removes hit the correct list).
     if isCustomBar and db.specSpecific then
         entries = {}
         local globalDB = ns.Addon and ns.Addon.db and ns.Addon.db.global
@@ -2489,8 +2315,6 @@ RefreshEntryList = function()
                 end
             end
         end
-        -- Also surface any unmigrated entries still sitting in db.entries
-        -- (defensive — should be empty after v32 migration).
         if type(db.entries) == "table" then
             for entryIndex, entry in ipairs(db.entries) do
                 if type(entry) == "table" then
@@ -2508,12 +2332,11 @@ RefreshEntryList = function()
     if type(entries) ~= "table" then entries = {} end
 
     local filterText = searchBox and searchBox:GetText() or ""
-    local lowerFilter = string_lower(filterText)
+    local lowerFilter = Helpers.FoldUTF8(filterText)
     local hasFilter = (filterText ~= "")
 
     local spellData = GetCDMSpellData()
 
-    -- Hide all existing cells and headers
     for _, cell in ipairs(entryCells) do
         cell:Hide()
         cell:ClearAllPoints()
@@ -2525,10 +2348,6 @@ RefreshEntryList = function()
     end
 
     local contentWidth = entryListContent:GetWidth()
-    if contentWidth < GRID_CELL_STRIDE then
-        C_Timer.After(0.01, RefreshEntryList)
-        return
-    end
     local cols = math_floor(contentWidth / GRID_CELL_STRIDE)
     if cols < 1 then cols = 1 end
 
@@ -2539,7 +2358,6 @@ RefreshEntryList = function()
 
     local isCooldown = (ResolveContainerType(activeContainer) == "cooldown")
 
-    -- Grid placement helpers
     local function FinishRow()
         if colPos > 0 then
             colPos = 0
@@ -2583,7 +2401,7 @@ RefreshEntryList = function()
 
     local function RenderEntryCell(entry, idx, rowNum)
         local entryName = GetEntryName(entry)
-        if hasFilter and not string_find(string_lower(entryName), lowerFilter, 1, true) then
+        if hasFilter and not string_find(Helpers.FoldUTF8(entryName), lowerFilter, 1, true) then
             return
         end
 
@@ -2602,9 +2420,6 @@ RefreshEntryList = function()
         else
             cell._dragTooltipText = ns.L["Drag to reorder"]
         end
-        -- Mirrors the tooltip warning: red-tint icons that are usable on
-        -- this class but currently absent from Blizzard's CDM viewer.
-        -- Skip when unknown-to-player (already desaturated for that state).
         cell._isMissingFromCDM = (not cell._isUnknownToPlayer)
             and not IsEntryRegisteredInBlizzCDM(entry)
 
@@ -2625,7 +2440,6 @@ RefreshEntryList = function()
         cell._icon:Show()
         cell:SetAlpha(cell._isUnknownToPlayer and 0.6 or 1)
 
-        -- Wire drag
         cell:SetScript("OnDragStart", function()
             StartDrag(cell, cell._entryIndex, rowNum)
         end)
@@ -2633,7 +2447,6 @@ RefreshEntryList = function()
             StopDrag()
         end)
 
-        -- OnClick handles both drag-stop (left) and context menu (right)
         cell:SetScript("OnClick", function(self, button)
             if button == "LeftButton" and dragState.active then
                 StopDrag()
@@ -2645,7 +2458,6 @@ RefreshEntryList = function()
         PlaceCell(cell)
     end
 
-    -- Build row grouping for cooldown containers
     local activeRowNums = {}
     local rowMax = {}
     local rowCounts = {}
@@ -2665,7 +2477,7 @@ RefreshEntryList = function()
     local cooldownDormantEntries = {}
     if isCooldown and #activeRowNums > 0 then
         for i, entry in ipairs(entries) do
-            if entry then
+            if entry and IsEntryApplicableOnCurrentPlayer(entry) then
                 if EntryCountsForCooldownRowCapacity(entry) then
                     local r = entry.row
                     r = FindCooldownRowWithRoom(activeRowNums, rowCounts, rowMax, r)
@@ -2684,7 +2496,6 @@ RefreshEntryList = function()
         end
     end
 
-    -- Render
     if isCooldown and #activeRowNums > 0 then
         for _, rowNum in ipairs(activeRowNums) do
             local rowItems = rowEntries[rowNum]
@@ -2698,7 +2509,6 @@ RefreshEntryList = function()
             end
             RenderSectionHeader(headerLabel, count == 0, rowNum)
             if count == 0 then
-                -- Empty hint (as a small header) — also tagged for drop targeting
                 headerIndex = headerIndex + 1
                 local hdr = GetOrCreateSectionHeader(headerIndex)
                 hdr:SetParent(entryListContent)
@@ -2737,31 +2547,15 @@ RefreshEntryList = function()
             FinishRow()
         end
     else
-        -- customBar entries render at the bar's anchor corner from index 1
-        -- outward. For LEFT/UP growth the first entry ends up at the far
-        -- right / bottom in-game — walk the list in reverse here so the
-        -- grid matches that visual while RenderEntryCell still records
-        -- each cell's true entryIndex for drag/remove.
         local reverse = isCustomBar and (db.growDirection == "LEFT" or db.growDirection == "UP")
 
-        -- For non-specSpecific custom bars and built-in non-row containers,
-        -- split entries into "usable on current character" and derived-dormant buckets.
-        -- Dormancy is computed per render from known-state — entries are
-        -- never relocated or removed because of it. The runtime path
-        -- (cdm_icon_renderer.lua:BuildIcons) skips these same entries at
-        -- display time; surfacing them here under a dormant header lets
-        -- the user still see / right-click-remove every entry they
-        -- configured — cross-class leftovers in a shared profile as well
-        -- as same-class talents not in the current loadout. The
-        -- specSpecific path already labels entries by source spec
-        -- (_renderSpecKey), so leave it alone.
         local splitDormant = not (isCustomBar and db.specSpecific)
         local usableEntries, dormantEntries
         if splitDormant then
             usableEntries = {}
             dormantEntries = {}
             for i, entry in ipairs(entries) do
-                if entry then
+                if entry and IsEntryApplicableOnCurrentPlayer(entry) then
                     if IsEntryUsableOnCurrentPlayer(entry) then
                         usableEntries[#usableEntries + 1] = { entry = entry, idx = i }
                     else
@@ -2804,11 +2598,15 @@ RefreshEntryList = function()
             if reverse then
                 for i = #entries, 1, -1 do
                     local entry = entries[i]
-                    if entry then RenderEntryCell(entry, i) end
+                    if entry and IsEntryApplicableOnCurrentPlayer(entry) then
+                        RenderEntryCell(entry, i)
+                    end
                 end
             else
                 for i, entry in ipairs(entries) do
-                    if entry then RenderEntryCell(entry, i) end
+                    if entry and IsEntryApplicableOnCurrentPlayer(entry) then
+                        RenderEntryCell(entry, i)
+                    end
                 end
             end
             FinishRow()
@@ -2821,14 +2619,6 @@ RefreshEntryList = function()
     end
 end
 
--- Refresh the entry grid and preview when /cdm composition changes.
--- Blizzard's standalone /cdm UI does NOT fire EDIT_MODE_LAYOUTS_UPDATED
--- (that's only for the broader edit-mode editor); it routes user toggles
--- through Blizzard's settings data provider, which fires its
--- OnDataChanged EventRegistry callback. The Blizzard viewer itself
--- listens to this same callback for its own relayout, so by the time
--- our callback runs the viewer's children are already current. Pending
--- flag coalesces bursts of events.
 local composerCDMRefreshPending = false
 local function ScheduleComposerCDMRefresh(delay)
     if type(delay) ~= "number" or delay ~= delay or delay < 0
@@ -2839,19 +2629,11 @@ local function ScheduleComposerCDMRefresh(delay)
     composerCDMRefreshPending = true
     C_Timer.After(delay, function()
         composerCDMRefreshPending = false
-        -- Tracked-spell sets are derived from the Blizzard CDM settings
-        -- data provider, which is exactly what changes when the user
-        -- toggles entries in /cdm. Drop the cache so the next refresh
-        -- recomputes the "Not added to /cdm" red-tint signal.
         InvalidateTrackedSpellSets()
         local composerVisible = composerFrame and composerFrame:IsShown()
         local previewVisible = previewFrame and previewFrame:IsShown()
         if composerVisible then
             RefreshEntryList()
-            -- Add list mirrors the same tracked-spell warning state and
-            -- (for the Cooldowns / Auras tabs) its source list itself
-            -- derives from the Blizzard CDM data provider, so it has to
-            -- re-render whenever the user toggles entries in /cdm.
             if RefreshAddList then
                 RefreshAddList()
             end
@@ -2862,9 +2644,6 @@ local function ScheduleComposerCDMRefresh(delay)
     end)
 end
 
--- The literal callback name is split across concatenation so the §5
--- grep contract holds for the runtime files; the composer is the only
--- place this Blizzard event needs to be observed.
 local _CDM_SETTINGS_EVENT = "Cooldown" .. "ViewerSettings.OnDataChanged"
 if EventRegistry and EventRegistry.RegisterCallback then
     EventRegistry:RegisterCallback(
@@ -2873,7 +2652,6 @@ if EventRegistry and EventRegistry.RegisterCallback then
         "QUI_Composer")
 end
 
--- Server-side cooldown table hotfixes still come through a real event.
 local composerCDMEventFrame = CreateFrame("Frame")
 composerCDMEventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
 composerCDMEventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
@@ -2887,9 +2665,6 @@ composerCDMEventFrame:SetScript("OnEvent", function(_, event)
     end
 end)
 
----------------------------------------------------------------------------
--- ADD SECTION (Below Entry List)
----------------------------------------------------------------------------
 local addPanel = nil
 local addListScroll = nil
 local addListContent = nil
@@ -2907,18 +2682,15 @@ local function BuildAddSection(parent)
     title:SetText(ns.L["Add Entries"])
     title:SetTextColor(0.6, 0.6, 0.6, 1)
 
-    -- Tab bar
     local tabBar = CreateFrame("Frame", nil, container)
     tabBar:SetHeight(TAB_HEIGHT)
     tabBar:SetPoint("TOPLEFT", 4, -22)
     tabBar:SetPoint("RIGHT", container, "RIGHT", -4, 0)
     container._tabBar = tabBar
 
-    -- Search box for add list
     addSearchBox = CreateSearchBox(container, 180, ns.L["Search to add..."])
     addSearchBox:SetPoint("TOPRIGHT", container, "TOPRIGHT", -8, -22)
 
-    -- Scroll area
     local scrollF, content = CreateScrollArea(container, 10, 10)
     scrollF:SetPoint("TOPLEFT", 4, -52)
     scrollF:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -4, 4)
@@ -2930,15 +2702,21 @@ local function BuildAddSection(parent)
 
     addPanel = container
 
-    -- Auto-refresh the add list when the player's auras change AND the
-    -- user is looking at the Active Buffs/Debuffs tab. Cheap guard so the
-    -- event has zero cost on other tabs.
+    local auraRefreshPending = false
     container:RegisterUnitEvent("UNIT_AURA", "player")
-    container:SetScript("OnEvent", function(self, event, unit)
-        if event == "UNIT_AURA" and unit == "player"
+    container:SetScript("OnEvent", function(self, event)
+        if event == "UNIT_AURA"
            and (activeAddTab == "active_buffs" or activeAddTab == "active_debuffs")
-           and self:IsVisible() then
-            RefreshAddList()
+           and self:IsVisible()
+           and not auraRefreshPending then
+            auraRefreshPending = true
+            C_Timer.After(0.2, function()
+                auraRefreshPending = false
+                if (activeAddTab == "active_buffs" or activeAddTab == "active_debuffs")
+                    and self:IsVisible() then
+                    RefreshAddList()
+                end
+            end)
         end
     end)
 
@@ -2948,41 +2726,11 @@ end
 local function GetOrCreateAddCell(index)
     if addCells[index] then return addCells[index] end
 
-    local cell = CreateFrame("Button", nil, addListContent, "BackdropTemplate")
-    cell:SetSize(GRID_CELL_SIZE, GRID_CELL_SIZE)
+    local cell = CreateGridCellBase(addListContent)
     cell:RegisterForClicks("RightButtonUp")
-
-    local _acBdR, _acBdG, _acBdB = GetChromeBorder()
-    SetSimpleBackdrop(cell, 0, 0, 0, 0, _acBdR, _acBdG, _acBdB, 0.5)
-
-    cell._icon = cell:CreateTexture(nil, "ARTWORK")
-    cell._icon:SetSize(GRID_ICON_SIZE, GRID_ICON_SIZE)
-    cell._icon:SetPoint("CENTER")
-    cell._icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    -- "Not added to /cdm" warning badge (mirrors entry-list cells).
-    cell._warnBadge = cell:CreateTexture(nil, "OVERLAY")
-    cell._warnBadge:SetSize(12, 12)
-    cell._warnBadge:SetPoint("TOPRIGHT", cell, "TOPRIGHT", -1, -1)
-    cell._warnBadge:SetColorTexture(0.95, 0.15, 0.15, 1)
-    cell._warnBadge:Hide()
-    cell._warnBadgeText = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(cell._warnBadgeText, { fontOnly = true }) end
-    cell._warnBadgeText:SetPoint("CENTER", cell._warnBadge, "CENTER", 0, 0)
-    cell._warnBadgeText:SetText("!")
-    cell._warnBadgeText:SetTextColor(1, 1, 1, 1)
-    cell._warnBadgeText:Hide()
-
-    cell._highlight = cell:CreateTexture(nil, "HIGHLIGHT")
-    cell._highlight:SetAllPoints()
-    cell._highlight:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.15)
 
     cell:SetScript("OnEnter", function(self)
         if not self._sourceEntry then return end
-        -- Red border on hover only when the cell is showing the full
-        -- red treatment (i.e. not already dimmed by owned/unlearned);
-        -- otherwise the dominant signal stays dim+grey and accent hover
-        -- shouldn't be replaced.
         local primaryRed = self._isMissingFromCDM
             and not self._isOwned
             and not self._isUnlearned
@@ -3011,10 +2759,6 @@ local function GetOrCreateAddCell(index)
         else
             GameTooltip:AddLine(ns.L["Right-click to add"], 0.5, 0.5, 0.5)
         end
-        -- Surface "no known aura" hint for item picks whose aura
-        -- isn't resolvable yet. HasResolvableAuraForItem returns
-        -- nil pre-discovery; the runtime caches the aura on
-        -- first use.
         local itemIDForHint
         if self._sourceEntry
             and self._sourceEntry._entryType == "item"
@@ -3074,26 +2818,33 @@ end
 RefreshAddList = function()
     if not addListContent or not activeContainer then return end
 
+    if addListContent:GetWidth() < GRID_CELL_STRIDE then
+        if not addListContent._quiWidthRetryPending
+            and addListContent:IsVisible() then
+            addListContent._quiWidthRetryPending = true
+            C_Timer.After(0.05, function()
+                addListContent._quiWidthRetryPending = nil
+                RefreshAddList()
+            end)
+        end
+        return
+    end
+
     local spellData = GetCDMSpellData()
     if not spellData then return end
 
-    -- Hide all existing add cells
     for _, cell in ipairs(addCells) do
         cell:Hide()
         cell:ClearAllPoints()
     end
 
     local filterText = addSearchBox and addSearchBox:GetText() or ""
-    local lowerFilter = string_lower(filterText)
+    local lowerFilter = Helpers.FoldUTF8(filterText)
     local hasFilter = (filterText ~= "")
 
     local sourceEntries = {}
     local containerType = ResolveContainerType(activeContainer) or "cooldown"
 
-    -- Build owned set for duplicate detection within the active container only.
-    -- A spell can appear in multiple containers (e.g. buff icon + buff bar).
-    -- customBar containers keep entries under `entries`, everything else
-    -- under `ownedSpells`.
     local ownedSet = {}
     local activeDB = GetContainerDB(activeContainer)
     local isCustomBar = (activeDB and activeDB.containerType == "customBar")
@@ -3129,9 +2880,6 @@ RefreshAddList = function()
         sourceEntries = spellData:GetAvailableSpells(activeContainer) or {}
 
     elseif activeAddTab == "cooldowns" then
-        -- Custom-bar Cooldowns tab: union of Blizzard CDM (Essential/Utility
-        -- categories) + every learned cooldown from the spellbook. The
-        -- active-tab kind contract sets entry.kind = "cooldown" on add.
         local seen = {}
         local cdm = ns.CDMComposer.GetAvailableSpellsForContainer(
             activeContainer, "cooldown", ownedSet, nil) or {}
@@ -3150,9 +2898,6 @@ RefreshAddList = function()
         end
 
     elseif activeAddTab == "auras" then
-        -- Custom-bar Auras tab: union of Blizzard CDM (TrackedBuff/TrackedBar
-        -- categories) + class passive auras + auras currently active on the
-        -- player (helpful + harmful). entry.kind = "aura" on add.
         local seen = {}
         local cdm = ns.CDMComposer.GetAvailableSpellsForContainer(
             activeContainer, "aura", ownedSet, nil) or {}
@@ -3214,8 +2959,6 @@ RefreshAddList = function()
             }
         end
 
-        -- Always append trinket slots 13/14 (equipped trinkets — useful to
-        -- track by slot so switching trinkets doesn't break the bar).
         local function hasSlotEntry(slotID)
             for _, e in ipairs(sourceEntries) do
                 if e._entryType == "slot" and (e._slotID == slotID or e._entryID == slotID) then
@@ -3247,9 +2990,6 @@ RefreshAddList = function()
             end
         end
 
-        -- If the filter is numeric AND nothing in sourceEntries matches,
-        -- treat it as an item ID lookup so the user can add items they
-        -- don't currently own.
         if hasFilter then
             local asNum = tonumber(filterText)
             if asNum then
@@ -3315,20 +3055,11 @@ RefreshAddList = function()
 
     end
 
-    -- Custom-bar Cooldowns/Auras tabs: if the search filter is a pure
-    -- numeric Spell ID and nothing in sourceEntries already matches it,
-    -- append a resolved candidate so the user can add spells by ID without
-    -- a dedicated tab. The active tab's kind contract handles the rest.
     if hasFilter and (activeAddTab == "cooldowns" or activeAddTab == "auras") then
         AppendSpellIDSearchCandidate(sourceEntries, filterText)
     end
 
-    -- Grid layout
     local contentWidth = addListContent:GetWidth()
-    if contentWidth < GRID_CELL_STRIDE then
-        C_Timer.After(0.01, RefreshAddList)
-        return
-    end
     local cols = math_floor(contentWidth / GRID_CELL_STRIDE)
     if cols < 1 then cols = 1 end
 
@@ -3339,7 +3070,7 @@ RefreshAddList = function()
     for _, entry in ipairs(sourceEntries) do
         local entryName = entry.name or ""
         local show = true
-        if hasFilter and not string_find(string_lower(entryName), lowerFilter, 1, true) then
+        if hasFilter and not string_find(Helpers.FoldUTF8(entryName), lowerFilter, 1, true) then
             local sidStr = tostring(entry.spellID or "")
             if not string_find(sidStr, filterText, 1, true) then
                 show = false
@@ -3360,10 +3091,6 @@ RefreshAddList = function()
             cell._isOwned = isOwned
             cell._isUnlearned = entry.isKnown == false
 
-            -- Flag spells the user hasn't enabled in Blizzard's /cdm so the
-            -- add list shows the same warning as the entry list above.
-            -- IsEntryRegisteredInBlizzCDM needs an entry-shaped table with
-            -- explicit type+id; source entries use spellID/_entryType.
             local effType = entry._entryType or "spell"
             local effID = tonumber(entry._entryID) or tonumber(entry.spellID)
             cell._isMissingFromCDM = (effType == "spell")
@@ -3375,11 +3102,6 @@ RefreshAddList = function()
             cell._icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
             cell:SetAlpha(isOwned and 0.4 or (cell._isUnlearned and 0.6 or 1))
             cell._icon:SetDesaturated(isOwned or cell._isUnlearned)
-            -- Always show the badge when missing-from-/cdm so the warning
-            -- is visible even on already-owned/desaturated entries. Apply
-            -- the red tint + border only when the cell isn't already
-            -- dimmed by the owned/unlearned states (those use the dim
-            -- visual as their primary signal).
             if cell._isMissingFromCDM then
                 if cell._warnBadge then cell._warnBadge:Show() end
                 if cell._warnBadgeText then cell._warnBadgeText:Show() end
@@ -3396,7 +3118,6 @@ RefreshAddList = function()
                 cell:SetBackdropBorderColor(_ralBdR, _ralBdG, _ralBdB, 0.5)
             end
 
-            -- Right-click to add directly
             if isOwned then
                 cell:SetScript("OnClick", nil)
             else
@@ -3411,39 +3132,17 @@ RefreshAddList = function()
                         local addType = entryRef._entryType or "spell"
                         local addID = entryRef._entryID or entryRef.spellID
 
-                        -- Capacity check for built-in cooldown containers (Essential /
-                        -- Utility): they use the row1/row2/row3 capacity model and need
-                        -- targetRow assigned at add-time. Custom bars (cooldown or
-                        -- auraBar shape) grow from a single anchor and have no per-row
-                        -- caps — auraBar defaults don't define row1/2/3 at all, so
-                        -- entering this branch with containerType=nil for a custom bar
-                        -- left targetRow=nil and silently surfaced "All rows are full"
-                        -- via UIErrorsFrame (often suppressed by user UI), making the
-                        -- right-click add look dead.
                         local targetRow = nil
                         if IsBuiltInContainer(activeContainer)
                             and ResolveContainerType(activeContainer) == "cooldown" then
-                            local spells = containerDB.ownedSpells or {}
-                            local firstActiveRow = nil
-                            for r = 1, 3 do
-                                local rd = containerDB["row" .. r]
-                                if rd and rd.iconCount and rd.iconCount > 0 then
-                                    if not firstActiveRow then firstActiveRow = r end
-                                    local count = 0
-                                    for _, e in ipairs(spells) do
-                                        if e and EntryCountsForCooldownRowCapacity(e)
-                                            and (e.row or firstActiveRow) == r then
-                                            count = count + 1
-                                        end
-                                    end
-                                    if count < rd.iconCount and not targetRow then
-                                        targetRow = r
-                                    end
+                            local activeRowNums, rowCounts, rowMax = CountCooldownRowUsage(containerDB)
+                            for _, r in ipairs(activeRowNums) do
+                                if rowCounts[r] < rowMax[r] and not targetRow then
+                                    targetRow = r
                                 end
                             end
                             if not targetRow then
-                                UIErrorsFrame:AddMessage(ns.L["All rows are full — remove a spell or increase row size"], 1.0, 0.3, 0.3, 1.0, 3)
-                                UIErrorsFrame:SetFrameStrata("TOOLTIP")
+                                if UIErrorsFrame then UIErrorsFrame:AddMessage(ns.L["All rows are full — remove a spell or increase row size"], 1.0, 0.3, 0.3, 1.0, 3); UIErrorsFrame:SetFrameStrata("TOOLTIP") end
                                 return
                             end
                         end
@@ -3452,27 +3151,6 @@ RefreshAddList = function()
                             ns.CDMSpellData:ClearRemoved(containerDB, addID)
                         end
 
-                        -- Kind precedence:
-                        --   1. Custom bars (mixed-kind containers) ALWAYS use the
-                        --      tab contract. Their `containerType == "customBar"`
-                        --      and `GetContainerImpliedKind` would otherwise fall
-                        --      through to the "cooldown" default in
-                        --      ResolveContainerType for any container DB whose
-                        --      type field isn't precisely the legacy strings —
-                        --      that silently overrode the auras tab and stamped
-                        --      everything as kind=cooldown.
-                        --   2. Built-in containers (essential/utility/buff/
-                        --      trackedBar) inherit kind from container shape —
-                        --      every entry in a Buff Icon container is kind=aura,
-                        --      every entry in Essential Cooldowns is kind=cooldown,
-                        --      regardless of the add-source tab.
-                        -- Custom bars are any container that isn't one of the
-                        -- four built-in CDM containers. The container's
-                        -- containerType field is the visual SHAPE
-                        -- (cooldown bar vs aura bar) — NOT the kind contract,
-                        -- so we can't rely on it == "customBar". A custom bar
-                        -- shaped as "cooldown" can still hold aura entries
-                        -- when the user adds them from the Auras tab.
                         local isCustomBarAdd = not IsBuiltInContainer(activeContainer)
                         local function kindForActiveTab()
                             if activeAddTab == "auras"
@@ -3491,7 +3169,6 @@ RefreshAddList = function()
 
                         local kindFromTab
                         if isCustomBarAdd then
-                            -- Tab is authoritative for custom bars.
                             kindFromTab = kindForActiveTab()
                         else
                             kindFromTab = GetContainerImpliedKind(activeContainer)
@@ -3510,7 +3187,12 @@ RefreshAddList = function()
                             if containerDB.removedSpells then
                                 ns.CDMSpellData:ClearRemoved(containerDB, entryRef._slotID)
                             end
-                            addResult = spellData:AddTrinketSlot(activeContainer, entryRef._slotID, targetRow, itemKind)
+                            addResult = spellData:AddTrinketSlot(activeContainer, entryRef._slotID, targetRow, itemKind, entrySource)
+                        elseif addType == "consumable" then
+                            if containerDB.removedSpells then
+                                ns.CDMSpellData:ClearRemoved(containerDB, addID)
+                            end
+                            addResult = spellData:AddConsumable(activeContainer, addID, targetRow, itemKind, entrySource)
                         elseif addType == "item" then
                             addResult = spellData:AddItem(activeContainer, addID, targetRow, itemKind)
                         else
@@ -3539,12 +3221,10 @@ RefreshAddList = function()
         end
     end
 
-    -- Finish last row
     if colPos > 0 then
         sy = sy - GRID_CELL_STRIDE
     end
 
-    -- Empty-state hints surface what to do when a tab/filter has no results.
     local hintText
     if cellIndex == 0 then
         if activeAddTab == "cooldowns" then
@@ -3589,7 +3269,6 @@ end
 local function BuildAddTabs()
     if not addPanel or not activeContainer then return end
 
-    -- Clear old tabs
     for _, btn in ipairs(addTabButtons) do
         btn:Hide()
     end
@@ -3600,10 +3279,6 @@ local function BuildAddTabs()
     local containerType = ResolveContainerType(activeContainer) or "cooldown"
     local tabs = {}
 
-    -- Built-ins (essential/utility/buff/trackedBar) keep their original
-    -- focused tab set. Only user-created containers (customBar and any
-    -- future custom container) get the unified rich picker so users can
-    -- mix spells / items / auras / passives freely.
     local activeContainerDB = GetContainerDB(activeContainer)
     local isBuiltIn = activeContainerDB and activeContainerDB.builtIn ~= false
         and (activeContainer == "essential" or activeContainer == "utility"
@@ -3630,11 +3305,6 @@ local function BuildAddTabs()
             }
         end
     else
-        -- Custom bars are mixed-kind containers: the active top-level tab is
-        -- the kind contract for any entry added under it. Spell ID search is
-        -- the persistent filter input above the list (numeric input resolves
-        -- the ID with the active tab's kind; text input filters by name) so
-        -- it doesn't need its own tab.
         tabs = {
             { key = "cooldowns", label = ns.L["Cooldowns"] },
             { key = "auras",     label = ns.L["Auras"] },
@@ -3646,7 +3316,6 @@ local function BuildAddTabs()
         activeAddTab = tabs[1] and tabs[1].key or "cdm_spells"
     end
 
-    -- Validate activeAddTab is in current tab set
     local found = false
     for _, t in ipairs(tabs) do
         if t.key == activeAddTab then found = true break end
@@ -3685,13 +3354,8 @@ local function BuildAddTabs()
     end
 end
 
----------------------------------------------------------------------------
--- CONTAINER TABS (Top of Composer)
----------------------------------------------------------------------------
-
--- Phase G: New Container creation popup
 local newContainerPopup = nil
-local newContainerCallback = nil  -- invoked with newKey after Create
+local newContainerCallback = nil
 
 local function ShowNewContainerPopup(onCreated)
     newContainerCallback = onCreated
@@ -3714,14 +3378,12 @@ local function ShowNewContainerPopup(onCreated)
     popup:SetScript("OnDragStart", function(self) self:StartMoving() end)
     popup:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
-    -- Title
     local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOP", 0, -10)
     title:SetText(ns.L["New Container"])
     title:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
 
-    -- Name label + editbox
     local nameLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(nameLabel, { fontOnly = true }) end
     nameLabel:SetPoint("TOPLEFT", 12, -36)
@@ -3742,17 +3404,12 @@ local function ShowNewContainerPopup(onCreated)
     nameBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     nameBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
-    -- Type label + dropdown buttons
     local typeLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(typeLabel, { fontOnly = true }) end
     typeLabel:SetPoint("TOPLEFT", 12, -82)
     typeLabel:SetText(ns.L["Type:"])
     typeLabel:SetTextColor(0.7, 0.7, 0.7, 1)
 
-    -- Phase B.3: two unified options. Icons accept any mix of spells,
-    -- items, trinkets, and auras; Bars render durations as horizontal bars.
-    -- The entry list picker (Items / Cooldowns / Active Buffs / By Spell ID)
-    -- lets the user fill in whatever content they want regardless of choice.
     local TYPE_OPTIONS = {
         { value = "cooldown", text = ns.L["Custom Icons"] },
         { value = "auraBar",  text = ns.L["Custom Bars"] },
@@ -3796,7 +3453,6 @@ local function ShowNewContainerPopup(onCreated)
     end
     UpdateTypeButtons()
 
-    -- Create + Cancel buttons
     local createBtn = CreateAccentButton(popup, ns.L["Create"], 120, 26)
     createBtn:SetPoint("BOTTOMLEFT", 12, 12)
     createBtn:SetScript("OnClick", function()
@@ -3805,7 +3461,6 @@ local function ShowNewContainerPopup(onCreated)
         if ns.CDMContainers and ns.CDMContainers.CreateContainer then
             local newKey = ns.CDMContainers.CreateContainer(name, selectedType)
             if newKey then
-                -- Select mover in layout mode
                 local elementKey = "cdmCustom_" .. newKey
                 local um = ns.QUI_LayoutMode
                 if um then
@@ -3817,17 +3472,12 @@ local function ShowNewContainerPopup(onCreated)
                     um:SelectMover(elementKey)
                 end
 
-                -- Re-sync mover after layout mode hooks settle
                 C_Timer.After(0.1, function()
                     if _G.QUI_LayoutModeSyncHandle then
                         _G.QUI_LayoutModeSyncHandle(elementKey)
                     end
                 end)
 
-                -- If a caller (e.g. Cooldown Manager tile's "+ New"
-                -- button) registered a callback, invoke it with the
-                -- new key. Otherwise fall back to popping the old
-                -- Composer surface open for the new container.
                 if newContainerCallback then
                     local cb = newContainerCallback
                     newContainerCallback = nil
@@ -3846,7 +3496,6 @@ local function ShowNewContainerPopup(onCreated)
         popup:Hide()
     end)
 
-    -- Close button
     SkinBase.CreateCloseButton(popup, {
         size = 16, lineLen = 8,
         point = "TOPRIGHT", x = -4, y = -4,
@@ -3857,14 +3506,25 @@ local function ShowNewContainerPopup(onCreated)
     popup:Show()
 end
 
--- Phase G: Right-click context menu for custom container tabs
 local function ShowContainerContextMenu(containerKey, anchorFrame)
-    -- Use a simple dropdown-like frame
     if _G.QUI_ContainerContextMenu then
         _G.QUI_ContainerContextMenu:Hide()
     end
 
-    local menu = CreateFrame("Frame", "QUI_ContainerContextMenu", UIParent, "BackdropTemplate")
+    local menu = _G.QUI_ContainerContextMenu
+    if menu then
+        menu._containerKey = containerKey
+        local _ccmBR, _ccmBG, _ccmBB = GetChromeBgMain()
+        local _ccmBdR, _ccmBdG, _ccmBdB = GetChromeBorder()
+        SkinBase.ApplyPixelBackdrop(menu, 1, true, false, { _ccmBdR, _ccmBdG, _ccmBdB, 1 }, { _ccmBR, _ccmBG, _ccmBB, 0.98 })
+        menu:ClearAllPoints()
+        menu:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -2)
+        menu:Show()
+        return
+    end
+
+    menu = CreateFrame("Frame", "QUI_ContainerContextMenu", UIParent, "BackdropTemplate")
+    menu._containerKey = containerKey
     menu:SetSize(140, 60)
     menu:SetFrameStrata("TOOLTIP")
     menu:SetFrameLevel(300)
@@ -3874,7 +3534,6 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     menu:EnableMouse(true)
     menu:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -2)
 
-    -- Rename option
     local renameBtn = CreateFrame("Button", nil, menu)
     renameBtn:SetSize(136, 24)
     renameBtn:SetPoint("TOPLEFT", 2, -2)
@@ -3885,7 +3544,7 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     renameText:SetTextColor(0.8, 0.8, 0.8, 1)
     renameBtn:SetScript("OnClick", function()
         menu:Hide()
-        -- Simple rename via chat input
+        local key = menu._containerKey
         StaticPopupDialogs["QUI_RENAME_CONTAINER"] = {
             text = ns.L["Enter new name:"],
             button1 = ns.L["OK"],
@@ -3896,7 +3555,7 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
                 local box = self.editBox or self.EditBox
                 local newName = box and box:GetText()
                 if newName and newName ~= "" and ns.CDMContainers then
-                    ns.CDMContainers.RenameContainer(containerKey, newName)
+                    ns.CDMContainers.RenameContainer(key, newName)
                     BuildContainerTabs()
                     RefreshAll_Composer()
                 end
@@ -3904,8 +3563,8 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
             OnShow = function(self)
                 local box = self.editBox or self.EditBox
                 if box then
-                    local db = GetContainerDB(containerKey)
-                    box:SetText(db and db.name or containerKey)
+                    local db = GetContainerDB(key)
+                    box:SetText(db and db.name or key)
                     box:HighlightText()
                 end
             end,
@@ -3923,7 +3582,6 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
         renameText:SetTextColor(0.8, 0.8, 0.8, 1)
     end)
 
-    -- Delete option
     local deleteBtn = CreateFrame("Button", nil, menu)
     deleteBtn:SetSize(136, 24)
     deleteBtn:SetPoint("TOPLEFT", renameBtn, "BOTTOMLEFT", 0, 0)
@@ -3934,13 +3592,14 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     deleteText:SetTextColor(0.9, 0.3, 0.3, 1)
     deleteBtn:SetScript("OnClick", function()
         menu:Hide()
+        local key = menu._containerKey
         StaticPopupDialogs["QUI_DELETE_CONTAINER"] = {
             text = ns.L["Delete this container? This cannot be undone."],
             button1 = ns.L["Delete"],
             button2 = ns.L["Cancel"],
             OnAccept = function()
                 if ns.CDMContainers and ns.CDMContainers.DeleteContainer then
-                    ns.CDMContainers.DeleteContainer(containerKey)
+                    ns.CDMContainers.DeleteContainer(key)
                     activeContainer = "essential"
                     BuildContainerTabs()
                     RefreshAll_Composer()
@@ -3960,9 +3619,8 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
         deleteText:SetTextColor(0.9, 0.3, 0.3, 1)
     end)
 
-    -- Auto-hide when clicking elsewhere
     menu:SetScript("OnUpdate", function(self)
-        if not MouseIsOver(self) and IsMouseButtonDown("LeftButton") then
+        if not self:IsMouseOver() and IsMouseButtonDown("LeftButton") then
             self:Hide()
         end
     end)
@@ -3976,10 +3634,8 @@ BuildContainerTabs = function()
     local tabBar = composerFrame._tabBar
     if not tabBar then return end
 
-    -- Phase G: Get all container keys (built-in + custom)
     local allKeys = GetAllTabKeys()
 
-    -- Hide all existing tabs first
     for i, btn in ipairs(containerTabs) do
         if btn then btn:Hide() end
     end
@@ -4018,9 +3674,6 @@ BuildContainerTabs = function()
         local key = containerKey
         local isBuiltIn = IsBuiltInContainer(key)
         btn:SetScript("OnClick", function()
-            -- Tear down the live preview before switching containers so the
-            -- driver releases any preview-scoped icons/bars/glow tied to
-            -- the previous container before Refresh paints the new one.
             if key ~= activeContainer
                and ns.CDMComposerPreview and ns.CDMComposerPreview.Teardown then
                 ns.CDMComposerPreview.Teardown()
@@ -4031,7 +3684,6 @@ BuildContainerTabs = function()
             BuildContainerTabs()
             RefreshAll_Composer()
         end)
-        -- Phase G: Right-click context menu for custom containers
         btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         btn:SetScript("OnMouseUp", function(self, button)
             if button == "RightButton" and not isBuiltIn then
@@ -4054,7 +3706,6 @@ BuildContainerTabs = function()
         yOff = yOff - TAB_HEIGHT - 2
     end
 
-    -- [+ New] button at bottom of nav
     local newIdx = #allKeys + 1
     local newBtn = containerTabs[newIdx]
     if not newBtn then
@@ -4087,14 +3738,10 @@ BuildContainerTabs = function()
     newBtn:Show()
 end
 
----------------------------------------------------------------------------
--- FOOTER BUTTONS
----------------------------------------------------------------------------
 local function BuildFooter(parent)
     local footer = CreateFrame("Frame", nil, parent)
     footer:SetHeight(32)
 
-    -- Reset to Blizzard Defaults
     local resetBtn = CreateSmallButton(footer, ns.L["Reset to Blizzard Defaults"], 180, 24)
     resetBtn._label:SetTextColor(0.9, 0.6, 0.2, 1)
     resetBtn:SetPoint("LEFT", footer, "LEFT", 8, 0)
@@ -4103,7 +3750,6 @@ local function BuildFooter(parent)
         if InCombatLockdown() then return end
         local spellData = GetCDMSpellData()
         if spellData and activeContainer then
-            -- Confirm with a second click (toggle state)
             if resetBtn._confirmPending then
                 local seeded, seedReady = ns.CDMComposer.SeedFromBlizzard(activeContainer)
                 if seeded and seedReady then
@@ -4114,8 +3760,6 @@ local function BuildFooter(parent)
                         NotifyComposerEntriesChanged(true)
                     end
                 else
-                    -- Seed empty (e.g., API not ready) — fall back to the
-                    -- legacy resnapshot path which scans viewer children.
                     spellData:ResnapshotFromBlizzard(activeContainer)
                 end
                 resetBtn._confirmPending = false
@@ -4126,7 +3770,6 @@ local function BuildFooter(parent)
                 resetBtn._confirmPending = true
                 resetBtn._label:SetText(ns.L["Click Again to Confirm"])
                 resetBtn._label:SetTextColor(0.9, 0.3, 0.3, 1)
-                -- Auto-cancel after 3 seconds
                 C_Timer.After(3, function()
                     if resetBtn._confirmPending then
                         resetBtn._confirmPending = false
@@ -4156,13 +3799,9 @@ local function BuildFooter(parent)
     return footer
 end
 
----------------------------------------------------------------------------
--- FULL REFRESH
----------------------------------------------------------------------------
 function RefreshAll_Composer() -- luacheck: ignore (assigns forward-declared upvalue)
     if not composerFrame or not activeContainer then return end
 
-    -- Update title
     if composerFrame._title then
         composerFrame._title:SetText(string.format(ns.L["Spell Manager - %s"], GetContainerLabel(activeContainer)))
     end
@@ -4173,20 +3812,8 @@ function RefreshAll_Composer() -- luacheck: ignore (assigns forward-declared upv
     RefreshAddList()
 end
 
----------------------------------------------------------------------------
--- COMPOSER LAYOUT
--- Paints the composer surface (nav panel + preview + entry list + add
--- section + footer) into a host frame supplied by the caller. The popup
--- chrome (titlebar, close button, drag) was removed when the composer
--- moved into the QUI options panel. The host is the V2 Cooldown Manager
--- tile's "Composer" sub-page body.
----------------------------------------------------------------------------
 local function BuildComposerLayout(host)
     if not host then return end
-    -- Cached layout is reused only if it's still attached to this host.
-    -- When the tile tab-switches away, it reparents children to nil; the
-    -- cached frame is detached and must be rebuilt the next time the
-    -- Entries tab renders.
     if host._composerLayout then
         local cached = host._composerLayout
         if cached.GetParent and cached:GetParent() == host then
@@ -4196,16 +3823,6 @@ local function BuildComposerLayout(host)
         host._composerLayout = nil
     end
 
-    -- Outer scroll wrapper: the panel can be sized smaller than the
-    -- composer's natural dimensions; rather than overflow the host, we
-    -- scroll. The BackdropTemplate wrapper inside has a minimum size and
-    -- stretches to fill the host when the host is larger.
-    --
-    -- When embedded via host._hideComposerNav (the tile's Entries tab),
-    -- the composer IS the tab content — we let the scroll child match
-    -- the viewport so there's no artificial empty space at the bottom
-    -- and no scrollbar unless the content genuinely overflows. In the
-    -- legacy popup path we keep the 640×670 minimum.
     local embedded = host._hideComposerNav
     local MIN_W = embedded and 400 or FRAME_WIDTH
     local MIN_H = embedded and 260 or (FRAME_HEIGHT - 30)
@@ -4214,7 +3831,6 @@ local function BuildComposerLayout(host)
     scroll:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -18, 0)
     host._composerScroll = scroll
 
-    -- Style the scroll bar to match QUI theme.
     local scrollBar = scroll.ScrollBar
     if scrollBar then
         scrollBar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 2, -2)
@@ -4227,12 +3843,6 @@ local function BuildComposerLayout(host)
         if down then down:Hide(); down:SetAlpha(0) end
     end
 
-    -- Composer layout host. We use explicit bg + 4 border textures rather
-    -- than a backdrop border with a raw one-unit edge because the scroll-child resize
-    -- (FitToHost) hits a Blizzard SetupTextureCoordinates recursion in
-    -- Blizzard_SharedXML/Backdrop.lua at this frame's typical
-    -- width/height/effectiveScale (≈640×670 @ 0.64), causing a C stack
-    -- overflow on first paint of the V2 Cooldown Manager tile.
     local frame = CreateFrame("Frame", nil, scroll)
     frame:SetSize(MIN_W, MIN_H)
     scroll:SetScrollChild(frame)
@@ -4262,15 +3872,6 @@ local function BuildComposerLayout(host)
     host._composerLayout = frame
     composerFrame = frame
 
-    -- Resize the scroll child to fill the viewport when the host grows
-    -- beyond MIN_W/MIN_H; otherwise stay at the minimum so the scroll
-    -- frame can pan it.
-    --
-    -- Embedded mode: the composer is the tile's Entries tab, so the
-    -- scroll child should match the viewport exactly (no dead space,
-    -- no scrollbar unless the entry/add sections genuinely exceed the
-    -- viewport). Popup mode keeps the old "grow-only" behavior so the
-    -- composer has room to breathe inside a floating window.
     local function FitToHost()
         local sw = scroll:GetWidth() or 0
         local sh = scroll:GetHeight() or 0
@@ -4278,34 +3879,29 @@ local function BuildComposerLayout(host)
         if embedded then
             w = math.max(MIN_W, sw)
             h = math.max(MIN_H, sh)
-            -- Prefer viewport height when the viewport is smaller than
-            -- the scroll child's minimum, but clamp to MIN_H so the
-            -- internal relayout has a sane floor.
             if sh > 0 and sh < MIN_H then h = sh end
             if sh >= MIN_H then h = sh end
         else
             w = math.max(MIN_W, sw)
-            h = math.max(MIN_H, sh)
+            h = math.max(MIN_H, sh, frame._composerNaturalHeight or 0)
         end
-        frame:SetSize(w, h)
+        local currentW = frame:GetWidth() or 0
+        local currentH = frame:GetHeight() or 0
+        if math_abs(currentW - w) > 0.5 or math_abs(currentH - h) > 0.5 then
+            frame:SetSize(w, h)
+            return true
+        end
+        return false
     end
     scroll:HookScript("OnSizeChanged", FitToHost)
     FitToHost()
 
-    -- Hosts that drive container selection via an external dropdown
-    -- (the Cooldown Manager Containers sub-page) set host._hideComposerNav
-    -- to claim both the container nav AND the preview. In that mode we
-    -- skip the nav panel entirely and shift every content section to
-    -- the frame's left edge, reclaiming the full width.
     local hostOwnsNav = host and host._hideComposerNav
     local contentLeft, footerLeft
     if hostOwnsNav then
         contentLeft = 0
         footerLeft = 0
     else
-        -- Left navigation panel (vertical container list). Explicit bg
-        -- texture instead of SetBackdrop — same Blizzard recursion bug
-        -- as the parent frame above.
         local navPanel = CreateFrame("Frame", nil, frame)
         navPanel:SetWidth(NAV_WIDTH)
         navPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
@@ -4314,78 +3910,72 @@ local function BuildComposerLayout(host)
         navBg:SetAllPoints(navPanel)
         local _navBR, _navBG, _navBB = GetChromeBgSubpanel()
         navBg:SetColorTexture(_navBR, _navBG, _navBB, 1)
-        navPanel._bg = navBg  -- stored for ReThemeComposer
+        navPanel._bg = navBg
         frame._navPanel = navPanel
-        frame._tabBar = navPanel  -- BuildContainerTabs reads ._tabBar
+        frame._tabBar = navPanel
 
-        -- Nav border (right edge)
         local navBorder = navPanel:CreateTexture(nil, "ARTWORK")
         navBorder:SetWidth(1)
         navBorder:SetPoint("TOPRIGHT", navPanel, "TOPRIGHT", 0, 0)
         navBorder:SetPoint("BOTTOMRIGHT", navPanel, "BOTTOMRIGHT", 0, 0)
         local _navBdR, _navBdG, _navBdB = GetChromeBorder()
         navBorder:SetColorTexture(_navBdR, _navBdG, _navBdB, 1)
-        navPanel._navBorder = navBorder  -- stored for ReThemeComposer
+        navPanel._navBorder = navBorder
 
         contentLeft = NAV_WIDTH + 4
         footerLeft = NAV_WIDTH
     end
 
-    -- Live Preview — suppressed when the host owns the nav (the tile
-    -- hoists the preview above the sub-tabs). Entry section claims the
-    -- space that would have held the preview.
-    local entryY = -188
+    local preview
     if not hostOwnsNav then
-        local preview = BuildPreviewSection(frame)
+        preview = BuildPreviewSection(frame)
         preview:SetPoint("TOPLEFT", frame, "TOPLEFT", contentLeft, 0)
         preview:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
-    else
-        entryY = 0
+        frame._previewSection = preview
     end
 
-    -- Entry List (below preview if present) — height set dynamically by Relayout below
     local entrySection = BuildEntryListSection(frame)
-    entrySection:SetPoint("TOPLEFT", frame, "TOPLEFT", contentLeft, entryY)
+    if preview then
+        entrySection:SetPoint("TOPLEFT", preview, "BOTTOMLEFT", 0, -8)
+    else
+        entrySection:SetPoint("TOPLEFT", frame, "TOPLEFT", contentLeft, 0)
+    end
     entrySection:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
     frame._entrySection = entrySection
 
-    -- Add section (below entry list)
     local addSection = BuildAddSection(frame)
     addSection:SetPoint("TOPLEFT", entrySection, "BOTTOMLEFT", 0, -4)
     addSection:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
     frame._addSection = addSection
 
-    -- Footer
     local footer = BuildFooter(frame)
     footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", footerLeft, 4)
     footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 4)
     frame._footer = footer
 
-    -- Split the vertical space between entrySection and addSection so the
-    -- composer fits whatever the current panel size is. Re-runs whenever
-    -- the host (and therefore the wrapper) changes size.
-    --
-    -- Embedded mode skips the 188px preview reservation (the tile hoists
-    -- the preview above the tab strip), so the entry/add sections claim
-    -- that space instead of leaving it as dead air between rows.
-    local PREVIEW_H = embedded and 0 or 188
     local FOOTER_H  = 36
     local GAP       = 4
     local MIN_SECT  = 80
     local function Relayout()
+        local previewHeight = preview and ((preview:GetHeight() or PREVIEW_INITIAL_HEIGHT) + 8) or 0
+        if not embedded then
+            frame._composerNaturalHeight = previewHeight + FOOTER_H + GAP * 2 + MIN_SECT * 2
+            if FitToHost() then return end
+        end
         local h = frame:GetHeight() or FRAME_HEIGHT
-        local content = h - PREVIEW_H - FOOTER_H - GAP * 2
+        local content = h - previewHeight - FOOTER_H - GAP * 2
         local each = math.max(MIN_SECT, math.floor(content / 2))
         entrySection:SetHeight(each)
         addSection:SetHeight(each)
     end
     frame:HookScript("OnSizeChanged", Relayout)
+    if preview then
+        preview:HookScript("OnSizeChanged", Relayout)
+    end
     Relayout()
 
-    -- Override panel (created lazily, parented to entry content)
     BuildOverridePanel(entryListContent)
 
-    -- Wire search callbacks
     if searchBox then
         searchBox._onSearch = function()
             C_Timer.After(0.05, RefreshEntryList)
@@ -4397,32 +3987,22 @@ local function BuildComposerLayout(host)
         end
     end
 
-    -- Refresh preview method
     frame._refreshPreview = RefreshPreview
 end
 
----------------------------------------------------------------------------
--- RE-THEME: apply current accent color to static frame elements
----------------------------------------------------------------------------
 local function ReThemeComposer(frame)
     if not frame then return end
-    -- Main frame border (explicit textures, not SetBackdrop — see BuildComposerLayout)
     if frame._border then
         for i = 1, #frame._border do
             frame._border[i]:SetColorTexture(ACCENT_R * 0.6, ACCENT_G * 0.6, ACCENT_B * 0.6, 0.8)
         end
     end
-    -- Title bar background
     if frame._titleBg then
         frame._titleBg:SetColorTexture(ACCENT_R * 0.08, ACCENT_G * 0.08, ACCENT_B * 0.08, 1)
     end
-    -- Title text
     if frame._title then
         frame._title:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
     end
-    -- Skin-change: re-apply panel/nav chrome bg/border so a skin swap
-    -- recolors the composer without a full rebuild. Dynamic sections
-    -- (tabs, cells, menus) pull colors at render time and don't need this.
     if frame._bg then
         local _r, _g, _b = GetChromeBgPanel()
         frame._bg:SetColorTexture(_r, _g, _b, 0.97)
@@ -4441,11 +4021,6 @@ local function ReThemeComposer(frame)
     end
 end
 
----------------------------------------------------------------------------
--- EMBED INTO HOST (V2 tile sub-page builder calls this)
--- Paints the composer layout into `host` if not already done, then sets
--- the active container and refreshes.
----------------------------------------------------------------------------
 local function ActivateContainer(containerKey)
     if not containerKey then containerKey = activeContainer or "essential" end
     local db = GetContainerDB(containerKey)
@@ -4457,8 +4032,6 @@ local function ActivateContainer(containerKey)
         return
     end
 
-    -- Tear down the live preview before switching so any preview-scoped
-    -- icons/bars/glow tied to the previous container are released cleanly.
     if ns.CDMComposerPreview and ns.CDMComposerPreview.Teardown then
         ns.CDMComposerPreview.Teardown()
     end
@@ -4479,33 +4052,19 @@ end
 _G.QUI_EmbedCDMComposer = function(host, containerKey)
     if not host then return end
     RefreshAccentColor()
-    -- host._hideComposerNav tells BuildComposerLayout to skip the left
-    -- nav panel and shift content to the frame's left edge. The tile
-    -- provides its own container dropdown + preview.
     BuildComposerLayout(host)
     ReThemeComposer(composerFrame)
     ActivateContainer(containerKey)
 end
 
--- Phase B.3: tile-level "+ New Container" button calls into the
--- composer's popup. The popup lives here so it reuses the composer's
--- container-creation flow; the tile passes a callback that's invoked
--- with the new container key after successful creation.
 _G.QUI_ShowCDMNewContainerPopup = function(onCreated)
     ShowNewContainerPopup(onCreated)
 end
 
--- Phase B.3: hoist the live preview to the Cooldown Manager tile. The
--- tile creates its preview frame above the sub-tab strip and calls
--- QUI_BuildCDMPreview once; subsequent container selections call
--- QUI_RefreshCDMPreview(containerKey). BuildPreviewSection is the
--- existing composer-internal builder — reusing it keeps the visual
--- language consistent. activeContainer is the file-local state used
--- by RefreshPreview to know what to render.
-_G.QUI_BuildCDMPreview = function(host, initialContainerKey)
+_G.QUI_BuildCDMPreview = function(host, initialContainerKey, autoHeightOptions)
     if not host then return end
     RefreshAccentColor()
-    local frame = BuildPreviewSection(host)
+    local frame = BuildPreviewSection(host, autoHeightOptions)
     frame:SetAllPoints(host)
     if initialContainerKey then
         local db = GetContainerDB(initialContainerKey)
@@ -4522,13 +4081,6 @@ _G.QUI_RefreshCDMPreview = function(containerKey)
     if RefreshPreview then RefreshPreview() end
 end
 
----------------------------------------------------------------------------
--- GLOBAL ENTRY POINT
--- Opens the QUI options panel and navigates to Cooldown Manager →
--- Composer sub-page. The sub-page builder calls _G.QUI_EmbedCDMComposer
--- on first activation; for already-embedded composers we update the
--- active container in place.
----------------------------------------------------------------------------
 _G.QUI_OpenCDMComposer = function(containerKey)
     if containerKey then
         local db = GetContainerDB(containerKey)
@@ -4541,18 +4093,14 @@ _G.QUI_OpenCDMComposer = function(containerKey)
         gui:Show()
     end
     if gui.NavigateTo then
-        gui:NavigateTo(4, 8)  -- Cooldown Manager → Composer sub-page
+        gui:NavigateTo(4, 8)
     end
 
-    -- If already embedded, refresh in place to reflect the requested
-    -- container. (Otherwise the V2 sub-page builder will embed for the
-    -- first time and pick up activeContainer set above.)
     if composerFrame then
         ActivateContainer(containerKey)
     end
 end
 
--- Global entry point to open the new container popup
 _G.QUI_ShowNewCDMContainerPopup = function()
     RefreshAccentColor()
     ShowNewContainerPopup()

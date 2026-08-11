@@ -1,18 +1,8 @@
---[[
-    QUI Options V2 — Related Settings Footer
-
-    Renders a compact "Related:" row at the bottom of a tile's page frame.
-    Each entry navigates to another tile/sub-page on click.
-]]
-
 local ADDON_NAME, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 
--- body     : parent frame (the tile's _pageFrame)
--- related  : array of { label, tileId, subPageIndex (optional), scrollToLabel (optional) }
--- frame    : the V2 MainFrame (for GUI:FindV2TileByID lookup)
 function ns.QUI_RenderRelatedFooter(body, related, frame)
     if not body or not related or #related == 0 then return end
 

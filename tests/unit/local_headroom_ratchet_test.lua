@@ -24,31 +24,32 @@ local MIN_HEADROOM = 10
 -- landed, with their measured free-slot floor. Each may only IMPROVE: dropping
 -- below its floor fails. Once a file reaches MIN_HEADROOM (via do-block
 -- scoping, state-table grouping, or a satellite split), remove its entry.
--- All four are candidates for the cdm_blizz_mirror-style satellite split.
+-- Both remaining are candidates for the cdm_blizz_mirror-style satellite split.
+-- (cdm_icon_renderer.lua graduated via the CDM dead-code deletions;
+-- cdm_spelldata.lua had already accumulated >=10 free slots in earlier
+-- rounds and its entry was simply stale — no split needed for either.)
 local GRANDFATHERED = {
-    ["QUI_CDM/cdm/cdm_icon_renderer.lua"] = 0,
-    ["QUI_CDM/cdm/cdm_spelldata.lua"] = 1,
     ["QUI_GroupFrames/groupframes/groupframes.lua"] = 0,
-    ["QUI_Minimap/minimap/minimap.lua"] = 5,
+    ["modules/minimap/minimap.lua"] = 5,
 }
 
 local loadchunk = loadstring or load
 
 -- ---------------------------------------------------------------------------
 -- File enumeration via git ls-files (same scope as the global-assignment
--- ratchet). QUI_OptionsSearch* caches are generated flat data with trivial
--- local counts; skip them to keep this test fast.
+-- ratchet). The generated search index used to live in its own folder and was
+-- skipped by prefix; it is QUI_Options/search_cache.lua now and stays in
+-- scope — it declares two file-scope locals, so it costs nothing to check.
 -- ---------------------------------------------------------------------------
 local function listInScopeFiles()
     local files = {}
     local p = io.popen and io.popen('git ls-files "*.lua"')
     if p then
         for line in p:lines() do
-            if (line:match("^core/")
-                    or line:match("^modules/")
-                    or line:match("^QUI_[^/]+/")
-                    or line == "init.lua")
-                and not line:match("^QUI_OptionsSearch")
+            if line:match("^core/")
+                or line:match("^modules/")
+                or line:match("^QUI_[^/]+/")
+                or line == "init.lua"
             then
                 files[#files + 1] = line
             end

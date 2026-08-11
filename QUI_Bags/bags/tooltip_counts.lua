@@ -1,15 +1,7 @@
----------------------------------------------------------------------------
--- Bags: tooltip inventory counts.
--- Item-tooltip post call (TooltipDataProcessor) appending per-owner counts
--- from Summaries.GetCounts: current character first, then alts by total,
--- plus warband/guild lines and a grand total when 2+ owners hold the item.
--- BuildCountLines is PURE (unit-tested); only the hook below touches game
--- state. Loads after the data layer in bags.xml; gates per show on
--- Bags.IsActive() so a disabled module adds nothing.
----------------------------------------------------------------------------
 -- luacheck: read globals ItemRefTooltip
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage
 
 local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
@@ -17,13 +9,10 @@ local GetSettings = Helpers.CreateDBGetter("bags")
 local TooltipCounts = {}
 Bags.TooltipCounts = TooltipCounts
 
--- Canonical breakdown order (matches the locations summaries.lua indexes).
 local LOCATION_ORDER = { "bags", "bank", "equipped", "mail", "auctions", "warband", "guild" }
 local KNOWN_LOCATION = {}
 for _, loc in ipairs(LOCATION_ORDER) do KNOWN_LOCATION[loc] = true end
 
--- Read RAID_CLASS_COLORS directly (chat-classcolors precedent: never route
--- class colors through the CUSTOM-aware accent helper).
 local function ColorLabel(label, classToken)
     local color = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
     if color and color.colorStr then
@@ -38,8 +27,6 @@ local function BuildBreakdown(locCounts)
         local n = locCounts[loc]
         if n and n > 0 then parts[#parts + 1] = loc .. " " .. n end
     end
-    -- Future/unknown locations still render (sorted for determinism) rather
-    -- than silently vanishing from the breakdown.
     local extras
     for loc, n in pairs(locCounts) do
         if not KNOWN_LOCATION[loc] and n > 0 then
@@ -54,13 +41,6 @@ local function BuildBreakdown(locCounts)
     return table.concat(parts, ", ")
 end
 
---- PURE formatter. counts is the Summaries.GetCounts shape
---- ({ ownerKey → { location → count } }); getOwnerInfo(ownerKey) must return
---- { label, classToken|nil, isCurrent|nil, plainTotal|nil } (plainTotal
---- suppresses the breakdown for owners whose single location is implied by
---- the label — warband/guild). Returns an array of display strings:
---- "Label: total (bags 3, bank 5)" per owner — current character first, then
---- total desc, then label asc — plus "Total: N" when 2+ owners hold the item.
 function TooltipCounts.BuildCountLines(counts, getOwnerInfo)
     local lines = {}
     if type(counts) ~= "table" then return lines end
@@ -102,21 +82,12 @@ function TooltipCounts.BuildCountLines(counts, getOwnerInfo)
     return lines
 end
 
----------------------------------------------------------------------------
--- Hook side (game state from here down)
----------------------------------------------------------------------------
-
---- Resolves display info for a Summaries owner key. The current realm's
---- "-Realm" suffix is stripped from character AND guild labels (suffix
---- compare, never parsed: realm names can contain dashes); cross-realm
---- owners keep the full key for disambiguation.
 local function GetOwnerInfo(ownerKey)
-    local Summaries, Store = Bags.Summaries, Bags.Store
+    local Summaries, Store = Storage.Summaries, Storage.Store
     if ownerKey == Summaries.WARBAND_OWNER then
         return { label = ns.L["Warband"], plainTotal = true }
     end
     local currentKey = Store.GetCurrentCharacterKey()
-    -- Character names cannot contain '-', so the first dash splits exactly.
     local currentRealm = currentKey and currentKey:match("^[^-]+%-(.+)$")
     local function StripCurrentRealm(label)
         if currentRealm and label:sub(-#currentRealm - 1) == ("-" .. currentRealm) then
@@ -137,44 +108,25 @@ local function GetOwnerInfo(ownerKey)
 end
 
 local function OnTooltipSetItem(tooltip, data)
-    -- Frame filter mirrors the Blizzard item-tooltip post-call idiom
-    -- (PTR feedback): main tooltip + chat-link tooltip only — shopping
-    -- comparisons and embedded tooltips stay untouched.
     if tooltip ~= GameTooltip and tooltip ~= ItemRefTooltip then return end
-    -- Module gate: disabled bags module = stale cache = no lines.
     if not (Bags.IsActive and Bags.IsActive()) then return end
     local settings = GetSettings()
     local mode = settings and settings.behavior and settings.behavior.tooltipCounts
     if mode == "off" then return end
-    -- "modifier" re-checks per call: counts appear only while Shift is held.
     if mode == "modifier" and not IsShiftKeyDown() then return end
     local itemID = data and data.id
     if type(itemID) ~= "number" then return end
-    -- EXPLICIT secret-policy decision: this guard-and-bail is intentional
-    -- and is NOT the forbidden pass-through gating. The house rule ("format
-    -- secrets straight through, never branch") exists for pipelines where
-    -- the secret can flow onward to a C-side consumer. Here the itemID is a
-    -- TooltipData id (the one secret-capable input in this module) and the
-    -- ONLY consumer is our own Lua cache lookup — a secret value cannot
-    -- index a table without throwing, and there is no C-side to forward it
-    -- to. When the hovered item's identity is restricted, cross-character
-    -- counts are information we cannot have: no line is the correct render.
-    -- (Guard order per qol/tooltip precedent: type first, then issecretvalue.)
     if type(issecretvalue) == "function" and issecretvalue(itemID) then return end
-    local counts = Bags.Summaries.GetCounts(itemID)
+    local counts = Storage.Summaries.GetCounts(itemID)
     if next(counts) == nil then return end
     local lines = TooltipCounts.BuildCountLines(counts, GetOwnerInfo)
     if #lines == 0 then return end
-    -- House separator + wrapped white lines (qol/tooltip info-line idiom).
-    -- Post calls run before the tooltip's own Show — no relayout needed.
     tooltip:AddLine(" ")
     for i = 1, #lines do
         tooltip:AddLine(lines[i], 1, 1, 1, true)
     end
 end
 
--- Registration guard covers partial-load environments (unit harness) and
--- API drift (mplus_progress/skinning-tooltips precedent).
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall
     and Enum and Enum.TooltipDataType then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, OnTooltipSetItem)

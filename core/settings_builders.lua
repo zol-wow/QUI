@@ -8,20 +8,10 @@ local providerSurfaces = {}
 local pendingProviderRefresh = {}
 local providerRevisions = {}
 
--- Monotonic per-provider change counter, bumped on every NotifyProviderChanged
--- (the canonical "this provider's data changed" signal). A built surface stamps
--- the revision it was built at, so OnShow can tell whether anything actually
--- changed while the surface was hidden -- and skip a full rebuild when not.
 local function BumpProviderRevision(providerKey)
     providerRevisions[providerKey] = (providerRevisions[providerKey] or 0) + 1
 end
 
-function SettingsBuilders.GetProviderRevision(providerKey)
-    return providerRevisions[providerKey] or 0
-end
-
--- True when a shown surface must be rebuilt because its provider changed since
--- the surface was last built. A never-stamped surface always rebuilds.
 function SettingsBuilders.SurfaceNeedsRebuildOnShow(parent, providerKey)
     if not parent then return true end
     local built = parent._quiBuiltProviderRevision
@@ -216,12 +206,6 @@ local function WithSuppressedPosition(includePosition, fn)
     return result
 end
 
--- Inverse of WithSuppressedPosition. Suppresses every Utils.CreateCollapsible
--- call inside fn EXCEPT when that call originates from BuildPositionCollapsible
--- (which wraps its anchoring widgets in a "Position" card). The
--- BuildOpenFullSettingsLink helper builds its own row and is unaffected.
---
--- Result: Layout Mode drawer renders only Position + "Open full settings →".
 local function WithOnlyPosition(fn)
     local U = ns.QUI_LayoutMode_Utils
     if not U or not U.CreateCollapsible or not U.BuildPositionCollapsible then
@@ -241,13 +225,13 @@ local function WithOnlyPosition(fn)
         if insidePosition then
             return originalCreate(...)
         end
-        -- Suppress: skip buildFunc, do not insert into sections, return nil.
         return nil
     end
 
     U.BuildPositionCollapsible = function(...)
         local prev = insidePosition
         insidePosition = true
+        ---@diagnostic disable-next-line: redundant-parameter
         local ok, err = xpcall(originalBuildPosition, ErrorHandler, ...)
         insidePosition = prev
         if not ok then geterrorhandler()(err) end
@@ -266,15 +250,6 @@ local function WithOnlyPosition(fn)
     return result
 end
 
--- Dual-column post-layout. The provider builders anchor widgets via
--- Helpers.PlaceRow (TOPLEFT at (0, sy), RIGHT to body RIGHT → full width).
--- After CreateCollapsible returns, we walk the body's direct children and
--- direct FontString help text in creation order, pair controls into card rows,
--- and re-anchor each pair LEFT-half / RIGHT-half with a center divider +
--- alternating row bg. Text regions stay full-width rows so helper copy keeps
--- its place in the flow. Mirrors the element-tab dual-column rendering in
--- layoutmode_composer.lua so every tile tab looks the same.
----------------------------------------------------------------------------
 local CARD_ROW_HEIGHT = 32
 local dualColumnSequence = 0
 
@@ -376,23 +351,19 @@ local function ApplyDualColumnLayout(section)
 
     if #layoutItems == 0 then return end
 
-    -- Pre-rendered card groups (from CreateSettingsCardGroup) already
-    -- pair their content into two columns with their own row frames.
-    -- Reanchoring the card inside a 32px row frame scrambles the inner
-    -- layout and causes siblings to overlap — skip this section entirely
-    -- if any direct child is a marked card group.
     for _, item in ipairs(layoutItems) do
         if item._quiCardGroup then return end
     end
 
-    -- Stable sort by the builder's original row offsets. The old child-first,
-    -- region-second collection moved direct FontString helper copy to the
-    -- bottom of settings sections; preserving the initial TOPLEFT offsets keeps
-    -- inline labels in the same flow while avoiding hidden-page GetTop() math.
     table.sort(layoutItems, function(a, b)
         local ay = a._quiDualColumnOriginalY
         local by = b._quiDualColumnOriginalY
-        if type(ay) == "number" and type(by) == "number" and ay ~= by then
+        local aNum = type(ay) == "number"
+        local bNum = type(by) == "number"
+        if aNum ~= bNum then
+            return aNum
+        end
+        if aNum and ay ~= by then
             return ay > by
         end
 
@@ -404,8 +375,6 @@ local function ApplyDualColumnLayout(section)
         return as < bs
     end)
 
-    -- Reset row-chrome pool attached to the body so repeated renders don't
-    -- leak textures.
     for _, rf in ipairs(body._dualRowFrames) do
         rf:Hide()
         rf._divider:Hide()
@@ -495,13 +464,6 @@ local function ApplyDualColumnLayout(section)
 
     local contentHeight = math.abs(ly) + 4
 
-    -- Providers set section._contentHeight to the full-width totalHeight
-    -- at the end of their buildFunc (≈ nRows × FORM_ROW). RefreshContentHeight
-    -- does math.max between that and the freshly-measured height, so if we
-    -- don't reset it, the section retains the old tall height and leaves
-    -- dead space below the compacted dual-column content. Clear both
-    -- caches, then let RefreshContentHeight re-measure from the current
-    -- child layout.
     section._contentHeight = 0
     body._contentHeight = contentHeight
     if section.SetExpanded then
@@ -516,10 +478,6 @@ local function ApplyDualColumnLayoutWhenReady(section)
 
     ApplyDualColumnLayout(section)
 
-    -- Tile sub-pages build into containers that start hidden and are only
-    -- shown after the current selection finishes rendering. Re-run the
-    -- compaction on the next frame so direct body regions (intro copy,
-    -- helper text, etc.) have resolved geometry before we place row 1.
     C_Timer.After(0, function()
         if not section or not section._body or not section.GetParent then return end
         if not section:GetParent() then return end
@@ -528,13 +486,6 @@ local function ApplyDualColumnLayoutWhenReady(section)
     end)
 end
 
----------------------------------------------------------------------------
--- RenderWithTileChrome
--- Wraps `fn` so every U.CreateCollapsible call inside it renders as a
--- borderless section and gets the dual-column post-process applied — the
--- V2 tile look (accent-dot header, no card border, rows paired into 32 px
--- cells with a center divider and alternating bg).
----------------------------------------------------------------------------
 local function RenderWithTileChrome(fn)
     local U = ns.QUI_LayoutMode_Utils
     if not U or not U.CreateCollapsible then
@@ -587,11 +538,6 @@ SettingsBuilders.WithSuppressedPosition = WithSuppressedPosition
 SettingsBuilders.WithOnlyPosition = WithOnlyPosition
 SettingsBuilders.RenderWithTileChrome = RenderWithTileChrome
 
--- Exposed so providers using deferred widget creation (e.g. chat tab
--- filters) can re-trigger the dual-column pairing pass once their
--- deferred widgets have actually been added to the body. The original
--- pass runs at section creation + one frame later — too early to
--- include widgets that get added via C_Timer.After drains.
 SettingsBuilders.ApplyDualColumnLayoutWhenReady = ApplyDualColumnLayoutWhenReady
 
 local function BuildViaProvider(providerKey, parent, width, options)
@@ -623,8 +569,6 @@ local function BuildViaProvider(providerKey, parent, width, options)
         refreshFn = RefreshSurface,
     }
 
-    -- Stamp the provider revision this surface is being built at, so a later
-    -- OnShow can skip the rebuild when nothing changed while it was hidden.
     parent._quiBuiltProviderRevision = providerRevisions[providerKey] or 0
 
     SettingsBuilders.RegisterProviderSurface(providerKey, surfaceId, RefreshSurface, function()
@@ -645,13 +589,6 @@ local function BuildViaProvider(providerKey, parent, width, options)
             SettingsBuilders.RegisterProviderSurface(info.providerKey, info.surfaceId, info.refreshFn, function()
                 return IsSurfaceVisible(self)
             end)
-            -- Rebuild on show only when needed: the first time the surface is
-            -- shown after building (some providers finalize width-dependent
-            -- layout on that first deferred pass, so we preserve it), or when
-            -- the provider actually changed while the surface was hidden (e.g.
-            -- an edit on another tab). Re-showing an unchanged, already-shown
-            -- subpage skips the ClearHost + full provider.build that froze the
-            -- client on every settings tab switch.
             if self._quiProviderShownRefreshed
                 and not SettingsBuilders.SurfaceNeedsRebuildOnShow(self, info.providerKey) then
                 return
@@ -668,10 +605,6 @@ local function BuildViaProvider(providerKey, parent, width, options)
     end
 
     local function BuildSurfaceContent()
-        -- Layout Mode passes `layoutModePositionOnly` and `useMinimalDrawerChrome`
-        -- through options. Apply them around provider.build so the flags hold for
-        -- both the initial render AND the OnShow / NotifyProviderChanged refresh
-        -- paths that re-enter BuildViaProvider with the same options object.
         local U = ns.QUI_LayoutMode_Utils
         local prevPositionOnly, prevMinimalChrome
         local appliedPositionOnly, appliedMinimalChrome = false, false
@@ -724,11 +657,7 @@ function SettingsBuilders.BuildProvider(providerKey, parent, width, options)
     return BuildViaProvider(providerKey, parent, width, options)
 end
 
--- Friendly display names for provider/feature keys. Used by higher-level
--- stacked feature composition to label each feature section without relying
--- on raw internal keys.
 SettingsBuilders.PROVIDER_LABELS = {
-    -- Gameplay · Combat
     combatTimer        = "Combat Timer",
     lustTimer          = "Lust Timer",
     brezCounter        = "Battle Res Counter",
@@ -741,22 +670,18 @@ SettingsBuilders.PROVIDER_LABELS = {
     mplusProgress      = "Mythic+ Mob Progress",
     actionTracker      = "Action Tracker",
 
-    -- Gameplay · Raid Buffs & Consumables
     missingRaidBuffs   = "Missing Raid Buffs",
     consumables        = "Consumables",
 
-    -- Cooldown Manager
     buffIcon           = "Buff Icons",
     buffBar            = "Buff Bars",
     primaryPower       = "Primary Resource",
     secondaryPower     = "Secondary Resource",
 
-    -- Appearance · widget anchoring labels
     topCenterWidgets    = "Top-Center Widgets",
     belowMinimapWidgets = "Below-Minimap Widgets",
     objectiveTracker    = "Objective Tracker",
 
-    -- Action Bars · Per-Bar
     bar1 = "Bar 1", bar2 = "Bar 2", bar3 = "Bar 3", bar4 = "Bar 4",
     bar5 = "Bar 5", bar6 = "Bar 6", bar7 = "Bar 7", bar8 = "Bar 8",
     stanceBar = "Stance Bar",
@@ -768,7 +693,6 @@ SettingsBuilders.PROVIDER_LABELS = {
     totemBar          = "Totem Bar",
     raidMarkersBar    = "Raid Markers Bar",
 
-    -- Group Frames
     partyFrames     = "Party Frames",
     raidFrames      = "Raid Frames",
     spotlightFrames = "Spotlight Frames",
@@ -777,8 +701,6 @@ SettingsBuilders.PROVIDER_LABELS = {
     dandersPinned1  = "Danders Pinned Set 1",
     dandersPinned2  = "Danders Pinned Set 2",
 
-    -- Minimap & Datatext
     datatextPanel = "Datatext Panel",
     minimap       = "Minimap",
 }
-

@@ -1,10 +1,3 @@
----------------------------------------------------------------------------
--- QUI Bags — settings feature registration (minimap settings precedent).
--- Loaded from QUI_Options/options.xml (LoD): registers the provider-backed
--- "bags" feature so the Bags tile sub-page renders the shared provider
--- panel built in bags_providers.lua. The module master toggle (enabled +
--- reload prompt) lives in core/settings/content/modules_nonvisual_onboarding.lua.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 
 local Settings = ns.Settings

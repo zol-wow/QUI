@@ -63,7 +63,7 @@ end
 -- Decode
 ----------------------------------------------------------------------------
 
-local KNOWN_PREFIXES = { "QUI1:", "QCT1:", "QCB1:" }
+local KNOWN_PREFIXES = { "QUI1:", "QUI1:", "QCT1:", "QCB1:" }
 
 local function StripWhitespace(s)
     return (s:gsub("%s+", ""))

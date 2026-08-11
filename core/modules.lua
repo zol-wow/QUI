@@ -1,17 +1,8 @@
----------------------------------------------------------------------------
--- QUI Modules — pub/sub for module-state changes.
--- Subscribe / Unsubscribe / NotifyChanged. Used by surfaces (Modules
--- panel, Layout Mode drawer, search-result rows) to refresh their row
--- visuals when any module's enable state flips.
---
--- State of the module itself lives in the module's own DB key — this
--- helper carries no state, only fans out notifications.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 
 local QUI_Modules = {
-    _specific = {},   -- [featureId] = { [token] = callback }
-    _wildcard = {},   -- [token] = callback
+    _specific = {},
+    _wildcard = {},
     _nextToken = 1,
 }
 ns.QUI_Modules = QUI_Modules
@@ -22,10 +13,6 @@ local function NewToken(self)
     return t
 end
 
---- Subscribe to state-change notifications for a feature.
--- @param featureId string — feature id, or "*" for all features.
--- @param callback function(featureId) — fired when NotifyChanged runs.
--- @return table — opaque token; pass to Unsubscribe to remove.
 function QUI_Modules:Subscribe(featureId, callback)
     if type(callback) ~= "function" then return nil end
     local token = { id = NewToken(self), key = featureId }
@@ -56,8 +43,6 @@ function QUI_Modules:Unsubscribe(token)
     end
 end
 
---- Dispatch a state-change notification synchronously.
--- All callbacks are pcall'd; one failure does not block others.
 local function DispatchCallback(cb, featureId)
     local ok, err = pcall(cb, featureId)
     if not ok and DEFAULT_CHAT_FRAME then

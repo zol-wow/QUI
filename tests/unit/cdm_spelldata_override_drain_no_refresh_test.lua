@@ -60,6 +60,8 @@ local essentialDB = {
 -- and container refreshes (FireChangeCallback -> QUI_OnSpellDataChanged).
 local mapRebuilds = 0
 local refreshCount = 0
+local hookRefreshCount = 0
+local lastHookRefreshMarkDirty
 
 -- The other builtin containers need a db with a non-nil ownedSpells so
 -- SnapshotBlizzardCDM reports "ready" (steady state, not cold-login). Without
@@ -86,8 +88,16 @@ local ns = {
         QueryOverrideSpell = function(s) return s end,
         QueryBaseSpell = function() return nil end,
     },
-    CDMContainers = { GetAllContainerKeys = function() return { "essential" } end },
-    CDMComposer = {
+    CDMContainers = {
+        GetAllContainerKeys = function() return { "essential" } end,
+        RefreshReanchorRuntimeHooks = function(markDirty)
+            hookRefreshCount = hookRefreshCount + 1
+            lastHookRefreshMarkDirty = markDirty
+        end,
+    },
+    -- Runtime reads ns.CDMCatalog directly; ns.CDMComposer is only the alias
+    -- that ships in the LoadOnDemand options addon.
+    CDMCatalog = {
         RebuildBlizzardCatalogMaps = function(spellToCDID, inCooldowns)
             mapRebuilds = mapRebuilds + 1
             for id in pairs(learnedCooldowns) do
@@ -125,7 +135,7 @@ local function fire(event) eventFrame.OnEvent(eventFrame, event) end
 
 -- CASE 1: proc-override armed in combat -> drained at combat end.
 -- Map rebuilt, but NO container refresh.
-mapRebuilds, refreshCount = 0, 0
+mapRebuilds, refreshCount, hookRefreshCount, lastHookRefreshMarkDirty = 0, 0, 0, nil
 inCombat = true
 fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 assert(refreshCount == 0, "override in combat must defer, not refresh immediately; got " .. refreshCount)
@@ -133,41 +143,51 @@ inCombat = false
 fire("PLAYER_REGEN_ENABLED")
 assert(mapRebuilds == 1, "combat-end drain must rebuild the spell->cdID map once; got " .. mapRebuilds)
 assert(refreshCount == 0, "proc-override drain must NOT fire the full container refresh; got " .. refreshCount)
+assert(hookRefreshCount == 0, "proc-override drain must NOT refresh native re-anchor hooks; got " .. hookRefreshCount)
 
 -- CASE 2: DATA_LOADED armed in combat -> drained at combat end. Full refresh.
-mapRebuilds, refreshCount = 0, 0
+mapRebuilds, refreshCount, hookRefreshCount, lastHookRefreshMarkDirty = 0, 0, 0, nil
 inCombat = true
 fire("COOLDOWN_VIEWER_DATA_LOADED")
 inCombat = false
 fire("PLAYER_REGEN_ENABLED")
 assert(mapRebuilds == 1, "data_loaded drain must rebuild the map once; got " .. mapRebuilds)
 assert(refreshCount == 1, "data_loaded drain must fire the full container refresh once; got " .. refreshCount)
+assert(hookRefreshCount == 1 and lastHookRefreshMarkDirty == true,
+    "data_loaded drain must refresh native re-anchor hooks with markDirty=true; got count="
+    .. hookRefreshCount .. " markDirty=" .. tostring(lastHookRefreshMarkDirty))
 
 -- CASE 3: mixed arming (override THEN data_loaded) in combat -> data_loaded wins.
-mapRebuilds, refreshCount = 0, 0
+mapRebuilds, refreshCount, hookRefreshCount, lastHookRefreshMarkDirty = 0, 0, 0, nil
 inCombat = true
 fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 fire("COOLDOWN_VIEWER_DATA_LOADED")
 inCombat = false
 fire("PLAYER_REGEN_ENABLED")
 assert(refreshCount == 1, "mixed arming must take the full-refresh path (data_loaded wins); got " .. refreshCount)
+assert(hookRefreshCount == 1,
+    "mixed arming with data_loaded must refresh native re-anchor hooks once; got " .. hookRefreshCount)
 
 -- CASE 3b: reverse mixed arming (data_loaded THEN override) -> refresh still wins.
 -- The needsRefresh flag, once set by a non-override event, must survive a later
 -- override event in the same combat (override must never clear it).
-mapRebuilds, refreshCount = 0, 0
+mapRebuilds, refreshCount, hookRefreshCount, lastHookRefreshMarkDirty = 0, 0, 0, nil
 inCombat = true
 fire("COOLDOWN_VIEWER_DATA_LOADED")
 fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 inCombat = false
 fire("PLAYER_REGEN_ENABLED")
 assert(refreshCount == 1, "data_loaded-then-override must still take the full-refresh path; got " .. refreshCount)
+assert(hookRefreshCount == 1,
+    "data_loaded-then-override must still refresh native re-anchor hooks once; got " .. hookRefreshCount)
 
 -- CASE 4: nothing armed -> drain is a no-op.
-mapRebuilds, refreshCount = 0, 0
+mapRebuilds, refreshCount, hookRefreshCount, lastHookRefreshMarkDirty = 0, 0, 0, nil
 fire("PLAYER_REGEN_ENABLED")
 assert(mapRebuilds == 0 and refreshCount == 0,
     "unarmed combat-end drain must do nothing; got rebuilds=" .. mapRebuilds .. " refresh=" .. refreshCount)
+assert(hookRefreshCount == 0,
+    "unarmed combat-end drain must not refresh native hooks; got " .. hookRefreshCount)
 
 -- CASE 5: proc-override OUT OF COMBAT must NOT drive a full container refresh.
 -- This is the OOC Hammer-of-Light flicker: the override is scoped (mirror +
@@ -175,18 +195,23 @@ assert(mapRebuilds == 0 and refreshCount == 0,
 -- gated off for OVERRIDE_UPDATED) nor the debounced reconcile (guarded, base-keyed
 -- learned signature unchanged) may fire -- the steady-state proc rebuilt every
 -- icon and flashed charge/stack text across the whole bar.
-mapRebuilds, refreshCount = 0, 0
+mapRebuilds, refreshCount, hookRefreshCount, lastHookRefreshMarkDirty = 0, 0, 0, nil
 inCombat = false
 fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 assert(refreshCount == 0,
     "OOC proc-override must NOT fire a full container refresh (scoped event); got " .. refreshCount)
+assert(hookRefreshCount == 0,
+    "OOC proc-override must NOT refresh native re-anchor hooks; got " .. hookRefreshCount)
 
 -- CASE 6: DATA_LOADED out of combat still drives the full refresh (genuine
 -- catalog staleness, e.g. cold-login binding fix) -- the gate is override-only.
-mapRebuilds, refreshCount = 0, 0
+mapRebuilds, refreshCount, hookRefreshCount, lastHookRefreshMarkDirty = 0, 0, 0, nil
 inCombat = false
 fire("COOLDOWN_VIEWER_DATA_LOADED")
 assert(refreshCount >= 1,
     "OOC data_loaded must still fire the full container refresh; got " .. refreshCount)
+assert(hookRefreshCount >= 1 and lastHookRefreshMarkDirty == true,
+    "OOC data_loaded must refresh native re-anchor hooks with markDirty=true; got count="
+    .. hookRefreshCount .. " markDirty=" .. tostring(lastHookRefreshMarkDirty))
 
 print("OK: cdm_spelldata_override_drain_no_refresh_test")

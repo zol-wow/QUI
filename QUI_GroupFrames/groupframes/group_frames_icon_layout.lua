@@ -3,20 +3,19 @@ local ADDON_NAME, ns = ...
 local IconLayout = ns.QUI_GroupFrameIconLayout or {}
 ns.QUI_GroupFrameIconLayout = IconLayout
 
--- Canonical dispel-type default color palette. Shared by groupframes.lua
--- (_dispel.defaultColors) and groupframes_auras.lua (AURA_DISPEL_COLORS) so a
--- palette change lands in exactly one place. NOTE: the settings UI keeps its
--- own 4-color seed (no Bleed) by design — do not point it here.
-IconLayout.DISPEL_DEFAULT_COLORS = {
-    Magic   = { 0.2, 0.6, 1.0, 1 },  -- Blue
-    Curse   = { 0.6, 0.0, 1.0, 1 },  -- Purple
-    Disease = { 0.6, 0.4, 0.0, 1 },  -- Brown
-    Poison  = { 0.0, 0.6, 0.0, 1 },  -- Green
-    Bleed   = { 0.8, 0.0, 0.0, 1 },  -- Red
-}
+local AuraGlue = ns.AuraGlue or (_G.QUI and _G.QUI.AuraGlue)
+IconLayout.DISPEL_DEFAULT_COLORS = AuraGlue and AuraGlue.DISPEL_DEFAULT_COLORS
 
--- Single-row offset for slot `index` (1-based) growing `direction` from the
--- anchor. CENTER centres the whole strip of `totalCount` icons on the anchor.
+function IconLayout.SeedDispelColors(tbl)
+    if type(tbl) ~= "table" then return tbl end
+    for k, v in pairs(IconLayout.DISPEL_DEFAULT_COLORS) do
+        if type(tbl[k]) ~= "table" then
+            tbl[k] = { v[1], v[2], v[3], v[4] or 1 }
+        end
+    end
+    return tbl
+end
+
 local function SingleRowOffset(index, iconSize, spacing, direction, totalCount)
     local step = ((index or 1) - 1) * ((iconSize or 0) + (spacing or 0))
     if direction == "LEFT" then
@@ -33,14 +32,6 @@ local function SingleRowOffset(index, iconSize, spacing, direction, totalCount)
     return step, 0
 end
 
--- `perRow` (optional, >0) wraps the strip into multiple rows/columns: every
--- `perRow` icons the strip steps once along the perpendicular axis (`rowDir`).
--- perRow nil/0 keeps the legacy single-line layout, so every existing caller
--- that omits the two new args is byte-for-byte unchanged.
--- rowDir is the wrap axis: for a horizontal grow (LEFT/RIGHT/CENTER) it is
--- "UP"/"DOWN" (default DOWN); for a vertical grow (UP/DOWN) it is "LEFT"/"RIGHT"
--- (default RIGHT). The caller derives it from the strip's frame anchor so rows
--- stack away from the frame edge rather than into it.
 function IconLayout.CalculateSlotOffset(index, iconSize, spacing, direction, totalCount, perRow, rowDir)
     perRow = perRow or 0
     if perRow <= 0 then
@@ -48,13 +39,11 @@ function IconLayout.CalculateSlotOffset(index, iconSize, spacing, direction, tot
     end
 
     local zeroBased = (index or 1) - 1
-    local major = zeroBased % perRow            -- position within the row/column
-    local line = math.floor(zeroBased / perRow) -- which row/column
+    local major = zeroBased % perRow
+    local line = math.floor(zeroBased / perRow)
     local stepUnit = (iconSize or 0) + (spacing or 0)
     local wrap = line * stepUnit
 
-    -- Centre each line on its own occupancy: full rows use perRow, the final
-    -- short row uses its real count so it stays centred too.
     local lineCount = perRow
     if totalCount and totalCount > 0 then
         local remaining = totalCount - line * perRow
@@ -108,19 +97,3 @@ function IconLayout.GetIconAnchorForGrow(frameAnchor, direction)
 
     return ComposeAnchor(horizontal, vertical)
 end
-
-function IconLayout.CalculateStripSize(count, iconSize, spacing, direction)
-    local size = iconSize or 0
-    local gap = spacing or 0
-    local visible = math.max(count or 0, 0)
-    if visible <= 0 then
-        return 0, 0
-    end
-
-    if direction == "UP" or direction == "DOWN" then
-        return size, visible * size + math.max(visible - 1, 0) * gap
-    end
-
-    return visible * size + math.max(visible - 1, 0) * gap, size
-end
-

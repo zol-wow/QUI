@@ -1,34 +1,12 @@
 local ADDON_NAME, ns = ...
 
----------------------------------------------------------------------------
--- Per-system A/B + allocation-rate perf harness (dev-only; loads with
--- QUI_Debug). Isolates a raid-frame subsystem's cost: toggle one off, watch
--- peak ms/frame and KB/s move.
---
--- Hot-path guards read ns.QUI_PerfFlags, which is NIL in normal play (this file
--- never loads unless QUI_Debug is active) -> the guard is a single nil-check.
---
---   /run QUI_PerfTest("kb", 30)        -- 30s GC-bracketed suite allocation rate
---   /run QUI_PerfTest("peak")          -- suite avg + engine peak ms/frame
---   /run QUI_PerfTest("off","raidbuffs")
---   /run QUI_PerfTest("solo","auras")  -- disable all wired systems except one
---   /run QUI_PerfTest("reset")  /  QUI_PerfTest("status")
---
--- A/B workflow: snapshot peak/KB with everything on, toggle one system off,
--- re-measure over the same raid scenario, compare. PeakTime is engine session
--- peak (ms) per AddOnProfilerDocumentation ("all times returned are in
--- milliseconds"), summed across the suite addons.
----------------------------------------------------------------------------
-
 local GetAddOnMemoryUsage = GetAddOnMemoryUsage
 local UpdateAddOnMemoryUsage = UpdateAddOnMemoryUsage
 local C_AddOnProfiler = C_AddOnProfiler
 local C_Timer = C_Timer
 
--- Hot-path toggle flags (shared suite-wide via the core namespace proxy).
 ns.QUI_PerfFlags = ns.QUI_PerfFlags or { disabled = {} }
 
--- Subsystems with a wired hot-path guard today.
 local SYSTEMS = { "raidbuffs", "health", "auras", "missingbuffs" }
 local SYSTEM_SET = {}
 for _, s in ipairs(SYSTEMS) do SYSTEM_SET[s] = true end
@@ -42,7 +20,7 @@ local function SuiteNames()
 end
 
 local function SuiteMemoryKB()
-    pcall(UpdateAddOnMemoryUsage)
+    ns.SafeCall("best-effort-style", UpdateAddOnMemoryUsage)
     local total = 0
     for _, name in ipairs(SuiteNames()) do
         local ok, mem = pcall(GetAddOnMemoryUsage, name)
@@ -51,7 +29,6 @@ local function SuiteMemoryKB()
     return total
 end
 
--- C_AddOnProfiler returns milliseconds (per API docs). Summed across suite addons.
 local function SuiteProfilerMs(metric)
     if not (C_AddOnProfiler and C_AddOnProfiler.GetAddOnMetric and metric) then return nil end
     local total = 0
@@ -96,9 +73,8 @@ local function ReportTimes()
 end
 
 local function ApplyAndRefresh()
-    -- Re-render the aura pipeline so a toggle takes visible effect immediately.
     local GFA = ns.QUI_GroupFrameAuras
-    if GFA and GFA.RefreshAll then pcall(function() GFA:RefreshAll() end) end
+    if GFA and GFA.RefreshAll then ns.SafeCall("bulkhead", function() GFA:RefreshAll() end) end
 end
 
 local function StatusLine()

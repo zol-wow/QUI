@@ -90,12 +90,6 @@ local ns = {
         ResolveCooldownState = function() return nil end,
         ResolveMacro = function() return nil end,
         IsAuraEntry = function() return false end,
-        ResolveBlizzardMirrorIdentityState = function()
-            return {
-                cooldownID = 9001,
-                category = "essential",
-            }
-        end,
     },
 }
 

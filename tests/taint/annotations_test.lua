@@ -23,3 +23,29 @@ assert_eq(annots[5].reason, nil, "line 5 has empty reason")
 assert(annots[5].emptyReason, "line 5 emptyReason flagged")
 
 print("annotations test passed")
+
+do
+    local ann = Annotations.scan("state.active = true -- @secret-policy: keep-visible-when-unknown\n")
+    assert(ann[1] and ann[1].kind == "policy", "policy annotation scanned with kind")
+    assert(ann[1].reason == "keep-visible-when-unknown", "policy name captured")
+
+    local safeAnn = Annotations.scan("x = 1 -- @secret-safe: doc fact\n")
+    assert(safeAnn[1].kind == "safe", "safe annotation carries kind")
+
+    local findings = {
+        { file = "f.lua", line = 1, sink = "<secret-collapse>", suppressed = false },
+        { file = "f.lua", line = 1, sink = "<comparison>",      suppressed = false },
+    }
+    Annotations.apply(findings, ann)  -- policy annotation on line 1
+    assert(findings[1].suppressed == true,  "policy suppresses collapse findings")
+    assert(findings[2].suppressed == false, "policy does NOT suppress other findings")
+
+    local findings2 = {
+        { file = "f.lua", line = 1, sink = "<secret-collapse>", suppressed = false },
+        { file = "f.lua", line = 1, sink = "<comparison>",      suppressed = false },
+    }
+    Annotations.apply(findings2, safeAnn)
+    assert(findings2[1].suppressed == false, "@secret-safe never suppresses collapse — policies must be NAMED")
+    assert(findings2[2].suppressed == true,  "@secret-safe still suppresses ordinary findings")
+end
+print("secret-policy annotation tests passed")

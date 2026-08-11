@@ -1,7 +1,3 @@
---[[
-    QUI Options V2 — Gameplay tile
-]]
-
 local ADDON_NAME, ns = ...
 
 local V2 = {}

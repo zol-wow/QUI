@@ -23,6 +23,7 @@ local function NewFrame(frameType, name, parent, template)
         scripts = {},
         registeredClicks = {},
         shown = false,
+        frameLevel = 0,
     }
 
     frameMT = frameMT or {
@@ -48,6 +49,14 @@ local function NewFrame(frameType, name, parent, template)
             elseif key == "GetScript" then
                 return function(self, script)
                     return self.scripts[script]
+                end
+            elseif key == "SetFrameLevel" then
+                return function(self, level)
+                    self.frameLevel = level
+                end
+            elseif key == "GetFrameLevel" then
+                return function(self)
+                    return self.frameLevel
                 end
             elseif key == "CreateTexture" or key == "CreateFontString" then
                 return function(self)
@@ -89,7 +98,8 @@ UIParent = NewFrame("Frame", "UIParent", nil, nil)
 QUI = {}
 MAX_TOTEMS = 4
 STANDARD_TOTEM_PRIORITIES = { 1, 2, 3, 4 }
-SHAMAN_TOTEM_PRIORITIES = nil
+SHAMAN_TOTEM_PRIORITIES = { 2, 1, 3, 4 }
+local playerClass = "DEATHKNIGHT"
 GameTooltip = {
     SetOwner = noop,
     SetTotem = noop,
@@ -107,6 +117,10 @@ end
 
 function InCombatLockdown()
     return inCombat
+end
+
+function UnitClass()
+    return "Player", playerClass
 end
 
 function GetTotemInfo()
@@ -186,8 +200,21 @@ for i = 1, MAX_TOTEMS do
         "right-click totem slot attribute should target the displayed slot")
     assert(button.attributes["*totem-slot2"] == i,
         "modified right-click totem slot attribute should target the displayed slot")
+    assert(button.frameLevel == TotemBar.container.frameLevel + i,
+        "later packed buttons must sit above earlier invisible placeholders")
 end
 
+-- SHAMAN_TOTEM_PRIORITIES is global for every class. It must only reorder a
+-- Shaman; otherwise Blood DK slot 1 is packed beneath an invisible slot-2
+-- placeholder at the same position and right-click targets the wrong slot.
+playerClass = "SHAMAN"
+TotemBar:Refresh()
+assert(TotemBar.buttons[1].attributes["totem-slot"] == 2,
+    "Shaman should use SHAMAN_TOTEM_PRIORITIES")
+assert(TotemBar.buttons[2].attributes["totem-slot"] == 1,
+    "Shaman fire slot should follow the earth slot")
+
+playerClass = "DEATHKNIGHT"
 STANDARD_TOTEM_PRIORITIES = { 4, 3, 2, 1 }
 TotemBar:Refresh()
 assert(TotemBar.buttons[1].attributes["totem-slot"] == 4,

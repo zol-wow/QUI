@@ -1,15 +1,3 @@
----------------------------------------------------------------------------
--- QUI Chat — Options feature-page registration (load-on-demand)
--- Registers the five chat feature pages (general, Filters, Button Bar,
--- Alerts, History) with the settings ProviderFeatures registry, wiring the
--- chat_tooltips tile's subpages to the chatFrame1 provider sections.
---
--- Layout rendering targets the QUI chat display (QUI_CustomChatFrame):
--- under the takeover ChatFrame1 is suppressed and never sized/positioned;
--- the position collapsible rides the anchoring key "chatFrame1", which
--- resolves to the QUI display.
----------------------------------------------------------------------------
-
 local _, ns = ...
 
 local Settings = ns.Settings
@@ -18,9 +6,6 @@ if not ProviderFeatures or type(ProviderFeatures.Register) ~= "function" then
     return
 end
 
--- Size bounds for the QUI display. Lower limits match display_layer's
--- SetResizeBounds (MIN_W/MIN_H = 220/100); upper limits are loose enough
--- for large displays without being unbounded.
 local CHAT_RESIZE_MIN_W, CHAT_RESIZE_MAX_W = 220, 1400
 local CHAT_RESIZE_MIN_H, CHAT_RESIZE_MAX_H = 100, 900
 
@@ -55,9 +40,6 @@ local function ChatSetSize(w, h)
     if Display and Display.PersistGeometry then
         Display.PersistGeometry()
     end
-    -- Anchored window: keep the anchor point pinned — grow away from it,
-    -- not from center (display_layer's Refresh skips position re-apply
-    -- while Layout Mode is live, so this is the in-drawer path).
     if _G.QUI_ReassertAnchorAfterResize then
         _G.QUI_ReassertAnchorAfterResize("chatFrame1")
     end

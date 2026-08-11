@@ -19,21 +19,18 @@ local function BuildSpecProfilesContent(content)
     local PAD = PADDING
     local y = -10
 
-    -- Description
     local info = GUI:CreateLabel(content, ns.L["Manage profiles and auto-switch based on specialization"], 11, C.textMuted)
     info:SetJustifyH("LEFT")
     info:SetPoint("TOPLEFT", PAD, y)
     info:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
     y = y - 24
 
-    -- Shared state
     local profileDropdown
     local profileDropdowns_all = {}
     local profileDropdowns_withPresets = {}
     local profileDropdowns_filtered = {}
     local currentProfileName
 
-    -- Build a lookup of preset profile names → preset definitions
     local presetsByName = {}
     for _, preset in ipairs(QUI._presetProfiles or {}) do
         presetsByName[preset.profileName] = preset
@@ -97,14 +94,10 @@ local function BuildSpecProfilesContent(content)
         RefreshProfileDropdowns()
     end
 
-    ---------------------------------------------------------------------------
-    -- Current Profile — active/reset paired, movers/factory paired.
-    ---------------------------------------------------------------------------
     Shared.CreateAccentDotLabel(content, ns.L["Current Profile"], y); y = y - 22
 
     local currentCard = Shared.CreateSettingsCardGroup(content, y)
 
-    -- Active profile display: static label left, live value right.
     local activeCell = CreateFrame("Frame", nil, currentCard.frame)
     activeCell:SetHeight(28)
     local activeLabel = activeCell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -173,7 +166,6 @@ local function BuildSpecProfilesContent(content)
         })
     end)
 
-    -- Factory Reset — label styled destructive, uses red button text.
     local factoryCell = CreateFrame("Frame", nil, currentCard.frame)
     factoryCell:SetHeight(28)
     local factoryLabel = factoryCell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -200,9 +192,6 @@ local function BuildSpecProfilesContent(content)
     currentCard.Finalize()
     y = y - currentCard.frame:GetHeight() - SECTION_GAP
 
-    ---------------------------------------------------------------------------
-    -- Manage Profiles — switch/copy and delete/create in paired rows.
-    ---------------------------------------------------------------------------
     Shared.CreateAccentDotLabel(content, ns.L["Manage Profiles"], y); y = y - 22
 
     local manageCard = Shared.CreateSettingsCardGroup(content, y)
@@ -285,10 +274,6 @@ local function BuildSpecProfilesContent(content)
     end, { description = ns.L["Select a profile to delete. The currently active profile can't be deleted — switch to another profile first."] })
     table.insert(profileDropdowns_filtered, deleteDropdown)
 
-    -- New-profile cell: BuildSettingRow supplies the label, pin attachment,
-    -- tooltip, and search capture; the bare editbox is then re-anchored to
-    -- make room for an inline Create button (two-point anchoring overrides
-    -- the widget container's fixed default width).
     local newProfileInput = GUI:CreateFormEditBox(manageCard.frame, nil, nil, nil, nil, {
         commitOnEnter = false, commitOnFocusLost = false,
         onEscapePressed = function(self) self:ClearFocus() end,
@@ -328,9 +313,6 @@ local function BuildSpecProfilesContent(content)
 
     y = y - manageCard.frame:GetHeight() - SECTION_GAP
 
-    ---------------------------------------------------------------------------
-    -- Spec Auto-Switch — enable row full-width, spec dropdowns paired two-up.
-    ---------------------------------------------------------------------------
     Shared.CreateAccentDotLabel(content, ns.L["Spec Auto-Switch"], y); y = y - 22
 
     local specCore = GetCore()
@@ -381,7 +363,6 @@ local function BuildSpecProfilesContent(content)
         y = y - 24
     end
 
-    -- Setup refresh hooks
     content:SetScript("OnShow", RefreshProfileDisplay)
     C_Timer.After(0.2, RefreshProfileDisplay)
     C_Timer.After(0.5, RefreshProfileDisplay)

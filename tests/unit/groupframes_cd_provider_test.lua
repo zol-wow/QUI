@@ -78,7 +78,16 @@ local function installExternalApi()
     }
 end
 
-local ns = { QUI_GroupFrames = QUI_GF }
+-- core/safecall.lua stub: silent pcall swallow matches the pre-SafeCall
+-- shape this test was written against (Task 3: groupframes_cdprovider.lua's
+-- registration + Notify() callback now route through ns.SafeCall).
+local function safeCallStub(_policy, fn, ...) return pcall(fn, ...) end
+local function safeCallMethodStub(_policy, obj, name, ...)
+    return pcall(function(...) return obj[name](obj, ...) end, ...)
+end
+local safeCallMethodIfPresentStub = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end
+
+local ns = { QUI_GroupFrames = QUI_GF, SafeCall = safeCallStub, SafeCallMethod = safeCallMethodStub, SafeCallMethodIfPresent = safeCallMethodIfPresentStub }
 
 local function has(list, v) for _, x in ipairs(list) do if x == v then return true end end return false end
 
@@ -168,7 +177,7 @@ assert(pcall(flushTimers), "a throwing consumer callback must be swallowed by pc
 local ns2 = { QUI_GroupFrames = {
     unitFrameMap = {}, RefreshAllFrames = function() end, Disable = function() end,
     IsEnabled = function() return true end,
-} }
+}, SafeCall = safeCallStub, SafeCallMethod = safeCallMethodStub, SafeCallMethodIfPresent = safeCallMethodIfPresentStub }
 local before = #registerCalls
 assert(loadfile(ADAPTER_PATH))("QUI_GroupFrames", ns2)
 local frame2 = lastFrame

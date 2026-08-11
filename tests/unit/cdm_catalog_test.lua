@@ -11,6 +11,12 @@ _G.C_CooldownViewer = nil
 local ns = {
 }
 
+-- Task 45f: cdm_catalog.lua routes discarded-result pcall guards through
+-- ns.SafeCall. Additive stub (T1d/T1e precedent) — same semantics as
+-- core/safecall.lua's bare pcall passthrough, no classification needed here.
+ns.SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end
+ns.SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end
+ns.SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
 local chunk = loadChunk("QUI_CDM/cdm/cdm_catalog.lua", "cdm_catalog.lua")
 chunk("QUI", ns)
@@ -67,6 +73,10 @@ _G.C_CooldownViewer = {
 _G.CooldownViewerSettings = {
     GetDataProvider = function()
         return {
+            -- memo fields present = cache already built by a secure consumer
+            -- (cold-boot taint gate reads these raw; see cdm_index/cdm_catalog)
+            displayDataDirty = false,
+            displayData = {},
             GetLayoutManager = function()
                 return {}
             end,
@@ -82,7 +92,7 @@ _G.CooldownViewerSettings = {
 local catalog = assert(ns.CDMCatalog, "CDMCatalog table was not exported")
 local available = catalog.GetAvailableSpellsForContainer("essential", "cooldown", {}, {})
 
-assert(#available == 3, "late-bound C_CooldownViewer should populate learned, unlearned, and untracked add entries")
+assert(#available == 2, "built-in Blizzard CDM picker should use the rendered provider category")
 
 local bySpellID = {}
 for _, entry in ipairs(available) do
@@ -98,9 +108,16 @@ assert(bySpellID[67890].name == "Unlearned CDM Spell", "wrong unlearned spell na
 assert(bySpellID[67890].icon == 87654, "wrong unlearned spell icon")
 assert(bySpellID[67890].isKnown == false, "unlearned CDM spell should retain isKnown=false")
 
-assert(bySpellID[13579], "untracked CDM spell missing from add catalog")
-assert(bySpellID[13579].name == "Untracked CDM Spell", "wrong untracked spell name")
-assert(bySpellID[13579].icon == 76543, "wrong untracked spell icon")
+assert(not bySpellID[13579], "built-in picker must not offer non-rendered raw CDM entries")
+
+local customAvailable = catalog.GetAvailableSpellsForContainer("customCooldown", "cooldown", {}, {})
+local customBySpellID = {}
+for _, entry in ipairs(customAvailable) do
+    customBySpellID[entry.spellID] = entry
+end
+assert(customBySpellID[13579], "custom cooldown picker should still include raw CDM defaults")
+assert(customBySpellID[13579].name == "Untracked CDM Spell", "wrong untracked spell name")
+assert(customBySpellID[13579].icon == 76543, "wrong untracked spell icon")
 
 local seeded, seedReady = catalog.SeedFromBlizzard("essential")
 assert(seedReady == true, "seed should report ready when the tracked provider returns a category list")
@@ -136,6 +153,10 @@ _G.C_CooldownViewer = {
 _G.CooldownViewerSettings = {
     GetDataProvider = function()
         return {
+            -- memo fields present = cache already built by a secure consumer
+            -- (cold-boot taint gate reads these raw; see cdm_index/cdm_catalog)
+            displayDataDirty = false,
+            displayData = {},
             GetOrderedCooldownIDsForCategory = function()
                 error("provider layout is not hydrated yet")
             end,
@@ -163,6 +184,10 @@ end
 _G.CooldownViewerSettings = {
     GetDataProvider = function()
         return {
+            -- memo fields present = cache already built by a secure consumer
+            -- (cold-boot taint gate reads these raw; see cdm_index/cdm_catalog)
+            displayDataDirty = false,
+            displayData = {},
             GetOrderedCooldownIDsForCategory = function(_, category, allowUnlearned)
                 assert(category == 2, "unexpected tracked buff category")
                 assert(allowUnlearned == true, "seed should preserve tracked unlearned aura rows")
@@ -179,6 +204,10 @@ assert(#seeded == 0, "seed should not snapshot raw data before settings layout h
 _G.CooldownViewerSettings = {
     GetDataProvider = function()
         return {
+            -- memo fields present = cache already built by a secure consumer
+            -- (cold-boot taint gate reads these raw; see cdm_index/cdm_catalog)
+            displayDataDirty = false,
+            displayData = {},
             GetLayoutManager = function()
                 return {}
             end,

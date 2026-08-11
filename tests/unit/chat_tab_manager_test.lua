@@ -239,4 +239,53 @@ assert(TM.GetWindowTab(1, "x") == nil, "non-numeric index -> nil")
 local tabfilt = TM.BuildFilter(t1)
 assert(tabfilt({ k = "LOOT" }) == true and tabfilt({ k = "SAY" }) == false, "custom tabData filters directly")
 
+---------------------------------------------------------------------------
+-- Wave 3 Task 3: GUILD/GUILD_DISCORD family fallback. A curated tab predates
+-- GUILD_DISCORD's existence (12.1) and never had a chance to whitelist it
+-- explicitly -- an absent GUILD_DISCORD key inherits the tab's GUILD verdict;
+-- a present key (true or false) always wins over the inherited value.
+---------------------------------------------------------------------------
+
+-- (a) Curated tab: GUILD true, no GUILD_DISCORD key at all -> Discord stream
+-- inherits the GUILD verdict and shows.
+local famA = TM.BuildFilter({ groups = { GUILD = true }, channels = {}, invert = false })
+assert(famA({ k = "GUILD_DISCORD" }) == true,
+    "(a) GUILD-true tab with no GUILD_DISCORD entry shows the Discord stream")
+assert(famA({ k = "GUILD" }) == true, "(a) GUILD itself still shows")
+assert(famA({ k = "SAY" }) == false, "(a) unrelated group still blocked")
+
+-- (b) Same GUILD-true tab, but GUILD_DISCORD explicitly deselected (false):
+-- the explicit key wins over the inherited GUILD verdict and hides it.
+local famB = TM.BuildFilter({
+    groups = { GUILD = true, GUILD_DISCORD = false },
+    channels = {},
+    invert = false,
+})
+assert(famB({ k = "GUILD_DISCORD" }) == false,
+    "(b) explicit GUILD_DISCORD=false hides the Discord stream despite GUILD=true")
+assert(famB({ k = "GUILD" }) == true, "(b) GUILD itself is unaffected by the Discord override")
+
+-- (c) GUILD absent (not curated true) but GUILD_DISCORD explicitly true:
+-- the explicit key wins and shows the Discord stream on its own.
+local famC = TM.BuildFilter({ groups = { GUILD_DISCORD = true }, channels = {}, invert = false })
+assert(famC({ k = "GUILD_DISCORD" }) == true,
+    "(c) explicit GUILD_DISCORD=true shows even though GUILD is not curated in")
+assert(famC({ k = "GUILD" }) == false, "(c) GUILD stays blocked (not itself listed)")
+
+-- (d) Uncurated tab (no groups constraint at all) is unaffected by the
+-- family fallback -- BuildFilter still returns nil / show-everything.
+local famD = TM.BuildFilter({ groups = {}, channels = {}, invert = false })
+assert(famD == nil, "(d) uncurated tab (empty groups/channels) yields nil filter, unchanged")
+local famDTab = TM.BuildTabFilter({ groups = {}, channels = {}, invert = false })
+assert(famDTab({ k = "GUILD_DISCORD" }) == true, "(d) uncurated tab shows Discord stream like everything else")
+assert(famDTab({ k = "SAY" }) == true, "(d) uncurated tab still shows unrelated groups")
+
+-- Mutation guard: an inverted (blacklist) GUILD-true tab blocks GUILD_DISCORD
+-- via the same inherited verdict (fallback participates in invert, not just
+-- the whitelist path).
+local famInvert = TM.BuildFilter({ groups = { GUILD = true }, channels = {}, invert = true })
+assert(famInvert({ k = "GUILD_DISCORD" }) == false,
+    "inverted GUILD-true tab blacklists the inherited Discord verdict too")
+assert(famInvert({ k = "SAY" }) == true, "inverted tab still passes unrelated groups")
+
 print("OK: chat_tab_manager_test")

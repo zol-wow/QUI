@@ -8,7 +8,7 @@ local function readFile(path)
     return data
 end
 
-local source = readFile("QUI_QoL/qol/tooltip.lua")
+local source = readFile("modules/qol/tooltip.lua")
 
 assert(source:find("local function AddTooltipInfoLine", 1, true),
     "tooltip QoL additions should use a shared left-aligned wrapped line helper")
@@ -17,7 +17,7 @@ local forbiddenDoubleLines = {
     'tooltip:AddDoubleLine(label, string.format("%.1f", itemLevel)',
     'tooltip:AddDoubleLine("Target:", targetInfo.name',
     'tooltip:AddDoubleLine("Mount:", mountName',
-    'tooltip:AddDoubleLine("M+ Rating:", string.format("%.1f", rating)',
+    'tooltip:AddDoubleLine("M+ Rating:", string.format("%d", rating)',
     'tooltip:AddDoubleLine("Spell ID:", tostring(spellID)',
     'tooltip:AddDoubleLine("Icon ID:", tostring(iconID)',
     'tooltip:AddDoubleLine("Item ID:", tostring(itemID)',
@@ -32,7 +32,7 @@ local requiredInfoLines = {
     'AddTooltipInfoLine(tooltip, label, string.format("%.1f", itemLevel)',
     'AddTooltipInfoLine(tooltip, ns.L["Target"], targetInfo.name',
     'AddTooltipInfoLine(tooltip, ns.L["Mount"], mountValue',
-    'AddTooltipInfoLine(tooltip, ns.L["M+ Rating"], string.format("%.1f", rating)',
+    'AddTooltipInfoLine(tooltip, ns.L["M+ Rating"], string.format("%d", rating)',
     'AddTooltipInfoLine(tooltip, ns.L["Spell ID"], tostring(spellID)',
     'AddTooltipInfoLine(tooltip, ns.L["Icon ID"], tostring(iconID)',
     'AddTooltipInfoLine(tooltip, ns.L["Item ID"], tostring(itemID)',
@@ -272,6 +272,7 @@ local function runHideFadeSelfFocusRegression()
                 return settings
             end,
             IsSecretValue = function() return false end,
+            HasTaintedWidgetContainer = function() return false end,
             SafeToNumber = function(value, fallback)
                 local number = tonumber(value)
                 if number == nil then return fallback end
@@ -281,13 +282,20 @@ local function runHideFadeSelfFocusRegression()
                 return left == right
             end,
         },
+        SafeCall = function(_policy, fn, ...)
+            return pcall(fn, ...)
+        end,
+        SafeCallMethod = function(_policy, obj, name, ...)
+            return pcall(function(...) return obj[name](obj, ...) end, ...)
+        end,
+        SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
         L = setmetatable({}, {
             __index = function(_, key) return key end,
         }),
     }
 
-    assert(loadfile("QUI_QoL/qol/tooltip_provider.lua"))("QUI", testNS)
-    assert(loadfile("QUI_QoL/qol/tooltip.lua"))("QUI", testNS)
+    assert(loadfile("modules/qol/tooltip_provider.lua"))("QUI", testNS)
+    assert(loadfile("modules/qol/tooltip.lua"))("QUI", testNS)
     testNS.TooltipProvider:InitializeEngine()
 
     local visibilityWatcher

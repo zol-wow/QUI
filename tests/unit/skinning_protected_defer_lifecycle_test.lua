@@ -48,7 +48,7 @@ assertContains(actionBarController, "OverrideActionBar:UpdateSkin();",
 assertContains(actionBarController, "ValidateActionBarTransition();",
     "OverrideActionBar show/animation follows the controller lifecycle")
 
-local objectiveSource = readFile("QUI_Skinning/skinning/gameplay/objectivetracker.lua")
+local objectiveSource = readFile("modules/skinning/gameplay/objectivetracker.lua")
 assertAbsent(objectiveSource, "C_Timer.After(0.15",
     "ObjectiveTracker protected post-layout updates must not use a fixed 0.15s delay")
 assertContains(objectiveSource, "local function DeferObjectiveTrackerPostLayoutUpdate()",
@@ -56,7 +56,7 @@ assertContains(objectiveSource, "local function DeferObjectiveTrackerPostLayoutU
 assertContains(objectiveSource, "FrameXML DirtiableMixin:MarkDirty uses RunNextFrame",
     "ObjectiveTracker defer helper must document the FrameXML lifecycle reason")
 
-local overrideSource = readFile("QUI_Skinning/skinning/frames/overrideactionbar.lua")
+local overrideSource = readFile("modules/skinning/frames/overrideactionbar.lua")
 assertAbsent(overrideSource, "C_Timer.After(0.15",
     "OverrideActionBar protected post-update skinning must not use a fixed 0.15s delay")
 assertContains(overrideSource, "local function DeferOverrideActionBarPostUpdate()",

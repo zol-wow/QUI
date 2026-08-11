@@ -1,16 +1,3 @@
---[[
-    QUI CDM Bar Factory
-
-    Creates and manages addon-owned bar frames for the CDM tracked bar system.
-    All bars are simple Frame objects with StatusBar children — no protected
-    attributes, eliminating combat taint concerns for frame operations.
-
-    All bar state flows through QUI's resolver pipeline. When a composer entry
-    is backed by a native viewer child, bars render that mirror payload directly.
-
-    Pattern mirrors cdm_icon_renderer.lua pool management.
-]]
-
 local _, ns = ...
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
@@ -24,31 +11,21 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
----------------------------------------------------------------------------
--- MODULE
----------------------------------------------------------------------------
 local CDMBars = {}
 ns.CDMBars = CDMBars
 local Sources = ns.CDMSources
 local Renderers = ns.CDMRenderers
 
----------------------------------------------------------------------------
--- HELPERS
----------------------------------------------------------------------------
 local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 
--- Upvalue hot-path globals
 local type = type
 local ipairs = ipairs
 local CreateFrame = CreateFrame
 local issecretvalue = issecretvalue
 
----------------------------------------------------------------------------
--- CONSTANTS
----------------------------------------------------------------------------
 local MAX_RECYCLE_POOL_SIZE = 20
 local STATUS_BAR_INTERPOLATION_IMMEDIATE = 0
 local STATUS_BAR_TIMER_REMAINING = 1
@@ -180,15 +157,12 @@ function CDMBars.MarkBarAuraRefresh(bar, unit, updateInfo)
     return false
 end
 
----------------------------------------------------------------------------
--- STATE
----------------------------------------------------------------------------
-local barPool = {}       -- active bars (array)
-local recyclePool = {}   -- recycled bars (array, max MAX_RECYCLE_POOL_SIZE)
+local barPool = {}
+local recyclePool = {}
 local barTimerFrame = CreateFrame("Frame")
 local barTimerGroup = barTimerFrame:CreateAnimationGroup()
 local barTimerAnim = barTimerGroup:CreateAnimation()
-barTimerAnim:SetDuration(0.1)  -- 100ms = ~10 FPS
+barTimerAnim:SetDuration(0.1)
 barTimerGroup:SetLooping("REPEAT")
 
 local function SetupDebugInstrumentation()
@@ -196,30 +170,15 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "CDM_barPool",      tbl = barPool }
     mp[#mp + 1] = { name = "CDM_barRecycle",   tbl = recyclePool }
 end
-if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+if ns.DebugRegister then
     ns.DebugRegister(SetupDebugInstrumentation)
 else
-    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+    SetupDebugInstrumentation()
 end
 
--- Stored refs for periodic re-layout after ticker updates _active state
 local _lastContainer = nil
 local _lastSettings = nil
 
----------------------------------------------------------------------------
--- DEFERRED RESIZE
--- The buff-bar container must keep adjusting its size during combat so
--- frames anchored to its growth edge track when bars activate/deactivate
--- mid-combat (and so the container itself follows an autoWidth parent that
--- resizes). LayoutBars is reached via UNIT_AURA dispatch, which
--- enters with taint inherited from the secure event chain; calling
--- container:SetSize directly fires ADDON_ACTION_BLOCKED 'UNKNOWN()' on the
--- protection check (pcall catches the Lua error but not the event itself).
--- C_Timer.After(0) defers the SetSize one tick into clean main-loop context,
--- breaking the taint chain so the call passes the protection check on a
--- non-protected QUI Frame. Multiple in-flight requests coalesce: each
--- container only resizes once per flush, with the latest target dimensions.
----------------------------------------------------------------------------
 local _pendingResize = nil
 
 local function _flushPendingResizes()
@@ -265,69 +224,34 @@ local function ResizeContainer(container, w, h)
     end
 end
 
----------------------------------------------------------------------------
--- PERMANENT-AURA OVERLAY DRIVE (curve trick via IsZero bool)
---
--- DurationObject:IsZero() returns a (potentially-secret) bool that is
--- stable for the aura's lifetime — it's a property of the durObj itself,
--- not derived from elapsed/remaining time, so it doesn't oscillate as
--- the aura ticks.
---
 -- C_CurveUtil.EvaluateColorValueFromBoolean is a C-side helper that
--- selects between two numbers based on a (potentially-secret) bool —
--- the secret never crosses into Lua compares. The selected value may
--- still be secret, so only pass it directly to C-side sinks
--- (Texture:SetAlpha / FontString:SetAlpha).
--- See docs/blizzard/cdm-api-reference.md for the boolean decode policy.
---
--- Mapping for the bar overlay:
---   IsZero=true  (permanent) → alpha 1 (overlay visible — bar full)
---   IsZero=false (timed)     → alpha 0 (overlay invisible — bar shows
---                                       SetTimerDuration animation)
---
--- Mapping for the duration text:
---   IsZero=true  (permanent) → alpha 0 (text hidden — no countdown)
---   IsZero=false (timed)     → alpha 1 (text visible — countdown shows)
----------------------------------------------------------------------------
 
----------------------------------------------------------------------------
--- BAR FRAME FACTORY
----------------------------------------------------------------------------
 local function CreateBar(parent)
     local bar = CreateFrame("Frame", nil, parent)
     bar:SetSize(200, 25)
 
-    -- StatusBar for duration progress
     local statusBar = CreateFrame("StatusBar", nil, bar)
     ClearStatusBar(statusBar)
     bar.StatusBar = statusBar
 
-    -- PermanentFill overlay: full-bar texture rendered above the StatusBar
-    -- fill but below text. Alpha is curve-driven from the durObj's total
-    -- duration in UpdateOwnedBarAura — visible only for no-expiration
-    -- auras, completely invisible (no visual effect) for timed auras.
     local permanentFill = statusBar:CreateTexture(nil, "OVERLAY", nil, 1)
     permanentFill:SetAllPoints(statusBar)
     permanentFill:SetAlpha(0)
     bar.PermanentFill = permanentFill
 
-    -- Background texture (BACKGROUND, sublevel -8)
     local bg = bar:CreateTexture(nil, "BACKGROUND", nil, -8)
     bg:SetColorTexture(0, 0, 0, 1)
     bar.Background = bg
 
-    -- Icon container frame
     local iconContainer = CreateFrame("Frame", nil, bar)
     iconContainer:SetSize(25, 25)
     bar.IconContainer = iconContainer
 
-    -- Icon texture inside container
     local iconTex = iconContainer:CreateTexture(nil, "ARTWORK")
     iconTex:SetAllPoints(iconContainer)
     iconTex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     bar.IconTexture = iconTex
 
-    -- Border container with 4-edge textures
     local borderFrame = CreateFrame("Frame", nil, bar)
     borderFrame:SetFrameLevel((bar.GetFrameLevel and bar:GetFrameLevel() or 1) + 5)
     borderFrame._top = borderFrame:CreateTexture(nil, "OVERLAY", nil, 7)
@@ -340,13 +264,11 @@ local function CreateBar(parent)
     borderFrame._right:SetColorTexture(0, 0, 0, 1)
     bar.BorderContainer = borderFrame
 
-    -- Text overlay frame (renders above StatusBar fill texture)
     local textOverlay = CreateFrame("Frame", nil, statusBar)
     textOverlay:SetAllPoints(statusBar)
     textOverlay:SetFrameLevel((statusBar.GetFrameLevel and statusBar:GetFrameLevel() or 1) + 2)
     bar.TextOverlay = textOverlay
 
-    -- Name text (spell name)
     local nameText = textOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
     CJKFont(nameText, GetGeneralFont(), 14, GetGeneralFontOutline())
     nameText:SetPoint("LEFT", statusBar, "LEFT", 4, 0)
@@ -356,7 +278,6 @@ local function CreateBar(parent)
     nameText:SetShadowOffset(1, -1)
     bar.NameText = nameText
 
-    -- Duration text (remaining time)
     local durationText = textOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
     CJKFont(durationText, GetGeneralFont(), 14, GetGeneralFontOutline())
     durationText:SetPoint("RIGHT", statusBar, "RIGHT", -4, 0)
@@ -366,7 +287,6 @@ local function CreateBar(parent)
     durationText:SetShadowOffset(1, -1)
     bar.DurationText = durationText
 
-    -- State tracking
     bar._spellEntry = nil
     bar._spellID = nil
     bar._active = false
@@ -377,14 +297,6 @@ local function CreateBar(parent)
     return bar
 end
 
----------------------------------------------------------------------------
--- Helper functions for color overrides
----------------------------------------------------------------------------
-
--- Build a color-override key set from the bar's bound composer entry. Key
--- shape mirrors the legacy Blizzard-child-derived spellData (spellID /
--- baseSpellID / overrideSpellID / cooldownID) so colorOverride profiles
--- imported from earlier versions still match.
 local function GetBarSpellData(bar)
     local entry = bar and bar._spellEntry
     if not entry then return nil end
@@ -401,8 +313,6 @@ local function GetBarSpellData(bar)
     }
 end
 
--- Per-spell "Hide Duration Text" override lookup. Returns true when the
--- composer override forces hide for this bar's spell/container; nil otherwise.
 local function GetBarSpellHideDurationOverride(bar)
     local entry = bar and bar._spellEntry
     if not entry then return nil end
@@ -415,13 +325,11 @@ local function GetBarSpellHideDurationOverride(bar)
     return nil
 end
 
--- DebugBarLabel implementation lives in the load-on-demand debug addon.
--- The placeholder below is rebound by cdm_debug.lua's BindAll() when loaded.
 ---@type fun(...)
 local DebugBarLabel = function() end
 
 local function ReadBoolean(value)
-    if issecretvalue and issecretvalue(value) then return nil end
+    if issecretvalue and issecretvalue(value) then return nil end -- @secret-policy: reject-secret-value
     if type(value) == "boolean" then return value end
     return nil
 end
@@ -442,13 +350,13 @@ local function WrapStackSuffix(stackValue)
 end
 
 local function IsMissingOrKnownEmptyText(value)
-    if issecretvalue and issecretvalue(value) then return false end
+    if issecretvalue and issecretvalue(value) then return false end -- @secret-policy: route-to-text-sink
     if value == nil then return true end
     return type(value) == "string" and value == ""
 end
 
 local function ValueIsPresent(value)
-    if issecretvalue and issecretvalue(value) then return true end
+    if issecretvalue and issecretvalue(value) then return true end -- @secret-policy: opaque-value-present
     return value ~= nil
 end
 
@@ -484,6 +392,157 @@ end
 
 CDMBars.ApplyNameTextWithCount = ApplyNameTextWithCount
 
+local function NormalizeTrackedBarRuntimeEntries(runtimeEntries)
+    if type(runtimeEntries) ~= "table" or #runtimeEntries == 0 then
+        return nil
+    end
+
+    local spellList = {}
+    for i, entry in ipairs(runtimeEntries) do
+        if type(entry) == "table" then
+            local runtimeSpellID = entry.overrideSpellID or entry.spellID or entry.baseSpellID
+            local baseSpellID = entry.baseSpellID or entry.spellID or runtimeSpellID
+            local id = runtimeSpellID or entry.cooldownID
+            if id then
+                local instanceID = entry.cooldownID or runtimeSpellID or entry.layoutIndex or i
+                spellList[#spellList + 1] = {
+                    id = id,
+                    spellID = baseSpellID,
+                    baseSpellID = baseSpellID,
+                    overrideSpellID = entry.overrideSpellID,
+                    name = entry.name or "",
+                    type = "spell",
+                    kind = "aura",
+                    isAura = true,
+                    viewerType = "trackedBar",
+                    source = "blizzardCDM",
+                    cooldownID = entry.cooldownID,
+                    layoutIndex = entry.layoutIndex or i,
+                    iconTexture = entry.iconTexture,
+                    _instanceKey = "trackedBar:" .. tostring(instanceID),
+                    _trackedBarRuntime = true,
+                    _trackedBarActive = entry.isActive == true,
+                    _blzFrame = entry.frame,
+                }
+            end
+        end
+    end
+
+    if #spellList == 0 then
+        return nil
+    end
+    return spellList
+end
+
+CDMBars._NormalizeTrackedBarRuntimeEntries = NormalizeTrackedBarRuntimeEntries
+
+local function CopyTrackedEntry(entry)
+    local out = {}
+    if type(entry) ~= "table" then return out end
+    for k, v in pairs(entry) do
+        out[k] = v
+    end
+    return out
+end
+
+local function AddTrackedSpellIdentity(out, value)
+    if value == nil then return end
+    out[tostring(value)] = true
+end
+
+local function BuildTrackedSpellIdentitySet(entry)
+    local out = {}
+    if type(entry) ~= "table" then return out end
+    AddTrackedSpellIdentity(out, entry.id)
+    AddTrackedSpellIdentity(out, entry.spellID)
+    AddTrackedSpellIdentity(out, entry.baseSpellID)
+    AddTrackedSpellIdentity(out, entry.overrideSpellID)
+    AddTrackedSpellIdentity(out, entry.itemID)
+    return out
+end
+
+local function TrackedEntriesMatch(configured, runtime)
+    if type(configured) ~= "table" or type(runtime) ~= "table" then
+        return false
+    end
+
+    local configuredIDs = BuildTrackedSpellIdentitySet(configured)
+    local runtimeIDs = BuildTrackedSpellIdentitySet(runtime)
+    for id in pairs(configuredIDs) do
+        if runtimeIDs[id] then
+            return true
+        end
+    end
+
+    if configured.cooldownID ~= nil and runtime.cooldownID ~= nil then
+        return tostring(configured.cooldownID) == tostring(runtime.cooldownID)
+    end
+    return false
+end
+
+local function FindTrackedRuntimeMatch(configured, runtimeSpellList, usedRuntime)
+    if type(runtimeSpellList) ~= "table" then return nil end
+    for i = 1, #runtimeSpellList do
+        local runtime = runtimeSpellList[i]
+        if not usedRuntime[i] and TrackedEntriesMatch(configured, runtime) then
+            usedRuntime[i] = true
+            return runtime
+        end
+    end
+    return nil
+end
+
+local function MergeTrackedRuntimeFields(configured, runtime)
+    local out = CopyTrackedEntry(configured)
+    if type(runtime) ~= "table" then
+        return out
+    end
+
+    if out.spellID == nil then out.spellID = runtime.spellID end
+    if out.baseSpellID == nil then out.baseSpellID = runtime.baseSpellID end
+    if out.overrideSpellID == nil then out.overrideSpellID = runtime.overrideSpellID end
+    if (out.name == nil or out.name == "") and runtime.name then out.name = runtime.name end
+    if out.iconTexture == nil then out.iconTexture = runtime.iconTexture end
+    out.cooldownID = runtime.cooldownID
+    out.layoutIndex = runtime.layoutIndex
+    out._instanceKey = runtime._instanceKey
+    out._trackedBarRuntime = runtime._trackedBarRuntime == true
+    out._trackedBarActive = runtime._trackedBarActive == true
+    out._blzFrame = runtime._blzFrame
+    return out
+end
+
+local function BuildTrackedBarSpellList(runtimeEntries, configuredSpellList, configuredOwnedInitialized)
+    local runtimeSpellList = NormalizeTrackedBarRuntimeEntries(runtimeEntries)
+    if not configuredOwnedInitialized then
+        return runtimeSpellList
+    end
+
+    local out = {}
+    local usedRuntime = {}
+    if type(configuredSpellList) ~= "table" then
+        return out
+    end
+
+    for i = 1, #configuredSpellList do
+        local configured = configuredSpellList[i]
+        if type(configured) == "table" then
+            local runtime = FindTrackedRuntimeMatch(configured, runtimeSpellList, usedRuntime)
+            out[#out + 1] = MergeTrackedRuntimeFields(configured, runtime)
+        end
+    end
+    return out
+end
+
+CDMBars._BuildTrackedBarSpellList = BuildTrackedBarSpellList
+
+local function ContainerOwnedListInitialized(containerKey)
+    local shared = ns.CDMShared
+    local getDB = shared and shared.GetContainerDB
+    local db = getDB and getDB(containerKey)
+    return db and db.ownedSpells ~= nil or false
+end
+
 local function ShouldHideAuraDurationText(r)
     if not r or not r.isActive then return false end
     if r.isTotemInstance then return false end
@@ -505,25 +564,9 @@ local function EnsureBarTimerRunning()
     end
 end
 
----------------------------------------------------------------------------
--- DurationTextBinding (12.0.7+)
---
--- Engine-side fontstring countdown driven straight from a LuaDurationObject.
--- The binding self-ticks C-side (no per-frame Lua poll) and formats secret
--- durations internally (HasSecretValues / GetFormattedText ConditionalSecret),
--- so it supersedes the GetRemainingDuration + SetFormattedText poll below.
--- Items/trinkets feed a non-secret durObj (C_Item.GetItemCooldown ->
--- C_DurationUtil.CreateDuration -> SetTimeFromStart); spell/aura bars feed the
--- same object shape, secret in combat — the binding handles both.
---
--- Gated on the API existing: pre-12.0.7 clients fall back to the numeric poll.
----------------------------------------------------------------------------
 local CreateDurationTextBinding = C_DurationUtil and C_DurationUtil.CreateDurationTextBinding
 local CreateSecondsFormatter = C_StringUtil and C_StringUtil.CreateSecondsFormatter
 
--- Shared formatter (one per session; binding setters take it by reference).
--- Built lazily so a missing API just leaves the binding text-less rather than
--- erroring at load.  barDurationFormatter: nil = untried, false = unavailable.
 local barDurationFormatter
 local function GetBarDurationFormatter()
     if barDurationFormatter ~= nil then
@@ -533,31 +576,22 @@ local function GetBarDurationFormatter()
         barDurationFormatter = false
         return nil
     end
-    local ok, fmt = pcall(CreateSecondsFormatter)
+    local ok, fmt = ns.SafeCall("best-effort-style", CreateSecondsFormatter)
     if not ok or not fmt then
         barDurationFormatter = false
         return nil
     end
-    -- COSMETIC KNOBS (tune in-game): below the ms threshold the binding shows
-    -- one-decimal seconds (eg. "8.7"); above it, whole seconds / clock form.
-    -- Abbreviation mode controls the long-form look ("1m 5s" vs "1:05"); pick
-    -- whichever reads best in the narrow right-aligned slot.
-    if fmt.SetMillisecondsThreshold then
-        pcall(fmt.SetMillisecondsThreshold, fmt, 10)
-    end
+    ns.SafeCallMethodIfPresent("best-effort-style", fmt, "SetMillisecondsThreshold", 10)
     if fmt.SetDefaultAbbreviation and Enum and Enum.SecondsFormatterAbbreviation then
-        pcall(fmt.SetDefaultAbbreviation, fmt, Enum.SecondsFormatterAbbreviation.OneLetter)
+        ns.SafeCallMethod("best-effort-style", fmt, "SetDefaultAbbreviation", Enum.SecondsFormatterAbbreviation.OneLetter)
     end
     if fmt.SetStripIntervalWhitespace and Enum and Enum.SecondsFormatterIntervalWhitespace then
-        pcall(fmt.SetStripIntervalWhitespace, fmt, Enum.SecondsFormatterIntervalWhitespace.Strip)
+        ns.SafeCallMethod("best-effort-style", fmt, "SetStripIntervalWhitespace", Enum.SecondsFormatterIntervalWhitespace.Strip)
     end
     barDurationFormatter = fmt
     return fmt
 end
 
--- One binding per bar, bound to its DurationText fontstring ONCE.  Returns the
--- live binding, or nil if the API is absent / setup failed (cached as false so
--- we don't retry every frame).
 local function EnsureBarDurationBinding(bar)
     if not CreateDurationTextBinding then return nil end
     if bar._durTextBinding ~= nil then
@@ -567,41 +601,31 @@ local function EnsureBarDurationBinding(bar)
         bar._durTextBinding = false
         return nil
     end
-    -- A binding with no formatter can't produce text (CanFormatText == false),
-    -- which would blank the duration slot — worse than the numeric fallback.
-    -- Require the formatter up front; bail to fallback if it's unavailable.
     local fmt = GetBarDurationFormatter()
     if not fmt then
         bar._durTextBinding = false
         return nil
     end
-    local ok, binding = pcall(CreateDurationTextBinding)
+    local ok, binding = ns.SafeCall("best-effort-style", CreateDurationTextBinding)
     if not ok or not binding or not binding.SetFontString or not binding.SetFormatter then
         bar._durTextBinding = false
         return nil
     end
-    -- DurationText is a CreateFontString FontString == SimpleFontString; pcall
-    -- guards the (unlikely) type rejection so a bad bind degrades to fallback.
-    local okBind = pcall(binding.SetFontString, binding, bar.DurationText)
+    local okBind = ns.SafeCallMethod("best-effort-style", binding, "SetFontString", bar.DurationText)
     if not okBind then
         bar._durTextBinding = false
         return nil
     end
-    pcall(binding.SetFormatter, binding, fmt)
-    if binding.SetZeroDurationText then pcall(binding.SetZeroDurationText, binding, "") end
-    if binding.SetExpiredText then pcall(binding.SetExpiredText, binding, "") end
+    ns.SafeCallMethod("best-effort-style", binding, "SetFormatter", fmt)
+    ns.SafeCallMethodIfPresent("best-effort-style", binding, "SetZeroDurationText", "")
+    ns.SafeCallMethodIfPresent("best-effort-style", binding, "SetExpiredText", "")
     bar._durTextBinding = binding
     return binding
 end
 
--- Stop the binding from ticking (bar inactive / hidden / recycled) and forget
--- the bound object so the next activation re-arms.  clearText wipes the
--- fontstring for paths that don't already SetText("") themselves.
 local function DisableBarDurationBinding(bar, clearText)
     local binding = bar and bar._durTextBinding
-    if binding and binding.SetEnabled then
-        pcall(binding.SetEnabled, binding, false)
-    end
+    ns.SafeCallMethodIfPresent("best-effort-style", binding, "SetEnabled", false)
     if bar then bar._boundDurObj = nil end
     if clearText and bar and bar.DurationText then
         bar.DurationText.SetText(bar.DurationText, "")
@@ -613,25 +637,16 @@ local function WriteDurationTextFromDurationObject(bar, durObj)
         return false
     end
 
-    -- Preferred path: hand the duration object to the engine-side binding,
-    -- which self-ticks the fontstring C-side and is secret-safe.  Only
-    -- (re)assign on durObj identity change — the OnLoop calls this every
-    -- frame, so the unchanged-object early-out keeps the hot path call-free.
     local binding = EnsureBarDurationBinding(bar)
     if binding then
         if bar._boundDurObj ~= durObj then
-            pcall(binding.SetDuration, binding, durObj)
-            if binding.SetEnabled then
-                pcall(binding.SetEnabled, binding, true)
-            end
+            ns.SafeCallMethod("sink-forward", binding, "SetDuration", durObj)
+            ns.SafeCallMethodIfPresent("best-effort-style", binding, "SetEnabled", true)
             bar._boundDurObj = durObj
         end
         return true
     end
 
-    -- Fallback (pre-12.0.7): numeric poll.  GetRemainingDuration is secret in
-    -- combat; forward straight to SetFormattedText (C-side format), never
-    -- compare/arith on it in Lua.
     if not durObj.GetRemainingDuration then
         return false
     end
@@ -669,15 +684,9 @@ local function GetTrackedBarOverrideColor(settings, spellData)
     return nil
 end
 
----------------------------------------------------------------------------
--- CONFIGURE BAR
----------------------------------------------------------------------------
 function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     if not bar then return end
 
-    -- Remember this bar's live container settings so a skin-color-only refresh
-    -- (RefreshSkinColors, which bypasses ConfigureBar) can re-resolve the
-    -- per-container border source without the settings table in hand.
     bar._borderSettings = settings
 
     local barHeight = settings.barHeight or 25
@@ -693,7 +702,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     local hideIcon = settings.hideIcon
     local hideText = settings.hideText
 
-    -- Inactive visual settings
     local inactiveMode = settings.inactiveMode or "hide"
     if inactiveMode ~= "always" and inactiveMode ~= "fade" and inactiveMode ~= "hide" then
         inactiveMode = "hide"
@@ -703,7 +711,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     if inactiveAlpha > 1 then inactiveAlpha = 1 end
     local desaturateInactive = (settings.desaturateInactive == true)
 
-    -- Vertical bar settings
     local orientation = settings.orientation or "horizontal"
     local isVertical = (orientation == "vertical")
     local fillDirection = settings.fillDirection or "up"
@@ -714,7 +721,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     local spellData = GetBarSpellData(bar)
     local overrideColor = GetTrackedBarOverrideColor(settings, spellData)
 
-    -- For vertical bars: swap width/height conceptually
     local frameWidth, frameHeight
     if isVertical then
         frameWidth = barHeight
@@ -724,7 +730,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         frameHeight = barHeight
     end
 
-    -- Set bar dimensions
     bar:SetSize(frameWidth, frameHeight)
 
     local statusBar = bar.StatusBar
@@ -738,7 +743,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         end
     end
 
-    -- Icon container
     local iconContainer = bar.IconContainer
     if iconContainer then
         if hideIcon then
@@ -750,14 +754,12 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
             local iconSize = isVertical and frameWidth or frameHeight
             iconContainer:SetSize(iconSize, iconSize)
 
-            -- Apply optional desaturation for inactive entries
             if bar.IconTexture and bar.IconTexture.SetDesaturated then
                 bar.IconTexture:SetDesaturated((not isActive) and desaturateInactive and inactiveMode ~= "always")
             end
         end
     end
 
-    -- Position statusBar and icon based on orientation
     if statusBar then
         statusBar:ClearAllPoints()
         if isVertical then
@@ -771,7 +773,7 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
                     statusBar:SetPoint("LEFT", bar, "LEFT", 0, 0)
                     statusBar:SetPoint("RIGHT", bar, "RIGHT", 0, 0)
                     statusBar:SetPoint("BOTTOM", iconContainer, "TOP", 0, 0)
-                else -- "top" (default)
+                else
                     iconContainer:SetPoint("TOP", bar, "TOP", 0, 0)
                     statusBar:SetPoint("BOTTOM", bar, "BOTTOM", 0, 0)
                     statusBar:SetPoint("LEFT", bar, "LEFT", 0, 0)
@@ -793,8 +795,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         end
     end
 
-    -- Apply StatusBar texture (and mirror onto PermanentFill so the
-    -- no-expiration overlay matches the bar's texture/style).
     local resolvedTexturePath
     if statusBar and statusBar.SetStatusBarTexture then
         resolvedTexturePath = LSM:Fetch("statusbar", texture) or LSM:Fetch("statusbar", "Quazii v5")
@@ -806,9 +806,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         bar.PermanentFill:SetTexture(resolvedTexturePath)
     end
 
-    -- Apply bar color (override > class > custom) with opacity. Mirror the
-    -- resolved color onto PermanentFill via SetVertexColor so the overlay
-    -- matches the bar's fill color.
     local resolvedR, resolvedG, resolvedB, resolvedA
     if statusBar and statusBar.SetStatusBarColor then
         local c = barColor
@@ -817,8 +814,9 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
                 overrideColor[1] or 0.2, overrideColor[2] or 0.8, overrideColor[3] or 0.6, barOpacity
         elseif useClassColor then
             local _, class = UnitClass("player")
-            local safeClass = tostring(class)
-            local color = safeClass and RAID_CLASS_COLORS[safeClass]
+            -- @secret-policy: collapse-only — UnitClass can return SECRET on 12.1 PTR7
+            if issecretvalue and issecretvalue(class) then class = nil end
+            local color = class and RAID_CLASS_COLORS[class]
             if color then
                 resolvedR, resolvedG, resolvedB, resolvedA = color.r, color.g, color.b, barOpacity
             else
@@ -835,7 +833,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         bar.PermanentFill:SetVertexColor(resolvedR, resolvedG, resolvedB, resolvedA or 1)
     end
 
-    -- Background
     local bg = bar.Background
     if bg then
         local bgR, bgG, bgB = bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0
@@ -848,7 +845,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         bg:Show()
     end
 
-    -- Border (4-edge technique)
     local borderFrame = bar.BorderContainer
     if borderFrame then
         if borderSizePx > 0 then
@@ -876,10 +872,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
             borderFrame._right:SetPoint("BOTTOMRIGHT", borderFrame, "BOTTOMRIGHT", 0, 0)
             borderFrame._right:SetWidth(borderSizePx)
 
-            -- Per-container border color via the central source enum
-            -- (inherit/theme/class/custom). Passing `settings` lets the bar honor
-            -- its own borderColorSource/borderColor like the icon-row containers;
-            -- "inherit" falls back to the global skin border + hideSkinBorders.
             local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(settings, "")
             borderFrame._top:SetColorTexture(sbR, sbG, sbB, sbA)
             borderFrame._bottom:SetColorTexture(sbR, sbG, sbB, sbA)
@@ -892,7 +884,6 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         end
     end
 
-    -- Text
     local generalFont = GetGeneralFont()
     local generalOutline = GetGeneralFontOutline()
     local showText = not hideText and (not isVertical or showTextOnVertical)
@@ -905,14 +896,9 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         CJKFont(bar.DurationText, generalFont, textSize, generalOutline)
         local durationBaseAlpha = showText and 1 or 0
         bar.DurationText:SetAlpha(durationBaseAlpha)
-        -- Captured so the curve-driven text-hide path (UpdateOwnedBarAura
-        -- durObj branch) and the alpha restore sites (inactive branch,
-        -- ReleaseBar, _hideDurationText branch) all agree on the
-        -- configured visibility — never override a "hide text" setting.
         bar._durationTextBaseAlpha = durationBaseAlpha
     end
 
-    -- Apply frame alpha based on active state
     local targetAlpha = 1
     if not isActive then
         if inactiveMode == "fade" then
@@ -924,21 +910,10 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     bar:SetAlpha(targetAlpha)
 end
 
----------------------------------------------------------------------------
--- PREVIEW ENTRY POINT
--- Used by modules/cdm/settings/composer_preview_driver.lua to construct
--- a bar frame inside the settings preview pane. CreateBar is pure
--- construction (no runtime hooks at the bar level), so the wrapper is
--- trivial; ConfigureBar(bar, settings, width) is the styling path the
--- driver also uses.
----------------------------------------------------------------------------
 function CDMBars.CreateForPreview(parent)
     return CreateBar(parent)
 end
 
----------------------------------------------------------------------------
--- POOL MANAGEMENT
----------------------------------------------------------------------------
 local function AcquireBar(parent)
     local bar
     if #recyclePool > 0 then
@@ -964,6 +939,9 @@ local function ReleaseBar(bar)
     bar._active = false
     bar._auraUnit = nil
     bar._auraInstanceID = nil
+    bar._blzChild = nil
+    bar._blzCooldownID = nil
+    bar._blzChildMissAt = nil
     bar._cSideFill = nil
     bar._preferDurObjFill = nil
     bar._forceTimerDurationRebind = nil
@@ -988,9 +966,6 @@ local function ReleaseBar(bar)
     if bar.PermanentFill then
         bar.PermanentFill:SetAlpha(0)
     end
-    -- Restore configured base alpha (or default to 1 for never-configured
-    -- bars) so the next ConfigureBar call doesn't have to fight a stale
-    -- curve-driven 0 from a previous permanent state.
     bar.DurationText:SetAlpha(bar._durationTextBaseAlpha or 1)
 
     if #recyclePool < MAX_RECYCLE_POOL_SIZE then
@@ -1019,8 +994,6 @@ function CDMBars:MarkAuraRefresh(unit, updateInfo)
     return marked
 end
 
--- Aggressive reset: clear per-bar caches stamped during totem/aura
--- mirroring. Repopulated on the next bar update tick.
 function CDMBars:ClearPerBarCaches()
     for i = 1, #barPool do
         local bar = barPool[i]
@@ -1037,22 +1010,13 @@ function CDMBars:GetCacheStats()
     }
 end
 
----------------------------------------------------------------------------
--- BUILD BARS FROM OWNED SPELL LIST: Create bars from owned spell data.
--- All state (StatusBar fill, IconTexture, NameText, DurationText) is driven
--- by UpdateOwnedBarAura -> CDMResolvers.ResolveCooldownState. Composer
--- entries can also provide a mirrored native child identity for exact
--- aura/cooldown state.
----------------------------------------------------------------------------
 function CDMBars:BuildBarsFromOwned(container, spellList)
     if not container then return end
     if not spellList or #spellList == 0 then
-        -- No owned spells — clear pool and return
         self:ClearPool()
         return
     end
 
-    -- Check if we need to rebuild: compare spell count + IDs with current pool
     local needsRebuild = (#spellList ~= #barPool)
     if not needsRebuild then
         for i, bar in ipairs(barPool) do
@@ -1065,7 +1029,6 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
         end
     end
 
-    -- Force rebuild if bars are parented to wrong frame
     if not needsRebuild and #barPool > 0 then
         local firstParent = barPool[1]:GetParent()
         if firstParent ~= container then
@@ -1073,7 +1036,6 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
         end
     end
 
-    -- No rebuild needed — refresh active state per bar via the resolver path.
     if not needsRebuild then
         for i, bar in ipairs(barPool) do
             local entry = spellList[i]
@@ -1084,6 +1046,9 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
                     bar._isTotemInstance = entry._isTotemInstance and true or false
                     bar._totemSlot = entry._totemSlot
                     bar._spellID = entry.overrideSpellID or entry.spellID or entry.id
+                    bar._blzChild = entry._blzFrame or bar._blzChild
+                    bar._blzCooldownID = entry._blzFrame and entry.cooldownID or bar._blzCooldownID
+                    if entry._blzFrame then bar._blzChildMissAt = nil end
                 end
                 self:UpdateOwnedBarAura(bar)
             end
@@ -1091,10 +1056,8 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
         return
     end
 
-    -- Clear existing pool
     self:ClearPool()
 
-    -- Create owned bars for each spell entry
     for _, entry in ipairs(spellList) do
         local bar = AcquireBar(container)
         bar._spellEntry = entry
@@ -1106,11 +1069,13 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
         local spellID = entry.overrideSpellID or entry.spellID or entry.id
         bar._spellID = spellID
 
-        -- Set initial texture from composer entry / direct C-side APIs.
-        -- Totem-instance bars defer to UpdateOwnedBarAura's totemIcon path.
+        bar._blzChild = entry._blzFrame
+        bar._blzCooldownID = entry._blzFrame and entry.cooldownID or nil
+        bar._blzChildMissAt = nil
+
         if bar.IconTexture and spellID and not bar._isTotemInstance then
-            local texID
-            if entry.type == "item" or entry.type == "slot" then
+            local texID = entry.iconTexture
+            if not texID and (entry.type == "item" or entry.type == "slot") then
                 if entry.type == "slot" then
                     texID = Sources and Sources.QueryInventoryItemTexture
                         and Sources.QueryInventoryItemTexture("player", entry.id)
@@ -1121,9 +1086,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
                     end
                     texID = icon
                 end
-            elseif entry.type == "spell" then
-                -- Cooldown bars use overrideSpellID for talent replacements.
-                -- Aura bars keep their configured entry identity.
+            elseif not texID and entry.type == "spell" then
                 local iconSid
                 if entry.isAura then
                     iconSid = entry.overrideSpellID or entry.spellID or entry.id or spellID
@@ -1142,10 +1105,6 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             end
         end
 
-        -- Set initial name text from the composer entry. Talent rename for
-        -- non-aura bars follows via UpdateOwnedBarAura's runtime override
-        -- lookup. Totem-instance bars defer to UpdateOwnedBarAura's
-        -- totemName path.
         if bar.NameText and not bar._isTotemInstance then
             local displayName = entry and entry.name
                 or (ns.CDMSpellData and ns.CDMSpellData:ResolveDisplayName(entry))
@@ -1154,18 +1113,10 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             end
         end
 
-        -- Update active state from aura data
         self:UpdateOwnedBarAura(bar)
     end
 end
 
----------------------------------------------------------------------------
--- UPDATE OWNED BAR AURA: Applies mirror payloads directly when present,
--- otherwise delegates to shared resolved cooldown state.
----------------------------------------------------------------------------
--- Phase B.3: drive bar fill from item / trinket-slot cooldowns. Custom
--- auraBar containers accept item entries alongside spells; duration-bar
--- rendering needs its own path since aura resolution is aura-only.
 local BuildBarCooldownStateContext
 
 local function StoreBarRuntimeState(bar, mode, active, extra)
@@ -1259,7 +1210,6 @@ local function UpdateItemBarCooldown(bar, entry)
             and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
     end
 
-    -- Texture refresh (trinket swap case)
     if bar.IconTexture and itemID then
         local tex = Sources and Sources.QueryItemIconByID
             and Sources.QueryItemIconByID(itemID)
@@ -1269,16 +1219,12 @@ local function UpdateItemBarCooldown(bar, entry)
         end
     end
 
-    -- Name
     if bar.NameText and itemID then
         local n = Sources and Sources.QueryItemNameByID
             and Sources.QueryItemNameByID(itemID)
         if n then bar.NameText.SetText(bar.NameText, n) end
     end
 
-    -- Active-state detection: scanned item/spell mappings can point from an
-    -- item use spell to a different aura spellID. Treat that aura as the
-    -- active phase before falling back to cooldown display.
     local scanner = _G.QUI and _G.QUI.SpellScanner
     local isActive, auraDur, auraRemaining
     if Sources and Sources.QueryScannedItemAuraInfo and itemID then
@@ -1297,8 +1243,8 @@ local function UpdateItemBarCooldown(bar, entry)
     end
     if not isActive and scanner and scanner.IsItemActive and itemID then
         local active, expiration, duration = scanner.IsItemActive(itemID)
-        local readableDuration = duration
-        local readableExpiration = expiration
+        local readableDuration = ReadNumber(duration, nil)
+        local readableExpiration = ReadNumber(expiration, nil)
         if active and readableDuration and readableDuration > 0 then
             isActive = true
             auraDur = readableDuration
@@ -1326,10 +1272,6 @@ local function UpdateItemBarCooldown(bar, entry)
         return
     end
 
-    -- For aura-kind entries (items in built-in buff/trackedBar containers)
-    -- and for entries with displayMode="auraOnly" (custom containers, item
-    -- types only), do NOT fall through to cooldown rendering when the aura
-    -- is inactive — the bar should go inactive instead.
     local isAuraKind = entry and entry.kind == "aura"
     local containerDB
     if ns.CDMShared and ns.CDMShared.GetContainerDB then
@@ -1363,7 +1305,9 @@ local function UpdateItemBarCooldown(bar, entry)
        and r.isOnCooldown == true
        and r.numericCooldownActive == true
        and type(startTime) == "number"
-       and type(duration) == "number" then
+       and type(duration) == "number"
+       and not (issecretvalue and issecretvalue(startTime))
+       and not (issecretvalue and issecretvalue(duration)) then
         local remaining = (startTime + duration) - GetTime()
         if remaining > 0 then
             bar._active = true
@@ -1390,14 +1334,12 @@ local function UpdateItemBarCooldown(bar, entry)
         end
     end
 
-    -- Not active, not on cooldown
     ClearItemBarInactive(bar, itemID)
 end
 
 local IsSpellCooldownEntry
 
 local _barCooldownStateContextOptions = {
-    mirrorIdentityPolicy = "entry-or-fallback",
     fallbackContainerKey = "trackedBar",
 }
 
@@ -1411,21 +1353,6 @@ function BuildBarCooldownStateContext(bar, entry, spellID)
     options.totemSlot = bar and bar._totemSlot
     options.useBuffSwipe = not IsSpellCooldownEntry(entry)
     options.skipAuraPhase = nil
-    -- Do NOT feed a cached mirror state into the resolve. GetStateByCooldownID
-    -- returns a per-key PackState table that is only refreshed when it is
-    -- called, and the resolver's cached-state fast path deliberately skips
-    -- re-querying the mirror (asserted by cdm_resolvers_cooldown_state_test).
-    -- So a state cached while an aura was inactive stays frozen at
-    -- mode=inactive even after the buff goes live -- the cross-category
-    -- buff-bar "won't activate until a rebuild / breaks again on /reload" bug.
-    -- A buff-viewer aura (cdID in the buff category) placed in the trackedBar
-    -- container binds correctly but the frozen cache masks its live aura.
-    -- Resolving fresh each poll -- exactly what the icon path does (it never
-    -- feeds a cache) -- reads the live mirror and is cheap at the bar's 0.5s
-    -- cadence; aura-mode fill stays stable via the DurationObject
-    -- userdata-identity check, and cooldown-mode keys off the spellID.
-    options.cachedMirrorState = nil
-    options.cachedMirrorSourceID = nil
     return builder(bar, entry, spellID, options)
 end
 
@@ -1440,14 +1367,146 @@ function IsSpellCooldownEntry(entry)
     return entry.kind == "cooldown" or entryType == "cooldown"
 end
 
+local function FindBlzChildByCooldownID(cooldownID)
+    local viewer = _G.BuffBarCooldownViewer
+    if not viewer or not viewer.GetChildren then return nil end
+    local ok, numChildren = pcall(viewer.GetNumChildren, viewer)
+    if not ok or not numChildren then return nil end
+    local children = { viewer:GetChildren() }
+    for ci = 1, numChildren do
+        local child = children[ci]
+        if child and child.Bar then
+            local cid = child.cooldownID
+            if not (issecretvalue and issecretvalue(cid)) and cid == cooldownID then
+                return child
+            end
+        end
+    end
+    return nil
+end
+
+local BLZ_CHILD_MISS_RETRY = 0.25
+
+local function GetPairedBlzChild(bar)
+    local wantCid = bar._blzCooldownID
+    if not wantCid then return nil end
+    local blz = bar._blzChild
+    if blz then
+        local cid = blz.cooldownID
+        if not (issecretvalue and issecretvalue(cid)) and cid == wantCid then
+            return blz
+        end
+    end
+    local now = GetTime()
+    local missAt = bar._blzChildMissAt
+    if missAt and (now - missAt) < BLZ_CHILD_MISS_RETRY then
+        return nil
+    end
+    local found = FindBlzChildByCooldownID(wantCid)
+    bar._blzChild = found
+    bar._blzChildMissAt = not found and now or nil
+    return found
+end
+
+local function ReadPairedBarActive(blz)
+    if blz.IsActive then
+        local ok, active = pcall(blz.IsActive, blz)
+        if ok then
+            if issecretvalue and issecretvalue(active) then return true end -- @secret-policy: keep-visible-when-unknown
+            return active and true or false
+        end
+        return true
+    end
+    if blz.IsShown then
+        local ok, shown = pcall(blz.IsShown, blz)
+        return ok and shown and true or false
+    end
+    return false
+end
+
+local barFillInterpolation = Enum and Enum.StatusBarInterpolation
+    and Enum.StatusBarInterpolation.ExponentialEaseOut
+
+local function MirrorPairedBarVisuals(bar, blz)
+    local nativeBar = blz.Bar
+    if not nativeBar or not nativeBar.GetValue then return end
+    local sb = bar.StatusBar
+    if sb then
+        sb.SetMinMaxValues(sb, nativeBar:GetMinMaxValues())
+        local smooth = bar._mirrorWasShown and barFillInterpolation
+        if smooth then
+            sb.SetValue(sb, nativeBar:GetValue(), smooth)
+        else
+            sb.SetValue(sb, nativeBar:GetValue())
+        end
+        bar._mirrorWasShown = true
+    end
+    if bar.DurationText then
+        if bar._hideDurationText then
+            bar.DurationText.SetText(bar.DurationText, "")
+        else
+            local durationFS = nativeBar.Duration
+            if durationFS and durationFS.GetText then
+                bar.DurationText.SetText(bar.DurationText, durationFS:GetText())
+            end
+        end
+    end
+end
+
+local pairedMirrorFrame = CreateFrame("Frame")
+if pairedMirrorFrame.Hide then pairedMirrorFrame:Hide() end
+local pairedMirrorAccum = 0
+pairedMirrorFrame:SetScript("OnUpdate", function(self, elapsed)
+    pairedMirrorAccum = pairedMirrorAccum + elapsed
+    if pairedMirrorAccum < 0.016 then return end
+    pairedMirrorAccum = 0
+    local anyPaired = false
+    for _, bar in ipairs(barPool) do
+        if bar._isOwnedBar and bar._active and bar:IsShown() then
+            local blz = GetPairedBlzChild(bar)
+            if blz then
+                anyPaired = true
+                MirrorPairedBarVisuals(bar, blz)
+            end
+        end
+    end
+    if not anyPaired then
+        self:Hide()
+    end
+end)
+
+local function UpdatePairedBarState(bar, blz)
+    local active = ReadPairedBarActive(blz)
+    bar._active = active
+    bar._hideDurationText = GetBarSpellHideDurationOverride(bar)
+    if bar._boundDurObj then DisableBarDurationBinding(bar) end
+    bar._durObj = nil
+    bar._cSideFill = nil
+    bar._preferDurObjFill = nil
+    if bar.PermanentFill then
+        bar.PermanentFill.SetAlpha(bar.PermanentFill, 0)
+    end
+    if not active then
+        bar._mirrorWasShown = nil
+    end
+    StoreBarRuntimeState(bar, active and "aura" or "inactive", active, nil)
+    if active and pairedMirrorFrame.Show then
+        pairedMirrorFrame:Show()
+    end
+end
+
 function CDMBars:UpdateOwnedBarAura(bar)
     if not bar or not bar._spellID then return end
     local spellID = bar._spellID
     local entry = bar._spellEntry
     if not ns.CDMSpellData then return end
 
-    -- Inventory-backed bars retain their adapter path for item names,
-    -- trinket-slot texture updates, and SpellScanner item-aura detection.
+    local blz = GetPairedBlzChild(bar)
+    if blz then
+        UpdatePairedBarState(bar, blz)
+        return
+    end
+
     if entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot") then
         UpdateItemBarCooldown(bar, entry)
         return
@@ -1469,9 +1528,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
         countValue = count and count.value or nil,
         countSource = count and count.source or nil,
         hasExpirationTime = r.hasExpirationTime,
-        mirrorBacked = r.mirrorBacked == true,
-        mirrorState = r.mirrorState,
-        mirrorSourceID = r.sourceID,
     })
 
     local _bname = entry and entry.name
@@ -1485,9 +1541,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
         bar._hideDurationText = ShouldHideAuraDurationText(r)
             or GetBarSpellHideDurationOverride(bar)
 
-        -- Active-aura fallback: when the resolver returns no DurationObject
-        -- and an out-of-combat auraData.duration is missing or non-positive,
-        -- treat it like permanent.
         if not bar._hideDurationText and not r.durObj and r.auraData
             and not InCombatLockdown() then
             local readableDur = ReadNumber(r.auraData.duration, 0)
@@ -1504,23 +1557,16 @@ function CDMBars:UpdateOwnedBarAura(bar)
             bar._totalDuration = nil
             bar._expirationTime = nil
             SetStatusBarFull(bar.StatusBar)
-            -- Explicit SetValue(1) handles the OOC-resolved permanent
-            -- case; the curve-driven PermanentFill overlay is only for
-            -- the in-combat case where we can't read the bool. Hide it
-            -- here so we don't double-render full.
             if bar.PermanentFill then
                 bar.PermanentFill.SetAlpha(bar.PermanentFill, 0)
             end
             DisableBarDurationBinding(bar)
             if bar.DurationText then
                 bar.DurationText.SetText(bar.DurationText, "")
-                -- Restore the configured base alpha — never override a
-                -- "hide text" setting (vertical bars without text, etc.).
                 bar.DurationText.SetAlpha(bar.DurationText, bar._durationTextBaseAlpha or 1)
             end
         end
 
-        -- Cache readable duration/expiration from OOC auraData (for OnUpdate timer text)
         if r.auraData and not bar._hideDurationText
             and not InCombatLockdown() then
             local rawDur = ReadNumber(r.auraData.duration, nil)
@@ -1529,7 +1575,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
             end
         end
 
-        -- Bar fill via DurationObject
         local durObj = r.durObj
         if durObj and not bar._hideDurationText then
             local prevDurObj = bar._durObj
@@ -1538,11 +1583,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
             local canUseTimerDuration = bar.StatusBar and bar.StatusBar.SetTimerDuration
             bar._preferDurObjFill = canUseTimerDuration and true or nil
             if bar._cSideFill then
-                -- C-side SetTimerDuration is already driving the fill
-                -- animation.  Re-calling it would restart the animation
-                -- and cause visible flickering.  Detect aura refreshes
-                -- by comparing the DurationObject reference (C userdata
-                -- identity check — safe in combat, no secret values).
                 if forceRebind or durObj ~= prevDurObj then
                     if canUseTimerDuration then
                         local ok = SetStatusBarTimerDuration(bar.StatusBar, durObj)
@@ -1566,24 +1606,13 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 end
             end
 
-            -- No-expiration overlay + text drive (curve trick via IsZero).
-            -- See header doc above the helpers. IsZero is a stable
-            -- per-aura property (not derived from elapsed/remaining),
-            -- so timed auras like Metamorphosis don't briefly cross a
-            -- threshold during animation and produce flicker.
             if durObj.IsZero
                and C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
                 local isZero = durObj.IsZero(durObj)
-                -- Overlay alpha: permanent → 1 (visible), timed → 0.
                 if bar.PermanentFill then
                     local alpha = C_CurveUtil.EvaluateColorValueFromBoolean(isZero, 1, 0)
                     bar.PermanentFill.SetAlpha(bar.PermanentFill, alpha)
                 end
-                -- Duration-text alpha: permanent → 0 (hidden), timed → 1.
-                -- Skip when the configured base alpha is 0 (hideText /
-                -- vertical-no-text settings) — the timed-aura output is
-                -- 1 (visible), which would otherwise override the
-                -- user's "hide text" choice.
                 if bar.DurationText and (bar._durationTextBaseAlpha or 1) ~= 0 then
                     local textAlpha = C_CurveUtil.EvaluateColorValueFromBoolean(isZero, 0, 1)
                     bar.DurationText.SetAlpha(bar.DurationText, textAlpha)
@@ -1593,12 +1622,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
             EnsureBarTimerRunning()
         end
 
-        -- Icon: totem instances use slot-bound display from resolved cooldown
-        -- state's totemIcon payload. Other bars rely on the desired texture
-        -- pinned in BuildBarsFromOwned plus auraData.icon as a runtime override
-        -- (talent swaps, debuff overlays). Falls back to the spell texture
-        -- source for aura entries whose buff icon differs from the entry's
-        -- stored icon.
         if bar.IconTexture then
             if bar._isTotemInstance then
                 if r.totemIcon ~= nil then
@@ -1628,10 +1651,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
             end
         end
 
-        -- Name + count text.  Display-count payloads are already formatted
-        -- by C_UnitAuras, while auraData applications are numeric counts.
-        -- Keep both paths in C-side helpers so secret values are forwarded
-        -- without Lua concatenation.
         if bar.NameText then
             local name
             if bar._isTotemInstance then
@@ -1684,18 +1703,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
         DisableBarDurationBinding(bar)
         if bar.DurationText then
             bar.DurationText:SetText("")
-            -- Restore the configured base alpha — never override a
-            -- "hide text" setting (vertical bars without text, etc.).
             bar.DurationText.SetAlpha(bar.DurationText, bar._durationTextBaseAlpha or 1)
         end
 
-        -- Always restore name via C-side SetText — no Lua string comparison
-        -- (GetText returns a secret value in combat causing taint on ==).
-        -- SetText deduplicates on the C side when text is unchanged.
-        -- Skip for totem instances: each slot's per-totem name (e.g.
-        -- "Dreadstalker" / "Charhound") is owned by the totem-icon path
-        -- on the active branch; forcing entry.name ("Call Dreadstalkers")
-        -- here would flicker the cached display.
         if bar.NameText and entry and entry.name and entry.name ~= ""
             and not bar._isTotemInstance then
             bar.NameText.SetText(bar.NameText, entry.name)
@@ -1704,10 +1714,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
 
 end
 
----------------------------------------------------------------------------
--- FORCE ALL ACTIVE: For Edit Mode, force all bars with names visible
--- so the mover overlay shows the full expected area.
----------------------------------------------------------------------------
 function CDMBars:ForceAllActive()
     for _, bar in ipairs(barPool) do
         local name = bar.NameText and bar.NameText:GetText()
@@ -1717,10 +1723,6 @@ function CDMBars:ForceAllActive()
     end
 end
 
----------------------------------------------------------------------------
--- LAYOUT BARS: Pure math positioning, no Blizzard frame interaction.
--- Stacks bars vertically (default) or horizontally (vertical orientation).
----------------------------------------------------------------------------
 function CDMBars:LayoutBars(container, settings)
     if not container then return end
     if not settings then return end
@@ -1730,8 +1732,6 @@ function CDMBars:LayoutBars(container, settings)
 
     local count = #barPool
 
-    -- Even with 0 bars, set a minimum container size so the Edit Mode
-    -- overlay is draggable and visible (not 1x1).
     if count == 0 then
         local orientation = settings.orientation or "horizontal"
         local w, h
@@ -1752,7 +1752,6 @@ function CDMBars:LayoutBars(container, settings)
     local inactiveMode = settings.inactiveMode or "hide"
     local reserveSlotWhenInactive = (settings.reserveSlotWhenInactive == true)
 
-    -- For vertical bars, swap dimensions
     local effectiveBarWidth, effectiveBarHeight
     if isVertical then
         effectiveBarWidth = barHeight
@@ -1762,8 +1761,6 @@ function CDMBars:LayoutBars(container, settings)
         effectiveBarHeight = barHeight
     end
 
-    -- Apply HUD layer priority (skip during layout mode — the handle
-    -- system owns strata/level while frames are reparented to movers).
     local layoutActive = Helpers.IsLayoutModeActive()
     local hudLayering = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.hudLayering
     local layerPriority = hudLayering and hudLayering.buffBar or 5
@@ -1776,17 +1773,10 @@ function CDMBars:LayoutBars(container, settings)
         container:SetFrameLevel(frameLevel)
     end
 
-    -- Configure and position each bar
     local editModeActive = Helpers.IsEditModeActive()
         or Helpers.IsLayoutModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
     local visibleIndex = 0
-    -- Build a lightweight config fingerprint so ConfigureBar is skipped
-    -- when settings haven't changed between LayoutBars calls.
-    --
-    -- Fold the per-container border source + custom color in too: a
-    -- border-color-only change leaves every numeric below untouched, so without
-    -- this the fingerprint would match and the border would never repaint.
     local bcs = settings.borderColorSource
     local bcsHash = (bcs == "theme" and 1) or (bcs == "class" and 2)
         or (bcs == "custom" and 3) or 0
@@ -1804,8 +1794,6 @@ function CDMBars:LayoutBars(container, settings)
         + bcsHash * 1300031
         + bcHash * 700001
     for _, bar in ipairs(barPool) do
-        -- In edit/layout mode, force bar active BEFORE ConfigureBar so that
-        -- inactive styling (alpha=0 for "hide" mode) doesn't apply.
         if editModeActive then
             bar._active = true
             SetStatusBarValue(bar.StatusBar, 0.65)
@@ -1815,14 +1803,12 @@ function CDMBars:LayoutBars(container, settings)
             end
         end
 
-        -- Apply styling (skip if settings unchanged and bar was already configured)
         if bar._cfgFingerprint ~= cfgFingerprint or bar._cfgActive ~= bar._active then
             bar._cfgFingerprint = cfgFingerprint
             bar._cfgActive = bar._active
             CDMBars.ConfigureBar(bar, settings, barWidth)
         end
 
-        -- Apply strata/level (skip if already correct to avoid layout invalidation)
         if bar._lastFrameLevel ~= frameLevel then
             bar._lastFrameLevel = frameLevel
             bar:SetFrameStrata("MEDIUM")
@@ -1841,10 +1827,8 @@ function CDMBars:LayoutBars(container, settings)
             end
         end
 
-        -- Determine visibility using display mode for owned bars
         local shouldShow = true
 
-        -- In edit/layout mode, force all bars visible (ignore visibility settings)
         if not editModeActive then
             local displayMode = settings.iconDisplayMode or "always"
             local effectiveDisplayMode = displayMode
@@ -1853,19 +1837,10 @@ function CDMBars:LayoutBars(container, settings)
             end
 
             if effectiveDisplayMode == "active" then
-                -- Active-only: only show bars with active auras/cooldowns
                 if not bar._active then
                     shouldShow = false
                 end
-            elseif effectiveDisplayMode == "always" then
-                -- Always mode: use existing inactiveMode for inactive bars
-                if not bar._active then
-                    if inactiveMode == "hide" and not reserveSlotWhenInactive then
-                        shouldShow = false
-                    end
-                end
             else
-                -- Fallback to existing behavior
                 if not bar._active then
                     if inactiveMode == "hide" and not reserveSlotWhenInactive then
                         shouldShow = false
@@ -1878,10 +1853,6 @@ function CDMBars:LayoutBars(container, settings)
             local wasShown = bar:IsShown()
             local offsetIndex = visibleIndex
 
-            -- Compute desired anchor point and offset, then skip
-            -- ClearAllPoints+SetPoint when the bar is already there.
-            -- Redundant point writes cause layout invalidation every tick,
-            -- which is the primary visual source of bar flickering.
             local anchor, relAnchor, offsetX, offsetY
             if isVertical then
                 if growFromBottom then
@@ -1928,11 +1899,8 @@ function CDMBars:LayoutBars(container, settings)
         end
     end
 
-    -- Set container size from calculated bounds
     local totalW, totalH
     if visibleIndex == 0 then
-        -- All bars hidden by inactiveMode — use settings dimensions so
-        -- the container (and Edit Mode overlay) stays a reasonable size.
         totalW = effectiveBarWidth
         totalH = effectiveBarHeight
     elseif isVertical then
@@ -1945,33 +1913,33 @@ function CDMBars:LayoutBars(container, settings)
     totalW = QUICore:PixelRound(totalW)
     totalH = QUICore:PixelRound(totalH)
 
-    -- Must run in combat too: a bar going active mid-combat would
-    -- otherwise leave the container frozen at the previous height,
-    -- so frames anchored to its growth edge stop tracking. The combat
-    -- branch defers SetSize one tick to escape inherited taint — see
-    -- the DEFERRED RESIZE block at the top of the file.
     ResizeContainer(container, totalW, totalH)
 end
 
----------------------------------------------------------------------------
--- REFRESH: Rebuild + re-layout (called from CDMBuffLayout)
----------------------------------------------------------------------------
-function CDMBars:Refresh(container, settings, overrideWidth, containerKey)
+function CDMBars:Refresh(container, settings, overrideWidth, containerKey, runtimeEntries)
     if not container then return end
     if not settings then return end
 
-    -- Update barWidth if autoWidth provides an override
     if overrideWidth then
         settings = setmetatable({ barWidth = overrideWidth }, { __index = settings })
     end
 
-    -- Store refs so the periodic ticker can re-layout after _active changes
     _lastContainer = container
     _lastSettings = settings
 
-    -- All bars are sourced from the composer's owned-spells snapshot.
-    if ns.CDMSpellData then
-        local spellList = ns.CDMSpellData:GetSpellList(containerKey or "trackedBar")
+    local spellList
+    if containerKey == "trackedBar" then
+        local configuredOwnedInitialized = ContainerOwnedListInitialized(containerKey)
+        local configuredSpellList
+        if configuredOwnedInitialized and ns.CDMSpellData then
+            configuredSpellList = ns.CDMSpellData:GetSpellList(containerKey)
+        end
+        spellList = BuildTrackedBarSpellList(runtimeEntries, configuredSpellList, configuredOwnedInitialized)
+    end
+    if not spellList and ns.CDMSpellData then
+        spellList = ns.CDMSpellData:GetSpellList(containerKey or "trackedBar")
+    end
+    if spellList then
         self:BuildBarsFromOwned(container, spellList)
     else
         self:ClearPool()
@@ -1979,10 +1947,6 @@ function CDMBars:Refresh(container, settings, overrideWidth, containerKey)
     self:LayoutBars(container, settings)
 end
 
----------------------------------------------------------------------------
--- UPDATE ALL OWNED BARS: Periodic aura poll for owned bars.
--- Called from the CDMIcons update ticker (piggybacks on existing 0.5s tick).
----------------------------------------------------------------------------
 function CDMBars:UpdateOwnedBars()
     local anyChanged = false
     local anyActive = false
@@ -1996,30 +1960,22 @@ function CDMBars:UpdateOwnedBars()
             if bar._active then anyActive = true end
         end
     end
-    -- Ensure the bar timer is running when any bar is active.
     if anyActive and not barTimerGroup:IsPlaying() then
         barTimerGroup:Play()
     end
-    -- Re-layout when any bar's active state changed so Show/Hide updates
     if anyChanged and _lastContainer and _lastSettings then
         self:LayoutBars(_lastContainer, _lastSettings)
     end
 end
 
----------------------------------------------------------------------------
--- OWNED BAR TIMER: 100ms AnimationGroup loop for duration text + bar fill.
--- This loop is ONLY responsible for visual updates (text, fill).
--- Active-state management and layout are owned exclusively by
--- UpdateOwnedBars (called from the 250ms safety ticker + event debounce).
--- Keeping one owner for state+layout prevents the two systems from
--- competing and causing flickering.
----------------------------------------------------------------------------
 barTimerGroup:SetScript("OnLoop", function()
     local Helpers = ns.Helpers
     local anyActive = false
     for _, bar in ipairs(barPool) do
         if bar._isOwnedBar and bar._active and bar:IsShown() then
-            if bar._hideDurationText then
+            if GetPairedBlzChild(bar) then
+                anyActive = true
+            elseif bar._hideDurationText then
                 anyActive = true
                 if bar._boundDurObj then DisableBarDurationBinding(bar) end
                 if bar.DurationText then
@@ -2028,28 +1984,13 @@ barTimerGroup:SetScript("OnLoop", function()
                 SetStatusBarFull(bar.StatusBar)
             else
                 local durObj = bar._durObj
-                -- Guard: GetCooldownDuration can return 0 (a number) when inactive.
-                -- Numbers must never be indexed, so only treat userdata/tables as DurationObjects.
                 if durObj and type(durObj) == "number" then
                     bar._durObj = nil
                     durObj = nil
                 end
-                -- Gate on durObj presence (the userdata reference, NOT any
-                -- value derived from it). GetRemainingDuration's return is a
-                -- secret number in combat — never compare it (`~= nil`,
-                -- `> 0`) or do arithmetic on it in Lua. Forward straight to
-                -- C-side sinks. SetFormattedText accepts secret numbers and
-                -- formats them on the C side. C-side SetTimerDuration drives
-                -- the StatusBar fill independently of this loop. Expiration
-                -- detection is handled by UpdateOwnedBars (event-driven), not
-                -- by Lua-side comparison here.
                 if durObj and durObj.GetRemainingDuration then
                     anyActive = true
                     WriteDurationTextFromDurationObject(bar, durObj)
-                    -- StatusBar fill: when C-side SetTimerDuration is bound,
-                    -- it owns the fill animation entirely. When it isn't,
-                    -- pin the bar visibly active without inventing a Lua
-                    -- fraction (any division would taint a secret value).
                     if not bar._cSideFill and bar.StatusBar then
                         SetStatusBarFull(bar.StatusBar)
                     end
@@ -2057,15 +1998,11 @@ barTimerGroup:SetScript("OnLoop", function()
             end
         end
     end
-    -- Stop the animation when no bars need ticking to avoid idle CPU cost.
     if not anyActive then
         barTimerGroup:Stop()
     end
 end)
 
----------------------------------------------------------------------------
--- DEBUG IMPORT BINDING (rebound by cdm_debug.lua's BindAll())
----------------------------------------------------------------------------
 ns.CDMBars = ns.CDMBars or CDMBars
 function ns.CDMBars._BindDebugImports()
     local d = ns.CDMDebug
@@ -2074,20 +2011,12 @@ function ns.CDMBars._BindDebugImports()
     end
 end
 
--- The CDM bar BORDER tracks the global skin (GetSkinBorderColor), applied in
--- ConfigureBar -- but ConfigureBar is skipped by a config fingerprint when only
--- the skin color changed, and the cooldowns-group refresh isn't reached by a
--- skin-color change (which fires only RefreshAll("skinning")). Re-apply the
--- border texture colors to the live bars on a skin-color change.
 function CDMBars:RefreshSkinColors()
     local H = ns.Helpers
     if not (H and H.GetSkinBorderColor) then return end
     for _, bar in ipairs(self:GetActiveBars() or {}) do
         local bc = bar and bar.BorderContainer
         if bc and bc._top and bc._top.SetColorTexture then
-            -- Resolve each bar from its own container settings so a per-container
-            -- source (inherit/theme/class/custom) is honored; a nil settings ref
-            -- (bar never configured) falls back to the global skin border.
             local r, g, b, a = H.GetSkinBorderColor(bar._borderSettings, "")
             bc._top:SetColorTexture(r, g, b, a)
             bc._bottom:SetColorTexture(r, g, b, a)

@@ -25,6 +25,11 @@ C_CooldownViewer = {
 }
 
 local ns = {}
+-- Task 45f: cdm_catalog.lua routes discarded-result pcall guards through
+-- ns.SafeCall. Additive stub (T1d/T1e precedent) — bare pcall passthrough.
+ns.SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end
+ns.SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end
+ns.SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
 loadChunk("QUI_CDM/cdm/cdm_catalog.lua", "cdm_catalog.lua")("QUI", ns)
 

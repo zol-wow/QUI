@@ -120,6 +120,11 @@ local ns = {
         IsSecretValue = function() return false end,
         SafeValue = function(value) return value end,
         IsAuraOwnedByPlayerOrPet = function() return true end,
+        GetCurrentSpecID = function()
+            local specIndex = GetSpecialization and GetSpecialization()
+            local specID = specIndex and GetSpecializationInfo and GetSpecializationInfo(specIndex)
+            return type(specID) == "number" and specID or nil
+        end,
     },
     CDMShared = {
         IsRuntimeEnabled = function() return true end,

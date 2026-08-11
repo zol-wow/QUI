@@ -92,7 +92,7 @@ assert(
 
 local ticketOptionsBlock = blockBetween(perBarSource,
     'if dbKey == "microbar" then\n                barDB.ticketIcon',
-    "-- SECTION: Visual")
+    "if SKINNABLE_BAR_KEYS[dbKey] then")
 assert(
     ticketOptionsBlock:find('"position", ticketDB', 1, true)
         and ticketOptionsBlock:find('"offsetX", ticketDB', 1, true)

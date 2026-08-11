@@ -1,18 +1,3 @@
--- modules/chat/channel_registry.lua
--- Live channel identity for the custom display, mirroring the per-frame
--- channel model Blizzard chat frames keep (channelList/zoneChannelList,
--- vendored FrameXML: Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua
--- :316-337). Maintains:
---   * channelMap:   channel index -> display name (community identifiers
---                    resolved to "Club - Stream" form)
---   * default set:  channels whose category is NOT custom (zone/regional —
---                    "General", "Trade - City", "Services", ...), keyed by
---                    UPPERCASED name because Blizzard's own routing compares
---                    channel names case-insensitively (strupper both sides).
--- Refreshed on the same events Blizzard rebuilds frame channel tables from.
---
--- All reads are local C state (GetChannelList / GetNumDisplayChannels /
--- GetChannelDisplayInfo) — no secret payloads flow through this file.
 local _, ns = ...
 
 assert(ns.QUI.Chat and ns.QUI.Chat._internals,
@@ -21,14 +6,10 @@ assert(ns.QUI.Chat and ns.QUI.Chat._internals,
 ns.QUI.Chat.ChannelRegistry = ns.QUI.Chat.ChannelRegistry or {}
 local Registry = ns.QUI.Chat.ChannelRegistry
 
-local channelMap = {}    -- index (number) -> display name
-local defaultUpper = {}  -- strupper(display name) -> true (non-custom category)
+local channelMap = {}
+local defaultUpper = {}
 local populated = false
 
--- "Community:1234:1" -> "Club - Stream" (or guild/officer stream name).
--- ChatFrameUtil.ResolveChannelName is Blizzard's own resolver (vendored
--- FrameXML: Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua:888) — pcall in
--- case club data is not yet initialized at login.
 local function ResolveCommunityName(identifier)
     local util = _G.ChatFrameUtil
     if util and util.ResolveChannelName then
@@ -53,8 +34,6 @@ function Registry.Refresh()
     for k in pairs(channelMap) do channelMap[k] = nil end
     for k in pairs(defaultUpper) do defaultUpper[k] = nil end
 
-    -- Channel display list: numbered channels with category (zone/regional
-    -- channels report a non-custom category; user /join channels are custom).
     for i = 1, _G.GetNumDisplayChannels() or 0 do
         local name, isHeader, _, channelNumber, _, _, category = _G.GetChannelDisplayInfo(i)
         if not isHeader and type(name) == "string" and name ~= "" then
@@ -68,9 +47,6 @@ function Registry.Refresh()
         end
     end
 
-    -- Joined-channel list: covers communities channels that carry a numbered
-    -- slot but may be absent from the display panel, and fills any slots the
-    -- panel walk missed (GetChannelList returns id, name, disabled triplets).
     if type(_G.GetChannelList) == "function" then
         local list = { _G.GetChannelList() }
         for i = 1, #list, 3 do
@@ -80,8 +56,6 @@ function Registry.Refresh()
                 if IsCommunityIdentifier(name) then
                     local display = ResolveCommunityName(name)
                     channelMap[index] = display
-                    -- Communities channels behave like default channels: they
-                    -- are configured/joined through Blizzard UI, not /join.
                     defaultUpper[display:upper()] = true
                 else
                     channelMap[index] = name
@@ -97,9 +71,6 @@ local function EnsurePopulated()
     end
 end
 
--- Canonical display name for a numbered-channel message: live map first
--- (keyed by arg8 channelIndex — NeverSecret per ChatInfoDocumentation), then
--- community resolution of the base name, then the base name itself.
 function Registry.ResolveName(channelIndex, channelBaseName)
     EnsurePopulated()
     if type(channelIndex) == "number" then
@@ -114,15 +85,12 @@ function Registry.ResolveName(channelIndex, channelBaseName)
     return channelBaseName
 end
 
--- True when the named channel is a default-category (zone/regional/community)
--- channel — Blizzard's default frame carries these without explicit listing.
 function Registry.IsDefault(name)
     if type(name) ~= "string" or name == "" then return false end
     EnsurePopulated()
     return defaultUpper[name:upper()] == true
 end
 
--- Sorted display names of all live channels (settings UI channel cards).
 function Registry.AllNames()
     EnsurePopulated()
     local seen, out = {}, {}
@@ -136,8 +104,6 @@ function Registry.AllNames()
     return out
 end
 
--- Refresh on the events Blizzard's chat frames rebuild channel state from,
--- plus PLAYER_ENTERING_WORLD (zone channels join server-side after PEW).
 local REFRESH_EVENTS = {
     "PLAYER_LOGIN",
     "PLAYER_ENTERING_WORLD",
@@ -146,7 +112,7 @@ local REFRESH_EVENTS = {
     "CHANNEL_LEFT",
 }
 
-if _G.CreateFrame then -- headless test harness tolerance
+if _G.CreateFrame then
     local eventFrame = CreateFrame("Frame")
     local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
     for i = 1, #REFRESH_EVENTS do
@@ -159,8 +125,6 @@ if _G.CreateFrame then -- headless test harness tolerance
     end)
 end
 
--- Channel index swaps and communities channel add/remove don't fire the
--- events above reliably — mirror the state through post-hooks.
 if _G.hooksecurefunc then
     if _G.C_ChatInfo and _G.C_ChatInfo.SwapChatChannelsByChannelIndex then
         _G.hooksecurefunc(_G.C_ChatInfo, "SwapChatChannelsByChannelIndex", function()

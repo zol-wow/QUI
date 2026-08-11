@@ -1,53 +1,28 @@
---[[
-    QUI Raid Markers Bar — Owned Engine
-    A small bar of secure buttons that place raid target markers (skull / cross /
-    etc.) on the current target. Uses SecureActionButtonTemplate with the blessed
-    type="raidtarget" action so placement works in combat — the underlying
-    SetRaidTarget is restricted and only fires through a secure click.
-
-    Combat-safety contract is cloned from totems.lua: secure attributes are set
-    OUT OF COMBAT only (deferred via pendingReconcile), button/container geometry
-    is never changed in combat (LayoutButtons / StyleButton / PositionContainer all
-    bail or skip SetSize in combat), and visibility is alpha-only (the container
-    parents secure children so its Show/Hide and EnableMouse are protected).
-
-    Unlike totems there is no per-slot active state: all configured marker buttons
-    are shown whenever the bar is enabled. Placing markers requires raid lead /
-    assist in a group; the secure click silently no-ops without it (a UX note, not
-    a taint issue).
-]]
-
 local ADDON_NAME, ns = ...
 
----------------------------------------------------------------------------
--- MODULE NAMESPACE
----------------------------------------------------------------------------
 local RaidMarkersBar = {}
 ns.QUI_RaidMarkersBar = RaidMarkersBar
 
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 
--- 8 raid target markers (1 = star, … 8 = skull). World markers (flares) are a
--- deliberate follow-up: their placement-mode behavior needs in-game confirmation.
 local MAX_MARKERS = 8
 local BASE_CROP = 0.08
 
--- Per-marker icon textures (individual files, indexed 1-8).
+local MAX_WORLD_MARKERS = 8
+local WORLD_MARKER_ORDER = { 5, 6, 3, 2, 7, 1, 4, 8 }
+
 local function MarkerTexture(i)
     return "Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. i
 end
 
--- Performance: cache frequently-called globals as locals
 local CreateFrame = CreateFrame
 local UIParent = UIParent
 local InCombatLockdown = InCombatLockdown
 local C_Timer = C_Timer
 local math_floor = math.floor
+local L = ns.L
 
----------------------------------------------------------------------------
--- COMBAT-SAFE SHOW / HIDE (alpha + mouse enable; never Show/Hide secure children)
----------------------------------------------------------------------------
 local pendingReconcile = false
 local HideAllButtons
 
@@ -71,14 +46,8 @@ local function SafeHideButton(btn)
     btn:EnableMouse(false)
 end
 
----------------------------------------------------------------------------
--- DATABASE ACCESS
----------------------------------------------------------------------------
 local GetDB = Helpers.CreateDBGetter("raidMarkersBar")
 
----------------------------------------------------------------------------
--- GROW DIRECTION HELPERS
----------------------------------------------------------------------------
 local function GrowAnchor(growDir)
     if growDir == "RIGHT" then return "LEFT"
     elseif growDir == "LEFT" then return "RIGHT"
@@ -102,9 +71,35 @@ local function GetAnchorPosition(frame, anchor)
     return x, y
 end
 
----------------------------------------------------------------------------
--- SECURE ATTRIBUTES (set OOC only; deferred in combat)
----------------------------------------------------------------------------
+local isLeaderish = false
+
+local function ComputeLeaderish()
+    if IsInRaid() then
+        local lead = UnitIsGroupLeader("player")
+        if Helpers.IsSecretValue(lead) then return false end -- @secret-policy: reject-secret-value — unreadable rank hides the leader rows
+        local assist = UnitIsGroupAssistant("player")
+        if Helpers.IsSecretValue(assist) then return false end -- @secret-policy: reject-secret-value — unreadable rank hides the leader rows
+        return lead == true or assist == true
+    end
+    if IsInGroup() then
+        local lead = UnitIsGroupLeader("player")
+        if Helpers.IsSecretValue(lead) then return false end -- @secret-policy: reject-secret-value — unreadable rank hides the leader rows
+        return lead == true
+    end
+    return false
+end
+
+local function InDungeonOrRaid()
+    local inInstance, instanceType = IsInInstance()
+    return inInstance and (instanceType == "party" or instanceType == "raid") or false
+end
+
+local function IsBarContextActive(db)
+    if RaidMarkersBar.previewing then return true end
+    if not db or not db.onlyInInstances then return true end
+    return InDungeonOrRaid()
+end
+
 local function SetMarkerAction(btn, marker)
     if not btn or not marker then return end
     if InCombatLockdown() then
@@ -114,7 +109,6 @@ local function SetMarkerAction(btn, marker)
         return
     end
     if btn._secureMarker == marker then return end
-    -- type="raidtarget" + marker N + action "toggle" on the current target.
     btn:SetAttribute("type", "raidtarget")
     btn:SetAttribute("type1", "raidtarget")
     btn:SetAttribute("*type1", "raidtarget")
@@ -124,9 +118,42 @@ local function SetMarkerAction(btn, marker)
     btn._secureMarker = marker
 end
 
----------------------------------------------------------------------------
--- CONTAINER + BUTTON CREATION
----------------------------------------------------------------------------
+local function SetWorldMarkerAction(btn, displayIndex)
+    if not btn or not displayIndex then return end
+    local marker = WORLD_MARKER_ORDER[displayIndex]
+    if InCombatLockdown() then
+        if btn._secureWorldMarker ~= marker then
+            pendingReconcile = true
+        end
+        return
+    end
+    if btn._secureWorldMarker == marker then return end
+    btn:SetAttribute("type", "worldmarker")
+    btn:SetAttribute("type1", "worldmarker")
+    btn:SetAttribute("*type1", "worldmarker")
+    btn:SetAttribute("type2", "worldmarker")
+    btn:SetAttribute("marker", marker)
+    btn:SetAttribute("action1", "set")
+    btn:SetAttribute("action2", "clear")
+    btn._secureWorldMarker = marker
+end
+
+local function SetWorldClearAction(btn)
+    if not btn then return end
+    if InCombatLockdown() then
+        if not btn._secureWorldClear then
+            pendingReconcile = true
+        end
+        return
+    end
+    if btn._secureWorldClear then return end
+    btn:SetAttribute("type", "worldmarker")
+    btn:SetAttribute("type1", "worldmarker")
+    btn:SetAttribute("*type1", "worldmarker")
+    btn:SetAttribute("action", "clear")
+    btn._secureWorldClear = true
+end
+
 local container = CreateFrame("Frame", "QUI_RaidMarkersBar", UIParent)
 container:SetFrameStrata("MEDIUM")
 container:SetSize(1, 1)
@@ -137,9 +164,6 @@ container:SetClampedToScreen(true)
 container:SetAlpha(0)
 container.visible = false
 
--- Container parents SecureActionButtonTemplate children → EnableMouse is
--- protected in combat. Toggle deferred via pendingReconcile; alpha + visible
--- flag remain combat-safe.
 local function ShowContainer()
     container:SetAlpha(1)
     container.visible = true
@@ -162,7 +186,27 @@ end
 
 RaidMarkersBar.container = container
 RaidMarkersBar.buttons = {}
+RaidMarkersBar.worldRow = {}
+RaidMarkersBar.stripRow = {}
 RaidMarkersBar.enabled = false
+
+local function AttachTooltip(btn, title, body)
+    btn:SetScript("OnEnter", function(self)
+        if not self.active then return end
+        local tt = _G.GameTooltip
+        if not tt then return end
+        tt:SetOwner(self, "ANCHOR_RIGHT")
+        tt:SetText(title, 1, 1, 1)
+        if body then
+            tt:AddLine(body, nil, nil, nil, true)
+        end
+        tt:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        local tt = _G.GameTooltip
+        if tt then tt:Hide() end
+    end)
+end
 
 for i = 1, MAX_MARKERS do
     local btn = CreateFrame("Button", "QUI_RaidMarkersBarButton" .. i, container, "SecureActionButtonTemplate")
@@ -170,8 +214,6 @@ for i = 1, MAX_MARKERS do
     btn:SetAlpha(0)
     btn:EnableMouse(false)
     btn.active = false
-    -- Register both directions so the secure click fires regardless of the
-    -- ActionButtonUseKeyDown CVar (same reasoning as the totem bar).
     btn:RegisterForClicks("AnyDown", "AnyUp")
     SetMarkerAction(btn, i)
 
@@ -179,7 +221,6 @@ for i = 1, MAX_MARKERS do
     btn.icon:SetAllPoints()
     btn.icon:SetTexture(MarkerTexture(i))
 
-    -- Border (behind icon)
     btn.border = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
     btn.border:SetColorTexture(0, 0, 0, 1)
 
@@ -187,15 +228,143 @@ for i = 1, MAX_MARKERS do
     RaidMarkersBar.buttons[i] = btn
 end
 
+for i = 1, MAX_WORLD_MARKERS do
+    local btn = CreateFrame("Button", "QUI_RaidMarkersBarWorldButton" .. i, container, "SecureActionButtonTemplate")
+    btn:SetSize(36, 36)
+    btn:SetAlpha(0)
+    btn:EnableMouse(false)
+    btn.active = false
+    btn:RegisterForClicks("AnyDown", "AnyUp")
+    SetWorldMarkerAction(btn, i)
+
+    btn.icon = btn:CreateTexture(nil, "ARTWORK")
+    btn.icon:SetAllPoints()
+    btn.icon:SetTexture(MarkerTexture(i))
+
+    btn.border = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
+    btn.border:SetColorTexture(0, 0, 0, 1)
+
+    btn.worldMarker = WORLD_MARKER_ORDER[i]
+    AttachTooltip(btn, L["World Marker"],
+        L["Left-click: place or move this flare on the ground. Right-click: clear it."])
+    RaidMarkersBar.worldRow[i] = btn
+end
+
+do
+    local btn = CreateFrame("Button", "QUI_RaidMarkersBarWorldClearButton", container, "SecureActionButtonTemplate")
+    btn:SetSize(36, 36)
+    btn:SetAlpha(0)
+    btn:EnableMouse(false)
+    btn.active = false
+    btn:RegisterForClicks("AnyDown", "AnyUp")
+    SetWorldClearAction(btn)
+
+    btn.icon = btn:CreateTexture(nil, "ARTWORK")
+    btn.icon:SetAllPoints()
+    btn.icon:SetAtlas("GM-raidMarker-remove")
+    btn.iconIsAtlas = true
+
+    btn.border = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
+    btn.border:SetColorTexture(0, 0, 0, 1)
+
+    AttachTooltip(btn, L["Clear World Markers"], L["Remove all placed flares."])
+    RaidMarkersBar.worldRow[MAX_WORLD_MARKERS + 1] = btn
+end
+
+local function PrintHint(msg)
+    print("|cFF30D1FFQUI:|r " .. msg)
+end
+
+local STRIP_DEFS = {
+    {
+        name = "ReadyCheck",
+        atlas = "GM-icon-readyCheck",
+        title = L["Ready Check"],
+        body = L["Start a ready check. Requires group lead or raid assist."],
+        onClick = function()
+            if not ComputeLeaderish() then
+                PrintHint(L["Ready checks require group lead or raid assist."])
+                return
+            end
+            if C_PartyInfo and C_PartyInfo.DoReadyCheck then
+                C_PartyInfo.DoReadyCheck()
+            end
+        end,
+    },
+    {
+        name = "RolePoll",
+        atlas = "GM-icon-roles",
+        title = L["Role Poll"],
+        body = L["Ask everyone to confirm their role. Requires group lead."],
+        onClick = function()
+            local lead = UnitIsGroupLeader("player")
+            if Helpers.IsSecretValue(lead) then lead = nil end -- @secret-policy: collapse-only — unreadable rank treated as not lead
+            if not lead then
+                PrintHint(L["Role polls require group lead."])
+                return
+            end
+            if InitiateRolePoll then
+                InitiateRolePoll()
+            end
+        end,
+    },
+    {
+        name = "Pull",
+        atlas = "GM-icon-countdown",
+        title = L["Pull Countdown"],
+        body = L["Left-click: start the pull countdown. Right-click: cancel it."],
+        onClick = function(_, mouseButton)
+            if not (C_PartyInfo and C_PartyInfo.DoCountdown) then
+                PrintHint(L["Pull countdown is not available on this client."])
+                return
+            end
+            if mouseButton == "RightButton" then
+                C_PartyInfo.DoCountdown(0)
+                return
+            end
+            local db = GetDB()
+            local secs = db and db.leaderStrip and db.leaderStrip.pullSeconds or 10
+            local ok = C_PartyInfo.DoCountdown(secs)
+            if not ok then
+                PrintHint(L["Could not start pull countdown (need to be in a group and have permission)."])
+            end
+        end,
+    },
+}
+
+for i, def in ipairs(STRIP_DEFS) do
+    local btn = CreateFrame("Button", "QUI_RaidMarkersBarStrip" .. def.name, container)
+    btn:SetSize(36, 36)
+    btn:SetAlpha(0)
+    btn:EnableMouse(false)
+    btn.active = false
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    btn:SetScript("OnClick", def.onClick)
+
+    btn.icon = btn:CreateTexture(nil, "ARTWORK")
+    btn.icon:SetAllPoints()
+    btn.icon:SetAtlas(def.atlas)
+    btn.iconIsAtlas = true
+
+    btn.border = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
+    btn.border:SetColorTexture(0, 0, 0, 1)
+
+    AttachTooltip(btn, def.title, def.body)
+    RaidMarkersBar.stripRow[i] = btn
+end
+
 HideAllButtons = function()
     for i = 1, MAX_MARKERS do
         SafeHideButton(RaidMarkersBar.buttons[i])
     end
+    for i = 1, #RaidMarkersBar.worldRow do
+        SafeHideButton(RaidMarkersBar.worldRow[i])
+    end
+    for i = 1, #RaidMarkersBar.stripRow do
+        SafeHideButton(RaidMarkersBar.stripRow[i])
+    end
 end
 
----------------------------------------------------------------------------
--- STYLE A SINGLE BUTTON
----------------------------------------------------------------------------
 local function StyleButton(btn)
     local db = GetDB()
     if not db or not btn then return end
@@ -205,10 +374,12 @@ local function StyleButton(btn)
         btn:SetSize(size, size)
     end
 
-    local zoom = db.zoom or 0
-    local left = BASE_CROP + zoom
-    local right = 1 - BASE_CROP - zoom
-    btn.icon:SetTexCoord(left, right, left, right)
+    if not btn.iconIsAtlas then
+        local zoom = db.zoom or 0
+        local left = BASE_CROP + zoom
+        local right = 1 - BASE_CROP - zoom
+        btn.icon:SetTexCoord(left, right, left, right)
+    end
 
     local bs = db.borderSize or 2
     if bs > 0 then
@@ -222,9 +393,26 @@ local function StyleButton(btn)
     end
 end
 
----------------------------------------------------------------------------
--- LAYOUT BUTTONS (no-op in combat — secure SetPoint is protected)
----------------------------------------------------------------------------
+local function LeaderRowGate(db)
+    if RaidMarkersBar.previewing then return true end
+    if db.autoShowForLeader == false then return true end
+    return isLeaderish
+end
+
+local function IsWorldRowActive(db)
+    if not db then return false end
+    local cfg = db.worldMarkers
+    if cfg and cfg.enabled == false then return false end
+    return LeaderRowGate(db)
+end
+
+local function IsStripRowActive(db)
+    if not db then return false end
+    local cfg = db.leaderStrip
+    if cfg and cfg.enabled == false then return false end
+    return LeaderRowGate(db)
+end
+
 local function LayoutButtons()
     if InCombatLockdown() then
         pendingReconcile = true
@@ -237,27 +425,55 @@ local function LayoutButtons()
     local spacing = db.spacing or 4
     local iconSize = db.iconSize or 36
 
-    for i = 1, MAX_MARKERS do
-        local btn = RaidMarkersBar.buttons[i]
-        btn:SetSize(iconSize, iconSize)
-        btn:ClearAllPoints()
-        local offset = (i - 1) * (iconSize + spacing)
-        if growDir == "RIGHT" then
-            btn:SetPoint("LEFT", container, "LEFT", offset, 0)
-        elseif growDir == "LEFT" then
-            btn:SetPoint("RIGHT", container, "RIGHT", -offset, 0)
-        elseif growDir == "DOWN" then
-            btn:SetPoint("TOP", container, "TOP", 0, -offset)
-        elseif growDir == "UP" then
-            btn:SetPoint("BOTTOM", container, "BOTTOM", 0, offset)
+    local rows = { RaidMarkersBar.buttons }
+    if IsWorldRowActive(db) then
+        rows[#rows + 1] = RaidMarkersBar.worldRow
+    end
+    if IsStripRowActive(db) then
+        rows[#rows + 1] = RaidMarkersBar.stripRow
+    end
+
+    local maxCount = 0
+    for r = 1, #rows do
+        local buttons = rows[r]
+        if #buttons > maxCount then maxCount = #buttons end
+        for i = 1, #buttons do
+            local btn = buttons[i]
+            btn:SetSize(iconSize, iconSize)
+            btn:ClearAllPoints()
+            local main = (i - 1) * (iconSize + spacing)
+            local cross = (r - 1) * (iconSize + spacing)
+            if growDir == "RIGHT" then
+                btn:SetPoint("TOPLEFT", container, "TOPLEFT", main, -cross)
+            elseif growDir == "LEFT" then
+                btn:SetPoint("TOPRIGHT", container, "TOPRIGHT", -main, -cross)
+            elseif growDir == "DOWN" then
+                btn:SetPoint("TOPLEFT", container, "TOPLEFT", cross, -main)
+            elseif growDir == "UP" then
+                btn:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", cross, main)
+            end
         end
     end
 
-    -- Container sized to the full bar extent so the anchor engine sees a stable rect.
+    if not IsWorldRowActive(db) then
+        for i = 1, #RaidMarkersBar.worldRow do
+            RaidMarkersBar.worldRow[i]:ClearAllPoints()
+            RaidMarkersBar.worldRow[i]:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+        end
+    end
+    if not IsStripRowActive(db) then
+        for i = 1, #RaidMarkersBar.stripRow do
+            RaidMarkersBar.stripRow[i]:ClearAllPoints()
+            RaidMarkersBar.stripRow[i]:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+        end
+    end
+
+    local mainExtent = maxCount * iconSize + (maxCount - 1) * spacing
+    local crossExtent = #rows * iconSize + (#rows - 1) * spacing
     if growDir == "RIGHT" or growDir == "LEFT" then
-        container:SetSize(MAX_MARKERS * iconSize + (MAX_MARKERS - 1) * spacing, iconSize)
+        container:SetSize(mainExtent, crossExtent)
     else
-        container:SetSize(iconSize, MAX_MARKERS * iconSize + (MAX_MARKERS - 1) * spacing)
+        container:SetSize(crossExtent, mainExtent)
     end
 
     local anchoring = ns.QUI_Anchoring
@@ -270,9 +486,6 @@ local function LayoutButtons()
     end
 end
 
----------------------------------------------------------------------------
--- POSITIONING
----------------------------------------------------------------------------
 local function PositionContainer()
     if InCombatLockdown() then return end
     if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("raidMarkersBar") then return end
@@ -287,9 +500,27 @@ local function PositionContainer()
     container:SetPoint(anchor, UIParent, "CENTER", offsetX, offsetY)
 end
 
----------------------------------------------------------------------------
--- SHOW ALL CONFIGURED MARKER BUTTONS
----------------------------------------------------------------------------
+local function ApplyLeaderRows(db)
+    local worldActive = IsWorldRowActive(db)
+    for i = 1, MAX_WORLD_MARKERS do
+        local btn = RaidMarkersBar.worldRow[i]
+        SetWorldMarkerAction(btn, i)
+        StyleButton(btn)
+        if worldActive then SafeShowButton(btn) else SafeHideButton(btn) end
+    end
+    local clearBtn = RaidMarkersBar.worldRow[MAX_WORLD_MARKERS + 1]
+    SetWorldClearAction(clearBtn)
+    StyleButton(clearBtn)
+    if worldActive then SafeShowButton(clearBtn) else SafeHideButton(clearBtn) end
+
+    local stripActive = IsStripRowActive(db)
+    for i = 1, #RaidMarkersBar.stripRow do
+        local btn = RaidMarkersBar.stripRow[i]
+        StyleButton(btn)
+        if stripActive then SafeShowButton(btn) else SafeHideButton(btn) end
+    end
+end
+
 local function ShowMarkers()
     if RaidMarkersBar.previewing then return end
     local db = GetDB()
@@ -302,6 +533,8 @@ local function ShowMarkers()
         SafeShowButton(btn)
     end
 
+    ApplyLeaderRows(db)
+
     LayoutButtons()
 
     if not container.visible then
@@ -309,9 +542,6 @@ local function ShowMarkers()
     end
 end
 
----------------------------------------------------------------------------
--- ENABLE / DISABLE
----------------------------------------------------------------------------
 local function Enable()
     if RaidMarkersBar.enabled then return end
     RaidMarkersBar.enabled = true
@@ -327,9 +557,6 @@ local function Disable()
     HideContainer()
 end
 
----------------------------------------------------------------------------
--- DRAG HANDLERS
----------------------------------------------------------------------------
 container:SetScript("OnDragStart", function(self)
     local db = GetDB()
     if db and not db.locked then
@@ -357,12 +584,9 @@ container:SetScript("OnDragStop", function(self)
     PositionContainer()
 end)
 
----------------------------------------------------------------------------
--- PUBLIC API
----------------------------------------------------------------------------
 function RaidMarkersBar:Refresh()
     local db = GetDB()
-    if not db or not db.enabled then
+    if not db or not db.enabled or not IsBarContextActive(db) then
         Disable()
         return
     end
@@ -375,9 +599,6 @@ function RaidMarkersBar:Hide()
     Disable()
 end
 
----------------------------------------------------------------------------
--- PREVIEW (shown on the container's own buttons)
----------------------------------------------------------------------------
 RaidMarkersBar.previewing = false
 
 local function ShowMockMarkers()
@@ -388,6 +609,7 @@ local function ShowMockMarkers()
         StyleButton(btn)
         SafeShowButton(btn)
     end
+    ApplyLeaderRows(db)
     LayoutButtons()
 end
 
@@ -418,9 +640,6 @@ function RaidMarkersBar:IsPreviewShown()
     return self.previewing
 end
 
----------------------------------------------------------------------------
--- GLOBAL CALLBACKS (for options / layout mode)
----------------------------------------------------------------------------
 _G.QUI_RefreshRaidMarkersBar = function()
     RaidMarkersBar:Refresh()
     if RaidMarkersBar:IsPreviewShown() then
@@ -445,9 +664,27 @@ if ns.Registry then
     })
 end
 
----------------------------------------------------------------------------
--- INITIALIZATION
----------------------------------------------------------------------------
+local leaderCoalesce = CreateFrame("Frame")
+leaderCoalesce:Hide()
+leaderCoalesce:SetScript("OnUpdate", function(self)
+    self:Hide()
+    local db = GetDB()
+    local newLeader = ComputeLeaderish()
+    local shouldBeActive = (db and db.enabled and IsBarContextActive(db)) and true or false
+    if newLeader == isLeaderish and shouldBeActive == RaidMarkersBar.enabled then return end
+    isLeaderish = newLeader
+    if RaidMarkersBar.previewing then return end
+    RaidMarkersBar:Refresh()
+end)
+
+local leaderWatch = CreateFrame("Frame")
+leaderWatch:RegisterEvent("GROUP_ROSTER_UPDATE")
+leaderWatch:RegisterEvent("PARTY_LEADER_CHANGED")
+leaderWatch:RegisterEvent("PLAYER_ENTERING_WORLD")
+leaderWatch:SetScript("OnEvent", function()
+    leaderCoalesce:Show()
+end)
+
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")

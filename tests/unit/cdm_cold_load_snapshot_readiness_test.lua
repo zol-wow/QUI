@@ -79,7 +79,7 @@ assert(trySnapshotFn:find("snapshotReady", 1, true),
 
 local bootstrapSnapshot = sliceBetween(
     containers,
-    "-- Phase A CDM Overhaul: Snapshot Blizzard CDM spell lists into owned DB.",
+    "local function RetrySnapshotBuiltInContainers(attempt)",
     "-- Ensure built-in containers with DB tables have enabled=true")
 
 assert(bootstrapSnapshot:find("RetrySnapshotBuiltInContainers", 1, true),

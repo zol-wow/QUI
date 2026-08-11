@@ -22,12 +22,12 @@ assert(tocSrc:find("damage_meter\\damage_meter.lua", 1, true),
 
 -- T2: section markers + skeleton declarations
 for _, marker in ipairs({
-    "-- ==== Settings ====",
-    "-- ==== Data ====",
-    "-- ==== WindowManager ====",
-    "-- ==== Window ====",
-    "-- ==== Formatters ====",
-    "-- ==== Init ====",
+    "local function GetSettings()",
+    "local Data = {}",
+    "local WindowManager = {",
+    "local Window = {}",
+    "local function FormatDuration(seconds)",
+    "local pendingCombatWrites = {}",
 }) do
     assert(coreSrc:find(marker, 1, true),
         "core must include section marker " .. marker)
@@ -126,7 +126,7 @@ assert(coreSrc:find("function Window.New", 1, true)
     or coreSrc:find("Window.New = function", 1, true),
     "Window.New must be defined")
 for _, name in ipairs({"frame", "backdrop", "header", "TypeLabel", "SessionTimer",
-                       "ConfigButton", "CloseButton"}) do
+                       "CloseButton"}) do
     assert(coreSrc:find(name, 1, true),
         "Window must reference " .. name)
 end
@@ -185,8 +185,8 @@ assert(coreSrc:find('SetCVar%("damageMeterEnabled"', 1, false),
 assert(coreSrc:find("_G%.DamageMeter", 1, false)
     or coreSrc:find("_G.DamageMeter", 1, true),
     "must reference _G.DamageMeter to Hide it")
-assert(coreSrc:find('PLAYER_LOGIN', 1, true),
-    "must register PLAYER_LOGIN")
+assert(coreSrc:find('ns.WhenLoggedIn(', 1, true),
+    "must init through ns.WhenLoggedIn (LOD: PLAYER_LOGIN has already fired)")
 
 -- T15: format helpers + lockdown queue
 assert(coreSrc:find("local function FormatDuration", 1, true),

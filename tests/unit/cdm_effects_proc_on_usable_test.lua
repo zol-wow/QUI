@@ -225,8 +225,7 @@ local mirrorIcon = {
         viewerType = "essential",
     },
     _cdmRuntimeState = {
-        mirrorBacked = true,
-        mirrorState = {
+        state = {
             spellID = 255937,
             overrideSpellID = 427453,
         },
@@ -254,7 +253,7 @@ assert(glowStops >= 1, "mirror override overlay hide should stop the base-owned 
 assert(ns._OwnedGlows.activeGlowIcons[mirrorIcon] == nil,
     "mirror override overlay hide should clear the base-owned CDM icon glow")
 
-mirrorIcon._cdmRuntimeState.mirrorState.overrideSpellID = nil
+mirrorIcon._cdmRuntimeState.state.overrideSpellID = nil
 ns.CDMSources.QueryBaseSpell = function(spellID)
     if spellID == 427453 then return 255937 end
     return spellID

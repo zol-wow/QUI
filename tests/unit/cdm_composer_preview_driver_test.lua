@@ -52,9 +52,12 @@ assert(source:find("CDMIconFactory.ReleaseForPreview", 1, true),
 local teardownStart = assert(source:find("function CDMComposerPreview.Teardown", 1, true),
     "Teardown definition required")
 local teardownEnd = assert(source:find("\nend\n", teardownStart, true), "Teardown end")
-assert(source:find("state.previewIcons", teardownStart, true) and
-       source:find("state.previewIcons", teardownStart, true) < teardownEnd,
+assert(source:find("ClearPreviewIcons()", teardownStart, true) and
+       source:find("ClearPreviewIcons()", teardownStart, true) < teardownEnd,
     "Teardown must clear state.previewIcons")
+assert(source:find("ClearPreviewBars()", teardownStart, true) and
+       source:find("ClearPreviewBars()", teardownStart, true) < teardownEnd,
+    "Teardown must clear state.previewBars")
 assert(source:find("state.iconState", teardownStart, true) and
        source:find("state.iconState", teardownStart, true) < teardownEnd,
     "Teardown must clear state.iconState")

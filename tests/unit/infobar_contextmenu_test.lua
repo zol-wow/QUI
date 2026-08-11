@@ -1,4 +1,4 @@
--- Verifies the pure helpers of QUI_InfoBar/infobar/contextmenu.lua:
+-- Verifies the pure helpers of modules/infobar/contextmenu.lua:
 --   * cursor-X -> zone bucketing (thirds of bar width, clamped at the edges)
 --   * add/remove/placed mutation semantics on db.zones (append to target
 --     zone, refuse duplicates across zones, remove from owning zone)
@@ -32,8 +32,8 @@ local ns = { Addon = { InfoBar = InfoBar } }
 (dofile(ROOT .. "tests/helpers/locale.lua"))(ns)
 assert(loadfile(ROOT .. "core/infobar_shared.lua"))("QUI", ns)
 
-local chunk = assert(loadfile(ROOT .. "QUI_InfoBar/infobar/contextmenu.lua"))
-chunk("QUI_InfoBar", ns)
+local chunk = assert(loadfile(ROOT .. "modules/infobar/contextmenu.lua"))
+chunk("QUI", ns)
 
 local CM = InfoBar.ContextMenu
 check(CM ~= nil, "ContextMenu published on InfoBar")

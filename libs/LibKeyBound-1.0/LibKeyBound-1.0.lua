@@ -107,7 +107,7 @@ function LibKeyBound:Initialize()
 		-- Okay bindings checkbox
 		local okayBindings = CreateFrame('CheckButton', 'KeyboundDialogOkay', f, 'UIPanelButtonTemplate')
 		okayBindings:SetSize(100, 20)
-		getglobal(okayBindings:GetName() .. 'Text'):SetText(OKAY)
+		_G[okayBindings:GetName() .. 'Text']:SetText(OKAY)
 
 		okayBindings:SetScript('OnClick', function(self)
 			current = (perChar:GetChecked() and 2) or 1
@@ -137,7 +137,7 @@ function LibKeyBound:Initialize()
 		-- Cancel bindings checkbox
 		local cancelBindings = CreateFrame('CheckButton', 'KeyboundDialogCancel', f, 'UIPanelButtonTemplate')
 		cancelBindings:SetSize(100, 20)
-		getglobal(cancelBindings:GetName() .. 'Text'):SetText(CANCEL)
+		_G[cancelBindings:GetName() .. 'Text']:SetText(CANCEL)
 
 		cancelBindings:SetScript('OnClick', function(self)
 			if InCombatLockdown() then

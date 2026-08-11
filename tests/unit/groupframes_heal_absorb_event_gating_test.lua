@@ -14,7 +14,7 @@ file:close()
 
 local startPos = assert(source:find("UpdateSelectiveEvents = function%(%)"),
     "UpdateSelectiveEvents should exist")
-local endPos = assert(source:find("Threat events", startPos, true),
+local endPos = assert(source:find("local partyInd = GetIndicatorSettings(false)", startPos, true),
     "UpdateSelectiveEvents threat-events section should follow the absorb gating")
 local body = source:sub(startPos, endPos)
 

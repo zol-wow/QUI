@@ -54,7 +54,7 @@ assert(skinning, "Skinning should remain a sub-page under Appearance")
 assert(character.featureId == "characterPane", "Character should still render the characterPane feature")
 assert(characterIndex + 1 == skinningIndex, "Character should appear immediately to the left of Skinning")
 
-local characterContent = readFile("QUI_Skinning/skinning/character_pane/settings/character_pane_content.lua")
+local characterContent = readFile("modules/skinning/character_pane/settings/character_pane_content.lua")
 assert(
     characterContent:find('category = "appearance"', 1, true),
     "characterPane feature category should be appearance")
@@ -65,9 +65,7 @@ assert(
     not characterContent:find('category = "gameplay"', 1, true),
     "characterPane feature should no longer be categorized as gameplay")
 
-local ns = {}
-assert(loadfile("QUI_OptionsSearch/search_cache.lua"))("QUI", ns)
-local cache = assert(ns.QUI_SearchCache, "search cache should load")
+local cache = dofile("tests/helpers/search_cache.lua")()
 
 local foundCharacterEntry = false
 for _, list in ipairs({ cache.navigation or {}, cache.settings or {} }) do

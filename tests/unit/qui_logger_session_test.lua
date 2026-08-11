@@ -1,5 +1,6 @@
 -- tests/unit/qui_logger_session_test.lua
 -- Run: lua tests/unit/qui_logger_session_test.lua
+-- luacheck: globals QUI_LoggerDB QUI_LOGGER_ENABLE (recorder SavedVariables)
 local ns = {}
 assert(loadfile("QUI_Logger/recorder.lua"))("QUI_Logger", ns)
 
@@ -65,7 +66,7 @@ assert(bounded.db.sessions[1].started == "B" and bounded.db.sessions[2].started 
 ns.ClearDB(store.db)
 assert(#store.db.sessions == 0, "clear empties sessions")
 
--- live wiring defaults to off, then /qlog on captures a bounded stream
+-- live wiring defaults to off, then /quilogger on captures a bounded stream
 local liveNS = {
     loggerLimits = {
         maxSessions = 2,
@@ -93,6 +94,10 @@ CreateFrame = function()
     function frame:RegisterAllEvents()
         self.allEvents = self.allEvents + 1
     end
+    function frame:UnregisterAllEvents()
+        self.events = {}
+        self.unregisterAll = (self.unregisterAll or 0) + 1
+    end
     function frame:SetScript(name, fn)
         self.scripts[name] = fn
     end
@@ -119,10 +124,10 @@ assert(#QUI_LoggerDB.sessions == 0, "disabled logger should not start a session"
 frame.scripts.OnEvent(frame, "PLAYER_LOGIN", "ignored")
 assert(#QUI_LoggerDB.sessions == 0, "disabled logger should not record events")
 
-SlashCmdList.QLOG("on")
-assert(QUI_LoggerDB.enabled == true, "/qlog on should persist enabled state")
-assert(frame.allEvents == 1, "/qlog on should register all events")
-assert(#QUI_LoggerDB.sessions == 1, "/qlog on should start one session")
+SlashCmdList.QUILOGGER("on")
+assert(QUI_LoggerDB.enabled == true, "/quilogger on should persist enabled state")
+assert(frame.allEvents == 1, "/quilogger on should register all events")
+assert(#QUI_LoggerDB.sessions == 1, "/quilogger on should start one session")
 
 frame.scripts.OnEvent(frame, "EVENT_ONE", "one")
 frame.scripts.OnEvent(frame, "EVENT_TWO", "two")
@@ -134,13 +139,15 @@ assert(session.events[1].e == "EVENT_TWO" and session.events[2].e == "EVENT_THRE
     "live recording should retain newest events")
 assert(session.dropped == 1, "live recording should track dropped events")
 
-SlashCmdList.QLOG("off")
+SlashCmdList.QUILOGGER("off")
+assert(frame.unregisterAll == 1, "/quilogger off should unregister all events")
+assert(frame.events.ADDON_LOADED == true, "/quilogger off should keep listening for ADDON_LOADED")
 local count = #session.events
 frame.scripts.OnEvent(frame, "EVENT_FOUR", "four")
-assert(#session.events == count, "/qlog off should stop recording")
+assert(#session.events == count, "/quilogger off should stop recording")
 
-SlashCmdList.QLOG("clear")
-assert(#QUI_LoggerDB.sessions == 0, "/qlog clear should clear sessions while stopped")
+SlashCmdList.QUILOGGER("clear")
+assert(#QUI_LoggerDB.sessions == 0, "/quilogger clear should clear sessions while stopped")
 
 print = realPrint
 CreateFrame = oldCreateFrame

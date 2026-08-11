@@ -159,7 +159,7 @@ jobs:
                that seems to require weakening them is not a fix — stop, and say
                in your comment that the change would need Drew to touch gate
                configuration himself. Also never hand-edit generated output
-               (QUI_OptionsSearch/search_cache.lua, core/locale/enUS.lua,
+               (QUI_Options/search_cache.lua, core/locale/enUS.lua,
                the ten core/locale/<locale>.lua translation overlays,
                tests/api-docs/api-index.lua) — those have generators, and the
                generators live under the forbidden paths, so a change requiring
@@ -180,7 +180,7 @@ jobs:
 
             6. GATES. Before opening a PR, run these and require all to pass:
                  bash tools/check_compile.sh
-                 luacheck QUI_Debug/ core/ modules/ init.lua QUI_ActionBars/ QUI_Alts/ QUI_Bags/ QUI_CDM/ QUI_Chat/ QUI_DamageMeter/ QUI_Datatexts/ QUI_GroupFrames/ QUI_InfoBar/ QUI_Minimap/ QUI_Options/ QUI_OptionsSearch/ QUI_QoL/ QUI_ResourceBars/ QUI_Skinning/ QUI_UnitFrames/
+                 luacheck QUI_Debug/ core/ modules/ init.lua QUI_ActionBars/ QUI_Bags/ QUI_CDM/ QUI_Chat/ QUI_DamageMeter/ QUI_GroupFrames/ QUI_Nameplates/ QUI_Options/ QUI_ResourceBars/ QUI_UnitFrames/
                  lua tools/test_taint.lua --self-test
                  lua tools/test_taint.lua --report github --strict-only
                  for t in tests/unit/*.lua; do lua "$t"; done

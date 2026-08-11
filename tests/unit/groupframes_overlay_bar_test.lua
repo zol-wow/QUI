@@ -1,8 +1,10 @@
 -- tests/unit/groupframes_overlay_bar_test.lua
 -- Run: lua tests/unit/groupframes_overlay_bar_test.lua
--- Extracts ApplyOverlayBar from groupframes.lua (between its QUI_TEST_EXTRACT
--- sentinels) and drives it against mock widgets to verify the config->widget
--- mapping for texture, draw order, fill origin, spark and outline.
+-- Extracts ApplyOverlayBar from core/group_frame_chrome.lua (between its
+-- QUI_TEST_EXTRACT sentinels) and drives it against mock widgets to verify the
+-- config->widget mapping for texture, draw order, fill origin, spark and
+-- outline. The chrome module is the ONE home of this function: the live frames
+-- and the settings preview both style their overlay bars through it.
 
 local loadstring = loadstring or load
 
@@ -12,7 +14,7 @@ local function readAll(path)
     return d:gsub("\r\n", "\n")
 end
 
-local source = readAll("QUI_GroupFrames/groupframes/groupframes.lua")
+local source = readAll("core/group_frame_chrome.lua")
 local fnStart = assert(source:find("local function ApplyOverlayBar", 1, true),
     "ApplyOverlayBar must exist")
 local nl = assert(source:find("\n%-%- <<< QUI_TEST_EXTRACT ApplyOverlayBar", fnStart),
@@ -68,7 +70,7 @@ local health = newHealth(10)
 ApplyOverlayBar(bar, { texture = "Foo", drawOrder = 3, fillFrom = "default" },
     health, false, { fillOrigin = true, drawOrderDefault = 2 })
 assert(bar._tex == "Foo", "texture applied from settings")
-assert(bar.level == 13, "frame level = health level + drawOrder")
+assert(bar.level == 14, "healthBar+1 is reserved; level = health + drawOrder + 1")
 assert(bar.strata == "MEDIUM", "strata mirrors health bar")
 assert(bar.reverse == false, "fillFrom=default -> reverse false")
 assert(bar.orient == "HORIZONTAL", "orientation horizontal")
@@ -77,13 +79,13 @@ assert(bar.allPoints == health, "overlay covers full health bar")
 -- defaults path: no drawOrder/fillFrom in settings -> opts default + reverse
 local bar2 = newBar()
 ApplyOverlayBar(bar2, {}, newHealth(5), false, { fillOrigin = true, drawOrderDefault = 2 })
-assert(bar2.level == 7, "drawOrderDefault used when unset")
+assert(bar2.level == 8, "drawOrderDefault used after the reserved tint level")
 assert(bar2.reverse == true, "fillFrom default -> reverse true")
 
 -- heal-prediction path: anchorToHealth, no reverse, edge-anchored via SetPoint
 local bar3 = newBar()
 ApplyOverlayBar(bar3, {}, newHealth(4), false, { drawOrderDefault = 1, anchorToHealth = true })
-assert(bar3.level == 5, "healPred frame level")
+assert(bar3.level == 6, "healPred frame level follows the reserved tint level")
 assert(bar3.reverse ~= true, "healPred is not reverse-filled")
 assert(bar3.points and #bar3.points >= 2, "healPred anchored to health fill edge")
 

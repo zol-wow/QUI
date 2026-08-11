@@ -104,7 +104,6 @@ local ns = {
                     durObj = chargeDuration,
                     sourceID = "444348:2",
                     spellID = 444348,
-                    mirrorBacked = nil,
                     isOnCooldown = true,
                     gcdOnly = false,
                 }
@@ -123,7 +122,6 @@ local ns = {
                 durObj = chargeDuration,
                 sourceID = "mirror:8203:444347",
                 spellID = 444347,
-                mirrorBacked = true,
                 isOnCooldown = false,
                 gcdOnly = false,
                 cooldownInfo = {
@@ -134,12 +132,9 @@ local ns = {
                 },
                 cooldownInfoActive = false,
                 cooldownInfoOnGCD = false,
-                mirrorCooldownID = 8203,
-                mirrorCategory = "essential",
                 cooldownID = 8203,
                 category = "essential",
                 state = state,
-                mirrorState = state,
             }
         end,
     },

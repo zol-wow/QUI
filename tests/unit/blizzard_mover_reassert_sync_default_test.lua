@@ -30,8 +30,8 @@ local function blockForId(source, id)
     return source:match(pattern)
 end
 
-local mover = readFile("QUI_QoL/qol/blizzard_mover.lua")
-local frames = readFile("QUI_QoL/qol/blizzard_mover_frames.lua")
+local mover = readFile("modules/qol/blizzard_mover.lua")
+local frames = readFile("modules/qol/blizzard_mover_frames.lua")
 
 -- 1. PlayerSpellsFrame opts into the deferred re-assert.
 local playerSpells = assert(blockForId(frames, "PlayerSpellsFrame"),

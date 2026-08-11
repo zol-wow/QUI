@@ -16,9 +16,6 @@ local GetCore = Helpers.GetCore
 local MakeLayout = ns.QUI_ModulesSettingsLayout.MakeLayout
 local row = ns.QUI_ModulesSettingsLayout.Row
 
---------------------------------------------------------------------------------
--- HUD LAYERING PAGE
---------------------------------------------------------------------------------
 local function BuildHUDLayeringContent(content)
     GUI:SetSearchContext({tabIndex = 12, tabName = "Frame Levels"})
 
@@ -63,8 +60,6 @@ local function BuildHUDLayeringContent(content)
         return
     end
 
-    -- Description (intro paragraph reserves 28px below the top before the first
-    -- accent-dot header).
     local info = GUI:CreateLabel(content, ns.L["Control which HUD elements appear above others. Higher values render on top."], 11, C.textMuted)
     info:SetJustifyH("LEFT")
     info:SetPoint("TOPLEFT", PAD, -10)
@@ -72,9 +67,6 @@ local function BuildHUDLayeringContent(content)
 
     local L = MakeLayout(content, -38)
 
-    ---------------------------------------------------------------------------
-    -- COOLDOWN DISPLAY MANAGER
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Cooldown Display Manager"])
     local sCDM = L.sectionAt()
     local cdmEssW = GUI:CreateFormSlider(sCDM.frame, nil, 0, 10, 1, "essential", layeringDB, RefreshCDM,
@@ -96,9 +88,6 @@ local function BuildHUDLayeringContent(content)
     )
     L.closeSection(sCDM)
 
-    ---------------------------------------------------------------------------
-    -- POWER BARS
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Power Bars"])
     local sPB = L.sectionAt()
     local pbPrimaryW = GUI:CreateFormSlider(sPB.frame, nil, 0, 10, 1, "primaryPowerBar", layeringDB, RefreshPowerBars,
@@ -111,9 +100,6 @@ local function BuildHUDLayeringContent(content)
     )
     L.closeSection(sPB)
 
-    ---------------------------------------------------------------------------
-    -- UNIT FRAMES
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Unit Frames"])
     local sUF = L.sectionAt()
     local ufPlayerW = GUI:CreateFormSlider(sUF.frame, nil, 0, 10, 1, "playerFrame", layeringDB, RefreshUnitFrames,
@@ -148,9 +134,6 @@ local function BuildHUDLayeringContent(content)
     sUF.AddRow(row(sUF.frame, ns.L["Boss Frames"], ufBossW))
     L.closeSection(sUF)
 
-    ---------------------------------------------------------------------------
-    -- CASTBARS
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Castbars"])
     local sCB = L.sectionAt()
     local cbPlayerW = GUI:CreateFormSlider(sCB.frame, nil, 0, 10, 1, "playerCastbar", layeringDB, RefreshCastbars,
@@ -163,9 +146,6 @@ local function BuildHUDLayeringContent(content)
     )
     L.closeSection(sCB)
 
-    ---------------------------------------------------------------------------
-    -- CUSTOM CDM BARS
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Custom CDM Bars"])
     local sCC = L.sectionAt()
     local ccW = GUI:CreateFormSlider(sCC.frame, nil, 0, 10, 1, "customBars", layeringDB, RefreshCustomTrackers,
@@ -173,9 +153,6 @@ local function BuildHUDLayeringContent(content)
     sCC.AddRow(row(sCC.frame, ns.L["Custom Item/Spell Bars"], ccW))
     L.closeSection(sCC)
 
-    ---------------------------------------------------------------------------
-    -- SKYRIDING
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Skyriding"])
     local sSK = L.sectionAt()
     local skW = GUI:CreateFormSlider(sSK.frame, nil, 0, 10, 1, "skyridingHUD", layeringDB, RefreshSkyriding,
@@ -191,9 +168,6 @@ local function CreateHUDLayeringPage(parent)
     BuildHUDLayeringContent(content)
 end
 
---------------------------------------------------------------------------------
--- Export
---------------------------------------------------------------------------------
 ns.QUI_HUDLayeringOptions = {
     BuildHUDLayeringContent = BuildHUDLayeringContent,
     CreateHUDLayeringPage = CreateHUDLayeringPage

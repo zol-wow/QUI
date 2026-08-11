@@ -14,30 +14,87 @@ jobs:
           luaVersion: "5.1"
       - name: Compile-check all Lua under 5.1
         run: bash tools/check_compile.sh
+      # Regenerate the search cache and fail if the committed copy differs. This
+      # gate used to live in dev-build.yml; it moved here when that workflow was
+      # removed, so it now runs on every branch and pull request rather than only
+      # on the branches that built a dev zip.
+      #
+      # Skipped on beta and alpha, where regen-search-cache.yml auto-commits the
+      # cache instead: gating there would go red and then green on the bot's
+      # follow-up commit. main is never excluded, so a stale cache still cannot
+      # land there, and pull_request events keep the gate because their
+      # github.ref is refs/pull/<n>/merge rather than a branch. Keep this list
+      # in sync with the branch list in regen-search-cache.yml.
+      - name: Validate generated search cache is not stale
+        if: github.ref != 'refs/heads/beta' && github.ref != 'refs/heads/alpha'
+        run: |
+          lua tools/generate_search_cache.lua
+          lua tools/audit_search_cache.lua
+          if ! git diff --quiet -- QUI_Options/search_cache.lua; then
+            echo "::error::QUI_Options/search_cache.lua is stale. Run: lua5.1 tools/generate_search_cache.lua && lua5.1 tools/audit_search_cache.lua"
+            git diff -- QUI_Options/search_cache.lua
+            exit 1
+          fi
+      # 753 independent files, so run them across the runner's cores rather
+      # than one at a time -- measured 10s serial on a 4-core runner.
+      #
+      # Output is discarded on the fast path because a parallel run interleaves
+      # the per-file ::group:: blocks into something unreadable. Failures are
+      # rare, so pay for grouped output and annotations only when there are
+      # some, by re-running just the failures serially. Same shape as
+      # tools/lint.sh and run_lua_tests() in tools/test.sh.
       - name: Run standalone Lua test suite
         run: |
-          set -u
-          fail=0
-          for t in tests/unit/*.lua; do
-            echo "::group::$t"
-            if lua "$t"; then
-              echo "::endgroup::"
-            else
+          set -uo pipefail
+          jobs="$(nproc 2>/dev/null || echo 4)"
+          # SC2016: the single quotes are deliberate -- $1 must reach the inner
+          # sh, which expands it per file, not this shell.
+          # shellcheck disable=SC2016
+          failed=$(printf '%s\n' tests/unit/*.lua | xargs -P "$jobs" -I{} \
+            sh -c 'lua "$1" >/dev/null 2>&1 || printf "%s\n" "$1"' _ {})
+          if [ -n "$failed" ]; then
+            printf '%s\n' "$failed" | while IFS= read -r t; do
+              echo "::group::$t"
+              lua "$t" || true
               echo "::endgroup::"
               echo "::error file=$t::Test failed"
-              fail=1
-            fi
-          done
-          exit $fail
+            done
+            exit 1
+          fi
+          echo "unit tests: all files passed"
       - name: i18n unit tests
         run: |
           lua tools/test_i18n_locale.lua
           lua tools/test_i18n_extract.lua
           lua tools/test_i18n_format.lua
-      # NOTE: the locale base (core/locale/enUS.lua) is auto-regenerated and
-      # committed back by .github/workflows/regen-i18n-base.yml on push to
-      # qui-beta, so the old hard "git diff --exit-code" gate was removed to
-      # avoid a red-then-green flicker on every commit that adds new strings.
+          # Format-parity gates. These only READ committed files, so unlike the
+          # staleness gate below they carry no branch exclusion — a locale
+          # format drift must not be able to reach any branch unseen.
+          python3 tools/i18n/test_overlay_roundtrip.py
+          python3 tools/i18n/test_enus_parser_agreement.py
+      - name: Tooling unit tests
+        run: |
+          lua tests/api-docs/extract_test.lua
+          lua tools/lua_defs_gen_test.lua
+      # Same split as the search cache above: regen-i18n-base.yml auto-commits
+      # the locale base on beta and alpha, so gate everywhere except those two.
+      # The old version of this gate ran unconditionally and flickered red then
+      # green against the bot; the exclusion is what makes gate and bot coexist.
+      - name: Validate i18n base is not stale
+        if: github.ref != 'refs/heads/beta' && github.ref != 'refs/heads/alpha'
+        run: |
+          # The stamp is half the generator. extract_strings.lua rewrites the
+          # whole file and cannot compute the `-- keyset:` checksum (Lua 5.1
+          # has no SHA-256), so running it alone DELETES that line — and that
+          # line is what tests/unit/locale_keyset_checksum_test.lua compares
+          # the ten positional overlays against. Never run one without the other.
+          lua tools/i18n/extract_strings.lua
+          python3 tools/i18n/stamp_enus_keyset.py
+          if ! git diff --quiet -- core/locale/enUS.lua; then
+            echo "::error::core/locale/enUS.lua is stale. Run: lua5.1 tools/i18n/extract_strings.lua && python3 tools/i18n/stamp_enus_keyset.py"
+            git diff -- core/locale/enUS.lua
+            exit 1
+          fi
 
   lint:
     runs-on: ubuntu-latest
@@ -49,5 +106,12 @@ jobs:
       - uses: leafo/gh-actions-luarocks@v4
       - name: Install luacheck
         run: luarocks install luacheck
+      # Delegated to tools/lint.sh rather than an inline luacheck invocation.
+      # The target list used to be duplicated here and in that script, which
+      # made a target added to one and not the other a gate that could only
+      # fail after a push; now there is one copy. It also shards the targets by
+      # directory across cores (measured 15.8s -> 4.8s at JOBS=4 locally).
+      #
+      # Shard by DIRECTORY, never by file. See the header of tools/lint.sh.
       - name: Lint (luacheck)
-        run: luacheck QUI_Debug/ core/ modules/ init.lua QUI_ActionBars/ QUI_Alts/ QUI_Bags/ QUI_CDM/ QUI_Chat/ QUI_DamageMeter/ QUI_Datatexts/ QUI_GroupFrames/ QUI_InfoBar/ QUI_Minimap/ QUI_Options/ QUI_OptionsSearch/ QUI_QoL/ QUI_ResourceBars/ QUI_Skinning/ QUI_UnitFrames/
+        run: bash tools/lint.sh

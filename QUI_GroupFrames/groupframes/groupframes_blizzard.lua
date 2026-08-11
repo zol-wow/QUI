@@ -1,60 +1,33 @@
---[[
-    QUI Group Frames - Blizzard Frame Hider
-    Hides default Blizzard party/raid frames when QUI group frames are enabled.
-    Uses hooksecurefunc to catch Blizzard re-showing frames (reactive, not polling).
-    Hidden-parent banishment, alpha/mouse fallback, selection highlight
-    suppression, event stripping.
-
-    COMBAT RELOAD SAFETY: Initial hide runs at ADDON_LOADED where
-    InCombatLockdown() returns false even during a combat /reload.
-    Show hooks use SetAlpha(0) only (safe during combat) and defer
-    Hide() to after combat ends.
-]]
-
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
 
--- Upvalue hot-path globals
 local pairs = pairs
-local pcall = pcall
 local wipe = wipe
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local hooksecurefunc = hooksecurefunc
 local C_Timer = C_Timer
 
----------------------------------------------------------------------------
--- MODULE TABLE
----------------------------------------------------------------------------
 local QUI_GFB = {}
 ns.QUI_GroupFrameBlizzard = QUI_GFB
 
--- Track what we've hidden/stripped so we can restore
 local hiddenFrames = {}
 local strippedFrames = {}
-local hookedFrames = {}  -- frames with Show hooks installed
+local hookedFrames = {}
 local mouseStates = Helpers.CreateStateTable()
 local banishStates = Helpers.CreateStateTable()
 local hiddenParent
 
----------------------------------------------------------------------------
--- Should we be hiding?
----------------------------------------------------------------------------
 local function ShouldHide()
     local db = GetDB()
     return db and db.enabled
 end
 
----------------------------------------------------------------------------
--- HELPERS: Safe alpha hide
----------------------------------------------------------------------------
 local function EnsureHiddenParent()
     if not hiddenParent then
         hiddenParent = CreateFrame("Frame", "QUI_GroupFramesHiddenParent", UIParent)
-        if hiddenParent.SetAllPoints then
-            pcall(hiddenParent.SetAllPoints, hiddenParent, UIParent)
-        end
+        ns.SafeCallMethodIfPresent("best-effort-style", hiddenParent, "SetAllPoints", UIParent)
         hiddenParent:Hide()
     end
     return hiddenParent
@@ -67,19 +40,19 @@ local function CaptureMouseState(frame)
     state = {}
     local ok, value
     if frame.IsMouseEnabled then
-        ok, value = pcall(frame.IsMouseEnabled, frame)
+        ok, value = ns.SafeCallMethod("best-effort-style", frame, "IsMouseEnabled")
         if ok then state.mouseEnabled = value and true or false end
     end
     if frame.IsMouseClickEnabled then
-        ok, value = pcall(frame.IsMouseClickEnabled, frame)
+        ok, value = ns.SafeCallMethod("best-effort-style", frame, "IsMouseClickEnabled")
         if ok then state.mouseClickEnabled = value and true or false end
     end
     if frame.IsMouseMotionEnabled then
-        ok, value = pcall(frame.IsMouseMotionEnabled, frame)
+        ok, value = ns.SafeCallMethod("best-effort-style", frame, "IsMouseMotionEnabled")
         if ok then state.mouseMotionEnabled = value and true or false end
     end
     if frame.IsMouseWheelEnabled then
-        ok, value = pcall(frame.IsMouseWheelEnabled, frame)
+        ok, value = ns.SafeCallMethod("best-effort-style", frame, "IsMouseWheelEnabled")
         if ok then state.mouseWheelEnabled = value and true or false end
     end
 
@@ -92,18 +65,10 @@ local function SuppressFrameMouse(frame)
 
     CaptureMouseState(frame)
 
-    if frame.EnableMouse then
-        pcall(frame.EnableMouse, frame, false)
-    end
-    if frame.SetMouseClickEnabled then
-        pcall(frame.SetMouseClickEnabled, frame, false)
-    end
-    if frame.SetMouseMotionEnabled then
-        pcall(frame.SetMouseMotionEnabled, frame, false)
-    end
-    if frame.EnableMouseWheel then
-        pcall(frame.EnableMouseWheel, frame, false)
-    end
+    ns.SafeCallMethodIfPresent("best-effort-style", frame, "EnableMouse", false)
+    ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetMouseClickEnabled", false)
+    ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetMouseMotionEnabled", false)
+    ns.SafeCallMethodIfPresent("best-effort-style", frame, "EnableMouseWheel", false)
 end
 
 local function RestoreFrameMouse(frame)
@@ -113,16 +78,16 @@ local function RestoreFrameMouse(frame)
     if not state then return true end
 
     if state.mouseEnabled ~= nil and frame.EnableMouse then
-        pcall(frame.EnableMouse, frame, state.mouseEnabled)
+        ns.SafeCallMethod("best-effort-style", frame, "EnableMouse", state.mouseEnabled)
     end
     if state.mouseClickEnabled ~= nil and frame.SetMouseClickEnabled then
-        pcall(frame.SetMouseClickEnabled, frame, state.mouseClickEnabled)
+        ns.SafeCallMethod("best-effort-style", frame, "SetMouseClickEnabled", state.mouseClickEnabled)
     end
     if state.mouseMotionEnabled ~= nil and frame.SetMouseMotionEnabled then
-        pcall(frame.SetMouseMotionEnabled, frame, state.mouseMotionEnabled)
+        ns.SafeCallMethod("best-effort-style", frame, "SetMouseMotionEnabled", state.mouseMotionEnabled)
     end
     if state.mouseWheelEnabled ~= nil and frame.EnableMouseWheel then
-        pcall(frame.EnableMouseWheel, frame, state.mouseWheelEnabled)
+        ns.SafeCallMethod("best-effort-style", frame, "EnableMouseWheel", state.mouseWheelEnabled)
     end
 
     mouseStates[frame] = nil
@@ -139,7 +104,7 @@ local function CaptureBanishState(frame)
 
     local originalParent = UIParent
     if frame.GetParent then
-        local ok, parent = pcall(frame.GetParent, frame)
+        local ok, parent = ns.SafeCallMethod("best-effort-style", frame, "GetParent")
         if ok and parent then
             originalParent = parent
         end
@@ -152,9 +117,7 @@ local function BanishFrame(frame)
     if not frame then return false end
 
     if InCombatLockdown() then
-        if frame.SetAlpha then
-            pcall(frame.SetAlpha, frame, 0)
-        end
+        ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetAlpha", 0)
         hiddenFrames[frame] = true
         QUI_GFB.pendingHide = true
         return false
@@ -162,12 +125,8 @@ local function BanishFrame(frame)
 
     local state = CaptureBanishState(frame)
     local reparented = false
-    if frame.SetParent then
-        reparented = pcall(frame.SetParent, frame, EnsureHiddenParent())
-    end
-    if frame.SetAlpha then
-        pcall(frame.SetAlpha, frame, 0)
-    end
+    reparented = ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetParent", EnsureHiddenParent()) == true
+    ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetAlpha", 0)
     SuppressFrameMouse(frame)
 
     hiddenFrames[frame] = true
@@ -180,12 +139,9 @@ local function SafeHideFrame(frame)
     BanishFrame(frame)
 end
 
----------------------------------------------------------------------------
--- HELPERS: Selection highlight suppression
----------------------------------------------------------------------------
 local function HideSelectionHighlights(frame)
     if not frame then return end
-    pcall(function()
+    ns.SafeCall("best-effort-style", function()
         if frame.selectionHighlight and frame.selectionHighlight.SetShown then
             frame.selectionHighlight:SetShown(false)
         end
@@ -195,58 +151,30 @@ local function HideSelectionHighlights(frame)
     end)
 end
 
----------------------------------------------------------------------------
--- HELPERS: Event stripping (stop Blizzard from updating hidden frames)
----------------------------------------------------------------------------
 local function StripUnitFrameEvents(frame)
     if not frame then return end
-    pcall(function()
+    ns.SafeCall("best-effort-style", function()
         frame:UnregisterAllEvents()
-        -- PERF: Do NOT re-register UNIT_AURA on hidden Blizzard frames.
-        -- QUI calls GetUnitAuras directly and never reads Blizzard's aura
-        -- containers. Leaving UNIT_AURA registered caused Blizzard's
-        -- CompactUnitFrame_UpdateAuras to run on 40 hidden frames in
-        -- parallel with QUI's own aura processing — doubling all aura
-        -- work in raids for zero benefit.
     end)
     strippedFrames[frame] = true
 end
 
 local function RestoreUnitFrameEvents(frame)
     if not frame or not strippedFrames[frame] then return end
-    pcall(function()
+    strippedFrames[frame] = nil
+    ns.SafeCall("best-effort-style", function()
         if CompactUnitFrame_UpdateUnitEvents then
             CompactUnitFrame_UpdateUnitEvents(frame)
         end
     end)
-    strippedFrames[frame] = nil
 end
 
----------------------------------------------------------------------------
--- HELPERS: Combat-safe group unit-frame event stripping
---
--- Modern retail (12.x) pools the legacy party member frames via
--- PartyFrame.PartyMemberFramePool (CreateFramePool with no name arg, so the
--- legacy _G["PartyMemberFrame1".."4"] globals no longer resolve) -- the live
--- frames must be reached through the pool. Raid-style party
--- (CompactPartyFrameMember1-5) and raid (CompactRaidFrame1-40) frames are still
--- created with explicit global names, so they resolve directly.
---
--- Event unregistration carries no protected-frame restriction (verified:
--- UnregisterAllEvents has no SecretArguments/combat gate in
--- SimpleFrameAPIDocumentation), so this runs safely in combat, unlike the
--- Hide/reparent in HideBlizzard*Frames. Stripping events stops these frames
--- running their UNIT_AURA / health handlers, which read secret values in 12.x
--- and throw the instant any addon taint is ambient on the coalesced event batch.
----------------------------------------------------------------------------
 local function StripBlizzardGroupEvents()
-    -- Party (legacy, pooled)
     if PartyFrame and PartyFrame.PartyMemberFramePool then
         for memberFrame in PartyFrame.PartyMemberFramePool:EnumerateActive() do
             StripUnitFrameEvents(memberFrame)
         end
     end
-    -- Party (raid-style) + legacy global names (older clients that still create them)
     if CompactPartyFrame then
         for i = 1, 5 do
             StripUnitFrameEvents(_G["CompactPartyFrameMember" .. i])
@@ -255,22 +183,18 @@ local function StripBlizzardGroupEvents()
     for i = 1, 4 do
         StripUnitFrameEvents(_G["PartyMemberFrame" .. i])
     end
-    -- Raid (globally named, 8 groups x 5)
     for i = 1, 40 do
         StripUnitFrameEvents(_G["CompactRaidFrame" .. i])
     end
 end
 
----------------------------------------------------------------------------
--- HELPERS: Restore frame
----------------------------------------------------------------------------
 local function RestoreFrame(frame)
     if not frame then return end
     if InCombatLockdown() then return false end
 
     local state = banishStates[frame]
     if state and state.originalParent and frame.SetParent then
-        pcall(frame.SetParent, frame, state.originalParent)
+        ns.SafeCallMethod("best-effort-style", frame, "SetParent", state.originalParent)
     end
     if state then
         state.banished = false
@@ -278,14 +202,11 @@ local function RestoreFrame(frame)
     end
 
     RestoreFrameMouse(frame)
-    pcall(frame.SetAlpha, frame, 1)
+    ns.SafeCallMethod("best-effort-style", frame, "SetAlpha", 1)
     hiddenFrames[frame] = nil
     return true
 end
 
----------------------------------------------------------------------------
--- HOOK: Install a Show hook on a frame to re-hide it when Blizzard restores it
----------------------------------------------------------------------------
 local function InstallShowHook(frame)
     if not frame or hookedFrames[frame] then return end
     hooksecurefunc(frame, "Show", function(self)
@@ -295,21 +216,11 @@ local function InstallShowHook(frame)
     hookedFrames[frame] = true
 end
 
----------------------------------------------------------------------------
--- HOOK: Suppress Blizzard selection highlight updates
--- TAINT SAFETY: These hooks fire for ALL CompactUnitFrames, including
--- nameplate frames. During combat, any addon code in the posthook can
--- taint the nameplate widget chain. InCombatLockdown() guard prevents
--- addon data access during combat. Unit check before GetDB() minimizes
--- addon code execution for non-party/raid frames (nameplates, boss frames).
----------------------------------------------------------------------------
 if CompactUnitFrame_UpdateSelectionHighlight then
     local sub = string.sub
     hooksecurefunc("CompactUnitFrame_UpdateSelectionHighlight", function(frame)
         if InCombatLockdown() then return end
 
-        -- PERF: This fires for ALL CompactUnitFrames (nameplates, boss, arena).
-        -- Fast string.sub prefix check instead of :match regex.
         local unit = frame.unit or frame.displayedUnit
         if not unit then return end
         local p4 = sub(unit, 1, 4)
@@ -326,9 +237,6 @@ if CompactUnitFrame_UpdateSelectionHighlight then
     end)
 end
 
----------------------------------------------------------------------------
--- HOOK: Suppress Blizzard ready check icons on hidden frames
----------------------------------------------------------------------------
 local function SuppressBlizzardReadyCheck(frame)
     if not frame then return end
     if InCombatLockdown() then return end
@@ -351,42 +259,31 @@ if CompactUnitFrame_UpdateReadyCheck then
     hooksecurefunc("CompactUnitFrame_UpdateReadyCheck", SuppressBlizzardReadyCheck)
 end
 
----------------------------------------------------------------------------
--- HOOK: Re-strip events when Blizzard tries to restore them
----------------------------------------------------------------------------
 if CompactUnitFrame_UpdateUnitEvents then
     hooksecurefunc("CompactUnitFrame_UpdateUnitEvents", function(frame)
         if not frame then return end
         if InCombatLockdown() then return end
         if not strippedFrames[frame] then return end
 
-        -- Blizzard just restored events on a frame we stripped — re-strip it
         StripUnitFrameEvents(frame)
     end)
 end
 
----------------------------------------------------------------------------
--- HIDE: Blizzard party frames
----------------------------------------------------------------------------
 local function HideBlizzardPartyFrames()
-    -- Modern PartyFrame container
     if PartyFrame then
         SafeHideFrame(PartyFrame)
         InstallShowHook(PartyFrame)
     end
 
-    -- CompactPartyFrame (Retail party frames)
     if CompactPartyFrame then
         SafeHideFrame(CompactPartyFrame)
         HideSelectionHighlights(CompactPartyFrame)
         StripUnitFrameEvents(CompactPartyFrame)
         InstallShowHook(CompactPartyFrame)
 
-        -- Hide border/title overlays
         SafeHideFrame(CompactPartyFrame.borderFrame)
         SafeHideFrame(CompactPartyFrame.title)
 
-        -- Individual member frames
         for i = 1, 5 do
             local mf = _G["CompactPartyFrameMember" .. i]
             if mf then
@@ -394,18 +291,12 @@ local function HideBlizzardPartyFrames()
                 HideSelectionHighlights(mf)
                 StripUnitFrameEvents(mf)
                 InstallShowHook(mf)
-                if mf.readyCheckIcon then pcall(mf.readyCheckIcon.SetAlpha, mf.readyCheckIcon, 0) end
-                if mf.readyCheckDecline then pcall(mf.readyCheckDecline.SetAlpha, mf.readyCheckDecline, 0) end
+                if mf.readyCheckIcon then ns.SafeCallMethod("best-effort-style", mf.readyCheckIcon, "SetAlpha", 0) end
+                if mf.readyCheckDecline then ns.SafeCallMethod("best-effort-style", mf.readyCheckDecline, "SetAlpha", 0) end
             end
         end
     end
 
-    -- Party member frames. Modern retail pools these via
-    -- PartyFrame.PartyMemberFramePool (unnamed) -- the legacy
-    -- _G["PartyMemberFrame1".."4"] globals no longer resolve on 12.x, so
-    -- enumerate the live pool. Without this the pooled member frames keep
-    -- UNIT_AURA registered and process party auras, which throws under any
-    -- ambient addon taint in 12.x (secret isBossAura / maxValue).
     if PartyFrame and PartyFrame.PartyMemberFramePool then
         for memberFrame in PartyFrame.PartyMemberFramePool:EnumerateActive() do
             SafeHideFrame(memberFrame)
@@ -413,7 +304,6 @@ local function HideBlizzardPartyFrames()
             InstallShowHook(memberFrame)
         end
     end
-    -- Legacy global names retained for older clients that still create them.
     for i = 1, 4 do
         local pf = _G["PartyMemberFrame" .. i]
         if pf then
@@ -424,23 +314,12 @@ local function HideBlizzardPartyFrames()
     end
 end
 
----------------------------------------------------------------------------
--- HIDE: Blizzard raid frames
----------------------------------------------------------------------------
 local function HideBlizzardRaidFrames()
-    -- CompactRaidFrameContainer — hidden-parent banish removes it from hit testing
     SafeHideFrame(CompactRaidFrameContainer)
     if CompactRaidFrameContainer then
         InstallShowHook(CompactRaidFrameContainer)
     end
 
-    -- CompactRaidFrameManager is owned by modules/ui/uihider.lua, which respects
-    -- the user's uiHider.hideRaidFrameManager setting. Do not suppress it here —
-    -- hiding the container/displayFrame/toggleButton removes the manager's buttons
-    -- even when the user has the hide setting disabled, and the extra ShowHook
-    -- caused a zone-in flicker on top of uihider's own hooks.
-
-    -- Individual CompactRaidFrame1-40
     for i = 1, 40 do
         local rf = _G["CompactRaidFrame" .. i]
         if rf then
@@ -451,7 +330,6 @@ local function HideBlizzardRaidFrames()
         end
     end
 
-    -- CompactRaidGroup headers and their members
     for group = 1, 8 do
         local gf = _G["CompactRaidGroup" .. group]
         if gf then
@@ -470,9 +348,6 @@ local function HideBlizzardRaidFrames()
     end
 end
 
----------------------------------------------------------------------------
--- HIDE: All Blizzard group frames
----------------------------------------------------------------------------
 function QUI_GFB:HideBlizzardFrames()
     if not ShouldHide() then return end
 
@@ -485,34 +360,24 @@ function QUI_GFB:HideBlizzardFrames()
     HideBlizzardRaidFrames()
 end
 
----------------------------------------------------------------------------
--- RESTORE: All Blizzard group frames
----------------------------------------------------------------------------
 function QUI_GFB:RestoreBlizzardFrames()
     if InCombatLockdown() then
         self.pendingRestore = true
         return
     end
 
-    -- Restore all hidden frames
     for frame in pairs(hiddenFrames) do
         RestoreFrame(frame)
     end
     wipe(hiddenFrames)
 
-    -- Restore stripped events
     for frame in pairs(strippedFrames) do
         RestoreUnitFrameEvents(frame)
     end
     wipe(strippedFrames)
 
-    -- Note: hooks remain installed but ShouldHide() will return false,
-    -- so they become no-ops until re-enabled.
 end
 
----------------------------------------------------------------------------
--- COMBAT EVENTS: Deferred operations
----------------------------------------------------------------------------
 local combatFrame = CreateFrame("Frame")
 combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatFrame:SetScript("OnEvent", function()
@@ -526,14 +391,6 @@ combatFrame:SetScript("OnEvent", function()
     end
 end)
 
----------------------------------------------------------------------------
--- EVENTS: Initial hide at ADDON_LOADED + re-apply on group changes
---
--- ADDON_LOADED runs the initial hide. This is critical for combat reload
--- support: InCombatLockdown() returns false at ADDON_LOADED even during
--- a combat /reload, giving us a safe window for protected operations.
--- Subsequent events (roster changes, zone transitions) re-apply as needed.
----------------------------------------------------------------------------
 local blizzardEventFrame = CreateFrame("Frame")
 blizzardEventFrame:RegisterEvent("ADDON_LOADED")
 blizzardEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
@@ -542,17 +399,13 @@ blizzardEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 blizzardEventFrame:RegisterEvent("PARTY_MEMBER_ENABLE")
 blizzardEventFrame:RegisterEvent("PARTY_MEMBER_DISABLE")
 blizzardEventFrame:SetScript("OnEvent", function(_, event, addonName)
-    -- Initial hide at ADDON_LOADED — runs during the safe window where
-    -- InCombatLockdown() is false even on a combat /reload
     if event == "ADDON_LOADED" then
         if addonName == ADDON_NAME then
-            -- Our own addon loaded — hide immediately if DB is ready
             if ShouldHide() then
                 HideBlizzardPartyFrames()
                 HideBlizzardRaidFrames()
             end
         elseif addonName == "Blizzard_CompactRaidFrames" then
-            -- Blizzard raid frames loaded late — re-hide
             if ShouldHide() and not InCombatLockdown() then
                 HideBlizzardRaidFrames()
             end
@@ -562,13 +415,6 @@ blizzardEventFrame:SetScript("OnEvent", function(_, event, addonName)
 
     if not ShouldHide() then return end
 
-    -- Strip group unit-frame events immediately AND next-frame, even in combat.
-    -- A roster change can pool+arm a fresh member frame (its OnLoad registers
-    -- UNIT_AURA), and PARTY_MEMBER_ENABLE fires in combat. Event unregistration
-    -- is combat-safe while the Hide/reparent below is not, so the full hide stays
-    -- deferred to combat end. The next-frame pass runs after Blizzard's same-event
-    -- handler has created the frame, closing the in-combat window where a re-armed
-    -- frame would process secret aura/health data under ambient taint.
     StripBlizzardGroupEvents()
     C_Timer.After(0, function()
         if ShouldHide() then StripBlizzardGroupEvents() end
@@ -579,7 +425,6 @@ blizzardEventFrame:SetScript("OnEvent", function(_, event, addonName)
         return
     end
 
-    -- Delayed to let Blizzard frames initialize/reposition first
     C_Timer.After(0.2, function()
         if InCombatLockdown() then
             QUI_GFB.pendingHide = true

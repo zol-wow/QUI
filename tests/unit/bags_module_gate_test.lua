@@ -247,7 +247,7 @@ assert(#guildTakeoverLog == gtBefore + 2, "GuildBanker interaction must route ex
 -- Test 6: ITEM_LOCK_CHANGED / BAG_UPDATE_COOLDOWN / EQUIPMENT_SETS_CHANGED
 -- → synthetic re-dress pings, only while the relevant window is shown.
 local lockPings = 0
-ns.Bags.Bus.Subscribe("BagsChanged", function() lockPings = lockPings + 1 end)
+ns.Storage.Bus.Subscribe("BagsChanged", function() lockPings = lockPings + 1 end)
 scripts.OnEvent(frame, "ITEM_LOCK_CHANGED", 0, 1)
 scripts.OnEvent(frame, "BAG_UPDATE_COOLDOWN")
 assert(lockPings == 0, "lock/cooldown changes must be ignored while the window is hidden")
@@ -258,7 +258,7 @@ scripts.OnEvent(frame, "BAG_UPDATE_COOLDOWN")
 assert(lockPings == 2, "cooldown update must publish a synthetic BagsChanged when shown")
 ns.Bags.BagWindow.IsShown = function() return false end
 local bankLockPings = 0
-ns.Bags.Bus.Subscribe("BankChanged", function() bankLockPings = bankLockPings + 1 end)
+ns.Storage.Bus.Subscribe("BankChanged", function() bankLockPings = bankLockPings + 1 end)
 scripts.OnEvent(frame, "ITEM_LOCK_CHANGED", 6, 1)
 assert(bankLockPings == 0, "no BankChanged ping while the bank window is hidden")
 ns.Bags.BankWindow.IsShown = function() return true end
@@ -268,8 +268,8 @@ assert(bankLockPings == 2, "lock/cooldown must publish BankChanged when the bank
 ns.Bags.BankWindow.IsShown = function() return false end
 -- EQUIPMENT_SETS_CHANGED rides the same route
 local eqBagPings, eqBankPings = 0, 0
-ns.Bags.Bus.Subscribe("BagsChanged", function() eqBagPings = eqBagPings + 1 end)
-ns.Bags.Bus.Subscribe("BankChanged", function() eqBankPings = eqBankPings + 1 end)
+ns.Storage.Bus.Subscribe("BagsChanged", function() eqBagPings = eqBagPings + 1 end)
+ns.Storage.Bus.Subscribe("BankChanged", function() eqBankPings = eqBankPings + 1 end)
 scripts.OnEvent(frame, "EQUIPMENT_SETS_CHANGED")
 assert(eqBagPings == 0 and eqBankPings == 0, "set changes must not ping while both windows are hidden")
 ns.Bags.BagWindow.IsShown = function() return true end

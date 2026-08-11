@@ -156,9 +156,14 @@ local ns = {
     -- NOT via its own ADDON_LOADED. The harness runs the callback synchronously
     -- at load, so init happens during the loadfile call below.
     WhenLoggedIn = function(fn) fn() end,
+    -- core/safecall.lua stub: silent pcall swallow matches the pre-SafeCall
+    -- shape these tests were written against.
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
 }
 
-assert(loadfile("QUI_Skinning/skinning/system/tooltips.lua"))("QUI", ns)
+assert(loadfile("modules/skinning/system/tooltips.lua"))("QUI", ns)
 -- Init already ran (ns.WhenLoggedIn fired synchronously during load). The
 -- eventFrame remains for post-init addon-tooltip discovery + combat restore.
 assert(eventFrame and eventFrame.scripts.OnEvent, "tooltip skinning must register an event handler")
@@ -199,8 +204,8 @@ local function assertBefore(text, first, second, reason)
     assert(firstAt < secondAt, reason)
 end
 
-local tooltipSkinningSource = readFile("QUI_Skinning/skinning/system/tooltips.lua")
-local tooltipQoLSource = readFile("QUI_QoL/qol/tooltip.lua")
+local tooltipSkinningSource = readFile("modules/skinning/system/tooltips.lua")
+local tooltipQoLSource = readFile("modules/qol/tooltip.lua")
 local helpersSource = readFile("core/utils.lua")
 assertContains(tooltipSkinningSource, "local function IsInternalEmbeddedItemTooltipFrame(tooltip)",
     "tooltip skinning must centralize the embedded item reward tooltip guard")
@@ -237,7 +242,7 @@ local styleTooltipStart = assert(tooltipSkinningSource:find("local function Styl
 local styleTooltipBody = tooltipSkinningSource:sub(styleTooltipStart)
 assertBefore(styleTooltipBody,
     "HasActiveWidgetContainer and HasActiveWidgetContainer(tooltip)",
-    "pcall(ApplyTooltipChrome, tooltip)",
+    "ns.SafeCall(\"best-effort-style\", ApplyTooltipChrome, tooltip)",
     "StyleTooltip must guard widget containers before applying chrome")
 local onTooltipShowStart = assert(tooltipSkinningSource:find("local function OnTooltipShow", 1, true))
 local onTooltipShowBody = tooltipSkinningSource:sub(onTooltipShowStart)
@@ -258,7 +263,7 @@ assertContains(tooltipQoLSource, "tooltip == GameTooltip and HasActiveWidgetCont
     "cursor anchoring must refuse active widget-set GameTooltip cycles")
 assertBefore(tooltipQoLSource,
     "if tooltip == GameTooltip and HasActiveWidgetContainer(tooltip) then",
-    "-- Reposition immediately",
+    "if settings.anchorToCursor then",
     "default-anchor hook must bail before immediate custom positioning")
 
 print("OK: tooltip_game_font_object_test")

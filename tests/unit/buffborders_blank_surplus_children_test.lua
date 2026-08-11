@@ -1,21 +1,26 @@
 -- tests/unit/buffborders_blank_surplus_children_test.lua
 -- Run: lua tests/unit/buffborders_blank_surplus_children_test.lua
 --
--- Regression guard for stale borders on empty buff/debuff slots.
+-- Regression guard for stale icons/borders on empty buff/debuff/enchant slots.
 --
--- The secure aura header lays out its children synchronously on UNIT_AURA and
--- HIDES every dead child itself (Blizzard_FrameXML SecureGroupHeaders.lua
--- configureAuras: deadIndex = #auraTable+1 .. -> button:Hide()). QUI's styling
--- is coalesced to the next frame, so during rapid aura turnover (and on pooled
--- child reuse) the header can momentarily show a child that C_UnitAuras has no
--- live aura for. GetUnitAuras returns a dense, never-nil table (UnitAura doc:
--- auras Nilable=false), so a nil slot means that shown child has NO aura.
+-- Model history:
+--   * SecureAuraHeader hid dead children in secure code; QUI blanked its parented
+--     regions a frame later.
+--   * The B2 insecure AuraButtonMixin pool made QUI Clear()+Hide() each pooled
+--     button with no aura this pass.
+--   * The E4 unification moved the player onto the SHARED secure
+--     CustomAuraContainer. For LIVE buffs/debuffs, blanking surplus buttons is now
+--     ENGINE-OWNED: CustomAuraContainerPrivateMixin:RefreshAuraFrames calls
+--     auraFrame:ClearAuraInstance() on every pooled AuraSkin button past the live
+--     count (see Blizzard_CustomAuraContainer.lua). QUI no longer pools or clears
+--     the live aura buttons, so there is intentionally NO QUI Lua loop for them.
 --
--- The QUI border textures are parented to the child and only vanish when the
--- child frame is hidden -- which is the header's job, not ours (hiding a
--- secure child from insecure code taints/blocks in combat). So QUI must blank
--- its OWN regions (borders/icon/cooldown/stacks) on any shown child it is not
--- painting this pass, or a stale border sits on an apparently-empty slot.
+-- Temp weapon enchants (the old exception -- synthetic non-aura entries the
+-- container couldn't show) are ALSO engine-owned now: PTR4 AddItemEnchantment
+-- (AuraSkin.ConfigureEnchantments, folded into the SAME strip-1 container)
+-- means the engine's ClearAuraInstance blanking covers them too. QUI no
+-- longer pools ANY buff/debuff/enchant button -- guard that no bespoke pool
+-- of any kind crept back in.
 
 local function readFile(path)
     local fh = assert(io.open(path, "rb"), "failed to open " .. path)
@@ -24,41 +29,21 @@ local function readFile(path)
     return text
 end
 
-local function sliceFunction(source, signature)
-    local startPos = source:find(signature, 1, true)
-    assert(startPos, signature .. " must exist in buffborders.lua")
-    local nextFn = source:find("\nlocal function ", startPos + 1, true)
-    return source:sub(startPos, nextFn or #source)
-end
-
 local source = readFile("QUI_ActionBars/actionbars/buffborders.lua")
 
--- A helper must exist to clear QUI-owned visuals on an unpainted shown child.
-assert(source:find("local function BlankAuraChild", 1, true),
-    "buffborders must have a BlankAuraChild helper to clear stale visuals on "
-    .. "shown header children that have no live aura this pass")
+-- No bespoke insecure aura-button pool for live buffs/debuffs (engine owns it now).
+assert(not source:find("function AuraFrame:Update", 1, true),
+    "buffborders.lua must NOT keep a bespoke AuraFrame:Update pool (the secure container blanks surplus buttons C-side)")
+assert(not source:find("function AuraButton:Clear", 1, true),
+    "buffborders.lua must NOT keep a bespoke AuraButton:Clear (engine ClearAuraInstance owns blanking)")
 
--- It must hide all four border edges (the visible artifact the user reports).
-local blankBody = sliceFunction(source, "local function BlankAuraChild")
-for _, edge in ipairs({ "BorderTop", "BorderBottom", "BorderLeft", "BorderRight" }) do
-    assert(blankBody:find(edge .. ":SetShown(false)", 1, true),
-        "BlankAuraChild must hide the " .. edge .. " border so empty slots show no border")
-end
--- It must also clear the icon texture so no stale icon is left behind.
-assert(blankBody:find("SetTexture", 1, true),
-    "BlankAuraChild must clear the icon texture on a blanked child")
-
--- The styling loop must blank shown children it has no aura data for instead
--- of leaving them with stale borders.
-local styleBody = sliceFunction(source, "local function StyleHeaderChildren")
-assert(styleBody:find("BlankAuraChild", 1, true),
-    "StyleHeaderChildren must blank shown header children with no live aura "
-    .. "data rather than break and leave stale borders on empty slots")
-
--- It must NOT hide the secure child frame itself from insecure code (that is
--- the header's responsibility and would taint / be protected in combat).
-assert(not styleBody:find("child:Hide()", 1, true),
-    "StyleHeaderChildren must not hide secure header children itself -- the "
-    .. "header owns child visibility; QUI only clears its own regions")
+-- The separate insecure temp-enchant strip (and its own Clear+Hide pool loop)
+-- is fully gone: enchants render inside the buff container via the engine now.
+assert(not source:find("function UpdateTempEnchants", 1, true),
+    "buffborders.lua must NOT keep a bespoke UpdateTempEnchants pool (enchants are engine-owned inside the buff container)")
+assert(not source:find("function EnsureTempEnchantButton", 1, true),
+    "buffborders.lua must NOT keep a bespoke EnsureTempEnchantButton (no QUI-pooled enchant buttons remain)")
+assert(source:find("AuraSkin.ConfigureEnchantments", 1, true),
+    "buffborders.lua must fold temp enchants into the buff container via AuraSkin.ConfigureEnchantments")
 
 print("OK: buffborders_blank_surplus_children_test")

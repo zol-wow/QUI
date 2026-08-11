@@ -35,7 +35,7 @@ assert(entrySignature:find("entry.linkedSpellIDs", 1, true),
 
 local buffFingerprint = sliceBetween(
     containers,
-    "-- Fingerprint: skip rebuild when the same buff spellIDs are active.",
+    "local spellData = ns.CDMSpellData and ns.CDMSpellData:GetSpellList(\"buff\")",
     "local fingerprint = table.concat(parts, \",\")")
 
 assert(buffFingerprint:find("entry.linkedSpellIDs", 1, true),
@@ -51,8 +51,8 @@ assert(iconListSignature:find("AppendCustomRuntimeEntrySignature", 1, true),
 
 local barReuse = sliceBetween(
     bars,
-    "-- No rebuild needed",
-    "    -- Clear existing pool")
+    "if not needsRebuild then",
+    "    -- self:ClearPool()")
 
 assert(barReuse:find("bar._spellEntry = entry", 1, true),
     "tracked bars must adopt refreshed spell entries when only linkedSpellIDs changed")

@@ -2,7 +2,7 @@
 -- Headless verification of the bags callback bus. Run: lua tests/unit/bags_bus_test.lua
 local loader = dofile("tests/helpers/load_bags_data.lua")
 local ns = loader.LoadAll(nil, "bus.lua")
-local Bus = ns.Bags.Bus
+local Bus = ns.Storage.Bus
 
 -- Test 1: basic dispatch with args
 local got = {}

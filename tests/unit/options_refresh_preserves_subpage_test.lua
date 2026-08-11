@@ -14,7 +14,7 @@ local refreshStart = assert(
     "framework.lua must define GUI:RefreshAccentColor"
 )
 local refreshEnd = assert(
-    source:find("---------------------------------------------------------------------------\n-- SCROLLBAR STYLING", refreshStart, true),
+    source:find("local function StyleScrollBar(scrollFrame)", refreshStart, true),
     "could not isolate GUI:RefreshAccentColor body"
 )
 local refreshBody = source:sub(refreshStart, refreshEnd)

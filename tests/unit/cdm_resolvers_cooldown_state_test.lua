@@ -70,8 +70,6 @@ C_DurationUtil = {
     end,
 }
 
-local states = {}
-local mirrorStateLookups = 0
 local itemAuraActive = true
 local itemCooldownActive = false
 local itemAuraDurationObjectAvailable = true
@@ -91,152 +89,6 @@ local itemUseSpellCooldownActive = false
 local itemUseSpellCooldownDur = { token = "item-use-spell-cooldown-dur" }
 local chargeQueryCounts = {}
 
-local function putState(cooldownID, category, state)
-    state.cooldownID = cooldownID
-    state.viewerCategory = category
-    states[category .. ":" .. cooldownID] = state
-end
-
-putState(50001, "essential", {
-    mirrorEpoch = 1,
-    spellID = 50001,
-    overrideSpellID = 50001,
-    auraInstanceID = 9001,
-    auraUnit = "player",
-    hasAura = true,
-    selfAura = true,
-    stackText = "3",
-    stackTextSource = "Applications",
-    stackTextShown = true,
-    auraDurObj = auraDur,
-    auraDurObjSource = "aura-duration",
-})
-
-putState(50002, "essential", {
-    mirrorEpoch = 2,
-    spellID = 50002,
-    overrideSpellID = 50002,
-})
-
-putState(50003, "essential", {
-    mirrorEpoch = 3,
-    spellID = 50003,
-    overrideSpellID = 50003,
-})
-
-putState(50004, "essential", {
-    mirrorEpoch = 4,
-    spellID = 50004,
-    overrideSpellID = 50004,
-    charges = true,
-    stackText = "1",
-    stackTextSource = "ChargeCount",
-    stackTextShown = true,
-})
-
-putState(50005, "essential", {
-    mirrorEpoch = 5,
-    spellID = 50005,
-    overrideSpellID = 50005,
-    charges = true,
-    stackText = "0",
-    stackTextSource = "ChargeCount",
-    stackTextShown = true,
-})
-
-putState(50006, "essential", {
-    mirrorEpoch = 6,
-    spellID = 50006,
-    overrideSpellID = 50006,
-})
-
-putState(50007, "essential", {
-    mirrorEpoch = 7,
-    spellID = 50007,
-    overrideSpellID = 50007,
-    charges = true,
-    cooldownChargesCount = "2",
-    cooldownChargesShown = true,
-})
-
-putState(50008, "essential", {
-    mirrorEpoch = 8,
-    spellID = 50008,
-    overrideSpellID = 50008,
-})
-
-putState(50009, "essential", {
-    mirrorEpoch = 9,
-    spellID = 50009,
-    overrideSpellID = 50009,
-    charges = true,
-})
-
-putState(50010, "essential", {
-    mirrorEpoch = 10,
-    spellID = 50010,
-    overrideSpellID = 50010,
-    charges = true,
-})
-
-putState(50011, "essential", {
-    mirrorEpoch = 11,
-    spellID = 50011,
-    overrideSpellID = 50011,
-    charges = true,
-})
-
-putState(50012, "essential", {
-    mirrorEpoch = 12,
-    spellID = 50012,
-    overrideSpellID = 50012,
-    charges = true,
-})
-
-putState(50013, "essential", {
-    mirrorEpoch = 13,
-    spellID = 50013,
-    overrideSpellID = 50013,
-    charges = true,
-})
-
--- 50014: DK Death Charge reference case. cdInfo.isActive=false (the spell
--- is castable from a remaining charge) but chargeInfo.isActive=true with a
--- rolling recharge — the recharge timing lives only on
--- C_Spell.GetSpellChargeDuration.
-putState(50014, "essential", {
-    mirrorEpoch = 14,
-    spellID = 50014,
-    overrideSpellID = 50014,
-    charges = true,
-})
-
--- 2700: Talent-override reference case (Guardian Druid Berserk slot replaced by
--- Incarnation: Guardian of Ursoc). The Blizzard EssentialCooldownViewer
--- registers the slot under the base spellID (50334 Berserk) but the live
--- cooldown lives on the override spellID (102558 Incarnation). After the buff
--- expires the aura phase ends, m.auraInstanceID clears, and DeriveMirrorPayloadMode
--- must probe the override to surface mode="cooldown" — probing only the base
--- returns isActive=false and the icon falls through to "inactive".
-putState(2700, "essential", {
-    mirrorEpoch = 99,
-    spellID = 50334,
-    overrideSpellID = 102558,
-    linkedSpellIDs = { 50334, 102558 },
-})
-
-putState(55090, "essential", {
-    mirrorEpoch = 101,
-    spellID = 55090,
-    overrideSpellID = 55090,
-    hasAura = false,
-    childIsActive = true,
-    wasSetFromAura = false,
-    wasSetFromCooldown = true,
-    wasSetFromCharges = false,
-    cooldownDurObj = cooldownDur,
-    cooldownDurObjSource = "live-cooldown",
-})
 
 local auraRuntimeProbeCount = 0
 
@@ -620,17 +472,6 @@ local ns = {
             return nil
         end,
     },
-    CDMBlizzMirror = {
-        GetStateByCooldownID = function(cooldownID, category)
-            mirrorStateLookups = mirrorStateLookups + 1
-            return states[tostring(category) .. ":" .. tostring(cooldownID)]
-        end,
-        HasChildForCooldownID = function(cooldownID, category)
-            return states[tostring(category) .. ":" .. tostring(cooldownID)] ~= nil
-        end,
-        GetDirectCooldownIDForViewer = function() return nil end,
-        GetCooldownIDForViewer = function() return nil end,
-    },
 }
 
 function GetInventoryItemCooldown(unit, slotID)
@@ -674,311 +515,6 @@ local function cooldownEntry(spellID)
 end
 
 local state = resolve({
-    entry = cooldownEntry(50001),
-    runtimeSpellID = 50001,
-    mirrorCooldownID = 50001,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = true,
-    showGCDSwipe = true,
-})
-
-assert(state.mode == "aura", "mirror aura lane should resolve as aura")
-assert(state.active == true, "mirror aura lane should be active")
-assert(state.isActive == true, "isActive alias should match active")
-assert(state.isAuraMode == true, "aura lane should publish isAuraMode")
-assert(state.isRealCooldownMode == false, "aura lane should not publish real cooldown mode")
-assert(state.hasDurationObject == true, "aura lane should report its DurationObject")
-assert(state.hasRenderableCooldown == true, "aura lane should report renderable swipe state")
-assert(state.auraActive == true, "mirror aura lane should mark the aura active")
-assert(state.auraIsActive == true, "auraIsActive alias should match auraActive")
-assert(state.durObj == auraDur, "mirror aura lane should carry aura DurationObject")
-assert(state.sourceID == "mirror:50001:1", "source should identify mirror cooldown and epoch")
-assert(state.mirrorBacked == true, "mirror lane should mark mirrorBacked")
-assert(state.mirrorCooldownID == 50001, "mirror cooldown ID should be copied")
-assert(state.mirrorCategory == "essential", "mirror category should be copied")
-assert(state.auraInstanceID == 9001, "aura instance should be copied")
-assert(state.auraUnit == "player", "aura unit should be copied")
-assert(state.countSinkText == "3", "mirror count sink text should be copied")
-assert(state.countValue == 3, "mirror count numeric value should be copied when readable")
-assert(state.countShown == true, "mirror count visibility should be copied")
-assert(state.countSource == "Applications", "mirror count source should be copied")
-assert(state.countMirrorBacked == true, "mirror count should be marked mirror-backed")
-
-local auraRuntimeProbesBeforeNoAuraCooldown = auraRuntimeProbeCount
-state = resolve({
-    entry = cooldownEntry(55090),
-    runtimeSpellID = 55090,
-    mirrorCooldownID = 55090,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = true,
-    showGCDSwipe = true,
-})
-
-assert(state.mode == "cooldown",
-    "hasAura=false active cooldown child without linked or sibling aura should remain cooldown")
-assert(state.durObj == cooldownDur,
-    "hasAura=false active cooldown child should keep the mirror cooldown duration")
-assert(auraRuntimeProbeCount == auraRuntimeProbesBeforeNoAuraCooldown,
-    "hasAura=false active cooldown child should not probe same-spell aura runtime without aura metadata")
-
-local lookupsBeforeCachedState = mirrorStateLookups
-state = resolve({
-    entry = cooldownEntry(50002),
-    runtimeSpellID = 50002,
-    mirrorCooldownID = 50002,
-    mirrorCategory = "essential",
-    cachedMirrorState = states["essential:50002"],
-    cachedMirrorSourceID = "mirror:50002:cached",
-    containerKey = "essential",
-    showGCDSwipe = true,
-})
-
-assert(state.mode == "cooldown", "cached mirror state should resolve the cooldown lane")
-assert(state.durObj == cooldownDur, "cached mirror state should provide the cooldown DurationObject")
--- After the mode-collapse refactor, BuildMirrorRenderPayload deliberately
--- bypasses cachedSourceID for cooldown/item-cooldown modes (per the
--- comment in cdm_resolvers.lua's BuildMirrorRenderPayload) and builds a stable key from
--- (cooldownID, spellID). The cache-hit path is still verified by the
--- mirrorStateLookups counter below.
-assert(state.sourceID == "mirror:50002:50002",
-    "cached mirror cooldown lane should rebuild its source key from cooldownID and spellID")
-assert(mirrorStateLookups == lookupsBeforeCachedState,
-    "resolver should not query the global mirror when a matching icon-cached state is provided")
-
-state = resolve({
-    entry = cooldownEntry(50001),
-    runtimeSpellID = 50001,
-    mirrorCooldownID = 50001,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-    skipAuraPhase = true,
-})
-
-assert(state.mode == "cooldown", "skip aura phase should select cooldown lane")
-assert(state.durObj == cooldownDur, "skip aura phase should carry cooldown DurationObject")
-assert(state.mirrorBacked == true, "cooldown phase should preserve mirror backing")
-assert(state.auraActive == true, "cooldown phase should preserve active aura facts")
-assert(state.isRealCooldownMode == true, "cooldown phase should publish real cooldown mode")
-assert(state.hasRenderableCooldown == true, "cooldown phase should report renderable swipe state")
-
-state = resolve({
-    entry = cooldownEntry(50003),
-    runtimeSpellID = 50003,
-    mirrorCooldownID = 50003,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "cooldown", "mirror cooldown should stay in cooldown mode during live GCD")
-assert(state.isOnCooldown == true,
-    "live isOnGCD must not clear an active mirror-backed cooldown DurationObject")
-
-state = resolve({
-    entry = {
-        type = "spell",
-        kind = "cooldown",
-        id = 50004,
-        spellID = 50004,
-        viewerType = "essential",
-        hasCharges = true,
-    },
-    runtimeSpellID = 50004,
-    mirrorCooldownID = 50004,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
--- After the mode-collapse refactor, charge spells with a rolling
--- recharge are classified as mode=="cooldown"; the icon renderer is
--- responsible for charge-aware saturation via its own chargesRemaining
--- query (Task 8). The hasCharges / hasChargesRemaining / rechargeActive
--- assertions that used to live here have been dropped because those
--- flags are no longer produced by the resolver.
-assert(state.mode == "cooldown", "mirror charge spell with recharge rolling should resolve as cooldown")
-assert(state.mirrorBacked == true, "mirror charge should preserve mirror backing")
-assert(state.durObj == chargeDur, "mirror charge should carry the recharge DurationObject")
-assert(state.isOnCooldown == true, "mirror-backed recharge should mark the spell on cooldown")
-
-state = resolve({
-    entry = {
-        type = "spell",
-        kind = "cooldown",
-        id = 50005,
-        spellID = 50005,
-        viewerType = "essential",
-        hasCharges = true,
-    },
-    runtimeSpellID = 50005,
-    mirrorCooldownID = 50005,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "cooldown", "zero-count mirror charge should resolve as cooldown")
-assert(state.isOnCooldown == true, "active recharge should mark the spell on cooldown")
-assert(state.durObj == chargeDur, "zero-count mirror charge should carry the recharge DurationObject")
-
-state = resolve({
-    entry = cooldownEntry(50006),
-    runtimeSpellID = 50006,
-    mirrorCooldownID = 50006,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "inactive", "clean live isActive=false should still reject a stale mirror cooldown")
-assert(state.isOnCooldown == false, "stale mirror rejection should clear cooldown activity")
-
-state = resolve({
-    entry = {
-        type = "spell",
-        kind = "cooldown",
-        id = 50007,
-        spellID = 50007,
-        viewerType = "essential",
-        hasCharges = true,
-    },
-    runtimeSpellID = 50007,
-    mirrorCooldownID = 50007,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "cooldown", "packed mirror charge count should resolve as cooldown")
-assert(state.isOnCooldown == true,
-    "active mirror-backed recharge should mark the spell on cooldown")
-assert(state.durObj == chargeDur,
-    "packed mirror charge count should carry the recharge DurationObject")
-
-state = resolve({
-    entry = cooldownEntry(50008),
-    runtimeSpellID = 50008,
-    mirrorCooldownID = 50008,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "inactive", "live isActive=false should reject a stale spell-cooldown mirror")
-assert(state.isOnCooldown == false,
-    "stale spell-cooldown mirror rejection should clear cooldown activity")
-
-state = resolve({
-    entry = {
-        type = "spell",
-        kind = "cooldown",
-        id = 50009,
-        spellID = 50009,
-        viewerType = "essential",
-        hasCharges = true,
-    },
-    runtimeSpellID = 50009,
-    mirrorCooldownID = 50009,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "cooldown", "hidden mirror charge should resolve as cooldown while recharge is active")
-assert(state.durObj == chargeDur, "active recharge should carry the recharge DurationObject")
-assert(state.isOnCooldown == true,
-    "active mirror-backed recharge should mark the spell on cooldown")
-
-state = resolve({
-    entry = {
-        type = "spell",
-        kind = "cooldown",
-        id = 50010,
-        spellID = 50010,
-        viewerType = "essential",
-        hasCharges = true,
-    },
-    runtimeSpellID = 50010,
-    mirrorCooldownID = 50010,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "inactive", "live charge-active=false should reject a stale hidden charge mirror")
-assert(state.isOnCooldown == false, "stale hidden charge mirror should not desaturate")
-
-state = resolve({
-    entry = {
-        type = "spell",
-        kind = "cooldown",
-        id = 50011,
-        spellID = 50011,
-        viewerType = "essential",
-        hasCharges = true,
-    },
-    runtimeSpellID = 50011,
-    mirrorCooldownID = 50011,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "cooldown",
-    "hidden charge mirror with active cooldown should resolve as cooldown")
-assert(state.durObj == chargeDur,
-    "hidden charge mirror should bind the recharge DurationObject")
-assert(state.isOnCooldown == true,
-    "active cooldown info should mark the spell on cooldown")
-
-state = resolve({
-    entry = {
-        type = "spell",
-        kind = "cooldown",
-        id = 50012,
-        spellID = 50012,
-        viewerType = "essential",
-        hasCharges = true,
-    },
-    runtimeSpellID = 50012,
-    mirrorCooldownID = 50012,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
--- After mode-collapse: an active cdInfo with isOnGCD=true classifies as
--- gcd-only (the old charge-mode demotion to inactive when charges remain
--- is gone — that logic was part of ApplyMirrorChargeActivityState).
-assert(state.mode == "gcd-only",
-    "active cdInfo with isOnGCD=true on a charge spell should resolve as gcd-only")
-assert(state.isOnCooldown == false,
-    "gcd-only state should not mark the spell on cooldown")
-
-state = resolve({
-    entry = {
-        type = "spell",
-        kind = "cooldown",
-        id = 50013,
-        spellID = 50013,
-        viewerType = "essential",
-        hasCharges = true,
-    },
-    runtimeSpellID = 50013,
-    mirrorCooldownID = 50013,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "cooldown", "opaque-count mirror charge with active recharge should resolve as cooldown")
-assert(state.durObj == chargeDur, "opaque-count mirror charge should carry the recharge DurationObject")
-assert(state.isOnCooldown == true, "active recharge should mark the spell on cooldown")
-
-state = resolve({
     entry = {
         type = "spell",
         kind = "cooldown",
@@ -1001,7 +537,6 @@ assert(state.mode == "cooldown", "live recharge should resolve as cooldown")
 assert(state.active == true, "live recharge should be active")
 assert(state.durObj == chargeDur, "live recharge should carry the recharge DurationObject")
 assert(state.sourceID == 60001, "non-mirror live cooldown source should be the spellID")
-assert(state.mirrorBacked == nil, "live recharge without mirror should not be mirror-backed")
 assert(state.isRealCooldownMode == true, "cooldown mode should publish real cooldown mode")
 assert(state.hasDurationObject == true, "cooldown mode should report its DurationObject")
 
@@ -1131,39 +666,6 @@ assert(state.durObj == chargeDur,
 assert(state.sourceID == 60011,
     "live recharge during a GCD should source the runtime spellID, got " .. tostring(state.sourceID))
 
--- DK Death Charge reference case: a multi-charge spell whose cooldown lane
--- reports isActive=false (the spell is castable from a remaining charge)
--- while a recharge is rolling on the charges API. The resolver must still
--- classify as mode=cooldown and bind the charge-duration DurationObject so
--- the recharge swipe is drawn. The previous 4-mode contract dropped this
--- and produced mode=inactive — visibly leaving Death Charge's icon with
--- no swipe between the in-use aura ending and the next charge fully
--- regenerating.
-state = resolve({
-    entry = {
-        type = "spell",
-        kind = "cooldown",
-        id = 50014,
-        spellID = 50014,
-        viewerType = "essential",
-        hasCharges = true,
-    },
-    runtimeSpellID = 50014,
-    mirrorCooldownID = 50014,
-    mirrorCategory = "essential",
-    containerKey = "essential",
-    useBuffSwipe = false,
-})
-
-assert(state.mode == "cooldown",
-    "mirror charge with cdInfo.isActive=false but chargeInfo.isActive=true should resolve as cooldown")
-assert(state.mirrorBacked == true,
-    "Death-Charge-shaped mirror should preserve mirror backing")
-assert(state.durObj == chargeDur,
-    "Death-Charge-shaped mirror should bind the charge recharge DurationObject")
-assert(state.isOnCooldown == true,
-    "active charge recharge with cd.isActive=false should still mark the spell on cooldown")
-
 state = resolve({
     entry = {
         type = "spell",
@@ -1184,8 +686,6 @@ assert(state.durObj == chargeDur,
     "non-mirror Death-Charge-shaped recharge should bind the charge-duration DurationObject")
 assert(state.isOnCooldown == true,
     "non-mirror active charge recharge should mark the spell on cooldown")
-assert(state.mirrorBacked == nil,
-    "live charge recharge without a mirror should not be mirror-backed")
 
 -- isOnGCD is read directly off cdInfo (NeverSecret). 70001 reports
 -- isActive=true / isOnGCD=true and has no real cooldown, so it must classify
@@ -1641,7 +1141,6 @@ state = resolve({
 assert(state.mode == "inactive", "missing runtime facts should resolve inactive")
 assert(state.active == false, "inactive state should not be active")
 assert(state.durObj == nil, "inactive state should not carry a DurationObject")
-assert(state.mirrorBacked == nil, "inactive state should not be mirror-backed")
 assert(state.hasDurationObject == false, "inactive state should not report a DurationObject")
 assert(state.hasRenderableCooldown == false, "inactive state should not report renderable swipe state")
 
@@ -1668,17 +1167,14 @@ assert(state.active == false and state.isActive == false,
     "contract normalization should clear active aliases for inactive states")
 assert(state.isOnCooldown == false, "contract normalization should coerce cooldown flags")
 
--- Talent-override post-aura case: the Blizzard EssentialCooldownViewer slot
--- carries m.spellID=base (Berserk 50334) and m.overrideSpellID=override
--- (Incarnation: Guardian of Ursoc 102558). C_Spell.GetSpellCooldown only
--- reports isActive=true for the override. Once the aura phase ends and the
--- resolver falls through to the cooldown branch, DeriveMirrorPayloadMode must
--- probe the override or the icon stays "inactive" for the rest of the 3 min cd.
+-- Talent-override post-aura case (Incarnation: Guardian of Ursoc 102558 over
+-- Berserk). The icon's runtime spellID is the override, on which
+-- C_Spell.GetSpellCooldown reports isActive=true. The resolver's live cooldown
+-- lane must surface mode=cooldown and bind the override's DurationObject; the
+-- base's DurObj would reflect an inactive lane and produce no visible swipe.
 state = resolve({
     entry = cooldownEntry(102558),
     runtimeSpellID = 102558,
-    mirrorCooldownID = 2700,
-    mirrorCategory = "essential",
     containerKey = "essential",
     useBuffSwipe = false,
 })

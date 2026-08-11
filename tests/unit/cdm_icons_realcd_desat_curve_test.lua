@@ -11,8 +11,9 @@
 -- C-side every frame: dark while the real CD rolls, bright the instant it hits
 -- zero, with the secret value never read in Lua.
 --
--- The charge carve-out (wasSetFromCharges) and the desaturateOnCooldown gate
--- must still suppress the curve drive and keep the icon saturated.
+-- The charge carve-out (C_Spell.GetSpellCooldown().isActive == false while a
+-- charge is banked) and the desaturateOnCooldown gate must still suppress the
+-- curve drive and keep the icon saturated.
 
 local BuildCooldownStateContext = dofile("tests/helpers/cdm_context_builder_stub.lua")
 
@@ -172,7 +173,6 @@ local ns = {
                 durObj = fullDuration,
                 sourceID = "mirror:8203:" .. THRASH,
                 spellID = THRASH,
-                mirrorBacked = true,
                 isOnCooldown = true,
                 gcdOnly = false,
                 cooldownInfo = {
@@ -183,12 +183,9 @@ local ns = {
                 },
                 cooldownInfoActive = true,
                 cooldownInfoOnGCD = false,
-                mirrorCooldownID = 8203,
-                mirrorCategory = "essential",
                 cooldownID = 8203,
                 category = "essential",
                 state = state,
-                mirrorState = state,
             }
         end,
     },
@@ -227,10 +224,6 @@ local function makeIcon()
             SetVertexColor = noop,
         },
         PandemicGlow = { SetAlpha = noop },
-        _blizzMirrorCooldownID = 8203,
-        _blizzMirrorCategory = "essential",
-        _blizzMirrorStateCooldownID = 8203,
-        _blizzMirrorStateCategory = "essential",
         _spellEntry = {
             id = THRASH,
             spellID = THRASH,
@@ -279,7 +272,6 @@ end
 -- SetDesaturated(true).
 do
     local icon, getAmount = makeIcon()
-    icon._blizzMirrorState = {}
     local applied = ns.CDMIcons.ApplyResolvedCooldown(icon)
     assert(applied == true, "case1: real-CD spell should report an applied cooldown")
     assert(getAmount() == DESAT_FROM_CURVE,
@@ -287,8 +279,11 @@ do
     assert(#curveAddPoints > 0, "case1: a desaturation step curve must be built")
 end
 
--- Case 2: charge carve-out (wasSetFromCharges=true) must suppress the curve
--- drive and keep the icon saturated via SetDesaturated(false).
+-- Case 2: the charge carve-out must suppress the curve drive and keep the icon
+-- saturated via SetDesaturated(false). The live carve-out keeps a multi-charge
+-- spell bright while a charge is banked: C_Spell.GetSpellCooldown().isActive ==
+-- false is the secret-safe "1+ charge available" signal (currentCharges itself
+-- is secret in combat and cannot be compared in Lua).
 do
     curveAddPoints = {}
     local realCdQueried = false
@@ -298,13 +293,26 @@ do
         if spellID == THRASH then return realCdDurObj end
         return nil
     end
+    -- Charge banked: the recharge is rolling but reported as NOT an active
+    -- cooldown (isActive == false), so the spell is still castable.
+    ns.CDMSources.QuerySpellCooldown = function(spellID)
+        if spellID == THRASH then
+            return {
+                startTime = GetTime(),
+                duration = 6,
+                isActive = false,
+                isOnGCD = false,
+            }
+        end
+        return nil
+    end
 
     local icon, getAmount, getBool = makeIcon()
-    icon._blizzMirrorState = { wasSetFromCharges = true }
+    icon._spellEntry.hasCharges = true
     local applied = ns.CDMIcons.ApplyResolvedCooldown(icon)
-    assert(applied == true, "case2: charge mirror should report an applied cooldown")
+    assert(applied == true, "case2: charge spell should report an applied cooldown")
     assert(getAmount() ~= DESAT_FROM_CURVE,
-        "case2: charge carve-out (wasSetFromCharges) must NOT route saturation through the real-CD curve")
+        "case2: charge carve-out must NOT route saturation through the real-CD curve")
     assert(getBool() == false,
         "case2: charge spell with banked charges must stay saturated via SetDesaturated(false)")
     assert(realCdQueried == false,

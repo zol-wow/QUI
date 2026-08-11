@@ -38,8 +38,8 @@ _G.GetInboxItemLink = function(i, j)
 end
 
 local ns = loader.LoadAll(nil, "scan_mail.lua")
-ns.Bags.RequestDrain = function() end
-local Store, ScanMail, Bus = ns.Bags.Store, ns.Bags.ScanMail, ns.Bags.Bus
+ns.Storage.RequestDrain = function() end
+local Store, ScanMail, Bus = ns.Storage.Store, ns.Storage.ScanMail, ns.Storage.Bus
 
 _G.QUI_StorageDB = nil
 Store.Initialize()

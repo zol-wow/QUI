@@ -1,30 +1,6 @@
----------------------------------------------------------------------------
--- Bags search: search-everywhere query core (PURE — store accessors +
--- Details.Build + Search.Compile only; no frames, no events).
--- Everywhere.Query(queryString, opts) walks EVERY cached owner — each
--- character record's bags/bank/mail/equipped/auctions, the warband tabs,
--- every guild's tabs — matches each slot entry against the compiled query,
--- and aggregates matches by itemID:
---   { itemID, name, icon, quality, link, total,
---     owners = { { ownerKey, location, count }, ... } }
--- * owner keys + locations mirror summaries.lua exactly (charKey /
---   Summaries.WARBAND_OWNER / GUILD_PREFIX..guildKey; bags/bank/mail/
---   equipped/auctions/warband/guild) so consumers speak one dialect.
--- * matcher result ~= false includes the entry: nil (a needed field not
---   loaded yet) counts as a match, same as the window grids.
--- * name/icon/quality/link are first-non-nil across placements (auction
---   entries omit quality; pending items have no name yet).
--- * results sort total desc, then name asc with pending (nil) names last,
---   then itemID; owners sort count desc, then ownerKey, then location.
--- * opts.limit (default 100) caps the array; the overflow count lands in
---   result.truncated (nil when complete) — no silent caps, the window
---   renders "+N more".
--- * blank/whitespace queries return empty with result.blank = true: an
---   empty query compiles to match-everything, and "every item on the
---   account" is useless as a result set (and expensive to render).
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage
 
 local Everywhere = {}
 Bags.Everywhere = Everywhere
@@ -40,7 +16,6 @@ local function Accumulate(state, ownerKey, location, entry, details)
     end
     local count = entry.count or 1
     agg.total = agg.total + count
-    -- presentation fields: first non-nil placement wins
     if agg.name == nil and details then agg.name = details.name end
     if agg.icon == nil then agg.icon = entry.icon end
     if agg.quality == nil then agg.quality = entry.quality end
@@ -55,21 +30,18 @@ local function Accumulate(state, ownerKey, location, entry, details)
     owner.count = owner.count + count
 end
 
---- One container ({ size, slots }; phase-1 placeholder {} skipped via the
---- .slots guard, same as summaries' IndexInto).
 local function ScanContainer(state, ownerKey, location, container)
     if not container or not container.slots then return end
     for _, entry in pairs(container.slots) do
         if entry and entry.itemID then
             local details = Bags.Details.Build(entry)
-            if state.matcher(details) ~= false then -- pending (nil) included
+            if state.matcher(details) ~= false then
                 Accumulate(state, ownerKey, location, entry, details)
             end
         end
     end
 end
 
---- A map of containers (bags/bankTabs/warband.tabs/guild.tabs).
 local function ScanContainerMap(state, ownerKey, location, map)
     if not map then return end
     for _, container in pairs(map) do
@@ -81,7 +53,6 @@ local function SortResults(items)
     table.sort(items, function(a, b)
         if a.total ~= b.total then return a.total > b.total end
         if a.name ~= b.name then
-            -- pending (nil) names sort after resolved ones
             if a.name == nil then return false end
             if b.name == nil then return true end
             return a.name < b.name
@@ -98,17 +69,10 @@ local function SortOwners(owners)
     end)
 end
 
---- Where should a click on this aggregated result navigate? Walks the
---- owners breakdown and picks the highest-priority placement a window can
---- actually render: current-char bags > current-char bank > warband (bank
---- window) > any guild > other-char bags > other-char bank. mail/equipped/
---- auctions have no navigable window — pure placements there → nil.
---- → { window = "bags"|"bank"|"guild", ownerKey?, guildKey?, warband? }
---- ownerKey nil = the current character's own view.
 function Everywhere.ResolveTarget(item, currentCharKey)
     local owners = item and item.owners
     if not owners then return nil end
-    local Summaries = Bags.Summaries
+    local Summaries = Storage.Summaries
     local best, bestRank = nil, math.huge
     for _, owner in ipairs(owners) do
         local key, loc = owner.ownerKey, owner.location
@@ -135,8 +99,6 @@ function Everywhere.ResolveTarget(item, currentCharKey)
     return best
 end
 
---- Query the whole cache. → array of aggregated item entries (shape in the
---- header) + result.truncated (overflow count) / result.blank flags.
 function Everywhere.Query(queryString, opts)
     local results = {}
     queryString = (queryString or ""):match("^%s*(.-)%s*$")
@@ -144,7 +106,7 @@ function Everywhere.Query(queryString, opts)
         results.blank = true
         return results
     end
-    local Store, Summaries = Bags.Store, Bags.Summaries
+    local Store, Summaries = Storage.Store, Storage.Summaries
     local state = {
         matcher = Bags.Search.Compile(queryString),
         byItem = {},

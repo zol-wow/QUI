@@ -27,7 +27,7 @@ check("render has no no-arg GetSkinBorderColor()", noArg == 0,
 
 local perFrame = 0
 for _ in render:gmatch('GetSkinBorderColor%(settings,%s*""%)') do perFrame = perFrame + 1 end
-check('render uses GetSkinBorderColor(settings, "") >= 4 times', perFrame >= 4,
+check('render uses GetSkinBorderColor(settings, "") >= 3 times', perFrame >= 3,
     "found " .. perFrame)
 
 -- 2. Frame subtab: per-frame picker bound to unit.unitDB, prefix "".

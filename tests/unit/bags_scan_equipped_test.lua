@@ -24,8 +24,8 @@ _G.GetInventoryItemQuality = function(_, slot) return worn[slot] and worn[slot].
 
 local ns = loader.LoadAll(nil, "scan_equipped.lua")
 local drainRequests = 0
-ns.Bags.RequestDrain = function() drainRequests = drainRequests + 1 end
-local Store, ScanEquipped, Bus = ns.Bags.Store, ns.Bags.ScanEquipped, ns.Bags.Bus
+ns.Storage.RequestDrain = function() drainRequests = drainRequests + 1 end
+local Store, ScanEquipped, Bus = ns.Storage.Store, ns.Storage.ScanEquipped, ns.Storage.Bus
 
 _G.QUI_StorageDB = nil
 Store.Initialize()
@@ -89,7 +89,7 @@ ScanEquipped.MarkDirty(5)
 ScanEquipped.Drain()
 assert(rec.equipped.slots[5].quality == nil, "pending entry persists with nil quality")
 worn[5].quality = 2 -- item data arrives
-ns.Bags.ItemInfo.OnItemDataLoadResult(424242, true)
+ns.Storage.ItemInfo.OnItemDataLoadResult(424242, true)
 assert(drainRequests >= 1, "successful load must request a drain")
 assert(ScanEquipped.Drain() == true, "successful load must re-mark the slot")
 assert(rec.equipped.slots[5].quality == 2, "rescan should pick up the loaded quality")

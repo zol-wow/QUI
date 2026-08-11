@@ -53,6 +53,11 @@ assertContains(
     "debug companion must own the CDM debug surface")
 
 assertContains(
+    "QUI_Debug/QUI_Debug.toc",
+    "ui_smoke.lua",
+    "debug companion must own the UI smoke runner")
+
+assertContains(
     "QUI_Debug/performance.lua",
     'local PRIMARY_ADDON_NAME = "QUI"',
     "performance monitor must still measure the main addon")
@@ -84,8 +89,16 @@ assertContains(
 local initLua = readFile("init.lua")
 local _, debugLoadCallCount = initLua:gsub("self:EnsureDebugToolsLoaded%(%s*%)", "")
 assert(
-    debugLoadCallCount == 1,
-    "debug companion should only be explicitly loaded by the /qui debug startup path")
+    debugLoadCallCount == 2,
+    "debug companion should only be explicitly loaded by debug startup and /qui uitest")
+assertContains(
+    "init.lua",
+    'input:match("^uitest")',
+    "/qui uitest must route through the main slash handler")
+assertContains(
+    "init.lua",
+    "ns.UISmoke.HandleSlash",
+    "/qui uitest must dispatch to the debug companion runner")
 assertAbsentText(
     initLua,
     'input == "debugtools"',

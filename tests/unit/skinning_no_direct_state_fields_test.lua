@@ -16,7 +16,7 @@ local function ReadLines(path)
 end
 
 local function FileList()
-    local cmd = "find QUI_Skinning/skinning -type f -name '*.lua' | sort"
+    local cmd = "find modules/skinning -type f -name '*.lua' | sort"
     local pipe = assert(io.popen(cmd, "r"))
     local files = {}
     for path in pipe:lines() do

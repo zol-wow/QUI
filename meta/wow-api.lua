@@ -126,8 +126,9 @@ function C_ActionBar.FindPetActionButtons(petActionID, ...) end
 function C_ActionBar.FindSpellActionButtons(spellID, ...) end
 --- Force updates some internals for an action button slot.
 ---@param slotID? number
+---@param suppressEvents? boolean
 ---@param ... any
-function C_ActionBar.ForceUpdateAction(slotID, ...) end
+function C_ActionBar.ForceUpdateAction(slotID, suppressEvents, ...) end
 ---@param actionID? number
 ---@param ... any
 ---@return boolean autocastAllowed
@@ -1309,6 +1310,44 @@ function C_AuctionHouse.StartCommoditiesPurchase(itemID, quantity, ...) end
 ---@return boolean supportsCopperValues
 function C_AuctionHouse.SupportsCopperValues(...) end
 
+C_AuraContainerUtil = {}
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessAuraTooltipBackdropOptions(options, ...) end
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessAuraTooltipNineSliceOptions(options, ...) end
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessAuraTooltipTextureSliceOptions(options, ...) end
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessCustomAuraButtonApplicationBarOptions(options, ...) end
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessCustomAuraButtonApplicationCountOptions(options, ...) end
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessCustomAuraButtonDispelTypeTextOptions(options, ...) end
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessCustomAuraButtonDispelTypeTextureOptions(options, ...) end
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessCustomAuraButtonDurationBarOptions(options, ...) end
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessCustomAuraButtonDurationTextOptions(options, ...) end
+
 C_AutoComplete = {}
 ---@param name? string
 ---@param ... any
@@ -1710,9 +1749,24 @@ C_BarberShopInternal = {}
 function C_BarberShopInternal.SetQAMode(qaModeEnabled, ...) end
 
 C_BattleNet = {}
+---@param ... any
+---@return boolean areFriendTagsEnabled
+function C_BattleNet.AreFriendTagsEnabled(...) end
+---@param ... any
+---@return boolean areTitleFriendCustomNamesEnabled
+function C_BattleNet.AreTitleFriendCustomNamesEnabled(...) end
+---@param ... any
+---@return boolean areTitleFriendsEnabled
+function C_BattleNet.AreTitleFriendsEnabled(...) end
 ---@param recentAllyGUID? string
 ---@param ... any
 function C_BattleNet.BNCheckBattleTagInviteToRecentAlly(recentAllyGUID, ...) end
+---@param unit? any
+---@param ... any
+function C_BattleNet.BNCheckTitleFriendInviteToUnit(unit, ...) end
+---@param ... any
+---@return boolean canToggle
+function C_BattleNet.CanToggleHighResTexturesWithoutClientReload(...) end
 ---@param guid? string
 ---@param ... any
 ---@return any accountInfo
@@ -1722,6 +1776,10 @@ function C_BattleNet.GetAccountInfoByGUID(guid, ...) end
 ---@param ... any
 ---@return any accountInfo
 function C_BattleNet.GetAccountInfoByID(id, wowAccountGUID, ...) end
+---@param id? number
+---@param ... any
+---@return string customName
+function C_BattleNet.GetCustomTitleFriendName(id, ...) end
 ---@param friendIndex? number
 ---@param wowAccountGUID? string
 ---@param ... any
@@ -1732,6 +1790,10 @@ function C_BattleNet.GetFriendAccountInfo(friendIndex, wowAccountGUID, ...) end
 ---@param ... any
 ---@return any gameAccountInfo
 function C_BattleNet.GetFriendGameAccountInfo(friendIndex, accountIndex, ...) end
+---@param inviteIndex? number
+---@param ... any
+---@return any inviteInfo
+function C_BattleNet.GetFriendInviteInfo(inviteIndex, ...) end
 ---@param friendIndex? number
 ---@param ... any
 ---@return number numGameAccounts
@@ -1749,12 +1811,27 @@ function C_BattleNet.InstallHighResTextures(...) end
 ---@param gameAccountID? number
 ---@param ... any
 function C_BattleNet.InviteFriend(gameAccountID, ...) end
+---@param ... any
+---@return boolean isBattleNetFriendsListEnabled
+function C_BattleNet.IsBattleNetFriendsListEnabled(...) end
+---@param ... any
+---@return boolean isBattleNetFriendsListSupported
+function C_BattleNet.IsBattleNetFriendsListSupported(...) end
+---@param searchInfo? any
+---@param ... any
+---@return table friendsData
+function C_BattleNet.SearchFriends(searchInfo, ...) end
 ---@param gameAccountID? number
 ---@param prefix? any
 ---@param data? any
 ---@param ... any
 ---@return any result
 function C_BattleNet.SendGameData(gameAccountID, prefix, data, ...) end
+---@param name? string
+---@param ... any
+function C_BattleNet.SendTitleFriendInviteByName(name, ...) end
+---@param ... any
+function C_BattleNet.SendVerifiedBattleNetFriendInvite(...) end
 ---@param bnetAccountID? number
 ---@param text? any
 ---@param ... any
@@ -1763,13 +1840,24 @@ function C_BattleNet.SendWhisper(bnetAccountID, text, ...) end
 ---@param isAFK? boolean
 ---@param ... any
 function C_BattleNet.SetAFK(isAFK, ...) end
+---@param isAppearOffline? boolean
+---@param ... any
+function C_BattleNet.SetAppearOffline(isAppearOffline, ...) end
 ---@param text? string
 ---@param ... any
 ---@return boolean success
 function C_BattleNet.SetCustomMessage(text, ...) end
+---@param id? number
+---@param customName? string
+---@param ... any
+function C_BattleNet.SetCustomTitleFriendName(id, customName, ...) end
 ---@param isDND? boolean
 ---@param ... any
 function C_BattleNet.SetDND(isDND, ...) end
+---@param id? number
+---@param friendTags? table
+---@param ... any
+function C_BattleNet.SetFriendTags(id, friendTags, ...) end
 
 C_BehavioralMessaging = {}
 ---@param dbId? any
@@ -1778,7 +1866,14 @@ C_BehavioralMessaging = {}
 ---@param ... any
 function C_BehavioralMessaging.SendNotificationReceipt(dbId, openTimeSeconds, readTimeSeconds, ...) end
 
+C_Browser = {}
+---@param ... any
+function C_Browser.CloseFullscreenBrowser(...) end
+
 C_CVar = {}
+---@param ... any
+---@return boolean loaded
+function C_CVar.AreCVarsLoaded(...) end
 ---@param name? string
 ---@param ... any
 ---@return string value
@@ -2812,6 +2907,12 @@ function C_ClickBindings.SetProfileByInfo(infoVec, ...) end
 ---@param ... any
 function C_ClickBindings.SetTutorialShown(...) end
 
+C_ClientScene = {}
+---@param desiredSceneType? any
+---@param ... any
+---@return boolean isPlaying
+function C_ClientScene.IsSceneTypeActive(desiredSceneType, ...) end
+
 C_Club = {}
 ---@param clubId? any
 ---@param ... any
@@ -3151,6 +3252,10 @@ function C_Club.SendInvitation(clubId, memberId, ...) end
 ---@param message? string
 ---@param ... any
 function C_Club.SendMessage(clubId, streamId, message, ...) end
+---@param guildClubId? any
+---@param memberId? any
+---@param ... any
+function C_Club.SendTitleFriendRequest(guildClubId, memberId, ...) end
 --- Only one stream can be set for auto-advance at a time. Focused streams will have their view times advanced automatically.
 ---@param clubId? any
 ---@param streamId? any
@@ -3167,7 +3272,7 @@ function C_Club.SetAvatarTexture(texture, avatarId, clubType, ...) end
 ---@param note? string
 ---@param ... any
 function C_Club.SetClubMemberNote(clubId, memberId, note, ...) end
---- You can only be subscribed to 0 or 1 clubs for presence.  Subscribing to a new club automatically unsuscribes you to existing subscription.
+--- You can only be subscribed to 0 or 1 clubs for presence. Subscribing to a new club automatically unsuscribes you to existing subscription.
 ---@param clubId? any
 ---@param ... any
 function C_Club.SetClubPresenceSubscription(clubId, ...) end
@@ -3558,6 +3663,7 @@ function C_CombatAudioAlert.SetThrottle(throttleType, newVal, ...) end
 ---@param category? any
 ---@param allowOverlap? boolean
 ---@param ... any
+---@return number utteranceID
 function C_CombatAudioAlert.SpeakText(text, category, allowOverlap, ...) end
 
 C_CombatLog = {}
@@ -4631,6 +4737,9 @@ function C_CooldownViewer.GetCooldownViewerCategorySet(category, allowUnlearned,
 ---@return any cooldownInfo
 function C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID, ...) end
 ---@param ... any
+---@return table groupBuffItems
+function C_CooldownViewer.GetGroupBuffItems(...) end
+---@param ... any
 ---@return string data
 function C_CooldownViewer.GetLayoutData(...) end
 ---@param cooldownID? number
@@ -5274,6 +5383,14 @@ function C_DelvesUI.GetDelvesMinRequiredLevel(...) end
 function C_DelvesUI.GetFactionForCompanion(companionID, ...) end
 ---@param companionID? number
 ---@param ... any
+---@return number nodeID
+function C_DelvesUI.GetFlavorNodeForCompanion(companionID, ...) end
+---@param companionID? number
+---@param ... any
+---@return string name
+function C_DelvesUI.GetFlavorNodeNameForCompanion(companionID, ...) end
+---@param companionID? number
+---@param ... any
 ---@return string text
 function C_DelvesUI.GetLockedTextForCompanion(companionID, ...) end
 ---@param companionID? number
@@ -5317,6 +5434,12 @@ function C_DelvesUI.GetWorldTierDifficultyForActivePlayer(...) end
 ---@param ... any
 ---@return boolean result
 function C_DelvesUI.HasActiveDelve(...) end
+---@param ... any
+---@return boolean result
+function C_DelvesUI.HasActiveLFGLair(...) end
+---@param ... any
+---@return boolean result
+function C_DelvesUI.HasActiveLair(...) end
 ---@param tier? number
 ---@param ... any
 ---@return boolean isEnabled
@@ -5326,6 +5449,9 @@ function C_DelvesUI.IsDelveEntranceTierEnabled(tier, ...) end
 ---@param ... any
 ---@return boolean result
 function C_DelvesUI.IsEligibleForActiveDelveRewards(unit, ...) end
+---@param ... any
+---@return boolean result
+function C_DelvesUI.IsInLair(...) end
 ---@param traitTreeID? number
 ---@param ... any
 ---@return boolean isForCompanion
@@ -5341,6 +5467,70 @@ function C_DelvesUI.SaveSeenCuriosBySlotType(slotType, ownedCurioNodeIDs, ...) e
 ---@param tier? number
 ---@param ... any
 function C_DelvesUI.SelectDelveEntranceTier(tier, ...) end
+
+C_Discord = {}
+---@param ... any
+function C_Discord.Authorize(...) end
+---@param serverIndex? number
+---@param channelIndex? number
+---@param ... any
+---@return string name
+function C_Discord.GetDiscordChannelName(serverIndex, channelIndex, ...) end
+---@param ... any
+---@return any userID
+function C_Discord.GetDiscordUserID(...) end
+---@param ... any
+---@return any type
+function C_Discord.GetDisplayNameType(...) end
+---@param ... any
+---@return boolean isFullyLinked
+---@return string linkedChannelName
+---@return string linkedServerName
+function C_Discord.GetGuildLinkStatus(...) end
+---@param serverIndex? number
+---@param ... any
+---@return number count
+---@return boolean valid
+function C_Discord.GetNumDiscordChannels(serverIndex, ...) end
+---@param ... any
+---@return number count
+function C_Discord.GetNumDiscordServers(...) end
+---@param index? number
+---@param ... any
+function C_Discord.GetServerLinkableChannels(index, ...) end
+---@param index? number
+---@param ... any
+---@return string name
+function C_Discord.GetServerName(index, ...) end
+---@param serverIndex? number
+---@param channelIndex? number
+---@param ... any
+function C_Discord.GuildLink(serverIndex, channelIndex, ...) end
+---@param ... any
+function C_Discord.GuildUnlink(...) end
+---@param ... any
+---@return boolean enabled
+function C_Discord.IsEnabled(...) end
+---@param ... any
+---@return boolean isLinked
+function C_Discord.IsGuildChannelLinked(...) end
+---@param setting? any
+---@param ... any
+---@return boolean isSet
+function C_Discord.IsGuildSettingSet(setting, ...) end
+---@param ... any
+---@return boolean hasOAuth
+function C_Discord.IsUserOAuthed(...) end
+---@param ... any
+function C_Discord.RefreshAuth(...) end
+---@param setting? any
+---@param set? boolean
+---@param ... any
+function C_Discord.SetGuildSetting(setting, set, ...) end
+---@param ... any
+function C_Discord.UpdateDiscordServers(...) end
+---@param ... any
+function C_Discord.UpdateGuildLobby(...) end
 
 C_DurationUtil = {}
 --- Creates a zero duration container that can represent a time span.
@@ -5368,18 +5558,18 @@ function C_DyeColor.GetAllDyeColors(ownedColorsOnly, ...) end
 ---@param ... any
 ---@return any dyeColorCategoryInfo
 function C_DyeColor.GetDyeColorCategoryInfo(dyeColorCategoryID, ...) end
----@param itemLinkOrID? any
----@param ... any
----@return number dyeColorID
-function C_DyeColor.GetDyeColorForItem(itemLinkOrID, ...) end
----@param itemLocation? any
----@param ... any
----@return number dyeColorID
-function C_DyeColor.GetDyeColorForItemLocation(itemLocation, ...) end
 ---@param dyeColorID? number
 ---@param ... any
 ---@return any dyeColorInfo
 function C_DyeColor.GetDyeColorInfo(dyeColorID, ...) end
+---@param itemLinkOrID? any
+---@param ... any
+---@return table dyeColorIDs
+function C_DyeColor.GetDyeColorsForItem(itemLinkOrID, ...) end
+---@param itemLocation? any
+---@param ... any
+---@return table dyeColorIDs
+function C_DyeColor.GetDyeColorsForItemLocation(itemLocation, ...) end
 ---@param dyeColorCategory? number
 ---@param ownedColorsOnly? boolean
 ---@param ... any
@@ -5527,6 +5717,10 @@ function C_EncounterEvents.SetEventColor(encounterEventID, trigger, color, ...) 
 function C_EncounterEvents.SetEventSound(encounterEventID, trigger, sound, ...) end
 
 C_EncounterJournal = {}
+---@param difficultyID? number
+---@param ... any
+---@return number baseDifficultyID
+function C_EncounterJournal.GetBaseDifficultyID(difficultyID, ...) end
 ---@param uiMapID? number
 ---@param ... any
 ---@return table dungeonEntrances
@@ -5556,7 +5750,7 @@ function C_EncounterJournal.GetLootInfo(id, ...) end
 ---@param ... any
 ---@return any itemInfo
 function C_EncounterJournal.GetLootInfoByIndex(index, encounterIndex, ...) end
---- Represents the icon indices for this EJ section.  An icon index can be used to arrive at texture coordinates for specific encounter types, e.g.: EncounterJournal_SetFlagIcon
+--- Represents the icon indices for this EJ section. An icon index can be used to arrive at texture coordinates for specific encounter types, e.g.: EncounterJournal_SetFlagIcon
 ---@param sectionID? number
 ---@param ... any
 ---@return table iconFlags
@@ -5570,6 +5764,10 @@ function C_EncounterJournal.GetSectionInfo(sectionID, ...) end
 function C_EncounterJournal.GetSlotFilter(...) end
 ---@param ... any
 function C_EncounterJournal.InitalizeSelectedTier(...) end
+---@param difficultyID? number
+---@param ... any
+---@return boolean hasDifficultyID
+function C_EncounterJournal.InstanceHasDifficultyID(difficultyID, ...) end
 ---@param instanceID? number
 ---@param ... any
 ---@return boolean hasLoot
@@ -6064,6 +6262,9 @@ function C_FriendList.IsIgnored(token, ...) end
 ---@param ... any
 ---@return boolean isIgnored
 function C_FriendList.IsIgnoredByGuid(guid, ...) end
+---@param ... any
+---@return boolean isLegacyFriendSystemEnabled
+function C_FriendList.IsLegacyFriendSystemEnabled(...) end
 ---@param token? string
 ---@param ... any
 ---@return boolean isIgnored
@@ -6568,6 +6769,9 @@ function C_GuildInfo.GuildRoster(...) end
 ---@param ... any
 function C_GuildInfo.Invite(name, ...) end
 ---@param ... any
+---@return boolean separateStream
+function C_GuildInfo.IsDiscordStreamSeparate(...) end
+---@param ... any
 ---@return boolean enabled
 function C_GuildInfo.IsEncounterGuildNewsEnabled(...) end
 ---@param ... any
@@ -6681,6 +6885,9 @@ function C_HouseEditor.GetHouseEditorAvailability(...) end
 ---@param ... any
 ---@return any result
 function C_HouseEditor.GetHouseEditorModeAvailability(editMode, ...) end
+---@param ... any
+---@return any playerType
+function C_HouseEditor.GetHouseEditorPlayerType(...) end
 --- Returns whether the House Editor is active, in any mode
 ---@param ... any
 ---@return boolean isEditorActive
@@ -6846,6 +7053,9 @@ function C_Housing.GetVisitCooldownInfo(...) end
 function C_Housing.HasHousingExpansionAccess(...) end
 ---@param ... any
 function C_Housing.HouseFinderDeclineNeighborhoodInvitation(...) end
+---@param neighborhoodGuid? string
+---@param ... any
+function C_Housing.HouseFinderIgnoreNeighborhood(neighborhoodGuid, ...) end
 ---@param ... any
 function C_Housing.HouseFinderRequestNeighborhoods(...) end
 ---@param neighborhoodGuid? string
@@ -6871,8 +7081,14 @@ function C_Housing.IsInsideHouse(...) end
 ---@return boolean isInside
 function C_Housing.IsInsideHouseOrPlot(...) end
 ---@param ... any
----@return boolean isInsideOwnHouse
-function C_Housing.IsInsideOwnHouse(...) end
+---@return boolean isInsideOwnedHouse
+function C_Housing.IsInsideOwnedHouse(...) end
+---@param ... any
+---@return boolean isInsideOwnedHouseOrPlot
+function C_Housing.IsInsideOwnedHouseOrPlot(...) end
+---@param ... any
+---@return boolean isInside
+function C_Housing.IsInsideOwnedPlot(...) end
 ---@param ... any
 ---@return boolean isInside
 function C_Housing.IsInsidePlot(...) end
@@ -6908,6 +7124,10 @@ function C_Housing.RequestCurrentHouseInfo(...) end
 function C_Housing.RequestHouseFinderNeighborhoodData(neighborhoodGuid, neighborhoodName, ...) end
 ---@param ... any
 function C_Housing.RequestPlayerCharacterList(...) end
+--- Resets all contents of the house, based on the provided scope; API restricted to ensure this can't be triggered without the player getting ample notice and confirmation
+---@param resetScope? any
+---@param ... any
+function C_Housing.ResetHouse(resetScope, ...) end
 ---@param ... any
 function C_Housing.ReturnAfterVisitingHouse(...) end
 ---@param playerGUID? string
@@ -7023,6 +7243,92 @@ function C_HousingBasicMode.StartPlacingNewDecor(catalogEntryVariantID, ...) end
 ---@param bundleCatalogShopProductID? number
 ---@param ... any
 function C_HousingBasicMode.StartPlacingPreviewDecor(decorRecordID, bundleCatalogShopProductID, ...) end
+
+C_HousingBlueprint = {}
+--- Returns true if the specific room is allowed to be exported
+---@param roomGUID? string
+---@param ... any
+---@return boolean canExport
+function C_HousingBlueprint.CanExportRoom(roomGUID, ...) end
+--- Returns true if the player's current location is a valid place to attempt to export a specific kind of blueprint
+---@param type? any
+---@param ... any
+---@return boolean locationValid
+function C_HousingBlueprint.CanExportTypeFromCurrentLocation(type, ...) end
+--- Returns true if the player's current location is a valid place to attempt to import a specific kind of blueprint
+---@param type? any
+---@param ... any
+---@return boolean locationValid
+function C_HousingBlueprint.CanImportTypeFromCurrentLocation(type, ...) end
+--- Delete the specified owned blueprint; Listen for HousingBlueprintDeleteSuccess and HousingBlueprintDeleteFailure for results
+---@param blueprintID? any
+---@param ... any
+function C_HousingBlueprint.DeleteBlueprint(blueprintID, ...) end
+--- Saves out a new Blueprint of the specified type, using the specified name, if available, based on where the player is currently standing (see GetExportAvailability); Listen for HousingBlueprintExportSuccess and HousingBlueprintExportFailure for results
+---@param type? any
+---@param name? string
+---@param ... any
+function C_HousingBlueprint.ExportBlueprint(type, name, ...) end
+--- Saves out a new Blueprint of the specified room, using the specified name, if available (see GetExportAvailability); Listen for HousingBlueprintExportSuccess and HousingBlueprintExportFailure for results
+---@param name? string
+---@param roomGUID? string
+---@param ... any
+function C_HousingBlueprint.ExportRoomBlueprint(name, roomGUID, ...) end
+---@param blueprintShareCode? string
+---@param ... any
+---@return string hyperLink
+function C_HousingBlueprint.GetBlueprintHyperlink(blueprintShareCode, ...) end
+--- Returns what type of Blueprint the specified code is for; Will return HousingBlueprintType.None if code is invalid; Does NOT check whether the shareCode actually matches up to a real valid Blueprint
+---@param shareCode? string
+---@param ... any
+---@return any type
+function C_HousingBlueprint.GetBlueprintTypeForCode(shareCode, ...) end
+--- Returns success if the player can currently export Blueprints, or a specific error type (ex: invalid location or permissions)
+---@param ... any
+---@return any availability
+function C_HousingBlueprint.GetExportAvailability(...) end
+--- Returns success if Blueprints as a feature is currently enabled and available
+---@param ... any
+---@return any blueprintsAvailability
+function C_HousingBlueprint.GetFeatureAvailability(...) end
+--- Returns success if the player can currently import Blueprints, or a specific error type (ex: invalid location or permissions)
+---@param ... any
+---@return any availability
+function C_HousingBlueprint.GetImportAvailability(...) end
+--- Imports the specified blueprint, if available (see GetImportAvailability and CanImportTypeFromCurrentLocation); Listen for HousingBlueprintImportSuccess and HousingBlueprintImportFailure for results
+---@param shareCode? string
+---@param ... any
+function C_HousingBlueprint.ImportBlueprint(shareCode, ...) end
+--- Returns true if the string matches the valid expected format for a Blueprint Share Code; Does NOT check whether the shareCode actually matches up to a real valid Blueprint
+---@param shareCode? string
+---@param ... any
+---@return boolean isValid
+function C_HousingBlueprint.IsShareCodeValid(shareCode, ...) end
+--- Rename the specified owned blueprint to the specified name; Listen for HousingBlueprintRenameSuccess and HousingBlueprintRenameFailure for results
+---@param blueprintID? any
+---@param newName? string
+---@param ... any
+function C_HousingBlueprint.RenameBlueprint(blueprintID, newName, ...) end
+--- Request the full list of all of the player's Blueprints; This is async, either the HOUSING_BLUEPRINT_COLLECTION_RECEIVED or HOUSING_BLUEPRINT_COLLECTION_FAILURE event will eventually be fired as a result
+---@param ... any
+function C_HousingBlueprint.RequestBlueprintCollection(...) end
+--- Request the full contents of a specific Blueprint, in context of the current owned plot or house (if any); This is async as content info includes dynamic data from the server, either the HOUSING_BLUEPRINT_CONTENTS_RECEIVED or HOUSING_BLUEPRINT_CONTENTS_FAILURE event will eventually be fired as a result; Calling this again before a prior request has finished will cancel the prior request
+---@param shareCode? string
+---@param ... any
+function C_HousingBlueprint.RequestBlueprintContents(shareCode, ...) end
+--- Request the full contents of a specific Blueprint, either in context of a specific owned House or plot, or explicitly outside of any specific context; Typically used to update missing requirement info from previously-retrieved contents; See RequestBlueprintContents for other notes
+---@param shareCode? string
+---@param optionalHouseGUID? string
+---@param ... any
+function C_HousingBlueprint.RequestBlueprintContentsForContext(shareCode, optionalHouseGUID, ...) end
+--- Start the process of importing a Room Blueprint. This will lead to Layout Mode being opened, so the player can then select an available door to attach the room to
+---@param shareCode? string
+---@param ... any
+function C_HousingBlueprint.StartImportRoomBlueprint(shareCode, ...) end
+---@param inputShareCode? string
+---@param ... any
+---@return string updatedShareCode
+function C_HousingBlueprint.UpdateBlueprintStringFromInput(inputShareCode, ...) end
 
 C_HousingCatalog = {}
 --- Creates a new instance of a HousingCatalog searcher; This can be used to asynchronously search/filter the HousingCatalog without affecting/being restricted by the filter state of other Housing Catalog UI displays
@@ -7172,6 +7478,11 @@ C_HousingCustomizeMode = {}
 ---@param dyeColorID? number
 ---@param ... any
 function C_HousingCustomizeMode.ApplyDyeToSelectedDecor(dyeSlotID, dyeColorID, ...) end
+--- If a decor is selected that supports pets, applies a specific petID to be shown on that decor
+---@param petID? string
+---@param petBehavior? any
+---@param ... any
+function C_HousingCustomizeMode.ApplyPetToSelectedDecor(petID, petBehavior, ...) end
 --- Attempt to apply a specific theme set (aka style) to all applicable room components in the current room
 ---@param themeSetID? number
 ---@param ... any
@@ -7237,6 +7548,11 @@ function C_HousingCustomizeMode.GetRecentlyUsedWallpapers(...) end
 ---@param ... any
 ---@return any info
 function C_HousingCustomizeMode.GetSelectedDecorInfo(...) end
+--- If a decor is selected that supports pets, gets petID and behavior type from decor
+---@param ... any
+---@return string petID
+---@return any petBehavior
+function C_HousingCustomizeMode.GetSelectedDecorPetInfo(...) end
 --- Returns info for the currently selected room component, if there is one
 ---@param ... any
 ---@return any info
@@ -7298,6 +7614,11 @@ function C_HousingCustomizeMode.SetRoomComponentCeilingType(roomGUID, componentI
 function C_HousingCustomizeMode.SetRoomComponentDoorType(roomGUID, componentID, newDoortype, ...) end
 
 C_HousingDecor = {}
+--- Returns true if any decor objects are placed in a given room
+---@param roomGUID? string
+---@param ... any
+---@return boolean isPlaced
+function C_HousingDecor.AnyDecorPlacedInRoom(roomGUID, ...) end
 --- Cancels all in-progress editing of the selected target, which will reset any unsaved changes and deselect the active target
 ---@param ... any
 function C_HousingDecor.CancelActiveEditing(...) end
@@ -7308,10 +7629,29 @@ function C_HousingDecor.CommitDecorMovement(...) end
 function C_HousingDecor.EnterPreviewState(...) end
 ---@param ... any
 function C_HousingDecor.ExitPreviewState(...) end
+--- Returns the interior and exterior max decor placement budgets for the current owned house interior or plot; Can be increased via house level
+---@param ... any
+---@return table interiorMaxBudgets
+---@return table exteriorMaxBudgets
+function C_HousingDecor.GetAllMaxPlacementBudgets(...) end
 --- Placed Decor List APIs currently restricted due to being potentially very expensive operations, may be reworked & opened up in the future
 ---@param ... any
 ---@return table placedDecor
 function C_HousingDecor.GetAllPlacedDecor(...) end
+--- Returns how much of the interior and exterior placement budgets for the current owned house interior or plot's decor budget have been spent
+---@param ... any
+---@return table interiorSpentBudgets
+---@return table exteriorSpentBudgets
+function C_HousingDecor.GetAllSpentPlacementBudgets(...) end
+--- Returns pet name for the placed decor instance associated with the passed Decor GUID, if there is one
+---@param decorGUID? string
+---@param ... any
+---@return string name
+function C_HousingDecor.GetDecorAssignedPetName(decorGUID, ...) end
+---@param decorID? number
+---@param ... any
+---@return boolean canAttachPet
+function C_HousingDecor.GetDecorCanAttachPet(decorID, ...) end
 ---@param decorID? number
 ---@param ... any
 ---@return string hyperLink
@@ -7333,7 +7673,11 @@ function C_HousingDecor.GetDecorName(decorID, ...) end
 ---@param ... any
 ---@return any info
 function C_HousingDecor.GetHoveredDecorInfo(...) end
---- Returns the max decor placement budget for the current house interior or plot; Can be increased via house level
+--- Returns the max pet decor placement budget for the current owned house interior or plot
+---@param ... any
+---@return number maxBudget
+function C_HousingDecor.GetMaxPetPlacementBudget(...) end
+--- Returns the max decor placement budget for the current owned house interior or plot; Can be increased via house level
 ---@param ... any
 ---@return number maxBudget
 function C_HousingDecor.GetMaxPlacementBudget(...) end
@@ -7348,7 +7692,11 @@ function C_HousingDecor.GetNumPreviewDecor(...) end
 ---@param ... any
 ---@return any info
 function C_HousingDecor.GetSelectedDecorInfo(...) end
---- Returns how much of the current house interior or plot's decor placement budget has been spent; Different kinds of decor take up different budget amounts, so this value isn't an individual decor count, see GetNumDecorPlaced for that
+--- Returns how much of the current owned house interior or plot's pet decor placement budget has been spent
+---@param ... any
+---@return number totalCost
+function C_HousingDecor.GetSpentPetPlacementBudget(...) end
+--- Returns how much of the current owned house interior or plot's decor placement budget has been spent; Different kinds of decor take up different budget amounts, so this value isn't an individual decor count, see GetNumDecorPlaced for that
 ---@param ... any
 ---@return number totalCost
 function C_HousingDecor.GetSpentPlacementBudget(...) end
@@ -7511,15 +7859,29 @@ function C_HousingLayout.DeselectFloorplan(...) end
 ---@param ... any
 function C_HousingLayout.DeselectRoomOrDoor(...) end
 ---@param ... any
+---@return number floor
+function C_HousingLayout.GetBaseRoomFloor(...) end
+---@param ... any
+---@return number highestFloorIndex
+function C_HousingLayout.GetHighestOccupiedFloorIndex(...) end
+---@param ... any
+---@return number lowestFloorIndex
+function C_HousingLayout.GetLowestOccupiedFloorIndex(...) end
+---@param ... any
 ---@return number numRooms
 function C_HousingLayout.GetNumActiveRooms(...) end
----@param ... any
----@return number numFloors
-function C_HousingLayout.GetNumFloors(...) end
---- Returns the max room placement budget for the current house interior; Can be increased via house level
+--- Returns the max room placement budget for the current owned house's interior; Can be increased via house level
 ---@param ... any
 ---@return number placementBudget
 function C_HousingLayout.GetRoomPlacementBudget(...) end
+--- Returns the guid of the interior room the player is standing in, or nil if not currently standing in one
+---@param ... any
+---@return string roomGUID
+function C_HousingLayout.GetRoomPlayerIsIn(...) end
+---@param ... any
+---@return number roomID
+---@return string shareCode
+function C_HousingLayout.GetSelectedBlueprintFloorplan(...) end
 --- If a door is selected, returns its component id and the guid of the room it belongs to; Otherwise returns nothing
 ---@param ... any
 ---@return number selectedDoorComponentID
@@ -7535,7 +7897,7 @@ function C_HousingLayout.GetSelectedRoom(...) end
 ---@param ... any
 ---@return number stairwellRoomCount
 function C_HousingLayout.GetSelectedStairwellRoomCount(...) end
---- Returns how much of the current house's room placement budget has been spent; Different kinds of rooms take up different budget amounts, so this value isn't an individual room count, see GetNumActiveRooms for that
+--- Returns how much of the current owned house's room placement budget has been spent; Different kinds of rooms take up different budget amounts, so this value isn't an individual room count, see GetNumActiveRooms for that
 ---@param ... any
 ---@return number spentPlacementBudget
 function C_HousingLayout.GetSpentPlacementBudget(...) end
@@ -7546,10 +7908,13 @@ function C_HousingLayout.GetViewedFloor(...) end
 ---@param ... any
 ---@return boolean hasAnySelections
 function C_HousingLayout.HasAnySelections(...) end
---- Returns whether there's a max room placement budget available and active for the current player, in the current house interior
+--- Returns whether there's a max room placement budget available and active for the current player, in the current house's interior
 ---@param ... any
 ---@return boolean hasBudget
 function C_HousingLayout.HasRoomPlacementBudget(...) end
+---@param ... any
+---@return boolean hasSelectedBlueprintFloorplan
+function C_HousingLayout.HasSelectedBlueprintFloorplan(...) end
 --- Returns true if a door component is currently selected
 ---@param ... any
 ---@return boolean hasSelectedDoor
@@ -7593,6 +7958,11 @@ function C_HousingLayout.MoveLayoutCamera(direction, isPressed, ...) end
 ---@param roomGUID? string
 ---@param ... any
 function C_HousingLayout.RemoveRoom(roomGUID, ...) end
+--- Returns true of the provided roomGUID is a stairwell. Returns false if roomGUID is invalid
+---@param roomGUID? string
+---@param ... any
+---@return boolean hasStairs
+function C_HousingLayout.RoomHasStairs(roomGUID, ...) end
 --- Rotates either the currently dragged or currently selected room, if either exist
 ---@param isLeft? boolean
 ---@param ... any
@@ -7848,6 +8218,10 @@ function C_Item.DoesItemExistByID(itemInfo, ...) end
 ---@param ... any
 ---@return boolean matchesBonusTree
 function C_Item.DoesItemMatchBonusTreeReplacement(itemLoc, ...) end
+---@param itemLoc? any
+---@param ... any
+---@return boolean matches
+function C_Item.DoesItemMatchSpellItemCondition(itemLoc, ...) end
 ---@param itemLoc? any
 ---@param ... any
 ---@return boolean matchesTargetEnchantingSpell
@@ -8265,7 +8639,7 @@ function C_Item.IsItemSpecificToPlayerClass(itemInfo, ...) end
 ---@param ... any
 ---@return boolean isLocked
 function C_Item.IsLocked(itemLocation, ...) end
---- Returns whether the item is a consumable relic  that can be applied to an artifact weapon.
+--- Returns whether the item is a consumable relic that can be applied to an artifact weapon.
 ---@param itemInfo? any
 ---@param ... any
 ---@return boolean result
@@ -8599,6 +8973,8 @@ function C_LFGList.ClearCreationTextFields(...) end
 ---@param ... any
 function C_LFGList.ClearSearchTextFields(...) end
 ---@param ... any
+function C_LFGList.ConfirmCensoredActiveEntry(...) end
+---@param ... any
 function C_LFGList.CopyActiveEntryInfoToCreationFields(...) end
 ---@param createData? any
 ---@param ... any
@@ -8612,6 +8988,11 @@ function C_LFGList.CreateListing(createData, ...) end
 ---@param ... any
 ---@return boolean canCreate
 function C_LFGList.CreateScenarioListing(activityID, itemLevel, autoAccept, privateGroup, scenarioID, ...) end
+---@param name? string
+---@param comment? string
+---@param ... any
+---@return boolean isMatch
+function C_LFGList.DoesCensoredTextMatch(name, comment, ...) end
 ---@param activityID? number
 ---@param groupID? number
 ---@param playstyle? any
@@ -8724,6 +9105,9 @@ function C_LFGList.HasActiveEntryInfo(...) end
 ---@param ... any
 ---@return boolean hasSearchResultInfo
 function C_LFGList.HasSearchResultInfo(searchResultID, ...) end
+---@param ... any
+---@return boolean isUnresolved
+function C_LFGList.IsCensoredActiveEntryUnresolved(...) end
 ---@param activityCategoryID? number
 ---@param ... any
 ---@return boolean isAuthenticated
@@ -8741,6 +9125,11 @@ function C_LFGList.ListingUsesEndgameEditRestrictions(activityID, ...) end
 ---@param searchResultID? number
 ---@param ... any
 function C_LFGList.ReportGroupAsAdvertisement(searchResultID, ...) end
+---@param ... any
+function C_LFGList.RevealCensoredActiveEntry(...) end
+---@param searchResultID? number
+---@param ... any
+function C_LFGList.RevealCensoredSearchResult(searchResultID, ...) end
 ---@param options? any
 ---@param ... any
 function C_LFGList.SaveAdvancedFilter(options, ...) end
@@ -9322,6 +9711,7 @@ function C_Map.OpenWorldMap(uiMapID, ...) end
 function C_Map.RequestPreloadMap(uiMapID, ...) end
 ---@param point? any
 ---@param ... any
+---@return boolean wasSet
 function C_Map.SetUserWaypoint(point, ...) end
 
 C_MapExplorationInfo = {}
@@ -9840,6 +10230,12 @@ function C_Navigation.GetFrame(...) end
 ---@param ... any
 ---@return string unitToken
 function C_Navigation.GetNearestPartyMemberToken(...) end
+---@param uiMapID? number
+---@param ... any
+---@return number x
+---@return number y
+---@return string waypointDescription
+function C_Navigation.GetNextWaypointForMap(uiMapID, ...) end
 ---@param ... any
 ---@return any state
 function C_Navigation.GetTargetState(...) end
@@ -9871,6 +10267,11 @@ function C_NeighborhoodInitiative.GetInitiativeTaskChatLink(initiativeTaskID, ..
 ---@param ... any
 ---@return any info
 function C_NeighborhoodInitiative.GetInitiativeTaskInfo(initiativeTaskID, ...) end
+---@param taskID? number
+---@param numItems? number
+---@param ... any
+---@return number scaledAmount
+function C_NeighborhoodInitiative.GetInitiativeTaskRewardScaling(taskID, numItems, ...) end
 ---@param ... any
 ---@return any info
 function C_NeighborhoodInitiative.GetNeighborhoodInitiativeInfo(...) end
@@ -9930,6 +10331,10 @@ function C_PaperDollInfo.CanAutoEquipCursorItem(...) end
 ---@param ... any
 ---@return boolean canOccupySlot
 function C_PaperDollInfo.CanCursorCanGoInSlot(slotIndex, ...) end
+--- Cancels active temporary enchantments on inventory slot items.
+---@param slot? any
+---@param ... any
+function C_PaperDollInfo.CancelTemporaryEnchantment(slot, ...) end
 ---@param armor? number
 ---@param attackerLevel? number
 ---@param ... any
@@ -9964,6 +10369,19 @@ function C_PaperDollInfo.GetInspectRatedBGData(...) end
 ---@param ... any
 ---@return any ratedSoloShuffleData
 function C_PaperDollInfo.GetInspectRatedSoloShuffleData(...) end
+---@param slotName? string
+---@param ... any
+---@return number invSlot
+---@return number slotTexture
+---@return boolean checkRelic
+function C_PaperDollInfo.GetInventorySlotInfo(slotName, ...) end
+---@param invSlotValue? number
+---@param ... any
+---@return number invSlot
+---@return number slotTexture
+---@return boolean checkRelic
+---@return string slotName
+function C_PaperDollInfo.GetInventorySlotInfoForInvSlot(invSlotValue, ...) end
 ---@param ... any
 ---@return number minItemLevel
 function C_PaperDollInfo.GetMinItemLevel(...) end
@@ -9972,6 +10390,11 @@ function C_PaperDollInfo.GetMinItemLevel(...) end
 ---@return number stagger
 ---@return number staggerAgainstTarget
 function C_PaperDollInfo.GetStaggerPercentage(unit, ...) end
+--- Queries information about active temporary enchants on inventory slot items.
+---@param slot? any
+---@param ... any
+---@return any enchantInfo
+function C_PaperDollInfo.GetTemporaryEnchantmentInfo(slot, ...) end
 ---@param slotName? any
 ---@param ... any
 ---@return boolean isEnabled
@@ -10419,6 +10842,10 @@ function C_PetJournal.GetPetAbilityListTable(speciesID, ...) end
 ---@param ... any
 ---@return any info
 function C_PetJournal.GetPetInfoTableByPetID(petID, ...) end
+---@param speciesID? number
+---@param ... any
+---@return any petInfo
+function C_PetJournal.GetPetInfoTableBySpeciesID(speciesID, ...) end
 ---@param slot? number
 ---@param ... any
 ---@return string petID
@@ -10500,10 +10927,6 @@ function C_PhotoSharing.TakePhoto(...) end
 function C_PhotoSharing.UploadPhotoToService(optionalTitle, optionalDescription, ...) end
 
 C_Ping = {}
----@param targetUnit? string
----@param ... any
----@return any type
-function C_Ping.GetContextualPingTypeForUnit(targetUnit, ...) end
 ---@param ... any
 ---@return any cooldownInfo
 function C_Ping.GetCooldownInfo(...) end
@@ -10517,17 +10940,16 @@ function C_Ping.GetTextureKitForType(type, ...) end
 ---@param ... any
 ---@return boolean isEnabled
 function C_Ping.IsPingSystemEnabled(...) end
----@param type? any
----@param targetToken? string
+---@param macroInfo? any
 ---@param ... any
-function C_Ping.SendMacroPing(type, targetToken, ...) end
+function C_Ping.SendMacroPing(macroInfo, ...) end
 ---@param down? boolean
 ---@param ... any
 function C_Ping.TogglePingListener(down, ...) end
 
 C_PingSecure = {}
 ---@param ... any
-function C_PingSecure.ClearPendingPingInfo(...) end
+function C_PingSecure.ClearHitTestPingInfo(...) end
 ---@param ... any
 function C_PingSecure.CreateFrame(...) end
 ---@param error? string
@@ -10538,19 +10960,37 @@ function C_PingSecure.DisplayError(error, ...) end
 ---@param ... any
 ---@return any frame
 function C_PingSecure.GetTargetPingReceiver(mousePosX, mousePosY, ...) end
+---@param type? any
+---@param ... any
+---@return any result
+function C_PingSecure.SendHitTestPing(type, ...) end
+---@param itemID? number
+---@param ... any
+---@return any result
+function C_PingSecure.SendPlayerItemPing(itemID, ...) end
+---@param spellCategoryID? number
+---@param ... any
+---@return any result
+function C_PingSecure.SendPlayerSpellCategoryPing(spellCategoryID, ...) end
+---@param spellID? number
+---@param ... any
+---@return any result
+function C_PingSecure.SendPlayerSpellPing(spellID, ...) end
+---@param target? string
+---@param type? any
+---@param isPlayerResource? boolean
+---@param ... any
+---@return any result
+function C_PingSecure.SendUnitPing(target, type, isPlayerResource, ...) end
 ---@param mousePosX? number
 ---@param mousePosY? number
+---@param forcePointPing? boolean
 ---@param ... any
----@return boolean foundTarget
-function C_PingSecure.GetTargetWorldPing(mousePosX, mousePosY, ...) end
----@param ... any
----@return any result
-function C_PingSecure.GetTargetWorldPingAndSend(...) end
----@param type? any
----@param target? string
+---@return any state
+function C_PingSecure.SetHitTestPingTarget(mousePosX, mousePosY, forcePointPing, ...) end
 ---@param ... any
 ---@return any result
-function C_PingSecure.SendPing(type, target, ...) end
+function C_PingSecure.SetHitTestTargetAndSendPing(...) end
 ---@param cb? any
 ---@param ... any
 function C_PingSecure.SetPendingPingOffScreenCallback(cb, ...) end
@@ -10920,6 +11360,9 @@ function C_PvP.CanPlayerUseRatedPVPUI(...) end
 ---@return boolean canUseTrainingGroundsUI
 ---@return string failureReason
 function C_PvP.CanPlayerUseTrainingGroundsUI(...) end
+---@param ... any
+---@return boolean CanSurrenderArena
+function C_PvP.CanSurrenderArena(...) end
 ---@param toggle? boolean
 ---@param ... any
 ---@return boolean canTogglePvP
@@ -11271,7 +11714,9 @@ function C_PvP.JoinBattlefield(battlemasterListId, ...) end
 ---@param ... any
 function C_PvP.JoinBrawl(isSpecialBrawl, ...) end
 ---@param ... any
-function C_PvP.JoinRandomTrainingGround(...) end
+function C_PvP.JoinRandomTrainingGroundArena(...) end
+---@param ... any
+function C_PvP.JoinRandomTrainingGroundBattleground(...) end
 ---@param ... any
 function C_PvP.JoinRatedBGBlitz(...) end
 ---@param trainingGroundID? number
@@ -11303,11 +11748,16 @@ function C_PvP.TogglePVP(...) end
 function C_PvP.ToggleWarMode(...) end
 
 C_QuestHub = {}
----@param questID? number
 ---@param areaPoiID? number
+---@param hubAreaPoiID? number
 ---@param ... any
 ---@return boolean isRelated
-function C_QuestHub.IsQuestCurrentlyRelatedToHub(questID, areaPoiID, ...) end
+function C_QuestHub.IsAreaPOICurrentlyRelatedToHub(areaPoiID, hubAreaPoiID, ...) end
+---@param questID? number
+---@param hubAreaPoiID? number
+---@param ... any
+---@return boolean isRelated
+function C_QuestHub.IsQuestCurrentlyRelatedToHub(questID, hubAreaPoiID, ...) end
 
 C_QuestInfoSystem = {}
 ---@param questID? number
@@ -11876,6 +12326,10 @@ function C_RecentAllies.IsSystemEnabled(...) end
 ---@param ... any
 ---@return boolean isRecentAllySystemSupported
 function C_RecentAllies.IsSystemSupported(...) end
+---@param searchInfo? any
+---@param ... any
+---@return table recentAlliesData
+function C_RecentAllies.SearchRecentAllies(searchInfo, ...) end
 ---@param characterGUID? string
 ---@param note? string
 ---@param ... any
@@ -11890,7 +12344,8 @@ function C_RecentAllies.TryRequestRecentAlliesData(...) end
 C_RecruitAFriend = {}
 ---@param guid? string
 ---@param ... any
----@return boolean result
+---@return boolean canSummon
+---@return any reason
 function C_RecruitAFriend.CanSummonFriend(guid, ...) end
 ---@param activityID? number
 ---@param acceptanceID? any
@@ -11924,9 +12379,6 @@ function C_RecruitAFriend.GetRecruitInfo(...) end
 ---@return number durationSeconds
 ---@return boolean enableCooldownTimer
 function C_RecruitAFriend.GetSummonFriendCooldown(...) end
----@param ... any
----@return boolean enabled
-function C_RecruitAFriend.IsEnabled(...) end
 ---@param guid? string
 ---@param ... any
 ---@return boolean result
@@ -11934,6 +12386,12 @@ function C_RecruitAFriend.IsRecruitAFriendLinked(guid, ...) end
 ---@param ... any
 ---@return boolean enabled
 function C_RecruitAFriend.IsRecruitingEnabled(...) end
+---@param ... any
+---@return boolean isSystemEnabled
+function C_RecruitAFriend.IsSystemEnabled(...) end
+---@param ... any
+---@return boolean isSystemSupported
+function C_RecruitAFriend.IsSystemSupported(...) end
 ---@param wowAccountGUID? string
 ---@param ... any
 ---@return boolean success
@@ -12147,6 +12605,21 @@ function C_RestrictedActions.InCombatLockdown(...) end
 ---@param ... any
 ---@return boolean active
 function C_RestrictedActions.IsAddOnRestrictionActive(type, ...) end
+
+C_Roleset = {}
+--- Sets or clears both blocklist and allowlist filters atomically with a single visibility reevaluation. Pass an empty table to clear the corresponding filter.
+---@param blockedRolesets? table
+---@param allowedRolesets? table
+---@param ... any
+function C_Roleset.ApplyRolesetFilters(blockedRolesets, allowedRolesets, ...) end
+--- Returns the rolesets in the currently active allowlist.
+---@param ... any
+---@return table allowedRolesets
+function C_Roleset.GetActiveAllowedRolesets(...) end
+--- Returns the rolesets in the currently active blocklist.
+---@param ... any
+---@return table blockedRolesets
+function C_Roleset.GetActiveBlockedRolesets(...) end
 
 C_ScenarioInfo = {}
 ---@param criteriaIndex? number
@@ -12461,6 +12934,12 @@ function C_SocialQueue.RequestToJoin(groupGUID, applyAsTank, applyAsHealer, appl
 ---@param priority? number
 ---@param ... any
 function C_SocialQueue.SignalToastDisplayed(groupGUID, priority, ...) end
+---@param ... any
+---@return boolean isSystemEnabled
+function C_SocialQueue.IsSystemEnabled(...) end
+---@param ... any
+---@return boolean isSystemSupported
+function C_SocialQueue.IsSystemSupported(...) end
 
 C_SocialRestrictions = {}
 ---@param ... any
@@ -12477,6 +12956,9 @@ function C_SocialRestrictions.CanSendChat(...) end
 ---@return boolean disabled
 function C_SocialRestrictions.IsChatDisabled(...) end
 ---@param ... any
+---@return boolean disabled
+function C_SocialRestrictions.IsFriendsDisabled(...) end
+---@param ... any
 ---@return boolean isMuted
 function C_SocialRestrictions.IsMuted(...) end
 ---@param ... any
@@ -12488,6 +12970,11 @@ function C_SocialRestrictions.IsSquelched(...) end
 ---@param disabled? boolean
 ---@param ... any
 function C_SocialRestrictions.SetChatDisabled(disabled, ...) end
+
+C_SocialUI = {}
+---@param ... any
+---@return boolean isSocialUISystemEnabled
+function C_SocialUI.IsSystemEnabled(...) end
 
 C_Soulbinds = {}
 ---@param soulbindID? number
@@ -12664,10 +13151,16 @@ function C_Sound.PlayItemSound(soundType, itemLocation, ...) end
 ---@param forceNoDuplicates? boolean
 ---@param runFinishCallback? boolean
 ---@param overridePriority? number
+---@param volumeOverride? number
 ---@param ... any
 ---@return boolean success
 ---@return any soundHandle
-function C_Sound.PlaySound(soundKitID, uiSoundSubType, forceNoDuplicates, runFinishCallback, overridePriority, ...) end
+function C_Sound.PlaySound(soundKitID, uiSoundSubType, forceNoDuplicates, runFinishCallback, overridePriority, volumeOverride, ...) end
+---@param params? any
+---@param ... any
+---@return boolean success
+---@return any soundHandle
+function C_Sound.PlaySoundWithOptions(params, ...) end
 ---@param vocalErrorSoundID? any
 ---@param ... any
 function C_Sound.PlayVocalErrorSound(vocalErrorSoundID, ...) end
@@ -12702,6 +13195,10 @@ function C_SpecializationInfo.GetClassIDFromSpecID(specID, ...) end
 ---@param ... any
 ---@return number selectedTalentID
 function C_SpecializationInfo.GetInspectSelectedPvpTalent(inspectedUnit, talentIndex, ...) end
+---@param unit? any
+---@param ... any
+---@return number specializationID
+function C_SpecializationInfo.GetInspectSpecialization(unit, ...) end
 ---@param classID? number
 ---@param ... any
 ---@return number specCount
@@ -12825,6 +13322,12 @@ function C_Spell.GetDeadlyDebuffInfo(spellIdentifier, ...) end
 ---@param ... any
 ---@return table itemModifiedAppearanceIDs
 function C_Spell.GetItemModifiedAppearancesApplied(spellID, ...) end
+--- Searches for the most recent spellID and itemID that started a cooldown in this category
+---@param spellCategory? number
+---@param ... any
+---@return number spellID
+---@return number itemID
+function C_Spell.GetLastCategoryCooldownSource(spellCategory, ...) end
 ---@param spellID? any
 ---@param ... any
 ---@return string link
@@ -12882,6 +13385,12 @@ function C_Spell.GetSpellCooldownDuration(spellIdentifier, ignoreGCD, ...) end
 ---@param ... any
 ---@return string description
 function C_Spell.GetSpellDescription(spellIdentifier, ...) end
+--- Returns nil if spell is not found
+---@param spellIdentifier? any
+---@param itemLocation? any
+---@param ... any
+---@return string description
+function C_Spell.GetSpellDescriptionForItemLocation(spellIdentifier, itemLocation, ...) end
 --- Depending on the spell, return a string that is either the use count or number of charges. If value is beyond the display count parameter, returns the replacementString (defaults to '*').
 ---@param spellIdentifier? any
 ---@param maxDisplayCount? number
@@ -12952,6 +13461,7 @@ function C_Spell.GetSpellSubtext(spellIdentifier, ...) end
 ---@param ... any
 ---@return number iconID
 ---@return number originalIconID
+---@return number conditionalIconID
 function C_Spell.GetSpellTexture(spellIdentifier, ...) end
 --- Returns nil if spell is not associated with a trade skill
 ---@param spellIdentifier? any
@@ -13080,6 +13590,9 @@ function C_Spell.SetSpellAutoCastEnabled(spellIdentifier, enabled, ...) end
 ---@param ... any
 ---@return boolean hasRange
 function C_Spell.SpellHasRange(spellIdentifier, ...) end
+---@param ... any
+---@return boolean result
+function C_Spell.TargetSpellChecksItemCondition(...) end
 ---@param ... any
 ---@return boolean isEnchanting
 function C_Spell.TargetSpellIsEnchanting(...) end
@@ -13469,7 +13982,7 @@ function C_StringUtil.CreateNumericRuleFormatter(...) end
 ---@param ... any
 ---@return any formatter
 function C_StringUtil.CreateSecondsFormatter(...) end
---- Returns a string with ASCII control characters (except  ,  , and  ) and invalid UTF-8 bytes replaced by decimal escape sequences (e.g. \127).
+--- Returns a string with ASCII control characters (except , , and ) and invalid UTF-8 bytes replaced by decimal escape sequences (e.g. \127).
 ---@param text? any
 ---@param ... any
 ---@return string escapedText
@@ -13566,12 +14079,6 @@ function C_SuperTrack.ClearSuperTrackedMapPin(...) end
 ---@param ... any
 ---@return any type
 function C_SuperTrack.GetHighestPrioritySuperTrackingType(...) end
----@param uiMapID? number
----@param ... any
----@return number x
----@return number y
----@return string waypointDescription
-function C_SuperTrack.GetNextWaypointForMap(uiMapID, ...) end
 ---@param ... any
 ---@return any trackableType
 ---@return number trackableID
@@ -15300,6 +15807,10 @@ C_TransmogOutfitInfo = {}
 ---@param icon? number
 ---@param ... any
 function C_TransmogOutfitInfo.AddNewOutfit(name, icon, ...) end
+---@param slot? any
+---@param ... any
+---@return boolean valid
+function C_TransmogOutfitInfo.CanPlayerTransmogSlot(slot, ...) end
 ---@param outfitID? number
 ---@param trigger? any
 ---@param toggleLock? boolean
@@ -15479,6 +15990,9 @@ function C_TransmogOutfitInfo.IsLockedOutfit(outfitID, ...) end
 ---@param ... any
 ---@return boolean isWeaponSlot
 function C_TransmogOutfitInfo.IsSlotWeaponSlot(slot, ...) end
+---@param ... any
+---@return boolean enabled
+function C_TransmogOutfitInfo.IsTransmogEnabled(...) end
 ---@param ... any
 ---@return boolean isAvailable
 function C_TransmogOutfitInfo.IsUsableDiscountAvailable(...) end
@@ -15919,6 +16433,11 @@ function C_UIWidgetManager.SetProcessingUnitGuid(unit, ...) end
 function C_UIWidgetManager.UnregisterUnitForWidgetUpdates(unitToken, isGuid, ...) end
 
 C_UnitAuras = {}
+---@param trigger? any
+---@param sound? any
+---@param ... any
+---@return number auraSoundID
+function C_UnitAuras.AddAuraSound(trigger, sound, ...) end
 ---@param unit? any
 ---@param auraInstanceID? number
 ---@param ... any
@@ -15927,10 +16446,6 @@ function C_UnitAuras.AddBlockedAura(unit, auraInstanceID, ...) end
 ---@param ... any
 ---@return number anchorID
 function C_UnitAuras.AddPrivateAuraAnchor(args, ...) end
----@param sound? any
----@param ... any
----@return number privateAuraSoundID
-function C_UnitAuras.AddPrivateAuraAppliedSound(sound, ...) end
 ---@param spellID? any
 ---@param ... any
 ---@return boolean isBigDefensive
@@ -15939,6 +16454,10 @@ function C_UnitAuras.AuraIsBigDefensive(spellID, ...) end
 ---@param ... any
 ---@return boolean isPrivate
 function C_UnitAuras.AuraIsPrivate(spellID, ...) end
+---@param unit? any
+---@param auraInstanceID? number
+---@param ... any
+function C_UnitAuras.CancelAuraByInstanceID(unit, auraInstanceID, ...) end
 ---@param unit? any
 ---@param ... any
 function C_UnitAuras.ClearBlockedAuras(unit, ...) end
@@ -16021,6 +16540,12 @@ function C_UnitAuras.GetCooldownAuraBySpellID(spellID, ...) end
 ---@param ... any
 ---@return any aura
 function C_UnitAuras.GetDebuffDataByIndex(unit, index, filter, ...) end
+---@param ... any
+---@return table visualAlerts
+function C_UnitAuras.GetGroupBuffVisualAlerts(...) end
+---@param ... any
+---@return table spellIDs
+function C_UnitAuras.GetHiddenGroupBuffs(...) end
 ---@param spellID? any
 ---@param ... any
 ---@return any aura
@@ -16060,23 +16585,26 @@ function C_UnitAuras.GetUnitAuras(unit, filter, maxCount, sortRule, sortDirectio
 ---@param ... any
 ---@return boolean isFiltered
 function C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, auraInstanceID, filter, ...) end
+---@param auraSoundID? number
+---@param ... any
+function C_UnitAuras.RemoveAuraSound(auraSoundID, ...) end
 ---@param anchorID? number
 ---@param ... any
 function C_UnitAuras.RemovePrivateAuraAnchor(anchorID, ...) end
----@param privateAuraSoundID? number
----@param ... any
-function C_UnitAuras.RemovePrivateAuraAppliedSound(privateAuraSoundID, ...) end
 ---@param ... any
 function C_UnitAuras.ResetAuraDataProvider(...) end
+---@param visualAlerts? table
+---@param ... any
+function C_UnitAuras.SetGroupBuffVisualAlerts(visualAlerts, ...) end
+---@param spellIDs? table
+---@param ... any
+function C_UnitAuras.SetHiddenGroupBuffs(spellIDs, ...) end
 ---@param parent? any
 ---@param anchor? any
 ---@param ... any
 function C_UnitAuras.SetPrivateWarningTextAnchor(parent, anchor, ...) end
 ---@param ... any
 function C_UnitAuras.SwitchAuraDataProvider(...) end
----@param show? boolean
----@param ... any
-function C_UnitAuras.TriggerPrivateAuraShowDispelType(show, ...) end
 ---@param unit? any
 ---@param ... any
 ---@return boolean wantsAlteredForm
@@ -16811,10 +17339,12 @@ function CreateFontFamily(name, members, ...) end
 ---@param ... any
 ---@return any object
 function CreateFromMixins(mixins, ...) end
+--- Creates a secure delegate closure for a Lua function. The delegate invokes the original function in a protected call context with secure execution taint, and supports passing and returning values directly.
 ---@param luaFunction? any
+---@param options? any
 ---@param ... any
 ---@return any secureDelegateFunction
-function CreateSecureDelegate(luaFunction, ...) end
+function CreateSecureDelegate(luaFunction, options, ...) end
 ---@param ... any
 ---@return any healPredictionCalculator
 function CreateUnitHealPredictionCalculator(...) end
@@ -17124,6 +17654,10 @@ function GetFontInfo(fontObject, ...) end
 ---@param ... any
 ---@return table fontNames
 function GetFonts(...) end
+---@param object? any
+---@param ... any
+---@return any forbiddenTable
+function GetForbiddenObjectTable(object, ...) end
 ---@param frame? any
 ---@param includeChildren? boolean
 ---@param ... any
@@ -17496,6 +18030,9 @@ function GetSpecializationInfoForSpecID(specID, gender, ...) end
 ---@param ... any
 ---@return string name
 function GetSpecializationNameForSpecID(specID, gender, ...) end
+---@param ... any
+---@return any system
+function GetSpecializationSystem(...) end
 ---@param ... any
 ---@return number result
 function GetSpeed(...) end
@@ -18211,10 +18748,6 @@ function SetRaidDifficultyID(difficultyID, force, ...) end
 ---@param userIndex? number
 ---@param ... any
 function SetRaidTarget(target, userIndex, ...) end
----@param table? any
----@param option? any
----@param ... any
-function SetTableSecurityOption(table, option, ...) end
 ---@param enable? boolean
 ---@param ... any
 function SetTaxiBenchmarkMode(enable, ...) end
@@ -19019,12 +19552,12 @@ function UnitQuestTrivialLevelRange(unit, ...) end
 ---@param ... any
 ---@return number levelRange
 function UnitQuestTrivialLevelRangeScaling(unit, ...) end
----@param name? string
+---@param unit? any
 ---@param ... any
 ---@return string localizedRaceName
 ---@return string englishRaceName
 ---@return number raceID
-function UnitRace(name, ...) end
+function UnitRace(unit, ...) end
 ---@param unit? any
 ---@param ... any
 ---@return number attackPower
@@ -19297,3 +19830,13 @@ function secretwrap(values, ...) end
 ---@param ... any
 ---@return any results
 function securecallmethod(object, method, arguments, ...) end
+--- Securely copies a Lua value. Tables are deep-copied with recursive and shared references preserved. Copied values receive the current execution taint.
+---@param value? any
+---@param options? any
+---@param ... any
+---@return any copy
+function securecopy(value, options, ...) end
+---@param table? any
+---@param option? any
+---@param ... any
+function settablesecurity(table, option, ...) end

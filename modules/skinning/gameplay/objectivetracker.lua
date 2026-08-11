@@ -1,0 +1,883 @@
+local addonName, ns = ...
+
+if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
+
+local Helpers = ns.Helpers
+local GetCore = Helpers.GetCore
+local SkinBase = ns.SkinBase
+
+local GetFontFlags = Helpers.GetGeneralFontOutline
+
+local pendingBackdropUpdate = false
+
+local function RunAfterFirstFrame(callback, delay)
+    if ns.RunAfterFirstFrame then
+        return ns.RunAfterFirstFrame(callback, delay)
+    end
+    if C_Timer and C_Timer.After then
+        return C_Timer.After(delay or 0, callback)
+    end
+    if type(callback) == "function" then
+        return callback()
+    end
+    return nil
+end
+
+local function GetSettings()
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
+    return settings
+end
+
+local function SafeSetTextColor(fontString, colorTable)
+    if not fontString or not colorTable then return end
+    if type(colorTable) ~= "table" or #colorTable < 3 then return end
+    fontString:SetTextColor(colorTable[1] or 1, colorTable[2] or 1, colorTable[3] or 1, colorTable[4] or 1)
+end
+
+local GetFontPath = Helpers.GetGeneralFont
+
+local function CJKFont(fs, path, size, flags)
+    if Helpers and Helpers.ApplyFontWithFallback then
+        Helpers.ApplyFontWithFallback(fs, path, size, flags)
+    else
+        fs:SetFont(path, size, flags)
+    end
+end
+
+local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
+    if not line then return false end
+    local heightChanged = false
+    local targetFlags = GetFontFlags()
+    if line.Text then
+        local curFont, curSize, curFlags = line.Text:GetFont()
+        local fontChanged = curFont ~= fontPath or curSize ~= textFontSize or curFlags ~= targetFlags
+        if fontChanged then
+            CJKFont(line.Text, fontPath, textFontSize, targetFlags)
+
+            if not skipHeight then
+                local textHeight = line.Text:GetStringHeight()
+                if textHeight and textHeight > 0 then
+                    local currentHeight = line:GetHeight()
+                    local minHeight = textHeight + 4
+                    if minHeight - currentHeight > 1 then
+                        line:SetHeight(minHeight)
+                        heightChanged = true
+                    end
+                end
+            end
+        end
+        SafeSetTextColor(line.Text, textColor)
+    end
+    if line.Dash then
+        local curFont, curSize, curFlags = line.Dash:GetFont()
+        if curFont ~= fontPath or curSize ~= textFontSize or curFlags ~= targetFlags then
+            CJKFont(line.Dash, fontPath, textFontSize, targetFlags)
+        end
+        SafeSetTextColor(line.Dash, textColor)
+    end
+    return heightChanged
+end
+
+local function EnsureBlockHighlightHook(block)
+    if not block or SkinBase.GetFrameData(block, "highlightHooked") or not block.UpdateHighlight then return end
+    SkinBase.SetFrameData(block, "highlightHooked", true)
+    hooksecurefunc(block, "UpdateHighlight", function(self)
+        local s = GetSettings()
+        if not s or not s.skinObjectiveTracker then return end
+        if self.HeaderText then
+            SafeSetTextColor(self.HeaderText, s.objectiveTrackerTitleColor)
+        end
+        if self.usedLines then
+            for _, line in pairs(self.usedLines) do
+                SafeSetTextColor(line.Text, s.objectiveTrackerTextColor)
+                if line.Dash then
+                    SafeSetTextColor(line.Dash, s.objectiveTrackerTextColor)
+                end
+            end
+        end
+    end)
+end
+
+local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, skipHeight)
+    if not block then return end
+
+    EnsureBlockHighlightHook(block)
+
+    if titleFontSize > 0 and block.HeaderText then
+        local curFont, curSize, curFlags = block.HeaderText:GetFont()
+        local targetFlags = GetFontFlags()
+        if curFont ~= fontPath or curSize ~= titleFontSize or curFlags ~= targetFlags then
+            CJKFont(block.HeaderText, fontPath, titleFontSize, targetFlags)
+        end
+        SafeSetTextColor(block.HeaderText, titleColor)
+    end
+
+    if textFontSize > 0 and block.usedLines then
+        for _, line in pairs(block.usedLines) do
+            StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
+        end
+    end
+end
+
+local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
+
+local function StyleQuestPOIIcon(button)
+    if not button or SkinBase.IsStyled(button) then return end
+
+    if button.NormalTexture then
+        button.NormalTexture:SetAlpha(0)
+    end
+    local pushed = button.GetPushedTexture and button:GetPushedTexture()
+    if pushed then
+        pushed:SetAlpha(0)
+    end
+    local highlight = button.GetHighlightTexture and button:GetHighlightTexture()
+    if highlight then
+        highlight:SetAlpha(0.3)
+    end
+
+    if LCG and LCG.PixelGlow_Stop then
+        LCG.PixelGlow_Stop(button, "_QUIQuestGlow")
+    end
+
+    SkinBase.MarkStyled(button)
+end
+
+local function StyleCompletionCheck(icon)
+    if not icon or SkinBase.IsStyled(icon) then return end
+
+    local sr, sg, sb = SkinBase.GetSkinColors()
+    if icon.SetDesaturated then icon:SetDesaturated(true) end
+    icon:SetVertexColor(sr, sg, sb)
+
+    SkinBase.MarkStyled(icon)
+end
+
+local function ApplyBlockSkinning(tracker, block)
+    if not block or not block:IsShown() then return end
+
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker then return end
+
+    local fontPath = GetFontPath()
+    local titleFontSize = settings.objectiveTrackerTitleFontSize or 10
+    local textFontSize = settings.objectiveTrackerTextFontSize or 10
+    local titleColor = settings.objectiveTrackerTitleColor
+    local textColor = settings.objectiveTrackerTextColor
+
+    local itemButton = block.ItemButton or block.itemButton
+    if itemButton then StyleQuestPOIIcon(itemButton) end
+    if block.usedLines then
+        for _, line in pairs(block.usedLines) do
+            if line.Icon then StyleCompletionCheck(line.Icon) end
+        end
+    end
+
+    StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, true)
+end
+
+local trackerModules = {
+    "ScenarioObjectiveTracker",
+    "UIWidgetObjectiveTracker",
+    "CampaignQuestObjectiveTracker",
+    "QuestObjectiveTracker",
+    "AdventureObjectiveTracker",
+    "AchievementObjectiveTracker",
+    "MonthlyActivitiesObjectiveTracker",
+    "ProfessionsRecipeTracker",
+    "BonusObjectiveTracker",
+    "WorldQuestObjectiveTracker",
+}
+
+local function SkinTrackerHeader(header)
+    if not header then return end
+
+    if header.Background then
+        header.Background:SetTexture(nil)
+        header.Background:SetAlpha(0)
+    end
+
+    if header.Text then
+        header.Text:ClearAllPoints()
+        header.Text:SetPoint("LEFT", header, "LEFT", -7, 0)
+        header.Text:SetJustifyH("LEFT")
+    end
+end
+
+local function SyncBlizzardHeight()
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return end
+
+    local settings = GetSettings()
+    local maxHeight = settings and settings.objectiveTrackerHeight or 600
+
+    TrackerFrame.editModeHeight = maxHeight
+    if TrackerFrame.UpdateHeight then
+        TrackerFrame:UpdateHeight()
+    end
+end
+
+local function HideScenarioStageArtwork()
+    local scenario = _G.ScenarioObjectiveTracker
+    if not scenario then return end
+
+    local stageBlock = scenario.StageBlock
+    if not stageBlock then return end
+
+    if stageBlock.NormalBG then
+        stageBlock.NormalBG:Hide()
+        stageBlock.NormalBG:SetAlpha(0)
+    end
+    if stageBlock.FinalBG then
+        stageBlock.FinalBG:Hide()
+        stageBlock.FinalBG:SetAlpha(0)
+    end
+    if stageBlock.GlowTexture then
+        stageBlock.GlowTexture:Hide()
+        stageBlock.GlowTexture:SetAlpha(0)
+    end
+
+    if stageBlock.Stage then
+        stageBlock.Stage:ClearAllPoints()
+        stageBlock.Stage:SetPoint("TOPLEFT", stageBlock, "TOPLEFT", 0, -5)
+        if stageBlock.Name then
+            stageBlock.Name:ClearAllPoints()
+            stageBlock.Name:SetPoint("TOPLEFT", stageBlock.Stage, "BOTTOMLEFT", 0, -2)
+        end
+    end
+end
+
+local function UpdateMinimizeButtonAtlas(btn, collapsed)
+    if not btn then return end
+    local normalTex = btn:GetNormalTexture()
+    local pushedTex = btn:GetPushedTexture()
+    if collapsed then
+        if normalTex then normalTex:SetAtlas("ui-questtrackerbutton-secondary-expand") end
+        if pushedTex then pushedTex:SetAtlas("ui-questtrackerbutton-secondary-expand-pressed") end
+    else
+        if normalTex then normalTex:SetAtlas("ui-questtrackerbutton-secondary-collapse") end
+        if pushedTex then pushedTex:SetAtlas("ui-questtrackerbutton-secondary-collapse-pressed") end
+    end
+end
+
+local function IsScenarioActive()
+    local scenario = _G.ScenarioObjectiveTracker
+    if not scenario or not scenario:IsShown() then return false end
+    if scenario.GetContentsHeight then
+        local height = scenario:GetContentsHeight()
+        if height and height > 0 then return true end
+    end
+    return false
+end
+
+local function ApplyMaxWidth(settings)
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return end
+
+    local maxWidth
+    if IsScenarioActive() then
+        maxWidth = 260
+    else
+        maxWidth = settings and settings.objectiveTrackerWidth or 260
+    end
+    TrackerFrame:SetWidth(maxWidth)
+
+    if TrackerFrame.Header then
+        TrackerFrame.Header:SetWidth(maxWidth)
+        local minBtn = TrackerFrame.Header.MinimizeButton
+        if minBtn then
+            minBtn:ClearAllPoints()
+            minBtn:SetPoint("RIGHT", TrackerFrame.Header, "RIGHT", 0, 0)
+            minBtn:SetSize(16, 16)
+            if not SkinBase.GetFrameData(minBtn, "highlightSet") and minBtn:GetHighlightTexture() then
+                minBtn:GetHighlightTexture():SetAtlas("ui-questtrackerbutton-yellow-highlight")
+                SkinBase.SetFrameData(minBtn, "highlightSet", true)
+            end
+        end
+
+        if TrackerFrame.Header.SetCollapsed and not SkinBase.GetFrameData(TrackerFrame.Header, "setCollapsedHooked") then
+            hooksecurefunc(TrackerFrame.Header, "SetCollapsed", function(self, collapsed)
+                C_Timer.After(0, function()
+                    UpdateMinimizeButtonAtlas(self.MinimizeButton, collapsed)
+                end)
+            end)
+            SkinBase.SetFrameData(TrackerFrame.Header, "setCollapsedHooked", true)
+
+            local isCollapsed = false
+            if type(TrackerFrame.IsCollapsed) == "function" then
+                isCollapsed = TrackerFrame:IsCollapsed()
+            end
+            UpdateMinimizeButtonAtlas(minBtn, isCollapsed)
+        end
+    end
+
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker then
+            tracker:SetWidth(maxWidth)
+            if tracker.Header then
+                tracker.Header:SetWidth(maxWidth)
+            end
+        end
+    end
+
+    HideScenarioStageArtwork()
+    local scenario = _G.ScenarioObjectiveTracker
+    local stageBlock = scenario and scenario.StageBlock
+    if stageBlock and stageBlock.UpdateStageBlock
+        and not SkinBase.GetFrameData(stageBlock, "stageHooked") then
+        SkinBase.SetFrameData(stageBlock, "stageHooked", true)
+        hooksecurefunc(stageBlock, "UpdateStageBlock", function()
+            HideScenarioStageArtwork()
+        end)
+    end
+end
+
+local function UpdateBackdropAnchors()
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    local quiBackdrop = TrackerFrame and SkinBase.GetFrameData(TrackerFrame, "backdrop")
+    if not TrackerFrame or not quiBackdrop then return end
+
+    local settings = GetSettings()
+    local maxHeight = settings and settings.objectiveTrackerHeight or 600
+
+    local bottomModule = nil
+    local lowestBottom = math.huge
+
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker and tracker:IsShown() then
+            local hasContent = false
+            if tracker.GetContentsHeight then
+                local contentHeight = tracker:GetContentsHeight()
+                hasContent = contentHeight and contentHeight > 0
+            end
+            if not hasContent then
+                local frameHeight = tracker:GetHeight()
+                hasContent = frameHeight and frameHeight > 1
+            end
+
+            if hasContent then
+                local bottom = tracker:GetBottom()
+                if bottom and bottom < lowestBottom then
+                    lowestBottom = bottom
+                    bottomModule = tracker
+                end
+            end
+        end
+    end
+
+    quiBackdrop:ClearAllPoints()
+    quiBackdrop:SetPoint("TOPLEFT", TrackerFrame, "TOPLEFT", -15, 0)
+    quiBackdrop:SetPoint("TOPRIGHT", TrackerFrame, "TOPRIGHT", 10, 0)
+
+    if bottomModule then
+        local trackerTop = TrackerFrame:GetTop()
+        local contentHeight = 0
+        if trackerTop and lowestBottom and trackerTop > lowestBottom then
+            contentHeight = trackerTop - lowestBottom + 15
+        end
+
+        if contentHeight > maxHeight then
+            quiBackdrop:SetHeight(maxHeight)
+        else
+            quiBackdrop:SetPoint("BOTTOM", bottomModule, "BOTTOM", 0, -15)
+        end
+        quiBackdrop:Show()
+    else
+        quiBackdrop:Hide()
+    end
+end
+
+local function HidePOIButtonGlows()
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker and tracker.usedBlocks then
+            for template, blocks in pairs(tracker.usedBlocks) do
+                if type(blocks) == "table" then
+                    for id, block in pairs(blocks) do
+                        if block.poiButton and block.poiButton.Glow then
+                            block.poiButton.Glow:Hide()
+                            block.poiButton.Glow:SetAlpha(0)
+                            if not SkinBase.GetFrameData(block.poiButton.Glow, "hooked") then
+                                Helpers.DeferredHideOnShow(block.poiButton.Glow, { combatCheck = false })
+                                SkinBase.SetFrameData(block.poiButton.Glow, "hooked", true)
+                            end
+                        end
+                        if LCG and LCG.PixelGlow_Stop and block.poiButton then
+                            LCG.PixelGlow_Stop(block.poiButton, "_QUIQuestGlow")
+                        end
+                        local itemButton = block.ItemButton or block.itemButton
+                        if LCG and LCG.PixelGlow_Stop and itemButton then
+                            LCG.PixelGlow_Stop(itemButton, "_QUIQuestGlow")
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function EnforceWidth()
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return end
+
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker then return end
+
+    local maxWidth
+    if IsScenarioActive() then
+        maxWidth = 260
+    else
+        maxWidth = settings.objectiveTrackerWidth or 260
+    end
+
+    if math.abs(TrackerFrame:GetWidth() - maxWidth) > 0.5 then
+        TrackerFrame:SetWidth(maxWidth)
+    end
+    if TrackerFrame.Header and math.abs(TrackerFrame.Header:GetWidth() - maxWidth) > 0.5 then
+        TrackerFrame.Header:SetWidth(maxWidth)
+    end
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker then
+            if math.abs(tracker:GetWidth() - maxWidth) > 0.5 then
+                tracker:SetWidth(maxWidth)
+            end
+            if tracker.Header and math.abs(tracker.Header:GetWidth() - maxWidth) > 0.5 then
+                tracker.Header:SetWidth(maxWidth)
+            end
+        end
+    end
+end
+
+local function RunObjectiveTrackerPostLayoutUpdate()
+    pendingBackdropUpdate = false
+    EnforceWidth()
+    UpdateBackdropAnchors()
+    HidePOIButtonGlows()
+end
+
+local function DeferObjectiveTrackerPostLayoutUpdate()
+    if pendingBackdropUpdate then return end
+    pendingBackdropUpdate = true
+    -- FrameXML DirtiableMixin:MarkDirty uses RunNextFrame, and our hooks are
+    C_Timer.After(0, RunObjectiveTrackerPostLayoutUpdate)
+end
+
+local function ScheduleBackdropUpdate()
+    DeferObjectiveTrackerPostLayoutUpdate()
+end
+
+local pendingProtectedLayoutUpdate = false
+local protectedLayoutEventFrame = CreateFrame("Frame")
+protectedLayoutEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+protectedLayoutEventFrame:SetScript("OnEvent", function()
+    if not pendingProtectedLayoutUpdate then return end
+    pendingProtectedLayoutUpdate = false
+
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker then return end
+
+    SyncBlizzardHeight()
+    ApplyMaxWidth(settings)
+    ScheduleBackdropUpdate()
+end)
+
+local function SetupDebugInstrumentation()
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "ObjTracker_ProtectedLayout", frame = protectedLayoutEventFrame }
+end
+if ns.DebugRegister then
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation()
+end
+
+local function ApplyLayoutSettingsSafely(settings)
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        pendingProtectedLayoutUpdate = true
+        return false
+    end
+
+    SyncBlizzardHeight()
+    ApplyMaxWidth(settings)
+    return true
+end
+
+local function ResolveBackdropOpacity(bga)
+    local manager = _G.ObjectiveTrackerManager
+    if manager and manager.backgroundAlpha ~= nil then
+        return manager.backgroundAlpha
+    end
+    return bga or 0.95
+end
+
+local function ApplyBackdropColors(backdrop, hideBorder, sr, sg, sb, sa, bgr, bgg, bgb, opacity)
+    local borderColor = hideBorder and { 0, 0, 0, 0 } or { sr, sg, sb, sa }
+    local bgColor = { bgr, bgg, bgb, opacity }
+    SkinBase.ApplyPixelBackdrop(backdrop, hideBorder and 0 or 1, true, true, borderColor, bgColor, nil, nil, 1)
+end
+
+local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not trackerFrame then return end
+
+    SkinBase.KillNineSlice(trackerFrame.NineSlice)
+
+    if trackerFrame.SetBackgroundAlpha and not SkinBase.GetFrameData(trackerFrame, "backgroundHooked") then
+        hooksecurefunc(trackerFrame, "SetBackgroundAlpha", function(self, alpha)
+            C_Timer.After(0, function()
+                if self.NineSlice then
+                    self.NineSlice:Hide()
+                    self.NineSlice:SetAlpha(0)
+                end
+                local bd = SkinBase.GetFrameData(self, "backdrop")
+                if bd then
+                    local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
+                    SkinBase.SetBackdropColors(bd, nil, { currBgR, currBgG, currBgB, alpha })
+                end
+            end)
+        end)
+        SkinBase.SetFrameData(trackerFrame, "backgroundHooked", true)
+    end
+
+    local opacity = ResolveBackdropOpacity(bga)
+
+    local backdrop = SkinBase.GetFrameData(trackerFrame, "backdrop")
+    if not backdrop then
+        backdrop = CreateFrame("Frame", nil, trackerFrame, "BackdropTemplate")
+        backdrop:SetFrameLevel(math.max(trackerFrame:GetFrameLevel() - 1, 0))
+        backdrop:EnableMouse(false)
+        SkinBase.SetFrameData(trackerFrame, "backdrop", backdrop)
+    end
+
+    local settings = GetSettings()
+    local hideBorder = settings and settings.hideObjectiveTrackerBorder
+
+    ApplyBackdropColors(backdrop, hideBorder, sr, sg, sb, sa, bgr, bgg, bgb, opacity)
+
+    UpdateBackdropAnchors()
+end
+
+local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
+    local fontPath = GetFontPath()
+
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker then
+            if moduleFontSize > 0 and tracker.Header and tracker.Header.Text then
+                local curFont, curSize, curFlags = tracker.Header.Text:GetFont()
+                local targetFlags = GetFontFlags()
+                if curFont ~= fontPath or curSize ~= moduleFontSize or curFlags ~= targetFlags then
+                    CJKFont(tracker.Header.Text, fontPath, moduleFontSize, targetFlags)
+                end
+                SafeSetTextColor(tracker.Header.Text, moduleColor)
+            end
+
+            if tracker.usedBlocks then
+                for template, blocks in pairs(tracker.usedBlocks) do
+                    for blockID, block in pairs(blocks) do
+                        StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor)
+                    end
+                end
+            end
+        end
+    end
+
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if TrackerFrame and TrackerFrame.Header and TrackerFrame.Header.Text then
+        if moduleFontSize > 0 then
+            local curFont, curSize, curFlags = TrackerFrame.Header.Text:GetFont()
+            local targetFlags = GetFontFlags()
+            if curFont ~= fontPath or curSize ~= moduleFontSize or curFlags ~= targetFlags then
+                CJKFont(TrackerFrame.Header.Text, fontPath, moduleFontSize, targetFlags)
+            end
+            SafeSetTextColor(TrackerFrame.Header.Text, moduleColor)
+        end
+    end
+end
+
+local function HookLineCreation()
+    local settings = GetSettings()
+    if not settings then return end
+
+    local textFontSize = settings.objectiveTrackerTextFontSize or 0
+    if textFontSize <= 0 then return end
+
+    local fontPath = GetFontPath()
+
+    if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.AddObjective and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked") then
+        hooksecurefunc(ObjectiveTrackerBlockMixin, "AddObjective", function(self, objectiveKey)
+            local block = self
+            EnsureBlockHighlightHook(block)
+            C_Timer.After(0, function()
+                local line = block.usedLines and block.usedLines[objectiveKey]
+                if line then
+                    local currentSettings = GetSettings()
+                    local currentTextSize = currentSettings and currentSettings.objectiveTrackerTextFontSize or 0
+                    local currentTextColor = currentSettings and currentSettings.objectiveTrackerTextColor
+                    if currentTextSize > 0 then
+                        StyleLine(line, GetFontPath(), currentTextSize, currentTextColor, true)
+                    end
+                end
+            end)
+        end)
+        SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked", true)
+    end
+
+    if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.SetHeader and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked") then
+        hooksecurefunc(ObjectiveTrackerBlockMixin, "SetHeader", function(self)
+            local block = self
+            EnsureBlockHighlightHook(block)
+            C_Timer.After(0, function()
+                local currentSettings = GetSettings()
+                local currentTitleSize = currentSettings and currentSettings.objectiveTrackerTitleFontSize or 0
+                local currentTitleColor = currentSettings and currentSettings.objectiveTrackerTitleColor
+                if currentTitleSize > 0 and block.HeaderText then
+                    local curFont, curSize, curFlags = block.HeaderText:GetFont()
+                    local targetFont = GetFontPath()
+                    local targetFlags = GetFontFlags()
+                    if curFont ~= targetFont or curSize ~= currentTitleSize or curFlags ~= targetFlags then
+                        CJKFont(block.HeaderText, targetFont, currentTitleSize, targetFlags)
+                    end
+                    SafeSetTextColor(block.HeaderText, currentTitleColor)
+                end
+            end)
+        end)
+        SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked", true)
+    end
+
+end
+
+local function SkinObjectiveTracker()
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker then return end
+
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return end
+
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+
+    ApplyLayoutSettingsSafely(settings)
+
+    ApplyQUIBackdrop(TrackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+
+    local moduleFontSize = settings.objectiveTrackerModuleFontSize or 12
+    local titleFontSize = settings.objectiveTrackerTitleFontSize or 10
+    local textFontSize = settings.objectiveTrackerTextFontSize or 10
+    local moduleColor = settings.objectiveTrackerModuleColor
+    local titleColor = settings.objectiveTrackerTitleColor
+    local textColor = settings.objectiveTrackerTextColor
+    ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
+
+    HookLineCreation()
+
+    local function SkinTrackerProgressBar(pb)
+        if pb and pb.Bar then SkinBase.SkinStatusBar(pb.Bar, { backdrop = false }) end
+    end
+    local pbMixins = {
+        { mixin = _G.ObjectiveTrackerProgressBarMixin, method = "SetPercent" },
+        { mixin = _G.BonusObjectiveTrackerProgressBarMixin, method = "SetValue" },
+        { mixin = _G.ScenarioTrackerProgressBarMixin, method = "SetValue" },
+    }
+    for _, pm in ipairs(pbMixins) do
+        if pm.mixin and pm.mixin[pm.method] and not SkinBase.GetFrameData(pm.mixin, "qProgressBarHooked") then
+            hooksecurefunc(pm.mixin, pm.method, SkinTrackerProgressBar)
+            SkinBase.SetFrameData(pm.mixin, "qProgressBarHooked", true)
+        end
+    end
+
+    if TrackerFrame.Header then
+        SkinTrackerHeader(TrackerFrame.Header)
+    end
+
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker then
+            SkinTrackerHeader(tracker.Header)
+        end
+    end
+
+    local DeferredScheduleBackdropUpdate = DeferObjectiveTrackerPostLayoutUpdate
+
+    if TrackerFrame.Update and not SkinBase.GetFrameData(TrackerFrame, "updateHooked") then
+        hooksecurefunc(TrackerFrame, "Update", DeferredScheduleBackdropUpdate)
+        SkinBase.SetFrameData(TrackerFrame, "updateHooked", true)
+    end
+
+    if TrackerFrame.SetCollapsed and not SkinBase.GetFrameData(TrackerFrame, "collapseHooked") then
+        hooksecurefunc(TrackerFrame, "SetCollapsed", DeferredScheduleBackdropUpdate)
+        SkinBase.SetFrameData(TrackerFrame, "collapseHooked", true)
+    end
+
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker and not SkinBase.GetFrameData(tracker, "collapseHooked") then
+            if tracker.Header and tracker.Header.MinimizeButton then
+                tracker.Header.MinimizeButton:HookScript("OnClick", DeferredScheduleBackdropUpdate)
+            end
+
+            if tracker.SetCollapsed then
+                hooksecurefunc(tracker, "SetCollapsed", DeferredScheduleBackdropUpdate)
+            end
+
+            if tracker.LayoutContents then
+                hooksecurefunc(tracker, "LayoutContents", DeferredScheduleBackdropUpdate)
+            end
+
+            if tracker.AddBlock and not SkinBase.GetFrameData(tracker, "addBlockHooked") then
+                hooksecurefunc(tracker, "AddBlock", function(trackerSelf, block)
+                    C_Timer.After(0, function()
+                        ApplyBlockSkinning(trackerSelf, block)
+                    end)
+                end)
+                SkinBase.SetFrameData(tracker, "addBlockHooked", true)
+            end
+
+            SkinBase.SetFrameData(tracker, "collapseHooked", true)
+        end
+    end
+
+    if not SkinBase.GetFrameData(TrackerFrame, "sizeChangedHooked") then
+        TrackerFrame:HookScript("OnSizeChanged", function()
+            C_Timer.After(0, function()
+                EnforceWidth()
+                UpdateBackdropAnchors()
+            end)
+        end)
+        SkinBase.SetFrameData(TrackerFrame, "sizeChangedHooked", true)
+    end
+
+    local manager = _G.ObjectiveTrackerManager
+    if manager and manager.SetOpacity and not SkinBase.GetFrameData(manager, "opacityHooked") then
+        hooksecurefunc(manager, "SetOpacity", function(self, opacityPercent)
+            C_Timer.After(0, function()
+                local alpha = (opacityPercent or 0) / 100
+                local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
+                local bd = SkinBase.GetFrameData(TrackerFrame, "backdrop")
+                if bd then
+                    SkinBase.SetBackdropColors(bd, nil, { currBgR, currBgG, currBgB, alpha })
+                end
+            end)
+        end)
+        SkinBase.SetFrameData(manager, "opacityHooked", true)
+    end
+
+    C_Timer.After(0.5, HidePOIButtonGlows)
+
+    if settings.objectiveTrackerClickThrough then
+        TrackerFrame:EnableMouse(false)
+    end
+
+    SkinBase.MarkSkinned(TrackerFrame)
+end
+
+local function RefreshObjectiveTracker()
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker then return end
+
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return end
+
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+
+    ApplyLayoutSettingsSafely(settings)
+
+    local refreshBackdrop = SkinBase.GetFrameData(TrackerFrame, "backdrop")
+    if refreshBackdrop then
+        local hideBorder = settings.hideObjectiveTrackerBorder
+
+        local opacity = ResolveBackdropOpacity(bga)
+
+        ApplyBackdropColors(refreshBackdrop, hideBorder, sr, sg, sb, sa, bgr, bgg, bgb, opacity)
+    end
+
+    UpdateBackdropAnchors()
+
+    local moduleFontSize = settings.objectiveTrackerModuleFontSize or 12
+    local titleFontSize = settings.objectiveTrackerTitleFontSize or 10
+    local textFontSize = settings.objectiveTrackerTextFontSize or 10
+    local moduleColor = settings.objectiveTrackerModuleColor
+    local titleColor = settings.objectiveTrackerTitleColor
+    local textColor = settings.objectiveTrackerTextColor
+    ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
+
+    HookLineCreation()
+
+    TrackerFrame:EnableMouse(not settings.objectiveTrackerClickThrough)
+end
+
+_G.QUI_RefreshObjectiveTracker = RefreshObjectiveTracker
+
+if ns.Registry then
+    ns.Registry:Register("skinObjectiveTracker", {
+        refresh = _G.QUI_RefreshObjectiveTracker,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end
+
+local trackingEvents = {
+    "CONTENT_TRACKING_UPDATE",
+    "TRACKED_ACHIEVEMENT_UPDATE",
+    "TRACKED_ACHIEVEMENT_LIST_CHANGED",
+    "ACHIEVEMENT_EARNED",
+    "SUPER_TRACKING_CHANGED",
+    "TRANSMOG_COLLECTION_SOURCE_ADDED",
+    "TRACKING_TARGET_INFO_UPDATE",
+    "TRACKABLE_INFO_UPDATE",
+    "HOUSE_DECOR_ADDED_TO_CHEST",
+    "CRITERIA_COMPLETE",
+    "QUEST_TURNED_IN",
+    "QUEST_LOG_UPDATE",
+    "QUEST_WATCH_LIST_CHANGED",
+    "SCENARIO_BONUS_VISIBILITY_UPDATE",
+    "SCENARIO_CRITERIA_UPDATE",
+    "SCENARIO_UPDATE",
+    "QUEST_ACCEPTED",
+    "QUEST_REMOVED",
+    "PERKS_ACTIVITY_COMPLETED",
+    "PERKS_ACTIVITIES_TRACKED_UPDATED",
+    "PERKS_ACTIVITIES_TRACKED_LIST_CHANGED",
+    "ZONE_CHANGED_NEW_AREA",
+    "ZONE_CHANGED_INDOORS",
+    "CURRENCY_DISPLAY_UPDATE",
+    "TRACKED_RECIPE_UPDATE",
+    "BAG_UPDATE_DELAYED",
+    "QUEST_AUTOCOMPLETE",
+    "QUEST_POI_UPDATE",
+    "SCENARIO_SPELL_UPDATE",
+    "SCENARIO_COMPLETED",
+    "SCENARIO_CRITERIA_SHOW_STATE_UPDATE",
+}
+
+local frame = CreateFrame("Frame")
+frame:SetScript("OnEvent", function(self, event)
+    if event == "SUPER_TRACKING_CHANGED" then
+        C_Timer.After(0.01, HidePOIButtonGlows)
+        ScheduleBackdropUpdate()
+    elseif event == "SCENARIO_UPDATE" or event == "SCENARIO_COMPLETED" then
+        C_Timer.After(0.2, function()
+            local settings = GetSettings()
+            if settings and settings.skinObjectiveTracker then
+                ApplyLayoutSettingsSafely(settings)
+            end
+        end)
+        ScheduleBackdropUpdate()
+    else
+        ScheduleBackdropUpdate()
+    end
+end)
+
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        RunAfterFirstFrame(function()
+            SkinObjectiveTracker()
+            for _, trackEvent in ipairs(trackingEvents) do
+                frame:RegisterEvent(trackEvent)
+            end
+        end, 0.2)
+    end)
+end

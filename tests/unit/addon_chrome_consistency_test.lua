@@ -38,7 +38,7 @@ end
 -- minimap.lua
 -- ===========================================================================
 do
-    local src = readFile("QUI_Minimap/minimap/minimap.lua")
+    local src = readFile("modules/minimap/minimap.lua")
 
     -- Great-vault button: raw backdrop with hardcoded 0,0,0,0.8 gone
     assertAbsent(src, "SetBackdropColor%(0, 0, 0, 0%.8%)",
@@ -66,7 +66,7 @@ end
 -- petwarning.lua
 -- ===========================================================================
 do
-    local src = readFile("QUI_QoL/qol/petwarning.lua")
+    local src = readFile("modules/qol/petwarning.lua")
 
     -- Migrated dark bg literal must be gone
     assertAbsent(src, "SetBackdropColor%(0%.1, 0%.1, 0%.1, 0%.9%)",
@@ -85,7 +85,7 @@ end
 -- consumablecheck.lua
 -- ===========================================================================
 do
-    local src = readFile("QUI_QoL/qol/consumablecheck.lua")
+    local src = readFile("modules/qol/consumablecheck.lua")
 
     -- Migrated dark bg literal must be gone (the raw SetBackdropColor call)
     assertAbsent(src, "SetBackdropColor%(0%.05, 0%.05, 0%.05, 0%.95%)",
@@ -102,7 +102,7 @@ end
 -- combattimer.lua
 -- ===========================================================================
 do
-    local src = readFile("QUI_QoL/qol/combattimer.lua")
+    local src = readFile("modules/qol/combattimer.lua")
 
     -- Migrated hardcoded initial bg literal must be gone
     assertAbsent(src, "SetBackdropColor%(0, 0, 0, 0%.6%)",
@@ -117,7 +117,7 @@ end
 -- combattext.lua  (batch c)
 -- ===========================================================================
 do
-    local src = readFile("QUI_QoL/combat/combattext.lua")
+    local src = readFile("modules/combat/combattext.lua")
 
     -- Hardcoded font path must be gone
     assertAbsent(src, "Fonts\\\\FRIZQT__%.TTF",
@@ -136,7 +136,7 @@ end
 -- rotationassist.lua  (batch c)
 -- ===========================================================================
 do
-    local src = readFile("QUI_QoL/combat/rotationassist.lua")
+    local src = readFile("modules/combat/rotationassist.lua")
 
     -- STANDARD_TEXT_FONT at the initial keybind-create site must be gone
     -- (the fallback in the LSM fetch is also migrated)
@@ -162,7 +162,7 @@ end
 -- atonement_counter.lua  (batch c)
 -- ===========================================================================
 do
-    local src = readFile("QUI_QoL/trackers/atonement_counter.lua")
+    local src = readFile("modules/trackers/atonement_counter.lua")
 
     -- GetGeneralFontOutline must now be referenced (replaces hardcoded "OUTLINE")
     assertContains(src, "GetGeneralFontOutline",
@@ -181,7 +181,7 @@ end
 -- preytracker.lua  (batch c)
 -- ===========================================================================
 do
-    local src = readFile("QUI_QoL/trackers/preytracker.lua")
+    local src = readFile("modules/trackers/preytracker.lua")
 
     -- Hardcoded gray border literal must be gone from the CreateHuntPanel area
     assertAbsent(src, "0%.3, 0%.3, 0%.3",
@@ -298,7 +298,7 @@ end
 -- mplus_timer.lua  (Phase 3 batch b)
 -- ===========================================================================
 do
-    local src = readFile("QUI_QoL/dungeon/mplus_timer.lua")
+    local src = readFile("modules/dungeon/mplus_timer.lua")
 
     -- Hardcoded FRIZQT font path in GetForcesFont fallback must be gone
     assertAbsent(src, "Fonts\\\\FRIZQT__%.TTF",
@@ -339,20 +339,29 @@ end
 -- chrome assertions were removed with the code they guarded.
 
 do
-    -- groupframes.lua: decorated-frame chrome border + portrait chrome border migrated
-    local src = readFile("QUI_GroupFrames/groupframes/groupframes.lua")
+    -- The decorated-frame chrome border, the portrait chrome border and the
+    -- secure fill forwarder all live in core/group_frame_chrome.lua now (the
+    -- ONE builder shared by the live frames and the settings preview), so the
+    -- guards follow the code.
+    local src = readFile("core/group_frame_chrome.lua")
     assertAbsent(src, "SetBackdropBorderColor%(0, 0, 0, 1%)",
-        "groupframes.lua: black chrome borders SetBackdropBorderColor(0,0,0,1) must use GetSkinBorderColor()")
+        "group_frame_chrome.lua: black chrome borders SetBackdropBorderColor(0,0,0,1) must use GetSkinBorderColor()")
     assertContains(src, "GetSkinBorderColor",
-        "groupframes.lua: must reference GetSkinBorderColor() for frame/portrait chrome border")
+        "group_frame_chrome.lua: must reference GetSkinBorderColor() for frame/portrait chrome border")
 
     -- Secure taint-mitigation forwarder must remain byte-for-byte (mechanism, not value)
     assertContains(src, "local function SetBackdropFillColor(frame, r, g, b, a)",
-        "groupframes.lua: secure SetBackdropFillColor forwarder definition must not be altered")
+        "group_frame_chrome.lua: secure SetBackdropFillColor forwarder definition must not be altered")
     assertContains(src, "center:SetVertexColor(r, g, b, a)",
-        "groupframes.lua: secure forwarder frame.Center:SetVertexColor mechanism must not be altered")
+        "group_frame_chrome.lua: secure forwarder frame.Center:SetVertexColor mechanism must not be altered")
     assertContains(src, "SetBackdropFillColor(frame, bgColor[1], bgColor[2], bgColor[3], bgAlpha)",
-        "groupframes.lua: secure fill forwarder call (bgColor) must not be altered")
+        "group_frame_chrome.lua: secure fill forwarder call (bgColor) must not be altered")
+
+    -- The runtime file must keep using that one forwarder, never a raw
+    -- SetBackdropColor (the taint source the forwarder exists to avoid).
+    local live = readFile("QUI_GroupFrames/groupframes/groupframes.lua")
+    assertAbsent(live, "frame:SetBackdropColor%(",
+        "groupframes.lua: must not call SetBackdropColor directly (taint) -- use the chrome forwarder")
 end
 
 do

@@ -113,11 +113,11 @@ reset()
 
 ---------------------------------------------------------------------------
 -- Load production files under test (bus → transfers → junk, the bags.xml
--- order; junk uses Transfers.RateQueue and publishes on Bags.Bus).
+-- order; junk uses Transfers.RateQueue and publishes on Storage.Bus).
 ---------------------------------------------------------------------------
 local ns = { Helpers = { CreateDBGetter = function() return function() return settings end end } }
 (dofile("tests/helpers/locale.lua"))(ns)
-assert(loadfile("QUI_Bags/bags/data/bus.lua"))("QUI", ns)
+assert(loadfile("core/storage/bus.lua"))("QUI", ns)
 assert(loadfile("QUI_Bags/bags/ops/shared.lua"))("QUI", ns)
 assert(loadfile("QUI_Bags/bags/ops/transfers.lua"))("QUI", ns)
 assert(loadfile("QUI_Bags/bags/ops/junk.lua"))("QUI", ns)
@@ -247,12 +247,12 @@ do
     reset()
     local pings = {}
     local handler = function(_, shown) pings[#pings + 1] = shown end
-    ns.Bags.Bus.Subscribe("MerchantChanged", handler)
+    ns.Storage.Bus.Subscribe("MerchantChanged", handler)
     Junk.OnMerchant(true)
     Junk.OnMerchant(false)
     assert(#pings == 2 and pings[1] == true and pings[2] == false,
         "OnMerchant must publish MerchantChanged(shown) both ways")
-    ns.Bags.Bus.Unsubscribe("MerchantChanged", handler)
+    ns.Storage.Bus.Unsubscribe("MerchantChanged", handler)
 end
 
 ---------------------------------------------------------------------------

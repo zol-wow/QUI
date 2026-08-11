@@ -1,28 +1,9 @@
----------------------------------------------------------------------------
--- Bags ops: pure reagent-fill planner (NO WoW APIs — headless-testable).
---
--- Plan(containers, targetBagID) → array of moves { fromBag, fromSlot,
--- toBag, toSlot, itemID } sweeping family-fitting items from every OTHER
--- container into the target specialty container: merge into the target's
--- partial stacks first (capped at maxStack; a partial pour leaves the
--- remainder at the source, matching cursor merge semantics), then move
--- whole stacks into empty target slots until none remain. A stack that
--- lands partial becomes a pour target for later sources of the same item.
---
--- Input shape matches sort_planner: containers = array of { bagID, size,
--- slots = {[slot] = entry|nil}, family, reagent }. entry needs itemID, count,
--- maxStack, and EITHER itemFamily (old profession bags) or isReagent (the
--- universal reagent bag, which is outside the family-mask system — see
--- sort_planner). itemID rides on each move so the executor can re-validate
--- the source slot before acting.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 
 local ReagentFill = {}
 Bags.ReagentFill = ReagentFill
 
--- Pure-Lua bitwise AND (sort_planner precedent: masks are small ints).
 local function band(a, b)
     local result, bitval = 0, 1
     while a > 0 and b > 0 do
@@ -40,8 +21,6 @@ function ReagentFill.Plan(containers, targetBagID)
         if c.bagID == targetBagID then target = c end
     end
     if not target then return {} end
-    -- The universal reagent bag accepts crafting reagents (isReagent); an old
-    -- profession bag accepts items whose itemFamily mask overlaps its own.
     local targetReagent = target.reagent and true or false
     if not targetReagent and (not target.family or target.family == 0) then return {} end
     local function accepts(e)
@@ -50,9 +29,8 @@ function ReagentFill.Plan(containers, targetBagID)
         return e.itemFamily and e.itemFamily ~= 0 and band(e.itemFamily, target.family) ~= 0
     end
 
-    -- Virtual target state: partial stacks by itemID + ordered empty slots.
-    local partials = {} -- itemID → array of { slot, count, maxStack }
-    local empties = {}  -- ascending slot list
+    local partials = {}
+    local empties = {}
     for slot = 1, target.size do
         local e = target.slots[slot]
         if not e then
@@ -72,7 +50,6 @@ function ReagentFill.Plan(containers, targetBagID)
                 local e = c.slots[slot]
                 if accepts(e) then
                     local remaining = e.count or 1
-                    -- merge into existing partial stacks first
                     local list = partials[e.itemID]
                     if list then
                         for _, p in ipairs(list) do
@@ -90,7 +67,6 @@ function ReagentFill.Plan(containers, targetBagID)
                             end
                         end
                     end
-                    -- whole remainder into the next empty slot, if any
                     if remaining > 0 and emptyIdx <= #empties then
                         local toSlot = empties[emptyIdx]
                         emptyIdx = emptyIdx + 1
@@ -99,8 +75,6 @@ function ReagentFill.Plan(containers, targetBagID)
                             toBag = targetBagID, toSlot = toSlot,
                             itemID = e.itemID,
                         }
-                        -- the landed stack may itself be partial: later
-                        -- sources of the same item can pour into it
                         if e.maxStack and e.maxStack > 1 and remaining < e.maxStack then
                             local list2 = partials[e.itemID]
                             if not list2 then list2 = {}; partials[e.itemID] = list2 end

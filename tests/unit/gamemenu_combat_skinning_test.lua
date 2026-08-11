@@ -220,10 +220,14 @@ local ns = {
             if button.SetHighlightFontObject then button:SetHighlightFontObject(labelFontObjectStub) end
             if button.SetDisabledFontObject then button:SetDisabledFontObject(labelFontObjectStub) end
         end,
+        -- Pixel-scaled inset insets for the QUI game-menu button highlight frame
+        -- (gamemenu.lua now uses SkinBase.SetInsetPixelPoints instead of raw 1/-1
+        -- SetPoint offsets). Geometry is not asserted here, so a no-op suffices.
+        SetInsetPixelPoints = function() end,
     },
 }
 
-assert(loadfile("QUI_Skinning/skinning/system/gamemenu.lua"))("QUI", ns)
+assert(loadfile("modules/skinning/system/gamemenu.lua"))("QUI", ns)
 
 -- ---- 1) Install surface: exactly one frame hook, on InitButtons -----------
 local initHooks, scriptHooks = 0, 0

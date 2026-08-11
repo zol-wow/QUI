@@ -5,9 +5,6 @@ ns.QUI_UnitFramesSettingsModel = Model
 local ModelKit = ns.Settings and ns.Settings.ModelKit
 
 local UNIT_ORDER = { "player", "target", "focus", "targettarget", "pet", "boss" }
--- Shared unit -> display-name map (single source of truth lives in
--- unit_frames_schema.lua, which loads first). Fall back to a local copy so the
--- model still works if loaded without the schema present.
 local UNIT_LABELS = ns.QUI_UnitFramesUnitDisplayNames or {
     player = ns.L["Player"],
     target = ns.L["Target"],
@@ -24,7 +21,6 @@ local PER_UNIT_TABS = {
     icons = true,
     indicators = true,
     portrait = true,
-    privateAuras = true,
     castbar = true,
 }
 
@@ -75,7 +71,7 @@ end
 
 local function RenderIcons(host, state)
     local unitKey = state and state.selectedUnit or nil
-    RenderSchema("RenderIconsTab", host, unitKey, ns.L["Icons"])
+    RenderSchema("RenderIconsTab", host, unitKey, ns.L["Auras"])
 end
 
 local function RenderPortrait(host, state)
@@ -86,11 +82,6 @@ end
 local function RenderIndicators(host, state)
     local unitKey = state and state.selectedUnit or nil
     RenderSchema("RenderIndicatorsTab", host, unitKey, ns.L["Indicators"])
-end
-
-local function RenderPrivateAuras(host, state)
-    local unitKey = state and state.selectedUnit or nil
-    RenderSchema("RenderPrivateAurasTab", host, unitKey, ns.L["Priv. Auras"])
 end
 
 local function RenderCastbar(host, state)
@@ -104,10 +95,9 @@ local TAB_DEFINITIONS = {
     { key = "bars", label = ns.L["Bars"], render = RenderBars },
     { key = "castbar", label = ns.L["Castbar"], render = RenderCastbar },
     { key = "text", label = ns.L["Text"], render = RenderText },
-    { key = "icons", label = ns.L["Icons"], render = RenderIcons },
+    { key = "icons", label = ns.L["Auras"], render = RenderIcons },
     { key = "indicators", label = ns.L["Indicators"], render = RenderIndicators },
     { key = "portrait", label = ns.L["Portrait"], render = RenderPortrait },
-    { key = "privateAuras", label = ns.L["Priv. Auras"], render = RenderPrivateAuras },
 }
 
 function Model.GetTabDefinitions()

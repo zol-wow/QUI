@@ -81,8 +81,8 @@ Registry:RegisterFeature(Schema.Feature({
     lookupKeys = { "buffFrame", "debuffFrame" },
     category = "frames",
     nav = {
-        tileId = "action_bars",
-        subPageIndex = 2,
+        tileId = "auras",
+        subPageIndex = 4,
     },
     sections = {
         Schema.Section({
@@ -98,5 +98,39 @@ Registry:RegisterFeature(Schema.Feature({
         layout = function(host, options)
             return RenderLayoutRoute(host, options, "buffFrame")
         end,
+    },
+}))
+
+Registry:RegisterFeature(Schema.Feature({
+    id = "actionBarsBuffDebuffPage",
+    category = "frames",
+    nav = { tileId = "action_bars", subPageIndex = 3 },
+    sections = {
+        Schema.Section({
+            id = "settings",
+            kind = "page",
+            minHeight = 80,
+            build = function(host)
+                local AB = ns.QUI_BuffDebuffOptions
+                local SearchRoute = ns.Settings and ns.Settings.SearchRoute
+                local MODULE_ROUTE = {
+                    tabIndex = 8,
+                    tabName = ns.L["Action Bars"],
+                    subTabIndex = 4,
+                    subTabName = ns.L["Buff/Debuff Frames"],
+                    tileId = "action_bars",
+                    subPageIndex = 3,
+                    featureId = "actionBarsBuffDebuffPage",
+                }
+                if AB and type(AB.BuildBuffDebuffTab) == "function" then
+                    if SearchRoute and type(SearchRoute.With) == "function" then
+                        SearchRoute.With(MODULE_ROUTE, AB.BuildBuffDebuffTab, host)
+                    else
+                        AB.BuildBuffDebuffTab(host)
+                    end
+                end
+                return (host.GetHeight and host:GetHeight()) or 80
+            end,
+        }),
     },
 }))

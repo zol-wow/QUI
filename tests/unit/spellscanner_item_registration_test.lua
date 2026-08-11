@@ -7,6 +7,33 @@ local now = 100
 local inCombat = false
 local itemCooldowns = {}
 local secretAuraInstanceID = { token = "secret-aura-instance" }
+-- 68569: the WHOLE UNIT_AURA updateInfo payload (not just a field inside it)
+-- can itself be an opaque secret value under restriction. A real secret value
+-- THROWS on field access, so this sentinel must throw too — a plain table
+-- here would pass even against pre-fix code (zero regression protection).
+local secretUpdateInfo = setmetatable({}, {
+    __index = function() error("attempt to use a secret value", 2) end,
+    __newindex = function() error("attempt to use a secret value", 2) end,
+})
+-- Wave 2b Task B: UNIT_SPELLCAST_SUCCEEDED's spellID can itself be
+-- whole-secret under SecretWhenUnitSpellCastRestricted. A real secret
+-- spellID throws as a table key and in a numeric compare (`spellID <= 0`);
+-- this sentinel throws on both so a plain number/table would give zero
+-- regression protection against the pre-fix `spellID <= 0` compare.
+local secretSpellID = setmetatable({}, {
+    __index = function() error("attempt to use a secret value", 2) end,
+    __newindex = function() error("attempt to use a secret value", 2) end,
+    __le = function() error("attempt to use a secret value", 2) end,
+    __lt = function() error("attempt to use a secret value", 2) end,
+})
+-- 12.1 per-field secrecy: updateInfo can be a READABLE table whose scalar
+-- isFullUpdate field is itself a secret boolean. In-game a boolean test on
+-- it THROWS; Lua metatables cannot trap truthiness, so a pre-fix boolean
+-- test on this token silently passes (truthy table). The RED signal is
+-- probe ABSENCE instead: probedValues records every value handed to
+-- issecretvalue, and the per-field case below asserts the token was probed.
+local secretIsFullUpdate = { token = "secret-isFullUpdate" }
+local probedValues = {}
 
 QUI = {
     db = {
@@ -19,7 +46,11 @@ SlashCmdList = {}
 function GetTime() return now end
 function InCombatLockdown() return inCombat end
 function time() return 1234 end
-function issecretvalue(value) return value == secretAuraInstanceID end
+function issecretvalue(value)
+    if value ~= nil then probedValues[value] = true end
+    return value == secretAuraInstanceID or value == secretUpdateInfo
+        or value == secretSpellID or value == secretIsFullUpdate
+end
 
 function CreateFrame()
     local frame = { events = {} }
@@ -83,6 +114,9 @@ C_UnitAuras = {
         if unit == "player" and auraInstanceID == 91005 then
             return { auraInstanceID = auraInstanceID }
         end
+        if unit == "player" and auraInstanceID == 91008 then
+            return { auraInstanceID = auraInstanceID }
+        end
         if unit == "player" and auraInstanceID == secretAuraInstanceID then
             return { auraInstanceID = auraInstanceID }
         end
@@ -111,7 +145,7 @@ local ns = {
     },
 }
 
-assert(loadfile("QUI_QoL/trackers/spellscanner.lua"))("QUI", ns)
+assert(loadfile("modules/trackers/spellscanner.lua"))("QUI", ns)
 
 local scanner = assert(QUI.SpellScanner, "SpellScanner should be exported")
 assert(scanner.RegisterItemUseSpell(2001, 9002) == true,
@@ -119,6 +153,15 @@ assert(scanner.RegisterItemUseSpell(2001, 9002) == true,
 
 local eventFrame = assert(frames[1], "event frame should be created")
 assert(eventFrame.OnEvent, "event frame should install OnEvent handler")
+
+-- Wave 2b Task B: UNIT_SPELLCAST_SUCCEEDED must be RegisterUnitEvent'd to
+-- "player" (matching UNIT_AURA on the same frame), never a bare
+-- RegisterEvent -- the C-side filter is the only trusted unit identity.
+assert(type(eventFrame.events["UNIT_SPELLCAST_SUCCEEDED"]) == "table",
+    "UNIT_SPELLCAST_SUCCEEDED must be registered via RegisterUnitEvent, not RegisterEvent")
+assert(eventFrame.events["UNIT_SPELLCAST_SUCCEEDED"][1] == "player",
+    "UNIT_SPELLCAST_SUCCEEDED must be scoped to the player unit")
+
 eventFrame.OnEvent(eventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-guid", 9002)
 
 local db = QUI.db.global.spellScanner
@@ -382,5 +425,96 @@ eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", {
 active = scanner.IsItemActive(2800)
 assert(active == false, "aura payload outside the pending item-use window should not bind")
 assert(#events == 0, "expired pending item-use correlation should not publish a scanner refresh")
+
+events = {}
+now = 1000
+inCombat = true
+scanner.RegisterItemUseSpell(2900, 9900)
+QUI.db.global.spellScanner.spells[9900] = nil
+QUI.db.global.spellScanner.items[2900] = nil
+
+-- 68569: a whole-secret UNIT_AURA updateInfo payload (the arg itself is
+-- opaque, not merely a field within it) must not throw -- a direct field
+-- access like `updateInfo.isFullUpdate` on a secret value throws -- and must
+-- have zero observable effect (the same no-op as the pre-existing
+-- isFullUpdate/nil full-rescan branch).
+local ok = pcall(eventFrame.OnEvent, eventFrame, "UNIT_AURA", "player", secretUpdateInfo)
+assert(ok, "a whole-secret UNIT_AURA updateInfo payload must not throw")
+assert(scanner.IsItemActive(2900) == false,
+    "a whole-secret updateInfo payload must not activate any buff")
+assert(#events == 0, "a whole-secret updateInfo payload must not publish a scanner refresh")
+
+-- 12.1 per-field secrecy: readable table, secret isFullUpdate scalar (live
+-- shape: { addedAuras=<secret table>, isFullUpdate=<secret boolean> }). Must
+-- not throw, must have zero observable effect, and the flag must have been
+-- PROBED via issecretvalue before any boolean test (see probedValues note at
+-- the top -- truthiness is untrappable, so probe absence is the RED signal).
+local okField = pcall(eventFrame.OnEvent, eventFrame, "UNIT_AURA", "player", {
+    isFullUpdate = secretIsFullUpdate,
+    addedAuras = secretUpdateInfo,
+})
+assert(okField, "a per-field secret isFullUpdate must not throw")
+assert(scanner.IsItemActive(2900) == false,
+    "a per-field secret isFullUpdate payload must not activate any buff")
+assert(#events == 0, "a per-field secret isFullUpdate payload must not publish a scanner refresh")
+assert(probedValues[secretIsFullUpdate] == true,
+    "isFullUpdate must be probed via issecretvalue before any boolean test")
+
+-- The scanner keeps working normally afterward: a real payload right after
+-- the secret one still binds correctly (the secret probe did not wedge any
+-- runtime state).
+eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", {
+    addedAuras = {
+        { auraInstanceID = 91008 },
+    },
+})
+itemCooldowns[2900] = {
+    startTime = now,
+    duration = 120,
+    enabled = true,
+}
+eventFrame.OnEvent(eventFrame, "BAG_UPDATE_COOLDOWN")
+
+active, expiration, duration, auraInstanceID, auraUnit = scanner.IsItemActive(2900)
+assert(active == true, "scanner should keep working normally after a whole-secret updateInfo payload")
+assert(auraInstanceID == 91008 and auraUnit == "player",
+    "post-secret-payload aura binding should keep the player aura identity")
+assert(events[1][1] == "CDM:COOLDOWN_CHANGED", "post-secret-payload binding should publish CDM refresh")
+assert(events[1][2] == 9900, "post-secret-payload refresh should include item use spell")
+
+events = {}
+now = 1100
+inCombat = true
+scanner.RegisterItemUseSpell(3000, 9950)
+QUI.db.global.spellScanner.spells[9950] = nil
+db.items[3000] = {
+    useSpellID = 9950,
+    buffSpellID = 8950,
+    duration = 20,
+    icon = 789,
+    name = "Secret Boundary Item Aura",
+    scannedAt = 123,
+}
+
+-- 68569: a whole-secret UNIT_SPELLCAST_SUCCEEDED spellID must not throw
+-- (the sentinel throws on table-index and `<=`, the two operations the
+-- pre-fix `if not spellID or spellID <= 0 then return end` guard would
+-- have hit) and must have zero observable effect.
+local castOk = pcall(eventFrame.OnEvent, eventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-guid-secret", secretSpellID)
+assert(castOk, "a whole-secret UNIT_SPELLCAST_SUCCEEDED spellID must not throw")
+assert(scanner.IsItemActive(3000) == false,
+    "a whole-secret spellID must not activate any buff")
+assert(#events == 0, "a whole-secret spellID must not publish a scanner refresh")
+
+-- The scanner keeps working normally afterward: a real cast right after the
+-- secret one still binds correctly (the secret probe did not wedge state).
+eventFrame.OnEvent(eventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-guid-3000", 9950)
+
+active, expiration, duration = scanner.IsItemActive(3000)
+assert(active == true and expiration == now + 20 and duration == 20,
+    "scanner should keep working normally after a whole-secret spellID")
+assert(events[1][1] == "CDM:COOLDOWN_CHANGED", "post-secret-spellID binding should publish CDM refresh")
+assert(events[1][2] == 9950, "post-secret-spellID refresh should include item use spell")
+assert(events[1][4] == "scanner_item", "post-secret-spellID refresh should target item scope")
 
 print("OK: spellscanner_item_registration_test")

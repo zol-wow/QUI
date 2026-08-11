@@ -11,14 +11,12 @@ end
 local ipairs = ipairs
 local math_abs = math.abs
 local pairs = pairs
-local pcall = pcall
 local string_find = string.find
 local string_format = string.format
 local string_gsub = string.gsub
-local string_lower = string.lower
+local FoldUTF8 = ns.Helpers.FoldUTF8
 local tostring = tostring
 local type = type
-local wipe = wipe
 
 local PIN_ICON_TEXTURE = ns.Helpers.AssetPath .. "pin_icon.png"
 
@@ -56,8 +54,6 @@ local function GetStaleColor()
     return { 0.92, 0.62, 0.28, 1 }
 end
 
--- Shared "Unpin All" destructive confirmation, used by both the popup
--- Clear All button and the manage-page Unpin All button.
 local function ConfirmUnpinAll(gui)
     gui:ShowConfirmation({
         title = ns.L["Remove all pins?"],
@@ -129,32 +125,8 @@ local function StyleSurface(frame, backgroundAlpha, borderColor, borderAlpha, ba
     end
 end
 
-local function CleanupChildren(frame)
-    if not frame or not frame.GetChildren then
-        return
-    end
-
-    local gui = GetGUI()
-    if gui and type(gui.CleanupWidgetTree) == "function" then
-        gui:CleanupWidgetTree(frame)
-    end
-
-    for _, child in ipairs({ frame:GetChildren() }) do
-        if child.Hide then child:Hide() end
-        if child.ClearAllPoints then child:ClearAllPoints() end
-        if child.SetParent then child:SetParent(nil) end
-    end
-
-    if frame.GetRegions then
-        for _, region in ipairs({ frame:GetRegions() }) do
-            if region.Hide then region:Hide() end
-            if region.SetParent then region:SetParent(nil) end
-        end
-    end
-end
-
 local function NormalizeSearch(text)
-    text = string_lower(tostring(text or ""))
+    text = FoldUTF8(text)
     text = string_gsub(text, "%s+", " ")
     text = string_gsub(text, "^%s+", "")
     text = string_gsub(text, "%s+$", "")
@@ -759,11 +731,6 @@ function Pins:AttachSettingRow(cell, widget, labelText)
 end
 
 local function BuildBreadcrumb(item)
-    -- Prefer stored tabName/subTabName, but fall back to deriving them from
-    -- tileId/subPageIndex via the tile registry. Pins captured inside a
-    -- BuildFeatureStackPage iteration sometimes have no tabName/subTabName
-    -- stored (only tileId/subPageIndex), which would otherwise collapse the
-    -- breadcrumb to just the sectionName ("Behavior") with no useful context.
     local tabName, subTabName = item.tabName, item.subTabName
     local needLookup = (type(tabName) ~= "string" or tabName == "")
         or (type(subTabName) ~= "string" or subTabName == "")
@@ -796,10 +763,6 @@ local function BuildBreadcrumb(item)
         parts[#parts + 1] = subTabName
     end
 
-    -- Stacked feature pages (e.g. Gameplay > Combat) host many features under
-    -- one sub-tab. Surface the feature's display label between the sub-tab
-    -- and the sectionName so the crumb tells the user which feature card
-    -- the pin lives under.
     if type(item.featureId) == "string" and item.featureId ~= "" then
         local RenderAdapters = Settings and Settings.RenderAdapters
         local featureLabel
@@ -820,21 +783,28 @@ local function BuildBreadcrumb(item)
 end
 
 local function SortItems(items, mode)
+    local crumbs
+    if mode == "feature" then
+        crumbs = {}
+        for i = 1, #items do
+            crumbs[items[i]] = FoldUTF8(BuildBreadcrumb(items[i]))
+        end
+    end
     table.sort(items, function(a, b)
         if mode == "name" then
-            local aName = string_lower(tostring(a.label or a.path))
-            local bName = string_lower(tostring(b.label or b.path))
+            local aName = FoldUTF8(a.label or a.path)
+            local bName = FoldUTF8(b.label or b.path)
             if aName ~= bName then
                 return aName < bName
             end
         elseif mode == "feature" then
-            local aCrumb = string_lower(BuildBreadcrumb(a))
-            local bCrumb = string_lower(BuildBreadcrumb(b))
+            local aCrumb = crumbs[a]
+            local bCrumb = crumbs[b]
             if aCrumb ~= bCrumb then
                 return aCrumb < bCrumb
             end
-            local aName = string_lower(tostring(a.label or a.path))
-            local bName = string_lower(tostring(b.label or b.path))
+            local aName = FoldUTF8(a.label or a.path)
+            local bName = FoldUTF8(b.label or b.path)
             if aName ~= bName then
                 return aName < bName
             end
@@ -889,37 +859,48 @@ local function CreateSearchBox(parent, width, onChanged)
     return frame
 end
 
-local function CreateValuePreview(parent, item, width)
+local function CreateValuePreview(parent, width)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(width or 132, 18)
+    local valueText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    valueText:SetJustifyH("LEFT")
+    frame.valueText = valueText
+    return frame
+end
+
+local function BindValuePreview(frame, item)
+    local valueText = frame.valueText
 
     if item.kind == "color" and type(item.value) == "table" then
-        local swatch = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        swatch:SetSize(16, 16)
-        swatch:SetPoint("LEFT", frame, "LEFT", 0, 0)
+        local swatch = frame.swatch
+        if not swatch then
+            swatch = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            swatch:SetSize(16, 16)
+            swatch:SetPoint("LEFT", frame, "LEFT", 0, 0)
+            frame.swatch = swatch
+        end
         StyleSurface(swatch, 1, { 1, 1, 1, 0.35 }, 0.35)
         if swatch._quiPinsBg and swatch._quiPinsBg.SetVertexColor then
             swatch._quiPinsBg:SetVertexColor(item.value[1] or 1, item.value[2] or 1, item.value[3] or 1, item.value[4] or 1)
         elseif swatch.SetBackdropColor then
             swatch:SetBackdropColor(item.value[1] or 1, item.value[2] or 1, item.value[3] or 1, item.value[4] or 1)
         end
+        swatch:Show()
 
-        local valueText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         SetFont(valueText, 10, GetTextColor())
         valueText:SetPoint("LEFT", swatch, "RIGHT", 6, 0)
         valueText:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
-        valueText:SetJustifyH("LEFT")
         valueText:SetText(Pins:FormatValue(item.value))
-        return frame
+        return
     end
 
-    local valueText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    if frame.swatch then
+        frame.swatch:Hide()
+    end
     SetFont(valueText, 10, item.disabled and GetStaleColor() or GetTextColor())
     valueText:SetPoint("LEFT", frame, "LEFT", 0, 0)
     valueText:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
-    valueText:SetJustifyH("LEFT")
     valueText:SetText(item.disabled and ns.L["Unavailable"] or Pins:FormatValue(item.value))
-    return frame
 end
 
 local function BuildPopupRows(chip)
@@ -928,62 +909,89 @@ local function BuildPopupRows(chip)
         return
     end
 
-    CleanupChildren(popup.content)
+    popup.rows = popup.rows or {}
 
     local items = Pins:List()
     local y = -6
     if #items == 0 then
-        local empty = popup.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(empty, 10, GetMutedColor())
-        empty:SetPoint("TOPLEFT", popup.content, "TOPLEFT", 4, y)
-        empty:SetPoint("RIGHT", popup.content, "RIGHT", -4, 0)
-        empty:SetJustifyH("LEFT")
-        empty:SetJustifyV("TOP")
-        empty:SetText(ns.L["No pinned settings yet."])
+        for _, row in ipairs(popup.rows) do
+            row:Hide()
+        end
+        if not popup.emptyText then
+            local empty = popup.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            SetFont(empty, 10, GetMutedColor())
+            empty:SetPoint("TOPLEFT", popup.content, "TOPLEFT", 4, y)
+            empty:SetPoint("RIGHT", popup.content, "RIGHT", -4, 0)
+            empty:SetJustifyH("LEFT")
+            empty:SetJustifyV("TOP")
+            empty:SetText(ns.L["No pinned settings yet."])
+            popup.emptyText = empty
+        end
+        popup.emptyText:Show()
         popup.content:SetHeight(48)
         return
     end
+    if popup.emptyText then
+        popup.emptyText:Hide()
+    end
 
     for index, item in ipairs(items) do
-        local row = CreateFrame("Button", nil, popup.content)
-        row:SetPoint("TOPLEFT", popup.content, "TOPLEFT", 0, y)
-        row:SetPoint("TOPRIGHT", popup.content, "TOPRIGHT", -4, y)
-        row:SetHeight(30)
+        local row = popup.rows[index]
+        if not row then
+            row = CreateFrame("Button", nil, popup.content)
+            row:SetPoint("TOPLEFT", popup.content, "TOPLEFT", 0, y)
+            row:SetPoint("TOPRIGHT", popup.content, "TOPRIGHT", -4, y)
+            row:SetHeight(30)
 
-        if (index % 2) == 0 then
-            local bg = row:CreateTexture(nil, "BACKGROUND")
-            bg:SetAllPoints(row)
-            bg:SetColorTexture(1, 1, 1, 0.025)
+            if (index % 2) == 0 then
+                local bg = row:CreateTexture(nil, "BACKGROUND")
+                bg:SetAllPoints(row)
+                bg:SetColorTexture(1, 1, 1, 0.025)
+            end
+
+            local hover = row:CreateTexture(nil, "ARTWORK")
+            hover:SetAllPoints(row)
+            hover:Hide()
+            row.hover = hover
+
+            local title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            title:SetPoint("TOPLEFT", row, "TOPLEFT", 6, -4)
+            title:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            title:SetJustifyH("LEFT")
+            row.title = title
+
+            local value = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            value:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 6, 4)
+            value:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            value:SetJustifyH("LEFT")
+            row.value = value
+
+            row:SetScript("OnEnter", function(self) self.hover:Show() end)
+            row:SetScript("OnLeave", function(self) self.hover:Hide() end)
+            row:SetScript("OnClick", function(self)
+                popup:Hide()
+                if self._quiPinItem then
+                    Pins:NavigateToPinned(self._quiPinItem.path)
+                end
+            end)
+
+            popup.rows[index] = row
         end
 
-        local hover = row:CreateTexture(nil, "ARTWORK")
-        hover:SetAllPoints(row)
         local hoverAccent = GetAccentColor()
-        hover:SetColorTexture(hoverAccent[1], hoverAccent[2], hoverAccent[3], 0.08)
-        hover:Hide()
-
-        local title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(title, 10, item.disabled and GetStaleColor() or GetTextColor())
-        title:SetPoint("TOPLEFT", row, "TOPLEFT", 6, -4)
-        title:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-        title:SetJustifyH("LEFT")
-        title:SetText(item.label or item.path)
-
-        local value = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(value, 9, GetMutedColor())
-        value:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 6, 4)
-        value:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-        value:SetJustifyH("LEFT")
-        value:SetText(item.disabled and ns.L["Unavailable"] or Pins:FormatValue(item.value))
-
-        row:SetScript("OnEnter", function() hover:Show() end)
-        row:SetScript("OnLeave", function() hover:Hide() end)
-        row:SetScript("OnClick", function()
-            popup:Hide()
-            Pins:NavigateToPinned(item.path)
-        end)
+        row.hover:SetColorTexture(hoverAccent[1], hoverAccent[2], hoverAccent[3], 0.08)
+        SetFont(row.title, 10, item.disabled and GetStaleColor() or GetTextColor())
+        row.title:SetText(item.label or item.path)
+        SetFont(row.value, 9, GetMutedColor())
+        row.value:SetText(item.disabled and ns.L["Unavailable"] or Pins:FormatValue(item.value))
+        row._quiPinItem = item
+        row:Show()
 
         y = y - 32
+    end
+
+    for i = #items + 1, #popup.rows do
+        popup.rows[i]:Hide()
     end
 
     popup.content:SetHeight(math.max(1, math_abs(y) + 2))
@@ -1142,7 +1150,7 @@ local function BuildPinnedGlobalsRows(state)
         return
     end
 
-    CleanupChildren(state.rowsHost)
+    state.rows = state.rows or {}
 
     local items = Pins:List()
     local query = NormalizeSearch(state.search)
@@ -1167,7 +1175,7 @@ local function BuildPinnedGlobalsRows(state)
 
     if disabledCount > 0 then
         state.staleBanner:Show()
-        state.staleText:SetText(string_format(ns.L["%d stale pin%s detected."], disabledCount, disabledCount == 1 and "" or "s"))
+        state.staleText:SetText(string_format(ns.L["%d stale pins detected."], disabledCount))
         state.rowsHost:ClearAllPoints()
         state.rowsHost:SetPoint("TOPLEFT", state.staleBanner, "BOTTOMLEFT", 0, -10)
         state.rowsHost:SetPoint("TOPRIGHT", state.staleBanner, "BOTTOMRIGHT", 0, -10)
@@ -1180,114 +1188,175 @@ local function BuildPinnedGlobalsRows(state)
 
     local y = 0
     if #filtered == 0 then
-        local empty = state.rowsHost:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(empty, 11, GetMutedColor())
-        empty:SetPoint("TOPLEFT", state.rowsHost, "TOPLEFT", 0, 0)
-        empty:SetPoint("RIGHT", state.rowsHost, "RIGHT", 0, 0)
-        empty:SetJustifyH("LEFT")
-        empty:SetText(query == "" and ns.L["No pinned settings yet."] or ns.L["No pinned settings match this search."])
+        for _, row in ipairs(state.rows) do
+            row:Hide()
+        end
+        if not state.emptyText then
+            local empty = state.rowsHost:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            SetFont(empty, 11, GetMutedColor())
+            empty:SetPoint("TOPLEFT", state.rowsHost, "TOPLEFT", 0, 0)
+            empty:SetPoint("RIGHT", state.rowsHost, "RIGHT", 0, 0)
+            empty:SetJustifyH("LEFT")
+            state.emptyText = empty
+        end
+        state.emptyText:SetText(query == "" and ns.L["No pinned settings yet."] or ns.L["No pinned settings match this search."])
+        state.emptyText:Show()
         state.rowsHost:SetHeight(32)
         state.content:SetHeight(220)
         return
     end
+    if state.emptyText then
+        state.emptyText:Hide()
+    end
 
-    -- One pinned item rendered as a half-width cell: accent bar, stacked
-    -- label + breadcrumb (truncating), value chip, compact Jump/Unpin.
-    local function BuildPinCell(row, item)
-        local cell = CreateFrame("Frame", nil, row)
-        cell._quiPinCell = true
+    local function BindPinCell(row, slot, item)
+        local cell = row[slot]
+        if not cell then
+            cell = CreateFrame("Frame", nil, row)
+            cell._quiPinCell = true
+
+            local accentBar = cell:CreateTexture(nil, "ARTWORK")
+            accentBar:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, -4)
+            accentBar:SetPoint("BOTTOMLEFT", cell, "BOTTOMLEFT", 0, 4)
+            accentBar:SetWidth(2)
+            cell.accentBar = accentBar
+
+            local unpinBtn = gui:CreateButton(cell, item.disabled and ns.L["Remove"] or ns.L["Unpin"], 52, 20, function()
+                local it = cell._quiPinItem
+                if not it then
+                    return
+                end
+                if it.disabled then
+                    Pins:DropPath(it.path)
+                else
+                    Pins:Unpin(it.path)
+                end
+            end)
+            unpinBtn:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
+            cell.unpinBtn = unpinBtn
+
+            local jumpBtn = gui:CreateButton(cell, ns.L["Jump"], 40, 20, function()
+                local it = cell._quiPinItem
+                if it then
+                    Pins:NavigateToPinned(it.path)
+                end
+            end)
+            jumpBtn:SetPoint("RIGHT", unpinBtn, "LEFT", -4, 0)
+
+            local valuePreview = CreateValuePreview(cell, 70)
+            valuePreview:SetPoint("RIGHT", jumpBtn, "LEFT", -6, 0)
+            cell.valuePreview = valuePreview
+
+            local label = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            label:SetPoint("TOPLEFT", cell, "TOPLEFT", 10, -6)
+            label:SetPoint("RIGHT", valuePreview, "LEFT", -6, 0)
+            label:SetJustifyH("LEFT")
+            label:SetWordWrap(false)
+            cell.label = label
+
+            local crumb = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            crumb:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
+            crumb:SetPoint("RIGHT", valuePreview, "LEFT", -6, 0)
+            crumb:SetJustifyH("LEFT")
+            crumb:SetWordWrap(false)
+            cell.crumb = crumb
+
+            row[slot] = cell
+        end
+
+        cell._quiPinItem = item
         cell._quiPinStale = item.disabled or nil
 
-        -- Stale tint draws above the row's alternating tint (cell regions
-        -- render over the parent row's regions).
         if item.disabled then
-            local staleBg = cell:CreateTexture(nil, "BACKGROUND", nil, 1)
-            staleBg:SetAllPoints(cell)
+            local staleBg = cell.staleBg
+            if not staleBg then
+                staleBg = cell:CreateTexture(nil, "BACKGROUND", nil, 1)
+                staleBg:SetAllPoints(cell)
+                cell.staleBg = staleBg
+            end
             staleBg:SetColorTexture(GetStaleColor()[1], GetStaleColor()[2], GetStaleColor()[3], 0.07)
+            staleBg:Show()
+        elseif cell.staleBg then
+            cell.staleBg:Hide()
         end
 
-        local accentBar = cell:CreateTexture(nil, "ARTWORK")
-        accentBar:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, -4)
-        accentBar:SetPoint("BOTTOMLEFT", cell, "BOTTOMLEFT", 0, 4)
-        accentBar:SetWidth(2)
         if item.disabled then
-            accentBar:SetColorTexture(GetStaleColor()[1], GetStaleColor()[2], GetStaleColor()[3], 1)
+            cell.accentBar:SetColorTexture(GetStaleColor()[1], GetStaleColor()[2], GetStaleColor()[3], 1)
         else
             local accent = GetAccentColor()
-            accentBar:SetColorTexture(accent[1], accent[2], accent[3], 1)
+            cell.accentBar:SetColorTexture(accent[1], accent[2], accent[3], 1)
         end
 
-        local unpinBtn = gui:CreateButton(cell, item.disabled and ns.L["Remove"] or ns.L["Unpin"], 52, 20, function()
-            if item.disabled then
-                Pins:DropPath(item.path)
-            else
-                Pins:Unpin(item.path)
-            end
-        end)
-        unpinBtn:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
+        if cell.unpinBtn.text then
+            cell.unpinBtn.text:SetText(item.disabled and ns.L["Remove"] or ns.L["Unpin"])
+        end
 
-        local jumpBtn = gui:CreateButton(cell, ns.L["Jump"], 40, 20, function()
-            Pins:NavigateToPinned(item.path)
-        end)
-        jumpBtn:SetPoint("RIGHT", unpinBtn, "LEFT", -4, 0)
+        BindValuePreview(cell.valuePreview, item)
 
-        local valuePreview = CreateValuePreview(cell, item, 70)
-        valuePreview:SetPoint("RIGHT", jumpBtn, "LEFT", -6, 0)
+        SetFont(cell.label, 11, item.disabled and GetStaleColor() or GetTextColor())
+        cell.label:SetText(item.label or item.path)
 
-        local label = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(label, 11, item.disabled and GetStaleColor() or GetTextColor())
-        label:SetPoint("TOPLEFT", cell, "TOPLEFT", 10, -6)
-        label:SetPoint("RIGHT", valuePreview, "LEFT", -6, 0)
-        label:SetJustifyH("LEFT")
-        label:SetWordWrap(false)
-        label:SetText(item.label or item.path)
+        SetFont(cell.crumb, 9, GetMutedColor())
+        cell.crumb:SetText(item.disabled and (BuildBreadcrumb(item) .. ns.L["  |  stale"]) or BuildBreadcrumb(item))
 
-        local crumb = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(crumb, 9, GetMutedColor())
-        crumb:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
-        crumb:SetPoint("RIGHT", valuePreview, "LEFT", -6, 0)
-        crumb:SetJustifyH("LEFT")
-        crumb:SetWordWrap(false)
-        crumb:SetText(item.disabled and (BuildBreadcrumb(item) .. ns.L["  |  stale"]) or BuildBreadcrumb(item))
-
+        cell:Show()
         return cell
     end
 
     local rowIndex = 0
     for i = 1, #filtered, 2 do
         rowIndex = rowIndex + 1
-        local row = CreateFrame("Frame", nil, state.rowsHost)
-        row:SetPoint("TOPLEFT", state.rowsHost, "TOPLEFT", 0, y)
-        row:SetPoint("TOPRIGHT", state.rowsHost, "TOPRIGHT", 0, y)
-        row:SetHeight(44)
+        local row = state.rows[rowIndex]
+        if not row then
+            row = CreateFrame("Frame", nil, state.rowsHost)
+            row:SetPoint("TOPLEFT", state.rowsHost, "TOPLEFT", 0, y)
+            row:SetPoint("TOPRIGHT", state.rowsHost, "TOPRIGHT", 0, y)
+            row:SetHeight(44)
 
-        -- Alternating row tint, full row width (matches the card-group rhythm).
-        if (rowIndex % 2) == 0 then
-            local bg = row:CreateTexture(nil, "BACKGROUND", nil, 0)
-            bg:SetAllPoints(row)
-            bg:SetColorTexture(1, 1, 1, 0.025)
+            if (rowIndex % 2) == 0 then
+                local bg = row:CreateTexture(nil, "BACKGROUND", nil, 0)
+                bg:SetAllPoints(row)
+                bg:SetColorTexture(1, 1, 1, 0.025)
+            end
+
+            state.rows[rowIndex] = row
         end
+        row:Show()
 
-        local leftCell = BuildPinCell(row, filtered[i])
+        local leftCell = BindPinCell(row, "leftCell", filtered[i])
         leftCell:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
         leftCell:SetPoint("BOTTOMRIGHT", row, "BOTTOM", -8, 0)
 
         local rightItem = filtered[i + 1]
         if rightItem then
-            local rightCell = BuildPinCell(row, rightItem)
+            local rightCell = BindPinCell(row, "rightCell", rightItem)
             rightCell:SetPoint("TOPLEFT", row, "TOP", 8, 0)
             rightCell:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
 
-            -- 1px center divider between the two columns (matches card groups).
-            local cdiv = row:CreateTexture(nil, "ARTWORK")
-            cdiv:SetPoint("TOP", row, "TOP", 0, -6)
-            cdiv:SetPoint("BOTTOM", row, "BOTTOM", 0, 6)
-            cdiv:SetWidth(1)
-            cdiv:SetColorTexture(1, 1, 1, 0.05)
-            row._centerDivider = cdiv
+            local cdiv = row._centerDivider
+            if not cdiv then
+                cdiv = row:CreateTexture(nil, "ARTWORK")
+                cdiv:SetPoint("TOP", row, "TOP", 0, -6)
+                cdiv:SetPoint("BOTTOM", row, "BOTTOM", 0, 6)
+                cdiv:SetWidth(1)
+                cdiv:SetColorTexture(1, 1, 1, 0.05)
+                row._centerDivider = cdiv
+            end
+            cdiv:Show()
+        else
+            if row.rightCell then
+                row.rightCell:Hide()
+            end
+            if row._centerDivider then
+                row._centerDivider:Hide()
+            end
         end
 
         y = y - 46
+    end
+
+    for i = rowIndex + 1, #state.rows do
+        state.rows[i]:Hide()
     end
 
     state.rowsHost:SetHeight(math.max(1, math_abs(y)))

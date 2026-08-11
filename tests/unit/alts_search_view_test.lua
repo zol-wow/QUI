@@ -21,8 +21,8 @@ ns.Storage = { Store = {}, Bus = {}, Summaries = {
 } }
 ns.Alts = { Window = { RegisterTab = function() end } }
 
-assert(loadfile("QUI_Alts/alts/views/shared.lua"))("QUI", ns)
-assert(loadfile("QUI_Alts/alts/views/search.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/shared.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/search.lua"))("QUI", ns)
 
 local SV = ns.Alts.SearchView
 assert(SV, "SearchView exported")

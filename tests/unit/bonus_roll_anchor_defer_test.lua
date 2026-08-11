@@ -9,9 +9,13 @@ local function readFile(path)
 end
 
 local source = readFile("modules/layout/layoutmode.lua")
-local block = assert(
-    source:match("%-%- BonusRollFrame: reapply.-%-%- Chat frame"),
+local blockStart = assert(
+    source:find("if _G.BonusRollFrame and not _G.BonusRollFrame._QUI_AnchorHooked then", 1, true),
     "BonusRollFrame anchoring hook block should exist")
+local blockEnd = assert(
+    source:find("local function ChatDB()", blockStart, true),
+    "BonusRollFrame anchoring hook block should end before the chat section")
+local block = source:sub(blockStart, blockEnd - 1)
 
 assert(
     block:find("C_Timer.After%(0", 1, false) or block:find("RunNextFrame", 1, true),

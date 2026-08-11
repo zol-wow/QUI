@@ -35,8 +35,8 @@ local function currency(id, qty, icon)
 end
 
 local ns = loader.LoadAll(nil, "scan_currencies.lua")
-ns.Bags.RequestDrain = function() end
-local Store, ScanCurrencies, Bus = ns.Bags.Store, ns.Bags.ScanCurrencies, ns.Bags.Bus
+ns.Storage.RequestDrain = function() end
+local Store, ScanCurrencies, Bus = ns.Storage.Store, ns.Storage.ScanCurrencies, ns.Storage.Bus
 
 _G.QUI_StorageDB = nil
 Store.Initialize()

@@ -12,15 +12,15 @@ local function assertContains(text, needle, reason)
     assert(text:find(needle, 1, true), reason)
 end
 
-local characterFrameSkin = readFile("QUI_Skinning/skinning/frames/character.lua")
-local inspectFrameSkin = readFile("QUI_Skinning/skinning/frames/inspect.lua")
-local inspectPane = readFile("QUI_Skinning/skinning/character_pane/inspect.lua")
+local characterFrameSkin = readFile("modules/skinning/frames/character.lua")
+local inspectFrameSkin = readFile("modules/skinning/frames/inspect.lua")
+local inspectPane = readFile("modules/skinning/character_pane/inspect.lua")
 
 local hideStart = assert(
     characterFrameSkin:find("local function HideBlizzardDecorations()", 1, true),
     "Character frame skin should have a decoration-hiding helper")
 local hideEnd = assert(
-    characterFrameSkin:find("-- API: Set background extended mode", hideStart, true),
+    characterFrameSkin:find("local function SetCharacterFrameBgExtended(", hideStart, true),
     "Character frame skin helper should precede the background API")
 local hideBlock = characterFrameSkin:sub(hideStart, hideEnd)
 
@@ -71,7 +71,7 @@ local updateStart = assert(
     inspectPane:find("local function UpdateInspectFrame()", 1, true),
     "Inspect update function should exist")
 local updateEnd = assert(
-    inspectPane:find("-- Hook inspect frame", updateStart, true),
+    inspectPane:find("local function HookInspectFrame()", updateStart, true),
     "Inspect update function should precede the hook section")
 local updateBlock = inspectPane:sub(updateStart, updateEnd)
 

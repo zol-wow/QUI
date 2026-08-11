@@ -46,11 +46,11 @@ assert(normalized[2].name == "Spell 123", "non-secret spellID should still resol
 assert(normalized[2].iconID == 1123, "non-secret spellID should still resolve icon")
 
 local utilityStart = assert(source:find("local function SortByDescSafe", 1, true))
-local utilityEnd = assert(source:find("-- ==== Data ====", utilityStart, true))
+local utilityEnd = assert(source:find("local Data = {}", utilityStart, true))
 local spellHelperStart = assert(source:find("local _spellInfoCache", 1, true))
 local spellHelperEnd = assert(source:find("Data._NormalizeSpells", spellHelperStart, true))
 local combinedStart = assert(source:find("function Data:GetCombinedHealingBreakdown", 1, true))
-local combinedEnd = assert(source:find("-- Helper: is this meter type", combinedStart, true))
+local combinedEnd = assert(source:find("local function IsHealingType(meterType)", combinedStart, true))
 local combinedChunk = table.concat({
     source:sub(utilityStart, utilityEnd - 1),
     "local Data = {}",

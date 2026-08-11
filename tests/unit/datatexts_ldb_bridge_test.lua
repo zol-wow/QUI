@@ -1,4 +1,4 @@
--- Verifies the LibDataBroker host (QUI_Datatexts/datatexts/ldb_bridge.lua)
+-- Verifies the LibDataBroker host (modules/datatexts/ldb_bridge.lua)
 -- against the real LibStub + CallbackHandler + LibDataBroker libraries, plus
 -- the registry/attach layer of datatexts.lua it rides on:
 --   * dataobjects existing BEFORE the bridge loads register as ldb:<name>
@@ -99,11 +99,17 @@ local QUICore = {
     GetPixelSize = function() return 1 end,
 }
 local ns = { Addon = QUICore, Helpers = {}, LSM = { Fetch = function() return nil end } }
+-- Task 1f: datatexts.lua now routes swallow-pcalls through ns.SafeCall.
+-- Additive stub (T1d/T1e precedent) — same semantics as core/safecall.lua's
+-- bare pcall passthrough, no classification needed for this test's scope.
+ns.SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end
+ns.SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end
+ns.SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end
 -- datatexts.lua indexes ns.L["..."] at load (post-i18n); install identity resolver.
 local installLocale = dofile(ROOT .. "tests/helpers/locale.lua")
 installLocale(ns)
 
-assert(loadfile(ROOT .. "QUI_Datatexts/datatexts/datatexts.lua"))("QUI_Datatexts", ns)
+assert(loadfile(ROOT .. "modules/datatexts/datatexts.lua"))("QUI_Datatexts", ns)
 local Datatexts = QUICore.Datatexts
 assert(Datatexts, "datatexts.lua did not publish QUICore.Datatexts")
 
@@ -123,7 +129,7 @@ _G.QUI_RefreshInfoBar = function() refreshes.infobar = refreshes.infobar + 1 end
 _G.QUI_RefreshDatapanels = function() refreshes.datapanels = refreshes.datapanels + 1 end
 _G.QUI_RefreshMinimap = function() refreshes.minimap = refreshes.minimap + 1 end
 
-assert(loadfile(ROOT .. "QUI_Datatexts/datatexts/ldb_bridge.lua"))("QUI_Datatexts", ns)
+assert(loadfile(ROOT .. "modules/datatexts/ldb_bridge.lua"))("QUI_Datatexts", ns)
 
 local failures = 0
 local function check(cond, label)

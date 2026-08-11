@@ -1,8 +1,8 @@
-## Interface: 120000, 120001, 120005, 120007, 120100
+## Interface: 120100
 ## Title: |cFF30D1FFQUI|r Group Frames
 ## Notes: QUI module. Requires the QUI core addon.
-## Author: Zol
-## Version: 4.0.0-beta58
+## Author: Drew
+## Version: 5.0.0-beta4
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
@@ -19,7 +19,6 @@ groupframes\groupframes_missing_raid_buffs.lua
 groupframes\groupframes_aura_model.lua
 groupframes\groupframes_auras.lua
 groupframes\groupframes_aura_render.lua
-groupframes\groupframes_private_auras.lua
 groupframes\groupframes_clickcast.lua
 groupframes\groupframes_blizzard.lua
 groupframes\groupframes_editmode.lua

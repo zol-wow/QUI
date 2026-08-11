@@ -47,13 +47,6 @@ GUI.Colors = GUI.Colors or {
 
 local C = GUI.Colors
 
----------------------------------------------------------------------------
--- FONT PATH (central) — bundled Quazii font, resolved lazily so LSM / AssetPath
--- are ready regardless of core file load order. QUI_Options/framework.lua mirrors
--- this; defining it on the core GUI shell makes the path reachable suite-wide at
--- login (UIKit.CreateButton and other early factories resolve through it before
--- the Options addon loads).
----------------------------------------------------------------------------
 function GUI:GetFontPath()
     if not self.FONT_PATH then
         local lsm = ns.LSM
@@ -207,72 +200,7 @@ if type(Options.CreateScrollableContent) ~= "function" then Options.CreateScroll
 if type(Options.CreateWrappedLabel) ~= "function" then Options.CreateWrappedLabel = CreateWrappedLabelCompat end
 if type(Options.CreateLinkItem) ~= "function" then Options.CreateLinkItem = CreateLinkItemCompat end
 
-GUI.ThemePresets = GUI.ThemePresets or {
-    { name = "Sky Blue",     color = {0.376, 0.647, 0.980} },
-    { name = "Classic Mint", color = {0.204, 0.827, 0.600} },
-    { name = "Horde",        color = {0.780, 0.192, 0.192} },
-    { name = "Alliance",     color = {0.267, 0.467, 0.800} },
-    { name = "Midnight",     color = {0.580, 0.490, 0.890} },
-    { name = "Amber",        color = {0.961, 0.620, 0.043} },
-    { name = "Rose",         color = {0.914, 0.349, 0.518} },
-    { name = "Emerald",      color = {0.196, 0.804, 0.494} },
-}
-
 function GUI:RefreshCachedColors()
-end
-
-function GUI:ApplyAccentColor(r, g, b)
-    local function lerp(a, b2, t) return a + (b2 - a) * t end
-
-    C.accent[1], C.accent[2], C.accent[3], C.accent[4] = r, g, b, 1
-    C.accentFaint[1], C.accentFaint[2], C.accentFaint[3] = r, g, b
-    C.accentGlow[1], C.accentGlow[2], C.accentGlow[3] = r, g, b
-    C.accentLight[1] = lerp(r, 1, 0.3)
-    C.accentLight[2] = lerp(g, 1, 0.3)
-    C.accentLight[3] = lerp(b, 1, 0.3)
-    C.accentLight[4] = 1
-    C.accentDark[1], C.accentDark[2], C.accentDark[3], C.accentDark[4] = r * 0.5, g * 0.5, b * 0.5, 1
-    C.accentHover[1] = lerp(r, 1, 0.15)
-    C.accentHover[2] = lerp(g, 1, 0.15)
-    C.accentHover[3] = lerp(b, 1, 0.15)
-    C.accentHover[4] = 1
-    C.tabSelected[1], C.tabSelected[2], C.tabSelected[3] = r, g, b
-    C.borderAccent[1], C.borderAccent[2], C.borderAccent[3] = r, g, b
-    C.sectionHeader[1], C.sectionHeader[2], C.sectionHeader[3] = C.accentLight[1], C.accentLight[2], C.accentLight[3]
-
-    if type(self.RefreshCachedColors) == "function" then
-        self:RefreshCachedColors()
-    end
-end
-
-function GUI:ResolveThemePreset(presetName)
-    for _, preset in ipairs(self.ThemePresets or {}) do
-        if preset.name == presetName then
-            return preset.color[1], preset.color[2], preset.color[3]
-        end
-    end
-
-    if presetName == "Class Colored" then
-        local _, class = UnitClass("player")
-        -- CUSTOM_CLASS_COLORS-aware via the shared helper (resolved at runtime)
-        local color = ns.Helpers and ns.Helpers.GetClassColorTable(class)
-        if color then return color.r, color.g, color.b end
-        return 0.376, 0.647, 0.980
-    end
-
-    if presetName == "Faction Auto" then
-        local faction = UnitFactionGroup("player")
-        if faction == "Horde" then return 0.780, 0.192, 0.192 end
-        return 0.267, 0.467, 0.800
-    end
-
-    if presetName == "Custom" then
-        local db = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile
-        local custom = db and db.general and db.general.addonAccentColor
-        if custom then return custom[1], custom[2], custom[3] end
-    end
-
-    return 0.376, 0.647, 0.980
 end
 
 local REQUIRED_WIDGET_API = {
@@ -328,6 +256,7 @@ end
 local function ShellShow()
     if QUI and type(QUI.EnsureOptionsLoaded) == "function" then
         local ok = QUI:EnsureOptionsLoaded()
+        ---@type fun(...): ... -- GUI.Show is swapped in by the LoD Options addon
         local show = GUI.Show
         if ok and type(show) == "function" and show ~= ShellShow then
             return show(GUI)

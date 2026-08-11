@@ -1,21 +1,3 @@
--- modules/chat/message_capture.lua
--- Direct-event capture for the custom chat display. Registers every routed
--- CHAT_MSG_* event on an insecure capture frame (independent delivery — no
--- dispatch-order dependence), runs Blizzard's message-event filters for
--- cross-addon compat, applies the secret-first guard, and appends to
--- MessageStore. Also registers the non-CHAT_MSG system events Blizzard's
--- ChatFrameMixin:SystemEventHandler turns into chat lines (/played, level-up,
--- GMOTD, disconnects...) — suppressed Blizzard frames are event-neutered, so
--- without this those lines would be lost entirely. A hooksecurefunc on
--- DEFAULT_CHAT_FRAME.AddMessage is the FALLBACK for non-event traffic only
--- (addon print(), direct AddMessage); event-driven and own-addon lines are
--- skipped via stack inspection.
---
--- SECRET SAFETY: arg1 (and any payload arg) may be secret. issecretvalue
--- BEFORE any operator; classification keys off the EVENT NAME only. Payload
--- args proven non-secret land in the `p` table handed to MessageFormat;
--- p.text/p.rawSender carry raw (possibly secret) values for the entry points
--- that own the secret discipline.
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 
@@ -38,12 +20,11 @@ local function Now()
 end
 
 local function FormatString(fmt, ...)
-    local ok, formatted = pcall(string.format, fmt, ...)
+    local ok, formatted = ns.SafeCall("report", string.format, fmt, ...)
     if not ok then return nil end
     return formatted
 end
 
--- Events routed to chat frames but not in ChatTypeGroupInverted.
 local EXTRA_EVENTS = {
     "CHAT_MSG_CHANNEL",
     "CHAT_MSG_COMMUNITIES_CHANNEL",
@@ -60,27 +41,12 @@ local EXTRA_EVENTS = {
 local captureFrame
 local fallbackHooked = false
 
--- NOTE: capture runs whenever the chat module is enabled; disabling tears it
--- down (goes inert). Capture starts at ADDON_LOADED, so the login burst is
--- caught; only pre-ADDON_LOADED engine lines are missed.
 local function CaptureActive()
     local settings = I.GetSettings and I.GetSettings()
     if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return false end
     return true
 end
 
--- ---------------------------------------------------------------------------
--- System-event replication (ChatFrameMixin:SystemEventHandler parity —
--- vendored FrameXML: Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua
--- :183-266 + ChatFrameUtil.DisplayTimePlayed/DisplayLevelUp/DisplayGMOTD).
--- Suppressed frames never receive these, so the capture frame owns them.
--- ---------------------------------------------------------------------------
-
--- Append a replicated system line. typeKey colors via the same read-only
--- resolver event lines use; entries are SYSTEM-group so default tabs show them.
--- SECRET-FIRST: probe before any inspection — a secret line (GMOTD under
--- lockdown) flows opaquely with s=true; type() is the only operator applied
--- to non-secret values before the string checks.
 local function AppendSystemLine(event, line, typeKey)
     local secretBody = IsSecret(line)
     if not secretBody and (type(line) ~= "string" or line == "") then return end
@@ -106,27 +72,13 @@ local function TimeBreakDown(t)
     return days, hours, minutes, seconds
 end
 
-local seenMotd -- session GMOTD dedupe (Blizzard shows each broadcast once)
+local seenMotd
 
--- GMOTD held until the GUILD chat color syncs. ChatTypeInfo carries NO r/g/b
--- at file scope (vendored ChatTypeInfoConstants.lua) — colors arrive per-type
--- via UPDATE_CHAT_COLOR during the login settings download, AFTER the login
--- GMOTD is available. Appending earlier bakes ColorForTypeKey's white fallback
--- into the entry permanently: Blizzard prints early too but recovers by
--- retroactively recoloring lines (UpdateColorByID, ChatFrameOverrides.lua:147),
--- a pass the store has no equivalent of. The held payload may be SECRET:
--- stored opaquely, flagged separately, no operator ever touches it here.
 local pendingMotd, hasPendingMotd
 
--- Per-type colors captured from UPDATE_CHAT_COLOR's OWN args ({r,g,b} keyed
--- by upper-cased type). The event payload is authoritative the moment it
--- fires, while ChatTypeInfo is only authoritative after Blizzard's handler
--- (same dispatch, unspecified cross-frame order) writes it — reading the args
--- removes that ordering dependence entirely.
 local syncedTypeColors = {}
 
 local function GuildColorReady()
-    -- A user override wins inside ColorForTypeKey regardless of ChatTypeInfo.
     local CC = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ChannelColors
     if CC and CC.HasOverride and CC.HasOverride("GUILD") then return true end
     if syncedTypeColors.GUILD then return true end
@@ -137,11 +89,6 @@ end
 local SYSTEM_EVENTS = {}
 
 SYSTEM_EVENTS.TIME_PLAYED_MSG = function(event, totalTime, levelTime)
-    -- Honor the stock silent-request dance: addons that RequestTimePlayed()
-    -- without wanting chat output unregister TIME_PLAYED_MSG from the chat
-    -- frames first. The neutered frames can't reflect that, so
-    -- blizzard_suppress mirrors the outside intent — when the default frame
-    -- wouldn't have printed, neither do we (fixes "/played spam at login").
     local Suppress = ns.QUI.Chat.BlizzardSuppress
     if Suppress and Suppress.TimePlayedWanted and not Suppress.TimePlayedWanted() then
         return
@@ -166,11 +113,11 @@ SYSTEM_EVENTS.PLAYER_LEVEL_CHANGED = function(event, oldLevel, newLevel, real)
     local noLink = false
     if _G.C_GameRules and _G.C_GameRules.IsGameRuleActive and _G.Enum
         and _G.Enum.GameRule and _G.Enum.GameRule.ChatLinkLevelToastsDisabled then
-        local ok, active = pcall(_G.C_GameRules.IsGameRuleActive, _G.Enum.GameRule.ChatLinkLevelToastsDisabled)
+        local ok, active = ns.SafeCall("best-effort-style", _G.C_GameRules.IsGameRuleActive, _G.Enum.GameRule.ChatLinkLevelToastsDisabled)
         noLink = ok and active or false
     end
     if not noLink and _G.C_PlayerInfo and _G.C_PlayerInfo.IsPlayerNPERestricted then
-        local ok, restricted = pcall(_G.C_PlayerInfo.IsPlayerNPERestricted)
+        local ok, restricted = ns.SafeCall("best-effort-style", _G.C_PlayerInfo.IsPlayerNPERestricted)
         noLink = ok and restricted or false
     end
     local line
@@ -184,10 +131,6 @@ end
 
 SYSTEM_EVENTS.GUILD_MOTD = function(event, motd)
     if not GuildColorReady() then
-        -- Only a REAL payload may stash. The pull triggers route empty
-        -- broadcasts through here (C_Club's broadcast field is nil/"" until
-        -- the club syncs, AFTER the GUILD_MOTD event on a cold login), and
-        -- letting one overwrite a stashed real MOTD drops the line at flush.
         if IsSecret(motd) or (type(motd) == "string" and motd ~= "") then
             pendingMotd, hasPendingMotd = motd, true
         end
@@ -196,7 +139,6 @@ SYSTEM_EVENTS.GUILD_MOTD = function(event, motd)
     local fmt = GlobalString("GUILD_MOTD_TEMPLATE")
     if not fmt then return end
     if IsSecret(motd) then
-        -- Can't compare for dedupe; show at most one secret MOTD per session.
         if seenMotd == true then return end
         seenMotd = true
         AppendSystemLine(event, FormatString(fmt, motd), "GUILD")
@@ -207,37 +149,7 @@ SYSTEM_EVENTS.GUILD_MOTD = function(event, motd)
     AppendSystemLine(event, FormatString(fmt, motd), "GUILD")
 end
 
--- Login backfill for the GMOTD. At login the MOTD is delivered with the guild
--- roster sync, often BEFORE this frame catches a GUILD_MOTD event (Blizzard's
--- own chat frame hits the same race — vendored ChatFrameOverrides.lua:131
--- "GMOTD may have arrived before this frame registered for the event"). Blizzard
--- recovers by re-reading the MOTD once guild data lands; without that pull the
--- login MOTD is simply lost. Route the pulled value through the GUILD_MOTD
--- handler so it shares the seenMotd latch — the event path and the pull never
--- double-post, and repeated guild-data events are cheap no-ops once a non-empty
--- MOTD has latched.
---
--- Read the MOTD from the guild club's broadcast field (C_Club), NOT
--- C_GuildInfo.GetMOTD: GetMOTD is HasRestrictions=true and is blocked as a
--- protected function (ADDON_ACTION_BLOCKED) when a guild-data event lands inside
--- an in-combat secret-value dispatch — a pcall cannot suppress that block.
--- C_Club.GetClubInfo carries no such restriction; it only flags a possibly
--- secret return during chat-messaging lockdown, so info.broadcast flows opaquely
--- into the handler, which probes IsSecret before any operator. GetGuildClubId
--- and GetClubInfo are both Nilable (clubs may still be initializing), so guard
--- each return.
 local function MaybePullGMOTD()
-    -- LOGIN-RECOVERY ONLY: once any MOTD has shown (or stashed pending the
-    -- color sync), stop pulling for the rest of the session. The pull events
-    -- below keep firing all session (GUILD_ROSTER_UPDATE on every guildie
-    -- login/logout, CHANNEL_LEFT/CHANNEL_UI_UPDATE beside channel notices),
-    -- and C_Club's broadcast flips between a plain string and a SECRET value
-    -- depending on chat-messaging lockdown at pull time — the seenMotd latch
-    -- can't dedupe across that domain flip (string latch vs `true` latch), so
-    -- an ungated pull re-appends the GMOTD on every flip, "randomly through
-    -- the session, next to system messages". A genuinely changed MOTD still
-    -- shows via the real GUILD_MOTD event (stock parity); only the pull
-    -- fallback is one-shot.
     if seenMotd ~= nil or hasPendingMotd then return end
     if _G.IsInGuild and not _G.IsInGuild() then return end
     local CC = _G.C_Club
@@ -249,17 +161,6 @@ local function MaybePullGMOTD()
     SYSTEM_EVENTS.GUILD_MOTD("GUILD_MOTD", info.broadcast)
 end
 
--- Primary login-MOTD recovery point. Blizzard's own chat frame backfills the
--- GMOTD on UPDATE_CHAT_WINDOWS (vendored ChatFrameOverrides.lua:114-136,
--- "GMOTD may have arrived before this frame registered for the event"): by the
--- time chat settings download the MOTD has reliably landed, whereas the
--- guild-data events below fire on a cold login BEFORE C_Club's broadcast field is
--- populated (the club broadcast syncs separately from the roster), so the pull
--- there no-ops and the login MOTD is lost until some unrelated later roster
--- update happens to fire. The channel-UI events give repeat retries through the
--- channel-join sequence. Capture.Setup() registers these at ADDON_LOADED, before
--- the login UPDATE_CHAT_WINDOWS, so the login firing is caught. seenMotd dedupes
--- against the GUILD_MOTD event path and the guild-data triggers.
 SYSTEM_EVENTS.UPDATE_CHAT_WINDOWS = function() MaybePullGMOTD() end
 SYSTEM_EVENTS.CHANNEL_UI_UPDATE = function() MaybePullGMOTD() end
 SYSTEM_EVENTS.CHANNEL_LEFT = function() MaybePullGMOTD() end
@@ -276,34 +177,10 @@ local function FlushPendingMotd()
     SYSTEM_EVENTS.GUILD_MOTD("GUILD_MOTD", motd)
 end
 
--- UPDATE_CHAT_COLOR: the login color burst both un-gates a held GMOTD and
--- retroactively REBAKES already-stored lines of the synced types — Blizzard's
--- UpdateColorByID parity (ChatFrameOverrides.lua:147): their early-printed
--- lines carry a colorID and get recolored when the type's color lands; store
--- entries bake r/g/b at append time, so without this pass any line captured
--- (or replayed from persisted history) before its type synced keeps the white
--- fallback forever.
---
--- Colors come from the event ARGS (cached in syncedTypeColors), never from
--- re-reading ChatTypeInfo: Blizzard's own handler (the neutered frames keep
--- this event registered) writes ChatTypeInfo in the same dispatch with
--- unspecified cross-frame order, and the addon must never write it itself
--- (taints chat dispatch session-wide). The work is DEBOUNCED one frame
--- (C_Timer.After(0)) purely as batching: one walk + one reapply covers the
--- whole same-frame login burst.
---
--- Rebake scope: entries whose k matches a synced type AND whose color was
--- RESOLVED from that type at append time. ADDMESSAGE/BACKFILL carry the
--- producer's own r/g/b (addon prints in custom colors) and HISTORY is the
--- grey session separators — k is just a routing bucket for those, never a
--- color source. CHANNEL/CHANNEL_NOTICE entries bake per-SLOT colors
--- (CHANNEL<n>), so a blanket per-type rebake would be wrong — skipped.
 local pendingColorTypes, colorSyncQueued
 
 local REBAKE_SKIP_EVENTS = { ADDMESSAGE = true, BACKFILL = true, HISTORY = true }
 
--- Override → synced event args → ColorForTypeKey (ChatTypeInfo). Same
--- precedence ColorForTypeKey itself applies, with the args cache between.
 local function ResolveSyncedColor(typeKey)
     local CC = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ChannelColors
     if CC and CC.HasOverride and CC.GetEffective and CC.HasOverride(typeKey) then
@@ -353,9 +230,6 @@ SYSTEM_EVENTS.UPDATE_CHAT_COLOR = function(_, chatType, r, g, b)
     pendingColorTypes[typeKey] = true
     if colorSyncQueued then return end
     colorSyncQueued = true
-    -- Debounce: the login burst is dozens of same-frame events; one walk +
-    -- one reapply next frame covers them all. The args cache already makes
-    -- the colors correct, so the defer is purely a batching concern.
     if _G.C_Timer and _G.C_Timer.After then
         _G.C_Timer.After(0, DrainColorSync)
     else
@@ -383,7 +257,7 @@ end
 
 local function RegionalUnavailableLine()
     if _G.GetRegionalChatUnavailableString then
-        local ok, s = pcall(_G.GetRegionalChatUnavailableString)
+        local ok, s = ns.SafeCall("chain-next", _G.GetRegionalChatUnavailableString)
         if ok and type(s) == "string" then return s end
     end
     return nil
@@ -393,7 +267,7 @@ SYSTEM_EVENTS.CHAT_REGIONAL_STATUS_CHANGED = function(event, isServiceAvailable)
     if IsSecret(isServiceAvailable) then return end
     if isServiceAvailable then
         if _G.GetRegionalChatAvailableString then
-            local ok, s = pcall(_G.GetRegionalChatAvailableString)
+            local ok, s = ns.SafeCall("best-effort-style", _G.GetRegionalChatAvailableString)
             if ok and type(s) == "string" then AppendSystemLine(event, s) end
         end
     else
@@ -418,23 +292,12 @@ SYSTEM_EVENTS.NOTIFY_CHAT_SUPPRESSED = function(event)
     AppendSystemLine(event, FormatString(fmt, body, hyperlink))
 end
 
--- Language cache for [Orcish]-style headers lives in MessageFormat; the
--- capture frame owns its event wiring (format stays frame-free).
 SYSTEM_EVENTS.PLAYER_ENTERING_WORLD = function()
     if Format.RefreshLanguages then Format.RefreshLanguages() end
-    -- Warm the name->class cache from the player + roster so the FIRST party/raid
-    -- line rendered after a zone-in (incl. entering a dungeon straight into a
-    -- pull) is class-colored even though its GUID is already secret in combat.
     if Format.SeedKnownClasses then Format.SeedKnownClasses() end
-    -- /reload keeps guild data cached, so the MOTD is readable right here even
-    -- if no GUILD_ROSTER_UPDATE re-fires; on a cold login GetMOTD is still empty
-    -- this early and the roster-update pull above catches it. seenMotd dedupes.
     MaybePullGMOTD()
 end
 
--- Roster change: re-warm the name->class cache. UnitClass's classFilename is
--- non-secret, so this stays correct even when the update fires mid-combat (a
--- member joining during a pull) -- keeping their chat lines class-colored.
 SYSTEM_EVENTS.GROUP_ROSTER_UPDATE = function()
     if Format.SeedKnownClasses then Format.SeedKnownClasses(false) end
 end
@@ -443,9 +306,6 @@ SYSTEM_EVENTS.ALTERNATIVE_DEFAULT_LANGUAGE_CHANGED = function()
     if Format.RefreshLanguages then Format.RefreshLanguages() end
 end
 
--- Reported sender: drop their lines from the store and rebuild the windows
--- (FCF_RemoveAllMessagesFromChanSender parity). Compares metadata only —
--- entry.m is never touched.
 SYSTEM_EVENTS.PLAYER_REPORT_SUBMITTED = function(_, reportedGUID)
     if IsSecret(reportedGUID) or type(reportedGUID) ~= "string" or reportedGUID == "" then return end
     local removed = Store.RemoveWhere and Store.RemoveWhere(function(entry)
@@ -457,19 +317,13 @@ SYSTEM_EVENTS.PLAYER_REPORT_SUBMITTED = function(_, reportedGUID)
     end
 end
 
--- ---------------------------------------------------------------------------
--- Regional-channel auto-add (ChatFrame_CheckAddChannel parity — vendored
--- ChatFrameOverrides.lua:49-71): joining a regional channel that no window-1
--- tab lists gets added to the first tab, like Blizzard adds it to the
--- default frame. Heals configs whose channel seed predates the channel.
--- ---------------------------------------------------------------------------
 local function MaybeAutoAddChannel(event, p)
     if event ~= "CHAT_MSG_CHANNEL_NOTICE" then return end
     if IsSecret(p.text) or p.text ~= "YOU_CHANGED" then return end
     if type(p.zoneID) ~= "number" or p.zoneID <= 0 then return end
     local CI = _G.C_ChatInfo
     if not (CI and CI.IsChannelRegionalForChannelID) then return end
-    local ok, regional = pcall(CI.IsChannelRegionalForChannelID, p.zoneID)
+    local ok, regional = ns.SafeCall("best-effort-style", CI.IsChannelRegionalForChannelID, p.zoneID)
     if not ok or not regional then return end
     if Registry and Registry.Refresh then Registry.Refresh() end
     local name = p.chName or p.chBase
@@ -479,13 +333,11 @@ local function MaybeAutoAddChannel(event, p)
     end
 end
 
--- Whisper-family chatTypeKeys (shared via chat.lua's _internals; see
--- I.WHISPER_TYPE_KEYS). Used here for whisper-popout conversation routing.
 local WHISPER_POPOUT_KEYS = I.WHISPER_TYPE_KEYS
 
 local function GetWhisperMode()
     if type(_G.GetCVar) ~= "function" then return nil end
-    local ok, value = pcall(_G.GetCVar, "whisperMode")
+    local ok, value = ns.SafeCall("chain-next", _G.GetCVar, "whisperMode")
     if ok then return value end
     return nil
 end
@@ -497,17 +349,10 @@ local function ShouldTranslateBlizzardWhisperPopouts()
 end
 
 local function IsWhisperPopoutOnly(typeKey, convKey)
-    -- Do not suppress the regular saved tabs unless the entry has a known
-    -- conversation destination. Secret/malformed identities stay inline rather
-    -- than disappearing.
     if not convKey or not WHISPER_POPOUT_KEYS[typeKey] then return nil end
     if not ShouldTranslateBlizzardWhisperPopouts() then return nil end
     return GetWhisperMode() == "popout" and true or nil
 end
-
--- ---------------------------------------------------------------------------
--- CHAT_MSG_* capture
--- ---------------------------------------------------------------------------
 
 local function OnCaptureEvent(_, event, ...)
     local active = CaptureActive()
@@ -519,72 +364,38 @@ local function OnCaptureEvent(_, event, ...)
         return
     end
 
-    -- Letterbox/cinematic-hidden lines: Blizzard bails before filters when
-    -- arg16 is set; mirror that. Probe before truth-testing (may be secret;
-    -- if it is, we can't know — let the line through rather than risk an op).
-    local a16 = select(16, ...)
-    if not IsSecret(a16) and a16 then return end
-    -- arg17 (suppressRaidIcons) is not in the filter contract (filters see
-    -- args 1-14) — read it from the original payload.
-    local a17 = select(17, ...)
-
-    -- Cross-addon compat: honor ChatFrameUtil.AddMessageEventFilter consumers
-    -- (spam blockers etc.). ChatFrame1 is the filter context — filters that
-    -- act per-frame behave as they do for the default frame. While suppressed
-    -- ChatFrame1 is EVENT-NEUTERED (receives no events), so this is the ONLY
-    -- invocation; with the module disabled capture never reaches here. Either
-    -- way the filter chain runs exactly once per message in steady state.
-    -- (Blizzard's filter registry skips callbacks on secret payloads via
-    -- canaccessvalue — we inherit that protection by calling the same API.)
-    local filtered, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14
+    local a16Raw = select(16, ...)
+    if not IsSecret(a16Raw) and a16Raw then return end
+    local filtered, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18
     local isChatMessage = type(event) == "string" and event:sub(1, 9) == "CHAT_MSG_"
     if isChatMessage and _G.ChatFrameUtil and _G.ChatFrameUtil.ProcessMessageEventFilters and _G.ChatFrame1 then
-        filtered, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14 =
+        filtered, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18 =
             _G.ChatFrameUtil.ProcessMessageEventFilters(_G.ChatFrame1, event, ...)
         if filtered then return end
     else
-        a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14 = ...
+        a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18 = ...
     end
 
     local typeKey = Format.EventToTypeKey(event)
 
     local line, p, secretBody = Format.BuildEventLineFromArgs(event, a1, a2, a3, a4, a5, a6, a7,
-        a8, a9, a10, a11, a12, a13, a14, nil, nil, a17)
+        a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18)
 
     MaybeAutoAddChannel(event, p)
 
-    -- R-to-reply: Blizzard records the last whisperer via
-    -- ChatFrameUtil.SetLastTellTarget inside its per-frame message handler
-    -- (ChatFrameOverrides.lua:648-651) — event-neutered under the takeover —
-    -- so mirror the bookkeeping here or ChatFrameUtil.ReplyTell (the REPLY
-    -- keybind) finds no target and silently no-ops. Incoming only: the
-    -- outgoing side (LastTOLD, reply-to-last-told) is recorded by the editbox
-    -- send path, which stays live. p.sender is already nil when arg2 is
-    -- secret or malformed; BN kstring senders pass through raw, exactly as
-    -- Blizzard passes arg2.
     if (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") and p.sender then
         local CFU = _G.ChatFrameUtil
         if CFU and CFU.SetLastTellTarget then
-            pcall(CFU.SetLastTellTarget, p.sender, typeKey)
+            ns.SafeCall("sink-forward", CFU.SetLastTellTarget, p.sender, typeKey)
         end
     end
 
-    -- Per-channel colors live in ChatTypeInfo.CHANNEL<n>, not .CHANNEL.
-    -- chName resolves channel-name-keyed user overrides in ChannelColors.
     local colorKey = typeKey
     if (typeKey == "CHANNEL" or typeKey == "CHANNEL_NOTICE") and p.chNum and p.chNum > 0 then
         colorKey = "CHANNEL" .. p.chNum
     end
     local r, g, b = Format.ColorForTypeKey(colorKey, p.chName)
 
-    -- Whisper conversation tagging: key off the counterparty identity
-    -- (arg2 playerName — sender on incoming, target on _INFORM; vendored
-    -- ChatInfoDocumentation.lua:2486ff). The event is
-    -- SecretInChatMessagingLockdown and playerName is NOT NeverSecret —
-    -- probe before any operator. A secret identity leaves the entry
-    -- untagged (falls through to type-filter tabs); a secret BODY does not
-    -- block tagging (both append paths below carry the fields).
-    -- ConversationManager loads after this file (chat.xml) — runtime lookup.
     local convKey, convName
     do
         local Conv = ns.QUI.Chat.ConversationManager
@@ -596,16 +407,9 @@ local function OnCaptureEvent(_, event, ...)
     end
     local whisperPopoutOnly = IsWhisperPopoutOnly(typeKey, convKey)
 
-    -- SECRET-FIRST: no operator may touch a1 before this check.
     if secretBody then
-        -- BuildEventLineFromArgs owns the secret-body formatting rules, including
-        -- dropping secret friend-status toast keys and preserving real secret
-        -- message bodies opaquely.
-        if not line then return end
+        if not IsSecret(line) and not line then return end
         local m = line
-        -- Timestamp secret lines too: AddTimestamp's secret path wraps via
-        -- C_StringUtil.WrapString (secret-safe) and passes through unchanged
-        -- when that API is unavailable. No Lua operator touches the payload.
         if I.AddTimestamp then
             m = (I.AddTimestamp(m))
         end
@@ -615,27 +419,18 @@ local function OnCaptureEvent(_, event, ...)
         return
     end
     if not line then return end
-    -- Redundant-text collapse (loot/xp/honor compaction) — pure transform,
-    -- gated inside the module on its own setting.
     local RT = ns.QUI.Chat.RedundantText
     if RT and RT.TryCollapseForCapture then
         line = (RT.TryCollapseForCapture(line, event))
     end
-    -- Coordinate waypoint links — pure transform, self-gated on the
-    -- coordinates toggle (same relative order the old rendered pipeline used).
     local HL = ns.QUI.Chat.Hyperlinks
     if HL and HL.TryLinkifyCoordsForCapture then
         line = (HL.TryLinkifyCoordsForCapture(line))
     end
-    -- Keyword highlight + sound (ProcessForCapture owns the keyword sound).
     local KA = ns.QUI.Chat.KeywordAlert
     if KA and KA.ProcessForCapture then
         line = (KA.ProcessForCapture(line, p.sender))
     end
-    -- Capture-time decorations: timestamps must reflect ARRIVAL time and
-    -- rebuilds must not re-run transforms, so entry.m stores the final line.
-    -- Both helpers are pure text functions; AddTimestamp self-gates on
-    -- settings.timestamps.enabled. Parens force first-return-only.
     if I.AddTimestamp then
         line = (I.AddTimestamp(line))
     end
@@ -648,15 +443,9 @@ local function OnCaptureEvent(_, event, ...)
         whisperPopoutOnly = whisperPopoutOnly, t = Now() })
 end
 
--- Fallback for traffic that never fires a CHAT_MSG event (addon print(),
--- direct system AddMessage). Skip event-dispatch traffic (captured above)
--- and our own history repump (would duplicate restored lines). Other QUI
--- prints SHOULD flow through — they're user-facing output.
 local function OnFallbackAddMessage(_, msg, r, g, b)
     local active = CaptureActive()
     if not active then return end
-    -- SECRET-FIRST: secrets only arrive here via event dispatch, which the
-    -- stack check below skips anyway — but guard before any operator.
     if IsSecret(msg) then return end
     if type(msg) ~= "string" or msg == "" then return end
     if IsSecret(r) or IsSecret(g) or IsSecret(b) then r, g, b = 1, 1, 1 end
@@ -668,23 +457,12 @@ local function OnFallbackAddMessage(_, msg, r, g, b)
         return
     end
 
-    -- Timestamp fallback lines too (Blizzard timestamps ALL rendered lines;
-    -- arrival time is known here). URL linkify is event-path-only — addon
-    -- prints carry their own links.
-    -- Fallback entries are routed as SYSTEM (un-classifiable rendered lines;
-    -- tabs whitelisting the SYSTEM group show them — matching the General
-    -- frame addon prints target).
     if I.AddTimestamp then
         msg = (I.AddTimestamp(msg))
     end
     Store.Append({ m = msg, r = r or 1, g = g or 1, b = b or 1, e = "ADDMESSAGE", k = "SYSTEM", t = Now() })
 end
 
--- One-shot backfill from the default frame's existing scrollback — used on a
--- MID-SESSION first enable so the custom display starts with what the user
--- already sees instead of empty. Secret lines are stored opaquely (s=true,
--- zero operators). Entries are typed SYSTEM/BACKFILL: rendered lines can't
--- be re-classified, so SYSTEM-listing tabs show them.
 function Capture.BackfillFromDefaultFrame()
     local frame = _G.DEFAULT_CHAT_FRAME or _G.ChatFrame1
     if not (frame and frame.GetNumMessages and frame.GetMessageInfo) then return 0 end
@@ -715,8 +493,6 @@ function Capture.Setup()
     end
     local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
     for event in pairs(_G.ChatTypeGroupInverted or {}) do
-        -- Only CHAT_MSG_* events: the inverted map also carries GUILD_MOTD,
-        -- which is replicated through SYSTEM_EVENTS below instead.
         if event:sub(1, 9) == "CHAT_MSG_"
             and (not valid or valid(event)) then
             captureFrame:RegisterEvent(event)
@@ -728,7 +504,6 @@ function Capture.Setup()
             captureFrame:RegisterEvent(event)
         end
     end
-    -- Non-CHAT_MSG system traffic (SystemEventHandler parity).
     for event in pairs(SYSTEM_EVENTS) do
         if not valid or valid(event) then
             captureFrame:RegisterEvent(event)
@@ -744,6 +519,4 @@ function Capture.Teardown()
     if captureFrame then
         captureFrame:UnregisterAllEvents()
     end
-    -- hooksecurefunc cannot be removed; OnFallbackAddMessage self-gates on
-    -- CaptureActive(), so it goes inert when the module is disabled.
 end

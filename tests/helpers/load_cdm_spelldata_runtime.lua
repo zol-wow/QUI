@@ -18,10 +18,10 @@ return function(ns)
     end
 
     if not ns.CDMAuraCatalog then
-        loadChunk("QUI_CDM/cdm/cdm_spelldata.lua", "cdm_aura_catalog.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_aura.lua", "cdm_aura_catalog.lua")("QUI", ns)
     end
     if not ns.CDMAuraRuntime then
-        loadChunk("QUI_CDM/cdm/cdm_spelldata.lua", "cdm_aura_runtime.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_aura.lua", "cdm_aura_runtime.lua")("QUI", ns)
     end
 
     return ns

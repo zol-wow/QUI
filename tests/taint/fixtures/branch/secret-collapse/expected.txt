@@ -1,0 +1,1 @@
+tests/taint/fixtures/branch/secret-collapse/input.lua:3:1 [advisory] <secret-collapse>: guard-secret branch manufactures ordinary state (returns literal(s)) — secrecy is indeterminate: route the value to a documented C sink or reject/defer; a deliberate policy needs `-- @secret-policy: <name>` (source: <tainted-local>)

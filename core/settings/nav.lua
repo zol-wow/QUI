@@ -49,12 +49,6 @@ function Nav:GetRoute(featureOrId)
     return feature.nav
 end
 
-function Nav:GetRouteByMoverKey(moverKey)
-    local registry = Settings.Registry
-    local feature = registry and registry.GetFeatureByMoverKey and registry:GetFeatureByMoverKey(moverKey)
-    return self:GetRoute(feature)
-end
-
 function Nav:GetLookupTarget(lookupKey)
     local registry = Settings.Registry
     local feature = registry and registry.GetFeatureByLookupKey and registry:GetFeatureByLookupKey(lookupKey)

@@ -1,20 +1,3 @@
----------------------------------------------------------------------------
--- QUI Chat Module - Persistent History Storage
--- Owns the per-character SV file (QUI_ChatHistory), one-time migration from
--- older layouts, and bounded access to recent persisted messages.
---
--- SV schema (QUI_ChatHistory), v2:
---   schemaVersion : 2
---   current       : plain array of newest entries. This is the write path.
---   chunks        : older fixed-size serialized arrays with metadata.
---   count         : total entries across chunks + current.
---
--- Normal reloads no longer compress or decompress the whole history. Appends
--- touch only `current`; old entries are rotated into serialized chunks in
--- small batches. Consumers ask for recent entries, so login replay and copy
--- decode only the newest chunks needed for the requested limit.
----------------------------------------------------------------------------
-
 local ADDON_NAME, ns = ...
 
 ns.QUI = ns.QUI or {}
@@ -32,10 +15,6 @@ local HOT_ROTATE_AT = 1000
 local DEFAULT_MAX_ENTRIES = 5000
 
 local chunkCache = setmetatable({}, { __mode = "k" })
-
--- ---------------------------------------------------------------------------
--- Codec
--- ---------------------------------------------------------------------------
 
 local function encodeChunk(entries)
     if type(entries) ~= "table" or #entries == 0 then return "", "none" end
@@ -95,10 +74,6 @@ Storage._Encode = encodeChunk
 Storage._Decode = decodeChunkData
 Storage._EncodeLegacy = encodeLegacyCompressed
 Storage._DecodeLegacy = decodeLegacyCompressed
-
--- ---------------------------------------------------------------------------
--- SV helpers
--- ---------------------------------------------------------------------------
 
 local function resetV2(sv)
     for key in pairs(sv) do
@@ -223,19 +198,23 @@ local function migrateSV(sv)
     sv._migrated = migratedFlag
 end
 
+local cachedSV
+
 local function getSV()
-    if type(_G.QUI_ChatHistory) ~= "table" then
-        _G.QUI_ChatHistory = {
+    local sv = _G.QUI_ChatHistory
+    if sv and sv == cachedSV then return sv end
+    if type(sv) ~= "table" then
+        sv = {
             schemaVersion = SCHEMA_VERSION,
             current = {},
             chunks = {},
             count = 0,
             totalCount = 0,
         }
+        _G.QUI_ChatHistory = sv
     end
-
-    local sv = _G.QUI_ChatHistory
     migrateSV(sv)
+    cachedSV = sv
     return sv
 end
 
@@ -282,10 +261,6 @@ local function selfKey()
     return q.db.keys.char
 end
 
--- Deferred-clear token. SVPC files for other characters cannot be touched from
--- the running addon; instead, ClearAllCharacters stamps a token in account-wide
--- QUIDB.global, and each character honors it once on its next login by wiping
--- its own SVPC and recording the token it honored.
 local CLEAR_TOKEN_KEY = "chatHistoryClearAllToken"
 
 local function getGlobalClearToken()
@@ -313,18 +288,12 @@ local function newClearToken()
     return prev + 1
 end
 
--- ---------------------------------------------------------------------------
--- Public API
--- ---------------------------------------------------------------------------
-
 function Storage.Init()
     getSV()
     Storage.MigrateFromAceDB()
     Storage.HonorPendingClearAll()
 end
 
--- Honors any pending ClearAllCharacters token stamped by a sibling character.
--- Returns true if this character's history was wiped as a result.
 function Storage.HonorPendingClearAll()
     local token = getGlobalClearToken()
     if not token then return false end
@@ -335,16 +304,16 @@ function Storage.HonorPendingClearAll()
     return true
 end
 
--- maxEntries: the configured settings cap; falls back to the storage default
--- when absent. The HOT_ROTATE_AT slack keeps Cap off the per-append hot path.
 function Storage.AppendLive(entry, maxEntries)
     if type(entry) ~= "table" then return end
     local sv = getSV()
     sv.current[#sv.current + 1] = entry
     rotateCurrent(sv, false)
-    refreshCount(sv)
+    local total = (tonumber(sv.count) or 0) + 1
+    sv.count = total
+    sv.totalCount = total
     local cap = tonumber(maxEntries) or DEFAULT_MAX_ENTRIES
-    if sv.count > cap + HOT_ROTATE_AT then
+    if total > cap + HOT_ROTATE_AT then
         Storage.Cap(cap)
     end
 end
@@ -364,8 +333,6 @@ function Storage.Snapshot()
     return out
 end
 
--- Compatibility for old callers. Mutating this return value does not change
--- storage; use Flush, RemoveFrame, or Prune for write operations.
 function Storage.GetArray()
     return Storage.Snapshot()
 end
@@ -423,8 +390,6 @@ function Storage.PersistNow()
     refreshCount(sv)
 end
 
--- Wipe THIS character's legacy AceDB-per-character history slot (QUIDB.char).
--- Mirrors the per-character branch ClearAllCharacters applies to every char.
 local function wipeLegacyAceDBForSelf()
     local key = selfKey()
     if not key then return end
@@ -441,12 +406,6 @@ end
 function Storage.Clear()
     local sv = getSV()
     resetV2(sv)
-    -- Clear must be DURABLE across a relog. resetV2 wipes the _migrated flag, so
-    -- without this the next MigrateFromAceDB re-runs and re-imports any
-    -- un-consumed legacy AceDB history (deferred first migration, profile
-    -- re-import) -- the cleared history then "returns after a relog". Re-assert
-    -- the flag and wipe this character's legacy slot, exactly as
-    -- ClearAllCharacters already does for every character.
     sv._migrated = true
     wipeLegacyAceDBForSelf()
 end
@@ -494,6 +453,20 @@ local function maxRetentionDays(settings)
         for _, value in pairs(perChannel) do
             local channelDays = tonumber(value)
             if channelDays and channelDays > days then
+                days = channelDays
+            end
+        end
+    end
+    return days
+end
+
+local function minRetentionDays(settings)
+    local days = tonumber(settings and settings.retentionDays) or 7
+    local perChannel = settings and settings.perChannelRetention
+    if type(perChannel) == "table" then
+        for _, value in pairs(perChannel) do
+            local channelDays = tonumber(value)
+            if channelDays and channelDays < days then
                 days = channelDays
             end
         end
@@ -578,14 +551,35 @@ function Storage.Prune(settings)
         sv.current[i] = nil
     end
 
+    local strictestAllowed = now - minRetentionDays(settings) * 86400
+
     write = 0
     for i = 1, #sv.chunks do
         local chunk = sv.chunks[i]
-        if (tonumber(chunk.last) or 0) >= oldestAllowed then
+        if (tonumber(chunk.last) or 0) < oldestAllowed then
+            chunkCache[chunk] = nil
+        elseif (tonumber(chunk.first) or 0) >= strictestAllowed then
             write = write + 1
             sv.chunks[write] = chunk
         else
-            chunkCache[chunk] = nil
+            local decoded = decodeChunk(chunk)
+            local kept = {}
+            for j = 1, #decoded do
+                if keepByRetention(decoded[j], settings, now) then
+                    kept[#kept + 1] = decoded[j]
+                end
+            end
+            if #kept == #decoded then
+                write = write + 1
+                sv.chunks[write] = chunk
+            else
+                chunkCache[chunk] = nil
+                local replacement = makeChunk(kept)
+                if replacement then
+                    write = write + 1
+                    sv.chunks[write] = replacement
+                end
+            end
         end
     end
     for i = #sv.chunks, write + 1, -1 do
@@ -643,10 +637,6 @@ function Storage.RemoveFrame(frameID)
     refreshCount(sv)
 end
 
--- Clears the current character's SVPC history now and stamps an account-wide
--- token so other characters wipe their own SVPC the next time they log in.
--- Also wipes any leftover legacy AceDB-per-character history in QUIDB.char.
--- Returns (clearedCharactersNow, clearedEntriesNow, deferredToken).
 function Storage.ClearAllCharacters()
     local clearedCharacters = 0
     local clearedEntries = 0
@@ -680,17 +670,6 @@ end
 
 function Storage.GetCount()
     return refreshCount(getSV())
-end
-
-function Storage.GetEncodedSize()
-    local sv = getSV()
-    local size = 0
-    for _, chunk in ipairs(sv.chunks) do
-        if type(chunk.data) == "string" then
-            size = size + #chunk.data
-        end
-    end
-    return size
 end
 
 function Storage.GetChunkCount()

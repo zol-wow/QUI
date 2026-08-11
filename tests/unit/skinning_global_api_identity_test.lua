@@ -20,7 +20,7 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local character = readFile("QUI_Skinning/skinning/frames/character.lua")
+local character = readFile("modules/skinning/frames/character.lua")
 assertContains(character, "local api = _G.QUI_CharacterFrameSkinning or {}",
     "character frame skinning export must preserve an existing API table")
 assertContains(character, "_G.QUI_CharacterFrameSkinning = api",
@@ -28,7 +28,7 @@ assertContains(character, "_G.QUI_CharacterFrameSkinning = api",
 assertAbsent(character, "_G.QUI_CharacterFrameSkinning = {",
     "character frame skinning export must not replace cached API table references")
 
-local inspect = readFile("QUI_Skinning/skinning/frames/inspect.lua")
+local inspect = readFile("modules/skinning/frames/inspect.lua")
 assertContains(inspect, "local api = _G.QUI_InspectFrameSkinning or {}",
     "inspect frame skinning export must preserve an existing API table")
 assertContains(inspect, "_G.QUI_InspectFrameSkinning = api",

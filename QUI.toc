@@ -1,12 +1,12 @@
-## Interface: 120000, 120001, 120005, 120007, 120100
+## Interface: 120100
 ## Title: |cFF30D1FFQUI (Midnight)|r
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## AddonCompartmentFunc: QUI_CompartmentClick
 ## AddonCompartmentFuncOnEnter: QUI_CompartmentOnEnter
 ## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
 ## Notes: Comprehensive UI customization addon
-## Author: Zol
-## Version: 4.1.1
+## Author: Drew
+## Version: 5.0.0-beta4
 ## Category: User Interface
 ## SavedVariables: QUIDB, QUI_StorageDB
 ## LoadSavedVariablesFirst: 1
@@ -15,8 +15,8 @@
 ## X-Contributors: Quazii (original creator), LiQiuDGG, Mondo, Zol
 ## X-License: GPLv3
 
-# File list converted from the old load.xml include tree
-# (tools/generate_flat_toc.lua). Order is load-bearing.
+# File list converted from the old load.xml include tree.
+# Order is load-bearing.
 
 # == libs/libs.xml ==
 libs\LibStub\LibStub.lua
@@ -51,18 +51,13 @@ libs\LibKeyBound-1.0\Locale-ruRU.lua
 libs\LibKeyBound-1.0\LibKeyBound-1.0.lua
 
 # == libs/LibOpenRaid/lib.xml ==
+# Pre-12.x ThingsToMantain_* datasets are version-guarded to `return` on this
+# client and only cost login parse/compile (~448 KB) — the vendored files stay
+# on disk for lib upgrades; only the live Midnight dataset loads.
 libs\LibOpenRaid\LibOpenRaid.lua
 libs\LibOpenRaid\Functions.lua
 libs\LibOpenRaid\GetPlayerInformation.lua
 libs\LibOpenRaid\Deprecated.lua
-libs\LibOpenRaid\ThingsToMantain_WarWithin.lua
-libs\LibOpenRaid\ThingsToMantain_Dragonflight.lua
-libs\LibOpenRaid\ThingsToMantain_Shadowlands.lua
-libs\LibOpenRaid\ThingsToMantain_Wrath.lua
-libs\LibOpenRaid\ThingsToMantain_Era.lua
-libs\LibOpenRaid\ThingsToMantain_BurningCrusade.lua
-libs\LibOpenRaid\ThingsToMantain_Cata.lua
-libs\LibOpenRaid\ThingsToMantain_Pandaria.lua
 libs\LibOpenRaid\ThingsToMantain_Midnight.lua
 libs\LibRangeCheck-3.0\LibRangeCheck-3.0.lua
 
@@ -71,6 +66,19 @@ init.lua
 
 # == localization (must precede any string consumer) ==
 core\locale\enUS.lua
+# Non-enUS translations. Each chunk self-gates on GetLocale() (with the
+# QUIDB.global.selectedLocale override) and returns immediately unless it is
+# the active one, so only one table is ever built — the other nine cost compile
+# time only, and their bytecode is collectable as soon as they return.
+#
+# They must be HERE, not in a LoadOnDemand addon: locale.lua (next) captures
+# ns.LocaleData.active as an UPVALUE, so an overlay arriving later never
+# reaches ns.L at all. File-scope consumers (BINDING_NAME_* in
+# QUI_Bags/bags/bags.lua) and everything built during the login sequence
+# read ns.L before any options addon could load.
+#
+# They used to be ten LoadOnDemand QUI_OptionsSearch_<loc> sub-addons, which
+# cost 10 shipped folders to save ~51 ms of login compile.
 core\locale\deDE.lua
 core\locale\esES.lua
 core\locale\esMX.lua
@@ -86,9 +94,13 @@ core\locale\locale.lua
 # == core/core.xml ==
 core\debug_gate.lua
 core\utils.lua
+core\pack.lua
+core\safecall.lua
+core\theme.lua
 core\ns_export_guard.lua
 core\infobar_shared.lua
 core\settings_layout_shared.lua
+importstrings\starter_profile.lua
 core\new_profile_defaults.lua
 core\border_registry.lua
 core\external_skin_bridge.lua
@@ -96,6 +108,7 @@ core\icon_skin.lua
 core\icon_glow.lua
 core\diagnostics_console.lua
 core\dumpspell.lua
+core\cast_engine.lua
 core\aura_events.lua
 core\registry.lua
 core\modules.lua
@@ -129,8 +142,10 @@ core\main.lua
 core\backdrop_deferred.lua
 core\font_system.lua
 core\scaling.lua
+core\classification.lua
 core\uikit.lua
 core\settings\util.lua
+core\settings\search_route.lua
 core\settings_builders.lua
 core\settings\render_adapters.lua
 core\settings\registry.lua
@@ -139,6 +154,20 @@ core\settings\provider_features.lua
 core\settings\pins.lua
 core\settings\pins_lifecycle.lua
 core\rangeutils.lua
+core\aura_theme.lua
+core\aura_skin.lua
+core\aura_elements.lua
+core\aura_context.lua
+core\aura_wizard.lua
+core\dispel_roles.lua
+core\aura_glue.lua
+core\aura_slots.lua
+core\aura_surface.lua
+core\aura_preview.lua
+# Shared group-frame chrome: the ONE builder for a group frame's skeleton +
+# settings styling. Lives in core because BOTH QUI_GroupFrames (runtime) and
+# QUI_Options (settings preview) consume it.
+core\group_frame_chrome.lua
 
 
 
@@ -164,3 +193,121 @@ modules\integrations\integration_shared.lua
 modules\integrations\bigwigs.lua
 modules\integrations\dandersframes.lua
 modules\integrations\abilitytimeline.lua
+
+# == merged QUI_UI bundle (skinning, datatexts, minimap, infobar, qol, alts,
+#    combat, dungeon, trackers, utility). Order is load-bearing — preserved
+#    verbatim from the former QUI_UI.toc; [Bootstrap] tags dropped (meaningless
+#    in the non-LOD main addon). The alts roster files at the tail compile at
+#    login and build their window on first open. The former QUI_UI bootstrap
+#    namespace-proxy is intentionally OMITTED: these files now share the main
+#    addon's ns directly (it IS QUI._ns), so a proxy would self-reference. ==
+modules\skinning\character_pane\character.lua
+modules\skinning\character_pane\inspect.lua
+modules\skinning\base.lua
+modules\skinning\gameplay\keystone.lua
+modules\skinning\notifications\alerts.lua
+modules\skinning\notifications\loot.lua
+modules\skinning\gameplay\mplus_timer.lua
+modules\skinning\frames\character.lua
+modules\skinning\frames\statustracking.lua
+modules\skinning\frames\inspect.lua
+modules\skinning\gameplay\powerbaralt.lua
+modules\skinning\notifications\readycheck.lua
+modules\skinning\system\gamemenu.lua
+modules\skinning\system\popups.lua
+modules\skinning\frames\overrideactionbar.lua
+modules\skinning\gameplay\objectivetracker.lua
+modules\skinning\frames\instanceframes.lua
+modules\skinning\frames\delves.lua
+modules\skinning\frames\pvpmatch.lua
+modules\skinning\frames\auctionhouse.lua
+modules\skinning\frames\craftingorders.lua
+modules\skinning\frames\professions.lua
+modules\skinning\frames\interaction.lua
+modules\skinning\frames\misc_frames.lua
+modules\skinning\frames\mail.lua
+modules\skinning\frames\social.lua
+modules\skinning\frames\journals.lua
+modules\skinning\frames\achievement.lua
+modules\skinning\frames\worldmap.lua
+modules\skinning\frames\weeklyrewards.lua
+modules\skinning\system\tooltips.lua
+modules\datatexts\alts_data.lua
+modules\datatexts\datatexts.lua
+modules\datatexts\providers_extra.lua
+modules\datatexts\ldb_bridge.lua
+modules\datatexts\datapanels.lua
+modules\minimap\minimap.lua
+modules\minimap\dungeon_data.lua
+modules\minimap\init_inwindow.lua
+modules\infobar\infobar.lua
+modules\infobar\micromenu.lua
+modules\infobar\travel.lua
+modules\infobar\specswap.lua
+modules\infobar\contextmenu.lua
+modules\infobar\dragreorder.lua
+modules\utility\keybinds.lua
+modules\utility\consumablemacros.lua
+modules\combat\rotationassist.lua
+modules\combat\combattext.lua
+modules\trackers\spellscanner.lua
+modules\trackers\preytracker.lua
+modules\trackers\atonement_counter.lua
+modules\qol\qol.lua
+modules\qol\blizzard_mover.lua
+modules\qol\blizzard_mover_frames.lua
+modules\qol\quicksalvage.lua
+modules\qol\petwarning.lua
+modules\qol\notargetwarning.lua
+modules\qol\consumablecheck.lua
+modules\qol\tooltip_provider.lua
+modules\qol\tooltip_inspect.lua
+modules\qol\tooltip.lua
+modules\qol\combattimer.lua
+modules\qol\lusttimer.lua
+modules\qol\actiontracker.lua
+modules\qol\crosshair.lua
+modules\qol\cursortrail.lua
+modules\qol\rangecheck.lua
+modules\qol\reticle.lua
+modules\qol\skyriding.lua
+modules\qol\xptracker.lua
+modules\qol\focuscastalert.lua
+modules\qol\merchant_grid.lua
+modules\qol\merchant_pets.lua
+modules\qol\ej_lootspecs.lua
+modules\qol\communities_privacy.lua
+modules\qol\gem_picker.lua
+modules\qol\mail_contacts.lua
+modules\qol\vendor_rules.lua
+modules\qol\trade_mail_log.lua
+modules\qol\focus_marker.lua
+modules\qol\healer_mana.lua
+modules\qol\death_alert.lua
+modules\qol\friends_decor.lua
+modules\qol\audio_device.lua
+modules\qol\extended_ignore.lua
+modules\qol\event_sounds.lua
+modules\qol\sound_mute_catalog.lua
+modules\qol\sound_mute.lua
+modules\qol\collection_fanfare.lua
+modules\dungeon\keystone.lua
+modules\dungeon\mplus_timer.lua
+modules\dungeon\mplus_progress.lua
+modules\dungeon\teleport.lua
+modules\dungeon\map_teleports.lua
+modules\dungeon\party_keystones.lua
+modules\dungeon\brez_counter.lua
+modules\alts\alts.lua
+modules\alts\alts_trigger.lua
+modules\alts\roster_data.lua
+modules\alts\views\shared.lua
+modules\alts\views\window.lua
+modules\alts\views\filter_popup.lua
+modules\alts\views\roster.lua
+modules\alts\views\professions.lua
+modules\alts\views\reputations.lua
+modules\alts\views\weeklies.lua
+modules\alts\views\currencies.lua
+modules\alts\views\equipment.lua
+modules\alts\views\search.lua

@@ -59,7 +59,7 @@ local ns = {
     WhenLoggedIn = function(fn) if fn then fn() end end,
 }
 
-assert(loadfile("QUI_QoL/qol/combattimer.lua"))("QUI_QoL", ns)
+assert(loadfile("modules/qol/combattimer.lua"))("QUI_QoL", ns)
 
 -- 1) The timer frame must be created at login.
 assert(namedFrames["QUI_CombatTimer"],

@@ -87,11 +87,11 @@ local fnSrc = assert(usabilitySrc:match("(ComputeAutoFlyoutDirection = function.
 
 local SCREEN_W, SCREEN_H = 1920, 1080
 
-local function loadComputeFn(safeToNumber)
+local function loadComputeFn(safeNumberOrNil)
     local env = {
         GetScreenWidth = function() return SCREEN_W end,
         GetScreenHeight = function() return SCREEN_H end,
-        Helpers = { SafeToNumber = safeToNumber },
+        Helpers = { SafeNumberOrNil = safeNumberOrNil },
     }
     local chunk = assert(loadstring(fnSrc, "ComputeAutoFlyoutDirection"))
     setfenv(chunk, env)
@@ -99,7 +99,10 @@ local function loadComputeFn(safeToNumber)
     return assert(env.ComputeAutoFlyoutDirection, "function did not assign into env")
 end
 
--- Plain numeric center (non-secret): SafeToNumber passes numbers through.
+-- Plain numeric center (non-secret): SafeNumberOrNil passes numbers through.
+-- (The old stub keyed this on SafeToNumber and pinned nil-on-secret semantics
+-- SafeToNumber never had — its `fallback or 0` can't return nil. Production
+-- now uses SafeNumberOrNil, whose real contract matches this stub.)
 local passThrough = function(v) if type(v) == "number" then return v end return nil end
 local compute = loadComputeFn(passThrough)
 
@@ -123,7 +126,7 @@ assert(compute(fakeBtn(200, 540), true) == "RIGHT",
 assert(compute(fakeBtn(nil, nil), false) == "UP", "missing center -> horizontal default UP")
 assert(compute(fakeBtn(nil, nil), true) == "RIGHT", "missing center -> vertical default RIGHT")
 
--- Secret center (SafeToNumber returns nil for a secret value) -> same fallback,
+-- Secret center (SafeNumberOrNil returns nil for a secret value) -> same fallback,
 -- and crucially never compares the secret coordinate in Lua.
 local secretCompute = loadComputeFn(function() return nil end)
 assert(secretCompute(fakeBtn(960, 200), false) == "UP", "secret center -> horizontal default UP")

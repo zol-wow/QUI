@@ -159,5 +159,86 @@ assert(out7:find("::warning", 1, true),
 print("renderer output regression test passed (github)")
 
 -- ---------------------------------------------------------------------------
+-- Test 8: --json-out archives every severity while stdout stays gated
+--
+-- This is the whole point of the flag: CI runs one analysis pass that fails on
+-- strict findings AND uploads the full advisory report. If --json-out ever
+-- starts honouring --strict-only, the artifact silently loses its advisory and
+-- review rows while still looking like a valid report.
+-- ---------------------------------------------------------------------------
+
+local jsonOutPath = "tests/taint/cli_test_jsonout.tmp.json"
+os.remove(jsonOutPath)
+
+local cmd8 = 'lua tools/test_taint.lua --report github --strict-only'
+    .. ' --json-out ' .. jsonOutPath .. ' tests/taint/cli-fixture'
+local out8, exit8 = runCmd(cmd8)
+
+assert(exit8 == 1,
+    "Test 8: fixture has strict findings, so exit should be 1, got: " .. tostring(exit8)
+    .. "\nOutput: " .. out8)
+
+local fJson = io.open(jsonOutPath, "rb")
+assert(fJson, "Test 8: --json-out should have written " .. jsonOutPath)
+local jsonContent = fJson:read("*a")
+fJson:close()
+os.remove(jsonOutPath)
+
+assert(jsonContent:find('"severity": "strict"', 1, true),
+    "Test 8: json-out must keep strict findings.\nGot: " .. jsonContent)
+assert(jsonContent:find('"severity": "advisory"', 1, true),
+    "Test 8: json-out must keep advisory findings despite --strict-only.\nGot: " .. jsonContent)
+assert(not out8:find("modules/foo/dirty.lua", 1, true),
+    "Test 8: stdout is --strict-only, so the advisory file must not appear.\nGot: " .. out8)
+
+print("json-out archives unfiltered findings test passed")
+
+-- ---------------------------------------------------------------------------
+-- Test 9: --shard is a partition, not a sample
+--
+-- The shard split is cost-balanced bin-packing rather than a simple modulo, so
+-- a bug there drops files silently: every shard exits 0 and CI stays green
+-- while part of the corpus is never analyzed. Assert the union of all shards
+-- reproduces the unsharded finding set exactly.
+-- ---------------------------------------------------------------------------
+
+local function findingKeys(text)
+    local keys = {}
+    for file, line in text:gmatch('"file": "(.-)", "line": (%d+)') do
+        keys[file .. ":" .. line] = (keys[file .. ":" .. line] or 0) + 1
+    end
+    return keys
+end
+
+local outFull = runCmd('lua tools/test_taint.lua --report json tests/taint/cli-fixture')
+local expected = findingKeys(outFull)
+
+local expectedCount = 0
+for _ in pairs(expected) do expectedCount = expectedCount + 1 end
+assert(expectedCount > 0, "Test 9: fixture should produce findings to partition")
+
+local SHARDS = 3
+local union = {}
+for shard = 1, SHARDS do
+    local outShard = runCmd(string.format(
+        'lua tools/test_taint.lua --report json --shard %d/%d tests/taint/cli-fixture',
+        shard, SHARDS))
+    for key, count in pairs(findingKeys(outShard)) do
+        union[key] = (union[key] or 0) + count
+    end
+end
+
+for key, count in pairs(expected) do
+    assert(union[key] == count, string.format(
+        "Test 9: %s appears %s time(s) across shards, expected %d -- shards must partition",
+        key, tostring(union[key]), count))
+end
+for key in pairs(union) do
+    assert(expected[key], "Test 9: shards produced a finding the unsharded run did not: " .. key)
+end
+
+print("shard partition test passed")
+
+-- ---------------------------------------------------------------------------
 
 print("cli_test.lua: all tests passed")

@@ -26,8 +26,8 @@ _G.C_Item.GetItemInfoInstant = function(itemID)
 end
 
 local ns = loader.LoadAll(nil, "scan_auctions.lua")
-ns.Bags.RequestDrain = function() end
-local Store, ScanAuctions, Bus = ns.Bags.Store, ns.Bags.ScanAuctions, ns.Bags.Bus
+ns.Storage.RequestDrain = function() end
+local Store, ScanAuctions, Bus = ns.Storage.Store, ns.Storage.ScanAuctions, ns.Storage.Bus
 
 _G.QUI_StorageDB = nil
 Store.Initialize()

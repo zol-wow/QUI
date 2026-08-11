@@ -9,15 +9,11 @@ local Settings = ns.Settings
 local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
--- Local references for shared infrastructure
 local CreateScrollableContent = Shared.CreateScrollableContent
 local CreateWrappedLabel = Shared.CreateWrappedLabel
 
 local GetCore = ns.Helpers.GetCore
 
---------------------------------------------------------------------------------
--- Helper: Create a scrollable text box container
---------------------------------------------------------------------------------
 local function CreateScrollableTextBox(parent, height, text)
     return GUI:CreateScrollableTextBox(parent, height, text)
 end
@@ -95,9 +91,6 @@ local function CreateImportBanner(parent, title, message, titleColor, bgColor, b
     return frame, height
 end
 
---------------------------------------------------------------------------------
--- SUB-TAB BUILDER: Import/Export (user profile import/export)
---------------------------------------------------------------------------------
 local function BuildImportExportTab(tabContent)
     local y = -10
     local PAD = 10
@@ -130,7 +123,6 @@ local function BuildImportExportTab(tabContent)
     validationNote:SetJustifyH("LEFT")
     y = y - 20
 
-    -- Export Section Header
     Shared.CreateAccentDotLabel(tabContent, ns.L["Export Current Profile"], y); y = y - 30
 
     local exportNote = CreateWrappedLabel(
@@ -280,12 +272,9 @@ local function BuildImportExportTab(tabContent)
     exportState.preview = exportPreview
 
     local exportCollapsibleAnchorY = y
-    local exportCollapsibleSection  -- always-visible section wrapper (accent-dot label + body)
+    local exportCollapsibleSection
 
     if exportPreview and type(exportPreview.categories) == "table" then
-        -- Wrapper frame containing the accent-dot header and body. Its
-        -- GetHeight()/ExportRelayout use measure the whole section, matching
-        -- the old CreateInlineCollapsible contract without collapsibility.
         exportCollapsibleSection = CreateFrame("Frame", nil, tabContent)
         exportCollapsibleSection:SetPoint("TOPLEFT", PAD, y)
         exportCollapsibleSection:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
@@ -429,19 +418,13 @@ local function BuildImportExportTab(tabContent)
         y = y - exportCollapsibleSection:GetHeight() - 8
     end
 
-    ---------------------------------------------------------------------------
-    -- Post-export container: holds everything below the collapsible so it
-    -- shifts automatically when the selective export section expands/collapses.
-    ---------------------------------------------------------------------------
     local postExportContainer = CreateFrame("Frame", nil, tabContent)
     postExportContainer:SetPoint("TOPLEFT", tabContent, "TOPLEFT", 0, y)
     postExportContainer:SetPoint("RIGHT", tabContent, "RIGHT", 0, 0)
     postExportContainer:SetHeight(1)
 
-    -- Reset y for container-local positioning
     y = 0
 
-    -- Export text box
     local exportContainer = CreateScrollableTextBox(postExportContainer, 100, "")
     exportContainer:SetPoint("TOPLEFT", PAD, y)
     exportContainer:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
@@ -457,16 +440,13 @@ local function BuildImportExportTab(tabContent)
 
     y = y - 28
 
-    -- Import Section Header (with a paste hint rendered next to the label)
     local importHeader = Shared.CreateAccentDotLabel(postExportContainer, ns.L["Import Profile String"], y)
 
-    -- Paste hint next to header
     local pasteHint = GUI:CreateLabel(postExportContainer, ns.L["press Ctrl+V to paste"], 11, C.textMuted)
     pasteHint:SetPoint("LEFT", importHeader, "RIGHT", 12, 0)
 
     y = y - 30
 
-    -- Import text box (user pastes string here)
     local importContainer = CreateScrollableTextBox(postExportContainer, 100, "")
     importContainer:SetPoint("TOPLEFT", PAD, y)
     importContainer:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
@@ -508,7 +488,7 @@ local function BuildImportExportTab(tabContent)
 
     local analysisNote = CreateWrappedLabel(
         postExportContainer,
-        ns.L["Paste a QUI profile string, analyze it, then choose which categories to import. Unselected categories stay as they are in the target profile."],
+        ns.L["Paste a QUI or QUI profile string, analyze it, then choose which categories to import. Unselected categories stay as they are in the target profile."],
         10,
         C.textMuted
     )
@@ -520,7 +500,6 @@ local function BuildImportExportTab(tabContent)
         preview = nil,
         selected = {},
         checkboxByID = {},
-        --- When set, selective/full import uses this validated table instead of re-parsing the edit box (required after sanitization).
         activePayload = nil,
     }
 
@@ -530,7 +509,6 @@ local function BuildImportExportTab(tabContent)
     previewHost:SetPoint("RIGHT", postExportContainer, "RIGHT", -PAD, 0)
     previewHost:SetHeight(10)
 
-    -- Track the final y inside postExportContainer for height calculations
     local postExportFinalY = previewTopY
 
     local function ShowReloadPrompt(message)
@@ -650,28 +628,25 @@ local function BuildImportExportTab(tabContent)
         tabContent:SetHeight(containerOffset + containerInternalHeight + 20)
     end
 
-    -- Forward declaration: the STRIP callback inside RenderPreview calls
-    -- ClearAnalysis, which is defined further down in this same scope. Without
-    -- this `local`, those calls bound to a nil global and errored at click time.
     local ClearAnalysis
 
     local function RenderPreview(title, message, preview, isError, validationDetail)
         previewHost._importCollapsible = nil
 
-        if previewHost.content then
-            previewHost.content:Hide()
-            previewHost.content:SetParent(nil)
-        end
-
         analysisState.checkboxByID = {}
         analysisState.importSelectedBtn = nil
         analysisState.importEverythingBtn = nil
 
-        local content = CreateFrame("Frame", nil, previewHost)
-        content:SetPoint("TOPLEFT", 0, 0)
-        content:SetPoint("RIGHT", previewHost, "RIGHT", 0, 0)
+        local content = previewHost.content
+        if content then
+            GUI:TeardownFrameTree(content)
+        else
+            content = CreateFrame("Frame", nil, previewHost)
+            content:SetPoint("TOPLEFT", 0, 0)
+            content:SetPoint("RIGHT", previewHost, "RIGHT", 0, 0)
+            previewHost.content = content
+        end
         content:SetHeight(1)
-        previewHost.content = content
 
         local localY = -6
         local banner, bannerHeight = CreateImportBanner(
@@ -752,7 +727,6 @@ local function BuildImportExportTab(tabContent)
         end
 
         if preview and type(preview.categories) == "table" then
-            -- "Import Everything" button above the collapsible for quick access
             analysisState.importEverythingBtn = GUI:CreateButton(content, ns.L["IMPORT EVERYTHING"], 180, 28, function()
                 local targetProfileName = GetTargetProfileName()
                 GUI:ShowConfirmation({
@@ -798,9 +772,6 @@ local function BuildImportExportTab(tabContent)
 
             local importSectionStartY = localY
 
-            -- Always-visible "Selective Import" section: accent-dot header +
-            -- inline body. Replaces CreateInlineCollapsible for style parity
-            -- with the new-standard settings panels (Keybind Mode, Third-party).
             local importCollapsibleSection = CreateFrame("Frame", nil, content)
             importCollapsibleSection:SetPoint("TOPLEFT", 0, localY)
             importCollapsibleSection:SetPoint("RIGHT", content, "RIGHT", 0, 0)
@@ -1045,17 +1016,12 @@ local function BuildImportExportTab(tabContent)
     ClearAnalysis(ns.L["Paste a QUI profile string and click Analyze Import to choose what to import."], false)
 end
 
--- PAGE: QUI Import/Export
---------------------------------------------------------------------------------
 local function CreateImportExportPage(parent)
     local _, content = CreateScrollableContent(parent)
     BuildImportExportTab(content)
     content:SetHeight(550)
 end
 
---------------------------------------------------------------------------------
--- Export
---------------------------------------------------------------------------------
 ns.QUI_ImportOptions = {
     CreateImportExportPage = CreateImportExportPage,
     BuildImportExportTab = BuildImportExportTab,

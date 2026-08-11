@@ -1,14 +1,3 @@
---[[
-    QUI Group Frames - Missing Raid Buff Detection
-
-    Per-unit missing raid buff helper used by the unified aura element renderer.
-    The lookup order is designed for protected combat aura reads:
-      1. Direct whitelisted spell-ID aura queries.
-      2. Pre-combat snapshot fallback.
-      3. Name lookup.
-      4. Guarded aura iteration.
-]]
-
 local ADDON_NAME, ns = ...
 
 local MRB = ns.QUI_GroupFrameMissingRaidBuffs or {}
@@ -33,6 +22,7 @@ local GetNumGroupMembers = GetNumGroupMembers
 local InCombatLockdown = InCombatLockdown
 local GetSpecialization = GetSpecialization
 local GetSpecializationInfo = GetSpecializationInfo
+local C_SpecializationInfo = C_SpecializationInfo
 local IsPlayerSpell = IsPlayerSpell
 local IsSpellKnown = IsSpellKnown
 local CreateFrame = CreateFrame
@@ -47,12 +37,13 @@ local GetDB = ns.Helpers and ns.Helpers.CreateDBGetter and ns.Helpers.CreateDBGe
 
 local GetPlayerAuraBySpellID = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
 local GetUnitAuraBySpellID = C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID
+local C_Secrets = C_Secrets
+local function AurasAreSecret()
+    return C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()
+end
 local GetAuraDataByIndex = C_UnitAuras and C_UnitAuras.GetAuraDataByIndex
 
--- Ally-buff delta scoping (see AllyDeltaIsRelevant below).
--- Built lazily from ns.QUI_AllyBuffs on first aura event.
 local _allyBuffIDs = nil
-local _allyTrackedInstances = {}  -- [unit] = { [auraInstanceID] = true }
 
 local RAID_BUFFS = {
     { key = "intellect", ids = { 1459, 432778 }, label = "Arcane Intellect", providerClass = "MAGE", iconSpellID = 1459 },
@@ -85,11 +76,8 @@ local NON_SECRET_RAID_BUFF_IDS = {
     [381749] = true, [381750] = true, [381751] = true, [381752] = true,
     [381753] = true, [381754] = true, [381756] = true, [381757] = true,
     [381758] = true,
-    -- Beacon of Light / Faith / Eternal Flame / of the Savior (Holy Paladin ally buff)
     [53563] = true, [156910] = true, [156322] = true, [1244893] = true,
-    -- Earth Shield (Restoration Shaman ally buff)
     [974] = true, [383648] = true,
-    -- Source of Magic (Augmentation Evoker ally buff)
     [369459] = true,
 }
 
@@ -104,8 +92,9 @@ local singleID = {}
 local preCombatSnapshot = {}
 local snapshotBuffIDs = {}
 local activePredicates = {}
-local _groupUnitsScratch = {}  -- reused table; callers must not hold a ref across calls
+local _groupUnitsScratch = {}
 local snapshotEventFrame
+local rangeListenerFrames
 local refreshQueued = false
 
 local function RegisterSnapshotIDs(spellIDOrTable)
@@ -132,6 +121,87 @@ function MRB:RegisterActivePredicate(predicate)
     end
 end
 
+local function BuildCDMGroupBuffEntries(out)
+    local CV = _G.C_CooldownViewer
+    if not (CV and CV.GetGroupBuffItems) then return end
+    local okItems, items = pcall(CV.GetGroupBuffItems)
+    if not okItems or type(items) ~= "table" then return end
+
+    local hidden = {}
+    local layoutListRead = false
+    local CVS = _G.CooldownViewerSettings
+    local layoutGetter = _G.CooldownManagerLayout_GetHiddenGroupBuffs
+    local layoutMode = _G.Enum and _G.Enum.CDMLayoutMode and _G.Enum.CDMLayoutMode.AccessOnly
+    if CVS and type(layoutGetter) == "function" and layoutMode ~= nil then
+        local okLayout, list = pcall(function()
+            local lm = CVS:GetLayoutManager()
+            local layout = lm and lm:GetActiveLayout(layoutMode)
+            return layout and layoutGetter(layout) or nil
+        end)
+        if okLayout and type(list) == "table" then
+            layoutListRead = true
+            for _, sid in ipairs(list) do hidden[sid] = true end
+        end
+    end
+    if not layoutListRead then
+        local UA = _G.C_UnitAuras
+        if UA and UA.GetHiddenGroupBuffs then
+            local okHidden, hiddenIDs = pcall(UA.GetHiddenGroupBuffs)
+            if okHidden and type(hiddenIDs) == "table" then
+                for _, sid in ipairs(hiddenIDs) do hidden[sid] = true end
+            end
+        end
+    end
+
+    local builtinIDs = {}
+    for i = 1, #out do
+        local ids = out[i].ids
+        if type(ids) == "table" then
+            for j = 1, #ids do builtinIDs[ids[j]] = true end
+        end
+    end
+
+    local hideByDefault = _G.Enum and _G.Enum.GroupBuffItemFlags
+        and _G.Enum.GroupBuffItemFlags.HideByDefault or 1
+    local band = bit and bit.band
+
+    local seen = {}
+    for _, item in ipairs(items) do
+        local sid = item.spellID
+        local flaggedHidden = not layoutListRead
+            and type(item.flags) == "number" and band
+            and band(item.flags, hideByDefault) ~= 0
+        if type(sid) == "number" and not IsSecretValue(sid)
+            and item.isKnown ~= false
+            and not flaggedHidden
+            and not hidden[sid] and not builtinIDs[sid] and not seen[sid] then
+            seen[sid] = true
+            out[#out + 1] = {
+                key = "cdm:" .. sid,
+                ids = { sid },
+                label = (type(item.name) == "string" and item.name) or ("Spell " .. sid),
+                providerClass = nil,
+                iconSpellID = sid,
+                source = "cdm",
+            }
+        end
+    end
+end
+
+function MRB:RebuildRaidBuffs()
+    for i = #RAID_BUFFS, 1, -1 do
+        if RAID_BUFFS[i].source == "cdm" then
+            table.remove(RAID_BUFFS, i)
+        end
+    end
+    BuildCDMGroupBuffEntries(RAID_BUFFS)
+    for i = 1, #RAID_BUFFS do
+        RegisterSnapshotIDs(RAID_BUFFS[i].ids)
+    end
+end
+
+MRB:RebuildRaidBuffs()
+
 local function SafeBoolean(fn, unit, fallback)
     if not fn then return fallback end
     local ok, value = pcall(fn, unit)
@@ -141,13 +211,12 @@ local function SafeBoolean(fn, unit, fallback)
     return value
 end
 
--- Seam: overrideable in tests to simulate raidN-as-player detection.
--- Production: fast path for literal "player", then pcall(UnitIsUnit, unit, "player").
 function MRB._isPlayerUnitProbe(unit)
     if unit == "player" then return true end
     if not UnitIsUnit then return false end
     local ok, result = pcall(UnitIsUnit, unit, "player")
-    if not ok or IsSecretValue(result) then return false end
+    if not ok then return false end
+    if IsSecretValue(result) then return false end -- @secret-policy: reject-secret-ids
     return result == true
 end
 
@@ -156,8 +225,8 @@ local function ContextHasMissingRaidBuffElement(contextDB)
     if not auras or auras.enabled == false or type(auras.elements) ~= "table" then
         return false
     end
-    for _, bucket in pairs(auras.elements) do
-        if type(bucket) == "table" then
+    for key, bucket in pairs(auras.elements) do
+        if (key == "*" or type(key) == "number") and type(bucket) == "table" then
             for _, element in ipairs(bucket) do
                 if type(element) == "table"
                     and element.mode == "missingRaidBuff"
@@ -179,7 +248,7 @@ function MRB:HasActiveElements()
         return true
     end
     for i = 1, #activePredicates do
-        local ok, active = pcall(activePredicates[i])
+        local ok, active = ns.SafeCall("bulkhead", activePredicates[i])
         if ok and active then
             return true
         end
@@ -212,9 +281,11 @@ local function GetBuffName(buff)
             name = resolved
         end
     end
-    name = name or buff.label
-    nameCache[buff.key] = name
-    return name
+    if name then
+        nameCache[buff.key] = name
+        return name
+    end
+    return buff.label
 end
 
 local function GetBuffIcon(buff)
@@ -230,30 +301,33 @@ local function GetBuffIcon(buff)
         local ok, resolved = pcall(GetSpellTexture, spellID)
         if ok and resolved then icon = resolved end
     end
-    icon = icon or 134400
-    iconCache[spellID] = icon
-    return icon
+    if icon then
+        iconCache[spellID] = icon
+        return icon
+    end
+    return 134400
 end
 
 local function GetSyntheticAura(buff)
     local aura = syntheticAuraCache[buff.key]
-    if aura then return aura end
-
-    aura = {
-        auraInstanceID = "QUI_MissingRaidBuff_" .. buff.key,
-        spellId = buff.iconSpellID or buff.ids[1],
-        name = GetBuffName(buff),
-        icon = GetBuffIcon(buff),
-        duration = 0,
-        expirationTime = 0,
-        isHelpful = true,
-        isHarmful = false,
-    }
-    syntheticAuraCache[buff.key] = aura
+    if not aura then
+        aura = {
+            auraInstanceID = "QUI_MissingRaidBuff_" .. buff.key,
+            spellId = buff.iconSpellID or buff.ids[1],
+            duration = 0,
+            expirationTime = 0,
+            isHelpful = true,
+            isHarmful = false,
+        }
+        syntheticAuraCache[buff.key] = aura
+    end
+    aura.name = GetBuffName(buff)
+    aura.icon = GetBuffIcon(buff)
     return aura
 end
 
 local function SafeAuraField(auraData, field)
+    if IsSecretValue(auraData) then return nil end -- @secret-policy: reject-secret-value
     if not auraData then return nil end
     local ok, value = pcall(function() return auraData[field] end)
     if not ok or IsSecretValue(value) then return nil end
@@ -318,56 +392,58 @@ function MRB:UnitHasBuff(unit, spellIDOrTable, spellName)
         end
     end
 
+    local unknown = false
+
     if spellName and AuraUtil and AuraUtil.FindAuraByName then
         local ok, aura = pcall(AuraUtil.FindAuraByName, spellName, unit, "HELPFUL")
-        if ok and aura then
-            return true
+        if ok then
+            if IsSecretValue(aura) then
+                -- @secret-policy: readable-only-scan — unidentifiable; fall
+                aura = nil
+                unknown = true
+            end
+            if aura then
+                return true
+            end
+        else
+            unknown = true
         end
     end
 
-    if AuraUtil and AuraUtil.ForEachAura then
-        local found = false
-        AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(auraData)
-            local auraSpellID = SafeAuraField(auraData, "spellId")
-            if auraSpellID then
-                for i = 1, #spellIDs do
-                    if auraSpellID == spellIDs[i] then
-                        found = true
-                        return true
-                    end
-                end
-            end
-        end, true)
-        if found then return true end
-    end
-
-    if GetAuraDataByIndex then
-        for index = 1, 40 do
+    if GetAuraDataByIndex and not AurasAreSecret() then
+        local index = 0
+        while true do
+            index = index + 1
             local ok, auraData = pcall(GetAuraDataByIndex, unit, index, "HELPFUL")
-            if not ok or not auraData then break end
-            local auraSpellID = SafeAuraField(auraData, "spellId")
-            if auraSpellID then
-                for i = 1, #spellIDs do
-                    if auraSpellID == spellIDs[i] then
-                        return true
+            if not ok then unknown = true; break end
+            if IsSecretValue(auraData) then
+                -- @secret-policy: readable-only-scan
+                unknown = true
+            elseif not auraData then
+                break
+            else
+                local auraSpellID = SafeAuraField(auraData, "spellId")
+                if auraSpellID then
+                    for i = 1, #spellIDs do
+                        if auraSpellID == spellIDs[i] then
+                            return true
+                        end
                     end
                 end
             end
         end
+    elseif GetAuraDataByIndex and AurasAreSecret() then
+        unknown = true
     end
 
+    if unknown then return nil end
     return false
 end
 
--- Seam: returns the whitelisted (non-secret) aura table for (unit, id) or nil.
--- Production reads the existing direct lookup; tests override this field.
 function MRB._auraProbe(unit, id)
     return DirectAuraLookup(unit, id)
 end
 
--- True iff `unit` carries one of `ids` cast by the player. For whitelisted IDs
--- the aura is non-secret, so isFromPlayerOrPlayerPet is readable; otherwise fall
--- back to the player-cast aura filter (C-side caster check, no secret read).
 function MRB:UnitHasMyBuff(unit, ids)
     if not unit or not SafeBoolean(UnitExists, unit, false) then return false end
     for i = 1, #ids do
@@ -379,33 +455,59 @@ function MRB:UnitHasMyBuff(unit, ids)
             end
         end
     end
-    if AuraUtil and AuraUtil.ForEachAura then
-        local found = false
-        AuraUtil.ForEachAura(unit, "HELPFUL|PLAYER", nil, function(auraData)
-            local sid = SafeAuraField(auraData, "spellId")
-            if sid then
-                for i = 1, #ids do
-                    if sid == ids[i] then found = true; return true end
+    local unknown = false
+    if GetAuraDataByIndex and not AurasAreSecret() then
+        local index = 0
+        while true do
+            index = index + 1
+            local ok, auraData = pcall(GetAuraDataByIndex, unit, index, "HELPFUL|PLAYER")
+            if not ok then unknown = true; break end
+            if IsSecretValue(auraData) then
+                -- @secret-policy: readable-only-scan
+                unknown = true
+            elseif not auraData then
+                break
+            else
+                local sid = SafeAuraField(auraData, "spellId")
+                if sid then
+                    for i = 1, #ids do
+                        if sid == ids[i] then return true end
+                    end
                 end
             end
-        end, true)
-        if found then return true end
+        end
+    elseif GetAuraDataByIndex and AurasAreSecret() then
+        unknown = true
     end
+    if unknown then return nil end
     return false
 end
 
-local function UnitInKnownRange(unit)
-    if unit == "player" then return true end
+function MRB._rangeProbe(unit)
+    local GF = ns.QUI_GroupFrames
+    if GF and GF.CheckUnitRange then
+        local ok, inRange = pcall(GF.CheckUnitRange, unit)
+        if not ok or IsSecretValue(inRange) then return false end
+        return inRange ~= false
+    end
     if UnitInRange then
         local ok, inRange, checked = pcall(UnitInRange, unit)
-        if ok and not IsSecretValue(inRange) and not IsSecretValue(checked) and checked and inRange == false then
-            return false
-        end
+        if not ok then return false end
+        -- @secret-policy: reject-secret-value
+        if IsSecretValue(inRange) then return false end
+        -- @secret-policy: reject-secret-value
+        if IsSecretValue(checked) then return false end
+        if checked and inRange == false then return false end
     end
     return true
 end
 
-local function UnitEligible(unit)
+local function UnitInKnownRange(unit)
+    if MRB._isPlayerUnitProbe(unit) then return true end
+    return MRB._rangeProbe(unit) == true
+end
+
+local function UnitEligible(unit, skipRange)
     if not unit or not SafeBoolean(UnitExists, unit, false) then return false end
     if SafeBoolean(UnitIsDeadOrGhost, unit, true) then return false end
     if SafeBoolean(UnitIsConnected, unit, false) == false then return false end
@@ -414,26 +516,23 @@ local function UnitEligible(unit)
         local ok, canAssist = pcall(UnitCanAssist, "player", unit)
         if not ok or IsSecretValue(canAssist) or not canAssist then return false end
     end
-    if not UnitInKnownRange(unit) then return false end
+    if not skipRange and not UnitInKnownRange(unit) then return false end
     return true
 end
 
--- Seams used by tests and by the ally-buff scan below.
--- Production delegates to the real functions; tests override these fields.
-function MRB._eligibleProbe(unit) return UnitEligible(unit) end
+function MRB._eligibleProbe(unit, skipRange) return UnitEligible(unit, skipRange) end
 
 function MRB._specProbe()
-    if not GetSpecialization then return nil end
-    local idx = GetSpecialization()
+    local getSpec = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization)
+        or GetSpecialization
+    local getSpecInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo)
+        or GetSpecializationInfo
+    if not getSpec or not getSpecInfo then return nil end
+    local idx = getSpec()
     if not idx then return nil end
-    -- GetSpecializationInfo returns specId as its FIRST value
-    -- (confirmed: SpecializationInfoDocumentation.lua, returns { specId, name, ... })
-    local specID = GetSpecializationInfo and GetSpecializationInfo(idx) or nil
-    return specID
+    return (getSpecInfo(idx))
 end
 
--- Returns the shared scratch table of unit tokens (player + party/raid).
--- Zero-alloc: reuses _groupUnitsScratch. Do NOT hold a reference across calls.
 function MRB._groupUnitsProbe()
     wipe(_groupUnitsScratch)
     _groupUnitsScratch[1] = "player"
@@ -447,9 +546,11 @@ function MRB._groupUnitsProbe()
     return _groupUnitsScratch
 end
 
--- Seam: accepts a buff table OR a bare spellID (backward compat).
--- Checks iconSpellID + all ids; fail-open if no check conclusively shows absent.
 function MRB._spellKnownProbe(buffOrID)
+    local haveCSpellBook = C_SpellBook and C_SpellBook.IsSpellKnown
+    if not haveCSpellBook and not IsPlayerSpell and not IsSpellKnown then
+        return true
+    end
     local ids, icon
     if type(buffOrID) == "table" then
         ids = buffOrID.ids
@@ -458,6 +559,10 @@ function MRB._spellKnownProbe(buffOrID)
         ids = { buffOrID }
     end
     local function tryID(id)
+        if haveCSpellBook then
+            local ok, v = pcall(C_SpellBook.IsSpellKnown, id)
+            if ok and v == true then return true end
+        end
         if IsPlayerSpell then
             local ok, v = pcall(IsPlayerSpell, id)
             if ok and v == true then return true end
@@ -474,10 +579,9 @@ function MRB._spellKnownProbe(buffOrID)
             if tryID(ids[i]) then return true end
         end
     end
-    return true -- fail-open
+    return false
 end
 
--- True iff the player's current specialization is in buff.providerSpecIDs.
 function MRB:PlayerIsProviderSpec(buff)
     local specs = buff and buff.providerSpecIDs
     if type(specs) ~= "table" then return false end
@@ -485,21 +589,28 @@ function MRB:PlayerIsProviderSpec(buff)
     return cur ~= nil and specs[cur] == true
 end
 
--- True iff at least one eligible group member carries one of `ids` cast by ME.
 function MRB:AnyEligibleAllyHasMyBuff(ids)
     local units = MRB._groupUnitsProbe()
+    local sawUnknown = false
     for i = 1, #units do
         local unit = units[i]
-        if MRB._eligibleProbe(unit) and MRB:UnitHasMyBuff(unit, ids) then
-            return true
+        if MRB._eligibleProbe(unit, true) then
+            local has = MRB:UnitHasMyBuff(unit, ids)
+            if has == true then
+                return true
+            elseif has == nil then
+                sawUnknown = true
+            end
         end
     end
+    if sawUnknown then return nil end
     return false
 end
 
 local function ElementShouldCheckBuff(element, buff)
     if element.classDetection ~= false then
         return CLASS_TO_BUFF_KEY[GetPlayerClass() or ""] == buff.key
+            or buff.providerClass == nil
     end
     local checks = element.buffChecks
     if type(checks) ~= "table" then
@@ -507,6 +618,7 @@ local function ElementShouldCheckBuff(element, buff)
     end
     return checks[buff.key] == true
 end
+MRB.ElementShouldCheckBuff = ElementShouldCheckBuff
 
 function MRB:BuildMatches(unit, element, out)
     out = out or {}
@@ -516,10 +628,6 @@ function MRB:BuildMatches(unit, element, out)
     local maxIcons = tonumber(element and element.maxIcons) or 1
     if maxIcons <= 0 then maxIcons = #RAID_BUFFS end
 
-    -- Ally-maintenance buffs (Beacon / Earth Shield): checked FIRST so they are never
-    -- starved by RAID_BUFFS filling maxIcons. Inverted check: remind the player when
-    -- no eligible ally carries MY copy. Player-unit only (covers both "player" token
-    -- and raidN tokens that resolve to the player via UnitIsUnit).
     if MRB._isPlayerUnitProbe(unit) then
         local ally = ns.QUI_AllyBuffs
         if ally then
@@ -527,7 +635,7 @@ function MRB:BuildMatches(unit, element, out)
                 local buff = ally[i]
                 if MRB:PlayerIsProviderSpec(buff)
                     and MRB._spellKnownProbe(buff)
-                    and not MRB:AnyEligibleAllyHasMyBuff(buff.ids)
+                    and MRB:AnyEligibleAllyHasMyBuff(buff.ids) == false
                 then
                     out[#out + 1] = GetSyntheticAura(buff)
                 end
@@ -540,7 +648,7 @@ function MRB:BuildMatches(unit, element, out)
         local buff = RAID_BUFFS[i]
         if ElementShouldCheckBuff(element or {}, buff) then
             local name = GetBuffName(buff)
-            if not self:UnitHasBuff(unit, buff.ids, name) then
+            if self:UnitHasBuff(unit, buff.ids, name) == false then
                 out[#out + 1] = GetSyntheticAura(buff)
             end
         end
@@ -593,7 +701,7 @@ end
 
 local function RefreshUnit(unit)
     if not MRB:HasActiveElements() then return end
-    local pf = ns.QUI_PerfFlags  -- dev A/B harness; nil in normal play
+    local pf = ns.QUI_PerfFlags
     if pf and pf.disabled and pf.disabled.missingbuffs then return end
     local GF = ns.QUI_GroupFrames
     local GFA = ns.QUI_GroupFrameAuras
@@ -609,7 +717,7 @@ end
 
 local function RefreshAll()
     if not MRB:HasActiveElements() then return end
-    local pf = ns.QUI_PerfFlags  -- dev A/B harness; nil in normal play
+    local pf = ns.QUI_PerfFlags
     if pf and pf.disabled and pf.disabled.missingbuffs then return end
     if refreshQueued then return end
     refreshQueued = true
@@ -622,71 +730,73 @@ local function RefreshAll()
     end)
 end
 
--- Mirrors AuraDeltaIsRelevant from raidbuffs.lua, scoped to ally-buff IDs only
--- (Beacon of Light variants + Earth Shield). Tracks added aura instanceIDs so
--- removedAuraInstanceIDs can be correlated back without a full aura rescan.
-local function AllyDeltaIsRelevant(unit, updateInfo)
-    if not updateInfo or updateInfo.isFullUpdate then
-        _allyTrackedInstances[unit] = nil
-        return true
-    end
-
-    -- Build ID set lazily from ns.QUI_AllyBuffs (avoids load-order dep).
-    if not _allyBuffIDs then
-        local ally = ns.QUI_AllyBuffs
-        if not ally then return true end  -- unknown IDs; assume relevant
-        _allyBuffIDs = {}
-        for i = 1, #ally do
-            for _, id in ipairs(ally[i].ids) do
-                _allyBuffIDs[id] = true
-            end
+function MRB.MakeDeltaRelevanceTracker(getIDSet, nilSpellIsRelevant)
+    local instances = {}
+    return function(unit, updateInfo)
+        if not updateInfo or updateInfo.isFullUpdate then
+            instances[unit] = nil
+            return true
         end
-    end
 
-    local relevant = false
-    local set = _allyTrackedInstances[unit]
+        local idSet = getIDSet()
+        if not idSet then return true end
 
-    -- Added auras carry spellId (may be secret on other players).
-    local added = updateInfo.addedAuras
-    if added then
-        for i = 1, #added do
-            local ad = added[i]
-            local sid = ad.spellId
-            if sid == nil or IsSecretValue(sid) then
-                relevant = true  -- can't test a secret spellId; assume relevant
-            elseif _allyBuffIDs[sid] then
-                relevant = true
-                local iid = ad.auraInstanceID
-                if iid and not IsSecretValue(iid) then
-                    set = set or {}
-                    _allyTrackedInstances[unit] = set
-                    set[iid] = true
+        local relevant = false
+        local set = instances[unit]
+
+        local added = updateInfo.addedAuras
+        if added then
+            for i = 1, #added do
+                local ad = added[i]
+                local sid = ad.spellId
+                if IsSecretValue(sid) then
+                    relevant = true
+                elseif sid == nil then
+                    if nilSpellIsRelevant then relevant = true end
+                elseif idSet[sid] then
+                    relevant = true
+                    local iid = ad.auraInstanceID
+                    if iid and not IsSecretValue(iid) then
+                        set = set or {}
+                        instances[unit] = set
+                        set[iid] = true
+                    end
                 end
             end
         end
-    end
 
-    -- Removed/updated carry only instanceIDs (NeverSecretContents per API).
-    -- Only the ones we flagged as tracked matter.
-    if set then
-        local removed = updateInfo.removedAuraInstanceIDs
-        if removed then
-            for i = 1, #removed do
-                local iid = removed[i]
-                if set[iid] then relevant = true; set[iid] = nil end
+        if set then
+            local removed = updateInfo.removedAuraInstanceIDs
+            if removed then
+                for i = 1, #removed do
+                    local iid = removed[i]
+                    if set[iid] then relevant = true; set[iid] = nil end
+                end
+            end
+            local updated = updateInfo.updatedAuraInstanceIDs
+            if updated then
+                for i = 1, #updated do
+                    if set[updated[i]] then relevant = true; break end
+                end
             end
         end
-        local updated = updateInfo.updatedAuraInstanceIDs
-        if updated then
-            for i = 1, #updated do
-                if set[updated[i]] then relevant = true; break end
-            end
-        end
-    end
 
-    return relevant
+        return relevant
+    end
 end
--- Expose as a test seam.
+
+local AllyDeltaIsRelevant = MRB.MakeDeltaRelevanceTracker(function()
+    if _allyBuffIDs then return _allyBuffIDs end
+    local ally = ns.QUI_AllyBuffs
+    if not ally then return nil end
+    _allyBuffIDs = {}
+    for i = 1, #ally do
+        for _, id in ipairs(ally[i].ids) do
+            _allyBuffIDs[id] = true
+        end
+    end
+    return _allyBuffIDs
+end, true)
 MRB._allyDeltaIsRelevant = AllyDeltaIsRelevant
 
 local function EnsureEventFrame()
@@ -700,9 +810,26 @@ local function EnsureEventFrame()
     snapshotEventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     snapshotEventFrame:RegisterEvent("UNIT_CONNECTION")
     snapshotEventFrame:RegisterEvent("UNIT_FLAGS")
-    snapshotEventFrame:RegisterEvent("UNIT_IN_RANGE_UPDATE")
+    do
+        local tokens = { "player" }
+        for i = 1, 4 do tokens[#tokens + 1] = "party" .. i end
+        for i = 1, 40 do tokens[#tokens + 1] = "raid" .. i end
+        rangeListenerFrames = {}
+        for i = 1, #tokens do
+            local token = tokens[i]
+            local listener = CreateFrame("Frame")
+            listener:RegisterUnitEvent("UNIT_IN_RANGE_UPDATE", token)
+            listener:SetScript("OnEvent", function()
+                RefreshUnit(token)
+            end)
+            rangeListenerFrames[i] = listener
+        end
+    end
     snapshotEventFrame:RegisterEvent("ENCOUNTER_START")
     snapshotEventFrame:RegisterEvent("CHALLENGE_MODE_START")
+    pcall(function() snapshotEventFrame:RegisterEvent("COOLDOWN_VIEWER_DATA_LOADED") end)
+    pcall(function() snapshotEventFrame:RegisterEvent("HIDDEN_GROUP_BUFFS_CHANGED") end)
+    pcall(function() snapshotEventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED") end)
     snapshotEventFrame:SetScript("OnEvent", function(_, event, unit)
         if event == "PLAYER_REGEN_DISABLED" then
             MRB:SnapshotRaidBuffAuras()
@@ -710,10 +837,15 @@ local function EnsureEventFrame()
         elseif event == "PLAYER_REGEN_ENABLED" then
             MRB:ClearPreCombatSnapshot()
             RefreshAll()
-        elseif event == "UNIT_CONNECTION" or event == "UNIT_FLAGS" or event == "UNIT_IN_RANGE_UPDATE" then
+        elseif event == "UNIT_CONNECTION" or event == "UNIT_FLAGS" then
             RefreshUnit(unit)
         elseif event == "GROUP_ROSTER_UPDATE" then
             C_Timer.After(0.25, RefreshAll)
+        elseif event == "COOLDOWN_VIEWER_DATA_LOADED"
+            or event == "HIDDEN_GROUP_BUFFS_CHANGED"
+            or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
+            MRB:RebuildRaidBuffs()
+            RefreshAll()
         else
             RefreshAll()
         end
@@ -722,15 +854,9 @@ end
 
 EnsureEventFrame()
 
--- Subscribe to the centralized aura dispatcher for ally-buff change detection.
--- Replaces the removed raw RegisterEvent("UNIT_AURA") → RefreshAll() path, which
--- fired a full 40-frame refresh on every group-member aura change regardless of
--- spec or relevance. Now: spec-gated + ID-scoped + single player-frame refresh,
--- mirroring the standalone-panel pattern in raidbuffs.lua (~1374-1447).
 if ns.AuraEvents then
     ns.AuraEvents:Subscribe("roster", function(unit, updateInfo)
         if not MRB:HasActiveElements() then return end
-        -- Spec short-circuit: a non-provider player (e.g. Warrior) pays zero cost.
         local ally = ns.QUI_AllyBuffs
         if not ally then return end
         local isProvider = false
@@ -741,10 +867,7 @@ if ns.AuraEvents then
             end
         end
         if not isProvider then return end
-        -- Delta scope: only wake when a tracked ally-buff ID is affected.
         if not AllyDeltaIsRelevant(unit, updateInfo) then return end
-        -- Refresh only the player's group frame — the ally-buff reminder appears
-        -- there only (BuildMatches gates on _isPlayerUnitProbe).
         local GF = ns.QUI_GroupFrames
         if GF and GF.unitFrameMap then
             for playerUnit in pairs(GF.unitFrameMap) do

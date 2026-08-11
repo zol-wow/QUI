@@ -8,8 +8,8 @@ return {
         name = "themePreset seeded to Starter Profile value (not legacy default)",
         assert = function(sv, ctx)
             local p = sv.QUI_DB.profiles.Default
-            -- seed = "Classic Mint"; core/defaults.lua = "Horde"
-            return p.themePreset == "Classic Mint"
+            -- seed = "Sky Blue"; core/defaults.lua = "Horde"
+            return p.themePreset == "Sky Blue"
         end,
     },
     {
@@ -28,7 +28,7 @@ return {
     {
         name = "_schemaVersion stamped at current value after seed",
         assert = function(sv, ctx)
-            return sv.QUI_DB.profiles.Default._schemaVersion == 47
+            return sv.QUI_DB.profiles.Default._schemaVersion == 60
         end,
     },
 }

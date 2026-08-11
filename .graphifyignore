@@ -1,0 +1,6 @@
+# graphify corpus scope for QUI.
+# Excludes vendored Blizzard reference snapshots — 3574 files / 57 MB that would
+# dominate every community and bury the addon's own structure.
+tests/framexml/
+tests/api-docs/
+graphify-out/

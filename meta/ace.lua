@@ -1,0 +1,13 @@
+---@meta
+--
+-- Hand-written LuaLS stubs for the Ace3 types the suite annotates against.
+-- NOT generated: `tools/generate_lua_definitions.lua` only writes wow-api.lua,
+-- wow-widgets.lua and wow-globals.lua, so this file survives a regen.
+--
+-- The real implementations live in `libs/`, which `.luarc.json` lists under
+-- `workspace.ignoreDir` (vendored, mock-heavy). These opaque classes exist only
+-- so `---@type AceAddon` / `---@type AceDBObject-3.0` resolve instead of firing
+-- `undefined-doc-name`. Member access is covered by `diagnostics.disable`.
+
+---@class AceAddon
+---@class AceDBObject-3.0

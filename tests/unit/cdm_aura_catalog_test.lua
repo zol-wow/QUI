@@ -7,7 +7,7 @@ end
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("QUI_CDM/cdm/cdm_spelldata.lua", "cdm_aura_catalog.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_aura.lua", "cdm_aura_catalog.lua")("QUI", ns)
 
 local catalog = assert(ns.CDMAuraCatalog, "CDMAuraCatalog table was not exported")
 
@@ -17,19 +17,11 @@ local displayID, remapped = catalog.ResolveEntryAuraDisplay(55090, {
 assert(displayID == 194310, "ability entries should remap to catalog aura display IDs")
 assert(remapped == true, "ability->aura remap should be reported")
 
-local mirror = {
-    GetDirectCooldownIDForViewer = function(spellID, viewerType)
-        if spellID == 55090 and viewerType == "buff" then
-            return 7001
-        end
-    end,
-}
-
-displayID, remapped = catalog.ResolveEntryAuraDisplay(55090, {
+displayID, remapped = catalog.ResolveEntryAuraDisplay(99999, {
     [55090] = 194310,
-}, mirror)
-assert(displayID == 55090, "direct aura children should keep their own display ID")
-assert(remapped == false, "direct aura children should not report a remap")
+})
+assert(displayID == 99999, "entries without a catalog remap should keep their own display ID")
+assert(remapped == false, "entries without a catalog remap should not report a remap")
 
 local resolved = {}
 catalog.AttachLinkedAuraIDs(resolved, {

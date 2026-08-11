@@ -1,35 +1,18 @@
----------------------------------------------------------------------------
--- QUI Module Registry
--- Central registry mapping modules to refresh functions, priorities,
--- groups, and import categories. Enables targeted refresh after selective
--- profile imports and ordered refresh on profile change.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 
 local Registry = {}
 ns.Registry = Registry
 
-Registry._modules = {}     -- name → module definition
-Registry._moduleOrder = nil -- sorted name list (built lazily)
+Registry._modules = {}
+Registry._moduleOrder = nil
 
----------------------------------------------------------------------------
--- REGISTRATION
----------------------------------------------------------------------------
-
---- Register a module with the registry.
---- @param name string Unique module identifier
---- @param def table { refresh=fn, priority=number, group=string, importCategories={...} }
 function Registry:Register(name, def)
     if not name or type(def) ~= "table" then return end
     def.name = name
     def.priority = def.priority or 50
     self._modules[name] = def
-    self._moduleOrder = nil -- invalidate sort cache
+    self._moduleOrder = nil
 end
-
----------------------------------------------------------------------------
--- INTERNAL SORT
----------------------------------------------------------------------------
 
 function Registry:_RebuildOrder()
     local order = {}
@@ -45,10 +28,6 @@ function Registry:_RebuildOrder()
     self._moduleOrder = order
 end
 
----------------------------------------------------------------------------
--- REFRESH API
----------------------------------------------------------------------------
-
 local function SafeCallRefresh(name, fn)
     local ok, err = pcall(fn)
     if not ok then
@@ -56,8 +35,6 @@ local function SafeCallRefresh(name, fn)
     end
 end
 
---- Refresh all modules, optionally filtered by group.
---- @param groupFilter string|nil Only refresh modules in this group (nil = all)
 function Registry:RefreshAll(groupFilter)
     if not self._moduleOrder then self:_RebuildOrder() end
     for _, name in ipairs(self._moduleOrder) do
@@ -68,9 +45,6 @@ function Registry:RefreshAll(groupFilter)
     end
 end
 
---- Refresh only modules whose importCategories overlap with the given IDs.
---- Used by selective profile import to avoid refreshing unrelated modules.
---- @param categoryIDs table Array of category ID strings
 function Registry:RefreshByCategories(categoryIDs)
     if not categoryIDs or #categoryIDs == 0 then return end
 
@@ -86,10 +60,9 @@ function Registry:RefreshByCategories(categoryIDs)
             for _, catID in ipairs(m.importCategories) do
                 if categorySet[catID] then
                     SafeCallRefresh(name, m.refresh)
-                    break -- don't call refresh twice for same module
+                    break
                 end
             end
         end
     end
 end
-

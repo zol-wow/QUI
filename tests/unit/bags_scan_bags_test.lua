@@ -15,8 +15,8 @@ local function fakeItem(itemID, count, quality)
 end
 
 local ns = loader.LoadAll(nil, "scan_bags.lua")
-ns.Bags.RequestDrain = function() end -- glue normally provided by bags.lua
-local Store, ScanBags, Bus = ns.Bags.Store, ns.Bags.ScanBags, ns.Bags.Bus
+ns.Storage.RequestDrain = function() end -- glue normally provided by bags.lua
+local Store, ScanBags, Bus = ns.Storage.Store, ns.Storage.ScanBags, ns.Storage.Bus
 
 _G.QUI_StorageDB = nil
 Store.Initialize()
@@ -61,11 +61,11 @@ assert(ScanBags.Drain() == false, "bank/invalid IDs must not dirty the bag scann
 -- Test 5: failed async item loads must NOT re-mark the bag (no rescan loop);
 -- successful loads must.
 local drainRequests = 0
-ns.Bags.RequestDrain = function() drainRequests = drainRequests + 1 end
+ns.Storage.RequestDrain = function() drainRequests = drainRequests + 1 end
 contents[1] = { [1] = fakeItem(424242, 1, nil) } -- quality nil → pending load
 ScanBags.MarkDirty(1)
 ScanBags.Drain()
-ns.Bags.ItemInfo.OnItemDataLoadResult(424242, false)
+ns.Storage.ItemInfo.OnItemDataLoadResult(424242, false)
 assert(drainRequests == 0, "failed load must not request a drain")
 assert(ScanBags.Drain() == false, "failed load must not re-mark the bag")
 
@@ -74,7 +74,7 @@ contents[1][1] = fakeItem(555555, 1, nil) -- new pending item in bag 1
 ScanBags.MarkDirty(1)
 ScanBags.Drain()
 contents[1][1] = fakeItem(555555, 1, 3) -- item data arrives
-ns.Bags.ItemInfo.OnItemDataLoadResult(555555, true)
+ns.Storage.ItemInfo.OnItemDataLoadResult(555555, true)
 assert(drainRequests == 1, "successful load must request a drain")
 assert(ScanBags.Drain() == true, "successful load must re-mark the bag")
 assert(Store.GetCurrentCharacter().bags[1].slots[1].quality == 3,
@@ -85,7 +85,7 @@ assert(Store.GetCurrentCharacter().bags[1].slots[1].quality == 3,
 -- answer inside ReadContainer, i.e. inside Drain itself)
 local realRequest = _G.C_Item.RequestLoadItemDataByID
 _G.C_Item.RequestLoadItemDataByID = function(itemID)
-    ns.Bags.ItemInfo.OnItemDataLoadResult(itemID, true)
+    ns.Storage.ItemInfo.OnItemDataLoadResult(itemID, true)
 end
 sizes[3] = 1
 contents[3] = { [1] = fakeItem(606060, 1, nil) } -- nil quality → pending → inline result

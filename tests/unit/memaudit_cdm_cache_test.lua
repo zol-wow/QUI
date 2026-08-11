@@ -59,10 +59,12 @@ C_Timer = {
     end,
 }
 
-local mirrorStates = 1
-local packedStates = 1
+local activeIcons = 10
 
 local ns = {
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
     CDMSpellData = {
         GetCacheStats = function()
             return {
@@ -86,7 +88,7 @@ local ns = {
             return {
                 textureCycleCache = 2,
                 activeIconPools = 3,
-                activeIcons = 10,
+                activeIcons = activeIcons,
                 recycleIcons = 4,
             }
         end,
@@ -95,21 +97,6 @@ local ns = {
         GetCacheStats = function()
             return {
                 activeBars = 5,
-            }
-        end,
-    },
-    CDMBlizzMirror = {
-        GetCacheStats = function()
-            return {
-                mirrorStates = mirrorStates,
-                packedStates = packedStates,
-                childFrames = 1,
-                cooldownInfo = 2,
-                spellMapEntries = 3,
-                directSpellMapEntries = 4,
-                spellNameEntries = 5,
-                totemSpellIDEntries = 6,
-                activeTotems = 7,
             }
         end,
     },
@@ -138,14 +125,13 @@ inCombat = true
 now = 1
 autoFrame.scripts.OnEvent(autoFrame, "PLAYER_REGEN_DISABLED")
 
-mirrorStates = 3
-packedStates = 4
+activeIcons = 15
 now = 2.1
 autoFrame.scripts.OnUpdate(autoFrame, 1.1)
 
 local foundCacheDelta = false
 for _, line in ipairs(printed) do
-    if line:find("CDM_cache_blizzMirror %+5", 1) then
+    if line:find("CDM_cache_iconPools %+5", 1) then
         foundCacheDelta = true
         break
     end

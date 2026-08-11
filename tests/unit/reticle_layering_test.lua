@@ -145,7 +145,7 @@ local ns = {
     WhenLoggedIn = function(fn) if fn then fn() end end,
 }
 
-assert(loadfile("QUI_QoL/qol/reticle.lua"))("QUI", ns)
+assert(loadfile("modules/qol/reticle.lua"))("QUI", ns)
 assert(eventFrame and eventFrame.scripts.OnEvent, "reticle should register an event handler")
 
 local reticle = assert(createdByName.QUI_Reticle, "reticle frame should be created")

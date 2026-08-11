@@ -20,7 +20,7 @@ local function readFile(path)
     return text
 end
 
-local source = readFile("QUI_Skinning/skinning/notifications/alerts.lua")
+local source = readFile("modules/skinning/notifications/alerts.lua")
 
 assert(source:find("GroupLootContainer.ignoreFramePositionManager = true", 1, true),
     "GroupLootContainer must opt out of Blizzard's UIParent frame-position manager "

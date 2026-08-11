@@ -64,7 +64,7 @@ local ns = {
 }
 
 (dofile("tests/helpers/locale.lua"))(ns)
-assert(loadfile("QUI_QoL/qol/consumablecheck.lua"))("QUI", ns)
+assert(loadfile("modules/qol/consumablecheck.lua"))("QUI", ns)
 local check = assert(ns.ConsumableCheckTest, "consumable check test seam should be exported")
 
 local owned = check.GetOwnedItemsForButton("oilMH")

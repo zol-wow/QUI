@@ -160,6 +160,9 @@ local oldChallengeMode = C_ChallengeMode
 
 local actionBarsDB = { fade = {}, bars = { bar5 = {}, bar6 = {} } }
 local helperNS = {
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
     Helpers = {
         CreateDBGetter = function()
             return function() return actionBarsDB end

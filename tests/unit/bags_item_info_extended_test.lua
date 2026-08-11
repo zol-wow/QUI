@@ -17,7 +17,7 @@ end
 _G.C_Item.GetDetailedItemLevelInfo = function(link) return 5 end
 
 local ns = loader.LoadAll(nil, "item_info.lua")
-local ItemInfo = ns.Bags.ItemInfo
+local ItemInfo = ns.Storage.ItemInfo
 
 -- Test 1: extended record assembled and cached
 local e1 = ItemInfo.GetExtended(2589, "|Hitem:2589|h[Linen Cloth]|h")

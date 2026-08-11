@@ -1,15 +1,6 @@
 local _, ns = ...
 
----------------------------------------------------------------------------
--- CDM Renderers
---
--- Small frame-write facade for owned cooldown visuals. Resolvers and
--- source adapters must not call these; renderers are the only boundary that
--- writes to cooldown frames.
---
--- Secret-safe Blizzard API policy lives in docs/blizzard/cdm-api-reference.md
 -- and tests/api-docs/cdm_blizzard_reference.lua.
----------------------------------------------------------------------------
 
 local CDMRenderers = {}
 ns.CDMRenderers = CDMRenderers
@@ -24,9 +15,25 @@ function CDMRenderers.ApplyDurationObjectCooldown(cd, durObj, clearWhenZero, rev
         clearWhenZero = true
     end
 
-    cd.SetCooldownFromDurationObject(cd, durObj, clearWhenZero)
+    local setOk, setErr = pcall(cd.SetCooldownFromDurationObject, cd, durObj, clearWhenZero)
+    if not setOk then
+        CDMRenderers._lastCooldownSetError = setErr
+        return false
+    end
+    CDMRenderers._lastCooldownSetError = nil
     if reverse ~= nil and cd.SetReverse then
         cd.SetReverse(cd, reverse and true or false)
+    end
+    if cd.GetCooldownDuration then
+        local ok, applied = pcall(cd.GetCooldownDuration, cd)
+        if ok then
+            if issecretvalue and issecretvalue(applied) then
+                return true -- @secret-policy: opaque-value-present
+            end
+            if type(applied) == "number" and applied <= 0 then
+                return false
+            end
+        end
     end
     return true
 end
@@ -45,7 +52,6 @@ function CDMRenderers.ApplyNumericCooldown(cd, startTime, duration, reverse)
     cd.SetCooldown(cd, startTime, duration)
     return true
 end
-
 
 function CDMRenderers.ClearCooldown(cd, reverse)
     if not cd then return end

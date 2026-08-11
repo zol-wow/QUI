@@ -275,6 +275,27 @@ TabUI.Rebuild()
 assert(#setActiveCalls == derivesAfterRecovery + 1, "definition change re-derives once")
 assert(setActiveCalls[#setActiveCalls].td == stubCustomTabs[1], "re-derived with the edited tabData")
 
+-- Same key set, VALUE flip: the settings groupsBinding persists explicit
+-- false on uncheck (GUILD_DISCORD family-fallback override), so a
+-- check->uncheck edit keeps the key set identical. The signature must encode
+-- group VALUES or this edit would never re-derive -- the same bug the
+-- channels encoding already fixed.
+stubCustomTabs[1].groups.CURRENCY = false
+TabUI.Rebuild()
+assert(#setActiveCalls == derivesAfterRecovery + 2, "group value flip (true->false) re-derives once")
+assert(setActiveCalls[#setActiveCalls].td == stubCustomTabs[1], "value-flip re-derive uses the edited tabData")
+
+-- Direct signature contract (hook exported for unit tests, like
+-- _ComputeDropIndex): groups encode value AND presence.
+local sigOf = TabUI._CustomTabSignature
+assert(type(sigOf) == "function", "CustomTabSignature hook exported for tests")
+assert(sigOf({ name = "t", groups = { GUILD_DISCORD = true } })
+    ~= sigOf({ name = "t", groups = { GUILD_DISCORD = false } }),
+    "signature distinguishes group value true from false")
+assert(sigOf({ name = "t", groups = { GUILD_DISCORD = false } })
+    ~= sigOf({ name = "t", groups = {} }),
+    "signature distinguishes explicit-false group key from absent key")
+
 -- Tab bar renders custom tabs in array order; reorder follows
 stubCustomTabs[2] = { name = "Second", groups = { SAY = true } }
 TabUI.Rebuild()

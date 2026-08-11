@@ -22,9 +22,9 @@ end
 local source = readAll("QUI_GroupFrames/groupframes/groupframes.lua")
 local startPos = assert(source:find("local function UpdateHealth%(frame%)"),
     "UpdateHealth should exist")
-local endMarker = "\n---------------------------------------------------------------------------\n-- UPDATE: Power"
+local endMarker = "local function ShouldShowPowerForUnit("
 local endPos = assert(source:find(endMarker, startPos, true),
-    "UpdateHealth should end before UPDATE: Power")
+    "UpdateHealth should end before the power section")
 local updateHealthSource = source:sub(startPos, endPos - 1)
 
 local function newFontString()
@@ -49,6 +49,7 @@ end
 local function loadUpdateHealth(ctx)
     local prelude = [[
 local ns = ns
+local QUI_GF = QUI_GF
 local COLORS = COLORS
 local UnitExists = UnitExists
 local UnitHealth = UnitHealth
@@ -68,10 +69,22 @@ local IsSecretValue = IsSecretValue
     return loader()
 end
 
+-- core/safecall.lua stub: silent pcall passthrough matches the pre-SafeCall
+-- shape this test was written against (Task 45a: groupframes.lua's healthText
+-- sink cluster now routes through ns.SafeCall("sink-forward", ...)).
+local function safeCallStub(_policy, fn, ...) return pcall(fn, ...) end
+local function safeCallMethodStub(_policy, obj, name, ...)
+    return pcall(function(...) return obj[name](obj, ...) end, ...)
+end
+local safeCallMethodIfPresentStub = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end
+
 local function render(style, healthValue, missingValue)
     local abbrCalls = {}
     local ctx = {
-        ns = {},
+        ns = { SafeCall = safeCallStub, SafeCallMethod = safeCallMethodStub, SafeCallMethodIfPresent = safeCallMethodIfPresentStub },
+        QUI_GF = {
+            GetFrameUnit = function(frame) return frame.previewUnit end,
+        },
         COLORS = {
             WHITE = { 1, 1, 1, 1 },
             OFFLINE = { 0.5, 0.5, 0.5, 1 },
@@ -107,7 +120,7 @@ local function render(style, healthValue, missingValue)
     local UpdateHealth = loadUpdateHealth(ctx)
     local healthText, calls = newFontString()
     local frame = {
-        unit = "raid1",
+        previewUnit = "raid1",
         healthText = healthText,
         healthBar = {
             SetValue = function() end,

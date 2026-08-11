@@ -83,7 +83,12 @@ _G.ChatTypeGroupInverted = { CHAT_MSG_SAY = "SAY", CHAT_MSG_GUILD = "GUILD", CHA
     CHAT_MSG_ACHIEVEMENT = "ACHIEVEMENT", CHAT_MSG_CHANNEL_LIST = "CHANNEL",
     CHAT_MSG_EMOTE = "EMOTE", CHAT_MSG_TEXT_EMOTE = "EMOTE",
     CHAT_MSG_MONSTER_YELL = "MONSTER_YELL", CHAT_MSG_RAID_BOSS_EMOTE = "MONSTER_BOSS_EMOTE",
-    CHAT_MSG_IGNORED = "IGNORED", CHAT_MSG_FILTERED = "ERRORS", CHAT_MSG_RESTRICTED = "ERRORS" }
+    CHAT_MSG_IGNORED = "IGNORED", CHAT_MSG_FILTERED = "ERRORS", CHAT_MSG_RESTRICTED = "ERRORS",
+    -- 12.1: FrameXML seeds ChatTypeGroup["GUILD_DISCORD"] = { "CHAT_MSG_GUILD_DISCORD" }
+    -- (ChatTypeInfoConstants.lua:154-156), so Blizzard's own inverted map already
+    -- carries this entry — capture's CHAT_MSG_ prefix scan (below) needs no
+    -- GUILD_DISCORD-specific registration code, only this mock mirroring reality.
+    CHAT_MSG_GUILD_DISCORD = "GUILD_DISCORD" }
 -- FrameXML constant consumed for link chatType data (RAID_WARNING -> RAID).
 _G.CHAT_INVERTED_CATEGORY_LIST = {
     RAID_WARNING = "RAID", PARTY_LEADER = "PARTY",
@@ -184,6 +189,12 @@ local ns = {
     Helpers = { IsSecretValue = function(v) return rawequal(v, secret) or rawequal(v, secretSender)
         or rawequal(v, formattedSecretSenderName) or rawequal(v, formattedSecretSenderLink)
         or rawequal(v, formattedSecretSenderPrefix) end },
+    -- core/safecall.lua stub: silent pcall swallow matches the pre-SafeCall
+    -- shape this test was written against (Task 3: message_store.lua's
+    -- Store.RemoveWhere now routes through ns.SafeCall).
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
     QUI = { Chat = {
         _internals = {
             GetSettings = function() return settings end,
@@ -226,9 +237,16 @@ local Store = ns.QUI.Chat.MessageStore
 assert(type(ns.QUI.Chat.MessageFormat.BuildEventLineFromArgs) == "function",
     "message capture must use the formatter raw-args entrypoint")
 local rawFormatCalls = 0
+-- Last-call spy: records exactly what capture forwards to the formatter's raw-args
+-- entrypoint (event + a1..a18), used to verify args 15-18 (isSubtitle,
+-- hideSenderInLetterbox, suppressRaidIcons, discordInfo) survive the unpack in
+-- message_capture.lua rather than being dropped like before the Wave 3 fix.
+local lastFormatArgCount, lastFormatArgs
 local realBuildEventLineFromArgs = ns.QUI.Chat.MessageFormat.BuildEventLineFromArgs
 ns.QUI.Chat.MessageFormat.BuildEventLineFromArgs = function(...)
     rawFormatCalls = rawFormatCalls + 1
+    lastFormatArgCount = select("#", ...)
+    lastFormatArgs = { ... }
     return realBuildEventLineFromArgs(...)
 end
 
@@ -241,6 +259,11 @@ Capture.Setup()
 -- Registration: valid events from the inverted map + explicit extras; bogus skipped
 assert(registered.CHAT_MSG_SAY, "registers CHAT_MSG_SAY")
 assert(registered.CHAT_MSG_GUILD, "registers CHAT_MSG_GUILD")
+-- 12.1 Discord guild chat: no explicit registration code needed. The CHAT_MSG_
+-- prefix scan over ChatTypeGroupInverted (Blizzard's own inverted map, seeded by
+-- ChatTypeGroup["GUILD_DISCORD"] in FrameXML) already registers it identically
+-- to every other CHAT_MSG_* group.
+assert(registered.CHAT_MSG_GUILD_DISCORD, "registers CHAT_MSG_GUILD_DISCORD (prefix scan, same path as GUILD)")
 assert(registered.CHAT_MSG_CHANNEL, "registers explicit CHAT_MSG_CHANNEL")
 assert(registered.CHAT_MSG_SYSTEM, "registers explicit CHAT_MSG_SYSTEM")
 assert(registered.CHAT_MSG_BN_INLINE_TOAST_ALERT, "registers explicit BN toast alerts")
@@ -847,6 +870,52 @@ fire("CHAT_MSG_BN_WHISPER_INFORM", "re", "Aria", nil, nil, nil, nil, nil, nil, n
 assert(#tellCalls == 2, "outgoing (_INFORM) whispers must NOT touch the reply target")
 fire("CHAT_MSG_WHISPER", "psst", secret)
 assert(#tellCalls == 2, "secret sender skipped")
+
+-- 12.1 Discord guild chat: args 15-18 (isSubtitle, hideSenderInLetterbox,
+-- suppressRaidIcons, discordInfo) must survive capture's vararg unpack and
+-- reach the formatter's raw-args entrypoint by identity -- discordInfo is a
+-- table (ChatInfoDocumentation.lua: DiscordChatInfo, non-nilable on this
+-- event) and must never be string-manipulated (kstring caution), only
+-- forwarded whole. message_format.lua's own payload-struct consumption of
+-- these args is a separate task; this only proves capture no longer drops
+-- them before they reach that boundary.
+do
+    local fakeDiscordInfo = { userID = "123456789012345678", username = "DiscordUser#0", fromDiscord = true }
+    Store.Clear()
+    -- a1=text  a2=sender  a3..a14=language..isMobile (12 unused slots)
+    -- a15=isSubtitle  a16=hideSenderInLetterbox  a17=suppressRaidIcons  a18=discordInfo
+    fire("CHAT_MSG_GUILD_DISCORD", "hello from discord", "DiscordUser",
+        nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, -- a3..a14 (12 slots)
+        false, false, false, fakeDiscordInfo) -- a15, a16, a17, a18
+    local eDiscord; Store.ForEach(function(e) eDiscord = e end)
+    assert(eDiscord, "GUILD_DISCORD message captured")
+    assert(eDiscord.e == "CHAT_MSG_GUILD_DISCORD" and eDiscord.k == "GUILD_DISCORD",
+        "GUILD_DISCORD event/typeKey metadata, got e=" .. tostring(eDiscord.e) .. " k=" .. tostring(eDiscord.k))
+    -- event + a1..a18 = 19 positional args now reach the formatter (was 18
+    -- args total, with a15/a16 nulled out and a18/discordInfo dropped
+    -- entirely, before this fix).
+    assert(lastFormatArgCount == 19,
+        "capture forwards event+a1..a18 to the formatter, got " .. tostring(lastFormatArgCount))
+    assert(lastFormatArgs[16] == false, "isSubtitle (a15) forwarded, got " .. tostring(lastFormatArgs[16]))
+    assert(lastFormatArgs[17] == false, "hideSenderInLetterbox (a16) forwarded, got " .. tostring(lastFormatArgs[17]))
+    assert(lastFormatArgs[18] == false, "suppressRaidIcons (a17) still forwarded, got " .. tostring(lastFormatArgs[18]))
+    assert(rawequal(lastFormatArgs[19], fakeDiscordInfo),
+        "discordInfo (a18) forwarded by table identity, never stringified")
+end
+
+-- Non-Discord events: the new a15/a16/a18 slots are simply nil/absent and must
+-- not disturb existing capture behavior (nil-safe per the task contract).
+do
+    Store.Clear()
+    fire("CHAT_MSG_SAY", "plain say, no discord args", "Bob")
+    local eSay; Store.ForEach(function(e) eSay = e end)
+    assert(eSay and eSay.m == "[12:00] |Hplayer:Bob:0:SAY:|h[Bob]|h: plain say, no discord args",
+        "non-Discord event unaffected by the a15-a18 extension, got " .. tostring(eSay and eSay.m))
+    assert(lastFormatArgCount == 19,
+        "wrapper always receives event+a1..a18 (trailing nils explicit), got " .. tostring(lastFormatArgCount))
+    assert(lastFormatArgs[19] == nil, "discordInfo absent (nil) for a non-Discord event")
+end
+Store.Clear()
 
 -- Teardown unregisters everything
 Capture.Teardown()

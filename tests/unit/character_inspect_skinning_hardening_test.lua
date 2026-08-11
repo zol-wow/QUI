@@ -16,19 +16,19 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local characterSource = readFile("QUI_Skinning/skinning/character_pane/character.lua")
-local inspectSource = readFile("QUI_Skinning/skinning/character_pane/inspect.lua")
+local characterSource = readFile("modules/skinning/character_pane/character.lua")
+local inspectSource = readFile("modules/skinning/character_pane/inspect.lua")
 local legacyGuildGuardKey = "__qui_" .. "guild_nil_guard"
 local forbiddenValueHelper = "Helpers." .. "Sa" .. "feValue"
 local forbiddenNumberHelper = "Helpers." .. "Sa" .. "feToNumber"
 local characterItemHelperBlock = assert(
-    characterSource:match("Structured item%-data helpers.-Get durability for a slot"),
+    characterSource:match("local TOOLTIP_LINE_TYPE_GEM_SOCKET.-local function GetSlotDurability%(slotId%)"),
     "Character structured item helper block should exist")
 local characterEquipmentSlotBlock = assert(
     characterSource:match("local function SkinEquipmentSlot%(slot%).-local function UpdateSlotBorder%(slot%)"),
     "Character equipment slot skinning block should exist")
 local characterUpdateSlotBorderBlock = assert(
-    characterSource:match("local function UpdateSlotBorder%(slot%).-%-%- All equipment slot names"),
+    characterSource:match("local function UpdateSlotBorder%(slot%).-local equipmentSlotNames = {"),
     "Character equipment slot border update block should exist")
 local characterLayoutStart = assert(
     characterSource:find("ApplyCharacterPaneLayout = function(force)", 1, true),
@@ -155,7 +155,7 @@ local inspectOnShowStart = assert(
     inspectSource:find("InspectFrame:HookScript(\"OnShow\"", 1, true),
     "Inspect OnShow hook should exist")
 local inspectOnShowEnd = assert(
-    inspectSource:find("-- NOTE: do NOT call NotifyInspect here", inspectOnShowStart, true),
+    inspectSource:find("if shared.ScheduleUpdate then", inspectOnShowStart, true),
     "Inspect OnShow hook should retain NotifyInspect ordering note")
 local inspectOnShowBlock = inspectSource:sub(inspectOnShowStart, inspectOnShowEnd)
 

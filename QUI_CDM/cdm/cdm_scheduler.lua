@@ -1,30 +1,13 @@
 local _, ns = ...
 
----------------------------------------------------------------------------
--- CDM Scheduler
---
--- Central event bus and coalesced runtime update scheduler for the owned
--- engine. Existing modules keep their public APIs, but delegate bus/update
--- mechanics here so event cadence has a single owner.
----------------------------------------------------------------------------
-
 local CDMScheduler = {}
 ns.CDMScheduler = CDMScheduler
 
 local type = type
 local table_remove = table.remove
 
----------------------------------------------------------------------------
--- Event bus
----------------------------------------------------------------------------
-
 local _subscribers = {}
 
--- Reusable snapshot pool. Publish must snapshot the subscriber list before
--- iterating so handlers that subscribe/unsubscribe during dispatch don't
--- mutate the in-flight iteration (see tests/unit/cdm_bus_test.lua). Pooled
--- to avoid per-publish table allocation in hot combat paths; depth-safe
--- because nested publishes acquire their own scratch.
 local _snapshotPool = {}
 local _snapshotPoolN = 0
 
@@ -58,6 +41,7 @@ function CDMScheduler.Publish(eventName, ...)
     end
 
     for i = 1, n do
+        ---@diagnostic disable-next-line: redundant-parameter
         xpcall(snapshot[i], geterrorhandler(), eventName, ...)
     end
 
@@ -84,10 +68,6 @@ function CDMScheduler.Unsubscribe(eventName, handler)
         end
     end
 end
-
----------------------------------------------------------------------------
--- Runtime update coalescing
----------------------------------------------------------------------------
 
 local UPDATE_COOLDOWN = "cooldown"
 local UPDATE_FULL = "full"
@@ -129,12 +109,7 @@ local function RuntimeUpdateOnUpdate(self, elapsed)
     end
 end
 
--- Memaudit instrumentation: this OnUpdate is dynamically attached/detached
--- (ScheduleRuntimeUpdate attaches, RuntimeUpdateOnUpdate/CancelRuntimeUpdate
--- detach), so QUI_PerfRegistry frame wrapping would be clobbered. Reassign
--- the local with a wrapped version so the SetScript call below picks up the
--- measured form.
-local measureFn -- profiler hook; bound at debug activation (nil otherwise)
+local measureFn
 local _RuntimeUpdateOnUpdateImpl = RuntimeUpdateOnUpdate
 RuntimeUpdateOnUpdate = function(...)
     local measure = measureFn
@@ -143,12 +118,13 @@ RuntimeUpdateOnUpdate = function(...)
 end
 
 local function SetupDebugInstrumentation()
-    measureFn = ns.MemAuditProfilerMeasure
+    measureFn = ns.DebugIsolate and ns.DebugIsolate(ns.MemAuditProfilerMeasure)
+        or ns.MemAuditProfilerMeasure
 end
-if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+if ns.DebugRegister then
     ns.DebugRegister(SetupDebugInstrumentation)
 else
-    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+    SetupDebugInstrumentation()
 end
 
 function CDMScheduler.SetRuntimeUpdateHandler(config)

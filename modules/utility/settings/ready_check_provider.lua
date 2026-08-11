@@ -1,0 +1,93 @@
+local _, ns = ...
+
+do
+    local function RegisterReadyCheckProvider()
+        local settingsPanel = ns.QUI_LayoutMode_Settings
+        if not settingsPanel then return end
+
+        local GUI = QUI and QUI.GUI
+        if not GUI then return end
+
+        local Helpers = ns.Helpers
+        local U = ns.QUI_LayoutMode_Utils
+        local Opts = ns.QUI_Options
+        local PAD = (Opts and Opts.PADDING) or 15
+        local HEADER_GAP = 26
+        local SECTION_GAP = 14
+
+        local function GetGeneralDB()
+            local core = Helpers.GetCore()
+            return core and core.db and core.db.profile and core.db.profile.general
+        end
+
+        local function RefreshColors()
+            if _G.QUI_RefreshReadyCheckColors then _G.QUI_RefreshReadyCheckColors() end
+        end
+
+        local function MakeLayout(content)
+            if U._layoutModePositionOnly then
+                return U.MakeSuppressedProviderLayout(content)
+            end
+            return ns.QUI_SettingsLayoutShared.MakeLayout(content, U)
+        end
+
+        local function row(parent, label, widget, desc)
+            return Opts.BuildSettingRow(parent, label, widget, desc)
+        end
+
+        local function BuildReadyCheckSettings(content, key, _width)
+            Opts = ns.QUI_Options or Opts
+            PAD = (Opts and Opts.PADDING) or PAD
+
+            local general = GetGeneralDB()
+            if not general then return 80 end
+
+            if general.skinReadyCheck == nil then general.skinReadyCheck = true end
+
+            local L = MakeLayout(content)
+
+            L.headerAt(ns.L["Skinning"])
+            local sSk = L.sectionAt()
+            local skinW = GUI:CreateFormCheckbox(sSk.frame, nil, "skinReadyCheck", general, function()
+                GUI:ShowConfirmation({
+                    title = ns.L["Reload UI?"],
+                    message = ns.L["Skinning changes require a reload to take effect."],
+                    acceptText = ns.L["Reload"],
+                    cancelText = ns.L["Later"],
+                    onAccept = function() QUI:SafeReload() end,
+                })
+            end, { description = ns.L["Apply QUI styling to the Blizzard ready-check popup. Requires a UI reload to take effect."] })
+            sSk.AddRow(row(sSk.frame, ns.L["Skin Ready Check Frame"], skinW))
+            L.closeSection(sSk)
+
+            L.headerAt(ns.L["Border"])
+            local sBd = L.sectionAt()
+            local rcSrcW, rcColW = ns.QUI_BorderControl.Attach(GUI, sBd.frame, general, "readyCheck", RefreshColors,
+                { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"], noAlpha = true })
+            sBd.AddRow(row(sBd.frame, ns.L["Border Color Source"], rcSrcW), row(sBd.frame, ns.L["Border Color"], rcColW))
+            L.closeSection(sBd)
+
+            U.BuildPositionCollapsible(content, "readyCheck", nil, L.sections, L.relayoutSections)
+            U.BuildOpenFullSettingsLink(content, key, L.sections, L.relayoutSections)
+            L.relayoutSections()
+            return content:GetHeight()
+        end
+
+        settingsPanel:RegisterSharedProvider("readyCheck", {
+            build = BuildReadyCheckSettings,
+        })
+        local adapters = ns.Settings and ns.Settings.RenderAdapters
+        if adapters and type(adapters.NotifyProviderChanged) == "function" then
+            adapters.NotifyProviderChanged("readyCheck", { structural = true })
+        end
+    end
+
+    local ProviderPanels = ns.Settings and ns.Settings.ProviderPanels
+    if ProviderPanels and type(ProviderPanels.RegisterAfterLoad) == "function" then
+        ProviderPanels:RegisterAfterLoad(function()
+            RegisterReadyCheckProvider()
+        end)
+    else
+        RegisterReadyCheckProvider()
+    end
+end
