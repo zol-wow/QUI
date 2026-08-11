@@ -1,7 +1,7 @@
 ## Interface: 120100
 ## Title: |cFF30D1FFQUI|r Group Frames
 ## Notes: QUI module. Requires the QUI core addon.
-## Author: Drew
+## Author: Zol and Drew
 ## Version: 5.0.0
 ## Category: User Interface
 ## Group: QUI
