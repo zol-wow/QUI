@@ -3721,6 +3721,8 @@ local defaults = {
             },
         },
 
+        auraDisplays = { enabled = true },
+
         totemBar = {
             enabled = false,
             locked = false,

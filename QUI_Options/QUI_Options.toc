@@ -133,6 +133,7 @@ aura_elements_editor.lua
 ..\QUI\modules\skinning\character_pane\settings\character_pane_content.lua
 ..\QUI\modules\trackers\settings\atonement_counter.lua
 ..\QUI\modules\trackers\settings\prey_tracker_content.lua
+..\QUI\modules\trackers\settings\aura_displays_content.lua
 ..\QUI\modules\ui\settings\blizzard_mover_content.lua
 ..\QUI\modules\ui\settings\crosshair_content.lua
 ..\QUI\modules\ui\settings\hud_visibility_content.lua
@@ -156,6 +157,7 @@ aura_elements_editor.lua
 ..\QUI\core\settings\content\auras_actionbar_page.lua
 ..\QUI\core\settings\content\auras_wizard_page.lua
 ..\QUI\core\settings\content\auras_nameplate_page.lua
+..\QUI\core\settings\content\auras_displays_page.lua
 init.lua
 tiles\related.lua
 tiles\minimap.lua

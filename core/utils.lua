@@ -357,6 +357,7 @@ local function UnitTokenMatches(unitToken, targetUnit)
     if not ok then return false end
     return DecodePotentialSecretBoolean(matched) == true
 end
+Helpers.UnitTokenMatches = UnitTokenMatches
 
 local function GUIDMatchesUnit(sourceGUID, unit)
     if issecretvalue and issecretvalue(sourceGUID) then return false end -- @secret-policy: reject-secret-value (unproven match)

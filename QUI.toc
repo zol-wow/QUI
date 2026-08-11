@@ -252,6 +252,7 @@ modules\combat\rotationassist.lua
 modules\combat\combattext.lua
 modules\trackers\spellscanner.lua
 modules\trackers\preytracker.lua
+modules\trackers\aura_displays.lua
 modules\trackers\atonement_counter.lua
 modules\qol\qol.lua
 modules\qol\blizzard_mover.lua

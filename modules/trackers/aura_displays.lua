@@ -1,0 +1,774 @@
+local ADDON_NAME, ns = ...
+
+local AD = ns.QUI_AuraDisplays or {}
+ns.QUI_AuraDisplays = AD
+_G.QUI = _G.QUI or {}
+_G.QUI.AuraDisplays = AD
+
+local DEFAULTS = { enabled = true }
+
+AD.ANCHOR_PREFIX = "auraDisplay_"
+
+local function Helpers()
+    return ns.Helpers
+end
+
+local function Store()
+    local H = Helpers()
+    if not H or type(H.GetModuleSettings) ~= "function" then return nil end
+    if type(H.GetProfile) ~= "function" or not H.GetProfile() then return nil end
+    local store = H.GetModuleSettings("auraDisplays", DEFAULTS)
+    if type(store) ~= "table" then return nil end
+    if type(store.displays) ~= "table" then store.displays = {} end
+    if type(store.order) ~= "table" then store.order = {} end
+    if type(store.groups) ~= "table" then store.groups = {} end
+    return store
+end
+AD.Store = Store
+
+local function DeepCopy(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for k, v in pairs(value) do out[k] = DeepCopy(v) end
+    return out
+end
+
+local function HighestID(store)
+    local highest = 0
+    for id in pairs(store.displays) do
+        local n = tonumber(tostring(id):match("^d(%d+)$"))
+        if n and n > highest then highest = n end
+    end
+    for i = 1, #store.order do
+        local n = tonumber(tostring(store.order[i]):match("^d(%d+)$"))
+        if n and n > highest then highest = n end
+    end
+    return highest
+end
+
+local function NextID(store)
+    if type(store.nextID) ~= "number" then
+        store.nextID = HighestID(store)
+    end
+    store.nextID = store.nextID + 1
+    return "d" .. tostring(store.nextID)
+end
+
+function AD.NewDisplay(name, group)
+    local store = Store()
+    if not store then return nil end
+    local id = NextID(store)
+    local display = {
+        id = id,
+        name = (type(name) == "string" and name ~= "") and name or id,
+        group = group,
+        enabled = true,
+        unitMode = "token",
+        unit = "player",
+        load = { classes = {}, specs = {}, roles = {}, encounters = {} },
+        auras = {},
+    }
+    store.displays[id] = display
+    store.order[#store.order + 1] = id
+    return display
+end
+
+function AD.GetDisplay(id)
+    local store = Store()
+    return store and store.displays[id] or nil
+end
+
+function AD.DeleteDisplay(id)
+    local store = Store()
+    if not store or not store.displays[id] then return false end
+    store.displays[id] = nil
+    for i = #store.order, 1, -1 do
+        if store.order[i] == id then table.remove(store.order, i) end
+    end
+    local H = Helpers()
+    local profile = H and type(H.GetProfile) == "function" and H.GetProfile() or nil
+    if profile and type(profile.frameAnchoring) == "table" then
+        profile.frameAnchoring[AD.ANCHOR_PREFIX .. id] = nil
+    end
+    return true
+end
+
+function AD.DuplicateDisplay(id, newName)
+    local store = Store()
+    if not store then return nil end
+    local source = store.displays[id]
+    if not source then return nil end
+    local copy = DeepCopy(source)
+    copy.id = NextID(store)
+    copy.name = (type(newName) == "string" and newName ~= "") and newName or copy.id
+    store.displays[copy.id] = copy
+    store.order[#store.order + 1] = copy.id
+    return copy
+end
+
+function AD.RenameDisplay(id, newName)
+    local display = AD.GetDisplay(id)
+    if not display or type(newName) ~= "string" then return false end
+    display.name = newName ~= "" and newName or id
+    AD.RegisterLayoutElement(display)
+    return true
+end
+
+function AD.MoveDisplay(id, delta)
+    local store = Store()
+    if not store or type(delta) ~= "number" or delta == 0 then return false end
+    for i = 1, #store.order do
+        if store.order[i] == id then
+            local j = i + delta
+            if j < 1 or j > #store.order then return false end
+            store.order[i], store.order[j] = store.order[j], store.order[i]
+            return true
+        end
+    end
+    return false
+end
+
+function AD.MoveDisplayWithinGroup(id, delta)
+    local store = Store()
+    if not store or type(delta) ~= "number" or delta == 0 then return false end
+    local display = store.displays[id]
+    if not display then return false end
+    local group = display.group
+
+    local indices = {}
+    for i = 1, #store.order do
+        local sibling = store.displays[store.order[i]]
+        if sibling and sibling.group == group then
+            indices[#indices + 1] = i
+        end
+    end
+
+    local pos
+    for i = 1, #indices do
+        if store.order[indices[i]] == id then
+            pos = i
+            break
+        end
+    end
+    if not pos then return false end
+
+    local targetPos = pos + delta
+    if targetPos < 1 or targetPos > #indices then return false end
+
+    local i1, i2 = indices[pos], indices[targetPos]
+    store.order[i1], store.order[i2] = store.order[i2], store.order[i1]
+    return true
+end
+
+function AD.OrderedDisplays()
+    local store = Store()
+    local out = {}
+    if not store then return out end
+    for i = 1, #store.order do
+        local display = store.displays[store.order[i]]
+        if display then out[#out + 1] = display end
+    end
+    return out
+end
+
+function AD.GroupEnabled(groupName)
+    if groupName == nil then return true end
+    local store = Store()
+    if not store then return true end
+    local group = store.groups[groupName]
+    return not (group and group.enabled == false)
+end
+
+function AD.SetGroupEnabled(groupName, enabled)
+    if groupName == nil then return end
+    local store = Store()
+    if not store then return end
+    local group = store.groups[groupName]
+    if not group then
+        group = { collapsed = false, enabled = true }
+        store.groups[groupName] = group
+    end
+    group.enabled = enabled and true or false
+end
+
+function AD.SetGroupCollapsed(groupName, collapsed)
+    if groupName == nil then return end
+    local store = Store()
+    if not store then return end
+    local group = store.groups[groupName]
+    if not group then
+        group = { collapsed = false, enabled = true }
+        store.groups[groupName] = group
+    end
+    group.collapsed = collapsed and true or false
+end
+
+function AD.GroupCollapsed(groupName)
+    if groupName == nil then return false end
+    local store = Store()
+    local group = store and store.groups[groupName]
+    return group ~= nil and group.collapsed == true
+end
+
+function AD.DeleteGroup(groupName)
+    local store = Store()
+    if not store or groupName == nil then return false end
+    store.groups[groupName] = nil
+    for _, display in pairs(store.displays) do
+        if display.group == groupName then display.group = nil end
+    end
+    return true
+end
+
+function AD.RenameGroup(oldName, newName)
+    local store = Store()
+    if not store or oldName == nil or type(newName) ~= "string" or newName == "" then
+        return false
+    end
+    if store.groups[newName] then return false end
+    store.groups[newName] = store.groups[oldName] or { collapsed = false, enabled = true }
+    store.groups[oldName] = nil
+    for _, display in pairs(store.displays) do
+        if display.group == oldName then display.group = newName end
+    end
+    return true
+end
+
+local STATIC_TOKENS = {
+    player = "friendly", pet = "friendly",
+    target = false, targettarget = false,
+    focus = false, focustarget = false, mouseover = false,
+}
+for i = 1, 5 do
+    STATIC_TOKENS["boss" .. i] = "hostile"
+    STATIC_TOKENS["arena" .. i] = "hostile"
+end
+for i = 1, 4 do STATIC_TOKENS["party" .. i] = "friendly" end
+for i = 1, 40 do STATIC_TOKENS["raid" .. i] = "friendly" end
+AD.STATIC_TOKENS = STATIC_TOKENS
+
+local activeEncounter
+
+function AD.SetEncounter(encounterID)
+    activeEncounter = tonumber(encounterID)
+end
+
+local function Fold(text)
+    if type(text) ~= "string" then return nil end
+    local H = Helpers()
+    if H and type(H.FoldUTF8) == "function" then return H.FoldUTF8(text) end
+    return text
+end
+
+local function GroupTokens()
+    local out = {}
+    local count = GetNumGroupMembers and GetNumGroupMembers() or 0
+    if count == 0 then
+        out[1] = "player"
+        return out
+    end
+    if IsInRaid and IsInRaid() then
+        for i = 1, count do out[#out + 1] = "raid" .. i end
+    else
+        out[1] = "player"
+        for i = 1, count - 1 do out[#out + 1] = "party" .. i end
+    end
+    return out
+end
+
+local function SplitNameRealm(text)
+    local name, realm = tostring(text):match("^([^%-]+)%-?(.*)$")
+    if realm == "" then realm = nil end
+    return name, realm
+end
+
+local function PlayerRealm()
+    local _, realm = UnitFullName("player")
+    if issecretvalue and issecretvalue(realm) then
+        realm = nil -- @secret-policy: reject-secret-value (fallback chain decides)
+    end
+    if realm and realm ~= "" then return realm end
+    if type(GetNormalizedRealmName) == "function" then
+        realm = GetNormalizedRealmName()
+        if realm and realm ~= "" then return realm end
+    end
+    if type(GetRealmName) == "function" then
+        realm = GetRealmName()
+        return realm and realm:gsub("[%s%-']", "") or nil
+    end
+    return nil
+end
+
+local function ResolveByName(wanted)
+    if type(wanted) ~= "string" or wanted == "" then return nil end
+    local wantName, wantRealm = SplitNameRealm(wanted)
+    wantName = Fold(wantName)
+    wantRealm = wantRealm and Fold((wantRealm:gsub("[%s%-']", ""))) or nil
+    if not wantName then return nil end
+    local tokens = GroupTokens()
+    for i = 1, #tokens do
+        local token = tokens[i]
+        local name, realm = UnitFullName(token)
+        if issecretvalue and issecretvalue(realm) then
+            realm = nil -- @secret-policy: reject-secret-value (realm unprovable, skip this candidate)
+            name = nil -- @secret-policy: reject-secret-value (realm unprovable, skip this candidate)
+        end
+        if issecretvalue and issecretvalue(name) then
+            name = nil -- @secret-policy: reject-secret-value (identity unprovable, skip this candidate)
+        end
+        if type(name) == "string" then
+            if type(realm) ~= "string" or realm == "" then
+                realm = PlayerRealm()
+            end
+            if Fold(name) == wantName and (not wantRealm or Fold(realm or "") == wantRealm) then
+                return token
+            end
+        end
+    end
+    return nil
+end
+
+local function ResolveCoTank()
+    local H = Helpers()
+    local UnitTokenMatches = H and H.UnitTokenMatches
+    if type(UnitTokenMatches) ~= "function" then return nil end
+    local tokens = GroupTokens()
+    for i = 1, #tokens do
+        local token = tokens[i]
+        local isPlayer = UnitTokenMatches("player", token)
+        local role = UnitGroupRolesAssigned(token)
+        if issecretvalue and issecretvalue(role) then
+            role = nil -- @secret-policy: reject-secret-value (role unprovable, not a co-tank)
+        end
+        if not isPlayer and role == "TANK" then
+            return token
+        end
+    end
+    return nil
+end
+
+function AD.ResolveUnit(display)
+    if type(display) ~= "table" then return nil end
+    local mode = display.unitMode or "token"
+    if mode == "cotank" then return ResolveCoTank() end
+    if mode == "name" then return ResolveByName(display.unit) end
+    local token = display.unit
+    if type(token) ~= "string" or STATIC_TOKENS[token] == nil then return nil end
+    return token
+end
+
+function AD.UnitPolarityFor(display)
+    if type(display) ~= "table" then return nil end
+    local mode = display.unitMode or "token"
+    if mode == "cotank" or mode == "name" then return "friendly" end
+    local polarity = STATIC_TOKENS[display.unit]
+    if polarity == false or polarity == nil then return nil end
+    return polarity
+end
+
+local function SetIsEmpty(set)
+    if type(set) ~= "table" then return true end
+    for _, v in pairs(set) do
+        if v == true then return false end
+    end
+    return true
+end
+
+local function PlayerClassToken()
+    if type(UnitClass) ~= "function" then return nil end
+    local _, token = UnitClass("player")
+    if type(token) ~= "string" then return nil end
+    return token
+end
+
+local function PlayerRoleToken()
+    local W = ns.QUI_AuraWizard
+    if W and type(W.PlayerRole) == "function" then return W.PlayerRole() end
+    return nil
+end
+
+local function PlayerSpecID()
+    local H = Helpers()
+    if H and type(H.GetCurrentSpecID) == "function" then return H.GetCurrentSpecID() end
+    return nil
+end
+
+function AD.PassesLoad(display)
+    local load = type(display) == "table" and display.load or nil
+    if type(load) ~= "table" then return true end
+
+    if not SetIsEmpty(load.classes) then
+        local class = PlayerClassToken()
+        if not class or load.classes[class] ~= true then return false end
+    end
+    if not SetIsEmpty(load.specs) then
+        local spec = PlayerSpecID()
+        if not spec or load.specs[spec] ~= true then return false end
+    end
+    if not SetIsEmpty(load.roles) then
+        local role = PlayerRoleToken()
+        if not role or load.roles[role] ~= true then return false end
+    end
+    if not SetIsEmpty(load.encounters) then
+        if not activeEncounter or load.encounters[activeEncounter] ~= true then return false end
+    end
+    return true
+end
+
+function AD.DisplayActive(display)
+    if type(display) ~= "table" then return false end
+    if display.enabled == false then return false end
+    if not AD.GroupEnabled(display.group) then return false end
+    if not AD.PassesLoad(display) then return false end
+    return AD.ResolveUnit(display) ~= nil
+end
+
+local E, AuraGlue, AuraSurface, AuraSkin
+
+local function ResolveDeps()
+    E = E or ns.AuraElements
+    AuraGlue = AuraGlue or ns.AuraGlue
+    AuraSurface = AuraSurface or ns.AuraSurface
+    AuraSkin = AuraSkin or (ns.Addon and ns.Addon.AuraSkin)
+    return E and AuraGlue and AuraSurface and AuraSkin
+end
+
+function AD.DefaultBucket()
+    local EE = E or ns.AuraElements
+    if not EE or type(EE.NewFilterStripElement) ~= "function" then return {} end
+    local element = EE.NewFilterStripElement("HELPFUL")
+    element.enabled = true
+    element.iconSize = 32
+    element.iconsPerRow = 8
+    element.spacing = 2
+    element.growDirection = "RIGHT"
+    element.anchor = "TOPLEFT"
+    element.maxIcons = 16
+    element.duration = { show = true, fontSize = 12, anchor = "CENTER",
+        offsetX = 0, offsetY = 0, color = { 1, 1, 1, 1 } }
+    element.stack = { show = true, fontSize = 12, anchor = "BOTTOMRIGHT",
+        offsetX = -1, offsetY = 1, color = { 1, 1, 1, 1 } }
+    return { element }
+end
+
+local hosts = {}
+local registered = {}
+local eventFrame
+
+function AD.HostFor(id)
+    return hosts[id]
+end
+
+local function EnsureHost(id)
+    local host = hosts[id]
+    if host then return host end
+    if InCombatLockdown() then return nil end
+    host = CreateFrame("Frame", "QUI_AuraDisplay_" .. id, UIParent)
+    host:SetSize(1, 1)
+    host:SetClampedToScreen(true)
+    host:ClearAllPoints()
+    host:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    hosts[id] = host
+    return host
+end
+
+local function DisableHostContainers(host)
+    local pool = host._quiAuraContainers
+    if pool then
+        for i = 1, #pool do
+            local container = pool[i]
+            if container then
+                ns.SafeCallMethod("best-effort-style", container, "SetEnabled", false)
+                ns.SafeCallMethod("best-effort-style", container, "Hide")
+            end
+        end
+    end
+end
+
+local function ParkOrphanHost(host)
+    DisableHostContainers(host)
+    host:Hide()
+end
+
+local function GridExtent(profile)
+    local perRow = profile.maxPerRow
+    if not perRow or perRow < 1 then perRow = profile.maxIcons end
+    local cols = math.min(perRow, profile.maxIcons)
+    if cols < 1 then cols = 1 end
+    local rows = math.ceil(profile.maxIcons / cols)
+    local w = cols * profile.iconSize + math.max(0, cols - 1) * profile.spacing
+    local h = rows * profile.iconSize + math.max(0, rows - 1) * profile.spacing
+    return w, h
+end
+
+local function AnchorElementContainer(container, host, element)
+    local profile = AuraGlue.ElementProfile(element)
+    container:ClearAllPoints()
+    container:SetPoint(AuraSkin.LayoutAnchor(profile), host, element.anchor or "TOPLEFT",
+        element.offsetX or 0, element.offsetY or 0)
+end
+
+local function FallbackProfile()
+    local bucket = AD.DefaultBucket()
+    if bucket and bucket[1] then return AuraGlue.ElementProfile(bucket[1]) end
+    return AuraGlue.ElementProfile({})
+end
+
+local EMPTY = {}
+
+local previewActive = false
+
+local ApplyDisplay
+
+local function AurasAreSecret()
+    return C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()
+end
+
+local function GameplayHidden(id)
+    local H = Helpers()
+    local profile = H and type(H.GetProfile) == "function" and H.GetProfile() or nil
+    local hiddenHandles = profile and profile.layoutMode and profile.layoutMode.hiddenHandles
+    return hiddenHandles ~= nil and hiddenHandles[AD.ANCHOR_PREFIX .. id] == true
+end
+
+local function RequeueDisplay(display)
+    if not (InCombatLockdown() or AurasAreSecret()) then return end
+    AuraGlue.QueueRegenWork(display, function(d) ApplyDisplay(d, true) end)
+end
+
+ApplyDisplay = function(display, allowCreate)
+    if previewActive then return end
+    if not ResolveDeps() then return end
+    local host = EnsureHost(display.id)
+    if not host then
+        RequeueDisplay(display)
+        return
+    end
+
+    E.EnsureSeeded(display.auras, AD.DefaultBucket)
+
+    local unit = nil
+    if display.enabled ~= false and AD.GroupEnabled(display.group) and AD.PassesLoad(display) then
+        unit = AD.ResolveUnit(display)
+    end
+    local elements = EMPTY
+    if unit then
+        local H = Helpers()
+        local specID = H and type(H.GetCurrentSpecID) == "function" and H.GetCurrentSpecID() or nil
+        elements = E.ActiveElementsForSpec(display.auras, specID)
+    end
+
+    local profile = elements[1] and AuraGlue.ElementProfile(elements[1]) or FallbackProfile()
+    local w, h = GridExtent(profile)
+    host._naturalW, host._naturalH = w, h
+    host:SetSize(w, h)
+
+    AuraSurface.ApplyElementPass(host, elements, {
+        unit = unit or "player",
+        allowCreate = allowCreate == true and not InCombatLockdown(),
+        cancelEligible = false,
+        profileFor = function(element) return AuraGlue.ElementProfile(element) end,
+        anchorContainer = AnchorElementContainer,
+        onIncomplete = function() RequeueDisplay(display) end,
+    })
+
+    local H = Helpers()
+    local layoutActive = H and type(H.IsLayoutModeActive) == "function" and H.IsLayoutModeActive()
+
+    if unit then
+        host:SetAlpha(1)
+        if layoutActive or not GameplayHidden(display.id) then
+            host:Show()
+        else
+            host:Hide()
+            local lm = ns.QUI_LayoutMode
+            if lm then
+                lm._gameplayHidden = lm._gameplayHidden or {}
+                lm._gameplayHidden[AD.ANCHOR_PREFIX .. display.id] = true
+            end
+        end
+    else
+        host:SetAlpha(0)
+    end
+
+    if not layoutActive and _G.QUI_ApplyFrameAnchor then
+        _G.QUI_ApplyFrameAnchor(AD.ANCHOR_PREFIX .. display.id)
+    end
+end
+
+function AD.RegisterLayoutElement(display)
+    local um = ns.QUI_LayoutMode
+    if not um or type(um.RegisterElement) ~= "function" then return end
+    local id = display.id
+    um:RegisterElement({
+        key = AD.ANCHOR_PREFIX .. id,
+        label = display.name or id,
+        group = ns.L["Aura Displays"],
+        order = 100,
+        isOwned = true,
+        isEnabled = function()
+            local d = AD.GetDisplay(id)
+            return d ~= nil and d.enabled ~= false
+        end,
+        setEnabled = function(value)
+            local d = AD.GetDisplay(id)
+            if d then d.enabled = value and true or false end
+            AD.Refresh()
+        end,
+        setGameplayHidden = function(hide)
+            local host = hosts[id]
+            if not host then return end
+            if hide then host:Hide() else host:Show() end
+        end,
+        getFrame = function()
+            return hosts[id]
+        end,
+    })
+    if _G.QUI_RegisterFrameResolver then
+        _G.QUI_RegisterFrameResolver(AD.ANCHOR_PREFIX .. id, {
+            resolver = function() return hosts[id] end,
+            displayName = display.name or id,
+            category = ns.L["Aura Displays"],
+            order = 100,
+        })
+    end
+end
+
+function AD.UnregisterLayoutElement(id)
+    local um = ns.QUI_LayoutMode
+    if um and type(um.UnregisterElement) == "function" then
+        um:UnregisterElement(AD.ANCHOR_PREFIX .. id)
+    end
+    if _G.QUI_UnregisterFrameResolver then
+        _G.QUI_UnregisterFrameResolver(AD.ANCHOR_PREFIX .. id)
+    end
+    local host = hosts[id]
+    if host then
+        host:Hide()
+        hosts[id] = nil
+    end
+end
+
+function AD.Refresh()
+    if not ResolveDeps() then return end
+    if previewActive then return end
+    local store = Store()
+    local seen = {}
+    if store and store.enabled ~= false then
+        local displays = AD.OrderedDisplays()
+        for i = 1, #displays do
+            local display = displays[i]
+            seen[display.id] = true
+            local ok = ns.SafeCall("best-effort-style", ApplyDisplay, display, true)
+            if not ok then RequeueDisplay(display) end
+            local stamp = tostring(display.name or display.id)
+                .. (hosts[display.id] and "+" or "-")
+            if registered[display.id] ~= stamp then
+                registered[display.id] = stamp
+                AD.RegisterLayoutElement(display)
+            end
+        end
+    end
+    for id, host in pairs(hosts) do
+        if not seen[id] then ParkOrphanHost(host) end
+    end
+    for id in pairs(registered) do
+        if not seen[id] then
+            registered[id] = nil
+            AD.UnregisterLayoutElement(id)
+        end
+    end
+end
+
+function AD.ShowPreview()
+    if previewActive then return end
+    if not ResolveDeps() then return end
+    local Preview = ns.AuraPreview
+    if not Preview or type(Preview.Show) ~= "function" then return end
+    previewActive = true
+    local displays = AD.OrderedDisplays()
+    for i = 1, #displays do
+        local display = displays[i]
+        local host = hosts[display.id]
+        if host then
+            E.EnsureSeeded(display.auras, AD.DefaultBucket)
+            local H = Helpers()
+            local specID = H and type(H.GetCurrentSpecID) == "function"
+                and H.GetCurrentSpecID() or nil
+            local elements = E.ActiveElementsForSpec(display.auras, specID)
+            DisableHostContainers(host)
+            local profile = elements[1] and AuraGlue.ElementProfile(elements[1]) or FallbackProfile()
+            local w, h = GridExtent(profile)
+            host._naturalW, host._naturalH = w, h
+            host:SetSize(w, h)
+            host:SetAlpha(1)
+            host:Show()
+            Preview.Show(host, elements)
+            if _G.QUI_LayoutModeSyncHandle then
+                _G.QUI_LayoutModeSyncHandle(AD.ANCHOR_PREFIX .. display.id)
+            end
+        end
+    end
+end
+
+function AD.HidePreview()
+    if not previewActive then return end
+    previewActive = false
+    local Preview = ns.AuraPreview
+    if Preview and type(Preview.Hide) == "function" then
+        for _, host in pairs(hosts) do
+            Preview.Hide(host)
+        end
+    end
+    AD.Refresh()
+end
+
+local WATCHED_EVENTS = {
+    "PLAYER_ENTERING_WORLD",
+    "GROUP_ROSTER_UPDATE",
+    "PLAYER_SPECIALIZATION_CHANGED",
+    "PLAYER_ROLES_ASSIGNED",
+    "ENCOUNTER_START",
+    "ENCOUNTER_END",
+}
+
+local function OnEvent(_, event, arg1)
+    if event == "ENCOUNTER_START" then
+        AD.SetEncounter(arg1)
+    elseif event == "ENCOUNTER_END" then
+        AD.SetEncounter(nil)
+    end
+    AD.Refresh()
+end
+
+function AD.Init()
+    if eventFrame then return end
+    eventFrame = CreateFrame("Frame")
+    for i = 1, #WATCHED_EVENTS do
+        eventFrame:RegisterEvent(WATCHED_EVENTS[i])
+    end
+    eventFrame:SetScript("OnEvent", OnEvent)
+    local um = ns.QUI_LayoutMode
+    if um then
+        if type(um.RegisterEnterCallback) == "function" then
+            um:RegisterEnterCallback(AD.ShowPreview)
+        end
+        if type(um.RegisterExitCallback) == "function" then
+            um:RegisterExitCallback(AD.HidePreview)
+        end
+    end
+    AD.Refresh()
+end
+
+if ns.Registry then
+    ns.Registry:Register("auraDisplays", {
+        refresh = AD.Refresh,
+        priority = 60,
+        group = "ui",
+        importCategories = { "auraDisplays" },
+    })
+end
+
+if ns.RunAfterFirstFrame then ns.RunAfterFirstFrame(AD.Init, 0.1) end
+
+return AD
