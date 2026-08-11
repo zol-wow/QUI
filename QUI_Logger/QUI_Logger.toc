@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Logger (dev)
 ## Notes: Dev-only event stream recorder. Not for release.
 ## Author: Drew
-## Version: 5.0.0-beta4
+## Version: 5.0.0
 ## Category: User Interface
 ## Group: QUI
 ## SavedVariablesPerCharacter: QUI_LoggerDB
