@@ -171,8 +171,10 @@ function NPPresets.GetRoleStore()
     local db = _G.QUI and _G.QUI.db
     local g = db and db.global
     if not g then return nil end
-    g.nameplateRolePresets = g.nameplateRolePresets or { autoSwitch = false }
-    return g.nameplateRolePresets
+    ---@type table<string, any>
+    local seeded = g.nameplateRolePresets or { autoSwitch = false }
+    g.nameplateRolePresets = seeded
+    return seeded
 end
 
 function NPPresets.HasRolePreset(role)

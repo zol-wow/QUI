@@ -44,6 +44,14 @@ local function LiveAssistProbe(unit)
 end
 S.LiveAssistProbe = LiveAssistProbe
 
+function S.LivePolarityMismatch(unit, auraType)
+    if TokenReactionClass(unit) ~= nil then return false end
+    local harmful = type(auraType) == "string" and auraType:find("HARMFUL", 1, true) ~= nil
+    local assist = LiveAssistProbe(unit)
+    if harmful then return assist end
+    return not assist
+end
+
 local function SpellNeverSecret(spellID)
     local CS = C_Secrets
     if not (CS and CS.GetSpellAuraSecrecy and Enum and Enum.SecrecyLevel) then
