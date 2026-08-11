@@ -5,8 +5,8 @@
 ## AddonCompartmentFuncOnEnter: QUI_CompartmentOnEnter
 ## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
 ## Notes: Comprehensive UI customization addon
-## Author: Drew
-## Version: 5.0.0-beta4
+## Author: Zol and Drew
+## Version: 5.0.0
 ## Category: User Interface
 ## SavedVariables: QUIDB, QUI_StorageDB
 ## LoadSavedVariablesFirst: 1

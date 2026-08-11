@@ -2,8 +2,8 @@
 ## Title: |cFF30D1FFQUI|r Options
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Configuration UI for QUI
-## Author: Drew
-## Version: 5.0.0-beta4
+## Author: Zol and Drew
+## Version: 5.0.0
 ## Category: User Interface
 ## Group: QUI
 ## RequiredDeps: QUI
