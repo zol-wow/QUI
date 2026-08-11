@@ -7,10 +7,10 @@ nav_order: 1
 # QUI Documentation
 {: .fs-9 }
 
-A modular World of Warcraft UI suite for Midnight 12.0+ that you can install, understand, and tune from one settings experience.
+A modular World of Warcraft UI suite for Midnight 12.1+ that you can install, understand, and tune from one settings experience.
 {: .fs-6 .fw-300 }
 
-**Current Beta: 4.0.0-beta56**
+**Current Release: 5.0.0**
 {: .label .label-purple }
 
 [Get Started](getting-started/){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
@@ -31,7 +31,7 @@ QUI's interface is also localized into 11 languages and follows your WoW client 
 If you are new to QUI, the easiest way to think about it is this: install all `QUI*` folders, open `/qui`, choose which optional modules you want, then fine-tune the pieces you care about.
 
 {: .important }
-QUI 4 beta is a multi-folder addon suite. Addon-manager installs handle this automatically. Manual installs must copy every top-level `QUI*` folder from the release zip into `Interface\AddOns\`, not only the `QUI` folder.
+QUI is a multi-folder addon suite. Addon-manager installs handle this automatically. Manual installs must copy every top-level `QUI*` folder from the release zip into `Interface\AddOns\`, not only the `QUI` folder.
 
 ## Why Players Pick QUI
 
