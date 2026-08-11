@@ -4,6 +4,23 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.1.0-beta1 - 2026-08-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Opens the 5.1 beta line. No addon code changes: this ships the 5.0.0 tree and
+moves the version on, so the next round of work has a beta channel to land in.
+
+### Changed
+
+- Documentation only. The README pointed at an archived repository whose
+  documentation site had been switched off, and its migration guide had been
+  collapsed by an old rename into instructions that told you to copy a file over
+  itself. The docs site still advertised support for 12.0, which this build does
+  not load on, and still described a build from June.
+- The addon list now credits **Zol** alongside **Drew** as the author.
+
 ## v5.0.0 - 2026-08-11
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
