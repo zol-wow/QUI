@@ -4,6 +4,24 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.0.0-beta4 - 2026-08-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Missing raid buff icons were unreliable.** The indicator could keep showing
+  a buff as missing after it had been cast, miss the change entirely when the
+  game reported an aura update it could not fully read, or flag a buff as
+  missing because the ally carrying it had moved out of range. Range, specialization
+  and aura-change handling were all reworked so the icon follows the real state.
+- **Missing raid buff names and icons could stay wrong for the session.** When
+  the indicator was built before the game had finished loading spell data, the
+  English placeholder name and the question-mark icon were cached permanently,
+  so on a non-English client the buff kept the wrong label. Both now refresh
+  until the real values are available.
+
 ## v5.0.0-beta3 - 2026-08-11
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
