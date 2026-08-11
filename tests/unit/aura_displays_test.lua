@@ -56,15 +56,32 @@ if #store.order ~= 2 or store.order[1] ~= "d1" or store.order[2] ~= "d2" then
     fail("order must append new displays")
 end
 
-if not AD.MoveDisplay("d2", -1) then fail("MoveDisplay must succeed within bounds") end
-if store.order[1] ~= "d2" then fail("MoveDisplay must swap order entries") end
-if AD.MoveDisplay("d2", -1) then fail("MoveDisplay must refuse to move past the start") end
+if AD.MoveDisplay ~= nil then
+    fail("AD.MoveDisplay was replaced by MoveDisplayWithinGroup and must not come back")
+end
 
 local dup = AD.DuplicateDisplay("d1", "First Copy")
 if dup.id ~= "d3" then fail("duplicate must take a fresh id, got " .. tostring(dup.id)) end
 if dup.name ~= "First Copy" then fail("duplicate must take the supplied name") end
 if dup.auras.elements == a.auras.elements then
     fail("duplicate must deep copy the aura store, not alias it")
+end
+if dup.auras._elementIDsBackfilled ~= nil then
+    fail("duplicate must clear the backfill flag so the copy re-uniquifies its element ids")
+end
+for _, bucket in pairs(dup.auras.elements) do
+    for i = 1, #bucket do
+        if bucket[i].id ~= nil then
+            fail("duplicate must clear copied element ids, got " .. tostring(bucket[i].id))
+        end
+    end
+end
+AuraElements.EnsureSeeded(dup.auras, AD.DefaultBucket)
+local sourceElementID = a.auras.elements["*"][1].id
+local copyElementID = dup.auras.elements["*"][1].id
+if copyElementID == nil or copyElementID == sourceElementID then
+    fail("a re-seeded copy must mint an element id distinct from its source, got "
+        .. tostring(copyElementID) .. " against " .. tostring(sourceElementID))
 end
 
 profile.frameAnchoring = { auraDisplay_d1 = { offsetX = 10 } }
@@ -99,6 +116,63 @@ if not AD.GroupEnabled("Raid") then fail("an unknown group must count as enabled
 AD.SetGroupEnabled("Raid", false)
 if AD.GroupEnabled("Raid") then fail("SetGroupEnabled(false) must disable the group") end
 if not AD.GroupEnabled(nil) then fail("a nil group must count as enabled") end
+
+AD.SetGroupEnabled("", false)
+if not AD.GroupEnabled("") then
+    fail("an empty group name must never gate visibility - no header renders controls for it")
+end
+if store.groups[""] ~= nil then
+    fail("SetGroupEnabled must not mint a store entry for an empty group name")
+end
+
+if AD.RenameGroup("Raid", "Mythic") ~= true then
+    fail("RenameGroup must succeed when the new name is free")
+end
+if store.groups["Raid"] ~= nil then fail("RenameGroup must drop the old group entry") end
+if AD.GroupEnabled("Mythic") then
+    fail("RenameGroup must carry the group's disabled state across to the new name")
+end
+
+local renameMember = AD.NewDisplay("Member")
+renameMember.group = "Mythic"
+if AD.RenameGroup("Mythic", "Renamed") ~= true then
+    fail("RenameGroup must succeed when the group has members")
+end
+if renameMember.group ~= "Renamed" then
+    fail("RenameGroup must move every member to the new name, got "
+        .. tostring(renameMember.group))
+end
+
+if AD.RenameGroup("Renamed", "Renamed") ~= true then
+    fail("renaming a group to its current name must be a successful no-op")
+end
+
+AD.SetGroupEnabled("Heroic", true)
+local collideOK, collideReason = AD.RenameGroup("Renamed", "Heroic")
+if collideOK ~= false or collideReason ~= "collision" then
+    fail("RenameGroup must report a name collision as false, 'collision', got "
+        .. tostring(collideOK) .. ", " .. tostring(collideReason))
+end
+
+local implicitMember = AD.NewDisplay("Implicit")
+implicitMember.group = "Legacy"
+local implicitOK, implicitReason = AD.RenameGroup("Renamed", "Legacy")
+if implicitOK ~= false or implicitReason ~= "collision" then
+    fail("RenameGroup must detect a group that exists only on a display, got "
+        .. tostring(implicitOK) .. ", " .. tostring(implicitReason))
+end
+
+local emptyOK, emptyReason = AD.RenameGroup("Renamed", "")
+if emptyOK ~= false or emptyReason ~= "invalid" then
+    fail("RenameGroup must reject an empty new name as false, 'invalid', got "
+        .. tostring(emptyOK) .. ", " .. tostring(emptyReason))
+end
+if AD.RenameGroup(nil, "Anything") ~= false then
+    fail("RenameGroup must reject a nil old name")
+end
+if AD.RenameGroup("Renamed", 7) ~= false then
+    fail("RenameGroup must reject a non-string new name")
+end
 
 local ordered = AD.OrderedDisplays()
 if #ordered ~= #store.order then
@@ -398,5 +472,25 @@ if AD.DisplayActive(live) then fail("a display in a disabled group must be inact
 AD.SetGroupEnabled("Raid", true)
 live.unit = "notaunit"
 if AD.DisplayActive(live) then fail("a display with an unresolvable unit must be inactive") end
+
+local realGetProfile = ns.Helpers.GetProfile
+ns.Helpers.GetProfile = function() return nil end
+if AD.Store() ~= nil then
+    fail("Store must return nil before a live profile exists, or lazy sub-table init writes "
+        .. "into the defaults table and leaks into every fresh profile")
+end
+if AD.NewDisplay("Cold") ~= nil then fail("NewDisplay must fail closed with no profile") end
+if AD.DuplicateDisplay("d2", "Cold Copy") ~= nil then
+    fail("DuplicateDisplay must fail closed with no profile")
+end
+if AD.DeleteDisplay("d2") ~= false then fail("DeleteDisplay must fail closed with no profile") end
+if AD.RenameGroup("Renamed", "Cold") ~= false then
+    fail("RenameGroup must fail closed with no profile")
+end
+if not AD.GroupEnabled("Renamed") then
+    fail("GroupEnabled must default to enabled with no profile, never hide a display")
+end
+ns.Helpers.GetProfile = realGetProfile
+if AD.Store() == nil then fail("Store must recover once the profile is back") end
 
 print("PASS: aura_displays_test")

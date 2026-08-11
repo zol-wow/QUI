@@ -161,15 +161,35 @@ local function BuildGroupHeader(L, parent, groupKey)
     end)
     toggle:SetPoint("LEFT", row, "LEFT", 0, 0)
 
-    local label = GUI:CreateLabel(row, groupKey, 12, C.text)
-    label:SetPoint("LEFT", toggle, "RIGHT", 8, 0)
+    local nameBox = GUI:CreateInlineEditBox(row, {
+        width = 160,
+        text = groupKey,
+        onEscapePressed = function(self)
+            self:SetText(groupKey)
+            self:ClearFocus()
+        end,
+        onEnterPressed = function(self)
+            local ok, reason = AD.RenameGroup(groupKey, self:GetText())
+            self:ClearFocus()
+            if ok then
+                RefreshAndRebuild()
+                return
+            end
+            self:SetText(groupKey)
+            if reason == "collision" and UIErrorsFrame then
+                UIErrorsFrame:AddMessage(ns.L["A group with that name already exists."],
+                    1.0, 0.3, 0.3, 1.0)
+            end
+        end,
+    })
+    nameBox:SetPoint("LEFT", toggle, "RIGHT", 8, 0)
 
     local enabled = AD.GroupEnabled(groupKey)
     local enableBtn = GUI:CreateButton(row, enabled and ns.L["Disable Group"] or ns.L["Enable Group"], 120, 22, function()
         AD.SetGroupEnabled(groupKey, not enabled)
         RefreshAndRebuild()
     end)
-    enableBtn:SetPoint("LEFT", label, "RIGHT", 12, 0)
+    enableBtn:SetPoint("LEFT", nameBox, "RIGHT", 12, 0)
 
     local deleteBtn = GUI:CreateButton(row, ns.L["Delete Group"], 110, 22, function()
         GUI:ShowConfirmation({
@@ -346,26 +366,17 @@ local function FormatIDList(set)
     return table.concat(ids, ", ")
 end
 
-local function AddPairedRows(card, rows)
-    local i = 1
-    while i <= #rows do
-        local left, right = rows[i], rows[i + 1]
-        if right then
-            card.AddRow(left, right)
-            i = i + 2
-        else
-            card.AddRow(left)
-            i = i + 1
-        end
-    end
-end
-
-local function BuildLoadCard(L, display)
+local function EnsureLoad(display)
     display.load = display.load or {}
     display.load.classes = display.load.classes or {}
     display.load.specs = display.load.specs or {}
     display.load.roles = display.load.roles or {}
     display.load.encounters = display.load.encounters or {}
+    return display.load
+end
+
+local function BuildLoadCard(L, display)
+    EnsureLoad(display)
 
     local card = L.sectionAt()
 
@@ -377,7 +388,7 @@ local function BuildLoadCard(L, display)
             { description = ns.L["Only load this display on the checked classes. No class checked means every class."] })
         classRows[#classRows + 1] = Shared.BuildSettingRow(card.frame, label, widget)
     end
-    AddPairedRows(card, classRows)
+    ns.QUI_ModulesSettingsLayout.PairCells(card, classRows)
 
     local roleRows = {}
     local ROLE_LABELS = { TANK = TANK, HEALER = HEALER, DAMAGER = DAMAGER }
@@ -387,20 +398,21 @@ local function BuildLoadCard(L, display)
             { description = ns.L["Only load this display in the checked roles. No role checked means every role."] })
         roleRows[#roleRows + 1] = Shared.BuildSettingRow(card.frame, ROLE_LABELS[token] or token, widget)
     end
-    AddPairedRows(card, roleRows)
+    ns.QUI_ModulesSettingsLayout.PairCells(card, roleRows)
 
     L.closeSection(card)
 end
 
 local function BuildSpecEncounterCard(L, display)
+    local load = EnsureLoad(display)
     local card = L.sectionAt()
 
     local specsW = GUI:CreateInlineEditBox(card.frame, {
         width = 260,
-        text = FormatIDList(display.load.specs),
+        text = FormatIDList(load.specs),
         onEnterPressed = function(self)
-            display.load.specs = ParseIDList(self:GetText())
-            self:SetText(FormatIDList(display.load.specs))
+            load.specs = ParseIDList(self:GetText())
+            self:SetText(FormatIDList(load.specs))
             self:ClearFocus()
             Refresh()
         end,
@@ -410,10 +422,10 @@ local function BuildSpecEncounterCard(L, display)
 
     local encountersW = GUI:CreateInlineEditBox(card.frame, {
         width = 260,
-        text = FormatIDList(display.load.encounters),
+        text = FormatIDList(load.encounters),
         onEnterPressed = function(self)
-            display.load.encounters = ParseIDList(self:GetText())
-            self:SetText(FormatIDList(display.load.encounters))
+            load.encounters = ParseIDList(self:GetText())
+            self:SetText(FormatIDList(load.encounters))
             self:ClearFocus()
             Refresh()
         end,

@@ -169,6 +169,7 @@ local _pollArmed = false
 local function AurasAreSecret()
     return C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()
 end
+G.AurasAreSecret = AurasAreSecret
 
 local FlushPending
 

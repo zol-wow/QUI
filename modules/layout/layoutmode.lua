@@ -155,6 +155,18 @@ function QUI_LayoutMode:RegisterElement(def)
     end
 end
 
+function QUI_LayoutMode:UpdateElementLabel(key, newLabel)
+    if not key or type(newLabel) ~= "string" or newLabel == "" then return false end
+    local def = self._elements[key]
+    if not def then return false end
+    def.label = newLabel
+    local handle = self._handles[key]
+    if handle and handle._label then
+        handle._label:SetText(ns.L[def.label or key])
+    end
+    return true
+end
+
 local function RestoreTargetFrame(handle, def, suspending)
     if not handle or not handle._savedTargetParent then return end
 

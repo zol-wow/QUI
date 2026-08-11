@@ -101,6 +101,18 @@ function AD.DuplicateDisplay(id, newName)
     local copy = DeepCopy(source)
     copy.id = NextID(store)
     copy.name = (type(newName) == "string" and newName ~= "") and newName or copy.id
+    if type(copy.auras) == "table" then
+        copy.auras._elementIDsBackfilled = nil
+        if type(copy.auras.elements) == "table" then
+            for _, bucket in pairs(copy.auras.elements) do
+                if type(bucket) == "table" then
+                    for i = 1, #bucket do
+                        if type(bucket[i]) == "table" then bucket[i].id = nil end
+                    end
+                end
+            end
+        end
+    end
     store.displays[copy.id] = copy
     store.order[#store.order + 1] = copy.id
     return copy
@@ -112,20 +124,6 @@ function AD.RenameDisplay(id, newName)
     display.name = newName ~= "" and newName or id
     AD.RegisterLayoutElement(display)
     return true
-end
-
-function AD.MoveDisplay(id, delta)
-    local store = Store()
-    if not store or type(delta) ~= "number" or delta == 0 then return false end
-    for i = 1, #store.order do
-        if store.order[i] == id then
-            local j = i + delta
-            if j < 1 or j > #store.order then return false end
-            store.order[i], store.order[j] = store.order[j], store.order[i]
-            return true
-        end
-    end
-    return false
 end
 
 function AD.MoveDisplayWithinGroup(id, delta)
@@ -171,65 +169,83 @@ function AD.OrderedDisplays()
     return out
 end
 
+local function GroupKey(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    return name
+end
+
+local function EnsureGroup(store, key)
+    local group = store.groups[key]
+    if not group then
+        group = { collapsed = false, enabled = true }
+        store.groups[key] = group
+    end
+    return group
+end
+
+local function GroupNameTaken(store, key)
+    if store.groups[key] then return true end
+    for _, display in pairs(store.displays) do
+        if display.group == key then return true end
+    end
+    return false
+end
+
 function AD.GroupEnabled(groupName)
-    if groupName == nil then return true end
+    local key = GroupKey(groupName)
+    if key == nil then return true end
     local store = Store()
     if not store then return true end
-    local group = store.groups[groupName]
+    local group = store.groups[key]
     return not (group and group.enabled == false)
 end
 
 function AD.SetGroupEnabled(groupName, enabled)
-    if groupName == nil then return end
+    local key = GroupKey(groupName)
+    if key == nil then return end
     local store = Store()
     if not store then return end
-    local group = store.groups[groupName]
-    if not group then
-        group = { collapsed = false, enabled = true }
-        store.groups[groupName] = group
-    end
-    group.enabled = enabled and true or false
+    EnsureGroup(store, key).enabled = enabled and true or false
 end
 
 function AD.SetGroupCollapsed(groupName, collapsed)
-    if groupName == nil then return end
+    local key = GroupKey(groupName)
+    if key == nil then return end
     local store = Store()
     if not store then return end
-    local group = store.groups[groupName]
-    if not group then
-        group = { collapsed = false, enabled = true }
-        store.groups[groupName] = group
-    end
-    group.collapsed = collapsed and true or false
+    EnsureGroup(store, key).collapsed = collapsed and true or false
 end
 
 function AD.GroupCollapsed(groupName)
-    if groupName == nil then return false end
+    local key = GroupKey(groupName)
+    if key == nil then return false end
     local store = Store()
-    local group = store and store.groups[groupName]
+    local group = store and store.groups[key]
     return group ~= nil and group.collapsed == true
 end
 
 function AD.DeleteGroup(groupName)
+    local key = GroupKey(groupName)
     local store = Store()
-    if not store or groupName == nil then return false end
-    store.groups[groupName] = nil
+    if not store or key == nil then return false end
+    store.groups[key] = nil
     for _, display in pairs(store.displays) do
-        if display.group == groupName then display.group = nil end
+        if display.group == key then display.group = nil end
     end
     return true
 end
 
 function AD.RenameGroup(oldName, newName)
     local store = Store()
-    if not store or oldName == nil or type(newName) ~= "string" or newName == "" then
-        return false
-    end
-    if store.groups[newName] then return false end
-    store.groups[newName] = store.groups[oldName] or { collapsed = false, enabled = true }
-    store.groups[oldName] = nil
+    local from, to = GroupKey(oldName), GroupKey(newName)
+    if not store or from == nil or to == nil then return false, "invalid" end
+    if from == to then return true end
+    if GroupNameTaken(store, to) then return false, "collision" end
+    local group = store.groups[from]
+    store.groups[from] = nil
+    store.groups[to] = group or { collapsed = false, enabled = true }
     for _, display in pairs(store.displays) do
-        if display.group == oldName then display.group = newName end
+        if display.group == from then display.group = to end
     end
     return true
 end
@@ -454,6 +470,7 @@ end
 local hosts = {}
 local registered = {}
 local eventFrame
+local watchingDynamicUnits = false
 
 function AD.HostFor(id)
     return hosts[id]
@@ -520,10 +537,6 @@ local previewActive = false
 
 local ApplyDisplay
 
-local function AurasAreSecret()
-    return C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()
-end
-
 local function GameplayHidden(id)
     local H = Helpers()
     local profile = H and type(H.GetProfile) == "function" and H.GetProfile() or nil
@@ -532,8 +545,12 @@ local function GameplayHidden(id)
 end
 
 local function RequeueDisplay(display)
-    if not (InCombatLockdown() or AurasAreSecret()) then return end
-    AuraGlue.QueueRegenWork(display, function(d) ApplyDisplay(d, true) end)
+    if not (InCombatLockdown() or AuraGlue.AurasAreSecret()) then return end
+    local id = display.id
+    AuraGlue.QueueRegenWork(AD.ANCHOR_PREFIX .. id, function()
+        local current = AD.GetDisplay(id)
+        if current then ApplyDisplay(current, true) end
+    end)
 end
 
 ApplyDisplay = function(display, allowCreate)
@@ -563,12 +580,22 @@ ApplyDisplay = function(display, allowCreate)
     host._naturalW, host._naturalH = w, h
     host:SetSize(w, h)
 
+    local skipElement
+    local Slots = unit and ns.AuraSlots
+    if Slots and type(Slots.LivePolarityMismatch) == "function" then
+        skipElement = function(element)
+            if element.mode ~= "tracked" then return false end
+            return Slots.LivePolarityMismatch(unit, element.auraType or "HELPFUL")
+        end
+    end
+
     AuraSurface.ApplyElementPass(host, elements, {
         unit = unit or "player",
         allowCreate = allowCreate == true and not InCombatLockdown(),
         cancelEligible = false,
         profileFor = function(element) return AuraGlue.ElementProfile(element) end,
         anchorContainer = AnchorElementContainer,
+        skip = skipElement,
         onIncomplete = function() RequeueDisplay(display) end,
     })
 
@@ -654,11 +681,16 @@ function AD.Refresh()
     if previewActive then return end
     local store = Store()
     local seen = {}
+    local dynamic = false
     if store and store.enabled ~= false then
         local displays = AD.OrderedDisplays()
         for i = 1, #displays do
             local display = displays[i]
             seen[display.id] = true
+            if (display.unitMode or "token") == "token"
+                and STATIC_TOKENS[display.unit] == false then
+                dynamic = true
+            end
             local ok = ns.SafeCall("best-effort-style", ApplyDisplay, display, true)
             if not ok then RequeueDisplay(display) end
             local stamp = tostring(display.name or display.id)
@@ -678,6 +710,7 @@ function AD.Refresh()
             AD.UnregisterLayoutElement(id)
         end
     end
+    watchingDynamicUnits = dynamic
 end
 
 function AD.ShowPreview()
@@ -730,6 +763,17 @@ local WATCHED_EVENTS = {
     "PLAYER_ROLES_ASSIGNED",
     "ENCOUNTER_START",
     "ENCOUNTER_END",
+    "PLAYER_TARGET_CHANGED",
+    "PLAYER_FOCUS_CHANGED",
+    "UPDATE_MOUSEOVER_UNIT",
+    "UNIT_FACTION",
+}
+
+local REACTION_EVENTS = {
+    PLAYER_TARGET_CHANGED = true,
+    PLAYER_FOCUS_CHANGED = true,
+    UPDATE_MOUSEOVER_UNIT = true,
+    UNIT_FACTION = true,
 }
 
 local function OnEvent(_, event, arg1)
@@ -737,6 +781,8 @@ local function OnEvent(_, event, arg1)
         AD.SetEncounter(arg1)
     elseif event == "ENCOUNTER_END" then
         AD.SetEncounter(nil)
+    elseif REACTION_EVENTS[event] and not watchingDynamicUnits then
+        return
     end
     AD.Refresh()
 end

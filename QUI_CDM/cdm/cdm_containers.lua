@@ -1475,6 +1475,7 @@ function CDMContainers_API:RenameContainer(containerKey, newName)
     if um and um.UpdateElementLabel then
         um:UpdateElementLabel("cdmCustom_" .. containerKey, newName)
     end
+    self:RegisterDynamicFrameResolver(containerKey, settings)
 
     return true
 end
