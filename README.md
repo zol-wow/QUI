@@ -1,11 +1,9 @@
-[![GitHub release](https://img.shields.io/github/v/release/torresdrew/QUI)](https://github.com/torresdrew/QUI/releases)
+[![GitHub release](https://img.shields.io/github/v/release/zol-wow/QUI)](https://github.com/zol-wow/QUI/releases)
 [![GPLv3 License](https://img.shields.io/badge/License-GPL%20v3-yellow.svg)](https://opensource.org/licenses/)
 
 # QUI
 
 QUI is a modular World of Warcraft UI suite for Midnight 12.1+. It combines combat HUD tools, layout editing, action bars, unit and group frames, chat, minimap controls, data panels, a native damage meter, profile tools, and quality-of-life helpers under one settings experience.
-
-QUI is a fork of [QUI Community Edition](https://github.com/zol-wow/QUI), continued independently by Drew. See [Credits](#credits).
 
 ## Highlights
 
@@ -24,7 +22,7 @@ QUI is a fork of [QUI Community Edition](https://github.com/zol-wow/QUI), contin
 
 ## Installation
 
-1. Download the latest release zip from [GitHub Releases](https://github.com/torresdrew/QUI/releases).
+1. Download the latest release zip from [GitHub Releases](https://github.com/zol-wow/QUI/releases).
 2. Extract the zip.
 3. Copy every top-level `QUI*` folder from the zip into:
    ```text
@@ -67,15 +65,13 @@ Slash commands changed: `/qui` is now `/qui` (or `/qui`), and the rest of the `/
 
 ## Documentation
 
-- User guide: https://torresdrew.github.io/QUI/
-- Releases: https://github.com/torresdrew/QUI/releases
-- Issues: https://github.com/torresdrew/QUI/issues
+- User guide: https://zol-wow.github.io/QUI/
+- Releases: https://github.com/zol-wow/QUI/releases
+- Issues: https://github.com/zol-wow/QUI/issues
 
 ## Credits
 
 QUI is a derivative work of QUI. The original addon was created by **Quazii**, and QUI Community Edition was expanded and maintained by **Zol**, **LiQiuDGG**, and **Mondo**. This fork would not exist without their work.
-
-Upstream project: https://github.com/zol-wow/QUI
 
 ## License
 
