@@ -959,7 +959,7 @@ ns.LocaleData.active = assert(loadstring("return " .. [==[
     "Colapsa mensagens de mudança de reputação em uma forma compacta de seta para cima/baixo.",
     "Reúne os botões do minimapa do addon em uma gaveta ocultável presa ao minimapa.",
     "Coleções",
-    "Jornal de Coleções (Req. Recarregar)",
+    "Diário de Coleções (Req. Recarregar)",
     "Cor",
     "Colorir TODO o Texto da Barra de Conjuração",
     "Colorir TODO o Texto de Vida",
