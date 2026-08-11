@@ -8,48 +8,46 @@ nav_order: 5
 
 This page summarizes the user-facing changes since the last mainline release. For every beta entry and technical fix, see the full [CHANGELOG.md](https://github.com/zol-wow/QUI/blob/main/CHANGELOG.md).
 
-## Current Beta: v4.0.0-beta56 - 2026-06-16
+## Current Release: 5.0.0
 
-QUI 4 is a major beta update over v3.5.11. The biggest change is that QUI now ships as a modular suite: a core addon plus feature folders you can manage from `/qui` > **Module Addons**. The most recent betas add full interface localization, per-frame unit-frame border colors, a Volume datatext control panel, and a large round of Group Frames, Layout Mode, and Bags refinements.
+{: .warning }
+**WoW 12.1 only.** This build targets patch 12.1 (interface 120100) and will not load on the 12.0.x client.
+
+QUI 5.0 rebuilds nameplates as their own addon, puts nameplates, group frames and unit frames on one shared aura engine, and cuts the suite from 22 addon folders to 11. It is also the release that adapts to 12.1's stricter rules about what an addon may read.
 
 {: .important }
 Back up your `WTF` folder before installing beta builds. Manual installs must copy every `QUI*` folder from the release zip into `Interface\AddOns\`.
 
-## Latest Updates (beta44–beta56)
+## What's New in 5.0
 
-These are the user-facing changes since beta43. None of these betas require a profile migration past beta47, and your settings carry over.
+### Nameplates
 
-### Localization (beta56)
+- **Nameplates are their own addon**, with a setup wizard and a settings preview that renders a real plate 1:1 and follows whatever you are editing.
+- **Every plate type gets its own config** — pets and minions, friendly units, bosses and elites, minor and trivial units, enemy players and enemy NPCs — picked from a dropdown with a Copy From control.
+- **Target indicators** (arrow, brackets, glow line), class power pips on the target plate, execute-threshold health colouring, and threat colour mapping.
+- **A Visibility tab** with an enemy-plate master toggle, friendly NPCs exposed, and Minions nesting Guardians, Pets and Totems. `Show In Instances` is a never / name-only / always choice.
+- **Name-only is a real render mode** — QUI draws the name and hides the bar and aura containers rather than restyling Blizzard's text.
 
-- **QUI's interface is now translated into 11 languages** — English plus German, Spanish (Spain & Mexico), French, Italian, Korean, Portuguese (Brazil), Russian, and Simplified & Traditional Chinese. The language follows your WoW client automatically; English clients see no change.
-- **CJK font rendering** picks a font fallback for Korean and Chinese automatically, so those glyphs display correctly. (Options search stays English for now.) See [Localization](features/localization).
+### Auras
 
-### Unit & Group Frames
+- **One aura engine drives nameplates, group frames and unit frames**, so an element configured on one behaves the same on the others.
+- **Pandemic glow** flashes an icon as its aura enters the refresh window, driven by the game's own pandemic region rather than a timer QUI approximates.
+- **Dispel borders and stealable buffs come from the game.** An aura element can be set to `Debuffs + Stealable Buffs` or `All Auras`.
 
-- **Per-frame Unit Frame border color (beta52).** Each frame (player, target, pet, focus, target-of-target, boss) can pick its own border color — Inherit, Theme, Class, or Custom — instead of all frames sharing one skin border.
-- **Group Frames unified aura model (beta47).** Buff/debuff auras, pinned auras, and indicators now share one Auras model with a reworked live preview and a faster in-combat render path.
-- **Group Frames fixes.** Power-bar space is reclaimed when power bars are off; dispel/defensive indicators no longer stay lit after the aura ends; bottom-anchored defensive indicators no longer overlap the power bar.
+### Speed and size
 
-### Info Bar & Datatexts
+- **The suite is 11 addon folders instead of 22.** Locales ship packed, so only the language in use is ever compiled, and login memory drops by roughly 2.3 MB.
+- **Settings search is 2.5–3x faster.** One English index ships instead of ten translated copies; typing the English term still finds the translated row on non-English clients.
+- **The options panel opens instantly**, building on the first frame after login, and moving between settings tabs reuses the page it already built.
 
-- **Volume datatext control panel (beta44).** Left-click opens a themed popup with Master/SFX/Music/Ambience/Dialog sliders and a Mute-all toggle. Audio settings moved to middle-click.
-- **Travel widget label & tooltip and a per-widget "Hide Text" (icon-only) toggle (beta51).**
-- **Shift-drag to reorder datatexts (beta47),** including the Volume widget (beta56 fix).
+### Localization
 
-### Bags, Alts & Chat
+- **Every non-English locale is actually translated now.** Nine of the ten had been falling back to English for roughly 900 strings each.
 
-- **Bags: "Pack to bottom" sort (beta46)** and reagent-bag sorting parity (beta47).
-- **Alts: right-click to untrack** currency and reputation rows (beta46).
-- **Chat: saved-tab right-click Filter/Tab Settings menus (beta45),** Blizzard whisper pop-out routing, and stable sender class colors (beta55).
+### Adapting to 12.1
 
-### Layout Mode
-
-- **Opens collapsed (beta54)** with the toolbar and frames drawer tucked away.
-- **Anchored windows and castbars** position correctly in Layout Mode, and resizing an anchored window keeps its anchor pinned (beta42–54).
-
-### Setup & Profiles
-
-- **New profiles seed from QUI's shipped defaults automatically (beta47);** the old first-run welcome popup is gone. Profiles older than schema v31 (pre-3.5.11) are backed up, reset, and reseeded at login; 3.5.11+ profiles migrate unchanged.
+- **Atonement tracking no longer reads the combat log** — 12.1 closed combat log events to addons, so the counter watches auras directly.
+- **The Brez counter lost its resurrection list** for the same reason. The charge count, recharge timer and per-pull tally are unaffected.
 
 ## Major Additions
 
@@ -58,7 +56,7 @@ These are the user-facing changes since beta43. None of these betas require a pr
 - QUI is now split into feature addon folders.
 - The **Module Addons** page controls whole modules such as Chat, Bags, Info Bar, Alts, Group Frames, Damage Meter, Datatexts, Minimap, and Quality of Life.
 - Several large beta modules are off by default so existing setups can stay conservative.
-- Options search now loads on demand, reducing first-open cost.
+- The settings panel builds on the first frame after login, so it opens instantly.
 
 ### QUI Chat
 
@@ -112,7 +110,9 @@ These are the user-facing changes since beta43. None of these betas require a pr
 
 ## Upgrade Notes
 
-- v3.5.11 to QUI 4 beta is a major upgrade. Back up `WTF`, then install all `QUI*` folders.
-- If a module is missing, check for a partial manual install first.
+- **4.x to 5.0 is an install over the top.** Same addon folders, same saved variables (`QUIDB` and `QUI_StorageDB`) — nothing to move by hand. Profiles migrate to the current schema on first login and are backed up beforehand; `/qui migration status` and `/qui migration restore` expose those backups.
+- Back up your `WTF` folder before installing an alpha or beta build.
+- Manual installs must copy every top-level `QUI*` folder from the release zip, not only the `QUI` folder.
+- **If you hand-installed 5.0.0-alpha29 or earlier**, the eleven `QUI_OptionsSearch` folders are left behind after updating. Nothing loads them — delete them.
 - If a feature does not open, check `/qui` > **Module Addons** before troubleshooting settings.
 - Some account-cache data, especially offline inventory and equipment, repopulates as each character logs in.
