@@ -2,8 +2,8 @@
 ## Title: |cFF30D1FFQUI|r Debug Tools
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Load-on-demand diagnostics and profiling tools for QUI
-## Author: Drew
-## Version: 5.0.0-beta3
+## Author: Zol and Drew
+## Version: 5.1.0-beta1
 ## Category: User Interface
 ## Group: QUI
 ## RequiredDeps: QUI

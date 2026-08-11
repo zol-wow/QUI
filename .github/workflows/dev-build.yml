@@ -3,7 +3,6 @@ name: Dev Build
 on:
   push:
     branches:
-      - 'main'
       - 'feature/*'
       - 'bugfix/*'
 
@@ -23,9 +22,9 @@ jobs:
         run: |
           lua5.1 tools/generate_search_cache.lua
           lua5.1 tools/audit_search_cache.lua
-          if ! git diff --quiet -- QUI_OptionsSearch/search_cache.lua; then
-            echo "QUI_OptionsSearch/search_cache.lua is stale. Run: lua5.1 tools/generate_search_cache.lua && lua5.1 tools/audit_search_cache.lua"
-            git diff -- QUI_OptionsSearch/search_cache.lua
+          if ! git diff --quiet -- QUI_Options/search_cache.lua; then
+            echo "QUI_Options/search_cache.lua is stale. Run: lua5.1 tools/generate_search_cache.lua && lua5.1 tools/audit_search_cache.lua"
+            git diff -- QUI_Options/search_cache.lua
             exit 1
           fi
 
