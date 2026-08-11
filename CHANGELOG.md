@@ -4,6 +4,52 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.0.0-beta2 - 2026-08-10
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Pandemic glow on aura icons.** An icon flashes once its aura enters the
+  refresh window. The glow is driven by the game's own pandemic region rather
+  than a timer QUI approximates, so it stays in step with the real duration.
+- **Dispel borders and stealable buffs come from the game.** Border colour and
+  artwork per dispel type are handed to Blizzard's aura button instead of being
+  redrawn on top of it, and an aura element can now be set to
+  `Debuffs + Stealable Buffs` or `All Auras`.
+
+### Changed
+
+- **Moving between settings tabs is instant.** Each tab body is built once per
+  variant and kept, so switching unit, plate type or context reuses the page it
+  already built instead of rebuilding it.
+- **Nameplate settings open on Enemy NPCs**, which is the plate type most people
+  are there to edit.
+- **QUI no longer adds an entry to the game's Settings > AddOns list.** It held
+  one button that opened the QUI panel, which `/qui` already does.
+- **A suite-wide consistency pass** landed under this release: shared helpers
+  replace hand-rolled duplicates for time formatting, accent-insensitive search
+  and secret-value guards, and a long tail of settings keys nothing ever read
+  are gone. No behaviour changes with it; it is groundwork for 12.1's stricter
+  rules about what an addon may touch.
+
+### Fixed
+
+- **Edit Mode could get stuck asking to reload.** When the game refused to save
+  a cooldown manager layout, QUI asked for a reload, and the same refusal met it
+  on the way back up. The pending save is now recorded and the loop breaks on
+  the next login.
+- **Atonement tracking no longer reads the combat log.** 12.1 closed combat log
+  events to addons, so the counter watches auras directly and caches what it has
+  already resolved per unit.
+
+### Removed
+
+- **The Brez counter's resurrection list.** Naming who battle-rezzed whom needed
+  combat log events, which 12.1 does not give addons. The charge count, the
+  recharge timer and the per-pull tally are unaffected.
+
 ## v5.0.0-beta1 - 2026-08-07
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
