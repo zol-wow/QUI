@@ -85,7 +85,7 @@ local editModeSuppressionBlock = blockBetween(
     coreMain,
     coreMainPath,
     "local _editModeSuppressedFrameNames = {",
-    "        }\n\n        -- PartyFrame"
+    "local function ShouldSuppressEditModeFrame(name)"
 )
 
 assert(editModeSuppressionBlock:find('"MainMenuBarVehicleLeaveButton"', 1, true),

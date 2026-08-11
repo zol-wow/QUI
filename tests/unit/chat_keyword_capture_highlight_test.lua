@@ -41,6 +41,12 @@ local suppressActive = false
 
 local ns = {
     Helpers = { IsSecretValue = function(v) return v == secret end },
+    -- core/safecall.lua stub: silent pcall swallow matches the pre-SafeCall
+    -- shape this test was written against (Task 3: keyword_alert.lua's
+    -- PlayAlertSound now routes through ns.SafeCall).
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
     QUI = { Chat = {
         _internals = setmetatable({
             GetSettings = function() return settings end,
@@ -96,9 +102,9 @@ assert(rawequal(KA.ProcessForCapture(secret, "Ann"), secret), "secret untouched"
 -- a link stays untouched; the same word in plain text still highlights.
 suppressActive = true
 soundPlayed = false
-local link = "|Haddon:quaziiuichat:waypoint:45.6:78.9|h[(45.6, 78.9)]|h"
+local link = "|Haddon:quichat:waypoint:45.6:78.9|h[(45.6, 78.9)]|h"
 -- (a) trigger appears ONLY inside the link: message unchanged, no trigger
-local lhs = "go " .. "|Haddon:quaziiuichat:waypoint:1:2|h[gem spot]|h" .. " now"
+local lhs = "go " .. "|Haddon:quichat:waypoint:1:2|h[gem spot]|h" .. " now"
 local outL = KA.ProcessForCapture(lhs, "Ann")
 assert(outL == lhs, "trigger inside link data/label must not modify the link, got " .. tostring(outL))
 assert(not soundPlayed, "no sound when the only match is inside a link span")

@@ -28,7 +28,7 @@ local auraBarStart = assert(
 
 -- Find the end of BuildAddTabs (the closing "end" before the next function/section).
 -- We rely on the comment block that follows the function.
-local buildEnd = source:find("\n---------------------------------------------------------------------------", buildStart, true)
+local buildEnd = source:find("local function ShowNewContainerPopup(onCreated)", buildStart, true)
 assert(buildEnd, "could not locate end of BuildAddTabs region")
 
 -- Extract the aura branch: from "aura then" up to the auraBar branch.

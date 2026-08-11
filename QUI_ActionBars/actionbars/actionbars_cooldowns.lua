@@ -4,24 +4,11 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
----------------------------------------------------------------------------
--- OWNED COOLDOWN UPDATE (12.0.5+ DurationObject path)
----------------------------------------------------------------------------
--- Replaces Blizzard's ActionButton_UpdateCooldown which can no longer call
--- SetCooldown with secret values from tainted code.  Uses the new
--- C_ActionBar structured APIs (isActive boolean, DurationObjects) to drive
--- cooldown display via SetCooldownFromDurationObject — the only remaining
--- secret-safe cooldown setter.
---
--- All helpers are scoped inside a do...end block to stay within Lua's
--- 200 file-scope local variable limit.  Public functions are stored as
--- ActionBarsOwned fields.
+---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
 
--- Local upvalue for do-block increment guards (luacheck-clean).
--- Also written to the same-named GLOBAL so actionbars_events.lua can
--- increment _abCooldownStats.events without a cross-file require.
--- Nil until QUI_Debug activates instrumentation (debug gate).
-local _abCooldownStats -- debug counters
+-- cooldown display via SetCooldownFromDurationObject — the only remaining
+
+local _abCooldownStats
 local function SetupDebugInstrumentation()
     _abCooldownStats = {
         events = 0,
@@ -43,7 +30,7 @@ local function SetupDebugInstrumentation()
         lossOfControlInfoHits = 0,
         lossOfControlDurationQueries = 0,
     }
-    _G._abCooldownStats = _abCooldownStats -- global alias for actionbars_events.lua (loads after this file per actionbars.xml; picks the alias up in its own gated setup)
+    _G._abCooldownStats = _abCooldownStats
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "AB_cooldownEvents",  counter = true, fn = function() return _abCooldownStats.events  end }
     mp[#mp + 1] = { name = "AB_cooldownBatches", counter = true, fn = function() return _abCooldownStats.batches end }
@@ -63,19 +50,14 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "AB_lossOfControlInfoQueries", counter = true, fn = function() return _abCooldownStats.lossOfControlInfoQueries end }
     mp[#mp + 1] = { name = "AB_lossOfControlInfoHits", counter = true, fn = function() return _abCooldownStats.lossOfControlInfoHits end }
     mp[#mp + 1] = { name = "AB_lossOfControlDurationQueries", counter = true, fn = function() return _abCooldownStats.lossOfControlDurationQueries end }
-    -- AB_chargeCapabilityCache probe is registered inside the do-block below
-    -- (after the gate registration below it) because _buttonChargeAction is
-    -- declared there; the probe fn closes over it safely at that point.
 end
-if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+if ns.DebugRegister then
     ns.DebugRegister(SetupDebugInstrumentation)
 else
-    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+    SetupDebugInstrumentation()
 end
 
 do
-    -- Build 66562+ removed the secure delegate from ActionButton_ApplyCooldown
-    -- and blocked SetCooldown from accepting secret values in tainted context.
     local USE_DURATION_OBJECTS = IS_MIDNIGHT
         and C_ActionBar ~= nil
         and C_ActionBar.GetActionCooldownDuration ~= nil
@@ -123,19 +105,13 @@ do
 
     local function DecodePotentialSecretBoolean(value)
         if Helpers.IsSecretValue(value) then
-            return nil
+            return nil -- @secret-policy: reject-secret-value
         end
         if value == true then return true end
         if value == false then return false end
         return nil
     end
 
-    -- Per-button "was on cooldown last scan" cache. Skips redundant Clear()
-    -- calls on idle buttons (the common case — ~90 of 96 buttons are usually
-    -- off cooldown at any given moment). In raid combat, SPELL_UPDATE_COOLDOWN
-    -- fires ~20-30/sec and we scan all 96 buttons on each tick; without this
-    -- cache we hit Clear() 270 times per tick (cooldown + charge + LoC frames)
-    -- for buttons that are already cleared.
     local _buttonWasActive = setmetatable({}, { __mode = "k" })
     local _buttonCooldownAction = setmetatable({}, { __mode = "k" })
     local _buttonCooldownInfo = setmetatable({}, { __mode = "k" })
@@ -155,15 +131,8 @@ do
     local _batchChargeMayHaveCharges = {}
     local _batchChargeDurationSeen = {}
     local _batchChargeDurationObject = {}
-    -- LoC cooldown info was the one C_ActionBar query with no batch dedupe:
-    -- GetActionLossOfControlCooldownInfo returns a FRESH table every call and
-    -- fired once per active button per update (~500/sec in raid), dominating AB
-    -- GC churn. Cache it per-batch by action like the cooldown/charge queries.
     local _batchLoCInfoSeen = {}
     local _batchLoCInfo = {}
-    -- AB_chargeCapabilityCache probe: registered here because _buttonChargeAction
-    -- is declared in this do-block, via its own gate registration (the file's
-    -- main SetupDebugInstrumentation can't see this local).
     local function SetupChargeCacheProbe()
         local mp = ns._memprobes or {}; ns._memprobes = mp
         mp[#mp + 1] = {
@@ -175,10 +144,10 @@ do
             end,
         }
     end
-    if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    if ns.DebugRegister then
         ns.DebugRegister(SetupChargeCacheProbe)
     else
-        SetupChargeCacheProbe() -- standalone test harness: no gate, run eagerly
+        SetupChargeCacheProbe()
     end
 
     local function ResetButtonCooldownRuntimeCache(button)
@@ -240,14 +209,10 @@ do
     end
 
     local function GetSafeCooldownTiming(cdInfo)
-        if not cdInfo then return nil, nil end
         local start = cdInfo.startTime
-        if start == nil then
-            start = cdInfo.start
-        end
         local duration = cdInfo.duration
         if Helpers.IsSecretValue(start) or Helpers.IsSecretValue(duration) then
-            return nil, nil
+            return nil, nil -- @secret-policy: reject-secret-value
         end
         if type(start) ~= "number" or type(duration) ~= "number" then
             return nil, nil
@@ -265,11 +230,11 @@ do
             and _cooldownBatchActive
             and _batchCooldownInfoSeen[action] == _cooldownBatchToken then
             if _abCooldownStats then _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1 end
-            return _batchCooldownInfo[action] or DEFAULT_CD_INFO
+            return _batchCooldownInfo[action]
         end
 
         if _abCooldownStats then _abCooldownStats.actionCooldownQueries = _abCooldownStats.actionCooldownQueries + 1 end
-        local cdInfo = C_ActionBar.GetActionCooldown(action) or DEFAULT_CD_INFO
+        local cdInfo = C_ActionBar.GetActionCooldown(action)
         if actionCanBeCached and _cooldownBatchActive then
             _batchCooldownInfoSeen[action] = _cooldownBatchToken
             _batchCooldownInfo[action] = cdInfo
@@ -309,7 +274,7 @@ do
                         _abCooldownStats.actionDurationHits = _abCooldownStats.actionDurationHits + 1
                         _abCooldownStats.actionDurationActiveHits = _abCooldownStats.actionDurationActiveHits + 1
                     end
-                    return _buttonCooldownInfo[button] or DEFAULT_CD_INFO, durationObject, true
+                    return _buttonCooldownInfo[button], durationObject, true
                 end
             end
 
@@ -363,10 +328,9 @@ do
     end
 
     local function ChargeInfoMayHaveCharges(chargeInfo)
-        if not chargeInfo then return false end
         local maxCharges = chargeInfo.maxCharges
         if Helpers.IsSecretValue(maxCharges) then
-            return true
+            return true -- @secret-policy: probe-charges-when-unknown
         end
         maxCharges = Helpers.SafeToNumber(maxCharges, 0) or 0
         return maxCharges > 1
@@ -402,7 +366,7 @@ do
                 _batchChargeMayHaveCharges[action] = mayHaveCharges
             end
         end
-        local chargeActive = chargeInfo and DecodePotentialSecretBoolean(chargeInfo.isActive)
+        local chargeActive = DecodePotentialSecretBoolean(chargeInfo.isActive)
         if mayHaveCharges and chargeActive == true then
             if _abCooldownStats then _abCooldownStats.chargeInfoActive = _abCooldownStats.chargeInfoActive + 1 end
             if actionCanBeCached and _cooldownBatchActive then
@@ -444,11 +408,11 @@ do
             and _cooldownBatchActive
             and _batchLoCInfoSeen[action] == _cooldownBatchToken then
             if _abCooldownStats then _abCooldownStats.lossOfControlInfoHits = _abCooldownStats.lossOfControlInfoHits + 1 end
-            return _batchLoCInfo[action] or DEFAULT_LOC_INFO
+            return _batchLoCInfo[action]
         end
 
         if _abCooldownStats then _abCooldownStats.lossOfControlInfoQueries = _abCooldownStats.lossOfControlInfoQueries + 1 end
-        local locInfo = C_ActionBar.GetActionLossOfControlCooldownInfo(action) or DEFAULT_LOC_INFO
+        local locInfo = C_ActionBar.GetActionLossOfControlCooldownInfo(action)
         if actionCanBeCached and _cooldownBatchActive then
             _batchLoCInfoSeen[action] = _cooldownBatchToken
             _batchLoCInfo[action] = locInfo
@@ -457,10 +421,6 @@ do
     end
 
     function ActionBarsOwned.UpdateCooldown(button)
-        -- Hot path: called every ~100ms for all active buttons. Every
-        -- saved Lua op compounds to measurable ms/sec in raid combat.
-        -- `button.action` is always set by SafeSyncAction/state driver,
-        -- so the GetAttribute fallback is dead code and has been removed.
         if _abCooldownStats then _abCooldownStats.buttons = _abCooldownStats.buttons + 1 end
         local action = button.action
         if not action or action == 0 then return end
@@ -469,16 +429,10 @@ do
         if not cooldown then return end
 
         if USE_DURATION_OBJECTS then
-            -- Fast path: check primary cooldown first, then read only the
-            -- non-secret charge capability/active fields. Never read
-            -- currentCharges in combat; fetch the DurationObject only when
-            -- isActive says a charge is recharging.
             local _, cdDurationObject, cdActive = GetActionCooldownState(button, action)
             local chActive = GetActionChargeActive(button, action)
             local chargeDurObj = chActive == true and GetActionChargeDurationObject(action) or nil
             if cdActive ~= true and chActive ~= true then
-                -- Idle button: only clear the frames on the active→inactive
-                -- transition. Subsequent idle scans skip the Clear() churn.
                 if _buttonWasActive[button] then
                     _buttonWasActive[button] = nil
                     cooldown:Clear()
@@ -489,8 +443,6 @@ do
             end
             _buttonWasActive[button] = true
 
-            -- Button is on cooldown and/or recharging a charge — LoC is the
-            -- remaining query (per-batch cached by action; see GetActionLoCInfo).
             local locInfo = GetActionLoCInfo(action)
 
             local locActive = DecodePotentialSecretBoolean(locInfo.isActive)
@@ -499,21 +451,18 @@ do
             local showCharge = locReplacesNormal ~= true and chActive == true
             local showNormal = locReplacesNormal ~= true and cdActive == true
 
-            -- Normal cooldown (only fetch DurationObject when needed)
             if showNormal then
                 SetOrClearCooldown(cooldown, true, cdDurationObject)
             else
                 cooldown:Clear()
             end
 
-            -- Charge cooldown (lazy-create frame)
             if showCharge then
                 SetOrClearCooldown(GetOrCreateChargeCooldown(button), true, chargeDurObj)
             elseif button.chargeCooldown then
                 button.chargeCooldown:Clear()
             end
 
-            -- Loss of control cooldown (lazy-create frame)
             if showLoC then
                 if _abCooldownStats then _abCooldownStats.lossOfControlDurationQueries = _abCooldownStats.lossOfControlDurationQueries + 1 end
                 SetOrClearCooldown(GetOrCreateLoCCooldown(button), true, C_ActionBar.GetActionLossOfControlCooldownDuration(action))
@@ -521,24 +470,19 @@ do
                 button.lossOfControlCooldown:Clear()
             end
         else
-            -- Pre-12.0.5 fallback: delegate to Blizzard's handler (pcall for safety)
             if ActionButton_UpdateCooldown then
-                pcall(ActionButton_UpdateCooldown, button)
+                ns.SafeCall("compat", ActionButton_UpdateCooldown, button)
             end
         end
     end
 
     local _lastCdUpdateTime = 0
     function ActionBarsOwned.UpdateAllCooldowns()
-        -- Hard throttle: max once per frame (prevents duplicate work when
-        -- multiple code paths trigger cooldown updates in the same frame)
         local now = GetTime()
         if now == _lastCdUpdateTime then return end
         _lastCdUpdateTime = now
         if _abCooldownStats then _abCooldownStats.batches = _abCooldownStats.batches + 1 end
 
-        -- Fast path: iterate only buttons with actions (LibActionButton
-        -- pattern). Typical raid: ~30-50 active of 96 total.
         local activeButtons = ActionBarsOwned._activeButtons
         BeginCooldownBatch()
         if next(activeButtons) ~= nil then
@@ -555,9 +499,6 @@ do
             return
         end
 
-        -- Fallback: full scan before the first SafeUpdate pass has
-        -- populated _activeButtons (fresh login, brief window before
-        -- PLAYER_ENTERING_WORLD-driven refresh).
         for _, barKey in ipairs(STANDARD_BAR_KEYS) do
             local buttons = ActionBarsOwned.nativeButtons[barKey]
             if buttons then
@@ -572,4 +513,4 @@ do
         EndCooldownBatch()
     end
 
-end -- do block (cooldown ownership)
+end

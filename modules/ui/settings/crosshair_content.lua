@@ -1,8 +1,3 @@
---[[
-    QUI Options - Cursor & Crosshair Tab (Gameplay tile sub-page). Migrated
-    to V3 body pattern.
-]]
-
 local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
@@ -22,7 +17,6 @@ local function BuildCrosshairTab(tabContent)
 
     local L = MakeLayout(tabContent)
 
-    -- ========== CURSOR RING ==========
     if db.reticle then
         local cr = db.reticle
 
@@ -88,7 +82,6 @@ local function BuildCrosshairTab(tabContent)
         )
         L.closeSection(sCR)
 
-        -- Cursor Ring — GCD
         L.headerAt(ns.L["Cursor Ring — GCD"])
         local sGCD = L.sectionAt()
         local gcdEnableW = GUI:CreateFormCheckbox(sGCD.frame, nil, "gcdEnabled", cr, Shared.RefreshReticle,
@@ -110,7 +103,6 @@ local function BuildCrosshairTab(tabContent)
         )
         L.closeSection(sGCD)
 
-        -- CPU usage note (custom block, no card chrome).
         local note = CreateFrame("Frame", nil, tabContent)
         local noteText = GUI:CreateLabel(note,
             ns.L["Note that cursor replacements consume some CPU resources due to continuous tracking. Negligible on modern CPUs."],
@@ -122,7 +114,6 @@ local function BuildCrosshairTab(tabContent)
         L.placeCustom(note, 24)
     end
 
-    -- ========== CURSOR TRAIL ==========
     if db.general then
         if type(db.general.cursorTrail) ~= "table" then db.general.cursorTrail = {} end
         local ct = db.general.cursorTrail
@@ -161,7 +152,6 @@ local function BuildCrosshairTab(tabContent)
         L.closeSection(sCT)
     end
 
-    -- ========== QUI CROSSHAIR ==========
     if db.crosshair then
         local ch = db.crosshair
 
@@ -173,7 +163,6 @@ local function BuildCrosshairTab(tabContent)
             {value = "DIALOG", text = ns.L["Dialog"]},
         }
 
-        -- General
         L.headerAt(ns.L["Crosshair — General"])
         local sGen = L.sectionAt()
         local genShowW = GUI:CreateFormCheckbox(sGen.frame, nil, "enabled", ch, Shared.RefreshCrosshair,
@@ -190,7 +179,6 @@ local function BuildCrosshairTab(tabContent)
         sGen.AddRow(row(sGen.frame, ns.L["Frame Strata"], genStrataW))
         L.closeSection(sGen)
 
-        -- Range Checking — cross-widget enable/disable logic preserved.
         L.headerAt(ns.L["Crosshair — Range Checking"])
         local sRC = L.sectionAt()
         local outOfRangeColorPicker, rangeColorCombatOnlyCheck, hideUntilOutOfRangeCheck
@@ -263,7 +251,6 @@ local function BuildCrosshairTab(tabContent)
         sRC.AddRow(row(sRC.frame, ns.L["Mid-Range Color (between melee & 25yd)"], midRangeColorPicker))
         L.closeSection(sRC)
 
-        -- Appearance
         L.headerAt(ns.L["Crosshair — Appearance"])
         local sAp = L.sectionAt()
         if not ch.lineColor then
@@ -302,7 +289,6 @@ local function BuildCrosshairTab(tabContent)
     L.finish()
 end
 
--- Export
 ns.QUI_CrosshairOptions = {
     BuildCrosshairTab = BuildCrosshairTab
 }

@@ -38,15 +38,6 @@ local ns = {
         end,
     },
     CDMSources = {},
-    CDMBlizzMirror = {
-        GetCooldownIDForViewer = function(spellID, viewerType)
-            if spellID == 100 and viewerType == "essential" then return 1 end
-            if spellID == 200 and viewerType == "buff" then return 2 end
-            if spellID == 300 and viewerType == "essential" then return 3 end
-            if spellID == 300 and viewerType == "buff" then return 4 end
-            return nil
-        end,
-    },
 }
 
 dofile("tests/helpers/load_cdm_spelldata_runtime.lua")(ns)
@@ -66,11 +57,7 @@ assert(resolveKind({ id = 1, type = "spell" }, "essential") == "cooldown",
 assert(resolveKind({ id = 1, type = "spell" }, "aliasAura") == "aura",
     "entry kind resolution should use the shared container taxonomy helper")
 assert(resolveKind({ id = 100, type = "spell" }, "customBar") == "cooldown",
-    "custom container entries should use mirror cooldown classification")
-assert(resolveKind({ id = 200, type = "spell" }, "customBar") == "aura",
-    "custom container entries should use mirror aura classification")
-assert(resolveKind({ id = 300, type = "spell" }, "customBar") == "cooldown",
-    "cooldown mirror classification should win when a spell appears in both families")
+    "custom container spell entries default to cooldown classification")
 assert(resolveKind({ id = 400, type = "spell" }, "customBar") == "cooldown",
     "unknown custom container spell should default to cooldown kind")
 

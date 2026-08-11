@@ -66,7 +66,6 @@ local ns = {
         IsRuntimeEnabled = function() return true end,
     },
     CDMSources = {},
-    CDMBlizzMirror = {},
     CDMComposer = {
         RebuildBlizzardCatalogMaps = function()
             return true

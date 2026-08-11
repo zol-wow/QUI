@@ -16,8 +16,8 @@ local function assertAbsentPattern(text, pattern, reason)
     assert(not text:find(pattern), reason)
 end
 
-local characterPane = readFile("QUI_Skinning/skinning/character_pane/character.lua")
-local characterPaneOptions = readFile("QUI_Skinning/skinning/character_pane/settings/character_pane_content.lua")
+local characterPane = readFile("modules/skinning/character_pane/character.lua")
+local characterPaneOptions = readFile("modules/skinning/character_pane/settings/character_pane_content.lua")
 
 assertAbsentPattern(characterPane, "C_Timer%.After%(%s*0%.1%s*,",
     "character pane runtime code must not use fixed 0.1s lifecycle catch-up timers")

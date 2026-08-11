@@ -1,13 +1,5 @@
 local _, ns = ...
 
----------------------------------------------------------------------------
--- CDM Icon Runtime Refresh
---
--- Private controller for CDMIcons event/runtime refresh dispatch. CDMIcons
--- owns renderer callbacks; this module owns the event branching shape,
--- scoped icon walking, and combat refresh queues.
----------------------------------------------------------------------------
-
 local CDMIconRuntimeRefresh = {}
 ns.CDMIconRuntimeRefresh = CDMIconRuntimeRefresh
 
@@ -26,15 +18,9 @@ end
 local UPDATE_COOLDOWN = "cooldown"
 local UPDATE_FULL = "full"
 
-local runtimeRefreshStats -- debug counters; nil until QUI_Debug activates instrumentation
-local measureFn -- profiler hook; bound at debug activation (nil otherwise)
+local runtimeRefreshStats
+local measureFn
 
--- Tag the upcoming resolve(s) by calling context so the gated per-caller
--- counters in cdm_resolvers.lua can attribute ResolveCooldownState volume.
--- ns.CDMResolvers.SetResolveCallerTag is nil until QUI_Debug activates, so
--- with debug off this is a single nil-check and the call is skipped entirely
--- (no hot-path residue). Resolved lazily because CDMResolvers may load after
--- this module.
 local function setResolveCallerTag(tag)
     local R = ns.CDMResolvers
     if R and R.SetResolveCallerTag then R.SetResolveCallerTag(tag) end
@@ -68,12 +54,13 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "CDM_spellsChangedScoped", counter = true, fn = function() return runtimeRefreshStats.spellsChangedScoped end }
     mp[#mp + 1] = { name = "CDM_unitSpellcastCooldownSkips", counter = true, fn = function() return runtimeRefreshStats.unitSpellcastCooldownSkips end }
     mp[#mp + 1] = { name = "CDM_unitSpellcastCooldownFallbacks", counter = true, fn = function() return runtimeRefreshStats.unitSpellcastCooldownFallbacks end }
-    measureFn = ns.MemAuditProfilerMeasure
+    measureFn = ns.DebugIsolate and ns.DebugIsolate(ns.MemAuditProfilerMeasure)
+        or ns.MemAuditProfilerMeasure
 end
-if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+if ns.DebugRegister then
     ns.DebugRegister(SetupDebugInstrumentation)
 else
-    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+    SetupDebugInstrumentation()
 end
 
 local function isRuntimeEnabled(callbacks)
@@ -233,11 +220,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         auraDeltaInstanceIDs = {},
         auraDeltaSpellIDs = {},
         applySpellIDScratch = {},
-        -- Scratch option tables reused across drain calls so the queue-drain
-        -- hot path doesn't allocate `{ refreshRuntime = ... }` /
-        -- `{ includeItems = ... }` literals every fire. ApplyItemScope and
-        -- friends do `options = options or {}` so they must receive a
-        -- non-nil table; these are mutated just before each Apply* call.
         itemScopeOptionsScratch = { refreshRuntime = false },
         catalogScopeOptionsScratch = { includeItems = false },
         spellScopeRefreshOptionsScratch = { refreshRuntime = true },
@@ -329,11 +311,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     function controller:ApplyAuraScope(options)
         options = options or {}
         local includeItems = options.includeItems == true
-        -- Target-change pass: skip icons we can PROVE are player self-auras
-        -- (mirror selfAura == true) -- a target swap can't change them. Anything
-        -- not provably self (non-mirror aura icons, unknown selfAura) falls
-        -- through and re-resolves, so no target aura is ever dropped. See the
-        -- Blizzard CooldownViewer TODO this mirrors (RefreshActiveFramesForTargetChange).
         local skipSelfAuraFn = options.skipSelfAuraIcons == true
             and callbacks.isDefinitivelySelfAuraIcon
             or nil
@@ -386,12 +363,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                         batchStarted = true
                     end
                     if refreshRuntime and callbacks.updateIconCooldown then
-                        -- updateIconCooldown's entry.type=="item" branch gates
-                        -- the QueryItemCount → ShowIconStackText write on
-                        -- stackTextWritesAllowed; without flipping it here the
-                        -- bag-count badge silently never refreshes after
-                        -- BAG_UPDATE_DELAYED / ITEM_COUNT_CHANGED. Mirrors the
-                        -- same gating in ApplySpellScope.
                         if not stackTextWritesEnabled then
                             setStackTextWrites(callbacks, true)
                             stackTextWritesEnabled = true
@@ -570,10 +541,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                         elseif callbacks.applyResolvedCooldown then
                             callbacks.applyResolvedCooldown(icon)
                         end
-                        -- Visibility + bling for matched (cast) icon. These were
-                        -- previously done by an ApplySpellScope() walk over EVERY
-                        -- spell icon on cast_succeeded; scoping them to the matched
-                        -- icons here lets that broader walk be removed entirely.
                         if callbacks.updateContainerVisibility then
                             callbacks.updateContainerVisibility(icon, entry, containerDB, editMode, inCombatState)
                         end
@@ -661,13 +628,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 local matches = iconAuraInstanceID
                     and ids[iconAuraInstanceID]
                     and (not unit or icon._auraUnit == unit)
-                if not matches and icon and icon._blizzMirrorCooldownID and callbacks.getMirrorStateByCooldownID then
-                    local state = callbacks.getMirrorStateByCooldownID(icon._blizzMirrorCooldownID, icon._blizzMirrorCategory)
-                    local mirrorAuraInstanceID = state and state.auraInstanceID
-                    matches = mirrorAuraInstanceID
-                        and ids[mirrorAuraInstanceID]
-                        and (not unit or state.auraUnit == unit or icon._auraUnit == unit)
-                end
                 if not matches
                     and entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs) then
                     matches = true
@@ -745,12 +705,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                         end
                         batchStarted = true
                     end
-                    -- applyResolvedCooldown (ResolveCooldownState → C_UnitAuras) is intentionally
-                    -- NOT called here. The usable tint is applied by cdm_icon_range_policy.lua via
-                    -- updateIconRangesForUsabilityEvent on the same SPELL_UPDATE_USABLE event;
-                    -- cooldown swipe and desaturation are live C-side (durObj-bound). The full
-                    -- resolve is redundant on the usability path and was the source of ~300 KB/drain
-                    -- of aura-table allocations per SPELL_UPDATE_USABLE batch.
 
                     local containerDB, cType = resolveContainer(callbacks, entry, ncdm, ncdmContainers)
                     if cType ~= "aura" and cType ~= "auraBar" and callbacks.updateContainerVisibility then
@@ -774,45 +728,10 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     function controller:RunUsabilityRefresh()
         controller:ApplyUsabilityRefresh()
         if callbacks.updateIconRangesForUsabilityEvent then
-            -- The range/usability visual policy resolves cooldown activity state per icon
-            -- (visual-priority + usable-tint) with no tag of its own; scope it here so the
-            -- churn lands in rangeUsable instead of the untagged "other" bucket.
             setResolveCallerTag("rangeUsable")
             callbacks.updateIconRangesForUsabilityEvent()
             setResolveCallerTag(nil)
         end
-    end
-
-    function controller:RefreshCooldownVisualsForSpellID(eventSpellID, eventBaseSpellID)
-        local spellIDs = {}
-        local hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventSpellID)
-        hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventBaseSpellID) or hasSpellIDs
-        if not hasSpellIDs then return false end
-
-        local editMode, ncdm, ncdmContainers, inCombatState
-        if callbacks.prepareBatch then
-            editMode, ncdm, ncdmContainers, inCombatState = callbacks.prepareBatch()
-        end
-        local refreshed = false
-
-        for _, pool in pairs(getIconPools(callbacks)) do
-            for _, icon in ipairs(pool) do
-                local entry = icon and icon._spellEntry
-                if entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs) then
-                    local containerDB, cType = resolveContainer(callbacks, entry, ncdm, ncdmContainers)
-                    if cType ~= "aura" and cType ~= "auraBar" and callbacks.updateContainerVisibility then
-                        callbacks.updateContainerVisibility(icon, entry, containerDB, editMode, inCombatState)
-                        refreshed = true
-                    end
-                end
-            end
-        end
-
-        if refreshed and callbacks.drainLayoutDirty then
-            callbacks.drainLayoutDirty()
-        end
-
-        return refreshed
     end
 
     local function drainSpellQueue()
@@ -868,9 +787,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
-    -- Memaudit instrumentation: drain runs on a dynamic OnUpdate frame outside
-    -- QUI_PerfRegistry. Reassigning (not redeclaring) the local lets the
-    -- spellQueueOnUpdate upvalue pick up the wrapped version.
+    ---@type fun(...): ...
     local _drainSpellQueueImpl = drainSpellQueue
     drainSpellQueue = function(...)
         local measure = measureFn
@@ -887,9 +804,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
     function controller:QueueResolvedCooldownForSpellID(eventSpellID, eventBaseSpellID)
         if not inCombat() then
-            -- ApplySpellID now folds in visibility + bling for matched icons,
-            -- so the separate RefreshCooldownVisualsForSpellID call that used
-            -- to follow here is redundant. Kept defined for the public API.
             controller:ApplySpellID(eventSpellID, eventBaseSpellID)
             return
         end
@@ -908,6 +822,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         controller:RunUsabilityRefresh()
     end
 
+    ---@type fun(...): ...
     local _drainUsabilityQueueImpl = drainUsabilityQueue
     drainUsabilityQueue = function(...)
         local measure = measureFn
@@ -943,6 +858,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         controller:ApplyItemScope(opts)
     end
 
+    ---@type fun(...): ...
     local _drainItemQueueImpl = drainItemQueue
     drainItemQueue = function(...)
         local measure = measureFn
@@ -982,6 +898,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         controller:ApplyCatalogScope(opts)
     end
 
+    ---@type fun(...): ...
     local _drainCatalogQueueImpl = drainCatalogQueue
     drainCatalogQueue = function(...)
         local measure = measureFn
@@ -1029,12 +946,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         return true
     end
 
-    function controller:NoteChargeDurationObjectsUpdated()
-        if callbacks.noteChargeDurationObjectsUpdated then
-            callbacks.noteChargeDurationObjectsUpdated()
-        end
-    end
-
     function controller:ApplyTargetScope(event)
         if callbacks.chargeDebug then
             callbacks.chargeDebug(nil, "EVENT", event, "target-scope-refresh")
@@ -1044,16 +955,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             callbacks.updateAllIconRanges()
             setResolveCallerTag(nil)
         end
-        -- No ApplyAuraScope here -- for EITHER soft-enemy or hard-target change.
-        -- A soft-enemy reticle change cannot alter the player's auras. A
-        -- hard-target change's aura side is ALREADY handled by cdm_spelldata's
-        -- PLAYER_TARGET_CHANGED handler: ReleaseCapturedAurasForUnit("target")
-        -- + NotifyAuraConsumers("target", nil) -> HandleAuraRefresh("target",
-        -- nil) -> a full ApplyAuraScope. Re-resolving the aura scope HERE too
-        -- was a redundant SECOND full aura walk per target change -- and
-        -- tab-targeting on trash fires PLAYER_TARGET_CHANGED constantly, so the
-        -- two full walks compounded into the auraScope/FR_CDM_Icons churn.
-        -- ApplyTargetScope's unique job is the range walk above + usability.
         controller:QueueUsabilityRefresh()
     end
 
@@ -1089,7 +990,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
-    function controller:HandleFrameEvent(frame, event, arg1, arg2, arg3)
+    function controller:HandleFrameEvent(event, arg1, arg2, arg3, arg4, frame)
         if not isRuntimeEnabled(callbacks) then
             if callbacks.onRuntimeDisabled then
                 callbacks.onRuntimeDisabled(frame)
@@ -1100,12 +1001,16 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if event == "UNIT_SPELLCAST_STOP"
            or event == "UNIT_SPELLCAST_CHANNEL_START"
            or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
-            local isPlayerUnit = not (callbacks.isSecretValue and callbacks.isSecretValue(arg1))
-                and arg1 == "player"
+            local isPlayerUnit
+            if callbacks.isSecretValue and callbacks.isSecretValue(arg1) then
+                isPlayerUnit = true
+            else
+                isPlayerUnit = arg1 == "player" -- @secret-safe: else-branch of the callbacks.isSecretValue(arg1) probe above (callback-indirected guard the analyzer cannot see; tests inject secrets through the stub)
+            end
             if isPlayerUnit then
                 if normalizeSpellIdentifier(callbacks, arg3) ~= nil then
                     if runtimeRefreshStats then runtimeRefreshStats.unitSpellcastCooldownSkips = runtimeRefreshStats.unitSpellcastCooldownSkips + 1 end
-                    controller:QueueResolvedCooldownForSpellID(arg3, nil)
+                    controller:QueueResolvedCooldownForSpellID(arg3, nil) -- @secret-safe: reached only when normalizeSpellIdentifier(callbacks, arg3) ~= nil, and that helper probes isSecretValue and returns nil for secrets — arg3 proven readable here
                 elseif callbacks.scheduleUpdate then
                     if runtimeRefreshStats then runtimeRefreshStats.unitSpellcastCooldownFallbacks = runtimeRefreshStats.unitSpellcastCooldownFallbacks + 1 end
                     callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "unit_spellcast")
@@ -1124,6 +1029,12 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if event == "PLAYER_EQUIPMENT_CHANGED" then
             if arg1 == 13 or arg1 == 14 then
                 controller:QueueItemScopeRefresh({ refreshRuntime = true })
+            end
+            return
+        end
+        if event == "PLAYER_TOTEM_UPDATE" then
+            if callbacks.scheduleUpdate then
+                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "totem")
             end
             return
         end
@@ -1153,9 +1064,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             return
         end
         if event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_SHAPESHIFT_FORMS" then
-            -- Form/stance changes alter spell overrides (C_Spell.GetOverrideSpell) but
-            -- do not affect item cooldowns. Re-query overrides immediately; scope to
-            -- spells only (includeItems = false).
             if callbacks.clearStableCaches then
                 callbacks.clearStableCaches()
             end
@@ -1163,44 +1071,15 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             return
         end
         if event == "SPELLS_CHANGED" then
-            -- SPELLS_CHANGED is a no-payload UniqueEvent (SpellBookDocumentation):
-            -- it cannot say WHICH spell changed, so it must never drive an icon
-            -- re-resolve or a cache wipe. Blizzard pairs a SPELLS_CHANGED with every
-            -- proc override grant/loss, so the old blanket catalog walk + 3-cache
-            -- wipe ran on every proc and flickered charges/stacks across all icons.
-            --
-            -- Every structural cause now flows through its own scoped, payload-
-            -- bearing event that touches only the affected spell(s):
-            --   proc / override   -> COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED(base, override)
-            --                        (scoped cache invalidation + scoped re-resolve below)
-            --   form / stance      -> UPDATE_SHAPESHIFT_FORM / _FORMS
-            --   talent/spec/load   -> TRAIT_CONFIG_UPDATED / PLAYER_SPECIALIZATION_CHANGED / ...
-            --                        (container RefreshAll, guarded on a learned-set delta)
-            --   catalog data/hotfix-> COOLDOWN_VIEWER_DATA_LOADED / _TABLE_HOTFIXED
-            -- The stable override cache is keyed per spellID and is invalidated by
-            -- the override event (the cache's true change signal), so SPELLS_CHANGED
-            -- no longer needs to wipe it. The learned-set reconcile
-            -- (cdm_spelldata RunReconcileSequence) already diffs the learned
-            -- signature and only relayouts when a spell is truly added/removed.
             if runtimeRefreshStats then runtimeRefreshStats.spellsChangedScoped = runtimeRefreshStats.spellsChangedScoped + 1 end
             return
         end
         if event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
-            -- Scoped proc-override signal (CooldownViewerDocumentation): arg1 is
-            -- baseSpellID (Nilable=false), arg2 is overrideSpellID (Nilable=true;
-            -- nil = the override is being removed). This is the server's per-spell
-            -- before/after delta for the stable override mapping, so invalidate
-            -- ONLY the affected spell(s)' caches, then re-resolve ONLY the affected
-            -- icon(s) -- never a catalog walk. Runs in combat too
-            -- (QueueResolvedCooldownForSpellID queues there): C_CooldownViewer reads
-            -- + Lua table writes only, no protected frame surface.
             if callbacks.invalidateSpellCaches then
                 callbacks.invalidateSpellCaches(arg1)
                 if arg2 then callbacks.invalidateSpellCaches(arg2) end
             end
             if callbacks.clearDurationBindingKeyCache then
-                -- Single-slot memo reset (O(1)); forces the next duration bind to
-                -- recompute its key against the new override mapping.
                 callbacks.clearDurationBindingKeyCache()
             end
             controller:QueueResolvedCooldownForSpellID(arg1, arg2)
@@ -1236,11 +1115,11 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
-    function controller:Handle(event, arg1, arg2, arg3, frame)
+    function controller:Handle(event, arg1, arg2, arg3, arg4, frame)
         if event == "UNIT_AURA" then
-            return controller:HandleAuraRefresh(arg1, arg2)
+            return controller:HandleAuraRefresh(arg1, arg2) -- @secret-safe: HandleAuraRefresh is reached only via cdm_spelldata NotifyAuraConsumers, which passes a plain non-secret unit; updateInfo is a plain container table (round-13 hand-audit)
         end
-        return controller:HandleFrameEvent(frame, event, arg1, arg2, arg3)
+        return controller:HandleFrameEvent(event, arg1, arg2, arg3, arg4, frame) -- @secret-safe: HandleFrameEvent probes isSecretValue(arg1) before the unit compare and normalizes arg3 through the secret-probing normalizeSpellIdentifier (round-13 hand-audit)
     end
 
     function controller:HandleCooldownChanged(_, spellID, baseSpellID, kind)
@@ -1254,27 +1133,8 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         elseif kind == "refresh" then
             local comparableSpellID = normalizeSpellIdentifier(callbacks, spellID) ~= nil
             if comparableSpellID then
-                -- SPELL_UPDATE_COOLDOWN with a payload is Blizzard's
-                -- canonical "this spell's cooldown lane just changed"
-                -- signal. Apply directly instead of going through
-                -- QueueResolvedCooldownForSpellID — that path's combat
-                -- queue stalls the rebind by up to 0.3s, and in-game
-                -- traces showed proc-window rebinds lagging 2+ seconds
-                -- behind the SUC fire because the queue drain kept
-                -- getting pre-empted by the next SUC tick. Skipping the
-                -- queue collapses the lag to one frame; ApplySpellID
-                -- already iterates only matching icons, so the extra
-                -- work is bounded. isOnGCD is read directly from cdInfo
-                -- by the resolver (NeverSecret), so GCD-only swipes
-                -- refresh via the cast_succeeded InvalidateGCDOnlyBindings
-                -- path without a broad GCD-edge walk here.
                 controller:ApplySpellID(spellID, baseSpellID)
             end
-            -- Else: nil spellID — Blizzard's "something changed somewhere"
-            -- fallback. Real changes that need handling already fire specific
-            -- events (UNIT_SPELLCAST_* with spellID, SPELL_UPDATE_CHARGES/USES,
-            -- BAG_UPDATE_COOLDOWN). Walking every icon defensively here is pure
-            -- churn.
         elseif kind == "cast_start" then
             if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
                 if runtimeRefreshStats then runtimeRefreshStats.castStartCooldownSkips = runtimeRefreshStats.castStartCooldownSkips + 1 end
@@ -1289,10 +1149,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             end
             controller:InvalidateGCDOnlyBindings()
             controller:InvalidateSpellCooldownBinding(spellID)
-            -- ApplySpellScope() removed: it walked every spell icon doing
-            -- updateContainerVisibility + syncCooldownBling. Those are now
-            -- folded into ApplySpellID below, scoped to the cast spell's
-            -- matching icons (which is what we actually changed).
             controller:ApplySpellID(spellID, nil)
             if callbacks.requestStackTextUpdate then
                 callbacks.requestStackTextUpdate()
@@ -1307,7 +1163,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
     function controller:HandleChargesChanged(_, spellID)
         if not isRuntimeEnabled(callbacks) then return end
-        controller:NoteChargeDurationObjectsUpdated()
         if callbacks.requestStackTextUpdate then
             callbacks.requestStackTextUpdate()
         end
@@ -1316,9 +1171,8 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             controller:QueueResolvedCooldownForSpellID(spellID, nil)
         else
             if callbacks.scheduleUpdate then
-                callbacks.scheduleUpdate(nil, UPDATE_COOLDOWN)
+                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "charges")
             end
-            controller:ApplySpellScope()
         end
     end
 

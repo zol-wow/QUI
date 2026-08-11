@@ -1,20 +1,5 @@
---[[
-    QUI Options — Search Synonyms
-
-    Maps common user vocabulary to canonical search terms. When the user
-    types a key (e.g. "aura"), ExecuteSearch also searches for each mapped
-    synonym (e.g. "buff", "debuff", "raid buff", "custom tracker").
-
-    Symmetric: the map is expanded bidirectionally so both "aura" → "buff"
-    AND "buff" → "aura" resolve.
-
-    Terms are lowercase. Add entries conservatively — synonyms that are
-    too broad add noise to results.
-]]
-
 local ADDON_NAME, ns = ...
 
--- seedTable: one-to-many map. Keys and values are all lowercase.
 local seedTable = {
     aura       = { "buff", "debuff", "raid buff", "custom tracker", "tracker" },
     bar        = { "action bar", "castbar", "power bar", "health bar" },
@@ -35,7 +20,6 @@ local seedTable = {
     infobar    = { "info bar", "data bar", "top bar", "bottom bar", "datatext" },
 }
 
--- Build the expanded symmetric map.
 local expanded = {}
 local function add(a, b)
     expanded[a] = expanded[a] or {}
@@ -51,12 +35,6 @@ for key, syns in pairs(seedTable) do
     end
 end
 
---[[
-    ns.QUI_SearchSynonyms.Expand(term)
-    Returns an array of synonym terms for the lowercased input. The input
-    itself is always included as the first element. Missing terms return
-    a one-element array (just the input).
-]]
 local function Expand(term)
     term = (term or ""):lower()
     local out = { term }

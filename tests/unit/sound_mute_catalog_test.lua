@@ -1,7 +1,7 @@
 -- tests/unit/sound_mute_catalog_test.lua
 -- Run: lua tests/unit/sound_mute_catalog_test.lua
 --
--- Guards the Sound Mute curated database (QUI_QoL/qol/sound_mute_catalog.lua):
+-- Guards the Sound Mute curated database (modules/qol/sound_mute_catalog.lua):
 --   * every entry key is globally unique (the DB is keyed by entry key, and the
 --     settings checkbox binds to soundMute[key] — a collision would silently
 --     make two checkboxes toggle the same mute)
@@ -21,7 +21,7 @@ end
 
 -- Mock ns: L returns its key (passthrough), captures SoundMuteCatalog on write.
 local ns = { L = setmetatable({}, { __index = function(_, k) return k end }) }
-local source = readAll("QUI_QoL/qol/sound_mute_catalog.lua")
+local source = readAll("modules/qol/sound_mute_catalog.lua")
 local chunk = assert(loadstring(source, "sound_mute_catalog"))
 chunk("QUI_QoL", ns)
 

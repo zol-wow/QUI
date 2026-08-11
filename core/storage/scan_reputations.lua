@@ -1,22 +1,3 @@
----------------------------------------------------------------------------
--- Core storage: reputations scanner. Full walk (login-deferred) expands
--- collapsed headers to capture hidden children, then restores the user's
--- collapse state; FACTION_STANDING_CHANGED updates one faction in place
--- (GetFactionDataByID — no walk, no UI mutation). Faction names/groups are
--- interned in shared store maps (Store.GetFactionNames/Groups) so per-
--- character entries stay numeric. Full walks defer out of combat (the
--- expand/collapse dance mutates the rep pane state).
---
--- API shapes verified against vendored docs:
---   ReputationInfoDocumentation.lua: GetNumFactions, GetFactionDataByIndex
---     (luaIndex) / GetFactionDataByID (factionID) → FactionData (nilable),
---     ExpandFactionHeader/CollapseFactionHeader (luaIndex), IsFactionParagon,
---     GetFactionParagonInfo (MayReturnNothing → currentValue, threshold,
---     rewardQuestID, hasRewardPending, tooLowLevelForParagon, paragonStorageLevel),
---     IsMajorFaction.
---   MajorFactionsDocumentation.lua: GetMajorFactionData → MajorFactionData
---     (nilable) incl. renownLevel, renownReputationEarned, renownLevelThreshold.
----------------------------------------------------------------------------
 -- luacheck: globals C_Reputation C_MajorFactions InCombatLockdown
 local ADDON_NAME, ns = ...
 local Storage = ns.Storage or {}; ns.Storage = Storage
@@ -26,20 +7,18 @@ Storage.ScanReputations = ScanReputations
 
 local hasDirty = false
 local fullDirty = false
-local incremental = {} -- [factionID] = true
+local incremental = {}
 
 function ScanReputations.MarkFullDirty()
     fullDirty = true
     hasDirty = true
 end
 
---- Collector calls this once per login (after first paint).
 function ScanReputations.ScheduleFullScan()
     ScanReputations.MarkFullDirty()
     Storage.RequestDrain()
 end
 
---- FACTION_STANDING_CHANGED payload (factionID, updatedStanding).
 function ScanReputations.OnFactionStandingChanged(factionID)
     if not factionID then return end
     incremental[factionID] = true
@@ -65,8 +44,6 @@ local function ReadEntry(data)
         end
     end
     if C_Reputation.IsFactionParagon(id) then
-        -- MayReturnNothing; store RAW values (currentValue accumulates past
-        -- the threshold) — display math is the UI's job.
         local cur, threshold, _, pending = C_Reputation.GetFactionParagonInfo(id)
         if cur then
             entry.paragonValue = cur
@@ -80,8 +57,6 @@ end
 local function FullWalk(rec)
     local names = Storage.Store.GetFactionNames()
     local groups = Storage.Store.GetFactionGroups()
-    -- 1) expand collapsed headers, remembering which (indices shift as we
-    --    expand, so re-read the count every step and never cache it)
     local collapsedIDs = {}
     local i = 1
     while i <= C_Reputation.GetNumFactions() do
@@ -92,8 +67,6 @@ local function FullWalk(rec)
         end
         i = i + 1
     end
-    -- 2) scan everything visible; track the current top-level header as the
-    --    group label
     local fresh = {}
     local currentGroup = nil
     for j = 1, C_Reputation.GetNumFactions() do
@@ -106,13 +79,10 @@ local function FullWalk(rec)
             if hasRep and data.factionID and data.factionID > 0 then
                 fresh[data.factionID] = ReadEntry(data)
                 if names then names[data.factionID] = data.name end
-                -- a faction listed under two headers keeps the LAST one seen
                 if groups then groups[data.factionID] = currentGroup end
             end
         end
     end
-    -- 3) restore collapse state bottom-up (collapsing shrinks the list;
-    --    bottom-up keeps earlier indices valid)
     for j = C_Reputation.GetNumFactions(), 1, -1 do
         local data = C_Reputation.GetFactionDataByIndex(j)
         if data and data.isHeader and collapsedIDs[data.factionID] then
@@ -128,8 +98,6 @@ function ScanReputations.Drain()
     local rec = Storage.Store.GetCurrentCharacter()
     if not rec then return false end
     if fullDirty and InCombatLockdown and InCombatLockdown() then
-        -- The expand/collapse dance mutates pane state; keep it out of
-        -- combat. Dirty marks survive; the next drain retries.
         return false
     end
     hasDirty = false

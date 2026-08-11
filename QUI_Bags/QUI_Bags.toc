@@ -1,8 +1,8 @@
-## Interface: 120000, 120001, 120005, 120007, 120100
+## Interface: 120100
 ## Title: |cFF30D1FFQUI|r Bags
 ## Notes: QUI module. Requires the QUI core addon.
-## Author: Zol
-## Version: 4.0.0-beta58
+## Author: Drew
+## Version: 5.0.0-beta4
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
@@ -10,8 +10,6 @@
 ## LoadOnDemand: 1
 
 bootstrap.lua
-bags\storage_compat.lua
-bags\data\bus.lua
 # == bags load order (was modules/bags/bags.xml) ==
 bags\newitems.lua
 bags\search\compiler.lua
@@ -25,6 +23,7 @@ bags\ops\junk.lua
 bags\views\details.lua
 bags\views\grid_layout.lua
 bags\views\category_layout.lua
+bags\views\refresh_scope.lua
 bags\views\chassis.lua
 bags\views\corner_widgets.lua
 bags\views\item_buttons.lua

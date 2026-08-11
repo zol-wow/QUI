@@ -11,6 +11,12 @@
 ---@class __WowWidget
 local __WowWidget = {}
 
+---@param ... any
+function __WowWidget:AbortDrag(...) end
+--- Adds access restrictions to a script object, preventing it from being used in API calls when enforced.
+---@param restrictions? any
+---@param ... any
+function __WowWidget:AddAccessRestrictions(restrictions, ...) end
 --- Adds a new breakpoint to the formatter.
 ---@param breakpoint? any
 ---@param ... any
@@ -19,10 +25,24 @@ function __WowWidget:AddBreakpoint(breakpoint, ...) end
 ---@param light? any
 ---@param ... any
 function __WowWidget:AddCharacterLight(index, light, ...) end
+---@param leftFontString? any
+---@param rightFontString? any
+---@param ... any
+function __WowWidget:AddFontStrings(leftFontString, rightFontString, ...) end
+--- Adds forbidden aspects to a script object, restricting access to various functionalities such as script bindings.
+---@param aspects? any
+---@param ... any
+function __WowWidget:AddForbiddenAspects(aspects, ...) end
+---@param text? string
+---@param ... any
+function __WowWidget:AddHistoryLine(text, ...) end
 ---@param index? number
 ---@param light? any
 ---@param ... any
 function __WowWidget:AddLight(index, light, ...) end
+---@param mask? any
+---@param ... any
+function __WowWidget:AddMaskTexture(mask, ...) end
 ---@param text? string
 ---@param colorR? number
 ---@param colorG? number
@@ -40,6 +60,13 @@ function __WowWidget:AddPetLight(index, light, ...) end
 ---@param y? any
 ---@param ... any
 function __WowWidget:AddPoint(x, y, ...) end
+--- Adds a roleset tag to this frame without removing existing ones.
+---@param roleset? string
+---@param ... any
+function __WowWidget:AddRoleset(roleset, ...) end
+---@param aspect? any
+---@param ... any
+function __WowWidget:AddSecretAspect(aspect, ...) end
 ---@param unitTokenString? string
 ---@param asset? any
 ---@param width? number
@@ -69,7 +96,7 @@ function __WowWidget:ApplySnapshot(texture, snapshotID, ...) end
 ---@param oneShot? boolean
 ---@param ... any
 function __WowWidget:ApplySpellVisualKit(spellVisualKitID, oneShot, ...) end
---- Copies another duration object and assigns it to this one.
+--- Copies another duration text binding and assigns it to this one.
 ---@param other? any
 ---@param ... any
 function __WowWidget:Assign(other, ...) end
@@ -83,15 +110,30 @@ function __WowWidget:AttachToMount(rider, animation, spellKitVisualID, ...) end
 ---@param ... any
 ---@return number scale
 function __WowWidget:CalculateMountScale(rider, ...) end
+---@param leftIndex? number
+---@param rightIndex? number
+---@param ... any
+---@return table areas
+function __WowWidget:CalculateScreenAreaFromCharacterSpan(leftIndex, rightIndex, ...) end
 --- Returns true if the given number of seconds is within an appropriate range for approximated formatting.
 ---@param seconds? any
 ---@param ... any
 ---@return boolean canApproximate
 function __WowWidget:CanApproximate(seconds, ...) end
+--- Returns whether the current Lua execution context has permission to access this object.
+---@param ... any
+---@return boolean canAccess
+function __WowWidget:CanBeAccessedInContext(...) end
+---@param ... any
+---@return boolean canChangeAttributes
+function __WowWidget:CanChangeAttribute(...) end
 --- Returns true if this nameplate permits changes to its hit-test points. Updates are normally blocked for tainted code during combat, except on the tick a unit is first assigned or when untainted code updates hit-test points on the same tick.
 ---@param ... any
 ---@return boolean canChangeHitTestPoints
 function __WowWidget:CanChangeHitTestPoints(...) end
+---@param ... any
+---@return boolean canChange
+function __WowWidget:CanChangeProtectedState(...) end
 --- Returns true if this binding has enough configuration to produce formatted text.
 ---@param ... any
 ---@return boolean canFormatText
@@ -99,6 +141,15 @@ function __WowWidget:CanFormatText(...) end
 ---@param ... any
 ---@return any moveRestriction
 function __WowWidget:CanMove(...) end
+---@param ... any
+---@return boolean wrap
+function __WowWidget:CanNonSpaceWrap(...) end
+---@param ... any
+---@return boolean canPropagate
+function __WowWidget:CanPropagateMouseClicks(...) end
+---@param ... any
+---@return boolean canPropagate
+function __WowWidget:CanPropagateMouseMotion(...) end
 ---@param ... any
 ---@return any removalRestriction
 function __WowWidget:CanRemove(...) end
@@ -124,6 +175,9 @@ function __WowWidget:CanSetUnit(unit, ...) end
 ---@return boolean canUpdateText
 function __WowWidget:CanUpdateFontString(...) end
 ---@param ... any
+---@return boolean wrap
+function __WowWidget:CanWordWrap(...) end
+---@param ... any
 function __WowWidget:CancelOpenCheckout(...) end
 ---@param ... any
 function __WowWidget:Clear(...) end
@@ -132,17 +186,40 @@ function __WowWidget:Clear(...) end
 function __WowWidget:ClearAllHitTestPoints(...) end
 ---@param ... any
 function __WowWidget:ClearAllPoints(...) end
+---@param ... any
+function __WowWidget:ClearAlphaGradient(...) end
+---@param attributeName? string
+---@param ... any
+---@return boolean cleared
+function __WowWidget:ClearAttribute(attributeName, ...) end
+---@param ... any
+function __WowWidget:ClearAttributes(...) end
 --- Removes all configured breakpoints from the formatter.
 ---@param ... any
 function __WowWidget:ClearBreakpoints(...) end
 ---@param ... any
 function __WowWidget:ClearColorWheelTexture(...) end
 ---@param ... any
+function __WowWidget:ClearDisabledTexture(...) end
+---@param ... any
 function __WowWidget:ClearFocus(...) end
 ---@param ... any
 function __WowWidget:ClearFog(...) end
 ---@param ... any
+function __WowWidget:ClearHighlightText(...) end
+---@param ... any
+function __WowWidget:ClearHighlightTexture(...) end
+---@param ... any
+function __WowWidget:ClearHistory(...) end
+---@param ... any
 function __WowWidget:ClearModel(...) end
+---@param ... any
+function __WowWidget:ClearNormalTexture(...) end
+--- Set all padding values to 0.0 and remove the Padding SecretAspect.
+---@param ... any
+function __WowWidget:ClearPadding(...) end
+---@param ... any
+function __WowWidget:ClearParentKey(...) end
 ---@param point? any
 ---@param ... any
 function __WowWidget:ClearPoint(point, ...) end
@@ -152,11 +229,39 @@ function __WowWidget:ClearPoints(...) end
 ---@param ... any
 function __WowWidget:ClearPointsOffset(...) end
 ---@param ... any
+function __WowWidget:ClearPushedTexture(...) end
+--- Disable radial progress bar rendering and restore standard texture display.
+---@param ... any
+function __WowWidget:ClearRadialProgressBar(...) end
+---@param ... any
+function __WowWidget:ClearSVG(...) end
+--- Remove all script handlers set through Scripts in XML or SetScript in Lua
+---@param ... any
+function __WowWidget:ClearScripts(...) end
+--- Sets text to an empty string and removes the Text secret aspect.
+---@param ... any
+function __WowWidget:ClearText(...) end
+--- Clears the text color curve used by this binding.
+---@param ... any
+function __WowWidget:ClearTextColorCurve(...) end
+--- Disable shader based nineslice texture rendering. Since SetAtlas will automatically load slice data for the atlas from the DB, can be useful if you want to disable nineslice after setting an atlas.
+---@param ... any
+function __WowWidget:ClearTextureSlice(...) end
+---@param ... any
 function __WowWidget:ClearTransform(...) end
 ---@param ... any
 function __WowWidget:ClearUnits(...) end
 ---@param ... any
+function __WowWidget:ClearVertexOffsets(...) end
+---@param button? string
+---@param isDown? boolean
+---@param ... any
+function __WowWidget:Click(button, isDown, ...) end
+---@param ... any
 function __WowWidget:CloseCheckout(...) end
+---@param ... any
+---@return boolean collapsesLayout
+function __WowWidget:CollapsesLayout(...) end
 --- Returns a new copy of this formatter.
 ---@param ... any
 ---@return any copy
@@ -170,6 +275,12 @@ function __WowWidget:CopyFontObject(sourceFont, ...) end
 ---@param template? string
 ---@param ... any
 function __WowWidget:CreateActor(name, template, ...) end
+---@param animationType? string
+---@param name? string
+---@param templateName? string
+---@param ... any
+---@return any anim
+function __WowWidget:CreateAnimation(animationType, name, templateName, ...) end
 ---@param name? string
 ---@param templateName? string
 ---@param ... any
@@ -181,12 +292,50 @@ function __WowWidget:CreateAnimationGroup(name, templateName, ...) end
 ---@param ... any
 ---@return any point
 function __WowWidget:CreateControlPoint(name, templateName, order, ...) end
+---@param name? string
+---@param drawLayer? any
+---@param templateName? string
+---@param ... any
+---@return any line
+function __WowWidget:CreateFontString(name, drawLayer, templateName, ...) end
+---@param name? string
+---@param drawLayer? any
+---@param templateName? string
+---@param subLevel? number
+---@param ... any
+---@return any line
+function __WowWidget:CreateLine(name, drawLayer, templateName, subLevel, ...) end
+---@param name? string
+---@param drawLayer? any
+---@param templateName? string
+---@param subLevel? number
+---@param ... any
+---@return any maskTexture
+function __WowWidget:CreateMaskTexture(name, drawLayer, templateName, subLevel, ...) end
+---@param name? string
+---@param drawLayer? any
+---@param templateName? string
+---@param subLevel? number
+---@param ... any
+---@return any texture
+function __WowWidget:CreateTexture(name, drawLayer, templateName, subLevel, ...) end
+---@param name? string
+---@param drawLayer? any
+---@param templateName? string
+---@param subLevel? number
+---@param ... any
+---@return any vectorGraphics
+function __WowWidget:CreateVectorGraphics(name, drawLayer, templateName, subLevel, ...) end
 ---@param variationIndex? number
 ---@param delta? number
 ---@param ... any
 function __WowWidget:CycleVariation(variationIndex, delta, ...) end
 ---@param ... any
 function __WowWidget:DeleteCookies(...) end
+---@param desaturation? number
+---@param excludeRoot? boolean
+---@param ... any
+function __WowWidget:DesaturateHierarchy(desaturation, excludeRoot, ...) end
 ---@param rider? any
 ---@param ... any
 ---@return boolean success
@@ -194,6 +343,16 @@ function __WowWidget:DetachFromMount(rider, ...) end
 --- Disables automatic updates for this duration text binding.
 ---@param ... any
 function __WowWidget:Disable(...) end
+---@param layer? any
+---@param ... any
+function __WowWidget:DisableDrawLayer(layer, ...) end
+---@param ... any
+---@return boolean clipsChildren
+function __WowWidget:DoesClipChildren(...) end
+--- Returns whether hyperlink events (ex. OnHyperlinkEnter, OnHyperlinkLeave, OnHyperlinkClick) are propagated to this frame's parent.
+---@param ... any
+---@return boolean canPropagate
+function __WowWidget:DoesHyperlinkPropagateToParent(...) end
 ---@param isAccessible? boolean
 ---@param ... any
 function __WowWidget:Drag(isAccessible, ...) end
@@ -213,9 +372,30 @@ function __WowWidget:DressPlayerSlot(invSlot, ...) end
 --- Enables automatic updates for this duration text binding.
 ---@param ... any
 function __WowWidget:Enable(...) end
+---@param layer? any
+---@param ... any
+function __WowWidget:EnableDrawLayer(layer, ...) end
+---@param enable? boolean
+---@param ... any
+function __WowWidget:EnableGamePadButton(enable, ...) end
+---@param enable? boolean
+---@param ... any
+function __WowWidget:EnableGamePadStick(enable, ...) end
+---@param enable? boolean
+---@param ... any
+function __WowWidget:EnableKeyboard(enable, ...) end
 ---@param enable? boolean
 ---@param ... any
 function __WowWidget:EnableMerging(enable, ...) end
+---@param enable? boolean
+---@param ... any
+function __WowWidget:EnableMouse(enable, ...) end
+---@param enable? boolean
+---@param ... any
+function __WowWidget:EnableMouseMotion(enable, ...) end
+---@param enable? boolean
+---@param ... any
+function __WowWidget:EnableMouseWheel(enable, ...) end
 ---@param enable? boolean
 ---@param ... any
 function __WowWidget:EnableSmoothing(enable, ...) end
@@ -293,8 +473,22 @@ function __WowWidget:EvaluateTotalDuration(curve, modifier, ...) end
 ---@return number yB
 ---@return number yA
 function __WowWidget:EvaluateUnpacked(x, ...) end
+---@param attributeName? string
+---@param arguments? string
+---@param ... any
+---@return boolean success
+---@return string returns
+function __WowWidget:ExecuteAttribute(attributeName, arguments, ...) end
 ---@param ... any
 function __WowWidget:FinalizeUnits(...) end
+---@param x? number
+---@param y? number
+---@param ... any
+---@return number characterIndex
+---@return boolean inside
+function __WowWidget:FindCharacterIndexAtCoordinate(x, y, ...) end
+---@param ... any
+function __WowWidget:Finish(...) end
 ---@param ... any
 function __WowWidget:Flush(...) end
 --- Formats a number of seconds and returns the resulting string.
@@ -338,6 +532,10 @@ function __WowWidget:FreezeAnimation(anim, variation, frame, ...) end
 ---@param ... any
 ---@return table data
 function __WowWidget:GetAbbreviateNumberData(...) end
+--- Returns the mask of all access restrictions applied to this object.
+---@param ... any
+---@return any restrictions
+function __WowWidget:GetAccessRestrictions(...) end
 ---@param ... any
 ---@return any boxBottom
 ---@return any boxTop
@@ -356,6 +554,13 @@ function __WowWidget:GetAllowOverlappedModels(...) end
 ---@return number alpha
 function __WowWidget:GetAlpha(...) end
 ---@param ... any
+---@return number start
+---@return number length
+function __WowWidget:GetAlphaGradient(...) end
+---@param ... any
+---@return boolean altMode
+function __WowWidget:GetAltArrowKeyMode(...) end
+---@param ... any
 ---@return any animation
 function __WowWidget:GetAnimation(...) end
 ---@param ... any
@@ -365,19 +570,50 @@ function __WowWidget:GetAnimationBlendOperation(...) end
 ---@return any groups
 function __WowWidget:GetAnimationGroups(...) end
 ---@param ... any
+---@return number animationSpeedMultiplier
+function __WowWidget:GetAnimationSpeedMultiplier(...) end
+---@param ... any
 ---@return number variation
 function __WowWidget:GetAnimationVariation(...) end
+---@param ... any
+---@return any anims
+function __WowWidget:GetAnimations(...) end
 --- Returns the threshold below which numeric values are formatted as approximated strings.
 ---@param ... any
 ---@return any approximationSeconds
 function __WowWidget:GetApproximationSeconds(...) end
 ---@param ... any
+---@return string atlas
+function __WowWidget:GetAtlas(...) end
+---@param attributeName? string
+---@param ... any
+---@return string value
+function __WowWidget:GetAttribute(attributeName, ...) end
+---@param ... any
 ---@return boolean enabled
 function __WowWidget:GetAutoDress(...) end
+---@param ... any
+---@return any blendMode
+function __WowWidget:GetBlendMode(...) end
+---@param ... any
+---@return number cursorBlinkSpeedSec
+function __WowWidget:GetBlinkSpeed(...) end
+---@param ... any
+---@return number bottom
+function __WowWidget:GetBottom(...) end
+---@param ... any
+---@return number left
+---@return number bottom
+---@return number width
+---@return number height
+function __WowWidget:GetBoundsRect(...) end
 --- Returns a list of all configured breakpoints on this formatter.
 ---@param ... any
 ---@return table breakpoints
 function __WowWidget:GetBreakpoints(...) end
+---@param ... any
+---@return any buttonState
+function __WowWidget:GetButtonState(...) end
 ---@param ... any
 ---@return number distance
 function __WowWidget:GetCameraDistance(...) end
@@ -427,11 +663,24 @@ function __WowWidget:GetCameraUp(...) end
 ---@return table matchingEntryVariantIDs
 function __WowWidget:GetCatalogSearchResults(...) end
 ---@param ... any
+---@return number x
+---@return number y
+function __WowWidget:GetCenter(...) end
+---@param ... any
 ---@return boolean checked
 function __WowWidget:GetChecked(...) end
 ---@param ... any
 ---@return any texture
 function __WowWidget:GetCheckedTexture(...) end
+---@param ... any
+---@return any children
+function __WowWidget:GetChildren(...) end
+---@param ... any
+---@return number left
+---@return number right
+---@return number top
+---@return number bottom
+function __WowWidget:GetClampRectInsets(...) end
 --- Returns the clock source used by this object.
 ---@param ... any
 ---@return any clock
@@ -472,12 +721,41 @@ function __WowWidget:GetColorWheelTexture(...) end
 ---@return any texture
 function __WowWidget:GetColorWheelThumbTexture(...) end
 ---@param ... any
+---@return number height
+function __WowWidget:GetContentHeight(...) end
+---@param ... any
 ---@return any points
 function __WowWidget:GetControlPoints(...) end
 --- Returns true if the formatter should lowercase all unit format strings.
 ---@param ... any
 ---@return boolean convert
 function __WowWidget:GetConvertToLower(...) end
+--- The returned duration unit is milliseconds, unaffected by modRate.
+---@param ... any
+---@return number duration
+function __WowWidget:GetCooldownDisplayDuration(...) end
+--- The returned duration unit is milliseconds and is multiplied by the modRate.
+---@param ... any
+---@return number duration
+function __WowWidget:GetCooldownDuration(...) end
+---@param ... any
+---@return number start
+---@return number duration
+function __WowWidget:GetCooldownTimes(...) end
+--- Returns the threshold below which cooldown numbers are displayed as an abbreviated form without a unit suffix (eg. '1:31').
+---@param ... any
+---@return any seconds
+function __WowWidget:GetCountdownAbbrevThreshold(...) end
+---@param ... any
+---@return any countdownString
+function __WowWidget:GetCountdownFontString(...) end
+---@param ... any
+---@return any formatter
+function __WowWidget:GetCountdownFormatter(...) end
+--- Returns the threshold below which cooldown numbers are displayed as a decimal value with one place for milliseconds (eg. '8.7').
+---@param ... any
+---@return any seconds
+function __WowWidget:GetCountdownMillisecondsThreshold(...) end
 --- Returns the base amount of unit health.
 ---@param ... any
 ---@return number currentHealth
@@ -486,6 +764,9 @@ function __WowWidget:GetCurrentHealth(...) end
 ---@param ... any
 ---@return number currentHealthPercent
 function __WowWidget:GetCurrentHealthPercent(...) end
+---@param ... any
+---@return number cursorPosition
+function __WowWidget:GetCursorPosition(...) end
 ---@param ... any
 ---@return any curveType
 function __WowWidget:GetCurveType(...) end
@@ -498,6 +779,10 @@ function __WowWidget:GetDamageAbsorbClampMode(...) end
 ---@return number amount
 ---@return boolean clamped
 function __WowWidget:GetDamageAbsorbs(...) end
+---@param preferParentKey? boolean
+---@param ... any
+---@return string debugName
+function __WowWidget:GetDebugName(preferParentKey, ...) end
 --- Returns the default abbreviation mode used for formatting.
 ---@param ... any
 ---@return any abbreviation
@@ -520,25 +805,61 @@ function __WowWidget:GetDesiredUnitCountCurve(...) end
 ---@return any texture
 function __WowWidget:GetDisabledCheckedTexture(...) end
 ---@param ... any
+---@return any font
+function __WowWidget:GetDisabledFontObject(...) end
+---@param ... any
+---@return any texture
+function __WowWidget:GetDisabledTexture(...) end
+---@param ... any
 ---@return number displayID
 function __WowWidget:GetDisplayInfo(...) end
+---@param ... any
+---@return string displayText
+function __WowWidget:GetDisplayText(...) end
 ---@param ... any
 ---@return boolean doBlend
 function __WowWidget:GetDoBlend(...) end
 ---@param ... any
+---@return boolean dontSave
+function __WowWidget:GetDontSavePosition(...) end
+---@param ... any
 ---@return any connectionInfo
 function __WowWidget:GetDoorConnectionInfo(...) end
+---@param ... any
+---@return boolean drawBling
+function __WowWidget:GetDrawBling(...) end
+---@param ... any
+---@return boolean drawEdge
+function __WowWidget:GetDrawEdge(...) end
 ---@param ... any
 ---@return any layer
 ---@return number sublevel
 function __WowWidget:GetDrawLayer(...) end
+---@param ... any
+---@return boolean drawSwipe
+function __WowWidget:GetDrawSwipe(...) end
 --- Returns the duration object used by this duration text binding.
 ---@param ... any
 ---@return any duration
 function __WowWidget:GetDuration(...) end
 ---@param ... any
+---@return number edgeScale
+function __WowWidget:GetEdgeScale(...) end
+---@param ... any
 ---@return any editorModeContext
 function __WowWidget:GetEditorModeContext(...) end
+---@param ... any
+---@return any effectiveAlpha
+function __WowWidget:GetEffectiveAlpha(...) end
+---@param ... any
+---@return number effectiveScale
+function __WowWidget:GetEffectiveScale(...) end
+---@param ... any
+---@return boolean flatten
+function __WowWidget:GetEffectivelyFlattensRenderLayers(...) end
+---@param ... any
+---@return number elapsedSec
+function __WowWidget:GetElapsed(...) end
 --- Calculates the elapsed duration of the stored time span.
 ---@param modifier? any
 ---@param ... any
@@ -552,6 +873,9 @@ function __WowWidget:GetElapsedPercent(modifier, ...) end
 ---@param ... any
 ---@return any color
 function __WowWidget:GetEndColor(...) end
+---@param ... any
+---@return number delaySec
+function __WowWidget:GetEndDelay(...) end
 ---@param ... any
 ---@return any relativePoint
 ---@return any relativeTo
@@ -579,6 +903,12 @@ function __WowWidget:GetFadePower(...) end
 ---@param ... any
 ---@return boolean isFading
 function __WowWidget:GetFading(...) end
+---@param ... any
+---@return number fieldSize
+function __WowWidget:GetFieldSize(...) end
+---@param ... any
+---@return any fillStyle
+function __WowWidget:GetFillStyle(...) end
 ---@param groupID? number
 ---@param tagID? number
 ---@param ... any
@@ -590,6 +920,9 @@ function __WowWidget:GetFilteredCategoryID(...) end
 ---@param ... any
 ---@return number subcategoryID
 function __WowWidget:GetFilteredSubcategoryID(...) end
+---@param ... any
+---@return boolean flatten
+function __WowWidget:GetFlattensRenderLayers(...) end
 ---@param ... any
 ---@return number columns
 function __WowWidget:GetFlipBookColumns(...) end
@@ -629,8 +962,8 @@ function __WowWidget:GetFogOfWarMaskAtlas(...) end
 ---@return any asset
 function __WowWidget:GetFogOfWarMaskTexture(...) end
 ---@param ... any
----@return string fontFile
----@return any height
+---@return string name
+---@return number fontHeight
 ---@return any flags
 function __WowWidget:GetFont(...) end
 --- Return is either in uiUnits or internal height due to fixedHeight.
@@ -652,13 +985,30 @@ function __WowWidget:GetFontString(...) end
 ---@param ... any
 ---@return any fontString
 function __WowWidget:GetFontStringByID(messageID, ...) end
+--- Returns the mask of all forbidden aspects applied to this object.
+---@param ... any
+---@return any aspects
+function __WowWidget:GetForbiddenAspects(...) end
 --- Returns the text that would currently be assigned to the configured font string.
 ---@param ... any
 ---@return string text
 function __WowWidget:GetFormattedText(...) end
+--- Returns the text color that would currently be assigned to the configured font string.
+---@param ... any
+---@return any color
+function __WowWidget:GetFormattedTextColor(...) end
+---@param ... any
+---@return number frameLevel
+function __WowWidget:GetFrameLevel(...) end
+---@param ... any
+---@return any strata
+function __WowWidget:GetFrameStrata(...) end
 ---@param ... any
 ---@return number normalizedAlpha
 function __WowWidget:GetFromAlpha(...) end
+---@param ... any
+---@return number percent
+function __WowWidget:GetFromPercent(...) end
 --- Returns the configured heal absorb clamping mode.
 ---@param ... any
 ---@return any healAbsorbClampMode
@@ -672,6 +1022,39 @@ function __WowWidget:GetHealAbsorbMode(...) end
 ---@return number amount
 ---@return boolean clamped
 function __WowWidget:GetHealAbsorbs(...) end
+---@param ignoreRect? boolean
+---@param ... any
+---@return number height
+function __WowWidget:GetHeight(ignoreRect, ...) end
+---@param ... any
+---@return boolean hideNumbers
+function __WowWidget:GetHideCountdownNumbers(...) end
+--- Returns the highest framelevel of the frame and its first order children, or all children if iterateAllChildren is true.
+---@param iterateAllChildren? boolean
+---@param ... any
+---@return number frameLevel
+function __WowWidget:GetHighestFrameLevel(iterateAllChildren, ...) end
+---@param ... any
+---@return number colorR
+---@return number colorG
+---@return number colorB
+---@return number colorA
+function __WowWidget:GetHighlightColor(...) end
+---@param ... any
+---@return any font
+function __WowWidget:GetHighlightFontObject(...) end
+---@param ... any
+---@return any texture
+function __WowWidget:GetHighlightTexture(...) end
+---@param ... any
+---@return number numHistoryLines
+function __WowWidget:GetHistoryLines(...) end
+---@param ... any
+---@return number left
+---@return number right
+---@return number top
+---@return number bottom
+function __WowWidget:GetHitRectInsets(...) end
 ---@param ... any
 ---@return number thickness
 function __WowWidget:GetHitRectThickness(...) end
@@ -679,6 +1062,24 @@ function __WowWidget:GetHitRectThickness(...) end
 ---@param ... any
 ---@return table anchors
 function __WowWidget:GetHitTestPoints(...) end
+---@param ... any
+---@return boolean tiling
+function __WowWidget:GetHorizTile(...) end
+---@param ... any
+---@return number offset
+function __WowWidget:GetHorizontalScroll(...) end
+---@param ... any
+---@return number range
+function __WowWidget:GetHorizontalScrollRange(...) end
+---@param ... any
+---@return string format
+function __WowWidget:GetHyperlinkFormat(...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:GetHyperlinksEnabled(...) end
+---@param ... any
+---@return number id
+function __WowWidget:GetID(...) end
 --- Returns the configured incoming heal clamping mode.
 ---@param ... any
 ---@return any incomingHealClampMode
@@ -695,11 +1096,23 @@ function __WowWidget:GetIncomingHealOverflowPercent(...) end
 ---@return boolean clamped
 function __WowWidget:GetIncomingHeals(...) end
 ---@param ... any
----@return boolean wordWrap
+---@return boolean isIndented
 function __WowWidget:GetIndentedWordWrap(...) end
+--- Returns the mask of all forbidden aspects applied to this object that can propagate to others.
+---@param path? any
+---@param ... any
+---@return any aspects
+function __WowWidget:GetInheritableForbiddenAspects(path, ...) end
+---@param ... any
+---@return string language
+function __WowWidget:GetInputLanguage(...) end
 ---@param ... any
 ---@return any mode
 function __WowWidget:GetInsertMode(...) end
+--- Returns the current interpolated value displayed by the bar.
+---@param ... any
+---@return number value
+function __WowWidget:GetInterpolatedValue(...) end
 ---@param inventorySlot? number
 ---@param ... any
 ---@return any itemTransmogInfo
@@ -716,6 +1129,13 @@ function __WowWidget:GetJustifyV(...) end
 ---@param ... any
 ---@return boolean keepModelOnHide
 function __WowWidget:GetKeepModelOnHide(...) end
+---@param ... any
+---@return number left
+function __WowWidget:GetLeft(...) end
+---@param line? number
+---@param ... any
+---@return any leftFontString
+function __WowWidget:GetLeftLine(line, ...) end
 ---@param ... any
 ---@return boolean enabled
 ---@return any light
@@ -744,6 +1164,15 @@ function __WowWidget:GetLightPosition(...) end
 ---@return any lightType
 function __WowWidget:GetLightType(...) end
 ---@param ... any
+---@return number lineHeight
+function __WowWidget:GetLineHeight(...) end
+---@param ... any
+---@return string loopState
+function __WowWidget:GetLoopState(...) end
+---@param ... any
+---@return any loopType
+function __WowWidget:GetLooping(...) end
+---@param ... any
 ---@return number file
 function __WowWidget:GetLowerBackgroundFileName(...) end
 ---@param ... any
@@ -761,10 +1190,17 @@ function __WowWidget:GetMapID(...) end
 ---@param ... any
 ---@return number scalar
 function __WowWidget:GetMaskScalar(...) end
+---@param index? number
+---@param ... any
+---@return any mask
+function __WowWidget:GetMaskTexture(index, ...) end
 ---@param ... any
 ---@return any boxBottom
 ---@return any boxTop
 function __WowWidget:GetMaxBoundingBox(...) end
+---@param ... any
+---@return number maxBytes
+function __WowWidget:GetMaxBytes(...) end
 ---@param ... any
 ---@return number maxCharacterSlotCount
 function __WowWidget:GetMaxCharacterSlotCount(...) end
@@ -779,6 +1215,12 @@ function __WowWidget:GetMaxInterval(...) end
 ---@param ... any
 ---@return any curve
 function __WowWidget:GetMaxIntervalCurve(...) end
+---@param ... any
+---@return number maxLetters
+function __WowWidget:GetMaxLetters(...) end
+---@param ... any
+---@return number maxLines
+function __WowWidget:GetMaxLines(...) end
 ---@param ... any
 ---@return number maxSnapshots
 function __WowWidget:GetMaxSnapshots(...) end
@@ -818,6 +1260,13 @@ function __WowWidget:GetMinIntervalCurve(...) end
 ---@return number minValue
 ---@return number maxValue
 function __WowWidget:GetMinMaxValues(...) end
+---@param ... any
+---@return any milliseconds
+function __WowWidget:GetMinimumCountdownDuration(...) end
+---@param ... any
+---@return number width
+---@return boolean forced
+function __WowWidget:GetMinimumWidth(...) end
 --- Returns the base amount of missing unit health.
 ---@param ... any
 ---@return number missingHealth
@@ -850,14 +1299,41 @@ function __WowWidget:GetModelScale(...) end
 ---@return string guid
 function __WowWidget:GetModelUnitGUID(...) end
 ---@param ... any
+---@return boolean motionScriptsWhileDisabled
+function __WowWidget:GetMotionScriptsWhileDisabled(...) end
+---@param ... any
 ---@return any units
 function __WowWidget:GetMouseOverUnits(...) end
+---@param ... any
+---@return string name
+function __WowWidget:GetName(...) end
+---@param ... any
+---@return any font
+function __WowWidget:GetNormalFontObject(...) end
+---@param ... any
+---@return any texture
+function __WowWidget:GetNormalTexture(...) end
 ---@param ... any
 ---@return number numActors
 function __WowWidget:GetNumActors(...) end
 ---@param ... any
+---@return number numChildren
+function __WowWidget:GetNumChildren(...) end
+---@param ... any
+---@return number numLetters
+function __WowWidget:GetNumLetters(...) end
+---@param ... any
+---@return number lines
+function __WowWidget:GetNumLines(...) end
+---@param ... any
+---@return any count
+function __WowWidget:GetNumMaskTextures(...) end
+---@param ... any
 ---@return number numPoints
 function __WowWidget:GetNumPoints(...) end
+---@param ... any
+---@return number numRegions
+function __WowWidget:GetNumRegions(...) end
 --- Returns the total number of entries being searched through
 ---@param ... any
 ---@return number numSearchItems
@@ -866,15 +1342,28 @@ function __WowWidget:GetNumSearchItems(...) end
 ---@return number numObjectives
 function __WowWidget:GetNumTooltips(...) end
 ---@param ... any
+---@return number number
+function __WowWidget:GetNumber(...) end
+---@param ... any
 ---@return boolean enabled
 function __WowWidget:GetObeyHideInTransmogFlag(...) end
 ---@param ... any
 ---@return boolean isObeyStepOnDrag
 function __WowWidget:GetObeyStepOnDrag(...) end
 ---@param ... any
+---@return any objectTable
+function __WowWidget:GetObjectTable(...) end
+---@param ... any
+---@return string objectType
+function __WowWidget:GetObjectType(...) end
+---@param ... any
 ---@return number offsetU
 ---@return number offsetV
 function __WowWidget:GetOffset(...) end
+--- Returns the currently configured OnUpdate script execution mode.
+---@param ... any
+---@return any onUpdateMode
+function __WowWidget:GetOnUpdateMode(...) end
 ---@param ... any
 ---@return number order
 function __WowWidget:GetOrder(...) end
@@ -886,6 +1375,18 @@ function __WowWidget:GetOrientation(...) end
 ---@return number originX
 ---@return number originY
 function __WowWidget:GetOrigin(...) end
+---@param ... any
+---@return number right
+---@return number bottom
+---@return number left
+---@return number top
+function __WowWidget:GetPadding(...) end
+---@param ... any
+---@return any parent
+function __WowWidget:GetParent(...) end
+---@param ... any
+---@return string parentKey
+function __WowWidget:GetParentKey(...) end
 ---@param ... any
 ---@return number scale
 function __WowWidget:GetParticleOverrideScale(...) end
@@ -938,8 +1439,56 @@ function __WowWidget:GetPosition(...) end
 ---@return any predictedValues
 function __WowWidget:GetPredictedValues(...) end
 ---@param ... any
+---@return number progress
+function __WowWidget:GetProgress(...) end
+---@param ... any
+---@return boolean propagate
+function __WowWidget:GetPropagateKeyboardInput(...) end
+---@param ... any
+---@return number offsetX
+---@return number offsetY
+function __WowWidget:GetPushedTextOffset(...) end
+---@param ... any
+---@return any texture
+function __WowWidget:GetPushedTexture(...) end
+--- Returns the end angle offset of the radial progress bar as a normalized value (0 to 1).
+---@param ... any
+---@return number offset
+function __WowWidget:GetRadialProgressBarEndOffset(...) end
+--- Returns the feather/blur amount applied to the radial progress bar edge.
+---@param ... any
+---@return number feather
+function __WowWidget:GetRadialProgressBarFeather(...) end
+--- Returns the fill percentage of the radial progress bar (0 to 1).
+---@param ... any
+---@return number percent
+function __WowWidget:GetRadialProgressBarPercent(...) end
+--- Returns whether the radial progress bar fills in reverse (counterclockwise) direction.
+---@param ... any
+---@return boolean reverse
+function __WowWidget:GetRadialProgressBarReverse(...) end
+--- Returns the start angle offset of the radial progress bar as a normalized value (0 to 1).
+---@param ... any
+---@return number offset
+function __WowWidget:GetRadialProgressBarStartOffset(...) end
+---@param ... any
 ---@return number angle
 function __WowWidget:GetRadians(...) end
+---@param ... any
+---@return number frameLevel
+function __WowWidget:GetRaisedFrameLevel(...) end
+---@param ... any
+---@return number left
+---@return number bottom
+---@return number width
+---@return number height
+function __WowWidget:GetRect(...) end
+---@param ... any
+---@return any region
+function __WowWidget:GetRegionParent(...) end
+---@param ... any
+---@return any regions
+function __WowWidget:GetRegions(...) end
 --- Calculates the remaining duration of the stored time span.
 ---@param modifier? any
 ---@param ... any
@@ -951,6 +1500,32 @@ function __WowWidget:GetRemainingDuration(modifier, ...) end
 ---@return number remainingPercent
 function __WowWidget:GetRemainingPercent(modifier, ...) end
 ---@param ... any
+---@return any renderMode
+function __WowWidget:GetRenderMode(...) end
+---@param ... any
+---@return number minWidth
+---@return number minHeight
+---@return number maxWidth
+---@return number maxHeight
+function __WowWidget:GetResizeBounds(...) end
+---@param ... any
+---@return boolean reverse
+function __WowWidget:GetReverse(...) end
+---@param ... any
+---@return boolean isReverseFill
+function __WowWidget:GetReverseFill(...) end
+---@param ... any
+---@return number right
+function __WowWidget:GetRight(...) end
+---@param line? number
+---@param ... any
+---@return any rightFontString
+function __WowWidget:GetRightLine(line, ...) end
+--- Returns the roleset tags assigned to this frame. Returns a list containing 'roleless' if none are assigned.
+---@param ... any
+---@return table rolesets
+function __WowWidget:GetRolesetNames(...) end
+---@param ... any
 ---@return number roll
 function __WowWidget:GetRoll(...) end
 ---@param ... any
@@ -960,8 +1535,24 @@ function __WowWidget:GetRoomGUID(...) end
 ---@return string name
 function __WowWidget:GetRoomName(...) end
 ---@param ... any
+---@return boolean rotatesTexture
+function __WowWidget:GetRotatesTexture(...) end
+---@param ... any
+---@return number rotationRadians
+function __WowWidget:GetRotation(...) end
+--- Returns how fractional seconds are rounded when not displaying milliseconds.
+---@param ... any
+---@return any rounding
+function __WowWidget:GetRounding(...) end
+---@param ... any
+---@return number svgFile
+function __WowWidget:GetSVGFileID(...) end
+---@param ... any
 ---@return number scale
 function __WowWidget:GetScale(...) end
+---@param ... any
+---@return any scaleAnimationMode
+function __WowWidget:GetScaleAnimationMode(...) end
 ---@param ... any
 ---@return number scaleX
 ---@return number scaleY
@@ -971,8 +1562,22 @@ function __WowWidget:GetScaleFrom(...) end
 ---@return number scaleY
 function __WowWidget:GetScaleTo(...) end
 ---@param ... any
+---@return number left
+---@return number bottom
+---@return number width
+---@return number height
+function __WowWidget:GetScaledRect(...) end
+---@param ... any
 ---@return string tooltipText
 function __WowWidget:GetScenarioTooltipText(...) end
+---@param scriptTypeName? any
+---@param bindingType? any
+---@param ... any
+---@return any script
+function __WowWidget:GetScript(scriptTypeName, bindingType, ...) end
+---@param ... any
+---@return any scrollChild
+function __WowWidget:GetScrollChild(...) end
 --- Returns the total number of owned instances across all most recent search result entries
 ---@param ... any
 ---@return number searchCount
@@ -996,11 +1601,28 @@ function __WowWidget:GetShadowOffset(...) end
 ---@param ... any
 ---@return boolean sheathed
 function __WowWidget:GetSheathed(...) end
+---@param ignoreRect? boolean
+---@param ... any
+---@return number width
+---@return number height
+function __WowWidget:GetSize(ignoreRect, ...) end
+---@param ... any
+---@return number progress
+function __WowWidget:GetSmoothProgress(...) end
+---@param ... any
+---@return boolean smoothScaling
+function __WowWidget:GetSmoothScaling(...) end
+---@param ... any
+---@return any weights
+function __WowWidget:GetSmoothing(...) end
 ---@param ... any
 ---@return any sortType
 function __WowWidget:GetSortType(...) end
 ---@param ... any
----@return number spacing
+---@return string location
+function __WowWidget:GetSourceLocation(...) end
+---@param ... any
+---@return number fontHeight
 function __WowWidget:GetSpacing(...) end
 ---@param ... any
 ---@return number spellVisualKitID
@@ -1008,6 +1630,9 @@ function __WowWidget:GetSpellVisualKit(...) end
 ---@param ... any
 ---@return any color
 function __WowWidget:GetStartColor(...) end
+---@param ... any
+---@return number delaySec
+function __WowWidget:GetStartDelay(...) end
 ---@param ... any
 ---@return any relativePoint
 ---@return any relativeTo
@@ -1020,18 +1645,96 @@ function __WowWidget:GetStartPoint(...) end
 ---@return any startTime
 function __WowWidget:GetStartTime(modifier, ...) end
 ---@param ... any
+---@return number colorR
+---@return number colorG
+---@return number colorB
+---@return number colorA
+function __WowWidget:GetStatusBarColor(...) end
+---@param ... any
+---@return number desaturation
+function __WowWidget:GetStatusBarDesaturation(...) end
+---@param ... any
+---@return any texture
+function __WowWidget:GetStatusBarTexture(...) end
+---@param ... any
 ---@return number stepsPerPage
 function __WowWidget:GetStepsPerPage(...) end
+---@param ... any
+---@return number height
+function __WowWidget:GetStringHeight(...) end
+---@param ... any
+---@return number width
+function __WowWidget:GetStringWidth(...) end
 --- Returns the whitespace stripping mode of the formatter.
 ---@param ... any
 ---@return any strip
 function __WowWidget:GetStripIntervalWhitespace(...) end
+---@param ... any
+---@return any target
+function __WowWidget:GetTarget(...) end
+---@param ... any
+---@return number ulX
+---@return number ulY
+---@return number llX
+---@return number llY
+---@return number urX
+---@return number urY
+---@return number lrX
+---@return number lrY
+function __WowWidget:GetTexCoord(...) end
+---@param ... any
+---@return number bias
+function __WowWidget:GetTexelSnappingBias(...) end
+---@param ... any
+---@return string text
+function __WowWidget:GetText(...) end
 ---@param ... any
 ---@return number colorR
 ---@return number colorG
 ---@return number colorB
 ---@return number colorA
 function __WowWidget:GetTextColor(...) end
+--- Returns the text color curve used by this binding.
+---@param ... any
+---@return any curve
+---@return any property
+function __WowWidget:GetTextColorCurve(...) end
+---@param ... any
+---@return table content
+function __WowWidget:GetTextData(...) end
+---@param ... any
+---@return number height
+function __WowWidget:GetTextHeight(...) end
+---@param ... any
+---@return number left
+---@return number right
+---@return number top
+---@return number bottom
+function __WowWidget:GetTextInsets(...) end
+---@param ... any
+---@return number textScale
+function __WowWidget:GetTextScale(...) end
+---@param ... any
+---@return number width
+function __WowWidget:GetTextWidth(...) end
+---@param ... any
+---@return string textureFile
+function __WowWidget:GetTexture(...) end
+---@param ... any
+---@return number textureFile
+function __WowWidget:GetTextureFileID(...) end
+---@param ... any
+---@return string textureFile
+function __WowWidget:GetTextureFilePath(...) end
+---@param ... any
+---@return number left
+---@return number top
+---@return number right
+---@return number bottom
+function __WowWidget:GetTextureSliceMargins(...) end
+---@param ... any
+---@return any sliceMode
+function __WowWidget:GetTextureSliceMode(...) end
 ---@param ... any
 ---@return number thickness
 function __WowWidget:GetThickness(...) end
@@ -1050,12 +1753,21 @@ function __WowWidget:GetTimeModifier(...) end
 ---@return number timeVisibleSeconds
 function __WowWidget:GetTimeVisible(...) end
 ---@param ... any
+---@return any duration
+function __WowWidget:GetTimerDuration(...) end
+---@param ... any
 ---@return number normalizedAlpha
 function __WowWidget:GetToAlpha(...) end
+---@param ... any
+---@return number percent
+function __WowWidget:GetToPercent(...) end
 ---@param index? number
 ---@param ... any
 ---@return number objectiveIndex
 function __WowWidget:GetTooltipIndex(index, ...) end
+---@param ... any
+---@return number top
+function __WowWidget:GetTop(...) end
 --- Returns the base total amount of all applied damage absorb shields.
 ---@param ... any
 ---@return number totalDamageAbsorbs
@@ -1082,8 +1794,18 @@ function __WowWidget:GetTotalIncomingHealsFromHealer(...) end
 ---@return any curveType
 function __WowWidget:GetType(...) end
 ---@param ... any
+---@return number cursorPosition
+function __WowWidget:GetUTF8CursorPosition(...) end
+---@param ... any
 ---@return number uiMapID
 function __WowWidget:GetUiMapID(...) end
+---@param ... any
+---@return number width
+function __WowWidget:GetUnboundedStringWidth(...) end
+---@param text? string
+---@param ... any
+---@return number width
+function __WowWidget:GetUnboundedStringWidthForText(text, ...) end
 --- Returns the minimum number of seconds between automatic text updates. A value of zero updates every game tick.
 ---@param ... any
 ---@return number updateInterval
@@ -1101,6 +1823,9 @@ function __WowWidget:GetUpperEmblemFile(...) end
 ---@param ... any
 function __WowWidget:GetUpperEmblemTexture(texture, ...) end
 ---@param ... any
+---@return boolean useAuraDisplayTime
+function __WowWidget:GetUseAuraDisplayTime(...) end
+---@param ... any
 ---@return boolean enabled
 function __WowWidget:GetUseTransmogChoices(...) end
 ---@param ... any
@@ -1113,6 +1838,26 @@ function __WowWidget:GetValue(...) end
 ---@return number valueStep
 function __WowWidget:GetValueStep(...) end
 ---@param ... any
+---@return boolean tiling
+function __WowWidget:GetVertTile(...) end
+---@param ... any
+---@return number colorR
+---@return number colorG
+---@return number colorB
+---@return number colorA
+function __WowWidget:GetVertexColor(...) end
+---@param vertexIndex? number
+---@param ... any
+---@return number offsetX
+---@return number offsetY
+function __WowWidget:GetVertexOffset(vertexIndex, ...) end
+---@param ... any
+---@return number offset
+function __WowWidget:GetVerticalScroll(...) end
+---@param ... any
+---@return number range
+function __WowWidget:GetVerticalScrollRange(...) end
+---@param ... any
 ---@return any insets
 function __WowWidget:GetViewInsets(...) end
 ---@param ... any
@@ -1120,8 +1865,21 @@ function __WowWidget:GetViewInsets(...) end
 ---@return number translationY
 function __WowWidget:GetViewTranslation(...) end
 ---@param ... any
+---@return number maxVisibleBytes
+function __WowWidget:GetVisibleTextByteLimit(...) end
+---@param ignoreRect? boolean
+---@param ... any
+---@return number width
+function __WowWidget:GetWidth(ignoreRect, ...) end
+---@param ... any
+---@return any window
+function __WowWidget:GetWindow(...) end
+---@param ... any
 ---@return number worldScale
 function __WowWidget:GetWorldScale(...) end
+---@param ... any
+---@return number width
+function __WowWidget:GetWrappedWidth(...) end
 ---@param ... any
 ---@return number yaw
 function __WowWidget:GetYaw(...) end
@@ -1135,10 +1893,30 @@ function __WowWidget:GetZoom(...) end
 ---@param ... any
 ---@return number zoomLevels
 function __WowWidget:GetZoomLevels(...) end
+--- Returns whether this object has any access constraints that may limit access from some Lua execution contexts.
+---@param ... any
+---@return boolean hasAccessConstraints
+function __WowWidget:HasAccessConstraints(...) end
+---@param ... any
+---@return boolean hasAlphaGradient
+function __WowWidget:HasAlphaGradient(...) end
 ---@param anim? any
 ---@param ... any
 ---@return boolean hasAnimation
 function __WowWidget:HasAnimation(anim, ...) end
+--- Returns true if this object has any of the supplied access restrictions applied.
+---@param restrictions? any
+---@param ... any
+---@return boolean hasAnyAccessRestriction
+function __WowWidget:HasAnyAccessRestrictions(restrictions, ...) end
+--- Returns true if this object has any of the supplied forbidden aspects added.
+---@param aspects? any
+---@param ... any
+---@return boolean hasAnyForbiddenAspect
+function __WowWidget:HasAnyForbiddenAspects(aspects, ...) end
+---@param ... any
+---@return boolean hasSecretAspect
+function __WowWidget:HasAnySecretAspect(...) end
 ---@param ... any
 ---@return boolean hasAttachedFixture
 function __WowWidget:HasAttachedFixture(...) end
@@ -1153,10 +1931,30 @@ function __WowWidget:HasCustomCamera(...) end
 ---@param ... any
 ---@return boolean hasExpired
 function __WowWidget:HasExpired(modifier, ...) end
+---@param ... any
+---@return boolean isFixed
+function __WowWidget:HasFixedFrameLevel(...) end
+---@param ... any
+---@return boolean isFixed
+function __WowWidget:HasFixedFrameStrata(...) end
+---@param ... any
+---@return boolean hasFocus
+function __WowWidget:HasFocus(...) end
 ---@param messageID? number
 ---@param ... any
 ---@return boolean hasMessage
 function __WowWidget:HasMessageByID(messageID, ...) end
+---@param ... any
+---@return boolean hasSVG
+function __WowWidget:HasSVG(...) end
+---@param scriptName? string
+---@param ... any
+---@return boolean hasScript
+function __WowWidget:HasScript(scriptName, ...) end
+---@param aspect? any
+---@param ... any
+---@return boolean hasSecretAspect
+function __WowWidget:HasSecretAspect(aspect, ...) end
 --- Returns true if the duration text binding has been configured with any secret values.
 ---@param ... any
 ---@return boolean hasSecretValues
@@ -1167,7 +1965,20 @@ function __WowWidget:HasSecretValues(...) end
 ---@return boolean hasStarted
 function __WowWidget:HasStarted(modifier, ...) end
 ---@param ... any
+---@return boolean hasText
+function __WowWidget:HasText(...) end
+---@param ... any
 function __WowWidget:Hide(...) end
+---@param start? number
+---@param stop? number
+---@param ... any
+function __WowWidget:HighlightText(start, stop, ...) end
+---@param scriptTypeName? any
+---@param script? any
+---@param bindingType? any
+---@param ... any
+---@return boolean success
+function __WowWidget:HookScript(scriptTypeName, script, bindingType, ...) end
 ---@param scaleFactor? number
 ---@param ... any
 function __WowWidget:InitializeCamera(scaleFactor, ...) end
@@ -1176,6 +1987,17 @@ function __WowWidget:InitializeCamera(scaleFactor, ...) end
 function __WowWidget:InitializePanCamera(scaleFactor, ...) end
 ---@param ... any
 function __WowWidget:InitializeTabardColors(...) end
+---@param text? string
+---@param ... any
+function __WowWidget:Insert(text, ...) end
+---@param delegate? any
+---@param ... any
+---@return boolean success
+function __WowWidget:InterceptStartDrag(delegate, ...) end
+---@param region? any
+---@param ... any
+---@return boolean intersects
+function __WowWidget:Intersects(region, ...) end
 --- Returns true while the duration is at or after its start time and before its end time.
 ---@param modifier? any
 ---@param ... any
@@ -1187,13 +2009,34 @@ function __WowWidget:IsAllowedIndoorsActive(...) end
 ---@param ... any
 ---@return boolean isActive
 function __WowWidget:IsAllowedOutdoorsActive(...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:IsAlphabeticOnly(...) end
+---@param ... any
+---@return boolean isRestricted
+function __WowWidget:IsAnchoringRestricted(...) end
+---@param ... any
+---@return boolean isSecret
+function __WowWidget:IsAnchoringSecret(...) end
 --- Returns true if this pin's associated room, or anything attached to it, is selected. Ex: If pin is for a door, returns true if its room, or any other doors on that room, are selected
 ---@param ... any
 ---@return boolean isSelected
 function __WowWidget:IsAnyPartOfRoomSelected(...) end
 ---@param ... any
+---@return boolean autoFocus
+function __WowWidget:IsAutoFocus(...) end
+---@param ... any
 ---@return boolean isActive
 function __WowWidget:IsBaseVariantOnlyActive(...) end
+---@param ... any
+---@return boolean blocking
+function __WowWidget:IsBlockingLoadRequested(...) end
+---@param ... any
+---@return boolean clampedToScreen
+function __WowWidget:IsClampedToScreen(...) end
+---@param ... any
+---@return boolean isCollapsed
+function __WowWidget:IsCollapsed(...) end
 ---@param ... any
 ---@return boolean isActive
 function __WowWidget:IsCollectedActive(...) end
@@ -1201,18 +2044,55 @@ function __WowWidget:IsCollectedActive(...) end
 ---@return boolean isConnectedToDraggingRoom
 function __WowWidget:IsConnectedToDraggingRoom(...) end
 ---@param ... any
+---@return boolean countInvisibleLetters
+function __WowWidget:IsCountInvisibleLetters(...) end
+---@param ... any
 ---@return boolean isActive
 function __WowWidget:IsCustomizableOnlyActive(...) end
 ---@param ... any
+---@return boolean isDelaying
+function __WowWidget:IsDelaying(...) end
+---@param ... any
+---@return boolean desaturated
+function __WowWidget:IsDesaturated(...) end
+---@param ... any
+---@return boolean isDone
+function __WowWidget:IsDone(...) end
+---@param ... any
+---@return boolean isDragging
+function __WowWidget:IsDragging(...) end
+---@param ... any
 ---@return boolean isDraggingThumb
 function __WowWidget:IsDraggingThumb(...) end
+---@param layer? any
+---@param ... any
+---@return boolean isEnabled
+function __WowWidget:IsDrawLayerEnabled(layer, ...) end
 --- Returns true if this duration text binding updates its font string automatically.
 ---@param ... any
 ---@return boolean enabled
 function __WowWidget:IsEnabled(...) end
+---@param eventName? string
+---@param ... any
+---@return boolean isRegistered
+---@return any units
+function __WowWidget:IsEventRegistered(eventName, ...) end
 ---@param ... any
 ---@return boolean isActive
 function __WowWidget:IsFirstAcquisitionBonusOnlyActive(...) end
+--- Returns whether this object has been explicitly marked as forbidden.
+---@param ... any
+---@return boolean isForbidden
+function __WowWidget:IsForbidden(...) end
+---@param ... any
+---@return boolean isFrameBuffer
+function __WowWidget:IsFrameBuffer(...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:IsGamePadButtonEnabled(...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:IsGamePadStickEnabled(...) end
 ---@param ... any
 ---@return boolean ready
 function __WowWidget:IsGeoReady(...) end
@@ -1220,11 +2100,74 @@ function __WowWidget:IsGeoReady(...) end
 ---@return boolean isGuildTabard
 function __WowWidget:IsGuildTabard(...) end
 ---@param ... any
+---@return boolean locked
+function __WowWidget:IsHighlightLocked(...) end
+---@param ... any
+---@return boolean ignore
+function __WowWidget:IsIgnoringChildrenForBounds(...) end
+---@param ... any
+---@return boolean ignore
+function __WowWidget:IsIgnoringParentAlpha(...) end
+---@param ... any
+---@return boolean ignore
+function __WowWidget:IsIgnoringParentScale(...) end
+---@param ... any
+---@return boolean isInIMECompositionMode
+function __WowWidget:IsInIMECompositionMode(...) end
+--- Returns true if the status bar is currently interpolating toward a target value.
+---@param ... any
+---@return boolean isInterpolating
+function __WowWidget:IsInterpolating(...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:IsKeyboardEnabled(...) end
+---@param ... any
 ---@return boolean isVisible
 function __WowWidget:IsLightVisible(...) end
 ---@param ... any
 ---@return boolean isLoaded
 function __WowWidget:IsLoaded(...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:IsMouseClickEnabled(...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:IsMouseEnabled(...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:IsMouseMotionEnabled(...) end
+---@param ... any
+---@return boolean isMouseMotionFocus
+function __WowWidget:IsMouseMotionFocus(...) end
+---@param offsetTop? number
+---@param offsetBottom? number
+---@param offsetLeft? number
+---@param offsetRight? number
+---@param ... any
+---@return boolean isMouseOver
+function __WowWidget:IsMouseOver(offsetTop, offsetBottom, offsetLeft, offsetRight, ...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:IsMouseWheelEnabled(...) end
+---@param ... any
+---@return boolean isMovable
+function __WowWidget:IsMovable(...) end
+---@param ... any
+---@return boolean multiline
+function __WowWidget:IsMultiLine(...) end
+---@param ... any
+---@return boolean isNumeric
+function __WowWidget:IsNumeric(...) end
+---@param ... any
+---@return boolean isNumeric
+function __WowWidget:IsNumericFullRange(...) end
+---@param ... any
+---@return boolean isLoaded
+function __WowWidget:IsObjectLoaded(...) end
+---@param objectType? string
+---@param ... any
+---@return boolean isType
+function __WowWidget:IsObjectType(objectType, ...) end
 --- Will be nil if pin is not a Door
 ---@param ... any
 ---@return boolean isOccupied
@@ -1233,14 +2176,52 @@ function __WowWidget:IsOccupiedDoor(...) end
 ---@return boolean isPartOfDraggingRoom
 function __WowWidget:IsPartOfDraggingRoom(...) end
 ---@param ... any
+---@return boolean isPassword
+function __WowWidget:IsPassword(...) end
+---@param ... any
+---@return boolean isPaused
+function __WowWidget:IsPaused(...) end
+---@param ... any
+---@return boolean isPendingFinish
+function __WowWidget:IsPendingFinish(...) end
+---@param ... any
+---@return boolean isPlaying
+function __WowWidget:IsPlaying(...) end
+---@param ... any
 ---@return boolean preferringCollisionBounds
 function __WowWidget:IsPreferringModelCollisionBounds(...) end
+---@param ... any
+---@return boolean isPreventingSecretValues
+function __WowWidget:IsPreventingSecretValues(...) end
+---@param ... any
+---@return boolean isProtected
+---@return boolean isProtectedExplicitly
+function __WowWidget:IsProtected(...) end
+---@param ... any
+---@return boolean isValid
+function __WowWidget:IsRectValid(...) end
+---@param ... any
+---@return boolean resizable
+function __WowWidget:IsResizable(...) end
+---@param ... any
+---@return boolean isReverse
+function __WowWidget:IsReverse(...) end
+--- Returns whether this frame is hidden because of its rolesets being filtered.
+---@param ... any
+---@return boolean isRolesetFiltered
+function __WowWidget:IsRolesetFiltered(...) end
 ---@param ... any
 ---@return boolean isSearchInProgress
 function __WowWidget:IsSearchInProgress(...) end
 ---@param ... any
+---@return boolean isSecure
+function __WowWidget:IsSecureText(...) end
+---@param ... any
 ---@return boolean isSelected
 function __WowWidget:IsSelected(...) end
+---@param ... any
+---@return boolean isSetToFinalAlpha
+function __WowWidget:IsSetToFinalAlpha(...) end
 ---@param ... any
 ---@return boolean isShown
 function __WowWidget:IsShown(...) end
@@ -1252,16 +2233,34 @@ function __WowWidget:IsSlotAllowed(slot, ...) end
 ---@param ... any
 ---@return boolean visible
 function __WowWidget:IsSlotVisible(slot, ...) end
+---@param ... any
+---@return boolean snap
+function __WowWidget:IsSnappingToPixelGrid(...) end
 ---@param snapshotID? number
 ---@param ... any
 ---@return boolean isValid
 function __WowWidget:IsSnapshotValid(snapshotID, ...) end
 ---@param ... any
+---@return boolean desaturated
+function __WowWidget:IsStatusBarDesaturated(...) end
+---@param ... any
+---@return boolean isStopped
+function __WowWidget:IsStopped(...) end
+---@param ... any
 ---@return boolean isActive
 function __WowWidget:IsStoredOnlyActive(...) end
 ---@param ... any
+---@return boolean isTopLevel
+function __WowWidget:IsToplevel(...) end
+---@param ... any
+---@return boolean isTruncated
+function __WowWidget:IsTruncated(...) end
+---@param ... any
 ---@return boolean isActive
 function __WowWidget:IsUncollectedActive(...) end
+---@param ... any
+---@return boolean isUserPlaced
+function __WowWidget:IsUserPlaced(...) end
 ---@param ... any
 ---@return boolean x
 ---@return boolean y
@@ -1270,6 +2269,9 @@ function __WowWidget:IsUsingCenterForOrigin(...) end
 ---@param ... any
 ---@return boolean useCenter
 function __WowWidget:IsUsingModelCenterToTransform(...) end
+---@param ... any
+---@return boolean usingParentLevel
+function __WowWidget:IsUsingParentLevel(...) end
 ---@param ... any
 ---@return boolean isValid
 function __WowWidget:IsValid(...) end
@@ -1284,6 +2286,10 @@ function __WowWidget:IsVisible(...) end
 ---@return boolean isZero
 function __WowWidget:IsZero(...) end
 ---@param ... any
+function __WowWidget:LockHighlight(...) end
+---@param ... any
+function __WowWidget:Lower(...) end
+---@param ... any
 function __WowWidget:MakeCurrentCameraCustom(...) end
 ---@param ... any
 function __WowWidget:NavigateBack(...) end
@@ -1296,6 +2302,8 @@ function __WowWidget:NavigateHome(urlType, ...) end
 function __WowWidget:NavigateReload(...) end
 ---@param ... any
 function __WowWidget:NavigateStop(...) end
+---@param ... any
+function __WowWidget:OnColorsUpdated(...) end
 ---@param checkoutID? number
 ---@param ... any
 ---@return boolean wasOpened
@@ -1305,10 +2313,14 @@ function __WowWidget:OpenExternalLink(...) end
 ---@param index? number
 ---@param ... any
 function __WowWidget:OpenTicket(index, ...) end
+---@param ... any
+function __WowWidget:Pause(...) end
 ---@param locationX? number
 ---@param locationY? number
 ---@param ... any
 function __WowWidget:PingLocation(locationX, locationY, ...) end
+---@param ... any
+function __WowWidget:Play(...) end
 ---@param animKit? number
 ---@param loop? boolean
 ---@param ... any
@@ -1326,16 +2338,58 @@ function __WowWidget:PlayAnimationKit(animationKit, isLooping, ...) end
 ---@return number depth
 function __WowWidget:Project3DPointTo2D(pointX, pointY, pointZ, ...) end
 ---@param ... any
+function __WowWidget:Raise(...) end
+---@param ... any
 function __WowWidget:RefreshCamera(...) end
 ---@param ... any
 function __WowWidget:RefreshUnit(...) end
 ---@param ... any
+function __WowWidget:RegisterAllEvents(...) end
+---@param eventName? string
+---@param ... any
+---@return boolean registered
+function __WowWidget:RegisterEvent(eventName, ...) end
+---@param eventName? string
+---@param cb? any
+---@param ... any
+---@return boolean registered
+function __WowWidget:RegisterEventCallback(eventName, cb, ...) end
+---@param buttons? any
+---@param ... any
+function __WowWidget:RegisterForClicks(buttons, ...) end
+---@param buttons? any
+---@param ... any
+function __WowWidget:RegisterForDrag(buttons, ...) end
+---@param buttons? any
+---@param ... any
+function __WowWidget:RegisterForMouse(buttons, ...) end
+---@param eventName? string
+---@param units? any
+---@param ... any
+---@return boolean registered
+function __WowWidget:RegisterUnitEvent(eventName, units, ...) end
+---@param eventName? string
+---@param cb? any
+---@param units? any
+---@param ... any
+---@return boolean registered
+function __WowWidget:RegisterUnitEventCallback(eventName, cb, units, ...) end
+---@param ... any
 ---@return boolean success
 function __WowWidget:ReleaseFrontEndCharacterDisplays(...) end
+---@param ... any
+function __WowWidget:RemoveAnimations(...) end
+---@param mask? any
+---@param ... any
+function __WowWidget:RemoveMaskTexture(mask, ...) end
 --- Removes a single point from the curve. Raises an error if the supplied point index is out of range.
 ---@param index? number
 ---@param ... any
 function __WowWidget:RemovePoint(index, ...) end
+--- Removes a roleset tag from this frame.
+---@param roleset? string
+---@param ... any
+function __WowWidget:RemoveRoleset(roleset, ...) end
 ---@param asset? any
 ---@param ... any
 function __WowWidget:ReplaceIconTexture(asset, ...) end
@@ -1346,6 +2400,8 @@ function __WowWidget:Reset(...) end
 ---@param ... any
 function __WowWidget:ResetBreakpoints(...) end
 ---@param ... any
+function __WowWidget:ResetInputMode(...) end
+---@param ... any
 function __WowWidget:ResetLights(...) end
 ---@param messageID? number
 ---@param ... any
@@ -1355,13 +2411,26 @@ function __WowWidget:ResetNextHandSlot(...) end
 --- Resets all stored healing values used for calculations.
 ---@param ... any
 function __WowWidget:ResetPredictedValues(...) end
+---@param ... any
+function __WowWidget:ResetTexCoord(...) end
 --- Resets the clock to a zero time value.
 ---@param ... any
 function __WowWidget:ResetTime(...) end
+---@param ... any
+function __WowWidget:ResizeToBoundsRect(...) end
+---@param ... any
+function __WowWidget:Restart(...) end
+---@param ... any
+function __WowWidget:Resume(...) end
 --- Rewinds the clock by a specified number of seconds.
 ---@param delta? any
 ---@param ... any
 function __WowWidget:RewindTime(delta, ...) end
+---@param radians? number
+---@param x? number
+---@param y? number
+---@param ... any
+function __WowWidget:RotateTextures(radians, x, y, ...) end
 --- Run search with all current param values
 ---@param ... any
 function __WowWidget:RunSearch(...) end
@@ -1399,6 +2468,22 @@ function __WowWidget:SetAllowedOutdoors(isActive, ...) end
 ---@param alpha? number
 ---@param ... any
 function __WowWidget:SetAlpha(alpha, ...) end
+---@param value? boolean
+---@param alphaIfTrue? any
+---@param alphaIfFalse? any
+---@param ... any
+function __WowWidget:SetAlphaFromBoolean(value, alphaIfTrue, alphaIfFalse, ...) end
+---@param start? number
+---@param length? number
+---@param ... any
+---@return boolean isWithinText
+function __WowWidget:SetAlphaGradient(start, length, ...) end
+---@param enabled? boolean
+---@param ... any
+function __WowWidget:SetAlphabeticOnly(enabled, ...) end
+---@param altMode? boolean
+---@param ... any
+function __WowWidget:SetAltArrowKeyMode(altMode, ...) end
 ---@param offset? number
 ---@param ... any
 function __WowWidget:SetAnimOffset(offset, ...) end
@@ -1409,6 +2494,9 @@ function __WowWidget:SetAnimation(anim, variation, ...) end
 ---@param blendOp? any
 ---@param ... any
 function __WowWidget:SetAnimationBlendOperation(blendOp, ...) end
+---@param animationSpeedMultiplier? number
+---@param ... any
+function __WowWidget:SetAnimationSpeedMultiplier(animationSpeedMultiplier, ...) end
 --- Configures the formatter to render numeric values between zero and this value as approximated strings (eg. '< 1m').
 ---@param seconds? any
 ---@param ... any
@@ -1434,9 +2522,28 @@ function __WowWidget:SetArchBlobRingScalar(scalar, ...) end
 ---@param asset? any
 ---@param ... any
 function __WowWidget:SetArchBlobRingTexture(asset, ...) end
+---@param atlas? string
+---@param useAtlasSize? boolean
+---@param filterMode? any
+---@param resetTexCoords? boolean
+---@param wrapModeHorizontal? string
+---@param wrapModeVertical? string
+---@param ... any
+function __WowWidget:SetAtlas(atlas, useAtlasSize, filterMode, resetTexCoords, wrapModeHorizontal, wrapModeVertical, ...) end
+---@param attributeName? string
+---@param value? string
+---@param ... any
+function __WowWidget:SetAttribute(attributeName, value, ...) end
+---@param attributeName? string
+---@param value? string
+---@param ... any
+function __WowWidget:SetAttributeNoHandler(attributeName, value, ...) end
 ---@param enabled? boolean
 ---@param ... any
 function __WowWidget:SetAutoDress(enabled, ...) end
+---@param autoFocus? boolean
+---@param ... any
+function __WowWidget:SetAutoFocus(autoFocus, ...) end
 --- If true, searcher automatically updates results whenever search param values are changed
 ---@param autoUpdateActive? boolean
 ---@param ... any
@@ -1447,6 +2554,22 @@ function __WowWidget:SetBarberShopAlternateForm(...) end
 ---@param isActive? boolean
 ---@param ... any
 function __WowWidget:SetBaseVariantOnly(isActive, ...) end
+---@param blendMode? any
+---@param ... any
+function __WowWidget:SetBlendMode(blendMode, ...) end
+---@param texture? any
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param colorA? number
+---@param ... any
+function __WowWidget:SetBlingTexture(texture, colorR, colorG, colorB, colorA, ...) end
+---@param cursorBlinkSpeedSec? number
+---@param ... any
+function __WowWidget:SetBlinkSpeed(cursorBlinkSpeedSec, ...) end
+---@param blocking? boolean
+---@param ... any
+function __WowWidget:SetBlockingLoadsRequested(blocking, ...) end
 ---@param alpha? number
 ---@param ... any
 function __WowWidget:SetBorderAlpha(alpha, ...) end
@@ -1460,6 +2583,10 @@ function __WowWidget:SetBorderTexture(asset, ...) end
 ---@param breakpoints? table
 ---@param ... any
 function __WowWidget:SetBreakpoints(breakpoints, ...) end
+---@param buttonState? any
+---@param lock? boolean
+---@param ... any
+function __WowWidget:SetButtonState(buttonState, lock, ...) end
 ---@param scale? number
 ---@param ... any
 function __WowWidget:SetCamDistanceScale(scale, ...) end
@@ -1525,10 +2652,29 @@ function __WowWidget:SetChecked(checked, ...) end
 ---@param asset? any
 ---@param ... any
 function __WowWidget:SetCheckedTexture(asset, ...) end
+---@param childKey? string
+---@param ... any
+---@return boolean success
+function __WowWidget:SetChildKey(childKey, ...) end
+---@param left? number
+---@param right? number
+---@param top? number
+---@param bottom? number
+---@param ... any
+function __WowWidget:SetClampRectInsets(left, right, top, bottom, ...) end
+---@param clampedToScreen? boolean
+---@param ... any
+function __WowWidget:SetClampedToScreen(clampedToScreen, ...) end
+---@param clipsChildren? boolean
+---@param ... any
+function __WowWidget:SetClipsChildren(clipsChildren, ...) end
 --- Configures the clock source used by this object.
 ---@param clock? any
 ---@param ... any
 function __WowWidget:SetClock(clock, ...) end
+---@param collapsesLayout? boolean
+---@param ... any
+function __WowWidget:SetCollapsesLayout(collapsesLayout, ...) end
 --- Search parameter; If true, includes all owned entries, including those that are in storage OR placed in an owned house or plot; See IsStoredOnlyActive for a more exclusive toggle
 ---@param isActive? boolean
 ---@param ... any
@@ -1542,6 +2688,12 @@ function __WowWidget:SetColorAlphaTexture(texture, ...) end
 ---@param texture? any
 ---@param ... any
 function __WowWidget:SetColorAlphaThumbTexture(texture, ...) end
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param a? any
+---@param ... any
+function __WowWidget:SetColorFill(colorR, colorG, colorB, a, ...) end
 ---@param hsvX? number
 ---@param hsvY? number
 ---@param hsvZ? number
@@ -1552,6 +2704,12 @@ function __WowWidget:SetColorHSV(hsvX, hsvY, hsvZ, ...) end
 ---@param rgbB? number
 ---@param ... any
 function __WowWidget:SetColorRGB(rgbR, rgbG, rgbB, ...) end
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param a? any
+---@param ... any
+function __WowWidget:SetColorTexture(colorR, colorG, colorB, a, ...) end
 ---@param texture? any
 ---@param ... any
 function __WowWidget:SetColorValueTexture(texture, ...) end
@@ -1568,6 +2726,46 @@ function __WowWidget:SetColorWheelThumbTexture(texture, ...) end
 ---@param convert? boolean
 ---@param ... any
 function __WowWidget:SetConvertToLower(convert, ...) end
+---@param start? any
+---@param duration? any
+---@param modRate? number
+---@param ... any
+function __WowWidget:SetCooldown(start, duration, modRate, ...) end
+---@param duration? any
+---@param modRate? number
+---@param ... any
+function __WowWidget:SetCooldownDuration(duration, modRate, ...) end
+---@param duration? any
+---@param clearIfZero? boolean
+---@param ... any
+function __WowWidget:SetCooldownFromDurationObject(duration, clearIfZero, ...) end
+---@param expirationTime? any
+---@param duration? any
+---@param modRate? number
+---@param ... any
+function __WowWidget:SetCooldownFromExpirationTime(expirationTime, duration, modRate, ...) end
+---@param start? number
+---@param duration? number
+---@param modRate? number
+---@param ... any
+function __WowWidget:SetCooldownUNIX(start, duration, modRate, ...) end
+---@param countInvisibleLetters? boolean
+---@param ... any
+function __WowWidget:SetCountInvisibleLetters(countInvisibleLetters, ...) end
+--- Sets the threshold below which cooldown numbers are displayed as an abbreviated form without a unit suffix (eg. '1:31').
+---@param seconds? any
+---@param ... any
+function __WowWidget:SetCountdownAbbrevThreshold(seconds, ...) end
+---@param fontName? string
+---@param ... any
+function __WowWidget:SetCountdownFont(fontName, ...) end
+---@param formatter? any
+---@param ... any
+function __WowWidget:SetCountdownFormatter(formatter, ...) end
+--- Sets the threshold below which cooldown numbers are displayed as a decimal value with one place for milliseconds (eg. '8.7').
+---@param seconds? any
+---@param ... any
+function __WowWidget:SetCountdownMillisecondsThreshold(seconds, ...) end
 ---@param creatureID? number
 ---@param displayID? number
 ---@param ... any
@@ -1575,6 +2773,9 @@ function __WowWidget:SetCreature(creatureID, displayID, ...) end
 ---@param creatureID? number
 ---@param ... any
 function __WowWidget:SetCreatureData(creatureID, ...) end
+---@param cursorPosition? number
+---@param ... any
+function __WowWidget:SetCursorPosition(cursorPosition, ...) end
 ---@param curveType? any
 ---@param ... any
 function __WowWidget:SetCurveType(curveType, ...) end
@@ -1596,6 +2797,12 @@ function __WowWidget:SetDefaultAbbreviation(abbreviation, ...) end
 ---@param angle? number
 ---@param ... any
 function __WowWidget:SetDegrees(angle, ...) end
+---@param desaturate? boolean
+---@param ... any
+function __WowWidget:SetDesaturateEmbeddedTextures(desaturate, ...) end
+---@param desaturated? boolean
+---@param ... any
+function __WowWidget:SetDesaturated(desaturated, ...) end
 ---@param strength? number
 ---@param ... any
 function __WowWidget:SetDesaturation(strength, ...) end
@@ -1607,9 +2814,18 @@ function __WowWidget:SetDesiredUnitCount(count, ...) end
 ---@param curve? any
 ---@param ... any
 function __WowWidget:SetDesiredUnitCountCurve(curve, ...) end
+---@param atlas? string
+---@param ... any
+function __WowWidget:SetDisabledAtlas(atlas, ...) end
 ---@param asset? any
 ---@param ... any
 function __WowWidget:SetDisabledCheckedTexture(asset, ...) end
+---@param font? any
+---@param ... any
+function __WowWidget:SetDisabledFontObject(font, ...) end
+---@param asset? any
+---@param ... any
+function __WowWidget:SetDisabledTexture(asset, ...) end
 ---@param displayID? number
 ---@param mountDisplayID? number
 ---@param ... any
@@ -1617,13 +2833,45 @@ function __WowWidget:SetDisplayInfo(displayID, mountDisplayID, ...) end
 ---@param doBlend? boolean
 ---@param ... any
 function __WowWidget:SetDoBlend(doBlend, ...) end
+---@param dontSave? boolean
+---@param ... any
+function __WowWidget:SetDontSavePosition(dontSave, ...) end
+---@param drawBling? boolean
+---@param ... any
+function __WowWidget:SetDrawBling(drawBling, ...) end
+---@param drawEdge? boolean
+---@param ... any
+function __WowWidget:SetDrawEdge(drawEdge, ...) end
 ---@param layer? any
 ---@param ... any
 function __WowWidget:SetDrawLayer(layer, ...) end
+---@param layer? any
+---@param isEnabled? boolean
+---@param ... any
+function __WowWidget:SetDrawLayerEnabled(layer, isEnabled, ...) end
+---@param drawSwipe? boolean
+---@param ... any
+function __WowWidget:SetDrawSwipe(drawSwipe, ...) end
 --- Configures the duration object used by this duration text binding.
 ---@param duration? any
 ---@param ... any
 function __WowWidget:SetDuration(duration, ...) end
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param a? any
+---@param ... any
+function __WowWidget:SetEdgeColor(colorR, colorG, colorB, a, ...) end
+---@param scale? number
+---@param ... any
+function __WowWidget:SetEdgeScale(scale, ...) end
+---@param texture? any
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param colorA? number
+---@param ... any
+function __WowWidget:SetEdgeTexture(texture, colorR, colorG, colorB, colorA, ...) end
 --- Search parameter; If set, limits search results to only entries that are used/valid in the specified editor mode
 ---@param editorModeContext? any
 ---@param ... any
@@ -1635,6 +2883,10 @@ function __WowWidget:SetEnabled(enabled, ...) end
 ---@param color? any
 ---@param ... any
 function __WowWidget:SetEndColor(color, ...) end
+---@param delaySec? number
+---@param recomputeGroupDuration? boolean
+---@param ... any
+function __WowWidget:SetEndDelay(delaySec, recomputeGroupDuration, ...) end
 ---@param relativePoint? any
 ---@param relativeTo? any
 ---@param offsetX? number
@@ -1667,6 +2919,9 @@ function __WowWidget:SetFading(fading, ...) end
 ---@param alpha? number
 ---@param ... any
 function __WowWidget:SetFillAlpha(alpha, ...) end
+---@param fillStyle? any
+---@param ... any
+function __WowWidget:SetFillStyle(fillStyle, ...) end
 ---@param asset? any
 ---@param ... any
 function __WowWidget:SetFillTexture(asset, ...) end
@@ -1688,6 +2943,18 @@ function __WowWidget:SetFilteredSubcategoryID(subcategoryID, ...) end
 ---@param isActive? boolean
 ---@param ... any
 function __WowWidget:SetFirstAcquisitionBonusOnly(isActive, ...) end
+---@param fixedColor? boolean
+---@param ... any
+function __WowWidget:SetFixedColor(fixedColor, ...) end
+---@param isFixed? boolean
+---@param ... any
+function __WowWidget:SetFixedFrameLevel(isFixed, ...) end
+---@param isFixed? boolean
+---@param ... any
+function __WowWidget:SetFixedFrameStrata(isFixed, ...) end
+---@param flatten? boolean
+---@param ... any
+function __WowWidget:SetFlattensRenderLayers(flatten, ...) end
 ---@param columns? number
 ---@param ... any
 function __WowWidget:SetFlipBookColumns(columns, ...) end
@@ -1734,6 +3001,7 @@ function __WowWidget:SetFogOfWarMaskTexture(asset, ...) end
 ---@param height? any
 ---@param flags? any
 ---@param ... any
+---@return boolean success
 function __WowWidget:SetFont(fontFile, height, flags, ...) end
 --- Preserves all flags, does correct height conversion due to fixedHeight.
 ---@param height? number
@@ -1746,13 +3014,27 @@ function __WowWidget:SetFontObject(font, ...) end
 ---@param fontString? any
 ---@param ... any
 function __WowWidget:SetFontString(fontString, ...) end
+---@param ... any
+function __WowWidget:SetForbidden(...) end
+---@param text? string
+---@param ... any
+function __WowWidget:SetFormattedText(text, ...) end
 --- Configures the text format used by this duration text binding to display the remaining duration using the supplied formatter.
 ---@param formatter? any
 ---@param ... any
 function __WowWidget:SetFormatter(formatter, ...) end
+---@param frameLevel? number
+---@param ... any
+function __WowWidget:SetFrameLevel(frameLevel, ...) end
+---@param strata? any
+---@param ... any
+function __WowWidget:SetFrameStrata(strata, ...) end
 ---@param normalizedAlpha? number
 ---@param ... any
 function __WowWidget:SetFromAlpha(normalizedAlpha, ...) end
+---@param percent? number
+---@param ... any
+function __WowWidget:SetFromPercent(percent, ...) end
 ---@param characterIndex? number
 ---@param ... any
 ---@return boolean success
@@ -1760,6 +3042,11 @@ function __WowWidget:SetFrontEndLobbyModelFromDefaultCharacterDisplay(characterI
 ---@param glow? number
 ---@param ... any
 function __WowWidget:SetGlow(glow, ...) end
+---@param orientation? any
+---@param minColor? any
+---@param maxColor? any
+---@param ... any
+function __WowWidget:SetGradient(orientation, minColor, maxColor, ...) end
 ---@param gradientIndex0? number
 ---@param gradientIndex1? number
 ---@param gradientIndex2? number
@@ -1785,6 +3072,38 @@ function __WowWidget:SetHeight(height, ...) end
 ---@param factor? number
 ---@param ... any
 function __WowWidget:SetHeightFactor(factor, ...) end
+---@param hideNumbers? boolean
+---@param ... any
+function __WowWidget:SetHideCountdownNumbers(hideNumbers, ...) end
+---@param atlas? string
+---@param blendMode? any
+---@param ... any
+function __WowWidget:SetHighlightAtlas(atlas, blendMode, ...) end
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param a? any
+---@param ... any
+function __WowWidget:SetHighlightColor(colorR, colorG, colorB, a, ...) end
+---@param font? any
+---@param ... any
+function __WowWidget:SetHighlightFontObject(font, ...) end
+---@param locked? boolean
+---@param ... any
+function __WowWidget:SetHighlightLocked(locked, ...) end
+---@param asset? any
+---@param blendMode? any
+---@param ... any
+function __WowWidget:SetHighlightTexture(asset, blendMode, ...) end
+---@param numHistoryLines? number
+---@param ... any
+function __WowWidget:SetHistoryLines(numHistoryLines, ...) end
+---@param left? number
+---@param right? number
+---@param top? number
+---@param bottom? number
+---@param ... any
+function __WowWidget:SetHitRectInsets(left, right, top, bottom, ...) end
 ---@param thickness? number
 ---@param ... any
 function __WowWidget:SetHitRectThickness(thickness, ...) end
@@ -1792,6 +3111,37 @@ function __WowWidget:SetHitRectThickness(thickness, ...) end
 ---@param anchors? table
 ---@param ... any
 function __WowWidget:SetHitTestPoints(anchors, ...) end
+---@param tiling? boolean
+---@param ... any
+function __WowWidget:SetHorizTile(tiling, ...) end
+---@param offset? number
+---@param ... any
+function __WowWidget:SetHorizontalScroll(offset, ...) end
+---@param format? string
+---@param ... any
+function __WowWidget:SetHyperlinkFormat(format, ...) end
+--- Enables or disables propagating hyperlink events (ex. OnHyperlinkEnter, OnHyperlinkLeave, OnHyperlinkClick) to this frame's parent.
+---@param canPropagate? boolean
+---@param ... any
+function __WowWidget:SetHyperlinkPropagateToParent(canPropagate, ...) end
+---@param enabled? boolean
+---@param ... any
+function __WowWidget:SetHyperlinksEnabled(enabled, ...) end
+---@param id? number
+---@param ... any
+function __WowWidget:SetID(id, ...) end
+---@param scale? number
+---@param ... any
+function __WowWidget:SetIconScale(scale, ...) end
+---@param ignore? boolean
+---@param ... any
+function __WowWidget:SetIgnoreParentAlpha(ignore, ...) end
+---@param ignore? boolean
+---@param ... any
+function __WowWidget:SetIgnoreParentScale(ignore, ...) end
+---@param ignore? boolean
+---@param ... any
+function __WowWidget:SetIgnoringChildrenForBounds(ignore, ...) end
 --- Changes the clamping mode used when calculating incoming heal amounts.
 ---@param incomingHealClampMode? any
 ---@param ... any
@@ -1800,12 +3150,15 @@ function __WowWidget:SetIncomingHealClampMode(incomingHealClampMode, ...) end
 ---@param incomingHealOverflowPercent? number
 ---@param ... any
 function __WowWidget:SetIncomingHealOverflowPercent(incomingHealOverflowPercent, ...) end
----@param wordWrap? boolean
+---@param isIndented? boolean
 ---@param ... any
-function __WowWidget:SetIndentedWordWrap(wordWrap, ...) end
+function __WowWidget:SetIndentedWordWrap(isIndented, ...) end
 ---@param mode? any
 ---@param ... any
 function __WowWidget:SetInsertMode(mode, ...) end
+---@param isFrameBuffer? boolean
+---@param ... any
+function __WowWidget:SetIsFrameBuffer(isFrameBuffer, ...) end
 ---@param itemID? number
 ---@param appearanceModID? number
 ---@param itemVisualID? number
@@ -1865,15 +3218,24 @@ function __WowWidget:SetLightType(lightType, ...) end
 ---@param visible? boolean
 ---@param ... any
 function __WowWidget:SetLightVisible(visible, ...) end
+---@param loopType? any
+---@param ... any
+function __WowWidget:SetLooping(loopType, ...) end
 ---@param uiMapID? number
 ---@param ... any
 function __WowWidget:SetMapID(uiMapID, ...) end
+---@param file? string
+---@param ... any
+function __WowWidget:SetMask(file, ...) end
 ---@param scalar? number
 ---@param ... any
 function __WowWidget:SetMaskScalar(scalar, ...) end
 ---@param asset? any
 ---@param ... any
 function __WowWidget:SetMaskTexture(asset, ...) end
+---@param maxBytes? number
+---@param ... any
+function __WowWidget:SetMaxBytes(maxBytes, ...) end
 --- Sets the maximum interval band used for formatting.
 ---@param interval? any
 ---@param ... any
@@ -1882,6 +3244,12 @@ function __WowWidget:SetMaxInterval(interval, ...) end
 ---@param curve? any
 ---@param ... any
 function __WowWidget:SetMaxIntervalCurve(curve, ...) end
+---@param maxLetters? number
+---@param ... any
+function __WowWidget:SetMaxLetters(maxLetters, ...) end
+---@param maxLines? number
+---@param ... any
+function __WowWidget:SetMaxLines(maxLines, ...) end
 ---@param maxSnapshots? number
 ---@param ... any
 function __WowWidget:SetMaxSnapshots(maxSnapshots, ...) end
@@ -1908,6 +3276,14 @@ function __WowWidget:SetMinIntervalCurve(curve, ...) end
 ---@param maxValue? number
 ---@param ... any
 function __WowWidget:SetMinMaxValues(minValue, maxValue, ...) end
+--- Controls the minimum duration above which countdown text will be shown. This is applied based upon the total duration of the cooldown, not the remaining duration as it ticks down.
+---@param milliseconds? any
+---@param ... any
+function __WowWidget:SetMinimumCountdownDuration(milliseconds, ...) end
+---@param width? number
+---@param force? boolean
+---@param ... any
+function __WowWidget:SetMinimumWidth(width, force, ...) end
 ---@param asset? any
 ---@param noMip? boolean
 ---@param ... any
@@ -1950,9 +3326,45 @@ function __WowWidget:SetModelDrawLayer(layer, ...) end
 ---@param scale? number
 ---@param ... any
 function __WowWidget:SetModelScale(scale, ...) end
+---@param motionScriptsWhileDisabled? boolean
+---@param ... any
+function __WowWidget:SetMotionScriptsWhileDisabled(motionScriptsWhileDisabled, ...) end
+---@param enabled? boolean
+---@param ... any
+function __WowWidget:SetMouseClickEnabled(enabled, ...) end
+---@param enabled? boolean
+---@param ... any
+function __WowWidget:SetMouseMotionEnabled(enabled, ...) end
+---@param movable? boolean
+---@param ... any
+function __WowWidget:SetMovable(movable, ...) end
+---@param multiline? boolean
+---@param ... any
+function __WowWidget:SetMultiLine(multiline, ...) end
+---@param wrap? boolean
+---@param ... any
+function __WowWidget:SetNonSpaceWrap(wrap, ...) end
+---@param atlas? string
+---@param ... any
+function __WowWidget:SetNormalAtlas(atlas, ...) end
+---@param font? any
+---@param ... any
+function __WowWidget:SetNormalFontObject(font, ...) end
+---@param asset? any
+---@param ... any
+function __WowWidget:SetNormalTexture(asset, ...) end
 ---@param numSplinePoints? number
 ---@param ... any
 function __WowWidget:SetNumSplinePoints(numSplinePoints, ...) end
+---@param number? number
+---@param ... any
+function __WowWidget:SetNumber(number, ...) end
+---@param isNumeric? boolean
+---@param ... any
+function __WowWidget:SetNumeric(isNumeric, ...) end
+---@param isNumeric? boolean
+---@param ... any
+function __WowWidget:SetNumericFullRange(isNumeric, ...) end
 ---@param enabled? boolean
 ---@param ... any
 function __WowWidget:SetObeyHideInTransmogFlag(enabled, ...) end
@@ -1963,9 +3375,13 @@ function __WowWidget:SetObeyStepOnDrag(obeyStepOnDrag, ...) end
 ---@param offsetV? number
 ---@param ... any
 function __WowWidget:SetOffset(offsetU, offsetV, ...) end
----@param order? number
+--- Changes when OnUpdate scripts are executed for this object.
+---@param onUpdateMode? any
 ---@param ... any
-function __WowWidget:SetOrder(order, ...) end
+function __WowWidget:SetOnUpdateMode(onUpdateMode, ...) end
+---@param newOrder? number
+---@param ... any
+function __WowWidget:SetOrder(newOrder, ...) end
 ---@param orientation? any
 ---@param ... any
 function __WowWidget:SetOrientation(orientation, ...) end
@@ -1974,6 +3390,12 @@ function __WowWidget:SetOrientation(orientation, ...) end
 ---@param originY? number
 ---@param ... any
 function __WowWidget:SetOrigin(point, originX, originY, ...) end
+---@param right? number
+---@param bottom? number
+---@param left? number
+---@param top? number
+---@param ... any
+function __WowWidget:SetPadding(right, bottom, left, top, ...) end
 ---@param scale? number
 ---@param ... any
 function __WowWidget:SetPanDistance(scale, ...) end
@@ -1981,16 +3403,25 @@ function __WowWidget:SetPanDistance(scale, ...) end
 ---@param order? number
 ---@param ... any
 function __WowWidget:SetParent(parent, order, ...) end
+---@param parentKey? string
+---@param clearOtherKeys? boolean
+---@param ... any
+function __WowWidget:SetParentKey(parentKey, clearOtherKeys, ...) end
 ---@param scale? number
 ---@param ... any
 function __WowWidget:SetParticleOverrideScale(scale, ...) end
 ---@param enabled? boolean
 ---@param ... any
 function __WowWidget:SetParticlesEnabled(enabled, ...) end
----@param paused? boolean
----@param affectsGlobalPause? boolean
+---@param buttons? any
 ---@param ... any
-function __WowWidget:SetPaused(paused, affectsGlobalPause, ...) end
+function __WowWidget:SetPassThroughButtons(buttons, ...) end
+---@param isPassword? boolean
+---@param ... any
+function __WowWidget:SetPassword(isPassword, ...) end
+---@param paused? boolean
+---@param ... any
+function __WowWidget:SetPaused(paused, ...) end
 ---@param pitch? number
 ---@param ... any
 function __WowWidget:SetPitch(pitch, ...) end
@@ -2012,6 +3443,9 @@ function __WowWidget:SetPlayerPingScale(scale, ...) end
 ---@param height? number
 ---@param ... any
 function __WowWidget:SetPlayerPingTexture(textureType, asset, width, height, ...) end
+---@param play? boolean
+---@param ... any
+function __WowWidget:SetPlaying(play, ...) end
 ---@param point? any
 ---@param relativeTo? any
 ---@param relativePoint? any
@@ -2043,6 +3477,25 @@ function __WowWidget:SetPredictedValues(predictedValues, ...) end
 ---@param preferCollisionBounds? boolean
 ---@param ... any
 function __WowWidget:SetPreferModelCollisionBounds(preferCollisionBounds, ...) end
+---@param propagate? boolean
+---@param ... any
+function __WowWidget:SetPropagateKeyboardInput(propagate, ...) end
+---@param propagate? boolean
+---@param ... any
+function __WowWidget:SetPropagateMouseClicks(propagate, ...) end
+---@param propagate? boolean
+---@param ... any
+function __WowWidget:SetPropagateMouseMotion(propagate, ...) end
+---@param atlas? string
+---@param ... any
+function __WowWidget:SetPushedAtlas(atlas, ...) end
+---@param offsetX? number
+---@param offsetY? number
+---@param ... any
+function __WowWidget:SetPushedTextOffset(offsetX, offsetY, ...) end
+---@param asset? any
+---@param ... any
+function __WowWidget:SetPushedTexture(asset, ...) end
 ---@param alpha? number
 ---@param ... any
 function __WowWidget:SetQuestBlobInsideAlpha(alpha, ...) end
@@ -2064,22 +3517,78 @@ function __WowWidget:SetQuestBlobRingScalar(scalar, ...) end
 ---@param asset? any
 ---@param ... any
 function __WowWidget:SetQuestBlobRingTexture(asset, ...) end
+--- Sets the end angle offset of the radial progress bar as a normalized value (0 to 1).
+---@param offset? number
+---@param ... any
+function __WowWidget:SetRadialProgressBarEndOffset(offset, ...) end
+--- Sets the feather/blur amount applied to the radial progress bar edge (higher = more gradual falloff).
+---@param feather? number
+---@param ... any
+function __WowWidget:SetRadialProgressBarFeather(feather, ...) end
+--- Sets the fill percentage of the radial progress bar (0 to 1).
+---@param percent? number
+---@param ... any
+function __WowWidget:SetRadialProgressBarPercent(percent, ...) end
+--- Sets whether the radial progress bar fills in reverse (counterclockwise) direction.
+---@param reverse? boolean
+---@param ... any
+function __WowWidget:SetRadialProgressBarReverse(reverse, ...) end
+--- Sets the start angle offset of the radial progress bar as a normalized value (0 to 1), where 0 is at the bottom.
+---@param offset? number
+---@param ... any
+function __WowWidget:SetRadialProgressBarStartOffset(offset, ...) end
 ---@param angle? number
 ---@param ... any
 function __WowWidget:SetRadians(angle, ...) end
+---@param renderMode? any
+---@param ... any
+function __WowWidget:SetRenderMode(renderMode, ...) end
+---@param resizable? boolean
+---@param ... any
+function __WowWidget:SetResizable(resizable, ...) end
+---@param minWidth? number
+---@param minHeight? number
+---@param maxWidth? number
+---@param maxHeight? number
+---@param ... any
+function __WowWidget:SetResizeBounds(minWidth, minHeight, maxWidth, maxHeight, ...) end
 ---@param callback? any
 ---@param ... any
 function __WowWidget:SetResultsUpdatedCallback(callback, ...) end
+---@param reverse? boolean
+---@param ... any
+function __WowWidget:SetReverse(reverse, ...) end
+---@param isReverseFill? boolean
+---@param ... any
+function __WowWidget:SetReverseFill(isReverseFill, ...) end
+--- Sets the roleset tags for this frame, used by the UI mode system to gate visibility. Supports comma-separated names to assign multiple rolesets. Pass nil to clear.
+---@param rolesetsString? string
+---@param ... any
+function __WowWidget:SetRolesets(rolesetsString, ...) end
 ---@param roll? number
 ---@param ... any
 function __WowWidget:SetRoll(roll, ...) end
+---@param rotatesTexture? boolean
+---@param ... any
+function __WowWidget:SetRotatesTexture(rotatesTexture, ...) end
 ---@param radians? number
 ---@param animate? boolean
 ---@param ... any
 function __WowWidget:SetRotation(radians, animate, ...) end
+--- Sets how fractional seconds are rounded when not displaying milliseconds.
+---@param rounding? any
+---@param ... any
+function __WowWidget:SetRounding(rounding, ...) end
+---@param svgAsset? any
+---@param ... any
+---@return boolean success
+function __WowWidget:SetSVG(svgAsset, ...) end
 ---@param scale? number
 ---@param ... any
 function __WowWidget:SetScale(scale, ...) end
+---@param scaleAnimationMode? any
+---@param ... any
+function __WowWidget:SetScaleAnimationMode(scaleAnimationMode, ...) end
 ---@param scaleX? number
 ---@param scaleY? number
 ---@param ... any
@@ -2088,10 +3597,24 @@ function __WowWidget:SetScaleFrom(scaleX, scaleY, ...) end
 ---@param scaleY? number
 ---@param ... any
 function __WowWidget:SetScaleTo(scaleX, scaleY, ...) end
+---@param scriptTypeName? any
+---@param script? any
+---@param ... any
+function __WowWidget:SetScript(scriptTypeName, script, ...) end
+---@param scrollChild? any
+---@param ... any
+function __WowWidget:SetScrollChild(scrollChild, ...) end
 --- Search parameter; If set, multiple text fields are checked for instances of the text, including name, category, subcategory, and data tags
 ---@param searchText? string
 ---@param ... any
 function __WowWidget:SetSearchText(searchText, ...) end
+---@param isSecure? boolean
+---@param ... any
+function __WowWidget:SetSecureText(isSecure, ...) end
+---@param ... any
+function __WowWidget:SetSecurityDisablePaste(...) end
+---@param ... any
+function __WowWidget:SetSecurityDisableSetText(...) end
 ---@param sequence? number
 ---@param ... any
 function __WowWidget:SetSequence(sequence, ...) end
@@ -2127,27 +3650,66 @@ function __WowWidget:SetShown(show, ...) end
 ---@param y? number
 ---@param ... any
 function __WowWidget:SetSize(x, y, ...) end
+---@param durationSec? number
+---@param ... any
+function __WowWidget:SetSmoothProgress(durationSec, ...) end
+---@param smoothScaling? boolean
+---@param ... any
+function __WowWidget:SetSmoothScaling(smoothScaling, ...) end
+---@param weights? any
+---@param ... any
+function __WowWidget:SetSmoothing(weights, ...) end
+---@param snap? boolean
+---@param ... any
+function __WowWidget:SetSnapToPixelGrid(snap, ...) end
 ---@param sortType? any
 ---@param ... any
 function __WowWidget:SetSortType(sortType, ...) end
----@param spacing? number
+---@param fontHeight? number
 ---@param ... any
-function __WowWidget:SetSpacing(spacing, ...) end
+function __WowWidget:SetSpacing(fontHeight, ...) end
 ---@param visualKitID? number
 ---@param ... any
 function __WowWidget:SetSpellVisualKit(visualKitID, ...) end
+---@param cell? number
+---@param numRows? number
+---@param numColumns? number
+---@param cellWidth? number
+---@param cellHeight? number
+---@param ... any
+function __WowWidget:SetSpriteSheetCell(cell, numRows, numColumns, cellWidth, cellHeight, ...) end
 ---@param frame? any
 ---@param ... any
 function __WowWidget:SetStackingBoundsFrame(frame, ...) end
 ---@param color? any
 ---@param ... any
 function __WowWidget:SetStartColor(color, ...) end
+---@param delaySec? number
+---@param recomputeGroupDuration? boolean
+---@param ... any
+function __WowWidget:SetStartDelay(delaySec, recomputeGroupDuration, ...) end
 ---@param relativePoint? any
 ---@param relativeTo? any
 ---@param offsetX? number
 ---@param offsetY? number
 ---@param ... any
 function __WowWidget:SetStartPoint(relativePoint, relativeTo, offsetX, offsetY, ...) end
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param a? any
+---@param ... any
+function __WowWidget:SetStatusBarColor(colorR, colorG, colorB, a, ...) end
+---@param desaturated? boolean
+---@param ... any
+function __WowWidget:SetStatusBarDesaturated(desaturated, ...) end
+---@param desaturation? number
+---@param ... any
+function __WowWidget:SetStatusBarDesaturation(desaturation, ...) end
+---@param asset? any
+---@param ... any
+---@return boolean success
+function __WowWidget:SetStatusBarTexture(asset, ...) end
 ---@param stepsPerPage? number
 ---@param ... any
 function __WowWidget:SetStepsPerPage(stepsPerPage, ...) end
@@ -2159,9 +3721,37 @@ function __WowWidget:SetStoredOnly(isActive, ...) end
 ---@param strip? any
 ---@param ... any
 function __WowWidget:SetStripIntervalWhitespace(strip, ...) end
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param a? any
+---@param ... any
+function __WowWidget:SetSwipeColor(colorR, colorG, colorB, a, ...) end
+---@param texture? any
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param colorA? number
+---@param ... any
+function __WowWidget:SetSwipeTexture(texture, colorR, colorG, colorB, colorA, ...) end
+---@param target? any
+---@param ... any
+---@return boolean success
+function __WowWidget:SetTarget(target, ...) end
 ---@param scale? number
 ---@param ... any
 function __WowWidget:SetTargetDistance(scale, ...) end
+---@param key? string
+---@param ... any
+---@return boolean success
+function __WowWidget:SetTargetKey(key, ...) end
+---@param name? string
+---@param ... any
+---@return boolean success
+function __WowWidget:SetTargetName(name, ...) end
+---@param ... any
+---@return boolean success
+function __WowWidget:SetTargetParent(...) end
 ---@param alpha? number
 ---@param ... any
 function __WowWidget:SetTaskBlobInsideAlpha(alpha, ...) end
@@ -2183,17 +3773,76 @@ function __WowWidget:SetTaskBlobRingScalar(scalar, ...) end
 ---@param asset? any
 ---@param ... any
 function __WowWidget:SetTaskBlobRingTexture(asset, ...) end
+---@param left? number
+---@param right? number
+---@param bottom? number
+---@param top? number
+---@param ... any
+function __WowWidget:SetTexCoord(left, right, bottom, top, ...) end
+---@param low? any
+---@param high? any
+---@param ... any
+function __WowWidget:SetTexCoordRange(low, high, ...) end
+---@param bias? number
+---@param ... any
+function __WowWidget:SetTexelSnappingBias(bias, ...) end
+---@param text? string
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param alpha? number
+---@param wrap? boolean
+---@param ... any
+function __WowWidget:SetText(text, colorR, colorG, colorB, alpha, wrap, ...) end
 ---@param colorR? number
 ---@param colorG? number
 ---@param colorB? number
 ---@param a? any
 ---@param ... any
 function __WowWidget:SetTextColor(colorR, colorG, colorB, a, ...) end
+--- Configures this duration text binding to adjust fontstring text color by evaluating a duration property through a curve.
+---@param curve? any
+---@param property? any
+---@param ... any
+function __WowWidget:SetTextColorCurve(curve, property, ...) end
 --- Configures the text format used by this duration text binding. The format string may contain '{}' placeholders, each of which is substituted by the corresponding component in the supplied array.
----@param format? string
+---@param formatString? any
 ---@param components? table
 ---@param ... any
-function __WowWidget:SetTextFormat(format, components, ...) end
+function __WowWidget:SetTextFormat(formatString, components, ...) end
+---@param height? number
+---@param ... any
+function __WowWidget:SetTextHeight(height, ...) end
+---@param left? number
+---@param right? number
+---@param top? number
+---@param bottom? number
+---@param ... any
+function __WowWidget:SetTextInsets(left, right, top, bottom, ...) end
+---@param textScale? number
+---@param ... any
+function __WowWidget:SetTextScale(textScale, ...) end
+---@param text? string
+---@param ... any
+function __WowWidget:SetTextToFit(text, ...) end
+---@param textureAsset? string
+---@param wrapModeHorizontal? string
+---@param wrapModeVertical? string
+---@param filterMode? string
+---@param ... any
+---@return boolean success
+function __WowWidget:SetTexture(textureAsset, wrapModeHorizontal, wrapModeVertical, filterMode, ...) end
+--- Enables nineslice texture rendering using the specified pixel margins. Preferred over legacy nineslice approach that uses 9 separate textures.
+---@param left? number
+---@param top? number
+---@param right? number
+---@param bottom? number
+---@param ... any
+function __WowWidget:SetTextureSliceMargins(left, top, right, bottom, ...) end
+--- Controls whether the center and sides are Stretched or Tiled when using nineslice texture rendering. Defaults to Stretched.
+---@param sliceMode? any
+---@param ... any
+function __WowWidget:SetTextureSliceMode(sliceMode, ...) end
 ---@param thickness? number
 ---@param ... any
 function __WowWidget:SetThickness(thickness, ...) end
@@ -2228,12 +3877,29 @@ function __WowWidget:SetTimeSpan(startTime, endTime, ...) end
 ---@param timeVisibleSeconds? number
 ---@param ... any
 function __WowWidget:SetTimeVisible(timeVisibleSeconds, ...) end
+---@param duration? any
+---@param interpolation? any
+---@param direction? any
+---@param ... any
+function __WowWidget:SetTimerDuration(duration, interpolation, direction, ...) end
 ---@param normalizedAlpha? number
 ---@param ... any
 function __WowWidget:SetToAlpha(normalizedAlpha, ...) end
 --- Resets this duration text binding to its default state, clearing the configured font string, duration, format, formatter, and fallback text.
 ---@param ... any
 function __WowWidget:SetToDefaults(...) end
+---@param setToFinalAlpha? boolean
+---@param ... any
+function __WowWidget:SetToFinalAlpha(setToFinalAlpha, ...) end
+---@param percent? number
+---@param ... any
+function __WowWidget:SetToPercent(percent, ...) end
+--- Immediately finishes any interpolation of the bar and snaps it to the target value.
+---@param ... any
+function __WowWidget:SetToTargetValue(...) end
+---@param topLevel? boolean
+---@param ... any
+function __WowWidget:SetToplevel(topLevel, ...) end
 ---@param translation? any
 ---@param rotation? any
 ---@param scale? number
@@ -2270,11 +3936,18 @@ function __WowWidget:SetUpdateCallback(cb, ...) end
 ---@param updateInterval? number
 ---@param ... any
 function __WowWidget:SetUpdateInterval(updateInterval, ...) end
+--- Aura durations are displayed slightly differently than cooldown durations. Setting this to true will adjust the display logic to stay in sync with aura timers.
+---@param useAuraDisplayTime? boolean
+---@param ... any
+function __WowWidget:SetUseAuraDisplayTime(useAuraDisplayTime, ...) end
 ---@param x? boolean
 ---@param y? boolean
 ---@param z? boolean
 ---@param ... any
 function __WowWidget:SetUseCenterForOrigin(x, y, z, ...) end
+---@param useCircularEdge? boolean
+---@param ... any
+function __WowWidget:SetUseCircularEdge(useCircularEdge, ...) end
 ---@param useGBuffer? boolean
 ---@param ... any
 function __WowWidget:SetUseGBuffer(useGBuffer, ...) end
@@ -2284,6 +3957,12 @@ function __WowWidget:SetUseTransmogChoices(enabled, ...) end
 ---@param enabled? boolean
 ---@param ... any
 function __WowWidget:SetUseTransmogSkin(enabled, ...) end
+---@param userPlaced? boolean
+---@param ... any
+function __WowWidget:SetUserPlaced(userPlaced, ...) end
+---@param usingParentLevel? boolean
+---@param ... any
+function __WowWidget:SetUsingParentLevel(usingParentLevel, ...) end
 ---@param value? number
 ---@param treatAsMouseEvent? boolean
 ---@param ... any
@@ -2291,6 +3970,28 @@ function __WowWidget:SetValue(value, treatAsMouseEvent, ...) end
 ---@param valueStep? number
 ---@param ... any
 function __WowWidget:SetValueStep(valueStep, ...) end
+---@param tiling? boolean
+---@param ... any
+function __WowWidget:SetVertTile(tiling, ...) end
+---@param colorR? number
+---@param colorG? number
+---@param colorB? number
+---@param a? any
+---@param ... any
+function __WowWidget:SetVertexColor(colorR, colorG, colorB, a, ...) end
+---@param value? boolean
+---@param colorIfTrue? any
+---@param colorIfFalse? any
+---@param ... any
+function __WowWidget:SetVertexColorFromBoolean(value, colorIfTrue, colorIfFalse, ...) end
+---@param vertexIndex? number
+---@param offsetX? number
+---@param offsetY? number
+---@param ... any
+function __WowWidget:SetVertexOffset(vertexIndex, offsetX, offsetY, ...) end
+---@param offset? number
+---@param ... any
+function __WowWidget:SetVerticalScroll(offset, ...) end
 ---@param insets? any
 ---@param ... any
 function __WowWidget:SetViewInsets(insets, ...) end
@@ -2298,9 +3999,18 @@ function __WowWidget:SetViewInsets(insets, ...) end
 ---@param translationY? number
 ---@param ... any
 function __WowWidget:SetViewTranslation(translationX, translationY, ...) end
+---@param maxVisibleBytes? number
+---@param ... any
+function __WowWidget:SetVisibleTextByteLimit(maxVisibleBytes, ...) end
 ---@param width? number
 ---@param ... any
 function __WowWidget:SetWidth(width, ...) end
+---@param window? any
+---@param ... any
+function __WowWidget:SetWindow(window, ...) end
+---@param wrap? boolean
+---@param ... any
+function __WowWidget:SetWordWrap(wrap, ...) end
 ---@param yaw? number
 ---@param ... any
 function __WowWidget:SetYaw(yaw, ...) end
@@ -2311,6 +4021,10 @@ function __WowWidget:SetZeroDurationText(text, ...) end
 ---@param zoomLevel? number
 ---@param ... any
 function __WowWidget:SetZoom(zoomLevel, ...) end
+---@param button? any
+---@param ... any
+---@return boolean shouldPassThrough
+function __WowWidget:ShouldButtonPassThrough(button, ...) end
 ---@param ... any
 function __WowWidget:Show(...) end
 ---@param movieID? number
@@ -2326,6 +4040,9 @@ function __WowWidget:StartMovie(movieID, looping, ...) end
 ---@return boolean success
 ---@return number returnCode
 function __WowWidget:StartMovieByName(movieName, looping, resolution, ...) end
+---@param alwaysStartFromMouse? boolean
+---@param ... any
+function __WowWidget:StartMoving(alwaysStartFromMouse, ...) end
 ---@param panType? number
 ---@param durationSeconds? number
 ---@param doFade? boolean
@@ -2338,6 +4055,12 @@ function __WowWidget:StartPan(panType, durationSeconds, doFade, visKitID, startP
 ---@param fadeDuration? number
 ---@param ... any
 function __WowWidget:StartPlayerPing(duration, fadeDuration, ...) end
+---@param resizePoint? any
+---@param alwaysStartFromMouse? boolean
+---@param ... any
+function __WowWidget:StartSizing(resizePoint, alwaysStartFromMouse, ...) end
+---@param ... any
+function __WowWidget:Stop(...) end
 ---@param ... any
 function __WowWidget:StopAnimKit(...) end
 ---@param ... any
@@ -2346,6 +4069,8 @@ function __WowWidget:StopAnimating(...) end
 function __WowWidget:StopAnimationKit(...) end
 ---@param ... any
 function __WowWidget:StopMovie(...) end
+---@param ... any
+function __WowWidget:StopMovingOrSizing(...) end
 ---@param ... any
 function __WowWidget:StopPan(...) end
 ---@param ... any
@@ -2378,6 +4103,8 @@ function __WowWidget:ToggleFilterTag(groupID, tagID, ...) end
 ---@param ... any
 function __WowWidget:ToggleFirstAcquisitionBonusOnly(...) end
 ---@param ... any
+function __WowWidget:ToggleInputLanguage(...) end
+---@param ... any
 function __WowWidget:ToggleStoredOnly(...) end
 ---@param ... any
 function __WowWidget:ToggleUncollected(...) end
@@ -2399,6 +4126,14 @@ function __WowWidget:UndressSlot(inventorySlot, ...) end
 ---@param ... any
 function __WowWidget:UnequipItems(...) end
 ---@param ... any
+function __WowWidget:UnlockHighlight(...) end
+---@param ... any
+function __WowWidget:UnregisterAllEvents(...) end
+---@param eventName? string
+---@param ... any
+---@return boolean registered
+function __WowWidget:UnregisterEvent(eventName, ...) end
+---@param ... any
 function __WowWidget:UpdateBlips(...) end
 --- Immediately updates the configured font string from the current duration state.
 ---@param ... any
@@ -2409,6 +4144,8 @@ function __WowWidget:UpdateFontString(...) end
 ---@return number questID
 ---@return number numObjectives
 function __WowWidget:UpdateMouseOverTooltip(x, y, ...) end
+---@param ... any
+function __WowWidget:UpdateScrollChildRect(...) end
 ---@param useCenter? boolean
 ---@param ... any
 function __WowWidget:UseModelCenterToTransform(useCenter, ...) end

@@ -78,12 +78,6 @@ local ns = {
             return nil
         end,
     },
-    CDMBlizzMirror = {
-        GetStateByCooldownID = function() return nil end,
-        HasChildForCooldownID = function() return false end,
-        GetDirectCooldownIDForViewer = function() return nil end,
-        GetCooldownIDForViewer = function() return nil end,
-    },
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
@@ -128,10 +122,8 @@ local expectedProbes = {
     "CDM_resolveBy_auraScope",
     "CDM_resolveBy_spellQueue",
     "CDM_resolveBy_expiry",
-    "CDM_resolveBy_mirrorCooldownOnly",
     "CDM_resolveBy_auraScopedCooldown",
     "CDM_resolveBy_ownedBar",
-    "CDM_resolveBy_mirrorRefresh",
     "CDM_resolveBy_typeRefresh",
     "CDM_resolveBy_runtimeTypeRefresh",
     "CDM_resolveBy_iconPlaced",
@@ -340,18 +332,5 @@ assert(probeValue("CDM_resolveBy_ownedBar") == beforeOwnedBar + 1,
     "resolveBy_ownedBar should increment on an ownedBar-tagged resolve")
 assert(probeValue("CDM_resolveBy_other") == beforeOther9,
     "resolveBy_other must not increment when ownedBar tag is set")
-
----------------------------------------------------------------------------
--- Test 10: mirrorRefresh tag increments resolveBy.mirrorRefresh.
----------------------------------------------------------------------------
-local beforeMirrorRefresh = probeValue("CDM_resolveBy_mirrorRefresh")
-local beforeOther10 = probeValue("CDM_resolveBy_other")
-setTag("mirrorRefresh")
-doResolve(70002)
-setTag(nil)
-assert(probeValue("CDM_resolveBy_mirrorRefresh") == beforeMirrorRefresh + 1,
-    "resolveBy_mirrorRefresh should increment on a mirrorRefresh-tagged resolve")
-assert(probeValue("CDM_resolveBy_other") == beforeOther10,
-    "resolveBy_other must not increment when mirrorRefresh tag is set")
 
 print("OK: cdm_resolve_churn_test")

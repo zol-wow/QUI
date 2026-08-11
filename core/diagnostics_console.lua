@@ -1,45 +1,11 @@
---[[
-    QUI Diagnostics Console
-    --------------------------------------------------------------
-    Public API:
-        ns.DiagnosticsConsole.Run(label, fn)
-            Wraps fn() in a temporary _G.print substitution.
-            Lines fn() prints are mirrored to both chat AND the
-            console buffer/panel. _G.print is always restored,
-            even on Lua error.
-            Note: fn must be synchronous. print() calls scheduled to
-            run later (timers, events) after Run returns will not be
-            captured.
-
-        ns.DiagnosticsConsole.Append(line, kind)
-            Append one line to the ring buffer (and panel if mounted).
-            kind in { "command", "captured", "error", "info" }.
-
-        ns.DiagnosticsConsole.Clear()
-            Empty the buffer and panel.
-
-        ns.DiagnosticsConsole.GetText()
-            Return the buffer joined with "\n" (used by [Copy]).
-
-        ns.DiagnosticsConsole.CreateOutputPanel(parent)
-            Build the visible panel widget; returns the anchor frame.
-]]
-
 local ADDON_NAME, ns = ...
 
 local MAX_LINES = 1000
 local Console = {}
 ns.DiagnosticsConsole = Console
 
--- Ring buffer: 1-indexed array; head points at the next slot to write.
--- We use a plain array with a length cap and table.remove(1) on overflow.
--- 1000 lines × O(1) appends with rare O(N) drops on overflow is fine for
--- a panel that updates at human click rate.
 local buffer = {}
 
--- Weak-valued reference to the live panel so Append can push updates.
--- The value (the panel frame) is GC-eligible once the options window is
--- closed; we do not hold the panel alive ourselves.
 local livePanel = setmetatable({}, { __mode = "v" })
 
 local KIND_DEFAULT = "captured"
@@ -83,19 +49,17 @@ function Console.Run(label, fn)
         local n, parts = select("#", ...), {}
         for i = 1, n do parts[i] = tostring((select(i, ...))) end
         appendInternal(table.concat(parts, " "), "captured")
-        realPrint(...)            -- mirror to chat
+        realPrint(...)
     end
     local ok, err = pcall(fn)
-    _G.print = realPrint           -- always restore
+    _G.print = realPrint
     if not ok then
         appendInternal("ERROR: " .. tostring(err), "error")
     end
 end
 
--- Color tags applied per-kind. Returned as the WoW colour-escape prefix
--- so ScrollingMessageFrame renders them; |r terminates each line.
 local KIND_COLOR = {
-    command  = "|cff34D399",  -- accent green (#34D399)
+    command  = "|cff34D399",
     captured = "|cffFFFFFF",
     error    = "|cffE15D5D",
     info     = "|cff888888",
@@ -106,18 +70,12 @@ local function colorize(text, kind)
     return prefix .. tostring(text or "") .. "|r"
 end
 
--- A small generic copy popup. We do this inline (no dependency on
--- framework.lua's CreateExportPopup) because that helper isn't a
--- public export at the module level we run in.
 local function showCopyPopup(text)
     local popup = _G.QUI_DiagnosticsCopyPopup
     if not popup then
         popup = CreateFrame("Frame", "QUI_DiagnosticsCopyPopup", UIParent, "BackdropTemplate")
         popup:SetSize(560, 320)
         popup:SetPoint("CENTER")
-        -- FULLSCREEN_DIALOG + Toplevel + a high explicit frame level so the
-        -- popup sits on top of the QUI options window (which itself runs at
-        -- the DIALOG strata).
         popup:SetFrameStrata("FULLSCREEN_DIALOG")
         popup:SetFrameLevel(500)
         popup:SetToplevel(true)
@@ -163,7 +121,6 @@ function Console.CreateOutputPanel(parent)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(680, 320)
 
-    -- ── header bar ────────────────────────────────────────────
     local header = CreateFrame("Frame", nil, container)
     header:SetHeight(24)
     header:SetPoint("TOPLEFT", 0, 0)
@@ -186,9 +143,6 @@ function Console.CreateOutputPanel(parent)
             showCopyPopup(Console.GetText())
         end, "ghost")
     else
-        -- Defensive fallback if GUI is unavailable. Should not occur
-        -- in normal load order; the page renderer guards on GUI before
-        -- creating the panel.
         clearBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
         clearBtn:SetSize(60, 20); clearBtn:SetText(ns.L["Clear"])
         clearBtn:SetScript("OnClick", function() Console.Clear() end)
@@ -201,13 +155,11 @@ function Console.CreateOutputPanel(parent)
     clearBtn:ClearAllPoints()
     clearBtn:SetPoint("RIGHT", copyBtn, "LEFT", -6, 0)
 
-    -- ── body backdrop ─────────────────────────────────────────
     local body = CreateFrame("Frame", nil, container, "BackdropTemplate")
     body:SetPoint("TOPLEFT", 0, -26)
     body:SetPoint("BOTTOMRIGHT", 0, 0)
     ns.SkinBase.ApplyPixelBackdrop(body, 1, true, false, {0.3, 0.3, 0.3, 1}, {0, 0, 0, 0.5})
 
-    -- ── scrolling message frame ───────────────────────────────
     local smf = CreateFrame("ScrollingMessageFrame", nil, body)
     smf:SetPoint("TOPLEFT", 6, -6)
     smf:SetPoint("BOTTOMRIGHT", -6, 6)
@@ -235,8 +187,6 @@ function Console.CreateOutputPanel(parent)
 
     container._smf = smf
 
-    -- Replay buffer into the freshly-built SMF so re-opening the
-    -- options window restores the previous transcript.
     for _, entry in ipairs(buffer) do
         smf:AddMessage(colorize(entry.text, entry.kind))
     end
@@ -256,7 +206,6 @@ function Console.CreateOutputPanel(parent)
     return container
 end
 
--- Internal hook for Task 5 / 6 confirmation flow tests.
 ns._DiagnosticsConsoleInternal = {
     bufferLength = function() return #buffer end,
     maxLines     = MAX_LINES,

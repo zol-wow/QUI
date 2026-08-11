@@ -54,25 +54,20 @@ local mirrorDesaturated
 local staleMirrorDesaturated
 local mirrorGapMode = "cooldown"
 local chargedOverridePhase = "charge"
-local chargedOverrideMirrorActive = true
 local cooldownQueryCounts = {}
 
 local function resolvedState(durObj, mode, sourceID, start, duration, spellID, mirrorBacked, mirrorPayload, activity)
     local state = mirrorPayload or {}
-    local mirrorState = state.state or state.mirrorState
+    local mirrorState = state.state
     state.mode = mode or "inactive"
     state.durObj = durObj
     state.sourceID = sourceID
     state.start = start
     state.duration = duration
     state.spellID = spellID
-    state.mirrorBacked = mirrorBacked == true or state.mirrorBacked
     state.state = mirrorState
-    state.mirrorState = mirrorState
-    state.cooldownID = state.cooldownID or state.mirrorCooldownID or (mirrorState and mirrorState.cooldownID)
-    state.category = state.category or state.mirrorCategory or (mirrorState and mirrorState.viewerCategory)
-    state.mirrorCooldownID = state.cooldownID
-    state.mirrorCategory = state.category
+    state.cooldownID = state.cooldownID or (mirrorState and mirrorState.cooldownID)
+    state.category = state.category or (mirrorState and mirrorState.viewerCategory)
     if state.active == nil then
         if mirrorState and type(mirrorState.isActive) == "boolean" then
             state.active = mirrorState.isActive
@@ -393,19 +388,6 @@ local ns = {
             end
             local fallbackID = id or 12345
             return resolvedState(gcdDuration, "gcd-only", fallbackID, nil, nil, fallbackID)
-        end,
-    },
-    CDMBlizzMirror = {
-        GetStateByCooldownID = function(cooldownID, viewerCategory)
-            if cooldownID == 8194 and viewerCategory == "essential" then
-                return {
-                    cooldownID = 8194,
-                    viewerCategory = "essential",
-                    isActive = chargedOverrideMirrorActive,
-                    resolvedMode = chargedOverrideMirrorActive and "cooldown" or nil,
-                }
-            end
-            return nil
         end,
     },
     CDMIconFactory = {
@@ -981,8 +963,6 @@ local chargedOverrideIcon = {
         end,
         SetVertexColor = noop,
     },
-    _blizzMirrorCooldownID = 8194,
-    _blizzMirrorCategory = "essential",
     _spellEntry = {
         id = 8092,
         spellID = 8092,
@@ -999,7 +979,6 @@ assert(chargedOverrideIcon._hasCooldownActive == true,
     "charged override recharge should start as cooldown-active")
 
 chargedOverridePhase = "inactive"
-chargedOverrideMirrorActive = true
 applied = ns.CDMIcons.ApplyResolvedCooldown(chargedOverrideIcon)
 assert(applied == false,
     "transient inactive base-spell pass may clear the active recharge binding while mirror state catches up")

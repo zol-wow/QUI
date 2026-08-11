@@ -21,6 +21,11 @@ local fnSource = source:sub(fnStart, nl - 1)
 
 local chunk = table.concat({
     "local C_UnitAuras = _CUA",
+    -- Production defines this file-locally (above the extracted section);
+    -- the standalone chunk needs its own. Mocks here are never secret.
+    -- (RenderIsSecretValue: PTR7 wave renamed the wrapper so the bare
+    -- builtin guard name is never file-bound — see .taintrc extra_guards.)
+    "local RenderIsSecretValue = function() return false end",
     fnSource,
     "return ApplyDebuffTypeBorder, ShowTypeBorder, HideTypeBorder",
 }, "\n")

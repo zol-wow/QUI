@@ -1,28 +1,9 @@
----------------------------------------------------------------------------
--- Bags views: category layout engine (PURE math, headless-testable — the
--- "future category engine" grid_layout.lua's header promised).
--- Groups occupied cells into ordered buckets and stacks one grid per
--- bucket under a header row, on the same TOPLEFT-relative coordinate
--- contract as GridLayout (y negative going down).
---
--- Buckets (ItemClass EnumValues per ItemConstantsDocumentation.lua:199):
---   recent      — cell.recent flag (new-item tracking), outranks everything
---   equipment   — Weapon(2) + Armor(4)
---   consumables — Consumable(0)
---   trade       — Tradegoods(7) + Reagent(5) + Profession(19)
---   quest       — Questitem(12) + Key(13)
---   recipes     — Recipe(9)
---   battlepets  — Battlepet(17)
---   misc        — everything else (incl. Container(1), pending details)
---   junk        — quality 0 (outranks class), always last
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 
 local CategoryLayout = {}
 Bags.CategoryLayout = CategoryLayout
 
--- Ordered bucket definitions (render order; junk deliberately last).
 CategoryLayout.CATEGORIES = {
     { key = "recent",      title = ns.L["Recent"] },
     { key = "equipment",   title = ns.L["Equipment"] },
@@ -44,18 +25,12 @@ local CLASS_BUCKET = {
     [17] = "battlepets",
 }
 
---- details (Details.Build shape: classID/quality/name) → bucket key.
---- Pending (nil) details fall into misc — the next refresh re-buckets them.
 function CategoryLayout.Categorize(details)
     if not details then return "misc" end
     if details.quality == 0 then return "junk" end
     return CLASS_BUCKET[details.classID] or "misc"
 end
 
---- cells: array of { bagID, slot, entry|nil, recent? }; buildDetails(entry)
---- → details|nil (injectable — pure). Empty slots are dropped. → ordered
---- array of { key, title, cells } with empty buckets omitted; in-bucket
---- sort is quality desc → name asc (pending names last) → itemID asc.
 function CategoryLayout.Group(cells, buildDetails)
     local buckets = {}
     for _, cell in ipairs(cells) do
@@ -93,10 +68,6 @@ function CategoryLayout.Group(cells, buildDetails)
     return groups
 end
 
---- groups (from Group) + config { columns, iconSize, spacing, headerHeight }
---- → { buttons = { { cell, x, y } ... }, headers = { { title, y } ... },
----     width, height }. One full-columns-wide grid per bucket, stacked
---- under its header; sections are separated by one `spacing` gap.
 function CategoryLayout.Compute(groups, config)
     local headerH = config.headerHeight or 16
     local gap = config.spacing or 4
@@ -116,7 +87,7 @@ function CategoryLayout.Compute(groups, config)
         y = y - grid.height - gap
     end
     out.width = width
-    out.height = -y - gap -- drop the trailing section gap
+    out.height = -y - gap
     if out.height < 0 then out.height = 0 end
     return out
 end

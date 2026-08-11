@@ -15,7 +15,7 @@ function V2.Register(frame)
         icon = "U",
         name = ns.L["Unit Frames"],
         primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "playerFrame" },
-        previewHeight = 220,
+        previewHeight = 180,
         navRoutes = {
             { tabIndex = 5, subTabIndex = 0, subPageIndex = 1 },
         },

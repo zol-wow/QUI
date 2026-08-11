@@ -46,9 +46,24 @@ _G.C_Timer = {
     After     = function() end,
     NewTicker = function() return { Cancel = function() end } end,
 }
-_G.C_UnitAuras = {}
+-- GetAuraDataByIndex / C_Secrets.ShouldAurasBeSecret are captured as LOCALS
+-- by groupframes_missing_raid_buffs.lua at loadfile time, so a bare
+-- _G.C_UnitAuras.field = fn reassignment afterward would never be seen — each
+-- stub instead calls through a stable closure that dereferences a
+-- reassignable upvalue (same technique as tests/unit/
+-- raidbuffs_unknown_tolerance_test.lua). Defaults (empty scan, auras not
+-- secret) are a behavioral no-op vs. the previous bare `_G.C_UnitAuras = {}`
+-- for every existing Task in this file (GetAuraDataByIndex was implicitly
+-- nil-forever before too) — Task2b below is the only block that reassigns
+-- them, and restores the defaults immediately after.
+local indexScanImpl = function() return nil end
+local aurasSecretFlag = false
+_G.C_UnitAuras = {
+    GetAuraDataByIndex = function(unit, index, filter) return indexScanImpl(unit, index, filter) end,
+}
 _G.C_Spell     = {}
 _G.AuraUtil    = {}
+_G.C_Secrets   = { ShouldAurasBeSecret = function() return aurasSecretFlag end }
 _G.LibStub     = nil
 
 -- =========================================================================
@@ -145,9 +160,34 @@ do
         return { isFromPlayerOrPlayerPet = (who == "mine") }
     end
     assert(MRB:UnitHasMyBuff("raid1", {53563}) == true,  "my beacon on raid1 counts")
+    -- Task 14 tristate update: raid2/raid3 stay `false` here — these are
+    -- genuine DEFINITE-negative outcomes (a readable "someone else's copy"
+    -- and a readable "nothing"), not a collapsed unknown. GetAuraDataByIndex
+    -- is now a live (default no-op) stub, so these two asserts exercise the
+    -- real index-scan fallback end to end, not a dead branch. Task2b below
+    -- pins the genuinely-UNKNOWN outcome for this same spell ID (53563) so
+    -- the two tristate branches are both proven for the brief's own
+    -- motivating spell, not just asserted by omission.
     assert(MRB:UnitHasMyBuff("raid2", {53563}) == false, "someone else's beacon does not count")
     assert(MRB:UnitHasMyBuff("raid3", {53563}) == false, "absent = false")
     print("OK: groupframes_ally_buffs_test Task2")
+end
+
+-- =========================================================================
+-- Task 2b (Task 14 follow-up): UnitHasMyBuff tristate — unreadable (secret)
+-- aura data for the SAME spell (53563, Beacon of Light) must yield nil
+-- (UNKNOWN), never collapse into the same `false` Task2 asserts for a
+-- genuinely-absent result above.
+-- =========================================================================
+do
+    -- raid4 is not in Task2's `present` map (whitelist seam returns nil, same
+    -- as raid3), but this time the index-scan fallback reports the aura data
+    -- as globally secret instead of cleanly finding nothing.
+    aurasSecretFlag = true
+    local result = MRB:UnitHasMyBuff("raid4", { 53563 })
+    aurasSecretFlag = false
+    assert(result == nil, "unreadable (secret) aura data => nil (UNKNOWN), not false")
+    print("OK: groupframes_ally_buffs_test Task2b")
 end
 
 -- =========================================================================

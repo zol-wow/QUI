@@ -76,18 +76,6 @@ local coreSrc2 = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 assert(coreSrc2:find("function WindowManager:DespawnAll", 1, true),
     "WindowManager:DespawnAll must be defined in damage_meter.lua")
 
--- v38 migration: maxVisibleRows is dropped from saved window entries so the
--- dead key doesn't linger in savedvars. Source-pattern assertion: the migration
--- function exists, is wired into the linear gate chain, and the schema version
--- was bumped.
-local migSrc = readAll("core/migrations.lua")
-assert(tonumber(migSrc:match("CURRENT_SCHEMA_VERSION = (%d+)")) >= 40,
-    "CURRENT_SCHEMA_VERSION must be at least 40")
-assert(migSrc:find("local function DropDamageMeterMaxVisibleRows", 1, true),
-    "v38 migration function DropDamageMeterMaxVisibleRows must be defined")
-assert(migSrc:find("if stored < 38 then DropDamageMeterMaxVisibleRows", 1, true),
-    "v38 migration must be wired into the linear gate chain")
-
 -- Task 4: Scroll infrastructure. Rows live inside a ScrollFrame with a
 -- scroll-child Frame. The scrollFrame's parent is the window frame; the
 -- scrollContent is the scroll child. Rows are created as children of

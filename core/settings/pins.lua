@@ -8,17 +8,13 @@ Settings.Pins = Pins
 
 local abs = math.abs
 local ipairs = ipairs
-local next = next
 local pairs = pairs
-local pcall = pcall
 local rawget = rawget
 local setmetatable = setmetatable
-local table_insert = table.insert
 local table_remove = table.remove
 local tonumber = tonumber
 local tostring = tostring
 local type = type
-local wipe = wipe
 
 local PIN_STORE_VERSION = 1
 local STALE_MISS_LIMIT = 3
@@ -26,11 +22,10 @@ local STALE_MISS_LIMIT = 3
 Pins._subscribers = Pins._subscribers or {}
 Pins._subscriptionSeq = Pins._subscriptionSeq or 0
 Pins._profilePathCache = Pins._profilePathCache or setmetatable({}, { __mode = "k" })
-Pins._autoApplySuppressed = Pins._autoApplySuppressed or 0
 
 local function GetTimeStamp()
     if type(time) == "function" then
-        local ok, value = pcall(time)
+        local ok, value = ns.SafeCall("chain-next", time)
         if ok and type(value) == "number" then
             return value
         end
@@ -106,15 +101,6 @@ local function IsSupportedPinnedValue(value)
         return true
     end
     return IsColorValue(value)
-end
-
-local function EnsureTable(parent, key)
-    local child = parent[key]
-    if type(child) ~= "table" then
-        child = {}
-        parent[key] = child
-    end
-    return child
 end
 
 local function IsPathExactOrNested(path, candidate)
@@ -227,10 +213,9 @@ local UNIT_FRAMES_FEATURE_ROUTE = {
     unitFramesFrameTab = { surfaceTabKey = "frame", subTabName = "Frame" },
     unitFramesBarsTab = { surfaceTabKey = "bars", subTabName = "Bars" },
     unitFramesTextTab = { surfaceTabKey = "text", subTabName = "Text" },
-    unitFramesIconsTab = { surfaceTabKey = "icons", subTabName = "Icons" },
+    unitFramesIconsTab = { surfaceTabKey = "icons", subTabName = "Auras" },
     unitFramesPortraitTab = { surfaceTabKey = "portrait", subTabName = "Portrait" },
     unitFramesIndicatorsTab = { surfaceTabKey = "indicators", subTabName = "Indicators" },
-    unitFramesPrivateAurasTab = { surfaceTabKey = "privateAuras", subTabName = "Priv. Auras" },
 }
 
 local CHAT_SEARCH_CONTEXT = {
@@ -396,21 +381,8 @@ local function ResolveFeatureRouteFromPath(path)
         return nil, nil
     end
 
-    -- The first segment of a pin path is the dbTable name (e.g. "preyTracker"),
-    -- which often differs from the registered feature id ("preyTrackerPage").
-    -- Features declare these aliases via lookupKeys; without this fallback, pins
-    -- captured under such features fall through to the legacy tabIndex/subTabIndex
-    -- nav map and misroute when another tile owns those legacy coordinates.
     local route, resolvedFeatureId = LookupSegment(featureId)
 
-    -- Nested-feature fallback: when a feature stores its settings inside a
-    -- generic container subtable (e.g. general.actionTracker.maxEntries,
-    -- general.focusCastAlert.X, general.quickSalvage.X), the first segment is
-    -- the container ("general") which doesn't resolve to any feature. Walk
-    -- subsequent segments — except the trailing field key — looking for the
-    -- registered feature id or a lookupKey that owns this path. Without this,
-    -- jump-to-pinned routes such pins via entry.tileId metadata only, which is
-    -- often missing or stale on legacy entries and lands users on the wrong tab.
     if type(route) ~= "table" then
         local segments = SplitPath(path)
         for i = 2, #segments - 1 do
@@ -500,10 +472,7 @@ local function SafeForEachEntry(store, callback)
     end
 
     for path, entry in pairs(store.entries) do
-        local ok, result = pcall(callback, path, entry)
-        if not ok then
-            DebugLog("Pinned settings callback failed for", tostring(path), tostring(result))
-        end
+        ns.SafeCall("bulkhead", callback, path, entry)
     end
 end
 
@@ -535,38 +504,6 @@ function Pins:BuildPath(featureId, sectionId, field)
     end
 
     return featureId .. "." .. sectionId .. "." .. key
-end
-
-function Pins:IsFieldPinnable(field, ctx)
-    if type(field) ~= "table" then
-        return false
-    end
-
-    if field.kind == "button" then
-        return false
-    end
-
-    if field.kind == "custom" then
-        return field.pinnable == true and type(field.pinGet) == "function" and type(field.pinSet) == "function"
-    end
-
-    if field.pinnable == false then
-        return false
-    end
-
-    local kind = field.kind
-    if kind ~= "checkbox" and kind ~= "slider" and kind ~= "dropdown" and kind ~= "color" then
-        return false
-    end
-
-    local featureId = ctx and ctx.feature and ctx.feature.id or nil
-    local sectionId = ctx and ctx.sectionId or nil
-    local path = self:BuildPath(featureId, sectionId, field)
-    if type(path) ~= "string" or path == "" then
-        return false
-    end
-
-    return self:IsPathPinnable(path, kind)
 end
 
 function Pins:IsPathPinnable(path, kind, value)
@@ -612,17 +549,13 @@ function Pins:GetCurrentProfileName(db)
     if not db or type(db.GetCurrentProfile) ~= "function" then
         return nil
     end
-    local ok, profileName = pcall(db.GetCurrentProfile, db)
+    local ok, profileName = ns.SafeCallMethod("chain-next", db, "GetCurrentProfile")
     if ok and type(profileName) == "string" and profileName ~= "" then
         return profileName
     end
     return nil
 end
 
--- Subtrees that can never host a pinnable setting. Descending into them
--- walks tens of thousands of nested tables (e.g. _migrationBackup holds
--- full per-slot snapshots of prior profile state) and trips the WoW
--- script watchdog.
 local PROFILE_PATH_SKIP_KEYS = {
     _migrationBackup = true,
     _schemaVersion = true,
@@ -716,12 +649,6 @@ function Pins:IsPinned(path, db)
     return store and store.entries and store.entries[path] ~= nil or false
 end
 
-function Pins:GetPinnedValue(path, db)
-    local store = GetStore(db, false)
-    local entry = store and store.entries and store.entries[path] or nil
-    return entry and CloneValue(entry.value) or nil
-end
-
 function Pins:GetEntry(path, db)
     local store = GetStore(db, false)
     return store and store.entries and store.entries[path] or nil
@@ -748,15 +675,6 @@ function Pins:List(db)
     end
 
     for path, entry in pairs(store.entries) do
-        -- Mirror Pins:GetNavigationEntry: when the path itself resolves to a
-        -- registered feature, the inferred route is authoritative. Stored
-        -- tabIndex/subTabIndex/tabName/subTabName on legacy entries reflect
-        -- the search context at pin-creation time, which can be stale (older
-        -- pins, layout-mode mini-panels, pre-V2 tile coordinates) and would
-        -- otherwise display a wrong breadcrumb in the Pinned Globals list.
-        -- Inferred routes don't carry tab*Name fields, so leaving those nil
-        -- triggers BuildBreadcrumb's tile-registry fallback (tile.config.name
-        -- + subPages[subPageIndex].name) and produces a fresh, correct crumb.
         local inferred = ResolveFeatureRouteFromPath(path)
         local source = entry
         if inferred and type(inferred.tileId) == "string" and inferred.tileId ~= "" then
@@ -832,17 +750,16 @@ local function NotifySubscribersForPath(subscribers, path)
         if owner and owner.GetParent and owner:GetParent() == nil then
             table_remove(subscribers, index)
         elseif subscription and type(subscription.callback) == "function" then
-            local ok, err = pcall(subscription.callback, path)
-            if not ok then
-                DebugLog("Pinned settings subscriber failed:", tostring(err))
-            end
+            ns.SafeCall("bulkhead", subscription.callback, path)
         end
     end
 end
 
 function Pins:Broadcast(path)
     NotifySubscribersForPath(self._subscribers[path], path)
-    NotifySubscribersForPath(self._subscribers["*"], path)
+    if path ~= "*" then
+        NotifySubscribersForPath(self._subscribers["*"], path)
+    end
 end
 
 function Pins:Subscribe(path, callback, owner)
@@ -878,46 +795,11 @@ function Pins:Unsubscribe(token)
     end
 end
 
-function Pins:PushAutoApplySuppression()
-    self._autoApplySuppressed = (self._autoApplySuppressed or 0) + 1
-end
-
-function Pins:PopAutoApplySuppression()
-    local current = self._autoApplySuppressed or 0
-    if current > 0 then
-        self._autoApplySuppressed = current - 1
-    end
-end
-
-function Pins:IsAutoApplySuppressed()
-    return (self._autoApplySuppressed or 0) > 0
-end
-
-function Pins:WithAutoApplySuppressed(callback)
-    if type(callback) ~= "function" then
-        return nil
-    end
-
-    self:PushAutoApplySuppression()
-    local ok, resultA, resultB, resultC = pcall(callback)
-    self:PopAutoApplySuppression()
-    if not ok then
-        error(resultA)
-    end
-    return resultA, resultB, resultC
-end
-
 function Pins:UpdateEntryMetadata(entry, descriptor, options)
     if type(entry) ~= "table" or type(descriptor) ~= "table" then
         return
     end
 
-    -- Navigation fields define where the user pinned from. They are write-once
-    -- by default: a widget rebound under a different sub-page (e.g. the bulk
-    -- editor, or a shared page that hosts a bound copy of the same path) must
-    -- not clobber the original capture context. Only Pins:Pin opts in to
-    -- overwrite, since re-pinning is the only operation that legitimately
-    -- re-establishes nav.
     local allowNavOverwrite = options and options.allowNavOverwrite == true
 
     if type(descriptor.kind) == "string" and descriptor.kind ~= "" then
@@ -1275,46 +1157,6 @@ function Pins:UpdatePinnedValue(path, value, descriptor, db)
     return true
 end
 
-function Pins:RewritePath(oldPath, newPath, db)
-    db = db or GetCurrentDB()
-    local store = GetStore(db, false)
-    if not store or type(oldPath) ~= "string" or oldPath == ""
-        or type(newPath) ~= "string" or newPath == "" or oldPath == newPath then
-        return false
-    end
-
-    local oldEntry = store.entries[oldPath]
-    if type(oldEntry) ~= "table" then
-        return false
-    end
-
-    local newEntry = store.entries[newPath]
-    if type(newEntry) ~= "table" then
-        store.entries[newPath] = oldEntry
-    else
-        newEntry.value = CloneValue(oldEntry.value)
-        newEntry.kind = oldEntry.kind or newEntry.kind
-        newEntry.pinnedAt = oldEntry.pinnedAt or newEntry.pinnedAt
-        newEntry.disabled = oldEntry.disabled == true
-        newEntry.missCount = tonumber(oldEntry.missCount) or 0
-        newEntry.shadowed = type(newEntry.shadowed) == "table" and newEntry.shadowed or {}
-        if type(oldEntry.shadowed) == "table" then
-            for profileName, value in pairs(oldEntry.shadowed) do
-                if newEntry.shadowed[profileName] == nil then
-                    newEntry.shadowed[profileName] = CloneValue(value)
-                end
-            end
-        end
-        self:UpdateEntryMetadata(newEntry, oldEntry)
-    end
-
-    store.entries[oldPath] = nil
-    TouchStore(store)
-    self:Broadcast(oldPath)
-    self:Broadcast(newPath)
-    return true
-end
-
 function Pins:DropPath(path, db)
     db = db or GetCurrentDB()
     local store = GetStore(db, false)
@@ -1340,13 +1182,6 @@ function Pins:GetNavigationEntry(path, db)
 
     local inferred = ResolveFeatureRouteFromPath(path)
 
-    -- When the path itself resolves to a registered feature, treat the inferred
-    -- route as fully authoritative. The entry's stored tabIndex/subTabIndex/
-    -- tabName/etc. are legacy hints captured from _searchContext at pin time
-    -- and may be stale (older pins from layout-mode mini-panels, pre-V2 tile
-    -- structure, or builder-ordering quirks). Mixing inferred tile data with
-    -- stale legacy tab coordinates makes ResolveSearchNavigation discard the
-    -- directRoute as "disagreeing" and fall back to the wrong tab.
     local source = entry
     if inferred and type(inferred.tileId) == "string" and inferred.tileId ~= "" then
         source = inferred

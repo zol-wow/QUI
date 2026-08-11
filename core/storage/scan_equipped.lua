@@ -1,27 +1,9 @@
----------------------------------------------------------------------------
--- Core storage: equipped-items scanner.
--- Inventory slots 1..19 (INVSLOT_FIRST_EQUIPPED..INVSLOT_LAST_EQUIPPED,
--- vendored Blizzard_FrameXMLBase/Constants.lua:152-173) read through the
--- legacy globals GetInventoryItemID/Link/Texture/Quality("player", slot)
--- (verified against vendored EquipmentManager.lua / PaperDollFrame.lua).
--- PLAYER_EQUIPMENT_CHANGED(equipmentSlot, hasCurrent) gives a per-slot
--- dirty unit; login catch-up is a MarkAllDirty from the deferred block.
--- Nil quality or nil ilvl (C_Item.GetDetailedItemLevelInfo is
--- MayReturnNothing) means item data isn't loaded yet → the shared
--- scan_common pending handler re-marks the slot on load success
--- (cf. scan_bags.lua).
--- Store shape: rec.equipped = { size = 19, slots = { [invSlot] = entry } }
--- where entry = { itemID, count, link, quality, ilvl, icon, isBound }.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local ScanEquipped = {}
 Storage.ScanEquipped = ScanEquipped
 
--- INVSLOT_FIRST_EQUIPPED .. INVSLOT_LAST_EQUIPPED (INVSLOT_TABARD). Slot 0
--- (ammo) is retail-dead; PLAYER_EQUIPMENT_CHANGED can also fire for
--- equipped-bag container slots above 19 — both are out of range here.
 local FIRST_SLOT, LAST_SLOT = 1, 19
 
 local dirty = {}
@@ -38,14 +20,11 @@ function ScanEquipped.MarkAllDirty()
     hasDirty = true
 end
 
---- Read one inventory slot into the persisted entry shape (or nil if empty).
 local function ReadSlot(slot, onPending)
     local itemID = GetInventoryItemID("player", slot)
     if not itemID then return nil end
     local quality = GetInventoryItemQuality("player", slot)
     local link = GetInventoryItemLink("player", slot)
-    -- C_Item.GetDetailedItemLevelInfo is MayReturnNothing while item data
-    -- loads — re-mark the slot through the same pending path as nil quality.
     local ilvl = C_Item.GetDetailedItemLevelInfo(link or itemID)
     if (quality == nil or ilvl == nil) and onPending then onPending(itemID) end
     return {
@@ -55,24 +34,17 @@ local function ReadSlot(slot, onPending)
         quality = quality,
         ilvl = ilvl,
         icon = GetInventoryItemTexture("player", slot),
-        isBound = true, -- equipping binds (warbound at minimum)
+        isBound = true,
     }
 end
 
---- Re-read every dirty slot; publishes EquippedChanged(charKey)
---- (whole-record event — no changed array; see bus.lua). Returns true when
---- anything was written.
 function ScanEquipped.Drain()
     if not hasDirty then return false end
     local rec = Storage.Store.GetCurrentCharacter()
-    if not rec then return false end -- transient: dirty marks preserved
-    -- Snapshot-swap BEFORE reading: the pending handler's load callback can
-    -- fire synchronously (client-cached item) and re-mark a slot inside
-    -- ReadSlot — re-marks must land in the fresh set (cf. scan_bags.lua).
+    if not rec then return false end
     local toScan = dirty
     dirty = {}
     hasDirty = false
-    -- Phase-1 records persisted `equipped = {}` (no .slots): upgrade in place.
     local eq = rec.equipped
     if type(eq) ~= "table" or not eq.slots then
         eq = { size = LAST_SLOT, slots = {} }

@@ -178,7 +178,19 @@ local function loadModule()
         frame.eventsRegistered = true
     end
 
+    -- core/safecall.lua stub: silent pcall passthrough matches the pre-SafeCall
+    -- pcall(...) behavior this test asserts against (the mouse/alpha/reparent
+    -- guard cluster now routes through ns.SafeCall("best-effort-style", ...)).
+    local function safeCallStub(_policy, fn, ...) return pcall(fn, ...) end
+local function safeCallMethodStub(_policy, obj, name, ...)
+    return pcall(function(...) return obj[name](obj, ...) end, ...)
+end
+local safeCallMethodIfPresentStub = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end
+
     local ns = {
+        SafeCall = safeCallStub,
+        SafeCallMethod = safeCallMethodStub,
+    SafeCallMethodIfPresent = safeCallMethodIfPresentStub,
         Helpers = {
             CreateDBGetter = function()
                 return function()

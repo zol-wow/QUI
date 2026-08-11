@@ -96,7 +96,7 @@ jobs:
 
             Gates that must pass before you call anything done:
               bash tools/check_compile.sh
-              luacheck QUI_Debug/ core/ modules/ init.lua QUI_ActionBars/ QUI_Alts/ QUI_Bags/ QUI_CDM/ QUI_Chat/ QUI_DamageMeter/ QUI_Datatexts/ QUI_GroupFrames/ QUI_InfoBar/ QUI_Minimap/ QUI_Options/ QUI_OptionsSearch/ QUI_QoL/ QUI_ResourceBars/ QUI_Skinning/ QUI_UnitFrames/
+              luacheck QUI_Debug/ core/ modules/ init.lua QUI_ActionBars/ QUI_Bags/ QUI_CDM/ QUI_Chat/ QUI_DamageMeter/ QUI_GroupFrames/ QUI_Nameplates/ QUI_Options/ QUI_ResourceBars/ QUI_UnitFrames/
               lua tools/test_taint.lua --self-test
               lua tools/test_taint.lua --report github --strict-only
               for t in tests/unit/*.lua; do lua "$t"; done
@@ -108,12 +108,19 @@ jobs:
               tests/framexml/. Read the local doc before using any Blizzard API.
               Do not guess signatures and do not fetch the web.
             - Generated files have generators. Never hand-edit
-              QUI_OptionsSearch/search_cache.lua or core/locale/enUS.lua — run
-              lua tools/generate_search_cache.lua followed by
-              lua tools/audit_search_cache.lua for the search cache, and
-              lua tools/i18n/extract_strings.lua for the locale base.
-            - The ten core/locale/<locale>.lua overlays are translations of the
-              enUS base. Never hand-edit one.
+              QUI_Options/search_cache.lua or core/locale/enUS.lua —
+              run lua tools/generate_search_cache.lua, or for the locale base
+              lua tools/i18n/extract_strings.lua &&
+              python3 tools/i18n/stamp_enus_keyset.py — BOTH commands, always.
+              The extractor rewrites enUS.lua whole and cannot compute its
+              "-- keyset:" checksum line (Lua 5.1 has no SHA-256), so running
+              it alone DELETES that line and reddens
+              tests/unit/locale_keyset_checksum_test.lua.
+            - Adding or removing an English ns.L string renumbers the positional
+              locale overlays. After regenerating enUS.lua, run
+              python3 tools/i18n/reslot_overlays.py to move the ten
+              core/locale/<locale>.lua files onto the new key array. Never
+              hand-edit an overlay.
             - Never rename the shipped LibSharedMedia names, SavedVariables
               keys, frame names, or BINDING_NAME_* strings. They are part of the
               public surface and renaming them breaks existing installs.

@@ -46,7 +46,7 @@ assert(
 )
 
 assert(
-    containers:find("local shouldLoadActiveSpec = true", 1, true),
+    containers:find("local readyNow = LoadOrSnapshotSpecProfile(specID, 1, specTrackingRetryToken)", 1, true),
     "initial login should hydrate the active spec from scoped storage even when no prior spec stamp exists"
 )
 

@@ -16,7 +16,7 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local source = readFile("QUI_Skinning/skinning/character_pane/character.lua")
+local source = readFile("modules/skinning/character_pane/character.lua")
 
 local enchantLocs = assert(
     source:match("local PERMANENT_ENCHANT_EQUIP_LOCS = %b{}"),
@@ -64,12 +64,12 @@ assertContains(
 
 assertContains(
     source,
-    "pcall(_G.PaperDollFrame_SetSidebar, PaperDollSidebarTab1, 1)",
+    "ns.SafeCall(\"best-effort-style\", _G.PaperDollFrame_SetSidebar, PaperDollSidebarTab1, 1)",
     "Sidebar selection should call PaperDollFrame_SetSidebar with the same tab/index shape Blizzard uses")
 
 assertAbsent(
     source,
-    "pcall(_G.PaperDollFrame_SetSidebar, 1)",
+    "PaperDollFrame_SetSidebar, 1)",
     "Sidebar selection should not call PaperDollFrame_SetSidebar with index as the self argument")
 
 assertContains(

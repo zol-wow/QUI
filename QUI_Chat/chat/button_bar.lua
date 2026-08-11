@@ -1,23 +1,3 @@
----------------------------------------------------------------------------
--- QUI Chat Module — Custom Button Bar (Phase F)
--- Per-chat-frame button bar with positioning modes. Built-in buttons
--- (QUI options, Layout Mode, Keybind, CDM, Friends, Guild, Reload) plus
--- user-defined slash-command buttons. Default off; opt-in per frame.
---
--- Storage: db.profile.chat.buttonBars[<frameID>] = {
---     enabled, position, offsetX, offsetY, buttonSpacing, hideInCombat,
---     buttons = { { id, visible }, ... },
---     customButtons = { { label, slashCommand, icon }, ... }
--- }
---
--- Reconcile triggers:
---   * ADDON_LOADED (after defaults wiring)
---   * PLAYER_LOGIN (after Blizzard finishes initializing chat windows)
---   * PLAYER_REGEN_DISABLED / PLAYER_REGEN_ENABLED visibility changes
---   * Settings change via the chat module's _afterRefresh chain
---   * FCF_OpenNewWindow / FCF_PopOutChat / FCF_Tab_OnClick layout shifts
----------------------------------------------------------------------------
-
 local ADDON_NAME, ns = ...
 
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
@@ -28,20 +8,10 @@ local Helpers  = ns.Helpers
 ns.QUI.Chat.ButtonBar = ns.QUI.Chat.ButtonBar or {}
 local BB = ns.QUI.Chat.ButtonBar
 
--- Forward declaration so closures (event handler, after-refresh, hooks) can
--- capture ApplyEnabled before its body is assigned later in the file.
 local ApplyEnabled
 local reconcileAll
 local scheduleReconcileAll
 local ensureVisibilityHooks
-
--- ---------------------------------------------------------------------------
--- Built-in button definitions
--- ---------------------------------------------------------------------------
--- Each entry is keyed by a stable id stored in the user's buttons array.
--- The action closure runs on click; tooltip is shown on hover. label is the
--- button text (icons deferred — texture-based buttons would need additional
--- art assets; the text label keeps the bar self-contained).
 
 local BUILTINS = {
     qui_options = {
@@ -122,29 +92,14 @@ local BUILTINS = {
     },
 }
 
--- Stable iteration order for the settings UI checklist + default buttons.
 local BUILTIN_ORDER = {
     "qui_options", "qui_layout", "qui_keybind", "qui_cdm",
     "social", "guild", "reload",
 }
 
--- ---------------------------------------------------------------------------
--- Visual skin (shared by text + icon variants)
--- ---------------------------------------------------------------------------
--- Buttons are addon-owned non-secure frames, so the QUI backdrop can be
--- applied directly — unlike skinning/system/gamemenu.lua which uses an
--- overlay container to avoid tainting GameMenuFrame's pool buttons.
 local function applySkin(button)
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
     ns.SkinBase.ApplyFullBackdrop(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    -- Cache the canonical base colors in dedicated _quiBase* fields. The hover
-    -- hooks must NOT read from _quiBg*/_quiBorder*: ApplyFullBackdrop's manual
-    -- backdrop installs ManualSetBackdropColor as SetBackdropColor, which WRITES
-    -- those fields on every call -- so the OnEnter brighten would overwrite them
-    -- and OnLeave would "restore" to the brightened value (the highlight would
-    -- stick and compound on each hover). These _quiBase* fields are only written
-    -- here, by a real (re)skin, so a live theme refresh (re-running applySkin)
-    -- still propagates the new colors to the hover state.
     button._quiBaseBgR, button._quiBaseBgG, button._quiBaseBgB, button._quiBaseBgA = bgr, bgg, bgb, bga
     button._quiBaseBorderR, button._quiBaseBorderG, button._quiBaseBorderB, button._quiBaseBorderA = sr, sg, sb, sa
 
@@ -171,20 +126,9 @@ local function applySkin(button)
     end)
 end
 
--- ---------------------------------------------------------------------------
--- Per-frame bar state
--- ---------------------------------------------------------------------------
-
--- Map: chatFrame -> bar Frame. Weak-keyed so a torn-down chat frame doesn't
--- pin the bar in memory.
 local bars = setmetatable({}, { __mode = "k" })
 local visibilityHookedFrames = setmetatable({}, { __mode = "k" })
 
--- Re-apply the skin to every live button. Registered with the Registry
--- "skinning" group (below) so a skin/accent/border color change updates the
--- buttons immediately. The chat _afterRefresh chain only fires on chat settings
--- changes, not on a global skin-color change, so without this a recolor would
--- not reach the buttons until the next chat refresh or a /reload.
 local function reskinAll()
     for _, bar in pairs(bars) do
         if bar.GetChildren then
@@ -196,10 +140,6 @@ local function reskinAll()
         end
     end
 end
-
--- ---------------------------------------------------------------------------
--- Bar creation / layout
--- ---------------------------------------------------------------------------
 
 local function isInCombat()
     return type(InCombatLockdown) == "function" and InCombatLockdown()
@@ -215,14 +155,84 @@ local function normalizeMacroText(text)
     return text
 end
 
+local RENAMED_BUILTIN_IDS = {
+    qui_options = "qui_options",
+    qui_layout  = "qui_layout",
+    qui_keybind = "qui_keybind",
+    qui_cdm     = "qui_cdm",
+}
+
+local function isCustomItem(item)
+    if type(item) ~= "table" then return false end
+    if item.kind == "custom" then return true end
+    if item.kind == "builtin" then return false end
+    return item.id == nil and item.slashCommand ~= nil
+end
+BB.IsCustomItem = isCustomItem
+
+local function normalizeEntry(entry)
+    if type(entry) ~= "table" then return entry end
+    if type(entry.items) ~= "table" then entry.items = {} end
+
+    local legacyBuiltins = entry.buttons
+    if type(legacyBuiltins) == "table" then
+        for i = 1, #legacyBuiltins do
+            local b = legacyBuiltins[i]
+            if type(b) == "table" and type(b.id) == "string" then
+                entry.items[#entry.items + 1] = {
+                    kind = "builtin", id = b.id, visible = b.visible and true or false,
+                }
+            end
+        end
+    end
+    if legacyBuiltins ~= nil then entry.buttons = nil end
+
+    local legacyCustom = entry.customButtons
+    if type(legacyCustom) == "table" then
+        for i = 1, #legacyCustom do
+            local c = legacyCustom[i]
+            if type(c) == "table" then
+                entry.items[#entry.items + 1] = {
+                    kind = "custom",
+                    label       = type(c.label) == "string" and c.label or "",
+                    slashCommand = type(c.slashCommand) == "string" and c.slashCommand or "",
+                    icon        = type(c.icon) == "string" and c.icon or "",
+                    visible     = c.visible ~= false,
+                }
+            end
+        end
+    end
+    if legacyCustom ~= nil then entry.customButtons = nil end
+
+    for i = #entry.items, 1, -1 do
+        local item = entry.items[i]
+        if type(item) ~= "table" then
+            table.remove(entry.items, i)
+        elseif isCustomItem(item) then
+            item.visible = item.visible ~= false
+        else
+            local renamed = RENAMED_BUILTIN_IDS[item.id]
+            if renamed then item.id = renamed end
+            if BUILTINS[item.id] then
+                item.kind = "builtin"
+            else
+                table.remove(entry.items, i)
+            end
+        end
+    end
+
+    return entry
+end
+BB.NormalizeEntry = normalizeEntry
+
 local function hasCustomMacroButtons(config)
-    if type(config) ~= "table" or type(config.customButtons) ~= "table" then
+    if type(config) ~= "table" or type(config.items) ~= "table" then
         return false
     end
 
-    for i = 1, #config.customButtons do
-        local cb = config.customButtons[i]
-        if type(cb) == "table" and normalizeMacroText(cb.slashCommand) then
+    for i = 1, #config.items do
+        local item = config.items[i]
+        if isCustomItem(item) and normalizeMacroText(item.slashCommand) then
             return true
         end
     end
@@ -233,13 +243,11 @@ end
 local function createButton(parent, def, customAction)
     local hasIcon = type(def.icon) == "string" and def.icon ~= ""
     local macroText = normalizeMacroText(def.macroText)
-    -- Custom commands need a secure action button; RunMacroText is protected
-    -- when called from an insecure addon click handler.
     local template = macroText and "SecureActionButtonTemplate,BackdropTemplate" or "BackdropTemplate"
     local btn = CreateFrame("Button", nil, parent, template)
 
     if macroText then
-        btn:RegisterForClicks("AnyUp")
+        btn:RegisterForClicks("AnyUp", "AnyDown")
         btn:SetAttribute("type", "macro")
         btn:SetAttribute("macrotext", macroText)
     else
@@ -287,6 +295,30 @@ local function createButton(parent, def, customAction)
     return btn
 end
 
+local function acquireButton(bar, def, key, used)
+    local cache = bar._quiButtonCache
+    if not cache then
+        cache = {}
+        bar._quiButtonCache = cache
+    end
+    local list = cache[key]
+    if not list then
+        list = {}
+        cache[key] = list
+    end
+    local n = (used[key] or 0) + 1
+    used[key] = n
+    local btn = list[n]
+    if btn then
+        btn:SetParent(bar)
+        applySkin(btn)
+    else
+        btn = createButton(bar, def)
+        list[n] = btn
+    end
+    return btn
+end
+
 local function GetSafeFrameHeight(frame, fallback)
     fallback = fallback or 100
     if not frame or not frame.GetHeight then return fallback end
@@ -301,10 +333,6 @@ local function GetSafeFrameHeight(frame, fallback)
     return height
 end
 
--- Takeover anchor: while the Blizzard frames are suppressed (reparented to the
--- hidden anchor), frame 1's bar follows the custom display container (the bar
--- itself is parented to UIParent, so it stays visible either way — only the
--- anchor moves).
 local function GetBarAnchorFrame(chatFrame, frameID)
     if frameID == 1 then
         local Suppress = ns.QUI.Chat.BlizzardSuppress
@@ -318,21 +346,13 @@ local function GetBarAnchorFrame(chatFrame, frameID)
     end
     return chatFrame
 end
-BB._GetBarAnchorFrame = GetBarAnchorFrame -- exposed for unit tests
+BB._GetBarAnchorFrame = GetBarAnchorFrame
 
--- Visibility teardown only applies when the bar is actually anchored to the
--- Blizzard frame — a suppressed frame-1 (intentionally hidden) re-anchors to
--- the custom display instead (the old visibility check tore the bar down
--- before the anchor chooser could move it).
 local function ShouldSkipVisibilityTeardown(chatFrame, frameID)
     return GetBarAnchorFrame(chatFrame, frameID) ~= chatFrame
 end
-BB._ShouldSkipVisibilityTeardown = ShouldSkipVisibilityTeardown -- for unit tests
+BB._ShouldSkipVisibilityTeardown = ShouldSkipVisibilityTeardown
 
--- Public reconcile for the display-fallback path: suppression flips change
--- the frame-1 bar's anchor target, and DisplayFallback.Apply runs AFTER the
--- _afterRefresh chain — re-reconcile here so the bar moves immediately
--- instead of one refresh late.
 function BB.Reapply()
     if ApplyEnabled then
         ApplyEnabled()
@@ -340,6 +360,7 @@ function BB.Reapply()
 end
 
 local function buildBar(chatFrame, frameID, config)
+    normalizeEntry(config)
     local hasSecureButtons = hasCustomMacroButtons(config)
     if hasSecureButtons and isInCombat() then
         return
@@ -347,8 +368,6 @@ local function buildBar(chatFrame, frameID, config)
 
     local bar = bars[chatFrame]
     if bar then
-        -- Tear down children and rebuild — config changes are infrequent and
-        -- per-button diffing isn't worth the complexity here.
         for _, child in ipairs({ bar:GetChildren() }) do
             child:Hide()
             child:SetParent(nil)
@@ -388,10 +407,6 @@ local function buildBar(chatFrame, frameID, config)
         bar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -4 + ox,   4 + oy)
     elseif position == "inside_tabs" then
         bar:SetSize(180, 22)
-        -- Anchor to the configured frame's own tab. Visibility reconciliation
-        -- below keeps inactive docked frames from leaving their bars behind.
-        -- When suppressed the tab is reparented to the hidden anchor, so skip
-        -- the tab anchor while suppression is active.
         local tab = _G["ChatFrame" .. tostring(frameID) .. "Tab"]
         local suppressed = anchorFrame ~= chatFrame
         if tab and tab:IsShown() and not suppressed then
@@ -406,37 +421,32 @@ local function buildBar(chatFrame, frameID, config)
 
     bar:Show()
 
-    -- Resolve the button list. Built-in buttons live in config.buttons as
-    -- { id = "<builtinKey>", visible = bool }. Custom buttons live in
-    -- config.customButtons as { label, slashCommand, icon }.
     local widgets = {}
-    if type(config.buttons) == "table" then
-        for i = 1, #config.buttons do
-            local b = config.buttons[i]
-            if b and b.visible and BUILTINS[b.id] then
-                widgets[#widgets + 1] = createButton(bar, BUILTINS[b.id])
-            end
-        end
-    end
-    if type(config.customButtons) == "table" then
-        for i = 1, #config.customButtons do
-            local cb = config.customButtons[i]
-            local hasLabel   = type(cb) == "table" and type(cb.label) == "string" and cb.label ~= ""
-            local hasIcon    = type(cb) == "table" and type(cb.icon) == "string" and cb.icon ~= ""
-            local hasCommand = type(cb) == "table" and type(cb.slashCommand) == "string" and cb.slashCommand ~= ""
-            if hasCommand and (hasLabel or hasIcon) then
-                widgets[#widgets + 1] = createButton(bar, {
-                    label   = cb.label,
-                    tooltip = cb.slashCommand,
-                    icon    = cb.icon,
-                    macroText = cb.slashCommand,
-                })
+    local used = {}
+    if type(config.items) == "table" then
+        for i = 1, #config.items do
+            local item = config.items[i]
+            if type(item) == "table" then
+                if isCustomItem(item) then
+                    local hasLabel   = type(item.label) == "string" and item.label ~= ""
+                    local hasIcon    = type(item.icon) == "string" and item.icon ~= ""
+                    local hasCommand = type(item.slashCommand) == "string" and item.slashCommand ~= ""
+                    if item.visible ~= false and hasCommand and (hasLabel or hasIcon) then
+                        local key = "c\1" .. (item.label or "") .. "\1" .. (item.icon or "") .. "\1" .. item.slashCommand
+                        widgets[#widgets + 1] = acquireButton(bar, {
+                            label     = item.label,
+                            tooltip   = item.slashCommand,
+                            icon      = item.icon,
+                            macroText = item.slashCommand,
+                        }, key, used)
+                    end
+                elseif item.visible and BUILTINS[item.id] then
+                    widgets[#widgets + 1] = acquireButton(bar, BUILTINS[item.id], "b\1" .. item.id, used)
+                end
             end
         end
     end
 
-    -- Layout: vertical for outside_left / inside_left, horizontal for
-    -- inside_tabs.
     local horizontal = (position == "inside_tabs")
     local x, y = 0, 0
     for i = 1, #widgets do
@@ -470,10 +480,6 @@ local function hideBar(chatFrame)
     if bar and bar._hasSecureCustomButtons and isInCombat() then return end
     if bar then bar:Hide() end
 end
-
--- ---------------------------------------------------------------------------
--- Reconciliation
--- ---------------------------------------------------------------------------
 
 local function isChatFrameVisible(chatFrame)
     if not chatFrame then return false end
@@ -556,9 +562,6 @@ BB.ReconcileAll   = reconcileAll
 BB.GetBuiltins    = function() return BUILTINS end
 BB.GetBuiltinOrder = function() return BUILTIN_ORDER end
 
--- Settings-side helper: lazily initialise buttonBars[frameID] with all
--- built-ins set to visible. Used by the settings tile when the user first
--- enables a bar so they immediately see a sensible default.
 function BB.InitFrameDefaults(frameID)
     local settings = I.GetSettings and I.GetSettings()
     if not settings then return nil end
@@ -581,32 +584,49 @@ function BB.InitFrameDefaults(frameID)
     if type(entry.offsetY) ~= "number" then entry.offsetY = 0 end
     if type(entry.buttonSpacing) ~= "number" then entry.buttonSpacing = 2 end
     if type(entry.hideInCombat) ~= "boolean" then entry.hideInCombat = false end
-    if type(entry.buttons) ~= "table" then entry.buttons = {} end
-    if type(entry.customButtons) ~= "table" then entry.customButtons = {} end
-    if #entry.buttons == 0 then
-        for _, id in ipairs(BUILTIN_ORDER) do
-            entry.buttons[#entry.buttons + 1] = { id = id, visible = true }
+    normalizeEntry(entry)
+
+    local fresh = (#entry.items == 0)
+    local seen = {}
+    for i = 1, #entry.items do
+        local item = entry.items[i]
+        if type(item) == "table" and not isCustomItem(item) and type(item.id) == "string" then
+            seen[item.id] = true
+        end
+    end
+    for _, id in ipairs(BUILTIN_ORDER) do
+        if not seen[id] then
+            entry.items[#entry.items + 1] = { kind = "builtin", id = id, visible = fresh }
         end
     end
     return entry
 end
 
--- ---------------------------------------------------------------------------
--- ApplyEnabled
--- ---------------------------------------------------------------------------
+function BB.MoveItem(frameID, index, delta)
+    local settings = I.GetSettings and I.GetSettings()
+    local entry = settings and settings.buttonBars and settings.buttonBars[frameID]
+    if type(entry) ~= "table" or type(entry.items) ~= "table" then return nil end
+
+    local target = index + delta
+    if index < 1 or index > #entry.items then return nil end
+    if target < 1 or target > #entry.items then return nil end
+
+    local item = table.remove(entry.items, index)
+    table.insert(entry.items, target, item)
+    return target
+end
 
 function ApplyEnabled()
     reconcileAll()
 end
 
--- Initial application. Defensive no-op if QUI.db isn't ready at file-load
--- time (GetSettings returns nil); PLAYER_LOGIN guarantees activation once
--- AceDB has been constructed in OnInitialize.
 ApplyEnabled()
 
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:SetScript("OnEvent", function(self, event, name)
@@ -614,12 +634,13 @@ eventFrame:SetScript("OnEvent", function(self, event, name)
         ApplyEnabled()
     elseif event == "PLAYER_LOGIN" then
         ApplyEnabled()
+    elseif event == "PLAYER_ENTERING_WORLD" or event == "EDIT_MODE_LAYOUTS_UPDATED" then
+        scheduleReconcileAll()
     elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
         scheduleReconcileAll()
     end
 end)
 
--- Reposition on chat-frame layout changes.
 if hooksecurefunc then
     if FCF_OpenNewWindow then
         hooksecurefunc("FCF_OpenNewWindow", function() scheduleReconcileAll() end)
@@ -632,16 +653,8 @@ if hooksecurefunc then
     end
 end
 
--- Register ApplyEnabled with the chat module's centralized after-refresh
--- hook list so it runs after every chat refresh (settings change, profile
--- switch, profile import, etc.).
 table.insert(ns.QUI.Chat._afterRefresh, ApplyEnabled)
 
--- Register a re-skin with the "skinning" refresh group so a skin/accent/border
--- color change (which fires Registry:RefreshAll("skinning")) re-applies the
--- current colors to the live buttons. The chat _afterRefresh chain above only
--- runs on chat settings changes, so without this the buttons keep their old
--- color until the next chat refresh or a /reload.
 if ns.Registry then
     ns.Registry:Register("chatButtonBarSkin", {
         refresh = reskinAll,

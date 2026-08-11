@@ -210,4 +210,19 @@ suppressActive = true
 fire({ e = "CHAT_MSG_GUILD", gid = nil, s = false })
 assert(played() == 1, "case 11: nil gid → plays (no self-suppress possible)")
 
+-------------------------------------------------------------------------------
+-- Case 12 (Wave 3 Task 4): CHAT_MSG_GUILD_DISCORD mirrors CHAT_MSG_GUILD --
+-- the guild_officer entry configured above plays for it exactly like GUILD.
+-------------------------------------------------------------------------------
+suppressActive = true
+fire({ e = "CHAT_MSG_GUILD_DISCORD", gid = "Player-Other-0002", s = false })
+assert(played() == 1, "case 12: suppressed + GUILD_DISCORD event should play once (mirrors GUILD)")
+
+-------------------------------------------------------------------------------
+-- Case 13: self-GUID suppression also applies to CHAT_MSG_GUILD_DISCORD.
+-------------------------------------------------------------------------------
+suppressActive = true
+fire({ e = "CHAT_MSG_GUILD_DISCORD", gid = "Player-Self-0001", s = false })
+assert(played() == 0, "case 13: self-GUID → silent for GUILD_DISCORD too")
+
 print("OK: chat_sounds_store_path_test")

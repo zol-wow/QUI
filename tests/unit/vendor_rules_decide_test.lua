@@ -16,7 +16,7 @@ local function readAll(path)
     return d:gsub("\r\n", "\n")
 end
 
-local source = readAll("QUI_QoL/qol/vendor_rules.lua")
+local source = readAll("modules/qol/vendor_rules.lua")
 local S = "-- <<< QUI_TEST_EXTRACT decide_sale"
 local a1 = assert(source:find(S, 1, true), "start sentinel must exist")
 local a2 = assert(source:find(S, a1 + #S, true), "end sentinel must exist")

@@ -25,7 +25,7 @@ return {
         ["C_UnitAuras.GetAuraDuration"] = {
             secretArguments = "AllowedWhenUntainted",
         },
-        ["Totem.GetTotemDuration"] = {
+        ["GetTotemDuration"] = {
             secretArguments = "AllowedWhenUntainted",
         },
     },
@@ -36,7 +36,7 @@ return {
             returnType = "LuaDurationObject",
             use = "aura duration lane",
         },
-        ["Totem.GetTotemDuration"] = {
+        ["GetTotemDuration"] = {
             doc = "totem",
             runtimeName = "GetTotemDuration",
             returnType = "LuaDurationObject",

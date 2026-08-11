@@ -4,8 +4,8 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
--- ACTION BARS PER-BAR SETTINGS BUILDERS
----------------------------------------------------------------------------
+---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
+
 do
     local ActionBarsPerBarBuilders = ns.QUI_ActionBarsPerBarBuilders or {}
     ns.QUI_ActionBarsPerBarBuilders = ActionBarsPerBarBuilders
@@ -38,7 +38,7 @@ do
                             UpdateEmptySlotVisibility(btn, settings)
                         end
                     end
-                    pcall(LayoutNativeButtons, bk)
+                    ns.SafeCall("best-effort-style", LayoutNativeButtons, bk)
                 end
             end
         end
@@ -177,9 +177,28 @@ do
                     "enabled", markersDB, RefreshRaidMarkersBar,
                     { description = ns.L["Show a bar of buttons that place raid target markers on your target. Requires raid lead or assist in a group."] }), body, sy)
                 sy = sy - FORM_ROW
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Only In Dungeons & Raids"],
+                    "onlyInInstances", markersDB, RefreshRaidMarkersBar,
+                    { description = ns.L["Only show the bar while you are inside a dungeon or raid instance."] }), body, sy)
                 P(GUI:CreateFormDropdown(body, ns.L["Grow Direction"],
                     totemBarGrowOptions, "growDirection", markersDB, RefreshRaidMarkersBar,
                     { description = ns.L["Direction the raid markers bar grows."] }), body, sy)
+            end, sections, relayout)
+
+            CreateCollapsible(content, ns.L["Leader Tools"], 4 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["World Markers"],
+                    "enabled", markersDB.worldMarkers, RefreshRaidMarkersBar,
+                    { description = ns.L["Second row of buttons that place world markers (flares) on the ground. Left-click places or moves a flare, right-click clears it."] }), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Leader Actions"],
+                    "enabled", markersDB.leaderStrip, RefreshRaidMarkersBar,
+                    { description = ns.L["Row of buttons for ready check, role poll, and pull countdown."] }), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Only As Leader"],
+                    "autoShowForLeader", markersDB, RefreshRaidMarkersBar,
+                    { description = ns.L["Only show the world marker and leader action rows while you are group lead or raid assist."] }), body, sy)
+                P(GUI:CreateFormSlider(body, ns.L["Pull Countdown Seconds"],
+                    3, 30, 1, "pullSeconds", markersDB.leaderStrip, nil, { deferOnDrag = true },
+                    { description = ns.L["Countdown length used by the pull button."] }), body, sy)
             end, sections, relayout)
 
             U.BuildPositionCollapsible(content, "raidMarkersBar", nil, sections, relayout)
@@ -273,7 +292,6 @@ do
             local function relayout() U.StandardRelayout(content, sections) end
             local DEFER = { deferOnDrag = true }
 
-            -- Lightweight preview: recompute container size from layout params
             local function PreviewBarSize()
                 local container = ActionBarsOwned.containers and ActionBarsOwned.containers[dbKey]
                 if not container or not layout then return end
@@ -296,11 +314,6 @@ do
             local DEFER_SIZE = { deferOnDrag = true, onDragPreview = PreviewBarSize }
 
             local function ApplyBarEnabledState(val)
-                -- Mirror Layout Mode's element toggle: apply the container
-                -- state now so re-enabling takes effect without a reload.
-                -- Containers are secure (SetAttribute is protected in
-                -- combat); the deferred QUI_RefreshActionBars covers the
-                -- disable side on regen, enable completes at reload.
                 if not InCombatLockdown() then
                     local container = ActionBarsOwned.containers and ActionBarsOwned.containers[dbKey]
                     if container then
@@ -356,7 +369,6 @@ do
                 end, sections, relayout)
             end
 
-            -- SECTION: Layout
             if hasLayout and layout then
                 local isMicroBag = (dbKey == "microbar" or dbKey == "bags")
                 local maxButtons = BUTTON_COUNTS[dbKey] or (dbKey == "microbar" and 12 or (dbKey == "bags" and 6 or 12))
@@ -400,7 +412,7 @@ do
                             end
                             RefreshActionBars()
                         end, { description = ns.L["Clone another bar's layout, visual, keybind, macro name, and stack count settings onto this bar. Position/anchor is not copied."] }), body, sy)
-                    end -- isMicroBag guard
+                    end
 
                     if isMicroBag then
                         sy = P(GUI:CreateFormCheckbox(body, ns.L["Clickthrough"],
@@ -456,9 +468,6 @@ do
                 end, sections, relayout)
             end
 
-            -- SECTION: Ticket Icon (micro menu only) — Blizzard's
-            -- open-support-ticket icon rides the reclaimed micro bar
-            -- (AnchorHelpTicketButton in actionbars_layout.lua).
             if dbKey == "microbar" then
                 barDB.ticketIcon = barDB.ticketIcon or {}
                 local ticketDB = barDB.ticketIcon
@@ -483,7 +492,6 @@ do
                 end, sections, relayout)
             end
 
-            -- SECTION: Visual (action bars only — micro/bag buttons are not skinned)
             if SKINNABLE_BAR_KEYS[dbKey] then
             CreateCollapsible(content, ns.L["Visual"], 7 * FORM_ROW + 8, function(body)
                 local sy = -4
@@ -516,12 +524,12 @@ do
                     {value = "blizzard", text = ns.L["Blizzard Default"]},
                     {value = "qui", text = ns.L["QUI"]},
                 }
+                if barDB.showFlash == true then barDB.showFlash = "qui" end
                 P(GUI:CreateFormDropdown(body, ns.L["Pressed Effect"],
                     pressedOptions, "showFlash", barDB, RefreshActionBars,
                     { description = ns.L["Visual response when a button is pressed. Blizzard Default replays the stock animation; QUI swaps in a subtle overlay; Off disables both."] }), body, sy)
             end, sections, relayout)
 
-            -- SECTION: Keybind Text
             CreateCollapsible(content, ns.L["Keybind Text"], 7 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Keybinds"],
@@ -553,7 +561,6 @@ do
                     { description = ns.L["Color used for the keybind text on this bar."] }), body, sy)
             end, sections, relayout)
 
-            -- SECTION: Macro Names
             CreateCollapsible(content, ns.L["Macro Names"], 6 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Macro Names"],
@@ -581,7 +588,6 @@ do
                     { description = ns.L["Color used for the macro name text on this bar."] }), body, sy)
             end, sections, relayout)
 
-            -- SECTION: Stack Count
             CreateCollapsible(content, ns.L["Stack Count"], 6 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Counts"],
@@ -609,7 +615,6 @@ do
                     { description = ns.L["Color used for the stack count text on this bar."] }), body, sy)
             end, sections, relayout)
 
-            -- SECTION: Cooldown Duration Text
             CreateCollapsible(content, ns.L["Cooldown Duration Text"], 6 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Duration Text"],
@@ -636,7 +641,7 @@ do
                     "cooldownTextColor", barDB, RefreshActionBars, nil,
                     { description = ns.L["Color used for cooldown duration text on this bar."] }), body, sy)
             end, sections, relayout)
-            end -- SKINNABLE_BAR_KEYS guard
+            end
 
             CreateCollapsible(content, ns.L["Context Visibility"], 6 * FORM_ROW + 8, function(body)
                 local sy = -4
@@ -660,11 +665,9 @@ do
                     { description = ns.L["Keep this bar fully visible during the Mythic L'ura encounter in March on Quel'Danas."] }), body, sy)
             end, sections, relayout)
 
-            -- Position / Anchoring
             U.BuildPositionCollapsible(content, barKey, nil, sections, relayout)
             U.BuildOpenFullSettingsLink(content, barKey, sections, relayout)
 
-            -- Initial layout
             relayout()
             return content:GetHeight()
         end
@@ -679,10 +682,6 @@ do
     ActionBarsPerBarBuilders.EnsureInitialized = InitializePerBarBuilders
 end
 
----------------------------------------------------------------------------
--- EXPOSE MODULE
----------------------------------------------------------------------------
-
 local core = GetCore()
 if core then
     core.ActionBars = ActionBarsOwned
@@ -690,7 +689,14 @@ end
 
 if ns.Registry then
     ns.Registry:Register("actionbars", {
-        refresh = _G.QUI_RefreshActionBars,
+        refresh = function()
+            if type(_G.QUI_RefreshActionBars) == "function" then
+                _G.QUI_RefreshActionBars()
+            end
+            if type(_G.QUI_RefreshExtraButtons) == "function" then
+                _G.QUI_RefreshExtraButtons()
+            end
+        end,
         priority = 20,
         group = "frames",
         importCategories = { "actionBars" },

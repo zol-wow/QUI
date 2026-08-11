@@ -1,29 +1,17 @@
---[[
-    QUI Help Content — Data Tables
-    All help text lives here, separate from the UI builders.
-    Exported as ns.QUI_HelpContent for use by help.lua and contextual help blocks.
-]]
-
 local ADDON_NAME, ns = ...
 
 local QUI_HelpContent = {}
 local AssetPath = ns.Helpers.AssetPath
 
----------------------------------------------------------------------------
--- GETTING STARTED
----------------------------------------------------------------------------
 QUI_HelpContent.GettingStarted = {
     {num = "1.", text = ns.L["Open |cff60A5FA/qui|r to access the options panel and explore available modules."]},
-    {num = "2.", text = ns.L["Import the QUI Edit Mode layout string from the |cff60A5FAWelcome|r tab into Blizzard Edit Mode to set up default frame positions."]},
+    {num = "2.", text = ns.L["Run |cff60A5FA/qui install|r — the guided setup applies the recommended scale, profile, and base frame layout."]},
     {num = "3.", text = ns.L["Import a QUI profile from the |cff60A5FAImport & Export Strings|r tab for a recommended starting layout, then |cff60A5FA/rl|r to apply."]},
     {num = "4.", text = ns.L["Customize individual modules — unit frames, action bars, cooldowns, and more — from their respective tabs."]},
     {num = "5.", text = ns.L["Use |cff60A5FA/kb|r to set up keybinds by hovering over action buttons and pressing a key."]},
     {num = "6.", text = ns.L["Fine-tune element positions with |cff60A5FA/qui layout|r (Layout Mode) or the |cff60A5FAFrame Positioning|r tab."]},
 }
 
----------------------------------------------------------------------------
--- SLASH COMMANDS
----------------------------------------------------------------------------
 QUI_HelpContent.SlashCommands = {
     {command = "/qui",          description = ns.L["Open the QUI options panel"]},
     {command = "/kb",           description = ns.L["Open the keybind overlay — hover a button and press a key to bind it"]},
@@ -32,12 +20,9 @@ QUI_HelpContent.SlashCommands = {
     {command = "/qui debug",    description = ns.L["Toggle debug mode — enables verbose logging for one session"]},
     {command = "/qui layout",   description = ns.L["Open Layout Mode — drag to reposition all QUI frames"]},
     {command = "/qui editmode", description = ns.L["Alias for /qui layout (backward compatibility)"]},
-    {command = "/pull <sec>",   description = ns.L["Start a pull timer countdown (requires BigWigs or DBM)"]},
+    {command = "/pull <sec>",   description = ns.L["Start a native pull countdown (no other addons required)"]},
 }
 
----------------------------------------------------------------------------
--- FEATURE GUIDES
----------------------------------------------------------------------------
 QUI_HelpContent.FeatureGuides = {
     {
         title = ns.L["Unit Frames"],
@@ -131,9 +116,6 @@ QUI_HelpContent.FeatureGuides = {
     },
 }
 
----------------------------------------------------------------------------
--- TROUBLESHOOTING
----------------------------------------------------------------------------
 QUI_HelpContent.Troubleshooting = {
     {
         question = ns.L["My frames disappeared or look broken after an update"],
@@ -165,17 +147,10 @@ QUI_HelpContent.Troubleshooting = {
     },
 }
 
----------------------------------------------------------------------------
--- DIAGNOSTICS (Troubleshooting sub-tab buttons)
----------------------------------------------------------------------------
--- Each entry:
---   label    = button text
---   command  = slash form shown in tooltip + capture header
---   tooltip  = body text shown on hover
---   run      = closure invoked under DiagnosticsConsole.Run
---   danger   = optional; true => red border + confirmation modal
 QUI_HelpContent.Diagnostics = {
-    -- General
+    { label = ns.L["Setup Wizard"],         command = "/qui install",
+      tooltip = ns.L["Run the guided setup: recommended scale, profile, feature toggles, and base frame layout."],
+      run = function() QUI:SlashCommandOpen("install") end },
     { label = ns.L["Reload UI"],            command = "/rl",
       tooltip = ns.L["Reload the UI safely. If you're in combat, the reload defers until combat ends."],
       run = function() QUI:SafeReload() end },
@@ -191,21 +166,12 @@ QUI_HelpContent.Diagnostics = {
     { label = ns.L["Open Keybind Mode"],    command = "/kb",
       tooltip = ns.L["Open the keybind overlay. Hover an action button and press a key to bind it."],
       run = function() if SlashCmdList and SlashCmdList["QUIKB"] then SlashCmdList["QUIKB"]() end end },
-    -- CDM
     { label = ns.L["Open CDM Settings"],    command = "/cdm",
       tooltip = ns.L["Toggle Blizzard's CooldownViewer Settings panel."],
       run = function() if SlashCmdList and SlashCmdList["QUI_CDM"] then SlashCmdList["QUI_CDM"]() end end },
     { label = ns.L["Open CDM Composer"],    command = "/qui cdm",
       tooltip = ns.L["Open the QUI CDM Spell Composer for editing custom CDM tracking entries."],
       run = function() QUI:SlashCommandOpen("cdm") end },
-    { label = ns.L["CDM Cache Status"],     command = "/qui cdm_cache status",
-      tooltip = ns.L["Print sizes and dirty flags for every CDM internal cache. Use first when CDM seems stuck."],
-      run = function() QUI:SlashCommandOpen("cdm_cache status") end },
-    { label = ns.L["CDM Cache Reset"],      command = "/qui cdm_cache reset",
-      tooltip = ns.L["Wipe and rebuild every CDM cache. Out-of-combat only. Run when /qui cdm_cache status reports stale state."],
-      danger = true,
-      run = function() QUI:SlashCommandOpen("cdm_cache reset") end },
-    -- Migrations & profiles
     { label = ns.L["Migration Status"],     command = "/qui migration status",
       tooltip = ns.L["Print the active profile's schema version and any available rollback slots."],
       run = function() QUI:SlashCommandOpen("migration status") end },
@@ -223,7 +189,6 @@ QUI_HelpContent.Diagnostics = {
     { label = ns.L["Anchor Dump"],          command = "/qui anchordump",
       tooltip = ns.L["Print frame-anchoring state (saved data + live frame positions) for the active profile."],
       run = function() QUI:SlashCommandOpen("anchordump") end },
-    -- Tooltip debugging
     { label = ns.L["Tooltip Debug On"],     command = "/qui tooltipdebug on",
       tooltip = ns.L["Begin sampling tooltip processing churn every 1 second. Use Tooltip Debug Report to read samples. To log slow callers, type /qui tooltipdebug slow N in chat (N = millisecond threshold)."],
       run = function() QUI:SlashCommandOpen("tooltipdebug on") end },
@@ -245,14 +210,12 @@ QUI_HelpContent.Diagnostics = {
     { label = ns.L["White-Backdrop Scan"],  command = "/qui tooltipdbg",
       tooltip = ns.L["Scan every visible frame and report any with explicit white backdrops or visible NineSlices. Useful when a stray white panel appears mid-screen."],
       run = function() QUI:SlashCommandOpen("tooltipdbg") end },
-    -- Edit Mode diagnostic
     { label = ns.L["Diagnose Edit Mode"],   command = "/qui diagnose",
       tooltip = ns.L["Report Edit Mode state and the most recent ADDON_ACTION_BLOCKED events. Run after a frame-positioning action that didn't take effect."],
       run = function() QUI:SlashCommandOpen("diagnose") end },
     { label = ns.L["Diagnose Clear"],       command = "/qui diagnose clear",
       tooltip = ns.L["Empty the Edit Mode diagnostic ring buffer."],
       run = function() QUI:SlashCommandOpen("diagnose clear") end },
-    -- Combat-end profiler
     { label = ns.L["Combat Profiler On"],   command = "/qui combatprof on",
       tooltip = ns.L["Start profiling the PLAYER_REGEN_ENABLED handler chain. Wraps named CDM functions plus every frame in QUI_PerfRegistry (CDM, group frames, action bars, raid buffs, aura dispatch, plus skinning combat-defer frames) and prints a summary 2.5s after each combat ends. Use to diagnose combat-end stutter."],
       run = function() QUI:SlashCommandOpen("combatprof on") end },
@@ -265,7 +228,6 @@ QUI_HelpContent.Diagnostics = {
     { label = ns.L["Combat Profiler Reset"], command = "/qui combatprof reset",
       tooltip = ns.L["Clear the combat-end profiler's accumulated stats."],
       run = function() QUI:SlashCommandOpen("combatprof reset") end },
-    -- Memory & GSE
     { label = ns.L["Memory Audit Help"],    command = "/qui memaudit",
       tooltip = ns.L["Print memory audit usage. Power forms (alloc N, dump foo bar) stay in chat — type them directly."],
       run = function() QUI:SlashCommandOpen("memaudit") end },
@@ -280,33 +242,27 @@ QUI_HelpContent.Diagnostics = {
       run = function() QUI:SlashCommandOpen("gse tail 20") end },
 }
 
----------------------------------------------------------------------------
--- LINKS
----------------------------------------------------------------------------
 QUI_HelpContent.Links = {
     {
         label = ns.L["|cff5865F2Discord|r"],
-        url = "https://discord.gg/FFUjA4JXnH",
+        url = "https://discord.gg/J9Q87C9CM8",
         iconR = 0.345, iconG = 0.396, iconB = 0.949,
         iconTexture = AssetPath .. "discord",
         popupTitle = ns.L["Copy Discord Invite"],
     },
     {
         label = ns.L["|cffF0F6FCGitHub|r"],
-        url = "https://github.com/zol-wow/QUI",
+        url = "https://github.com/torresdrew/QUI",
         iconR = 0.941, iconG = 0.965, iconB = 0.988,
         iconTexture = AssetPath .. "github",
         popupTitle = ns.L["Copy GitHub URL"],
     },
     {
         label = ns.L["|cffF16436CurseForge|r"],
-        url = "https://www.curseforge.com/wow/addons/qui",
+        url = "https://www.curseforge.com/wow/addons/qui-ui",
         iconR = 0.945, iconG = 0.392, iconB = 0.212,
         popupTitle = ns.L["Copy CurseForge URL"],
     },
 }
 
----------------------------------------------------------------------------
--- EXPORT
----------------------------------------------------------------------------
 ns.QUI_HelpContent = QUI_HelpContent

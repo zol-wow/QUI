@@ -19,7 +19,7 @@ end
 
 local weeklyRewardsLua = readFile("tests/framexml/Interface/AddOns/Blizzard_WeeklyRewards/Blizzard_WeeklyRewards.lua")
 local weeklyRewardsXml = readFile("tests/framexml/Interface/AddOns/Blizzard_WeeklyRewards/Blizzard_WeeklyRewards.xml")
-local source = readFile("QUI_Skinning/skinning/frames/weeklyrewards.lua")
+local source = readFile("modules/skinning/frames/weeklyrewards.lua")
 
 assertContains(weeklyRewardsXml, '<Texture parentKey="Background" atlas="evergreen-weeklyrewards-frame-back">',
     "local FrameXML must expose WeeklyRewardsFrame evergreen background chrome")

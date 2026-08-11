@@ -5,6 +5,8 @@
 local function noop() end
 local frames = {}
 local inCombat = true
+local aurasSecret = false
+local unitAuraScanCalls = 0
 
 function InCombatLockdown() return inCombat end
 function GetTime() return 100 end
@@ -78,9 +80,13 @@ local ns = {
         QueryUnitAuraBySpellID = function()
             return nil
         end,
-    },
-    CDMBlizzMirror = {
-        HandleUnitAuraChanged = noop,
+        QueryUnitAuras = function()
+            unitAuraScanCalls = unitAuraScanCalls + 1
+            error("GetUnitAuras must not run while auras are secret")
+        end,
+        AreAurasSecret = function()
+            return aurasSecret
+        end,
     },
     CDMIcons = {
         HandleRuntimeRefresh = noop,
@@ -149,5 +155,29 @@ state = ns.CDMAuraRuntime.ResolveState({
 
 assert(state.isActive ~= true,
     "target removedAuraInstanceIDs should evict target aura capture")
+
+-- Aura restriction is broader than combat lockdown. Both the direct
+-- GetUnitAuras scan and AuraUtil fallback are RequiresUnitAuraAccess paths and
+-- must be skipped when C_Secrets.ShouldAurasBeSecret() is true.
+inCombat = false
+aurasSecret = true
+AuraUtil = {
+    ForEachAura = function()
+        error("AuraUtil.ForEachAura must not run while auras are secret")
+    end,
+}
+local ok, err = pcall(ns.CDMAuraRuntime.ResolveState, {
+    spellID = 61052,
+    entrySpellID = 61052,
+    entryID = 61052,
+    entryName = "Restricted Target Debuff",
+    entryKind = "aura",
+    entryIsAura = true,
+    entryType = "aura",
+    viewerType = "buff",
+})
+assert(ok, "secret target aura fallback must not throw: " .. tostring(err))
+assert(unitAuraScanCalls == 0,
+    "secret target aura fallback must not call QueryUnitAuras")
 
 print("OK: cdm_spelldata_target_aura_capture_test")

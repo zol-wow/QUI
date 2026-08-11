@@ -1,11 +1,3 @@
---[[
-    QUI Troubleshooting Page
-    --------------------------------------------------------------
-    Renders the second sub-page of the Help tile: a flat grid of
-    diagnostic command buttons above a captured-output console.
-    Data lives in ns.QUI_HelpContent.Diagnostics.
-]]
-
 local ADDON_NAME, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
@@ -25,11 +17,6 @@ local function BuildTroubleshootingContent(content)
     local y = -10
     local contentWidth = 700
 
-    -- Set tileId + subPageIndex (V2 route) and tabName/subTabName (display).
-    -- Deliberately omit tabIndex: that's the legacy V1 routing key, and the
-    -- value 13 is already mapped in _navMap to the General tile. Setting
-    -- it would make ResolveSearchNavigation prefer the General route over
-    -- our explicit tileId, putting "General > Profiles" in the breadcrumb.
     GUI:SetSearchContext({
         tabName      = "Help",
         subTabName   = "Tools",
@@ -37,7 +24,6 @@ local function BuildTroubleshootingContent(content)
         subPageIndex = 2,
     })
 
-    -- Header
     local title = CreateWrappedLabel(content, ns.L["Tools & Diagnostics"],
         20, C.accent, contentWidth)
     title:SetPoint("TOPLEFT", PADDING, y)
@@ -55,7 +41,6 @@ local function BuildTroubleshootingContent(content)
     disclaimer:SetPoint("TOPLEFT", PADDING, y)
     y = y - (disclaimer:GetStringHeight() or 14) - 18
 
-    -- Grid section
     Shared.CreateAccentDotLabel(content, ns.L["Diagnostic Commands"], y)
     y = y - SECTION_LABEL_GAP
 
@@ -88,8 +73,6 @@ local function BuildTroubleshootingContent(content)
     local BTN_H = 26
     local MIN_W = 110
 
-    -- Build all buttons up front; remember each one's natural (text-derived)
-    -- width so layout can re-stretch from the same baseline on resize.
     local buttons = {}
     for _, entry in ipairs(entries) do
         local btn = GUI:CreateButton(grid, entry.label, 0, BTN_H,
@@ -105,13 +88,6 @@ local function BuildTroubleshootingContent(content)
         end
         GUI:AttachTooltip(btn, entry.tooltip, entry.label)
 
-        -- Register this button with the search index so the global
-        -- "Search settings" box can land users on this sub-page when
-        -- they query a button label, the slash command, or any tooltip
-        -- term. The slash command is added as a keyword so queries like
-        -- "cdm cache" match `/qui cdm_cache status` even though the
-        -- visible label is "CDM Cache Status" with no "cache" hit on
-        -- its own.
         if GUI.RegisterSearchSettingWidget then
             GUI:RegisterSearchSettingWidget({
                 label       = entry.label,
@@ -124,11 +100,6 @@ local function BuildTroubleshootingContent(content)
         buttons[#buttons + 1] = btn
     end
 
-    -- Reflow grid: split into rows by natural width, then justify each row
-    -- to the live grid width by distributing the leftover space evenly
-    -- across its buttons. Re-runs on grid size change so window resize
-    -- reflows. Layout is single-shot per call (guard against re-entry from
-    -- our own SetHeight triggering OnSizeChanged again).
     local layingOut = false
     local function LayoutGrid()
         if layingOut then return end
@@ -181,12 +152,8 @@ local function BuildTroubleshootingContent(content)
 
     grid:SetScript("OnSizeChanged", LayoutGrid)
     LayoutGrid()
-    -- Grid's width may not be resolved yet on the first pass; run again
-    -- next frame so it settles after the initial layout.
     C_Timer.After(0, LayoutGrid)
 
-    -- Output section anchors relative to grid bottom so it reflows when
-    -- the grid height changes (window resize ⇒ different row count).
     local outLabel = Shared.CreateAccentDotLabel(content, ns.L["Diagnostic Output"], 0)
     outLabel:ClearAllPoints()
     outLabel:SetPoint("TOPLEFT", grid, "BOTTOMLEFT", 0, -18)
@@ -197,8 +164,6 @@ local function BuildTroubleshootingContent(content)
     panel:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
     panel:SetHeight(320)
 
-    -- Recompute content height after the layout settles so the scroll
-    -- frame's range tracks our actual bottom.
     local function RecalcContentHeight()
         C_Timer.After(0, function()
             if not content:GetParent() then return end

@@ -1,10 +1,3 @@
----------------------------------------------------------------------------
--- Core storage: collection driver. Owns the event wiring for the
--- account-wide character cache, the coalesced next-frame drain scheduler,
--- and login store init. Always on — collection is a core service; UI
--- modules (bags, alts) are pure consumers and their enable flags do not
--- gate scanning. Writes go only to the logged-in character's record.
----------------------------------------------------------------------------
 -- luacheck: globals RequestRaidInfo
 local ADDON_NAME, ns = ...
 local Storage = ns.Storage or {}; ns.Storage = Storage
@@ -13,16 +6,11 @@ local eventFrame = CreateFrame("Frame")
 local drainQueued = false
 local running = false
 
---- True once login init completed and the store is writable.
 function Storage.IsRunning()
     return running
 end
 
--- Tier-2 scanners (reputations / weeklies / lockouts) honor the per-profile
--- alts.scanners toggles LIVE. Lazy + nil-safe: the profile DB does not exist
--- pre-login, and missing flags default ON (collection is opt-out). Bag /
--- bank / character / professions scanning stays ungated — core service.
-local GetAltsSettings -- lazy: profile DB may not exist pre-login
+local GetAltsSettings
 local function ScannerEnabled(key)
     if GetAltsSettings == nil then
         GetAltsSettings = (ns.Helpers and ns.Helpers.CreateDBGetter and ns.Helpers.CreateDBGetter("alts")) or false
@@ -34,21 +22,6 @@ local function ScannerEnabled(key)
     return sc[key] ~= false
 end
 
----------------------------------------------------------------------------
--- Silent /played request. scan_character only WRITES playedTotal when a
--- TIME_PLAYED_MSG lands, and never issues RequestTimePlayed itself — so the
--- roster Played column stays empty until the user happens to type /played.
--- Stock silent-request dance (the pattern QUI chat's blizzard_suppress
--- mirrors): UnregisterEvent("TIME_PLAYED_MSG") on the chat frames →
--- RequestTimePlayed() → re-register once the reply lands. ChatFrame1 is
--- ALWAYS included in both halves regardless of registration state: the
--- suppress mirror tracks the un/register CALLS on the default frame
--- (hooksecurefunc fires on no-op unregisters too), and that flag is what
--- keeps the chat-takeover capture frame from printing the reply.
--- Re-register is deferred a frame (never inside the TIME_PLAYED_MSG
--- dispatch) with a 10s timeout failsafe so a lost reply can't permanently
--- eat the user's manual /played output.
----------------------------------------------------------------------------
 -- luacheck: globals RequestTimePlayed NUM_CHAT_WINDOWS
 local silencedChatFrames = nil
 local function RestoreTimePlayedChat()
@@ -61,7 +34,7 @@ local function RestoreTimePlayedChat()
 end
 local function SilentRequestTimePlayed()
     if type(RequestTimePlayed) ~= "function" then return end
-    if silencedChatFrames then return end -- dance already in flight
+    if silencedChatFrames then return end
     local frames = {}
     for i = 1, (NUM_CHAT_WINDOWS or 10) do
         local f = _G["ChatFrame" .. i]
@@ -76,10 +49,6 @@ local function SilentRequestTimePlayed()
     C_Timer.After(10, RestoreTimePlayedChat)
 end
 
---- Coalesced next-frame drain of all scanners. Data files call this after
---- async item loads; event handlers call it after dirty-marking. Each
---- Drain() self-guards on dirty/session state. Later-phase scanners are
---- existence-guarded (unit harnesses and partial loads).
 function Storage.RequestDrain()
     if not running or drainQueued then return end
     drainQueued = true
@@ -101,26 +70,20 @@ function Storage.RequestDrain()
     end)
 end
 
--- Data-collection events only. UI/takeover/ops events (interaction-manager
--- auto-open, junk, lock/cooldown re-dress, combat op aborts, guild-bank log,
--- ADDON_LOADED takeover arming) stay in QUI_Bags/bags/bags.lua.
 local SCAN_EVENTS = {
-    "BAG_UPDATE",                              -- (bagID) bags AND bank-tab containers
-    "BAG_UPDATE_DELAYED",                      -- batch boundary → drain
-    "BAG_CONTAINER_UPDATE",                    -- bag equipped/unequipped → sizes changed
-    "BANKFRAME_OPENED",                        -- full bank scan opportunity
-    "BANK_TABS_CHANGED",                       -- (bankType) tab purchase/structure
-    "BANK_TAB_SETTINGS_UPDATED",               -- (bankType) rename/icon/flags
-    "PLAYERBANKSLOTS_CHANGED",                 -- legacy char-bank slot event
-    "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED",   -- warband slot event
+    "BAG_UPDATE",
+    "BAG_UPDATE_DELAYED",
+    "BAG_CONTAINER_UPDATE",
+    "BANKFRAME_OPENED",
+    "BANK_TABS_CHANGED",
+    "BANK_TAB_SETTINGS_UPDATED",
+    "PLAYERBANKSLOTS_CHANGED",
+    "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED",
     "PLAYER_MONEY",
     "PLAYER_GUILD_UPDATE",
-    "ACCOUNT_MONEY",                           -- warband bank gold changed (no payload)
-    "ITEM_DATA_LOAD_RESULT",                   -- (itemID, success) → item_info
-    "PLAYER_LOGOUT",                           -- lastSeen stamp (SVs save after handlers)
-    -- Guild bank: scanner session + data events. The session edge is the
-    -- interaction-manager event (GUILDBANKFRAME_OPENED has no mainline
-    -- consumer); legacy events kept as a latch-safe belt-and-braces.
+    "ACCOUNT_MONEY",
+    "ITEM_DATA_LOAD_RESULT",
+    "PLAYER_LOGOUT",
     "PLAYER_INTERACTION_MANAGER_FRAME_SHOW",
     "PLAYER_INTERACTION_MANAGER_FRAME_HIDE",
     "GUILDBANKFRAME_OPENED",
@@ -130,7 +93,6 @@ local SCAN_EVENTS = {
     "GUILDBANK_UPDATE_TABS",
     "GUILDBANK_UPDATE_MONEY",
     "GUILDBANK_UPDATE_WITHDRAWMONEY",
-    -- Cache-breadth events:
     "MAIL_SHOW",
     "MAIL_CLOSED",
     "MAIL_INBOX_UPDATE",
@@ -139,39 +101,32 @@ local SCAN_EVENTS = {
     "AUCTION_HOUSE_SHOW",
     "AUCTION_HOUSE_CLOSED",
     "OWNED_AUCTIONS_UPDATED",
-    -- Character-basics events (scan_character):
     "PLAYER_LEVEL_UP",
     "PLAYER_XP_UPDATE",
     "UPDATE_EXHAUSTION",
     "PLAYER_AVG_ITEM_LEVEL_UPDATE",
     "PLAYER_SPECIALIZATION_CHANGED",
     "ZONE_CHANGED_NEW_AREA",
-    "TIME_PLAYED_MSG",                         -- (total, thisLevel) payload write
-    -- Professions events (scan_professions):
+    "TIME_PLAYED_MSG",
     "SKILL_LINES_CHANGED",
     "TRADE_SKILL_LIST_UPDATE",
-    -- Reputations events (scan_reputations):
-    "FACTION_STANDING_CHANGED",                -- (factionID, updatedStanding)
-    "MAJOR_FACTION_RENOWN_LEVEL_CHANGED",      -- (majorFactionID, new, old)
-    -- Weeklies (scan_weeklies):
+    "FACTION_STANDING_CHANGED",
+    "MAJOR_FACTION_RENOWN_LEVEL_CHANGED",
     "WEEKLY_REWARDS_UPDATE",
     "CHALLENGE_MODE_COMPLETED",
     "CHALLENGE_MODE_MAPS_UPDATE",
     "MYTHIC_PLUS_CURRENT_AFFIX_UPDATE",
-    -- Lockouts (scan_lockouts):
-    "UPDATE_INSTANCE_INFO",                    -- after RequestRaidInfo AND on zone-in (drain is cheap)
+    "UPDATE_INSTANCE_INFO",
     "BOSS_KILL",
 }
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "BAG_UPDATE" then
         Storage.ScanBags.MarkDirty(arg1)
-        Storage.ScanBank.MarkDirty(arg1) -- bank-tab container updates arrive here too
+        Storage.ScanBank.MarkDirty(arg1)
     elseif event == "BAG_UPDATE_DELAYED" then
         Storage.RequestDrain()
     elseif event == "BAG_CONTAINER_UPDATE" then
-        -- Sizes changed; a pure swap fires no BAG_UPDATE for the removed bag
-        -- and no BAG_UPDATE_DELAYED is guaranteed to follow.
         Storage.ScanBags.MarkAllDirty()
         Storage.RequestDrain()
     elseif event == "BANKFRAME_OPENED"
@@ -250,7 +205,6 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
             Storage.RequestDrain()
         end
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        -- fires for party members too; (unit) payload, nil on some paths
         if (arg1 == "player" or arg1 == nil) and Storage.ScanCharacter then
             Storage.ScanCharacter.MarkAllDirty()
             Storage.RequestDrain()
@@ -264,7 +218,6 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         if Storage.ScanCharacter then
             Storage.ScanCharacter.OnTimePlayed(arg1, arg2)
         end
-        -- end the silent-request dance next frame, never inside the dispatch
         if silencedChatFrames then
             C_Timer.After(0, RestoreTimePlayedChat)
         end
@@ -289,13 +242,9 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
     end
 end)
 
--- Startup. Core loads pre-login, so ns.WhenLoggedIn waits for the event.
--- Event registration AND the full scan defer past first paint: the login
--- BAG_UPDATE storm fires during the loading screen and would otherwise
--- drain inside the first rendered frame (login-cost rule).
 ns.WhenLoggedIn(function()
     Storage.Store.Initialize()
-    if not Storage.Store.IsReady() then return end -- newer-version SV: read-only, collect nothing
+    if not Storage.Store.IsReady() then return end
     Storage.Store.EnsureCurrentCharacter()
     Storage.Summaries.SeedOwners()
     running = true

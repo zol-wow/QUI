@@ -1087,6 +1087,16 @@ end
 
         ["UNIT_SPELLCAST_SUCCEEDED"] = function(...)
             local unitId, castGUID, spellId = ...
+            --QUI patch (12.1): SecretWhenUnitSpellCastRestricted — even with
+            --the player/pet RegisterUnitEvent filter, a per-spell
+            --always-secret cast delivers secret unitId/spellId. Indexing
+            --LIB_OPEN_RAID_SPELL_DEFAULT_IDS by a secret key and
+            --UnitIsUnit(secret) throw. Probe BEFORE any use; an
+            --unidentifiable cast is skipped (cooldown degrades to "ready",
+            --same policy as the other patched handlers).
+            if (issecretvalue and (issecretvalue(unitId) or issecretvalue(spellId))) then
+                return
+            end
             C_Timer.After(0.1, function()
                 --some spells has many different spellIds, get the default
                 spellId = LIB_OPEN_RAID_SPELL_DEFAULT_IDS[spellId] or spellId
@@ -1219,14 +1229,27 @@ end
             if (UnitIsUnit(unitId, "player")) then
                 openRaidLib.Schedules.NewUniqueTimer(1.1, function() openRaidLib.internalCallback.TriggerEvent("playerPetChange") end, "mainControl", "petStatus_Schedule")
                 --if the pet is alive, register to know when it dies
-                if (UnitExists("pet") and UnitHealth("pet") >= 1) then
-                    eventFrame:RegisterUnitEvent("UNIT_FLAGS", "pet")
+                --QUI patch (12.1): UnitHealth is SecretReturns — `>= 1` on a
+                --secret value throws while restricted. ACTION POLICY, not
+                --liveness truth: secret health is INDETERMINATE — keep the
+                --death-watch registered; readable health decides normally.
+                if (UnitExists("pet")) then
+                    local petHealth = UnitHealth("pet")
+                    if ((issecretvalue and issecretvalue(petHealth)) or petHealth >= 1) then
+                        eventFrame:RegisterUnitEvent("UNIT_FLAGS", "pet")
+                    end
                 end
             end
         end,
 
         ["UNIT_FLAGS"] = function(unitId)
             local petHealth = UnitHealth(unitId)
+            --QUI patch (12.1): probe before the < 1 compare; a secret health
+            --is unreadable — keep the registration and re-check on the next
+            --UNIT_FLAGS (pet death out of restriction resolves it).
+            if (issecretvalue and issecretvalue(petHealth)) then
+                return
+            end
             if (petHealth < 1) then
                 eventFrame:UnregisterEvent("UNIT_FLAGS")
                 openRaidLib.eventFunctions["UNIT_PET"]("player")
@@ -3601,6 +3624,16 @@ local createLocalCooldownTracker = function()
     cdTrackerFrame:SetScript("OnEvent", function(self, event, ...)
         if (event == "UNIT_SPELLCAST_SUCCEEDED") then
             local unitId, castGUID, spellId = ...
+
+            --QUI patch (12.1): UNIT_SPELLCAST_SUCCEEDED is
+            --SecretWhenUnitSpellCastRestricted — unitId/castGUID/spellId can
+            --arrive as secret values. UnitIsUnit(secret) and table indexing by
+            --a secret spellId throw. Probe BEFORE any use; a restricted cast
+            --is untrackable — skip it (cooldown degrades to "ready", matching
+            --the GetPlayerCooldownStatus patch policy).
+            if (issecretvalue and (issecretvalue(unitId) or issecretvalue(spellId))) then
+                return
+            end
 
             --don't track spells casted by the player
             local bUnitIsThePlayer = UnitIsUnit(unitId, "player")

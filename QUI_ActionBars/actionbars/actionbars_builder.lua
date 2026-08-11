@@ -4,38 +4,8 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
--- Fully silence a Blizzard-managed bar frame before we reparent its buttons:
--- purge Edit Mode's tainted isShownExternal (write enough nil keys to push the
--- entry off the secure-variable tracking list), unregister its events, reparent
--- it under the hidden parent, and hide it via the C-side HideBase to avoid Edit
--- Mode's Lua override propagating taint. Shared by the pet/stance, microbar and
--- bags build branches, which each ran this identical sequence.
-local function SuppressManagedBarFrame(barFrame)
-    if barFrame.system then
-        barFrame.isShownExternal = nil
-        local c = 42
-        repeat
-            if barFrame[c] == nil then
-                barFrame[c] = nil
-            end
-            c = c + 1
-        until issecurevariable(barFrame, "isShownExternal")
-    end
-    barFrame:UnregisterAllEvents()
-    barFrame:SetParent(hiddenBarParent)
-    if barFrame.HideBase then
-        barFrame:HideBase()
-    else
-        barFrame:Hide()
-    end
-end
+---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
 
----------------------------------------------------------------------------
--- BAR BUILD (native engine)
----------------------------------------------------------------------------
-
--- Get the ORIGINAL Blizzard buttons by name (bypassing nativeButtons cache).
--- Used during BuildBar to find buttons that need hiding.
 function GetOriginalBlizzButtons(barKey)
     local buttons = {}
     local pattern = BUTTON_PATTERNS[barKey]
@@ -51,66 +21,16 @@ function GetOriginalBlizzButtons(barKey)
     return buttons
 end
 
-function SharedOwnedButtonUpdateCooldown(self)
-    ActionBarsOwned.UpdateCooldown(self)
-end
-
-function SharedOwnedButtonUpdateCount(self)
-    local action = self.action
-    local count = self.Count
-    if not action or not HasAction(action) then
-        if count then count:SetText("") end
-        return
-    end
-
-    if C_ActionBar and C_ActionBar.GetActionDisplayCount then
-        if count then count:SetText(C_ActionBar.GetActionDisplayCount(action) or "") end
-    elseif count then
-        count:SetText("")
-    end
-end
-
-function SharedOwnedButtonSetTooltip(self)
-    if GetCVar("UberTooltips") == "1" then
-        GameTooltip_SetDefaultAnchor(GameTooltip, self)
-    else
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    end
-    if GameTooltip:SetAction(self.action) then
-        self.UpdateTooltip = self.SetTooltip
-    else
-        self.UpdateTooltip = nil
-    end
-end
-
-function SharedOwnedButtonOnEvent(self, event, ...)
-    if event == "ACTIONBAR_UPDATE_COOLDOWN"
-        or event == "LOSS_OF_CONTROL_ADDED"
-        or event == "LOSS_OF_CONTROL_UPDATE" then
-        ActionBarsOwned.UpdateCooldown(self)
-    else
-        ActionBarsOwned.SafeUpdate(self)
-    end
-end
-
 function SharedOwnedButtonPostDrag(self)
     OwnedButton_PostDrag(self)
 end
-
-ActionBarsOwned._sharedHandlers = ActionBarsOwned._sharedHandlers or {
-    UpdateCooldown = SharedOwnedButtonUpdateCooldown,
-    UpdateCount = SharedOwnedButtonUpdateCount,
-    SetTooltip = SharedOwnedButtonSetTooltip,
-    OnEvent = SharedOwnedButtonOnEvent,
-    PostDrag = SharedOwnedButtonPostDrag,
-}
 
 function EnsureOwnedActionButton(container, barKey, btnName, index)
     local btn = _G[btnName]
     local existed = btn ~= nil
     if not btn then
         local ok
-        ok, btn = pcall(CreateFrame, "CheckButton", btnName, container, "ActionButtonTemplate, SecureActionButtonTemplate")
+        ok, btn = ns.SafeCall("best-effort-style", CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate")
         if not ok then btn = _G[btnName] end
         btn:SetAttribute("type", "action")
         btn:SetAttribute("checkselfcast", true)
@@ -141,6 +61,7 @@ function EnsureOwnedActionButton(container, barKey, btnName, index)
         end
         btn.flashing = 0
         btn.flashtime = 0
+
     else
         btn:SetParent(container)
     end
@@ -153,19 +74,15 @@ function EnsureOwnedActionButton(container, barKey, btnName, index)
     return btn, existed
 end
 
-function SetupPagedOwnedActionButton(btn, index)
+function SetupPagedOwnedActionButton(container, btn, index)
     btn:SetAttribute("index", index)
-    btn:SetAttribute("action", index)
     btn:SetAttribute("_childupdate-offset", [[
         local index = self:GetAttribute("index")
         local newAction = index + (message or 0)
         self:SetAttribute("action", newAction)
         self:RunAttribute("QUI_UpdateActionFlags")
-        self:CallMethod("SafeSyncAction")
     ]])
-    btn.SafeSyncAction = ActionBarsOwned.SafeSyncAction
-    btn.UpdateCooldown = SharedOwnedButtonUpdateCooldown
-    btn.UpdateCount = SharedOwnedButtonUpdateCount
+    SetupFixedOwnedActionButton(container, btn, index)
 end
 
 function SetupFixedOwnedActionButton(container, btn, action)
@@ -211,10 +128,7 @@ function BuildStandardOwnedButtons(container, barKey)
             local btnName = "QUI_Bar1Button" .. i
             local btn, existed = EnsureOwnedActionButton(container, barKey, btnName, i)
             if not existed then
-                SetupPagedOwnedActionButton(btn, i)
-                btn.action = i
-            else
-                btn.action = btn:GetAttribute("action") or i
+                SetupPagedOwnedActionButton(container, btn, i)
             end
             btn:Show()
             buttons[i] = btn
@@ -232,7 +146,6 @@ function BuildStandardOwnedButtons(container, barKey)
         if not existed then
             SetupFixedOwnedActionButton(container, btn, action)
         end
-        btn.action = action
         btn:Show()
         buttons[i] = btn
     end
@@ -241,21 +154,6 @@ function BuildStandardOwnedButtons(container, barKey)
 end
 
 function SetupStandardOwnedButtonRuntime(container, btn)
-    btn:UnregisterAllEvents()
-    btn:SetScript("OnEvent", SharedOwnedButtonOnEvent)
-    btn.Update = ActionBarsOwned.SafeUpdate
-    btn.UpdateAction = ActionBarsOwned.SafeSyncAction
-    btn.SafeSyncAction = ActionBarsOwned.SafeSyncAction
-    btn.UpdateCooldown = SharedOwnedButtonUpdateCooldown
-    ---@type fun(...)
-    btn.UpdatePressAndHoldAction = function() end
-    btn.UpdateCount = SharedOwnedButtonUpdateCount
-    if SetActionUIButton and btn.action and btn.cooldown then
-        SetActionUIButton(btn, btn.action, btn.cooldown)
-    end
-
-    btn.SetTooltip = SharedOwnedButtonSetTooltip
-
     btn:SetAttribute("buttonlock", GetCVar("lockActionBars") == "1")
     btn.QUI_PostDrag = SharedOwnedButtonPostDrag
 
@@ -279,11 +177,11 @@ function SetupStandardOwnedButtonRuntime(container, btn)
 
         btn:HookScript("OnEnter", function(self)
             local global = GetGlobalSettings()
-            if global and global.showTooltips == false then return end
-            self:SetTooltip()
+            if global and global.showTooltips == false then
+                GameTooltip:Hide()
+            end
         end)
         btn:HookScript("OnLeave", function(self)
-            self.UpdateTooltip = nil
             GameTooltip:Hide()
         end)
 
@@ -370,7 +268,7 @@ end
 function PrimeStandardOwnedButtonVisuals(buttons)
     for _, btn in ipairs(buttons) do
         if ActionButton_Update then
-            pcall(ActionButton_Update, btn)
+            ns.SafeCall("best-effort-style", ActionButton_Update, btn)
         end
         ActionBarsOwned.UpdateCooldown(btn)
         ActionBarsOwned.UpdateOverlayGlow(btn)
@@ -392,28 +290,10 @@ function BuildBar(barKey)
         SuppressOriginalStandardBar(barFrame, barKey)
         buttons = BuildStandardOwnedButtons(container, barKey)
     elseif barKey == "pet" or barKey == "stance" then
-        -- PET/STANCE: Create fresh buttons from Blizzard templates, then
-        -- fully suppress the originals (same pattern as bars 1-8 and
-        -- action button addons).  Pet/stance buttons use GetID() for
-        -- slot lookup — SetID is the only required setup.
         if barFrame then
-            SuppressManagedBarFrame(barFrame)
-            -- Do NOT write to the bar frame (numForms, Update, etc.) — any
-            -- tainted write is read by ActionBarController, tainting its
-            -- context and leaking into the ActionBarButtonEventsFrame dispatch.
-            -- The bar is hidden + reparented + events unregistered; the
-            -- controller's calls to Update/ShouldShow are harmless.
+            HideManagedBlizzardBarFrame(barFrame, true)
         end
 
-        -- Suppress original Blizzard buttons — but for the pet bar we
-        -- must leave the originals ALIVE (not UnregisterAllEvents, not
-        -- statehidden).  Blizzard's native pet action bar keeps the
-        -- server<->client state in sync via PetActionButton_OnEvent on
-        -- the individual buttons — if we unregister their events, pet
-        -- bar drag state fails to persist across /reload because the
-        -- native sync path never runs.  The container is already
-        -- hidden + reparented above, which is enough to make them
-        -- invisible while preserving the native child-button event path.
         if barKey ~= "pet" then
             local origButtons = GetOriginalBlizzButtons(barKey)
             for _, blizzBtn in ipairs(origButtons) do
@@ -421,7 +301,6 @@ function BuildBar(barKey)
             end
         end
 
-        -- Create fresh buttons from the native template
         local template = barKey == "pet" and "PetActionButtonTemplate" or "StanceButtonTemplate"
         local prefix = barKey == "pet" and "QUI_PetButton" or "QUI_StanceButton"
         local count = BUTTON_COUNTS[barKey] or 10
@@ -431,39 +310,22 @@ function BuildBar(barKey)
             local btn = _G[btnName]
             if not btn then
                 local ok
-                ok, btn = pcall(CreateFrame, "CheckButton", btnName, container, template)
+                ok, btn = ns.SafeCall("best-effort-style", CreateFrame, "CheckButton", btnName, container, template)
                 if not ok then btn = _G[btnName] end
                 btn:SetID(i)
             else
                 btn:SetParent(container)
             end
-            -- Pet buttons inherit ActionButton OnEvent from the template, which
-            -- runs BaseActionButtonMixin:Update (wrong for pet actions) and can
-            -- taint the execution context.  Silence events — QUI drives pet
-            -- button visuals via UpdatePetButton / UpdateAllPetButtons.
             if barKey == "pet" then
                 btn:UnregisterAllEvents()
                 btn:SetScript("OnEvent", nil)
-                -- Pin the pet slot on the button itself so our drag
-                -- overrides below don't depend on GetID() or on
-                -- whatever the template's OnLoad populated.
                 btn.id = i
-                -- The inherited OnEnter is BaseActionButtonMixin:OnEnter →
-                -- GameTooltip:SetAction(self.action), which is wrong for pet
-                -- buttons (they have no .action).  Replace with SetPetAction.
                 btn:SetScript("OnEnter", function(self)
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:SetPetAction(self:GetID())
                     GameTooltip:Show()
                 end)
                 btn:SetScript("OnLeave", GameTooltip_Hide)
-                -- Explicit insecure drag handlers.  Pet action pickup /
-                -- placement is not combat-protected, so plain Lua calls
-                -- are fine here.  Overriding means we don't rely on the
-                -- template's native OnDragStart / OnReceiveDrag, which
-                -- may misbehave when the button is reparented outside
-                -- the original PetActionBar frame or when the template
-                -- internals read stale cached fields.
                 btn:SetScript("OnDragStart", function(self)
                     if InCombatLockdown() then return end
                     local slot = self.id or self:GetID()
@@ -485,8 +347,6 @@ function BuildBar(barKey)
                 end)
             end
             btn:Show()
-            -- Both pet and stance bar-level Updates are suppressed — QUI
-            -- drives button visuals directly via the Blizzard APIs.
             if barKey == "pet" then
                 ActionBarsOwned.UpdatePetButton(btn)
             elseif barKey == "stance" then
@@ -495,24 +355,17 @@ function BuildBar(barKey)
             buttons[i] = btn
         end
     elseif barKey == "microbar" then
-        -- MICRO MENU: Reparent individual micro buttons into QUI container.
-        -- Fully silence the Blizzard container so its Layout() never fires
-        -- during combat (which would propagate taint through our hooks).
         if barFrame then
-            SuppressManagedBarFrame(barFrame)
+            HideManagedBlizzardBarFrame(barFrame, true)
         end
 
-        -- Suppress Blizzard's MicroMenu.Layout during reparenting — partially
-        -- reparented children have nil positions, which crashes GetEdgeButton.
         local origLayout = MicroMenu and MicroMenu.Layout
         if MicroMenu then MicroMenu.Layout = function() end end
 
-        -- Use explicit button list instead of fragile GetChildren enumeration
         ActionBarsOwned._microAnchors = {}
         for i, name in ipairs(MICRO_BUTTON_NAMES) do
             local btn = _G[name]
             if btn then
-                -- Save original anchor for clean restoration during yield
                 ActionBarsOwned._microAnchors[i] = { btn:GetPoint() }
                 btn:SetParent(container)
                 btn:Show()
@@ -520,18 +373,13 @@ function BuildBar(barKey)
             end
         end
 
-        -- HelpMicroButton shares StoreMicroButton's slot — reparent it into
-        -- our container so Blizzard's Layout doesn't crash on orphaned children,
-        -- but don't add it to the buttons array (LayoutNativeButtons handles it).
         local helpBtn = _G.HelpMicroButton
         if helpBtn then
             helpBtn:SetParent(container)
         end
 
-        -- Restore MicroMenu.Layout now that all children are reparented
         if MicroMenu and origLayout then MicroMenu.Layout = origLayout end
 
-        -- Apply clickthrough setting
         local barDB = GetBarSettings("microbar")
         if barDB and barDB.clickthrough then
             for _, btn in ipairs(buttons) do
@@ -539,27 +387,14 @@ function BuildBar(barKey)
             end
         end
 
-        -- Hook Blizzard's layout to reclaim buttons if it tries to reparent them
         if not ActionBarsOwned._microLayoutHooked then
             ActionBarsOwned._microLayoutHooked = true
 
-            -- Shared reclaim function: reparent stray buttons and reapply layout.
-            -- During combat, defers via C_Timer.After(0) to break the taint
-            -- chain from hooked Blizzard execution paths, then coalesces
-            -- multiple hook fires into a single layout per frame.
-            -- Reparenting (SetParent) is protected during combat,
-            -- so that is deferred to PLAYER_REGEN_ENABLED, but SetPoint/SetScale
-            -- on micro buttons works fine from untainted addon code.
             local microCombatLayoutPending = false
             local function ReclaimMicroButtons()
                 if not ActionBarsOwned.initialized then return end
-                -- Skip reclaim when Blizzard legitimately owns the buttons
-                -- (vehicle, override bar, pet battle). The _microOwnedByUI
-                -- flag is set by the MicroMenu:SetParent hook.
                 if ActionBarsOwned._microOwnedByUI then return end
 
-                -- Clear Blizzard's cached grid settings so its next Layout()
-                -- doesn't reuse stale button positions from before QUI reclaimed.
                 if MicroMenu then
                     MicroMenu.oldGridSettings = nil
                 end
@@ -568,7 +403,6 @@ function BuildBar(barKey)
                 local cont = ActionBarsOwned.containers["microbar"]
                 if not btns or not cont then return end
 
-                -- Check if any buttons need reparenting (protected during combat)
                 local needsReparent = false
                 for _, btn in ipairs(btns) do
                     if btn:GetParent() ~= cont then
@@ -578,7 +412,6 @@ function BuildBar(barKey)
                 end
 
                 if needsReparent and InCombatLockdown() then
-                    -- SetParent is protected — defer reparenting to combat end
                     if not ActionBarsOwned._microDeferPending then
                         ActionBarsOwned._microDeferPending = true
                         ns.Addon:RegisterEvent("PLAYER_REGEN_ENABLED", function()
@@ -596,12 +429,10 @@ function BuildBar(barKey)
                             btn:SetParent(cont)
                         end
                     end
-                    -- Reclaim HelpMicroButton as well (shares Store's slot)
                     local helpBtn = _G.HelpMicroButton
                     if helpBtn and helpBtn:GetParent() ~= cont then
                         helpBtn:SetParent(cont)
                     end
-                    -- Re-apply clickthrough after reparenting
                     local microDB = GetBarSettings("microbar")
                     local ct = microDB and microDB.clickthrough
                     for _, btn in ipairs(btns) do
@@ -609,10 +440,6 @@ function BuildBar(barKey)
                     end
                 end
 
-                -- SetScale on the microbar container is protected during combat.
-                -- Defer layout to combat end via a dedicated frame event handler
-                -- (not ns.Addon:RegisterEvent, which would conflict with the
-                -- reparent defer above).
                 if InCombatLockdown() then
                     if not microCombatLayoutPending then
                         microCombatLayoutPending = true
@@ -635,9 +462,6 @@ function BuildBar(barKey)
                 end
             end
 
-            -- Yield micro buttons back to Blizzard when MicroMenu is
-            -- reparented away from UIParent (vehicle, override, pet battle).
-            -- Reclaim when it returns to UIParent.
             local function YieldMicroButtons()
                 ActionBarsOwned._microOwnedByUI = true
                 local btns = ActionBarsOwned.nativeButtons["microbar"]
@@ -646,13 +470,11 @@ function BuildBar(barKey)
                     for i, btn in ipairs(btns) do
                         btn:SetParent(MicroMenu)
                         btn:EnableMouse(true)
-                        -- Restore original anchor if saved
                         if savedAnchors and savedAnchors[i] then
                             btn:ClearAllPoints()
                             btn:SetPoint(unpack(savedAnchors[i]))
                         end
                     end
-                    -- Return HelpMicroButton to MicroMenu as well
                     local helpBtn = _G.HelpMicroButton
                     if helpBtn then
                         helpBtn:SetParent(MicroMenu)
@@ -669,9 +491,6 @@ function BuildBar(barKey)
                 end
             end
 
-            -- Hook MicroMenu:SetParent — primary ownership detection.
-            -- Fires when Blizzard reparents the frame for vehicle/override/
-            -- pet battle transitions.
             if MicroMenu then
                 hooksecurefunc(MicroMenu, "SetParent", function(_, parent)
                     if not ActionBarsOwned.initialized then return end
@@ -684,10 +503,6 @@ function BuildBar(barKey)
                 end)
             end
 
-            -- Hook MicroMenuContainer AND MicroMenu Layout — both can fire
-            -- when Blizzard re-layouts buttons (Edit Mode changes, grid
-            -- recalculation, etc.). MicroMenu.Layout repositions individual
-            -- buttons; MicroMenuContainer.Layout repositions the container.
             if MicroMenuContainer and MicroMenuContainer.Layout then
                 hooksecurefunc(MicroMenuContainer, "Layout", ReclaimMicroButtons)
             end
@@ -695,16 +510,6 @@ function BuildBar(barKey)
                 hooksecurefunc(MicroMenu, "Layout", ReclaimMicroButtons)
             end
 
-            -- Blizzard's MicroMenu:Layout() ends by re-anchoring
-            -- HelpOpenWebTicketButton to its own edge button; with the
-            -- buttons reclaimed GetEdgeButton() returns nil and the icon
-            -- lands at screen center. Fix it right after Blizzard moves it
-            -- — SetPoint on the ticket button is not combat-protected, so
-            -- this also covers re-layouts while ReclaimMicroButtons has
-            -- deferred the full layout to combat end. Deferred one frame:
-            -- this hook can fire inside Edit Mode's secure anchor pass
-            -- (secureexecuterange on zone-in), where addon SetPoint calls
-            -- risk "anchor family connection" blocks.
             if MicroMenu and MicroMenu.UpdateHelpTicketButtonAnchor then
                 local ticketAnchorPending = false
                 hooksecurefunc(MicroMenu, "UpdateHelpTicketButtonAnchor", function()
@@ -718,33 +523,24 @@ function BuildBar(barKey)
                 end)
             end
 
-            -- Hook UpdateMicroButtons — fires on many events (talent changes,
-            -- guild updates, store state, etc.) and repositions buttons
             if UpdateMicroButtons then
                 hooksecurefunc("UpdateMicroButtons", ReclaimMicroButtons)
             end
 
-            -- Hook UpdateMicroButtonsParent — fires when Blizzard explicitly
-            -- reparents micro buttons (vehicle, override bar, pet battle)
             if UpdateMicroButtonsParent then
                 hooksecurefunc("UpdateMicroButtonsParent", ReclaimOrYield)
             end
 
-            -- Hook ActionBarController_UpdateAll — fires on bar state changes
-            -- (vehicle exit, stance changes) that can trigger button reparenting
             if ActionBarController_UpdateAll then
                 hooksecurefunc("ActionBarController_UpdateAll", ReclaimMicroButtons)
             end
 
-            -- Reclaim micro buttons when pet battle ends — no other hook
-            -- reliably fires for this transition.
             if C_PetBattles then
                 local petBattleFrame = CreateFrame("Frame")
                 petBattleFrame:RegisterEvent("PET_BATTLE_CLOSE")
                 petBattleFrame:SetScript("OnEvent", function()
                     if not ActionBarsOwned.initialized then return end
                     ActionBarsOwned._microOwnedByUI = false
-                    -- Restore MicroMenu parent so the SetParent hook also fires
                     if MicroMenu and MicroMenu:GetParent() ~= UIParent then
                         MicroMenu:SetParent(UIParent)
                     else
@@ -753,17 +549,11 @@ function BuildBar(barKey)
                 end)
             end
 
-            -- Reanchor MicroButtonAlert callouts when the microbar is near
-            -- a screen edge so the alert bubble doesn't render off-screen.
-            -- Blizzard's default is BOTTOM-of-alert to TOP-of-button (alert
-            -- above button).  We flip to TOP-of-alert to BOTTOM-of-button
-            -- when the button is in the upper portion of the screen, and
-            -- nudge horizontally when near a side edge.
             if not ActionBarsOwned._microAlertAnchorHooked then
                 ActionBarsOwned._microAlertAnchorHooked = true
 
-                local EDGE_THRESHOLD_Y = 200  -- px from top before flipping
-                local EDGE_THRESHOLD_X = 60   -- px from side before nudging
+                local EDGE_THRESHOLD_Y = 200
+                local EDGE_THRESHOLD_X = 60
 
                 local function ReanchorMicroAlert(button)
                     if not button then return end
@@ -771,9 +561,6 @@ function BuildBar(barKey)
                     if not alert and button.GetName then
                         alert = _G[button:GetName() .. "Alert"]
                     end
-                    -- FlashBorder/FlashContent are the button pulse textures,
-                    -- not alert bubbles. Reanchoring them can detach Blizzard's
-                    -- glow geometry from the micro button and inflate it.
                     if alert == button.FlashBorder or alert == button.FlashContent then
                         return
                     end
@@ -788,9 +575,7 @@ function BuildBar(barKey)
                     local btnRight = button:GetRight()
                     if not btnTop or not btnLeft then return end
 
-                    -- Determine vertical anchor: flip below if near top
                     local nearTop = (screenH - btnTop) < EDGE_THRESHOLD_Y
-                    -- Determine horizontal nudge
                     local xOff = 0
                     if btnLeft < EDGE_THRESHOLD_X then
                         xOff = EDGE_THRESHOLD_X - btnLeft
@@ -800,26 +585,22 @@ function BuildBar(barKey)
 
                     alert:ClearAllPoints()
                     if nearTop then
-                        -- Alert below button
                         alert:SetPoint("TOP", button, "BOTTOM", xOff, -4)
-                        -- Flip the arrow to point upward
                         if alert.Arrow then
                             alert.Arrow:ClearAllPoints()
                             alert.Arrow:SetPoint("BOTTOM", alert, "TOP", 0, -2)
-                            alert.Arrow:SetTexCoord(0, 1, 1, 0) -- flip vertically
+                            alert.Arrow:SetTexCoord(0, 1, 1, 0)
                         end
                     else
-                        -- Alert above button (Blizzard default direction)
                         alert:SetPoint("BOTTOM", button, "TOP", xOff, 4)
                         if alert.Arrow then
                             alert.Arrow:ClearAllPoints()
                             alert.Arrow:SetPoint("TOP", alert, "BOTTOM", 0, 2)
-                            alert.Arrow:SetTexCoord(0, 1, 0, 1) -- normal
+                            alert.Arrow:SetTexCoord(0, 1, 0, 1)
                         end
                     end
                 end
 
-                -- Hook the global alert function to reposition after it sets up
                 if type(MainMenuMicroButton_ShowAlert) == "function" then
                     hooksecurefunc("MainMenuMicroButton_ShowAlert", function(button)
                         C_Timer.After(0, function()
@@ -830,11 +611,8 @@ function BuildBar(barKey)
             end
         end
     elseif barKey == "bags" then
-        -- BAG BAR: Reparent bag slot buttons into QUI container.
-        -- Fully silence the Blizzard container so its Layout() never fires
-        -- during combat (which would propagate taint through our hooks).
         if barFrame then
-            SuppressManagedBarFrame(barFrame)
+            HideManagedBlizzardBarFrame(barFrame, true)
         end
 
         local bagButtons = GetBarButtons("bags")
@@ -843,21 +621,16 @@ function BuildBar(barKey)
         for i, btn in ipairs(bagButtons) do
             btn:SetParent(container)
             btn:Show()
-            -- Prevent Blizzard's expand/collapse animation from firing on
-            -- reparented bag buttons.
             if btn.SetBarExpanded then
                 btn.SetBarExpanded = noopFunc
             end
             buttons[i] = btn
         end
 
-        -- Prevent BagsBar from responding to expand/collapse state changes
-        -- which would trigger unnecessary Layout calls.
         if BagsBar and EventRegistry and EventRegistry.UnregisterCallback then
-            pcall(EventRegistry.UnregisterCallback, EventRegistry, "MainMenuBarManager.OnExpandChanged", BagsBar)
+            ns.SafeCallMethod("best-effort-style", EventRegistry, "UnregisterCallback", "MainMenuBarManager.OnExpandChanged", BagsBar)
         end
 
-        -- Hook Blizzard's layout to reclaim buttons if it tries to reparent them
         if not ActionBarsOwned._bagsLayoutHooked then
             ActionBarsOwned._bagsLayoutHooked = true
             local bagsBar = BagsBar
@@ -901,7 +674,6 @@ function BuildBar(barKey)
         end
     end
 
-    -- Build slot→{button, barKey} lookup for O(1) ACTIONBAR_SLOT_CHANGED dispatch
     if not ActionBarsOwned.slotMap then ActionBarsOwned.slotMap = {} end
     for _, btn in ipairs(buttons) do
         if btn.action and btn.action > 0 then
@@ -909,27 +681,14 @@ function BuildBar(barKey)
         end
     end
 
-    -- Standard action bars (bar1-8): suppress Blizzard's event handling
-    -- and shadow mixin methods with taint-safe versions.
-    --
-    -- Buttons ARE registered with SetActionUIButton so the C-side can
-    -- push icon/cooldown/state updates (critical for assisted combat
-    -- rotation which has no Lua event).  The taint-unsafe mixin methods
-    -- (Update, UpdateAction, UpdateCooldown) are shadowed below with
-    -- QUI's safe versions, so C-side ForceUpdateAction → btn:Update()
-    -- hits SafeUpdate instead of the original mixin code.
     if barKey ~= "pet" and barKey ~= "stance" and barKey ~= "microbar" and barKey ~= "bags" then
         for _, btn in ipairs(buttons) do
             SetupStandardOwnedButtonRuntime(container, btn)
         end
 
-        -- Populate visuals via the mixin (safe — GetActionCount is
-        -- suppressed, and shadows are in place so any internal
-        -- self:Method() calls hit the safe versions).
         PrimeStandardOwnedButtonVisuals(buttons)
     end
 
-    -- Register frame refs for the secure layout handler (must be outside combat).
     if SKINNABLE_BAR_KEYS[barKey] then
         layoutHandler:SetFrameRef("bar-" .. barKey, container)
         for i, btn in ipairs(buttons) do
@@ -937,26 +696,21 @@ function BuildBar(barKey)
         end
     end
 
-    -- Micro/bag buttons are not action buttons — skip skinning, keybinds, and override bindings
     if SKINNABLE_BAR_KEYS[barKey] then
-        -- Defer skinning slightly so ActionButtonTemplate has time to
-        -- populate icons and visuals from the action attribute.
         local capturedSettings = settings
         C_Timer.After(0, function()
             if not capturedSettings then return end
             local btns = ActionBarsOwned.nativeButtons[barKey]
             if not btns then return end
             for _, btn in ipairs(btns) do
-                -- Reset skin key to force full re-skin
                 local st = GetFrameState(btn)
-                st.skinKey = nil
+                st.sk_sz = nil
                 SkinButton(btn, capturedSettings)
                 UpdateButtonText(btn, capturedSettings)
                 UpdateEmptySlotVisibility(btn, capturedSettings)
             end
         end)
 
-        -- Register keybind methods for LibKeyBound
         local prefix = BINDING_COMMANDS[barKey]
         if prefix then
             local LKB = LibStub("LibKeyBound-1.0", true)
@@ -964,11 +718,8 @@ function BuildBar(barKey)
                 local state = GetFrameState(btn)
                 state.bindingCommand = prefix .. i
                 state.keybindMethods = true
-                -- Hook OnEnter so LibKeyBound detects hover.
-                -- No OnLeave hook needed — the binder frame handles its own OnLeave.
-                -- Guard against re-entry: if the binder is already targeting this
-                -- button, skip Set() to avoid a show/hide flicker loop.
-                if LKB then
+                if LKB and not state.lkbHooked then
+                    state.lkbHooked = true
                     btn:HookScript("OnEnter", function(self)
                         if LKB:IsShown() then
                             local bf = LKB.frame
@@ -986,10 +737,8 @@ function BuildBar(barKey)
     RestoreContainerPosition(barKey)
     SetupOwnedBarMouseover(barKey)
 
-    -- Action bars need override bindings (reparenting disconnects native bindings)
     if SKINNABLE_BAR_KEYS[barKey] then
         ApplyBarOverrideBindings(barKey)
     end
 
 end
-

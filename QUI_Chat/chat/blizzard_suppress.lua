@@ -1,37 +1,3 @@
--- modules/chat/blizzard_suppress.lua
--- COMPLETE Blizzard-chat suppression while the custom display is active:
--- chat frames + tab buttons are REPARENTED to a permanently hidden anchor —
--- no render, no mouse, no fade fighting. Suppressed frames are also fully
--- EVENT-NEUTERED (UnregisterAllEvents + keep only UPDATE_CHAT_COLOR) so no
--- legacy dispatch taint surface remains. A reentrancy-guarded RegisterEvent
--- post-hook strips any events re-added while active. Canonical event restore
--- on flip-back re-registers the fixed OnLoad base set then calls
--- RegisterForMessages/RegisterForChannels with Blizzard's own saved-settings
--- APIs — exactly what Blizzard's UPDATE_CHAT_WINDOWS handler does. Combat
--- log frame (ChatFrame2) is exempt from neuter/restore: Blizzard_CombatLog
--- hardcodes it. Exception: its chat-MESSAGE events are stripped while active
--- (StripCombatLogChatMessages) so the embedded combat log renders only
--- combat-log entries, not window-2's legacy chat groups (tradeskills etc.).
---
--- Subsystem ownership (single-path):
---   sounds        → store subscriber  (sounds.lua)
---   keyword sound → ProcessForCapture (keyword_alert.lua)
---   history       → store subscriber  (history.lua)
--- The store path is the ONLY path — capture starts at ADDON_LOADED, so it
--- also covers the pre-suppression login window. The old AddMessage-hook
--- paths are deleted.
---
--- Caveat: temporary windows (whisper/BN popouts) born while suppressed get
--- the canonical group restore on flip-back but not the popout-specific
--- AddSingleMessageType extras (CHAT_MSG_SYSTEM on whisper popouts etc.) —
--- those self-heal when Blizzard next reconfigures the window.
---
--- Taint posture: SetParent only; NEVER Hide/SetPoint/SetSize on Blizzard
--- chat frames. First application is deferred past PLAYER_ENTERING_WORLD
--- (+ one timer tick) so the chat-color pipeline settles before frames move.
--- ChatFrame1EditBox lives INSIDE ChatFrame1 and would vanish with it — it
--- is parented out to UIParent while suppressed; DisplayFallback.Apply runs
--- editbox_basics.StyleEditBox, which anchors it to the custom display.
 local ADDON_NAME, ns = ...
 
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
@@ -44,9 +10,6 @@ local function IsSecret(v)
     return ns.Helpers and ns.Helpers.IsSecretValue and ns.Helpers.IsSecretValue(v) or false
 end
 
--- The chat frame's fixed OnLoad event set (vendored FrameXML,
--- Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua:1-28) — restored
--- verbatim on flip-back, then message events rebuild from saved settings.
 local BASE_FRAME_EVENTS = {
     "PLAYER_ENTERING_WORLD", "SETTINGS_LOADED", "UPDATE_CHAT_COLOR",
     "UPDATE_CHAT_WINDOWS", "CHAT_MSG_CHANNEL", "CHAT_MSG_COMMUNITIES_CHANNEL",
@@ -58,25 +21,14 @@ local BASE_FRAME_EVENTS = {
     "NOTIFY_CHAT_SUPPRESSED", "CAUTIONARY_CHAT_MESSAGE",
 }
 
--- Events a NEUTERED frame keeps: the color-sync handler mutates ChatTypeInfo
--- and other Blizzard code assumes it ran (reference-validated minimal set).
 local NEUTER_ALLOWED = {
     UPDATE_CHAT_COLOR = true,
 }
 
-local neutered = {}        -- frame -> true while event-neutered
-local registerHooked = {}  -- frame -> true (blocking hook installed)
+local neutered = {}
+local registerHooked = {}
 local inOwnRegister = false
 
--- /played visibility mirror. Stock chat shows TIME_PLAYED_MSG via the SYSTEM
--- message group; addons that silently RequestTimePlayed() at login suppress
--- the print by UnregisterEvent("TIME_PLAYED_MSG") on the chat frames and
--- re-register afterwards. The capture frame replicates the event regardless
--- of frame registration, so without this mirror every silent request prints
--- ("/played multiple times at login"). Track outside register/unregister
--- intent on the DEFAULT frame (the suppression dance always includes it) and
--- let message_capture consult it. Starts true: the stock default frame
--- carries the SYSTEM group.
 local timePlayedWanted = true
 
 function Suppress.TimePlayedWanted()
@@ -87,11 +39,6 @@ local function IsCombatLogFrame(frame)
     return frame == _G.ChatFrame2
 end
 
--- ChatFrame1 additionally keeps CAUTIONARY_CHAT_MESSAGE: its handler routes
--- straight to ChatFrameUtil.HandleCautionaryChatMessage (the suspicious-link
--- confirm flow, ChatFrameOverrides.lua:273-275) and renders nothing — the
--- flow must keep one live listener while frames are hidden. Default frame
--- only, so a confirm fires once, not once per window.
 local function IsNeuterAllowed(frame, event)
     if NEUTER_ALLOWED[event] then return true end
     return event == "CAUTIONARY_CHAT_MESSAGE" and frame == _G.ChatFrame1
@@ -100,29 +47,18 @@ end
 local function HookRegisterEvent(frame)
     if registerHooked[frame] or not _G.hooksecurefunc then return end
     registerHooked[frame] = true
-    -- While neutered, strip anything outside the allowed set the moment it
-    -- is registered (Blizzard settings paths and other addons re-add message
-    -- groups; dead frames must stay dead). Reentrancy-guarded.
     _G.hooksecurefunc(frame, "RegisterEvent", function(self, event)
         if inOwnRegister then return end
-        -- Outside register of TIME_PLAYED_MSG on the default frame = "the
-        -- silent /played requester is done"; the line is wanted again.
         if event == "TIME_PLAYED_MSG" and self == _G.ChatFrame1 then
             timePlayedWanted = true
         end
         if not neutered[self] then return end
         if type(event) == "string" and not IsNeuterAllowed(self, event) then
-            -- The strip is OUR write: guard it so the UnregisterEvent hook
-            -- below does not read it as an outside suppression request.
             inOwnRegister = true
-            pcall(self.UnregisterEvent, self, event)
+            ns.SafeCallMethod("best-effort-style", self, "UnregisterEvent", event)
             inOwnRegister = false
         end
     end)
-    -- Outside UnregisterEvent of TIME_PLAYED_MSG on the default frame is the
-    -- canonical "request /played silently" dance — honor it (see
-    -- timePlayedWanted above). NeuterOne/RestoreEventsOne use
-    -- UnregisterAllEvents, which this hook does not see.
     _G.hooksecurefunc(frame, "UnregisterEvent", function(self, event)
         if inOwnRegister then return end
         if event == "TIME_PLAYED_MSG" and self == _G.ChatFrame1 then
@@ -135,56 +71,48 @@ local function NeuterOne(frame)
     if not frame or neutered[frame] or IsCombatLogFrame(frame) then return end
     if not frame.UnregisterAllEvents then return end
     neutered[frame] = true
-    pcall(frame.UnregisterAllEvents, frame)
+    ns.SafeCallMethod("best-effort-style", frame, "UnregisterAllEvents")
     inOwnRegister = true
     for event in pairs(NEUTER_ALLOWED) do
-        pcall(frame.RegisterEvent, frame, event)
+        ns.SafeCallMethod("best-effort-style", frame, "RegisterEvent", event)
     end
     local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
     if frame == _G.ChatFrame1
         and (not valid or valid("CAUTIONARY_CHAT_MESSAGE")) then
-        pcall(frame.RegisterEvent, frame, "CAUTIONARY_CHAT_MESSAGE")
+        ns.SafeCallMethod("best-effort-style", frame, "RegisterEvent", "CAUTIONARY_CHAT_MESSAGE")
     end
     inOwnRegister = false
     HookRegisterEvent(frame)
 end
 
--- Canonical restore: the fixed OnLoad base set, then Blizzard's own
--- saved-settings rebuild (exactly what its UPDATE_CHAT_WINDOWS handler does:
--- RegisterForMessages(GetChatWindowMessages) + RegisterForChannels(...)).
 local function RestoreEventsOne(frame)
     if not frame or not neutered[frame] then return end
     neutered[frame] = nil
     inOwnRegister = true
-    -- Mirror Blizzard's UPDATE_CHAT_WINDOWS handler: wipe the message-group
-    -- bookkeeping so RegisterForMessages doesn't leave stale tail entries.
-    if frame.UnregisterAllMessageGroups then
-        pcall(frame.UnregisterAllMessageGroups, frame)
-    end
-    pcall(frame.UnregisterAllEvents, frame)
+    ns.SafeCallMethodIfPresent("best-effort-style", frame, "UnregisterAllMessageGroups")
+    ns.SafeCallMethod("best-effort-style", frame, "UnregisterAllEvents")
     local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
     for i = 1, #BASE_FRAME_EVENTS do
         local event = BASE_FRAME_EVENTS[i]
         if not valid or valid(event) then
-            pcall(frame.RegisterEvent, frame, event)
+            ns.SafeCallMethod("best-effort-style", frame, "RegisterEvent", event)
         end
     end
-    -- :GetID has SecretReturnsForAspect=ID — probe before passing to any API.
     local id = frame.GetID and frame:GetID()
     if id and not IsSecret(id) then
         if frame.RegisterForMessages and _G.GetChatWindowMessages then
-            pcall(frame.RegisterForMessages, frame, _G.GetChatWindowMessages(id))
+            ns.SafeCallMethod("best-effort-style", frame, "RegisterForMessages", _G.GetChatWindowMessages(id))
         end
         if frame.RegisterForChannels and _G.GetChatWindowChannels then
-            pcall(frame.RegisterForChannels, frame, _G.GetChatWindowChannels(id))
+            ns.SafeCallMethod("best-effort-style", frame, "RegisterForChannels", _G.GetChatWindowChannels(id))
         end
     end
     inOwnRegister = false
 end
 
-local lastActive            -- nil until first applied state
+local lastActive
 local hiddenAnchor
-local savedParents = {}     -- region -> original parent
+local savedParents = {}
 local regionHooked = {}
 local inOwnSetParent = false
 local pewSeen = false
@@ -215,23 +143,46 @@ local CHAT_GLOBAL_REGIONS = {
 local function WantActive()
     local settings = I.GetSettings and I.GetSettings()
     if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return false end
-    return true -- chat enabled (checked above) IS the takeover
+    return true
 end
 
--- Consumed by hud_visibility's chat fade and the button bar's anchor chooser.
 function Suppress.IsActive()
     return lastActive == true
 end
 
-local function SafeSetParent(region, parent)
+local pendingParents = setmetatable({}, { __mode = "k" })
+local regenFlushFrame
+local graceApply = false
+local SafeSetParent
+
+local function QueueParentForRegen(region, parent)
+    pendingParents[region] = parent
+    if not regenFlushFrame then
+        if not _G.CreateFrame then return end
+        regenFlushFrame = _G.CreateFrame("Frame")
+        regenFlushFrame:SetScript("OnEvent", function(self)
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            for r, p in pairs(pendingParents) do
+                pendingParents[r] = nil
+                SafeSetParent(r, p)
+            end
+        end)
+    end
+    regenFlushFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
+
+SafeSetParent = function(region, parent)
     if not (region and region.SetParent and parent) then return end
+    if not graceApply
+        and type(_G.InCombatLockdown) == "function" and _G.InCombatLockdown() then
+        QueueParentForRegen(region, parent)
+        return
+    end
     inOwnSetParent = true
-    pcall(region.SetParent, region, parent)
+    ns.SafeCallMethod("best-effort-style", region, "SetParent", parent)
     inOwnSetParent = false
 end
 
--- Iterate all known chat frame names: prefer Blizzard's CHAT_FRAMES list so
--- temporary windows (whisper popouts, pet-battle log) are always included.
 local function EachChatFrameName(fn)
     if type(_G.CHAT_FRAMES) == "table" then
         for _, name in pairs(_G.CHAT_FRAMES) do
@@ -250,12 +201,9 @@ local function RefreshSuppressedFrameChannels(frame)
     local id = frame.GetID and frame:GetID()
     if not id or IsSecret(id) then return end
 
-    -- Hidden frames stay event-neutered, but their channel tables still need to
-    -- track regional channel joins/leaves so Blizzard's chat filter context does
-    -- not behave as if the default frame left city channels until /reload.
     frame.channelList = {}
     frame.zoneChannelList = {}
-    pcall(frame.RegisterForChannels, frame, _G.GetChatWindowChannels(id))
+    ns.SafeCallMethod("best-effort-style", frame, "RegisterForChannels", _G.GetChatWindowChannels(id))
 end
 
 local function RefreshSuppressedChannels()
@@ -278,10 +226,6 @@ local function EnsureChannelRefreshWatcher()
     channelRefreshFrame:SetScript("OnEvent", RefreshSuppressedChannels)
 end
 
--- While suppressed, enforce the expected parent for any region that gets
--- reparented externally (e.g. DetachFromEditMode, dock layout passes).
--- enforcedParentFn returns the parent we require while suppression is active.
--- Idempotent: installs at most once per region.
 local function HookRegion(region, enforcedParentFn)
     if regionHooked[region] or not _G.hooksecurefunc then return end
     regionHooked[region] = true
@@ -289,7 +233,6 @@ local function HookRegion(region, enforcedParentFn)
         if inOwnSetParent or lastActive ~= true then return end
         local enforced = enforcedParentFn()
         if parent ~= enforced then
-            -- Record the latest outside intent so RestoreAll honours it.
             savedParents[self] = parent
             SafeSetParent(self, enforced)
         end
@@ -312,19 +255,6 @@ local function SuppressGlobalChatRegions()
     end
 end
 
--- Neutralize the dock's transient update driver. The dock carries only an
--- OnLoad by default (FrameXML FloatingChatFrame.xml), but FCFDock_OnPrimarySizeChanged
--- installs dock:SetScript("OnUpdate", FCFDock_OnUpdate) every time the primary
--- chat frame resizes. Left live on the dock we just reparented — which taints
--- the dock frame — that OnUpdate runs FCFDock_UpdateTabs -> FCF_CheckShowChatFrame
--- -> ChatFrame1:SetShown(AllowChatFramesToShow(...)) -> Show(): a protected call
--- reached on the tainted path, blocked as ADDON_ACTION_BLOCKED on QUI_Chat (and
--- AllowChatFramesToShow returns true unconditionally in-game, so it would also
--- un-hide ChatFrame1). Clear the dock's update scripts now and re-clear them on
--- every SetScript while suppression is active, so any re-install is undone the
--- instant it happens. origDockSetScript is captured BEFORE the hook so we can
--- re-nil without re-entering our own SetScript hook. Gated on lastActive so the
--- dock's normal tab-layout OnUpdate works again after a flip back to Blizzard.
 local function NeutralizeDockUpdateScripts()
     local dock = _G.GeneralDockManager
     if not (dock and dock.SetScript) then return end
@@ -341,16 +271,6 @@ local function NeutralizeDockUpdateScripts()
     end
 end
 
--- ChatFrame2's enforced parent is dynamic: the combat-log host container while
--- its QUI tab is active (combat_log_tab.lua), the combat-log module's SHOWN
--- clipped park otherwise. The park must stay shown: a hidden parent fires the
--- Blizzard_CombatLog OnShow/OnHide wrapper on QUI's tainted path, and its
--- filter re-apply then half-completes (C_CombatLogSecure.ClearEventFilters
--- runs, the tainted AddEventFilter is blocked) — the combat log shows
--- everything from then on. Passed by reference to SuppressRegion so the
--- SetParent hook re-resolves live — letting the combat-log tab embed
--- ChatFrame2 instead of being yanked back. Defined here (after the
--- module-level `hiddenAnchor` local) so the last-ditch fallback captures it.
 local function ChatFrame2EnforcedParent()
     local CL = ns.QUI.Chat.CombatLogTab
     local host = CL and CL.GetHostParent and CL.GetHostParent()
@@ -359,18 +279,13 @@ local function ChatFrame2EnforcedParent()
     return park or hiddenAnchor
 end
 
--- Test/diagnostic hook.
 function Suppress._ResolveChatFrame2Parent()
     return ChatFrame2EnforcedParent()
 end
 
--- Suppress a single named frame+tab/button set. Idempotent: regions already parented
--- to hiddenAnchor are skipped so re-running on the full list is safe.
 local function SuppressOne(name)
     local f = _G[name]
     if f then
-        -- The combat log (ChatFrame2) gets the dynamic enforced parent; every
-        -- other chat frame is pinned to the hidden anchor.
         local parentFn = IsCombatLogFrame(f)
             and ChatFrame2EnforcedParent
             or function() return hiddenAnchor end
@@ -381,17 +296,11 @@ local function SuppressOne(name)
     SuppressRegion(_G[name .. "ButtonFrame"], function() return hiddenAnchor end)
 end
 
--- FloatingChatFrameManager auto-pops out incoming whispers (whisperMode
--- "popout"/"popout_and_inline"). Each popout calls FCF_OpenTemporaryWindow,
--- whose body docks the new temp frame on the reparented (tainted) dock ->
--- FCFDock_UpdateTabs -> FCF_CheckShowChatFrame -> ChatFrame1:Show() = blocked.
--- The manager registers ONLY whisper events, so neuter it wholesale while active
--- and rebuild from its OnLoad on flip-back.
 local function NeuterChatFrameManager()
     local mgr = _G.FloatingChatFrameManager
     if managerNeutered or not (mgr and mgr.UnregisterAllEvents) then return end
     managerNeutered = true
-    pcall(mgr.UnregisterAllEvents, mgr)
+    ns.SafeCallMethod("best-effort-style", mgr, "UnregisterAllEvents")
 end
 
 local function RestoreChatFrameManager()
@@ -399,20 +308,10 @@ local function RestoreChatFrameManager()
     managerNeutered = false
     local mgr = _G.FloatingChatFrameManager
     if mgr and type(_G.FloatingChatFrameManager_OnLoad) == "function" then
-        pcall(_G.FloatingChatFrameManager_OnLoad, mgr)
+        ns.SafeCall("best-effort-style", _G.FloatingChatFrameManager_OnLoad, mgr)
     end
 end
 
--- Neutering the manager is not enough: a user "whisper -> new window"
--- (UnitPopupPopoutChatButtonMixin) and the pet-battle combat log also call
--- FCF_OpenTemporaryWindow directly, and its body always docks the temp frame on
--- the tainted dock (same blocked ChatFrame1:Show()). While suppressed, REPLACE
--- the global with a forward-only wrapper: translate the whisper intent into a
--- QUI conversation tab (Conv.OnBlizzardPopout self-gates on whisper types +
--- translatePopout) and skip Blizzard's body entirely. The remaining callers
--- ignore the return; only the manager consumed it, and it is neutered. The
--- pristine original is restored on flip-back and the wrapper NEVER calls it, so
--- the Blizzard popout path stays untainted while the takeover is off.
 local function QUIForwardTempWindow(chatType, chatTarget)
     local Conv = ns.QUI.Chat.ConversationManager
     if Conv and Conv.OnBlizzardPopout then
@@ -434,23 +333,6 @@ local function RestoreTempWindowFn()
     if origFCFOpenTemp then _G.FCF_OpenTemporaryWindow = origFCFOpenTemp end
 end
 
--- ChatFrame2 is event-EXEMPT from the neuter (Blizzard_CombatLog hardcodes
--- the frame), so its native chat-message rendering stays live too — and the
--- stock Combat Log window carries the legacy combat-info message groups
--- (TRADESKILLS/OPENING/PET_INFO/COMBAT_MISC_INFO, the chat-config "Other >
--- Combat" section), so the embedded combat log interleaves "Soandso creates
--- X" chat lines with real combat-log entries. While the takeover is active,
--- ChatFrame2 must render ONLY the processor-driven combat log
--- (Blizzard_CombatLogProcessor's COMBAT_LOG_EVENT callback — independent of
--- these frame events); chat traffic belongs to the QUI store, where the
--- capture frame already records every CHAT_MSG_* group and a tab opts in via
--- its group filter. Strip every chat-message event from ChatFrame2 and KEEP
--- it stripped: the frame's live UPDATE_CHAT_WINDOWS handler re-asserts the
--- saved groups on every settings sync (vendored ChatFrameOverrides.lua:
--- 124-126 — the same clobber path as the font re-assert), so a RegisterEvent
--- post-hook re-strips while active. Flip-back re-registers the OnLoad base
--- channel events and rebuilds the saved groups (RestoreEventsOne's shape;
--- ChatFrame2 is never in `neutered`, so it needs its own restore).
 local cf2Stripped = false
 local cf2RegisterHooked = false
 local COMBAT_LOG_BASE_CHAT_EVENTS = { "CHAT_MSG_CHANNEL", "CHAT_MSG_COMMUNITIES_CHANNEL" }
@@ -458,7 +340,6 @@ local COMBAT_LOG_BASE_CHAT_EVENTS = { "CHAT_MSG_CHANNEL", "CHAT_MSG_COMMUNITIES_
 local function IsChatMessageEvent(event)
     if type(event) ~= "string" then return false end
     if event:sub(1, 9) == "CHAT_MSG_" then return true end
-    -- Group events without the prefix (GUILD_MOTD, TIME_PLAYED_MSG, ...).
     local inv = _G.ChatTypeGroupInverted
     return type(inv) == "table" and inv[event] ~= nil
 end
@@ -467,21 +348,15 @@ local function StripCombatLogChatMessages()
     local cf = _G.ChatFrame2
     if not (cf and cf.UnregisterEvent) then return end
     cf2Stripped = true
-    -- ChatTypeGroup is the authoritative group -> events map; visiting every
-    -- event regardless of registration keeps this independent of the user's
-    -- window-2 saved groups (UnregisterEvent on an unregistered event is a
-    -- no-op). Frame event de/registration is insecure-safe; messageTypeList
-    -- stays Blizzard-owned and untouched.
     inOwnRegister = true
-    -- ChatFrameMixin:OnLoad registers these directly, outside ChatTypeGroup.
     for i = 1, #COMBAT_LOG_BASE_CHAT_EVENTS do
-        pcall(cf.UnregisterEvent, cf, COMBAT_LOG_BASE_CHAT_EVENTS[i])
+        ns.SafeCallMethod("best-effort-style", cf, "UnregisterEvent", COMBAT_LOG_BASE_CHAT_EVENTS[i])
     end
     if type(_G.ChatTypeGroup) == "table" then
         for _, events in pairs(_G.ChatTypeGroup) do
             if type(events) == "table" then
                 for i = 1, #events do
-                    pcall(cf.UnregisterEvent, cf, events[i])
+                    ns.SafeCallMethod("best-effort-style", cf, "UnregisterEvent", events[i])
                 end
             end
         end
@@ -493,7 +368,7 @@ local function StripCombatLogChatMessages()
             if inOwnRegister or not cf2Stripped then return end
             if IsChatMessageEvent(event) then
                 inOwnRegister = true
-                pcall(self.UnregisterEvent, self, event)
+                ns.SafeCallMethod("best-effort-style", self, "UnregisterEvent", event)
                 inOwnRegister = false
             end
         end)
@@ -502,23 +377,21 @@ end
 
 local function RestoreCombatLogChatMessages()
     if not cf2Stripped then return end
-    cf2Stripped = false -- before the re-registers so the hook lets them through
+    cf2Stripped = false
     local cf = _G.ChatFrame2
     if not cf then return end
     inOwnRegister = true
-    -- The strip also removed the OnLoad base channel events; hand them back,
-    -- then rebuild the message groups from Blizzard's saved settings.
     local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
     for i = 1, #COMBAT_LOG_BASE_CHAT_EVENTS do
         local event = COMBAT_LOG_BASE_CHAT_EVENTS[i]
         if not valid or valid(event) then
-            pcall(cf.RegisterEvent, cf, event)
+            ns.SafeCallMethod("best-effort-style", cf, "RegisterEvent", event)
         end
     end
     local id = cf.GetID and cf:GetID()
     if id and not IsSecret(id) then
         if cf.RegisterForMessages and _G.GetChatWindowMessages then
-            pcall(cf.RegisterForMessages, cf, _G.GetChatWindowMessages(id))
+            ns.SafeCallMethod("best-effort-style", cf, "RegisterForMessages", _G.GetChatWindowMessages(id))
         end
     end
     inOwnRegister = false
@@ -536,25 +409,14 @@ local function SuppressAll()
     RefreshSuppressedChannels()
     SuppressGlobalChatRegions()
 
-    -- GeneralDockManager is UIParent-parented and resurfaces suppressed tabs;
-    -- park it in the hidden anchor too. Reparenting taints the dock frame, so
-    -- its update scripts must also be neutralized (below) or the dock's
-    -- transient OnUpdate drives a blocked ChatFrame1:Show().
     SuppressRegion(_G.GeneralDockManager, function() return hiddenAnchor end)
     NeutralizeDockUpdateScripts()
 
     SuppressRegion(_G.ChatFrame1EditBox, function() return _G.UIParent end)
 
-    -- Stop Blizzard driving the (tainted) dock to show ChatFrame1: kill the
-    -- whisper-popout manager and intercept temp-window creation. Both reverse on
-    -- flip-back (RestoreAll).
     NeuterChatFrameManager()
     SwapTempWindowFn()
 
-    -- Install a post-hook on FCF_OpenNewWindow so a user-created chat window
-    -- born AFTER the initial SuppressAll is caught immediately. (Temp windows go
-    -- through the FCF_OpenTemporaryWindow swap above, which never creates a
-    -- Blizzard frame to suppress.)
     if not windowHooksInstalled and _G.hooksecurefunc then
         windowHooksInstalled = true
         if _G.FCF_OpenNewWindow then
@@ -566,32 +428,19 @@ local function SuppressAll()
         end
     end
 
-    -- Takeover now owns ChatFrame2 (parked above): drive the session's first
-    -- combat-log filter apply so a mid-combat first Combat-tab click finds the
-    -- filters applied and the frame shown (CombatLogTab.Prime). Idempotent.
     local CL = ns.QUI.Chat.CombatLogTab
     if CL and CL.Prime then CL.Prime() end
 end
 
 local function RestoreAll()
-    -- Hand the whisper-popout machinery back to Blizzard before reparenting.
     RestoreChatFrameManager()
     RestoreTempWindowFn()
-    -- Tear down the combat-log embed first: this clears CombatLogTab's active
-    -- state so ChatFrame2's enforced parent resolves away from our container,
-    -- and the savedParents restore below then hands ChatFrame2 back to Blizzard.
     local CL = ns.QUI.Chat.CombatLogTab
     if CL and CL.Deactivate then CL.Deactivate(1) end
     for region, parent in pairs(savedParents) do
         SafeSetParent(region, parent)
     end
-    -- Drop the snapshots: the SetParent hooks are inert while inactive, so a
-    -- legitimate reparent during a disabled interlude would otherwise be
-    -- shadowed by this table and the NEXT flip-back would restore a stale
-    -- parent. The next activation re-snapshots whatever is live then.
     savedParents = {}
-    -- Restore events for every frame we neutered, including temp windows born
-    -- mid-suppression. Iterate a copy: RestoreEventsOne mutates `neutered`.
     local toRestore = {}
     for frame in pairs(neutered) do toRestore[#toRestore + 1] = frame end
     for i = 1, #toRestore do
@@ -611,23 +460,6 @@ local function ApplyNow()
     end
 end
 
--- Idempotent; transition-latched. The FIRST application normally waits for
--- PLAYER_ENTERING_WORLD + one timer tick (lets Blizzard finish its chat setup
--- and holds the IsActive ownership flip until past the login burst); later
--- flips apply immediately.
---
--- EXCEPTION — combat /reload: the deferred PEW + C_Timer.After(0) path runs the
--- first SuppressAll AFTER the load-time protected grace (the ADDON_LOADED->PEW
--- window that still permits protected writes — the same one display_layer.lua
--- relies on) has closed, while the character is still in combat. SuppressAll's
--- SetParent reparents of the Blizzard chat frames (ChatFrame1, GeneralDockManager,
--- tabs, button frames) are then silently blocked, so Blizzard chat lingers beside
--- the QUI display until combat ends (when an incidental Blizzard reparent finally
--- trips our enforcement hooks). When we load under combat lockdown, apply
--- synchronously here instead: this call runs inside chat's ADDON_LOADED handler,
--- still within the grace, so the protected reparents land immediately. The PEW
--- path stays armed but ApplyNow's transition latch makes the post-PEW re-apply a
--- no-op.
 function Suppress.Apply()
     if pewSeen then
         ApplyNow()
@@ -650,11 +482,11 @@ function Suppress.Apply()
         end)
     end
     if type(_G.InCombatLockdown) == "function" and _G.InCombatLockdown() then
-        -- Combat /reload: land the protected reparents now, in the grace.
         pendingApply = false
+        graceApply = true
         ApplyNow()
+        graceApply = false
     else
-        -- Normal load: defer the first application to PEW as before.
         pendingApply = true
     end
 end

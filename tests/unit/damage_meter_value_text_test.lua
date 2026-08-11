@@ -27,6 +27,16 @@ local function extract(funcName)
     return chunk
 end
 
+-- Secret composition rides C_StringUtil.WrapString (Lua `..` on a secret
+-- string throws in-game). Stub the documented join semantics: prefix..infix..
+-- suffix, empty infix drops everything.
+_G.C_StringUtil = {
+    WrapString = function(infix, prefix, suffix)
+        if infix == "" then return "" end
+        return (prefix or "") .. infix .. (suffix or "")
+    end,
+}
+
 local loader = assert(loadstring(extract("BuildValueText")
     .. "\nreturn BuildValueText"))
 local BuildValueText = loader()

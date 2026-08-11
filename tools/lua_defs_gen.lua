@@ -50,10 +50,11 @@ end
 local function buildSignature(fn)
     local lines = {}
     if type(fn.Documentation) == "table" and fn.Documentation[1] then
-        -- Doc text can contain raw control chars (some strings literally
-        -- describe LF/CR/TAB); a bare newline would split the "--- " comment
-        -- across lines and produce invalid Lua. Collapse all control chars.
-        local doc = table.concat(fn.Documentation, " "):gsub("%c", " ")
+        -- Doc strings can embed literal control bytes (newline/CR/tab); some
+        -- 12.1 docs (e.g. C_StringUtil.EscapeDecimalNonPrintables) do. Collapse
+        -- any whitespace run to a single space so the comment stays one line —
+        -- a raw newline would split it and break the file (luac parse error).
+        local doc = table.concat(fn.Documentation, " "):gsub("%s+", " ")
         lines[#lines + 1] = "--- " .. doc
     end
     local params = {}

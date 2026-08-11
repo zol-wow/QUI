@@ -55,6 +55,13 @@ local fctx = fullBuilt.ctx
 assert(fctx.QUI_GF ~= nil, "ctx.QUI_GF must be populated (real groupframes module)")
 assert(fctx.onEvent ~= nil, "ctx.onEvent must be the captured OnEvent handler")
 assert(fctx.eventFrame ~= nil, "ctx.eventFrame must be the captured eventFrame")
+assert(rawget(fctx.frame, "unit") == nil,
+    "full replay frame must not create the ping-sensitive .unit field")
+assert(fctx.QUI_GF.GetFrameUnit(fctx.frame) == "raid1",
+    "full replay frame must resolve its unit through GroupFrames side state")
+assert(fctx.QUI_GF.unitFrameMap.raid1
+    and fctx.QUI_GF.unitFrameMap.raid1[1] == fctx.frame,
+    "full replay frame must remain mapped under its side-state unit")
 
 -- 5. Full-scope EVENT_MAP must have the right events
 local fullEventMap = A.FULL_EVENT_MAP

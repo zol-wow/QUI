@@ -11,9 +11,6 @@ local CreateWrappedLabel = Shared.CreateWrappedLabel
 local CreateLinkItem = Shared.CreateLinkItem
 local PADDING = Shared.PADDING or 15
 
---------------------------------------------------------------------------------
--- Helper: Create a Q/A pair (bold question + muted answer)
---------------------------------------------------------------------------------
 local function CreateQA(parent, question, answer, y, contentWidth)
     local qLabel = CreateWrappedLabel(parent, question, 12, C.text, contentWidth - PADDING * 2)
     qLabel:SetPoint("TOPLEFT", PADDING, y)
@@ -28,16 +25,10 @@ local function CreateQA(parent, question, answer, y, contentWidth)
     return y
 end
 
---------------------------------------------------------------------------------
--- CONTENT: Welcome
---------------------------------------------------------------------------------
 local function BuildWelcomeContent(content)
     local y = -10
     local contentWidth = 700
 
-    -- =====================================================
-    -- WELCOME HEADER
-    -- =====================================================
     local version = QUI.versionString or "3.00"
     local title = CreateWrappedLabel(content, ns.L["Welcome to QUI"], 20, C.accent, contentWidth)
     title:SetPoint("TOPLEFT", PADDING, y)
@@ -53,19 +44,18 @@ local function BuildWelcomeContent(content)
     tagline:SetPoint("TOPLEFT", PADDING, y)
     y = y - (tagline:GetStringHeight() or 14) - 14
 
-    -- Links (both on one row, parented directly to content)
     local AssetPath = ns.Helpers.AssetPath
     local discordItem = CreateLinkItem(content,
-        ns.L["|cff5865F2Discord|r"], "https://discord.gg/FFUjA4JXnH",
-        0.345, 0.396, 0.949,  -- Discord blurple
+        ns.L["|cff5865F2Discord|r"], "https://discord.gg/J9Q87C9CM8",
+        0.345, 0.396, 0.949,
         AssetPath .. "discord",
         ns.L["Copy Discord Invite"])
     discordItem:SetPoint("TOPLEFT", PADDING, y)
     discordItem:SetSize(320, 22)
 
     local githubItem = CreateLinkItem(content,
-        ns.L["|cffF0F6FCGitHub|r"], "https://github.com/zol-wow/QUI",
-        0.941, 0.965, 0.988,  -- GitHub light
+        ns.L["|cffF0F6FCGitHub|r"], "https://github.com/torresdrew/QUI",
+        0.941, 0.965, 0.988,
         AssetPath .. "github",
         ns.L["Copy GitHub URL"])
     githubItem:SetPoint("TOPLEFT", PADDING + 330, y)
@@ -73,9 +63,6 @@ local function BuildWelcomeContent(content)
 
     y = y - 40
 
-    -- =====================================================
-    -- QUICK SETUP GUIDE
-    -- =====================================================
     Shared.CreateAccentDotLabel(content, ns.L["Quick Setup Guide"], y); y = y - 30
 
     local steps = {
@@ -95,9 +82,6 @@ local function BuildWelcomeContent(content)
     end
     y = y - 12
 
-    -- =====================================================
-    -- FAQ
-    -- =====================================================
     Shared.CreateAccentDotLabel(content, ns.L["Frequently Asked Questions"], y); y = y - 30
 
     y = CreateQA(content,
@@ -132,26 +116,19 @@ local function BuildWelcomeContent(content)
 
     y = CreateQA(content,
         ns.L["How do I report a bug or get help?"],
-        ns.L["If something still looks wrong after reloading or trying a current QUI 3 preset/profile import, enable Lua errors with |cff60A5FA/console scriptErrors 1|r and report the issue on GitHub (https://github.com/zol-wow/QUI) or ask on Discord (https://discord.gg/FFUjA4JXnH). Links with copy buttons are at the top of this page."],
+        ns.L["If something still looks wrong after reloading or trying a current QUI 3 preset/profile import, enable Lua errors with |cff60A5FA/console scriptErrors 1|r and report the issue on GitHub (https://github.com/torresdrew/QUI) or ask on Discord (https://discord.gg/J9Q87C9CM8). Links with copy buttons are at the top of this page."],
         y, contentWidth)
 
     y = y - 10
 
-    -- Set total content height for scrolling
     content:SetHeight(math.abs(y))
 end
 
---------------------------------------------------------------------------------
--- PAGE: Welcome (legacy wrapper for callers that still need a full page)
---------------------------------------------------------------------------------
 local function CreateWelcomePage(parent)
     local _, content = Shared.CreateScrollableContent(parent)
     BuildWelcomeContent(content)
 end
 
---------------------------------------------------------------------------------
--- Export
---------------------------------------------------------------------------------
 ns.QUI_WelcomeOptions = {
     BuildWelcomeContent = BuildWelcomeContent,
     CreateWelcomePage = CreateWelcomePage,

@@ -13,28 +13,36 @@
 -- UNIT_AURA / SPELLS_CHANGED / ACTIONBAR_SLOT_CHANGED / vehicle events -- all
 -- of which fire mid-combat.  The per-path rules:
 --
---   1. EXTRA path: combat-gated.  Ownership is established out of combat by
---      anchoring the shared ExtraAbilityContainer (a stable Blizzard frame
---      Blizzard never reparents on a grant) to the mover, NOT
---      ExtraActionBarFrame.  A mid-combat refresh marks pending;
---      PLAYER_REGEN_ENABLED reconciles.
+--   1. EXTRA path: combat-gated -- BOTH the settings apply AND the saved
+--      frame-anchor apply (a granted button hangs a secure chain under the
+--      extra holder, making SetPoint on the holder anchoring-restricted).
+--      Ownership is established out of combat by anchoring the shared
+--      ExtraAbilityContainer (a stable Blizzard frame Blizzard never
+--      reparents on a grant) to the mover, NOT ExtraActionBarFrame.  A
+--      mid-combat refresh marks pending; PLAYER_REGEN_ENABLED reconciles.
 --   2. ZONE path: no blanket combat gate.  The unprotected ZoneAbilityFrame
 --      is reparented onto its own mover, including mid-combat, so an
 --      in-combat grant/reparent is reclaimed immediately instead of
 --      stranding the button at the Blizzard position until regen.  The
---      reclaim PROBES live protection/anchoring state first (secret-capable
---      returns probed before truth-testing) and defers to regen if the
---      client reports the frame restricted.
+--      reclaim PROBES live protection/anchoring state first through the
+--      shared fail-closed helper (Helpers.FrameMutationRestricted): a
+--      false answer mutates, a true answer defers, a SECRET answer defers
+--      (probed before any truth-test -- truth-testing a secret throws),
+--      and a THROWING getter defers (pcall-contained).
 --   3. DISABLE path: toggling a surface off resets stock appearance but keeps
 --      ownership until /reload.  Live hand-back would mutate protected
 --      managed-layout state; next session with both settings off leaves
---      Blizzard untouched.
+--      Blizzard untouched.  A stale saved hideArtwork flag is ignored while
+--      disabled so the holder spans the restored stock artwork bounds.
 --
 -- This test proves: (a) in combat the EXTRA path touches NO protected
--- geometry on ExtraActionBarFrame OR the container and marks pending; (b) in
--- combat the ZONE path DOES reclaim ZoneAbilityFrame; (c) out of combat the
--- EXTRA path anchors the CONTAINER (never ExtraActionBarFrame:SetParent);
--- (d) disabling keeps ownership monotonic and resets styling.
+-- geometry on ExtraActionBarFrame OR the container, applies NO saved frame
+-- anchor, and marks pending; (b) in combat the ZONE path DOES reclaim
+-- ZoneAbilityFrame and DOES apply its saved frame anchor; (c) the protection
+-- probe handles all four query outcomes (false / true / secret / throwing);
+-- (d) out of combat the EXTRA path anchors the CONTAINER (never
+-- ExtraActionBarFrame:SetParent); (e) disabling keeps ownership monotonic,
+-- resets styling, and sizes the holder from stock bounds.
 
 local function readFile(path)
     local fh = assert(io.open(path, "rb"), "failed to open " .. path)
@@ -44,12 +52,31 @@ local function readFile(path)
 end
 
 local CHUNK = "QUI_ActionBars/actionbars/actionbars_extra_buttons.lua"
+local UTILS = "core/utils.lua"
+local ANCHORING = "modules/layout/anchoring.lua"
+local BUILDERS = "QUI_ActionBars/actionbars/actionbars_per_bar_builders.lua"
 
 ---------------------------------------------------------------------------
--- Behavioral harness: load the real chunk with a stubbed environment.
+-- Behavioral harness: load the REAL shared helpers (core/utils.lua) and the
+-- real chunk with a stubbed environment.
 ---------------------------------------------------------------------------
+
+-- Secret sentinel + fake probe, installed BEFORE core/utils.lua loads (it
+-- caches _G.issecretvalue at file scope).
+local SECRET = setmetatable({}, { __tostring = function() return "SECRET" end })
+local function fakeIsSecretValue(v) return v == SECRET end
+_G.issecretvalue = fakeIsSecretValue
+_G.LibStub = function() return nil end
 
 local ns = {}
+ns.SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end
+ns.SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end
+ns.SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end
+assert(loadfile(UTILS))("QUI", ns)
+assert(ns.Helpers and ns.Helpers.SafeToNumber,
+    "core/utils.lua must export Helpers.SafeToNumber")
+assert(ns.Helpers.FrameMutationRestricted,
+    "core/utils.lua must export the fail-closed Helpers.FrameMutationRestricted")
 
 assert(loadfile("QUI_ActionBars/actionbars/actionbars_env.lua"))("QUI", ns)
 local env = ns.ActionBarsEnv
@@ -128,27 +155,69 @@ container.scripts.OnShow = blizzOnShow
 container.scripts.OnHide = blizzOnHide
 
 local function stubHolder(name)
-    return { __name = name, SetSize = function() end }
+    return {
+        __name = name,
+        SetSize = function(self, w, h) self.lastW, self.lastH = w, h end,
+        ClearAllPoints = function(self) self.pointCleared = true end,
+        SetPoint = function(self, point, rel, relPoint, x, y)
+            self.lastPoint, self.lastRel, self.lastRelPoint, self.lastX, self.lastY =
+                point, rel, relPoint, x, y
+        end,
+    }
 end
 
 local scheduled = {}
 local inCombat = true
 
+-- Chunk-visible _G stub: captures the chunk's global exports and hosts the
+-- recording frame-anchor API the chunk reads at call time.
+local anchorApplied = {}
+local hasAnchorOverride = true
+local gStub = {
+    QUI_HasFrameAnchor = function() return hasAnchorOverride end,
+    QUI_ApplyFrameAnchor = function(key)
+        anchorApplied[#anchorApplied + 1] = key
+    end,
+}
+local function resetAnchors()
+    for i = #anchorApplied, 1, -1 do anchorApplied[i] = nil end
+end
+local function anchorSet()
+    local seen = {}
+    for _, key in ipairs(anchorApplied) do seen[key] = true end
+    return seen
+end
+
+env._G = gStub
+env.UIParent = { __name = "UIParent" }
 env.InCombatLockdown = function() return inCombat end
-env.issecretvalue = function() return false end
+env.issecretvalue = fakeIsSecretValue
 env.ExtraActionBarFrame = extraFrame
 env.ZoneAbilityFrame = zoneFrame
 env.ExtraAbilityContainer = container
-env.hooksecurefunc = function() end
+-- Capturing hooksecurefunc: records every (object, method) hook body so the
+-- lifecycle section below can fire them like Blizzard would.  Capture-only —
+-- hooks never fire implicitly, so the sections above drive the chunk's
+-- entry points directly, unchanged.
+local capturedHooks = {}  -- [object][method] = { fn, ... }
+env.hooksecurefunc = function(obj, method, fn)
+    local byMethod = capturedHooks[obj]
+    if not byMethod then
+        byMethod = {}
+        capturedHooks[obj] = byMethod
+    end
+    local list = byMethod[method]
+    if not list then
+        list = {}
+        byMethod[method] = list
+    end
+    list[#list + 1] = fn
+end
 env.C_Timer = { After = function(_, fn) scheduled[#scheduled + 1] = fn end }
 env.ActionBarsOwned = {}
-env.Helpers = {
-    SafeToNumber = function(v, d)
-        local n = tonumber(v)
-        if n == nil then return d end
-        return n
-    end,
-}
+-- REAL helpers: the zone probe and holder sizing must exercise the actual
+-- shared implementation, not a stub.
+env.Helpers = ns.Helpers
 local extraSettings = { enabled = true, scale = 1.0 }
 local zoneSettings = { enabled = true, scale = 1.0 }
 env.GetCore = function()
@@ -169,6 +238,8 @@ env.extraBtnState.zoneAbilityHolder = zoneHolder
 
 local ApplyExtraButtonSettings = assert(env.ApplyExtraButtonSettings,
     "chunk must declare ApplyExtraButtonSettings")
+local ApplyExtraButtonFrameAnchor = assert(env.ApplyExtraButtonFrameAnchor,
+    "chunk must declare ApplyExtraButtonFrameAnchor")
 local RefreshExtraButtons = assert(env.RefreshExtraButtons,
     "chunk must declare RefreshExtraButtons")
 local QueueExtraButtonReanchor = assert(env.QueueExtraButtonReanchor,
@@ -207,6 +278,60 @@ local function assertNoProtectedExtraCalls(label)
 end
 
 ---------------------------------------------------------------------------
+-- FAIL-CLOSED PROBE: Helpers.FrameMutationRestricted must answer all four
+-- protection-query outcomes -- false mutable, true restricted, secret
+-- restricted (probed before any truth-test), throwing restricted
+-- (pcall-contained).  Both getters, plus degenerate frames.
+---------------------------------------------------------------------------
+
+local FrameMutationRestricted = ns.Helpers.FrameMutationRestricted
+
+local function probeFrame()
+    return {
+        IsProtected = function() return false end,
+        IsAnchoringRestricted = function() return false end,
+    }
+end
+
+assert(FrameMutationRestricted(probeFrame()) == false,
+    "false/false protection answers must leave the frame mutable")
+
+local f = probeFrame()
+f.IsProtected = function() return true end
+assert(FrameMutationRestricted(f) == true,
+    "a true IsProtected answer must restrict")
+
+f = probeFrame()
+f.IsAnchoringRestricted = function() return true end
+assert(FrameMutationRestricted(f) == true,
+    "a true IsAnchoringRestricted answer must restrict")
+
+f = probeFrame()
+f.IsProtected = function() return SECRET end
+assert(FrameMutationRestricted(f) == true,
+    "a SECRET IsProtected answer must restrict (fail-closed)")
+
+f = probeFrame()
+f.IsAnchoringRestricted = function() return SECRET end
+assert(FrameMutationRestricted(f) == true,
+    "a SECRET IsAnchoringRestricted answer must restrict (fail-closed)")
+
+f = probeFrame()
+f.IsProtected = function() error("exec-taint: protection state unreadable") end
+assert(FrameMutationRestricted(f) == true,
+    "a THROWING IsProtected getter must restrict (fail-closed)")
+
+f = probeFrame()
+f.IsAnchoringRestricted = function() error("exec-taint: anchoring state unreadable") end
+assert(FrameMutationRestricted(f) == true,
+    "a THROWING IsAnchoringRestricted getter must restrict (fail-closed)")
+
+assert(FrameMutationRestricted(nil) == false,
+    "nil frame carries nothing to mutate -- callers null-check separately")
+assert(FrameMutationRestricted({}) == false,
+    "a frame without protection getters (plain addon frame) stays mutable")
+
+---------------------------------------------------------------------------
 -- IN COMBAT: the protected EXTRA path defers and marks pending; the
 -- unprotected ZONE path reclaims immediately (mid-fight grants).
 ---------------------------------------------------------------------------
@@ -237,7 +362,26 @@ for _, expected in ipairs({
 end
 assertNoProtectedExtraCalls("ApplyExtraButtonSettings(zone)")
 
+-- FRAME-ANCHOR GATE: in combat the extra holder is anchoring-restricted
+-- whenever a granted button hangs its secure chain under it -- the saved
+-- frame anchor must NOT be applied; the zone holder hosts only the
+-- unprotected zone frame, so its anchor applies live.
 resetGeom()
+resetAnchors()
+env.ActionBarsOwned.pendingExtraButtonRefresh = false
+ApplyExtraButtonFrameAnchor("extraActionButton")
+assert(#anchorApplied == 0,
+    "ApplyExtraButtonFrameAnchor(extra) must not apply the saved anchor in combat")
+assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
+    "ApplyExtraButtonFrameAnchor(extra) must mark a pending refresh when gated in combat")
+
+resetAnchors()
+ApplyExtraButtonFrameAnchor("zoneAbility")
+assert(anchorSet()["zoneAbility"],
+    "ApplyExtraButtonFrameAnchor(zone) must apply the saved anchor in combat")
+
+resetGeom()
+resetAnchors()
 env.ActionBarsOwned.pendingExtraButtonRefresh = false
 RefreshExtraButtons()
 assertNoProtectedExtraCalls("RefreshExtraButtons")
@@ -245,26 +389,36 @@ assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
     "RefreshExtraButtons must mark the extra path pending when gated in combat")
 assert(seenSet()["ZoneAbilityFrame:SetParent"],
     "RefreshExtraButtons must still apply the unprotected zone path in combat; got: " .. geomSummary())
+assert(not anchorSet()["extraActionButton"],
+    "RefreshExtraButtons must not apply the extra frame anchor in combat")
+assert(anchorSet()["zoneAbility"],
+    "RefreshExtraButtons must still apply the zone frame anchor in combat")
 
 resetGeom()
+resetAnchors()
 env.ActionBarsOwned.pendingExtraButtonRefresh = false
 QueueExtraButtonReanchor("extraActionButton")
 runScheduled()
 assertNoProtectedExtraCalls("QueueExtraButtonReanchor(extra) callback")
 assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
     "QueueExtraButtonReanchor(extra) must mark a pending refresh when gated in combat")
+assert(not anchorSet()["extraActionButton"],
+    "QueueExtraButtonReanchor(extra) callback must not apply the frame anchor in combat")
 
 resetGeom()
+resetAnchors()
 QueueExtraButtonReanchor("zoneAbility")
 runScheduled()
 assert(seenSet()["ZoneAbilityFrame:SetParent"],
     "QueueExtraButtonReanchor(zone) callback must reclaim in combat; got: " .. geomSummary())
+assert(anchorSet()["zoneAbility"],
+    "QueueExtraButtonReanchor(zone) callback must apply the zone frame anchor in combat")
 
 ---------------------------------------------------------------------------
--- ZONE PROBE: the in-combat reclaim trusts the client over the static
--- "unprotected" expectation.  A frame reporting protected or
--- anchoring-restricted (or answering with a secret) defers to regen
--- instead of drawing ADDON_ACTION_BLOCKED.
+-- ZONE PROBE (complete path): the in-combat reclaim trusts the client over
+-- the static "unprotected" expectation.  All four protection-query outcomes
+-- are exercised end-to-end through ApplyExtraButtonSettings: false mutates
+-- (proven above), true defers, SECRET defers, THROWING defers.
 ---------------------------------------------------------------------------
 
 resetGeom()
@@ -292,24 +446,104 @@ zoneFrame.protectedNow = false
 -- any truth-test (truth-testing a secret throws).
 resetGeom()
 env.ActionBarsOwned.pendingExtraButtonRefresh = false
-local SECRET = setmetatable({}, { __tostring = function() return "SECRET" end })
-env.issecretvalue = function(v) return v == SECRET end
 zoneFrame.protectedNow = SECRET
 ApplyExtraButtonSettings("zoneAbility")
 assert(#geomCalls == 0,
-    "secret protection answer must count as restricted; got: " .. geomSummary())
+    "secret IsProtected answer must count as restricted; got: " .. geomSummary())
 assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
-    "secret protection answer must defer the reclaim to regen")
+    "secret IsProtected answer must defer the reclaim to regen")
 zoneFrame.protectedNow = false
-env.issecretvalue = function() return false end
+
+resetGeom()
+env.ActionBarsOwned.pendingExtraButtonRefresh = false
+zoneFrame.anchoringRestricted = SECRET
+ApplyExtraButtonSettings("zoneAbility")
+assert(#geomCalls == 0,
+    "secret IsAnchoringRestricted answer must count as restricted; got: " .. geomSummary())
+assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
+    "secret IsAnchoringRestricted answer must defer the reclaim to regen")
+zoneFrame.anchoringRestricted = false
+
+-- The getters can also THROW (exec-taint on the stack).  The probe must
+-- contain the error and defer instead of crashing the reclaim.
+resetGeom()
+env.ActionBarsOwned.pendingExtraButtonRefresh = false
+local savedIsProtected = zoneFrame.IsProtected
+zoneFrame.IsProtected = function() error("exec-taint: protection state unreadable") end
+ApplyExtraButtonSettings("zoneAbility")
+assert(#geomCalls == 0,
+    "throwing IsProtected getter must count as restricted; got: " .. geomSummary())
+assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
+    "throwing IsProtected getter must defer the reclaim to regen")
+zoneFrame.IsProtected = savedIsProtected
+
+resetGeom()
+env.ActionBarsOwned.pendingExtraButtonRefresh = false
+local savedIsAnchoringRestricted = zoneFrame.IsAnchoringRestricted
+zoneFrame.IsAnchoringRestricted = function() error("exec-taint: anchoring state unreadable") end
+ApplyExtraButtonSettings("zoneAbility")
+assert(#geomCalls == 0,
+    "throwing IsAnchoringRestricted getter must count as restricted; got: " .. geomSummary())
+assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
+    "throwing IsAnchoringRestricted getter must defer the reclaim to regen")
+zoneFrame.IsAnchoringRestricted = savedIsAnchoringRestricted
+
+---------------------------------------------------------------------------
+-- HOLDER PROBE: the reclaim SetParents/SetPoints the zone frame ONTO the
+-- holder and then SetSizes the holder itself, so a secure dependent that
+-- restricts the HOLDER (zone frame still readable-unrestricted) blocks the
+-- same protected mutations.  true, SECRET, and THROWING answers on either
+-- holder getter must all defer the reclaim to regen.
+---------------------------------------------------------------------------
+
+for _, case in ipairs({
+    { label = "true", getter = function() return true end },
+    { label = "SECRET", getter = function() return SECRET end },
+    { label = "throwing", getter = function() error("exec-taint: holder state unreadable") end },
+}) do
+    resetGeom()
+    env.ActionBarsOwned.pendingExtraButtonRefresh = false
+    zoneHolder.IsProtected = case.getter
+    ApplyExtraButtonSettings("zoneAbility")
+    assert(#geomCalls == 0,
+        case.label .. " holder IsProtected answer must defer the zone reclaim; got: " .. geomSummary())
+    assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
+        case.label .. " holder IsProtected answer must defer to regen")
+    zoneHolder.IsProtected = nil
+end
+
+resetGeom()
+env.ActionBarsOwned.pendingExtraButtonRefresh = false
+zoneHolder.IsAnchoringRestricted = function() return SECRET end
+ApplyExtraButtonSettings("zoneAbility")
+assert(#geomCalls == 0,
+    "secret holder IsAnchoringRestricted answer must defer the zone reclaim; got: " .. geomSummary())
+assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
+    "secret holder IsAnchoringRestricted answer must defer to regen")
+zoneHolder.IsAnchoringRestricted = nil
+
+-- Positive control: with both frame and holder readable-unrestricted the
+-- reclaim proceeds again (the holder probe must not fail-closed on a
+-- readable false answer).
+resetGeom()
+ApplyExtraButtonSettings("zoneAbility")
+assert(seenSet()["ZoneAbilityFrame:SetParent"],
+    "readable-unrestricted holder must let the reclaim proceed; got: " .. geomSummary())
 
 ---------------------------------------------------------------------------
 -- POSITIVE CONTROL (out of combat): EXTRA anchors the CONTAINER, never
--- ExtraActionBarFrame; ZONE reparents ZoneAbilityFrame.  Proves the test can
--- detect a regression instead of passing vacuously.
+-- ExtraActionBarFrame; ZONE reparents ZoneAbilityFrame; BOTH saved frame
+-- anchors apply.  Proves the test can detect a regression instead of
+-- passing vacuously.
 ---------------------------------------------------------------------------
 
 inCombat = false
+
+resetGeom()
+resetAnchors()
+RefreshExtraButtons()
+assert(anchorSet()["extraActionButton"] and anchorSet()["zoneAbility"],
+    "out of combat RefreshExtraButtons must apply BOTH saved frame anchors")
 
 resetGeom()
 ApplyExtraButtonSettings("extraActionButton")
@@ -360,6 +594,106 @@ for _, expected in ipairs({
     assert(zoneSeen[expected],
         "positive control (zone): out of combat must call " .. expected .. "; got: " .. geomSummary())
 end
+
+---------------------------------------------------------------------------
+-- NO-OVERRIDE FALLBACK: a profile whose mover was never dragged has no raw
+-- frameAnchoring override (AceDB strips default-equal entries on save), so
+-- QUI_HasFrameAnchor is false and the central anchoring apply skips the
+-- key.  The refresh must then snap the holder to the ACTIVE profile's saved
+-- bars position (or the creation default) -- without this, a profile
+-- switch/import left the holder at the previous profile's position.
+---------------------------------------------------------------------------
+
+hasAnchorOverride = false
+
+extraSettings.position = { point = "CENTER", relPoint = "CENTER", x = -120, y = -25 }
+zoneSettings.position = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 150, y = -27 }
+resetAnchors()
+ApplyExtraButtonFrameAnchor("extraActionButton")
+ApplyExtraButtonFrameAnchor("zoneAbility")
+assert(#anchorApplied == 0,
+    "no-override profile must not route through QUI_ApplyFrameAnchor")
+assert(extraHolder.pointCleared and extraHolder.lastPoint == "CENTER"
+        and extraHolder.lastRel == env.UIParent
+        and extraHolder.lastX == -120 and extraHolder.lastY == -25,
+    ("no-override refresh must snap the extra holder to the profile's saved position; got (%s, %s, %s)")
+        :format(tostring(extraHolder.lastPoint), tostring(extraHolder.lastX), tostring(extraHolder.lastY)))
+assert(zoneHolder.pointCleared and zoneHolder.lastPoint == "TOPLEFT"
+        and zoneHolder.lastX == 150 and zoneHolder.lastY == -27,
+    ("no-override refresh must snap the zone holder to the profile's saved position; got (%s, %s, %s)")
+        :format(tostring(zoneHolder.lastPoint), tostring(zoneHolder.lastX), tostring(zoneHolder.lastY)))
+
+-- No saved bars position either: the holder falls back to the creation
+-- default instead of keeping a stale point.
+extraSettings.position = nil
+extraHolder.lastPoint, extraHolder.lastX, extraHolder.lastY = nil, nil, nil
+ApplyExtraButtonFrameAnchor("extraActionButton")
+assert(extraHolder.lastPoint == "CENTER"
+        and extraHolder.lastX == -100 and extraHolder.lastY == -200,
+    ("missing saved position must fall back to the creation default; got (%s, %s, %s)")
+        :format(tostring(extraHolder.lastPoint), tostring(extraHolder.lastX), tostring(extraHolder.lastY)))
+
+-- In combat the extra fallback defers like the anchor apply (the holder can
+-- be anchoring-restricted while a button is up); the zone fallback applies
+-- live but defers when the holder probes restricted.
+inCombat = true
+env.ActionBarsOwned.pendingExtraButtonRefresh = false
+extraHolder.lastPoint, extraHolder.lastX, extraHolder.lastY = nil, nil, nil
+ApplyExtraButtonFrameAnchor("extraActionButton")
+assert(extraHolder.lastPoint == nil,
+    "in-combat no-override extra fallback must not SetPoint the holder")
+assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
+    "in-combat no-override extra fallback must defer to regen")
+
+zoneHolder.lastPoint, zoneHolder.lastX = nil, nil
+ApplyExtraButtonFrameAnchor("zoneAbility")
+assert(zoneHolder.lastPoint == "TOPLEFT" and zoneHolder.lastX == 150,
+    "in-combat no-override zone fallback must reposition the unrestricted holder")
+
+env.ActionBarsOwned.pendingExtraButtonRefresh = false
+zoneHolder.IsProtected = function() return true end
+zoneHolder.lastPoint = nil
+ApplyExtraButtonFrameAnchor("zoneAbility")
+assert(zoneHolder.lastPoint == nil,
+    "in-combat no-override zone fallback must not touch a restricted holder")
+assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
+    "restricted zone holder fallback must defer to regen")
+zoneHolder.IsProtected = nil
+
+inCombat = false
+hasAnchorOverride = true
+extraSettings.position = nil
+zoneSettings.position = nil
+
+---------------------------------------------------------------------------
+-- HOLDER SIZE vs hideArtwork: while ENABLED the holder shrinks to the
+-- visible button footprint; while DISABLED a stale saved hideArtwork flag
+-- must be ignored so the holder spans the restored stock artwork bounds.
+---------------------------------------------------------------------------
+
+extraFrame.button = {
+    GetWidth = function() return 100 end,
+    GetHeight = function() return 100 end,
+    style = { alpha = nil, SetAlpha = function(self, a) self.alpha = a end },
+}
+extraSettings.hideArtwork = true
+resetGeom()
+ApplyExtraButtonSettings("extraActionButton")
+assert(extraHolder.lastW == 100 and extraHolder.lastH == 100,
+    ("enabled hideArtwork must size the holder to the visual button; got (%s, %s)")
+        :format(tostring(extraHolder.lastW), tostring(extraHolder.lastH)))
+
+extraSettings.enabled = false
+resetGeom()
+ApplyExtraButtonSettings("extraActionButton")
+assert(extraHolder.lastW == 256 and extraHolder.lastH == 128,
+    ("disabled surface must ignore stale hideArtwork and span stock bounds; got (%s, %s)")
+        :format(tostring(extraHolder.lastW), tostring(extraHolder.lastH)))
+assert(extraFrame.button.style.alpha == 1,
+    "disabled surface must restore stock artwork alpha")
+extraSettings.enabled = true
+extraSettings.hideArtwork = nil
+extraFrame.button = nil
 
 ---------------------------------------------------------------------------
 -- DISABLE / SESSION OWNERSHIP: toggles reset stock appearance.  Container and
@@ -507,6 +841,77 @@ zoneSettings.enabled = true
 extraSettings.enabled = true
 
 ---------------------------------------------------------------------------
+-- HOOK LIFECYCLE: the ZoneAbilityFrame:SetParent reclaim hook end-to-end.
+-- Blizzard re-adds the zone frame to the shared container mid-combat
+-- (UNIT_AURA / SPELLS_CHANGED / grant events).  While a protected dependent
+-- restricts the frame, the reclaim DEFERS — the zone frame temporarily
+-- rides the extra mover (the deliberate safety exception to the dual-mover
+-- invariant) — and the PLAYER_REGEN_ENABLED reconcile (RefreshExtraButtons,
+-- see actionbars_events.lua) restores zone ownership.
+---------------------------------------------------------------------------
+
+local zoneSetParentHooks = capturedHooks[zoneFrame] and capturedHooks[zoneFrame].SetParent
+assert(zoneSetParentHooks and #zoneSetParentHooks >= 1,
+    "HookExtraButtonPositioning must hook ZoneAbilityFrame:SetParent")
+local zoneSetParentHook = zoneSetParentHooks[1]
+
+-- Restricted mid-combat re-add: the hook defers (no geometry, pending set);
+-- the zone frame stays wherever Blizzard parented it until regen.
+inCombat = true
+zoneFrame.anchoringRestricted = true
+env.ActionBarsOwned.pendingExtraButtonRefresh = false
+resetGeom()
+zoneFrame.lastParent = container
+zoneSetParentHook(zoneFrame, container)
+runScheduled()
+assert(#geomCalls == 0,
+    "restricted mid-combat re-add must defer the hook reclaim; got: " .. geomSummary())
+assert(env.ActionBarsOwned.pendingExtraButtonRefresh == true,
+    "restricted mid-combat re-add must mark pending for the regen reconcile")
+assert(zoneFrame.lastParent == container,
+    "deferred reclaim leaves the zone frame riding the shared container until regen")
+
+-- Regen reconcile: combat drops, restriction clears; the events chunk clears
+-- pending and calls RefreshExtraButtons — zone ownership must be restored.
+inCombat = false
+zoneFrame.anchoringRestricted = false
+env.ActionBarsOwned.pendingExtraButtonRefresh = false
+resetGeom()
+RefreshExtraButtons()
+assert(zoneFrame.lastParent == zoneHolder,
+    "regen reconcile must restore the zone frame to its own holder")
+assert(seenSet()["ZoneAbilityFrame:SetParent"],
+    "regen reconcile must reclaim via SetParent; got: " .. geomSummary())
+
+-- Unrestricted mid-combat re-add: the hook reclaims immediately (mid-fight
+-- grant tracking) instead of stranding the button until regen.
+inCombat = true
+resetGeom()
+zoneFrame.lastParent = container
+zoneSetParentHook(zoneFrame, container)
+runScheduled()
+assert(zoneFrame.lastParent == zoneHolder,
+    "unrestricted mid-combat re-add must reclaim the zone frame immediately")
+
+-- The hook's re-entry latch: a reclaim-driven SetParent (hookingSetParent
+-- latched) must not schedule another reclaim pass.
+resetGeom()
+local pendingBefore = #scheduled
+env.extraBtnState.hookingSetParent = true
+zoneSetParentHook(zoneFrame, container)
+env.extraBtnState.hookingSetParent = false
+assert(#scheduled == pendingBefore,
+    "latched SetParent hook must not schedule a reclaim (re-entry guard)")
+
+-- A SetParent onto the zone holder itself is the reclaim landing, not a
+-- Blizzard re-add — no reclaim pass either.
+zoneSetParentHook(zoneFrame, zoneHolder)
+assert(#scheduled == pendingBefore,
+    "SetParent onto the zone holder must not schedule a reclaim")
+
+inCombat = false
+
+---------------------------------------------------------------------------
 -- SOURCE GUARD: gates, container-anchor topology, and honest comments present.
 ---------------------------------------------------------------------------
 
@@ -516,6 +921,23 @@ local source = readFile(CHUNK)
 -- it on a "both frames are unprotected" premise shipped live taint once).
 assert(source:find("COMBAT GATE (load-bearing)", 1, true),
     "extra path must document and keep its combat gate")
+
+-- The extra frame-anchor apply carries its own combat gate: the extra holder
+-- is anchoring-restricted whenever a granted button is up.
+assert(source:find("COMBAT GATE (extra path)", 1, true),
+    "extra frame-anchor apply must document and keep its combat gate")
+
+-- Profiles without a raw frameAnchoring override must still reposition the
+-- holder on refresh, and holder creation must share the same fallback.
+assert(source:find("NO-OVERRIDE FALLBACK", 1, true),
+    "frame-anchor apply must document the no-override fallback")
+assert(source:find("function ApplyExtraButtonHolderFallbackPosition", 1, true),
+    "no-override fallback must live in a shared helper")
+local createStart = assert(source:find("function CreateExtraButtonHolder", 1, true),
+    "chunk must declare CreateExtraButtonHolder")
+local createBody = source:sub(createStart, createStart + 800)
+assert(createBody:find("ApplyExtraButtonHolderFallbackPosition(buttonType, holder)", 1, true),
+    "holder creation must position through the shared fallback helper")
 
 -- The zone path's in-combat reclaim rests on the no-secure-descendant fact;
 -- keep that justification in the source next to the behavior.
@@ -546,19 +968,27 @@ assert(not source:find("function RestoreExtraAbilityContainer", 1, true)
     "live disable path must not restore Blizzard ownership")
 
 -- The dual-mover requirement is load-bearing: extra action and zone ability
--- each keep their OWN mover; the zone frame never rides the extra mover.
+-- each keep their OWN mover.  One documented exception: a restricted
+-- mid-combat reclaim defers, so the zone frame TEMPORARILY rides the extra
+-- mover until the regen reconcile (taint-free beats absolute separation in
+-- combat).  The invariant doc must name that exception rather than
+-- overclaiming "never".
 assert(source:find("DUAL-MOVER INVARIANT", 1, true),
     "source must document the dual-mover invariant")
+assert(source:find("DELIBERATE SAFETY EXCEPTION", 1, true),
+    "source must document the combat safety exception to the dual-mover invariant")
+assert(source:find("deliberate safety exception", 1, true),
+    "the dual-mover invariant doc must reference the combat safety exception")
 assert(source:find("function IsZoneAbilityManaged", 1, true),
     "zone management must be active whenever either surface is enabled")
 assert(source:find("function ShouldOwnExtraAbilityContainer", 1, true),
     "either enabled surface must acquire the shared container shell")
 
--- Protected extra acquisition and restricted zone/MarkDirty paths mark pending
--- for the PLAYER_REGEN_ENABLED reconcile.
+-- Protected extra acquisition (settings AND frame anchor) and restricted
+-- zone/MarkDirty paths mark pending for the PLAYER_REGEN_ENABLED reconcile.
 local gateCount = select(2, source:gsub("ActionBarsOwned%.pendingExtraButtonRefresh = true", ""))
-assert(gateCount >= 2,
-    "expected >= 2 combat gates marking pendingExtraButtonRefresh, found " .. gateCount)
+assert(gateCount >= 3,
+    "expected >= 3 combat gates marking pendingExtraButtonRefresh, found " .. gateCount)
 
 -- NEVER write into the manager's showingFrames table: an insecure write
 -- (raw key removal included) taints it, and the manager's secure pairs()
@@ -577,13 +1007,75 @@ assert(not source:find("container%.frames%s*%[")
         and not source:find("table%.remove%s*%(container%.frames"),
     "QUI must never mutate ExtraAbilityContainer.frames")
 
--- The zone in-combat reclaim must probe live protection/anchoring state
--- (secret-capable returns probed before any truth-test) instead of assuming
--- the static no-secure-descendant topology.
-assert(source:find("IsAnchoringRestricted", 1, true),
-    "zone reclaim must probe IsAnchoringRestricted before in-combat mutation")
-assert(source:find("issecretvalue(", 1, true),
-    "protection probes must issecretvalue-probe their secret-capable returns")
+-- The zone in-combat reclaim must gate on the SHARED fail-closed probe
+-- (pcall + issecretvalue before any truth-test) instead of raw getter calls.
+assert(source:find("Helpers.FrameMutationRestricted", 1, true),
+    "zone reclaim must probe via the shared fail-closed Helpers.FrameMutationRestricted")
+assert(not source:find("frame:IsProtected()", 1, true)
+        and not source:find("frame:IsAnchoringRestricted()", 1, true),
+    "zone reclaim must not raw-call the protection getters (secret/throw unsafe)")
+
+-- A disabled surface ignores stale hideArtwork when sizing the holder.
+assert(source:find("settings.enabled == true and settings.hideArtwork", 1, true),
+    "holder sizing must honor hideArtwork only while the surface is enabled")
+
+-- The shared helper itself must be fail-closed: pcall both getters and
+-- issecretvalue-probe the answers before truth-testing.
+local utilsSource = readFile(UTILS)
+local helperStart = assert(utilsSource:find("function Helpers.FrameMutationRestricted", 1, true),
+    "core/utils.lua must define Helpers.FrameMutationRestricted")
+local helperBody = utilsSource:sub(helperStart, helperStart + 900)
+assert(helperBody:find("pcall(frame.IsProtected", 1, true)
+        and helperBody:find("pcall(frame.IsAnchoringRestricted", 1, true),
+    "FrameMutationRestricted must pcall both protection getters")
+assert(helperBody:find("issecretvalue(answer)", 1, true),
+    "FrameMutationRestricted must issecretvalue-probe before truth-testing")
+
+-- ORDERING: within EACH getter block the issecretvalue probe must run
+-- BEFORE the truth-test -- truth-testing a secret answer itself throws, so
+-- a reordered block would ship the exact crash the probe exists to prevent.
+local protBlockStart = assert(helperBody:find("pcall(frame.IsProtected", 1, true),
+    "helper body must contain the IsProtected block")
+local anchorBlockStart = assert(helperBody:find("pcall(frame.IsAnchoringRestricted", 1, true),
+    "helper body must contain the IsAnchoringRestricted block")
+assert(protBlockStart < anchorBlockStart, "unexpected getter block order")
+for label, block in pairs({
+    IsProtected = helperBody:sub(protBlockStart, anchorBlockStart - 1),
+    IsAnchoringRestricted = helperBody:sub(anchorBlockStart),
+}) do
+    local probeAt = block:find("issecretvalue(answer)", 1, true)
+    local truthAt = block:find("if answer then", 1, true)
+    assert(probeAt and truthAt and probeAt < truthAt,
+        "FrameMutationRestricted " .. label
+            .. " block must issecretvalue-probe BEFORE its truth-test")
+end
+
+-- The zone reclaim must hand BOTH the zone frame and its holder to the
+-- probe (both in-combat call sites: settings apply and SetParent reclaim).
+local holderProbeCount = select(2,
+    source:gsub("ZoneFrameCombatMutable%(blizzFrame, holder%)", ""))
+assert(holderProbeCount >= 2,
+    "expected >= 2 ZoneFrameCombatMutable(blizzFrame, holder) call sites, found "
+        .. holderProbeCount)
+
+-- The central anchoring path must use the same fail-closed probe for its
+-- in-combat defer decision (ApplyFrameAnchor + both hideWithParent sites).
+local anchoringSource = readFile(ANCHORING)
+local anchoringUses = select(2, anchoringSource:gsub("ns%.Helpers%.FrameMutationRestricted%(", ""))
+assert(anchoringUses >= 3,
+    "anchoring.lua must gate its in-combat mutations on ns.Helpers.FrameMutationRestricted"
+        .. " (combat probe + hide/show sites); found " .. anchoringUses)
+assert(not anchoringSource:find("probe:IsProtected()", 1, true)
+        and not anchoringSource:find("probe:IsAnchoringRestricted()", 1, true),
+    "anchoring.lua combat probe must not raw-call the protection getters")
+
+-- Profile switch/import must refresh the extra/zone surfaces too.
+local buildersSource = readFile(BUILDERS)
+local registerStart = assert(buildersSource:find('ns.Registry:Register("actionbars"', 1, true),
+    "per-bar builders must register the actionbars refresh")
+local registerBody = buildersSource:sub(registerStart, registerStart + 900)
+assert(registerBody:find("QUI_RefreshExtraButtons", 1, true),
+    "registry refresh must reapply extra/zone surfaces on profile switch/import")
 
 -- Fresh defaults must present truly independent movers.
 local defaults = readFile("core/defaults.lua")

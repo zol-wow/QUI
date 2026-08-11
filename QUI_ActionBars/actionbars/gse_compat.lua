@@ -1,25 +1,3 @@
---[[
-    QUI GSE Action Bar Compatibility
-
-    GSE identifies override-capable action buttons by global name prefix
-    (ActionButton, MultiBarBottomLeftButton, common third-party bar prefixes, ...).
-    QUI's native engine creates buttons named QUI_Bar<N>Button<i> /
-    QUI_PetButton<i> / QUI_StanceButton<i>, none of which match GSE's
-    prefix table, so GSE falls into its generic third-party branch and
-    applies an OnEnter WrapScript that is restricted on ActionButtonTemplate
-    in modern WoW — the override install errors and the button never fires
-    the GSE sequence.
-
-    This shim intercepts GSE.CreateActionBarOverride / RemoveActionBarOverride
-    for QUI-owned buttons and installs the equivalent secure OnClick WrapScript
-    ourselves (OnClick WrapScript IS allowed on ActionButtonTemplate; only
-    OnEnter WrapScript is blocked — confirmed by GSE's own Events.lua:532
-    comment).  OnEnter tooltip/type-correction is handled via a non-secure
-    HookScript.  QUI-button overrides are persisted in our own AceDB table
-    and re-applied on login / spec change, so GSE's LoadOverrides loop never
-    touches them.
-]]
-
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local GetCore = Helpers and Helpers.GetCore
@@ -36,18 +14,8 @@ local GetActionTexture = GetActionTexture
 local GetMacroIndexByName = GetMacroIndexByName
 local GetMacroInfo = GetMacroInfo
 
----------------------------------------------------------------------------
--- Debug state (forward declarations — full helpers defined near EOF so they
--- can reference the install/dump state, but these names must be visible to
--- earlier hook closures like the GSE.UpdateIcon secure hook).
----------------------------------------------------------------------------
-
 local DEBUG_GSE = false
 local dbg
-
----------------------------------------------------------------------------
--- Button name classification
----------------------------------------------------------------------------
 
 local function IsQUIButtonName(name)
     if type(name) ~= "string" then return false end
@@ -62,11 +30,6 @@ local function GetConfiguredUseOnKeyDown()
     return db and db.global and db.global.useOnKeyDown == true
 end
 
--- The only compatibility tweak GSE needs from us is Multiclick off.
--- `ActionButtonUseKeyDown` used to require CVar gymnastics here, but we now
--- set useOnKeyDown=false directly on the GSE sequence frame at install time,
--- which overrides the CVar fallback — so the user's CVar choice no longer
--- affects GSE casts and we don't need to mutate it.
 local function EnsureOverrideCompatibility()
     if GSEOptions and GSEOptions.Multiclick then
         GSEOptions.Multiclick = false
@@ -75,16 +38,6 @@ local function EnsureOverrideCompatibility()
         end
     end
 end
-
----------------------------------------------------------------------------
--- Secure handler + snippets
---
--- BAR_SWAP_OAC / BAR_SWAP_ONCLICK mirror GSE's equivalent snippets: they
--- flip between type="click" (fire GSE sequence) and type="action" (let a
--- vehicle/override/possession bar handle the slot).  Kept behaviourally
--- identical so vehicle transitions work the same on QUI buttons as on
--- native Blizzard bars.
----------------------------------------------------------------------------
 
 local SHBT
 local function GetSHBT()
@@ -146,29 +99,9 @@ local BAR_SWAP_ONCLICK = [[
     end
 ]]
 
----------------------------------------------------------------------------
--- Icon management
---
--- GSE's icon helpers (getGSEButtonIcon, addGSEWatermark,
--- hookButtonIconUpdates, scheduleIconRestore) are local to Events.lua
--- and never run for QUI buttons because our shim intercepts
--- CreateActionBarOverride before overrideActionButton is reached.
--- We replicate the essential behaviour here.
----------------------------------------------------------------------------
-
-local watermarkedButtons = {}   -- [buttonName] = texture region
-local iconHookedButtons = {}    -- [buttonName] = true
-local latestSequenceIcons = {}  -- [sequenceName] = iconID
-
---- Resolve the effective action slot for a QUI button.
-local function GetButtonEffectiveSlot(btn)
-    local action = tonumber(btn:GetAttribute("action"))
-    if action and action > 0 then return action end
-    local slot = tonumber(btn:GetAttribute("qui-button-index")) or btn:GetID()
-    if not slot or slot == 0 then return nil end
-    local page = tonumber(btn:GetAttribute("actionpage")) or 1
-    return slot + (page - 1) * 12
-end
+local watermarkedButtons = {}
+local iconHookedButtons = {}
+local latestSequenceIcons = {}
 
 local function GetSequenceStepEntry(seqName)
     if not GSE or not GSE.SequencesExec or not seqName then return nil end
@@ -183,24 +116,9 @@ local function GetSequenceStepEntry(seqName)
     return executionseq[step]
 end
 
--- Best-effort extractor for a castable spell's icon out of a macrotext
--- block.  GSE.GetSpellsFromString returns nil on anything with complex
--- conditionals that SecureCmdOptionParse can't evaluate out-of-context
--- (very common in real sequences), so we parse lines ourselves.
---
--- Heuristic: GSE templates commonly front-load modifier-gated alternates
--- (/use [mod:alt] 14, /castsequence [mod:shift] X, /castsequence [mod:ctrl] Y)
--- and put the primary cast on the LAST /cast line without a modifier.
--- So we collect all resolvable spell candidates and prefer the one from
--- the LAST line (most specific / modifier-free), with a hard preference
--- for /cast over /castsequence over /use.
 local function LooksLikeSpellName(s)
     if type(s) ~= "string" or s == "" then return false end
     if s:match("^reset=") then return false end
-    -- "/use 14" (bag slot) or "/use 13" (trinket slot) — numeric candidates
-    -- are inventory/slot IDs, not spell names.  Accept only names with at
-    -- least one letter.  (SpellIDs are legitimate too, but GSE sequences
-    -- don't generally use raw IDs in macrotext.)
     if not s:match("%a") then return false end
     return true
 end
@@ -211,9 +129,6 @@ local function ExtractIconFromMacroText(macrotext)
     local unescape = (GSE and GSE.UnEscapeString) and GSE.UnEscapeString or function(s) return s end
     local text = unescape(macrotext)
 
-    -- Priority: 3 = plain /cast with no conditionals, 2 = /cast with
-    -- conditionals, 1 = /castsequence / /castrandom, 0 = /use.
-    -- Ties broken by line position (later wins — closer to "primary").
     local best = { icon = nil, priority = -1, lineIndex = -1 }
     local lineIndex = 0
 
@@ -260,21 +175,10 @@ local function GetSequenceIcon(seqName)
     local entry = GetSequenceStepEntry(seqName)
     if not entry then return nil end
 
-    -- Try per-step spell/macrotext/item resolution first (same order as
-    -- GSE.UpdateIcon).  entry.Icon is a static sequence-wide fallback that
-    -- typically gets copied onto every step's entry — if we short-circuit
-    -- on it, every step renders the same icon instead of the live spell.
     if entry.type == "spell" and entry.spell and C_Spell and C_Spell.GetSpellInfo then
         local info = C_Spell.GetSpellInfo(GSE.UnEscapeString(entry.spell))
         if info and info.iconID then return info.iconID end
     elseif entry.type == "macro" and entry.macrotext then
-        -- Don't use GSE.GetSpellsFromString here — it returns early as soon
-        -- as it hits the first /castsequence, ignoring later /cast lines.
-        -- That causes every step that starts with a mod-gated /castsequence
-        -- alternate (very common GSE template) to return the alternate's
-        -- icon (e.g. Mend Pet, iconID 132179) instead of the primary cast.
-        -- Our ExtractIconFromMacroText walks all lines with priority
-        -- scoring so the modifier-free /cast at the end wins.
         local ico = ExtractIconFromMacroText(entry.macrotext)
         if ico then return ico end
     elseif entry.type == "macro" and entry.macro and GetMacroIndexByName then
@@ -288,13 +192,11 @@ local function GetSequenceIcon(seqName)
         if icon then return icon end
     end
 
-    -- Last-resort fallback: static sequence-wide icon.
     if entry.Icon then return entry.Icon end
 
     return nil
 end
 
---- Return the display icon for a GSE-overridden button.
 local function GetGSEButtonIcon(btn)
     local swappedAction = tonumber(btn:GetAttribute("gse-eff-action"))
     if swappedAction and swappedAction > 0 and GetActionTexture then
@@ -325,7 +227,6 @@ end
 
 _G.QUI_GetGSEButtonIcon = GetGSEButtonIcon
 
---- Resolve the button's icon texture child.
 local function GetButtonIcon(btn, buttonName)
     return btn.icon or (buttonName and _G[buttonName .. "Icon"])
 end
@@ -361,17 +262,25 @@ local function ApplyGSEButtonIcon(btn, buttonName)
     end
 end
 
-local function UpdateQUIButtonsForSequence(sequenceName)
-    if not sequenceName then return end
+local function ForEachQUIActionButton(callback)
     for bar = 1, 8 do
         for slot = 1, 12 do
             local buttonName = "QUI_Bar" .. bar .. "Button" .. slot
             local btn = _G[buttonName]
-            if btn and btn.GetAttribute and btn:GetAttribute("gse-button") == sequenceName then
-                ApplyGSEButtonIcon(btn, buttonName)
+            if btn then
+                callback(buttonName, btn)
             end
         end
     end
+end
+
+local function UpdateQUIButtonsForSequence(sequenceName)
+    if not sequenceName then return end
+    ForEachQUIActionButton(function(buttonName, btn)
+        if btn.GetAttribute and btn:GetAttribute("gse-button") == sequenceName then
+            ApplyGSEButtonIcon(btn, buttonName)
+        end
+    end)
 end
 
 local function SetSequenceLiveIcon(sequenceName, iconID)
@@ -380,7 +289,6 @@ local function SetSequenceLiveIcon(sequenceName, iconID)
     UpdateQUIButtonsForSequence(sequenceName)
 end
 
---- Defer icon restore one frame so WoW's own ActionButton_Update runs first.
 local function ScheduleIconRestore(btn)
     C_Timer.After(0, function()
         if not btn:GetAttribute("gse-button") then return end
@@ -388,7 +296,6 @@ local function ScheduleIconRestore(btn)
     end)
 end
 
---- Show GSE spell tooltip for an overridden button.
 local function ShowGSEButtonTooltip(btn)
     if not btn or not btn.GetAttribute then return end
     local seqName = btn:GetAttribute("gse-button")
@@ -438,7 +345,6 @@ local function ShowGSEButtonTooltip(btn)
     GameTooltip:Show()
 end
 
---- Add small GSE logo watermark to bottom-right of button.
 local function AddWatermark(buttonName)
     if watermarkedButtons[buttonName] then return end
     local btn = _G[buttonName]
@@ -468,7 +374,6 @@ local function SetWatermarkVisible(buttonName, visible)
     if visible then wm:Show() else wm:Hide() end
 end
 
---- Hook OnEnter / OnLeave / OnAttributeChanged to keep icon + tooltip correct.
 local function HookButtonIconUpdates(buttonName)
     if iconHookedButtons[buttonName] then return end
     iconHookedButtons[buttonName] = true
@@ -506,12 +411,8 @@ local function HookButtonIconUpdates(buttonName)
     end)
 end
 
----------------------------------------------------------------------------
--- Per-button install / uninstall
----------------------------------------------------------------------------
-
-local wrappedButtons = {}   -- [buttonName] = true  (WrapScripts installed once)
-local onEnterHooked = {}    -- [buttonName] = true  (HookScript installed once)
+local wrappedButtons = {}
+local onEnterHooked = {}
 
 local function RefreshQUIOverrides()
     if _G.QUI_ReapplyActionBarBindings then
@@ -519,18 +420,6 @@ local function RefreshQUIOverrides()
     end
     if _G.QUI_RefreshActionBars then
         _G.QUI_RefreshActionBars()
-    end
-end
-
-local function ForEachQUIActionButton(callback)
-    for bar = 1, 8 do
-        for slot = 1, 12 do
-            local buttonName = "QUI_Bar" .. bar .. "Button" .. slot
-            local btn = _G[buttonName]
-            if btn then
-                callback(buttonName, btn)
-            end
-        end
     end
 end
 
@@ -554,15 +443,11 @@ local function InstallOverrideOnButton(buttonName, sequenceName, suppressRefresh
         GSE.ReloadSequences()
     end
     if not _G[sequenceName] then
-        -- GSE stores each sequence as a global SecureActionButton frame named
-        -- after the sequence.  Missing global means the sequence hasn't been
-        -- compiled yet — skip; GSE.ReloadOverrides will retry later.
         return false
     end
 
     local handler = GetSHBT()
     if not wrappedButtons[buttonName] then
-        -- WrapScript on OnClick is allowed on ActionButtonTemplate; OnEnter is not.
         handler:WrapScript(btn, "OnClick", BAR_SWAP_ONCLICK)
         handler:WrapScript(btn, "OnAttributeChanged", BAR_SWAP_OAC)
         wrappedButtons[buttonName] = true
@@ -576,37 +461,22 @@ local function InstallOverrideOnButton(buttonName, sequenceName, suppressRefresh
     btn:SetAttribute("type", "click")
     btn:SetAttribute("clickbutton", _G[sequenceName])
     btn:SetAttribute("useOnKeyDown", GetConfiguredUseOnKeyDown())
-    -- Force the sequence frame into release-mode cast dispatch.  Our consumer
-    -- button's press-edge click forwards a synthetic click with down=false;
-    -- the seq frame has no useOnKeyDown set so it falls back to the CVar,
-    -- and with ActionButtonUseKeyDown=1 the cast dispatcher expects a press
-    -- edge and silently drops our release-style forward (step advances via
-    -- the WrapScript, but the type="macro"/"spell" action never fires).
-    -- Setting useOnKeyDown=false on the seq frame locks it to release-mode
-    -- regardless of CVar, which is what GSE relies on and what BT4 gets for
-    -- free by running with the CVar already set to 0.
     local seqFrame = _G[sequenceName]
     if seqFrame and seqFrame.SetAttribute then
         seqFrame:SetAttribute("useOnKeyDown", false)
     end
     latestSequenceIcons[sequenceName] = GetSequenceIcon(sequenceName) or latestSequenceIcons[sequenceName]
-    -- Force GSE to paint the live step icon right now.  Our hook on
-    -- GSE.UpdateIcon populates latestSequenceIcons, which covers the
-    -- case where SequencesExec wasn't ready when GetSequenceIcon ran.
     if _G.GSE and _G.GSE.UpdateIcon and _G[sequenceName] then
-        pcall(_G.GSE.UpdateIcon, _G[sequenceName], false)
+        ns.SafeCall("bulkhead", _G.GSE.UpdateIcon, _G[sequenceName], false)
     end
     if btn.RunAttribute then
         btn:RunAttribute("QUI_UpdateActionFlags")
     end
 
-    -- Icon management — replicate what GSE's overrideActionButton does
     HookButtonIconUpdates(buttonName)
     AddWatermark(buttonName)
     ScheduleIconRestore(btn)
-    if btn.Update then
-        pcall(btn.Update, btn)
-    end
+    ns.SafeCallMethodIfPresent("best-effort-style", btn, "Update")
     if not suppressRefresh then
         RefreshQUIOverrides()
     end
@@ -618,9 +488,6 @@ local function RemoveOverrideFromButton(buttonName, suppressRefresh)
     if InCombatLockdown() then return false end
     local btn = _G[buttonName]
     if not btn then return false end
-    -- WrapScripts are permanent once installed; clearing the gse-button
-    -- attribute makes both snippets fall through to type="action", which
-    -- is the correct restored behaviour for a QUI action button.
     btn:SetAttribute("LABdisableDragNDrop", nil)
     btn:SetAttribute("gse-eff-action", 0)
     btn:SetAttribute("clickbutton", nil)
@@ -631,20 +498,12 @@ local function RemoveOverrideFromButton(buttonName, suppressRefresh)
         btn:RunAttribute("QUI_UpdateActionFlags")
     end
     RemoveWatermark(buttonName)
-    -- Re-run the button's update so the icon refreshes back to the
-    -- normal action slot state (or hides if the slot is empty).
-    if btn.Update then
-        pcall(btn.Update, btn)
-    end
+    ns.SafeCallMethodIfPresent("best-effort-style", btn, "Update")
     if not suppressRefresh then
         RefreshQUIOverrides()
     end
     return true
 end
-
----------------------------------------------------------------------------
--- Persistence (QUI DB)
----------------------------------------------------------------------------
 
 local function GetSpecID()
     if GSE and GSE.GetCurrentSpecID then return GSE.GetCurrentSpecID() end
@@ -689,10 +548,6 @@ local function ClearBinding(buttonName)
     t[buttonName] = nil
 end
 
----------------------------------------------------------------------------
--- Re-install pass (login, spec change, after bar rebuild)
----------------------------------------------------------------------------
-
 local function ReapplyAll()
     if InCombatLockdown() then return end
     EnsureOverrideCompatibility()
@@ -716,10 +571,6 @@ local function ReapplyAll()
 
     RefreshQUIOverrides()
 end
-
----------------------------------------------------------------------------
--- GSE API hooks
----------------------------------------------------------------------------
 
 local hooksInstalled = false
 local updateIconHookInstalled = false
@@ -756,8 +607,6 @@ local function InstallGSEHooks()
         return origRemove(buttonName)
     end
 
-    -- After GSE reloads overrides (e.g. spec change, sequence recompile) our
-    -- QUI button clickbuttons may point at stale sequence frames.  Re-apply.
     if GSE.ReloadOverrides then
         hooksecurefunc(GSE, "ReloadOverrides", function()
             ReapplyAll()
@@ -769,13 +618,6 @@ local function InstallGSEHooks()
         hooksecurefunc(GSE, "UpdateIcon", function(sequenceButton, reseticon)
             local sequenceName = sequenceButton and sequenceButton.GetName and sequenceButton:GetName()
             if sequenceName then
-                -- Compute the per-step icon ourselves.  GSE would normally
-                -- broadcast GSE_SEQUENCE_ICON_UPDATE with the authoritative
-                -- spellinfo.iconID here, but if GSE.GetSpellsFromString can't
-                -- resolve the macrotext (complex conditionals), GSE's own
-                -- `if spellinfo and spellinfo.iconID` gate drops the broadcast
-                -- entirely.  Our GetSequenceIcon has an additional fallback
-                -- parser that handles those cases.
                 local liveIcon = GetSequenceIcon(sequenceName)
                 if liveIcon then
                     latestSequenceIcons[sequenceName] = liveIcon
@@ -803,9 +645,6 @@ local function InstallGSEHooks()
 
     if not iconMessageHookInstalled and GSE.SendMessage then
         iconMessageHookInstalled = true
-        -- Preferred path: GSE:SendMessage(GSE_SEQUENCE_ICON_UPDATE, {name, spellinfo})
-        -- carries the authoritative per-step icon that GSE.UpdateIcon just
-        -- computed.  We listen and cache the iconID — no need to re-parse.
         hooksecurefunc(GSE, "SendMessage", function(_, message, payload)
             if DEBUG_GSE then
                 dbg("SendMsg   msg=%s payloadType=%s p1=%s p2Type=%s",
@@ -826,15 +665,7 @@ local function InstallGSEHooks()
     end
 end
 
----------------------------------------------------------------------------
--- Right-click sequence picker popup
---
--- GSE hooks OnClick on known addon buttons to show a context menu for
--- assigning / changing / clearing sequence overrides.  QUI buttons are
--- not in that list, so we install the equivalent handler ourselves.
----------------------------------------------------------------------------
-
-local rightClickHooked = {}  -- [buttonName] = true
+local rightClickHooked = {}
 
 local function HookRightClickOnce(btn, buttonName)
     if rightClickHooked[buttonName] then return end
@@ -915,38 +746,35 @@ end
 
 local function HookRightClickAllQUIButtons()
     if not _G.GSE then return end
-    for bar = 1, 8 do
-        for slot = 1, 12 do
-            local name = "QUI_Bar" .. bar .. "Button" .. slot
-            local btn = _G[name]
-            if btn then
-                HookRightClickOnce(btn, name)
-            end
-        end
-    end
+    ForEachQUIActionButton(function(buttonName, btn)
+        HookRightClickOnce(btn, buttonName)
+    end)
 end
 
----------------------------------------------------------------------------
--- Debug-only spellcast trace — verifies whether a sequence advance actually
--- produced an outgoing cast.  Listens on "player" for SENT/SUCCEEDED/FAILED
--- and only logs when DEBUG_GSE is on.
----------------------------------------------------------------------------
-
 local castTraceFrame = CreateFrame("Frame")
-castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
-castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
-castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED_QUIET", "player")
-castTraceFrame:SetScript("OnEvent", function(_, event, _, _, spellID)
+local function SetCastTraceRegistered(enabled)
+    if enabled then
+        castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
+        castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+        castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
+        castTraceFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED_QUIET", "player")
+    else
+        castTraceFrame:UnregisterAllEvents()
+    end
+end
+SetCastTraceRegistered(DEBUG_GSE)
+castTraceFrame:SetScript("OnEvent", function(_, event, _, _, arg3, arg4)
     if not DEBUG_GSE then return end
+    local spellID
+    if event == "UNIT_SPELLCAST_SENT" then spellID = arg4 else spellID = arg3 end
+    if issecretvalue and issecretvalue(spellID) then
+        dbg("Cast      %s spellID=<secret>", event)
+        return
+    end
     local info = spellID and C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(spellID)
     local name = info and info.name or "?"
     dbg("Cast      %s spellID=%s name=%s", event, tostring(spellID), name)
 end)
-
----------------------------------------------------------------------------
--- Event wiring
----------------------------------------------------------------------------
 
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
@@ -956,8 +784,6 @@ eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         InstallGSEHooks()
-        -- Defer one frame so GSE has finished its own PLAYER_LOGIN setup
-        -- (sequence globals, ReloadOverrides) before we install on top.
         C_Timer.After(0.1, function()
             InstallGSEHooks()
             ReapplyAll()
@@ -972,17 +798,9 @@ eventFrame:SetScript("OnEvent", function(self, event)
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         C_Timer.After(0.1, ReapplyAll)
     elseif event == "PLAYER_REGEN_ENABLED" then
-        -- In case a spec change or reload landed in combat, retry OOC.
         ReapplyAll()
     end
 end)
-
----------------------------------------------------------------------------
--- Debug instrumentation (toggled via /qui gse debug)
--- DEBUG_GSE and dbg are forward-declared near the top of this file so
--- hook closures installed before this block (e.g. GSE.UpdateIcon hook)
--- can see them as upvalues.
----------------------------------------------------------------------------
 
 local DBG_RECENT = {}
 local DBG_RECENT_LIMIT = 60
@@ -991,7 +809,7 @@ local debugHookedSequences = {}
 
 dbg = function(fmt, ...)
     if not DEBUG_GSE then return end
-    local ok, msg = pcall(string.format, fmt, ...)
+    local ok, msg = ns.SafeCall("report", string.format, fmt, ...)
     if not ok then msg = tostring(fmt) end
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage("|cff60A5FA[QUI GSE]|r " .. msg)
@@ -1108,6 +926,7 @@ local function ToggleDebug(force)
     else
         DEBUG_GSE = not DEBUG_GSE
     end
+    SetCastTraceRegistered(DEBUG_GSE)
     InstallAllDebugHooks()
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage(string.format(
@@ -1115,8 +934,6 @@ local function ToggleDebug(force)
     end
 end
 
--- Ensure sequence debug hook is installed after each override install so
--- newly-wired sequences get traced from the first click.
 local origInstallOverrideOnButton = InstallOverrideOnButton
 InstallOverrideOnButton = function(buttonName, sequenceName, suppressRefresh)
     local ok = origInstallOverrideOnButton(buttonName, sequenceName, suppressRefresh)
@@ -1127,10 +944,6 @@ InstallOverrideOnButton = function(buttonName, sequenceName, suppressRefresh)
     end
     return ok
 end
-
----------------------------------------------------------------------------
--- Public namespace (for debugging / manual re-apply)
----------------------------------------------------------------------------
 
 ns.QUI_GSECompat = {
     IsQUIButtonName = IsQUIButtonName,

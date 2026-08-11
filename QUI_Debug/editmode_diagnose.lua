@@ -2,23 +2,6 @@ local ADDON_NAME, ns = ...
 local DIAGNOSE_ADDON_NAME = "QUI"
 local Helpers = ns.Helpers
 
-----------------------------------------------------------------------------
--- Edit Mode Diagnostic — passive capture + on-demand report
---
--- Usage:  /qui diagnose
---
--- Passively records ADDON_ACTION_BLOCKED / ADDON_ACTION_FORBIDDEN events
--- blamed on QUI into a small ring buffer. When invoked, inspects Edit Mode
--- state and classifies captured events, since server-side corrupt Edit Mode
--- layouts frequently manifest as managed-container protected calls blamed
--- on whichever addon last hooked the frame.
---
--- Edit Mode layouts are stored server-side by Blizzard as account-wide JSON;
--- client-side resets (WTF, addon uninstall, CVars) do NOT fix them. The only
--- known remediation is a Blizzard GM ticket. The report points the user at
--- that path only when the symptom profile matches.
-----------------------------------------------------------------------------
-
 local BUFFER_MAX  = 30
 local MANAGED_TOKENS = {
     "ManagedFrameContainer",
@@ -40,8 +23,6 @@ local EDITMODE_TOKENS = {
     "EditModeUtil",
 }
 
--- Ring buffer of captured block events. Each entry:
---   { t = GetTime()-origin, func = string, combat = bool, event = "BLOCKED"|"FORBIDDEN" }
 local buffer = {}
 local bufferStart = nil
 
@@ -54,15 +35,11 @@ local function RecordBlock(eventKind, addonFunc)
         event  = eventKind,
     }
     buffer[#buffer + 1] = entry
-    -- Drop oldest once we exceed cap
     if #buffer > BUFFER_MAX then
         table.remove(buffer, 1)
     end
 end
 
--- Event frame: register once at file load. Cheap — only fires on actual
--- protected-call violations blamed on us, which should be zero in a healthy
--- session.
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_ACTION_BLOCKED")
 eventFrame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
@@ -71,10 +48,6 @@ eventFrame:SetScript("OnEvent", function(_, event, addonName, addonFunc)
     local kind = (event == "ADDON_ACTION_BLOCKED") and "BLOCKED" or "FORBIDDEN"
     RecordBlock(kind, addonFunc)
 end)
-
-----------------------------------------------------------------------------
--- Classification helpers
-----------------------------------------------------------------------------
 
 local function containsAny(str, tokens)
     if type(str) ~= "string" then return false end
@@ -99,10 +72,6 @@ local function IsPetFrameLayoutBlock(entry)
         and func:find("ClearAllPointsBase", 1, true)
 end
 
-----------------------------------------------------------------------------
--- Edit Mode state probes (defensive — never trust Blizzard state in combat)
-----------------------------------------------------------------------------
-
 local function ProbeEditModeState()
     local state = {
         addonLoaded        = false,
@@ -115,7 +84,6 @@ local function ProbeEditModeState()
         probeErrors        = {},
     }
 
-    -- Is the Blizzard_EditMode addon loaded?
     if C_AddOns and C_AddOns.IsAddOnLoaded then
         local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, "Blizzard_EditMode")
         state.addonLoaded = ok and loaded and true or false
@@ -126,7 +94,6 @@ local function ProbeEditModeState()
     end
     state.managerPresent = true
 
-    -- layoutInfo is populated asynchronously; it may be nil early after login.
     local info = EditModeManagerFrame.layoutInfo
     if type(info) ~= "table" then
         return state
@@ -144,24 +111,17 @@ local function ProbeEditModeState()
             state.activeLayoutName = name
         end
 
-        -- Scan for known-bad name shapes. Real forum reports show layout names
-        -- like "1 7 7 UIParen" / "1 1 UI Parent" — JSON parse residue leaking
-        -- frame-graph content into the name field. Flag only highly-specific
-        -- patterns to avoid false positives on legitimate user names.
         for i = 1, #layouts do
             local entry = layouts[i]
             local name = entry and Helpers.SafeToString(entry.layoutName, nil)
             if type(name) == "string" then
                 local flagged = false
-                -- 1. Contains "UIParent" or "UI Parent" substring
                 if name:find("UIParent", 1, true) or name:find("UI Parent", 1, true) then
                     flagged = true
                 end
-                -- 2. Unusually long (real layout names top out around 20 chars)
                 if #name > 48 then
                     flagged = true
                 end
-                -- 3. Contains non-printable control characters
                 if name:find("[%z\1-\8\11\12\14-\31]") then
                     flagged = true
                 end
@@ -177,10 +137,6 @@ local function ProbeEditModeState()
 
     return state
 end
-
-----------------------------------------------------------------------------
--- Report
-----------------------------------------------------------------------------
 
 local COLOR_HEAD = "|cff60A5FA"
 local COLOR_OK   = "|cff44FF44"
@@ -214,7 +170,6 @@ local function PrintReport()
 
     local state = ProbeEditModeState()
 
-    ------------------------------------------------------------------ STATE
     line(fmt(COLOR_HEAD, "Edit Mode state:"))
     line(("  Blizzard_EditMode loaded: %s"):format(
         state.addonLoaded and fmt(COLOR_OK, "yes") or fmt(COLOR_BAD, "NO")))
@@ -243,7 +198,6 @@ local function PrintReport()
         line("  Suspicious layout names:  " .. fmt(COLOR_OK, "none"))
     end
 
-    ----------------------------------------------------------------- EVENTS
     line("")
     line(fmt(COLOR_HEAD,
         ("Recent events blamed on QUI this session: %d"):format(#buffer)))
@@ -264,7 +218,6 @@ local function PrintReport()
         end
     end
 
-    ---------------------------------------------------------------- VERDICT
     line("")
     line(fmt(COLOR_HEAD, "Verdict:"))
 
@@ -332,10 +285,6 @@ local function PrintReport()
     line("    " .. fmt(COLOR_DIM, "•") ..
         " Review the event list above and report the function names upstream.")
 end
-
-----------------------------------------------------------------------------
--- Public API
-----------------------------------------------------------------------------
 
 _G.QUI_DiagnoseEditMode = function(subcmd)
     if subcmd == "clear" then

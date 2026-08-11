@@ -10,9 +10,9 @@ end
 
 local source = readAll("QUI_UnitFrames/unitframes/unitframes.lua")
 
-local startPos = assert(source:find("%-%- Boss Range Alpha"),
+local startPos = assert(source:find("local bossRange = {", 1, true),
     "Boss Range Alpha section should exist")
-local endPos = assert(source:find("%-%-%-+%s*\n%-%- CREATE: Unit Frame", startPos),
+local endPos = assert(source:find("local function CreateUnitFrame(", startPos, true),
     "Boss Range Alpha section should end before CreateUnitFrame")
 local body = source:sub(startPos, endPos)
 
@@ -21,8 +21,12 @@ local body = source:sub(startPos, endPos)
 -- payload is resolved by a secret-safe sink, so there is no per-tick flicker.
 assert(body:find('RegisterUnitEvent("UNIT_IN_RANGE_UPDATE"', 1, true),
     "boss range alpha should register the per-unit UNIT_IN_RANGE_UPDATE event")
-assert(body:find("boss1", 1, true) and body:find("boss5", 1, true),
-    "boss range alpha should register UNIT_IN_RANGE_UPDATE for boss1-boss5")
+-- SecretPayloads = true: the payload unit is ALWAYS secret, so the design is
+-- one listener per LEXICAL boss token, never payload-keyed dispatch.
+assert(body:find('local token = "boss" .. i', 1, true),
+    "boss range alpha should build one listener per lexical boss token")
+assert(body:find("QUI_UF.frames[token]", 1, true),
+    "boss range handler must index frames by the lexical token, not the secret payload unit")
 assert(body:find("isInRange", 1, true),
     "boss range alpha should consume the UNIT_IN_RANGE_UPDATE isInRange payload")
 assert(body:find("EvaluateColorValueFromBoolean", 1, true),
@@ -37,7 +41,7 @@ assert(not body:find("BOSS_RANGE_CHANGE_CONFIRMATIONS", 1, true),
 do
     local rangeStart = assert(source:find("local bossRange = {", 1, true),
         "boss range alpha state table should exist")
-    local rangeEnd = assert(source:find("---------------------------------------------------------------------------\n-- CREATE: Unit Frame",
+    local rangeEnd = assert(source:find("local function CreateUnitFrame(",
         rangeStart, true), "boss range alpha section should end before CreateUnitFrame")
     local loader = loadstring or load
     local chunk = "local UpdateBossRangeAlpha, SeedBossFrameRangeAlpha\n"
@@ -57,6 +61,9 @@ do
     }
     QUI_UF = {
         frames = { boss1 = bossFrame },
+        -- Live code keeps unit tokens in weak side state (ping-taint fix);
+        -- the stub mirrors the accessor over the mock's plain field.
+        GetFrameUnit = function(frame) return frame and frame.unit end,
     }
 
     function GetUnitSettings()
@@ -82,7 +89,7 @@ do
         end,
     }
 
-    local eventFrame
+    local createdFrames = {}
     function CreateFrame()
         local frame = { unitEvents = {}, events = {} }
         function frame:RegisterUnitEvent(event, ...)
@@ -94,41 +101,50 @@ do
         function frame:SetScript(script, handler)
             if script == "OnEvent" then self.onEvent = handler end
         end
-        eventFrame = frame
+        createdFrames[#createdFrames + 1] = frame
         return frame
     end
 
     local api = assert(loader(chunk))()
 
     api.StartBossRangeCheck()
-    assert(eventFrame, "StartBossRangeCheck should create the shared event frame")
-    local registeredUnits = eventFrame.unitEvents["UNIT_IN_RANGE_UPDATE"]
-    assert(registeredUnits,
-        "boss range alpha should register UNIT_IN_RANGE_UPDATE as a unit event")
-    do
-        local seen = {}
-        for _, u in ipairs(registeredUnits) do seen[u] = true end
-        for i = 1, 5 do
-            assert(seen["boss" .. i],
-                "UNIT_IN_RANGE_UPDATE should be registered for boss" .. i)
+    -- One listener per lexical boss token (SecretPayloads: the payload unit
+    -- is always secret; dispatch must never key on it), plus the shared
+    -- transitions frame.
+    local listeners = {}
+    for _, frame in ipairs(createdFrames) do
+        local reg = frame.unitEvents["UNIT_IN_RANGE_UPDATE"]
+        if reg then
+            assert(#reg == 1, "each range listener should register exactly one boss token")
+            listeners[reg[1]] = frame
+            assert(frame.onEvent, "each range listener should install an OnEvent handler")
         end
+    end
+    for i = 1, 5 do
+        assert(listeners["boss" .. i],
+            "UNIT_IN_RANGE_UPDATE should have a dedicated listener for boss" .. i)
     end
     assert(boss1Alpha == 1,
         "StartBossRangeCheck should baseline existing boss frames to full alpha")
-    assert(eventFrame.onEvent, "boss range alpha should install an OnEvent handler")
+
+    -- The payload unit is SECRET in-game: simulate with an opaque sentinel
+    -- the handler must never consume (it uses the captured lexical token).
+    local SECRET_UNIT = setmetatable({}, { __tostring = function() error("secret unit consumed") end })
 
     -- Out of range: dim to the configured out-of-range alpha (single apply, no flicker).
-    eventFrame.onEvent(eventFrame, "UNIT_IN_RANGE_UPDATE", "boss1", false)
+    local l1 = listeners.boss1
+    l1.onEvent(l1, "UNIT_IN_RANGE_UPDATE", SECRET_UNIT, false)
     assert(boss1Alpha == 0.4,
         "out-of-range boss should dim to outOfRangeAlpha via the secret-safe sink")
 
     -- Back in range: restore full alpha.
-    eventFrame.onEvent(eventFrame, "UNIT_IN_RANGE_UPDATE", "boss1", true)
+    l1.onEvent(l1, "UNIT_IN_RANGE_UPDATE", SECRET_UNIT, true)
     assert(boss1Alpha == 1,
         "in-range boss should return to full alpha")
 
     -- A range update for an absent boss slot must not touch existing frames.
-    eventFrame.onEvent(eventFrame, "UNIT_IN_RANGE_UPDATE", "boss3", false)
+    local l3 = listeners.boss3
+    l3.onEvent(l3, "UNIT_IN_RANGE_UPDATE", SECRET_UNIT, false)
     assert(boss1Alpha == 1,
         "range update for an absent boss slot should not change other frames")
 
@@ -212,6 +228,12 @@ do
         return units[unit] ~= nil
     end
 
+    -- Aura setup runs its full OOC path so the engage-frame assertions below
+    -- exercise real event registration (not the deferred combat queue).
+    function InCombatLockdown()
+        return false
+    end
+
     local unitGuidCalls = 0
     local secretGUIDMT = {
         __eq = function()
@@ -254,6 +276,9 @@ do
         QUI_UnitFrames = {
             frames = {},
             auraPreviewMode = {},
+            -- Live code keeps unit tokens in weak side state (ping-taint fix);
+            -- the stub mirrors the accessor over the mock's plain field.
+            GetFrameUnit = function(frame) return frame and frame.unit end,
             _GetFontPath = function() return "Fonts\\FRIZQT__.TTF" end,
             _GetFontOutline = function() return "OUTLINE" end,
             _GetUnitSettings = function()

@@ -1,11 +1,3 @@
----------------------------------------------------------------------------
--- Bags views: live item buttons. Pools ContainerFrameItemButtonTemplate
--- buttons under per-bag holder frames (SetID protocol — the Blizzard mixin
--- resolves bagID via GetParent():GetID(), slot via self:GetID()), giving
--- native click/drag/split/use/tooltip/context behavior with zero secure-
--- frame surgery. QUI dressing: quality 1px border, search dim, lock desat,
--- cooldown.
----------------------------------------------------------------------------
 -- luacheck: read globals ColorManager ITEM_QUALITY_COLORS SplitGuildBankItem
 -- luacheck: read globals HandleModifiedItemClick GetGuildBankItemLink IsModifiedClick CursorHasItem
 -- luacheck: read globals GetGuildBankItemInfo StackSplitFrame DepositGuildBankMoney
@@ -19,11 +11,8 @@ local UIKit = ns.UIKit
 local Helpers = ns.Helpers
 
 local function CJKFont(fs, p, s, f)
-    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
-        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
-    else
-        fs:SetFont(p, s, f)
-    end
+    if Bags.CJKFont then return Bags.CJKFont(fs, p, s, f) end
+    fs:SetFont(p, s, f)
 end
 
 local ItemButtons = {}
@@ -33,10 +22,11 @@ local GetSettings = Helpers.CreateDBGetter("bags")
 
 local SEARCH_DIM = 0.3
 
+function ItemButtons.SetSearchDim(button, searchResult)
+    button:SetAlpha(searchResult == false and SEARCH_DIM or 1)
+end
+
 local function GetQualityColor(quality)
-    -- 12.0 modern path: ColorManager wraps quality colors (incl. user
-    -- accessibility overrides); the ITEM_QUALITY_COLORS global still exists
-    -- (Blizzard_Colors/ColorConstants.lua) and is kept as fallback.
     local c
     if ColorManager and ColorManager.GetColorDataForItemQuality then
         c = ColorManager.GetColorDataForItemQuality(quality)
@@ -47,10 +37,8 @@ local function GetQualityColor(quality)
     if c then return c.r, c.g, c.b end
     return 0.5, 0.5, 0.5
 end
--- shared with the search-everywhere window's quality-colored name rows
 ItemButtons.GetQualityColor = GetQualityColor
 
---- One holder per (parent window, bagID): carries the bag ID for the mixin.
 function ItemButtons.CreateHolder(parent, bagID)
     local holder = CreateFrame("Frame", nil, parent)
     holder:SetID(bagID)
@@ -58,9 +46,6 @@ function ItemButtons.CreateHolder(parent, bagID)
     return holder
 end
 
---- Flat slot fill behind the icon, shared by every button flavor (live,
---- cached, guild) so occupied and empty slots read as one QUI surface
---- instead of the Blizzard slot art.
 function ItemButtons.AddSlotBackground(button)
     if button._quiSlotBg then return end
     local bg = button:CreateTexture(nil, "BACKGROUND", nil, -1)
@@ -69,27 +54,12 @@ function ItemButtons.AddSlotBackground(button)
     button._quiSlotBg = bg
 end
 
---- Auction-house sell-context match. Stock bags' context list (vendored
---- ItemUtil.lua GetItemContext) has NO auctioneer entry, so the template
---- pipeline never fades anything at the AH — QUI adds it: while the auction
---- house is open, an occupied slot whose item fails
---- C_AuctionHouse.IsSellItemValid renders the stock Mismatch treatment
---- (black 0.8 ItemContextOverlay), the same darkening the scrapper/upgrade
---- UIs get. This MUST live inside the stock pipeline as a per-button
---- GetItemContextMatchResult override (installed in CreateLive), NOT as a
---- manual overlay write: the intrinsic's PostOnShow runs
---- UpdateItemContextMatching after every pooled re-Show (vendored
---- ItemButtonTemplate.lua:16) and reverts any hand-set overlay state.
---- → nil when the auction context doesn't apply (defer to stock matching),
---- else an ItemButtonUtil.ItemContextMatchResult value.
 local function AuctionContextMatchResult(button)
     if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then return nil end
-    -- a real context UI open alongside the AH keeps priority (mirrors stock:
-    -- an active GetItemContext owns the overlay)
     if ItemButtonUtil.GetItemContext() ~= nil then return nil end
     local bagID, slot = button:GetBagID(), button:GetID()
     if not C_Container.GetContainerItemInfo(bagID, slot) then
-        return ItemButtonUtil.ItemContextMatchResult.DoesNotApply -- empty slot
+        return ItemButtonUtil.ItemContextMatchResult.DoesNotApply
     end
     local loc = ItemLocation:CreateFromBagAndSlot(bagID, slot)
     if not (loc and loc:IsValid()) then
@@ -100,68 +70,47 @@ local function AuctionContextMatchResult(button)
         or ItemButtonUtil.ItemContextMatchResult.Mismatch
 end
 
---- CreateLive installs this over the container mixin's method; every stock
---- consumer (PostOnShow, the ItemContextChanged callback, QUI's Dress call
---- to UpdateItemContextMatching) then computes the auction fade natively.
 local function LiveGetItemContextMatchResult(button)
     local auction = AuctionContextMatchResult(button)
     if auction ~= nil then return auction end
     return ContainerFrameItemButtonMixin.GetItemContextMatchResult(button)
 end
 
---- Create one live button under a holder. NOT pooled across bags (a button's
---- holder fixes its bagID); pooled per holder by the window.
+local function StopNewItemGlow(button)
+    if button.NewItemTexture then button.NewItemTexture:Hide() end
+    if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
+    if button.flashAnim and button.flashAnim:IsPlaying() then
+        button.flashAnim:Stop()
+    end
+    if button.newitemglowAnim and button.newitemglowAnim:IsPlaying() then
+        button.newitemglowAnim:Stop()
+    end
+end
+
+function ItemButtons.DismissNewItemGlow(button)
+    if not button then return end
+    local guid = button._newItemGuid
+    if guid and Bags.NewItems then Bags.NewItems.MarkSlotSeen(guid) end
+    button._newItemGuid = nil
+    StopNewItemGlow(button)
+end
+
 function ItemButtons.CreateLive(holder, bagID)
     local button = CreateFrame("ItemButton", nil, holder, "ContainerFrameItemButtonTemplate")
     button:SetBagID(bagID)
-    -- AH sell fade rides the stock context pipeline through this override —
-    -- a plain data method (NOT a secure script handler; the OnClick
-    -- replacement prohibition doesn't apply), consulted by the mixin's
-    -- UpdateItemContextMatching from PostOnShow and context callbacks.
     button.GetItemContextMatchResult = LiveGetItemContextMatchResult
-    -- Blizzard's IconBorder is replaced by the QUI pixel border
     if button.IconBorder then button.IconBorder:SetAlpha(0) end
-    -- The template ships BattlepayItemTexture VISIBLE by default — it is the
-    -- only overlay in ContainerFrame.xml with no hidden=/alpha=0 attribute.
-    -- Stock bags hide it on every UpdateNewItem pass, which Dress REPLACES,
-    -- so without this one-time hide every button permanently wears the store
-    -- highlight ("everything looks new", surviving reloads — hover hides it
-    -- per button via the mixin's hover handler, masquerading as the
-    -- new-item glow). QUI never renders the battlepay highlight.
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
-    -- Strip the rest of the Blizzard slot chrome QUI replaces: the quickslot
-    -- ring (NormalTexture renders larger than the button and overlaps
-    -- neighbors once spacing shrinks) and the stock empty-slot art (the
-    -- ItemButton mixin falls back to emptyBackgroundAtlas whenever no item
-    -- texture is set). QUI draws its own pixel border + flat fill instead.
     if button.ClearNormalTexture then button:ClearNormalTexture() end
     button.emptyBackgroundAtlas = nil
     ItemButtons.AddSlotBackground(button)
     UIKit.CreateBorderLines(button)
-    -- New-item glow seen-marking. HookScript is sanctioned here: the
-    -- template wires OnEnter as a plain function script ("NOTE: Tutorials
-    -- hook this" — vendored ContainerFrame.xml:76), and Blizzard's own
-    -- handler (Mixin:OnEnter → OnUpdate, ContainerFrame.lua:1538-1548)
-    -- already hides NewItemTexture + stops the anims before this post-hook
-    -- runs — so the hook only persists the seen state in the char store;
-    -- the next Dress then keeps the glow off.
     button:HookScript("OnEnter", function(self)
-        if self._newItemGuid then
-            if Bags.NewItems then Bags.NewItems.MarkSlotSeen(self._newItemGuid) end
-            self._newItemGuid = nil
-        end
+        ItemButtons.DismissNewItemGlow(self)
     end)
     return button
 end
 
---- Shared cached-surface tooltip. battlepet: hyperlinks (caged pets — the
---- container API hands the cage's hyperlink over in this form) cannot be
---- rendered by GameTooltip:SetHyperlink; they route through
---- BattlePetToolTip_ShowLink, which anchors BattlePetTooltip to
---- GameTooltip's point — so the owner anchor is set FIRST either way (the
---- AH caller idiom, vendored Blizzard_AuctionHouseSharedTemplates.lua:25).
---- The battlepet check outranks itemID: SetItemByID(82800) would show the
---- generic cage tooltip instead of the pet.
 -- luacheck: read globals BattlePetToolTip_ShowLink BattlePetTooltip
 function ItemButtons.ShowItemTooltip(owner, link, itemID)
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
@@ -178,16 +127,11 @@ function ItemButtons.ShowItemTooltip(owner, link, itemID)
     GameTooltip:Show()
 end
 
---- Leave-path counterpart: BattlePetTooltip is a separate frame that
---- GameTooltip:Hide() never touches — a zombie pet tooltip survives
---- otherwise.
 function ItemButtons.HideItemTooltip()
     GameTooltip:Hide()
     if BattlePetTooltip then BattlePetTooltip:Hide() end
 end
 
---- Inert browse button (cached/offline viewing): icon/count/quality border +
---- hyperlink tooltip. NOT a ContainerFrameItemButtonTemplate — no live ops.
 function ItemButtons.CreateCached(parent)
     local button = CreateFrame("Button", nil, parent)
     ItemButtons.AddSlotBackground(button)
@@ -206,12 +150,6 @@ function ItemButtons.CreateCached(parent)
     return button
 end
 
--- Crafting-quality tier badge (reagent r1–r5, crafted gear rank) for the
--- crafting_quality corner widget. Blizzard's lookup order (vendored
--- ItemButtonTemplate.lua:322-335): GetItemReagentQualityInfo first, then
--- GetItemCraftedQualityInfo; both → CraftingQualityInfo (nilable) whose
--- iconSmall atlas fits the 12px corner slot. Static per item link, so the
--- result (including misses, as false) memoizes by link-or-itemID.
 local craftQualityCache = {}
 local function CraftQualityAtlas(entry)
     if not (entry and (entry.link or entry.itemID)) then return nil end
@@ -227,17 +165,13 @@ local function CraftQualityAtlas(entry)
     return atlas or nil
 end
 
---- Dress a cached button from a cache slot entry (nil entry = empty slot).
---- searchResult: true (match) | false (dim) | nil (no active search).
---- Cached surfaces have no live junk/equipment-set facts: junk falls back
---- to quality 0, the set glyph is live-only.
 function ItemButtons.DressCached(button, entry, searchResult)
     local appearance = GetSettings().appearance
     if entry then
         button._link = entry.link
         button._icon:SetTexture(entry.icon)
         button._icon:Show()
-        button._count:SetText("") -- the quantity corner widget owns the number
+        button._count:SetText("")
         local r, g, b = GetQualityColor(entry.quality or 1)
         UIKit.UpdateBorderLines(button, 1, r, g, b, 1)
         button._icon:SetDesaturated(
@@ -264,21 +198,9 @@ function ItemButtons.DressCached(button, entry, searchResult)
         ItemButtons.SetUnusableTint(button, false)
         if Bags.CornerWidgets then Bags.CornerWidgets.Apply(button, nil, appearance) end
     end
-    button:SetAlpha(searchResult == false and SEARCH_DIM or 1)
+    ItemButtons.SetSearchDim(button, searchResult)
 end
 
----------------------------------------------------------------------------
--- Guild live buttons. ContainerFrameItemButtonTemplate is unusable for
--- guild slots (its mixin routes everything through C_Container bag/slot
--- IDs; guild slots have none), so these are plain buttons wired straight
--- to the legacy guild cursor APIs — the exact handler set Blizzard's
--- GuildBankItemButtonMixin uses (vendored Blizzard_GuildBankUI.lua:676-746).
--- The button carries _tab/_slot (set by DressGuildLive) instead of the
--- SetID protocol.
----------------------------------------------------------------------------
-
---- Create one live guild button: CreateCached's visual base (icon, count,
---- QUI border) + cursor-API interaction handlers.
 function ItemButtons.CreateGuildLive(parent)
     local button = CreateFrame("Button", nil, parent)
     ItemButtons.AddSlotBackground(button)
@@ -291,17 +213,11 @@ function ItemButtons.CreateGuildLive(parent)
 
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:RegisterForDrag("LeftButton")
-    -- StackSplitFrame owner protocol (Blizzard_GuildBankUI.lua:681-683):
-    -- the okay button calls owner.SplitStack(owner, split)
-    -- (StackSplitFrame.lua:237-238); the split lands on the cursor.
     button.SplitStack = function(self, split)
         SplitGuildBankItem(self._tab, self._slot, split)
     end
 
     button:SetScript("OnClick", function(self, mouseButton)
-        -- Modified clicks first (chat link / dressing room / split), then
-        -- cursor-money, then the pickup/withdraw pair — Blizzard's exact
-        -- OnClick order (Blizzard_GuildBankUI.lua:687-715).
         if HandleModifiedItemClick(GetGuildBankItemLink(self._tab, self._slot)) then
             return
         end
@@ -316,11 +232,10 @@ function ItemButtons.CreateGuildLive(parent)
         end
         local cursorType, money = GetCursorInfo()
         if cursorType == "money" then
-            -- gold on the cursor dropped onto a slot deposits it (parity)
             DepositGuildBankMoney(money)
             ClearCursor()
         elseif mouseButton == "RightButton" then
-            AutoStoreGuildBankItem(self._tab, self._slot) -- withdraw to bags
+            AutoStoreGuildBankItem(self._tab, self._slot)
         else
             PickupGuildBankItem(self._tab, self._slot)
         end
@@ -329,12 +244,11 @@ function ItemButtons.CreateGuildLive(parent)
         PickupGuildBankItem(self._tab, self._slot)
     end)
     button:SetScript("OnReceiveDrag", function(self)
-        PickupGuildBankItem(self._tab, self._slot) -- drop INTO the slot
+        PickupGuildBankItem(self._tab, self._slot)
     end)
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if Bags.GuildTakeover and Bags.GuildTakeover.IsLive() then
-            -- live tooltip incl. per-slot withdraw info (vendored :719)
             GameTooltip:SetGuildBankItem(self._tab, self._slot)
         elseif self._link then
             GameTooltip:SetHyperlink(self._link)
@@ -344,7 +258,6 @@ function ItemButtons.CreateGuildLive(parent)
     end)
     button:SetScript("OnLeave", function() GameTooltip:Hide() end)
     button:SetScript("OnHide", function(self)
-        -- a hidden owner must drop its split popup (vendored :728-732)
         if self.hasStackSplit == 1 and StackSplitFrame then
             StackSplitFrame:Hide()
         end
@@ -352,8 +265,6 @@ function ItemButtons.CreateGuildLive(parent)
     return button
 end
 
---- Dress a guild live button from a cache slot entry (nil = empty slot).
---- tab/slot bind the cursor APIs; searchResult: true | false (dim) | nil.
 function ItemButtons.DressGuildLive(button, tab, slot, entry, searchResult)
     button._tab, button._slot = tab, slot
     local appearance = GetSettings().appearance
@@ -361,11 +272,9 @@ function ItemButtons.DressGuildLive(button, tab, slot, entry, searchResult)
         button._link = entry.link
         button._icon:SetTexture(entry.icon)
         button._icon:Show()
-        button._count:SetText("") -- the quantity corner widget owns the number
+        button._count:SetText("")
         local r, g, b = GetQualityColor(entry.quality or 1)
         UIKit.UpdateBorderLines(button, 1, r, g, b, 1)
-        -- Lock state is live (not cached): GetGuildBankItemInfo →
-        -- texture, itemCount, locked (3rd return); query at dress time.
         local _, _, locked = GetGuildBankItemInfo(tab, slot)
         local isJunk = entry.quality == 0
         button._icon:SetDesaturated((locked or false)
@@ -393,11 +302,9 @@ function ItemButtons.DressGuildLive(button, tab, slot, entry, searchResult)
         ItemButtons.SetUnusableTint(button, false)
         if Bags.CornerWidgets then Bags.CornerWidgets.Apply(button, nil, appearance) end
     end
-    button:SetAlpha(searchResult == false and SEARCH_DIM or 1)
+    ItemButtons.SetSearchDim(button, searchResult)
 end
 
---- True when any of the eight corner-widget slots selects the given widget id
---- (used to skip computing live facts nobody renders).
 local function WantsCornerWidget(appearance, id)
     local c = appearance and appearance.corners
     if not c then return false end
@@ -405,34 +312,21 @@ local function WantsCornerWidget(appearance, id)
         or c.bl1 == id or c.bl2 == id or c.br1 == id or c.br2 == id
 end
 
---- Dress a live button from a cache slot entry (nil entry = empty slot).
---- searchResult: true (match) | false (dim) | nil (no active search).
---- newGuid: glow-eligible item GUID | nil (bag window live mode passes
---- NewItems.CheckSlot's result; every other caller leaves it nil → no glow).
 function ItemButtons.Dress(button, entry, searchResult, newGuid)
     local appearance = GetSettings().appearance
     if entry then
         SetItemButtonTexture(button, entry.icon)
-        -- native count stays off: the quantity corner widget owns the number
         SetItemButtonCount(button, 0)
         local r, g, b = GetQualityColor(entry.quality or 1)
         local start, duration, enable = C_Container.GetContainerItemCooldown(button:GetBagID(), button:GetID())
         CooldownFrame_Set(button.Cooldown, start, duration, enable)
-        -- Lock state is live (not cached): query at dress time.
         local live = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
-        -- isJunk is computed regardless of the dim toggle so the junk-coin
-        -- corner widget can preview auto-sell even with dimming off; the
-        -- desaturate below stays gated on appearance.greyJunk.
         local junkCfg = GetSettings().behavior.junk
         local isJunk = (Bags.Junk and live
             and Bags.Junk.IsJunk(live, button:GetBagID(), junkCfg and junkCfg.exclusions))
             and true or false
         SetItemButtonDesaturated(button, (live and live.isLocked)
             or (appearance and appearance.greyJunk and isJunk) or false)
-        -- Equipment-set lookup (live dressing only — the API answers the
-        -- player's own containers; cached/guild dressing never lands here).
-        -- Doc: GetContainerItemEquipmentSetInfo(bag, slot) → inSet bool,
-        -- setList string (both Nilable=false).
         local inSet = false
         if (not appearance or appearance.equipmentSetMark ~= false)
             and C_Container.GetContainerItemEquipmentSetInfo then
@@ -447,19 +341,12 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
         ItemButtons.SetUnusableTint(button,
             appearance and appearance.markUnusable
             and ItemButtons.IsUnusable(button:GetBagID(), button:GetID(), entry.link))
-        -- Upgrade-track corner badge (live fact, per-instance accurate — the
-        -- itemID-keyed GetExtended cache can't tell two copies at different
-        -- upgrade levels apart). Only computed when a corner selects it.
-        -- Doc (ItemDocumentation): C_Item.GetItemUpgradeInfo(itemInfo) →
-        -- ItemUpgradeInfo{currentLevel, maxLevel, trackString (Nilable)},
-        -- Nilable return (nil for non-upgradable items).
         local upgradeTrack
         if WantsCornerWidget(appearance, "upgrade_track")
             and entry.link and C_Item and C_Item.GetItemUpgradeInfo then
-            local okU, u = pcall(C_Item.GetItemUpgradeInfo, entry.link)
+            local okU, u = ns.SafeCall("best-effort-style", C_Item.GetItemUpgradeInfo, entry.link)
             if okU and u and u.trackString and u.trackString ~= ""
                 and u.currentLevel and u.maxLevel then
-                -- first UTF-8 char of the localized track name + progression
                 local abbrev = u.trackString:match("^[%z\1-\127\194-\244][\128-\191]*") or ""
                 upgradeTrack = {
                     text = abbrev .. u.currentLevel .. "/" .. u.maxLevel,
@@ -488,18 +375,8 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
         ItemButtons.SetUnusableTint(button, false)
         if Bags.CornerWidgets then Bags.CornerWidgets.Apply(button, nil, appearance) end
     end
-    -- the corner system owns the junk coin now; the template's stays off
     if button.JunkIcon then button.JunkIcon:Hide() end
     if button.IconQuestTexture then button.IconQuestTexture:Hide() end
-    -- Item-context matching (socketing/upgrade/scrapping UIs + the QUI
-    -- auction-sell fade via LiveGetItemContextMatchResult): the template
-    -- mixin fades non-matching slots on its own via the ItemContextChanged
-    -- callback (PostOnShow), but a content change re-dressed by OUR Refresh
-    -- bypasses the mixin's SetItem path — re-evaluate here so the overlay
-    -- tracks the slot's CURRENT item while a context applies. The
-    -- contextFading toggle suppresses the overlay via alpha (the mixin's
-    -- own PostOnShow pass keeps SetShown-ing it); re-assert alpha 1 when
-    -- enabled or a toggle off→on would stay invisible until reload.
     if appearance and appearance.contextFading == false then
         if button.ItemContextOverlay then button.ItemContextOverlay:SetAlpha(0) end
     else
@@ -508,11 +385,6 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
             button:UpdateItemContextMatching()
         end
     end
-    -- New-item glow: the template's reserved NewItemTexture + its two anim
-    -- groups, driven exactly like Blizzard's UpdateNewItem (vendored
-    -- ContainerFrame.lua:1688-1719): quality atlas when ColorManager has
-    -- one, "bags-glow-white" fallback; flash plays only when the looping
-    -- glow starts (the IsPlaying guard), both stop when eligibility ends.
     button._newItemGuid = newGuid
     if button.NewItemTexture then
         if newGuid then
@@ -529,38 +401,18 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
                 button.newitemglowAnim:Play()
             end
         else
-            button.NewItemTexture:Hide()
-            if button.flashAnim and button.flashAnim:IsPlaying() then
-                button.flashAnim:Stop()
-            end
-            if button.newitemglowAnim and button.newitemglowAnim:IsPlaying() then
-                button.newitemglowAnim:Stop()
-            end
+            StopNewItemGlow(button)
         end
     end
     if button.UpgradeIcon then button.UpgradeIcon:Hide() end
-    if searchResult == false then
-        button:SetAlpha(SEARCH_DIM)
-    else
-        button:SetAlpha(1)
-    end
+    ItemButtons.SetSearchDim(button, searchResult)
 end
 
----------------------------------------------------------------------------
--- Equipment-set mark: a small gear glyph in the slot's top-left corner for
--- items that belong to a saved equipment set. QUI-owned overlay (stock bags
--- have no such marker); atlas "questlog-icon-setting" is the small gear
--- used by Blizzard's quest-log settings button (verified in vendored XML).
----------------------------------------------------------------------------
----------------------------------------------------------------------------
--- Unusable marking: red-tint the icon when the item's own tooltip carries
--- red (unusable) text — the only API surface that knows proficiency.
--- C_TooltipInfo (TooltipInfoDocumentation: GetBagItem(bag, slot),
--- GetHyperlink(link)) returns plain line tables; colors are not secrets.
--- Cached per link: proficiency changes are rare (level-ups), and a stale
--- verdict only mistints until the next session.
----------------------------------------------------------------------------
-local unusableCache = {} -- [itemLink] = true|false
+local unusableCache = {}
+
+function ItemButtons.InvalidateUnusableCache()
+    wipe(unusableCache)
+end
 
 function ItemButtons.IsUnusable(bagID, slot, link)
     if link and unusableCache[link] ~= nil then return unusableCache[link] end
@@ -574,9 +426,6 @@ function ItemButtons.IsUnusable(bagID, slot, link)
     if data and data.lines then
         for _, row in ipairs(data.lines) do
             local lc, rc = row.leftColor, row.rightColor
-            -- red left text that isn't one of the benign "can't right now"
-            -- lines (same exclusion set the stock red-text rendering uses
-            -- for non-proficiency reasons)
             if lc and lc.r == 1 and lc.g < 0.2 and lc.b < 0.2
                 and row.leftText ~= _G.ITEM_SCRAPABLE_NOT
                 and row.leftText ~= _G.CANNOT_UNEQUIP_COMBAT
@@ -594,7 +443,6 @@ function ItemButtons.IsUnusable(bagID, slot, link)
     return unusable
 end
 
---- Red usability tint on the icon (live template `icon` or custom `_icon`).
 function ItemButtons.SetUnusableTint(button, unusable)
     local icon = button.icon or button._icon
     if not icon then return end
@@ -605,8 +453,6 @@ function ItemButtons.SetUnusableTint(button, unusable)
     end
 end
 
---- Free-slot counter for the grouped-empty-slots cell (flat mode): the one
---- surviving empty button shows how many free slots it stands in for.
 function ItemButtons.SetFreeCount(button, n)
     if button.Count then
         button.Count:SetText(n)
@@ -616,18 +462,6 @@ function ItemButtons.SetFreeCount(button, n)
     end
 end
 
----------------------------------------------------------------------------
--- Search-focus flash: a pulsing accent overlay on the slot a search-
--- everywhere navigation landed on. Window code calls this from its grid
--- loop (on = entry.itemID == the window's focus item). Works on live,
--- cached, and guild buttons alike — the overlay is QUI-owned (no template
--- fields touched). BOUNCE alpha loop; the WINDOW clears focus state, this
--- only renders it.
----------------------------------------------------------------------------
---- Container-membership highlight: shown while a bank tab button is
---- hovered so the unified (All) grid reveals which slots belong to that
---- tab. Lazy overlay texture; bags-glow-heirloom reads as a soft gold
---- wash over the icon without hiding quality borders.
 function ItemButtons.SetBagHighlight(button, on)
     if not on and not button._quiBagHighlight then return end
     local hl = button._quiBagHighlight
@@ -670,11 +504,6 @@ function ItemButtons.SetFocusFlash(button, on)
     end
 end
 
----------------------------------------------------------------------------
--- Selection overlay: steady accent tint while the bag window's select mode
--- has the slot marked for a batch send. QUI-owned overlay, sits below the
--- focus flash (sublevel 5 < 7).
----------------------------------------------------------------------------
 function ItemButtons.SetSelectedOverlay(button, on)
     if not on then
         if button._quiSelected then button._quiSelected:Hide() end

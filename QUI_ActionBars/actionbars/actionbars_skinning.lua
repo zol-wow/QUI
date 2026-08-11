@@ -4,6 +4,8 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
+---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
+
 local function CJKFont(fs, p, s, f)
     if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
         ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
@@ -12,18 +14,10 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
--- BUTTON SKINNING
----------------------------------------------------------------------------
-
--- Get the icon texture from a button, handling stance/pet buttons
--- that use NormalTexture as the icon source.
--- Returns: icon texture, iconUsesNormalTexture (bool)
 function GetButtonIconTexture(button)
-    -- Standard action buttons use .icon or .Icon
     local icon = button.icon or button.Icon
     if icon then return icon, false end
 
-    -- Stance/pet buttons may use NormalTexture as the icon
     local normalTex = button:GetNormalTexture()
     if normalTex then
         return normalTex, true
@@ -32,15 +26,10 @@ function GetButtonIconTexture(button)
     return nil, false
 end
 
--- Remove Blizzard's default textures and masks
 function StripBlizzardArtwork(button)
     local state = GetFrameState(button)
     local icon, iconUsesNormalTexture = GetButtonIconTexture(button)
 
-    -- Always re-hide NormalTexture — Blizzard may reset it after our init
-    -- (e.g. action bar updates that call SetNormalTexture post-PLAYER_LOGIN).
-    -- If a button currently uses NormalTexture as the icon source, keep it.
-    -- Otherwise hide NormalTexture, including for stance buttons.
     local normalTex = button:GetNormalTexture()
     if normalTex and not iconUsesNormalTexture then
         normalTex:SetAlpha(0)
@@ -49,8 +38,6 @@ function StripBlizzardArtwork(button)
         button.NormalTexture:SetAlpha(0)
     end
 
-    -- Remove mask textures from icon
-    -- Re-run when icon object changes (can happen for stance/pet during paging).
     if icon and not iconUsesNormalTexture and icon.GetMaskTexture and icon.RemoveMaskTexture then
         if state.lastMaskStrippedIcon ~= icon then
             for i = 1, 10 do
@@ -63,8 +50,6 @@ function StripBlizzardArtwork(button)
         end
     end
 
-    -- Neutralize IconMask to prevent Blizzard's UpdateButtonArt from
-    -- re-adding it during combat transitions and bar paging.
     if button.IconMask then
         button.IconMask:Hide()
         button.IconMask:SetTexture(nil)
@@ -72,23 +57,18 @@ function StripBlizzardArtwork(button)
         button.IconMask:SetSize(0.001, 0.001)
     end
 
-    -- Hide FloatingBG if present
     if button.FloatingBG then
         button.FloatingBG:SetAlpha(0)
     end
 
-    -- Hide SlotBackground if present
     if button.SlotBackground then
         button.SlotBackground:SetAlpha(0)
     end
 
-    -- Hide SlotArt if present
     if button.SlotArt then
         button.SlotArt:SetAlpha(0)
     end
 
-    -- Replace Blizzard's highlight, pushed, checked, and flash textures
-    -- with QUI versions that are properly sized via SetAllPoints.
     local function ReplaceTexture(tex, texturePath)
         if not tex then return end
         tex:SetAtlas(nil)
@@ -117,43 +97,30 @@ function StripBlizzardArtwork(button)
         ReplaceTexture(button.CheckedTexture, TEXTURES.checked)
     end
 
-    -- Replace flash texture
     if button.Flash then
         ReplaceTexture(button.Flash, TEXTURES.flash)
     end
 
-    -- Hide border/shadow decorations
     if button.Border then button.Border:SetAlpha(0) end
     if button.BorderShadow then button.BorderShadow:SetAlpha(0) end
 
-    -- SpellHighlightTexture: anchor to button so it matches our size
     if button.SpellHighlightTexture then
         button.SpellHighlightTexture:ClearAllPoints()
         button.SpellHighlightTexture:SetAllPoints(button)
     end
 
-    -- Cooldown: anchor to button so it fills correctly
     local cd = button.cooldown or button.Cooldown
     if cd then
         cd:ClearAllPoints()
         cd:SetAllPoints(button)
     end
 
-    -- No overlay scaling needed — buttons stay at their natural 45x45 size
-    -- and the container's SetScale handles visual resize. Blizzard overlays
-    -- (SpellActivationAlert, proc glows, rotation assist) work naturally
-    -- because the button dimensions match what overlays expect.
 end
-
----------------------------------------------------------------------------
--- BUTTON SKINNING
----------------------------------------------------------------------------
 
 env.__declared.FadeHideEffects = true
 env.__declared.FadeShowEffects = true
 env.__declared.SkinSpellFlyoutButtons = true
 env.__declared.ApplySpellFlyoutButtonStateTextures = true
-env.__declared.ShowOwnedFlyoutForButton = true
 env.__declared.HideOwnedFlyout = true
 PROC_ALERT_REGION_KEYS = {
     "ProcStartFlipbook",
@@ -163,7 +130,7 @@ PROC_ALERT_REGION_KEYS = {
 function SuppressProcVisualFrame(frame)
     if not frame then return end
 
-    pcall(function()
+    ns.SafeCall("best-effort-style", function()
         if frame.Hide then
             frame:Hide()
         end
@@ -173,10 +140,6 @@ function SuppressProcVisualFrame(frame)
         if frame.StopAnimating then
             frame:StopAnimating()
         end
-        -- ActionButtonSpellAlertMixin keeps the proc loop alive via two
-        -- AnimationGroups (ProcStartAnim → ProcLoop) defined on the alert
-        -- frame itself. StopAnimating() doesn't traverse them, so the swirl
-        -- keeps playing under SetAlpha(0) and pops back on the next Show.
         if frame.ProcStartAnim and frame.ProcStartAnim.Stop then
             frame.ProcStartAnim:Stop()
         end
@@ -190,9 +153,6 @@ function SuppressProcVisualFrame(frame)
     end
 end
 
--- Whether QUI should suppress Blizzard's native proc/spell-activation art.
--- Only suppress when a QUI glow provider will actually draw the glow. When the
--- glow source is the external skin or Off, leave native/skin art intact.
 local function ShouldSuppressNativeProc()
     local db = GetDB()
     local source = db and db.global and db.global.glowSource or "QUI"
@@ -203,7 +163,7 @@ function SuppressButtonProcVisuals(button)
     if not ShouldSuppressNativeProc() then return end
     if not button then return end
 
-    pcall(function()
+    ns.SafeCall("best-effort-style", function()
         local alert = button.SpellActivationAlert
         if alert then
             SuppressProcVisualFrame(alert)
@@ -214,11 +174,11 @@ function SuppressButtonProcVisuals(button)
         end
     end)
 
-    pcall(function()
+    ns.SafeCall("best-effort-style", function()
         SuppressProcVisualFrame(button.OverlayGlow)
     end)
 
-    pcall(function()
+    ns.SafeCall("best-effort-style", function()
         SuppressProcVisualFrame(button._ButtonGlow)
     end)
 end
@@ -246,7 +206,7 @@ UpdateButtonProfessionQuality = function(button, settings)
         return
     end
 
-    local ok, qualityInfo = pcall(C_ActionBar.GetProfessionQualityInfo, action)
+    local ok, qualityInfo = ns.SafeCall("best-effort-style", C_ActionBar.GetProfessionQualityInfo, action)
     local atlas = ok and qualityInfo and qualityInfo.iconInventory
     if not atlas then
         if overlay then
@@ -269,8 +229,6 @@ UpdateButtonProfessionQuality = function(button, settings)
     overlay:Show()
 end
 
--- Normalized region table for the external skin bridge / icon_skin. Cached on
--- the button. Populated from the QUI overlay textures created in SkinButton.
 local function GetButtonRegions(button)
     local r = button._quiRegions
     if not r then
@@ -286,7 +244,6 @@ local function GetButtonRegions(button)
 end
 ActionBarsOwned.GetButtonRegions = GetButtonRegions
 
--- Apply QUI skin to a single button
 SkinButton = function(button, settings)
     if not button or not settings then
         return
@@ -298,8 +255,6 @@ SkinButton = function(button, settings)
         return
     end
 
-    -- Overlay the globally-selected icon skin preset onto the per-bar gloss/
-    -- backdrop knobs. Border + all other knobs stay per-bar. Default = no-op.
     do
         local gdb = GetDB()
         local skinName = gdb and gdb.global and gdb.global.iconSkin or "Default"
@@ -316,8 +271,6 @@ SkinButton = function(button, settings)
 
     local state = GetFrameState(button)
 
-    -- Skip if already skinned with same settings (direct field comparison,
-    -- avoids string.format allocation on every call)
     local _sz = settings.iconSize or 36
     local _zm = settings.iconZoom or 0.07
     local _bd = settings.showBackdrop
@@ -337,7 +290,6 @@ SkinButton = function(button, settings)
     state.sk_gl = _gl; state.sk_ga = _ga
     state.sk_br = _br; state.sk_fl = _fl
 
-    -- Save original Blizzard pushed texture before stripping (for restore)
     if not state.origPushedTex then
         local p = button:GetPushedTexture()
         if p then
@@ -346,14 +298,12 @@ SkinButton = function(button, settings)
         end
     end
 
-    -- Strip Blizzard artwork first
     StripBlizzardArtwork(button)
     SuppressButtonProcVisuals(button)
 
     local iconSize = settings.iconSize or 36
     local zoom = settings.iconZoom or 0.07
 
-    -- Apply icon TexCoords (crop transparent edges)
     local icon = GetButtonIconTexture(button)
     if icon then
         icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
@@ -364,12 +314,6 @@ SkinButton = function(button, settings)
             buttonName:match("^SpellFlyoutPopupButton%d+$")
             or buttonName:match("^SpellFlyoutButton%d+$")
         )
-        -- After /reload, empty slots may retain stale icon textures from the
-        -- previous session. Clear them so ghost icons don't appear.
-        -- Do not apply this to stance/pet buttons: they use non-standard action
-        -- slot semantics and can return false from HasAction() while still
-        -- having a valid icon.
-        -- Also skip spell flyout buttons: Blizzard sets their icon directly.
         local barKey = GetBarKeyFromButton(button)
         local action = GetSafeActionSlot(button)
         if action and barKey ~= "stance" and barKey ~= "pet" and not isSpellFlyoutButton
@@ -380,7 +324,6 @@ SkinButton = function(button, settings)
         if icon.Show then icon:Show() end
     end
 
-    -- Create or update backdrop (behind icon, configurable opacity)
     if settings.showBackdrop then
         if not state.backdrop then
             state.backdrop = button:CreateTexture(nil, "BACKGROUND", nil, -8)
@@ -388,13 +331,12 @@ SkinButton = function(button, settings)
         end
         state.backdrop:SetAlpha(settings.backdropAlpha or 0.8)
         state.backdrop:ClearAllPoints()
-        state.backdrop:SetAllPoints(button)  -- Same size as button, not extending beyond
+        state.backdrop:SetAllPoints(button)
         state.backdrop:Show()
     elseif state.backdrop then
         state.backdrop:Hide()
     end
 
-    -- Create or update Normal overlay (border frame texture)
     if settings.showBorders ~= false then
         if not state.normal then
             state.normal = button:CreateTexture(nil, "OVERLAY", nil, 1)
@@ -408,7 +350,6 @@ SkinButton = function(button, settings)
         state.normal:Hide()
     end
 
-    -- Create or update Gloss overlay (ADD blend shine)
     if settings.showGloss then
         if not state.gloss then
             state.gloss = button:CreateTexture(nil, "OVERLAY", nil, 2)
@@ -422,11 +363,8 @@ SkinButton = function(button, settings)
         state.gloss:Hide()
     end
 
-    -- Button-press pushed texture (the visual on keydown/click).
-    -- showFlash: "qui" = QUI texture, "blizzard" = original, "off"/false = hidden
-    -- Backwards compat: true → "qui", false → "off"
     local flashMode = settings.showFlash
-    if flashMode == true then flashMode = "qui"
+    if flashMode == true or flashMode == "qui" then flashMode = "qui"
     elseif flashMode == false then flashMode = "off"
     end
 
@@ -444,12 +382,10 @@ SkinButton = function(button, settings)
                 tex:SetTexture(state.origPushedTex)
                 tex:SetTexCoord(0, 1, 0, 1)
             end
-            -- Blizzard's pushed atlas has asymmetric padding (more on the
-            -- right/bottom). Extend BOTTOMRIGHT to compensate.
             tex:ClearAllPoints()
             tex:SetPoint("TOPLEFT", button, "TOPLEFT")
             tex:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 4, -4)
-        else -- "qui" (default)
+        else
             tex:SetAtlas(nil)
             tex:SetTexture(TEXTURES.pushed)
             tex:SetTexCoord(0, 1, 0, 1)
@@ -461,16 +397,10 @@ SkinButton = function(button, settings)
         ApplyPushedMode(button.PushedTexture)
     end
 
-    -- Fix Cooldown frame positioning
     local cooldown = button.cooldown or button.Cooldown
     if cooldown then
         cooldown:ClearAllPoints()
         cooldown:SetAllPoints(button)
-        -- Recharge edge: re-add the cooldown swipe edge (the bright moving spark)
-        -- when enabled by the shared cooldown-swipe setting. Action-bar button
-        -- cooldowns previously never applied this, unlike CDM. Read-only profile
-        -- access (no mutation); default on, since showRechargeEdge defaults true.
-        -- The fade hide/show logic saves/restores GetDrawEdge, so it stays in sync.
         if cooldown.SetDrawEdge then
             local prof = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
             local cs = prof and prof.cooldownSwipe
@@ -479,25 +409,16 @@ SkinButton = function(button, settings)
         end
     end
 
-    -- If the button is currently hidden (bar faded out or empty slot),
-    -- keep newly-created textures hidden to match the fade state.
-    -- Record _fh* flags so FadeShowTextures knows to restore them on hover.
     if state.fadeHidden then
         if state.backdrop and state.backdrop:IsShown() then state.backdrop:Hide(); state._fhBg = true end
         if state.normal and state.normal:IsShown() then state.normal:Hide(); state._fhNorm = true end
         if state.gloss and state.gloss:IsShown() then state.gloss:Hide(); state._fhGloss = true end
-        -- SkinButton just re-applied the recharge edge above; drop the stale saved
-        -- edge so FadeHideEffects re-captures the fresh value to restore on unfade.
         state._fhCooldownEdge = nil
         FadeHideEffects(button, state)
     end
 
     ActionBarsOwned.skinnedButtons[button] = true
 
-    -- PERF: Per-button UpdateButtonArt hook.
-    -- Fires only when Blizzard resets button artwork (combat transitions,
-    -- paging, bonus bar swaps) — much less frequent than ActionButton_Update.
-    -- Cached closure avoids allocation per hook fire.
     if button.UpdateButtonArt and not button._quiArtHooked then
         local cachedSkinFn = function()
             if button:IsForbidden() then return end
@@ -505,7 +426,6 @@ SkinButton = function(button, settings)
             if bk then
                 local s = GetEffectiveSettings(bk)
                 if s then
-                    -- Clear skin cache to force re-apply after Blizzard reset
                     local st = GetFrameState(button)
                     st.sk_sz = nil
                     SkinButton(button, s)
@@ -518,12 +438,6 @@ SkinButton = function(button, settings)
         button._quiArtHooked = true
     end
 
-    -- External skin library ownership: when the user has enabled external
-    -- skinning and the library is present, hand the button to it and hide
-    -- QUI's own overlay textures so the external skin shows instead of a
-    -- double-skin. When disabled/absent, QUI's in-house skin (drawn above)
-    -- stands. The in-house skin-PRESET selection is applied separately via
-    -- the action-bar settings layer.
     local db = GetDB()
     local externalOn = db and db.global and db.global.externalSkinning
     local Bridge = ns.ExternalSkinBridge
@@ -539,126 +453,36 @@ SkinButton = function(button, settings)
     end
 end
 
----------------------------------------------------------------------------
--- TEXT VISIBILITY
----------------------------------------------------------------------------
-
--- Update keybind/hotkey text visibility and styling
--- Directly modifies Blizzard's HotKey element with abbreviated text
 UpdateKeybindText = function(button, settings)
     local hotkey = button.HotKey or button.hotKey
     if not hotkey then return end
 
-    -- Determine if keybinds should be shown
     if not settings.showKeybinds then
         hotkey:SetAlpha(0)
         hotkey:Hide()
         return
     end
 
-    -- Get abbreviated keybind text
-    local buttonName = button:GetName()
-    local bindingName = nil
-    local abbreviated = nil
-
-    if buttonName then
-        local num
-
-        -- Map button frame names to WoW binding names
-        num = buttonName:match("^ActionButton(%d+)$")
-        if num then bindingName = "ACTIONBUTTON" .. num end
-
-        -- QUI fresh buttons (bar1-8)
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar1Button(%d+)$")
-            if num then bindingName = "ACTIONBUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar2Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR1BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar3Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR2BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar4Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR3BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar5Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR4BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar6Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR5BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar7Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR6BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_Bar8Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR7BUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_PetButton(%d+)$")
-            if num then bindingName = "BONUSACTIONBUTTON" .. num end
-        end
-        if not bindingName then
-            num = buttonName:match("^QUI_StanceButton(%d+)$")
-            if num then bindingName = "SHAPESHIFTBUTTON" .. num end
-        end
-
-        -- Blizzard button names (fallback for reparented buttons)
-        if not bindingName then
-            num = buttonName:match("^MultiBarBottomRightButton(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR2BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBarBottomLeftButton(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR1BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBarRightButton(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR3BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBarLeftButton(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR4BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBar5Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR5BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBar6Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR6BUTTON" .. num end
-        end
-
-        if not bindingName then
-            num = buttonName:match("^MultiBar7Button(%d+)$")
-            if num then bindingName = "MULTIACTIONBAR7BUTTON" .. num end
-        end
-
-        -- Get keybind and abbreviate
-        if bindingName then
-            local key = GetBindingKey(bindingName)
-            if key and ns and ns.FormatKeybind then
-                abbreviated = ns.FormatKeybind(key)
-            end
+    local buttonFrameState = frameState[button]
+    local bindingName = buttonFrameState and buttonFrameState.bindingCommand
+    if not bindingName then
+        local prefix = BINDING_COMMANDS[GetBarKeyFromButton(button)]
+        local index = prefix and GetButtonIndex(button)
+        if index then
+            bindingName = prefix .. index
         end
     end
 
-    -- Determine visibility
+    local abbreviated = nil
+    if bindingName then
+        local key = GetBindingKey(bindingName)
+        if key and ns and ns.FormatKeybind then
+            abbreviated = ns.FormatKeybind(key)
+        end
+    end
+
     local shouldShow = abbreviated and abbreviated ~= ""
 
-    -- Only hide keybinds on empty action slots when hideEmptyKeybinds is enabled
     if shouldShow and settings.hideEmptyKeybinds then
         local action = GetSafeActionSlot(button)
         if action then
@@ -675,12 +499,10 @@ UpdateKeybindText = function(button, settings)
         return
     end
 
-    -- Set the abbreviated text and show
     hotkey:SetText(abbreviated)
     hotkey:Show()
     hotkey:SetAlpha(1)
 
-    -- Apply styling
     local fontPath, outline = GetFontSettings()
 
     CJKFont(hotkey, fontPath, settings.keybindFontSize or 11, outline)
@@ -692,11 +514,9 @@ UpdateKeybindText = function(button, settings)
     local a = color and color[4] or 1
     hotkey:SetTextColor(r, g, b, a)
 
-    -- Reposition with configurable anchor and offsets
     hotkey:ClearAllPoints()
     local anchor = settings.keybindAnchor or "TOPRIGHT"
 
-    -- Match text justification to anchor direction (Blizzard defaults to RIGHT justify)
     if anchor:find("LEFT") then
         hotkey:SetJustifyH("LEFT")
     elseif anchor:find("RIGHT") then
@@ -709,7 +529,6 @@ UpdateKeybindText = function(button, settings)
     hotkey:SetPoint(anchor, button, anchor, (settings.keybindOffsetX or 0), (settings.keybindOffsetY or 0))
 end
 
--- Update macro name text visibility and styling
 function UpdateMacroText(button, settings)
     local name = button.Name
     if not name then return end
@@ -721,7 +540,6 @@ function UpdateMacroText(button, settings)
 
     name:SetAlpha(1)
 
-    -- Apply styling
     local fontPath, outline = GetFontSettings()
 
     CJKFont(name, fontPath, settings.macroNameFontSize or 10, outline)
@@ -733,13 +551,11 @@ function UpdateMacroText(button, settings)
     local a = color and color[4] or 1
     name:SetTextColor(r, g, b, a)
 
-    -- Reposition with configurable anchor and offsets
     name:ClearAllPoints()
     local anchor = settings.macroNameAnchor or "BOTTOM"
     name:SetPoint(anchor, button, anchor, (settings.macroNameOffsetX or 0), (settings.macroNameOffsetY or 0))
 end
 
--- Update count/charge text visibility and styling
 function UpdateCountText(button, settings)
     local count = button.Count
     if not count then return end
@@ -751,7 +567,6 @@ function UpdateCountText(button, settings)
 
     count:SetAlpha(1)
 
-    -- Apply styling
     local fontPath, outline = GetFontSettings()
 
     CJKFont(count, fontPath, settings.countFontSize or 14, outline)
@@ -763,13 +578,11 @@ function UpdateCountText(button, settings)
     local a = color and color[4] or 1
     count:SetTextColor(r, g, b, a)
 
-    -- Reposition with configurable anchor and offsets
     count:ClearAllPoints()
     local anchor = settings.countAnchor or "BOTTOMRIGHT"
     count:SetPoint(anchor, button, anchor, (settings.countOffsetX or 0), (settings.countOffsetY or 0))
 end
 
--- Update native cooldown duration text visibility and styling.
 function UpdateCooldownText(button, settings)
     local cooldown = button.cooldown or button.Cooldown
     if not cooldown then return end
@@ -828,21 +641,12 @@ function UpdateCooldownText(button, settings)
     if text.SetHeight then text:SetHeight(math.max(fontSize + 4, 1)) end
 end
 
--- Update all text elements on a button
 UpdateButtonText = function(button, settings)
     UpdateKeybindText(button, settings)
     UpdateMacroText(button, settings)
     UpdateCountText(button, settings)
     UpdateCooldownText(button, settings)
 end
-
----------------------------------------------------------------------------
--- FADE-HIDE HELPERS
--- QUI-owned textures (backdrop, border, gloss, tintOverlay) may not
--- respect parent alpha inheritance — especially MOD-blend textures.
--- We must explicitly Hide()/Show() them when the button should be
--- invisible (bar faded to alpha 0, or hidden empty slot).
----------------------------------------------------------------------------
 
 FadeHideEffects = function(button, state)
     if not button then return end
@@ -897,7 +701,6 @@ FadeShowEffects = function(button, state)
     SuppressButtonProcVisuals(button)
 end
 
--- Hide QUI textures on a button, saving which were visible for later restore.
 FadeHideTextures = function(state, button)
     if state.fadeHidden then return end
     state.fadeHidden = true
@@ -916,7 +719,6 @@ FadeHideTextures = function(state, button)
     FadeHideEffects(button, state)
 end
 
--- Restore QUI textures that were hidden by FadeHideTextures.
 FadeShowTextures = function(state, button)
     if not state.fadeHidden then return end
     state.fadeHidden = nil
@@ -929,29 +731,13 @@ FadeShowTextures = function(state, button)
     FadeShowEffects(button, state)
 end
 
----------------------------------------------------------------------------
--- BAR LAYOUT FEATURES
----------------------------------------------------------------------------
-
-
--- Drag preview: show hidden empty slots at low alpha while cursor holds a placeable action
 DRAG_PREVIEW_ALPHA = 0.3
 
--- Update empty slot visibility for a single button
 UpdateEmptySlotVisibility = function(button, settings)
     if not settings then return end
     local state = GetFrameState(button)
 
     local barKey = GetBarKeyFromButton(button)
-
-    -- Stance/pet buttons are not standard action slots and can report action
-    -- data that does not map cleanly to HasAction(). Never apply hide-empty
-    -- logic to them.
-    -- Button-level alpha handles only empty-slot hiding.  The mouseover
-    -- fade effect is applied on the *container*, so buttons should be at
-    -- alpha 1 when they have content.  Using the container's currentAlpha
-    -- here would leave buttons stuck at 0 after a fade-in because
-    -- SetOwnedBarAlpha only animates the container, not individual buttons.
 
     if barKey == "stance" or barKey == "pet" then
         if state.hiddenEmpty then
@@ -963,7 +749,6 @@ UpdateEmptySlotVisibility = function(button, settings)
     end
 
     if not settings.hideEmptySlots then
-        -- Restore visibility if setting is off
         if state.hiddenEmpty then
             button:SetAlpha(1)
             state.hiddenEmpty = nil
@@ -972,7 +757,6 @@ UpdateEmptySlotVisibility = function(button, settings)
         return
     end
 
-    -- Only applies to action buttons with action property
     local action = GetSafeActionSlot(button)
     if action then
         local hasAction = HasButtonContent(button, action)
@@ -983,7 +767,6 @@ UpdateEmptySlotVisibility = function(button, settings)
                 FadeShowTextures(state, button)
             end
         else
-            -- Show at preview alpha while dragging a placeable action
             if ActionBarsOwned.dragPreviewActive then
                 button:SetAlpha(DRAG_PREVIEW_ALPHA)
             else
@@ -1003,19 +786,13 @@ UpdateEmptySlotVisibility = function(button, settings)
     end
 end
 
-
--- Usability indicator state tracking
--- PERF: Relaxed from 250ms/100ms to 500ms.  State-change gating in
--- UpdateButtonUsability means visual updates only happen when the tint
--- actually changes, so polling less often has no visible impact.
 usabilityState = {
     checkFrame = nil,
-    INTERVAL_COMBAT = 0.5,   -- 500ms in combat
-    INTERVAL_IDLE = 2.0,     -- 2s OOC (range matters less)
-    EVENT_DEBOUNCE = 0.05,   -- same-frame/event-burst coalescing floor
+    INTERVAL_COMBAT = 0.5,
+    INTERVAL_IDLE = 2.0,
+    EVENT_DEBOUNCE = 0.05,
     inCombat = false,
     rangePollingActive = false,
     updatePending = false,
     lastScanTime = 0,
 }
-

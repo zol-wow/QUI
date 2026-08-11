@@ -29,6 +29,23 @@ CLAUDE.md
 luac.out
 tools/i18n/_mt/
 
+# Project-local LuaRocks tree. gh-actions-luarocks installs into the workspace,
+# so an unignored tree gets swept up by `git ls-files --others` gates.
+/.luarocks/
+
 # Python bytecode
 tools/i18n/__pycache__/
 *.pyc
+
+# Fork-local tooling
+GSE_UnholyDK.lua
+encode_gse.py
+/.windsurf
+/node_modules
+/.tmp_debug
+
+# graphify knowledge-graph output (AST dump alone is ~17 MB, regenerable)
+# unanchored: also covers tests/framexml/graphify-out/ from a reference extract
+graphify-out/
+
+.graphifyignore

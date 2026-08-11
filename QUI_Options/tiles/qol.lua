@@ -1,7 +1,3 @@
---[[
-    QUI Options V2 — Quality of Life tile
-]]
-
 local ADDON_NAME, ns = ...
 
 local V2 = {}

@@ -62,6 +62,17 @@ assert(type(WillPlay) == "function", "Sounds.WillPlayForEvent must be published"
 assert(WillPlay("CHAT_MSG_WHISPER") == true, "configured whisper entry plays")
 assert(WillPlay("CHAT_MSG_BN_WHISPER") == true, "whisper channel covers BN whisper")
 assert(WillPlay("CHAT_MSG_GUILD") == false, "no guild entry → will not play")
+assert(WillPlay("CHAT_MSG_GUILD_DISCORD") == false, "no guild entry → GUILD_DISCORD will not play either")
+
+-- Wave 3 Task 4: CHAT_MSG_GUILD_DISCORD mirrors CHAT_MSG_GUILD in every
+-- SOUND_CHANNEL_EVENTS entry that lists GUILD (guild, guild_officer, all).
+settings.newMessageSound.entries[#settings.newMessageSound.entries + 1] =
+    { channel = "guild_officer", sound = "Ding" }
+assert(WillPlay("CHAT_MSG_GUILD") == true, "guild_officer entry plays for CHAT_MSG_GUILD")
+assert(WillPlay("CHAT_MSG_GUILD_DISCORD") == true,
+    "guild_officer entry also plays for CHAT_MSG_GUILD_DISCORD (mirrors GUILD)")
+assert(WillPlay("CHAT_MSG_OFFICER") == true, "guild_officer entry still plays for CHAT_MSG_OFFICER")
+settings.newMessageSound.entries[#settings.newMessageSound.entries] = nil
 
 -- Combat messaging lockdown: chat plays nothing → predicate false (QoL falls back)
 locked = true

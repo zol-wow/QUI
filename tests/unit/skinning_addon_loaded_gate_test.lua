@@ -33,8 +33,8 @@ assertAbsent(uikit, "if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOn
     "SkinBase.OnAddOnLoaded must not treat loadedOrLoading as loaded")
 
 for _, path in ipairs({
-    "QUI_Skinning/skinning/character_pane/inspect.lua",
-    "QUI_Skinning/skinning/frames/statustracking.lua",
+    "modules/skinning/character_pane/inspect.lua",
+    "modules/skinning/frames/statustracking.lua",
 }) do
     local source = readFile(path)
     assertAbsent(source, "C_AddOns.IsAddOnLoaded(",
@@ -45,7 +45,7 @@ end
 
 -- keystone routes its single-addon gate through the shared OnAddOnLoaded helper,
 -- which uses IsAddOnFullyLoaded internally for the already-loaded catch-up.
-local keystone = readFile("QUI_Skinning/skinning/gameplay/keystone.lua")
+local keystone = readFile("modules/skinning/gameplay/keystone.lua")
 assertAbsent(keystone, "C_AddOns.IsAddOnLoaded(",
     "keystone.lua must not consume the loading-state return directly")
 assertContains(keystone, "SkinBase.OnAddOnLoaded(\"Blizzard_ChallengesUI\"",
@@ -53,17 +53,17 @@ assertContains(keystone, "SkinBase.OnAddOnLoaded(\"Blizzard_ChallengesUI\"",
 
 for _, entry in ipairs({
     {
-        path = "QUI_Skinning/skinning/frames/auctionhouse.lua",
+        path = "modules/skinning/frames/auctionhouse.lua",
         addon = "Blizzard_AuctionHouseUI",
         skin = "SkinAuctionHouse",
     },
     {
-        path = "QUI_Skinning/skinning/frames/professions.lua",
+        path = "modules/skinning/frames/professions.lua",
         addon = "Blizzard_Professions",
         skin = "SkinProfessions",
     },
     {
-        path = "QUI_Skinning/skinning/frames/craftingorders.lua",
+        path = "modules/skinning/frames/craftingorders.lua",
         addon = "Blizzard_ProfessionsCustomerOrders",
         skin = "SkinCraftingOrders",
     },

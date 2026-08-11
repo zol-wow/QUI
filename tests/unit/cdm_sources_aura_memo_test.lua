@@ -21,7 +21,13 @@ _G.wipe = function(tbl)
     return tbl
 end
 
-function issecretvalue(value) return secretValues[value] == true end
+-- probedValues: spy for T16's probe-discipline pin. Must exist before load —
+-- the module latches issecretvalue as a file-local at load time.
+local probedValues = {}
+function issecretvalue(value)
+    if value ~= nil then probedValues[value] = true end
+    return secretValues[value] == true
+end
 
 -- Returns scripted from these tables; a nil entry models "no such aura".
 -- auraInstanceID lets the delta-invalidation tests match cached AuraData.
@@ -230,5 +236,107 @@ S.InvalidateAuraMemoForDelta("player", { removedAuraInstanceIDs = { secretIID } 
 S.QueryUnitAuraBySpellID("player", 300) -- unverifiable -> dropped -> re-probe
 assert(calls.unit == 2, "secret changed instanceID forces a conservative re-probe (got " .. calls.unit .. ")")
 secretValues[secretIID] = nil
+
+---------------------------------------------------------------------------
+-- T16: 12.1 per-field secrecy -- updateInfo is a READABLE table whose scalar
+-- isFullUpdate field is itself secret (live shape: { addedAuras=<secret
+-- table>, isFullUpdate=<secret boolean> }, 222x on target). In-game the
+-- boolean test on it THROWS; this harness cannot trap truthiness (the token
+-- is an ordinary table here), so pin both:
+--   (1) behavior: the unreadable flag folds to the conservative full wipe;
+--   (2) probe discipline: the flag passed through issecretvalue BEFORE any
+--       boolean test (probedValues spy installed at the top of this file).
+---------------------------------------------------------------------------
+local secretFull = { token = "secret-isFullUpdate" }
+secretValues[secretFull] = true
+S.InvalidateAllAuraMemo()
+calls.unit = 0
+S.QueryUnitAuraBySpellID("player", 100)
+S.QueryUnitAuraBySpellID("player", 200)
+S.InvalidateAuraMemoForDelta("player", { isFullUpdate = secretFull })
+S.QueryUnitAuraBySpellID("player", 100)
+S.QueryUnitAuraBySpellID("player", 200)
+assert(calls.unit == 4, "secret isFullUpdate must fold to the conservative full wipe (got " .. calls.unit .. ")")
+assert(probedValues[secretFull] == true,
+    "isFullUpdate must be probed via issecretvalue before any boolean test")
+secretValues[secretFull] = nil
+
+---------------------------------------------------------------------------
+-- T17: a WHOLE-SECRET removed/updated array names an unknowable change set --
+-- EVERY present entry must drop, readable instanceID or not (2026-07 stop
+-- review: uncertainChanged used to spare readable-iid entries -> stale memo).
+-- A cached nil stays: a removal/update can't turn an absent aura present.
+---------------------------------------------------------------------------
+local secretArray = { token = "secret-array" }
+secretValues[secretArray] = true
+S.InvalidateAllAuraMemo()
+calls.unit = 0
+S.QueryUnitAuraBySpellID("player", 100) -- present, readable iid 5100
+assert(S.QueryUnitAuraBySpellID("player", 777) == nil) -- cached nil
+assert(calls.unit == 2, "prime one present + one nil")
+S.InvalidateAuraMemoForDelta("player", { removedAuraInstanceIDs = secretArray })
+assert(probedValues[secretArray] == true,
+    "whole-secret array must pass through issecretvalue before any truth test")
+S.QueryUnitAuraBySpellID("player", 100) -- unknowable removal -> re-probe
+assert(calls.unit == 3, "whole-secret removed array must drop readable-iid entries (got " .. calls.unit .. ")")
+S.QueryUnitAuraBySpellID("player", 777) -- nil sentinel untouched
+assert(calls.unit == 3, "nil sentinel must survive a secret removed array (got " .. calls.unit .. ")")
+S.InvalidateAuraMemoForDelta("player", { updatedAuraInstanceIDs = secretArray })
+S.QueryUnitAuraBySpellID("player", 100)
+assert(calls.unit == 4, "whole-secret updated array must drop present entries (got " .. calls.unit .. ")")
+
+---------------------------------------------------------------------------
+-- T18: an add we can't target could satisfy any nil sentinel AND refresh /
+-- restack any PRESENT aura (2026-07 stop review: dropAllNils alone spared
+-- present entries -> stale memo) -- a whole-secret addedAuras must drop
+-- EVERY entry, matching what the targeted DropAuraMemoKey path drops for
+-- readable keys.
+---------------------------------------------------------------------------
+S.InvalidateAllAuraMemo()
+calls.unit = 0
+S.QueryUnitAuraBySpellID("player", 100)
+assert(S.QueryUnitAuraBySpellID("player", 777) == nil)
+assert(calls.unit == 2, "prime one present + one nil")
+S.InvalidateAuraMemoForDelta("player", { addedAuras = secretArray })
+S.QueryUnitAuraBySpellID("player", 777) -- unknowable add -> re-probe
+S.QueryUnitAuraBySpellID("player", 100) -- could be a refresh of 100 -> re-probe
+assert(calls.unit == 4, "whole-secret addedAuras must drop nils AND present entries (got " .. calls.unit .. ")")
+secretValues[secretArray] = nil
+
+---------------------------------------------------------------------------
+-- T18b: same widening for a READABLE added element whose spellId key is
+-- secret (can't name which key the add satisfies).
+---------------------------------------------------------------------------
+local secretKey = { token = "secret-add-key" }
+secretValues[secretKey] = true
+S.InvalidateAllAuraMemo()
+calls.unit = 0
+S.QueryUnitAuraBySpellID("player", 100)
+assert(S.QueryUnitAuraBySpellID("player", 777) == nil)
+assert(calls.unit == 2, "prime one present + one nil")
+S.InvalidateAuraMemoForDelta("player", { addedAuras = { { spellId = secretKey } } })
+S.QueryUnitAuraBySpellID("player", 777)
+S.QueryUnitAuraBySpellID("player", 100)
+assert(calls.unit == 4, "secret-keyed add must drop nils AND present entries (got " .. calls.unit .. ")")
+secretValues[secretKey] = nil
+
+---------------------------------------------------------------------------
+-- T19: a READABLE removal can name an entry whose CACHED instanceID is
+-- secret (can't compare) -- that entry must drop; readable non-matching
+-- siblings stay warm.
+---------------------------------------------------------------------------
+secretValues[secretIID] = true
+S.InvalidateAllAuraMemo()
+calls.unit = 0
+S.QueryUnitAuraBySpellID("player", 300) -- present, secret cached iid
+S.QueryUnitAuraBySpellID("player", 100) -- present, readable iid 5100
+assert(calls.unit == 2, "prime secret-iid + readable-iid entries")
+S.InvalidateAuraMemoForDelta("player", { removedAuraInstanceIDs = { 9999 } })
+S.QueryUnitAuraBySpellID("player", 300) -- could be 9999 -> re-probe
+assert(calls.unit == 3, "readable removal must drop uncomparable secret-iid entries (got " .. calls.unit .. ")")
+S.QueryUnitAuraBySpellID("player", 100) -- 5100 ~= 9999 -> warm
+assert(calls.unit == 3, "readable non-matching entry must stay warm (got " .. calls.unit .. ")")
+secretValues[secretIID] = nil
+unitReturns[300] = nil
 
 print("OK: cdm_sources_aura_memo_test")

@@ -58,9 +58,9 @@ assertContains(mailLua, "function SendMailFrame_Update()",
 assertContains(mailLua, "function OpenMail_Update()",
     "local FrameXML must expose open-mail refresh")
 
-local toc = readFile("QUI_Skinning/QUI_Skinning.toc")
-local interaction = readFile("QUI_Skinning/skinning/frames/interaction.lua")
-local mail = readFile("QUI_Skinning/skinning/frames/mail.lua")
+local toc = readFile("QUI.toc")
+local interaction = readFile("modules/skinning/frames/interaction.lua")
+local mail = readFile("modules/skinning/frames/mail.lua")
 
 assertBefore(toc, "skinning\\frames\\interaction.lua", "skinning\\frames\\mail.lua",
     "Mail skinning must load as a dedicated file after shared interaction-frame skinning")

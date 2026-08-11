@@ -1,87 +1,29 @@
----------------------------------------------------------------------------
--- Bags ops: rate-limited transfer queue + warband deposit-all.
---
--- RateQueue: generic one-item-per-tick paced queue driven by C_Timer chain.
--- Default interval: 0.2s (≈5 ops/sec; slower than the sort executor's bus-
--- paced model because deposit calls go to the server individually and the
--- server will silently drop calls that arrive too fast).
---
--- DepositAllToWarband([onDone]): live-iterates player bags 0–5, builds an
--- ItemLocation per occupied slot, passes it through
---   C_Bank.IsItemAllowedInBankType(Enum.BankType.Account, loc)
--- and enqueues C_Container.UseContainerItem(bag, slot, nil,
--- Enum.BankType.Account) for each allowed item. The CALLER (bank_window) is
--- responsible for gating on an open warband bank session before calling
--- this; the function itself only filters by IsItemAllowedInBankType and does
--- no additional bank-side check (there is no API to re-query whether the
--- session is still live per-step).
---
--- C_Container.UseContainerItem signature (ContainerDocumentation.lua,
--- Namespace = "C_Container" — there is no global alias on the modern
--- client):
---   UseContainerItem(containerIndex, slotIndex, unitToken, bankType,
---                    reagentBankOpen=false)
--- bankType = Enum.BankType.Account triggers the deposit path.
---
--- C_Bank.IsItemAllowedInBankType(bankType, itemLocation) — verified:
---   bankType first, returns non-nilable bool; SecretArguments = AllowedWhenUntainted.
---
--- ItemLocation:CreateFromBagAndSlot(bagID, slotIndex) — verified in
---   Blizzard_ObjectAPI/Mainline/ItemLocation.lua: static method on the
---   `ItemLocation` global (a mixin table, not a C_ namespace), available at
---   all times (loaded with the ObjectAPI LoD addon, present by the time any
---   bag interaction runs).
---
--- Combat: bags.lua routes PLAYER_REGEN_DISABLED → Transfers.OnCombat()
--- (existence-guarded; already wired in bags.lua at the time this file lands).
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("bags")
 
-local RATE_INTERVAL = 0.2  -- seconds between UseContainerItem calls
+local RATE_INTERVAL = 0.2
 
--- Informational house print prefix (mirrors sort_executor.lua's PREFIX).
 local PREFIX = Bags.OpsShared.PREFIX
 
----------------------------------------------------------------------------
--- RateQueue constructor (returned as Transfers.RateQueue for test access
--- and for Junk.SellJunk which wants its own independent queue instance).
---
--- Usage:
---   local q = Transfers.RateQueue([interval[, onDone]])
---   q:Enqueue(fn)   -- fn() called on its scheduled tick
---   q:IsRunning()   -- bool
---   q:Cancel()      -- abort; onDone(false, "cancel")
---   q:OnCombat()    -- abort; onDone(false, "combat")
---
--- Pacing model: the first Enqueue fires the function immediately (no timer
--- delay so the UI feels responsive), then schedules a C_Timer.After for the
--- next item. Subsequent items each schedule the one after them. When the
--- queue drains, onDone(true) fires. A guard token makes stale timer callbacks
--- (from before a Cancel/OnCombat) inert.
----------------------------------------------------------------------------
 local function RateQueue(interval, onDone)
     interval = interval or RATE_INTERVAL
     local q = {}
-    local queue   = {}    -- pending fn list (FIFO)
-    local running = false -- true between first Enqueue and finish
-    local token   = nil   -- identity guard for the active timer callback
+    local queue   = {}
+    local running = false
+    local token   = nil
 
     local function finish(ok, reason)
         running = false
-        token   = nil   -- invalidate any pending timer
+        token   = nil
         queue   = {}
         if onDone then onDone(ok, reason) end
     end
 
-    -- Schedule the next timer tick.  The timer callback runs the next queued
-    -- item (if any) or finishes the run.  Staleness-checked via token so that
-    -- Cancel/OnCombat between scheduling and firing is a no-op.
     local function scheduleNext(myToken)
         C_Timer.After(interval, function()
-            if token ~= myToken then return end  -- stale: aborted since scheduling
+            if token ~= myToken then return end
             if #queue == 0 then
                 finish(true)
                 return
@@ -89,7 +31,6 @@ local function RateQueue(interval, onDone)
             local fn = table.remove(queue, 1)
             fn()
             if #queue == 0 then
-                -- Nothing more to do; finish without scheduling another timer.
                 finish(true)
             else
                 local nextToken = {}
@@ -102,24 +43,15 @@ local function RateQueue(interval, onDone)
     function q:Enqueue(fn)
         queue[#queue + 1] = fn
         if not running then
-            -- Queue was idle: start it.  Run the first item immediately so
-            -- the operation feels responsive, then schedule a timer for the
-            -- rest.  `running` is set BEFORE executing fn so IsRunning() is
-            -- true even if fn itself calls Enqueue again.
             running = true
             local startToken = {}
             token = startToken
             local first = table.remove(queue, 1)
             first()
-            -- After the synchronous first run: if no further items were
-            -- Enqueued in the same call frame, schedule the drain timer.
-            -- That timer will finish(true) when it sees an empty queue.
-            if running then  -- guard: fn() could have called Cancel/OnCombat
+            if running then
                 scheduleNext(startToken)
             end
         end
-        -- If already running, the item was appended and the active timer
-        -- chain will pick it up on its next scheduleNext invocation.
     end
 
     function q:IsRunning()
@@ -139,51 +71,25 @@ local function RateQueue(interval, onDone)
     return q
 end
 
----------------------------------------------------------------------------
--- Module-level singleton queue used by DepositAllToWarband (and later by
--- Junk.SellJunk, which will create its own RateQueue instance instead).
--- Exposed via Transfers.IsRunning / Transfers.Cancel / Transfers.OnCombat
--- so bags.lua's PLAYER_REGEN_DISABLED route can reach it.
----------------------------------------------------------------------------
 local singleton = nil
 
----------------------------------------------------------------------------
--- Public API
----------------------------------------------------------------------------
 local Transfers = {}
 Bags.Transfers = Transfers
 
--- Expose the constructor for Junk and tests.
 Transfers.RateQueue = RateQueue
 
---- Deposit all warband-allowed items from player bags 0–5 into the warband
---- bank (Enum.BankType.Account). The caller must gate on an open warband
---- bank session; this function only filters by IsItemAllowedInBankType and
---- does not re-check the session state per step.
----
---- onDone(ok[, reason]) fires once: (true) all items deposited, or
---- (false, "combat"|"cancel") if aborted; refused outright with
---- (false, "busy") while any cursor/slot op (sort, deposit, sell) runs.
---- Shared refusal gate for cursor/slot ops (sort, deposit, sell, fill):
---- they must never overlap (wrong-item hazards).
 local OpsBusy = Bags.OpsShared.OpsBusy
 
 function Transfers.DepositAllToWarband(onDone)
-    -- shared ops gate: cursor/slot ops must never overlap (wrong-item hazards)
     if OpsBusy() then
         if onDone then onDone(false, "busy") end
         return
     end
 
-    -- Build the full list of (bag, slot) pairs that pass the filter now, so
-    -- the queue is deterministic regardless of mid-run bag changes. Live reads
-    -- are cheap at this point (at most 6×36 = 216 GetContainerItemInfo calls).
-    -- The occupant itemID is snapshotted alongside for per-tick re-validation.
     local pairs_list = {}
     for bagID = 0, 5 do
         local size = C_Container.GetContainerNumSlots(bagID) or 0
         for slot = 1, size do
-            -- GetContainerItemInfo: MayReturnNothing — guard nil
             local info = C_Container.GetContainerItemInfo(bagID, slot)
             if info then
                 local loc = ItemLocation:CreateFromBagAndSlot(bagID, slot)
@@ -194,7 +100,6 @@ function Transfers.DepositAllToWarband(onDone)
         end
     end
 
-    -- Empty bags → immediate success, nothing to queue.
     if #pairs_list == 0 then
         if onDone then onDone(true) end
         return
@@ -208,24 +113,13 @@ function Transfers.DepositAllToWarband(onDone)
     for _, p in ipairs(pairs_list) do
         local bag, slot, snapshotID = p.bag, p.slot, p.itemID
         singleton:Enqueue(function()
-            -- Per-tick re-validation: items can move under a queue (user
-            -- drags); never act on a slot whose occupant changed.
             local live = C_Container.GetContainerItemInfo(bag, slot)
             if not live or live.itemID ~= snapshotID then return end
-            -- C_Container.UseContainerItem with bankType =
-            -- Enum.BankType.Account triggers the deposit path
-            -- (ContainerDocumentation: 5-arg form; unitToken nil = self;
-            -- reagentBankOpen defaults false).
             C_Container.UseContainerItem(bag, slot, nil, Enum.BankType.Account)
         end)
     end
 end
 
---- Sweep crafting reagents from bags 0–4 into the reagent bag (bag 5):
---- merge into its partial stacks first, then fill empty slots. Plans once
---- against live state (ReagentFill.Plan over the sort executor's container
---- reader), executes through the paced queue with per-move source
---- re-validation. onDone(ok[, reason]) as elsewhere.
 function Transfers.FillReagentBag(onDone)
     if OpsBusy() then
         if onDone then onDone(false, "busy") end
@@ -248,7 +142,6 @@ function Transfers.FillReagentBag(onDone)
     end)
     for _, m in ipairs(moves) do
         singleton:Enqueue(function()
-            -- Source re-validation: never act on a slot whose occupant changed.
             local live = C_Container.GetContainerItemInfo(m.fromBag, m.fromSlot)
             if not live or live.itemID ~= m.itemID or live.isLocked then return end
             ClearCursor()
@@ -259,11 +152,6 @@ function Transfers.FillReagentBag(onDone)
     end
 end
 
---- Deposit all crafting reagents from bags 0–5 into the given bank type.
---- isCraftingReagent = C_Item.GetItemInfo return 17 (ItemDocumentation:617);
---- uncached items return nothing and are skipped (rare for carried
---- reagents). Account deposits additionally pass IsItemAllowedInBankType.
---- The caller gates on an open bank session, as with DepositAllToWarband.
 function Transfers.DepositReagents(bankType, onDone)
     if OpsBusy() then
         if onDone then onDone(false, "busy") end
@@ -307,9 +195,6 @@ function Transfers.DepositReagents(bankType, onDone)
     end
 end
 
---- behavior.autoDepositReagents: on a live bank open, deposit reagents into
---- the warband bank (account-wide reagent storage is the point; character-
---- only bankers no-op). Deferred a beat so the session fully settles.
 function Transfers.AutoDepositReagentsOnOpen()
     local s = GetSettings()
     if not (s and s.behavior and s.behavior.autoDepositReagents) then return end
@@ -321,19 +206,8 @@ function Transfers.AutoDepositReagentsOnOpen()
     end)
 end
 
----------------------------------------------------------------------------
--- Send-selected: the bag window's multi-select batch transfer.
----------------------------------------------------------------------------
-
--- Per-destination caps (verified in vendored FrameXML: MailFrame.lua:4
--- ATTACHMENTS_MAX_SEND = 12; TradeFrame.lua:2 MAX_TRADABLE_ITEMS = 6).
 local SEND_CAPS = { mail = 12, trade = 6 }
 
---- Which destination can take the current selection? state = booleans
---- { bankLive, bankType, guildLive, tradeOpen, mailSendOpen, merchantOpen } (the
---- caller reads the live surfaces; this stays pure). Priority settles
---- pathological overlaps: bank > guild > trade > mail > merchant.
---- → { key, verb[, bankType] } or nil when nothing is open (button hidden).
 function Transfers.ResolveSendDestination(state)
     if not state then return nil end
     if state.bankLive then
@@ -350,12 +224,6 @@ function Transfers.ResolveSendDestination(state)
     return nil
 end
 
---- Which destination owns a targeted right-click on a live bag item button?
---- state = booleans { bankTabSelected, auctionOpen } (the caller reads the
---- live surfaces; this stays pure). A banker and an auctioneer can't be
---- open at once — the priority just settles pathological overlaps.
---- → "bankTab" | "auction" | nil (catcher hidden, the template's own
---- OnClick handles the click).
 function Transfers.ResolveItemRightClickRoute(state)
     if not state then return nil end
     if state.bankTabSelected then return "bankTab" end
@@ -363,23 +231,6 @@ function Transfers.ResolveItemRightClickRoute(state)
     return nil
 end
 
---- Where should a right-click deposit into a SPECIFIC bank tab land? Restores
---- native stacking that the plain first-empty-slot placement broke: if the
---- tab already holds a partial stack of the same item WITH ROOM, return nil so
---- the caller deposits via C_Container.UseContainerItem — the server merges
---- into the partial stack (and handles overflow) exactly like the stock bag→
---- bank deposit. Only when nothing is mergeable does it return the first empty
---- slot for a targeted cursor placement into THIS tab; a full tab with no
---- mergeable partial also returns nil (the caller falls back to the server's
---- default placement).
----
---- size: C_Container.GetContainerNumSlots(tabID). occupantAt(slot) →
---- { itemID, stackCount, isLocked } | nil (empty), for slot = 1..size (feed it
---- C_Container.GetContainerItemInfo(tabID, slot)). sourceItemID: the item being
---- deposited. maxStack: its C_Item.GetItemMaxStackSizeByID (nil when the item
---- isn't cached → a same-item slot is treated as mergeable so the server can
---- stack it). A locked occupant is mid-move and never a merge target.
---- → slot number (targeted empty placement) | nil (deposit natively).
 function Transfers.ResolveDepositTargetSlot(size, occupantAt, sourceItemID, maxStack)
     local firstEmpty = nil
     for s = 1, (size or 0) do
@@ -388,20 +239,12 @@ function Transfers.ResolveDepositTargetSlot(size, occupantAt, sourceItemID, maxS
             if not firstEmpty then firstEmpty = s end
         elseif occ.itemID == sourceItemID and not occ.isLocked
             and (maxStack == nil or (maxStack > 1 and occ.stackCount < maxStack)) then
-            -- a same-item partial stack has room → let the server merge
             return nil
         end
     end
     return firstEmpty
 end
 
---- Send a snapshot list of cells ({ bag, slot, itemID }) to dest (from
---- ResolveSendDestination). Same machinery as DepositAllToWarband: the
---- shared ops gate, the paced queue, per-tick occupant re-validation.
---- UseContainerItem routes by the OPEN interaction for guild/mail/trade/
---- merchant (no bankType); the bank destination passes its explicit bankType
---- (the deposit path needs it).
---- Destination caps truncate the queue (mail 12, trade 6).
 function Transfers.UseSelected(cells, dest, onDone)
     if OpsBusy() then
         if onDone then onDone(false, "busy") end
@@ -428,7 +271,6 @@ function Transfers.UseSelected(cells, dest, onDone)
     for _, p in ipairs(list) do
         local bag, slot, snapshotID = p.bag, p.slot, p.itemID
         singleton:Enqueue(function()
-            -- never act on a slot whose occupant changed under the queue
             local live = C_Container.GetContainerItemInfo(bag, slot)
             if not live or live.itemID ~= snapshotID then return end
             C_Container.UseContainerItem(bag, slot, nil, bankType)
@@ -436,17 +278,14 @@ function Transfers.UseSelected(cells, dest, onDone)
     end
 end
 
---- Combat abort — bags.lua routes PLAYER_REGEN_DISABLED here.
 function Transfers.OnCombat()
     if singleton then singleton:OnCombat() end
 end
 
---- User abort.
 function Transfers.Cancel()
     if singleton then singleton:Cancel() end
 end
 
---- True while a DepositAllToWarband run is in progress.
 function Transfers.IsRunning()
     return singleton ~= nil
 end

@@ -16,13 +16,13 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local instanceframes = readFile("QUI_Skinning/skinning/frames/instanceframes.lua")
+local instanceframes = readFile("modules/skinning/frames/instanceframes.lua")
 local pveFrame = readFile("tests/framexml/Interface/AddOns/Blizzard_GroupFinder/Mainline/PVEFrame.lua")
 local pvpui = readFile("tests/framexml/Interface/AddOns/Blizzard_PVPUI/Mainline/Blizzard_PVPUI.lua")
 local challenges = readFile("tests/framexml/Interface/AddOns/Blizzard_ChallengesUI/Mainline/Blizzard_ChallengesUI.lua")
 
-assertContains(pveFrame, "UIParentLoadAddOn(panels[tabIndex].addon);",
-    "FrameXML must load PVP/Challenges addons inside PVEFrame_ShowFrame before the selected panel is shown")
+assertContains(pveFrame, "if not panels[tabIndex].loadFunc() then",
+    "FrameXML must load PVP/Challenges addons (12.1 loadFunc) inside PVEFrame_ShowFrame before the selected panel is shown")
 assertContains(pveFrame, "panel:Show();",
     "FrameXML must show the selected child panel synchronously after addon loading")
 assertContains(pveFrame, "function PVEFrameMixin:OnShow()",
@@ -141,7 +141,7 @@ do
         SkinBase = SkinBase,
     }
 
-    assert(loadfile("QUI_Skinning/skinning/frames/instanceframes.lua"))("QUI", ns)
+    assert(loadfile("modules/skinning/frames/instanceframes.lua"))("QUI", ns)
 
     assert(categorySkinCalls == 2, "LFG category rows must use SkinCategoryButton for selected-state visuals")
     assert(buttonSkinCalls == 2, "Start/Find action buttons should still use the regular button skin")

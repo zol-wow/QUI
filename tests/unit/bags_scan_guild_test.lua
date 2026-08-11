@@ -54,8 +54,8 @@ _G.GetGuildBankMoney = function() return 5000000 end
 _G.GetCurrentGuildBankTab = function() return 0 end
 
 local ns = loader.LoadAll(nil, "scan_guild.lua")
-ns.Bags.RequestDrain = function() end
-local Store, ScanGuild, Bus = ns.Bags.Store, ns.Bags.ScanGuild, ns.Bags.Bus
+ns.Storage.RequestDrain = function() end
+local Store, ScanGuild, Bus = ns.Storage.Store, ns.Storage.ScanGuild, ns.Storage.Bus
 
 _G.QUI_StorageDB = nil
 Store.Initialize()

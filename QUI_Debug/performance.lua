@@ -5,18 +5,11 @@ local Helpers = ns.Helpers
 local QUI_PerfMonitor = {}
 ns.QUI_PerfMonitor = QUI_PerfMonitor
 
--- Metric targets = the WHOLE QUI suite (core + every QUI_* sub-addon).
--- Pre-split, "QUI" was one monolithic addon so a single name captured all
--- memory/CPU. After the addon split the suite is core + ~16 sub-addons, each
--- with its own profiler/memory accounting; summing only "QUI" undercounts the
--- real footprint badly. Enumerate every LOADED addon whose name is "QUI" or
--- begins with "QUI_" (catches QUI_Debug itself too), rebuilt on ADDON_LOADED
--- so LOD members (Options, Bags, ...) that load after login are picked up.
 local metricTargets = {}
 
 local function IsQUIAddon(name)
     return name == PRIMARY_ADDON_NAME
-        or (type(name) == "string" and name:sub(1, 4) == "QUI_")
+        or (type(name) == "string" and name:sub(1, #"QUI_") == "QUI_")
 end
 
 local function RebuildMetricTargets()
@@ -31,7 +24,6 @@ local function RebuildMetricTargets()
             end
         end
     end
-    -- Never leave the list empty (enumeration unavailable, e.g. unit tests).
     if #metricTargets == 0 then
         metricTargets[1] = PRIMARY_ADDON_NAME
     end
@@ -86,7 +78,6 @@ local function SumScriptCPUUsage()
     return found and total or nil
 end
 
--- Constants
 local SAMPLE_INTERVAL = 1.0
 local MAX_HISTORY = 150
 local FRAME_WIDTH = 340
@@ -98,11 +89,10 @@ local GRAPH_WIDTH = 300
 local GRAPH_HEIGHT = 80
 local TOP_EVENTS_COUNT = 5
 local TOP_MODULES_COUNT = 7
-local ACCENT_R, ACCENT_G, ACCENT_B = 0.204, 0.827, 0.600 -- #34D399
+local ACCENT_R, ACCENT_G, ACCENT_B = 0.204, 0.827, 0.600
 local BG_R, BG_G, BG_B, BG_A = 0.08, 0.08, 0.08, 0.92
 local BORDER_R, BORDER_G, BORDER_B = 0.204, 0.827, 0.600
 
--- State
 local monitorFrame
 local isTracking = false
 local elapsed = 0
@@ -111,49 +101,41 @@ local currentMem = 0
 local peakMem = 0
 local totalMem = 0
 local sampleCount = 0
-local currentCPU = 0       -- ms per frame (profiler) or ms/sec (scriptProfile)
-local currentCPUPct = 0    -- percentage of frame time
+local currentCPU = 0
+local currentCPUPct = 0
 local memoryHistory = {}
-local cpuHistory = {}
 
--- CPU API tier: "profiler" | "scriptProfile" | nil
 local cpuAPITier
-local lastScriptCPU = 0    -- for scriptProfile delta tracking
-local lastScriptTime = 0   -- GetTime() at last scriptProfile sample
+local lastScriptCPU = 0
+local lastScriptTime = 0
 
--- Event counting
 local eventSnifferEnabled = false
-local eventCounts = {}      -- [eventName] = count since last sample
-local eventRates = {}       -- [eventName] = fires/sec (from last sample)
-local eventSniffer          -- hidden frame that registers all events
-local topEvents = {}        -- sorted {name, rate} for display
+local eventCounts = {}
+local eventRates = {}
+local eventSniffer
+local topEvents = {}
 
--- Module profiler
 local moduleProfileEnabled = false
-local moduleStats = {}        -- [name] = {ms = 0, count = 0} accumulator for current window
-local moduleRates = {}        -- [name] = {ms, calls} per-second for display
-local topModules = {}         -- sorted snapshot for display
-local profileRegistry = {}    -- [name] = {frame, scriptType, orig}
+local moduleStats = {}
+local moduleRates = {}
+local topModules = {}
+local profileRegistry = {}
 local debugprofilestart_fn = debugprofilestart
 local debugprofilestop_fn = debugprofilestop
 
--- UI references
 local memText, peakText, avgText, cpuText, sessionText, samplesText
 local graphBars = {}
 local graphMaxLabel
 local gcResultText
-local eventSection          -- container frame for the hot events section
-local eventRows = {}        -- fontstring pairs for top events
-local eventsToggleBtn       -- button to enable/disable event sniffer
-local moduleSection         -- container frame for the hot modules section
-local moduleRows = {}       -- fontstring triples (name/ms/calls) for top modules
-local modulesToggleBtn      -- button to enable/disable module profiler
-local graphContainer        -- the memory graph frame
-
--- ─── API Detection ───────────────────────────────────────────────────────────
+local eventSection
+local eventRows = {}
+local eventsToggleBtn
+local moduleSection
+local moduleRows = {}
+local modulesToggleBtn
+local graphContainer
 
 local function DetectCPUAPI()
-    -- Tier 1: C_AddOnProfiler (12.0+, no CVar needed)
     if C_AddOnProfiler and C_AddOnProfiler.GetAddOnMetric and Enum and Enum.AddOnProfilerMetric then
         local val = SumProfilerMetric(Enum.AddOnProfilerMetric.RecentAverageTime)
         if val ~= nil then
@@ -162,13 +144,11 @@ local function DetectCPUAPI()
         end
     end
 
-    -- Tier 2: GetAddOnCPUUsage (requires scriptProfile CVar)
     if GetAddOnCPUUsage and GetCVar and GetCVar("scriptProfile") == "1" then
         cpuAPITier = "scriptProfile"
         return
     end
 
-    -- Tier 3: memory only
     cpuAPITier = nil
 end
 
@@ -176,21 +156,12 @@ function QUI_PerfMonitor.GetCPUAPITier()
     return cpuAPITier
 end
 
--- ─── Module Profiler ─────────────────────────────────────────────────────────
---
--- Wraps `SetScript("OnEvent"|"OnUpdate")` handlers on registered module frames
--- with debugprofilestart/debugprofilestop timing. Lets us measure per-module
--- CPU cost within QUI without scriptProfile CVar or external tooling.
---
--- Modules opt in by pushing (name, frame, scriptType) onto `ns.QUI_PerfRegistry`
--- at file-load time. PerfMonitor drains the registry at bootstrap. The overhead
--- is zero when the profiler is disabled — the original handler runs untouched.
--- When enabled, each dispatch adds two debugprofile calls + a table-index add.
+local securecall = securecallfunction or function(fn, ...) return fn(...) end
 
 local function MakeWrappedHandler(name, orig)
     return function(...)
         debugprofilestart_fn()
-        orig(...)
+        securecall(orig, ...)
         local ms = debugprofilestop_fn()
         local s = moduleStats[name]
         if not s then
@@ -237,14 +208,8 @@ local function DrainPerfRegistry()
             end
         end
     end
-    -- Note: do NOT wipe(reg). The combat-end profiler reads ns.QUI_PerfRegistry
-    -- at /qui combatprof on time, after PLAYER_LOGIN drain. The dupe guard above
-    -- (`not profileRegistry[name]`) keeps re-drain idempotent without wiping.
-    -- The registry is naturally re-initialized on /reload via ns being fresh.
 end
 
--- Public API: modules may call this after performance.lua has loaded. Safe to
--- call multiple times.
 function QUI_PerfMonitor:Register(name, frame, scriptType)
     ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
     ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = {
@@ -252,11 +217,9 @@ function QUI_PerfMonitor:Register(name, frame, scriptType)
         frame = frame,
         scriptType = scriptType or "OnEvent",
     }
-    -- If the profiler already bootstrapped, drain now so the new entry is wrapped.
     if next(profileRegistry) ~= nil or moduleProfileEnabled then
         DrainPerfRegistry()
         if moduleProfileEnabled then
-            -- Only wrap the newly-added frame, not all (avoid double-wrap on existing ones).
             local info = profileRegistry[name]
             if info and info.frame:GetScript(info.scriptType) == info.orig then
                 info.frame:SetScript(info.scriptType, MakeWrappedHandler(name, info.orig))
@@ -301,8 +264,6 @@ local function SnapshotModuleRates(dt)
     table.sort(topModules, function(a, b) return a.ms > b.ms end)
 end
 
--- ─── Event Sniffer ───────────────────────────────────────────────────────────
-
 local function StartEventSniffer()
     if not eventSniffer then
         eventSniffer = CreateFrame("Frame")
@@ -310,18 +271,11 @@ local function StartEventSniffer()
     wipe(eventCounts)
     wipe(eventRates)
     wipe(topEvents)
-    -- Register only the events the QUI suite actually handles (generated set in
-    -- event_allowlist.lua) instead of RegisterAllEvents, so the readout is not
-    -- swamped by high-frequency events QUI never touches (UNIT_COMBAT,
-    -- COMBAT_LOG_EVENT_UNFILTERED, COMBAT_TEXT_UPDATE, ...). RegisterEvent
-    -- returns false for protected events and errors on unknown names, so any
-    -- over-harvested token is dropped here. Fall back to RegisterAllEvents if
-    -- the generated list is missing (e.g. running an un-regenerated tree).
     eventSniffer:UnregisterAllEvents()
     local allow = ns.QUI_EventAllowlist
     if allow and #allow > 0 then
         for i = 1, #allow do
-            pcall(eventSniffer.RegisterEvent, eventSniffer, allow[i])
+            ns.SafeCallMethod("best-effort-style", eventSniffer, "RegisterEvent", allow[i])
         end
     else
         eventSniffer:RegisterAllEvents()
@@ -352,15 +306,12 @@ local function SnapshotEventRates(dt)
     end
     wipe(eventCounts)
 
-    -- Sort for top N
     wipe(topEvents)
     for event, r in pairs(eventRates) do
         topEvents[#topEvents + 1] = { name = event, rate = r }
     end
     table.sort(topEvents, function(a, b) return a.rate > b.rate end)
 end
-
--- ─── Layout Toggle ───────────────────────────────────────────────────────────
 
 local function RefreshLayout()
     if not monitorFrame then return end
@@ -400,20 +351,16 @@ local function RefreshLayout()
         end
     end
 
-    -- Stack module section below event section when both are shown.
     if eventSnifferEnabled and moduleProfileEnabled then
         moduleSection:ClearAllPoints()
         moduleSection:SetPoint("TOPLEFT", eventSection, "BOTTOMLEFT", 0, -4)
         moduleSection:SetPoint("TOPRIGHT", eventSection, "BOTTOMRIGHT", 0, -4)
     elseif moduleProfileEnabled then
-        -- Anchor to same slot events would use
         moduleSection:ClearAllPoints()
         moduleSection:SetPoint("TOPLEFT", monitorFrame, "TOPLEFT", 0, moduleSection._baseY or -130)
         moduleSection:SetPoint("TOPRIGHT", monitorFrame, "TOPRIGHT", 0, moduleSection._baseY or -130)
     end
 end
-
--- ─── Sampling ────────────────────────────────────────────────────────────────
 
 local function FormatMemory(kb)
     if kb >= 1024 then
@@ -422,11 +369,7 @@ local function FormatMemory(kb)
     return format("%.1f KB", kb)
 end
 
-local function FormatTime(seconds)
-    local m = math.floor(seconds / 60)
-    local s = math.floor(seconds % 60)
-    return format("%d:%02d", m, s)
-end
+local FormatTime = Helpers.FormatMMSS
 
 local function PushHistory(history, value)
     history[#history + 1] = value
@@ -436,8 +379,7 @@ local function PushHistory(history, value)
 end
 
 local function Sample()
-    -- Memory
-    pcall(UpdateAddOnMemoryUsage)
+    ns.SafeCall("best-effort-style", UpdateAddOnMemoryUsage)
     local mem = SumAddonMemoryUsage()
     if mem then
         currentMem = mem
@@ -446,7 +388,6 @@ local function Sample()
         sampleCount = sampleCount + 1
     end
 
-    -- CPU — compute as percentage of total frame time
     local fps = GetFramerate()
     local frameTimeMs = fps > 0 and (1000 / fps) or 16.667
 
@@ -457,7 +398,7 @@ local function Sample()
             currentCPUPct = (val / frameTimeMs) * 100
         end
     elseif cpuAPITier == "scriptProfile" then
-        pcall(UpdateAddOnCPUUsage)
+        ns.SafeCall("best-effort-style", UpdateAddOnCPUUsage)
         local val = SumScriptCPUUsage()
         if val then
             local now = GetTime()
@@ -473,17 +414,12 @@ local function Sample()
         end
     end
 
-    -- Event rates (no-op if sniffer disabled)
     SnapshotEventRates(SAMPLE_INTERVAL)
 
-    -- Per-module rates (no-op if profiler disabled)
     SnapshotModuleRates(SAMPLE_INTERVAL)
 
     PushHistory(memoryHistory, currentMem)
-    PushHistory(cpuHistory, currentCPUPct)
 end
-
--- ─── Graph Update ────────────────────────────────────────────────────────────
 
 local function UpdateGraph()
     local count = #memoryHistory
@@ -514,8 +450,6 @@ local function UpdateGraph()
     end
 end
 
--- ─── UI Update ───────────────────────────────────────────────────────────────
-
 local function UpdateDisplay()
     if not monitorFrame or not monitorFrame:IsShown() then return end
 
@@ -534,7 +468,6 @@ local function UpdateDisplay()
     sessionText:SetText(FormatTime(GetTime() - sessionStart))
     samplesText:SetText(tostring(sampleCount))
 
-    -- Top events (only when sniffer is active)
     if eventSnifferEnabled then
         for i = 1, TOP_EVENTS_COUNT do
             local row = eventRows[i]
@@ -549,7 +482,6 @@ local function UpdateDisplay()
         end
     end
 
-    -- Top modules (only when profiler is active)
     if moduleProfileEnabled then
         for i = 1, TOP_MODULES_COUNT do
             local row = moduleRows[i]
@@ -569,8 +501,6 @@ local function UpdateDisplay()
     UpdateGraph()
 end
 
--- ─── OnUpdate Handler ────────────────────────────────────────────────────────
-
 local function OnUpdate(self, dt)
     elapsed = elapsed + dt
     if elapsed >= SAMPLE_INTERVAL then
@@ -579,8 +509,6 @@ local function OnUpdate(self, dt)
         UpdateDisplay()
     end
 end
-
--- ─── Frame Creation ──────────────────────────────────────────────────────────
 
 local function CreateStatRow(parent, label, yOffset)
     local labelFs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -616,13 +544,11 @@ local function CreateMonitorFrame()
     f:SetBackdropColor(BG_R, BG_G, BG_B, BG_A)
     f:SetBackdropBorderColor(BORDER_R, BORDER_G, BORDER_B, 0.8)
 
-    -- Title
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -8)
     title:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
     title:SetText("QUI Performance")
 
-    -- Close button
     local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
     closeBtn:SetScript("OnClick", function()
@@ -633,14 +559,12 @@ local function CreateMonitorFrame()
         StopModuleProfiler()
     end)
 
-    -- Accent separator
     local sep = f:CreateTexture(nil, "ARTWORK")
     sep:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -24)
     sep:SetPoint("TOPRIGHT", f, "TOPRIGHT", -8, -24)
     sep:SetHeight(1)
     sep:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.6)
 
-    -- Stats rows
     local y = -30
     local rowSpacing = -14
     memText = CreateStatRow(f, "Memory:", y)
@@ -655,7 +579,6 @@ local function CreateMonitorFrame()
     y = y + rowSpacing
     samplesText = CreateStatRow(f, "Samples:", y)
 
-    -- ─── Hot Events section (hidden by default) ─────────────────────────────
     y = y + rowSpacing - 4
     eventSection = CreateFrame("Frame", nil, f)
     eventSection:SetPoint("TOPLEFT", f, "TOPLEFT", 0, y)
@@ -695,9 +618,8 @@ local function CreateMonitorFrame()
         ey = ey + rowSpacing
     end
 
-    -- ─── Hot Modules section (hidden by default) ────────────────────────────
     moduleSection = CreateFrame("Frame", nil, f)
-    moduleSection._baseY = y  -- remember original anchor Y for solo positioning
+    moduleSection._baseY = y
     moduleSection:SetPoint("TOPLEFT", f, "TOPLEFT", 0, y)
     moduleSection:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, y)
     moduleSection:SetHeight(TOP_MODULES_COUNT * (-rowSpacing) + 22)
@@ -745,7 +667,6 @@ local function CreateMonitorFrame()
         my = my + rowSpacing
     end
 
-    -- ─── Memory Graph (anchored to bottom so it shifts with frame height) ───
     graphContainer = CreateFrame("Frame", nil, f, "BackdropTemplate")
     graphContainer:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 36)
     graphContainer:SetSize(GRAPH_WIDTH, GRAPH_HEIGHT)
@@ -757,7 +678,6 @@ local function CreateMonitorFrame()
     graphContainer:SetBackdropColor(0.04, 0.04, 0.04, 0.8)
     graphContainer:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.6)
 
-    -- Grid lines at 25%, 50%, 75%
     for _, pct in ipairs({ 0.25, 0.50, 0.75 }) do
         local line = graphContainer:CreateTexture(nil, "ARTWORK")
         line:SetPoint("LEFT", graphContainer, "BOTTOMLEFT", 1, GRAPH_HEIGHT * pct)
@@ -766,13 +686,11 @@ local function CreateMonitorFrame()
         line:SetColorTexture(0.3, 0.3, 0.3, 0.4)
     end
 
-    -- Y-axis max label
     graphMaxLabel = graphContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     graphMaxLabel:SetPoint("TOPRIGHT", graphContainer, "TOPRIGHT", -4, -2)
     graphMaxLabel:SetTextColor(0.5, 0.5, 0.5)
     graphMaxLabel:SetText("")
 
-    -- Pre-create bar textures
     local barWidth = GRAPH_WIDTH / MAX_HISTORY
     for i = 1, MAX_HISTORY do
         local bar = graphContainer:CreateTexture(nil, "OVERLAY")
@@ -784,7 +702,6 @@ local function CreateMonitorFrame()
         graphBars[i] = bar
     end
 
-    -- ─── Bottom buttons ─────────────────────────────────────────────────────
     local gcBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     gcBtn:SetSize(80, 20)
     gcBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
@@ -833,8 +750,6 @@ local function CreateMonitorFrame()
     return f
 end
 
--- ─── Toggle / Start / Stop ───────────────────────────────────────────────────
-
 local function ResetSession()
     elapsed = 0
     sessionStart = GetTime()
@@ -847,7 +762,6 @@ local function ResetSession()
     lastScriptCPU = 0
     lastScriptTime = 0
     memoryHistory = {}
-    cpuHistory = {}
     wipe(eventCounts)
     wipe(eventRates)
     wipe(topEvents)
@@ -862,12 +776,10 @@ local function StartTracking()
     end
     ResetSession()
 
-    -- Reset graph bars
     for i = 1, MAX_HISTORY do
         graphBars[i]:Hide()
     end
 
-    -- Reset event rows
     for i = 1, TOP_EVENTS_COUNT do
         eventRows[i].name:SetText("")
         eventRows[i].rate:SetText("")
@@ -878,7 +790,6 @@ local function StartTracking()
     monitorFrame:SetScript("OnUpdate", OnUpdate)
     RefreshLayout()
 
-    -- Take first sample immediately
     Sample()
     UpdateDisplay()
 end
@@ -901,24 +812,18 @@ local function Toggle()
     end
 end
 
--- Expose for slash command
 _G.QUI_TogglePerfMonitor = Toggle
-
--- ─── Bootstrap ───────────────────────────────────────────────────────────────
 
 local bootstrap = CreateFrame("Frame")
 bootstrap:RegisterEvent("PLAYER_LOGIN")
 bootstrap:RegisterEvent("ADDON_LOADED")
 bootstrap:SetScript("OnEvent", function(self, event, addonName)
     if event == "ADDON_LOADED" then
-        -- LOD suite members (Options, Bags, ...) load after login; refold them
-        -- into the metric target list so their memory/CPU is counted.
         if IsQUIAddon(addonName) then
             RebuildMetricTargets()
         end
         return
     end
-    -- PLAYER_LOGIN
     DetectCPUAPI()
     DrainPerfRegistry()
     RebuildMetricTargets()

@@ -19,7 +19,7 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local shared = readFile("QUI_Alts/alts/views/shared.lua")
+local shared = readFile("modules/alts/views/shared.lua")
 assertContains(shared, "local function CJKFont(fs, p, s, f)",
     "Alts shared helpers must expose a CJK font wrapper")
 assertContains(shared, "CJKFont(fs, Shared.GeneralFont(), size or 11, Shared.GeneralOutline())",
@@ -27,7 +27,7 @@ assertContains(shared, "CJKFont(fs, Shared.GeneralFont(), size or 11, Shared.Gen
 assertAbsent(shared, "fs:SetFont(Shared.GeneralFont(), size or 11, Shared.GeneralOutline())",
     "Shared.MakeFS must not use raw SetFont")
 
-local filterPopup = readFile("QUI_Alts/alts/views/filter_popup.lua")
+local filterPopup = readFile("modules/alts/views/filter_popup.lua")
 assertContains(filterPopup, "CJKFont(sb, GeneralFont(), 11, GeneralOutline())",
     "filter popup search box must route through the CJK font wrapper")
 assertAbsent(filterPopup, "sb:SetFont(GeneralFont(), 11, GeneralOutline())",

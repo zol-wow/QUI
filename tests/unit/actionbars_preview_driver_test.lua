@@ -200,4 +200,13 @@ assert(source:find("normal:SetVertexColor", 1, true)
     or source:find(".normal:SetVertexColor", 1, true),
     "push_flash phase must drive pb.normal:SetVertexColor for the flash effect")
 
+local teardownStart = assert(source:find("function ActionBarsPreviewDriver.Teardown", 1, true),
+    "Teardown definition required")
+assert(not source:find("state.previewButtons = {}", teardownStart, true),
+    "Teardown must pool previewButtons (WoW frames are never reclaimed)")
+assert(not source:find("state.previewHost = nil", teardownStart, true),
+    "Teardown must pool previewHost for reuse by the next Build")
+assert(source:find("previewHost:SetParent(host)", 1, true),
+    "Build must reparent the pooled previewHost instead of creating a new one")
+
 print("OK: actionbars_preview_driver_test")

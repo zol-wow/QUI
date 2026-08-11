@@ -16,8 +16,8 @@ ns.Storage = { Store = {}, Bus = {} }
 -- currencies.lua reads Alts.Window.RegisterTab at file end; stub it.
 ns.Alts = { Window = { RegisterTab = function() end } }
 
-assert(loadfile("QUI_Alts/alts/views/shared.lua"))("QUI", ns)
-assert(loadfile("QUI_Alts/alts/views/currencies.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/shared.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/currencies.lua"))("QUI", ns)
 
 local CV = ns.Alts.CurrenciesView
 assert(CV, "CurrenciesView exported")

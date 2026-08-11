@@ -1,29 +1,3 @@
---[[
-    QUI Action Bars Live Preview Driver
-
-    Drives the Action Bars tile preview pane: owns the preview-button
-    mocks (frame + icon + normal/gloss/backdrop + hotkey/name/count
-    fontstrings + Cooldown child), the OnUpdate ticker, and the per-button
-    cycle script that walks each button through idle / cooldown swipe /
-    ready_glow / push_flash / charges phases. The cycle is layered on top
-    of the existing live-mirror behavior: real spell textures and
-    hotkey/macro/count text come from the selected real bar's runtime
-    state; cooldown/glow/charges/push are simulated.
-
-    Public surface:
-        ns.QUI_ActionBarsPreviewDriver.Build(host)
-        ns.QUI_ActionBarsPreviewDriver.Refresh()
-        ns.QUI_ActionBarsPreviewDriver.SetSelectedBar(barKey)
-        ns.QUI_ActionBarsPreviewDriver.Teardown()
-        ns.QUI_ActionBarsPreviewDriver.IsPreviewable(barKey)
-
-    Invariants:
-        * No game events are registered. Cycle is time-driven.
-        * Driver never wraps or replaces real LibActionButton buttons.
-        * LibCustomGlow keys are scoped to "_QUIActionBarsPreviewGlow".
-        * Driver does not modify the live action bar.
-]]
-
 local _, ns = ...
 
 local QUI = QUI
@@ -43,9 +17,6 @@ end
 local ActionBarsPreviewDriver = {}
 ns.QUI_ActionBarsPreviewDriver = ActionBarsPreviewDriver
 
----------------------------------------------------------------------------
--- Constants (migrated from action_bars_content.lua in T2)
----------------------------------------------------------------------------
 local BAR_OFFSETS = {
     bar1 = 0,    bar2 = 60,   bar3 = 48,   bar4 = 24,
     bar5 = 36,   bar6 = 144,  bar7 = 156,  bar8 = 168,
@@ -68,9 +39,6 @@ local PREVIEW_TEXTURES = {
 local MAX_PREVIEW_BUTTONS = 12
 local SAMPLE_PREVIEW_KEYBINDS = { "1", "2", "3", "4", "R", "F", "C", "V", "Q", "E", "T", "G" }
 
----------------------------------------------------------------------------
--- Live-mirror helpers (migrated from action_bars_content.lua in T2)
----------------------------------------------------------------------------
 local function FormatPreviewKeybind(keybind)
     if QUI and QUI.FormatKeybind then
         return QUI.FormatKeybind(keybind)
@@ -143,22 +111,19 @@ local function FormatPreviewKeybind(keybind)
     return upper
 end
 
-local function IsSecretValue(value)
+local function IsPreviewSecretValue(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value) or false
 end
 
-local IsPreviewSecretValue = IsSecretValue
-
 local function HasPreviewTextValue(value)
-    if IsSecretValue(value) then
-        return true
+    if IsPreviewSecretValue(value) then
+        return true -- @secret-policy: route-to-text-sink
     end
     if value == nil then return false end
     return value ~= ""
 end
 
 local function ResolveContext()
-    -- Mirrors content.lua's local — pure helper, duplication intentional.
     local db = GetDB and GetDB()
     if not db or not db.actionBars then return nil end
     return {
@@ -197,9 +162,6 @@ local function GetPreviewSlot(barKey, index)
         and ns.ActionBarsOwned.nativeButtons[barKey]
     local button = buttons and buttons[index]
     local liveAction = button and button.action
-    if Helpers.SafeValue then
-        liveAction = Helpers.SafeValue(liveAction, nil)
-    end
     local numericAction = liveAction and tonumber(liveAction)
     if numericAction and numericAction > 0 then
         return numericAction
@@ -218,10 +180,6 @@ end
 
 local function GetPreviewActionSlot(slot, sourceButton)
     local liveAction = sourceButton and sourceButton.action
-    if Helpers.SafeValue then
-        liveAction = Helpers.SafeValue(liveAction, nil)
-    end
-
     local numericAction = liveAction and tonumber(liveAction)
     if numericAction and numericAction > 0 then
         return numericAction
@@ -316,7 +274,7 @@ local function GetPreviewCountText(slot, sourceButton)
     local ok, count = pcall(C_ActionBar.GetActionDisplayCount, actionSlot)
     if not ok then return nil end
 
-    if IsSecretValue(count) then
+    if IsPreviewSecretValue(count) then
         return count
     else
         if count == nil or count == "" or count == 0 or count == "0" then
@@ -327,9 +285,6 @@ local function GetPreviewCountText(slot, sourceButton)
     end
 end
 
--- Derive horizontal/vertical justification from the anchor point name and
--- apply the (defaulted-to-white) text color. Shared by SetPreviewTextStyle and
--- SetPreviewCooldownTextStyle, which applied this identical block.
 local function ApplyJustifyAndColor(fontString, point, color)
     if point:find("LEFT") then
         fontString:SetJustifyH("LEFT")
@@ -356,10 +311,8 @@ end
 
 local function SetPreviewTextStyle(fontString, button, text, fontPath, outline, fontSize, color, anchor, offsetX, offsetY)
     if not fontString then return end
-    local isSecretText = IsSecretValue(text)
+    local isSecretText = IsPreviewSecretValue(text)
     if isSecretText then
-        -- Secret text can be passed directly to SetText below, but must not be
-        -- inspected in Lua.
     elseif text == nil or text == "" then
         fontString:SetText("")
         fontString:SetAlpha(0)
@@ -419,12 +372,6 @@ local function SetPreviewCooldownTextStyle(cooldown, button, settings, fontPath,
     fontString:Show()
 end
 
----------------------------------------------------------------------------
--- Preview-scoped glow helper
--- Uses LibCustomGlow with a preview-only key so preview glows can never
--- collide with runtime glow state on the same spell icon (runtime uses
--- a different key on real action buttons).
----------------------------------------------------------------------------
 local PREVIEW_GLOW_KEY = "_QUIActionBarsPreviewGlow"
 
 local function GetLCG()
@@ -453,21 +400,19 @@ end
 local function StopGlow(pb)
     local LCG = GetLCG()
     if not LCG or not pb or not pb.frame then return end
-    -- Stop every style defensively — the user may have changed glowStyle
-    -- mid-cycle and we don't know which one is currently active.
     if LCG.PixelGlow_Stop    then LCG.PixelGlow_Stop(pb.frame, PREVIEW_GLOW_KEY)    end
     if LCG.AutoCastGlow_Stop then LCG.AutoCastGlow_Stop(pb.frame, PREVIEW_GLOW_KEY) end
     if LCG.ButtonGlow_Stop   then LCG.ButtonGlow_Stop(pb.frame)                    end
 end
 
----------------------------------------------------------------------------
--- Driver state
----------------------------------------------------------------------------
 local state = {
     host             = nil,
     ticker           = nil,
-    previewButtons   = {},   -- array of preview button records
-    buttonState      = {},   -- per-button cycle records (keyed by button frame)
+    previewHost      = nil,
+    previewButtons   = {},
+    buttonState      = {},
+    layoutCount      = 0,
+    autoHeight       = nil,
     selectedBar      = "bar1",
     glowOwnerIdx     = 1,
     glowOwnerT       = 0,
@@ -475,28 +420,117 @@ local state = {
     chargeOwnerT     = 0,
 }
 
----------------------------------------------------------------------------
--- Per-button cycle state
----------------------------------------------------------------------------
+local function IncludeContentBounds(object, bounds, onlyWhenShown)
+    if not object then return end
+    if onlyWhenShown and object.IsShown and not object:IsShown() then return end
+
+    local top = object.GetTop and object:GetTop()
+    local bottom = object.GetBottom and object:GetBottom()
+    if Helpers.IsSecretValue(top) or Helpers.IsSecretValue(bottom) then
+        bounds.unmeasurable = true -- @secret-policy: defer-until-readable — caller keeps last good height
+        return
+    end
+    if top and bottom then
+        bounds.top = bounds.top and math.max(bounds.top, top) or top
+        bounds.bottom = bounds.bottom and math.min(bounds.bottom, bottom) or bottom
+    end
+end
+
+local function MeasurePreviewContentHeight()
+    local previewHost = state.previewHost
+    if not previewHost then return 0 end
+
+    local bounds = {}
+    for i = 1, state.layoutCount do
+        local pb = state.previewButtons[i]
+        if pb and pb.frame then
+            IncludeContentBounds(pb.frame, bounds, false)
+            if not pb.frame.IsShown or pb.frame:IsShown() then
+                IncludeContentBounds(pb.hotkey, bounds, true)
+                IncludeContentBounds(pb.name, bounds, true)
+                IncludeContentBounds(pb.count, bounds, true)
+                local cooldownText = pb.cooldown and pb.cooldown.GetCountdownFontString
+                    and pb.cooldown:GetCountdownFontString()
+                IncludeContentBounds(cooldownText, bounds, true)
+            end
+        end
+    end
+
+    if bounds.unmeasurable then return nil end
+    if not bounds.top or not bounds.bottom then return 0 end
+
+    local centerY
+    if previewHost.GetCenter then
+        local _, cy = previewHost:GetCenter()
+        centerY = cy
+    end
+    if Helpers.IsSecretValue(centerY) then return nil end -- @secret-policy: defer-until-readable — nil keeps last good height
+    if centerY then
+        local radius = math.max(
+            math.abs(bounds.top - centerY),
+            math.abs(bounds.bottom - centerY)
+        )
+        return radius * 2
+    end
+    return math.max(0, bounds.top - bounds.bottom)
+end
+
+local function ResizePreviewToContent(host)
+    local options = state.autoHeight
+    if not host or not options or options.autoHeight == false then return end
+
+    local contentHeight = MeasurePreviewContentHeight()
+    if not contentHeight then return end
+    local desiredHeight = math.floor(
+        contentHeight
+        + (options.chromeHeight or 0)
+        + (options.verticalPadding or 0) * 2
+        + 0.5
+    )
+    desiredHeight = math.max(options.minHeight or 0, desiredHeight)
+
+    local currentHeight = host.GetHeight and host:GetHeight() or 0
+    if math.abs(currentHeight - desiredHeight) <= 0.5 then return end
+
+    host._previewAutoHeightApplying = true
+    host:SetHeight(desiredHeight)
+    host._previewAutoHeightApplying = nil
+end
+
+local function RequestPreviewAutoHeight()
+    local host = state.host
+    if not host or not state.autoHeight or state.autoHeight.autoHeight == false
+        or host._previewAutoHeightPending then
+        return
+    end
+
+    host._previewAutoHeightPending = true
+    local function Apply()
+        host._previewAutoHeightPending = nil
+        if state.host == host then
+            ResizePreviewToContent(host)
+        end
+    end
+
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, Apply)
+    else
+        Apply()
+    end
+end
+
 local function InitButtonState(pb)
     state.buttonState[pb.frame] = {
-        phaseIdx     = 1,                          -- entry phase index
-        t            = math.random() * 5,          -- random phase offset (staggers cycles)
-        cooldownDur  = 4 + math.random() * 8,      -- 4–12s randomized per button
-        chargeMax    = math.random(2, 4),          -- 2–4 charges when this button is the charge-owner
+        phaseIdx     = 1,
+        t            = math.random() * 5,
+        cooldownDur  = 4 + math.random() * 8,
+        chargeMax    = math.random(2, 4),
     }
 end
 
----------------------------------------------------------------------------
--- Cycle script catalog
--- Each preview button advances independently with a random initial phase
--- offset, so the panel always shows a mix of states at any given moment.
--- ready_glow and charges are gated by global owner indexes (see T6, T7);
--- non-owner buttons in those phases look like idle.
----------------------------------------------------------------------------
 local ACTION_BUTTON_PHASES = {
     { phase = "idle",        duration = 0.6  },
-    { phase = "cooldown",    duration = 7    },   -- per-button override via buttonState.cooldownDur
+    { phase = "cooldown",    duration = 7    },
     { phase = "ready_glow",  duration = 1.5  },
     { phase = "push_flash",  duration = 0.15 },
     { phase = "charges",     duration = 2.5  },
@@ -505,28 +539,21 @@ local ACTION_BUTTON_PHASES = {
 local function PhaseDuration(phaseIdx, bs)
     local phase = ACTION_BUTTON_PHASES[phaseIdx]
     if not phase then return 1 end
-    -- The "cooldown" phase uses per-button randomized duration so cycles stagger.
     if phase.phase == "cooldown" then
         return bs.cooldownDur or phase.duration
     end
     return phase.duration
 end
 
----------------------------------------------------------------------------
--- Glow-owner rotation
--- Only one preview button glows at a time. Owner advances every 1.5s.
----------------------------------------------------------------------------
 local function AdvanceGlowOwner(elapsed)
     if #state.previewButtons == 0 then return end
     state.glowOwnerT = state.glowOwnerT + elapsed
     if state.glowOwnerT < 1.5 then return end
     state.glowOwnerT = 0
 
-    -- Stop glow on previous owner
     local prev = state.previewButtons[state.glowOwnerIdx]
     if prev then StopGlow(prev) end
 
-    -- Advance index, start glow on new owner if it has a texture
     state.glowOwnerIdx = (state.glowOwnerIdx % #state.previewButtons) + 1
     local nextButton = state.previewButtons[state.glowOwnerIdx]
     if nextButton and nextButton.icon and nextButton.icon:GetTexture() then
@@ -535,32 +562,21 @@ local function AdvanceGlowOwner(elapsed)
     end
 end
 
----------------------------------------------------------------------------
--- Charge-owner rotation
--- Only one preview button displays charge text at a time. Owner advances
--- every 2.5s. Prevents preview-looks-like-every-spell-has-charges.
----------------------------------------------------------------------------
 local function AdvanceChargeOwner(elapsed)
     if #state.previewButtons == 0 then return end
     state.chargeOwnerT = state.chargeOwnerT + elapsed
     if state.chargeOwnerT < 2.5 then return end
     state.chargeOwnerT = 0
 
-    -- Hide charge text on previous owner
     local prev = state.previewButtons[state.chargeOwnerIdx]
     if prev and prev.count then
         prev.count:SetText("")
         prev.count:Hide()
     end
 
-    -- Advance index. The owning button shows charges during its `charges` phase.
     state.chargeOwnerIdx = (state.chargeOwnerIdx % #state.previewButtons) + 1
 end
 
----------------------------------------------------------------------------
--- Per-button phase application (T5: idle + cooldown; T6 adds ready_glow;
--- T7 adds charges; T8 adds push_flash)
----------------------------------------------------------------------------
 local function ApplyPhase(pb, bs, phaseName, phaseT)
     if not pb.cooldown or not pb.icon then return end
 
@@ -569,8 +585,6 @@ local function ApplyPhase(pb, bs, phaseName, phaseT)
         pb.cooldown:Hide()
         pb.icon:SetDesaturated(false)
     elseif phaseName == "cooldown" then
-        -- Re-arm only on phase entry; calling SetCooldown every frame would
-        -- reset start to GetTime() each frame and freeze the swipe at frame 0.
         if phaseT < 0.05 then
             pb.cooldown:Show()
             pb.cooldown:SetCooldown(GetTime(), bs.cooldownDur or 7)
@@ -580,22 +594,16 @@ local function ApplyPhase(pb, bs, phaseName, phaseT)
         pb.cooldown:Clear()
         pb.cooldown:Hide()
         pb.icon:SetDesaturated(false)
-        -- Glow is owned by the rotating glowOwner, not every button.
     elseif phaseName == "push_flash" then
         pb.cooldown:Clear()
         pb.cooldown:Hide()
         pb.icon:SetDesaturated(false)
-        -- Skip the flash entirely when an active tint is already coloring the
-        -- icon — flashing on top of a tint looks like the tint blinks.
         if bs.tintActive then return end
-        -- Brief dim on the normal-texture overlay, restored at the end of the phase.
         if pb.normal then
             local PHASE_DUR = 0.15
             if phaseT < PHASE_DUR * 0.5 then
-                -- First half: dim
                 pb.normal:SetVertexColor(0.3, 0.3, 0.3, 1)
             else
-                -- Second half: restore
                 pb.normal:SetVertexColor(0, 0, 0, 1)
             end
         end
@@ -603,7 +611,6 @@ local function ApplyPhase(pb, bs, phaseName, phaseT)
         pb.cooldown:Clear()
         pb.cooldown:Hide()
         pb.icon:SetDesaturated(false)
-        -- Charge text only shown when this button is the current charge-owner.
         if pb.idx == state.chargeOwnerIdx and pb.count then
             local total = bs.chargeMax or 3
             local remaining = math.max(0, total - math.floor(phaseT * (total / 2.5)))
@@ -622,9 +629,6 @@ local function AdvanceButton(pb, elapsed)
     local bs = state.buttonState[pb.frame]
     if not bs then return end
 
-    -- Empty slots (no live texture) skip the cycle and stay in idle. This
-    -- avoids cycling cooldown / glow on slots with no spell, which would
-    -- look broken. The texture is set every Refresh — read it here.
     local tex = pb.icon and pb.icon:GetTexture()
     if not tex then
         ApplyPhase(pb, bs, "idle", 0)
@@ -644,86 +648,101 @@ local function AdvanceButton(pb, elapsed)
     ApplyPhase(pb, bs, phaseName, bs.t)
 end
 
----------------------------------------------------------------------------
--- Public surface
----------------------------------------------------------------------------
-
-function ActionBarsPreviewDriver.Build(host)
-    if state.ticker then return end  -- idempotent
+function ActionBarsPreviewDriver.Build(host, options)
+    if state.host == host then
+        state.autoHeight = options or state.autoHeight
+        return
+    end
+    if state.host then
+        ActionBarsPreviewDriver.Teardown()
+    end
     state.host = host
+    state.autoHeight = options
 
-    local previewHost = CreateFrame("Frame", nil, host)
+    local previewHost = state.previewHost
+    if previewHost then
+        previewHost:SetParent(host)
+        previewHost:ClearAllPoints()
+    else
+        previewHost = CreateFrame("Frame", nil, host)
+        state.previewHost = previewHost
+    end
     previewHost:SetPoint("TOPLEFT",  host, "TOPLEFT",  12, -30)
     previewHost:SetPoint("TOPRIGHT", host, "TOPRIGHT", -12, -30)
     previewHost:SetPoint("BOTTOM",   host, "BOTTOM",   0,  12)
-    state.previewHost = previewHost
+    previewHost:Show()
 
-    -- Build MAX_PREVIEW_BUTTONS preview-button records. Each bundles the
-    -- visual pieces QUI's real SkinButton applies (backdrop, icon, normal,
-    -- gloss, hotkey/name/count fontstrings). Cooldown child is attached
-    -- in Task 4.
-    for i = 1, MAX_PREVIEW_BUTTONS do
-        local b = CreateFrame("Frame", nil, previewHost)
+    if #state.previewButtons > 0 then
+        for _, pb in ipairs(state.previewButtons) do
+            InitButtonState(pb)
+        end
+    else
+        for i = 1, MAX_PREVIEW_BUTTONS do
+            local b = CreateFrame("Frame", nil, previewHost)
 
-        local backdrop = b:CreateTexture(nil, "BACKGROUND", nil, -8)
-        backdrop:SetAllPoints(b)
-        backdrop:SetColorTexture(0, 0, 0, 1)
+            local backdrop = b:CreateTexture(nil, "BACKGROUND", nil, -8)
+            backdrop:SetAllPoints(b)
+            backdrop:SetColorTexture(0, 0, 0, 1)
 
-        local icon = b:CreateTexture(nil, "ARTWORK")
-        icon:SetAllPoints(b)
+            local icon = b:CreateTexture(nil, "ARTWORK")
+            icon:SetAllPoints(b)
 
-        local normal = b:CreateTexture(nil, "OVERLAY", nil, 1)
-        normal:SetAllPoints(b)
-        normal:SetTexture(PREVIEW_TEXTURES.normal)
-        normal:SetVertexColor(0, 0, 0, 1)
+            local normal = b:CreateTexture(nil, "OVERLAY", nil, 1)
+            normal:SetAllPoints(b)
+            normal:SetTexture(PREVIEW_TEXTURES.normal)
+            normal:SetVertexColor(0, 0, 0, 1)
 
-        local gloss = b:CreateTexture(nil, "OVERLAY", nil, 2)
-        gloss:SetAllPoints(b)
-        gloss:SetTexture(PREVIEW_TEXTURES.gloss)
-        gloss:SetBlendMode("ADD")
-        gloss:Hide()
+            local gloss = b:CreateTexture(nil, "OVERLAY", nil, 2)
+            gloss:SetAllPoints(b)
+            gloss:SetTexture(PREVIEW_TEXTURES.gloss)
+            gloss:SetBlendMode("ADD")
+            gloss:Hide()
 
-        local hotkey = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        hotkey:SetWordWrap(false)
-        hotkey:SetShadowOffset(1, -1)
-        if hotkey.SetMaxLines then hotkey:SetMaxLines(1) end
+            local hotkey = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            hotkey:SetWordWrap(false)
+            hotkey:SetShadowOffset(1, -1)
+            if hotkey.SetMaxLines then hotkey:SetMaxLines(1) end
 
-        local name = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        name:SetWordWrap(false)
-        name:SetShadowOffset(1, -1)
-        if name.SetMaxLines then name:SetMaxLines(1) end
+            local name = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            name:SetWordWrap(false)
+            name:SetShadowOffset(1, -1)
+            if name.SetMaxLines then name:SetMaxLines(1) end
 
-        local count = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        count:SetWordWrap(false)
-        count:SetShadowOffset(1, -1)
-        if count.SetMaxLines then count:SetMaxLines(1) end
+            local count = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            count:SetWordWrap(false)
+            count:SetShadowOffset(1, -1)
+            if count.SetMaxLines then count:SetMaxLines(1) end
 
-        local cooldown = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
-        cooldown:SetAllPoints(b)
-        cooldown:SetDrawSwipe(true)
-        cooldown:SetHideCountdownNumbers(false)
-        cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
-        cooldown:SetSwipeColor(0, 0, 0, 0.8)
-        cooldown:SetDrawBling(false)
-        cooldown:EnableMouse(false)
-        cooldown:Hide()
+            local cooldown = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
+            cooldown:SetAllPoints(b)
+            cooldown:SetDrawSwipe(true)
+            cooldown:SetHideCountdownNumbers(false)
+            cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
+            cooldown:SetSwipeColor(0, 0, 0, 0.8)
+            cooldown:SetDrawBling(false)
+            cooldown:EnableMouse(false)
+            cooldown:Hide()
 
-        state.previewButtons[i] = {
-            frame    = b,
-            icon     = icon,
-            backdrop = backdrop,
-            normal   = normal,
-            gloss    = gloss,
-            hotkey   = hotkey,
-            name     = name,
-            count    = count,
-            cooldown = cooldown,
-            idx      = i,
-        }
-        InitButtonState(state.previewButtons[i])
+            state.previewButtons[i] = {
+                frame    = b,
+                icon     = icon,
+                backdrop = backdrop,
+                normal   = normal,
+                gloss    = gloss,
+                hotkey   = hotkey,
+                name     = name,
+                count    = count,
+                cooldown = cooldown,
+                idx      = i,
+            }
+            InitButtonState(state.previewButtons[i])
+        end
     end
 
-    state.ticker = CreateFrame("Frame", nil, host)
+    if not state.ticker then
+        state.ticker = CreateFrame("Frame", nil, previewHost)
+    end
+    state.ticker:Show()
     state.ticker:SetScript("OnUpdate", function(_, elapsed)
         for _, pb in ipairs(state.previewButtons) do
             AdvanceButton(pb, elapsed)
@@ -761,13 +780,12 @@ function ActionBarsPreviewDriver.Refresh()
         }
     end
 
-    -- Keep one placeholder visible on completely empty bars so the tile
-    -- preview does not disappear while tuning layout settings.
     if not hasAnyTexture and previewSlots[1] then
         previewSlots[1].hiddenEmpty = false
     end
 
     local visibleCount = requestedVisible
+    state.layoutCount = visibleCount
     local buttonSize = math.max(20, layout.buttonSize or 30)
     local buttonSpacing = layout.buttonSpacing or 0
     local columns = math.max(1, math.min(layout.columns or visibleCount, visibleCount))
@@ -884,8 +902,6 @@ function ActionBarsPreviewDriver.Refresh()
                     end
                     pb.icon:SetAlpha(1)
 
-                    -- Record tint-active state for the cycle's push_flash phase
-                    -- (push_flash skips when a tint is already coloring the icon).
                     local bs = state.buttonState[pb.frame]
                     if bs then
                         bs.tintActive = (settings.rangeIndicator and not inRange)
@@ -954,13 +970,14 @@ function ActionBarsPreviewDriver.Refresh()
             end
         end
     end
+
+    RequestPreviewAutoHeight()
 end
 
 function ActionBarsPreviewDriver.SetSelectedBar(barKey)
     if not barKey then return end
     state.selectedBar = barKey
 
-    -- Bar changed → reset all per-button cycle state (different bar, different spells).
     state.buttonState = {}
     for _, pb in ipairs(state.previewButtons) do
         InitButtonState(pb)
@@ -980,10 +997,15 @@ function ActionBarsPreviewDriver.Teardown()
         StopGlow(pb)
         if pb.cooldown then pb.cooldown:Clear(); pb.cooldown:Hide() end
     end
-    if state.ticker then state.ticker:SetScript("OnUpdate", nil) end
-    state.ticker = nil  -- clear so Build's `if state.ticker then return end` guard lets it rebuild
-    state.previewButtons = {}
+    if state.ticker then
+        state.ticker:SetScript("OnUpdate", nil)
+        state.ticker:Hide()
+    end
+    if state.previewHost then state.previewHost:Hide() end
+    state.host = nil
     state.buttonState    = {}
+    state.layoutCount    = 0
+    state.autoHeight     = nil
     state.glowOwnerIdx   = 1
     state.glowOwnerT     = 0
     state.chargeOwnerIdx = 1

@@ -13,6 +13,7 @@ local function SetActionBarsChunkEnv(level, targetEnv)
     if type(nativeSetFenv) == "function" and _VERSION == "Lua 5.1" then
         return nativeSetFenv(level + 1, targetEnv)
     end
+    ---@diagnostic disable-next-line: deprecated
     if not (debug and debug.getinfo and debug.getupvalue and debug.upvaluejoin) then
         return nil
     end
@@ -23,6 +24,7 @@ local function SetActionBarsChunkEnv(level, targetEnv)
     while true do
         local name = debug.getupvalue(fn, i)
         if name == "_ENV" then
+            ---@diagnostic disable-next-line: deprecated
             debug.upvaluejoin(fn, i, function() return targetEnv end, 1)
             return fn
         elseif name == nil then

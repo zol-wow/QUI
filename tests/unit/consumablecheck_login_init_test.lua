@@ -68,7 +68,7 @@ local ns = {
 }
 
 (dofile("tests/helpers/locale.lua"))(ns)
-assert(loadfile("QUI_QoL/qol/consumablecheck.lua"))("QUI_QoL", ns)
+assert(loadfile("modules/qol/consumablecheck.lua"))("QUI_QoL", ns)
 local check = assert(ns.ConsumableCheckTest, "consumable check test seam should be exported")
 
 -- After login, every category button must exist. If init only hangs off the

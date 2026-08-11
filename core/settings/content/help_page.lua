@@ -1,11 +1,3 @@
---[[
-    QUI Help Tab — Page Builder
-    Narrative content rendered flat: accent-dot section headers + plain
-    wrapped labels + link items. No card chrome on guides — the tile
-    opts into chip-strip section nav at the top via sectionNav=true,
-    which auto-collects the accent-dot labels as scroll anchors.
-]]
-
 local ADDON_NAME, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
@@ -20,11 +12,8 @@ local CreateWrappedLabel = Shared.CreateWrappedLabel
 local CreateLinkItem = Shared.CreateLinkItem
 local PADDING = Shared.PADDING or 15
 
-local SECTION_LABEL_GAP = 30  -- matches CreateAccentDotLabel's 22px height + 8 breathing room
+local SECTION_LABEL_GAP = 30
 
---------------------------------------------------------------------------------
--- CONTENT: Help
---------------------------------------------------------------------------------
 local function BuildHelpContent(content)
     if not HelpContent then return end
 
@@ -33,9 +22,6 @@ local function BuildHelpContent(content)
 
     GUI:SetSearchContext({tabIndex = 13, tabName = "Help"})
 
-    -- =====================================================
-    -- HEADER
-    -- =====================================================
     local title = CreateWrappedLabel(content, ns.L["Help & Documentation"], 20, C.accent, contentWidth)
     title:SetPoint("TOPLEFT", PADDING, y)
     y = y - 28
@@ -46,9 +32,6 @@ local function BuildHelpContent(content)
     subtitle:SetPoint("TOPLEFT", PADDING, y)
     y = y - (subtitle:GetStringHeight() or 14) - 18
 
-    -- =====================================================
-    -- GETTING STARTED
-    -- =====================================================
     Shared.CreateAccentDotLabel(content, ns.L["Getting Started"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.GettingStarted then
@@ -62,9 +45,6 @@ local function BuildHelpContent(content)
     end
     y = y - 12
 
-    -- =====================================================
-    -- FEATURE GUIDES (flat — no card chrome)
-    -- =====================================================
     Shared.CreateAccentDotLabel(content, ns.L["Feature Guides"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.FeatureGuides then
@@ -91,9 +71,6 @@ local function BuildHelpContent(content)
         end
     end
 
-    -- =====================================================
-    -- SLASH COMMANDS
-    -- =====================================================
     Shared.CreateAccentDotLabel(content, ns.L["Slash Commands"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.SlashCommands then
@@ -107,9 +84,6 @@ local function BuildHelpContent(content)
     end
     y = y - 12
 
-    -- =====================================================
-    -- TROUBLESHOOTING
-    -- =====================================================
     Shared.CreateAccentDotLabel(content, ns.L["Troubleshooting"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.Troubleshooting then
@@ -125,9 +99,6 @@ local function BuildHelpContent(content)
     end
     y = y - 10
 
-    -- =====================================================
-    -- LINKS & RESOURCES
-    -- =====================================================
     Shared.CreateAccentDotLabel(content, ns.L["Links & Resources"], y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.Links then
@@ -145,17 +116,11 @@ local function BuildHelpContent(content)
     content:SetHeight(math.abs(y) + 10)
 end
 
---------------------------------------------------------------------------------
--- PAGE: Help (legacy wrapper for callers that still need a full page)
---------------------------------------------------------------------------------
 local function CreateHelpPage(parent)
     local _, content = Shared.CreateScrollableContent(parent)
     BuildHelpContent(content)
 end
 
---------------------------------------------------------------------------------
--- Export
---------------------------------------------------------------------------------
 ns.QUI_HelpOptions = {
     BuildHelpContent = BuildHelpContent,
     CreateHelpPage = CreateHelpPage,

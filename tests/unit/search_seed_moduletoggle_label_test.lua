@@ -27,8 +27,41 @@ assert((loadstring or load)(src:sub(1, cut - 1), "@gen-preamble"))()
 
 local GUI = assert(_G.QUI and _G.QUI.GUI, "framework did not initialize QUI.GUI")
 
--- Apply the generated cache exactly as the runtime does.
-assert(loadfile("QUI_OptionsSearch/search_cache.lua"))("QUI", {})
+-- Apply the generated cache exactly as the runtime does, through the real
+-- GUI:EnsureSearchCacheLoaded: search_cache.lua parks a packed STRING on the
+-- shared namespace, and the first search compiles it via ns.Unpack and applies
+-- it with the field-order schema. This is the only standing coverage of that
+-- wiring; drop the schema argument there and every positional row registers
+-- with no label, so search silently falls back to tile routes only.
+--
+-- The generator preamble loads framework.lua with a private namespace table we
+-- cannot name from here, so borrow it from the loader's own upvalues -- it is
+-- the same table search_cache.lua writes into in game (the sub-addon bootstrap
+-- proxies both onto the core namespace).
+local frameworkNS
+do
+    local index = 1
+    while true do
+        local name, value = debug.getupvalue(GUI.EnsureSearchCacheLoaded, index)
+        if not name then break end
+        if name == "ns" then frameworkNS = value break end
+        index = index + 1
+    end
+end
+assert(type(frameworkNS) == "table",
+    "GUI:EnsureSearchCacheLoaded no longer closes over `ns` -- update this harness")
+
+assert(loadfile("core/pack.lua"))("QUI", frameworkNS)
+assert(loadfile("QUI_Options/search_cache.lua"))("QUI_Options", frameworkNS)
+assert(type(frameworkNS.QUI_SearchCachePacked) == "string",
+    "search_cache.lua must park the payload as a packed string")
+
+GUI:EnsureSearchCacheLoaded()
+
+assert(GUI:HasGeneratedSearchCache(),
+    "EnsureSearchCacheLoaded did not apply the packed cache")
+assert(frameworkNS.QUI_SearchCachePacked == nil,
+    "EnsureSearchCacheLoaded must drop the packed string once it has compiled it")
 
 -- The legacy damageMeterNativePage master row was retired with the toggle
 -- consolidation; the Module Addons row is the damage meter switch now.

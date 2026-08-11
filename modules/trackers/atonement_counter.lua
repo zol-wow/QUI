@@ -1,0 +1,665 @@
+local ADDON_NAME, ns = ...
+local QUI = ns.QUI or {}
+ns.QUI = QUI
+local QUICore = ns.Addon
+local Helpers = ns.Helpers
+local UIKit = ns.UIKit
+local IsSecretValue = Helpers.IsSecretValue
+
+local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+local IsInGroup = IsInGroup
+local IsInRaid = IsInRaid
+local GetNumGroupMembers = GetNumGroupMembers
+local UnitExists = UnitExists
+local UnitIsConnected = UnitIsConnected
+local UnitIsUnit = UnitIsUnit
+local UnitGUID = UnitGUID
+local type = type
+local ipairs = ipairs
+local pcall = pcall
+local string_format = string.format
+
+local ATONEMENT_SPELL_ID = 194384
+local DISCIPLINE_SPEC_ID = 256
+local PLAYER_HELPFUL_FILTER = "PLAYER|HELPFUL"
+local HELPFUL_FILTER = "HELPFUL"
+local PREVIEW_COUNT = 7
+
+local CounterState = {
+    frame = nil,
+    count = 0,
+    isPreviewMode = false,
+}
+
+local DEFAULTS = {
+    enabled = true,
+    locked = true,
+    showOnlyInInstance = false,
+    hideIcon = false,
+    width = 50,
+    height = 50,
+    fontSize = 24,
+    xOffset = 500,
+    yOffset = 10,
+    showBackdrop = true,
+    backdropColor = { 0, 0, 0, 0.6 },
+    activeCountColor = { 1.0, 0.82, 0.2, 1 },
+    zeroCountColor = { 1, 1, 1, 0.55 },
+    useClassColorText = false,
+    borderSize = 1,
+    hideBorder = false,
+    borderColor = { 0, 0, 0, 1 },
+    useClassColorBorder = false,
+    useAccentColorBorder = false,
+    borderTexture = "None",
+    useCustomFont = false,
+    font = nil,
+}
+
+local GetSettings = Helpers.CreateDBGetter("atonementCounter")
+local cachedAtonementSpellName
+local cachedAtonementTexture
+
+local refreshQueued = false
+local refreshFrame = CreateFrame("Frame")
+refreshFrame:Hide()
+
+local auraStateCache = {}
+local dirtyAuraGuids = {}
+local auraCacheInvalid = true
+local appearanceDirty = true
+
+local function SafeBoolean(value)
+    if IsSecretValue(value) or value == nil then
+        return nil
+    end
+    return value and true or false
+end
+
+local function SafeAuraField(auraData, key)
+    if IsSecretValue(auraData) or not auraData then return nil end
+    local value = auraData[key]
+    if IsSecretValue(value) or value == nil then
+        return nil
+    end
+    return value
+end
+
+local function GetAtonementSpellName()
+    if cachedAtonementSpellName then
+        return cachedAtonementSpellName
+    end
+
+    if C_Spell and C_Spell.GetSpellName then
+        local ok, spellName = ns.SafeCall("chain-next", C_Spell.GetSpellName, ATONEMENT_SPELL_ID)
+        if ok and type(spellName) == "string" and spellName ~= "" then
+            cachedAtonementSpellName = spellName
+            return cachedAtonementSpellName
+        end
+    end
+    if GetSpellInfo then
+        local ok, spellName = ns.SafeCall("chain-next", GetSpellInfo, ATONEMENT_SPELL_ID)
+        if ok and type(spellName) == "string" and spellName ~= "" then
+            cachedAtonementSpellName = spellName
+            return cachedAtonementSpellName
+        end
+    end
+    cachedAtonementSpellName = "Atonement"
+    return cachedAtonementSpellName
+end
+
+local function GetAtonementTexture()
+    if cachedAtonementTexture then
+        return cachedAtonementTexture
+    end
+
+    if C_Spell and C_Spell.GetSpellTexture then
+        local ok, texture = ns.SafeCall("chain-next", C_Spell.GetSpellTexture, ATONEMENT_SPELL_ID)
+        if ok and texture then
+            cachedAtonementTexture = texture
+            return cachedAtonementTexture
+        end
+    end
+    if GetSpellTexture then
+        local ok, texture = ns.SafeCall("chain-next", GetSpellTexture, ATONEMENT_SPELL_ID)
+        if ok and texture then
+            cachedAtonementTexture = texture
+            return cachedAtonementTexture
+        end
+    end
+    cachedAtonementTexture = 134400
+    return cachedAtonementTexture
+end
+
+local function GetPlayerSpecID()
+    local specIndex = GetSpecialization and GetSpecialization()
+    if not specIndex or specIndex <= 0 then
+        return nil
+    end
+    local specID = GetSpecializationInfo and GetSpecializationInfo(specIndex)
+    if IsSecretValue(specID) then
+        return nil -- @secret-policy: reject-secret-ids
+    end
+    return specID
+end
+
+local function IsDisciplinePriest()
+    return GetPlayerSpecID() == DISCIPLINE_SPEC_ID
+end
+
+local function GetClassColor()
+    local r, g, b = Helpers.GetPlayerClassColor()
+    return { r, g, b, 1 }
+end
+
+local function UnitAvailable(unit)
+    if not unit then return false end
+    local exists = SafeBoolean(UnitExists(unit))
+    if not exists then return false end
+    local connected = SafeBoolean(UnitIsConnected(unit))
+    return connected ~= false
+end
+
+local function AuraMatchesAtonement(auraData)
+    if IsSecretValue(auraData) or not auraData then return false end
+    local auraSpellID = SafeAuraField(auraData, "spellId")
+    if auraSpellID and auraSpellID == ATONEMENT_SPELL_ID then
+        return true
+    end
+    local auraName = SafeAuraField(auraData, "name")
+    return auraName and auraName == GetAtonementSpellName() or false
+end
+
+local function AuraBelongsToPlayer(auraData, unit)
+    if IsSecretValue(auraData) or not auraData then return false end
+    if unit == "player" then
+        return true
+    end
+
+    local sourceUnit = SafeAuraField(auraData, "sourceUnit")
+    if sourceUnit and type(sourceUnit) == "string" then
+        if sourceUnit == "player" then
+            return true
+        end
+        local ok, isPlayer = pcall(UnitIsUnit, sourceUnit, "player")
+        if ok and not IsSecretValue(isPlayer) and isPlayer then
+            return true
+        end
+    end
+
+    local sourceGUID = SafeAuraField(auraData, "sourceGUID")
+    local playerGUID = UnitGUID and UnitGUID("player")
+    if sourceGUID and playerGUID and sourceGUID == playerGUID then
+        return true
+    end
+
+    return false
+end
+
+local function ScanAuraListForAtonement(unit, auraList, filteredToPlayer)
+    if IsSecretValue(auraList) or not auraList then return false end
+    for _, auraData in ipairs(auraList) do
+        if not IsSecretValue(auraData) and AuraMatchesAtonement(auraData) then
+            if filteredToPlayer or AuraBelongsToPlayer(auraData, unit) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function UnitHasPlayerAtonement(unit)
+    if not UnitAvailable(unit) then
+        return false
+    end
+
+    if C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID then
+        local ok, auraData = pcall(C_UnitAuras.GetUnitAuraBySpellID, unit, ATONEMENT_SPELL_ID)
+        if ok and not IsSecretValue(auraData) and auraData
+            and AuraMatchesAtonement(auraData) and AuraBelongsToPlayer(auraData, unit) then
+            return true
+        end
+    end
+
+    local spellName = GetAtonementSpellName()
+    if spellName and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName then
+        local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, PLAYER_HELPFUL_FILTER)
+        if ok and not IsSecretValue(auraData) and auraData and AuraMatchesAtonement(auraData) then
+            return true
+        end
+    end
+
+    if C_UnitAuras and C_UnitAuras.GetUnitAuras then
+        local ok, helpfulAuras = pcall(C_UnitAuras.GetUnitAuras, unit, PLAYER_HELPFUL_FILTER)
+        if ok and not IsSecretValue(helpfulAuras) and helpfulAuras
+            and ScanAuraListForAtonement(unit, helpfulAuras, true) then
+            return true
+        end
+    end
+
+    if AuraUtil and AuraUtil.ForEachAura then
+        local found = false
+        local ok = pcall(AuraUtil.ForEachAura, unit, PLAYER_HELPFUL_FILTER, nil, function(auraData)
+            if AuraMatchesAtonement(auraData) then
+                found = true
+                return true
+            end
+        end, true)
+        if ok and found then
+            return true
+        end
+    end
+
+    if C_UnitAuras and C_UnitAuras.GetUnitAuras then
+        local ok, helpfulAuras = pcall(C_UnitAuras.GetUnitAuras, unit, HELPFUL_FILTER)
+        if ok and not IsSecretValue(helpfulAuras) and helpfulAuras
+            and ScanAuraListForAtonement(unit, helpfulAuras, false) then
+            return true
+        end
+    end
+
+    if C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret() then
+        return nil
+    end
+
+    return false
+end
+
+local function UnitAtonementState(unit)
+    local guid = UnitGUID and UnitGUID(unit)
+    if IsSecretValue(guid) then
+        guid = nil -- @secret-policy: reject-secret-ids
+    end
+    if guid then
+        local cached = auraStateCache[guid]
+        if cached ~= nil and not dirtyAuraGuids[guid] then
+            if cached == "unknown" then
+                return nil
+            end
+            return cached
+        end
+    end
+    local has = UnitHasPlayerAtonement(unit)
+    if guid then
+        auraStateCache[guid] = has == nil and "unknown" or has
+        dirtyAuraGuids[guid] = nil
+    end
+    return has
+end
+
+local function CountActiveAtonements()
+    if not IsDisciplinePriest() then
+        return 0, false
+    end
+
+    local count, unknown = 0, false
+    local has = UnitAtonementState("player")
+    if has then
+        count = count + 1
+    elseif has == nil then
+        unknown = true
+    end
+
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            local unit = "raid" .. i
+            local ok, isPlayer = pcall(UnitIsUnit, unit, "player")
+            if IsSecretValue(isPlayer) then isPlayer = false end
+            if not ok then isPlayer = false end
+            if not isPlayer then
+                has = UnitAtonementState(unit)
+                if has then
+                    count = count + 1
+                elseif has == nil then
+                    unknown = true
+                end
+            end
+        end
+    elseif IsInGroup() then
+        for i = 1, GetNumGroupMembers() - 1 do
+            has = UnitAtonementState("party" .. i)
+            if has then
+                count = count + 1
+            elseif has == nil then
+                unknown = true
+            end
+        end
+    end
+
+    return count, unknown
+end
+
+local function CreateCounterFrame()
+    if CounterState.frame then return end
+
+    local frame = CreateFrame("Frame", "QUI_AtonementCounter", UIParent, "BackdropTemplate")
+    frame:SetPoint("CENTER", UIParent, "CENTER", DEFAULTS.xOffset, DEFAULTS.yOffset)
+    frame:SetSize(DEFAULTS.width, DEFAULTS.height)
+    frame:SetFrameStrata("HIGH")
+    frame:SetFrameLevel(50)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:SetClampedToScreen(true)
+
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self)
+        local settings = GetSettings()
+        local locked = settings and settings.locked ~= false
+        local isOverridden = _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("atonementCounter")
+        if not locked and not isOverridden and not InCombatLockdown() then
+            self:StartMoving()
+        end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local settings = GetSettings()
+        if settings then
+            local _, _, _, xOfs, yOfs = self:GetPoint()
+            settings.xOffset = QUICore:PixelRound(xOfs)
+            settings.yOffset = QUICore:PixelRound(yOfs)
+        end
+    end)
+
+    local icon = frame:CreateTexture(nil, "BACKGROUND")
+    icon:SetAllPoints(frame)
+    icon:SetTexture(GetAtonementTexture())
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    icon:SetVertexColor(1, 1, 1, 0.45)
+    frame.icon = icon
+
+    local countText = frame:CreateFontString(nil, "OVERLAY")
+    countText:SetPoint("CENTER", frame, "CENTER", 0, 1)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(countText, UIKit.ResolveFontPath(), DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    else
+        countText:SetFont(UIKit.ResolveFontPath(), DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    end
+    countText:SetJustifyH("CENTER")
+    countText:SetJustifyV("MIDDLE")
+    countText:SetText("0")
+    frame.countText = countText
+
+    frame:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(ns.L["Atonement Counter"], 1, 0.82, 0.2)
+        GameTooltip:AddLine(string_format(ns.L["Active: %d"], CounterState.count or 0), 1, 1, 1)
+        GameTooltip:AddLine(ns.L["Counts only your active Atonements."], 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    UIKit.CreateBorderLines(frame)
+    CounterState.frame = frame
+end
+
+local function GetTextColor(settings, count)
+    if settings.useClassColorText then
+        return GetClassColor()
+    end
+    if count > 0 then
+        return settings.activeCountColor or DEFAULTS.activeCountColor
+    end
+    return settings.zeroCountColor or DEFAULTS.zeroCountColor
+end
+
+local function ApplyAppearance()
+    CreateCounterFrame()
+
+    local settings = GetSettings()
+    if not settings then return end
+
+    local frame = CounterState.frame
+    frame:SetSize(settings.width or DEFAULTS.width, settings.height or DEFAULTS.height)
+
+    if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("atonementCounter")) then
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", UIParent, "CENTER", settings.xOffset or DEFAULTS.xOffset, settings.yOffset or DEFAULTS.yOffset)
+    end
+
+    local fontName = settings.useCustomFont and settings.font or nil
+    local fontPath = UIKit.ResolveFontPath(fontName)
+    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
+        ns.Helpers.ApplyFontWithFallback(frame.countText, fontPath, settings.fontSize or DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    else
+        frame.countText:SetFont(fontPath, settings.fontSize or DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
+    end
+
+    if settings.hideIcon then
+        frame.icon:Hide()
+    else
+        frame.icon:Show()
+    end
+
+    local borderSize = settings.borderSize or DEFAULTS.borderSize
+    local borderTexture = settings.borderTexture or DEFAULTS.borderTexture
+    local hideBorder = settings.hideBorder
+    local useLSMBorder = borderTexture ~= "None" and borderSize > 0 and not hideBorder
+    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
+    local showBackdrop = settings.showBackdrop
+    if showBackdrop == nil then showBackdrop = true end
+
+    local SSB = QUICore and QUICore.SafeSetBackdrop
+    if showBackdrop or useLSMBorder then
+        local borderColorTable = useLSMBorder and { bR, bG, bB, bA } or nil
+        local backdropInfo = UIKit.GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame)
+        if SSB then
+            SSB(frame, backdropInfo, borderColorTable)
+        else
+            frame:SetBackdrop(backdropInfo)
+        end
+
+        if showBackdrop then
+            local bgColor = settings.backdropColor or DEFAULTS.backdropColor
+            frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
+        else
+            local _abgR, _abgG, _abgB = 0, 0, 0
+            if Helpers and Helpers.GetSkinBgColor then _abgR, _abgG, _abgB = Helpers.GetSkinBgColor() end
+            frame:SetBackdropColor(_abgR, _abgG, _abgB, 0)
+        end
+
+        if useLSMBorder and not SSB then
+            frame:SetBackdropBorderColor(bR, bG, bB, bA)
+        end
+    else
+        if SSB then
+            SSB(frame, nil)
+        else
+            frame:SetBackdrop(nil)
+        end
+    end
+
+    UIKit.CreateBorderLines(frame)
+    UIKit.UpdateBorderLines(frame, borderSize, bR, bG, bB, bA, useLSMBorder or hideBorder)
+end
+
+local function ShouldShowCounter(settings)
+    if CounterState.isPreviewMode then
+        return true
+    end
+    if not settings or not settings.enabled then
+        return false
+    end
+    if not IsDisciplinePriest() then
+        return false
+    end
+    if not IsInGroup() then
+        return false
+    end
+    if settings.showOnlyInInstance and ns.Utils and ns.Utils.IsInInstancedContent and not ns.Utils.IsInInstancedContent() then
+        return false
+    end
+    return true
+end
+
+local function UpdateCounterDisplay()
+    CreateCounterFrame()
+
+    local settings = GetSettings()
+    if not settings then
+        CounterState.frame:Hide()
+        return
+    end
+
+    if appearanceDirty then
+        ApplyAppearance()
+        appearanceDirty = false
+    end
+
+    if not ShouldShowCounter(settings) then
+        CounterState.frame:Hide()
+        return
+    end
+
+    if CounterState.isPreviewMode then
+        CounterState.count = PREVIEW_COUNT
+    else
+        local count, unknown = CountActiveAtonements()
+        if unknown and count == 0 and (CounterState.count or 0) > 0 then
+        else
+            CounterState.count = count
+        end
+    end
+
+    local textColor = GetTextColor(settings, CounterState.count)
+    CounterState.frame.countText:SetText(CounterState.count)
+    CounterState.frame.countText:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+
+    if not settings.hideIcon then
+        if CounterState.count > 0 or CounterState.isPreviewMode then
+            CounterState.frame.icon:SetDesaturated(false)
+            CounterState.frame.icon:SetVertexColor(1, 1, 1, 0.8)
+        else
+            CounterState.frame.icon:SetDesaturated(true)
+            CounterState.frame.icon:SetVertexColor(1, 1, 1, 0.35)
+        end
+    end
+
+    local locked = settings.locked ~= false
+    CounterState.frame:SetMovable(not locked and not InCombatLockdown())
+    CounterState.frame:Show()
+end
+
+local function RunQueuedRefresh()
+    refreshQueued = false
+    if auraCacheInvalid then
+        wipe(auraStateCache)
+        wipe(dirtyAuraGuids)
+        auraCacheInvalid = false
+    end
+    UpdateCounterDisplay()
+end
+
+local function RefreshAtonementCounter()
+    auraCacheInvalid = true
+    appearanceDirty = true
+    RunQueuedRefresh()
+end
+
+local function QueueRefresh()
+    auraCacheInvalid = true
+    if refreshQueued then
+        return
+    end
+    refreshQueued = true
+    refreshFrame:Show()
+end
+
+local function QueueUnitRefresh(unit)
+    if not auraCacheInvalid then
+        local guid = UnitGUID and UnitGUID(unit)
+        if IsSecretValue(guid) then
+            guid = nil -- @secret-policy: reject-secret-ids
+        end
+        if guid then
+            dirtyAuraGuids[guid] = true
+        else
+            auraCacheInvalid = true
+        end
+    end
+    if refreshQueued then
+        return
+    end
+    refreshQueued = true
+    refreshFrame:Show()
+end
+
+refreshFrame:SetScript("OnUpdate", function(self)
+    self:Hide()
+    RunQueuedRefresh()
+end)
+
+local function TogglePreview(enable)
+    CounterState.isPreviewMode = enable and true or false
+    RefreshAtonementCounter()
+end
+
+local function IsPreviewMode()
+    return CounterState.isPreviewMode
+end
+
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+ns.AuraEvents:Subscribe("roster", function(unit)
+    if not IsDisciplinePriest() then return end
+    QueueUnitRefresh(unit)
+end)
+eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+eventFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:SetScript("OnEvent", function(_, event, ...)
+    if event == "PLAYER_SPECIALIZATION_CHANGED" then
+        local unit = ...
+        if unit ~= "player" then
+            return
+        end
+    end
+
+    QueueRefresh()
+end)
+
+if ns.WhenLoggedIn then ns.WhenLoggedIn(QueueRefresh) end
+
+local function SetupDebugInstrumentation()
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AtonementCounter", frame = eventFrame }
+end
+if ns.DebugRegister then
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation()
+end
+
+_G.QUI_RefreshAtonementCounter = RefreshAtonementCounter
+_G.QUI_ToggleAtonementCounterPreview = TogglePreview
+
+QUI.AtonementCounter = {
+    Refresh = RefreshAtonementCounter,
+    TogglePreview = TogglePreview,
+    IsPreviewMode = IsPreviewMode,
+}
+
+if ns.Registry then
+    ns.Registry:Register("atonementCounter", {
+        refresh = _G.QUI_RefreshAtonementCounter,
+        priority = 40,
+        group = "trackers",
+        importCategories = { "trackersTimers" },
+    })
+end
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "atonement", label = ns.L["Atonement Counter"], category = ns.L["Trackers"], prefix = "",
+        db = function(p) return p.atonementCounter end,
+        refresh = function() if _G.QUI_RefreshAtonementCounter then _G.QUI_RefreshAtonementCounter() end end,
+        legacy = { useClass = "useClassColorBorder", accent = "useAccentColorBorder" },
+    })
+end
+
+C_Timer.After(0, RefreshAtonementCounter)

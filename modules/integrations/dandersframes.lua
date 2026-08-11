@@ -1,33 +1,17 @@
---[[
-    QUI DandersFrames Integration Module
-    Anchors DandersFrames party/raid/pinned containers to QUI elements
-    Requires DandersFrames v4.0.0+ API
-]]
-
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 
----------------------------------------------------------------------------
--- MODULE TABLE
----------------------------------------------------------------------------
 local QUI_DandersFrames = {}
 ns.QUI_DandersFrames = QUI_DandersFrames
 
--- Pending combat-deferred updates
 local pendingUpdate = false
 
--- Debounce timer handle for GROUP_ROSTER_UPDATE
 local rosterTimer = nil
 
--- Hook install guard for Danders test mode callbacks
 local previewHooksInstalled = false
 
--- Forward declaration for layout mode registration (defined at bottom)
 local RegisterLayoutModeElements
 
----------------------------------------------------------------------------
--- DATABASE ACCESS
----------------------------------------------------------------------------
 local function GetDB()
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.dandersFrames then
         return QUICore.db.profile.dandersFrames
@@ -35,16 +19,10 @@ local function GetDB()
     return nil
 end
 
----------------------------------------------------------------------------
--- DF AVAILABILITY
----------------------------------------------------------------------------
 function QUI_DandersFrames:IsAvailable()
     return type(DandersFrames_IsReady) == "function" and DandersFrames_IsReady()
 end
 
----------------------------------------------------------------------------
--- CONTAINER FRAME RESOLUTION
----------------------------------------------------------------------------
 local function AddUniqueFrame(frames, seen, frame)
     if not frame or seen[frame] then
         return
@@ -57,7 +35,7 @@ local function IsFrameProtected(frame)
     if not frame then return false end
     if type(frame.IsProtected) ~= "function" then return false end
 
-    local ok, isProtected = pcall(frame.IsProtected, frame)
+    local ok, isProtected = ns.SafeCallMethod("best-effort-style", frame, "IsProtected")
     return ok and isProtected or false
 end
 
@@ -95,17 +73,12 @@ end
 
 local function GetPartyLiveContainer()
     local danders = GetDandersAddon()
-    -- Header mode roots party layout in DF.container; partyContainer is SetAllPoints.
     if danders and danders.container then
         return danders.container
     end
-    -- Fallback to known root container global.
     if _G["DandersFramesContainer"] then
         return _G["DandersFramesContainer"]
     end
-    -- Intentionally do not fall back to DandersFrames_GetPartyContainer():
-    -- that API can point at partyContainer, which should remain SetAllPoints
-    -- to the root container and must not be independently re-anchored.
     return nil
 end
 
@@ -120,10 +93,7 @@ function QUI_DandersFrames:GetContainerFrameSets(containerKey)
     local danders = GetDandersAddon()
 
     if containerKey == "party" then
-        -- Anchor the live party root container (not partyContainer) so we don't
-        -- break Danders' internal SetAllPoints relationship.
         AddUniqueFrame(frameSets.live, seen, GetPartyLiveContainer())
-        -- Danders test mode party preview container (non-secure)
         AddUniqueFrame(frameSets.preview, seen, _G["DandersTestPartyContainer"])
         if danders and danders.testPartyContainer then
             AddUniqueFrame(frameSets.preview, seen, danders.testPartyContainer)
@@ -132,7 +102,6 @@ function QUI_DandersFrames:GetContainerFrameSets(containerKey)
         if type(DandersFrames_GetRaidContainer) == "function" then
             AddUniqueFrame(frameSets.live, seen, DandersFrames_GetRaidContainer())
         end
-        -- Danders test mode raid preview container (non-secure)
         AddUniqueFrame(frameSets.preview, seen, _G["DandersTestRaidContainer"])
         if danders and danders.testRaidContainer then
             AddUniqueFrame(frameSets.preview, seen, danders.testRaidContainer)
@@ -165,21 +134,15 @@ function QUI_DandersFrames:GetContainerFrames(containerKey)
     return frames
 end
 
----------------------------------------------------------------------------
--- ANCHOR FRAME RESOLUTION
----------------------------------------------------------------------------
 function QUI_DandersFrames:GetAnchorFrame(anchorName)
     return ns.QUI_IntegrationShared.GetAnchorFrame(anchorName)
 end
 
----------------------------------------------------------------------------
--- POSITIONING
----------------------------------------------------------------------------
 local function ApplyPositionToFrames(frames, applyFunc)
     local shouldRetryAfterCombat = false
 
     for _, container in ipairs(frames) do
-        local ok = pcall(applyFunc, container)
+        local ok = ns.SafeCall("best-effort-style", applyFunc, container)
         if not ok then
             shouldRetryAfterCombat = true
         end
@@ -202,7 +165,6 @@ function QUI_DandersFrames:ApplyPosition(containerKey)
     local hasAnchor = cfg.anchorTo and cfg.anchorTo ~= "disabled"
     local hasAbsolute = type(cfg.absolutePoint) == "string"
 
-    -- Need either an anchor target or an explicit absolute position
     if not hasAnchor and not hasAbsolute then return end
 
     local anchorFrame
@@ -281,9 +243,6 @@ function QUI_DandersFrames:ApplyAllPositions()
     self:ApplyPosition("pinned2")
 end
 
----------------------------------------------------------------------------
--- EVENT HANDLING
----------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
 
 local function OnEvent(self, event, arg1)
@@ -306,7 +265,6 @@ local function OnEvent(self, event, arg1)
         end
 
     elseif event == "GROUP_ROSTER_UPDATE" then
-        -- Debounce roster updates
         if rosterTimer then
             rosterTimer:Cancel()
         end
@@ -323,9 +281,6 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 
----------------------------------------------------------------------------
--- INITIALIZE
----------------------------------------------------------------------------
 local initialized = false
 
 local function QueueApplyPosition(containerKey, delay)
@@ -346,29 +301,22 @@ function QUI_DandersFrames:Initialize()
     self:ApplyAllPositions()
     RegisterLayoutModeElements()
 
-    -- Hook into CDM layout update callback (idempotent — re-running this
-    -- method replaces the hook slot instead of double-wrapping)
     if ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAnchoredFramesPostHook then
         ns.QUI_Anchoring.RegisterAnchoredFramesPostHook("dandersframes", function()
             QUI_DandersFrames:ApplyAllPositions()
         end)
     end
 
-    -- Re-apply QUI anchors right after Danders test mode shows preview containers.
-    -- Danders positions preview containers from its own anchor values on activation.
     if not previewHooksInstalled then
         local danders = _G["DandersFrames"]
         if danders and type(danders.ShowTestFrames) == "function" then
             hooksecurefunc(danders, "ShowTestFrames", function()
-                -- Danders can do a late layout pass while showing previews.
-                -- Apply immediately and once more shortly after.
                 QueueApplyPosition("party", 0)
                 QueueApplyPosition("party", 0.05)
             end)
         end
         if danders and type(danders.ShowRaidTestFrames) == "function" then
             hooksecurefunc(danders, "ShowRaidTestFrames", function()
-                -- Mirror party behavior for raid preview containers.
                 QueueApplyPosition("raid", 0)
                 QueueApplyPosition("raid", 0.05)
             end)
@@ -377,11 +325,6 @@ function QUI_DandersFrames:Initialize()
     end
 end
 
----------------------------------------------------------------------------
--- LAYOUT MODE: COORDINATE TRANSLATION HELPERS
----------------------------------------------------------------------------
-
---- Return the x,y screen coordinates of a specific anchor point on a frame.
 local function GetPointScreenPosition(frame, point)
     if not frame then return 0, 0 end
     local l, r, t, b = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
@@ -399,7 +342,6 @@ local function GetPointScreenPosition(frame, point)
     return cx, cy
 end
 
---- Return dx,dy offset from frame center to the named anchor point.
 local function GetPointOffsetFromCenter(point, width, height)
     local hw, hh = (width or 0) * 0.5, (height or 0) * 0.5
     if point == "TOPLEFT"     then return -hw,  hh end
@@ -414,11 +356,9 @@ local function GetPointOffsetFromCenter(point, width, height)
     return 0, 0
 end
 
---- Read the container's current screen position and return as UIParent-CENTER coords.
 local function LoadDandersPosition(containerKey)
     local frames = QUI_DandersFrames:GetContainerFrames(containerKey)
     if not frames then return "CENTER", "CENTER", 0, 0 end
-    -- Prefer a visible container (test mode during layout)
     local f
     for _, frame in ipairs(frames) do
         if frame:IsShown() then f = frame; break end
@@ -434,8 +374,6 @@ local function LoadDandersPosition(containerKey)
     return "CENTER", "CENTER", 0, 0
 end
 
---- Convert a new UIParent-CENTER position back to anchor-relative offsets,
---- or save as absolute UIParent-CENTER position when no anchor is configured.
 local function SaveDandersPosition(containerKey, ox, oy)
     local db = GetDB()
     if not db or not db[containerKey] then return end
@@ -448,7 +386,6 @@ local function SaveDandersPosition(containerKey, ox, oy)
     local useAbsolute = (not cfg.anchorTo or cfg.anchorTo == "disabled")
 
     if useAbsolute then
-        -- Save as absolute UIParent-CENTER position
         cfg.absolutePoint = "CENTER"
         cfg.absoluteX = math.floor(ox + 0.5)
         cfg.absoluteY = math.floor(oy + 0.5)
@@ -456,15 +393,12 @@ local function SaveDandersPosition(containerKey, ox, oy)
         local anchorFrame = QUI_DandersFrames:GetAnchorFrame(cfg.anchorTo)
         if not anchorFrame then return end
 
-        -- Where the anchor frame's target point is on screen
         local targetX, targetY = GetPointScreenPosition(anchorFrame, cfg.targetPoint or "BOTTOM")
 
-        -- Where the container center will be at the new position
         local uiW, uiH = UIParent:GetWidth(), UIParent:GetHeight()
         local newCenterX = uiW * 0.5 + ox
         local newCenterY = uiH * 0.5 + oy
 
-        -- Get container size for source point offset calculation (prefer visible)
         local frames = QUI_DandersFrames:GetContainerFrames(containerKey)
         local f
         if frames then
@@ -476,22 +410,16 @@ local function SaveDandersPosition(containerKey, ox, oy)
         local cw = f and f:GetWidth() or 160
         local ch = f and f:GetHeight() or 40
 
-        -- Where the container's source point would be at the new center
         local srcDx, srcDy = GetPointOffsetFromCenter(cfg.sourcePoint or "TOP", cw, ch)
         local sourceX = newCenterX + srcDx
         local sourceY = newCenterY + srcDy
 
-        -- New relative offsets
         cfg.offsetX = math.floor(sourceX - targetX + 0.5)
         cfg.offsetY = math.floor(sourceY - targetY + 0.5)
     end
 
     QUI_DandersFrames:ApplyPosition(containerKey)
 end
-
----------------------------------------------------------------------------
--- LAYOUT MODE: ELEMENT REGISTRATION
----------------------------------------------------------------------------
 
 local layoutElementsRegistered = false
 
@@ -515,8 +443,6 @@ RegisterLayoutModeElements = function()
         local containerKey = info.containerKey
         local elementKey = info.key
 
-        -- Return the first *visible* container (test mode during layout),
-        -- falling back to the first frame in the list.
         local function GetPreferredFrame()
             local frames = QUI_DandersFrames:GetContainerFrames(containerKey)
             if not frames then return nil end
@@ -576,9 +502,8 @@ RegisterLayoutModeElements = function()
             onOpen = info.showTest and function()
                 local danders = GetDandersAddon()
                 if danders and type(danders[info.showTest]) == "function" then
-                    pcall(danders[info.showTest], danders)
+                    ns.SafeCall("bulkhead", danders[info.showTest], danders)
                 end
-                -- Re-sync handle after test frames finish async layout
                 C_Timer.After(0.1, function()
                     if _G.QUI_LayoutModeSyncHandle then
                         _G.QUI_LayoutModeSyncHandle(elementKey)
@@ -589,7 +514,7 @@ RegisterLayoutModeElements = function()
             onClose = info.hideTest and function()
                 local danders = GetDandersAddon()
                 if danders and type(danders[info.hideTest]) == "function" then
-                    pcall(danders[info.hideTest], danders)
+                    ns.SafeCall("bulkhead", danders[info.hideTest], danders)
                 end
             end or nil,
 
@@ -604,8 +529,6 @@ RegisterLayoutModeElements = function()
     end
 end
 
--- Fallback: attempt layout registration after a delay in case Initialize
--- fires before layout mode is ready (mirrors pattern in other modules).
 C_Timer.After(2, function()
     RegisterLayoutModeElements()
 end)

@@ -8,7 +8,7 @@ end
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_stack_text.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_stack_text.lua")("QUI", ns)
 
 local stackText = assert(ns.CDMIconStackText, "CDMIconStackText table was not exported")
 
@@ -33,9 +33,8 @@ local icon = {
     },
 }
 
-local setOk, _, showOk = stackText.Show(icon, secretToken, "Applications")
-assert(setOk == true, "show should report a successful text write")
-assert(showOk == true, "show should report a successful show write")
+local shown = stackText.Show(icon, secretToken, "Applications")
+assert(shown == true, "show should report a successful write")
 assert(writes[1].op == "set" and writes[1].value == secretToken,
     "show should forward secret stack text unchanged")
 assert(writes[2].op == "show", "show should show the stack text FontString")

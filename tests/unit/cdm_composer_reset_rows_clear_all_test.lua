@@ -9,11 +9,26 @@ local function readAll(path)
 end
 
 local source = readAll("QUI_CDM/cdm/settings/composer.lua")
+local catalogSource = readAll("QUI_CDM/cdm/cdm_catalog.lua")
+
+-- The seed entrypoint and its row assignment must stay in cdm_catalog.lua
+-- (QUI_CDM, loaded at login), NOT in composer.lua (LoadOnDemand
+-- QUI_Options): CDMSpellData:SnapshotBlizzardCDM seeds a fresh install at
+-- login, and behind the LOD boundary it could only ever seed after the user
+-- opened the options window once.
+local seedImpl = assert(catalogSource:find("function CDMCatalog.SeedFromBlizzard", 1, true),
+    "catalog SeedFromBlizzard implementation should exist")
+assert(catalogSource:find("CDMCatalog.AssignCooldownRowsByCapacity(entries, containerKind)", seedImpl, true),
+    "ready Blizzard reset seeds should be assigned to active cooldown rows by capacity before storage")
+assert(catalogSource:find("function CDMCatalog.AssignCooldownRowsByCapacity", 1, true),
+    "row-capacity assignment must live in the catalog, not the LoadOnDemand options addon")
+assert(not source:find("AssignCooldownRowsByCapacity = function", 1, true),
+    "composer must not redefine the row-capacity assignment it now aliases")
 
 local seedWrapper = assert(source:find("function ns.CDMComposer.SeedFromBlizzard", 1, true),
     "composer SeedFromBlizzard wrapper should exist")
-assert(source:find("AssignCooldownRowsByCapacity(entries, containerKind)", seedWrapper, true),
-    "ready Blizzard reset seeds should be assigned to active cooldown rows by capacity before storage")
+assert(source:find("catalog.SeedFromBlizzard(containerKind)", seedWrapper, true),
+    "composer wrapper should delegate straight to the catalog seed")
 
 local refreshStart = assert(source:find("RefreshEntryList = function()", 1, true),
     "RefreshEntryList should exist")

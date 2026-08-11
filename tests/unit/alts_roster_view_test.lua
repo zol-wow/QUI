@@ -16,14 +16,14 @@ ns.Helpers = {
 ns.Storage = { Store = {}, Bus = {} }
 
 -- roster_data first (roster.lua reads Alts.RosterData at load).
-assert(loadfile("QUI_Alts/alts/roster_data.lua"))("QUI", ns)
+assert(loadfile("modules/alts/roster_data.lua"))("QUI", ns)
 
 -- window.lua provides Alts.Window.RegisterTab; stub it so we don't load the
 -- frame chassis. roster.lua calls it at file end.
 ns.Alts.Window = { RegisterTab = function() end }
 
-assert(loadfile("QUI_Alts/alts/views/shared.lua"))("QUI", ns)
-assert(loadfile("QUI_Alts/alts/views/roster.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/shared.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/roster.lua"))("QUI", ns)
 
 local RV = ns.Alts.RosterView
 assert(RV, "RosterView exported")

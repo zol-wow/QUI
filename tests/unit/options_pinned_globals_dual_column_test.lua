@@ -127,7 +127,7 @@ function pins:UnpinAll() end
 
 local ns = {
     Settings = { Pins = pins },
-    Helpers = { AssetPath = "assets/", DeepCopy = function(v) return v end, ApplyFontWithFallback = function() end },
+    Helpers = { AssetPath = "assets/", DeepCopy = function(v) return v end, ApplyFontWithFallback = function() end, FoldUTF8 = function(v) return string.lower(tostring(v or "")) end },
 }
 
 (dofile("tests/helpers/locale.lua"))(ns)

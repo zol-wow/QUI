@@ -1,26 +1,3 @@
---- QUI Scaling Utils
---- Pixel-perfect scaling with frame-aware math
----
---- The WoW UI coordinate system uses virtual units where the screen height equals
---- 768 / uiScale. Physical screen pixels don't always align with these virtual units,
---- causing borders, sizes, and gaps to render inconsistently (e.g., a "1 pixel" border
---- sometimes renders as 2 pixels, or a 300px frame is actually 299 or 301 pixels).
----
---- This module provides functions that snap all dimensions and positions to the
---- physical pixel grid, ensuring:
----   - 1 pixel always means exactly 1 physical screen pixel
----   - 300 pixels always means exactly 300 physical screen pixels
----   - Positions land on pixel boundaries so borders and gaps are consistent
----
---- Key concept: "pixel size" = the virtual-coordinate size of 1 physical screen pixel
---- for a given frame, calculated as: 768 / (physicalScreenHeight * effectiveScale)
----
---- Functions come in two families:
----   Pixel-count input (I want N physical pixels):
----     Scale(n, frame), Pixels(n, frame), SetPixelPerfectSize, SetPixelPerfectPoint
----   Virtual-coord input (snap existing value to grid):
----     PixelRound(v, frame), PixelFloor(v, frame), PixelCeil(v, frame), SetSnappedPoint
-
 local ADDON_NAME, ns = ...
 
 local QUICore = ns.Addon or (QUI and QUI.QUICore)
@@ -40,95 +17,56 @@ local issecretvalue = issecretvalue
 local GetPhysicalScreenSize = GetPhysicalScreenSize
 local GetScreenWidth, GetScreenHeight = GetScreenWidth, GetScreenHeight
 
---- Cached physical screen height (updated on UI_SCALE_CHANGED).
 local cachedPhysicalHeight = select(2, GetPhysicalScreenSize())
 
---------------------------------------------------------------------------------
--- Pixel Math Core
---------------------------------------------------------------------------------
+function QUICore:PushPixelReference(frame)
+    self._pixelRefDepth = (self._pixelRefDepth or 0) + 1
+    self._pixelRef = frame or false
+end
 
---- Get the virtual-coordinate size of 1 physical screen pixel for a given frame.
---- This is the fundamental unit for all pixel-perfect calculations.
----
---- The formula: pixelSize = 768 / (physicalScreenHeight * frame:GetEffectiveScale())
----
---- A frame's effective scale is the product of its own scale and all ancestor scales.
---- Using the correct frame (not just UIParent) matters when frames in the hierarchy
---- have been scaled with SetScale().
----
---- @param frame? Frame The frame context (defaults to UIParent)
---- @return number The size of 1 physical pixel in the frame's coordinate space
+function QUICore:PopPixelReference()
+    local depth = (self._pixelRefDepth or 0) - 1
+    if depth <= 0 then
+        depth = 0
+        self._pixelRef = nil
+    end
+    self._pixelRefDepth = depth
+end
+
 function QUICore:GetPixelSize(frame)
+    local ref = self._pixelRef
+    if ref ~= nil then frame = ref or nil end
+
     local es
     if frame then
         local ok, val = pcall(frame.GetEffectiveScale, frame)
-        es = ok and val or nil
+        if ok and not (issecretvalue and issecretvalue(val)) then es = val end
     end
     if not es then
         local ok2, val2 = pcall(UIParent.GetEffectiveScale, UIParent)
-        es = ok2 and val2 or nil
+        if ok2 and not (issecretvalue and issecretvalue(val2)) then es = val2 end
     end
-    -- Secret values from GetEffectiveScale can't be used in Lua arithmetic
-    if not es or (issecretvalue and issecretvalue(es)) then return 1 end
+    if not es then return 1 end
     if es == 0 then return 1 end
     if cachedPhysicalHeight == 0 then return 1 end
     return 768 / (cachedPhysicalHeight * es)
 end
 
---- Convert a physical pixel count to virtual coordinate units for a given frame.
---- Use this when you want "exactly N physical pixels" in a frame's coordinate space.
----
---- Example: self:Pixels(1, myFrame) returns the exact size of 1 physical pixel
---- Example: self:Pixels(300, myFrame) returns exactly 300 physical pixels
----
---- @param n number Number of physical pixels desired
---- @param frame? Frame The frame context (defaults to UIParent)
---- @return number Virtual coordinate size equal to exactly N physical pixels
 function QUICore:Pixels(n, frame)
     if n == 0 then return 0 end
     return n * self:GetPixelSize(frame)
 end
 
---- Snap a virtual-coordinate value to the nearest physical pixel boundary.
---- Use this when you have a value in virtual coordinates (e.g., from a database
---- setting or calculation) and need it to land exactly on a pixel boundary.
----
---- @param value number The value in virtual coordinates
---- @param frame? Frame The frame context (defaults to UIParent)
---- @return number The value snapped to the nearest pixel boundary
 function QUICore:PixelRound(value, frame)
     if value == 0 then return 0 end
     local px = self:GetPixelSize(frame)
     return Round(value / px) * px
 end
 
---------------------------------------------------------------------------------
--- Scaling (Legacy + Frame-Aware)
---------------------------------------------------------------------------------
-
---- Scale a pixel count to virtual coordinates, snapped to the pixel grid.
---- Uses the given frame's effective scale (or UIParent if omitted).
----
---- @param x number Number of physical pixels desired
---- @param frame? Frame Optional frame for frame-aware scaling (defaults to UIParent)
---- @return number Virtual coordinate value representing exactly x physical pixels
 function QUICore:Scale(x, frame)
     return self:Pixels(x, frame)
 end
 
---------------------------------------------------------------------------------
--- Frame-Aware Pixel-Perfect Sizing
---------------------------------------------------------------------------------
-
---- Set frame size to exactly widthPixels x heightPixels physical screen pixels.
---- Uses the frame's own effective scale for accurate pixel mapping.
----
---- Unlike SetSize() which always uses UIParent's scale, this accounts for any
---- intermediate scaling in the frame's parent chain.
----
---- @param frame Frame The frame to size
---- @param widthPixels number Desired width in physical pixels
---- @param heightPixels number Desired height in physical pixels
 function QUICore:SetPixelPerfectSize(frame, widthPixels, heightPixels)
     if not frame then return end
     local px = self:GetPixelSize(frame)
@@ -141,28 +79,12 @@ function QUICore:SetPixelPerfectSize(frame, widthPixels, heightPixels)
     end
 end
 
---- Set frame height to exactly heightPixels physical screen pixels.
---- @param frame Frame The frame to size
---- @param heightPixels number Desired height in physical pixels
 function QUICore:SetPixelPerfectHeight(frame, heightPixels)
     if not frame then return end
     local px = self:GetPixelSize(frame)
     frame:SetHeight(Round(heightPixels) * px)
 end
 
---------------------------------------------------------------------------------
--- Pixel-Perfect Positioning
---------------------------------------------------------------------------------
-
---- SetPoint with offsets specified in physical pixel counts, snapped to grid.
---- The offsets are in physical pixels (e.g., 5 means 5 physical pixels right/up).
----
---- @param frame Frame The frame to position
---- @param point string Anchor point (e.g., "TOPLEFT")
---- @param relativeTo Frame|nil The reference frame (nil for parent)
---- @param relativePoint string The reference point on relativeTo
---- @param xPixels? number X offset in physical pixels (default 0)
---- @param yPixels? number Y offset in physical pixels (default 0)
 function QUICore:SetPixelPerfectPoint(frame, point, relativeTo, relativePoint, xPixels, yPixels)
     if not frame then return end
     local px = self:GetPixelSize(frame)
@@ -171,23 +93,8 @@ function QUICore:SetPixelPerfectPoint(frame, point, relativeTo, relativePoint, x
     frame:SetPoint(point, relativeTo, relativePoint, x, y)
 end
 
---- Snap existing virtual-coordinate offsets to the nearest pixel boundary.
---- Use this when you have offsets in virtual coordinates (e.g., from the database
---- or a calculation) that need to be pixel-aligned.
----
---- Unlike SetPixelPerfectPoint where offsets are pixel counts, here the offsets
---- are already in virtual coordinates and just need to be snapped to the grid.
----
---- @param frame Frame The frame to position
---- @param point string Anchor point
---- @param relativeTo Frame|nil The reference frame
---- @param relativePoint string The reference point on relativeTo
---- @param offsetX? number X offset in virtual coordinates (will be snapped)
---- @param offsetY? number Y offset in virtual coordinates (will be snapped)
 function QUICore:SetSnappedPoint(frame, point, relativeTo, relativePoint, offsetX, offsetY)
     if not frame then return end
-    -- If frame is owned by the layout system, reapply its position
-    -- (modules call ClearAllPoints before SetSnappedPoint, so the position was just cleared)
     local anchoring = ns.QUI_Anchoring
     if anchoring and anchoring.layoutOwnedFrames and anchoring.layoutOwnedFrames[frame] then
         local layoutKey = anchoring.layoutOwnedFrames[frame]
@@ -205,22 +112,11 @@ function QUICore:SetSnappedPoint(frame, point, relativeTo, relativePoint, offset
     frame:SetPoint(point, relativeTo, relativePoint, x, y)
 end
 
---- Snap a frame's current position to the pixel grid after a drag operation.
---- Call this after StopMovingOrSizing() to ensure the frame lands on pixel
---- boundaries, preventing ±1px size rendering errors.
----
---- Returns the snapped anchor data so callers can save it to the database.
----
---- @param frame Frame The frame to snap
---- @return string? point Anchor point
---- @return Frame? relativeTo Relative frame
---- @return string? relativePoint Relative anchor
---- @return number? x Snapped X offset
---- @return number? y Snapped Y offset
 function QUICore:SnapFramePosition(frame)
     if not frame then return end
     if InCombatLockdown() then return end
     local point, relativeTo, relativePoint, x, y = frame:GetPoint()
+    if ns.Helpers.HasSecretValue(point, relativeTo, relativePoint, x, y) then return end
     if not point then return end
     x = self:PixelRound(x or 0, frame)
     y = self:PixelRound(y or 0, frame)
@@ -229,20 +125,6 @@ function QUICore:SnapFramePosition(frame)
     return point, relativeTo, relativePoint, x, y
 end
 
---------------------------------------------------------------------------------
--- Pixel-Perfect Backdrop
---------------------------------------------------------------------------------
-
---- Apply a backdrop with an exact N-pixel border using the frame's own scale.
---- Guarantees the border is exactly borderPixels physical pixels thick.
----
---- @param frame Frame The frame (must inherit BackdropTemplate)
---- @param borderPixels? number Border thickness in physical pixels (default 1)
---- @param bgFile? string Background texture path (nil for border-only)
---- @param r? number Border color red (0-1)
---- @param g? number Border color green (0-1)
---- @param b? number Border color blue (0-1)
---- @param a? number Border color alpha (0-1, default 1)
 function QUICore:SetPixelPerfectBackdrop(frame, borderPixels, bgFile, r, g, b, a)
     if not frame then return end
     local px = self:GetPixelSize(frame)
@@ -266,46 +148,23 @@ function QUICore:SetPixelPerfectBackdrop(frame, borderPixels, bgFile, r, g, b, a
     end
 end
 
---------------------------------------------------------------------------------
--- Texel Snapping
---------------------------------------------------------------------------------
-
---- Apply pixel-grid snapping to a frame for crisp texture rendering.
---- Calls SetSnapToPixelGrid(true) and SetTexelSnappingBias(0) if available.
---- These are WoW 12.0+ APIs that prevent sub-pixel texture blurring.
----
---- @param frame Frame The frame (or texture) to snap
 function QUICore:ApplyPixelSnapping(frame)
     if not frame then return end
     if frame.SetSnapToPixelGrid then frame:SetSnapToPixelGrid(true) end
     if frame.SetTexelSnappingBias then frame:SetTexelSnappingBias(0) end
 end
 
---------------------------------------------------------------------------------
--- Font Registry
---------------------------------------------------------------------------------
-
---- Weak-keyed registry of FontStrings for scale-change refresh.
 local fontRegistry = ns.Helpers.CreateStateTable()
 
---- Internal: resolve font parameters and apply a pixel-snapped font to a FontString.
---- Does NOT write to the registry — callers handle registration separately.
 local function applyFontInternal(self, fontString, frame, size, fontPath, flags)
     local Helpers = ns.Helpers
     local path = fontPath or (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or "Fonts\\FRIZQT__.TTF"
     local outline = flags or (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or "OUTLINE"
     local sz = (type(size) == "number" and size > 0) and size or 12
 
-    -- Snap font size to pixel grid using the same formula as PixelRound
     local px = self:GetPixelSize(frame)
     sz = Round(sz / px) * px
 
-    -- Route through the CJK-aware family setter so every UIKit.CreateText
-    -- consumer (castbars and most QUI UI text) renders Chinese/Korean glyphs.
-    -- ApplyFontWithFallback keeps the roman font (only adds CJK members, so
-    -- Latin appearance is unchanged) and degrades to a single-file SetFont
-    -- internally. Mirror the old boolean "ok" via a post-apply GetFont check so
-    -- the caller's scale-refresh registration still works.
     if Helpers and Helpers.ApplyFontWithFallback then
         Helpers.ApplyFontWithFallback(fontString, path, sz, outline)
         return fontString:GetFont() ~= nil
@@ -315,48 +174,24 @@ local function applyFontInternal(self, fontString, frame, size, fontPath, flags)
     return ok
 end
 
---- Apply a font to a FontString with pixel-perfect size snapping, and register
---- it for automatic refresh on UI scale changes.
----
---- Font size is snapped to the physical pixel grid using GetPixelSize(), the same
---- formula used by PixelRound and all other snapping functions in this module.
---- This prevents fractional-pixel font heights that cause blurry text.
----
---- @param fontString FontString The FontString to configure
---- @param frame? Frame The reference frame for effective scale (defaults to UIParent)
---- @param size? number Font size in points (default 12)
---- @param fontPath? string Font file path (default: user's configured general font)
---- @param flags? string Font flags like "OUTLINE" (default: user's configured outline)
 function QUICore:ApplyFont(fontString, frame, size, fontPath, flags)
     if not fontString or not fontString.SetFont then return end
 
     local ok = applyFontInternal(self, fontString, frame, size, fontPath, flags)
     if not ok then return end
 
-    -- Register for scale-change refresh (stores original values, not snapped)
     fontRegistry[fontString] = { frame = frame, size = size, fontPath = fontPath, flags = flags }
 end
 
---- Re-apply pixel-snapped fonts to all registered FontStrings.
---- Called automatically after UI scale is applied. Can also be called manually
---- after font settings change.
 function QUICore:RefreshAllFonts()
     for fs, data in pairs(fontRegistry) do
         applyFontInternal(self, fs, data.frame, data.size, data.fontPath, data.flags)
     end
 end
 
---- Wipe the font registry to release all FontString references.
---- Called on profile change so stale FontStrings from the previous profile's
---- frames are not retained. Modules will re-register their FontStrings
---- via ApplyFont when they rebuild their UI for the new profile.
 function QUICore:CleanupFontRegistry()
     wipe(fontRegistry)
 end
-
---------------------------------------------------------------------------------
--- UI Scale Management
---------------------------------------------------------------------------------
 
 local function GetUIScale(self)
     if self.db and self.db.profile and self.db.profile.general then
@@ -365,24 +200,17 @@ local function GetUIScale(self)
     return 1.0
 end
 
---- Get the pixel-perfect scale for the current screen resolution.
---- At this scale, 1 virtual unit = 1 physical pixel, eliminating all rounding.
---- Formula: 768 / physicalScreenHeight
---- @return number The pixel-perfect scale value
 function QUICore:GetPixelPerfectScale()
     if cachedPhysicalHeight == 0 then return 1 end
     return 768 / cachedPhysicalHeight
 end
 
---- Get smart default scale based on screen resolution
 function QUICore:GetSmartDefaultScale()
-    if cachedPhysicalHeight >= 2160 then return 0.53 end     -- 4K
-    if cachedPhysicalHeight >= 1440 then return 0.64 end     -- 1440p
-    return 1.0                                                -- 1080p or lower
+    if cachedPhysicalHeight >= 2160 then return 0.53 end
+    if cachedPhysicalHeight >= 1440 then return 0.64 end
+    return 1.0
 end
 
--- Re-run ApplyUIScale once combat ends (shared by the in-combat and
--- protected-call-failed deferral paths in ApplyUIScale below).
 local function DeferUIScaleToRegen(self)
     if not self._UIScalePending then
         self._UIScalePending = true
@@ -394,7 +222,6 @@ local function DeferUIScaleToRegen(self)
     end
 end
 
---- Apply UI scale (defers if in combat, unless in ADDON_LOADED safe window)
 function QUICore:ApplyUIScale()
     if InCombatLockdown() and not ns._inInitSafeWindow then
         DeferUIScaleToRegen(self)
@@ -409,7 +236,7 @@ function QUICore:ApplyUIScale()
         end
     end
 
-    local success = pcall(function() UIParent:SetScale(scaleToApply) end)
+    local success = ns.SafeCallMethod("defer-ooc", UIParent, "SetScale", scaleToApply)
     if not success then
         DeferUIScaleToRegen(self)
         return
@@ -417,7 +244,7 @@ function QUICore:ApplyUIScale()
 
     self.uiscale = UIParent:GetScale()
     self.screenWidth, self.screenHeight = GetScreenWidth(), GetScreenHeight()
-    self:RefreshAllFonts()  -- Re-snap all registered fonts to new pixel grid
+    self:RefreshAllFonts()
     local UIKit = ns.UIKit
     if UIKit then
         if UIKit.QueueScaleRefresh then
@@ -428,15 +255,10 @@ function QUICore:ApplyUIScale()
     end
 end
 
---------------------------------------------------------------------------------
--- Event Handling & Initialization
---------------------------------------------------------------------------------
-
 function QUICore:PixelScaleChanged(event)
     if event == 'UI_SCALE_CHANGED' or event == 'DISPLAY_SIZE_CHANGED' then
         self.physicalWidth, self.physicalHeight = GetPhysicalScreenSize()
         self.resolution = format('%dx%d', self.physicalWidth, self.physicalHeight)
-        -- Update the module-level cache
         cachedPhysicalHeight = self.physicalHeight
     end
     self:ApplyUIScale()
@@ -448,20 +270,4 @@ function QUICore:InitializePixelPerfect()
     cachedPhysicalHeight = self.physicalHeight
     self:RegisterEvent('UI_SCALE_CHANGED', 'PixelScaleChanged')
     self:RegisterEvent('DISPLAY_SIZE_CHANGED', 'PixelScaleChanged')
-end
-
---------------------------------------------------------------------------------
--- Panel Pixel-Perfect Context
--- Provides pixel math relative to the options panel's effective scale rather
--- than UIParent's. Ensures crisp 1px borders on widgets that live inside a
--- scaled panel frame.
---------------------------------------------------------------------------------
-
-local panelFrame = nil
-
---- Set the options panel frame for panel-context pixel math.
---- Call this from GUI:CreateMainFrame() and on panel scale change.
---- @param frame Frame The options panel main frame
-function QUICore:SetPanelFrame(frame)
-    panelFrame = frame
 end

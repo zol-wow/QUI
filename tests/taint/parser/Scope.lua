@@ -25,10 +25,13 @@ local Scope = {
 	end,
 	
 	CreateLocal = function(self, name)
-		local v
-		v = self:GetLocal(name)
-		if v then return v end
-		v = { }
+		-- Every lexical binder gets a DISTINCT variable object.  The
+		-- upstream LuaMinify behavior (return the existing same-name local,
+		-- including one found in a PARENT scope) collapsed `local x = x;
+		-- local x = {}` — and any shadowing redeclaration — onto one
+		-- identity, corrupting consumers that reason per-binder (the taint
+		-- analyzer's env resolution keys variable objects).
+		local v = { }
 		v.Scope = self
 		v.Name = name
 		v.IsGlobal = false
@@ -37,12 +40,16 @@ local Scope = {
 		self:AddLocal(v)
 		return v
 	end,
-	
+
 	GetLocal = function(self, name)
-		for k, var in pairs(self.Locals) do
+		-- Most recent binder wins: with distinct binder identities a
+		-- forward scan would resolve references to the OLDEST same-name
+		-- local in the scope.
+		for i = #self.Locals, 1, -1 do
+			local var = self.Locals[i]
 			if var.Name == name then return var end
 		end
-		
+
 		if self.Parent then
 			return self.Parent:GetLocal(name)
 		end

@@ -1,5 +1,19 @@
 -- tests/unit/buffborders_blizzard_banish_taint_test.lua
 -- Run: lua tests/unit/buffborders_blizzard_banish_taint_test.lua
+--
+-- Guards behaviors that survive the E4 unification onto the SHARED secure
+-- CustomAuraContainer model:
+--   1. Blizzard buff/debuff frame banish state must live OFF the Blizzard frame
+--      keys (taint hygiene), and banished frames must be removed from managed
+--      containers + the frame position manager. (Unchanged across models.)
+--   2. The forbidden AuraContainer is created/configured OUT OF COMBAT only and
+--      combat-deferred to PLAYER_REGEN_ENABLED (it is a forbidden object).
+--   3. QUI does NOT poll auras on UNIT_AURA for the live display anymore: the
+--      secure container self-drives UNIT_AURA C-side (AuraContainerPrivateMixin),
+--      so the bespoke per-frame UNIT_AURA registration + ScheduleBuffUpdate/
+--      ScheduleDebuffUpdate coalescing of the old insecure pool must be GONE.
+--      (Its replacement -- the container's own C-side UNIT_AURA handling -- is
+--      strictly better and not a QUI-side mechanism to assert here.)
 
 local function readFile(path)
     local fh = assert(io.open(path, "rb"), "failed to open " .. path)
@@ -18,6 +32,7 @@ end
 
 local source = readFile("QUI_ActionBars/actionbars/buffborders.lua")
 
+-- (1) Banish hygiene -- unchanged across models.
 assertContains(
     source,
     "local blizzardBanishState = Helpers.CreateStateTable()",
@@ -35,62 +50,37 @@ assertContains(
 
 assertContains(
     source,
-    "currentParent.RemoveManagedFrame",
-    "Managed-container removal must use the Blizzard parent mixin")
+    'ns.SafeCallMethodIfPresent("best-effort-style", currentParent, "RemoveManagedFrame"',
+    "Managed-container removal must use the Blizzard parent mixin (lookup inside pcall)")
 
 assertContains(
     source,
     "frame.ignoreFramePositionManager = true",
     "Banished Blizzard aura frames must not be re-added to the frame position manager")
 
+-- (2) The forbidden container is configured OOC only and combat-deferred.
 assertContains(
     source,
-    "ScheduleBuffUpdate()",
-    "Buff aura header events must coalesce styling through the shared update frame")
-
+    "PLAYER_REGEN_ENABLED",
+    "Forbidden-container work must be deferred to PLAYER_REGEN_ENABLED")
 assertContains(
     source,
-    "ScheduleDebuffUpdate()",
-    "Debuff aura header events must coalesce styling through the shared update frame")
+    "InCombatLockdown()",
+    "Container (re)config must be gated behind InCombatLockdown and deferred")
 
-assertContains(
-    source,
-    "if ns.AuraEvents then return end",
-    "Header UNIT_AURA hooks must be fallback-only when centralized aura deltas are available")
-
-assertContains(
-    source,
-    "if RefreshPureAuraUpdate(updateInfo) then return end",
-    "Pure aura updates must use the auraInstanceID fast path instead of scheduling full scans")
-
-assertContains(
-    source,
-    "local buffAuraChildrenByID = {}",
-    "BuffBorders must keep a visible auraInstanceID-to-child map for direct delta refresh")
-
-assertContains(
-    source,
-    "SetAuraChildMapEntry(child, auraChildMap, auraInstanceID)",
-    "BuffBorders must update aura child maps incrementally instead of wiping them each structural refresh")
-
+-- (3) No bespoke insecure UNIT_AURA poll/coalesce for the live display -- the
+-- secure container self-drives UNIT_AURA C-side now.
 assertAbsent(
     source,
-    "wipe(auraChildMap)",
-    "BuffBorders aura child maps must not be wiped and refilled on every structural refresh")
-
-assertContains(
-    source,
-    "BB_fastAuraUpdates",
-    "Memaudit must expose the BuffBorders fast aura update counter")
-
+    "ScheduleBuffUpdate",
+    "Live aura restyling must NOT coalesce through a bespoke ScheduleBuffUpdate (container self-drives UNIT_AURA)")
 assertAbsent(
     source,
-    "StyleHeaderChildren(buffContainer, s, true)",
-    "Buff aura header events must not run immediate GetUnitAuras scans")
-
+    "ScheduleDebuffUpdate",
+    "Live aura restyling must NOT coalesce through a bespoke ScheduleDebuffUpdate (container self-drives UNIT_AURA)")
 assertAbsent(
     source,
-    "StyleHeaderChildren(debuffContainer, s, false)\n        LayoutPrivateAuraSlots()",
-    "Debuff aura header events must not run immediate GetUnitAuras scans")
+    'RegisterUnitEvent("UNIT_AURA"',
+    "buffborders.lua must NOT register UNIT_AURA itself for the live display (the secure container owns it)")
 
 print("OK: buffborders_blizzard_banish_taint_test")

@@ -1,4 +1,4 @@
--- Verifies the pure helpers of QUI_InfoBar/infobar/dragreorder.lua:
+-- Verifies the pure helpers of modules/infobar/dragreorder.lua:
 --   * MoveWidget: remove-then-insert with same-zone gap adjustment, no-op
 --     detection, cross-zone moves, absent id
 --   * ResolveArrayInsert: screen side -> array index, mirrored for right zone
@@ -32,8 +32,8 @@ local InfoBar = { ApplyAll = function() end, GetZoneFrames = function() return {
 local ns = { Addon = { InfoBar = InfoBar } }
 (dofile(ROOT .. "tests/helpers/locale.lua"))(ns)
 assert(loadfile(ROOT .. "core/infobar_shared.lua"))("QUI", ns)
-assert(loadfile(ROOT .. "QUI_InfoBar/infobar/contextmenu.lua"))("QUI_InfoBar", ns)
-assert(loadfile(ROOT .. "QUI_InfoBar/infobar/dragreorder.lua"))("QUI_InfoBar", ns)
+assert(loadfile(ROOT .. "modules/infobar/contextmenu.lua"))("QUI_InfoBar", ns)
+assert(loadfile(ROOT .. "modules/infobar/dragreorder.lua"))("QUI_InfoBar", ns)
 
 local DR = InfoBar.DragReorder
 check(DR ~= nil, "DragReorder published on InfoBar")

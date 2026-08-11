@@ -284,7 +284,11 @@ ns.Helpers.CreateStateTable = function()
     return setmetatable({}, { __mode = "k" })
 end
 ns.Helpers.CHROME = { BORDER_PX = 1, BG_FALLBACK = { 0.05, 0.05, 0.05, 0.95 }, BORDER_FALLBACK = { 0, 0, 0, 1 }, BUTTON_BOOST = 0.07, SCROLLROW_BOOST = 0.03, DEPTH = { PANEL = { boost = 0, alpha = 0.95 }, SUBPANEL = { boost = 0.04, alpha = 0.85 }, ROW = { boost = 0.07, alpha = 0.75 } } }
-
+-- core/safecall.lua stub: silent pcall swallow matches the pre-SafeCall
+-- shape these tests were written against.
+ns.SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end
+ns.SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end
+ns.SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end
 function ns.Addon:PixelRound(value)
     return math.floor((value / pixelScale) + 0.5) * pixelScale
 end
@@ -301,6 +305,7 @@ function ns.Addon:ApplyFont(fontString, _, size, path, outline)
 end
 
 assert(loadfile("core/uikit.lua"))("QUI", ns)
+assert(loadfile("core/cast_engine.lua"))("QUI", ns)
 assert(loadfile("QUI_UnitFrames/unitframes/castbar.lua"))("QUI", ns)
 
 local settings = {

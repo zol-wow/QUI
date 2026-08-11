@@ -1,36 +1,15 @@
----------------------------------------------------------------------------
--- Bags views: per-corner icon widgets.
---
--- Each button corner (tl/tr/bl/br) carries a primary + fallback widget
--- pick (appearance.corners.tl1/tl2/...; scalar keys by design — array
--- defaults resurrect removed entries at login, the AceDB array-prefix
--- landmine). The first widget that yields content for the item renders;
--- "none" and inapplicable widgets fall through.
---
--- Widget facts come from the shared cache layer: Details.Build supplies
--- ilvl/bindType/expacID/equipLoc through ItemInfo (async-aware — a miss
--- re-renders on the next refresh once item data loads). Live-only facts
--- (junk, equipment set) are computed by the dress path and passed in ctx.
---
--- Select is PURE (ctx in, payload out) — TDD'd in
--- tests/unit/bags_corner_widgets_test.lua.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 local Helpers = ns.Helpers
 
 local function CJKFont(fs, p, s, f)
-    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
-        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
-    else
-        fs:SetFont(p, s, f)
-    end
+    if Bags.CJKFont then return Bags.CJKFont(fs, p, s, f) end
+    fs:SetFont(p, s, f)
 end
 
 local CornerWidgets = {}
 Bags.CornerWidgets = CornerWidgets
 
--- expacID (GetItemInfo returns[15]) → short label
 local EXPANSION_SHORT = {
     [0] = "Cls", "TBC", "WLK", "Cat", "MoP", "WoD", "Leg", "BfA", "SL", "DF",
     "TWW", "Mid",
@@ -43,21 +22,11 @@ local function TextColor(ctx)
     return 1, 1, 1
 end
 
---- ctx = { entry, details, isJunk, inSet, qualityColorText,
----         craftQualityAtlas (tier badge atlas, dress-path supplied),
----         upgradeTrack (badge payload, dress-path supplied) }
---- Resolver returns { text, r, g, b } | { atlas } | nil (inapplicable).
 CornerWidgets.Resolvers = {
     crafting_quality = function(ctx)
-        -- profession quality tier badge (reagent r1–r5 / crafted gear rank);
-        -- the dress path resolves the atlas via C_TradeSkillUI (live fact —
-        -- the pure core only consumes it)
         if ctx.craftQualityAtlas then return { atlas = ctx.craftQualityAtlas } end
     end,
     upgrade_track = function(ctx)
-        -- gear upgrade-track badge (e.g. "V4/8" = Veteran 4/8); the dress
-        -- path resolves it via C_Item.GetItemUpgradeInfo (live fact — the
-        -- pure core only consumes it)
         local u = ctx.upgradeTrack
         if u then return { text = u.text, r = u.r, g = u.g, b = u.b } end
     end,
@@ -69,9 +38,6 @@ CornerWidgets.Resolvers = {
     end,
     item_level = function(ctx)
         local d = ctx.details
-        -- equippables only: ilvl on consumables/reagents is API filler. Gate on
-        -- IsEquippableItem (d.isEquippable) — equipLoc ~= "" leaks ilvl onto
-        -- flasks/potions that report the "INVTYPE_NON_EQUIP_IGNORE" token.
         if d and d.ilvl and d.ilvl > 1 and d.isEquippable then
             local r, g, b = TextColor(ctx)
             return { text = tostring(d.ilvl), r = r, g = g, b = b }
@@ -85,8 +51,6 @@ CornerWidgets.Resolvers = {
     end,
     binding = function(ctx)
         local d = ctx.details
-        -- ItemConstantsDocumentation Enum.ItemBind: 2 = OnEquip;
-        -- 7/8/9 = ToWoWAccount/ToBnetAccount/ToBnetAccountUntilEquipped.
         if not d or d.isBound then return nil end
         local bt = d.bindType
         if bt == 2 then
@@ -104,8 +68,6 @@ CornerWidgets.Resolvers = {
     end,
 }
 
---- Pure core: first applicable of (primary, fallback). "none"/nil/unknown
---- ids fall through.
 function CornerWidgets.Select(id1, id2, ctx)
     if not ctx then return nil end
     local resolver = id1 and CornerWidgets.Resolvers[id1]
@@ -115,9 +77,6 @@ function CornerWidgets.Select(id1, id2, ctx)
     return resolver and resolver(ctx) or nil
 end
 
----------------------------------------------------------------------------
--- Renderer (frame-facing)
----------------------------------------------------------------------------
 local CORNERS = {
     { key = "tl", point = "TOPLEFT",     x = 2,  y = -1, justify = "LEFT" },
     { key = "tr", point = "TOPRIGHT",    x = -2, y = -1, justify = "RIGHT" },
@@ -145,7 +104,6 @@ local function EnsureCorner(button, c)
     return slot
 end
 
---- Render all four corners for a button. ctx nil (empty slot) hides all.
 function CornerWidgets.Apply(button, ctx, appearance)
     local corners = appearance and appearance.corners
     local fontSize = (appearance and appearance.cornerFontSize) or 11

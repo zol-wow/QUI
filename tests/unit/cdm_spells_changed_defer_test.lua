@@ -90,7 +90,6 @@ local function makeController()
         updateIconRangesForUsabilityEvent = noop,
         scheduleUpdate = noop,
         requestStackTextUpdate = noop,
-        noteChargeDurationObjectsUpdated = noop,
         recordRecentPlayerSpellCast = noop,
         getHighlighter = function() return { OnPlayerCastSucceeded = noop } end,
         setBarsDirty = noop,

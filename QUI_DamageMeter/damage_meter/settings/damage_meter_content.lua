@@ -1,15 +1,3 @@
---[[
-    QUI Options - Native Damage Meter
-    Builds the "Damage Meter (Native)" sub-page. Migrated to V3 body pattern
-    (CreateAccentDotLabel + CreateSettingsCardGroup + BuildSettingRow). The
-    override-row machinery is preserved: in Per-Window mode each appearance
-    widget shows an Override toggle paired with the actual control inside a
-    full-width row cell. In Global mode rows pair 2-per-row normally.
-
-    Owns: visibility dropdown, refresh rates, appearance (bars/fonts/colors),
-    session timer, spell history (icon strip + bar window), windows list.
-]]
-
 -- luacheck: globals C_Timer
 
 local _, ns = ...
@@ -35,7 +23,7 @@ local HEADER_GAP = 26
 local SECTION_GAP = 14
 local FORM_ROW = 32
 
-local NATIVE_DM_SUBPAGE_INDEX = 7  -- gameplay tile slot, immediately after Combat (6)
+local NATIVE_DM_SUBPAGE_INDEX = 7
 
 local function GetMod()
     return ns.QUI_DamageMeter or _G.QUI_DamageMeter
@@ -63,13 +51,6 @@ local function GetFontList()
     return list
 end
 
--- ===========================================================================
--- Theme presets — one-click Dark / Light shortcut for the Colors section.
--- A preset is a bundle of the same appearance keys the manual pickers write;
--- selecting one stamps the bundle into the GLOBAL appearance table and repaints
--- live. Nothing reads these back at render time, so there is no "preset vs
--- picker wins" resolution layer — the pickers simply show the stamped values.
--- ===========================================================================
 local THEME_PRESETS = {
     dark = {
         colors = {
@@ -91,9 +72,6 @@ local THEME_PRESETS = {
     },
 }
 
--- Stamp a preset bundle into `app` (the global appearance table). Color arrays
--- are COPIED, never shared by reference, so a later manual picker edit mutates
--- the profile's copy and not the THEME_PRESETS constant.
 local function ApplyThemePreset(app, name)
     local preset = THEME_PRESETS[name]
     if not (preset and app) then return end
@@ -116,12 +94,9 @@ local function DB()
     return nil
 end
 
--- ===========================================================================
--- Per-window override state
--- ===========================================================================
 local editingWindowID = 0
 local tabContentRef = nil
-local BuildNativeDamageMeterTab  -- forward
+local BuildNativeDamageMeterTab
 
 local function RebuildPage()
     if not tabContentRef then return end
@@ -208,10 +183,6 @@ local function ToggleNestedOverride(globalParent, parentKey, leafKey, on)
     end
 end
 
--- ===========================================================================
--- V3 layout helpers
--- ===========================================================================
--- Shared provider-panel layout scaffold (core/settings_layout_shared.lua).
 local function MakeLayout(content)
     return ns.QUI_SettingsLayoutShared.MakeLayout(content)
 end
@@ -220,13 +191,6 @@ local function row(parent, label, widget, desc)
     return Opts.BuildSettingRow(parent, label, widget, desc)
 end
 
--- ===========================================================================
--- Override widget wrapper: composes toggle + widget into a single composite
--- frame suitable for the right slot of a BuildSettingRow cell. In Global mode
--- (editingWindowID == 0), no toggle is shown — the widget is returned bare.
--- In Per-Window mode, toggle goes left, widget right, with in-place rebuild
--- on toggle flip so the bind table swaps without a page-wide repaint.
--- ===========================================================================
 local function BuildOverrideWidget(parent, globalTable, key, onChange, widgetBuilder)
     if editingWindowID == 0 then
         return widgetBuilder(parent, globalTable)
@@ -303,18 +267,8 @@ local function BuildNestedOverrideWidget(parent, globalParent, parentKey, leafKe
     return wrapper
 end
 
--- ===========================================================================
--- Page builder
--- ===========================================================================
 BuildNativeDamageMeterTab = function(tabContent)
     tabContentRef = tabContent
-    -- Resolve the options namespace at call time, not load time. This file is
-    -- loaded before the on-demand QUI_Options addon (shared.lua) REPLACES
-    -- ns.QUI_Options, so the upvalues captured at load can be nil (headless) or
-    -- the stale gui_shell stub (which lacks GetDB/CreateAccentDotLabel, making
-    -- the builder early-return with no widgets). Re-resolve live-first: a truthy
-    -- stale stub must not win over the replacement. This also updates
-    -- MakeLayout/row, which close over the same Shared/Opts upvalues.
     Shared = ns.QUI_Options or Shared
     Opts   = ns.QUI_Options or Opts
     local db = Shared and Shared.GetDB and Shared.GetDB()
@@ -361,8 +315,6 @@ BuildNativeDamageMeterTab = function(tabContent)
     if native.autoSwapChallengeSessions == nil then native.autoSwapChallengeSessions = false end
     local app = native.appearance.global
 
-    -- Per-window mode banner: pair override-aware cells full-width so the
-    -- toggle has room next to its widget. In Global mode, pair 2-per-row.
     local isPerWindow = editingWindowID > 0
     local function placeOverrideRow(s, label, wrapper, pendingRef)
         local cell = row(s.frame, label, wrapper)
@@ -378,9 +330,6 @@ BuildNativeDamageMeterTab = function(tabContent)
         end
     end
 
-    ---------------------------------------------------------------------------
-    -- Editing Window selector
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Editing Window"])
     local sEdit = L.sectionAt()
     local editingOptions = { { value = 0, text = ns.L["Global (apply to all windows)"] } }
@@ -397,9 +346,6 @@ BuildNativeDamageMeterTab = function(tabContent)
     sEdit.AddRow(row(sEdit.frame, ns.L["Editing"], editW))
     L.closeSection(sEdit)
 
-    ---------------------------------------------------------------------------
-    -- Behavior
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Behavior"])
     local sBeh = L.sectionAt()
 
@@ -442,7 +388,6 @@ BuildNativeDamageMeterTab = function(tabContent)
         { description = ns.L["When ON, windows showing Overall switch to Current when a key starts, then Current switches back to Overall when the key completes."] })
     sBeh.AddRow(row(sBeh.frame, ns.L["Auto Reset on Key Start"], autoResetW), row(sBeh.frame, ns.L["Auto Swap Current/Overall"], autoSwapW))
 
-    -- Override-aware fields: Number Format, Icon Style
     local numberFormatOptions = {
         { value = "minimal",  text = ns.L["Minimal (1K / 2M)"] },
         { value = "compact",  text = ns.L["Compact (1.5K / 2.4M)"] },
@@ -474,9 +419,6 @@ BuildNativeDamageMeterTab = function(tabContent)
     if pending then sBeh.AddRow(pending) end
     L.closeSection(sBeh)
 
-    ---------------------------------------------------------------------------
-    -- Appearance: Bars
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Appearance: Bars"])
     local sBars = L.sectionAt()
     local textures = GetTextureList()
@@ -542,9 +484,6 @@ BuildNativeDamageMeterTab = function(tabContent)
     if pending then sBars.AddRow(pending) end
     L.closeSection(sBars)
 
-    ---------------------------------------------------------------------------
-    -- Appearance: Fonts (font-slot overrides: rowName, rowValue, header)
-    ---------------------------------------------------------------------------
     local outlineOptions = {
         { value = "",             text = ns.L["None"] },
         { value = "OUTLINE",      text = ns.L["Outline"] },
@@ -608,15 +547,9 @@ BuildNativeDamageMeterTab = function(tabContent)
     BuildFontSlotCard("rowValue", ns.L["Row Value"])
     BuildFontSlotCard("header", ns.L["Header"])
 
-    ---------------------------------------------------------------------------
-    -- Appearance: Colors (nested under colors.{key})
-    ---------------------------------------------------------------------------
     L.headerAt(ns.L["Appearance: Colors"])
     local sCol = L.sectionAt()
 
-    -- One-click theme preset (Global mode only). Stamps a cohesive Dark/Light
-    -- color bundle into `app`, then repaints live. Per-window mode omits this —
-    -- those users keep tuning individual color overrides below.
     if editingWindowID == 0 then
         local presetOptions = {
             { value = "dark",  text = ns.L["Dark"]  },
@@ -656,9 +589,6 @@ BuildNativeDamageMeterTab = function(tabContent)
     if pending then sCol.AddRow(pending) end
     L.closeSection(sCol)
 
-    ---------------------------------------------------------------------------
-    -- Windows — bespoke layout (per-window two-row + Add button)
-    ---------------------------------------------------------------------------
     local TYPE_NAMES = {
         [0] = ns.L["Damage Done"], [1] = ns.L["Healing Done"], [2] = ns.L["Damage Taken"],
         [3] = ns.L["Interrupts"],  [4] = ns.L["Dispels"],      [5] = ns.L["Deaths"],
@@ -693,7 +623,6 @@ BuildNativeDamageMeterTab = function(tabContent)
         local windowID = id
         if not ws.name or ws.name == "" then ws.name = autoName end
 
-        -- Single row: nameEdit | Hide toggle + label | Delete, anchored left-to-right
         local nameEdit = GUI:CreateFormEditBox(windowsFrame, nil, "name", ws, function()
             RebuildPage()
         end, { width = 220, maxLetters = 60 },
@@ -748,9 +677,6 @@ BuildNativeDamageMeterTab = function(tabContent)
     return L.finish()
 end
 
--- ===========================================================================
--- Export + Feature registration
--- ===========================================================================
 ns.QUI_NativeDamageMeterOptions = {
     BuildNativeDamageMeterTab = BuildNativeDamageMeterTab,
 }

@@ -1,0 +1,1 @@
+tests/taint/fixtures/unsafe/unknown-method-consumer/input.lua:3:1 [advisory] <consumer:obj:Configure>: tainted value passed to unknown method consumer obj:Configure — not an index-documented secret-accepting sink; route through a documented C sink or probe first (source: <tainted-local>)

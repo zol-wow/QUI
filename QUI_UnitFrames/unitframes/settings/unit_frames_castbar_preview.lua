@@ -1,21 +1,3 @@
---[[
-    QUI Options V2 — Unit Frames preview: castbar mock
-
-    Builds and drives an animated mock castbar inside the Unit Frames
-    settings page preview pane. Follows the unit dropdown selection,
-    reflects every visible Castbar-tab setting in real time, and runs
-    a per-unit cycle script so settings that only manifest mid-cast
-    (channel ticks, GCD sweep, empowered stages, non-interruptible
-    color) are observably exercised.
-
-    Public surface:
-        ns.QUI_UnitFramesCastbarPreview.Build(host)   -> mock handle
-        ns.QUI_UnitFramesCastbarPreview.Refresh(mock, unitKey, unitDB, general)
-
-    Build runs once during preview block construction.
-    Refresh runs on every settings change and on dropdown change.
-]]
-
 local ADDON_NAME, ns = ...
 
 local function CJKFont(fs, p, s, f)
@@ -29,24 +11,16 @@ end
 local Module = {}
 ns.QUI_UnitFramesCastbarPreview = Module
 
----------------------------------------------------------------------------
--- Constants & helpers
----------------------------------------------------------------------------
-
--- Shared preview helpers live in unit_frames_surface.lua, which QUI_Options.toc
--- loads before this file. Alias them here to avoid byte-identical duplicates.
 local Shared = ns.QUI_UnitFramesPreviewShared
 local ANCHOR_MAP = Shared.ANCHOR_MAP
 local ResolveStatusBarTexture = Shared.ResolveStatusBarTexture
 local ResolveUnitFrameFont = Shared.ResolveUnitFrameFont
 
--- Hairline border helpers shared with unit_frames_surface.lua (loads first).
 local ApplyHairlineBorder = Shared.ApplyHairlineBorder
 local CreateHairlineBorder = Shared.CreateHairlineBorder
 
 local ApplyTextAnchor = Shared.ApplyTextAnchor
 
--- Position the spell icon outside the bar at the chosen anchor edge.
 local function ApplyIconAnchor(icon, bar, anchorKey, spacing)
     local anchor = ANCHOR_MAP[anchorKey] or "LEFT"
     spacing = spacing or 0
@@ -63,8 +37,6 @@ local function ApplyIconAnchor(icon, bar, anchorKey, spacing)
     end
 end
 
--- Scale the bar to fit the host width, leaving room for the icon (when shown)
--- and a small horizontal margin.
 local function ComputeBarScale(host, castDB)
     local iconAllowance = 0
     if castDB.showIcon then
@@ -73,10 +45,6 @@ local function ComputeBarScale(host, castDB)
     local hostW = math.max(((host and host:GetWidth()) or 0) - 40 - iconAllowance, 80)
     return math.min(1, hostW / (castDB.width or 250))
 end
-
----------------------------------------------------------------------------
--- Per-unit cycle scripts
----------------------------------------------------------------------------
 
 local CAST_PLAYER     = { kind = "cast",      duration = 2.5, spellName = ns.L["Frostbolt"],
                           spellIcon = "Interface\\Icons\\Spell_Frost_FrostBolt02" }
@@ -116,10 +84,6 @@ local function BuildScript(unitKey, castDB)
     return SCRIPTS[unitKey] or SCRIPTS.target
 end
 
----------------------------------------------------------------------------
--- Color resolution for the active segment
----------------------------------------------------------------------------
-
 local function GetPlayerClassColor()
     return Shared.GetPlayerClassColorOr(1, 0.7, 0, 1)
 end
@@ -141,20 +105,14 @@ local function ResolveSegmentColor(mock, seg)
     return c[1], c[2], c[3], c[4] or 1
 end
 
----------------------------------------------------------------------------
--- Per-segment one-shot (spell name, icon, baseline color, ticks)
----------------------------------------------------------------------------
-
 local function ApplySegmentEntry(mock, seg)
     local castDB = mock._castDB
 
-    -- Spell name (truncated by maxLength if > 0)
     local name = seg.spellName or ""
     local maxLen = castDB.maxLength or 0
-    if maxLen > 0 and #name > maxLen then name = name:sub(1, maxLen) end
+    if maxLen > 0 then name = ns.Helpers.TruncateUTF8(name, maxLen) end
     if castDB.showSpellText then mock.spellText:SetText(name) end
 
-    -- Icon (hidden for GCD segment which has nil icon)
     if castDB.showIcon and seg.spellIcon then
         mock.icon:Show()
         mock.icon._art:SetTexture(seg.spellIcon)
@@ -162,11 +120,9 @@ local function ApplySegmentEntry(mock, seg)
         mock.icon:Hide()
     end
 
-    -- Baseline fill color (per-stage empowered overrides this in OnUpdate)
     local r, g, b, a = ResolveSegmentColor(mock, seg)
     mock.fill:SetVertexColor(r, g, b, a)
 
-    -- Channel ticks
     if mock._ticksEnabled and seg.kind == "channel" and seg.ticks then
         local barW = mock._barInnerW
         for i = 1, 4 do
@@ -185,7 +141,6 @@ local function ApplySegmentEntry(mock, seg)
         for i = 1, 4 do mock.ticks[i]:Hide() end
     end
 
-    -- Empowered stage text shown only during empowered segment
     if seg.kind == "empowered" and mock._showStageNumber then
         mock.empoweredText:Show()
     else
@@ -193,25 +148,15 @@ local function ApplySegmentEntry(mock, seg)
     end
 end
 
----------------------------------------------------------------------------
--- Public API
----------------------------------------------------------------------------
-
 function Module.Build(host)
-    -- The mock IS the bar frame. Background / fill / border / text /
-    -- ticks parent directly to the mock. Icon is a child frame so it
-    -- can have its own border without coupling to the bar's border.
     local mock = CreateFrame("Frame", nil, host)
-    mock:SetSize(200, 20)  -- placeholder; Refresh resizes per castDB
+    mock:SetSize(200, 20)
     mock:SetPoint("BOTTOM", host, "BOTTOM", 0, 12)
 
-    -- Background (unfilled portion of the bar)
     mock.bg = mock:CreateTexture(nil, "BACKGROUND", nil, -2)
     mock.bg:SetAllPoints(mock)
     mock.bg:SetColorTexture(0.149, 0.149, 0.149, 1)
 
-    -- Fill (colored portion). Anchored to the LEFT edge; OnUpdate sets
-    -- the width per frame as a fraction of barInnerW.
     mock.fill = mock:CreateTexture(nil, "ARTWORK")
     mock.fill:SetPoint("TOPLEFT",    mock, "TOPLEFT",    0, 0)
     mock.fill:SetPoint("BOTTOMLEFT", mock, "BOTTOMLEFT", 0, 0)
@@ -219,10 +164,8 @@ function Module.Build(host)
     mock.fill:SetTexture("Interface\\Buttons\\WHITE8x8")
     mock.fill:SetVertexColor(1, 0.7, 0, 1)
 
-    -- Border (4 hairline strips, like the unit-frame mock)
     mock._border = CreateHairlineBorder(mock, { 0, 0, 0, 1 })
 
-    -- Icon (separate frame so it has its own border)
     local icon = CreateFrame("Frame", nil, mock)
     icon:SetSize(25, 25)
     icon._art = icon:CreateTexture(nil, "ARTWORK")
@@ -233,7 +176,6 @@ function Module.Build(host)
     icon._border = CreateHairlineBorder(icon, { 0, 0, 0, 1 })
     mock.icon = icon
 
-    -- Spell name + time text + empowered stage text
     mock.spellText     = mock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     mock.spellText:SetText(ns.L["Frostbolt"])
     mock.timeText      = mock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -241,7 +183,6 @@ function Module.Build(host)
     mock.empoweredText = mock:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     mock.empoweredText:Hide()
 
-    -- Channel tick textures (positions set in ApplySegmentEntry per channel segment)
     mock.ticks = {}
     for i = 1, 4 do
         local t = mock:CreateTexture(nil, "OVERLAY")
@@ -250,7 +191,6 @@ function Module.Build(host)
         mock.ticks[i] = t
     end
 
-    -- Runtime state — populated by Refresh and OnUpdate
     mock._state = {
         segment      = nil,
         segmentIndex = nil,
@@ -274,7 +214,6 @@ function Module.Build(host)
 
         s.segmentT = (s.segmentT or 0) + elapsed
 
-        -- Pick a segment (state machine driven by per-unit script)
         if (not s.segment) or s.segmentT >= s.segment.duration then
             s.segmentIndex = ((s.segmentIndex or 0) % #s.script) + 1
             s.segment      = s.script[s.segmentIndex]
@@ -284,7 +223,6 @@ function Module.Build(host)
 
         local seg, t, dur = s.segment, s.segmentT, s.segment.duration
 
-        -- Compute fill percentage from segment kind
         local pct
         if seg.kind == "cast" or seg.kind == "empowered" then
             pct = t / dur
@@ -299,7 +237,6 @@ function Module.Build(host)
 
         self.fill:SetWidth(math.max(0, self._barInnerW * pct))
 
-        -- Time text (absolute remaining)
         if castDB.showTimeText
             and not (seg.kind == "empowered" and castDB.hideTimeTextOnEmpowered) then
             self.timeText:Show()
@@ -308,7 +245,6 @@ function Module.Build(host)
             self.timeText:Hide()
         end
 
-        -- Empowered stage number + per-stage fill color override
         if seg.kind == "empowered" and self._showStageNumber then
             local stage = math.min(4, math.floor(pct * 4) + 1)
             self.empoweredText:SetText(tostring(stage))
@@ -323,12 +259,9 @@ function Module.Build(host)
         end
     end)
 
-    -- Apply default geometry/border so the mock is visible before
-    -- Refresh runs (e.g. if the surface integration races, or if no
-    -- castDB exists). Refresh will overwrite all of this.
     ApplyHairlineBorder(mock._border,      mock,      1)
     ApplyHairlineBorder(mock.icon._border, mock.icon, 1)
-    mock.fill:SetWidth(100)  -- frozen 50% fill at default 200 width
+    mock.fill:SetWidth(100)
 
     return mock
 end
@@ -350,21 +283,17 @@ function Module.Refresh(mock, unitKey, unitDB, general)
     local scale = ComputeBarScale(host, castDB)
     mock._scale = scale
 
-    -- Geometry
     local barW = math.max(20, (castDB.width  or 250) * scale)
     local barH = math.max(4,  (castDB.height or  25) * scale)
     mock:SetSize(barW, barH)
     mock._barInnerW = barW
 
-    -- Texture + bg
     mock.fill:SetTexture(ResolveStatusBarTexture(castDB.texture))
     local bg = castDB.bgColor or { 0.149, 0.149, 0.149, 1 }
     mock.bg:SetColorTexture(bg[1], bg[2], bg[3], bg[4] or 1)
 
-    -- Border
     ApplyHairlineBorder(mock._border, mock, castDB.borderSize or 1)
 
-    -- Icon
     if castDB.showIcon then
         mock.icon:Show()
         local iconBase = math.max(8, (castDB.iconSize or 25) * (castDB.iconScale or 1) * scale)
@@ -375,7 +304,6 @@ function Module.Refresh(mock, unitKey, unitDB, general)
         mock.icon:Hide()
     end
 
-    -- Text fonts/anchors
     local fontPath, fontOutline = ResolveUnitFrameFont()
     local fontSize = math.max(8, math.min(24, math.floor((castDB.fontSize or 12) * scale + 0.5)))
 
@@ -405,7 +333,6 @@ function Module.Refresh(mock, unitKey, unitDB, general)
         mock.timeText:Hide()
     end
 
-    -- Channel ticks (color + thickness; positions set per-segment in OnUpdate)
     mock._ticksEnabled = (castDB.showChannelTicks == true) and unitKey ~= "boss" and unitKey ~= "pet"
     local tickColor     = castDB.channelTickColor or { 1, 1, 1, 0.9 }
     local tickThickness = math.max(1, (castDB.channelTickThickness or 1) * scale)
@@ -413,10 +340,9 @@ function Module.Refresh(mock, unitKey, unitDB, general)
         local t = mock.ticks[i]
         t:SetColorTexture(tickColor[1], tickColor[2], tickColor[3], tickColor[4] or 0.9)
         t:SetWidth(tickThickness)
-        t:Hide()  -- shown on entry of channel segment in ApplySegmentEntry
+        t:Hide()
     end
 
-    -- Empowered (player only)
     if unitKey == "player" and castDB.showEmpoweredLevel then
         mock._showStageNumber = true
         mock._stageColors     = castDB.empoweredStageColors or {}
@@ -434,13 +360,8 @@ function Module.Refresh(mock, unitKey, unitDB, general)
         mock.empoweredText:Hide()
     end
 
-    -- Build the per-unit cycle script (player script depends on
-    -- showEmpoweredLevel / showGCD toggles, so rebuild every refresh).
     mock._state.script = BuildScript(unitKey, castDB)
 
-    -- Cycle reset on dropdown unit change OR when the previous segment
-    -- is no longer in the (rebuilt) script. Forces the OnUpdate driver
-    -- to enter segment 1 on its next tick.
     if mock._lastUnit ~= unitKey then
         mock._lastUnit           = unitKey
         mock._state.segment      = nil
@@ -448,9 +369,6 @@ function Module.Refresh(mock, unitKey, unitDB, general)
         mock._state.segmentT     = 0
     end
 
-    -- Apply segment 1 immediately so the mock looks like a real cast
-    -- before the OnUpdate driver runs (or while waiting for its next
-    -- tick). The driver may overwrite this on its next call; that's fine.
     if not mock._state.segment then
         mock._state.segmentIndex = 1
         mock._state.segment      = mock._state.script[1]

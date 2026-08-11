@@ -1,9 +1,3 @@
----------------------------------------------------------------------------
--- BONUS ROLL FRAME — Layout Mode anchoring provider
--- Registers a Feature + shared provider so the layout-mode right-click
--- panel for the bonusRollFrame mover shows the standard Position section
--- (anchor target, from/to point, X/Y offsets) instead of an empty panel.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 
 local Settings = ns.Settings

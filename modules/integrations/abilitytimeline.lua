@@ -1,18 +1,9 @@
---[[
-    QUI AbilityTimeline Integration Module
-    Anchors AbilityTimeline timeline and big icon frames to QUI elements.
-]]
-
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 
----------------------------------------------------------------------------
--- MODULE TABLE
----------------------------------------------------------------------------
 local QUI_AbilityTimeline = {}
 ns.QUI_AbilityTimeline = QUI_AbilityTimeline
 
--- Deferred updates when frames are unavailable
 local pendingUpdate = false
 
 local TARGET_KEYS = {
@@ -20,9 +11,6 @@ local TARGET_KEYS = {
     bigIcon = "abilityTimelineBigIcon",
 }
 
----------------------------------------------------------------------------
--- DATABASE ACCESS
----------------------------------------------------------------------------
 local function GetDB()
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.abilityTimeline then
         return QUICore.db.profile.abilityTimeline
@@ -30,9 +18,6 @@ local function GetDB()
     return nil
 end
 
----------------------------------------------------------------------------
--- ADDON AVAILABILITY
----------------------------------------------------------------------------
 local function IsAddonLoaded(name)
     if C_AddOns and C_AddOns.IsAddOnLoaded then
         return C_AddOns.IsAddOnLoaded(name)
@@ -50,9 +35,6 @@ function QUI_AbilityTimeline:IsAvailable()
     return IsAddonLoaded("AbilityTimeline")
 end
 
----------------------------------------------------------------------------
--- FRAME RESOLUTION
----------------------------------------------------------------------------
 function QUI_AbilityTimeline:GetAddonFrame(frameKey)
     if frameKey == "timeline" then
         return _G.AbilityTimelineFrame
@@ -66,9 +48,6 @@ function QUI_AbilityTimeline:GetAnchorFrame(anchorName)
     return ns.QUI_IntegrationShared.GetAnchorFrame(anchorName)
 end
 
----------------------------------------------------------------------------
--- POSITIONING
----------------------------------------------------------------------------
 local QueueRetry = ns.QUI_IntegrationShared.MakeQueueRetry("QUI_AbilityTimeline")
 
 local anchoredFramesHookInstalled = false
@@ -161,9 +140,6 @@ function QUI_AbilityTimeline:ApplyAllPositions()
     self:ApplyPosition("bigIcon")
 end
 
----------------------------------------------------------------------------
--- INITIALIZE
----------------------------------------------------------------------------
 function QUI_AbilityTimeline:Initialize()
     if not self:IsAvailable() then
         return
@@ -172,9 +148,6 @@ function QUI_AbilityTimeline:Initialize()
     self:ApplyAllPositions()
 end
 
----------------------------------------------------------------------------
--- EVENT HANDLING
----------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1)

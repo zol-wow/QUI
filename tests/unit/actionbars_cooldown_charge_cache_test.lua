@@ -246,6 +246,9 @@ function C_ActionBar.GetActionLossOfControlCooldownDuration()
 end
 
 local ns = {
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
     Helpers = {
         GetCore = function() return {} end,
         CreateDBGetter = function()
@@ -574,12 +577,9 @@ actionBars.UpdateAllCooldowns()
 assert(actionCooldownCalls - cooldownCallsBeforeInactiveCache == 2,
     "recently inactive cooldown buttons should skip source probes until the inactive TTL expires")
 
-assert(type(actionBars._sharedHandlers) == "table",
-    "shared action button handlers should be exported for all button instances")
-assert(type(actionBars._sharedHandlers.UpdateCooldown) == "function",
-    "cooldown updates should use one shared handler instead of per-button closures")
-assert(type(actionBars._sharedHandlers.UpdateCount) == "function",
-    "count updates should use one shared handler instead of per-button closures")
+-- (_sharedHandlers pins removed: ActionBarButtonTemplate adoption made the
+-- shared per-button handler table dead code — Blizzard's mixin owns the
+-- button lifecycle; QUI's presentation passes run through ActionBarsOwned.)
 
 actionBarsDB.global = {
     skinEnabled = true,
@@ -755,5 +755,208 @@ assert(spellMapStats.rebuilds == rebuildsBefore + 1,
 actionBars.EnsureSpellIdMap()
 assert(spellMapStats.rebuilds == rebuildsBefore + 1,
     "clean spell reverse map should not rebuild on repeated visual refreshes")
+
+---------------------------------------------------------------------------
+-- SOURCE GUARD: GetSafeCooldownTiming probe order.  startTime/duration are
+-- non-nilable numbers (SpellSharedDocumentation SpellCooldownInfo) but
+-- secret-capable under cooldown restriction; == / <= on a secret THROWS in
+-- 12.1 while the offline Lua 5.1 sentinel silently compares false, so the
+-- probe-before-compare order can only be pinned at the source level.
+---------------------------------------------------------------------------
+
+local fh = assert(io.open("QUI_ActionBars/actionbars/actionbars_cooldowns.lua", "rb"),
+    "failed to open actionbars_cooldowns.lua")
+local cooldownsSource = fh:read("*a")
+fh:close()
+
+-- Preserve byte offsets while blanking every non-code Lua lexical form.
+-- A line-only comment scrub is insufficient: the expected guard can be
+-- planted in a quoted/long string or a long comment while unsafe code runs.
+local function stripLuaNonCode(source)
+    local chars = {}
+    for i = 1, #source do
+        chars[i] = source:sub(i, i)
+    end
+
+    local function blank(first, last)
+        for i = first, last do
+            if chars[i] ~= "\n" and chars[i] ~= "\r" then
+                chars[i] = " "
+            end
+        end
+    end
+
+    local function longBracketAt(at)
+        local first, last, equals = source:find("%[(=*)%[", at)
+        if first ~= at then return nil end
+        return last, equals
+    end
+
+    local function longBracketEnd(openEnd, equals)
+        local close = "]" .. equals .. "]"
+        local closeAt = source:find(close, openEnd + 1, true)
+        return closeAt and (closeAt + #close - 1) or #source
+    end
+
+    local cursor = 1
+    while cursor <= #source do
+        local char = source:sub(cursor, cursor)
+        if source:sub(cursor, cursor + 1) == "--" then
+            local openEnd, equals = longBracketAt(cursor + 2)
+            if openEnd then
+                local closeEnd = longBracketEnd(openEnd, equals)
+                blank(cursor, closeEnd)
+                cursor = closeEnd + 1
+            else
+                local newline = source:find("\n", cursor + 2, true)
+                local commentEnd = newline and (newline - 1) or #source
+                blank(cursor, commentEnd)
+                cursor = commentEnd + 1
+            end
+        elseif char == "'" or char == '"' then
+            local quote = char
+            local stringEnd = cursor
+            local scan = cursor + 1
+            while scan <= #source do
+                local current = source:sub(scan, scan)
+                if current == "\\" then
+                    scan = scan + 2
+                elseif current == quote then
+                    stringEnd = scan
+                    scan = #source + 1
+                else
+                    scan = scan + 1
+                end
+            end
+            if stringEnd == cursor then stringEnd = #source end
+            blank(cursor, stringEnd)
+            cursor = stringEnd + 1
+        elseif char == "[" then
+            local openEnd, equals = longBracketAt(cursor)
+            if openEnd then
+                local closeEnd = longBracketEnd(openEnd, equals)
+                blank(cursor, closeEnd)
+                cursor = closeEnd + 1
+            else
+                cursor = cursor + 1
+            end
+        else
+            cursor = cursor + 1
+        end
+    end
+
+    local code = table.concat(chars)
+    assert(#code == #source, "Lua lexical scrub must preserve source offsets")
+    return code
+end
+
+local combinedGuard =
+    "if Helpers.IsSecretValue(start) or Helpers.IsSecretValue(duration) then"
+local lexicalDecoys = table.concat({
+    '"' .. combinedGuard .. '"',
+    "'" .. combinedGuard .. "'",
+    "[=[" .. combinedGuard .. "]=]",
+    "-- " .. combinedGuard,
+    "--[==[\n" .. combinedGuard .. "\n]==]",
+}, "\n")
+assert(not stripLuaNonCode(lexicalDecoys):find(combinedGuard, 1, true),
+    "Lua lexical scrub must reject guard text hidden in strings/comments")
+
+-- Find the helper boundary in CODE too. A raw-source search can be truncated
+-- by `\n    local function decoy` planted in a long string/comment, leaving
+-- unsafe executable statements after the decoy outside the scanned slice.
+local cooldownsCode = stripLuaNonCode(cooldownsSource)
+local timingStart = assert(
+    cooldownsCode:find("local function GetSafeCooldownTiming", 1, true),
+    "chunk must declare GetSafeCooldownTiming")
+local timingEnd = assert(cooldownsCode:find(
+    "\n    local function ", timingStart + 1, true),
+    "GetSafeCooldownTiming must be followed by the next local helper")
+-- Comparison order is CODE order: non-code bytes are blanked, not removed.
+local timingCode = cooldownsCode:sub(timingStart, timingEnd - 1)
+local combinedGuardAt = assert(timingCode:find(combinedGuard, 1, true),
+    "GetSafeCooldownTiming must use one combined start/duration secret guard")
+local startProbeAt = assert(timingCode:find("start", combinedGuardAt, true))
+local durationProbeAt = assert(timingCode:find("duration", startProbeAt + 1, true))
+local guardLineEnd = assert(timingCode:find("\n", combinedGuardAt, true))
+local guardReturnAt = assert(timingCode:find("%S", guardLineEnd + 1),
+    "combined secret guard must have a body")
+local guardReturnEnd = timingCode:find("\n", guardReturnAt, true)
+    or (#timingCode + 1)
+assert(timingCode:sub(guardReturnAt, guardReturnEnd - 1)
+        :match("^%s*(.-)%s*$") == "return nil, nil",
+    "combined secret guard must immediately return nil timing values")
+local guardCloseAt = assert(timingCode:find("%S", guardReturnEnd + 1),
+    "combined secret guard must close before timing values are consumed")
+local guardCloseEnd = timingCode:find("\n", guardCloseAt, true)
+    or (#timingCode + 1)
+assert(timingCode:sub(guardCloseAt, guardCloseEnd - 1)
+        :match("^%s*(.-)%s*$") == "end",
+    "combined secret guard must close immediately after its return")
+local function exactTrimmedLineAt(source, expected)
+    local cursor = 1
+    while cursor <= #source do
+        local newline = source:find("\n", cursor, true) or (#source + 1)
+        local line = source:sub(cursor, newline - 1)
+        if line:match("^%s*(.-)%s*$") == expected then
+            return cursor + assert(line:find(expected, 1, true)) - 1
+        end
+        cursor = newline + 1
+    end
+end
+local function plainOccurrences(source, needle)
+    local count, first, cursor = 0, nil, 1
+    while true do
+        local at = source:find(needle, cursor, true)
+        if not at then return count, first end
+        count = count + 1
+        first = first or at
+        cursor = at + #needle
+    end
+end
+local startDeclAt = assert(exactTrimmedLineAt(
+    timingCode, "local start = cdInfo.startTime"),
+    "startTime extraction must be exactly `local start = cdInfo.startTime`")
+local durationDeclAt = assert(exactTrimmedLineAt(
+    timingCode, "local duration = cdInfo.duration"),
+    "duration extraction must be exactly `local duration = cdInfo.duration`")
+local startRawCount, startRawAt =
+    plainOccurrences(timingCode, "cdInfo.startTime")
+local durationRawCount, durationRawAt =
+    plainOccurrences(timingCode, "cdInfo.duration")
+assert(startRawCount == 1 and startRawAt == startDeclAt + #"local start = ",
+    "cdInfo.startTime must occur exactly once, in its exact extraction line")
+assert(durationRawCount == 1
+        and durationRawAt == durationDeclAt + #"local duration = ",
+    "cdInfo.duration must occur exactly once, in its exact extraction line")
+local startDeclEnd = assert(timingCode:find("\n", startDeclAt, true))
+local durationDeclEnd = assert(timingCode:find("\n", durationDeclAt, true))
+local firstStartUse = assert(timingCode:find(
+    "%f[%w_]start%f[^%w_]", startDeclEnd + 1))
+local firstDurationUse = assert(timingCode:find(
+    "%f[%w_]duration%f[^%w_]", durationDeclEnd + 1))
+assert(firstStartUse == startProbeAt and firstDurationUse == durationProbeAt,
+    "the combined secret guard must be the FIRST post-read use of BOTH start and duration (including direct truth-tests)")
+-- Pin the full operator family too.  The first-use assertion above catches
+-- direct truth-tests; these explicit scans document comparison, modulo,
+-- exponentiation, and every other arithmetic spelling that also throws.
+local firstCompare = math.min(
+    timingCode:find("==", 1, true) or math.huge,
+    timingCode:find("~=", 1, true) or math.huge,
+    timingCode:find("<", 1, true) or math.huge,
+    timingCode:find(">", 1, true) or math.huge)
+local firstArith = math.min(
+    timingCode:find("+", 1, true) or math.huge,
+    timingCode:find("-", 1, true) or math.huge,
+    timingCode:find("*", 1, true) or math.huge,
+    timingCode:find("/", 1, true) or math.huge,
+    timingCode:find("%", 1, true) or math.huge,
+    timingCode:find("^", 1, true) or math.huge)
+assert(startProbeAt < firstCompare and durationProbeAt < firstCompare,
+    "GetSafeCooldownTiming must probe BOTH start and duration BEFORE any comparison (== on a secret throws)")
+assert(startProbeAt < firstArith and durationProbeAt < firstArith,
+    "GetSafeCooldownTiming must probe BOTH start and duration BEFORE any arithmetic (+ on a secret throws)")
+assert(not timingCode:find("cdInfo%.start%f[%A]"),
+    "no legacy cdInfo.start fallback: the field is not in SpellCooldownInfo and a nil-compare on a secret startTime throws")
 
 originalPrint("OK: actionbars_cooldown_charge_cache_test")

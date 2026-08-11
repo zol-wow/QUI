@@ -1,35 +1,4 @@
 local ADDON_NAME, ns = ...
-----------------------------------------------------------------------------
--- Combat-End Profiler
---
--- Measures the cost of the PLAYER_REGEN_ENABLED handler chain to diagnose
--- combat-end stutter. Disabled by default; opt in via slash command.
---
--- Usage:
---   /qui combatprof on        → start profiling
---   /qui combatprof off       → stop and unwrap functions
---   /qui combatprof report    → reprint the last combat-end report
---   /qui combatprof reset     → clear accumulated stats
---
--- A report prints automatically ~2.5s after each combat ends.
---
--- Four layers of evidence:
---   1. Wall-clock window: t0 on PLAYER_REGEN_ENABLED, "settle" mark on the
---      next After(0) tick (proxy for when the synchronous handler chain
---      finishes), FPS sampled before and 0.5s after window closes.
---   2. Per-function timing on named CDM/spell-data suspects via
---      GetTimePreciseSec deltas (immune to nesting unlike debugprofilestart).
---   3. Per-frame-handler timing on every frame in ns.QUI_PerfRegistry
---      (CDM, group frames, action bars, raid buffs, aura dispatch, plus
---      explicit registrations from skinning combat-defer frames). Wraps
---      OnEvent / OnUpdate, records totalMs only inside the watch window.
---   4. Frame-time spike detector — any frame >50ms within the watch window
---      is logged with offset-since-regen.
-----------------------------------------------------------------------------
-
--- =====================================================================
--- State
--- =====================================================================
 
 local enabled       = false
 local wrapped       = false
@@ -39,27 +8,23 @@ local windowSettleMs = 0
 local windowFps0    = 0
 local windowFps1    = 0
 
-local funcStats     = {}    -- [label] = { calls, totalMs, maxMs }
-local frameSpikes   = {}    -- list of { elapsed, t }
-local lastReport    = nil   -- string (most recent printed report)
+local funcStats     = {}
+local frameSpikes   = {}
+local lastReport    = nil
 
 local WINDOW_DURATION = 2.0
-local SPIKE_THRESHOLD = 0.05    -- 50 ms
+local SPIKE_THRESHOLD = 0.05
 
--- Suspect functions to wrap. Resolved at enable time so missing modules
--- (e.g. CDM disabled) don't error.
 local SUSPECTS = {
     { path = "CDMSpellData", method = "SnapshotBlizzardCDM",    label = "SnapshotBlizzardCDM" },
     { path = "CDMSpellData", method = "CheckAllDormantSpells",  label = "CheckAllDormantSpells" },
     { path = "CDMSpellData", method = "ReconcileAllContainers", label = "ReconcileAllContainers" },
 }
 
-local originals = {}        -- [label] = { tbl, method, fn }
-local frameOriginals = {}   -- [label] = { frame, scriptType, fn }
+local originals = {}
+local frameOriginals = {}
 
--- =====================================================================
--- Wrapping (Layer 2)
--- =====================================================================
+local securecall = securecallfunction or function(fn, ...) return fn(...) end
 
 local function record(label, ms)
     local row = funcStats[label]
@@ -78,20 +43,16 @@ local function wrapFn(tbl, method, label)
     if type(orig) ~= "function" then return end
     originals[label] = { tbl = tbl, method = method, fn = orig }
     tbl[method] = function(self, ...)
-        if not enabled then return orig(self, ...) end
+        if not enabled then return securecall(orig, self, ...) end
         local t0 = GetTimePreciseSec()
         local function track(...)
             record(label, (GetTimePreciseSec() - t0) * 1000)
             return ...
         end
-        return track(orig(self, ...))
+        return track(securecall(orig, self, ...))
     end
 end
 
--- Wrap a frame's OnEvent / OnUpdate handler so its synchronous cost is timed
--- whenever it dispatches inside the watch window. Captures every event the
--- frame is registered for, not just PLAYER_REGEN_ENABLED — that's the point:
--- post-combat handlers also fire on UNIT_AURA / BAG_UPDATE / etc cascades.
 local function wrapFrameHandler(label, frame, scriptType)
     if frameOriginals[label] then return end
     if type(frame) ~= "table" or type(frame.GetScript) ~= "function"
@@ -103,31 +64,28 @@ local function wrapFrameHandler(label, frame, scriptType)
     local wrapped_fn
     if scriptType == "OnUpdate" then
         wrapped_fn = function(self, elapsed, ...)
-            if not (enabled and windowOpen) then return orig(self, elapsed, ...) end
+            if not (enabled and windowOpen) then return securecall(orig, self, elapsed, ...) end
             local t0 = GetTimePreciseSec()
             local function track(...)
                 record(label, (GetTimePreciseSec() - t0) * 1000)
                 return ...
             end
-            return track(orig(self, elapsed, ...))
+            return track(securecall(orig, self, elapsed, ...))
         end
     else
         wrapped_fn = function(self, event, ...)
-            if not (enabled and windowOpen) then return orig(self, event, ...) end
+            if not (enabled and windowOpen) then return securecall(orig, self, event, ...) end
             local t0 = GetTimePreciseSec()
             local function track(...)
                 record(label, (GetTimePreciseSec() - t0) * 1000)
                 return ...
             end
-            return track(orig(self, event, ...))
+            return track(securecall(orig, self, event, ...))
         end
     end
     frame:SetScript(scriptType, wrapped_fn)
 end
 
--- Snapshot ns.QUI_PerfRegistry at install time so any module that pushed an
--- entry before /qui combatprof on is wrapped. Late pushes (after enable) are
--- not picked up — call combatprof off + on to refresh.
 local function InstallFrameWrappers()
     local reg = ns.QUI_PerfRegistry
     if not reg then return end
@@ -153,7 +111,6 @@ end
 
 local function InstallWrappers()
     if wrapped then return true end
-    -- Pre-flight: every named suspect must resolve.
     for _, s in ipairs(SUSPECTS) do
         local tbl = ns[s.path]
         if not tbl or type(tbl[s.method]) ~= "function" then
@@ -177,10 +134,6 @@ local function RestoreWrappers()
     wrapped = false
 end
 
--- =====================================================================
--- Frame-time spike detector (Layer 4)
--- =====================================================================
-
 local spikeFrame = CreateFrame("Frame")
 spikeFrame:Hide()
 spikeFrame:SetScript("OnUpdate", function(self, elapsed)
@@ -198,10 +151,6 @@ spikeFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 
--- =====================================================================
--- Window lifecycle (Layer 1)
--- =====================================================================
-
 local function ResetWindow()
     wipe(funcStats)
     wipe(frameSpikes)
@@ -210,7 +159,7 @@ local function ResetWindow()
     windowFps1 = 0
 end
 
-local PrintReport    -- forward declared
+local PrintReport
 
 local function OpenWindow()
     ResetWindow()
@@ -219,16 +168,12 @@ local function OpenWindow()
     windowOpen  = true
     spikeFrame:Show()
 
-    -- Settle marker — fires on the next OnUpdate after the synchronous
-    -- handler chain completes. Caveat: our combat handler may itself fire
-    -- mid-chain, so this is a lower bound on total sync cost.
     C_Timer.After(0, function()
         if windowOpen then
             windowSettleMs = (GetTimePreciseSec() - windowStart) * 1000
         end
     end)
 
-    -- Window close + auto-report.
     C_Timer.After(WINDOW_DURATION + 0.5, function()
         if not windowOpen then return end
         windowFps1 = GetFramerate() or 0
@@ -243,10 +188,6 @@ combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatFrame:SetScript("OnEvent", function()
     if enabled then OpenWindow() end
 end)
-
--- =====================================================================
--- Reporting
--- =====================================================================
 
 local function fmtMs(n) return ("%6.1f"):format(n or 0) end
 
@@ -283,10 +224,6 @@ PrintReport = function(autoPrint)
     lastReport = table.concat(lines, "\n")
     for _, line in ipairs(lines) do print(line) end
 end
-
--- =====================================================================
--- Slash dispatch
--- =====================================================================
 
 local function CmdOn()
     if enabled then

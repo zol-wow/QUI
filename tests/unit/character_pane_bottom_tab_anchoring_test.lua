@@ -16,7 +16,7 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local source = readFile("QUI_Skinning/skinning/character_pane/character.lua")
+local source = readFile("modules/skinning/character_pane/character.lua")
 
 assertContains(
     source,
@@ -46,7 +46,7 @@ assertContains(
     "Non-character tabs must move the whole bottom tab chain up")
 
 local restoreEnd = assert(
-    source:find("-- Helper to hide all custom elements", adjustEnd, true),
+    source:find("local function HideCustomElements()", adjustEnd, true),
     "HideCustomElements marker should follow RestoreCharacterTabPositions")
 local restoreBlock = source:sub(adjustEnd, restoreEnd)
 assertContains(

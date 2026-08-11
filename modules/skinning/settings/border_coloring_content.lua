@@ -1,0 +1,195 @@
+local _, ns = ...
+local QUI = QUI
+local GUI = QUI.GUI
+
+local Shared = ns.QUI_Options
+local Helpers = ns.Helpers
+
+local Settings = ns.Settings
+local Registry = Settings and Settings.Registry
+local Schema = Settings and Settings.Schema
+
+local BORDER_COLORING_SUBPAGE_INDEX = 11
+
+local function MakeLayout(content)
+    return ns.QUI_SettingsLayoutShared.MakeLayout(content)
+end
+
+local function row(parent, label, widget, desc)
+    return Shared.BuildSettingRow(parent, label, widget, desc)
+end
+
+local function RefreshBorderColoring()
+    if Helpers and Helpers.RefreshAllBorders then
+        Helpers.RefreshAllBorders()
+    end
+    if ns.Registry and type(ns.Registry.RefreshAll) == "function" then
+        ns.Registry:RefreshAll("skinning")
+    end
+end
+
+local function BuildBorderColoringTab(tabContent)
+    local db = Shared.GetDB()
+
+    GUI:SetSearchContext({
+        tileId = "appearance",
+        tabName = "Appearance",
+        subPageIndex = BORDER_COLORING_SUBPAGE_INDEX,
+        subTabName = "Border Coloring",
+        featureId = "borderColoringPage",
+        category = "appearance",
+    })
+
+    if not db then return end
+    if not db.general then db.general = {} end
+
+    local general = db.general
+    local profile = db
+
+    if general.hideSkinBorders == nil then general.hideSkinBorders = false end
+    if general.skinBorderColorSource == nil then
+        general.skinBorderColorSource = general.skinBorderUseClassColor and "class" or "theme"
+    end
+
+    local L = MakeLayout(tabContent)
+
+    L.headerAt(ns.L["Global Border"])
+    local sGB = L.sectionAt()
+
+    local gbSourceW, gbColorW = ns.QUI_BorderControl.Attach(
+        GUI,
+        sGB.frame,
+        general,
+        "skin",
+        RefreshBorderColoring,
+        {
+            includeInherit   = false,
+            noAlpha          = true,
+            label            = ns.L["Border Color Source"],
+            colorLabel       = ns.L["Custom Border Color"],
+        }
+    )
+
+    local gbHideW = GUI:CreateFormCheckbox(sGB.frame, nil, "hideSkinBorders", general,
+        RefreshBorderColoring,
+        { description = ns.L["Hide the 1px border drawn around all globally skinned frames."] }
+    )
+
+    sGB.AddRow(
+        row(sGB.frame, ns.L["Border Color Source"], gbSourceW),
+        row(sGB.frame, ns.L["Custom Border Color"],  gbColorW)
+    )
+    sGB.AddRow(
+        row(sGB.frame, ns.L["Hide Borders"], gbHideW)
+    )
+    L.closeSection(sGB)
+
+    local CATEGORY_ORDER = { "Skinning", "Unit Frames", "Resource Bars", "CDM", "Trackers", "HUD" }
+
+    local byCategory = {}
+    Helpers.BorderRegistry.Each(function(e)
+        local cat = e.category or "Other"
+        if not byCategory[cat] then byCategory[cat] = {} end
+        local t = byCategory[cat]
+        t[#t + 1] = e
+    end)
+
+    for _, cat in ipairs(CATEGORY_ORDER) do
+        local entries = byCategory[cat]
+        if entries and #entries > 0 then
+            L.headerAt(ns.L[cat])
+            local sCat = L.sectionAt()
+            local cells = {}
+            for _, e in ipairs(entries) do
+                if e.multi then
+                    local insts = e.instances and e.instances(profile) or {}
+                    local rep = insts[1]
+                    if rep then
+                        local keys = Helpers.GetBorderKeys(e.prefix or "")
+                        local srcW, colW = ns.QUI_BorderControl.Attach(
+                            GUI,
+                            sCat.frame,
+                            rep,
+                            e.prefix or "",
+                            function()
+                                for _, inst in ipairs(insts) do
+                                    inst[keys.source] = rep[keys.source]
+                                    if type(rep[keys.color]) == "table" then
+                                        inst[keys.color] = {
+                                            rep[keys.color][1], rep[keys.color][2],
+                                            rep[keys.color][3], rep[keys.color][4],
+                                        }
+                                    end
+                                end
+                                RefreshBorderColoring()
+                            end,
+                            {
+                                label      = e.label .. ns.L[" Source (all)"],
+                                colorLabel = e.label .. ns.L[" Color (all)"],
+                            }
+                        )
+                        cells[#cells + 1] = row(sCat.frame, e.label .. ns.L[" Source"], srcW)
+                        cells[#cells + 1] = row(sCat.frame, e.label .. ns.L[" Color"],  colW)
+                    end
+                else
+                    local dbTable = type(e.db) == "function" and e.db(profile) or nil
+                    if dbTable then
+                        local srcW, colW = ns.QUI_BorderControl.Attach(
+                            GUI,
+                            sCat.frame,
+                            dbTable,
+                            e.prefix or "",
+                            RefreshBorderColoring,
+                            {
+                                label      = e.label .. ns.L[" Source"],
+                                colorLabel = e.label .. ns.L[" Color"],
+                            }
+                        )
+                        cells[#cells + 1] = row(sCat.frame, e.label .. ns.L[" Source"], srcW)
+                        cells[#cells + 1] = row(sCat.frame, e.label .. ns.L[" Color"],  colW)
+                    end
+                end
+            end
+            local i = 1
+            while i <= #cells do
+                local left  = cells[i]
+                local right = cells[i + 1]
+                if right then
+                    sCat.AddRow(left, right)
+                    i = i + 2
+                else
+                    sCat.AddRow(left)
+                    i = i + 1
+                end
+            end
+            L.closeSection(sCat)
+        end
+    end
+
+    L.finish()
+end
+
+ns.QUI_BorderColoringOptions = {
+    BuildBorderColoringTab = BuildBorderColoringTab,
+}
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id         = "borderColoringPage",
+        moverKey   = "borderColoring",
+        lookupKeys = { "border", "outline", "edge" },
+        category   = "appearance",
+        nav        = { tileId = "appearance", subPageIndex = BORDER_COLORING_SUBPAGE_INDEX },
+        sections   = {
+            Schema.Section({
+                id        = "settings",
+                kind      = "page",
+                minHeight = 80,
+                build     = BuildBorderColoringTab,
+            }),
+        },
+    }))
+end

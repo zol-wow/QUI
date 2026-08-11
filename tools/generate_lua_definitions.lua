@@ -55,8 +55,33 @@ local function discoverFiles(dir)
     return files
 end
 
+-- Some doc files read Enum.*/Constants.* at load time (e.g. `Default =
+-- Enum.Foo.Bar`). The client defines those; a bare sandbox does not, so the
+-- chunk raises and the pcall below silently dropped the whole file. That cost
+-- us every Simple*API table — i.e. essentially the entire widget surface,
+-- SetFrameLevel included. Auto-vivifying stubs keep those files loadable.
+-- A few Constants files also do arithmetic on those values (`MAX_SLOTS + 1`),
+-- so the stub answers numeric operators with 0 rather than raising.
+local function autoStub()
+    local mt
+    local zero = function() return 0 end
+    mt = {
+        __index = function(t, k)
+            local v = setmetatable({}, mt)
+            rawset(t, k, v)
+            return v
+        end,
+        __add = zero, __sub = zero, __mul = zero, __div = zero,
+        __mod = zero, __pow = zero, __unm = zero, __len = zero,
+        __concat = function() return "" end,
+        __tostring = function() return "0" end,
+    }
+    return setmetatable({}, mt)
+end
+
 local function loadTables(dir)
     local captured = {}
+    local failures = {}
     local APIDocumentation = {}
     function APIDocumentation:AddDocumentationTable(tbl) -- luacheck: ignore self
         captured[#captured + 1] = tbl
@@ -65,17 +90,29 @@ local function loadTables(dir)
         local f = io.open(path, "rb")
         if f then
             local source = f:read("*a"); f:close()
-            local env = setmetatable({ APIDocumentation = APIDocumentation }, { __index = _G })
+            local env = setmetatable({
+                APIDocumentation = APIDocumentation,
+                Enum = autoStub(),
+                Constants = autoStub(),
+            }, { __index = _G })
+            local ok, err
             if setfenv then
                 -- Lua 5.1: load a string via loadstring + setfenv.
                 local chunk = (loadstring or load)(source, "@" .. path)
-                if chunk then setfenv(chunk, env); pcall(chunk) end
+                if chunk then setfenv(chunk, env); ok, err = pcall(chunk) else ok, err = false, "compile error" end
             else
                 -- Lua 5.2+: env is the 4th argument to load.
                 local chunk = load(source, "@" .. path, "t", env)
-                if chunk then pcall(chunk) end
+                if chunk then ok, err = pcall(chunk) else ok, err = false, "compile error" end
             end
+            -- Surface skipped files instead of swallowing them; a silent drop
+            -- here reads downstream as "the API simply doesn't have that method".
+            if not ok then failures[#failures + 1] = path .. ": " .. tostring(err) end
         end
+    end
+    if #failures > 0 then
+        io.stderr:write(("WARNING: %d doc file(s) failed to load and were skipped:\n"):format(#failures))
+        for _, msg in ipairs(failures) do io.stderr:write("  " .. msg .. "\n") end
     end
     return captured
 end

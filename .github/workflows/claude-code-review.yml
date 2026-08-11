@@ -89,15 +89,20 @@ jobs:
                table (e.g. Constants.MacroConsts, not the loose global).
             4. Generated-file drift. If the diff changes anything the generators
                read, the committed output must be regenerated in the same
-               commit: search cache via lua tools/generate_search_cache.lua
-               then lua tools/audit_search_cache.lua, enUS locale via
-               lua tools/i18n/extract_strings.lua, taint api-index via
+               commit: search cache via lua tools/generate_search_cache.lua,
+               enUS locale via lua tools/i18n/extract_strings.lua &&
+               python3 tools/i18n/stamp_enus_keyset.py (BOTH — the extractor
+               cannot compute the "-- keyset:" line and running it alone
+               deletes it, reddening the checksum test), taint api-index via
                lua tools/test_taint.lua --update-index. A stale generated file
-               reddens main. The ten core/locale/<locale>.lua files are
-               translation overlays of the enUS base; only a new TRANSLATION
-               needs tools/i18n/translate_delta.py and its API key, so do not
-               ask for that in the same commit. Flag hand edits to an overlay
-               either way.
+               reddens main. The ten core/locale/<locale>.lua translation
+               overlays are POSITIONAL — slot N holds the translation of enUS
+               key N — so adding or removing an English ns.L string renumbers
+               all ten. That regen is python3 tools/i18n/reslot_overlays.py,
+               needs no API key, and DOES belong in the same commit. Only a new
+               TRANSLATION needs tools/i18n/translate_delta.py and its API key;
+               do not ask for that in the same commit. Flag hand edits to an
+               overlay either way.
             5. Profile and schema safety. New or renamed profile keys need the
                profile_io allowlists updated in the same change, or selective
                import silently drops user config. Array-shaped AceDB defaults

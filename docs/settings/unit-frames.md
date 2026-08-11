@@ -179,32 +179,37 @@ Settings at `quiUnitFrames.player`. The Player frame is the most feature-rich un
 
 ### Auras (Buffs/Debuffs)
 
-| Setting | Type | Default | Description |
+Unit-frame auras use the unified aura element model (store version 50+). The
+old flat keys (`showBuffs`, `buffFilterMode`, `buffClassifications`, …) no
+longer exist — profiles that carried them are migrated into
+`player.auras.elements` automatically and the flat keys are pruned.
+
+`player.auras.elements` holds one bucket keyed `"*"` (unit frames do not use
+per-spec buckets) containing an ordered array of element tables. A fresh
+profile seeds two filter strips, both disabled: a `debuffs` strip
+(`HARMFUL` base filter, anchored `TOPLEFT`) and a `buffs` strip (`HELPFUL`
+base filter, anchored `BOTTOMLEFT`). Elements are edited in Options via the
+shared aura element editor (Unit Frames → the unit's Icons tab).
+
+Fields on each element:
+
+| Field | Type | Default | Description |
 |---------|------|---------|-------------|
-| `player.auras.showBuffs` | boolean | `false` | Show buffs on the frame |
-| `player.auras.showDebuffs` | boolean | `false` | Show debuffs on the frame |
-| `player.auras.buffFilterMode` | string | `"off"` | Buff type filter mode: `"off"` or `"classification"` |
-| `player.auras.debuffFilterMode` | string | `"off"` | Debuff type filter mode: `"off"` or `"classification"` |
-| `player.auras.buffFilterOnlyMine` | boolean | `true` | Only show player/vehicle-cast buffs |
-| `player.auras.buffClassifications` | table | all `false` | Buff classification toggles: `helpful`, `cancelable`, `notCancelable`, `important`, `bigDefensive`, `externalDefensive`. `helpful` matches Blizzard `HELPFUL|RAID` or `HELPFUL|RAID_IN_COMBAT`. |
-| `player.auras.debuffClassifications` | table | all `false` | Debuff classification toggles: `harmful`, `dispellable`, `crowdControl`, `important`. `harmful` matches Blizzard `HARMFUL|RAID` or `HARMFUL|RAID_IN_COMBAT`; `dispellable` matches `HARMFUL|RAID_PLAYER_DISPELLABLE`. |
-| `player.auras.iconSize` | number | `22` | Debuff icon size |
-| `player.auras.debuffAnchor` | string | `"TOPLEFT"` | Debuff row anchor point |
-| `player.auras.debuffGrow` | string | `"RIGHT"` | Debuff growth direction |
-| `player.auras.debuffMaxIcons` | number | `4` | Max debuff icons shown |
-| `player.auras.debuffOffsetX` | number | `0` | Debuff row horizontal offset |
-| `player.auras.debuffOffsetY` | number | `0` | Debuff row vertical offset |
-| `player.auras.buffIconSize` | number | `22` | Buff icon size |
-| `player.auras.buffAnchor` | string | `"BOTTOMLEFT"` | Buff row anchor point |
-| `player.auras.buffGrow` | string | `"RIGHT"` | Buff growth direction |
-| `player.auras.buffMaxIcons` | number | `4` | Max buff icons shown |
-| `player.auras.iconSpacing` | number | `2` | Spacing between icons |
-| `player.auras.showDuration` | boolean | `false` | Show duration countdown text |
-| `player.auras.durationSize` | number | `12` | Duration text font size |
-| `player.auras.durationAnchor` | string | `"CENTER"` | Duration text anchor |
-| `player.auras.showStack` | boolean | `true` | Show stack count text |
-| `player.auras.stackSize` | number | `10` | Stack count font size |
-| `player.auras.stackAnchor` | string | `"BOTTOMRIGHT"` | Stack text anchor |
+| `enabled` | boolean | `false` | Render this element |
+| `id` | string | `"debuffs"` / `"buffs"` | Stable element identity |
+| `mode` | string | `"filterStrip"` | Element kind (unit frames render filter strips) |
+| `filterMode` / `filterFlags` | string / table | base filter only | Filter refinement: engine tokens (e.g. `RAID`, `CANCELABLE`) combined onto the `HARMFUL`/`HELPFUL` base. `RAID_IN_COMBAT` is HELPFUL-only — `HARMFUL\|RAID_IN_COMBAT` is rejected by the C API and never emitted |
+| `anchor` | string | `"TOPLEFT"` (debuffs) / `"BOTTOMLEFT"` (buffs) | Strip anchor point |
+| `growDirection` | string | `"RIGHT"` | Growth direction |
+| `iconSize` | number | `22` | Icon size |
+| `maxIcons` | number | `4` | Max icons shown |
+| `iconsPerRow` | number | `0` | Icons per row (`0` = single row) |
+| `spacing` | number | `2` | Spacing between icons |
+| `offsetX` / `offsetY` | number | `0` | Strip offset |
+| `rightClickCancel` | boolean | `false` | Right-click cancels the aura (player buffs) |
+| `hideSwipe` / `reverseSwipe` | boolean | `false` | Cooldown swipe display |
+| `duration` | table | debuffs hidden / buffs `fontSize` 12 | `{ show, fontSize, anchor, offsetX, offsetY, color }` |
+| `stack` | table | shown, `fontSize` 10, `BOTTOMRIGHT` | `{ show, fontSize, anchor, offsetX, offsetY, color }` |
 
 ### Indicators (Player Only)
 

@@ -1,10 +1,3 @@
---[[
-    QUI Options — 3rd Party Addons Anchoring
-    Migrated to V3 body pattern. Each anchor config (BigWigs Normal /
-    Emphasized, Danders Party/Raid/Pinned, AbilityTimeline Timeline/BigIcon)
-    renders as an accent-dot section + card group with paired rows.
-]]
-
 local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
@@ -28,11 +21,6 @@ local THIRD_PARTY_LAYOUT_KEYS = {
     dandersPinned2 = { containerKey = "pinned2" },
 }
 
--- Emit one anchor-config block (accent-dot label + card) inside `tabContent`
--- starting at `y`. Returns the new y after the block + SECTION_GAP.
--- `excludeSelf` (optional) is the canonical anchor-target name this block
--- represents — passed through to the registry-driven dropdown so the
--- frame can't anchor to itself (used by AbilityTimeline timeline/bigIcon).
 local function BuildAnchorBlock(tabContent, label, cfg, y, onChange, excludeSelf)
     if not cfg then return y end
 
@@ -40,13 +28,8 @@ local function BuildAnchorBlock(tabContent, label, cfg, y, onChange, excludeSelf
 
     local card = Shared.CreateSettingsCardGroup(tabContent, y)
 
-    -- Forward declarations so the anchor-target change handler can reach the
-    -- offset slider widgets that are created further down.
     local xW, yW
 
-    -- Changing Anchor To leaves prior offsets calibrated for a different
-    -- target — they teleport the frame when re-applied. Mirror the owned-
-    -- module behavior (BuildAnchoringSection) and zero offsets on change.
     local function OnAnchorTargetChange()
         cfg.offsetX = 0
         cfg.offsetY = 0
@@ -55,14 +38,10 @@ local function BuildAnchorBlock(tabContent, label, cfg, y, onChange, excludeSelf
         if onChange then onChange() end
     end
 
-    -- Enable — full-width (the primary gate).
     local enableW = GUI:CreateFormCheckbox(card.frame, nil, "enabled", cfg, onChange,
         { description = ns.L["Let QUI drive the position of "] .. label .. ns.L[". Turn off to leave the addon's own anchor behavior intact."] })
     card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Enable Anchoring"], enableW))
 
-    -- Anchor To — same registry-driven, categorized + searchable widget the
-    -- rest of QUI's movers use. Falls back to a plain dropdown if the helper
-    -- module hasn't loaded yet (defensive; load order makes this unlikely).
     local AnchorOpts = ns.QUI_Anchoring_Options
     local anchorW
     if AnchorOpts and AnchorOpts.CreateAnchorDropdown then
@@ -76,7 +55,6 @@ local function BuildAnchorBlock(tabContent, label, cfg, y, onChange, excludeSelf
     end
     card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Anchor To"], anchorW))
 
-    -- Container Point + Target Point — paired 9-point dropdowns.
     local srcW = GUI:CreateFormDropdown(card.frame, nil, ANCHOR_POINTS, "sourcePoint", cfg, onChange,
         { description = ns.L["Which corner or edge of "] .. label .. ns.L[" is used as its anchor point."] })
     local dstW = GUI:CreateFormDropdown(card.frame, nil, ANCHOR_POINTS, "targetPoint", cfg, onChange,
@@ -86,8 +64,6 @@ local function BuildAnchorBlock(tabContent, label, cfg, y, onChange, excludeSelf
         Shared.BuildSettingRow(card.frame, ns.L["Target Point"], dstW)
     )
 
-    -- X / Y offset — paired sliders. Range matches the Layout Mode panel so
-    -- values written in one surface are not display-clamped in the other.
     xW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetX", cfg, onChange, nil,
         { description = ns.L["Horizontal pixel offset from the target anchor point."] })
     yW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetY", cfg, onChange, nil,
@@ -130,19 +106,14 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
     local y = -10
     local sections = {}
 
-    -- Position section: V3 accent-dot header + card group.
     Shared.CreateAccentDotLabel(host, ns.L["Position"], y); y = y - HEADER_GAP
     local card = Shared.CreateSettingsCardGroup(host, y)
     card.frame:ClearAllPoints()
     card.frame:SetPoint("TOPLEFT", host, "TOPLEFT", PAD, y)
     card.frame:SetPoint("TOPRIGHT", host, "TOPRIGHT", -PAD, y)
 
-    -- Forward decls so the anchor-target handler can reach the sliders.
     local xW, yW
 
-    -- Changing Anchor To leaves prior offsets calibrated for a different
-    -- target — they teleport the frame when re-applied. Reset to 0 so the
-    -- user's first sight of the new target is at its anchor point.
     local function OnAnchorTargetChange()
         cfg.offsetX = 0
         cfg.offsetY = 0
@@ -188,8 +159,6 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
     card.Finalize()
     y = y - card.frame:GetHeight() - SECTION_GAP
 
-    -- Tail relayout for V2 layout-mode chrome (OpenFullSettingsLink) starting
-    -- from the bottom of the V3 card above.
     local function relayoutSections()
         local cy = y
         for _, s in ipairs(sections) do
@@ -206,10 +175,6 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
     return host:GetHeight()
 end
 
--- Renders a single integration's section: top-level accent-dot label
--- with the addon name, availability guard (muted label if the target
--- addon isn't installed), intro paragraph, then one BuildAnchorBlock
--- per configured key.
 local function BuildIntegrationSection(tabContent, y, opts)
     local PAD = PADDING
 
@@ -244,7 +209,7 @@ local function BuildIntegrationSection(tabContent, y, opts)
         local cfg = db[entry.key]
         y = BuildAnchorBlock(
             tabContent,
-            opts.name .. " \226\128\148 " .. entry.label,  -- "BigWigs — Normal Bars"
+            opts.name .. " \226\128\148 " .. entry.label,
             cfg, y,
             function() opts.applyPosition(entry.key) end,
             entry.excludeSelf
@@ -269,7 +234,6 @@ local function BuildThirdPartyTab(tabContent)
     intro:SetWordWrap(true)
     y = y - 30
 
-    -- BigWigs
     y = BuildIntegrationSection(tabContent, y, {
         name    = "BigWigs",
         dbKey   = "bigWigs",
@@ -283,7 +247,6 @@ local function BuildThirdPartyTab(tabContent)
         applyPosition      = function(k) ns.QUI_BigWigs:ApplyPosition(k) end,
     })
 
-    -- DandersFrames
     y = BuildIntegrationSection(tabContent, y, {
         name    = "DandersFrames",
         dbKey   = "dandersFrames",
@@ -299,8 +262,6 @@ local function BuildThirdPartyTab(tabContent)
         applyPosition      = function(k) ns.QUI_DandersFrames:ApplyPosition(k) end,
     })
 
-    -- AbilityTimeline — each entry's `excludeSelf` keeps the frame from
-    -- offering itself as an anchor target in its own dropdown.
     y = BuildIntegrationSection(tabContent, y, {
         name    = "AbilityTimeline",
         dbKey   = "abilityTimeline",
@@ -348,11 +309,6 @@ if Registry and Schema and RenderAdapters
                 )
             end,
         },
-        -- Layout Mode reads anchor status from db.profile.frameAnchoring[key]
-        -- by default. DandersFrames stores its anchor in db.dandersFrames.<container>
-        -- and actively wipes the matching frameAnchoring entry, which would
-        -- otherwise make the panel report "Anchoring: Disabled" even when the
-        -- container is in fact anchored. Provide an explicit status here.
         getAnchorStatus = function(key)
             local entry = THIRD_PARTY_LAYOUT_KEYS[key]
             if not entry then return nil end

@@ -594,8 +594,23 @@ function openRaidLib.GearManager.BuildPlayerEquipmentList()
     return equipmentList
 end
 
+--QUI patch (12.1): UnitHealth is SecretReturns — `>= 1` on a secret value
+--throws while restricted. ACTION POLICY, not liveness truth: a secret
+--health is INDETERMINATE — keep tracking the pet (UnitExists already
+--proved existence); readable health decides normally.
+local isPetAliveHealthCheck = function()
+    if (not UnitExists("pet")) then
+        return false
+    end
+    local petHealth = UnitHealth("pet")
+    if (issecretvalue and issecretvalue(petHealth)) then
+        return true
+    end
+    return petHealth >= 1
+end
+
 local playerHasPetOfNpcId = function(npcId)
-    if (UnitExists("pet") and UnitHealth("pet") >= 1) then
+    if (isPetAliveHealthCheck()) then
         local guid = UnitGUID("pet")
         if (guid) then
             local split = {strsplit("-", guid)}
@@ -875,7 +890,10 @@ local auraDurationTime
 local auraUnitId
 
 local handleBuffAura = function(aura)
-    local auraInfo = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnitId, aura.auraInstanceID)
+    --QUI patch (12.1): sole caller is the pcall'd AuraUtil.ForEachAura in
+    --getAuraDuration below, which runs behind a ShouldAurasBeSecret gate —
+    --this callback executes inside that protected+gated scope.
+    local auraInfo = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnitId, aura.auraInstanceID) -- @secret-safe: callback of the gated+pcall'd ForEachAura at getAuraDuration
     if (auraInfo) then
         local spellId = auraInfo.spellId
         if (auraSpellID == spellId) then
@@ -898,14 +916,24 @@ local getAuraDuration = function(spellId, unitId)
     --spellId = customBuffDuration or spellId --can't replace the spellId by customBuffDurationSpellId has it wount be found in LIB_OPEN_RAID_PLAYERCOOLDOWNS
 
     if (bIsNewUnitAuraAvailable) then
+        --QUI patch (12.1): aura reads are RequiresUnitAuraAccess-guarded
+        --(FailureMode=Error) under encounter/M+/PvP addon restrictions, and
+        --this runs synchronously from UNIT_SPELLCAST_SUCCEEDED on group
+        --members' casts — exactly when restrictions are active. Skip the
+        --live scan while restricted and fall back to the data file; pcall
+        --the walk as a belt-and-braces for partial restriction states.
+        if (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()) then
+            return LIB_OPEN_RAID_PLAYERCOOLDOWNS[spellId].duration or 0
+        end
+
         local bUsePackedAura = true
         auraSpellID = customBuffDuration or spellId
         auraDurationTime = 0 --reset duration
         auraUnitId = unitId or "player"
 
-        AuraUtil.ForEachAura(auraUnitId, "HELPFUL", nil, handleBuffAura, bUsePackedAura) --check auras to find a buff for the spellId
+        local bScanOk = pcall(AuraUtil.ForEachAura, auraUnitId, "HELPFUL", nil, handleBuffAura, bUsePackedAura) --check auras to find a buff for the spellId
 
-        if (auraDurationTime == 0) then --if the buff wasn't found, attempt to get the duration from the file
+        if (not bScanOk or auraDurationTime == 0) then --if the buff wasn't found, attempt to get the duration from the file
             return LIB_OPEN_RAID_PLAYERCOOLDOWNS[spellId].duration or 0
         end
         return auraDurationTime
@@ -935,6 +963,15 @@ function openRaidLib.CooldownManager.GetPlayerCooldownStatus(spellId)
     if (spellData) then
         local buffDuration = getAuraDuration(spellId)
         local chargesAvailable, chargesTotal, start, duration = GetSpellCharges(spellId)
+        --QUI patch (12.1): charge fields are SecretWhenCooldownsRestricted —
+        --any truth-test/==/arithmetic on them throws while restricted.
+        --Degrade to "ready, no cooldown info": correct data is unobtainable
+        --by tainted code under restriction, and a stable answer beats an
+        --error thrown into the comm scheduler.
+        if (issecretvalue and (issecretvalue(chargesAvailable) or issecretvalue(chargesTotal)
+            or issecretvalue(start) or issecretvalue(duration))) then
+            return 0, 1, 0, 0, buffDuration or 0
+        end
         if chargesAvailable then
             if (chargesAvailable == chargesTotal) then
                 return 0, chargesTotal, 0, 0, 0 --all charges are ready to use
@@ -950,12 +987,23 @@ function openRaidLib.CooldownManager.GetPlayerCooldownStatus(spellId)
                 local spellCooldownInfo = GetSpellCooldown(spellId)
                 local start = spellCooldownInfo.startTime
                 local duration = spellCooldownInfo.duration
+                --QUI patch (12.1): cooldown timing is SecretWhenCooldownsRestricted;
+                --probe before the == 0 compare below.
+                if (issecretvalue and (issecretvalue(start) or issecretvalue(duration))) then
+                    return 0, 1, 0, 0, buffDuration or 0
+                end
                 if (start == 0) then --cooldown is ready
                     return 0, 1, 0, 0, 0 --time left, charges, startTime
                 else
                     local timeLeft = start + duration - GetTime()
                     local globalCooldownInfo = GetSpellCooldown(CONST_GLOBALCOOLDOWN_SPELLID)
-                    if (globalCooldownInfo.startTime ~= 0 and globalCooldownInfo.duration >= timeLeft) then
+                    local gcStart = globalCooldownInfo.startTime
+                    local gcDuration = globalCooldownInfo.duration
+                    --QUI patch (12.1): secret GCD timing can't be compared —
+                    --skip the GCD-override shortcut, the plain math below
+                    --uses only the (proven non-secret) spell cooldown.
+                    local gcReadable = not (issecretvalue and (issecretvalue(gcStart) or issecretvalue(gcDuration)))
+                    if (gcReadable and gcStart ~= 0 and gcDuration >= timeLeft) then
                         return 0, 1, 0, 0, 0 --time left, charges, startTime
                     else
                         local startTimeOffset = start - GetTime()
@@ -1003,6 +1051,14 @@ do
         end
 
         function openRaidLib.AuraTracker.ScanUnitAuras(unitId)
+            --QUI patch (12.1): see getAuraDuration — the aura walk is
+            --RequiresUnitAuraAccess-guarded (hard error) under encounter/M+/
+            --PvP restrictions. Bail BEFORE touching scan state so the next
+            --unrestricted scan still diffs removals correctly.
+            if (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()) then
+                return
+            end
+
             local maxCount = nil
             local bUsePackedAura = true
             openRaidLib.AuraTracker.CurrentUnitId = unitId
@@ -1010,7 +1066,7 @@ do
             openRaidLib.AuraTracker.AurasFoundOnScan = {}
 
             --code of 'ForEachAura' has been updated to use the latest API available
-            AuraUtil.ForEachAura(unitId, "HELPFUL", maxCount, openRaidLib.AuraTracker.ScanCallback, bUsePackedAura)
+            pcall(AuraUtil.ForEachAura, unitId, "HELPFUL", maxCount, openRaidLib.AuraTracker.ScanCallback, bUsePackedAura)
 
             local thisUnitAuras = openRaidLib.AuraTracker.CurrentAuras[unitId]
             for spellId in pairs(thisUnitAuras) do
@@ -1072,8 +1128,16 @@ do
     ---@return auraduration|nil auraDuration
     ---@return number|nil expirationTime
     function openRaidLib.AuraTracker.FindBuffDuration(unitId, casterName, spellId)
-        local name, texture, count, buffType, duration, expirationTime = AuraUtil.FindAura(predicateFunc, unitId, "HELPFUL", spellId, casterName)
-        if (name) then
+        --QUI patch (12.1): AuraUtil.FindAura walks RequiresUnitAuraAccess-
+        --guarded getters (FailureMode=Error) under encounter/M+/PvP addon
+        --restrictions. Skip the scan while restricted and pcall the walk as
+        --a belt-and-braces for partial restriction states — this exported
+        --entry point must never hard-error a caller.
+        if (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()) then
+            return
+        end
+        local ok, name, texture, count, buffType, duration, expirationTime = pcall(AuraUtil.FindAura, predicateFunc, unitId, "HELPFUL", spellId, casterName)
+        if (ok and name) then
             return duration, expirationTime
         end
     end

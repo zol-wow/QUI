@@ -1,9 +1,3 @@
---[[
-    QUI Group Frames - Edit Mode & Test/Preview System
-    Handles header dragging, nudge controls, fake preview frames,
-    spotlight feature, and Blizzard Edit Mode integration.
-]]
-
 local ADDON_NAME, ns = ...
 local function CJKFont(fs, p, s, f)
     if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
@@ -15,8 +9,12 @@ end
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
+local CHROME_LEVELS = (ns.QUI_GroupFrameChrome and ns.QUI_GroupFrameChrome.LEVELS)
+    or {
+        THREAT = 6, TARGET = 7, DISPEL = 8, TEXT = 9,
+        DISPEL_ICON = 10, CLEANSE = 11, AURA_HOST = 12,
+    }
 
--- Upvalue hot-path globals
 local pairs = pairs
 local ipairs = ipairs
 local wipe = wipe
@@ -27,29 +25,23 @@ local C_Timer = C_Timer
 local string_format = string.format
 local table_insert = table.insert
 
----------------------------------------------------------------------------
--- MODULE TABLE
----------------------------------------------------------------------------
 local QUI_GFEM = {}
 ns.QUI_GroupFrameEditMode = QUI_GFEM
 
 local isEditMode = false
 local isTestMode = false
 local testFrames = {}
-local testContainer = nil  -- direct reference to the active test container (legacy compat)
--- Per-type test containers for simultaneous party + raid preview
-local testContainers = {}  -- { party = container, raid = container }
-local testFramesByType = {} -- { party = {frames}, raid = {frames} }
-local groupMover = nil     -- party mover
-local raidMover = nil      -- raid mover
+local testContainer = nil
+local testContainers = {}
+local testFramesByType = {}
+local reuseContainers = {}
+local groupMover = nil
+local raidMover = nil
 local spotlightHeader = nil
-local spotlightContainer = nil  -- non-secure wrapper for layout mode handle
-local partySelectionWatcher = nil   -- OnUpdate guard for CompactPartyFrame.Selection
-local raidSelectionWatcher = nil    -- OnUpdate guard for CompactRaidFrameContainer.Selection
+local spotlightContainer = nil
+local partySelectionWatcher = nil
+local raidSelectionWatcher = nil
 
----------------------------------------------------------------------------
--- FAKE DATA: For test/preview mode
----------------------------------------------------------------------------
 local FAKE_CLASSES = { "WARRIOR", "PALADIN", "PRIEST", "DRUID", "SHAMAN", "MAGE", "ROGUE", "HUNTER", "WARLOCK", "DEATHKNIGHT", "MONK", "DEMONHUNTER", "EVOKER" }
 local FAKE_NAMES = { "Tankthor", "Healena", "Pwnadin", "Natureza", "Shamwow", "Frostina", "Stabsworth", "Bowmaster", "Felcaster", "Lichking", "Mistpaw", "Demonbane", "Scalewing",
     "Ironwall", "Lightbeam", "Shadowmend", "Wildgrowth", "Totemist", "Arcanist", "Backstab", "Marksman", "Doomcall", "Runeblade", "Zenmaster", "Havocwing", "Breathfire",
@@ -64,29 +56,25 @@ local FAKE_RAID_ROLES = { "TANK", "TANK", "HEALER", "HEALER", "HEALER", "HEALER"
     "DAMAGER", "DAMAGER" }
 
 local FAKE_BUFF_ICONS = {
-    136034,  -- Spell_Holy_Renew
-    135940,  -- Spell_Holy_PowerWordShield
-    136081,  -- Spell_Nature_Rejuvenation
+    136034,
+    135940,
+    136081,
 }
 local FAKE_DEBUFF_ICONS = {
-    136207,  -- Spell_Shadow_ShadowWordPain
-    136130,  -- Ability_Creature_Cursed_01
-    136067,  -- Spell_Nature_NullifyPoison_02
+    136207,
+    136130,
+    136067,
 }
 
--- Distribution tables — keyed by party frame index (1–5).
--- Each entry lists what preview indicators that frame should show.
--- Cycled via modulo for both party and raid frames.
 local PREVIEW_INDICATORS = {
     [1] = { leader = true, targetHighlight = true, threatBorder = true, buffs = 1 },
     [2] = { readyCheck = true, raidMarker = 1, debuffs = 2, buffs = 1 },
-    [3] = { phaseIcon = true, resurrection = true, debuffs = 1, defensiveIndicator = 2 },
+    [3] = { phaseIcon = true, resurrection = true, debuffs = 1 },
     [4] = { dispelOverlay = true, summonPending = true, debuffs = 3 },
     [5] = { raidMarker = 8, buffs = 2 },
 }
 
 local function GetFakeHealthPct(index)
-    -- Varied health levels for visual interest
     local patterns = { 100, 85, 65, 45, 92, 78, 30, 95, 88, 55,
                        72, 100, 80, 60, 90, 75, 40, 98, 82, 68,
                        0, 100, 70, 50, 95, 85, 35, 100, 77, 62,
@@ -94,12 +82,9 @@ local function GetFakeHealthPct(index)
     return patterns[((index - 1) % #patterns) + 1]
 end
 
--- Sample textures used to populate the unified aura element preview.
 local PREVIEW_ELEMENT_BUFF_ICONS = { 136034, 135940, 136081, 135932, 136063 }
 local PREVIEW_ELEMENT_DEBUFF_ICONS = { 136207, 136130, 136067, 135813, 136118 }
 
--- Player active spec (mirrors the editor / the live render path) so the preview
--- shows the same spec bucket the player is editing.
 local function GetPreviewSpecID()
     local specIndex = GetSpecialization and GetSpecialization()
     if specIndex and GetSpecializationInfo then
@@ -108,13 +93,136 @@ local function GetPreviewSpecID()
     return nil
 end
 
--- Standalone preview of the unified aura element model: one representative
--- visual per enabled element in the "*" + active-spec buckets, placed via the
--- shared icon-layout helpers so it matches the live renderer's geometry.
-local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, px, texturePath)
+local testShellPool = {}
+local testShellCount = 0
+local activeRecycle
+
+local RECYCLE_KINDS = { "frames", "backdropFrames", "bars", "textures", "strings" }
+
+local function RecycleStart(frame)
+    local rc = frame._quiRecycle
+    if not rc then
+        rc = {}
+        for _, kind in ipairs(RECYCLE_KINDS) do rc[kind] = {} end
+        frame._quiRecycle = rc
+    end
+    rc.n = { frames = 0, backdropFrames = 0, bars = 0, textures = 0, strings = 0 }
+    activeRecycle = rc
+end
+
+local function RecycleFinish()
+    local rc = activeRecycle
+    if not rc then return end
+    for _, kind in ipairs(RECYCLE_KINDS) do
+        local list = rc[kind]
+        for i = rc.n[kind] + 1, #list do
+            list[i]:Hide()
+        end
+    end
+    activeRecycle = nil
+end
+
+local function RecycledFrame(parent, template)
+    local rc = activeRecycle
+    local key = template and "backdropFrames" or "frames"
+    local n = rc.n[key] + 1
+    rc.n[key] = n
+    local f = rc[key][n]
+    if not f then
+        f = CreateFrame("Frame", nil, parent, template)
+        rc[key][n] = f
+    else
+        f:SetParent(parent)
+        f:ClearAllPoints()
+        f:Show()
+    end
+    return f
+end
+
+local function RecycledBar(parent)
+    local rc = activeRecycle
+    local n = rc.n.bars + 1
+    rc.n.bars = n
+    local bar = rc.bars[n]
+    if not bar then
+        bar = CreateFrame("StatusBar", nil, parent)
+        rc.bars[n] = bar
+    else
+        bar:SetParent(parent)
+        bar:ClearAllPoints()
+        bar:SetOrientation("HORIZONTAL")
+        bar:SetAlpha(1)
+        bar:Show()
+    end
+    bar:SetFrameLevel(parent:GetFrameLevel() + 1)
+    return bar
+end
+
+local function RecycledTexture(parent, layer, sublevel)
+    local rc = activeRecycle
+    local n = rc.n.textures + 1
+    rc.n.textures = n
+    local tex = rc.textures[n]
+    if not tex then
+        tex = parent:CreateTexture(nil, layer, nil, sublevel)
+        rc.textures[n] = tex
+    else
+        tex:SetParent(parent)
+        tex:SetDrawLayer(layer, sublevel or 0)
+        tex:ClearAllPoints()
+        tex:SetTexCoord(0, 1, 0, 1)
+        tex:SetVertexColor(1, 1, 1, 1)
+        tex:Show()
+    end
+    return tex
+end
+
+local function RecycledFontString(parent, layer)
+    local rc = activeRecycle
+    local n = rc.n.strings + 1
+    rc.n.strings = n
+    local fs = rc.strings[n]
+    if not fs then
+        fs = parent:CreateFontString(nil, layer)
+        rc.strings[n] = fs
+    else
+        fs:SetParent(parent)
+        fs:ClearAllPoints()
+        fs:SetText("")
+        fs:Show()
+    end
+    return fs
+end
+
+local function AcquireTestShell(parent)
+    local frame = table.remove(testShellPool)
+    if frame then
+        frame._quiPooled = nil
+        frame:SetParent(parent)
+        frame:ClearAllPoints()
+        local Chrome = ns.QUI_GroupFrameChrome
+        if Chrome and Chrome.HideDispelTypeIcons then
+            Chrome.HideDispelTypeIcons(frame)
+        end
+    else
+        testShellCount = testShellCount + 1
+        frame = CreateFrame("Frame", "QUI_TestFrame" .. testShellCount, parent, "BackdropTemplate")
+        frame._quiTestShell = true
+    end
+    return frame
+end
+
+local function ReleaseTestShell(frame)
+    if frame._quiPooled then return end
+    frame._quiPooled = true
+    frame:Hide()
+    testShellPool[#testShellPool + 1] = frame
+end
+
+local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, px, texturePath, frameType)
     local Model = ns.QUI_GroupFramesAuraModel
     if not Model or not Model.ActiveElementsForSpec then return end
-    if Model.EnsureSeeded then Model.EnsureSeeded(auras) end
+    if Model.EnsureSeeded then Model.EnsureSeeded(auras, frameType) end
     local IconLayout = ns.QUI_GroupFrameIconLayout
     local elements = Model.ActiveElementsForSpec(auras, GetPreviewSpecID())
     if not elements or #elements == 0 then return end
@@ -134,8 +242,6 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             local offX = element.offsetX or 0
             local offY = element.offsetY or 0
             if anchor:find("BOTTOM") then offY = offY + powerHeight end
-            -- Strip count: maxIcons (capped to the sample pool); tracked-icon
-            -- count: number of configured spells (capped). 0/nil = full sample.
             local count
             if mode == "filterStrip" or mode == "missingRaidBuff" then
                 count = element.maxIcons or 0
@@ -148,9 +254,6 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
 
             local iconAnchor = (IconLayout and IconLayout.GetIconAnchorForGrow
                 and IconLayout.GetIconAnchorForGrow(anchor, growDir)) or anchor
-            -- Multi-row wrapping: mirror the live renderer (groupframes_aura_render.lua)
-            -- so the preview wraps icons into rows when "Icons Per Row" is set.
-            -- Without perRow/rowDir, CalculateSlotOffset falls back to single-row.
             local perRow = tonumber(element.iconsPerRow) or 0
             if perRow < 0 then perRow = 0 end
             local rowDir
@@ -160,7 +263,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
                 rowDir = (type(anchor) == "string" and anchor:find("BOTTOM")) and "UP" or "DOWN"
             end
             for i = 1, count do
-                local iconFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+                local iconFrame = RecycledFrame(frame, "BackdropTemplate")
                 iconFrame:SetSize(iconSize, iconSize)
                 iconFrame:SetFrameLevel(auraLevel)
                 local slotX, slotY = 0, 0
@@ -173,7 +276,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
                 iconFrame:SetPoint(iconAnchor, frame, anchor, offX + slotX, offY + slotY)
                 local iconPx = QUICore.GetPixelSize and QUICore:GetPixelSize(iconFrame) or px
                 ns.SkinBase.ApplyPixelBackdrop(iconFrame, 1, true, false, { borderR, borderG, borderB, 1 }, { 0, 0, 0, 1 })
-                local tex = iconFrame:CreateTexture(nil, "ARTWORK")
+                local tex = RecycledTexture(iconFrame, "ARTWORK")
                 tex:SetPoint("TOPLEFT", iconPx, -iconPx)
                 tex:SetPoint("BOTTOMRIGHT", -iconPx, iconPx)
                 tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -187,13 +290,13 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             local offY = element.offsetY or 0
             if anchor:find("BOTTOM") then offY = offY + powerHeight end
             local color = element.color or { 0.5, 0.5, 0.5, 1 }
-            local sq = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            local sq = RecycledFrame(frame, "BackdropTemplate")
             sq:SetSize(size, size)
             sq:SetFrameLevel(auraLevel)
             sq:ClearAllPoints()
             sq:SetPoint(anchor, frame, anchor, offX, offY)
             ns.SkinBase.ApplyPixelBackdrop(sq, 1, false, false, { 0, 0, 0, 1 })
-            local fill = sq:CreateTexture(nil, "ARTWORK")
+            local fill = RecycledTexture(sq, "ARTWORK")
             fill:SetAllPoints()
             fill:SetColorTexture(color[1] or 0.5, color[2] or 0.5, color[3] or 0.5, color[4] or 1)
 
@@ -209,7 +312,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             local offY = barCfg.offsetY or element.offsetY or 0
             if anchor:find("BOTTOM") then offY = offY + powerHeight end
             local color = (barCfg.color) or element.color or { 0.2, 0.8, 0.2, 1 }
-            local bar = CreateFrame("StatusBar", nil, frame)
+            local bar = RecycledBar(frame)
             bar:SetSize(width, height)
             bar:SetFrameLevel(auraLevel + 1)
             bar:ClearAllPoints()
@@ -219,27 +322,34 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             bar:SetMinMaxValues(0, 1)
             bar:SetValue(0.66)
             bar:SetStatusBarColor(color[1] or 0.2, color[2] or 0.8, color[3] or 0.2, color[4] or 1)
-            local bg = bar:CreateTexture(nil, "BACKGROUND")
+            local bg = RecycledTexture(bar, "BACKGROUND")
             bg:SetAllPoints()
             bg:SetColorTexture(0, 0, 0, 0.28)
 
         elseif mode == "tracked" and displayType == "healthTint" then
-            -- Health-tint preview: a translucent colored overlay across the
-            -- health bar (the live renderer animates this on the real bar).
             local hb = frame.healthBar
             if hb then
                 local color = element.color or { 0.2, 0.8, 0.2, 1 }
-                local tint = hb:CreateTexture(nil, "OVERLAY")
+                local tint = RecycledTexture(hb, "OVERLAY")
                 tint:SetAllPoints(hb)
                 tint:SetColorTexture(color[1] or 0.2, color[2] or 0.8, color[3] or 0.2, (color[4] or 1) * 0.4)
             end
+
+        elseif mode == "tracked" and displayType == "border" then
+            local anchorTo = frame.healthBar or frame
+            local color = element.color or { 0.2, 0.8, 0.2, 1 }
+            local size = math.max(1, (element.border and element.border.thickness) or 2)
+            local outline = RecycledFrame(frame, "BackdropTemplate")
+            outline:SetFrameLevel(auraLevel + 2)
+            outline:ClearAllPoints()
+            outline:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", -size, size)
+            outline:SetPoint("BOTTOMRIGHT", anchorTo, "BOTTOMRIGHT", size, -size)
+            outline:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = size })
+            outline:SetBackdropBorderColor(color[1] or 0.2, color[2] or 0.8, color[3] or 0.2, color[4] or 1)
         end
     end
 end
 
----------------------------------------------------------------------------
--- TEST MODE: Create fake frames for solo testing
----------------------------------------------------------------------------
 local function CreateTestFrame(parent, index, totalCount, classToken, name, role, healthPct)
     local db = GetDB()
     if not db then return nil end
@@ -265,16 +375,15 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     else w, h = dims and dims.largeRaidWidth or 140, dims and dims.largeRaidHeight or 24
     end
 
-    local frame = CreateFrame("Frame", "QUI_TestFrame" .. index, parent, "BackdropTemplate")
+    local frame = AcquireTestShell(parent)
+    RecycleStart(frame)
     frame:SetSize(w, h)
 
-    -- Visuals matching DecorateGroupFrame
     local general = vdb.general
     local borderPx = general and general.borderSize or 1
     local borderSize = borderPx > 0 and (QUICore.Pixels and QUICore:Pixels(borderPx, frame) or borderPx) or 0
     local px = QUICore.GetPixelSize and QUICore:GetPixelSize(frame) or 1
 
-    -- Background color matching groupframes.lua behavior
     local bgColor, healthOpacity, bgOpacity
     if general and general.darkMode then
         bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
@@ -294,18 +403,16 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     end
     ns.SkinBase.ApplyPixelBackdrop(frame, borderSize > 0 and borderPx or 0, true, false, frameBorderColor, { bgColor[1], bgColor[2], bgColor[3], bgAlpha })
 
-    -- Power bar
     local powerSettings = vdb.power
     local showPower = powerSettings and powerSettings.showPowerBar ~= false
     local powerHeight = showPower and (powerSettings.powerBarHeight or 4) or 0
     local separatorHeight = showPower and px or 0
 
-    -- Health bar
     local LSM = ns.LSM
     local textureName = general and general.texture or "Quazii v5"
     local texturePath = LSM:Fetch("statusbar", textureName) or "Interface\\TargetingFrame\\UI-StatusBar"
 
-    local healthBar = CreateFrame("StatusBar", nil, frame)
+    local healthBar = RecycledBar(frame)
     healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
     healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
     healthBar:SetStatusBarTexture(texturePath)
@@ -313,7 +420,6 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     healthBar:SetValue(healthPct)
     healthBar:SetAlpha(healthOpacity)
 
-    -- Class color on health bar
     if general and general.darkMode then
         local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
         healthBar:SetStatusBarColor(c[1], c[2], c[3], c[4] or 1)
@@ -328,9 +434,8 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         healthBar:SetStatusBarColor(0.2, 0.8, 0.2, 1)
     end
 
-    -- Power bar
     if showPower then
-        local powerBar = CreateFrame("StatusBar", nil, frame)
+        local powerBar = RecycledBar(frame)
         powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
         powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
         powerBar:SetHeight(powerHeight)
@@ -344,12 +449,12 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             powerBar:SetStatusBarColor(pc[1], pc[2], pc[3], pc[4] or 1)
         end
 
-        local powerBg = powerBar:CreateTexture(nil, "BACKGROUND")
+        local powerBg = RecycledTexture(powerBar, "BACKGROUND")
         powerBg:SetAllPoints()
         powerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
         powerBg:SetVertexColor(0.05, 0.05, 0.05, 0.9)
 
-        local sep = powerBar:CreateTexture(nil, "OVERLAY")
+        local sep = RecycledTexture(powerBar, "OVERLAY")
         sep:SetHeight(px)
         sep:SetPoint("BOTTOMLEFT", powerBar, "TOPLEFT", 0, 0)
         sep:SetPoint("BOTTOMRIGHT", powerBar, "TOPRIGHT", 0, 0)
@@ -357,28 +462,23 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         sep:SetVertexColor(0, 0, 0, 1)
     end
 
-    -- Text frame
-    local textFrame = CreateFrame("Frame", nil, frame)
+    local textFrame = RecycledFrame(frame)
     textFrame:SetAllPoints()
-    textFrame:SetFrameLevel(healthBar:GetFrameLevel() + 3)
+    textFrame:SetFrameLevel(frame:GetFrameLevel() + CHROME_LEVELS.TEXT)
 
     local fontName = general and general.font or "Quazii"
     local fontPath = LSM:Fetch("font", fontName) or "Fonts\\FRIZQT__.TTF"
     local fontOutline = general and general.fontOutline or "OUTLINE"
 
-    -- Anchor map for text positioning (two-point horizontal anchoring for proper
-    -- justify). Shared with the live frames via groupframes.lua so preview text
-    -- placement can't drift from real frames.
     local ANCHOR_MAP = ns.QUI_GroupFrameTextAnchorMap
 
-    -- Name text
     local nameSettings = vdb.name
     if not nameSettings or nameSettings.showName ~= false then
         local nameAnchorInfo = ANCHOR_MAP[nameSettings and nameSettings.nameAnchor or "LEFT"] or ANCHOR_MAP.LEFT
         local nameOffsetX = nameSettings and nameSettings.nameOffsetX or 4
         local nameOffsetY = nameSettings and nameSettings.nameOffsetY or 0
         local namePadX = math.abs(nameOffsetX)
-        local nameText = textFrame:CreateFontString(nil, "OVERLAY")
+        local nameText = RecycledFontString(textFrame, "OVERLAY")
         Helpers.ApplyFontWithFallback(nameText, fontPath, nameSettings and nameSettings.nameFontSize or 12, fontOutline)
         nameText:SetPoint(nameAnchorInfo.leftPoint, frame, nameAnchorInfo.leftPoint, namePadX, nameOffsetY)
         nameText:SetPoint(nameAnchorInfo.rightPoint, frame, nameAnchorInfo.rightPoint, -namePadX, nameOffsetY)
@@ -393,7 +493,6 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
         nameText:SetText(displayName)
 
-        -- Name color
         if nameSettings and nameSettings.nameTextUseClassColor then
             local cc = RAID_CLASS_COLORS[classToken]
             if cc then
@@ -409,13 +508,12 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
     end
 
-    -- Level text
     if nameSettings and nameSettings.showLevel == true then
         local levelAnchorInfo = ANCHOR_MAP[nameSettings.levelAnchor or "RIGHT"] or ANCHOR_MAP.RIGHT
         local levelOffsetX = nameSettings.levelOffsetX or -4
         local levelOffsetY = nameSettings.levelOffsetY or 0
         local levelPadX = math.abs(levelOffsetX)
-        local levelText = textFrame:CreateFontString(nil, "OVERLAY")
+        local levelText = RecycledFontString(textFrame, "OVERLAY")
         local levelFontPath = fontPath
         if type(nameSettings.levelFont) == "string" and nameSettings.levelFont ~= "" then
             levelFontPath = LSM:Fetch("font", nameSettings.levelFont, true) or fontPath
@@ -436,14 +534,13 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
     end
 
-    -- Health text
     local healthSettings = vdb.health
     if not healthSettings or healthSettings.showHealthText ~= false then
         local healthAnchorInfo = ANCHOR_MAP[healthSettings and healthSettings.healthAnchor or "RIGHT"] or ANCHOR_MAP.RIGHT
         local healthOffsetX = healthSettings and healthSettings.healthOffsetX or -4
         local healthOffsetY = healthSettings and healthSettings.healthOffsetY or 0
         local healthPadX = math.abs(healthOffsetX)
-        local healthText = textFrame:CreateFontString(nil, "OVERLAY")
+        local healthText = RecycledFontString(textFrame, "OVERLAY")
         CJKFont(healthText, fontPath, healthSettings and healthSettings.healthFontSize or 12, fontOutline)
         healthText:SetPoint(healthAnchorInfo.leftPoint, frame, healthAnchorInfo.leftPoint, healthPadX, healthOffsetY)
         healthText:SetPoint(healthAnchorInfo.rightPoint, frame, healthAnchorInfo.rightPoint, -healthPadX, healthOffsetY)
@@ -456,9 +553,8 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             healthText:SetTextColor(0.5, 0.5, 0.5, 1)
             healthBar:SetStatusBarColor(0.5, 0.5, 0.5, 1)
         else
-            -- Format based on display style
             local style = healthSettings and healthSettings.healthDisplayStyle or "percent"
-            local fakeHP = healthPct * 1000  -- Simulate ~100k max HP
+            local fakeHP = healthPct * 1000
             local fakeMax = 100000
             if style == "percent" then
                 healthText:SetText(healthPct .. "%")
@@ -477,7 +573,6 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
                 healthText:SetText(healthPct .. "%")
             end
 
-            -- Health text color
             if healthSettings and healthSettings.healthTextColor then
                 local tc = healthSettings.healthTextColor
                 healthText:SetTextColor(tc[1], tc[2], tc[3], tc[4] or 1)
@@ -489,13 +584,12 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         healthBar:SetStatusBarColor(0.5, 0.5, 0.5, 1)
     end
 
-    -- Role icon
     local indSettings = vdb.indicators
     if indSettings and indSettings.showRoleIcon ~= false then
         local ROLE_TOGGLE_KEY = ns.QUI_GroupFrameRoleToggleKey
         local toggleKey = ROLE_TOGGLE_KEY[role]
         if not toggleKey or indSettings[toggleKey] ~= false then
-            local roleIcon = textFrame:CreateTexture(nil, "OVERLAY")
+            local roleIcon = RecycledTexture(textFrame, "OVERLAY")
             roleIcon:SetSize(indSettings.roleIconSize or 12, indSettings.roleIconSize or 12)
             local roleAnchor = indSettings.roleIconAnchor or "TOPLEFT"
             roleIcon:SetPoint(roleAnchor, frame, roleAnchor, indSettings.roleIconOffsetX or 2, indSettings.roleIconOffsetY or -2)
@@ -509,58 +603,49 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
     end
 
-    ---------------------------------------------------------------------------
-    -- PREVIEW INDICATORS / OVERLAYS / AURAS
-    ---------------------------------------------------------------------------
     local prev = PREVIEW_INDICATORS[((index - 1) % #PREVIEW_INDICATORS) + 1]
     local baseLevel = frame:GetFrameLevel()
 
     if prev and indSettings then
-        -- Helper to position from DB
         local function IndPoint(tex, anchorKey, offXKey, offYKey, defAnchor, defX, defY)
             local a = indSettings[anchorKey] or defAnchor
             tex:SetPoint(a, frame, a, indSettings[offXKey] or defX, indSettings[offYKey] or defY)
         end
 
-        -- Ready Check icon
         if prev.readyCheck and indSettings.showReadyCheck ~= false then
-            local rc = textFrame:CreateTexture(nil, "OVERLAY")
+            local rc = RecycledTexture(textFrame, "OVERLAY")
             local rcSize = indSettings.readyCheckSize or 16
             rc:SetSize(rcSize, rcSize)
             IndPoint(rc, "readyCheckAnchor", "readyCheckOffsetX", "readyCheckOffsetY", "CENTER", 0, 0)
             rc:SetTexture("INTERFACE\\RAIDFRAME\\ReadyCheck-Ready")
         end
 
-        -- Resurrection icon
         if prev.resurrection and indSettings.showResurrection ~= false then
-            local ri = textFrame:CreateTexture(nil, "OVERLAY")
+            local ri = RecycledTexture(textFrame, "OVERLAY")
             local riSize = indSettings.resurrectionSize or 16
             ri:SetSize(riSize, riSize)
             IndPoint(ri, "resurrectionAnchor", "resurrectionOffsetX", "resurrectionOffsetY", "CENTER", 0, 0)
             ri:SetTexture("Interface\\RaidFrame\\Raid-Icon-Rez")
         end
 
-        -- Summon Pending icon
         if prev.summonPending and indSettings.showSummonPending ~= false then
-            local si = textFrame:CreateTexture(nil, "OVERLAY")
+            local si = RecycledTexture(textFrame, "OVERLAY")
             local siSize = indSettings.summonSize or 20
             si:SetSize(siSize, siSize)
             IndPoint(si, "summonAnchor", "summonOffsetX", "summonOffsetY", "CENTER", 16, 0)
             si:SetAtlas("RaidFrame-Icon-SummonPending")
         end
 
-        -- Leader icon
         if prev.leader and indSettings.showLeaderIcon ~= false then
-            local li = textFrame:CreateTexture(nil, "OVERLAY")
+            local li = RecycledTexture(textFrame, "OVERLAY")
             local liSize = indSettings.leaderSize or 12
             li:SetSize(liSize, liSize)
             IndPoint(li, "leaderAnchor", "leaderOffsetX", "leaderOffsetY", "TOP", 0, 6)
             li:SetAtlas("groupfinder-icon-leader")
         end
 
-        -- Raid Target Marker
         if prev.raidMarker and indSettings.showTargetMarker ~= false then
-            local rm = textFrame:CreateTexture(nil, "OVERLAY")
+            local rm = RecycledTexture(textFrame, "OVERLAY")
             local rmSize = indSettings.targetMarkerSize or 14
             rm:SetSize(rmSize, rmSize)
             IndPoint(rm, "targetMarkerAnchor", "targetMarkerOffsetX", "targetMarkerOffsetY", "TOPRIGHT", -2, -2)
@@ -568,119 +653,66 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             SetRaidTargetIconTexture(rm, prev.raidMarker)
         end
 
-        -- Phase icon
         if prev.phaseIcon and indSettings.showPhaseIcon ~= false then
-            local pi = textFrame:CreateTexture(nil, "OVERLAY")
+            local pi = RecycledTexture(textFrame, "OVERLAY")
             local piSize = indSettings.phaseSize or 16
             pi:SetSize(piSize, piSize)
             IndPoint(pi, "phaseAnchor", "phaseOffsetX", "phaseOffsetY", "BOTTOMLEFT", 2, 2)
             pi:SetTexture("Interface\\TargetingFrame\\UI-PhasingIcon")
         end
 
-        -- Threat Border — edge + tinted fill over the whole frame
         if prev.threatBorder and indSettings.showThreatBorder ~= false then
-            local threatOverlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            local threatOverlay = RecycledFrame(frame, "BackdropTemplate")
             threatOverlay:SetAllPoints()
-            threatOverlay:SetFrameLevel(baseLevel + 3)
+            threatOverlay:SetFrameLevel(baseLevel + CHROME_LEVELS.THREAT)
             local tc = indSettings.threatColor or { 1, 0, 0, 0.8 }
             ns.SkinBase.ApplyPixelBackdrop(threatOverlay, indSettings.threatBorderSize or 3, true, false, { tc[1], tc[2], tc[3], tc[4] or 0.8 }, { tc[1], tc[2], tc[3], indSettings.threatFillOpacity or 0.15 })
         end
     end
 
-    -- Healer overlays
     local healerSettings = vdb.healer
     if prev and healerSettings then
-        -- Target Highlight — edge + tinted fill
         if prev.targetHighlight then
             local th = healerSettings.targetHighlight
             if th and th.enabled ~= false then
-                local highlight = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+                local highlight = RecycledFrame(frame, "BackdropTemplate")
                 highlight:SetPoint("TOPLEFT", -px, px)
                 highlight:SetPoint("BOTTOMRIGHT", px, -px)
-                highlight:SetFrameLevel(baseLevel + 4)
+                highlight:SetFrameLevel(baseLevel + CHROME_LEVELS.TARGET)
                 local hc = th.color or { 1, 1, 1, 0.6 }
                 ns.SkinBase.ApplyPixelBackdrop(highlight, 2, true, false, { hc[1], hc[2], hc[3], hc[4] or 0.6 }, { hc[1], hc[2], hc[3], th.fillOpacity or 0.12 })
             end
         end
 
-        -- Dispel Overlay — edge + tinted fill
         if prev.dispelOverlay then
             local dsp = healerSettings.dispelOverlay
-            if dsp and dsp.enabled ~= false then
-                local dispel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-                dispel:SetPoint("TOPLEFT", -px, px)
-                dispel:SetPoint("BOTTOMRIGHT", px, -px)
-                dispel:SetFrameLevel(baseLevel + 6)
-                local dc = dsp.color or { 0.26, 0.54, 1, 0.8 }
-                local opacity = dsp.opacity or 0.8
-                ns.SkinBase.ApplyPixelBackdrop(dispel, dsp.borderSize or 3, true, false, { dc[1], dc[2], dc[3], opacity }, { dc[1], dc[2], dc[3], dsp.fillOpacity or 0.18 })
+            if dsp then
+                local sampleType = dsp.scope == "ALL_TYPED" and "Bleed" or "Magic"
+                if dsp.enabled ~= false then
+                    local dispel = RecycledFrame(frame, "BackdropTemplate")
+                    dispel:SetPoint("TOPLEFT", -px, px)
+                    dispel:SetPoint("BOTTOMRIGHT", px, -px)
+                    dispel:SetFrameLevel(baseLevel + CHROME_LEVELS.DISPEL)
+                    local palette = dsp.colors or {}
+                    local dc = palette[sampleType] or { 0.26, 0.54, 1, 0.8 }
+                    local opacity = dsp.opacity or 0.8
+                    ns.SkinBase.ApplyPixelBackdrop(dispel, dsp.borderSize or 3, true, false, { dc[1], dc[2], dc[3], opacity }, { dc[1], dc[2], dc[3], dsp.fillOpacity or 0.18 })
+                end
+                local Chrome = ns.QUI_GroupFrameChrome
+                if dsp.showIcon == true and Chrome and Chrome.ApplyDispelIconLayout then
+                    Chrome.ApplyDispelIconLayout(frame, dsp)
+                    Chrome.ShowDispelTypeIcon(frame, sampleType)
+                end
             end
         end
     end
 
-    -- Defensive indicator preview (shows up to maxIcons)
-    if prev and prev.defensiveIndicator then
-        local defSettings = healerSettings and healerSettings.defensiveIndicator
-        if defSettings and defSettings.enabled ~= false then
-            local iconSize = defSettings.iconSize or 16
-            local position = defSettings.position or "CENTER"
-            local offsetX = defSettings.offsetX or 0
-            local offsetY = defSettings.offsetY or 0
-            local spacing = defSettings.spacing or 2
-            local growDir = defSettings.growDirection or "RIGHT"
-            local maxIcons = defSettings.maxIcons or 3
-
-            -- Growth direction offsets
-            local stepX, stepY = 0, 0
-            if growDir == "RIGHT" then stepX = iconSize + spacing
-            elseif growDir == "LEFT" then stepX = -(iconSize + spacing)
-            elseif growDir == "CENTER" then stepX = iconSize + spacing
-            elseif growDir == "UP" then stepY = iconSize + spacing
-            elseif growDir == "DOWN" then stepY = -(iconSize + spacing)
-            end
-
-            -- CENTER: centering offset
-            local defCenterOff = 0
-            if growDir == "CENTER" then
-                local totalSpan = maxIcons * iconSize + math.max(maxIcons - 1, 0) * spacing
-                defCenterOff = -totalSpan / 2
-            end
-
-            -- Lift above the power bar on BOTTOM* positions, mirroring the aura
-            -- element preview above and the live UpdateDefensiveIndicator fix.
-            if type(position) == "string" and position:find("BOTTOM") then
-                offsetY = offsetY + powerHeight
-            end
-
-            -- Sample defensive textures for preview
-            local previewTextures = { 135936, 135987, 136120, 135874, 236220 }
-
-            for i = 1, maxIcons do
-                local defIcon = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-                defIcon:SetSize(iconSize, iconSize)
-                defIcon:SetPoint(position, frame, position, offsetX + defCenterOff + stepX * (i - 1), offsetY + stepY * (i - 1))
-                defIcon:SetFrameLevel(baseLevel + 10)
-                ns.SkinBase.ApplyPixelBackdrop(defIcon, 1, false, false, { 0, 0.8, 0, 1 })
-
-                local icon = defIcon:CreateTexture(nil, "ARTWORK")
-                icon:SetAllPoints()
-                icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                icon:SetTexture(previewTextures[i] or previewTextures[1])
-            end
-        end
-    end
-
-    -- Unified aura elements preview (v46 model). One loop over the active spec
-    -- bucket + the "*" bucket draws a representative strip / icon / square / bar
-    -- per element, honoring its anchor / grow / spacing / size, so Edit Mode
-    -- shows the same elements the live unified renderer draws. Fake textures
-    -- only; this is a standalone preview (no live renderer / no real unit).
     local auraSettings = vdb.auras
     if prev and auraSettings and auraSettings.enabled ~= false then
-        RenderAuraElementsPreview(frame, auraSettings, baseLevel + 8, powerHeight, px, texturePath)
+        RenderAuraElementsPreview(frame, auraSettings, baseLevel + CHROME_LEVELS.AURA_HOST, powerHeight, px, texturePath,
+            isRaid and "raid" or "party")
     end
 
-    -- Absorb + Heal prediction overlays (clamped to remaining health bar space)
     local absorbSettings = vdb.absorbs
     local healPredSettings = vdb.healPrediction
     local fillRight = w * (healthPct / 100)
@@ -699,7 +731,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             ac = absorbSettings.color or {1, 1, 1, 1}
         end
         local aa = absorbSettings.opacity or 0.3
-        local absorbOverlay = healthBar:CreateTexture(nil, "OVERLAY", nil, 1)
+        local absorbOverlay = RecycledTexture(healthBar, "OVERLAY", 1)
         absorbOverlay:SetTexture("Interface\\RaidFrame\\Shield-Fill")
         absorbOverlay:SetVertexColor(ac[1], ac[2], ac[3], aa)
         absorbOverlay:SetPoint("TOPLEFT", healthBar, "TOPLEFT", fillRight, 0)
@@ -715,7 +747,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             hc = healPredSettings.color or {0.2, 1, 0.2}
         end
         local ha = healPredSettings.opacity or 0.5
-        local healOverlay = healthBar:CreateTexture(nil, "OVERLAY", nil, 1)
+        local healOverlay = RecycledTexture(healthBar, "OVERLAY", 1)
         healOverlay:SetTexture(texturePath)
         healOverlay:SetVertexColor(hc[1], hc[2], hc[3], ha)
         local healStart = fillRight + (absorbSettings and absorbSettings.enabled ~= false and absorbW or 0)
@@ -724,76 +756,66 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         healOverlay:SetWidth(healPredW)
     end
 
+    RecycleFinish()
     frame:Show()
     return frame
 end
 
 local function DestroyTestFrames(onlyType)
-    -- Clean up private aura placeholders
-    local PA = ns.QUI_GroupFramePrivateAuras
-    if PA and PA.CleanupTestFrames then
-        PA:CleanupTestFrames()
-    end
-
     if onlyType then
-        -- Destroy only the specified type's test frames (keep container for reuse)
         local frames = testFramesByType[onlyType]
         if frames then
-            for _, frame in ipairs(frames) do frame:Hide(); frame:SetParent(nil) end
+            for _, frame in ipairs(frames) do ReleaseTestShell(frame) end
             wipe(frames)
         end
         testFramesByType[onlyType] = nil
-        -- Remove container from tracking so EnableTestMode can reuse or recreate it
-        -- but do NOT destroy it — layout mode overlays may be parented to it.
         local keepContainer = testContainers[onlyType]
         testContainers[onlyType] = nil
-        -- Update legacy refs
         if not testContainers.party and not testContainers.raid then
             testContainer = nil
             wipe(testFrames)
         else
             testContainer = testContainers.party or testContainers.raid
         end
-        -- Store for reuse by EnableTestMode
         if keepContainer then
-            keepContainer._reuseContainer = true
+            reuseContainers[#reuseContainers + 1] = keepContainer
         end
     else
-        -- Destroy all test frames (keep containers for reuse)
-        for _, frame in ipairs(testFrames) do frame:Hide(); frame:SetParent(nil) end
+        for _, frame in ipairs(testFrames) do
+            if frame._quiTestShell then
+                ReleaseTestShell(frame)
+            else
+                frame:Hide()
+                frame:SetParent(nil)
+            end
+        end
         wipe(testFrames)
         for _, frames in pairs(testFramesByType) do
-            for _, frame in ipairs(frames) do frame:Hide(); frame:SetParent(nil) end
+            for _, frame in ipairs(frames) do ReleaseTestShell(frame) end
         end
         wipe(testFramesByType)
         for _, container in pairs(testContainers) do
-            container._reuseContainer = true
+            reuseContainers[#reuseContainers + 1] = container
         end
         wipe(testContainers)
         testContainer = nil
     end
 end
 
----------------------------------------------------------------------------
--- TEST MODE: Toggle
----------------------------------------------------------------------------
 function QUI_GFEM:EnableTestMode(previewType)
-    -- If this type is already showing, skip
     if testContainers[previewType] then return end
 
-    -- Destroy only the same type if somehow lingering (shouldn't happen)
     if testFramesByType[previewType] then DestroyTestFrames(previewType) end
 
     local db = GetDB()
     if not db then return end
 
     isTestMode = true
-    self._lastTestPreviewType = previewType  -- remember for refresh
+    self._lastTestPreviewType = previewType
 
     local GF = ns.QUI_GroupFrames
     if GF then GF.testMode = true end
 
-    -- Determine count
     local count
     if previewType == "raid" then
         count = db.testMode and db.testMode.raidCount or 25
@@ -801,28 +823,16 @@ function QUI_GFEM:EnableTestMode(previewType)
         count = db.testMode and db.testMode.partyCount or 5
     end
 
-    -- Reuse existing container if available (avoids flash from destroy/recreate
-    -- cycle when layout mode overlays are parented to the container).
-    -- Look for a container marked for reuse by DestroyTestFrames.
-    local container
-    local children = { UIParent:GetChildren() }
-    for _, child in ipairs(children) do
-        if child._reuseContainer then
-            container = child
-            container._reuseContainer = nil
-            break
-        end
-    end
-
-    if not container then
+    local container = table.remove(reuseContainers)
+    if container then
+        container:SetParent(UIParent)
+    else
         container = CreateFrame("Frame", nil, UIParent)
     end
 
-    -- Use LOW strata so layout mode handle overlays (FULLSCREEN_DIALOG) render above.
     container:SetFrameStrata("LOW")
     container:ClearAllPoints()
     if isEditMode then
-        -- Anchor to the mover matching preview type
         local targetMover = groupMover
         if previewType == "raid" and raidMover then
             targetMover = raidMover
@@ -833,7 +843,6 @@ function QUI_GFEM:EnableTestMode(previewType)
             container:SetPoint("CENTER", UIParent, "CENTER", -400, 0)
         end
     else
-        -- Prefer frameAnchoring position; fall back to legacy db.position
         local faKey = previewType == "raid" and "raidFrames" or "partyFrames"
         local core = ns.Helpers and ns.Helpers.GetCore and ns.Helpers.GetCore()
         local faDB = core and core.db and core.db.profile and core.db.profile.frameAnchoring
@@ -848,11 +857,10 @@ function QUI_GFEM:EnableTestMode(previewType)
     end
     container:Show()
     testContainers[previewType] = container
-    testContainer = container  -- legacy compat (used by SyncMoverToContent fallback)
+    testContainer = container
     table_insert(testFrames, container)
     testFramesByType[previewType] = testFramesByType[previewType] or {}
 
-    -- Create test frames
     local isRaid = previewType == "raid"
     local vdb = isRaid and (db.raid or db) or (db.party or db)
     local layout = vdb.layout
@@ -868,7 +876,6 @@ function QUI_GFEM:EnableTestMode(previewType)
     local framesPerGroup = 5
     local numGroups = math.ceil(count / framesPerGroup)
 
-    -- Determine frame dimensions for the current mode
     local mode
     if count <= 5 then mode = "party"
     elseif count <= 15 then mode = "small"
@@ -907,25 +914,23 @@ function QUI_GFEM:EnableTestMode(previewType)
                 local xOff, yOff, anchor
 
                 if horizontal then
-                    -- Frames within a group go left/right; groups stack via groupGrowDir
                     if groupGrowDir == "UP" then
                         yOff = col * (frameH + groupSpacing)
-                    else -- DOWN
+                    else
                         yOff = -(col * (frameH + groupSpacing))
                     end
                     if grow == "RIGHT" then
                         anchor = groupGrowDir == "UP" and "BOTTOMLEFT" or "TOPLEFT"
                         xOff = row * (frameW + spacing)
-                    else -- LEFT
+                    else
                         anchor = groupGrowDir == "UP" and "BOTTOMRIGHT" or "TOPRIGHT"
                         xOff = -(row * (frameW + spacing))
                     end
                 else
-                    -- Frames within a group go up/down; groups stack via groupGrowDir
                     if grow == "DOWN" then
                         anchor = (groupGrowDir == "LEFT") and "TOPRIGHT" or "TOPLEFT"
                         yOff = -(row * (frameH + spacing))
-                    else -- UP
+                    else
                         anchor = (groupGrowDir == "LEFT") and "BOTTOMRIGHT" or "BOTTOMLEFT"
                         yOff = row * (frameH + spacing)
                     end
@@ -936,17 +941,10 @@ function QUI_GFEM:EnableTestMode(previewType)
                 testFrame:SetPoint(anchor, container, anchor, xOff, yOff)
                 table_insert(testFrames, testFrame)
                 table_insert(testFramesByType[previewType], testFrame)
-
-                -- Attach private aura placeholders
-                local PA = ns.QUI_GroupFramePrivateAuras
-                if PA and PA.SetupTestFrame then
-                    PA:SetupTestFrame(testFrame)
-                end
             end
         end
     end
 
-    -- Set container size
     local totalW, totalH
     if horizontal then
         totalW = framesPerGroup * frameW + (framesPerGroup - 1) * spacing
@@ -957,37 +955,21 @@ function QUI_GFEM:EnableTestMode(previewType)
     end
     container:SetSize(totalW, totalH)
 
-    -- The initial SetPoint above anchored the container to UIParent, which is
-    -- correct ONLY for free / screen-positioned frames. When the frame is
-    -- ANCHORED to another element, its stored frameAnchoring offsets are relative
-    -- to that PARENT, so applying them against UIParent drops the preview at the
-    -- wrong spot (and the layout handle, a child overlay that syncs off this
-    -- container's rect, follows it there). Now that the container is the resolved
-    -- frame for its key (FRAME_RESOLVERS -> GetActiveFrame returns it in test
-    -- mode) AND has been sized to its content, re-run the anchoring system so it
-    -- positions relative to the real parent frame, matching the live gameplay
-    -- position. This MUST run after container:SetSize: ApplyFrameAnchor's
-    -- corner/edge math reads the container's current size, so anchoring it while
-    -- still unsized would offset it by ~one container height ("one level up the
-    -- chain"). Skip in legacy edit mode: there the container rides the mover.
     if not isEditMode and _G.QUI_ApplyFrameAnchor then
         _G.QUI_ApplyFrameAnchor(previewType == "raid" and "raidFrames" or "partyFrames")
     end
 
-    -- If edit mode is active, sync the mover size and re-anchor
     if isEditMode then
         self:SyncMoverToContent()
     end
 end
 
 local function CleanupReuseContainers()
-    local children = { UIParent:GetChildren() }
-    for _, child in ipairs(children) do
-        if child._reuseContainer then
-            child._reuseContainer = nil
-            child:Hide()
-            child:SetParent(nil)
-        end
+    for i = #reuseContainers, 1, -1 do
+        local container = reuseContainers[i]
+        reuseContainers[i] = nil
+        container:Hide()
+        container:SetParent(nil)
     end
 end
 
@@ -995,7 +977,6 @@ function QUI_GFEM:DisableTestMode(switching, onlyType)
     if onlyType then
         DestroyTestFrames(onlyType)
         CleanupReuseContainers()
-        -- Still in test mode if any type remains
         if not testContainers.party and not testContainers.raid then
             isTestMode = false
             self._lastTestPreviewType = nil
@@ -1013,9 +994,6 @@ function QUI_GFEM:DisableTestMode(switching, onlyType)
         if GF then GF.testMode = false end
     end
 
-    -- If edit mode is active, there's no real group, and we're not just
-    -- switching preview types, exit edit mode — the mover has nothing to
-    -- control.
     if not switching and not isTestMode and isEditMode and not IsInGroup() and not IsInRaid() then
         self:DisableEditMode()
     end
@@ -1025,29 +1003,10 @@ function QUI_GFEM:IsTestMode()
     return isTestMode
 end
 
-function QUI_GFEM:ToggleTestMode(previewType)
-    -- If edit mode is active, exit it first — preview is a standalone toggle
-    if isEditMode then
-        self:DisableEditMode()
-    end
-
-    if testContainers[previewType] then
-        -- This type is showing — toggle it off
-        self:DisableTestMode(false, previewType)
-    else
-        self:EnableTestMode(previewType or "party")
-    end
-end
-
--- Rebuild test frames with current settings (called when options change).
--- Uses trailing-edge debounce: rapid calls (slider drags) are coalesced
--- into a single rebuild 0.15s after the last call, preventing the
--- destroy/recreate flash that occurs with leading-edge throttles.
 local refreshTimer = nil
 function QUI_GFEM:RefreshTestMode()
     if not isTestMode then return end
 
-    -- Cancel any pending rebuild and restart the debounce window.
     if refreshTimer then
         refreshTimer:Cancel()
     end
@@ -1063,7 +1022,6 @@ function QUI_GFEM:RefreshTestMode()
         for _, pt in ipairs(rebuildTypes) do
             DestroyTestFrames(pt)
             self:EnableTestMode(pt)
-            -- Re-sync layout mode handle after rebuild
             local syncKey = pt == "raid" and "raidFrames" or "partyFrames"
             if _G.QUI_LayoutModeSyncHandle then
                 _G.QUI_LayoutModeSyncHandle(syncKey)
@@ -1072,20 +1030,9 @@ function QUI_GFEM:RefreshTestMode()
     end)
 end
 
----------------------------------------------------------------------------
--- EDIT MODE: Dragging + overlays
---
--- We create a single non-secure mover frame parented to UIParent.
--- During edit mode, headers and test containers are anchored TO the mover
--- so everything moves together.  On exit, headers are re-anchored to
--- UIParent at the saved offset.
----------------------------------------------------------------------------
-
--- Calculate the visual bounds of a header from its children
 local function GetHeaderBounds(header, db)
     if not header then return 0, 0 end
 
-    -- Count visible children
     local childCount = 0
     local i = 1
     while true do
@@ -1104,7 +1051,6 @@ local function GetHeaderBounds(header, db)
     local spacing = layout and layout.spacing or 2
     local groupSpacing = layout and layout.groupSpacing or 10
 
-    -- Determine mode and frame size
     local mode
     if childCount <= 5 then mode = "party"
     elseif childCount <= 15 then mode = "small"
@@ -1142,7 +1088,6 @@ local function GetHeaderBounds(header, db)
     return totalW, totalH
 end
 
--- Helper: Create a nudge button (matches unitframe_editmode chevron style)
 local function CreateNudgeButton(parent, direction, deltaX, deltaY)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(18, 18)
@@ -1196,7 +1141,6 @@ local function CreateNudgeButton(parent, direction, deltaX, deltaY)
     btn:SetScript("OnClick", function()
         local shift = IsShiftKeyDown()
         local step = shift and 10 or 1
-        -- Use the mover's stored nudge key so party/raid mover nudge the right position
         local key = parent._nudgeKey or "party"
         QUI_GFEM:NudgeHeader(key, deltaX * step, deltaY * step)
     end)
@@ -1211,7 +1155,6 @@ local function UpdateMoverPositionText(mover, oX, oY)
     end
 end
 
--- Returns the position table for a given mover (or "position" by default).
 local function GetMoverPositionTable(mover)
     local db = GetDB()
     if not db then return nil end
@@ -1239,7 +1182,6 @@ local function SaveMoverPosition(mover)
     return oX, oY
 end
 
--- Helper: size a single mover to a single header.
 local function SizeMoverToHeader(mover, hdr, db)
     if not mover or not hdr then return 0, 0 end
     local GF = ns.QUI_GroupFrames
@@ -1270,7 +1212,6 @@ local function SizeMoverToHeader(mover, hdr, db)
     return w, h
 end
 
--- Helper: re-parent a single header to a mover using BOTTOMLEFT offsets.
 local function ReparentHeaderToMover(hdr, mover)
     if not hdr or not mover then return end
     local hLeft = Helpers.SafeValue(hdr:GetLeft(), nil)
@@ -1291,8 +1232,6 @@ local function ReparentHeaderToMover(hdr, mover)
     end
 end
 
--- Resize the mover(s) to match content and re-anchor all frames.
--- Called after any state change (test mode toggle, settings refresh, edit mode enter).
 function QUI_GFEM:SyncMoverToContent()
     if not isEditMode or not groupMover then return end
     if InCombatLockdown() then return end
@@ -1300,7 +1239,6 @@ function QUI_GFEM:SyncMoverToContent()
     local db = GetDB()
     local GF = ns.QUI_GroupFrames
 
-    -- Separate party + raid movers
     if GF then
         local partyHdr = GF.headers and GF.headers.party
         if partyHdr then
@@ -1311,7 +1249,6 @@ function QUI_GFEM:SyncMoverToContent()
             groupMover:SetSize(200, 40)
         end
 
-        -- Self header follows party mover
         if GF.headers.self then
             ReparentHeaderToMover(GF.headers.self, groupMover)
         end
@@ -1328,7 +1265,6 @@ function QUI_GFEM:SyncMoverToContent()
         end
     end
 
-    -- Test containers: anchor each type to its matching mover
     local function SyncTestContainerToMover(container, mover)
         if not container or not mover then return end
         local tw = Helpers.SafeValue(container:GetWidth(), 200)
@@ -1361,7 +1297,6 @@ function QUI_GFEM:SyncMoverToContent()
     end
 end
 
--- moverType: "party" or "raid"
 local function CreateGroupMover(moverType)
     moverType = moverType or "party"
     local frameName = moverType == "raid" and "QUI_RaidFramesMover" or "QUI_PartyFramesMover"
@@ -1376,23 +1311,18 @@ local function CreateGroupMover(moverType)
     mover:EnableMouse(true)
     mover:RegisterForDrag("LeftButton")
 
-    -- Store metadata for SaveMoverPosition, UpdateMoverPositionText, NudgeHeader
     mover._label = label
     mover._positionKey = posKey
     mover._nudgeKey = nudgeKey
     mover._moverType = moverType
 
-    -- Border overlay: a separate frame at a high frame level so it renders
-    -- on top of child content (test frames, headers) that gets re-parented
-    -- to the mover during edit mode.
     local border = CreateFrame("Frame", nil, mover, "BackdropTemplate")
     border:SetAllPoints()
     border:SetFrameLevel(mover:GetFrameLevel() + 100)
     ns.SkinBase.ApplyPixelBackdrop(border, 2, true, false, { 0.2, 0.8, 1, 1 }, { 0.2, 0.8, 1, 0.08 })
-    border:EnableMouse(false)  -- clicks pass through to the mover
+    border:EnableMouse(false)
     mover.border = border
 
-    -- Position / label text above the mover (on the border overlay so it's on top)
     local fontPath = ns.LSM:Fetch("font", "Quazii") or "Fonts\\FRIZQT__.TTF"
     local posText = border:CreateFontString(nil, "OVERLAY")
     CJKFont(posText, fontPath, 10, "OUTLINE")
@@ -1400,7 +1330,6 @@ local function CreateGroupMover(moverType)
     posText:SetTextColor(0.2, 0.8, 1, 1)
     mover.posText = posText
 
-    -- Hint text
     local hint = border:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     CJKFont(hint, fontPath, 9, "OUTLINE")
     hint:SetPoint("TOP", mover, "BOTTOM", 0, -4)
@@ -1408,7 +1337,6 @@ local function CreateGroupMover(moverType)
     hint:SetText(ns.L["Drag to move  |  Arrows to nudge (Shift=10px)"])
     mover.hint = hint
 
-    -- Nudge buttons
     local nudgeUp = CreateNudgeButton(mover, "UP", 0, 1)
     nudgeUp:SetPoint("BOTTOM", mover, "TOP", 0, 4)
     mover.nudgeUp = nudgeUp
@@ -1425,17 +1353,14 @@ local function CreateGroupMover(moverType)
     nudgeRight:SetPoint("LEFT", mover, "RIGHT", 4, 0)
     mover.nudgeRight = nudgeRight
 
-    -- Click to select (re-select after clicking another edit mode element)
     mover:SetScript("OnMouseDown", function(self, button)
+        ---@diagnostic disable-next-line: empty-block
         if button == "LeftButton" then
-            -- no-op: edit mode element selection removed
         end
     end)
 
-    -- Drag handlers
     mover:SetScript("OnDragStart", function(self)
         if InCombatLockdown() then return end
-        -- Block dragging when locked by anchoring system
         local anchorKey = (self._nudgeKey or "party") .. "Frames"
         if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(anchorKey) then return end
         self:StartMoving()
@@ -1467,7 +1392,6 @@ local function CreateGroupMover(moverType)
     return mover
 end
 
--- Re-parent headers back to UIParent and restore saved offset (edit mode exit)
 local function RestoreHeaderAnchors()
     if InCombatLockdown() then return end
 
@@ -1501,7 +1425,6 @@ local function RestoreHeaderAnchors()
     end
 end
 
--- Old locked overlay styling removed — Layout Mode handles replace these.
 function QUI_GFEM:UpdateMoverLockedState() end
 
 function QUI_GFEM:EnableEditMode(previewType)
@@ -1509,16 +1432,13 @@ function QUI_GFEM:EnableEditMode(previewType)
 
     local wantType = previewType or "party"
 
-    -- Already in edit mode — switch preview type if different, else no-op
     if isEditMode then
         if self._lastTestPreviewType ~= wantType then
             self:EnableTestMode(wantType)
-            -- SyncMoverToContent is called at the end of EnableTestMode
         end
         return
     end
 
-    -- Fresh entry into edit mode
     isEditMode = true
 
     local GF = ns.QUI_GroupFrames
@@ -1527,13 +1447,11 @@ function QUI_GFEM:EnableEditMode(previewType)
 
     local db = GetDB()
 
-    -- Helper: position a mover at its saved position (or derive from header)
     local function PositionMover(mover, headerKey)
         local pos = GetMoverPositionTable(mover)
         local oX = pos and pos.offsetX or -400
         local oY = pos and pos.offsetY or 0
 
-        -- If the header is visible, derive from its actual screen center
         if GF and GF.headers then
             local hdr = GF.headers[headerKey]
             if hdr and hdr:IsShown() then
@@ -1557,14 +1475,12 @@ function QUI_GFEM:EnableEditMode(previewType)
         return oX, oY
     end
 
-    -- Always separate party + raid movers
     if not groupMover then
         groupMover = CreateGroupMover("party")
     end
     if not raidMover then
         raidMover = CreateGroupMover("raid")
     end
-    -- Only show the mover for the requested context
     if wantType == "party" then
         PositionMover(groupMover, "party")
         raidMover:Hide()
@@ -1576,15 +1492,10 @@ function QUI_GFEM:EnableEditMode(previewType)
         PositionMover(raidMover, "raid")
     end
 
-    -- Show test frames when real frames aren't visible for the requested type.
-    -- This must happen AFTER movers are created so test containers can
-    -- anchor to the correct mover and SyncMoverToContent can size it.
     local needTestFrames = false
     if wantType == "raid" then
         needTestFrames = not IsInRaid()
     elseif wantType == "party" then
-        -- Show party test frames when solo or in a raid (WoW hides party
-        -- frames in raid, so there's nothing real to position).
         needTestFrames = not IsInGroup() or IsInRaid()
     else
         needTestFrames = not IsInGroup() or not IsInRaid()
@@ -1595,22 +1506,16 @@ function QUI_GFEM:EnableEditMode(previewType)
         end
     end
 
-    -- Size the mover(s) and anchor all content
     self:SyncMoverToContent()
 
-    -- Check if group frames are locked by the anchoring system
     self:UpdateMoverLockedState()
 
-    -- Hide Blizzard's CompactPartyFrame selection overlay (blue box in Edit Mode)
-    -- Use SetAlpha(0) not Hide() — hidden frames return nil from GetRect(),
-    -- crashing Blizzard's magnetic snap loop (GetScaledSelectionSides).
     if CompactPartyFrame and CompactPartyFrame.Selection then
         C_Timer.After(0, function()
             if CompactPartyFrame and CompactPartyFrame.Selection then
                 CompactPartyFrame.Selection:SetAlpha(0)
             end
         end)
-        -- Persistent watcher: Blizzard re-shows Selection on every click/select cycle
         if not partySelectionWatcher then
             partySelectionWatcher = CreateFrame("Frame", nil, UIParent)
             partySelectionWatcher:SetScript("OnUpdate", function()
@@ -1627,7 +1532,6 @@ function QUI_GFEM:EnableEditMode(previewType)
         end
     end
 
-    -- Hide Blizzard's CompactRaidFrameContainer selection overlay
     if CompactRaidFrameContainer and CompactRaidFrameContainer.Selection then
         C_Timer.After(0, function()
             if CompactRaidFrameContainer and CompactRaidFrameContainer.Selection then
@@ -1650,14 +1554,12 @@ function QUI_GFEM:EnableEditMode(previewType)
         end
     end
 
-    -- (edit mode element selection removed)
 end
 
 function QUI_GFEM:DisableEditMode()
     if not isEditMode then return end
     isEditMode = false
 
-    -- Stop suppressing Blizzard selection overlays
     if partySelectionWatcher then
         partySelectionWatcher:Hide()
     end
@@ -1668,9 +1570,6 @@ function QUI_GFEM:DisableEditMode()
     local GF = ns.QUI_GroupFrames
     if GF then GF.editMode = false end
 
-    -- (edit mode element selection removed)
-
-    -- Save final position and hide mover(s)
     local function StopAndHideMover(mover)
         if not mover then return end
         if mover._isMoving then
@@ -1684,23 +1583,13 @@ function QUI_GFEM:DisableEditMode()
     StopAndHideMover(groupMover)
     StopAndHideMover(raidMover)
 
-    -- Re-anchor headers to UIParent at saved offset
     RestoreHeaderAnchors()
     if GF and GF.UpdateAnchorFrames then
         GF:UpdateAnchorFrames()
     end
 
-    -- Disable test mode if active
     if isTestMode then
         self:DisableTestMode()
-    end
-end
-
-function QUI_GFEM:ToggleEditMode(previewType)
-    if isEditMode then
-        self:DisableEditMode()
-    else
-        self:EnableEditMode(previewType)
     end
 end
 
@@ -1708,10 +1597,6 @@ function QUI_GFEM:IsEditMode()
     return isEditMode
 end
 
--- Returns the currently visible frame for anchoring purposes.
--- During edit/test mode this is the mover or test container;
--- outside edit mode returns nil (callers should fall back to headers).
--- Optional frameType ("party" or "raid") returns the correct mover.
 function QUI_GFEM:GetActiveFrame(frameType)
     if isEditMode then
         if frameType == "raid" and raidMover then
@@ -1723,8 +1608,6 @@ function QUI_GFEM:GetActiveFrame(frameType)
     end
     if isTestMode then
         if frameType then
-            -- Return the container for the requested type only — never
-            -- fall through to a different type's container.
             return testContainers[frameType]
         end
         if testContainer then return testContainer end
@@ -1732,16 +1615,12 @@ function QUI_GFEM:GetActiveFrame(frameType)
     return nil
 end
 
----------------------------------------------------------------------------
--- NUDGE: Pixel-level positioning
----------------------------------------------------------------------------
 function QUI_GFEM:NudgeHeader(headerKey, dx, dy)
     if InCombatLockdown() then return end
 
     local db = GetDB()
     if not db then return end
 
-    -- Determine which position table and mover to nudge
     local posKey = "position"
     local mover = groupMover
     if headerKey == "raid" then
@@ -1755,7 +1634,6 @@ function QUI_GFEM:NudgeHeader(headerKey, dx, dy)
     pos.offsetX = (pos.offsetX or 0) + dx
     pos.offsetY = (pos.offsetY or 0) + dy
 
-    -- Move the mover (headers are anchored to it, so they follow)
     if mover then
         mover:ClearAllPoints()
         mover:SetPoint("CENTER", UIParent, "CENTER", pos.offsetX, pos.offsetY)
@@ -1763,32 +1641,25 @@ function QUI_GFEM:NudgeHeader(headerKey, dx, dy)
     end
 end
 
----------------------------------------------------------------------------
--- SPOTLIGHT: Pin specific members to a separate group
----------------------------------------------------------------------------
 function QUI_GFEM:CreateSpotlightHeader()
     local db = GetDB()
     local spot = db and db.raid and db.raid.spotlight
     if not spot or not spot.enabled then return end
     if InCombatLockdown() then return end
 
-    -- Already fully set up with previews from a prior call
     if spotlightContainer and spotlightContainer._previewFrames then
         return spotlightContainer
     end
 
-    -- Adopt the runtime-created container/header if available
     local GF = ns.QUI_GroupFrames
     if not spotlightContainer and GF and GF.spotlightContainer then
         spotlightContainer = GF.spotlightContainer
         spotlightHeader = GF.spotlightHeader
     end
 
-    -- Dimensions
     local w = spot.frameWidth or 180
     local h = spot.frameHeight or 36
 
-    -- Create infrastructure only if runtime didn't (spotlight enabled mid-session)
     if not spotlightContainer then
         spotlightContainer = CreateFrame("Frame", "QUI_SpotlightContainer", UIParent)
         spotlightContainer:SetSize(w, h)
@@ -1829,7 +1700,6 @@ function QUI_GFEM:CreateSpotlightHeader()
 
     spotlightContainer:Show()
 
-    -- Build preview frames
     local filterMode = spot.filterMode or "ROLE"
     local spacing = spot.spacing or 2
     local grow = spot.growDirection or "DOWN"
@@ -1857,7 +1727,6 @@ function QUI_GFEM:CreateSpotlightHeader()
         end
     end
 
-    -- Create and position preview frames
     local totalCount = #previewData
     if totalCount > 0 then
         local horizontal = (grow == "LEFT" or grow == "RIGHT")
@@ -1881,7 +1750,6 @@ function QUI_GFEM:CreateSpotlightHeader()
             end
         end
 
-        -- Resize container to fit all preview frames
         if horizontal then
             spotlightContainer:SetSize(totalCount * w + (totalCount - 1) * spacing, h)
         else
@@ -1895,23 +1763,19 @@ function QUI_GFEM:CreateSpotlightHeader()
 end
 
 function QUI_GFEM:DestroySpotlightHeader()
-    -- Always clean up preview frames
     if spotlightContainer and spotlightContainer._previewFrames then
         for _, f in ipairs(spotlightContainer._previewFrames) do
-            f:Hide()
-            f:SetParent(nil)
+            ReleaseTestShell(f)
         end
         spotlightContainer._previewFrames = nil
     end
 
-    -- If the runtime owns the container/header, just clear our locals
     if spotlightContainer and not spotlightContainer._editModeCreated then
         spotlightContainer = nil
         spotlightHeader = nil
         return
     end
 
-    -- Edit-mode-created: full teardown
     if spotlightHeader then
         if not InCombatLockdown() then
             spotlightHeader:Hide()
@@ -1926,12 +1790,6 @@ function QUI_GFEM:DestroySpotlightHeader()
     end
 end
 
--- Preview is managed exclusively via Layout Mode.
--- /qui grouptest slash command removed — use /qui layout instead.
-
----------------------------------------------------------------------------
--- UNLOCK MODE ELEMENT REGISTRATION
----------------------------------------------------------------------------
 do
     local function RegisterLayoutModeElements()
         local um = ns.QUI_LayoutMode
@@ -1942,9 +1800,6 @@ do
             return core and core.db and core.db.profile and core.db.profile.quiGroupFrames
         end
 
-        -- Module on/off lives in Module Addons (addon state + guard flag);
-        -- the party/raid enable pills and their shared reload-prompt helper
-        -- were retired with the master-toggle consolidation. Positioning only.
         um:RegisterElement({
             key = "partyFrames",
             label = ns.L["Party Frames"],
@@ -1957,9 +1812,6 @@ do
                     local active = GFEM:GetActiveFrame("party")
                     if active then return active end
                 end
-                -- Return the anchor root frame (not the header) so layout mode
-                -- positions the root. Headers are arranged within the root by
-                -- UpdateAnchorRoot.
                 local GF = ns.QUI_GroupFrames
                 if GF and GF.anchorFrames and GF.anchorFrames.party then
                     return GF.anchorFrames.party
@@ -1974,16 +1826,14 @@ do
                 if not target then return end
                 if hide then
                     target:SetAlpha(0)
-                    pcall(target.EnableMouse, target, false)
+                    ns.SafeCallMethod("best-effort-style", target, "EnableMouse", false)
                 else
                     target:SetAlpha(1)
-                    pcall(target.EnableMouse, target, true)
+                    ns.SafeCallMethod("best-effort-style", target, "EnableMouse", true)
                 end
             end,
             onOpen = function()
                 local GFEM = ns.QUI_GroupFrameEditMode
-                -- Show party preview when solo or in a raid (WoW hides party
-                -- frames in raid, so there's nothing real to position).
                 if GFEM and (not IsInGroup() or IsInRaid()) then GFEM:EnableTestMode("party") end
             end,
             onClose = function()
@@ -1998,7 +1848,6 @@ do
             group = ns.L["Group Frames"],
             order = 2,
             isOwned = true,
-            -- positioning only; module on/off in Module Addons
             setGameplayHidden = function(hide)
                 local GF = ns.QUI_GroupFrames
                 local root = GF and GF.anchorFrames and GF.anchorFrames.raid
@@ -2007,10 +1856,10 @@ do
                 if not target then return end
                 if hide then
                     target:SetAlpha(0)
-                    pcall(target.EnableMouse, target, false)
+                    ns.SafeCallMethod("best-effort-style", target, "EnableMouse", false)
                 else
                     target:SetAlpha(1)
-                    pcall(target.EnableMouse, target, true)
+                    ns.SafeCallMethod("best-effort-style", target, "EnableMouse", true)
                 end
             end,
             getFrame = function()
@@ -2035,7 +1884,6 @@ do
             end,
         })
 
-        -- Spotlight Frames (separate handle, only visible when enabled)
         um:RegisterElement({
             key = "spotlightFrames",
             label = ns.L["Spotlight"],
@@ -2054,7 +1902,6 @@ do
                 if not db.raid then db.raid = {} end
                 if not db.raid.spotlight then db.raid.spotlight = {} end
                 db.raid.spotlight.enabled = val
-                -- Show/hide the runtime spotlight immediately
                 local GF = ns.QUI_GroupFrames
                 if GF then
                     if val then
@@ -2077,10 +1924,10 @@ do
                 if not container then return end
                 if hide then
                     container:SetAlpha(0)
-                    pcall(container.EnableMouse, container, false)
+                    ns.SafeCallMethod("best-effort-style", container, "EnableMouse", false)
                 else
                     container:SetAlpha(1)
-                    pcall(container.EnableMouse, container, true)
+                    ns.SafeCallMethod("best-effort-style", container, "EnableMouse", true)
                 end
             end,
             getFrame = function()

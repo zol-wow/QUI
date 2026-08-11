@@ -102,6 +102,11 @@ local settings = { modifiers = {
 
 local ns = {
     Helpers = { IsSecretValue = function(v) return secrets[v] == true end },
+    -- core/safecall.lua stub: silent pcall swallow matches the pre-SafeCall
+    -- behavior these tests were written against (Task 45b ns-mock precedent).
+    SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end,
+    SafeCallMethod = function(_policy, obj, name, ...) return pcall(function(...) return obj[name](obj, ...) end, ...) end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
     QUI = { Chat = {
         _internals = {
             GetSettings = function() return settings end,
@@ -230,8 +235,14 @@ do
     local p = F.BuildPayloadFromArgs("CHAT_MSG_SAY",
         "hi", "Bob-Realm", nil, nil, nil, nil, nil, nil, nil, nil, 42,
         "Player-1-MAGE", nil, nil, nil, nil, true)
-    eq("sender filter receives Blizzard arg count", seenCount, 14)
-    eq("sender filter hides arg17 suppressRaidIcons", seenArg15, nil)
+    -- Wave 3 Task 2: BuildPayloadFromArgs now forwards discordInfo (a18) to
+    -- DecorateSender as its 15th vararg slot, exactly like Blizzard's own
+    -- GetDecoratedSenderName(event, arg1..arg14, discordInfo) call
+    -- (ChatFrameOverrides.lua:310) — so ProcessSenderNameFilters always sees
+    -- 15 args now (a1..a14 + discordInfo), never 14. suppressRaidIcons (a17)
+    -- still never leaks in (it isn't part of DecorateSender's vararg at all).
+    eq("sender filter receives Blizzard arg count (+discordInfo slot)", seenCount, 15)
+    eq("sender filter's 15th slot is discordInfo (nil: no Discord traffic here)", seenArg15, nil)
     eq("payload keeps arg17 suppressIcons", p.suppressIcons, true)
     _G.ChatFrameUtil.ProcessSenderNameFilters = prevFilter
 end
@@ -1030,6 +1041,254 @@ do
     string.format = realFormat
     _G.GetPlayerInfoByGUID = prevGPI
     assert(rawequal(got, coloredFinal), "secret sender+GUID keeps class-colored prefix")
+end
+
+-- ============================================================================
+-- Wave 3 Task 2: Discord guild chat (CHAT_MSG_GUILD_DISCORD) formatter parity
+-- ============================================================================
+-- Parity sources: ChatFrameOverrides.lua:284-657 (MessageEventHandler),
+-- ChatFrameUtil.lua:994-1111 (GetDecoratedSenderName, DiscordNameColorize,
+-- FormatDiscordMessage), ItemRef.lua:122-129 + LinkUtil.lua:1-77
+-- (GetDiscordUserLink / LinkTypes.DiscordUser = "discorduser"),
+-- DiscordConstantsDocumentation.lua (DiscordChatInfo fields,
+-- DiscordDisplayNameType.GlobalName = 2 -- the literal fallback
+-- DISCORD_GLOBAL_NAME_TYPE uses when _G.Enum isn't present, so no Enum mock
+-- is needed here).
+
+_G.CHAT_GUILD_DISCORD_GET = "%s says: "
+_G.DISCORD_MESSAGE_ATTACHMENT = "[Attachment]"
+_G.DISCORD_MESSAGE_POLL = "[Poll]"
+_G.DISCORD_MESSAGE_FORWARD = "[Forwarded]"
+_G.YELLOW_FONT_COLOR = { WrapTextInColorCode = function(_, t) return "Y<" .. t .. ">" end }
+
+-- --- DecorateSender: Discord identity override (ChatFrameUtil.lua:1018-1026) --
+
+-- userID == 0 (not from Discord): discordInfo entirely ignored, ordinary
+-- WoW-character decoration proceeds untouched.
+eq("decorate discord userID=0 ignored",
+    F.DecorateSender("CHAT_MSG_GUILD", "hi", "Bob-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+        { userID = 0, lastOnlineName = "ShouldNotAppear" }),
+    "Bob")
+
+-- lastOnlineName path (type ~= GlobalName / no globalName): BOTH the
+-- decorated name and the class-color GUID swap to the Discord identity's
+-- linked WoW character -- and the swapped name is NOT re-ambiguated
+-- (Blizzard overwrites decoratedPlayerName directly with lastOnlineName,
+-- ChatFrameUtil.lua:1025, with no further Ambiguate call), so a cross-realm
+-- lastOnlineName keeps its "-Realm" suffix unlike an ordinary sender.
+eq("decorate discord lastOnlineName class-colored, realm kept (not re-ambiguated)",
+    F.DecorateSender("CHAT_MSG_GUILD_DISCORD", "hi", "DiscordHandle#0", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+        { userID = 111222333, lastOnlineName = "Zed-Realm", lastOnlineGUID = "Player-1-MAGE" }),
+    "|cff3fc7ebZed-Realm|r")
+
+-- No class resolves for the linked GUID (absent here): the swapped name still
+-- renders, uncolored -- never falls back to the original WoW-side handle.
+eq("decorate discord lastOnlineName, no linked guid, stays plain",
+    F.DecorateSender("CHAT_MSG_GUILD_DISCORD", "hi", "DiscordHandle#0", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+        { userID = 444555666, lastOnlineName = "Nobody-Realm" }),
+    "Nobody-Realm")
+
+-- GlobalName display mode: returns ChatFrameUtil.DiscordNameColorize(globalName)
+-- IMMEDIATELY (ChatFrameUtil.lua:1019-1023), bypassing BOTH the
+-- timerunning-icon check AND ProcessSenderNameFilters entirely -- a genuine
+-- Blizzard quirk, mirrored rather than "fixed".
+do
+    local prevFilter = _G.ChatFrameUtil.ProcessSenderNameFilters
+    local filterCalled = false
+    _G.ChatFrameUtil.ProcessSenderNameFilters = function(_, decorated) filterCalled = true; return decorated end
+    _G.C_ChatInfo = { GetColorForChatType = function(name)
+        assert(name == "DISCORD_PLAYER_NAME", "queries the DISCORD_PLAYER_NAME chat-color slot")
+        return { r = 224 / 255, g = 227 / 255, b = 1 }
+    end }
+    eq("decorate discord globalName colorized via GetColorForChatType",
+        F.DecorateSender("CHAT_MSG_GUILD_DISCORD", "hi", "WoWCharName", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+            { userID = 777888999, type = 2, globalName = "coolname" }),
+        "|cffe0e3ffcoolname|r")
+    eq("globalName path bypasses ProcessSenderNameFilters (Blizzard quirk)", filterCalled, false)
+    _G.ChatFrameUtil.ProcessSenderNameFilters = prevFilter
+    _G.C_ChatInfo = nil
+end
+
+-- GetColorForChatType unavailable: falls back to Blizzard's own hardcoded
+-- CreateColor(224, 227, 255, 1) literal (ChatFrameUtil.lua:1056) -- same
+-- E0E3FF facsimile, since C_ChatInfo is absent from this harness by default.
+eq("decorate discord globalName fallback color (no C_ChatInfo)",
+    F.DecorateSender("CHAT_MSG_GUILD_DISCORD", "hi", "WoWCharName", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+        { userID = 1, type = 2, globalName = "fallbackname" }),
+    "|cffe0e3fffallbackname|r")
+
+-- Secret discordInfo (the CHAT_MSG_GUILD case: SecretInChatMessagingLockdown
+-- under combat lockdown, and discordInfo itself has no NeverSecret marker):
+-- degrades to the ordinary WoW-character path rather than throwing or
+-- guessing (IsFromDiscord's own conservative gate never asserts "from
+-- Discord" on an unreadable table).
+do
+    local secretDiscordInfo = setmetatable({}, { __tostring = explode, __concat = explode, __len = explode })
+    secrets[secretDiscordInfo] = true
+    eq("decorate secret discordInfo degrades to normal path (no crash)",
+        F.DecorateSender("CHAT_MSG_GUILD", "hi", "Fresh-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+            secretDiscordInfo),
+        "Fresh")
+    secrets[secretDiscordInfo] = nil
+end
+
+-- --- FormatDiscordMessage: content markers (ChatFrameUtil.lua:1079-1111) ---
+-- Isolated from the discorduser-link/outMsg-quirk branches below by using a
+-- non-GUILD/-GUILD_DISCORD typeKey -- Blizzard's own `if isFromDiscord then
+-- message = FormatDiscordMessage(...)` gate has NO typeKey restriction
+-- (ChatFrameOverrides.lua:611-613).
+
+eq("discord marker: fromDiscord=false leaves message untouched (own inner gate)",
+    F.BuildEventLine("CHAT_MSG_SAY", {
+        text = "hello", sender = "Ann", decorated = "Ann",
+        isFromDiscord = true, discordInfo = { userID = 5, fromDiscord = false, hasAttachment = true },
+    }),
+    "|Hplayer:Ann:0:SAY:|h[Ann]|h: hello")
+
+eq("discord marker: attachment",
+    F.BuildEventLine("CHAT_MSG_SAY", {
+        text = "look at this", sender = "Ann", decorated = "Ann",
+        isFromDiscord = true, discordInfo = { userID = 5, fromDiscord = true, hasAttachment = true },
+    }),
+    "|Hplayer:Ann:0:SAY:|h[Ann]|h: Y<[Attachment]> look at this")
+
+eq("discord marker: multiple flags -- LAST in Blizzard's if-chain order wins (poll after attachment), never stacked",
+    F.BuildEventLine("CHAT_MSG_SAY", {
+        text = "vote now", sender = "Ann", decorated = "Ann",
+        isFromDiscord = true,
+        discordInfo = { userID = 5, fromDiscord = true, hasAttachment = true, hasPoll = true },
+    }),
+    "|Hplayer:Ann:0:SAY:|h[Ann]|h: Y<[Poll]> vote now")
+
+eq("discord marker: forwardedMessage replaces the body entirely (Blizzard quirk)",
+    F.BuildEventLine("CHAT_MSG_SAY", {
+        text = "original text (discarded)", sender = "Ann", decorated = "Ann",
+        isFromDiscord = true,
+        discordInfo = { userID = 5, fromDiscord = true, hasForwardedMessage = true, forwardedMessage = "the forwarded text" },
+    }),
+    "|Hplayer:Ann:0:SAY:|h[Ann]|h: Y<[Forwarded]> the forwarded text")
+
+do
+    local secretFlag = setmetatable({}, { __tostring = explode, __concat = explode, __len = explode })
+    secrets[secretFlag] = true
+    eq("discord marker: secret flag value never asserted true",
+        F.BuildEventLine("CHAT_MSG_SAY", {
+            text = "hello", sender = "Ann", decorated = "Ann",
+            isFromDiscord = true, discordInfo = { userID = 5, fromDiscord = true, hasAttachment = secretFlag },
+        }),
+        "|Hplayer:Ann:0:SAY:|h[Ann]|h: hello")
+    secrets[secretFlag] = nil
+end
+
+-- --- BuildPlayerLink: GetDiscordUserLink parity (ChatFrameOverrides.lua:594-595,
+-- 637-638; ItemRef.lua:122-124; LinkUtil.lua:62,69-77) -- p-based, combining
+-- identity + link + marker end-to-end for CHAT_MSG_GUILD_DISCORD.
+
+do
+    local discordInfo = {
+        userID = 987654321, fromDiscord = true, hasAttachment = true,
+        lastOnlineName = "Zed-Realm", lastOnlineGUID = "Player-1-MAGE",
+    }
+    local decorated = F.DecorateSender("CHAT_MSG_GUILD_DISCORD", "hey guild", "DiscordHandle#0",
+        nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, discordInfo)
+    eq("e2e: decorated identity swapped + class-colored", decorated, "|cff3fc7ebZed-Realm|r")
+
+    local line = F.BuildEventLine("CHAT_MSG_GUILD_DISCORD", {
+        text = "hey guild", sender = "DiscordHandle#0", decorated = decorated,
+        lineID = 909, bnID = 0,
+        isFromDiscord = true, discordInfo = discordInfo,
+    })
+    -- |Hdiscorduser:bnetIDAccount:discordUserID:lineID:chatGroup:chatTarget|h...|h,
+    -- PLUS ChatFrameOverrides.lua:637-638's genuine extra-space quirk (pflag
+    -- .." "..playerLink, unconditional -- with pflag empty here that reads as
+    -- a stray space after the [GD] shorten tag; mirrored, not "fixed").
+    eq("e2e: [GD] tag + discorduser link + attachment marker + GUILD_DISCORD extra-space quirk", line,
+        "[GD]  |Hdiscorduser:0:987654321:909:GUILD_DISCORD:|h[|cff3fc7ebZed-Realm|r]|h: Y<[Attachment]> hey guild")
+end
+
+-- CHAT_MSG_GUILD carrying a Discord-bridged message (isFromDiscord true for
+-- typeKey=="GUILD" too, ChatFrameOverrides.lua:594): gets the SAME
+-- discorduser link, but NOT the extra-space quirk -- that quirk's condition
+-- is `type == "GUILD_DISCORD"` specifically (ChatFrameOverrides.lua:637),
+-- never "GUILD".
+do
+    local discordInfo = { userID = 42, fromDiscord = true }
+    local line = F.BuildEventLine("CHAT_MSG_GUILD", {
+        text = "hi from bridge", sender = "Handle#1", decorated = "Handle#1",
+        lineID = 5, bnID = 0, isFromDiscord = true, discordInfo = discordInfo,
+    })
+    eq("e2e: GUILD+isFromDiscord uses discorduser link, no extra-space quirk",
+        line, "[G] |Hdiscorduser:0:42:5:GUILD:|h[Handle#1]|h: hi from bridge")
+end
+
+-- --- Full raw-args round trip: BuildEventLineFromArgs / BuildPayloadFromArgs
+-- unpack through a18 (discordInfo), matching message_capture.lua's forwarded
+-- vararg chain end to end. ---
+
+do
+    local discordInfo = {
+        userID = 555, fromDiscord = true, hasPoll = true,
+        lastOnlineName = "Kara-Realm", lastOnlineGUID = "Player-2-MAGE",
+    }
+    -- a1=text a2=sender a3..a10=8 nils a11=lineID a12=guid(WoW-side; irrelevant
+    -- once discordInfo swaps it) a13=bnID a14=isMobile a15=isSubtitle
+    -- a16=hideSenderInLetterbox a17=suppressRaidIcons a18=discordInfo
+    local line, p, secretBody = F.BuildEventLineFromArgs("CHAT_MSG_GUILD_DISCORD",
+        "raid at 8pm?", "DiscordHandle#0", nil, nil, nil, nil, nil, nil, nil, nil,
+        314, nil, 0, false, false, false, false, discordInfo)
+    eq("e2e raw-args: not secret", secretBody, false)
+    eq("e2e raw-args: payload carries discordInfo by identity", rawequal(p.discordInfo, discordInfo), true)
+    eq("e2e raw-args: payload isFromDiscord gate", p.isFromDiscord, true)
+    eq("e2e raw-args: identity swapped + class-colored", p.decorated, "|cff3fc7ebKara-Realm|r")
+    eq("e2e raw-args: full line -- [GD] tag, discorduser link, swapped identity, poll marker, extra-space quirk",
+        line,
+        "[GD]  |Hdiscorduser:0:555:314:GUILD_DISCORD:|h[|cff3fc7ebKara-Realm|r]|h: Y<[Poll]> raid at 8pm?")
+end
+
+-- Non-Discord CHAT_MSG_GUILD_DISCORD traffic (a WoW player's own message
+-- routed through the bridge stream, userID==0): behaves exactly like an
+-- ordinary GUILD line -- plain GetPlayerLink, no discorduser link, no markers.
+do
+    local line, p = F.BuildEventLineFromArgs("CHAT_MSG_GUILD_DISCORD",
+        "just a normal guild line", "Wowchar-Realm", nil, nil, nil, nil, nil, nil, nil, nil,
+        7, nil, 0, false, false, false, false, { userID = 0, fromDiscord = false })
+    eq("non-discord GUILD_DISCORD payload isFromDiscord false", p.isFromDiscord, false)
+    eq("non-discord GUILD_DISCORD renders as a plain player link ([GD] tag, no quirk space)",
+        line, "[GD] |Hplayer:Wowchar-Realm:7:GUILD_DISCORD:|h[Wowchar]|h: just a normal guild line")
+end
+
+-- channelShorten short tag: GUILD_DISCORD gets its own [GD] (distinct from
+-- GUILD's [G]) instead of the tag-less "name: text" fallback unlisted types
+-- get. QUI-only feature (Blizzard has no shorten mode), so the tag has no
+-- Blizzard citation -- consistency with the surrounding 1-2 char tag style is
+-- the contract.
+eq("channelShorten tag for GUILD_DISCORD is [GD], distinct from GUILD's [G]",
+    F.BuildEventLine("CHAT_MSG_GUILD_DISCORD", { text = "hi", sender = "Ann" }),
+    "[GD] |Hplayer:Ann:0:GUILD_DISCORD:|h[Ann]|h: hi")
+
+-- Review Minor 2: discordInfo with a usable lastOnlineGUID but NO usable
+-- lastOnlineName swaps only the GUID -- the displayed name stays the raw
+-- Discord handle, colored by the LINKED character's class. That resolve must
+-- NOT seed nameClassCache[handle] = linked class: the handle is not a
+-- character name, and a poisoned entry would recolor unrelated future lines
+-- from the same handle via the cold-GUID name-recovery path.
+do
+    local handle = "PollutionHandle#9"
+    -- 1) Guid-only swap: colors via the linked GUID (MAGE), name un-swapped.
+    eq("discord guid-only swap colors handle via linked guid",
+        F.DecorateSender("CHAT_MSG_GUILD_DISCORD", "hi", handle, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+            { userID = 31, lastOnlineGUID = "Player-1-MAGE" }),
+        "|cff3fc7eb" .. handle .. "|r")
+    -- 2) Same handle later, secret GUID (no engine resolve), no discordInfo:
+    -- the name-cache recovery path is the only way this could color. A seeded
+    -- nameClassCache[handle] from step 1 would return the MAGE color here;
+    -- the fix (classLookupName cleared on a guid-only swap) keeps it plain.
+    local secretGuid = setmetatable({}, getmetatable(secret))
+    secrets[secretGuid] = true
+    eq("discord guid-only swap does NOT seed the name cache under the handle",
+        F.DecorateSender("CHAT_MSG_GUILD", "hi", handle, nil, nil, nil, nil, nil, nil, nil, nil, nil, secretGuid),
+        handle)
+    secrets[secretGuid] = nil
 end
 
 print("OK: chat_message_format_test")

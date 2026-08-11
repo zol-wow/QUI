@@ -1,24 +1,3 @@
--- QUI_Chat/chat/message_format.lua
--- Blizzard-parity formatter for custom-display lines captured from CHAT_MSG_*
--- events. Replicates ChatFrameMixin:MessageEventHandler's formatting (vendored
--- FrameXML: Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua:268-674):
--- CHAT_<TYPE>_GET format strings, AFK/DND/GM flags, raid-icon/group expression
--- expansion, language headers, hyperlinked channel prefixes, full player links
--- (lineID:chatType:chatTarget). The channelShorten modifier setting swaps the
--- GET prefixes for compact labels ([G], [T]) without losing the rest.
---
--- Payload tables: formatter entry points take raw CHAT_MSG_* args or `p`, a
--- table of probed CHAT_MSG_* args built by BuildPayloadFromArgs — every possibly-secret field is nil unless
--- proven non-secret, EXCEPT p.text (BuildEventLine: non-secret string;
--- WrapSecretEventLine: secret), p.rawSender, and p.rawGuid (may be secret;
--- raw identity values are only ever passed to secret-allowed APIs or fixed
--- string.format templates, never Lua operators).
---   p = { text, rawSender, sender, language, channelFull, target, flags,
---         zoneID, chNum, chBase, chName (registry-resolved display name),
---         lineID, guid, rawGuid, bnID, decorated (DecorateSender output) }
---
--- HARD CONSTRAINT: ChatTypeInfo is READ-ONLY here. Never assign into it and
--- never call ChangeChatColor.
 local _, ns = ...
 local Helpers = ns.Helpers
 
@@ -33,18 +12,18 @@ local function IsSecret(v)
 end
 
 local function FormatString(fmt, ...)
-    local ok, formatted = pcall(string.format, fmt, ...)
+    local ok, formatted = ns.SafeCall("report", string.format, fmt, ...)
     if not ok then return nil end
     return formatted
 end
 
--- ---------------------------------------------------------------------------
--- Settings gates
--- ---------------------------------------------------------------------------
+local function IsFromDiscord(discordInfo)
+    if IsSecret(discordInfo) or type(discordInfo) ~= "table" then return false end
+    local userID = discordInfo.userID
+    if IsSecret(userID) or not userID or userID == 0 then return false end
+    return true
+end
 
--- channelShorten modifier: nil when disabled (full Blizzard formats), else
--- the preset string ("letter" | "number"). Channel labels follow the preset;
--- chat-type prefixes shorten under both presets.
 local function ShortenPreset()
     local settings = I.GetSettings and I.GetSettings()
     local cs = settings and settings.modifiers and settings.modifiers.channelShorten
@@ -52,40 +31,17 @@ local function ShortenPreset()
     return cs.preset == "number" and "number" or "letter"
 end
 
--- showRealmNames modifier: when true, cross-realm players keep their "-Realm"
--- suffix in chat sender names. Independent of channelShorten (which only
--- shapes channel/type labels). Default false ⇒ realm stripped.
 local function ShowRealmNames()
     local settings = I.GetSettings and I.GetSettings()
     return (settings and settings.modifiers and settings.modifiers.showRealmNames) == true
 end
 
--- GUID -> englishClass memo. GetPlayerInfoByGUID is backed by Blizzard's
--- internal player-info cache, which WARMS and EVICTS over a session: the same
--- sender resolves a class one moment and returns nil the next (cold GUID, cross
--- realm not recently seen, post-login race). Decoration runs per-message, so an
--- eviction left names flickering between class-colored and plain across a
--- conversation. A GUID's class never changes, so memoizing the first successful
--- resolve makes the color stable for the rest of the session regardless of
--- later cache state. (Plain string keys/values — cheap even at thousands of
--- distinct senders; never invalidated because class is immutable per GUID.)
-local guidClassCache = {}
+local CLASS_CACHE_CAP = 2000
 
--- Sender NAME -> englishClass cache. FALLBACK ONLY. In combat the GUID arrives
--- SECRET and so does the englishClass GetPlayerInfoByGUID returns for it -- but a
--- secret class still COLORS fine via the AllowedWhenTainted C_ClassColor chain
--- (see ColorizeSenderName), so the live combat path needs no name recovery. This
--- cache exists for the OTHER failure mode: GetPlayerInfoByGUID is
--- MayReturnNothing=true, so a genuinely cold/unknown GUID (cross-realm not
--- recently seen, post-login race) yields nil regardless of secrecy. When that
--- happens we recover the class by the non-secret sender NAME -- seeded by every
--- successful non-secret resolve and proactively from the roster
--- (SeedKnownClasses). Plain string keys/values; class is immutable per character
--- name within a session. (If the NAME is also secret, recovery is skipped and
--- the name degrades to stock best-effort.)
-local nameClassCache = {}
+local guidClassCache, guidClassCount = {}, 0
 
--- A sender name usable as a cache key: a plain, non-secret, non-empty string.
+local nameClassCache, nameClassCount = {}, 0
+
 local function CacheableName(name)
     if type(name) ~= "string" or name == "" or IsSecret(name) then return nil end
     return name
@@ -94,14 +50,21 @@ end
 local function StoreNameClass(name, englishClass)
     if IsSecret(englishClass) or type(englishClass) ~= "string" or englishClass == "" then return end
     local key = CacheableName(name)
-    if key then nameClassCache[key] = englishClass end
+    if not key then return end
+    if nameClassCache[key] == nil then
+        if nameClassCount >= CLASS_CACHE_CAP then
+            nameClassCache, nameClassCount = {}, 0
+        end
+        nameClassCount = nameClassCount + 1
+    end
+    nameClassCache[key] = englishClass
 end
 
 local function StoreNameClassAliases(name, englishClass)
     StoreNameClass(name, englishClass)
     if type(name) ~= "string" or IsSecret(name) then return end
     if _G.Ambiguate then
-        local ok, short = pcall(_G.Ambiguate, name, "short")
+        local ok, short = ns.SafeCall("best-effort-style", _G.Ambiguate, name, "short")
         if ok then StoreNameClass(short, englishClass) end
     end
 end
@@ -132,7 +95,7 @@ local function LookupNameClass(name)
         end
     end
     if _G.Ambiguate then
-        local ok, short = pcall(_G.Ambiguate, key, "short")
+        local ok, short = ns.SafeCall("best-effort-style", _G.Ambiguate, key, "short")
         if ok then return nameClassCache[short] end
     end
     return nil
@@ -141,47 +104,31 @@ end
 local function StoreGuidClass(guid, englishClass)
     if IsSecret(guid) or type(guid) ~= "string" or guid == "" then return end
     if IsSecret(englishClass) or type(englishClass) ~= "string" or englishClass == "" then return end
+    if guidClassCache[guid] == nil then
+        if guidClassCount >= CLASS_CACHE_CAP then
+            guidClassCache, guidClassCount = {}, 0
+        end
+        guidClassCount = guidClassCount + 1
+    end
     guidClassCache[guid] = englishClass
 end
 
--- Proactive NAME->class seeding from the local player, group roster, and guild
--- roster. Lazy seeding (above) only fills nameClassCache after a sender has spoken at least
--- once while NON-SECRET -- so a cold login straight into a Mythic+ pull leaves
--- it EMPTY exactly when it is needed: the player's own first party line (and
--- every groupmate's) is dispatched in combat, the GUID is already secret, and
--- the name has no cache entry yet, so the name renders plain. The fix: pull
--- class from a source that is non-secret even under combat lockdown. UnitGUID
--- is SecretWhenUnitIdentityRestricted, but UnitClass's SECOND return
--- (classFilename, e.g. "DEMONHUNTER") carries NO secret marker -- only its
--- first return (localized name) is ConditionalSecret -- and RAID_CLASS_COLORS
--- is keyed by exactly that filename. So `select(2, UnitClass(unit))` resolves
--- any roster member's class by their non-secret unit token, combat or not
--- (Blizzard's own GetClassColoredTextForUnit uses the identical call,
--- vendored ColorUtil.lua:81). We store it under the member's chat NAME so the
--- combat recovery path finds it on the very first line. Seed on login and on
--- every GROUP_ROSTER_UPDATE (message_capture owns the event wiring).
 local function SeedUnitClass(unit)
     if not _G.UnitExists then return end
-    local okExists, exists = pcall(_G.UnitExists, unit)
+    local okExists, exists = ns.SafeCall("best-effort-style", _G.UnitExists, unit)
     if not okExists or not exists then return end
     if _G.UnitIsPlayer then
-        local okPlayer, isPlayer = pcall(_G.UnitIsPlayer, unit)
+        local okPlayer, isPlayer = ns.SafeCall("best-effort-style", _G.UnitIsPlayer, unit)
         if not okPlayer or not isPlayer then return end
     end
     if not _G.UnitClass then return end
-    -- classFilename is the non-secret 2nd return; guard anyway in case a future
-    -- client marks it secret (== "" on a secret would throw).
     local ok, _, englishClass = pcall(_G.UnitClass, unit)
     if not ok or IsSecret(englishClass)
         or type(englishClass) ~= "string" or englishClass == "" then return end
     if _G.UnitGUID then
-        local okGuid, guid = pcall(_G.UnitGUID, unit)
+        local okGuid, guid = ns.SafeCall("best-effort-style", _G.UnitGUID, unit)
         if okGuid then StoreGuidClass(guid, englishClass) end
     end
-    -- Seed under BOTH the realm-qualified and short name forms. CHAT_MSG_* arg2
-    -- carries "Name-Realm" only for cross-realm senders and bare "Name" for
-    -- same-realm. Read UnitName directly so a secret/blocked identity cannot make
-    -- FrameXML's GetUnitName helper concatenate a secret value.
     if _G.UnitName then
         local okName, name, server = pcall(_G.UnitName, unit)
         if okName and not IsSecret(name) and type(name) == "string" and name ~= "" then
@@ -194,9 +141,9 @@ local function SeedUnitClass(unit)
     end
     local getName = _G.GetUnitName
     if getName then
-        local okFull, full = pcall(getName, unit, true)
+        local okFull, full = ns.SafeCall("best-effort-style", getName, unit, true)
         if okFull then StoreNameClassVariants(full, englishClass) end
-        local okShort, short = pcall(getName, unit, false)
+        local okShort, short = ns.SafeCall("best-effort-style", getName, unit, false)
         if okShort then StoreNameClassVariants(short, englishClass) end
     end
 end
@@ -204,14 +151,11 @@ end
 local function InChatMessagingLockdown()
     local CI = _G.C_ChatInfo
     if not (CI and CI.InChatMessagingLockdown) then return false end
-    local ok, restricted = pcall(CI.InChatMessagingLockdown)
+    local ok, restricted = ns.SafeCall("best-effort-style", CI.InChatMessagingLockdown)
     return ok and restricted == true or false
 end
 
 local function SeedGuildMemberClasses()
-    -- C_Club guild-member APIs are themselves SecretInChatMessagingLockdown in
-    -- generated docs. Seed only before/after restricted chat dispatches; the
-    -- combat renderer then consumes the plain name->class cache.
     if InChatMessagingLockdown() then return end
     local Club, CreatureInfo = _G.C_Club, _G.C_CreatureInfo
     if not (Club and Club.GetGuildClubId and Club.GetClubMembers and Club.GetMemberInfo) then return end
@@ -240,11 +184,6 @@ local function SeedGuildMemberClasses()
     end
 end
 
--- Seed the name->class cache from currently-known units, plus the guild roster
--- when requested. Unit seeding is cheap (≤41 units); guild seeding is reserved
--- for login/guild-roster sync and is guarded out of chat messaging lockdown.
--- Idempotent: a class is immutable per character within a session, so
--- re-seeding only refreshes keys.
 function Format.SeedKnownClasses(includeGuild)
     SeedUnitClass("player")
     if _G.IsInRaid and _G.IsInRaid() then
@@ -267,20 +206,9 @@ local function ResolveSenderClass(guid, name)
             return cached
         end
     end
-    -- GetPlayerInfoByGUID: returns localizedClass, englishClass, ... (7 values).
-    -- The GUID passes straight through (SecretArguments="AllowedWhenTainted").
-    -- CRITICAL: in combat / chat-messaging lockdown the GUID is SECRET and so is
-    -- the englishClass returned for it (secret in -> secret out). A secret class
-    -- still COLORS fine downstream (ColorizeSenderName routes it through the
-    -- AllowedWhenTainted C_ClassColor chain, never a table key), so we must NOT
-    -- reject it here -- the old `not IsSecret(englishClass)` gate is exactly what
-    -- dropped raid/party class colors mid-combat. Accept any truthy class; only a
-    -- plain EMPTY string is junk. MayReturnNothing=true => a genuinely cold/
-    -- unknown GUID still yields nil (name-cache fallback below handles that).
-    -- Cache only NON-secret classes: a secret cannot be a table key or value.
     if _G.GetPlayerInfoByGUID then
         local ok, _, englishClass = pcall(_G.GetPlayerInfoByGUID, guid)
-        if ok and englishClass
+        if ok
             and (IsSecret(englishClass) or (type(englishClass) == "string" and englishClass ~= "")) then
             if not IsSecret(englishClass) then
                 if not secret then StoreGuidClass(guid, englishClass) end
@@ -289,11 +217,9 @@ local function ResolveSenderClass(guid, name)
             return englishClass
         end
     end
-    -- UnitClassFromGUID: a more direct resolver with the same secret semantics
-    -- (GUID arg AllowedWhenTainted). Same accept/cache rules as above.
     if _G.UnitClassFromGUID then
         local ok, _, englishClass = pcall(_G.UnitClassFromGUID, guid)
-        if ok and englishClass
+        if ok
             and (IsSecret(englishClass) or (type(englishClass) == "string" and englishClass ~= "")) then
             if not IsSecret(englishClass) then
                 if not secret then StoreGuidClass(guid, englishClass) end
@@ -302,57 +228,28 @@ local function ResolveSenderClass(guid, name)
             return englishClass
         end
     end
-    -- GUID resolution failed: unknown GUID, or (the combat case) a secret GUID
-    -- the engine declines to resolve under lockdown. Recover from the name
-    -- cache if this sender was resolved earlier while non-secret.
     local byName = LookupNameClass(cname)
     if byName then return byName end
     return nil
 end
 
--- Wrap `text` (a sender name/handle) in the sender's class color, gated on the
--- classColors setting. Mirrors Blizzard ChatFrameUtil + the C_ClassColor chain.
--- The resolved class may be a SECRET value under combat lockdown, so it is NEVER
--- used as a table key:
---   * non-secret / out of combat -> index RAID_CLASS_COLORS directly for
---     .colorStr (Blizzard palette; the custom-color-aware helper is deliberately
---     avoided for chat -- CUSTOM_CLASS_COLORS entries may lack .colorStr).
---   * secret (combat) -> C_ClassColor.GetClassColor + ColorMixin:WrapTextInColorCode,
---     both SecretArguments="AllowedWhenTainted", so a secret class yields a
---     (secret) colored string chat can still display -- stock raid-chat parity.
--- Returns `text` unchanged when coloring is off or no class resolves.
 local function ColorizeSenderName(guid, name, text)
-    -- TRUTHINESS ONLY -- never compare the guid. It is a real engine secret in
-    -- combat; a bare `==`/`~=` (the old `if guid == nil`) is illegal on it and
-    -- silently dropped class color. `not guid` is Blizzard's own coercion and is
-    -- safe on secrets. (No Lua unit test reproduces this: the harness secret
-    -- sentinel is a plain table, so `== nil` just returns false.)
-    if not guid then return text end
+    local guidSecret = IsSecret(guid)
+    if not guidSecret and not guid then return text end
     local settings = I.GetSettings and I.GetSettings()
     local mods = settings and settings.modifiers
     local classColors = mods and mods.classColors
     if classColors and classColors.enabled == false then return text end
     local englishClass = ResolveSenderClass(guid, name)
-    if not englishClass then return text end
-    -- Resolution order mirrors stock ChatFrameUtil.GetDecoratedSenderName EXACTLY:
-    -- C_ClassColor.GetClassColor FIRST for BOTH secret and non-secret classes
-    -- (SecretArguments="AllowedWhenTainted"), wrapped via the color object's
-    -- ColorMixin:WrapTextInColorCode. This is the only path that keeps raid/party
-    -- names colored in combat -- a secret class can never be a table key -- and it
-    -- also covers the login-burst window where RAID_CLASS_COLORS is not yet
-    -- populated but C_ClassColor already resolves.
+    local clsSecret = IsSecret(englishClass)
+    if not clsSecret and not englishClass then return text end
     if _G.C_ClassColor and _G.C_ClassColor.GetClassColor then
-        local ok, color = pcall(_G.C_ClassColor.GetClassColor, englishClass)
+        local ok, color = ns.SafeCall("best-effort-style", _G.C_ClassColor.GetClassColor, englishClass)
         if ok and type(color) == "table" and color.WrapTextInColorCode then
             local ok2, wrapped = pcall(color.WrapTextInColorCode, color, text)
-            if ok2 and wrapped then return wrapped end
+            if ok2 and (IsSecret(wrapped) or wrapped) then return wrapped end
         end
     end
-    -- Fallback when C_ClassColor is unavailable (unit-test harness / older
-    -- client): index RAID_CLASS_COLORS for .colorStr. Safe ONLY for a non-secret
-    -- class (a secret cannot key a table) -- fine, because the secret combat path
-    -- always resolves through C_ClassColor above. The custom-color-aware helper is
-    -- deliberately avoided here (chat tracks Blizzard's class palette).
     if not IsSecret(englishClass) then
         local cc = _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[englishClass]
         local colorStr = cc and cc.colorStr
@@ -363,58 +260,82 @@ local function ColorizeSenderName(guid, name, text)
     return text
 end
 
--- ---------------------------------------------------------------------------
--- Sender decoration (ChatFrameUtil.GetDecoratedSenderName parity, vendored
--- ChatFrameUtil.lua:977 — replicated so the class-color gate is QUI's setting,
--- not Blizzard's per-type color toggle)
--- ---------------------------------------------------------------------------
+local DISCORD_GLOBAL_NAME_TYPE =
+    (_G.Enum and _G.Enum.DiscordDisplayNameType and _G.Enum.DiscordDisplayNameType.GlobalName) or 2
 
--- Called from capture with the RAW event vararg (filters applied) so
--- ProcessSenderNameFilters sees the same payload Blizzard hands it.
--- Returns nil when the sender is secret/absent — callers fall back to the
--- raw value through pcall'd formats.
+local function DiscordNameColorize(name)
+    local r255, g255, b255 = 224, 227, 255
+    local CI = _G.C_ChatInfo
+    if CI and CI.GetColorForChatType then
+        local ok, colorInfo = pcall(CI.GetColorForChatType, "DISCORD_PLAYER_NAME")
+        if ok and not IsSecret(colorInfo) and type(colorInfo) == "table"
+            and type(colorInfo.r) == "number" and type(colorInfo.g) == "number"
+            and type(colorInfo.b) == "number" then
+            r255, g255, b255 = colorInfo.r * 255, colorInfo.g * 255, colorInfo.b * 255
+        end
+    end
+    local hex = ("ff%02x%02x%02x"):format(
+        math.floor(r255 + 0.5) % 256, math.floor(g255 + 0.5) % 256, math.floor(b255 + 0.5) % 256)
+    return ("|c%s%s|r"):format(hex, name)
+end
+
 function Format.DecorateSender(event, ...)
     local _, sender = ...
     if IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
     local typeKey = Format.EventToTypeKey(event)
     local decorated = sender
     if _G.Ambiguate then
-        -- Sender realm display is its OWN setting (showRealmNames), decoupled
-        -- from channelShorten (which only shapes channel/type labels). ON mirrors
-        -- Blizzard's realm-showing pair ("guild" in guild chat, else "none" —
-        -- ChatFrameUtil.lua:993-998); OFF ("short") strips the realm.
         local mode = ShowRealmNames()
             and (typeKey == "GUILD" and "guild" or "none")
             or "short"
-        local ok, short = pcall(_G.Ambiguate, sender, mode)
+        local ok, short = ns.SafeCall("best-effort-style", _G.Ambiguate, sender, mode)
         if ok and type(short) == "string" and short ~= "" then decorated = short end
     end
     local guid = select(12, ...)
+    local classLookupName = sender
+
+    local discordInfo = select(15, ...)
+    if IsFromDiscord(discordInfo) then
+        local shouldShowGlobalName = not IsSecret(discordInfo.type) and discordInfo.type == DISCORD_GLOBAL_NAME_TYPE
+        local globalName = discordInfo.globalName
+        if shouldShowGlobalName and not IsSecret(globalName)
+            and type(globalName) == "string" and globalName ~= "" then
+            return DiscordNameColorize(globalName)
+        end
+        local lastOnlineGUID = discordInfo.lastOnlineGUID
+        if not IsSecret(lastOnlineGUID) and type(lastOnlineGUID) == "string" and lastOnlineGUID ~= "" then
+            guid = lastOnlineGUID
+            classLookupName = nil
+        end
+        local lastOnlineName = discordInfo.lastOnlineName
+        if not IsSecret(lastOnlineName) and type(lastOnlineName) == "string" and lastOnlineName ~= "" then
+            decorated = lastOnlineName
+            classLookupName = lastOnlineName
+        end
+    end
+
     if not IsSecret(guid) and type(guid) == "string" and guid ~= ""
         and _G.C_ChatInfo and _G.C_ChatInfo.IsTimerunningPlayer
         and _G.TimerunningUtil and _G.TimerunningUtil.AddSmallIcon then
-        local ok, isTR = pcall(_G.C_ChatInfo.IsTimerunningPlayer, guid)
+        local ok, isTR = ns.SafeCall("best-effort-style", _G.C_ChatInfo.IsTimerunningPlayer, guid)
         if ok and isTR then
-            local ok2, marked = pcall(_G.TimerunningUtil.AddSmallIcon, decorated)
+            local ok2, marked = ns.SafeCall("best-effort-style", _G.TimerunningUtil.AddSmallIcon, decorated)
             if ok2 and type(marked) == "string" and marked ~= "" then decorated = marked end
         end
     end
-    -- Class-color the name. The GUID flows through even when secret
-    -- (AllowedWhenTainted) and yields a (secret) class in combat that still
-    -- colors via the C_ClassColor chain; the non-secret `sender` is only the
-    -- name-cache fallback key for the rare cold-GUID (MayReturnNothing) case.
-    decorated = ColorizeSenderName(guid, sender, decorated)
-    -- Cross-addon sender-name filters (same registry Blizzard consults).
+    -- @secret-policy: drop-color-when-secret (readable name preserved; combat
+    local colored = ColorizeSenderName(guid, classLookupName, decorated)
+    if not IsSecret(colored) then decorated = colored end
     local util = _G.ChatFrameUtil
     if util and util.ProcessSenderNameFilters then
-        local ok, filtered = pcall(util.ProcessSenderNameFilters, event, decorated, ...)
+        local ok, filtered = ns.SafeCall("best-effort-style", util.ProcessSenderNameFilters, event, decorated, ...)
         if ok and type(filtered) == "string" and filtered ~= "" then decorated = filtered end
     end
     return decorated
 end
 
 function Format.BuildPayloadFromArgs(event, ...)
-    local a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, _, _, a17 = ...
+    local a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18 = ...
     local p = {
         text = a1,
         rawSender = a2,
@@ -431,6 +352,10 @@ function Format.BuildPayloadFromArgs(event, ...)
         rawGuid = a12,
         bnID = (not IsSecret(a13)) and type(a13) == "number" and a13 or nil,
         suppressIcons = (not IsSecret(a17)) and a17 and true or nil,
+        isSubtitle = a15 and true or nil,
+        hideSenderInLetterbox = a16 and true or nil,
+        discordInfo = a18,
+        isFromDiscord = IsFromDiscord(a18),
     }
     if p.chBase then
         local Registry = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ChannelRegistry
@@ -438,13 +363,9 @@ function Format.BuildPayloadFromArgs(event, ...)
             and Registry.ResolveName(p.chNum, p.chBase) or p.chBase
     end
     p.decorated = Format.DecorateSender(event, a1, a2, a3, a4, a5, a6, a7,
-        a8, a9, a10, a11, a12, a13, a14)
+        a8, a9, a10, a11, a12, a13, a14, a18)
     return p
 end
-
--- ---------------------------------------------------------------------------
--- Type classification
--- ---------------------------------------------------------------------------
 
 local BOSS_NOTICE_EVENTS = {
     RAID_BOSS_EMOTE = true,
@@ -452,10 +373,9 @@ local BOSS_NOTICE_EVENTS = {
     QUEST_BOSS_EMOTE = true,
 }
 
--- Compact prefixes used when channelShorten is enabled. Types not listed
--- render as "name: text" (SAY/CHANNEL) in short mode.
 local TYPE_PREFIX = {
     GUILD = "[G] ",
+    GUILD_DISCORD = "[GD] ",
     OFFICER = "[O] ",
     PARTY = "[P] ",
     PARTY_LEADER = "[PL] ",
@@ -471,8 +391,6 @@ local TYPE_PREFIX = {
     YELL = "[Y] ",
 }
 
--- "CHAT_MSG_SAY" -> "SAY". Event names come from our own RegisterEvent list —
--- plain Lua strings, never secret.
 function Format.EventToTypeKey(event)
     if type(event) ~= "string" then return nil end
     local typeKey = event:match("^CHAT_MSG_(.+)$")
@@ -486,8 +404,6 @@ local function IsMonsterOrRaidBossType(typeKey)
         and (typeKey:sub(1, 7) == "MONSTER" or typeKey:sub(1, 9) == "RAID_BOSS")
 end
 
--- Blizzard renders these bodies verbatim (ChatFrameOverrides.lua:382-392) —
--- no sender prefix even when arg2 carries a name (CHAT_MSG_SYSTEM often does).
 local RAW_TYPES = {
     SYSTEM = true, SKILL = true, CURRENCY = true, MONEY = true,
     OPENING = true, TRADESKILLS = true, PET_INFO = true, TARGETICONS = true,
@@ -501,8 +417,6 @@ local function IsRawType(typeKey)
         or typeKey:sub(1, 10) == "BG_SYSTEM_"
 end
 
--- Message group for link data / expression expansion (CHAT_INVERTED_CATEGORY_LIST
--- maps PARTY_LEADER -> PARTY etc.; identity for unlisted types).
 local function ChatCategory(typeKey)
     local categories = _G.CHAT_INVERTED_CATEGORY_LIST
     local category = type(categories) == "table" and categories[typeKey] or nil
@@ -520,33 +434,9 @@ local function ChatCategoryForTypeKey(typeKey)
     return typeKey
 end
 
--- ---------------------------------------------------------------------------
--- Color resolution
--- ---------------------------------------------------------------------------
-
--- READ-ONLY color resolver; white fallback.
--- Consults user channel-color overrides (ns.QUI.Chat.ChannelColors) FIRST so
--- the custom display honours the same overrides the rendered-frame path used to
--- apply at the Blizzard level.  Falls back to ChatTypeInfo (read-only; never
--- written to — see HARD CONSTRAINT above).
---
--- typeKey: "SAY", "WHISPER", "CHANNEL2", etc.
--- chName:  optional channel base-name ("Trade") — used for CHANNEL<n> keys
---          because the override store keys custom channels by NAME not slot.
---
--- NOTE: for CHANNEL events pass "CHANNEL"..channelNumber (e.g. "CHANNEL2") and
--- the channel base name so overrides are found; ChatTypeInfo.CHANNEL itself
--- carries no r/g/b.
 function Format.ColorForTypeKey(typeKey, chName)
-    -- Override lookup — lazy ns reference so load order is safe.
-    -- GetEffective NEVER returns nil (it falls back to white), so the call
-    -- must be gated on HasOverride or every non-builtin type goes white and
-    -- the ChatTypeInfo fallback below becomes unreachable.
     local CC = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ChannelColors
     if CC and CC.HasOverride and CC.GetEffective then
-        -- Determine the override-store key:
-        --   custom channels → channel NAME (the store keys by name, not slot)
-        --   built-in types  → typeKey itself ("SAY", "WHISPER", ...)
         local lookupKey
         if type(typeKey) == "string" and typeKey:sub(1, 7) == "CHANNEL" and type(chName) == "string" and chName ~= "" then
             lookupKey = chName
@@ -558,7 +448,6 @@ function Format.ColorForTypeKey(typeKey, chName)
             return CC.GetEffective(typeKey)
         end
     end
-    -- ChatTypeInfo fallback (read-only; safe).
     local info = typeKey and _G.ChatTypeInfo and _G.ChatTypeInfo[typeKey]
     if info then
         return info.r or 1, info.g or 1, info.b or 1
@@ -566,48 +455,26 @@ function Format.ColorForTypeKey(typeKey, chName)
     return 1, 1, 1
 end
 
--- Render-time type-color resolver (consumed by display_layer.RenderEntry).
--- Type-derived lines (system lines like GMOTD, and CHAT_MSG_* non-channel
--- types) bake their color at STORE time via ColorForTypeKey. At login the
--- per-type color has not synced yet (it arrives in the UPDATE_CHAT_COLOR
--- burst AFTER the line), so the baked value is the white fallback and the
--- line paints white until the rebake pass rewrites it -- the "white GMOTD that
--- self-heals". Resolving the color LIVE at render (same override->ChatTypeInfo
--- precedence the bake used) means the first paint already carries the synced
--- color the instant it is available, with no bake-and-rebake flash. This is
--- the reference addons' live-render model. Channel lines are deliberately
--- NOT routed here: their color is per-SLOT (ChatTypeInfo.CHANNEL<n>) and the
--- slot number is not carried on the stored entry, so the baked slot color
--- stays authoritative for them (display_layer gates CHANNEL/CHANNEL_NOTICE
--- out and keeps the existing override resolver for channel-name overrides).
 ns.QUI.Chat._typeColorResolver = function(typeKey, chName)
     return Format.ColorForTypeKey(typeKey, chName)
 end
 
--- ---------------------------------------------------------------------------
--- Language cache (MessageFormatter's defaultLanguage handling; PEW-refreshed
--- like Blizzard's PLAYER_ENTERING_WORLD handler)
--- ---------------------------------------------------------------------------
-
 local defaultLanguage, alternativeDefaultLanguage
 
--- Re-read on PLAYER_ENTERING_WORLD / ALTERNATIVE_DEFAULT_LANGUAGE_CHANGED —
--- the capture frame owns the event registration (this file stays frame-free;
--- it is a pure formatter).
 function Format.RefreshLanguages()
     if _G.GetDefaultLanguage then
-        local ok, lang = pcall(_G.GetDefaultLanguage)
+        local ok, lang = ns.SafeCall("best-effort-style", _G.GetDefaultLanguage)
         if ok and type(lang) == "string" then defaultLanguage = lang end
     end
     if _G.GetAlternativeDefaultLanguage then
-        local ok, lang = pcall(_G.GetAlternativeDefaultLanguage)
+        local ok, lang = ns.SafeCall("best-effort-style", _G.GetAlternativeDefaultLanguage)
         if ok and type(lang) == "string" then alternativeDefaultLanguage = lang end
     end
 end
 
 local function RelevantDefaultLanguage(typeKey)
     if defaultLanguage == nil and alternativeDefaultLanguage == nil then
-        Format.RefreshLanguages() -- lazy first read (login burst before PEW)
+        Format.RefreshLanguages()
     end
     if typeKey == "SAY" or typeKey == "YELL" then
         return alternativeDefaultLanguage
@@ -615,40 +482,29 @@ local function RelevantDefaultLanguage(typeKey)
     return defaultLanguage
 end
 
--- ---------------------------------------------------------------------------
--- Formatting building blocks
--- ---------------------------------------------------------------------------
-
--- AFK/DND/GM/GUIDE/NEWCOMER flag prefix. ChatFrameUtil.GetPFlag is Blizzard's
--- implementation (vendored ChatFrameUtil.lua:254); flags/zoneID/chNum are
--- NeverSecret per ChatInfoDocumentation event payloads.
 local function PFlag(flags, zoneID, chNum)
     if type(flags) ~= "string" or flags == "" then return "" end
     local util = _G.ChatFrameUtil
     if util and util.GetPFlag then
-        local ok, pflag = pcall(util.GetPFlag, flags, zoneID or 0, chNum or 0)
+        local ok, pflag = ns.SafeCall("chain-next", util.GetPFlag, flags, zoneID or 0, chNum or 0)
         if ok and type(pflag) == "string" then return pflag end
     end
     local gs = _G["CHAT_FLAG_" .. flags]
     return type(gs) == "string" and gs or ""
 end
 
--- Escape '%' so user text can pass through string.format (Blizzard escapes
--- before formatting; skipped for monster types whose GET strings expect raw).
 local function EscapeFormatTokens(msg)
     if _G.C_StringUtil and _G.C_StringUtil.EscapeLuaFormatString then
-        local ok, escaped = pcall(_G.C_StringUtil.EscapeLuaFormatString, msg)
+        local ok, escaped = ns.SafeCall("chain-next", _G.C_StringUtil.EscapeLuaFormatString, msg)
         if ok and type(escaped) == "string" then return escaped end
     end
     return (msg:gsub("%%", "%%%%"))
 end
 
--- {rt1}/{skull} -> texture markup; group expressions expand only where
--- Blizzard allows (RAID, or INSTANCE_CHAT while in an instance raid).
 local function CanExpandExpressions(chatGroup)
     local util = _G.ChatFrameUtil
     if util and util.CanChatGroupPerformExpressionExpansion then
-        local ok, can = pcall(util.CanChatGroupPerformExpressionExpansion, chatGroup)
+        local ok, can = ns.SafeCall("chain-next", util.CanChatGroupPerformExpressionExpansion, chatGroup)
         if ok then return can and true or false end
     end
     return chatGroup == "RAID"
@@ -656,7 +512,7 @@ end
 
 local function ExpandIconExpressions(msg, suppressIcons, chatGroup)
     if _G.C_ChatInfo and _G.C_ChatInfo.ReplaceIconAndGroupExpressions then
-        local ok, replaced = pcall(_G.C_ChatInfo.ReplaceIconAndGroupExpressions,
+        local ok, replaced = ns.SafeCall("chain-next", _G.C_ChatInfo.ReplaceIconAndGroupExpressions,
             msg, suppressIcons and true or false, not CanExpandExpressions(chatGroup))
         if ok and type(replaced) == "string" then return replaced end
     end
@@ -665,23 +521,64 @@ end
 
 local function CollapseSpaces(msg)
     if _G.C_StringUtil and _G.C_StringUtil.RemoveContiguousSpaces then
-        local ok, trimmed = pcall(_G.C_StringUtil.RemoveContiguousSpaces, msg, 4)
+        local ok, trimmed = ns.SafeCall("chain-next", _G.C_StringUtil.RemoveContiguousSpaces, msg, 4)
         if ok and type(trimmed) == "string" then return trimmed end
     end
     return (msg:gsub("     +", "    "))
 end
 
--- "2. Community:1234:1" -> "2. Club - Stream"; plain channels pass through.
+local DISCORD_MARKER_ORDER = {
+    { flag = "hasAttachment", gs = "DISCORD_MESSAGE_ATTACHMENT" },
+    { flag = "hasPoll", gs = "DISCORD_MESSAGE_POLL" },
+    { flag = "hasEmbed", gs = "DISCORD_MESSAGE_EMBED" },
+    { flag = "hasSticker", gs = "DISCORD_MESSAGE_STICKER" },
+    { flag = "hasEmoji", gs = "DISCORD_MESSAGE_EMOJI" },
+    { flag = "hasForwardedMessage", gs = "DISCORD_MESSAGE_FORWARD" },
+}
+
+local function DiscordMarkerText(globalStringName, body)
+    local gs = _G[globalStringName]
+    if type(gs) ~= "string" or gs == "" then return body end
+    local label = gs
+    local color = _G.YELLOW_FONT_COLOR
+    if type(color) == "table" and color.WrapTextInColorCode then
+        local ok, wrapped = ns.SafeCallMethod("best-effort-style", color, "WrapTextInColorCode", gs)
+        if ok and type(wrapped) == "string" and wrapped ~= "" then label = wrapped end
+    end
+    return ("%s %s"):format(label, body)
+end
+
+local function FormatDiscordMessage(discordInfo, message)
+    if IsSecret(discordInfo) or type(discordInfo) ~= "table" then return message end
+    local fromDiscord = discordInfo.fromDiscord
+    if IsSecret(fromDiscord) or not fromDiscord then return message end
+    local modified = message
+    for i = 1, #DISCORD_MARKER_ORDER do
+        local entry = DISCORD_MARKER_ORDER[i]
+        local flagValue = discordInfo[entry.flag]
+        if not IsSecret(flagValue) and flagValue then
+            if entry.flag == "hasForwardedMessage" then
+                local forwarded = discordInfo.forwardedMessage
+                local body = (not IsSecret(forwarded) and type(forwarded) == "string" and forwarded ~= "")
+                    and forwarded or message
+                modified = DiscordMarkerText(entry.gs, body)
+            else
+                modified = DiscordMarkerText(entry.gs, message)
+            end
+        end
+    end
+    return modified
+end
+
 local function ResolvePrefixedChannelName(channelFull)
     local util = _G.ChatFrameUtil
     if util and util.ResolvePrefixedChannelName then
-        local ok, resolved = pcall(util.ResolvePrefixedChannelName, channelFull)
+        local ok, resolved = ns.SafeCall("chain-next", util.ResolvePrefixedChannelName, channelFull)
         if ok and type(resolved) == "string" and resolved ~= "" then return resolved end
     end
     return channelFull
 end
 
--- First n UTF-8 characters (channel letter-abbreviations on localized names).
 local function UTF8Prefix(text, n)
     local out, i, count = "", 1, 0
     while i <= #text and count < n do
@@ -694,8 +591,6 @@ local function UTF8Prefix(text, n)
     return out
 end
 
--- Compact channel label for the letter preset: [1. General] → Gen,
--- [2. Trade - City] → T, [Services] → S; unknown/custom → first 3 letters.
 local function LetterChannelLabel(name)
     if name:find("Services", 1, true) then return "S" end
     if name:sub(1, 5) == "Trade" then return "T" end
@@ -706,21 +601,15 @@ local function LetterChannelLabel(name)
     return UTF8Prefix(name, 3)
 end
 
--- A line gets the channel prefix when the event carried a prefixed channel
--- name (Blizzard's channelLength>0 rule) — plus the degenerate case where
--- arg4 was secret/absent but the base name survived (channel-family only).
 local function HasChannelContext(p, typeKey)
     if type(p.channelFull) == "string" and p.channelFull ~= "" then return true end
     return (typeKey == "CHANNEL" or typeKey == "COMMUNITIES_CHANNEL")
         and type(p.chName) == "string" and p.chName ~= ""
 end
 
--- Hyperlinked channel prefix (Blizzard: "|Hchannel:channel:N|h[2. Trade]|h ")
--- with the shorten presets swapping the label text only — the link survives.
 local function ChannelDecoration(p)
     local num = p.chNum
     if type(num) ~= "number" or num <= 0 then
-        -- No numbered slot (some communities traffic): plain bracket label.
         local name = p.chName or (type(p.channelFull) == "string" and ResolvePrefixedChannelName(p.channelFull))
         if type(name) ~= "string" or name == "" then return "" end
         return ("[%s] "):format(name)
@@ -740,19 +629,6 @@ local function ChannelDecoration(p)
     return ("|Hchannel:channel:%d|h[%s]|h "):format(num, label)
 end
 
--- GET-format resolution: full mode uses Blizzard's CHAT_<TYPE>_GET ("%s says: ");
--- short mode swaps in the compact prefix ("[G] %s: "). Monster/boss/emote
--- grammar always keeps the GET string.
---
--- Blizzard's ChatFrameUtil.GetOutMessageFormatKey reports a NON-FATAL assert
--- (assertsafe -> geterrorhandler, which is NOT catchable by the pcall below)
--- whenever CHAT_<TYPE>_GET is absent. Some chat types legitimately have none —
--- TEXT_EMOTE and GUILD_ITEM_LOOTED bodies arrive pre-formatted and Blizzard's
--- own MessageFormatter never queries a format key for them. Resolve the raw
--- global FIRST and only delegate to the Blizzard helper when the key exists;
--- otherwise fall back without tripping the assert. In live clients the helper
--- just returns this same global, so gating on it is behaviour-neutral for any
--- key that is present.
 local function GetOutMessageFormatKey(typeKey)
     local direct = _G["CHAT_" .. typeKey .. "_GET"]
     if type(direct) ~= "string" or direct == "" then
@@ -760,7 +636,7 @@ local function GetOutMessageFormatKey(typeKey)
     end
     local util = _G.ChatFrameUtil and _G.ChatFrameUtil.GetOutMessageFormatKey
     if type(util) == "function" then
-        local ok, fmt = pcall(util, typeKey)
+        local ok, fmt = ns.SafeCall("chain-next", util, typeKey)
         if ok and type(fmt) == "string" and fmt ~= "" then
             return fmt
         end
@@ -776,17 +652,10 @@ local function OutFormat(typeKey)
         return (TYPE_PREFIX[typeKey] or "") .. "%s: "
     end
     local fmt = GetOutMessageFormatKey(typeKey)
-    if fmt == "%s " then fmt = "%s: " end -- missing GET: sane "[name]: text"
+    if fmt == "%s " then fmt = "%s: " end
     return fmt
 end
 
--- ---------------------------------------------------------------------------
--- Player links (LinkUtil parity: |Hplayer:name:lineID:chatType:chatTarget|h)
--- ---------------------------------------------------------------------------
-
--- Bare bracketed player hyperlink "|Hplayer:<name>|h[<shown>]|h" used by the
--- achievement and channel-INVITE notice lines. Keep the link template in one
--- place so a format change can't drift between callers.
 local function BracketedPlayerLink(name, shown)
     return ("|Hplayer:%s|h[%s]|h"):format(name, shown)
 end
@@ -797,9 +666,6 @@ local function ChatTargetFor(chatGroup, sender, chNum)
     end
     if (chatGroup == "WHISPER" or chatGroup == "BN_WHISPER")
         and not IsSecret(sender) and type(sender) == "string" then
-        -- BN senders arrive as |K kstrings; the escape is case-sensitive, so
-        -- uppercasing corrupts it and the whole |HBNplayer link renders raw
-        -- (FCFManager_GetChatTarget parity).
         if sender:sub(1, 2) == "|K" then return sender end
         return sender:upper()
     end
@@ -816,16 +682,18 @@ local function BuildPlayerLink(typeKey, chatGroup, p, linkDisplayText)
             return ("|HBNplayer:%s:%d:%d:%s:%s|h%s|h"):format(
                 sender, p.bnID, lid, chatGroup, target, linkDisplayText)
         end
-        -- No bnSenderID -> plain text (a |Hplayer:| link would be a broken
-        -- click target for BN display names).
         return linkDisplayText
     end
+    if (typeKey == "GUILD_DISCORD" or typeKey == "GUILD") and p.isFromDiscord then
+        local lid = type(p.lineID) == "number" and p.lineID or 0
+        local target = ChatTargetFor(chatGroup, sender, p.chNum)
+        local bnID = type(p.bnID) == "number" and p.bnID or 0
+        return ("|Hdiscorduser:%s:%s:%d:%s:%s|h%s|h"):format(
+            bnID, p.discordInfo.userID, lid, chatGroup, target, linkDisplayText)
+    end
     if typeKey == "COMMUNITIES_CHANNEL" then
-        -- Community message links carry club/stream/message coordinates
-        -- (ChatFrameOverrides.lua:564-576). GetInfoFromLastCommunityChatLine
-        -- is only valid during the dispatch of this event — pcall + fallback.
         if _G.C_Club and _G.C_Club.GetInfoFromLastCommunityChatLine then
-            local ok, messageInfo, clubId, streamId = pcall(_G.C_Club.GetInfoFromLastCommunityChatLine)
+            local ok, messageInfo, clubId, streamId = ns.SafeCall("chain-next", _G.C_Club.GetInfoFromLastCommunityChatLine)
             if ok and type(messageInfo) == "table" and messageInfo.messageId then
                 local epoch = ("%.f"):format(messageInfo.messageId.epoch or 0)
                 local position = ("%.f"):format(messageInfo.messageId.position or 0)
@@ -847,15 +715,14 @@ end
 
 local function BuildSecretSenderLink(p)
     if not IsSecret(p.rawSender) then return nil end
-    if not IsSecret(p.text) and not (p.rawGuid or p.guid) then return nil end
+    local guid = p.rawGuid
+    local guidSecret = IsSecret(guid)
+    if not guidSecret and not guid then guid = p.guid end
+    if not IsSecret(p.text) and not guidSecret and not guid then return nil end
     local shown = string.format("[%s]", p.rawSender)
-    shown = ColorizeSenderName(p.rawGuid or p.guid, p.sender, shown)
+    shown = ColorizeSenderName(guid, p.sender, shown)
     return string.format("|Hplayer:%s|h%s|h", p.rawSender, shown)
 end
-
--- ---------------------------------------------------------------------------
--- Normal (non-secret body) line — MessageFormatter parity
--- ---------------------------------------------------------------------------
 
 local function FormatNormalLine(event, typeKey, p)
     local text = p.text
@@ -863,16 +730,13 @@ local function FormatNormalLine(event, typeKey, p)
     local isMonster = IsMonsterOrRaidBossType(typeKey)
     local showLink = not isMonster
 
-    -- VOICE_TEXT honors the speech-to-text CVar like Blizzard.
     if typeKey == "VOICE_TEXT" and _G.GetCVarBool then
-        local ok, enabled = pcall(_G.GetCVarBool, "speechToText")
+        local ok, enabled = ns.SafeCall("chain-next", _G.GetCVarBool, "speechToText")
         if ok and not enabled then return nil end
     end
 
-    -- Censored lines render the censored-link body verbatim (lineID is
-    -- NeverSecret; the placeholder text arrives pre-built in arg1).
     if type(p.lineID) == "number" and _G.C_ChatInfo and _G.C_ChatInfo.IsChatLineCensored then
-        local ok, censored = pcall(_G.C_ChatInfo.IsChatLineCensored, p.lineID)
+        local ok, censored = ns.SafeCall("chain-next", _G.C_ChatInfo.IsChatLineCensored, p.lineID)
         if ok and censored then return text end
     end
 
@@ -882,19 +746,18 @@ local function FormatNormalLine(event, typeKey, p)
     end
     msg = ExpandIconExpressions(msg, p.suppressIcons, chatGroup)
     msg = CollapseSpaces(msg)
+    if p.isFromDiscord then
+        msg = FormatDiscordMessage(p.discordInfo, msg)
+    end
 
     local pflag = PFlag(p.flags, p.zoneID, p.chNum)
     local sender = type(p.sender) == "string" and p.sender or ""
     local usingDifferentLanguage = type(p.language) == "string" and p.language ~= ""
         and p.language ~= RelevantDefaultLanguage(typeKey)
 
-    -- Secret sender with a raw GUID can still build a fixed-template player
-    -- prefix. Truly absent/no-handle senders degrade to the bare body (a "%s
-    -- says:" with an empty name reads worse than no prefix). Monster types keep
-    -- Blizzard's empty-name format below.
     if showLink and sender == "" and typeKey ~= "TEXT_EMOTE" then
         local secretLink = BuildSecretSenderLink(p)
-        if secretLink then
+        if IsSecret(secretLink) or secretLink then
             local linkWithFlag = string.format("%s%s", pflag, secretLink)
             local fmt = OutFormat(typeKey)
             if usingDifferentLanguage then
@@ -944,8 +807,9 @@ local function FormatNormalLine(event, typeKey, p)
             if typeKey == "TEXT_EMOTE" then
                 outMsg = (msg:gsub(sender, pflag .. playerLink, 1))
             elseif typeKey == "GUILD_ITEM_LOOTED" then
-                -- "$s has looted ..." — Blizzard substitutes a bare player link.
                 outMsg = (msg:gsub("%$s", ("|Hplayer:%s|h%s|h"):format(sender, linkDisplayText)))
+            elseif typeKey == "GUILD_DISCORD" and p.isFromDiscord then
+                outMsg = FormatString(fmt .. msg, pflag .. " " .. playerLink)
             else
                 outMsg = FormatString(fmt .. msg, pflag .. playerLink)
             end
@@ -953,18 +817,11 @@ local function FormatNormalLine(event, typeKey, p)
     end
     if not outMsg then return nil end
 
-    -- Channel prefix whenever the event carries a prefixed channel name
-    -- (CHANNEL and COMMUNITIES_CHANNEL traffic).
     if HasChannelContext(p, typeKey) then
         outMsg = ChannelDecoration(p) .. outMsg
     end
     return outMsg
 end
-
--- ---------------------------------------------------------------------------
--- Special-event dispatch: tokens/templates instead of plain bodies, matching
--- Blizzard's exact format calls (vendored ChatFrameOverrides.lua).
--- ---------------------------------------------------------------------------
 
 local SPECIAL_KIND = {
     ACHIEVEMENT = "ach",
@@ -1051,8 +908,6 @@ local function FormatSpecialLine(event, typeKey, kind, p)
         if type(gs) ~= "string" then gs = _G["CHAT_" .. text .. "_NOTICE"] end
         if type(gs) ~= "string" then return nil end
         local num = type(channelNumber) == "number" and channelNumber or 0
-        -- arg4 is the PREFIXED full name ("2. Trade") — resolved so community
-        -- identifiers display as "N. Club - Stream" like Blizzard.
         local name = type(channelFull) == "string" and ResolvePrefixedChannelName(channelFull) or ""
         return FormatString(gs, num, name)
     elseif kind == "ignored" then
@@ -1079,12 +934,10 @@ local function FormatSpecialLine(event, typeKey, kind, p)
     elseif kind == "bntoast" then
         local gs = BNToastGlobalString(text)
         if type(gs) ~= "string" then return nil end
-        -- FRIEND_PENDING is %d-based (invite count), not %s-based.
         if text == "FRIEND_PENDING" then
             local n = (_G.BNGetNumFriendInvites and _G.BNGetNumFriendInvites()) or 0
             return FormatString(gs, n)
         end
-        -- FRIEND_REMOVED/BATTLETAG_FRIEND_REMOVED: plain name, no link, no brackets.
         if text == "FRIEND_REMOVED" or text == "BATTLETAG_FRIEND_REMOVED" then
             if type(sender) ~= "string" or sender == "" then return nil end
             return FormatString(gs, sender)
@@ -1093,14 +946,10 @@ local function FormatSpecialLine(event, typeKey, kind, p)
         if type(sender) ~= "string" or sender == "" then return nil end
         local part = BNToastPlayerLink(sender, p.bnID, p.lineID, typeKey)
         if not part then return nil end
-        -- FRIEND_ONLINE/OFFLINE parity: append the character name when the
-        -- BN account info resolves (sync read; nil-safe — the API may return
-        -- nothing at login or when the friend is in a non-WoW game).
-        -- gameAccountInfo.characterName is Nilable per BNetGameAccountInfo docs.
         if (text == "FRIEND_ONLINE" or text == "FRIEND_OFFLINE")
             and type(p.bnID) == "number"
             and _G.C_BattleNet and _G.C_BattleNet.GetAccountInfoByID then
-            local okA, info = pcall(_G.C_BattleNet.GetAccountInfoByID, p.bnID)
+            local okA, info = ns.SafeCall("chain-next", _G.C_BattleNet.GetAccountInfoByID, p.bnID)
             local game = okA and type(info) == "table"
                 and type(info.gameAccountInfo) == "table" and info.gameAccountInfo or nil
             local charName = game and game.characterName
@@ -1113,13 +962,6 @@ local function FormatSpecialLine(event, typeKey, kind, p)
     return nil
 end
 
--- ---------------------------------------------------------------------------
--- Entry points
--- ---------------------------------------------------------------------------
-
--- One entry point for capture: returns the display line, or nil to DROP the
--- message (unrenderable token, secret template, missing globalstring).
--- p.text is a non-secret string here (capture guards this).
 function Format.BuildEventLine(event, p)
     if type(p) ~= "table" then return nil end
     local text = p.text
@@ -1137,11 +979,6 @@ function Format.BuildEventLine(event, p)
     return FormatNormalLine(event, typeKey, p)
 end
 
--- Secret-body line: build the largest prefix we can (flags, links, channel
--- decoration, GET format) from FIXED templates and join it to the secret body
--- with string.format — which accepts secret values and propagates secrecy, so
--- no Lua operator ever touches the payload (event doc: playerName is
--- Nilable=false without NeverSecret, so the sender may be secret too).
 function Format.WrapSecretEventLine(event, p)
     if type(p) ~= "table" then return nil end
     local text = p.text
@@ -1149,28 +986,14 @@ function Format.WrapSecretEventLine(event, p)
     local typeKey = Format.EventToTypeKey(event)
     if not typeKey then return text end
 
-    -- Special + boss-notice lines build their output FROM the body — the body
-    -- is itself the format template (boss notices, achievements) or indexes a
-    -- globalstring by it. string.format takes secret VALUES, never a secret
-    -- format string, so a secret body here is unrenderable: pass it through
-    -- verbatim, exactly as the reference client does with secret payloads.
     if BOSS_NOTICE_EVENTS[event] or SPECIAL_KIND[typeKey] then
         return text
     end
 
-    -- string.format accepts secret values and PROPAGATES secrecy; every format
-    -- string below is a fixed/Blizzard template (never the secret body), so no
-    -- Lua operator touches the payload and no pcall is needed. The prefix may
-    -- itself be secret (built from a secret sender) — truthiness only on it,
-    -- never a comparison.
     local prefix
     if IsMonsterOrRaidBossType(typeKey) then
-        -- Monster chat: "<name> says/yells: " + body. The name lives in the
-        -- GET prefix, not the body, so the body never needs filling.
         prefix = string.format(GetOutMessageFormatKey(typeKey), p.rawSender)
     elseif typeKey == "EMOTE" then
-        -- Player emote joins the GET ("%s ") like Blizzard: linked sender when
-        -- renderable, raw (possibly secret) name otherwise.
         local who = p.rawSender
         if p.sender then
             who = PFlag(p.flags, p.zoneID, p.chNum)
@@ -1178,8 +1001,6 @@ function Format.WrapSecretEventLine(event, p)
         end
         prefix = string.format(GetOutMessageFormatKey(typeKey), who)
     elseif IsRawType(typeKey) or typeKey == "TEXT_EMOTE" then
-        -- Raw types render bodies verbatim; TEXT_EMOTE grammar embeds the name
-        -- in the body itself (the sender gsub can't run on a secret).
         return text
     else
         local chatGroup = ChatCategory(typeKey)
@@ -1190,7 +1011,8 @@ function Format.WrapSecretEventLine(event, p)
         elseif IsSecret(p.rawSender) then
             link = BuildSecretSenderLink(p)
         end
-        if link then
+        local linkSecret = IsSecret(link)
+        if linkSecret or link then
             prefix = string.format(OutFormat(typeKey), string.format("%s%s", pflag, link))
         elseif TYPE_PREFIX[typeKey] then
             prefix = TYPE_PREFIX[typeKey]
@@ -1198,12 +1020,16 @@ function Format.WrapSecretEventLine(event, p)
         if HasChannelContext(p, typeKey) then
             local deco = ChannelDecoration(p)
             if deco ~= "" then
-                prefix = prefix and string.format("%s%s", deco, prefix) or deco
+                if IsSecret(prefix) or prefix then
+                    prefix = string.format("%s%s", deco, prefix)
+                else
+                    prefix = deco
+                end
             end
         end
     end
 
-    if not prefix then return text end
+    if not IsSecret(prefix) and not prefix then return text end
     return string.format("%s%s", prefix, text)
 end
 
@@ -1216,5 +1042,8 @@ function Format.BuildEventLineFromArgs(event, ...)
         return Format.WrapSecretEventLine(event, p), p, true
     end
     if type(text) ~= "string" or text == "" then return nil, p, false end
-    return Format.BuildEventLine(event, p), p, false
+    -- @secret-policy: line-secrecy-follows-any-secret-part
+    local line = Format.BuildEventLine(event, p)
+    if IsSecret(line) then return line, p, true end
+    return line, p, false
 end

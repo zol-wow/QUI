@@ -1,81 +1,28 @@
----------------------------------------------------------------------------
--- QUI Global Font System
--- SafeSetFont helper and Blizzard UI font override system.
--- Extracted from core/main.lua for maintainability.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 
 local LSM = ns.LSM
 local Helpers = ns.Helpers
 
----------------------------------------------------------------------------
--- SAFE FONT HELPER
----------------------------------------------------------------------------
-
 function QUICore:SafeSetFont(fontString, fontPath, size, flags)
     if not fontString then return end
-    -- Route through the CJK-aware family setter so QUI text renders Chinese/
-    -- Korean glyphs regardless of the selected locale (the family keeps the
-    -- given roman font and only adds CJK members — appearance is unchanged for
-    -- Latin users). Degrades to a single-file SetFont when the family API is
-    -- unavailable. This is the addon-wide font choke point, so fixing it here
-    -- gives every SafeSetFont caller (datatext panels, minimap clock, etc.)
-    -- CJK fallback for free.
     if Helpers and Helpers.ApplyFontWithFallback then
         Helpers.ApplyFontWithFallback(fontString, fontPath, size, flags or "")
     else
         fontString:SetFont(fontPath, size, flags or "")
     end
-    -- Check if font was actually set (GetFont returns nil if failed)
     local actualFont = fontString:GetFont()
     if not actualFont then
-        -- Fallback to guaranteed Blizzard font
         fontString:SetFont("Fonts\\FRIZQT__.TTF", size, flags or "")
     end
 end
 
----------------------------------------------------------------------------
--- GLOBAL FONT OVERRIDE FOR BLIZZARD UI
----------------------------------------------------------------------------
-
--- Fallback to bundled Quazii font (always available, loaded early in media.lua).
--- Derive the assets dir from Helpers.AssetPath so a folder rename can't strand it.
 local QUAZII_FONT_PATH = ((Helpers and Helpers.AssetPath) or [[Interface\AddOns\QUI\assets\]]) .. "Quazii.ttf"
 
--- TAINT SAFETY: Some shared Font objects are unsafe to modify.
--- Calling SetFont() on Font objects used by secure UI systems (e.g.,
--- GameFontNormal → UIWidgetTemplateTextWithState, NumberFontNormal →
--- ActionButton Count) taints ALL derived FontStrings. During combat,
--- Blizzard's secure code calls GetStringHeight()/GetStringWidth() on
--- those FontStrings and gets secret/tainted values → arithmetic errors.
---
--- EXCEPTION: Tooltip-specific Font objects (GameTooltipHeaderText,
--- GameTooltipText) are safe to modify. Their derived FontStrings are
--- NOT read by secure UIWidget code, so GetStringWidth() remains
--- non-secret. Calling SetFont() on the Font object (NOT on individual
--- FontStrings) propagates size changes without per-FontString taint.
--- See skinning/system/tooltips.lua ApplyFontSizeViaFontObjects().
---
--- Directly calling SetFont() on individual FontStrings (e.g.,
--- GameTooltipTextLeft1) DOES taint them — avoid this for GameTooltip.
---
--- All non-tooltip font overrides are applied PER-INSTANCE:
---   - Chat frames: per-frame SetFont below
---   - ObjectiveTracker/GameMenu: covered by ApplyGlobalFontObjects (font-object override)
-
--- Track if hooks are already set up (one-time per API; some Blizzard frames
--- are loaded lazily, so hook setup is retried until each target exists).
 local chatFontHooksInitialized = false
 local originalChatFonts = ns.Helpers.CreateStateTable()
--- Pristine Blizzard DAMAGE_TEXT_FONT captured once before any QUI override, so
--- the SCT font can be restored when the toggle is turned off (mirrors the
--- chat/objective restore paths). false = not yet captured.
 local originalDamageTextFont = false
 
--- Pristine Blizzard STANDARD_TEXT_FONT captured once before any QUI override, so
--- the engine default can be restored when the global font is turned off (mirrors
--- the DAMAGE_TEXT_FONT capture below). false = not yet captured.
 local originalStandardTextFont = false
 
 local function GetGlobalFontPath()
@@ -94,12 +41,6 @@ local function IsGlobalFontEnabled()
         and QUICore.db.profile.general.applyGlobalFontToBlizzard
 end
 
--- Shared Blizzard font OBJECTS overridden when the global font is enabled.
--- Reference-proven leaf set. The bare roots GameFontNormal/GameFontHighlight/
--- GameFontDisable/GameFontNormalSmall are DELIBERATELY excluded — they are the
--- most-inherited secure-template roots; the reference avoids them and so do we.
--- Each name is _G-guarded, so cross-version entries that do not exist on 12.0.7
--- are silently skipped.
 local FONT_OBJECT_SET = {
     "AchievementFont_Small", "ChatBubbleFont", "CoreAbilityFont",
     "DestinyFontHuge", "DestinyFontMed", "ErrorFont",
@@ -138,14 +79,8 @@ local FONT_OBJECT_SET = {
     "WorldMapTextFont", "ZoneTextFont",
 }
 
--- Pristine {font,size,flags} per object, captured once before first override so
--- restore (toggle off) is lossless.
 local originalFontObjects = ns.Helpers.CreateStateTable()
 
--- Apply (shouldApply=true) or restore (false) QUI face + general.fontOutline on
--- every shared font OBJECT in FONT_OBJECT_SET. Native SIZE is preserved. The
--- object carries the face, so inheriting FontStrings update without a walk and
--- survive Blizzard's hover/disable swaps. CJK locales are skipped by the caller.
 function QUICore:ApplyGlobalFontObjects(shouldApply)
     local fontPath = GetGlobalFontPath()
     local outline = (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or "OUTLINE"
@@ -155,21 +90,10 @@ function QUICore:ApplyGlobalFontObjects(shouldApply)
             if shouldApply then
                 local _, size = obj:GetFont()
                 if size and size > 0 then
-                    -- Capture pristine {font,size,flags} only when we actually
-                    -- apply, so the capture/restore size>0 guards stay symmetric
-                    -- (a size-0 object is never captured, never leaks an entry).
                     if not originalFontObjects[obj] then
                         local f, s, fl = obj:GetFont()
                         originalFontObjects[obj] = { font = f, size = s, flags = fl }
                     end
-                    -- Outline TIERING: apply the user's outline ONLY to fonts that
-                    -- NATIVELY carry an outline (large/display text — zone, numbers,
-                    -- nameplates). Fonts Blizzard ships WITHOUT an outline (quest,
-                    -- mail, parchment and other dark-fill body text) keep their
-                    -- native flags, so a forced black outline never turns dark body
-                    -- text into a black-on-black blob on a skinned backdrop. Mirrors
-                    -- the reference, which only outlines its display-font tier and
-                    -- leaves body/quest/mail at NONE/SHADOW.
                     local nativeFlags = originalFontObjects[obj].flags or ""
                     local applied = nativeFlags:find("OUTLINE") and outline or nativeFlags
                     obj:SetFont(fontPath, size, applied)
@@ -185,26 +109,14 @@ function QUICore:ApplyGlobalFontObjects(shouldApply)
     end
 end
 
--- SetFontObject re-bases a frame's inherited layout props. On a chat
--- ScrollingMessageFrame a freshly built FontFamily carries no justification,
--- so the frame falls back to the WoW default (CENTER) and renders every line
--- centered once the Blizzard frame is visible again (e.g. the QUI chat takeover
--- is off). Blizzard's own ChatFrameMixin:OnLoad sets the font object THEN
--- re-asserts SetJustifyH("LEFT") for exactly this reason — mirror it here.
--- justifyH/justifyV come from the capture-time snapshot (the frame's real
--- justification before any QUI font was applied); GetJustifyH/V are never secret
--- (JustifyHorizontal/Vertical enums), so the getter result feeds the setter.
 local function SetChatFontObject(chatFrame, fontObject, justifyH, justifyV)
     if not (chatFrame and chatFrame.SetFontObject and fontObject) then return false end
-    if not pcall(chatFrame.SetFontObject, chatFrame, fontObject) then return false end
-    if justifyH and chatFrame.SetJustifyH then pcall(chatFrame.SetJustifyH, chatFrame, justifyH) end
-    if justifyV and chatFrame.SetJustifyV then pcall(chatFrame.SetJustifyV, chatFrame, justifyV) end
+    if not ns.SafeCallMethod("best-effort-style", chatFrame, "SetFontObject", fontObject) then return false end
+    if justifyH and chatFrame.SetJustifyH then ns.SafeCallMethod("best-effort-style", chatFrame, "SetJustifyH", justifyH) end
+    if justifyV and chatFrame.SetJustifyV then ns.SafeCallMethod("best-effort-style", chatFrame, "SetJustifyV", justifyV) end
     return true
 end
 
--- Snapshot a chat frame's pristine font + justification exactly once, before
--- any QUI font is applied, so both the SetFontObject re-base above and the
--- flip-back restore can put the original justification back.
 local function CaptureOriginalChatFont(chatFrame, currentFont, flags)
     local snap = originalChatFonts[chatFrame]
     if snap then return snap end
@@ -240,10 +152,8 @@ function QUICore:ApplyGlobalFontToChatFrames(fontPath, shouldApply)
                         originalChatFonts[chatFrame] = nil
                     elseif original and original.font then
                         chatFrame:SetFont(original.font, size, flags or original.flags or "")
-                        -- SetFont leaves justify alone, but a prior SetFontObject
-                        -- may have re-based it — restore the captured justification.
                         if original.justifyH and chatFrame.SetJustifyH then
-                            pcall(chatFrame.SetJustifyH, chatFrame, original.justifyH)
+                            ns.SafeCallMethod("best-effort-style", chatFrame, "SetJustifyH", original.justifyH)
                         end
                         originalChatFonts[chatFrame] = nil
                     end
@@ -253,12 +163,6 @@ function QUICore:ApplyGlobalFontToChatFrames(fontPath, shouldApply)
     end
 end
 
--- TAINT SAFETY: STANDARD_TEXT_FONT is a path-string global read by the engine
--- when CREATING fonts; setting it never mutates an existing (secure) font
--- object, so no FontString is tainted. This is the safe alternative to mutating
--- shared font objects directly. Gated by the global-font toggle AND the locale
--- glyph gate — on CJK clients the Latin-only QUI font would render boxes, so we
--- leave the Blizzard default there.
 function QUICore:ApplyGlobalDefaultFont()
     if not self.db or not self.db.profile or not self.db.profile.general then return end
     local glyphFallback = Helpers and Helpers.GetLocaleGlyphFallback and Helpers.GetLocaleGlyphFallback()
@@ -274,29 +178,15 @@ function QUICore:ApplyGlobalDefaultFont()
 end
 
 function QUICore:ApplyGlobalFont()
-    -- Check if feature is enabled
     if not self.db or not self.db.profile or not self.db.profile.general then return end
     local shouldApply = IsGlobalFontEnabled()
 
     local fontPath = GetGlobalFontPath()
 
-    -- Set up chat hooks (one-time)
     if not chatFontHooksInitialized then
         chatFontHooksInitialized = true
 
-        -- Tooltip font display is handled per-instance by
-        -- skinning/system/tooltips.lua (ApplyTooltipFontSizeToFrame).
-        -- Do NOT walk tooltip FontStrings directly — UIWidget child containers
-        -- inherit from shared font objects; tainting them breaks GetStringHeight() in combat.
-
-        -- Hook chat frame font size changes
         if FCF_SetChatWindowFontSize then
-            -- TAINT SAFETY: Defer to break taint chain from secure context.
-            -- Live signature is FCF_SetChatWindowFontSize(self, chatFrame, fontSize)
-            -- (Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua:882). hooksecurefunc
-            -- forwards the real call args, so the callback must absorb the leading
-            -- self/slider arg — otherwise `chatFrame` receives `self` and the global-font
-            -- re-apply silently targets the wrong object. Mirror Blizzard's nil fallback.
             hooksecurefunc("FCF_SetChatWindowFontSize", function(_self, chatFrame, fontSize)
                 C_Timer.After(0, function()
                     if not IsGlobalFontEnabled() then return end
@@ -305,7 +195,6 @@ function QUICore:ApplyGlobalFont()
                         chatFrame = FCF_GetCurrentChatFrame()
                     end
                     if chatFrame and type(chatFrame.GetFont) == "function" and type(chatFrame.SetFont) == "function" then
-                        -- Apply global font directly to ScrollingMessageFrame (not just children)
                         local currentFont, size, flags = chatFrame:GetFont()
                         local snap = CaptureOriginalChatFont(chatFrame, currentFont, flags)
                         local targetSize = fontSize or size or 14
@@ -318,7 +207,6 @@ function QUICore:ApplyGlobalFont()
             end)
         end
 
-        -- Event handler for chat window resets (font persistence across new messages)
         local chatFontEventFrame = CreateFrame("Frame")
         chatFontEventFrame:RegisterEvent("UPDATE_CHAT_WINDOWS")
         chatFontEventFrame:RegisterEvent("UPDATE_FLOATING_CHAT_WINDOWS")
@@ -332,22 +220,13 @@ function QUICore:ApplyGlobalFont()
         end)
     end
 
-    -- Shared font-OBJECT override (static text face+outline). CJK clients skip:
-    -- the Latin-only QUI font would render boxes, so leave Blizzard objects.
     do
         local glyphFallback = Helpers and Helpers.GetLocaleGlyphFallback and Helpers.GetLocaleGlyphFallback()
         self:ApplyGlobalFontObjects(shouldApply and not glyphFallback)
     end
 
-    -- Apply to existing chat frames (SetFont on the frame itself for new message persistence)
     self:ApplyGlobalFontToChatFrames(fontPath, shouldApply)
 
-    -- Tooltip fonts are applied per-instance by skinning/system/tooltips.lua.
-    -- Recursive application here would taint UIWidget child FontStrings.
-
-    -- Override scrolling combat text (floating damage/heal numbers) font.
-    -- DAMAGE_TEXT_FONT is a simple global string variable used by Blizzard's
-    -- CombatText system — safe to override without taint concerns.
     if shouldApply and self.db.profile.general.overrideSCTFont then
         if originalDamageTextFont == false then
             originalDamageTextFont = _G.DAMAGE_TEXT_FONT
@@ -358,9 +237,6 @@ function QUICore:ApplyGlobalFont()
         originalDamageTextFont = false
     end
 
-    -- Notify the options panel so its own FontStrings pick up the new font
-    -- immediately if the panel is currently open.  GUI:OnFontChanged() is a
-    -- no-op when the panel is hidden, so this is safe to call unconditionally.
     local gui = QUI and QUI.GUI
     if gui and gui.OnFontChanged then
         gui:OnFontChanged()

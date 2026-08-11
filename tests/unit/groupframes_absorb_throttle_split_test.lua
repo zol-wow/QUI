@@ -5,18 +5,31 @@
 -- visual overlays. Their throttles must not suppress each other for the same
 -- unit inside the 100 ms coalesce window.
 
-local loadDispatch = dofile("tests/helpers/load_groupframes_dispatch.lua")
+local function readAll(path)
+    local f = assert(io.open(path, "rb"))
+    local d = f:read("*a")
+    f:close()
+    return d:gsub("\r\n", "\n")
+end
+
+local source = readAll("QUI_GroupFrames/groupframes/groupframes.lua")
+local startPos = assert(source:find("local function OnEvent%(self, event, arg1, %.%.%.%)"),
+    "OnEvent should exist")
+local endMarker = "\neventFrame:SetScript(\"OnEvent\", OnEvent)"
+local endPos = assert(source:find(endMarker, startPos, true),
+    "OnEvent should end before eventFrame:SetScript")
+local onEventSource = source:sub(startPos, endPos - 1)
 
 local calls = {
     absorb = 0,
     healAbsorb = 0,
     healPrediction = 0,
 }
+local scheduled = {}
 local now = 100
 local frame = {}
 
 local ctx = {
-    ns = {},
     QUI_GF = {
         initialized = true,
         unitFrameMap = {
@@ -25,7 +38,6 @@ local ctx = {
     },
     _state = {
         cachedModuleEnabled = true,
-        healthThrottle = {},
         healAbsorbThrottle = {},
     },
     _range = {
@@ -34,22 +46,12 @@ local ctx = {
     },
     powerThrottle = {},
     absorbThrottle = {},
+    healAbsorbThrottle = {},
     healPredThrottle = {},
     THROTTLE_INTERVAL = 0.1,
-    -- The throttle section creates its trailing-flush frame at load time; this
-    -- test only exercises the leading edge, so an inert stub is enough.
-    CreateFrame = function()
-        return {
-            Show = function() end,
-            Hide = function() end,
-            SetScript = function() end,
-        }
-    end,
     GetTime = function() return now end,
     UnitExists = function() return true end,
     RebuildUnitFrameMap = function() error("unexpected map rebuild") end,
-    UpdateHealth = function() error("unexpected health update") end,
-    UpdatePower = function() error("unexpected power update") end,
     UpdateAbsorbs = function(seenFrame)
         assert(seenFrame == frame, "UpdateAbsorbs should receive mapped frame")
         calls.absorb = calls.absorb + 1
@@ -62,12 +64,35 @@ local ctx = {
         assert(seenFrame == frame, "UpdateHealPrediction should receive mapped frame")
         calls.healPrediction = calls.healPrediction + 1
     end,
+    ScheduleTrailingDrain = function(family, unit)
+        scheduled[#scheduled + 1] = family .. ":" .. unit
+    end,
     type = type,
     pairs = pairs,
     wipe = function(t) for k in pairs(t) do t[k] = nil end end,
 }
 
-local OnEvent = loadDispatch(ctx)
+local prelude = [[
+local QUI_GF = QUI_GF
+local _state = _state
+local _range = _range
+local powerThrottle = powerThrottle
+local absorbThrottle = absorbThrottle
+local healAbsorbThrottle = healAbsorbThrottle
+local healPredThrottle = healPredThrottle
+local THROTTLE_INTERVAL = THROTTLE_INTERVAL
+local GetTime = GetTime
+local UnitExists = UnitExists
+local RebuildUnitFrameMap = RebuildUnitFrameMap
+local UpdateAbsorbs = UpdateAbsorbs
+local UpdateHealAbsorb = UpdateHealAbsorb
+local UpdateHealPrediction = UpdateHealPrediction
+local ScheduleTrailingDrain = ScheduleTrailingDrain
+]]
+
+local loader = assert(loadstring(prelude .. onEventSource .. "\nreturn OnEvent"))
+setfenv(loader, ctx)
+local OnEvent = loader()
 
 OnEvent(nil, "UNIT_ABSORB_AMOUNT_CHANGED", "raid1")
 OnEvent(nil, "UNIT_HEAL_ABSORB_AMOUNT_CHANGED", "raid1")
@@ -77,5 +102,7 @@ assert(calls.absorb == 1, "duplicate absorb event inside 100 ms should be thrott
 assert(calls.healAbsorb == 1,
     "heal-absorb event should not be suppressed by absorb event throttle")
 assert(calls.healPrediction == 0, "heal prediction should not run for absorb events")
+assert(#scheduled == 1 and scheduled[1] == "absorb:raid1",
+    "suppressed absorb event must schedule exactly one trailing drain for its unit")
 
 print("OK: groupframes_absorb_throttle_split_test")

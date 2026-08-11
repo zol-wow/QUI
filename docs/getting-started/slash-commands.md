@@ -30,8 +30,6 @@ These are the commands most players actually use. Type them into the WoW chat wi
 | `/qpull` or `/quipull` | Always-available pull timer aliases. |
 | `/qui perf` | Toggle the performance monitor overlay. |
 | `/qui debug` | Enable debug mode. Debug output persists for one reload, then turns off automatically. |
-| `/qui cdm_cache status` | Print CDM cache status without loading the CDM debug addon. |
-| `/qui cdm_cache reset` | Reset CDM caches out of combat. |
 
 ## Bags Commands
 
@@ -67,8 +65,7 @@ These are available after `/qui debug` reloads the load-on-demand debug tools.
 | `/cdmdebug` | Show CDM debug command groups and active flags. |
 | `/cdmdebug flags [name] [on|off|filter]` | Toggle CDM debug flags for icon, bar, blizz, aura, charge, totem, or taint output. |
 | `/cdmdebug spell <spellID|name> [once|watch|events [sec]|trace|charge|flicker]` | Inspect one CDM spell/icon path. `events` defaults to a 0.25s throttle; use `events 0` for raw output. |
-| `/cdmdebug mirror [filter|child|raw|cdtest]` | Inspect Blizzard mirror state, child frames, raw viewer data, or cooldown setter behavior. |
-| `/cdmdebug cache [status|reset]` | Print or reset CDM cache state. `/qui cdm_cache` remains available without loading debug tools. |
+| `/cdmdebug cache [status|reset]` | Print or reset CDM cache state. |
 | `/cdmdebug profile [status|clean]` | Dump or clean CDM profile/spec tracking state. |
 
 ## Good To Know

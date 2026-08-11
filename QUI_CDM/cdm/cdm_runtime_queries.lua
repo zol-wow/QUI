@@ -1,14 +1,5 @@
 local _, ns = ...
 
----------------------------------------------------------------------------
--- CDM Runtime Queries
---
--- Shared runtime query/cache seam for cooldown resolver consumers. Short
--- batch query facts are stored on the current icon/bar runtime state, while
--- this module keeps trusted GCD state and charge metadata persistence out of
--- CDMResolvers' factual state interface.
----------------------------------------------------------------------------
-
 local CDMRuntimeQueries = {}
 ns.CDMRuntimeQueries = CDMRuntimeQueries
 
@@ -30,16 +21,6 @@ local function IsSecretValue(value)
     return false
 end
 
-local chargeDurationObjectSerial = 0
-
-function CDMRuntimeQueries.NoteChargeDurationObjectsUpdated()
-    chargeDurationObjectSerial = chargeDurationObjectSerial + 1
-end
-
-function CDMRuntimeQueries.GetChargeDurationObjectSerial()
-    return chargeDurationObjectSerial
-end
-
 local function GetChargeMetadataDB()
     local db = QUI and QUI.db and QUI.db.global
     if not db then return nil end
@@ -51,11 +32,8 @@ CDMRuntimeQueries.GetChargeMetadataDB = GetChargeMetadataDB
 local NIL_SENTINEL = {}
 local runtimeQueryBatchDepth = 0
 local runtimeQueryEpoch = 0
-local runtimeQueryOwner
-local runtimeQueryOwnerStack = {}
-local runtimeQueryOwnerStackDepth = 0
 local stableOverrideCache = {}
-local runtimeQueryStats -- debug counters; nil until QUI_Debug activates instrumentation
+local runtimeQueryStats
 
 local function SetupDebugInstrumentation()
     runtimeQueryStats = {
@@ -105,10 +83,10 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "CDM_queryCacheSpellCountSource", counter = true, fn = function() return runtimeQueryStats.spellCountSource end }
     mp[#mp + 1] = { name = "CDM_queryUnbatchedSource", counter = true, fn = function() return runtimeQueryStats.unbatchedSourceCalls end }
 end
-if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+if ns.DebugRegister then
     ns.DebugRegister(SetupDebugInstrumentation)
 else
-    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+    SetupDebugInstrumentation()
 end
 
 local function AdvanceRuntimeQueryEpoch()
@@ -119,39 +97,9 @@ function CDMRuntimeQueries.ClearStableCaches()
     wipe(stableOverrideCache)
 end
 
--- Scoped invalidation: drop the stable override memo for a single spell.
--- COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED carries the exact (baseSpellID,
--- overrideSpellID) whose override mapping changed, so the override handler
--- invalidates only those entries instead of wiping the whole cache on every
--- SPELLS_CHANGED (which co-fires with every proc override).
 function CDMRuntimeQueries.InvalidateStableOverrideForSpell(spellID)
     if spellID == nil or IsSecretValue(spellID) then return end
     stableOverrideCache[spellID] = nil
-end
-
-function CDMRuntimeQueries.PushRuntimeQueryOwner(owner)
-    runtimeQueryOwnerStackDepth = runtimeQueryOwnerStackDepth + 1
-    runtimeQueryOwnerStack[runtimeQueryOwnerStackDepth] = runtimeQueryOwner
-    runtimeQueryOwner = owner
-    return runtimeQueryOwnerStackDepth
-end
-
-function CDMRuntimeQueries.PopRuntimeQueryOwner()
-    if runtimeQueryOwnerStackDepth <= 0 then
-        runtimeQueryOwner = nil
-        return
-    end
-    runtimeQueryOwner = runtimeQueryOwnerStack[runtimeQueryOwnerStackDepth]
-    runtimeQueryOwnerStack[runtimeQueryOwnerStackDepth] = nil
-    runtimeQueryOwnerStackDepth = runtimeQueryOwnerStackDepth - 1
-end
-
-function CDMRuntimeQueries.WithRuntimeQueryOwner(owner, callback, ...)
-    if not callback then return nil end
-    CDMRuntimeQueries.PushRuntimeQueryOwner(owner)
-    local a, b, c, d, e = callback(...)
-    CDMRuntimeQueries.PopRuntimeQueryOwner()
-    return a, b, c, d, e
 end
 
 function CDMRuntimeQueries.BeginRuntimeQueryBatch()
@@ -165,41 +113,17 @@ end
 function CDMRuntimeQueries.EndRuntimeQueryBatch()
     if runtimeQueryBatchDepth <= 0 then
         runtimeQueryBatchDepth = 0
-        runtimeQueryOwner = nil
-        runtimeQueryOwnerStackDepth = 0
-        wipe(runtimeQueryOwnerStack)
         return
     end
 
     runtimeQueryBatchDepth = runtimeQueryBatchDepth - 1
-    if runtimeQueryBatchDepth == 0 then
-        runtimeQueryOwner = nil
-        runtimeQueryOwnerStackDepth = 0
-        wipe(runtimeQueryOwnerStack)
-    end
 end
 
 function CDMRuntimeQueries.ResetRuntimeQueryBatch()
     runtimeQueryBatchDepth = 0
-    runtimeQueryOwner = nil
-    runtimeQueryOwnerStackDepth = 0
-    wipe(runtimeQueryOwnerStack)
     AdvanceRuntimeQueryEpoch()
 end
 
--- Batch-shared query cache. Previously this layer kept a per-owner cache on
--- each icon's runtime state, which forced duplicate Blizzard API calls when
--- multiple icons (mirrors, item variants, GCD targets) all queried the same
--- spell within one batch — each fresh `C_Spell.GetSpellCooldown` return is
--- its own allocated table, and combat memaudit showed those returns
--- dominating the per-window "unattributed" allocation gap (see
--- docs/dev/perf-memaudit-2026-05-21.md notes).
---
--- The cache is keyed by (cacheName, key) only; owner parameters are still
--- accepted for source compatibility but ignored. Slots stay alive across
--- batches and are reused via epoch tagging — reads check `slot.epoch ==
--- runtimeQueryEpoch`, so stale data is invisible after the next batch
--- begin without paying for a per-batch wipe.
 local batchSharedCache = {
     cooldown = {},
     charge = {},
@@ -212,7 +136,7 @@ local batchSharedCache = {
 
 local function ReadRuntimeCache(cacheName, _owner, key, hitStat)
     if runtimeQueryBatchDepth <= 0 then return nil, false end
-    if IsSecretValue(key) then return nil, false end
+    if IsSecretValue(key) then return nil, false end -- @secret-policy: reject-secret-ids
     local cache = batchSharedCache[cacheName]
     if not cache then return nil, false end
     local slot = cache[key]
@@ -255,8 +179,6 @@ function CDMRuntimeQueries.QueryCharges(spellID, owner)
     end
     if not InCombatLockdown() then
         if chargeInfo then
-            -- Treat secret charge counts as opaque; metadata cache only
-            -- records clean, out-of-combat numeric charge counts.
             local maxC = chargeInfo.maxCharges
             if not IsSecretValue(maxC) and type(maxC) == "number" then
                 if maxC > 1 then
@@ -338,7 +260,7 @@ function CDMRuntimeQueries.QueryOverrideSpell(spellID)
         overrideID = Sources.QueryOverrideSpell(spellID)
     end
     if IsSecretValue(overrideID) then
-        return nil
+        return nil -- @secret-policy: reject-secret-ids
     end
     stableOverrideCache[spellID] = overrideID == nil and NIL_SENTINEL or overrideID
     if runtimeQueryBatchDepth > 0 then

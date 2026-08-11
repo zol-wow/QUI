@@ -1,14 +1,3 @@
----------------------------------------------------------------------------
--- QUI Chat Module — Legacy Per-Frame Content Filtering Storage
--- Older builds persisted per-frame message group + channel selections at
--- db.profile.chat.tabs[<frameID>] = { customized, groups, channels }.
--- Live QUI chat tabs now use db.profile.chat.customDisplay.windows[i].tabs instead;
--- this module only preserves group-version upgrades and compatibility helpers.
--- NOTHING is applied to the Blizzard chat windows anymore — under the
--- takeover they are hidden and event-neutered, and with the module
--- disabled QUI does not touch chat at all.
----------------------------------------------------------------------------
-
 local ADDON_NAME, ns = ...
 
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
@@ -22,7 +11,7 @@ TF.GROUPS_VERSION = GROUPS_VERSION
 
 local STANDARD_GROUPS = {
     "SAY", "EMOTE", "YELL",
-    "GUILD", "OFFICER", "GUILD_ACHIEVEMENT", "ACHIEVEMENT",
+    "GUILD", "OFFICER", "GUILD_DISCORD", "GUILD_ACHIEVEMENT", "ACHIEVEMENT",
     "WHISPER", "WHISPER_INFORM", "BN_WHISPER", "BN_WHISPER_INFORM",
     "AFK", "DND",
     "PARTY", "PARTY_LEADER",
@@ -59,9 +48,6 @@ local function appendUnique(list, value)
     list[#list + 1] = value
 end
 
--- Groups introduced after a stored entry was written. A pre-version entry
--- that whitelisted SYSTEM gets the split-out groups appended so its tab
--- keeps showing the same content.
 local SYSTEM_GROUP_UPGRADE = {
     "ERRORS",
     "TARGETICONS",
@@ -84,7 +70,6 @@ local function upgradeEntryGroups(entry)
     entry._groupsVersion = GROUPS_VERSION
 end
 
--- One pass over legacy stored entries so old saved variables remain normalized.
 local function upgradeAllStoredEntries()
     local settings = I.GetSettings and I.GetSettings()
     local tabs = settings and settings.tabs
@@ -94,34 +79,6 @@ local function upgradeAllStoredEntries()
     end
 end
 
--- ---------------------------------------------------------------------------
--- Settings helpers (used by the settings UI)
--- ---------------------------------------------------------------------------
-
--- Save a legacy per-frame filter config. `groups` and `channels` are arrays
--- of string keys. Retained for saved-variable compatibility.
-function TF.SaveTabConfig(frameID, groups, channels)
-    local settings = I.GetSettings and I.GetSettings()
-    if not settings then return end
-    settings.tabs = settings.tabs or {}
-    settings.tabs[frameID] = {
-        customized = true,
-        groups = groups or {},
-        channels = channels or {},
-        _groupsVersion = GROUPS_VERSION,
-    }
-end
-
--- Reset a legacy per-frame filter config.
-function TF.ResetTab(frameID)
-    local settings = I.GetSettings and I.GetSettings()
-    if not settings or not settings.tabs then return end
-    settings.tabs[frameID] = nil
-end
-
--- Upgrade stored entries once settings exist. ADDON_LOADED covers normal
--- login; PLAYER_LOGIN is the safety net (AceDB is constructed in
--- OnInitialize, before either fires for this addon).
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")

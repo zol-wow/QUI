@@ -8,13 +8,13 @@ file:close()
 
 local startPos = assert(source:find("local function UpdateAbsorbs%(frame%)"),
     "UpdateAbsorbs should exist")
-local endPos = assert(source:find("%-%- Heal absorbs", startPos),
+local endPos = assert(source:find("local healAbsorbAmount = UnitGetTotalHealAbsorbs(unit)", startPos, true),
     "UpdateAbsorbs heal-absorb section should exist")
 local body = source:sub(startPos, endPos)
 
 local damageClampModePos = assert(body:find("SetDamageAbsorbClampMode", 1, true),
     "UpdateAbsorbs should configure damage absorb clamping")
-local damageAbsorbsPos = assert(body:find("calc:GetDamageAbsorbs", 1, true),
+local damageAbsorbsPos = assert(body:find("GetDamageAbsorbs", 1, true),
     "UpdateAbsorbs should read clamped damage absorbs")
 local defaultModePos = body:find("UnitMaximumHealthMode.Default", 1, true)
     or body:find("maximumHealthMode.Default", 1, true)
@@ -24,7 +24,7 @@ local withAbsorbsModePos = body:find("UnitMaximumHealthMode.WithAbsorbs", 1, tru
     or body:find("maximumHealthMode.WithAbsorbs", 1, true)
 assert(withAbsorbsModePos,
     "UpdateAbsorbs should configure WithAbsorbs max-health mode for visibility")
-local visibilityEvalPos = assert(body:find("calc:EvaluateCurrentHealthPercent", 1, true),
+local visibilityEvalPos = assert(body:find("EvaluateCurrentHealthPercent", 1, true),
     "UpdateAbsorbs should evaluate the visibility curve")
 
 assert(damageClampModePos < damageAbsorbsPos,

@@ -79,8 +79,9 @@ assert(mappedCount > 0, "at least one mapped event must appear in counts")
 
 -- Unmapped event must appear as skipped/unmapped (not as a CDM method call)
 -- ZZZ_UNMAPPED should appear in counts but not call any controller method
-assert(counts["ZZZ_UNMAPPED"] == nil or counts["ZZZ_UNMAPPED"] == 0 or true,
-    "unmapped count may be zero or nil -- real gate is no error and no mapped count")
+assert(counts["ZZZ_UNMAPPED"] == nil,
+    "unmapped events must be stripped from counts (ProfileSession removal step)")
+assert(A._lastUnmappedCount == 1, "the one unmapped synthetic event must be tallied")
 -- The mapped count entries come from EVENT_MAP, so only mapped events are in counts.
 -- Unmapped events are skipped silently (adapter counts them internally).
 

@@ -15,8 +15,8 @@ ns.Storage = { Store = {}, Bus = {} }
 -- professions.lua reads Alts.Window.RegisterTab at file end; stub it.
 ns.Alts = { Window = { RegisterTab = function() end } }
 
-assert(loadfile("QUI_Alts/alts/views/shared.lua"))("QUI", ns)
-assert(loadfile("QUI_Alts/alts/views/professions.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/shared.lua"))("QUI", ns)
+assert(loadfile("modules/alts/views/professions.lua"))("QUI", ns)
 
 local PV = ns.Alts.ProfessionsView
 assert(PV, "ProfessionsView exported")

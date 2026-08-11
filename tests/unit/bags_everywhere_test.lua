@@ -12,7 +12,7 @@ loader.InstallBaseStubs()
 
 local ns = loader.LoadAll()
 ;(dofile("tests/helpers/locale.lua"))(ns)
-local Store, Summaries = ns.Bags.Store, ns.Bags.Summaries
+local Store, Summaries = ns.Storage.Store, ns.Storage.Summaries
 
 -- everywhere.lua sits outside the data layer: load compiler + details + it
 for _, path in ipairs({

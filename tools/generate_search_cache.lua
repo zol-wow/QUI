@@ -1,9 +1,31 @@
 local ADDON_NAME = "QUI"
 local ROOT = "."
-local LOCALE = (arg and arg[1]) or "enUS"
-local OUTPUT_PATH = (LOCALE == "enUS")
-    and "QUI_OptionsSearch/search_cache.lua"
-    or  ("QUI_OptionsSearch_%s/search_cache.lua"):format(LOCALE)
+-- ONE cache, in English. Its strings are ns.L keys, and the runtime localizes
+-- them at apply time (GUI:PrepareSearchEntry in QUI_Options/framework.lua).
+-- This used to take a locale argument and emit ten translated copies; every
+-- non-enUS client then parsed a 3.2 MB copy on the LOGIN path, because those
+-- copies shipped inside the per-locale translation addons that had to load
+-- synchronously during login. Those addons are gone too — the overlays are
+-- core/locale/<loc>.lua now.
+local OUTPUT_PATH = "QUI_Options/search_cache.lua"
+
+-- Hard-stop the old habit: `lua tools/generate_search_cache.lua deDE` used to
+-- emit QUI_OptionsSearch_deDE/search_cache.lua. It now silently regenerates
+-- the English cache, which looks like a no-op and hides the mistake.
+if arg and arg[1] then
+    io.stderr:write(([[
+generate_search_cache.lua takes no arguments (got %q).
+
+There is one cache, in English, at %s. Its strings are ns.L keys and
+QUI_Options localizes them at apply time (GUI:PrepareSearchEntry), so
+per-locale caches no longer exist — one in a QUI_OptionsSearch_<loc> folder
+would be parsed on the LOGIN path of every non-enUS client.
+
+Run without arguments, or `bash tools/i18n/gen_all_caches.sh` for the full
+enUS.lua + cache + overlay-TOC pass.
+]]):format(tostring(arg[1]), OUTPUT_PATH))
+    os.exit(1)
+end
 _G.unpack = _G.unpack or table.unpack
 local unpack = _G.unpack
 
@@ -134,9 +156,6 @@ local function should_load_script(path)
     if path:match("^libs/") or path:match("^importstrings/") then
         return false
     end
-    if path == "QUI_Options/blizzard_options.lua" then
-        return false
-    end
 
     if path == "core/utils.lua"
         or path == "core/infobar_shared.lua"
@@ -166,32 +185,16 @@ local function should_load_script(path)
         if path:match("^QUI_UnitFrames/unitframes/settings/") then
             return true
         end
+        if path:match("^QUI_Nameplates/nameplates/settings/") then
+            return true
+        end
         if path:match("^QUI_Chat/chat/settings/") then
             return true
         end
         if path:match("^QUI_Bags/bags/settings/") then
             return true
         end
-        if path:match("^QUI_Alts/alts/settings/") then
-            return true
-        end
-        if path:match("^QUI_InfoBar/infobar/settings/") then
-            return true
-        end
-        if path == "QUI_Minimap/minimap/settings/minimap.lua" then
-            return true
-        end
-        if path == "QUI_Datatexts/datatexts/settings/datatexts_features.lua" then
-            return true
-        end
         if path:match("^QUI_ResourceBars/resourcebars/settings/") then
-            return true
-        end
-        if path:match("^QUI_Skinning/skinning/.+/settings/")
-            or path:match("^QUI_Skinning/skinning/settings/") then
-            return true
-        end
-        if path:match("^QUI_QoL/.+/settings/") then
             return true
         end
         if path == "QUI_DamageMeter/damage_meter/settings/damage_meter_content.lua" then
@@ -636,7 +639,9 @@ _G.GetFramerate = function()
     return 144
 end
 _G.GetLocale = function()
-    return LOCALE
+    -- The harvest always runs in English: the emitted strings must be the ns.L
+    -- keys that QUI_Options localizes at apply time.
+    return "enUS"
 end
 -- WoW-style positional string.format (e.g. "%2$s %1$s", "%1$d / %2$d"). Stock
 -- Lua 5.1 rejects "%n$" specifiers but WoW's format supports them and QUI
@@ -771,6 +776,9 @@ _G.C_CVar = {
         return _G.SetCVar(cvar, value)
     end,
 }
+_G.C_NamePlateManager = {
+    SetNamePlateSimplified = function() end,
+}
 _G.ReloadUI = function() end
 _G.date = _G.date or os.date
 _G.wipe = _G.wipe or function(tbl)
@@ -828,6 +836,12 @@ _G.C_Timer = {
         return queue_timer(delay, callback)
     end,
 }
+
+-- Published so page builds can skip work that's meaningless under the
+-- harvest — e.g. live preview-mock rendering, whose math reads numeric DB
+-- leaves that make_auto_table() vivifies as TABLES (math.max(0, table)
+-- errors, and the failed build knocks the page's labels out of the cache).
+_G.QUI_SEARCH_HARVEST = true
 
 local profile_db = make_auto_table()
 profile_db.general.showOptionTooltips = true
@@ -978,25 +992,19 @@ local ns = {
     LSM = libs["LibSharedMedia-3.0"],
 }
 
--- i18n: resolve L["..."] in content files to the target locale so each
--- generated cache is already in-language. Reuses the runtime resolution order.
+-- i18n: resolve L["..."] in content files against the enUS base so the emitted
+-- strings are exactly the ns.L KEYS the runtime resolver looks up. Do not add a
+-- translation overlay here — a translated cache cannot be localized again, and
+-- the whole point of the single-cache design is that translation happens at
+-- apply time from the overlay the client already loaded.
 do
-    local data = { enUS = {}, active = nil }
-    local function loadData(path, sink)
-        local chunk = loadfile(path)
-        if not chunk then return end
-        local fakeNs = { LocaleData = {} }
-        pcall(chunk, "QUI", fakeNs)          -- guarded files early-return unless GetLocale()==LOCALE
-        if fakeNs.LocaleData.enUS then data.enUS = fakeNs.LocaleData.enUS end
-        if fakeNs.LocaleData.active then data.active = fakeNs.LocaleData.active end
-    end
-    loadData("core/locale/enUS.lua")
-    if LOCALE ~= "enUS" then loadData(("core/locale/%s.lua"):format(LOCALE)) end
-    ns.L = setmetatable({}, { __index = function(_, key)
-        if data.active then local v = data.active[key]; if v ~= nil then return v end end
-        local b = data.enUS[key]; if b ~= nil then return b end
-        return key
-    end })
+    -- enUS.lua ships an ordered KEY ARRAY (ns.LocaleData.keys) since the ten
+    -- overlays went positional. It used to ship a keyed identity table, and
+    -- resolving against an identity table returns the key itself -- so the
+    -- identity fallback below is exactly what that lookup always produced,
+    -- with no table to load. Emitting the KEY is the requirement here; see the
+    -- comment above and tests/unit/search_cache_locale_consistency_test.lua.
+    ns.L = setmetatable({}, { __index = function(_, key) return key end })
 end
 
 local function build_lsm_options(kind, fallback)
@@ -1109,6 +1117,44 @@ collect_qui_options_scripts(scripts, script_xml_seen)
 local failures = {}
 local loaded_count = 0
 
+-- groupframes_aura_model.lua is now a compatibility shim: `local E =
+-- ns.AuraElements` captured at file scope, delegating every constructor to the
+-- shared core model (core/aura_elements.lua). That core file is part of
+-- QUI.toc and would normally load via the main scripts loop below, but the
+-- shim (pre-loaded next) needs ns.AuraElements populated BEFORE it runs, so
+-- pull it in here first. Pure Lua / no dependencies, safe to load standalone;
+-- the main loop loading it again later is harmless (a fresh idempotent table
+-- assignment — this file's shim already captured its own reference).
+-- QUI_Options/shared.lua (GetFontList, CVar helpers) calls ns.SafeCall at
+-- harvest time. That guard lives in QUI.toc (core/safecall.lua), which
+-- should_load_script() does not pull into the main loop, so pre-load it
+-- here or every page whose build() touches those helpers errors out of the
+-- harvest. Pure Lua (issecretvalue/geterrorhandler resolved defensively),
+-- safe to load standalone.
+do
+    local safecall_path = "core/safecall.lua"
+    local probe = io.open(safecall_path, "r")
+    if probe then
+        probe:close()
+        local ok, err = load_script(safecall_path)
+        if not ok then
+            failures[#failures + 1] = { path = safecall_path, error = err }
+        end
+    end
+end
+
+do
+    local core_model_path = "core/aura_elements.lua"
+    local probe = io.open(core_model_path, "r")
+    if probe then
+        probe:close()
+        local ok, err = load_script(core_model_path)
+        if not ok then
+            failures[#failures + 1] = { path = core_model_path, error = err }
+        end
+    end
+end
+
 -- The unified-auras editor captures `local Model = ns.QUI_GroupFramesAuraModel`
 -- at file scope, and the auras element-list capture below needs the model's
 -- element constructors. That model lives in the QUI_GroupFrames runtime TOC, not
@@ -1122,6 +1168,71 @@ do
         local ok, err = load_script(model_path)
         if not ok then
             failures[#failures + 1] = { path = model_path, error = err }
+        end
+    end
+end
+
+-- Nameplates' shared-element aura editor mount (nameplates_schema.lua,
+-- RenderAuraRowsSection) captures `local NP = ns.QUI_Nameplates` and
+-- passes NP.DefaultNameplateBucket (plate_auras.lua) as AurasEditor.RenderAuras's
+-- defaultBucketFn, seeding the SAME store the runtime uses. Both files live in
+-- QUI_Nameplates's runtime TOC, not the options TOC the harvest walks, so
+-- pre-load them here, in dependency order: shared.lua creates ns.QUI_Nameplates
+-- first (plate_auras.lua opens with `if not NP then return end` and is a
+-- silent no-op otherwise). Without this the schema's NP upvalue is nil and
+-- the aura editor mount is skipped, leaving those rows unsearchable.
+do
+    local shared_path = "QUI_Nameplates/nameplates/shared.lua"
+    local probe = io.open(shared_path, "r")
+    if probe then
+        probe:close()
+        local ok, err = load_script(shared_path)
+        if not ok then
+            failures[#failures + 1] = { path = shared_path, error = err }
+        end
+    end
+end
+
+do
+    local plate_type_path = "QUI_Nameplates/nameplates/plate_type.lua"
+    local probe = io.open(plate_type_path, "r")
+    if probe then
+        probe:close()
+        local ok, err = load_script(plate_type_path)
+        if not ok then
+            failures[#failures + 1] = { path = plate_type_path, error = err }
+        end
+    end
+end
+
+do
+    local plate_auras_path = "QUI_Nameplates/nameplates/plate_auras.lua"
+    local probe = io.open(plate_auras_path, "r")
+    if probe then
+        probe:close()
+        local ok, err = load_script(plate_auras_path)
+        if not ok then
+            failures[#failures + 1] = { path = plate_auras_path, error = err }
+        end
+    end
+end
+
+-- The setup-wizard page (core/settings/content/auras_wizard_page.lua) captures
+-- `local W = ns.QUI_AuraWizard` at file scope, and its build() calls W.WizardSteps
+-- / W.RoleDefaults / W.CommitTrackedHoTs etc. during the harvest. That module
+-- lives in QUI.toc (core/aura_wizard.lua), which should_load_script() does not
+-- pull into the main loop, so pre-load it here -- AFTER core/aura_elements.lua
+-- (loaded above), which it depends on via `local E = ns.AuraElements`. Without
+-- this the page's W upvalue is nil and the wizard page build errors, leaving
+-- only its nav entry (SetSearchContext) searchable and none of its labels.
+do
+    local wizard_path = "core/aura_wizard.lua"
+    local probe = io.open(wizard_path, "r")
+    if probe then
+        probe:close()
+        local ok, err = load_script(wizard_path)
+        if not ok then
+            failures[#failures + 1] = { path = wizard_path, error = err }
         end
     end
 end
@@ -1274,9 +1385,38 @@ local function emit_tile_search_aliases(tile_config)
     end
 end
 
+local seen_capture_setting_identities = {}
+
+local row_identity = assert(loadfile("tools/lib/search_row_identity.lua"),
+    "tools/lib/search_row_identity.lua not found (run from the repository root)")()
+
+local function resolve_surface_type_key(widget_descriptor, context)
+    return row_identity.ResolveSurfaceTypeKey(widget_descriptor, context.surfaceTypeKey)
+end
+
+local function build_capture_setting_identity(label, widget_descriptor, context)
+    return row_identity.Build(label, widget_descriptor, context)
+end
+
+-- Returns true (and records the identity) the first time a given identity is
+-- claimed; returns false without recording anything on every later call for
+-- the same identity, so the caller should skip emitting that row.
+local function claim_capture_setting_identity(label, widget_descriptor, context)
+    local identity = build_capture_setting_identity(label, widget_descriptor, context)
+    if seen_capture_setting_identities[identity] then
+        return false
+    end
+    seen_capture_setting_identities[identity] = true
+    return true
+end
+
 local function register_capture_setting_entry(entry)
     local context = GUI._searchContext or {}
     if type(entry) ~= "table" or type(entry.label) ~= "string" or entry.label == "" then
+        return nil
+    end
+
+    if not claim_capture_setting_identity(entry.label, entry.widgetDescriptor, context) then
         return nil
     end
 
@@ -1295,6 +1435,7 @@ local function register_capture_setting_entry(entry)
         category = context.category,
         surfaceTabKey = context.surfaceTabKey,
         surfaceUnitKey = context.surfaceUnitKey,
+        surfaceTypeKey = resolve_surface_type_key(entry.widgetDescriptor, context),
         widgetDescriptor = entry.widgetDescriptor,
         keywords = entry.keywords,
         description = entry.description,
@@ -1400,6 +1541,15 @@ local function register_manual_static_setting(context, label, widget_type, db_pa
         end
     end
 
+    -- Same dedupe as register_capture_setting_entry above -- see the comment
+    -- block there. This is the manual/declarative emit path
+    -- (capture_action_bar_per_bar_setting, Totem Bar Grow Direction,
+    -- capture_minimap_setting, capture_datatext_setting), and it shares the
+    -- identity builder and seen-set rather than duplicating the check.
+    if not claim_capture_setting_identity(label, descriptor, context) then
+        return nil
+    end
+
     return GUI:RegisterStaticSettingEntry({
         label = label,
         widgetType = widget_type,
@@ -1415,6 +1565,7 @@ local function register_manual_static_setting(context, label, widget_type, db_pa
         category = context.category,
         surfaceTabKey = context.surfaceTabKey,
         surfaceUnitKey = context.surfaceUnitKey,
+        surfaceTypeKey = resolve_surface_type_key(descriptor, context),
         widgetDescriptor = descriptor,
         keywords = context.keywords,
     })
@@ -1474,6 +1625,7 @@ local function install_search_capture_overrides()
             category = info.category,
             surfaceTabKey = info.surfaceTabKey,
             surfaceUnitKey = info.surfaceUnitKey,
+            surfaceTypeKey = info.surfaceTypeKey,
             keywords = keywords,
         })
     end
@@ -1805,6 +1957,7 @@ local function capture_all_search_features()
     end
 
     GUI:ResetStaticSearchIndex()
+    seen_capture_setting_identities = {}
 
     for _, step in ipairs(build_search_capture_queue()) do
         if step and step.feature then
@@ -1948,7 +2101,7 @@ end
 -- the element renders expanded. The variant matrix covers every conditional
 -- branch (each filterMode, each tracked displayType, multi-spell per-spell rows).
 local function capture_group_frames_auras_elements()
-    local AurasEditor = ns.QUI_GroupFramesAurasSettings
+    local AurasEditor = ns.QUI_AuraElementsEditor
     local Model = ns.QUI_GroupFramesAuraModel
     if type(AurasEditor) ~= "table"
         or type(AurasEditor.RenderAuras) ~= "function"
@@ -1963,8 +2116,8 @@ local function capture_group_frames_auras_elements()
     -- render (they only appear when a strip tracks more than one spell). Missing
     -- raid buff renders twice so both auto-detect and manual buff rows enter the
     -- generated search cache.
-    local function strip(filterMode)
-        local element = Model.NewFilterStripElement("HARMFUL")
+    local function strip(filterMode, auraType)
+        local element = Model.NewFilterStripElement(auraType or "HARMFUL")
         element.filterMode = filterMode
         return element
     end
@@ -1984,7 +2137,15 @@ local function capture_group_frames_auras_elements()
     -- One entry per expanded-element render. label is diagnostic only.
     local variants = {
         { label = "filterStrip:off", element = strip("off") },
-        { label = "filterStrip:classification", element = strip("classification") },
+        { label = "filterStrip:flags", element = strip("flags") },
+        { label = "filterStrip:classify", element = strip("classify") },
+        -- HELPFUL variants: the classify checkboxes + flag tokens differ by
+        -- polarity (Cancelable / Not Cancelable / Big Defensive / External
+        -- Defensive are HELPFUL-only) — without these renders those labels
+        -- vanish from the search cache (they were searchable at HEAD via the
+        -- old flat filter rows).
+        { label = "filterStrip:classify:HELPFUL", element = strip("classify", "HELPFUL") },
+        { label = "filterStrip:flags:HELPFUL", element = strip("flags", "HELPFUL") },
         { label = "filterStrip:whitelist", element = strip("whitelist") },
         { label = "tracked:icon", element = tracked("icon") },
         { label = "tracked:bar", element = tracked("bar") },
@@ -2052,10 +2213,9 @@ local UNIT_FRAMES_SEARCH_CAPTURE_TABS = {
     { key = "bars", label = "Bars", method = "RenderBarsTab" },
     { key = "castbar", label = "Castbar", method = "RenderCastbarTab" },
     { key = "text", label = "Text", method = "RenderTextTab" },
-    { key = "icons", label = "Icons", method = "RenderIconsTab" },
+    { key = "icons", label = "Auras", method = "RenderIconsTab" },
     { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab" },
     { key = "portrait", label = "Portrait", method = "RenderPortraitTab" },
-    { key = "privateAuras", label = "Priv. Auras", method = "RenderPrivateAurasTab" },
 }
 
 local function capture_unit_frames_settings_tabs()
@@ -2097,6 +2257,176 @@ local function capture_unit_frames_settings_tabs()
                         error = err,
                     }
                 end
+            end
+        end
+    end
+
+    return #capture_errors == 0
+end
+
+local NAMEPLATES_SEARCH_CAPTURE_TABS = {
+    { key = "general", label = "General", method = "RenderGeneralTab", subTabIndex = 1 },
+    { key = "visibility", label = "Visibility", method = "RenderVisibilityTab", subTabIndex = 2 },
+    { key = "frame", label = "Frame", method = "RenderFrameTab", subTabIndex = 3, perType = true },
+    { key = "text", label = "Text", method = "RenderTextTab", subTabIndex = 4, perType = true },
+    { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab", subTabIndex = 5, perType = true },
+    { key = "auras", label = "Auras", method = "RenderAurasTab", subTabIndex = 6, perType = true },
+    { key = "castbars", label = "Castbar", method = "RenderCastbarsTab", subTabIndex = 7, perType = true },
+    { key = "colors", label = "Colors", method = "RenderColorsTab", subTabIndex = 8, perType = true },
+}
+
+local NAMEPLATES_SEARCH_CAPTURE_TYPES = {
+    { key = "petMinion" },
+    { key = "friendly" },
+    { key = "bossElite" },
+    { key = "minorTrivial" },
+    { key = "enemyPlayer" },
+    { key = "enemyNPC" },
+}
+
+local function capture_nameplates_settings_tab_variant(schema, tab, typeKey)
+    local render = schema[tab.method]
+    if type(render) ~= "function" then
+        return
+    end
+
+    local host = create_stub_node("Frame", nil, false)
+    host:SetSize(760, 1)
+
+    GUI:ClearSearchContext()
+    local ok, err = xpcall(function()
+        GUI:SetSearchContext({
+            tabIndex = 21,
+            tabName = "Nameplates",
+            subTabIndex = tab.subTabIndex,
+            subTabName = tab.label,
+            tileId = "nameplates",
+            subPageIndex = 1,
+            featureId = "nameplatesPage",
+            category = "frames",
+            surfaceTabKey = tab.key,
+            surfaceTypeKey = typeKey,
+        })
+        render(host, typeKey)
+        GUI:ClearSearchContext()
+    end, debug.traceback)
+    GUI:ClearSearchContext()
+
+    if not ok then
+        capture_errors[#capture_errors + 1] = {
+            featureId = "nameplatesPage",
+            providerKey = typeKey and (typeKey .. ":" .. tab.key) or tab.key,
+            error = err,
+        }
+    end
+end
+
+local function capture_nameplates_settings_tabs()
+    local schema = ns.QUI_NameplatesSettingsSchema
+    if type(schema) ~= "table" then
+        return true
+    end
+
+    for _, tab in ipairs(NAMEPLATES_SEARCH_CAPTURE_TABS) do
+        if tab.perType then
+            for _, type_context in ipairs(NAMEPLATES_SEARCH_CAPTURE_TYPES) do
+                capture_nameplates_settings_tab_variant(schema, tab, type_context.key)
+            end
+        else
+            capture_nameplates_settings_tab_variant(schema, tab, nil)
+        end
+    end
+
+    return #capture_errors == 0
+end
+
+-- Mirrors capture_group_frames_auras_elements(): the per-element aura config
+-- controls only render for the EXPANDED element, so a collapsed-by-default
+-- RenderAurasTab harvest never sees them. Nameplates mounts the same
+-- AurasEditor.RenderAuras() (nameplates_schema.lua RenderAuraRowsSection) on
+-- both its module page and the Auras hub page (auras_nameplate_page.lua), so
+-- both contexts are captured here, each driven with the SAME restricted
+-- capabilities nameplates_schema.lua actually passes at runtime (filterStrip
+-- + tracked only, icon/square/bar display types, hostile polarity) so no
+-- label gets indexed that a real Nameplates user could never reach.
+local NAMEPLATES_AURA_ELEMENT_SEARCH_CONTEXTS = {
+    {
+        tabIndex = 21, tabName = "Nameplates", subTabIndex = 2, subTabName = "Auras",
+        tileId = "nameplates", subPageIndex = 1, featureId = "nameplatesPage",
+        category = "frames", surfaceTabKey = "auras",
+    },
+    {
+        tabIndex = 21, tabName = "Auras", subTabIndex = 5, subTabName = "Nameplates",
+        tileId = "auras", subPageIndex = 5, featureId = "aurasNameplatePage",
+    },
+}
+
+local function capture_nameplates_auras_elements()
+    local AurasEditor = ns.QUI_AuraElementsEditor
+    local E = ns.AuraElements
+    if type(AurasEditor) ~= "table"
+        or type(AurasEditor.RenderAuras) ~= "function"
+        or type(E) ~= "table"
+        or type(E.NewFilterStripElement) ~= "function"
+        or type(E.NewTrackedElement) ~= "function" then
+        return true
+    end
+
+    local function buildVariants()
+        local function strip(filterMode, auraType)
+            local element = E.NewFilterStripElement(auraType or "HARMFUL")
+            element.filterMode = filterMode
+            return element
+        end
+        local function tracked(displayType)
+            return E.NewTrackedElement({ 12345, 67890 }, displayType)
+        end
+        return {
+            { label = "filterStrip:off", element = strip("off") },
+            { label = "filterStrip:flags", element = strip("flags") },
+            { label = "filterStrip:classify", element = strip("classify") },
+            { label = "filterStrip:classify:HELPFUL", element = strip("classify", "HELPFUL") },
+            { label = "filterStrip:flags:HELPFUL", element = strip("flags", "HELPFUL") },
+            { label = "filterStrip:whitelist", element = strip("whitelist") },
+            { label = "tracked:icon", element = tracked("icon") },
+            { label = "tracked:bar", element = tracked("bar") },
+            { label = "tracked:square", element = tracked("square") },
+        }
+    end
+
+    local NAMEPLATES_AURA_ELEMENT_CAPS = {
+        elementTypes        = { filterStrip = true, tracked = true },
+        trackedDisplayTypes = { icon = true, square = true, bar = true },
+        unitPolarity        = "hostile",
+        durationDecimals    = true,
+        roleGate            = false,
+        allowSpecOverride   = false,
+    }
+
+    for _, context in ipairs(NAMEPLATES_AURA_ELEMENT_SEARCH_CONTEXTS) do
+        for _, variant in ipairs(buildVariants()) do
+            local host = create_stub_node("Frame", nil, false)
+            host:SetSize(760, 1)
+
+            local auras = { enabled = true, elements = { ["*"] = { variant.element } } }
+
+            GUI:ClearSearchContext()
+            local ok, err = xpcall(function()
+                GUI:SetSearchContext(context)
+                AurasEditor.RenderAuras(host, auras, "*", function() end, {
+                    forceSelectedIndex = 1,
+                    capabilities = NAMEPLATES_AURA_ELEMENT_CAPS,
+                })
+                GUI:ClearSearchContext()
+            end, debug.traceback)
+            GUI:ClearSearchContext()
+
+            if not ok then
+                capture_errors[#capture_errors + 1] = {
+                    featureId = context.featureId,
+                    providerKey = "auras:" .. variant.label,
+                    error = err,
+                }
             end
         end
     end
@@ -2305,7 +2635,14 @@ local MINIMAP_DRAWER_GROWTH_OPTIONS = {
     { value = "UP", text = "Up" },
 }
 
+-- HARDCODED MIRROR of toggleIconOptions in
+-- modules/minimap/settings/minimap_providers.lua. The generator does not read
+-- that provider for this control, so the two drift silently — the guard is
+-- tests/unit/minimap_drawer_toggle_icon_test.lua. Text is English on purpose:
+-- this mirror bypasses ns.L, which is the correct outcome for the brand name
+-- but a side effect, not a deliberate guard.
 local MINIMAP_DRAWER_TOGGLE_ICON_OPTIONS = {
+    { value = "qui", text = "QUI" },
     { value = "hammer", text = "Hammer" },
     { value = "grid", text = "Grid Dots" },
 }
@@ -2461,7 +2798,6 @@ local function capture_minimap_datatext_settings()
     capture_minimap_setting("Drawer Appearance", "Border Color", "colorpicker", "profile.minimap.buttonDrawer", "borderColor", { options = { noAlpha = true } })
 
     capture_datatext_setting("Panel Settings", "Enable Minimap Datatext", "toggle", "profile.datatext", "enabled")
-    capture_datatext_setting("Panel Settings", "Force Single Line", "toggle", "profile.datatext", "forceSingleLine")
     capture_datatext_setting("Panel Settings", "Panel Height (Per Row)", "slider", "profile.datatext", "height", { min = 18, max = 50, step = 1 })
     capture_datatext_setting("Panel Settings", "Background Transparency", "slider", "profile.datatext", "bgOpacity", { min = 0, max = 100, step = 5 })
     capture_datatext_setting("Panel Settings", "Border Size (0=hidden)", "slider", "profile.datatext", "borderSize", { min = 0, max = 8, step = 1 })
@@ -2489,6 +2825,8 @@ capture_cdm_settings_tabs()
 capture_group_frames_settings_tabs()
 capture_group_frames_auras_elements()
 capture_unit_frames_settings_tabs()
+capture_nameplates_settings_tabs()
+capture_nameplates_auras_elements()
 capture_action_bar_per_bar_settings()
 capture_minimap_datatext_settings()
 
@@ -2526,6 +2864,8 @@ local tile_order = {
     "QUI_GlobalTile",
     "QUI_UnitFramesTile",
     "QUI_GroupFramesTile",
+    "QUI_NameplatesTile",
+    "QUI_AurasTile",
     "QUI_ActionBarsTile",
     "QUI_CooldownManagerTile",
     "QUI_ResourceBarsTile",
@@ -2598,7 +2938,8 @@ local function clear_non_plain_arrays_before_route_seed()
                 and is_scalar(entry.providerKey)
                 and is_scalar(entry.category)
                 and is_scalar(entry.surfaceTabKey)
-                and is_scalar(entry.surfaceUnitKey) then
+                and is_scalar(entry.surfaceUnitKey)
+                and is_scalar(entry.surfaceTypeKey) then
                 filtered[#filtered + 1] = entry
             end
         end
@@ -2733,6 +3074,7 @@ local function entry_sort_key(entry)
         entry.category or "",
         entry.surfaceTabKey or "",
         entry.surfaceUnitKey or "",
+        entry.surfaceTypeKey or "",
     }, "\31")
 end
 
@@ -2786,83 +3128,20 @@ table.sort(navigation_entries, function(a, b)
 end)
 apply_feature_keywords(navigation_entries)
 
-local function is_array(value)
-    if type(value) ~= "table" then
-        return false
-    end
-
-    local count = 0
-    for key in pairs(value) do
-        if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
-            return false
-        end
-        count = count + 1
-    end
-
-    return count == #value
-end
-
-local function sorted_keys(tbl)
-    local keys = {}
-    for key in pairs(tbl) do
-        keys[#keys + 1] = key
-    end
-    table.sort(keys, function(a, b)
-        local ta, tb = type(a), type(b)
-        if ta ~= tb then
-            return ta < tb
-        end
-        if ta == "number" or ta == "string" then
-            return a < b
-        end
-        return tostring(a) < tostring(b)
-    end)
-    return keys
-end
-
-local function serialize(value, indent)
-    indent = indent or ""
-    local value_type = type(value)
-    if value_type == "string" then
-        return string.format("%q", value)
-    end
-    if value_type == "number" or value_type == "boolean" then
-        return tostring(value)
-    end
-    if value_type == "nil" then
-        return "nil"
-    end
-    if value_type ~= "table" then
-        return "nil"
-    end
-
-    local next_indent = indent .. "    "
-    local parts = { "{" }
-
-    if is_array(value) then
-        for index = 1, #value do
-            parts[#parts + 1] = next_indent .. serialize(value[index], next_indent) .. ","
-        end
-    else
-        for _, key in ipairs(sorted_keys(value)) do
-            parts[#parts + 1] = next_indent
-                .. "["
-                .. serialize(key, next_indent)
-                .. "] = "
-                .. serialize(value[key], next_indent)
-                .. ","
-        end
-    end
-
-    parts[#parts + 1] = indent .. "}"
-    return table.concat(parts, "\n")
-end
-
-local cache = {
-    version = 1,
-    settings = settings_entries,
-    navigation = navigation_entries,
-}
+-- Records are emitted POSITIONALLY under a per-group schema header, and the
+-- whole payload ships as a long-bracket string. The keyed, indented table this
+-- replaced was 3,179,748 bytes of which ~69% was `["field"] = ` scaffolding,
+-- indentation and newlines repeated once per record; and every byte of it was
+-- compiled by the Lua parser whether or not anyone opened the search box.
+--
+-- Underscore-prefixed keys (_normLabel, _rawKeywords, …) are dropped by
+-- pack_emit at every level. GUI:PrepareSearchEntry attaches them as the
+-- registry is populated, so the headless harvest sees them too — but they are
+-- computed from the ENGLISH strings and the runtime recomputes them after
+-- localizing, so serializing them would ship values that are wrong for every
+-- non-enUS client.
+local pack_emit = assert(loadfile("tools/lib/pack_emit.lua"),
+    "tools/lib/pack_emit.lua not found (run from the repository root)")()
 
 if #capture_errors > 0 then
     io.stderr:write(("search capture reported %d error(s):\n"):format(#capture_errors))
@@ -2880,16 +3159,44 @@ if #settings_entries == 0 or #navigation_entries == 0 then
     os.exit(1)
 end
 
+local settings_schema   = pack_emit.derive_schema(settings_entries)
+local navigation_schema = pack_emit.derive_schema(navigation_entries)
+
+local packed = table.concat({
+    "{settings=", pack_emit.rows(settings_entries, settings_schema),
+    ",navigation=", pack_emit.rows(navigation_entries, navigation_schema),
+    ",version=1}",
+})
+
+pack_emit.assert_long_bracket_safe(packed, "]==]")
+
+-- Two things about the emitted file that used to be explained in comments
+-- INSIDE it. The addon tree is kept comment-free (tools/strip_comments.sh), and
+-- a generator that emits comments makes its output permanently "stale" against
+-- that, so the explanations live here instead:
+--
+--   * ns.QUI_SearchCacheSchema — records are POSITIONAL: row[i] is the field
+--     named schema[i]. An absent field is `false`, not a hole, so every row has
+--     the schema's arity; a trailing nil would truncate the array and shift
+--     every later read.
+--   * ns.QUI_SearchCachePacked — a long-bracket STRING, so loading the file
+--     lexes ONE token. QUI_Options/framework.lua compiles it on first search
+--     via ns.Unpack.
+--
+-- Only the "do not edit by hand" banner is still emitted: it is what stops an
+-- agent hand-editing generated output that the next regen silently eats.
 local output = table.concat({
     "-- Generated by tools/generate_search_cache.lua; do not edit by hand.",
     "local ADDON_NAME, ns = ...",
     "",
-    "ns.QUI_SearchCache = " .. serialize(cache),
+    "ns.QUI_SearchCacheSchema = {",
+    "    settings = " .. pack_emit.schema(settings_schema) .. ",",
+    "    navigation = " .. pack_emit.schema(navigation_schema) .. ",",
+    "}",
     "",
-    "local GUI = QUI and QUI.GUI",
-    "if GUI and type(GUI.ApplyGeneratedSearchCache) == \"function\" then",
-    "    GUI:ApplyGeneratedSearchCache(ns.QUI_SearchCache)",
-    "end",
+    "ns.QUI_SearchCachePacked = [==[",
+    packed,
+    "]==]",
     "",
 }, "\n")
 

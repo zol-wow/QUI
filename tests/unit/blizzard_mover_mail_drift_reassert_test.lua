@@ -27,7 +27,7 @@ end
 -- Registry entries: the mail cluster must opt into drift re-assert; the
 -- world map must NOT (drift-fighting would snap back Blizzard's own
 -- maximize flow, which re-anchors the shown map on purpose).
-local frameRegistry = readFile("QUI_QoL/qol/blizzard_mover_frames.lua")
+local frameRegistry = readFile("modules/qol/blizzard_mover_frames.lua")
 local mailBlock = assert(blockForId(frameRegistry, "MailFrame"), "MailFrame registry entry should exist")
 assert(mailBlock:find("reassertOnDrift = true", 1, true), "MailFrame must opt into drift re-assert")
 local openMailBlock = assert(blockForId(frameRegistry, "OpenMailFrame"), "OpenMailFrame registry entry should exist")
@@ -178,7 +178,7 @@ local ns = {
     SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
 }
 
-assert(loadfile("QUI_QoL/qol/blizzard_mover.lua"))("QUI", ns)
+assert(loadfile("modules/qol/blizzard_mover.lua"))("QUI", ns)
 local mover = assert(ns.QUI_BlizzardMover, "Blizzard mover module should load")
 mover.functions.InitDB()
 

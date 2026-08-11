@@ -20,17 +20,18 @@ end
 
 local buffBorders = readFile("QUI_ActionBars/actionbars/buffborders.lua")
 local cdmBars = readFile("QUI_CDM/cdm/cdm_bar_renderer.lua")
-local partyKeystones = readFile("QUI_QoL/dungeon/party_keystones.lua")
+local partyKeystones = readFile("modules/dungeon/party_keystones.lua")
 
-assert(buffBorders:find("local function GetBorderSizePx", 1, true),
-    "buff border module must convert configured border size through the pixel helper")
-assert(not buffBorders:find("SetHeight(borderSize)", 1, true),
+-- buffborders draws no border textures itself anymore: live aura/enchant
+-- borders are owned by AuraSkin/AuraTheme and the layout-mode preview moved
+-- to core/aura_preview.lua. Lock the exit — border drawing must not be
+-- reintroduced here bypassing the shared pixel-aware paths.
+assert(not buffBorders:find("SetHeight(borderSize", 1, true),
     "buff border textures must not use raw configured border size for height")
-assert(not buffBorders:find("SetWidth(borderSize)", 1, true),
+assert(not buffBorders:find("SetWidth(borderSize", 1, true),
     "buff border textures must not use raw configured border size for width")
-assert(not buffBorders:find("iconSize %- borderSize %* 2"),
-    "private aura icon dimensions must subtract frame-space pixel border size")
-
+assert(not buffBorders:find("BorderTop", 1, true),
+    "buffborders must not draw its own border textures; borders are owned by AuraSkin/AuraTheme")
 assert(cdmBars:find("local function GetBorderSizePx", 1, true),
     "CDM bars must convert configured border size through the pixel helper")
 assert(not cdmBars:find("SetHeight(borderSize)", 1, true),
@@ -46,14 +47,14 @@ assert(not partyKeystones:find("edgeSize = 1", 1, true),
 local rawBackdropFiles = {
     "QUI_Options/framework.lua",
     "QUI_GroupFrames/groupframes/groupframes_editmode.lua",
-    "QUI_GroupFrames/groupframes/settings/group_frames_auras_editor.lua",
+    "QUI_Options/aura_elements_editor.lua",
     "core/diagnostics_console.lua",
-    "QUI_QoL/utility/settings/keybinds_content.lua",
+    "modules/utility/settings/keybinds_content.lua",
     "QUI_Chat/chat/settings/chat_frame1_provider.lua",
-    "QUI_QoL/trackers/preytracker.lua",
+    "modules/trackers/preytracker.lua",
     "modules/layout/layoutmode_settings.lua",
     "QUI_CDM/cdm/settings/composer.lua",
-    "QUI_QoL/qol/consumablecheck.lua",
+    "modules/qol/consumablecheck.lua",
 }
 
 for _, path in ipairs(rawBackdropFiles) do
@@ -63,9 +64,9 @@ for _, path in ipairs(rawBackdropFiles) do
 end
 
 local characterBorderFiles = {
-    "QUI_Skinning/skinning/frames/character.lua",
-    "QUI_Skinning/skinning/character_pane/character.lua",
-    "QUI_Skinning/skinning/character_pane/inspect.lua",
+    "modules/skinning/frames/character.lua",
+    "modules/skinning/character_pane/character.lua",
+    "modules/skinning/character_pane/inspect.lua",
 }
 
 for _, path in ipairs(characterBorderFiles) do
@@ -81,11 +82,11 @@ for _, path in ipairs(characterBorderFiles) do
 end
 
 local rawBorderOffsetFiles = {
-    "QUI_QoL/qol/actiontracker.lua",
-    "QUI_Skinning/skinning/gameplay/keystone.lua",
-    "QUI_Skinning/skinning/notifications/loot.lua",
-    "QUI_Skinning/skinning/frames/overrideactionbar.lua",
-    "QUI_Skinning/skinning/frames/instanceframes.lua",
+    "modules/qol/actiontracker.lua",
+    "modules/skinning/gameplay/keystone.lua",
+    "modules/skinning/notifications/loot.lua",
+    "modules/skinning/frames/overrideactionbar.lua",
+    "modules/skinning/frames/instanceframes.lua",
 }
 
 for _, path in ipairs(rawBorderOffsetFiles) do
@@ -97,9 +98,9 @@ for _, path in ipairs(rawBorderOffsetFiles) do
 end
 
 local rawTwoPixelBorderOffsetFiles = {
-    "QUI_Skinning/skinning/gameplay/powerbaralt.lua",
-    "QUI_Skinning/skinning/frames/statustracking.lua",
-    "QUI_Skinning/skinning/notifications/alerts.lua",
+    "modules/skinning/gameplay/powerbaralt.lua",
+    "modules/skinning/frames/statustracking.lua",
+    "modules/skinning/notifications/alerts.lua",
 }
 
 for _, path in ipairs(rawTwoPixelBorderOffsetFiles) do
@@ -134,7 +135,7 @@ assert(not layoutModeUi:find("guide:SetWidth%(1%)"),
 
 -- The skinning engine was relocated into core/uikit.lua (loaded first, exposed as
 -- both ns.UIKit and ns.SkinBase). The scale-refreshing pixel backdrop helper now
--- lives there; QUI_Skinning/skinning/base.lua is a thin stub.
+-- lives there; modules/skinning/base.lua is a thin stub.
 local skinBase = readFile("core/uikit.lua")
 assert(skinBase:find("function SkinBase.ApplyPixelBackdrop", 1, true),
     "skinning base must expose a scale-refreshing pixel backdrop helper")
@@ -160,7 +161,7 @@ for _, path in ipairs(listLuaFiles("modules/skinning")) do
     assert(not src:find("line:SetHeight%(1%)"),
         path .. " must not create one-pixel skinning lines with raw 1 UI-unit height")
 
-    if path ~= "QUI_Skinning/skinning/base.lua" then
+    if path ~= "modules/skinning/base.lua" then
         local pos = 1
         while true do
             local startPos = src:find(":SetBackdrop%(%s*%{", pos)

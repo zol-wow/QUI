@@ -89,7 +89,7 @@ GameTooltip.link = nil
 GameTooltip.shown = nil
 GameTooltip.hidden = nil
 
-enterCallbacks[1](nil, chatFrame, "addon:quaziiuichat:url:https://discord.gg/FFUjA4JXnH")
+enterCallbacks[1](nil, chatFrame, "addon:quichat:url:https://discord.gg/J9Q87C9CM8")
 assert(GameTooltip.link == nil, "QUI URL addon links should not be passed to GameTooltip:SetHyperlink")
 assert(GameTooltip.shown == nil, "QUI URL addon links should not show an item tooltip")
 

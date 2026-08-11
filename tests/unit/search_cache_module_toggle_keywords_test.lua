@@ -10,12 +10,7 @@
 --
 -- Run: lua tests/unit/search_cache_module_toggle_keywords_test.lua
 
-local chunk = assert(loadfile("QUI_OptionsSearch/search_cache.lua"),
-    "could not load QUI_OptionsSearch/search_cache.lua")
-local ns = {}
-chunk("QUI", ns)
-
-local cache = assert(ns.QUI_SearchCache, "search_cache.lua must define ns.QUI_SearchCache")
+local cache = dofile("tests/helpers/search_cache.lua")()
 local nav = assert(cache.navigation, "search cache must have a navigation section")
 
 local function findModuleToggle(featureId)

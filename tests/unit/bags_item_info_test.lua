@@ -15,7 +15,7 @@ local requested = {}
 _G.C_Item.RequestLoadItemDataByID = function(itemID) requested[#requested + 1] = itemID end
 
 local ns = loader.LoadAll(nil, "item_info.lua")
-local ItemInfo = ns.Bags.ItemInfo
+local ItemInfo = ns.Storage.ItemInfo
 
 -- Test 1: derived info is fetched once then session-cached
 local d1 = ItemInfo.GetDerived(6948)

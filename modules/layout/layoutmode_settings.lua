@@ -1,12 +1,5 @@
----------------------------------------------------------------------------
--- QUI Layout Mode — Settings Panel
--- Context-aware settings panel that appears when a mover is selected
--- in Layout Mode. Modules register providers for their frame keys.
----------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 
--- Re-applies a FontString's current font through the CJK-safe family resolver
--- so Chinese/Korean glyphs render (GameFont* templates are Latin-only).
 local function EnsureCJKFont(fs)
     if not fs or not fs.GetFont then return fs end
     local fp, sz, fl = fs:GetFont()
@@ -22,7 +15,6 @@ local UIKit = ns.UIKit
 local QUI_LayoutMode_Settings = {}
 ns.QUI_LayoutMode_Settings = QUI_LayoutMode_Settings
 
--- Accent color: cached from GUI.Colors.accent, refreshed when layout mode opens.
 local ACCENT_R, ACCENT_G, ACCENT_B = 0.376, 0.647, 0.980
 
 function QUI_LayoutMode_Settings:RefreshAccentColor()
@@ -32,7 +24,6 @@ function QUI_LayoutMode_Settings:RefreshAccentColor()
         ACCENT_G = GUI.Colors.accent[2]
         ACCENT_B = GUI.Colors.accent[3]
     end
-    -- Repaint accent gradient overlay if panel exists
     local panel = self._panel
     local glow = panel and panel._accentGlow
     if glow then
@@ -53,7 +44,6 @@ function QUI_LayoutMode_Settings:RefreshAccentColor()
     end
 end
 
--- Panel constants
 local PANEL_WIDTH = 420
 local PANEL_HEIGHT = 650
 local PANEL_STRATA = "FULLSCREEN_DIALOG"
@@ -62,29 +52,17 @@ local TITLE_HEIGHT = 32
 local CONTENT_PADDING = 12
 local BORDER_SIZE = 1
 
--- Scroll speed
 local SCROLL_STEP = 60
 
-local function GetPixelSize(frame)
-    if UIKit and UIKit.GetPixelSize then
-        return UIKit.GetPixelSize(frame)
-    end
-    local core = ns.Addon
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-end
+local GetPixelSize = UIKit.GetPixelSize
 
 local function GetPixelLineSize(frame, pixels)
     return (pixels or 1) * GetPixelSize(frame)
 end
 
--- State
 QUI_LayoutMode_Settings._currentKey = nil
 QUI_LayoutMode_Settings._panel = nil
 QUI_LayoutMode_Settings._built = false
-
----------------------------------------------------------------------------
--- PROVIDER REGISTRY
----------------------------------------------------------------------------
 
 local function GetSharedProviderRegistry()
     local Settings = ns.Settings
@@ -101,11 +79,6 @@ function QUI_LayoutMode_Settings:RegisterSharedProvider(key, provider)
         sharedProviders:Register(key, provider)
     end
 end
-
-
----------------------------------------------------------------------------
--- PANEL CREATION
----------------------------------------------------------------------------
 
 local function CreateBorderLine(parent, p1, r1, p2, r2, isHoriz, r, g, b, a)
     local line = parent:CreateTexture(nil, "BORDER")
@@ -174,11 +147,6 @@ local function SafeGetVerticalScroll(scrollFrame)
     return ok2 and safeCurrent or 0
 end
 
--- Delegates to the central UIKit.CreateCloseButton (line-X close chip, accent
--- hover). The body historically anchored "RIGHT"/"RIGHT" regardless of the
--- relativePoint arg, so that anchor is preserved here. ~1px edge difference vs
--- the old SetBackdrop chrome (kit uses manual textures); colors are identical
--- (GUI.Colors border/white lines, live accent hover).
 local function CreateQUIStyleCloseButton(parent, relativeTo, relativePoint, xOffset, yOffset, onClick)
     return UIKit.CreateCloseButton(parent, {
         point = "RIGHT",
@@ -206,12 +174,10 @@ local function CreatePanel()
     local bgContent = C.bgContent or {1, 1, 1, 0.02}
     local accentGlow = C.accentGlow or {ACCENT_R, ACCENT_G, ACCENT_B, 0.06}
 
-    -- Background (matches main settings window deep dark)
     local bg = panel:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.97)
 
-    -- Border
     panel._pixelBorderLines = {
         CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true),
         CreateBorderLine(panel, "BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true),
@@ -219,7 +185,6 @@ local function CreatePanel()
         CreateBorderLine(panel, "TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false),
     }
 
-    -- Title bar background
     local borderSize = GetPixelLineSize(panel, BORDER_SIZE)
     local titleBg = panel:CreateTexture(nil, "ARTWORK")
     titleBg:SetPoint("TOPLEFT", borderSize, -borderSize)
@@ -228,14 +193,12 @@ local function CreatePanel()
     titleBg:SetColorTexture(0.04, 0.06, 0.1, 1)
     panel._titleBg = titleBg
 
-    -- Content-area white-tint surface (matches main settings bgContent)
     local contentSurface = panel:CreateTexture(nil, "BACKGROUND", nil, 1)
     contentSurface:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT", 0, 0)
     contentSurface:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -borderSize, borderSize)
     contentSurface:SetColorTexture(bgContent[1], bgContent[2], bgContent[3], bgContent[4] or 0.02)
     panel._contentSurface = contentSurface
 
-    -- Horizontal accent gradient overlay (matches main settings glow)
     local glow = panel:CreateTexture(nil, "BACKGROUND", nil, 2)
     glow:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT", 0, 0)
     glow:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -borderSize, borderSize)
@@ -254,7 +217,6 @@ local function CreatePanel()
     end
     panel._accentGlow = glow
 
-    -- Title bar bottom line
     local titleLine = panel:CreateTexture(nil, "ARTWORK", nil, 1)
     titleLine:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT")
     titleLine:SetPoint("TOPRIGHT", titleBg, "BOTTOMRIGHT")
@@ -266,7 +228,6 @@ local function CreatePanel()
         UIKit.RegisterScaleRefresh(panel, "layoutModeSettingsPixelLayout", RefreshPanelPixelLayout)
     end
 
-    -- Title text
     local titleText = EnsureCJKFont(panel:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
     titleText:SetPoint("LEFT", titleBg, "LEFT", 12, 0)
     titleText:SetPoint("RIGHT", titleBg, "RIGHT", -32, 0)
@@ -275,12 +236,10 @@ local function CreatePanel()
     titleText:SetText(ns.L["Settings"])
     panel._titleText = titleText
 
-    -- Close button
     local closeBtn = CreateQUIStyleCloseButton(panel, titleBg, "TOPRIGHT", -6, 0, function()
         QUI_LayoutMode_Settings:Hide()
     end)
 
-    -- Drag handle (title bar)
     local dragHandle = CreateFrame("Frame", nil, panel)
     dragHandle:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
     dragHandle:SetPoint("TOPRIGHT", closeBtn, "TOPLEFT", -4, 0)
@@ -295,7 +254,6 @@ local function CreatePanel()
         panel._userDragged = true
     end)
 
-    -- Scroll frame for content
     local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", CONTENT_PADDING, -(TITLE_HEIGHT + CONTENT_PADDING))
     scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -(CONTENT_PADDING + 22), CONTENT_PADDING)
@@ -305,7 +263,6 @@ local function CreatePanel()
     content:SetHeight(1)
     scrollFrame:SetScrollChild(content)
 
-    -- Style scrollbar
     local scrollBar = scrollFrame.ScrollBar
     if scrollBar then
         scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", 4, -16)
@@ -319,7 +276,6 @@ local function CreatePanel()
         if scrollUp then scrollUp:Hide(); scrollUp:SetAlpha(0) end
         if scrollDown then scrollDown:Hide(); scrollDown:SetAlpha(0) end
 
-        -- Auto-hide scrollbar when not needed
         scrollBar:HookScript("OnShow", function(self)
             C_Timer.After(0.066, function()
                 local maxScroll = SafeGetVerticalScrollRange(scrollFrame)
@@ -330,23 +286,17 @@ local function CreatePanel()
         end)
     end
 
-    -- Mouse wheel scrolling
     scrollFrame:EnableMouseWheel(true)
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local currentScroll = SafeGetVerticalScroll(self)
         local maxScroll = SafeGetVerticalScrollRange(self)
-        local okNew, newScroll = pcall(function()
-            return math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
-        end)
-        if okNew then
-            pcall(self.SetVerticalScroll, self, newScroll)
-        end
+        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
+        self:SetVerticalScroll(newScroll)
     end)
 
     panel._scrollFrame = scrollFrame
     panel._content = content
 
-    -- Placeholder message (shown when no provider exists)
     local placeholder = EnsureCJKFont(content:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
     placeholder:SetPoint("TOP", content, "TOP", 0, -40)
     placeholder:SetTextColor(0.6, 0.65, 0.7, 1)
@@ -358,13 +308,8 @@ local function CreatePanel()
     return panel
 end
 
----------------------------------------------------------------------------
--- POSITIONING (adjacent to the slide-out drawer)
----------------------------------------------------------------------------
-
 local function PositionAdjacentToDrawer(panel)
     local ui = ns.QUI_LayoutMode_UI
-    -- Prefer anchoring to drawer if visible, fall back to toolbar panel
     local anchor = ui and ((ui._drawer and ui._drawer:IsShown() and ui._drawer) or ui._toolbarPanel)
     if not anchor then return end
 
@@ -379,12 +324,10 @@ local function PositionAdjacentToDrawer(panel)
     local x, y
 
     if side == "LEFT" then
-        -- Drawer is to the right of toolbar; settings goes right of drawer
         local anchorRight = anchor:GetRight()
         if anchorRight then
             x = anchorRight + gap
             if x + panelW > screenW then
-                -- Not enough space right, try left of toolbar
                 local tabLeft = ui._toolbar and ui._toolbar:GetLeft()
                 x = tabLeft and (tabLeft - panelW - gap) or (screenW - panelW - gap)
             end
@@ -392,12 +335,10 @@ local function PositionAdjacentToDrawer(panel)
             x = gap
         end
     else
-        -- Drawer is to the left of toolbar; settings goes left of drawer
         local anchorLeft = anchor:GetLeft()
         if anchorLeft then
             x = anchorLeft - panelW - gap
             if x < 0 then
-                -- Not enough space left, try right of toolbar
                 local tabRight = ui._toolbar and ui._toolbar:GetRight()
                 x = tabRight and (tabRight + gap) or gap
             end
@@ -406,7 +347,6 @@ local function PositionAdjacentToDrawer(panel)
         end
     end
 
-    -- Vertical: align top with anchor, clamp to screen
     local anchorTop = anchor:GetTop()
     y = math.min(anchorTop or (screenH - gap), screenH - gap)
     y = math.max(y, panelH + gap)
@@ -415,15 +355,10 @@ local function PositionAdjacentToDrawer(panel)
     panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
 end
 
----------------------------------------------------------------------------
--- CONTENT MANAGEMENT
----------------------------------------------------------------------------
-
 local function ClearContent(panel)
     local content = panel._content
     local GUI = _G.QUI and _G.QUI.GUI
 
-    -- Save collapsible expanded states before clearing
     local expandedStates = {}
     for _, child in pairs({content:GetChildren()}) do
         if child._expanded ~= nil and child._sectionTitle then
@@ -432,8 +367,6 @@ local function ClearContent(panel)
     end
     QUI_LayoutMode_Settings._expandedStates = expandedStates
 
-    -- Restore the true original SetHeight before clearing, so stacked hooks
-    -- from previous BuildContent calls don't accumulate and corrupt heights.
     if content._origSetHeight then
         content.SetHeight = content._origSetHeight
     end
@@ -442,12 +375,17 @@ local function ClearContent(panel)
         GUI:CleanupWidgetTree(content)
     end
 
-    -- Hide and release children
     for _, child in pairs({content:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
+        if child == panel._infoSection then
+            if UIKit and UIKit.CancelValueAnimation then
+                UIKit.CancelValueAnimation(child, "anchoringInfo")
+            end
+            child:Hide()
+        else
+            child:Hide()
+            child:SetParent(nil)
+        end
     end
-    -- Hide font strings (except placeholder)
     for _, region in pairs({content:GetRegions()}) do
         if region ~= panel._placeholder then
             region:Hide()
@@ -459,8 +397,6 @@ local function ClearContent(panel)
     pcall(panel._scrollFrame.SetVerticalScroll, panel._scrollFrame, 0)
 end
 
---- Build the anchor chain text for a given frame key.
---- Returns a string like "Frame > Parent > Grandparent > Screen Center"
 local function BuildAnchorChainText(key)
     local fa
     local core = ns.Helpers.GetCore()
@@ -478,7 +414,6 @@ local function BuildAnchorChainText(key)
 
         local entry = fa[current]
         if type(entry) ~= "table" then
-            -- Frame has no anchoring entry — it's positioned by layout mode
             local info = ns.FRAME_ANCHOR_INFO and ns.FRAME_ANCHOR_INFO[current]
             local name = info and info.displayName or current
             table.insert(lines, name .. "  (" .. ns.L["layout mode"] .. ")")
@@ -555,7 +490,7 @@ local function BuildContent(panel, key)
 
     if feature and Renderer and type(Renderer.RenderFeature) == "function" then
         if type(feature.onNavigate) == "function" then
-            pcall(feature.onNavigate, key, nil, {
+            ns.SafeCall("bulkhead", feature.onNavigate, key, nil, {
                 source = "layoutmode-drawer",
             })
         end
@@ -570,7 +505,7 @@ local function BuildContent(panel, key)
                 U._useMinimalDrawerChrome = true
                 U._layoutModePositionOnly = usePositionOnly
             end
-            local ok2, h = pcall(Renderer.RenderFeature, Renderer, feature, content, {
+            local ok2, h = ns.SafeCallMethod("bulkhead", Renderer, "RenderFeature", feature, content, {
                 surface = "layout",
                 width = contentWidth,
                 includePosition = true,
@@ -614,15 +549,11 @@ local function BuildContent(panel, key)
         end
     end
 
-    -- Anchoring Details section — appended after provider content
     if U and U.CreateCollapsible then
-        -- Determine anchor status. Features whose anchor lives outside the
-        -- shared frameAnchoring table (e.g. DandersFrames stores anchor in
-        -- db.dandersFrames.<container>) can override this via feature.getAnchorStatus.
         local statusText
         local customStatus
         if feature and type(feature.getAnchorStatus) == "function" then
-            local ok, result = pcall(feature.getAnchorStatus, key)
+            local ok, result = ns.SafeCall("bulkhead", feature.getAnchorStatus, key)
             if ok and type(result) == "table" then
                 customStatus = result
             end
@@ -668,86 +599,107 @@ local function BuildContent(panel, key)
             chainText = BuildAnchorChainText(key)
         end
 
-        local infoSection = CreateFrame("Frame", nil, content)
         local HEADER_HEIGHT = U.HEADER_HEIGHT or 24
+        local infoSection = panel._infoSection
 
-        -- Build collapsible manually here to avoid needing sections/relayout
-        local btn = CreateFrame("Button", nil, infoSection)
-        btn:SetPoint("TOPLEFT", 0, 0)
-        btn:SetPoint("TOPRIGHT", 0, 0)
-        btn:SetHeight(HEADER_HEIGHT)
+        if not infoSection then
+            infoSection = CreateFrame("Frame", nil, content)
+            panel._infoSection = infoSection
+            infoSection._sectionTitle = "Anchoring Details"
 
-        local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
-            point = "LEFT",
-            relativeTo = btn,
-            relativePoint = "LEFT",
-            xPixels = 2,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-            expanded = true,
-            collapsedDirection = "right",
-            r = ACCENT_R,
-            g = ACCENT_G,
-            b = ACCENT_B,
-            a = 1,
-        }) or EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
-        if not (UIKit and UIKit.CreateChevronCaret) then
-            chevron:SetPoint("LEFT", 2, 0)
-            chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            local btn = CreateFrame("Button", nil, infoSection)
+            btn:SetPoint("TOPLEFT", 0, 0)
+            btn:SetPoint("TOPRIGHT", 0, 0)
+            btn:SetHeight(HEADER_HEIGHT)
+            infoSection._btn = btn
+
+            local chevron = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(btn, {
+                point = "LEFT",
+                relativeTo = btn,
+                relativePoint = "LEFT",
+                xPixels = 2,
+                yPixels = 0,
+                sizePixels = 10,
+                lineWidthPixels = 6,
+                lineHeightPixels = 1,
+                expanded = true,
+                collapsedDirection = "right",
+                r = ACCENT_R,
+                g = ACCENT_G,
+                b = ACCENT_B,
+                a = 1,
+            }) or EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
+            if not (UIKit and UIKit.CreateChevronCaret) then
+                chevron:SetPoint("LEFT", 2, 0)
+                chevron:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            end
+            infoSection._chevron = chevron
+
+            local titleLabel = EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
+            titleLabel:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
+            titleLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            titleLabel:SetText(ns.L["Anchoring Details"])
+            infoSection._titleLabel = titleLabel
+
+            local underline = btn:CreateTexture(nil, "ARTWORK")
+            underline:SetHeight(1)
+            underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+            underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+            underline:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
+
+            local bodyClip = CreateFrame("ScrollFrame", nil, infoSection)
+            bodyClip:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
+            bodyClip:SetPoint("RIGHT", infoSection, "RIGHT", 0, 0)
+            bodyClip:SetHeight(0)
+            bodyClip:Hide()
+            infoSection._bodyClip = bodyClip
+
+            local body = CreateFrame("Frame", nil, bodyClip)
+            body:SetWidth(1)
+            bodyClip:SetScrollChild(body)
+            bodyClip:SetScript("OnSizeChanged", function(self, width)
+                body:SetWidth(math.max(width or 1, 1))
+            end)
+            body:SetAlpha(0)
+            infoSection._body = body
+
+            local statusLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+            statusLabel:SetPoint("TOPLEFT", 8, -6)
+            statusLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+            statusLabel:SetJustifyH("LEFT")
+            infoSection._statusLabel = statusLabel
+
+            local chainLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+            chainLabel:SetPoint("TOPLEFT", 8, -(6 + statusLabel:GetStringHeight() + 6))
+            chainLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+            chainLabel:SetTextColor(0.85, 0.85, 0.85, 1)
+            chainLabel:SetJustifyH("LEFT")
+            chainLabel:SetJustifyV("TOP")
+            chainLabel:SetWordWrap(true)
+            chainLabel:SetSpacing(3)
+            infoSection._chainLabel = chainLabel
         end
 
-        local label = EnsureCJKFont(btn:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
-        label:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
-        label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        label:SetText(ns.L["Anchoring Details"])
+        local btn = infoSection._btn
+        local chevron = infoSection._chevron
+        local label = infoSection._titleLabel
+        local bodyClip = infoSection._bodyClip
+        local body = infoSection._body
+        local statusLabel = infoSection._statusLabel
+        local chainLabel = infoSection._chainLabel
 
-        local underline = btn:CreateTexture(nil, "ARTWORK")
-        underline:SetHeight(1)
-        underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
-        underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
-        underline:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.3)
-
-        local bodyClip = CreateFrame("ScrollFrame", nil, infoSection)
-        bodyClip:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
-        bodyClip:SetPoint("RIGHT", infoSection, "RIGHT", 0, 0)
-        bodyClip:SetHeight(0)
-        bodyClip:Hide()
-
-        local body = CreateFrame("Frame", nil, bodyClip)
-        body:SetWidth(1)
-        bodyClip:SetScrollChild(body)
-        bodyClip:SetScript("OnSizeChanged", function(self, width)
-            body:SetWidth(math.max(width or 1, 1))
-        end)
-        body:SetAlpha(0)
-
-        -- Anchor status line
-        local statusLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-        statusLabel:SetPoint("TOPLEFT", 8, -6)
-        statusLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
-        statusLabel:SetJustifyH("LEFT")
+        infoSection:Show()
         statusLabel:SetText(statusText)
-
-        -- Chain text
-        local chainLabel = EnsureCJKFont(body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
         chainLabel:SetPoint("TOPLEFT", 8, -(6 + statusLabel:GetStringHeight() + 6))
-        chainLabel:SetPoint("RIGHT", body, "RIGHT", -8, 0)
-        chainLabel:SetTextColor(0.85, 0.85, 0.85, 1)
-        chainLabel:SetJustifyH("LEFT")
-        chainLabel:SetJustifyV("TOP")
-        chainLabel:SetWordWrap(true)
-        chainLabel:SetSpacing(3)
         chainLabel:SetText(chainText)
 
         local bodyHeight = 6 + statusLabel:GetStringHeight() + 6 + chainLabel:GetStringHeight() + 10
         body:SetHeight(bodyHeight)
 
-        -- Default to expanded
         infoSection._expanded = true
-        infoSection._sectionTitle = "Anchoring Details"
-        if not (UIKit and UIKit.CreateChevronCaret) then
+        if UIKit and UIKit.SetChevronCaretExpanded then
+            UIKit.SetChevronCaretExpanded(chevron, true)
+        elseif chevron.SetText then
             chevron:SetText("v")
         end
         bodyClip:Show()
@@ -755,17 +707,11 @@ local function BuildContent(panel, key)
         body:SetAlpha(1)
         infoSection:SetHeight(HEADER_HEIGHT + bodyHeight)
 
-        -- Position Info section dynamically below provider content.
-        -- Hook content's SetHeight so Info repositions when provider sections expand/collapse.
-        -- Store the true original once so ClearContent can restore it (prevents hook stacking).
         if not content._origSetHeight then
             content._origSetHeight = content.SetHeight
         end
         local origSetHeight = content._origSetHeight
         local function repositionInfo()
-            -- Use providerHeight (set by StandardRelayout via SetHeight override)
-            -- instead of spatial queries, which are unreliable during build when
-            -- frames haven't been rendered yet (causes overlay on expanded sections).
             infoSection:ClearAllPoints()
             infoSection:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -(providerHeight + 4))
             infoSection:SetPoint("RIGHT", content, "RIGHT", 0, 0)
@@ -774,7 +720,6 @@ local function BuildContent(panel, key)
             origSetHeight(content, totalH)
         end
 
-        -- Restore collapsed state if user previously collapsed it
         local savedStates = QUI_LayoutMode_Settings._expandedStates
         if savedStates and savedStates["Anchoring Details"] == false then
             infoSection._expanded = false
@@ -860,8 +805,6 @@ local function BuildContent(panel, key)
         end)
 
         content.SetHeight = function(self, h)
-            -- Update providerHeight from the value StandardRelayout computed,
-            -- then reposition the Info section below all provider sections.
             if h and h > 0 then
                 providerHeight = h
             end
@@ -873,10 +816,6 @@ local function BuildContent(panel, key)
         content:SetHeight(math.max(providerHeight, 80))
     end
 end
-
----------------------------------------------------------------------------
--- PUBLIC API
----------------------------------------------------------------------------
 
 function QUI_LayoutMode_Settings:Show(key)
     if not key then
@@ -899,13 +838,11 @@ function QUI_LayoutMode_Settings:Show(key)
 
     panel._titleText:SetText("|cff60A5FA" .. label .. "|r " .. ns.L["Settings"])
 
-    -- New key: rebuild content, only reposition if panel isn't already open
     if self._currentKey ~= key then
         local wasShown = panel:IsShown()
         self._currentKey = key
         BuildContent(panel, key)
 
-        -- Position adjacent to drawer on first open (not when switching between movers)
         if not wasShown and not panel._userDragged then
             PositionAdjacentToDrawer(panel)
         end
@@ -924,7 +861,6 @@ function QUI_LayoutMode_Settings:Show(key)
 end
 
 function QUI_LayoutMode_Settings:Hide()
-    -- Deselect mover (stops pixel glow) — guard against re-entry
     if not self._hiding then
         self._hiding = true
         local um = ns.QUI_LayoutMode
@@ -946,8 +882,6 @@ function QUI_LayoutMode_Settings:IsShown()
     return self._panel and self._panel:IsShown()
 end
 
-
---- Force rebuild of current content (e.g., after DB change).
 function QUI_LayoutMode_Settings:Refresh(meta)
     if not self._currentKey or not self._panel or not self._panel:IsShown() then return end
     local panel = self._panel
@@ -960,7 +894,6 @@ function QUI_LayoutMode_Settings:Refresh(meta)
     pcall(panel._scrollFrame.SetVerticalScroll, panel._scrollFrame, math.max(0, math.min(currentScroll, maxScroll)))
 end
 
---- Reset state when Layout Mode closes.
 function QUI_LayoutMode_Settings:Reset()
     self:Hide()
     self._currentKey = nil

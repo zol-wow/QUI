@@ -10,7 +10,7 @@
 -- UIParent child, so a deferred Show is safe even mid-combat.
 
 local ns = {}
-assert(loadfile("QUI_CDM/cdm/cdm_icon_visibility_policy.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_icon_policies.lua"))("QUI", ns)
 local Policy = assert(ns.CDMIconVisibilityPolicy, "CDMIconVisibilityPolicy exported")
 
 local shows = 0

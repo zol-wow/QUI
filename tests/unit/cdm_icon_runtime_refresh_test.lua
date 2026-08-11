@@ -89,8 +89,6 @@ local mirrorAuraIcon = makeIcon("mirrorAura", {
     type = "spell",
     viewerType = "essential",
 })
-mirrorAuraIcon._blizzMirrorCooldownID = 505
-mirrorAuraIcon._blizzMirrorCategory = "essential"
 local idleIcon = makeIcon("idle", {
     id = 606,
     spellID = 606,
@@ -119,7 +117,6 @@ local barsDirty = false
 local dirtyBarRuns = 0
 local stackRequested = false
 local stackWriteStates = {}
-local chargeDurationNotes = 0
 local recentCasts = {}
 local highlighterCasts = {}
 local textureClears = 0
@@ -127,14 +124,8 @@ local durationKeyClears = 0
 local stableClears = 0
 local spellCacheInvalidations = {}
 local barAuraRefreshMarks = {}
-local mirrorStates = {
-    ["505:essential"] = {
-        auraInstanceID = 9001,
-        auraUnit = "target",
-    },
-}
 -- Names the isDefinitivelySelfAuraIcon stub reports as PROVABLE player
--- self-auras (mirror selfAura == true). Populated by the target-scope test.
+-- self-auras. Populated by the target-scope test.
 local selfAuraNames = {}
 
 local ns = {}
@@ -187,9 +178,6 @@ local controller = module.Create({
     isDefinitivelySelfAuraIcon = function(icon)
         return icon ~= nil and selfAuraNames[icon.name] == true
     end,
-    getMirrorStateByCooldownID = function(cooldownID, category)
-        return mirrorStates[tostring(cooldownID) .. ":" .. tostring(category)]
-    end,
     getItemIDForEntry = function(entry)
         return entry and entry.itemID
     end,
@@ -221,9 +209,6 @@ local controller = module.Create({
     end,
     requestStackTextUpdate = function()
         stackRequested = true
-    end,
-    noteChargeDurationObjectsUpdated = function()
-        chargeDurationNotes = chargeDurationNotes + 1
     end,
     recordRecentPlayerSpellCast = function(spellID)
         recentCasts[#recentCasts + 1] = spellID
@@ -391,6 +376,10 @@ reset(clearedBindings)
 wipe(barAuraRefreshMarks)
 stackRequested = false
 local schedulesBeforeAuraDelta = #schedules
+-- Aura deltas match the icon's stamped aura instance/unit (previously sourced
+-- from the removed Blizzard mirror state lookup).
+mirrorAuraIcon._auraInstanceID = 9001
+mirrorAuraIcon._auraUnit = "target"
 mirrorAuraIcon._lastDurObjKey = "aura:9001"
 mirrorAuraIcon._lastDurObj = { token = "stale-target-aura-duration" }
 mirrorAuraIcon._lastResolvedMode = "aura"
@@ -398,7 +387,7 @@ mirrorAuraIcon._lastResolvedSourceID = 9001
 controller:Handle("UNIT_AURA", "target", {
     updatedAuraInstanceIDs = { 9001 },
 })
-assert(auraApplied.mirrorAura == 1, "aura delta should match mirror-backed aura instance IDs")
+assert(auraApplied.mirrorAura == 1, "aura delta should match stamped aura instance IDs")
 assert(clearedBindings.mirrorAura == 1, "target aura deltas should invalidate stale aura DurationObject bindings before re-resolve")
 assert(mirrorAuraIcon._lastDurObjKey == nil, "target aura delta invalidation should clear the previous duration key")
 assert(#barAuraRefreshMarks == 1
@@ -580,16 +569,31 @@ reset(applied)
 reset(runtimeUpdated)
 reset(stackWriteStates)
 stackRequested = false
-chargeDurationNotes = 0
 local schedulesBeforeCharges = #schedules
 controller:HandleChargesChanged("CDM:CHARGES_CHANGED", 101)
-assert(chargeDurationNotes == 1, "charge changes should notify runtime query cache")
 assert(stackRequested == true, "charge changes should request stack text writes")
 assert(#schedules == schedulesBeforeCharges,
     "charge changes with a spell ID should stay on the targeted spell path")
 assert(runtimeUpdated.spell == 1, "charge changes with a spell ID should run the full matching spell update")
 assert(stackWriteStates[1] == true and stackWriteStates[2] == false,
     "charge scoped spell refresh should enable stack text writes")
+
+-- SPELL_UPDATE_CHARGES carries no payload, so the nil-spellID else-branch
+-- IS the ordinary charge path (see SpellBookDocumentation: no Payload
+-- table). It must coalesce into a single scheduled cooldown update and
+-- must NOT run a synchronous ApplySpellScope walk over every icon.
+reset(visibilityUpdated)
+reset(stackWriteStates)
+stackRequested = false
+local schedulesBeforeNilCharges = #schedules
+controller:HandleChargesChanged("CDM:CHARGES_CHANGED", nil)
+assert(stackRequested == true, "nil-spellID charge changes should still request stack text writes")
+assert(#schedules == schedulesBeforeNilCharges + 1,
+    "nil-spellID charge changes should schedule exactly one coalesced cooldown update")
+assert(schedules[#schedules].mode == "cooldown" and schedules[#schedules].reason == "charges",
+    "nil-spellID charge changes should schedule a cooldown update tagged with reason \"charges\"")
+assert(next(visibilityUpdated) == nil,
+    "nil-spellID charge changes must not run a synchronous full ApplySpellScope visibility walk")
 
 reset(applied)
 reset(runtimeUpdated)
@@ -622,10 +626,28 @@ assert(#schedules == schedulesBeforeSecretSpellcastStop + 1,
 assert(schedules[#schedules].reason == "unit_spellcast",
     "secret player spellcast fallback should be attributable in memaudit")
 
+-- UNIT_SPELLCAST_STOP/CHANNEL_START/CHANNEL_STOP are RegisterUnitEvent("player")-
+-- bound (cdm_icon_renderer.lua cdEventFrame); the C-side filter already
+-- guarantees the unit, so a secret unit token here is still the player and
+-- must not be compared (== on a secret throws) or silently dropped.
+reset(applied)
+reset(runtimeUpdated)
+reset(stackWriteStates)
 local schedulesBeforeSecretUnit = #schedules
 controller:Handle("UNIT_SPELLCAST_STOP", secretUnit, "cast-guid", 101)
 assert(#schedules == schedulesBeforeSecretUnit,
-    "secret unit spellcast payloads should not be compared or scheduled")
+    "secret unit spellcast stop with a spell ID should stay on the targeted spell path")
+assert(runtimeUpdated.spell == 1, "secret unit spellcast stop should still update the matching spell icon")
+assert(runtimeUpdated.otherSpell == nil, "secret unit spellcast stop should not update unrelated spell icons")
+
+reset(applied)
+reset(runtimeUpdated)
+local schedulesBeforeSecretUnitFallback = #schedules
+controller:Handle("UNIT_SPELLCAST_STOP", secretUnit, "cast-guid", nil)
+assert(#schedules == schedulesBeforeSecretUnitFallback + 1,
+    "secret unit spellcast stop with no spell ID should fall back to the broad cooldown refresh")
+assert(schedules[#schedules].reason == "unit_spellcast",
+    "secret unit spellcast fallback should be attributable in memaudit")
 
 reset(applied)
 reset(runtimeUpdated)
@@ -710,14 +732,10 @@ local selfAuraIcon = makeIcon("selfAura", {
     id = 909, spellID = 909, kind = "aura", type = "spell",
     viewerType = "buff", containerType = "aura",
 })
-selfAuraIcon._blizzMirrorCooldownID = 909
-selfAuraIcon._blizzMirrorCategory = "buff"
 local targetAuraIcon = makeIcon("targetAura", {
     id = 910, spellID = 910, kind = "aura", type = "spell",
     viewerType = "buff", containerType = "aura",
 })
-targetAuraIcon._blizzMirrorCooldownID = 910
-targetAuraIcon._blizzMirrorCategory = "buff"
 local buffPool = iconPools.buff
 buffPool[#buffPool + 1] = selfAuraIcon
 buffPool[#buffPool + 1] = targetAuraIcon

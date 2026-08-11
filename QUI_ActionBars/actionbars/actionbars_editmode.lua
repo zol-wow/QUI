@@ -4,9 +4,7 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
----------------------------------------------------------------------------
--- EDIT MODE INTEGRATION
----------------------------------------------------------------------------
+---@diagnostic disable: lowercase-global -- SetChunkEnv installs a setfenv
 
 function CreateEditOverlay(container, barKey)
     local overlay = CreateFrame("Frame", nil, container, "BackdropTemplate")
@@ -95,10 +93,6 @@ function OnEditModeExit()
     end
 end
 
----------------------------------------------------------------------------
--- OVERRIDE BINDING APPLICATION
----------------------------------------------------------------------------
-
 function IsVehicleBarActive()
     return (HasVehicleActionBar and HasVehicleActionBar())
         or (HasOverrideActionBar and HasOverrideActionBar())
@@ -109,8 +103,6 @@ function IsPetBattleActive()
     return C_PetBattles and C_PetBattles.IsInBattle and C_PetBattles.IsInBattle()
 end
 
--- Apply override bindings for a bar. All bars need this because reparenting
--- + SetID(0) disconnects buttons from Blizzard's native binding lookup.
 function ApplyBarOverrideBindings(barKey)
     if InCombatLockdown() and not inInitSafeWindow then
         ActionBarsOwned.pendingBindings = true
@@ -120,22 +112,16 @@ function ApplyBarOverrideBindings(barKey)
     local container = ActionBarsOwned.containers[barKey]
     if not container then return end
 
-    -- Clear existing override bindings on this bar's container
     ClearOverrideBindings(container)
 
-    -- Vehicle guard: bar1 keybinds should pass through to Blizzard's
-    -- vehicle/override bar natively when one is active.
     if barKey == "bar1" and IsVehicleBarActive() then
         return
     end
 
-    -- Pet battle guard: all bindings should pass through to the pet
-    -- battle UI natively.  Clear and return for every bar.
     if IsPetBattleActive() then
         return
     end
 
-    -- Housing guard: housing has its own keybinds.
     if ActionBarsOwned._inHousing then
         return
     end
@@ -151,12 +137,6 @@ function ApplyBarOverrideBindings(barKey)
             if key then
                 local existing = GetBindingAction(key, true)
                 if not existing or existing == "" or existing == command then
-                    -- Pet/stance buttons use PetActionButtonTemplate / StanceButtonTemplate
-                    -- whose OnClick handlers check for "LeftButton" specifically.  Standard
-                    -- action bars (SecureActionButtonTemplate) fire via secure attributes
-                    -- regardless of button string, so "Keybind" works for them.
-                    -- (Click-cast does NOT yield keys: it overrides them on @mouseover via
-                    -- its own state driver, so off-frame the bar keybind set here fires.)
                     local vBtn = ((barKey == "pet" or barKey == "stance") or btn:GetAttribute("gse-button"))
                         and "LeftButton" or "Keybind"
                     SetOverrideBindingClick(container, false, key, btn:GetName(), vBtn)
@@ -166,38 +146,25 @@ function ApplyBarOverrideBindings(barKey)
     end
 end
 
--- Apply override bindings for all managed bars (including pet/stance)
 function ApplyAllOverrideBindings()
     for _, barKey in ipairs(ALL_MANAGED_BAR_KEYS) do
         ApplyBarOverrideBindings(barKey)
     end
 end
 
--- Compat aliases
 ApplyBar1OverrideBindings = function() ApplyBarOverrideBindings("bar1") end
-
----------------------------------------------------------------------------
--- BAR 1 PAGING STATE DRIVER
----------------------------------------------------------------------------
 
 function BuildPagingCondition()
     local parts = {}
-    -- Override/vehicle/possess/shapeshift: use string tokens resolved
-    -- dynamically in the _onstate-page restricted snippet (bar indices
-    -- can change mid-session so must not be baked at build time).
     table.insert(parts, "[overridebar] override")
     table.insert(parts, "[vehicleui][possessbar][shapeshift] possess")
-    -- Dragonriding (bonusbar:5)
     table.insert(parts, "[bonusbar:5] 11")
-    -- Class-specific bonus bars (Druid forms, Rogue stealth, etc.)
     for i = 4, 1, -1 do
         table.insert(parts, "[bonusbar:" .. i .. "] " .. (6 + i))
     end
-    -- Manual page switching
     for i = 6, 2, -1 do
         table.insert(parts, "[bar:" .. i .. "] " .. i)
     end
-    -- Default page
     table.insert(parts, "1")
     return table.concat(parts, "; ")
 end
@@ -208,9 +175,6 @@ function SetupBar1Paging(container)
     if bar1PagingInitialized then return end
     bar1PagingInitialized = true
 
-    -- Resolve override/possess/shapeshift bar indices dynamically in
-    -- restricted code (they can change mid-session).  String tokens from
-    -- BuildPagingCondition are converted to real page numbers here.
     container:SetAttribute("_onstate-page", [[
         local page = newstate
         if page == "override" then
@@ -255,4 +219,3 @@ function SetupSecureActionFlagRefresh(container)
         end
     ]])
 end
-

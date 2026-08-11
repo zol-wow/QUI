@@ -20,7 +20,10 @@ _G.CreateFrame = function()
     function f.SetAlpha() end
     function f.SetID() end
     function f.SetAllPoints() end
-    function f.HookScript() end
+    function f.HookScript(self, which, fn)
+        self._hooks = self._hooks or {}
+        self._hooks[which] = fn
+    end
     function f.RegisterForClicks() end
     function f.RegisterForDrag() end
     return f
@@ -107,12 +110,17 @@ reset()
 btn._scripts.OnLeave(btn)
 assert(seen("gt-hide") and seen("pet-hide"), "cached button OnLeave must hide both tooltips")
 
--- Regression: CreateLive must hide the template's BattlepayItemTexture.
+-- Regression: CreateLive must hide the template's BattlepayItemTexture and
+-- its hover hook must immediately dismiss QUI's new-item texture + anims.
 -- ContainerFrame.xml ships it VISIBLE (the only overlay with no hidden=/
 -- alpha=0 attribute); stock bags hide it on every UpdateNewItem pass, which
 -- Dress replaces — leaving it shown made every item wear the store
 -- highlight permanently ("everything looks new", surviving reloads).
 local battlepayHidden = false
+local newItemHidden = false
+local flashStopped = false
+local glowStopped = false
+local markedGuid
 local prevCreateFrame = _G.CreateFrame
 _G.CreateFrame = function(frameType, name, parent, template)
     local f = prevCreateFrame(frameType, name, parent, template)
@@ -120,11 +128,28 @@ _G.CreateFrame = function(frameType, name, parent, template)
     if template == "ContainerFrameItemButtonTemplate" then
         f.IconBorder = { SetAlpha = function() end }
         f.BattlepayItemTexture = { Hide = function() battlepayHidden = true end }
+        f.NewItemTexture = { Hide = function() newItemHidden = true end }
+        f.flashAnim = {
+            IsPlaying = function() return true end,
+            Stop = function() flashStopped = true end,
+        }
+        f.newitemglowAnim = {
+            IsPlaying = function() return true end,
+            Stop = function() glowStopped = true end,
+        }
     end
     return f
 end
-ItemButtons.CreateLive({}, 0)
+ns.Bags.NewItems = { MarkSlotSeen = function(guid) markedGuid = guid end }
+local liveButton = ItemButtons.CreateLive({}, 0)
 assert(battlepayHidden, "CreateLive must hide the default-visible BattlepayItemTexture")
+assert(liveButton._hooks and liveButton._hooks.OnEnter, "CreateLive must install its new-item hover hook")
+liveButton._newItemGuid = "Item-1-2-3"
+liveButton._hooks.OnEnter(liveButton)
+assert(markedGuid == "Item-1-2-3", "hover must persist the new item as seen")
+assert(liveButton._newItemGuid == nil, "hover must clear the button's new-item GUID")
+assert(newItemHidden, "hover must hide NewItemTexture immediately")
+assert(flashStopped and glowStopped, "hover must stop both new-item animations")
 _G.CreateFrame = prevCreateFrame
 
 print("OK: bags_item_buttons_tooltip_test")

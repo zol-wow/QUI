@@ -3,7 +3,7 @@
 -- luacheck: globals QUI_StorageDB
 local loader = dofile("tests/helpers/load_bags_data.lua")
 local ns = loader.LoadAll(nil, "store.lua")
-local Store = ns.Bags.Store
+local Store = ns.Storage.Store
 
 -- Test 1: fresh init creates versioned schema
 _G.QUI_StorageDB = nil

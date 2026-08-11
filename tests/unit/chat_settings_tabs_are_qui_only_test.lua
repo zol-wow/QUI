@@ -36,7 +36,7 @@ assert(not src:find("Reset to Blizzard defaults", 1, true),
 
 local defaultStart = assert(src:find('CreateChatCustomSection("defaultTab"', 1, true),
     "default tab section must exist")
-local defaultStop = src:find("-- Chat Background", defaultStart, true) or #src
+local defaultStop = src:find("if chat.glass then", defaultStart, true) or #src
 local defaultBlock = src:sub(defaultStart, defaultStop)
 
 assert(defaultBlock:find("GetWindowTabs", 1, true),

@@ -1,12 +1,5 @@
 local _, ns = ...
 
----------------------------------------------------------------------------
--- CDM Layout Mode Registration
---
--- Registers owned CDM containers with QUI layout mode. Container creation,
--- frame writes, and layout math remain in their owning modules.
----------------------------------------------------------------------------
-
 local CDMLayoutMode = {}
 
 local Shared = ns.CDMShared
@@ -63,9 +56,6 @@ local function RefreshCDM()
     if _G.QUI_RefreshCustomTrackersVisibility then _G.QUI_RefreshCustomTrackersVisibility() end
 end
 
--- Layout Mode exit: hide instantly (snap past the fade) so containers don't
--- linger for a frame. Falls back to the faded refresh if the instant global
--- isn't present.
 local function RefreshCDMInstant()
     if ns.RefreshCDMVisibilityInstant then
         ns.RefreshCDMVisibilityInstant()
@@ -75,6 +65,10 @@ local function RefreshCDMInstant()
     if _G.QUI_RefreshCustomTrackersVisibility then _G.QUI_RefreshCustomTrackersVisibility() end
 end
 
+local function RebuildCDM()
+    if ns.NCDM and ns.NCDM.RefreshAll then ns.NCDM.RefreshAll(true) end
+    if _G.QUI_RefreshCDMBuffLayout then _G.QUI_RefreshCDMBuffLayout() end
+end
 
 local function GetViewerFrame(elementKey)
     local viewerKey = CDM_VIEWER_MAP[elementKey]
@@ -117,16 +111,8 @@ local function RegisterMasterElement(um)
         order = -1,
         isOwned = true,
         noHandle = true,
-        -- module on/off lives in Module Addons (addon state); positioning only here
         setGameplayHidden = SetAllGameplayHidden,
         getFrame = GetFirstViewerFrame,
-        -- On Layout Mode exit, re-evaluate CDM visibility synchronously. The
-        -- containers are force-shown while layout mode is active (the
-        -- IsLayoutModeActive gates in hud_visibility); without an explicit
-        -- refresh here the auto-hide (empty buff bar/icon) only re-applies on
-        -- the next CDM event, so they linger after closing. isActive is already
-        -- cleared by the time onClose fires; the instant variant also snaps
-        -- past the fade so there's no 1-frame lag.
         onClose = RefreshCDMInstant,
     })
 end
@@ -189,6 +175,8 @@ local function RegisterCustomElements()
     end
 end
 
+local _layoutCallbacksRegistered = false
+
 function CDMLayoutMode.RegisterLayoutModeElements()
     local um = ns.QUI_LayoutMode
     if not um then return false end
@@ -198,6 +186,12 @@ function CDMLayoutMode.RegisterLayoutModeElements()
         RegisterBuiltInElement(um, info)
     end
     RegisterCustomElements()
+
+    if not _layoutCallbacksRegistered and um.RegisterEnterCallback and um.RegisterExitCallback then
+        _layoutCallbacksRegistered = true
+        um:RegisterEnterCallback(function() RebuildCDM() end)
+        um:RegisterExitCallback(function() C_Timer.After(0, RebuildCDM) end)
+    end
     return true
 end
 

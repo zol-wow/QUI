@@ -11,35 +11,6 @@ local Registry = Settings.Registry or {
 }
 Settings.Registry = Registry
 
----------------------------------------------------------------------------
--- Optional `moduleEntry` field on feature specs (Phase 1+ of the
--- Modules Control Center). Declares that a feature is a binary on/off
--- module, surfaced in the Modules panel under General and in global
--- settings search with a [Module] badge.
---
--- Shape:
---   moduleEntry = {
---     -- Required
---     group        = "QoL",                      -- category header
---     isEnabled    = function() return ... end,  -- read state
---     setEnabled   = function(val) ... end,      -- write state; the
---                                                -- callee owns persistence
---                                                -- AND any combat-deferral
---
---     -- Optional
---     label        = "Focus-Cast Alert",         -- defaults to feature.name
---     caption      = "One-line discoverability blurb.",
---     order        = 5,                          -- sort within group; lower first
---     combatLocked = true,                       -- pill greys + tooltip in combat
---     hidden       = function() return false end,-- spec/class gating
---   }
---
--- The registry stores the spec as-is; iterators that care about modules
--- should walk Registry._featuresById and pick out specs with a non-nil
--- `moduleEntry` field. State-change fan-out goes through ns.QUI_Modules:
--- module setters call NotifyChanged(featureId) after writing state.
----------------------------------------------------------------------------
-
 local function RemoveOrderedId(orderedIds, featureId)
     for index, existingId in ipairs(orderedIds) do
         if existingId == featureId then
@@ -134,19 +105,6 @@ function Registry:RegisterFeature(spec)
         end
     end
 
-    return spec
-end
-
-function Registry:UnregisterFeature(featureId)
-    local spec = self._featuresById[featureId]
-    if not spec then return nil end
-
-    self._featuresById[featureId] = nil
-    if type(spec.moverKey) == "string" and spec.moverKey ~= "" then
-        self._featuresByMoverKey[spec.moverKey] = nil
-    end
-    ClearLookupKeys(self, spec)
-    RemoveOrderedId(self._orderedIds, featureId)
     return spec
 end
 

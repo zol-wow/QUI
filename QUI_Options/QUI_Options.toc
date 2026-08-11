@@ -1,13 +1,14 @@
-## Interface: 120000, 120001, 120005, 120007, 120100
+## Interface: 120100
 ## Title: |cFF30D1FFQUI|r Options
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Configuration UI for QUI
-## Author: Zol
-## Version: 4.0.0-beta58
+## Author: Drew
+## Version: 5.0.0-beta4
 ## Category: User Interface
 ## Group: QUI
 ## RequiredDeps: QUI
-## OptionalDeps: QUI_ActionBars, QUI_CDM, QUI_Chat, QUI_Datatexts, QUI_GroupFrames, QUI_InfoBar, QUI_ResourceBars, QUI_UnitFrames
+## OptionalDeps: QUI_ActionBars, QUI_CDM, QUI_Chat, QUI_GroupFrames, QUI_Nameplates, QUI_ResourceBars, QUI_UnitFrames
+## LoadOnDemand: 1
 
 bootstrap.lua
 
@@ -15,17 +16,26 @@ bootstrap.lua
 # Order is load-bearing. ..\QUI\ paths load files from the main addon
 # (parent-dir TOC entries are client-supported; Blizzard_PTRFeedbackGlue ships them).
 #
-# NOTE: this addon now loads at login (no LoadOnDemand) so opening the options
-# window never pays a compile cost — the window appears instantly. The OptionalDeps
-# above only order this addon after the login-class module addons (their settings
-# builders are loaded here); no builder captures a module symbol at file scope, so
-# the ordering is belt-and-suspenders (proven by the headless generator smoke test).
-# The ~3MB generated search index lives in the QUI_OptionsSearch LoadOnDemand
-# addon and is pulled in on demand the first time the search box is used.
+# NOTE: LoadOnDemand — ~2.9 MB stays off the login path; the first options
+# open pays the compile cost (QUI:EnsureOptionsLoaded, every open path routes
+# through it). Login-time theme reads (accent color for layout mode, info bar,
+# datatexts) are served by core/theme.lua, which pre-creates QUI.GUI; the
+# framework merges into that table on load. The OptionalDeps above only order
+# this addon after the login-class module addons when both load (their settings
+# builders are loaded here); no builder captures a module symbol at file scope,
+# so the ordering is belt-and-suspenders (proven by the headless generator
+# smoke test).
 search_synonyms.lua
+# The generated search index, packed as a long-bracket string (~1.2 MB).
+# Loading this file lexes ONE token; framework.lua compiles it on first search.
+# It used to be the LoadOnDemand QUI_OptionsSearch addon — one folder for
+# one deferral point. Packing gives the same deferral without the folder.
+search_cache.lua
 framework.lua
 border_control.lua
+reorder_list.lua
 shared.lua
+wizard.lua
 # Options-only settings framework, deferred out of the login path. Every
 # consumer reaches these lazily (inside a function) from UI-build code; none
 # is captured at file scope on the login path. Loaded here ahead of the
@@ -40,14 +50,15 @@ shared.lua
 ..\QUI\core\settings\surfaces.lua
 ..\QUI\core\settings\surface_features.lua
 ..\QUI\core\settings\nav.lua
-..\QUI\core\settings\sync.lua
 ..\QUI\core\settings\renderer.lua
 # Options-only profile machinery, deferred out of the main-addon login path.
 # profile_io.lua (import/export engine) + bundled preset import strings:
 # nothing in the gameplay/login path references these, so they load here.
 ..\QUI\core\profile_io.lua
 ..\QUI\importstrings\qui_editmode_base.lua
-..\QUI\importstrings\starter_profile.lua
+# starter_profile.lua moved to the root TOC: core/new_profile_defaults.lua
+# decodes it for the new-profile seed; the Profiles-tab preset reads the
+# same memoized QUI.imports entry.
 ..\QUI\core\settings\full_surface.lua
 ..\QUI\core\settings\pins_ui.lua
 ..\QUI\core\settings\content\anchoring_shared_content.lua
@@ -67,17 +78,17 @@ tiles\help_content.lua
 ..\QUI_CDM\cdm\settings\composer.lua
 ..\QUI_Chat\chat\settings\chat_features.lua
 ..\QUI_Chat\chat\settings\chat_frame1_provider.lua
-..\QUI_QoL\combat\settings\rotation_assist.lua
+..\QUI\modules\combat\settings\rotation_assist.lua
 ..\QUI_DamageMeter\damage_meter\settings\damage_meter_content.lua
-..\QUI_QoL\dungeon\settings\mplus_timer.lua
-..\QUI_QoL\dungeon\settings\mplus_timer_provider.lua
-..\QUI_QoL\dungeon\settings\mplus_progress.lua
-..\QUI_QoL\dungeon\settings\mplus_progress_provider.lua
-..\QUI_QoL\dungeon\settings\party_keystones.lua
-..\QUI_QoL\dungeon\settings\brez_counter.lua
+..\QUI\modules\dungeon\settings\mplus_timer.lua
+..\QUI\modules\dungeon\settings\mplus_timer_provider.lua
+..\QUI\modules\dungeon\settings\mplus_progress.lua
+..\QUI\modules\dungeon\settings\mplus_progress_provider.lua
+..\QUI\modules\dungeon\settings\party_keystones.lua
+..\QUI\modules\dungeon\settings\brez_counter.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_aura_defaults.lua
-..\QUI_GroupFrames\groupframes\settings\group_frames_spell_list.lua
-..\QUI_GroupFrames\groupframes\settings\group_frames_auras_editor.lua
+aura_spell_list.lua
+aura_elements_editor.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_schema.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_model.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames.lua
@@ -85,38 +96,43 @@ tiles\help_content.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_surface.lua
 ..\QUI_GroupFrames\groupframes\settings\click_cast_content.lua
 ..\QUI_GroupFrames\groupframes\settings\raid_buffs.lua
+..\QUI_Nameplates\nameplates\settings\nameplates_schema.lua
+..\QUI_Nameplates\nameplates\settings\nameplates_model.lua
+..\QUI_Nameplates\nameplates\settings\nameplates.lua
+..\QUI_Nameplates\nameplates\settings\nameplates_preview_driver.lua
+..\QUI_Nameplates\nameplates\settings\nameplates_surface.lua
 ..\QUI\modules\layout\settings\bonus_roll_provider.lua
 ..\QUI\modules\layout\settings\third_party_anchoring_content.lua
-..\QUI_Minimap\minimap\settings\minimap.lua
-..\QUI_Minimap\minimap\settings\minimap_providers.lua
-..\QUI_Datatexts\datatexts\settings\datatexts_features.lua
-..\QUI_Datatexts\datatexts\settings\datatexts_providers.lua
-..\QUI_InfoBar\infobar\settings\infobar_features.lua
-..\QUI_InfoBar\infobar\settings\infobar_content.lua
-..\QUI_QoL\qol\settings\pet_warning.lua
-..\QUI_QoL\qol\settings\no_target_warning.lua
-..\QUI_QoL\qol\settings\consumables.lua
-..\QUI_QoL\qol\settings\combat_timer.lua
-..\QUI_QoL\qol\settings\lust_timer.lua
-..\QUI_QoL\qol\settings\tooltip_anchor.lua
-..\QUI_QoL\qol\settings\provider_panels.lua
-..\QUI_QoL\qol\settings\action_tracker.lua
-..\QUI_QoL\qol\settings\skyriding.lua
-..\QUI_QoL\qol\settings\xp_tracker.lua
-..\QUI_QoL\qol\settings\focus_cast_alert.lua
-..\QUI_QoL\qol\settings\qol_content.lua
+..\QUI\modules\minimap\settings\minimap.lua
+..\QUI\modules\minimap\settings\minimap_providers.lua
+..\QUI\modules\datatexts\settings\datatexts_features.lua
+..\QUI\modules\datatexts\settings\datatexts_providers.lua
+..\QUI\modules\infobar\settings\infobar_features.lua
+..\QUI\modules\infobar\settings\infobar_content.lua
+..\QUI\modules\qol\settings\pet_warning.lua
+..\QUI\modules\qol\settings\no_target_warning.lua
+..\QUI\modules\qol\settings\consumables.lua
+..\QUI\modules\qol\settings\combat_timer.lua
+..\QUI\modules\qol\settings\lust_timer.lua
+..\QUI\modules\qol\settings\tooltip_anchor.lua
+..\QUI\modules\qol\settings\provider_panels.lua
+..\QUI\modules\qol\settings\action_tracker.lua
+..\QUI\modules\qol\settings\skyriding.lua
+..\QUI\modules\qol\settings\xp_tracker.lua
+..\QUI\modules\qol\settings\focus_cast_alert.lua
+..\QUI\modules\qol\settings\qol_content.lua
 ..\QUI_Bags\bags\settings\bags_providers.lua
 ..\QUI_Bags\bags\settings\bags.lua
-..\QUI_Alts\alts\settings\alts_providers.lua
-..\QUI_Alts\alts\settings\alts.lua
+..\QUI\modules\alts\settings\alts_providers.lua
+..\QUI\modules\alts\settings\alts.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars_builders.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars_preview_driver.lua
-..\QUI_Skinning\skinning\settings\skinning_content.lua
-..\QUI_Skinning\skinning\settings\border_coloring_content.lua
-..\QUI_Skinning\skinning\character_pane\settings\character_pane_content.lua
-..\QUI_QoL\trackers\settings\atonement_counter.lua
-..\QUI_QoL\trackers\settings\prey_tracker_content.lua
+..\QUI\modules\skinning\settings\skinning_content.lua
+..\QUI\modules\skinning\settings\border_coloring_content.lua
+..\QUI\modules\skinning\character_pane\settings\character_pane_content.lua
+..\QUI\modules\trackers\settings\atonement_counter.lua
+..\QUI\modules\trackers\settings\prey_tracker_content.lua
 ..\QUI\modules\ui\settings\blizzard_mover_content.lua
 ..\QUI\modules\ui\settings\crosshair_content.lua
 ..\QUI\modules\ui\settings\hud_visibility_content.lua
@@ -128,20 +144,27 @@ tiles\help_content.lua
 ..\QUI_UnitFrames\unitframes\settings\unit_frames_surface.lua
 ..\QUI_UnitFrames\unitframes\settings\unit_frames_castbar_preview.lua
 ..\QUI_UnitFrames\unitframes\settings\unit_frames_body_preview.lua
-..\QUI_QoL\utility\settings\ready_check.lua
-..\QUI_QoL\utility\settings\ready_check_provider.lua
-..\QUI_QoL\utility\settings\keybinds_content.lua
+..\QUI\modules\utility\settings\ready_check.lua
+..\QUI\modules\utility\settings\ready_check_provider.lua
+..\QUI\modules\utility\settings\keybinds_content.lua
 ..\QUI\core\settings\content\modules_visual_onboarding.lua
 ..\QUI\core\settings\content\modules_nonvisual_onboarding.lua
 ..\QUI\core\settings\content\module_addons_content.lua
 ..\QUI\core\settings\content\modules_page.lua
+..\QUI\core\settings\content\auras_group_page.lua
+..\QUI\core\settings\content\auras_unit_page.lua
+..\QUI\core\settings\content\auras_actionbar_page.lua
+..\QUI\core\settings\content\auras_wizard_page.lua
+..\QUI\core\settings\content\auras_nameplate_page.lua
 init.lua
 tiles\related.lua
 tiles\minimap.lua
 tiles\infobar.lua
 tiles\unit_frames.lua
 tiles\group_frames.lua
+tiles\nameplates.lua
 tiles\action_bars.lua
+tiles\auras.lua
 tiles\cooldown_manager.lua
 tiles\resource_bars.lua
 tiles\appearance.lua
@@ -152,4 +175,3 @@ tiles\bags.lua
 tiles\alts.lua
 tiles\global.lua
 tiles\help.lua
-blizzard_options.lua

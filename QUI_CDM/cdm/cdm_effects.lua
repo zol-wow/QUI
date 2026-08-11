@@ -1,16 +1,10 @@
--- cdm_effects.lua
--- Visual effects for addon-owned CDM icons.
-
-
--- Proc and aura glow effects for addon-owned CDM icons.
--- Simplified: applies LibCustomGlow directly to addon-owned icon frames.
--- No overlay frame indirection, no Blizzard glow suppression needed.
-
 local _, ns = ...
 local Helpers = ns.Helpers
 local Sources = ns.CDMSources
 local Shared = ns.CDMShared
 local Resolvers = ns.CDMResolvers
+
+local _issecretvalue = issecretvalue or function() return false end
 
 local function IsCDMRuntimeEnabled()
     return not Shared or Shared.IsRuntimeEnabled()
@@ -37,10 +31,6 @@ local function IsBuiltinAuraContainerKey(containerKey)
     return false
 end
 
--- Pandemic step curve: lazily built, cached. The curve evaluates C-side and
--- yields a secret userdata (LuaCurveEvaluatedResult) that flows directly into
--- SetAlpha; never compared, arithmetic'd, or read into Lua. Mirrors the HP
--- alpha-curve pattern in hud_visibility.lua.
 local _pandemicCurve
 
 local function GetPandemicCurve()
@@ -51,51 +41,27 @@ local function GetPandemicCurve()
     end
     local curve = C_CurveUtil.CreateCurve()
     curve:SetType(Enum.LuaCurveType.Step)
-    -- Negative-side anchor: if the cached _lastAuraDurObj outlives the
-    -- aura it represents (icon-side state didn't observe the removal in
-    -- time, or the resolver returned r.durObj=nil while r.isActive=true
-    -- and ApplyAuraStateToIcon kept the stale cached durObj), then
-    -- EvaluateRemainingPercent on that durObj produces a NEGATIVE value
-    -- once GetTime() is past startTime+duration. Without this anchor the
-    -- step curve falls back to the lowest defined point's value (1) for
-    -- any x below 0, leaving the glow stuck on permanently.
-    curve:AddPoint(-1.0, 0) -- expired / negative percent: hide
-    curve:AddPoint(0.0, 1)  -- 0..<30% remaining: glow visible
-    curve:AddPoint(0.3, 0)  -- 30%+ remaining: glow hidden
+    curve:AddPoint(-1.0, 0)
+    curve:AddPoint(0.0, 1)
+    curve:AddPoint(0.3, 0)
     _pandemicCurve = curve
     return curve
 end
 
--- Get LibCustomGlow for custom glow styles
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
--- Texture assets for overlay glow types
 local FLASH_TEXTURE = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[iconskin\Flash]]
 local HAMMER_TEXTURE = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[quazii_hammer]]
 
--- Get IsSpellOverlayed API: try C_ namespace (12.0+), fall back to deprecated global
 local IsSpellOverlayed = (C_SpellActivationOverlay and C_SpellActivationOverlay.IsSpellOverlayed)
     or _G.IsSpellOverlayed
 
--- Event-based overlay tracking: ultimate fallback when neither query API exists,
--- and also used to check override spell IDs that the API might miss.
-local overlayedSpells = {}  -- [spellID] = true
-local overlayedSpellCounts = {}  -- [spellID] = refcount
-local overlayedSourceMap = {}  -- [sourceSpellID] = { [candidateID] = true }
+local overlayedSpells = {}
+local overlayedSpellCounts = {}
+local overlayedSourceMap = {}
 
--- Overlay-driven glows are latched on overlayedSpells (the authoritative overlay
--- state) so a transient icon->overlay re-link miss during a SPELLS_CHANGED
--- override flip cannot tear them down. See EvaluateGlowForIcon.
-local overlayGlowSpell = {}  -- [icon] = overlay spellID currently driving its glow
-local overlayGlowBase  = {}  -- [icon] = entry.spellID when latched (recycle guard)
-
--- Glow-spell-candidate gathering rewritten without per-call closures.
--- Previously `ForEachSpellCandidate` + `ForEachIconSpellID` took callbacks
--- and `EvaluateGlowForIcon` allocated 3 fresh closures per icon glow eval
--- (one outer, one VisitRaw, one inner candidate). With 100+ icons walked
--- many times per second during combat that dominated FR_CDM_Glows churn.
--- The new helpers fill module-level scratch tables; callers iterate them
--- directly with for-loops. No allocations in the hot path.
+local overlayGlowSpell = {}
+local overlayGlowBase  = {}
 
 local _iconRawSeen = {}
 local _iconCandidateSeen = {}
@@ -111,10 +77,6 @@ local function GetIconRuntimeState(icon)
     return icon._cdmRuntimeState
 end
 
--- Visit one raw spellID candidate. Resolves Blizzard's override spell once
--- and emits up to two deduplicated candidates into _iconSpellIDScratch.
--- Operates on module-level scratch; safe to call repeatedly until the next
--- GatherIconSpellIDs() reset.
 local function VisitRawSpellID(id)
     if not id or _iconRawSeen[id] then return end
     _iconRawSeen[id] = true
@@ -134,9 +96,6 @@ local function VisitRawSpellID(id)
     end
 end
 
--- Fills _iconSpellIDScratch[1..N] with deduplicated candidate spellIDs for
--- the icon (seed IDs and their Blizzard overrides). Returns N. Callers
--- must consume the result before the next GatherIconSpellIDs() call.
 local function GatherIconSpellIDs(icon)
     _iconSpellIDScratchN = 0
     if not icon or not icon._spellEntry then return 0 end
@@ -144,26 +103,21 @@ local function GatherIconSpellIDs(icon)
     wipe(_iconCandidateSeen)
 
     local entry = icon._spellEntry
-    -- entry.* come from our spell registration and are always non-secret.
     VisitRawSpellID(entry.spellID)
     VisitRawSpellID(entry.overrideSpellID)
     VisitRawSpellID(entry.id)
 
-    -- Runtime override may be a secret value in combat; sanitize at the
-    -- boundary. Combat misses here are covered by
-    -- SPELL_ACTIVATION_OVERLAY_GLOW events, which deliver non-secret
-    -- spellIDs directly to ScanGlowsForSpell.
     VisitRawSpellID(icon._runtimeSpellID)
 
     local runtimeState = GetIconRuntimeState(icon)
     if runtimeState then
         VisitRawSpellID(runtimeState.spellID)
-        local mirrorState = runtimeState.mirrorState or runtimeState.state
-        if mirrorState then
-            VisitRawSpellID(mirrorState.overrideTooltipSpellID)
-            VisitRawSpellID(mirrorState.overrideSpellID)
-            VisitRawSpellID(mirrorState.spellID)
-            local linkedSpellIDs = mirrorState.linkedSpellIDs
+        local state = runtimeState.state
+        if state then
+            VisitRawSpellID(state.overrideTooltipSpellID)
+            VisitRawSpellID(state.overrideSpellID)
+            VisitRawSpellID(state.spellID)
+            local linkedSpellIDs = state.linkedSpellIDs
             if type(linkedSpellIDs) == "table" then
                 for _, linkedSpellID in ipairs(linkedSpellIDs) do
                     VisitRawSpellID(linkedSpellID)
@@ -212,8 +166,6 @@ end
 local function MarkOverlaySource(sourceSpellID)
     if not sourceSpellID then return end
     ClearOverlaySource(sourceSpellID)
-    -- mapped is stored persistently in overlayedSourceMap, so this
-    -- allocation is intentional (one per MarkOverlaySource call).
     local mapped = {}
     MarkOverlayCandidate(mapped, sourceSpellID)
     local overrideID = Sources and Sources.QueryOverrideSpell
@@ -240,7 +192,6 @@ end
 
 local IsOverlayed
 
--- Explicit per-spell override: glow when this ability becomes castable.
 local function IsSpellCastable(icon)
     if not icon or not icon._spellEntry then return false end
     if icon._auraActive then return false end
@@ -276,10 +227,6 @@ local function IsOverlayCandidateAllowed(viewerType, candidateID)
         return true, candidateOvr
     end
 
-    -- MarkOverlaySource aliases an overlay source to its base/override IDs so a
-    -- base-owned mirror icon can react before Blizzard's mirror state catches
-    -- up. If the gathered candidate is disabled only because it is the stale
-    -- base ID, honor the actual event source's own override instead.
     for sourceID, mapped in pairs(overlayedSourceMap) do
         if mapped[candidateID] then
             local sourceOvr = GetSpellGlowOverrideForID(viewerType, sourceID)
@@ -308,6 +255,9 @@ end
 
 local GetSettings = Helpers.CreateDBGetter("customGlow")
 
+local _pandemicDebuffKeys = {}
+local _pandemicBuffKeys = {}
+
 local function IsPandemicMirroringEnabled(icon)
     if not icon or not icon._spellEntry then return false end
 
@@ -317,41 +267,36 @@ local function IsPandemicMirroringEnabled(icon)
     local viewerType = icon._spellEntry.viewerType
     if not viewerType then return false end
 
-    -- Built-in viewers and custom containers all use the viewerType as
-    -- the settings-key prefix.
-    local debuffKey = viewerType .. "PandemicDebuffEnabled"
-    local buffKey   = viewerType .. "PandemicBuffEnabled"
+    local debuffKey = _pandemicDebuffKeys[viewerType]
+    local buffKey   = _pandemicBuffKeys[viewerType]
+    if not debuffKey then
+        debuffKey = viewerType .. "PandemicDebuffEnabled"
+        buffKey   = viewerType .. "PandemicBuffEnabled"
+        _pandemicDebuffKeys[viewerType] = debuffKey
+        _pandemicBuffKeys[viewerType]   = buffKey
+    end
     local debuffOn = settings[debuffKey] ~= false
     local buffOn   = settings[buffKey]   ~= false
 
-    -- Pick the relevant toggle from the cached aura type. When the type
-    -- is unknown (aura first observed in combat without auraData), fall
-    -- back to "show if either toggle is on" so combat-applied auras
-    -- don't suddenly lose their pandemic glow.
     local isHarmful = icon._auraIsHarmful
     if isHarmful == true  then return debuffOn end
     if isHarmful == false then return buffOn   end
     return debuffOn or buffOn
 end
 
--- Forward declarations.
 local ClearPandemicState
 local SyncGlowForIcon
 local UpdatePandemicGlow
 local HasProcOnUsableOverride
 
--- Track which icons currently have active glows
-local activeGlowIcons = {}  -- [icon] = true
+local activeGlowIcons = {}
 
--- Reverse lookup: spellID -> list of icons that track it.
--- Allows O(1) dispatch on SHOW/HIDE events instead of scanning all icons.
-local spellIdToGlowIcons = {}  -- [spellID] = {icon, ...}
+local spellIdToGlowIcons = {}
 local procOnUsableGlowIcons = {}
 local procOnUsableGlowMapReady = false
--- SetupDebugInstrumentation is defined at the bottom of the file (it captures
--- eventFrame for QUI_PerfRegistry).
 
 local function AddGlowMapID(spellID, icon)
+    if _issecretvalue(spellID) then return end
     if not spellID then return end
     local list = spellIdToGlowIcons[spellID]
     if not list then
@@ -372,12 +317,12 @@ local function AddIconToGlowMaps(icon)
     local runtimeState = GetIconRuntimeState(icon)
     if runtimeState then
         AddGlowMapID(runtimeState.spellID, icon)
-        local mirrorState = runtimeState.mirrorState or runtimeState.state
-        if mirrorState then
-            AddGlowMapID(mirrorState.overrideTooltipSpellID, icon)
-            AddGlowMapID(mirrorState.overrideSpellID, icon)
-            AddGlowMapID(mirrorState.spellID, icon)
-            local linkedSpellIDs = mirrorState.linkedSpellIDs
+        local state = runtimeState.state
+        if state then
+            AddGlowMapID(state.overrideTooltipSpellID, icon)
+            AddGlowMapID(state.overrideSpellID, icon)
+            AddGlowMapID(state.spellID, icon)
+            local linkedSpellIDs = state.linkedSpellIDs
             if type(linkedSpellIDs) == "table" then
                 for _, linkedSpellID in ipairs(linkedSpellIDs) do
                     AddGlowMapID(linkedSpellID, icon)
@@ -392,9 +337,6 @@ end
 
 local _rebuildGlowSpellMapInFlight = false
 local function RebuildGlowSpellMap()
-    -- Reentry guard: a future change inside AddIconToGlowMaps that triggers
-    -- Rebuild again would otherwise wipe the maps mid-population. AddIcon
-    -- is currently a leaf, but the guard keeps the invariant cheap.
     if _rebuildGlowSpellMapInFlight then return end
     _rebuildGlowSpellMapInFlight = true
     wipe(spellIdToGlowIcons)
@@ -423,26 +365,16 @@ local function RebuildGlowSpellMap()
     _rebuildGlowSpellMapInFlight = false
 end
 
--- SETTINGS ACCESS
----------------------------------------------------------------------------
-
----------------------------------------------------------------------------
--- DETERMINE VIEWER TYPE FROM ICON
--- Uses icon._spellEntry.viewerType instead of checking parent frame.
----------------------------------------------------------------------------
 local function GetViewerType(icon)
     if not icon or not icon._spellEntry then return nil end
     local vt = icon._spellEntry.viewerType
     if vt == "essential" then return "Essential"
     elseif vt == "utility" then return "Utility"
-    elseif vt then return vt  -- custom container key
+    elseif vt then return vt
     end
     return nil
 end
 
----------------------------------------------------------------------------
--- GET SETTINGS FOR VIEWER TYPE
----------------------------------------------------------------------------
 local function GetViewerSettings(viewerType)
     local settings = GetSettings()
     if not settings then return nil end
@@ -474,7 +406,6 @@ local function GetViewerSettings(viewerType)
             yOffset = settings.utilityYOffset or 0,
         }
     else
-        -- Custom container: uses viewerType as prefix (e.g., "custom_1Enabled")
         local prefix = viewerType
         if not settings[prefix .. "Enabled"] then return nil end
         return {
@@ -490,27 +421,14 @@ local function GetViewerSettings(viewerType)
         }
     end
 
+    ---@diagnostic disable-next-line: unreachable-code
     return nil
 end
 
----------------------------------------------------------------------------
--- GLOW APPLICATION (supports 3 glow types via LibCustomGlow)
--- Applied directly to owned icons; no overlay frame needed.
----------------------------------------------------------------------------
-
--- Place the proc glow LOW in the icon stack: above the icon art/border but
--- BELOW the Cooldown frame. The swipe and the native countdown numbers both
--- live on the Cooldown frame (the count on a higher draw layer than the swipe),
--- so dropping the glow under that frame lets both render on top of it.
--- Desired order (low -> high): icon art -> proc glow -> swipe -> text.
--- LibCustomGlow defaults the glow to icon:GetFrameLevel() + 8 (above everything),
--- so we explicitly push it back down to one below the Cooldown frame.
 local function EnsureGlowBelowSwipe(icon, glowFrame)
     if not glowFrame or not icon or not icon.Cooldown then return end
     if not (glowFrame.SetFrameLevel and glowFrame.GetFrameLevel) then return end
 
-    -- Glow is a child of the icon, so the icon's own level already draws it
-    -- above the icon art/border; cdLevel - 1 keeps it under the swipe + count.
     local cdLevel = icon.Cooldown:GetFrameLevel()
     local targetLevel = cdLevel - 1
     if targetLevel < 0 then targetLevel = 0 end
@@ -518,14 +436,8 @@ local function EnsureGlowBelowSwipe(icon, glowFrame)
         glowFrame:SetFrameLevel(targetLevel)
     end
 end
--- Expose to subsequent file chunks so the highlighter and other consumers
--- share the same layer-coordination behavior (was previously a thinner
--- per-chunk duplicate that skipped the text-overlay anchoring).
 ns._CDM_EnsureGlowBelowSwipe = EnsureGlowBelowSwipe
 
--- Shared helper: create or reuse a pulsing texture overlay on an icon.
--- key: unique frame key on icon (e.g. "_QUIFlashGlow")
--- texturePath: texture file path
 local function StartTextureGlow(icon, key, texturePath, color)
     local frame = icon[key]
     if not frame then
@@ -576,14 +488,8 @@ end
 
 local StopGlow
 
--- Default LibCustomGlow scope key for the runtime cooldown/proc glow. The
--- composer live preview passes its own scoped key so its glows can never be
--- confused with runtime glows; both go through the exact same applier below.
 local DEFAULT_GLOW_KEY = "_QUICustomGlow"
 
--- glowKey scopes every LibCustomGlow/texture frame this call creates so the
---   same applier can drive both the runtime icons (default key, tracked in
---   activeGlowIcons) and the preview icons (scoped key, skipTracking=true).
 local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
     if not LCG or not icon then return false end
 
@@ -600,7 +506,6 @@ local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
     local xOffset = viewerSettings.xOffset or 0
     local yOffset = viewerSettings.yOffset or 0
 
-    -- Stop any existing glow first
     StopGlow(icon, glowKey)
 
     if glowType == "Pixel Glow" then
@@ -655,14 +560,8 @@ local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
     return true
 end
 
----------------------------------------------------------------------------
--- START / STOP GLOW
----------------------------------------------------------------------------
--- Per-spell glow color override helper: returns a copy of viewerSettings
--- with the color replaced if a per-spell glowColor override exists.
 local function ApplyGlowColorOverride(viewerSettings, spellOvr)
     if not spellOvr or not spellOvr.glowColor then return viewerSettings end
-    -- Shallow copy so we don't mutate the cached settings table
     local copy = {}
     for k, v in pairs(viewerSettings) do copy[k] = v end
     copy.color = spellOvr.glowColor
@@ -679,7 +578,6 @@ local function StartGlow(icon, spellOvr)
     local viewerSettings = GetViewerSettings(viewerType)
     if not viewerSettings then return end
 
-    -- Apply per-spell glow color override
     viewerSettings = ApplyGlowColorOverride(viewerSettings, spellOvr)
 
     ApplyLibCustomGlow(icon, viewerSettings)
@@ -696,21 +594,12 @@ StopGlow = function(icon, glowKey)
     end
     StopTextureGlow(icon, "_QUIFlash" .. glowKey)
     StopTextureGlow(icon, "_QUIHammer" .. glowKey)
-    -- Only the runtime (default-key) glow participates in activeGlowIcons;
-    -- preview glows pass a scoped key and must not touch runtime tracking.
     if glowKey == DEFAULT_GLOW_KEY then
         activeGlowIcons[icon] = nil
     end
 end
 
----------------------------------------------------------------------------
--- PANDEMIC GLOW: dedicated overlay frame whose alpha is driven by a
--- C_CurveUtil step curve evaluated against the icon's active aura
--- DurationObject. The curve evaluates C-side and the result is secret
--- userdata that flows directly into SetAlpha; no Lua-side compare or
--- arithmetic. Mirrors hud_visibility's UnitHealthPercent + curve pattern.
----------------------------------------------------------------------------
-local PANDEMIC_TEXTURE = FLASH_TEXTURE  -- reuse the proc-glow flash sheet
+local PANDEMIC_TEXTURE = FLASH_TEXTURE
 
 local function EnsurePandemicGlowFrame(icon)
     if not icon then return nil end
@@ -744,10 +633,6 @@ UpdatePandemicGlow = function(icon)
         return
     end
 
-    -- Pandemic glow is intentionally decoupled from the per-spell overlay/proc
-    -- glow override: a spell's glowEnabled == false toggle suppresses only its
-    -- overlay/proc glow, not its pandemic (aura-expiry) glow. They are distinct
-    -- visual signals, so do not gate the pandemic glow on the overlay override.
     if not icon._auraActive or not icon._lastAuraDurObj then
         if frame then frame:SetAlpha(0) end
         return
@@ -764,29 +649,14 @@ UpdatePandemicGlow = function(icon)
 
     local durObj = icon._lastAuraDurObj
 
-    -- Gate against permanent / no-duration auras. For an aura with no
-    -- duration, EvaluateRemainingPercent lands at the start of the step
-    -- curve (alpha 1) and the glow shows permanently. DurationObject:IsZero
-    -- is a stable per-aura property (not derived from elapsed/remaining),
-    -- and EvaluateColorValueFromBoolean keeps the (potentially-secret) bool
-    -- C-side; pass the selected value directly to SetAlpha without reading
-    -- or comparing it in Lua. Same pattern as the permanent-aura bar overlay.
-    --   IsZero=true  (permanent): texture alpha 0, glow hidden
-    --   IsZero=false (timed): texture alpha 1, curve drives frame alpha
     if frame.texture
        and durObj.IsZero
        and C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
-local okZ = true; local isZero = durObj.IsZero(durObj)
-        if okZ then
-local okA = true; local gate = C_CurveUtil.EvaluateColorValueFromBoolean(isZero, 0, 1)
-            if okA then
-                frame.texture.SetAlpha(frame.texture, gate)
-            end
-        end
+        local isZero = durObj.IsZero(durObj)
+        local gate = C_CurveUtil.EvaluateColorValueFromBoolean(isZero, 0, 1)
+        frame.texture.SetAlpha(frame.texture, gate)
     end
 
-    -- Curve evaluates C-side; result is secret userdata; SetAlpha accepts it
-    -- natively. Never read back into Lua.
     frame:SetAlpha(durObj:EvaluateRemainingPercent(curve))
 end
 
@@ -797,27 +667,40 @@ ClearPandemicState = function(icon)
     end
 end
 
----------------------------------------------------------------------------
--- GROW / POP on buff apply (opt-in: ncdm.buff.growOnApply; buff icons only).
---
--- When a tracked buff becomes ACTIVE (the renderer's false->true transition of
--- the NON-secret icon._auraActive flag), briefly scale the ARTWORK texture
--- (icon.Icon) up then settle it back. Scaling ONLY the texture -- never the
--- icon frame -- keeps the effect visually isolated: neighbor icons anchor to
--- the icon FRAME, so the texture's transient scale cannot shift layout.
---
--- Taint: the trigger reads only icon._auraActive (CDInfo.isActive is
--- NeverSecret) and the plain non-secret growOnApply flag; the animation is a
--- local insecure Scale anim built from plain number literals (SetScaleFrom/To
--- are AllowedWhenUntainted and never see a secret). No protected frame touched.
----------------------------------------------------------------------------
-local GROW_POP_PEAK     = 1.25   -- peak scale of the pop
-local GROW_POP_UP_SEC   = 0.10   -- grow phase duration
-local GROW_POP_DOWN_SEC = 0.15   -- settle phase duration (total ~0.25s)
+local _pandemicEntryProbe = {}
 
--- Lazy-build the Scale animation group on the texture itself. Created ONLY on
--- the first pop the feature actually plays, so the default-off path never
--- allocates an animation object. Returns nil if the target can't be animated.
+local function IsPandemicEnabledForEntry(entry)
+    if not entry then return false end
+    _pandemicEntryProbe._spellEntry = entry
+    local enabled = IsPandemicMirroringEnabled(_pandemicEntryProbe)
+    _pandemicEntryProbe._spellEntry = nil
+    return enabled
+end
+
+local function ApplyPandemicToOverlay(overlay)
+    if not overlay then return end
+    local tex = overlay._quiPandemicTex
+    if not tex and overlay.CreateTexture then
+        tex = overlay:CreateTexture(nil, "OVERLAY")
+        tex:SetTexture(PANDEMIC_TEXTURE)
+        tex:SetTexCoord(0, 1, 0, 1)
+        tex:SetBlendMode("ADD")
+        tex:SetAllPoints(overlay)
+        tex:SetVertexColor(1, 0.85, 0.2, 1)
+        overlay._quiPandemicTex = tex
+    end
+    if tex then tex:Show() end
+end
+
+local function ClearPandemicFromOverlay(overlay)
+    local tex = overlay and overlay._quiPandemicTex
+    if tex then tex:Hide() end
+end
+
+local GROW_POP_PEAK     = 1.25
+local GROW_POP_UP_SEC   = 0.10
+local GROW_POP_DOWN_SEC = 0.15
+
 local function EnsureGrowPop(tex)
     if not tex or not tex.CreateAnimationGroup then return nil end
     local ag = tex._quiGrowPop
@@ -845,57 +728,38 @@ local function EnsureGrowPop(tex)
     return ag
 end
 
--- Called by the renderer on the buff icon's false->true active edge. Gated on
--- the live buff-container growOnApply flag; returns (creating nothing) when off.
 local function PlayGrowPop(icon)
     if not icon then return end
     local tex = icon.Icon
     if not tex then return end
 
-    -- Opt-in gate: read the live buff-container settings (ncdm.buff). Plain
-    -- table lookups on a non-secret flag; nothing is allocated when off.
     local db = Shared and Shared.GetContainerDB and Shared.GetContainerDB("buff")
     if not db or not db.growOnApply then return end
 
     local ag = EnsureGrowPop(tex)
     if not ag then return end
-    if ag:IsPlaying() then ag:Stop() end  -- restart cleanly on rapid re-apply
+    if ag:IsPlaying() then ag:Stop() end
     ag:Play()
 end
 
--- Reset on icon recycle/hide so a mid-pop frame never carries its transient
--- scale into the next viewer. Stop() reverts the texture to its base scale.
 local function StopGrowPop(icon)
     local tex = icon and icon.Icon
     local ag = tex and tex._quiGrowPop
     if ag then
         if ag:IsPlaying() then ag:Stop() end
-        -- Explicitly clear any transient scale so a recycled icon never inherits
-        -- a mid-pop scale (Stop() mid-animation does not guarantee a base reset).
         tex:SetScale(1)
     end
 end
 
----------------------------------------------------------------------------
--- CHECK OVERLAY STATE: query API + event-based tracking
----------------------------------------------------------------------------
 local function IsOverlayQueryActive(spellID)
+    if _issecretvalue(spellID) then return false end -- @secret-policy: reject-secret-ids
     if not spellID or not IsSpellOverlayed then return false end
     return IsSpellOverlayed(spellID) and true or false
 end
 
 IsOverlayed = function(spellID)
+    if _issecretvalue(spellID) then return false end -- @secret-policy: reject-secret-ids
     if not spellID then return false end
-    -- The SPELL_ACTIVATION_OVERLAY_GLOW_SHOW/HIDE event is Blizzard's
-    -- authoritative proc signal (ref-counted into overlayedSpells, cleared on
-    -- HIDE). The live IsSpellOverlayed query is a secondary check that does NOT
-    -- reflect some override procs -- Hammer of Light (427453) fires GLOW_SHOW
-    -- but C_SpellActivationOverlay.IsSpellOverlayed(427453) returns false, so a
-    -- live-only check leaves the procced override icon un-glowed while the
-    -- action bar (which shows straight off the event) glows correctly. Honor
-    -- either source: event cache first (catches override procs), then the live
-    -- query (catches procs whose SHOW we loaded after, avoiding a stale miss).
-    -- The HIDE/wipe events clear the cache, bounding the missed-HIDE risk.
     if overlayedSpells[spellID] then return true end
     if IsSpellOverlayed then
         return IsOverlayQueryActive(spellID)
@@ -903,22 +767,11 @@ IsOverlayed = function(spellID)
     return false
 end
 
--- Hand the resolver our authoritative proc-overlay signal so it can tell a
--- genuine proc override (overlay active -> show ready) from a form/spec override
--- that shares the base cooldown (no overlay -> show the cooldown swipe). See
--- IsTransientProcOverrideReady in cdm_resolvers.lua. cdm_resolvers loads before
--- this file, so CDMResolvers is present.
-if ns.CDMResolvers and ns.CDMResolvers.SetProcOverlayProbe then
-    ns.CDMResolvers.SetProcOverlayProbe(IsOverlayed)
-end
-
 local function EvaluateGlowForIcon(icon)
     if not icon or not icon:IsShown() or not icon._spellEntry then
         return false, nil
     end
 
-    -- Glow source gate: Off suppresses QUI glow; Skin defers to the external
-    -- skin's own glow when present. QUI (default) = native CDM glow below.
     do
         local profile = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
         local source = profile and profile.ncdm and profile.ncdm.glowSource or "QUI"
@@ -953,17 +806,6 @@ local function EvaluateGlowForIcon(icon)
         shouldGlow = IsSpellCastable(icon)
     end
 
-    -- Overlay glow latch. A routine scan can transiently fail to re-link this
-    -- icon to its active overlay: Blizzard's override spell flips mid
-    -- SPELLS_CHANGED, so Sources.QueryOverrideSpell briefly stops resolving the
-    -- overlay ID and FindAllowedOverlayGlow misses -- even though the overlay is
-    -- still active (overlayedSpells[id] stays true until GLOW_HIDE). Tearing the
-    -- glow down on that miss, then re-applying once the override settles, replays
-    -- the proc glow's intro animation (a visible flicker at proc start). Latch on
-    -- the authoritative overlayedSpells state: once an overlay drives the glow,
-    -- only the GLOW_HIDE path (which clears overlayedSpells) may stop it -- a
-    -- re-link miss while the overlay is still active leaves the glow untouched.
-    -- The base guard drops the latch if the icon is recycled to another spell.
     local entryID = entry.spellID or entry.id
     if overlayGlow then
         overlayGlowSpell[icon] = overlaySpellID
@@ -971,7 +813,7 @@ local function EvaluateGlowForIcon(icon)
     elseif not shouldGlow then
         local latched = overlayGlowSpell[icon]
         if latched and overlayGlowBase[icon] == entryID and IsOverlayed(latched) then
-            shouldGlow = true   -- overlay still active; transient re-link miss
+            shouldGlow = true
         else
             overlayGlowSpell[icon] = nil
             overlayGlowBase[icon] = nil
@@ -1033,13 +875,8 @@ local function ScanProcOnUsableGlows()
     end
 end
 
----------------------------------------------------------------------------
--- SCAN ALL ICONS AND SYNC GLOW STATE
----------------------------------------------------------------------------
--- Hoisted out of ScanAllGlows so IconFactory:ForEachIcon does not allocate
--- a fresh closure per call.
 local function _SyncGlowIfVisible(icon)
-    if not icon:IsShown() then return end -- skip hidden icons (glow re-applied on layout refresh)
+    if not icon:IsShown() then return end
     if icon._spellEntry then
         SyncGlowForIcon(icon)
     end
@@ -1062,16 +899,10 @@ local function ScanAllGlows()
     end
 end
 
----------------------------------------------------------------------------
--- TARGETED GLOW UPDATE FOR A SINGLE SPELL ID
--- O(1) lookup via reverse map instead of scanning all icons.
----------------------------------------------------------------------------
 local _scanGlowVisited = {}
 
--- Hoisted to avoid a per-call closure: previous ForEachSpellCandidate
--- callback captured `visited`, `matched`, and `spellIdToGlowIcons`. State
--- now lives on module locals; matched is signaled via the return value.
 local function _ProcessGlowIconsForCandidate(spellID, visited)
+    if _issecretvalue(spellID) then return false end -- @secret-policy: reject-secret-ids
     local icons = spellIdToGlowIcons[spellID]
     if not icons then return false end
     for i = 1, #icons do
@@ -1092,8 +923,6 @@ local function ScanGlowsForSpell(spellID)
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
 
-    -- Deduplicate icons across candidates. Reuse scratch table because
-    -- overlay events can fire in bursts during combat.
     local visited = _scanGlowVisited
     wipe(visited)
 
@@ -1121,18 +950,12 @@ local function ScanGlowsForSpell(spellID)
     end
 
     if not matched then
-        -- Proc events are infrequent; if the fast reverse map misses because
-        -- Blizzard reported a related spellID we do not currently index,
-        -- rescan all visible icons immediately so short overlays are not lost.
         ScanAllGlows()
     end
 
     wipe(visited)
 end
 
----------------------------------------------------------------------------
--- REFRESH ALL GLOWS (called when settings change)
----------------------------------------------------------------------------
 local _refreshStopScratch = {}
 
 local function StopAllTrackedGlows()
@@ -1153,34 +976,17 @@ local function StopAllTrackedGlows()
     wipe(overlayGlowBase)
 end
 
--- Full rebuild: tears every glow down and re-applies from scratch. Use ONLY
--- when the glow *settings* changed (type/color/frequency from the options
--- panel) -- the teardown is what forces the new look to take. The restart
--- replays the proc-glow's intro animation (a visible flash), which is fine
--- while the user is actively editing but must NOT run on routine refreshes.
 local function RefreshAllGlows()
-    -- Stop all current glows
     StopAllTrackedGlows()
 
     if not IsCDMRuntimeEnabled() then
         return
     end
 
-    -- Rebuild reverse lookup and re-scan with current settings
     RebuildGlowSpellMap()
     ScanAllGlows()
 end
 
--- Idempotent resync for post-layout refreshes (icons created/recycled, but
--- glow *settings* unchanged). Rebuilds the reverse map then diffs per icon via
--- SyncGlowForIcon, which only starts a glow when the icon is not already
--- glowing and only stops one when it should no longer glow. A still-valid glow
--- is left completely untouched -- no ButtonGlow_Stop->Start, so no AnimIn
--- replay/flash. This is the safe-to-call-repeatedly path: a single proc (e.g.
--- Hammer of Light overriding Wake of Ashes) drives several back-to-back
--- post-layout refreshes, and the previous RefreshAllGlows teardown flashed the
--- proc glow on every one. Glows on hidden/recycled icons are invisible (the
--- glow frame is a child of the hidden icon) and re-evaluated when next shown.
 local function ResyncAllGlows()
     if not IsCDMRuntimeEnabled() then
         StopAllTrackedGlows()
@@ -1190,20 +996,6 @@ local function ResyncAllGlows()
     ScanAllGlows()
 end
 
----------------------------------------------------------------------------
--- EVENT HANDLING
--- Spell activation overlay events drive proc glow updates.
--- Track overlay state in overlayedSpells table for API-free fallback.
----------------------------------------------------------------------------
--- Proc overrides (Hammer of Light 427453 overriding Wake of Ashes 255937 on a
--- Light's Guidance proc) flip C_Spell.GetOverrideSpell mid-combat. The resolver
--- reads that override through CDMRuntimeQueries.QueryOverrideSpell, which caches
--- per spellID. Previously the only invalidation edge was SPELLS_CHANGED -- a
--- Blizzard hot event that fires constantly in combat for procs/forms/temp
--- spells, so it must not carry broad work. The glow SHOW/HIDE events ARE the
--- proc edges (per-spell, fired exactly when the override flips), so invalidate
--- the override cache here instead. Keeps QueryOverrideSpell fresh at the proc
--- edge without leaning on SPELLS_CHANGED in the hot path.
 local function InvalidateOverrideCacheForProc()
     local rq = ns.CDMRuntimeQueries
     if rq and rq.ClearStableCaches then
@@ -1266,10 +1058,10 @@ local function SetupDebugInstrumentation()
     ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
     ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Glows", frame = eventFrame }
 end
-if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+if ns.DebugRegister then
     ns.DebugRegister(SetupDebugInstrumentation)
 else
-    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+    SetupDebugInstrumentation()
 end
 
 local function DisableRuntime()
@@ -1278,43 +1070,46 @@ local function DisableRuntime()
     StopAllTrackedGlows()
 end
 
----------------------------------------------------------------------------
--- PANDEMIC AURA REFRESH
--- cdm_spelldata.lua owns UNIT_AURA and calls this after it captures the
--- batched payload. The icon's _lastAuraDurObj (cached by the resolver in
--- ApplyAuraStateToIcon) feeds the C-side curve evaluation; pandemic state
--- never enters Lua.
----------------------------------------------------------------------------
+local _pandemicVisited = {}
+
 local function HandleUnitAuraChanged(_unit, _updateInfo)
     if not IsCDMRuntimeEnabled() then return end
 
+    wipe(_pandemicVisited)
     for _, icons in pairs(spellIdToGlowIcons) do
         for i = 1, #icons do
             local icon = icons[i]
-            if icon and icon:IsShown() and icon._spellEntry then
-                UpdatePandemicGlow(icon)
+            if icon and not _pandemicVisited[icon] then
+                _pandemicVisited[icon] = true
+                if icon:IsShown() and icon._spellEntry then
+                    UpdatePandemicGlow(icon)
+                end
             end
         end
     end
 end
 
----------------------------------------------------------------------------
--- EXPORTS
----------------------------------------------------------------------------
--- Store on ns for engine init to wire
+local function ResolveGlowForEntry(entry)
+    if not entry then return nil end
+    local fakeIcon = { _spellEntry = entry }
+    local viewerType = GetViewerType(fakeIcon)
+    if not viewerType then return nil end
+    local viewerSettings = GetViewerSettings(viewerType)
+    if not viewerSettings then return nil end
+    local spellOvr = GetSpellGlowOverride(fakeIcon)
+    if spellOvr and spellOvr.glowEnabled == false then return nil end
+    return ApplyGlowColorOverride(viewerSettings, spellOvr)
+end
+
 ns._OwnedGlows = {
     StartGlow = StartGlow,
     StopGlow = StopGlow,
+    ResolveGlowForEntry = ResolveGlowForEntry,
     RefreshAllGlows = RefreshAllGlows,
     ResyncAllGlows = ResyncAllGlows,
     RebuildGlowSpellMap = RebuildGlowSpellMap,
     GetViewerType = GetViewerType,
-    -- Resolves the customGlow settings table for a viewer ("Essential",
-    -- "Utility", or a custom container prefix); returns nil when that
-    -- viewer's glow is disabled. Used by the composer live preview.
     GetViewerSettings = GetViewerSettings,
-    -- Key-scoped applier/stopper so the preview can paint glows on its own
-    -- frames through the exact runtime code without touching activeGlowIcons.
     ApplyGlowWithKey = function(icon, viewerSettings, glowKey)
         return ApplyLibCustomGlow(icon, viewerSettings, glowKey, true)
     end,
@@ -1326,6 +1121,9 @@ ns._OwnedGlows = {
     IsSpellCastable = IsSpellCastable,
     UpdatePandemicGlow = UpdatePandemicGlow,
     ClearPandemicState = ClearPandemicState,
+    IsPandemicEnabledForEntry = IsPandemicEnabledForEntry,
+    ApplyPandemicToOverlay = ApplyPandemicToOverlay,
+    ClearPandemicFromOverlay = ClearPandemicFromOverlay,
     PlayGrowPop = PlayGrowPop,
     StopGrowPop = StopGrowPop,
     HandleUnitAuraChanged = HandleUnitAuraChanged,
@@ -1334,16 +1132,6 @@ ns._OwnedGlows = {
         return activeGlowIcons[icon] and { active = true } or nil
     end,
 }
-
-
-
----------------------------------------------------------------------------
--- Cooldown highlighter
----------------------------------------------------------------------------
-
-
--- Cooldown highlighter: briefly highlights the CDM icon matching a spell
--- the player just cast, giving visual feedback of what was pressed.
 
 local _, ns = ...
 local Helpers = ns.Helpers
@@ -1359,21 +1147,11 @@ local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 local FLASH_TEXTURE = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[iconskin\Flash]]
 local HAMMER_TEXTURE = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[quazii_hammer]]
 
----------------------------------------------------------------------------
--- SETTINGS
----------------------------------------------------------------------------
 local GetSettings = Helpers.CreateDBGetter("cooldownHighlighter")
 
----------------------------------------------------------------------------
--- STATE
----------------------------------------------------------------------------
-local activeHighlights = {}  -- [icon] = timerHandle
+local activeHighlights = {}
 local GLOW_KEY = "_QUIHighlighter"
 
----------------------------------------------------------------------------
--- FIND CDM ICON BY SPELL ID
--- Searches all owned CDM icons for a matching spellID or overrideSpellID.
----------------------------------------------------------------------------
 local VIEWER_TYPES = GetBuiltinIconContainerKeys()
 
 local function FindIconBySpellID(castSpellID)
@@ -1401,21 +1179,18 @@ local function FindIconBySpellID(castSpellID)
     return nil
 end
 
----------------------------------------------------------------------------
--- TEXTURE OVERLAY GLOW HELPER
----------------------------------------------------------------------------
--- StartTextureGlow/StopTextureGlow are defined once in the effects chunk
--- above (same file scope) and remain in scope here as upvalues; the calls
--- below reuse those originals instead of redeclaring an identical copy.
-
----------------------------------------------------------------------------
--- HIGHLIGHT APPLICATION
----------------------------------------------------------------------------
 local function StopAllGlows(icon)
     if not icon or not LCG then return end
     LCG.PixelGlow_Stop(icon, GLOW_KEY)
     LCG.AutoCastGlow_Stop(icon, GLOW_KEY)
-    LCG.ButtonGlow_Stop(icon)
+    if icon[GLOW_KEY] then
+        icon[GLOW_KEY] = nil
+        LCG.ButtonGlow_Stop(icon)
+        if activeGlowIcons[icon] then
+            activeGlowIcons[icon] = nil
+            SyncGlowForIcon(icon)
+        end
+    end
     LCG.ProcGlow_Stop(icon, GLOW_KEY)
     StopTextureGlow(icon, "_QUIFlashHL")
     StopTextureGlow(icon, "_QUIHammerHL")
@@ -1427,10 +1202,6 @@ local function RemoveHighlight(icon)
     activeHighlights[icon] = nil
 end
 
--- Use the canonical EnsureGlowBelowSwipe defined in the effects chunk
--- (exposed via ns._CDM_EnsureGlowBelowSwipe) so the highlighter places its
--- glow at the same low level (below the cooldown swipe + count) as every
--- other glow path.
 local EnsureGlowBelowSwipe = ns._CDM_EnsureGlowBelowSwipe
 
 local function ApplyHighlight(icon)
@@ -1439,9 +1210,6 @@ local function ApplyHighlight(icon)
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
 
-    -- Glow source gate (consistent with the proc/cooldown glow in this file):
-    -- "Off" suppresses QUI highlights; "Skin" defers to the external skin's
-    -- own glow when present. "QUI" (default) runs the native highlight below.
     do
         local profile = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
         local source = profile and profile.ncdm and profile.ncdm.glowSource or "QUI"
@@ -1455,7 +1223,6 @@ local function ApplyHighlight(icon)
         end
     end
 
-    -- Remove existing highlight if any
     if activeHighlights[icon] then
         activeHighlights[icon]:Cancel()
         RemoveHighlight(icon)
@@ -1476,8 +1243,11 @@ local function ApplyHighlight(icon)
         LCG.AutoCastGlow_Start(icon, color, lines, frequency, scale, 0, 0, GLOW_KEY)
         EnsureGlowBelowSwipe(icon, icon["_AutoCastGlow" .. GLOW_KEY])
     elseif glowType == "Button Glow" then
-        LCG.ButtonGlow_Start(icon, color, frequency)
-        EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
+        if not icon["_ButtonGlow"] then
+            LCG.ButtonGlow_Start(icon, color, frequency)
+            icon[GLOW_KEY] = true
+            EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
+        end
 
     elseif glowType == "Flash" then
         EnsureGlowBelowSwipe(icon, StartTextureGlow(icon, "_QUIFlashHL", FLASH_TEXTURE, color))
@@ -1494,18 +1264,11 @@ local function ApplyHighlight(icon)
         EnsureGlowBelowSwipe(icon, icon["_ProcGlow" .. GLOW_KEY])
     end
 
-    -- Auto-remove after duration
     activeHighlights[icon] = C_Timer.NewTimer(duration, function()
         RemoveHighlight(icon)
     end)
 end
 
----------------------------------------------------------------------------
--- DISPATCH
--- Called by cdm_icon_renderer.lua's central UNIT_SPELLCAST_SUCCEEDED handler. The
--- highlighter no longer registers the event itself; single registration on
--- cdEventFrame avoids the duplicate per-cast dispatch.
----------------------------------------------------------------------------
 local function OnPlayerCastSucceeded(castSpellID)
     if not IsCDMRuntimeEnabled() then return end
 
@@ -1537,9 +1300,6 @@ ns._OwnedHighlighter = {
     OnPlayerCastSucceeded = OnPlayerCastSucceeded,
 }
 
----------------------------------------------------------------------------
--- GLOBAL REFRESH
----------------------------------------------------------------------------
 _G.QUI_RefreshCooldownHighlighter = function()
     if not IsCDMRuntimeEnabled() then
         ClearHighlights()
@@ -1548,7 +1308,6 @@ _G.QUI_RefreshCooldownHighlighter = function()
 
     local settings = GetSettings()
     if not settings or not settings.enabled then
-        -- Remove all active highlights
         ClearHighlights()
     end
 end
@@ -1562,43 +1321,49 @@ if ns.Registry then
     })
 end
 
-
----------------------------------------------------------------------------
--- Cooldown swipe
----------------------------------------------------------------------------
-
-
--- Granular cooldown swipe control for addon-owned CDM icons.
--- Simplified: operates directly on QUI's owned icon frames.
--- No hooks, no pulse tickers, no deferred operations needed.
-
 local _, ns = ...
 local Helpers = ns.Helpers
 local Shared = ns.CDMShared
 
--- Default settings
 local DEFAULTS = {
     showBuffSwipe = true,
     showCooldownIconAuraPhase = true,
     showBuffIconSwipe = true,
     showGCDSwipe = true,
     showCooldownSwipe = true,
-    -- Overlay color: shown when spell/buff is ACTIVE (aura duration)
-    overlayColorMode = "default",  -- "default" | "class" | "accent" | "custom"
+    overlayColorMode = "default",
     overlayColor = {1, 1, 1, 1},
-    -- Swipe color: shown when spell is ON COOLDOWN (radial darkening)
     swipeColorMode = "default",
     swipeColor = {1, 1, 1, 1},
 }
 
--- Get settings from AceDB via shared helper
 local function GetSettings()
     return Helpers.GetModuleSettings("cooldownSwipe", DEFAULTS)
 end
 
----------------------------------------------------------------------------
--- COLOR RESOLUTION
----------------------------------------------------------------------------
+local EFFECTS_DEFAULTS = {
+    hideEssential = false,
+    hideUtility = false,
+}
+
+local function GetEffectsSettings()
+    return Helpers.GetModuleSettings("cooldownEffects", EFFECTS_DEFAULTS)
+end
+
+local function ContainerHideKey(viewerType)
+    if viewerType == "essential" then return "hideEssential" end
+    if viewerType == "utility" then return "hideUtility" end
+    if viewerType == nil then return nil end
+    return "hide_" .. viewerType
+end
+
+local function IsContainerEffectsHidden(viewerType)
+    local key = ContainerHideKey(viewerType)
+    if not key then return false end
+    local effects = GetEffectsSettings()
+    return (effects and effects[key] == true) or false
+end
+
 local function GetClassColor()
     local _, class = UnitClass("player")
     local classColor = Helpers.GetClassColorTable(class)
@@ -1608,7 +1373,6 @@ local function GetClassColor()
     return 1, 1, 1, 0.8
 end
 
--- Resolve r,g,b,a for a given mode + stored color table; nil = leave default.
 local function ResolveColor(mode, colorTable)
     if mode == "class" then
         return GetClassColor()
@@ -1618,17 +1382,15 @@ local function ResolveColor(mode, colorTable)
             local r, g, b = QUI:GetSkinColor()
             return r, g, b, 0.8
         end
-        return 0.376, 0.647, 0.980, 0.8  -- fallback sky blue
+        return 0.376, 0.647, 0.980, 0.8
     elseif mode == "custom" then
         local c = colorTable or {}
         return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
     end
-    return nil  -- "default": don't override
+    return nil
 end
 
--- CDM default swipe color (dark overlay for cooldowns)
 local CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A = 0, 0, 0, 0.8
--- Blizzard default buff/aura overlay color (yellow)
 local BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A = 0.93, 0.77, 0.0, 0.45
 local FULL_FRAME_SWIPE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 
@@ -1639,11 +1401,6 @@ local function SettingEnabled(value, fallback)
     return value == nil and fallback == true or value == true
 end
 
--- Resolve the swipe draw state + color for the composer live preview, using
--- the same ResolveColor + default-fallback rules as the runtime swipe path.
--- mode: "aura" (overlayColorMode/overlayColor, gated by showBuffSwipe) or
--- "cooldown" (swipeColorMode/swipeColor, gated by showCooldownSwipe).
--- Returns showSwipe, r, g, b, a.
 function ns._CDM_ResolvePreviewSwipe(settings, mode)
     settings = settings or {}
     local showSwipe
@@ -1667,21 +1424,25 @@ function ns._CDM_ResolvePreviewSwipe(settings, mode)
     return true, r, g, b, a or 1
 end
 
----------------------------------------------------------------------------
--- APPLY SWIPE TO A SINGLE ICON
--- Classification prefers the icon's active rendered swipe state:
--- aura phase, then explicit GCD render flag, then cooldown.
----------------------------------------------------------------------------
+function ns._CDM_ResolveModeColor(settings, mode)
+    settings = settings or {}
+    local r, g, b, a
+    if mode == "aura" then
+        r, g, b, a = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
+        if not r then r, g, b, a = BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A end
+    else
+        r, g, b, a = ResolveColor(settings.swipeColorMode or "default", settings.swipeColor)
+        if not r then r, g, b, a = CDM_DEFAULT_R, CDM_DEFAULT_G, CDM_DEFAULT_B, CDM_DEFAULT_A end
+    end
+    return r, g, b, a or 1
+end
+
 local function ApplySwipeToIcon(icon, settings)
     if not icon or not icon.Cooldown or not icon._spellEntry then return end
     settings = settings or GetSettings()
 
     local entry = icon._spellEntry
     local isBuffIcon = (entry.viewerType == "buff")
-    -- Aura-kind classification is independent of container shape: an aura
-    -- entry on a custom cooldown container or essential/utility (kind="aura")
-    -- still gets aura-mode swipe styling. Falls back to viewerType when
-    -- CDMSpellData is unavailable during early bootstrap.
     local isAuraEntry
     local CDMSpellData = ns.CDMSpellData
     if CDMSpellData and CDMSpellData.IsAuraEntry then
@@ -1691,10 +1452,6 @@ local function ApplySwipeToIcon(icon, settings)
             or IsBuiltinAuraContainerKey(entry.viewerType)
     end
 
-    -- Classify: aura, gcd, inactive, or cooldown. The resolver's active render mode is
-    -- authoritative for cooldown-kind icons; fallback aura probing is only for
-    -- early/unresolved styling. Otherwise a live aura lookup can recolor a
-    -- CooldownFrame that is currently bound to a GCD DurationObject.
     local mode
     local resolvedMode = icon._resolvedCooldownMode
     if isAuraEntry or isBuffIcon then
@@ -1722,9 +1479,6 @@ local function ApplySwipeToIcon(icon, settings)
             local active = Resolvers.ResolveAuraActiveState(entry)
             if active then mode = "aura" end
         end
-        -- Buff-pool cross-reference (preserved here, not in the helper;
-        -- it depends on the current state of OTHER icons, which is a
-        -- visual concern, not a per-entry property).
         if not mode then
             local sid = entry.overrideSpellID or entry.spellID
             local IconFactory = ns.CDMIconFactory
@@ -1747,7 +1501,6 @@ local function ApplySwipeToIcon(icon, settings)
         mode = "cooldown"
     end
 
-    -- Swipe visibility
     local showSwipe
     if mode == "aura" then
         if isBuffIcon then
@@ -1763,15 +1516,16 @@ local function ApplySwipeToIcon(icon, settings)
         showSwipe = SettingEnabled(settings.showCooldownSwipe, true)
     end
 
-    -- Apply swipe styling to QUI's native icon.Cooldown.
-    -- Buff/aura edge is independently toggleable (showBuffEdge) so users can keep
-    -- the radial darkening while dropping the bright edge on buff icons.
     local showEdge = showSwipe and ((mode == "aura" and SettingEnabled(settings.showBuffEdge, true))
         or (mode == "cooldown" and settings.showRechargeEdge))
 
+    if IsContainerEffectsHidden(entry.viewerType) then
+        showSwipe = false
+        showEdge = false
+    end
+
     local function applyToCooldown(cd)
         if not cd then return end
-        -- Stash intended state on the cooldown frame for later style reapplies.
         cd._quiIntendedDrawSwipe = showSwipe and true or false
         cd._quiIntendedDrawEdge  = showEdge and true or false
         cd._quiIntendedSwipeTexture = FULL_FRAME_SWIPE_TEXTURE
@@ -1779,11 +1533,7 @@ local function ApplySwipeToIcon(icon, settings)
         cd.SetDrawSwipe(cd, showSwipe and true or false)
         cd.SetDrawEdge(cd, showEdge and true or false)
 
-        -- Apply color and texture based on mode.
-        -- When swipe is disabled, force alpha-0 color as a failsafe;
         -- SetCooldownFromDurationObject + SetReverse (aura path) can
-        -- internally re-enable drawSwipe on the C-side animation system,
-        -- so a transparent color ensures the swipe is invisible regardless.
         local cR, cG, cB, cA
         if not showSwipe then
             cR, cG, cB, cA = 0, 0, 0, 0
@@ -1803,18 +1553,11 @@ local function ApplySwipeToIcon(icon, settings)
     applyToCooldown(icon.Cooldown)
 end
 
----------------------------------------------------------------------------
--- APPLY SWIPE TO A BLIZZARD BUFF VIEWER CHILD
--- These children have .Icon and .Cooldown but no ._spellEntry.
--- Buff viewer children are always auras, so classification is fixed.
----------------------------------------------------------------------------
 local function ApplySwipeToBuffChild(icon, settings)
     if not icon or not icon.Cooldown then return end
     settings = settings or GetSettings()
 
-    -- Buff viewer children are always auras in the buff viewer
     local showSwipe = SettingEnabled(settings.showBuffIconSwipe, true)
-    -- Edge is independently toggleable (keep radial, drop the bright edge).
     local showEdge = showSwipe and SettingEnabled(settings.showBuffEdge, true)
 
     icon.Cooldown:SetDrawSwipe(showSwipe)
@@ -1823,7 +1566,6 @@ local function ApplySwipeToBuffChild(icon, settings)
     if not showSwipe then
         icon.Cooldown:SetSwipeColor(0, 0, 0, 0)
     else
-        -- Use overlay color (aura mode); default to Blizzard yellow
         local oR, oG, oB, oA = ResolveColor(settings.overlayColorMode or "default", settings.overlayColor)
         if not oR then oR, oG, oB, oA = BLIZZ_BUFF_R, BLIZZ_BUFF_G, BLIZZ_BUFF_B, BLIZZ_BUFF_A end
 
@@ -1832,9 +1574,6 @@ local function ApplySwipeToBuffChild(icon, settings)
     end
 end
 
----------------------------------------------------------------------------
--- REFRESH ALL ICONS
----------------------------------------------------------------------------
 local function RefreshAllSwipes()
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
@@ -1845,7 +1584,6 @@ local function RefreshAllSwipes()
         CDMIcons:UpdateAllCooldowns()
     end
 
-    -- Addon-owned built-in icon containers.
     local IconFactory = ns.CDMIconFactory
     if not IconFactory then return end
     for _, viewerType in ipairs(GetBuiltinIconContainerKeys()) do
@@ -1854,13 +1592,26 @@ local function RefreshAllSwipes()
             ApplySwipeToIcon(icon, settings)
         end
     end
+
+    local ncdm = Shared and Shared.GetNcdmDB and Shared.GetNcdmDB()
+    local customList = ncdm and ncdm.containers
+    if customList then
+        for containerKey, cfg in pairs(customList) do
+            if cfg and not cfg.builtIn then
+                local pool = IconFactory:GetIconPool(containerKey)
+                for _, icon in ipairs(pool) do
+                    ApplySwipeToIcon(icon, settings)
+                end
+            end
+        end
+    end
 end
 
--- EXPORTS
----------------------------------------------------------------------------
 ns._OwnedSwipe = {
     Apply = RefreshAllSwipes,
     ApplyToIcon = ApplySwipeToIcon,
     ApplyToBuffChild = ApplySwipeToBuffChild,
     GetSettings = GetSettings,
+    IsContainerEffectsHidden = IsContainerEffectsHidden,
+    _TestContainerHideKey = ContainerHideKey,
 }

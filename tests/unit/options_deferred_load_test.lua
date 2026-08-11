@@ -6,10 +6,16 @@
 -- gameplay/login path references them — their only callers are the
 -- QUI_Options settings content files and the headless test harness. They must
 -- therefore load via QUI_Options (LoadOnDemand), NOT in the main addon's login
--- path, so a fresh login does not parse ~190 KB of preset strings plus the
--- ~2.8k-line serialization engine that the player may never open.
+-- path, so a fresh login does not parse preset strings plus the ~2.8k-line
+-- serialization engine that the player may never open.
 --
--- This guard prevents a regression that silently re-adds either to startup.
+-- ONE exception since the lazy-seed inversion: importstrings/
+-- starter_profile.lua IS the fresh-install seed source (decoded by
+-- core/new_profile_defaults.lua in the OnNewProfile hook, direct
+-- LibDeflate/AceSerializer — not profile_io), so its ~44 KB string loads at
+-- login, replacing the 347 KB literal seed table that used to load there.
+--
+-- This guard prevents a regression that silently re-adds the rest to startup.
 
 local function readAll(path)
     local file = assert(io.open(path, "rb"), "failed to open " .. path)
@@ -55,28 +61,28 @@ check(not quiToc:find("profile_io", 1, true),
 check(optionsXml:find("profile_io", 1, true) ~= nil,
     "QUI_Options.toc must load core\\profile_io.lua")
 
--- Bundled preset import strings: out of load.xml, into QUI_Options.
-check(not quiToc:find("importstrings", 1, true),
-    "QUI.toc must NOT load importstrings at login (preset strings are options-only)")
-for _, f in ipairs({
-    "qui_editmode_base",
-    "starter_profile",
-}) do
-    check(optionsXml:find(f, 1, true) ~= nil,
-        "QUI_Options/options.xml must load importstrings\\" .. f .. ".lua")
-end
+-- Bundled preset import strings: qui_editmode_base stays options-only;
+-- starter_profile is root-owned (lazy-seed source — see header).
+check(quiToc:find("importstrings/starter_profile.lua", 1, true) ~= nil,
+    "QUI.toc must load importstrings\\starter_profile.lua (lazy-seed source)")
+check(not quiToc:find("qui_editmode_base", 1, true),
+    "QUI.toc must NOT load qui_editmode_base at login (options-only)")
+check(optionsXml:find("qui_editmode_base", 1, true) ~= nil,
+    "QUI_Options/options.xml must load importstrings\\qui_editmode_base.lua")
+check(not optionsXml:find("starter_profile", 1, true),
+    "QUI_Options.toc must not double-load starter_profile.lua (root owns it; the Profiles tab reads the same QUI.imports entry)")
 
 -- Settings framework split (core/settings/*.lua):
 --
--- These 9 are options-only — every consumer reaches them lazily (inside a
+-- These 8 are options-only — every consumer reaches them lazily (inside a
 -- function) from code that only runs once the settings/layout-mode UI is open;
 -- none is captured at file scope on the login path. They load via QUI_Options.
 for _, f in ipairs({
     "providers", "provider_panels", "model_kit", "fields", "surfaces",
-    "surface_features", "nav", "sync", "renderer",
+    "surface_features", "nav", "renderer",
 }) do
     -- Both manifests need the "core/" prefix so e.g. provider_panels doesn't
-    -- collide with the module file QUI_QoL/qol/settings/provider_panels.lua.
+    -- collide with the module file modules/qol/settings/provider_panels.lua.
     check(not quiToc:find("core/settings/" .. f .. ".lua", 1, true),
         "QUI.toc must NOT load core/settings/" .. f .. ".lua (options-only)")
     check(optionsXml:find("core/settings/" .. f .. ".lua", 1, true) ~= nil,

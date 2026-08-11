@@ -3,17 +3,9 @@ local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
-local Opts = Shared  -- V3 body-pattern helpers
+local Opts = Shared
+local SkinBase = ns.SkinBase
 
-local function CJKFont(fs, p, s, f)
-    if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
-        ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
-    else
-        fs:SetFont(p, s, f)
-    end
-end
-
--- Local references
 local PADDING = Shared.PADDING
 local CreateScrollableContent = Shared.CreateScrollableContent
 local GetDB = Shared.GetDB
@@ -29,9 +21,6 @@ local Settings = ns.Settings
 local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
----------------------------------------------------------------------------
--- SHARED CONTEXT & REFRESH CALLBACKS
----------------------------------------------------------------------------
 local function ResolveContext()
     local db = GetDB()
     if not db or not db.actionBars then return nil end
@@ -48,7 +37,6 @@ local function RefreshActionBars()
     if _G.QUI_RefreshActionBars then _G.QUI_RefreshActionBars() end
 end
 
--- Lightweight: only re-evaluate mouseover fade state (no full bar rebuild)
 local function RefreshActionBarFade()
     if _G.QUI_RefreshActionBarFade then _G.QUI_RefreshActionBarFade() end
 end
@@ -58,9 +46,6 @@ local function Unavailable(parent, label)
     t:SetPoint("TOPLEFT", PADDING, -15)
 end
 
--- Vertical section-layout cursor shared by the sub-tab builders. Returns the
--- headerAt / sectionAt / closeSection trio that advance a shared `y` cursor as
--- accent-dot headers and settings-card groups are stacked down the tab.
 local function MakeSectionLayout(tabContent)
     local PAD = PADDING
     local HEADER_GAP = 26
@@ -92,14 +77,6 @@ local function MakeSectionLayout(tabContent)
     return headerAt, sectionAt, closeSection, getY
 end
 
----------------------------------------------------------------------------
--- PERSISTENT PREVIEW (tile-level, shared across all sub-tabs)
----------------------------------------------------------------------------
--- Called once by framework_v2 BuildTilePage via tile.config.preview.build.
--- Populates the preview frame with 10 action button mirrors + a bar
--- selector dropdown that picks which of bar 1-8 to mirror. Stays in sync
--- with live slot changes. Since it's built at the tile level (not the
--- sub-tab level), it persists across every sub-tab of Action Bars.
 local BAR_OPTIONS = {
     { value = "bar1", text = ns.L["Bar 1"] }, { value = "bar2", text = ns.L["Bar 2"] },
     { value = "bar3", text = ns.L["Bar 3"] }, { value = "bar4", text = ns.L["Bar 4"] },
@@ -118,7 +95,7 @@ local SelectedBarListeners = setmetatable({}, { __mode = "k" })
 local function NotifySelectedBarChanged(origin)
     for owner, callback in pairs(SelectedBarListeners) do
         if owner and callback then
-            local ok = pcall(callback, SelectedBarState.key, origin)
+            local ok = ns.SafeCall("bulkhead", callback, SelectedBarState.key, origin)
             if not ok then
                 SelectedBarListeners[owner] = nil
             end
@@ -167,7 +144,6 @@ local function SetActionBarsPreviewBar(barKey)
 end
 
 local function BuildActionBarsPreview(pv)
-    local accent = C.accent or { 0.204, 0.827, 0.6, 1 }
     local border = (GUI.Colors and GUI.Colors.border) or { 1, 1, 1, 0.06 }
 
     local selectedBar = GetSelectedBar()
@@ -186,20 +162,22 @@ local function BuildActionBarsPreview(pv)
     end
 
     local lbl = pv:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(GUI:GetFontPath())
-    CJKFont(lbl, fpath or select(1, lbl:GetFont()), 8, "")
-    lbl:SetTextColor(accent[1], accent[2], accent[3], 0.7)
+    if SkinBase and SkinBase.SkinFontString then
+        SkinBase.SkinFontString(lbl, { fontOnly = true })
+    end
     lbl:SetPoint("TOPLEFT", pv, "TOPLEFT", 8, -6)
-    local spaced = ns.L["P R E V I E W"]
-    lbl:SetText(spaced)
+    lbl:SetText(ns.L["Live Preview"])
+    lbl:SetTextColor(0.6, 0.6, 0.6, 1)
 
-    -- Driver owns the preview buttons, Cooldown children, ticker, and cycle.
     if ns.QUI_ActionBarsPreviewDriver and ns.QUI_ActionBarsPreviewDriver.Build then
-        ns.QUI_ActionBarsPreviewDriver.Build(pv)
+        ns.QUI_ActionBarsPreviewDriver.Build(pv, {
+            autoHeight = true,
+            chromeHeight = 42,
+            minHeight = 66,
+            verticalPadding = 2,
+        })
     end
 
-    -- PreviewState.refresh now points at the driver. This is the
-    -- callback every option onChange / live-event handler invokes.
     PreviewState.refresh = ns.QUI_ActionBarsPreviewDriver and ns.QUI_ActionBarsPreviewDriver.Refresh
     if PreviewState.refresh then PreviewState.refresh() end
 
@@ -232,20 +210,12 @@ local function BuildActionBarsPreview(pv)
     pv:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
     pv:RegisterEvent("UPDATE_BINDINGS")
     pv:RegisterEvent("PLAYER_ENTERING_WORLD")
-    -- ACTIONBAR_SLOT_CHANGED fires constantly (~10/s) even at idle, so
-    -- gate refresh on visibility. OnUpdate already only ticks while shown
-    -- and runs every 1.0s, so a freshly-opened panel catches up within a second.
     pv:SetScript("OnEvent", function(self)
         if self:IsVisible() and PreviewState.refresh then
             PreviewState.refresh()
         end
     end)
 
-    -- Safety-net poll. Setting changes are reflected explicitly via
-    -- _G.QUI_RefreshActionBars → driver.Refresh; this poll exists only
-    -- to catch live action-slot changes the game made without firing
-    -- ACTIONBAR_SLOT_CHANGED, plus hypothetical setting paths that skip
-    -- the explicit hook chain. 1.0s is imperceptible latency for those.
     local _accum = 0
     pv:SetScript("OnUpdate", function(self, elapsed)
         _accum = _accum + elapsed
@@ -255,9 +225,6 @@ local function BuildActionBarsPreview(pv)
     end)
 end
 
----------------------------------------------------------------------------
--- SUB-TAB: General (section layout with mixed 2-col)
----------------------------------------------------------------------------
 local function BuildMasterSettingsTab(tabContent)
     local ctx = ResolveContext()
     if not ctx then Unavailable(tabContent, ns.L["Action Bars"]); return end
@@ -276,7 +243,16 @@ local function BuildMasterSettingsTab(tabContent)
 
     local headerAt, sectionAt, closeSection, getY = MakeSectionLayout(tabContent)
 
-    -- Button lock proxy (CVar-backed dropdown)
+    headerAt(ns.L["Auras"])
+    local sAuras = sectionAt()
+    local openAurasBtn = GUI:CreateButton(sAuras.frame, ns.L["Open Auras"], 140, 26, function()
+        if GUI.NavigateTo then
+            GUI:NavigateTo(21, 3)
+        end
+    end)
+    sAuras.AddRow(Opts.BuildSettingRow(sAuras.frame, ns.L["Aura settings have moved to the Auras section."], openAurasBtn))
+    closeSection(sAuras)
+
     local lockOptions = {
         {value = "unlocked", text = ns.L["Unlocked"]},
         {value = "shift", text = ns.L["Locked - Shift to drag"]},
@@ -307,12 +283,9 @@ local function BuildMasterSettingsTab(tabContent)
         end
     })
 
-    -- GENERAL (mixed types paired for space efficiency)
     headerAt(ns.L["General"])
     local s1 = sectionAt()
 
-    -- Module on/off lives in Module Addons (addon enable state); the old
-    -- "Enable Action Bars" master toggle was retired with its flag (v43).
     local lockDD = GUI:CreateFormDropdown(s1.frame, nil, lockOptions,
         "buttonLock", lockProxy, RefreshActionBars,
         { description = ns.L["Control whether action buttons can be dragged. Choose a modifier to unlock them on the fly or lock the bars fully."] })
@@ -349,8 +322,6 @@ local function BuildMasterSettingsTab(tabContent)
 
     closeSection(s1)
 
-    -- SKINS & GLOWS (built-in skin preset + proc-glow source/style/color)
-    -- Convert plain name arrays from the registries into dropdown option tables.
     local function _toOpts(names)
         local o = {}
         for _, n in ipairs(names) do o[#o + 1] = { value = n, text = n } end
@@ -428,7 +399,6 @@ local function BuildMasterSettingsTab(tabContent)
 
     closeSection(sSkin)
 
-    -- RANGE & USABILITY (mixed: toggle + color picker paired row)
     headerAt(ns.L["Range & Usability"])
     local s2 = sectionAt()
 
@@ -461,7 +431,6 @@ local function BuildMasterSettingsTab(tabContent)
 
     closeSection(s2)
 
-    -- QUICK KEYBIND
     headerAt(ns.L["Quick Keybind"])
     local s3 = sectionAt()
 
@@ -483,9 +452,6 @@ local function BuildMasterSettingsTab(tabContent)
     tabContent:SetHeight(math.abs(getY()) + 40)
 end
 
----------------------------------------------------------------------------
--- SUB-TAB: Mouseover Hide (section layout with mixed 2-col pairing)
----------------------------------------------------------------------------
 local function BuildMouseoverHideTab(tabContent)
     local ctx = ResolveContext()
     if not ctx then Unavailable(tabContent, ns.L["Mouseover Hide"]); return end
@@ -495,7 +461,6 @@ local function BuildMouseoverHideTab(tabContent)
 
     local headerAt, sectionAt, closeSection, getY = MakeSectionLayout(tabContent)
 
-    -- FADE SETTINGS (mixed pairing: toggle+slider, slider+slider, toggle+toggle)
     headerAt(ns.L["Fade Settings"])
     local s1 = sectionAt()
 
@@ -546,7 +511,6 @@ local function BuildMouseoverHideTab(tabContent)
 
     closeSection(s1)
 
-    -- ALWAYS SHOW BARS (paired 2-up throughout)
     headerAt(ns.L["Always Show Bars"])
     local s2 = sectionAt()
 
@@ -582,21 +546,12 @@ local function BuildMouseoverHideTab(tabContent)
     tabContent:SetHeight(math.abs(getY()) + 40)
 end
 
----------------------------------------------------------------------------
--- LEGACY ENTRY POINT (kept as a thin wrapper for backwards compat)
----------------------------------------------------------------------------
--- The V2 Action Bars tile now routes directly to BuildMasterSettingsTab and
--- BuildMouseoverHideTab, so there are no current callers of this function —
--- but leave it exported as a safety shim for any out-of-tree consumer.
 local function CreateActionBarsPage(parent)
     local scroll, content = CreateScrollableContent(parent)
     BuildMasterSettingsTab(content)
     return scroll, content
 end
 
----------------------------------------------------------------------------
--- Export
----------------------------------------------------------------------------
 ns.QUI_ActionBarsOptions = {
     BuildActionBarsPreview = BuildActionBarsPreview,
     BuildMasterSettingsTab = BuildMasterSettingsTab,
@@ -615,7 +570,7 @@ ns.QUI_ActionBarsOptions = {
             and ns.QUI_ActionBarsPreviewDriver.IsPreviewable(barKey)
             or false
     end,
-    CreateActionBarsPage   = CreateActionBarsPage,  -- legacy shim
+    CreateActionBarsPage   = CreateActionBarsPage,
 }
 
 if Registry and Schema

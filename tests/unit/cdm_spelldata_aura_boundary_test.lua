@@ -59,11 +59,6 @@ local ns = {
         IsRuntimeEnabled = function() return true end,
     },
     CDMSources = {},
-    CDMBlizzMirror = {
-        HandleUnitAuraChanged = function()
-            auraRefreshes = auraRefreshes + 1
-        end,
-    },
     CDMIcons = {
         HandleRuntimeRefresh = function()
             auraRefreshes = auraRefreshes + 1

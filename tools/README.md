@@ -21,7 +21,7 @@ on PATH with a warning. Override with `LUA=/path/to/lua5.1` /
 
 ## generate_search_cache.lua
 
-Regenerates `QUI_OptionsSearch/search_cache.lua` from in-source settings
+Regenerates `QUI_Options/search_cache.lua` from in-source settings
 definitions. Run after adding or renaming user-visible settings.
 
 ```sh
@@ -107,7 +107,7 @@ lua tools/test_profiles.lua --only edge/
 lua tools/test_profiles.lua --list
 
 # Regenerate snapshots after intentional changes
-lua tools/test_profiles.lua --update --only legacy/v22_pre_ncdm_containers
+lua tools/test_profiles.lua --update --only edge/idempotency_check
 ```
 
 See `tests/README.md` for the full fixture authoring guide. Exit codes:

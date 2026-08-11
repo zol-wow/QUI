@@ -1,11 +1,6 @@
 local ADDON_NAME, ns = ...
 local TARGET_ADDON_NAME = "QUI"
 
--- Suite-wide resident memory (KB). Post addon-split, GetAddOnMemoryUsage("QUI")
--- only sees core; CDM/GroupFrames/etc. each bill to their own QUI_* addon. Sum
--- every loaded addon named "QUI" or beginning with "QUI_". Caller must run
--- UpdateAddOnMemoryUsage() first. Falls back to the core figure if enumeration
--- is unavailable (e.g. bare-ns unit tests).
 local function SumSuiteMemoryKB()
     local total, found = 0, false
     local n = (C_AddOns and C_AddOns.GetNumAddOns and C_AddOns.GetNumAddOns()) or 0
@@ -14,7 +9,7 @@ local function SumSuiteMemoryKB()
         if okL and loaded then
             local okN, name = pcall(C_AddOns.GetAddOnInfo, i)
             if okN and (name == TARGET_ADDON_NAME
-                or (type(name) == "string" and name:sub(1, 4) == "QUI_")) then
+                or (type(name) == "string" and name:sub(1, #"QUI_") == "QUI_")) then
                 local okM, mem = pcall(GetAddOnMemoryUsage, name)
                 if okM and mem then
                     total = total + mem
@@ -29,33 +24,6 @@ local function SumSuiteMemoryKB()
     end
     return total
 end
-----------------------------------------------------------------------------
--- Memory Audit — runtime probe for cache/pool sizes
---
--- Usage:  /qui memaudit              → snapshot current sizes + GC stats
---         /qui memaudit diff         → show delta from last snapshot
---         /qui memaudit gc           → force full GC and report reclaimable
---         /qui memaudit auto         → toggle 5s combat auto-print on/off
---         /qui memaudit auto N       → set auto interval to N seconds
---         /qui memaudit auto off     → turn auto off
---         /qui memaudit exp          → list runtime allocation experiments
---         /qui memaudit exp <name>   → flip experiment (toggle current state)
---         /qui memaudit exp <name> on|off → force experiment state
---         /qui memaudit exp reset    → restore all experiments to production
---         /qui memaudit rows <n|all> → set how many allocation scopes the auto
---                                      summary prints (default 16). Use `all`
---                                      to see the full non-truncated breakdown.
---
--- Modules register probes BEFORE this file loads by pushing entries onto
--- ns._memprobes = { { name = "...", tbl = tbl }, ... }
--- This file drains the list at load time. Probes can also be `fn = function()
--- return number end` for computed counts (e.g. multi-table pools).
---
--- Modules register A/B experiments by pushing entries onto
--- ns.QUI_PerfExperiments = { { name, description, isEnabled, setEnabled } }
--- Auto-mode labels combat-start with any experiment currently off so chat
--- scrollback is self-attributing.
-----------------------------------------------------------------------------
 
 local probes = {}
 local lastSnapshot = nil
@@ -71,17 +39,14 @@ local profilerEventParents = {
     CDM_testMarked = true,
 }
 
--- Drain any probes registered by modules that loaded before us
 local pending = ns._memprobes
 if pending then
     for i = 1, #pending do
         probes[#probes + 1] = pending[i]
     end
 end
--- Keep ns._memprobes alive so late-loading modules can still push
 ns._memprobes = probes
 
--- Count entries in a table (shallow + one-level nested)
 local function CountEntries(tbl)
     local count = 0
     local deepCount = 0
@@ -142,15 +107,6 @@ local function RegisterCDMCacheProbes()
             N(s.capturedAuraUnits) + N(s.capturedAuraSpellKeys) + N(s.capturedAuraNameKeys)
     end)
 
-    AddProbe("CDM_cache_blizzMirror", function()
-        local bm = CallFunction(ns.CDMBlizzMirror and ns.CDMBlizzMirror.GetCacheStats)
-        return N(bm.mirrorStates) + N(bm.packedStates),
-            N(bm.childFrames) + N(bm.cooldownInfo) + N(bm.defaultCooldownInfo)
-            + N(bm.spellMapEntries) + N(bm.directSpellMapEntries)
-            + N(bm.spellNameEntries) + N(bm.totemSpellIDEntries) + N(bm.activeTotems)
-            + N(bm.auraCandidateCaches) + N(bm.spellCandidateCaches)
-    end)
-
     AddProbe("CDM_cache_iconPools", function()
         local ic = CallStats(ns.CDMIcons, "GetCacheStats")
         return N(ic.activeIcons) + N(ic.recycleIcons),
@@ -159,7 +115,7 @@ local function RegisterCDMCacheProbes()
 
     AddProbe("CDM_cache_runtimeStore", function()
         local rt = CallFunction(ns.CDMRuntimeStore and ns.CDMRuntimeStore.GetStats)
-        return N(rt.states), 0
+        return N(rt.version), N(rt.compatState)
     end)
 
     AddProbe("CDM_cache_tickAura", function()
@@ -206,7 +162,7 @@ local function TakeSnapshot()
         end
     end
 
-    pcall(UpdateAddOnMemoryUsage)
+    ns.SafeCall("best-effort-style", UpdateAddOnMemoryUsage)
     snap._totalKB = SumSuiteMemoryKB()
     snap._time = GetTime()
     snap._combat = InCombatLockdown() and true or false
@@ -415,10 +371,21 @@ local function InstallProfilerWrappers()
     return true
 end
 
--- How many allocation scopes the auto summary prints per window. The full
--- breakdown is always collected; this only caps the printed rows so a normal
--- window stays readable. nil = print every row (set via `/qui memaudit rows
--- all` when hunting the diffuse churn that the top-16 truncation hides).
+local function RestoreProfilerWrappers()
+    for scopeName, info in pairs(profilerWrappers) do
+        if info.owner[info.methodName] == info.wrapper then
+            info.owner[info.methodName] = info.original
+        end
+        profilerWrappers[scopeName] = nil
+    end
+    for scopeName, info in pairs(profilerFrameWrappers) do
+        if info.frame:GetScript(info.scriptType) == info.wrapper then
+            info.frame:SetScript(info.scriptType, info.original)
+        end
+        profilerFrameWrappers[scopeName] = nil
+    end
+end
+
 local profilerRowLimit = 16
 
 local function DrainProfilerRows()
@@ -485,15 +452,7 @@ local function FormatSignedKB(kb)
     return prefix .. FormatKB(kb)
 end
 
-----------------------------------------------------------------------------
--- MODULE ROLLUP: aggregate profiler rows by their module prefix so the per-
--- tick output shows where churn is going by subsystem, not just per-function.
--- The `[unattributed]` synthetic bucket carries the gap between heap Δ and
--- the sum of measured profiler scopes — when it tops the rollup, we know to
--- expand profiler coverage to additional frames.
-----------------------------------------------------------------------------
 local MODULE_ALIASES = {
-    -- Direct prefixes (e.g. CDM_applyResolveState → CDM)
     CDM    = "CDM",
     AB     = "ActionBars",
     BB     = "BuffBorders",
@@ -504,7 +463,6 @@ local MODULE_ALIASES = {
     Prey   = "Preybar",
     Anch   = "Anchoring",
     Tooltip = "Tooltip",
-    -- FR_<name> forms — second token after FR_ stripped (e.g. FR_ActionBars → ActionBars)
     ActionBars     = "ActionBars",
     BuffBorders    = "BuffBorders",
     RotationAssist = "RotationAssist",
@@ -549,8 +507,6 @@ local function BuildModuleRollup(rows, heapDeltaKB)
         mod.elapsedMS        = mod.elapsedMS        + (row.elapsedMS        or 0)
     end
 
-    -- Compute the unattributed gap relative to the measured net (not raw alloc),
-    -- since gross alloc minus heap-delta is meaningless during GC ticks.
     if heapDeltaKB ~= nil then
         local netKB = 0
         for i = 1, #order do
@@ -607,16 +563,6 @@ local function PrintProfilerSummary(prefix, rows, heapDeltaKB)
         calls)
 
     if heapDeltaKB ~= nil then
-        -- `gap vs gross` is the discriminator for the [unattributed] bucket.
-        -- heap Δ (GetAddOnMemoryUsage) tracks GROSS resident growth — Lua does
-        -- not free abandoned tables until GC — so comparing it to NET
-        -- (gross − dealloc) manufactures a phantom gap from deallocations the
-        -- collector hasn't run yet. Comparing to GROSS instead is the honest
-        -- test: ≈0/negative every window ⇒ measured scopes account for all
-        -- growth and [unattributed] is that timing artifact; consistently
-        -- positive ⇒ that many KB are allocated outside every wrapped scope
-        -- (a genuinely uninstrumented path), and this is its size. Gross only
-        -- over-counts under nesting, so a positive gross gap is a hard floor.
         local grossAllocKB = allocatedBytes / 1024
         line = string.format(
             "%s; heap Δ %s; gap vs row-net %s; gap vs gross %s",
@@ -627,21 +573,6 @@ local function PrintProfilerSummary(prefix, rows, heapDeltaKB)
     end
 
     print(line)
-end
-
-local function ProbeTotal(snap)
-    local count, deep = 0, 0
-    for name, val in pairs(snap) do
-        if name:sub(1, 1) ~= "_" then
-            if type(val) == "table" and not val.counter then
-                count = count + (val.count or 0)
-                deep = deep + (val.deep or 0)
-            elseif type(val) ~= "table" then
-                count = count + (val or 0)
-            end
-        end
-    end
-    return count, deep
 end
 
 local function PrintSnapshot(snap, prev)
@@ -662,7 +593,6 @@ local function PrintSnapshot(snap, prev)
             dt > 0 and (delta / dt) or 0))
     end
 
-    -- Sort probes by total entry count descending
     local sorted = {}
     local counters = {}
     for name, val in pairs(snap) do
@@ -724,13 +654,6 @@ local function PrintSnapshot(snap, prev)
     end
 end
 
-----------------------------------------------------------------------------
--- EXPERIMENTS: runtime A/B toggles registered by modules via
--- ns.QUI_PerfExperiments. Used to attribute heap deltas to specific event
--- frames or registration paths without /reload-ing the addon. Declared
--- above the AUTO MODE block so PrintAutoLine and the combat-end summary can
--- close over ExperimentLabel as an upvalue.
-----------------------------------------------------------------------------
 local function GetExperiments()
     return ns.QUI_PerfExperiments or {}
 end
@@ -785,7 +708,7 @@ local function HandleExperiment(arg)
     if arg == "reset" then
         local exps = GetExperiments()
         for i = 1, #exps do
-            pcall(exps[i].setEnabled, true)
+            ns.SafeCall("report", exps[i].setEnabled, true)
         end
         print("|cff60A5FA[memaudit exp]|r all experiments restored to production (on)")
         return
@@ -813,9 +736,6 @@ local function HandleExperiment(arg)
     end
 end
 
--- Compact "experiment label" string: "  [exp foo=off,bar=off]" when any
--- experiment is non-default. Empty string when all experiments are at the
--- production state (all on). Used as a self-labeling tag in auto-mode output.
 local function ExperimentLabel()
     local exps = GetExperiments()
     if #exps == 0 then return "" end
@@ -832,11 +752,6 @@ local function ExperimentLabel()
     return "  |cffFFC85C[exp " .. table.concat(parts, ",") .. "]|r"
 end
 
-----------------------------------------------------------------------------
--- AUTO MODE: periodic snapshots while in combat. Prints a compact one-liner
--- per tick, and surfaces any probed tables that grew between ticks (so we
--- can spot retention live without scrolling through a full audit).
-----------------------------------------------------------------------------
 local autoFrame = CreateFrame("Frame")
 autoFrame:Hide()
 local autoEnabled = false
@@ -866,8 +781,6 @@ local function PrintAutoLine(snap, prev)
     end
     P(line)
 
-    -- If the total grew, surface which probed tables grew (to attribute the
-    -- delta) and how much of the delta is unaccounted-for (== outside probes).
     if prev then
         local totalGrew = (snap._totalKB - prev._totalKB) > 0
         local growers = {}
@@ -947,8 +860,6 @@ autoFrame:SetScript("OnUpdate", function(self, elapsed)
     autoLastSnap = snap
 end)
 
--- PLAYER_REGEN_DISABLED resets baseline so the first in-combat tick is a
--- meaningful baseline rather than a stale OOC reading.
 autoFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 autoFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 autoFrame:SetScript("OnEvent", function(self, event)
@@ -959,7 +870,6 @@ autoFrame:SetScript("OnEvent", function(self, event)
         autoCombatStartSnap = autoEnabled and TakeSnapshot() or nil
         autoLastSnap = autoCombatStartSnap
     elseif event == "PLAYER_REGEN_ENABLED" and autoEnabled and autoCombatStartSnap then
-        -- Combat ended: print one final summary line.
         local snap = TakeSnapshot()
         local startKB = autoCombatStartSnap._totalKB
         print(string.format("|cff60A5FA[memaudit auto]|r combat ended — final %s (Δ from combat-start %s)%s",
@@ -991,6 +901,7 @@ local function ToggleAuto(arg)
     if arg == "off" or arg == "0" or arg == "stop" then
         autoEnabled = false
         profilerActive = false
+        RestoreProfilerWrappers()
         DrainProfilerRows()
         autoFrame:Hide()
         autoLastSnap = nil
@@ -999,7 +910,6 @@ local function ToggleAuto(arg)
         return
     end
 
-    -- "auto N" sets interval; "auto" toggles
     local n = tonumber(arg)
     if n and n >= 1 then
         autoInterval = n
@@ -1017,13 +927,12 @@ local function ToggleAuto(arg)
             "|cff60A5FAQUI memaudit auto:|r |cff44FF44on|r — printing every %ds while in combat",
             autoInterval))
     else
-        -- Already on, just changed interval
         if n then
             print(string.format("|cff60A5FAQUI memaudit auto:|r interval = %ds", autoInterval))
         else
-            -- No arg → toggle off
             autoEnabled = false
             profilerActive = false
+            RestoreProfilerWrappers()
             DrainProfilerRows()
             autoFrame:Hide()
             autoLastSnap = nil
@@ -1035,10 +944,10 @@ end
 
 _G.QUI_MemAudit = function(subcmd, arg)
     if subcmd == "gc" then
-        pcall(UpdateAddOnMemoryUsage)
+        ns.SafeCall("best-effort-style", UpdateAddOnMemoryUsage)
         local before = SumSuiteMemoryKB()
         collectgarbage("collect")
-        pcall(UpdateAddOnMemoryUsage)
+        ns.SafeCall("best-effort-style", UpdateAddOnMemoryUsage)
         local after = SumSuiteMemoryKB()
         print(string.format("|cff60A5FAQUI GC:|r Before: %s  After: %s  Freed: |cff44FF44%s|r",
             FormatKB(before), FormatKB(after), FormatKB(before - after)))

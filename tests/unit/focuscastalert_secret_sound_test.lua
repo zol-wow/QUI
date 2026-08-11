@@ -120,16 +120,34 @@ local ns = {
             return "Interface\\AddOns\\QUI\\sounds\\alert.ogg"
         end,
     },
+    SafeCall = function(_policy, fn, ...)
+        return pcall(fn, ...)
+    end,
+    SafeCallMethod = function(_policy, obj, name, ...)
+        return pcall(function(...) return obj[name](obj, ...) end, ...)
+    end,
+    SafeCallMethodIfPresent = function(_policy, obj, name, ...) if obj == nil then return nil end local okP, m = pcall(function() return obj[name] end) if not okP then return false end if m == nil then return nil end return pcall(m, obj, ...) end,
 }
 
-assert(loadfile("QUI_QoL/qol/focuscastalert.lua"))("QUI", ns)
+assert(loadfile("modules/qol/focuscastalert.lua"))("QUI", ns)
 assert(eventFrame and eventFrame.scripts and eventFrame.scripts.OnEvent, "focus cast alert event handler missing")
 
 eventFrame.scripts.OnEvent(eventFrame, "UNIT_SPELLCAST_START", "focus", "CastGUID", 116)
 assert(alertFrame and alertFrame.shown, "focus cast alert frame should be shown for active cast")
 assert(alertFrame.alphaFromBoolean and alertFrame.alphaFromBoolean.value == secret,
     "secret interruptibility should be passed to SetAlphaFromBoolean")
-assert(soundsPlayed == 1, "secret-visible focus cast alert should play one configured sound, got " .. soundsPlayed)
+-- Audio is Lua-only logic with no absorbing C-sink: a SECRET flag is
+-- indeterminate, and playing on it could announce a secretly
+-- NON-interruptible cast. No sound until READABLE evidence arrives.
+assert(soundsPlayed == 0, "secret interruptibility must NOT trigger the sound, got " .. soundsPlayed)
+
+_G.QUI_RefreshFocusCastAlert()
+assert(soundsPlayed == 0, "refresh polling must not play on a still-secret flag")
+
+-- UNIT_SPELLCAST_INTERRUPTIBLE stores a PLAIN false — that is the readable
+-- evidence the audio path requires.
+eventFrame.scripts.OnEvent(eventFrame, "UNIT_SPELLCAST_INTERRUPTIBLE", "focus")
+assert(soundsPlayed == 1, "readable interruptible evidence should play exactly one sound, got " .. soundsPlayed)
 
 _G.QUI_RefreshFocusCastAlert()
 assert(soundsPlayed == 1, "refresh polling should not replay a latched focus cast sound")

@@ -115,7 +115,7 @@ ns.SkinBase = {
     end,
 }
 
-assert(loadfile("QUI_Skinning/skinning/frames/journals.lua"))("QUI", ns)
+assert(loadfile("modules/skinning/frames/journals.lua"))("QUI", ns)
 assert(type(callbacks.Blizzard_PlayerSpells) == "function", "PlayerSpells load hook must be registered")
 
 callbacks.Blizzard_PlayerSpells()

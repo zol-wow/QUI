@@ -58,13 +58,21 @@ _G.C_CooldownViewer = {
         return {}
     end,
     GetCooldownViewerCooldownInfo = function(cooldownID)
-        assert(cooldownID == 88, "unexpected cooldownID")
-        return {
-            spellID = 12345,
-            overrideSpellID = 12346,
-            overrideTooltipSpellID = nil,
-            linkedSpellIDs = { 12347 },
-        }
+        if cooldownID == 88 then
+            return {
+                spellID = 12345,
+                overrideSpellID = 12346,
+                overrideTooltipSpellID = nil,
+                linkedSpellIDs = { 12347 },
+            }
+        elseif cooldownID == 22 then
+            return {
+                spellID = 12345,
+                overrideSpellID = nil,
+                overrideTooltipSpellID = nil,
+            }
+        end
+        error("unexpected cooldownID " .. tostring(cooldownID))
     end,
 }
 
@@ -81,11 +89,17 @@ local orderedCalls = 0
 _G.CooldownViewerSettings = {
     GetDataProvider = function()
         return {
+            -- memo fields present = cache already built by a secure consumer
+            -- (cold-boot taint gate reads these raw; see cdm_index/cdm_catalog)
+            displayDataDirty = false,
+            displayData = {},
             GetOrderedCooldownIDsForCategory = function(_, category, includeHidden)
                 orderedCalls = orderedCalls + 1
                 assert(includeHidden == true, "ordered map should include hidden provider rows")
                 if category == 0 then
                     return { 88 }
+                elseif category == 2 then
+                    return { 22 }
                 end
                 return {}
             end,
@@ -99,8 +113,12 @@ local secondOrdered = index.GetOrderedSpellMap()
 
 assert(secondOrdered == firstOrdered, "ordered spell map should be cached by index version")
 assert(orderedCalls == callsAfterFirst, "cached ordered spell map should not re-walk provider")
-assert(firstOrdered[12345] and firstOrdered[12345].cooldownID == 88,
-    "ordered spell map should index base spellID")
+assert(firstOrdered[12345] and firstOrdered[12345].cooldownID == 22,
+    "generic ordered spell map keeps the first visible duplicate")
+assert(index.GetOrderedForContainer("essential", 12345).cooldownID == 88,
+    "container ordered lookup should return the Essential cooldownID, not a duplicate from another viewer")
+assert(index.GetOrderedForContainer("buff", 12345).cooldownID == 22,
+    "container ordered lookup should return the Buff cooldownID for the same spell")
 
 index.Notify("manual")
 local thirdOrdered = index.GetOrderedSpellMap()

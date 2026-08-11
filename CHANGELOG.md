@@ -4,27 +4,1051 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.0.0-beta4 - 2026-08-11
 
-
-
-
-
-
-
-
-
-
-## v4.1.1 - 2026-07-28
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
 
 ### Fixed
-- fix(groupframes): flush trailing throttled unit updates
-- fix(cdm): let inactive override lane fall through
-- fix(cdm): prefer override cooldown lane when child override is active
-- fix(cdm): empty barrel proc override art and visibility
-- fix(cdm): show active auras in custom containers
-- feat(qol,actionbars): ten QoL modules + extra-action container ownership
-- fix(qol): re-assert mail position on panel drift
-- fix(damagemeter): render API rate as-is; pin Current duration
+
+- **Missing raid buff icons were unreliable.** The indicator could keep showing
+  a buff as missing after it had been cast, miss the change entirely when the
+  game reported an aura update it could not fully read, or flag a buff as
+  missing because the ally carrying it had moved out of range. Range, specialization
+  and aura-change handling were all reworked so the icon follows the real state.
+- **Missing raid buff names and icons could stay wrong for the session.** When
+  the indicator was built before the game had finished loading spell data, the
+  English placeholder name and the question-mark icon were cached permanently,
+  so on a non-English client the buff kept the wrong label. Both now refresh
+  until the real values are available.
+
+## v5.0.0-beta3 - 2026-08-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Friendly NPC nameplates could not be turned on.** Auto-Hide shipped with
+  friendly player and NPC nameplates hidden, and that setting quietly outranked
+  the one on the nameplate page, so ticking Friendly NPCs there changed nothing
+  and the game's own Nameplates options showed the option off. Both pages now
+  read and write the same setting, so either one turns it on and it stays on.
+- **Settings rows escaped the options window.** Toggling a nameplate visibility
+  option left cards and checkboxes drawing loose over the game world while the
+  panel below them went blank, until the page was reopened.
+
+### Changed
+
+- **Auto-Hide's two nameplate rows now read "Friendly Nameplates" and "Friendly
+  NPCs".** They are the same two settings as the nameplate page's Visibility
+  tab rather than separate ones that fought it, so ticking a box now means show,
+  not hide, and both pages stay in step.
+
+## v5.0.0-beta2 - 2026-08-10
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Pandemic glow on aura icons.** An icon flashes once its aura enters the
+  refresh window. The glow is driven by the game's own pandemic region rather
+  than a timer QUI approximates, so it stays in step with the real duration.
+- **Dispel borders and stealable buffs come from the game.** Border colour and
+  artwork per dispel type are handed to Blizzard's aura button instead of being
+  redrawn on top of it, and an aura element can now be set to
+  `Debuffs + Stealable Buffs` or `All Auras`.
+
+### Changed
+
+- **Moving between settings tabs is instant.** Each tab body is built once per
+  variant and kept, so switching unit, plate type or context reuses the page it
+  already built instead of rebuilding it.
+- **Nameplate settings open on Enemy NPCs**, which is the plate type most people
+  are there to edit.
+- **QUI no longer adds an entry to the game's Settings > AddOns list.** It held
+  one button that opened the QUI panel, which `/qui` already does.
+- **A suite-wide consistency pass** landed under this release: shared helpers
+  replace hand-rolled duplicates for time formatting, accent-insensitive search
+  and secret-value guards, and a long tail of settings keys nothing ever read
+  are gone. No behaviour changes with it; it is groundwork for 12.1's stricter
+  rules about what an addon may touch.
+
+### Fixed
+
+- **Edit Mode could get stuck asking to reload.** When the game refused to save
+  a cooldown manager layout, QUI asked for a reload, and the same refusal met it
+  on the way back up. The pending save is now recorded and the loop breaks on
+  the next login.
+- **Atonement tracking no longer reads the combat log.** 12.1 closed combat log
+  events to addons, so the counter watches auras directly and caches what it has
+  already resolved per unit.
+
+### Removed
+
+- **The Brez counter's resurrection list.** Naming who battle-rezzed whom needed
+  combat log events, which 12.1 does not give addons. The charge count, the
+  recharge timer and the per-pull tally are unaffected.
+
+## v5.0.0-beta1 - 2026-08-07
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+First beta of the 5.0.0 line. Everything below has landed since v5.0.0-alpha29.
+
+### Added
+
+- **Nameplates are their own addon**, with a sidebar tile, a setup wizard, and a
+  settings preview that renders a real plate 1:1 and follows whatever you are
+  editing. A control strip toggles ten plate states plus reaction, so you can see
+  each one without going and finding the unit.
+- **Every plate type gets its own config** instead of one config for all plates —
+  pets and minions, friendly units, bosses and elites, minor and trivial units,
+  enemy players and enemy NPCs, picked from a dropdown with a Copy From control.
+  A plate re-resolves its type live on classification, flag and faction changes.
+- **Target indicators** — arrow, brackets and glow line — plus class power pips on
+  the target plate, execute-threshold health colouring and threat colour mapping.
+- **A nameplate Visibility tab**: an enemy-plate master toggle, friendly NPCs
+  exposed, and Minions nesting Guardians, Pets and Totems on both sides.
+  `Show In Instances` becomes a never / name-only / always choice.
+
+### Changed
+
+- **Nameplate auras use the same engine as group frames and unit frames.** One
+  shared aura surface renders all three, so an element configured on one behaves
+  the same on the others. Duration text and mine-only are per channel, and
+  `Nameplate Only` is a per-element field rather than a filter flag.
+- **Nameplate settings split from five tabs to eight** — General, Visibility,
+  Frame, Text, Indicators, Auras, Castbar, Colors. Absorbs, heal prediction and
+  Fading And Scale moved to Frame; Render Mode moved to Visibility.
+- **Name-only is a real render mode** — QUI draws the name and hides the bar and
+  aura containers instead of restyling Blizzard's own text.
+- **Settings search is 2.5–3x faster.** One English index ships instead of ten
+  translated copies, labels are localized as the index is applied, and scoring
+  only visits entries that can actually match what you typed. Typing the English
+  term still finds the translated row on non-English clients.
+- **The suite is 11 addon folders instead of 22.** The eleven `QUI_OptionsSearch`
+  folders are gone — the index moved into `QUI_Options` and the translations into
+  `QUI`. Locale files ship packed, so only the language in use is ever compiled,
+  and login memory drops by roughly 2.3 MB.
+- **The options panel opens instantly.** It builds on the first frame after login
+  rather than the first time you open it.
+- **Dispel Colors** moved into Auras > Group Frames.
+- **Chat button bar**: built-in and custom buttons collapse into one ordered list,
+  so custom buttons can sit ahead of built-ins. Existing profiles fold at runtime
+  — nothing to do.
+- **Every non-English locale is actually translated now.** Nine of the ten had
+  been falling back to English for roughly 900 strings each. English plural
+  suffixes are gone from six strings no other language could express, the `KB`
+  keybind column header is translated everywhere (ruRU had been rendering it as a
+  kilobyte unit), and koKR uses one word for "cooldown" across all 25 keys that
+  used it instead of two.
+
+### Fixed
+
+- **Friendly pet, guardian, totem and minion plates never appeared.** All four
+  toggles shipped off and were re-asserted on every settings change, overriding
+  the game's own Nameplates options. They ship on now, and existing profiles pick
+  the change up once.
+- **Macro creation errored on every attempt on 12.1.** The macro limit constants
+  moved on Blizzard's side and were still being read as bare globals. The
+  focus-marker index scan also started from the wrong base.
+- **A fresh install could end up with a permanently empty cooldown catalog.**
+  Seeding ran through a file that lives inside the load-on-demand options addon,
+  so the per-character catalog stayed empty until `/qui` was opened once.
+- **Totem cooldowns show their remaining duration again**, and their icons update
+  when the totem is placed or drops. A totem summoned under a linked or override
+  spell ID never matched an active slot, and nothing re-scanned the slots.
+- **A cooldown manager icon could report a cooldown it never drew.** A recycled
+  icon kept its old duration binding after the widget itself had been cleared, so
+  the swipe was never re-applied.
+- **The unit-frame options preview mangled CJK names.** It truncated on raw bytes
+  while the live frame walks codepoints, so on koKR, zhCN and zhTW any Max Name
+  Length not divisible by three cut a character in half.
+- **Raid frames rendered party dispel colors.**
+- **The chat button bar jumped about a second after login.**
+- esES: Windrunner is Brisaveloz. zhTW: Mythic difficulty is 傳奇, not the
+  client's word for Epic item quality.
+
+### Upgrading
+
+If you installed v5.0.0-alpha29 by hand rather than through an addon manager, the
+eleven `QUI_OptionsSearch` folders are left behind after updating. Nothing loads
+them, but you can delete them from `Interface/AddOns` to tidy the list.
+
+## v5.0.0-alpha29 - 2026-07-25
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client.
+
+First release under the QUI name. Same codebase as QUI 5.0.0-alpha28,
+continued independently — see the credits in the README.
+
+### Changed
+
+- The addon is now **QUI**. Every addon folder, TOC, global, and saved
+  variable moved from the `QUI` namespace to `QUI`; settings now live in
+  `QUIDB` rather than `QUIDB`.
+- Slash commands moved to the `dui` family: `/qui` is now `/qui` (with a
+  `/qui` alias), and `/quibags`, `/quialts`, `/quidp`, `/quilog`, and the rest
+  are now `/quibags`, `/quialts`, `/quidp`, `/quilog`, and so on. The legacy
+  `/quaziiui` alias was removed.
+- Profile schema 60 renames the `quiUnitFrames`, `quiGroupFrames`, and
+  `quiDatatexts` key namespaces to their `drew*` spellings, and rewrites the
+  `__QUI_GLOBAL__` font sentinel. Existing profiles migrate automatically.
+- Profile strings are exported with a `QUI1:` prefix. QUI's `QUI1:` strings
+  are still imported natively.
+
+### Added
+
+- One-time, non-destructive adoption of an existing `QUIDB` on first login, so
+  a QUI install's settings carry over. QUI's saved variables are never
+  modified. This requires QUI to still be installed and enabled; otherwise use
+  a profile export string.
+
+
+
+## v5.0.0-alpha28 - 2026-07-25
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Fixed
+- Auras placed in a cooldown container you built yourself stayed invisible when
+  the container was set to show only active icons. The active check was asking
+  whether the ability was on cooldown, which an aura never is, so buffs like
+  Anti-Magic Shell never appeared even while running. Custom containers now
+  judge auras by whether the aura is actually on you, matching how the built-in
+  containers already behaved. Cooldown entries in the same container are
+  unaffected.
+
+## v5.0.0-alpha27 - 2026-07-25
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Fixed
+- The duplicate-placement aura mirrors added in alpha26 kept a small internal
+  bookkeeping list that grew every time a placement retired and came back —
+  toggling a container off and on, swapping specs, or an entry dropping out for
+  a refresh. Nothing visible went wrong and no frames were retained, but memory
+  crept up over a long session. Retired records are now released exactly, so
+  the list stays bounded.
+
+## v5.0.0-alpha26 - 2026-07-25
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Added
+- Placing the same ability in more than one cooldown container now shows it in
+  every container you put it in. Blizzard hands out a single frame per ability,
+  so one placement keeps that native icon and the others are drawn from QUI's
+  own timing sources — exact duration for cooldowns, and a managed aura slot
+  for aura-kind entries so stacks and remaining time stay real. Duplicated
+  items, equipment, consumables, and totem instances still show exactly one
+  icon: they have no exact public timing source, so they fail closed with a
+  diagnostic instead of drawing a mirror that could drift.
+- Group frames can show the Blizzard dispel type icon — Magic, Curse, Disease,
+  Poison, or Bleed — with its own size, opacity, anchor, and offset, separate
+  from the colored dispel border. A new **Show For** choice adds *All Typed
+  Debuffs* next to *Dispellable by Me*, so awareness-only types such as Bleed
+  and Enrage can surface without widening Cleanse-Ready Glow, which stays
+  strictly on what you can actually dispel.
+- Hovering an item in your bags now clears its new-item glow immediately
+  instead of waiting for a click.
+
+### Fixed
+- The Cooldown Composer, Action Bars, and Resource Bars settings previews now
+  measure what they actually drew and resize their pane to fit, so tall icon
+  stacks and long value text are no longer clipped or stranded in empty space.
+  All three headers now read *Live Preview*, matching the rest of the settings.
+- The totem bar read the player class token without collapsing a restricted
+  value first, so slot ordering could fall through to the wrong priorities; it
+  now falls back to the standard order when the token is not readable. Active
+  totem buttons also sit above the invisible placeholders they pack over, so a
+  right-click to dismiss always hits the totem you aimed at.
+
+## v5.0.0-alpha25 - 2026-07-25
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Fixed
+- Dark Mode looked inert in the group frame preview whenever Use Class Color
+  was also enabled: the preview painted the class color over the dark fill,
+  while the live frames do it the other way round. The preview now follows the
+  live rule — Dark Mode wins while it is on, with its configured color and
+  alpha honored — so the two surfaces finally agree.
+
+## v5.0.0-alpha24 - 2026-07-25
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Added
+- The group frame settings preview now shows what the live frames show. It is
+  built from the same frame skeleton the runtime uses, so it picks up cleanse
+  glow, Party Target Frames, Spotlight role and name filters with their growth
+  direction, party show-player / hide-DPS / sort / self-first, and a dedicated
+  Targeted Spells chip instead of that unexplained centre cooldown.
+- Aura previews are drawn with the real icon styler: icon skins, dispel
+  borders, cooldown swipes, duration text, and stack counts all appear in the
+  preview, so settings that only existed on the live path can finally be judged
+  before you commit to them.
+- **Auras > Unit Frames** gets a pinned preview of the unit frame itself,
+  outside the scrolling settings body.
+
+### Changed
+- The aura element editor opens quietly: Basics, Filters, and Appearance &
+  Advanced start collapsed, and expanding a section reflows the rows in place
+  rather than repainting the whole tab. "What to Show" latches manual mode when
+  you pick Custom…, and the spell Browse window stays open for multi-select
+  while the inline list updates live behind it.
+- Both unit frame previews measure what is actually visible — body, portrait,
+  auras, cast bar — recentre on it and shrink the pane to fit, instead of
+  reserving space for a cast bar that is not there.
+- Threat and target fill opacity are no longer inert settings; both now tint a
+  real fill on live frames and in the preview.
+
+### Fixed
+- Buff/debuff settings in search results sent you to **Action Bars > Per-Bar**,
+  a page that contains none of them. All 46 of those entries now land on
+  **Auras > Buff/Debuff Frames**, where they moved.
+- The Cooldown Manager composer listed spells your class can never learn — for
+  example Shaman auras offered on a Demon Hunter — and they looked active while
+  never appearing on the real frame. Those rows are hidden now. Same-class
+  abilities missing from your current loadout keep their Dormant treatment, and
+  spell IDs you entered by hand are still yours to manage.
+- The Group Frames tile and the Auras hub's Group Frames sub-page each keep
+  their own Party/Raid choice; opening one no longer silently retargets the
+  other.
+- An automatic Missing Raid Buff container previewed as empty on classes with
+  no raid buff of their own (Death Knight), leaving nothing to position. The
+  preview now shows a representative icon; live frames are unchanged.
+- Resource bars honour the colour mode dropdown on every path, so a static
+  colour no longer stays white on Blood Death Knight Runic Power.
+
+## v5.0.0-alpha23 - 2026-07-24
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+> 🔄 **Profile schema migrated to v59.** Removes the tracked auras that earlier
+> alphas seeded into the Healer HoTs element. Your profile is backed up
+> automatically before it runs.
+
+### Removed
+- The 42-spell **Healer HoTs** default seed. Alpha22 shipped that element
+  pre-filled with every healer specialization's healing-over-time spells; the
+  element itself stays, but its tracked auras are now yours to choose. Spells
+  you added by hand are kept — only the seeded ones are swept, on every group
+  frame and raid bucket, including profiles you import.
+- Specialization-based aura suggestions in the aura editor and wizard.
+  Suggestions now come from the Blizzard cooldown-manager catalog only.
+
+### Added
+- Aura tooltip and dispel controls in the options panel, promised in alpha22:
+  hide aura tooltips in combat, anchor them to each icon (or at the cursor),
+  and override the per-dispel-type ring colors for a single element. Dispel
+  types you leave alone keep the engine color.
+- The docked options preview panel can be detached, dragged, collapsed, and
+  scaled by its grip for the rest of the session.
+
+### Changed
+- Dispel-type borders and symbols moved onto the 12.1 dispel-texture API that
+  replaced the names removed after 12.1, and custom dispel artwork now reaches
+  tracked-aura element buttons alongside custom dispel colors.
+
+### Fixed
+- Cooldown-manager icons no longer trigger an action-blocked error when the
+  cooldown manager re-anchors during combat. Clickable icons are held in their
+  own pool and only reused while they are still safe to touch, so nothing is
+  dropped or leaked while you are in a fight.
+- Restored the cast bar detach that a 12.1 PTR guard had been suppressing.
+- A taint-scan gate check no longer accepts a look-alike namespace-prefixed
+  name in place of the real one.
+
+## v5.0.0-alpha22 - 2026-07-23
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Added
+- Aura tooltips can now be positioned per element (anchor point and offset)
+  and hidden in combat through profile settings. Options-panel controls for
+  these arrive in a later alpha.
+
+### Changed
+- Aura containers now lay out through the 12.1 native flow layout, giving
+  real multi-column growth where the old layout degraded to a single column.
+- Aura tooltips now carry QUI's backdrop and border styling instead of the
+  default Blizzard chrome.
+- Dispel-type aura borders use the new 12.1 dispel texture API, keeping
+  Blizzard's per-type artwork intact under QUI sizing.
+- Aura "index" sorting uses the client's new instance-ID ordering when
+  available, keeping positions stable as auras refresh.
+
+### Fixed
+- Adopted the re-shipped 12.1 PTR build 68914 API surface.
+- More spots no longer error when the client withholds combat data
+  ("secret" values): the party leader icon, guild names in tooltips, and
+  raid buff class lookups.
+- A full-repo hardening sweep closed out the remaining strict taint-scan
+  findings across 32 files.
+
+## v5.0.0-alpha21 - 2026-07-23
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Removed
+- The **Encounters** browser under the Auras tab, along with instance- and
+  encounter-specific aura setups. 12.1 no longer exposes the encounter
+  identity they keyed on. The boss and role-on-boss visibility conditions
+  remain, and per-element boss strips you created keep working; instance- or
+  encounter-specific setups saved by older profiles are ignored.
+
+### Changed
+- Modules now repaint only what an event actually changed instead of doing a
+  full render per event: **Bags** re-dress changed slots in place when the
+  layout provably didn't move, **Resource Bars** route power ticks through a
+  value-only path, **Unit Frames** coalesce rapid power updates, the
+  **Damage Meter** restyles bars only when appearance actually changed and
+  follows the session's own clock for Current-session rates, the **Minimap**
+  clock wakes once a minute instead of once a second, and the consumable
+  check reuses a cached inventory snapshot on aura ticks.
+- **Bags** skip their loading-screen compile entirely when the module is
+  disabled in the profile.
+
+### Fixed
+- Adopted the 12.1 PTR build 68824 API changes: action button cooldown
+  updates, flyout lookups (which now hard-error on unknown IDs), and cast
+  bar suppression no longer error or risk taint.
+- Moving or saving frame positions while the client withholds anchor data
+  ("secret" values) no longer errors, and the extra action button position
+  save skips unreadable coordinates instead of writing 0,0.
+- Several spots that silently treated combat-hidden values as 0 now handle
+  them properly: unknown unit reactions fall through to class colors instead
+  of hostile red, and tooltips with unreadable alpha are treated as visible.
+- Profiles version-stamped by earlier dev builds now re-run all repair
+  migrations, healing states those builds may have left behind.
+
+## v5.0.0-alpha20 - 2026-07-22
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+> 🔄 **Profile schema migrated to v58.** Seeds the new Healer HoTs element into
+> existing profiles and extends the shipped defensives element to instance- and
+> encounter-specific override setups. Your profile is backed up automatically
+> before it runs.
+
+### Added
+- New **Healer HoTs** tracked aura element on group frames, pre-seeded with the
+  healing-over-time spells of every healer specialization so HoT tracking works
+  out of the box. Existing profiles receive it via migration; deleting it is
+  respected and it will not re-seed.
+
+### Changed
+- Aura tracking adopted the latest 12.1 PTR aura API (build 68824): aura groups
+  keep stable identities across updates, filtering uses the native filter
+  string, and weapon enchant frames are enumerated through the engine rather
+  than tracked ad hoc.
+- Buff presence checks now treat combat-hidden ("secret") results as unknown
+  instead of missing, so indicators no longer flicker off when the client
+  withholds aura data mid-combat.
+
+### Fixed
+- Broad 12.1 secret-value hardening (rounds 18–23): class colors, tooltips, the
+  character pane, on-screen error messages, and aura scans no longer error when
+  the client hides unit or aura data during combat.
+- The shipped defensives element now also applies inside instance- and
+  encounter-specific override setups, where it previously vanished.
+- Repairs profiles where an earlier dev build injected a lone Healer HoTs
+  element into spec, instance, or encounter overrides that were deliberately
+  left empty.
+
+## v5.0.0-alpha19 - 2026-07-18
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Changed
+- Extra action button and zone ability takeover reworked for 12.1's secure
+  layout: QUI now owns the shared container for the whole session, so
+  disabling the takeover asks for a `/reload` to hand the frames back to
+  Blizzard instead of risking a protected-layout error mid-session.
+- The zone ability mover now defaults to its own screen position instead of
+  riding the extra action button's anchor.
+
+### Fixed
+- In-combat frame moves are now gated behind secret-safe protection probes,
+  fixing errors the 12.1 client could throw when QUI checked whether a frame
+  was movable during combat; blocked moves retry automatically after combat.
+- Action bar cooldown reads no longer risk a secret-value error when the
+  12.1 client hides cooldown data during combat.
+- Cooldown viewer icons whose text or values are hidden by the 12.1 client
+  now count as present and stay visible instead of disappearing.
+- The mail window position is re-asserted when Blizzard's panel manager
+  re-stamps it while open.
+- Frame anchoring resolves retries per consumer, so one frame's pending
+  retry can no longer suppress or hijack another's; anchor work blocked by
+  combat is replayed reliably once combat ends.
+
+## v5.0.0-alpha18 - 2026-07-14
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+> 🔄 **Profile schema migrated to v56.** Repairs boss-debuff strips that
+> earlier alpha dev builds could duplicate or orphan in spec-override buckets,
+> so the Encounters page toggle always addresses the strip that actually
+> renders. Your profile is backed up automatically before it runs.
+
+### Added
+- New **Auras** configuration hub unifying aura setup across unit frames,
+  group frames, and buff/debuff frames, with a guided **Setup Wizard** as its
+  first page.
+- **Encounters** page: a journal-sourced encounter catalog with per-encounter
+  boss aura settings and spec-specific overrides (spec × encounter cascade).
+- **Dispel Colors** page with role-based dispel and bleed seeding.
+
+### Changed
+- "Action Bar Auras" is now named **Buff/Debuff Frames**; cross-links updated.
+- The Setup Wizard replaces a tracked HoT wherever it appears in multi-spell
+  elements, and corner placement now spaces indicators by their real pixel
+  footprint — stacked HoTs on the same corner no longer overlap.
+- The legacy "dispellable by me" debuff filter checkbox is ported to the 12.1
+  filter token that preserves its meaning.
+
+### Fixed
+- Boss-debuff strips duplicated or orphaned by earlier alpha builds are
+  repaired by the v56 migration; the strip the Encounters page controls is
+  the one that renders.
+- A raid-cooldown library no longer scans aura data unguarded while the 12.1
+  client restricts it.
+
+## v5.0.0-alpha17 - 2026-07-11
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+> 🔄 **Profile schema migrated to v51.** A single squashed migration repairs
+> aura filter data corrupted under alpha16, folds the group-frame defensive
+> indicator into the unified aura elements, and purges orphaned cooldown-viewer
+> settings. Your profile is backed up automatically before it runs.
+
+### Changed
+- The Unit Frames **Icons** tab is now named **Auras**, matching the unified
+  aura element system it configures.
+- The group-frame defensive indicator is now a standard **defensives** aura
+  element, gaining the element system's filters, sorting, layout, and placement.
+- Faster login and options window: the options engine (~2.9 MB) and the
+  new-profile seed data now load on demand instead of at login, the first
+  `/qui` open compiles the options UI, per-locale search indexes load when
+  needed, and startup runs its profile migration in a single pass.
+
+### Fixed
+- Aura filters saved under alpha16 are repaired. An alpha16 seeding bug wrote
+  invalid tokens into unit-frame aura filters, which hard-errored on 12.1 when
+  the filter string was compiled; the migration strips the bad tokens (a filter
+  left empty reverts to off).
+- A batch of 12.1 crash fixes around secret (protected) values — cooldown-viewer
+  cast/channel tracking, spell-cooldown map teleports, pet proc glows, consumable
+  and skyriding aura tracking, the castbar empower probe, and loot-frame
+  positioning no longer error when the game returns a protected value.
+
+### Performance
+- Reduced per-frame allocations across group frames, resource bars (shared
+  resource maps and zero-allocation rune tracking), and unit-frame power updates
+  (frequent-power events coalesced to ~5 Hz on non-player frames).
+- Trimmed ~448 KB of unused bundled cooldown data and removed dead bag storage
+  code.
+
+### Internal
+- Development history re-founded on the v4.1.0 fork base as a single linear
+  trunk; the packaged addon is unchanged from the prior alpha dev build.
+- Blizzard API reference (FrameXML + API docs) refreshed to 12.1.0.68629.
+
+## v5.0.0-alpha16 - 2026-07-09
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+> 🔄 **Profile schema migrated to v50.** Aura settings on all three surfaces
+> (action-bar buff borders, unit-frame auras, group-frame auras) are converted
+> to the new unified element format. Your profile is backed up automatically
+> before the migration runs.
+
+### Added
+- feat(auras): tracked aura elements — pin specific spells as icon, square, or
+  duration-bar displays — return on group frames and are new on unit frames
+  (they had been non-functional since the PTR4 aura rework).
+- feat(auras): sort options for unit-frame and group-frame auras, and
+  right-click-to-cancel for eligible player buffs (both previously action-bar
+  buff borders only).
+
+### Changed
+- feat(auras): buff borders, unit-frame auras, and group-frame auras now share
+  one element-based configuration model and one editor — add aura elements per
+  frame, each with its own filters (classification / whitelist / blacklist),
+  sorting, layout, and placement.
+
+### Fixed
+- fix(auras): group-frame aura elements honor their individual anchor and grow
+  settings again (alpha15 collapsed all of a frame's aura strips onto the
+  first element's layout).
+
+## v5.0.0-alpha15 - 2026-07-08
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Fixed
+- fix(auras): all aura surfaces (unit-frame buffs/debuffs, action-bar buff
+  borders, group-frame auras) migrated to the new 12.1 PTR4 aura container
+  API — the latest PTR build removed the old aura APIs, which broke every
+  aura display in alpha14. Right-click-to-cancel and the sort options now go
+  through the game engine directly.
+
+### Changed
+- style(auras): aura icons now crop the dark bevel edge baked into icon art,
+  matching the rest of the suite's icon treatment.
+
+### Removed
+- the private-aura anchor feature on unit frames and group frames. The 12.1
+  aura containers render private auras natively, so the dedicated anchors
+  would show them twice. Any stored private-aura settings are cleaned up
+  automatically (profile schema v49).
+
+## v5.0.0-alpha14 - 2026-07-07
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Added
+
+A large batch of new Quality-of-Life modules. **All are opt-in and default OFF.**
+
+- feat(qol): Group Death Alert — on-screen text plus an optional sound when a
+  party/raid member dies (feign-death filtered).
+- feat(qol): Healer Mana Watcher — a movable frame with a mana bar for each
+  healer in your group.
+- feat(qol): Focus Marker — one action to focus and raid-mark your mouseover
+  target via a character macro or clickable button.
+- feat(qol): Map Teleports — M+ season dungeon teleport panel on the world map
+  with click-to-cast buttons and cooldown swipes.
+- feat(qol): Vendor Sell Rules — rule-based auto-sell for equippable gear by
+  quality/ilvl with force/never lists; runs in preview-only mode until you
+  turn previews off.
+- feat(qol): Gem Socket Picker — a panel of socketable gems from your bags
+  under the item socketing window.
+- feat(qol): Mail Contacts — an address-book side panel on the send-mail tab
+  (your alts + past recipients), plus a remember-last-recipient toggle.
+- feat(qol): Trade & Mail Log — account-wide trade / sent-mail / received-mail
+  history, browsable via `/quilog`.
+- feat(qol): EJ Loot Specs — spec-eligibility icons on Encounter Journal loot
+  rows.
+- feat(qol): Communities Privacy — a click-to-reveal cover over community chat
+  and rosters.
+- feat(qol): Cursor Trail — fading afterimage dots with combat-only and
+  class-color options.
+- feat(qol): Sound Mute — mute individual game sounds from a built-in catalog.
+- feat(qol): Collection Fanfare — auto-clears the "new" fanfare glow on
+  freshly collected mounts/pets/toys.
+- feat(qol): Merchant Pets — green check on already-collected pets at
+  merchants.
+- feat(qol): Loot Toast Filter — hide loot-won toasts below a chosen quality,
+  with keep-overrides.
+- feat(qol): auto-confirm popups for socket replacement, token purchase, and
+  high-cost items.
+- feat(qol): Audio Device Lock — re-asserts your chosen audio output device
+  whenever the OS device list changes.
+- feat(qol): Event Sounds — play a chosen sound on whisper / ready check /
+  LFG proposal / resurrection offer / loot roll won / loot upgrade.
+- feat(qol): Extended Ignore — a user-managed ignore list beyond Blizzard's
+  cap; suppresses public chat from listed names and auto-declines their
+  invites and duels.
+- feat(qol): Friends List class colors — class-colored names for WoW and
+  BNet friends playing WoW.
+- feat(qol): No-Target Warning — an in-combat "No Target" banner with
+  movable placement.
+- feat(tooltips): new tooltip options — scale, hide faction/PvP lines,
+  connected-realm mark, guild rank, and guild-name coloring.
+- feat(character): gem summary on the character pane (per-color counts and
+  empty sockets).
+- feat(bags): currency bar, corner widgets, and item-button refinements.
+- feat(datatexts): additional datatext providers.
+- feat(actionbars): position options for the open-ticket icon.
+
+### Fixed
+- fix(actionbars): Blizzard's open-ticket (help request) icon now anchors to
+  the reclaimed micro bar instead of floating loose.
+- fix(core): profile changes made during a Mythic+ run are parked and applied
+  when the run ends, instead of being dropped.
+- fix(core): cross-suite namespace export collisions are now detected, so two
+  sub-addons can no longer silently overwrite each other's shared symbols.
+- fix(tooltips): guard GameTooltip widget containers from tainted layout.
+- fix(sounds): whispers no longer double-ping when both QUI Chat's new-message
+  sound and the QoL Event Sounds whisper alert are enabled — chat owns the
+  whisper sound and the QoL module defers to it.
+- fix(options): settings tiles with a single sub-page no longer render a lone
+  redundant tab that repeated the header title.
+
+### Changed
+- perf: idle-cost sweep across the suite — tooltip visibility watcher
+  throttled, CDM buff-icon poll made allocation-free with a relaxed cadence,
+  CDM mouseover poll and fade fallback stop allocating bar-frame snapshots,
+  the action-button global sweep runs once per session, the damage-meter
+  ticker stops walking settings every render frame, the cursor-follow watcher
+  parks until you move, options sliders debounce their onChange while
+  dragging, and the info bar skips mouseover-fade alpha work while settled.
+
+
+## v5.0.0-alpha13 - 2026-07-05
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Fixed
+- fix(cdm): the cooldown viewer HUD now re-evaluates its visibility rules the
+  instant you start or stop moving, so movement-dependent conditions (skyriding,
+  flying, mounted) update promptly instead of lagging until the next event.
+
+
+## v5.0.0-alpha12 - 2026-07-05
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Added
+- feat(groupframes): party target frames — an optional companion frame for each
+  party member showing the name and health of that member's current target.
+  Party only, off by default.
+- feat(groupframes): the absorb, heal-absorb, and heal-prediction overlays gain
+  per-bar controls — bar texture, draw order, fill direction, and an optional
+  leading-edge spark with outline.
+- feat(groupframes): detached mini-bar mode for those same overlays — each can
+  leave the health bar and render as a standalone mini-bar with its own width,
+  height, anchor, and offset. Off by default (overlay stays the default).
+- feat(groupframes): debuff icon borders can be colored by dispel type
+  (Magic / Curse / Poison / Disease / Bleed). Off by default.
+- feat(groupframes): linear (horizontal or vertical) cooldown swipe option for
+  aura icons as an alternative to the default radial swipe; the countdown
+  number is kept either way.
+- feat(groupframes): party frames can expose their unit frames to an external
+  cooldown-tracker provider (party frames only, no raid frames).
+- feat(qol): merchant grid extender — widen the vendor Items tab into a grid
+  (2–4 columns × 5–8 rows) so a multi-page vendor collapses onto one page. Off
+  by default; a 2×5 grid matches the vanilla layout.
+- feat(qol): a toggle to force Blizzard's floating/scrolling combat text off.
+  Off by default.
+- feat(damagemeter): a Dark/Light theme preset dropdown for the native meter's
+  appearance colors.
+
+### Fixed
+- fix(inspect): inspecting a player no longer blanks the open inspect pane's
+  item levels and gear tooltips a moment later. A queued tooltip inspect
+  request is now suppressed once the Inspect window opens.
+- fix(bags): right-clicking a bag item to deposit into a selected bank or
+  warband tab now merges into an existing partial stack of the same item
+  instead of always dropping the whole stack into the first empty slot.
+
+## v5.0.0-alpha11 - 2026-07-04
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Fixed
+- fix(cdm): Cooldown Manager proc highlights no longer flicker. While a spell
+  showed its proc glow, every cooldown, aura, or charge event re-triggered the
+  glow's start animation, so the highlight strobed under a burst of events. The
+  glow is now painted once and left alone until the proc ends or the icon is
+  reused for a different spell.
+
+## v5.0.0-alpha10 - 2026-07-04
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Fixed
+- fix(cdm): a disabled Cooldown Manager tracker no longer flashes its icons in
+  the middle of the screen. With a tracker disabled (e.g. Utility) and its
+  spells curated into another tracker, every cooldown update briefly pinned
+  the disabled tracker's icons at its hidden container's position. Disabled
+  trackers now claim no icons at all, and icons they held before being
+  disabled are released on the next update.
+
+## v5.0.0-alpha9 - 2026-07-04
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Fixed
+- fix(cdm): Cooldown Manager icons no longer snap to Blizzard's mid-screen
+  Edit Mode position at the start of combat. The viewer is now glued onto the
+  QUI container, so Blizzard's own layout lands in the right place, and icons
+  that appear mid-combat stay hidden until QUI has positioned them instead of
+  flashing mid-screen.
+- fix(auras): aura frames are no longer created during combat, which the 12.1
+  client forbids and could crash. Buff borders, group frames, and unit frames
+  now update existing icons while in combat and queue brand-new icons for the
+  moment combat ends.
+- fix(groupframes): party and raid members who join mid-fight now show their
+  auras immediately — aura frames are pre-allocated out of combat instead of
+  appearing only after the fight.
+
+### Changed
+- Buff border layout and settings changes now re-lay existing icons
+  immediately, even in combat, instead of waiting for combat to end. The
+  weapon-enchant icons now lead the buff grid.
+
+## v5.0.0-alpha8 - 2026-07-03
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Added
+- Pandemic glow now works on re-anchored Cooldown Manager icons. It follows
+  Blizzard's own per-spell pandemic window, so the flash timing matches the
+  actual refresh window for each aura.
+
+### Changed
+- Tracked buff bars now mirror their fill and timer text directly from
+  Blizzard's live bars. Bars animate smoothly in combat even while aura data
+  is secret, instead of freezing or going blank.
+
+### Fixed
+- fix(cdm): the aura cache no longer wipes itself mid-combat under the 12.1
+  secret-aura rules, which could leave cooldown and buff displays empty until
+  the next out-of-combat refresh.
+- fix(cdm): combat Potion / Health Potion / Healthstone entries now show their
+  proper icons and names in the composer and on rendered icons instead of a
+  blank or question-mark icon.
+- fix(actionbars): buffs that appear after your buff count grows past its
+  previous maximum now show tooltips and accept right-click-to-cancel
+  immediately, instead of blocking the mouse until a /reload.
+
+## v5.0.0-alpha7 - 2026-07-03
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Changed
+- **Cooldown Manager rebuilt on the re-anchor engine.** QUI now positions and
+  skins Blizzard's own cooldown icons in place instead of mirroring them into
+  cloned frames. This removes the whole class of "icons hidden in combat",
+  ghost-icon, and cooldown-viewer taint failures the old mirror pipeline had.
+- Tracked buff bars are now rendered as QUI-owned bars; Blizzard's bar viewer
+  acts purely as a data source. Bar skin, ordering, and Edit Mode suppression
+  all come from QUI.
+- Aura scanning migrated to the 12.1 secret-aura rules (aura getters that were
+  removed in 12.1 are replaced, secret combat payloads are skipped safely)
+  across the Cooldown Manager, group frames, cast bars, the consumable check,
+  and the atonement counter.
+- Essential/Utility cooldown icons handle clicks and tooltips through
+  QUI-owned hosts, so hover and click behave consistently on re-anchored icons.
+
+### Fixed
+- fix(cdm): cold login no longer leaves the Cooldown Manager tainted (aura
+  reads going secret / icons refusing to register) until a /reload.
+- fix(cdm): with "Show Buff/Debuff Phase on Cooldown Icons" disabled, icons —
+  including trinkets and consumables — now show their real cooldown swipe and
+  desaturation instead of reading bright "ready" while the cooldown rolls.
+- fix(cdm): buff icons no longer get stuck invisible or stale after combat; a
+  repair net re-claims them whenever Blizzard re-shows or re-uses a frame.
+- fix(cdm): Edit Mode cooldown-viewer visibility settings that conflict with
+  QUI's rendering get a one-time reset (with a reload prompt) instead of
+  silently fighting the addon.
+- fix(unitframes): buff/debuff containers on unit frames now anchor exactly
+  where the layout-mode preview shows them on non-default anchor corners.
+
+## v5.0.0-alpha6 - 2026-06-29
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Changed
+- folded the **QUI_UI** add-on back into the main QUI add-on, so the suite now
+  installs one fewer sibling folder. Skinning, datatexts, info bar, alts, minimap,
+  and the QoL features all load from main. Info bar, alts, datatexts, and skinning
+  now default **on** — if you had never toggled Info Bar or Alts off, they will
+  appear after this update; turn them off under Module Add-ons.
+- combat-end recovery now re-applies backdrops only to the frames that errored
+  during combat instead of rescanning every frame, and the buff-border / aura
+  headers no longer rebuild on a normal combat end.
+
+### Fixed
+- fix(chat): when reloading in combat, the Blizzard chat frames are now hidden
+  immediately instead of lingering beside the QUI chat until combat ends.
+- fix(cdm): the cooldown re-anchor engine no longer throws a protected-call error
+  when resizing cooldown containers in combat; the resize is deferred to combat end.
+
+## v5.0.0-alpha5 - 2026-06-29
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+> 🔄 **Profile schema migrated to v48.** Player buffs and debuffs are now two
+> separate aura containers. Your profile is backed up automatically before the
+> migration runs; profiles older than schema v47 are backed up, reset, and
+> reseeded from the starter preset instead of step-migrated.
+
+### Added
+- player buffs and debuffs now render on two independent aura containers, each
+  with its own mover target, so they can be positioned and styled separately.
+- rebuilt the CDM cooldown engine to reposition Blizzard's own cooldown icons in
+  place (SetPoint re-anchor) instead of cloning them — no reparenting of Blizzard
+  frames. Item cooldowns with no spell ID (trinkets, combat/health potions,
+  healthstone) are tracked by slot/category.
+- merged Blizzard's CDM Group Buffs into the missing-raid-buff tracker; CDM-
+  sourced buffs surface as manual toggles in the Auras editor.
+- added an ally maintenance-buff reminder (Beacon of Light / Earth Shield), an
+  action-bar raid-marker bar, and a Bloodlust/Heroism cooldown timer.
+- added CDM buff-icon absorb-amount text, grow-on-apply, and buff-edge options.
+- added Group Frames per-group "Group N" headers, cleanse glow, and a hide-DPS
+  toggle; Unit Frames inline target-of-target, class-color, and per-size raid
+  positions; a composer absorb-bar texture picker.
+- added horizontal scroll with overflow controls to chat window tabs.
+
+### Changed
+- the boss-frame out-of-range alpha is now driven by range-update events instead
+  of a polling ticker.
+
+### Fixed
+- fix(chat): keep player class colors on guild and party/raid senders through
+  combat lockdown and on cold-login-into-combat, including plain-body lines with
+  a secret sender.
+- fix(qol): the focus/cast-alert interrupt sound now follows the same
+  interruptibility signal that gates the alert visual.
+
+
+## v5.0.0-alpha4 - 2026-06-25
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Changed
+- consolidated the six cosmetic addons — Skinning, Datatexts, Minimap, Info Bar,
+  QoL, and Alts — into a single LoadOnDemand bundle, **QUI_UI**, using 12.1's
+  per-file `[Bootstrap]` TOC directive. The visual tier loads at startup; the
+  Alts roster UI loads on first open. A "UI Bundle" toggle plus per-module
+  dormancy flags (minimap / info bar / alts) control it. ⚠️ Brand-new packaging
+  — if a cosmetic module doesn't appear, toggle it in Module Addons and `/reload`.
+- unified every aura surface — player, unit, group frames, and buff borders —
+  onto a single CustomAuraContainer render path, with a secret-safe stack count
+  and per-dispel borders under 12.0 secret values.
+- Bags now defaults **on** for new profiles (existing profiles are untouched).
+
+
+## v5.0.0-alpha3 - 2026-06-23
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+Rebased the QUI5 12.1 line onto the latest 4.x beta (v4.0.4), folding in every
+fix and feature that landed on the beta line since alpha2.
+
+### Added
+- added Delves/Dressing Room/PvP Match skinning surfaces; expanded the UIKit
+  factory tier.
+- added professions, quest log, housing, and adventure guide buttons to the
+  Info Bar micro menu.
+
+### Fixed
+- refactor(font): override the shared Blizzard font objects instead of walking
+  frames per-frame, so themed fonts survive Blizzard hover/disable swaps.
+- fix(chat): launder hyperlink taint so "Copy Character Name" works again.
+- fix(skinning): drop the tooltip refit and adopt 12.0.7 self-sizing; repair
+  dead skins, backdrop persistence, and dead-field lookups; consolidate the
+  font/backdrop paths and harden persistence.
+- fix(tooltip): stop a C stack overflow from reentrant `Show()` in layout refresh.
+- fix(cdm): prefer the override cooldown lane when a child override is active.
+- fix(anchoring): pin the CDM buff-icon container out of the restricted anchor
+  family.
+- fix(clickcast): edge-driven keyboard binds, clear keys on last-bind removal,
+  keep the mouse-over decision secure, and re-arm on transient mouseover-off.
+- perf(groupframes): cut raid-frame cost across 5 hot paths.
+- fixed friendly boss frames flickering, tooltips flickering when fading out, and
+  LFG category button styling / refresh handling.
+
+
+## v5.0.0-alpha2 - 2026-06-21
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+### Changed
+- chore(toc): pin every shipped TOC to a single `## Interface: 120100`, dropping
+  the pre-12.1 forward-compat list (120000/120001/120005/120007). QUI5 now
+  declares support for patch 12.1 exclusively.
+
+
+## v5.0.0-alpha1 - 2026-06-18
+
+> ⚠️ **WoW 12.1 PTR ONLY.** QUI5 targets patch 12.1 (interface 120100) and will
+> not load on the 12.0.x live client. Stay on the v4.x beta line for live realms.
+
+First QUI5 alpha. Targets patch 12.1 and pulls the latest fixes and features
+forward from the 4.x beta line.
+
+### Added
+- feat(cdm): "New Window" / "Delete Window" entries in the cooldown-manager header
+  right-click menu.
+- feat(cdm): bar duration text now driven via `DurationTextBinding` (12.0.7 API).
+- feat(alts): overflow tab strips show scroll bars; fixed equipment ilvl/status
+  text overlap.
+
+### Fixed
+- fix(12.1): `GetScaledCursorPosition` was removed from the in-world environment
+  in patch 12.1 (now glue-screen only) — the cursor reticle errored every frame.
+  Reimplemented locally from `GetCursorPosition` and UIParent's effective scale.
+- fix(12.1): the global `AnimateTexCoords` moved to `TextureUtil` in 12.1 —
+  restored the button glow "ants" animation (LibCustomGlow).
+- fix(12.1): 12.1's assisted-combat rotation OnUpdate now calls
+  `OnActionBarSlotChanged()`, a method QUI's custom action buttons don't inherit
+  — stubbed it on the hosting button to stop the per-frame error.
+- fix(chat): class color preserved on secret-sender whisper/party lines.
+- fix(skinning,cdm): font-revert/template-drift sweep, mail frame skinning coverage,
+  and glow drawn below the cooldown swipe.
+- fix(auras): removed the IMPORTANT aura filter (removed by Blizzard in 12.0.7).
+
+### Internal
+- Refreshed the vendored FrameXML + Blizzard API doc corpus to 12.1.0.68209 and
+  regenerated the LSP API definitions; sanitized control bytes in generated doc
+  comments so the defs always parse.
+- Regenerated the enUS localization base.
+
+
+
+## v4.0.5-beta3 - 2026-06-24
+
+### Fixed
+- fixed a taint crash caused by leftover events on legacy party frames
+- fixed action bars flickering on skyriding mount/dismount
+
+## v4.0.5-beta2 - 2026-06-24
+
+### Fixed
+- fixed raid/party names blanking out for the rest of the session until /reload
+- fixed boss cast bars persisting on screen after a wipe
+
+## v4.0.5-beta1 - 2026-06-23
+
+### Added
+- reworked click-casting for reference parity — per-frame secure proxies, click direction (up/down), and friend/enemy bind separation
+
+### Fixed
+- fixed raid/party name class colors lost in combat
+- fixed unreadable dark gossip text on skinned frames
+- fixed flight map canvas hidden behind skinned backdrop
+- hardened skin button-font walk against bad-self GetObjectType
+
+
+
 ## v4.1.0 - 2026-07-07
 
 ### Added
@@ -1180,7 +2204,7 @@ QUI 4 is the next major release for Retail/Midnight. It restructures the addon i
 - **added a second CDM engine (you can now pick between our own and the classic blizzard hook one in the CDM options) **
 - added minimap menu (click with middle mousebutton on the minimap)
 - added main chat frame as an anchoring target
-- added pull timer command(s) (/pull (if available), /qpull, /quipull)
+- added pull timer command(s) (/pull (if available), /quipull, /quipull)
 - added more anchoring options for tooltips when anchoring to the mouse cursor
 ## v2.42.0 - 2026-02-28
 
