@@ -456,6 +456,30 @@ test("party roster reflects show-player, hide-DPS, role sort and self pin", func
     assert(sorted[1].isSelf == true, "self-first survives name sorting")
 end)
 
+test("hidden players drop matching names in both preview contexts", function()
+    -- The driver resolves ns.Helpers lazily; wire the REAL core parser in so
+    -- the preview filter is exercised with live matching semantics.
+    local env = dofile("tools/_addon_env.lua")
+    ns.Helpers = env.LoadCore().Helpers
+
+    -- Roster index 1/2 are "Tankthor"/"Healena" (FAKE_NAMES). Realm-less
+    -- entries match any realm; unknown names are ignored.
+    local party = D._PrepareRoster("party", 5, {}, { hiddenPlayers = " healena , Nobody-Realm " })
+    assert(#party == 4, "one of five party members filtered")
+    for _, m in ipairs(party) do
+        assert(m.name ~= "Healena", "hidden name must not survive")
+    end
+
+    local raid = D._PrepareRoster("raid", 10, {}, { hiddenPlayers = "Tankthor" })
+    assert(#raid == 9, "hidden players apply to the raid context too")
+
+    -- No list → untouched roster; driver also loads with no Helpers at all.
+    ns.Helpers = nil
+    assert(#D._PrepareRoster("party", 5, {}, { hiddenPlayers = "Healena" }) == 5,
+        "bare test ns (no core utils) leaves the roster unfiltered")
+    assert(#D._PrepareRoster("party", 5, {}, {}) == 5)
+end)
+
 test("pet sample uses the outer edge when its anchor follows party growth", function()
     assert(D._EdgeSampleIndex(5, "DOWN", "BOTTOM") == 5)
     assert(D._EdgeSampleIndex(5, "UP", "TOP") == 5)

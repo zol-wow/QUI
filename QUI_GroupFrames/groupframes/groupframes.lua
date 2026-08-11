@@ -318,6 +318,25 @@ local function GetRaidSelfFirst(db)
     return db.selfFirst == true
 end
 
+-- Hidden players: user-maintained name list (db.hiddenPlayers) whose frames
+-- are removed from the party/raid headers entirely. The secure header only
+-- has include-filters (nameList/groupFilter/roleFilter), so exclusion is
+-- expressed by computing include-lists that omit these names. Parse result
+-- is cached on the raw string so roster-burst callers don't re-split.
+do  -- do-block: keeps the cache upvalues off the main chunk's 200-local budget
+    local cacheKey, cacheSet
+    _state.GetHiddenPlayerSet = function(db)
+        db = db or GetSettings()
+        local raw = db and db.hiddenPlayers
+        if type(raw) ~= "string" or raw == "" then return nil end
+        if raw ~= cacheKey then
+            cacheKey = raw
+            cacheSet = Helpers.ParseNameListString(raw)
+        end
+        return cacheSet
+    end
+end
+
 local function UseRaidSectionHeaders(db)
     db = db or GetSettings()
     if not db then return false end
@@ -326,6 +345,9 @@ local function UseRaidSectionHeaders(db)
     return IsMultiHeaderMode()
         or GetRaidSelfFirst(db)
         or (layout and layout.limitGroupsByRaidSize == true)
+        -- Hidden players need computed nameLists in every raid mode, so the
+        -- single groupFilter-driven raid header can't be used.
+        or _state.GetHiddenPlayerSet(db) ~= nil
 end
 
 _state.UseRaidNameListSections = function(db, layout)
@@ -335,6 +357,12 @@ _state.UseRaidNameListSections = function(db, layout)
         layout = raidVdb and raidVdb.layout
     end
     if GetRaidSelfFirst(db) then
+        return true
+    end
+    -- A non-empty hidden-players list forces nameList sections: every raid
+    -- section header is driven from a computed nameList and
+    -- GetRaidDisplaySections skips the hidden names.
+    if _state.GetHiddenPlayerSet(db) ~= nil then
         return true
     end
     return layout
@@ -2316,6 +2344,94 @@ local function UpdateAnchorFrames()
     end
 end
 
+---------------------------------------------------------------------------
+-- Party include-list (hidden players active). The secure header only honors
+-- nameList when NEITHER groupFilter nor roleFilter is set, and its nameList
+-- branch ignores groupBy entirely (SecureGroupHeaders.lua:410-495) — so
+-- hideDPS and role ordering are folded into the computed list here and the
+-- header sorts by NAMELIST order. The header's showPlayer/showParty/showSolo
+-- attributes still gate which units are iterated at all.
+---------------------------------------------------------------------------
+do  -- do-block: keeps these helpers off the main chunk's 200-local budget
+local PARTY_NAMELIST_UNITS = { "player", "party1", "party2", "party3", "party4" }
+
+local function BuildPartyNameListEntries(layout, hiddenSet)
+    local entries = {}
+    local needRole = layout.hideDPS == true or layout.sortByRole == true
+    for i = 1, #PARTY_NAMELIST_UNITS do
+        local unit = PARTY_NAMELIST_UNITS[i]
+        if UnitExists(unit) then
+            local name, server = UnitName(unit)
+            if IsSecretValue(name) then name = nil end
+            if IsSecretValue(server) then server = nil end
+            if name then
+                -- Mirror SecureGroupHeaders' GetGroupRosterInfo name format
+                -- so include-list tokens compare equal for cross-realm units.
+                if server and server ~= "" then
+                    name = name .. "-" .. server
+                end
+                local role = "NONE"
+                if needRole then
+                    role = UnitGroupRolesAssigned(unit)
+                    if IsSecretValue(role) or not role then role = "NONE" end
+                end
+                local keep = not Helpers.NameListContains(hiddenSet, name)
+                if keep and layout.hideDPS == true then
+                    -- Same semantics as the roleFilter="TANK,HEALER" path,
+                    -- including hiding a DPS-spec player's own frame.
+                    keep = role == "TANK" or role == "HEALER"
+                end
+                if keep then
+                    entries[#entries + 1] = { name = name, role = role, index = i }
+                end
+            end
+        end
+    end
+
+    if layout.sortByRole == true then
+        table_sort(entries, function(a, b)
+            local pa = RAID_SECTION_ROLE_PRIORITY[a.role] or 99
+            local pb = RAID_SECTION_ROLE_PRIORITY[b.role] or 99
+            if pa ~= pb then return pa < pb end
+            return a.index < b.index
+        end)
+    elseif layout.sortMethod == "NAME" then
+        table_sort(entries, function(a, b)
+            if a.name ~= b.name then return a.name < b.name end
+            return a.index < b.index
+        end)
+    end
+
+    return entries
+end
+
+-- Returns nil when no hidden-players list is configured (normal attribute
+-- path applies). Otherwise: nameList (may be "" — a valid everyone-filtered
+-- include list that keeps the header showing nobody), the count of non-player
+-- members kept, and whether the player's own entry survived the filters.
+_state.GetPartyNameListInfo = function(layout, db)
+    local hiddenSet = _state.GetHiddenPlayerSet(db)
+    if not hiddenSet then return nil end
+
+    local entries = BuildPartyNameListEntries(layout, hiddenSet)
+    local names, memberCount, hasPlayer = {}, 0, false
+    for i = 1, #entries do
+        names[i] = entries[i].name
+        if entries[i].index == 1 then
+            hasPlayer = true
+        else
+            memberCount = memberCount + 1
+        end
+    end
+
+    return {
+        nameList = table_concat(names, ","),
+        memberCount = memberCount,
+        hasPlayer = hasPlayer,
+    }
+end
+end  -- do-block
+
 local function GetVisiblePartyUnitCount()
     local layout = GetLayoutSettings(false)
     if not layout then return 0 end
@@ -2327,9 +2443,13 @@ local function GetVisiblePartyUnitCount()
         return 0
     end
 
+    local info = _state.GetPartyNameListInfo(layout, db)
+
     if IsInGroup() then
         local subgroupCount
-        if type(GetNumSubgroupMembers) == "function" then
+        if info then
+            subgroupCount = info.memberCount
+        elseif type(GetNumSubgroupMembers) == "function" then
             subgroupCount = GetNumSubgroupMembers() or 0
         else
             subgroupCount = math_max((GetNumGroupMembers() or 0) - 1, 0)
@@ -2339,14 +2459,14 @@ local function GetVisiblePartyUnitCount()
             return subgroupCount
         end
 
-        return subgroupCount + 1
+        return subgroupCount + ((not info or info.hasPlayer) and 1 or 0)
     end
 
     if selfFirst or not layout.showSolo then
         return 0
     end
 
-    return 1
+    return (not info or info.hasPlayer) and 1 or 0
 end
 
 local function ConfigurePartyHeader(header)
@@ -2388,15 +2508,36 @@ local function ConfigurePartyHeader(header)
         header:SetAttribute("yOffset", 0)
     end
 
-    if layout.sortByRole then
-        header:SetAttribute("groupBy", "ASSIGNEDROLE")
-        header:SetAttribute("groupingOrder", "TANK,HEALER,DAMAGER,NONE")
+    local nameListInfo = _state.GetPartyNameListInfo(layout, db)
+    if nameListInfo then
+        -- Include-list mode (hidden players configured): drive the header
+        -- from a computed nameList. Ordering discipline mirrors the raid
+        -- section path — set nameList/sortMethod FIRST so no intermediate
+        -- state leaves the header filterless, then clear roleFilter/groupBy
+        -- (a set roleFilter would make the header ignore nameList entirely).
+        _state.SetHeaderAttributeIfChanged(header, "nameList", nameListInfo.nameList)
+        _state.SetHeaderAttributeIfChanged(header, "sortMethod", "NAMELIST")
+        _state.SetHeaderAttributeIfChanged(header, "groupBy", nil)
+        _state.SetHeaderAttributeIfChanged(header, "groupingOrder", nil)
+        _state.SetHeaderAttributeIfChanged(header, "roleFilter", nil)
     else
-        local sortMethod = layout.sortMethod or "INDEX"
-        header:SetAttribute("sortMethod", sortMethod)
-    end
+        if layout.sortByRole then
+            header:SetAttribute("groupBy", "ASSIGNEDROLE")
+            header:SetAttribute("groupingOrder", "TANK,HEALER,DAMAGER,NONE")
+        else
+            _state.SetHeaderAttributeIfChanged(header, "groupBy", nil)
+            _state.SetHeaderAttributeIfChanged(header, "groupingOrder", nil)
+        end
+        -- NAMELIST sorting only exists in include-list mode; restore the
+        -- layout sort when leaving it (change-guard no-ops otherwise).
+        _state.SetHeaderAttributeIfChanged(header, "sortMethod", layout.sortMethod or "INDEX")
 
-    _state.SetHeaderAttributeIfChanged(header, "roleFilter", layout.hideDPS and "TANK,HEALER" or nil)
+        _state.SetHeaderAttributeIfChanged(header, "roleFilter", layout.hideDPS and "TANK,HEALER" or nil)
+        -- Cleared LAST when leaving include-list mode: while roleFilter/groupBy
+        -- are being restored above, a still-set nameList keeps the header in a
+        -- valid filtered state instead of briefly showing everyone.
+        _state.SetHeaderAttributeIfChanged(header, "nameList", nil)
+    end
 
     header:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
     header:SetAttribute("_initialAttribute-unit-width", w)
@@ -3212,6 +3353,7 @@ GetRaidDisplaySections = function()
     end
 
     local raidSelfFirst = GetRaidSelfFirst(db)
+    local hiddenSet = _state.GetHiddenPlayerSet(db)
     local groupBy = layout.groupBy or "GROUP"
     local sortMethod = layout.sortMethod or "INDEX"
     local sortByRole = layout.sortByRole == true and groupBy ~= "ROLE"
@@ -3225,7 +3367,8 @@ GetRaidDisplaySections = function()
     for i = 1, GetNumGroupMembers() do
         local unit = "raid" .. i
         local name, _, subgroup, _, _, rosterClassFile, _, _, _, _, _, rosterRole = GetRaidRosterInfo(i)
-        if name and _state.IsRaidSubgroupAllowed(subgroup, layout) then
+        if name and _state.IsRaidSubgroupAllowed(subgroup, layout)
+            and not Helpers.NameListContains(hiddenSet, name) then
             seenRosterNames[name] = true
 
             local unitMatchesRoster = _state.UnitNameMatchesRoster(unit, name)
