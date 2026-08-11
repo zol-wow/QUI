@@ -4,6 +4,29 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.0.0-beta3 - 2026-08-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Friendly NPC nameplates could not be turned on.** Auto-Hide shipped with
+  friendly player and NPC nameplates hidden, and that setting quietly outranked
+  the one on the nameplate page, so ticking Friendly NPCs there changed nothing
+  and the game's own Nameplates options showed the option off. Both pages now
+  read and write the same setting, so either one turns it on and it stays on.
+- **Settings rows escaped the options window.** Toggling a nameplate visibility
+  option left cards and checkboxes drawing loose over the game world while the
+  panel below them went blank, until the page was reopened.
+
+### Changed
+
+- **Auto-Hide's two nameplate rows now read "Friendly Nameplates" and "Friendly
+  NPCs".** They are the same two settings as the nameplate page's Visibility
+  tab rather than separate ones that fought it, so ticking a box now means show,
+  not hide, and both pages stay in step.
+
 ## v5.0.0-beta2 - 2026-08-10
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and

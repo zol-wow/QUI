@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Nameplates
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Drew
-## Version: 5.0.0-beta2
+## Version: 5.0.0-beta3
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
