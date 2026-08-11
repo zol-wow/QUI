@@ -835,6 +835,16 @@ local function RenderLayoutSection(sectionHost, ctx)
         })
         card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Limit Groups by Raid Size"], limitGroupsCheckbox))
 
+        local hiddenPlayersEdit = gui:CreateFormEditBox(card.frame, nil, "hiddenPlayers", groupFrames.gfdb, function()
+            refresh(true)
+        end, {
+            commitOnEnter = true,
+            commitOnFocusLost = true,
+        }, {
+            description = ns.L["Comma-separated character names whose frames are hidden entirely. Add -Realm to limit an entry to one realm. Shared between party and raid; roster changes during combat apply after combat ends."],
+        })
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Hidden Players"], hiddenPlayersEdit))
+
         local gfdb = groupFrames.gfdb
         if type(gfdb.raidSizeOffsets) ~= "table" then
             gfdb.raidSizeOffsets = {}
@@ -911,6 +921,16 @@ local function RenderLayoutSection(sectionHost, ctx)
         card.AddRow(
             optionsAPI.BuildSettingRow(card.frame, ns.L["Hide DPS Frames"], hideDPSCheckbox)
         )
+
+        local hiddenPlayersEdit = gui:CreateFormEditBox(card.frame, nil, "hiddenPlayers", groupFrames.gfdb, function()
+            refresh(true)
+        end, {
+            commitOnEnter = true,
+            commitOnFocusLost = true,
+        }, {
+            description = ns.L["Comma-separated character names whose frames are hidden entirely. Add -Realm to limit an entry to one realm. Shared between party and raid; roster changes during combat apply after combat ends."],
+        })
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Hidden Players"], hiddenPlayersEdit))
     end
 
     builder.CloseCard(card)

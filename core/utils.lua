@@ -392,6 +392,38 @@ function Helpers.IsAuraOwnedByPlayerOrPet(auraData, strictSource)
     return false
 end
 
+-- Name-list filters (group-frame hidden players + its settings preview).
+-- Parses a user-typed name list ("Bob, Alice-Stormrage; Eve") into a
+-- lowercase lookup set: split on commas/semicolons/newlines, trimmed,
+-- entries keep an explicit -Realm suffix. Returns nil when empty.
+function Helpers.ParseNameListString(raw)
+    if type(raw) ~= "string" or raw == "" then return nil end
+    local set
+    for token in raw:gmatch("[^,;\r\n]+") do
+        token = token:match("^%s*(.-)%s*$")
+        if token ~= "" then
+            set = set or {}
+            set[token:lower()] = true
+        end
+    end
+    return set
+end
+
+-- True when a roster name ("Name" or "Name-Realm") matches a parsed set.
+-- A set entry without a realm matches the name on any realm; an entry with
+-- -Realm must match the full roster string. Case-insensitive (ASCII);
+-- secret values never match.
+function Helpers.NameListContains(set, name)
+    if not set then return false end
+    if Helpers.IsSecretValue(name) or type(name) ~= "string" or name == "" then
+        return false
+    end
+    local lowered = name:lower()
+    if set[lowered] then return true end
+    local base = lowered:match("^([^%-]+)%-")
+    return base ~= nil and set[base] == true
+end
+
 function Helpers.GetCore()
     return (_G.QUI and _G.QUI.QUICore) or ns.Addon
 end

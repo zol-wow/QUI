@@ -5833,6 +5833,7 @@ return {
         quiGroupFrames = {
           enabled = false,
           externalSkinning = false,
+          hiddenPlayers = "",
           iconSkin = "Default",
           party = {
             absorbs = {
