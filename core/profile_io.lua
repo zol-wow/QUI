@@ -1231,6 +1231,13 @@ local PROFILE_IMPORT_CATEGORIES = {
         },
     },
     {
+        id = "auraDisplays",
+        label = "Aura Displays",
+        description = "Your custom on-screen aura frames and their filters.",
+        recommended = true,
+        topLevelKeys = { "auraDisplays" },
+    },
+    {
         id = "trackersTimers",
         label = "Timers / Widgets",
         description = "M+ timer, combat timers, XP tracker, and other utility widgets.",

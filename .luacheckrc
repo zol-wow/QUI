@@ -92,6 +92,7 @@ read_globals = {
     "StaticPopup_Show", "StopDrag",
     "GENERAL", "MAX_TOTEMS", "NUM_CHAT_WINDOWS", "RAID_CLASS_COLORS",
     "CUSTOM_CLASS_COLORS", "SetPortraitTexture",
+    "TANK", "HEALER", "DAMAGER",
 
     -- Time, combat, addon lifecycle
     "GetTime", "InCombatLockdown", "UpdateAddOnMemoryUsage", "GetAddOnMemoryUsage",

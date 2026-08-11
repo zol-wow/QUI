@@ -487,6 +487,9 @@ return {
             [4] = 0.55000000000000004
           }
         },
+        auraDisplays = {
+          enabled = true
+        },
         bags = {
           appearance = {
             bankColumns = 14,
