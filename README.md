@@ -33,35 +33,13 @@ QUI is a modular World of Warcraft UI suite for Midnight 12.1+. It combines comb
 
 Log in and open `/qui` (or `/qui`) to get started.
 
-## Coming from QUI
+## Upgrading from 4.x
 
-QUI stores its settings separately from QUI, under `QUIDB`. There are two ways to bring your QUI configuration across.
+Install over the top. There is nothing to move by hand: 5.0 uses the same addon folders and the same saved variables as 4.x (`QUIDB` and `QUI_StorageDB`), so your profiles, layouts and keybinds are already where the addon looks for them.
 
-**Both ways need QUI disabled or uninstalled on the character you log in with.** Addon enable state is per character, so untick QUI in the AddOns list at character select — or delete the `QUI` folder entirely. QUI refuses to import anything while QUI is still loaded, and tells you so in chat if you try.
+On first login QUI brings each profile up to the current settings schema, taking a backup of that profile before it changes anything. `/qui migration status` prints the schema version and lists the available backup slots, and `/qui migration restore` rolls back to one if something looks wrong.
 
-### Copy your saved variables file (recommended)
-
-This works even if you have already uninstalled QUI, because the game keeps a saved variables file after the addon folder is gone. Close WoW first, then find your account's saved variables folder:
-
-```text
-World of Warcraft\_retail_\WTF\Account\<YOUR ACCOUNT>\SavedVariables\
-```
-
-It holds one file per addon. QUI's is `QUI.lua`. QUI's is `QUI.lua`, which only appears once you have played with QUI installed and logged out at least once. Look in the folder and check whether `QUI.lua` is there — that answers which of the two recipes below you want.
-
-**Recipe 1 — there is no `QUI.lua`.** Copy `QUI.lua`, leave the original where it is, and rename the copy to `QUI.lua`.
-
-**Recipe 2 — `QUI.lua` is already there.** Do not replace it. That file *is* your QUI settings, and overwriting it deletes them. Make a backup copy of it first. Then open `QUI.lua` and `QUI.lua` in a plain text editor, copy everything out of `QUI.lua`, paste it at the **end** of `QUI.lua`, and save. Your QUI profiles are then added alongside the ones you already have instead of replacing them, and you pick the one you want under Options → Profiles.
-
-Either way, start the game afterwards with QUI disabled. QUI reads your QUI settings on the next login and tells you in chat when it has. If it instead says the settings look incomplete, the copy or paste was truncated — restore your backup and try again.
-
-### Or import a profile string
-
-If you can still run QUI, export a profile string from it first. Then disable or uninstall QUI, log in with QUI, and paste the string under Options → Import & Export Strings. QUI reads QUI's `QUI1:` strings natively.
-
-Neither way writes to `QUI.lua`, so QUI's own saved variables stay intact and you can keep the addon folder around until you are sure you no longer need it — just leave it disabled.
-
-Slash commands changed: `/qui` is now `/qui` (or `/qui`), and the rest of the `/qui*` family is now `/qui*` — for example `/quibags` is now `/quibags`.
+Back up your `WTF` folder first if you are installing an alpha or beta build.
 
 ## Documentation
 
@@ -71,7 +49,7 @@ Slash commands changed: `/qui` is now `/qui` (or `/qui`), and the rest of the `/
 
 ## Credits
 
-QUI is a derivative work of QUI. The original addon was created by **Quazii**, and QUI Community Edition was expanded and maintained by **Zol**, **LiQiuDGG**, and **Mondo**. This fork would not exist without their work.
+QUI began as an addon created by **Quazii**, and was expanded and maintained as QUI Community Edition by **Zol**, **LiQiuDGG**, and **Mondo**. It would not exist without their work.
 
 ## License
 
