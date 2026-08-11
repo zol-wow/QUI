@@ -7,7 +7,7 @@ nav_order: 1
 
 # Installation
 
-QUI requires **World of Warcraft Midnight (12.0+)**.
+QUI requires **World of Warcraft Midnight (12.1+)**. It will not load on the 12.0.x client.
 
 ## Fastest Option: Addon Manager
 
@@ -31,7 +31,7 @@ For most players, the easiest path is an addon manager.
 4. Make sure the folder structure is correct -- `QUI.toc` should be directly inside `Interface\AddOns\QUI\`, `QUI_Options.toc` should be directly inside `Interface\AddOns\QUI_Options\`, and the other `QUI_*` folders should sit beside them.
 
 {: .important }
-QUI 4 beta is a multi-folder addon suite. If you manually copy only `QUI`, the options panel and feature modules will be missing.
+QUI is a multi-folder addon suite. If you manually copy only `QUI`, the options panel and feature modules will be missing.
 
 ## Confirm It Loaded Correctly
 
