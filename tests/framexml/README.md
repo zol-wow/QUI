@@ -35,9 +35,9 @@ web-grep is also available at
 
 ## Current snapshot
 
-- **Patch:** 12.1.0.69214 (Midnight 12.1 PTR)
-- **Source branch:** `ptr` (Gethe/wow-ui-source)
-- **Vendored on:** 2026-08-10
+- **Patch:** 12.1.0.69273 (Midnight 12.1)
+- **Source branch:** `live` (Gethe/wow-ui-source)
+- **Vendored on:** 2026-08-11
 
 The exact patch version is recorded in `version.txt` at the root of this
 directory and should always match the snapshot.
