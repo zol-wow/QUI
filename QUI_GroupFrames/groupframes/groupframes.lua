@@ -2478,12 +2478,12 @@ local function ConfigurePartyHeader(header)
     local inParty = IsInGroup() and not IsInRaid()
     local showSolo = (not inParty) and layout.showSolo and not selfFirst
 
-    header:SetAttribute("showParty", true)
-    header:SetAttribute("showPlayer", (not selfFirst and ((inParty and layout.showPlayer ~= false) or showSolo)) and true or false)
-    header:SetAttribute("showRaid", false)
-    header:SetAttribute("showSolo", showSolo or false)
-    header:SetAttribute("maxColumns", 1)
-    header:SetAttribute("unitsPerColumn", 5)
+    _state.SetHeaderAttributeIfChanged(header, "showParty", true)
+    _state.SetHeaderAttributeIfChanged(header, "showPlayer", (not selfFirst and ((inParty and layout.showPlayer ~= false) or showSolo)) and true or false)
+    _state.SetHeaderAttributeIfChanged(header, "showRaid", false)
+    _state.SetHeaderAttributeIfChanged(header, "showSolo", showSolo or false)
+    _state.SetHeaderAttributeIfChanged(header, "maxColumns", 1)
+    _state.SetHeaderAttributeIfChanged(header, "unitsPerColumn", 5)
 
     local mode = "party"
     local w, h = GetFrameDimensions(mode)
@@ -2491,21 +2491,21 @@ local function ConfigurePartyHeader(header)
 
     local grow = GetLayoutGrowDirection(layout, "DOWN")
     if grow == "DOWN" then
-        header:SetAttribute("point", "TOP")
-        header:SetAttribute("yOffset", -spacing)
-        header:SetAttribute("xOffset", 0)
+        _state.SetHeaderAttributeIfChanged(header, "point", "TOP")
+        _state.SetHeaderAttributeIfChanged(header, "yOffset", -spacing)
+        _state.SetHeaderAttributeIfChanged(header, "xOffset", 0)
     elseif grow == "UP" then
-        header:SetAttribute("point", "BOTTOM")
-        header:SetAttribute("yOffset", spacing)
-        header:SetAttribute("xOffset", 0)
+        _state.SetHeaderAttributeIfChanged(header, "point", "BOTTOM")
+        _state.SetHeaderAttributeIfChanged(header, "yOffset", spacing)
+        _state.SetHeaderAttributeIfChanged(header, "xOffset", 0)
     elseif grow == "RIGHT" then
-        header:SetAttribute("point", "LEFT")
-        header:SetAttribute("xOffset", spacing)
-        header:SetAttribute("yOffset", 0)
+        _state.SetHeaderAttributeIfChanged(header, "point", "LEFT")
+        _state.SetHeaderAttributeIfChanged(header, "xOffset", spacing)
+        _state.SetHeaderAttributeIfChanged(header, "yOffset", 0)
     elseif grow == "LEFT" then
-        header:SetAttribute("point", "RIGHT")
-        header:SetAttribute("xOffset", -spacing)
-        header:SetAttribute("yOffset", 0)
+        _state.SetHeaderAttributeIfChanged(header, "point", "RIGHT")
+        _state.SetHeaderAttributeIfChanged(header, "xOffset", -spacing)
+        _state.SetHeaderAttributeIfChanged(header, "yOffset", 0)
     end
 
     local nameListInfo = _state.GetPartyNameListInfo(layout, db)
@@ -2522,8 +2522,8 @@ local function ConfigurePartyHeader(header)
         _state.SetHeaderAttributeIfChanged(header, "roleFilter", nil)
     else
         if layout.sortByRole then
-            header:SetAttribute("groupBy", "ASSIGNEDROLE")
-            header:SetAttribute("groupingOrder", "TANK,HEALER,DAMAGER,NONE")
+            _state.SetHeaderAttributeIfChanged(header, "groupBy", "ASSIGNEDROLE")
+            _state.SetHeaderAttributeIfChanged(header, "groupingOrder", "TANK,HEALER,DAMAGER,NONE")
         else
             _state.SetHeaderAttributeIfChanged(header, "groupBy", nil)
             _state.SetHeaderAttributeIfChanged(header, "groupingOrder", nil)
@@ -2539,19 +2539,19 @@ local function ConfigurePartyHeader(header)
         _state.SetHeaderAttributeIfChanged(header, "nameList", nil)
     end
 
-    header:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
-    header:SetAttribute("_initialAttribute-unit-width", w)
-    header:SetAttribute("_initialAttribute-unit-height", h)
+    _state.SetHeaderAttributeIfChanged(header, "_initialAttributeNames", "unit-width,unit-height")
+    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", w)
+    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", h)
 end
 
 local function ConfigureRaidHeader(header)
     local layout = GetLayoutSettings(true)
     if not layout then return end
 
-    header:SetAttribute("showRaid", true)
-    header:SetAttribute("showParty", false)
-    header:SetAttribute("showPlayer", false)
-    header:SetAttribute("showSolo", false)
+    _state.SetHeaderAttributeIfChanged(header, "showRaid", true)
+    _state.SetHeaderAttributeIfChanged(header, "showParty", false)
+    _state.SetHeaderAttributeIfChanged(header, "showPlayer", false)
+    _state.SetHeaderAttributeIfChanged(header, "showSolo", false)
 
     local mode = GetGroupMode()
     local w, h = GetFrameDimensions(mode)
@@ -2560,21 +2560,21 @@ local function ConfigureRaidHeader(header)
 
     local grow = GetLayoutGrowDirection(layout, "DOWN")
     if grow == "DOWN" then
-        header:SetAttribute("point", "TOP")
-        header:SetAttribute("yOffset", -spacing)
-        header:SetAttribute("xOffset", 0)
+        _state.SetHeaderAttributeIfChanged(header, "point", "TOP")
+        _state.SetHeaderAttributeIfChanged(header, "yOffset", -spacing)
+        _state.SetHeaderAttributeIfChanged(header, "xOffset", 0)
     elseif grow == "UP" then
-        header:SetAttribute("point", "BOTTOM")
-        header:SetAttribute("yOffset", spacing)
-        header:SetAttribute("xOffset", 0)
+        _state.SetHeaderAttributeIfChanged(header, "point", "BOTTOM")
+        _state.SetHeaderAttributeIfChanged(header, "yOffset", spacing)
+        _state.SetHeaderAttributeIfChanged(header, "xOffset", 0)
     elseif grow == "RIGHT" then
-        header:SetAttribute("point", "LEFT")
-        header:SetAttribute("xOffset", spacing)
-        header:SetAttribute("yOffset", 0)
+        _state.SetHeaderAttributeIfChanged(header, "point", "LEFT")
+        _state.SetHeaderAttributeIfChanged(header, "xOffset", spacing)
+        _state.SetHeaderAttributeIfChanged(header, "yOffset", 0)
     elseif grow == "LEFT" then
-        header:SetAttribute("point", "RIGHT")
-        header:SetAttribute("xOffset", -spacing)
-        header:SetAttribute("yOffset", 0)
+        _state.SetHeaderAttributeIfChanged(header, "point", "RIGHT")
+        _state.SetHeaderAttributeIfChanged(header, "xOffset", -spacing)
+        _state.SetHeaderAttributeIfChanged(header, "yOffset", 0)
     end
 
     local horizontal = (grow == "LEFT" or grow == "RIGHT")
@@ -2585,51 +2585,51 @@ local function ConfigureRaidHeader(header)
 
     if isFlat then
         local upc = layout.unitsPerFlat or 5
-        header:SetAttribute("unitsPerColumn", upc)
-        header:SetAttribute("maxColumns", math.ceil((groupLimit * 5) / upc))
-        header:SetAttribute("columnSpacing", spacing)
+        _state.SetHeaderAttributeIfChanged(header, "unitsPerColumn", upc)
+        _state.SetHeaderAttributeIfChanged(header, "maxColumns", math.ceil((groupLimit * 5) / upc))
+        _state.SetHeaderAttributeIfChanged(header, "columnSpacing", spacing)
     else
-        header:SetAttribute("maxColumns", groupLimit)
-        header:SetAttribute("unitsPerColumn", 5)
-        header:SetAttribute("columnSpacing", groupSpacing)
+        _state.SetHeaderAttributeIfChanged(header, "maxColumns", groupLimit)
+        _state.SetHeaderAttributeIfChanged(header, "unitsPerColumn", 5)
+        _state.SetHeaderAttributeIfChanged(header, "columnSpacing", groupSpacing)
     end
 
     if horizontal then
-        header:SetAttribute("columnAnchorPoint", "TOP")
+        _state.SetHeaderAttributeIfChanged(header, "columnAnchorPoint", "TOP")
     else
         local groupGrow = layout.groupGrowDirection or "RIGHT"
         if groupGrow == "RIGHT" then
-            header:SetAttribute("columnAnchorPoint", "LEFT")
+            _state.SetHeaderAttributeIfChanged(header, "columnAnchorPoint", "LEFT")
         else
-            header:SetAttribute("columnAnchorPoint", "RIGHT")
+            _state.SetHeaderAttributeIfChanged(header, "columnAnchorPoint", "RIGHT")
         end
     end
 
     if groupBy == "NONE" then
-        header:SetAttribute("groupBy", nil)
-        header:SetAttribute("groupFilter", groupLimit < 8 and groupFilter or nil)
-        header:SetAttribute("groupingOrder", nil)
+        _state.SetHeaderAttributeIfChanged(header, "groupBy", nil)
+        _state.SetHeaderAttributeIfChanged(header, "groupFilter", groupLimit < 8 and groupFilter or nil)
+        _state.SetHeaderAttributeIfChanged(header, "groupingOrder", nil)
     elseif groupBy == "GROUP" then
-        header:SetAttribute("groupBy", "GROUP")
-        header:SetAttribute("groupFilter", groupFilter)
-        header:SetAttribute("groupingOrder", groupFilter)
+        _state.SetHeaderAttributeIfChanged(header, "groupBy", "GROUP")
+        _state.SetHeaderAttributeIfChanged(header, "groupFilter", groupFilter)
+        _state.SetHeaderAttributeIfChanged(header, "groupingOrder", groupFilter)
     elseif groupBy == "ROLE" then
-        header:SetAttribute("groupBy", "ASSIGNEDROLE")
-        header:SetAttribute("groupingOrder", "TANK,HEALER,DAMAGER,NONE")
+        _state.SetHeaderAttributeIfChanged(header, "groupBy", "ASSIGNEDROLE")
+        _state.SetHeaderAttributeIfChanged(header, "groupingOrder", "TANK,HEALER,DAMAGER,NONE")
     elseif groupBy == "CLASS" then
-        header:SetAttribute("groupBy", "CLASS")
-        header:SetAttribute("groupingOrder", "WARRIOR,DEATHKNIGHT,PALADIN,MONK,PRIEST,SHAMAN,DRUID,ROGUE,MAGE,WARLOCK,HUNTER,DEMONHUNTER,EVOKER")
+        _state.SetHeaderAttributeIfChanged(header, "groupBy", "CLASS")
+        _state.SetHeaderAttributeIfChanged(header, "groupingOrder", "WARRIOR,DEATHKNIGHT,PALADIN,MONK,PRIEST,SHAMAN,DRUID,ROGUE,MAGE,WARLOCK,HUNTER,DEMONHUNTER,EVOKER")
     end
 
     if layout.sortByRole and groupBy ~= "ROLE" then
-        header:SetAttribute("sortMethod", "NAME")
+        _state.SetHeaderAttributeIfChanged(header, "sortMethod", "NAME")
     else
-        header:SetAttribute("sortMethod", layout.sortMethod or "INDEX")
+        _state.SetHeaderAttributeIfChanged(header, "sortMethod", layout.sortMethod or "INDEX")
     end
 
-    header:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
-    header:SetAttribute("_initialAttribute-unit-width", w)
-    header:SetAttribute("_initialAttribute-unit-height", h)
+    _state.SetHeaderAttributeIfChanged(header, "_initialAttributeNames", "unit-width,unit-height")
+    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", w)
+    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", h)
 end
 
 _state.SetHeaderAttributeIfChanged = function(header, name, value)
@@ -2669,21 +2669,21 @@ local function ConfigureRaidGroupHeaders()
     for g, header in ipairs(QUI_GF.raidGroupHeaders) do
         local section = sections and sections[g] or nil
         if header then
-            header:SetAttribute("point", point)
-            header:SetAttribute("xOffset", xOff)
-            header:SetAttribute("yOffset", yOff)
-            header:SetAttribute("showRaid", true)
-            header:SetAttribute("showParty", false)
-            header:SetAttribute("showPlayer", false)
-            header:SetAttribute("showSolo", false)
-            header:SetAttribute("columnSpacing", spacing)
-            header:SetAttribute("columnAnchorPoint", columnAnchorPoint)
+            _state.SetHeaderAttributeIfChanged(header, "point", point)
+            _state.SetHeaderAttributeIfChanged(header, "xOffset", xOff)
+            _state.SetHeaderAttributeIfChanged(header, "yOffset", yOff)
+            _state.SetHeaderAttributeIfChanged(header, "showRaid", true)
+            _state.SetHeaderAttributeIfChanged(header, "showParty", false)
+            _state.SetHeaderAttributeIfChanged(header, "showPlayer", false)
+            _state.SetHeaderAttributeIfChanged(header, "showSolo", false)
+            _state.SetHeaderAttributeIfChanged(header, "columnSpacing", spacing)
+            _state.SetHeaderAttributeIfChanged(header, "columnAnchorPoint", columnAnchorPoint)
             _state.SetHeaderAttributeIfChanged(header, "sortDir", "ASC")
 
             if section then
                 local unitsPerColumn = math_max(1, math_min(section.memberCount, GetRaidSectionUnitsPerColumn(layout)))
-                header:SetAttribute("maxColumns", math_max(1, math.ceil(section.memberCount / unitsPerColumn)))
-                header:SetAttribute("unitsPerColumn", unitsPerColumn)
+                _state.SetHeaderAttributeIfChanged(header, "maxColumns", math_max(1, math.ceil(section.memberCount / unitsPerColumn)))
+                _state.SetHeaderAttributeIfChanged(header, "unitsPerColumn", unitsPerColumn)
                 _state.SetHeaderAttributeIfChanged(header, "nameList", section.nameList)
                 _state.SetHeaderAttributeIfChanged(header, "sortMethod", "NAMELIST")
                 _state.SetHeaderAttributeIfChanged(header, "sortDir", "ASC")
@@ -2691,39 +2691,39 @@ local function ConfigureRaidGroupHeaders()
                 _state.SetHeaderAttributeIfChanged(header, "groupFilter", nil)
                 _state.SetHeaderAttributeIfChanged(header, "groupingOrder", nil)
             elseif useNameListSections then
-                header:SetAttribute("maxColumns", 1)
-                header:SetAttribute("unitsPerColumn", 1)
+                _state.SetHeaderAttributeIfChanged(header, "maxColumns", 1)
+                _state.SetHeaderAttributeIfChanged(header, "unitsPerColumn", 1)
                 _state.SetHeaderAttributeIfChanged(header, "groupBy", nil)
                 _state.SetHeaderAttributeIfChanged(header, "groupFilter", nil)
                 _state.SetHeaderAttributeIfChanged(header, "groupingOrder", nil)
                 _state.SetHeaderAttributeIfChanged(header, "nameList", nil)
                 _state.SetHeaderAttributeIfChanged(header, "sortMethod", "INDEX")
             else
-                header:SetAttribute("maxColumns", 1)
-                header:SetAttribute("unitsPerColumn", 5)
+                _state.SetHeaderAttributeIfChanged(header, "maxColumns", 1)
+                _state.SetHeaderAttributeIfChanged(header, "unitsPerColumn", 5)
                 if g <= groupLimit then
-                    header:SetAttribute("groupBy", "GROUP")
-                    header:SetAttribute("groupFilter", tostring(g))
-                    header:SetAttribute("groupingOrder", tostring(g))
-                    header:SetAttribute("nameList", nil)
+                    _state.SetHeaderAttributeIfChanged(header, "groupBy", "GROUP")
+                    _state.SetHeaderAttributeIfChanged(header, "groupFilter", tostring(g))
+                    _state.SetHeaderAttributeIfChanged(header, "groupingOrder", tostring(g))
+                    _state.SetHeaderAttributeIfChanged(header, "nameList", nil)
 
                     if sortByRole then
-                        header:SetAttribute("sortMethod", "NAME")
+                        _state.SetHeaderAttributeIfChanged(header, "sortMethod", "NAME")
                     else
-                        header:SetAttribute("sortMethod", sortMethod)
+                        _state.SetHeaderAttributeIfChanged(header, "sortMethod", sortMethod)
                     end
                 else
-                    header:SetAttribute("groupBy", nil)
-                    header:SetAttribute("groupFilter", nil)
-                    header:SetAttribute("groupingOrder", nil)
-                    header:SetAttribute("nameList", nil)
-                    header:SetAttribute("sortMethod", "INDEX")
+                    _state.SetHeaderAttributeIfChanged(header, "groupBy", nil)
+                    _state.SetHeaderAttributeIfChanged(header, "groupFilter", nil)
+                    _state.SetHeaderAttributeIfChanged(header, "groupingOrder", nil)
+                    _state.SetHeaderAttributeIfChanged(header, "nameList", nil)
+                    _state.SetHeaderAttributeIfChanged(header, "sortMethod", "INDEX")
                 end
             end
 
-            header:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
-            header:SetAttribute("_initialAttribute-unit-width", w)
-            header:SetAttribute("_initialAttribute-unit-height", h)
+            _state.SetHeaderAttributeIfChanged(header, "_initialAttributeNames", "unit-width,unit-height")
+            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", w)
+            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", h)
         end
     end
 
@@ -3224,7 +3224,7 @@ local function GetPopulatedRaidGroups()
     for i = 1, GetNumGroupMembers() do
         local _, _, subgroup = GetRaidRosterInfo(i)
         if subgroup and _state.IsRaidSubgroupAllowed(subgroup, layout) then
-            populated[subgroup] = true
+            populated[subgroup] = (populated[subgroup] or 0) + 1
         end
     end
     return populated
@@ -3530,14 +3530,7 @@ local function UpdateHeaderSizes()
                     header:SetSize(1, 1)
                 end
             elseif g <= 8 and populated and populated[g] then
-                local groupCount = 0
-                for i = 1, GetNumGroupMembers() do
-                    local _, _, subgroup = GetRaidRosterInfo(i)
-                    if subgroup == g then
-                        groupCount = groupCount + 1
-                    end
-                end
-                local hdrW, hdrH = CalculateRaidSectionHeaderSize(math_max(groupCount, 1), mode, layout)
+                local hdrW, hdrH = CalculateRaidSectionHeaderSize(math_max(populated[g], 1), mode, layout)
                 header:SetSize(hdrW, hdrH)
             else
                 header:SetSize(1, 1)
@@ -3560,8 +3553,8 @@ local function UpdateHeaderSizes()
         local partyDims = db.party and db.party.dimensions
         local sw = partyDims and partyDims.partyWidth or 200
         local sh = partyDims and partyDims.partyHeight or 40
-        selfHdr:SetAttribute("_initialAttribute-unit-width", sw)
-        selfHdr:SetAttribute("_initialAttribute-unit-height", sh)
+        _state.SetHeaderAttributeIfChanged(selfHdr, "_initialAttribute-unit-width", sw)
+        _state.SetHeaderAttributeIfChanged(selfHdr, "_initialAttribute-unit-height", sh)
         selfHdr:SetSize(sw, sh)
         local child = selfHdr:GetAttribute("child1")
         if child then child:SetSize(sw, sh) end
@@ -3663,7 +3656,7 @@ local function UpdateHeaderVisibility()
     end
 
     if selfHeader then
-        selfHeader:SetAttribute("showSolo", partySelfFirst and true or false)
+        _state.SetHeaderAttributeIfChanged(selfHeader, "showSolo", partySelfFirst and true or false)
     end
 
     if IsInRaid() then
@@ -3826,23 +3819,23 @@ local function UpdateFrameScaling(forceUpdate)
 
     local partyHeader = QUI_GF.headers.party
     if partyHeader then
-        partyHeader:SetAttribute("_initialAttribute-unit-width", partyW)
-        partyHeader:SetAttribute("_initialAttribute-unit-height", partyH)
+        _state.SetHeaderAttributeIfChanged(partyHeader, "_initialAttribute-unit-width", partyW)
+        _state.SetHeaderAttributeIfChanged(partyHeader, "_initialAttribute-unit-height", partyH)
     end
     local selfHeader = QUI_GF.headers.self
     if selfHeader then
-        selfHeader:SetAttribute("_initialAttribute-unit-width", partyW)
-        selfHeader:SetAttribute("_initialAttribute-unit-height", partyH)
+        _state.SetHeaderAttributeIfChanged(selfHeader, "_initialAttribute-unit-width", partyW)
+        _state.SetHeaderAttributeIfChanged(selfHeader, "_initialAttribute-unit-height", partyH)
     end
     local raidHeader = QUI_GF.headers.raid
     if raidHeader then
-        raidHeader:SetAttribute("_initialAttribute-unit-width", raidW)
-        raidHeader:SetAttribute("_initialAttribute-unit-height", raidH)
+        _state.SetHeaderAttributeIfChanged(raidHeader, "_initialAttribute-unit-width", raidW)
+        _state.SetHeaderAttributeIfChanged(raidHeader, "_initialAttribute-unit-height", raidH)
     end
     for _, header in ipairs(QUI_GF.raidGroupHeaders) do
         if header then
-            header:SetAttribute("_initialAttribute-unit-width", raidW)
-            header:SetAttribute("_initialAttribute-unit-height", raidH)
+            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", raidW)
+            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", raidH)
         end
     end
 
