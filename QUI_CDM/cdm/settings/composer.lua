@@ -2845,36 +2845,11 @@ RefreshAddList = function()
     local sourceEntries = {}
     local containerType = ResolveContainerType(activeContainer) or "cooldown"
 
-    local ownedSet = {}
     local activeDB = GetContainerDB(activeContainer)
     local isCustomBar = (activeDB and activeDB.containerType == "customBar")
-    local ownedEntries = activeDB and (isCustomBar and activeDB.entries or activeDB.ownedSpells)
-    if type(ownedEntries) == "table" then
-        for _, entry in ipairs(ownedEntries) do
-            if type(entry) == "table" and entry.id then
-                ownedSet[(entry.type or "spell") .. ":" .. entry.id] = true
-                ownedSet[entry.id] = true
-                if entry.type == "item" and Sources and Sources.QueryBestOwnedItemVariant then
-                    local bestItemID = Sources.QueryBestOwnedItemVariant(entry.id)
-                    if bestItemID then
-                        ownedSet["item:" .. bestItemID] = true
-                        ownedSet[bestItemID] = true
-                    end
-                end
-            elseif type(entry) == "number" then
-                ownedSet["spell:" .. entry] = true
-                ownedSet[entry] = true
-            end
-        end
-    end
-    if activeDB and type(activeDB.dormantSpells) == "table" then
-        for sid in pairs(activeDB.dormantSpells) do
-            if type(sid) == "number" then
-                ownedSet["spell:" .. sid] = true
-                ownedSet[sid] = true
-            end
-        end
-    end
+    local ownedSet = (spellData and type(spellData.BuildOwnedSet) == "function")
+        and spellData.BuildOwnedSet(activeDB)
+        or {}
 
     if activeAddTab == "cdm_spells" or not activeAddTab then
         sourceEntries = spellData:GetAvailableSpells(activeContainer) or {}

@@ -1951,6 +1951,92 @@ local function NormalizeOwnedSpells(ownedSpells)
     return ownedSpells
 end
 
+local function ResolveOverrideID(spellID)
+    if not (Sources and Sources.QueryOverrideSpell) then return nil end
+    local overrideID = Sources.QueryOverrideSpell(spellID)
+    if overrideID and overrideID ~= spellID then return overrideID end
+    return nil
+end
+
+local function ResolveBaseID(spellID)
+    if not (Sources and Sources.QueryBaseSpell) then return nil end
+    local baseID = Sources.QueryBaseSpell(spellID)
+    if baseID and baseID ~= spellID then return baseID end
+    return nil
+end
+
+function CDMSpellData.AddSpellIDFamily(set, spellID)
+    local id = tonumber(spellID)
+    if type(set) ~= "table" or not id then return end
+    set[id] = true
+    local overrideID = ResolveOverrideID(id)
+    if overrideID then set[overrideID] = true end
+    local baseID = ResolveBaseID(id)
+    if baseID then set[baseID] = true end
+end
+
+function CDMSpellData.IsSpellIDFamilyInSet(set, spellID)
+    local id = tonumber(spellID)
+    if type(set) ~= "table" or not id then return false end
+    if set[id] then return true end
+    local overrideID = ResolveOverrideID(id)
+    if overrideID and set[overrideID] then return true end
+    local baseID = ResolveBaseID(id)
+    if baseID and set[baseID] then return true end
+    return false
+end
+
+function CDMSpellData.ResolveSpellFamilyKey(spellID)
+    local id = tonumber(spellID)
+    if not id then return nil end
+    local overrideID = ResolveOverrideID(id)
+    local anchor = overrideID or id
+    return ResolveBaseID(anchor) or anchor
+end
+
+function CDMSpellData.BuildOwnedSet(db)
+    local ownedSet = {}
+    if type(db) ~= "table" then return ownedSet end
+
+    local list = db.ownedSpells
+    if db.containerType == "customBar" and type(db.entries) == "table" then
+        list = db.entries
+    end
+
+    if type(list) == "table" then
+        for _, rawEntry in ipairs(list) do
+            local entry = NormalizeOwnedEntry(rawEntry)
+            if entry and entry.id then
+                local etype = entry.type or "spell"
+                ownedSet[etype .. ":" .. tostring(entry.id)] = true
+                if etype == "spell" then
+                    CDMSpellData.AddSpellIDFamily(ownedSet, entry.id)
+                else
+                    ownedSet[entry.id] = true
+                end
+                if etype == "item" and Sources and Sources.QueryBestOwnedItemVariant then
+                    local bestItemID = Sources.QueryBestOwnedItemVariant(entry.id)
+                    if bestItemID then
+                        ownedSet["item:" .. tostring(bestItemID)] = true
+                        ownedSet[bestItemID] = true
+                    end
+                end
+            end
+        end
+    end
+
+    if type(db.dormantSpells) == "table" then
+        for sid in pairs(db.dormantSpells) do
+            if type(sid) == "number" then
+                ownedSet["spell:" .. tostring(sid)] = true
+                CDMSpellData.AddSpellIDFamily(ownedSet, sid)
+            end
+        end
+    end
+
+    return ownedSet
+end
+
 local WoW_IsSpellKnown = IsSpellKnown
 local WoW_IsPlayerSpell = IsPlayerSpell
 local function IsSpellKnownByPlayer(spellID)
@@ -2404,6 +2490,7 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
 
     local result = {}
     local seenInstanceKeys = {}
+    local seenSpellFamilyKeys = {}
     for i, entry in ipairs(ownedSpells) do
         if entry and entry.id then
             local isRemoved = false
@@ -2432,9 +2519,21 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
                             expandedEntry._isTotemInstance
                             or (expandedEntry.isAura and instanceKey and not instanceKey:find(":entry:", 1, true))
                         )
+                        local familyKey = nil
+                        if expandedEntry and not expandedEntry.isAura
+                            and expandedEntry.type == "spell" then
+                            familyKey = CDMSpellData.ResolveSpellFamilyKey(
+                                expandedEntry.overrideSpellID or expandedEntry.spellID)
+                        end
+
                         if shouldDedupe and instanceKey then
                             if not seenInstanceKeys[instanceKey] then
                                 seenInstanceKeys[instanceKey] = true
+                                result[#result + 1] = expandedEntry
+                            end
+                        elseif familyKey then
+                            if not seenSpellFamilyKeys[familyKey] then
+                                seenSpellFamilyKeys[familyKey] = true
                                 result[#result + 1] = expandedEntry
                             end
                         else
@@ -3206,30 +3305,7 @@ end
 function CDMSpellData:GetAvailableSpells(containerKey)
     local db = GetContainerDB(containerKey)
 
-    local ownedSet = {}
-    if db and type(db.ownedSpells) == "table" then
-        for _, entry in ipairs(db.ownedSpells) do
-            local normalized = NormalizeOwnedEntry(entry)
-            if normalized and normalized.type == "spell" and normalized.id then
-                ownedSet[normalized.id] = true
-                local oid = Sources and Sources.QueryOverrideSpell
-                    and Sources.QueryOverrideSpell(normalized.id)
-                if oid and oid ~= normalized.id then
-                    ownedSet[oid] = true
-                end
-            elseif normalized and normalized.id then
-                ownedSet[normalized.type .. ":" .. normalized.id] = true
-                ownedSet[normalized.id] = true
-            end
-        end
-    end
-    if db and type(db.dormantSpells) == "table" then
-        for sid in pairs(db.dormantSpells) do
-            if type(sid) == "number" then
-                ownedSet[sid] = true
-            end
-        end
-    end
+    local ownedSet = CDMSpellData.BuildOwnedSet(db)
 
     local containerType = db and db.containerType
     if not containerType then
