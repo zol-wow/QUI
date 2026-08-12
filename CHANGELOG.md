@@ -4,6 +4,63 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.1.0-beta2 - 2026-08-12
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+The first build with real work on the 5.1 line: aura displays you place
+yourself, a hidden-players filter for group frames, and a run of fixes for
+settings that looked like they were doing nothing.
+
+### Added
+
+- **Aura displays you place yourself.** Build a display, point it at a unit,
+  filter it per unit, give it load conditions and drag it where you want it.
+  Displays can be renamed, and a reaction can be parked out of the way.
+- **A hidden-players filter for group frames**, to keep specific players off the
+  raid frames.
+- **Plate Scale for nameplates** (Nameplates → Behavior). One slider grows the
+  whole plate — bar, text, icons and borders together — and the clickable area
+  grows with it, so plates stay clickable at their edges. It multiplies on top
+  of Target Scale and the simplified-plate scale rather than replacing either.
+- **Item cosmetic overlays in bags**, on live and cached bag buttons alike.
+
+### Fixed
+
+- **Cast on Key Press now does something.** Owned action buttons dispatched
+  through a path that forced casting on key release, so the setting wrote a
+  value nothing ever read. Abilities fire on the press when it is on.
+- **Skins survive being loaded early.** When another addon force-loaded a
+  Blizzard frame before QUI had a profile, the skin's one-shot fired against a
+  profile that did not exist yet and never came back — profession windows and
+  their siblings stayed unskinned for the rest of the session.
+- **QUI no longer runs other addons' code while sweeping for action buttons.**
+  The sweep classified frames by calling a method on every global, which threw
+  inside a widget library's generated methods and surfaced as that addon's
+  error with QUI's frames underneath it.
+- **Duplicate abilities in the cooldown composer.** A spell the client replaces
+  with an override was tracked under whichever ID happened to be stored, so it
+  could be offered as available while already owned, or appear twice in a built
+  list.
+- **Group frame headers stop churning.** Re-configuring a header rewrote every
+  secure attribute even when nothing had changed, forcing a re-layout each time.
+- **Orphaned movers are released** instead of lingering in Layout Mode.
+- **The nameplate settings preview opens at real size.** It used to open zoomed
+  all the way in; the grip now zooms both ways from life size.
+
+### Changed
+
+- **The Alts window is translated.** It had been hard-coded English throughout,
+  and the `Back` label it shared with a cloak slot and a UI layer is split so
+  each reads correctly in every language.
+- **Terminology is consistent across all ten locales** — frame and spec wording
+  unified, realm and roster wording unified, five mistranslations corrected and
+  the hidden-players strings translated everywhere.
+- **Discord announcements come only from tagged releases.** The workflow that
+  posted a second notification on every feature-branch push is gone.
+- The vendored Blizzard API corpus is refreshed to 12.1.0.69273.
+
 ## v5.1.0-beta1 - 2026-08-11
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
