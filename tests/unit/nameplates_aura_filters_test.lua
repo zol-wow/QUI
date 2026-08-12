@@ -34,7 +34,10 @@ local debuffFilters = E.CompileFilters(debuffs)
 if #debuffFilters ~= 1 then
     fail("debuffs element must compile to a single filter string, got " .. #debuffFilters)
 end
-eq(debuffFilters[1], "HARMFUL|INCLUDE_NAME_PLATE_ONLY", "debuffs filter string")
+-- Mine-only strips must carry the engine-enforced PLAYER token: the Lua-side
+-- isFromPlayerOrPlayerPet candidate filter cannot discriminate on secret
+-- (in-combat) aura data, so without PLAYER the strip shows everyone's debuffs.
+eq(debuffFilters[1], "HARMFUL|INCLUDE_NAME_PLATE_ONLY|PLAYER", "debuffs filter string")
 
 local buffFilters = E.CompileFilters(buffs)
 if #buffFilters ~= 1 then

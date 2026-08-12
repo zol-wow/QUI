@@ -87,6 +87,17 @@ local function SlotCandidateFilters(element, spellID)
     return cf
 end
 
+-- Mine-only slots carry PLAYER in the filter string too: the engine enforces
+-- it on secret (in-combat) aura data, where the Lua-side candidate filter
+-- above cannot discriminate.
+local function SlotFilterString(element, spellID)
+    local base = element.auraType or "HELPFUL"
+    if E.EffectiveOnlyMine(element, spellID) then
+        return base .. "|PLAYER"
+    end
+    return base
+end
+
 local function StyleSlot(frame, element, index, profileOverrides)
     local profile = ns.AuraGlue.ElementProfile(element, profileOverrides)
     if element.displayType == "square" or element.displayType == "bar" then
@@ -244,7 +255,7 @@ function S.Sync(container, element, allowCreate, profileOverrides)
                     if parkThis then
                         ParkSlot(container, slot)
                     else
-                        container:SetAuraSlotFilterString(slot.key, base)
+                        container:SetAuraSlotFilterString(slot.key, SlotFilterString(element, spellID))
                         container:SetAuraSlotCandidateFilters(slot.key, SlotCandidateFilters(element, spellID))
                         slot.parked = false
                     end
@@ -252,7 +263,7 @@ function S.Sync(container, element, allowCreate, profileOverrides)
                     local key = "t" .. tostring(want)
                     local slotIndex, slotTotal = want, total
                     local birthFilters = parkThis and PARK_FILTER or SlotCandidateFilters(element, spellID)
-                    local frame = container:AddAuraSlot(key, base, {
+                    local frame = container:AddAuraSlot(key, SlotFilterString(element, spellID), {
                         candidateFilters = birthFilters,
                         initializeFrame = function(f)
                             StyleSlot(f, element, slotIndex, profileOverrides)

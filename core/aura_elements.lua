@@ -398,6 +398,29 @@ local function AppendNameplateOnly(element, out)
     return out
 end
 
+local function HasFilterToken(filterString, want)
+    for component in filterString:gmatch("[^| ]+") do
+        if component == want then return true end
+    end
+    return false
+end
+
+-- onlyMine must ride the filter string, not just candidate filters: the
+-- engine enforces PLAYER on secret (in-combat) aura data, while the Lua-side
+-- isFromPlayerOrPlayerPet candidate filter cannot discriminate there.
+local function AppendPlayerOnly(element, out)
+    if element.onlyMine ~= true then return out end
+    for i = 1, #out do
+        if not HasFilterToken(out[i], "PLAYER") then
+            out[i] = out[i] .. "|PLAYER"
+        end
+    end
+    if #out == 0 then
+        out[1] = (element.auraType or "HELPFUL") .. "|PLAYER"
+    end
+    return out
+end
+
 function E.CompileFilters(element)
     local out = {}
     if element.filterMode == "flags" then
@@ -421,9 +444,9 @@ function E.CompileFilters(element)
             for i = 1, #exc do parts[#parts + 1] = exc[i] end
             out[1] = table.concat(parts, "|")
         end
-        return AppendNameplateOnly(element, out)
+        return AppendPlayerOnly(element, AppendNameplateOnly(element, out))
     end
-    if element.filterMode ~= "classify" then return AppendNameplateOnly(element, out) end
+    if element.filterMode ~= "classify" then return AppendPlayerOnly(element, AppendNameplateOnly(element, out)) end
     local harmful = (element.auraType == "HARMFUL")
     local map = harmful and DEBUFF_CLASSIFICATION_MAP or BUFF_CLASSIFICATION_MAP
     local priority = harmful and DEBUFF_CLASSIFICATION_PRIORITY or BUFF_CLASSIFICATION_PRIORITY
@@ -483,7 +506,7 @@ function E.CompileFilters(element)
             end
         end
     end
-    return AppendNameplateOnly(element, out)
+    return AppendPlayerOnly(element, AppendNameplateOnly(element, out))
 end
 
 function E.CompileCandidateFilters(element)

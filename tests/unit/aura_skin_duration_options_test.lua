@@ -3,8 +3,13 @@ local function fail(msg)
     os.exit(1)
 end
 
+Enum = { NumericRuleFormatRounding = { Nearest = 0, Up = 1, Down = 2 } }
 C_StringUtil = {
-    CreateNumericRuleFormatter = function(a, b, n) return { fmt = { a, b, n } } end,
+    CreateNumericRuleFormatter = function()
+        local f = {}
+        function f.SetBreakpoints(self, breakpoints) self.breakpoints = breakpoints end
+        return f
+    end,
 }
 
 local ns = { Addon = {} }
@@ -24,6 +29,29 @@ if plain.textColor ~= nil then fail("plain profile means no textColor") end
 
 local dec = AuraSkin.BuildDurationTextOptions({ duration = { decimals = true } })
 if dec.textFormatter == nil then fail("decimals must produce a textFormatter") end
+local bp = dec.textFormatter.breakpoints
+if not (bp and bp[1] and bp[1].format == "%.1fs" and bp[2] and bp[2].threshold == 3) then
+    fail("decimals formatter must show tenths below 3s via breakpoints")
+end
+
+local noUnit = AuraSkin.BuildDurationTextOptions({ duration = { hideUnit = true } })
+if noUnit.textFormatter == nil then fail("hideUnit must produce a textFormatter") end
+bp = noUnit.textFormatter.breakpoints
+if not (bp and bp[1] and bp[1].format == "%d") then
+    fail("hideUnit formatter must render bare seconds (got " .. tostring(bp and bp[1] and bp[1].format) .. ")")
+end
+if not (bp[2] and bp[2].format == "%dm") then
+    fail("hideUnit formatter must keep the minutes unit")
+end
+
+local both = AuraSkin.BuildDurationTextOptions({ duration = { decimals = true, hideUnit = true } })
+bp = both.textFormatter and both.textFormatter.breakpoints
+if not (bp and bp[1] and bp[1].format == "%.1f" and bp[2] and bp[2].format == "%d") then
+    fail("decimals + hideUnit must render bare tenths and bare seconds")
+end
+if noUnit.textFormatter == dec.textFormatter then
+    fail("distinct option combos must not share one cached formatter")
+end
 
 local legacy = AuraSkin.BuildDurationTextOptions({
     duration = { color = { 0, 0, 1, 1 }, pandemicColor = { 1, 0, 0 } },
