@@ -30,7 +30,7 @@ function EnsureOwnedActionButton(container, barKey, btnName, index)
     local existed = btn ~= nil
     if not btn then
         local ok
-        ok, btn = ns.SafeCall("best-effort-style", CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate")
+        ok, btn = ns.SafeCall("best-effort-style", CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate, SecureActionButtonTemplate")
         if not ok then btn = _G[btnName] end
         btn:SetAttribute("type", "action")
         btn:SetAttribute("checkselfcast", true)
