@@ -130,7 +130,7 @@ read_globals = {
     "C_ChallengeMode", "C_ClassTalents", "C_Container", "C_CooldownViewer",
     "C_CurveUtil", "C_DurationUtil", "C_Item", "C_ScenarioInfo",
     "C_SpellActivationOverlay",
-    "C_SpellBook", "C_StringUtil", "C_TradeSkillUI", "C_Traits",
+    "C_SpellBook", "C_StringUtil", "C_TradeSkillUI", "C_Traits", "C_Widget",
 
     -- M+ constants
     "DIFFICULTY_MYTHIC_PLUS",
