@@ -3079,6 +3079,7 @@ return {
             showNPCs = true
           },
           layout = {
+            scale = 1,
             targetScale = 1,
             verticalOffset = 0
           },
