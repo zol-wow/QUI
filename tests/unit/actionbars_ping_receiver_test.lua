@@ -54,9 +54,9 @@ check("spell ping is SecureOnly and AllowedWhenUntainted",
         and pingDocs:find('Name = "SendPlayerSpellPing"', 1, true) ~= nil
         and pingDocs:find('SecretArguments = "AllowedWhenUntainted"', 1, true) ~= nil)
 
-check("QUI creates standard owned buttons from ActionBarButtonTemplate",
+check("QUI owned buttons keep Blizzard's ActionBarButtonTemplate and append SecureActionButtonTemplate so useOnKeyDown survives",
     builder:find(
-        'CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate"',
+        'CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate, SecureActionButtonTemplate"',
         1, true) ~= nil)
 check("QUI does not replace Blizzard's ping identity or update lifecycle",
     builder:find("btn.HasAction =", 1, true) == nil
