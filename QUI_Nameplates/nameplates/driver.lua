@@ -332,6 +332,7 @@ local function PinPlateScale(plate)
         if plate.npRenderMode == "simplified" then
             mult = mult * NP.SimplifiedScale(settings)
         end
+        mult = mult * NP.PlateScale(settings)
         plate:SetScale(es * mult)
     end
 end

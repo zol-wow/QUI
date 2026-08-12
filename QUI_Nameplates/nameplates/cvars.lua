@@ -113,7 +113,8 @@ local function ResolvePlateSize(settings)
         maxW = 210 * scaleX
         maxH = (24 * scaleY) + 17 + 15
     end
-    return maxW, maxH
+    local plateScale = NP.PlateScale(settings)
+    return maxW * plateScale, maxH * plateScale
 end
 
 function NPCVars.ApplyPlateSize()

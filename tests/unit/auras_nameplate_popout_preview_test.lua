@@ -57,10 +57,11 @@ check("surface owns the docked pop-out panel",
     and surface:find("sessionState = State.previewSession", 1, true) ~= nil
     and surface:find("ns.QUI_BuildNameplatePreview(panel.contentHost)", 1, true) ~= nil)
 
-check("a single plate gets more zoom headroom, and opens at it",
+check("a single plate gets zoom headroom, and opens life-size with the grip to zoom",
     surface:find("local PREVIEW_SCALE_MAX = 3", 1, true) ~= nil
     and surface:find("scaleMax = PREVIEW_SCALE_MAX", 1, true) ~= nil
-    and surface:find("defaultScale = PREVIEW_SCALE_MAX", 1, true) ~= nil)
+    and surface:find("defaultScale = LifeSizeScale(win)", 1, true) ~= nil
+    and surface:find("return uiScale / winScale", 1, true) ~= nil)
 
 check("surface resizes the panel from the driver observer",
     surface:find("ns.QUI_SetNameplatePreviewObserver(function(w, h)", 1, true) ~= nil

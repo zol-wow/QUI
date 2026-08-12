@@ -2769,6 +2769,7 @@ local defaults = {
                 occludedAlphaMult = 0.4,
             },
             layout = {
+                scale = 1.0,
                 targetScale = 1.0,
                 verticalOffset = 0,
             },

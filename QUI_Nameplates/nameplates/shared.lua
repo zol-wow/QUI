@@ -66,6 +66,9 @@ NP.SIMPLIFIED_AVAILABLE = (C_NamePlateManager ~= nil
 NP.SIMPLIFIED_SCALE_MIN = 0.5
 NP.SIMPLIFIED_SCALE_MAX = 2.0
 
+NP.PLATE_SCALE_MIN = 0.5
+NP.PLATE_SCALE_MAX = 2.0
+
 function NP.IsLightweightMode(mode)
     return mode == "nameonly" or mode == "simplified"
 end
@@ -105,6 +108,16 @@ function NP.SimplifiedScale(settings)
     if not scale then return 1.0 end
     if scale < NP.SIMPLIFIED_SCALE_MIN then return NP.SIMPLIFIED_SCALE_MIN end
     if scale > NP.SIMPLIFIED_SCALE_MAX then return NP.SIMPLIFIED_SCALE_MAX end
+    return scale
+end
+
+function NP.PlateScale(settings)
+    if type(settings) ~= "table" then settings = NP.GetSettings() end
+    local layout = type(settings) == "table" and settings.layout or nil
+    local scale = type(layout) == "table" and tonumber(layout.scale) or nil
+    if not scale then return 1.0 end
+    if scale < NP.PLATE_SCALE_MIN then return NP.PLATE_SCALE_MIN end
+    if scale > NP.PLATE_SCALE_MAX then return NP.PLATE_SCALE_MAX end
     return scale
 end
 
