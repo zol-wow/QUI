@@ -240,10 +240,10 @@ local function SkinMonthlyActivitiesText(monthlyFrame)
         end
     end
 
-    ns.SafeCallMethodIfPresent("best-effort-style", monthlyFrame.ScrollBox, "ForEachFrame", SkinMonthlyActivitiesActivityButton)
+    SkinBase.ForEachScrollBoxFrame(monthlyFrame.ScrollBox, SkinMonthlyActivitiesActivityButton)
 
     local filterScrollBox = monthlyFrame.FilterList and monthlyFrame.FilterList.ScrollBox
-    ns.SafeCallMethodIfPresent("best-effort-style", filterScrollBox, "ForEachFrame", SkinMonthlyActivitiesFilterButton)
+    SkinBase.ForEachScrollBoxFrame(filterScrollBox, SkinMonthlyActivitiesFilterButton)
 end
 
 local function SkinEncounterJournalEncounterText(frame)

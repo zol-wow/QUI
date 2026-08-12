@@ -11,10 +11,6 @@ local function IsEnabled()
     return settings and settings.skinCraftingOrders
 end
 
-local function SafeForEachFrame(scrollBox, callback)
-    ns.SafeCallMethodIfPresent("best-effort-style", scrollBox, "ForEachFrame", callback)
-end
-
 local function skinRow(row)
     SkinBase.SkinScrollRow(row)
     SkinBase.LockPooledRowText(row, 4)
@@ -106,7 +102,7 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.ApplyButtonFontObjects(button)
         end
         local function RefreshCategoryButtons(self)
-            SafeForEachFrame(self, StyleCategoryRow)
+            SkinBase.ForEachScrollBoxFrame(self, StyleCategoryRow)
         end
 
         SkinBase.HookScrollBoxAcquired(categoryList.ScrollBox, StyleCategoryRow)

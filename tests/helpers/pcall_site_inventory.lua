@@ -129,7 +129,7 @@ return {
     "modules/qol/vendor_rules.lua::3",
     "modules/skinning/character_pane/character.lua::29",
     "modules/skinning/character_pane/inspect.lua::10",
-    "modules/skinning/frames/auctionhouse.lua::3",
+    "modules/skinning/frames/auctionhouse.lua::2",
     "modules/skinning/system/tooltips.lua::19",
     "modules/trackers/atonement_counter.lua::7",
     "modules/trackers/preytracker.lua::8",
