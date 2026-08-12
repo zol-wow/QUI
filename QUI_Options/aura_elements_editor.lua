@@ -698,6 +698,10 @@ local function AddTextRegionWidgets(ctx, element, key, label)
         row(ns.L["Decimals Under 3s"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "decimals", region, onChange, {
             description = ns.L["Show tenths of a second below 3 seconds."],
         }))
+        row(ns.L["Hide Time Unit"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideUnit", region, onChange, {
+            description = ns.L["Show 4 instead of 4s. Durations over 90 seconds keep their m/h/d unit."],
+            keywords = { "unit", "seconds", "suffix" },
+        }))
     end
 end
 

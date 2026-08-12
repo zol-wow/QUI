@@ -196,23 +196,47 @@ local function ApplyIconSkinOwnership(button, profile)
     end
 end
 
-local pandemicFormatter
-local function DurationFormatter()
-    if pandemicFormatter ~= nil then return pandemicFormatter or nil end
-    if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter then
-        local ok, fmt = pcall(C_StringUtil.CreateNumericRuleFormatter, "%.1f", "%.0f", 3)
-        pandemicFormatter = ok and fmt or false
-    else
-        pandemicFormatter = false
+local durationFormatters = {}
+local function DurationFormatter(decimals, hideUnit)
+    local key = (decimals and "d" or "-") .. (hideUnit and "u" or "-")
+    local cached = durationFormatters[key]
+    if cached ~= nil then return cached or nil end
+    local rounding = Enum and Enum.NumericRuleFormatRounding
+    local built
+    if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter and rounding then
+        local ok, formatter = pcall(C_StringUtil.CreateNumericRuleFormatter)
+        if ok and formatter then
+            local breakpoints = {}
+            local secondsFmt = hideUnit and "%d" or "%ds"
+            if decimals then
+                breakpoints[#breakpoints + 1] = { threshold = 0, format = hideUnit and "%.1f" or "%.1fs" }
+                breakpoints[#breakpoints + 1] = { threshold = 3, step = 1, rounding = rounding.Up, format = secondsFmt }
+            else
+                breakpoints[#breakpoints + 1] = { threshold = 0, step = 1, rounding = rounding.Up, format = secondsFmt }
+            end
+            -- Minute+ bands keep their unit even with hideUnit: a bare "2"
+            -- for two minutes is indistinguishable from two seconds.
+            breakpoints[#breakpoints + 1] = { threshold = 90, format = "%dm",
+                components = { { div = 60, step = 1, rounding = rounding.Up } } }
+            breakpoints[#breakpoints + 1] = { threshold = 5400, format = "%dh",
+                components = { { div = 3600, step = 1, rounding = rounding.Up } } }
+            breakpoints[#breakpoints + 1] = { threshold = 129600, format = "%dd",
+                components = { { div = 86400, step = 1, rounding = rounding.Up } } }
+            local applied = pcall(formatter.SetBreakpoints, formatter, breakpoints)
+            if applied then built = formatter end
+        end
     end
-    return pandemicFormatter or nil
+    durationFormatters[key] = built or false
+    return built
 end
 
 function AuraSkin.BuildDurationTextOptions(profile)
     local durS = (profile and profile.duration) or {}
     local opts = {}
-    if durS.decimals == true then
-        opts.textFormatter = DurationFormatter()
+    local decimals = durS.decimals == true
+    local hideUnit = durS.hideUnit == true
+    if decimals or hideUnit then
+        opts.textFormatter = DurationFormatter(decimals, hideUnit)
     end
     return opts
 end

@@ -75,7 +75,7 @@ return {
     "core/aura_events.lua::2",
     "core/aura_glue.lua::3",
     "core/aura_preview.lua::1",
-    "core/aura_skin.lua::3",
+    "core/aura_skin.lua::4",
     "core/aura_slots.lua::3",
     "core/border_registry.lua::1",
     "core/cast_engine.lua::6",
