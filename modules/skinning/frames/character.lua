@@ -393,7 +393,7 @@ local function RefreshCharacterFrameColors()
     SkinCharacterFrameTabs()
 
     if ReputationFrame and ReputationFrame.ScrollBox then
-        ReputationFrame.ScrollBox:ForEachFrame(function(child)
+        SkinBase.ForEachScrollBoxFrame(ReputationFrame.ScrollBox, function(child)
             if not skinnedEntries[child] then return end
             if child.Right and child.Name then
                 child.Name:SetTextColor(sr, sg, sb, 1)
@@ -407,7 +407,7 @@ local function RefreshCharacterFrameColors()
     end
 
     if TokenFrame and TokenFrame.ScrollBox then
-        TokenFrame.ScrollBox:ForEachFrame(function(child)
+        SkinBase.ForEachScrollBoxFrame(TokenFrame.ScrollBox, function(child)
             if not skinnedEntries[child] then return end
             if child.Right and child.Name then
                 child.Name:SetTextColor(sr, sg, sb, 1)
@@ -551,7 +551,7 @@ RefreshEquipmentManagerColors = function()
 
     local pane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
     if pane and pane.ScrollBox then
-        pane.ScrollBox:ForEachFrame(function(entry)
+        SkinBase.ForEachScrollBoxFrame(pane.ScrollBox, function(entry)
             if not skinnedEntries[entry] then return end
             RestyleEquipmentSetEntryText(entry)
             if entry.icon and iconBorders[entry.icon] then
@@ -678,7 +678,7 @@ RefreshTitlePaneColors = function()
     if not pane or not skinnedEntries[pane] then return end
 
     if pane.ScrollBox then
-        pane.ScrollBox:ForEachFrame(function(button)
+        SkinBase.ForEachScrollBoxFrame(pane.ScrollBox, function(button)
             if not skinnedEntries[button] then return end
             if button.Check then
                 button.Check:SetVertexColor(sr, sg, sb, 1)

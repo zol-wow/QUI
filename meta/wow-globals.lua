@@ -92,6 +92,7 @@ CTX_KEY = nil ---@type any
 CUSTOM_CLASS_COLORS = nil ---@type any
 C_ItemCallbacks = nil ---@type any
 C_ToyBox = nil ---@type any
+C_Widget = nil ---@type any
 C_WowTokenPublic = nil ---@type any
 CanEditGuildBankTabInfo = nil ---@type any
 CanExitVehicle = nil ---@type any

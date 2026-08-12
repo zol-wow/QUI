@@ -71,6 +71,11 @@ C_Spell = {
 C_Timer = {
     After = noop,
 }
+C_Widget = {
+    IsFrameWidget = function(object)
+        return type(object) == "table" and type(rawget(object, "GetObjectType")) == "function"
+    end,
+}
 
 local createdFrames = {}
 local fontStrings = {}

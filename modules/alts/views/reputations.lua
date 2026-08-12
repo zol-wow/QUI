@@ -230,7 +230,7 @@ local function Builder(parent)
     end)
     local filterLabel = MakeFS(filterBtn, 11)
     filterLabel:SetPoint("CENTER")
-    filterLabel:SetText("Filter")
+    filterLabel:SetText(ns.L["Filter"])
     filterLabel:SetTextColor(0.9, 0.9, 0.9)
 
     Alts.FilterPopup.Attach({
@@ -441,5 +441,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("reputations", "Reputations", Builder,
+Alts.Window.RegisterTab("reputations", ns.L["Reputations"], Builder,
     "Faction standings across your characters, including renown and paragon progress.")

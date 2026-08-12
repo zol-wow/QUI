@@ -180,12 +180,6 @@ local function SkinSearchBar()
     end
 end
 
-local function SafeForEachFrame(scrollBox, callback)
-    if scrollBox and scrollBox.ForEachFrame then
-        pcall(scrollBox.ForEachFrame, scrollBox, callback)
-    end
-end
-
 local function skinRow(row)
     SkinBase.SkinScrollRow(row)
     SkinBase.LockPooledRowText(row, 4)
@@ -380,7 +374,7 @@ local function SkinCategoriesList()
         SkinBase.ApplyButtonFontObjects(button, { color = AH_CATEGORY_TEXT_COLOR })
     end
     local function RefreshCategoryButtons(self)
-        SafeForEachFrame(self, StyleCategoryRow)
+        SkinBase.ForEachScrollBoxFrame(self, StyleCategoryRow)
     end
 
     local scrollBox = categoriesList.ScrollBox

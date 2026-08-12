@@ -82,6 +82,38 @@ if LM._elements["cdmCustom_x1"].label ~= before then
         .. tostring(LM._elements["cdmCustom_x1"].label))
 end
 
+local released, shown = {}, {}
+local function FakeHandle(tag)
+    return {
+        Hide = function() released[#released + 1] = tag end,
+        SetParent = function(_, p) if p == nil then released[#released + 1] = tag .. ":unparented" end end,
+        _label = FakeLabel(),
+    }
+end
+
+LM.isActive = false
+LM._elements["mover1"] = { key = "mover1", label = "One" }
+LM._handles["mover1"] = FakeHandle("old")
+
+LM:RegisterElement({ key = "mover1", label = "One Renamed" })
+if LM._handles["mover1"] ~= nil then
+    fail("re-registering must RELEASE the previous handle, not orphan it - "
+        .. "RegisterElement used to overwrite _handles[key] with no teardown, "
+        .. "leaving the old mover parented and shown")
+end
+if not (released[1] == "old" and released[2] == "old:unparented") then
+    fail("the released handle must be hidden AND unparented, matching what "
+        .. "UnregisterElement does, got " .. table.concat(released, ","))
+end
+
+released = {}
+LM._elements["mover2"] = { key = "mover2", label = "Two" }
+LM._handles["mover2"] = FakeHandle("two")
+LM:UnregisterElement("mover2")
+if LM._handles["mover2"] ~= nil or #released == 0 then
+    fail("UnregisterElement must still tear its handle down through the same path")
+end
+
 local src = io.open("QUI_CDM/cdm/cdm_containers.lua"):read("*a")
 if not src:find("self:RegisterDynamicFrameResolver(containerKey, settings)", 1, true) then
     fail("RenameContainer must also refresh the frame resolver, or the anchoring "
