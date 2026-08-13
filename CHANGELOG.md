@@ -4,6 +4,23 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.1.0-beta5 - 2026-08-13
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+One fix for players carrying settings over from older versions: custom text
+colors no longer error out the resource bars.
+
+### Fixed
+
+- **Custom resource bar text colors from old profiles work again.** Older
+  profiles saved the custom text color in a different table shape than the
+  current options panel writes. Reading it the new way produced a nil color
+  and threw "bad argument" on every secondary power bar update, spamming
+  errors whenever the bar refreshed. Both shapes are now accepted, with a
+  white fallback if the saved color is missing or malformed.
+
 ## v5.1.0-beta4 - 2026-08-13
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
