@@ -273,6 +273,19 @@ local function styleButton(button, profile)
 
     ApplyIconSkinOwnership(button, profile)
 
+    -- Border thickness is the gap between the button edge and the inset icon;
+    -- external skins own the icon geometry, so leave it alone when bridged.
+    local showBorder = profile.showBorder ~= false
+    if not button._quiBridged and button.Icon then
+        local inset = 0
+        if showBorder then
+            inset = profile.borderSize or 1
+            if inset < 0 then inset = 0 end
+        end
+        button.Icon:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
+        button.Icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
+    end
+
     local dispel = button._quiDispel
     if dispel and button.ClearDispelTypeTextures and button.AddDispelTypeTexture then
         local mode = profile.dispelBorderMode
@@ -334,15 +347,19 @@ local function styleButton(button, profile)
 
     local border = button._quiBorder
     if border then
-        local bc = profile.borderColor
-        local r, g, b, a
-        if type(bc) == "table" then
-            r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4]
+        if not showBorder then
+            if border.Hide then border:Hide() end
         else
-            r, g, b, a = AuraTheme.BorderColor()
+            local bc = profile.borderColor
+            local r, g, b, a
+            if type(bc) == "table" then
+                r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4]
+            else
+                r, g, b, a = AuraTheme.BorderColor()
+            end
+            border:SetColorTexture(r, g, b, a or 1)
+            if border.DisablePixelSnap then border:DisablePixelSnap() end
         end
-        border:SetColorTexture(r, g, b, a or 1)
-        if border.DisablePixelSnap then border:DisablePixelSnap() end
     end
 
     local fontPath = (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont())
