@@ -284,6 +284,10 @@ UpdateAssistedCombatRotationFrame = function(button)
 
     if show and not frame then
         ActionBarsOwned._assistedCombatEverActive = true
+        if button.UpdateAssistedCombatRotationFrame then
+            _assistRotationButton = button
+            return
+        end
         frame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatRotationTemplate")
         button.AssistedCombatRotationFrame = frame
         _assistRotationButton = button
