@@ -554,7 +554,9 @@ jobs:
 
           case "$RELEASE_TYPE" in
             release)
-              FOOTER="\n\n💖 *A massive thank you to everyone using the addon, raising issues, requesting new features, testing tirelessly, contributing merge requests, and supporting development via Ko-Fi or PayPal!*\n\n"
+              # $'...' so the \n are real newlines — jq --arg would otherwise
+              # escape literal backslash-n into visible "\n" text on Discord.
+              FOOTER=$'\n\n💖 *A massive thank you to everyone using the addon, raising issues, requesting new features, testing tirelessly, contributing merge requests, and supporting development via Ko-Fi or PayPal!*'
               post "$DISCORD_RELEASE_WEBHOOK" \
                 "$(full_payload 'New QUI Release' '🚀' "$FOOTER" 3447003)" \
                 'release channel'
@@ -569,13 +571,13 @@ jobs:
               post "$DISCORD_ANNOUNCE_WEBHOOK" "$ANNOUNCE" 'announcements'
               ;;
             beta)
-              FOOTER="\n\n⚠️ *This is a beta build — expect bugs. Please report issues on GitHub!*\n\n"
+              FOOTER=$'\n\n⚠️ *This is a beta build — expect bugs. Please report issues on GitHub!*'
               post "$DISCORD_BETA_WEBHOOK" \
                 "$(full_payload 'New QUI Beta' '🧪' "$FOOTER" 16761095)" \
                 'beta channel'
               ;;
             alpha)
-              FOOTER="\n\n⚠️ *This is an alpha build — expect bugs. Please report issues on GitHub!*\n\n"
+              FOOTER=$'\n\n⚠️ *This is an alpha build — expect bugs. Please report issues on GitHub!*'
               post "$DISCORD_ALPHA_WEBHOOK" \
                 "$(full_payload 'New QUI Alpha' '🧪' "$FOOTER" 16761095)" \
                 'alpha channel'
