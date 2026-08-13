@@ -4,6 +4,35 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.1.0-beta6 - 2026-08-13
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+A polish pass on icons: cooldown manager borders draw crisp at every scale,
+duration and stack text is styled again, and the buff and debuff border
+controls are back — now per strip.
+
+### Added
+
+- **Per-strip border controls for buff and debuff icons.** Each aura strip can
+  now show or hide its icon borders and set its own border thickness, on top
+  of the global setting.
+
+### Fixed
+
+- **Cooldown manager borders are crisp again.** Icon rectangles are snapped to
+  physical pixels before borders are drawn, so a border no longer lands
+  between pixels and comes out blurry or a pixel thicker on one side at odd
+  UI scales.
+- **Duration and stack text on cooldown icons follows its settings again.**
+  Icons the cooldown manager rebuilds mid-combat skipped the text pass, so
+  countdown and stack numbers could sit in the wrong corner with the wrong
+  font. They are re-anchored and restyled now. Options dropdowns also open
+  scrolled to the top instead of wherever the last menu left off.
+- **Buff and debuff icon borders obey the border settings again.** The global
+  border toggle and thickness had stopped being applied to aura icons.
+
 ## v5.1.0-beta5 - 2026-08-13
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
