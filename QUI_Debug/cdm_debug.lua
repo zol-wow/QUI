@@ -3359,7 +3359,10 @@ local function RunCDMDebugEdges(rest)
             local cx, cy
             if container.GetCenter then
                 local ok, x, y = pcall(container.GetCenter, container)
-                if ok and x and not DebugIsSecretValue(x) then cx, cy = x, y end
+                if ok and not DebugIsSecretValue(x) and not DebugIsSecretValue(y)
+                    and x and y then
+                    cx, cy = x, y
+                end
             end
             if cx then
                 local px = core:GetPixelSize(container)
