@@ -280,7 +280,6 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         if cd and cd.SetHideCountdownNumbers then
             cd:SetHideCountdownNumbers(rowConfig.hideDurationText and true or false)
         end
-        if cd and cd.SetDrawSwipe then cd:SetDrawSwipe(true) end
         local lvlOk, baseLvl = ns.SafeCallMethod("best-effort-style", frame, "GetFrameLevel")
         if lvlOk and type(baseLvl) == "number" then
             local textLvl = baseLvl + 23

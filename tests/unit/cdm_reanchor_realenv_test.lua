@@ -352,14 +352,11 @@ end
 
 -- Reference-parity PER-PASS writes on claimed frames (re-anchor reference
 -- re-asserts these every collect pass):
---  1) SetDrawSwipe(true): blank-on-acquire disables the swipe on every acquired
---     native item and nothing re-enabled it on claim -- a blanked-then-claimed
---     frame lost its cooldown swirl for the session.
---  2) Applications/ChargeCount frame-level raise: both are child FRAMES
---     (CooldownViewer.xml:54/:189), Blizzard resets pooled frame levels on zone
---     transitions, so the native stack/charge text must be re-raised above the
---     swirl every pass. Writes are on CHILD frames -- the live item frame keeps
---     its zero-forbidden-writes pin (no SetFrameLevel on the item itself).
+-- Applications/ChargeCount frame-level raise: both are child FRAMES
+-- (CooldownViewer.xml:54/:189), Blizzard resets pooled frame levels on zone
+-- transitions, so the native stack/charge text must be re-raised above the
+-- swirl every pass. Writes are on CHILD frames -- the live item frame keeps
+-- its zero-forbidden-writes pin (no SetFrameLevel on the item itself).
 do
     local cdCalls, appLevels, chargeLevels = {}, {}, {}
     local live = {
@@ -383,13 +380,12 @@ do
         return n
     end
     envC.applyChrome(live, { borderSize = 1 }, false) -- NON-first pass: per-pass writes only
-    assert(countCalls("SetDrawSwipe", true) == 1,
-        "claimed pass re-enables the native cooldown swipe (SetDrawSwipe true)")
     assert(appLevels[1] == 33 and chargeLevels[1] == 33,
         "claimed pass raises native stack/charge text child frames above the swirl (live level + 23)")
     envC.applyChrome(live, { borderSize = 1 }, false)
-    assert(countCalls("SetDrawSwipe", true) == 2,
-        "swipe re-assert runs EVERY claimed pass (re-acquire can re-blank between passes)")
+    assert(countCalls("SetDrawSwipe") == 0,
+        "applyChrome must NEVER write SetDrawSwipe -- Blizzard owns that channel per event; "
+        .. "a per-pass force-true alternates with Blizzard's charge edge-only false and flickers")
     assert(#appLevels == 2 and #chargeLevels == 2,
         "text raise runs every pass (Blizzard resets pooled frame levels on zone transitions)")
     -- Full reference parity: the native Cooldown widget writes also re-assert
