@@ -4,6 +4,37 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.1.0-beta3 - 2026-08-12
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+A short follow-up to beta2: resource bars that keep working in combat, two
+action bar fixes that keep QUI out of Blizzard's own code, and one new option
+for aura duration text.
+
+### Added
+
+- **Hide Time Unit** for aura duration text, per text region. Shows `4` instead
+  of `4s`; durations over 90 seconds keep their m/h/d unit.
+
+### Fixed
+
+- **Resource bars keep drawing in combat.** On 12.1 the client can hand back a
+  protected power value, and the bar took a separate path whenever it did —
+  dropping its text placement, tick marks and indicator lines for as long as the
+  value stayed protected. It now renders the same way either way: the value goes
+  straight to the bar and to the text, and indicator lines are positioned by the
+  game instead of by arithmetic QUI is no longer allowed to do. Soul fragments
+  show their real count rather than falling back to zero, and both power bars
+  reuse their frame instead of stacking a second one over the first.
+- **Action bar cooldowns stay off Blizzard's own fields.** The loss-of-control
+  swirl was stored on a field Blizzard's code reads, so that code inherited QUI's
+  taint; it lives on a private field now. A button that carries its own
+  assisted-combat rotation frame builds that frame itself instead of receiving a
+  second one.
+- **The original QUI logo is back.**
+
 ## v5.1.0-beta2 - 2026-08-12
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
