@@ -82,15 +82,20 @@ do
         return cd
     end
 
+    local function GetLoCCooldown(button)
+        return button.lossOfControlCooldown or button._quiLoCCooldown
+    end
+
     local function GetOrCreateLoCCooldown(button)
-        if button.lossOfControlCooldown then return button.lossOfControlCooldown end
+        local existing = GetLoCCooldown(button)
+        if existing then return existing end
         local parent = button.cooldown or button
         local cd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
         cd:SetHideCountdownNumbers(true)
         cd:SetAllPoints(parent)
         cd:SetFrameLevel(button:GetFrameLevel() + 1)
         cd:SetSwipeColor(0.17, 0, 0, 0.8)
-        button.lossOfControlCooldown = cd
+        button._quiLoCCooldown = cd
         return cd
     end
 
@@ -437,7 +442,8 @@ do
                     _buttonWasActive[button] = nil
                     cooldown:Clear()
                     if button.chargeCooldown then button.chargeCooldown:Clear() end
-                    if button.lossOfControlCooldown then button.lossOfControlCooldown:Clear() end
+                    local loc = GetLoCCooldown(button)
+                    if loc then loc:Clear() end
                 end
                 return
             end
@@ -466,8 +472,9 @@ do
             if showLoC then
                 if _abCooldownStats then _abCooldownStats.lossOfControlDurationQueries = _abCooldownStats.lossOfControlDurationQueries + 1 end
                 SetOrClearCooldown(GetOrCreateLoCCooldown(button), true, C_ActionBar.GetActionLossOfControlCooldownDuration(action))
-            elseif button.lossOfControlCooldown then
-                button.lossOfControlCooldown:Clear()
+            else
+                local loc = GetLoCCooldown(button)
+                if loc then loc:Clear() end
             end
         else
             if ActionButton_UpdateCooldown then
