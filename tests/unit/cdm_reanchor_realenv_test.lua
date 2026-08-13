@@ -352,14 +352,11 @@ end
 
 -- Reference-parity PER-PASS writes on claimed frames (re-anchor reference
 -- re-asserts these every collect pass):
---  1) SetDrawSwipe(true): blank-on-acquire disables the swipe on every acquired
---     native item and nothing re-enabled it on claim -- a blanked-then-claimed
---     frame lost its cooldown swirl for the session.
---  2) Applications/ChargeCount frame-level raise: both are child FRAMES
---     (CooldownViewer.xml:54/:189), Blizzard resets pooled frame levels on zone
---     transitions, so the native stack/charge text must be re-raised above the
---     swirl every pass. Writes are on CHILD frames -- the live item frame keeps
---     its zero-forbidden-writes pin (no SetFrameLevel on the item itself).
+-- Applications/ChargeCount frame-level raise: both are child FRAMES
+-- (CooldownViewer.xml:54/:189), Blizzard resets pooled frame levels on zone
+-- transitions, so the native stack/charge text must be re-raised above the
+-- swirl every pass. Writes are on CHILD frames -- the live item frame keeps
+-- its zero-forbidden-writes pin (no SetFrameLevel on the item itself).
 do
     local cdCalls, appLevels, chargeLevels = {}, {}, {}
     local live = {
@@ -383,13 +380,12 @@ do
         return n
     end
     envC.applyChrome(live, { borderSize = 1 }, false) -- NON-first pass: per-pass writes only
-    assert(countCalls("SetDrawSwipe", true) == 1,
-        "claimed pass re-enables the native cooldown swipe (SetDrawSwipe true)")
     assert(appLevels[1] == 33 and chargeLevels[1] == 33,
         "claimed pass raises native stack/charge text child frames above the swirl (live level + 23)")
     envC.applyChrome(live, { borderSize = 1 }, false)
-    assert(countCalls("SetDrawSwipe", true) == 2,
-        "swipe re-assert runs EVERY claimed pass (re-acquire can re-blank between passes)")
+    assert(countCalls("SetDrawSwipe") == 0,
+        "applyChrome must NEVER write SetDrawSwipe -- Blizzard owns that channel per event; "
+        .. "a per-pass force-true alternates with Blizzard's charge edge-only false and flickers")
     assert(#appLevels == 2 and #chargeLevels == 2,
         "text raise runs every pass (Blizzard resets pooled frame levels on zone transitions)")
     -- Full reference parity: the native Cooldown widget writes also re-assert
@@ -1099,6 +1095,141 @@ do
     assert(#factoryStub._pools.essential == 0, "successful release removes pool membership")
 
     factoryStub.ReleaseIcon = savedReleaseIcon
+end
+
+-- Duration/stack text styling on re-anchored live items (Discord report 2026-08):
+-- pre-reanchor, ConfigureIcon styled QUI-owned icons; post-reanchor the live
+-- Blizzard item kept its native centered countdown + small NumberFontNormal
+-- charge/stack text, ignoring durationAnchor/offsets and stackSize/stackAnchor.
+-- applyChrome must now (a) re-anchor the native countdown fontstring per
+-- rowConfig and (b) restyle native ChargeCount.Current / Applications.Applications
+-- via a font OBJECT (SetFontObject -- G14's "never raw SetFont" invariant holds)
+-- plus anchor writes relative to the live item frame.
+do
+    local oldCreateFont, oldHelpers = _G.CreateFont, ns.Helpers
+    local fontObjs = {}
+    _G.CreateFont = function(name)
+        local fo = { _sets = {} }
+        fo.SetFont = function(_, f, sz, o) fo._sets[#fo._sets + 1] = { f, sz, o } end
+        fo.SetTextColor = function() end
+        fontObjs[name] = fo
+        _G[name] = fo
+        return fo
+    end
+    ns.Helpers = {
+        GetGeneralFont = function() return "QUIFONT.TTF" end,
+        GetGeneralFontOutline = function() return "OUTLINE" end,
+        GetSkinBorderColor = function() return 0, 0, 0, 1 end,
+    }
+
+    local function fsWidget()
+        local w = { _log = {} }
+        w.GetObjectType = function() return "FontString" end
+        return setmetatable(w, { __index = function(_, k)
+            return function(_, ...) w._log[#w._log + 1] = { k, ... } end
+        end })
+    end
+    local function logFind(w, m)
+        for _, c in ipairs(w._log) do if c[1] == m then return c end end
+        return nil
+    end
+
+    -- shape = "charge" (essential/utility: ChargeCount.Current) or
+    -- "apps" (buff icon: Applications frame -> Applications fontstring)
+    local function makeItem(shape)
+        local countFs, stackFs = fsWidget(), fsWidget()
+        local cdLog = {}
+        local cd = setmetatable({
+            GetCountdownFontString = function() return countFs end,
+            GetRegions = function() return countFs end,
+        }, { __index = function(_, k)
+            return function(_, ...) cdLog[#cdLog + 1] = { k, ... } end
+        end })
+        local holderAlphas = {}
+        local holder = { SetAlpha = function(_, a) holderAlphas[#holderAlphas + 1] = a end }
+        local frame = {
+            Cooldown = cd,
+            GetFrameLevel = function() return 10 end,
+            SetAlpha = function() end,
+            CreateTexture = function()
+                return setmetatable({}, { __index = function() return function() end end })
+            end,
+        }
+        if shape == "charge" then
+            holder.Current = stackFs
+            frame.ChargeCount = holder
+        else
+            holder.Applications = stackFs
+            frame.Applications = holder
+        end
+        return frame, countFs, stackFs, cdLog, holderAlphas
+    end
+    local function cdLogFind(cdLog, m)
+        for _, c in ipairs(cdLog) do if c[1] == m then return c end end
+        return nil
+    end
+
+    local styleEnv = RE.BuildEnv({})
+    local rc = {
+        borderSize = 0,
+        durationSize = 20, durationAnchor = "TOP", durationOffsetX = 1, durationOffsetY = 5,
+        durationTextColor = { 1, 1, 1, 1 },
+        stackSize = 20, stackAnchor = "BOTTOM", stackOffsetX = 0, stackOffsetY = -8,
+        stackTextColor = { 1, 1, 1, 1 },
+    }
+
+    for _, shape in ipairs({ "charge", "apps" }) do
+        local frame, countFs, stackFs, cdLog = makeItem(shape)
+        styleEnv.applyChrome(frame, rc)
+
+        -- (a) countdown text follows durationAnchor/offsets (was: native center)
+        assert(logFind(countFs, "ClearAllPoints"), shape .. ": countdown fs re-anchored (ClearAllPoints)")
+        local sp = logFind(countFs, "SetPoint")
+        assert(sp and sp[2] == "TOP" and sp[3] == frame and sp[4] == "TOP"
+            and sp[5] == 1 and sp[6] == 5,
+            shape .. ": countdown fs SetPoint(durationAnchor, live, durationAnchor, dx, dy)")
+        local scf = cdLogFind(cdLog, "SetCountdownFont")
+        assert(scf and fontObjs[scf[2]], shape .. ": SetCountdownFont uses a registered font object")
+        assert(fontObjs[scf[2]]._sets[1] and fontObjs[scf[2]]._sets[1][2] == 20,
+            shape .. ": countdown font object carries durationSize")
+
+        -- (b) native stack/charge text picks up stackSize/stackAnchor via font object
+        assert(not logFind(stackFs, "SetFont"), shape .. ": still NEVER raw SetFont on the native fs (G14)")
+        local sfo = logFind(stackFs, "SetFontObject")
+        assert(sfo and fontObjs[sfo[2]], shape .. ": stack fs styled via SetFontObject(font object)")
+        assert(fontObjs[sfo[2]]._sets[1] and fontObjs[sfo[2]]._sets[1][2] == 20,
+            shape .. ": stack font object carries stackSize (was: Blizzard NumberFontNormal)")
+        local ssp = logFind(stackFs, "SetPoint")
+        assert(ssp and ssp[2] == "BOTTOM" and ssp[3] == frame and ssp[4] == "BOTTOM"
+            and ssp[5] == 0 and ssp[6] == -8,
+            shape .. ": stack fs SetPoint(stackAnchor, live, stackAnchor, sx, sy)")
+    end
+
+    -- hideStackText blanks the native count via alpha on holder + fs (Blizzard
+    -- SetShown()s the holder every refresh, so Hide() would not stick)
+    do
+        local frame, _, stackFs, _, holderAlphas = makeItem("charge")
+        styleEnv.applyChrome(frame, {
+            borderSize = 0, durationSize = 20, stackSize = 20, hideStackText = true,
+        })
+        assert(holderAlphas[#holderAlphas] == 0, "hideStackText alpha-0s the native holder frame")
+        local sa = logFind(stackFs, "SetAlpha")
+        assert(sa and sa[2] == 0, "hideStackText alpha-0s the native fs")
+        assert(not logFind(stackFs, "SetFontObject"), "hidden stack text is not restyled")
+    end
+
+    -- hideDurationText suppresses the countdown re-anchor (numbers are hidden
+    -- natively via SetHideCountdownNumbers; no anchor writes needed)
+    do
+        local frame, countFs = makeItem("charge")
+        styleEnv.applyChrome(frame, {
+            borderSize = 0, durationSize = 20, stackSize = 20, hideDurationText = true,
+        })
+        assert(not logFind(countFs, "SetPoint"), "hideDurationText: countdown fs left un-anchored")
+    end
+
+    _G.CreateFont, ns.Helpers = oldCreateFont, oldHelpers
+    print("OK: reanchor chrome styles native countdown + stack text per rowConfig")
 end
 
 print("OK: cdm_reanchor_realenv_test")

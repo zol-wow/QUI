@@ -487,6 +487,9 @@ return {
             [4] = 0.55000000000000004
           }
         },
+        auraDisplays = {
+          enabled = true
+        },
         bags = {
           appearance = {
             bankColumns = 14,
@@ -3076,6 +3079,7 @@ return {
             showNPCs = true
           },
           layout = {
+            scale = 1,
             targetScale = 1,
             verticalOffset = 0
           },
@@ -5833,6 +5837,7 @@ return {
         quiGroupFrames = {
           enabled = false,
           externalSkinning = false,
+          hiddenPlayers = "",
           iconSkin = "Default",
           party = {
             absorbs = {

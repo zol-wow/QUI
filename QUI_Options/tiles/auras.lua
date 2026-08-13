@@ -94,6 +94,22 @@ function ns.QUI_AurasTile.Register(frame)
                     subTabName = ns.L["Nameplates"],
                 },
             },
+            {
+                id = "aurasDisplays",
+                name = ns.L["Aura Displays"],
+                featureId = "aurasDisplaysPage",
+                navRoutes = { { tabIndex = 21, subTabIndex = 6 } },
+                searchAliases = {
+                    ns.L["Aura Displays"], ns.L["Custom aura frame"],
+                    ns.L["Track a buff on screen"], ns.L["Watch another player's auras"],
+                },
+                searchContext = {
+                    tabIndex = 21,
+                    tabName = ns.L["Auras"],
+                    subTabIndex = 6,
+                    subTabName = ns.L["Aura Displays"],
+                },
+            },
         },
     })
 end

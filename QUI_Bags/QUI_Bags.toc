@@ -1,8 +1,8 @@
 ## Interface: 120100
 ## Title: |cFF30D1FFQUI|r Bags
 ## Notes: QUI module. Requires the QUI core addon.
-## Author: Drew
-## Version: 5.0.0-beta1
+## Author: Zol and Drew
+## Version: 5.1.0-beta6
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI

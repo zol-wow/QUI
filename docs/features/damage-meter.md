@@ -7,7 +7,7 @@ nav_order: 21
 
 # Damage Meter
 
-QUI ships a native damage meter for Midnight 12.0+. It provides QUI-styled meter windows with Layout Mode placement, selectable views, row breakdowns, and per-window appearance controls.
+QUI ships a native damage meter for Midnight 12.1+. It provides QUI-styled meter windows with Layout Mode placement, selectable views, row breakdowns, and per-window appearance controls.
 
 ## How to Enable
 

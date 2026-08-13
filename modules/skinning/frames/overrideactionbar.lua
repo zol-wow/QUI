@@ -13,6 +13,52 @@ local RESOURCE_BAR_HEIGHT = 40
 local pendingOverrideSkin = false
 local pendingOverridePostUpdate = false
 local overrideActionBarLifecycleHooked = false
+local microMenuHome
+
+local function MicroMenuDockedInOverrideBar()
+    local menu = _G.MicroMenu
+    local bar = _G.OverrideActionBar
+    if not (menu and bar and menu.GetParent) then return false end
+    local parent = menu:GetParent()
+    local guard = 0
+    while guard < 8 do
+        if issecretvalue and issecretvalue(parent) then return false end -- @secret-policy: reject-secret-value
+        if not parent then return false end
+        if parent == bar then return true end
+        parent = parent.GetParent and parent:GetParent()
+        guard = guard + 1
+    end
+    return false
+end
+
+local function CacheMicroMenuHome()
+    if microMenuHome then return end
+    local menu = _G.MicroMenu
+    if not (menu and menu.GetPoint) then return end
+    if MicroMenuDockedInOverrideBar() then return end
+    local point, relativeTo, relativePoint, x, y = menu:GetPoint(1)
+    if issecretvalue and (issecretvalue(point) or issecretvalue(relativeTo)
+        or issecretvalue(relativePoint) or issecretvalue(x) or issecretvalue(y)) then
+        return
+    end
+    if point then
+        microMenuHome = { point, relativeTo, relativePoint, x or 0, y or 0 }
+    end
+end
+
+local function ReclaimMicroMenuFromOverrideBar()
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then return end
+    local menu = _G.MicroMenu
+    local container = _G.MicroMenuContainer
+    if not (menu and container) then return end
+    CacheMicroMenuHome()
+    if not MicroMenuDockedInOverrideBar() then return end
+    menu:SetParent(container)
+    if microMenuHome then
+        menu:ClearAllPoints()
+        menu:SetPoint(microMenuHome[1], microMenuHome[2] or container, microMenuHome[3], microMenuHome[4], microMenuHome[5])
+    end
+end
 
 local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
     if not button then return end
@@ -213,21 +259,13 @@ local function SkinOverrideActionBar()
 
     SkinBase.MarkSkinned(bar)
 
-    if MicroMenu and MicroMenu.ResetMicroMenuPosition then
-        C_Timer.After(0, function()
-            if not InCombatLockdown() then
-                MicroMenu:ResetMicroMenuPosition()
-            end
-        end)
-    end
+    C_Timer.After(0, ReclaimMicroMenuFromOverrideBar)
 end
 
 local function RunOverrideActionBarPostUpdate()
     pendingOverridePostUpdate = false
     SkinOverrideActionBar()
-    if MicroMenu and MicroMenu.ResetMicroMenuPosition and not InCombatLockdown() then
-        MicroMenu:ResetMicroMenuPosition()
-    end
+    ReclaimMicroMenuFromOverrideBar()
 end
 
 local function DeferOverrideActionBarPostUpdate()
@@ -302,6 +340,7 @@ local function HandleBarStateChange()
     local bar = _G.OverrideActionBar
     if not bar then return end
     EnsureOverrideActionBarLifecycleHook(bar)
+    CacheMicroMenuHome()
 
     local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
     if not settings or not settings.skinOverrideActionBar then return end

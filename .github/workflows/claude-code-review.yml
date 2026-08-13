@@ -55,6 +55,8 @@ jobs:
         run: luarocks install luacheck
 
       - uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Lets the reviewer read this PR's CI results, so it can cite an
@@ -62,11 +64,18 @@ jobs:
           additional_permissions: |
             actions: read
           claude_args: |
-            --allowed-tools "Read,Grep,Glob,Bash(lua:*),Bash(luacheck:*),Bash(bash tools/check_compile.sh),Bash(git diff:*),Bash(git log:*)"
+            --allowed-tools "Read,Grep,Glob,Bash(lua:*),Bash(luacheck:*),Bash(bash tools/check_compile.sh),Bash(git diff:*),Bash(git log:*),mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*)"
           prompt: |
             Review the changes in this pull request. QUI is a World of
-            Warcraft 12.1 addon suite in Lua 5.1. Post review comments; do not
-            approve, do not push commits, do not open other PRs.
+            Warcraft 12.1 addon suite in Lua 5.1. Do not approve, do not push
+            commits, do not open other PRs.
+
+            Your final assistant message is discarded — it is not posted
+            anywhere. A finding you do not write through a tool is lost. Post
+            each finding with mcp__github_inline_comment__create_inline_comment
+            on the line it concerns, then close with one summary via
+            `gh pr comment` listing every finding and its severity. Post the
+            summary even when the diff is clean.
 
             Scope yourself to the diff. Read surrounding code for context, but
             only report problems the diff introduces or exposes.

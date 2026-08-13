@@ -2404,6 +2404,12 @@ end
 
 local scrollBoxAcquiredCallbacks = Helpers.CreateStateTable()
 
+function SkinBase.ForEachScrollBoxFrame(scrollBox, callback)
+    local okView, hasView = ns.SafeCallMethodIfPresent("best-effort-style", scrollBox, "HasView")
+    if okView and not hasView then return end
+    return ns.SafeCallMethodIfPresent("best-effort-style", scrollBox, "ForEachFrame", callback)
+end
+
 function SkinBase.HookScrollBoxAcquired(scrollBox, callback, opts)
     if not scrollBox or type(callback) ~= "function" then return end
     if not ScrollUtil or not ScrollUtil.AddAcquiredFrameCallback then return end
@@ -2420,7 +2426,7 @@ function SkinBase.HookScrollBoxAcquired(scrollBox, callback, opts)
     callbacks[#callbacks + 1] = entry
 
     C_Timer.After(0, function()
-        ns.SafeCallMethodIfPresent("best-effort-style", scrollBox, "ForEachFrame", callback)
+        SkinBase.ForEachScrollBoxFrame(scrollBox, callback)
     end)
 
     if SkinBase.GetFrameData(scrollBox, "qScrollHooked") then return end
@@ -2467,7 +2473,9 @@ end
 function SkinBase.OnAddOnLoaded(addonName, callback, delay)
     delay = delay or 0
     local function fire()
-        if delay > 0 then
+        if ns.RunAfterFirstFrame then
+            ns.RunAfterFirstFrame(callback, delay)
+        elseif delay > 0 then
             C_Timer.After(delay, callback)
         else
             callback()

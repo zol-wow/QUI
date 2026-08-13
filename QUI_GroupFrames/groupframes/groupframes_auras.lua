@@ -856,6 +856,8 @@ local function ApplyAuraDelta(unit, updateInfo)
                     else
                         debuffsDirty = true
                     end
+                else
+                    _deltaSummary.spellsUncertain = true
                 end
             end
         end
@@ -876,6 +878,9 @@ local function ApplyAuraDelta(unit, updateInfo)
             if rd and RemoveAuraFromBucket(cache, "debuffs", instID) then
                 debuffsDirty = true
                 SummaryAddSpell(rd)
+            end
+            if not rb and not rd then
+                _deltaSummary.spellsUncertain = true
             end
         end
     end
@@ -998,7 +1003,7 @@ local function GetAuraRelevance(auras, specID)
 end
 
 local function DeltaTouchesFrame(rel, dirty)
-    if dirty.helpful and rel.hasMissingRaidBuff then return true end
+    if (dirty.helpful or dirty.spellsUncertain) and rel.hasMissingRaidBuff then return true end
     if rel.hasTracked then
         if dirty.spellsUncertain then return true end
         for sid in pairs(dirty.spells) do
@@ -1075,7 +1080,7 @@ local function RenderFrameElements(frame, cache, dirty)
             local elementDirty = (dirty == nil)
             if not elementDirty then
                 if element.mode == "missingRaidBuff" then
-                    elementDirty = dirty.helpful
+                    elementDirty = dirty.helpful or dirty.spellsUncertain
                 elseif element.mode == "tracked" then
                     if dirty.spellsUncertain then
                         elementDirty = true

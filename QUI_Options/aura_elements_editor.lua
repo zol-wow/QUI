@@ -698,6 +698,10 @@ local function AddTextRegionWidgets(ctx, element, key, label)
         row(ns.L["Decimals Under 3s"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "decimals", region, onChange, {
             description = ns.L["Show tenths of a second below 3 seconds."],
         }))
+        row(ns.L["Hide Time Unit"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideUnit", region, onChange, {
+            description = ns.L["Show 4 instead of 4s. Durations over 90 seconds keep their m/h/d unit."],
+            keywords = { "unit", "seconds", "suffix" },
+        }))
     end
 end
 
@@ -1082,6 +1086,28 @@ local function AddFilterStripConfig(ctx, element)
             description = ns.L["Only show auras that are boss-applied or role-relevant. Combines with the other filters."],
         }))
 
+        row(ns.L["Hide Border"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideBorder", element, onChange, {
+            description = ns.L["Hide the border drawn around icons in this strip."],
+        }))
+        row(ns.L["Custom Border Size"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "_customBorderSize", {
+            _customBorderSize = element.borderSize ~= nil,
+            _quiTransientOptionsProxy = true,
+        }, function(checked)
+            if checked and element.borderSize == nil then
+                element.borderSize = 2
+            elseif not checked then
+                element.borderSize = nil
+            end
+            ctx.NotifyChanged()
+            rebuild()
+        end, {
+            description = ns.L["Override the default border thickness for icons in this strip."],
+        }))
+        if element.borderSize ~= nil then
+            row(ns.L["Border Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 1, 6, 1, "borderSize", element, onChange, { deferOnDrag = true }, {
+                description = ns.L["Border thickness in pixels for icons in this strip."],
+            }))
+        end
         row(ns.L["Custom Border Color"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "_customBorder", {
             _customBorder = element.borderColor ~= nil,
             _quiTransientOptionsProxy = true,

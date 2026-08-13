@@ -105,8 +105,41 @@ local function GetDebuffStore(settings)
     return settings.debuffAuras
 end
 
-local function ElementProfileFor(element)
-    return G.ElementProfile(element)
+-- Pre-5.0 buff borders were black; the strip's custom color still wins.
+local BORDER_COLOR_DEFAULT = { 0, 0, 0, 1 }
+local STACKS_HIDDEN = { show = false }
+
+-- Merges the module-level settings (Show Borders, Border Size, Button Skin,
+-- External Skinning, ...) into the per-strip profile. Per-strip values win
+-- where both exist. Pass isBuff = nil for layout-only uses (anchoring).
+local function ElementProfileFor(element, isBuff)
+    local overrides
+    if isBuff ~= nil then
+        local settings = GetSettings()
+        if settings then
+            local moduleShow
+            if isBuff then
+                moduleShow = settings.showBuffBorders ~= false
+            else
+                moduleShow = settings.showDebuffBorders ~= false
+            end
+            overrides = {
+                showBorder       = moduleShow and element.hideBorder ~= true,
+                borderSize       = element.borderSize or settings.borderSize or 2,
+                borderColor      = element.borderColor or BORDER_COLOR_DEFAULT,
+                iconSkin         = settings.iconSkin,
+                externalSkinning = settings.externalSkinning == true,
+                externalSkinKey  = isBuff and "Buff Frame" or "Debuff Frame",
+            }
+            if settings.showStacks == false then
+                overrides.stack = STACKS_HIDDEN
+            end
+            if settings.hideSwipe then
+                overrides.hideSwipe = true
+            end
+        end
+    end
+    return G.ElementProfile(element, overrides)
 end
 
 local function FallbackProfile(defaultBucketFn)
@@ -328,7 +361,7 @@ local function ApplyMoverElements(moverFrame, strips, isBuff, allowCreate)
                     incomplete = true
                 end
             end
-            local profile = ElementProfileFor(element)
+            local profile = ElementProfileFor(element, isBuff)
             local groups = G.ElementGroups("player", element, profile, isBuff)
             if not G.RunConfigPass(container, profile, groups, allowCreate) then incomplete = true end
             S.Park(container)
@@ -383,8 +416,8 @@ local function ApplyConfigPass(allowCreate)
     local buffStrips   = ResolveStrips(GetBuffStore(settings),   DefaultBuffBucket,   _buffStrips,   "HELPFUL")
     local debuffStrips = ResolveStrips(GetDebuffStore(settings), DefaultDebuffBucket, _debuffStrips, "HARMFUL")
 
-    local buffProfile   = buffStrips[1]   and ElementProfileFor(buffStrips[1])   or FallbackProfile(DefaultBuffBucket)
-    local debuffProfile = debuffStrips[1] and ElementProfileFor(debuffStrips[1]) or FallbackProfile(DefaultDebuffBucket)
+    local buffProfile   = buffStrips[1]   and ElementProfileFor(buffStrips[1], true)    or FallbackProfile(DefaultBuffBucket)
+    local debuffProfile = debuffStrips[1] and ElementProfileFor(debuffStrips[1], false) or FallbackProfile(DefaultDebuffBucket)
 
     local bw, bh = GridExtent(buffProfile)
     buffContainer._naturalW, buffContainer._naturalH = bw, bh
@@ -468,19 +501,26 @@ local function ShowPreview()
     buffContainer:SetAlpha(1)
     debuffContainer:SetAlpha(1)
 
+    local function PreviewResolve(isBuff)
+        return function(e)
+            return ElementProfileFor(e, isBuff), e.anchor or "TOPLEFT",
+                e.offsetX or 0, e.offsetY or 0
+        end
+    end
+
     local buffStrips  = ResolveStrips(GetBuffStore(settings), DefaultBuffBucket, _buffStrips, "HELPFUL")
-    local buffProfile = buffStrips[1] and ElementProfileFor(buffStrips[1]) or FallbackProfile(DefaultBuffBucket)
+    local buffProfile = buffStrips[1] and ElementProfileFor(buffStrips[1], true) or FallbackProfile(DefaultBuffBucket)
     local bw, bh = GridExtent(buffProfile)
     buffContainer._naturalW, buffContainer._naturalH = bw, bh
     buffContainer:SetSize(bw, bh)
-    Preview.Show(buffContainer, buffStrips)
+    Preview.Show(buffContainer, buffStrips, { resolve = PreviewResolve(true) })
 
     local debuffStrips  = ResolveStrips(GetDebuffStore(settings), DefaultDebuffBucket, _debuffStrips, "HARMFUL")
-    local debuffProfile = debuffStrips[1] and ElementProfileFor(debuffStrips[1]) or FallbackProfile(DefaultDebuffBucket)
+    local debuffProfile = debuffStrips[1] and ElementProfileFor(debuffStrips[1], false) or FallbackProfile(DefaultDebuffBucket)
     local dw, dh = GridExtent(debuffProfile)
     debuffContainer._naturalW, debuffContainer._naturalH = dw, dh
     debuffContainer:SetSize(dw, dh)
-    Preview.Show(debuffContainer, debuffStrips)
+    Preview.Show(debuffContainer, debuffStrips, { resolve = PreviewResolve(false) })
 
     if _G.QUI_LayoutModeSyncHandle then
         _G.QUI_LayoutModeSyncHandle("buffFrame")

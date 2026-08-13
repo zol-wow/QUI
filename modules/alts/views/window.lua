@@ -223,7 +223,7 @@ local function Build()
     CJKFont(win._title, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 14,
         Helpers.GetGeneralFontOutline() or "OUTLINE")
     win._title:SetPoint("LEFT", 12, 0)
-    win._title:SetText("Alts")
+    win._title:SetText(ns.L["Alts"])
 
     win._close = UIKit.CreateCloseButton(header, {
         point = "RIGHT", x = -8, y = 0,

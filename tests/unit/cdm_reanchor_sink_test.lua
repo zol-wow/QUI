@@ -1,10 +1,10 @@
 -- tests/unit/cdm_reanchor_sink_test.lua
 -- Run: lua tests/unit/cdm_reanchor_sink_test.lua
--- G10: Sink hides an unclaimed pool frame with SetAlpha(0) + Cooldown:SetDrawSwipe(false)
--- ONLY -- NO ClearAllPoints, NO offscreen SetPoint. The anchor guard's unclaimed-branch
+-- G10: Sink hides an unclaimed pool frame with SetAlpha(0) ONLY -- NO ClearAllPoints,
+-- NO offscreen SetPoint, NO Cooldown writes. The anchor guard's unclaimed-branch
 -- alpha-0 + Blizzard's next Layout pass (which overwrites any point we set) already hide
 -- it, so the offscreen move was a redundant extra combat SetPoint + ClearAllPoints churn
--- on a managed GridLayout child. Mirrors the re-anchor reference's unclaimed-hide recipe.
+-- on a managed GridLayout child.
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
 loadChunk("QUI_CDM/cdm/cdm_reanchor.lua", "cdm_reanchor.lua")("QUI", ns)
@@ -42,8 +42,9 @@ end
 assert(sawAlpha0, "G10: Sink sets alpha 0")
 assert(not sawClear, "G10: Sink must NOT ClearAllPoints (redundant churn on managed GridLayout child)")
 assert(not sawOffscreen, "G10: Sink must NOT re-anchor offscreen (redundant extra combat SetPoint)")
-assert(#drawSwipeCalls == 1 and drawSwipeCalls[1] == false,
-    "G10: Sink calls Cooldown:SetDrawSwipe(false) for swipe-hide parity")
+assert(#drawSwipeCalls == 0,
+    "G10: Sink must NOT write Cooldown:SetDrawSwipe -- Blizzard owns that channel; "
+    .. "alpha 0 already hides the frame and a false here re-creates the swipe flicker fight")
 
 local keyCount = 0
 for _ in pairs(frame) do keyCount = keyCount + 1 end

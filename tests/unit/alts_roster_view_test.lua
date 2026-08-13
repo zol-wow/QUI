@@ -7,6 +7,7 @@
 -- RegisterTab + Helpers + global font are stubbed so the file loads.
 
 local ns = {}
+ns.L = setmetatable({}, { __index = function(_, k) return k end })
 
 -- Stubs the roster view file touches at load / in pure helpers.
 ns.Helpers = {

@@ -255,6 +255,11 @@ function Driver._PrepareRoster(contextMode, count, layout, gfdb)
     layout = layout or {}
     gfdb = gfdb or {}
     local source = Driver._BuildRoster(contextMode, count)
+    -- Hidden players apply to both contexts; ns.Helpers resolved lazily so
+    -- the driver still loads under a bare test ns without core utils.
+    local Helpers = ns.Helpers
+    local hiddenSet = Helpers and Helpers.ParseNameListString
+        and Helpers.ParseNameListString(gfdb.hiddenPlayers) or nil
     local out = {}
     for _, member in ipairs(source) do
         local keep = true
@@ -262,6 +267,7 @@ function Driver._PrepareRoster(contextMode, count, layout, gfdb)
             if layout.showPlayer == false and member.isSelf then keep = false end
             if layout.hideDPS == true and member.role == "DAMAGER" then keep = false end
         end
+        if hiddenSet and Helpers.NameListContains(hiddenSet, member.name) then keep = false end
         if keep then out[#out + 1] = member end
     end
 

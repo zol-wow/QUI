@@ -2128,6 +2128,11 @@ local function RenderFadingSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, ns.L["Occluded Opacity"], occludedSlider)
     )
 
+    local plateScaleSlider = gui:CreateFormSlider(card.frame, nil, 0.5, 2, 0.05, "scale", layout, refresh, { deferOnDrag = true }, {
+        description = ns.L["Size multiplier for every plate, hitbox included. Target Scale and Simplified Plate Scale multiply on top of it."],
+    })
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Plate Scale"], plateScaleSlider))
+
     local targetScaleSlider = gui:CreateFormSlider(card.frame, nil, 1, 1.5, 0.05, "targetScale", layout, refresh, { deferOnDrag = true }, {
         description = ns.L["Size multiplier for your current target's plate."],
     })

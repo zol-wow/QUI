@@ -4,6 +4,328 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.1.0-beta6 - 2026-08-13
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+A polish pass on icons: cooldown manager borders draw crisp at every scale,
+duration and stack text is styled again, and the buff and debuff border
+controls are back — now per strip.
+
+### Added
+
+- **Per-strip border controls for buff and debuff icons.** Each aura strip can
+  now show or hide its icon borders and set its own border thickness, on top
+  of the global setting.
+
+### Fixed
+
+- **Cooldown manager borders are crisp again.** Icon rectangles are snapped to
+  physical pixels before borders are drawn, so a border no longer lands
+  between pixels and comes out blurry or a pixel thicker on one side at odd
+  UI scales.
+- **Duration and stack text on cooldown icons follows its settings again.**
+  Icons the cooldown manager rebuilds mid-combat skipped the text pass, so
+  countdown and stack numbers could sit in the wrong corner with the wrong
+  font. They are re-anchored and restyled now. Options dropdowns also open
+  scrolled to the top instead of wherever the last menu left off.
+- **Buff and debuff icon borders obey the border settings again.** The global
+  border toggle and thickness had stopped being applied to aura icons.
+
+## v5.1.0-beta5 - 2026-08-13
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+One fix for players carrying settings over from older versions: custom text
+colors no longer error out the resource bars.
+
+### Fixed
+
+- **Custom resource bar text colors from old profiles work again.** Older
+  profiles saved the custom text color in a different table shape than the
+  current options panel writes. Reading it the new way produced a nil color
+  and threw "bad argument" on every secondary power bar update, spamming
+  errors whenever the bar refreshed. Both shapes are now accepted, with a
+  white fallback if the saved color is missing or malformed.
+
+## v5.1.0-beta4 - 2026-08-13
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Two fixes that keep QUI out of Blizzard's own code: the vehicle bar can hide
+itself again, and cooldown swipes stop flickering.
+
+### Fixed
+
+- **Leaving a vehicle no longer jams the override bar.** Blizzard's slide-out
+  code read a field QUI had tainted, so the final hide was blocked — the bar
+  could stick on screen with an "Interface action failed" error. QUI's action
+  buttons now stay out of the event table Blizzard reads, the micro menu is
+  moved back directly instead of through Blizzard's repositioning call, and a
+  bar that still gets stuck hides itself as soon as it legally can.
+- **Cooldown swipes stop flickering.** Two writers alternated on the swipe
+  draw flag: Blizzard rewrote it on every cooldown event and QUI forced it
+  back moments later. The flag belongs to Blizzard again, and recharging
+  charge spells return to their native edge-only look.
+
+## v5.1.0-beta3 - 2026-08-12
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+A short follow-up to beta2: resource bars that keep working in combat, two
+action bar fixes that keep QUI out of Blizzard's own code, and one new option
+for aura duration text.
+
+### Added
+
+- **Hide Time Unit** for aura duration text, per text region. Shows `4` instead
+  of `4s`; durations over 90 seconds keep their m/h/d unit.
+
+### Fixed
+
+- **Resource bars keep drawing in combat.** On 12.1 the client can hand back a
+  protected power value, and the bar took a separate path whenever it did —
+  dropping its text placement, tick marks and indicator lines for as long as the
+  value stayed protected. It now renders the same way either way: the value goes
+  straight to the bar and to the text, and indicator lines are positioned by the
+  game instead of by arithmetic QUI is no longer allowed to do. Soul fragments
+  show their real count rather than falling back to zero, and both power bars
+  reuse their frame instead of stacking a second one over the first.
+- **Action bar cooldowns stay off Blizzard's own fields.** The loss-of-control
+  swirl was stored on a field Blizzard's code reads, so that code inherited QUI's
+  taint; it lives on a private field now. A button that carries its own
+  assisted-combat rotation frame builds that frame itself instead of receiving a
+  second one.
+- **The original QUI logo is back.**
+
+## v5.1.0-beta2 - 2026-08-12
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+The first build with real work on the 5.1 line: aura displays you place
+yourself, a hidden-players filter for group frames, and a run of fixes for
+settings that looked like they were doing nothing.
+
+### Added
+
+- **Aura displays you place yourself.** Build a display, point it at a unit,
+  filter it per unit, give it load conditions and drag it where you want it.
+  Displays can be renamed, and a reaction can be parked out of the way.
+- **A hidden-players filter for group frames**, to keep specific players off the
+  raid frames.
+- **Plate Scale for nameplates** (Nameplates → Behavior). One slider grows the
+  whole plate — bar, text, icons and borders together — and the clickable area
+  grows with it, so plates stay clickable at their edges. It multiplies on top
+  of Target Scale and the simplified-plate scale rather than replacing either.
+- **Item cosmetic overlays in bags**, on live and cached bag buttons alike.
+
+### Fixed
+
+- **Cast on Key Press now does something.** Owned action buttons dispatched
+  through a path that forced casting on key release, so the setting wrote a
+  value nothing ever read. Abilities fire on the press when it is on.
+- **Skins survive being loaded early.** When another addon force-loaded a
+  Blizzard frame before QUI had a profile, the skin's one-shot fired against a
+  profile that did not exist yet and never came back — profession windows and
+  their siblings stayed unskinned for the rest of the session.
+- **QUI no longer runs other addons' code while sweeping for action buttons.**
+  The sweep classified frames by calling a method on every global, which threw
+  inside a widget library's generated methods and surfaced as that addon's
+  error with QUI's frames underneath it.
+- **Duplicate abilities in the cooldown composer.** A spell the client replaces
+  with an override was tracked under whichever ID happened to be stored, so it
+  could be offered as available while already owned, or appear twice in a built
+  list.
+- **Group frame headers stop churning.** Re-configuring a header rewrote every
+  secure attribute even when nothing had changed, forcing a re-layout each time.
+- **Orphaned movers are released** instead of lingering in Layout Mode.
+- **The nameplate settings preview opens at real size.** It used to open zoomed
+  all the way in; the grip now zooms both ways from life size.
+
+### Changed
+
+- **The Alts window is translated.** It had been hard-coded English throughout,
+  and the `Back` label it shared with a cloak slot and a UI layer is split so
+  each reads correctly in every language.
+- **Terminology is consistent across all ten locales** — frame and spec wording
+  unified, realm and roster wording unified, five mistranslations corrected and
+  the hidden-players strings translated everywhere.
+- **Discord announcements come only from tagged releases.** The workflow that
+  posted a second notification on every feature-branch push is gone.
+- The vendored Blizzard API corpus is refreshed to 12.1.0.69273.
+
+## v5.1.0-beta1 - 2026-08-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Opens the 5.1 beta line. No addon code changes: this ships the 5.0.0 tree and
+moves the version on, so the next round of work has a beta channel to land in.
+
+### Changed
+
+- Documentation only. The README pointed at an archived repository whose
+  documentation site had been switched off, and its migration guide had been
+  collapsed by an old rename into instructions that told you to copy a file over
+  itself. The docs site still advertised support for 12.0, which this build does
+  not load on, and still described a build from June.
+- The addon list now credits **Zol** alongside **Drew** as the author.
+
+## v5.0.0 - 2026-08-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+The 5.0.0 line, released. Nameplates become their own addon, nameplates and
+group frames and unit frames move onto one shared aura engine, the suite drops
+from 22 addon folders to 11, and QUI adapts to 12.1's stricter rules about what
+an addon is allowed to read. Everything below landed across alpha1 to beta4; the
+per-build entries under this one carry the full detail.
+
+### Added
+
+- **Nameplates are their own addon**, with a setup wizard and a settings preview
+  that renders a real plate 1:1 and follows whatever you are editing.
+- **Every plate type gets its own config** — pets and minions, friendly units,
+  bosses and elites, minor and trivial units, enemy players and enemy NPCs —
+  picked from a dropdown with a Copy From control.
+- **Target indicators** (arrow, brackets and glow line), class power pips on the
+  target plate, execute-threshold health colouring and threat colour mapping.
+- **A nameplate Visibility tab** with an enemy-plate master toggle, friendly NPCs
+  exposed, and Minions nesting Guardians, Pets and Totems on both sides.
+  `Show In Instances` is a never / name-only / always choice.
+- **Pandemic glow on aura icons**, driven by the game's own pandemic region
+  rather than a timer QUI approximates, so it stays in step with the real
+  duration.
+- **Dispel borders and stealable buffs come from the game.** An aura element can
+  be set to `Debuffs + Stealable Buffs` or `All Auras`.
+
+### Changed
+
+- **One aura engine drives nameplates, group frames and unit frames**, so an
+  element configured on one behaves the same on the others.
+- **Name-only is a real render mode** — QUI draws the name and hides the bar and
+  aura containers instead of restyling Blizzard's own text.
+- **The suite is 11 addon folders instead of 22.** Locales ship packed, so only
+  the language in use is ever compiled, and login memory drops by roughly 2.3 MB.
+- **Settings search is 2.5–3x faster.** One English index ships instead of ten
+  translated copies, and typing the English term still finds the translated row
+  on non-English clients.
+- **The options panel opens instantly**, building on the first frame after login,
+  and moving between settings tabs reuses the page it already built.
+- **Every non-English locale is actually translated now.** Nine of the ten had
+  been falling back to English for roughly 900 strings each.
+- **Atonement tracking no longer reads the combat log.** 12.1 closed combat log
+  events to addons, so the counter watches auras directly.
+
+### Removed
+
+- **The Brez counter's resurrection list.** Naming who battle-rezzed whom needed
+  combat log events, which 12.1 does not give addons. The charge count, the
+  recharge timer and the per-pull tally are unaffected.
+
+### Upgrading
+
+4.x to 5.0 is an install over the top: the same addon folders and the same saved
+variables (`QUIDB` and `QUI_StorageDB`), so nothing moves by hand. Profiles
+migrate to the current schema on first login and are backed up beforehand —
+`/qui migration status` and `/qui migration restore` expose those backups.
+
+If you hand-installed 5.0.0-alpha29 or earlier, the eleven `QUI_OptionsSearch`
+folders are left behind after updating. Nothing loads them; delete them.
+
+## v5.0.0-beta4 - 2026-08-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Missing raid buff icons were unreliable.** The indicator could keep showing
+  a buff as missing after it had been cast, miss the change entirely when the
+  game reported an aura update it could not fully read, or flag a buff as
+  missing because the ally carrying it had moved out of range. Range, specialization
+  and aura-change handling were all reworked so the icon follows the real state.
+- **Missing raid buff names and icons could stay wrong for the session.** When
+  the indicator was built before the game had finished loading spell data, the
+  English placeholder name and the question-mark icon were cached permanently,
+  so on a non-English client the buff kept the wrong label. Both now refresh
+  until the real values are available.
+
+## v5.0.0-beta3 - 2026-08-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Friendly NPC nameplates could not be turned on.** Auto-Hide shipped with
+  friendly player and NPC nameplates hidden, and that setting quietly outranked
+  the one on the nameplate page, so ticking Friendly NPCs there changed nothing
+  and the game's own Nameplates options showed the option off. Both pages now
+  read and write the same setting, so either one turns it on and it stays on.
+- **Settings rows escaped the options window.** Toggling a nameplate visibility
+  option left cards and checkboxes drawing loose over the game world while the
+  panel below them went blank, until the page was reopened.
+
+### Changed
+
+- **Auto-Hide's two nameplate rows now read "Friendly Nameplates" and "Friendly
+  NPCs".** They are the same two settings as the nameplate page's Visibility
+  tab rather than separate ones that fought it, so ticking a box now means show,
+  not hide, and both pages stay in step.
+
+## v5.0.0-beta2 - 2026-08-10
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Pandemic glow on aura icons.** An icon flashes once its aura enters the
+  refresh window. The glow is driven by the game's own pandemic region rather
+  than a timer QUI approximates, so it stays in step with the real duration.
+- **Dispel borders and stealable buffs come from the game.** Border colour and
+  artwork per dispel type are handed to Blizzard's aura button instead of being
+  redrawn on top of it, and an aura element can now be set to
+  `Debuffs + Stealable Buffs` or `All Auras`.
+
+### Changed
+
+- **Moving between settings tabs is instant.** Each tab body is built once per
+  variant and kept, so switching unit, plate type or context reuses the page it
+  already built instead of rebuilding it.
+- **Nameplate settings open on Enemy NPCs**, which is the plate type most people
+  are there to edit.
+- **QUI no longer adds an entry to the game's Settings > AddOns list.** It held
+  one button that opened the QUI panel, which `/qui` already does.
+- **A suite-wide consistency pass** landed under this release: shared helpers
+  replace hand-rolled duplicates for time formatting, accent-insensitive search
+  and secret-value guards, and a long tail of settings keys nothing ever read
+  are gone. No behaviour changes with it; it is groundwork for 12.1's stricter
+  rules about what an addon may touch.
+
+### Fixed
+
+- **Edit Mode could get stuck asking to reload.** When the game refused to save
+  a cooldown manager layout, QUI asked for a reload, and the same refusal met it
+  on the way back up. The pending save is now recorded and the loop breaks on
+  the next login.
+- **Atonement tracking no longer reads the combat log.** 12.1 closed combat log
+  events to addons, so the counter watches auras directly and caches what it has
+  already resolved per unit.
+
+### Removed
+
+- **The Brez counter's resurrection list.** Naming who battle-rezzed whom needed
+  combat log events, which 12.1 does not give addons. The charge count, the
+  recharge timer and the per-pull tally are unaffected.
+
 ## v5.0.0-beta1 - 2026-08-07
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and

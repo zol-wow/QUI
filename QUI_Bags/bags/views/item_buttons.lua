@@ -3,6 +3,7 @@
 -- luacheck: read globals GetGuildBankItemInfo StackSplitFrame DepositGuildBankMoney
 -- luacheck: read globals AutoStoreGuildBankItem PickupGuildBankItem SetItemButtonTexture
 -- luacheck: read globals SetItemButtonCount SetItemButtonDesaturated
+-- luacheck: read globals SetItemButtonOverlay ClearItemButtonOverlay
 -- luacheck: read globals C_AuctionHouse ItemButtonUtil ItemLocation
 -- luacheck: read globals ContainerFrameItemButtonMixin
 local ADDON_NAME, ns = ...
@@ -38,6 +39,14 @@ local function GetQualityColor(quality)
     return 0.5, 0.5, 0.5
 end
 ItemButtons.GetQualityColor = GetQualityColor
+
+local function ApplyIconOverlay(button, entry)
+    if entry and entry.link then
+        SetItemButtonOverlay(button, entry.link, entry.quality)
+    else
+        ClearItemButtonOverlay(button)
+    end
+end
 
 function ItemButtons.CreateHolder(parent, bagID)
     local holder = CreateFrame("Frame", nil, parent)
@@ -100,6 +109,7 @@ function ItemButtons.CreateLive(holder, bagID)
     button:SetBagID(bagID)
     button.GetItemContextMatchResult = LiveGetItemContextMatchResult
     if button.IconBorder then button.IconBorder:SetAlpha(0) end
+    button.noProfessionQualityOverlay = true
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
     if button.ClearNormalTexture then button:ClearNormalTexture() end
     button.emptyBackgroundAtlas = nil
@@ -137,6 +147,10 @@ function ItemButtons.CreateCached(parent)
     ItemButtons.AddSlotBackground(button)
     button._icon = button:CreateTexture(nil, "ARTWORK")
     button._icon:SetAllPoints()
+    button.IconOverlay = button:CreateTexture(nil, "OVERLAY", nil, 1)
+    button.IconOverlay:SetAllPoints(button._icon)
+    button.IconOverlay:Hide()
+    button.noProfessionQualityOverlay = true
     button._count = button:CreateFontString(nil, "OVERLAY")
     button._count:SetPoint("BOTTOMRIGHT", -2, 2)
     CJKFont(button._count, Helpers.GetGeneralFont(), 11, "OUTLINE")
@@ -174,6 +188,7 @@ function ItemButtons.DressCached(button, entry, searchResult)
         button._count:SetText("")
         local r, g, b = GetQualityColor(entry.quality or 1)
         UIKit.UpdateBorderLines(button, 1, r, g, b, 1)
+        ApplyIconOverlay(button, entry)
         button._icon:SetDesaturated(
             (appearance and appearance.greyJunk and entry.quality == 0) or false)
         ItemButtons.SetUnusableTint(button,
@@ -195,6 +210,7 @@ function ItemButtons.DressCached(button, entry, searchResult)
         button._count:SetText("")
         local sr, sg, sb = Helpers.GetSkinColors()
         UIKit.UpdateBorderLines(button, 1, sr, sg, sb, 0.35)
+        ApplyIconOverlay(button, nil)
         ItemButtons.SetUnusableTint(button, false)
         if Bags.CornerWidgets then Bags.CornerWidgets.Apply(button, nil, appearance) end
     end
@@ -206,6 +222,10 @@ function ItemButtons.CreateGuildLive(parent)
     ItemButtons.AddSlotBackground(button)
     button._icon = button:CreateTexture(nil, "ARTWORK")
     button._icon:SetAllPoints()
+    button.IconOverlay = button:CreateTexture(nil, "OVERLAY", nil, 1)
+    button.IconOverlay:SetAllPoints(button._icon)
+    button.IconOverlay:Hide()
+    button.noProfessionQualityOverlay = true
     button._count = button:CreateFontString(nil, "OVERLAY")
     button._count:SetPoint("BOTTOMRIGHT", -2, 2)
     CJKFont(button._count, Helpers.GetGeneralFont(), 11, "OUTLINE")
@@ -275,6 +295,7 @@ function ItemButtons.DressGuildLive(button, tab, slot, entry, searchResult)
         button._count:SetText("")
         local r, g, b = GetQualityColor(entry.quality or 1)
         UIKit.UpdateBorderLines(button, 1, r, g, b, 1)
+        ApplyIconOverlay(button, entry)
         local _, _, locked = GetGuildBankItemInfo(tab, slot)
         local isJunk = entry.quality == 0
         button._icon:SetDesaturated((locked or false)
@@ -298,6 +319,7 @@ function ItemButtons.DressGuildLive(button, tab, slot, entry, searchResult)
         button._count:SetText("")
         local sr, sg, sb = Helpers.GetSkinColors()
         UIKit.UpdateBorderLines(button, 1, sr, sg, sb, 0.35)
+        ApplyIconOverlay(button, nil)
         button._icon:SetDesaturated(false)
         ItemButtons.SetUnusableTint(button, false)
         if Bags.CornerWidgets then Bags.CornerWidgets.Apply(button, nil, appearance) end
@@ -318,6 +340,7 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
         SetItemButtonTexture(button, entry.icon)
         SetItemButtonCount(button, 0)
         local r, g, b = GetQualityColor(entry.quality or 1)
+        ApplyIconOverlay(button, entry)
         local start, duration, enable = C_Container.GetContainerItemCooldown(button:GetBagID(), button:GetID())
         CooldownFrame_Set(button.Cooldown, start, duration, enable)
         local live = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
@@ -368,6 +391,7 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
     else
         SetItemButtonTexture(button, nil)
         SetItemButtonCount(button, 0)
+        ApplyIconOverlay(button, nil)
         local sr, sg, sb = Helpers.GetSkinColors()
         UIKit.UpdateBorderLines(button, 1, sr, sg, sb, 0.35)
         button.Cooldown:Hide()

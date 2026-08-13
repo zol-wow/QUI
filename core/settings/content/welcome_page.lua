@@ -46,7 +46,7 @@ local function BuildWelcomeContent(content)
 
     local AssetPath = ns.Helpers.AssetPath
     local discordItem = CreateLinkItem(content,
-        ns.L["|cff5865F2Discord|r"], "https://discord.gg/J9Q87C9CM8",
+        ns.L["|cff5865F2Discord|r"], "https://discord.gg/FFUjA4JXnH",
         0.345, 0.396, 0.949,
         AssetPath .. "discord",
         ns.L["Copy Discord Invite"])
@@ -54,7 +54,7 @@ local function BuildWelcomeContent(content)
     discordItem:SetSize(320, 22)
 
     local githubItem = CreateLinkItem(content,
-        ns.L["|cffF0F6FCGitHub|r"], "https://github.com/torresdrew/QUI",
+        ns.L["|cffF0F6FCGitHub|r"], "https://github.com/zol-wow/QUI",
         0.941, 0.965, 0.988,
         AssetPath .. "github",
         ns.L["Copy GitHub URL"])
@@ -116,7 +116,7 @@ local function BuildWelcomeContent(content)
 
     y = CreateQA(content,
         ns.L["How do I report a bug or get help?"],
-        ns.L["If something still looks wrong after reloading or trying a current QUI 3 preset/profile import, enable Lua errors with |cff60A5FA/console scriptErrors 1|r and report the issue on GitHub (https://github.com/torresdrew/QUI) or ask on Discord (https://discord.gg/J9Q87C9CM8). Links with copy buttons are at the top of this page."],
+        ns.L["If something still looks wrong after reloading or trying a current QUI 3 preset/profile import, enable Lua errors with |cff60A5FA/console scriptErrors 1|r and report the issue on GitHub (https://github.com/zol-wow/QUI) or ask on Discord (https://discord.gg/FFUjA4JXnH). Links with copy buttons are at the top of this page."],
         y, contentWidth)
 
     y = y - 10

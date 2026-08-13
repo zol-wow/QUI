@@ -133,8 +133,8 @@ end
 
 local function DecorateVisibleRows()
     local scrollBox = GetLootScrollBox()
-    if scrollBox and scrollBox.ForEachFrame then
-        scrollBox:ForEachFrame(DecorateRow)
+    if scrollBox and ns.SkinBase then
+        ns.SkinBase.ForEachScrollBoxFrame(scrollBox, DecorateRow)
     end
 end
 

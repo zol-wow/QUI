@@ -245,21 +245,21 @@ QUI_HelpContent.Diagnostics = {
 QUI_HelpContent.Links = {
     {
         label = ns.L["|cff5865F2Discord|r"],
-        url = "https://discord.gg/J9Q87C9CM8",
+        url = "https://discord.gg/FFUjA4JXnH",
         iconR = 0.345, iconG = 0.396, iconB = 0.949,
         iconTexture = AssetPath .. "discord",
         popupTitle = ns.L["Copy Discord Invite"],
     },
     {
         label = ns.L["|cffF0F6FCGitHub|r"],
-        url = "https://github.com/torresdrew/QUI",
+        url = "https://github.com/zol-wow/QUI",
         iconR = 0.941, iconG = 0.965, iconB = 0.988,
         iconTexture = AssetPath .. "github",
         popupTitle = ns.L["Copy GitHub URL"],
     },
     {
         label = ns.L["|cffF16436CurseForge|r"],
-        url = "https://www.curseforge.com/wow/addons/qui-ui",
+        url = "https://www.curseforge.com/wow/addons/qui",
         iconR = 0.945, iconG = 0.392, iconB = 0.212,
         popupTitle = ns.L["Copy CurseForge URL"],
     },

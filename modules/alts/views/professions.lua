@@ -61,12 +61,12 @@ local function Builder(parent)
     local hdrName = MakeFS(frame, 11)
     hdrName:SetPoint("TOPLEFT", frame, "TOPLEFT", CELL_PAD, 0)
     hdrName:SetWidth(NAME_W - CELL_PAD * 2)
-    hdrName:SetText("Character")
+    hdrName:SetText(ns.L["Character"])
     hdrName:SetTextColor(1, 0.82, 0)
 
     local hdrProf = MakeFS(frame, 11)
     hdrProf:SetPoint("TOPLEFT", frame, "TOPLEFT", NAME_W + CELL_PAD, 0)
-    hdrProf:SetText("Professions")
+    hdrProf:SetText(ns.L["Professions"])
     hdrProf:SetTextColor(1, 0.82, 0)
 
     local function GetRow(i)
@@ -183,5 +183,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("professions", "Professions", Builder,
+Alts.Window.RegisterTab("professions", ns.L["Professions"], Builder,
     "Primary and secondary profession ranks for every cached character.")

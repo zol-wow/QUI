@@ -3255,6 +3255,137 @@ local function RunCDMDebugBuff()
     end
 end
 
+-- /cdmdebug edges: dump absolute frame/texture edges in PHYSICAL pixels.
+-- GetLeft() etc. are in the region's own coordinate space; dividing by
+-- QUICore:GetPixelSize(region) converts to physical pixels, so a border
+-- renders crisp only when these values are (near-)integers.
+local function RunCDMDebugEdges(rest)
+    local P = "|cff34D399[CDM-Edges]|r"
+    local core = ns.Addon or _G.QUI
+    local Containers = ns.CDMContainers
+    if not (core and core.GetPixelSize and Containers and Containers.GetContainer) then
+        print(P .. " core/containers unavailable")
+        return
+    end
+
+    local physW, physH = GetPhysicalScreenSize()
+    local okScale, uiScale = ns.SafeCallMethod("best-effort-style", UIParent, "GetEffectiveScale")
+    local scaleText = "?"
+    if okScale and not DebugIsSecretValue(uiScale) and type(uiScale) == "number" then
+        scaleText = string.format("%.5f", uiScale)
+    end
+    print(string.format("%s physical=%dx%d uiParentScale=%s", P, physW, physH, scaleText))
+
+    local function safeEdges(region)
+        local ok, l, r, t, b = pcall(function()
+            return region:GetLeft(), region:GetRight(), region:GetTop(), region:GetBottom()
+        end)
+        if not ok then return nil end
+        if DebugIsSecretValue(l) or DebugIsSecretValue(r)
+            or DebugIsSecretValue(t) or DebugIsSecretValue(b) then return nil end
+        if not (l and r and t and b) then return nil end
+        return l, r, t, b
+    end
+
+    local function fmtPx(v)
+        local frac = v - math.floor(v + 0.5)
+        if math.abs(frac) > 0.05 then
+            return string.format("|cffffaa00%.2f|r", v)
+        end
+        return string.format("%.2f", v)
+    end
+
+    local function dumpRegion(indent, label, region)
+        if not region then return end
+        local l, r, t, b = safeEdges(region)
+        if not l then
+            print(string.format("%s%s %s: rect unavailable", P, indent, label))
+            return
+        end
+        local px = core:GetPixelSize(region)
+        print(string.format("%s%s %s: L=%s R=%s T=%s B=%s w=%.2f h=%.2f px=%.4f",
+            P, indent, label, fmtPx(l / px), fmtPx(r / px), fmtPx(t / px), fmtPx(b / px),
+            (r - l) / px, (t - b) / px, px))
+    end
+
+    -- GetRegions on protected live frames can return secret region refs
+    -- (SecretAspect.Hierarchy); guard the call and each region before use.
+    local function collectRegions(frame)
+        return { frame:GetRegions() }
+    end
+
+    local function findChromeBorder(frame)
+        if frame.Border then return frame.Border, "Border" end
+        local fl = safeEdges(frame)
+        if not fl then return nil end
+        if not frame.GetRegions then return nil end
+        local ok, regions = ns.SafeCall("best-effort-style", collectRegions, frame)
+        if not ok or type(regions) ~= "table" then return nil end
+        for i = 1, #regions do
+            local reg = regions[i]
+            if reg and not DebugIsSecretValue(reg)
+                and reg.GetObjectType and reg:GetObjectType() == "Texture" then
+                local l = safeEdges(reg)
+                if l and l < fl - 0.001 then
+                    return reg, "chromeBorder"
+                end
+            end
+        end
+    end
+
+    local function dumpIcon(kind, i, icon)
+        local shown = icon.IsShown and icon:IsShown()
+        if not shown then return false end
+        dumpRegion("  ", string.format("%s#%d", kind, i), icon)
+        dumpRegion("    ", "Icon tex", icon.Icon)
+        local border, borderLabel = findChromeBorder(icon)
+        dumpRegion("    ", borderLabel or "border", border)
+        return true
+    end
+
+    rest = TrimText(rest or "")
+    local keys = (rest ~= "" and rest ~= "all") and { rest }
+        or { "essential", "utility", "buff" }
+    local boot = ns._cdmBoot
+    local runtime = boot and boot.runtime
+
+    for _, key in ipairs(keys) do
+        local container = Containers.GetContainer(key)
+        print(string.format("%s === %s ===", P, key))
+        if not container then
+            print(P .. "  container: nil")
+        else
+            dumpRegion("  ", "container", container)
+            local cx, cy
+            if container.GetCenter then
+                local ok, x, y = pcall(container.GetCenter, container)
+                if ok and not DebugIsSecretValue(x) and not DebugIsSecretValue(y)
+                    and x and y then
+                    cx, cy = x, y
+                end
+            end
+            if cx then
+                local px = core:GetPixelSize(container)
+                print(string.format("%s   center: X=%s Y=%s", P, fmtPx(cx / px), fmtPx(cy / px)))
+            end
+            local shownCount = 0
+            local pool = ns.CDMIconFactory and ns.CDMIconFactory.GetIconPool
+                and ns.CDMIconFactory:GetIconPool(key) or {}
+            for i = 1, #pool do
+                if dumpIcon("owned", i, pool[i]) then shownCount = shownCount + 1 end
+            end
+            local live = runtime and runtime.GetReanchoredFrames
+                and runtime:GetReanchoredFrames(key) or nil
+            if type(live) == "table" then
+                for i = 1, #live do
+                    if dumpIcon("live", i, live[i]) then shownCount = shownCount + 1 end
+                end
+            end
+            print(string.format("%s   shown icons: %d", P, shownCount))
+        end
+    end
+end
+
 local BORROW_VIEWER_GLOBALS = {
     essential = "EssentialCooldownViewer",
     utility   = "UtilityCooldownViewer",
@@ -3468,6 +3599,7 @@ local function PrintCDMDebugHelp()
     print("  /cdmdebug mint                            -> native mint/provider taint verdict")
     print("  /cdmdebug borrow <spell> [container]      -> borrow a spare native item frame; off|report")
     print("  /cdmdebug buff                            -> reanchor BuffIcon pipeline dump")
+    print("  /cdmdebug edges [container]               -> icon/border edges in physical pixels")
     print("  direct flag shorthand: /cdmdebug icon on, /cdmdebug taint Sync, /cdmdebug off")
     ListDebugFlags()
 end
@@ -3499,6 +3631,8 @@ local function RunCDMDebugCommand(msg)
         RunCDMDebugBorrow(rest)
     elseif lower == "buff" then
         RunCDMDebugBuff()
+    elseif lower == "edges" then
+        RunCDMDebugEdges(rest)
     else
         print("|cffffaa00[CDM-Debug]|r unknown command '" .. tostring(cmd) .. "'. Use /cdmdebug help.")
     end

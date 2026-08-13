@@ -25,13 +25,47 @@ function SharedOwnedButtonPostDrag(self)
     OwnedButton_PostDrag(self)
 end
 
+-- Owned buttons must stay OUT of Blizzard's shared dispatch registries: one
+-- addon-created (tainted) entry in ActionBarActionEventsFrame.frames taints
+-- the rest of that pairs() dispatch loop, and every suppressed original
+-- Blizzard button visited afterwards then runs Update -> SetCooldown under
+-- taint and errors on secret cooldown values in combat. OnLoad registration
+-- into ActionBarButtonEventsFrame is purged at creation below, but
+-- ActionBarActionEventsFrame registration happens lazily inside Blizzard's
+-- Update() whenever the button holds an action, so it needs a standing hook.
+local ownedDispatchExcludedButtons = setmetatable({}, { __mode = "k" })
+local actionEventsPurgeHooked = false
+
+local function KeepOwnedButtonOutOfActionEventsFrame(btn)
+    ownedDispatchExcludedButtons[btn] = true
+    local dispatcher = _G.ActionBarActionEventsFrame
+    if not dispatcher then return end
+    if type(dispatcher.frames) == "table" then
+        dispatcher.frames[btn] = nil
+    end
+    if not actionEventsPurgeHooked and type(dispatcher.RegisterFrame) == "function" then
+        actionEventsPurgeHooked = true
+        hooksecurefunc(dispatcher, "RegisterFrame", function(self, frame)
+            if frame and ownedDispatchExcludedButtons[frame] and type(self.frames) == "table" then
+                self.frames[frame] = nil
+            end
+        end)
+    end
+end
+
 function EnsureOwnedActionButton(container, barKey, btnName, index)
     local btn = _G[btnName]
     local existed = btn ~= nil
     if not btn then
         local ok
-        ok, btn = ns.SafeCall("best-effort-style", CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate")
+        ok, btn = ns.SafeCall("best-effort-style", CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate, SecureActionButtonTemplate")
         if not ok then btn = _G[btnName] end
+        local broadcaster = _G.ActionBarButtonEventsFrame
+        if broadcaster and type(broadcaster.frames) == "table" then
+            for k, f in pairs(broadcaster.frames) do
+                if f == btn then broadcaster.frames[k] = nil end
+            end
+        end
         btn:SetAttribute("type", "action")
         btn:SetAttribute("checkselfcast", true)
         btn:SetAttribute("checkfocuscast", true)
@@ -67,6 +101,7 @@ function EnsureOwnedActionButton(container, barKey, btnName, index)
     end
     btn._quiBarKey = barKey
     btn._quiButtonIndex = index
+    KeepOwnedButtonOutOfActionEventsFrame(btn)
     btn:SetAttribute("qui-button-index", index)
 
     btn:SetAttribute("qui-refresh-ref", "btn-refresh-" .. barKey .. "-" .. index)

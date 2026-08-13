@@ -40,12 +40,12 @@ end
 
 function SearchView.OwnerLabel(ownerKey)
     if ownerKey == WARBAND_OWNER then
-        return { label = "Warband" }, "warband"
+        return { label = ns.L["Warband"] }, "warband"
     end
     if ownerKey:sub(1, #GUILD_PREFIX) == GUILD_PREFIX then
         local guildKey = ownerKey:sub(#GUILD_PREFIX + 1)
         local namePart = guildKey:match("^(.-)%-") or guildKey
-        return { label = "Guild: " .. namePart, guild = namePart }, "guild"
+        return { label = ns.L["Guild: "] .. namePart, guild = namePart }, "guild"
     end
     local namePart = ownerKey:match("^(.-)%-") or ownerKey
     return { label = namePart, isChar = true }, "char"
@@ -128,7 +128,7 @@ local function Builder(parent)
     placeholder:SetPoint("LEFT", search, "LEFT", 7, 0)
     CJKFont(placeholder, GeneralFont(), 12, GeneralOutline())
     placeholder:SetTextColor(0.55, 0.55, 0.55, 0.9)
-    placeholder:SetText("Search all characters…")
+    placeholder:SetText(ns.L["Search all characters…"])
     search._placeholder = placeholder
 
     local function RefreshChrome()
@@ -340,5 +340,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("search", "Search", Builder,
+Alts.Window.RegisterTab("search", ns.L["Search"], Builder,
     "Find items across every cached character's bags, bank, mail, equipped gear, and the warband bank.")

@@ -243,10 +243,19 @@ do
 
     assertOrderInFunction(code, path, "local function ReadPlayerPowerPair(",
         "IsSecretValue(current)", "return current, max, false", 900)
-    -- GetPrimaryResourceValue must consume the probed pair helper before the
-    -- <= compare on max.
+    -- GetPrimaryResourceValue does no arithmetic on max at all now: it reads the
+    -- probed pair helper, presence-tests with type() (safe on secrets), and hands
+    -- current/max/percent to C sinks. The old "max <= 0" compare would throw on a
+    -- secret max, which is exactly why it is gone.
     assertOrderInFunction(code, path, "local function GetPrimaryResourceValue(",
-        "ReadPlayerPowerPair(resource)", "max <= 0", 1200)
+        "ReadPlayerPowerPair(resource)", "type(max) ==", 1200)
+    do
+        local headerAt = assert(code:find("local function GetPrimaryResourceValue(", 1, true))
+        local bodyEnd = assert(code:find("\nend\n", headerAt, true))
+        local body = code:sub(headerAt, bodyEnd)
+        assert(not body:find("max <= 0", 1, true) and not body:find("/ max", 1, true),
+            path .. ": GetPrimaryResourceValue must not compare or divide a possibly-secret max")
+    end
     -- GetPowerPct: unconditional probe before the nil compares on pct.
     assertOrderInFunction(code, path, "local function GetPowerPct(",
         "IsSecretValue(pct)", "pct == nil", 1600)

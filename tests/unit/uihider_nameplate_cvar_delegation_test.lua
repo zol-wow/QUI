@@ -1,11 +1,10 @@
 -- tests/unit/uihider_nameplate_cvar_delegation_test.lua
 -- Run: lua tests/unit/uihider_nameplate_cvar_delegation_test.lua
 --
--- CVar ownership handshake (plans/009-nameplates.md Phase 0): uihider's two
--- friendly-nameplate toggles must delegate to ns.QUI_NameplatesCVars when the
--- suite's CVar owner is active, and both paths must stay inside the
--- C_Timer.After(0) taint break. Static source-pattern checks — uihider.lua
--- needs a full frame environment to load.
+-- CVar ownership handshake (plans/009-nameplates.md Phase 0): uihider must yield
+-- to ns.QUI_NameplatesCVars when the suite's CVar owner is active, and its
+-- fallback writes must stay inside the C_Timer.After(0) taint break. Static
+-- source-pattern checks — uihider.lua needs a full frame environment to load.
 
 local function fail(msg)
     print("FAIL: uihider_nameplate_cvar_delegation_test - " .. msg)
@@ -17,10 +16,8 @@ if not f then fail("cannot open modules/ui/uihider.lua") end
 local src = f:read("*a")
 f:close()
 
--- Isolate the friendly-nameplate block: from the section comment to the
--- closing of its `do ... end`.
-local blockStart = src:find("local hidePlayers = settings.hideFriendlyPlayerNameplates", 1, true)
-if not blockStart then fail("friendly nameplate section comment not found") end
+local blockStart = src:find("local friendly = profile and profile.nameplates and profile.nameplates.friendly", 1, true)
+if not blockStart then fail("friendly nameplate block anchor not found") end
 local block = src:sub(blockStart, blockStart + 2200)
 
 -- 1. The delegation must consult the suite's CVar owner.
@@ -30,8 +27,8 @@ end
 if not block:find("IsActive") then
     fail("delegation must gate on the owner's IsActive()")
 end
-if not block:find("RequestFriendlyVisibility") then
-    fail("delegation must call RequestFriendlyVisibility")
+if not block:find("profile%.nameplates%.friendly") then
+    fail("uihider must derive from profile.nameplates.friendly, not its own keys")
 end
 
 -- 2. The delegation and the fallback SetCVar writes must both be inside the

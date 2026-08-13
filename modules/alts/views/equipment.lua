@@ -22,25 +22,25 @@ local COL_W = 78
 local ICON_SIZE = 18
 
 local SLOT_DEFS = {
-    { slot = 1,  label = "Head" },
-    { slot = 2,  label = "Neck" },
-    { slot = 3,  label = "Shoulder" },
-    { slot = 15, label = "Back" },
-    { slot = 5,  label = "Chest" },
-    { slot = 4,  label = "Shirt",  optional = true },
-    { slot = 19, label = "Tabard", optional = true },
-    { slot = 9,  label = "Wrist" },
-    { slot = 10, label = "Hands" },
-    { slot = 6,  label = "Waist" },
-    { slot = 7,  label = "Legs" },
-    { slot = 8,  label = "Feet" },
-    { slot = 11, label = "Finger 1" },
-    { slot = 12, label = "Finger 2" },
-    { slot = 13, label = "Trinket 1" },
-    { slot = 14, label = "Trinket 2" },
-    { slot = 16, label = "Main Hand" },
-    { slot = 17, label = "Off Hand" },
-    { slot = 18, label = "Ranged", optional = true },
+    { slot = 1,  label = ns.L["Head"] },
+    { slot = 2,  label = ns.L["Neck"] },
+    { slot = 3,  label = ns.L["Shoulder"] },
+    { slot = 15, label = ns.L["Cloak"] },
+    { slot = 5,  label = ns.L["Chest"] },
+    { slot = 4,  label = ns.L["Shirt"],  optional = true },
+    { slot = 19, label = ns.L["Tabard"], optional = true },
+    { slot = 9,  label = ns.L["Wrist"] },
+    { slot = 10, label = ns.L["Hands"] },
+    { slot = 6,  label = ns.L["Waist"] },
+    { slot = 7,  label = ns.L["Legs"] },
+    { slot = 8,  label = ns.L["Feet"] },
+    { slot = 11, label = ns.L["Finger 1"] },
+    { slot = 12, label = ns.L["Finger 2"] },
+    { slot = 13, label = ns.L["Trinket 1"] },
+    { slot = 14, label = ns.L["Trinket 2"] },
+    { slot = 16, label = ns.L["Main Hand"] },
+    { slot = 17, label = ns.L["Off Hand"] },
+    { slot = 18, label = ns.L["Ranged"], optional = true },
 }
 
 function EquipmentView.BuildSlotRows(characters)
@@ -321,5 +321,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("equipment", "Equipment", Builder,
+Alts.Window.RegisterTab("equipment", ns.L["Equipment"], Builder,
     "Currently equipped gear for every character, side by side — icons, item levels, and quality colors per slot.")

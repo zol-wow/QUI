@@ -139,11 +139,16 @@ QUI_LayoutMode._savedMovableState = {}
 
 QUI_LayoutMode._movers = QUI_LayoutMode._handles
 
+local ReleaseHandle
+
 function QUI_LayoutMode:RegisterElement(def)
     if not def or not def.key then return end
 
+    local previous = self._elements[def.key]
     self._elements[def.key] = def
     self:_RebuildOrder()
+
+    ReleaseHandle(self, def.key, previous or def)
 
     if self.isActive and not self._combatSuspended then
         if not def.isEnabled or def.isEnabled() then
@@ -153,6 +158,18 @@ function QUI_LayoutMode:RegisterElement(def)
             handle:Show()
         end
     end
+end
+
+function QUI_LayoutMode:UpdateElementLabel(key, newLabel)
+    if not key or type(newLabel) ~= "string" or newLabel == "" then return false end
+    local def = self._elements[key]
+    if not def then return false end
+    def.label = newLabel
+    local handle = self._handles[key]
+    if handle and handle._label then
+        handle._label:SetText(ns.L[def.label or key])
+    end
+    return true
 end
 
 local function RestoreTargetFrame(handle, def, suspending)
@@ -186,6 +203,22 @@ local function RestoreTargetFrame(handle, def, suspending)
     end
 end
 
+function ReleaseHandle(self, key, def)
+    local handle = self._handles[key]
+    if not handle then return end
+    handle:Hide()
+    if handle._isChildOverlay and handle._parentFrame then
+        local saved = self._savedMovableState[key]
+        if saved ~= nil then
+            ns.SafeCallMethod("best-effort-style", handle._parentFrame, "SetMovable", saved)
+            self._savedMovableState[key] = nil
+        end
+    end
+    RestoreTargetFrame(handle, def)
+    handle:SetParent(nil)
+    self._handles[key] = nil
+end
+
 function QUI_LayoutMode:UnregisterElement(key)
     if not key then return end
 
@@ -193,20 +226,7 @@ function QUI_LayoutMode:UnregisterElement(key)
     self._elements[key] = nil
     self:_RebuildOrder()
 
-    local handle = self._handles[key]
-    if handle then
-        handle:Hide()
-        if handle._isChildOverlay and handle._parentFrame then
-            local saved = self._savedMovableState[key]
-            if saved ~= nil then
-                ns.SafeCallMethod("best-effort-style", handle._parentFrame, "SetMovable", saved)
-                self._savedMovableState[key] = nil
-            end
-        end
-        RestoreTargetFrame(handle, def)
-        handle:SetParent(nil)
-        self._handles[key] = nil
-    end
+    ReleaseHandle(self, key, def)
 
     self._pendingPositions[key] = nil
 

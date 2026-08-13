@@ -178,7 +178,7 @@ local function Builder(parent)
     end)
     local filterLabel = MakeFS(filterBtn, 11)
     filterLabel:SetPoint("CENTER")
-    filterLabel:SetText("Filter")
+    filterLabel:SetText(ns.L["Filter"])
     filterLabel:SetTextColor(0.9, 0.9, 0.9)
 
     Alts.FilterPopup.Attach({
@@ -388,5 +388,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("currencies", "Currencies", Builder,
+Alts.Window.RegisterTab("currencies", ns.L["Currencies"], Builder,
     "Currency amounts for the selected character — the list covers every currency seen on any of your characters.")

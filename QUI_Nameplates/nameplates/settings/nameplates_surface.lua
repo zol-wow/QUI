@@ -318,6 +318,19 @@ local function BuildControlStrip(panel)
     end
 end
 
+local function LifeSizeScale(win)
+    local Helpers = ns.Helpers
+    local SafeToNumber = Helpers and Helpers.SafeToNumber
+    if not SafeToNumber or not UIParent or not win
+        or type(win.GetEffectiveScale) ~= "function" then
+        return 1
+    end
+    local uiScale = SafeToNumber(UIParent:GetEffectiveScale(), 0)
+    local winScale = SafeToNumber(win:GetEffectiveScale(), 0)
+    if uiScale <= 0 or winScale <= 0 then return 1 end
+    return uiScale / winScale
+end
+
 local function EnsurePreviewPanel()
     local win = CurrentOptionsWindow()
     if not win then return nil end
@@ -351,7 +364,7 @@ local function EnsurePreviewPanel()
         minWidth = 240,
         controlStripHeight = STRIP_HEIGHT,
         scaleMax = PREVIEW_SCALE_MAX,
-        defaultScale = PREVIEW_SCALE_MAX,
+        defaultScale = LifeSizeScale(win),
         sessionState = State.previewSession,
     })
     if not panel then return nil end

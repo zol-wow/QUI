@@ -118,6 +118,10 @@ local ns = {
 }
 
 ns.SkinBase = {
+    ForEachScrollBoxFrame = function(scrollBox, callback)
+        if scrollBox and scrollBox.HasView and not scrollBox:HasView() then return end
+        return ns.SafeCallMethodIfPresent("best-effort-style", scrollBox, "ForEachFrame", callback)
+    end,
     RefreshFrameBackdropColors = function() end,
     IsSkinned = function() return false end,
     SkinButtonFrameTemplate = function(frame)

@@ -31,6 +31,10 @@ local function BuildAutohideTab(tabContent)
     local function RefreshUIHider()
         if _G.QUI_RefreshUIHider then _G.QUI_RefreshUIHider() end
     end
+    local function RefreshNameplateVisibility()
+        if ns.QUI_RefreshNameplates then ns.QUI_RefreshNameplates() end
+        RefreshUIHider()
+    end
     local function RefreshBuffBorders()
         if _G.QUI_RefreshBuffBorders then _G.QUI_RefreshBuffBorders() end
     end
@@ -81,14 +85,17 @@ local function BuildAutohideTab(tabContent)
 
     L.headerAt(ns.L["Nameplates"])
     local sNP = L.sectionAt()
-    local npFriendlyW = GUI:CreateFormCheckbox(sNP.frame, nil, "hideFriendlyPlayerNameplates", db.uiHider, RefreshUIHider,
-        { description = ns.L["Hide nameplates above friendly player characters to reduce visual clutter."] })
-    local npNPCW = GUI:CreateFormCheckbox(sNP.frame, nil, "hideFriendlyNPCNameplates", db.uiHider, RefreshUIHider,
-        { description = ns.L["Hide nameplates above friendly NPCs such as quest givers and town residents."] })
-    sNP.AddRow(
-        row(sNP.frame, ns.L["Hide Friendly Player Nameplates"], npFriendlyW),
-        row(sNP.frame, ns.L["Hide Friendly NPC Nameplates"], npNPCW)
-    )
+    local npFriendly = db.nameplates and db.nameplates.friendly
+    if npFriendly then
+        local npFriendlyW = GUI:CreateFormCheckbox(sNP.frame, nil, "enabled", npFriendly, RefreshNameplateVisibility,
+            { description = ns.L["Off hides friendly nameplates entirely, whatever the Friendly unit type's render mode is set to."] })
+        local npNPCW = GUI:CreateFormCheckbox(sNP.frame, nil, "showNPCs", npFriendly, RefreshNameplateVisibility,
+            { description = ns.L["Show nameplates on friendly NPCs such as quest givers and vendors."] })
+        sNP.AddRow(
+            row(sNP.frame, ns.L["Friendly Nameplates"], npFriendlyW),
+            row(sNP.frame, ns.L["Friendly NPCs"], npNPCW)
+        )
+    end
     L.closeSection(sNP)
 
     L.headerAt(ns.L["Status Bars"])

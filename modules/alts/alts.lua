@@ -31,7 +31,7 @@ SLASH_QUIALTS1 = "/quialts"
 SLASH_QUIALTS2 = "/alts"
 SlashCmdList["QUIALTS"] = function()
     if not IsEnabled() then
-        print("|cff00ff00QUI:|r the Alts module is disabled (Options → Modules).")
+        print("|cff00ff00QUI:|r " .. ns.L["the Alts module is disabled (Options → Modules)."])
         return
     end
     if _G.QUI_OpenAltsRoster then _G.QUI_OpenAltsRoster() end

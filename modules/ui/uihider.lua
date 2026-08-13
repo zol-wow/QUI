@@ -352,16 +352,17 @@ local function ApplyHideSettings()
     end
 
     do
-        local hidePlayers = settings.hideFriendlyPlayerNameplates
-        local hideNPCs = settings.hideFriendlyNPCNameplates
+        local profile = Helpers.GetProfile()
+        local friendly = profile and profile.nameplates and profile.nameplates.friendly
+        local showPlayers = not friendly or friendly.enabled ~= false
+        local showNPCs = showPlayers and (not friendly or friendly.showNPCs ~= false)
         C_Timer.After(0, function()
             local npCVars = ns.QUI_NameplatesCVars
             if npCVars and npCVars.IsActive and npCVars:IsActive() then
-                npCVars:RequestFriendlyVisibility(not hidePlayers, not hideNPCs)
                 return
             end
-            SetCVar("nameplateShowFriendlyPlayers", hidePlayers and "0" or "1")
-            SetCVar("nameplateShowFriendlyNPCs", hideNPCs and "0" or "1")
+            SetCVar("nameplateShowFriendlyPlayers", showPlayers and "1" or "0")
+            SetCVar("nameplateShowFriendlyNpcs", showNPCs and "1" or "0")
         end)
     end
 

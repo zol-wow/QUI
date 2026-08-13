@@ -113,7 +113,8 @@ local function ResolvePlateSize(settings)
         maxW = 210 * scaleX
         maxH = (24 * scaleY) + 17 + 15
     end
-    return maxW, maxH
+    local plateScale = NP.PlateScale(settings)
+    return maxW * plateScale, maxH * plateScale
 end
 
 function NPCVars.ApplyPlateSize()
@@ -151,8 +152,6 @@ function NPCVars.ApplyStacking()
     end)
 end
 
-local uihiderRequest = nil
-
 function NPCVars:IsActive()
     local s = NP.GetSettings()
     return NP.IsEnabled() and not (s.friendly and s.friendly.enabled == false)
@@ -167,23 +166,12 @@ local function ApplyFriendlyVisibility()
     local visible = mode ~= "off" and (inInstance or friendly.showInWorld ~= false)
     local showPlayers = visible
     local showNPCs = visible and friendly.showNPCs ~= false
-    if uihiderRequest then
-        if uihiderRequest.players == false then showPlayers = false end
-        if uihiderRequest.npcs == false then showNPCs = false end
-    end
     NPCVars.Set("nameplateShowFriends", showPlayers and 1 or 0)
     NPCVars.Set("nameplateShowFriendlyPlayers", showPlayers and 1 or 0)
     NPCVars.Set("nameplateShowFriendlyNpcs", showNPCs and 1 or 0)
     NPCVars.Set("nameplateShowFriendlyNPCs", showNPCs and 1 or 0)
 end
 NPCVars.ApplyFriendlyVisibility = ApplyFriendlyVisibility
-
-function NPCVars:RequestFriendlyVisibility(showPlayers, showNPCs)
-    uihiderRequest = uihiderRequest or {}
-    uihiderRequest.players = showPlayers and true or false
-    uihiderRequest.npcs = showNPCs and true or false
-    ApplyFriendlyVisibility()
-end
 
 local UNIT_VISIBILITY_CVARS = {
     { key = "showEnemies",           cvar = "nameplateShowEnemies",                default = true },

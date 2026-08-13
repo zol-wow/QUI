@@ -317,6 +317,8 @@ local function RenderSection(runtime, sectionId)
     if not sectionHost then
         sectionHost = CreateFrame("Frame", nil, runtime.host)
         runtime.sectionHosts[sectionId] = sectionHost
+    else
+        sectionHost:SetParent(runtime.host)
     end
     sectionHost:Show()
 
