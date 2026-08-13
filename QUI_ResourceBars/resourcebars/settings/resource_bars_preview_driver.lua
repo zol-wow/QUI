@@ -230,6 +230,50 @@ local function ApplyPreviewTicks(section, cfg, resource)
     end
 end
 
+local function ApplyPreviewIndicators(section, cfg, resource)
+    section.indicators = section.indicators or {}
+    for _, line in ipairs(section.indicators) do line:Hide() end
+
+    local Internal = GetInternal()
+    local GetValues = Internal and Internal.GetIndicatorValuesForCurrentSpec
+    if not GetValues or not cfg then return end
+
+    local max = GetPreviewPowerMax(resource)
+    if max <= 0 then return end
+
+    local values = GetValues(cfg.indicators, max)
+    if #values == 0 then return end
+
+    local bar = section.bar
+    local width, height = bar:GetWidth(), bar:GetHeight()
+    if width <= 0 or height <= 0 then return end
+
+    local indicatorCfg = cfg.indicators
+    local thickness = math_max(1, indicatorCfg.thickness or 1)
+    local c = indicatorCfg.color or { 1, 1, 1, 1 }
+    local isVertical = cfg.orientation == "VERTICAL"
+
+    for i, value in ipairs(values) do
+        local line = section.indicators[i]
+        if not line then
+            line = bar:CreateTexture(nil, "OVERLAY")
+            section.indicators[i] = line
+        end
+        line:SetColorTexture(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        line:ClearAllPoints()
+        if isVertical then
+            local y = (value / max) * height
+            line:SetPoint("BOTTOM", bar, "BOTTOM", 0, y - (thickness / 2))
+            line:SetSize(width, thickness)
+        else
+            local x = (value / max) * width
+            line:SetPoint("LEFT", bar, "LEFT", x - (thickness / 2), 0)
+            line:SetSize(thickness, height)
+        end
+        line:Show()
+    end
+end
+
 local function GetPreviewBgColor(cfg)
     local bg = cfg and cfg.bgColor
     if bg then
@@ -603,6 +647,7 @@ function Module.Refresh()
         section.bar:SetStatusBarColor(r, g, b)
 
         ApplyPreviewTicks(section, cfg, resource)
+        ApplyPreviewIndicators(section, cfg, resource)
 
         local fontSize = textCfg and math_max(7, math_min(textCfg.textSize or 9, 13)) or 9
         if valueFont then
