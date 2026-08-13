@@ -3304,14 +3304,23 @@ local function RunCDMDebugEdges(rest)
             (r - l) / px, (t - b) / px, px))
     end
 
+    -- GetRegions on protected live frames can return secret region refs
+    -- (SecretAspect.Hierarchy); guard the call and each region before use.
+    local function collectRegions(frame)
+        return { frame:GetRegions() }
+    end
+
     local function findChromeBorder(frame)
         if frame.Border then return frame.Border, "Border" end
         local fl = safeEdges(frame)
         if not fl then return nil end
-        local regions = { frame:GetRegions() }
+        if not frame.GetRegions then return nil end
+        local ok, regions = ns.SafeCall("best-effort-style", collectRegions, frame)
+        if not ok or type(regions) ~= "table" then return nil end
         for i = 1, #regions do
             local reg = regions[i]
-            if reg and reg.GetObjectType and reg:GetObjectType() == "Texture" then
+            if reg and not DebugIsSecretValue(reg)
+                and reg.GetObjectType and reg:GetObjectType() == "Texture" then
                 local l = safeEdges(reg)
                 if l and l < fl - 0.001 then
                     return reg, "chromeBorder"
