@@ -25,18 +25,21 @@ local function PlacementRect(placement)
     return size, size / aspect
 end
 
--- Snap a CENTER-anchored rect to whole physical pixels. Rounding only the
--- center leaves the edges on half-pixels when the size rounds to an odd
--- pixel count, which renders the 1px border 2px wide on one side.
+-- Snap a CENTER-anchored rect to whole physical pixels via the injected
+-- pixelSnapCenter (QUICore:PixelSnapCenter): rounding only the center
+-- leaves the edges on half-pixels when the size rounds to an odd pixel
+-- count, which renders the 1px border 2px wide on one side. Without a
+-- snapper (or without a size), fall back to rounding the center.
 local function SnapPlacementRect(deps, container, x, y, w, h)
-    if not deps.pixelRound then return x, y, w, h end
-    if not (w and h) then
+    local snap = deps.pixelSnapCenter
+    if snap and w and h then
+        x, w = snap(x, w, container)
+        y, h = snap(y, h, container)
+        return x, y, w, h
+    end
+    if deps.pixelRound then
         return deps.pixelRound(x, container), deps.pixelRound(y, container), w, h
     end
-    w = deps.pixelRound(w, container)
-    h = deps.pixelRound(h, container)
-    x = deps.pixelRound(x - w / 2, container) + w / 2
-    y = deps.pixelRound(y + h / 2, container) - h / 2
     return x, y, w, h
 end
 

@@ -246,6 +246,7 @@ function CDMReanchorBoot.BuildRuntime(env)
         canMutate = env.canMutate,
         isEditMode = env.isEditMode,
         pixelRound = env.pixelRound,
+        pixelSnapCenter = env.pixelSnapCenter,
         mintOwned = MakeMintOwned(env),
         releaseOwned = env.releaseIcon,
         positionOwned = MakePositionOwned(env),

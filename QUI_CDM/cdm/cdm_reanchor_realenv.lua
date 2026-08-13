@@ -816,6 +816,12 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
             if Core and Core.PixelRound then return Core:PixelRound(v, c) end
             return v
         end,
+        pixelSnapCenter = function(center, extent, c)
+            if Core and Core.PixelSnapCenter then
+                return Core:PixelSnapCenter(center, extent, c)
+            end
+            return center, extent
+        end,
         acquireIcon = function(c, e, containerKey)
             if not (Factory and Factory.AcquireIcon) then return nil end
             local clickable = false

@@ -40,6 +40,10 @@ local plan = {
 local runtime = R.New({
     bridge = bridge,
     pixelRound = function(v) return math.floor(v + 0.5) end,   -- 1px grid
+    pixelSnapCenter = function(c, e)                            -- 1px grid
+        e = math.floor(e + 0.5)
+        return math.floor((c - e / 2) + 0.5) + e / 2, e
+    end,
     positionShell = function(shell, c, x, y, w, h, rowConfig)
         shells[#shells+1] = { shell = shell, c = c, x = x, y = y, w = w, h = h, rowConfig = rowConfig }
     end,

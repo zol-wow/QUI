@@ -4,9 +4,9 @@
 -- Covers QUICore:PixelSnapCenter / PixelSnapRect (core/scaling.lua): CENTER
 -- offsets must be shifted so both rect edges land on whole physical pixels
 -- (rounding the center alone leaves edges on half-pixels for odd pixel
--- extents). Also pins equivalence with the dependency-injected copy in
--- cdm_reanchor_runtime.lua (SnapPlacementRect), so the two implementations
--- cannot silently drift.
+-- extents). This is the single canonical implementation — buff layout's
+-- snapCenter and the reanchor runtime's SnapPlacementRect both delegate to
+-- it (the latter via the injected deps.pixelSnapCenter).
 
 local function fail(msg)
     print("FAIL: pixel_snap_center_test - " .. msg)
@@ -104,22 +104,21 @@ if not (x == ex and y == ey and w == ew and h == eh) then
     fail("PixelSnapRect must match per-axis PixelSnapCenter")
 end
 
--- equivalence with cdm_reanchor_runtime.lua SnapPlacementRect (the
--- dependency-injected copy): same snapped rect for both axis formulas.
-for _, frame in ipairs({ px1, pxHalf }) do
-    local px = core:GetPixelSize(frame)
-    local function pixelRound(v) return Round(v / px) * px end
-    for _, center in ipairs(centers) do
-        for _, extent in ipairs(extents) do
-            local se = pixelRound(extent)
-            local runtimeX = pixelRound(center - se / 2) + se / 2
-            local runtimeY = pixelRound(center + se / 2) - se / 2
-            local sc, sce = core:PixelSnapCenter(center, extent, frame)
-            if not (near(runtimeX, sc) and near(runtimeY, sc) and near(se, sce)) then
-                fail(("runtime SnapPlacementRect drift: center=%s extent=%s px=%s -> core %s vs runtime %s/%s")
-                    :format(center, extent, px, sc, runtimeX, runtimeY))
-            end
-        end
+-- the reanchor realenv must expose this helper as deps.pixelSnapCenter so
+-- SnapPlacementRect (cdm_reanchor_runtime.lua) delegates instead of
+-- reimplementing the formula.
+do
+    local fh = assert(io.open("QUI_CDM/cdm/cdm_reanchor_realenv.lua", "rb"))
+    local src = fh:read("*a")
+    fh:close()
+    if not src:find("Core:PixelSnapCenter(", 1, true) then
+        fail("cdm_reanchor_realenv.lua must wire pixelSnapCenter to Core:PixelSnapCenter")
+    end
+    fh = assert(io.open("QUI_CDM/cdm/cdm_reanchor_runtime.lua", "rb"))
+    src = fh:read("*a")
+    fh:close()
+    if not src:find("deps.pixelSnapCenter", 1, true) then
+        fail("cdm_reanchor_runtime.lua must snap placements via deps.pixelSnapCenter")
     end
 end
 
