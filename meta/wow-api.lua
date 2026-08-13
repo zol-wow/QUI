@@ -5479,6 +5479,10 @@ function C_Discord.GetDiscordChannelName(serverIndex, channelIndex, ...) end
 ---@param ... any
 ---@return any userID
 function C_Discord.GetDiscordUserID(...) end
+---@param userID? any
+---@param ... any
+---@return any userName
+function C_Discord.GetDiscordUserName(userID, ...) end
 ---@param ... any
 ---@return any type
 function C_Discord.GetDisplayNameType(...) end
