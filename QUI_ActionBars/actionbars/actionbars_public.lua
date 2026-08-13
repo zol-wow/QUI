@@ -18,6 +18,8 @@ function ActionBarsOwned:Initialize()
     PatchLibKeyBoundForMidnight()
 
     ownedEventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
+    ownedEventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
+    ownedEventFrame:RegisterEvent("GAME_PAD_ACTIVE_CHANGED")
     ownedEventFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
     ownedEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
     ownedEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")

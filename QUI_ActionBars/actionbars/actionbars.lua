@@ -353,6 +353,28 @@ function PurgeShownExternalTaint(frame)
     until issecurevariable(frame, "isShownExternal")
 end
 
+function FinishBlockedOverrideBarExit()
+    local bar = _G.OverrideActionBar
+    if not bar or not bar.hideOnFinish then return end
+    if InCombatLockdown() then return end
+    if not bar:IsShown() then return end
+    if bar.slideOut and bar.slideOut:IsPlaying() then return end
+    bar:Hide()
+    if _G.ValidateActionBarTransition then _G.ValidateActionBarTransition() end
+end
+
+if type(_G.BeginActionBarTransition) == "function" then
+    hooksecurefunc("BeginActionBarTransition", function(bar)
+        if bar ~= _G.OverrideActionBar then return end
+        if not bar.hideOnFinish then return end
+        if InCombatLockdown() then return end
+        if issecurevariable(bar, "hideOnFinish") then return end
+        if bar.slideOut then bar.slideOut:Stop() end
+        bar:Hide()
+        if _G.ValidateActionBarTransition then _G.ValidateActionBarTransition() end
+    end)
+end
+
 function HideManagedBlizzardBarFrame(frame, clearEvents)
     if not frame then return end
 

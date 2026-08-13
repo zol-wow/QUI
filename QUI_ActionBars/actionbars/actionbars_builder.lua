@@ -32,6 +32,12 @@ function EnsureOwnedActionButton(container, barKey, btnName, index)
         local ok
         ok, btn = ns.SafeCall("best-effort-style", CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate, SecureActionButtonTemplate")
         if not ok then btn = _G[btnName] end
+        local broadcaster = _G.ActionBarButtonEventsFrame
+        if broadcaster and type(broadcaster.frames) == "table" then
+            for k, f in pairs(broadcaster.frames) do
+                if f == btn then broadcaster.frames[k] = nil end
+            end
+        end
         btn:SetAttribute("type", "action")
         btn:SetAttribute("checkselfcast", true)
         btn:SetAttribute("checkfocuscast", true)
