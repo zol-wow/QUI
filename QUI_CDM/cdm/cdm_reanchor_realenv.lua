@@ -12,6 +12,22 @@ end
 
 local _countFontCache = {}
 
+-- Exact per-path interning for the font-object cache key: stripping the path
+-- to a "safe" charset could collide two fonts differing only in punctuation.
+local _fontPathIndex = {}
+local _fontPathCount = 0
+
+local function _FontPathKey(font)
+    local path = tostring(font or "")
+    local idx = _fontPathIndex[path]
+    if not idx then
+        _fontPathCount = _fontPathCount + 1
+        idx = _fontPathCount
+        _fontPathIndex[path] = idx
+    end
+    return idx
+end
+
 local function _EnsureCountFont(font, sz, outline, color)
     if not CreateFont then return nil end
     sz = (type(sz) == "number" and sz > 0) and sz or 14
@@ -23,8 +39,7 @@ local function _EnsureCountFont(font, sz, outline, color)
             .. "," .. math.floor((color[3] or 1) * 255 + 0.5)
             .. "," .. math.floor((color[4] or 1) * 255 + 0.5)
     end
-    local fk = tostring(font or ""):gsub("[^%w]", "")
-    local key = fk .. "_" .. sz .. (outline ~= "" and "_" .. outline or "") .. ck
+    local key = "F" .. _FontPathKey(font) .. "_" .. sz .. (outline ~= "" and "_" .. outline or "") .. ck
     local name = _countFontCache[key]
     if not name then
         name = "QUI_CDM_CountFont_" .. key
