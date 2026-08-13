@@ -48,37 +48,49 @@ local function _EnsureCountFont(font, sz, outline, color)
     return name
 end
 
-local function _EachCooldownFontString(cd, fn)
-    if not cd then return end
+-- Resolved countdown fontstring per Cooldown widget. applyChrome runs per
+-- claimed icon per collect pass, so the resolve (and its GetRegions table)
+-- must not re-run on the hot path; misses are retried until the fontstring
+-- exists (it is created lazily on the first SetCooldown).
+local _cdCountdownFS = setmetatable({}, { __mode = "k" })
+
+local function _CollectRegions(cd)
+    return { cd:GetRegions() }
+end
+
+local function _ResolveCountdownFontString(cd)
+    local fs = _cdCountdownFS[cd]
+    if fs then return fs end
     if cd.GetCountdownFontString then
-        local ok, fs = ns.SafeCallMethod("best-effort-style", cd, "GetCountdownFontString")
-        if ok and fs and not _issecretvalue(fs) then fn(fs) end
+        local ok, got = ns.SafeCallMethod("best-effort-style", cd, "GetCountdownFontString")
+        if ok and got and not _issecretvalue(got) then fs = got end
     end
-    if cd.GetRegions then
-        local ok, regions = ns.SafeCall("best-effort-style", function() return { cd:GetRegions() } end)
+    if not fs and cd.GetRegions then
+        local ok, regions = ns.SafeCall("best-effort-style", _CollectRegions, cd)
         if ok and type(regions) == "table" then
             for i = 1, #regions do
                 local region = regions[i]
                 if region and not _issecretvalue(region)
                     and region.GetObjectType and region:GetObjectType() == "FontString" then
-                    fn(region)
+                    fs = region
+                    break
                 end
             end
         end
     end
+    if fs then _cdCountdownFS[cd] = fs end
+    return fs
 end
 
 local function _AnchorCountdownText(cd, frame, rowConfig)
     if not (cd and frame) then return end
-    local anchor = rowConfig.durationAnchor or "CENTER"
-    local ox = rowConfig.durationOffsetX or 0
-    local oy = rowConfig.durationOffsetY or 0
-    _EachCooldownFontString(cd, function(fs)
-        if fs.ClearAllPoints and fs.SetPoint then
-            fs:ClearAllPoints()
-            fs:SetPoint(anchor, frame, anchor, ox, oy)
-        end
-    end)
+    local fs = _ResolveCountdownFontString(cd)
+    if fs and fs.ClearAllPoints and fs.SetPoint then
+        fs:ClearAllPoints()
+        fs:SetPoint(rowConfig.durationAnchor or "CENTER", frame,
+            rowConfig.durationAnchor or "CENTER",
+            rowConfig.durationOffsetX or 0, rowConfig.durationOffsetY or 0)
+    end
 end
 
 local function _ResolveStackText(frame)
