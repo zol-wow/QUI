@@ -4,6 +4,73 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.1.0 - 2026-08-13
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+The 5.1.0 line, released. Aura displays you place and filter yourself, a
+hidden-players filter for group frames, a nameplate Plate Scale slider — and
+underneath, a sustained pass at keeping QUI out of Blizzard's code on 12.1, so
+resource bars, action bars and the cooldown manager keep working in combat.
+Everything below landed across beta1 to beta6 plus two fixes since; the
+per-build entries under this one carry the full detail.
+
+### Added
+
+- **Aura displays you place yourself.** Build a display, point it at a unit,
+  filter it per unit, give it load conditions and drag it where you want it.
+  Displays can be renamed, and a reaction can be parked out of the way.
+- **A hidden-players filter for group frames**, to keep specific players off
+  the raid frames.
+- **Plate Scale for nameplates** (Nameplates → Behavior). One slider grows the
+  whole plate — bar, text, icons and borders together — and the clickable area
+  grows with it. It multiplies on top of Target Scale and the
+  simplified-plate scale.
+- **Per-strip border controls for buff and debuff icons**, on top of the
+  global setting.
+- **Hide Time Unit** for aura duration text, per text region — `4` instead of
+  `4s`.
+- **Item cosmetic overlays in bags**, on live and cached bag buttons alike.
+
+### Fixed
+
+- **Blizzard's own action buttons keep their cooldowns.** An owned QUI button
+  that slipped into Blizzard's action-event dispatch tainted the entries after
+  it, so Blizzard's buttons silently stopped drawing cooldown swipes. Owned
+  buttons are purged from that dispatch table now.
+- **Resource bars keep drawing in combat.** On 12.1 the client can hand back a
+  protected power value; the bars now render it the same way as a readable
+  one, so text, ticks and indicator lines no longer vanish mid-fight and soul
+  fragments show their real count.
+- **Leaving a vehicle no longer jams the override bar**, and cooldown swipes
+  stop flickering — both were QUI and Blizzard fighting over the same fields.
+- **Cast on Key Press now does something** on owned action buttons.
+- **Cooldown manager borders are crisp at every scale**, duration and stack
+  text follows its settings again, and duplicate abilities no longer appear in
+  the cooldown composer.
+- **Custom resource bar text colors from old profiles work again** instead of
+  erroring on every update.
+- **Skins survive being force-loaded early**, orphaned movers are released,
+  group frame headers stop churning, and the sweep for action buttons no
+  longer runs other addons' code.
+- **The Discord and GitHub links in the options panel work again.**
+- **The original QUI logo is back**, and the nameplate settings preview opens
+  at life size.
+
+### Changed
+
+- **The Alts window is translated**, and terminology is consistent across all
+  ten locales — frame, spec, realm and roster wording unified and five
+  mistranslations corrected.
+- **Discord announcements come only from tagged releases.**
+- The vendored Blizzard API corpus is refreshed to 12.1.0.69283.
+
+### Upgrading
+
+5.0.0 to 5.1.0 is an install over the top: the same addon folders and the same
+saved variables, so nothing moves by hand.
+
 ## v5.1.0-beta6 - 2026-08-13
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
