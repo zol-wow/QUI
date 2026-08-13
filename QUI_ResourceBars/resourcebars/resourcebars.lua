@@ -1910,6 +1910,13 @@ local function GetSecondaryTextConfig(cfg)
     return EnsureTextSpecOverrides(cfg, specID)
 end
 
+-- Tolerates legacy {r=,g=,b=,a=}-keyed color tables from old profiles
+local function GetCustomTextColor(textCfg)
+    local c = textCfg and textCfg.textCustomColor
+    if type(c) ~= "table" then return 1, 1, 1, 1 end
+    return c[1] or c.r or 1, c[2] or c.g or 1, c[3] or c.b or 1, c[4] or c.a or 1
+end
+
 ns.QUI_ResourceBars_Internal = {
     PseudoPowerTypes        = QUI_POWER,
     GetBarTexture           = GetBarTexture,
@@ -2396,8 +2403,7 @@ function QUICore:UpdatePowerBar()
             bar.TextValue:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
         end
     else
-        local c = cfg.textCustomColor or { 1, 1, 1, 1 }
-        bar.TextValue:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+        bar.TextValue:SetTextColor(GetCustomTextColor(cfg))
     end
 
     ApplyPowerBarTextPlacement(bar, cfg)
@@ -3847,8 +3853,7 @@ function QUICore:UpdateSecondaryPowerBar()
                 bar.TextValue:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
             end
         else
-            local c = textCfg.textCustomColor or { 1, 1, 1, 1 }
-            bar.TextValue:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+            bar.TextValue:SetTextColor(GetCustomTextColor(textCfg))
         end
 
         if bar.SoulShardDecimal then
@@ -3863,8 +3868,7 @@ function QUICore:UpdateSecondaryPowerBar()
                     bar.SoulShardDecimal:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
                 end
             else
-                local c = textCfg.textCustomColor or { 1, 1, 1, 1 }
-                bar.SoulShardDecimal:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+                bar.SoulShardDecimal:SetTextColor(GetCustomTextColor(textCfg))
             end
         end
 
