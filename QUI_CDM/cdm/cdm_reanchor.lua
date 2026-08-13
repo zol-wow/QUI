@@ -73,10 +73,6 @@ function CDMReanchor:Sink(frame)
     fd.sunk = true
     local raw, sc = self._raw, self._securecall
     sc(raw.SetAlpha, frame, 0)
-    local cd = (frame.GetCooldownFrame and frame:GetCooldownFrame()) or frame.Cooldown
-    if cd and cd.SetDrawSwipe then
-        sc(cd.SetDrawSwipe, cd, false)
-    end
 end
 
 function CDMReanchor:InstallAnchorGuard(frame)

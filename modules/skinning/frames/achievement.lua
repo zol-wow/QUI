@@ -52,7 +52,7 @@ end
 local function HookAchievementListColors()
     local listFrame = _G.AchievementFrameAchievements
     local scrollBox = listFrame and listFrame.ScrollBox
-    ns.SafeCallMethodIfPresent("best-effort-style", scrollBox, "ForEachFrame", RecolorAchievementRow)
+    SkinBase.ForEachScrollBoxFrame(scrollBox, RecolorAchievementRow)
 
     if achievementListColorHooked then return end
     local mixin = _G.AchievementTemplateMixin

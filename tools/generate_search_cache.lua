@@ -1155,6 +1155,18 @@ do
     end
 end
 
+do
+    local aura_displays_path = "modules/trackers/aura_displays.lua"
+    local probe = io.open(aura_displays_path, "r")
+    if probe then
+        probe:close()
+        local ok, err = load_script(aura_displays_path)
+        if not ok then
+            failures[#failures + 1] = { path = aura_displays_path, error = err }
+        end
+    end
+end
+
 -- The unified-auras editor captures `local Model = ns.QUI_GroupFramesAuraModel`
 -- at file scope, and the auras element-list capture below needs the model's
 -- element constructors. That model lives in the QUI_GroupFrames runtime TOC, not
@@ -2434,6 +2446,118 @@ local function capture_nameplates_auras_elements()
     return #capture_errors == 0
 end
 
+local AURA_DISPLAYS_SEARCH_CONTEXT = {
+    tabIndex = 21, tabName = "Auras", subTabIndex = 6, subTabName = "Aura Displays",
+    tileId = "auras", subPageIndex = 6, featureId = "aurasDisplaysPage",
+    category = "frames",
+}
+
+local function capture_aura_displays_elements()
+    local AurasEditor = ns.QUI_AuraElementsEditor
+    local E = ns.AuraElements
+    local AD = ns.QUI_AuraDisplays
+    local Page = ns.QUI_AuraDisplaysOptions
+    local LayoutShared = ns.QUI_SettingsLayoutShared
+    if type(AurasEditor) ~= "table"
+        or type(AurasEditor.RenderAuras) ~= "function"
+        or type(E) ~= "table"
+        or type(E.NewFilterStripElement) ~= "function"
+        or type(E.NewTrackedElement) ~= "function"
+        or type(AD) ~= "table"
+        or type(AD.DefaultBucket) ~= "function" then
+        return true
+    end
+
+    local function capabilities(polarity)
+        return {
+            elementTypes        = { filterStrip = true, tracked = true },
+            trackedDisplayTypes = { icon = true, square = true, bar = true },
+            allowSpecOverride   = true,
+            roleGate            = false,
+            cancelEligible      = false,
+            unitPolarity        = polarity,
+            defaultBucketFn     = AD.DefaultBucket,
+        }
+    end
+
+    local function render(providerKey, fn)
+        local host = create_stub_node("Frame", nil, false)
+        host:SetSize(760, 1)
+
+        GUI:ClearSearchContext()
+        local ok, err = xpcall(function()
+            GUI:SetSearchContext(AURA_DISPLAYS_SEARCH_CONTEXT)
+            fn(host)
+            GUI:ClearSearchContext()
+        end, debug.traceback)
+        GUI:ClearSearchContext()
+
+        if not ok then
+            capture_errors[#capture_errors + 1] = {
+                featureId = "aurasDisplaysPage",
+                providerKey = providerKey,
+                error = err,
+            }
+        end
+    end
+
+    if type(Page) == "table" and type(Page._BuildDetail) == "function"
+        and type(LayoutShared) == "table" and type(LayoutShared.MakeLayout) == "function" then
+        for _, unit in ipairs({ "player", "target" }) do
+            render("detail:" .. unit, function(host)
+                local L = LayoutShared.MakeLayout(host)
+                Page._BuildDetail(L, host, nil, {
+                    id = "d1",
+                    name = "Display",
+                    enabled = true,
+                    unitMode = "token",
+                    unit = unit,
+                    load = { classes = {}, specs = {}, roles = {}, encounters = {} },
+                    auras = {},
+                })
+                if type(L.finish) == "function" then L.finish() end
+            end)
+        end
+    end
+
+    local function buildVariants()
+        local function strip(filterMode, auraType)
+            local element = E.NewFilterStripElement(auraType or "HARMFUL")
+            element.filterMode = filterMode
+            return element
+        end
+        local function tracked(displayType)
+            return E.NewTrackedElement({ 12345, 67890 }, displayType)
+        end
+        return {
+            { label = "filterStrip:off", element = strip("off") },
+            { label = "filterStrip:flags", element = strip("flags") },
+            { label = "filterStrip:classify", element = strip("classify") },
+            { label = "filterStrip:classify:HELPFUL", element = strip("classify", "HELPFUL") },
+            { label = "filterStrip:flags:HELPFUL", element = strip("flags", "HELPFUL") },
+            { label = "filterStrip:whitelist", element = strip("whitelist") },
+            { label = "tracked:icon", element = tracked("icon") },
+            { label = "tracked:bar", element = tracked("bar") },
+            { label = "tracked:square", element = tracked("square") },
+        }
+    end
+
+    for _, polarity in ipairs({ "friendly", "hostile" }) do
+        local caps = capabilities(polarity)
+        for _, variant in ipairs(buildVariants()) do
+            render("auras:" .. polarity .. ":" .. variant.label, function(host)
+                local auras = { enabled = true, elements = { ["*"] = { variant.element } } }
+                AurasEditor.RenderAuras(host, auras, "*", function() end, {
+                    forceSelectedIndex = 1,
+                    capabilities = caps,
+                })
+            end)
+        end
+    end
+
+    return #capture_errors == 0
+end
+
 local ACTION_BAR_ANCHOR_OPTIONS = {
     { value = "TOPLEFT", text = "Top Left" },
     { value = "TOP", text = "Top" },
@@ -2827,6 +2951,7 @@ capture_group_frames_auras_elements()
 capture_unit_frames_settings_tabs()
 capture_nameplates_settings_tabs()
 capture_nameplates_auras_elements()
+capture_aura_displays_elements()
 capture_action_bar_per_bar_settings()
 capture_minimap_datatext_settings()
 

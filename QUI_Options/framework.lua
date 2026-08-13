@@ -1964,6 +1964,9 @@ local function AcquireSharedMenuFor(menu, container, dropdown, searchable, build
     menu._owner = container
     menu._ownerDropdown = dropdown
     menu._ownerBuildMenu = buildMenu
+    -- The menu is shared across every form dropdown: a scroll offset left by a
+    -- long list would push a short list entirely out of the clipped viewport.
+    menu.scrollFrame:SetVerticalScroll(0)
     if searchable then
         menu.searchContainer:Show()
         menu.scrollFrame:SetPoint("TOPLEFT", 0, -DROPDOWN_SEARCH_BOX_HEIGHT)

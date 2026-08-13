@@ -17,15 +17,15 @@ local ROW_H, HDR_H, FOOTER_H = 22, 20, 22
 local CELL_PAD = 6
 
 local COLUMNS = {
-    { id = "name",        label = "Character",   width = 160, sortKey = "name",        always = true },
-    { id = "level",       label = "Lvl",         width = 40,  sortKey = "level",       desc = true, always = true },
-    { id = "ilvl",        label = "iLvl",        width = 52,  sortKey = "ilvl",        desc = true },
-    { id = "gold",        label = "Gold",        width = 96,  sortKey = "money",       desc = true },
-    { id = "played",      label = "Played",      width = 72,  sortKey = "playedTotal", desc = true },
-    { id = "rested",      label = "Rested",      width = 56,  sortKey = "restedXP",    desc = true },
-    { id = "professions", label = "Professions", width = 160 },
-    { id = "zone",        label = "Zone",        width = 150 },
-    { id = "lastSeen",    label = "Seen",        width = 72,  sortKey = "lastSeen",    desc = true },
+    { id = "name",        label = ns.L["Character"],   width = 160, sortKey = "name",        always = true },
+    { id = "level",       label = ns.L["Lvl"],         width = 40,  sortKey = "level",       desc = true, always = true },
+    { id = "ilvl",        label = ns.L["iLvl"],        width = 52,  sortKey = "ilvl",        desc = true },
+    { id = "gold",        label = ns.L["Gold"],        width = 96,  sortKey = "money",       desc = true },
+    { id = "played",      label = ns.L["Played"],      width = 72,  sortKey = "playedTotal", desc = true },
+    { id = "rested",      label = ns.L["Rested"],      width = 56,  sortKey = "restedXP",    desc = true },
+    { id = "professions", label = ns.L["Professions"], width = 160 },
+    { id = "zone",        label = ns.L["Zone"],        width = 150 },
+    { id = "lastSeen",    label = ns.L["Seen"],        width = 72,  sortKey = "lastSeen",    desc = true },
 }
 RosterView.COLUMNS = COLUMNS
 
@@ -293,5 +293,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("roster", "Roster", Builder,
+Alts.Window.RegisterTab("roster", ns.L["Roster"], Builder,
     "Every cached character with level, item level, gold, played time, and more. Click a column header to sort; right-click a row to delete that character from the cache.")

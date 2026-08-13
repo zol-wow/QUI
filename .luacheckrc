@@ -92,6 +92,7 @@ read_globals = {
     "StaticPopup_Show", "StopDrag",
     "GENERAL", "MAX_TOTEMS", "NUM_CHAT_WINDOWS", "RAID_CLASS_COLORS",
     "CUSTOM_CLASS_COLORS", "SetPortraitTexture",
+    "TANK", "HEALER", "DAMAGER",
 
     -- Time, combat, addon lifecycle
     "GetTime", "InCombatLockdown", "UpdateAddOnMemoryUsage", "GetAddOnMemoryUsage",
@@ -129,7 +130,7 @@ read_globals = {
     "C_ChallengeMode", "C_ClassTalents", "C_Container", "C_CooldownViewer",
     "C_CurveUtil", "C_DurationUtil", "C_Item", "C_ScenarioInfo",
     "C_SpellActivationOverlay",
-    "C_SpellBook", "C_StringUtil", "C_TradeSkillUI", "C_Traits",
+    "C_SpellBook", "C_StringUtil", "C_TradeSkillUI", "C_Traits", "C_Widget",
 
     -- M+ constants
     "DIFFICULTY_MYTHIC_PLUS",
@@ -257,7 +258,7 @@ UpdateMicroButtons UpdateMicroButtonsParent WOW_PROJECT_ID WOW_PROJECT_MAINLINE 
 WorldQuestCompleteAlertSystem ZoneAbilityFrame debugprofilestart gsub strupper tremove table.unpack table.wipe
 TradeFrame SendMailFrame BankFrame GuildBankFrame StackSplitFrame ItemRefTooltip BattlePetTooltip BattlePetToolTip_ShowLink
 PickupBagFromSlot PutItemInBag BAG_FILTER_CLEANUP BAG_NAME_BACKPACK SELL_ALL_JUNK_ITEMS_EXCLUDE_FLAG LE_FRAME_TUTORIAL_EQUIP_REAGENT_BAG
-ContainerFrame_AllowedToOpenBags ContainerFrameItemButtonMixin ItemButtonUtil SetItemButtonCount SetItemButtonDesaturated SetItemButtonTexture ITEM_QUALITY_COLORS
+ContainerFrame_AllowedToOpenBags ContainerFrameItemButtonMixin ItemButtonUtil SetItemButtonCount SetItemButtonDesaturated SetItemButtonTexture SetItemButtonOverlay ClearItemButtonOverlay ITEM_QUALITY_COLORS
 GetInboxHeaderInfo GetInboxItem GetInboxItemLink GetInboxNumItems ATTACHMENTS_MAX_RECEIVE
 AutoStoreGuildBankItem BuyGuildBankTab CanEditGuildBankTabInfo CanWithdrawGuildBankMoney CloseGuildBankFrame DepositGuildBankMoney GetCurrentGuildBankTab
 GetGuildBankItemInfo GetGuildBankItemLink GetGuildBankMoney GetGuildBankMoneyTransaction GetGuildBankTabCost GetGuildBankTabInfo GetGuildBankTransaction GetGuildBankWithdrawMoney

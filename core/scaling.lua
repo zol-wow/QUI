@@ -63,6 +63,23 @@ function QUICore:PixelRound(value, frame)
     return Round(value / px) * px
 end
 
+-- Snap one axis of a CENTER-anchored rect to the physical pixel grid.
+-- Rounding the center alone leaves both edges on half-pixels whenever the
+-- extent rounds to an odd number of pixels, so round the extent and the
+-- low edge, then derive the center from them. Returns center, extent.
+function QUICore:PixelSnapCenter(center, extent, frame)
+    local px = self:GetPixelSize(frame)
+    extent = Round(extent / px) * px
+    return Round((center - extent / 2) / px) * px + extent / 2, extent
+end
+
+function QUICore:PixelSnapRect(x, y, w, h, frame)
+    local sw, sh
+    x, sw = self:PixelSnapCenter(x, w, frame)
+    y, sh = self:PixelSnapCenter(y, h, frame)
+    return x, y, sw, sh
+end
+
 function QUICore:Scale(x, frame)
     return self:Pixels(x, frame)
 end

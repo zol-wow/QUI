@@ -600,14 +600,8 @@ local function ProcessActionButton(button)
 end
 
 local function LooksLikeActionButton(frame)
-    local objType = frame:GetObjectType()
-    if not objType then return false end
-
-    if frame.action or (frame.GetAction and type(frame.GetAction) == "function") then
-        return true
-    end
-
-    return false
+    if frame.action then return true end
+    return type(frame.GetAction) == "function"
 end
 
 local globalSweepButtons = {}
@@ -618,15 +612,13 @@ local function RunGlobalActionButtonSweep()
     globalSweepDone = true
 
     for globalName, frame in pairs(_G) do
-        if type(globalName) == "string" and type(frame) == "table" then
-            if not Helpers.CanAccessTable(frame) or not Helpers.CanAccessValue(frame) then
-            elseif type(frame.GetObjectType) ~= "function" then
-            else
-                local ok, isActionButton = QUI.SafeCall("best-effort-style", LooksLikeActionButton, frame)
+        if type(globalName) == "string" and type(frame) == "table"
+            and Helpers.CanAccessTable(frame) and Helpers.CanAccessValue(frame)
+            and C_Widget.IsFrameWidget(frame) then
+            local ok, isActionButton = QUI.SafeCall("best-effort-style", LooksLikeActionButton, frame)
 
-                if ok and isActionButton then
-                    table.insert(globalSweepButtons, frame)
-                end
+            if ok and isActionButton then
+                table.insert(globalSweepButtons, frame)
             end
         end
     end

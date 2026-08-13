@@ -12,6 +12,22 @@ end
 
 local _countFontCache = {}
 
+-- Exact per-path interning for the font-object cache key: stripping the path
+-- to a "safe" charset could collide two fonts differing only in punctuation.
+local _fontPathIndex = {}
+local _fontPathCount = 0
+
+local function _FontPathKey(font)
+    local path = tostring(font or "")
+    local idx = _fontPathIndex[path]
+    if not idx then
+        _fontPathCount = _fontPathCount + 1
+        idx = _fontPathCount
+        _fontPathIndex[path] = idx
+    end
+    return idx
+end
+
 local function _EnsureCountFont(font, sz, outline, color)
     if not CreateFont then return nil end
     sz = (type(sz) == "number" and sz > 0) and sz or 14
@@ -23,7 +39,7 @@ local function _EnsureCountFont(font, sz, outline, color)
             .. "," .. math.floor((color[3] or 1) * 255 + 0.5)
             .. "," .. math.floor((color[4] or 1) * 255 + 0.5)
     end
-    local key = sz .. (outline ~= "" and "_" .. outline or "") .. ck
+    local key = "F" .. _FontPathKey(font) .. "_" .. sz .. (outline ~= "" and "_" .. outline or "") .. ck
     local name = _countFontCache[key]
     if not name then
         name = "QUI_CDM_CountFont_" .. key
@@ -45,6 +61,100 @@ local function _EnsureCountFont(font, sz, outline, color)
         end
     end
     return name
+end
+
+-- Resolved countdown fontstring per Cooldown widget. applyChrome runs per
+-- claimed icon per collect pass, so the resolve (and its GetRegions table)
+-- must not re-run on the hot path; misses are retried until the fontstring
+-- exists (it is created lazily on the first SetCooldown).
+local _cdCountdownFS = setmetatable({}, { __mode = "k" })
+
+local function _CollectRegions(cd)
+    return { cd:GetRegions() }
+end
+
+local function _ResolveCountdownFontString(cd)
+    local fs = _cdCountdownFS[cd]
+    if fs then return fs end
+    if cd.GetCountdownFontString then
+        local ok, got = ns.SafeCallMethod("best-effort-style", cd, "GetCountdownFontString")
+        if ok and got and not _issecretvalue(got) then fs = got end
+    end
+    if not fs and cd.GetRegions then
+        local ok, regions = ns.SafeCall("best-effort-style", _CollectRegions, cd)
+        if ok and type(regions) == "table" then
+            for i = 1, #regions do
+                local region = regions[i]
+                if region and not _issecretvalue(region)
+                    and region.GetObjectType and region:GetObjectType() == "FontString" then
+                    fs = region
+                    break
+                end
+            end
+        end
+    end
+    if fs then _cdCountdownFS[cd] = fs end
+    return fs
+end
+
+local function _AnchorCountdownText(cd, frame, rowConfig)
+    if not (cd and frame) then return end
+    local fs = _ResolveCountdownFontString(cd)
+    if fs and fs.ClearAllPoints and fs.SetPoint then
+        fs:ClearAllPoints()
+        fs:SetPoint(rowConfig.durationAnchor or "CENTER", frame,
+            rowConfig.durationAnchor or "CENTER",
+            rowConfig.durationOffsetX or 0, rowConfig.durationOffsetY or 0)
+    end
+end
+
+local function _ResolveStackText(frame)
+    local apps = frame.Applications
+    if apps then
+        if apps.GetObjectType and apps:GetObjectType() == "FontString" then
+            return apps, nil
+        end
+        local fs = apps.Applications
+        if fs and fs.GetObjectType and fs:GetObjectType() == "FontString" then
+            return fs, apps
+        end
+    end
+    local charge = frame.ChargeCount
+    if charge then
+        local fs = charge.Current
+        if fs and fs.GetObjectType and fs:GetObjectType() == "FontString" then
+            return fs, charge
+        end
+    end
+    return nil, nil
+end
+
+local function _StyleStackText(frame, rowConfig, baseFont, outline)
+    local fs, holder = _ResolveStackText(frame)
+    if not fs then return end
+    if rowConfig.hideStackText then
+        if holder and holder.SetAlpha then holder:SetAlpha(0) end
+        if fs.SetAlpha then fs:SetAlpha(0) end
+        return
+    end
+    if holder and holder.SetAlpha then holder:SetAlpha(1) end
+    if fs.SetAlpha then fs:SetAlpha(1) end
+    local font = baseFont
+    local LSM = ns.LSM
+    if LSM and rowConfig.stackFont and rowConfig.stackFont ~= "" then
+        font = LSM:Fetch("font", rowConfig.stackFont) or font
+    end
+    local stackSize = rowConfig.stackSize
+    if font and type(stackSize) == "number" and stackSize > 0 then
+        local name = _EnsureCountFont(font, stackSize, outline or "",
+            rowConfig.stackTextColor or {1, 1, 1, 1})
+        if name and fs.SetFontObject then fs:SetFontObject(name) end
+    end
+    if fs.ClearAllPoints and fs.SetPoint then
+        local anchor = rowConfig.stackAnchor or "BOTTOMRIGHT"
+        fs:ClearAllPoints()
+        fs:SetPoint(anchor, frame, anchor, rowConfig.stackOffsetX or 0, rowConfig.stackOffsetY or 0)
+    end
 end
 
 local function _DecorateWork(decorator, live, shell, rowConfig)
@@ -250,7 +360,9 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
     local Icons      = ctx.CDMIcons or ns.CDMIcons
     local Factory    = ctx.CDMIconFactory or ns.CDMIconFactory
     local Sources    = ctx.CDMSources or ns.CDMSources
-    local Core       = ctx.core or _G.QUI
+    -- Pixels/PixelRound live on the QUICore module (ns.Addon), not on the
+    -- _G.QUI addon object; falling back to _G.QUI silently disables them.
+    local Core       = ctx.core or ns.Addon or _G.QUI
     local DecorateMod = ctx.CDMReanchorDecorate or ns.CDMReanchorDecorate
 
     local Helpers = ns.Helpers
@@ -266,21 +378,30 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
             if cd.SetSwipeTexture then cd:SetSwipeTexture("Interface\\Buttons\\WHITE8X8") end
             if cd.SetDrawBling then cd:SetDrawBling(false) end
         end
+        local generalFont, generalOutline
         if Helpers and Helpers.GetGeneralFont then
-            local font = Helpers.GetGeneralFont()
-            local outline = Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline() or ""
+            generalFont = Helpers.GetGeneralFont()
+            generalOutline = Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline() or ""
+        end
+        if generalFont then
+            local durationFont = generalFont
+            local LSM = ns.LSM
+            if LSM and rowConfig.durationFont and rowConfig.durationFont ~= "" then
+                durationFont = LSM:Fetch("font", rowConfig.durationFont) or durationFont
+            end
             local dtc = rowConfig.durationTextColor or {1, 1, 1, 1}
-            if font then
-                local countFontName = _EnsureCountFont(font, rowConfig.durationSize or 14, outline, dtc)
-                if cd and cd.SetCountdownFont and countFontName then
-                    cd:SetCountdownFont(countFontName)
-                end
+            local countFontName = _EnsureCountFont(durationFont, rowConfig.durationSize or 14, generalOutline, dtc)
+            if cd and cd.SetCountdownFont and countFontName then
+                cd:SetCountdownFont(countFontName)
             end
         end
         if cd and cd.SetHideCountdownNumbers then
             cd:SetHideCountdownNumbers(rowConfig.hideDurationText and true or false)
         end
-        if cd and cd.SetDrawSwipe then cd:SetDrawSwipe(true) end
+        if not rowConfig.hideDurationText then
+            _AnchorCountdownText(cd, frame, rowConfig)
+        end
+        _StyleStackText(frame, rowConfig, generalFont, generalOutline)
         local lvlOk, baseLvl = ns.SafeCallMethod("best-effort-style", frame, "GetFrameLevel")
         if lvlOk and type(baseLvl) == "number" then
             local textLvl = baseLvl + 23
@@ -814,6 +935,12 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         pixelRound = function(v, c)
             if Core and Core.PixelRound then return Core:PixelRound(v, c) end
             return v
+        end,
+        pixelSnapCenter = function(center, extent, c)
+            if Core and Core.PixelSnapCenter then
+                return Core:PixelSnapCenter(center, extent, c)
+            end
+            return center, extent
         end,
         acquireIcon = function(c, e, containerKey)
             if not (Factory and Factory.AcquireIcon) then return nil end

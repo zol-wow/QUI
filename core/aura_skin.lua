@@ -196,23 +196,47 @@ local function ApplyIconSkinOwnership(button, profile)
     end
 end
 
-local pandemicFormatter
-local function DurationFormatter()
-    if pandemicFormatter ~= nil then return pandemicFormatter or nil end
-    if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter then
-        local ok, fmt = pcall(C_StringUtil.CreateNumericRuleFormatter, "%.1f", "%.0f", 3)
-        pandemicFormatter = ok and fmt or false
-    else
-        pandemicFormatter = false
+local durationFormatters = {}
+local function DurationFormatter(decimals, hideUnit)
+    local key = (decimals and "d" or "-") .. (hideUnit and "u" or "-")
+    local cached = durationFormatters[key]
+    if cached ~= nil then return cached or nil end
+    local rounding = Enum and Enum.NumericRuleFormatRounding
+    local built
+    if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter and rounding then
+        local ok, formatter = pcall(C_StringUtil.CreateNumericRuleFormatter)
+        if ok and formatter then
+            local breakpoints = {}
+            local secondsFmt = hideUnit and "%d" or "%ds"
+            if decimals then
+                breakpoints[#breakpoints + 1] = { threshold = 0, format = hideUnit and "%.1f" or "%.1fs" }
+                breakpoints[#breakpoints + 1] = { threshold = 3, step = 1, rounding = rounding.Up, format = secondsFmt }
+            else
+                breakpoints[#breakpoints + 1] = { threshold = 0, step = 1, rounding = rounding.Up, format = secondsFmt }
+            end
+            -- Minute+ bands keep their unit even with hideUnit: a bare "2"
+            -- for two minutes is indistinguishable from two seconds.
+            breakpoints[#breakpoints + 1] = { threshold = 90, format = "%dm",
+                components = { { div = 60, step = 1, rounding = rounding.Up } } }
+            breakpoints[#breakpoints + 1] = { threshold = 5400, format = "%dh",
+                components = { { div = 3600, step = 1, rounding = rounding.Up } } }
+            breakpoints[#breakpoints + 1] = { threshold = 129600, format = "%dd",
+                components = { { div = 86400, step = 1, rounding = rounding.Up } } }
+            local applied = pcall(formatter.SetBreakpoints, formatter, breakpoints)
+            if applied then built = formatter end
+        end
     end
-    return pandemicFormatter or nil
+    durationFormatters[key] = built or false
+    return built
 end
 
 function AuraSkin.BuildDurationTextOptions(profile)
     local durS = (profile and profile.duration) or {}
     local opts = {}
-    if durS.decimals == true then
-        opts.textFormatter = DurationFormatter()
+    local decimals = durS.decimals == true
+    local hideUnit = durS.hideUnit == true
+    if decimals or hideUnit then
+        opts.textFormatter = DurationFormatter(decimals, hideUnit)
     end
     return opts
 end
@@ -248,6 +272,19 @@ local function styleButton(button, profile)
     end
 
     ApplyIconSkinOwnership(button, profile)
+
+    -- Border thickness is the gap between the button edge and the inset icon;
+    -- external skins own the icon geometry, so leave it alone when bridged.
+    local showBorder = profile.showBorder ~= false
+    if not button._quiBridged and button.Icon then
+        local inset = 0
+        if showBorder then
+            inset = profile.borderSize or 1
+            if inset < 0 then inset = 0 end
+        end
+        button.Icon:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
+        button.Icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
+    end
 
     local dispel = button._quiDispel
     if dispel and button.ClearDispelTypeTextures and button.AddDispelTypeTexture then
@@ -310,15 +347,19 @@ local function styleButton(button, profile)
 
     local border = button._quiBorder
     if border then
-        local bc = profile.borderColor
-        local r, g, b, a
-        if type(bc) == "table" then
-            r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4]
+        if not showBorder then
+            if border.Hide then border:Hide() end
         else
-            r, g, b, a = AuraTheme.BorderColor()
+            local bc = profile.borderColor
+            local r, g, b, a
+            if type(bc) == "table" then
+                r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4]
+            else
+                r, g, b, a = AuraTheme.BorderColor()
+            end
+            border:SetColorTexture(r, g, b, a or 1)
+            if border.DisablePixelSnap then border:DisablePixelSnap() end
         end
-        border:SetColorTexture(r, g, b, a or 1)
-        if border.DisablePixelSnap then border:DisablePixelSnap() end
     end
 
     local fontPath = (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont())

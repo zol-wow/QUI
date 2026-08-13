@@ -44,6 +44,14 @@ local function LiveAssistProbe(unit)
 end
 S.LiveAssistProbe = LiveAssistProbe
 
+function S.LivePolarityMismatch(unit, auraType)
+    if TokenReactionClass(unit) ~= nil then return false end
+    local harmful = type(auraType) == "string" and auraType:find("HARMFUL", 1, true) ~= nil
+    local assist = LiveAssistProbe(unit)
+    if harmful then return assist end
+    return not assist
+end
+
 local function SpellNeverSecret(spellID)
     local CS = C_Secrets
     if not (CS and CS.GetSpellAuraSecrecy and Enum and Enum.SecrecyLevel) then
@@ -77,6 +85,17 @@ local function SlotCandidateFilters(element, spellID)
         cf.isFromPlayerOrPlayerPet = true
     end
     return cf
+end
+
+-- Mine-only slots carry PLAYER in the filter string too: the engine enforces
+-- it on secret (in-combat) aura data, where the Lua-side candidate filter
+-- above cannot discriminate.
+local function SlotFilterString(element, spellID)
+    local base = element.auraType or "HELPFUL"
+    if E.EffectiveOnlyMine(element, spellID) then
+        return base .. "|PLAYER"
+    end
+    return base
 end
 
 local function StyleSlot(frame, element, index, profileOverrides)
@@ -236,7 +255,7 @@ function S.Sync(container, element, allowCreate, profileOverrides)
                     if parkThis then
                         ParkSlot(container, slot)
                     else
-                        container:SetAuraSlotFilterString(slot.key, base)
+                        container:SetAuraSlotFilterString(slot.key, SlotFilterString(element, spellID))
                         container:SetAuraSlotCandidateFilters(slot.key, SlotCandidateFilters(element, spellID))
                         slot.parked = false
                     end
@@ -244,7 +263,7 @@ function S.Sync(container, element, allowCreate, profileOverrides)
                     local key = "t" .. tostring(want)
                     local slotIndex, slotTotal = want, total
                     local birthFilters = parkThis and PARK_FILTER or SlotCandidateFilters(element, spellID)
-                    local frame = container:AddAuraSlot(key, base, {
+                    local frame = container:AddAuraSlot(key, SlotFilterString(element, spellID), {
                         candidateFilters = birthFilters,
                         initializeFrame = function(f)
                             StyleSlot(f, element, slotIndex, profileOverrides)

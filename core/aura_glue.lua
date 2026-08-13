@@ -61,6 +61,7 @@ function G.ElementProfile(element, overrides)
         anchor       = anchor,
         wrap         = (anchor:find("BOTTOM", 1, true) and "UP" or "DOWN"),
         borderSize   = element.borderSize or 1,
+        showBorder   = element.hideBorder ~= true,
         fontSize     = (element.duration and element.duration.fontSize) or 9,
         hideSwipe    = element.hideSwipe or false,
         reverseSwipe = element.reverseSwipe or false,
@@ -169,6 +170,7 @@ local _pollArmed = false
 local function AurasAreSecret()
     return C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()
 end
+G.AurasAreSecret = AurasAreSecret
 
 local FlushPending
 

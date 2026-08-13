@@ -2769,6 +2769,7 @@ local defaults = {
                 occludedAlphaMult = 0.4,
             },
             layout = {
+                scale = 1.0,
                 targetScale = 1.0,
                 verticalOffset = 0,
             },
@@ -2810,6 +2811,10 @@ local defaults = {
 
             partySelfFirst = false,
             raidSelfFirst = false,
+            -- Comma-separated character names whose frames are never shown
+            -- in party or raid (Spotlight pins still show). Add -Realm to
+            -- pin an entry to one realm; realm-less entries match any realm.
+            hiddenPlayers = "",
             externalSkinning = false,
             iconSkin = "Default",
 
@@ -3720,6 +3725,8 @@ local defaults = {
                 learnedBuffs = {},
             },
         },
+
+        auraDisplays = { enabled = true },
 
         totemBar = {
             enabled = false,

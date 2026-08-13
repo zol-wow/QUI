@@ -1417,7 +1417,7 @@ Datatexts:Register("durability", {
             [8] = ns.L["Feet"],
             [9] = ns.L["Wrist"],
             [10] = ns.L["Hands"],
-            [15] = ns.L["Back"],
+            [15] = ns.L["Cloak"],
             [16] = ns.L["Main Hand"],
             [17] = ns.L["Off Hand"],
         }

@@ -1713,27 +1713,18 @@ end
 local function GetPrimaryResourceValue(resource, cfg)
     if not resource then return nil, nil, nil, nil end
 
-    local current, max, secret = ReadPlayerPowerPair(resource)
-    if secret then
-        -- @secret-policy: sink-passthrough — the bar keeps rendering from the
-        return max, current, current, "secret"
-    end
-    if max <= 0 then return nil, nil, nil, nil end
+    local current, max = ReadPlayerPowerPair(resource)
+    if type(max) == "nil" then return nil, nil, nil, nil end
 
-    if (cfg.showPercent or cfg.showManaAsPercent) and resource == Enum.PowerType.Mana then
-        if HAS_UNIT_POWER_PERCENT then
-            local pct = GetPowerPct("player", resource, false)
-            if Helpers.IsSecretValue(pct) then
-                -- @secret-policy: sink-passthrough — percent unreadable,
-                return max, current, current, "secret"
-            end
+    if cfg.showPercent or cfg.showManaAsPercent then
+        local pct = GetPowerPct("player", resource, false)
+        -- @secret-policy: sink-passthrough — the C-side percent goes straight to SetFormattedText
+        if type(pct) ~= "nil" then
             return max, current, pct, "percent"
-        else
-            return max, current, math_floor((current / max) * 100 + 0.5), "percent"
         end
-    else
-        return max, current, current, "number"
     end
+
+    return max, current, current, "number"
 end
 
 local function GetSecondaryResourceValue(resource)
@@ -1780,9 +1771,15 @@ local function GetSecondaryResourceValue(resource)
     end
 
     if resource == QUI_POWER.VengSoulFragments then
-        local current = SafeNumberOrNil(C_Spell.GetSpellCastCount(228477)) or 0
+        local raw = C_Spell.GetSpellCastCount(228477)
         local max = 6
 
+        if Helpers.IsSecretValue(raw) then
+            -- @secret-policy: sink-passthrough
+            return max, raw, raw, "secret"
+        end
+
+        local current = SafeNumberOrNil(raw) or 0
         return max, current, current, "number"
     end
 
@@ -1913,6 +1910,13 @@ local function GetSecondaryTextConfig(cfg)
     return EnsureTextSpecOverrides(cfg, specID)
 end
 
+-- Tolerates legacy {r=,g=,b=,a=}-keyed color tables from old profiles
+local function GetCustomTextColor(textCfg)
+    local c = textCfg and textCfg.textCustomColor
+    if type(c) ~= "table" then return 1, 1, 1, 1 end
+    return c[1] or c.r or 1, c[2] or c.g or 1, c[3] or c.b or 1, c[4] or c.a or 1
+end
+
 ns.QUI_ResourceBars_Internal = {
     PseudoPowerTypes        = QUI_POWER,
     GetBarTexture           = GetBarTexture,
@@ -1930,15 +1934,24 @@ ns.QUI_ResourceBars_Internal = {
 }
 
 local function SanitizeIndicatorValues(values, maxValue)
-    if type(values) ~= "table" or not maxValue or maxValue <= 0 then
+    if type(values) ~= "table" then
         return {}
+    end
+
+    local clamp = nil
+    if not Helpers.IsSecretValue(maxValue) then
+        -- @secret-policy: sink-passthrough — a secret max clamps in the StatusBar, not here
+        clamp = tonumber(maxValue)
+        if not clamp or clamp <= 0 then
+            return {}
+        end
     end
 
     local dedupe = {}
     local sanitized = {}
     for _, rawValue in ipairs(values) do
         local value = tonumber(rawValue)
-        if value and value > 0 and value < maxValue then
+        if value and value > 0 and (clamp == nil or value <= clamp) then
             value = math_floor((value * 1000) + 0.5) / 1000
             local dedupeKey = string_format("%.3f", value)
             if not dedupe[dedupeKey] then
@@ -1971,28 +1984,88 @@ local function GetIndicatorValuesForCurrentSpec(indicatorCfg, maxValue)
     return SanitizeIndicatorValues(specValues, maxValue)
 end
 
+ns.QUI_ResourceBars_Internal.GetIndicatorValuesForCurrentSpec = GetIndicatorValuesForCurrentSpec
+
+local function ResolveBarMax(bar, resource, max)
+    local cache = bar._shadowMax
+    local cached = (cache and resource ~= nil) and cache[resource] or nil
+
+    if Helpers.IsSecretValue(max) then
+        max = nil -- @secret-policy: shadow-state — the last plain max drives placement
+    else
+        max = tonumber(max)
+    end
+
+    if not (max and max > 0) and type(resource) == "number" then
+        local live = UnitPowerMax("player", resource)
+        if Helpers.IsSecretValue(live) then
+            live = nil -- @secret-policy: shadow-state
+        end
+        max = tonumber(live)
+    end
+
+    if not (max and max > 0) then
+        return cached
+    end
+
+    if resource ~= nil then
+        bar._shadowMax = bar._shadowMax or {}
+        bar._shadowMax[resource] = max
+    end
+    return max
+end
+
+local function ResolveIndicatorMax(resource, max)
+    if Helpers.IsSecretValue(max) then
+        return max -- @secret-policy: sink-passthrough — the ruler StatusBar divides it
+    end
+    local plain = tonumber(max)
+    if plain and plain > 0 then
+        return plain
+    end
+    if type(resource) == "number" then
+        return UnitPowerMax("player", resource)
+    end
+    return nil
+end
+
 local function UpdateBarIndicatorLines(bar, indicatorPool, values, maxValue, thickness, color, isVertical)
     for _, indicator in ipairs(indicatorPool) do
         indicator:Hide()
     end
 
-    if #values == 0 or not maxValue or maxValue <= 0 then
+    if #values == 0 or type(maxValue) == "nil" then
         return
     end
 
-    local width = bar:GetWidth()
-    local height = bar:GetHeight()
-    if width <= 0 or height <= 0 then
-        return
-    end
-
+    bar.indicatorRulers = bar.indicatorRulers or {}
     local lineThickness = QUICore:Pixels(thickness or 1, bar)
     local lineColor = color or { 1, 1, 1, 1 }
+    local orientation = isVertical and "VERTICAL" or "HORIZONTAL"
 
     for i, value in ipairs(values) do
+        local ruler = bar.indicatorRulers[i]
+        if not ruler then
+            ruler = CreateFrame("StatusBar", nil, bar.StatusBar)
+            ruler:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+            ruler:SetStatusBarColor(0, 0, 0, 0)
+            ruler:EnableMouse(false)
+            bar.indicatorRulers[i] = ruler
+        end
+        ruler:ClearAllPoints()
+        ruler:SetAllPoints(bar.StatusBar)
+        ruler:SetOrientation(orientation)
+        -- @secret-policy: sink-passthrough — SetMinMaxValues/SetValue divide engine-side
+        ruler:SetMinMaxValues(0, maxValue)
+        ruler:SetValue(value)
+        ruler:Show()
+
+        local rulerTex = ruler:GetStatusBarTexture()
+        if not rulerTex then break end
+
         local indicator = indicatorPool[i]
         if not indicator then
-            indicator = bar:CreateTexture(nil, "OVERLAY")
+            indicator = bar.StatusBar:CreateTexture(nil, "OVERLAY")
             QUICore:ApplyPixelSnapping(indicator)
             indicatorPool[i] = indicator
         end
@@ -2001,13 +2074,15 @@ local function UpdateBarIndicatorLines(bar, indicatorPool, values, maxValue, thi
         indicator:ClearAllPoints()
 
         if isVertical then
-            local y = (value / maxValue) * height
-            indicator:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, QUICore:PixelRound(y - (lineThickness / 2), bar))
-            indicator:SetSize(width, lineThickness)
+            indicator:SetPoint("LEFT", bar.StatusBar, "LEFT", 0, 0)
+            indicator:SetPoint("RIGHT", bar.StatusBar, "RIGHT", 0, 0)
+            indicator:SetPoint("BOTTOM", rulerTex, "TOP", 0, -(lineThickness / 2))
+            indicator:SetHeight(lineThickness)
         else
-            local x = (value / maxValue) * width
-            indicator:SetPoint("LEFT", bar.StatusBar, "LEFT", QUICore:PixelRound(x - (lineThickness / 2), bar), 0)
-            indicator:SetSize(lineThickness, height)
+            indicator:SetPoint("TOP", bar.StatusBar, "TOP", 0, 0)
+            indicator:SetPoint("BOTTOM", bar.StatusBar, "BOTTOM", 0, 0)
+            indicator:SetPoint("LEFT", rulerTex, "RIGHT", -(lineThickness / 2), 0)
+            indicator:SetWidth(lineThickness)
         end
 
         indicator:Show()
@@ -2019,7 +2094,7 @@ function QUICore:GetPowerBar()
 
     local cfg = self.db.profile.powerBar
 
-    local bar = CreateFrame("Frame", "QUIPowerBar", UIParent)
+    local bar = _G["QUIPowerBar"] or CreateFrame("Frame", "QUIPowerBar", UIParent)
     bar:SetFrameStrata("MEDIUM")
     local layerPriority = self.db.profile.hudLayering and self.db.profile.hudLayering.primaryPowerBar or 7
     local frameLevel = self:GetHUDFrameLevel(layerPriority)
@@ -2121,27 +2196,19 @@ function QUICore:UpdatePowerBarValue(forceShown)
     bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b, color.a or 1)
 
     local max, current, displayValue, valueType = GetPrimaryResourceValue(resource, cfg)
-    if valueType == "secret" then
-        -- @secret-policy: keep-visible-when-unknown + sink-passthrough — the
-        bar.StatusBar:SetMinMaxValues(0, max)
-        bar.StatusBar:SetValue(current)
-        bar.TextValue:SetFormattedText("%d", displayValue)
-        bar:SetAlpha(1)
-        SafeShow(bar)
-        return "secret", nil, resource
-    end
-    if not max then
+    if type(max) == "nil" then
         SafeHide(bar)
         return nil
     end
 
+    -- @secret-policy: sink-passthrough — every write below absorbs secrets
     bar.StatusBar:SetMinMaxValues(0, max)
     bar.StatusBar:SetValue(current)
 
     if valueType == "percent" then
-        bar.TextValue:SetText(FormatPercentValue(displayValue, cfg))
+        bar.TextValue:SetFormattedText(cfg.hidePercentSymbol and "%.0f" or "%.0f%%", displayValue)
     else
-        bar.TextValue:SetText(tostring(displayValue))
+        bar.TextValue:SetFormattedText("%d", displayValue)
     end
 
     bar:SetAlpha(1)
@@ -2324,30 +2391,27 @@ function QUICore:UpdatePowerBar()
         return
     end
 
-    if vType ~= "secret" then
-        CJKFont(bar.TextValue, GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
-        bar.TextValue:SetShadowOffset(0, 0)
+    CJKFont(bar.TextValue, GetGeneralFont(), QUICore:PixelRound(cfg.textSize or 12, bar.TextValue), GetGeneralFontOutline())
+    bar.TextValue:SetShadowOffset(0, 0)
 
-        if cfg.textUseClassColor then
-            local _, class = UnitClass("player")
-            -- @secret-policy: collapse-only — secret class keeps the current text color
-            if issecretvalue and issecretvalue(class) then class = nil end
-            local classColor = class and RAID_CLASS_COLORS[class]
-            if classColor then
-                bar.TextValue:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
-            end
-        else
-            local c = cfg.textCustomColor or { 1, 1, 1, 1 }
-            bar.TextValue:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+    if cfg.textUseClassColor then
+        local _, class = UnitClass("player")
+        -- @secret-policy: collapse-only — secret class keeps the current text color
+        if issecretvalue and issecretvalue(class) then class = nil end
+        local classColor = class and RAID_CLASS_COLORS[class]
+        if classColor then
+            bar.TextValue:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
         end
-
-        ApplyPowerBarTextPlacement(bar, cfg)
-
-        bar.TextFrame:SetShown(cfg.showText ~= false)
-
-        self:UpdatePowerBarTicks(bar, vResource, vMax)
-        self:UpdatePowerBarIndicators(bar, vMax, isVertical)
+    else
+        bar.TextValue:SetTextColor(GetCustomTextColor(cfg))
     end
+
+    ApplyPowerBarTextPlacement(bar, cfg)
+
+    bar.TextFrame:SetShown(cfg.showText ~= false)
+
+    self:UpdatePowerBarTicks(bar, vResource, vMax)
+    self:UpdatePowerBarIndicators(bar, vResource, vMax, isVertical)
 
     local secondaryCfg = self.db.profile.secondaryPowerBar
     local propagated = false
@@ -2373,6 +2437,9 @@ function QUICore:UpdatePowerBarTicks(bar, resource, max)
         return
     end
 
+    max = ResolveBarMax(bar, resource, max)
+    if not max or max <= 0 then return end
+
     local width = bar:GetWidth()
     local height = bar:GetHeight()
     if width <= 0 or height <= 0 then return end
@@ -2389,9 +2456,10 @@ function QUICore:UpdatePowerBarTicks(bar, resource, max)
         isVertical and width or height)
 end
 
-function QUICore:UpdatePowerBarIndicators(bar, max, isVertical)
+function QUICore:UpdatePowerBarIndicators(bar, resource, max, isVertical)
     if not bar then return end
     bar.indicatorLines = bar.indicatorLines or {}
+    max = ResolveIndicatorMax(resource, max)
 
     local cfg = self.db and self.db.profile and self.db.profile.powerBar
     local indicatorCfg = cfg and cfg.indicators
@@ -2623,7 +2691,7 @@ function QUICore:GetSecondaryPowerBar()
 
     local cfg = self.db.profile.secondaryPowerBar
 
-    local bar = CreateFrame("Frame", "QUISecondaryPowerBar", UIParent)
+    local bar = _G["QUISecondaryPowerBar"] or CreateFrame("Frame", "QUISecondaryPowerBar", UIParent)
     bar:SetFrameStrata("MEDIUM")
     local layerPriority = self.db.profile.hudLayering and self.db.profile.hudLayering.secondaryPowerBar or 6
     local frameLevel = self:GetHUDFrameLevel(layerPriority)
@@ -3121,6 +3189,9 @@ function QUICore:UpdateSecondaryPowerBarTicks(bar, resource, max)
         return
     end
 
+    max = ResolveBarMax(bar, resource, max)
+    if not max or max <= 0 then return end
+
     local width  = bar:GetWidth()
     local height = bar:GetHeight()
     if width <= 0 or height <= 0 then return end
@@ -3129,12 +3200,8 @@ function QUICore:UpdateSecondaryPowerBarTicks(bar, resource, max)
 
     local displayMax = max
     if resource == Enum.PowerType.SoulShards then
-        local shardMax = UnitPowerMax("player", resource)
-        if Helpers.IsSecretValue(shardMax) then
-            -- @secret-policy: defer-until-readable — hold the last tick layout.
-            return
-        end
-        displayMax = shardMax
+        displayMax = ResolveBarMax(bar, "shardMax", UnitPowerMax("player", resource))
+        if not displayMax or displayMax <= 0 then return end
     end
 
     local genTickPx = QUICore:GetPixelSize(bar)
@@ -3147,9 +3214,10 @@ function QUICore:UpdateSecondaryPowerBarTicks(bar, resource, max)
         isVertical and width or height)
 end
 
-function QUICore:UpdateSecondaryPowerBarIndicators(bar, max, isVertical)
+function QUICore:UpdateSecondaryPowerBarIndicators(bar, resource, max, isVertical)
     if not bar then return end
     bar.indicatorLines = bar.indicatorLines or {}
+    max = ResolveIndicatorMax(resource, max)
 
     local cfg = self.db and self.db.profile and self.db.profile.secondaryPowerBar
     local indicatorCfg = cfg and cfg.indicators
@@ -3273,13 +3341,10 @@ function QUICore:UpdateSecondaryPowerBarValue(forceShown)
         bar.StatusBar:SetAlpha(1)
         bar.StatusBar:SetMinMaxValues(0, max)
         bar.StatusBar:SetValue(current)
-        if Helpers.IsSecretValue(displayValue) then
-            bar.TextValue:SetFormattedText("%d", displayValue)
-        else
-            bar.TextValue:SetText("")
-        end
+        -- @secret-policy: sink-passthrough — SetFormattedText absorbs either kind
+        bar.TextValue:SetFormattedText("%d", displayValue)
         SafeShow(bar)
-        return "secret", nil, resource
+        return "secret", max, resource
     end
     if not max then
         if renewingMistUpdateRunning then
@@ -3770,7 +3835,7 @@ function QUICore:UpdateSecondaryPowerBar()
     end
 
     local vType, vMax, vResource = self:UpdateSecondaryPowerBarValue(true)
-    if vType == nil or vType == "defer" or vType == "secret" then
+    if vType == nil or vType == "defer" then
         return
     end
 
@@ -3788,8 +3853,7 @@ function QUICore:UpdateSecondaryPowerBar()
                 bar.TextValue:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
             end
         else
-            local c = textCfg.textCustomColor or { 1, 1, 1, 1 }
-            bar.TextValue:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+            bar.TextValue:SetTextColor(GetCustomTextColor(textCfg))
         end
 
         if bar.SoulShardDecimal then
@@ -3804,8 +3868,7 @@ function QUICore:UpdateSecondaryPowerBar()
                     bar.SoulShardDecimal:SetTextColor(classColor.r, classColor.g, classColor.b, 1)
                 end
             else
-                local c = textCfg.textCustomColor or { 1, 1, 1, 1 }
-                bar.SoulShardDecimal:SetTextColor(c[1], c[2], c[3], c[4] or 1)
+                bar.SoulShardDecimal:SetTextColor(GetCustomTextColor(textCfg))
             end
         end
 
@@ -3816,7 +3879,7 @@ function QUICore:UpdateSecondaryPowerBar()
     if not fragmentedPowerTypes[vResource] then
         self:UpdateSecondaryPowerBarTicks(bar, vResource, vMax)
     end
-    self:UpdateSecondaryPowerBarIndicators(bar, vMax, isVertical)
+    self:UpdateSecondaryPowerBarIndicators(bar, vResource, vMax, isVertical)
 
     if bar.SoulShardDecimal then
         bar.SoulShardDecimal:Hide()
@@ -3942,6 +4005,10 @@ function QUICore:OnUnitAura(_, _, updateInfo)
         return
     end
     local vType, vMax = self:UpdateSecondaryPowerBarValue()
+    if Helpers.IsSecretValue(vMax) then
+        -- @secret-policy: collapse-only — a secret cannot key a cache, so it always re-renders
+        vMax = nil
+    end
     if bar:IsShown()
         and vType == bar._cachedAuraValueType
         and vMax == bar._cachedAuraValueMax then

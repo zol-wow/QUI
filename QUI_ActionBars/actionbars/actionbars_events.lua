@@ -307,7 +307,7 @@ function OnOwnedEvent(self, event, ...)
             end
         end
 
-    elseif event == "UPDATE_BINDINGS" then
+    elseif event == "UPDATE_BINDINGS" or event == "GAME_PAD_ACTIVE_CHANGED" then
         C_Timer.After(0.1, RefreshNativeKeybinds)
 
     elseif event == "CURSOR_CHANGED" then
@@ -321,6 +321,7 @@ function OnOwnedEvent(self, event, ...)
         end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
+        FinishBlockedOverrideBarExit()
         if ActionBarsOwned.pendingExtraButtonInit then
             ActionBarsOwned.pendingExtraButtonInit = false
             InitializeExtraButtons()
@@ -509,7 +510,6 @@ function OnOwnedEvent(self, event, ...)
 
     elseif event == "ACTIONBAR_SHOWGRID" then
         ActionBarsOwned._showGrid = true
-        self:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
         for _, barKey in ipairs(STANDARD_BAR_KEYS) do
             local btns = ActionBarsOwned.nativeButtons[barKey]
             if btns then
@@ -521,7 +521,6 @@ function OnOwnedEvent(self, event, ...)
 
     elseif event == "ACTIONBAR_HIDEGRID" then
         ActionBarsOwned._showGrid = nil
-        self:UnregisterEvent("ACTIONBAR_SLOT_CHANGED")
         ScheduleABVisualUpdate(true)
         ScheduleABCooldownUpdate()
         ActionBarsOwned.UpdateAllAssistedCombatRotation()
