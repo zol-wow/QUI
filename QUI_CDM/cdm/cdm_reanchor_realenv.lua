@@ -360,7 +360,9 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
     local Icons      = ctx.CDMIcons or ns.CDMIcons
     local Factory    = ctx.CDMIconFactory or ns.CDMIconFactory
     local Sources    = ctx.CDMSources or ns.CDMSources
-    local Core       = ctx.core or _G.QUI
+    -- Pixels/PixelRound live on the QUICore module (ns.Addon), not on the
+    -- _G.QUI addon object; falling back to _G.QUI silently disables them.
+    local Core       = ctx.core or ns.Addon or _G.QUI
     local DecorateMod = ctx.CDMReanchorDecorate or ns.CDMReanchorDecorate
 
     local Helpers = ns.Helpers
@@ -933,6 +935,12 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         pixelRound = function(v, c)
             if Core and Core.PixelRound then return Core:PixelRound(v, c) end
             return v
+        end,
+        pixelSnapCenter = function(center, extent, c)
+            if Core and Core.PixelSnapCenter then
+                return Core:PixelSnapCenter(center, extent, c)
+            end
+            return center, extent
         end,
         acquireIcon = function(c, e, containerKey)
             if not (Factory and Factory.AcquireIcon) then return nil end

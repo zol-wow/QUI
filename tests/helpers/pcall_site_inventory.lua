@@ -36,7 +36,7 @@ return {
     "QUI_Chat/chat/settings/chat_frame1_provider.lua::3",
     "QUI_DamageMeter/damage_meter/damage_meter.lua::6",
     "QUI_Debug/aura_probe.lua::3",
-    "QUI_Debug/cdm_debug.lua::22",
+    "QUI_Debug/cdm_debug.lua::24",
     "QUI_Debug/editmode_diagnose.lua::1",
     "QUI_Debug/memaudit.lua::13",
     "QUI_Debug/performance.lua::5",

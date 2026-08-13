@@ -1724,6 +1724,10 @@ local function RestoreContainerPosition(container, trackerKey)
             if parent == "screen" or parent == "disabled" then
                 local ox = settings.offsetX or 0
                 local oy = settings.offsetY or 0
+                if QUICore and QUICore.PixelRound then
+                    ox = QUICore:PixelRound(ox, container)
+                    oy = QUICore:PixelRound(oy, container)
+                end
                 container:ClearAllPoints()
                 container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
                 return true
@@ -1737,6 +1741,10 @@ local function RestoreContainerPosition(container, trackerKey)
     local ox = db.pos.ox
     local oy = db.pos.oy
     if ox and oy then
+        if QUICore and QUICore.PixelRound then
+            ox = QUICore:PixelRound(ox, container)
+            oy = QUICore:PixelRound(oy, container)
+        end
         container:ClearAllPoints()
         container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
         return true
@@ -2353,7 +2361,11 @@ local function LayoutContainer(trackerKey)
             icon:SetScale(1)
         end
 
-        if QUICore and QUICore.PixelRound then
+        if QUICore and QUICore.PixelSnapRect and rowConfig and rowConfig.size then
+            local aspect = rowConfig.aspectRatioCrop or 1.0
+            if type(aspect) ~= "number" or aspect <= 0 then aspect = 1.0 end
+            x, y = QUICore:PixelSnapRect(x, y, rowConfig.size, rowConfig.size / aspect, container)
+        elseif QUICore and QUICore.PixelRound then
             x = QUICore:PixelRound(x, container)
             y = QUICore:PixelRound(y, container)
         end
@@ -2367,6 +2379,10 @@ local function LayoutContainer(trackerKey)
     local maxRowWidth, proxyTotalHeight = ApplyViewerMetrics(vs, layoutPlan.metrics, trackerKey)
 
     if maxRowWidth > 0 and proxyTotalHeight > 0 then
+        if QUICore and QUICore.PixelRound then
+            maxRowWidth = QUICore:PixelRound(maxRowWidth, container)
+            proxyTotalHeight = QUICore:PixelRound(proxyTotalHeight, container)
+        end
         container:SetSize(maxRowWidth, proxyTotalHeight)
     end
 
@@ -2568,6 +2584,9 @@ ApplyUtilityAnchor = function()
     end
 
     local totalOffset = CDMLayout.GetUtilityAnchorOffset(utilSettings)
+    if QUICore and QUICore.PixelRound then
+        totalOffset = QUICore:PixelRound(totalOffset, utilContainer)
+    end
 
     local anchorParent = UpdateUtilityAnchorProxy() or essContainer
 
