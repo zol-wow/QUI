@@ -23,7 +23,8 @@ local function _EnsureCountFont(font, sz, outline, color)
             .. "," .. math.floor((color[3] or 1) * 255 + 0.5)
             .. "," .. math.floor((color[4] or 1) * 255 + 0.5)
     end
-    local key = sz .. (outline ~= "" and "_" .. outline or "") .. ck
+    local fk = tostring(font or ""):gsub("[^%w]", "")
+    local key = fk .. "_" .. sz .. (outline ~= "" and "_" .. outline or "") .. ck
     local name = _countFontCache[key]
     if not name then
         name = "QUI_CDM_CountFont_" .. key
@@ -45,6 +46,88 @@ local function _EnsureCountFont(font, sz, outline, color)
         end
     end
     return name
+end
+
+local function _EachCooldownFontString(cd, fn)
+    if not cd then return end
+    if cd.GetCountdownFontString then
+        local ok, fs = ns.SafeCallMethod("best-effort-style", cd, "GetCountdownFontString")
+        if ok and fs and not _issecretvalue(fs) then fn(fs) end
+    end
+    if cd.GetRegions then
+        local ok, regions = ns.SafeCall("best-effort-style", function() return { cd:GetRegions() } end)
+        if ok and type(regions) == "table" then
+            for i = 1, #regions do
+                local region = regions[i]
+                if region and not _issecretvalue(region)
+                    and region.GetObjectType and region:GetObjectType() == "FontString" then
+                    fn(region)
+                end
+            end
+        end
+    end
+end
+
+local function _AnchorCountdownText(cd, frame, rowConfig)
+    if not (cd and frame) then return end
+    local anchor = rowConfig.durationAnchor or "CENTER"
+    local ox = rowConfig.durationOffsetX or 0
+    local oy = rowConfig.durationOffsetY or 0
+    _EachCooldownFontString(cd, function(fs)
+        if fs.ClearAllPoints and fs.SetPoint then
+            fs:ClearAllPoints()
+            fs:SetPoint(anchor, frame, anchor, ox, oy)
+        end
+    end)
+end
+
+local function _ResolveStackText(frame)
+    local apps = frame.Applications
+    if apps then
+        if apps.GetObjectType and apps:GetObjectType() == "FontString" then
+            return apps, nil
+        end
+        local fs = apps.Applications
+        if fs and fs.GetObjectType and fs:GetObjectType() == "FontString" then
+            return fs, apps
+        end
+    end
+    local charge = frame.ChargeCount
+    if charge then
+        local fs = charge.Current
+        if fs and fs.GetObjectType and fs:GetObjectType() == "FontString" then
+            return fs, charge
+        end
+    end
+    return nil, nil
+end
+
+local function _StyleStackText(frame, rowConfig, baseFont, outline)
+    local fs, holder = _ResolveStackText(frame)
+    if not fs then return end
+    if rowConfig.hideStackText then
+        if holder and holder.SetAlpha then holder:SetAlpha(0) end
+        if fs.SetAlpha then fs:SetAlpha(0) end
+        return
+    end
+    if holder and holder.SetAlpha then holder:SetAlpha(1) end
+    if fs.SetAlpha then fs:SetAlpha(1) end
+    local font = baseFont
+    local LSM = ns.LSM
+    if LSM and rowConfig.stackFont and rowConfig.stackFont ~= "" then
+        font = LSM:Fetch("font", rowConfig.stackFont) or font
+    end
+    local stackSize = rowConfig.stackSize
+    if font and type(stackSize) == "number" and stackSize > 0 then
+        local name = _EnsureCountFont(font, stackSize, outline or "",
+            rowConfig.stackTextColor or {1, 1, 1, 1})
+        if name and fs.SetFontObject then fs:SetFontObject(name) end
+    end
+    if fs.ClearAllPoints and fs.SetPoint then
+        local anchor = rowConfig.stackAnchor or "BOTTOMRIGHT"
+        fs:ClearAllPoints()
+        fs:SetPoint(anchor, frame, anchor, rowConfig.stackOffsetX or 0, rowConfig.stackOffsetY or 0)
+    end
 end
 
 local function _DecorateWork(decorator, live, shell, rowConfig)
@@ -266,20 +349,30 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
             if cd.SetSwipeTexture then cd:SetSwipeTexture("Interface\\Buttons\\WHITE8X8") end
             if cd.SetDrawBling then cd:SetDrawBling(false) end
         end
+        local generalFont, generalOutline
         if Helpers and Helpers.GetGeneralFont then
-            local font = Helpers.GetGeneralFont()
-            local outline = Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline() or ""
+            generalFont = Helpers.GetGeneralFont()
+            generalOutline = Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline() or ""
+        end
+        if generalFont then
+            local durationFont = generalFont
+            local LSM = ns.LSM
+            if LSM and rowConfig.durationFont and rowConfig.durationFont ~= "" then
+                durationFont = LSM:Fetch("font", rowConfig.durationFont) or durationFont
+            end
             local dtc = rowConfig.durationTextColor or {1, 1, 1, 1}
-            if font then
-                local countFontName = _EnsureCountFont(font, rowConfig.durationSize or 14, outline, dtc)
-                if cd and cd.SetCountdownFont and countFontName then
-                    cd:SetCountdownFont(countFontName)
-                end
+            local countFontName = _EnsureCountFont(durationFont, rowConfig.durationSize or 14, generalOutline, dtc)
+            if cd and cd.SetCountdownFont and countFontName then
+                cd:SetCountdownFont(countFontName)
             end
         end
         if cd and cd.SetHideCountdownNumbers then
             cd:SetHideCountdownNumbers(rowConfig.hideDurationText and true or false)
         end
+        if not rowConfig.hideDurationText then
+            _AnchorCountdownText(cd, frame, rowConfig)
+        end
+        _StyleStackText(frame, rowConfig, generalFont, generalOutline)
         local lvlOk, baseLvl = ns.SafeCallMethod("best-effort-style", frame, "GetFrameLevel")
         if lvlOk and type(baseLvl) == "number" then
             local textLvl = baseLvl + 23
