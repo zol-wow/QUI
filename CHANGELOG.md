@@ -4,6 +4,27 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.1.0-beta4 - 2026-08-13
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Two fixes that keep QUI out of Blizzard's own code: the vehicle bar can hide
+itself again, and cooldown swipes stop flickering.
+
+### Fixed
+
+- **Leaving a vehicle no longer jams the override bar.** Blizzard's slide-out
+  code read a field QUI had tainted, so the final hide was blocked — the bar
+  could stick on screen with an "Interface action failed" error. QUI's action
+  buttons now stay out of the event table Blizzard reads, the micro menu is
+  moved back directly instead of through Blizzard's repositioning call, and a
+  bar that still gets stuck hides itself as soon as it legally can.
+- **Cooldown swipes stop flickering.** Two writers alternated on the swipe
+  draw flag: Blizzard rewrote it on every cooldown event and QUI forced it
+  back moments later. The flag belongs to Blizzard again, and recharging
+  charge spells return to their native edge-only look.
+
 ## v5.1.0-beta3 - 2026-08-12
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
