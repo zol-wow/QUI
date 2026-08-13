@@ -3269,8 +3269,12 @@ local function RunCDMDebugEdges(rest)
     end
 
     local physW, physH = GetPhysicalScreenSize()
-    print(string.format("%s physical=%dx%d uiParentScale=%.5f", P,
-        physW, physH, UIParent:GetEffectiveScale()))
+    local okScale, uiScale = ns.SafeCallMethod("best-effort-style", UIParent, "GetEffectiveScale")
+    local scaleText = "?"
+    if okScale and not DebugIsSecretValue(uiScale) and type(uiScale) == "number" then
+        scaleText = string.format("%.5f", uiScale)
+    end
+    print(string.format("%s physical=%dx%d uiParentScale=%s", P, physW, physH, scaleText))
 
     local function safeEdges(region)
         local ok, l, r, t, b = pcall(function()
