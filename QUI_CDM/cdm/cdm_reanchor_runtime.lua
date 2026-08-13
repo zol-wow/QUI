@@ -14,6 +14,32 @@ local function IsBlizzardCDMEntry(entry)
     return entry and entry.source == BLIZZARD_CDM_ENTRY_SOURCE
 end
 
+local function PlacementRect(placement)
+    local w, h = placement.w, placement.h
+    if w and h then return w, h end
+    local rc = placement.rowConfig
+    local size = rc and rc.size
+    if not size then return nil, nil end
+    local aspect = rc.aspectRatioCrop or 1
+    if type(aspect) ~= "number" or aspect <= 0 then aspect = 1 end
+    return size, size / aspect
+end
+
+-- Snap a CENTER-anchored rect to whole physical pixels. Rounding only the
+-- center leaves the edges on half-pixels when the size rounds to an odd
+-- pixel count, which renders the 1px border 2px wide on one side.
+local function SnapPlacementRect(deps, container, x, y, w, h)
+    if not deps.pixelRound then return x, y, w, h end
+    if not (w and h) then
+        return deps.pixelRound(x, container), deps.pixelRound(y, container), w, h
+    end
+    w = deps.pixelRound(w, container)
+    h = deps.pixelRound(h, container)
+    x = deps.pixelRound(x - w / 2, container) + w / 2
+    y = deps.pixelRound(y + h / 2, container) - h / 2
+    return x, y, w, h
+end
+
 local function ShouldMintFramelessOwned(entry, containerKey, displayMode, editing)
     if IsBuffIconKey(containerKey) then
         if IsBlizzardCDMEntry(entry) then return editing == true end
@@ -359,21 +385,10 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
         local frame = wrapper and wrapper.frame
         if frame then
             local x, y = placement.x, placement.y
-            if deps.pixelRound then
-                x = deps.pixelRound(x, container)
-                y = deps.pixelRound(y, container)
-            end
+            local w, h = PlacementRect(placement)
+            x, y, w, h = SnapPlacementRect(deps, container, x, y, w, h)
             if wrapper.reanchored then
                 local rc = placement.rowConfig
-                local w, h = placement.w, placement.h
-                if not (w and h) then
-                    local size = rc and rc.size
-                    if size then
-                        local aspect = (rc and rc.aspectRatioCrop) or 1
-                        if type(aspect) ~= "number" or aspect <= 0 then aspect = 1 end
-                        w, h = size, size / aspect
-                    end
-                end
                 local live = wrapper.liveFrame
                 if live and w and h then
                     local tlX, tlY = x - w / 2, y + h / 2
@@ -398,18 +413,8 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
             elseif deps.positionOwned then
                 local positionedByAuraMirror = false
                 if wrapper.auraMirror and deps.positionAuraMirror then
-                    local rc = placement.rowConfig
-                    local w, h = placement.w, placement.h
-                    if not (w and h) then
-                        local size = rc and rc.size
-                        if size then
-                            local aspect = rc.aspectRatioCrop or 1
-                            if type(aspect) ~= "number" or aspect <= 0 then aspect = 1 end
-                            w, h = size, size / aspect
-                        end
-                    end
                     positionedByAuraMirror = deps.positionAuraMirror(
-                        wrapper.auraMirror, frame, container, x, y, w, h, rc) == true
+                        wrapper.auraMirror, frame, container, x, y, w, h, placement.rowConfig) == true
                 end
                 if not positionedByAuraMirror then
                     deps.positionOwned(frame, container, "CENTER", "CENTER", x, y, placement.rowConfig)

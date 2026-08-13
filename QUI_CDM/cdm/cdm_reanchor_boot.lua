@@ -21,6 +21,10 @@ local function MakeApplySize(env)
     return function(container, metrics)
         local w = metrics.iconWidth or 0
         local h = metrics.totalHeight or 0
+        if env.pixelRound then
+            w = env.pixelRound(w, container)
+            h = env.pixelRound(h, container)
+        end
         if w > 0 and h > 0 and ((not env.canMutate) or env.canMutate(container)) then
             ns.SafeCallMethod("best-effort-style", container, "SetSize", w, h)
         end

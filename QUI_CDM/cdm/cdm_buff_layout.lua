@@ -35,6 +35,14 @@ local function snapPx(value, px)
     return floor(value / px + 0.5) * px
 end
 
+-- Snap a CENTER offset so the icon's edges land on whole pixels; snapping
+-- the center alone leaves both edges on half-pixels whenever the extent
+-- rounds to an odd pixel count, which renders 1px borders 2px wide.
+local function snapCenter(center, extent, px)
+    local ext = floor(extent / px + 0.5) * px
+    return floor((center - ext / 2) / px + 0.5) * px + ext / 2
+end
+
 local viewerBuffState = Helpers.CreateStateTable()
 
 local abs = math.abs
@@ -862,9 +870,9 @@ LayoutBuffIcons = function()
         if isVertical then
             local expectedY
             if growthDirection == "UP" then
-                expectedY = snapPx(startY + (i - 1) * (iconHeight + padding), px)
+                expectedY = snapCenter(startY + (i - 1) * (iconHeight + padding), iconHeight, px)
             else
-                expectedY = snapPx(startY - (i - 1) * (iconHeight + padding), px)
+                expectedY = snapCenter(startY - (i - 1) * (iconHeight + padding), iconHeight, px)
             end
             local point, _, _, xOfs, yOfs = icon:GetPoint(1)
             if not point or point ~= "CENTER" or abs((yOfs or 0) - expectedY) > 2 then
@@ -872,7 +880,7 @@ LayoutBuffIcons = function()
                 break
             end
         else
-            local expectedX = snapPx(startX + (i - 1) * (iconWidth + padding), px)
+            local expectedX = snapCenter(startX + (i - 1) * (iconWidth + padding), iconWidth, px)
             if not PositionMatchesTolerance(icon, expectedX, 2) then
                 needsReposition = true
                 break
@@ -894,10 +902,12 @@ LayoutBuffIcons = function()
                 else
                     y = startY - (i - 1) * (iconHeight + padding)
                 end
-                icon:SetPoint("CENTER", viewer, "CENTER", 0, snapPx(y, px))
+                icon:SetPoint("CENTER", viewer, "CENTER",
+                    snapCenter(0, iconWidth, px), snapCenter(y, iconHeight, px))
             else
                 local x = startX + (i - 1) * (iconWidth + padding)
-                icon:SetPoint("CENTER", viewer, "CENTER", snapPx(x, px), snapPx(startY, px))
+                icon:SetPoint("CENTER", viewer, "CENTER",
+                    snapCenter(x, iconWidth, px), snapCenter(startY, iconHeight, px))
             end
         end
     else
