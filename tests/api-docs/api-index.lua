@@ -930,6 +930,7 @@ return {
     ["C_DelvesUI.SaveSeenCuriosBySlotType"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_DelvesUI.SelectDelveEntranceTier"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_Discord.GetDiscordChannelName"] = { secretArguments = "AllowedWhenUntainted" },
+    ["C_Discord.GetDiscordUserName"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_Discord.GetNumDiscordChannels"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_Discord.GetServerLinkableChannels"] = { secretArguments = "AllowedWhenUntainted" },
     ["C_Discord.GetServerName"] = { secretArguments = "AllowedWhenUntainted" },
