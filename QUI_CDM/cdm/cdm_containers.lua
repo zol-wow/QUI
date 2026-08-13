@@ -132,15 +132,6 @@ end
 local function BlankReanchoredNativeItemFrame(frame)
     if not frame then return end
     if frame.SetAlpha then frame:SetAlpha(0) end
-
-    local cd = frame.Cooldown
-    if not cd then
-        local ok, cooldown = ns.SafeCallMethodIfPresent("best-effort-style", frame, "GetCooldownFrame")
-        if ok then cd = cooldown end
-    end
-    if cd and cd.SetDrawSwipe then
-        cd:SetDrawSwipe(false)
-    end
 end
 
 local GetDB = Helpers.CreateDBGetter("ncdm")
