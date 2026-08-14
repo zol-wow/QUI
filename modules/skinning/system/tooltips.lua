@@ -558,19 +558,6 @@ HasActiveWidgetContainer = function(tooltip)
                 return true
             end
 
-            local shownWidgetCount = child.shownWidgetCount
-            if shownWidgetCount ~= nil then
-                if Helpers.IsSecretValue(shownWidgetCount) then
-                    TooltipDebugCount("skin.widgetHit")
-                    return true -- @secret-policy: keep-native-when-unknown
-                end
-                shownWidgetCount = tonumber(shownWidgetCount)
-                if shownWidgetCount and shownWidgetCount > 0 then
-                    TooltipDebugCount("skin.widgetHit")
-                    return true
-                end
-            end
-
             local numWidgetsShowing = child.numWidgetsShowing
             if numWidgetsShowing ~= nil then
                 if Helpers.IsSecretValue(numWidgetsShowing) then

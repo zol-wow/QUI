@@ -59,7 +59,7 @@ function Helpers.HasTaintedWidgetContainer(tooltip)
     for i = 1, #children do
         local child = children[i]
         if child then
-            local ok, isWidgetContainer, widgetSetID, shownWidgetCount, numWidgetsShowing, dirty, numPoints = pcall(function()
+            local ok, isWidgetContainer, widgetSetID, numWidgetsShowing, dirty, numPoints = pcall(function()
                 local isWidget = child.RegisterForWidgetSet
                     or child.widgetType
                     or child.widgetSetID ~= nil
@@ -71,7 +71,7 @@ function Helpers.HasTaintedWidgetContainer(tooltip)
                     points = child:GetNumPoints()
                 end
 
-                return isWidget, child.widgetSetID, child.shownWidgetCount, child.numWidgetsShowing, child.dirty, points
+                return isWidget, child.widgetSetID, child.numWidgetsShowing, child.dirty, points
             end)
 
             if not ok then
@@ -80,7 +80,6 @@ function Helpers.HasTaintedWidgetContainer(tooltip)
 
             if isWidgetContainer then
                 if Helpers.IsSecretValue(widgetSetID)
-                    or Helpers.IsSecretValue(shownWidgetCount)
                     or Helpers.IsSecretValue(numWidgetsShowing)
                     or Helpers.IsSecretValue(dirty)
                     or Helpers.IsSecretValue(numPoints) then
@@ -88,11 +87,6 @@ function Helpers.HasTaintedWidgetContainer(tooltip)
                 end
 
                 if widgetSetID ~= nil or dirty == true then
-                    return true
-                end
-
-                local shownCount = tonumber(shownWidgetCount)
-                if shownCount and shownCount > 0 then
                     return true
                 end
 
