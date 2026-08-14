@@ -4,6 +4,38 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.0-beta1 - 2026-08-14
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+An action-bar taint pass plus small fixes: re-showing a bar in combat no
+longer throws blocked-action or cooldown errors, bag icon overlays sit on the
+button again, opened mail is readable with the dark skin, and the new 12.1
+consumables are in the macro dropdowns.
+
+### Added
+
+- **New 12.1 consumables in the macro dropdowns.** Liquid Luster, Alluring
+  Nostrum, Concentrated Silvermoon Health Potion, the fleeting Silvermoon
+  variants, and Vantus Rune: Tides are now available in the consumable macro
+  definitions and dropdowns.
+
+### Fixed
+
+- **Re-showing an action bar in combat no longer throws errors.** Leaving a
+  vehicle or override bar mid-combat could trigger blocked SetAttribute and
+  rejected cooldown errors; QUI's buttons no longer run Blizzard's tainted
+  show handler and are kept out of Blizzard's event dispatch entirely.
+- **Bag item icon overlays line up again.** The overlay texture was pinned at
+  a fixed size in the button center, so resized bag buttons drew it
+  misplaced. It now anchors to the button itself.
+- **Opened mail is readable with the dark skin.** Hiding the parchment left
+  the dark-ink letter body, subject, sender, and invoice text nearly
+  invisible; each text type is now recolored explicitly.
+- **The Help page's community links work again.** The Discord, GitHub, and
+  CurseForge links point at the current QUI homes.
+
 ## v5.1.0-beta6 - 2026-08-13
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
