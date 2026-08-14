@@ -76,7 +76,7 @@ do -- numeric buckets are handled in the same pass as the fold
     end
     check("empty numeric override remains empty", #elements[106] == 0, tostring(#elements[106]))
     check("'*' still has exactly one", countDefensives(elements["*"]) == 1)
-    check("stamped 60", p._schemaVersion == 60, tostring(p._schemaVersion))
+    check("stamped to current", p._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(p._schemaVersion))
 end
 
 do -- disabled "*" defensives mirrors as disabled

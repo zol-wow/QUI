@@ -2270,7 +2270,14 @@ local function RenderStarterStylesSection(sectionHost, ctx)
     return builder.Height()
 end
 
-local function RenderSpecPresetsSection(sectionHost, ctx)
+local selectedNameplateProfile = nil
+local NP_PROFILE_NONE = "__none"
+
+local function NameplateProfilePrint(message)
+    print("|cff60A5FAQUI:|r " .. tostring(message))
+end
+
+local function RenderNameplateProfilesSection(sectionHost, ctx)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
     local npdb = ResolveNameplatesDB()
@@ -2285,61 +2292,283 @@ local function RenderSpecPresetsSection(sectionHost, ctx)
         return nil
     end
 
-    builder.Header(ns.L["Spec & Role Presets"])
-    builder.Description(ns.L["Save the current nameplate settings as a preset. Spec presets live in this profile; role presets are account-wide — every character shares them. With auto-switch on, changing spec (or logging in) applies the matching preset; a spec preset wins over a role preset."])
-    local card = builder.Card()
+    builder.Header(ns.L["Nameplate Profiles"])
+    builder.Description(ns.L["Named nameplate profiles are account-wide: every character sees the same list. Save your current settings as a profile, assign profiles per specialization (or per role as a fallback), and export or import them as standalone strings. A spec assignment wins over a role assignment."])
 
-    local autoToggle = gui:CreateFormCheckbox(card.frame, nil, "specAutoSwitch", npdb, RefreshNameplates, {
-        description = ns.L["Automatically apply the saved spec preset when you change specialization."],
-    })
-    local roleStore = (Presets and Presets.GetRoleStore and Presets.GetRoleStore()) or { autoSwitch = false }
-    local roleAutoToggle = gui:CreateFormCheckbox(card.frame, nil, "autoSwitch", roleStore, RefreshNameplates, {
-        description = ns.L["Account-wide: any character switching to a tank, healer, or damage spec applies that role's preset."],
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Auto-switch on spec change"], autoToggle),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Auto-switch by role (account-wide)"], roleAutoToggle)
-    )
-    builder.CloseCard(card)
-    builder.Spacer(8)
-
-    if not Presets then
+    if not (Presets and Presets.ListProfileNames) then
         return builder.Height()
     end
 
-    local function AddPresetRow(labelText, saved, onSave, onApply, onClear)
+    local names = Presets.ListProfileNames()
+    local activeName = Presets.GetLastAppliedProfile and Presets.GetLastAppliedProfile() or nil
+    if selectedNameplateProfile and not Presets.HasProfile(selectedNameplateProfile) then
+        selectedNameplateProfile = nil
+    end
+    if not selectedNameplateProfile then
+        selectedNameplateProfile = activeName or names[1]
+    end
+    local hasSelection = selectedNameplateProfile ~= nil
+
+    local card = builder.Card()
+
+    local colors = gui.Colors or {}
+    local textColor = colors.text or { 0.9, 0.9, 0.9 }
+    local accentColor = colors.accent or { 0.2, 0.83, 0.6 }
+    local mutedColor = colors.textMuted or { 0.6, 0.6, 0.6 }
+
+    local activeCell = CreateFrame("Frame", nil, card.frame)
+    activeCell:SetHeight(28)
+    local activeLabel = activeCell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    activeLabel:SetPoint("LEFT", activeCell, "LEFT", 0, 0)
+    activeLabel:SetText(ns.L["Active Profile"])
+    activeLabel:SetTextColor(textColor[1], textColor[2], textColor[3], 1)
+    local activeValue = activeCell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    activeValue:SetPoint("RIGHT", activeCell, "RIGHT", 0, 0)
+    if activeName then
+        local modified = Presets.IsActiveProfileModified and Presets.IsActiveProfileModified()
+        activeValue:SetText(activeName .. (modified and (" |cff9CA3AF" .. ns.L["(modified)"] .. "|r") or ""))
+        activeValue:SetTextColor(accentColor[1], accentColor[2], accentColor[3], 1)
+    else
+        activeValue:SetText(ns.L["None"])
+        activeValue:SetTextColor(mutedColor[1], mutedColor[2], mutedColor[3], 1)
+    end
+    card.AddRow(activeCell)
+
+    local assignments = (Presets.GetAssignments and Presets.GetAssignments()) or { autoSwitch = false, specs = {}, roles = {} }
+    local autoToggle = gui:CreateFormCheckbox(card.frame, nil, "autoSwitch", assignments, nil, {
+        description = ns.L["Account-wide: changing specialization (or logging in) applies the profile assigned to your spec, or to your role if the spec has none."],
+    })
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Auto-switch on spec change"], autoToggle))
+    builder.CloseCard(card)
+    builder.Spacer(8)
+
+    local function AddRow(height)
         local row = CreateFrame("Frame", nil, sectionHost)
-        row:SetHeight(26)
+        row:SetHeight(height)
         row:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -builder.Height(0))
         row:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, -builder.Height(0))
-        builder.Spacer(30)
+        builder.Spacer(height + 4)
+        return row
+    end
 
-        local label = gui:CreateLabel(row, labelText .. (saved and (" |cFF34D399" .. ns.L["(saved)"] .. "|r") or ""), 12)
-        label:SetPoint("LEFT", row, "LEFT", 4, 0)
+    local function Reflow()
+        ScheduleSectionReflow(ctx)
+    end
 
-        local saveBtn = gui:CreateButton(row, ns.L["Save"], 70, 20, function()
-            onSave()
-            ScheduleSectionReflow(ctx)
-        end)
-        saveBtn:SetPoint("LEFT", row, "LEFT", 200, 0)
+    -- Profile selector + actions
+    local selectorRow = AddRow(26)
+    local selectorLabel = gui:CreateLabel(selectorRow, ns.L["Profile"], 12)
+    selectorLabel:SetPoint("LEFT", selectorRow, "LEFT", 4, 0)
 
-        local applyBtn = gui:CreateButton(row, ns.L["Apply"], 70, 20, function()
-            if onApply() then
-                ScheduleSectionReflow(ctx)
-            end
-        end)
-        applyBtn:SetPoint("LEFT", saveBtn, "RIGHT", 8, 0)
-
-        local clearBtn = gui:CreateButton(row, ns.L["Clear"], 70, 20, function()
-            onClear()
-            ScheduleSectionReflow(ctx)
-        end)
-        clearBtn:SetPoint("LEFT", applyBtn, "RIGHT", 8, 0)
-
-        if not saved then
-            if applyBtn.Disable then applyBtn:Disable() end
-            if clearBtn.Disable then clearBtn:Disable() end
+    local profileOptions = {}
+    for _, name in ipairs(names) do
+        profileOptions[#profileOptions + 1] = { value = name, text = name }
+    end
+    if #profileOptions == 0 then
+        profileOptions[1] = { value = NP_PROFILE_NONE, text = ns.L["No profiles saved yet"] }
+    end
+    local selectorState = { value = selectedNameplateProfile or NP_PROFILE_NONE }
+    local selectorDropdown = gui:CreateFormDropdown(selectorRow, nil, profileOptions, "value", selectorState, function()
+        if selectorState.value ~= NP_PROFILE_NONE then
+            selectedNameplateProfile = selectorState.value
         end
+    end)
+    selectorDropdown:SetPoint("LEFT", selectorRow, "LEFT", 200, 0)
+    selectorDropdown:SetWidth(280)
+
+    local exportBox
+    local actionRow = AddRow(24)
+    local applyBtn = gui:CreateButton(actionRow, ns.L["Apply"], 74, 20, function()
+        if Presets.ApplyProfile(selectedNameplateProfile) then
+            RefreshNameplates()
+            InvalidateTabBodies()
+            Reflow()
+        end
+    end)
+    applyBtn:SetPoint("LEFT", actionRow, "LEFT", 200, 0)
+
+    local updateBtn = gui:CreateButton(actionRow, ns.L["Update"], 74, 20, function()
+        local name = selectedNameplateProfile
+        gui:ShowConfirmation({
+            title = ns.L["Update Profile"],
+            message = string.format(ns.L["Overwrite the nameplate profile '%s' with your current nameplate settings?"], name),
+            acceptText = ns.L["Update"],
+            cancelText = ns.L["Cancel"],
+            onAccept = function()
+                if Presets.SaveProfile(name) then
+                    NameplateProfilePrint(string.format(ns.L["Nameplate profile '%s' updated."], name))
+                    Reflow()
+                end
+            end,
+        })
+    end)
+    updateBtn:SetPoint("LEFT", applyBtn, "RIGHT", 8, 0)
+
+    local deleteBtn = gui:CreateButton(actionRow, ns.L["Delete"], 74, 20, function()
+        local name = selectedNameplateProfile
+        gui:ShowConfirmation({
+            title = ns.L["Delete Profile"],
+            message = string.format(ns.L["Delete the nameplate profile '%s'? Any spec or role assignments using it are cleared."], name),
+            acceptText = ns.L["Delete"],
+            cancelText = ns.L["Cancel"],
+            isDestructive = true,
+            onAccept = function()
+                if Presets.DeleteProfile(name) then
+                    selectedNameplateProfile = nil
+                    Reflow()
+                end
+            end,
+        })
+    end)
+    deleteBtn:SetPoint("LEFT", updateBtn, "RIGHT", 8, 0)
+
+    local exportBtn = gui:CreateButton(actionRow, ns.L["Export"], 74, 20, function()
+        local core = Helpers.GetCore and Helpers.GetCore()
+        if not (core and core.ExportNameplateProfileToString) then return end
+        local str, err = core:ExportNameplateProfileToString(selectedNameplateProfile)
+        if exportBox and exportBox.editBox then
+            exportBox.editBox:SetText(str or err or ns.L["Error generating export string"])
+            exportBox.editBox:SetCursorPosition(0)
+        end
+    end)
+    exportBtn:SetPoint("LEFT", deleteBtn, "RIGHT", 8, 0)
+
+    if not hasSelection then
+        for _, btn in ipairs({ applyBtn, updateBtn, deleteBtn, exportBtn }) do
+            if btn.Disable then btn:Disable() end
+        end
+    end
+
+    -- Save as new / rename
+    local nameRow = AddRow(26)
+    local nameLabel = gui:CreateLabel(nameRow, ns.L["Profile name"], 12)
+    nameLabel:SetPoint("LEFT", nameRow, "LEFT", 4, 0)
+    local nameField, nameEditBox = gui:CreateInlineEditBox(nameRow, { width = 280, maxLetters = 60 })
+    nameField:SetPoint("LEFT", nameRow, "LEFT", 200, 0)
+
+    local nameActionRow = AddRow(24)
+    local function ReadNameInput()
+        local text = nameEditBox:GetText() or ""
+        text = text:gsub("^%s+", ""):gsub("%s+$", "")
+        if text == "" then
+            NameplateProfilePrint(ns.L["Enter a profile name first."])
+            return nil
+        end
+        if text == NP_PROFILE_NONE then
+            NameplateProfilePrint(ns.L["This name is reserved."])
+            return nil
+        end
+        return text
+    end
+
+    local saveNewBtn = gui:CreateButton(nameActionRow, ns.L["Save as New"], 114, 20, function()
+        local name = ReadNameInput()
+        if not name then return end
+        local function doSave()
+            if Presets.SaveProfile(name) then
+                selectedNameplateProfile = name
+                Reflow()
+            end
+        end
+        if Presets.HasProfile(name) then
+            gui:ShowConfirmation({
+                title = ns.L["Overwrite Profile"],
+                message = string.format(ns.L["A nameplate profile named '%s' already exists. Overwrite it?"], name),
+                acceptText = ns.L["Overwrite"],
+                cancelText = ns.L["Cancel"],
+                isDestructive = true,
+                onAccept = doSave,
+            })
+        else
+            doSave()
+        end
+    end)
+    saveNewBtn:SetPoint("LEFT", nameActionRow, "LEFT", 200, 0)
+
+    local renameBtn = gui:CreateButton(nameActionRow, ns.L["Rename Selected"], 130, 20, function()
+        local name = ReadNameInput()
+        if not name then return end
+        if Presets.HasProfile(name) then
+            NameplateProfilePrint(string.format(ns.L["A nameplate profile named '%s' already exists."], name))
+            return
+        end
+        if Presets.RenameProfile(selectedNameplateProfile, name) then
+            selectedNameplateProfile = name
+            Reflow()
+        end
+    end)
+    renameBtn:SetPoint("LEFT", saveNewBtn, "RIGHT", 8, 0)
+    if not hasSelection and renameBtn.Disable then renameBtn:Disable() end
+
+    -- Export / import string box
+    local boxRow = AddRow(72)
+    exportBox = gui:CreateScrollableTextBox(boxRow, 72, "")
+    exportBox:SetPoint("TOPLEFT", boxRow, "TOPLEFT", 4, 0)
+    exportBox:SetPoint("TOPRIGHT", boxRow, "TOPRIGHT", -4, 0)
+    exportBox.editBox:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+
+    local importRow = AddRow(24)
+    local importBtn = gui:CreateButton(importRow, ns.L["Import"], 74, 20, function()
+        local core = Helpers.GetCore and Helpers.GetCore()
+        if not (core and core.AnalyzeNameplateProfileImportString) then return end
+        local text = exportBox.editBox:GetText() or ""
+        local ok, result = core:AnalyzeNameplateProfileImportString(text)
+        if not ok then
+            NameplateProfilePrint(result or ns.L["Could not read import string."])
+            return
+        end
+        local name = result.name or ns.L["Imported nameplate profile"]
+        local function doImport()
+            local iok, importedName, stripped = core:ImportNameplateProfileFromString(text, name)
+            if not iok then
+                NameplateProfilePrint(importedName or ns.L["Could not read import string."])
+                return
+            end
+            if stripped and #stripped > 0 then
+                NameplateProfilePrint(string.format(ns.L["Auto-fixed %d incompatible settings during import."], #stripped))
+            end
+            NameplateProfilePrint(string.format(ns.L["Imported nameplate profile '%s'."], importedName))
+            selectedNameplateProfile = importedName
+            Reflow()
+        end
+        if Presets.HasProfile(name) then
+            gui:ShowConfirmation({
+                title = ns.L["Overwrite Profile"],
+                message = string.format(ns.L["A nameplate profile named '%s' already exists. Overwrite it?"], name),
+                acceptText = ns.L["Overwrite"],
+                cancelText = ns.L["Cancel"],
+                isDestructive = true,
+                onAccept = doImport,
+            })
+        else
+            doImport()
+        end
+    end)
+    importBtn:SetPoint("LEFT", importRow, "LEFT", 4, 0)
+
+    local importHint = gui:CreateLabel(importRow, ns.L["Paste a nameplate profile string above, then press Import."], 11, { 0.6, 0.65, 0.7, 1 })
+    importHint:SetPoint("LEFT", importBtn, "RIGHT", 10, 0)
+
+    -- Assignments
+    builder.Spacer(6)
+    builder.Header(ns.L["Nameplate Assignments"])
+    builder.Description(ns.L["Pick which nameplate profile each specialization of this class uses. Role assignments cover specs without their own profile — on every class."])
+
+    local assignmentOptions = { { value = NP_PROFILE_NONE, text = ns.L["None"] } }
+    for _, name in ipairs(names) do
+        assignmentOptions[#assignmentOptions + 1] = { value = name, text = name }
+    end
+
+    local function AddAssignmentRow(labelText, current, onSelect)
+        local row = AddRow(26)
+        local label = gui:CreateLabel(row, labelText, 12)
+        label:SetPoint("LEFT", row, "LEFT", 4, 0)
+        local state = { value = current or NP_PROFILE_NONE }
+        local dropdown = gui:CreateFormDropdown(row, nil, assignmentOptions, "value", state, function()
+            onSelect(state.value ~= NP_PROFILE_NONE and state.value or nil)
+        end)
+        dropdown:SetPoint("LEFT", row, "LEFT", 200, 0)
+        dropdown:SetWidth(280)
     end
 
     local numSpecs = 0
@@ -2348,17 +2577,19 @@ local function RenderSpecPresetsSection(sectionHost, ctx)
         if ok and type(n) == "number" then numSpecs = n end
     end
     for specIndex = 1, numSpecs do
-        local specName = ns.L["Spec"] .. " " .. specIndex
+        local specID, specName
         if GetSpecializationInfo then
-            local ok, _, name = pcall(GetSpecializationInfo, specIndex)
-            if ok and type(name) == "string" and name ~= "" then
-                specName = name
+            local ok, id, name = pcall(GetSpecializationInfo, specIndex)
+            if ok and type(id) == "number" and id > 0 then
+                specID = id
+                specName = type(name) == "string" and name ~= "" and name or nil
             end
         end
-        AddPresetRow(specName, Presets.HasPreset(specIndex),
-            function() Presets.SaveForSpec(specIndex) end,
-            function() return Presets.ApplyForSpec(specIndex) end,
-            function() Presets.ClearForSpec(specIndex) end)
+        if specID then
+            AddAssignmentRow(specName or (ns.L["Spec"] .. " " .. specIndex),
+                Presets.GetSpecAssignment(specID),
+                function(profileName) Presets.AssignSpec(specID, profileName) end)
+        end
     end
 
     builder.Spacer(6)
@@ -2369,10 +2600,9 @@ local function RenderSpecPresetsSection(sectionHost, ctx)
     }
     for _, def in ipairs(ROLE_ROWS) do
         local role = def.role
-        AddPresetRow(def.label, Presets.HasRolePreset(role),
-            function() Presets.SaveForRole(role) end,
-            function() return Presets.ApplyForRole(role) end,
-            function() Presets.ClearForRole(role) end)
+        AddAssignmentRow(def.label,
+            Presets.GetRoleAssignment(role),
+            function(profileName) Presets.AssignRole(role, profileName) end)
     end
 
     return builder.Height()
@@ -2481,7 +2711,7 @@ end
 local GENERAL_TAB_FEATURE = CreateMultiSectionTabFeature("nameplatesGeneralTab", {
     { id = "enable", minHeight = 64, render = RenderEnableSection },
     { id = "starterStyles", minHeight = 150, render = RenderStarterStylesSection },
-    { id = "specPresets", minHeight = 160, render = RenderSpecPresetsSection },
+    { id = "nameplateProfiles", minHeight = 420, render = RenderNameplateProfilesSection },
     { id = "cvarsSection", minHeight = 130, render = RenderCVarsSection },
 })
 

@@ -58,7 +58,7 @@ return {
     "QUI_Nameplates/nameplates/plate_health.lua::21",
     "QUI_Nameplates/nameplates/plate_power.lua::5",
     "QUI_Nameplates/nameplates/plate_type.lua::1",
-    "QUI_Nameplates/nameplates/presets.lua::2",
+    "QUI_Nameplates/nameplates/presets.lua::4",
     "QUI_Nameplates/nameplates/settings/nameplates_preview_driver.lua::4",
     "QUI_Nameplates/nameplates/settings/nameplates_schema.lua::2",
     "QUI_Nameplates/nameplates/shared.lua::3",

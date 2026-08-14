@@ -118,7 +118,7 @@ do
     check("utilityFrequency survives", profile.customGlow.utilityFrequency == 0.25)
     check("utilityEnabled survives", profile.customGlow.utilityEnabled == true)
 
-    check("stamped to current (60)", profile._schemaVersion == 60, tostring(profile._schemaVersion))
+    check("stamped to current (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(profile._schemaVersion))
 end
 
 ----------------------------------------------------------------------------
@@ -157,7 +157,7 @@ do
     M.RunOnProfile(profile)
     check("idempotent: live anchor still present", profile.frameAnchoring["cdmCustom_" .. liveKey] ~= nil)
     check("idempotent: live glow still present", profile.customGlow[liveKey .. "Scale"] == 0.5)
-    check("idempotent: stays at current (60)", profile._schemaVersion == 60, tostring(profile._schemaVersion))
+    check("idempotent: stays at current (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(profile._schemaVersion))
 end
 
 if failures > 0 then os.exit(1) end

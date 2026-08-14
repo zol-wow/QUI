@@ -2763,8 +2763,6 @@ local defaults = {
                 showInInstances = "never",
                 showNPCs = true,
             },
-            specPresets = {},
-            specAutoSwitch = false,
             simplified = {
                 scale = 1.0,
             },
