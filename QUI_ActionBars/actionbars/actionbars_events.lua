@@ -225,7 +225,10 @@ end)
 
 function ScheduleSlotUpdate(slot)
     if not slot or slot < 1 then return end
-    if GetTime() - _lastPagingTime < 0.5 then return end
+    if GetTime() - _lastPagingTime < 0.5 then
+        ScheduleABVisualUpdate(false, true)
+        return
+    end
     abDirtySlots[slot] = true
     abSlotFrame:Show()
 end
@@ -279,6 +282,7 @@ function OnOwnedEvent(self, event, ...)
                 ActionBarsOwned.UpdateOverlayGlow(btn)
             end
         end
+        ScheduleABVisualUpdate(false, true)
         if not InCombatLockdown() then
             UpdateStanceBarLayout()
         else
@@ -321,6 +325,7 @@ function OnOwnedEvent(self, event, ...)
         end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
+        ScheduleABVisualUpdate(false, true)
         FinishBlockedOverrideBarExit()
         if ActionBarsOwned.pendingExtraButtonInit then
             ActionBarsOwned.pendingExtraButtonInit = false
