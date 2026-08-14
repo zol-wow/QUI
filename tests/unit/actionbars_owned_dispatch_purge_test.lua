@@ -95,9 +95,14 @@ function GetBuildInfo()
     return "12.0.5", "66562", "May 1 2026", 120005
 end
 
+local function templateOnShow() end
+local function templateOnHide() end
+
 function CreateFrame(_, _, parent)
     local frame = NewFrame()
     frame.parent = parent
+    frame.scripts.OnShow = templateOnShow
+    frame.scripts.OnHide = templateOnHide
     return frame
 end
 
@@ -215,15 +220,24 @@ _G.QUI_Bar3Button2 = staleOwned
 dispatcher:RegisterFrame(staleOwned)
 assert(dispatcher.frames[staleOwned] ~= nil, "sanity: stale owned button registered")
 
+local function laterHookedOnShow() end
+staleOwned.scripts.OnShow = laterHookedOnShow
+
 local reusedBtn = env.EnsureOwnedActionButton(container, "bar3", "QUI_Bar3Button2", 2)
 assert(reusedBtn == staleOwned, "sanity: reuse branch must return the existing frame")
 assert(dispatcher.frames[staleOwned] == nil,
     "EnsureOwnedActionButton must sweep reused owned buttons out of ActionBarActionEventsFrame.frames")
+assert(staleOwned.scripts.OnShow == laterHookedOnShow,
+    "the reuse branch must not touch script handlers hooked after creation")
 
 -- Create path + lazy re-registration: Blizzard's Update() re-registers a
 -- button whenever it holds an action; the hook must purge it immediately.
 local createdBtn = env.EnsureOwnedActionButton(container, "bar3", "QUI_Bar3Button1", 1)
 assert(createdBtn ~= nil, "sanity: create branch must return a button")
+assert(createdBtn.scripts.OnShow == nil,
+    "the create branch must clear the template's OnShow handler")
+assert(createdBtn.scripts.OnHide == nil,
+    "the create branch must clear the template's OnHide handler")
 
 dispatcher:RegisterFrame(createdBtn)
 assert(dispatcher.frames[createdBtn] == nil,
