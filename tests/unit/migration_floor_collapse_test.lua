@@ -20,7 +20,7 @@ do
     M.RunOnProfile(profile)
     check("below-floor (46) wiped: user data gone", profile.someModule == nil, tostring(profile.someModule))
     check("below-floor (46) flagged _needsStarterReseed", profile._needsStarterReseed == true, tostring(profile._needsStarterReseed))
-    check("below-floor (46) stamped to CURRENT (60)", profile._schemaVersion == 60, tostring(profile._schemaVersion))
+    check("below-floor (46) stamped to CURRENT (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(profile._schemaVersion))
 end
 
 -- 2) At-floor profile (47) is NOT floored; the squash runs RestoreBuffDebuffSplit +
@@ -38,7 +38,7 @@ do
     check("at-floor (47) flat buffIconSize pruned by the elements seed", profile.buffBorders.buffIconSize == nil, tostring(profile.buffBorders.buffIconSize))
     check("at-floor (47) NOT flagged for reseed", profile._needsStarterReseed == nil, tostring(profile._needsStarterReseed))
     check("at-floor (47) debuffFrame restored", profile.frameAnchoring.debuffFrame ~= nil, "debuffFrame nil")
-    check("at-floor (47) stamped to current (60)", profile._schemaVersion == 60, tostring(profile._schemaVersion))
+    check("at-floor (47) stamped to current (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(profile._schemaVersion))
 end
 
 -- 2b) PrunePrivateAuras on the stable schema-47 path: stored
@@ -72,7 +72,7 @@ do
         and profile.quiUnitFrames.player.portrait.enabled == true, "portrait clobbered")
     check("prune preserves sibling group settings", profile.quiGroupFrames.party.frames
         and profile.quiGroupFrames.party.frames.width == 90, "frames clobbered")
-    check("stable path stamps to CURRENT (60)", profile._schemaVersion == 60,
+    check("stable path stamps to CURRENT (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION,
         tostring(profile._schemaVersion))
 end
 
@@ -91,7 +91,7 @@ do
         profile.fonts.global == "__QUI_GLOBAL__", tostring(profile.fonts.global))
     check("alpha stamp (59) NOT floored", profile._needsStarterReseed == nil,
         tostring(profile._needsStarterReseed))
-    check("alpha stamp (59) stamped to CURRENT (60)", profile._schemaVersion == 60,
+    check("alpha stamp (59) stamped to CURRENT (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION,
         tostring(profile._schemaVersion))
 end
 

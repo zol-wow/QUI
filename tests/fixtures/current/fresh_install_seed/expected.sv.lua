@@ -3106,8 +3106,6 @@ return {
           simplified = {
             scale = 1
           },
-          specAutoSwitch = false,
-          specPresets = {},
           types = {
             bossElite = {
               absorbs = {
@@ -8289,7 +8287,7 @@ return {
       Default = {
         _defaultsVersion = 3,
         _needsLateAbImport = true,
-        _schemaVersion = 60,
+        _schemaVersion = 61,
         actionBars = {
           bars = {
             bags = {

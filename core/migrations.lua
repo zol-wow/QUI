@@ -5,11 +5,13 @@ ns.Migrations = Migrations
 if _G.QUI then _G.QUI.Migrations = Migrations end
 
 local _currentGlobalDB     = nil
+local _currentProfileKey   = nil
 
-local CURRENT_SCHEMA_VERSION = 60
+local CURRENT_SCHEMA_VERSION = 61
 
 local MIN_SUPPORTED_SCHEMA = 47
 
+Migrations.CURRENT_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
 Migrations.MIN_SUPPORTED_SCHEMA = MIN_SUPPORTED_SCHEMA
 
 local function CloneValue(value)
@@ -1291,6 +1293,110 @@ local function MigrateActionBarPositionsFromEditMode(profile)
         imported, protected, skipped)
 end
 
+local function ClaimUniqueNameplateProfileName(store, baseName)
+    if store[baseName] == nil then return baseName end
+    local suffix = 2
+    while store[baseName .. " " .. suffix] ~= nil do
+        suffix = suffix + 1
+    end
+    return baseName .. " " .. suffix
+end
+
+local function EnsureNameplateProfileStore(globalDB)
+    if type(globalDB.nameplateProfiles) ~= "table" then
+        globalDB.nameplateProfiles = {}
+    end
+    return globalDB.nameplateProfiles
+end
+
+local function EnsureNameplateAssignments(globalDB)
+    local assignments = globalDB.nameplateProfileAssignments
+    if type(assignments) ~= "table" then
+        assignments = { autoSwitch = false }
+        globalDB.nameplateProfileAssignments = assignments
+    end
+    if type(assignments.specs) ~= "table" then assignments.specs = {} end
+    if type(assignments.roles) ~= "table" then assignments.roles = {} end
+    return assignments
+end
+
+-- Legacy nameplate spec presets were keyed by spec INDEX (1..4), which collides
+-- across classes when characters share a profile. The class the snapshot was
+-- saved on is unrecoverable, so they become unassigned named profiles in the
+-- account-wide store. Without a global DB (profile import path) the legacy
+-- keys are stripped instead.
+function Migrations.MigrateNameplatePresets(profile, globalDB, profileLabel)
+    local np = type(profile) == "table" and profile.nameplates
+    if type(np) ~= "table" then return false end
+
+    local changed = false
+    local wantsAutoSwitch = np.specAutoSwitch == true
+
+    if type(np.specPresets) == "table" then
+        if globalDB then
+            local store = EnsureNameplateProfileStore(globalDB)
+            for specIndex, snap in pairs(np.specPresets) do
+                if type(snap) == "table" and next(snap) ~= nil then
+                    local base = ("Migrated spec preset %s"):format(tostring(specIndex))
+                    if type(profileLabel) == "string" and profileLabel ~= "" then
+                        base = ("%s (%s)"):format(base, profileLabel)
+                    end
+                    store[ClaimUniqueNameplateProfileName(store, base)] = CloneValue(snap)
+                    MigLog("Nameplate presets: converted %s spec preset %s",
+                        tostring(profileLabel or "?"), tostring(specIndex))
+                end
+            end
+        end
+        np.specPresets = nil
+        changed = true
+    end
+
+    if np.specAutoSwitch ~= nil then
+        np.specAutoSwitch = nil
+        changed = true
+    end
+
+    if wantsAutoSwitch and globalDB then
+        EnsureNameplateAssignments(globalDB).autoSwitch = true
+    end
+
+    return changed
+end
+
+-- Legacy role presets were already account-wide and unambiguous, so they keep
+-- their role assignment as named profiles. Idempotent: the source key is
+-- removed after conversion.
+function Migrations.MigrateNameplateRolePresets(globalDB)
+    if type(globalDB) ~= "table" then return false end
+    local rolePresets = globalDB.nameplateRolePresets
+    if type(rolePresets) ~= "table" then return false end
+
+    local ROLE_PROFILE_NAMES = {
+        { role = "TANK", name = "Tank" },
+        { role = "HEALER", name = "Healer" },
+        { role = "DAMAGER", name = "Damage" },
+    }
+    local store = EnsureNameplateProfileStore(globalDB)
+    local assignments = EnsureNameplateAssignments(globalDB)
+
+    for _, def in ipairs(ROLE_PROFILE_NAMES) do
+        local snap = rolePresets[def.role]
+        if type(snap) == "table" and next(snap) ~= nil then
+            local name = ClaimUniqueNameplateProfileName(store, def.name)
+            store[name] = CloneValue(snap)
+            assignments.roles[def.role] = name
+            MigLog("Nameplate presets: converted role preset %s -> %s", def.role, name)
+        end
+    end
+
+    if rolePresets.autoSwitch == true then
+        assignments.autoSwitch = true
+    end
+
+    globalDB.nameplateRolePresets = nil
+    return true
+end
+
 function Migrations.RunLate(db)
     if not db then return false end
     local profile = db.profile
@@ -1496,6 +1602,8 @@ function Migrations.RunOnProfile(profile)
     end
 
     if stored < CURRENT_SCHEMA_VERSION then
+        Migrations.MigrateNameplatePresets(profile, _currentGlobalDB, _currentProfileKey)
+
         Migrations.RestoreBuffDebuffSplit(profile)
 
         Migrations.PrunePrivateAuras(profile)
@@ -1523,11 +1631,15 @@ function Migrations.Run(db)
     local profiles = sv and sv.profiles
     if type(profiles) == "table" then
         local any = false
-        for _, profile in pairs(profiles) do
+        for profileKey, profile in pairs(profiles) do
+            _currentProfileKey = profileKey
             if Migrations.RunOnProfile(profile) then
                 any = true
             end
         end
+        _currentProfileKey = nil
+
+        Migrations.MigrateNameplateRolePresets(db.global)
 
         local pins = ns.Settings and ns.Settings.Pins
         if pins then
@@ -1544,6 +1656,8 @@ function Migrations.Run(db)
     end
 
     local result = Migrations.RunOnProfile(db.profile)
+
+    Migrations.MigrateNameplateRolePresets(db.global)
 
     local pins = ns.Settings and ns.Settings.Pins
     if pins then

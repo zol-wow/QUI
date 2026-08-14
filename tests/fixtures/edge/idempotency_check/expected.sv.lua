@@ -3106,8 +3106,6 @@ return {
           simplified = {
             scale = 1
           },
-          specAutoSwitch = false,
-          specPresets = {},
           types = {
             bossElite = {
               absorbs = {
@@ -8288,7 +8286,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 60,
+        _schemaVersion = 61,
         cdm = {
           engine = "owned"
         },

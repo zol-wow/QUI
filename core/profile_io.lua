@@ -363,6 +363,16 @@ local SUPPORTED_PROFILE_IMPORT_PREFIXES = {
     CDM1 = true,
 }
 
+-- QUI1/CDM1 decode fine here too: the payload-type check below turns a pasted
+-- full-profile string into a pointed error instead of a generic prefix error.
+local NAMEPLATE_PROFILE_PREFIXES = { NP1 = true, QUI1 = true, CDM1 = true }
+local NAMEPLATE_PROFILE_PAYLOAD_TYPE = "nameplateProfile"
+local NAMEPLATE_SETTINGS_EXCLUDED_KEYS = {
+    enabled = true,
+    specPresets = true,
+    specAutoSwitch = true,
+}
+
 local PROFILE_THEME_GENERAL_KEYS = {
     "font",
     "fontOutline",
@@ -1542,7 +1552,7 @@ local function DetectProfileImportPrefix(str)
     return str:match("^([A-Za-z][A-Za-z0-9]*%d):")
 end
 
-local function DeserializeProfileImportPayload(str)
+local function DeserializeProfileImportPayload(str, allowedPrefixes, defaultPrefix)
     if not AceSerializer or not LibDeflate then
         return false, nil, nil, "Import requires AceSerializer-3.0 and LibDeflate."
     end
@@ -1557,12 +1567,16 @@ local function DeserializeProfileImportPayload(str)
 
     local prefix = DetectProfileImportPrefix(str)
     if prefix then
-        if not SUPPORTED_PROFILE_IMPORT_PREFIXES[prefix] then
+        local allowed = allowedPrefixes or SUPPORTED_PROFILE_IMPORT_PREFIXES
+        if not allowed[prefix] then
+            if not allowedPrefixes and NAMEPLATE_PROFILE_PREFIXES[prefix] then
+                return false, nil, prefix, "This is a nameplate profile string. Import it under Nameplates in the options panel."
+            end
             return false, nil, nil, ("This doesn't appear to be a QUI profile string (%s)."):format(prefix)
         end
         str = str:sub(#prefix + 2)
     else
-        prefix = "QUI1"
+        prefix = defaultPrefix or "QUI1"
     end
 
     local compressed = LibDeflate:DecodeForPrint(str)
@@ -2142,7 +2156,7 @@ local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs
     return true, ("Imported %s."):format(table.concat(selectedLabels, ", "))
 end
 
-local function SerializeProfileExportPayload(payload)
+local function SerializeProfileExportPayload(payload, prefix)
     if type(payload) ~= "table" then
         return nil, "Failed to serialize profile."
     end
@@ -2165,7 +2179,7 @@ local function SerializeProfileExportPayload(payload)
         return nil, "Failed to encode profile."
     end
 
-    return "QUI1:" .. encoded
+    return (prefix or "QUI1") .. ":" .. encoded
 end
 
 local function RunExportProfileSelection(core, selectedCategoryIDs)
@@ -2350,6 +2364,86 @@ end
 
 function QUICore:ExportProfileSelectionToString(selectedCategoryIDs)
     return RunExportProfileSelection(self, selectedCategoryIDs)
+end
+
+local function StripExcludedNameplateKeys(settings)
+    for key in pairs(NAMEPLATE_SETTINGS_EXCLUDED_KEYS) do
+        settings[key] = nil
+    end
+    return settings
+end
+
+function QUICore:ExportNameplateProfileToString(name)
+    local store = self.db and self.db.global and self.db.global.nameplateProfiles
+    local snap = type(store) == "table" and type(name) == "string" and store[name] or nil
+    if type(snap) ~= "table" then
+        return nil, "No nameplate profile with that name."
+    end
+
+    local payload = {
+        _type = NAMEPLATE_PROFILE_PAYLOAD_TYPE,
+        _schemaVersion = tonumber(self.db.profile and self.db.profile._schemaVersion),
+        name = name,
+        settings = StripExcludedNameplateKeys(CloneValue(snap)),
+    }
+    return SerializeProfileExportPayload(payload, "NP1")
+end
+
+function QUICore:AnalyzeNameplateProfileImportString(str)
+    if not self.db or not self.db.global then
+        return false, "No database loaded."
+    end
+
+    local ok, payload, _, decodeErr = DeserializeProfileImportPayload(str, NAMEPLATE_PROFILE_PREFIXES, "NP1")
+    if not ok then
+        return false, decodeErr or "Could not read import string."
+    end
+
+    if type(payload) ~= "table" or payload._type ~= NAMEPLATE_PROFILE_PAYLOAD_TYPE or type(payload.settings) ~= "table" then
+        if type(payload) == "table" and type(payload.nameplates) == "table" then
+            return false, "This is a full QUI profile string. Import it from the profile Import/Export page."
+        end
+        return false, "This doesn't appear to be a nameplate profile string."
+    end
+
+    local floorErr = SchemaFloorError(payload)
+    if floorErr then
+        return false, floorErr
+    end
+
+    local wrapped = { nameplates = CloneValue(payload.settings) }
+    local sok, sanitized, stripped, serr = SanitizeProfilePayload(self, wrapped)
+    if not sok or type(sanitized) ~= "table" or type(sanitized.nameplates) ~= "table" then
+        return false, serr or "Import failed nameplate validation."
+    end
+
+    return true, {
+        name = type(payload.name) == "string" and payload.name or nil,
+        settings = StripExcludedNameplateKeys(sanitized.nameplates),
+        stripped = stripped or {},
+    }
+end
+
+function QUICore:ImportNameplateProfileFromString(str, targetName)
+    local ok, result = self:AnalyzeNameplateProfileImportString(str)
+    if not ok then
+        return false, result
+    end
+
+    local name = type(targetName) == "string" and targetName or result.name or ""
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    -- "__none" is the options UI's no-profile dropdown sentinel — a profile
+    -- with that literal name would be unselectable, so fall back.
+    if name == "" or name == "__none" then
+        name = "Imported nameplate profile"
+    end
+
+    local g = self.db.global
+    if type(g.nameplateProfiles) ~= "table" then
+        g.nameplateProfiles = {}
+    end
+    g.nameplateProfiles[name] = result.settings
+    return true, name, result.stripped
 end
 
 function QUICore:GenerateUniqueTrackerID()
