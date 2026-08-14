@@ -4,6 +4,26 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.0-beta2 - 2026-08-14
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Two features: nameplate profiles you can name and share, and an objective
+tracker that matches the rest of your UI.
+
+### Added
+
+- **Named nameplate profiles with import/export.** Nameplate setups are now
+  account-wide named profiles instead of numbered per-spec presets: create
+  them, rename them, delete them, assign them per specialization, and share
+  them as import/export strings. Existing spec presets are migrated into
+  named profiles automatically.
+- **Objective tracker progress bars and icons.** The Skinning page can now
+  replace tracker progress bars with flat skinned bars in a color of your
+  choice, and recolor the bullet points next to objectives in progress and
+  the checkmarks next to completed ones.
+
 ## v5.2.0-beta1 - 2026-08-14
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
