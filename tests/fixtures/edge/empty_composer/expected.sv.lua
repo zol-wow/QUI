@@ -2535,7 +2535,27 @@ return {
             offsetX = 0,
             offsetY = -160
           },
+          objectiveTrackerBarColor = {
+            [1] = 0.26000000000000001,
+            [2] = 0.41999999999999998,
+            [3] = 1,
+            [4] = 1
+          },
+          objectiveTrackerBulletColor = {
+            [1] = 1,
+            [2] = 0.81999999999999995,
+            [3] = 0,
+            [4] = 1
+          },
+          objectiveTrackerCheckColor = {
+            [1] = 0.20000000000000001,
+            [2] = 0.80000000000000004,
+            [3] = 0.20000000000000001,
+            [4] = 1
+          },
           objectiveTrackerClickThrough = false,
+          objectiveTrackerCustomBars = true,
+          objectiveTrackerCustomIcons = true,
           objectiveTrackerHeight = 600,
           objectiveTrackerModuleColor = {
             [1] = 1,

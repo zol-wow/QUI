@@ -756,6 +756,11 @@ local function BuildSkinningTab(tabContent)
     if general.objectiveTrackerModuleColor == nil then general.objectiveTrackerModuleColor = { 1.0, 0.82, 0.0, 1.0 } end
     if general.objectiveTrackerTitleColor == nil then general.objectiveTrackerTitleColor = { 1.0, 1.0, 1.0, 1.0 } end
     if general.objectiveTrackerTextColor == nil then general.objectiveTrackerTextColor = { 0.8, 0.8, 0.8, 1.0 } end
+    if general.objectiveTrackerCustomBars == nil then general.objectiveTrackerCustomBars = true end
+    if general.objectiveTrackerBarColor == nil then general.objectiveTrackerBarColor = { 0.26, 0.42, 1.0, 1.0 } end
+    if general.objectiveTrackerCustomIcons == nil then general.objectiveTrackerCustomIcons = true end
+    if general.objectiveTrackerBulletColor == nil then general.objectiveTrackerBulletColor = { 1.0, 0.82, 0.0, 1.0 } end
+    if general.objectiveTrackerCheckColor == nil then general.objectiveTrackerCheckColor = { 0.2, 0.8, 0.2, 1.0 } end
 
     local function RefreshOT()
         if _G.QUI_RefreshObjectiveTracker then _G.QUI_RefreshObjectiveTracker() end
@@ -810,6 +815,28 @@ local function BuildSkinningTab(tabContent)
     local otTextColorW = GUI:CreateFormColorPicker(sOT.frame, nil, "objectiveTrackerTextColor", general, RefreshOT, nil,
         { description = ns.L["Color applied to objective/progress text beneath each quest title."] })
     sOT.AddRow(row(sOT.frame, ns.L["Objective Text Color"], otTextColorW))
+
+    local otCustomBarsW = GUI:CreateFormCheckbox(sOT.frame, nil, "objectiveTrackerCustomBars", general, RefreshOT,
+        { description = ns.L["Replace tracker progress bars with flat skinned bars in the color below. Disabling requires a reload to restore the default look."] })
+    local otBarColorW = GUI:CreateFormColorPicker(sOT.frame, nil, "objectiveTrackerBarColor", general, RefreshOT, nil,
+        { description = ns.L["Fill color of skinned tracker progress bars."] })
+    sOT.AddRow(
+        row(sOT.frame, ns.L["Custom Progress Bars"], otCustomBarsW),
+        row(sOT.frame, ns.L["Progress Bar Color"], otBarColorW)
+    )
+
+    local otCustomIconsW = GUI:CreateFormCheckbox(sOT.frame, nil, "objectiveTrackerCustomIcons", general, RefreshOT,
+        { description = ns.L["Recolor the bullet points and checkmarks next to objectives with the colors below. Disabling requires a reload to restore the default look."] })
+    local otBulletColorW = GUI:CreateFormColorPicker(sOT.frame, nil, "objectiveTrackerBulletColor", general, RefreshOT, nil,
+        { description = ns.L["Color of the bullet point shown next to objectives in progress."] })
+    sOT.AddRow(
+        row(sOT.frame, ns.L["Custom Objective Icons"], otCustomIconsW),
+        row(sOT.frame, ns.L["Bullet Point Color"], otBulletColorW)
+    )
+
+    local otCheckColorW = GUI:CreateFormColorPicker(sOT.frame, nil, "objectiveTrackerCheckColor", general, RefreshOT, nil,
+        { description = ns.L["Color of the checkmark shown next to completed objectives."] })
+    sOT.AddRow(row(sOT.frame, ns.L["Checkmark Color"], otCheckColorW))
     L.closeSection(sOT)
 
     L.finish()
