@@ -32,18 +32,22 @@ local function MicroMenuDockedInOverrideBar()
 end
 
 local function CacheMicroMenuHome()
-    if microMenuHome then return end
     local menu = _G.MicroMenu
-    if not (menu and menu.GetPoint) then return end
+    if not menu then return end
     if MicroMenuDockedInOverrideBar() then return end
-    local point, relativeTo, relativePoint, x, y = menu:GetPoint(1)
-    if issecretvalue and (issecretvalue(point) or issecretvalue(relativeTo)
-        or issecretvalue(relativePoint) or issecretvalue(x) or issecretvalue(y)) then
+    local stride, isStacked, isHorizontal = menu.stride, menu.isStacked, menu.isHorizontal
+    local goingRight, goingUp = menu.layoutFramesGoingRight, menu.layoutFramesGoingUp
+    if issecretvalue and (issecretvalue(stride) or issecretvalue(isStacked)
+        or issecretvalue(isHorizontal) or issecretvalue(goingRight) or issecretvalue(goingUp)) then
         return
     end
-    if point then
-        microMenuHome = { point, relativeTo, relativePoint, x or 0, y or 0 }
-    end
+    microMenuHome = {
+        stride = stride,
+        isStacked = isStacked,
+        isHorizontal = isHorizontal,
+        goingRight = goingRight,
+        goingUp = goingUp,
+    }
 end
 
 local function ReclaimMicroMenuFromOverrideBar()
@@ -54,10 +58,20 @@ local function ReclaimMicroMenuFromOverrideBar()
     CacheMicroMenuHome()
     if not MicroMenuDockedInOverrideBar() then return end
     menu:SetParent(container)
-    if microMenuHome then
-        menu:ClearAllPoints()
-        menu:SetPoint(microMenuHome[1], microMenuHome[2] or container, microMenuHome[3], microMenuHome[4], microMenuHome[5])
+    if menu.ClearOverrideScale then menu:ClearOverrideScale() end
+    local home = microMenuHome
+    if home then
+        menu.stride = home.stride or menu.numButtons
+        menu.isStacked = home.isStacked
+        menu.isHorizontal = home.isHorizontal
+        menu.layoutFramesGoingRight = home.goingRight
+        menu.layoutFramesGoingUp = home.goingUp
+    else
+        menu.stride = menu.numButtons
+        menu.isStacked = false
     end
+    if menu.Layout then menu:Layout() end
+    if container.Layout then container:Layout() end
 end
 
 local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
