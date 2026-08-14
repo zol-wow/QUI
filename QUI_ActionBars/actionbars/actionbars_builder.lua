@@ -66,6 +66,12 @@ function EnsureOwnedActionButton(container, barKey, btnName, index)
                 if f == btn then broadcaster.frames[k] = nil end
             end
         end
+        btn:SetScript("OnShow", nil)
+        btn:SetScript("OnHide", nil)
+        if btn.QuickKeybindButtonOnShow and btn.QuickKeybindButtonOnHide then
+            btn:HookScript("OnShow", btn.QuickKeybindButtonOnShow)
+            btn:HookScript("OnHide", btn.QuickKeybindButtonOnHide)
+        end
         btn:SetAttribute("type", "action")
         btn:SetAttribute("checkselfcast", true)
         btn:SetAttribute("checkfocuscast", true)
