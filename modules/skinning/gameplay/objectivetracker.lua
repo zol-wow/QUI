@@ -45,6 +45,96 @@ local function CJKFont(fs, path, size, flags)
     end
 end
 
+local function StyleLineIcon(line)
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker or not settings.objectiveTrackerCustomIcons then return end
+
+    local icon = line and line.Icon
+    if not icon or not icon.GetAtlas then return end
+    if icon.IsShown and not icon:IsShown() then return end
+
+    -- Anim lines (quest objectives) only legitimately show their check while
+    -- completing/completed; never touch the icon in any other state so we
+    -- can't reveal a check that Blizzard is keeping invisible.
+    local animState = _G.ObjectiveTrackerAnimLineState
+    if line.state ~= nil and animState then
+        if line.state ~= animState.Completed and line.state ~= animState.Completing then return end
+    end
+
+    local atlas = icon:GetAtlas()
+    if type(atlas) ~= "string" then return end
+    atlas = atlas:lower()
+
+    local color
+    if atlas:find("check", 1, true) then
+        color = settings.objectiveTrackerCheckColor
+    elseif atlas:find("nub", 1, true) then
+        color = settings.objectiveTrackerBulletColor
+    else
+        -- e.g. ui-questtracker-objective-fail keeps its native look
+        return
+    end
+    if type(color) ~= "table" then return end
+
+    -- Preserve the icon's current vertex alpha: recolor visible icons, but
+    -- never raise alpha on one that is being kept transparent.
+    local alpha = color[4] or 1
+    local _, _, _, curA = icon:GetVertexColor()
+    curA = Helpers.SafeNumberOrNil(curA)
+    if curA and curA < alpha then
+        alpha = curA
+    end
+    if alpha <= 0 then return end
+
+    if icon.SetDesaturated then icon:SetDesaturated(true) end
+    icon:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, alpha)
+end
+
+local function HookAnimLineState()
+    local mixin = _G.ObjectiveTrackerAnimLineMixin
+    if mixin and mixin.SetState and not SkinBase.GetFrameData(mixin, "qSetStateHooked") then
+        SkinBase.SetFrameData(mixin, "qSetStateHooked", true)
+        hooksecurefunc(mixin, "SetState", StyleLineIcon)
+    end
+end
+
+local CUSTOM_BAR_FILL_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+
+local function StyleTrackerProgressBar(pb)
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker or not settings.objectiveTrackerCustomBars then return end
+
+    local bar = pb and pb.Bar
+    if not bar or not bar.GetStatusBarTexture then return end
+
+    if not SkinBase.GetFrameData(bar, "qCustomBar") then
+        SkinBase.SetFrameData(bar, "qCustomBar", true)
+
+        -- Hide native bar art (frame/border overlays, glows, sheen, navy
+        -- background) but keep the fill, the label and the reward icon+ring.
+        local fill = bar:GetStatusBarTexture()
+        for _, region in ipairs({ bar:GetRegions() }) do
+            if region ~= fill and region ~= bar.Icon and region ~= bar.IconBG
+                and region.IsObjectType and region:IsObjectType("Texture") then
+                region:Hide()
+                region:SetAlpha(0)
+            end
+        end
+
+        bar:SetStatusBarTexture(CUSTOM_BAR_FILL_TEXTURE)
+
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    end
+
+    local color = settings.objectiveTrackerBarColor
+    local r, g, b, a = 0.26, 0.42, 1, 1
+    if type(color) == "table" then
+        r, g, b, a = color[1] or r, color[2] or g, color[3] or b, color[4] or a
+    end
+    bar:SetStatusBarColor(r, g, b, a)
+end
+
 local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
     if not line then return false end
     local heightChanged = false
@@ -76,6 +166,7 @@ local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
         end
         SafeSetTextColor(line.Dash, textColor)
     end
+    StyleLineIcon(line)
     return heightChanged
 end
 
@@ -94,6 +185,7 @@ local function EnsureBlockHighlightHook(block)
                 if line.Dash then
                     SafeSetTextColor(line.Dash, s.objectiveTrackerTextColor)
                 end
+                StyleLineIcon(line)
             end
         end
     end)
@@ -144,16 +236,6 @@ local function StyleQuestPOIIcon(button)
     SkinBase.MarkStyled(button)
 end
 
-local function StyleCompletionCheck(icon)
-    if not icon or SkinBase.IsStyled(icon) then return end
-
-    local sr, sg, sb = SkinBase.GetSkinColors()
-    if icon.SetDesaturated then icon:SetDesaturated(true) end
-    icon:SetVertexColor(sr, sg, sb)
-
-    SkinBase.MarkStyled(icon)
-end
-
 local function ApplyBlockSkinning(tracker, block)
     if not block or not block:IsShown() then return end
 
@@ -168,11 +250,6 @@ local function ApplyBlockSkinning(tracker, block)
 
     local itemButton = block.ItemButton or block.itemButton
     if itemButton then StyleQuestPOIIcon(itemButton) end
-    if block.usedLines then
-        for _, line in pairs(block.usedLines) do
-            if line.Icon then StyleCompletionCheck(line.Icon) end
-        end
-    end
 
     StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, true)
 end
@@ -189,6 +266,32 @@ local trackerModules = {
     "BonusObjectiveTracker",
     "WorldQuestObjectiveTracker",
 }
+
+local function StyleExistingProgressBars()
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker and tracker.usedProgressBars then
+            for _, pb in pairs(tracker.usedProgressBars) do
+                StyleTrackerProgressBar(pb)
+            end
+        end
+    end
+end
+
+local function HookProgressBarMixins()
+    local pbMixins = {
+        { mixin = _G.ObjectiveTrackerProgressBarMixin, method = "SetPercent" },
+        { mixin = _G.BonusObjectiveTrackerProgressBarMixin, method = "SetValue" },
+        { mixin = _G.ScenarioTrackerProgressBarMixin, method = "SetValue" },
+    }
+    for _, pm in ipairs(pbMixins) do
+        if pm.mixin and type(pm.mixin[pm.method]) == "function"
+            and not SkinBase.GetFrameData(pm.mixin, "qCustomBarHooked") then
+            SkinBase.SetFrameData(pm.mixin, "qCustomBarHooked", true)
+            hooksecurefunc(pm.mixin, pm.method, StyleTrackerProgressBar)
+        end
+    end
+end
 
 local function SkinTrackerHeader(header)
     if not header then return end
@@ -457,6 +560,7 @@ local function RunObjectiveTrackerPostLayoutUpdate()
     EnforceWidth()
     UpdateBackdropAnchors()
     HidePOIButtonGlows()
+    StyleExistingProgressBars()
 end
 
 local function DeferObjectiveTrackerPostLayoutUpdate()
@@ -672,21 +776,9 @@ local function SkinObjectiveTracker()
     ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
 
     HookLineCreation()
-
-    local function SkinTrackerProgressBar(pb)
-        if pb and pb.Bar then SkinBase.SkinStatusBar(pb.Bar, { backdrop = false }) end
-    end
-    local pbMixins = {
-        { mixin = _G.ObjectiveTrackerProgressBarMixin, method = "SetPercent" },
-        { mixin = _G.BonusObjectiveTrackerProgressBarMixin, method = "SetValue" },
-        { mixin = _G.ScenarioTrackerProgressBarMixin, method = "SetValue" },
-    }
-    for _, pm in ipairs(pbMixins) do
-        if pm.mixin and pm.mixin[pm.method] and not SkinBase.GetFrameData(pm.mixin, "qProgressBarHooked") then
-            hooksecurefunc(pm.mixin, pm.method, SkinTrackerProgressBar)
-            SkinBase.SetFrameData(pm.mixin, "qProgressBarHooked", true)
-        end
-    end
+    HookAnimLineState()
+    HookProgressBarMixins()
+    StyleExistingProgressBars()
 
     if TrackerFrame.Header then
         SkinTrackerHeader(TrackerFrame.Header)
@@ -804,6 +896,9 @@ local function RefreshObjectiveTracker()
     ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
 
     HookLineCreation()
+    HookAnimLineState()
+    HookProgressBarMixins()
+    StyleExistingProgressBars()
 
     TrackerFrame:EnableMouse(not settings.objectiveTrackerClickThrough)
 end
