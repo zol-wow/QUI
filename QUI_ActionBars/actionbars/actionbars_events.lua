@@ -495,6 +495,16 @@ function OnOwnedEvent(self, event, ...)
         if _abCooldownStats then _abCooldownStats.events = _abCooldownStats.events + 1 end
         ScheduleABCooldownUpdate()
 
+    elseif event == "SPELL_UPDATE_COOLDOWN"
+        or event == "UNIT_SPELLCAST_STOP"
+        or event == "UNIT_SPELLCAST_INTERRUPTED"
+        or event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+        if _abCooldownStats then _abCooldownStats.events = _abCooldownStats.events + 1 end
+        if FlushCooldownTimingCaches then
+            FlushCooldownTimingCaches()
+        end
+        ScheduleABCooldownUpdate()
+
     elseif event == "ACTIONBAR_UPDATE_STATE" then
         ScheduleABStateUpdate()
 
@@ -508,7 +518,11 @@ function OnOwnedEvent(self, event, ...)
         ScheduleUsabilityUpdate()
 
     elseif event == "SPELL_UPDATE_CHARGES" then
+        if FlushChargeCapabilityVerdicts then
+            FlushChargeCapabilityVerdicts()
+        end
         ScheduleABCountUpdate()
+        ScheduleABCooldownUpdate()
 
     elseif event == "UNIT_AURA" then
         ScheduleABCountUpdate()

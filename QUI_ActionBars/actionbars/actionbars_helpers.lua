@@ -123,7 +123,11 @@ function SafeIsActionInRange(action)
 end
 
 function SafeIsUsableAction(action)
-    local usable, noMana = IsUsableAction(action)
+    local ok, usable, noMana = pcall(IsUsableAction, action)
+    if not ok then return true, false end
+    if Helpers.IsSecretValue(usable) or Helpers.IsSecretValue(noMana) then
+        return true, false -- @secret-policy: reject-secret-value
+    end
     return (usable and true or false), (noMana and true or false)
 end
 
@@ -727,7 +731,7 @@ function CursorHasPlaceableAction()
 end
 
 function OwnedButton_PostDrag(self)
-    ActionBarsOwned.SafeUpdate(self)
+    ns.SafeCall("best-effort-style", ActionBarsOwned.SafeUpdate, self)
     local bk = GetBarKeyFromButton(self)
     local s = bk and GetEffectiveSettings(bk)
     if s then
@@ -738,7 +742,7 @@ function OwnedButton_PostDrag(self)
         UpdateEmptySlotVisibility(self, s)
     end
     C_Timer.After(0, function()
-        ActionBarsOwned.SafeUpdate(self)
+        ns.SafeCall("best-effort-style", ActionBarsOwned.SafeUpdate, self)
         if s then
             local st = GetFrameState(self)
             st.sk_sz = nil

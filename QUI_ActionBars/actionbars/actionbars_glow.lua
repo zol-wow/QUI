@@ -493,6 +493,9 @@ function ActionBarsOwned.UpdateAllButtonStates()
 
     for btn in pairs(ActionBarsOwned._activeButtons) do
         local action = btn.action
+        if Helpers.IsSecretValue(action) then
+            action = nil -- @secret-policy: reject-secret-value
+        end
         if action and action ~= 0 then
             if IsCurrentAction(action) or IsAutoRepeatAction(action) then
                 btn:SetChecked(true)
