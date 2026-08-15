@@ -1489,6 +1489,19 @@ local function MirrorPairedBarVisuals(bar, blz)
             end
         end
     end
+    if bar.NameText then
+        local nameFS = nativeBar.Name
+        if nameFS and nameFS.GetText then
+            bar.NameText.SetText(bar.NameText, nameFS:GetText())
+        end
+    end
+    if bar.IconTexture then
+        local iconRegion = blz.Icon
+        local iconTex = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion.texture)
+        if iconTex and iconTex.GetTexture then
+            bar.IconTexture.SetTexture(bar.IconTexture, iconTex:GetTexture())
+        end
+    end
 end
 
 local pairedMirrorFrame = CreateFrame("Frame")

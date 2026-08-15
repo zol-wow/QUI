@@ -39,7 +39,7 @@ local function BuildHUDLayeringContent(content)
     end
 
     local function RefreshCDM()
-        if NCDM and NCDM.ApplySettings then NCDM:ApplySettings("essential"); NCDM:ApplySettings("utility") end
+        if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
         if _G.QUI_RefreshCDMBuffLayout then _G.QUI_RefreshCDMBuffLayout() end
     end
     local function RefreshPowerBars()
@@ -49,7 +49,7 @@ local function BuildHUDLayeringContent(content)
     end
     local function RefreshUnitFrames() if _G.QUI_RefreshUnitFrames then _G.QUI_RefreshUnitFrames() end end
     local function RefreshCastbars() if _G.QUI_RefreshCastbars then _G.QUI_RefreshCastbars() end end
-    local function RefreshCustomTrackers() if _G.QUI_RefreshCustomTrackers then _G.QUI_RefreshCustomTrackers() end end
+    local function RefreshCustomTrackers() RefreshCDM() end
     local function RefreshSkyriding() if _G.QUI_RefreshSkyriding then _G.QUI_RefreshSkyriding() end end
 
     local layeringDB = GetLayeringDB()

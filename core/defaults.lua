@@ -1728,6 +1728,7 @@ local defaults = {
             borderColor = {0.376, 0.647, 0.980, 1},
             borderColorSource = "inherit",
             showSpellIDs = true,
+            showAuraSpellIDs = true,
             showItemMaxStackSize = false,
             showPlayerItemLevel = true,
             colorPlayerItemLevel = true,

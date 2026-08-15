@@ -495,6 +495,7 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         shell._quiTooltipContext = nil
         shell.__quiTooltipContext = nil
         shell.__customTrackerIcon = nil
+        shell._quiCdmLive = nil
     end
 
     local function beginShellPass(container)
@@ -720,6 +721,7 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
             local containerLevel = container.GetFrameLevel and container:GetFrameLevel()
             slot:SetFrameLevel(((liveLevel or containerLevel or 0) + 8))
         end
+        slot._quiCdmLive = live
         raiseHoverOverlay(slot)
         return slot
     end

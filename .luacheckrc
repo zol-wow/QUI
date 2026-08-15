@@ -308,7 +308,7 @@ for _, name in ipairs(additional_writable_globals) do
 end
 
 local project_runtime_globals = [[
-CTX_KEY ClearAnalysis HideCopyButton LINKED_BAR_KEYS NCDM QUICore RunNextFrame UIKit
+CTX_KEY ClearAnalysis HideCopyButton LINKED_BAR_KEYS QUICore RunNextFrame UIKit
 ]]
 
 for name in project_runtime_globals:gmatch("%S+") do

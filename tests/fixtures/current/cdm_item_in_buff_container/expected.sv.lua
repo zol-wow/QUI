@@ -8038,6 +8038,7 @@ return {
             white = 245
           },
           scale = 1,
+          showAuraSpellIDs = true,
           showBorder = true,
           showConnectedRealm = false,
           showGuildRank = false,

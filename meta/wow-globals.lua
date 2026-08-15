@@ -575,7 +575,6 @@ MoneyWonAlertSystem = nil ---@type any
 MonthlyActivitiesFrameMixin = nil ---@type any
 MonthlyActivityAlertSystem = nil ---@type any
 MuteSoundFile = nil ---@type any
-NCDM = nil ---@type any
 NORMAL_FONT_COLOR = nil ---@type any
 NORMAL_FONT_COLOR_CODE = nil ---@type any
 NUM_BAG_FRAMES = nil ---@type any
