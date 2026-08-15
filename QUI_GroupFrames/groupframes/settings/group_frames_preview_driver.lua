@@ -986,8 +986,12 @@ local function RenderFrameAuras(f, member, auras, now)
                 member and member.isSelf
             )
         if applies then
-            local engineDrawn = GFA and GFA.EngineRendersElement
-                and GFA.EngineRendersElement(element) or false
+            -- Feeder-driven elements (healthTint) have no secure containers on
+            -- preview fakes; keep previewing them through the engine renderer.
+            local engineDrawn = (GFA and GFA.EngineRendersElement
+                and GFA.EngineRendersElement(element) or false)
+                or (GFA and GFA.FeederRendersElement
+                and GFA.FeederRendersElement(element) or false)
             if engineDrawn then
                 local matches
                 if element.mode == "missingRaidBuff" then

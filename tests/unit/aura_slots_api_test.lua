@@ -43,6 +43,23 @@ check("mid-combat linear-fill creation deferred (StatusBar child is OOC-only)",
     src:find("not fill and InCombatLockdown()", 1, true) ~= nil)
 check("bar track dimmed behind the fill (depletion must read visually)",
     src:find("trackDim", 1, true) ~= nil)
+check("healthTint feeder slots: passive art attached, engine renders it",
+    src:find("StyleFeederSlot", 1, true) ~= nil
+    and src:find("ns.AuraFeederAttach", 1, true) ~= nil
+    and src:find("ns.AuraFeederDetach", 1, true) ~= nil)
+-- The engine refuses SetShown() with secret aura presence on buttons carrying
+-- script handlers — feeder slots must stay scriptless forever.
+check("feeder slots carry NO script handlers (secret SetShown would error)",
+    src:find("HookScript", 1, true) == nil
+    and src:find("SetScript", 1, true) == nil)
+check("feeder retire path clears state when a slot changes display type",
+    src:find("RetireFeederSlot", 1, true) ~= nil)
+check("feeder element syncs ONE union slot (stacked covers composite darker)",
+    src:find("SyncFeederElement", 1, true) ~= nil
+    and src:find("FeederSpellMap", 1, true) ~= nil)
+check("linear fills suppress the cooldown edge + bling overlays",
+    src:find("SetDrawEdge(false)", 1, true) ~= nil
+    and src:find("SetDrawBling(false)", 1, true) ~= nil)
 
 -- Live-assist gate (party/raid HELPFUL quadrant): the engine's identity
 -- filter check is LIVE UnitCanAssist per aura, not token class — a
