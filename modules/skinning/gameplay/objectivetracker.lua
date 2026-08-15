@@ -40,6 +40,7 @@ end
 -- the rest of that loop and leaves objective lines stale. Styling must
 -- therefore never run inline from those hooks — queue the frame and restyle
 -- on the next frame, where a failure only costs us our own skinning.
+-- <<< QUI_TEST_EXTRACT deferred_style_queue
 local function CreateDeferredStyleQueue(handler)
     local pending = {}
     local scheduled = false
@@ -58,6 +59,7 @@ local function CreateDeferredStyleQueue(handler)
         end)
     end
 end
+-- <<< QUI_TEST_EXTRACT deferred_style_queue
 
 local GetFontPath = Helpers.GetGeneralFont
 
@@ -83,6 +85,7 @@ local WIDGET_POOL_TRACKER_NAMES = {
     UIWidgetObjectiveTracker = true,
 }
 
+-- <<< QUI_TEST_EXTRACT line_icon_style
 local function StyleLineIcon(line)
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker or not settings.objectiveTrackerCustomIcons then return end
@@ -129,6 +132,7 @@ local function StyleLineIcon(line)
     if icon.SetDesaturated then icon:SetDesaturated(true) end
     icon:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, alpha)
 end
+-- <<< QUI_TEST_EXTRACT line_icon_style
 
 local QueueLineIconStyle = CreateDeferredStyleQueue(StyleLineIcon)
 
