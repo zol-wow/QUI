@@ -400,7 +400,7 @@ local function NormalizeTrackedBarRuntimeEntries(runtimeEntries)
     local spellList = {}
     for i, entry in ipairs(runtimeEntries) do
         if type(entry) == "table" then
-            local runtimeSpellID = entry.overrideSpellID or entry.spellID or entry.baseSpellID
+            local runtimeSpellID = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.baseSpellID
             local baseSpellID = entry.baseSpellID or entry.spellID or runtimeSpellID
             local id = runtimeSpellID or entry.cooldownID
             if id then
@@ -410,6 +410,7 @@ local function NormalizeTrackedBarRuntimeEntries(runtimeEntries)
                     spellID = baseSpellID,
                     baseSpellID = baseSpellID,
                     overrideSpellID = entry.overrideSpellID,
+                    linkedSpellID = entry.linkedSpellID,
                     name = entry.name or "",
                     type = "spell",
                     kind = "aura",
@@ -467,6 +468,12 @@ local function TrackedEntriesMatch(configured, runtime)
     end
 
     local configuredIDs = BuildTrackedSpellIdentitySet(configured)
+    if runtime.linkedSpellID ~= nil and not configuredIDs[tostring(runtime.linkedSpellID)] then
+        local cfgPrimary = configured.overrideSpellID or configured.spellID or configured.id
+        if cfgPrimary ~= nil and tostring(cfgPrimary) ~= tostring(runtime.spellID) then
+            return false
+        end
+    end
     local runtimeIDs = BuildTrackedSpellIdentitySet(runtime)
     for id in pairs(configuredIDs) do
         if runtimeIDs[id] then
@@ -492,6 +499,21 @@ local function FindTrackedRuntimeMatch(configured, runtimeSpellList, usedRuntime
     return nil
 end
 
+local function FindTrackedRuntimeExactVariant(configured, runtimeSpellList, usedRuntime)
+    if type(runtimeSpellList) ~= "table" or type(configured) ~= "table" then return nil end
+    local configuredIDs = BuildTrackedSpellIdentitySet(configured)
+    for i = 1, #runtimeSpellList do
+        local runtime = runtimeSpellList[i]
+        if not usedRuntime[i] and type(runtime) == "table"
+            and runtime.linkedSpellID ~= nil
+            and configuredIDs[tostring(runtime.linkedSpellID)] then
+            usedRuntime[i] = true
+            return runtime
+        end
+    end
+    return nil
+end
+
 local function MergeTrackedRuntimeFields(configured, runtime)
     local out = CopyTrackedEntry(configured)
     if type(runtime) ~= "table" then
@@ -501,8 +523,15 @@ local function MergeTrackedRuntimeFields(configured, runtime)
     if out.spellID == nil then out.spellID = runtime.spellID end
     if out.baseSpellID == nil then out.baseSpellID = runtime.baseSpellID end
     if out.overrideSpellID == nil then out.overrideSpellID = runtime.overrideSpellID end
+    out.linkedSpellID = runtime.linkedSpellID
     if (out.name == nil or out.name == "") and runtime.name then out.name = runtime.name end
+    if runtime.linkedSpellID ~= nil and runtime.name and runtime.name ~= "" then
+        out.name = runtime.name
+    end
     if out.iconTexture == nil then out.iconTexture = runtime.iconTexture end
+    if runtime.linkedSpellID ~= nil and runtime.iconTexture ~= nil then
+        out.iconTexture = runtime.iconTexture
+    end
     out.cooldownID = runtime.cooldownID
     out.layoutIndex = runtime.layoutIndex
     out._instanceKey = runtime._instanceKey
@@ -524,10 +553,19 @@ local function BuildTrackedBarSpellList(runtimeEntries, configuredSpellList, con
         return out
     end
 
+    local exactMatches = {}
     for i = 1, #configuredSpellList do
         local configured = configuredSpellList[i]
         if type(configured) == "table" then
-            local runtime = FindTrackedRuntimeMatch(configured, runtimeSpellList, usedRuntime)
+            exactMatches[i] = FindTrackedRuntimeExactVariant(configured, runtimeSpellList, usedRuntime)
+        end
+    end
+
+    for i = 1, #configuredSpellList do
+        local configured = configuredSpellList[i]
+        if type(configured) == "table" then
+            local runtime = exactMatches[i]
+                or FindTrackedRuntimeMatch(configured, runtimeSpellList, usedRuntime)
             out[#out + 1] = MergeTrackedRuntimeFields(configured, runtime)
         end
     end
@@ -1021,7 +1059,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
     if not needsRebuild then
         for i, bar in ipairs(barPool) do
             local entry = spellList[i]
-            local entrySpellID = entry.overrideSpellID or entry.spellID or entry.id
+            local entrySpellID = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.id
             if bar._spellID ~= entrySpellID or bar._instanceKey ~= entry._instanceKey then
                 needsRebuild = true
                 break
@@ -1045,7 +1083,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
                     bar._instanceKey = entry._instanceKey
                     bar._isTotemInstance = entry._isTotemInstance and true or false
                     bar._totemSlot = entry._totemSlot
-                    bar._spellID = entry.overrideSpellID or entry.spellID or entry.id
+                    bar._spellID = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.id
                     bar._blzChild = entry._blzFrame or bar._blzChild
                     bar._blzCooldownID = entry._blzFrame and entry.cooldownID or bar._blzCooldownID
                     if entry._blzFrame then bar._blzChildMissAt = nil end
@@ -1066,7 +1104,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
         bar._isTotemInstance = entry._isTotemInstance and true or false
         bar._totemSlot = entry._totemSlot
 
-        local spellID = entry.overrideSpellID or entry.spellID or entry.id
+        local spellID = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.id
         bar._spellID = spellID
 
         bar._blzChild = entry._blzFrame
@@ -1089,7 +1127,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             elseif not texID and entry.type == "spell" then
                 local iconSid
                 if entry.isAura then
-                    iconSid = entry.overrideSpellID or entry.spellID or entry.id or spellID
+                    iconSid = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.id or spellID
                 else
                     iconSid = entry.overrideSpellID or entry.id or spellID
                 end
