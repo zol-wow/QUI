@@ -3968,8 +3968,10 @@ if ns.WhenLoggedIn then
     end)
 end
 
+-- <<< QUI_TEST_EXTRACT character_refresh_gate
 _G.QUI_RefreshCharacterPane = function()
-    if CharacterFrame then
+    local settings = GetSettings()
+    if settings.enabled and CharacterFrame then
         if CharacterFrame.CloseButton then
             StyleCloseButton(CharacterFrame.CloseButton)
         end
@@ -3977,6 +3979,7 @@ _G.QUI_RefreshCharacterPane = function()
     end
     ScheduleUpdate()
 end
+-- <<< QUI_TEST_EXTRACT character_refresh_gate
 
 QUI.CharacterPane = {
     Refresh = function()
