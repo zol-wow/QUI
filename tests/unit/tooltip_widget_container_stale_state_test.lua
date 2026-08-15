@@ -28,6 +28,7 @@ local function makeContainer(overrides)
         widgetSetID = nil,
         shownWidgetCount = 3,
         numWidgetsShowing = 0,
+        dirty = nil,
         IsShown = function() return false end,
         GetNumPoints = function() return 0 end,
     }
@@ -47,19 +48,35 @@ assert(HasTaintedWidgetContainer(makeTooltip(nil)) == false,
     "no children -> not tainted")
 
 assert(HasTaintedWidgetContainer(makeTooltip(makeContainer())) == false,
-    "cleared container with stale shownWidgetCount high-water mark -> not tainted")
+    "hidden container with stale shownWidgetCount high-water mark -> not tainted")
 
-assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({ widgetSetID = 5 }))) == true,
-    "registered widget set -> tainted")
+assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({ widgetSetID = 5 }))) == false,
+    "hidden container with registration residue from a crashed unregister -> not tainted")
 
-assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({ numWidgetsShowing = 2 }))) == true,
-    "widgets showing -> tainted")
+assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({ dirty = true }))) == false,
+    "hidden container with latched layout dirty flag -> not tainted")
+
+assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({ numWidgetsShowing = 2 }))) == false,
+    "hidden container presents nothing -> not tainted")
+
+assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({ widgetSetID = SECRET }))) == false,
+    "hidden container with stored secret residue -> not tainted")
+
+assert(HasTaintedWidgetContainer(makeTooltip({
+    widgetType = 2,
+    IsShown = function() return true end,
+})) == false, "shown non-container child -> not tainted")
 
 assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({
     IsShown = function() return true end,
 }))) == true, "container currently shown -> tainted")
 
-assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({ widgetSetID = SECRET }))) == true,
-    "secret widget state -> tainted (keep native when unknown)")
+assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({
+    IsShown = function() return SECRET end,
+}))) == true, "unreadable shown state -> tainted (keep native when unknown)")
+
+assert(HasTaintedWidgetContainer(makeTooltip(makeContainer({
+    IsShown = function() error("secret boolean test") end,
+}))) == true, "throwing shown probe -> tainted (keep native when unknown)")
 
 print("OK: tooltip_widget_container_stale_state_test")

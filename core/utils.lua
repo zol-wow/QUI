@@ -58,49 +58,10 @@ function Helpers.HasTaintedWidgetContainer(tooltip)
 
     for i = 1, #children do
         local child = children[i]
-        if child then
-            local ok, isWidgetContainer, widgetSetID, numWidgetsShowing, dirty, numPoints = pcall(function()
-                local isWidget = child.RegisterForWidgetSet
-                    or child.widgetType
-                    or child.widgetSetID ~= nil
-                    or child.shownWidgetCount ~= nil
-                    or child.numWidgetsShowing ~= nil
-
-                local points
-                if child.GetNumPoints then
-                    points = child:GetNumPoints()
-                end
-
-                return isWidget, child.widgetSetID, child.numWidgetsShowing, child.dirty, points
-            end)
-
-            if not ok then
-                return true
-            end
-
-            if isWidgetContainer then
-                if Helpers.IsSecretValue(widgetSetID)
-                    or Helpers.IsSecretValue(numWidgetsShowing)
-                    or Helpers.IsSecretValue(dirty)
-                    or Helpers.IsSecretValue(numPoints) then
-                    return true -- @secret-policy: report-secret-detected (unreadable widget state counts as tainted)
-                end
-
-                if widgetSetID ~= nil or dirty == true then
-                    return true
-                end
-
-                local showingCount = tonumber(numWidgetsShowing)
-                if showingCount and showingCount > 0 then
-                    return true
-                end
-
-                if child.IsShown then
-                    local okShown, shown = pcall(child.IsShown, child)
-                    if not okShown or shown then
-                        return true
-                    end
-                end
+        if child and type(child.RegisterForWidgetSet) == "function" then
+            local okShown, shown = pcall(child.IsShown, child)
+            if not okShown or Helpers.IsSecretValue(shown) or shown then
+                return true -- @secret-policy: report-secret-detected (unreadable widget state counts as tainted)
             end
         end
     end

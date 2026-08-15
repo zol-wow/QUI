@@ -543,40 +543,21 @@ HasActiveWidgetContainer = function(tooltip)
         return active
     end
 
-    if not tooltip or not tooltip.GetChildren or not tooltip.GetNumChildren then return false end
+    if not tooltip or not tooltip.GetChildren then return false end
     TooltipDebugCount("skin.widgetScan")
 
-    local okCount, numChildren = pcall(tooltip.GetNumChildren, tooltip)
-    if not okCount or not numChildren then return false end
+    local okChildren, children = pcall(function()
+        return { tooltip:GetChildren() }
+    end)
+    if not okChildren or not children then return false end
 
-    for i = 1, numChildren do
-        local child = select(i, tooltip:GetChildren())
-        if child and (child.RegisterForWidgetSet or child.shownWidgetCount ~= nil or child.widgetSetID ~= nil) then
-            local widgetSetID = child.widgetSetID
-            if widgetSetID ~= nil then
+    for i = 1, #children do
+        local child = children[i]
+        if child and type(child.RegisterForWidgetSet) == "function" then
+            local okShown, shown = pcall(child.IsShown, child)
+            if not okShown or Helpers.IsSecretValue(shown) or shown then
                 TooltipDebugCount("skin.widgetHit")
-                return true
-            end
-
-            local numWidgetsShowing = child.numWidgetsShowing
-            if numWidgetsShowing ~= nil then
-                if Helpers.IsSecretValue(numWidgetsShowing) then
-                    TooltipDebugCount("skin.widgetHit")
-                    return true -- @secret-policy: keep-native-when-unknown
-                end
-                numWidgetsShowing = tonumber(numWidgetsShowing)
-                if numWidgetsShowing and numWidgetsShowing > 0 then
-                    TooltipDebugCount("skin.widgetHit")
-                    return true
-                end
-            end
-
-            if child.IsShown then
-                local okShown, shown = pcall(child.IsShown, child)
-                if okShown and shown then
-                    TooltipDebugCount("skin.widgetHit")
-                    return true
-                end
+                return true -- @secret-policy: keep-native-when-unknown
             end
         end
     end
