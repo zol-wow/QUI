@@ -19,6 +19,12 @@ end
 
 local function noop() end
 
+local function ActionAttr(slot)
+    return function(_, name)
+        if name == "action" then return slot end
+    end
+end
+
 local frameMT
 local function NewFrame()
     local frame = {
@@ -284,31 +290,41 @@ cooldownDurationByAction[10] = activeDuration
 chargeInfoByAction[10] = { currentCharges = 0, maxCharges = 0, isActive = false }
 locInfoByAction[10] = { isActive = false, shouldReplaceNormalCooldown = false }
 
-local secretBtn = {
+local secretFieldBtn = {
     action = SecretSentinel.MakeSecretSentinel(),
+    GetAttribute = ActionAttr(10),
     cooldown = NewFrame(),
     GetFrameLevel = function() return 1 end,
 }
 local normalBtn = {
     action = 10,
+    GetAttribute = ActionAttr(10),
     cooldown = NewFrame(),
     GetFrameLevel = function() return 1 end,
 }
-actionBars._activeButtons[secretBtn] = true
+local noSlotBtn = {
+    action = SecretSentinel.MakeSecretSentinel(),
+    cooldown = NewFrame(),
+    GetFrameLevel = function() return 1 end,
+}
+actionBars._activeButtons[secretFieldBtn] = true
 actionBars._activeButtons[normalBtn] = true
+actionBars._activeButtons[noSlotBtn] = true
 currentTime = currentTime + 1
 
 local ok, err = pcall(actionBars.UpdateAllCooldowns)
-assert(ok, "a secret button.action must not abort the cooldown batch: " .. tostring(err))
+assert(ok, "a secret button.action field must not abort the cooldown batch: " .. tostring(err))
 assert(normalBtn.cooldown.lastDurationObject == activeDuration,
-    "buttons after a secret-action button must still receive their DurationObject")
-assert(rawget(secretBtn.cooldown, "cleared") == nil,
-    "a secret-action button must be skipped, not cleared")
-assert(rawget(secretBtn.cooldown, "lastDurationObject") == nil,
-    "a secret-action button must not be painted from an unreadable slot")
+    "buttons alongside a secret-field button must still receive their DurationObject")
+assert(secretFieldBtn.cooldown.lastDurationObject == activeDuration,
+    "a secret action FIELD must not block painting: the attribute slot is the cooldown source")
+assert(rawget(noSlotBtn.cooldown, "cleared") == nil
+        and rawget(noSlotBtn.cooldown, "lastDurationObject") == nil,
+    "a button with no resolvable attribute slot must be skipped, not cleared")
 
 local nilInfoBtn = {
     action = 20,
+    GetAttribute = ActionAttr(20),
     cooldown = NewFrame(),
     GetFrameLevel = function() return 1 end,
 }
@@ -330,6 +346,7 @@ cooldownInfoByAction[30] = { isActive = SecretSentinel.MakeSecretSentinel() }
 cooldownDurationByAction[30] = secretSchedule
 local secretActiveBtn = {
     action = 30,
+    GetAttribute = ActionAttr(30),
     cooldown = NewFrame(),
     GetFrameLevel = function() return 1 end,
 }
@@ -349,6 +366,7 @@ wipe(actionBars._activeStandardButtons)
 actionBars.nativeButtons.bar1 = {
     {
         action = SecretSentinel.MakeSecretSentinel(),
+        GetAttribute = ActionAttr(10),
         cooldown = NewFrame(),
         GetFrameLevel = function() return 1 end,
         _quiBarKey = "bar1",
@@ -359,27 +377,38 @@ currentTime = currentTime + 1
 
 ok, err = pcall(actionBars.UpdateAllCooldowns)
 assert(ok, "the standard-bar fallback walk must not abort on a secret button.action: " .. tostring(err))
+assert(actionBars.nativeButtons.bar1[1].cooldown.lastDurationObject == activeDuration,
+    "the fallback walk must paint a secret-field button from its attribute slot")
 
 local checkedStates = {}
 local stateSecretBtn = {
     action = SecretSentinel.MakeSecretSentinel(),
+    GetAttribute = ActionAttr(40),
     SetChecked = function(_, value) checkedStates.secret = value end,
 }
 local stateNormalBtn = {
     action = 40,
+    GetAttribute = ActionAttr(41),
     SetChecked = function(_, value) checkedStates.normal = value end,
+}
+local stateNoSlotBtn = {
+    action = SecretSentinel.MakeSecretSentinel(),
+    SetChecked = function(_, value) checkedStates.noslot = value end,
 }
 wipe(actionBars._activeButtons)
 actionBars._activeButtons[stateSecretBtn] = true
 actionBars._activeButtons[stateNormalBtn] = true
+actionBars._activeButtons[stateNoSlotBtn] = true
 currentTime = currentTime + 1
 
 ok, err = pcall(actionBars.UpdateAllButtonStates)
-assert(ok, "a secret button.action must not abort the checked-state batch: " .. tostring(err))
-assert(checkedStates.normal == true,
-    "buttons after a secret-action button must still receive their checked state")
-assert(checkedStates.secret == nil,
-    "a secret-action button must be skipped by the checked-state batch")
+assert(ok, "a secret button.action field must not abort the checked-state batch: " .. tostring(err))
+assert(checkedStates.secret == true,
+    "a secret action field must not block checked state: the attribute slot drives it")
+assert(checkedStates.normal == false,
+    "checked state must follow the attribute slot, never the action field")
+assert(checkedStates.noslot == nil,
+    "a button with no resolvable attribute slot must be skipped by the checked-state batch")
 
 actionBars.initialized = true
 local OnOwnedEvent = assert(ns.ActionBarsEnv.OnOwnedEvent,
@@ -388,6 +417,7 @@ local OnOwnedEvent = assert(ns.ActionBarsEnv.OnOwnedEvent,
 local longDuration = { token = "dur-50" }
 local longCdBtn = {
     action = 50,
+    GetAttribute = ActionAttr(50),
     cooldown = NewFrame(),
     GetFrameLevel = function() return 1 end,
 }
@@ -399,20 +429,71 @@ actionBars._activeButtons[longCdBtn] = true
 
 actionBars.UpdateAllCooldowns()
 local callsAfterFirstFetch = actionCooldownCalls
+local freshLongDuration = { token = "dur-50-fresh" }
+cooldownDurationByAction[50] = freshLongDuration
 currentTime = 100.1
 actionBars.UpdateAllCooldowns()
-assert(actionCooldownCalls == callsAfterFirstFetch,
-    "a bound long cooldown should serve from cache inside its refresh window")
-
-OnOwnedEvent(nil, "SPELL_UPDATE_COOLDOWN")
-currentTime = 100.2
-actionBars.UpdateAllCooldowns()
 assert(actionCooldownCalls == callsAfterFirstFetch + 1,
-    "SPELL_UPDATE_COOLDOWN must flush the timing caches so a shortened or reset cooldown refetches immediately")
+    "every batch must refetch cooldown info: a shortened schedule is unreadable under combat secrecy, so no per-button memo may serve it")
+assert(longCdBtn.cooldown.lastDurationObject == freshLongDuration,
+    "every batch must push the FRESH DurationObject: a memoized object strands the swipe on the old schedule")
+
+local secretAttrState = { value = 10 }
+local secretAttrBtn = {
+    action = SecretSentinel.MakeSecretSentinel(),
+    GetAttribute = function(_, name)
+        if name == "action" then return secretAttrState.value end
+    end,
+    cooldown = NewFrame(),
+    GetFrameLevel = function() return 1 end,
+}
+cooldownInfoByAction[10] = { isActive = true }
+cooldownDurationByAction[10] = activeDuration
+wipe(actionBars._activeButtons)
+actionBars._activeButtons[secretAttrBtn] = true
+currentTime = 100.2
+ok, err = pcall(actionBars.UpdateAllCooldowns)
+assert(ok and secretAttrBtn.cooldown.lastDurationObject == activeDuration,
+    "a readable attribute slot must paint and seed the last-readable-slot memo: " .. tostring(err))
+
+secretAttrState.value = SecretSentinel.MakeSecretSentinel()
+secretAttrBtn.cooldown.lastDurationObject = nil
+currentTime = 100.3
+ok, err = pcall(actionBars.UpdateAllCooldowns)
+assert(ok, "a secret GetAttribute return must not abort the cooldown batch: " .. tostring(err))
+assert(secretAttrBtn.cooldown.lastDurationObject == activeDuration,
+    "a secret attribute read must fall back to the last readable slot and keep painting")
+
+local throwingBtn = {
+    action = 10,
+    GetAttribute = ActionAttr(10),
+    cooldown = setmetatable({}, { __index = function(_, key)
+        if key == "SetCooldownFromDurationObject" then
+            return function() error("sink throw") end
+        end
+        return noop
+    end }),
+    GetFrameLevel = function() return 1 end,
+}
+local healthyBtn = {
+    action = 10,
+    GetAttribute = ActionAttr(10),
+    cooldown = NewFrame(),
+    GetFrameLevel = function() return 1 end,
+}
+wipe(actionBars._activeButtons)
+actionBars._activeButtons[throwingBtn] = true
+actionBars._activeButtons[healthyBtn] = true
+currentTime = 100.4
+ok, err = pcall(actionBars.UpdateAllCooldowns)
+assert(ok, "a throwing per-button paint must not abort the cooldown batch: " .. tostring(err))
+assert(healthyBtn.cooldown.lastDurationObject == activeDuration,
+    "buttons sharing a batch with a throwing button must still receive their DurationObject")
 
 local chargeSwipe = { token = "charge-dur-60" }
 local chargeBtn = {
     action = 60,
+    GetAttribute = ActionAttr(60),
     cooldown = NewFrame(),
     GetFrameLevel = function() return 1 end,
 }
@@ -441,6 +522,7 @@ assert(chargeBtn.chargeCooldown and chargeBtn.chargeCooldown.lastDurationObject 
 local locDur = { token = "loc-dur-70" }
 local locBtn = {
     action = 70,
+    GetAttribute = ActionAttr(70),
     cooldown = NewFrame(),
     GetFrameLevel = function() return 1 end,
 }

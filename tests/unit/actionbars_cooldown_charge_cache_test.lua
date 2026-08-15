@@ -16,6 +16,10 @@ end
 
 local function noop() end
 
+local function ActionAttr(self, name)
+    if name == "action" then return self.action end
+end
+
 local function readAll(path)
     local file = assert(io.open(path, "rb"))
     local data = file:read("*a")
@@ -320,6 +324,7 @@ local clears = 0
 local sets = 0
 local button = {
     action = 1,
+    GetAttribute = ActionAttr,
     GetFrameLevel = function()
         return 1
     end,
@@ -378,11 +383,13 @@ end
 
 local batchButtonA = {
     action = 10,
+    GetAttribute = ActionAttr,
     GetFrameLevel = function() return 1 end,
     cooldown = NewFrame(),
 }
 local batchButtonB = {
     action = 11,
+    GetAttribute = ActionAttr,
     GetFrameLevel = function() return 1 end,
     cooldown = NewFrame(),
 }
@@ -406,11 +413,13 @@ assert(batchButtonB.cooldown.lastDurationObject == gcdDurationB,
 
 local chargeBatchButtonA = {
     action = 20,
+    GetAttribute = ActionAttr,
     GetFrameLevel = function() return 1 end,
     cooldown = NewFrame(),
 }
 local chargeBatchButtonB = {
     action = 20,
+    GetAttribute = ActionAttr,
     GetFrameLevel = function() return 1 end,
     cooldown = NewFrame(),
 }
@@ -446,11 +455,13 @@ assert(chargeBatchButtonB.chargeCooldown.lastDurationObject == sharedChargeDurat
 local sharedCooldownDuration = { token = "shared-cooldown-duration" }
 local cooldownBatchButtonA = {
     action = 30,
+    GetAttribute = ActionAttr,
     GetFrameLevel = function() return 1 end,
     cooldown = NewFrame(),
 }
 local cooldownBatchButtonB = {
     action = 30,
+    GetAttribute = ActionAttr,
     GetFrameLevel = function() return 1 end,
     cooldown = NewFrame(),
 }
@@ -474,108 +485,51 @@ assert(cooldownBatchButtonA.cooldown.lastDurationObject == sharedCooldownDuratio
 assert(cooldownBatchButtonB.cooldown.lastDurationObject == sharedCooldownDuration,
     "second cooldown button should receive the shared cooldown DurationObject")
 
-local activeCacheDuration = { token = "active-cache-duration" }
-local activeCacheButton = {
+local activeFreshDurationA = { token = "active-fresh-a" }
+local activeFreshDurationB = { token = "active-fresh-b" }
+local activeFreshButton = {
     action = 40,
+    GetAttribute = ActionAttr,
     GetFrameLevel = function() return 1 end,
     cooldown = NewFrame(),
 }
 currentTime = 50
 cooldownInfoByAction[40] = { isActive = true, startTime = currentTime, duration = 1.5 }
-cooldownDurationByAction[40] = activeCacheDuration
-local cooldownCallsBeforeActiveCache = actionCooldownCalls
-local durationCallsBeforeActiveCache = actionCooldownDurationCalls
+cooldownDurationByAction[40] = activeFreshDurationA
+local cooldownCallsBeforeFresh = actionCooldownCalls
+local durationCallsBeforeFresh = actionCooldownDurationCalls
 wipe(actionBars._activeButtons)
-actionBars._activeButtons[activeCacheButton] = true
+actionBars._activeButtons[activeFreshButton] = true
 
 actionBars.UpdateAllCooldowns()
-currentTime = 50.2
+cooldownDurationByAction[40] = activeFreshDurationB
+currentTime = 50.05
 actionBars.UpdateAllCooldowns()
 
-assert(actionCooldownCalls - cooldownCallsBeforeActiveCache == 1,
-    "active cooldown buttons should reuse bound DurationObjects until near expiry")
-assert(actionCooldownDurationCalls - durationCallsBeforeActiveCache == 1,
-    "active cooldown buttons should not refetch DurationObjects before expiry")
-assert(activeCacheButton.cooldown.lastDurationObject == activeCacheDuration,
-    "active cooldown cache should preserve the bound DurationObject")
-
-currentTime = 51.5
-actionBars.UpdateAllCooldowns()
-assert(actionCooldownCalls - cooldownCallsBeforeActiveCache == 2,
-    "active cooldown cache should refresh near expiry")
-
-local activeFallbackDuration = { token = "active-fallback-duration" }
-local activeFallbackButton = {
-    action = 43,
-    GetFrameLevel = function() return 1 end,
-    cooldown = NewFrame(),
-}
-currentTime = 55
-cooldownInfoByAction[43] = { isActive = true }
-cooldownDurationByAction[43] = activeFallbackDuration
-local cooldownCallsBeforeFallbackCache = actionCooldownCalls
-local durationCallsBeforeFallbackCache = actionCooldownDurationCalls
-wipe(actionBars._activeButtons)
-actionBars._activeButtons[activeFallbackButton] = true
-
-actionBars.UpdateAllCooldowns()
-currentTime = 55.1
-actionBars.UpdateAllCooldowns()
-currentTime = 55.25
-actionBars.UpdateAllCooldowns()
-
-assert(actionCooldownCalls - cooldownCallsBeforeFallbackCache == 2,
-    "active cooldowns without safe timing should use a short fallback cache")
-assert(actionCooldownDurationCalls - durationCallsBeforeFallbackCache == 2,
-    "active cooldown fallback cache should refresh after its short TTL")
-
-local longCooldownDuration = { token = "long-cooldown-duration" }
-local longCooldownButton = {
-    action = 41,
-    GetFrameLevel = function() return 1 end,
-    cooldown = NewFrame(),
-}
-currentTime = 60
-cooldownInfoByAction[41] = { isActive = true, startTime = currentTime, duration = 30 }
-cooldownDurationByAction[41] = longCooldownDuration
-local cooldownCallsBeforeLongCooldown = actionCooldownCalls
-local durationCallsBeforeLongCooldown = actionCooldownDurationCalls
-wipe(actionBars._activeButtons)
-actionBars._activeButtons[longCooldownButton] = true
-
-actionBars.UpdateAllCooldowns()
-currentTime = 60.2
-actionBars.UpdateAllCooldowns()
-
-assert(actionCooldownCalls - cooldownCallsBeforeLongCooldown == 1,
-    "long real cooldowns should reuse bound DurationObjects inside the refresh window")
-assert(actionCooldownDurationCalls - durationCallsBeforeLongCooldown == 1,
-    "long real cooldowns should not refetch DurationObjects inside the refresh window")
-
-currentTime = 61.1
-actionBars.UpdateAllCooldowns()
-assert(actionCooldownCalls - cooldownCallsBeforeLongCooldown == 2,
-    "long real cooldowns should refresh after the long-cooldown cache TTL")
+assert(actionCooldownCalls - cooldownCallsBeforeFresh == 2,
+    "every batch must refetch cooldown info: a changed schedule is unreadable under combat secrecy, so no per-button memo may serve it")
+assert(actionCooldownDurationCalls - durationCallsBeforeFresh == 2,
+    "every batch must refetch the DurationObject while active")
+assert(activeFreshButton.cooldown.lastDurationObject == activeFreshDurationB,
+    "every batch must push the FRESH DurationObject: a memoized object strands the swipe on the old schedule")
 
 local inactiveCooldownButton = {
     action = 42,
+    GetAttribute = ActionAttr,
     GetFrameLevel = function() return 1 end,
     cooldown = NewFrame(),
 }
 currentTime = 70
 cooldownInfoByAction[42] = { isActive = false }
-local cooldownCallsBeforeInactiveCache = actionCooldownCalls
 wipe(actionBars._activeButtons)
 actionBars._activeButtons[inactiveCooldownButton] = true
 
 actionBars.UpdateAllCooldowns()
 currentTime = 70.1
 actionBars.UpdateAllCooldowns()
-currentTime = 70.31
-actionBars.UpdateAllCooldowns()
 
-assert(actionCooldownCalls - cooldownCallsBeforeInactiveCache == 2,
-    "recently inactive cooldown buttons should skip source probes until the inactive TTL expires")
+assert(rawget(inactiveCooldownButton.cooldown, "cleared") == nil,
+    "a never-active idle button must not churn Clear calls")
 
 -- (_sharedHandlers pins removed: ActionBarButtonTemplate adoption made the
 -- shared per-button handler table dead code — Blizzard's mixin owns the
@@ -620,6 +574,7 @@ function IsUsableAction(action)
 end
 local activeUsabilityButton = {
     action = 101,
+    GetAttribute = ActionAttr,
     GetName = function()
         return "QUI_Bar1Button1"
     end,
@@ -630,6 +585,7 @@ local activeUsabilityButton = {
 }
 local inactiveUsabilityButton = {
     action = 102,
+    GetAttribute = ActionAttr,
     GetName = function()
         return "QUI_Bar1Button2"
     end,
@@ -652,6 +608,7 @@ assert(visibleCalls == 1, "usability refresh should avoid visible checks for ina
 
 local visibleSlotButton = {
     action = 201,
+    GetAttribute = ActionAttr,
     _quiBarKey = "bar1",
     _quiButtonIndex = 1,
     IsVisible = function()
@@ -661,6 +618,7 @@ local visibleSlotButton = {
 }
 local hiddenByLayoutButton = {
     action = 202,
+    GetAttribute = ActionAttr,
     _quiBarKey = "bar1",
     _quiButtonIndex = 2,
     IsVisible = function()
@@ -862,101 +820,14 @@ local lexicalDecoys = table.concat({
 assert(not stripLuaNonCode(lexicalDecoys):find(combinedGuard, 1, true),
     "Lua lexical scrub must reject guard text hidden in strings/comments")
 
--- Find the helper boundary in CODE too. A raw-source search can be truncated
--- by `\n    local function decoy` planted in a long string/comment, leaving
--- unsafe executable statements after the decoy outside the scanned slice.
+-- The schedule fields are secret in combat. The painter must never read them:
+-- every paint goes through the DurationObject sink, so the strongest pin is
+-- their total absence from executable code (scrubbed of strings/comments).
 local cooldownsCode = stripLuaNonCode(cooldownsSource)
-local timingStart = assert(
-    cooldownsCode:find("local function GetSafeCooldownTiming", 1, true),
-    "chunk must declare GetSafeCooldownTiming")
-local timingEnd = assert(cooldownsCode:find(
-    "\n    local function ", timingStart + 1, true),
-    "GetSafeCooldownTiming must be followed by the next local helper")
--- Comparison order is CODE order: non-code bytes are blanked, not removed.
-local timingCode = cooldownsCode:sub(timingStart, timingEnd - 1)
-local combinedGuardAt = assert(timingCode:find(combinedGuard, 1, true),
-    "GetSafeCooldownTiming must use one combined start/duration secret guard")
-local startProbeAt = assert(timingCode:find("start", combinedGuardAt, true))
-local durationProbeAt = assert(timingCode:find("duration", startProbeAt + 1, true))
-local guardLineEnd = assert(timingCode:find("\n", combinedGuardAt, true))
-local guardReturnAt = assert(timingCode:find("%S", guardLineEnd + 1),
-    "combined secret guard must have a body")
-local guardReturnEnd = timingCode:find("\n", guardReturnAt, true)
-    or (#timingCode + 1)
-assert(timingCode:sub(guardReturnAt, guardReturnEnd - 1)
-        :match("^%s*(.-)%s*$") == "return nil, nil",
-    "combined secret guard must immediately return nil timing values")
-local guardCloseAt = assert(timingCode:find("%S", guardReturnEnd + 1),
-    "combined secret guard must close before timing values are consumed")
-local guardCloseEnd = timingCode:find("\n", guardCloseAt, true)
-    or (#timingCode + 1)
-assert(timingCode:sub(guardCloseAt, guardCloseEnd - 1)
-        :match("^%s*(.-)%s*$") == "end",
-    "combined secret guard must close immediately after its return")
-local function exactTrimmedLineAt(source, expected)
-    local cursor = 1
-    while cursor <= #source do
-        local newline = source:find("\n", cursor, true) or (#source + 1)
-        local line = source:sub(cursor, newline - 1)
-        if line:match("^%s*(.-)%s*$") == expected then
-            return cursor + assert(line:find(expected, 1, true)) - 1
-        end
-        cursor = newline + 1
-    end
-end
-local function plainOccurrences(source, needle)
-    local count, first, cursor = 0, nil, 1
-    while true do
-        local at = source:find(needle, cursor, true)
-        if not at then return count, first end
-        count = count + 1
-        first = first or at
-        cursor = at + #needle
-    end
-end
-local startDeclAt = assert(exactTrimmedLineAt(
-    timingCode, "local start = cdInfo.startTime"),
-    "startTime extraction must be exactly `local start = cdInfo.startTime`")
-local durationDeclAt = assert(exactTrimmedLineAt(
-    timingCode, "local duration = cdInfo.duration"),
-    "duration extraction must be exactly `local duration = cdInfo.duration`")
-local startRawCount, startRawAt =
-    plainOccurrences(timingCode, "cdInfo.startTime")
-local durationRawCount, durationRawAt =
-    plainOccurrences(timingCode, "cdInfo.duration")
-assert(startRawCount == 1 and startRawAt == startDeclAt + #"local start = ",
-    "cdInfo.startTime must occur exactly once, in its exact extraction line")
-assert(durationRawCount == 1
-        and durationRawAt == durationDeclAt + #"local duration = ",
-    "cdInfo.duration must occur exactly once, in its exact extraction line")
-local startDeclEnd = assert(timingCode:find("\n", startDeclAt, true))
-local durationDeclEnd = assert(timingCode:find("\n", durationDeclAt, true))
-local firstStartUse = assert(timingCode:find(
-    "%f[%w_]start%f[^%w_]", startDeclEnd + 1))
-local firstDurationUse = assert(timingCode:find(
-    "%f[%w_]duration%f[^%w_]", durationDeclEnd + 1))
-assert(firstStartUse == startProbeAt and firstDurationUse == durationProbeAt,
-    "the combined secret guard must be the FIRST post-read use of BOTH start and duration (including direct truth-tests)")
--- Pin the full operator family too.  The first-use assertion above catches
--- direct truth-tests; these explicit scans document comparison, modulo,
--- exponentiation, and every other arithmetic spelling that also throws.
-local firstCompare = math.min(
-    timingCode:find("==", 1, true) or math.huge,
-    timingCode:find("~=", 1, true) or math.huge,
-    timingCode:find("<", 1, true) or math.huge,
-    timingCode:find(">", 1, true) or math.huge)
-local firstArith = math.min(
-    timingCode:find("+", 1, true) or math.huge,
-    timingCode:find("-", 1, true) or math.huge,
-    timingCode:find("*", 1, true) or math.huge,
-    timingCode:find("/", 1, true) or math.huge,
-    timingCode:find("%", 1, true) or math.huge,
-    timingCode:find("^", 1, true) or math.huge)
-assert(startProbeAt < firstCompare and durationProbeAt < firstCompare,
-    "GetSafeCooldownTiming must probe BOTH start and duration BEFORE any comparison (== on a secret throws)")
-assert(startProbeAt < firstArith and durationProbeAt < firstArith,
-    "GetSafeCooldownTiming must probe BOTH start and duration BEFORE any arithmetic (+ on a secret throws)")
-assert(not timingCode:find("cdInfo%.start%f[%A]"),
-    "no legacy cdInfo.start fallback: the field is not in SpellCooldownInfo and a nil-compare on a secret startTime throws")
+assert(not cooldownsCode:find("cdInfo.startTime", 1, true)
+        and not cooldownsCode:find("cdInfo.duration", 1, true),
+    "the cooldown painter must never read schedule fields: secret in combat; the DurationObject sink is the only paint path")
+assert(not cooldownsCode:find("GetSafeCooldownTiming", 1, true),
+    "no schedule-derived timing helper may return: timing memos stranded in-combat swipes on stale objects")
 
 originalPrint("OK: actionbars_cooldown_charge_cache_test")

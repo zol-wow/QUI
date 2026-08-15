@@ -680,8 +680,8 @@ local function HookRightClickOnce(btn, buttonName)
         local existingSequence = self:GetAttribute("gse-button")
 
         if not existingSequence then
-            local action = self.action or self:GetAttribute("action")
-            if not action or action == 0 then return end
+            local action = self:GetAttribute("action")
+            if type(action) ~= "number" or action == 0 then return end
             if HasAction(action) then return end
         end
 

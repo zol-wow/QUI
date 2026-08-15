@@ -260,8 +260,8 @@ function OnOwnedEvent(self, event, ...)
             end
             if buttons then
                 for _, btn in ipairs(buttons) do
-                    local action = btn.action
-                    if action and action > 0 then
+                    local action = GetSafeActionSlot(btn)
+                    if action then
                         slotMap[action] = { button = btn, barKey = "bar1" }
                         if ResetButtonChargeCapabilityCache then
                             ResetButtonChargeCapabilityCache(btn)
@@ -500,9 +500,6 @@ function OnOwnedEvent(self, event, ...)
         or event == "UNIT_SPELLCAST_INTERRUPTED"
         or event == "UNIT_SPELLCAST_EMPOWER_STOP" then
         if _abCooldownStats then _abCooldownStats.events = _abCooldownStats.events + 1 end
-        if FlushCooldownTimingCaches then
-            FlushCooldownTimingCaches()
-        end
         ScheduleABCooldownUpdate()
 
     elseif event == "ACTIONBAR_UPDATE_STATE" then
