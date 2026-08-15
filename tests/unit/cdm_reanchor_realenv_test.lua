@@ -350,6 +350,32 @@ do
     assert(#created == afterFirst, "applyChrome is idempotent: reuses the border child, no second CreateTexture")
 end
 
+-- Row opacity: applyChrome is the alpha authority for reanchored live icons.
+-- OverlayRect re-asserts alpha 1 on every claim, so rowConfig.opacity must be
+-- applied here per pass or the Row Opacity setting is silently ignored.
+do
+    local alphas = {}
+    local SUBOBJECT = { Cooldown = true, ChargeCount = true, Applications = true, Icon = true }
+    local icon = {
+        CreateTexture = function()
+            return setmetatable({}, { __index = function() return function() end end })
+        end,
+        SetAlpha = function(_, a) alphas[#alphas + 1] = a end,
+    }
+    setmetatable(icon, { __index = function(_, k)
+        if SUBOBJECT[k] then return nil end
+        return function() end
+    end })
+
+    local envO = RE.BuildEnv({})
+    envO.applyChrome(icon, { opacity = 0.4 })
+    assert(alphas[#alphas] == 0.4, "applyChrome applies rowConfig.opacity to the live frame")
+    envO.applyChrome(icon, { opacity = 0 })
+    assert(alphas[#alphas] == 0, "opacity 0 yields a fully transparent live frame, not a reset to 1")
+    envO.applyChrome(icon, {})
+    assert(alphas[#alphas] == 1.0, "missing opacity defaults to fully opaque")
+end
+
 -- Reference-parity PER-PASS writes on claimed frames (re-anchor reference
 -- re-asserts these every collect pass):
 -- Applications/ChargeCount frame-level raise: both are child FRAMES

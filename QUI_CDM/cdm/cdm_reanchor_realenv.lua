@@ -368,7 +368,14 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
     local Helpers = ns.Helpers
     local _chrome = setmetatable({}, { __mode = "k" })
     local function applyChrome(frame, rowConfig, _firstChrome)
-        if frame and frame.SetAlpha then frame:SetAlpha(1) end
+        -- applyChrome is the alpha authority for reanchored live icons:
+        -- OverlayRect resets alpha to 1 each layout pass, so row opacity
+        -- must be reapplied here on every call.
+        local rowOpacity = 1.0
+        if type(rowConfig) == "table" and type(rowConfig.opacity) == "number" then
+            rowOpacity = rowConfig.opacity
+        end
+        if frame and frame.SetAlpha then frame:SetAlpha(rowOpacity) end
         if Icons and Icons.NeutralizeBlizzardItemChrome then
             Icons.NeutralizeBlizzardItemChrome(frame, rowConfig)
         end
