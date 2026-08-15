@@ -4,6 +4,34 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.0-beta5 - 2026-08-15
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+A focused Cooldown Manager pass: Frame Levels controls work again, tracked
+buff bars mirror their paired icon exactly, and tooltips can show aura
+spell IDs.
+
+### Added
+
+- **Show Aura Spell ID tooltip setting.** A new tooltip toggle surfaces the
+  client's aura spell ID line on buff and debuff tooltips, re-applied at
+  login so the choice survives sessions.
+
+### Fixed
+
+- **Frame Levels sliders move Cooldown Manager containers again.** The
+  Frame Levels tab wrote layering keys no Cooldown Manager container ever
+  read, and the game's own viewers were never leveled alongside them; both
+  now route through per-container keys so the sliders visibly reorder the
+  HUD.
+- **Tracked buff bars mirror their paired icon every update.** Multi-variant
+  buff bars could still show a stale variant between refreshes; the bar now
+  copies its paired icon's visuals on every tick and resolves tooltips by
+  aura instance, so the bar and its tooltip always show the variant that
+  actually rolled.
+
 ## v5.2.0-beta4 - 2026-08-15
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
