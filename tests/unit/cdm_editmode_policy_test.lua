@@ -212,6 +212,7 @@ do
     loadChunk("QUI_CDM/cdm/cdm_editmode_policy.lua", "cdm_editmode_policy.lua")("QUI", ns5)
     eventHandler(nil, "PLAYER_ENTERING_WORLD")
     assert(popupsShown[1] == "QUI_CDM_EDITMODE_MANUAL", "still unresolved next session -> manual instructions, no reload loop")
+    assert(#savedLayouts == 0, "save-pending state never re-saves (a re-save taints the whole session)")
     assert(_G.QUIDB.cdmEditModeSavePending == true, "save-pending flag stays latched while unresolved")
 end
 
@@ -224,6 +225,33 @@ do
     assert(#savedLayouts == 0 and #popupsShown == 0, "settled layout -> no save, no prompt")
     assert(_G.QUIDB.cdmEditModeSavePending == nil, "settled layout re-arms the loop breaker")
     _G.QUIDB = nil
+end
+
+---------------------------------------------------------------------------
+-- Combat deferral: a PEW during combat lockdown must not save (a save
+-- taints the session and reload is impossible in combat); enforcement runs
+-- at PLAYER_REGEN_ENABLED instead.
+---------------------------------------------------------------------------
+do
+    local ns7 = {}
+    savedLayouts, popupsShown = {}, {}
+    local regs = {}
+    local frameStub = {
+        RegisterEvent = function(_, ev) regs[ev] = true end,
+        UnregisterEvent = function(_, ev) regs[ev] = nil end,
+    }
+    _G.InCombatLockdown = function() return true end
+    layoutInfoToReturn = staleLayout()
+    loadChunk("QUI_CDM/cdm/cdm_editmode_policy.lua", "cdm_editmode_policy.lua")("QUI", ns7)
+    eventHandler(frameStub, "PLAYER_ENTERING_WORLD")
+    assert(#savedLayouts == 0 and #popupsShown == 0, "in-combat PEW -> enforcement deferred, nothing saved")
+    assert(regs["PLAYER_REGEN_ENABLED"], "in-combat PEW -> waits for PLAYER_REGEN_ENABLED")
+    _G.InCombatLockdown = function() return false end
+    eventHandler(frameStub, "PLAYER_REGEN_ENABLED")
+    assert(#savedLayouts == 1, "regen after deferral -> save runs")
+    assert(popupsShown[1] == "QUI_CDM_EDITMODE_RELOAD", "regen after deferral -> forced reload prompt")
+    assert(regs["PLAYER_REGEN_ENABLED"] == nil, "regen listener unregistered after firing")
+    _G.InCombatLockdown = nil
 end
 
 print("OK: cdm_editmode_policy_test")
