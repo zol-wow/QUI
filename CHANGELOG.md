@@ -4,6 +4,51 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.0-beta4 - 2026-08-15
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Aura displays gain proper load condition pickers, and a fix pass across
+action bars, Cooldown Manager, and skinning: combat cooldowns stay live,
+tracked buff bars follow spell variants, double keybinds are gone, and
+skinning respects module toggles.
+
+### Added
+
+- **Load condition pickers for aura displays.** Aura displays now pick
+  their load conditions from lists — classes, specializations, roles, and
+  encounters — instead of typing comma-separated IDs, alongside a reworked
+  display list with quick create and a single-display preview.
+
+### Fixed
+
+- **Action bar cooldowns, glows, and pressed states stay live in combat.**
+  Reading a button's action in combat can hand back an unreadable secret
+  value, which silently skipped cooldown paints until the fight ended. All
+  slot consumers now resolve the slot from the button's action attribute,
+  which is never secret.
+- **Cooldown Manager icons no longer drop in-combat updates.** When a
+  cooldown event carries a spell that cannot be identified mid-combat, the
+  viewer now refreshes all icons instead of dropping the update.
+- **Tracked buff bars follow the active spell variant.** Multi-variant
+  buffs rendered the wrong bar because tracked-bar matching ignored the
+  linked spell; the linked variant now leads resolution and carries its
+  own name and icon onto the bar.
+- **Cooldown Manager keybind labels no longer double up.** The keybind
+  sweep labelled both a native icon and its invisible click shell, drawing
+  two overlapping keybind texts whenever the two drifted apart.
+- **Edit Mode layouts save against the right layout list.** Both places
+  QUI writes Edit Mode layouts now follow the client's own indexing
+  convention, so a save can no longer edit a layout you never had active.
+- **Objective tracker styling no longer runs inside protected code.** Line
+  icon styling is deferred out of the game's secure hooks and each styled
+  frame is isolated, so one bad frame only costs its own styling.
+- **Skinning leaves disabled modules alone.** The world map and character
+  pane refreshers ran on profile changes even with their modules turned
+  off, burying third-party map buttons and restyling the character pane
+  uninvited.
+
 ## v5.2.0-beta3 - 2026-08-14
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
