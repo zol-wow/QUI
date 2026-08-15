@@ -70,6 +70,7 @@ function CDMEditModePolicy.Enforce()
             layoutInfo.layouts = presets
         end
     end
+    if numPresets == 0 then return end
 
     local activeLayout = type(layoutInfo.activeLayout) == "number"
         and layoutInfo.layouts[layoutInfo.activeLayout]

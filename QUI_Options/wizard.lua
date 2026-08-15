@@ -95,6 +95,10 @@ local function ApplyEditModeBaseLayout()
         and C_EditMode.SaveLayouts and C_EditMode.SetActiveLayout and Enum and Enum.EditModeLayoutType) then
         return false, L["Edit Mode API unavailable on this client."]
     end
+    local presetMgr = _G.EditModePresetLayoutManager
+    if not (presetMgr and presetMgr.GetCopyOfPresetLayouts) then
+        return false, L["Edit Mode API unavailable on this client."]
+    end
 
     local ok, err = pcall(function()
         local newInfo = C_EditMode.ConvertStringToLayoutInfo(str)
@@ -103,21 +107,19 @@ local function ApplyEditModeBaseLayout()
         end
 
         local layoutInfo = C_EditMode.GetLayouts()
-        local list = layoutInfo and layoutInfo.layouts
-        if type(list) ~= "table" then
+        local customs = layoutInfo and layoutInfo.layouts
+        if type(customs) ~= "table" then
             error(L["Edit Mode layout list unavailable."], 0)
         end
 
-        local presetsInList = 0
-        for _, layout in ipairs(list) do
-            if layout.layoutType == Enum.EditModeLayoutType.Preset then
-                presetsInList = presetsInList + 1
-            end
+        local list = presetMgr:GetCopyOfPresetLayouts()
+        if type(list) ~= "table" or #list == 0 then
+            error(L["Edit Mode layout list unavailable."], 0)
         end
-        local presetOffset = 0
-        if presetsInList == 0 then
-            presetOffset = (Enum.EditModePresetLayoutsMeta and Enum.EditModePresetLayoutsMeta.NumValues) or 2
+        for i = 1, #customs do
+            list[#list + 1] = customs[i]
         end
+        layoutInfo.layouts = list
 
         local targetIndex
         for i, layout in ipairs(list) do
@@ -137,7 +139,7 @@ local function ApplyEditModeBaseLayout()
         end
 
         C_EditMode.SaveLayouts(layoutInfo)
-        C_EditMode.SetActiveLayout(targetIndex + presetOffset)
+        C_EditMode.SetActiveLayout(targetIndex)
     end)
 
     if not ok then
