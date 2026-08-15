@@ -4,6 +4,46 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.0-beta3 - 2026-08-14
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+An action-bar reliability pass plus skinning fixes: cooldowns and icons keep
+updating in combat, tooltips stay skinned, the micro menu survives vehicle
+exits, and the special bars get their own settings tabs.
+
+### Added
+
+- **Special bars get their own settings tabs.** Totem Bar, Raid Markers, Bag
+  Bar, and a combined Extra & Zone page now have their own sub-tabs under
+  Action Bars instead of hiding at the bottom of the Per-Bar dropdown, and
+  the raid markers bar picks up button size and spacing sliders.
+
+### Fixed
+
+- **Action bar cooldowns no longer freeze mid-fight.** In combat a button's
+  action can become an unreadable secret value; one throw inside the shared
+  cooldown painter froze every swipe until leaving combat. The painter now
+  handles secret state and paints undecidable cooldowns straight from the
+  game's duration objects, and pet and stance buttons use the same path.
+- **Action bar icons repaint on page and stance changes.** The owned icon
+  pipeline never repainted on paging or stance switches and scheduled no
+  pass on leaving combat, so icons could stay stale until moused over.
+- **Edit Mode no longer re-taints every login after a pending save.** A
+  session interrupted mid-save re-ran the tainted layout save at every
+  login with no way to clear it.
+- **The micro menu recovers its size and layout after vehicle exits.** The
+  override-bar reclaim brought it back shrunk and stacked through the
+  taint-recovery path.
+- **Tooltips stay skinned after the first widget tooltip.** Stale widget
+  state latched on the tooltip's widget container and made every later
+  tooltip read as widget-active, which stopped skinning until reload; the
+  check now only asks whether a widget container is actually shown.
+- **The scenario and widget objective trackers are left alone.** Styling
+  their pooled blocks corrupted the shared widget pool behind them, so QUI
+  now skips those two trackers entirely; they keep the stock look.
+
 ## v5.2.0-beta2 - 2026-08-14
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
