@@ -429,6 +429,9 @@ local function ApplyBarValues(f, member, general, power, showPower)
             r, g, b, a = c[1] or r, c[2] or g, c[3] or b, c[4] or a
         elseif general.useClassColor ~= false then
             r, g, b = ClassColor(member.class)
+        elseif general.healthBarColor then
+            local c = general.healthBarColor
+            r, g, b, a = c[1] or r, c[2] or g, c[3] or b, c[4] or a
         end
         hb:SetStatusBarColor(r, g, b, a)
     end

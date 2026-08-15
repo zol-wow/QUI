@@ -277,6 +277,33 @@ local function StyleSlot(frame, element, index, profileOverrides)
         fill:SetOrientation(vertical and "VERTICAL" or "HORIZONTAL")
         fill:SetStatusBarColor(blockColor[1] or 1, blockColor[2] or 1, blockColor[3] or 1, 1)
         fill:Show()
+        -- Low-time recolor: a cover in the expiring color anchored to the
+        -- fill's texture region (its rect tracks the timer C-side), with its
+        -- Shown aspect handed to the engine's refresh-window driver via
+        -- AddPandemicRegion — no time is ever read Lua-side. BIND-ONCE:
+        -- Blizzard owns the cover's visibility from the bind onward, so QUI
+        -- must never Show/Hide it; disabling the option restyles it to
+        -- alpha 0 instead (slots cannot be rebuilt to shed the bind).
+        local lowColor = isBar and barCfg.lowTimeColor or nil
+        local lowCover = fill._quiLowTimeCover
+        if type(lowColor) == "table" and frame.AddPandemicRegion then
+            if not lowCover then
+                lowCover = fill:CreateTexture(nil, "OVERLAY")
+                local fillTex = fill.GetStatusBarTexture and fill:GetStatusBarTexture()
+                if fillTex then
+                    lowCover:SetAllPoints(fillTex)
+                else
+                    lowCover:SetAllPoints(fill)
+                end
+                if lowCover.DisablePixelSnap then lowCover:DisablePixelSnap() end
+                fill._quiLowTimeCover = lowCover
+                frame:AddPandemicRegion(lowCover)
+            end
+            lowCover:SetColorTexture(lowColor[1] or 1, lowColor[2] or 0.35, lowColor[3] or 0.2, 1)
+            lowCover:SetAlpha(lowColor[4] or 1)
+        elseif lowCover then
+            lowCover:SetAlpha(0)
+        end
     else
         if frame._quiDurationBar then frame._quiDurationBar:Hide() end
         if cd and Helpers and Helpers.ApplyCooldownSwipeStyle then

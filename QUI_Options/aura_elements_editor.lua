@@ -1275,6 +1275,27 @@ local function AddTrackedConfig(ctx, element)
         row(ns.L["Border Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 1, 8, 1, "borderSize", element.bar, onChange, { deferOnDrag = true }, {
             description = ns.L["Pixel thickness of the bar's border."],
         }))
+        local barCfg = element.bar
+        row(ns.L["Color When Expiring"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "_lowTimeColorOn", {
+            _lowTimeColorOn = barCfg.lowTimeColor ~= nil,
+            _quiTransientOptionsProxy = true,
+        }, function(checked)
+            if checked and barCfg.lowTimeColor == nil then
+                barCfg.lowTimeColor = { 1, 0.35, 0.2, 1 }
+            elseif not checked then
+                barCfg.lowTimeColor = nil
+            end
+            ctx.NotifyChanged()
+            rebuild()
+        end, {
+            description = ns.L["Recolor the bar inside the game's refresh window (roughly the final 30% of the aura's duration). The window is engine-driven, so this keeps working in combat; a custom seconds threshold is not possible there."],
+            keywords = { "low time", "expiring", "pandemic" },
+        }))
+        if barCfg.lowTimeColor then
+            row(ns.L["Expiring Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "lowTimeColor", element.bar, onChange, nil, {
+                description = ns.L["Bar color while the aura is inside the refresh window."],
+            }))
+        end
     elseif displayType == "border" then
         if type(element.color) ~= "table" then element.color = { 0.2, 0.8, 0.2, 1 } end
         if type(element.border) ~= "table" then element.border = { thickness = 2 } end

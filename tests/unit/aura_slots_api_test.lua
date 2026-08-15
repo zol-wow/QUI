@@ -57,6 +57,9 @@ check("feeder retire path clears state when a slot changes display type",
 check("feeder element syncs ONE union slot (stacked covers composite darker)",
     src:find("SyncFeederElement", 1, true) ~= nil
     and src:find("FeederSpellMap", 1, true) ~= nil)
+check("bar low-time recolor rides the engine refresh window, capability-gated + bind-once",
+    src:find("AddPandemicRegion", 1, true) ~= nil
+    and src:find("frame.AddPandemicRegion", 1, true) ~= nil)
 check("linear fills suppress the cooldown edge + bling overlays",
     src:find("SetDrawEdge(false)", 1, true) ~= nil
     and src:find("SetDrawBling(false)", 1, true) ~= nil)
