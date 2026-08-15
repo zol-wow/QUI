@@ -717,8 +717,9 @@ function BuildBar(barKey)
 
     if not ActionBarsOwned.slotMap then ActionBarsOwned.slotMap = {} end
     for _, btn in ipairs(buttons) do
-        if btn.action and btn.action > 0 then
-            ActionBarsOwned.slotMap[btn.action] = { button = btn, barKey = barKey }
+        local slot = GetSafeActionSlot(btn)
+        if slot then
+            ActionBarsOwned.slotMap[slot] = { button = btn, barKey = barKey }
         end
     end
 

@@ -8,17 +8,16 @@ env.SetChunkEnv(1, env)
 
 GetDB = Helpers.CreateDBGetter("actionBars")
 
+local _lastPlainActionSlot = setmetatable({}, { __mode = "k" })
 function GetSafeActionSlot(button)
-    if not button then return nil end
-    local action = button.action
-    if action == nil or Helpers.IsSecretValue(action) then
-        return nil
+    if not button or not button.GetAttribute then return nil end
+    local action = button:GetAttribute("action")
+    if Helpers.IsSecretValue(action) then
+        return _lastPlainActionSlot[button] -- @secret-policy: last-readable-slot-fallback
     end
-    local ok, numericAction = ns.SafeCall("best-effort-style", tonumber, action)
-    if not ok or type(numericAction) ~= "number" or numericAction < 1 then
-        return nil
-    end
-    return numericAction
+    if type(action) ~= "number" or action < 1 then return nil end
+    _lastPlainActionSlot[button] = action
+    return action
 end
 
 function GetGlobalSettings()

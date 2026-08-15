@@ -347,26 +347,31 @@ assert(visibilityUpdated.spell == 1, "matched per-spell cooldown refresh should 
 assert(stackWriteStates[1] == true and stackWriteStates[2] == false,
     "matched per-spell cooldown refresh should enable stack text writes around the full update")
 
--- isOnGCD is read directly off cdInfo (NeverSecret), so a refresh with a nil
--- spellID no longer captures a trusted-GCD snapshot or runs a broad GCD-edge
--- spell-scope re-resolve. It is the documented no-op fallback: GCD-only swipe
--- refresh is driven by the cast_succeeded InvalidateGCDOnlyBindings path
--- instead. A refresh must leave existing bindings untouched when no comparable
--- spellID is carried.
 reset(applied)
 reset(runtimeUpdated)
 reset(visibilityUpdated)
 reset(stackWriteStates)
 reset(batches)
+local schedulesBeforeNilRefresh = #schedules
 spellIcon._lastResolvedMode = "gcd-only"
 spellIcon._lastDurObjKey = "gcd-only:101"
 spellIcon._lastDurObj = {}
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", nil, nil, "refresh")
 assert(spellIcon._lastDurObjKey == "gcd-only:101",
     "nil-spellID refresh should not invalidate any duration binding (no broad GCD-edge walk)")
-assert(next(applied) == nil, "nil-spellID refresh should not re-resolve any icon")
-assert(next(runtimeUpdated) == nil, "nil-spellID refresh should not run any icon update")
+assert(next(applied) == nil, "nil-spellID refresh should not re-resolve any icon synchronously")
+assert(next(runtimeUpdated) == nil, "nil-spellID refresh should not run synchronous icon updates")
 assert(#batches == 0, "nil-spellID refresh should not open a runtime batch")
+assert(#schedules == schedulesBeforeNilRefresh + 1
+        and schedules[#schedules].mode == "cooldown"
+        and schedules[#schedules].reason == "refresh_all",
+    "nil-spellID refresh must schedule the coalesced refresh-all cooldown pass: the API doc says a nil value means ALL cooldowns update")
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", secretSpellID, nil, "refresh")
+assert(#schedules == schedulesBeforeNilRefresh + 2
+        and schedules[#schedules].mode == "cooldown"
+        and schedules[#schedules].reason == "refresh_all",
+    "secret-spellID refresh must schedule the refresh-all pass, never silently drop the event")
+assert(next(runtimeUpdated) == nil, "secret-spellID refresh should not run synchronous icon updates")
 spellIcon._lastResolvedMode = nil
 spellIcon._lastDurObjKey = nil
 spellIcon._lastDurObj = nil

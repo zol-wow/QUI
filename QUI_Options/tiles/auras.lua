@@ -102,6 +102,8 @@ function ns.QUI_AurasTile.Register(frame)
                 searchAliases = {
                     ns.L["Aura Displays"], ns.L["Custom aura frame"],
                     ns.L["Track a buff on screen"], ns.L["Watch another player's auras"],
+                    ns.L["Load Conditions"], ns.L["Classes"], ns.L["Specs"],
+                    ns.L["Roles"], ns.L["Encounters"], ns.L["New Display"],
                 },
                 searchContext = {
                     tabIndex = 21,

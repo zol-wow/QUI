@@ -66,10 +66,6 @@ do
     local DEFAULT_CD_INFO  = { startTime = 0, duration = 0, isEnabled = false, isActive = false, modRate = 0 }
     local DEFAULT_LOC_INFO = { startTime = 0, duration = 0, modRate = 0, isActive = false, shouldReplaceNormalCooldown = false }
     local DEFAULT_CHARGE_INFO = { currentCharges = 0, maxCharges = 0, cooldownStartTime = 0, cooldownDuration = 0, chargeModRate = 0, isActive = false }
-    local ACTIVE_COOLDOWN_CACHE_MAX_DURATION = 2.5
-    local ACTIVE_COOLDOWN_CACHE_LONG_REFRESH_TTL = 1.0
-    local ACTIVE_COOLDOWN_CACHE_FALLBACK_TTL = 0.20
-    local INACTIVE_COOLDOWN_CACHE_TTL = 0.25
 
     local function GetOrCreateChargeCooldown(button)
         if button.chargeCooldown then return button.chargeCooldown end
@@ -136,11 +132,6 @@ do
     end
 
     local _buttonWasActive = setmetatable({}, { __mode = "k" })
-    local _buttonCooldownAction = setmetatable({}, { __mode = "k" })
-    local _buttonCooldownInfo = setmetatable({}, { __mode = "k" })
-    local _buttonCooldownDurationObject = setmetatable({}, { __mode = "k" })
-    local _buttonCooldownExpiresAt = setmetatable({}, { __mode = "k" })
-    local _buttonCooldownInactiveAt = setmetatable({}, { __mode = "k" })
     local _buttonChargeAction = setmetatable({}, { __mode = "k" })
     local _buttonMayHaveCharges = setmetatable({}, { __mode = "k" })
     local _cooldownBatchToken = 0
@@ -173,23 +164,9 @@ do
         SetupChargeCacheProbe()
     end
 
-    local function ResetButtonCooldownRuntimeCache(button)
-        _buttonCooldownAction[button] = nil
-        _buttonCooldownInfo[button] = nil
-        _buttonCooldownDurationObject[button] = nil
-        _buttonCooldownExpiresAt[button] = nil
-        _buttonCooldownInactiveAt[button] = nil
-    end
-
     ResetButtonChargeCapabilityCache = function(button)
-        ResetButtonCooldownRuntimeCache(button)
         _buttonChargeAction[button] = nil
         _buttonMayHaveCharges[button] = nil
-    end
-
-    FlushCooldownTimingCaches = function()
-        wipe(_buttonCooldownExpiresAt)
-        wipe(_buttonCooldownInactiveAt)
     end
 
     FlushChargeCapabilityVerdicts = function()
@@ -197,11 +174,6 @@ do
     end
 
     ResetAllChargeCapabilityCaches = function()
-        wipe(_buttonCooldownAction)
-        wipe(_buttonCooldownInfo)
-        wipe(_buttonCooldownDurationObject)
-        wipe(_buttonCooldownExpiresAt)
-        wipe(_buttonCooldownInactiveAt)
         wipe(_buttonChargeAction)
         wipe(_buttonMayHaveCharges)
         wipe(_batchCooldownInfoSeen)
@@ -240,26 +212,9 @@ do
         _cooldownBatchActive = false
     end
 
-    local function GetSafeCooldownTiming(cdInfo)
-        local start = cdInfo.startTime
-        local duration = cdInfo.duration
-        if Helpers.IsSecretValue(start) or Helpers.IsSecretValue(duration) then
-            return nil, nil -- @secret-policy: reject-secret-value
-        end
-        if type(start) ~= "number" or type(duration) ~= "number" then
-            return nil, nil
-        end
-        if start <= 0 or duration <= 0 then
-            return nil, nil
-        end
-        return start + duration, duration
-    end
-
     local function GetActionCooldownInfo(action)
         if not C_ActionBar.GetActionCooldown then return DEFAULT_CD_INFO end
-        local actionCanBeCached = not Helpers.IsSecretValue(action)
-        if actionCanBeCached
-            and _cooldownBatchActive
+        if _cooldownBatchActive
             and _batchCooldownInfoSeen[action] == _cooldownBatchToken then
             if _abCooldownStats then _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1 end
             return _batchCooldownInfo[action]
@@ -268,7 +223,7 @@ do
         if _abCooldownStats then _abCooldownStats.actionCooldownQueries = _abCooldownStats.actionCooldownQueries + 1 end
         local cdInfo = C_ActionBar.GetActionCooldown(action)
         if type(cdInfo) ~= "table" then cdInfo = DEFAULT_CD_INFO end
-        if actionCanBeCached and _cooldownBatchActive then
+        if _cooldownBatchActive then
             _batchCooldownInfoSeen[action] = _cooldownBatchToken
             _batchCooldownInfo[action] = cdInfo
         end
@@ -277,9 +232,7 @@ do
 
     local function GetActionCooldownDurationObject(action)
         if not C_ActionBar.GetActionCooldownDuration then return nil end
-        local actionCanBeCached = not Helpers.IsSecretValue(action)
-        if actionCanBeCached
-            and _cooldownBatchActive
+        if _cooldownBatchActive
             and _batchCooldownDurationSeen[action] == _cooldownBatchToken then
             if _abCooldownStats then _abCooldownStats.actionDurationHits = _abCooldownStats.actionDurationHits + 1 end
             return _batchCooldownDurationObject[action]
@@ -287,7 +240,7 @@ do
 
         if _abCooldownStats then _abCooldownStats.actionDurationQueries = _abCooldownStats.actionDurationQueries + 1 end
         local durationObject = C_ActionBar.GetActionCooldownDuration(action)
-        if actionCanBeCached and _cooldownBatchActive then
+        if _cooldownBatchActive then
             _batchCooldownDurationSeen[action] = _cooldownBatchToken
             _batchCooldownDurationObject[action] = durationObject
         end
@@ -295,68 +248,9 @@ do
     end
 
     local function GetActionCooldownState(button, action)
-        local actionCanBeCached = not Helpers.IsSecretValue(action)
-        if actionCanBeCached and _buttonCooldownAction[button] == action then
-            local expiresAt = _buttonCooldownExpiresAt[button]
-            if type(expiresAt) == "number" and GetTime() < expiresAt - 0.05 then
-                local durationObject = _buttonCooldownDurationObject[button]
-                if durationObject then
-                    if _abCooldownStats then
-                        _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1
-                        _abCooldownStats.actionCooldownActiveHits = _abCooldownStats.actionCooldownActiveHits + 1
-                        _abCooldownStats.actionDurationHits = _abCooldownStats.actionDurationHits + 1
-                        _abCooldownStats.actionDurationActiveHits = _abCooldownStats.actionDurationActiveHits + 1
-                    end
-                    return _buttonCooldownInfo[button], durationObject, true
-                end
-            end
-
-            local inactiveAt = _buttonCooldownInactiveAt[button]
-            if type(inactiveAt) == "number"
-                and GetTime() - inactiveAt < INACTIVE_COOLDOWN_CACHE_TTL then
-                if _abCooldownStats then
-                    _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1
-                    _abCooldownStats.actionCooldownInactiveSkips = _abCooldownStats.actionCooldownInactiveSkips + 1
-                end
-                return DEFAULT_CD_INFO, nil, false
-            end
-        end
-
         local cdInfo = GetActionCooldownInfo(action)
         local cdActive = DecodePotentialSecretBoolean(cdInfo.isActive)
         local durationObject = cdActive ~= false and GetActionCooldownDurationObject(action) or nil
-        if actionCanBeCached then
-            if cdActive == true and durationObject then
-                local expiresAt, duration = GetSafeCooldownTiming(cdInfo)
-                if expiresAt and duration <= ACTIVE_COOLDOWN_CACHE_MAX_DURATION then
-                    _buttonCooldownAction[button] = action
-                    _buttonCooldownInfo[button] = cdInfo
-                    _buttonCooldownDurationObject[button] = durationObject
-                    _buttonCooldownExpiresAt[button] = expiresAt
-                    _buttonCooldownInactiveAt[button] = nil
-                elseif expiresAt then
-                    _buttonCooldownAction[button] = action
-                    _buttonCooldownInfo[button] = cdInfo
-                    _buttonCooldownDurationObject[button] = durationObject
-                    _buttonCooldownExpiresAt[button] = math.min(expiresAt, GetTime() + ACTIVE_COOLDOWN_CACHE_LONG_REFRESH_TTL)
-                    _buttonCooldownInactiveAt[button] = nil
-                elseif not expiresAt then
-                    _buttonCooldownAction[button] = action
-                    _buttonCooldownInfo[button] = cdInfo
-                    _buttonCooldownDurationObject[button] = durationObject
-                    _buttonCooldownExpiresAt[button] = GetTime() + ACTIVE_COOLDOWN_CACHE_FALLBACK_TTL
-                    _buttonCooldownInactiveAt[button] = nil
-                end
-            elseif cdActive == false then
-                _buttonCooldownAction[button] = action
-                _buttonCooldownInfo[button] = nil
-                _buttonCooldownDurationObject[button] = nil
-                _buttonCooldownExpiresAt[button] = nil
-                _buttonCooldownInactiveAt[button] = GetTime()
-            else
-                ResetButtonCooldownRuntimeCache(button)
-            end
-        end
         return cdInfo, durationObject, cdActive
     end
 
@@ -371,9 +265,7 @@ do
 
     local function GetActionChargeActive(button, action)
         if not C_ActionBar.GetActionCharges then return nil end
-        local actionCanBeCached = not Helpers.IsSecretValue(action)
-        if actionCanBeCached
-            and _cooldownBatchActive
+        if _cooldownBatchActive
             and _batchChargeInfoSeen[action] == _cooldownBatchToken then
             if _batchChargeMayHaveCharges[action] == false then
                 if _abCooldownStats then _abCooldownStats.chargeInfoSkips = _abCooldownStats.chargeInfoSkips + 1 end
@@ -381,8 +273,7 @@ do
             return _batchChargeActive[action]
         end
 
-        if actionCanBeCached
-            and _buttonChargeAction[button] == action
+        if _buttonChargeAction[button] == action
             and _buttonMayHaveCharges[button] == false then
             if _abCooldownStats then _abCooldownStats.chargeInfoSkips = _abCooldownStats.chargeInfoSkips + 1 end
             return nil
@@ -392,23 +283,21 @@ do
         local chargeInfo = C_ActionBar.GetActionCharges(action)
         if type(chargeInfo) ~= "table" then chargeInfo = DEFAULT_CHARGE_INFO end
         local mayHaveCharges = ChargeInfoMayHaveCharges(chargeInfo)
-        if actionCanBeCached then
-            _buttonChargeAction[button] = action
-            _buttonMayHaveCharges[button] = mayHaveCharges
-            if _cooldownBatchActive then
-                _batchChargeInfoSeen[action] = _cooldownBatchToken
-                _batchChargeMayHaveCharges[action] = mayHaveCharges
-            end
+        _buttonChargeAction[button] = action
+        _buttonMayHaveCharges[button] = mayHaveCharges
+        if _cooldownBatchActive then
+            _batchChargeInfoSeen[action] = _cooldownBatchToken
+            _batchChargeMayHaveCharges[action] = mayHaveCharges
         end
         local chargeActive = DecodePotentialSecretBoolean(chargeInfo.isActive)
         if mayHaveCharges and chargeActive ~= false then
             if _abCooldownStats then _abCooldownStats.chargeInfoActive = _abCooldownStats.chargeInfoActive + 1 end
-            if actionCanBeCached and _cooldownBatchActive then
+            if _cooldownBatchActive then
                 _batchChargeActive[action] = true
             end
             return true
         end
-        if actionCanBeCached and _cooldownBatchActive then
+        if _cooldownBatchActive then
             _batchChargeActive[action] = nil
         end
         return nil
@@ -416,16 +305,14 @@ do
 
     local function GetActionChargeDurationObject(action)
         if not C_ActionBar.GetActionChargeDuration then return nil end
-        local actionCanBeCached = not Helpers.IsSecretValue(action)
-        if actionCanBeCached
-            and _cooldownBatchActive
+        if _cooldownBatchActive
             and _batchChargeDurationSeen[action] == _cooldownBatchToken then
             return _batchChargeDurationObject[action]
         end
 
         if _abCooldownStats then _abCooldownStats.chargeDurationQueries = _abCooldownStats.chargeDurationQueries + 1 end
         local durationObject = C_ActionBar.GetActionChargeDuration(action)
-        if actionCanBeCached and _cooldownBatchActive then
+        if _cooldownBatchActive then
             _batchChargeDurationSeen[action] = _cooldownBatchToken
             _batchChargeDurationObject[action] = durationObject
         end
@@ -437,9 +324,7 @@ do
 
     local function GetActionLoCInfo(action)
         if not C_ActionBar.GetActionLossOfControlCooldownInfo then return DEFAULT_LOC_INFO end
-        local actionCanBeCached = not Helpers.IsSecretValue(action)
-        if actionCanBeCached
-            and _cooldownBatchActive
+        if _cooldownBatchActive
             and _batchLoCInfoSeen[action] == _cooldownBatchToken then
             if _abCooldownStats then _abCooldownStats.lossOfControlInfoHits = _abCooldownStats.lossOfControlInfoHits + 1 end
             return _batchLoCInfo[action]
@@ -448,7 +333,7 @@ do
         if _abCooldownStats then _abCooldownStats.lossOfControlInfoQueries = _abCooldownStats.lossOfControlInfoQueries + 1 end
         local locInfo = C_ActionBar.GetActionLossOfControlCooldownInfo(action)
         if type(locInfo) ~= "table" then locInfo = DEFAULT_LOC_INFO end
-        if actionCanBeCached and _cooldownBatchActive then
+        if _cooldownBatchActive then
             _batchLoCInfoSeen[action] = _cooldownBatchToken
             _batchLoCInfo[action] = locInfo
         end
@@ -457,11 +342,8 @@ do
 
     function ActionBarsOwned.UpdateCooldown(button)
         if _abCooldownStats then _abCooldownStats.buttons = _abCooldownStats.buttons + 1 end
-        local action = button.action
-        if Helpers.IsSecretValue(action) then
-            return -- @secret-policy: reject-secret-value
-        end
-        if not action or action == 0 then return end
+        local action = GetSafeActionSlot(button)
+        if not action then return end
 
         local cooldown = button.cooldown or button.Cooldown
         if not cooldown then return end
@@ -529,7 +411,7 @@ do
             for btn in pairs(activeButtons) do
                 local barKey = btn._quiBarKey
                 if not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey) then
-                    ActionBarsOwned.UpdateCooldown(btn)
+                    ns.SafeCall("best-effort-style", ActionBarsOwned.UpdateCooldown, btn)
                 else
                     activeButtons[btn] = nil
                     ActionBarsOwned._activeStandardButtons[btn] = nil
@@ -543,13 +425,11 @@ do
             local buttons = ActionBarsOwned.nativeButtons[barKey]
             if buttons then
                 for _, btn in ipairs(buttons) do
-                    local action = btn.action
-                    if Helpers.IsSecretValue(action) then
-                        action = nil -- @secret-policy: reject-secret-value
-                    end
-                    if (not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey))
-                        and HasAction(action or 0) then
-                        ActionBarsOwned.UpdateCooldown(btn)
+                    local action = GetSafeActionSlot(btn)
+                    if action
+                        and (not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey))
+                        and HasAction(action) then
+                        ns.SafeCall("best-effort-style", ActionBarsOwned.UpdateCooldown, btn)
                     end
                 end
             end

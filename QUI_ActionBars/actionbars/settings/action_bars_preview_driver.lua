@@ -161,10 +161,9 @@ local function GetPreviewSlot(barKey, index)
         and ns.ActionBarsOwned.nativeButtons
         and ns.ActionBarsOwned.nativeButtons[barKey]
     local button = buttons and buttons[index]
-    local liveAction = button and button.action
-    local numericAction = liveAction and tonumber(liveAction)
-    if numericAction and numericAction > 0 then
-        return numericAction
+    local liveAction = button and button.GetAttribute and button:GetAttribute("action")
+    if type(liveAction) == "number" and liveAction > 0 then
+        return liveAction
     end
 
     local offset = BAR_OFFSETS[barKey] or 0
@@ -179,10 +178,9 @@ local function GetPreviewSourceButton(barKey, index)
 end
 
 local function GetPreviewActionSlot(slot, sourceButton)
-    local liveAction = sourceButton and sourceButton.action
-    local numericAction = liveAction and tonumber(liveAction)
-    if numericAction and numericAction > 0 then
-        return numericAction
+    local liveAction = sourceButton and sourceButton.GetAttribute and sourceButton:GetAttribute("action")
+    if type(liveAction) == "number" and liveAction > 0 then
+        return liveAction
     end
 
     return slot

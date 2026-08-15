@@ -510,13 +510,14 @@ end
 local function GetTrackedBarSpellData(frame)
     if not frame then return nil end
 
-    local resolvedSpellID, baseSpellID, overrideSpellID, name
+    local resolvedSpellID, baseSpellID, overrideSpellID, linkedSpellID, name
     local cdInfo = frame.cooldownInfo
     if cdInfo then
+        linkedSpellID = ReadNumber(cdInfo.linkedSpellID, nil)
         overrideSpellID = ReadNumber(cdInfo.overrideSpellID, nil)
         baseSpellID = ReadNumber(cdInfo.spellID, nil)
         name = ReadString(cdInfo.name, nil)
-        resolvedSpellID = overrideSpellID or baseSpellID
+        resolvedSpellID = linkedSpellID or overrideSpellID or baseSpellID
     end
 
     if (not resolvedSpellID or not name) and frame.cooldownID then
@@ -527,6 +528,13 @@ local function GetTrackedBarSpellData(frame)
             baseSpellID = baseSpellID or ReadNumber(apiInfo.spellID, nil)
             name = name or ReadString(apiInfo.name, nil)
             resolvedSpellID = resolvedSpellID or overrideSpellID or baseSpellID
+        end
+    end
+
+    if linkedSpellID then
+        local spellInfo = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(linkedSpellID)
+        if spellInfo and spellInfo.name then
+            name = spellInfo.name
         end
     end
 
@@ -557,6 +565,7 @@ local function GetTrackedBarSpellData(frame)
         spellID = resolvedSpellID,
         baseSpellID = baseSpellID or resolvedSpellID,
         overrideSpellID = overrideSpellID,
+        linkedSpellID = linkedSpellID,
         name = name,
         cooldownID = frame.cooldownID,
     }
@@ -576,7 +585,7 @@ local function GetTrackedBarIconTexture(frame, spellData)
         end
     end
 
-    local spellID = spellData and (spellData.overrideSpellID or spellData.spellID or spellData.baseSpellID)
+    local spellID = spellData and (spellData.spellID or spellData.overrideSpellID or spellData.baseSpellID)
     if spellID then
         local info = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(spellID)
         if info and info.iconID then
@@ -617,6 +626,7 @@ local function GetTrackedBarRuntimeEntries()
                     spellID = spellData.spellID,
                     baseSpellID = spellData.baseSpellID,
                     overrideSpellID = spellData.overrideSpellID,
+                    linkedSpellID = spellData.linkedSpellID,
                     name = spellData.name or "",
                     iconTexture = GetTrackedBarIconTexture(child, spellData),
                     cooldownID = spellData.cooldownID,
