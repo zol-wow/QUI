@@ -14,6 +14,7 @@ return {
     "QUI_CDM/cdm/cdm_catalog.lua::3",
     "QUI_CDM/cdm/cdm_containers.lua::13",
     "QUI_CDM/cdm/cdm_frame_writes.lua::3",
+    "QUI_CDM/cdm/cdm_icon_factory.lua::1",
     "QUI_CDM/cdm/cdm_icon_renderer.lua::1",
     "QUI_CDM/cdm/cdm_index.lua::2",
     "QUI_CDM/cdm/cdm_reanchor.lua::1",

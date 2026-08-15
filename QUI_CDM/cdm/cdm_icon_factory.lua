@@ -75,10 +75,13 @@ local WoW_IsSecretValue = issecretvalue
 local function AuraCarrierFields(frame)
     if WoW_IsSecretValue and WoW_IsSecretValue(frame) then return nil end -- @secret-policy: reject-secret-value (a secret frame ref cannot be indexed for aura fields)
     if type(frame) ~= "table" then return nil end
-    if type(frame.auraInstanceID) == "nil" then return nil end
+    local auraInstanceID = frame.auraInstanceID
+    if WoW_IsSecretValue and WoW_IsSecretValue(auraInstanceID) then return nil end -- @secret-policy: reject-secret-ids (secret in combat; tooltip accessor would hard-error)
+    if type(auraInstanceID) == "nil" then return nil end
     local unit = frame.auraDataUnit
+    if WoW_IsSecretValue and WoW_IsSecretValue(unit) then return nil end -- @secret-policy: reject-secret-value
     if type(unit) ~= "string" then return nil end
-    return unit, frame.auraInstanceID
+    return unit, auraInstanceID
 end
 
 local function ResolveAuraCarrier(owner)
@@ -124,8 +127,11 @@ function CDMIconFactory.ShowEntryTooltip(owner, entry, tooltipContext)
     if setAuraByInstance then
         local auraUnit, auraInstanceID = ResolveAuraCarrier(owner)
         if auraUnit then
-            auraShown = setAuraByInstance(GameTooltip, auraUnit, auraInstanceID,
-                "INCLUDE_NAME_PLATE_ONLY") and true or false
+            -- Auras can be secret in combat; from tainted execution the
+            -- accessor hard-errors instead of returning nil.
+            local ok, shown = pcall(setAuraByInstance, GameTooltip, auraUnit, auraInstanceID,
+                "INCLUDE_NAME_PLATE_ONLY")
+            auraShown = (ok and shown) and true or false
             if not auraShown then
                 AnchorEntryTooltip(owner, tooltipSettings)
             end
