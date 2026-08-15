@@ -1655,6 +1655,11 @@ local function RenderCastColorsSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, ns.L["Important Casts"], importantToggle),
         optionsAPI.BuildSettingRow(card.frame, ns.L["Important Cast Color"], importantPicker)
     )
+
+    local backgroundPicker = gui:CreateFormColorPicker(card.frame, nil, "castBg", colors, refresh, nil, {
+        description = ns.L["Color of the unfilled portion of the castbar."],
+    })
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Background Color"], backgroundPicker))
     builder.CloseCard(card)
 
     return builder.Height()
