@@ -54,7 +54,7 @@ local function CreateDeferredStyleQueue(handler)
             local batch = pending
             pending = {}
             for frame in pairs(batch) do
-                handler(frame)
+                ns.SafeCall("best-effort-style", handler, frame)
             end
         end)
     end

@@ -26,19 +26,27 @@ local function check(name, cond, detail)
 end
 
 local queueChunk = table.concat({
-    "local C_Timer = ...",
+    "local C_Timer, ns = ...",
     extract("deferred_style_queue"),
     "return CreateDeferredStyleQueue",
 }, "\n")
 
 local timers
+local safeCallPolicies
 
 local function buildQueue(handler)
     timers = {}
+    safeCallPolicies = {}
     local fakeTimer = {
         After = function(delay, cb) timers[#timers + 1] = { delay = delay, cb = cb } end,
     }
-    local factory = assert(loadstring(queueChunk, "deferred_style_queue"))(fakeTimer)
+    local fakeNs = {
+        SafeCall = function(policy, fn, ...)
+            safeCallPolicies[#safeCallPolicies + 1] = policy
+            return pcall(fn, ...)
+        end,
+    }
+    local factory = assert(loadstring(queueChunk, "deferred_style_queue"))(fakeTimer, fakeNs)
     return factory(handler)
 end
 
@@ -88,6 +96,24 @@ do
     check("re-queue during a flush lands in a new batch", count == 1 and #timers == 1)
     fire()
     check("re-queued target is handled once on the next flush", count == 2 and #timers == 0)
+end
+
+do
+    local handled = {}
+    local bad = { name = "bad" }
+    local q = buildQueue(function(f)
+        if f == bad then error("boom") end
+        handled[#handled + 1] = f
+    end)
+    local g1, g2 = { name = "g1" }, { name = "g2" }
+    q(g1)
+    q(bad)
+    q(g2)
+    fire()
+    check("a throwing target does not drop its batch-mates", #handled == 2)
+    check("flush isolates each target through the best-effort SafeCall policy",
+        #safeCallPolicies == 3 and safeCallPolicies[1] == "best-effort-style"
+            and safeCallPolicies[2] == "best-effort-style" and safeCallPolicies[3] == "best-effort-style")
 end
 
 check("SetState hook routes through the deferred queue",
