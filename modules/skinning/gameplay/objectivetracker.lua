@@ -35,6 +35,30 @@ local function SafeSetTextColor(fontString, colorTable)
     fontString:SetTextColor(colorTable[1] or 1, colorTable[2] or 1, colorTable[3] or 1, colorTable[4] or 1)
 end
 
+-- Hooks installed on tracker mixins fire inside Blizzard's update loop
+-- (e.g. QuestObjectiveTracker line updates); an error raised there aborts
+-- the rest of that loop and leaves objective lines stale. Styling must
+-- therefore never run inline from those hooks — queue the frame and restyle
+-- on the next frame, where a failure only costs us our own skinning.
+local function CreateDeferredStyleQueue(handler)
+    local pending = {}
+    local scheduled = false
+    return function(target)
+        if not target then return end
+        pending[target] = true
+        if scheduled then return end
+        scheduled = true
+        C_Timer.After(0, function()
+            scheduled = false
+            local batch = pending
+            pending = {}
+            for frame in pairs(batch) do
+                handler(frame)
+            end
+        end)
+    end
+end
+
 local GetFontPath = Helpers.GetGeneralFont
 
 local function CJKFont(fs, path, size, flags)
@@ -77,6 +101,7 @@ local function StyleLineIcon(line)
     end
 
     local atlas = icon:GetAtlas()
+    if Helpers.IsSecretValue(atlas) then return end
     if type(atlas) ~= "string" then return end
     atlas = atlas:lower()
 
@@ -105,11 +130,13 @@ local function StyleLineIcon(line)
     icon:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, alpha)
 end
 
+local QueueLineIconStyle = CreateDeferredStyleQueue(StyleLineIcon)
+
 local function HookAnimLineState()
     local mixin = _G.ObjectiveTrackerAnimLineMixin
     if mixin and mixin.SetState and not SkinBase.GetFrameData(mixin, "qSetStateHooked") then
         SkinBase.SetFrameData(mixin, "qSetStateHooked", true)
-        hooksecurefunc(mixin, "SetState", StyleLineIcon)
+        hooksecurefunc(mixin, "SetState", QueueLineIconStyle)
     end
 end
 
@@ -185,25 +212,29 @@ local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
     return heightChanged
 end
 
+local function RestyleBlockAfterHighlight(block)
+    local s = GetSettings()
+    if not s or not s.skinObjectiveTracker then return end
+    if block.HeaderText then
+        SafeSetTextColor(block.HeaderText, s.objectiveTrackerTitleColor)
+    end
+    if block.usedLines then
+        for _, line in pairs(block.usedLines) do
+            SafeSetTextColor(line.Text, s.objectiveTrackerTextColor)
+            if line.Dash then
+                SafeSetTextColor(line.Dash, s.objectiveTrackerTextColor)
+            end
+            StyleLineIcon(line)
+        end
+    end
+end
+
+local QueueBlockHighlightRestyle = CreateDeferredStyleQueue(RestyleBlockAfterHighlight)
+
 local function EnsureBlockHighlightHook(block)
     if not block or IsWidgetPoolBlock(block) or SkinBase.GetFrameData(block, "highlightHooked") or not block.UpdateHighlight then return end
     SkinBase.SetFrameData(block, "highlightHooked", true)
-    hooksecurefunc(block, "UpdateHighlight", function(self)
-        local s = GetSettings()
-        if not s or not s.skinObjectiveTracker then return end
-        if self.HeaderText then
-            SafeSetTextColor(self.HeaderText, s.objectiveTrackerTitleColor)
-        end
-        if self.usedLines then
-            for _, line in pairs(self.usedLines) do
-                SafeSetTextColor(line.Text, s.objectiveTrackerTextColor)
-                if line.Dash then
-                    SafeSetTextColor(line.Dash, s.objectiveTrackerTextColor)
-                end
-                StyleLineIcon(line)
-            end
-        end
-    end)
+    hooksecurefunc(block, "UpdateHighlight", QueueBlockHighlightRestyle)
 end
 
 local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, skipHeight)
@@ -294,6 +325,8 @@ local function StyleExistingProgressBars()
     end
 end
 
+local QueueProgressBarStyle = CreateDeferredStyleQueue(StyleTrackerProgressBar)
+
 local function HookProgressBarMixins()
     local pbMixins = {
         { mixin = _G.ObjectiveTrackerProgressBarMixin, method = "SetPercent" },
@@ -303,7 +336,7 @@ local function HookProgressBarMixins()
         if pm.mixin and type(pm.mixin[pm.method]) == "function"
             and not SkinBase.GetFrameData(pm.mixin, "qCustomBarHooked") then
             SkinBase.SetFrameData(pm.mixin, "qCustomBarHooked", true)
-            hooksecurefunc(pm.mixin, pm.method, StyleTrackerProgressBar)
+            hooksecurefunc(pm.mixin, pm.method, QueueProgressBarStyle)
         end
     end
 end
