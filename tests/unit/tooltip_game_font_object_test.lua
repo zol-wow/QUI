@@ -225,14 +225,12 @@ assertContains(hookBody, "IsInternalEmbeddedItemTooltipFrame(tooltip)",
 
 assertContains(helpersSource, "function Helpers.HasTaintedWidgetContainer(tooltip)",
     "shared widget-container taint guard must exist for world quest/GameTooltip widget sets")
-assertContains(helpersSource, "child:GetNumPoints()",
-    "widget-container guard must probe point counts without comparing them directly")
-assertContains(helpersSource, "Helpers.IsSecretValue(widgetSetID)",
-    "secret widget-set IDs must make the tooltip cycle unsafe before nil comparison")
-assertContains(helpersSource, "Helpers.IsSecretValue(dirty)",
-    "secret dirty flags must make the tooltip cycle unsafe before boolean comparison")
-assertContains(helpersSource, "widgetSetID ~= nil or dirty == true",
-    "registered or dirty widget containers must make the tooltip cycle unsafe")
+assertContains(helpersSource, 'type(child.RegisterForWidgetSet) == "function"',
+    "widget-container guard must identify containers via a throw-proof type probe")
+assertContains(helpersSource, "Helpers.IsSecretValue(shown)",
+    "unreadable shown state must make the tooltip cycle unsafe before boolean test")
+assertAbsent(helpersSource, "widgetSetID ~= nil or dirty == true",
+    "registration and layout residue on a hidden container must not disable skinning")
 
 assertContains(tooltipSkinningSource, "Helpers.HasTaintedWidgetContainer",
     "tooltip skinning must use the shared widget-container detector")

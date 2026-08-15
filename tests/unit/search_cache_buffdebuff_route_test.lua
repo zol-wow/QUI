@@ -8,7 +8,7 @@
 -- Action Bars > Per-Bar, a page that contains none of those settings.
 --
 -- Buff/Debuff is now DUAL-HOMED: the same editor also mounts back on the
--- Action Bars tile (third sub-page, after Task 6), and that module home was
+-- Action Bars tile, and that module home was
 -- given its OWN featureId, "actionBarsBuffDebuffPage", so the two homes can
 -- carry different routes from one shared editor. The FEATURE_ID checks below
 -- are unchanged and still guard the original regression -- the hub-mounted
@@ -109,8 +109,8 @@ for _, entry in ipairs(settings) do
             check("module page rows must carry the action_bars tileId",
                 false, "got tileId=" .. tostring(entry.tileId))
         end
-        if entry.subPageIndex ~= 3 then
-            check("module page rows must point at sub-page 3 (Per-Bar owns 2)",
+        if entry.subPageIndex ~= 7 then
+            check("module page rows must point at sub-page 7",
                 false, "got subPageIndex=" .. tostring(entry.subPageIndex))
         end
     end

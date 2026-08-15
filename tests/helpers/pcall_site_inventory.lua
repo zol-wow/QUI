@@ -3,7 +3,7 @@
 -- Error-swallowing dispatch goes through ns.SafeCall; a count increase is
 -- only for secret-probe reads or checked-result pcalls, justified in review.
 return {
-    "QUI_ActionBars/actionbars/actionbars_helpers.lua::1",
+    "QUI_ActionBars/actionbars/actionbars_helpers.lua::2",
     "QUI_ActionBars/actionbars/actionbars_layout.lua::4",
     "QUI_ActionBars/actionbars/actionbars_usability.lua::3",
     "QUI_ActionBars/actionbars/settings/action_bars_preview_driver.lua::2",
@@ -98,7 +98,7 @@ return {
     "core/settings_builders.lua::4",
     "core/storage/collector.lua::2",
     "core/uikit.lua::9",
-    "core/utils.lua::34",
+    "core/utils.lua::33",
     "modules/alts/views/window.lua::1",
     "modules/combat/rotationassist.lua::9",
     "modules/datatexts/ldb_bridge.lua::1",

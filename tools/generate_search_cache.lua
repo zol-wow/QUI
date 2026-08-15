@@ -2614,22 +2614,25 @@ local ACTION_BAR_PER_BAR_CAPTURE_BARS = {
     { key = "stanceBar", label = ns.L["Stance Bar"], dbKey = "stance", layout = true, skinnable = true },
     { key = "petBar", label = ns.L["Pet Bar"], dbKey = "pet", layout = true, skinnable = true },
     { key = "microMenu", label = ns.L["Micro Menu"], dbKey = "microbar", layout = true, clickthrough = true, ticketIcon = true },
-    { key = "bagBar", label = ns.L["Bag Bar"], dbKey = "bags", layout = true, clickthrough = true },
+    { key = "bagBar", label = ns.L["Bag Bar"], dbKey = "bags", layout = true, clickthrough = true,
+        route = { featureId = "actionBarsBagBar", subPageIndex = 5, subTabIndex = 7, subTabName = "Bag Bar" } },
 }
 
 local function capture_action_bar_per_bar_setting(bar, section, label, widget_type, db_path, db_key, extra)
+    local route = bar.route
+    local subTabName = route and route.subTabName or "Per-Bar"
     register_manual_static_setting({
         tabIndex = 8,
         tabName = "Action Bars",
-        subTabIndex = 3,
-        subTabName = "Per-Bar",
+        subTabIndex = route and route.subTabIndex or 3,
+        subTabName = subTabName,
         sectionName = bar.label .. " - " .. section,
         tileId = "action_bars",
-        subPageIndex = 3,
-        featureId = "actionBarsPerBar",
+        subPageIndex = route and route.subPageIndex or 2,
+        featureId = route and route.featureId or "actionBarsPerBar",
         providerKey = bar.key,
         category = "frames",
-        keywords = { label, bar.label, section, "Action Bars", "Per-Bar" },
+        keywords = { label, bar.label, section, "Action Bars", subTabName },
     }, label, widget_type, db_path, db_key, extra)
 end
 
@@ -2722,16 +2725,67 @@ local function capture_action_bar_per_bar_settings()
     register_manual_static_setting({
         tabIndex = 8,
         tabName = "Action Bars",
-        subTabIndex = 3,
-        subTabName = "Per-Bar",
-        sectionName = ns.L["Totem Bar"] .. " - " .. ns.L["Layout"],
+        subTabIndex = 5,
+        subTabName = "Totem Bar",
+        sectionName = ns.L["Layout"],
         tileId = "action_bars",
         subPageIndex = 3,
-        featureId = "actionBarsPerBar",
+        featureId = "actionBarsTotemBar",
         providerKey = "totemBar",
         category = "frames",
-        keywords = { "Grow Direction", "Totem Bar", "Action Bars", "Per-Bar" },
+        keywords = { "Grow Direction", "Totem Bar", "Action Bars" },
     }, ns.L["Grow Direction"], "dropdown", "profile.totemBar", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
+
+    local function capture_raid_markers_bar_setting(section, label, widget_type, db_path, db_key, extra)
+        register_manual_static_setting({
+            tabIndex = 8,
+            tabName = "Action Bars",
+            subTabIndex = 6,
+            subTabName = "Raid Markers",
+            sectionName = section,
+            tileId = "action_bars",
+            subPageIndex = 4,
+            featureId = "actionBarsRaidMarkersBar",
+            providerKey = "raidMarkersBar",
+            category = "frames",
+            keywords = { label, "Raid Markers Bar", "Raid Marker", "Action Bars" },
+        }, label, widget_type, db_path, db_key, extra)
+    end
+
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Enabled"], "toggle", "profile.raidMarkersBar", "enabled")
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Only In Dungeons & Raids"], "toggle", "profile.raidMarkersBar", "onlyInInstances")
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Grow Direction"], "dropdown", "profile.raidMarkersBar", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Button Size"], "slider", "profile.raidMarkersBar", "iconSize", { min = 20, max = 64, step = 1 })
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Button Spacing"], "slider", "profile.raidMarkersBar", "spacing", { min = -10, max = 10, step = 1 })
+    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["World Markers"], "toggle", "profile.raidMarkersBar.worldMarkers", "enabled")
+    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["Leader Actions"], "toggle", "profile.raidMarkersBar.leaderStrip", "enabled")
+    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["Show Only As Leader"], "toggle", "profile.raidMarkersBar", "autoShowForLeader")
+    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["Pull Countdown Seconds"], "slider", "profile.raidMarkersBar.leaderStrip", "pullSeconds", { min = 3, max = 30, step = 1 })
+
+    local function capture_extra_zone_setting(button, label, widget_type, db_key, extra)
+        register_manual_static_setting({
+            tabIndex = 8,
+            tabName = "Action Bars",
+            subTabIndex = 8,
+            subTabName = "Extra & Zone",
+            sectionName = button.label,
+            tileId = "action_bars",
+            subPageIndex = 6,
+            featureId = "actionBarsExtraZone",
+            providerKey = button.dbKey,
+            category = "frames",
+            keywords = { label, button.label, "Action Bars", "Extra & Zone" },
+        }, label, widget_type, "profile.actionBars.bars." .. button.dbKey, db_key, extra)
+    end
+
+    for _, button in ipairs({
+        { label = ns.L["Extra Action Button"], dbKey = "extraActionButton" },
+        { label = ns.L["Zone Ability"], dbKey = "zoneAbility" },
+    }) do
+        capture_extra_zone_setting(button, ns.L["Enabled"], "toggle", "enabled")
+        capture_extra_zone_setting(button, ns.L["Hide Artwork"], "toggle", "hideArtwork")
+        capture_extra_zone_setting(button, ns.L["Scale"], "slider", "scale", { min = 0.5, max = 2.0, step = 0.05 })
+    end
 end
 
 local MINIMAP_CORNER_OPTIONS = {

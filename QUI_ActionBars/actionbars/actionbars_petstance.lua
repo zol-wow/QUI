@@ -68,10 +68,22 @@ function ActionBarsOwned.UpdatePetButton(btn)
         end
     end
     local cooldown = btn.cooldown
-    if cooldown and GetPetActionCooldown then
-        local start, duration, enable = GetPetActionCooldown(id)
-        if CooldownFrame_Set then
-            ns.SafeCall("sink-forward", CooldownFrame_Set, cooldown, start, duration, enable)
+    if cooldown then
+        local painted = false
+        if type(spellID) ~= "nil"
+            and cooldown.SetCooldownFromDurationObject
+            and C_Spell and C_Spell.GetSpellCooldownDuration then
+            local durObj = C_Spell.GetSpellCooldownDuration(spellID)
+            if durObj then
+                cooldown:SetCooldownFromDurationObject(durObj)
+                painted = true
+            end
+        end
+        if not painted and GetPetActionCooldown then
+            local start, duration, enable = GetPetActionCooldown(id)
+            if CooldownFrame_Set then
+                ns.SafeCall("sink-forward", CooldownFrame_Set, cooldown, start, duration, enable)
+            end
         end
     end
 end
@@ -108,10 +120,22 @@ function ActionBarsOwned.UpdateStanceButton(btn)
         btn:SetChecked(false)
     end
     local cooldown = btn.cooldown
-    if cooldown and GetShapeshiftFormCooldown then
-        local start, duration, enable = GetShapeshiftFormCooldown(id)
-        if CooldownFrame_Set then
-            ns.SafeCall("sink-forward", CooldownFrame_Set, cooldown, start, duration, enable)
+    if cooldown then
+        local painted = false
+        if type(spellID) ~= "nil"
+            and cooldown.SetCooldownFromDurationObject
+            and C_Spell and C_Spell.GetSpellCooldownDuration then
+            local durObj = C_Spell.GetSpellCooldownDuration(spellID)
+            if durObj then
+                cooldown:SetCooldownFromDurationObject(durObj)
+                painted = true
+            end
+        end
+        if not painted and GetShapeshiftFormCooldown then
+            local start, duration, enable = GetShapeshiftFormCooldown(id)
+            if CooldownFrame_Set then
+                ns.SafeCall("sink-forward", CooldownFrame_Set, cooldown, start, duration, enable)
+            end
         end
     end
 end

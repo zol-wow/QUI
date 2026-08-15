@@ -52,7 +52,6 @@ end
 Registry:RegisterFeature(Schema.Feature({
     id = "actionBarsGeneral",
     moverKey = "bar1",
-    lookupKeys = { "extraActionButton", "zoneAbility", "totemBar", "raidMarkersBar" },
     category = "frames",
     nav = {
         tileId = "action_bars",
@@ -67,11 +66,6 @@ Registry:RegisterFeature(Schema.Feature({
                 return RenderBuilder(host, "QUI_ActionBarsOptions", "BuildMasterSettingsTab")
             end,
         }),
-    },
-    render = {
-        layout = function(host, options)
-            return RenderLayoutRoute(host, options, "extraActionButton")
-        end,
     },
 }))
 
@@ -104,7 +98,7 @@ Registry:RegisterFeature(Schema.Feature({
 Registry:RegisterFeature(Schema.Feature({
     id = "actionBarsBuffDebuffPage",
     category = "frames",
-    nav = { tileId = "action_bars", subPageIndex = 3 },
+    nav = { tileId = "action_bars", subPageIndex = 7 },
     sections = {
         Schema.Section({
             id = "settings",
@@ -119,7 +113,7 @@ Registry:RegisterFeature(Schema.Feature({
                     subTabIndex = 4,
                     subTabName = ns.L["Buff/Debuff Frames"],
                     tileId = "action_bars",
-                    subPageIndex = 3,
+                    subPageIndex = 7,
                     featureId = "actionBarsBuffDebuffPage",
                 }
                 if AB and type(AB.BuildBuffDebuffTab) == "function" then

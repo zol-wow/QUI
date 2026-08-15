@@ -45,11 +45,26 @@ local function CJKFont(fs, path, size, flags)
     end
 end
 
+local function IsWidgetPoolTracker(module)
+    return module ~= nil
+        and (module == _G.ScenarioObjectiveTracker or module == _G.UIWidgetObjectiveTracker)
+end
+
+local function IsWidgetPoolBlock(block)
+    return block ~= nil and IsWidgetPoolTracker(block.parentModule)
+end
+
+local WIDGET_POOL_TRACKER_NAMES = {
+    ScenarioObjectiveTracker = true,
+    UIWidgetObjectiveTracker = true,
+}
+
 local function StyleLineIcon(line)
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker or not settings.objectiveTrackerCustomIcons then return end
+    if not line or IsWidgetPoolBlock(line.parentBlock) then return end
 
-    local icon = line and line.Icon
+    local icon = line.Icon
     if not icon or not icon.GetAtlas then return end
     if icon.IsShown and not icon:IsShown() then return end
 
@@ -171,7 +186,7 @@ local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
 end
 
 local function EnsureBlockHighlightHook(block)
-    if not block or SkinBase.GetFrameData(block, "highlightHooked") or not block.UpdateHighlight then return end
+    if not block or IsWidgetPoolBlock(block) or SkinBase.GetFrameData(block, "highlightHooked") or not block.UpdateHighlight then return end
     SkinBase.SetFrameData(block, "highlightHooked", true)
     hooksecurefunc(block, "UpdateHighlight", function(self)
         local s = GetSettings()
@@ -192,7 +207,7 @@ local function EnsureBlockHighlightHook(block)
 end
 
 local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, skipHeight)
-    if not block then return end
+    if not block or IsWidgetPoolBlock(block) then return end
 
     EnsureBlockHighlightHook(block)
 
@@ -237,7 +252,8 @@ local function StyleQuestPOIIcon(button)
 end
 
 local function ApplyBlockSkinning(tracker, block)
-    if not block or not block:IsShown() then return end
+    if not block or IsWidgetPoolBlock(block) then return end
+    if not block:IsShown() then return end
 
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker then return end
@@ -269,7 +285,7 @@ local trackerModules = {
 
 local function StyleExistingProgressBars()
     for _, trackerName in ipairs(trackerModules) do
-        local tracker = _G[trackerName]
+        local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
         if tracker and tracker.usedProgressBars then
             for _, pb in pairs(tracker.usedProgressBars) do
                 StyleTrackerProgressBar(pb)
@@ -282,7 +298,6 @@ local function HookProgressBarMixins()
     local pbMixins = {
         { mixin = _G.ObjectiveTrackerProgressBarMixin, method = "SetPercent" },
         { mixin = _G.BonusObjectiveTrackerProgressBarMixin, method = "SetValue" },
-        { mixin = _G.ScenarioTrackerProgressBarMixin, method = "SetValue" },
     }
     for _, pm in ipairs(pbMixins) do
         if pm.mixin and type(pm.mixin[pm.method]) == "function"
@@ -308,49 +323,6 @@ local function SkinTrackerHeader(header)
     end
 end
 
-local function SyncBlizzardHeight()
-    local TrackerFrame = _G.ObjectiveTrackerFrame
-    if not TrackerFrame then return end
-
-    local settings = GetSettings()
-    local maxHeight = settings and settings.objectiveTrackerHeight or 600
-
-    TrackerFrame.editModeHeight = maxHeight
-    if TrackerFrame.UpdateHeight then
-        TrackerFrame:UpdateHeight()
-    end
-end
-
-local function HideScenarioStageArtwork()
-    local scenario = _G.ScenarioObjectiveTracker
-    if not scenario then return end
-
-    local stageBlock = scenario.StageBlock
-    if not stageBlock then return end
-
-    if stageBlock.NormalBG then
-        stageBlock.NormalBG:Hide()
-        stageBlock.NormalBG:SetAlpha(0)
-    end
-    if stageBlock.FinalBG then
-        stageBlock.FinalBG:Hide()
-        stageBlock.FinalBG:SetAlpha(0)
-    end
-    if stageBlock.GlowTexture then
-        stageBlock.GlowTexture:Hide()
-        stageBlock.GlowTexture:SetAlpha(0)
-    end
-
-    if stageBlock.Stage then
-        stageBlock.Stage:ClearAllPoints()
-        stageBlock.Stage:SetPoint("TOPLEFT", stageBlock, "TOPLEFT", 0, -5)
-        if stageBlock.Name then
-            stageBlock.Name:ClearAllPoints()
-            stageBlock.Name:SetPoint("TOPLEFT", stageBlock.Stage, "BOTTOMLEFT", 0, -2)
-        end
-    end
-end
-
 local function UpdateMinimizeButtonAtlas(btn, collapsed)
     if not btn then return end
     local normalTex = btn:GetNormalTexture()
@@ -365,13 +337,8 @@ local function UpdateMinimizeButtonAtlas(btn, collapsed)
 end
 
 local function IsScenarioActive()
-    local scenario = _G.ScenarioObjectiveTracker
-    if not scenario or not scenario:IsShown() then return false end
-    if scenario.GetContentsHeight then
-        local height = scenario:GetContentsHeight()
-        if height and height > 0 then return true end
-    end
-    return false
+    if not C_ScenarioInfo or not C_ScenarioInfo.GetScenarioInfo then return false end
+    return C_ScenarioInfo.GetScenarioInfo() ~= nil
 end
 
 local function ApplyMaxWidth(settings)
@@ -416,24 +383,13 @@ local function ApplyMaxWidth(settings)
     end
 
     for _, trackerName in ipairs(trackerModules) do
-        local tracker = _G[trackerName]
+        local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
         if tracker then
             tracker:SetWidth(maxWidth)
             if tracker.Header then
                 tracker.Header:SetWidth(maxWidth)
             end
         end
-    end
-
-    HideScenarioStageArtwork()
-    local scenario = _G.ScenarioObjectiveTracker
-    local stageBlock = scenario and scenario.StageBlock
-    if stageBlock and stageBlock.UpdateStageBlock
-        and not SkinBase.GetFrameData(stageBlock, "stageHooked") then
-        SkinBase.SetFrameData(stageBlock, "stageHooked", true)
-        hooksecurefunc(stageBlock, "UpdateStageBlock", function()
-            HideScenarioStageArtwork()
-        end)
     end
 end
 
@@ -449,7 +405,7 @@ local function UpdateBackdropAnchors()
     local lowestBottom = math.huge
 
     for _, trackerName in ipairs(trackerModules) do
-        local tracker = _G[trackerName]
+        local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
         if tracker and tracker:IsShown() then
             local hasContent = false
             if tracker.GetContentsHeight then
@@ -495,7 +451,7 @@ end
 
 local function HidePOIButtonGlows()
     for _, trackerName in ipairs(trackerModules) do
-        local tracker = _G[trackerName]
+        local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
         if tracker and tracker.usedBlocks then
             for template, blocks in pairs(tracker.usedBlocks) do
                 if type(blocks) == "table" then
@@ -543,7 +499,7 @@ local function EnforceWidth()
         TrackerFrame.Header:SetWidth(maxWidth)
     end
     for _, trackerName in ipairs(trackerModules) do
-        local tracker = _G[trackerName]
+        local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
         if tracker then
             if math.abs(tracker:GetWidth() - maxWidth) > 0.5 then
                 tracker:SetWidth(maxWidth)
@@ -584,7 +540,6 @@ protectedLayoutEventFrame:SetScript("OnEvent", function()
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker then return end
 
-    SyncBlizzardHeight()
     ApplyMaxWidth(settings)
     ScheduleBackdropUpdate()
 end)
@@ -605,7 +560,6 @@ local function ApplyLayoutSettingsSafely(settings)
         return false
     end
 
-    SyncBlizzardHeight()
     ApplyMaxWidth(settings)
     return true
 end
@@ -679,7 +633,7 @@ local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, modu
                 SafeSetTextColor(tracker.Header.Text, moduleColor)
             end
 
-            if tracker.usedBlocks then
+            if tracker.usedBlocks and not WIDGET_POOL_TRACKER_NAMES[trackerName] then
                 for template, blocks in pairs(tracker.usedBlocks) do
                     for blockID, block in pairs(blocks) do
                         StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor)
@@ -714,6 +668,7 @@ local function HookLineCreation()
     if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.AddObjective and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked") then
         hooksecurefunc(ObjectiveTrackerBlockMixin, "AddObjective", function(self, objectiveKey)
             local block = self
+            if IsWidgetPoolBlock(block) then return end
             EnsureBlockHighlightHook(block)
             C_Timer.After(0, function()
                 local line = block.usedLines and block.usedLines[objectiveKey]
@@ -733,6 +688,7 @@ local function HookLineCreation()
     if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.SetHeader and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked") then
         hooksecurefunc(ObjectiveTrackerBlockMixin, "SetHeader", function(self)
             local block = self
+            if IsWidgetPoolBlock(block) then return end
             EnsureBlockHighlightHook(block)
             C_Timer.After(0, function()
                 local currentSettings = GetSettings()

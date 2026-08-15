@@ -171,7 +171,7 @@ do
                 end
             end
 
-            CreateCollapsible(content, ns.L["Layout"], FORM_ROW + 8, function(body)
+            CreateCollapsible(content, ns.L["Layout"], 5 * FORM_ROW + 8, function(body)
                 local sy = -4
                 P(GUI:CreateFormCheckbox(body, ns.L["Enabled"],
                     "enabled", markersDB, RefreshRaidMarkersBar,
@@ -180,9 +180,15 @@ do
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Only In Dungeons & Raids"],
                     "onlyInInstances", markersDB, RefreshRaidMarkersBar,
                     { description = ns.L["Only show the bar while you are inside a dungeon or raid instance."] }), body, sy)
-                P(GUI:CreateFormDropdown(body, ns.L["Grow Direction"],
+                sy = P(GUI:CreateFormDropdown(body, ns.L["Grow Direction"],
                     totemBarGrowOptions, "growDirection", markersDB, RefreshRaidMarkersBar,
                     { description = ns.L["Direction the raid markers bar grows."] }), body, sy)
+                sy = P(GUI:CreateFormSlider(body, ns.L["Button Size"],
+                    20, 64, 1, "iconSize", markersDB, RefreshRaidMarkersBar, { deferOnDrag = true },
+                    { description = ns.L["Square size of each button in pixels."] }), body, sy)
+                P(GUI:CreateFormSlider(body, ns.L["Button Spacing"],
+                    -10, 10, 1, "spacing", markersDB, RefreshRaidMarkersBar, { deferOnDrag = true },
+                    { description = ns.L["Pixel gap between adjacent buttons. Negative values overlap buttons for compact layouts."] }), body, sy)
             end, sections, relayout)
 
             CreateCollapsible(content, ns.L["Leader Tools"], 4 * FORM_ROW + 8, function(body)
@@ -247,7 +253,8 @@ do
                 ShowSpecialButtonReloadPrompt()
             end
 
-            CreateCollapsible(content, ns.L["Button"], 3 * FORM_ROW + 8, function(body)
+            local collapsibleTitle = barKey == "zoneAbility" and ns.L["Zone Ability"] or ns.L["Extra Action Button"]
+            CreateCollapsible(content, collapsibleTitle, 3 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormToggle(body, ns.L["Enabled"], "enabled", barDB, RefreshSpecialButtonEnabled,
                     { description = ns.L["Let QUI manage this button's holder, position, scale, artwork, and mouseover behavior."] }), body, sy)
