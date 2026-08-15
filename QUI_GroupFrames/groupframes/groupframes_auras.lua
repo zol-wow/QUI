@@ -33,10 +33,42 @@ local function EngineRendersElement(element)
     if not element then return false end
     local mode = element.mode
     if mode == "missingRaidBuff" then return true end
-    if mode == "tracked" and (element.displayType == "healthTint" or element.displayType == "border") then return true end
+    -- healthTint left the engine path: its Lua aura cache freezes whenever
+    -- ShouldAurasBeSecret (instanced combat), so presence now comes from a
+    -- secure feeder slot (see FeederRendersElement + aura_slots feeder wiring).
+    if mode == "tracked" and element.displayType == "border" then return true end
     return false
 end
 QUI_GFA.EngineRendersElement = EngineRendersElement
+
+-- Tracked displays whose presence signal is a hidden secure aura slot
+-- (OnShow/OnHide relay) instead of the Lua aura cache.
+local function FeederRendersElement(element)
+    return element ~= nil and element.mode == "tracked" and element.displayType == "healthTint"
+end
+QUI_GFA.FeederRendersElement = FeederRendersElement
+
+-- Feeder attach/detach: parent the tint overlay into the secure slot so the
+-- engine's (possibly secret) show/hide of the slot renders or hides the tint
+-- without Lua ever observing aura presence.
+local function OnFeederAttach(slotFrame, element)
+    local container = slotFrame and slotFrame:GetParent()
+    local host = container and container:GetParent()
+    if not host or not element then return end
+    local Render = GetRender()
+    if Render and Render.AttachFeederTint then
+        Render:AttachFeederTint(host, slotFrame, element)
+    end
+end
+
+local function OnFeederDetach(slotFrame, element)
+    local Render = GetRender()
+    if Render and Render.DetachFeederTint then
+        Render:DetachFeederTint(slotFrame, element)
+    end
+end
+ns.AuraFeederAttach = OnFeederAttach
+ns.AuraFeederDetach = OnFeederDetach
 
 function QUI_GFA.ProfileOverrides(auras, gfdb, surfaceKey, dispelColorCurve)
     gfdb = gfdb or GetDB()
@@ -1114,6 +1146,12 @@ local function RenderFrameElements(frame, cache, dirty)
             elseif auraStats then
                 auraStats.elementSkips = auraStats.elementSkips + 1
             end
+        elseif FeederRendersElement(element)
+            and AuraModel.ElementAppliesToRole(element, frameRole, frameIsSelf) then
+            -- Feeder-driven tint: the overlay lives inside the secure slot and
+            -- the engine renders it; nothing to dispatch here. Marking current
+            -- keeps the tint-owner reap below away while the element is live.
+            current[element.id] = true
         end
     end
 
@@ -1183,7 +1221,7 @@ local function ResolveContainerElements(frame)
     for i = 1, #elements do
         local e = elements[i]
         if (e.mode == "filterStrip"
-            or (e.mode == "tracked" and e.displayType ~= "healthTint" and e.displayType ~= "border"))
+            or (e.mode == "tracked" and e.displayType ~= "border"))
             and AuraModel.ElementAppliesToRole(e, role, isSelf) then
             _activeElems[#_activeElems + 1] = e
         end
@@ -1551,3 +1589,61 @@ function QUI_GFA:RenderFrame(frame)
     local unit = GetFrameUnit(frame)
     RenderFrameElements(frame, unit and unitAuraCache[unit] or nil)
 end
+
+-- /run QUI.DebugTintFeeders() — dump feeder slot + tint overlay state.
+-- slotShown=secret in combat is EXPECTED and good: it means the engine is
+-- driving the slot's visibility with secret aura presence (which is the whole
+-- mechanism). overlay=shown only says QUI hasn't hidden it; whether it
+-- actually renders is the slot's (possibly secret) visibility.
+QUI_GFA.DebugTintFeeders = function()
+    print(string.format("|cff33ff99QUI tint feeders|r (combat=%s)",
+        tostring((InCombatLockdown and InCombatLockdown()) or false)))
+    local GF = ns.QUI_GroupFrames
+    local found = false
+    if GF and GF.unitFrameMap then
+        local seen = {}
+        for unit, frames in pairs(GF.unitFrameMap) do
+            for i = 1, #frames do
+                local frame = frames[i]
+                if frame and not seen[frame] then
+                    seen[frame] = true
+                    local pool = frame._quiAuraContainers
+                    if pool then
+                        for c = 1, #pool do
+                            local slots = pool[c] and pool[c]._quiSlots
+                            if slots then
+                                for s = 1, #slots do
+                                    local sf = slots[s] and slots[s].frame
+                                    if sf and sf._quiFeederActive then
+                                        found = true
+                                        local el = sf._quiFeederElement
+                                        local shownTxt
+                                        local ok, shown = ns.SafeCall("report", sf.IsShown, sf)
+                                        if not ok then
+                                            shownTxt = "err"
+                                        elseif issecretvalue and issecretvalue(shown) then
+                                            shownTxt = "secret"
+                                        else
+                                            shownTxt = tostring(shown)
+                                        end
+                                        local ov = sf._quiFeederTint
+                                        print(string.format(
+                                            "  %s c%d s%d slotShown=%s overlay=%s elem=%s",
+                                            tostring(unit), c, s, shownTxt,
+                                            ov and (ov:IsShown() and "shown" or "hidden") or "nil",
+                                            tostring(el and el.id)))
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if not found then
+        print("  (no active feeder slots — no healthTint elements, or containers not built yet)")
+    end
+end
+_G.QUI = _G.QUI or {}
+_G.QUI.DebugTintFeeders = QUI_GFA.DebugTintFeeders

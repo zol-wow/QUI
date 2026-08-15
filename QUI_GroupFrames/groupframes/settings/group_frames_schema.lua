@@ -595,16 +595,36 @@ local function RenderAppearanceSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, ns.L["Texture"], textureDropdown)
     )
 
-    local darkModeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "darkMode", general, refresh, {
+    local healthColorRow
+    local function UpdateHealthColorRow()
+        if healthColorRow then
+            local active = general.darkMode ~= true and general.useClassColor == false
+            healthColorRow:SetAlpha(active and 1.0 or 0.4)
+        end
+    end
+    local darkModeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "darkMode", general, function()
+        refresh()
+        UpdateHealthColorRow()
+    end, {
         description = ns.L["Invert the frames so missing health is dark and remaining health is colored."],
     })
-    local classColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "useClassColor", general, refresh, {
-        description = ns.L["Color the health bar by class instead of the default non-class color."],
+    local classColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "useClassColor", general, function()
+        refresh()
+        UpdateHealthColorRow()
+    end, {
+        description = ns.L["Color the health bar by class instead of the Health Color swatch below."],
     })
     card.AddRow(
         optionsAPI.BuildSettingRow(card.frame, ns.L["Dark Mode"], darkModeCheckbox),
         optionsAPI.BuildSettingRow(card.frame, ns.L["Use Class Color"], classColorCheckbox)
     )
+
+    local healthColorPicker = gui:CreateFormColorPicker(card.frame, nil, "healthBarColor", general, refresh, nil, {
+        description = ns.L["Health bar fill color used when Use Class Color and Dark Mode are both off."],
+    })
+    healthColorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Health Color"], healthColorPicker)
+    card.AddRow(healthColorRow)
+    UpdateHealthColorRow()
 
     local bgColorPicker = gui:CreateFormColorPicker(card.frame, nil, "defaultBgColor", general, refresh, nil, {
         description = ns.L["Backdrop color behind the health fill when Dark Mode is off."],

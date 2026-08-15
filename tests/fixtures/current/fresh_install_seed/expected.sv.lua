@@ -5937,6 +5937,12 @@ return {
               font = "Quazii",
               fontOutline = "OUTLINE",
               fontSize = 12,
+              healthBarColor = {
+                [1] = 0.20000000000000001,
+                [2] = 0.80000000000000004,
+                [3] = 0.20000000000000001,
+                [4] = 1
+              },
               showTooltips = true,
               texture = "Quazii v5",
               useClassColor = true
@@ -6313,6 +6319,12 @@ return {
               font = "Quazii",
               fontOutline = "OUTLINE",
               fontSize = 12,
+              healthBarColor = {
+                [1] = 0.20000000000000001,
+                [2] = 0.80000000000000004,
+                [3] = 0.20000000000000001,
+                [4] = 1
+              },
               showTooltips = true,
               texture = "Quazii v5",
               useClassColor = true

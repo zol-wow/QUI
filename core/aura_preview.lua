@@ -208,8 +208,11 @@ local function LayoutElement(host, pool, poolCursor, element, resolve, opts)
     local displayType = (element.mode == "tracked") and element.displayType or nil
     local isBar = (displayType == "bar")
     local isSwatch = isBar or (displayType == "square")
-    local w = isBar and ((element.bar and element.bar.length) or 48) or size
-    local h = isBar and ((element.bar and element.bar.thickness) or 12) or size
+    local barVertical = isBar and element.bar and element.bar.orientation == "VERTICAL"
+    local barLong = isBar and ((element.bar and element.bar.length) or 48) or size
+    local barThick = isBar and ((element.bar and element.bar.thickness) or 12) or size
+    local w = barVertical and barThick or barLong
+    local h = barVertical and barLong or barThick
     local stepX = w + gap
     local stepY = h + gap
     local color = element.color
