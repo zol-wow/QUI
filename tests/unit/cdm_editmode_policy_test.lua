@@ -136,9 +136,22 @@ end
 assert(registeredEvents["PLAYER_ENTERING_WORLD"], "policy registers PLAYER_ENTERING_WORLD")
 assert(type(eventHandler) == "function", "policy installs an OnEvent handler")
 
+-- activeLayout is a COMBINED index in the live client (presets first, then
+-- saved layouts), so the Enforce cases model two presets: user layout 1 = 3.
+local standingPresetManager = {
+    GetCopyOfPresetLayouts = function()
+        return { { systems = mkSystems({}) }, { systems = mkSystems({}) } }
+    end,
+}
+_G.EditModePresetLayoutManager = standingPresetManager
+_G.tAppendAll = function(dst, src)
+    for _, v in ipairs(src) do dst[#dst + 1] = v end
+    return dst
+end
+
 -- changed case: stale VisibleSetting on the active (non-preset) layout
 layoutInfoToReturn = {
-    activeLayout = 1,
+    activeLayout = 3,
     layouts = {
         { systems = mkSystems({ [1] = { { setting = ENUMS.visSetting, value = 2 } } }) },
     },
@@ -155,7 +168,7 @@ assert(#savedLayouts == 1 and #popupsShown == 1, "enforcement is one-shot per se
 do
     local ns2 = {}
     savedLayouts, popupsShown = {}, {}
-    layoutInfoToReturn = { activeLayout = 1, layouts = { { systems = mkSystems({}) } } }
+    layoutInfoToReturn = { activeLayout = 3, layouts = { { systems = mkSystems({}) } } }
     loadChunk("QUI_CDM/cdm/cdm_editmode_policy.lua", "cdm_editmode_policy.lua")("QUI", ns2)
     eventHandler(nil, "PLAYER_ENTERING_WORLD")
     assert(#savedLayouts == 0, "no change -> SaveLayouts never called")
@@ -180,7 +193,7 @@ do
     loadChunk("QUI_CDM/cdm/cdm_editmode_policy.lua", "cdm_editmode_policy.lua")("QUI", ns3)
     eventHandler(nil, "PLAYER_ENTERING_WORLD")
     assert(#savedLayouts == 0, "preset-active layout is read-only: never saved")
-    _G.EditModePresetLayoutManager = nil
+    _G.EditModePresetLayoutManager = standingPresetManager
 end
 
 ---------------------------------------------------------------------------
@@ -188,7 +201,7 @@ end
 -- manual instructions each login until the layout comes back clean.
 ---------------------------------------------------------------------------
 local staleLayout = function()
-    return { activeLayout = 1, layouts = {
+    return { activeLayout = 3, layouts = {
         { systems = mkSystems({ [1] = { { setting = ENUMS.visSetting, value = 2 } } }) },
     } }
 end
@@ -219,12 +232,31 @@ end
 do
     local ns6 = {}
     savedLayouts, popupsShown = {}, {}
-    layoutInfoToReturn = { activeLayout = 1, layouts = { { systems = mkSystems({}) } } }
+    layoutInfoToReturn = { activeLayout = 3, layouts = { { systems = mkSystems({}) } } }
     loadChunk("QUI_CDM/cdm/cdm_editmode_policy.lua", "cdm_editmode_policy.lua")("QUI", ns6)
     eventHandler(nil, "PLAYER_ENTERING_WORLD")
     assert(#savedLayouts == 0 and #popupsShown == 0, "settled layout -> no save, no prompt")
     assert(_G.QUIDB.cdmEditModeSavePending == nil, "settled layout re-arms the loop breaker")
     _G.QUIDB = nil
+end
+
+---------------------------------------------------------------------------
+-- Missing preset data: activeLayout is a combined index, so without the
+-- preset list the index cannot be resolved -- enforcement must not guess,
+-- mutate, or save (a misresolved index edits the WRONG layout).
+---------------------------------------------------------------------------
+do
+    local ns8 = {}
+    savedLayouts, popupsShown = {}, {}
+    _G.EditModePresetLayoutManager = nil
+    local layouts = { { systems = mkSystems({ [1] = { { setting = ENUMS.visSetting, value = 2 } } }) } }
+    layoutInfoToReturn = { activeLayout = 1, layouts = layouts }
+    loadChunk("QUI_CDM/cdm/cdm_editmode_policy.lua", "cdm_editmode_policy.lua")("QUI", ns8)
+    eventHandler(nil, "PLAYER_ENTERING_WORLD")
+    assert(#savedLayouts == 0, "missing preset data -> never saved")
+    assert(#popupsShown == 0, "missing preset data -> no prompt")
+    assert(layouts[1].systems[1].settings[1].value == 2, "missing preset data -> stored settings untouched")
+    _G.EditModePresetLayoutManager = standingPresetManager
 end
 
 ---------------------------------------------------------------------------
