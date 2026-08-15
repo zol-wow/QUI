@@ -2449,7 +2449,7 @@ end
 local AURA_DISPLAYS_SEARCH_CONTEXT = {
     tabIndex = 21, tabName = "Auras", subTabIndex = 6, subTabName = "Aura Displays",
     tileId = "auras", subPageIndex = 6, featureId = "aurasDisplaysPage",
-    category = "frames",
+    category = "frames", providerKey = "detail",
 }
 
 local function capture_aura_displays_elements()
@@ -2464,7 +2464,8 @@ local function capture_aura_displays_elements()
         or type(E.NewFilterStripElement) ~= "function"
         or type(E.NewTrackedElement) ~= "function"
         or type(AD) ~= "table"
-        or type(AD.DefaultBucket) ~= "function" then
+        or type(AD.DefaultBucket) ~= "function"
+        or type(ns.QUI_AuraDisplayPickers) ~= "table" then
         return true
     end
 
@@ -2501,21 +2502,23 @@ local function capture_aura_displays_elements()
         end
     end
 
-    if type(Page) == "table" and type(Page._BuildDetail) == "function"
-        and type(LayoutShared) == "table" and type(LayoutShared.MakeLayout) == "function" then
+    if type(Page) == "table" and type(Page._BuildGeneralTab) == "function"
+        and type(Page._BuildLoadTab) == "function" then
         for _, unit in ipairs({ "player", "target" }) do
-            render("detail:" .. unit, function(host)
-                local L = LayoutShared.MakeLayout(host)
-                Page._BuildDetail(L, host, nil, {
-                    id = "d1",
-                    name = "Display",
-                    enabled = true,
-                    unitMode = "token",
-                    unit = unit,
-                    load = { classes = {}, specs = {}, roles = {}, encounters = {} },
-                    auras = {},
-                })
-                if type(L.finish) == "function" then L.finish() end
+            local display = {
+                id = "d1",
+                name = "Display",
+                enabled = true,
+                unitMode = "token",
+                unit = unit,
+                load = { classes = {}, specs = {}, roles = {}, encounters = {} },
+                auras = {},
+            }
+            render("general:" .. unit, function(host)
+                Page._BuildGeneralTab(host, nil, display)
+            end)
+            render("load:" .. unit, function(host)
+                Page._BuildLoadTab(host, nil, display)
             end)
         end
     end
@@ -3178,6 +3181,27 @@ end
 -- Phase 1+ Modules Control Center: emit moduleToggle navigation entries
 -- for features that declare moduleEntry. These power the [Module] badge +
 -- inline pill rendering in the global search dropdown (see Task 9).
+local function find_module_enabled_route(featureId)
+    local wantPath = "profile." .. featureId
+    local fallbackTile, fallbackSubPage
+    for _, row in ipairs(GUI.StaticSettingsRegistry or {}) do
+        if row.providerKey == featureId
+            and type(row.tileId) == "string"
+            and row.tileId ~= "" then
+            local descriptor = row.widgetDescriptor
+            if type(descriptor) == "table"
+                and descriptor.dbPath == wantPath
+                and descriptor.dbKey == "enabled" then
+                return row.tileId, row.subPageIndex
+            end
+            if not fallbackTile then
+                fallbackTile, fallbackSubPage = row.tileId, row.subPageIndex
+            end
+        end
+    end
+    return fallbackTile, fallbackSubPage
+end
+
 local function emit_module_toggle_entries()
     local settings = ns.Settings
     local registry = settings and settings.Registry
@@ -3192,14 +3216,24 @@ local function emit_module_toggle_entries()
             local label = entry.label or feature.name or featureId
             local caption = entry.caption or ""
             local group = entry.group or "Modules"
-            GUI:RegisterSearchNavigation("moduleToggle", {
-                label = label,
-                featureId = featureId,
-                tileId = "global",
-                subPageIndex = 3,    -- Modules sub-page index in General tile's
+            local tileId = "global"
+            local subPageIndex = 3    -- Modules sub-page index in General tile's
                                       -- subPages array. See options/tiles/global.lua
                                       -- — order is profiles, pinnedGlobals, modules,
                                       -- importExport, thirdParty, clickCast.
+            local hiddenOk, hiddenFromToggles = pcall(entry.hidden)
+            if type(entry.hidden) == "function" and hiddenOk and hiddenFromToggles then
+                local routeTile, routeSubPage = find_module_enabled_route(featureId)
+                if routeTile then
+                    tileId = routeTile
+                    subPageIndex = routeSubPage
+                end
+            end
+            GUI:RegisterSearchNavigation("moduleToggle", {
+                label = label,
+                featureId = featureId,
+                tileId = tileId,
+                subPageIndex = subPageIndex,
                 keywords = { label, caption, group, "module" },
             })
             emitted = emitted + 1

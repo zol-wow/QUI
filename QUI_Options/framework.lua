@@ -3162,6 +3162,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         AcquireSharedMenuFor(menu, container, dropdown, searchable, BuildMenu)
         BuildMenu()
         PositionDropdownMenu(menu, dropdown, menu:GetHeight())
+        menu:SetFrameLevel((container:GetFrameLevel() or 0) + 10)
         menu:Show()
         C_Timer.After(0, function() menu.updateThumb(); menu.UpdateScrollInset() end)
     end)
