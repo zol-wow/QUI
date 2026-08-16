@@ -20,6 +20,9 @@ end
 
 local src = readAll("QUI_CDM/cdm/cdm_buff_layout.lua")
 
+assert(not src:find(":MarkClean()", 1, true),
+    "buff layout must not write Blizzard viewer dirty state")
+
 local bodyStart = assert(src:find("local iconAuraCoalesce = CreateFrame", 1, true),
     "icon aura coalesce frame not found")
 local bodyEnd = assert(src:find("if ns.AuraEvents then", bodyStart, true),

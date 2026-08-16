@@ -62,11 +62,15 @@ assert(not editBody:find('RefreshBuiltin("trackedBar"', 1, true),
     "Edit Mode enter must not refresh trackedBar through the re-anchor runtime")
 assert(editBody:find("ns.CDMBars:Refresh(containers.trackedBar", 1, true),
     "Edit Mode enter must populate owned trackedBar bars")
+assert(not editBody:find("ForceAllActive", 1, true),
+    "Edit Mode enter must let LayoutBars expose pooled bars without reading rendered text")
 
 local barRenderer = readAll("QUI_CDM/cdm/cdm_bar_renderer.lua")
 assert(barRenderer:find("NormalizeTrackedBarRuntimeEntries(runtimeEntries)", 1, true),
     "bar renderer must normalize native tracked-bar entries for owned bars")
 assert(barRenderer:find('containerKey == "trackedBar"', 1, true),
     "runtime entry override must be scoped to trackedBar only")
+assert(not barRenderer:find("NameText:GetText()", 1, true),
+    "bar renderer must keep rendered text opaque and pass secret values only to C sinks")
 
 print("OK: cdm_trackedbar_owned_layout_test")

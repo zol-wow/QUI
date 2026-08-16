@@ -921,10 +921,6 @@ LayoutBuffIcons = function()
         _G.QUI_SetCDMViewerBounds(viewer, totalWidth, totalHeight)
     end
 
-    if viewer.MarkClean then
-        viewer:MarkClean()
-    end
-
     isIconLayoutRunning = false
 end
 
@@ -1059,16 +1055,10 @@ local function CheckIconChanges()
     LayoutBuffIcons()
 end
 
-local buffIconOnUpdateElapsed = 0
 local buffIconScanElapsed = 0
 
 local function BuffIconViewer_OnUpdate(self, elapsed)
-    buffIconOnUpdateElapsed = buffIconOnUpdateElapsed + elapsed
     buffIconScanElapsed = buffIconScanElapsed + elapsed
-    if buffIconOnUpdateElapsed > 0.1 then
-        buffIconOnUpdateElapsed = 0
-        if self.MarkClean then self:MarkClean() end
-    end
     if buffIconScanElapsed > 0.25 then
         buffIconScanElapsed = 0
         if self:IsShown() then

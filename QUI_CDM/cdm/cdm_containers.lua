@@ -2803,7 +2803,6 @@ _G.QUI_OnEditModeEnterCDM = function()
             local tbSettings = db and db.trackedBar
             if tbSettings then
                 ns.CDMBars:Refresh(containers.trackedBar, tbSettings, tbSettings.barWidth)
-                ns.CDMBars:ForceAllActive()
                 ns.CDMBars:LayoutBars(containers.trackedBar, tbSettings)
             end
         end

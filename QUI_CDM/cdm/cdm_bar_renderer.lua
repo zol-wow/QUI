@@ -1756,15 +1756,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
 
 end
 
-function CDMBars:ForceAllActive()
-    for _, bar in ipairs(barPool) do
-        local name = bar.NameText and bar.NameText:GetText()
-        if name and name ~= "" then
-            bar._active = true
-        end
-    end
-end
-
 function CDMBars:LayoutBars(container, settings)
     if not container then return end
     if not settings then return end

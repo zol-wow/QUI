@@ -208,9 +208,17 @@ local function LayoutElement(host, pool, poolCursor, element, resolve, opts)
     local displayType = (element.mode == "tracked") and element.displayType or nil
     local isBar = (displayType == "bar")
     local isSwatch = isBar or (displayType == "square")
-    local barVertical = isBar and element.bar and element.bar.orientation == "VERTICAL"
-    local barLong = isBar and ((element.bar and element.bar.length) or 48) or size
-    local barThick = isBar and ((element.bar and element.bar.thickness) or 12) or size
+    local bar = isBar and element.bar
+    local barVertical = bar and bar.orientation == "VERTICAL"
+    local barLong = isBar and ((bar and bar.length) or 48) or size
+    local barThick = isBar and ((bar and bar.thickness) or 12) or size
+    if bar and bar.matchFrameSize == true then
+        if barVertical then
+            barLong = ns.Helpers.SafeToNumber(host:GetHeight(), barLong)
+        else
+            barLong = ns.Helpers.SafeToNumber(host:GetWidth(), barLong)
+        end
+    end
     local w = barVertical and barThick or barLong
     local h = barVertical and barLong or barThick
     local stepX = w + gap
