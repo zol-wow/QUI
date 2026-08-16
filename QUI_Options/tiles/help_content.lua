@@ -259,7 +259,7 @@ QUI_HelpContent.Links = {
     },
     {
         label = ns.L["|cffF16436CurseForge|r"],
-        url = "https://www.curseforge.com/wow/addons/qui",
+        url = "https://www.curseforge.com/wow/addons/qui-community-edition",
         iconR = 0.945, iconG = 0.392, iconB = 0.212,
         popupTitle = ns.L["Copy CurseForge URL"],
     },
