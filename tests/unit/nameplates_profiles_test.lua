@@ -40,6 +40,11 @@ end
 
 QUI = { db = { global = {}, char = {} } }
 
+local shippedNameplates = {
+    enabled = false,
+    health = { width = 156, height = 17, bgColor = { 0.12, 0.12, 0.12 } },
+    colors = { hostile = { 0.39, 0.11, 0.09 } },
+}
 local settings = {
     enabled = true,
     health = { width = 156, height = 17, bgColor = { 0.12, 0.12, 0.12 } },
@@ -47,6 +52,7 @@ local settings = {
 }
 local refreshCount = 0
 local ns = {
+    defaults = { profile = { nameplates = shippedNameplates } },
     Helpers = {
         GetModuleSettings = function() return settings end,
         IsSecretValue = function() return false end,
@@ -78,6 +84,25 @@ test("store and assignments live in db.global and are lazily created", function(
     if type(assignments.specs) ~= "table" or type(assignments.roles) ~= "table" then
         fail("assignments must seed specs/roles maps")
     end
+end)
+
+test("default-backed snapshots are complete and sparse applies reset prior overrides", function()
+    local live = setmetatable({
+        enabled = true,
+        health = setmetatable({ width = 201, ghostKey = true }, { __index = shippedNameplates.health }),
+    }, { __index = shippedNameplates })
+    local snap = Presets.Snapshot(live)
+    if snap.health.height ~= 17 then fail("snapshot must materialize nested defaults") end
+    if math.abs(snap.colors.hostile[1] - 0.39) > 1e-9 then fail("snapshot must materialize top-level defaults") end
+
+    live.colors = { hostile = { 0.9, 0.9, 0.9 } }
+    live.custom = true
+    Presets.ApplySnapshot(live, { health = { width = 222 } })
+    if live.health.width ~= 222 or live.health.height ~= 17 then fail("sparse apply must merge shipped defaults") end
+    if live.health.ghostKey ~= nil then fail("sparse apply must remove nested leftovers") end
+    if math.abs(live.colors.hostile[1] - 0.39) > 1e-9 then fail("sparse apply must reset omitted settings") end
+    if live.custom ~= nil then fail("sparse apply must remove omitted custom settings") end
+    if live.enabled ~= true then fail("sparse apply must preserve excluded settings") end
 end)
 
 test("save/apply round-trip; ghost keys wiped; name trimmed; empty rejected", function()
@@ -210,6 +235,10 @@ test("active-profile tracking: apply/save set it, edits mark it modified, rename
         fail("saving current settings into a profile must mark it active")
     end
     if Presets.IsActiveProfileModified() then fail("freshly saved profile must not read as modified") end
+
+    Presets.GetProfileStore().Tracked.colors = nil
+    Presets.ApplyProfile("Tracked")
+    if Presets.IsActiveProfileModified() then fail("older sparse profiles must compare against current defaults") end
 
     settings.health.width = 999
     if not Presets.IsActiveProfileModified() then fail("live edits must mark the active profile modified") end
