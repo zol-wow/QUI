@@ -203,7 +203,7 @@ function NPPresets.IsActiveProfileModified()
     local name = NPPresets.GetLastAppliedProfile()
     if not name then return false end
     local store = NPPresets.PeekProfileStore()
-    return not TablesEqual(NPPresets.Snapshot(NP.GetSettings()), store[name])
+    return not TablesEqual(NPPresets.Snapshot(NP.GetSettings()), NPPresets.Snapshot(store[name]))
 end
 
 function NPPresets.ListProfileNames()
