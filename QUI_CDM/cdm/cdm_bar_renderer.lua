@@ -1502,6 +1502,7 @@ local function MirrorPairedBarVisuals(bar, blz)
     end
 end
 
+local UpdatePairedBarState
 local pairedMirrorFrame = CreateFrame("Frame")
 if pairedMirrorFrame.Hide then pairedMirrorFrame:Hide() end
 local pairedMirrorAccum = 0
@@ -1510,11 +1511,16 @@ pairedMirrorFrame:SetScript("OnUpdate", function(self, elapsed)
     if pairedMirrorAccum < 0.016 then return end
     pairedMirrorAccum = 0
     local anyPaired = false
+    local activeChanged = false
     for _, bar in ipairs(barPool) do
         if bar._isOwnedBar and bar._blzCooldownID then
             anyPaired = true
             local blz = GetPairedBlzChild(bar)
             if blz then
+                if ReadPairedBarActive(blz) ~= bar._active then
+                    UpdatePairedBarState(bar, blz)
+                    activeChanged = true
+                end
                 MirrorPairedBarVisuals(bar, blz)
             end
         end
@@ -1522,9 +1528,12 @@ pairedMirrorFrame:SetScript("OnUpdate", function(self, elapsed)
     if not anyPaired then
         self:Hide()
     end
+    if activeChanged and _lastContainer and _lastSettings then
+        CDMBars:LayoutBars(_lastContainer, _lastSettings)
+    end
 end)
 
-local function UpdatePairedBarState(bar, blz)
+UpdatePairedBarState = function(bar, blz)
     local active = ReadPairedBarActive(blz)
     bar._active = active
     bar._hideDurationText = GetBarSpellHideDurationOverride(bar)
@@ -1555,11 +1564,14 @@ function CDMBars:UpdateOwnedBarAura(bar)
         UpdatePairedBarState(bar, blz)
         return
     end
+    if bar._blzCooldownID then return end
 
     if entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot") then
         UpdateItemBarCooldown(bar, entry)
         return
     end
+    if entry and entry.viewerType == "trackedBar" and entry.kind == "aura"
+       and not bar._isTotemInstance then return end
 
     local resolver = ns.CDMResolvers and ns.CDMResolvers.ResolveCooldownState
     if not resolver then return end
