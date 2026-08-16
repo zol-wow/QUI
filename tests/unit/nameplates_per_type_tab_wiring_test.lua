@@ -141,6 +141,24 @@ _G.QUI.GUI = {
     ShowConfirmation = function(_self, opts)
         capturedConfirmations[#capturedConfirmations + 1] = opts
     end,
+    CreateInlineEditBox = function(_self, _parent, _options)
+        local field = NewMockFrame()
+        local editBox = NewMockFrame()
+        editBox.GetText = function() return "" end
+        editBox.SetText = function() end
+        field.editBox = editBox
+        return field, editBox
+    end,
+    CreateScrollableTextBox = function(_self, _parent, _height, _text)
+        local box = NewMockFrame()
+        local editBox = NewMockFrame()
+        editBox.GetText = function() return "" end
+        editBox.SetText = function() end
+        editBox.SetCursorPosition = function() end
+        editBox.HighlightText = function() end
+        box.editBox = editBox
+        return box
+    end,
 }
 
 ns.QUI_Options = {

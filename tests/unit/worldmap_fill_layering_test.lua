@@ -118,8 +118,8 @@ ns.SkinBase = {
     GetSkinColors = function()
         return 0.1, 0.2, 0.3, 1, 0.05, 0.06, 0.07, 0.88
     end,
-    IsSkinned = function()
-        return false
+    IsSkinned = function(frame)
+        return frame.markedSkinned == true
     end,
     MarkSkinned = function(frame)
         frame.markedSkinned = true

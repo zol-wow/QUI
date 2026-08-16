@@ -1059,7 +1059,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         local showNpcIDW = GUI:CreateFormCheckbox(s2.frame, nil, "showNpcID", tooltip, RefreshTooltips,
             { description = ns.L["Append the NPC ID to creature and NPC tooltips. Useful for macros, scripting, and bug reports."] })
-        s2.AddRow(row(s2.frame, ns.L["Show NPC ID"], showNpcIDW))
+        local auraSpellIDW = GUI:CreateFormCheckbox(s2.frame, nil, "showAuraSpellIDs", tooltip, RefreshTooltips,
+            { description = ns.L["Show the game's built-in spell ID line on buff and debuff tooltips. Works in combat. The game forgets this setting at logout, so QUI re-applies it at every login."] })
+        s2.AddRow(row(s2.frame, ns.L["Show NPC ID"], showNpcIDW), row(s2.frame, ns.L["Show Aura Spell ID"], auraSpellIDW))
 
         local hideGuildW = GUI:CreateFormToggle(s2.frame, nil, "hideGuildName", tooltip, RefreshTooltips,
             { description = ns.L["Strip the guild name line from player tooltips."] })

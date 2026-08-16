@@ -95,14 +95,13 @@ local defaultState = {
     dungeonName = "",
     deathCount = 0,
     deathTimeLost = 0,
-    currentCount = 0,
-    totalCount = 0,
-    currentPercent = 0,
-    pullCount = 0,
+    forcesQuantity = 0,
+    forcesTotal = 0,
+    forcesQuantityString = "",
     pullPercent = 0,
-    forcesCompleted = false,
-    forcesCompletionTime = nil,
     objectivesList = {},
+    objectivesByIndex = {},
+    weightedByIndex = {},
     currentTargetTier = 3,
     currentTargetTime = 0,
     paceOffset = 0,
@@ -1283,33 +1282,35 @@ function MPlusTimer:RenderAffixIcons()
     end
 end
 
+function MPlusTimer:WriteForcesText(fs)
+    local settings = GetSettings()
+    local format = settings.forcesTextFormat or "both"
+    if format == "count" then
+        fs:SetFormattedText("%s", self.state.forcesQuantityString)
+    elseif format == "percentage" then
+        fs:SetFormattedText("%.2f%%", self.state.forcesQuantity)
+    else
+        fs:SetFormattedText("%.2f%% (%s)", self.state.forcesQuantity, self.state.forcesQuantityString)
+    end
+end
+
 function MPlusTimer:RenderForces()
     if not self.bars.forces then return end
 
     local settings = GetSettings()
-    local displayMode = settings.forcesDisplayMode or "bar"
     local bar = self.bars.forces
-    bar.bar:SetValue(self.state.currentPercent)
+    bar.bar:SetMinMaxValues(0, 100)
+    bar.bar:SetValue(self.state.forcesQuantity)
 
-    local text = ""
-    local format = settings.forcesTextFormat or "both"
-    if format == "count" then
-        text = string.format("%d/%d", self.state.currentCount, self.state.totalCount)
-    elseif format == "percentage" then
-        text = string.format("%.2f%%", self.state.currentPercent * 100)
-    else
-        text = string.format("%.2f%% (%d/%d)", self.state.currentPercent * 100, self.state.currentCount, self.state.totalCount)
-    end
-    bar.text:SetText(text)
+    self:WriteForcesText(bar.text)
 
     if bar.overlay then
-        if self.state.pullPercent > 0 and self.state.currentPercent < 1 then
+        if self.state.pullPercent > 0 then
             local barWidth = bar.bar:GetWidth()
-            local startX = self.state.currentPercent * barWidth
-            local pullWidth = math.min(self.state.pullPercent, 1 - self.state.currentPercent) * barWidth
+            local pullWidth = math.min(self.state.pullPercent, 1) * barWidth
 
             bar.overlay:ClearAllPoints()
-            bar.overlay:SetPoint("LEFT", bar.bar, "LEFT", startX, 0)
+            bar.overlay:SetPoint("LEFT", bar.bar:GetStatusBarTexture(), "RIGHT", 0, 0)
             bar.overlay:SetWidth(math.max(1, pullWidth))
             bar.overlay:Show()
         else
@@ -1319,8 +1320,8 @@ function MPlusTimer:RenderForces()
 
     if self.frames.forcesLabelText and self.frames.forcesValueText then
         local label = settings.forcesLabel or ns.L["Forces"]
-        self.frames.forcesLabelText:SetText(label .. ":")
-        self.frames.forcesValueText:SetText(text)
+        self.frames.forcesLabelText:SetFormattedText("%s:", label)
+        self:WriteForcesText(self.frames.forcesValueText)
         self:AnchorForcesText()
     end
 end
@@ -1343,10 +1344,10 @@ function MPlusTimer:RenderObjectives()
     for i, obj in ipairs(self.state.objectivesList) do
         if i <= 8 then
             local indicator = obj.time and "|cFF66FF66+|r " or "|cFFAAAAAA-|r "
-            local text = obj.name or "Unknown"
+            local suffix = ""
 
-            if sleek then
-                if obj.time then
+            if obj.time then
+                if sleek then
                     local expectedTime = (i / totalBosses) * targetTime
                     local differential = obj.time - expectedTime
 
@@ -1360,19 +1361,15 @@ function MPlusTimer:RenderObjectives()
                     end
 
                     local diffStr = FormatPaceOffset(-differential)
-                    text = indicator .. text .. " " .. diffColor .. diffStr .. "|r |cFF888888" .. FormatTime(obj.time) .. "|r"
+                    suffix = " " .. diffColor .. diffStr .. "|r |cFF888888" .. FormatTime(obj.time) .. "|r"
                 else
-                    text = indicator .. text
-                end
-            else
-                if obj.time then
-                    text = indicator .. text .. " |cFF888888[" .. FormatTime(obj.time) .. "]|r"
-                else
-                    text = indicator .. text
+                    suffix = " |cFF888888[" .. FormatTime(obj.time) .. "]|r"
                 end
             end
 
-            self.objectives[i]:SetText(text)
+            local name = obj.name
+            if type(name) == "nil" then name = "Unknown" end
+            self.objectives[i]:SetFormattedText("%s%s%s", indicator, name, suffix)
         end
     end
 
@@ -1488,12 +1485,10 @@ function MPlusTimer:SetDeathCount(count, timeLost)
     self:RenderDeaths()
 end
 
-function MPlusTimer:SetForces(current, total)
-    self.state.currentCount = current or 0
-    self.state.totalCount = total or 1
-    self.state.currentPercent = self.state.totalCount > 0
-        and (self.state.currentCount / self.state.totalCount)
-        or 0
+function MPlusTimer:SetForces(quantity, total, quantityString)
+    if type(quantity) ~= "nil" then self.state.forcesQuantity = quantity end
+    if type(total) ~= "nil" then self.state.forcesTotal = total end
+    if type(quantityString) ~= "nil" then self.state.forcesQuantityString = quantityString end
     self:RenderForces()
 end
 
@@ -1564,7 +1559,7 @@ function MPlusTimer:EnableDemoMode()
     self:SetTimeLimit(32 * 60)
     self:SetKeyDetails(11, {"Tyrannical", "Storming", "Fortified"}, {9, 124, 10}, 1, "Jade Serpent")
     self:SetDeathCount(3, 15)
-    self:SetForces(198, 289)
+    self:SetForces(68.51, 289, "198/289")
 
     self:SetObjectives({
         { name = "Wise Mari", time = 328 },
@@ -1630,6 +1625,7 @@ function MPlusTimer:EnableChallengeMode()
     self:SetDeathCount(deaths, timeLost)
 
     self:UpdateObjectives()
+    self:UpdateForces()
 
     self:Show()
     self:StartTimerLoop()
@@ -1659,30 +1655,58 @@ function MPlusTimer:CompleteChallenge()
     self:RenderTimer()
 end
 
+-- >>> QUI_TEST_EXTRACT mplus_objectives_secret
 function MPlusTimer:UpdateObjectives()
+    local stepInfo = C_ScenarioInfo.GetScenarioStepInfo()
+    if type(stepInfo) ~= "table" then return end
+
+    local numCriteria = stepInfo.numCriteria
+    if issecretvalue and issecretvalue(numCriteria) then numCriteria = nil end -- @secret-policy: shadow-state (plain count cached below)
+    if type(numCriteria) == "number" then
+        self.state.plainNumCriteria = numCriteria
+    else
+        numCriteria = self.state.plainNumCriteria
+    end
+    if type(numCriteria) ~= "number" then return end
+
+    local byIndex = self.state.objectivesByIndex
+    local weightedByIndex = self.state.weightedByIndex
     local objectives = {}
 
-    local prevTimes = {}
-    for _, prev in ipairs(self.state.objectivesList or {}) do
-        if prev.name and prev.time then
-            prevTimes[prev.name] = prev.time
-        end
-    end
-
-    local stepInfo = C_ScenarioInfo.GetScenarioStepInfo()
-    local numCriteria = stepInfo and stepInfo.numCriteria or 0
     for i = 1, numCriteria do
         local info = C_ScenarioInfo.GetCriteriaInfo(i)
-        local criteriaString = info and info.description
-        local completed = info and info.completed
-        local isWeightedProgress = info and info.isWeightedProgress
-
-        if criteriaString and not isWeightedProgress then
-            local obj = { name = criteriaString, time = nil }
-            if completed then
-                obj.time = prevTimes[criteriaString] or self.state.timer
+        if type(info) == "table" then
+            local isWeighted = info.isWeightedProgress
+            if issecretvalue and issecretvalue(isWeighted) then
+                isWeighted = weightedByIndex[i] -- @secret-policy: shadow-state (structural flag cached from plain reads)
+            else
+                isWeighted = not not isWeighted
+                weightedByIndex[i] = isWeighted
             end
-            table.insert(objectives, obj)
+
+            if isWeighted == true then
+                self.state.forcesIndex = i
+            elseif isWeighted == false then
+                local obj = byIndex[i]
+                if not obj then
+                    obj = {}
+                    byIndex[i] = obj
+                end
+
+                local name = info.description
+                if type(name) ~= "nil" then obj.name = name end
+
+                local completed = info.completed
+                if not (issecretvalue and issecretvalue(completed)) then
+                    if completed then
+                        if not obj.time then obj.time = self.state.timer end
+                    else
+                        obj.time = nil
+                    end
+                end
+
+                table.insert(objectives, obj)
+            end
         end
     end
 
@@ -1690,22 +1714,15 @@ function MPlusTimer:UpdateObjectives()
 end
 
 function MPlusTimer:UpdateForces()
-    local stepInfo = C_ScenarioInfo.GetScenarioStepInfo()
-    local numCriteria = stepInfo and stepInfo.numCriteria or 0
+    local idx = self.state.forcesIndex
+    if type(idx) ~= "number" then return end
 
-    for i = 1, numCriteria do
-        local info = C_ScenarioInfo.GetCriteriaInfo(i)
-        if info and info.isWeightedProgress then
-            local quantityString = info.quantityString
-            local totalQuantity = info.totalQuantity
-            if quantityString then
-                local current = tonumber(quantityString:match("(%d+)")) or 0
-                self:SetForces(current, totalQuantity or 100)
-            end
-            break
-        end
-    end
+    local info = C_ScenarioInfo.GetCriteriaInfo(idx)
+    if type(info) ~= "table" then return end
+
+    self:SetForces(info.quantity, info.totalQuantity, info.quantityString)
 end
+-- <<< QUI_TEST_EXTRACT mplus_objectives_secret
 
 function MPlusTimer:CheckForChallengeMode()
     local _, instanceType, difficulty = GetInstanceInfo()
@@ -1756,6 +1773,12 @@ local function OnEvent(self, event, arg1, ...)
             MPlusTimer:UpdateForces()
         end
 
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if MPlusTimer.state.inChallenge then
+            MPlusTimer:UpdateObjectives()
+            MPlusTimer:UpdateForces()
+        end
+
     elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA" then
         C_Timer.After(0.5, function()
             MPlusTimer:CheckForChallengeMode()
@@ -1772,6 +1795,7 @@ eventFrame:RegisterEvent("CHALLENGE_MODE_RESET")
 eventFrame:RegisterEvent("CHALLENGE_MODE_DEATH_COUNT_UPDATED")
 eventFrame:RegisterEvent("SCENARIO_CRITERIA_UPDATE")
 eventFrame:RegisterEvent("SCENARIO_POI_UPDATE")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("ZONE_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 

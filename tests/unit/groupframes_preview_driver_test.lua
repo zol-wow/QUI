@@ -359,15 +359,15 @@ test("missing-raid-buff preview honors auto/manual buff selection", function()
         ElementShouldCheckBuff = function(element, buff)
             if element.noAutoCandidate then return false end
             if element.classDetection ~= false then
-                return buff.key == "fortitude" or buff.providerClass == nil
+                return buff.key == "fortitude"
             end
             return element.buffChecks and element.buffChecks[buff.key] == true
         end,
     }
 
     local auto = D._BuildMissingRaidBuffMatches({ classDetection = true, maxIcons = 5 }, 0)
-    assert(#auto == 2 and auto[1].spellId == 10 and auto[2].spellId == 30,
-        "auto mode must show only the current-class/CDM candidates")
+    assert(#auto == 1 and auto[1].spellId == 10,
+        "auto mode must show only the current-class candidate")
 
     local noAutoCandidate = D._BuildMissingRaidBuffMatches({
         classDetection = true, noAutoCandidate = true, maxIcons = 5,

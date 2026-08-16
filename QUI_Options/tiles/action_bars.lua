@@ -13,6 +13,7 @@ function V2.Register(frame)
         id = "action_bars",
         icon = "A",
         name = ns.L["Action Bars"],
+        moduleFeatureId = "moduleAddon_QUI_ActionBars",
         primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "bar1" },
         preview = {
             height = 110,
@@ -44,6 +45,54 @@ function V2.Register(frame)
                     tabName = ns.L["Action Bars"],
                     subTabIndex = 3,
                     subTabName = ns.L["Per-Bar"],
+                },
+            },
+            {
+                id = "totemBar",
+                name = ns.L["Totem Bar"],
+                featureId = "actionBarsTotemBar",
+                navRoutes = { { tabIndex = 8, subTabIndex = 5 } },
+                searchContext = {
+                    tabIndex = 8,
+                    tabName = ns.L["Action Bars"],
+                    subTabIndex = 5,
+                    subTabName = ns.L["Totem Bar"],
+                },
+            },
+            {
+                id = "raidMarkers",
+                name = ns.L["Raid Markers"],
+                featureId = "actionBarsRaidMarkersBar",
+                navRoutes = { { tabIndex = 8, subTabIndex = 6 } },
+                searchContext = {
+                    tabIndex = 8,
+                    tabName = ns.L["Action Bars"],
+                    subTabIndex = 6,
+                    subTabName = ns.L["Raid Markers"],
+                },
+            },
+            {
+                id = "bagBar",
+                name = ns.L["Bag Bar"],
+                featureId = "actionBarsBagBar",
+                navRoutes = { { tabIndex = 8, subTabIndex = 7 } },
+                searchContext = {
+                    tabIndex = 8,
+                    tabName = ns.L["Action Bars"],
+                    subTabIndex = 7,
+                    subTabName = ns.L["Bag Bar"],
+                },
+            },
+            {
+                id = "extraZone",
+                name = ns.L["Extra & Zone"],
+                featureId = "actionBarsExtraZone",
+                navRoutes = { { tabIndex = 8, subTabIndex = 8 } },
+                searchContext = {
+                    tabIndex = 8,
+                    tabName = ns.L["Action Bars"],
+                    subTabIndex = 8,
+                    subTabName = ns.L["Extra & Zone"],
                 },
             },
             {

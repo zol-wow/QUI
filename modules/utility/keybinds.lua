@@ -1269,12 +1269,19 @@ local function GetCustomContainerKeys()
     return keys
 end
 
+-- <<< QUI_TEST_EXTRACT viewer_children_sweep
 local function GetViewerChildren(viewerName)
     local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
     local out
     if viewer then
         local container = viewer.viewerFrame or viewer
-        out = { container:GetChildren() }
+        out = {}
+        local children = { container:GetChildren() }
+        for i = 1, #children do
+            if not children[i]._quiCdmClickSlot then
+                out[#out + 1] = children[i]
+            end
+        end
     end
     if _G.QUI_GetReanchoredCDMFrames then
         local extra = _G.QUI_GetReanchoredCDMFrames(viewerName)
@@ -1287,6 +1294,7 @@ local function GetViewerChildren(viewerName)
     end
     return out
 end
+-- <<< QUI_TEST_EXTRACT viewer_children_sweep
 
 local function UpdateViewerKeybinds(viewerName)
     local children = GetViewerChildren(viewerName)

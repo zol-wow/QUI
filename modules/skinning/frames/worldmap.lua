@@ -86,7 +86,7 @@ end
 
 local function RefreshWorldMap()
     local frame = _G.WorldMapFrame
-    if not frame then return end
+    if not frame or not SkinBase.IsSkinned(frame) then return end
     if frame.BorderFrame then
         ApplyBorderBackdrop(SkinBase.GetBackdrop(frame.BorderFrame))
     end

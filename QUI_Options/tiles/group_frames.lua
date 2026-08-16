@@ -14,6 +14,7 @@ function V2.Register(frame)
         id = "group_frames",
         icon = "G",
         name = ns.L["Group Frames"],
+        moduleFeatureId = "moduleAddon_QUI_GroupFrames",
         primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "partyFrames" },
         navRoutes = {
             { tabIndex = 6, subTabIndex = 0, subPageIndex = 1 },

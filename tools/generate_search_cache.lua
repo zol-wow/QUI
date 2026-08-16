@@ -2449,7 +2449,7 @@ end
 local AURA_DISPLAYS_SEARCH_CONTEXT = {
     tabIndex = 21, tabName = "Auras", subTabIndex = 6, subTabName = "Aura Displays",
     tileId = "auras", subPageIndex = 6, featureId = "aurasDisplaysPage",
-    category = "frames",
+    category = "frames", providerKey = "detail",
 }
 
 local function capture_aura_displays_elements()
@@ -2464,7 +2464,8 @@ local function capture_aura_displays_elements()
         or type(E.NewFilterStripElement) ~= "function"
         or type(E.NewTrackedElement) ~= "function"
         or type(AD) ~= "table"
-        or type(AD.DefaultBucket) ~= "function" then
+        or type(AD.DefaultBucket) ~= "function"
+        or type(ns.QUI_AuraDisplayPickers) ~= "table" then
         return true
     end
 
@@ -2501,21 +2502,23 @@ local function capture_aura_displays_elements()
         end
     end
 
-    if type(Page) == "table" and type(Page._BuildDetail) == "function"
-        and type(LayoutShared) == "table" and type(LayoutShared.MakeLayout) == "function" then
+    if type(Page) == "table" and type(Page._BuildGeneralTab) == "function"
+        and type(Page._BuildLoadTab) == "function" then
         for _, unit in ipairs({ "player", "target" }) do
-            render("detail:" .. unit, function(host)
-                local L = LayoutShared.MakeLayout(host)
-                Page._BuildDetail(L, host, nil, {
-                    id = "d1",
-                    name = "Display",
-                    enabled = true,
-                    unitMode = "token",
-                    unit = unit,
-                    load = { classes = {}, specs = {}, roles = {}, encounters = {} },
-                    auras = {},
-                })
-                if type(L.finish) == "function" then L.finish() end
+            local display = {
+                id = "d1",
+                name = "Display",
+                enabled = true,
+                unitMode = "token",
+                unit = unit,
+                load = { classes = {}, specs = {}, roles = {}, encounters = {} },
+                auras = {},
+            }
+            render("general:" .. unit, function(host)
+                Page._BuildGeneralTab(host, nil, display)
+            end)
+            render("load:" .. unit, function(host)
+                Page._BuildLoadTab(host, nil, display)
             end)
         end
     end
@@ -2614,22 +2617,25 @@ local ACTION_BAR_PER_BAR_CAPTURE_BARS = {
     { key = "stanceBar", label = ns.L["Stance Bar"], dbKey = "stance", layout = true, skinnable = true },
     { key = "petBar", label = ns.L["Pet Bar"], dbKey = "pet", layout = true, skinnable = true },
     { key = "microMenu", label = ns.L["Micro Menu"], dbKey = "microbar", layout = true, clickthrough = true, ticketIcon = true },
-    { key = "bagBar", label = ns.L["Bag Bar"], dbKey = "bags", layout = true, clickthrough = true },
+    { key = "bagBar", label = ns.L["Bag Bar"], dbKey = "bags", layout = true, clickthrough = true,
+        route = { featureId = "actionBarsBagBar", subPageIndex = 5, subTabIndex = 7, subTabName = "Bag Bar" } },
 }
 
 local function capture_action_bar_per_bar_setting(bar, section, label, widget_type, db_path, db_key, extra)
+    local route = bar.route
+    local subTabName = route and route.subTabName or "Per-Bar"
     register_manual_static_setting({
         tabIndex = 8,
         tabName = "Action Bars",
-        subTabIndex = 3,
-        subTabName = "Per-Bar",
+        subTabIndex = route and route.subTabIndex or 3,
+        subTabName = subTabName,
         sectionName = bar.label .. " - " .. section,
         tileId = "action_bars",
-        subPageIndex = 3,
-        featureId = "actionBarsPerBar",
+        subPageIndex = route and route.subPageIndex or 2,
+        featureId = route and route.featureId or "actionBarsPerBar",
         providerKey = bar.key,
         category = "frames",
-        keywords = { label, bar.label, section, "Action Bars", "Per-Bar" },
+        keywords = { label, bar.label, section, "Action Bars", subTabName },
     }, label, widget_type, db_path, db_key, extra)
 end
 
@@ -2722,16 +2728,67 @@ local function capture_action_bar_per_bar_settings()
     register_manual_static_setting({
         tabIndex = 8,
         tabName = "Action Bars",
-        subTabIndex = 3,
-        subTabName = "Per-Bar",
-        sectionName = ns.L["Totem Bar"] .. " - " .. ns.L["Layout"],
+        subTabIndex = 5,
+        subTabName = "Totem Bar",
+        sectionName = ns.L["Layout"],
         tileId = "action_bars",
         subPageIndex = 3,
-        featureId = "actionBarsPerBar",
+        featureId = "actionBarsTotemBar",
         providerKey = "totemBar",
         category = "frames",
-        keywords = { "Grow Direction", "Totem Bar", "Action Bars", "Per-Bar" },
+        keywords = { "Grow Direction", "Totem Bar", "Action Bars" },
     }, ns.L["Grow Direction"], "dropdown", "profile.totemBar", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
+
+    local function capture_raid_markers_bar_setting(section, label, widget_type, db_path, db_key, extra)
+        register_manual_static_setting({
+            tabIndex = 8,
+            tabName = "Action Bars",
+            subTabIndex = 6,
+            subTabName = "Raid Markers",
+            sectionName = section,
+            tileId = "action_bars",
+            subPageIndex = 4,
+            featureId = "actionBarsRaidMarkersBar",
+            providerKey = "raidMarkersBar",
+            category = "frames",
+            keywords = { label, "Raid Markers Bar", "Raid Marker", "Action Bars" },
+        }, label, widget_type, db_path, db_key, extra)
+    end
+
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Enabled"], "toggle", "profile.raidMarkersBar", "enabled")
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Only In Dungeons & Raids"], "toggle", "profile.raidMarkersBar", "onlyInInstances")
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Grow Direction"], "dropdown", "profile.raidMarkersBar", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Button Size"], "slider", "profile.raidMarkersBar", "iconSize", { min = 20, max = 64, step = 1 })
+    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Button Spacing"], "slider", "profile.raidMarkersBar", "spacing", { min = -10, max = 10, step = 1 })
+    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["World Markers"], "toggle", "profile.raidMarkersBar.worldMarkers", "enabled")
+    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["Leader Actions"], "toggle", "profile.raidMarkersBar.leaderStrip", "enabled")
+    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["Show Only As Leader"], "toggle", "profile.raidMarkersBar", "autoShowForLeader")
+    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["Pull Countdown Seconds"], "slider", "profile.raidMarkersBar.leaderStrip", "pullSeconds", { min = 3, max = 30, step = 1 })
+
+    local function capture_extra_zone_setting(button, label, widget_type, db_key, extra)
+        register_manual_static_setting({
+            tabIndex = 8,
+            tabName = "Action Bars",
+            subTabIndex = 8,
+            subTabName = "Extra & Zone",
+            sectionName = button.label,
+            tileId = "action_bars",
+            subPageIndex = 6,
+            featureId = "actionBarsExtraZone",
+            providerKey = button.dbKey,
+            category = "frames",
+            keywords = { label, button.label, "Action Bars", "Extra & Zone" },
+        }, label, widget_type, "profile.actionBars.bars." .. button.dbKey, db_key, extra)
+    end
+
+    for _, button in ipairs({
+        { label = ns.L["Extra Action Button"], dbKey = "extraActionButton" },
+        { label = ns.L["Zone Ability"], dbKey = "zoneAbility" },
+    }) do
+        capture_extra_zone_setting(button, ns.L["Enabled"], "toggle", "enabled")
+        capture_extra_zone_setting(button, ns.L["Hide Artwork"], "toggle", "hideArtwork")
+        capture_extra_zone_setting(button, ns.L["Scale"], "slider", "scale", { min = 0.5, max = 2.0, step = 0.05 })
+    end
 end
 
 local MINIMAP_CORNER_OPTIONS = {
@@ -3124,6 +3181,27 @@ end
 -- Phase 1+ Modules Control Center: emit moduleToggle navigation entries
 -- for features that declare moduleEntry. These power the [Module] badge +
 -- inline pill rendering in the global search dropdown (see Task 9).
+local function find_module_enabled_route(featureId)
+    local wantPath = "profile." .. featureId
+    local fallbackTile, fallbackSubPage
+    for _, row in ipairs(GUI.StaticSettingsRegistry or {}) do
+        if row.providerKey == featureId
+            and type(row.tileId) == "string"
+            and row.tileId ~= "" then
+            local descriptor = row.widgetDescriptor
+            if type(descriptor) == "table"
+                and descriptor.dbPath == wantPath
+                and descriptor.dbKey == "enabled" then
+                return row.tileId, row.subPageIndex
+            end
+            if not fallbackTile then
+                fallbackTile, fallbackSubPage = row.tileId, row.subPageIndex
+            end
+        end
+    end
+    return fallbackTile, fallbackSubPage
+end
+
 local function emit_module_toggle_entries()
     local settings = ns.Settings
     local registry = settings and settings.Registry
@@ -3138,14 +3216,24 @@ local function emit_module_toggle_entries()
             local label = entry.label or feature.name or featureId
             local caption = entry.caption or ""
             local group = entry.group or "Modules"
-            GUI:RegisterSearchNavigation("moduleToggle", {
-                label = label,
-                featureId = featureId,
-                tileId = "global",
-                subPageIndex = 3,    -- Modules sub-page index in General tile's
+            local tileId = "global"
+            local subPageIndex = 3    -- Modules sub-page index in General tile's
                                       -- subPages array. See options/tiles/global.lua
                                       -- — order is profiles, pinnedGlobals, modules,
                                       -- importExport, thirdParty, clickCast.
+            local hiddenOk, hiddenFromToggles = pcall(entry.hidden)
+            if type(entry.hidden) == "function" and hiddenOk and hiddenFromToggles then
+                local routeTile, routeSubPage = find_module_enabled_route(featureId)
+                if routeTile then
+                    tileId = routeTile
+                    subPageIndex = routeSubPage
+                end
+            end
+            GUI:RegisterSearchNavigation("moduleToggle", {
+                label = label,
+                featureId = featureId,
+                tileId = tileId,
+                subPageIndex = subPageIndex,
                 keywords = { label, caption, group, "module" },
             })
             emitted = emitted + 1

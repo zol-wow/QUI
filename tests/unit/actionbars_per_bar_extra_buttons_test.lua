@@ -23,14 +23,17 @@ local function assertContains(source, needle, message)
 end
 
 assertContains(perBarSource,
-    '{ value = "extraActionButton", text = ns.L["Extra Action Button"] }',
-    "Per-Bar selector should include the Extra Action Button")
+    'id = "actionBarsExtraZone"',
+    "The Extra & Zone feature should register the combined special button page")
 assertContains(perBarSource,
-    '{ value = "zoneAbility",       text = ns.L["Zone Ability"] }',
-    "Per-Bar selector should include Zone Ability")
+    'BuildPinnedBarSection("extraAction", "extraActionButton")',
+    "The Extra & Zone page should mount the Extra Action Button settings")
+assertContains(perBarSource,
+    'BuildPinnedBarSection("zoneAbility", "zoneAbility")',
+    "The Extra & Zone page should mount the Zone Ability settings")
 assertContains(perBarSource,
     '"extraActionButton", "zoneAbility"',
-    "Per-Bar search lookup keys should include the extra button entries")
+    "Extra & Zone lookup keys should include both special button entries")
 assertContains(perBarSource,
     'local SPECIAL_BUTTON_OPTION_KEYS = { extraActionButton = true, zoneAbility = true }',
     "Per-Bar copy-all behavior should identify special button options")

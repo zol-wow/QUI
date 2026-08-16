@@ -131,6 +131,7 @@ env.__declared.UpdateAssistedCombatRotationFrame = true
 env.__declared.UpdateAllAssistedHighlights = true
 env.__declared.ResetButtonChargeCapabilityCache = true
 env.__declared.ResetAllChargeCapabilityCaches = true
+env.__declared.FlushChargeCapabilityVerdicts = true
 env.__declared.IsButtonInsideVisibleLayout = true
 env.__declared.MarkSpellIdMapDirty = true
 env.__declared.ScheduleUsabilityUpdate = true
@@ -170,9 +171,10 @@ end
 env.__declared.UpdateButtonProfessionQuality = true
 env.__declared.SafeHasAction = true
 env.__declared.HasButtonContent = true
+env.__declared.GetSafeActionSlot = true
 
 function ActionBarsOwned.SafeUpdate(self)
-    local action = self.action
+    local action = GetSafeActionSlot(self)
     if not action then return end
     local hasAction = SafeHasAction(action)
     local hasContent = hasAction or (self.GetAttribute and self:GetAttribute("gse-button"))

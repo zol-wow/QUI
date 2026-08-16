@@ -25,18 +25,12 @@ local BAR_OPTIONS = {
     { value = "stanceBar", text = ns.L["Stance Bar"] },
     { value = "petBar",    text = ns.L["Pet Bar"] },
     { value = "microMenu", text = ns.L["Micro Menu"] },
-    { value = "bagBar",    text = ns.L["Bag Bar"] },
-    { value = "extraActionButton", text = ns.L["Extra Action Button"] },
-    { value = "zoneAbility",       text = ns.L["Zone Ability"] },
-    { value = "totemBar",  text = ns.L["Totem Bar"] },
-    { value = "raidMarkersBar", text = ns.L["Raid Markers Bar"] },
 }
 
 local LOOKUP_KEYS = {
     "bar1", "bar2", "bar3", "bar4",
     "bar5", "bar6", "bar7", "bar8",
-    "stanceBar", "petBar", "microMenu", "bagBar",
-    "extraActionButton", "zoneAbility",
+    "stanceBar", "petBar", "microMenu",
 }
 
 local SPECIAL_BUTTON_OPTION_KEYS = { extraActionButton = true, zoneAbility = true }
@@ -356,3 +350,65 @@ local feature = Schema.Feature({
 })
 
 Registry:RegisterFeature(feature)
+
+local function BuildPinnedBarSection(sectionId, barKey)
+    return Schema.Section({
+        id = sectionId,
+        kind = "page",
+        minHeight = 80,
+        build = function(host)
+            local build = GetPerBarBuilder()
+            if type(build) ~= "function" then return 80 end
+            return build(host, barKey) or 80
+        end,
+    })
+end
+
+local function PinnedLayoutRender(barKey)
+    return function(host, options)
+        local build = GetPerBarBuilder()
+        if type(build) ~= "function" then return 80 end
+        return build(host, barKey, options and options.width) or 80
+    end
+end
+
+local SPECIAL_TABS = {
+    { id = "actionBarsTotemBar", key = "totemBar", subPageIndex = 3 },
+    { id = "actionBarsRaidMarkersBar", key = "raidMarkersBar", subPageIndex = 4 },
+    { id = "actionBarsBagBar", key = "bagBar", subPageIndex = 5 },
+}
+
+for _, tab in ipairs(SPECIAL_TABS) do
+    Registry:RegisterFeature(Schema.Feature({
+        id = tab.id,
+        category = "frames",
+        nav = { tileId = "action_bars", subPageIndex = tab.subPageIndex },
+        moverKey = tab.key,
+        lookupKeys = { tab.key },
+        render = { layout = PinnedLayoutRender(tab.key) },
+        sections = { BuildPinnedBarSection("settings", tab.key) },
+    }))
+end
+
+Registry:RegisterFeature(Schema.Feature({
+    id = "actionBarsExtraZone",
+    category = "frames",
+    nav = { tileId = "action_bars", subPageIndex = 6 },
+    moverKey = "extraActionButton",
+    lookupKeys = { "extraActionButton", "zoneAbility" },
+    render = {
+        layout = function(host, options)
+            local key = options and options.providerKey
+            if key ~= "extraActionButton" and key ~= "zoneAbility" then
+                key = "extraActionButton"
+            end
+            local build = GetPerBarBuilder()
+            if type(build) ~= "function" then return 80 end
+            return build(host, key, options and options.width) or 80
+        end,
+    },
+    sections = {
+        BuildPinnedBarSection("extraAction", "extraActionButton"),
+        BuildPinnedBarSection("zoneAbility", "zoneAbility"),
+    },
+}))

@@ -598,7 +598,12 @@ local function RenderEnableSection(sectionHost, ctx)
             ns.L["Enable Unitframes (Req. Reload)"],
             "enabled",
             db.ufdb,
-            function()
+            function(enabled)
+                if ns.QUI_Modules and type(ns.QUI_Modules.SetEnabled) == "function" then
+                    ns.QUI_Modules:SetEnabled("moduleAddon_QUI_UnitFrames", enabled, {
+                        suppressReloadPrompt = true,
+                    })
+                end
                 RefreshUnitFrames()
                 ShowReloadConfirmation()
             end,

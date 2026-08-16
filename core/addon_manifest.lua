@@ -5,7 +5,7 @@ local MANIFEST = {
     { folder = "QUI_GroupFrames",  class = "login", legacyFlag = { "quiGroupFrames", "enabled" },    sources = { "modules/groupframes" } },
     { folder = "QUI_Nameplates",   class = "login", legacyFlag = { "nameplates", "enabled" },        sources = {} },
     { folder = "QUI_ResourceBars", class = "login",                                                  sources = { "modules/resourcebars" } },
-    { folder = "QUI_UnitFrames",   class = "login",                                                  sources = { "modules/unitframes" } },
+    { folder = "QUI_UnitFrames",   class = "login", legacyFlag = { "quiUnitFrames", "enabled" },   sources = { "modules/unitframes" } },
     { coreModule = "minimap",   flag = { "minimap",      "enabled" } },
     { coreModule = "infobar",   flag = { "infobar",      "enabled" } },
     { coreModule = "alts",      flag = { "alts",         "enabled" } },

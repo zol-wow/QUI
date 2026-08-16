@@ -165,7 +165,7 @@ do
     check("BB survive enableBuffs=true", bb.enableBuffs == true, tostring(bb.enableBuffs))
     check("BB survive enableDebuffs=false", bb.enableDebuffs == false, tostring(bb.enableDebuffs))
 
-    check("BB stamped to current (60)", profile._schemaVersion == 60, tostring(profile._schemaVersion))
+    check("BB stamped to current (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(profile._schemaVersion))
 end
 
 ----------------------------------------------------------------------------
@@ -357,7 +357,7 @@ do
         petDebuff and #E.CompileFilters(petDebuff) == 0,
         petDebuff and table.concat(E.CompileFilters(petDebuff), " , "))
 
-    check("UF stamped to current (60)", profile._schemaVersion == 60, tostring(profile._schemaVersion))
+    check("UF stamped to current (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(profile._schemaVersion))
 end
 
 ----------------------------------------------------------------------------
@@ -492,7 +492,7 @@ do
     check("GF elementsSeeded still true", profile.quiGroupFrames.party.auras.elementsSeeded == true, "flag lost")
     check("GF classifications untouched (raid only)", e.classifications and e.classifications.raid == true
         and e.classifications.helpful == nil and e.classifications.harmful == nil, "classifications mutated")
-    check("GF stamped to current (60)", profile._schemaVersion == 60, tostring(profile._schemaVersion))
+    check("GF stamped to current (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(profile._schemaVersion))
 end
 
 ----------------------------------------------------------------------------
@@ -558,7 +558,7 @@ do
     local eqD, whyD = deepEqual(snapshotDebuff, profile.buffBorders.debuffAuras, "debuffAuras")
     check("idempotent buffAuras tree", eqB, whyB)
     check("idempotent debuffAuras tree", eqD, whyD)
-    check("idempotent stays at current (60)", profile._schemaVersion == 60, tostring(profile._schemaVersion))
+    check("idempotent stays at current (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(profile._schemaVersion))
 end
 
 -- F5 (re-review): "Hide Duration Swipe" was a real HEAD checkbox writing the

@@ -210,35 +210,70 @@ _G.Enum = {
     EditModeLayoutType = { Account = 0, Character = 1, Preset = 2 },
     EditModePresetLayoutsMeta = { NumValues = 2 },
 }
-local layoutList = {}
+_G.EditModePresetLayoutManager = {
+    GetCopyOfPresetLayouts = function()
+        return {
+            { layoutType = 2, layoutName = "Modern" },
+            { layoutType = 2, layoutName = "Classic" },
+        }
+    end,
+}
+-- Engine model: SaveLayouts persists only non-preset entries; GetLayouts
+-- returns those saved customs (activeLayout indexing counts the presets).
+local savedCustoms = {}
 _G.C_EditMode = {
     ConvertStringToLayoutInfo = function(str)
         if str == "2 50 0 0 0" then return { systems = { "SYSTEMS" } } end
         return nil
     end,
-    GetLayouts = function() return { layouts = layoutList } end,
-    SaveLayouts = function(info) saved = info end,
+    GetLayouts = function() return { layouts = savedCustoms } end,
+    SaveLayouts = function(info)
+        saved = info
+        local customs = {}
+        for _, layout in ipairs(info.layouts) do
+            if layout.layoutType ~= 2 then customs[#customs + 1] = layout end
+        end
+        savedCustoms = customs
+    end,
     SetActiveLayout = function(i) activated = i end,
 }
 
 local applyLayout = assert(FindButton("Apply QUI Edit Mode Layout"), "layout page offers the apply")
 applyLayout.onClick()
-assert(saved and #layoutList == 1, "layout apply adds one layout")
-assert(layoutList[1].layoutName == "QUI" and layoutList[1].layoutType == 0,
+assert(saved and #saved.layouts == 3,
+    "layout apply must save the full combined list (2 presets + the QUI layout), matching Blizzard's SaveLayouts convention")
+assert(saved.layouts[1].layoutType == 2 and saved.layouts[2].layoutType == 2,
+    "saved list must lead with the preset copies")
+assert(saved.layouts[3].layoutName == "QUI" and saved.layouts[3].layoutType == 0,
     "added layout is an Account layout named QUI")
-assert(activated == 3, "SetActiveLayout must offset past the presets (1 user layout + 2 presets)")
+assert(#savedCustoms == 1, "engine persists exactly one custom layout")
+assert(activated == 3, "SetActiveLayout must receive the same combined index the save used")
 
 -- Re-apply updates in place instead of duplicating
-layoutList[1].systems = "STALE"
+savedCustoms[1].systems = "STALE"
 applyLayout.onClick()
-assert(#layoutList == 1, "re-apply must update the existing QUI layout, not duplicate it")
-assert(layoutList[1].systems[1] == "SYSTEMS", "re-apply refreshes the layout systems")
+assert(#saved.layouts == 3 and #savedCustoms == 1,
+    "re-apply must update the existing QUI layout, not duplicate it")
+assert(savedCustoms[1].systems[1] == "SYSTEMS", "re-apply refreshes the layout systems")
+assert(activated == 3, "re-apply activates the same combined index")
 
 -- Failure path: unrecognized string fails soft with a reason
 _G.QUI.imports.QUIEditMode.data = "garbage"
 local ok, err = Wizard._ApplyEditModeBaseLayout()
 assert(ok == false and type(err) == "string", "unrecognized layout string fails soft")
 _G.QUI.imports.QUIEditMode.data = "2 50 0 0 0"
+
+-- Failure path: preset data unavailable -> fail soft, never save a list the
+-- combined activeLayout index cannot be resolved against
+do
+    local presetMgr = _G.EditModePresetLayoutManager
+    _G.EditModePresetLayoutManager = nil
+    saved = nil
+    local ok2, err2 = Wizard._ApplyEditModeBaseLayout()
+    assert(ok2 == false and type(err2) == "string", "missing preset data fails soft")
+    assert(saved == nil, "missing preset data must not save layouts")
+    _G.EditModePresetLayoutManager = presetMgr
+end
 
 -- Page 7: finish
 nextBtn.onClick()

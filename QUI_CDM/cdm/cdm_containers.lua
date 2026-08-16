@@ -2095,6 +2095,21 @@ local function ApplyViewerMetrics(vs, metrics, containerKey)
     return maxRowWidth, proxyTotalHeight
 end
 
+CDMContainers_API.HUD_LAYERING = {
+    keys = {
+        essential  = "essential",
+        utility    = "utility",
+        buff       = "buffIcon",
+        trackedBar = "buffBar",
+    },
+    viewers = {
+        essential  = "EssentialCooldownViewer",
+        utility    = "UtilityCooldownViewer",
+        buff       = "BuffIconCooldownViewer",
+        trackedBar = "BuffBarCooldownViewer",
+    },
+}
+
 local function LayoutContainer(trackerKey)
     if not IsCDMRuntimeEnabled() then
         return
@@ -2144,10 +2159,21 @@ local function LayoutContainer(trackerKey)
     end
 
     local hudLayering = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.hudLayering
-    local layerPriority = hudLayering and hudLayering[trackerKey] or 5
+    local layerKey = CDMContainers_API.HUD_LAYERING.keys[trackerKey] or "customBars"
+    local layerPriority = hudLayering and hudLayering[layerKey] or 5
     if QUICore and QUICore.GetHUDFrameLevel then
         local frameLevel = QUICore:GetHUDFrameLevel(layerPriority)
         container:SetFrameLevel(frameLevel)
+        if (not InCombatLockdown()) or inInitSafeWindow then
+            local viewerName = CDMContainers_API.HUD_LAYERING.viewers[trackerKey]
+            local viewer = viewerName and _G[viewerName]
+            if viewer and viewer.SetFrameLevel then
+                if viewer.SetFrameStrata then
+                    viewer:SetFrameStrata("MEDIUM")
+                end
+                viewer:SetFrameLevel(frameLevel)
+            end
+        end
     end
 
     local vs = viewerState[container]
