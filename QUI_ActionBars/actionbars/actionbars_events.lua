@@ -326,6 +326,7 @@ function OnOwnedEvent(self, event, ...)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         ScheduleABVisualUpdate(false, true)
+        FlushPendingPingAttributes()
         FinishBlockedOverrideBarExit()
         if ActionBarsOwned.pendingExtraButtonInit then
             ActionBarsOwned.pendingExtraButtonInit = false

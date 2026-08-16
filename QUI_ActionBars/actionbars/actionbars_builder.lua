@@ -35,6 +35,16 @@ end
 -- Update() whenever the button holds an action, so it needs a standing hook.
 local ownedDispatchExcludedButtons = setmetatable({}, { __mode = "k" })
 local actionEventsPurgeHooked = false
+local pendingPingAttributes = setmetatable({}, { __mode = "k" })
+
+function FlushPendingPingAttributes()
+    for pending in pairs(pendingPingAttributes) do
+        pendingPingAttributes[pending] = nil
+        if type(pending.UpdatePingAttributes) == "function" then
+            ns.SafeCallMethod("best-effort-style", pending, "UpdatePingAttributes")
+        end
+    end
+end
 
 local function KeepOwnedButtonOutOfActionEventsFrame(btn)
     ownedDispatchExcludedButtons[btn] = true
@@ -67,12 +77,28 @@ function EnsureOwnedActionButton(container, barKey, btnName, index)
             end
         end
         btn.Update = function(self)
+            local assistFrame = self.AssistedCombatRotationFrame
+            if type(assistFrame) == "table" and assistFrame.GetScript
+                and assistFrame:GetScript("OnUpdate") then
+                assistFrame:SetScript("OnUpdate", nil)
+            end
             ns.SafeCall("best-effort-style", ActionBarsOwned.SafeUpdate, self)
             if HasButtonContent(self, GetSafeActionSlot(self)) then
                 self:UpdateTypeOverlay()
                 self:UpdateHighlightMark()
             else
                 self:ClearTypeOverlay()
+            end
+        end
+        local blizzardPingUpdate = btn.UpdatePingAttributes
+        if type(blizzardPingUpdate) == "function" then
+            btn.UpdatePingAttributes = function(self)
+                if InCombatLockdown() then
+                    pendingPingAttributes[self] = true
+                    return
+                end
+                pendingPingAttributes[self] = nil
+                blizzardPingUpdate(self)
             end
         end
         local castAnim = btn.SpellCastAnimFrame

@@ -25,6 +25,8 @@ local actionBarsDB = {
 
 local function noop() end
 
+local pingUpdateCounts = {}
+
 local frameMT
 local function NewFrame()
     local frame = {
@@ -66,6 +68,8 @@ local function NewFrame()
                 return function(self, parent) self.parent = parent end
             elseif key == "CreateTexture" or key == "CreateFontString" then
                 return function() return NewFrame() end
+            elseif key == "UpdatePingAttributes" then
+                return function(self) pingUpdateCounts[self] = (pingUpdateCounts[self] or 0) + 1 end
             end
             return noop
         end,
@@ -98,7 +102,8 @@ function CreateFrame(_, _, parent, template)
     return frame
 end
 
-function InCombatLockdown() return false end
+local testInCombat = false
+function InCombatLockdown() return testInCombat end
 function GetTime() return 1 end
 function HasAction(action) return action ~= nil and action > 0 end
 function RegisterStateDriver() end
@@ -275,6 +280,42 @@ check("losing the assist action stops the ticker",
     rearmed.cancelled == true)
 check("losing the assist action clears the tracked button so the next search can find a new one",
     rawget(env, "_assistRotationButton") == nil)
+
+local pingBtn = env.EnsureOwnedActionButton(container, "bar5", "QUI_Bar5Button3", 3)
+pingBtn.attributes.action = 13
+
+local blizzardSwirl = CreateFrame("Frame", nil, pingBtn, "ActionBarButtonAssistedCombatRotationTemplate")
+assert(blizzardSwirl.scripts.OnUpdate == templateOnUpdate,
+    "sanity: the swirl template must arrive with its OnUpdate bound")
+pingBtn.AssistedCombatRotationFrame = blizzardSwirl
+
+actionBars.SafeUpdate = noop
+pingBtn:Update()
+actionBars.SafeUpdate = realSafeUpdate
+
+check("the Update override neuters a swirl OnUpdate that Blizzard's UpdateAction created",
+    blizzardSwirl.scripts.OnUpdate == nil,
+    "UpdateAction:540 creates it one line above the Update() the override replaces")
+
+testInCombat = true
+pingBtn:UpdatePingAttributes()
+
+check("UpdatePingAttributes defers in combat instead of firing a protected SetAttribute",
+    pingUpdateCounts[pingBtn] == nil,
+    "pingUpdates=" .. tostring(pingUpdateCounts[pingBtn]))
+
+testInCombat = false
+env.FlushPendingPingAttributes()
+
+check("the deferred ping attribute update is flushed when combat ends",
+    pingUpdateCounts[pingBtn] == 1,
+    "pingUpdates=" .. tostring(pingUpdateCounts[pingBtn]))
+
+pingBtn:UpdatePingAttributes()
+
+check("out of combat the ping attribute update passes straight through to Blizzard",
+    pingUpdateCounts[pingBtn] == 2,
+    "pingUpdates=" .. tostring(pingUpdateCounts[pingBtn]))
 
 print(string.format("actionbars_owned_update_override_test: checks complete, %d failed", fails))
 if fails > 0 then os.exit(1) end
