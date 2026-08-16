@@ -4093,9 +4093,13 @@ local function DoRangeCheck()
             if rangeChanged then
                 _range.cache[unit] = inRange
             end
+            local GFA = ns.QUI_GroupFrameAuras
             for i = 1, #list do
                 local frame = list[i]
                 if frame and frame:IsShown() then
+                    if rangeChanged and GFA and GFA.ApplyRangeGate then
+                        GFA.ApplyRangeGate(frame, inRange)
+                    end
                     local rangeSettings = GetRangeSettings(frame._isRaid)
                     if rangeSettings and rangeSettings.enabled ~= false then
                         local outAlpha = rangeSettings.outOfRangeAlpha or 0.4
@@ -4506,8 +4510,12 @@ function _state.HandleRangeUpdate(unit)
     local isSecret = issecretvalue and (issecretvalue(inRange) or issecretvalue(cached))
     if isSecret or cached ~= inRange then
         _range.cache[unit] = inRange
+        local GFA = ns.QUI_GroupFrameAuras
         for i = 1, #frames do
             local frame = frames[i]
+            if GFA and GFA.ApplyRangeGate then
+                GFA.ApplyRangeGate(frame, inRange)
+            end
             local rangeSettings = GetRangeSettings(frame._isRaid)
             if rangeSettings and rangeSettings.enabled ~= false then
                 local outAlpha = rangeSettings.outOfRangeAlpha or 0.4

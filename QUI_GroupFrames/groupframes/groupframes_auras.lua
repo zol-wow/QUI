@@ -1201,6 +1201,42 @@ end
 
 local ApplyStripContainers
 
+-- Blizzard's BIG_DEFENSIVE / EXTERNAL_DEFENSIVE filters fail open on
+-- distance-obfuscated aura data: for out-of-range units the engine matches
+-- arbitrary buffs, so classification strips show icons with nothing up
+-- (pre-engine fix: PR #484). Lua cannot re-verify engine-rendered auras,
+-- so fail closed instead: blank gated strips while the unit is out of range.
+-- >>> QUI_TEST_EXTRACT range_gate
+local function ElementNeedsRangeGate(element)
+    if not element or element.mode ~= "filterStrip" then return false end
+    if element.filterMode ~= "classify" then return false end
+    local c = element.classifications
+    return type(c) == "table"
+        and (c.bigDefensive == true or c.externalDefensive == true)
+end
+
+function QUI_GFA.ApplyRangeGate(frame, inRange)
+    local pool = frame and frame._quiAuraContainers
+    if not pool then return end
+    if not IsSecretValue(inRange) and inRange == nil then
+        local GF = ns.QUI_GroupFrames
+        local unit = GetFrameUnit(frame)
+        if not (unit and GF and GF.CheckUnitRange) then return end
+        inRange = GF.CheckUnitRange(unit)
+    end
+    for i = 1, #pool do
+        local container = pool[i]
+        if container and container._quiRangeGated then
+            if container.SetAlphaFromBoolean then
+                container:SetAlphaFromBoolean(inRange, 1, 0)
+            elseif not IsSecretValue(inRange) then
+                container:SetAlpha(inRange == false and 0 or 1)
+            end
+        end
+    end
+end
+-- <<< QUI_TEST_EXTRACT range_gate
+
 local function QueueContainerCombatWork(frame)
     AuraGlue = AuraGlue or ns.AuraGlue
     if not AuraGlue then return end
@@ -1259,6 +1295,11 @@ local function ApplyElementPass(frame, allowCreate)
             return AuraGlue.ElementProfile(element, profileOverrides)
         end,
         anchorContainer = function(container, host, element)
+            local gated = ElementNeedsRangeGate(element)
+            if container._quiRangeGated and not gated then
+                container:SetAlpha(1)
+            end
+            container._quiRangeGated = gated
             AnchorElementContainer(container, host, element)
         end,
         onContainerReady = function(container, host)
@@ -1271,6 +1312,7 @@ local function ApplyElementPass(frame, allowCreate)
         end,
         onIncomplete = QueueContainerCombatWork,
     })
+    QUI_GFA.ApplyRangeGate(frame)
 end
 
 function ApplyStripContainers(frame)
