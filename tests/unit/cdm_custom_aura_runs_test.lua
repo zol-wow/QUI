@@ -9,6 +9,10 @@ local function Frame(name)
     function frame:SetPoint(...) self.points[#self.points + 1] = { ... } end
     function frame:SetSize(w, h) self.width, self.height = w, h end
     function frame:SetUnit(unit) self.unit = unit end
+    function frame:SetAuraGroupMaxFrameCount(key, count)
+        self.maxFrameCountCalls = self.maxFrameCountCalls or {}
+        self.maxFrameCountCalls[#self.maxFrameCountCalls + 1] = { key, count }
+    end
     function frame:SetEnabled(enabled) self.enabled = enabled end
     function frame:Show() self.shown = true end
     function frame:Hide() self.shown = false end
@@ -157,17 +161,22 @@ assert(controller.unit == "player"
 
 local friendlyOwner = Frame("friendly-owner")
 local friendlyProxy = Frame("friendly-proxy")
+local friendlyProxyB = Frame("friendly-proxy-b")
 friendlyProxy._spellEntry = { spellID = 333, kind = "aura", _useManagedAura = true }
+friendlyProxyB._spellEntry = { spellID = 333, kind = "aura", _useManagedAura = true }
 local friendlySettings = {
     containerType = "customBar",
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
     row1 = { iconCount = 1 },
-    entries = { { id = 333, kind = "aura" } },
+    entries = { { id = 333, kind = "aura" }, { id = 333, kind = "aura" } },
 }
 local friendlyPlan = {
     metrics = { iconWidth = 30 },
-    placements = { { icon = friendlyProxy, rowConfig = row, x = 0, y = 0 } },
+    placements = {
+        { icon = friendlyProxy, rowConfig = row, x = 0, y = 0 },
+        { icon = friendlyProxyB, rowConfig = row, x = 32, y = 0 },
+    },
 }
 assert(ns.CDMCustomAuraRuns.Apply(friendlyOwner, friendlySettings, friendlyPlan) == true)
 local friendlyController = friendlyOwner._quiCDMAuraRuns[1]
@@ -177,6 +186,9 @@ assert(friendlyController.unit == "target"
     and friendlyConfig.groups[1].maxFrameCount == 1
     and friendlyConfig.groups[1].cancelButtons == nil,
     "non-self helpful entries must activate on friendly targets")
+assert(#friendlyConfig.groups == 2 and friendlyConfig.groups[2].groupSpacing == nil
+    and friendlyConfig.profile.spacing == 2,
+    "adjacent aura groups must use row spacing exactly once")
 
 local harmfulOwner = Frame("harmful-owner")
 local harmfulProxy = Frame("harmful-proxy")
@@ -199,7 +211,10 @@ assert(harmfulController.unit == "target" and harmfulConfig.groups[1].maxFrameCo
     "harmful entries must park on friendly targets")
 
 target.friendly, target.attackable = false, true
+local configuredBeforeRefresh = #configured
 ns.CDMCustomAuraRuns.RefreshTargets()
+assert(#configured == configuredBeforeRefresh,
+    "target refreshes must not rebuild secure aura layouts")
 harmfulConfig = LastConfig(harmfulController)
 assert(harmfulController.unit == "target"
     and harmfulConfig.groups[1].filter == "HARMFUL|PLAYER"
@@ -209,6 +224,14 @@ assert(harmfulController.unit == "target"
 friendlyConfig = LastConfig(friendlyController)
 assert(friendlyConfig.groups[1].maxFrameCount == 0,
     "non-self helpful entries must park on enemy targets")
+local friendlyCalls = #(friendlyController.maxFrameCountCalls or {})
+local harmfulCalls = #(harmfulController.maxFrameCountCalls or {})
+assert(friendlyCalls == 2 and harmfulCalls == 1,
+    "target refreshes must update only changed group capacities")
+ns.CDMCustomAuraRuns.RefreshTargets()
+assert(#(friendlyController.maxFrameCountCalls or {}) == friendlyCalls
+    and #(harmfulController.maxFrameCountCalls or {}) == harmfulCalls,
+    "unchanged target refreshes must not mutate secure groups")
 
 local disabledSettings = {
     containerType = "customBar",
@@ -223,6 +246,31 @@ assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan) == true)
 local containersFile = assert(io.open("QUI_CDM/cdm/cdm_containers.lua", "rb"))
 local containersSource = containersFile:read("*a")
 containersFile:close()
+local deferStart = assert(containersSource:find(
+    "local function ShouldDeferContainerLayoutInCombat", 1, true))
+local deferStop = assert(containersSource:find(
+    "\nlocal function GetDefaultsByContainerType", deferStart, true))
+local deferSource = containersSource:sub(deferStart, deferStop - 1)
+deferSource = deferSource:gsub(
+    "^local function ShouldDeferContainerLayoutInCombat", "return function", 1)
+local inCombat = true
+local deferEnv = setmetatable({
+    ns = ns,
+    inInitSafeWindow = true,
+    InCombatLockdown = function() return inCombat end,
+}, { __index = _G })
+local deferChunk = assert(loadstring(deferSource,
+    "@cdm_containers.lua#ShouldDeferContainerLayoutInCombat"))
+setfenv(deferChunk, deferEnv)
+local shouldDefer = deferChunk()
+assert(shouldDefer("custom", settings) == true,
+    "custom aura runs must defer creation even during the combat init window")
+assert(shouldDefer("custom", {
+        containerType = "customBar",
+        row1 = { iconCount = 1 },
+        entries = { { id = 111, kind = "cooldown" } },
+    }) == false,
+    "non-aura custom bars must retain the combat init window behavior")
 local layoutStart = assert(containersSource:find("local function LayoutContainer(trackerKey)", 1, true))
 local layoutStop = assert(containersSource:find("\nlocal function RunPostLayoutRefresh()", layoutStart, true))
 local layoutSource = containersSource:sub(layoutStart, layoutStop - 1)
@@ -239,15 +287,26 @@ local layoutEnv = setmetatable({
     Helpers = { IsEditModeActive = function() return false end },
     IsCDMRuntimeEnabled = function() return true end,
     GetTrackerSettings = function() return settings end,
-    ShouldDeferContainerLayoutInCombat = function() return false end,
+    ShouldDeferContainerLayoutInCombat = shouldDefer,
     GetHUDMinWidth = function() return false, 0 end,
-    InCombatLockdown = function() return false end,
+    InCombatLockdown = function() return inCombat end,
 }, { __index = globals })
 layoutEnv._G = layoutEnv
 local layoutChunk = assert(loadstring(layoutSource, "@cdm_containers.lua#LayoutContainer"))
 setfenv(layoutChunk, layoutEnv)
 local priorIcons = ns.CDMIcons
-ns.CDMIcons = { BuildIcons = function() return {} end }
+local buildCalls = 0
+ns.CDMIcons = { BuildIcons = function()
+    buildCalls = buildCalls + 1
+    return {}
+end }
+local createdBeforeCombat = #created
+local configuredBeforeCombat = #configured
+layoutChunk()("custom")
+assert(layoutEnv.specTrackingPendingRefresh == true and buildCalls == 0
+    and #created == createdBeforeCombat and #configured == configuredBeforeCombat,
+    "combat deferral must queue refresh without creating secure frames")
+inCombat = false
 layoutChunk()("custom")
 ns.CDMIcons = priorIcons
 assert(controller.enabled == false and controller.shown == false,

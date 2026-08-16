@@ -293,7 +293,10 @@ local function CreateIconBare(parent, spellEntry, layoutRestricted)
     icon.Icon = icon:CreateTexture(nil, "ARTWORK")
     icon.Icon:SetAllPoints(icon)
 
-    icon.Cooldown = CreateFrame("Cooldown", frameName .. "Cooldown", icon, "CooldownFrameTemplate")
+    local cooldownTemplate = layoutRestricted
+        and "CooldownFrameTemplate, DisableUntrustedLayoutScriptsTemplate"
+        or "CooldownFrameTemplate"
+    icon.Cooldown = CreateFrame("Cooldown", frameName .. "Cooldown", icon, cooldownTemplate)
     icon.Cooldown:SetAllPoints(icon)
     icon.Cooldown:SetDrawSwipe(true)
     icon.Cooldown:SetHideCountdownNumbers(false)
@@ -303,7 +306,7 @@ local function CreateIconBare(parent, spellEntry, layoutRestricted)
     icon._drawBlingEnabled = false
     icon.Cooldown:EnableMouse(false)
 
-    icon.TextOverlay = CreateFrame("Frame", nil, icon)
+    icon.TextOverlay = CreateFrame("Frame", nil, icon, template)
     icon.TextOverlay:SetAllPoints(icon)
     icon.TextOverlay:SetFrameLevel(icon.Cooldown:GetFrameLevel() + 2)
     icon.TextOverlay:EnableMouse(false)

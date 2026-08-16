@@ -48,6 +48,7 @@ _G.CreateFrame = function(frameType, name, parent, template)
     function frame:SetFrameLevel(value) self.frameLevel = value end
     function frame:GetFrameLevel() return self.frameLevel end
     function frame:EnableMouse(value) self.mouseEnabled = value end
+    function frame:RegisterForClicks(...) self.registeredClicks = { ... } end
     function frame:SetScript(script, callback) self[script] = callback end
     function frame:Show() self.shown = true end
     function frame:Hide() self.shown = false end
@@ -98,6 +99,12 @@ assert(plain.template == nil and plain._quiLayoutRestricted == nil,
 assert(restricted.template == "DisableUntrustedLayoutScriptsTemplate"
     and restricted._quiLayoutRestricted == true,
     "restricted icons must opt into the template at frame creation")
+assert(plain.Cooldown.template == "CooldownFrameTemplate" and plain.TextOverlay.template == nil,
+    "ordinary icon children must remain unrestricted")
+assert(restricted.Cooldown.template
+        == "CooldownFrameTemplate, DisableUntrustedLayoutScriptsTemplate"
+    and restricted.TextOverlay.template == "DisableUntrustedLayoutScriptsTemplate",
+    "restricted icon children must opt into the template at frame creation")
 
 restricted._runtimeSpellID = 777
 restricted.OnEnter(restricted)
@@ -121,5 +128,27 @@ assert(factory._recycleRestrictedProtectedPool[1] == restricted,
     "restricted protected icons must use their isolated protected pool")
 assert(factory:AcquireIcon(parent, entry, true, true) == restricted,
     "clickable restricted acquisition must reuse the protected restricted shell")
+
+local rendererFile = assert(io.open("QUI_CDM/cdm/cdm_icon_renderer.lua", "rb"))
+local rendererSource = rendererFile:read("*a")
+rendererFile:close()
+local clickStart = assert(rendererSource:find("local function EnsureClickButton(icon)", 1, true))
+local clickStop = assert(rendererSource:find("\nlocal function ClearClickButtonAttributes", clickStart, true))
+local clickSource = rendererSource:sub(clickStart, clickStop - 1)
+clickSource = clickSource:gsub("^local function EnsureClickButton", "return function", 1)
+local clickEnv = setmetatable({
+    CDMIcons = { EnsureTextOverlayLevel = noop },
+    SyncClickButtonFrameLevel = noop,
+}, { __index = _G })
+local clickChunk = assert(loadstring(clickSource, "@cdm_icon_renderer.lua#EnsureClickButton"))
+setfenv(clickChunk, clickEnv)
+local ensureClickButton = clickChunk()
+local plainClick = ensureClickButton({})
+local restrictedClick = ensureClickButton({ _quiLayoutRestricted = true })
+assert(plainClick.template == "SecureActionButtonTemplate",
+    "ordinary click overlays must remain unrestricted")
+assert(restrictedClick.template
+        == "SecureActionButtonTemplate, DisableUntrustedLayoutScriptsTemplate",
+    "restricted click overlays must opt into the template at frame creation")
 
 print("OK: cdm_icon_factory_layout_restricted_test")

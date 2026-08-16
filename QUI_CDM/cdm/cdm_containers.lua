@@ -1140,9 +1140,17 @@ local function IsBarShape(viewerType)
 end
 
 local function ShouldDeferContainerLayoutInCombat(trackerKey, settings)
-    if not InCombatLockdown() or inInitSafeWindow then
+    if not InCombatLockdown() then
         return false
     end
+
+    local auraRuns = ns.CDMCustomAuraRuns
+    if auraRuns and auraRuns.ShouldUseSettings(settings)
+        and auraRuns.HasAuraEntries(settings, trackerKey) then
+        return true
+    end
+
+    if inInitSafeWindow then return false end
 
     if trackerKey == "essential" or trackerKey == "utility" then
         return true

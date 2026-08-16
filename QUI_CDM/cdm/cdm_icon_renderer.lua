@@ -1578,7 +1578,10 @@ local function EnsureClickButton(icon)
         return icon.clickButton
     end
 
-    local btn = CreateFrame("Button", nil, icon, "SecureActionButtonTemplate")
+    local template = icon._quiLayoutRestricted
+        and "SecureActionButtonTemplate, DisableUntrustedLayoutScriptsTemplate"
+        or "SecureActionButtonTemplate"
+    local btn = CreateFrame("Button", nil, icon, template)
     btn:SetAllPoints()
     btn:RegisterForClicks("AnyUp", "AnyDown")
     btn:EnableMouse(true)

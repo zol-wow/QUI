@@ -144,7 +144,7 @@ local function AcquireRun(owner, index)
     return container, pool
 end
 
-local function BuildGroup(icon, index, spacing)
+local function BuildGroup(icon, index)
     local ids = CandidateIDs(icon._spellEntry)
     local include = {}
     for i = 1, #ids do include[ids[i]] = true end
@@ -154,7 +154,6 @@ local function BuildGroup(icon, index, spacing)
         filter = HELPFUL_FILTER,
         maxFrameCount = 1,
         candidateFilters = filters,
-        groupSpacing = index > 1 and spacing or 0,
     }
 end
 
@@ -186,12 +185,16 @@ local function HostileTarget()
         and UnitCanAttack and UnitCanAttack("player", "target") == true
 end
 
+local function RouteActive(route)
+    return route == "SELF_HELPFUL"
+        or (route == "HELPFUL" and FriendlyTarget())
+        or (route == "HARMFUL" and HostileTarget())
+end
+
 local function ApplyRoute(record)
     local unit = record.route == "SELF_HELPFUL" and "player" or "target"
     local filter = record.route == "HARMFUL" and HARMFUL_FILTER or HELPFUL_FILTER
-    local active = record.route == "SELF_HELPFUL"
-        or (record.route == "HELPFUL" and FriendlyTarget())
-        or (record.route == "HARMFUL" and HostileTarget())
+    local active = RouteActive(record.route)
     local cancel = record.route == "SELF_HELPFUL" and "RightButtonUp" or nil
     for i = 1, #record.groups do
         local group = record.groups[i]
@@ -211,7 +214,17 @@ function Runs.RefreshTargets()
         local records = owner._quiCDMAuraRunRecords
         if records then
             for i = 1, #records do
-                if records[i].route ~= "SELF_HELPFUL" then ApplyRoute(records[i]) end
+                local record = records[i]
+                if record.route ~= "SELF_HELPFUL" then
+                    local maxFrameCount = RouteActive(record.route) and 1 or 0
+                    for j = 1, #record.groups do
+                        local group = record.groups[j]
+                        if group.maxFrameCount ~= maxFrameCount then
+                            group.maxFrameCount = maxFrameCount
+                            record.container:SetAuraGroupMaxFrameCount(group.key, maxFrameCount)
+                        end
+                    end
+                end
             end
         end
     end
@@ -271,8 +284,7 @@ function Runs.Apply(owner, settings, layoutPlan)
                 runRecords[#runRecords + 1] = currentRun
                 chain[#chain + 1] = container
             end
-            currentRun.groups[#currentRun.groups + 1] = BuildGroup(
-                icon, #currentRun.groups + 1, placement.rowConfig.padding or 0)
+            currentRun.groups[#currentRun.groups + 1] = BuildGroup(icon, #currentRun.groups + 1)
             HideProxy(icon)
         else
             currentRun = nil
