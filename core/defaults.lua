@@ -123,6 +123,7 @@ local function NameplateTypeDefaults(renderMode)
             castImportantEnabled = false,
             castImportant       = { 1.00, 0.25, 0.25 },
             castInterruptReady  = { 0.30, 0.85, 0.40 },
+            castBg              = { 0.10, 0.10, 0.10, 0.90 },
             targetEnabled = false,
             target = { 1, 1, 1 },
             focusEnabled = true,
