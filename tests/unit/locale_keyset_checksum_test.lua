@@ -28,7 +28,7 @@ for _, loc in ipairs(LOCALES) do
     local got = checksumOf("core/locale/" .. loc .. ".lua")
     -- NOT gen_all_caches.sh: that script regenerates enUS.lua and the search
     -- cache and never writes an overlay, so running it here changes nothing.
-    -- Nor translate_delta.py, which needs a translation API key -- no new
+    -- Nor translate_delta.py, which needs a logged-in Codex session -- no new
     -- translation is required to fix this, only a new slot number.
     assert(got == base, ("%s keyset %s does not match enUS %s — the overlays are "
         .. "numbered for a different enUS key set, so every slot after the added or "
