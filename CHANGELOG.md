@@ -4,6 +4,59 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.0-beta6 - 2026-08-16
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+A fix pass across action bars, group frames, and the objective tracker: QUI's
+own action buttons stop dropping updates and throwing blocked-action errors in
+combat, group frame health colors and tracked aura bars work again, and the
+skinned objective tracker and Mythic+ timer keep updating through a fight.
+
+### Added
+
+- **Health bar colors for group frames without class coloring.** Group
+  frames can set their own health bar color when class coloring is off.
+- **Orientation and styling options for tracked aura bars.** Group frame
+  tracked aura bars expose orientation and styling controls alongside the
+  existing tracked aura settings.
+
+### Fixed
+
+- **Action bar buttons keep painting in combat.** QUI's action buttons
+  inherit the game's own button behaviour, and several of its update paths
+  either read values that go unreadable in combat or write protected
+  attributes, which silently stalled cooldowns, glows, and pressed states
+  until the fight ended. QUI now paints those buttons itself and queues the
+  protected writes until combat drops.
+- **The assisted rotation arrow shows on QUI's action bars.** The arrow
+  overlay marking the assisted combat rotation action was never created on
+  QUI-owned buttons, and its repaint timer could keep running against a
+  stale slot.
+- **The skinned objective tracker keeps updating.** Reading the tracker's
+  own geometry in combat froze its layout after the first unreadable value;
+  the tracker now holds position instead of stalling.
+- **Mythic+ timer objectives and progress bar update again.** Boss kills,
+  objective names, and the weighted progress bar are driven directly from
+  the game's values and catch up when combat ends.
+- **Group frame health colors and expiring aura bars work again.** Health
+  tints route through the shared aura feeder, and tracked aura bars recolor
+  during their expiring window.
+- **Tracked buff bars stay on the variant that actually rolled.** A buff bar
+  paired to one of the game's frames could freeze on whatever variant was
+  live when a fight started; its mirror now keeps ticking for as long as the
+  pairing exists.
+- **Cooldown Manager row opacity survives layout changes.** Reanchoring a
+  row's icons no longer resets their configured opacity.
+- **Cooldown Manager tooltips no longer error on unreadable auras.**
+
+### Changed
+
+- **Cooldown Manager mouseover detection does less work per frame.** The
+  detector rebuilt a viewer's whole child list once per child; it now builds
+  it once per frame.
+
 ## v5.2.0-beta5 - 2026-08-15
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
