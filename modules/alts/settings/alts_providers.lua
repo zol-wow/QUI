@@ -64,7 +64,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         L.headerAt(ns.L["Alts Module"])
         local s0 = L.sectionAt()
-        local enableW = GUI:CreateFormCheckbox(s0.frame, nil, "enabled", alts, function()
+        local enableW = GUI:CreateFormCheckbox(s0.frame, nil, "enabled", alts, function(enabled)
+            if ns.QUI_Modules and type(ns.QUI_Modules.SetEnabled) == "function" then
+                ns.QUI_Modules:SetEnabled("moduleFlag_alts", enabled, {
+                    suppressReloadPrompt = true,
+                })
+            end
             Refresh()
             ShowAltsModuleReloadPrompt()
         end, { description = ns.L["Account-wide character tracking window (/alts): roster, professions, reputations, weeklies, and item search across all your characters."] })

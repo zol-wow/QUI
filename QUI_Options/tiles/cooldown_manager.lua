@@ -14,6 +14,7 @@ function V2.Register(frame)
         id = "cooldown_manager",
         icon = "C",
         name = ns.L["Cooldown Manager"],
+        moduleFeatureId = "moduleAddon_QUI_CDM",
         primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "cdmEssential" },
         previewHeight = 230,
         navRoutes = {

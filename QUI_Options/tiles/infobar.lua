@@ -13,6 +13,7 @@ function V2InfoBar.Register(frame)
         id = "infobar",
         icon = "i",
         name = ns.L["Info Bar"],
+        moduleFeatureId = "moduleFlag_infobar",
         subPages = {
             {
                 id = "infobar",

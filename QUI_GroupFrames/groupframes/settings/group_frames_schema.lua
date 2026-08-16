@@ -424,7 +424,12 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
         ns.L["Enable QUI Group Frames (Req. Reload)"],
         "enabled",
         groupFrames.gfdb,
-        function()
+        function(enabled)
+            if ns.QUI_Modules and type(ns.QUI_Modules.SetEnabled) == "function" then
+                ns.QUI_Modules:SetEnabled("moduleAddon_QUI_GroupFrames", enabled, {
+                    suppressReloadPrompt = true,
+                })
+            end
             RefreshGroupFrames(groupFrames.contextMode)
             gui:ShowConfirmation({
                 title = ns.L["Reload UI?"],

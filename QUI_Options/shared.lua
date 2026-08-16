@@ -1361,6 +1361,7 @@ local function RegisterFeatureTile(frame, spec)
         name = spec.name,
         subtitle = spec.subtitle,
         isBottomItem = spec.isBottomItem,
+        moduleFeatureId = spec.moduleFeatureId,
         primaryCTA = spec.primaryCTA,
         relatedSettings = spec.relatedSettings,
         preview = previewHeight and {

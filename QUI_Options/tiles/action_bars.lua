@@ -13,6 +13,7 @@ function V2.Register(frame)
         id = "action_bars",
         icon = "A",
         name = ns.L["Action Bars"],
+        moduleFeatureId = "moduleAddon_QUI_ActionBars",
         primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "bar1" },
         preview = {
             height = 110,
