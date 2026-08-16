@@ -270,6 +270,45 @@ ActionBarsOwned._assistedCombatEverActive = false
 
 _assistRotationButton = nil
 
+local assistTicker, assistTickerRate
+
+local function StopAssistTicker()
+    if assistTicker then
+        assistTicker:Cancel()
+        assistTicker = nil
+        assistTickerRate = nil
+    end
+end
+
+local function AssistTickRate()
+    local manager = _G.AssistedCombatManager
+    local rate = manager and manager.GetUpdateRate and manager:GetUpdateRate()
+    if type(rate) ~= "number" or rate <= 0 then return 0.2 end
+    return rate
+end
+
+local function AssistTick()
+    local button = _assistRotationButton
+    if not button then
+        StopAssistTicker()
+        return
+    end
+    local slot = GetSafeActionSlot(button)
+    if not slot then return end
+    if C_ActionBar.ForceUpdateAction then
+        C_ActionBar.ForceUpdateAction(slot, true)
+    end
+    ns.SafeCall("best-effort-style", ActionBarsOwned.SafeUpdate, button)
+end
+
+local function ArmAssistTicker()
+    local rate = AssistTickRate()
+    if assistTicker and assistTickerRate == rate then return end
+    StopAssistTicker()
+    assistTickerRate = rate
+    assistTicker = C_Timer.NewTicker(rate, AssistTick)
+end
+
 UpdateAssistedCombatRotationFrame = function(button)
     if not (C_ActionBar and C_ActionBar.IsAssistedCombatAction) then return end
     local frame = button.AssistedCombatRotationFrame
@@ -286,20 +325,23 @@ UpdateAssistedCombatRotationFrame = function(button)
         ActionBarsOwned._assistedCombatEverActive = true
         frame = CreateFrame("Frame", nil, button, "ActionBarButtonAssistedCombatRotationTemplate")
         button.AssistedCombatRotationFrame = frame
-        _assistRotationButton = button
-        if not button.OnActionBarSlotChanged then
-            button.OnActionBarSlotChanged = function(self)
-                local slot = GetSafeActionSlot(self)
-                if slot and ClearNewActionHighlight then ClearNewActionHighlight(slot, true) end
-                if self.Update then self:Update() end
-            end
-        end
         frame:SetFrameLevel(button:GetFrameLevel() + 5)
     end
     if frame then
+        if frame:GetScript("OnUpdate") then
+            frame:SetScript("OnUpdate", nil)
+        end
         frame:UpdateState()
         frame:SetFrameLevel(button:GetFrameLevel() + 5)
     end
+    if show then
+        _assistRotationButton = button
+        ArmAssistTicker()
+    elseif button == _assistRotationButton then
+        _assistRotationButton = nil
+        StopAssistTicker()
+    end
+    return show
 end
 
 function UpdateAllAssistedCombatRotation()
