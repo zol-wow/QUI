@@ -66,6 +66,24 @@ function EnsureOwnedActionButton(container, barKey, btnName, index)
                 if f == btn then broadcaster.frames[k] = nil end
             end
         end
+        btn.Update = function(self)
+            ns.SafeCall("best-effort-style", ActionBarsOwned.SafeUpdate, self)
+            if HasButtonContent(self, GetSafeActionSlot(self)) then
+                self:UpdateTypeOverlay()
+                self:UpdateHighlightMark()
+            else
+                self:ClearTypeOverlay()
+            end
+        end
+        local castAnim = btn.SpellCastAnimFrame
+        if type(castAnim) == "table" and castAnim.SetScript then
+            local owner = btn
+            castAnim:SetScript("OnHide", function()
+                if owner.ClearReticle then owner:ClearReticle() end
+                if owner.cooldown then owner.cooldown:SetSwipeColor(0, 0, 0, 1) end
+                ScheduleABCooldownUpdate(true)
+            end)
+        end
         btn:SetScript("OnShow", nil)
         btn:SetScript("OnHide", nil)
         if btn.QuickKeybindButtonOnShow and btn.QuickKeybindButtonOnHide then
