@@ -14,6 +14,7 @@ function V2.Register(frame)
         id = "unit_frames",
         icon = "U",
         name = ns.L["Unit Frames"],
+        moduleFeatureId = "moduleAddon_QUI_UnitFrames",
         primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "playerFrame" },
         previewHeight = 180,
         navRoutes = {

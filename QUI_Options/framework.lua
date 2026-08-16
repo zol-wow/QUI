@@ -786,6 +786,20 @@ local function BroadcastToSiblings(widget, val)
     end
 end
 
+function GUI:RefreshWidgetInstances()
+    for _, instances in pairs(self.WidgetInstances or {}) do
+        for _, widget in ipairs(instances) do
+            if widget and type(widget.Refresh) == "function" then
+                if ns.SafeCallMethod then
+                    ns.SafeCallMethod("bulkhead", widget, "Refresh")
+                else
+                    widget.Refresh()
+                end
+            end
+        end
+    end
+end
+
 local function GetProviderSyncContext(frame)
     local current = frame
     local depth = 0
@@ -5929,10 +5943,25 @@ function GUI:AddFeatureTile(frame, config)
     end
     tile.text:SetText(config.name)
     tile.text:SetPoint("LEFT", tile, "LEFT", textX, 0)
-    tile.text:SetPoint("RIGHT", tile, "RIGHT", -10, 0)
+    tile.text:SetPoint("RIGHT", tile, "RIGHT", config.moduleFeatureId and -44 or -10, 0)
     tile.text:SetJustifyH("LEFT")
     tile.text:SetWordWrap(false)
     tile.text:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1)
+
+    if config.moduleFeatureId then
+        local settings = ns.Settings
+        local registry = settings and settings.Registry
+        local feature = registry and type(registry.GetFeature) == "function"
+            and registry:GetFeature(config.moduleFeatureId)
+        local entry = feature and feature.moduleEntry
+        local modulesPage = ns.QUI_ModulesPage
+        if type(entry) == "table" and modulesPage
+            and type(modulesPage.CreateModuleTogglePill) == "function" then
+            tile.moduleToggle = modulesPage.CreateModuleTogglePill(
+                tile, config.moduleFeatureId, entry)
+            tile.moduleToggle:SetPoint("RIGHT", tile, "RIGHT", -8, 1)
+        end
+    end
 
     frame._tiles[index] = tile
 

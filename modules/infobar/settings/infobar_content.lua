@@ -134,7 +134,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         L.headerAt(ns.L["General"])
         local g = L.sectionAt()
 
-        local enW = GUI:CreateFormCheckbox(g.frame, nil, "enabled", db, RefreshInfoBar,
+        local enW = GUI:CreateFormCheckbox(g.frame, nil, "enabled", db, function(enabled)
+            if ns.QUI_Modules and type(ns.QUI_Modules.SetEnabled) == "function" then
+                ns.QUI_Modules:SetEnabled("moduleFlag_infobar", enabled)
+            end
+            RefreshInfoBar()
+        end,
             { description = ns.L["Show the full-width info bar. The Info Bar module itself must also be enabled on the Module Addons page."] })
         local posW = GUI:CreateFormDropdown(g.frame, nil, {
             { value = "TOP", text = ns.L["Top"] },

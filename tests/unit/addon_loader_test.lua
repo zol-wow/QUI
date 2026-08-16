@@ -125,8 +125,8 @@ do
     assert(login == 7, "7 login-class entries, got " .. login)
     assert(lod == 2, "2 lod folder entries (QUI_DamageMeter/QUI_Bags), got " .. lod)
     assert(coreModule == 5, "5 coreModule entries (minimap/infobar/alts/datatexts/skinning), got " .. coreModule)
-    assert(#legacyFlagFolders == 4,
-        "exactly 4 legacyFlag entries, got " .. #legacyFlagFolders)
+    assert(#legacyFlagFolders == 5,
+        "exactly 5 legacyFlag entries, got " .. #legacyFlagFolders)
     -- Sort for deterministic comparison (manifest order may vary)
     table.sort(legacyFlagFolders)
     assert(legacyFlagFolders[1] == "QUI_Bags",
@@ -137,6 +137,8 @@ do
         "3rd legacyFlag entry must be QUI_GroupFrames, got " .. tostring(legacyFlagFolders[3]))
     assert(legacyFlagFolders[4] == "QUI_Nameplates",
         "4th legacyFlag entry must be QUI_Nameplates, got " .. tostring(legacyFlagFolders[4]))
+    assert(legacyFlagFolders[5] == "QUI_UnitFrames",
+        "5th legacyFlag entry must be QUI_UnitFrames, got " .. tostring(legacyFlagFolders[5]))
     table.sort(coreModules)
     assert(table.concat(coreModules, ",") == "alts,datatexts,infobar,minimap,skinning",
         "coreModule entries must be alts/datatexts/infobar/minimap/skinning, got " .. table.concat(coreModules, ","))

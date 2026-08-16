@@ -16,6 +16,9 @@ skinned objective tracker and Mythic+ timer keep updating through a fight.
 
 ### Added
 
+- **Quick feature toggles in the options sidebar.** Applicable feature
+  sections expose their master switch beside the section name, synchronized
+  with both Feature Toggles and the feature's own General tab.
 - **Health bar colors for group frames without class coloring.** Group
   frames can set their own health bar color when class coloring is off.
 - **Orientation and styling options for tracked aura bars.** Group frame

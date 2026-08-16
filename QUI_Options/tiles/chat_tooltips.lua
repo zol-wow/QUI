@@ -13,6 +13,7 @@ function V2.Register(frame)
         id = "chat_tooltips",
         icon = "T",
         name = ns.L["Chat & Tooltips"],
+        moduleFeatureId = "moduleAddon_QUI_Chat",
         subPages = {
             {
                 id = "chat",

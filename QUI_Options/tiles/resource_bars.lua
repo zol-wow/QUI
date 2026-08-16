@@ -16,6 +16,7 @@ function V2.Register(frame)
         id = "resource_bars",
         icon = "R",
         name = ns.L["Resource Bars"],
+        moduleFeatureId = "moduleAddon_QUI_ResourceBars",
         primaryCTA = { label = ns.L["Edit in Layout Mode"], moverKey = "primaryPower" },
         preview = {
             height = 120,
