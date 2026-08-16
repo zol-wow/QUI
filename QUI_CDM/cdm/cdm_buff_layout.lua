@@ -531,13 +531,6 @@ local function GetTrackedBarSpellData(frame)
         end
     end
 
-    if linkedSpellID then
-        local spellInfo = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(linkedSpellID)
-        if spellInfo and spellInfo.name then
-            name = spellInfo.name
-        end
-    end
-
     if not name then
         name = GetTrackedBarName(frame) or GetTrackedBarName(frame.Bar)
     end
@@ -609,15 +602,11 @@ local function GetTrackedBarRuntimeEntries()
 
     local entries = {}
     local selection = viewer.Selection
-    local okN, numChildren = pcall(viewer.GetNumChildren, viewer)
-    if not okN or not numChildren or numChildren == 0 then
-        return entries
-    end
+    local pool = viewer.itemFramePool
+    if not (pool and pool.EnumerateActive) then return entries end
 
-    local children = { viewer:GetChildren() }
-    for ci = 1, numChildren do
-        local child = children[ci]
-        if child and child ~= selection and child.IsObjectType and child:IsObjectType("Frame")
+    for child in pool:EnumerateActive() do
+        if child ~= selection and child.IsObjectType and child:IsObjectType("Frame")
             and child.Bar and child.Bar.IsObjectType and child.Bar:IsObjectType("StatusBar")
             and (child.cooldownID or child.layoutIndex) then
             local spellData = GetTrackedBarSpellData(child)

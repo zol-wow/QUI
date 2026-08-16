@@ -525,13 +525,7 @@ local function MergeTrackedRuntimeFields(configured, runtime)
     if out.overrideSpellID == nil then out.overrideSpellID = runtime.overrideSpellID end
     out.linkedSpellID = runtime.linkedSpellID
     if (out.name == nil or out.name == "") and runtime.name then out.name = runtime.name end
-    if runtime.linkedSpellID ~= nil and runtime.name and runtime.name ~= "" then
-        out.name = runtime.name
-    end
     if out.iconTexture == nil then out.iconTexture = runtime.iconTexture end
-    if runtime.linkedSpellID ~= nil and runtime.iconTexture ~= nil then
-        out.iconTexture = runtime.iconTexture
-    end
     out.cooldownID = runtime.cooldownID
     out.layoutIndex = runtime.layoutIndex
     out._instanceKey = runtime._instanceKey
@@ -1059,7 +1053,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
     if not needsRebuild then
         for i, bar in ipairs(barPool) do
             local entry = spellList[i]
-            local entrySpellID = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.id
+            local entrySpellID = entry.overrideSpellID or entry.spellID or entry.id
             if bar._spellID ~= entrySpellID or bar._instanceKey ~= entry._instanceKey then
                 needsRebuild = true
                 break
@@ -1083,7 +1077,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
                     bar._instanceKey = entry._instanceKey
                     bar._isTotemInstance = entry._isTotemInstance and true or false
                     bar._totemSlot = entry._totemSlot
-                    bar._spellID = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.id
+                    bar._spellID = entry.overrideSpellID or entry.spellID or entry.id
                     bar._blzChild = entry._blzFrame or bar._blzChild
                     bar._blzCooldownID = entry._blzFrame and entry.cooldownID or bar._blzCooldownID
                     if entry._blzFrame then bar._blzChildMissAt = nil end
@@ -1104,7 +1098,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
         bar._isTotemInstance = entry._isTotemInstance and true or false
         bar._totemSlot = entry._totemSlot
 
-        local spellID = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.id
+        local spellID = entry.overrideSpellID or entry.spellID or entry.id
         bar._spellID = spellID
 
         bar._blzChild = entry._blzFrame
@@ -1127,7 +1121,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
             elseif not texID and entry.type == "spell" then
                 local iconSid
                 if entry.isAura then
-                    iconSid = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.id or spellID
+                    iconSid = entry.overrideSpellID or entry.spellID or entry.id or spellID
                 else
                     iconSid = entry.overrideSpellID or entry.id or spellID
                 end
@@ -1407,13 +1401,10 @@ end
 
 local function FindBlzChildByCooldownID(cooldownID)
     local viewer = _G.BuffBarCooldownViewer
-    if not viewer or not viewer.GetChildren then return nil end
-    local ok, numChildren = pcall(viewer.GetNumChildren, viewer)
-    if not ok or not numChildren then return nil end
-    local children = { viewer:GetChildren() }
-    for ci = 1, numChildren do
-        local child = children[ci]
-        if child and child.Bar then
+    local pool = viewer and viewer.itemFramePool
+    if not (pool and pool.EnumerateActive) then return nil end
+    for child in pool:EnumerateActive() do
+        if child.Bar then
             local cid = child.cooldownID
             if not (issecretvalue and issecretvalue(cid)) and cid == cooldownID then
                 return child
@@ -1513,10 +1504,10 @@ pairedMirrorFrame:SetScript("OnUpdate", function(self, elapsed)
     pairedMirrorAccum = 0
     local anyPaired = false
     for _, bar in ipairs(barPool) do
-        if bar._isOwnedBar and bar._active and bar:IsShown() then
+        if bar._isOwnedBar and bar._blzCooldownID then
+            anyPaired = true
             local blz = GetPairedBlzChild(bar)
             if blz then
-                anyPaired = true
                 MirrorPairedBarVisuals(bar, blz)
             end
         end
@@ -1541,7 +1532,7 @@ local function UpdatePairedBarState(bar, blz)
         bar._mirrorWasShown = nil
     end
     StoreBarRuntimeState(bar, active and "aura" or "inactive", active, nil)
-    if active and pairedMirrorFrame.Show then
+    if pairedMirrorFrame.Show then
         pairedMirrorFrame:Show()
     end
 end
