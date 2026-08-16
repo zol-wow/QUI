@@ -1799,6 +1799,12 @@ local function GetSecondaryResourceValue(resource)
         return max, fillValue, current, "number"
     end
 
+    if resource == Enum.PowerType.Runes then
+        local current = UnitPower("player", resource)
+        local max = UnitPowerMax("player", resource)
+        return max, current, current, "number"
+    end
+
     if resource == Enum.PowerType.SoulShards then
         local _, class = UnitClass("player")
         -- @secret-policy: collapse-only — secret class takes the generic shard path below
@@ -3172,7 +3178,7 @@ function QUICore:UpdateSecondaryPowerBarValue(forceShown)
     bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b, color.a or 1)
 
     local max, current, displayValue, valueType = GetSecondaryResourceValue(resource)
-    if valueType == "secret" and resource ~= Enum.PowerType.Runes then
+    if valueType == "secret" then
         -- @secret-policy: keep-visible-when-unknown + sink-passthrough — the
         if bar.FragmentedPowerBars then
             for _, fragmentBar in ipairs(bar.FragmentedPowerBars) do
@@ -3187,7 +3193,7 @@ function QUICore:UpdateSecondaryPowerBarValue(forceShown)
         SafeShow(bar)
         return "secret", max, resource
     end
-    if valueType ~= "secret" and not max then
+    if type(max) == "nil" then
         if renewingMistUpdateRunning then
             bar:SetScript("OnUpdate", nil)
             renewingMistUpdateRunning = false

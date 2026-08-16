@@ -73,7 +73,7 @@ check("primary power color is applied before the value sinks",
     primaryColor < primarySink)
 
 local secondaryStart = assert(runtime:find("function QUICore:UpdateSecondaryPowerBarValue", 1, true))
-local secondarySecret = assert(runtime:find('if valueType == "secret" and resource ~= Enum.PowerType.Runes then', secondaryStart, true))
+local secondarySecret = assert(runtime:find('if valueType == "secret" then', secondaryStart, true))
 local secondaryColor = assert(runtime:find("GetConfiguredResourceColor(cfg, resource)", secondaryStart, true))
 check("secondary power color is applied before the secret-value early return",
     secondaryColor < secondarySecret)
