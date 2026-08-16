@@ -5,6 +5,7 @@ if not NP then return end
 local type = type
 local pairs = pairs
 local pcall = pcall
+local rawget = rawget
 local wipe = wipe
 local CreateFrame = CreateFrame
 
@@ -20,34 +21,51 @@ NPPresets.EXCLUDED_KEYS = EXCLUDED_KEYS
 
 local CopyDeep = NP.CopyDeep
 NPPresets.CopyDeep = CopyDeep
+local IsArrayLike = NP.IsArrayLike
+
+local function MergeDeep(target, patch)
+    for k, v in pairs(patch) do
+        if type(v) == "table" and not IsArrayLike(v) then
+            if type(target[k]) ~= "table" then target[k] = {} end
+            MergeDeep(target[k], v)
+        else
+            target[k] = CopyDeep(v)
+        end
+    end
+end
 
 function NPPresets.Snapshot(settings)
     settings = settings or NP.GetSettings()
-    local snap = {}
-    for k, v in pairs(settings) do
-        if not EXCLUDED_KEYS[k] then
-            snap[k] = CopyDeep(v)
-        end
+    local shipped = ns.defaults and ns.defaults.profile and ns.defaults.profile.nameplates
+    local snap = type(shipped) == "table" and CopyDeep(shipped) or {}
+    MergeDeep(snap, settings)
+    for k in pairs(EXCLUDED_KEYS) do
+        snap[k] = nil
     end
     return snap
 end
 
 function NPPresets.ApplySnapshot(settings, snap)
     if type(settings) ~= "table" or type(snap) ~= "table" then return false end
-    for k, v in pairs(snap) do
-        if not EXCLUDED_KEYS[k] then
-            if type(v) == "table" then
-                if type(settings[k]) ~= "table" then
-                    settings[k] = {}
-                else
-                    wipe(settings[k])
-                end
-                for k2, v2 in pairs(CopyDeep(v)) do
-                    settings[k][k2] = v2
-                end
+    local complete = NPPresets.Snapshot(snap)
+    for k in pairs(settings) do
+        if not EXCLUDED_KEYS[k] and complete[k] == nil then
+            settings[k] = nil
+        end
+    end
+    for k, v in pairs(complete) do
+        if type(v) == "table" then
+            local target = rawget(settings, k)
+            if type(target) ~= "table" then
+                settings[k] = CopyDeep(v)
             else
-                settings[k] = v
+                wipe(target)
+                for k2, v2 in pairs(CopyDeep(v)) do
+                    target[k2] = v2
+                end
             end
+        else
+            settings[k] = v
         end
     end
     return true
@@ -71,19 +89,6 @@ NPPresets.STARTER_STYLES = STARTER_STYLES
 
 function NPPresets.GetStarterStyleKeys()
     return { "default", "compact", "chunky" }
-end
-
-local IsArrayLike = NP.IsArrayLike
-
-local function MergeDeep(target, patch)
-    for k, v in pairs(patch) do
-        if type(v) == "table" and not IsArrayLike(v) then
-            if type(target[k]) ~= "table" then target[k] = {} end
-            MergeDeep(target[k], v)
-        else
-            target[k] = CopyDeep(v)
-        end
-    end
 end
 
 function NPPresets.ApplyStyleTable(styleKey)
