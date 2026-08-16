@@ -22,9 +22,10 @@ from tools.i18n.lua_literal import unescape_lua_string
 ENUS = ROOT / "core/locale/enUS.lua"
 MT_DIR = ROOT / "tools/i18n/_mt"
 
-LOCALES = ["esES", "esMX", "frFR", "itIT", "ptBR", "ruRU", "koKR", "zhCN", "zhTW"]
+LOCALES = ["deDE", "esES", "esMX", "frFR", "itIT", "ptBR", "ruRU", "koKR", "zhCN", "zhTW"]
 
 LANG_NAMES = {
+    "deDE": "German",
     "esES": "Spanish for Spain",
     "esMX": "Spanish for Latin America",
     "frFR": "French",
@@ -172,7 +173,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--locales", default=",".join(LOCALES))
     ap.add_argument("--shard-size", type=int, default=250)
-    ap.add_argument("--model", default="gpt-5.4-mini")
+    ap.add_argument("--model", default="gpt-5.6-luna")
     ap.add_argument("--reasoning-effort", default="low")
     ap.add_argument("--timeout-seconds", type=int, default=900)
     ap.add_argument("--jobs", type=int, default=1)

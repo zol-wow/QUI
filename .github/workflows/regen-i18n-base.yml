@@ -92,7 +92,7 @@ jobs:
         # Nothing is committed yet at this point, so HEAD is still the
         # pre-regen commit and the old key array it re-slots FROM is the one
         # the committed overlays were actually numbered against. It needs no
-        # translation API key — no new translation happens, only a change of
+        # translation credentials — no new translation happens, only a change of
         # slot number — and when the key set did not move it says so and writes
         # nothing, which keeps the "nothing to commit" path below intact.
         run: |

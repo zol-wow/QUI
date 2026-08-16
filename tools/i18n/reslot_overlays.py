@@ -16,7 +16,7 @@ fires.
 Nothing else in the tree can fix that:
   * tools/i18n/gen_all_caches.sh regenerates enUS.lua and the search cache but
     never writes an overlay;
-  * tools/i18n/translate_delta.py can, but needs a translation API key, and no
+  * tools/i18n/translate_delta.py can, but needs a logged-in Codex session, and no
     new translation is required here -- every string already exists, it just
     needs a different slot number;
   * tools/i18n/migrate_overlays_positional.py is the retired one-shot that

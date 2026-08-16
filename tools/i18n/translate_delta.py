@@ -8,13 +8,14 @@ writes QUI_Locale_<loc>/<loc>.lua, and updates state.json.
 Usage:
   python3 tools/i18n/translate_delta.py --locales deDE,frFR        # real run
   python3 tools/i18n/translate_delta.py --mock --locales deDE      # offline self-test
-Model/params for the real translator: see the claude-api skill before wiring.
+The real translator uses the logged-in Codex CLI session.
 """
-import argparse, hashlib, importlib, json, os, re, shutil, subprocess, sys, tempfile
+import argparse, hashlib, json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.i18n.lua_literal import unescape_lua_string
+from tools.i18n.translate_gpt_codex import run_codex
 
 LOCALES = ["deDE","esES","esMX","frFR","itIT","ptBR","ruRU","koKR","zhCN","zhTW"]
 ENUS = "core/locale/enUS.lua"
@@ -323,63 +324,18 @@ def write_locale(loc, table, generator="tools/i18n/translate_delta.py"):
     open(overlay_path(loc), "w", encoding="utf-8").write(
         overlay_bytes(loc, table, generator))
 
-LANG_NAMES = {
-    "deDE": "German", "esES": "Spanish (Spain)", "esMX": "Spanish (Latin America)",
-    "frFR": "French", "itIT": "Italian", "ptBR": "Portuguese (Brazil)",
-    "ruRU": "Russian", "koKR": "Korean", "zhCN": "Simplified Chinese",
-    "zhTW": "Traditional Chinese",
-}
-
-_TRANSLATE_SYSTEM = (
-    "You are a professional localizer for a World of Warcraft addon UI. Translate "
-    "each English string into {lang} as it would read in-game. Rules, applied to "
-    "every string:\n"
-    "- Preserve printf format specifiers EXACTLY and in the SAME COUNT: %1$s, %2$d, "
-    "%s, %d, %% etc. You may reorder %1$s/%2$s to fit {lang} grammar, but never add, "
-    "drop, or alter a specifier.\n"
-    "- Preserve WoW escape sequences verbatim: color codes like |cff60A5FA ... |r, "
-    "and |T...|t / |H...|h sequences. Translate the human-readable text around them.\n"
-    "- Do NOT translate: WoW slash commands (/dui, /reload), API/CVar tokens, or "
-    "proper nouns that ship untranslated in the {lang} WoW client (keep 'QUI').\n"
-    "- Keep UI labels terse; match the source register.\n"
-    "Return ONLY the translations, in the same order as the input array."
-)
-
 def real_translate(loc, items):
     # items: list[str] English -> list[str] translations (order-preserved).
-    # Anthropic SDK per the claude-api skill: Opus 4.8, adaptive thinking, batched,
-    # structured JSON output, cached system prompt. Requires ANTHROPIC_API_KEY.
-    anthropic = importlib.import_module("anthropic")
-    client = anthropic.Anthropic()
-    model = os.environ.get("QUI_I18N_MODEL", "claude-opus-5")
-    lang = LANG_NAMES.get(loc, loc)
-    system = [{
-        "type": "text",
-        "text": _TRANSLATE_SYSTEM.format(lang=lang),
-        "cache_control": {"type": "ephemeral"},
-    }]
-    schema = {
-        "type": "object",
-        "properties": {"translations": {"type": "array", "items": {"type": "string"}}},
-        "required": ["translations"],
-        "additionalProperties": False,
-    }
+    args = argparse.Namespace(
+        model=os.environ.get("QUI_I18N_MODEL", "gpt-5.6-luna"),
+        reasoning_effort=os.environ.get("QUI_I18N_REASONING_EFFORT", "low"),
+        timeout_seconds=int(os.environ.get("QUI_I18N_TIMEOUT_SECONDS", "900")),
+    )
     out, BATCH = [], 60
     for i in range(0, len(items), BATCH):
         chunk = items[i:i + BATCH]
-        resp = client.messages.create(
-            model=model,
-            max_tokens=16000,
-            thinking={"type": "adaptive"},
-            output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
-            system=system,
-            messages=[{"role": "user", "content": json.dumps(chunk, ensure_ascii=False)}],
-        )
-        text = next(b.text for b in resp.content if b.type == "text")
-        got = json.loads(text)["translations"]
-        if len(got) != len(chunk):
-            raise SystemExit(f"{loc}: batch {i}: expected {len(chunk)} translations, got {len(got)}")
-        out.extend(got)
+        translated = run_codex(loc, chunk, args)
+        out.extend(translated[item] for item in chunk)
     return out
 
 def mock_translate(loc, items):
