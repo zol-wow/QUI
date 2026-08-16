@@ -64,7 +64,7 @@ for _, token in ipairs(forbidden) do
         "layout call in secondary value path: " .. token)
 end
 -- Value-driven displays that must stay on the hot path.
-assert(secondaryValue:find("self:UpdateFragmentedPowerDisplay(bar, resource, isVertical)", 1, true),
+assert(secondaryValue:find("self:UpdateFragmentedPowerDisplay(bar, resource, isVertical, current)", 1, true),
     "fragment fills must update on the value path")
 assert(secondaryValue:find("self:UpdateChargedComboPoints(bar, resource, max, current, isVertical)", 1, true),
     "charged combo overlays must update on the value path")

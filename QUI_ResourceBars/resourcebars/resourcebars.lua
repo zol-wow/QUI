@@ -783,9 +783,6 @@ local fragmentedPowerTypes = {
     [Enum.PowerType.Essence] = true,
 }
 
-local runeUpdateElapsed = 0
-local runeUpdateRunning = false
-
 local essenceUpdateElapsed = 0
 local essenceUpdateRunning = false
 local essenceNextTick = nil
@@ -794,18 +791,6 @@ local essenceTickDuration = nil
 
 local renewingMistUpdateElapsed = 0
 local renewingMistUpdateRunning = false
-
-local _lastRuneRounded = {}
-local _lastRuneFormatted = {}
-
-local runeScratch = {}
-local runeOrder = {}
-local function RuneDisplayLess(a, b)
-    if a.ready ~= b.ready then return a.ready end
-    if a.ready then return a.index < b.index end
-    if a.remaining ~= b.remaining then return a.remaining < b.remaining end
-    return a.index < b.index
-end
 
 local UPDATE_THROTTLE = 0.016
 local lastPrimaryUpdate = 0
@@ -1814,29 +1799,6 @@ local function GetSecondaryResourceValue(resource)
         return max, fillValue, current, "number"
     end
 
-    if resource == Enum.PowerType.Runes then
-        local current = 0
-        local max = UnitPowerMax("player", resource)
-        if Helpers.IsSecretValue(max) then
-            -- @secret-policy: defer-until-readable
-            return nil, nil, nil, "defer"
-        end
-        if max <= 0 then return nil, nil, nil, nil end
-
-        for i = 1, max do
-            local runeReady = select(3, GetRuneCooldown(i))
-            if Helpers.IsSecretValue(runeReady) then
-                -- @secret-policy: defer-until-readable — readiness unknowable
-                return nil, nil, nil, "defer"
-            end
-            if runeReady then
-                current = current + 1
-            end
-        end
-
-        return max, current, current, "number"
-    end
-
     if resource == Enum.PowerType.SoulShards then
         local _, class = UnitClass("player")
         -- @secret-policy: collapse-only — secret class takes the generic shard path below
@@ -2747,7 +2709,6 @@ function QUICore:GetSecondaryPowerBar()
     bar.SoulShardDecimal:Hide()
 
     bar.FragmentedPowerBars = {}
-    bar.FragmentedPowerBarTexts = {}
 
     bar.chargedOverlays = {}
 
@@ -2762,10 +2723,14 @@ end
 
 function QUICore:CreateFragmentedPowerBars(bar, resource, isVertical)
     local cfg = self.db.profile.secondaryPowerBar
-    local maxPower = UnitPowerMax("player", resource)
-    if Helpers.IsSecretValue(maxPower) then
-        -- @secret-policy: defer-until-readable — keep the existing pool.
-        return
+    local maxPower
+    if resource == Enum.PowerType.Runes then
+        maxPower = 6
+    else
+        maxPower = UnitPowerMax("player", resource)
+        if Helpers.IsSecretValue(maxPower) then
+            return
+        end
     end
 
     for i = 1, maxPower do
@@ -2776,24 +2741,20 @@ function QUICore:CreateFragmentedPowerBars(bar, resource, isVertical)
             fragmentBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
             fragmentBar:SetFrameLevel(bar.StatusBar:GetFrameLevel())
             bar.FragmentedPowerBars[i] = fragmentBar
-
-            local text = fragmentBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            QUICore:SetSnappedPoint(text, "CENTER", fragmentBar, "CENTER", cfg.runeTimerTextX or 0, cfg.runeTimerTextY or 0)
-            text:SetJustifyH("CENTER")
-            CJKFont(text, GetGeneralFont(), QUICore:PixelRound(cfg.runeTimerTextSize or 10, text), GetGeneralFontOutline())
-            text:SetShadowOffset(0, 0)
-            text:SetText("")
-            bar.FragmentedPowerBarTexts[i] = text
         end
     end
 end
 
-function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
+function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical, current)
     local cfg = self.db.profile.secondaryPowerBar
-    local maxPower = UnitPowerMax("player", resource)
-    if Helpers.IsSecretValue(maxPower) then
-        -- @secret-policy: defer-until-readable — hold the last fragment layout.
-        return
+    local maxPower
+    if resource == Enum.PowerType.Runes then
+        maxPower = 6
+    else
+        maxPower = UnitPowerMax("player", resource)
+        if Helpers.IsSecretValue(maxPower) then
+            return
+        end
     end
     if maxPower <= 0 then return end
 
@@ -2822,43 +2783,8 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
     local color = GetConfiguredResourceColor(cfg, resource)
 
     if resource == Enum.PowerType.Runes then
-        local now = GetTime()
-        for i = 1, maxPower do
-            local rec = runeScratch[i]
-            if not rec then
-                rec = {}
-                runeScratch[i] = rec
-            end
-            local start, duration, runeReady = GetRuneCooldown(i)
-            rec.index = i
-            if runeReady then
-                rec.ready = true
-                rec.remaining = 0
-                rec.frac = 1
-            else
-                rec.ready = false
-                if start and duration and duration > 0 then
-                    local elapsed = now - start
-                    rec.remaining = math_max(0, duration - elapsed)
-                    rec.frac = math_max(0, math_min(1, elapsed / duration))
-                else
-                    rec.remaining = math.huge
-                    rec.frac = 0
-                end
-            end
-            runeOrder[i] = rec
-        end
-        for i = maxPower + 1, #runeOrder do
-            runeOrder[i] = nil
-        end
-
-        table.sort(runeOrder, RuneDisplayLess)
-
         for pos = 1, maxPower do
-            local rec = runeOrder[pos]
-            local runeIndex = rec.index
-            local runeFrame = bar.FragmentedPowerBars[runeIndex]
-            local runeText = bar.FragmentedPowerBarTexts[runeIndex]
+            local runeFrame = bar.FragmentedPowerBars[pos]
 
             if runeFrame then
                 runeFrame:ClearAllPoints()
@@ -2869,31 +2795,9 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                     runeFrame:SetPoint("LEFT", bar, "LEFT", (pos - 1) * fragmentedBarWidth, 0)
                 end
 
-                if runeText then
-                    runeText:ClearAllPoints()
-                    QUICore:SetSnappedPoint(runeText, "CENTER", runeFrame, "CENTER", cfg.runeTimerTextX or 0, cfg.runeTimerTextY or 0)
-                    CJKFont(runeText, GetGeneralFont(), QUICore:PixelRound(cfg.runeTimerTextSize or 10, runeText), GetGeneralFontOutline())
-                    runeText:SetShadowOffset(0, 0)
-                end
-
-                if rec.ready then
-                    runeFrame:SetMinMaxValues(0, 1)
-                    runeFrame:SetValue(1)
-                    runeText:SetText("")
-                    runeFrame:SetStatusBarColor(color.r, color.g, color.b)
-                else
-                    runeFrame:SetMinMaxValues(0, 1)
-                    runeFrame:SetValue(rec.frac)
-
-                    if cfg.showFragmentedPowerBarText ~= false then
-                        runeText:SetFormattedText("%.1f", math_max(0, rec.remaining))
-                    else
-                        runeText:SetText("")
-                    end
-
-                    runeFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5)
-                end
-
+                runeFrame:SetMinMaxValues(pos - 1, pos)
+                runeFrame:SetValue(current)
+                runeFrame:SetStatusBarColor(color.r, color.g, color.b)
                 runeFrame:Show()
             end
         end
@@ -2901,9 +2805,6 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
         for i = maxPower + 1, #bar.FragmentedPowerBars do
             if bar.FragmentedPowerBars[i] then
                 bar.FragmentedPowerBars[i]:Hide()
-                if bar.FragmentedPowerBarTexts[i] then
-                    bar.FragmentedPowerBarTexts[i]:SetText("")
-                end
             end
         end
 
@@ -2923,11 +2824,6 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
         end
 
     elseif resource == Enum.PowerType.Essence then
-        local current = UnitPower("player", Enum.PowerType.Essence)
-        if Helpers.IsSecretValue(current) then
-            -- @secret-policy: defer-until-readable — extrapolation state is
-            return
-        end
         if current == nil then current = 0 end
         local now = GetTime()
 
@@ -2970,7 +2866,6 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
 
         for pos = 1, maxPower do
             local essenceFrame = bar.FragmentedPowerBars[pos]
-            local essenceText = bar.FragmentedPowerBarTexts[pos]
 
             if essenceFrame then
                 essenceFrame:ClearAllPoints()
@@ -2994,10 +2889,6 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                     essenceFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5)
                 end
 
-                if essenceText then
-                    essenceText:SetText("")
-                end
-
                 essenceFrame:Show()
             end
         end
@@ -3005,9 +2896,6 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
         for i = maxPower + 1, #bar.FragmentedPowerBars do
             if bar.FragmentedPowerBars[i] then
                 bar.FragmentedPowerBars[i]:Hide()
-                if bar.FragmentedPowerBarTexts[i] then
-                    bar.FragmentedPowerBarTexts[i]:SetText("")
-                end
             end
         end
 
@@ -3025,49 +2913,6 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                 tick:Hide()
             end
         end
-    end
-end
-
-local function RuneTimerOnUpdate(bar, delta)
-    runeUpdateElapsed = runeUpdateElapsed + delta
-    if runeUpdateElapsed < 0.05 then return end
-    runeUpdateElapsed = 0
-
-    local now = GetTime()
-    local anyOnCooldown = false
-
-    for i = 1, 6 do
-        local runeFrame = bar.FragmentedPowerBars and bar.FragmentedPowerBars[i]
-        local runeText = bar.FragmentedPowerBarTexts and bar.FragmentedPowerBarTexts[i]
-        if runeFrame and runeFrame:IsShown() then
-            local start, duration, runeReady = GetRuneCooldown(i)
-            if not runeReady and start and duration and duration > 0 then
-                anyOnCooldown = true
-                local remaining = math_max(0, duration - (now - start))
-                local frac = math_max(0, math_min(1, (now - start) / duration))
-                runeFrame:SetValue(frac)
-                if runeText then
-                    local cfg = QUICore.db.profile.secondaryPowerBar
-                    if cfg.showFragmentedPowerBarText ~= false then
-                        local rounded = math_floor(remaining * 10)
-                        if rounded ~= _lastRuneRounded[i] then
-                            _lastRuneRounded[i] = rounded
-                            _lastRuneFormatted[i] = string_format("%.1f", remaining)
-                        end
-                        runeText:SetText(_lastRuneFormatted[i])
-                    else
-                        runeText:SetText("")
-                    end
-                end
-            end
-        end
-    end
-
-    if not anyOnCooldown then
-        bar:SetScript("OnUpdate", nil)
-        runeUpdateRunning = false
-        wipe(_lastRuneRounded)
-        wipe(_lastRuneFormatted)
     end
 end
 
@@ -3327,11 +3172,7 @@ function QUICore:UpdateSecondaryPowerBarValue(forceShown)
     bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b, color.a or 1)
 
     local max, current, displayValue, valueType = GetSecondaryResourceValue(resource)
-    if valueType == "defer" then
-        -- @secret-policy: defer-until-readable — Lua-derived state (rune
-        return "defer", nil, resource
-    end
-    if valueType == "secret" then
+    if valueType == "secret" and resource ~= Enum.PowerType.Runes then
         -- @secret-policy: keep-visible-when-unknown + sink-passthrough — the
         if bar.FragmentedPowerBars then
             for _, fragmentBar in ipairs(bar.FragmentedPowerBars) do
@@ -3346,7 +3187,7 @@ function QUICore:UpdateSecondaryPowerBarValue(forceShown)
         SafeShow(bar)
         return "secret", max, resource
     end
-    if not max then
+    if valueType ~= "secret" and not max then
         if renewingMistUpdateRunning then
             bar:SetScript("OnUpdate", nil)
             renewingMistUpdateRunning = false
@@ -3369,7 +3210,7 @@ function QUICore:UpdateSecondaryPowerBarValue(forceShown)
     end
 
     if fragmentedPowerTypes[resource] then
-        self:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
+        self:UpdateFragmentedPowerDisplay(bar, resource, isVertical, current)
 
         if resource == Enum.PowerType.Essence then
             local essenceCur, essenceMax, essSecret = ReadPlayerPowerPair(Enum.PowerType.Essence)
@@ -3386,31 +3227,12 @@ function QUICore:UpdateSecondaryPowerBarValue(forceShown)
             end
         end
 
-        if resource == Enum.PowerType.Runes then
-            local anyOnCooldown = false
-            for i = 1, 6 do
-                local _, _, runeReady = GetRuneCooldown(i)
-                if not runeReady then
-                    anyOnCooldown = true
-                    break
-                end
-            end
-            if anyOnCooldown and not runeUpdateRunning then
-                runeUpdateRunning = true
-                runeUpdateElapsed = 0
-                bar:SetScript("OnUpdate", RuneTimerOnUpdate)
-            elseif not anyOnCooldown and runeUpdateRunning then
-                bar:SetScript("OnUpdate", nil)
-                runeUpdateRunning = false
-            end
-        end
-
         bar.StatusBar:SetMinMaxValues(0, max)
         bar.StatusBar:SetValue(current)
 
         bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b, color.a or 1)
 
-        bar.TextValue:SetText(tostring(current))
+        bar.TextValue:SetFormattedText("%d", displayValue)
     else
         bar.StatusBar:SetAlpha(1)
         bar.StatusBar:SetMinMaxValues(0, max)
@@ -3835,7 +3657,7 @@ function QUICore:UpdateSecondaryPowerBar()
     end
 
     local vType, vMax, vResource = self:UpdateSecondaryPowerBarValue(true)
-    if vType == nil or vType == "defer" then
+    if vType == nil then
         return
     end
 
@@ -4097,7 +3919,7 @@ local function InitializeResourceBars(self)
     powerEventFrame:RegisterEvent("RUNE_POWER_UPDATE")
     powerEventFrame:SetScript("OnEvent", function(_, event, unit, ...)
         if event == "RUNE_POWER_UPDATE" then
-            self:OnRunePowerUpdate(event, unit, ...) -- @secret-safe: callee signature is `()` — the always-secret RUNE_POWER_UPDATE payload (SecretPayloads) is dropped at the call boundary; rune state re-reads via GetRuneCooldown
+            self:OnRunePowerUpdate()
         elseif event == "UNIT_AURA" then
             self:OnUnitAura(event, unit, ...) -- @secret-safe: callee ignores the unit arg entirely (signature `_, _, updateInfo`) and probes updateInfo unconditionally at entry before any truth-test
         elseif event == "UNIT_POWER_POINT_CHARGE" then
