@@ -4,6 +4,55 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.0 - 2026-08-16
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+QUI 5.2 expands profile management, aura-display setup, and objective tracking
+while delivering a broad reliability pass for action bars, Cooldown Manager,
+group frames, and other combat-facing modules. The beta1 through beta6 entries
+below contain the complete fix-by-fix history.
+
+### Added
+
+- **Named account-wide nameplate profiles.** Create, rename, delete, assign by
+  specialization, import, and export nameplate setups. Existing per-spec
+  presets migrate automatically.
+- **Guided load conditions for aura displays.** Pick classes,
+  specializations, roles, and encounters from lists, with a faster display
+  list, quick creation, and a focused preview.
+- **Objective tracker styling.** Skin progress bars and recolor in-progress
+  bullets and completed-objective checkmarks.
+- **Quick feature toggles in the options sidebar.** Applicable feature
+  sections expose their master switch beside the section name.
+- **Group frame health and tracked-aura styling.** Set a custom health color
+  when class coloring is off, and configure tracked-aura bar orientation and
+  appearance.
+- **New 12.1 consumables in macro dropdowns.** Midnight potions, flasks, and
+  the Tides Vantus Rune are available to consumable macros.
+
+### Fixed
+
+- **Action bars stay responsive in combat.** Cooldowns, glows, pressed states,
+  icons, paging, stances, assisted-rotation indicators, and protected updates
+  now remain live or safely queue until combat ends.
+- **Cooldown Manager state stays accurate.** Spell variants, tracked buff
+  bars, tooltips, keybind labels, frame levels, row opacity, and in-combat
+  refreshes no longer drift or stall.
+- **Objective and Mythic+ trackers keep updating.** Skinned tracker geometry,
+  boss kills, objective names, and weighted progress catch up safely through
+  combat.
+- **Group frame colors and expiring aura bars update correctly.** Health tints
+  route through the shared feeder and tracked bars recolor during expiration.
+- **Bag overlays, dark-skinned mail, module-aware skinning, and community help
+  links work as intended.**
+
+### Changed
+
+- **Cooldown Manager mouseover detection does less per-frame work.** A
+  viewer's child list is built once per frame instead of once per child.
+
 ## v5.2.0-beta6 - 2026-08-16
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
