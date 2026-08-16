@@ -411,6 +411,7 @@ local function NormalizeTrackedBarRuntimeEntries(runtimeEntries)
                     baseSpellID = baseSpellID,
                     overrideSpellID = entry.overrideSpellID,
                     linkedSpellID = entry.linkedSpellID,
+                    linkedSpellIDs = entry.linkedSpellIDs,
                     name = entry.name or "",
                     type = "spell",
                     kind = "aura",
@@ -451,7 +452,7 @@ local function AddTrackedSpellIdentity(out, value)
     out[tostring(value)] = true
 end
 
-local function BuildTrackedSpellIdentitySet(entry)
+local function BuildTrackedSpellIdentitySet(entry, includeLinkedSpellIDs)
     local out = {}
     if type(entry) ~= "table" then return out end
     AddTrackedSpellIdentity(out, entry.id)
@@ -459,6 +460,11 @@ local function BuildTrackedSpellIdentitySet(entry)
     AddTrackedSpellIdentity(out, entry.baseSpellID)
     AddTrackedSpellIdentity(out, entry.overrideSpellID)
     AddTrackedSpellIdentity(out, entry.itemID)
+    if includeLinkedSpellIDs and type(entry.linkedSpellIDs) == "table" then
+        for _, linkedSpellID in ipairs(entry.linkedSpellIDs) do
+            AddTrackedSpellIdentity(out, linkedSpellID)
+        end
+    end
     return out
 end
 
@@ -474,7 +480,7 @@ local function TrackedEntriesMatch(configured, runtime)
             return false
         end
     end
-    local runtimeIDs = BuildTrackedSpellIdentitySet(runtime)
+    local runtimeIDs = BuildTrackedSpellIdentitySet(runtime, runtime.linkedSpellID == nil)
     for id in pairs(configuredIDs) do
         if runtimeIDs[id] then
             return true
@@ -524,6 +530,7 @@ local function MergeTrackedRuntimeFields(configured, runtime)
     if out.baseSpellID == nil then out.baseSpellID = runtime.baseSpellID end
     if out.overrideSpellID == nil then out.overrideSpellID = runtime.overrideSpellID end
     out.linkedSpellID = runtime.linkedSpellID
+    out.linkedSpellIDs = runtime.linkedSpellIDs or out.linkedSpellIDs
     if (out.name == nil or out.name == "") and runtime.name then out.name = runtime.name end
     if out.iconTexture == nil then out.iconTexture = runtime.iconTexture end
     out.cooldownID = runtime.cooldownID

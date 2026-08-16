@@ -510,10 +510,11 @@ end
 local function GetTrackedBarSpellData(frame)
     if not frame then return nil end
 
-    local resolvedSpellID, baseSpellID, overrideSpellID, linkedSpellID, name
+    local resolvedSpellID, baseSpellID, overrideSpellID, linkedSpellID, linkedSpellIDs, name
     local cdInfo = frame.cooldownInfo
     if cdInfo then
         linkedSpellID = ReadNumber(cdInfo.linkedSpellID, nil)
+        if type(cdInfo.linkedSpellIDs) == "table" then linkedSpellIDs = cdInfo.linkedSpellIDs end
         overrideSpellID = ReadNumber(cdInfo.overrideSpellID, nil)
         baseSpellID = ReadNumber(cdInfo.spellID, nil)
         name = ReadString(cdInfo.name, nil)
@@ -524,6 +525,9 @@ local function GetTrackedBarSpellData(frame)
         local apiInfo = ns.CDMCatalog and ns.CDMCatalog.GetCooldownInfo
             and ns.CDMCatalog.GetCooldownInfo(frame.cooldownID)
         if apiInfo then
+            if not linkedSpellIDs and type(apiInfo.linkedSpellIDs) == "table" then
+                linkedSpellIDs = apiInfo.linkedSpellIDs
+            end
             overrideSpellID = overrideSpellID or ReadNumber(apiInfo.overrideSpellID, nil)
             baseSpellID = baseSpellID or ReadNumber(apiInfo.spellID, nil)
             name = name or ReadString(apiInfo.name, nil)
@@ -559,6 +563,7 @@ local function GetTrackedBarSpellData(frame)
         baseSpellID = baseSpellID or resolvedSpellID,
         overrideSpellID = overrideSpellID,
         linkedSpellID = linkedSpellID,
+        linkedSpellIDs = linkedSpellIDs,
         name = name,
         cooldownID = frame.cooldownID,
     }
@@ -616,6 +621,7 @@ local function GetTrackedBarRuntimeEntries()
                     baseSpellID = spellData.baseSpellID,
                     overrideSpellID = spellData.overrideSpellID,
                     linkedSpellID = spellData.linkedSpellID,
+                    linkedSpellIDs = spellData.linkedSpellIDs,
                     name = spellData.name or "",
                     iconTexture = GetTrackedBarIconTexture(child, spellData),
                     cooldownID = spellData.cooldownID,

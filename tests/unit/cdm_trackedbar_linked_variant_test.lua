@@ -41,12 +41,18 @@ check("GetTrackedBarSpellData must resolve linked before override before base",
 check("GetTrackedBarSpellData must return the linkedSpellID field",
     string.find(spellDataBody, "linkedSpellID = linkedSpellID", 1, true) ~= nil,
     "returned table does not carry linkedSpellID")
+check("GetTrackedBarSpellData must return the linkedSpellIDs family",
+    string.find(spellDataBody, "linkedSpellIDs = linkedSpellIDs", 1, true) ~= nil,
+    "returned table does not carry linkedSpellIDs")
 
 local runtimeBody = sliceFunction(layoutSrc, "GetTrackedBarRuntimeEntries()")
 
 check("runtime entries must carry spellData.linkedSpellID",
     string.find(runtimeBody, "linkedSpellID = spellData.linkedSpellID", 1, true) ~= nil,
     "entry table does not copy spellData.linkedSpellID")
+check("runtime entries must carry spellData.linkedSpellIDs",
+    string.find(runtimeBody, "linkedSpellIDs = spellData.linkedSpellIDs", 1, true) ~= nil,
+    "entry table does not copy spellData.linkedSpellIDs")
 
 check("harvest must enumerate the viewer item pool, never GetChildren",
     string.find(runtimeBody, "pool:EnumerateActive()", 1, true) ~= nil
@@ -148,6 +154,7 @@ local function variantConfig(sid)
     return {
         id = sid,
         spellID = sid,
+        linkedSpellIDs = { RTB_X, RTB_Y, RTB_Z },
         name = "Configured " .. sid,
         type = "spell",
         kind = "aura",
@@ -184,6 +191,17 @@ check("a base-spell config bound to a live variant must KEEP its configured name
     baseBound[1] and baseBound[1].name == "Configured " .. RTB_BASE,
     baseBound[1] and ("got name=%s -- the variant overlay is dead code, the mirror owns display"):format(
         tostring(baseBound[1].name)) or "no merged entry")
+
+local familyOnlyRuntime = liveVariantRuntime(nil)
+familyOnlyRuntime.spellID = 999999
+familyOnlyRuntime.baseSpellID = 999999
+familyOnlyRuntime.linkedSpellIDs = { RTB_X, RTB_Y, RTB_Z }
+local familyConfig = variantConfig(RTB_Y)
+familyConfig.cooldownID = nil
+local familyBound = buildTracked({ familyOnlyRuntime }, { familyConfig }, true)
+check("a linked-family config must bind while the live singular variant is secret",
+    familyBound[1] and familyBound[1]._trackedBarRuntime == true,
+    "linkedSpellIDs were dropped, so the live Blizzard frame never reaches the mirror sinks")
 
 local mergeBody = sliceFunction(rendererSrc, "MergeTrackedRuntimeFields(configured, runtime)")
 check("the merge must not overlay name or icon from the live variant",
