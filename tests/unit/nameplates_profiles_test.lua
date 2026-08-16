@@ -236,6 +236,10 @@ test("active-profile tracking: apply/save set it, edits mark it modified, rename
     end
     if Presets.IsActiveProfileModified() then fail("freshly saved profile must not read as modified") end
 
+    Presets.GetProfileStore().Tracked.colors = nil
+    Presets.ApplyProfile("Tracked")
+    if Presets.IsActiveProfileModified() then fail("older sparse profiles must compare against current defaults") end
+
     settings.health.width = 999
     if not Presets.IsActiveProfileModified() then fail("live edits must mark the active profile modified") end
 
