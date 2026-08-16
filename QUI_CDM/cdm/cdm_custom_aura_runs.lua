@@ -6,6 +6,7 @@ ns.CDMCustomAuraRuns = Runs
 local activeOwners = setmetatable({}, { __mode = "k" })
 local HELPFUL_FILTER = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 local HARMFUL_FILTER = "HARMFUL|PLAYER"
+local ResolveRoute
 
 local function IsSecret(value)
     return issecretvalue and issecretvalue(value)
@@ -13,11 +14,12 @@ end
 
 local function IsManagedAuraIcon(icon)
     local entry = icon and icon._spellEntry
-    return entry and entry._useManagedAura == true
+    return entry and entry._useManagedAura == true and entry._managedAuraRoute ~= nil
 end
 
 function Runs.ShouldUseSettings(settings)
     if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
+    if settings.dynamicLayout ~= true then return false end
     if settings.layoutDirection == "VERTICAL" then return false end
     if settings.growDirection and settings.growDirection ~= "RIGHT" then return false end
 
@@ -44,7 +46,10 @@ function Runs.HasAuraEntries(settings, viewerType)
     if type(entries) ~= "table" then return false end
     for i = 1, #entries do
         local entry = entries[i]
-        if entry and entry.enabled ~= false and entry.kind == "aura" then return true end
+        if entry and entry.enabled ~= false and entry.kind == "aura"
+            and ResolveRoute and ResolveRoute(entry) then
+            return true
+        end
     end
     return false
 end
@@ -80,6 +85,36 @@ local function CandidateIDs(entry)
         end
     end
     return out
+end
+
+ResolveRoute = function(entry)
+    if type(entry) ~= "table" or entry.source ~= "blizzardCDM" then return nil end
+    local selfAura = entry._selfAura
+    if selfAura == nil then
+        local spellData = ns.CDMSpellData
+        if spellData and spellData.IsSelfAuraSpell then
+            selfAura = spellData:IsSelfAuraSpell(entry.id or entry.spellID)
+        end
+    end
+    if selfAura == nil then return nil end
+
+    local helpful, harmful = false, false
+    local sources = ns.CDMSources
+    local ids = CandidateIDs(entry)
+    for i = 1, #ids do
+        local spellID = ids[i]
+        helpful = helpful or (sources and sources.QuerySpellHelpful
+            and sources.QuerySpellHelpful(spellID) == true) or false
+        harmful = harmful or (sources and sources.QuerySpellHarmful
+            and sources.QuerySpellHarmful(spellID) == true) or false
+    end
+    if helpful == harmful then return nil end
+    if selfAura == true then return helpful and "SELF_HELPFUL" or nil end
+    return helpful and "HELPFUL" or "HARMFUL"
+end
+
+function Runs.ResolveRoute(entry)
+    return ResolveRoute(entry)
 end
 
 local function Profile(rowConfig)
@@ -155,24 +190,6 @@ local function BuildGroup(icon, index)
         maxFrameCount = 1,
         candidateFilters = filters,
     }
-end
-
-local function AuraRoute(icon)
-    local entry = icon and icon._spellEntry
-    if entry and entry._selfAura == true then return "SELF_HELPFUL" end
-    local sources = ns.CDMSources
-    local ids = CandidateIDs(entry)
-    if sources and sources.QuerySpellHarmful then
-        for i = 1, #ids do
-            if sources.QuerySpellHarmful(ids[i]) == true then return "HARMFUL" end
-        end
-    end
-    if sources and sources.QuerySpellHelpful then
-        for i = 1, #ids do
-            if sources.QuerySpellHelpful(ids[i]) == true then return "HELPFUL" end
-        end
-    end
-    return "SELF_HELPFUL"
 end
 
 local function FriendlyTarget()
@@ -271,7 +288,7 @@ function Runs.Apply(owner, settings, layoutPlan)
         local placement = layoutPlan.placements[i]
         local icon = placement.icon
         if IsManagedAuraIcon(icon) then
-            local route = AuraRoute(icon)
+            local route = icon._spellEntry._managedAuraRoute
             if not currentRun or currentRun.route ~= route then
                 runCount = runCount + 1
                 local container = AcquireRun(owner, runCount)

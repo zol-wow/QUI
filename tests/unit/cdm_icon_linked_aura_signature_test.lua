@@ -32,6 +32,8 @@ local entrySignature = sliceBetween(
 
 assert(entrySignature:find("entry.linkedSpellIDs", 1, true),
     "icon pool signature must include linkedSpellIDs so linked aura aliases rebuild stale icons")
+assert(entrySignature:find("entry.source", 1, true),
+    "icon pool signature must include route provenance")
 
 local customEntryBuilder = sliceBetween(
     icons,
@@ -47,15 +49,25 @@ local builderEnv = setmetatable({
         CDMCustomAuraRuns = {
             ShouldUseSettings = function() return true end,
             HasAuraEntries = function() return true end,
+            ResolveRoute = function(entry)
+                if entry.source ~= "blizzardCDM" then return nil end
+                if entry._selfAura == true then return "SELF_HELPFUL" end
+                if entry._selfAura == false and entry.spellID == 333 then return "HELPFUL" end
+            end,
         },
         CDMSpellData = {
-            IsSelfAuraSpell = function(_, spellID) return spellID == 222 end,
+            IsSelfAuraSpell = function(_, spellID)
+                if spellID == 222 then return true end
+                if spellID == 333 then return false end
+            end,
         },
     },
     Sources = {},
     Shared = {},
     CDMIcons = {},
-    GetTrackerSettings = function() return { containerType = "customBar" } end,
+    GetTrackerSettings = function()
+        return { containerType = "customBar", dynamicLayout = true }
+    end,
     GetBuiltinContainerEntryKind = function() return nil end,
     ResolveMacro = function() return nil end,
     GetCachedSpellName = function() return nil end,
@@ -70,10 +82,33 @@ local builtAura = builderChunk()({
     type = "spell",
     kind = "aura",
     name = "Managed Aura",
+    source = "blizzardCDM",
     linkedSpellIDs = { 333 },
 }, 1, "custom")
-assert(builtAura._useManagedAura == true and builtAura._selfAura == true,
+assert(builtAura._useManagedAura == true and builtAura._selfAura == true
+    and builtAura._managedAuraRoute == "SELF_HELPFUL",
     "eligible custom auras must carry managed and self-aura routing state")
+local builtTargetAura = builderChunk()({
+    id = 333,
+    type = "spell",
+    kind = "aura",
+    name = "Managed Target Aura",
+    source = "blizzardCDM",
+}, 2, "custom")
+assert(builtTargetAura._useManagedAura == true and builtTargetAura._selfAura == false
+    and builtTargetAura._managedAuraRoute == "HELPFUL",
+    "catalogued non-self auras must carry their proven target route")
+local builtManualAura = builderChunk()({
+    id = 555,
+    type = "spell",
+    kind = "aura",
+    name = "Manual Aura",
+}, 3, "custom")
+assert(builtManualAura._useManagedAura == nil
+    and builtManualAura._managedAuraRoute == nil,
+    "uncatalogued custom auras must retain the legacy player-first resolver")
+assert(builtManualAura.source == nil and builtAura.source == "blizzardCDM",
+    "runtime entries must preserve provenance for safe route selection")
 
 local placeSource = sliceBetween(
     icons,
@@ -106,8 +141,8 @@ setfenv(updateChunk, updateEnv)
 local updateCooldown = updateChunk()
 updateCooldown({ _spellEntry = { _useManagedAura = true } })
 assert(ownedUpdates == 0, "managed aura proxies must skip Lua cooldown resolution")
-updateCooldown({ _spellEntry = {} })
-assert(ownedUpdates == 1, "ordinary icons must retain Lua cooldown resolution")
+updateCooldown({ _spellEntry = builtManualAura })
+assert(ownedUpdates == 1, "manual auras must retain Lua cooldown resolution")
 
 local buffFingerprint = sliceBetween(
     containers,

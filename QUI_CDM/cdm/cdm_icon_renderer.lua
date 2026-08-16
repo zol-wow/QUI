@@ -3079,10 +3079,6 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
     local isAuraEntry = (kind == "aura")
     local settings = GetTrackerSettings(viewerType)
     local auraRuns = ns.CDMCustomAuraRuns
-    local useManagedAura = isAuraEntry
-        and auraRuns
-        and auraRuns.ShouldUseSettings(settings)
-        and auraRuns.HasAuraEntries(settings, viewerType)
     local spellData = ns.CDMSpellData
     local selfAura = isAuraEntry
         and spellData
@@ -3105,8 +3101,8 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         itemID = itemID,
         _isCustomEntry = true,
         _sourceSpecID = entry._sourceSpecID,
+        source = entry.source,
         linkedSpellIDs = entry.linkedSpellIDs,
-        _useManagedAura = useManagedAura and true or nil,
         _selfAura = selfAura,
     }
     if entry.type == "macro" then
@@ -3134,6 +3130,13 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
             spellEntry.name = GetCachedSpellName(entry.id) or ""
         end
     end
+    local managedAuraRoute = isAuraEntry
+        and auraRuns
+        and auraRuns.ShouldUseSettings(settings)
+        and auraRuns.ResolveRoute
+        and auraRuns.ResolveRoute(spellEntry)
+    spellEntry._managedAuraRoute = managedAuraRoute
+    spellEntry._useManagedAura = managedAuraRoute and true or nil
     if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugEntryBuild then
         CDMIcons.DebugEntryBuild(entry, spellEntry, viewerType)
     end
@@ -3172,6 +3175,7 @@ local function AppendEntrySignature(parts, prefix, entry, idx)
     AppendSignaturePart(parts, entry.id)
     AppendSignaturePart(parts, entry.spellID)
     AppendSignaturePart(parts, entry.overrideSpellID)
+    AppendSignaturePart(parts, entry.source)
     AppendSignaturePart(parts, "linked")
     local linkedSpellIDs = entry.linkedSpellIDs
     if type(linkedSpellIDs) == "table" then

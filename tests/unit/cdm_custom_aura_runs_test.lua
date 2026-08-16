@@ -62,12 +62,20 @@ local ns = {
     },
     CDMManagedAuraMirrors = {
         ResolveCandidateIDs = function(entry)
-            return { entry.spellID }
+            return { entry.spellID or entry.id }
+        end,
+    },
+    CDMSpellData = {
+        IsSelfAuraSpell = function(_, spellID)
+            if spellID == 222 then return true end
+            if spellID == 333 or spellID == 444 or spellID == 666 then return false end
         end,
     },
     CDMSources = {
-        QuerySpellHelpful = function(spellID) return spellID == 222 or spellID == 333 end,
-        QuerySpellHarmful = function(spellID) return spellID == 444 end,
+        QuerySpellHelpful = function(spellID)
+            return spellID == 222 or spellID == 333 or spellID == 555 or spellID == 666
+        end,
+        QuerySpellHarmful = function(spellID) return spellID == 444 or spellID == 666 end,
     },
 }
 
@@ -77,12 +85,13 @@ assert(loadfile("QUI_CDM/cdm/cdm_custom_aura_runs.lua"))("QUI", ns)
 local settings = {
     builtIn = false,
     containerType = "customBar",
+    dynamicLayout = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
     row1 = { iconCount = 3, iconSize = 30, padding = 2 },
     entries = {
         { id = 111, kind = "cooldown" },
-        { id = 222, kind = "aura" },
+        { id = 222, kind = "aura", source = "blizzardCDM" },
         { id = 333, kind = "cooldown" },
     },
 }
@@ -97,6 +106,8 @@ auraProxy._spellEntry = {
     kind = "aura",
     _useManagedAura = true,
     _selfAura = true,
+    _managedAuraRoute = "SELF_HELPFUL",
+    source = "blizzardCDM",
 }
 cooldownB._spellEntry = { spellID = 333, kind = "cooldown" }
 
@@ -137,6 +148,24 @@ assert(borderColor[1] == 0.2 and borderColor[2] == 0.4
     "the secure aura must resolve the same inherited border color as CDM icons")
 assert(auraProxy.shown == false and auraProxy._quiManagedAuraProxy == true,
     "the addon aura proxy must not paint the live aura")
+assert(ns.CDMCustomAuraRuns.ResolveRoute({
+        id = 222, kind = "aura", source = "blizzardCDM",
+    }) == "SELF_HELPFUL"
+    and ns.CDMCustomAuraRuns.ResolveRoute({
+        id = 333, kind = "aura", source = "blizzardCDM",
+    }) == "HELPFUL"
+    and ns.CDMCustomAuraRuns.ResolveRoute({
+        id = 444, kind = "aura", source = "blizzardCDM",
+    }) == "HARMFUL",
+    "catalogued auras must resolve only their proven secure route")
+assert(ns.CDMCustomAuraRuns.ResolveRoute({ id = 222, kind = "aura" }) == nil
+    and ns.CDMCustomAuraRuns.ResolveRoute({
+        id = 555, kind = "aura", source = "blizzardCDM",
+    }) == nil
+    and ns.CDMCustomAuraRuns.ResolveRoute({
+        id = 666, kind = "aura", source = "blizzardCDM",
+    }) == nil,
+    "manual, uncatalogued, or ambiguous auras must remain on the legacy resolver")
 
 local controller = created[1]
 local first = cooldownA.points[1]
@@ -162,14 +191,26 @@ assert(controller.unit == "player"
 local friendlyOwner = Frame("friendly-owner")
 local friendlyProxy = Frame("friendly-proxy")
 local friendlyProxyB = Frame("friendly-proxy-b")
-friendlyProxy._spellEntry = { spellID = 333, kind = "aura", _useManagedAura = true }
-friendlyProxyB._spellEntry = { spellID = 333, kind = "aura", _useManagedAura = true }
+friendlyProxy._spellEntry = {
+    spellID = 333, kind = "aura", _useManagedAura = true,
+    _selfAura = false, _managedAuraRoute = "HELPFUL",
+    source = "blizzardCDM",
+}
+friendlyProxyB._spellEntry = {
+    spellID = 333, kind = "aura", _useManagedAura = true,
+    _selfAura = false, _managedAuraRoute = "HELPFUL",
+    source = "blizzardCDM",
+}
 local friendlySettings = {
     containerType = "customBar",
+    dynamicLayout = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
     row1 = { iconCount = 1 },
-    entries = { { id = 333, kind = "aura" }, { id = 333, kind = "aura" } },
+    entries = {
+        { id = 333, kind = "aura", source = "blizzardCDM" },
+        { id = 333, kind = "aura", source = "blizzardCDM" },
+    },
 }
 local friendlyPlan = {
     metrics = { iconWidth = 30 },
@@ -192,13 +233,18 @@ assert(#friendlyConfig.groups == 2 and friendlyConfig.groups[2].groupSpacing == 
 
 local harmfulOwner = Frame("harmful-owner")
 local harmfulProxy = Frame("harmful-proxy")
-harmfulProxy._spellEntry = { spellID = 444, kind = "aura", _useManagedAura = true }
+harmfulProxy._spellEntry = {
+    spellID = 444, kind = "aura", _useManagedAura = true,
+    _selfAura = false, _managedAuraRoute = "HARMFUL",
+    source = "blizzardCDM",
+}
 local harmfulSettings = {
     containerType = "customBar",
+    dynamicLayout = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
     row1 = { iconCount = 1 },
-    entries = { { id = 444, kind = "aura" } },
+    entries = { { id = 444, kind = "aura", source = "blizzardCDM" } },
 }
 local harmfulPlan = {
     metrics = { iconWidth = 30 },
@@ -235,12 +281,47 @@ assert(#(friendlyController.maxFrameCountCalls or {}) == friendlyCalls
 
 local disabledSettings = {
     containerType = "customBar",
+    dynamicLayout = true,
     layoutDirection = "VERTICAL",
 }
 assert(ns.CDMCustomAuraRuns.Apply(owner, disabledSettings, plan) == false,
     "unsupported layouts must leave the secure chain path")
 assert(controller.enabled == false and controller.shown == false,
     "leaving the secure chain path must park old aura runs")
+
+local fixedSettings = {
+    containerType = "customBar",
+    layoutDirection = "HORIZONTAL",
+    growDirection = "RIGHT",
+    row1 = { iconCount = 1 },
+    entries = { { id = 222, kind = "aura", source = "blizzardCDM" } },
+}
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(fixedSettings) == false,
+    "default fixed-slot bars must keep their ordinary aura proxies")
+fixedSettings.dynamicLayout = false
+fixedSettings.clickableIcons = true
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(fixedSettings) == false,
+    "clickable fixed-slot bars must keep their secure click proxies")
+local fixedOwner = Frame("fixed-owner")
+local fixedProxy = Frame("fixed-proxy")
+fixedProxy._spellEntry = {
+    spellID = 222, kind = "aura", _useManagedAura = true,
+    _selfAura = true, _managedAuraRoute = "SELF_HELPFUL",
+    source = "blizzardCDM",
+}
+fixedProxy:SetPoint("CENTER", fixedOwner, "CENTER", 0, 0)
+local fixedClickButton = {}
+fixedProxy.clickButton = fixedClickButton
+local fixedCreated, fixedConfigured = #created, #configured
+assert(ns.CDMCustomAuraRuns.Apply(fixedOwner, fixedSettings, {
+        metrics = { iconWidth = 30 },
+        placements = { { icon = fixedProxy, rowConfig = row, x = 0, y = 0 } },
+    }) == false,
+    "fixed-slot aura bars must stay on the ordinary renderer")
+assert(#created == fixedCreated and #configured == fixedConfigured
+    and fixedProxy.shown == true and #fixedProxy.points == 1
+    and fixedProxy._quiManagedAuraProxy == nil and fixedProxy.clickButton == fixedClickButton,
+    "fixed-slot fallback must preserve the visible slot and click surface")
 
 assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan) == true)
 local containersFile = assert(io.open("QUI_CDM/cdm/cdm_containers.lua", "rb"))
