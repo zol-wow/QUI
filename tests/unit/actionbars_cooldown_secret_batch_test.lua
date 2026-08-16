@@ -342,7 +342,12 @@ assert(rawget(nilInfoBtn.cooldown, "cleared") == nil,
     "a nil-struct button must be treated as inactive without churning Clear")
 
 local secretSchedule = { token = "dur-30" }
-cooldownInfoByAction[30] = { isActive = SecretSentinel.MakeSecretSentinel() }
+cooldownInfoByAction[30] = {
+    isActive = true,
+    startTime = SecretSentinel.MakeSecretSentinel(),
+    duration = SecretSentinel.MakeSecretSentinel(),
+    modRate = SecretSentinel.MakeSecretSentinel(),
+}
 cooldownDurationByAction[30] = secretSchedule
 local secretActiveBtn = {
     action = 30,
@@ -355,11 +360,11 @@ actionBars._activeButtons[secretActiveBtn] = true
 currentTime = currentTime + 1
 
 ok, err = pcall(actionBars.UpdateAllCooldowns)
-assert(ok, "a secret isActive must not abort the cooldown batch: " .. tostring(err))
+assert(ok, "the secret-capable SpellCooldownInfo numbers must never be touched: " .. tostring(err))
 assert(secretActiveBtn.cooldown.lastDurationObject == secretSchedule,
-    "a secret isActive must pass the DurationObject through to the sink, never collapse to inactive")
+    "startTime/duration/modRate are secret-capable and ride the DurationObject; isActive is NeverSecret and gates it")
 assert(rawget(secretActiveBtn.cooldown, "cleared") == nil,
-    "a secret isActive must never clear a possibly-running swipe")
+    "a running swipe must never be cleared by a read of the secret schedule numbers")
 
 wipe(actionBars._activeButtons)
 wipe(actionBars._activeStandardButtons)

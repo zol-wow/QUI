@@ -105,11 +105,7 @@ do
         if _locGateAt == now then return _locGateResult end
         _locGateAt = now
         local count = C_LossOfControl.GetActiveLossOfControlDataCount()
-        if Helpers.IsSecretValue(count) then
-            _locGateResult = true -- @secret-policy: probe-loc-when-unknown
-        else
-            _locGateResult = (tonumber(count) or 0) > 0
-        end
+        _locGateResult = (tonumber(count) or 0) > 0
         return _locGateResult
     end
 
@@ -120,15 +116,6 @@ do
             return
         end
         cooldown:SetCooldownFromDurationObject(durationObject)
-    end
-
-    local function DecodePotentialSecretBoolean(value)
-        if Helpers.IsSecretValue(value) then
-            return nil -- @secret-policy: reject-secret-value
-        end
-        if value == true then return true end
-        if value == false then return false end
-        return nil
     end
 
     local _buttonWasActive = setmetatable({}, { __mode = "k" })
@@ -249,18 +236,9 @@ do
 
     local function GetActionCooldownState(button, action)
         local cdInfo = GetActionCooldownInfo(action)
-        local cdActive = DecodePotentialSecretBoolean(cdInfo.isActive)
+        local cdActive = cdInfo.isActive
         local durationObject = cdActive ~= false and GetActionCooldownDurationObject(action) or nil
         return cdInfo, durationObject, cdActive
-    end
-
-    local function ChargeInfoMayHaveCharges(chargeInfo)
-        local maxCharges = chargeInfo.maxCharges
-        if Helpers.IsSecretValue(maxCharges) then
-            return true -- @secret-policy: probe-charges-when-unknown
-        end
-        maxCharges = Helpers.SafeToNumber(maxCharges, 0) or 0
-        return maxCharges > 1
     end
 
     local function GetActionChargeActive(button, action)
@@ -282,14 +260,14 @@ do
         if _abCooldownStats then _abCooldownStats.chargeInfoQueries = _abCooldownStats.chargeInfoQueries + 1 end
         local chargeInfo = C_ActionBar.GetActionCharges(action)
         if type(chargeInfo) ~= "table" then chargeInfo = DEFAULT_CHARGE_INFO end
-        local mayHaveCharges = ChargeInfoMayHaveCharges(chargeInfo)
+        local mayHaveCharges = chargeInfo.maxCharges > 1
         _buttonChargeAction[button] = action
         _buttonMayHaveCharges[button] = mayHaveCharges
         if _cooldownBatchActive then
             _batchChargeInfoSeen[action] = _cooldownBatchToken
             _batchChargeMayHaveCharges[action] = mayHaveCharges
         end
-        local chargeActive = DecodePotentialSecretBoolean(chargeInfo.isActive)
+        local chargeActive = chargeInfo.isActive
         if mayHaveCharges and chargeActive ~= false then
             if _abCooldownStats then _abCooldownStats.chargeInfoActive = _abCooldownStats.chargeInfoActive + 1 end
             if _cooldownBatchActive then
@@ -366,8 +344,8 @@ do
 
             local locInfo = GetActionLoCInfo(action)
 
-            local locActive = DecodePotentialSecretBoolean(locInfo.isActive)
-            local locReplacesNormal = DecodePotentialSecretBoolean(locInfo.shouldReplaceNormalCooldown)
+            local locActive = locInfo.isActive
+            local locReplacesNormal = locInfo.shouldReplaceNormalCooldown
             local showLoC    = locActive ~= false
             local showCharge = locReplacesNormal ~= true and chActive == true
             local showNormal = locReplacesNormal ~= true and cdActive ~= false
