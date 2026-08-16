@@ -1346,15 +1346,16 @@ local function UpdateAllKeybinds()
     end
 end
 
-local updatePending = false
+local updateTimer
 local UPDATE_THROTTLE = 0.5
 
 local function ThrottledUpdate()
-    if updatePending then return end
-    updatePending = true
+    if updateTimer then
+        updateTimer:Cancel()
+    end
 
-    C_Timer.After(UPDATE_THROTTLE, function()
-        updatePending = false
+    updateTimer = C_Timer.NewTimer(UPDATE_THROTTLE, function()
+        updateTimer = nil
         if InCombatLockdown() then
             pendingRebuild = true
             return
@@ -1364,6 +1365,7 @@ local function ThrottledUpdate()
 end
 
 local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("SPELLS_CHANGED")

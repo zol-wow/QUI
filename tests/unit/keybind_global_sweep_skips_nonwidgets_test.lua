@@ -17,7 +17,9 @@ function GetInventoryItemID() return nil end
 function GetMacroInfo() return nil end
 function GetMacroSpell() return nil end
 function GetActionText() return nil end
+local actionInfoCalls = 0
 function GetActionInfo(action)
+    actionInfoCalls = actionInfoCalls + 1
     if action == 7 then return "spell", 4242 end
     return nil
 end
@@ -25,21 +27,32 @@ end
 UIParent = {}
 C_Item = { GetItemInfo = function() return nil end }
 C_Spell = { GetSpellInfo = function(id) return { name = "Spell " .. tostring(id) } end }
-C_Timer = { After = noop }
+local timers = {}
+C_Timer = {
+    After = noop,
+    NewTimer = function(_, callback)
+        local timer = { callback = callback, cancelled = false }
+        function timer:Cancel() self.cancelled = true end
+        timers[#timers + 1] = timer
+        return timer
+    end,
+}
 C_Widget = {
     IsFrameWidget = function(object)
         return type(object) == "table" and rawget(object, "isFrameWidget") == true
     end,
 }
 
+local frames = {}
 function CreateFrame()
-    local frame = {}
+    local frame = { events = {}, scripts = {} }
     function frame:SetAllPoints() end
     function frame:CreateFontString() return { SetFont = noop, SetText = noop, Hide = noop, Show = noop } end
-    function frame:RegisterEvent() end
-    function frame:SetScript() end
+    function frame:RegisterEvent(event) self.events[event] = true end
+    function frame:SetScript(script, callback) self.scripts[script] = callback end
     function frame:Hide() end
     function frame:Show() end
+    frames[#frames + 1] = frame
     return frame
 end
 
@@ -115,5 +128,24 @@ assert(#reportedErrors == 0,
     "the sweep must not surface third-party errors: " .. tostring(reportedErrors[1]))
 assert(addon.Keybinds.GetKeybindForSpell(4242) == "F",
     "the sweep must still collect real action-button widgets from _G")
+
+local eventFrame
+for _, frame in ipairs(frames) do
+    if frame.events.ACTIONBAR_SLOT_CHANGED then
+        eventFrame = frame
+        break
+    end
+end
+assert(eventFrame and eventFrame.scripts.OnEvent,
+    "the keybind cache must listen for action-slot changes")
+
+local callsBeforeRefresh = actionInfoCalls
+eventFrame.scripts.OnEvent(eventFrame, "ACTIONBAR_SLOT_CHANGED")
+eventFrame.scripts.OnEvent(eventFrame, "ACTIONBAR_SLOT_CHANGED")
+assert(#timers == 2 and timers[1].cancelled and not timers[2].cancelled,
+    "action-slot bursts must debounce to the newest refresh")
+timers[2].callback()
+assert(actionInfoCalls > callsBeforeRefresh,
+    "the debounced action-slot refresh must rebuild the keybind cache")
 
 print("OK: keybind_global_sweep_skips_nonwidgets_test")
