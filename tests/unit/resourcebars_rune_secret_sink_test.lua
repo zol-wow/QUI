@@ -14,33 +14,35 @@ local runeStart = assert(getter:find("if resource == Enum.PowerType.Runes then",
 local runeEnd = assert(getter:find("\n    end", runeStart, true))
 local runeBody = getter:sub(runeStart, runeEnd)
 
-assert(not source:find("GetRuneCooldown", 1, true),
-    "rune state must not be inspected in Lua")
-assert(not source:find("RuneTimerOnUpdate", 1, true),
-    "rune recharge state must not drive a Lua timer")
 assert(not source:find("ShouldUnitPowerMaxBeSecret", 1, true),
     "rune rendering must not branch on predicted secrecy")
-assert(runeBody:find('local current = UnitPower("player", resource)', 1, true),
-    "rune current must be read raw")
-assert(runeBody:find('local max = UnitPowerMax("player", resource)', 1, true),
-    "rune max must be read raw")
+assert(runeBody:find("GetRuneCooldown(i)", 1, true),
+    "rune count must use Blizzard's per-rune state API")
+assert(not runeBody:find("UnitPower", 1, true),
+    "rune count must not use UnitPower, which does not expose spent runes")
 assert(not runeBody:find("ReadPlayerPowerPair", 1, true),
-    "rune current and max must not be classified")
+    "rune state must not use the generic secret power path")
 assert(not runeBody:find("IsSecretValue", 1, true),
-    "rune current and max must not be probed")
+    "documented-clean rune cooldown values must not be classified as UnitPower secrets")
 assert(source:find("function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical, current)", 1, true),
-    "fragment rendering must receive the raw power value")
-assert(source:find("runeFrame:SetMinMaxValues(pos - 1, pos)", 1, true),
-    "each rune pip must use a fixed C-side range")
-assert(source:find("runeFrame:SetValue(current)", 1, true),
-    "each rune pip must receive the raw power value")
+    "fragment rendering must retain the shared resource path")
+assert(source:find("local function RuneTimerOnUpdate(bar, delta)", 1, true),
+    "spent runes must animate while recharging")
+assert(source:find("runeFrame:SetValue(rec.frac)", 1, true),
+    "each rune pip must render its own cooldown fraction")
+assert(source:find("table.sort(runeOrder, RuneDisplayLess)", 1, true),
+    "ready and cooling runes must retain the reference ordering")
 assert(source:find('if valueType == "secret" then', 1, true),
     "non-rune secret resources must retain their sink path")
 assert(not source:find('if valueType == "secret" and resource ~= Enum.PowerType.Runes then', 1, true),
     "runes must not need a secret-path exception")
 assert(source:find('if type(max) == "nil" then', 1, true),
     "max absence must be checked without truth-testing a secret")
-assert(source:find('bar.TextValue:SetFormattedText("%d", displayValue)', 1, true),
-    "rune text must use a C formatting sink")
+assert(source:find('bar.TextValue:SetFormattedText("%d / %d", current, max)', 1, true),
+    "fragmented current and max text must use a C formatting sink")
+assert(source:find("cfg.showFragmentedPowerBarText == false", 1, true),
+    "fragmented text must honor its live setting")
+assert(source:find("self:OnRunePowerUpdate()", 1, true),
+    "the secret RUNE_POWER_UPDATE payload must be dropped at the event boundary")
 
 print("PASS resourcebars_rune_secret_sink_test")
