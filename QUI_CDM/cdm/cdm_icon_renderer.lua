@@ -3030,6 +3030,7 @@ local function UpdateIconCooldownOwned(icon)
 end
 
 UpdateIconCooldown = function(icon)
+    if icon and icon._spellEntry and icon._spellEntry._useManagedAura then return end
     return UpdateIconCooldownOwned(icon)
 end
 
@@ -3073,6 +3074,17 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         end
     end
     local isAuraEntry = (kind == "aura")
+    local settings = GetTrackerSettings(viewerType)
+    local auraRuns = ns.CDMCustomAuraRuns
+    local useManagedAura = isAuraEntry
+        and auraRuns
+        and auraRuns.ShouldUseSettings(settings)
+        and auraRuns.HasAuraEntries(settings, viewerType)
+    local spellData = ns.CDMSpellData
+    local selfAura = isAuraEntry
+        and spellData
+        and spellData.IsSelfAuraSpell
+        and spellData:IsSelfAuraSpell(entry.id)
     local itemID = (entry.type == "item")
         and ((Sources and Sources.QueryBestOwnedItemVariant
             and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id)
@@ -3090,6 +3102,9 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         itemID = itemID,
         _isCustomEntry = true,
         _sourceSpecID = entry._sourceSpecID,
+        linkedSpellIDs = entry.linkedSpellIDs,
+        _useManagedAura = useManagedAura and true or nil,
+        _selfAura = selfAura,
     }
     if entry.type == "macro" then
         spellEntry.macroName = entry.macroName
@@ -3226,6 +3241,13 @@ local function BuildIconListSignature(viewerType, container, spellData)
                     end
                     AppendSignaturePart(parts, resolvedKind)
 
+                    local selfAura = resolvedKind == "aura"
+                        and spellDataAPI
+                        and spellDataAPI.IsSelfAuraSpell
+                        and spellDataAPI:IsSelfAuraSpell(entry.id)
+                    AppendSignaturePart(parts, "selfAura")
+                    AppendSignaturePart(parts, selfAura == nil and "" or (selfAura and 1 or 0))
+
                     local mappedID, remapped
                     if AuraRuntime and AuraRuntime.ResolveAbilityAuraSpellID then
                         mappedID, remapped = AuraRuntime.ResolveAbilityAuraSpellID(entry.id)
@@ -3289,9 +3311,15 @@ function CDMIcons:BuildIcons(viewerType, container)
     if not container then return {} end
 
     local spellData = ns.CDMSpellData and ns.CDMSpellData:GetSpellList(viewerType) or {}
-    local signature = BuildIconListSignature(viewerType, container, spellData)
-    local pool = Factory:GetIconPool(viewerType)
     local clickViewerDB = GetTrackerSettings and GetTrackerSettings(viewerType)
+    local auraRuns = ns.CDMCustomAuraRuns
+    local layoutRestricted = auraRuns
+        and auraRuns.ShouldUseSettings(clickViewerDB)
+        and auraRuns.HasAuraEntries(clickViewerDB, viewerType)
+        or false
+    local signature = BuildIconListSignature(viewerType, container, spellData)
+        .. "|layoutRestricted:" .. tostring(layoutRestricted)
+    local pool = Factory:GetIconPool(viewerType)
     local clickable = (clickViewerDB and clickViewerDB.clickableIcons) and true or false
     local reusePool = pool
         and container._lastBuildSignature == signature
@@ -3303,7 +3331,7 @@ function CDMIcons:BuildIcons(viewerType, container)
         pool = Factory:EnsurePool(viewerType)
 
         for _, entry in ipairs(spellData) do
-            local icon = Factory:AcquireIcon(container, entry, clickable)
+            local icon = Factory:AcquireIcon(container, entry, clickable, layoutRestricted)
             pool[#pool + 1] = icon
         end
 
@@ -3324,7 +3352,7 @@ function CDMIcons:BuildIcons(viewerType, container)
                             and IsCustomBarEntryUsableOnCurrentClass(entry, viewerType) then
                             local spellEntry = BuildSpellEntryFromCustom(entry, idx, viewerType)
                             if spellEntry then
-                                local icon = Factory:AcquireIcon(container, spellEntry, clickable)
+                                local icon = Factory:AcquireIcon(container, spellEntry, clickable, layoutRestricted)
                                 pool[#pool + 1] = icon
                             end
                         end
@@ -3362,11 +3390,11 @@ function CDMIcons:BuildIcons(viewerType, container)
                             pool[i + prefixCount] = pool[i]
                         end
                         for i, entry in ipairs(unpositioned) do
-                            pool[i] = Factory:AcquireIcon(container, entry, clickable)
+                            pool[i] = Factory:AcquireIcon(container, entry, clickable, layoutRestricted)
                         end
                     else
                         for _, entry in ipairs(unpositioned) do
-                            local icon = Factory:AcquireIcon(container, entry, clickable)
+                            local icon = Factory:AcquireIcon(container, entry, clickable, layoutRestricted)
                             pool[#pool + 1] = icon
                         end
                     end
@@ -3377,7 +3405,7 @@ function CDMIcons:BuildIcons(viewerType, container)
                     return a.origIndex < b.origIndex
                 end)
                 for _, item in ipairs(positioned) do
-                    local icon = Factory:AcquireIcon(container, item.entry, clickable)
+                    local icon = Factory:AcquireIcon(container, item.entry, clickable, layoutRestricted)
                     local insertAt = math.min(item.position, #pool + 1)
                     table.insert(pool, insertAt, icon)
                 end
@@ -3514,6 +3542,7 @@ local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
 end
 
 function CDMIcons.ShouldContainerLayoutPlaceIcon(icon, entry, containerDB, inCombat)
+    if entry and entry._useManagedAura then return true end
     return not visibilityPolicy
         or visibilityPolicy:ShouldPlaceLayoutIcon(icon, entry, containerDB, inCombat)
 end
@@ -3612,6 +3641,11 @@ local function RequestStackTextUpdate()
 end
 
 local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
+    if entry and entry._useManagedAura then
+        if icon:IsShown() then icon:Hide() end
+        SyncCooldownBling(icon)
+        return
+    end
     local spellOvr = (not editMode) and GetIconSpellOverride(icon) or nil
     local isHiddenOverride = spellOvr and spellOvr.hidden
 
@@ -4196,6 +4230,7 @@ cdEventFrame:RegisterEvent("ITEM_COUNT_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_SOFT_ENEMY_CHANGED")
+cdEventFrame:RegisterUnitEvent("UNIT_FACTION", "target")
 cdEventFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cdEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -4526,6 +4561,11 @@ do
             return icon ~= nil
                 and icon._auraActive == true
                 and icon._auraUnit == "player"
+        end,
+        refreshCustomAuraTargets = function()
+            if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.RefreshTargets then
+                ns.CDMCustomAuraRuns.RefreshTargets()
+            end
         end,
     }
     runtimeRefresh = ns.CDMIconRuntimeRefresh and ns.CDMIconRuntimeRefresh.Create(callbacks)

@@ -112,6 +112,7 @@ local batches = {}
 local endedBatches = 0
 local drained = 0
 local rangeRefreshes = 0
+local targetRouteRefreshes = 0
 local schedules = {}
 local barsDirty = false
 local dirtyBarRuns = 0
@@ -199,6 +200,9 @@ local controller = module.Create({
     end,
     updateIconRangesForUsabilityEvent = function()
         rangeRefreshes = rangeRefreshes + 1
+    end,
+    refreshCustomAuraTargets = function()
+        targetRouteRefreshes = targetRouteRefreshes + 1
     end,
     scheduleUpdate = function(fast, mode, reason)
         schedules[#schedules + 1] = {
@@ -459,11 +463,14 @@ stackRequested = false
 barsDirty = false
 local schedulesBeforeTarget = #schedules
 local rangeRefreshesBeforeTarget = rangeRefreshes
+local targetRouteRefreshesBefore = targetRouteRefreshes
 local dirtyRunsBeforeTarget = dirtyBarRuns
 spellIcon._hasCooldownActive = true
 controller:Handle("PLAYER_TARGET_CHANGED")
 assert(rangeRefreshes == rangeRefreshesBeforeTarget + 1,
     "target changes should still refresh icon ranges")
+assert(targetRouteRefreshes == targetRouteRefreshesBefore + 1,
+    "target changes must refresh secure custom aura routing")
 -- ApplyTargetScope no longer runs an aura scope. A target change's aura side is
 -- owned by cdm_spelldata's PLAYER_TARGET_CHANGED handler (ReleaseCapturedAuras +
 -- NotifyAuraConsumers("target", nil) -> a full ApplyAuraScope); doing it here
@@ -479,6 +486,9 @@ assert(#schedules == schedulesBeforeTarget,
 assert(barsDirty == false, "target changes must not mark bars dirty in the controller (no aura scope here)")
 assert(dirtyBarRuns == dirtyRunsBeforeTarget,
     "target changes must not run dirty bar updates in the controller (no aura scope here)")
+controller:Handle("UNIT_FACTION", "target")
+assert(targetRouteRefreshes == targetRouteRefreshesBefore + 2,
+    "target reaction changes must refresh secure custom aura routing")
 
 reset(applied)
 reset(runtimeUpdated)

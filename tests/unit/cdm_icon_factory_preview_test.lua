@@ -13,9 +13,9 @@ end
 local source = readAll("QUI_CDM/cdm/cdm_icon_factory.lua")
 
 -- T1: bare construction helper must exist and be separate from CreateIcon
-local bareStart = assert(source:find("local function CreateIconBare(parent, spellEntry)", 1, true),
+local bareStart = assert(source:find("local function CreateIconBare(parent, spellEntry, layoutRestricted)", 1, true),
     "CreateIconBare must exist as a local function in cdm_icon_factory.lua")
-local createIconStart = assert(source:find("local function CreateIcon(parent, spellEntry)", 1, true),
+local createIconStart = assert(source:find("local function CreateIcon(parent, spellEntry, layoutRestricted)", 1, true),
     "CreateIcon must still exist as a local function")
 assert(bareStart < createIconStart,
     "CreateIconBare must be defined before CreateIcon so CreateIcon can call it")
@@ -23,7 +23,7 @@ assert(bareStart < createIconStart,
 -- T1: CreateIcon must delegate construction to CreateIconBare
 local createIconEnd = assert(source:find("\nend\n", createIconStart, true),
     "CreateIcon must terminate with end")
-local delegation = source:find("CreateIconBare(parent, spellEntry)", createIconStart, true)
+local delegation = source:find("CreateIconBare(parent, spellEntry, layoutRestricted)", createIconStart, true)
 assert(delegation and delegation < createIconEnd,
     "CreateIcon must call CreateIconBare(parent, spellEntry) to build the frame tree")
 
@@ -63,8 +63,8 @@ local acqStart = assert(
     "AcquireForPreview definition not located")
 local acqEnd = assert(source:find("\nend\n", acqStart, true),
     "AcquireForPreview must terminate with end")
-assert(source:find("CreateIconBare(parent, spellEntry)", acqStart, true) and
-       source:find("CreateIconBare(parent, spellEntry)", acqStart, true) < acqEnd,
+assert(source:find("CreateIconBare(parent, spellEntry, false)", acqStart, true) and
+       source:find("CreateIconBare(parent, spellEntry, false)", acqStart, true) < acqEnd,
     "AcquireForPreview must construct via CreateIconBare")
 do
     local tryBind = source:find("TryBindIconToBlizz", acqStart, true)

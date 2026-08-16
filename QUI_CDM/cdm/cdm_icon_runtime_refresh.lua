@@ -952,6 +952,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if callbacks.chargeDebug then
             callbacks.chargeDebug(nil, "EVENT", event, "target-scope-refresh")
         end
+        if callbacks.refreshCustomAuraTargets then
+            callbacks.refreshCustomAuraTargets()
+        end
         if callbacks.updateAllIconRanges then
             setResolveCallerTag("rangeTarget")
             callbacks.updateAllIconRanges()
@@ -1024,7 +1027,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             controller:ApplyTargetScope(event)
             return
         end
-        if event == "PLAYER_SOFT_ENEMY_CHANGED" then
+        if event == "PLAYER_SOFT_ENEMY_CHANGED" or event == "UNIT_FACTION" then
             controller:ApplyTargetScope(event)
             return
         end

@@ -115,7 +115,7 @@ local AuraSkin = ns.Addon.AuraSkin
 check("core/aura_skin.lua publishes ns.Addon.AuraSkin", AuraSkin ~= nil)
 
 local container = MakeContainer()
-local profile = { iconSize = 20 }
+local profile = { iconSize = 20, iconWidth = 30, iconHeight = 12 }
 
 ----------------------------------------------------------------------------
 -- (1) Three groups, first Configure: layoutIndex must match CALLER-array
@@ -124,7 +124,7 @@ local profile = { iconSize = 20 }
 ----------------------------------------------------------------------------
 local groups = {
     { key = "s1", filter = "HELPFUL" },
-    { key = "s2", filter = "HARMFUL" },
+    { key = "s2", filter = "HARMFUL", groupSpacing = 7 },
     { key = "s3", filter = "PLAYER" },
 }
 AuraSkin.Configure(container, profile, groups)
@@ -138,6 +138,11 @@ check("s2 registered second, layoutIndex 2",
 check("s3 registered third, layoutIndex 3",
     container._layoutByKey["s3|PLAYER"] and container._layoutByKey["s3|PLAYER"].layoutIndex == 3,
     container._layoutByKey["s3|PLAYER"] and tostring(container._layoutByKey["s3|PLAYER"].layoutIndex))
+check("rectangular profile dimensions reach group layout",
+    container._layoutByKey["s1|HELPFUL"].elementWidth == 30
+        and container._layoutByKey["s1|HELPFUL"].elementHeight == 12)
+check("per-group spacing reaches group layout",
+    container._layoutByKey["s2|HARMFUL"].groupSpacing == 7)
 
 check("Configure stamped g._quiOrder onto every group descriptor in caller order",
     groups[1]._quiOrder == 1 and groups[2]._quiOrder == 2 and groups[3]._quiOrder == 3,

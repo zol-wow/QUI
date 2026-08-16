@@ -38,6 +38,15 @@ local ns = {
         end,
     },
     CDMSources = {},
+    CDMCatalog = {
+        RebuildBlizzardCatalogMaps = function(spellToCooldownID)
+            spellToCooldownID[222] = 7
+            spellToCooldownID[333] = 8
+        end,
+        GetCooldownInfo = function(cooldownID)
+            return { selfAura = cooldownID == 7 }
+        end,
+    },
 }
 
 dofile("tests/helpers/load_cdm_spelldata_runtime.lua")(ns)
@@ -60,5 +69,9 @@ assert(resolveKind({ id = 100, type = "spell" }, "customBar") == "cooldown",
     "custom container spell entries default to cooldown classification")
 assert(resolveKind({ id = 400, type = "spell" }, "customBar") == "cooldown",
     "unknown custom container spell should default to cooldown kind")
+assert(ns.CDMSpellData:IsSelfAuraSpell(222) == true,
+    "selfAura catalog metadata must route the spell to the player")
+assert(ns.CDMSpellData:IsSelfAuraSpell(333) == false,
+    "non-self catalog metadata must not route the spell to the player")
 
 print("OK: cdm_spelldata_entry_kind_taxonomy_test")

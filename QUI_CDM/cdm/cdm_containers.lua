@@ -2357,22 +2357,20 @@ local function LayoutContainer(trackerKey)
         end
     end
 
-    if #iconsToLayout == 0 then
-        applying[trackerKey] = false
-        return
-    end
-
     local minWidthEnabled, minWidth = GetHUDMinWidth()
     local applyHUDMinWidth = minWidthEnabled
         and (trackerKey == "essential" or trackerKey == "utility")
         and IsHUDAnchoredToCDM()
 
-    local layoutPlan = CDMLayout and CDMLayout.BuildIconLayout
+    local layoutPlan = #iconsToLayout > 0 and CDMLayout and CDMLayout.BuildIconLayout
         and CDMLayout.BuildIconLayout(settings, iconsToLayout, {
             applyHUDMinWidth = applyHUDMinWidth,
             minWidth = minWidth,
         })
     if not layoutPlan or not layoutPlan.metrics or #layoutPlan.placements == 0 then
+        if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.Apply then
+            ns.CDMCustomAuraRuns.Apply(container)
+        end
         applying[trackerKey] = false
         return
     end
@@ -2400,6 +2398,10 @@ local function LayoutContainer(trackerKey)
         icon:Show()
 
         ns.CDMIcons.OnContainerIconPlaced(icon, rowConfig)
+    end
+
+    if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.Apply then
+        ns.CDMCustomAuraRuns.Apply(container, settings, layoutPlan)
     end
 
     local maxRowWidth, proxyTotalHeight = ApplyViewerMetrics(vs, layoutPlan.metrics, trackerKey)

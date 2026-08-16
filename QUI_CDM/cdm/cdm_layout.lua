@@ -96,6 +96,29 @@ function CDMLayout.GetTotalIconCapacity(settings)
     return total
 end
 
+function CDMLayout.AnchorLinearChain(owner, frames, opts)
+    if not owner or type(frames) ~= "table" or #frames == 0 then return false end
+    opts = opts or {}
+    if opts.axis ~= nil and opts.axis ~= "HORIZONTAL" then return false end
+    if opts.grow ~= nil and opts.grow ~= "RIGHT" then return false end
+
+    local spacing = opts.spacing or 0
+    local offsetY = opts.offsetY or 0
+    local previous
+    for i = 1, #frames do
+        local frame = frames[i]
+        if not (frame and frame.ClearAllPoints and frame.SetPoint) then return false end
+        frame:ClearAllPoints()
+        if previous then
+            frame:SetPoint("LEFT", previous, "RIGHT", spacing, 0)
+        else
+            frame:SetPoint("LEFT", owner, "LEFT", opts.offsetX or 0, offsetY)
+        end
+        previous = frame
+    end
+    return true
+end
+
 function CDMLayout.BuildRows(settings)
     local rows = {}
     if not settings then return rows end

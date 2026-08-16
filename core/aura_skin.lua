@@ -52,6 +52,8 @@ local function ResolveLayout(profile)
     return {
         maxIcons  = m.maxIcons,
         iconSize  = m.iconSize,
+        iconWidth = profile.iconWidth or m.iconSize,
+        iconHeight = profile.iconHeight or m.iconSize,
         spacing   = m.spacing,
         grow      = m.grow,
         maxPerRow = profile.maxPerRow or 0,
@@ -249,7 +251,9 @@ local Helpers = ns.Helpers
 local function styleButton(button, profile)
     local size = profile.iconSize or 22
     if size <= 0 then size = 22 end
-    button:SetSize(size, size)
+    local width = profile.iconWidth or size
+    local height = profile.iconHeight or size
+    button:SetSize(width, height)
 
     if button.SetTooltipAnchorPoint then
         if profile.tooltipAnchor then
@@ -455,11 +459,14 @@ local function GroupLayout(L, g)
     local t = {
         elementSpacing = L.spacing,
         lineSpacing    = L.spacing,
-        elementWidth   = L.iconSize,
-        elementHeight  = L.iconSize,
+        elementWidth   = L.iconWidth,
+        elementHeight  = L.iconHeight,
     }
     if g and type(g._quiOrder) == "number" then
         t.layoutIndex = g._quiOrder
+    end
+    if g and type(g.groupSpacing) == "number" then
+        t.groupSpacing = g.groupSpacing
     end
     return t
 end
