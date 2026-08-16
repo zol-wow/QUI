@@ -136,7 +136,11 @@ local function StubFrame()
 end
 _G.CreateFrame = function() return StubFrame() end
 
-local ns = {}
+local ns = {
+    Helpers = {
+        SafeToNumber = function(value, fallback) return tonumber(value) or fallback end,
+    },
+}
 assert(loadfile("core/aura_glue.lua"))("QUI", ns)
 assert(loadfile("core/aura_preview.lua"))("QUI", ns)
 local P = ns.AuraPreview
@@ -284,6 +288,21 @@ check("tracked bar draws one rectangle per configured spell",
     type(barPool) == "table" and #barPool == 1 and barPool[1].shown)
 check("bar rectangle sized bar.length x bar.thickness",
     barPool[1].w == 50 and barPool[1].h == 10)
+local matchHost = {
+    GetWidth = function() return 120 end,
+    GetHeight = function() return 80 end,
+}
+P.Show(matchHost, { { mode = "tracked", displayType = "bar", auraType = "HELPFUL",
+    anchor = "TOPLEFT", spells = { 101 }, bar = { length = 50, thickness = 10, matchFrameSize = true },
+    iconSize = 16 } })
+check("horizontal matchFrameSize uses host width",
+    matchHost._quiAuraPreview[1].w == 120 and matchHost._quiAuraPreview[1].h == 10)
+P.Show(matchHost, { { mode = "tracked", displayType = "bar", auraType = "HELPFUL",
+    anchor = "TOPLEFT", spells = { 101 },
+    bar = { length = 50, thickness = 10, orientation = "VERTICAL", matchFrameSize = true },
+    iconSize = 16 } })
+check("vertical matchFrameSize uses host height",
+    matchHost._quiAuraPreview[1].w == 10 and matchHost._quiAuraPreview[1].h == 80)
 do
     local tex = barPool[1]._tex
     check("bar texture used SetColorTexture with element.color",
