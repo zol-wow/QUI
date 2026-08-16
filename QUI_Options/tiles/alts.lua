@@ -16,6 +16,7 @@ function V2Alts.Register(frame)
         id = "alts",
         icon = "A",
         name = ns.L["Alts"],
+        moduleFeatureId = "moduleFlag_alts",
         subPages = {
             {
                 id = "alts",

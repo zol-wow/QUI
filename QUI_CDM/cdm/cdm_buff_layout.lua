@@ -510,13 +510,14 @@ end
 local function GetTrackedBarSpellData(frame)
     if not frame then return nil end
 
-    local resolvedSpellID, baseSpellID, overrideSpellID, name
+    local resolvedSpellID, baseSpellID, overrideSpellID, linkedSpellID, name
     local cdInfo = frame.cooldownInfo
     if cdInfo then
+        linkedSpellID = ReadNumber(cdInfo.linkedSpellID, nil)
         overrideSpellID = ReadNumber(cdInfo.overrideSpellID, nil)
         baseSpellID = ReadNumber(cdInfo.spellID, nil)
         name = ReadString(cdInfo.name, nil)
-        resolvedSpellID = overrideSpellID or baseSpellID
+        resolvedSpellID = linkedSpellID or overrideSpellID or baseSpellID
     end
 
     if (not resolvedSpellID or not name) and frame.cooldownID then
@@ -557,6 +558,7 @@ local function GetTrackedBarSpellData(frame)
         spellID = resolvedSpellID,
         baseSpellID = baseSpellID or resolvedSpellID,
         overrideSpellID = overrideSpellID,
+        linkedSpellID = linkedSpellID,
         name = name,
         cooldownID = frame.cooldownID,
     }
@@ -576,7 +578,7 @@ local function GetTrackedBarIconTexture(frame, spellData)
         end
     end
 
-    local spellID = spellData and (spellData.overrideSpellID or spellData.spellID or spellData.baseSpellID)
+    local spellID = spellData and (spellData.spellID or spellData.overrideSpellID or spellData.baseSpellID)
     if spellID then
         local info = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(spellID)
         if info and info.iconID then
@@ -600,15 +602,11 @@ local function GetTrackedBarRuntimeEntries()
 
     local entries = {}
     local selection = viewer.Selection
-    local okN, numChildren = pcall(viewer.GetNumChildren, viewer)
-    if not okN or not numChildren or numChildren == 0 then
-        return entries
-    end
+    local pool = viewer.itemFramePool
+    if not (pool and pool.EnumerateActive) then return entries end
 
-    local children = { viewer:GetChildren() }
-    for ci = 1, numChildren do
-        local child = children[ci]
-        if child and child ~= selection and child.IsObjectType and child:IsObjectType("Frame")
+    for child in pool:EnumerateActive() do
+        if child ~= selection and child.IsObjectType and child:IsObjectType("Frame")
             and child.Bar and child.Bar.IsObjectType and child.Bar:IsObjectType("StatusBar")
             and (child.cooldownID or child.layoutIndex) then
             local spellData = GetTrackedBarSpellData(child)
@@ -617,6 +615,7 @@ local function GetTrackedBarRuntimeEntries()
                     spellID = spellData.spellID,
                     baseSpellID = spellData.baseSpellID,
                     overrideSpellID = spellData.overrideSpellID,
+                    linkedSpellID = spellData.linkedSpellID,
                     name = spellData.name or "",
                     iconTexture = GetTrackedBarIconTexture(child, spellData),
                     cooldownID = spellData.cooldownID,

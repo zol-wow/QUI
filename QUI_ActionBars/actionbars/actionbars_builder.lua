@@ -35,6 +35,16 @@ end
 -- Update() whenever the button holds an action, so it needs a standing hook.
 local ownedDispatchExcludedButtons = setmetatable({}, { __mode = "k" })
 local actionEventsPurgeHooked = false
+local pendingPingAttributes = setmetatable({}, { __mode = "k" })
+
+function FlushPendingPingAttributes()
+    for pending in pairs(pendingPingAttributes) do
+        pendingPingAttributes[pending] = nil
+        if type(pending.UpdatePingAttributes) == "function" then
+            ns.SafeCallMethod("best-effort-style", pending, "UpdatePingAttributes")
+        end
+    end
+end
 
 local function KeepOwnedButtonOutOfActionEventsFrame(btn)
     ownedDispatchExcludedButtons[btn] = true
@@ -65,6 +75,46 @@ function EnsureOwnedActionButton(container, barKey, btnName, index)
             for k, f in pairs(broadcaster.frames) do
                 if f == btn then broadcaster.frames[k] = nil end
             end
+        end
+        btn.Update = function(self)
+            local assistFrame = self.AssistedCombatRotationFrame
+            if type(assistFrame) == "table" and assistFrame.GetScript
+                and assistFrame:GetScript("OnUpdate") then
+                assistFrame:SetScript("OnUpdate", nil)
+            end
+            ns.SafeCall("best-effort-style", ActionBarsOwned.SafeUpdate, self)
+            if HasButtonContent(self, GetSafeActionSlot(self)) then
+                self:UpdateTypeOverlay()
+                self:UpdateHighlightMark()
+            else
+                self:ClearTypeOverlay()
+            end
+        end
+        local blizzardPingUpdate = btn.UpdatePingAttributes
+        if type(blizzardPingUpdate) == "function" then
+            btn.UpdatePingAttributes = function(self)
+                if InCombatLockdown() then
+                    pendingPingAttributes[self] = true
+                    return
+                end
+                pendingPingAttributes[self] = nil
+                blizzardPingUpdate(self)
+            end
+        end
+        local castAnim = btn.SpellCastAnimFrame
+        if type(castAnim) == "table" and castAnim.SetScript then
+            local owner = btn
+            castAnim:SetScript("OnHide", function()
+                if owner.ClearReticle then owner:ClearReticle() end
+                if owner.cooldown then owner.cooldown:SetSwipeColor(0, 0, 0, 1) end
+                ScheduleABCooldownUpdate(true)
+            end)
+        end
+        btn:SetScript("OnShow", nil)
+        btn:SetScript("OnHide", nil)
+        if btn.QuickKeybindButtonOnShow and btn.QuickKeybindButtonOnHide then
+            btn:HookScript("OnShow", btn.QuickKeybindButtonOnShow)
+            btn:HookScript("OnHide", btn.QuickKeybindButtonOnHide)
         end
         btn:SetAttribute("type", "action")
         btn:SetAttribute("checkselfcast", true)
@@ -711,8 +761,9 @@ function BuildBar(barKey)
 
     if not ActionBarsOwned.slotMap then ActionBarsOwned.slotMap = {} end
     for _, btn in ipairs(buttons) do
-        if btn.action and btn.action > 0 then
-            ActionBarsOwned.slotMap[btn.action] = { button = btn, barKey = barKey }
+        local slot = GetSafeActionSlot(btn)
+        if slot then
+            ActionBarsOwned.slotMap[slot] = { button = btn, barKey = barKey }
         end
     end
 

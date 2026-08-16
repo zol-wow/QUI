@@ -68,7 +68,7 @@ do
     check("party: dedupeDefensives stripped",
         profile.quiGroupFrames.party.auras.elements["*"][1].dedupeDefensives == nil
         and profile.quiGroupFrames.party.auras.elements["*"][2].dedupeDefensives == nil)
-    check("stamped to current (60)", profile._schemaVersion == 60, tostring(profile._schemaVersion))
+    check("stamped to current (current)", profile._schemaVersion == M.CURRENT_SCHEMA_VERSION, tostring(profile._schemaVersion))
 end
 
 ----------------------------------------------------------------------------

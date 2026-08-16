@@ -609,8 +609,9 @@ end
 
 local function ElementShouldCheckBuff(element, buff)
     if element.classDetection ~= false then
+        -- Auto-detect tracks only the raid buff the player's class provides;
+        -- CDM Group Buff entries (no providerClass) are opt-in via manual mode.
         return CLASS_TO_BUFF_KEY[GetPlayerClass() or ""] == buff.key
-            or buff.providerClass == nil
     end
     local checks = element.buffChecks
     if type(checks) ~= "table" then

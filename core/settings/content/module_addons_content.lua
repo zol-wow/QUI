@@ -135,9 +135,14 @@ for _, entry in ipairs(ns.AddonManifest) do
                 isEnabled    = function()
                     return ReadLegacyFlag(hostFlagPath)
                 end,
-                setEnabled   = function(val)
+                setEnabled   = function(val, options)
                     WriteLegacyFlag(hostFlagPath, val and true or false)
-                    ShowReloadPrompt()
+                    if ns.QUI_Modules then
+                        ns.QUI_Modules:NotifyChanged("moduleFlag_" .. mod)
+                    end
+                    if not (options and options.suppressReloadPrompt) then
+                        ShowReloadPrompt()
+                    end
                 end,
             }
             Registry:RegisterFeature(Schema.Feature({
@@ -160,7 +165,7 @@ for _, entry in ipairs(ns.AddonManifest) do
                 end
                 return addonOn
             end,
-            setEnabled   = function(val)
+            setEnabled   = function(val, options)
                 local flipped = false
                 if flagPath then
                     if val then
@@ -174,7 +179,8 @@ for _, entry in ipairs(ns.AddonManifest) do
                 end
                 if result == "depDisabled" then
                     ShowDependencyPrompt(folder, depFolder)
-                elseif result == "reload" or (flipped and result == "loaded") then
+                elseif not (options and options.suppressReloadPrompt)
+                    and (result == "reload" or (flipped and result == "loaded")) then
                     ShowReloadPrompt()
                 end
             end,

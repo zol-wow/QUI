@@ -136,6 +136,15 @@ check("mirror must not compare mirrored values",
         or string.find(mirrorFn, "GetText() ~=", 1, true)
         or string.find(mirrorFn, "GetText() ==", 1, true)),
     "comparison on a mirrored (possibly secret) value")
+check("mirror must forward Name text into SetText",
+    string.find(mirrorFn, "nameFS:GetText()", 1, true) ~= nil,
+    "name text passthrough missing -- variant auras keep the static name")
+check("mirror must forward the live icon texture into SetTexture",
+    string.find(mirrorFn, "iconTex:GetTexture()", 1, true) ~= nil,
+    "icon passthrough missing -- variant auras keep the static icon")
+check("mirror must not probe mirrored values",
+    not string.find(mirrorFn, "issecretvalue", 1, true),
+    "secret probe inside the mirror -- values pass to sinks untouched")
 
 ---------------------------------------------------------------------------
 -- 4b. Pairing self-heals (reference pattern): on cooldownID mismatch the

@@ -109,6 +109,14 @@ function ItemButtons.CreateLive(holder, bagID)
     button:SetBagID(bagID)
     button.GetItemContextMatchResult = LiveGetItemContextMatchResult
     if button.IconBorder then button.IconBorder:SetAlpha(0) end
+    if button.IconOverlay then
+        button.IconOverlay:ClearAllPoints()
+        button.IconOverlay:SetAllPoints(button)
+    end
+    if button.IconOverlay2 then
+        button.IconOverlay2:ClearAllPoints()
+        button.IconOverlay2:SetAllPoints(button)
+    end
     button.noProfessionQualityOverlay = true
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
     if button.ClearNormalTexture then button:ClearNormalTexture() end

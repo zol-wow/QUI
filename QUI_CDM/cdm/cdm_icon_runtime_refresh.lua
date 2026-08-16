@@ -40,6 +40,7 @@ local function SetupDebugInstrumentation()
         spellsChangedScoped = 0,
         unitSpellcastCooldownSkips = 0,
         unitSpellcastCooldownFallbacks = 0,
+        refreshAllCooldownFallbacks = 0,
     }
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_catalogScopeRefreshes", counter = true, fn = function() return runtimeRefreshStats.catalogScopeRefreshes end }
@@ -54,6 +55,7 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "CDM_spellsChangedScoped", counter = true, fn = function() return runtimeRefreshStats.spellsChangedScoped end }
     mp[#mp + 1] = { name = "CDM_unitSpellcastCooldownSkips", counter = true, fn = function() return runtimeRefreshStats.unitSpellcastCooldownSkips end }
     mp[#mp + 1] = { name = "CDM_unitSpellcastCooldownFallbacks", counter = true, fn = function() return runtimeRefreshStats.unitSpellcastCooldownFallbacks end }
+    mp[#mp + 1] = { name = "CDM_refreshAllCooldownFallbacks", counter = true, fn = function() return runtimeRefreshStats.refreshAllCooldownFallbacks end }
     measureFn = ns.DebugIsolate and ns.DebugIsolate(ns.MemAuditProfilerMeasure)
         or ns.MemAuditProfilerMeasure
 end
@@ -1134,6 +1136,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             local comparableSpellID = normalizeSpellIdentifier(callbacks, spellID) ~= nil
             if comparableSpellID then
                 controller:ApplySpellID(spellID, baseSpellID)
+            elseif callbacks.scheduleUpdate then
+                if runtimeRefreshStats then runtimeRefreshStats.refreshAllCooldownFallbacks = runtimeRefreshStats.refreshAllCooldownFallbacks + 1 end
+                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all")
             end
         elseif kind == "cast_start" then
             if normalizeSpellIdentifier(callbacks, spellID) ~= nil then

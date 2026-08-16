@@ -57,6 +57,45 @@ function CDMIconFactory.HideEntryTooltip()
     end
 end
 
+local function AnchorEntryTooltip(owner, tooltipSettings)
+    if tooltipSettings and tooltipSettings.anchorToCursor then
+        local anchorTooltip = ns.QUI_AnchorTooltipToCursor
+        if anchorTooltip then
+            anchorTooltip(GameTooltip, owner, tooltipSettings)
+        else
+            GameTooltip:SetOwner(owner, "ANCHOR_CURSOR")
+        end
+    else
+        GameTooltip:SetOwner(owner, "ANCHOR_BOTTOM")
+    end
+end
+
+local WoW_IsSecretValue = issecretvalue
+
+local function AuraCarrierFields(frame)
+    if WoW_IsSecretValue and WoW_IsSecretValue(frame) then return nil end -- @secret-policy: reject-secret-value (a secret frame ref cannot be indexed for aura fields)
+    if type(frame) ~= "table" then return nil end
+    local auraInstanceID = frame.auraInstanceID
+    if WoW_IsSecretValue and WoW_IsSecretValue(auraInstanceID) then return nil end -- @secret-policy: reject-secret-ids (secret in combat; tooltip accessor would hard-error)
+    if type(auraInstanceID) == "nil" then return nil end
+    local unit = frame.auraDataUnit
+    if WoW_IsSecretValue and WoW_IsSecretValue(unit) then return nil end -- @secret-policy: reject-secret-value
+    if type(unit) ~= "string" then return nil end
+    return unit, auraInstanceID
+end
+
+local function ResolveAuraCarrier(owner)
+    local unit, auraInstanceID = AuraCarrierFields(owner)
+    if unit then return unit, auraInstanceID end
+    unit, auraInstanceID = AuraCarrierFields(owner._quiCdmLive)
+    if unit then return unit, auraInstanceID end
+    if owner.GetParent then
+        unit, auraInstanceID = AuraCarrierFields(owner:GetParent())
+        if unit then return unit, auraInstanceID end
+    end
+    return nil
+end
+
 function CDMIconFactory.ShowEntryTooltip(owner, entry, tooltipContext)
     if not (owner and entry and GameTooltip) then return false end
     if GameTooltip.IsForbidden and GameTooltip:IsForbidden() then return false end
@@ -81,39 +120,48 @@ function CDMIconFactory.ShowEntryTooltip(owner, entry, tooltipContext)
     if (not tooltipProvider) and tooltipSettings and tooltipSettings.hideInCombat and InCombatLockdown() then
         return false
     end
-    if tooltipSettings and tooltipSettings.anchorToCursor then
-        local anchorTooltip = ns.QUI_AnchorTooltipToCursor
-        if anchorTooltip then
-            anchorTooltip(GameTooltip, owner, tooltipSettings)
-        else
-            GameTooltip:SetOwner(owner, "ANCHOR_CURSOR")
+    AnchorEntryTooltip(owner, tooltipSettings)
+
+    local auraShown = false
+    local setAuraByInstance = GameTooltip.SetUnitAuraByAuraInstanceID
+    if setAuraByInstance then
+        local auraUnit, auraInstanceID = ResolveAuraCarrier(owner)
+        if auraUnit then
+            -- Auras can be secret in combat; from tainted execution the
+            -- accessor hard-errors instead of returning nil.
+            local ok, shown = pcall(setAuraByInstance, GameTooltip, auraUnit, auraInstanceID,
+                "INCLUDE_NAME_PLATE_ONLY")
+            auraShown = (ok and shown) and true or false
+            if not auraShown then
+                AnchorEntryTooltip(owner, tooltipSettings)
+            end
         end
-    else
-        GameTooltip:SetOwner(owner, "ANCHOR_BOTTOM")
     end
 
-    local sid = owner._activeAuraSpellID
-    if not sid then
-        sid = owner._runtimeSpellID
-    end
-    if not sid and ns.CDMSpellData and ns.CDMSpellData.ResolveDisplaySpellID then
-        sid = ns.CDMSpellData:ResolveDisplaySpellID(entry)
-    end
-    if sid then
-        if entry.type == "trinket" or entry.type == "slot" then
-            local itemID = entry.itemID
-            if not itemID and Sources and Sources.QueryInventoryItemID then
-                itemID = Sources.QueryInventoryItemID("player", entry.id)
-            end
-            if itemID then
+    if not auraShown then
+        local sid = owner._activeAuraSpellID
+        if not sid then
+            sid = owner._runtimeSpellID
+        end
+        if not sid and ns.CDMSpellData and ns.CDMSpellData.ResolveDisplaySpellID then
+            sid = ns.CDMSpellData:ResolveDisplaySpellID(entry)
+        end
+        if sid then
+            if entry.type == "trinket" or entry.type == "slot" then
+                local itemID = entry.itemID
+                if not itemID and Sources and Sources.QueryInventoryItemID then
+                    itemID = Sources.QueryInventoryItemID("player", entry.id)
+                end
+                if itemID then
+                    GameTooltip.SetItemByID(GameTooltip, itemID)
+                end
+            elseif entry.type == "item" then
+                local itemID = (Sources and Sources.QueryBestOwnedItemVariant
+                    and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
                 GameTooltip.SetItemByID(GameTooltip, itemID)
+            else
+                GameTooltip.SetSpellByID(GameTooltip, sid)
             end
-        elseif entry.type == "item" then
-            local itemID = (Sources and Sources.QueryBestOwnedItemVariant
-                and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
-            GameTooltip.SetItemByID(GameTooltip, itemID)
-        else
-            GameTooltip.SetSpellByID(GameTooltip, sid)
         end
     end
 

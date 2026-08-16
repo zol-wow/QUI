@@ -89,14 +89,37 @@ local POTION_DEFS = {
             { itemID = 241301, tag = "Silver Crafted" },
         },
     },
+    liquid_luster = {
+        label = "Liquid Luster (Versatility)",
+        variants = {
+            { itemID = 271887, tag = "Gold Crafted" },
+            { itemID = 271886, tag = "Silver Crafted" },
+        },
+    },
+    alluring_nostrum = {
+        label = "Alluring Nostrum (AoE Shadow)",
+        variants = {
+            { itemID = 271890, tag = "Gold Crafted" },
+            { itemID = 271889, tag = "Silver Crafted" },
+        },
+    },
 }
 
 local HEALTH_DEFS = {
     silvermoon = {
         label = "Silvermoon Health Potion",
         variants = {
+            { itemID = 245918, tag = "Gold Fleeting" },
+            { itemID = 245919, tag = "Silver Fleeting" },
             { itemID = 241304, tag = "Gold Crafted" },
             { itemID = 241305, tag = "Silver Crafted" },
+        },
+    },
+    concentrated = {
+        label = "Concentrated Silvermoon Health Potion",
+        variants = {
+            { itemID = 271884, tag = "Gold Crafted" },
+            { itemID = 271883, tag = "Silver Crafted" },
         },
     },
 }
@@ -125,6 +148,13 @@ local VANTUS_DEFS = {
         variants = {
             { itemID = 245880, tag = "Gold Crafted" },
             { itemID = 245879, tag = "Silver Crafted" },
+        },
+    },
+    tides = {
+        label = "Vantus Rune: Tides (Vers, weekly)",
+        variants = {
+            { itemID = 272195, tag = "Gold Crafted" },
+            { itemID = 272194, tag = "Silver Crafted" },
         },
     },
 }
@@ -258,12 +288,15 @@ ConsumableMacros.POTION_OPTIONS = {
     { value = "rampant_abandon", text = ns.L["Rampant Abandon (Primary)"] },
     { value = "lights_potential", text = ns.L["Light's Potential (Primary, safe)"] },
     { value = "zealotry", text = ns.L["Zealotry (Single-target)"] },
+    { value = "liquid_luster", text = ns.L["Liquid Luster (Versatility)"] },
+    { value = "alluring_nostrum", text = ns.L["Alluring Nostrum (AoE Shadow)"] },
     { value = "mana", text = ns.L["Mana Potion"] },
 }
 
 ConsumableMacros.HEALTH_OPTIONS = {
     { value = "none", text = ns.L["None"] },
     { value = "silvermoon", text = ns.L["Silvermoon Health Potion"] },
+    { value = "concentrated", text = ns.L["Concentrated Silvermoon Health Potion"] },
 }
 
 ConsumableMacros.HEALTHSTONE_OPTIONS = {
@@ -279,6 +312,7 @@ ConsumableMacros.AUGMENT_OPTIONS = {
 ConsumableMacros.VANTUS_OPTIONS = {
     { value = "none", text = ns.L["None"] },
     { value = "radiant", text = ns.L["Vantus Rune: Radiant (Vers)"] },
+    { value = "tides", text = ns.L["Vantus Rune: Tides (Vers)"] },
 }
 
 ConsumableMacros.WEAPON_OPTIONS = {

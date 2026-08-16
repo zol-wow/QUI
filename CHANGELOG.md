@@ -4,72 +4,226 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## v5.1.0 - 2026-08-13
+## v5.2.0-beta6 - 2026-08-16
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
 > will not load on the 12.0.x client.
 
-The 5.1.0 line, released. Aura displays you place and filter yourself, a
-hidden-players filter for group frames, a nameplate Plate Scale slider — and
-underneath, a sustained pass at keeping QUI out of Blizzard's code on 12.1, so
-resource bars, action bars and the cooldown manager keep working in combat.
-Everything below landed across beta1 to beta6 plus two fixes since; the
-per-build entries under this one carry the full detail.
+A fix pass across action bars, group frames, and the objective tracker: QUI's
+own action buttons stop dropping updates and throwing blocked-action errors in
+combat, group frame health colors and tracked aura bars work again, and the
+skinned objective tracker and Mythic+ timer keep updating through a fight.
 
 ### Added
 
-- **Aura displays you place yourself.** Build a display, point it at a unit,
-  filter it per unit, give it load conditions and drag it where you want it.
-  Displays can be renamed, and a reaction can be parked out of the way.
-- **A hidden-players filter for group frames**, to keep specific players off
-  the raid frames.
-- **Plate Scale for nameplates** (Nameplates → Behavior). One slider grows the
-  whole plate — bar, text, icons and borders together — and the clickable area
-  grows with it. It multiplies on top of Target Scale and the
-  simplified-plate scale.
-- **Per-strip border controls for buff and debuff icons**, on top of the
-  global setting.
-- **Hide Time Unit** for aura duration text, per text region — `4` instead of
-  `4s`.
-- **Item cosmetic overlays in bags**, on live and cached bag buttons alike.
+- **Quick feature toggles in the options sidebar.** Applicable feature
+  sections expose their master switch beside the section name, synchronized
+  with both Feature Toggles and the feature's own General tab.
+- **Health bar colors for group frames without class coloring.** Group
+  frames can set their own health bar color when class coloring is off.
+- **Orientation and styling options for tracked aura bars.** Group frame
+  tracked aura bars expose orientation and styling controls alongside the
+  existing tracked aura settings.
 
 ### Fixed
 
-- **Blizzard's own action buttons keep their cooldowns.** An owned QUI button
-  that slipped into Blizzard's action-event dispatch tainted the entries after
-  it, so Blizzard's buttons silently stopped drawing cooldown swipes. Owned
-  buttons are purged from that dispatch table now.
-- **Resource bars keep drawing in combat.** On 12.1 the client can hand back a
-  protected power value; the bars now render it the same way as a readable
-  one, so text, ticks and indicator lines no longer vanish mid-fight and soul
-  fragments show their real count.
-- **Leaving a vehicle no longer jams the override bar**, and cooldown swipes
-  stop flickering — both were QUI and Blizzard fighting over the same fields.
-- **Cast on Key Press now does something** on owned action buttons.
-- **Cooldown manager borders are crisp at every scale**, duration and stack
-  text follows its settings again, and duplicate abilities no longer appear in
-  the cooldown composer.
-- **Custom resource bar text colors from old profiles work again** instead of
-  erroring on every update.
-- **Skins survive being force-loaded early**, orphaned movers are released,
-  group frame headers stop churning, and the sweep for action buttons no
-  longer runs other addons' code.
-- **The Discord and GitHub links in the options panel work again.**
-- **The original QUI logo is back**, and the nameplate settings preview opens
-  at life size.
+- **Action bar buttons keep painting in combat.** QUI's action buttons
+  inherit the game's own button behaviour, and several of its update paths
+  either read values that go unreadable in combat or write protected
+  attributes, which silently stalled cooldowns, glows, and pressed states
+  until the fight ended. QUI now paints those buttons itself and queues the
+  protected writes until combat drops.
+- **The assisted rotation arrow shows on QUI's action bars.** The arrow
+  overlay marking the assisted combat rotation action was never created on
+  QUI-owned buttons, and its repaint timer could keep running against a
+  stale slot.
+- **The skinned objective tracker keeps updating.** Reading the tracker's
+  own geometry in combat froze its layout after the first unreadable value;
+  the tracker now holds position instead of stalling.
+- **Mythic+ timer objectives and progress bar update again.** Boss kills,
+  objective names, and the weighted progress bar are driven directly from
+  the game's values and catch up when combat ends.
+- **Group frame health colors and expiring aura bars work again.** Health
+  tints route through the shared aura feeder, and tracked aura bars recolor
+  during their expiring window.
+- **Tracked buff bars stay on the variant that actually rolled.** A buff bar
+  paired to one of the game's frames could freeze on whatever variant was
+  live when a fight started; its mirror now keeps ticking for as long as the
+  pairing exists.
+- **Cooldown Manager row opacity survives layout changes.** Reanchoring a
+  row's icons no longer resets their configured opacity.
+- **Cooldown Manager tooltips no longer error on unreadable auras.**
 
 ### Changed
 
-- **The Alts window is translated**, and terminology is consistent across all
-  ten locales — frame, spec, realm and roster wording unified and five
-  mistranslations corrected.
-- **Discord announcements come only from tagged releases.**
-- The vendored Blizzard API corpus is refreshed to 12.1.0.69283.
+- **Cooldown Manager mouseover detection does less work per frame.** The
+  detector rebuilt a viewer's whole child list once per child; it now builds
+  it once per frame.
 
-### Upgrading
+## v5.2.0-beta5 - 2026-08-15
 
-5.0.0 to 5.1.0 is an install over the top: the same addon folders and the same
-saved variables, so nothing moves by hand.
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+A focused Cooldown Manager pass: Frame Levels controls work again, tracked
+buff bars mirror their paired icon exactly, and tooltips can show aura
+spell IDs.
+
+### Added
+
+- **Show Aura Spell ID tooltip setting.** A new tooltip toggle surfaces the
+  client's aura spell ID line on buff and debuff tooltips, re-applied at
+  login so the choice survives sessions.
+
+### Fixed
+
+- **Frame Levels sliders move Cooldown Manager containers again.** The
+  Frame Levels tab wrote layering keys no Cooldown Manager container ever
+  read, and the game's own viewers were never leveled alongside them; both
+  now route through per-container keys so the sliders visibly reorder the
+  HUD.
+- **Tracked buff bars mirror their paired icon every update.** Multi-variant
+  buff bars could still show a stale variant between refreshes; the bar now
+  copies its paired icon's visuals on every tick and resolves tooltips by
+  aura instance, so the bar and its tooltip always show the variant that
+  actually rolled.
+
+## v5.2.0-beta4 - 2026-08-15
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Aura displays gain proper load condition pickers, and a fix pass across
+action bars, Cooldown Manager, and skinning: combat cooldowns stay live,
+tracked buff bars follow spell variants, double keybinds are gone, and
+skinning respects module toggles.
+
+### Added
+
+- **Load condition pickers for aura displays.** Aura displays now pick
+  their load conditions from lists — classes, specializations, roles, and
+  encounters — instead of typing comma-separated IDs, alongside a reworked
+  display list with quick create and a single-display preview.
+
+### Fixed
+
+- **Action bar cooldowns, glows, and pressed states stay live in combat.**
+  Reading a button's action in combat can hand back an unreadable secret
+  value, which silently skipped cooldown paints until the fight ended. All
+  slot consumers now resolve the slot from the button's action attribute,
+  which is never secret.
+- **Cooldown Manager icons no longer drop in-combat updates.** When a
+  cooldown event carries a spell that cannot be identified mid-combat, the
+  viewer now refreshes all icons instead of dropping the update.
+- **Tracked buff bars follow the active spell variant.** Multi-variant
+  buffs rendered the wrong bar because tracked-bar matching ignored the
+  linked spell; the linked variant now leads resolution and carries its
+  own name and icon onto the bar.
+- **Cooldown Manager keybind labels no longer double up.** The keybind
+  sweep labelled both a native icon and its invisible click shell, drawing
+  two overlapping keybind texts whenever the two drifted apart.
+- **Edit Mode layouts save against the right layout list.** Both places
+  QUI writes Edit Mode layouts now follow the client's own indexing
+  convention, so a save can no longer edit a layout you never had active.
+- **Objective tracker styling no longer runs inside protected code.** Line
+  icon styling is deferred out of the game's secure hooks and each styled
+  frame is isolated, so one bad frame only costs its own styling.
+- **Skinning leaves disabled modules alone.** The world map and character
+  pane refreshers ran on profile changes even with their modules turned
+  off, burying third-party map buttons and restyling the character pane
+  uninvited.
+
+## v5.2.0-beta3 - 2026-08-14
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+An action-bar reliability pass plus skinning fixes: cooldowns and icons keep
+updating in combat, tooltips stay skinned, the micro menu survives vehicle
+exits, and the special bars get their own settings tabs.
+
+### Added
+
+- **Special bars get their own settings tabs.** Totem Bar, Raid Markers, Bag
+  Bar, and a combined Extra & Zone page now have their own sub-tabs under
+  Action Bars instead of hiding at the bottom of the Per-Bar dropdown, and
+  the raid markers bar picks up button size and spacing sliders.
+
+### Fixed
+
+- **Action bar cooldowns no longer freeze mid-fight.** In combat a button's
+  action can become an unreadable secret value; one throw inside the shared
+  cooldown painter froze every swipe until leaving combat. The painter now
+  handles secret state and paints undecidable cooldowns straight from the
+  game's duration objects, and pet and stance buttons use the same path.
+- **Action bar icons repaint on page and stance changes.** The owned icon
+  pipeline never repainted on paging or stance switches and scheduled no
+  pass on leaving combat, so icons could stay stale until moused over.
+- **Edit Mode no longer re-taints every login after a pending save.** A
+  session interrupted mid-save re-ran the tainted layout save at every
+  login with no way to clear it.
+- **The micro menu recovers its size and layout after vehicle exits.** The
+  override-bar reclaim brought it back shrunk and stacked through the
+  taint-recovery path.
+- **Tooltips stay skinned after the first widget tooltip.** Stale widget
+  state latched on the tooltip's widget container and made every later
+  tooltip read as widget-active, which stopped skinning until reload; the
+  check now only asks whether a widget container is actually shown.
+- **The scenario and widget objective trackers are left alone.** Styling
+  their pooled blocks corrupted the shared widget pool behind them, so QUI
+  now skips those two trackers entirely; they keep the stock look.
+
+## v5.2.0-beta2 - 2026-08-14
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Two features: nameplate profiles you can name and share, and an objective
+tracker that matches the rest of your UI.
+
+### Added
+
+- **Named nameplate profiles with import/export.** Nameplate setups are now
+  account-wide named profiles instead of numbered per-spec presets: create
+  them, rename them, delete them, assign them per specialization, and share
+  them as import/export strings. Existing spec presets are migrated into
+  named profiles automatically.
+- **Objective tracker progress bars and icons.** The Skinning page can now
+  replace tracker progress bars with flat skinned bars in a color of your
+  choice, and recolor the bullet points next to objectives in progress and
+  the checkmarks next to completed ones.
+
+## v5.2.0-beta1 - 2026-08-14
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+An action-bar taint pass plus small fixes: re-showing a bar in combat no
+longer throws blocked-action or cooldown errors, bag icon overlays sit on the
+button again, opened mail is readable with the dark skin, and the new 12.1
+consumables are in the macro dropdowns.
+
+### Added
+
+- **New 12.1 consumables in the macro dropdowns.** Liquid Luster, Alluring
+  Nostrum, Concentrated Silvermoon Health Potion, the fleeting Silvermoon
+  variants, and Vantus Rune: Tides are now available in the consumable macro
+  definitions and dropdowns.
+
+### Fixed
+
+- **Re-showing an action bar in combat no longer throws errors.** Leaving a
+  vehicle or override bar mid-combat could trigger blocked SetAttribute and
+  rejected cooldown errors; QUI's buttons no longer run Blizzard's tainted
+  show handler and are kept out of Blizzard's event dispatch entirely.
+- **Bag item icon overlays line up again.** The overlay texture was pinned at
+  a fixed size in the button center, so resized bag buttons drew it
+  misplaced. It now anchors to the button itself.
+- **Opened mail is readable with the dark skin.** Hiding the parchment left
+  the dark-ink letter body, subject, sender, and invoice text nearly
+  invisible; each text type is now recolored explicitly.
+- **The Help page's community links work again.** The Discord, GitHub, and
+  CurseForge links point at the current QUI homes.
 
 ## v5.1.0-beta6 - 2026-08-13
 

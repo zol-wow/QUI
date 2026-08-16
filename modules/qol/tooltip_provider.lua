@@ -589,12 +589,21 @@ local function InitTooltipEngineDeferred()
         TooltipProvider:InitializeEngine()
     end
 end
+
+local function ApplyAuraSpellIDCVar()
+    local settings = TooltipProvider:GetSettings()
+    if not settings or not settings.enabled then return end
+    SetCVar("tooltipShowAuraSpellIDs", settings.showAuraSpellIDs and "1" or "0")
+end
+
 if ns.WhenLoggedIn then
     ns.WhenLoggedIn(InitTooltipEngineDeferred)
+    ns.WhenLoggedIn(ApplyAuraSpellIDCVar)
 end
 
 ns.QUI_RefreshTooltips = function()
     TooltipProvider:InvalidateCache()
+    ApplyAuraSpellIDCVar()
     if TooltipProvider.activeEngine and TooltipProvider.activeEngine.Refresh then
         TooltipProvider.activeEngine:Refresh()
     end

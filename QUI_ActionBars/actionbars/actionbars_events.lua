@@ -225,7 +225,10 @@ end)
 
 function ScheduleSlotUpdate(slot)
     if not slot or slot < 1 then return end
-    if GetTime() - _lastPagingTime < 0.5 then return end
+    if GetTime() - _lastPagingTime < 0.5 then
+        ScheduleABVisualUpdate(false, true)
+        return
+    end
     abDirtySlots[slot] = true
     abSlotFrame:Show()
 end
@@ -257,8 +260,8 @@ function OnOwnedEvent(self, event, ...)
             end
             if buttons then
                 for _, btn in ipairs(buttons) do
-                    local action = btn.action
-                    if action and action > 0 then
+                    local action = GetSafeActionSlot(btn)
+                    if action then
                         slotMap[action] = { button = btn, barKey = "bar1" }
                         if ResetButtonChargeCapabilityCache then
                             ResetButtonChargeCapabilityCache(btn)
@@ -279,6 +282,7 @@ function OnOwnedEvent(self, event, ...)
                 ActionBarsOwned.UpdateOverlayGlow(btn)
             end
         end
+        ScheduleABVisualUpdate(false, true)
         if not InCombatLockdown() then
             UpdateStanceBarLayout()
         else
@@ -321,6 +325,8 @@ function OnOwnedEvent(self, event, ...)
         end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
+        ScheduleABVisualUpdate(false, true)
+        FlushPendingPingAttributes()
         FinishBlockedOverrideBarExit()
         if ActionBarsOwned.pendingExtraButtonInit then
             ActionBarsOwned.pendingExtraButtonInit = false
@@ -490,6 +496,13 @@ function OnOwnedEvent(self, event, ...)
         if _abCooldownStats then _abCooldownStats.events = _abCooldownStats.events + 1 end
         ScheduleABCooldownUpdate()
 
+    elseif event == "SPELL_UPDATE_COOLDOWN"
+        or event == "UNIT_SPELLCAST_STOP"
+        or event == "UNIT_SPELLCAST_INTERRUPTED"
+        or event == "UNIT_SPELLCAST_EMPOWER_STOP" then
+        if _abCooldownStats then _abCooldownStats.events = _abCooldownStats.events + 1 end
+        ScheduleABCooldownUpdate()
+
     elseif event == "ACTIONBAR_UPDATE_STATE" then
         ScheduleABStateUpdate()
 
@@ -503,7 +516,11 @@ function OnOwnedEvent(self, event, ...)
         ScheduleUsabilityUpdate()
 
     elseif event == "SPELL_UPDATE_CHARGES" then
+        if FlushChargeCapabilityVerdicts then
+            FlushChargeCapabilityVerdicts()
+        end
         ScheduleABCountUpdate()
+        ScheduleABCooldownUpdate()
 
     elseif event == "UNIT_AURA" then
         ScheduleABCountUpdate()

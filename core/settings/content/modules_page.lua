@@ -144,8 +144,10 @@ local function CreateModuleTogglePill(parent, featureId, entry)
 
     btn:SetScript("OnClick", function(self)
         if self._isLocked then return end
-        if type(entry.setEnabled) == "function" then
-            local current = type(entry.isEnabled) == "function" and entry.isEnabled() or false
+        local current = type(entry.isEnabled) == "function" and entry.isEnabled() or false
+        if ns.QUI_Modules and type(ns.QUI_Modules.SetEnabled) == "function" then
+            ns.QUI_Modules:SetEnabled(featureId, not current)
+        elseif type(entry.setEnabled) == "function" then
             entry.setEnabled(not current)
         end
     end)
@@ -167,13 +169,25 @@ local function CreateModuleTogglePill(parent, featureId, entry)
         ApplyVisual()
     end)
 
-    local token = ns.QUI_Modules and ns.QUI_Modules:Subscribe(featureId, ApplyVisual)
-    btn:SetScript("OnHide", function()
+    local token
+    local function Subscribe()
+        if not token and ns.QUI_Modules then
+            token = ns.QUI_Modules:Subscribe(featureId, ApplyVisual)
+        end
+    end
+    local function Unsubscribe()
         if token then
             ns.QUI_Modules:Unsubscribe(token)
             token = nil
         end
+    end
+
+    Subscribe()
+    btn:SetScript("OnShow", function()
+        Subscribe()
+        ApplyVisual()
     end)
+    btn:SetScript("OnHide", Unsubscribe)
 
     btn._refresh = ApplyVisual
     return btn

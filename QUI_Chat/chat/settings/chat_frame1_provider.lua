@@ -212,7 +212,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
         end
         CreateChatSection("chatModule", ns.L["Chat Module"], FORM_ROW + 8, function(card)
-            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat, function()
+            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat, function(enabled)
+                if ns.QUI_Modules and type(ns.QUI_Modules.SetEnabled) == "function" then
+                    ns.QUI_Modules:SetEnabled("moduleAddon_QUI_Chat", enabled, {
+                        suppressReloadPrompt = true,
+                    })
+                end
                 Refresh()
                 ShowChatModuleReloadPrompt()
             end, { description = ns.L["QUI's chat takeover. Enabled: chat is captured and rendered in QUI's own display. Disabled: QUI leaves chat completely stock."] })
