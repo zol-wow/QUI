@@ -93,7 +93,11 @@ local function StyleLineIcon(line)
 
     local icon = line.Icon
     if not icon or not icon.GetAtlas then return end
-    if icon.IsShown and not icon:IsShown() then return end
+    if icon.IsShown then
+        local shown = icon:IsShown()
+        if issecretvalue and issecretvalue(shown) then return end -- @secret-policy: reject-secret-value (never touch an icon whose visibility is unreadable)
+        if not shown then return end
+    end
 
     -- Anim lines (quest objectives) only legitimately show their check while
     -- completing/completed; never touch the icon in any other state so we
@@ -192,11 +196,11 @@ local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
             CJKFont(line.Text, fontPath, textFontSize, targetFlags)
 
             if not skipHeight then
-                local textHeight = line.Text:GetStringHeight()
+                local textHeight = Helpers.SafeNumberOrNil(line.Text:GetStringHeight())
                 if textHeight and textHeight > 0 then
-                    local currentHeight = line:GetHeight()
+                    local currentHeight = Helpers.SafeNumberOrNil(line:GetHeight())
                     local minHeight = textHeight + 4
-                    if minHeight - currentHeight > 1 then
+                    if currentHeight and minHeight - currentHeight > 1 then
                         line:SetHeight(minHeight)
                         heightChanged = true
                     end
@@ -288,7 +292,9 @@ end
 
 local function ApplyBlockSkinning(tracker, block)
     if not block or IsWidgetPoolBlock(block) then return end
-    if not block:IsShown() then return end
+    local shown = block:IsShown()
+    if issecretvalue and issecretvalue(shown) then return end -- @secret-policy: reject-secret-value (skip styling when visibility is unreadable)
+    if not shown then return end
 
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker then return end
@@ -375,7 +381,7 @@ end
 
 local function IsScenarioActive()
     if not C_ScenarioInfo or not C_ScenarioInfo.GetScenarioInfo then return false end
-    return C_ScenarioInfo.GetScenarioInfo() ~= nil
+    return type(C_ScenarioInfo.GetScenarioInfo()) ~= "nil"
 end
 
 local function ApplyMaxWidth(settings)
@@ -440,36 +446,54 @@ local function UpdateBackdropAnchors()
 
     local bottomModule = nil
     local lowestBottom = math.huge
+    local sawUnreadable = false
 
     for _, trackerName in ipairs(trackerModules) do
         local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
-        if tracker and tracker:IsShown() then
-            local hasContent = false
-            if tracker.GetContentsHeight then
-                local contentHeight = tracker:GetContentsHeight()
-                hasContent = contentHeight and contentHeight > 0
+        if tracker then
+            local shown = tracker:IsShown()
+            if issecretvalue and issecretvalue(shown) then -- @secret-policy: reject-secret-value (anchor scan holds current layout below)
+                shown = nil
+                sawUnreadable = true
             end
-            if not hasContent then
-                local frameHeight = tracker:GetHeight()
-                hasContent = frameHeight and frameHeight > 1
-            end
+            if shown then
+                local contentHeight = nil
+                if tracker.GetContentsHeight then
+                    contentHeight = Helpers.SafeNumberOrNil(tracker:GetContentsHeight())
+                end
+                local frameHeight = Helpers.SafeNumberOrNil(tracker:GetHeight())
+                if frameHeight == nil then
+                    sawUnreadable = true
+                end
 
-            if hasContent then
-                local bottom = tracker:GetBottom()
-                if bottom and bottom < lowestBottom then
-                    lowestBottom = bottom
-                    bottomModule = tracker
+                local hasContent = contentHeight ~= nil and contentHeight > 0
+                if not hasContent then
+                    hasContent = frameHeight ~= nil and frameHeight > 1
+                end
+
+                if hasContent then
+                    local bottom = Helpers.SafeNumberOrNil(tracker:GetBottom())
+                    if bottom then
+                        if bottom < lowestBottom then
+                            lowestBottom = bottom
+                            bottomModule = tracker
+                        end
+                    else
+                        sawUnreadable = true
+                    end
                 end
             end
         end
     end
+
+    if not bottomModule and sawUnreadable then return end
 
     quiBackdrop:ClearAllPoints()
     quiBackdrop:SetPoint("TOPLEFT", TrackerFrame, "TOPLEFT", -15, 0)
     quiBackdrop:SetPoint("TOPRIGHT", TrackerFrame, "TOPRIGHT", 10, 0)
 
     if bottomModule then
-        local trackerTop = TrackerFrame:GetTop()
+        local trackerTop = Helpers.SafeNumberOrNil(TrackerFrame:GetTop())
         local contentHeight = 0
         if trackerTop and lowestBottom and trackerTop > lowestBottom then
             contentHeight = trackerTop - lowestBottom + 15
@@ -529,19 +553,15 @@ local function EnforceWidth()
         maxWidth = settings.objectiveTrackerWidth or 260
     end
 
-    if math.abs(TrackerFrame:GetWidth() - maxWidth) > 0.5 then
-        TrackerFrame:SetWidth(maxWidth)
-    end
-    if TrackerFrame.Header and math.abs(TrackerFrame.Header:GetWidth() - maxWidth) > 0.5 then
+    TrackerFrame:SetWidth(maxWidth)
+    if TrackerFrame.Header then
         TrackerFrame.Header:SetWidth(maxWidth)
     end
     for _, trackerName in ipairs(trackerModules) do
         local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
         if tracker then
-            if math.abs(tracker:GetWidth() - maxWidth) > 0.5 then
-                tracker:SetWidth(maxWidth)
-            end
-            if tracker.Header and math.abs(tracker.Header:GetWidth() - maxWidth) > 0.5 then
+            tracker:SetWidth(maxWidth)
+            if tracker.Header then
                 tracker.Header:SetWidth(maxWidth)
             end
         end
@@ -707,6 +727,7 @@ local function HookLineCreation()
             local block = self
             if IsWidgetPoolBlock(block) then return end
             EnsureBlockHighlightHook(block)
+            if issecretvalue and issecretvalue(objectiveKey) then return end -- @secret-policy: reject-secret-value (cannot index usedLines with a secret key)
             C_Timer.After(0, function()
                 local line = block.usedLines and block.usedLines[objectiveKey]
                 if line then
