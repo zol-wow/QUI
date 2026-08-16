@@ -381,7 +381,8 @@ end
 
 local function IsScenarioActive()
     if not C_ScenarioInfo or not C_ScenarioInfo.GetScenarioInfo then return false end
-    return type(C_ScenarioInfo.GetScenarioInfo()) ~= "nil"
+    local scenarioInfo = C_ScenarioInfo.GetScenarioInfo()
+    return type(scenarioInfo) ~= "nil"
 end
 
 local function ApplyMaxWidth(settings)
