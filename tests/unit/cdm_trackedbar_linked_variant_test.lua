@@ -38,10 +38,6 @@ check("GetTrackedBarSpellData must resolve linked before override before base",
     string.find(spellDataBody, "linkedSpellID or overrideSpellID or baseSpellID", 1, true) ~= nil,
     "resolution chain does not put linkedSpellID first")
 
-check("GetTrackedBarSpellData must resolve the variant name from the linked spell",
-    string.find(spellDataBody, "QuerySpellInfo(linkedSpellID)", 1, true) ~= nil,
-    "no QuerySpellInfo(linkedSpellID) name resolution found")
-
 check("GetTrackedBarSpellData must return the linkedSpellID field",
     string.find(spellDataBody, "linkedSpellID = linkedSpellID", 1, true) ~= nil,
     "returned table does not carry linkedSpellID")
@@ -52,13 +48,27 @@ check("runtime entries must carry spellData.linkedSpellID",
     string.find(runtimeBody, "linkedSpellID = spellData.linkedSpellID", 1, true) ~= nil,
     "entry table does not copy spellData.linkedSpellID")
 
+check("harvest must enumerate the viewer item pool, never GetChildren",
+    string.find(runtimeBody, "pool:EnumerateActive()", 1, true) ~= nil
+        and string.find(runtimeBody, "GetChildren", 1, true) == nil
+        and string.find(runtimeBody, "GetNumChildren", 1, true) == nil,
+    "GetChildren/GetNumChildren are SecretReturnsForAspect Hierarchy; itemFramePool is a plain Lua pool")
+
+local pairFnBody = sliceFunction(rendererSrc, "FindBlzChildByCooldownID(cooldownID)")
+check("pairing lookup must enumerate the viewer item pool, never GetChildren",
+    string.find(pairFnBody, "pool:EnumerateActive()", 1, true) ~= nil
+        and string.find(pairFnBody, "GetChildren", 1, true) == nil
+        and string.find(pairFnBody, "GetNumChildren", 1, true) == nil,
+    "pairing lookup still walks Hierarchy-secret frame references")
+
 local displaySites = 0
-for _ in string.gmatch(rendererSrc, "entry%.linkedSpellID or entry%.overrideSpellID") do
+for _ in string.gmatch(rendererSrc,
+    "entry%.linkedSpellID or entry%.overrideSpellID or entry%.spellID or entry%.id") do
     displaySites = displaySites + 1
 end
-check("display identity sites must prefer entry.linkedSpellID (rebuild gate, rebind, build, icon)",
-    displaySites >= 4,
-    ("found %d linked-first identity sites, need >= 4"):format(displaySites))
+check("no bar-identity or rebuild-gate site may key on entry.linkedSpellID",
+    displaySites == 0,
+    ("found %d linked-first identity sites; display comes from the mirror, bar identity must be variant-stable"):format(displaySites))
 
 function InCombatLockdown() return false end
 function CreateFrame()
@@ -166,13 +176,24 @@ local baseBound = buildTracked({ liveVariantRuntime(RTB_Y) }, { variantConfig(RT
 check("a base-spell config must still bind whichever variant is live",
     baseBound[1] and baseBound[1]._trackedBarRuntime == true,
     "base config no longer matches a live variant frame")
-check("a base-spell config bound to a live variant must display the variant identity",
-    baseBound[1] and baseBound[1].linkedSpellID == RTB_Y
-        and baseBound[1].name == "Variant " .. RTB_Y
-        and baseBound[1].iconTexture == 1000 + RTB_Y,
-    baseBound[1] and ("got linked=%s name=%s icon=%s"):format(
-        tostring(baseBound[1].linkedSpellID), tostring(baseBound[1].name),
-        tostring(baseBound[1].iconTexture)) or "no merged entry")
+check("the merged entry must still carry the runtime linkedSpellID for pairing",
+    baseBound[1] and baseBound[1].linkedSpellID == RTB_Y,
+    "pairing metadata lost -- the exact-variant pass and the sibling veto both need it")
+
+check("a base-spell config bound to a live variant must KEEP its configured name",
+    baseBound[1] and baseBound[1].name == "Configured " .. RTB_BASE,
+    baseBound[1] and ("got name=%s -- the variant overlay is dead code, the mirror owns display"):format(
+        tostring(baseBound[1].name)) or "no merged entry")
+
+local mergeBody = sliceFunction(rendererSrc, "MergeTrackedRuntimeFields(configured, runtime)")
+check("the merge must not overlay name or icon from the live variant",
+    string.find(mergeBody, "runtime.linkedSpellID ~= nil and runtime.name", 1, true) == nil
+        and string.find(mergeBody, "runtime.linkedSpellID ~= nil and runtime.iconTexture", 1, true) == nil,
+    "variant display overlay survives -- it reads a value that collapses to nil in combat")
+
+check("the rebuild gate must not key on the live variant",
+    string.find(rendererSrc, "local entrySpellID = entry.overrideSpellID or entry.spellID or entry.id", 1, true) ~= nil,
+    "a re-roll would ClearPool and rebuild every bar; the Blizzard frame never changed")
 
 print(("\n%d failure(s)"):format(failures))
 os.exit(failures == 0 and 0 or 1)

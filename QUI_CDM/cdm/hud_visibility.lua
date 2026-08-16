@@ -529,10 +529,10 @@ local function SetupCDMMouseoverDetector()
     end
 
     for _, viewer in ipairs(viewers) do
-        if viewer and viewer.GetNumChildren then
-            local numChildren = viewer:GetNumChildren()
-            for i = 1, numChildren do
-                local child = select(i, viewer:GetChildren())
+        if viewer and viewer.GetChildren then
+            local children = { viewer:GetChildren() }
+            for i = 1, #children do
+                local child = children[i]
                 if child and IsAddonOwnedCDMMouseoverFrame(child) then
                     HookFrameForMouseover(child)
                 end
@@ -550,10 +550,10 @@ local function SetupCustomTrackersMouseoverDetector()
     local frames = GetCustomTrackerFrames()
     for _, frame in ipairs(frames) do
         HookCustomTrackerFrameForMouseover(frame)
-        if frame and frame.GetNumChildren then
-            local numChildren = frame:GetNumChildren()
-            for i = 1, numChildren do
-                local child = select(i, frame:GetChildren())
+        if frame and frame.GetChildren then
+            local children = { frame:GetChildren() }
+            for i = 1, #children do
+                local child = children[i]
                 if child and IsAddonOwnedCDMMouseoverFrame(child) then
                     HookCustomTrackerFrameForMouseover(child)
                 end
