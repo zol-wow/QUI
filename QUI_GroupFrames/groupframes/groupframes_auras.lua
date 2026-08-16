@@ -1206,6 +1206,7 @@ local ApplyStripContainers
 -- arbitrary buffs, so classification strips show icons with nothing up
 -- (pre-engine fix: PR #484). Lua cannot re-verify engine-rendered auras,
 -- so fail closed instead: blank gated strips while the unit is out of range.
+-- >>> QUI_TEST_EXTRACT range_gate
 local function ElementNeedsRangeGate(element)
     if not element or element.mode ~= "filterStrip" then return false end
     if element.filterMode ~= "classify" then return false end
@@ -1234,6 +1235,7 @@ function QUI_GFA.ApplyRangeGate(frame, inRange)
         end
     end
 end
+-- <<< QUI_TEST_EXTRACT range_gate
 
 local function QueueContainerCombatWork(frame)
     AuraGlue = AuraGlue or ns.AuraGlue
