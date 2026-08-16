@@ -16,6 +16,7 @@ function V2Bags.Register(frame)
         id = "bags",
         icon = "B",
         name = ns.L["Bags"],
+        moduleFeatureId = "moduleAddon_QUI_Bags",
         subPages = {
             {
                 id = "bags",

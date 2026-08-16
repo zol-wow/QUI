@@ -534,6 +534,7 @@ end
 local EMPTY = {}
 
 local previewActive = false
+local singlePreviewID
 
 local ApplyDisplay
 
@@ -555,6 +556,7 @@ end
 
 ApplyDisplay = function(display, allowCreate)
     if previewActive then return end
+    if display.id == singlePreviewID then return end
     if not ResolveDeps() then return end
     local host = EnsureHost(display.id)
     if not host then
@@ -713,45 +715,77 @@ function AD.Refresh()
     watchingDynamicUnits = dynamic
 end
 
+local function ShowPreviewForDisplay(display)
+    local Preview = ns.AuraPreview
+    if not Preview or type(Preview.Show) ~= "function" then return end
+    local host = hosts[display.id]
+    if not host then return end
+    E.EnsureSeeded(display.auras, AD.DefaultBucket)
+    local H = Helpers()
+    local specID = H and type(H.GetCurrentSpecID) == "function"
+        and H.GetCurrentSpecID() or nil
+    local elements = E.ActiveElementsForSpec(display.auras, specID)
+    DisableHostContainers(host)
+    local profile = elements[1] and AuraGlue.ElementProfile(elements[1]) or FallbackProfile()
+    local w, h = GridExtent(profile)
+    host._naturalW, host._naturalH = w, h
+    host:SetSize(w, h)
+    host:SetAlpha(1)
+    host:Show()
+    Preview.Show(host, elements)
+    if _G.QUI_LayoutModeSyncHandle then
+        _G.QUI_LayoutModeSyncHandle(AD.ANCHOR_PREFIX .. display.id)
+    end
+    return true
+end
+
 function AD.ShowPreview()
     if previewActive then return end
     if not ResolveDeps() then return end
     local Preview = ns.AuraPreview
     if not Preview or type(Preview.Show) ~= "function" then return end
     previewActive = true
+    singlePreviewID = nil
     local displays = AD.OrderedDisplays()
     for i = 1, #displays do
-        local display = displays[i]
-        local host = hosts[display.id]
-        if host then
-            E.EnsureSeeded(display.auras, AD.DefaultBucket)
-            local H = Helpers()
-            local specID = H and type(H.GetCurrentSpecID) == "function"
-                and H.GetCurrentSpecID() or nil
-            local elements = E.ActiveElementsForSpec(display.auras, specID)
-            DisableHostContainers(host)
-            local profile = elements[1] and AuraGlue.ElementProfile(elements[1]) or FallbackProfile()
-            local w, h = GridExtent(profile)
-            host._naturalW, host._naturalH = w, h
-            host:SetSize(w, h)
-            host:SetAlpha(1)
-            host:Show()
-            Preview.Show(host, elements)
-            if _G.QUI_LayoutModeSyncHandle then
-                _G.QUI_LayoutModeSyncHandle(AD.ANCHOR_PREFIX .. display.id)
-            end
-        end
+        ShowPreviewForDisplay(displays[i])
     end
 end
 
 function AD.HidePreview()
     if not previewActive then return end
     previewActive = false
+    singlePreviewID = nil
     local Preview = ns.AuraPreview
     if Preview and type(Preview.Hide) == "function" then
         for _, host in pairs(hosts) do
             Preview.Hide(host)
         end
+    end
+    AD.Refresh()
+end
+
+function AD.ShowPreviewFor(id)
+    if previewActive then return end
+    if not ResolveDeps() then return end
+    local display = AD.GetDisplay(id)
+    if not display then return end
+    if singlePreviewID and singlePreviewID ~= id then
+        AD.HidePreviewFor(singlePreviewID)
+    end
+    if ShowPreviewForDisplay(display) then
+        singlePreviewID = id
+    end
+end
+
+function AD.HidePreviewFor(id)
+    if previewActive then return end
+    if singlePreviewID ~= id then return end
+    singlePreviewID = nil
+    local Preview = ns.AuraPreview
+    local host = hosts[id]
+    if Preview and type(Preview.Hide) == "function" and host then
+        Preview.Hide(host)
     end
     AD.Refresh()
 end

@@ -142,6 +142,11 @@ local SWIPE_STYLE_OPTIONS = {
     { value = "vertical", text = ns.L["Vertical"] },
 }
 
+local BAR_ORIENTATION_OPTIONS = {
+    { value = "HORIZONTAL", text = ns.L["Horizontal"] },
+    { value = "VERTICAL", text = ns.L["Vertical"] },
+}
+
 local DISPEL_BORDER_MODE_OPTIONS = {
     { value = "debuffs", text = ns.L["Debuffs"] },
     { value = "stealable", text = ns.L["Debuffs + Stealable Buffs"] },
@@ -1243,8 +1248,14 @@ local function AddTrackedConfig(ctx, element)
         row(ns.L["Y Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
             description = ns.L["Vertical pixel offset from the anchor."],
         }))
+        row(ns.L["Orientation"], GUI:CreateFormDropdown(ctx.detailArea, nil, BAR_ORIENTATION_OPTIONS, "orientation", element.bar, onChange, {
+            description = ns.L["Whether the bar drains horizontally or vertically as the aura ticks down."],
+        }))
         row(ns.L["Bar Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
             description = ns.L["Fill color of the bar while the aura is active."],
+        }))
+        row(ns.L["Background Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "backgroundColor", element.bar, onChange, nil, {
+            description = ns.L["Color drawn behind the bar fill."],
         }))
         row(ns.L["Thickness"], GUI:CreateFormSlider(ctx.detailArea, nil, 1, 40, 1, "thickness", element.bar, onChange, { deferOnDrag = true }, {
             description = ns.L["Pixel thickness of the bar."],
@@ -1252,6 +1263,39 @@ local function AddTrackedConfig(ctx, element)
         row(ns.L["Length"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 200, 1, "length", element.bar, onChange, { deferOnDrag = true }, {
             description = ns.L["Pixel length of the bar."],
         }))
+        row(ns.L["Match Frame Width / Height"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "matchFrameSize", element.bar, onChange, {
+            description = ns.L["Stretch the bar to match the frame size."],
+        }))
+        row(ns.L["Hide Border"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideBorder", element.bar, onChange, {
+            description = ns.L["Remove the border drawn around the bar."],
+        }))
+        row(ns.L["Border Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "borderColor", element.bar, onChange, nil, {
+            description = ns.L["Color of the bar's border."],
+        }))
+        row(ns.L["Border Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 1, 8, 1, "borderSize", element.bar, onChange, { deferOnDrag = true }, {
+            description = ns.L["Pixel thickness of the bar's border."],
+        }))
+        local barCfg = element.bar
+        row(ns.L["Color When Expiring"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "_lowTimeColorOn", {
+            _lowTimeColorOn = barCfg.lowTimeColor ~= nil,
+            _quiTransientOptionsProxy = true,
+        }, function(checked)
+            if checked and barCfg.lowTimeColor == nil then
+                barCfg.lowTimeColor = { 1, 0.35, 0.2, 1 }
+            elseif not checked then
+                barCfg.lowTimeColor = nil
+            end
+            ctx.NotifyChanged()
+            rebuild()
+        end, {
+            description = ns.L["Recolor the bar inside the game's refresh window (roughly the final 30% of the aura's duration). The window is engine-driven, so this keeps working in combat; a custom seconds threshold is not possible there."],
+            keywords = { "low time", "expiring", "pandemic" },
+        }))
+        if barCfg.lowTimeColor then
+            row(ns.L["Expiring Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "lowTimeColor", element.bar, onChange, nil, {
+                description = ns.L["Bar color while the aura is inside the refresh window."],
+            }))
+        end
     elseif displayType == "border" then
         if type(element.color) ~= "table" then element.color = { 0.2, 0.8, 0.2, 1 } end
         if type(element.border) ~= "table" then element.border = { thickness = 2 } end

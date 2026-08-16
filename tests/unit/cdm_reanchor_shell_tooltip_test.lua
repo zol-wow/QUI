@@ -145,4 +145,31 @@ hover:GetScript("OnEnter")(hover)
 assert(GameTooltip.owner == shell and GameTooltip.spellID == 12345 and GameTooltip.shown == true,
     "hover overlay forwards tooltip hover to the shell")
 
+assert(shell._quiCdmLive == live, "click slot records its live Blizzard frame")
+
+GameTooltip.owner, GameTooltip.spellID, GameTooltip.shown = nil, nil, false
+GameTooltip.auraAccessorResult = true
+GameTooltip.SetUnitAuraByAuraInstanceID = function(self, unit, auraInstanceID, filter)
+    self.auraUnit, self.auraInstance, self.auraFilter = unit, auraInstanceID, filter
+    return self.auraAccessorResult
+end
+
+live.auraInstanceID = 987
+live.auraDataUnit = "player"
+shell:GetScript("OnEnter")(shell)
+assert(GameTooltip.auraUnit == "player" and GameTooltip.auraInstance == 987,
+    "shell hover feeds the live frame's aura instance to the tooltip sink")
+assert(GameTooltip.auraFilter == "INCLUDE_NAME_PLATE_ONLY",
+    "aura tooltip passes Blizzard's own filter")
+assert(GameTooltip.spellID == nil,
+    "aura-instance tooltip must not fall through to the static spell")
+assert(GameTooltip.shown == true, "aura tooltip is shown")
+
+GameTooltip.owner, GameTooltip.spellID, GameTooltip.shown = nil, nil, false
+GameTooltip.auraUnit, GameTooltip.auraInstance = nil, nil
+GameTooltip.auraAccessorResult = false
+shell:GetScript("OnEnter")(shell)
+assert(GameTooltip.owner == shell and GameTooltip.spellID == 12345 and GameTooltip.shown == true,
+    "refused aura accessor re-anchors and falls back to the spell tooltip")
+
 print("OK: cdm_reanchor_shell_tooltip_test")

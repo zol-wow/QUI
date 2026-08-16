@@ -238,7 +238,12 @@ function NPCastbar.Build(plate)
     UIKit.CreateBorderLines(castBar)
 
     local overlay = castBar:CreateTexture(nil, "ARTWORK", nil, 2)
-    overlay:SetAllPoints(castBar)
+    local fill = castBar:GetStatusBarTexture()
+    if fill then
+        overlay:SetAllPoints(fill)
+    else
+        overlay:SetAllPoints(castBar)
+    end
     overlay:SetColorTexture(0.45, 0.45, 0.45, 0.85)
     overlay:SetAlpha(0)
     plate.castUninterruptibleOverlay = overlay
@@ -306,10 +311,14 @@ function NPCastbar.ApplyAppearance(plate, settings)
     if tex then
         tex:SetHorizTile(false)
         tex:SetVertTile(false)
+        plate.castUninterruptibleOverlay:ClearAllPoints()
+        plate.castUninterruptibleOverlay:SetAllPoints(tex)
     end
     local bc = health.borderColor or { 0, 0, 0 }
     UIKit.UpdateBorderLines(castBar, health.borderSize or 1, bc[1] or 0, bc[2] or 0, bc[3] or 0, 1,
         (health.borderSize or 1) <= 0)
+    local bg = (settings.colors or {}).castBg or { 0.1, 0.1, 0.1, 0.9 }
+    plate.castBg:SetVertexColor(bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, bg[4] or 0.9)
 
     local iconSize = height
     plate.castIcon:ClearAllPoints()
@@ -396,6 +405,9 @@ end
 local function ApplyInterruptibleVisuals(plate, notInterruptible, settings)
     local colors = (settings or NP.GetTypeSettings(plate) or {}).colors or {}
     local castBar = plate.castBar
+
+    local cu = colors.castUninterruptible or { 0.45, 0.45, 0.45 }
+    plate.castUninterruptibleOverlay:SetColorTexture(cu[1], cu[2], cu[3], 0.85)
 
     local plainNI = NP.Plain(notInterruptible, "boolean")
     plate.npPlainNotInterruptible = plainNI

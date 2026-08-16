@@ -712,7 +712,7 @@ local function GetHealthBarColor(unit, isRaid)
 
     if general and general.useClassColor ~= false then
         local _, class = UnitClass(unit)
-        -- @secret-policy: collapse-only — fallback green below
+        -- @secret-policy: collapse-only — fallback color below
         if IsSecretValue(class) then class = nil end
         if class then
             local cc = RAID_CLASS_COLORS[class]
@@ -722,6 +722,10 @@ local function GetHealthBarColor(unit, isRaid)
         end
     end
 
+    local c = general and general.healthBarColor
+    if c then
+        return c[1], c[2], c[3], c[4] or 1
+    end
     return 0.2, 0.8, 0.2, 1
 end
 
@@ -4089,9 +4093,13 @@ local function DoRangeCheck()
             if rangeChanged then
                 _range.cache[unit] = inRange
             end
+            local GFA = ns.QUI_GroupFrameAuras
             for i = 1, #list do
                 local frame = list[i]
                 if frame and frame:IsShown() then
+                    if rangeChanged and GFA and GFA.ApplyRangeGate then
+                        GFA.ApplyRangeGate(frame, inRange)
+                    end
                     local rangeSettings = GetRangeSettings(frame._isRaid)
                     if rangeSettings and rangeSettings.enabled ~= false then
                         local outAlpha = rangeSettings.outOfRangeAlpha or 0.4
@@ -4502,8 +4510,12 @@ function _state.HandleRangeUpdate(unit)
     local isSecret = issecretvalue and (issecretvalue(inRange) or issecretvalue(cached))
     if isSecret or cached ~= inRange then
         _range.cache[unit] = inRange
+        local GFA = ns.QUI_GroupFrameAuras
         for i = 1, #frames do
             local frame = frames[i]
+            if GFA and GFA.ApplyRangeGate then
+                GFA.ApplyRangeGate(frame, inRange)
+            end
             local rangeSettings = GetRangeSettings(frame._isRaid)
             if rangeSettings and rangeSettings.enabled ~= false then
                 local outAlpha = rangeSettings.outOfRangeAlpha or 0.4

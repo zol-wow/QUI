@@ -58,12 +58,21 @@ check("QUI owned buttons keep Blizzard's ActionBarButtonTemplate and append Secu
     builder:find(
         'CreateFrame, "CheckButton", btnName, container, "ActionBarButtonTemplate, SecureActionButtonTemplate"',
         1, true) ~= nil)
-check("QUI does not replace Blizzard's ping identity or update lifecycle",
+check("QUI does not replace Blizzard's ping identity or action lifecycle",
     builder:find("btn.HasAction =", 1, true) == nil
         and builder:find("btn.GetActionButtonInfo =", 1, true) == nil
         and builder:find("btn.UpdateAction =", 1, true) == nil
-        and builder:find("btn.Update =", 1, true) == nil
         and builder:find("btn.UpdatePressAndHoldAction =", 1, true) == nil)
+check("owned buttons route Blizzard's Update through QUI's own painter",
+    framexml:find("ActionButton_UpdateCooldown(self);", 1, true) ~= nil
+        and builder:find("btn.Update = function(self)", 1, true) ~= nil
+        and builder:find("ActionBarsOwned.SafeUpdate, self", 1, true) ~= nil)
+check("owned buttons take over the cast-anim OnHide that bypasses Update",
+    framexml:find(
+        "function ActionButtonCastingAnimFrameMixin:OnHide()\n\tlocal parent = self:GetParent();\n\tparent:ClearReticle();\n\tparent.cooldown:SetSwipeColor(0, 0, 0, 1);\n\tActionButton_UpdateCooldown(parent);",
+        1, true) ~= nil
+        and builder:find('castAnim:SetScript("OnHide"', 1, true) ~= nil
+        and builder:find("ScheduleABCooldownUpdate(true)", 1, true) ~= nil)
 check("QUI never assigns the action identity directly",
     builder:find("btn.action =", 1, true) == nil
         and actionbars:find("self.action = action", 1, true) == nil)

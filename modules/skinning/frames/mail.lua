@@ -199,6 +199,62 @@ local function SkinOpenMailArtwork()
     end
 end
 
+local BODY_TEXT_TYPES = { "P", "H1", "H2", "H3" }
+local INVOICE_TEXT = {
+    "OpenMailInvoiceItemLabel", "OpenMailInvoicePurchaser", "OpenMailInvoiceSalePrice",
+    "OpenMailInvoiceDeposit", "OpenMailInvoiceHouseCut", "OpenMailInvoiceAmountReceived",
+    "OpenMailInvoiceNotYetSent", "OpenMailInvoiceMoneyDelay",
+}
+local CONSORTIUM_TEXT = {
+    "OpeningText", "CrafterText", "CommissionReceived", "CrafterNote", "ConsortiumNote",
+}
+
+local function RecolorLetterFontString(fs)
+    if not fs or (fs.IsForbidden and fs:IsForbidden()) then return end
+    SkinBase.SkinFontString(fs)
+end
+
+local function RecolorOpenMailText()
+    local html = _G.OpenMailBodyText
+    if html and html.SetTextColor then
+        local helpers = ns.Helpers
+        local fontPath = helpers.GetGeneralFont and helpers.GetGeneralFont()
+        local outline = (helpers.GetGeneralFontOutline and helpers.GetGeneralFontOutline()) or ""
+        for i = 1, #BODY_TEXT_TYPES do
+            local el = BODY_TEXT_TYPES[i]
+            if fontPath and html.GetFont then
+                local _, size = html:GetFont(el)
+                if not (issecretvalue and issecretvalue(size))
+                    and type(size) == "number" and size > 0 then
+                    local family = helpers.GetFontFamilyObject
+                        and helpers.GetFontFamilyObject(fontPath, size, outline)
+                    if family and html.SetFontObject then
+                        html:SetFontObject(el, family)
+                    elseif html.SetFont then
+                        html:SetFont(el, fontPath, size, outline)
+                    end
+                end
+            end
+            html:SetTextColor(el, 0.95, 0.95, 0.95)
+        end
+    end
+
+    RecolorLetterFontString(_G.OpenMailSubject)
+    local sender = _G.OpenMailSender
+    if sender and sender.Name then RecolorLetterFontString(sender.Name) end
+
+    for i = 1, #INVOICE_TEXT do RecolorLetterFontString(_G[INVOICE_TEXT[i]]) end
+    if _G.InvoiceTextFontNormal then _G.InvoiceTextFontNormal:SetTextColor(0.95, 0.95, 0.95) end
+    if _G.InvoiceTextFontSmall then _G.InvoiceTextFontSmall:SetTextColor(0.95, 0.95, 0.95) end
+
+    local cm = _G.ConsortiumMailFrame
+    if cm and not (cm.IsForbidden and cm:IsForbidden()) then
+        for i = 1, #CONSORTIUM_TEXT do RecolorLetterFontString(cm[CONSORTIUM_TEXT[i]]) end
+        local paid = cm.CommissionPaidDisplay
+        if paid then RecolorLetterFontString(paid.CommissionPaidText) end
+    end
+end
+
 local function SkinOpenMailFrame()
     local frame = _G.OpenMailFrame
     if not frame then return end
@@ -210,6 +266,7 @@ local function SkinOpenMailFrame()
 
     LowerFrameBackdrop(frame)
     SkinOpenMailArtwork()
+    RecolorOpenMailText()
     SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     SkinBase.SkinButton(_G.OpenMailReportSpamButton)
     SkinBase.SkinButton(_G.OpenMailCancelButton)

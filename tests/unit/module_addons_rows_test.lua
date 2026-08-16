@@ -186,7 +186,95 @@ check("no moduleAddon_QUI_Minimap row (coreModule now)",  features["moduleAddon_
 check("no moduleAddon_QUI_InfoBar row (coreModule now)",  features["moduleAddon_QUI_InfoBar"]  == nil)
 check("no moduleAddon_QUI_Alts row (coreModule now)",     features["moduleAddon_QUI_Alts"]     == nil)
 
--- ── 8. Result ─────────────────────────────────────────────────────────────────
+-- ── 8. Sidebar module toggles use the same registered entries ─────────────────
+
+local function readAll(path)
+    local file, err = io.open(path, "rb")
+    assert(file, err)
+    local source = file:read("*a")
+    file:close()
+    return source
+end
+
+local expectedTiles = {
+    action_bars = "moduleAddon_QUI_ActionBars",
+    unit_frames = "moduleAddon_QUI_UnitFrames",
+    group_frames = "moduleAddon_QUI_GroupFrames",
+    nameplates = "moduleAddon_QUI_Nameplates",
+    cooldown_manager = "moduleAddon_QUI_CDM",
+    resource_bars = "moduleAddon_QUI_ResourceBars",
+    chat_tooltips = "moduleAddon_QUI_Chat",
+    infobar = "moduleFlag_infobar",
+    bags = "moduleAddon_QUI_Bags",
+    alts = "moduleFlag_alts",
+}
+
+for tile, featureId in pairs(expectedTiles) do
+    local source = readAll("QUI_Options/tiles/" .. tile .. ".lua")
+    check("sidebar " .. tile .. " maps to " .. featureId,
+        source:find('moduleFeatureId = "' .. featureId .. '"', 1, true) ~= nil)
+end
+
+local framework = readAll("QUI_Options/framework.lua")
+check("sidebar reuses Feature Toggles pill builder",
+    framework:find("modulesPage.CreateModuleTogglePill", 1, true) ~= nil)
+
+local mirroredSettings = {
+    ["QUI_UnitFrames/unitframes/settings/unit_frames_schema.lua"] = "moduleAddon_QUI_UnitFrames",
+    ["QUI_GroupFrames/groupframes/settings/group_frames_schema.lua"] = "moduleAddon_QUI_GroupFrames",
+    ["QUI_Nameplates/nameplates/settings/nameplates_schema.lua"] = "moduleAddon_QUI_Nameplates",
+    ["QUI_Chat/chat/settings/chat_frame1_provider.lua"] = "moduleAddon_QUI_Chat",
+    ["modules/infobar/settings/infobar_content.lua"] = "moduleFlag_infobar",
+    ["modules/alts/settings/alts_providers.lua"] = "moduleFlag_alts",
+}
+
+for path, featureId in pairs(mirroredSettings) do
+    local source = readAll(path)
+    check(path .. " routes its master toggle through shared state",
+        source:find('QUI_Modules:SetEnabled("' .. featureId .. '"', 1, true) ~= nil)
+end
+
+-- ── 9. Shared state dispatches once and refreshes ordinary widgets ────────────
+
+local changedValue
+local setterOptions
+local refreshes = 0
+local notifications = 0
+features.testModule = {
+    moduleEntry = {
+        isEnabled = function() return changedValue == true end,
+        setEnabled = function(value, options)
+            changedValue = value
+            setterOptions = options
+        end,
+    },
+}
+_G.QUI.GUI.RefreshWidgetInstances = function()
+    refreshes = refreshes + 1
+end
+
+assert(loadfile("core/modules.lua"))("QUI", ns)
+ns.QUI_Modules:Subscribe("testModule", function()
+    notifications = notifications + 1
+end)
+
+local setterOpts = { suppressReloadPrompt = true }
+check("shared module API accepts registered module",
+    ns.QUI_Modules:SetEnabled("testModule", true, setterOpts) == true)
+check("shared module API calls moduleEntry.setEnabled", changedValue == true)
+check("shared module API passes setter options", setterOptions == setterOpts)
+check("shared module API emits one notification", notifications == 1)
+check("module change refreshes ordinary settings widgets", refreshes == 1)
+
+features.testModule.moduleEntry.setEnabled = function(value)
+    changedValue = value
+    ns.QUI_Modules:NotifyChanged("testModule")
+end
+ns.QUI_Modules:SetEnabled("testModule", false)
+check("internally-notifying entries are not double-dispatched", notifications == 2)
+check("internally-notifying entries still refresh widgets", refreshes == 2)
+
+-- ── 10. Result ────────────────────────────────────────────────────────────────
 
 if failures > 0 then
     io.stderr:write(("FAIL  module_addons_rows_test: %d assertion(s) failed\n"):format(failures))

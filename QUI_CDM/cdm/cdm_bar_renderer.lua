@@ -400,7 +400,7 @@ local function NormalizeTrackedBarRuntimeEntries(runtimeEntries)
     local spellList = {}
     for i, entry in ipairs(runtimeEntries) do
         if type(entry) == "table" then
-            local runtimeSpellID = entry.overrideSpellID or entry.spellID or entry.baseSpellID
+            local runtimeSpellID = entry.linkedSpellID or entry.overrideSpellID or entry.spellID or entry.baseSpellID
             local baseSpellID = entry.baseSpellID or entry.spellID or runtimeSpellID
             local id = runtimeSpellID or entry.cooldownID
             if id then
@@ -410,6 +410,7 @@ local function NormalizeTrackedBarRuntimeEntries(runtimeEntries)
                     spellID = baseSpellID,
                     baseSpellID = baseSpellID,
                     overrideSpellID = entry.overrideSpellID,
+                    linkedSpellID = entry.linkedSpellID,
                     name = entry.name or "",
                     type = "spell",
                     kind = "aura",
@@ -467,6 +468,12 @@ local function TrackedEntriesMatch(configured, runtime)
     end
 
     local configuredIDs = BuildTrackedSpellIdentitySet(configured)
+    if runtime.linkedSpellID ~= nil and not configuredIDs[tostring(runtime.linkedSpellID)] then
+        local cfgPrimary = configured.overrideSpellID or configured.spellID or configured.id
+        if cfgPrimary ~= nil and tostring(cfgPrimary) ~= tostring(runtime.spellID) then
+            return false
+        end
+    end
     local runtimeIDs = BuildTrackedSpellIdentitySet(runtime)
     for id in pairs(configuredIDs) do
         if runtimeIDs[id] then
@@ -492,6 +499,21 @@ local function FindTrackedRuntimeMatch(configured, runtimeSpellList, usedRuntime
     return nil
 end
 
+local function FindTrackedRuntimeExactVariant(configured, runtimeSpellList, usedRuntime)
+    if type(runtimeSpellList) ~= "table" or type(configured) ~= "table" then return nil end
+    local configuredIDs = BuildTrackedSpellIdentitySet(configured)
+    for i = 1, #runtimeSpellList do
+        local runtime = runtimeSpellList[i]
+        if not usedRuntime[i] and type(runtime) == "table"
+            and runtime.linkedSpellID ~= nil
+            and configuredIDs[tostring(runtime.linkedSpellID)] then
+            usedRuntime[i] = true
+            return runtime
+        end
+    end
+    return nil
+end
+
 local function MergeTrackedRuntimeFields(configured, runtime)
     local out = CopyTrackedEntry(configured)
     if type(runtime) ~= "table" then
@@ -501,6 +523,7 @@ local function MergeTrackedRuntimeFields(configured, runtime)
     if out.spellID == nil then out.spellID = runtime.spellID end
     if out.baseSpellID == nil then out.baseSpellID = runtime.baseSpellID end
     if out.overrideSpellID == nil then out.overrideSpellID = runtime.overrideSpellID end
+    out.linkedSpellID = runtime.linkedSpellID
     if (out.name == nil or out.name == "") and runtime.name then out.name = runtime.name end
     if out.iconTexture == nil then out.iconTexture = runtime.iconTexture end
     out.cooldownID = runtime.cooldownID
@@ -524,10 +547,19 @@ local function BuildTrackedBarSpellList(runtimeEntries, configuredSpellList, con
         return out
     end
 
+    local exactMatches = {}
     for i = 1, #configuredSpellList do
         local configured = configuredSpellList[i]
         if type(configured) == "table" then
-            local runtime = FindTrackedRuntimeMatch(configured, runtimeSpellList, usedRuntime)
+            exactMatches[i] = FindTrackedRuntimeExactVariant(configured, runtimeSpellList, usedRuntime)
+        end
+    end
+
+    for i = 1, #configuredSpellList do
+        local configured = configuredSpellList[i]
+        if type(configured) == "table" then
+            local runtime = exactMatches[i]
+                or FindTrackedRuntimeMatch(configured, runtimeSpellList, usedRuntime)
             out[#out + 1] = MergeTrackedRuntimeFields(configured, runtime)
         end
     end
@@ -1369,13 +1401,10 @@ end
 
 local function FindBlzChildByCooldownID(cooldownID)
     local viewer = _G.BuffBarCooldownViewer
-    if not viewer or not viewer.GetChildren then return nil end
-    local ok, numChildren = pcall(viewer.GetNumChildren, viewer)
-    if not ok or not numChildren then return nil end
-    local children = { viewer:GetChildren() }
-    for ci = 1, numChildren do
-        local child = children[ci]
-        if child and child.Bar then
+    local pool = viewer and viewer.itemFramePool
+    if not (pool and pool.EnumerateActive) then return nil end
+    for child in pool:EnumerateActive() do
+        if child.Bar then
             local cid = child.cooldownID
             if not (issecretvalue and issecretvalue(cid)) and cid == cooldownID then
                 return child
@@ -1451,6 +1480,19 @@ local function MirrorPairedBarVisuals(bar, blz)
             end
         end
     end
+    if bar.NameText then
+        local nameFS = nativeBar.Name
+        if nameFS and nameFS.GetText then
+            bar.NameText.SetText(bar.NameText, nameFS:GetText())
+        end
+    end
+    if bar.IconTexture then
+        local iconRegion = blz.Icon
+        local iconTex = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion.texture)
+        if iconTex and iconTex.GetTexture then
+            bar.IconTexture.SetTexture(bar.IconTexture, iconTex:GetTexture())
+        end
+    end
 end
 
 local pairedMirrorFrame = CreateFrame("Frame")
@@ -1462,10 +1504,10 @@ pairedMirrorFrame:SetScript("OnUpdate", function(self, elapsed)
     pairedMirrorAccum = 0
     local anyPaired = false
     for _, bar in ipairs(barPool) do
-        if bar._isOwnedBar and bar._active and bar:IsShown() then
+        if bar._isOwnedBar and bar._blzCooldownID then
+            anyPaired = true
             local blz = GetPairedBlzChild(bar)
             if blz then
-                anyPaired = true
                 MirrorPairedBarVisuals(bar, blz)
             end
         end
@@ -1490,7 +1532,7 @@ local function UpdatePairedBarState(bar, blz)
         bar._mirrorWasShown = nil
     end
     StoreBarRuntimeState(bar, active and "aura" or "inactive", active, nil)
-    if active and pairedMirrorFrame.Show then
+    if pairedMirrorFrame.Show then
         pairedMirrorFrame:Show()
     end
 end

@@ -70,6 +70,7 @@ function CDMEditModePolicy.Enforce()
             layoutInfo.layouts = presets
         end
     end
+    if numPresets == 0 then return end
 
     local activeLayout = type(layoutInfo.activeLayout) == "number"
         and layoutInfo.layouts[layoutInfo.activeLayout]
@@ -91,21 +92,14 @@ function CDMEditModePolicy.Enforce()
     })
 
     _applied = true
+    local db = _G.QUIDB
     if not changed then
-        local db = _G.QUIDB
         if db then db.cdmEditModeSavePending = nil end
         return
     end
 
-    C_EditMode.SaveLayouts(layoutInfo)
-
-    if not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then return end
-
-    local db = _G.QUIDB
-    local savePending = db and db.cdmEditModeSavePending
-    if db then db.cdmEditModeSavePending = true end
-
-    if savePending then
+    if db and db.cdmEditModeSavePending then
+        if not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then return end
         _G.StaticPopupDialogs["QUI_CDM_EDITMODE_MANUAL"] = {
             text = "QUI could not save the Cooldown Manager Edit Mode settings,"
                 .. " so they must be set by hand:\n\n"
@@ -126,6 +120,11 @@ function CDMEditModePolicy.Enforce()
         return
     end
 
+    C_EditMode.SaveLayouts(layoutInfo)
+    if db then db.cdmEditModeSavePending = true end
+
+    if not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then return end
+
     _G.StaticPopupDialogs["QUI_CDM_EDITMODE_RELOAD"] = {
         text = "QUI has updated your Cooldown Manager Edit Mode settings"
             .. " (viewers must be Always visible with Hide When Inactive on"
@@ -145,9 +144,21 @@ end
 local enforceFrame = CreateFrame("Frame")
 enforceFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 enforceFrame:SetScript("OnEvent", function(self, event)
-    if event ~= "PLAYER_ENTERING_WORLD" then return end
-    if self and self.UnregisterEvent then
-        self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    if event == "PLAYER_ENTERING_WORLD" then
+        if self and self.UnregisterEvent then
+            self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+        end
+        if _G.InCombatLockdown and _G.InCombatLockdown()
+            and self and self.RegisterEvent then
+            self:RegisterEvent("PLAYER_REGEN_ENABLED")
+            return
+        end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if self and self.UnregisterEvent then
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        end
+    else
+        return
     end
     CDMEditModePolicy.Enforce()
 end)

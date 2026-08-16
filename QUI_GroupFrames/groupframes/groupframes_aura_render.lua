@@ -1238,25 +1238,62 @@ local function HideBorderOverlay(frame)
     overlay:Hide()
 end
 
-function R.RenderHealthTint(self, frame, element, matches)
-    if not frame then return end
+-- Live health tints ride secure feeder slots: a plain scriptless TEXTURE is
+-- parented into the slot, so the engine's (possibly secret) show/hide of the
+-- slot decides whether the tint renders — Lua never observes presence at all.
+--
+-- The cover is anchored to the REAL health bar's fill texture region, so it
+-- inherits the fill's rect and tracks health with no per-tick feed and no
+-- reads (rects and values can be secret in combat; anchors are not). A
+-- Lua-driven StatusBar mirror can NEVER work here: aura slot buttons carry
+-- Enum.ScriptObjectAccessRestriction.DenyTaintedAccessWhenAurasAreSecret, so
+-- per-tick writes into the slot are refused while auras are secret
+-- (DandersFrames shipped that mirror and removed it, field-confirmed).
+-- Consequence: no entrance animations on live frames — nothing Lua-side
+-- knows when the aura appears.
+function R.AttachFeederTint(self, host, slotFrame, element)
+    if not (host and host.healthBar and slotFrame and element) then return end
+    local healthBar = host.healthBar
+    local fillRegion = healthBar.GetStatusBarTexture and healthBar:GetStatusBarTexture()
+    if not fillRegion then return end
 
-    local auraData
-    if element.spells then
-        for _, sid in ipairs(element.spells) do
-            local data = matches and matches[sid]
-            if data then auraData = data; break end
-        end
+    local cover = slotFrame._quiFeederTint
+    if not cover then
+        cover = slotFrame:CreateTexture(nil, "OVERLAY")
+        -- The slot sits at alpha 0 to mute its template art; the cover must
+        -- not inherit that.
+        if cover.SetIgnoreParentAlpha then cover:SetIgnoreParentAlpha(true) end
+        if cover.DisablePixelSnap then cover:DisablePixelSnap() end
+        slotFrame._quiFeederTint = cover
     end
 
-    if not auraData then
-        if frame._quiAuraRenderHealthTintOwner == element.id then
-            frame._quiAuraRenderHealthTintOwner = nil
-            frame._quiAuraRenderHealthTintColor = nil
-            HideHealthTintOverlay(frame)
-        end
-        return
-    end
+    -- Re-anchored on every style pass, not just creation: a health-texture
+    -- swap in settings replaces the fill region and would stale the anchor.
+    cover:ClearAllPoints()
+    cover:SetAllPoints(fillRegion)
+    local color = element.color or DEFAULT_HEALTH_COLOR
+    local texPath = (fillRegion.GetTexture and fillRegion:GetTexture()) or GetStatusBarTexturePath()
+    cover:SetTexture(texPath)
+    cover:SetVertexColor(color[1] or 0.2, color[2] or 0.8, color[3] or 0.2, 1)
+    cover:SetAlpha(color[4] or 1)
+    cover:Show()
+
+    -- Seat the slot's draw band at healthBar+1 — above the real fill, below
+    -- absorb/overlay bars — where the engine-rendered tint used to sit.
+    slotFrame:SetFrameStrata(healthBar:GetFrameStrata())
+    slotFrame:SetFrameLevel((healthBar:GetFrameLevel() or 1) + 1)
+end
+
+function R.DetachFeederTint(self, slotFrame, element)
+    local cover = slotFrame and slotFrame._quiFeederTint
+    if cover then cover:Hide() end
+end
+
+-- Presence-driven tint entry points. RenderHealthTint feeds these from the
+-- Lua aura cache; live group frames use the feeder overlays above, this path
+-- remains for the options preview (fake frames have no secure containers).
+function R.ApplyHealthTint(self, frame, element)
+    if not frame or not element then return end
 
     local htCfg = element.healthTint or nil
     local animation = NormalizeHealthTintAnimation(htCfg and htCfg.animation)
@@ -1281,6 +1318,34 @@ function R.RenderHealthTint(self, frame, element, matches)
         overlay._quiTintWasShown = true
         StartHealthTintAnimation(overlay, animation, targetValue, 1)
     end
+end
+
+function R.ClearHealthTint(self, frame, elementID)
+    if not frame then return end
+    if frame._quiAuraRenderHealthTintOwner == elementID then
+        frame._quiAuraRenderHealthTintOwner = nil
+        frame._quiAuraRenderHealthTintColor = nil
+        HideHealthTintOverlay(frame)
+    end
+end
+
+function R.RenderHealthTint(self, frame, element, matches)
+    if not frame then return end
+
+    local auraData
+    if element.spells then
+        for _, sid in ipairs(element.spells) do
+            local data = matches and matches[sid]
+            if data then auraData = data; break end
+        end
+    end
+
+    if not auraData then
+        R.ClearHealthTint(self, frame, element.id)
+        return
+    end
+
+    R.ApplyHealthTint(self, frame, element)
 end
 
 function R.RenderBorder(self, frame, element, matches)

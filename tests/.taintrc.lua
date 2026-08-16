@@ -367,6 +367,14 @@ return {
         -- Field names that are always non-secret per Blizzard's API contract.
         -- When the analyzer sees `tainted_local.<field>` for any of these,
         -- it treats the read as clean instead of propagating taint.
-        "isOnGCD",  -- SpellCooldownInfo.isOnGCD is always a clean boolean
+        -- Every entry must carry NeverSecret = true on EVERY structure field
+        -- of that name in tests/api-docs/blizzard/ that belongs to a
+        -- secret-guarded structure; tests/unit/taint_clean_fields_test.lua
+        -- enforces that against the generated docs.
+        "isOnGCD",  -- SpellCooldownInfo.isOnGCD
+        "isActive",  -- SpellCooldownInfo / SpellChargeInfo / SpellLossOfControlInfo
+        "isEnabled",  -- SpellCooldownInfo.isEnabled
+        "maxCharges",  -- SpellChargeInfo.maxCharges
+        "shouldReplaceNormalCooldown",  -- SpellLossOfControlInfo
     },
 }

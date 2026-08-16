@@ -16,6 +16,7 @@ function V2.Register(frame)
         id = "nameplates",
         icon = "N",
         name = ns.L["Nameplates"],
+        moduleFeatureId = "moduleAddon_QUI_Nameplates",
         navRoutes = {
             { tabIndex = SEARCH_TAB_INDEX, subTabIndex = 0, subPageIndex = 1 },
             { tabIndex = SEARCH_TAB_INDEX, subTabIndex = 1, subPageIndex = 1 },

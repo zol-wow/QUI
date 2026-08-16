@@ -2535,7 +2535,27 @@ return {
             offsetX = 0,
             offsetY = -160
           },
+          objectiveTrackerBarColor = {
+            [1] = 0.26000000000000001,
+            [2] = 0.41999999999999998,
+            [3] = 1,
+            [4] = 1
+          },
+          objectiveTrackerBulletColor = {
+            [1] = 1,
+            [2] = 0.81999999999999995,
+            [3] = 0,
+            [4] = 1
+          },
+          objectiveTrackerCheckColor = {
+            [1] = 0.20000000000000001,
+            [2] = 0.80000000000000004,
+            [3] = 0.20000000000000001,
+            [4] = 1
+          },
           objectiveTrackerClickThrough = false,
+          objectiveTrackerCustomBars = true,
+          objectiveTrackerCustomIcons = true,
           objectiveTrackerHeight = 600,
           objectiveTrackerModuleColor = {
             [1] = 1,
@@ -3086,8 +3106,6 @@ return {
           simplified = {
             scale = 1
           },
-          specAutoSwitch = false,
-          specPresets = {},
           types = {
             bossElite = {
               absorbs = {
@@ -3126,6 +3144,12 @@ return {
                 timerSize = 10
               },
               colors = {
+                castBg = {
+                  [1] = 0.10000000000000001,
+                  [2] = 0.10000000000000001,
+                  [3] = 0.10000000000000001,
+                  [4] = 0.90000000000000002
+                },
                 castChannel = {
                   [1] = 0.34999999999999998,
                   [2] = 0.59999999999999998,
@@ -3411,6 +3435,12 @@ return {
                 timerSize = 10
               },
               colors = {
+                castBg = {
+                  [1] = 0.10000000000000001,
+                  [2] = 0.10000000000000001,
+                  [3] = 0.10000000000000001,
+                  [4] = 0.90000000000000002
+                },
                 castChannel = {
                   [1] = 0.34999999999999998,
                   [2] = 0.59999999999999998,
@@ -3696,6 +3726,12 @@ return {
                 timerSize = 10
               },
               colors = {
+                castBg = {
+                  [1] = 0.10000000000000001,
+                  [2] = 0.10000000000000001,
+                  [3] = 0.10000000000000001,
+                  [4] = 0.90000000000000002
+                },
                 castChannel = {
                   [1] = 0.34999999999999998,
                   [2] = 0.59999999999999998,
@@ -3981,6 +4017,12 @@ return {
                 timerSize = 10
               },
               colors = {
+                castBg = {
+                  [1] = 0.10000000000000001,
+                  [2] = 0.10000000000000001,
+                  [3] = 0.10000000000000001,
+                  [4] = 0.90000000000000002
+                },
                 castChannel = {
                   [1] = 0.34999999999999998,
                   [2] = 0.59999999999999998,
@@ -4266,6 +4308,12 @@ return {
                 timerSize = 10
               },
               colors = {
+                castBg = {
+                  [1] = 0.10000000000000001,
+                  [2] = 0.10000000000000001,
+                  [3] = 0.10000000000000001,
+                  [4] = 0.90000000000000002
+                },
                 castChannel = {
                   [1] = 0.34999999999999998,
                   [2] = 0.59999999999999998,
@@ -4551,6 +4599,12 @@ return {
                 timerSize = 10
               },
               colors = {
+                castBg = {
+                  [1] = 0.10000000000000001,
+                  [2] = 0.10000000000000001,
+                  [3] = 0.10000000000000001,
+                  [4] = 0.90000000000000002
+                },
                 castChannel = {
                   [1] = 0.34999999999999998,
                   [2] = 0.59999999999999998,
@@ -5919,6 +5973,12 @@ return {
               font = "Quazii",
               fontOutline = "OUTLINE",
               fontSize = 12,
+              healthBarColor = {
+                [1] = 0.20000000000000001,
+                [2] = 0.80000000000000004,
+                [3] = 0.20000000000000001,
+                [4] = 1
+              },
               showTooltips = true,
               texture = "Quazii v5",
               useClassColor = true
@@ -6295,6 +6355,12 @@ return {
               font = "Quazii",
               fontOutline = "OUTLINE",
               fontSize = 12,
+              healthBarColor = {
+                [1] = 0.20000000000000001,
+                [2] = 0.80000000000000004,
+                [3] = 0.20000000000000001,
+                [4] = 1
+              },
               showTooltips = true,
               texture = "Quazii v5",
               useClassColor = true
@@ -8020,6 +8086,7 @@ return {
             white = 245
           },
           scale = 1,
+          showAuraSpellIDs = true,
           showBorder = true,
           showConnectedRealm = false,
           showGuildRank = false,
@@ -8269,7 +8336,7 @@ return {
       Default = {
         _defaultsVersion = 3,
         _needsLateAbImport = true,
-        _schemaVersion = 60,
+        _schemaVersion = 61,
         quiUnitFrames = {
           focus = {
             castbar = {
