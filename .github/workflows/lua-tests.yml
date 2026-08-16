@@ -72,6 +72,7 @@ jobs:
           # format drift must not be able to reach any branch unseen.
           python3 tools/i18n/test_overlay_roundtrip.py
           python3 tools/i18n/test_enus_parser_agreement.py
+          python3 tools/i18n/test_translate_codex_provider.py
       - name: Tooling unit tests
         run: |
           lua tests/api-docs/extract_test.lua

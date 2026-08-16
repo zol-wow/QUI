@@ -51,3 +51,4 @@ meta/wow-widgets.lua linguist-generated=true
 libs/** linguist-vendored linguist-generated=true
 tools/** linguist-generated=true
 assets/** linguist-generated=true
+graphify-out/graph.json merge=graphify

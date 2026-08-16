@@ -172,8 +172,8 @@ run_lua_tests "tooling tests" \
     tools/test_i18n_locale.lua tools/test_i18n_extract.lua \
     tools/test_i18n_format.lua || fail=1
 
-# The ten locale overlays have no staleness gate — translate_delta.py needs an
-# API key, so CI cannot regenerate them — which leaves format drift between the
+# The ten locale overlays have no staleness gate — translation is intentionally
+# not rerun in CI — which leaves format drift between the
 # committed files and their writer invisible. This round-trips each file
 # through overlay_source and requires byte equality. Python-only; skipped with
 # a warning rather than failing a Lua-only environment.
@@ -195,6 +195,14 @@ if command -v python3 >/dev/null 2>&1; then
     else
         python3 tools/i18n/test_enus_parser_agreement.py >/dev/null
         echo "FAIL: an enUS.lua parser disagrees with a real Lua load" >&2
+        fail=1
+    fi
+
+    if python3 tools/i18n/test_translate_codex_provider.py >/dev/null 2>&1; then
+        echo "delta translator: Codex provider wiring passed"
+    else
+        python3 tools/i18n/test_translate_codex_provider.py
+        echo "FAIL: delta translator Codex provider wiring" >&2
         fail=1
     fi
 else

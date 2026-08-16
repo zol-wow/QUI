@@ -7,8 +7,8 @@ Why this exists instead of a regeneration step: the overlays cannot be
 regenerated. `tools/i18n/gen_all_caches.sh` only runs `extract_strings.lua`
 (core/locale/enUS.lua) and `generate_search_cache.lua` -- it never writes the
 ten overlays. Those are written by `tools/i18n/translate_delta.py`, which
-requires a translation API key that is not available in this environment (and
-is not needed here: no new translation is happening, only a container
+requires a logged-in Codex session that is not available in CI (and is not
+needed here: no new translation is happening, only a container
 change). So the only way to flip their format is to parse the translations
 that are ALREADY committed and re-emit them through the new writer.
 
