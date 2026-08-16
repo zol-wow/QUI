@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Action Bars
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol and Drew
-## Version: 5.2.0
+## Version: 5.2.1-beta1
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
