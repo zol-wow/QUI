@@ -103,6 +103,7 @@ function CDMLayout.AnchorLinearChain(owner, frames, opts)
     if opts.grow ~= nil and opts.grow ~= "RIGHT" then return false end
 
     local spacing = opts.spacing or 0
+    local spacingAfter = opts.spacingAfter
     local offsetY = opts.offsetY or 0
     local previous
     for i = 1, #frames do
@@ -110,7 +111,8 @@ function CDMLayout.AnchorLinearChain(owner, frames, opts)
         if not (frame and frame.ClearAllPoints and frame.SetPoint) then return false end
         frame:ClearAllPoints()
         if previous then
-            frame:SetPoint("LEFT", previous, "RIGHT", spacing, 0)
+            local gap = spacingAfter and spacingAfter[previous]
+            frame:SetPoint("LEFT", previous, "RIGHT", gap == nil and spacing or gap, 0)
         else
             frame:SetPoint("LEFT", owner, "LEFT", opts.offsetX or 0, offsetY)
         end

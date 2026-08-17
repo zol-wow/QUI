@@ -47,6 +47,7 @@ apply(owner, { cooldownA, inactiveAura, cooldownB }, {
     axis = "HORIZONTAL",
     grow = "RIGHT",
     spacing = 2,
+    spacingAfter = { [inactiveAura] = -1 },
 })
 
 local a = cooldownA.points[1]
@@ -60,9 +61,15 @@ assert(aura[1] == "LEFT" and aura[2] == cooldownA and aura[3] == "RIGHT"
     and aura[4] == 2 and aura[5] == 0,
     "aura must follow the first cooldown")
 assert(b[1] == "LEFT" and b[2] == inactiveAura and b[3] == "RIGHT"
-    and b[4] == 2 and b[5] == 0,
+    and b[4] == -1 and b[5] == 0,
     "second cooldown must follow the aura layout frame")
-assert(cooldownB:GetLeft() == 35,
-    "inactive 1x1 aura must not reserve a 30px icon slot")
+assert(cooldownB:GetLeft() == 32,
+    "inactive 1x1 aura must collapse without an extra gap")
+inactiveAura.width = 33
+assert(cooldownB:GetLeft() == 64,
+    "one active aura must preserve the visible row gap")
+inactiveAura.width = 65
+assert(cooldownB:GetLeft() == 96,
+    "two active auras must preserve both visible row gaps")
 
 print("OK: cdm_secure_linear_chain_test")

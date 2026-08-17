@@ -133,6 +133,9 @@ local function Profile(rowConfig)
         iconWidth = size,
         iconHeight = size / aspect,
         spacing = rowConfig.padding or 0,
+        opacity = rowConfig.opacity or 1,
+        zoom = rowConfig.zoom or 0,
+        aspectRatioCrop = aspect,
         grow = "RIGHT",
         maxPerRow = 0,
         anchor = "TOPLEFT",
@@ -179,22 +182,25 @@ local function AcquireRun(owner, index)
     return container, pool
 end
 
-local function BuildGroup(icon, index)
+local function BuildGroup(icon, index, rowConfig)
     local ids = CandidateIDs(icon._spellEntry)
     local include = {}
     for i = 1, #ids do include[ids[i]] = true end
     local filters = next(include) and { includeSpellIDs = include } or { maxDuration = 0 }
+    local spacing = rowConfig.padding or 0
     return {
         key = "a" .. tostring(index),
         filter = HELPFUL_FILTER,
         maxFrameCount = 1,
         candidateFilters = filters,
+        elementWidth = (rowConfig.size or 39) + spacing + 1,
+        elementSpacing = -1,
     }
 end
 
 local function FriendlyTarget()
     return UnitExists and UnitExists("target")
-        and UnitIsFriend and UnitIsFriend("player", "target") == true
+        and UnitCanAssist and UnitCanAssist("player", "target") == true
 end
 
 local function HostileTarget()
@@ -279,6 +285,7 @@ function Runs.Apply(owner, settings, layoutPlan)
     if not (AuraSkin and AuraSkin.Configure and Layout and Layout.AnchorLinearChain) then return false end
 
     local chain = {}
+    local spacingAfter = {}
     local runRecords = {}
     local currentRun
     local runCount = 0
@@ -300,8 +307,10 @@ function Runs.Apply(owner, settings, layoutPlan)
                 }
                 runRecords[#runRecords + 1] = currentRun
                 chain[#chain + 1] = container
+                spacingAfter[container] = -1
             end
-            currentRun.groups[#currentRun.groups + 1] = BuildGroup(icon, #currentRun.groups + 1)
+            currentRun.groups[#currentRun.groups + 1] = BuildGroup(
+                icon, #currentRun.groups + 1, placement.rowConfig)
             HideProxy(icon)
         else
             currentRun = nil
@@ -341,6 +350,7 @@ function Runs.Apply(owner, settings, layoutPlan)
         axis = "HORIZONTAL",
         grow = "RIGHT",
         spacing = rowConfig.padding or 0,
+        spacingAfter = spacingAfter,
         offsetX = offsetX,
         offsetY = firstPlacement.y or 0,
     })

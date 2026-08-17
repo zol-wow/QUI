@@ -49,10 +49,10 @@ local function Stub()
     function t:SetPoint() end
     function t:ClearAllPoints() end
     function t:SetColorTexture() end
-    function t:SetTexCoord() end
+    function t:SetTexCoord(...) self.texCoords = { ... } end
     function t:DisablePixelSnap() end
     function t:SetTextColor() end
-    function t:SetAlpha() end
+    function t:SetAlpha(alpha) self.alpha = alpha end
     function t:SetFont() end
     function t:SetHideCountdownNumbers() end
     function t:SetDrawSwipe() end
@@ -86,13 +86,14 @@ end
 -- composite-key fallback re-registration path, the exact scenario the
 -- brief's rationale names ("new composite key appends LAST").
 local function MakeContainer()
-    local c = { _addOrder = {}, _layoutByKey = {}, _registeredKeys = {} }
+    local c = { _addOrder = {}, _layoutByKey = {}, _registeredKeys = {}, _buttons = {} }
     function c:HasAuraGroup(key) return self._registeredKeys[key] == true end
     function c:AddAuraGroup(key, filter, opts)
         c._addOrder[#c._addOrder + 1] = key
         c._registeredKeys[key] = true
         c._layoutByKey[key] = opts.layout
         local btn = MakeButton()
+        c._buttons[key] = btn
         opts.initializeFrame(btn)
     end
     function c:SetAuraGroupMaxFrameCount() end
@@ -115,7 +116,15 @@ local AuraSkin = ns.Addon.AuraSkin
 check("core/aura_skin.lua publishes ns.Addon.AuraSkin", AuraSkin ~= nil)
 
 local container = MakeContainer()
-local profile = { iconSize = 20, iconWidth = 30, iconHeight = 12 }
+local profile = {
+    iconSize = 20,
+    iconWidth = 30,
+    iconHeight = 12,
+    spacing = 2,
+    opacity = 0.45,
+    zoom = 0.12,
+    aspectRatioCrop = 1.5,
+}
 
 ----------------------------------------------------------------------------
 -- (1) Three groups, first Configure: layoutIndex must match CALLER-array
@@ -123,7 +132,7 @@ local profile = { iconSize = 20, iconWidth = 30, iconHeight = 12 }
 -- this establishes the baseline the next step disturbs).
 ----------------------------------------------------------------------------
 local groups = {
-    { key = "s1", filter = "HELPFUL" },
+    { key = "s1", filter = "HELPFUL", elementWidth = 33, elementSpacing = -1 },
     { key = "s2", filter = "HARMFUL", groupSpacing = 7 },
     { key = "s3", filter = "PLAYER" },
 }
@@ -139,14 +148,29 @@ check("s3 registered third, layoutIndex 3",
     container._layoutByKey["s3|PLAYER"] and container._layoutByKey["s3|PLAYER"].layoutIndex == 3,
     container._layoutByKey["s3|PLAYER"] and tostring(container._layoutByKey["s3|PLAYER"].layoutIndex))
 check("rectangular profile dimensions reach group layout",
-    container._layoutByKey["s1|HELPFUL"].elementWidth == 30
-        and container._layoutByKey["s1|HELPFUL"].elementHeight == 12)
+    container._layoutByKey["s1|HELPFUL"].elementWidth == 33
+        and container._layoutByKey["s1|HELPFUL"].elementHeight == 12
+        and container._layoutByKey["s1|HELPFUL"].elementSpacing == -1)
 check("per-group spacing reaches group layout",
     container._layoutByKey["s2|HARMFUL"].groupSpacing == 7)
 
 check("Configure stamped g._quiOrder onto every group descriptor in caller order",
     groups[1]._quiOrder == 1 and groups[2]._quiOrder == 2 and groups[3]._quiOrder == 3,
     string.format("%s,%s,%s", tostring(groups[1]._quiOrder), tostring(groups[2]._quiOrder), tostring(groups[3]._quiOrder)))
+
+local button = container._buttons["s1|HELPFUL"]
+local coords = button.Icon.texCoords
+check("row opacity reaches managed aura buttons", button.alpha == 0.45)
+check("row zoom and aspect crop reach managed aura textures",
+    math.abs(coords[1] - 0.20) < 0.000001
+        and math.abs(coords[2] - 0.80) < 0.000001
+        and math.abs(coords[3] - 0.30) < 0.000001
+        and math.abs(coords[4] - 0.70) < 0.000001)
+AuraSkin.Restyle(container, {})
+coords = button.Icon.texCoords
+check("restyle restores default opacity and crop", button.alpha == 1
+    and coords[1] == 0.08 and coords[2] == 0.92
+    and coords[3] == 0.08 and coords[4] == 0.92)
 
 ----------------------------------------------------------------------------
 -- (2) THE regression-defining case: s1's filter changes. On the incapable

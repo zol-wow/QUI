@@ -29,9 +29,10 @@ _G.CreateFrame = function(kind, name, parent, template)
 end
 _G.issecretvalue = function() return false end
 
-local target = { exists = false, friendly = false, attackable = false }
+local target = { exists = false, friendly = false, assistable = false, attackable = false }
 _G.UnitExists = function(unit) return unit == "target" and target.exists end
 _G.UnitIsFriend = function(_, unit) return unit == "target" and target.friendly end
+_G.UnitCanAssist = function(_, unit) return unit == "target" and target.assistable end
 _G.UnitCanAttack = function(_, unit) return unit == "target" and target.attackable end
 
 local configured = {}
@@ -114,7 +115,9 @@ cooldownB._spellEntry = { spellID = 333, kind = "cooldown" }
 local row = {
     size = 30,
     padding = 2,
-    aspectRatioCrop = 1,
+    aspectRatioCrop = 1.5,
+    opacity = 0.45,
+    zoom = 0.12,
     borderSize = 1,
     borderColorSource = "inherit",
     borderColor = { 0, 0, 0, 1 },
@@ -136,7 +139,9 @@ assert(#created == 1 and created[1].kind == "AuraContainer"
 assert(#configured == 1 and #configured[1].groups == 1,
     "one aura occurrence must register one secure group")
 assert(configured[1].groups[1].maxFrameCount == 1
-    and configured[1].groups[1].candidateFilters.includeSpellIDs[222] == true,
+    and configured[1].groups[1].candidateFilters.includeSpellIDs[222] == true
+    and configured[1].groups[1].elementWidth == 33
+    and configured[1].groups[1].elementSpacing == -1,
     "the secure group must track the exact aura ID")
 assert(configured[1].groups[1].cancelButtons == "RightButtonUp",
     "player buffs must use Blizzard's native right-click cancellation")
@@ -146,6 +151,10 @@ local borderColor = configured[1].profile.borderColor
 assert(borderColor[1] == 0.2 and borderColor[2] == 0.4
     and borderColor[3] == 0.6 and borderColor[4] == 0.8,
     "the secure aura must resolve the same inherited border color as CDM icons")
+assert(configured[1].profile.opacity == 0.45
+    and configured[1].profile.zoom == 0.12
+    and configured[1].profile.aspectRatioCrop == 1.5,
+    "the secure aura must inherit row opacity, zoom, and aspect crop")
 assert(auraProxy.shown == false and auraProxy._quiManagedAuraProxy == true,
     "the addon aura proxy must not paint the live aura")
 assert(ns.CDMCustomAuraRuns.ResolveRoute({
@@ -175,12 +184,13 @@ assert(first[1] == "LEFT" and first[2] == owner and first[3] == "LEFT",
     "the mixed chain must start on the owner")
 assert(middle[1] == "LEFT" and middle[2] == cooldownA and middle[3] == "RIGHT",
     "the secure aura run must follow the first cooldown")
-assert(last[1] == "LEFT" and last[2] == controller and last[3] == "RIGHT",
+assert(middle[4] == 2 and last[1] == "LEFT" and last[2] == controller
+    and last[3] == "RIGHT" and last[4] == -1,
     "the second cooldown must follow the secure aura run")
 assert(controller.unit == "player" and controller.enabled == true and controller.shown == true,
     "the secure aura run must be live for player buffs")
 
-target.exists, target.friendly, target.attackable = true, true, false
+target.exists, target.friendly, target.assistable, target.attackable = true, true, false, false
 ns.CDMCustomAuraRuns.RefreshTargets()
 local friendlyConfig = LastConfig(controller)
 assert(controller.unit == "player"
@@ -224,10 +234,19 @@ local friendlyController = friendlyOwner._quiCDMAuraRuns[1]
 friendlyConfig = LastConfig(friendlyController)
 assert(friendlyController.unit == "target"
     and friendlyConfig.groups[1].filter == "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
-    and friendlyConfig.groups[1].maxFrameCount == 1
+    and friendlyConfig.groups[1].maxFrameCount == 0
     and friendlyConfig.groups[1].cancelButtons == nil,
-    "non-self helpful entries must activate on friendly targets")
-assert(#friendlyConfig.groups == 2 and friendlyConfig.groups[2].groupSpacing == nil
+    "non-self helpful entries must park on friendly but unassistable targets")
+local friendlyConfiguredBefore = #configured
+target.assistable = true
+ns.CDMCustomAuraRuns.RefreshTargets()
+assert(#configured == friendlyConfiguredBefore
+    and friendlyConfig.groups[1].maxFrameCount == 1
+    and #(friendlyController.maxFrameCountCalls or {}) == 2,
+    "non-self helpful entries must activate without rebuilding when the target is assistable")
+assert(#friendlyConfig.groups == 2
+    and friendlyConfig.groups[2].elementWidth == 33
+    and friendlyConfig.groups[2].elementSpacing == -1
     and friendlyConfig.profile.spacing == 2,
     "adjacent aura groups must use row spacing exactly once")
 
@@ -256,7 +275,7 @@ local harmfulConfig = LastConfig(harmfulController)
 assert(harmfulController.unit == "target" and harmfulConfig.groups[1].maxFrameCount == 0,
     "harmful entries must park on friendly targets")
 
-target.friendly, target.attackable = false, true
+target.friendly, target.assistable, target.attackable = false, false, true
 local configuredBeforeRefresh = #configured
 ns.CDMCustomAuraRuns.RefreshTargets()
 assert(#configured == configuredBeforeRefresh,
@@ -272,7 +291,7 @@ assert(friendlyConfig.groups[1].maxFrameCount == 0,
     "non-self helpful entries must park on enemy targets")
 local friendlyCalls = #(friendlyController.maxFrameCountCalls or {})
 local harmfulCalls = #(harmfulController.maxFrameCountCalls or {})
-assert(friendlyCalls == 2 and harmfulCalls == 1,
+assert(friendlyCalls == 4 and harmfulCalls == 1,
     "target refreshes must update only changed group capacities")
 ns.CDMCustomAuraRuns.RefreshTargets()
 assert(#(friendlyController.maxFrameCountCalls or {}) == friendlyCalls
