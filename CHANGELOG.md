@@ -4,6 +4,25 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.1-beta3 - 2026-08-16
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Secret-value safety and combat-layout fixes for Cooldown Manager and the
+character pane.
+
+### Fixed
+
+- **Cooldown Manager rejects secret values at resolver boundaries.** Aura,
+  cooldown, item, slot, and totem paths no longer pass unreadable values into
+  cached state, metadata, or DurationObject construction.
+- **Opaque aura presence remains usable without exposing payloads.** Secret
+  aura results are represented as clean presence metadata and are not memoized.
+- **Character-pane layout updates immediately during combat.** Scale,
+  decorations, equipment slots, model, and stats layout no longer wait for
+  combat to end.
+
 ## v5.2.1-beta2 - 2026-08-16
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
