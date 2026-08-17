@@ -4,6 +4,27 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.1-beta4 - 2026-08-17
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Aura display layout and tracked-spell mapping improvements.
+
+### Added
+
+- **Display-level aura row layout controls.** Configure row direction,
+  alignment, and spacing while keeping editor preview geometry matched to the
+  runtime display.
+
+### Fixed
+
+- **Tracked spells preserve linked aura candidates.** Multi-aura mappings now
+  retain every linked aura ID instead of collapsing to one resolved ID.
+- **Aura display bounds follow the configured layout.** Multi-icon rows and
+  upward or downward growth now measure and place elements along the correct
+  axis without overlapping neighboring rows.
+
 ## v5.2.1-beta3 - 2026-08-16
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
