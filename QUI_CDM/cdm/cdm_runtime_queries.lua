@@ -206,6 +206,9 @@ function CDMRuntimeQueries.QueryCooldown(spellID, owner)
     if Sources and Sources.QuerySpellCooldown then
         info = Sources.QuerySpellCooldown(spellID)
     end
+    if IsSecretValue(info) then
+        info = nil
+    end
     return StoreRuntimeCache("cooldown", owner, spellID, info, "cooldownSource")
 end
 

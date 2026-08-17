@@ -809,6 +809,10 @@ end
 
 local function AuraDataMatchesFilter(unit, auraData, filter, filterWasApplied)
     if not auraData then return false end
+    if Sources and Sources.IsOpaqueAuraPresence
+        and Sources.IsOpaqueAuraPresence(auraData) then
+        return true
+    end
     if type(filter) ~= "string" or filter == "" then
         return true
     end
@@ -1113,7 +1117,8 @@ local function FormatTotemSlotScan()
     wipe(_totemScanReport)
     for slot = 1, slotCount do
         local hasTotem, _, _, _, _, _, totemSpellID = GetTotemInfo(slot)
-        if IsUsableTableKey(hasTotem) then
+        if issecretvalue and issecretvalue(hasTotem) then hasTotem = nil end
+        if hasTotem == true then
             -- @secret-safe: guarded by IsUsableSpellIDKey, which probes issecretvalue and rejects secrets; the analyzer is non-interprocedural and cannot see through the helper
             local shown = IsUsableSpellIDKey(totemSpellID) and tostring(totemSpellID) or "?"
             _totemScanReport[#_totemScanReport + 1] = tostring(slot) .. ":" .. shown
@@ -1131,7 +1136,8 @@ local function FindTotemSlotForSpellIDs(...)
     if #candidates == 0 then return nil end
     for slot = 1, slotCount do
         local hasTotem, _, _, _, _, _, totemSpellID = GetTotemInfo(slot)
-        if IsUsableTableKey(hasTotem) and IsUsableSpellIDKey(totemSpellID) then
+        if issecretvalue and issecretvalue(hasTotem) then hasTotem = nil end
+        if hasTotem == true and IsUsableSpellIDKey(totemSpellID) then
             for i = 1, #candidates do
                 -- @secret-safe: both operands cleared IsUsableSpellIDKey, which probes issecretvalue and rejects secrets; the analyzer is non-interprocedural and cannot see through the helper
                 if candidates[i] == totemSpellID then
@@ -1147,13 +1153,17 @@ local function ResolveVirtualAuraState(explicitSlot)
     local slot = SafeMaybeNumber(explicitSlot)
     local state = { slot = slot }
 
-    if slot and GetTotemInfo then
-        local _, totemName, _, _, totemIcon = GetTotemInfo(slot)
-        state.totemName = totemName
-        state.totemIcon = totemIcon
-    end
+    if not (slot and GetTotemInfo) then return state end
 
-    if slot and GetTotemDuration then
+    local haveTotem, totemName, _, _, totemIcon = GetTotemInfo(slot)
+    if issecretvalue and issecretvalue(haveTotem) then return state end
+    if haveTotem ~= true then return state end
+    if issecretvalue and issecretvalue(totemName) then totemName = nil end
+    if issecretvalue and issecretvalue(totemIcon) then totemIcon = nil end
+    state.totemName = totemName
+    state.totemIcon = totemIcon
+
+    if GetTotemDuration then
         local durObj = GetTotemDuration(slot)
         if durObj and type(durObj) ~= "number" then
             state.isActive = true

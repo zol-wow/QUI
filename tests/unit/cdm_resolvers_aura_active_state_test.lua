@@ -16,6 +16,7 @@ end
 local capturedLookupIDs
 local capturedLookupName
 local queriedSpellIDs = {}
+local opaqueAuraPresence = {}
 
 local ns = {
     Helpers = {},
@@ -24,6 +25,9 @@ local ns = {
             queriedSpellIDs[#queriedSpellIDs + 1] = spellID
             if spellID == 20002 then
                 return { auraInstanceID = 9002 }
+            end
+            if spellID == 10003 then
+                return opaqueAuraPresence
             end
             return nil
         end,
@@ -79,5 +83,15 @@ assert(unit == "player", "direct aura lookup should report player unit")
 assert(instanceID == 9002, "direct aura lookup should return auraInstanceID")
 assert(queriedSpellIDs[1] == 10002, "direct lookup should try configured ID first")
 assert(queriedSpellIDs[2] == 20002, "direct lookup should fall back to mapped aura ID")
+
+active, unit, instanceID = resolve({
+    spellID = 10003,
+    id = 10003,
+    name = "Opaque Aura",
+})
+
+assert(active == true, "clean opaque presence should keep the custom aura active")
+assert(unit == "player", "clean opaque presence should retain the queried unit")
+assert(instanceID == nil, "clean opaque presence must not invent an auraInstanceID")
 
 print("OK: cdm_resolvers_aura_active_state_test")

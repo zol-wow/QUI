@@ -27,9 +27,12 @@ local durationObject = { token = "cooldown-duration" }
 local chargeDurationObject = { token = "charge-duration" }
 local secretDisplayCount = { token = "secret-display-count" }
 local secretSpellCount = { token = "secret-spell-count" }
+local secretCooldownInfo = { token = "secret-cooldown-info" }
 
 function issecretvalue(value)
-    return rawequal(value, secretDisplayCount) or rawequal(value, secretSpellCount)
+    return rawequal(value, secretDisplayCount)
+        or rawequal(value, secretSpellCount)
+        or rawequal(value, secretCooldownInfo)
 end
 
 local ns = {
@@ -44,6 +47,7 @@ local ns = {
         QuerySpellCooldown = function(spellID)
             cooldownCalls = cooldownCalls + 1
             if spellID == 101 then return cooldownInfo end
+            if spellID == 303 then return secretCooldownInfo end
             return nil
         end,
         QuerySpellCharges = function(spellID)
@@ -208,6 +212,18 @@ assert(spellCountCalls == 2,
 runtime.QueryCooldown(101)
 assert(cooldownCalls == 7,
     "ending a batch should restore live cooldown reads")
+
+local secretCooldownCalls = cooldownCalls
+assert(runtime.QueryCooldown(303) == nil,
+    "whole-secret cooldown info should be rejected before resolver consumers")
+runtime.BeginRuntimeQueryBatch()
+assert(runtime.QueryCooldown(303) == nil,
+    "whole-secret cooldown info should stay rejected in a batch")
+assert(runtime.QueryCooldown(303) == nil,
+    "rejected whole-secret cooldown info should cache as nil within a batch")
+runtime.EndRuntimeQueryBatch()
+assert(cooldownCalls == secretCooldownCalls + 2,
+    "whole-secret cooldown info should use one source read outside and one inside the batch")
 
 runtime.BeginRuntimeQueryBatch()
 assert(runtime.QueryOverrideSpell(101) == 202,
