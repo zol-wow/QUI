@@ -48,8 +48,13 @@ end
 
 function G.ElementProfile(element, overrides)
     local anchor = element.anchor or "TOPLEFT"
-    local maxIcons = element.maxIcons or 0
-    if maxIcons <= 0 then maxIcons = 40 end
+    local maxIcons
+    if element.mode == "tracked" and ResolveE() and E.TrackedSpellCount then
+        maxIcons = E.TrackedSpellCount(element)
+    else
+        maxIcons = element.maxIcons or 0
+        if maxIcons <= 0 then maxIcons = 40 end
+    end
     local p = {
         maxIcons     = maxIcons,
         iconSize     = (element.iconSize and element.iconSize > 0) and element.iconSize or 22,

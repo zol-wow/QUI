@@ -7,6 +7,12 @@ _G.QUI.AuraDisplays = AD
 
 local DEFAULTS = { enabled = true }
 
+local DISPLAY_LAYOUT_DEFAULTS = {
+    direction = "RIGHT",
+    alignment = "CENTER",
+    spacing = 2,
+}
+
 AD.ANCHOR_PREFIX = "auraDisplay_"
 
 local function Helpers()
@@ -65,6 +71,11 @@ function AD.NewDisplay(name, group)
         enabled = true,
         unitMode = "token",
         unit = "player",
+        layout = {
+            direction = DISPLAY_LAYOUT_DEFAULTS.direction,
+            alignment = DISPLAY_LAYOUT_DEFAULTS.alignment,
+            spacing = DISPLAY_LAYOUT_DEFAULTS.spacing,
+        },
         load = { classes = {}, specs = {}, roles = {}, encounters = {} },
         auras = {},
     }
@@ -518,17 +529,152 @@ local function GridExtent(profile)
     return w, h
 end
 
-local function AnchorElementContainer(container, host, element)
-    local profile = AuraGlue.ElementProfile(element)
-    container:ClearAllPoints()
-    container:SetPoint(AuraSkin.LayoutAnchor(profile), host, element.anchor or "TOPLEFT",
-        element.offsetX or 0, element.offsetY or 0)
+local function ElementExtent(element, profile)
+    if element.mode == "tracked" and element.displayType == "bar"
+        and not (element.bar and element.bar.matchFrameSize == true) then
+        local bar = element.bar or {}
+        if bar.orientation == "VERTICAL" then
+            return bar.thickness or 12, bar.length or 48
+        end
+        return bar.length or 48, bar.thickness or 12
+    end
+    return GridExtent(profile)
 end
 
-local function FallbackProfile()
-    local bucket = AD.DefaultBucket()
-    if bucket and bucket[1] then return AuraGlue.ElementProfile(bucket[1]) end
-    return AuraGlue.ElementProfile({})
+local function DisplayElementProfile(element)
+    local profile = AuraGlue.ElementProfile(element)
+    if element.mode == "tracked" and E.TrackedSpellCount(element) <= 1 then
+        profile.grow = "RIGHT"
+        profile.spacing = 0
+        profile.maxPerRow = 0
+    end
+    return profile
+end
+
+local function RenderableElement(element, profile)
+    if element.mode == "tracked" then
+        return element.displayType ~= "healthTint"
+            and element.displayType ~= "border"
+            and E.TrackedSpellCount(element) > 0
+    end
+    return element.mode == "filterStrip" or element.mode == "missingRaidBuff"
+end
+
+local function BuildDisplayLayout(display, elements, preview)
+    if type(elements) ~= "table" then
+        preview = elements
+        elements = display
+        display = nil
+    end
+    E = E or ns.AuraElements
+    AuraGlue = AuraGlue or ns.AuraGlue
+    if not E or not AuraGlue then
+        return { placements = {}, profiles = {}, width = 1, height = 1 }
+    end
+    local renderable = {}
+    local profiles = {}
+    for i = 1, #elements do
+        local element = elements[i]
+        local profile = DisplayElementProfile(element)
+        if preview and element.mode == "filterStrip" and (element.maxIcons or 0) == 0 then
+            profile.maxIcons = 3
+        end
+        if RenderableElement(element, profile) then
+            renderable[#renderable + 1] = element
+            profiles[element] = profile
+        end
+    end
+
+    if #renderable == 0 then
+        return { placements = {}, profiles = profiles, width = 1, height = 1 }
+    end
+
+    local placements = {}
+    local settings = type(display) == "table" and display.layout or nil
+    local direction = settings and settings.direction or DISPLAY_LAYOUT_DEFAULTS.direction
+    local alignment = settings and settings.alignment or DISPLAY_LAYOUT_DEFAULTS.alignment
+    local gap = settings and settings.spacing or DISPLAY_LAYOUT_DEFAULTS.spacing
+    if type(gap) ~= "number" or gap < 0 then gap = DISPLAY_LAYOUT_DEFAULTS.spacing end
+    local width, height = 0, 0
+    local extents = {}
+    for i = 1, #renderable do
+        local element = renderable[i]
+        local profile = profiles[element]
+        local elementWidth, elementHeight = ElementExtent(element, profile)
+        extents[i] = { width = elementWidth, height = elementHeight }
+        if direction == "UP" or direction == "DOWN" then
+            width = math.max(width, elementWidth)
+            height = height + elementHeight
+        else
+            width = width + elementWidth
+            height = math.max(height, elementHeight)
+        end
+    end
+    if #renderable > 1 then
+        if direction == "UP" or direction == "DOWN" then
+            height = height + gap * (#renderable - 1)
+        else
+            width = width + gap * (#renderable - 1)
+        end
+    end
+
+    local cursor = 0
+    for i = 1, #renderable do
+        local element = renderable[i]
+        local extent = extents[i]
+        local offsetX, offsetY
+        if direction == "UP" or direction == "DOWN" then
+            if alignment == "END" then
+                offsetX = width - extent.width
+            elseif alignment == "CENTER" then
+                offsetX = (width - extent.width) / 2
+            else
+                offsetX = 0
+            end
+            if direction == "UP" then
+                offsetY = height - cursor - extent.height
+            else
+                offsetY = -cursor
+            end
+            cursor = cursor + extent.height + gap
+        else
+            if alignment == "END" then
+                offsetY = -(height - extent.height)
+            elseif alignment == "CENTER" then
+                offsetY = -(height - extent.height) / 2
+            else
+                offsetY = 0
+            end
+            if direction == "LEFT" then
+                offsetX = width - cursor - extent.width
+            else
+                offsetX = cursor
+            end
+            cursor = cursor + extent.width + gap
+        end
+        placements[element] = {
+            point = "TOPLEFT",
+            relativePoint = "TOPLEFT",
+            pinCorner = "TOPLEFT",
+            offsetX = offsetX,
+            offsetY = offsetY,
+        }
+    end
+
+    return { placements = placements, profiles = profiles, width = width, height = height }
+end
+
+AD.ResolveDisplayLayout = BuildDisplayLayout
+
+local function AnchorElementContainer(container, host, element, placement)
+    local profile = DisplayElementProfile(element)
+    local offsetX = placement and placement.offsetX or element.offsetX or 0
+    local offsetY = placement and placement.offsetY or element.offsetY or 0
+    local point = placement and placement.point or AuraSkin.LayoutAnchor(profile)
+    local relativePoint = placement and placement.relativePoint or element.anchor or "TOPLEFT"
+    container:ClearAllPoints()
+    container:SetPoint(point, host, relativePoint,
+        offsetX, offsetY)
 end
 
 local EMPTY = {}
@@ -570,17 +716,22 @@ ApplyDisplay = function(display, allowCreate)
     if display.enabled ~= false and AD.GroupEnabled(display.group) and AD.PassesLoad(display) then
         unit = AD.ResolveUnit(display)
     end
-    local elements = EMPTY
+    local activeElements = EMPTY
     if unit then
         local H = Helpers()
         local specID = H and type(H.GetCurrentSpecID) == "function" and H.GetCurrentSpecID() or nil
-        elements = E.ActiveElementsForSpec(display.auras, specID)
+        activeElements = E.ActiveElementsForSpec(display.auras, specID)
     end
+    if activeElements == EMPTY then
+        local H = Helpers()
+        local specID = H and type(H.GetCurrentSpecID) == "function" and H.GetCurrentSpecID() or nil
+        activeElements = E.ActiveElementsForSpec(display.auras, specID)
+    end
+    local elements = unit and activeElements or EMPTY
 
-    local profile = elements[1] and AuraGlue.ElementProfile(elements[1]) or FallbackProfile()
-    local w, h = GridExtent(profile)
-    host._naturalW, host._naturalH = w, h
-    host:SetSize(w, h)
+    local layout = BuildDisplayLayout(display, activeElements)
+    host._naturalW, host._naturalH = layout.width, layout.height
+    host:SetSize(layout.width, layout.height)
 
     local skipElement
     local Slots = unit and ns.AuraSlots
@@ -595,8 +746,10 @@ ApplyDisplay = function(display, allowCreate)
         unit = unit or "player",
         allowCreate = allowCreate == true and not InCombatLockdown(),
         cancelEligible = false,
-        profileFor = function(element) return AuraGlue.ElementProfile(element) end,
-        anchorContainer = AnchorElementContainer,
+        profileFor = DisplayElementProfile,
+        anchorContainer = function(container, anchorHost, element)
+            AnchorElementContainer(container, anchorHost, element, layout.placements[element])
+        end,
         skip = skipElement,
         onIncomplete = function() RequeueDisplay(display) end,
     })
@@ -718,7 +871,7 @@ end
 local function ShowPreviewForDisplay(display)
     local Preview = ns.AuraPreview
     if not Preview or type(Preview.Show) ~= "function" then return end
-    local host = hosts[display.id]
+    local host = hosts[display.id] or EnsureHost(display.id)
     if not host then return end
     E.EnsureSeeded(display.auras, AD.DefaultBucket)
     local H = Helpers()
@@ -726,13 +879,21 @@ local function ShowPreviewForDisplay(display)
         and H.GetCurrentSpecID() or nil
     local elements = E.ActiveElementsForSpec(display.auras, specID)
     DisableHostContainers(host)
-    local profile = elements[1] and AuraGlue.ElementProfile(elements[1]) or FallbackProfile()
-    local w, h = GridExtent(profile)
-    host._naturalW, host._naturalH = w, h
-    host:SetSize(w, h)
+    local layout = BuildDisplayLayout(display, elements, true)
+    host._naturalW, host._naturalH = layout.width, layout.height
+    host:SetSize(layout.width, layout.height)
     host:SetAlpha(1)
     host:Show()
-    Preview.Show(host, elements)
+    Preview.Show(host, elements, {
+        resolve = function(element)
+            local profile = layout.profiles[element] or DisplayElementProfile(element)
+            local placement = layout.placements[element]
+            return profile, placement and placement.relativePoint or element.anchor or "TOPLEFT",
+                placement and placement.offsetX or element.offsetX or 0,
+                placement and placement.offsetY or element.offsetY or 0,
+                placement and placement.pinCorner
+        end,
+    })
     if _G.QUI_LayoutModeSyncHandle then
         _G.QUI_LayoutModeSyncHandle(AD.ANCHOR_PREFIX .. display.id)
     end

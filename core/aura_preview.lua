@@ -184,9 +184,12 @@ local function LayoutElement(host, pool, poolCursor, element, resolve, opts)
     local count
     if element.mode == "tracked" then
         local spells = element.spells
-        local n = (type(spells) == "table") and #spells or 0
-        local cap = element.maxIcons
-        count = (cap and cap > 0 and cap < n) and cap or n
+        count = 0
+        if type(spells) == "table" then
+            for i = 1, #spells do
+                if type(spells[i]) == "number" then count = count + 1 end
+            end
+        end
     else
         count = p.maxIcons
     end

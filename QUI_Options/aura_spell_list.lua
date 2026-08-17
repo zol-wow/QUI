@@ -164,6 +164,17 @@ local function GetSpellIcon(spellId)
     return 134400
 end
 
+local function BrowseDisplaySpellID(spellId, opts)
+    if not (opts and opts.resolveAuraSpellIDs) then
+        return spellId
+    end
+    local elements = ns.AuraElements
+    if elements and elements.ResolveTrackedSpellID then
+        return elements.ResolveTrackedSpellID(spellId)
+    end
+    return spellId
+end
+
 local RebuildBrowseRows
 
 local function EnsureBrowsePopup()
@@ -420,9 +431,11 @@ RebuildBrowseRows = function(filter)
             local id = spell.id or spell.spellID
             if id and not seen[id] then
                 local name = spell.name or GetSpellName(id) or (ns.L["Spell"] .. " " .. tostring(id))
+                local displayID = BrowseDisplaySpellID(id, opts)
                 if not lower
                     or ns.Helpers.FoldUTF8(name):find(lower, 1, true)
-                    or tostring(id):find(lower, 1, true) then
+                    or tostring(id):find(lower, 1, true)
+                    or tostring(displayID):find(lower, 1, true) then
                     seen[id] = true
                     if not headerPlaced then
                         headerPlaced = true
@@ -441,7 +454,11 @@ RebuildBrowseRows = function(filter)
                     row:SetPoint("RIGHT", popup._scrollChild, "RIGHT", 0, 0)
                     row.spellId = id
                     row.icon:SetTexture(spell.icon or GetSpellIcon(id))
-                    row.text:SetText(name .. "  |cFF888888(" .. tostring(id) .. ")|r")
+                    local idLabel = tostring(id)
+                    if displayID ~= id then
+                        idLabel = idLabel .. " -> " .. ns.L["Aura"] .. " " .. tostring(displayID)
+                    end
+                    row.text:SetText(name .. "  |cFF888888(" .. idLabel .. ")|r")
                     local selected = opts and type(opts.isSelected) == "function" and opts.isSelected(id)
                     if selected then
                         row.bg:SetColorTexture(accent[1], accent[2], accent[3], 0.12)
