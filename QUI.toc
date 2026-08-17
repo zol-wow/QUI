@@ -258,6 +258,7 @@ modules\trackers\spellscanner.lua
 modules\trackers\preytracker.lua
 modules\trackers\aura_displays.lua
 modules\trackers\incoming_casts.lua
+modules\trackers\aura_display_templates.lua
 modules\trackers\atonement_counter.lua
 modules\qol\qol.lua
 modules\qol\blizzard_mover.lua
