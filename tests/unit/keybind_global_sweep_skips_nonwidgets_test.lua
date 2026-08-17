@@ -10,7 +10,8 @@ end
 
 function issecretvalue() return false end
 function InCombatLockdown() return false end
-function GetTime() return 2 end
+local now = 2
+function GetTime() return now end
 function GetSpecialization() return nil end
 function GetSpecializationInfo() return nil end
 function GetInventoryItemID() return nil end
@@ -30,8 +31,8 @@ C_Spell = { GetSpellInfo = function(id) return { name = "Spell " .. tostring(id)
 local timers = {}
 C_Timer = {
     After = noop,
-    NewTimer = function(_, callback)
-        local timer = { callback = callback, cancelled = false }
+    NewTimer = function(delay, callback)
+        local timer = { delay = delay, callback = callback, cancelled = false }
         function timer:Cancel() self.cancelled = true end
         timers[#timers + 1] = timer
         return timer
@@ -141,9 +142,16 @@ assert(eventFrame and eventFrame.scripts.OnEvent,
 
 local callsBeforeRefresh = actionInfoCalls
 eventFrame.scripts.OnEvent(eventFrame, "ACTIONBAR_SLOT_CHANGED")
+now = 2.4
 eventFrame.scripts.OnEvent(eventFrame, "ACTIONBAR_SLOT_CHANGED")
-assert(#timers == 2 and timers[1].cancelled and not timers[2].cancelled,
-    "action-slot bursts must debounce to the newest refresh")
+assert(#timers == 1 and not timers[1].cancelled,
+    "action-slot bursts must retain one pending timer")
+now = 2.5
+timers[1].callback()
+assert(#timers == 2 and actionInfoCalls == callsBeforeRefresh
+    and timers[2].delay > 0.39 and timers[2].delay < 0.41,
+    "an early timer must wait out the remaining quiet period without rebuilding")
+now = 3
 timers[2].callback()
 assert(actionInfoCalls > callsBeforeRefresh,
     "the debounced action-slot refresh must rebuild the keybind cache")

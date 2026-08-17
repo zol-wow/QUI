@@ -287,6 +287,39 @@ local function HideProxy(icon)
     icon:Hide()
 end
 
+local function SameValue(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for key, value in pairs(a) do
+        if not SameValue(value, b[key]) then return false end
+    end
+    for key in pairs(b) do
+        if a[key] == nil then return false end
+    end
+    return true
+end
+
+function Runs.HasActiveRuns(owner)
+    return owner and activeOwners[owner] == true
+end
+
+function Runs.CanRelayoutInCombat(owner, settings)
+    local records = owner and owner._quiCDMAuraRunRecords
+    local runByIcon = owner and owner._quiCDMAuraRunByIcon
+    local Layout = ns.CDMLayout
+    if not (activeOwners[owner] and records and runByIcon and Layout and Layout.BuildRows) then
+        return false
+    end
+    if owner._quiCDMAuraCapacity ~= Layout.GetTotalIconCapacity(settings) then return false end
+    local rows = Layout.BuildRows(settings)
+    local profile = rows[1] and Profile(rows[1])
+    if not profile then return false end
+    for i = 1, #records do
+        if not SameValue(records[i].profile, profile) then return false end
+    end
+    return true
+end
+
 local function Disable(owner)
     if owner then activeOwners[owner] = nil end
     local pool = owner and owner._quiCDMAuraRuns
@@ -300,11 +333,51 @@ local function Disable(owner)
         container:SetEnabled(false)
         container:Hide()
     end
+    owner._quiCDMAuraRunRecords = nil
+    owner._quiCDMAuraRunByIcon = nil
+    owner._quiCDMAuraCapacity = nil
 end
 
-function Runs.Apply(owner, settings, layoutPlan)
+local function AnchorPreparedRuns(owner, layoutPlan, runByIcon)
+    local Layout = ns.CDMLayout
+    local chain = {}
+    local spacingAfter = {}
+    local firstPlacement = layoutPlan.placements[1]
+    if not firstPlacement then return false end
+
+    for i = 1, #layoutPlan.placements do
+        local icon = layoutPlan.placements[i].icon
+        if IsManagedAuraIcon(icon) then
+            local record = runByIcon[icon]
+            if not record then return false end
+            local container = record.container
+            if chain[#chain] ~= container then
+                chain[#chain + 1] = container
+                spacingAfter[container] = -1
+            end
+            HideProxy(icon)
+        else
+            chain[#chain + 1] = icon
+        end
+    end
+
+    local metrics = layoutPlan.metrics or {}
+    local rowConfig = firstPlacement.rowConfig
+    local width = rowConfig.size or 39
+    local offsetX = firstPlacement.x + ((metrics.iconWidth or width) * 0.5) - (width * 0.5)
+    return Layout.AnchorLinearChain(owner, chain, {
+        axis = "HORIZONTAL",
+        grow = "RIGHT",
+        spacing = rowConfig.padding or 0,
+        spacingAfter = spacingAfter,
+        offsetX = offsetX,
+        offsetY = firstPlacement.y or 0,
+    })
+end
+
+function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat)
     if not (owner and Runs.ShouldUseSettings(settings) and layoutPlan and layoutPlan.placements) then
-        Disable(owner)
+        if not inCombat then Disable(owner) end
         return false
     end
 
@@ -312,16 +385,32 @@ function Runs.Apply(owner, settings, layoutPlan)
     local Layout = ns.CDMLayout
     if not (AuraSkin and AuraSkin.Configure and Layout and Layout.AnchorLinearChain) then return false end
 
-    local chain = {}
-    local spacingAfter = {}
+    if inCombat then
+        local runByIcon = owner._quiCDMAuraRunByIcon
+        if not runByIcon then return false end
+        return AnchorPreparedRuns(owner, layoutPlan, runByIcon)
+    end
+
     local runRecords = {}
+    local runByIcon = {}
     local currentRun
     local runCount = 0
-    local firstPlacement
+    local firstPlacement = layoutPlan.placements[1]
+    if not firstPlacement then
+        Disable(owner)
+        return false
+    end
+    local staticIcons = allIcons
+    if type(staticIcons) ~= "table" then
+        staticIcons = {}
+        for i = 1, #layoutPlan.placements do
+            staticIcons[i] = layoutPlan.placements[i].icon
+        end
+    end
+    local capacity = Layout.GetTotalIconCapacity(settings)
 
-    for i = 1, #layoutPlan.placements do
-        local placement = layoutPlan.placements[i]
-        local icon = placement.icon
+    for i = 1, math.min(#staticIcons, capacity) do
+        local icon = staticIcons[i]
         if IsManagedAuraIcon(icon) then
             local route = icon._spellEntry._managedAuraRoute
             if not currentRun or currentRun.route ~= route then
@@ -330,21 +419,17 @@ function Runs.Apply(owner, settings, layoutPlan)
                 currentRun = {
                     container = container,
                     groups = {},
-                    rowConfig = placement.rowConfig,
+                    rowConfig = firstPlacement and firstPlacement.rowConfig,
                     route = route,
                 }
                 runRecords[#runRecords + 1] = currentRun
-                chain[#chain + 1] = container
-                spacingAfter[container] = -1
             end
+            runByIcon[icon] = currentRun
             currentRun.groups[#currentRun.groups + 1] = BuildGroup(
-                icon, #currentRun.groups + 1, placement.rowConfig)
-            HideProxy(icon)
+                icon, #currentRun.groups + 1, currentRun.rowConfig)
         else
             currentRun = nil
-            chain[#chain + 1] = icon
         end
-        firstPlacement = firstPlacement or placement
     end
 
     if #runRecords == 0 or not firstPlacement then
@@ -360,6 +445,8 @@ function Runs.Apply(owner, settings, layoutPlan)
     end
 
     owner._quiCDMAuraRunRecords = runRecords
+    owner._quiCDMAuraRunByIcon = runByIcon
+    owner._quiCDMAuraCapacity = capacity
     activeOwners[owner] = true
 
     local pool = owner._quiCDMAuraRuns or {}
@@ -370,18 +457,7 @@ function Runs.Apply(owner, settings, layoutPlan)
         container:Hide()
     end
 
-    local metrics = layoutPlan.metrics or {}
-    local rowConfig = firstPlacement.rowConfig
-    local width = rowConfig.size or 39
-    local offsetX = firstPlacement.x + ((metrics.iconWidth or width) * 0.5) - (width * 0.5)
-    return Layout.AnchorLinearChain(owner, chain, {
-        axis = "HORIZONTAL",
-        grow = "RIGHT",
-        spacing = rowConfig.padding or 0,
-        spacingAfter = spacingAfter,
-        offsetX = offsetX,
-        offsetY = firstPlacement.y or 0,
-    })
+    return AnchorPreparedRuns(owner, layoutPlan, runByIcon)
 end
 
 return Runs

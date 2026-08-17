@@ -1139,14 +1139,22 @@ local function IsBarShape(viewerType)
     return GetContainerShape(viewerType) == "bar"
 end
 
-local function ShouldDeferContainerLayoutInCombat(trackerKey, settings)
+local function ShouldDeferContainerLayoutInCombat(trackerKey, settings, runtimeVisibilityRelayout)
     if not InCombatLockdown() then
         return false
     end
 
     local auraRuns = ns.CDMCustomAuraRuns
-    if auraRuns and auraRuns.ShouldUseSettings(settings)
-        and auraRuns.HasAuraEntries(settings, trackerKey) then
+    local owner = containers[trackerKey]
+    local usesAuraRuns = auraRuns and auraRuns.ShouldUseSettings(settings)
+        and auraRuns.HasAuraEntries(settings, trackerKey)
+    if auraRuns and (usesAuraRuns
+        or (auraRuns.HasActiveRuns and auraRuns.HasActiveRuns(owner))) then
+        if runtimeVisibilityRelayout and usesAuraRuns
+            and auraRuns.CanRelayoutInCombat
+            and auraRuns.CanRelayoutInCombat(owner, settings) then
+            return false
+        end
         return true
     end
 
@@ -2118,7 +2126,7 @@ CDMContainers_API.HUD_LAYERING = {
     },
 }
 
-local function LayoutContainer(trackerKey)
+local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
     if not IsCDMRuntimeEnabled() then
         return
     end
@@ -2133,7 +2141,7 @@ local function LayoutContainer(trackerKey)
     end
 
     local settings = GetTrackerSettings(trackerKey)
-    if ShouldDeferContainerLayoutInCombat(trackerKey, settings) then
+    if ShouldDeferContainerLayoutInCombat(trackerKey, settings, runtimeVisibilityRelayout) then
         specTrackingPendingRefresh = true
         return
     end
@@ -2292,8 +2300,23 @@ local function LayoutContainer(trackerKey)
         return
     end
 
-    local allIcons = ns.CDMIcons:BuildIcons(trackerKey, container)
+    local reuseOnly = runtimeVisibilityRelayout and InCombatLockdown()
+    local allIcons = ns.CDMIcons:BuildIcons(trackerKey, container, reuseOnly)
+    if not allIcons then
+        specTrackingPendingRefresh = true
+        applying[trackerKey] = false
+        return
+    end
     local totalCapacity = CDMLayout and CDMLayout.GetTotalIconCapacity and CDMLayout.GetTotalIconCapacity(settings) or 0
+    local auraRuns = ns.CDMCustomAuraRuns
+    if not InCombatLockdown() and auraRuns and auraRuns.ShouldUseSettings(settings)
+        and auraRuns.HasAuraEntries(settings, trackerKey)
+        and ns.CDMIcons.OnIconRowConfigApplied and CDMLayout.BuildRows then
+        local rowConfig = CDMLayout.BuildRows(settings)[1]
+        for i = 1, math.min(#allIcons, totalCapacity) do
+            ns.CDMIcons.OnIconRowConfigApplied(allIcons[i], rowConfig)
+        end
+    end
 
     local displayMode = settings.iconDisplayMode or "always"
     local effectiveDisplayMode = displayMode
@@ -2377,7 +2400,7 @@ local function LayoutContainer(trackerKey)
         })
     if not layoutPlan or not layoutPlan.metrics or #layoutPlan.placements == 0 then
         if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.Apply then
-            ns.CDMCustomAuraRuns.Apply(container)
+            ns.CDMCustomAuraRuns.Apply(container, nil, nil, nil, InCombatLockdown())
         end
         applying[trackerKey] = false
         return
@@ -2409,7 +2432,7 @@ local function LayoutContainer(trackerKey)
     end
 
     if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.Apply then
-        ns.CDMCustomAuraRuns.Apply(container, settings, layoutPlan)
+        ns.CDMCustomAuraRuns.Apply(container, settings, layoutPlan, allIcons, InCombatLockdown())
     end
 
     local maxRowWidth, proxyTotalHeight = ApplyViewerMetrics(vs, layoutPlan.metrics, trackerKey)
@@ -2701,11 +2724,11 @@ _G.QUI_OnSpellDataChanged = function()
     end
 end
 
-_G.QUI_ForceLayoutContainer = function(containerKey)
+_G.QUI_ForceLayoutContainer = function(containerKey, runtimeVisibilityRelayout)
     if not containerKey or not initialized then return end
     if not IsCDMRuntimeEnabled() then return end
     _forceLayoutKey = containerKey
-    LayoutContainer(containerKey)
+    LayoutContainer(containerKey, runtimeVisibilityRelayout)
     _forceLayoutKey = nil
     if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
         ns.CDMIcons:UpdateAllCooldowns()

@@ -166,6 +166,58 @@ assert(iconListSignature:find("AppendCustomRuntimeEntrySignature", 1, true),
 assert(iconListSignature:find("IsSelfAuraSpell", 1, true),
     "custom container signatures must rebuild when selfAura routing metadata changes")
 
+local buildIconsSource = sliceBetween(
+    icons,
+    "function CDMIcons:BuildIcons(viewerType, container, reuseOnly)",
+    "local visibilityPolicy =")
+buildIconsSource = buildIconsSource:gsub(
+    "^function CDMIcons:BuildIcons%(viewerType, container, reuseOnly%)",
+    "return function(self, viewerType, container, reuseOnly)", 1)
+local poolIcon = { GetParent = function() return nil end }
+local pool = { poolIcon }
+local clearCalls = 0
+local buildIconsEnv = setmetatable({
+    ns = {
+        CDMSpellData = { GetSpellList = function() return {} end },
+        CDMCustomAuraRuns = {
+            ShouldUseSettings = function() return false end,
+            HasAuraEntries = function() return false end,
+        },
+    },
+    Factory = {
+        GetIconPool = function() return pool end,
+        ClearPool = function()
+            clearCalls = clearCalls + 1
+            return {}
+        end,
+        EnsurePool = function() return {} end,
+    },
+    GetTrackerSettings = function() return {} end,
+    BuildIconListSignature = function() return "signature" end,
+    PoolMatchesContainer = function() return true end,
+    IsBuiltinCooldownContainerKey = function() return false end,
+    IsCustomBarContainer = function() return false end,
+    IsAuraEntry = function() return false end,
+    UpdateIconSecureAttributes = function() end,
+    iconPools = {},
+}, { __index = globals })
+local buildIconsChunk = assert(loadstring(buildIconsSource,
+    "@cdm_icon_renderer.lua#BuildIcons"))
+setfenv(buildIconsChunk, buildIconsEnv)
+local buildIcons = buildIconsChunk()
+local buildIconsOwner = { UpdateCooldownsForType = function() end }
+local matchingContainer = {
+    _lastBuildSignature = "signature|layoutRestricted:false",
+    _lastBuildPool = pool,
+}
+assert(buildIcons(buildIconsOwner, "custom", matchingContainer, true) == pool
+    and clearCalls == 0,
+    "reuse-only combat builds must preserve matching icon identities")
+matchingContainer._lastBuildSignature = "stale"
+assert(buildIcons(buildIconsOwner, "custom", matchingContainer, true) == nil
+    and clearCalls == 0,
+    "reuse-only combat builds must reject stale pools before mutation")
+
 local barReuse = sliceBetween(
     bars,
     "if not needsRebuild then",

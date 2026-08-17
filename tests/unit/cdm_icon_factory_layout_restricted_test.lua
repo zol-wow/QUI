@@ -151,4 +151,32 @@ assert(restrictedClick.template
         == "SecureActionButtonTemplate, DisableUntrustedLayoutScriptsTemplate",
     "restricted click overlays must opt into the template at frame creation")
 
+local glowFile = assert(io.open("libs/LibCustomGlow-1.0/LibCustomGlow-1.0.lua", "rb"))
+local glowSource = glowFile:read("*a")
+glowFile:close()
+assert(glowSource:find('"Frame", GlowParent, "DisableUntrustedLayoutScriptsTemplate", FramePoolResetter', 1, true)
+    and glowSource:find('"Frame", GlowParent, "DisableUntrustedLayoutScriptsTemplate", ButtonGlowResetter', 1, true)
+    and glowSource:find('"Frame", GlowParent, "DisableUntrustedLayoutScriptsTemplate", ProcGlowResetter', 1, true),
+    "all glow frame types must have restricted template-at-birth pools")
+assert(glowSource:find("r._quiLayoutRestricted and RestrictedGlowFramePool or GlowFramePool", 1, true)
+    and glowSource:find("r._quiLayoutRestricted and RestrictedButtonGlowPool or ButtonGlowPool", 1, true)
+    and glowSource:find("r._quiLayoutRestricted and RestrictedProcGlowPool or ProcGlowPool", 1, true),
+    "glow acquisition must select restricted pools for managed-row icons")
+
+local effectsFile = assert(io.open("QUI_CDM/cdm/cdm_effects.lua", "rb"))
+local effectsSource = effectsFile:read("*a")
+effectsFile:close()
+local _, restrictedEffectFrames = effectsSource:gsub(
+    'icon%._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil', "")
+assert(restrictedEffectFrames == 2,
+    "texture and pandemic glow frames must inherit the restricted layout template")
+
+local keybindFile = assert(io.open("modules/utility/keybinds.lua", "rb"))
+local keybindSource = keybindFile:read("*a")
+keybindFile:close()
+local _, restrictedKeybindFrames = keybindSource:gsub(
+    'icon%._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil', "")
+assert(restrictedKeybindFrames == 2,
+    "keybind text and rotation overlays must inherit the restricted layout template")
+
 print("OK: cdm_icon_factory_layout_restricted_test")

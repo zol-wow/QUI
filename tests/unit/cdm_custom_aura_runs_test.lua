@@ -99,7 +99,13 @@ local settings = {
     showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
-    row1 = { iconCount = 3, iconSize = 30, padding = 2 },
+    row1 = {
+        iconCount = 3,
+        iconSize = 30,
+        padding = 2,
+        borderColorSource = "inherit",
+        borderColor = { 0, 0, 0, 1 },
+    },
     entries = {
         { id = 111, kind = "cooldown" },
         { id = 222, kind = "aura", source = "blizzardCDM" },
@@ -274,7 +280,7 @@ local friendlySettings = {
     showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
-    row1 = { iconCount = 1 },
+    row1 = { iconCount = 2 },
     entries = {
         { id = 333, kind = "aura", source = "blizzardCDM" },
         { id = 333, kind = "aura", source = "blizzardCDM" },
@@ -437,6 +443,7 @@ deferSource = deferSource:gsub(
 local inCombat = true
 local deferEnv = setmetatable({
     ns = ns,
+    containers = { custom = owner, plain = Frame("plain-owner") },
     inInitSafeWindow = true,
     InCombatLockdown = function() return inCombat end,
 }, { __index = _G })
@@ -446,13 +453,14 @@ setfenv(deferChunk, deferEnv)
 local shouldDefer = deferChunk()
 assert(shouldDefer("custom", settings) == true,
     "custom aura runs must defer creation even during the combat init window")
-assert(shouldDefer("custom", {
+assert(shouldDefer("plain", {
         containerType = "customBar",
         row1 = { iconCount = 1 },
         entries = { { id = 111, kind = "cooldown" } },
     }) == false,
     "non-aura custom bars must retain the combat init window behavior")
-local layoutStart = assert(containersSource:find("local function LayoutContainer(trackerKey)", 1, true))
+local layoutStart = assert(containersSource:find(
+    "local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)", 1, true))
 local layoutStop = assert(containersSource:find("\nlocal function RunPostLayoutRefresh()", layoutStart, true))
 local layoutSource = containersSource:sub(layoutStart, layoutStop - 1)
 layoutSource = layoutSource:gsub("^local function LayoutContainer", "return function", 1)
@@ -470,6 +478,9 @@ local layoutEnv = setmetatable({
     GetTrackerSettings = function() return settings end,
     ShouldDeferContainerLayoutInCombat = shouldDefer,
     GetHUDMinWidth = function() return false, 0 end,
+    ApplyViewerMetrics = function() return 94, 30 end,
+    RefreshCustomBarRuntimeAfterLayout = function() end,
+    C_Timer = { After = function() end },
     InCombatLockdown = function() return inCombat end,
 }, { __index = globals })
 layoutEnv._G = layoutEnv
@@ -493,6 +504,102 @@ ns.CDMIcons = priorIcons
 assert(controller.enabled == false and controller.shown == false,
     "an empty container layout must park stale secure aura runs")
 
+local mixedSettings = {
+    containerType = "customBar",
+    dynamicLayout = true,
+    showOnlyWhenActive = true,
+    layoutDirection = "HORIZONTAL",
+    growDirection = "RIGHT",
+    row1 = {
+        iconCount = 3,
+        iconSize = 30,
+        padding = 2,
+        borderColorSource = "inherit",
+        borderColor = { 0, 0, 0, 1 },
+    },
+    entries = {
+        { id = 222, kind = "aura", source = "blizzardCDM" },
+        { id = 111, kind = "cooldown" },
+        { id = 222, kind = "aura", source = "blizzardCDM" },
+    },
+}
+local mixedOwner = Frame("mixed-owner")
+local mixedAuraA = Frame("mixed-aura-a")
+local mixedCooldown = Frame("mixed-cooldown")
+local mixedAuraB = Frame("mixed-aura-b")
+mixedAuraA._spellEntry = auraProxy._spellEntry
+mixedCooldown._spellEntry = cooldownA._spellEntry
+mixedAuraB._spellEntry = auraProxy._spellEntry
+local mixedIcons = { mixedAuraA, mixedCooldown, mixedAuraB }
+local mixedRow = ns.CDMLayout.BuildRows(mixedSettings)[1]
+local mixedCreatedBefore = #created
+local mixedConfiguredBefore = #configured
+local preparedIcons = {}
+local prepareCalls = 0
+local combatBuilds = 0
+local reusablePool = true
+local showMixedCooldown = false
+deferEnv.containers.custom = mixedOwner
+layoutEnv.containers.custom = mixedOwner
+layoutEnv.GetTrackerSettings = function() return mixedSettings end
+layoutEnv.viewerState = {}
+layoutEnv.specTrackingPendingRefresh = false
+ns.CDMIcons = {
+    BuildIcons = function(_, _, _, reuseOnly)
+        if inCombat then
+            assert(reuseOnly == true)
+            combatBuilds = combatBuilds + 1
+        end
+        return reusablePool and mixedIcons or nil
+    end,
+    ShouldContainerLayoutPlaceIcon = function(icon, entry)
+        return entry._useManagedAura == true or showMixedCooldown
+    end,
+    OnIconRowConfigApplied = function(icon, rowConfig)
+        assert(not inCombat and rowConfig.size == mixedRow.size)
+        preparedIcons[icon] = true
+        prepareCalls = prepareCalls + 1
+    end,
+    OnContainerIconPlaced = function(icon)
+        assert(preparedIcons[icon], "combat-visible icons must be configured out of combat")
+    end,
+}
+inCombat = false
+layoutChunk()("custom")
+local mixedRecords = mixedOwner._quiCDMAuraRunRecords
+assert(#mixedRecords == 2 and #created == mixedCreatedBefore + 2
+    and #configured == mixedConfiguredBefore + 2
+    and mixedRecords[1].rowConfig.size == mixedRow.size
+    and prepareCalls == 3 and preparedIcons[mixedCooldown] == true,
+    "hidden ordinary icons must split the preallocated aura-run topology")
+
+inCombat = true
+layoutEnv.specTrackingPendingRefresh = false
+showMixedCooldown = true
+local combatCreatedBefore = #created
+local combatConfiguredBefore = #configured
+layoutChunk()("custom", true)
+assert(layoutEnv.specTrackingPendingRefresh ~= true and combatBuilds == 1
+    and prepareCalls == 3
+    and #created == combatCreatedBefore and #configured == combatConfiguredBefore,
+    "prepared visibility relayouts must not create or configure secure frames in combat")
+assert(mixedCooldown.points[1][2] == mixedRecords[1].container
+    and mixedRecords[2].container.points[1][2] == mixedCooldown,
+    "combat visibility relayouts must insert ordinary icons between stable aura runs")
+local mixedCooldownPoints = #mixedCooldown.points
+reusablePool = false
+layoutEnv.specTrackingPendingRefresh = false
+layoutChunk()("custom", true)
+assert(layoutEnv.specTrackingPendingRefresh == true and combatBuilds == 2
+    and #mixedCooldown.points == mixedCooldownPoints
+    and #created == combatCreatedBefore and #configured == combatConfiguredBefore,
+    "stale combat icon pools must defer before mutating layout or secure runs")
+layoutChunk()("custom")
+assert(layoutEnv.specTrackingPendingRefresh == true and combatBuilds == 2,
+    "structural combat layouts must remain deferred")
+inCombat = false
+ns.CDMIcons = priorIcons
+
 local rendererFile = assert(io.open("QUI_CDM/cdm/cdm_icon_renderer.lua", "rb"))
 local rendererSource = rendererFile:read("*a")
 rendererFile:close()
@@ -500,5 +607,7 @@ assert(rendererSource:find('cdEventFrame:RegisterUnitEvent("UNIT_FACTION", "targ
     "target reaction routing must subscribe to UNIT_FACTION")
 assert(rendererSource:find('cdEventFrame:RegisterEvent("PLAYER_SOFT_FRIEND_CHANGED")', 1, true),
     "helpful target routing must subscribe to soft friendly target changes")
+assert(rendererSource:find("QUI_ForceLayoutContainer(trackerKey, true)", 1, true),
+    "visibility policy relayouts must identify their combat-safe runtime path")
 
 print("OK: cdm_custom_aura_runs_test")

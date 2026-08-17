@@ -1098,7 +1098,8 @@ local function ApplyKeybindToIcon(icon, viewerName)
         iks.r, iks.g, iks.b, iks.a = nil, nil, nil, nil
     end
     if not iks.textLayer then
-        local layer = CreateFrame("Frame", nil, textLayerParent)
+        local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+        local layer = CreateFrame("Frame", nil, textLayerParent, template)
         layer:SetAllPoints(textLayerParent)
         iks.textLayer = layer
     end
@@ -1347,21 +1348,28 @@ local function UpdateAllKeybinds()
 end
 
 local updateTimer
+local lastUpdateRequest = 0
 local UPDATE_THROTTLE = 0.5
 
-local function ThrottledUpdate()
-    if updateTimer then
-        updateTimer:Cancel()
+local function RunThrottledUpdate()
+    local remaining = UPDATE_THROTTLE - (GetTime() - lastUpdateRequest)
+    if remaining > 0 then
+        updateTimer = C_Timer.NewTimer(remaining, RunThrottledUpdate)
+        return
     end
 
-    updateTimer = C_Timer.NewTimer(UPDATE_THROTTLE, function()
-        updateTimer = nil
-        if InCombatLockdown() then
-            pendingRebuild = true
-            return
-        end
-        UpdateAllKeybinds()
-    end)
+    updateTimer = nil
+    if InCombatLockdown() then
+        pendingRebuild = true
+        return
+    end
+    UpdateAllKeybinds()
+end
+
+local function ThrottledUpdate()
+    lastUpdateRequest = GetTime()
+    if updateTimer then return end
+    updateTimer = C_Timer.NewTimer(UPDATE_THROTTLE, RunThrottledUpdate)
 end
 
 local eventFrame = CreateFrame("Frame")
@@ -1474,7 +1482,8 @@ local function GetRotationHelperOverlay(icon)
         return iks.overlay
     end
 
-    local overlay = CreateFrame("Frame", nil, icon)
+    local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+    local overlay = CreateFrame("Frame", nil, icon, template)
     overlay:SetAllPoints(icon)
     overlay:SetFrameLevel(icon:GetFrameLevel() + 15)
 

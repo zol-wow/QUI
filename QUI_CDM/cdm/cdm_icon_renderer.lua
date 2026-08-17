@@ -2029,8 +2029,10 @@ local function ConfigureIcon(icon, rowConfig)
             r.Icon     = icon.Icon
             r.Border   = icon.Border
             r.Cooldown = icon.Cooldown
-            Bridge.AddButton("cdm", icon, r)
-            icon._quiBridged = true
+            if not icon._quiBridged then
+                Bridge.AddButton("cdm", icon, r)
+                icon._quiBridged = true
+            end
             if icon.Border then icon.Border:Hide() end
             icon._quiBackdrop:Hide()
             icon._quiGloss:Hide()
@@ -3314,7 +3316,7 @@ end
 local _customPositionedScratch = {}
 local _customUnpositionedScratch = {}
 
-function CDMIcons:BuildIcons(viewerType, container)
+function CDMIcons:BuildIcons(viewerType, container, reuseOnly)
     if not container then return {} end
 
     local spellData = ns.CDMSpellData and ns.CDMSpellData:GetSpellList(viewerType) or {}
@@ -3332,6 +3334,7 @@ function CDMIcons:BuildIcons(viewerType, container)
         and container._lastBuildSignature == signature
         and container._lastBuildPool == pool
         and PoolMatchesContainer(pool, container)
+    if reuseOnly and not reusePool then return nil end
 
     if not reusePool then
         pool = Factory:ClearPool(viewerType)
@@ -3538,7 +3541,7 @@ local visibilityPolicy = ns.CDMIconVisibilityPolicy and ns.CDMIconVisibilityPoli
     end,
     forceLayoutContainer = function(trackerKey)
         if _G.QUI_ForceLayoutContainer then
-            _G.QUI_ForceLayoutContainer(trackerKey)
+            _G.QUI_ForceLayoutContainer(trackerKey, true)
         end
     end,
 })
