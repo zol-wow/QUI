@@ -4,6 +4,33 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.1-beta2 - 2026-08-16
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager custom aura rows now use Blizzard's secure aura containers
+where supported, so mixed cooldown and aura layouts can collapse and refresh
+safely through combat and target changes without losing their configured order
+or styling.
+
+### Fixed
+
+- **Dynamic mixed custom aura rows stay accurate in combat.** Eligible
+  right-growing, single-row bars prepare secure aura runs out of combat, then
+  follow active-only visibility without forbidden combat layout work; order,
+  sizing, spacing, and styling remain intact.
+- **Target auras refresh on friendly and enemy swaps.** Helpful and harmful
+  target routes update unit identity and visibility without leaving stale icons
+  or empty-run spacing.
+- **Existing aura configuration keeps its behavior.** Fixed and manual layouts,
+  clickables, per-spell overrides, glow effects, and unsupported visibility
+  modes keep their existing renderer, while external skins retain their texture
+  crop.
+- **Tracked buff bars and action-bar keybind labels stay current.** Native
+  tracked bars preserve Blizzard state through pairing gaps and live active
+  state changes, while keybinds rebuild after action-slot changes.
+
 ## v5.2.1-beta1 - 2026-08-16
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
