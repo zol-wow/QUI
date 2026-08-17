@@ -1098,7 +1098,8 @@ local function ApplyKeybindToIcon(icon, viewerName)
         iks.r, iks.g, iks.b, iks.a = nil, nil, nil, nil
     end
     if not iks.textLayer then
-        local layer = CreateFrame("Frame", nil, textLayerParent)
+        local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+        local layer = CreateFrame("Frame", nil, textLayerParent, template)
         layer:SetAllPoints(textLayerParent)
         iks.textLayer = layer
     end
@@ -1346,24 +1347,33 @@ local function UpdateAllKeybinds()
     end
 end
 
-local updatePending = false
+local updateTimer
+local lastUpdateRequest = 0
 local UPDATE_THROTTLE = 0.5
 
-local function ThrottledUpdate()
-    if updatePending then return end
-    updatePending = true
+local function RunThrottledUpdate()
+    local remaining = UPDATE_THROTTLE - (GetTime() - lastUpdateRequest)
+    if remaining > 0 then
+        updateTimer = C_Timer.NewTimer(remaining, RunThrottledUpdate)
+        return
+    end
 
-    C_Timer.After(UPDATE_THROTTLE, function()
-        updatePending = false
-        if InCombatLockdown() then
-            pendingRebuild = true
-            return
-        end
-        UpdateAllKeybinds()
-    end)
+    updateTimer = nil
+    if InCombatLockdown() then
+        pendingRebuild = true
+        return
+    end
+    UpdateAllKeybinds()
+end
+
+local function ThrottledUpdate()
+    lastUpdateRequest = GetTime()
+    if updateTimer then return end
+    updateTimer = C_Timer.NewTimer(UPDATE_THROTTLE, RunThrottledUpdate)
 end
 
 local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("SPELLS_CHANGED")
@@ -1472,7 +1482,8 @@ local function GetRotationHelperOverlay(icon)
         return iks.overlay
     end
 
-    local overlay = CreateFrame("Frame", nil, icon)
+    local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+    local overlay = CreateFrame("Frame", nil, icon, template)
     overlay:SetAllPoints(icon)
     overlay:SetFrameLevel(icon:GetFrameLevel() + 15)
 

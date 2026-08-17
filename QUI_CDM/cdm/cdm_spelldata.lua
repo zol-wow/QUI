@@ -3881,6 +3881,19 @@ function CDMSpellData:GetAuraIDsForSpell(spellID)
     end
     return _auraIDsForSpell[spellID]
 end
+
+function CDMSpellData:IsSelfAuraSpell(spellID)
+    if not spellID then return nil end
+    if not next(_spellToCooldownID) then
+        RebuildSpellToCooldownID()
+    end
+    local cooldownID = _spellToCooldownID[spellID]
+    local catalog = ns.CDMCatalog
+    if not (cooldownID and catalog and catalog.GetCooldownInfo) then return nil end
+    local info = catalog.GetCooldownInfo(cooldownID)
+    if not info then return nil end
+    return info.selfAura == true
+end
 CDMSpellData.ResolveEntryKind = ResolveEntryKind
 CDMSpellData.IsAuraEntry = IsAuraEntry
 CDMSpellData.GetContainerDB = GetContainerDB

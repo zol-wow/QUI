@@ -53,7 +53,7 @@ local function Stub()
     function t:SetSize() end
     function t:ClearAllPoints() end
     function t:SetColorTexture() end
-    function t:SetTexCoord() end
+    function t:SetTexCoord(...) self.texCoords = { ... } end
     function t:DisablePixelSnap() end
     function t:SetTextColor() end
     function t:SetAlpha() end
@@ -392,6 +392,7 @@ ns.ExternalSkinBridge = {
     AddButton = function(key, button, regions)
         bridgeCalls.add = bridgeCalls.add + 1
         bridgeCalls.key, bridgeCalls.button, bridgeCalls.regions = key, button, regions
+        regions.Icon:SetTexCoord(0.2, 0.8, 0.3, 0.7)
     end,
     RemoveButton = function(key, button)
         bridgeCalls.remove = bridgeCalls.remove + 1
@@ -409,7 +410,8 @@ check("available external skin bridge receives the live aura button",
     bridgeCalls.add == 1
         and bridgeCalls.key == "groupauras"
         and bridgeCalls.button == externalButton
-        and bridgeCalls.regions.Icon == externalButton.Icon)
+        and bridgeCalls.regions.Icon == externalButton.Icon
+        and table.concat(externalButton.Icon.texCoords, ",") == "0.2,0.8,0.3,0.7")
 AuraSkin.Restyle(externalSkin, {
     iconSize = 20,
     externalSkinning = false,

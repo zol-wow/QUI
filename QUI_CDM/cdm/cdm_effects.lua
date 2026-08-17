@@ -441,7 +441,8 @@ ns._CDM_EnsureGlowBelowSwipe = EnsureGlowBelowSwipe
 local function StartTextureGlow(icon, key, texturePath, color)
     local frame = icon[key]
     if not frame then
-        frame = CreateFrame("Frame", nil, icon)
+        local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+        frame = CreateFrame("Frame", nil, icon, template)
         frame:SetAllPoints(icon)
         icon[key] = frame
 
@@ -606,7 +607,8 @@ local function EnsurePandemicGlowFrame(icon)
     local frame = icon.PandemicGlow
     if frame then return frame end
 
-    frame = CreateFrame("Frame", nil, icon)
+    local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+    frame = CreateFrame("Frame", nil, icon, template)
     frame:SetAllPoints(icon)
     frame:SetAlpha(0)
 

@@ -466,11 +466,16 @@ local function RefreshCooldownEffects()
     PokePreview()
 end
 
-local function RefreshGlows()
+local function RefreshGlows(containerKey)
+    if containerKey then
+        RefreshContainer(containerKey)
+    end
     if _G.QUI_RefreshCustomGlows then
         _G.QUI_RefreshCustomGlows()
     end
-    PokePreview()
+    if not containerKey then
+        PokePreview()
+    end
 end
 
 local function RefreshHighlighter()
@@ -2030,6 +2035,9 @@ local function RenderEffectsSection(sectionHost, ctx)
     local glowXOffsetKey = effectsCtx.glowPrefix .. "XOffset"
     local glowYOffsetKey = effectsCtx.glowPrefix .. "YOffset"
     local glowWidgets = {}
+    local function RefreshGlowEligibility()
+        RefreshGlows(containerKey)
+    end
     local function UpdateGlowWidgetStates()
         local enabled = effectsCtx.glowDB[glowEnabledKey] ~= false
         local glowType = effectsCtx.glowDB[glowTypeKey] or "Pixel Glow"
@@ -2049,15 +2057,15 @@ local function RenderEffectsSection(sectionHost, ctx)
         if glowWidgets.yOffsetRow then glowWidgets.yOffsetRow:SetEnabled(enabled and not isButton and not isTexture) end
     end
     local glowEnableCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, glowEnabledKey, effectsCtx.glowDB, function()
-        RefreshGlows()
+        RefreshGlowEligibility()
         UpdateGlowWidgetStates()
     end, {
         description = ns.L["Override the Blizzard proc glow with QUI's custom glow style for icons in this container."],
     })
-    local pandemicDebuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicDebuffKey, effectsCtx.glowDB, RefreshGlows, {
+    local pandemicDebuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicDebuffKey, effectsCtx.glowDB, RefreshGlowEligibility, {
         description = ns.L["Emit the custom glow during the pandemic refresh window (last ~30% remaining) of harmful auras like DoTs and debuffs."],
     })
-    local pandemicBuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicBuffKey, effectsCtx.glowDB, RefreshGlows, {
+    local pandemicBuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicBuffKey, effectsCtx.glowDB, RefreshGlowEligibility, {
         description = ns.L["Emit the custom glow during the pandemic refresh window (last ~30% remaining) of helpful auras like HoTs and self-buffs."],
     })
     glowWidgets.pandemicDebuffRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Pandemic Glow — Debuffs/DoTs"], pandemicDebuffCheckbox)

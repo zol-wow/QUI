@@ -112,6 +112,8 @@ local batches = {}
 local endedBatches = 0
 local drained = 0
 local rangeRefreshes = 0
+local targetRouteRefreshes = 0
+local targetRouteFullRefreshes = 0
 local schedules = {}
 local barsDirty = false
 local dirtyBarRuns = 0
@@ -199,6 +201,10 @@ local controller = module.Create({
     end,
     updateIconRangesForUsabilityEvent = function()
         rangeRefreshes = rangeRefreshes + 1
+    end,
+    refreshCustomAuraTargets = function(refreshAll)
+        targetRouteRefreshes = targetRouteRefreshes + 1
+        if refreshAll then targetRouteFullRefreshes = targetRouteFullRefreshes + 1 end
     end,
     scheduleUpdate = function(fast, mode, reason)
         schedules[#schedules + 1] = {
@@ -459,11 +465,16 @@ stackRequested = false
 barsDirty = false
 local schedulesBeforeTarget = #schedules
 local rangeRefreshesBeforeTarget = rangeRefreshes
+local targetRouteRefreshesBefore = targetRouteRefreshes
 local dirtyRunsBeforeTarget = dirtyBarRuns
 spellIcon._hasCooldownActive = true
 controller:Handle("PLAYER_TARGET_CHANGED")
 assert(rangeRefreshes == rangeRefreshesBeforeTarget + 1,
     "target changes should still refresh icon ranges")
+assert(targetRouteRefreshes == targetRouteRefreshesBefore + 1,
+    "target changes must refresh secure custom aura routing")
+assert(targetRouteFullRefreshes == 1,
+    "hard target changes must force secure aura reassignment")
 -- ApplyTargetScope no longer runs an aura scope. A target change's aura side is
 -- owned by cdm_spelldata's PLAYER_TARGET_CHANGED handler (ReleaseCapturedAuras +
 -- NotifyAuraConsumers("target", nil) -> a full ApplyAuraScope); doing it here
@@ -479,6 +490,20 @@ assert(#schedules == schedulesBeforeTarget,
 assert(barsDirty == false, "target changes must not mark bars dirty in the controller (no aura scope here)")
 assert(dirtyBarRuns == dirtyRunsBeforeTarget,
     "target changes must not run dirty bar updates in the controller (no aura scope here)")
+controller:Handle("UNIT_FACTION", "target")
+assert(targetRouteRefreshes == targetRouteRefreshesBefore + 2,
+    "target reaction changes must refresh secure custom aura routing")
+assert(targetRouteFullRefreshes == 1,
+    "target reaction changes must delegate aura reassignment to capacity changes")
+controller:Handle("PLAYER_SOFT_FRIEND_CHANGED")
+assert(targetRouteRefreshes == targetRouteRefreshesBefore + 3,
+    "soft friendly target changes must refresh secure custom aura routing")
+assert(targetRouteFullRefreshes == 2,
+    "soft friendly target changes must force secure aura reassignment")
+controller:Handle("PLAYER_SOFT_ENEMY_CHANGED")
+assert(targetRouteRefreshes == targetRouteRefreshesBefore + 4
+    and targetRouteFullRefreshes == 3,
+    "soft enemy target changes must force secure aura reassignment")
 
 reset(applied)
 reset(runtimeUpdated)
