@@ -100,6 +100,20 @@ local function EnsureLoad(display)
     return display.load
 end
 
+local function UnitLabelFor(display)
+    if display.unitMode == "cotank" then return ns.L["Co-Tank"] end
+    if display.unitMode == "name" then
+        if type(display.unit) == "string" and display.unit ~= "" then
+            return display.unit
+        end
+        return ns.L["Specific player..."]
+    end
+    for i = 1, #UNIT_OPTIONS do
+        if UNIT_OPTIONS[i].value == display.unit then return UNIT_OPTIONS[i].text end
+    end
+    return display.unit or ns.L["Player"]
+end
+
 local function HasHelpfulTrackedElement(display)
     local elements = display.auras and display.auras.elements
     if type(elements) ~= "table" then return false end
@@ -206,13 +220,21 @@ function ns.QUI_AuraDisplaysOptions._QuickCreate(spec)
     E.EnsureSeeded(display.auras, AD.DefaultBucket)
     local bucket = display.auras.elements["*"]
     for i = #bucket, 1, -1 do bucket[i] = nil end
+    -- Seed at DefaultBucket quality (32px, duration text on), not the bare
+    -- 16px constructor defaults quick-create used to ship.
+    local T = ns.QUI_AuraDisplayTemplates
     if spec.kind == "tracked" then
         local spellID = spec.spellID
             and E.ResolveTrackedSpellID and E.ResolveTrackedSpellID(spec.spellID)
             or spec.spellID
-        bucket[1] = E.NewTrackedElement(spellID and { spellID } or {}, "icon")
+        if T and type(T.TunedTrackedElement) == "function" then
+            bucket[1] = T.TunedTrackedElement(spellID and { spellID } or {}, "icon", "HELPFUL")
+        else
+            bucket[1] = E.NewTrackedElement(spellID and { spellID } or {}, "icon")
+        end
     else
-        bucket[1] = E.NewFilterStripElement("HELPFUL")
+        local seeded = AD.DefaultBucket()
+        bucket[1] = seeded[1] or E.NewFilterStripElement("HELPFUL")
     end
     return display
 end
@@ -580,7 +602,18 @@ BuildLeftPane = function(left)
     end
 
     local newBtn = GUI:CreateButton(left, ns.L["New Display"], LIST_W, 24, function()
-        ShowQuickCreatePopup()
+        local Create = ns.QUI_AuraDisplaysCreate
+        if Create and type(Create.ShowDialog) == "function" then
+            Create.ShowDialog({
+                onCreated = function(display)
+                    if not display then return end
+                    AD.Refresh()
+                    SelectDisplay(display.id)
+                end,
+            })
+        else
+            ShowQuickCreatePopup()
+        end
     end, "primary")
     newBtn:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -4)
     newBtn:SetPoint("TOPRIGHT", search, "BOTTOMRIGHT", 0, -4)
@@ -814,6 +847,8 @@ function ns.QUI_AuraDisplaysOptions._BuildAurasTab(host, ctx, display)
             cancelEligible      = false,
             unitPolarity        = AD.UnitPolarityFor(display),
             defaultBucketFn     = AD.DefaultBucket,
+            simpleMode          = true,
+            summaryUnit         = UnitLabelFor(display),
         },
         onLayoutChanged = function(newHeight)
             if type(newHeight) == "number" and ctx and ctx.ResizeTab then
@@ -1024,6 +1059,8 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
         end
         if UI.groupRenameField then UI.groupRenameField:Hide() end
         if UI.quickCreatePopup then UI.quickCreatePopup:Hide() end
+        local Create = ns.QUI_AuraDisplaysCreate
+        if Create and type(Create.HideDialog) == "function" then Create.HideDialog() end
     end)
     pane:HookScript("OnShow", SyncPreview)
 

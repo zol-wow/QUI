@@ -133,6 +133,7 @@ return {
     "modules/skinning/frames/auctionhouse.lua::2",
     "modules/skinning/system/tooltips.lua::19",
     "modules/trackers/atonement_counter.lua::7",
+    "modules/trackers/aura_display_templates.lua::1",
     "modules/trackers/preytracker.lua::8",
     "modules/trackers/spellscanner.lua::7",
     "modules/utility/keybinds.lua::22",
