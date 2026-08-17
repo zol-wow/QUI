@@ -422,7 +422,21 @@ local _C_GetCooldownAuraBySpellID = C_UnitAuras and C_UnitAuras.GetCooldownAuraB
 local _C_GetAuraDataBySpellName = C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName
 local _C_GetUnitAuras = C_UnitAuras and C_UnitAuras.GetUnitAuras
 
+local _opaqueAuraPresence = {}
+
+local function NormalizeAuraDataResult(result)
+    if WoW_IsSecretValue and WoW_IsSecretValue(result) then
+        return _opaqueAuraPresence
+    end
+    return result
+end
+
+function CDMSources.IsOpaqueAuraPresence(value)
+    return value == _opaqueAuraPresence
+end
+
 local function EnforceAuraFilterPolarity(result, filter)
+    result = NormalizeAuraDataResult(result)
     if result == nil or filter == nil then return result end
     local wantHelpful = string.find(filter, "HELPFUL", 1, true) ~= nil
     local wantHarmful = string.find(filter, "HARMFUL", 1, true) ~= nil
@@ -433,7 +447,7 @@ local function EnforceAuraFilterPolarity(result, filter)
     else
         field = result.isHarmful
     end
-    if issecretvalue and issecretvalue(field) then return result end
+    if WoW_IsSecretValue and WoW_IsSecretValue(field) then return _opaqueAuraPresence end
     if field == nil then return result end
     if field then return result end
     return nil
@@ -472,6 +486,7 @@ local function AuraMemoGet(unit, bucketKey, id)
 end
 
 local function AuraMemoStore(unit, bucketKey, id, result)
+    if result == _opaqueAuraPresence then return end
     local u = _auraMemo[unit]
     if not u then u = {}; _auraMemo[unit] = u end
     local b = u[bucketKey]
@@ -495,7 +510,7 @@ end
 function CDMSources.QueryAuraDataByAuraInstanceID(unit, auraInstanceID)
     if not unit or not HasOpaqueValue(auraInstanceID) or not _C_GetAuraDataByAuraInstanceID then return nil end
     if AreAurasSecret() then return nil end
-    return _C_GetAuraDataByAuraInstanceID(unit, auraInstanceID)
+    return NormalizeAuraDataResult(_C_GetAuraDataByAuraInstanceID(unit, auraInstanceID))
 end
 
 function CDMSources.QueryAuraHasExpirationTime(unit, auraInstanceID)
@@ -538,12 +553,12 @@ function CDMSources.QueryPlayerAuraBySpellID(spellID)
         local bucketKey = _auraMemoBucket.playerBySpell.n
         local v, hit = AuraMemoGet("player", bucketKey, spellID)
         if hit then return v end
-        local result = _C_GetPlayerAuraBySpellID(spellID)
+        local result = NormalizeAuraDataResult(_C_GetPlayerAuraBySpellID(spellID))
         AuraMemoStore("player", bucketKey, spellID, result)
         return result
     end
     if auraMemoStats then auraMemoStats.bypass = auraMemoStats.bypass + 1 end
-    return _C_GetPlayerAuraBySpellID(spellID)
+    return NormalizeAuraDataResult(_C_GetPlayerAuraBySpellID(spellID))
 end
 
 function CDMSources.QueryAuraDataBySpellID(unit, spellID, filter)
@@ -553,7 +568,7 @@ function CDMSources.QueryAuraDataBySpellID(unit, spellID, filter)
         if bucketKey then
             local v, hit = AuraMemoGet(unit, bucketKey, spellID)
             if hit then return v end
-            local result = _C_GetAuraDataBySpellID(unit, spellID, filter)
+            local result = NormalizeAuraDataResult(_C_GetAuraDataBySpellID(unit, spellID, filter))
             if _auraDataFallbackNeedsPolarity then
                 result = EnforceAuraFilterPolarity(result, filter)
             end
@@ -562,7 +577,7 @@ function CDMSources.QueryAuraDataBySpellID(unit, spellID, filter)
         end
     end
     if auraMemoStats then auraMemoStats.bypass = auraMemoStats.bypass + 1 end
-    local result = _C_GetAuraDataBySpellID(unit, spellID, filter)
+    local result = NormalizeAuraDataResult(_C_GetAuraDataBySpellID(unit, spellID, filter))
     if _auraDataFallbackNeedsPolarity then
         result = EnforceAuraFilterPolarity(result, filter)
     end
@@ -581,13 +596,13 @@ function CDMSources.QueryAuraDataBySpellName(unit, name, filter)
         if bucketKey then
             local v, hit = AuraMemoGet(unit, bucketKey, name)
             if hit then return v end
-            local result = _C_GetAuraDataBySpellName(unit, name, filter)
+            local result = NormalizeAuraDataResult(_C_GetAuraDataBySpellName(unit, name, filter))
             AuraMemoStore(unit, bucketKey, name, result)
             return result
         end
     end
     if auraMemoStats then auraMemoStats.bypass = auraMemoStats.bypass + 1 end
-    return _C_GetAuraDataBySpellName(unit, name, filter)
+    return NormalizeAuraDataResult(_C_GetAuraDataBySpellName(unit, name, filter))
 end
 
 function CDMSources.QueryUnitAuras(unit, filter, maxCount)

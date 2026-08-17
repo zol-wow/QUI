@@ -31,7 +31,18 @@ C_Secrets = {
     ShouldAurasBeSecret = function() return aurasSecret end,
 }
 
-local calls = { duration = 0, data = 0, expiration = 0, filtered = 0, appCount = 0, unitAuras = 0, bySpell = 0 }
+local calls = {
+    duration = 0,
+    data = 0,
+    expiration = 0,
+    filtered = 0,
+    appCount = 0,
+    unitAuras = 0,
+    bySpell = 0,
+    playerBySpell = 0,
+    dataBySpell = 0,
+    byName = 0,
+}
 
 local function instanceGetter(counterKey, result)
     return function(...)
@@ -45,18 +56,43 @@ end
 
 local durationToken = { token = "duration" }
 local auraDataToken = { token = "aura-data" }
+local wholeSecretAura = SecretSentinel.MakeSecretSentinel()
+local secretPolarity = { token = "secret-polarity" }
+local auraWithSecretPolarity = { isHelpful = secretPolarity }
+secretValues[wholeSecretAura] = true
+secretValues[secretPolarity] = true
 
 C_UnitAuras = {
     GetAuraDuration = instanceGetter("duration", durationToken),
-    GetAuraDataByAuraInstanceID = instanceGetter("data", auraDataToken),
+    GetAuraDataByAuraInstanceID = function(_unit, auraInstanceID)
+        if aurasSecret then
+            error("data(): Auras cannot be accessed when secret while tainted")
+        end
+        calls.data = calls.data + 1
+        return auraInstanceID == 777 and wholeSecretAura or auraDataToken
+    end,
     DoesAuraHaveExpirationTime = instanceGetter("expiration", true),
     IsAuraFilteredOutByInstanceID = instanceGetter("filtered", false),
     GetAuraApplicationDisplayCount = instanceGetter("appCount", 3),
     GetUnitAuras = instanceGetter("unitAuras", { auraDataToken }),
-    GetUnitAuraBySpellID = function(_unit, _spellID, _filter)
+    GetUnitAuraBySpellID = function(_unit, spellID, _filter)
         -- Spell getters never throw; they return (possibly secret) AuraData.
         calls.bySpell = calls.bySpell + 1
+        if spellID == 101 then return wholeSecretAura end
+        if spellID == 102 then return auraWithSecretPolarity end
         return auraDataToken
+    end,
+    GetPlayerAuraBySpellID = function()
+        calls.playerBySpell = calls.playerBySpell + 1
+        return wholeSecretAura
+    end,
+    GetAuraDataBySpellID = function()
+        calls.dataBySpell = calls.dataBySpell + 1
+        return wholeSecretAura
+    end,
+    GetAuraDataBySpellName = function()
+        calls.byName = calls.byName + 1
+        return wholeSecretAura
     end,
 }
 
@@ -111,6 +147,37 @@ assert(calls.duration == 1 and calls.data == 1 and calls.expiration == 1
 assert(S.QueryUnitAuraBySpellID("player", 100) == auraDataToken, "T4: spell getter still resolves while secret")
 assert(calls.bySpell >= 1, "T4: spell getter reached the C function")
 aurasSecret = false
+
+local function assertCleanOpaquePresence(label, query)
+    local ok, value = pcall(query)
+    assert(ok, label .. " must quarantine the whole-secret AuraData")
+    assert(type(value) == "table", label .. " must return clean presence metadata")
+    assert(value.auraInstanceID == nil, label .. " must not expose the secret payload")
+end
+
+local bySpellBefore = calls.bySpell
+assertCleanOpaquePresence("T4 unit spell getter", function()
+    return S.QueryUnitAuraBySpellID("player", 101, "HELPFUL")
+end)
+assertCleanOpaquePresence("T4 repeated unit spell getter", function()
+    return S.QueryUnitAuraBySpellID("player", 101, "HELPFUL")
+end)
+assert(calls.bySpell == bySpellBefore + 2, "T4 opaque presence must not be memoized")
+assertCleanOpaquePresence("T4 secret polarity", function()
+    return S.QueryUnitAuraBySpellID("player", 102, "HELPFUL")
+end)
+assertCleanOpaquePresence("T4 player spell getter", function()
+    return S.QueryPlayerAuraBySpellID(101)
+end)
+assertCleanOpaquePresence("T4 data spell getter", function()
+    return S.QueryAuraDataBySpellID("player", 101, "HELPFUL")
+end)
+assertCleanOpaquePresence("T4 name getter", function()
+    return S.QueryAuraDataBySpellName("player", "Secret Aura", "HELPFUL")
+end)
+assertCleanOpaquePresence("T4 instance getter", function()
+    return S.QueryAuraDataByAuraInstanceID("player", 777)
+end)
 
 ---------------------------------------------------------------------------
 -- T5: secret auraInstanceID still rejected even when auras are NOT secret

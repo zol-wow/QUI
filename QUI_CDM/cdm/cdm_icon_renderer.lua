@@ -738,39 +738,6 @@ local function ScheduleCooldownExpiryRefreshAt(icon, key, expiresAt)
     end
 end
 
-local function ScheduleCooldownExpiryRefresh(icon, key, cdInfo)
-    if not icon or not key or not cdInfo or not C_Timer then return end
-    if not GetTime then return end
-
-    local getCooldownInfoField = Resolvers and Resolvers.GetCooldownInfoField
-    if not getCooldownInfoField then return end
-
-    local start, startSecret = getCooldownInfoField(cdInfo, "startTime")
-    if not startSecret and start == nil then
-        start, startSecret = getCooldownInfoField(cdInfo, "start")
-    end
-    local duration, durationSecret = getCooldownInfoField(cdInfo, "duration")
-    if startSecret or durationSecret
-        or (issecretvalue and (issecretvalue(start) or issecretvalue(duration))) then
-        if icon._cooldownExpiryTimerKey and icon._cooldownExpiryTimerKey ~= key then
-            CancelCooldownExpiryRefresh(icon)
-        end
-        return
-    end
-    if type(start) ~= "number" or type(duration) ~= "number" then
-        if icon._cooldownExpiryTimerKey and icon._cooldownExpiryTimerKey ~= key then
-            CancelCooldownExpiryRefresh(icon)
-        end
-        return
-    end
-    if start <= 0 or duration <= 0 then
-        CancelCooldownExpiryRefresh(icon)
-        return
-    end
-
-    ScheduleCooldownExpiryRefreshAt(icon, key, start + duration)
-end
-
 function _resolverRuntimePolicy.IsRealCooldownDurationMode(mode)
     return mode == "cooldown"
         or mode == "item-cooldown"
@@ -1089,7 +1056,6 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
     end
 
     local cdActive = mode ~= "inactive" and resolvedState.isOnCooldown == true
-    local resolvedCdInfo = resolvedState.cooldownInfo
     local _dbgIsActive = resolvedState.cooldownInfoActive
     local _dbgIsOnGCD = resolvedState.cooldownInfoOnGCD
 
@@ -1180,19 +1146,14 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
         return false
     end
 
-    local shouldScheduleExpiry = (mode == "aura" and hasNumericCooldown == true)
-        or (cdActive == true
-            and (resolvedCdInfo ~= nil or hasNumericCooldown)
-            and (mode == "cooldown" or mode == "item-cooldown"))
+    local shouldScheduleExpiry = hasNumericCooldown == true
+        and (mode == "aura"
+            or (cdActive == true and (mode == "cooldown" or mode == "item-cooldown")))
     local sameDurationBinding = DurationBindingMatches(icon, mode, keySource, durObj)
     if sameDurationBinding then
         if shouldScheduleExpiry then
             local key = GetDurationBindingKey(icon, mode, keySource)
-            if resolvedCdInfo then
-                ScheduleCooldownExpiryRefresh(icon, key, resolvedCdInfo)
-            else
-                ScheduleCooldownExpiryRefreshAt(icon, key, resolvedStart + resolvedDuration)
-            end
+            ScheduleCooldownExpiryRefreshAt(icon, key, resolvedStart + resolvedDuration)
         else
             CancelCooldownExpiryRefresh(icon)
         end
@@ -1252,11 +1213,7 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
     end
 
     if shouldScheduleExpiry then
-        if resolvedCdInfo then
-            ScheduleCooldownExpiryRefresh(icon, key, resolvedCdInfo)
-        else
-            ScheduleCooldownExpiryRefreshAt(icon, key, resolvedStart + resolvedDuration)
-        end
+        ScheduleCooldownExpiryRefreshAt(icon, key, resolvedStart + resolvedDuration)
     else
         CancelCooldownExpiryRefresh(icon)
     end

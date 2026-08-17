@@ -193,10 +193,11 @@ local function CleanOpaqueValue(value)
 end
 
 function CDMResolvers.GetCooldownInfoField(info, key)
-    if not info then return nil, false end
+    if ResolverIsSecretValue(info) then return nil, true end -- @secret-policy: reject-secret-value
+    if info == nil then return nil, false end
     local value = info[key]
     if ResolverIsSecretValue(value) then
-        return value, true
+        return nil, true -- @secret-policy: reject-secret-value
     end
     if value == nil then return nil, false end
     return value, false
@@ -468,10 +469,6 @@ local function IsSupportedMirrorMode(mode)
         or mode == "item-cooldown"
         or mode == "gcd-only"
         or mode == "inactive"
-end
-
-local function ShouldRenderLiveGCD(currentOnGCD)
-    return currentOnGCD == true
 end
 
 function CDMResolvers.GetSpellCastInfo(spellID)
@@ -1100,10 +1097,10 @@ local QueryItemCooldown
 local QuerySlotCooldown
 
 local function BuildDurationObjectFromStart(startTime, duration)
-    local startSecret = ResolverIsSecretValue(startTime)
-    local durationSecret = ResolverIsSecretValue(duration)
-    if not startSecret and startTime == nil then return nil end
-    if not durationSecret and duration == nil then return nil end
+    if ResolverIsSecretValue(startTime) or ResolverIsSecretValue(duration) then
+        return nil -- @secret-policy: reject-secret-value
+    end
+    if startTime == nil or duration == nil then return nil end
     if not (C_DurationUtil and C_DurationUtil.CreateDuration) then return nil end
 
     local okCreate, durObj = pcall(C_DurationUtil.CreateDuration)
@@ -1292,6 +1289,11 @@ QueryItemCooldown = function(itemID)
         return nil, nil, nil
     end
     local startTime, duration, enabled = Sources.QueryItemCooldown(itemID)
+    if ResolverIsSecretValue(startTime)
+        or ResolverIsSecretValue(duration)
+        or ResolverIsSecretValue(enabled) then
+        return nil, nil, nil -- @secret-policy: reject-secret-value
+    end
     return startTime, duration, enabled
 end
 
@@ -1301,7 +1303,13 @@ QuerySlotCooldown = function(slotID)
     if not slotID or not _GetInventoryItemCooldown then
         return nil, nil, nil
     end
-    return _GetInventoryItemCooldown("player", slotID)
+    local startTime, duration, enabled = _GetInventoryItemCooldown("player", slotID)
+    if ResolverIsSecretValue(startTime)
+        or ResolverIsSecretValue(duration)
+        or ResolverIsSecretValue(enabled) then
+        return nil, nil, nil -- @secret-policy: reject-secret-value
+    end
+    return startTime, duration, enabled
 end
 
 function CDMResolvers.BuildEntryItemDurationObject(entry)
@@ -1913,18 +1921,18 @@ local function ResolveCooldownStateCore(context)
 
     do
         local cdInfo = gcdCdInfo or QueryCooldown(sid)
-        local cdInfoActive = cdInfo and IsCooldownInfoActive(cdInfo)
+        local cdInfoActive = IsCooldownInfoActive(cdInfo)
         if cdInfoActive ~= false then
             local cdInfoOnGCD = GetCurrentIsOnGCD(cdInfo)
             local durObj = QueryDuration(sid)
-            local renderLiveGCD = ShouldRenderLiveGCD(cdInfoOnGCD)
-            if durObj and not renderLiveGCD then
+            state.cooldownInfoActive = cdInfoActive
+            state.cooldownInfoOnGCD = cdInfoOnGCD
+            if durObj then
                 state.mode = "cooldown"
                 SetCooldownStateActivity(state, true)
                 state.durObj = durObj
                 state.sourceID = sid
                 state.spellID = sid
-                state.cooldownInfo = cdInfo
                 MemAuditProfilerMark("CDM_rsReturnLiveCD")
                 return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
             end
@@ -1936,18 +1944,7 @@ local function ResolveCooldownStateCore(context)
                     state.durObj = gcdDur
                     state.sourceID = sid
                     state.spellID = sid
-                    state.cooldownInfo = cdInfo
                     MemAuditProfilerMark("CDM_rsReturnGCD")
-                    return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
-                end
-                if durObj and renderLiveGCD then
-                    state.mode = "gcd-only"
-                    SetCooldownStateActivity(state, true)
-                    state.durObj = durObj
-                    state.sourceID = sid
-                    state.spellID = sid
-                    state.cooldownInfo = cdInfo
-                    MemAuditProfilerMark("CDM_rsReturnGCDDur")
                     return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
                 end
             end
@@ -1961,7 +1958,7 @@ local function ResolveCooldownStateCore(context)
         state.durObj = gcdDurObj
         state.sourceID = sid
         state.spellID = sid
-        state.cooldownInfo = gcdCdInfo
+        state.cooldownInfoOnGCD = currentOnGCD
         MemAuditProfilerMark("CDM_rsReturnGCDCached")
         return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
     end

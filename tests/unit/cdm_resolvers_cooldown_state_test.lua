@@ -23,6 +23,8 @@ local gcdDur = { token = "gcd-dur" }
 local itemAuraDur = { token = "item-aura-dur" }
 local secretItemStart = { token = "secret-item-start" }
 local secretItemDuration = { token = "secret-item-duration" }
+local secretCooldownStart = { token = "secret-cooldown-start" }
+local secretCooldownDuration = { token = "secret-cooldown-duration" }
 local secretChargeZero = { token = "secret-current-charges", value = 0 }
 local secretChargeOne = { token = "secret-current-charges", value = 1 }
 local secretChargeUnknown = { token = "secret-current-charges", value = "unknown" }
@@ -38,6 +40,8 @@ function issecretvalue(value)
         or value == secretChargeUnknown
         or value == secretItemStart
         or value == secretItemDuration
+        or value == secretCooldownStart
+        or value == secretCooldownDuration
 end
 
 Enum = { LuaCurveType = { Step = "Step" } }
@@ -232,6 +236,14 @@ local ns = {
             if spellID == 70001 then
                 return { isActive = true, isOnGCD = true }
             end
+            if spellID == 70002 then
+                return {
+                    isActive = true,
+                    isOnGCD = true,
+                    startTime = secretCooldownStart,
+                    duration = secretCooldownDuration,
+                }
+            end
             if spellID == 91004 and itemUseSpellCooldownActive then
                 return { isActive = true, isOnGCD = false }
             end
@@ -240,6 +252,9 @@ local ns = {
         QuerySpellCooldownDuration = function(spellID, ignoreGCD)
             if spellID == 70001 and ignoreGCD == false then
                 return gcdDur
+            end
+            if spellID == 70002 then
+                return ignoreGCD == true and cooldownDur or gcdDur
             end
             -- 60011: a GCD duration is available (a GCD swipe would otherwise be
             -- drawn) so the test proves the active recharge wins over it.
@@ -708,6 +723,21 @@ assert(state.gcdOnly == true, "GCD-only state should publish gcdOnly")
 assert(state.isGCDOnly == true, "GCD-only state should publish isGCDOnly")
 assert(state.isRealCooldownMode == false, "GCD-only state should not publish real cooldown mode")
 
+state = resolve({
+    entry = cooldownEntry(70002),
+    runtimeSpellID = 70002,
+    containerKey = "essential",
+    useBuffSwipe = false,
+    showGCDSwipe = true,
+})
+
+assert(state.mode == "cooldown", "a real ignore-GCD duration should outrank isOnGCD")
+assert(state.durObj == cooldownDur, "real cooldown should bind its ignore-GCD DurationObject")
+assert(state.cooldownInfo == nil, "resolved state must not retain SpellCooldownInfo")
+assert(state.start == nil and state.duration == nil, "secret cooldown timing must not enter resolved state")
+local secretField, wasSecret = resolvers.GetCooldownInfoField({ startTime = secretCooldownStart }, "startTime")
+assert(secretField == nil and wasSecret == true, "secret cooldown fields must be discarded at read time")
+
 itemAuraActive = true
 itemCooldownActive = false
 state = resolve({
@@ -943,15 +973,12 @@ state = resolve({
     showGCDSwipe = true,
 })
 
-assert(state.mode == "item-cooldown", "secret item timing should still resolve as an item cooldown")
-assert(state.isOnCooldown == true, "secret item DurationObject should publish cooldown activity")
-assert(state.durObj == createdDurationObjects[1],
-    "secret item timing should be passed through a DurationObject")
-assert(state.numericCooldownActive == nil, "secret item timing must not publish numeric cooldown timing")
-assert(state.start == nil and state.duration == nil, "secret item timing must not be exposed as SetCooldown timing")
-assert(durationObjectSetCalls[1].start == secretItemStart
-    and durationObjectSetCalls[1].duration == secretItemDuration,
-    "secret item cooldown values should pass directly into DurationObject setup")
+assert(state.mode == "inactive", "secret item timing should be rejected")
+assert(state.isOnCooldown == false, "rejected secret item timing must not publish cooldown activity")
+assert(state.durObj == nil, "rejected secret item timing must not create a DurationObject")
+assert(state.start == nil and state.duration == nil, "secret item timing must not enter resolved state")
+assert(#createdDurationObjects == 0 and #durationObjectSetCalls == 0,
+    "secret item timing must never reach DurationObject construction")
 
 createdDurationObjects = {}
 durationObjectSetCalls = {}
