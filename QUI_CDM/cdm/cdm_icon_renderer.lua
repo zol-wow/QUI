@@ -3134,7 +3134,7 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
     end
     local managedAuraRoute = isAuraEntry
         and auraRuns
-        and auraRuns.ShouldUseSettings(settings)
+        and auraRuns.ShouldUseSettings(settings, viewerType)
         and auraRuns.ResolveRoute
         and auraRuns.ResolveRoute(spellEntry)
     spellEntry._managedAuraRoute = managedAuraRoute
@@ -3323,7 +3323,7 @@ function CDMIcons:BuildIcons(viewerType, container, reuseOnly)
     local clickViewerDB = GetTrackerSettings and GetTrackerSettings(viewerType)
     local auraRuns = ns.CDMCustomAuraRuns
     local layoutRestricted = auraRuns
-        and auraRuns.ShouldUseSettings(clickViewerDB)
+        and auraRuns.ShouldUseSettings(clickViewerDB, viewerType)
         and auraRuns.HasAuraEntries(clickViewerDB, viewerType)
         or false
     local signature = BuildIconListSignature(viewerType, container, spellData)

@@ -58,7 +58,14 @@ local ns = {
         end,
     },
     Addon = {
-        db = { profile = { ncdm = {} } },
+        db = { profile = {
+            ncdm = {},
+            customGlow = {
+                customEnabled = false,
+                customPandemicDebuffEnabled = false,
+                customPandemicBuffEnabled = false,
+            },
+        } },
         AuraSkin = {
             Configure = function(container, profile, groups)
                 container._quiProfile = profile
@@ -96,6 +103,7 @@ local settings = {
     builtIn = false,
     containerType = "customBar",
     dynamicLayout = true,
+    activeGlowEnabled = false,
     showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
@@ -120,22 +128,42 @@ local function CopySettings(changes)
     return copy
 end
 
-assert(ns.CDMCustomAuraRuns.ShouldUseSettings(settings) == true,
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(settings, "custom") == true,
     "active-only dynamic bars must use secure aura runs")
 local unsafeCases = {
     { "clickable icons", { clickableIcons = true } },
+    { "active glow", { activeGlowEnabled = true } },
     { "default visibility", { showOnlyWhenActive = false } },
     { "on-cooldown visibility", { showOnlyOnCooldown = true } },
     { "off-cooldown visibility", { showOnlyWhenOffCooldown = true } },
     { "combat visibility", { showOnlyInCombat = true } },
     { "usability filtering", { hideNonUsable = true } },
     { "hidden spell overrides", { spellOverrides = { [222] = { hidden = true } } } },
+    { "per-spell appearance", { spellOverrides = { [222] = { hideDurationText = true } } } },
+    { "per-spell glow", { spellOverrides = { [222] = { glowEnabled = false } } } },
 }
 for i = 1, #unsafeCases do
     local case = unsafeCases[i]
-    assert(ns.CDMCustomAuraRuns.ShouldUseSettings(CopySettings(case[2])) == false,
+    assert(ns.CDMCustomAuraRuns.ShouldUseSettings(CopySettings(case[2]), "custom") == false,
         case[1] .. " must retain the ordinary proxy renderer")
 end
+ns.Addon.db.profile.customGlow.customEnabled = true
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(settings, "custom") == false,
+    "custom glows must retain the ordinary proxy renderer")
+ns.Addon.db.profile.customGlow.customEnabled = false
+ns.Addon.db.profile.customGlow.customPandemicDebuffEnabled = true
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(settings, "custom") == false,
+    "debuff pandemic effects must retain the ordinary proxy renderer")
+ns.Addon.db.profile.customGlow.customPandemicDebuffEnabled = false
+ns.Addon.db.profile.customGlow.customPandemicBuffEnabled = true
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(settings, "custom") == false,
+    "buff pandemic effects must retain the ordinary proxy renderer")
+ns.Addon.db.profile.customGlow.customPandemicBuffEnabled = false
+local customGlow = ns.Addon.db.profile.customGlow
+ns.Addon.db.profile.customGlow = nil
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(settings, "custom") == false,
+    "missing glow settings must retain the ordinary proxy renderer")
+ns.Addon.db.profile.customGlow = customGlow
 
 local owner = Frame("owner")
 local cooldownA = Frame("cooldown-a")
@@ -180,21 +208,23 @@ fallbackProxy:SetPoint("CENTER", fallbackOwner, "CENTER", 0, 0)
 local fallbackCreated, fallbackConfigured = #created, #configured
 for _, unsafe in ipairs({
     CopySettings({ clickableIcons = true }),
+    CopySettings({ activeGlowEnabled = true }),
     CopySettings({ showOnlyWhenActive = false }),
     CopySettings({ spellOverrides = { [222] = { hidden = true } } }),
+    CopySettings({ spellOverrides = { [222] = { hideDurationText = true } } }),
 }) do
     assert(ns.CDMCustomAuraRuns.Apply(fallbackOwner, unsafe, {
             metrics = { iconWidth = 30 },
             placements = { { icon = fallbackProxy, rowConfig = row, x = 0, y = 0 } },
-        }) == false,
-        "unsupported visibility settings must leave aura proxies on the ordinary renderer")
+        }, nil, nil, "custom") == false,
+        "unsupported managed settings must leave aura proxies on the ordinary renderer")
 end
 assert(#created == fallbackCreated and #configured == fallbackConfigured
     and fallbackProxy.shown == true and #fallbackProxy.points == 1
     and fallbackProxy._quiManagedAuraProxy == nil,
     "visibility fallback must preserve the visible proxy without secure allocation")
 
-assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan) == true,
+assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan, nil, nil, "custom") == true,
     "eligible mixed rows must use the secure aura run")
 assert(#created == 1 and created[1].kind == "AuraContainer"
     and created[1].template == "CustomAuraContainerTemplate",
@@ -279,6 +309,7 @@ friendlyProxyB._spellEntry = {
 local friendlySettings = {
     containerType = "customBar",
     dynamicLayout = true,
+    activeGlowEnabled = false,
     showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
@@ -295,7 +326,8 @@ local friendlyPlan = {
         { icon = friendlyProxyB, rowConfig = row, x = 32, y = 0 },
     },
 }
-assert(ns.CDMCustomAuraRuns.Apply(friendlyOwner, friendlySettings, friendlyPlan) == true)
+assert(ns.CDMCustomAuraRuns.Apply(
+    friendlyOwner, friendlySettings, friendlyPlan, nil, nil, "custom") == true)
 local friendlyController = friendlyOwner._quiCDMAuraRuns[1]
 friendlyConfig = LastConfig(friendlyController)
 assert(friendlyController.unit == "target"
@@ -333,6 +365,7 @@ harmfulProxy._spellEntry = {
 local harmfulSettings = {
     containerType = "customBar",
     dynamicLayout = true,
+    activeGlowEnabled = false,
     showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
@@ -343,7 +376,8 @@ local harmfulPlan = {
     metrics = { iconWidth = 30 },
     placements = { { icon = harmfulProxy, rowConfig = row, x = 0, y = 0 } },
 }
-assert(ns.CDMCustomAuraRuns.Apply(harmfulOwner, harmfulSettings, harmfulPlan) == true)
+assert(ns.CDMCustomAuraRuns.Apply(
+    harmfulOwner, harmfulSettings, harmfulPlan, nil, nil, "custom") == true)
 local harmfulController = harmfulOwner._quiCDMAuraRuns[1]
 local harmfulConfig = LastConfig(harmfulController)
 assert(harmfulController.unit == "target" and harmfulConfig.groups[1].maxFrameCount == 0,
@@ -391,7 +425,7 @@ local disabledSettings = {
     showOnlyWhenActive = true,
     layoutDirection = "VERTICAL",
 }
-assert(ns.CDMCustomAuraRuns.Apply(owner, disabledSettings, plan) == false,
+assert(ns.CDMCustomAuraRuns.Apply(owner, disabledSettings, plan, nil, nil, "custom") == false,
     "unsupported layouts must leave the secure chain path")
 assert(controller.enabled == false and controller.shown == false,
     "leaving the secure chain path must park old aura runs")
@@ -404,11 +438,11 @@ local fixedSettings = {
     row1 = { iconCount = 1 },
     entries = { { id = 222, kind = "aura", source = "blizzardCDM" } },
 }
-assert(ns.CDMCustomAuraRuns.ShouldUseSettings(fixedSettings) == false,
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(fixedSettings, "custom") == false,
     "default fixed-slot bars must keep their ordinary aura proxies")
 fixedSettings.dynamicLayout = false
 fixedSettings.clickableIcons = true
-assert(ns.CDMCustomAuraRuns.ShouldUseSettings(fixedSettings) == false,
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(fixedSettings, "custom") == false,
     "clickable fixed-slot bars must keep their secure click proxies")
 local fixedOwner = Frame("fixed-owner")
 local fixedProxy = Frame("fixed-proxy")
@@ -424,14 +458,14 @@ local fixedCreated, fixedConfigured = #created, #configured
 assert(ns.CDMCustomAuraRuns.Apply(fixedOwner, fixedSettings, {
         metrics = { iconWidth = 30 },
         placements = { { icon = fixedProxy, rowConfig = row, x = 0, y = 0 } },
-    }) == false,
+    }, nil, nil, "custom") == false,
     "fixed-slot aura bars must stay on the ordinary renderer")
 assert(#created == fixedCreated and #configured == fixedConfigured
     and fixedProxy.shown == true and #fixedProxy.points == 1
     and fixedProxy._quiManagedAuraProxy == nil and fixedProxy.clickButton == fixedClickButton,
     "fixed-slot fallback must preserve the visible slot and click surface")
 
-assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan) == true)
+assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan, nil, nil, "custom") == true)
 local containersFile = assert(io.open("QUI_CDM/cdm/cdm_containers.lua", "rb"))
 local containersSource = containersFile:read("*a")
 containersFile:close()
@@ -515,6 +549,7 @@ assert(controller.enabled == false and controller.shown == false,
 local mixedSettings = {
     containerType = "customBar",
     dynamicLayout = true,
+    activeGlowEnabled = false,
     showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
@@ -700,5 +735,59 @@ preparedRelayout = false
 forceEnv.QUI_ForceLayoutContainer("custom", true)
 assert(cooldownSweeps == 1,
     "ordinary relayouts must retain the cooldown sweep")
+
+local settingsFile = assert(io.open("QUI_CDM/cdm/settings/containers_page.lua", "rb"))
+local settingsSource = settingsFile:read("*a")
+settingsFile:close()
+local refreshContainerSource = assert(settingsSource:match(
+    "(local function RefreshContainer%(containerKey%).-\nend)\n\nlocal function RefreshSwipe"))
+local refreshGlowsSource = assert(settingsSource:match(
+    "(local function RefreshGlows%(containerKey%).-\nend)\n\nlocal function RefreshHighlighter"))
+local glowRefreshes, glowLayouts, glowPreviews = 0, 0, 0
+local glowRefreshOrder = {}
+local glowRefreshEnv = {
+    PokePreview = function()
+        glowPreviews = glowPreviews + 1
+        glowRefreshOrder[#glowRefreshOrder + 1] = "preview"
+    end,
+    QUI_RefreshCustomGlows = function()
+        glowRefreshes = glowRefreshes + 1
+        glowRefreshOrder[#glowRefreshOrder + 1] = "glow"
+    end,
+    QUI_ForceLayoutContainer = function(containerKey)
+        assert(containerKey == "custom")
+        glowLayouts = glowLayouts + 1
+        glowRefreshOrder[#glowRefreshOrder + 1] = "layout"
+    end,
+}
+glowRefreshEnv._G = glowRefreshEnv
+setmetatable(glowRefreshEnv, { __index = _G })
+local glowRefreshChunk = assert(loadstring(
+    refreshContainerSource .. "\n" .. refreshGlowsSource .. "\nreturn RefreshGlows",
+    "@containers_page.lua#RefreshGlows"))
+setfenv(glowRefreshChunk, glowRefreshEnv)
+local refreshGlows = glowRefreshChunk()
+refreshGlows("custom")
+assert(glowRefreshes == 1 and glowLayouts == 1 and glowPreviews == 1,
+    "glow eligibility changes must refresh effects and relayout their container")
+assert(glowRefreshOrder[1] == "layout" and glowRefreshOrder[3] == "glow",
+    "glow eligibility changes must reveal ordinary proxies before scanning glows")
+refreshGlows()
+assert(glowRefreshes == 2 and glowLayouts == 1 and glowPreviews == 2,
+    "ordinary glow styling changes must retain their lightweight refresh path")
+assert(settingsSource:find(
+    "local function RefreshGlowEligibility%(%).-RefreshGlows%(containerKey%).-end"),
+    "effect controls must route aura-run eligibility changes through container relayout")
+local glowEnableStart = assert(settingsSource:find(
+    "local glowEnableCheckbox = gui:CreateFormCheckbox", 1, true))
+local glowEnableStop = assert(settingsSource:find("end, {", glowEnableStart, true))
+assert(settingsSource:sub(glowEnableStart, glowEnableStop):find(
+    "RefreshGlowEligibility()", 1, true),
+    "the custom glow toggle must re-evaluate managed aura eligibility")
+assert(settingsSource:find(
+    "effectsCtx.pandemicDebuffKey, effectsCtx.glowDB, RefreshGlowEligibility", 1, true)
+    and settingsSource:find(
+        "effectsCtx.pandemicBuffKey, effectsCtx.glowDB, RefreshGlowEligibility", 1, true),
+    "both pandemic controls must re-evaluate managed aura eligibility")
 
 print("OK: cdm_custom_aura_runs_test")

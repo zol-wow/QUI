@@ -17,10 +17,12 @@ local function IsManagedAuraIcon(icon)
     return entry and entry._useManagedAura == true and entry._managedAuraRoute ~= nil
 end
 
-function Runs.ShouldUseSettings(settings)
+function Runs.ShouldUseSettings(settings, viewerType)
     if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
+    if type(viewerType) ~= "string" or viewerType == "" then return false end
     if settings.dynamicLayout ~= true then return false end
     if settings.clickableIcons == true then return false end
+    if settings.activeGlowEnabled ~= false then return false end
     if settings.showOnlyWhenActive ~= true
         or settings.showOnlyOnCooldown == true
         or settings.showOnlyWhenOffCooldown == true
@@ -33,8 +35,17 @@ function Runs.ShouldUseSettings(settings)
 
     if type(settings.spellOverrides) == "table" then
         for _, override in pairs(settings.spellOverrides) do
-            if type(override) == "table" and override.hidden == true then return false end
+            if type(override) == "table" and next(override) ~= nil then return false end
         end
+    end
+
+    local profile = ns.Addon and ns.Addon.db and ns.Addon.db.profile
+    local glow = profile and profile.customGlow
+    if not glow then return false end
+    if glow[viewerType .. "Enabled"] == true
+        or glow[viewerType .. "PandemicDebuffEnabled"] ~= false
+        or glow[viewerType .. "PandemicBuffEnabled"] ~= false then
+        return false
     end
 
     local rowCount = 0
@@ -293,7 +304,7 @@ function Runs.CanRelayoutInCombat(owner, settings, icons)
     local state = owner and owner._quiCDMAuraCombatState
     if not (activeOwners[owner] and state and state.settings == settings
         and state.icons == icons
-        and state.valid ~= false and Runs.ShouldUseSettings(settings)) then
+        and state.valid ~= false and Runs.ShouldUseSettings(settings, state.viewerType)) then
         return false
     end
     local capacity = (settings.row1 and settings.row1.iconCount or 0)
@@ -424,8 +435,9 @@ local function AnchorPreparedRuns(owner, layoutPlan, runByIcon)
     })
 end
 
-function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat)
-    if not (owner and Runs.ShouldUseSettings(settings) and layoutPlan and layoutPlan.placements) then
+function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat, viewerType)
+    if not (owner and Runs.ShouldUseSettings(settings, viewerType)
+        and layoutPlan and layoutPlan.placements) then
         if not inCombat then Disable(owner) end
         return false
     end
@@ -509,6 +521,7 @@ function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat)
     local rowConfig = firstPlacement.rowConfig
     local width = rowConfig.size or 39
     combatState.settings = settings
+    combatState.viewerType = viewerType
     combatState.icons = combatIcons
     combatState.capacity = capacity
     combatState.iconCount = iconCount

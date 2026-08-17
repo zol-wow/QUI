@@ -1158,7 +1158,7 @@ local function ShouldDeferContainerLayoutInCombat(trackerKey, settings, runtimeV
         end
         return true
     end
-    local usesAuraRuns = auraRuns and auraRuns.ShouldUseSettings(settings)
+    local usesAuraRuns = auraRuns and auraRuns.ShouldUseSettings(settings, trackerKey)
         and auraRuns.HasAuraEntries(settings, trackerKey)
     if usesAuraRuns then return true end
 
@@ -2341,7 +2341,7 @@ local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
     end
     local totalCapacity = CDMLayout and CDMLayout.GetTotalIconCapacity and CDMLayout.GetTotalIconCapacity(settings) or 0
     local auraRuns = ns.CDMCustomAuraRuns
-    if not InCombatLockdown() and auraRuns and auraRuns.ShouldUseSettings(settings)
+    if not InCombatLockdown() and auraRuns and auraRuns.ShouldUseSettings(settings, trackerKey)
         and auraRuns.HasAuraEntries(settings, trackerKey)
         and ns.CDMIcons.OnIconRowConfigApplied and CDMLayout.BuildRows then
         local rowConfig = CDMLayout.BuildRows(settings)[1]
@@ -2432,7 +2432,7 @@ local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
         })
     if not layoutPlan or not layoutPlan.metrics or #layoutPlan.placements == 0 then
         if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.Apply then
-            ns.CDMCustomAuraRuns.Apply(container, nil, nil, nil, InCombatLockdown())
+            ns.CDMCustomAuraRuns.Apply(container, nil, nil, nil, InCombatLockdown(), trackerKey)
         end
         applying[trackerKey] = false
         return
@@ -2464,7 +2464,8 @@ local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
     end
 
     if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.Apply then
-        ns.CDMCustomAuraRuns.Apply(container, settings, layoutPlan, allIcons, InCombatLockdown())
+        ns.CDMCustomAuraRuns.Apply(container, settings, layoutPlan, allIcons,
+            InCombatLockdown(), trackerKey)
     end
 
     local maxRowWidth, proxyTotalHeight = ApplyViewerMetrics(vs, layoutPlan.metrics, trackerKey)

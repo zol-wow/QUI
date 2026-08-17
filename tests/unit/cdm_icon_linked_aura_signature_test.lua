@@ -47,7 +47,9 @@ local globals = _G
 local builderEnv = setmetatable({
     ns = {
         CDMCustomAuraRuns = {
-            ShouldUseSettings = function() return true end,
+            ShouldUseSettings = function(settings, viewerType)
+                return settings.activeGlowEnabled == false and viewerType == "custom"
+            end,
             HasAuraEntries = function() return true end,
             ResolveRoute = function(entry)
                 if entry.source ~= "blizzardCDM" then return nil end
@@ -69,6 +71,7 @@ local builderEnv = setmetatable({
         return {
             containerType = "customBar",
             dynamicLayout = true,
+            activeGlowEnabled = false,
             showOnlyWhenActive = true,
         }
     end,
