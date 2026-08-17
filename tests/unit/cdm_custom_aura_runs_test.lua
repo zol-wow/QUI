@@ -484,7 +484,9 @@ local layoutEnv = setmetatable({
     GetTrackerSettings = function() return settings end,
     ShouldDeferContainerLayoutInCombat = shouldDefer,
     GetHUDMinWidth = function() return false, 0 end,
-    ApplyViewerMetrics = function() return 94, 30 end,
+    ApplyViewerMetrics = function(_, metrics)
+        return metrics.iconWidth, metrics.totalHeight
+    end,
     RefreshCustomBarRuntimeAfterLayout = function() end,
     C_Timer = { After = function() end },
     InCombatLockdown = function() return inCombat end,
@@ -517,7 +519,7 @@ local mixedSettings = {
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
     row1 = {
-        iconCount = 3,
+        iconCount = 4,
         iconSize = 30,
         padding = 2,
         borderColorSource = "inherit",
@@ -543,8 +545,12 @@ local mixedConfiguredBefore = #configured
 local preparedIcons = {}
 local prepareCalls = 0
 local combatBuilds = 0
-local reusablePool = true
 local showMixedCooldown = false
+local activePool = mixedIcons
+local priorFactory = ns.CDMIconFactory
+ns.CDMIconFactory = {
+    GetIconPool = function() return activePool end,
+}
 deferEnv.containers.custom = mixedOwner
 layoutEnv.containers.custom = mixedOwner
 layoutEnv.GetTrackerSettings = function() return mixedSettings end
@@ -553,10 +559,10 @@ layoutEnv.specTrackingPendingRefresh = false
 ns.CDMIcons = {
     BuildIcons = function(_, _, _, reuseOnly)
         if inCombat then
-            assert(reuseOnly == true)
             combatBuilds = combatBuilds + 1
+            error("combat relayout must not rebuild icon signatures")
         end
-        return reusablePool and mixedIcons or nil
+        return mixedIcons
     end,
     ShouldContainerLayoutPlaceIcon = function(icon, entry)
         return entry._useManagedAura == true or showMixedCooldown
@@ -578,33 +584,83 @@ assert(#mixedRecords == 2 and #created == mixedCreatedBefore + 2
     and mixedRecords[1].rowConfig.size == mixedRow.size
     and prepareCalls == 3 and preparedIcons[mixedCooldown] == true,
     "hidden ordinary icons must split the preallocated aura-run topology")
+local combatState = mixedOwner._quiCDMAuraCombatState
+local cachedChain = combatState.chain
+local cachedMetrics = combatState.metrics
+local cachedSpacingAfter = combatState.spacingAfter
+assert(combatState.capacity == 4 and combatState.iconCount == 3,
+    "combat topology must distinguish configured capacity from enabled icons")
+local priorHasAuraEntries = ns.CDMCustomAuraRuns.HasAuraEntries
+local priorBuildRows = ns.CDMLayout.BuildRows
+local priorBuildIconLayout = ns.CDMLayout.BuildIconLayout
+local priorAnchorLinearChain = ns.CDMLayout.AnchorLinearChain
+ns.CDMCustomAuraRuns.HasAuraEntries = function()
+    error("combat relayout must use cached aura eligibility")
+end
+ns.CDMLayout.BuildRows = function()
+    error("combat relayout must use cached row geometry")
+end
+ns.CDMLayout.BuildIconLayout = function()
+    error("combat relayout must not allocate a layout plan")
+end
+ns.CDMLayout.AnchorLinearChain = function()
+    error("combat relayout must anchor its cached chain directly")
+end
 
 inCombat = true
-layoutEnv.specTrackingPendingRefresh = false
+deferEnv.specTrackingPendingRefresh = true
+layoutEnv.specTrackingPendingRefresh = true
 showMixedCooldown = true
+mixedCooldown._lastLayoutFilterHidden = false
 local combatCreatedBefore = #created
 local combatConfiguredBefore = #configured
 layoutChunk()("custom", true)
-assert(layoutEnv.specTrackingPendingRefresh ~= true and combatBuilds == 1
+assert(layoutEnv.specTrackingPendingRefresh == true and combatBuilds == 0
     and prepareCalls == 3
     and #created == combatCreatedBefore and #configured == combatConfiguredBefore,
-    "prepared visibility relayouts must not create or configure secure frames in combat")
+    "unrelated deferred work must not block prepared combat relayouts")
 assert(mixedCooldown.points[1][2] == mixedRecords[1].container
-    and mixedRecords[2].container.points[1][2] == mixedCooldown,
+    and mixedRecords[2].container.points[1][2] == mixedCooldown
+    and mixedOwner.width == 94,
     "combat visibility relayouts must insert ordinary icons between stable aura runs")
-local mixedCooldownPoints = #mixedCooldown.points
-reusablePool = false
+mixedCooldown._lastLayoutFilterHidden = true
+deferEnv.specTrackingPendingRefresh = false
 layoutEnv.specTrackingPendingRefresh = false
 layoutChunk()("custom", true)
-assert(layoutEnv.specTrackingPendingRefresh == true and combatBuilds == 2
+assert(mixedRecords[2].container.points[1][2] == mixedRecords[1].container,
+    "combat visibility relayouts must remove hidden ordinary icons")
+assert(mixedOwner.width == 62,
+    "combat visibility relayouts must update the cached proxy width")
+assert(mixedOwner._quiCDMAuraCombatState == combatState
+    and mixedOwner._quiCDMAuraCombatState.chain == cachedChain
+    and mixedOwner._quiCDMAuraCombatState.metrics == cachedMetrics
+    and mixedOwner._quiCDMAuraCombatState.spacingAfter == cachedSpacingAfter
+    and mixedOwner._quiCDMAuraCombatState.icons == mixedIcons,
+    "combat visibility relayouts must reuse cached topology and metrics tables")
+local mixedCooldownPoints = #mixedCooldown.points
+activePool = {}
+layoutEnv.specTrackingPendingRefresh = false
+layoutChunk()("custom", true)
+assert(layoutEnv.specTrackingPendingRefresh == true and combatBuilds == 0
     and #mixedCooldown.points == mixedCooldownPoints
     and #created == combatCreatedBefore and #configured == combatConfiguredBefore,
     "stale combat icon pools must defer before mutating layout or secure runs")
 layoutChunk()("custom")
-assert(layoutEnv.specTrackingPendingRefresh == true and combatBuilds == 2,
+assert(layoutEnv.specTrackingPendingRefresh == true and combatBuilds == 0,
     "structural combat layouts must remain deferred")
+activePool = mixedIcons
+layoutEnv.specTrackingPendingRefresh = false
+layoutChunk()("custom", true)
+assert(layoutEnv.specTrackingPendingRefresh == true and combatBuilds == 0
+    and mixedOwner._quiCDMAuraCombatState.valid == false,
+    "a structural deferral must invalidate only that owner's prepared combat state")
 inCombat = false
 ns.CDMIcons = priorIcons
+ns.CDMIconFactory = priorFactory
+ns.CDMCustomAuraRuns.HasAuraEntries = priorHasAuraEntries
+ns.CDMLayout.BuildRows = priorBuildRows
+ns.CDMLayout.BuildIconLayout = priorBuildIconLayout
+ns.CDMLayout.AnchorLinearChain = priorAnchorLinearChain
 
 local rendererFile = assert(io.open("QUI_CDM/cdm/cdm_icon_renderer.lua", "rb"))
 local rendererSource = rendererFile:read("*a")
@@ -615,5 +671,34 @@ assert(rendererSource:find('cdEventFrame:RegisterEvent("PLAYER_SOFT_FRIEND_CHANG
     "helpful target routing must subscribe to soft friendly target changes")
 assert(rendererSource:find("QUI_ForceLayoutContainer(trackerKey, true)", 1, true),
     "visibility policy relayouts must identify their combat-safe runtime path")
+
+local forceStart = assert(containersSource:find(
+    "_G.QUI_ForceLayoutContainer = function", 1, true))
+local forceStop = assert(containersSource:find(
+    "\nlocal function RebuildBuffContainer", forceStart, true))
+local forceSource = containersSource:sub(forceStart, forceStop - 1)
+local cooldownSweeps = 0
+local preparedRelayout = true
+local forceEnv = {
+    initialized = true,
+    IsCDMRuntimeEnabled = function() return true end,
+    LayoutContainer = function() return preparedRelayout end,
+    ns = { CDMIcons = { UpdateAllCooldowns = function() cooldownSweeps = cooldownSweeps + 1 end } },
+    containers = {},
+    BUILTIN_NAMES = {},
+    _editModeActive = false,
+}
+forceEnv._G = forceEnv
+setmetatable(forceEnv, { __index = _G })
+local forceChunk = assert(loadstring(forceSource, "@cdm_containers.lua#QUI_ForceLayoutContainer"))
+setfenv(forceChunk, forceEnv)
+forceChunk()
+forceEnv.QUI_ForceLayoutContainer("custom", true)
+assert(cooldownSweeps == 0,
+    "prepared combat relayouts must not trigger a redundant cooldown sweep")
+preparedRelayout = false
+forceEnv.QUI_ForceLayoutContainer("custom", true)
+assert(cooldownSweeps == 1,
+    "ordinary relayouts must retain the cooldown sweep")
 
 print("OK: cdm_custom_aura_runs_test")

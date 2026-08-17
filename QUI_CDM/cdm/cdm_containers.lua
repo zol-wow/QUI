@@ -1146,17 +1146,21 @@ local function ShouldDeferContainerLayoutInCombat(trackerKey, settings, runtimeV
 
     local auraRuns = ns.CDMCustomAuraRuns
     local owner = containers[trackerKey]
-    local usesAuraRuns = auraRuns and auraRuns.ShouldUseSettings(settings)
-        and auraRuns.HasAuraEntries(settings, trackerKey)
-    if auraRuns and (usesAuraRuns
-        or (auraRuns.HasActiveRuns and auraRuns.HasActiveRuns(owner))) then
-        if runtimeVisibilityRelayout and usesAuraRuns
+    local hasActiveRuns = auraRuns and auraRuns.HasActiveRuns
+        and auraRuns.HasActiveRuns(owner)
+    if hasActiveRuns then
+        local pool = ns.CDMIconFactory and ns.CDMIconFactory.GetIconPool
+            and ns.CDMIconFactory:GetIconPool(trackerKey)
+        if runtimeVisibilityRelayout
             and auraRuns.CanRelayoutInCombat
-            and auraRuns.CanRelayoutInCombat(owner, settings) then
+            and auraRuns.CanRelayoutInCombat(owner, settings, pool) then
             return false
         end
         return true
     end
+    local usesAuraRuns = auraRuns and auraRuns.ShouldUseSettings(settings)
+        and auraRuns.HasAuraEntries(settings, trackerKey)
+    if usesAuraRuns then return true end
 
     if inInitSafeWindow then return false end
 
@@ -2143,6 +2147,10 @@ local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
     local settings = GetTrackerSettings(trackerKey)
     if ShouldDeferContainerLayoutInCombat(trackerKey, settings, runtimeVisibilityRelayout) then
         specTrackingPendingRefresh = true
+        if not runtimeVisibilityRelayout and ns.CDMCustomAuraRuns
+            and ns.CDMCustomAuraRuns.InvalidatePreparedCombatRelayout then
+            ns.CDMCustomAuraRuns.InvalidatePreparedCombatRelayout(container)
+        end
         return
     end
 
@@ -2163,6 +2171,30 @@ local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
         return
     end
     applying[trackerKey] = true
+
+    if runtimeVisibilityRelayout and InCombatLockdown() then
+        local auraRuns = ns.CDMCustomAuraRuns
+        local pool = ns.CDMIconFactory and ns.CDMIconFactory.GetIconPool
+            and ns.CDMIconFactory:GetIconPool(trackerKey)
+        local metrics = auraRuns and auraRuns.RelayoutPreparedInCombat
+            and auraRuns.RelayoutPreparedInCombat(container, settings, pool)
+        local vs = viewerState[container]
+        if not (metrics and vs) then
+            specTrackingPendingRefresh = true
+            applying[trackerKey] = false
+            return
+        end
+        local maxRowWidth, proxyTotalHeight = ApplyViewerMetrics(vs, metrics, trackerKey)
+        if maxRowWidth > 0 and proxyTotalHeight > 0 then
+            if QUICore and QUICore.PixelRound then
+                maxRowWidth = QUICore:PixelRound(maxRowWidth, container)
+                proxyTotalHeight = QUICore:PixelRound(proxyTotalHeight, container)
+            end
+            container:SetSize(maxRowWidth, proxyTotalHeight)
+        end
+        applying[trackerKey] = false
+        return true
+    end
 
     local anchorHidden = false
     if _G.QUI_IsFrameHiddenByAnchor then
@@ -2728,9 +2760,10 @@ _G.QUI_ForceLayoutContainer = function(containerKey, runtimeVisibilityRelayout)
     if not containerKey or not initialized then return end
     if not IsCDMRuntimeEnabled() then return end
     _forceLayoutKey = containerKey
-    LayoutContainer(containerKey, runtimeVisibilityRelayout)
+    local didPreparedCombatRelayout = LayoutContainer(containerKey, runtimeVisibilityRelayout)
     _forceLayoutKey = nil
-    if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
+    if not didPreparedCombatRelayout
+        and ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
         ns.CDMIcons:UpdateAllCooldowns()
     end
     local container = containers[containerKey]

@@ -1001,6 +1001,7 @@ function CDMIconVisibilityPolicy.Create(callbacks)
         if not (entry and entry.viewerType) then return end
         if not containerDB or containerDB.dynamicLayout == false then return end
         local previously = icon._lastLayoutFilterHidden
+        icon._lastLayoutFilterHidden = filterHidesNow and true or false
         if previously == nil then return end
         if filterHidesNow ~= previously then
             controller.layoutNeedsRefresh[entry.viewerType] = true

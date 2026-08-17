@@ -38,12 +38,9 @@ function Runs.ShouldUseSettings(settings)
     end
 
     local rowCount = 0
-    for i = 1, 3 do
-        local row = settings["row" .. i]
-        if row and (row.iconCount or 0) > 0 then
-            rowCount = rowCount + 1
-        end
-    end
+    if settings.row1 and (settings.row1.iconCount or 0) > 0 then rowCount = rowCount + 1 end
+    if settings.row2 and (settings.row2.iconCount or 0) > 0 then rowCount = rowCount + 1 end
+    if settings.row3 and (settings.row3.iconCount or 0) > 0 then rowCount = rowCount + 1 end
     return rowCount == 1
 end
 
@@ -288,37 +285,27 @@ local function HideProxy(icon)
     icon:Hide()
 end
 
-local function SameValue(a, b)
-    if type(a) ~= type(b) then return false end
-    if type(a) ~= "table" then return a == b end
-    for key, value in pairs(a) do
-        if not SameValue(value, b[key]) then return false end
-    end
-    for key in pairs(b) do
-        if a[key] == nil then return false end
-    end
-    return true
-end
-
 function Runs.HasActiveRuns(owner)
     return owner and activeOwners[owner] == true
 end
 
-function Runs.CanRelayoutInCombat(owner, settings)
-    local records = owner and owner._quiCDMAuraRunRecords
-    local runByIcon = owner and owner._quiCDMAuraRunByIcon
-    local Layout = ns.CDMLayout
-    if not (activeOwners[owner] and records and runByIcon and Layout and Layout.BuildRows) then
+function Runs.CanRelayoutInCombat(owner, settings, icons)
+    local state = owner and owner._quiCDMAuraCombatState
+    if not (activeOwners[owner] and state and state.settings == settings
+        and state.icons == icons
+        and state.valid ~= false and Runs.ShouldUseSettings(settings)) then
         return false
     end
-    if owner._quiCDMAuraCapacity ~= Layout.GetTotalIconCapacity(settings) then return false end
-    local rows = Layout.BuildRows(settings)
-    local profile = rows[1] and Profile(rows[1])
-    if not profile then return false end
-    for i = 1, #records do
-        if not SameValue(records[i].profile, profile) then return false end
-    end
-    return true
+    local capacity = (settings.row1 and settings.row1.iconCount or 0)
+        + (settings.row2 and settings.row2.iconCount or 0)
+        + (settings.row3 and settings.row3.iconCount or 0)
+    return state.capacity == capacity
+        and #icons >= state.iconCount
+end
+
+function Runs.InvalidatePreparedCombatRelayout(owner)
+    local state = owner and owner._quiCDMAuraCombatState
+    if state then state.valid = false end
 end
 
 local function Disable(owner)
@@ -337,6 +324,67 @@ local function Disable(owner)
     owner._quiCDMAuraRunRecords = nil
     owner._quiCDMAuraRunByIcon = nil
     owner._quiCDMAuraCapacity = nil
+    owner._quiCDMAuraCombatState = nil
+end
+
+function Runs.RelayoutPreparedInCombat(owner, settings, icons)
+    if not Runs.CanRelayoutInCombat(owner, settings, icons) then return nil end
+    local state = owner._quiCDMAuraCombatState
+    local chain = state.chain
+    local chainCount, proxyCount = 0, 0
+
+    for i = 1, state.iconCount do
+        local icon = icons[i]
+        if not (icon and icon.ClearAllPoints and icon.SetPoint) then return nil end
+        if IsManagedAuraIcon(icon) and not state.runByIcon[icon] then return nil end
+    end
+
+    for i = 1, state.iconCount do
+        local icon = icons[i]
+        local frame
+        if IsManagedAuraIcon(icon) then
+            frame = state.runByIcon[icon].container
+            proxyCount = proxyCount + 1
+            HideProxy(icon)
+        elseif icon._lastLayoutFilterHidden ~= true then
+            frame = icon
+            proxyCount = proxyCount + 1
+            icon:Show()
+        else
+            icon:Hide()
+            icon:ClearAllPoints()
+        end
+        if frame and chain[chainCount] ~= frame then
+            chainCount = chainCount + 1
+            chain[chainCount] = frame
+        end
+    end
+    for i = #chain, chainCount + 1, -1 do chain[i] = nil end
+    if chainCount == 0 then return nil end
+
+    local width = (proxyCount * state.iconWidth)
+        + (math.max(proxyCount - 1, 0) * state.padding)
+    local metrics = state.metrics
+    metrics.iconWidth = width
+    metrics.rawContentWidth = width
+    metrics.row1Width = width
+    metrics.bottomRowWidth = width
+    metrics.rawRow1Width = width
+    metrics.rawBottomRowWidth = width
+
+    local previous
+    for i = 1, chainCount do
+        local frame = chain[i]
+        frame:ClearAllPoints()
+        if previous then
+            local gap = state.spacingAfter[previous]
+            frame:SetPoint("LEFT", previous, "RIGHT", gap == nil and state.padding or gap, 0)
+        else
+            frame:SetPoint("LEFT", owner, "LEFT", state.offsetX, state.offsetY)
+        end
+        previous = frame
+    end
+    return metrics
 end
 
 local function AnchorPreparedRuns(owner, layoutPlan, runByIcon)
@@ -387,9 +435,7 @@ function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat)
     if not (AuraSkin and AuraSkin.Configure and Layout and Layout.AnchorLinearChain) then return false end
 
     if inCombat then
-        local runByIcon = owner._quiCDMAuraRunByIcon
-        if not runByIcon then return false end
-        return AnchorPreparedRuns(owner, layoutPlan, runByIcon)
+        return Runs.RelayoutPreparedInCombat(owner, settings, allIcons) ~= nil
     end
 
     local runRecords = {}
@@ -449,6 +495,34 @@ function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat)
     owner._quiCDMAuraRunByIcon = runByIcon
     owner._quiCDMAuraCapacity = capacity
     activeOwners[owner] = true
+
+    local combatState = owner._quiCDMAuraCombatState or {}
+    local chain = combatState.chain or {}
+    local spacingAfter = combatState.spacingAfter or {}
+    for frame in pairs(spacingAfter) do spacingAfter[frame] = nil end
+    local combatIcons = allIcons or staticIcons
+    local iconCount = math.min(#combatIcons, capacity)
+    for i = 1, iconCount do chain[i] = false end
+    for i = iconCount, 1, -1 do chain[i] = nil end
+    for i = 1, #runRecords do spacingAfter[runRecords[i].container] = -1 end
+    local metrics = layoutPlan.metrics
+    local rowConfig = firstPlacement.rowConfig
+    local width = rowConfig.size or 39
+    combatState.settings = settings
+    combatState.icons = combatIcons
+    combatState.capacity = capacity
+    combatState.iconCount = iconCount
+    combatState.valid = true
+    combatState.runByIcon = runByIcon
+    combatState.chain = chain
+    combatState.spacingAfter = spacingAfter
+    combatState.metrics = metrics
+    combatState.iconWidth = width
+    combatState.padding = rowConfig.padding or 0
+    combatState.offsetX = firstPlacement.x
+        + ((metrics.iconWidth or width) * 0.5) - (width * 0.5)
+    combatState.offsetY = firstPlacement.y or 0
+    owner._quiCDMAuraCombatState = combatState
 
     local pool = owner._quiCDMAuraRuns or {}
     for i = runCount + 1, #pool do
