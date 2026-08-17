@@ -159,6 +159,20 @@ AD.SetGroupEnabled("Raid", false)
 if AD.GroupEnabled("Raid") then fail("SetGroupEnabled(false) must disable the group") end
 if not AD.GroupEnabled(nil) then fail("a nil group must count as enabled") end
 
+local raidGroup = AD.GetGroup("Raid", false)
+if type(raidGroup) ~= "table" or not tostring(raidGroup.id):match("^g%d+$") then
+    fail("creating group state must mint a stable group id")
+end
+if raidGroup.growDirection ~= "RIGHT" or raidGroup.alignment ~= "CENTER"
+    or raidGroup.spacing ~= 4 or raidGroup.scale ~= 1
+    or raidGroup.itemWidth ~= 0 or raidGroup.itemHeight ~= 0 then
+    fail("new groups must carry complete layout defaults")
+end
+local raidAnchorKey = AD.GroupAnchorKey("Raid", false)
+if raidAnchorKey ~= AD.GROUP_ANCHOR_PREFIX .. raidGroup.id then
+    fail("GroupAnchorKey must use the group's stable id")
+end
+
 AD.SetGroupEnabled("", false)
 if not AD.GroupEnabled("") then
     fail("an empty group name must never gate visibility - no header renders controls for it")
@@ -173,6 +187,9 @@ end
 if store.groups["Raid"] ~= nil then fail("RenameGroup must drop the old group entry") end
 if AD.GroupEnabled("Mythic") then
     fail("RenameGroup must carry the group's disabled state across to the new name")
+end
+if AD.GroupAnchorKey("Mythic", false) ~= raidAnchorKey then
+    fail("RenameGroup must preserve the group's layout anchor key")
 end
 
 local renameMember = AD.NewDisplay("Member")
@@ -214,6 +231,78 @@ if AD.RenameGroup(nil, "Anything") ~= false then
 end
 if AD.RenameGroup("Renamed", 7) ~= false then
     fail("RenameGroup must reject a non-string new name")
+end
+
+local deleteGroupMember = AD.NewDisplay("Delete Group Member")
+deleteGroupMember.group = "Disposable"
+local disposable = AD.GetGroup("Disposable", true)
+local disposableAnchor = AD.GroupAnchorKey("Disposable", false)
+profile.frameAnchoring = profile.frameAnchoring or {}
+profile.frameAnchoring[disposableAnchor] = { offsetX = 25 }
+if not AD.DeleteGroup("Disposable") then fail("DeleteGroup must remove a real group") end
+if deleteGroupMember.group ~= nil then
+    fail("DeleteGroup must make its former members ungrouped")
+end
+if profile.frameAnchoring[disposableAnchor] ~= nil then
+    fail("DeleteGroup must remove the stable group layout anchor")
+end
+if AD.GetGroup("Disposable", false) ~= nil or disposable == nil then
+    fail("DeleteGroup must remove group settings without invalidating the captured test value")
+end
+
+local layoutMembers = {
+    { id = "a", width = 10, height = 8 },
+    { id = "b", width = 20, height = 12 },
+    { id = "c", width = 6, height = 10 },
+}
+local layoutW, layoutH, placed = AD.ComputeGroupLayout({
+    growDirection = "RIGHT", alignment = "CENTER", spacing = 2,
+}, layoutMembers)
+if layoutW ~= 40 or layoutH ~= 12 then
+    fail("RIGHT group extent must include member sizes and spacing")
+end
+if placed[1].x ~= 5 or placed[2].x ~= 22 or placed[3].x ~= 37 then
+    fail("RIGHT group growth must preserve member order from left to right")
+end
+if placed[1].y ~= -6 or placed[2].y ~= -6 then
+    fail("CENTER group alignment must share the cross-axis center")
+end
+
+layoutW, layoutH, placed = AD.ComputeGroupLayout({
+    growDirection = "LEFT", alignment = "START", spacing = 2,
+}, layoutMembers)
+if placed[1].x ~= 35 or placed[2].x ~= 18 or placed[3].x ~= 3 then
+    fail("LEFT group growth must place the first member at the right edge")
+end
+if placed[1].y ~= -4 or placed[2].y ~= -6 then
+    fail("START group alignment must align horizontal members to the top edge")
+end
+
+layoutW, layoutH, placed = AD.ComputeGroupLayout({
+    growDirection = "CENTER_H", alignment = "END", spacing = 2,
+}, {
+    { id = "a", width = 10, height = 8 },
+    { id = "b", width = 10, height = 8 },
+    { id = "c", width = 10, height = 8 },
+})
+if layoutW ~= 34 or placed[1].x ~= 17 or placed[2].x ~= 29 or placed[3].x ~= 5 then
+    fail("CENTER_H group growth must alternate members around the anchor")
+end
+
+layoutW, layoutH, placed = AD.ComputeGroupLayout({
+    growDirection = "UP", alignment = "END", spacing = 3,
+    itemWidth = 30, itemHeight = 14,
+}, layoutMembers)
+if layoutW ~= 30 or layoutH ~= 48 then
+    fail("forced member size must define the group extent")
+end
+if placed[1].y ~= -41 or placed[3].y ~= -7 then
+    fail("UP group growth must place the first member at the bottom edge")
+end
+
+local emptyW, emptyH, emptyLayout = AD.ComputeGroupLayout({}, {})
+if emptyW ~= 1 or emptyH ~= 1 or #emptyLayout ~= 0 then
+    fail("an empty group must retain a safe 1x1 layout")
 end
 
 local ordered = AD.OrderedDisplays()
@@ -534,5 +623,107 @@ if not AD.GroupEnabled("Renamed") then
 end
 ns.Helpers.GetProfile = realGetProfile
 if AD.Store() == nil then fail("Store must recover once the profile is back") end
+
+-- Runtime group integration: grouped displays share one host/mover, then an
+-- ungrouped display returns to UIParent and regains its own mover.
+local function NewFrame(parent)
+    local frame = { parent = parent, width = 1, height = 1, scale = 1, shown = false }
+    function frame:SetSize(w, h) self.width, self.height = w, h end
+    function frame:GetSize() return self.width, self.height end
+    function frame:GetWidth() return self.width end
+    function frame:GetHeight() return self.height end
+    function frame:SetScale(scale) self.scale = scale end
+    function frame:GetParent() return self.parent end
+    function frame:SetParent(nextParent) self.parent = nextParent end
+    function frame:SetClampedToScreen() end
+    function frame:ClearAllPoints() self.point = nil end
+    function frame:SetPoint(...) self.point = { ... } end
+    function frame:SetAlpha(alpha) self.alpha = alpha end
+    function frame:Show() self.shown = true end
+    function frame:Hide() self.shown = false end
+    return frame
+end
+
+UIParent = NewFrame(nil)
+InCombatLockdown = function() return false end
+CreateFrame = function(_, _, parent) return NewFrame(parent) end
+local layoutElements = {}
+ns.L = setmetatable({}, { __index = function(_, key) return key end })
+ns.AuraElements = {
+    NewFilterStripElement = function() return {} end,
+    EnsureSeeded = function() end,
+    -- One renderable element per display: since beta4, hosts are sized by
+    -- BuildDisplayLayout from renderable elements (an empty display is 1x1),
+    -- so the 10px stub profile below only applies if something renders.
+    ActiveElementsForSpec = function() return { { mode = "filterStrip" } } end,
+}
+ns.AuraGlue = {
+    ElementProfile = function()
+        return { maxPerRow = 1, maxIcons = 1, iconSize = 10, spacing = 0 }
+    end,
+    AurasAreSecret = function() return false end,
+    QueueRegenWork = function() end,
+}
+ns.AuraSurface = { ApplyElementPass = function() return true end }
+ns.Addon = { AuraSkin = { LayoutAnchor = function() return "TOPLEFT" end } }
+ns.QUI_LayoutMode = {
+    RegisterElement = function(_, def) layoutElements[def.key] = def end,
+    UnregisterElement = function(_, key) layoutElements[key] = nil end,
+}
+ns.Helpers.IsLayoutModeActive = function() return false end
+ns.SafeCall = function(_, fn, ...)
+    local ok, result = pcall(fn, ...)
+    if not ok then fail("runtime SafeCall failed: " .. tostring(result)) end
+    return ok, result
+end
+ns.SafeCallMethod = function(_, target, method, ...)
+    return target[method](target, ...)
+end
+
+-- Reload the runtime so its cached dependency upvalues (E/AuraGlue/AuraSurface/
+-- AuraSkin) bind to the stubs above — the sections before this one resolved
+-- them against the real modules loaded at the top of this file.
+assert(loadfile("modules/trackers/aura_displays.lua"))("QUI", ns)
+AD = ns.QUI_AuraDisplays
+
+local runtimeFirst = AD.NewDisplay("Runtime First", "Runtime Group")
+local runtimeSecond = AD.NewDisplay("Runtime Second", "Runtime Group")
+local runtimeGroup = AD.GetGroup("Runtime Group", true)
+runtimeGroup.spacing = 4
+runtimeGroup.scale = 1.5
+AD.Refresh()
+
+local runtimeGroupHost = AD.GroupHostFor("Runtime Group")
+local runtimeFirstHost = AD.HostFor(runtimeFirst.id)
+local runtimeSecondHost = AD.HostFor(runtimeSecond.id)
+if not runtimeGroupHost or runtimeGroupHost.width ~= 24 or runtimeGroupHost.height ~= 10 then
+    fail("Refresh must create and size a populated group host")
+end
+if runtimeGroupHost.scale ~= 1.5
+    or runtimeFirstHost.parent ~= runtimeGroupHost
+    or runtimeSecondHost.parent ~= runtimeGroupHost then
+    fail("group runtime must apply scale and parent members to the group host")
+end
+if runtimeFirstHost.point[4] ~= 5 or runtimeSecondHost.point[4] ~= 19 then
+    fail("group runtime must place members using the configured spacing")
+end
+local runtimeGroupKey = AD.GroupAnchorKey("Runtime Group", false)
+if not layoutElements[runtimeGroupKey]
+    or layoutElements[AD.ANCHOR_PREFIX .. runtimeFirst.id]
+    or layoutElements[AD.ANCHOR_PREFIX .. runtimeSecond.id] then
+    fail("grouped displays must expose one group Layout Mode mover")
+end
+
+runtimeFirst.group = nil
+AD.Refresh()
+if runtimeFirstHost.parent ~= UIParent or runtimeFirstHost.scale ~= 1 then
+    fail("an ungrouped display must return to UIParent at its natural scale")
+end
+if not layoutElements[AD.ANCHOR_PREFIX .. runtimeFirst.id] then
+    fail("an ungrouped display must regain its individual Layout Mode mover")
+end
+if runtimeGroupHost.width ~= 10 then
+    fail("the remaining one-member group must reflow")
+end
 
 print("PASS: aura_displays_test")
