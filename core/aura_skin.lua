@@ -289,7 +289,7 @@ local function styleButton(button, profile)
         bottom = bottom - offset
     end
     button:SetAlpha(profile.opacity or 1)
-    if button.Icon and button.Icon.SetTexCoord then
+    if not button._quiBridged and button.Icon and button.Icon.SetTexCoord then
         button.Icon:SetTexCoord(left, right, top, bottom)
     end
 
