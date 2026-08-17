@@ -9,6 +9,7 @@ local SkinBase = ns.SkinBase
 local GetFontFlags = Helpers.GetGeneralFontOutline
 
 local pendingBackdropUpdate = false
+local pendingProtectedLayoutUpdate = false
 
 local function RunAfterFirstFrame(callback, delay)
     if ns.RunAfterFirstFrame then
@@ -437,6 +438,21 @@ local function ApplyMaxWidth(settings)
     end
 end
 
+-- ObjectiveTrackerContainerMixin passes its own frame height to every module
+-- as the available layout height. The backdrop cap below is only decorative;
+-- constraining this frame is what makes Blizzard truncate overflowing rows.
+-- Keep this separate from Edit Mode's saved height field: that state belongs
+-- to Blizzard and can be restored independently by Edit Mode.
+-- <<< QUI_TEST_EXTRACT tracker_max_height
+local function ApplyTrackerMaxHeight(settings)
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return end
+
+    local maxHeight = settings and settings.objectiveTrackerHeight or 600
+    TrackerFrame:SetHeight(maxHeight)
+end
+-- <<< QUI_TEST_EXTRACT tracker_max_height
+
 local function UpdateBackdropAnchors()
     local TrackerFrame = _G.ObjectiveTrackerFrame
     local quiBackdrop = TrackerFrame and SkinBase.GetFrameData(TrackerFrame, "backdrop")
@@ -540,12 +556,17 @@ local function HidePOIButtonGlows()
     end
 end
 
-local function EnforceWidth()
+local function EnforceSize()
     local TrackerFrame = _G.ObjectiveTrackerFrame
     if not TrackerFrame then return end
 
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker then return end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        pendingProtectedLayoutUpdate = true
+    else
+        ApplyTrackerMaxHeight(settings)
+    end
 
     local maxWidth
     if IsScenarioActive() then
@@ -571,7 +592,7 @@ end
 
 local function RunObjectiveTrackerPostLayoutUpdate()
     pendingBackdropUpdate = false
-    EnforceWidth()
+    EnforceSize()
     UpdateBackdropAnchors()
     HidePOIButtonGlows()
     StyleExistingProgressBars()
@@ -588,7 +609,6 @@ local function ScheduleBackdropUpdate()
     DeferObjectiveTrackerPostLayoutUpdate()
 end
 
-local pendingProtectedLayoutUpdate = false
 local protectedLayoutEventFrame = CreateFrame("Frame")
 protectedLayoutEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 protectedLayoutEventFrame:SetScript("OnEvent", function()
@@ -598,6 +618,7 @@ protectedLayoutEventFrame:SetScript("OnEvent", function()
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker then return end
 
+    ApplyTrackerMaxHeight(settings)
     ApplyMaxWidth(settings)
     ScheduleBackdropUpdate()
 end)
@@ -618,6 +639,7 @@ local function ApplyLayoutSettingsSafely(settings)
         return false
     end
 
+    ApplyTrackerMaxHeight(settings)
     ApplyMaxWidth(settings)
     return true
 end
@@ -849,7 +871,7 @@ local function SkinObjectiveTracker()
     if not SkinBase.GetFrameData(TrackerFrame, "sizeChangedHooked") then
         TrackerFrame:HookScript("OnSizeChanged", function()
             C_Timer.After(0, function()
-                EnforceWidth()
+                EnforceSize()
                 UpdateBackdropAnchors()
             end)
         end)
