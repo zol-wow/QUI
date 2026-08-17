@@ -1027,7 +1027,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             controller:ApplyTargetScope(event)
             return
         end
-        if event == "PLAYER_SOFT_ENEMY_CHANGED" or event == "UNIT_FACTION" then
+        if event == "PLAYER_SOFT_ENEMY_CHANGED"
+            or event == "PLAYER_SOFT_FRIEND_CHANGED"
+            or event == "UNIT_FACTION" then
             controller:ApplyTargetScope(event)
             return
         end

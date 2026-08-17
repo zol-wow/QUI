@@ -489,6 +489,9 @@ assert(dirtyBarRuns == dirtyRunsBeforeTarget,
 controller:Handle("UNIT_FACTION", "target")
 assert(targetRouteRefreshes == targetRouteRefreshesBefore + 2,
     "target reaction changes must refresh secure custom aura routing")
+controller:Handle("PLAYER_SOFT_FRIEND_CHANGED")
+assert(targetRouteRefreshes == targetRouteRefreshesBefore + 3,
+    "soft friendly target changes must refresh secure custom aura routing")
 
 reset(applied)
 reset(runtimeUpdated)

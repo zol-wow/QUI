@@ -475,5 +475,7 @@ local rendererSource = rendererFile:read("*a")
 rendererFile:close()
 assert(rendererSource:find('cdEventFrame:RegisterUnitEvent("UNIT_FACTION", "target")', 1, true),
     "target reaction routing must subscribe to UNIT_FACTION")
+assert(rendererSource:find('cdEventFrame:RegisterEvent("PLAYER_SOFT_FRIEND_CHANGED")', 1, true),
+    "helpful target routing must subscribe to soft friendly target changes")
 
 print("OK: cdm_custom_aura_runs_test")
