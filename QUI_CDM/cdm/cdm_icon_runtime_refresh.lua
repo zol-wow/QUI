@@ -953,7 +953,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             callbacks.chargeDebug(nil, "EVENT", event, "target-scope-refresh")
         end
         if callbacks.refreshCustomAuraTargets then
-            callbacks.refreshCustomAuraTargets()
+            callbacks.refreshCustomAuraTargets(event ~= "UNIT_FACTION")
         end
         if callbacks.updateAllIconRanges then
             setResolveCallerTag("rangeTarget")

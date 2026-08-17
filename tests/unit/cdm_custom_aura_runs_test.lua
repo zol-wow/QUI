@@ -13,6 +13,9 @@ local function Frame(name)
         self.maxFrameCountCalls = self.maxFrameCountCalls or {}
         self.maxFrameCountCalls[#self.maxFrameCountCalls + 1] = { key, count }
     end
+    function frame:UpdateAllAuras()
+        self.updateAllAurasCalls = (self.updateAllAurasCalls or 0) + 1
+    end
     function frame:SetEnabled(enabled) self.enabled = enabled end
     function frame:Show() self.shown = true end
     function frame:Hide() self.shown = false end
@@ -297,8 +300,15 @@ target.assistable = true
 ns.CDMCustomAuraRuns.RefreshTargets()
 assert(#configured == friendlyConfiguredBefore
     and friendlyConfig.groups[1].maxFrameCount == 1
-    and #(friendlyController.maxFrameCountCalls or {}) == 2,
+    and #(friendlyController.maxFrameCountCalls or {}) == 2
+    and friendlyController.updateAllAurasCalls == 1,
     "non-self helpful entries must activate without rebuilding when the target is assistable")
+local friendlyCallsBeforeTargetSwitch = #(friendlyController.maxFrameCountCalls or {})
+ns.CDMCustomAuraRuns.RefreshTargets(true)
+assert(friendlyController.updateAllAurasCalls == 2
+    and controller.updateAllAurasCalls == nil
+    and #(friendlyController.maxFrameCountCalls or {}) == friendlyCallsBeforeTargetSwitch,
+    "same-reaction target changes must refresh auras without mutating group capacity")
 assert(#friendlyConfig.groups == 2
     and friendlyConfig.groups[2].elementWidth == 33
     and friendlyConfig.groups[2].elementSpacing == -1
@@ -347,11 +357,24 @@ assert(friendlyConfig.groups[1].maxFrameCount == 0,
     "non-self helpful entries must park on enemy targets")
 local friendlyCalls = #(friendlyController.maxFrameCountCalls or {})
 local harmfulCalls = #(harmfulController.maxFrameCountCalls or {})
-assert(friendlyCalls == 4 and harmfulCalls == 1,
+assert(friendlyCalls == 4 and harmfulCalls == 1
+    and friendlyController.updateAllAurasCalls == 3
+    and harmfulController.updateAllAurasCalls == 1,
     "target refreshes must update only changed group capacities")
+local friendlyFullRefreshes = friendlyController.updateAllAurasCalls
+ns.CDMCustomAuraRuns.RefreshTargets(true)
+assert(friendlyController.updateAllAurasCalls == friendlyFullRefreshes + 1
+    and harmfulController.updateAllAurasCalls == 2
+    and #(friendlyController.maxFrameCountCalls or {}) == friendlyCalls
+    and #(harmfulController.maxFrameCountCalls or {}) == harmfulCalls,
+    "same-reaction hostile target changes must refresh every target run without capacity changes")
+local friendlyUnchangedRefreshes = friendlyController.updateAllAurasCalls
+local harmfulUnchangedRefreshes = harmfulController.updateAllAurasCalls
 ns.CDMCustomAuraRuns.RefreshTargets()
 assert(#(friendlyController.maxFrameCountCalls or {}) == friendlyCalls
-    and #(harmfulController.maxFrameCountCalls or {}) == harmfulCalls,
+    and #(harmfulController.maxFrameCountCalls or {}) == harmfulCalls
+    and friendlyController.updateAllAurasCalls == friendlyUnchangedRefreshes
+    and harmfulController.updateAllAurasCalls == harmfulUnchangedRefreshes,
     "unchanged target refreshes must not mutate secure groups")
 
 local disabledSettings = {

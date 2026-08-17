@@ -4570,9 +4570,9 @@ do
                 and icon._auraActive == true
                 and icon._auraUnit == "player"
         end,
-        refreshCustomAuraTargets = function()
+        refreshCustomAuraTargets = function(identityChanged)
             if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.RefreshTargets then
-                ns.CDMCustomAuraRuns.RefreshTargets()
+                ns.CDMCustomAuraRuns.RefreshTargets(identityChanged)
             end
         end,
     }

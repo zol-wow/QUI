@@ -255,7 +255,7 @@ local function ApplyRoute(record)
     container:Show()
 end
 
-function Runs.RefreshTargets()
+function Runs.RefreshTargets(identityChanged)
     for owner in pairs(activeOwners) do
         local records = owner._quiCDMAuraRunRecords
         if records then
@@ -263,12 +263,17 @@ function Runs.RefreshTargets()
                 local record = records[i]
                 if record.route ~= "SELF_HELPFUL" then
                     local maxFrameCount = RouteActive(record.route) and 1 or 0
+                    local capacityChanged = false
                     for j = 1, #record.groups do
                         local group = record.groups[j]
                         if group.maxFrameCount ~= maxFrameCount then
+                            capacityChanged = true
                             group.maxFrameCount = maxFrameCount
                             record.container:SetAuraGroupMaxFrameCount(group.key, maxFrameCount)
                         end
+                    end
+                    if (identityChanged or capacityChanged) and record.container.UpdateAllAuras then
+                        record.container:UpdateAllAuras()
                     end
                 end
             end
