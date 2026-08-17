@@ -20,6 +20,7 @@ local NON_GAMEPLAY_INSTANCE_TYPES = {
 }
 
 AD.ANCHOR_PREFIX = "auraDisplay_"
+AD.GROUP_ANCHOR_PREFIX = "auraDisplayGroup_"
 
 local function Helpers()
     return ns.Helpers
@@ -192,13 +193,75 @@ local function GroupKey(name)
     return name
 end
 
-local function EnsureGroup(store, key)
-    local group = store.groups[key]
-    if not group then
-        group = { collapsed = false, enabled = true }
-        store.groups[key] = group
+local GROUP_DEFAULTS = {
+    collapsed = false,
+    enabled = true,
+    growDirection = "RIGHT",
+    alignment = "CENTER",
+    spacing = 4,
+    scale = 1,
+    itemWidth = 0,
+    itemHeight = 0,
+}
+
+local function HighestGroupID(store)
+    local highest = 0
+    for _, group in pairs(store.groups) do
+        if type(group) == "table" then
+            local n = tonumber(tostring(group.id):match("^g(%d+)$"))
+            if n and n > highest then highest = n end
+        end
+    end
+    return highest
+end
+
+local function NextGroupID(store)
+    store.nextGroupID = math.max(tonumber(store.nextGroupID) or 0, HighestGroupID(store)) + 1
+    return "g" .. tostring(store.nextGroupID)
+end
+
+local function NormalizeGroup(store, group)
+    if type(group.id) ~= "string" or not group.id:match("^g%d+$") then
+        group.id = NextGroupID(store)
+    end
+    for key, value in pairs(GROUP_DEFAULTS) do
+        if group[key] == nil then group[key] = value end
     end
     return group
+end
+
+local function EnsureGroup(store, key)
+    local group = store.groups[key]
+    if type(group) ~= "table" then
+        group = {}
+        store.groups[key] = group
+    end
+    return NormalizeGroup(store, group)
+end
+
+function AD.GetGroup(groupName, create)
+    local key = GroupKey(groupName)
+    local store = Store()
+    if not store or key == nil then return nil end
+    local group = store.groups[key]
+    if group == nil and not create then return nil end
+    return EnsureGroup(store, key)
+end
+
+function AD.GroupAnchorKey(groupName, create)
+    local group = AD.GetGroup(groupName, create)
+    return group and (AD.GROUP_ANCHOR_PREFIX .. group.id) or nil
+end
+
+function AD.GroupMembers(groupName)
+    local key = GroupKey(groupName)
+    local out = {}
+    if key == nil then return out end
+    local displays = AD.OrderedDisplays()
+    for i = 1, #displays do
+        if displays[i].group == key then out[#out + 1] = displays[i] end
+    end
+    return out
 end
 
 local function GroupNameTaken(store, key)
@@ -246,9 +309,20 @@ function AD.DeleteGroup(groupName)
     local key = GroupKey(groupName)
     local store = Store()
     if not store or key == nil then return false end
+    local group = store.groups[key]
+    local anchorKey = type(group) == "table" and type(group.id) == "string"
+        and (AD.GROUP_ANCHOR_PREFIX .. group.id) or nil
     store.groups[key] = nil
     for _, display in pairs(store.displays) do
         if display.group == key then display.group = nil end
+    end
+    local H = Helpers()
+    local profile = H and type(H.GetProfile) == "function" and H.GetProfile() or nil
+    if anchorKey and profile and type(profile.frameAnchoring) == "table" then
+        profile.frameAnchoring[anchorKey] = nil
+    end
+    if type(AD.UnregisterGroupLayoutElement) == "function" then
+        AD.UnregisterGroupLayoutElement(group)
     end
     return true
 end
@@ -261,11 +335,116 @@ function AD.RenameGroup(oldName, newName)
     if GroupNameTaken(store, to) then return false, "collision" end
     local group = store.groups[from]
     store.groups[from] = nil
-    store.groups[to] = group or { collapsed = false, enabled = true }
+    store.groups[to] = NormalizeGroup(store, group or {})
     for _, display in pairs(store.displays) do
         if display.group == from then display.group = to end
     end
     return true
+end
+
+local function PositiveNumber(value, fallback)
+    value = tonumber(value)
+    if not value or value <= 0 then return fallback end
+    return value
+end
+
+local function NonNegativeNumber(value, fallback)
+    value = tonumber(value)
+    if not value or value < 0 then return fallback end
+    return value
+end
+
+-- Pure layout seam used by the runtime and headless tests. Coordinates are
+-- measured from the group's top-left; y is negative to match WoW SetPoint.
+function AD.ComputeGroupLayout(group, members)
+    group = type(group) == "table" and group or GROUP_DEFAULTS
+    members = type(members) == "table" and members or {}
+    local spacing = NonNegativeNumber(group.spacing, GROUP_DEFAULTS.spacing)
+    local forcedW = NonNegativeNumber(group.itemWidth, 0)
+    local forcedH = NonNegativeNumber(group.itemHeight, 0)
+    local direction = group.growDirection or GROUP_DEFAULTS.growDirection
+    local vertical = direction == "UP" or direction == "DOWN" or direction == "CENTER_V"
+    local centered = direction == "CENTER_H" or direction == "CENTER_V"
+    local reverse = direction == "LEFT" or direction == "UP"
+    local slots = {}
+    local crossExtent = 1
+
+    for i = 1, #members do
+        local member = members[i]
+        local w = forcedW > 0 and forcedW or PositiveNumber(member.width, 1)
+        local h = forcedH > 0 and forcedH or PositiveNumber(member.height, 1)
+        slots[i] = { member = member, width = w, height = h }
+        crossExtent = math.max(crossExtent, vertical and w or h)
+    end
+
+    local primaryExtent = 1
+    if #slots > 0 then
+        if centered then
+            local negativeEdge, positiveEdge = 0, 0
+            for i = 1, #slots do
+                local size = vertical and slots[i].height or slots[i].width
+                local center
+                if i == 1 then
+                    center = 0
+                    negativeEdge, positiveEdge = size / 2, size / 2
+                elseif i % 2 == 0 then
+                    center = positiveEdge + spacing + size / 2
+                    positiveEdge = positiveEdge + spacing + size
+                else
+                    center = -(negativeEdge + spacing + size / 2)
+                    negativeEdge = negativeEdge + spacing + size
+                end
+                slots[i]._primary = center
+            end
+            primaryExtent = negativeEdge + positiveEdge
+            for i = 1, #slots do
+                slots[i]._primary = slots[i]._primary + negativeEdge
+            end
+        else
+            local cursor = 0
+            for i = 1, #slots do
+                local size = vertical and slots[i].height or slots[i].width
+                slots[i]._primary = cursor + size / 2
+                cursor = cursor + size
+                if i < #slots then cursor = cursor + spacing end
+            end
+            primaryExtent = math.max(cursor, 1)
+            if reverse then
+                for i = 1, #slots do
+                    slots[i]._primary = primaryExtent - slots[i]._primary
+                end
+            end
+        end
+    end
+
+    local width = vertical and crossExtent or primaryExtent
+    local height = vertical and primaryExtent or crossExtent
+    local alignment = group.alignment or GROUP_DEFAULTS.alignment
+    for i = 1, #slots do
+        local slot = slots[i]
+        if vertical then
+            if alignment == "START" then
+                slot.x = slot.width / 2
+            elseif alignment == "END" then
+                slot.x = width - slot.width / 2
+            else
+                slot.x = width / 2
+            end
+            slot.y = -slot._primary
+        else
+            slot.x = slot._primary
+            if alignment == "START" then
+                slot.y = -slot.height / 2
+            elseif alignment == "END" then
+                slot.y = -(height - slot.height / 2)
+            else
+                slot.y = -height / 2
+            end
+        end
+        slot._primary = nil
+    end
+
+    return width, height, slots
 end
 
 local STATIC_TOKENS = {
@@ -499,13 +678,16 @@ function AD.DefaultBucket()
 end
 
 local hosts = {}
+local groupHosts = {}
 local registered = {}
 local auraSoundRegistrations = {}
+local registeredGroups = {}
 local eventFrame
 local watchingDynamicUnits = false
 local visibilityAlpha = 1
 local previewActive = false
 local singlePreviewID
+local singlePreviewGroup
 local IsSecretValue = issecretvalue
 
 local AURA_SOUND_TRIGGERS = {
@@ -660,6 +842,11 @@ function AD.SetVisibilityAlpha(alpha)
     end
 end
 
+function AD.GroupHostFor(groupName)
+    local group = AD.GetGroup(groupName, false)
+    return group and groupHosts[group.id] or nil
+end
+
 local function EnsureHost(id)
     local host = hosts[id]
     if host then return host end
@@ -670,6 +857,19 @@ local function EnsureHost(id)
     host:ClearAllPoints()
     host:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     hosts[id] = host
+    return host
+end
+
+local function EnsureGroupHost(group)
+    local host = groupHosts[group.id]
+    if host then return host end
+    if InCombatLockdown() then return nil end
+    host = CreateFrame("Frame", "QUI_AuraDisplayGroup_" .. group.id, UIParent)
+    host:SetSize(1, 1)
+    host:SetClampedToScreen(true)
+    host:ClearAllPoints()
+    host:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    groupHosts[group.id] = host
     return host
 end
 
@@ -855,11 +1055,11 @@ local EMPTY = {}
 
 local ApplyDisplay
 
-local function GameplayHidden(id)
+local function GameplayHidden(anchorKey)
     local H = Helpers()
     local profile = H and type(H.GetProfile) == "function" and H.GetProfile() or nil
     local hiddenHandles = profile and profile.layoutMode and profile.layoutMode.hiddenHandles
-    return hiddenHandles ~= nil and hiddenHandles[AD.ANCHOR_PREFIX .. id] == true
+    return hiddenHandles ~= nil and hiddenHandles[anchorKey] == true
 end
 
 local function RequeueDisplay(display)
@@ -874,6 +1074,7 @@ end
 ApplyDisplay = function(display, allowCreate)
     if previewActive then return end
     if display.id == singlePreviewID then return end
+    if singlePreviewGroup and display.group == singlePreviewGroup then return end
     if not ResolveDeps() then return end
     local host = EnsureHost(display.id)
     if not host then
@@ -929,10 +1130,11 @@ ApplyDisplay = function(display, allowCreate)
     local H = Helpers()
     local layoutActive = H and type(H.IsLayoutModeActive) == "function" and H.IsLayoutModeActive()
 
+    local grouped = GroupKey(display.group) ~= nil
     host._quiAuraDisplayActive = unit ~= nil
     ApplyHostVisibilityAlpha(display.id, host, layoutActive)
     if unit then
-        if layoutActive or not GameplayHidden(display.id) then
+        if grouped or layoutActive or not GameplayHidden(AD.ANCHOR_PREFIX .. display.id) then
             host:Show()
         else
             host:Hide()
@@ -944,12 +1146,109 @@ ApplyDisplay = function(display, allowCreate)
         end
     end
 
-    if not layoutActive and _G.QUI_ApplyFrameAnchor then
-        _G.QUI_ApplyFrameAnchor(AD.ANCHOR_PREFIX .. display.id)
+    if not grouped and not layoutActive then
+        if host:GetParent() ~= UIParent then host:SetParent(UIParent) end
+        host:SetScale(1)
+        if _G.QUI_ApplyFrameAnchor then
+            _G.QUI_ApplyFrameAnchor(AD.ANCHOR_PREFIX .. display.id)
+        end
     end
 end
 
+local function QueueGroupReflow()
+    if AuraGlue and type(AuraGlue.QueueRegenWork) == "function" then
+        AuraGlue.QueueRegenWork("auraDisplayGroups", function() AD.Refresh() end)
+    end
+end
+
+function AD.ReflowGroups(displays)
+    displays = displays or AD.OrderedDisplays()
+    if InCombatLockdown() then
+        QueueGroupReflow()
+        return false
+    end
+
+    local buckets, order = {}, {}
+    for i = 1, #displays do
+        local display = displays[i]
+        local key = GroupKey(display.group)
+        if key then
+            local bucket = buckets[key]
+            if not bucket then
+                bucket = {}
+                buckets[key] = bucket
+                order[#order + 1] = key
+            end
+            bucket[#bucket + 1] = display
+        end
+    end
+
+    local seenGroupIDs = {}
+    local H = Helpers()
+    local layoutActive = H and type(H.IsLayoutModeActive) == "function" and H.IsLayoutModeActive()
+    for i = 1, #order do
+        local groupName = order[i]
+        local group = AD.GetGroup(groupName, true)
+        local groupHost = group and EnsureGroupHost(group)
+        if groupHost then
+            seenGroupIDs[group.id] = true
+            local memberSpecs = {}
+            local groupDisplays = buckets[groupName]
+            for j = 1, #groupDisplays do
+                local display = groupDisplays[j]
+                local host = hosts[display.id]
+                local forcePreview = previewActive or singlePreviewGroup == groupName
+                    or singlePreviewID == display.id
+                if host and (forcePreview or AD.DisplayActive(display)) then
+                    memberSpecs[#memberSpecs + 1] = {
+                        id = display.id,
+                        display = display,
+                        host = host,
+                        width = host._naturalW or host:GetWidth() or 1,
+                        height = host._naturalH or host:GetHeight() or 1,
+                    }
+                elseif host then
+                    host:Hide()
+                end
+            end
+
+            local width, height, placements = AD.ComputeGroupLayout(group, memberSpecs)
+            groupHost._naturalW, groupHost._naturalH = width, height
+            groupHost:SetSize(width, height)
+            groupHost:SetScale(PositiveNumber(group.scale, GROUP_DEFAULTS.scale))
+            for j = 1, #placements do
+                local placement = placements[j]
+                local host = placement.member.host
+                if host:GetParent() ~= groupHost then host:SetParent(groupHost) end
+                host:SetScale(1)
+                host:SetSize(placement.width, placement.height)
+                host:ClearAllPoints()
+                host:SetPoint("CENTER", groupHost, "TOPLEFT", placement.x, placement.y)
+                host:Show()
+            end
+
+            local anchorKey = AD.GROUP_ANCHOR_PREFIX .. group.id
+            local showGroup = #placements > 0
+                and (previewActive or singlePreviewGroup == groupName or group.enabled ~= false)
+                and (layoutActive or not GameplayHidden(anchorKey))
+            if showGroup then groupHost:Show() else groupHost:Hide() end
+            if not layoutActive and _G.QUI_ApplyFrameAnchor then
+                _G.QUI_ApplyFrameAnchor(anchorKey)
+            end
+            if _G.QUI_LayoutModeSyncHandle then
+                _G.QUI_LayoutModeSyncHandle(anchorKey)
+            end
+        end
+    end
+
+    for groupID, host in pairs(groupHosts) do
+        if not seenGroupIDs[groupID] then host:Hide() end
+    end
+    return true
+end
+
 function AD.RegisterLayoutElement(display)
+    if GroupKey(display.group) ~= nil then return end
     local um = ns.QUI_LayoutMode
     if not um or type(um.RegisterElement) ~= "function" then return end
     local id = display.id
@@ -991,7 +1290,46 @@ function AD.RegisterLayoutElement(display)
     end
 end
 
-function AD.UnregisterLayoutElement(id)
+function AD.RegisterGroupLayoutElement(groupName, group)
+    group = group or AD.GetGroup(groupName, false)
+    if not group then return end
+    local um = ns.QUI_LayoutMode
+    if not um or type(um.RegisterElement) ~= "function" then return end
+    local anchorKey = AD.GROUP_ANCHOR_PREFIX .. group.id
+    um:RegisterElement({
+        key = anchorKey,
+        label = groupName,
+        group = ns.L["Aura Displays"],
+        order = 100,
+        isOwned = true,
+        isEnabled = function()
+            local current = AD.GetGroup(groupName, false)
+            return current ~= nil and current.enabled ~= false and #AD.GroupMembers(groupName) > 0
+        end,
+        setEnabled = function(value)
+            AD.SetGroupEnabled(groupName, value)
+            AD.Refresh()
+        end,
+        setGameplayHidden = function(hide)
+            local host = groupHosts[group.id]
+            if not host then return end
+            if hide then host:Hide() else host:Show() end
+        end,
+        getFrame = function()
+            return groupHosts[group.id]
+        end,
+    })
+    if _G.QUI_RegisterFrameResolver then
+        _G.QUI_RegisterFrameResolver(anchorKey, {
+            resolver = function() return groupHosts[group.id] end,
+            displayName = groupName,
+            category = ns.L["Aura Displays"],
+            order = 100,
+        })
+    end
+end
+
+function AD.UnregisterLayoutElement(id, keepHost)
     local um = ns.QUI_LayoutMode
     if um and type(um.UnregisterElement) == "function" then
         um:UnregisterElement(AD.ANCHOR_PREFIX .. id)
@@ -1000,9 +1338,29 @@ function AD.UnregisterLayoutElement(id)
         _G.QUI_UnregisterFrameResolver(AD.ANCHOR_PREFIX .. id)
     end
     local host = hosts[id]
-    if host then
+    if host and not keepHost then
         host:Hide()
         hosts[id] = nil
+    end
+end
+
+
+function AD.UnregisterGroupLayoutElement(groupOrName, keepHost)
+    local group = type(groupOrName) == "table" and groupOrName
+        or AD.GetGroup(groupOrName, false)
+    if not group or type(group.id) ~= "string" then return end
+    local anchorKey = AD.GROUP_ANCHOR_PREFIX .. group.id
+    local um = ns.QUI_LayoutMode
+    if um and type(um.UnregisterElement) == "function" then
+        um:UnregisterElement(anchorKey)
+    end
+    if _G.QUI_UnregisterFrameResolver then
+        _G.QUI_UnregisterFrameResolver(anchorKey)
+    end
+    local host = groupHosts[group.id]
+    if host and not keepHost then
+        host:Hide()
+        groupHosts[group.id] = nil
     end
 end
 
@@ -1012,9 +1370,11 @@ function AD.Refresh()
     ReconcileAuraSounds(store)
     if previewActive then return end
     local seen = {}
+    local seenGroups = {}
     local dynamic = false
+    local displays = {}
     if store and store.enabled ~= false then
-        local displays = AD.OrderedDisplays()
+        displays = AD.OrderedDisplays()
         for i = 1, #displays do
             local display = displays[i]
             seen[display.id] = true
@@ -1024,11 +1384,34 @@ function AD.Refresh()
             end
             local ok = ns.SafeCall("best-effort-style", ApplyDisplay, display, true)
             if not ok then RequeueDisplay(display) end
-            local stamp = tostring(display.name or display.id)
-                .. (hosts[display.id] and "+" or "-")
-            if registered[display.id] ~= stamp then
-                registered[display.id] = stamp
-                AD.RegisterLayoutElement(display)
+        end
+        AD.ReflowGroups(displays)
+
+        for i = 1, #displays do
+            local display = displays[i]
+            local groupName = GroupKey(display.group)
+            if groupName then
+                if registered[display.id] ~= nil then
+                    registered[display.id] = nil
+                    AD.UnregisterLayoutElement(display.id, true)
+                end
+                local group = AD.GetGroup(groupName, true)
+                if group then seenGroups[group.id] = { name = groupName, group = group } end
+            else
+                local stamp = tostring(display.name or display.id)
+                    .. (hosts[display.id] and "+" or "-")
+                if registered[display.id] ~= stamp then
+                    registered[display.id] = stamp
+                    AD.RegisterLayoutElement(display)
+                end
+            end
+        end
+
+        for groupID, entry in pairs(seenGroups) do
+            local stamp = entry.name .. (groupHosts[groupID] and "+" or "-")
+            if registeredGroups[groupID] ~= stamp then
+                registeredGroups[groupID] = stamp
+                AD.RegisterGroupLayoutElement(entry.name, entry.group)
             end
         end
     end
@@ -1039,6 +1422,12 @@ function AD.Refresh()
         if not seen[id] then
             registered[id] = nil
             AD.UnregisterLayoutElement(id)
+        end
+    end
+    for groupID in pairs(registeredGroups) do
+        if not seenGroups[groupID] then
+            registeredGroups[groupID] = nil
+            AD.UnregisterGroupLayoutElement({ id = groupID })
         end
     end
     watchingDynamicUnits = dynamic
@@ -1086,16 +1475,19 @@ function AD.ShowPreview()
     if not Preview or type(Preview.Show) ~= "function" then return end
     previewActive = true
     singlePreviewID = nil
+    singlePreviewGroup = nil
     local displays = AD.OrderedDisplays()
     for i = 1, #displays do
         ShowPreviewForDisplay(displays[i])
     end
+    AD.ReflowGroups(displays)
 end
 
 function AD.HidePreview()
     if not previewActive then return end
     previewActive = false
     singlePreviewID = nil
+    singlePreviewGroup = nil
     local Preview = ns.AuraPreview
     if Preview and type(Preview.Hide) == "function" then
         for _, host in pairs(hosts) do
@@ -1110,11 +1502,15 @@ function AD.ShowPreviewFor(id)
     if not ResolveDeps() then return end
     local display = AD.GetDisplay(id)
     if not display then return end
+    if singlePreviewGroup then AD.HidePreviewForGroup(singlePreviewGroup) end
     if singlePreviewID and singlePreviewID ~= id then
         AD.HidePreviewFor(singlePreviewID)
     end
+    singlePreviewID = id
     if ShowPreviewForDisplay(display) then
-        singlePreviewID = id
+        AD.ReflowGroups()
+    else
+        singlePreviewID = nil
     end
 end
 
@@ -1126,6 +1522,41 @@ function AD.HidePreviewFor(id)
     local host = hosts[id]
     if Preview and type(Preview.Hide) == "function" and host then
         Preview.Hide(host)
+    end
+    AD.Refresh()
+end
+
+function AD.ShowPreviewForGroup(groupName)
+    local key = GroupKey(groupName)
+    if previewActive or key == nil then return end
+    if singlePreviewID then AD.HidePreviewFor(singlePreviewID) end
+    if singlePreviewGroup and singlePreviewGroup ~= key then
+        AD.HidePreviewForGroup(singlePreviewGroup)
+    end
+    singlePreviewGroup = key
+    local shown = false
+    local displays = AD.GroupMembers(key)
+    for i = 1, #displays do
+        if ShowPreviewForDisplay(displays[i]) then shown = true end
+    end
+    if shown then
+        AD.ReflowGroups()
+    else
+        singlePreviewGroup = nil
+    end
+end
+
+function AD.HidePreviewForGroup(groupName)
+    local key = GroupKey(groupName)
+    if previewActive or singlePreviewGroup ~= key then return end
+    singlePreviewGroup = nil
+    local Preview = ns.AuraPreview
+    if Preview and type(Preview.Hide) == "function" then
+        local displays = AD.GroupMembers(key)
+        for i = 1, #displays do
+            local host = hosts[displays[i].id]
+            if host then Preview.Hide(host) end
+        end
     end
     AD.Refresh()
 end
