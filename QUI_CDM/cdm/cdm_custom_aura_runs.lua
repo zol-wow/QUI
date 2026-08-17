@@ -20,8 +20,21 @@ end
 function Runs.ShouldUseSettings(settings)
     if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
     if settings.dynamicLayout ~= true then return false end
+    if settings.showOnlyWhenActive ~= true
+        or settings.showOnlyOnCooldown == true
+        or settings.showOnlyWhenOffCooldown == true
+        or settings.showOnlyInCombat == true
+        or settings.hideNonUsable == true then
+        return false
+    end
     if settings.layoutDirection == "VERTICAL" then return false end
     if settings.growDirection and settings.growDirection ~= "RIGHT" then return false end
+
+    if type(settings.spellOverrides) == "table" then
+        for _, override in pairs(settings.spellOverrides) do
+            if type(override) == "table" and override.hidden == true then return false end
+        end
+    end
 
     local rowCount = 0
     for i = 1, 3 do
@@ -123,6 +136,14 @@ local function Profile(rowConfig)
     if aspect <= 0 then aspect = 1 end
     local ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
     local borderColor = rowConfig.borderColor
+    local durationFont, stackFont
+    local LSM = ns.LSM
+    if LSM and type(rowConfig.durationFont) == "string" and rowConfig.durationFont ~= "" then
+        durationFont = LSM:Fetch("font", rowConfig.durationFont)
+    end
+    if LSM and type(rowConfig.stackFont) == "string" and rowConfig.stackFont ~= "" then
+        stackFont = LSM:Fetch("font", rowConfig.stackFont)
+    end
     if ns.Helpers and ns.Helpers.GetSkinBorderColor then
         local r, g, b, a = ns.Helpers.GetSkinBorderColor(rowConfig, "")
         borderColor = { r, g, b, a }
@@ -147,6 +168,7 @@ local function Profile(rowConfig)
         swipeStyle = "radial",
         duration = {
             show = rowConfig.hideDurationText ~= true,
+            font = durationFont,
             fontSize = rowConfig.durationSize or 14,
             anchor = rowConfig.durationAnchor or "CENTER",
             offsetX = rowConfig.durationOffsetX or 0,
@@ -155,6 +177,7 @@ local function Profile(rowConfig)
         },
         stack = {
             show = rowConfig.hideStackText ~= true,
+            font = stackFont,
             fontSize = rowConfig.stackSize or 14,
             anchor = rowConfig.stackAnchor or "BOTTOMRIGHT",
             offsetX = rowConfig.stackOffsetX or 0,

@@ -388,7 +388,8 @@ local function styleButton(button, profile)
         if not fs then return end
         local size = (cfg and cfg.fontSize) or fallbackSize or 11
         if size <= 0 then size = 11 end
-        if fontPath then fs:SetFont(fontPath, size, fontFlags) end
+        local font = (cfg and cfg.font) or fontPath
+        if font then fs:SetFont(font, size, fontFlags) end
         fs:ClearAllPoints()
         fs:SetPoint((cfg and cfg.anchor) or defAnchor, button, (cfg and cfg.anchor) or defAnchor,
             (cfg and cfg.offsetX) or defX, (cfg and cfg.offsetY) or defY)

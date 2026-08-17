@@ -66,7 +66,11 @@ local builderEnv = setmetatable({
     Shared = {},
     CDMIcons = {},
     GetTrackerSettings = function()
-        return { containerType = "customBar", dynamicLayout = true }
+        return {
+            containerType = "customBar",
+            dynamicLayout = true,
+            showOnlyWhenActive = true,
+        }
     end,
     GetBuiltinContainerEntryKind = function() return nil end,
     ResolveMacro = function() return nil end,

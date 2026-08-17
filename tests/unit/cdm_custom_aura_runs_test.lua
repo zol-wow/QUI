@@ -42,6 +42,12 @@ local function LastConfig(container)
     end
 end
 local ns = {
+    LSM = {
+        Fetch = function(_, kind, name)
+            assert(kind == "font")
+            return ({ DurationFace = "duration.ttf", StackFace = "stack.ttf" })[name]
+        end,
+    },
     Helpers = {
         GetSkinBorderColor = function(settings)
             assert(settings.borderColorSource == "inherit")
@@ -87,6 +93,7 @@ local settings = {
     builtIn = false,
     containerType = "customBar",
     dynamicLayout = true,
+    showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
     row1 = { iconCount = 3, iconSize = 30, padding = 2 },
@@ -96,6 +103,29 @@ local settings = {
         { id = 333, kind = "cooldown" },
     },
 }
+
+local function CopySettings(changes)
+    local copy = {}
+    for key, value in pairs(settings) do copy[key] = value end
+    for key, value in pairs(changes or {}) do copy[key] = value end
+    return copy
+end
+
+assert(ns.CDMCustomAuraRuns.ShouldUseSettings(settings) == true,
+    "active-only dynamic bars must use secure aura runs")
+local unsafeCases = {
+    { "default visibility", { showOnlyWhenActive = false } },
+    { "on-cooldown visibility", { showOnlyOnCooldown = true } },
+    { "off-cooldown visibility", { showOnlyWhenOffCooldown = true } },
+    { "combat visibility", { showOnlyInCombat = true } },
+    { "usability filtering", { hideNonUsable = true } },
+    { "hidden spell overrides", { spellOverrides = { [222] = { hidden = true } } } },
+}
+for i = 1, #unsafeCases do
+    local case = unsafeCases[i]
+    assert(ns.CDMCustomAuraRuns.ShouldUseSettings(CopySettings(case[2])) == false,
+        case[1] .. " must retain the ordinary proxy renderer")
+end
 
 local owner = Frame("owner")
 local cooldownA = Frame("cooldown-a")
@@ -118,6 +148,8 @@ local row = {
     aspectRatioCrop = 1.5,
     opacity = 0.45,
     zoom = 0.12,
+    durationFont = "DurationFace",
+    stackFont = "StackFace",
     borderSize = 1,
     borderColorSource = "inherit",
     borderColor = { 0, 0, 0, 1 },
@@ -130,6 +162,26 @@ local plan = {
         { icon = cooldownB, rowConfig = row, x = 32, y = 0 },
     },
 }
+
+local fallbackOwner = Frame("fallback-owner")
+local fallbackProxy = Frame("fallback-proxy")
+fallbackProxy._spellEntry = auraProxy._spellEntry
+fallbackProxy:SetPoint("CENTER", fallbackOwner, "CENTER", 0, 0)
+local fallbackCreated, fallbackConfigured = #created, #configured
+for _, unsafe in ipairs({
+    CopySettings({ showOnlyWhenActive = false }),
+    CopySettings({ spellOverrides = { [222] = { hidden = true } } }),
+}) do
+    assert(ns.CDMCustomAuraRuns.Apply(fallbackOwner, unsafe, {
+            metrics = { iconWidth = 30 },
+            placements = { { icon = fallbackProxy, rowConfig = row, x = 0, y = 0 } },
+        }) == false,
+        "unsupported visibility settings must leave aura proxies on the ordinary renderer")
+end
+assert(#created == fallbackCreated and #configured == fallbackConfigured
+    and fallbackProxy.shown == true and #fallbackProxy.points == 1
+    and fallbackProxy._quiManagedAuraProxy == nil,
+    "visibility fallback must preserve the visible proxy without secure allocation")
 
 assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan) == true,
     "eligible mixed rows must use the secure aura run")
@@ -153,8 +205,10 @@ assert(borderColor[1] == 0.2 and borderColor[2] == 0.4
     "the secure aura must resolve the same inherited border color as CDM icons")
 assert(configured[1].profile.opacity == 0.45
     and configured[1].profile.zoom == 0.12
-    and configured[1].profile.aspectRatioCrop == 1.5,
-    "the secure aura must inherit row opacity, zoom, and aspect crop")
+    and configured[1].profile.aspectRatioCrop == 1.5
+    and configured[1].profile.duration.font == "duration.ttf"
+    and configured[1].profile.stack.font == "stack.ttf",
+    "the secure aura must inherit row opacity, crop, and resolved fonts")
 assert(auraProxy.shown == false and auraProxy._quiManagedAuraProxy == true,
     "the addon aura proxy must not paint the live aura")
 assert(ns.CDMCustomAuraRuns.ResolveRoute({
@@ -214,6 +268,7 @@ friendlyProxyB._spellEntry = {
 local friendlySettings = {
     containerType = "customBar",
     dynamicLayout = true,
+    showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
     row1 = { iconCount = 1 },
@@ -260,6 +315,7 @@ harmfulProxy._spellEntry = {
 local harmfulSettings = {
     containerType = "customBar",
     dynamicLayout = true,
+    showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
     row1 = { iconCount = 1 },
@@ -301,6 +357,7 @@ assert(#(friendlyController.maxFrameCountCalls or {}) == friendlyCalls
 local disabledSettings = {
     containerType = "customBar",
     dynamicLayout = true,
+    showOnlyWhenActive = true,
     layoutDirection = "VERTICAL",
 }
 assert(ns.CDMCustomAuraRuns.Apply(owner, disabledSettings, plan) == false,
@@ -310,6 +367,7 @@ assert(controller.enabled == false and controller.shown == false,
 
 local fixedSettings = {
     containerType = "customBar",
+    showOnlyWhenActive = true,
     layoutDirection = "HORIZONTAL",
     growDirection = "RIGHT",
     row1 = { iconCount = 1 },

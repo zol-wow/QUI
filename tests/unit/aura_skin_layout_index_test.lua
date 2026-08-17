@@ -53,7 +53,7 @@ local function Stub()
     function t:DisablePixelSnap() end
     function t:SetTextColor() end
     function t:SetAlpha(alpha) self.alpha = alpha end
-    function t:SetFont() end
+    function t:SetFont(...) self.fontArgs = { ... } end
     function t:SetHideCountdownNumbers() end
     function t:SetDrawSwipe() end
     function t:SetReverse() end
@@ -108,7 +108,12 @@ local function MakeContainer()
     return c
 end
 
-local ns = {}
+local ns = {
+    Helpers = {
+        GetGeneralFont = function() return "general.ttf" end,
+        GetGeneralFontOutline = function() return "OUTLINE" end,
+    },
+}
 assert(loadfile("core/safecall.lua"))("QUI", ns)
 assert(loadfile("core/aura_theme.lua"))("QUI", ns)
 assert(loadfile("core/aura_skin.lua"))("QUI", ns)
@@ -124,6 +129,8 @@ local profile = {
     opacity = 0.45,
     zoom = 0.12,
     aspectRatioCrop = 1.5,
+    duration = { font = "duration.ttf", fontSize = 13 },
+    stack = { font = "stack.ttf", fontSize = 9 },
 }
 
 ----------------------------------------------------------------------------
@@ -166,11 +173,21 @@ check("row zoom and aspect crop reach managed aura textures",
         and math.abs(coords[2] - 0.80) < 0.000001
         and math.abs(coords[3] - 0.30) < 0.000001
         and math.abs(coords[4] - 0.70) < 0.000001)
+check("per-text fonts reach managed aura text",
+    button._quiDuration.fontArgs[1] == "duration.ttf"
+        and button._quiDuration.fontArgs[2] == 13
+        and button._quiDuration.fontArgs[3] == "OUTLINE"
+        and button._quiCount.fontArgs[1] == "stack.ttf"
+        and button._quiCount.fontArgs[2] == 9
+        and button._quiCount.fontArgs[3] == "OUTLINE")
 AuraSkin.Restyle(container, {})
 coords = button.Icon.texCoords
 check("restyle restores default opacity and crop", button.alpha == 1
     and coords[1] == 0.08 and coords[2] == 0.92
     and coords[3] == 0.08 and coords[4] == 0.92)
+check("restyle restores the general text font",
+    button._quiDuration.fontArgs[1] == "general.ttf"
+        and button._quiCount.fontArgs[1] == "general.ttf")
 
 ----------------------------------------------------------------------------
 -- (2) THE regression-defining case: s1's filter changes. On the incapable
