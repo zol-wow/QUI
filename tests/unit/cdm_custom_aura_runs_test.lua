@@ -123,6 +123,7 @@ end
 assert(ns.CDMCustomAuraRuns.ShouldUseSettings(settings) == true,
     "active-only dynamic bars must use secure aura runs")
 local unsafeCases = {
+    { "clickable icons", { clickableIcons = true } },
     { "default visibility", { showOnlyWhenActive = false } },
     { "on-cooldown visibility", { showOnlyOnCooldown = true } },
     { "off-cooldown visibility", { showOnlyWhenOffCooldown = true } },
@@ -178,6 +179,7 @@ fallbackProxy._spellEntry = auraProxy._spellEntry
 fallbackProxy:SetPoint("CENTER", fallbackOwner, "CENTER", 0, 0)
 local fallbackCreated, fallbackConfigured = #created, #configured
 for _, unsafe in ipairs({
+    CopySettings({ clickableIcons = true }),
     CopySettings({ showOnlyWhenActive = false }),
     CopySettings({ spellOverrides = { [222] = { hidden = true } } }),
 }) do
@@ -459,6 +461,10 @@ assert(shouldDefer("plain", {
         entries = { { id = 111, kind = "cooldown" } },
     }) == false,
     "non-aura custom bars must retain the combat init window behavior")
+deferEnv.inInitSafeWindow = false
+assert(shouldDefer("plain", CopySettings({ clickableIcons = true }), true) == true,
+    "persisted clickable aura bars must not use the combat relayout exception")
+deferEnv.inInitSafeWindow = true
 local layoutStart = assert(containersSource:find(
     "local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)", 1, true))
 local layoutStop = assert(containersSource:find("\nlocal function RunPostLayoutRefresh()", layoutStart, true))

@@ -20,6 +20,7 @@ end
 function Runs.ShouldUseSettings(settings)
     if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
     if settings.dynamicLayout ~= true then return false end
+    if settings.clickableIcons == true then return false end
     if settings.showOnlyWhenActive ~= true
         or settings.showOnlyOnCooldown == true
         or settings.showOnlyWhenOffCooldown == true
