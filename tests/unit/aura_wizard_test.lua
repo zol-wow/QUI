@@ -226,8 +226,8 @@ do -- CommitTrackedHoTs: slot occupancy (2026-07 re-review round 2). An icon
     check("mixed sizes: new icon clears the 30px survivor in pixels",
         new16 and new16.offsetX == 64, tostring(new16 and new16.offsetX))
 
-    -- maxIcons caps the reserved span: 3 spells capped to 2 rendered icons
-    -- occupy [0,36), so the next element lands at 36.
+    -- Tracked elements reserve one slot per spell. An old saved maxIcons value
+    -- cannot truncate the three-spell span, so the next element lands at 54.
     local b5 = { { id = "cap", enabled = true, mode = "tracked", maxIcons = 2,
         displayType = "icon", spells = { 111, 333, 444 }, anchor = "TOPLEFT", iconSize = 16 } }
     W.CommitTrackedHoTs(b5, { [222] = { corner = "TOPLEFT", displayType = "icon" } })
@@ -235,8 +235,8 @@ do -- CommitTrackedHoTs: slot occupancy (2026-07 re-review round 2). An icon
     for _, e in ipairs(b5) do
         if e.id ~= "cap" and e.spells and e.spells[1] == 222 then capped = e end
     end
-    check("maxIcons: span capped to rendered icons",
-        capped and capped.offsetX == 36, tostring(capped and capped.offsetX))
+    check("tracked span ignores saved maxIcons",
+        capped and capped.offsetX == 54, tostring(capped and capped.offsetX))
 
     -- Geometry mirrors the runtime (2026-07 round-4): per-element SPACING is
     -- part of the step (AnchorSlot: size + profile.spacing) — a retained

@@ -245,10 +245,8 @@ function W.CommitTrackedHoTs(bucket, staged)
         return off
     end
     local function renderedSpellCount(e)
-        local n = (type(e.spells) == "table") and #e.spells or 0
+        local n = E.TrackedSpellCount and E.TrackedSpellCount(e) or 0
         if n < 1 then n = 1 end
-        local cap = e.maxIcons
-        if type(cap) == "number" and cap > 0 and cap < n then n = cap end
         return n
     end
     local function wrapCounts(e, n)

@@ -18,6 +18,7 @@ ns.Helpers = {
 
 assert(loadfile("core/aura_elements.lua"))("QUI", ns)
 local AuraElements = ns.AuraElements
+assert(loadfile("core/aura_glue.lua"))("QUI", ns)
 
 assert(loadfile("modules/trackers/aura_displays.lua"))("QUI", ns)
 local AD = ns.QUI_AuraDisplays
@@ -37,6 +38,10 @@ if a.id ~= "d1" then fail("first display id must be d1, got " .. tostring(a.id))
 if a.unitMode ~= "token" or a.unit ~= "player" then
     fail("new display must default to the player token")
 end
+if a.layout.direction ~= "RIGHT" or a.layout.alignment ~= "CENTER"
+    or a.layout.spacing ~= 2 then
+    fail("new display must default to a centered rightward row layout")
+end
 if type(a.auras) ~= "table" or a.auras.elements ~= nil then
     fail("new display must leave auras.elements unset so EnsureSeeded can seed it")
 end
@@ -48,6 +53,43 @@ AuraElements.EnsureSeeded(a.auras, AD.DefaultBucket)
 if type(a.auras.elements) ~= "table" or type(a.auras.elements["*"]) ~= "table"
     or #a.auras.elements["*"] == 0 then
     fail("EnsureSeeded must seed a non-empty default bucket into auras.elements['*']")
+end
+
+local firstTracked = AuraElements.NewTrackedElement({ 101 }, "icon")
+local secondTracked = AuraElements.NewTrackedElement({ 202 }, "icon")
+local layout = AD.ResolveDisplayLayout({ firstTracked, secondTracked })
+if layout.placements[secondTracked].offsetX ~= 18 or layout.width ~= 34 then
+    fail("default tracked rows must auto-flow with one icon gap")
+end
+
+local containerLayout = { layout = { direction = "DOWN", alignment = "END", spacing = 4 } }
+local vertical = AD.ResolveDisplayLayout(containerLayout, { firstTracked, secondTracked })
+if vertical.width ~= 16 or vertical.height ~= 36
+    or vertical.placements[secondTracked].offsetY ~= -20
+    or vertical.placements[secondTracked].offsetX ~= 0 then
+    fail("display row layout must stack rows using the container direction and alignment")
+end
+
+local centeredSingle = AuraElements.NewTrackedElement({ 303 }, "icon")
+centeredSingle.growDirection = "CENTER"
+centeredSingle.spacing = 8
+local singleProfile = AD.ResolveDisplayLayout({}, { centeredSingle }).profiles[centeredSingle]
+if singleProfile.grow ~= "RIGHT" or singleProfile.spacing ~= 0 then
+    fail("single-spell tracked rows must use a stable one-icon layout profile")
+end
+local multiTracked = AuraElements.NewTrackedElement({ 404, 505 }, "icon")
+multiTracked.growDirection = "CENTER"
+multiTracked.spacing = 8
+local multiProfile = AD.ResolveDisplayLayout({}, { multiTracked }).profiles[multiTracked]
+if multiProfile.grow ~= "CENTER" or multiProfile.spacing ~= 8 then
+    fail("multi-spell tracked rows must retain their internal grow layout")
+end
+
+local unlimitedStrip = AuraElements.NewFilterStripElement("HELPFUL")
+unlimitedStrip.maxIcons = 0
+local previewLayout = AD.ResolveDisplayLayout({ unlimitedStrip }, true)
+if previewLayout.profiles[unlimitedStrip].maxIcons ~= 3 then
+    fail("Aura Displays preview must not reserve 40 icons for an unlimited strip")
 end
 
 local b = AD.NewDisplay("Second")

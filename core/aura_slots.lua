@@ -80,7 +80,9 @@ local function IdentityFilterEnforceable(container, base)
 end
 
 local function SlotCandidateFilters(element, spellID)
-    local cf = { includeSpellIDs = { [spellID] = true } }
+    local includeSpellIDs = E.TrackedSpellCandidates
+        and E.TrackedSpellCandidates(spellID) or { [spellID] = true }
+    local cf = { includeSpellIDs = includeSpellIDs }
     if E.EffectiveOnlyMine(element, spellID) then
         cf.isFromPlayerOrPlayerPet = true
     end
@@ -376,7 +378,9 @@ local function FeederSpellMap(element)
         local sid = spells[i]
         if type(sid) == "number" then
             map = map or {}
-            map[sid] = true
+            local candidates = E.TrackedSpellCandidates
+                and E.TrackedSpellCandidates(sid) or { [sid] = true }
+            for candidateID in pairs(candidates) do map[candidateID] = true end
             n = n + 1
         end
     end
@@ -507,8 +511,6 @@ function S.Sync(container, element, allowCreate, profileOverrides)
         for i = 1, #spells do
             if type(spells[i]) == "number" then total = total + 1 end
         end
-        local cap = element.maxIcons
-        if cap and cap > 0 and cap < total then total = cap end
         for i = 1, #spells do
             if want >= total then break end
             local spellID = spells[i]

@@ -93,6 +93,11 @@ check("2a: classify-mode cap row relabels to 'Max Icons Per Category'",
     editor:find('ns.L["Max Icons Per Category"]', 1, true) ~= nil)
 check("2a: relabel is gated on filterMode == classify (not a blanket rename)",
     editor:find('element.filterMode == "classify"', 1, true) ~= nil)
+check("tracked elements do not expose the filter-strip Max Icons cap",
+    editor:find('if includeStrip and element.mode == "filterStrip" then', 1, true) ~= nil)
+check("Icon Size uses the capability-specific maximum",
+    editor:find('local iconSizeMax = ctx.caps.iconSizeMax or 40', 1, true) ~= nil
+    and editor:find('4, iconSizeMax, 1, "iconSize"', 1, true) ~= nil)
 check("2b: exclusivity lives in core, not duplicated in the editor",
     editor:find("PRIORITY", 1, true) == nil)
 check("2c: polarity hint gated on caps.unitPolarity",
@@ -136,6 +141,15 @@ check("tracked bar sliders write element.bar.thickness / length",
     and editor:find("element.bar", 1, true) ~= nil)
 check("tracked spell list uses the moved CreateListFrame",
     editor:find("SpellList.CreateListFrame", 1, true) ~= nil)
+local trackedConfig = editor:match("local function AddTrackedConfig.-\nend\n\nlocal function AddMissingRaidBuffConfig")
+check("tracked spell editor is shown before tracked display settings",
+    trackedConfig and trackedConfig:find("AddTrackedSpellListEditor(ctx, element)", 1, true)
+        and trackedConfig:find("AddTrackedSpellListEditor(ctx, element)", 1, true)
+            < trackedConfig:find("local displayOptions", 1, true))
+check("tracked spell changes rebuild the selected row immediately",
+    editor:find("ctx.onChange()\n            ctx.rebuild()", 1, true) ~= nil
+    and editor:find("ctx.NotifyChanged()\n                        ctx.rebuild()", 1, true) ~= nil
+    and editor:find("ctx.NotifyChanged()\n                ctx.rebuild()", 1, true) ~= nil)
 
 -- Schema mount ------------------------------------------------------------
 local schema = read("QUI_GroupFrames/groupframes/settings/group_frames_schema.lua")
@@ -210,7 +224,12 @@ check("Browse refreshes the inline spell list while it stays open",
     and editor:find("ctx.UpdateDetailWidgetHeight(listFrame, newHeight)", 1, true) ~= nil)
 check("tracked Browse keeps its inline map view synchronized",
     editor:find("mapView[spellID] = nil", 1, true) ~= nil
-    and editor:find("mapView[spellID] = true", 1, true) ~= nil)
+    and (editor:find("mapView[spellID] = true", 1, true) ~= nil
+        or editor:find("mapView[resolvedID] = true", 1, true) ~= nil))
+check("tracked Browse labels the resolved applied-aura ID",
+    editor:find("resolveAuraSpellIDs = true", 1, true) ~= nil
+    and spelllist:find("BrowseDisplaySpellID", 1, true) ~= nil
+    and spelllist:find("ResolveTrackedSpellID", 1, true) ~= nil)
 
 -- TOC surgery -------------------------------------------------------------
 local optsToc = read("QUI_Options/QUI_Options.toc")

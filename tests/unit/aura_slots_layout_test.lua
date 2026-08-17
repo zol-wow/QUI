@@ -1,5 +1,5 @@
 -- tests/unit/aura_slots_layout_test.lua
--- Task 6: tracked slots (core/aura_slots.lua) honor element.maxIcons,
+-- Task 6: tracked slots (core/aura_slots.lua) honor the spell list,
 -- element.iconsPerRow (wrap) and growDirection == "CENTER". AnchorSlot does
 -- manual SetPoint math (unlike the filter-strip engine flow layout in
 -- core/aura_skin.lua) so these three behaviors are exercised end-to-end
@@ -67,8 +67,8 @@ local function MakeContainer()
 end
 
 ----------------------------------------------------------------------------
--- Test A: maxIcons truncates — 5 spells, maxIcons = 3. Slots 4/5 (already
--- present in the pool from a prior sync at a higher cap) are parked.
+-- Test A: tracked capacity follows the spell list — an old saved maxIcons
+-- value cannot truncate the five tracked spells.
 ----------------------------------------------------------------------------
 do
     local element = {
@@ -86,22 +86,42 @@ do
     end
 
     local complete = S.Sync(container, element, true)
-    check("maxIcons: Sync reports complete", complete == true)
+    check("tracked capacity: Sync reports complete", complete == true)
 
     local pool = container._quiSlots
-    check("maxIcons: slot 1 stays live", pool[1].parked == false)
-    check("maxIcons: slot 2 stays live", pool[2].parked == false)
-    check("maxIcons: slot 3 stays live", pool[3].parked == false)
-    check("maxIcons: slot 4 parked (surplus)", pool[4].parked == true)
-    check("maxIcons: slot 5 parked (surplus)", pool[5].parked == true)
+    check("tracked capacity: slot 1 stays live", pool[1].parked == false)
+    check("tracked capacity: slot 2 stays live", pool[2].parked == false)
+    check("tracked capacity: slot 3 stays live", pool[3].parked == false)
+    check("tracked capacity: slot 4 stays live", pool[4].parked == false)
+    check("tracked capacity: slot 5 stays live", pool[5].parked == false)
 
-    check("maxIcons: slot 4 filter is the park recipe (maxDuration=0)",
-        container._filterCalls["t4"] and container._filterCalls["t4"].maxDuration == 0)
-    check("maxIcons: slot 5 filter is the park recipe (maxDuration=0)",
-        container._filterCalls["t5"] and container._filterCalls["t5"].maxDuration == 0)
-    check("maxIcons: slot 1 filter is a live per-spell filter, not parked",
+    check("tracked capacity: slot 4 filter is live",
+        container._filterCalls["t4"] and container._filterCalls["t4"].includeSpellIDs ~= nil)
+    check("tracked capacity: slot 5 filter is live",
+        container._filterCalls["t5"] and container._filterCalls["t5"].includeSpellIDs ~= nil)
+    check("tracked capacity: slot 1 filter is a live per-spell filter",
         container._filterCalls["t1"] and container._filterCalls["t1"].includeSpellIDs ~= nil
         and container._filterCalls["t1"].maxDuration == nil)
+end
+
+do
+    local oldRuntime = ns.CDMAuraRuntime
+    ns.CDMAuraRuntime = {
+        ResolveAbilityAuraSpellID = function(spellID)
+            if spellID == 301 then return 302, true end
+            return spellID, false
+        end,
+    }
+    local element = {
+        spells = { 301 }, enabled = true, auraType = "HELPFUL",
+        anchor = "TOPLEFT", growDirection = "RIGHT",
+    }
+    local container = MakeContainer()
+    S.Sync(container, element, true)
+    local ids = container._birthFilters.t1 and container._birthFilters.t1.includeSpellIDs
+    check("tracked mapping: legacy and applied-aura IDs are candidates",
+        ids and ids[301] == true and ids[302] == true)
+    ns.CDMAuraRuntime = oldRuntime
 end
 
 ----------------------------------------------------------------------------

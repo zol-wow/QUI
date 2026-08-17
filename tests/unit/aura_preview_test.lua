@@ -325,8 +325,8 @@ check("square swatch filled with element.color (not the question-mark icon)",
 local capHost = {}
 P.Show(capHost, { { mode = "tracked", displayType = "icon", auraType = "HELPFUL",
     anchor = "TOPLEFT", spells = { 1, 2, 3 }, maxIcons = 2, iconSize = 16 } })
-check("tracked placeholder count = min(#spells, maxIcons)",
-    #capHost._quiAuraPreview == 2)
+check("tracked placeholder count follows #spells, not saved maxIcons",
+    #capHost._quiAuraPreview == 3)
 
 local htHost = {}
 P.Show(htHost, { { mode = "tracked", displayType = "healthTint", auraType = "HELPFUL",

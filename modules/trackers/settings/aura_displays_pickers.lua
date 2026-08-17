@@ -193,7 +193,7 @@ function P.BuildSpecPicker(parent, width, get, set, expanded, onToggleExpand)
         for _, on in pairs(get()) do
             if on then selected = selected + 1 end
         end
-        headerLabel:SetText((expanded and "▾ " or "▸ ") .. ns.L["Specs"]
+        headerLabel:SetText((expanded and "v " or "> ") .. ns.L["Specs"]
             .. (selected > 0 and (" (" .. selected .. ")") or ""))
     end
     RefreshHeaderLabel()

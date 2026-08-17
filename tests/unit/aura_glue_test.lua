@@ -33,6 +33,14 @@ do
     zero.maxIcons = 0
     check("profile: maxIcons 0 (unlimited) → 40 cap for the engine", G.ElementProfile(zero).maxIcons == 40)
 
+    local tracked = E.NewTrackedElement({ 101, 102 }, "icon")
+    tracked.maxIcons = 0
+    check("tracked profile: maxIcons follows the spell count",
+        G.ElementProfile(tracked).maxIcons == 2)
+    tracked.maxIcons = 1
+    check("tracked profile: old saved maxIcons cannot truncate spells",
+        G.ElementProfile(tracked).maxIcons == 2)
+
     local o = G.ElementProfile(top, { attachPoint = "BOTTOMLEFT", wrap = "UP", offsetX = 7 })
     check("profile: overrides win", o.attachPoint == "BOTTOMLEFT" and o.wrap == "UP" and o.offsetX == 7)
 end
