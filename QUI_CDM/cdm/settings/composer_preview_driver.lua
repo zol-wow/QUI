@@ -77,7 +77,9 @@ local function StartActiveGlow(icon)
     local Glows = ns._OwnedGlows
     if not icon or not db or not Glows or not Glows.ApplyGlowWithKey then return end
     if not db.activeGlowEnabled then return end
-    Glows.ApplyGlowWithKey(icon, {
+    local iconState = state.iconState[icon]
+    if iconState and iconState.activeGlow then return end
+    local applied = Glows.ApplyGlowWithKey(icon, {
         glowType  = db.activeGlowType or "Pixel Glow",
         color     = db.activeGlowColor or {0.95, 0.95, 0.32, 1},
         lines     = db.activeGlowLines or 8,
@@ -85,6 +87,7 @@ local function StartActiveGlow(icon)
         thickness = db.activeGlowThickness or 2,
         scale     = db.activeGlowScale or 1,
     }, PREVIEW_ACTIVE_KEY)
+    if applied and iconState then iconState.activeGlow = true end
 end
 
 local function StopActiveGlow(icon)
@@ -92,6 +95,8 @@ local function StopActiveGlow(icon)
     if icon and Glows and Glows.StopGlowWithKey then
         Glows.StopGlowWithKey(icon, PREVIEW_ACTIVE_KEY)
     end
+    local iconState = state.iconState[icon]
+    if iconState then iconState.activeGlow = false end
 end
 
 local function StartHighlighter(icon)

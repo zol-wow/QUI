@@ -35,7 +35,7 @@ web-grep is also available at
 
 ## Current snapshot
 
-- **Patch:** 12.1.0.69323 (Midnight 12.1)
+- **Patch:** 12.1.0.69382 (Midnight 12.1)
 - **Source branch:** `live` (Gethe/wow-ui-source)
 - **Vendored on:** 2026-08-17
 

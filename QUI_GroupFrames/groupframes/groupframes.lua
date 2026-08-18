@@ -1946,12 +1946,14 @@ local function DecorateGroupFrame(frame)
 
             if oldGuid and newGuid and oldGuid == newGuid then return end
 
+            self._quiRosterAuraDirty = true
             UpdateFrame(self)
         end)
     end
 
     local currentUnit = frame:GetAttribute("unit")
     if currentUnit then
+        frame._quiRosterAuraDirty = true
         QUI_GF.SetFrameUnit(frame, currentUnit)
         AddFrameToMap(currentUnit, frame)
         local GFADecorate = ns.QUI_GroupFrameAuras
@@ -4731,7 +4733,8 @@ end
 
 function QUI_GF:RefreshAllFrames(_reason)
     local GFA = ns.QUI_GroupFrameAuras
-    if GFA and GFA.InvalidateLayout then GFA:InvalidateLayout() end
+    local rosterRefresh = _reason == "roster"
+    if not rosterRefresh and GFA and GFA.InvalidateLayout then GFA:InvalidateLayout() end
     local auraCacheAvailable = GFA and GFA.ScanUnitAuras and GFA.RenderFrame
 
     for unit, list in pairs(self.unitFrameMap) do
@@ -4742,7 +4745,8 @@ function QUI_GF:RefreshAllFrames(_reason)
                 if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
                 if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
                 if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
-                local auraCacheRender = auraCacheAvailable
+                local auraDirty = not rosterRefresh or frame._quiRosterAuraDirty
+                local auraCacheRender = auraCacheAvailable and auraDirty
                     and (not GFA.HasActiveConsumersForFrame or GFA:HasActiveConsumersForFrame(frame))
                 if auraCacheRender and not auraScanned then
                     GFA.ScanUnitAuras(unit)
@@ -4750,13 +4754,16 @@ function QUI_GF:RefreshAllFrames(_reason)
                 end
                 UpdateFrame(frame)
 
-                if auraCacheAvailable then
+                if auraCacheAvailable and auraDirty then
                     GFA:RenderFrame(frame)
-                elseif GFA and GFA.RefreshFrame then
+                elseif not auraCacheAvailable and auraDirty and GFA and GFA.RefreshFrame then
                     GFA:RefreshFrame(frame)
                 end
                 if GFA and GFA.UpdateStripContainers then
                     GFA.UpdateStripContainers(frame)
+                end
+                if rosterRefresh then
+                    frame._quiRosterAuraDirty = nil
                 end
             end
         end

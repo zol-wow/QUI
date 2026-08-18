@@ -101,6 +101,16 @@ assert(source:find("StartActiveGlow", 1, true),
 assert(source:find("StartHighlighter", 1, true),
     "driver must reflect the cooldown highlighter flash in the preview")
 
+local activeGlowStart = assert(source:find("local function StartActiveGlow", 1, true),
+    "active glow helper must exist")
+local activeGlowEnd = assert(source:find("local function StopActiveGlow", activeGlowStart, true),
+    "active glow stop helper must exist")
+local activeGlowBody = source:sub(activeGlowStart, activeGlowEnd)
+assert(activeGlowBody:find("iconState.activeGlow", 1, true),
+    "active glow must be latched so OnUpdate cannot restart its animation")
+assert(activeGlowBody:find("if applied and iconState then iconState.activeGlow = true end", 1, true),
+    "active glow must latch only after the shared applier succeeds")
+
 -- T8: cycle script catalog tokens present
 local cooldownTokens = {"cooldown", "ready_glow", "charges", "idle"}
 for _, tok in ipairs(cooldownTokens) do
