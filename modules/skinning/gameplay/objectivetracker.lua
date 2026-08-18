@@ -444,12 +444,28 @@ end
 -- Keep this separate from Edit Mode's saved height field: that state belongs
 -- to Blizzard and can be restored independently by Edit Mode.
 -- <<< QUI_TEST_EXTRACT tracker_max_height
+local blizzardTrackerHeight = nil
+
+local function CaptureBlizzardTrackerHeight(trackerFrame)
+    if not trackerFrame or not trackerFrame.GetHeight then return end
+
+    local height = Helpers.SafeNumberOrNil(trackerFrame:GetHeight())
+    if height and height > 0 then
+        blizzardTrackerHeight = height
+    end
+end
+
 local function ApplyTrackerMaxHeight(settings)
     local TrackerFrame = _G.ObjectiveTrackerFrame
     if not TrackerFrame then return end
 
+    if not blizzardTrackerHeight then
+        CaptureBlizzardTrackerHeight(TrackerFrame)
+    end
+    if not blizzardTrackerHeight then return end
+
     local maxHeight = settings and settings.objectiveTrackerHeight or 600
-    TrackerFrame:SetHeight(maxHeight)
+    TrackerFrame:SetHeight(math.min(maxHeight, blizzardTrackerHeight))
 end
 -- <<< QUI_TEST_EXTRACT tracker_max_height
 
@@ -799,6 +815,14 @@ local function SkinObjectiveTracker()
     if not TrackerFrame then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+
+    if TrackerFrame.UpdateHeight and not SkinBase.GetFrameData(TrackerFrame, "updateHeightHooked") then
+        hooksecurefunc(TrackerFrame, "UpdateHeight", function(self)
+            CaptureBlizzardTrackerHeight(self)
+            DeferObjectiveTrackerPostLayoutUpdate()
+        end)
+        SkinBase.SetFrameData(TrackerFrame, "updateHeightHooked", true)
+    end
 
     ApplyLayoutSettingsSafely(settings)
 

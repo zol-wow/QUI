@@ -28,10 +28,16 @@ assert(src:find("ScenarioObjectiveTracker = true", 1, true)
     "objectivetracker.lua must list both widget-pool trackers")
 
 local heightChunk = table.concat({
-    "local _G = ...",
+    "local _G, Helpers = ...",
     extract("tracker_max_height"),
-    "return ApplyTrackerMaxHeight",
+    "return ApplyTrackerMaxHeight, CaptureBlizzardTrackerHeight",
 }, "\n")
+
+local fakeHelpers = {
+    SafeNumberOrNil = function(value)
+        return type(value) == "number" and value or nil
+    end,
+}
 
 local tracker = { height = 800, updateHeightCalls = 0, topModulePadding = 38 }
 function tracker:SetHeight(height)
@@ -45,7 +51,8 @@ function tracker:UpdateHeight()
 end
 
 local fakeGlobals = { ObjectiveTrackerFrame = tracker }
-local applyHeight = assert(loadstring(heightChunk, "tracker_max_height"))(fakeGlobals)
+local applyHeight, captureBlizzardHeight = assert(loadstring(heightChunk, "tracker_max_height"))(
+    fakeGlobals, fakeHelpers)
 
 local containerSrc = readAll(
     "tests/framexml/Interface/AddOns/Blizzard_ObjectiveTracker/" ..
@@ -72,6 +79,31 @@ assert(tracker.editModeHeight == nil,
 applyHeight(nil)
 assert(tracker.height == 600, "missing settings must retain the 600px default")
 
+tracker.height = 300
+captureBlizzardHeight(tracker)
+applyHeight({ objectiveTrackerHeight = 600 })
+assert(tracker.height == 300,
+    "a smaller Blizzard layout height must remain smaller than the configured maximum")
+
+tracker.height = 800
+captureBlizzardHeight(tracker)
+applyHeight({ objectiveTrackerHeight = 600 })
+assert(tracker.height == 600,
+    "the tracker must expand to its configured cap when Blizzard later reports more room")
+
+local shortTracker = { height = 300 }
+function shortTracker:SetHeight(height)
+    self.height = height
+end
+function shortTracker:GetHeight()
+    return self.height
+end
+local applyShortHeight = assert(loadstring(heightChunk, "tracker_short_height"))(
+    { ObjectiveTrackerFrame = shortTracker }, fakeHelpers)
+applyShortHeight({ objectiveTrackerHeight = 600 })
+assert(shortTracker.height == 300,
+    "configured max height must not enlarge a tracker beyond Blizzard's available height")
+
 fakeGlobals.ObjectiveTrackerFrame = nil
 assert(pcall(applyHeight, { objectiveTrackerHeight = 300 }),
     "height enforcement must tolerate the tracker not being loaded yet")
@@ -82,5 +114,7 @@ local postLayout = assert(src:match(
     "post-layout objective tracker block must exist")
 assert(postLayout:find("EnforceSize()", 1, true),
     "post-layout updates must reassert both configured dimensions after Blizzard relayout")
+assert(src:find('hooksecurefunc(TrackerFrame, "UpdateHeight"', 1, true),
+    "height enforcement must capture Blizzard's available height from its owner lifecycle")
 
 print("OK: objectivetracker_widget_pool_retreat_test")
