@@ -224,8 +224,9 @@ local function LayoutElement(host, pool, poolCursor, element, resolve, opts)
     end
     local w = barVertical and barThick or barLong
     local h = barVertical and barLong or barThick
+    local rowGap = (p.rowSpacing and p.rowSpacing > 0) and p.rowSpacing or gap
     local stepX = w + gap
-    local stepY = h + gap
+    local stepY = h + (column and gap or rowGap)
     local color = element.color
 
     for i = 1, count do
