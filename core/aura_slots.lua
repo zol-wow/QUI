@@ -347,13 +347,15 @@ local function AnchorSlot(frame, container, element, index, total)
         dx = (col - (rowN - 1) / 2) * (w + profile.spacing)
     end
     if rowI > 0 then
+        local rowGap = (profile.rowSpacing and profile.rowSpacing > 0)
+            and profile.rowSpacing or profile.spacing
         local vert = (grow == "UP" or grow == "DOWN")
         if vert then
             local anchorRight = tostring(profile.anchor or ""):find("RIGHT", 1, true)
-            dx = dx + (anchorRight and -1 or 1) * rowI * (w + profile.spacing)
+            dx = dx + (anchorRight and -1 or 1) * rowI * (w + rowGap)
         else
             local anchorTop = tostring(profile.anchor or ""):find("TOP", 1, true)
-            dy = dy + (anchorTop and -1 or 1) * rowI * (h + profile.spacing)
+            dy = dy + (anchorTop and -1 or 1) * rowI * (h + rowGap)
         end
     end
     frame:ClearAllPoints()

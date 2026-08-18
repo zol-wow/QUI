@@ -520,6 +520,9 @@ local function AddPlacementWidgets(ctx, element, includeStrip)
         row(ns.L["Icons Per Row"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 10, 1, "iconsPerRow", element, onChange, { deferOnDrag = true }, {
             description = ns.L["Wrap icons onto a new row after this many. 0 keeps them on a single row. Extra rows stack away from the anchored frame edge."],
         }))
+        row(ns.L["Row Spacing"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 30, 1, "rowSpacing", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Pixel gap between wrapped rows. 0 uses the regular icon spacing. Increase this to make room for duration text below icons."],
+        }))
     end
     if ctx.caps.singleStrip then
         local hint = GUI:CreateLabel(ctx.detailArea,

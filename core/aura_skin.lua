@@ -55,6 +55,8 @@ local function ResolveLayout(profile)
         iconWidth = profile.iconWidth or m.iconSize,
         iconHeight = profile.iconHeight or m.iconSize,
         spacing   = m.spacing,
+        rowSpacing = (profile.rowSpacing and profile.rowSpacing > 0)
+            and profile.rowSpacing or m.spacing,
         grow      = m.grow,
         maxPerRow = profile.maxPerRow or 0,
         offsetX   = profile.offsetX or 0,
@@ -475,7 +477,7 @@ end
 local function GroupLayout(L, g)
     local t = {
         elementSpacing = g and g.elementSpacing or L.spacing,
-        lineSpacing    = L.spacing,
+        lineSpacing    = L.rowSpacing,
         elementWidth   = g and g.elementWidth or L.iconWidth,
         elementHeight  = L.iconHeight,
     }
@@ -630,7 +632,7 @@ function AuraSkin.ConfigureEnchantments(container, profile)
     container:SetItemEnchantmentLayout({
         placement      = placement.BeforeAuraGroups,
         elementSpacing = L.spacing,
-        lineSpacing    = L.spacing,
+        lineSpacing    = L.rowSpacing,
         elementWidth   = L.iconSize,
         elementHeight  = L.iconSize,
     })
