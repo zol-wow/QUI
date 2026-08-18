@@ -59,6 +59,7 @@ function G.ElementProfile(element, overrides)
         maxIcons     = maxIcons,
         iconSize     = (element.iconSize and element.iconSize > 0) and element.iconSize or 22,
         spacing      = element.spacing or 2,
+        rowSpacing   = element.rowSpacing or 0,
         grow         = element.growDirection or "RIGHT",
         maxPerRow    = element.iconsPerRow or 0,
         offsetX      = element.offsetX or 0,
