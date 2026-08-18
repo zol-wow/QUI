@@ -78,8 +78,8 @@ CM:ForceRefresh()
 
 assert(#created == 1,
     ("expected exactly one macro to be created, got %d"):format(#created))
-assert(created[1].name == "Flask_DUI",
-    "the created macro should be Flask_DUI, got " .. tostring(created[1].name))
+assert(created[1].name == "Flask_QUI",
+    "the created macro should be Flask_QUI, got " .. tostring(created[1].name))
 assert(created[1].perCharacter == true,
     "consumable macros are per-character")
 assert(#chatMessages == 0,

@@ -329,13 +329,13 @@ ConsumableMacros.WEAPON_OPTIONS = {
 }
 
 local MACRO_SLOTS = {
-    { dbKey = "selectedFlask",   macroName = "Flask_DUI",  defs = FLASK_DEFS,  label = "Flask" },
-    { dbKey = "selectedPotion",  macroName = "Pot_DUI",    defs = POTION_DEFS, label = "Potion" },
-    { dbKey = "selectedHealth",       macroName = "Health_DUI", defs = HEALTH_DEFS,       label = "Health Potion" },
-    { dbKey = "selectedHealthstone", macroName = "Stone_DUI",  defs = HEALTHSTONE_DEFS, label = "Healthstone" },
-    { dbKey = "selectedAugment",     macroName = "Rune_DUI",   defs = AUGMENT_DEFS,     label = "Augment Rune" },
-    { dbKey = "selectedVantus",      macroName = "Vantus_DUI", defs = VANTUS_DEFS,      label = "Vantus Rune" },
-    { dbKey = "selectedWeapon",      macroName = "Weapon_DUI", defs = WEAPON_DEFS,      label = "Weapon" },
+    { dbKey = "selectedFlask",   macroName = "Flask_QUI",  defs = FLASK_DEFS,  label = "Flask" },
+    { dbKey = "selectedPotion",  macroName = "Pot_QUI",    defs = POTION_DEFS, label = "Potion" },
+    { dbKey = "selectedHealth",       macroName = "Health_QUI", defs = HEALTH_DEFS,       label = "Health Potion" },
+    { dbKey = "selectedHealthstone", macroName = "Stone_QUI",  defs = HEALTHSTONE_DEFS, label = "Healthstone" },
+    { dbKey = "selectedAugment",     macroName = "Rune_QUI",   defs = AUGMENT_DEFS,     label = "Augment Rune" },
+    { dbKey = "selectedVantus",      macroName = "Vantus_QUI", defs = VANTUS_DEFS,      label = "Vantus Rune" },
+    { dbKey = "selectedWeapon",      macroName = "Weapon_QUI", defs = WEAPON_DEFS,      label = "Weapon" },
 }
 
 local MACRO_ICON = 134400

@@ -7,14 +7,15 @@ WoW install.
 
 ## Source
 
-The canonical source is your local WoW client install at:
-`<wow-root>/Interface/AddOns/Blizzard_APIDocumentationGenerated/`
+The canonical source is the `live` branch of
+[`Gethe/wow-ui-source`](https://github.com/Gethe/wow-ui-source):
+`Interface/AddOns/Blizzard_APIDocumentationGenerated/`
 
 Online mirror: https://www.townlong-yak.com/framexml/live/Blizzard_APIDocumentation
 
 ## Current state
 
-This directory contains a vendored snapshot of Blizzard's generated API
+This directory contains the `12.1.0.69382` snapshot of Blizzard's generated API
 documentation tables. The taint analyzer reads these files through the derived
 index at `tests/api-docs/api-index.lua`, so the corpus and index must stay in
 sync. After replacing or adding Blizzard documentation files, regenerate the
@@ -28,8 +29,9 @@ lua tools/test_taint.lua --update-index
 
 When WoW patches, file contents may change. To refresh:
 
-1. Copy the latest `*.lua` files from your WoW client install (path above) into
-   this directory. Replace existing files; do not merge.
+1. Clone the upstream `live` branch and copy its
+   `Interface/AddOns/Blizzard_APIDocumentationGenerated/*.lua` files into this
+   directory. Replace existing files; do not merge.
 2. Run `lua tools/test_taint.lua --update-index` to regenerate
    `tests/api-docs/api-index.lua`.
 3. Inspect the diff in `api-index.lua`. New entries are normal; removed

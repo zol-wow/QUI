@@ -3,7 +3,7 @@ local Helpers = ns.Helpers
 
 local GetSettings = Helpers.CreateDBGetter("general")
 
-local MACRO_NAME = "FocusMarker_DUI"
+local MACRO_NAME = "FocusMarker_QUI"
 local MACRO_ICON = 132219
 
 local button

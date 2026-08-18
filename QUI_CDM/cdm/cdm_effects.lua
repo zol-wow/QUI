@@ -290,6 +290,7 @@ local UpdatePandemicGlow
 local HasProcOnUsableOverride
 
 local activeGlowIcons = {}
+local buttonGlowOwners = {}
 
 local spellIdToGlowIcons = {}
 local procOnUsableGlowIcons = {}
@@ -531,6 +532,7 @@ local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
 
     elseif glowType == "Button Glow" then
         LCG.ButtonGlow_Start(icon, color, frequency)
+        buttonGlowOwners[icon] = glowKey
         EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
 
     elseif glowType == "Flash" then
@@ -590,7 +592,12 @@ StopGlow = function(icon, glowKey)
     if LCG then
         LCG.PixelGlow_Stop(icon, glowKey)
         LCG.AutoCastGlow_Stop(icon, glowKey)
-        LCG.ButtonGlow_Stop(icon)
+        local buttonGlowOwner = buttonGlowOwners[icon]
+        if buttonGlowOwner == glowKey
+            or (not buttonGlowOwner and glowKey == DEFAULT_GLOW_KEY) then
+            LCG.ButtonGlow_Stop(icon)
+            buttonGlowOwners[icon] = nil
+        end
         LCG.ProcGlow_Stop(icon, glowKey)
     end
     StopTextureGlow(icon, "_QUIFlash" .. glowKey)
