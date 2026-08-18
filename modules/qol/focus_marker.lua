@@ -4,6 +4,7 @@ local Helpers = ns.Helpers
 local GetSettings = Helpers.CreateDBGetter("general")
 
 local MACRO_NAME = "FocusMarker_QUI"
+local LEGACY_MACRO_NAME = "FocusMarker_DUI"
 local MACRO_ICON = 132219
 
 local button
@@ -34,24 +35,27 @@ local function EnsureButton()
     return button
 end
 
-local function FindMacroIndex()
+local function FindMacroIndex(name)
     if not (GetNumMacros and GetMacroInfo) then return nil end
     local numAccount, numCharacter = GetNumMacros()
     for i = 1, numAccount or 0 do
-        if GetMacroInfo(i) == MACRO_NAME then return i end
+        if GetMacroInfo(i) == name then return i end
     end
     local consts = Constants and Constants.MacroConsts
     local base = consts and consts.MAX_ACCOUNT_MACROS
     if type(base) ~= "number" then base = 120 end
     for i = base + 1, base + (numCharacter or 0) do
-        if GetMacroInfo(i) == MACRO_NAME then return i end
+        if GetMacroInfo(i) == name then return i end
     end
     return nil
 end
 
 local function WriteCharacterMacro(body)
     if not (CreateMacro and EditMacro) then return end
-    local index = FindMacroIndex()
+    local index = FindMacroIndex(MACRO_NAME)
+    if not index then
+        index = FindMacroIndex(LEGACY_MACRO_NAME)
+    end
     if index then
         pcall(EditMacro, index, MACRO_NAME, MACRO_ICON, body)
     else

@@ -17,7 +17,10 @@ check("roster refresh has a distinct path", refresh:find("local rosterRefresh = 
 check("roster refresh skips aura layout invalidation", refresh:find("if not rosterRefresh and GFA and GFA.InvalidateLayout", 1, true) ~= nil)
 check("roster aura work is dirty-gated", refresh:find("local auraDirty = not rosterRefresh or frame._quiRosterAuraDirty", 1, true) ~= nil)
 check("aura scans require dirty frames", refresh:find("local auraCacheRender = auraCacheAvailable and auraDirty", 1, true) ~= nil)
-check("unchanged roster frames skip aura render", refresh:find("if auraCacheAvailable and auraDirty then", 1, true) ~= nil)
+check("roster refresh renders cached aura elements for every frame",
+    refresh:find("if auraCacheAvailable then\n                    GFA:RenderFrame(frame)", 1, true) ~= nil)
+check("roster refresh does not dirty-gate cached aura rendering",
+    refresh:find("if auraCacheAvailable and auraDirty then", 1, true) == nil)
 check("roster dirty state is cleared after refresh", refresh:find("frame._quiRosterAuraDirty = nil", 1, true) ~= nil)
 
 local decoratedStart = assert(source:find("local function DecorateGroupFrame(frame)", 1, true))
