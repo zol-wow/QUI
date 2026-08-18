@@ -4754,7 +4754,7 @@ function QUI_GF:RefreshAllFrames(_reason)
                 end
                 UpdateFrame(frame)
 
-                if auraCacheAvailable and auraDirty then
+                if auraCacheAvailable then
                     GFA:RenderFrame(frame)
                 elseif not auraCacheAvailable and auraDirty and GFA and GFA.RefreshFrame then
                     GFA:RefreshFrame(frame)
