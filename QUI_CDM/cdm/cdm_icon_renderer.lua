@@ -2366,7 +2366,16 @@ function _resolverRuntimePolicy.ShouldSkipAuraPhaseForCooldownIcon(icon, entry)
     if IsAuraEntry(entry) then return false end
     if entry._isCustomEntry == true and entry.kind == "cooldown"
         and (entry.type == nil or entry.type == "spell") then
-        return true
+        local settings = ResolveTrackerSettingsNow
+            and ResolveTrackerSettingsNow(entry.viewerType)
+        local nativeOverlayEligible = settings
+            and settings.containerType == "customBar"
+            and (settings.iconDisplayMode or "always") == "always"
+            and settings.showOnlyWhenActive ~= true
+            and settings.showOnlyOnCooldown ~= true
+            and settings.showOnlyWhenOffCooldown ~= true
+            and settings.showOnlyInCombat ~= true
+        return nativeOverlayEligible == true or _showCooldownIconAuraPhase == false
     end
     return _showCooldownIconAuraPhase == false
 end

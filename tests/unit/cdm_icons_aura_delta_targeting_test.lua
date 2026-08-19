@@ -564,9 +564,6 @@ assert(itemAuraAppliedDuration == itemCooldownDur,
 assert(itemAuraReverse == false,
     "removed item aura should leave aura/reverse cooldown mode")
 
-customCooldownAppliedDuration = nil
-customCooldownReverse = nil
-customCooldownApplyCount = 0
 resolveCounts.customCooldown = 0
 
 icons.HandleRuntimeRefresh("UNIT_AURA", "pet", {
@@ -574,14 +571,8 @@ icons.HandleRuntimeRefresh("UNIT_AURA", "pet", {
     removedAuraInstanceIDs = { 901 },
 })
 
-assert(resolveCounts.customCooldown == 1,
-    "removed pet aura should re-resolve custom cooldown icons without a stored aura instance ID")
-assert(customCooldownAppliedDuration == customCooldownDur,
-    "removed pet aura should bind the custom cooldown DurationObject")
-assert(customCooldownReverse == false,
-    "removed pet aura should keep the custom icon on cooldown mode")
-assert(customCooldownApplyCount == 1,
-    "removed pet aura should refresh the custom cooldown once")
+assert(resolveCounts.customCooldown == 0,
+    "removed unrelated pet auras must not re-resolve custom cooldown icons")
 
 customCooldownAppliedDuration = nil
 customCooldownReverse = nil

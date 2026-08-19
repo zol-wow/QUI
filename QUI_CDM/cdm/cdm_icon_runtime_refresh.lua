@@ -677,12 +677,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                     and iconAuraInstanceID == nil then
                     matches = true
                 end
-                if not matches
-                    and hasRemovedIDs
-                    and isSelfAuraUnit(unit)
-                    and isCustomCooldownEntry(entry) then
-                    matches = true
-                end
                 if not matches and wakeAuraEntries and isAuraEntry(callbacks, entry) then
                     matches = true
                 end

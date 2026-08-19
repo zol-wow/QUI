@@ -96,9 +96,17 @@ local idleIcon = makeIcon("idle", {
     type = "spell",
     viewerType = "essential",
 })
+local customCooldownIcon = makeIcon("customCooldown", {
+    id = 707,
+    spellID = 707,
+    kind = "cooldown",
+    type = "spell",
+    viewerType = "custom",
+    _isCustomEntry = true,
+})
 
 local iconPools = {
-    essential = { spellIcon, otherSpellIcon, itemIcon, mirrorAuraIcon, idleIcon },
+    essential = { spellIcon, otherSpellIcon, itemIcon, mirrorAuraIcon, idleIcon, customCooldownIcon },
     buff = { auraIcon },
 }
 
@@ -424,6 +432,13 @@ controller:Handle("UNIT_AURA", "player", {
     },
 })
 assert(auraApplied.item == 1, "secret player added aura identity should still wake item aura entries")
+
+reset(auraApplied)
+controller:Handle("UNIT_AURA", "player", {
+    removedAuraInstanceIDs = { 9005 },
+})
+assert(auraApplied.customCooldown == nil,
+    "unrelated removed auras must not refresh custom cooldown bindings")
 
 reset(auraApplied)
 controller:Handle("UNIT_AURA", "target", {
