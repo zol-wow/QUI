@@ -20,9 +20,23 @@ function CDMManagedAuraMirrors.ResolveCandidateIDs(entry, isSecret)
     if entry.type == nil or entry.type == "spell" then
         AppendID(out, seen, entry.id, isSecret)
     end
+    AppendID(out, seen, entry.linkedSpellID, isSecret)
     local linked = entry.linkedSpellIDs
     if type(linked) == "table" then
         for i = 1, #linked do AppendID(out, seen, linked[i], isSecret) end
+    end
+    local baseID = entry.id or entry.spellID
+    local runtime = ns.CDMAuraRuntime
+    if runtime and runtime.ResolveAbilityAuraSpellID then
+        local mapped = runtime.ResolveAbilityAuraSpellID(baseID)
+        AppendID(out, seen, mapped, isSecret)
+    end
+    local spellData = ns.CDMSpellData
+    if spellData and spellData.GetAuraIDsForSpell then
+        local auraIDs = spellData:GetAuraIDsForSpell(baseID)
+        if type(auraIDs) == "table" then
+            for i = 1, #auraIDs do AppendID(out, seen, auraIDs[i], isSecret) end
+        end
     end
     return out
 end

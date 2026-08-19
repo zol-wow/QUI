@@ -4,9 +4,11 @@ local Runs = {}
 ns.CDMCustomAuraRuns = Runs
 
 local activeOwners = setmetatable({}, { __mode = "k" })
+local activeMirrorOwners = setmetatable({}, { __mode = "k" })
 local HELPFUL_FILTER = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 local HARMFUL_FILTER = "HARMFUL|PLAYER"
 local ResolveRoute
+local mirrorManager
 
 local function IsSecret(value)
     return issecretvalue and issecretvalue(value)
@@ -139,6 +141,37 @@ function Runs.ResolveRoute(entry)
     return ResolveRoute(entry)
 end
 
+local function IsAuraMirrorEntry(entry)
+    return type(entry) == "table"
+        and entry.enabled ~= false
+        and entry.kind ~= "aura"
+        and ResolveRoute(entry) == "SELF_HELPFUL"
+end
+
+function Runs.ShouldUseAuraMirrors(settings, viewerType)
+    if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
+    if type(viewerType) ~= "string" or viewerType == "" then return false end
+    if (settings.iconDisplayMode or "always") ~= "always" then return false end
+    return settings.showOnlyWhenActive ~= true
+        and settings.showOnlyOnCooldown ~= true
+        and settings.showOnlyWhenOffCooldown ~= true
+        and settings.showOnlyInCombat ~= true
+end
+
+function Runs.HasAuraMirrorEntries(settings, viewerType)
+    if not Runs.ShouldUseAuraMirrors(settings, viewerType) then return false end
+    local entries
+    if settings.specSpecific and ns.CDMSpellData and ns.CDMSpellData.GetSpecEntries then
+        entries = ns.CDMSpellData:GetSpecEntries(viewerType)
+    end
+    entries = type(entries) == "table" and entries or settings.entries
+    if type(entries) ~= "table" then return false end
+    for i = 1, #entries do
+        if IsAuraMirrorEntry(entries[i]) then return true end
+    end
+    return false
+end
+
 local function Profile(rowConfig)
     local size = rowConfig.size or 39
     local aspect = rowConfig.aspectRatioCrop or 1
@@ -197,6 +230,78 @@ local function Profile(rowConfig)
         externalSkinKey = "cdm",
         iconSkin = ncdm and ncdm.iconSkin,
     }
+end
+
+local function GetMirrorManager()
+    if mirrorManager then return mirrorManager end
+    local mirrors = ns.CDMManagedAuraMirrors
+    if not (mirrors and mirrors.New) then return nil end
+    local AuraSkin = ns.AuraSkin or (ns.Addon and ns.Addon.AuraSkin)
+    mirrorManager = mirrors.New({
+        createFrame = CreateFrame,
+        isSecret = IsSecret,
+        canCreate = function()
+            return not (InCombatLockdown and InCombatLockdown())
+        end,
+        canMutate = function()
+            return not (InCombatLockdown and InCombatLockdown())
+        end,
+        aurasAreSecret = function()
+            return C_Secrets and C_Secrets.ShouldAurasBeSecret
+                and C_Secrets.ShouldAurasBeSecret()
+        end,
+        styleFrame = AuraSkin and AuraSkin.WireButton,
+        restyleFrame = AuraSkin and AuraSkin.WireButton,
+        positionBase = function(baseIcon, host)
+            if host.SetFrameLevel and baseIcon.GetFrameLevel then
+                host:SetFrameLevel(baseIcon:GetFrameLevel() + 20)
+            end
+        end,
+    })
+    return mirrorManager
+end
+
+local function DisableAuraMirrors(owner)
+    if not owner or not activeMirrorOwners[owner] then return end
+    local manager = GetMirrorManager()
+    if manager and manager:BeginPass(owner) then manager:EndPass(owner) end
+    activeMirrorOwners[owner] = nil
+end
+
+function Runs.HasAuraMirrors(owner)
+    return owner and activeMirrorOwners[owner] == true
+end
+
+local function ApplyAuraMirrors(owner, settings, layoutPlan, inCombat, viewerType)
+    local manager = GetMirrorManager()
+    local eligible = owner and not inCombat and manager
+        and Runs.ShouldUseAuraMirrors(settings, viewerType)
+        and layoutPlan and layoutPlan.placements
+    if not eligible then
+        if not inCombat then DisableAuraMirrors(owner) end
+        return inCombat and Runs.HasAuraMirrors(owner) or false
+    end
+    if not manager:BeginPass(owner) then return Runs.HasAuraMirrors(owner) end
+
+    local mirrored = 0
+    for i = 1, #layoutPlan.placements do
+        local placement = layoutPlan.placements[i]
+        local icon = placement.icon
+        if IsAuraMirrorEntry(icon and icon._spellEntry) then
+            local record = manager:Acquire(owner, icon, icon._spellEntry, Profile(placement.rowConfig))
+            local rowConfig = placement.rowConfig
+            local width = rowConfig.size or 39
+            local aspect = rowConfig.aspectRatioCrop or 1
+            if aspect <= 0 then aspect = 1 end
+            if record and manager:Position(record, icon, owner, placement.x, placement.y,
+                width, width / aspect, rowConfig) then
+                mirrored = mirrored + 1
+            end
+        end
+    end
+    manager:EndPass(owner)
+    activeMirrorOwners[owner] = mirrored > 0 or nil
+    return mirrored > 0
 end
 
 local function AcquireRun(owner, index)
@@ -436,10 +541,11 @@ local function AnchorPreparedRuns(owner, layoutPlan, runByIcon)
 end
 
 function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat, viewerType)
+    local mirrorsApplied = ApplyAuraMirrors(owner, settings, layoutPlan, inCombat, viewerType)
     if not (owner and Runs.ShouldUseSettings(settings, viewerType)
         and layoutPlan and layoutPlan.placements) then
         if not inCombat then Disable(owner) end
-        return false
+        return mirrorsApplied
     end
 
     local AuraSkin = ns.AuraSkin or (ns.Addon and ns.Addon.AuraSkin)

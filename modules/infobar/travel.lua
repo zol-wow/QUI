@@ -185,12 +185,16 @@ local function BuildSecureWidgets(frame, slotFrame, size)
 
     local hearth = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
     frame._hearth = hearth
-    hearth:SetSize(size, size)
+    hearth:SetSize(slotFrame._quiFixedWidth or size, size)
     hearth:SetPoint("LEFT", frame, "LEFT", 2, 0)
     hearth:RegisterForClicks("AnyUp", "AnyDown")
     hearth:SetAttribute("type", attrType)
     hearth:SetAttribute(attrType, attrValue)
     hearth:SetNormalTexture(icon)
+    local hearthIcon = hearth:GetNormalTexture()
+    hearthIcon:SetSize(size, size)
+    hearthIcon:ClearAllPoints()
+    hearthIcon:SetPoint("LEFT", hearth, "LEFT", 0, 0)
     hearth:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
 
     BuildFlyout(frame, slotFrame)
