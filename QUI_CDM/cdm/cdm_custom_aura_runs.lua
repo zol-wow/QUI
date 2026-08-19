@@ -5,6 +5,7 @@ ns.CDMCustomAuraRuns = Runs
 
 local activeOwners = setmetatable({}, { __mode = "k" })
 local activeMirrorOwners = setmetatable({}, { __mode = "k" })
+local preparedMirrorOwners = setmetatable({}, { __mode = "k" })
 local HELPFUL_FILTER = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 local HARMFUL_FILTER = "HARMFUL|PLAYER"
 local ResolveRoute
@@ -275,7 +276,15 @@ function Runs.HasAuraMirrors(owner)
     return owner and activeMirrorOwners[owner] == true
 end
 
+function Runs.HasPreparedAuraMirrors(owner)
+    return owner and preparedMirrorOwners[owner] == true
+end
+
 local function ApplyAuraMirrors(owner, settings, layoutPlan, inCombat, viewerType)
+    if owner and not inCombat then
+        preparedMirrorOwners[owner] = Runs.ShouldUseAuraMirrors(settings, viewerType)
+            and Runs.HasAuraMirrorEntries(settings, viewerType) or nil
+    end
     local manager = GetMirrorManager()
     local eligible = owner and not inCombat and manager
         and Runs.ShouldUseAuraMirrors(settings, viewerType)

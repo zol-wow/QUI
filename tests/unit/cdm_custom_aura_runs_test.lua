@@ -508,7 +508,8 @@ assert(ns.CDMCustomAuraRuns.Apply(mirrorOwner, mirrorSettings, {
     "always-visible cooldown entries must retain the base icon while applying an aura mirror")
 assert(mirrorCalls.begin == 1 and mirrorCalls.acquire == 1
     and mirrorCalls.position == 1 and mirrorCalls.finish == 1
-    and ns.CDMCustomAuraRuns.HasAuraMirrors(mirrorOwner) == true,
+    and ns.CDMCustomAuraRuns.HasAuraMirrors(mirrorOwner) == true
+    and ns.CDMCustomAuraRuns.HasPreparedAuraMirrors(mirrorOwner) == true,
     "the aura mirror must be pooled and positioned over the owned cooldown icon")
 ns._OwnedSwipe.GetSettings = function() return { showCooldownIconAuraPhase = false } end
 assert(ns.CDMCustomAuraRuns.ShouldUseAuraMirrors(mirrorSettings, "custom") == false
@@ -518,7 +519,8 @@ assert(ns.CDMCustomAuraRuns.Apply(mirrorOwner, mirrorSettings, {
         metrics = { iconWidth = 30 },
         placements = { { icon = mirrorIcon, rowConfig = row, x = 0, y = 0 } },
     }, nil, nil, "custom") == false
-    and ns.CDMCustomAuraRuns.HasAuraMirrors(mirrorOwner) == false,
+    and ns.CDMCustomAuraRuns.HasAuraMirrors(mirrorOwner) == false
+    and ns.CDMCustomAuraRuns.HasPreparedAuraMirrors(mirrorOwner) == false,
     "disabling cooldown aura phases must park existing custom-bar mirrors")
 
 assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan, nil, nil, "custom") == true)
