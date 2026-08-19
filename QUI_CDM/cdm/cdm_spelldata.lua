@@ -1074,8 +1074,32 @@ local function GetLinkedSpellIDsForSpellID(spellID)
     local linked
     if IsUsableTableKey(cooldownID) then
         local info = catalog.GetCooldownInfo(cooldownID)
-        if info and type(info.linkedSpellIDs) == "table" then
-            linked = info.linkedSpellIDs
+        if info then
+            if type(info.linkedSpellIDs) == "table" then
+                linked = info.linkedSpellIDs
+            end
+            local activeLinkedID = info.linkedSpellID
+            if IsUsableSpellIDKey(activeLinkedID) then
+                if not linked then
+                    linked = { activeLinkedID }
+                else
+                    local found = false
+                    for _, linkedID in ipairs(linked) do
+                        if linkedID == activeLinkedID then
+                            found = true
+                            break
+                        end
+                    end
+                    if not found then
+                        local withActive = {}
+                        for i, linkedID in ipairs(linked) do
+                            withActive[i] = linkedID
+                        end
+                        withActive[#withActive + 1] = activeLinkedID
+                        linked = withActive
+                    end
+                end
+            end
         end
     end
     _linkedSpellIDCache[spellID] = linked or false
@@ -1319,6 +1343,7 @@ end
 
 local _resolveAuraScratch = {
     spellID = nil, entrySpellID = nil, entryID = nil, entryName = nil,
+    entryLinkedSpellID = nil, entryLinkedSpellIDs = nil,
     entryIsAura = false, entryTexture = nil, viewerType = nil,
     debugAura = false, isBuiltinAuraViewer = false,
 
@@ -1334,6 +1359,7 @@ local _scratchProbeSeen     = {}
 local function WipeResolveAuraScratch()
     local s = _resolveAuraScratch
     s.spellID = nil; s.entrySpellID = nil; s.entryID = nil; s.entryName = nil
+    s.entryLinkedSpellID = nil; s.entryLinkedSpellIDs = nil
     s.entryIsAura = false; s.entryTexture = nil; s.viewerType = nil
     s.debugAura = false; s.isBuiltinAuraViewer = false
     s.hasCooldownAuraID = false
@@ -1381,6 +1407,17 @@ local function ResolveAuraAppendMappedAuraIDs(id)
     end
 end
 
+local function ResolveAuraAppendLinkedSpellIDs(id)
+    local linked = GetLinkedSpellIDsForSpellID(id)
+    if not linked then return end
+    for _, linkedID in ipairs(linked) do
+        if IsUsableTableKey(linkedID) then
+            _resolveAuraScratch.hasMappedAuraID = true
+        end
+        ResolveAuraAppendID(linkedID)
+    end
+end
+
 local function ResolveAuraTryCaptured(preferredUnits, allowGlobalFallback, phaseName)
     local s = _resolveAuraScratch
     local captured = GetCapturedAuraForLookup(_scratchCandidateIDs, s.entryName,
@@ -1419,6 +1456,8 @@ local function ResolveAuraRuntimeStateImpl(params)
     local entrySpellID = params.entrySpellID
     local entryID = params.entryID
     local entryName = params.entryName
+    local entryLinkedSpellID = params.entryLinkedSpellID
+    local entryLinkedSpellIDs = params.entryLinkedSpellIDs
     local entryKind = params.entryKind
     local entryIsAura = params.entryIsAura == true or entryKind == "aura"
     local entryTexture = params.entryTexture
@@ -1430,6 +1469,8 @@ local function ResolveAuraRuntimeStateImpl(params)
     s.entrySpellID = entrySpellID
     s.entryID = entryID
     s.entryName = entryName
+    s.entryLinkedSpellID = entryLinkedSpellID
+    s.entryLinkedSpellIDs = entryLinkedSpellIDs
     s.entryIsAura = entryIsAura
     s.entryTexture = entryTexture
     s.viewerType = viewerType
@@ -1505,6 +1546,21 @@ local function ResolveAuraRuntimeStateImpl(params)
             ResolveAuraAppendMappedAuraIDs(entrySpellID)
             ResolveAuraAppendMappedAuraIDs(entryID)
         end
+        ResolveAuraAppendLinkedSpellIDs(auraSpellID)
+        ResolveAuraAppendLinkedSpellIDs(entrySpellID)
+        ResolveAuraAppendLinkedSpellIDs(entryID)
+        if IsUsableSpellIDKey(entryLinkedSpellID) then
+            s.hasMappedAuraID = true
+            ResolveAuraAppendID(entryLinkedSpellID)
+        end
+        if type(entryLinkedSpellIDs) == "table" then
+            for _, linkedID in ipairs(entryLinkedSpellIDs) do
+                if IsUsableSpellIDKey(linkedID) then
+                    s.hasMappedAuraID = true
+                    ResolveAuraAppendID(linkedID)
+                end
+            end
+        end
         if entryIsAura then
             ResolveAuraAppendCooldownAuraIDFor(auraSpellID)
             ResolveAuraAppendCooldownAuraIDFor(entrySpellID)
@@ -1568,7 +1624,8 @@ local function ResolveAuraRuntimeStateImpl(params)
     if childAuraInstID then
         local alive, durObj = ResolveAuraInstanceDurationState(r, auraUnit, childAuraInstID, r.auraData)
         if alive or r.auraData then
-            AuraStateDebug(debugAura, "phase3.2-duration", "unit=", auraUnit, "inst=", childAuraInstID)
+            AuraStateDebug(debugAura, "phase3.2-duration", "unit=", auraUnit, "inst=", childAuraInstID,
+                "durObj=", durObj and "yes" or "no", "unknown=", r.durationStateUnknown and "yes" or "no")
             isActive = true
             r.durObj = durObj
         end

@@ -1862,14 +1862,16 @@ function CDMIconCustomBarPolicy.Create(callbacks)
             else
                 icon.Cooldown:SetSwipeColor(0, 0, 0, 0)
             end
-        elseif icon._customBarActive and icon._lastAuraDurObj and containerDB.showAuraSwipe == true
+        elseif (icon._customBarActive or icon._resolvedCooldownMode == "aura")
+            and icon._lastAuraDurObj and containerDB.showAuraSwipe == true
             and ns.CDMRenderers and ns.CDMRenderers.ApplyDurationObjectCooldown then
             icon.Cooldown:SetDrawEdge(false)
             icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
             icon.Cooldown:SetSwipeColor(0, 0, 0, 0.6)
             icon.Cooldown:SetDrawSwipe(true)
             ns.CDMRenderers.ApplyDurationObjectCooldown(icon.Cooldown, icon._lastAuraDurObj, true, false)
-        elseif not icon._customBarActive then
+        elseif not icon._customBarActive
+            and not (cooldownState and cooldownState.isOnCooldown == true) then
             icon.Cooldown:SetDrawSwipe(false)
             icon.Cooldown:SetDrawEdge(false)
             icon.Cooldown:SetSwipeColor(0, 0, 0, 0)

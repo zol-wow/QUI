@@ -1149,6 +1149,9 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
     local shouldScheduleExpiry = hasNumericCooldown == true
         and (mode == "aura"
             or (cdActive == true and (mode == "cooldown" or mode == "item-cooldown")))
+    if addonCD.Show then
+        addonCD:Show()
+    end
     local sameDurationBinding = DurationBindingMatches(icon, mode, keySource, durObj)
     if sameDurationBinding then
         if shouldScheduleExpiry then
@@ -2777,6 +2780,13 @@ local function UpdateIconCooldownOwned(icon)
         end
     end
 
+    if resolvedApplied
+        and icon._hasCooldownActive == true
+        and icon._resolvedCooldownMode ~= "inactive"
+        and icon.Cooldown.Show then
+        icon.Cooldown:Show()
+    end
+
     local _cachedChargeInfo = nil
     local _cachedChargeInfoQueried = false
 
@@ -3061,6 +3071,7 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         _isCustomEntry = true,
         _sourceSpecID = entry._sourceSpecID,
         source = entry.source,
+        linkedSpellID = entry.linkedSpellID,
         linkedSpellIDs = entry.linkedSpellIDs,
         _selfAura = selfAura,
     }

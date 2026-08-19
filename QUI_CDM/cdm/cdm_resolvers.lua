@@ -1497,6 +1497,8 @@ local function ResolveAuraRuntimeStateForContext(context, entry, sid, entryIsAur
     p.entryName = entry.name
     p.entryKind = entry.kind
     p.entryType = entry.type
+    p.entryLinkedSpellID = entry.linkedSpellID
+    p.entryLinkedSpellIDs = entry.linkedSpellIDs
     p.entryIsAura = entryIsAura
     p.entryTexture = CDMResolvers.GetEntryTexture(entry)
     p.viewerType = context.containerKey or entry.viewerType

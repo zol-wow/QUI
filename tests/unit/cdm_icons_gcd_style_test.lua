@@ -507,6 +507,9 @@ local realCooldownIcon = {
         SetCooldownFromDurationObject = noop,
         SetReverse = noop,
         SetSwipeTexture = noop,
+        Show = function(self)
+            self.shown = true
+        end,
     },
     Icon = {
         SetDesaturated = function(_, value)
@@ -530,6 +533,7 @@ local realCooldownIcon = {
 applied = ns.CDMIcons.ApplyResolvedCooldown(realCooldownIcon)
 
 assert(applied == true, "real cooldown duration should be applied")
+assert(realCooldownIcon.Cooldown.shown == true, "active cooldown should show its cooldown child")
 assert(realCooldownIcon._hasCooldownActive == true, "real cooldown should remain active when the resolved API state is cooldown")
 assert(realCooldownIcon._hasRealCooldownActive == true, "real cooldown flag should remain active when the resolved API state is cooldown")
 assert(desaturated == true, "real cooldown should stay desaturated when the resolved API state is cooldown")
