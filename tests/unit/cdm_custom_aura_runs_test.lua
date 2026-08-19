@@ -501,7 +501,9 @@ ns.CDMManagedAuraMirrors.New = function(deps)
         Acquire = function(_, _, _, entry)
             overlayCalls.acquire = overlayCalls.acquire + 1
             acquiredUnits[entry.id] = deps.unit
-            return { entry = entry }
+            return { entry = entry, slots = {
+                { frame = { IsShown = function() return true end } },
+            } }
         end,
         PositionOverlay = function()
             overlayCalls.position = overlayCalls.position + 1

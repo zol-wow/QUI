@@ -1025,10 +1025,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             end
         end
 
-        if callbacks.refreshCustomCooldownAuraOverlays and isSelfAuraUnit(unit) then
-            callbacks.refreshCustomCooldownAuraOverlays(unit)
-        end
-
         if callbacks.eventTracePrint then
             callbacks.eventTracePrint("aura-post", "UNIT_AURA", unit, nil, nil,
                 callbacks.eventTraceAuraInfo and callbacks.eventTraceAuraInfo(unit, updateInfo))

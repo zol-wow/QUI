@@ -326,14 +326,6 @@ function Runs.HasPreparedAuraOverlays(owner)
     return owner and preparedAuraOverlayOwners[owner] == true
 end
 
-function Runs.RefreshCooldownAuraOverlays(unit)
-    for overlayUnit, manager in pairs(auraOverlayManagers) do
-        if not unit or overlayUnit == unit then
-            manager:Refresh()
-        end
-    end
-end
-
 local function ApplyCooldownAuraOverlays(owner, settings, layoutPlan, inCombat, viewerType)
     if owner and not inCombat then
         ClearPreparedAuraOverlayIcons(owner)
@@ -386,8 +378,14 @@ local function ApplyCooldownAuraOverlays(owner, settings, layoutPlan, inCombat, 
                 Profile(rowConfig))
             if record and manager:PositionOverlay(record, icon, owner, placement.x, placement.y,
                 width, width / aspect, rowConfig) then
-                icon._customAuraOverlayPrepared = true
-                preparedIcons[icon] = true
+                for j = 1, #(record.slots or {}) do
+                    local frame = record.slots[j].frame
+                    if frame and frame.IsShown and frame:IsShown() then
+                        icon._customAuraOverlayPrepared = true
+                        preparedIcons[icon] = true
+                        break
+                    end
+                end
                 mirrored = mirrored + 1
             end
         end

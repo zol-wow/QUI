@@ -4551,11 +4551,6 @@ do
                 ns.CDMCustomAuraRuns.RefreshTargets(identityChanged)
             end
         end,
-        refreshCustomCooldownAuraOverlays = function(unit)
-            if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.RefreshCooldownAuraOverlays then
-                ns.CDMCustomAuraRuns.RefreshCooldownAuraOverlays(unit)
-            end
-        end,
     }
     runtimeRefresh = ns.CDMIconRuntimeRefresh and ns.CDMIconRuntimeRefresh.Create(callbacks)
 
