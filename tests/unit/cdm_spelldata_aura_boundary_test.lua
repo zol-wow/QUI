@@ -58,7 +58,35 @@ local ns = {
     CDMShared = {
         IsRuntimeEnabled = function() return true end,
     },
-    CDMSources = {},
+    CDMSources = {
+        QueryUnitAuraBySpellID = function(unit, spellID)
+            if unit == "player" and spellID == 8001 then
+                return {
+                    auraInstanceID = 9001,
+                    spellId = spellID,
+                    duration = 10,
+                    expirationTime = 11,
+                    isHelpful = true,
+                    sourceUnit = "player",
+                }
+            end
+        end,
+    },
+    CDMIndex = {
+        Version = function() return 1 end,
+        Get = function(spellID)
+            if spellID == 7001 then
+                return { cooldownID = 9002 }
+            end
+        end,
+    },
+    CDMCatalog = {
+        GetCooldownInfo = function(cooldownID)
+            if cooldownID == 9002 then
+                return { linkedSpellID = 8001 }
+            end
+        end,
+    },
     CDMIcons = {
         HandleRuntimeRefresh = function()
             auraRefreshes = auraRefreshes + 1
@@ -118,6 +146,29 @@ auraFrame.script(auraFrame, "UNIT_AURA", "player", {
 local captured = ns.CDMSpellData.GetCapturedAuraForLookup({ 7001 }, nil, { "player" }, false)
 assert(captured and captured.auraInstanceID == 9001,
     "clean added aura payloads should also be keyed by recent cast spellID")
+
+local resolvedAura = ns.CDMAuraRuntime.ResolveState({
+    spellID = 7001,
+    entrySpellID = 7001,
+    entryID = 7001,
+    entryKind = "cooldown",
+    entryType = "spell",
+    viewerType = "custom",
+})
+assert(resolvedAura.isActive == true and resolvedAura.resolvedAuraSpellID == 8001,
+    "cooldown aura resolution should probe linked spell IDs for custom entries")
+
+local directEntryAura = ns.CDMAuraRuntime.ResolveState({
+    spellID = 7002,
+    entrySpellID = 7002,
+    entryID = 7002,
+    entryLinkedSpellID = 8001,
+    entryKind = "cooldown",
+    entryType = "spell",
+    viewerType = "custom",
+})
+assert(directEntryAura.isActive == true and directEntryAura.resolvedAuraSpellID == 8001,
+    "custom entry linkedSpellID should resolve without a catalog mapping")
 
 inCombat = true
 local ok, err = pcall(function()

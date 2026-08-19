@@ -15,8 +15,14 @@ Enum = {
 }
 
 local ns = {}
+local auraDurationApplied
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
 loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_custom_bar_policy.lua")("QUI", ns)
+ns.CDMRenderers = {
+    ApplyDurationObjectCooldown = function(_, durObj)
+        auraDurationApplied = durObj
+    end,
+}
 
 local policyModule = assert(ns.CDMIconCustomBarPolicy, "CDMIconCustomBarPolicy should be exported")
 
@@ -169,6 +175,7 @@ trackerSettings.custom = {
     visibilityMode = "onCooldown",
     hideNonUsable = true,
     showRechargeSwipe = true,
+    showAuraSwipe = true,
     activeGlowEnabled = true,
 }
 
@@ -290,6 +297,37 @@ assert(swipeWrites[3].op == "texture",
     "recharge swipe style should restore the owned swipe texture")
 assert(swipeWrites[4].op == "color" and swipeWrites[4].a == 0.6,
     "recharge swipe style should tint the recharge swipe")
+
+local realCooldownIcon, realCooldownWrites = makeIcon({
+    type = "spell", id = 101, spellID = 101, viewerType = "custom",
+})
+policy:ApplySwipeStyle(realCooldownIcon, trackerSettings.custom, {
+    isOnCooldown = true,
+    hasCharges = false,
+    rechargeActive = false,
+})
+for _, write in ipairs(realCooldownWrites) do
+    assert(not (write.op == "swipe" and write.value == false),
+        "custom-bar policy must preserve the real cooldown swipe")
+end
+
+local combatAuraDuration = { token = "combat-aura-duration" }
+local combatAuraIcon, combatAuraWrites = makeIcon({
+    type = "spell", id = 101, spellID = 101, viewerType = "custom",
+})
+combatAuraIcon._resolvedCooldownMode = "aura"
+combatAuraIcon._lastAuraDurObj = combatAuraDuration
+policy:ApplySwipeStyle(combatAuraIcon, trackerSettings.custom, {
+    isOnCooldown = false,
+    hasCharges = false,
+    rechargeActive = false,
+})
+assert(combatAuraWrites[1].op == "edge" and combatAuraWrites[1].value == false,
+    "resolved aura mode should keep the aura swipe path in combat")
+assert(combatAuraWrites[4].op == "swipe" and combatAuraWrites[4].value == true,
+    "resolved aura mode should draw its swipe without custom active-state truth")
+assert(auraDurationApplied == combatAuraDuration,
+    "resolved aura mode should rebind its cached DurationObject")
 
 local activeIcon = makeIcon({ type = "spell", id = 101, spellID = 101, viewerType = "custom" })
 activeSpells[101] = { true, 1, 2, "spell-active" }
