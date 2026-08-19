@@ -1146,6 +1146,12 @@ local function ShouldDeferContainerLayoutInCombat(trackerKey, settings, runtimeV
 
     local auraRuns = ns.CDMCustomAuraRuns
     local owner = containers[trackerKey]
+    local hasAuraMirrors = auraRuns and auraRuns.HasAuraMirrors
+        and auraRuns.HasAuraMirrors(owner)
+    if hasAuraMirrors then return true end
+    local usesAuraMirrors = auraRuns and auraRuns.HasPreparedAuraMirrors
+        and auraRuns.HasPreparedAuraMirrors(owner)
+    if usesAuraMirrors then return true end
     local hasActiveRuns = auraRuns and auraRuns.HasActiveRuns
         and auraRuns.HasActiveRuns(owner)
     if hasActiveRuns then
