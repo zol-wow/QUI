@@ -540,6 +540,12 @@ playerOverlayIcon._spellEntry = {
 assert(ns.CDMCustomAuraRuns.ShouldUseCooldownAuraOverlays(overlaySettings, "custom") == true
     and ns.CDMCustomAuraRuns.HasCooldownAuraOverlayEntries(overlaySettings, "custom") == true,
     "always-visible custom cooldowns must opt into native aura overlays")
+assert(ns.CDMCustomAuraRuns.HasCooldownAuraOverlayEntries(CopySettings({
+        iconDisplayMode = "always",
+        showOnlyWhenActive = false,
+        entries = { { id = 1233448, kind = "cooldown", type = "item" } },
+    }), "custom") == false,
+    "item cooldown entries must not claim native spell aura overlays")
 assert(ns.CDMCustomAuraRuns.Apply(overlayOwner, overlaySettings, {
         metrics = { iconWidth = 30 },
         placements = {

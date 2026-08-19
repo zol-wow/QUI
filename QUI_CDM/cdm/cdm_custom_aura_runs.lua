@@ -121,7 +121,10 @@ function Runs.HasCooldownAuraOverlayEntries(settings, viewerType)
     if type(entries) ~= "table" then return false end
     for i = 1, #entries do
         local entry = entries[i]
-        if entry and entry.enabled ~= false and entry.kind == "cooldown" then return true end
+        if entry and entry.enabled ~= false and entry.kind == "cooldown"
+            and (entry.type == nil or entry.type == "spell") then
+            return true
+        end
     end
     return false
 end
@@ -378,14 +381,8 @@ local function ApplyCooldownAuraOverlays(owner, settings, layoutPlan, inCombat, 
                 Profile(rowConfig))
             if record and manager:PositionOverlay(record, icon, owner, placement.x, placement.y,
                 width, width / aspect, rowConfig) then
-                for j = 1, #(record.slots or {}) do
-                    local frame = record.slots[j].frame
-                    if frame and frame.IsShown and frame:IsShown() then
-                        icon._customAuraOverlayPrepared = true
-                        preparedIcons[icon] = true
-                        break
-                    end
-                end
+                icon._customAuraOverlayPrepared = true
+                preparedIcons[icon] = true
                 mirrored = mirrored + 1
             end
         end
