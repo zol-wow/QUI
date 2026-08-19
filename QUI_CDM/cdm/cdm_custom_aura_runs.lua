@@ -285,6 +285,7 @@ local function ApplyAuraMirrors(owner, settings, layoutPlan, inCombat, viewerTyp
         preparedMirrorOwners[owner] = Runs.ShouldUseAuraMirrors(settings, viewerType)
             and Runs.HasAuraMirrorEntries(settings, viewerType) or nil
     end
+    if inCombat then return Runs.HasAuraMirrors(owner) end
     local manager = GetMirrorManager()
     local eligible = owner and not inCombat and manager
         and Runs.ShouldUseAuraMirrors(settings, viewerType)
