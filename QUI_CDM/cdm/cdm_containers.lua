@@ -3246,6 +3246,9 @@ function ownedEngine:Initialize()
         QUI.CooldownSwipe = ns._OwnedSwipe
         _G.QUI_RefreshCooldownSwipe = ns._OwnedSwipe.Apply
         _G.QUI_RefreshCooldownEffects = ns._OwnedSwipe.Apply
+        ns.QUI_RefreshCDMReanchor = function()
+            RefreshAll()
+        end
     end
 
     if ns.Registry then

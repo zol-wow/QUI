@@ -303,6 +303,29 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
                     diag.mintFailed = diag.mintFailed + 1
                 end
             end
+        elseif m and deps.shouldReplaceNativeAuraPhase
+            and deps.shouldReplaceNativeAuraPhase(m.frame, e, containerKey) then
+            claimedFrames[m.frame] = nil
+            local nativePlacement = self._nativePlacementByFrame[m.frame]
+            if not nativePlacement or nativePlacement.containerKey == containerKey then
+                self._entryByFrame[m.frame] = nil
+                self._nativePlacementByFrame[m.frame] = nil
+                self._consumersByFrame[m.frame] = nil
+            end
+            if self._bridge and self._bridge.Sink then
+                self._bridge:Sink(m.frame)
+            end
+            local icon = deps.mintOwned and deps.mintOwned(e, containerKey) or nil
+            if icon then
+                diag.minted = diag.minted + 1
+                self:_TrackMintedOwned(containerKey, icon)
+                entries[#entries + 1] = {
+                    src = e, frame = icon, reanchored = false,
+                    _assignedRow = e._assignedRow,
+                }
+            else
+                diag.mintFailed = diag.mintFailed + 1
+            end
         elseif m then
             local hiddenPreview = editing and IsBuffIconKey(containerKey)
                 and deps.frameIsActive ~= nil

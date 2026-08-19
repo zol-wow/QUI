@@ -230,7 +230,6 @@ local ap = AP.New({
     securecall = function(fn, ...) return fn(...) end,
     reassertColor = function(_, _, key) seen[#seen + 1] = { what = "color", key = key } end,
     reassertEdge = function(_, _, key) seen[#seen + 1] = { what = "edge", key = key } end,
-    reassertDesat = function(_, _, key) seen[#seen + 1] = { what = "desat", key = key } end,
 })
 local cdw = {
     SetSwipeColor = function() end,
@@ -249,14 +248,10 @@ assert(hookedFns.SetSwipeColor, "SetSwipeColor hook installed")()
 assert(seen[1] and seen[1].what == "color" and seen[1].key == "buff",
     "SetSwipeColor hook threads the container key into reassertColor")
 
-seen = {}
-assert(hookedFns.SetCooldown, "SetCooldown hook installed")()
-assert(seen[1] and seen[1].key == "buff", "SetCooldown hook threads the container key")
+assert(hookedFns.SetCooldown == nil, "native SetCooldown hook is not installed")
 
 seen = {}
-assert(hookedFns.SetDesaturated, "SetDesaturated hook installed")()
-assert(seen[1] and seen[1].what == "desat" and seen[1].key == "buff",
-    "SetDesaturated hook threads the container key")
+assert(hookedFns.SetDesaturated == nil, "native SetDesaturated hook is not installed")
 
 -- Proactive path: Reassert fires colour + edge with NO Blizzard write at all.
 seen = {}
