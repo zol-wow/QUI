@@ -182,8 +182,14 @@ function CDMReanchorBoot.BuildRuntime(env)
             if isBuffIconFrameKey(containerKey) or entry and (entry.isAura or entry.kind == "aura") then
                 return false
             end
+            local entryType = entry and entry.type
+            local itemBacked = entryType == "item"
+                or entryType == "slot"
+                or entryType == "trinket"
+                or entryType == "consumable"
+                or entryType == "macro"
             local linked = entry and entry.linkedSpellIDs
-            return type(linked) == "table" and #linked > 0
+            return (itemBacked or type(linked) == "table" and #linked > 0)
                 and not isAuraPhaseEnabled()
         end,
         buildLayout = env.buildLayout,

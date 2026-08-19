@@ -227,4 +227,17 @@ assert(type(facade.DrainPendingCombatRefresh) == "function",
 -- calling it with no deferred keys is a safe no-op
 facade:DrainPendingCombatRefresh()
 
+-- Item/category-backed cooldown entries are stable aura-capable entries even
+-- when Blizzard does not expose linkedSpellIDs on the curated entry.
+swipeStub.showCooldownIconAuraPhase = false
+local shouldReplace = capturedRuntimeDeps.shouldReplaceNativeAuraPhase
+for _, entryType in ipairs({ "item", "slot", "trinket", "consumable", "macro" }) do
+    assert(shouldReplace({}, { type = entryType }, "essential") == true,
+        entryType .. "-backed cooldown replaces native aura phase")
+end
+assert(shouldReplace({}, { type = "spell" }, "essential") == false,
+    "unlinked spell cooldown remains native")
+assert(shouldReplace({}, { type = "item" }, "buff") == false,
+    "item-backed BuffIcon entry remains native")
+
 print("OK: cdm_reanchor_boot_buildruntime_test")
