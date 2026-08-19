@@ -295,6 +295,11 @@ local defaults = {
                 offsetX = 0,
                 offsetY = 220,
             },
+            aztarecHelper = {
+                offsetX = 0,
+                offsetY = 0,
+                locked = false,
+            },
             healerMana = {
                 enabled = false,
                 instanceOnly = true,

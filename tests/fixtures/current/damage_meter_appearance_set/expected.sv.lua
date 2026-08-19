@@ -2338,6 +2338,11 @@ return {
           autoSelectGossip = true,
           autoTurnInQuest = true,
           autoUnwrapCollections = false,
+          aztarecHelper = {
+            locked = false,
+            offsetX = 0,
+            offsetY = 0
+          },
           closeBagsOnKeystoneInsert = false,
           communitiesPrivacy = false,
           consumableAnchorMode = true,
