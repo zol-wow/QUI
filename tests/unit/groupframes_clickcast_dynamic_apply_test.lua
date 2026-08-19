@@ -121,6 +121,7 @@ local ns = {
             return tbl, get
         end,
         DeepCopy = DeepCopy,
+        GetCurrentSpecID = function() return 102 end,
     },
 }
 
@@ -192,5 +193,97 @@ assert(proxy.attributes["macrotext1"]:find("Regrowth", 1, true),
     .. "Regrowth without a /reload. Got: " .. tostring(proxy.attributes["macrotext1"]))
 assert(not proxy.attributes["macrotext1"]:find("Rejuvenation", 1, true),
     "BUG: stale Rejuvenation macro should be gone from proxy after the binding change")
+
+-- ---- 4. copy between shared, spec, and loadout binding sets --------------
+local cc = _G.QUI.db.char.clickCast
+local loadoutBinding = {
+    button = "RightButton",
+    modifiers = "shift",
+    actionType = "macro",
+    spell = "Macro",
+    macro = "/say loadout",
+    metadata = { source = "loadout" },
+}
+local otherSpecBinding = {
+    key = "F",
+    modifiers = "",
+    actionType = "spell",
+    spell = "Regrowth",
+    spellID = 8936,
+}
+
+cc.specBindings = {
+    [102] = {
+        { button = "MiddleButton", actionType = "target", spell = "target" },
+    },
+    [103] = { otherSpecBinding },
+    [104] = {},
+}
+cc.loadoutBindings = {
+    [102] = {
+        [9001] = { loadoutBinding },
+        [9002] = {
+            { button = "Button4", actionType = "focus", spell = "focus" },
+        },
+        [9003] = {},
+    },
+}
+cc.perSpec = true
+cc.perLoadout = false
+
+assert(GFCC:GetEditableBindingSetID() == "spec:102",
+    "per-spec mode should edit the current spec bucket")
+
+local sources = GFCC:GetBindingSetSources()
+local sourceByID = {}
+for _, source in ipairs(sources) do sourceByID[source.id] = source end
+
+assert(#sources == 5, "only non-empty binding sets should be offered as copy sources")
+assert(sourceByID.shared and sourceByID.shared.count == 1, "shared bindings should be listed")
+assert(sourceByID["spec:102"] and sourceByID["spec:102"].isActive,
+    "the current spec source should be marked active")
+assert(sourceByID["spec:103"], "another spec should be listed")
+assert(sourceByID["loadout:102:9001"], "a saved loadout should be listed")
+assert(sourceByID["loadout:102:9002"], "the active loadout bucket should be listed")
+assert(not sourceByID["spec:104"], "empty spec buckets should not be listed")
+assert(not sourceByID["loadout:102:9003"], "empty loadout buckets should not be listed")
+
+local ok, count = GFCC:CopyBindingsFrom("loadout:102:9001")
+assert(ok and count == 1, "copying a loadout into the current spec should succeed")
+assert(cc.specBindings[102][1].macro == "/say loadout",
+    "the copied binding should replace the active spec set")
+assert(cc.specBindings[102][1] ~= loadoutBinding,
+    "the destination binding should not alias the source binding")
+assert(cc.specBindings[102][1].metadata ~= loadoutBinding.metadata,
+    "nested binding data should also be copied")
+cc.specBindings[102][1].metadata.source = "changed"
+assert(loadoutBinding.metadata.source == "loadout", "editing the copy should not change its source")
+
+cc.perSpec = false
+assert(GFCC:GetEditableBindingSetID() == "shared",
+    "turning off per-spec mode should target shared bindings")
+assert(GFCC:CopyBindingsFrom("spec:103"), "copying another spec into shared bindings should succeed")
+assert(cc.bindings[1].spellID == 8936, "shared bindings should receive the other spec")
+assert(cc.bindings[1] ~= otherSpecBinding, "the shared binding should be independent")
+
+C_ClassTalents = {
+    GetLastSelectedSavedConfigID = function() return 9002 end,
+    GetActiveConfigID = function() return 9002 end,
+}
+cc.perSpec = true
+cc.perLoadout = true
+assert(GFCC:GetEditableBindingSetID() == "loadout:102:9002",
+    "per-loadout mode should target the active loadout")
+assert(GFCC:CopyBindingsFrom("spec:103"), "copying a spec into a loadout should succeed")
+assert(cc.loadoutBindings[102][9002][1].spellID == 8936,
+    "the active loadout should receive the copied spec binding")
+
+local before = cc.loadoutBindings[102][9002][1]
+assert(not GFCC:CopyBindingsFrom("loadout:102:9002"),
+    "copying the active binding set onto itself should be rejected")
+assert(cc.loadoutBindings[102][9002][1] == before,
+    "a rejected self-copy should leave the active set untouched")
+assert(not GFCC:CopyBindingsFrom("loadout:102:9999"),
+    "an unknown source should be rejected")
 
 print("OK: groupframes_clickcast_dynamic_apply_test")

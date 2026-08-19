@@ -280,6 +280,8 @@ Click-casting allows binding spells to mouse clicks on group frames.
 | `clickCast.loadoutBindings` | table | `{}` | Per-loadout bindings keyed by `specID` then config ID |
 | `clickCast.unitFrames` | table | `{...}` | Per-unit-frame opt-ins (`player`, `target`, `targettarget`, `focus`, `pet`, `boss`) |
 
+The Bindings panel can copy any non-empty shared, spec, or loadout binding set into the set currently being edited. Copying replaces the current set with an independent copy; the source set is unchanged.
+
 ---
 
 ## Range

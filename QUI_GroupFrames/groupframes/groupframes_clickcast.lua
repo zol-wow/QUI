@@ -1,5 +1,6 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
+local DeepCopy = ns.Helpers.DeepCopy
 
 local function GetDB()
     return _G.QUI and _G.QUI.db and _G.QUI.db.char or nil
@@ -1152,6 +1153,128 @@ function QUI_GFCC:GetEditableBindings()
     return cc.bindings
 end
 
+local function GetEditableBindingSetID(cc)
+    if cc.perSpec then
+        local specID = GetCurrentSpecID()
+        if specID then
+            if cc.perLoadout then
+                local configID = GetStableLoadoutID()
+                if configID then
+                    return "loadout:" .. specID .. ":" .. configID
+                end
+            end
+            return "spec:" .. specID
+        end
+    end
+
+    return "shared"
+end
+
+local function GetBindingSetByID(cc, setID)
+    if setID == "shared" then
+        return cc.bindings
+    end
+
+    local specID = type(setID) == "string" and setID:match("^spec:(%d+)$")
+    if specID then
+        specID = tonumber(specID)
+        return cc.specBindings and cc.specBindings[specID]
+    end
+
+    local loadoutSpecID, configID
+    if type(setID) == "string" then
+        loadoutSpecID, configID = setID:match("^loadout:(%d+):(%d+)$")
+    end
+    if loadoutSpecID and configID then
+        loadoutSpecID = tonumber(loadoutSpecID)
+        configID = tonumber(configID)
+        local specLoadouts = cc.loadoutBindings and cc.loadoutBindings[loadoutSpecID]
+        return specLoadouts and specLoadouts[configID]
+    end
+
+    return nil
+end
+
+local function SortedNumericKeys(source)
+    local keys = {}
+    if type(source) ~= "table" then return keys end
+
+    for key in pairs(source) do
+        if type(key) == "number" then
+            keys[#keys + 1] = key
+        end
+    end
+    table.sort(keys)
+    return keys
+end
+
+function QUI_GFCC:GetEditableBindingSetID()
+    local db = GetDB()
+    local cc = db and db.clickCast
+    return cc and GetEditableBindingSetID(cc) or nil
+end
+
+function QUI_GFCC:GetBindingSetSources()
+    local db = GetDB()
+    local cc = db and db.clickCast
+    if not cc then return {} end
+
+    local activeID = GetEditableBindingSetID(cc)
+    local sources = {}
+    local function AddSource(id, scope, bindings, specID, configID)
+        if type(bindings) ~= "table" or #bindings == 0 then return end
+        sources[#sources + 1] = {
+            id = id,
+            scope = scope,
+            specID = specID,
+            configID = configID,
+            count = #bindings,
+            isActive = id == activeID,
+        }
+    end
+
+    AddSource("shared", "shared", cc.bindings)
+
+    for _, specID in ipairs(SortedNumericKeys(cc.specBindings)) do
+        AddSource("spec:" .. specID, "spec", cc.specBindings[specID], specID)
+    end
+
+    for _, specID in ipairs(SortedNumericKeys(cc.loadoutBindings)) do
+        local loadouts = cc.loadoutBindings[specID]
+        for _, configID in ipairs(SortedNumericKeys(loadouts)) do
+            AddSource("loadout:" .. specID .. ":" .. configID,
+                "loadout", loadouts[configID], specID, configID)
+        end
+    end
+
+    return sources
+end
+
+function QUI_GFCC:CopyBindingsFrom(sourceID)
+    local db = GetDB()
+    local cc = db and db.clickCast
+    if not cc then return false, "Click-cast settings unavailable" end
+
+    local source = GetBindingSetByID(cc, sourceID)
+    if type(source) ~= "table" then return false, "Binding set not found" end
+
+    local target = self:GetEditableBindings()
+    if source == target then return false, "Cannot copy a binding set onto itself" end
+
+    local copied = DeepCopy(source)
+    wipe(target)
+    for index, binding in ipairs(copied) do
+        target[index] = binding
+    end
+
+    if not InCombatLockdown() then
+        self:RefreshBindings()
+    else
+        self.pendingRefresh = true
+    end
+    return true, #target
+end
+
 function QUI_GFCC:AddBinding(binding)
     if not binding then return false, "No binding specified" end
     if not binding.button and not binding.key then return false, "No button or key specified" end
@@ -1240,8 +1363,6 @@ local function RunRootSpellMigration()
 
     cc.rootSpellMigrationDone = true
 end
-
-local DeepCopy = ns.Helpers.DeepCopy
 
 function MigrateProfileClickCastToChar()
     local QUI = _G.QUI

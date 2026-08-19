@@ -21,6 +21,10 @@ local CreateScrollableContent = Shared.CreateScrollableContent
 
 local FORM_ROW = 32
 local PAD = 10
+local COPY_LABEL_WIDTH = 72
+local COPY_DROPDOWN_WIDTH = 420
+local COPY_CONTROL_GAP = 12
+local BINDINGS_SECTION_GAP = 22
 local UIKit = ns.UIKit
 
 local spellCache = {}
@@ -938,6 +942,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     L.placeCustom(bindingsBlock, 100)
 
     local by = 0
+    local RefreshBindingList
 
     local specLabel = GUI:CreateLabel(bindingsBlock, "", 11, C.accent)
     specLabel:SetPoint("TOPLEFT", 0, by)
@@ -988,14 +993,116 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     UpdateSpecLabel()
     if specLabel:IsShown() then by = by - 20 end
 
+    local function GetSpecName(specID)
+        if GetSpecializationInfoByID then
+            local _, specName = GetSpecializationInfoByID(specID)
+            if specName and specName ~= "" then return specName end
+        end
+        return ns.L["Spec"] .. " " .. tostring(specID)
+    end
+
+    local function GetLoadoutName(specID, configID, specName)
+        local configInfo = C_Traits and C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(configID)
+        local customName = configInfo and configInfo.name
+        if customName and customName ~= "" and customName ~= specName then
+            return customName
+        end
+
+        local configIDs = C_ClassTalents and C_ClassTalents.GetConfigIDsBySpecID
+            and C_ClassTalents.GetConfigIDsBySpecID(specID)
+        if configIDs then
+            for index, savedConfigID in ipairs(configIDs) do
+                if savedConfigID == configID then
+                    return ns.L["Loadout"] .. " " .. index
+                end
+            end
+        end
+
+        return ns.L["Loadout"] .. " " .. tostring(configID)
+    end
+
+    local function GetBindingSetLabel(source)
+        if source.scope == "shared" then
+            return ns.L["Shared"]
+        end
+
+        local specName = GetSpecName(source.specID)
+        if source.scope == "spec" then
+            return specName .. " (" .. ns.L["Spec"] .. ")"
+        end
+
+        return specName .. ": " .. GetLoadoutName(source.specID, source.configID, specName)
+    end
+
+    Shared.CreateAccentDotLabel(bindingsBlock, ns.L["Copy Settings"], by); by = by - 30
+
+    local copySelector = { selected = nil }
+    local copyCard = Shared.CreateSettingsCardGroup(bindingsBlock, by)
+    local copyControls = CreateFrame("Frame", nil, copyCard.frame)
+    copyControls:SetHeight(FORM_ROW)
+
+    local copyDropdown = GUI:CreateFormDropdown(copyControls, ns.L["Copy From"], {}, "selected", copySelector)
+    copyDropdown:ClearAllPoints()
+    copyDropdown:SetPoint("LEFT", copyControls, "LEFT", 0, 0)
+    copyDropdown:SetWidth(COPY_LABEL_WIDTH + COPY_CONTROL_GAP + COPY_DROPDOWN_WIDTH)
+    if copyDropdown.dropdown then
+        copyDropdown.dropdown:ClearAllPoints()
+        copyDropdown.dropdown:SetPoint("LEFT", copyDropdown, "LEFT", COPY_LABEL_WIDTH + COPY_CONTROL_GAP, 0)
+        copyDropdown.dropdown:SetPoint("RIGHT", copyDropdown, "RIGHT", 0, 0)
+    end
+
+    local applyCopyBtn = GUI:CreateButton(copyControls, ns.L["Apply Copy"], 100, 24, function()
+        if not copySelector.selected or copySelector.selected == "" then return end
+        local ok = GFCC:CopyBindingsFrom(copySelector.selected)
+        if ok and RefreshBindingList then RefreshBindingList() end
+    end)
+    applyCopyBtn:SetPoint("LEFT", copyDropdown, "RIGHT", COPY_CONTROL_GAP, 0)
+
+    copyCard.AddRow(copyControls)
+    copyCard.Finalize()
+    by = by - copyCard.frame:GetHeight() - BINDINGS_SECTION_GAP
+
+    local function UpdateCopyControls()
+        local activeID = GFCC:GetEditableBindingSetID()
+        local options = {}
+        for _, source in ipairs(GFCC:GetBindingSetSources()) do
+            if source.id ~= activeID then
+                options[#options + 1] = {
+                    value = source.id,
+                    text = GetBindingSetLabel(source),
+                }
+            end
+        end
+
+        local hasSources = #options > 0
+        if not hasSources then
+            options[1] = { value = "", text = ns.L["None"] }
+        end
+
+        local selectionFound = false
+        for _, option in ipairs(options) do
+            if option.value == copySelector.selected then
+                selectionFound = true
+                break
+            end
+        end
+        if not selectionFound then
+            copySelector.selected = options[1].value
+        end
+
+        copyDropdown:SetOptions(options)
+        copyDropdown:SetValue(copySelector.selected, true)
+        copyDropdown:SetEnabled(hasSources)
+        applyCopyBtn:SetEnabled(hasSources)
+        applyCopyBtn:SetAlpha(hasSources and 1 or 0.4)
+    end
+
     Shared.CreateAccentDotLabel(bindingsBlock, ns.L["Current Bindings"], by); by = by - 30
 
     local bindingListFrame = CreateFrame("Frame", nil, bindingsBlock)
     bindingListFrame:SetPoint("TOPLEFT", 0, by)
     bindingListFrame:SetSize(400, 20)
     local listTopOffset = math.abs(by)
-
-    local RefreshBindingList
 
     local addContainer = CreateFrame("Frame", nil, bindingsBlock)
     addContainer:SetPoint("TOPLEFT", bindingListFrame, "BOTTOMLEFT", 0, -10)
@@ -1544,6 +1651,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     RefreshBindingList = function()
         UpdateSpecLabel()
+        UpdateCopyControls()
         local buttonNames = GFCC:GetButtonNames()
         local modLabels  = GFCC:GetModifierLabels()
         local bindings   = GFCC:GetEditableBindings()
