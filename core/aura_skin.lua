@@ -411,6 +411,8 @@ local function styleButton(button, profile)
     local wantsLinear = profile.swipeStyle == "horizontal" or profile.swipeStyle == "vertical"
     if wantsLinear and button.SetDurationBar and profile.hideSwipe ~= true then
         if cd and cd.SetDrawSwipe then cd:SetDrawSwipe(false) end
+        if cd and cd.SetDrawEdge then cd:SetDrawEdge(false) end
+        if cd and cd.SetDrawBling then cd:SetDrawBling(false) end
         local fill = button._quiDurationBar
         if not fill and InCombatLockdown() then
             return

@@ -171,6 +171,10 @@ AuraSkin.Configure(container, profileHorizontal, groups)
 local button1 = container._capturedButton
 check("radial swipe disabled when linear style requested",
     button1 ~= nil and button1._cooldown._drawSwipe == false)
+check("radial edge disabled when linear style requested",
+    button1 ~= nil and button1._cooldown._drawEdge == false)
+check("radial bling disabled when linear style requested",
+    button1 ~= nil and button1._cooldown._drawBling == false)
 check("SetDurationBar was called", button1._durationBarCalls >= 1)
 check("SetDurationBar direction defaults to RemainingTime",
     button1._lastDurationBarOptions ~= nil

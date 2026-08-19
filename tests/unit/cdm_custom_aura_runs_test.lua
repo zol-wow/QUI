@@ -550,6 +550,8 @@ assert(overlayCalls.begin == 2 and overlayCalls.acquire == 2
     and overlayCalls.position == 2 and overlayCalls.finish == 2
     and overlayUnits.pet == true and overlayUnits.player == true
     and acquiredUnits[1233448] == "pet" and acquiredUnits[222] == "player"
+    and overlayIcon._customAuraOverlayPrepared == true
+    and playerOverlayIcon._customAuraOverlayPrepared == true
     and ns.CDMCustomAuraRuns.HasAuraOverlays(overlayOwner) == true
     and ns.CDMCustomAuraRuns.HasPreparedAuraOverlays(overlayOwner) == true,
     "native aura overlays must be pooled and positioned over the cooldown icon")
@@ -564,6 +566,8 @@ assert(ns.CDMCustomAuraRuns.Apply(overlayOwner, overlaySettings, {
             { icon = playerOverlayIcon, rowConfig = row, x = 32, y = 0 },
         },
     }, nil, nil, "custom") == false
+    and overlayIcon._customAuraOverlayPrepared == nil
+    and playerOverlayIcon._customAuraOverlayPrepared == nil
     and ns.CDMCustomAuraRuns.HasAuraOverlays(overlayOwner) == false,
     "disabling cooldown aura phases must park the native overlay")
 ns._OwnedSwipe.GetSettings = function() return { showCooldownIconAuraPhase = true } end

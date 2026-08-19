@@ -126,7 +126,6 @@ skipSource = skipSource:gsub(
 local skipEnv = setmetatable({
     IsAuraEntry = function(entry) return entry and entry.kind == "aura" end,
     _showCooldownIconAuraPhase = false,
-    ResolveTrackerSettingsNow = function() return nil end,
 }, { __index = globals })
 local skipChunk = assert(loadstring(skipSource,
     "@cdm_icon_renderer.lua#ShouldSkipAuraPhaseForCooldownIcon"))
@@ -139,22 +138,18 @@ assert(shouldSkipAuraPhase({}, {
 assert(shouldSkipAuraPhase({}, { kind = "aura" }) == false,
     "explicit aura entries must retain the native aura resolver path")
 skipEnv._showCooldownIconAuraPhase = true
-skipEnv.ResolveTrackerSettingsNow = function()
-    return { containerType = "customBar", iconDisplayMode = "always" }
-end
 assert(shouldSkipAuraPhase({}, {
         kind = "cooldown", type = "spell", _isCustomEntry = true,
-        viewerType = "custom",
-    }) == true,
-    "always-visible custom cooldowns must use the native aura overlay path")
-skipEnv.ResolveTrackerSettingsNow = function()
-    return { containerType = "customBar", iconDisplayMode = "always", showOnlyWhenActive = true }
-end
-assert(shouldSkipAuraPhase({}, {
-        kind = "cooldown", type = "spell", _isCustomEntry = true,
-        viewerType = "custom",
     }) == false,
-    "filtered custom cooldowns must retain Lua aura resolution without a native overlay")
+    "custom cooldowns must retain Lua aura resolution until an overlay is positioned")
+assert(shouldSkipAuraPhase({}, {
+        kind = "cooldown", type = "spell", _isCustomEntry = true,
+    }) == false,
+    "custom cooldowns must retain Lua aura resolution for unsupported aura routes")
+assert(shouldSkipAuraPhase({ _customAuraOverlayPrepared = true }, {
+        kind = "cooldown", type = "spell", _isCustomEntry = true,
+    }) == true,
+    "custom cooldowns may skip Lua aura resolution after their native overlay is positioned")
 
 local placeSource = sliceBetween(
     icons,

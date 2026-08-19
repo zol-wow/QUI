@@ -6,11 +6,21 @@ ns.CDMCustomAuraRuns = Runs
 local activeOwners = setmetatable({}, { __mode = "k" })
 local activeAuraOverlayOwners = setmetatable({}, { __mode = "k" })
 local preparedAuraOverlayOwners = setmetatable({}, { __mode = "k" })
+local preparedAuraOverlayIcons = setmetatable({}, { __mode = "k" })
 local HELPFUL_FILTER = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 local HARMFUL_FILTER = "HARMFUL|PLAYER"
 local PET_AURA_UNITS = { [1235391] = true }
 local ResolveRoute
 local auraOverlayManagers = {}
+
+local function ClearPreparedAuraOverlayIcons(owner)
+    local icons = owner and preparedAuraOverlayIcons[owner]
+    if not icons then return end
+    for icon in pairs(icons) do
+        icon._customAuraOverlayPrepared = nil
+    end
+    preparedAuraOverlayIcons[owner] = nil
+end
 
 local function IsSecret(value)
     return issecretvalue and issecretvalue(value)
@@ -299,6 +309,7 @@ local function GetAuraOverlayManager(unit)
 end
 
 local function DisableCooldownAuraOverlays(owner)
+    ClearPreparedAuraOverlayIcons(owner)
     if not owner or not activeAuraOverlayOwners[owner] then return end
     for unit in pairs(auraOverlayManagers) do
         local manager = GetAuraOverlayManager(unit)
@@ -324,6 +335,9 @@ function Runs.RefreshCooldownAuraOverlays(unit)
 end
 
 local function ApplyCooldownAuraOverlays(owner, settings, layoutPlan, inCombat, viewerType)
+    if owner and not inCombat then
+        ClearPreparedAuraOverlayIcons(owner)
+    end
     if owner and not inCombat then
         preparedAuraOverlayOwners[owner] = Runs.ShouldUseCooldownAuraOverlays(settings, viewerType)
             and Runs.HasCooldownAuraOverlayEntries(settings, viewerType) or nil
@@ -358,6 +372,7 @@ local function ApplyCooldownAuraOverlays(owner, settings, layoutPlan, inCombat, 
     if managerCount == 0 then return Runs.HasAuraOverlays(owner) end
 
     local mirrored = 0
+    local preparedIcons = {}
     for i = 1, #layoutPlan.placements do
         local placement = layoutPlan.placements[i]
         local icon = placement.icon
@@ -371,11 +386,14 @@ local function ApplyCooldownAuraOverlays(owner, settings, layoutPlan, inCombat, 
                 Profile(rowConfig))
             if record and manager:PositionOverlay(record, icon, owner, placement.x, placement.y,
                 width, width / aspect, rowConfig) then
+                icon._customAuraOverlayPrepared = true
+                preparedIcons[icon] = true
                 mirrored = mirrored + 1
             end
         end
     end
     for _, manager in pairs(managers) do manager:EndPass(owner) end
+    preparedAuraOverlayIcons[owner] = preparedIcons
     activeAuraOverlayOwners[owner] = mirrored > 0 or nil
     return mirrored > 0
 end
