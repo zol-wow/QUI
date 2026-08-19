@@ -106,11 +106,10 @@ function CDMReanchorBoot.BuildRuntime(env)
             if isAuraPhaseEnabled() then
                 local r, g, b, a = modeColor("aura")
                 cd:SetSwipeColor(r, g, b, a)
-            elseif cooldownShown(frame) then
-                local r, g, b, a = modeColor("cooldown")
-                cd:SetSwipeColor(r, g, b, a)
-            else
+            elseif swipeSettings().showCooldownSwipe == false then
                 cd:SetSwipeColor(0, 0, 0, 0)
+            else
+                return
             end
         elseif cooldownShown(frame) then
             local r, g, b, a = modeColor("cooldown")

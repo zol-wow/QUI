@@ -2,9 +2,8 @@
 -- Run: lua tests/unit/cdm_reanchor_auraphase_restyle_test.lua
 -- Locks the reassertColor contract for showCooldownIconAuraPhase on re-anchored
 -- NATIVE frames: setting ON -> aura colour over Blizzard's native aura timing;
--- setting OFF -> re-bind the widget to the spell's REAL cooldown via a duration
--- object (spell CD first, charge recharge fallback), or clear to ready when the
--- spell has no cooldown behind the buff. Colour honours showCooldownSwipe.
+-- setting OFF -> leave Blizzard's native aura presentation untouched. Colour
+-- honours showCooldownSwipe.
 local ns = {}
 -- Task 45f: cdm_reanchor*.lua route discarded-result pcall guards through
 -- ns.SafeCall. Additive stub (T1d/T1e precedent) — bare pcall passthrough.
@@ -125,7 +124,7 @@ do
         "setting ON: native aura timing untouched")
 end
 
--- 2) Setting OFF + aura phase: keep Blizzard's native timing untouched.
+-- 2) Setting OFF + aura phase: exclude native aura presentation from the setting.
 do
     swipeStub.showCooldownIconAuraPhase = false
     fMatch.cooldownUseAuraDisplayTime = true
@@ -133,12 +132,8 @@ do
     durQueries = {}
     local cd = NewCd()
     reassertColor(fMatch, cd)
-    assert(#durQueries == 0 and #cd.auraDisplay == 0 and #cd.binds == 0 and cd.cleared == 0,
-        "setting OFF: native timing remains untouched")
-    local c = assert(lastColor(cd))
-    assert(c[1] == 0 and c[2] == 0 and c[3] == 0 and c[4] == 0.8,
-        "setting OFF: cooldown (fallback dark) colour")
-    assert(cd.cleared == 0, "active CD: no clear")
+    assert(#durQueries == 0 and #cd.colors == 0 and #cd.auraDisplay == 0 and #cd.binds == 0 and cd.cleared == 0,
+        "setting OFF: native aura presentation remains untouched")
 end
 
 -- 3) Setting OFF + cooldown swipe disabled: only the visual colour is hidden.
@@ -159,10 +154,8 @@ do
     local orphan = { cooldownUseAuraDisplayTime = true }
     local cd = NewCd()
     reassertColor(orphan, cd)
-    assert(cd.cleared == 0 and #cd.binds == 0 and #cd.auraDisplay == 0,
-        "no entry: no native timing writes")
-    local c = assert(lastColor(cd))
-    assert(c[4] == 0.8, "no entry: cooldown colour remains visual-only")
+    assert(cd.cleared == 0 and #cd.colors == 0 and #cd.binds == 0 and #cd.auraDisplay == 0,
+        "no entry: native aura presentation remains untouched")
 end
 
 -- 5) Non-aura phase: unchanged cooldown-colour path, no timing writes.
