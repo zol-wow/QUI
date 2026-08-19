@@ -4,12 +4,13 @@ local Runs = {}
 ns.CDMCustomAuraRuns = Runs
 
 local activeOwners = setmetatable({}, { __mode = "k" })
-local activeMirrorOwners = setmetatable({}, { __mode = "k" })
-local preparedMirrorOwners = setmetatable({}, { __mode = "k" })
+local activeAuraOverlayOwners = setmetatable({}, { __mode = "k" })
+local preparedAuraOverlayOwners = setmetatable({}, { __mode = "k" })
 local HELPFUL_FILTER = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 local HARMFUL_FILTER = "HARMFUL|PLAYER"
+local PET_AURA_UNITS = { [1235391] = true }
 local ResolveRoute
-local mirrorManager
+local auraOverlayManagers = {}
 
 local function IsSecret(value)
     return issecretvalue and issecretvalue(value)
@@ -79,6 +80,42 @@ function Runs.HasAuraEntries(settings, viewerType)
     return false
 end
 
+local function IsCooldownAuraOverlayEntry(entry)
+    return type(entry) == "table"
+        and entry.enabled ~= false
+        and entry._isCustomEntry == true
+        and entry.kind == "cooldown"
+        and (entry.type == nil or entry.type == "spell")
+end
+
+function Runs.ShouldUseCooldownAuraOverlays(settings, viewerType)
+    if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
+    if type(viewerType) ~= "string" or viewerType == "" then return false end
+    local swipe = ns._OwnedSwipe
+    local swipeSettings = swipe and swipe.GetSettings and swipe.GetSettings()
+    if swipeSettings and swipeSettings.showCooldownIconAuraPhase == false then return false end
+    if (settings.iconDisplayMode or "always") ~= "always" then return false end
+    return settings.showOnlyWhenActive ~= true
+        and settings.showOnlyOnCooldown ~= true
+        and settings.showOnlyWhenOffCooldown ~= true
+        and settings.showOnlyInCombat ~= true
+end
+
+function Runs.HasCooldownAuraOverlayEntries(settings, viewerType)
+    if not Runs.ShouldUseCooldownAuraOverlays(settings, viewerType) then return false end
+    local entries
+    if settings.specSpecific and ns.CDMSpellData and ns.CDMSpellData.GetSpecEntries then
+        entries = ns.CDMSpellData:GetSpecEntries(viewerType)
+    end
+    entries = type(entries) == "table" and entries or settings.entries
+    if type(entries) ~= "table" then return false end
+    for i = 1, #entries do
+        local entry = entries[i]
+        if entry and entry.enabled ~= false and entry.kind == "cooldown" then return true end
+    end
+    return false
+end
+
 local function CandidateIDs(entry)
     local out, seen = {}, {}
     local function add(value)
@@ -112,6 +149,16 @@ local function CandidateIDs(entry)
     return out
 end
 
+local function ResolveCooldownAuraUnit(entry)
+    local unit = entry and entry.auraUnit
+    if unit == "player" or unit == "pet" then return unit end
+    local ids = CandidateIDs(entry)
+    for i = 1, #ids do
+        if PET_AURA_UNITS[ids[i]] then return "pet" end
+    end
+    return "player"
+end
+
 ResolveRoute = function(entry)
     if type(entry) ~= "table" or entry.source ~= "blizzardCDM" then return nil end
     local selfAura = entry._selfAura
@@ -143,40 +190,6 @@ function Runs.ResolveRoute(entry)
     return ResolveRoute(entry)
 end
 
-local function IsAuraMirrorEntry(entry)
-    return type(entry) == "table"
-        and entry.enabled ~= false
-        and entry.kind ~= "aura"
-        and ResolveRoute(entry) == "SELF_HELPFUL"
-end
-
-function Runs.ShouldUseAuraMirrors(settings, viewerType)
-    if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
-    if type(viewerType) ~= "string" or viewerType == "" then return false end
-    local swipe = ns._OwnedSwipe
-    local swipeSettings = swipe and swipe.GetSettings and swipe.GetSettings()
-    if swipeSettings and swipeSettings.showCooldownIconAuraPhase == false then return false end
-    if (settings.iconDisplayMode or "always") ~= "always" then return false end
-    return settings.showOnlyWhenActive ~= true
-        and settings.showOnlyOnCooldown ~= true
-        and settings.showOnlyWhenOffCooldown ~= true
-        and settings.showOnlyInCombat ~= true
-end
-
-function Runs.HasAuraMirrorEntries(settings, viewerType)
-    if not Runs.ShouldUseAuraMirrors(settings, viewerType) then return false end
-    local entries
-    if settings.specSpecific and ns.CDMSpellData and ns.CDMSpellData.GetSpecEntries then
-        entries = ns.CDMSpellData:GetSpecEntries(viewerType)
-    end
-    entries = type(entries) == "table" and entries or settings.entries
-    if type(entries) ~= "table" then return false end
-    for i = 1, #entries do
-        if IsAuraMirrorEntry(entries[i]) then return true end
-    end
-    return false
-end
-
 local function Profile(rowConfig)
     local size = rowConfig.size or 39
     local aspect = rowConfig.aspectRatioCrop or 1
@@ -195,6 +208,22 @@ local function Profile(rowConfig)
         local r, g, b, a = ns.Helpers.GetSkinBorderColor(rowConfig, "")
         borderColor = { r, g, b, a }
     end
+    local swipeSettings = ns._OwnedSwipe
+        and ns._OwnedSwipe.GetSettings
+        and ns._OwnedSwipe.GetSettings()
+    local showSwipe = not (swipeSettings and swipeSettings.showBuffSwipe == false)
+    local showEdge = showSwipe and not (swipeSettings and swipeSettings.showBuffEdge == false)
+    local swipeColor
+    if ns._CDM_ResolveModeColor and swipeSettings then
+        local r, g, b, a = ns._CDM_ResolveModeColor(swipeSettings, "aura")
+        swipeColor = { r, g, b, a }
+    elseif swipeSettings and swipeSettings.overlayColorMode == "custom"
+        and type(swipeSettings.overlayColor) == "table" then
+        local c = swipeSettings.overlayColor
+        swipeColor = { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 }
+    else
+        swipeColor = { 0.93, 0.77, 0, 0.45 }
+    end
     return {
         maxIcons = 1,
         iconSize = size,
@@ -210,7 +239,10 @@ local function Profile(rowConfig)
         borderSize = rowConfig.borderSize or 1,
         showBorder = (rowConfig.borderSize or 1) > 0,
         borderColor = borderColor,
-        hideSwipe = false,
+        hideSwipe = not showSwipe,
+        showEdge = showEdge,
+        swipeTexture = "Interface\\Buttons\\WHITE8X8",
+        swipeColor = swipeColor,
         reverseSwipe = false,
         swipeStyle = "radial",
         duration = {
@@ -237,13 +269,15 @@ local function Profile(rowConfig)
     }
 end
 
-local function GetMirrorManager()
-    if mirrorManager then return mirrorManager end
+local function GetAuraOverlayManager(unit)
+    unit = unit or "player"
+    if auraOverlayManagers[unit] then return auraOverlayManagers[unit] end
     local mirrors = ns.CDMManagedAuraMirrors
     if not (mirrors and mirrors.New) then return nil end
     local AuraSkin = ns.AuraSkin or (ns.Addon and ns.Addon.AuraSkin)
-    mirrorManager = mirrors.New({
+    local manager = mirrors.New({
         createFrame = CreateFrame,
+        unit = unit,
         isSecret = IsSecret,
         canCreate = function()
             return not (InCombatLockdown and InCombatLockdown())
@@ -259,64 +293,90 @@ local function GetMirrorManager()
         restyleFrame = AuraSkin and function(frame, rowConfig)
             return AuraSkin.WireButton(frame, Profile(rowConfig))
         end,
-        positionBase = function(baseIcon, host)
-            if host.SetFrameLevel and baseIcon.GetFrameLevel then
-                host:SetFrameLevel(baseIcon:GetFrameLevel() + 20)
-            end
-        end,
     })
-    return mirrorManager
+    auraOverlayManagers[unit] = manager
+    return manager
 end
 
-local function DisableAuraMirrors(owner)
-    if not owner or not activeMirrorOwners[owner] then return end
-    local manager = GetMirrorManager()
-    if manager and manager:BeginPass(owner) then manager:EndPass(owner) end
-    activeMirrorOwners[owner] = nil
-end
-
-function Runs.HasAuraMirrors(owner)
-    return owner and activeMirrorOwners[owner] == true
-end
-
-function Runs.HasPreparedAuraMirrors(owner)
-    return owner and preparedMirrorOwners[owner] == true
-end
-
-local function ApplyAuraMirrors(owner, settings, layoutPlan, inCombat, viewerType)
-    if owner and not inCombat then
-        preparedMirrorOwners[owner] = Runs.ShouldUseAuraMirrors(settings, viewerType)
-            and Runs.HasAuraMirrorEntries(settings, viewerType) or nil
+local function DisableCooldownAuraOverlays(owner)
+    if not owner or not activeAuraOverlayOwners[owner] then return end
+    for unit in pairs(auraOverlayManagers) do
+        local manager = GetAuraOverlayManager(unit)
+        if manager and manager:BeginPass(owner, false) then manager:EndPass(owner) end
     end
-    if inCombat then return Runs.HasAuraMirrors(owner) end
-    local manager = GetMirrorManager()
-    local eligible = owner and not inCombat and manager
-        and Runs.ShouldUseAuraMirrors(settings, viewerType)
+    activeAuraOverlayOwners[owner] = nil
+end
+
+function Runs.HasAuraOverlays(owner)
+    return owner and activeAuraOverlayOwners[owner] == true
+end
+
+function Runs.HasPreparedAuraOverlays(owner)
+    return owner and preparedAuraOverlayOwners[owner] == true
+end
+
+function Runs.RefreshCooldownAuraOverlays(unit)
+    for overlayUnit, manager in pairs(auraOverlayManagers) do
+        if not unit or overlayUnit == unit then
+            manager:Refresh()
+        end
+    end
+end
+
+local function ApplyCooldownAuraOverlays(owner, settings, layoutPlan, inCombat, viewerType)
+    if owner and not inCombat then
+        preparedAuraOverlayOwners[owner] = Runs.ShouldUseCooldownAuraOverlays(settings, viewerType)
+            and Runs.HasCooldownAuraOverlayEntries(settings, viewerType) or nil
+    end
+    if inCombat then return Runs.HasAuraOverlays(owner) end
+
+    local eligible = owner
+        and Runs.ShouldUseCooldownAuraOverlays(settings, viewerType)
         and layoutPlan and layoutPlan.placements
     if not eligible then
-        if not inCombat then DisableAuraMirrors(owner) end
-        return inCombat and Runs.HasAuraMirrors(owner) or false
+        DisableCooldownAuraOverlays(owner)
+        return false
     end
-    if not manager:BeginPass(owner) then return Runs.HasAuraMirrors(owner) end
+    local managers = {}
+    for i = 1, #layoutPlan.placements do
+        local placement = layoutPlan.placements[i]
+        if IsCooldownAuraOverlayEntry(placement.icon and placement.icon._spellEntry) then
+            local unit = ResolveCooldownAuraUnit(placement.icon._spellEntry)
+            if not managers[unit] then
+                local manager = GetAuraOverlayManager(unit)
+                if manager and manager:BeginPass(owner) then managers[unit] = manager end
+            end
+        end
+    end
+    for unit, manager in pairs(auraOverlayManagers) do
+        if not managers[unit] and manager:BeginPass(owner, false) then
+            managers[unit] = manager
+        end
+    end
+    local managerCount = 0
+    for _ in pairs(managers) do managerCount = managerCount + 1 end
+    if managerCount == 0 then return Runs.HasAuraOverlays(owner) end
 
     local mirrored = 0
     for i = 1, #layoutPlan.placements do
         local placement = layoutPlan.placements[i]
         local icon = placement.icon
-        if IsAuraMirrorEntry(icon and icon._spellEntry) then
-            local record = manager:Acquire(owner, icon, icon._spellEntry, Profile(placement.rowConfig))
-            local rowConfig = placement.rowConfig
+        if IsCooldownAuraOverlayEntry(icon and icon._spellEntry) then
+            local rowConfig = placement.rowConfig or {}
             local width = rowConfig.size or 39
             local aspect = rowConfig.aspectRatioCrop or 1
             if aspect <= 0 then aspect = 1 end
-            if record and manager:Position(record, icon, owner, placement.x, placement.y,
+            local manager = managers[ResolveCooldownAuraUnit(icon._spellEntry)]
+            local record = manager and manager:Acquire(owner, icon, icon._spellEntry,
+                Profile(rowConfig))
+            if record and manager:PositionOverlay(record, icon, owner, placement.x, placement.y,
                 width, width / aspect, rowConfig) then
                 mirrored = mirrored + 1
             end
         end
     end
-    manager:EndPass(owner)
-    activeMirrorOwners[owner] = mirrored > 0 or nil
+    for _, manager in pairs(managers) do manager:EndPass(owner) end
+    activeAuraOverlayOwners[owner] = mirrored > 0 or nil
     return mirrored > 0
 end
 
@@ -557,11 +617,12 @@ local function AnchorPreparedRuns(owner, layoutPlan, runByIcon)
 end
 
 function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat, viewerType)
-    local mirrorsApplied = ApplyAuraMirrors(owner, settings, layoutPlan, inCombat, viewerType)
+    local overlaysApplied = ApplyCooldownAuraOverlays(
+        owner, settings, layoutPlan, inCombat, viewerType)
     if not (owner and Runs.ShouldUseSettings(settings, viewerType)
         and layoutPlan and layoutPlan.placements) then
         if not inCombat then Disable(owner) end
-        return mirrorsApplied
+        return overlaysApplied
     end
 
     local AuraSkin = ns.AuraSkin or (ns.Addon and ns.Addon.AuraSkin)
@@ -570,6 +631,7 @@ function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat, viewerType)
 
     if inCombat then
         return Runs.RelayoutPreparedInCombat(owner, settings, allIcons) ~= nil
+            or overlaysApplied
     end
 
     local runRecords = {}

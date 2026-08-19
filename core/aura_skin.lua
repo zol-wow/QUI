@@ -409,7 +409,7 @@ local function styleButton(button, profile)
 
     local cd = button._quiCooldown
     local wantsLinear = profile.swipeStyle == "horizontal" or profile.swipeStyle == "vertical"
-    if wantsLinear and button.SetDurationBar then
+    if wantsLinear and button.SetDurationBar and profile.hideSwipe ~= true then
         if cd and cd.SetDrawSwipe then cd:SetDrawSwipe(false) end
         local fill = button._quiDurationBar
         if not fill and InCombatLockdown() then
@@ -431,7 +431,21 @@ local function styleButton(button, profile)
     else
         if button._quiDurationBar then button._quiDurationBar:Hide() end
         if cd then
-            cd:SetDrawSwipe(profile.hideSwipe ~= true)
+            if cd.SetSwipeTexture and profile.swipeTexture then
+                cd:SetSwipeTexture(profile.swipeTexture)
+            end
+            local showSwipe = profile.hideSwipe ~= true
+            cd:SetDrawSwipe(showSwipe)
+            if cd.SetDrawEdge then
+                cd:SetDrawEdge(showSwipe and profile.showEdge ~= false)
+            end
+            if cd.SetDrawBling then
+                cd:SetDrawBling(showSwipe)
+            end
+            if profile.swipeColor and cd.SetSwipeColor then
+                local c = profile.swipeColor
+                cd:SetSwipeColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+            end
             cd:SetReverse(profile.reverseSwipe == true)
             cd:SetHideCountdownNumbers(true)
         end

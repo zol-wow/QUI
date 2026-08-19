@@ -63,7 +63,7 @@ function CDMManagedAuraMirrors:_GetPool(ownerContainer, allowCreate)
         "CustomAuraContainerTemplate")
     if not auraContainer then return nil end
     if auraContainer.SetSize then auraContainer:SetSize(1, 1) end
-    if auraContainer.SetUnit then auraContainer:SetUnit("player") end
+    if auraContainer.SetUnit then auraContainer:SetUnit(self._deps.unit or "player") end
     if auraContainer.SetEnabled then auraContainer:SetEnabled(true) end
     if auraContainer.Show then auraContainer:Show() end
     pool = {
@@ -77,8 +77,9 @@ function CDMManagedAuraMirrors:_GetPool(ownerContainer, allowCreate)
     return pool
 end
 
-function CDMManagedAuraMirrors:BeginPass(ownerContainer)
-    local canCreate = not self._deps.canCreate or self._deps.canCreate(ownerContainer)
+function CDMManagedAuraMirrors:BeginPass(ownerContainer, allowCreate)
+    local canCreate = allowCreate ~= false
+        and (not self._deps.canCreate or self._deps.canCreate(ownerContainer))
     local pool = self:_GetPool(ownerContainer, canCreate)
     if not pool then return false end
     pool.generation = pool.generation + 1
@@ -224,6 +225,37 @@ function CDMManagedAuraMirrors:Position(record, baseIcon, ownerContainer, x, y, 
         end
     end
     return true
+end
+
+function CDMManagedAuraMirrors:PositionOverlay(record, baseIcon, ownerContainer, x, y, w, h, rowConfig)
+    if not (record and record.host and baseIcon) then return false end
+    local canMutate = self._deps.canMutate
+    if canMutate and not canMutate(record.host) then return false end
+    local host = record.host
+    host:ClearAllPoints()
+    host:SetPoint("CENTER", baseIcon, "CENTER")
+    if host.SetSize and w and h then host:SetSize(w, h) end
+    if host.SetFrameLevel and baseIcon.GetFrameLevel then
+        host:SetFrameLevel(baseIcon:GetFrameLevel() + 20)
+    end
+    if host.Show then host:Show() end
+    local restyleFrame = self._deps.restyleFrame
+    if restyleFrame and not (self._deps.aurasAreSecret and self._deps.aurasAreSecret()) then
+        for i = 1, #record.slots do
+            local slot = record.slots[i]
+            if slot.frame then restyleFrame(slot.frame, rowConfig or record.profile or {}) end
+        end
+    end
+    return true
+end
+
+function CDMManagedAuraMirrors:Refresh()
+    for _, pool in pairs(self._pools) do
+        local auraContainer = pool.auraContainer
+        if auraContainer and auraContainer.UpdateAllAuras then
+            auraContainer:UpdateAllAuras()
+        end
+    end
 end
 
 function CDMManagedAuraMirrors:EndPass(ownerContainer)

@@ -117,6 +117,27 @@ assert(builtManualAura._useManagedAura == nil
 assert(builtManualAura.source == nil and builtAura.source == "blizzardCDM",
     "runtime entries must preserve provenance for safe route selection")
 
+local skipSource = sliceBetween(
+    icons,
+    "function _resolverRuntimePolicy.ShouldSkipAuraPhaseForCooldownIcon(icon, entry)",
+    "function _resolverRuntimePolicy.ShouldUseBuffSwipeForIcon")
+skipSource = skipSource:gsub(
+    "^function _resolverRuntimePolicy.ShouldSkipAuraPhaseForCooldownIcon", "return function", 1)
+local skipEnv = setmetatable({
+    IsAuraEntry = function(entry) return entry and entry.kind == "aura" end,
+    _showCooldownIconAuraPhase = false,
+}, { __index = globals })
+local skipChunk = assert(loadstring(skipSource,
+    "@cdm_icon_renderer.lua#ShouldSkipAuraPhaseForCooldownIcon"))
+setfenv(skipChunk, skipEnv)
+local shouldSkipAuraPhase = skipChunk()
+assert(shouldSkipAuraPhase({}, {
+        kind = "cooldown", type = "spell", _isCustomEntry = true,
+    }) == true,
+    "custom spell cooldowns must skip the forbidden Lua aura resolver")
+assert(shouldSkipAuraPhase({}, { kind = "aura" }) == false,
+    "explicit aura entries must retain the native aura resolver path")
+
 local placeSource = sliceBetween(
     icons,
     "function CDMIcons.ShouldContainerLayoutPlaceIcon(icon, entry, containerDB, inCombat)",

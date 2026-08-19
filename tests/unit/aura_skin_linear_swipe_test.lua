@@ -54,6 +54,8 @@ local function Stub()
     function t:SetFont() end
     function t:SetHideCountdownNumbers() end
     function t:SetDrawSwipe() end
+    function t:SetDrawEdge() end
+    function t:SetDrawBling() end
     function t:SetReverse() end
     function t:SetText() end
     function t:CreateTexture() return Stub() end
@@ -94,7 +96,11 @@ local function MakeButton()
     local b = Stub()
     b._cooldown = Stub()
     b._cooldown._drawSwipe = "UNSET"
+    b._cooldown._drawEdge = "UNSET"
+    b._cooldown._drawBling = "UNSET"
     function b._cooldown:SetDrawSwipe(v) self._drawSwipe = v end
+    function b._cooldown:SetDrawEdge(v) self._drawEdge = v end
+    function b._cooldown:SetDrawBling(v) self._drawBling = v end
     b._durationBarCalls = 0
     b._lastDurationBar = nil
     b._lastDurationBarOptions = nil
@@ -192,6 +198,13 @@ check("vertical swipeStyle orients the SAME fill VERTICAL",
 check("no second StatusBar child was created on re-style (fill is cached)",
     #createdStatusBars == 1)
 
+AuraSkin.Restyle(container, { iconSize = 20, swipeStyle = "horizontal", hideSwipe = true })
+check("hideSwipe hides a linear duration bar", fill1 ~= nil and fill1._shown == false)
+check("hideSwipe disables the Cooldown swipe for a linear strip",
+    button1._cooldown._drawSwipe == false)
+check("hideSwipe disables the Cooldown edge and bling",
+    button1._cooldown._drawEdge == false and button1._cooldown._drawBling == false)
+
 -- (3) Switching BACK to radial must hide the linear fill and restore the
 -- Cooldown's radial swipe.
 local profileRadial = { iconSize = 20, swipeStyle = "radial" }
@@ -199,6 +212,8 @@ AuraSkin.Restyle(container, profileRadial)
 check("switching back to radial hides the linear fill", fill1 ~= nil and fill1._shown == false)
 check("switching back to radial re-enables the Cooldown radial swipe",
     button1._cooldown._drawSwipe == true)
+check("switching back to radial re-enables the Cooldown edge and bling",
+    button1._cooldown._drawEdge == true and button1._cooldown._drawBling == true)
 
 if fails > 0 then error(fails .. " failure(s) in aura_skin_linear_swipe_test") end
 print("OK: aura_skin_linear_swipe_test (all checks passed)")

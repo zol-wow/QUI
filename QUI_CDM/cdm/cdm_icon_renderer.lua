@@ -2364,6 +2364,10 @@ end
 function _resolverRuntimePolicy.ShouldSkipAuraPhaseForCooldownIcon(icon, entry)
     if not entry then return false end
     if IsAuraEntry(entry) then return false end
+    if entry._isCustomEntry == true and entry.kind == "cooldown"
+        and (entry.type == nil or entry.type == "spell") then
+        return true
+    end
     return _showCooldownIconAuraPhase == false
 end
 
@@ -4544,6 +4548,11 @@ do
         refreshCustomAuraTargets = function(identityChanged)
             if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.RefreshTargets then
                 ns.CDMCustomAuraRuns.RefreshTargets(identityChanged)
+            end
+        end,
+        refreshCustomCooldownAuraOverlays = function(unit)
+            if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.RefreshCooldownAuraOverlays then
+                ns.CDMCustomAuraRuns.RefreshCooldownAuraOverlays(unit)
             end
         end,
     }
