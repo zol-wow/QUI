@@ -178,6 +178,10 @@ function CDMReanchorBoot.BuildRuntime(env)
         getCurated = env.getCurated,
         getSettings = env.getSettings,
         getAdditional = MakeGetAdditional(env),
+        shouldReplaceNativeAuraPhase = function(frame)
+            return frame and frame.cooldownUseAuraDisplayTime == true
+                and not isAuraPhaseEnabled()
+        end,
         buildLayout = env.buildLayout,
         buildBuffLayout = env.buildBuffLayout,
         frameIsActive = env.frameIsActive,
