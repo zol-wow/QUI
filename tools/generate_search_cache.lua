@@ -1073,6 +1073,15 @@ ns.QUI_GroupFrameClickCast = {
     GetEditableBindings = function()
         return {}
     end,
+    GetEditableBindingSetID = function()
+        return nil
+    end,
+    GetBindingSetSources = function()
+        return {}
+    end,
+    CopyBindingsFrom = function()
+        return false
+    end,
     AddBinding = function()
         return true
     end,
