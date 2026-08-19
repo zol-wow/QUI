@@ -42,6 +42,10 @@ local itemAuraReverse
 local itemAuraApplyCount = 0
 local itemAuraActive = true
 local itemAuraPublishesInstanceID = true
+local customCooldownDur = { token = "custom-cooldown-duration" }
+local customCooldownAppliedDuration
+local customCooldownApplyCount = 0
+local customCooldownReverse
 local runtimeBatches = 0
 local buffAuraResolutionUnit = "player"
 local buffAuraResolutionInstanceID = 621
@@ -133,6 +137,25 @@ itemAuraIcon.Cooldown.SetCooldownFromDurationObject = function(_, durObj)
 end
 itemAuraIcon.Cooldown.SetReverse = function(_, reverse)
     itemAuraReverse = reverse
+end
+
+local customCooldownIcon = makeIcon("customCooldown", 1233448)
+customCooldownIcon._spellEntry = {
+    id = 1233448,
+    spellID = 1233448,
+    name = "customCooldown",
+    kind = "cooldown",
+    viewerType = "custom",
+    type = "spell",
+    _isCustomEntry = true,
+    linkedSpellIDs = { 1235391 },
+}
+customCooldownIcon.Cooldown.SetCooldownFromDurationObject = function(_, durObj)
+    customCooldownApplyCount = customCooldownApplyCount + 1
+    customCooldownAppliedDuration = durObj
+end
+customCooldownIcon.Cooldown.SetReverse = function(_, reverse)
+    customCooldownReverse = reverse
 end
 
 local ns = {
@@ -284,6 +307,19 @@ local ns = {
                     hasRenderableCooldown = true,
                 }
             end
+            if name == "customCooldown" then
+                return {
+                    mode = "cooldown",
+                    active = true,
+                    isActive = true,
+                    durObj = customCooldownDur,
+                    sourceID = "cooldown:1233448",
+                    spellID = 1233448,
+                    isOnCooldown = true,
+                    hasDurationObject = true,
+                    hasRenderableCooldown = true,
+                }
+            end
             return {
                 mode = "inactive",
                 active = false,
@@ -295,7 +331,7 @@ local ns = {
         _iconPools = {
             essential = { matchingIcon, unrelatedIcon, nonMirrorIcon, itemAuraIcon },
             buff = { buffAuraIcon },
-            custom = { customAuraIcon },
+            custom = { customAuraIcon, customCooldownIcon },
         },
         _recyclePool = {},
         _FinalizeImports = noop,
@@ -344,7 +380,7 @@ end
 assert(loadfile("QUI_CDM/cdm/cdm_icon_renderer.lua"))("QUI", ns)
 ns.CDMIconFactory._iconPools.essential = { matchingIcon, unrelatedIcon, nonMirrorIcon, itemAuraIcon }
 ns.CDMIconFactory._iconPools.buff = { buffAuraIcon }
-ns.CDMIconFactory._iconPools.custom = { customAuraIcon }
+ns.CDMIconFactory._iconPools.custom = { customAuraIcon, customCooldownIcon }
 
 local icons = assert(ns.CDMIcons, "CDMIcons should be exported")
 runtimeBatches = 0
@@ -527,6 +563,30 @@ assert(itemAuraAppliedDuration == itemCooldownDur,
     "removed item aura should bind the item cooldown DurationObject")
 assert(itemAuraReverse == false,
     "removed item aura should leave aura/reverse cooldown mode")
+
+resolveCounts.customCooldown = 0
+
+icons.HandleRuntimeRefresh("UNIT_AURA", "pet", {
+    isFullUpdate = false,
+    removedAuraInstanceIDs = { 901 },
+})
+
+assert(resolveCounts.customCooldown == 0,
+    "removed unrelated pet auras must not re-resolve custom cooldown icons")
+
+customCooldownAppliedDuration = nil
+customCooldownReverse = nil
+customCooldownApplyCount = 0
+resolveCounts.customCooldown = 0
+
+icons.HandleRuntimeRefresh("UNIT_AURA", "pet", nil)
+
+assert(resolveCounts.customCooldown == 1,
+    "unknown/full pet aura refreshes should re-resolve custom cooldown icons")
+assert(customCooldownAppliedDuration == customCooldownDur,
+    "unknown/full pet aura refreshes should bind the custom cooldown DurationObject")
+assert(customCooldownReverse == false,
+    "unknown/full pet aura refreshes should keep the custom icon on cooldown mode")
 
 itemAuraActive = true
 itemAuraPublishesInstanceID = true

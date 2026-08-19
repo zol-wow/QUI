@@ -29,8 +29,10 @@ local function createFrame(kind, _, parent)
         local c = frameBase()
         c.filters = {}
         c.added = {}
+        c.refreshes = 0
         c.SetUnit = function(self, unit) self.unit = unit end
         c.SetEnabled = function(self, enabled) self.enabled = enabled end
+        c.UpdateAllAuras = function(self) self.refreshes = self.refreshes + 1 end
         c.AddAuraSlot = function(self, key, filter, options)
             local button = frameBase()
             options.initializeFrame(button)
@@ -66,6 +68,12 @@ assert(record and #record.slots == 3, "one exact managed slot is created per uni
 assert(#createdAuraContainers == 1 and #createdHosts == 1, "container and stable placement host are pooled")
 assert(createdAuraContainers[1].unit == "player" and createdAuraContainers[1].enabled == true,
     "managed aura source is the enabled player unit")
+local petManager = M.New({ createFrame = createFrame, unit = "pet" })
+local petOwner = {}
+assert(petManager:BeginPass(petOwner) == true
+    and createdAuraContainers[2].unit == "pet",
+    "managed aura sources must support pet-unit overlays")
+petManager:EndPass(petOwner)
 assert(record.slots[1].spellID == 101 and record.slots[2].spellID == 100
     and record.slots[3].spellID == 102, "candidate priority is override, primary, linked")
 assert(record.slots[1].frame.allPoints == record.host and record.slots[1].frame.mouse == false,
@@ -77,6 +85,18 @@ assert(manager:Position(record, base, owner, 4, -5, 30, 20, { size = 30 }) == tr
 assert(record.host.points[1][2] == owner and record.host.size[1] == 30 and record.host.size[2] == 20,
     "host receives the layout rect")
 assert(base.host == record.host, "owned base follows the stable host")
+
+local overlayBase = frameBase()
+assert(manager:PositionOverlay(record, overlayBase, owner, 0, 0, 30, 20, { size = 30 }) == true,
+    "overlay placement must position the native aura host without moving the base icon")
+assert(record.host.points[1][2] == overlayBase and record.host.size[1] == 30
+    and record.host.size[2] == 20 and record.host.level == 30,
+    "overlay placement must anchor and layer the native aura host above the base icon")
+assert(overlayBase.host == nil, "overlay placement must leave the owned cooldown icon untouched")
+
+manager:Refresh()
+assert(createdAuraContainers[1].refreshes == 1,
+    "aura overlay refresh should forward UNIT_AURA changes to the native container")
 
 manager:EndPass(owner)
 assert(record.parked == false, "used record remains live at pass end")

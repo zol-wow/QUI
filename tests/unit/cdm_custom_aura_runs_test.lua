@@ -79,7 +79,11 @@ local ns = {
     },
     CDMManagedAuraMirrors = {
         ResolveCandidateIDs = function(entry)
-            return { entry.spellID or entry.id }
+            local ids = { entry.spellID or entry.id }
+            if entry.linkedSpellIDs then
+                for i = 1, #entry.linkedSpellIDs do ids[#ids + 1] = entry.linkedSpellIDs[i] end
+            end
+            return ids
         end,
     },
     CDMSpellData = {
@@ -95,7 +99,15 @@ local ns = {
         QuerySpellHarmful = function(spellID) return spellID == 444 or spellID == 666 end,
     },
     _OwnedSwipe = {
-        GetSettings = function() return { showCooldownIconAuraPhase = true } end,
+        GetSettings = function()
+            return {
+                showCooldownIconAuraPhase = true,
+                showBuffSwipe = true,
+                showBuffEdge = true,
+                overlayColorMode = "custom",
+                overlayColor = { 0.1, 0.2, 0.3, 0.4 },
+            }
+        end,
     },
 }
 
@@ -253,6 +265,12 @@ assert(configured[1].profile.opacity == 0.45
     and configured[1].profile.duration.font == "duration.ttf"
     and configured[1].profile.stack.font == "stack.ttf",
     "the secure aura must inherit row opacity, crop, and resolved fonts")
+assert(configured[1].profile.hideSwipe == false
+    and configured[1].profile.showEdge == true
+    and configured[1].profile.swipeTexture == "Interface\\Buttons\\WHITE8X8"
+    and configured[1].profile.swipeColor[1] == 0.1
+    and configured[1].profile.swipeColor[4] == 0.4,
+    "the secure aura must inherit CDM aura-swipe visibility, edge, texture, and color settings")
 assert(auraProxy.shown == false and auraProxy._quiManagedAuraProxy == true,
     "the addon aura proxy must not paint the live aura")
 assert(ns.CDMCustomAuraRuns.ResolveRoute({
@@ -471,65 +489,118 @@ assert(#created == fixedCreated and #configured == fixedConfigured
     and fixedProxy._quiManagedAuraProxy == nil and fixedProxy.clickButton == fixedClickButton,
     "fixed-slot fallback must preserve the visible slot and click surface")
 
-local mirrorCalls = { begin = 0, acquire = 0, position = 0, finish = 0 }
-ns.CDMManagedAuraMirrors.New = function()
+local overlayCalls = { begin = 0, acquire = 0, position = 0, finish = 0 }
+local overlayUnits, acquiredUnits = {}, {}
+ns.CDMManagedAuraMirrors.New = function(deps)
+    overlayUnits[deps.unit] = true
     return {
         BeginPass = function()
-            mirrorCalls.begin = mirrorCalls.begin + 1
+            overlayCalls.begin = overlayCalls.begin + 1
             return true
         end,
-        Acquire = function()
-            mirrorCalls.acquire = mirrorCalls.acquire + 1
-            return {}
+        Acquire = function(_, _, _, entry)
+            overlayCalls.acquire = overlayCalls.acquire + 1
+            acquiredUnits[entry.id] = deps.unit
+            return { entry = entry, slots = {
+                { frame = { IsShown = function() return true end } },
+            } }
         end,
-        Position = function()
-            mirrorCalls.position = mirrorCalls.position + 1
+        PositionOverlay = function()
+            overlayCalls.position = overlayCalls.position + 1
             return true
         end,
         EndPass = function()
-            mirrorCalls.finish = mirrorCalls.finish + 1
+            overlayCalls.finish = overlayCalls.finish + 1
         end,
     }
 end
-local mirrorSettings = CopySettings({
+local overlaySettings = CopySettings({
     iconDisplayMode = "always",
     showOnlyWhenActive = false,
-    entries = { { id = 222, kind = "cooldown", source = "blizzardCDM" } },
+    entries = { { id = 1233448, kind = "cooldown" } },
 })
-local mirrorOwner = Frame("mirror-owner")
-local mirrorIcon = Frame("mirror-icon")
-mirrorIcon._spellEntry = {
-    id = 222, spellID = 222, kind = "cooldown", source = "blizzardCDM",
+local overlayOwner = Frame("overlay-owner")
+local overlayIcon = Frame("overlay-icon")
+local playerOverlayIcon = Frame("player-overlay-icon")
+overlayIcon._spellEntry = {
+    id = 1233448,
+    spellID = 1233448,
+    kind = "cooldown",
+    type = "spell",
+    _isCustomEntry = true,
+    linkedSpellIDs = { 1235391 },
 }
-assert(ns.CDMCustomAuraRuns.ShouldUseAuraMirrors(mirrorSettings, "custom") == true
-    and ns.CDMCustomAuraRuns.HasAuraMirrorEntries(mirrorSettings, "custom") == true,
-    "always-visible catalogued cooldown bars must opt into aura mirrors")
-assert(ns.CDMCustomAuraRuns.Apply(mirrorOwner, mirrorSettings, {
+playerOverlayIcon._spellEntry = {
+    id = 222,
+    spellID = 222,
+    kind = "cooldown",
+    type = "spell",
+    _isCustomEntry = true,
+}
+assert(ns.CDMCustomAuraRuns.ShouldUseCooldownAuraOverlays(overlaySettings, "custom") == true
+    and ns.CDMCustomAuraRuns.HasCooldownAuraOverlayEntries(overlaySettings, "custom") == true,
+    "always-visible custom cooldowns must opt into native aura overlays")
+assert(ns.CDMCustomAuraRuns.ShouldUseCooldownAuraOverlays(CopySettings({
+        showActiveState = false,
+    }), "custom") == false,
+    "disabled active-state rendering must not create native aura overlays")
+assert(ns.CDMCustomAuraRuns.ShouldUseCooldownAuraOverlays(CopySettings({
+        hideNonUsable = true,
+    }), "custom") == false,
+    "non-usable filtering must not create ghostable native aura overlays")
+assert(ns.CDMCustomAuraRuns.HasCooldownAuraOverlayEntries(CopySettings({
+        iconDisplayMode = "always",
+        showOnlyWhenActive = false,
+        entries = { { id = 1233448, kind = "cooldown", type = "item" } },
+    }), "custom") == false,
+    "item cooldown entries must not claim native spell aura overlays")
+assert(ns.CDMCustomAuraRuns.Apply(overlayOwner, overlaySettings, {
         metrics = { iconWidth = 30 },
-        placements = { { icon = mirrorIcon, rowConfig = row, x = 0, y = 0 } },
+        placements = {
+            { icon = overlayIcon, rowConfig = row, x = 0, y = 0 },
+            { icon = playerOverlayIcon, rowConfig = row, x = 32, y = 0 },
+        },
     }, nil, nil, "custom") == true,
-    "always-visible cooldown entries must retain the base icon while applying an aura mirror")
-assert(mirrorCalls.begin == 1 and mirrorCalls.acquire == 1
-    and mirrorCalls.position == 1 and mirrorCalls.finish == 1
-    and ns.CDMCustomAuraRuns.HasAuraMirrors(mirrorOwner) == true
-    and ns.CDMCustomAuraRuns.HasPreparedAuraMirrors(mirrorOwner) == true,
-    "the aura mirror must be pooled and positioned over the owned cooldown icon")
+    "custom cooldowns must retain the base icon while applying a native aura overlay")
+assert(overlayCalls.begin == 2 and overlayCalls.acquire == 2
+    and overlayCalls.position == 2 and overlayCalls.finish == 2
+    and overlayUnits.pet == true and overlayUnits.player == true
+    and acquiredUnits[1233448] == "pet" and acquiredUnits[222] == "player"
+    and overlayIcon._customAuraOverlayPrepared == true
+    and playerOverlayIcon._customAuraOverlayPrepared == true
+    and ns.CDMCustomAuraRuns.HasAuraOverlays(overlayOwner) == true
+    and ns.CDMCustomAuraRuns.HasPreparedAuraOverlays(overlayOwner) == true,
+    "native aura overlays must be pooled and positioned over the cooldown icon")
+assert(ns.CDMCustomAuraRuns.Apply(overlayOwner, overlaySettings, nil, nil, true, "custom") == true
+    and overlayCalls.begin == 2,
+    "combat updates must keep the prepared native aura overlay without rebuilding it")
+ns._OwnedSwipe.GetSettings = function() return { showCooldownIconAuraPhase = false } end
+assert(ns.CDMCustomAuraRuns.Apply(overlayOwner, overlaySettings, {
+        metrics = { iconWidth = 30 },
+        placements = {
+            { icon = overlayIcon, rowConfig = row, x = 0, y = 0 },
+            { icon = playerOverlayIcon, rowConfig = row, x = 32, y = 0 },
+        },
+    }, nil, nil, "custom") == false
+    and overlayIcon._customAuraOverlayPrepared == nil
+    and playerOverlayIcon._customAuraOverlayPrepared == nil
+    and ns.CDMCustomAuraRuns.HasAuraOverlays(overlayOwner) == false,
+    "disabling cooldown aura phases must park the native overlay")
+ns._OwnedSwipe.GetSettings = function() return { showCooldownIconAuraPhase = true } end
+
 local runsFile = assert(io.open("QUI_CDM/cdm/cdm_custom_aura_runs.lua", "rb"))
 local runsSource = runsFile:read("*a")
 runsFile:close()
-assert(runsSource:find("AuraSkin.WireButton(frame, Profile(rowConfig))", 1, true),
-    "mirror restyling must pass a complete aura profile")
-ns._OwnedSwipe.GetSettings = function() return { showCooldownIconAuraPhase = false } end
-assert(ns.CDMCustomAuraRuns.ShouldUseAuraMirrors(mirrorSettings, "custom") == false
-    and ns.CDMCustomAuraRuns.HasAuraMirrorEntries(mirrorSettings, "custom") == false,
-    "the cooldown aura-phase setting must disable custom-bar aura mirrors")
-assert(ns.CDMCustomAuraRuns.Apply(mirrorOwner, mirrorSettings, {
-        metrics = { iconWidth = 30 },
-        placements = { { icon = mirrorIcon, rowConfig = row, x = 0, y = 0 } },
-    }, nil, nil, "custom") == false
-    and ns.CDMCustomAuraRuns.HasAuraMirrors(mirrorOwner) == false
-    and ns.CDMCustomAuraRuns.HasPreparedAuraMirrors(mirrorOwner) == false,
-    "disabling cooldown aura phases must park existing custom-bar mirrors")
+assert(runsSource:find("ApplyCooldownAuraOverlays", 1, true)
+    and runsSource:find("PositionOverlay", 1, true)
+    and runsSource:find("reverseSwipe = true", 1, true),
+    "cooldown entries must use the native aura overlay path")
+local skinFile = assert(io.open("core/aura_skin.lua", "rb"))
+local skinSource = skinFile:read("*a")
+skinFile:close()
+assert(skinSource:find("profile.showEdge", 1, true)
+    and skinSource:find("profile.swipeColor", 1, true),
+    "native aura buttons must apply the CDM aura swipe edge and color settings")
 
 assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan, nil, nil, "custom") == true)
 local containersFile = assert(io.open("QUI_CDM/cdm/cdm_containers.lua", "rb"))

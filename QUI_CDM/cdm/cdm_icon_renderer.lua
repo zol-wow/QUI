@@ -2364,6 +2364,11 @@ end
 function _resolverRuntimePolicy.ShouldSkipAuraPhaseForCooldownIcon(icon, entry)
     if not entry then return false end
     if IsAuraEntry(entry) then return false end
+    if entry._isCustomEntry == true and entry.kind == "cooldown"
+        and (entry.type == nil or entry.type == "spell") then
+        return icon and icon._customAuraOverlayPrepared == true
+            or _showCooldownIconAuraPhase == false
+    end
     return _showCooldownIconAuraPhase == false
 end
 

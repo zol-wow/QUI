@@ -131,6 +131,10 @@ local function isItemEntry(entry)
     return entryType == "item" or entryType == "trinket" or entryType == "slot"
 end
 
+local function isCustomCooldownEntry(entry)
+    return entry and entry._isCustomEntry == true and entry.kind == "cooldown"
+end
+
 local function resolveContainer(callbacks, entry, ncdm, ncdmContainers)
     if callbacks.resolveContainerDBAndType then
         return callbacks.resolveContainerDBAndType(entry, ncdm, ncdmContainers)
@@ -164,6 +168,20 @@ local function clearAuraDurationBinding(callbacks, icon)
         return false
     end
 
+    if callbacks.clearDurationBinding then
+        callbacks.clearDurationBinding(icon)
+    else
+        icon._lastDurObjKey = nil
+        icon._lastDurObj = nil
+        icon._lastResolvedMode = nil
+        icon._lastResolvedSourceID = nil
+        icon._lastResolvedSpellID = nil
+    end
+    return true
+end
+
+local function clearCustomCooldownDurationBinding(callbacks, icon, entry)
+    if not isCustomCooldownEntry(entry) then return false end
     if callbacks.clearDurationBinding then
         callbacks.clearDurationBinding(icon)
     else
@@ -313,6 +331,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     function controller:ApplyAuraScope(options)
         options = options or {}
         local includeItems = options.includeItems == true
+        local includeCustomCooldowns = options.includeCustomCooldowns == true
         local skipSelfAuraFn = options.skipSelfAuraIcons == true
             and callbacks.isDefinitivelySelfAuraIcon
             or nil
@@ -325,11 +344,22 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 if entry
                     and (isAuraEntry(callbacks, entry)
                         or icon._auraActive == true
-                        or (includeItems and isItemEntry(entry)))
+                        or (includeItems and isItemEntry(entry))
+                        or (includeCustomCooldowns and isCustomCooldownEntry(entry)))
                     and not (skipSelfAuraFn and skipSelfAuraFn(icon)) then
-                    clearAuraDurationBinding(callbacks, icon)
+                    if not clearCustomCooldownDurationBinding(callbacks, icon, entry) then
+                        clearAuraDurationBinding(callbacks, icon)
+                    end
                     if controller:ApplyAuraScopedResolvedCooldown(icon, entry, editMode, ncdm, ncdmContainers, inCombatState) then
                         if includeItems and isItemEntry(entry) then
+                            local containerDB = select(1, resolveContainer(callbacks, entry, ncdm, ncdmContainers))
+                            if callbacks.updateContainerVisibility then
+                                callbacks.updateContainerVisibility(icon, entry, containerDB, editMode, inCombatState)
+                            end
+                            if callbacks.syncCooldownBling then
+                                callbacks.syncCooldownBling(icon)
+                            end
+                        elseif includeCustomCooldowns and isCustomCooldownEntry(entry) then
                             local containerDB = select(1, resolveContainer(callbacks, entry, ncdm, ncdmContainers))
                             if callbacks.updateContainerVisibility then
                                 callbacks.updateContainerVisibility(icon, entry, containerDB, editMode, inCombatState)
@@ -661,7 +691,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                         editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "auraDelta")
                         batchStarted = true
                     end
-                    clearAuraDurationBinding(callbacks, icon)
+                    if not clearCustomCooldownDurationBinding(callbacks, icon, entry) then
+                        clearAuraDurationBinding(callbacks, icon)
+                    end
                     if controller:ApplyAuraScopedResolvedCooldown(icon, entry, editMode, ncdm, ncdmContainers, inCombatState) then
                         refreshed = refreshed + 1
                     end
@@ -979,7 +1011,11 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
         if not updateInfo or updateInfo.isFullUpdate then
             if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
-            controller:ApplyAuraScope({ includeItems = unit == "player", skipSelfAuraIcons = unit == "target" })
+            controller:ApplyAuraScope({
+                includeItems = unit == "player",
+                includeCustomCooldowns = isSelfAuraUnit(unit),
+                skipSelfAuraIcons = unit == "target",
+            })
             if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
         else
             local refreshed = controller:ApplyAuraInstances(unit, updateInfo) or 0

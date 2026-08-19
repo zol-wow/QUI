@@ -96,9 +96,17 @@ local idleIcon = makeIcon("idle", {
     type = "spell",
     viewerType = "essential",
 })
+local customCooldownIcon = makeIcon("customCooldown", {
+    id = 707,
+    spellID = 707,
+    kind = "cooldown",
+    type = "spell",
+    viewerType = "custom",
+    _isCustomEntry = true,
+})
 
 local iconPools = {
-    essential = { spellIcon, otherSpellIcon, itemIcon, mirrorAuraIcon, idleIcon },
+    essential = { spellIcon, otherSpellIcon, itemIcon, mirrorAuraIcon, idleIcon, customCooldownIcon },
     buff = { auraIcon },
 }
 
@@ -126,6 +134,7 @@ local durationKeyClears = 0
 local stableClears = 0
 local spellCacheInvalidations = {}
 local barAuraRefreshMarks = {}
+local customOverlayRefreshes = 0
 -- Names the isDefinitivelySelfAuraIcon stub reports as PROVABLE player
 -- self-auras. Populated by the target-scope test.
 local selfAuraNames = {}
@@ -205,6 +214,9 @@ local controller = module.Create({
     refreshCustomAuraTargets = function(refreshAll)
         targetRouteRefreshes = targetRouteRefreshes + 1
         if refreshAll then targetRouteFullRefreshes = targetRouteFullRefreshes + 1 end
+    end,
+    refreshCustomCooldownAuraOverlays = function()
+        customOverlayRefreshes = customOverlayRefreshes + 1
     end,
     scheduleUpdate = function(fast, mode, reason)
         schedules[#schedules + 1] = {
@@ -416,6 +428,8 @@ controller:Handle("UNIT_AURA", "player", {
     },
 })
 assert(auraApplied.item == 1, "aura delta should match item entries through item-use aura mapping")
+assert(customOverlayRefreshes == 0,
+    "UNIT_AURA should rely on native container incremental handling without a manual overlay rebuild")
 
 reset(auraApplied)
 controller:Handle("UNIT_AURA", "player", {
@@ -424,6 +438,13 @@ controller:Handle("UNIT_AURA", "player", {
     },
 })
 assert(auraApplied.item == 1, "secret player added aura identity should still wake item aura entries")
+
+reset(auraApplied)
+controller:Handle("UNIT_AURA", "player", {
+    removedAuraInstanceIDs = { 9005 },
+})
+assert(auraApplied.customCooldown == nil,
+    "unrelated removed auras must not refresh custom cooldown bindings")
 
 reset(auraApplied)
 controller:Handle("UNIT_AURA", "target", {
