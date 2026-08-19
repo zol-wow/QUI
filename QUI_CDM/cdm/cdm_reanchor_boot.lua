@@ -178,7 +178,10 @@ function CDMReanchorBoot.BuildRuntime(env)
         getCurated = env.getCurated,
         getSettings = env.getSettings,
         getAdditional = MakeGetAdditional(env),
-        shouldReplaceNativeAuraPhase = function(_frame, entry)
+        shouldReplaceNativeAuraPhase = function(_frame, entry, containerKey)
+            if isBuffIconFrameKey(containerKey) or entry and (entry.isAura or entry.kind == "aura") then
+                return false
+            end
             local linked = entry and entry.linkedSpellIDs
             return type(linked) == "table" and #linked > 0
                 and not isAuraPhaseEnabled()

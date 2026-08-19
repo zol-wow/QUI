@@ -104,6 +104,28 @@ do
         "disabled native aura phase renders the owned cooldown icon")
     assert(minted == 1 and sinks[1] == nativeFrame and claimed[nativeFrame] == nil,
         "disabled native aura phase sinks the native aura widget")
+
+    local buffEntry = {
+        name = "Native buff", kind = "aura", linkedSpellIDs = { 12345 },
+    }
+    local buffFrame = { cooldownUseAuraDisplayTime = true }
+    local buffRuntime = R.New({
+        bridge = { Sink = function() error("buff native frame must stay native") end },
+        wiring = {
+            MatchCuratedToFrames = function()
+                return { { entry = buffEntry, frame = buffFrame } }, {}, { [buffFrame] = true }
+            end,
+        },
+        getCurated = function() return { buffEntry } end,
+        getAdditional = function() return {} end,
+        shouldReplaceNativeAuraPhase = function(_frame, entry, key)
+            return key ~= "buff" and entry.kind ~= "aura"
+        end,
+        mintOwned = function() error("buff aura entry must not mint") end,
+    })
+    local buffEntries = buffRuntime:AssembleEntries("buff", {})
+    assert(#buffEntries == 1 and buffEntries[1].reanchored == true,
+        "disabled aura phase leaves dedicated buff icons native")
 end
 
 -- Active-only BuffIcon must not treat a missing native frame as active. Cold login
