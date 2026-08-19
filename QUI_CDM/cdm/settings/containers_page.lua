@@ -461,6 +461,9 @@ end
 
 local function RefreshCooldownIconAuraPhase()
     RefreshSwipe()
+    if _G.QUI_RefreshNCDM then
+        _G.QUI_RefreshNCDM(true)
+    end
     if ns.QUI_RefreshCDMReanchor then
         ns.QUI_RefreshCDMReanchor()
     end

@@ -151,6 +151,9 @@ end
 function Runs.ShouldUseAuraMirrors(settings, viewerType)
     if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
     if type(viewerType) ~= "string" or viewerType == "" then return false end
+    local swipe = ns._OwnedSwipe
+    local swipeSettings = swipe and swipe.GetSettings and swipe.GetSettings()
+    if swipeSettings and swipeSettings.showCooldownIconAuraPhase == false then return false end
     if (settings.iconDisplayMode or "always") ~= "always" then return false end
     return settings.showOnlyWhenActive ~= true
         and settings.showOnlyOnCooldown ~= true

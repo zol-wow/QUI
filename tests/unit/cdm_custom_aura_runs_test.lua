@@ -94,6 +94,9 @@ local ns = {
         end,
         QuerySpellHarmful = function(spellID) return spellID == 444 or spellID == 666 end,
     },
+    _OwnedSwipe = {
+        GetSettings = function() return { showCooldownIconAuraPhase = true } end,
+    },
 }
 
 assert(loadfile("QUI_CDM/cdm/cdm_layout.lua"))("QUI", ns)
@@ -465,6 +468,59 @@ assert(#created == fixedCreated and #configured == fixedConfigured
     and fixedProxy._quiManagedAuraProxy == nil and fixedProxy.clickButton == fixedClickButton,
     "fixed-slot fallback must preserve the visible slot and click surface")
 
+local mirrorCalls = { begin = 0, acquire = 0, position = 0, finish = 0 }
+ns.CDMManagedAuraMirrors.New = function()
+    return {
+        BeginPass = function()
+            mirrorCalls.begin = mirrorCalls.begin + 1
+            return true
+        end,
+        Acquire = function()
+            mirrorCalls.acquire = mirrorCalls.acquire + 1
+            return {}
+        end,
+        Position = function()
+            mirrorCalls.position = mirrorCalls.position + 1
+            return true
+        end,
+        EndPass = function()
+            mirrorCalls.finish = mirrorCalls.finish + 1
+        end,
+    }
+end
+local mirrorSettings = CopySettings({
+    iconDisplayMode = "always",
+    showOnlyWhenActive = false,
+    entries = { { id = 222, kind = "cooldown", source = "blizzardCDM" } },
+})
+local mirrorOwner = Frame("mirror-owner")
+local mirrorIcon = Frame("mirror-icon")
+mirrorIcon._spellEntry = {
+    id = 222, spellID = 222, kind = "cooldown", source = "blizzardCDM",
+}
+assert(ns.CDMCustomAuraRuns.ShouldUseAuraMirrors(mirrorSettings, "custom") == true
+    and ns.CDMCustomAuraRuns.HasAuraMirrorEntries(mirrorSettings, "custom") == true,
+    "always-visible catalogued cooldown bars must opt into aura mirrors")
+assert(ns.CDMCustomAuraRuns.Apply(mirrorOwner, mirrorSettings, {
+        metrics = { iconWidth = 30 },
+        placements = { { icon = mirrorIcon, rowConfig = row, x = 0, y = 0 } },
+    }, nil, nil, "custom") == true,
+    "always-visible cooldown entries must retain the base icon while applying an aura mirror")
+assert(mirrorCalls.begin == 1 and mirrorCalls.acquire == 1
+    and mirrorCalls.position == 1 and mirrorCalls.finish == 1
+    and ns.CDMCustomAuraRuns.HasAuraMirrors(mirrorOwner) == true,
+    "the aura mirror must be pooled and positioned over the owned cooldown icon")
+ns._OwnedSwipe.GetSettings = function() return { showCooldownIconAuraPhase = false } end
+assert(ns.CDMCustomAuraRuns.ShouldUseAuraMirrors(mirrorSettings, "custom") == false
+    and ns.CDMCustomAuraRuns.HasAuraMirrorEntries(mirrorSettings, "custom") == false,
+    "the cooldown aura-phase setting must disable custom-bar aura mirrors")
+assert(ns.CDMCustomAuraRuns.Apply(mirrorOwner, mirrorSettings, {
+        metrics = { iconWidth = 30 },
+        placements = { { icon = mirrorIcon, rowConfig = row, x = 0, y = 0 } },
+    }, nil, nil, "custom") == false
+    and ns.CDMCustomAuraRuns.HasAuraMirrors(mirrorOwner) == false,
+    "disabling cooldown aura phases must park existing custom-bar mirrors")
+
 assert(ns.CDMCustomAuraRuns.Apply(owner, settings, plan, nil, nil, "custom") == true)
 local containersFile = assert(io.open("QUI_CDM/cdm/cdm_containers.lua", "rb"))
 local containersSource = containersFile:read("*a")
@@ -739,6 +795,9 @@ assert(cooldownSweeps == 1,
 local settingsFile = assert(io.open("QUI_CDM/cdm/settings/containers_page.lua", "rb"))
 local settingsSource = settingsFile:read("*a")
 settingsFile:close()
+assert(settingsSource:find(
+    "local function RefreshCooldownIconAuraPhase%(%)%s.-QUI_RefreshNCDM%(true%)",
+    1), "cooldown aura-phase changes must synchronously relayout custom containers")
 local refreshContainerSource = assert(settingsSource:match(
     "(local function RefreshContainer%(containerKey%).-\nend)\n\nlocal function RefreshSwipe"))
 local refreshGlowsSource = assert(settingsSource:match(
