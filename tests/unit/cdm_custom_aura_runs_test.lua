@@ -540,6 +540,14 @@ playerOverlayIcon._spellEntry = {
 assert(ns.CDMCustomAuraRuns.ShouldUseCooldownAuraOverlays(overlaySettings, "custom") == true
     and ns.CDMCustomAuraRuns.HasCooldownAuraOverlayEntries(overlaySettings, "custom") == true,
     "always-visible custom cooldowns must opt into native aura overlays")
+assert(ns.CDMCustomAuraRuns.ShouldUseCooldownAuraOverlays(CopySettings({
+        showActiveState = false,
+    }), "custom") == false,
+    "disabled active-state rendering must not create native aura overlays")
+assert(ns.CDMCustomAuraRuns.ShouldUseCooldownAuraOverlays(CopySettings({
+        hideNonUsable = true,
+    }), "custom") == false,
+    "non-usable filtering must not create ghostable native aura overlays")
 assert(ns.CDMCustomAuraRuns.HasCooldownAuraOverlayEntries(CopySettings({
         iconDisplayMode = "always",
         showOnlyWhenActive = false,
@@ -584,7 +592,8 @@ local runsFile = assert(io.open("QUI_CDM/cdm/cdm_custom_aura_runs.lua", "rb"))
 local runsSource = runsFile:read("*a")
 runsFile:close()
 assert(runsSource:find("ApplyCooldownAuraOverlays", 1, true)
-    and runsSource:find("PositionOverlay", 1, true),
+    and runsSource:find("PositionOverlay", 1, true)
+    and runsSource:find("reverseSwipe = true", 1, true),
     "cooldown entries must use the native aura overlay path")
 local skinFile = assert(io.open("core/aura_skin.lua", "rb"))
 local skinSource = skinFile:read("*a")

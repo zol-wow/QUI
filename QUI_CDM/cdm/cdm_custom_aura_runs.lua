@@ -105,6 +105,7 @@ function Runs.ShouldUseCooldownAuraOverlays(settings, viewerType)
     local swipeSettings = swipe and swipe.GetSettings and swipe.GetSettings()
     if swipeSettings and swipeSettings.showCooldownIconAuraPhase == false then return false end
     if (settings.iconDisplayMode or "always") ~= "always" then return false end
+    if settings.showActiveState == false or settings.hideNonUsable == true then return false end
     return settings.showOnlyWhenActive ~= true
         and settings.showOnlyOnCooldown ~= true
         and settings.showOnlyWhenOffCooldown ~= true
@@ -256,7 +257,7 @@ local function Profile(rowConfig)
         showEdge = showEdge,
         swipeTexture = "Interface\\Buttons\\WHITE8X8",
         swipeColor = swipeColor,
-        reverseSwipe = false,
+        reverseSwipe = true,
         swipeStyle = "radial",
         duration = {
             show = rowConfig.hideDurationText ~= true,
