@@ -259,6 +259,9 @@ assert(ns.CDMCustomAuraRuns.ResolveRoute({
         id = 222, kind = "aura", source = "blizzardCDM",
     }) == "SELF_HELPFUL"
     and ns.CDMCustomAuraRuns.ResolveRoute({
+        id = 222, kind = "cooldown", source = "blizzardCDM", _selfAura = false,
+    }) == "SELF_HELPFUL"
+    and ns.CDMCustomAuraRuns.ResolveRoute({
         id = 333, kind = "aura", source = "blizzardCDM",
     }) == "HELPFUL"
     and ns.CDMCustomAuraRuns.ResolveRoute({
@@ -511,6 +514,11 @@ assert(mirrorCalls.begin == 1 and mirrorCalls.acquire == 1
     and ns.CDMCustomAuraRuns.HasAuraMirrors(mirrorOwner) == true
     and ns.CDMCustomAuraRuns.HasPreparedAuraMirrors(mirrorOwner) == true,
     "the aura mirror must be pooled and positioned over the owned cooldown icon")
+local runsFile = assert(io.open("QUI_CDM/cdm/cdm_custom_aura_runs.lua", "rb"))
+local runsSource = runsFile:read("*a")
+runsFile:close()
+assert(runsSource:find("AuraSkin.WireButton(frame, Profile(rowConfig))", 1, true),
+    "mirror restyling must pass a complete aura profile")
 ns._OwnedSwipe.GetSettings = function() return { showCooldownIconAuraPhase = false } end
 assert(ns.CDMCustomAuraRuns.ShouldUseAuraMirrors(mirrorSettings, "custom") == false
     and ns.CDMCustomAuraRuns.HasAuraMirrorEntries(mirrorSettings, "custom") == false,

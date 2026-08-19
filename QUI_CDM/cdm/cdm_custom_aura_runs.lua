@@ -115,6 +115,7 @@ end
 ResolveRoute = function(entry)
     if type(entry) ~= "table" or entry.source ~= "blizzardCDM" then return nil end
     local selfAura = entry._selfAura
+    if entry.kind ~= "aura" then selfAura = nil end
     if selfAura == nil then
         local spellData = ns.CDMSpellData
         if spellData and spellData.IsSelfAuraSpell then
@@ -255,7 +256,9 @@ local function GetMirrorManager()
                 and C_Secrets.ShouldAurasBeSecret()
         end,
         styleFrame = AuraSkin and AuraSkin.WireButton,
-        restyleFrame = AuraSkin and AuraSkin.WireButton,
+        restyleFrame = AuraSkin and function(frame, rowConfig)
+            return AuraSkin.WireButton(frame, Profile(rowConfig))
+        end,
         positionBase = function(baseIcon, host)
             if host.SetFrameLevel and baseIcon.GetFrameLevel then
                 host:SetFrameLevel(baseIcon:GetFrameLevel() + 20)
