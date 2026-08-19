@@ -1,10 +1,8 @@
 -- tests/unit/cdm_reanchor_auraphase_test.lua
 -- Run: lua tests/unit/cdm_reanchor_auraphase_test.lua
 -- Locks the hook contract of the re-anchor swipe colour owner.
--- :Hook installs SetSwipeColor / SetDrawEdge / SetCooldown post-hooks (never
--- RefreshSpellCooldownInfo). :OnSwipeColor -> reassertColor re-asserts the QUI
--- colour from non-secret state; :OnCooldownSet re-asserts AFTER Blizzard's
--- timing write so the aura-phase-off re-bind survives the refresh.
+-- :Hook installs only taint-safe visual post-hooks (never
+-- RefreshSpellCooldownInfo or native timing/desaturation hooks).
 
 local ns = {}
 -- Task 45f: cdm_reanchor_auraphase.lua routes discarded-result pcall guards
@@ -100,12 +98,8 @@ do
     assert(calls == 2, "G13: nil cooldown frame must be a no-op")
 end
 
--- Timing post-hook: :Hook ALSO installs a SetCooldown hook. Blizzard's refresh
--- recolours BEFORE it re-binds timing (CooldownViewer.lua:1166 vs :1169), so the
--- aura-phase-off re-bind must re-assert from the LAST timing write to survive.
--- Desat post-hook: :Hook ALSO installs a SetDesaturated hook on the icon TEXTURE
--- (frame.Icon): RefreshData writes desaturation AFTER the timing refresh
--- (:1269 vs :1271), so the aura-phase-off saturation must re-assert from there.
+-- Native CDM timing and desaturation setters are untainted-only. QUI leaves
+-- Blizzard's timing and saturation state alone.
 do
     local hooked = {}
     local texHooked = {}
@@ -118,60 +112,16 @@ do
         end,
         reassertColor = function() end,
         reassertEdge = function() end,
-        reassertDesat = function() end,
         isAuraPhaseEnabled = function() return true end,
     })
     local frame = { GetCooldownFrame = function() return cd end, Icon = tex }
     inst:Hook(frame)
-    assert(hooked["SetCooldown"] == true, "Hook must install a SetCooldown timing post-hook")
-    assert(texHooked["SetDesaturated"] == true,
-        "Hook must install a SetDesaturated post-hook on the icon texture")
+    assert(hooked["SetCooldown"] == nil,
+        "Hook must not install an untainted-only SetCooldown hook")
+    assert(texHooked["SetDesaturated"] == nil,
+        "Hook must not install an untainted-only SetDesaturated hook")
     assert(hooked["RefreshSpellCooldownInfo"] == nil,
         "still NEVER hooks RefreshSpellCooldownInfo (secret-value taint)")
-end
-
--- :OnCooldownSet -> reassertColor once, guarded against BOTH its own re-fire and
--- the colour hook: the reassert's SetSwipeColor re-fires OnSwipeColor, which must
--- no-op while the timing re-assert is in flight (no double restyle per refresh).
-do
-    local calls = 0
-    local inst
-    local deps = {
-        reassertColor = function(f, cdw)
-            calls = calls + 1
-            inst:OnSwipeColor(f, cdw)   -- simulate the reassert's SetSwipeColor re-firing the colour hook
-            inst:OnCooldownSet(f, cdw)  -- and a nested SetCooldown re-fire
-        end,
-    }
-    inst = M.New(deps)
-    local f, cdw = {}, {}
-    inst:OnCooldownSet(f, cdw)
-    assert(calls == 1, "OnCooldownSet calls reassertColor once (both guards held)")
-    inst:OnCooldownSet(f, cdw)
-    assert(calls == 2, "guards clear after each call so later refreshes re-assert")
-    inst:OnCooldownSet(f, nil)
-    assert(calls == 2, "nil cooldown frame must be a no-op")
-end
-
--- :OnDesaturated -> reassertDesat once (re-entry guarded so the reassert's own
--- boolean SetDesaturated fallback, which re-fires the hook, cannot recurse).
-do
-    local calls = 0
-    local inst
-    local deps = {
-        reassertDesat = function(f, texArg)
-            calls = calls + 1
-            inst:OnDesaturated(f, texArg)  -- simulate the fallback's SetDesaturated re-firing
-        end,
-    }
-    inst = M.New(deps)
-    local f, tex = {}, {}
-    inst:OnDesaturated(f, tex)
-    assert(calls == 1, "OnDesaturated calls reassertDesat once (re-entry guarded)")
-    inst:OnDesaturated(f, tex)
-    assert(calls == 2, "guard clears after each call so later re-asserts fire")
-    inst:OnDesaturated(f, nil)
-    assert(calls == 2, "nil texture must be a no-op")
 end
 
 print("OK: cdm_reanchor_auraphase_test")
