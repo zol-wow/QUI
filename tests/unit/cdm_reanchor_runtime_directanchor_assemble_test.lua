@@ -78,7 +78,9 @@ do
 end
 
 do
-    local nativeEntry = { name = "Native cooldown", _assignedRow = 2 }
+    local nativeEntry = {
+        name = "Native cooldown", _assignedRow = 2, linkedSpellIDs = { 12345 },
+    }
     local nativeFrame = { cooldownUseAuraDisplayTime = true }
     local ownedIcon = { f = "owned-cooldown" }
     local sinks, minted = {}, 0
@@ -91,8 +93,8 @@ do
         },
         getCurated = function() return { nativeEntry } end,
         getAdditional = function() return {} end,
-        shouldReplaceNativeAuraPhase = function(frame)
-            return frame.cooldownUseAuraDisplayTime == true
+        shouldReplaceNativeAuraPhase = function(_frame, entry)
+            return type(entry.linkedSpellIDs) == "table" and #entry.linkedSpellIDs > 0
         end,
         mintOwned = function() minted = minted + 1; return ownedIcon end,
     })

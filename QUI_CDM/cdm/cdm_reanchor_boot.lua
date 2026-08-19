@@ -178,8 +178,9 @@ function CDMReanchorBoot.BuildRuntime(env)
         getCurated = env.getCurated,
         getSettings = env.getSettings,
         getAdditional = MakeGetAdditional(env),
-        shouldReplaceNativeAuraPhase = function(frame)
-            return frame and frame.cooldownUseAuraDisplayTime == true
+        shouldReplaceNativeAuraPhase = function(_frame, entry)
+            local linked = entry and entry.linkedSpellIDs
+            return type(linked) == "table" and #linked > 0
                 and not isAuraPhaseEnabled()
         end,
         buildLayout = env.buildLayout,

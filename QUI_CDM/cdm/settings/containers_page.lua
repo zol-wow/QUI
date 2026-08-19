@@ -459,6 +459,13 @@ local function RefreshSwipe()
     PokePreview()
 end
 
+local function RefreshCooldownIconAuraPhase()
+    RefreshSwipe()
+    if ns.QUI_RefreshCDMReanchor then
+        ns.QUI_RefreshCDMReanchor()
+    end
+end
+
 local function RefreshCooldownEffects()
     if _G.QUI_RefreshCooldownEffects then
         _G.QUI_RefreshCooldownEffects()
@@ -1944,7 +1951,7 @@ local function RenderEffectsSection(sectionHost, ctx)
     local buffSwipeCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showBuffSwipe", effectsCtx.swipeDB, RefreshSwipe, {
         description = ns.L["Play a swipe animation on buff/debuff icons to represent remaining duration."],
     })
-    local cooldownIconAuraPhaseCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showCooldownIconAuraPhase", effectsCtx.swipeDB, RefreshSwipe, {
+    local cooldownIconAuraPhaseCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showCooldownIconAuraPhase", effectsCtx.swipeDB, RefreshCooldownIconAuraPhase, {
         description = ns.L["Let cooldown icons show their linked buff/debuff phase before switching to recharge or cooldown."],
     })
     local rechargeEdgeCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showRechargeEdge", effectsCtx.swipeDB, RefreshSwipe, {
