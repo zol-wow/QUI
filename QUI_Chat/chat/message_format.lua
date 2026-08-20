@@ -407,7 +407,7 @@ end
 local RAW_TYPES = {
     SYSTEM = true, SKILL = true, CURRENCY = true, MONEY = true,
     OPENING = true, TRADESKILLS = true, PET_INFO = true, TARGETICONS = true,
-    BN_WHISPER_PLAYER_OFFLINE = true, LOOT = true, PING = true,
+    BN_WHISPER_PLAYER_OFFLINE = true, LOOT = true,
 }
 
 local function IsRawType(typeKey)
@@ -654,6 +654,16 @@ local function OutFormat(typeKey)
     local fmt = GetOutMessageFormatKey(typeKey)
     if fmt == "%s " then fmt = "%s: " end
     return fmt
+end
+
+local function FormatPingLine(p)
+    local sender = p.rawSender
+    if not IsSecret(sender) and (type(sender) ~= "string" or sender == "") then
+        return p.text
+    end
+    local prefix = FormatString(GetOutMessageFormatKey("PING"), sender)
+    if type(prefix) == "nil" then return nil end
+    return FormatString("%s%s", prefix, p.text)
 end
 
 local function BracketedPlayerLink(name, shown)
@@ -969,6 +979,9 @@ function Format.BuildEventLine(event, p)
     local typeKey = Format.EventToTypeKey(event)
     if not typeKey then return nil end
 
+    if typeKey == "PING" then
+        return FormatPingLine(p)
+    end
     if IsRawType(typeKey) then
         return text
     end
@@ -1000,6 +1013,8 @@ function Format.WrapSecretEventLine(event, p)
                 .. (BuildPlayerLink(typeKey, ChatCategory(typeKey), p, p.decorated or p.sender) or p.sender)
         end
         prefix = string.format(GetOutMessageFormatKey(typeKey), who)
+    elseif typeKey == "PING" then
+        return FormatPingLine(p)
     elseif IsRawType(typeKey) or typeKey == "TEXT_EMOTE" then
         return text
     else

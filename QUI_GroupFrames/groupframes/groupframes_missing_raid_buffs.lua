@@ -841,7 +841,7 @@ local function EnsureEventFrame()
         elseif event == "UNIT_CONNECTION" or event == "UNIT_FLAGS" then
             RefreshUnit(unit)
         elseif event == "GROUP_ROSTER_UPDATE" then
-            C_Timer.After(0.25, RefreshAll)
+            return
         elseif event == "COOLDOWN_VIEWER_DATA_LOADED"
             or event == "HIDDEN_GROUP_BUFFS_CHANGED"
             or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then

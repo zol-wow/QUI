@@ -89,6 +89,7 @@ _G.ChatTypeGroupInverted = { CHAT_MSG_SAY = "SAY", CHAT_MSG_GUILD = "GUILD", CHA
     -- carries this entry — capture's CHAT_MSG_ prefix scan (below) needs no
     -- GUILD_DISCORD-specific registration code, only this mock mirroring reality.
     CHAT_MSG_GUILD_DISCORD = "GUILD_DISCORD" }
+_G.ChatTypeGroupInverted.CHAT_MSG_PING = "PING"
 -- FrameXML constant consumed for link chatType data (RAID_WARNING -> RAID).
 _G.CHAT_INVERTED_CATEGORY_LIST = {
     RAID_WARNING = "RAID", PARTY_LEADER = "PARTY",
@@ -109,6 +110,7 @@ _G.CHAT_EMOTE_GET = "%s "
 -- missing-key assert — see chat_text_emote_missing_get_no_assert_test).
 _G.CHAT_MONSTER_YELL_GET = "%s yells: "
 _G.CHAT_RAID_BOSS_EMOTE_GET = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|t%s "
+_G.CHAT_PING_GET = "%s: "
 _G.GetPlayerInfoByGUID = function() return nil end
 _G.RAID_CLASS_COLORS = {}
 _G.C_EventUtils = { IsEventValid = function(e) return e ~= "CHAT_MSG_BOGUS" end }
@@ -264,6 +266,7 @@ assert(registered.CHAT_MSG_GUILD, "registers CHAT_MSG_GUILD")
 -- ChatTypeGroup["GUILD_DISCORD"] in FrameXML) already registers it identically
 -- to every other CHAT_MSG_* group.
 assert(registered.CHAT_MSG_GUILD_DISCORD, "registers CHAT_MSG_GUILD_DISCORD (prefix scan, same path as GUILD)")
+assert(registered.CHAT_MSG_PING, "registers CHAT_MSG_PING")
 assert(registered.CHAT_MSG_CHANNEL, "registers explicit CHAT_MSG_CHANNEL")
 assert(registered.CHAT_MSG_SYSTEM, "registers explicit CHAT_MSG_SYSTEM")
 assert(registered.CHAT_MSG_BN_INLINE_TOAST_ALERT, "registers explicit BN toast alerts")
@@ -377,6 +380,10 @@ settings.enabled = false
 fire("CHAT_MSG_SAY", "ignored", "Bob")
 assert(Store.Size() == 5, "no capture when chat disabled")
 settings.enabled = true
+
+fire("CHAT_MSG_PING", "Attack", "Bob")
+local ePing; Store.ForEach(function(e) ePing = e end)
+assert(ePing.m == "[12:00] Bob: Attack", "ping includes sender, got " .. tostring(ePing.m))
 
 -- Channel messages pull per-channel color (ChatTypeInfo.CHANNEL<n>)
 fire("CHAT_MSG_CHANNEL", "wts gem", "Ann", nil, "2. Trade", nil, nil, nil, 2, "Trade")

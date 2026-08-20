@@ -6,6 +6,7 @@ local function newFrame(name)
     local frame = {
         name = name,
         parent = nil,
+        parentChanges = 0,
         alpha = 1,
         scale = 1,
         shown = true,
@@ -33,6 +34,7 @@ local function newFrame(name)
 
     function frame:SetParent(parent)
         self.parent = parent
+        self.parentChanges = self.parentChanges + 1
     end
 
     function frame:GetParent()
@@ -241,6 +243,11 @@ local raidFrameParent = _G.CompactRaidFrame1:GetParent()
 local raidGroupMemberParent = _G.CompactRaidGroup1Member1:GetParent()
 
 groupframes:HideBlizzardFrames()
+
+local parentChangesAfterFirstHide = _G.CompactRaidFrame1.parentChanges
+groupframes:HideBlizzardFrames()
+assert(_G.CompactRaidFrame1.parentChanges == parentChangesAfterFirstHide,
+    "repeated hide should not reparent an already hidden frame")
 
 assertBanished(PartyFrame, partyParent, "PartyFrame")
 assertBanished(CompactPartyFrame, compactPartyParent, "CompactPartyFrame")

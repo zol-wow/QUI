@@ -253,6 +253,7 @@ end
 local mainFrame
 local buffIcons = {}
 local lastUpdate = 0
+local lastLayoutKey
 local groupClasses = {}
 local previewMode = false
 local previewBuffs = nil
@@ -941,6 +942,7 @@ UpdateDisplay = function()
     local settings = GetSettings()
     local inCombat = InCombatLockdown()
     if not settings.enabled then
+        lastLayoutKey = nil
         if mainFrame then
             if inCombat then mainFrame:SetAlpha(0) else mainFrame:Hide() end
         end
@@ -955,6 +957,7 @@ UpdateDisplay = function()
     local missing = GetRelevantBuffs()
 
     if #missing == 0 then
+        lastLayoutKey = nil
         if inCombat then mainFrame:SetAlpha(0) else mainFrame:Hide() end
         return
     end
@@ -964,6 +967,15 @@ UpdateDisplay = function()
     local growDir = settings.growDirection or "RIGHT"
     local isVertical = (growDir == "UP" or growDir == "DOWN" or growDir == "CENTER_V")
     local totalSize = (#missing * iconSize) + ((#missing - 1) * iconSpacing)
+    local position = settings.position
+    local positionKey = position and table.concat({
+        position.point or "", position.relPoint or "", position.x or 0, position.y or 0,
+    }, ":") or ""
+    local layoutKey = table.concat({
+        #missing, iconSize, iconSpacing, growDir, settings.hideLabelBar and 1 or 0,
+        settings.labelFontSize or 12, positionKey,
+    }, "|")
+    local layoutChanged = layoutKey ~= lastLayoutKey
 
     if #buffIcons < #missing then
         for i = #buffIcons + 1, #missing do
@@ -977,7 +989,7 @@ UpdateDisplay = function()
         if i <= #missing then
             local buff = missing[i]
 
-            if not inCombat then
+            if not inCombat and layoutChanged then
                 icon:SetSize(iconSize, iconSize)
                 icon:ClearAllPoints()
 
@@ -1117,64 +1129,67 @@ UpdateDisplay = function()
         CJKFont(mainFrame.labelBar.text, Helpers.GetGeneralFont(), fontSize, Helpers.GetGeneralFontOutline())
         mainFrame.labelBar.text:SetText(ns.L["Raid Buffs"])
 
-        local hideLabelBar = settings.hideLabelBar
-        local minIconsSize = (3 * iconSize) + (2 * iconSpacing)
-        local minTextWidth = fontSize * 8 + 10
+        if layoutChanged then
+            local hideLabelBar = settings.hideLabelBar
+            local minIconsSize = (3 * iconSize) + (2 * iconSpacing)
+            local minTextWidth = fontSize * 8 + 10
 
-        mainFrame.iconContainer:ClearAllPoints()
-        mainFrame.labelBar:ClearAllPoints()
+            mainFrame.iconContainer:ClearAllPoints()
+            mainFrame.labelBar:ClearAllPoints()
 
-        if isVertical then
-            local containerHeight = totalSize
-            local containerWidth = iconSize
-            mainFrame.iconContainer:SetSize(containerWidth, containerHeight)
+            if isVertical then
+                local containerHeight = totalSize
+                local containerWidth = iconSize
+                mainFrame.iconContainer:SetSize(containerWidth, containerHeight)
 
-            if hideLabelBar then
-                mainFrame.labelBar:Hide()
-                if growDir == "UP" then
-                    mainFrame.iconContainer:SetPoint("BOTTOM", mainFrame, "BOTTOM", 0, 0)
-                elseif growDir == "DOWN" then
+                if hideLabelBar then
+                    mainFrame.labelBar:Hide()
+                    if growDir == "UP" then
+                        mainFrame.iconContainer:SetPoint("BOTTOM", mainFrame, "BOTTOM", 0, 0)
+                    elseif growDir == "DOWN" then
+                        mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
+                    else
+                        mainFrame.iconContainer:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
+                    end
+                    mainFrame:SetSize(containerWidth, containerHeight)
+                else
+                    local frameWidth = math.max(containerWidth, minTextWidth)
+                    mainFrame.labelBar:SetSize(frameWidth, labelBarHeight)
+                    mainFrame.labelBar:Show()
                     mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
-                else
-                    mainFrame.iconContainer:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
+                    mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -labelBarGap)
+                    mainFrame:SetSize(frameWidth, containerHeight + labelBarGap + labelBarHeight)
                 end
-                mainFrame:SetSize(containerWidth, containerHeight)
             else
-                local frameWidth = math.max(containerWidth, minTextWidth)
-                mainFrame.labelBar:SetSize(frameWidth, labelBarHeight)
-                mainFrame.labelBar:Show()
-                mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
-                mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -labelBarGap)
-                mainFrame:SetSize(frameWidth, containerHeight + labelBarGap + labelBarHeight)
-            end
-        else
-            local frameWidth = math.max(totalSize, hideLabelBar and 0 or math.max(minIconsSize, minTextWidth))
-            mainFrame.iconContainer:SetSize(totalSize, iconSize)
+                local frameWidth = math.max(totalSize, hideLabelBar and 0 or math.max(minIconsSize, minTextWidth))
+                mainFrame.iconContainer:SetSize(totalSize, iconSize)
 
-            if hideLabelBar then
-                mainFrame.labelBar:Hide()
-                if growDir == "LEFT" then
-                    mainFrame.iconContainer:SetPoint("RIGHT", mainFrame, "RIGHT", 0, 0)
-                elseif growDir == "RIGHT" then
-                    mainFrame.iconContainer:SetPoint("LEFT", mainFrame, "LEFT", 0, 0)
+                if hideLabelBar then
+                    mainFrame.labelBar:Hide()
+                    if growDir == "LEFT" then
+                        mainFrame.iconContainer:SetPoint("RIGHT", mainFrame, "RIGHT", 0, 0)
+                    elseif growDir == "RIGHT" then
+                        mainFrame.iconContainer:SetPoint("LEFT", mainFrame, "LEFT", 0, 0)
+                    else
+                        mainFrame.iconContainer:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
+                    end
+                    mainFrame:SetSize(totalSize, iconSize)
                 else
-                    mainFrame.iconContainer:SetPoint("CENTER", mainFrame, "CENTER", 0, 0)
+                    mainFrame.iconContainer:SetSize(frameWidth, iconSize)
+                    mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
+                    mainFrame.labelBar:SetSize(frameWidth, labelBarHeight)
+                    mainFrame.labelBar:Show()
+                    mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -labelBarGap)
+                    mainFrame:SetSize(frameWidth, iconSize + labelBarGap + labelBarHeight)
                 end
-                mainFrame:SetSize(totalSize, iconSize)
-            else
-                mainFrame.iconContainer:SetSize(frameWidth, iconSize)
-                mainFrame.iconContainer:SetPoint("TOP", mainFrame, "TOP", 0, 0)
-                mainFrame.labelBar:SetSize(frameWidth, labelBarHeight)
-                mainFrame.labelBar:Show()
-                mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -labelBarGap)
-                mainFrame:SetSize(frameWidth, iconSize + labelBarGap + labelBarHeight)
+            end
+
+            if settings.position and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("missingRaidBuffs")) then
+                mainFrame:ClearAllPoints()
+                mainFrame:SetPoint(settings.position.point, UIParent, settings.position.relPoint, settings.position.x, settings.position.y)
             end
         end
-
-        if settings.position and not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("missingRaidBuffs")) then
-            mainFrame:ClearAllPoints()
-            mainFrame:SetPoint(settings.position.point, UIParent, settings.position.relPoint, settings.position.x, settings.position.y)
-        end
+        lastLayoutKey = layoutKey
     end
 
     if inCombat then mainFrame:SetAlpha(1) else mainFrame:Show() end

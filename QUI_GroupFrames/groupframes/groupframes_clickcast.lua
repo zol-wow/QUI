@@ -1522,7 +1522,6 @@ eventFrame:SetScript("OnEvent", function(self, event)
             rosterDebounceTimer = nil
             if not InCombatLockdown() then
                 QUI_GFCC:RegisterAllFrames()
-                QUI_GFCC:RegisterUnitFrames()
             else
                 QUI_GFCC.pendingRefresh = true
             end

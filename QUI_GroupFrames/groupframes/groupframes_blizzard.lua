@@ -18,6 +18,9 @@ local hookedFrames = {}
 local mouseStates = Helpers.CreateStateTable()
 local banishStates = Helpers.CreateStateTable()
 local hiddenParent
+local stripRefreshPending
+local hideRefreshPending
+local StripBlizzardGroupEvents
 
 local function ShouldHide()
     local db = GetDB()
@@ -116,6 +119,15 @@ end
 local function BanishFrame(frame)
     if not frame then return false end
 
+    local hidden = hiddenParent
+    local parentOK, parent
+    if hidden then
+        parentOK, parent = ns.SafeCallMethod("best-effort-style", frame, "GetParent")
+        if hiddenFrames[frame] and parentOK and parent == hidden then
+            return false
+        end
+    end
+
     if InCombatLockdown() then
         ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetAlpha", 0)
         hiddenFrames[frame] = true
@@ -123,15 +135,41 @@ local function BanishFrame(frame)
         return false
     end
 
+    hidden = EnsureHiddenParent()
+    parentOK, parent = ns.SafeCallMethod("best-effort-style", frame, "GetParent")
     local state = CaptureBanishState(frame)
-    local reparented = false
-    reparented = ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetParent", EnsureHiddenParent()) == true
+    local reparented = parentOK and parent == hidden
+    if not reparented then
+        reparented = ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetParent", hidden) == true
+    end
     ns.SafeCallMethodIfPresent("best-effort-style", frame, "SetAlpha", 0)
     SuppressFrameMouse(frame)
 
     hiddenFrames[frame] = true
     state.banished = reparented
     return reparented
+end
+
+local function QueueStripBlizzardGroupEvents()
+    if stripRefreshPending then return end
+    stripRefreshPending = true
+    C_Timer.After(0, function()
+        stripRefreshPending = false
+        if ShouldHide() then StripBlizzardGroupEvents() end
+    end)
+end
+
+local function QueueHideBlizzardFrames()
+    if hideRefreshPending then return end
+    hideRefreshPending = true
+    C_Timer.After(0.2, function()
+        hideRefreshPending = false
+        if InCombatLockdown() then
+            QUI_GFB.pendingHide = true
+            return
+        end
+        if ShouldHide() then QUI_GFB:HideBlizzardFrames() end
+    end)
 end
 
 local function SafeHideFrame(frame)
@@ -169,7 +207,7 @@ local function RestoreUnitFrameEvents(frame)
     end)
 end
 
-local function StripBlizzardGroupEvents()
+StripBlizzardGroupEvents = function()
     if PartyFrame and PartyFrame.PartyMemberFramePool then
         for memberFrame in PartyFrame.PartyMemberFramePool:EnumerateActive() do
             StripUnitFrameEvents(memberFrame)
@@ -415,21 +453,12 @@ blizzardEventFrame:SetScript("OnEvent", function(_, event, addonName)
 
     if not ShouldHide() then return end
 
-    StripBlizzardGroupEvents()
-    C_Timer.After(0, function()
-        if ShouldHide() then StripBlizzardGroupEvents() end
-    end)
+    QueueStripBlizzardGroupEvents()
 
     if InCombatLockdown() then
         QUI_GFB.pendingHide = true
         return
     end
 
-    C_Timer.After(0.2, function()
-        if InCombatLockdown() then
-            QUI_GFB.pendingHide = true
-            return
-        end
-        QUI_GFB:HideBlizzardFrames()
-    end)
+    QueueHideBlizzardFrames()
 end)

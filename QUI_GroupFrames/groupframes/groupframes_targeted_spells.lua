@@ -878,7 +878,6 @@ local function HandleNameplateRemoved(unit)
 end
 
 local function HandleRosterChanged()
-    IndexRoster()
     ClearAllCasts()
     RefreshRuntimeState()
 end
