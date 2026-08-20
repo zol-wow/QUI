@@ -1908,7 +1908,7 @@ local function ResolveCooldownStateCore(context)
         and context.owner
         and context.owner._resolvedCooldownMode == "gcd-only"
     local gcdDurObj
-    if trustIsOnGCD and currentOnGCD == true then
+    if trustIsOnGCD and currentOnGCD == true and context.showGCDSwipe == true then
         gcdDurObj = QueryGCDDurationObject(sid)
     end
     MemAuditProfilerMark("CDM_rsGCDProbe")

@@ -737,6 +737,16 @@ assert(state.gcdOnly == true, "GCD-only state should publish gcdOnly")
 assert(state.isGCDOnly == true, "GCD-only state should publish isGCDOnly")
 assert(state.isRealCooldownMode == false, "GCD-only state should not publish real cooldown mode")
 
+state = resolve({
+    entry = cooldownEntry(70001),
+    runtimeSpellID = 70001,
+    containerKey = "essential",
+    useBuffSwipe = false,
+    showGCDSwipe = false,
+})
+assert(state.mode ~= "gcd-only" and state.isOnCooldown == false,
+    "trusted GCD refreshes must honor disabled GCD swipe visibility")
+
 state = resolveUntrusted({
     owner = { _resolvedCooldownMode = "gcd-only" },
     entry = cooldownEntry(70001),
