@@ -1,5 +1,7 @@
 local _, ns = ...
 
+local _issecretvalue = issecretvalue or function() return false end
+
 local CDMReanchorAuraPhase = {}
 ns.CDMReanchorAuraPhase = CDMReanchorAuraPhase
 
@@ -37,6 +39,7 @@ end
 
 function CDMReanchorAuraPhase:OnDrawSwipe(frame, cd, show)
     if not cd or self._drawSwipeReentry[cd] then return end
+    if _issecretvalue and _issecretvalue(show) then show = nil end
     self._drawSwipeReentry[cd] = true
     local deps = self._deps
     if deps.reassertSwipe then
@@ -85,5 +88,11 @@ function CDMReanchorAuraPhase:Reassert(frame)
     securecall(function()
         this:OnSwipeColor(frame, cd)
         this:OnDrawEdge(frame, cd)
+        if type(cd.GetDrawSwipe) == "function" then
+            local ok, show = ns.SafeCallMethod("bulkhead", cd, "GetDrawSwipe")
+            if ok and not (_issecretvalue and _issecretvalue(show)) then
+                this:OnDrawSwipe(frame, cd, show)
+            end
+        end
     end)
 end

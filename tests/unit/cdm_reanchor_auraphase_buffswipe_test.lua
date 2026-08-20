@@ -281,6 +281,21 @@ assert(#seen == 2 and seen[1].what == "color" and seen[2].what == "edge",
 assert(seen[1].key == "buff" and seen[2].key == "buff",
     "Reassert threads the container key")
 
+do
+    local swipe
+    local inst = AP.New({
+        securecall = function(fn, ...) return fn(...) end,
+        reassertSwipe = function(_, _, _, show) swipe = show end,
+    })
+    local cd = {
+        SetSwipeColor = function() end,
+        SetDrawEdge = function() end,
+        GetDrawSwipe = function() return false end,
+    }
+    inst:Reassert({ GetCooldownFrame = function() return cd end })
+    assert(swipe == false, "Reassert forwards the readable native swipe state")
+end
+
 -- Reassert on a frame with no cooldown widget: harmless no-op.
 seen = {}
 ap:Reassert({})

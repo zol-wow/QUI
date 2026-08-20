@@ -92,6 +92,10 @@ end
 
 local probeVerdict = {}
 
+local function IsUsableSpellIDKey(spellID)
+    return type(spellID) == "number" and spellID > 0
+end
+
 function G.FilterStringUsable(unit, filterString)
     local AU = _G.AuraUtil
     if AU and AU.IsValidFilterString and not AU.IsValidFilterString(filterString) then
@@ -147,6 +151,15 @@ function G.CollectReadableAuras(unit)
         end
     end
     return result
+end
+
+function G.GetCooldownAuraBySpellID(spellID)
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetCooldownAuraBySpellID) then return nil end
+    local ok, auraSpellID = ns.SafeCall(
+        "secret-probe", unitAuras.GetCooldownAuraBySpellID, spellID)
+    if not ok or (issecretvalue and issecretvalue(auraSpellID)) then return nil end
+    return IsUsableSpellIDKey(auraSpellID) and auraSpellID or nil
 end
 
 function G.ElementGroups(unit, element, profile, cancelEligible)

@@ -4065,7 +4065,7 @@ local CDM_UPDATE_FULL = "full"
 local updateScheduler
 local ScheduleCDMUpdate
 local pendingCooldownForceResolveIdle = false
-local pendingCooldownTrustIsOnGCD = false
+local pendingCooldownTrustIsOnGCD
 
 local function BindCooldownDoneRefresh(icon)
     local cooldown = icon and icon.Cooldown
@@ -4281,14 +4281,14 @@ local function CreateIconUpdateScheduler()
             return ns.CDMScheduler
         end,
         updateAllCooldowns = function()
-            pendingCooldownTrustIsOnGCD = false
+            pendingCooldownTrustIsOnGCD = nil
             CDMIcons:UpdateAllCooldowns()
         end,
         updateCooldownOnly = function()
             local forceResolveIdle = pendingCooldownForceResolveIdle
             local trustIsOnGCD = pendingCooldownTrustIsOnGCD
             pendingCooldownForceResolveIdle = false
-            pendingCooldownTrustIsOnGCD = false
+            pendingCooldownTrustIsOnGCD = nil
             CDMIcons:UpdateCooldownOnly(trustIsOnGCD, forceResolveIdle)
         end,
         getBars = function()
@@ -4318,7 +4318,9 @@ end
 ScheduleCDMUpdate = function(fast, mode, reason, trustIsOnGCD)
     if mode == CDM_UPDATE_COOLDOWN then
         pendingCooldownForceResolveIdle = true
-        if trustIsOnGCD == true then
+        if trustIsOnGCD == false then
+            pendingCooldownTrustIsOnGCD = false
+        elseif trustIsOnGCD == true and pendingCooldownTrustIsOnGCD ~= false then
             pendingCooldownTrustIsOnGCD = true
         end
     end

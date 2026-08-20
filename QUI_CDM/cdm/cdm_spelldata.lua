@@ -1328,6 +1328,20 @@ local function ResolveAuraRuntimeStateImpl(params)
         end
     end
 
+    if not entryIsAura then
+        local glue = ns.AuraGlue
+        local resolveCooldownAura = glue and glue.GetCooldownAuraBySpellID
+        if resolveCooldownAura then
+            for i = 1, #_scratchCandidateIDs do
+                local auraID = resolveCooldownAura(_scratchCandidateIDs[i])
+                if IsUsableSpellIDKey(auraID) then
+                    s.hasMappedAuraID = true
+                    ResolveAuraAppendID(auraID)
+                end
+            end
+        end
+    end
+
     if not entryIsAura and not s.hasMappedAuraID then
         AuraStateDebug(debugAura, "cooldown-no-mirror", "skip-api-fallbacks",
             "hasMappedAuraID=", s.hasMappedAuraID,
@@ -3159,10 +3173,10 @@ function CDMSpellData:GetActiveAuras(filter)
     local entries = _capturedAuraByUnitSpellID.player
     if not entries then return result end
     for sid, auraData in pairs(entries) do
-        if sid and not seen[sid] and CapturedAuraMatchesFilter(auraData, {
+        if sid and not seen[auraData] and CapturedAuraMatchesFilter(auraData, {
             player = filter or "HELPFUL",
         }) then
-            seen[sid] = true
+            seen[auraData] = true
             local rawAuraData = GetCapturedAuraData(auraData)
             local icon = rawAuraData and rawAuraData.icon
             local duration = rawAuraData and rawAuraData.duration
@@ -3173,7 +3187,7 @@ function CDMSpellData:GetActiveAuras(filter)
                 duration = 0
             end
             result[#result + 1] = {
-                spellID = sid,
+                spellID = GetCleanAuraSpellID(rawAuraData) or auraData.spellID or sid,
                 name = auraData.name or "",
                 icon = icon,
                 duration = duration,
