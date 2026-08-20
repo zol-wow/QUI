@@ -78,11 +78,9 @@ active, unit, instanceID = resolve({
     name = "Direct Aura",
 })
 
-assert(active == true, "direct mapped aura lookup should mark the entry active")
-assert(unit == "player", "direct aura lookup should report player unit")
-assert(instanceID == 9002, "direct aura lookup should return auraInstanceID")
-assert(queriedSpellIDs[1] == 10002, "direct lookup should try configured ID first")
-assert(queriedSpellIDs[2] == 20002, "direct lookup should fall back to mapped aura ID")
+assert(active == false, "un-captured mapped aura must not use a direct spell getter")
+assert(unit == nil and instanceID == nil, "direct aura getter results are removed")
+assert(#queriedSpellIDs == 0, "aura resolution must not query spell getters")
 
 active, unit, instanceID = resolve({
     spellID = 10003,
@@ -90,8 +88,7 @@ active, unit, instanceID = resolve({
     name = "Opaque Aura",
 })
 
-assert(active == true, "clean opaque presence should keep the custom aura active")
-assert(unit == "player", "clean opaque presence should retain the queried unit")
-assert(instanceID == nil, "clean opaque presence must not invent an auraInstanceID")
+assert(active == false, "uncaptured opaque presence must not be queried")
+assert(unit == nil and instanceID == nil, "uncaptured aura has no native identity")
 
 print("OK: cdm_resolvers_aura_active_state_test")

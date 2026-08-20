@@ -1028,6 +1028,9 @@ ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
     local resolvedStart = resolvedState.start
     local resolvedDuration = resolvedState.duration
     local resolvedSpellID = resolvedState.spellID
+    if trustIsOnGCD then
+        icon._gcdOnlySuppressed = resolvedState.cooldownInfoOnGCD == true or nil
+    end
     icon._resolvedCooldownMode = mode
     icon._itemAuraCooldownActive = nil
     icon._itemAuraCooldownDurObj = nil
@@ -2621,7 +2624,8 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
         local useBuffSwipe = _resolverRuntimePolicy.ShouldUseBuffSwipeForIcon(icon, entry)
         if useBuffSwipe then
             local _cBaseID = _runtimeSid
-            local r = _resolverRuntimePolicy.ResolveAuraFactsForIcon(icon, entry, _cBaseID, true)
+            local r = _resolverRuntimePolicy.ResolveAuraFactsForIcon(
+                icon, entry, _cBaseID, true, trustIsOnGCD)
             preResolvedCooldownState = r
             if _resolverRuntimePolicy.ResolvedAuraStateIsActive(r) then
                 ApplyAuraStateToIcon(icon, entry, _cBaseID, r)
@@ -4047,7 +4051,7 @@ function CDMIcons.OnContainerIconPlaced(icon, rowConfig)
     ConfigureIcon(icon, rowConfig)
     BeginIconRefreshBatch("placed")
     if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("iconPlaced") end
-    UpdateIconCooldown(icon)
+    UpdateIconCooldown(icon, true)
     if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag(nil) end
     EndIconRefreshBatch()
 end
@@ -4061,6 +4065,7 @@ local CDM_UPDATE_FULL = "full"
 local updateScheduler
 local ScheduleCDMUpdate
 local pendingCooldownForceResolveIdle = false
+local pendingCooldownTrustIsOnGCD = false
 
 local function BindCooldownDoneRefresh(icon)
     local cooldown = icon and icon.Cooldown
@@ -4276,12 +4281,15 @@ local function CreateIconUpdateScheduler()
             return ns.CDMScheduler
         end,
         updateAllCooldowns = function()
+            pendingCooldownTrustIsOnGCD = false
             CDMIcons:UpdateAllCooldowns()
         end,
         updateCooldownOnly = function()
             local forceResolveIdle = pendingCooldownForceResolveIdle
+            local trustIsOnGCD = pendingCooldownTrustIsOnGCD
             pendingCooldownForceResolveIdle = false
-            CDMIcons:UpdateCooldownOnly(false, forceResolveIdle)
+            pendingCooldownTrustIsOnGCD = false
+            CDMIcons:UpdateCooldownOnly(trustIsOnGCD, forceResolveIdle)
         end,
         getBars = function()
             return ns.CDMBars
@@ -4307,9 +4315,12 @@ local function NoteFullUpdateSchedule(reason)
     end
 end
 
-ScheduleCDMUpdate = function(fast, mode, reason)
+ScheduleCDMUpdate = function(fast, mode, reason, trustIsOnGCD)
     if mode == CDM_UPDATE_COOLDOWN then
         pendingCooldownForceResolveIdle = true
+        if trustIsOnGCD == true then
+            pendingCooldownTrustIsOnGCD = true
+        end
     end
     if mode == CDM_UPDATE_FULL then
         NoteFullUpdateSchedule(reason)
@@ -4461,8 +4472,8 @@ do
         scheduleFullUpdate = function()
             ScheduleCDMUpdate(true, CDM_UPDATE_FULL, "runtime")
         end,
-        scheduleUpdate = function(fast, mode, reason)
-            ScheduleCDMUpdate(fast, mode, reason or "runtime")
+        scheduleUpdate = function(fast, mode, reason, trustIsOnGCD)
+            ScheduleCDMUpdate(fast, mode, reason or "runtime", trustIsOnGCD)
         end,
         prepareBatch = PrepareCooldownUpdateBatch,
         beginBatch = function(reason)
@@ -4496,11 +4507,6 @@ do
         queryItemSpell = function(itemID)
             if Sources and Sources.QueryItemSpell then
                 return Sources.QueryItemSpell(itemID)
-            end
-        end,
-        queryCooldownAuraBySpellID = function(spellID)
-            if Sources and Sources.QueryCooldownAuraBySpellID then
-                return Sources.QueryCooldownAuraBySpellID(spellID)
             end
         end,
         clearDurationBinding = function(icon)

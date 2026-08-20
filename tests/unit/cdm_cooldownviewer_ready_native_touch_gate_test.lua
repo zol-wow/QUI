@@ -65,8 +65,8 @@ assert(bootstrapHooks:find("BlankReanchoredNativeItemFrame", 1, true),
     "re-anchor bootstrap must provide a native frame blanker")
 assert(bootstrapHooks:find("isInitialReanchorDone", 1, true),
     "acquire blanking must be gated until initial reanchor completes")
-assert(bootstrapHooks:find("blankKeys = { buff = true, essential = true, utility = true }", 1, true),
-    "buff + essential/utility acquire blanking must be explicitly enabled (combat-start snap fix)")
+assert(bootstrapHooks:find("blankKeys = { buff = true }", 1, true),
+    "Essential/Utility acquire blanking must stay disabled to avoid native pool flicker")
 assert(bootstrapHooks:find("blankKeys = { trackedBar = true }", 1, true),
     "tracked buff-bar acquire blanking must be explicitly enabled")
 

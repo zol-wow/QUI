@@ -683,6 +683,14 @@ ns.CDMIcons = priorIcons
 assert(controller.enabled == false and controller.shown == false,
     "an empty container layout must park stale secure aura runs")
 
+assert(layoutSource:find(
+    "if runtimeVisibilityRelayout then\n            applying[trackerKey] = false\n            return", 1, true),
+    "native built-ins must not reanchor during runtime visibility relayouts")
+assert(containersSource:find(
+    'refreshMany = function(keys)\n                    return RefreshReanchoredBuiltin(boot, "essential", false, keys)',
+    1, true),
+    "dirty native refreshes must preserve their key set")
+
 local mixedSettings = {
     containerType = "customBar",
     dynamicLayout = true,

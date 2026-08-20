@@ -7,15 +7,13 @@ WoW install.
 
 ## Source
 
-The canonical source is the `live` branch of
-[`Gethe/wow-ui-source`](https://github.com/Gethe/wow-ui-source):
-`Interface/AddOns/Blizzard_APIDocumentationGenerated/`
-
-Online mirror: https://www.townlong-yak.com/framexml/live/Blizzard_APIDocumentation
+The canonical source is [`Gethe/wow-ui-source`](https://github.com/Gethe/wow-ui-source):
+`Interface/AddOns/Blizzard_APIDocumentationGenerated/`. Read the branch
+`version.txt` files before choosing `live`, `ptr`, or another retail branch.
 
 ## Current state
 
-This directory contains the `12.1.0.69382` snapshot of Blizzard's generated API
+This directory contains the `12.1.0.69404` snapshot of Blizzard's generated API
 documentation tables. The taint analyzer reads these files through the derived
 index at `tests/api-docs/api-index.lua`, so the corpus and index must stay in
 sync. After replacing or adding Blizzard documentation files, regenerate the
@@ -27,17 +25,20 @@ lua tools/test_taint.lua --update-index
 
 ## Refresh procedure
 
-When WoW patches, file contents may change. To refresh:
+When WoW patches, file contents may change. Refresh this directory from the
+same upstream clone used for `tests/framexml/`:
 
-1. Clone the upstream `live` branch and copy its
-   `Interface/AddOns/Blizzard_APIDocumentationGenerated/*.lua` files into this
-   directory. Replace existing files; do not merge.
+1. Run the FrameXML refresh procedure from `tests/framexml/README.md`; its
+   `rsync` command refreshes this directory too. Replace existing files; do not
+   merge.
 2. Run `lua tools/test_taint.lua --update-index` to regenerate
    `tests/api-docs/api-index.lua`.
-3. Inspect the diff in `api-index.lua`. New entries are normal; removed
+3. Run `lua tools/generate_lua_definitions.lua` to refresh the LuaLS API
+   definitions.
+4. Inspect the diff in `api-index.lua`. New entries are normal; removed
    entries may indicate functions that have been deprecated.
-4. Run `lua tools/test_taint.lua --self-test` to verify nothing broke.
-5. Commit corpus + api-index.lua together with a message noting the patch
+5. Run `lua tools/test_taint.lua --self-test` to verify nothing broke.
+6. Commit corpus + api-index.lua together with a message noting the patch
    version.
 
 ## Patch coverage

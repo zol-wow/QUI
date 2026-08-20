@@ -446,7 +446,6 @@ local PROFILE_QOL_GENERAL_KEYS = {
     "focusMarker",
     "healerMana",
     "deathAlert",
-    "aztarecHelper",
     "popupBlocker",
     "petCombatWarning",
     "petWarningOffsetX",

@@ -230,11 +230,11 @@ facade:DrainPendingCombatRefresh()
 swipeStub.showCooldownIconAuraPhase = false
 local shouldReplace = capturedRuntimeDeps.shouldReplaceNativeAuraPhase
 for _, entryType in ipairs({ "item", "slot", "trinket", "consumable", "macro" }) do
-    assert(shouldReplace({}, { type = entryType }, "essential") == true,
-        entryType .. "-backed cooldown replaces native aura phase")
+    assert(shouldReplace({}, { type = entryType }, "essential") == false,
+        entryType .. "-backed native frame stays Blizzard-owned")
 end
-assert(shouldReplace({}, { type = "spell" }, "essential") == true,
-    "ordinary spell cooldown replaces native aura phase")
+assert(shouldReplace({}, { type = "spell" }, "essential") == false,
+    "ordinary spell native frame stays Blizzard-owned")
 assert(shouldReplace({}, { type = "item" }, "buff") == false,
     "item-backed BuffIcon entry remains native")
 assert(shouldReplace({}, { type = "spell", kind = "aura" }, "essential") == false,

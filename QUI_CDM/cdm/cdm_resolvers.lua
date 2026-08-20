@@ -162,11 +162,6 @@ local function IsSafeNumeric(val)
     return Shared and Shared.IsSafeNumeric(val) or type(val) == "number"
 end
 
-local function GetAuraDataInstanceID(auraData)
-    if not auraData then return nil end
-    return auraData.auraInstanceID
-end
-
 local GCD_MAX_DURATION = 1.75
 local GCD_SPELL_ID = 61304
 
@@ -522,18 +517,6 @@ function CDMResolvers.GetSpellBuffInfo(spellID, icon, entry)
         return false
     end
 
-    if Sources and Sources.QueryPlayerAuraBySpellID then
-        local auraData = Sources.QueryPlayerAuraBySpellID(spellID)
-        if auraData then
-            local expiration = auraData.expirationTime
-            local duration = auraData.duration
-            if IsSafeNumeric(expiration) and IsSafeNumeric(duration) then
-                return true, expiration - duration, duration, "buff"
-            end
-            return true, nil, nil, "buff"
-        end
-    end
-
     if icon and icon._auraActive then
         return true, nil, nil, "buff"
     end
@@ -713,7 +696,7 @@ local function ApplyChargeRuntimeFallback(state, entry, spellID, isItemLike)
     local ci = QueryCharges(spellID)
     if ci then
         local maxC = ci.maxCharges
-        if IsSafeNumeric(maxC) and maxC >= 1 then
+        if IsSafeNumeric(maxC) and maxC > 1 then
             state.hasCharges = true
         end
     end
@@ -790,7 +773,6 @@ end
 
 local _auraActiveLookupIDs = {}
 local _auraActiveSeenLookup = {}
-local _auraActiveQuerySeen = {}
 
 local function _AuraActiveAddLookup(id)
     if not id or _auraActiveSeenLookup[id] then return end
@@ -804,34 +786,6 @@ local function _AuraActiveAddMappedLookups(CDMSpellData, id)
     if mappedIDs then
         for _, auraID in ipairs(mappedIDs) do _AuraActiveAddLookup(auraID) end
     end
-end
-
-local function _AuraActiveTryQuery(id)
-    if not id or _auraActiveQuerySeen[id] then return nil end
-    _auraActiveQuerySeen[id] = true
-    if Sources.QueryUnitAuraBySpellID then
-        local auraData = Sources.QueryUnitAuraBySpellID("player", id)
-        if auraData then return auraData end
-    end
-    if Sources.QueryPlayerAuraBySpellID then
-        local auraData = Sources.QueryPlayerAuraBySpellID(id)
-        if auraData then return auraData end
-    end
-    return nil
-end
-
-local function _AuraActiveTryMappedIDs(CDMSpellData, id)
-    if not id then return false end
-    local mappedIDs = CDMSpellData:GetAuraIDsForSpell(id)
-    if mappedIDs then
-        for _, auraID in ipairs(mappedIDs) do
-            local mappedAuraData = _AuraActiveTryQuery(auraID)
-            if mappedAuraData then
-                return true, "player", GetAuraDataInstanceID(mappedAuraData)
-            end
-        end
-    end
-    return false
 end
 
 function CDMResolvers.ResolveAuraActiveState(entry)
@@ -859,172 +813,7 @@ function CDMResolvers.ResolveAuraActiveState(entry)
         end
     end
 
-    if Sources and (Sources.QueryUnitAuraBySpellID or Sources.QueryPlayerAuraBySpellID) then
-        wipe(_auraActiveQuerySeen)
-
-        local auraData = _AuraActiveTryQuery(sid)
-        if auraData then return true, "player", GetAuraDataInstanceID(auraData) end
-        auraData = _AuraActiveTryQuery(entry.spellID)
-        if auraData then return true, "player", GetAuraDataInstanceID(auraData) end
-        auraData = _AuraActiveTryQuery(entry.id)
-        if auraData then return true, "player", GetAuraDataInstanceID(auraData) end
-
-        if CDMSpellData and CDMSpellData.GetAuraIDsForSpell then
-            local active, unit, instID = _AuraActiveTryMappedIDs(CDMSpellData, sid)
-            if active then return active, unit, instID end
-            active, unit, instID = _AuraActiveTryMappedIDs(CDMSpellData, entry.spellID)
-            if active then return active, unit, instID end
-            active, unit, instID = _AuraActiveTryMappedIDs(CDMSpellData, entry.id)
-            if active then return active, unit, instID end
-        end
-    end
-
-    if entry.name and entry.name ~= ""
-        and Sources and Sources.QueryAuraDataBySpellName then
-        local auraData = Sources.QueryAuraDataBySpellName("player", entry.name, "HELPFUL")
-        if auraData then
-            return true, "player", GetAuraDataInstanceID(auraData)
-        end
-    end
-
     return false, nil, nil
-end
-
-local PLAYER_AURA_CAPTURE_LOOKUP_UNITS = { "player", "pet" }
-
-local _capturedDurLookupIDs = {}
-local _capturedDurSeen = {}
-
-local function _CapturedDurAddLookup(id)
-    if ResolverIsSecretValue(id) then return end
-    if id == nil then return end
-    local idType = type(id)
-    if idType ~= "number" and idType ~= "string" then return end
-    if _capturedDurSeen[id] then return end
-    _capturedDurSeen[id] = true
-    _capturedDurLookupIDs[#_capturedDurLookupIDs + 1] = id
-end
-
-local function _CapturedDurAddCooldownAuraLookup(id)
-    if ResolverIsSecretValue(id) or id == nil then return end
-    if not (Sources and Sources.QueryCooldownAuraBySpellID) then return end
-    _CapturedDurAddLookup(Sources.QueryCooldownAuraBySpellID(id))
-end
-
-local function QueryCapturedPlayerAuraDuration(spellID, name)
-    if not InCombatLockdown()
-       or not (Sources and Sources.QueryAuraDuration) then
-        return nil
-    end
-
-    local CDMSpellData = ns.CDMSpellData
-    if not (CDMSpellData and CDMSpellData.GetCapturedAuraForLookup) then
-        return nil
-    end
-
-    wipe(_capturedDurLookupIDs)
-    wipe(_capturedDurSeen)
-
-    if CDMSpellData.GetAuraIDsForSpell and spellID then
-        local catalogIDs = CDMSpellData:GetAuraIDsForSpell(spellID)
-        if catalogIDs then
-            for _, auraID in ipairs(catalogIDs) do
-                _CapturedDurAddLookup(auraID)
-            end
-        end
-    end
-    _CapturedDurAddCooldownAuraLookup(spellID)
-    _CapturedDurAddLookup(spellID)
-
-    local captured = CDMSpellData.GetCapturedAuraForLookup(
-        _capturedDurLookupIDs, name, PLAYER_AURA_CAPTURE_LOOKUP_UNITS, false)
-    local auraInstanceID = captured and captured.auraInstanceID
-    if not HasOpaqueValue(auraInstanceID) then
-        return nil
-    end
-
-    local auraUnit = captured.unit or "player"
-    return Sources.QueryAuraDuration(auraUnit, auraInstanceID),
-        captured.spellID,
-        auraInstanceID,
-        auraUnit
-end
-
-local function QueryPlayerAuraDurationBySpellID(rawSpellID, name)
-    if not rawSpellID or not (Sources and Sources.QueryAuraDuration) then
-        return nil
-    end
-
-    local capturedDurObj, capturedAuraSpellID, capturedAuraInstanceID, capturedAuraUnit =
-        QueryCapturedPlayerAuraDuration(rawSpellID, name)
-    if capturedDurObj then
-        return capturedDurObj, capturedAuraSpellID, capturedAuraInstanceID, capturedAuraUnit
-    end
-
-    local function queryAuraData(auraSpellID)
-        if ResolverIsSecretValue(auraSpellID) or auraSpellID == nil then return nil end
-        if Sources.QueryUnitAuraBySpellID then
-            local auraData = Sources.QueryUnitAuraBySpellID("player", auraSpellID)
-            if auraData then return auraData end
-        end
-        if Sources.QueryPlayerAuraBySpellID then
-            local auraData = Sources.QueryPlayerAuraBySpellID(auraSpellID)
-            if auraData then return auraData end
-        end
-        if Sources.QueryAuraDataBySpellID then
-            local auraData = Sources.QueryAuraDataBySpellID("player", auraSpellID, "HELPFUL")
-            if auraData then return auraData end
-        end
-        return nil
-    end
-
-    local function queryDuration(auraSpellID)
-        local auraData = queryAuraData(auraSpellID)
-        local auraInstanceID = GetAuraDataInstanceID(auraData)
-        if not HasOpaqueValue(auraInstanceID) then return nil end
-
-        return Sources.QueryAuraDuration("player", auraInstanceID), auraSpellID, auraInstanceID, "player"
-    end
-
-    if Sources.QueryCooldownAuraBySpellID then
-        local auraSpellID = Sources.QueryCooldownAuraBySpellID(rawSpellID)
-        if not ResolverIsSecretValue(auraSpellID) and auraSpellID ~= nil then
-            local durObj, resolvedAuraSpellID, auraInstanceID, auraUnit = queryDuration(auraSpellID)
-            if durObj then
-                return durObj, resolvedAuraSpellID, auraInstanceID, auraUnit
-            end
-        end
-    end
-
-    return queryDuration(rawSpellID)
-end
-
-local function QueryPlayerAuraDurationByName(name)
-    if type(name) ~= "string"
-       or name == ""
-       or not (Sources and Sources.QueryAuraDuration) then
-        return nil
-    end
-
-    local capturedDurObj, _, capturedAuraInstanceID, capturedAuraUnit =
-        QueryCapturedPlayerAuraDuration(nil, name)
-    if capturedDurObj then
-        return capturedDurObj, capturedAuraInstanceID, capturedAuraUnit
-    end
-
-    if not Sources.QueryAuraDataBySpellName then
-        return nil
-    end
-
-    local auraData = Sources.QueryAuraDataBySpellName("player", name, "HELPFUL")
-    if not auraData then
-        return nil
-    end
-
-    local auraInstanceID = GetAuraDataInstanceID(auraData)
-    if not HasOpaqueValue(auraInstanceID) then return nil end
-
-    return Sources.QueryAuraDuration("player", auraInstanceID), auraInstanceID, "player"
 end
 
 local function ClearCooldownStateContext(context)
@@ -1570,76 +1359,11 @@ local function ResolveItemAuraForContext(state, context, entry, itemID, itemSpel
         return false
     end
 
-    local function trySpellID(rawSpellID, sourceKey)
-        local durObj, resolvedAuraSpellID, auraInstanceID, auraUnit =
-            QueryPlayerAuraDurationBySpellID(rawSpellID, entry.name)
-        if durObj then
-            local cleanAuraInstanceID = CleanOpaqueValue(auraInstanceID)
-            state.mode = "aura"
-            SetCooldownStateActivity(state, true)
-            state.durObj = durObj
-            state.sourceID = "item-aura-spell:" .. tostring(itemID) .. ":" .. sourceKey
-            state.spellID = rawSpellID
-            state.auraResolved = true
-            state.auraActive = true
-            state.auraIsActive = true
-            state.auraUnit = auraUnit or "player"
-            state.auraInstanceID = cleanAuraInstanceID
-            state.hasAuraInstanceID = HasOpaqueValue(auraInstanceID)
-            state.resolvedAuraSpellID = resolvedAuraSpellID or rawSpellID
-            return true
-        end
-        return false
-    end
-
     local rawItemSpellID = QueryItemUseSpellID(itemID)
-    if trySpellID(rawItemSpellID, "raw-use") then return true end
-    if trySpellID(itemSpellID, "use") then return true end
 
     if Sources and Sources.QueryScannedItemAuraInfo then
         local scanned = Sources.QueryScannedItemAuraInfo(itemID, itemSpellID or rawItemSpellID)
         if scanned then
-            local auraInstanceID = scanned.auraInstanceID
-            if HasOpaqueValue(auraInstanceID) and Sources.QueryAuraDuration then
-                local auraUnit = scanned.auraUnit or "player"
-                local durObj = Sources.QueryAuraDuration(auraUnit, auraInstanceID)
-                if durObj then
-                    local cleanAuraInstanceID = CleanOpaqueValue(auraInstanceID)
-                    state.mode = "aura"
-                    SetCooldownStateActivity(state, true)
-                    state.durObj = durObj
-                    state.sourceID = cleanAuraInstanceID
-                        and ("item-aura-instance:" .. tostring(itemID) .. ":" .. tostring(cleanAuraInstanceID))
-                        or ("item-aura-instance:" .. tostring(itemID))
-                    state.spellID = scanned.buffSpellID or scanned.useSpellID or itemSpellID or rawItemSpellID
-                    state.auraResolved = true
-                    state.auraActive = true
-                    state.auraIsActive = true
-                    state.auraUnit = auraUnit
-                    state.auraInstanceID = cleanAuraInstanceID
-                    state.hasAuraInstanceID = true
-                    state.resolvedAuraSpellID = scanned.buffSpellID or scanned.useSpellID or state.spellID
-                    return true
-                end
-                if Sources.QueryAuraDataByAuraInstanceID then
-                    local auraData = Sources.QueryAuraDataByAuraInstanceID(auraUnit, auraInstanceID)
-                    if auraData and ApplyCleanItemAuraTiming(
-                        state,
-                        itemID,
-                        scanned.buffSpellID or scanned.useSpellID or itemSpellID or rawItemSpellID,
-                        scanned.buffSpellID or scanned.useSpellID,
-                        auraUnit,
-                        auraInstanceID,
-                        auraData.expirationTime,
-                        auraData.duration,
-                        "aura-data") then
-                        return true
-                    end
-                end
-            end
-            if trySpellID(scanned.buffSpellID, "scanner-buff") then return true end
-            if trySpellID(scanned.useSpellID, "scanner-use") then return true end
-            if trySpellID(scanned.sourceSpellID, "scanner-source") then return true end
             local scannedActive = scanned.active
             if ResolverIsSecretValue(scannedActive) then
                 scannedActive = nil
@@ -1677,28 +1401,6 @@ local function ResolveItemAuraForContext(state, context, entry, itemID, itemSpel
                 return true
             end
         end
-    end
-
-    if trySpellID(entry.spellID, "entry") then return true end
-    if trySpellID(entry.overrideSpellID, "override") then return true end
-    if trySpellID(entry.id, "id") then return true end
-
-    local durObj, auraInstanceID, auraUnit = QueryPlayerAuraDurationByName(entry.name)
-    if durObj then
-        local cleanAuraInstanceID = CleanOpaqueValue(auraInstanceID)
-        state.mode = "aura"
-        SetCooldownStateActivity(state, true)
-        state.durObj = durObj
-        state.sourceID = "item-aura-name:" .. tostring(itemID)
-        state.auraResolved = true
-        state.auraActive = true
-        state.auraIsActive = true
-        state.auraUnit = auraUnit or "player"
-        state.auraInstanceID = cleanAuraInstanceID
-        state.hasAuraInstanceID = HasOpaqueValue(auraInstanceID)
-        state.resolvedAuraSpellID = itemSpellID
-        state.spellID = itemSpellID
-        return true
     end
 
     return false
@@ -1909,7 +1611,12 @@ local function ResolveCooldownStateCore(context)
     local currentOnGCD = GetCurrentIsOnGCD(gcdCdInfo, trustIsOnGCD)
     local preserveGCDOnly = not trustIsOnGCD
         and context.owner
-        and context.owner._resolvedCooldownMode == "gcd-only"
+        and (context.owner._resolvedCooldownMode == "gcd-only"
+            or context.owner._gcdOnlySuppressed == true)
+    if preserveGCDOnly then
+        local gcdInfo = QueryCooldown(GCD_SPELL_ID)
+        preserveGCDOnly = IsCooldownInfoActive(gcdInfo) == true
+    end
     local gcdDurObj
     if trustIsOnGCD and currentOnGCD == true and context.showGCDSwipe == true then
         gcdDurObj = QueryGCDDurationObject(sid)

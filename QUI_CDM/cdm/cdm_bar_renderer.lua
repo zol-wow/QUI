@@ -723,6 +723,14 @@ local function GetTrackedBarOverrideColor(settings, spellData)
     return nil
 end
 
+local function GetColorFingerprint(color)
+    if type(color) ~= "table" then return 0 end
+    return (tonumber(color[1]) or 0)
+        + (tonumber(color[2]) or 0) * 7
+        + (tonumber(color[3]) or 0) * 53
+        + (tonumber(color[4]) or 0) * 131
+end
+
 function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     if not bar then return end
 
@@ -1837,6 +1845,7 @@ function CDMBars:LayoutBars(container, settings)
     if type(bc) == "table" then
         bcHash = (bc[1] or 0) + (bc[2] or 0) * 7 + (bc[3] or 0) * 53 + (bc[4] or 0) * 131
     end
+    local barColorHash = GetColorFingerprint(settings.barColor)
     local cfgFingerprint = (settings.barHeight or 0)
         + (barWidth or 0) * 7
         + (settings.borderSize or 0) * 97
@@ -1846,6 +1855,11 @@ function CDMBars:LayoutBars(container, settings)
         + bcsHash * 1300031
         + bcHash * 700001
     for _, bar in ipairs(barPool) do
+        local overrideColorHash = GetColorFingerprint(
+            GetTrackedBarOverrideColor(settings, GetBarSpellData(bar)))
+        local barCfgFingerprint = cfgFingerprint
+            + barColorHash * 17000011
+            + overrideColorHash * 29000017
         if editModeActive then
             bar._active = true
             SetStatusBarValue(bar.StatusBar, 0.65)
@@ -1855,8 +1869,8 @@ function CDMBars:LayoutBars(container, settings)
             end
         end
 
-        if bar._cfgFingerprint ~= cfgFingerprint or bar._cfgActive ~= bar._active then
-            bar._cfgFingerprint = cfgFingerprint
+        if bar._cfgFingerprint ~= barCfgFingerprint or bar._cfgActive ~= bar._active then
+            bar._cfgFingerprint = barCfgFingerprint
             bar._cfgActive = bar._active
             CDMBars.ConfigureBar(bar, settings, barWidth)
         end

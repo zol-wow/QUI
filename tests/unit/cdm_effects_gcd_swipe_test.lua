@@ -4,6 +4,12 @@
 local function noop() end
 
 function InCombatLockdown() return false end
+function UnitClass() return "Mage", "MAGE" end
+C_ClassColor = {
+    GetClassColor = function()
+        return { GetRGBA = function() return 0.12, 0.34, 0.56, 1 end }
+    end,
+}
 function CreateFrame()
     return {
         RegisterEvent = noop,
@@ -112,6 +118,24 @@ assert(cooldownGCD.calls.drawSwipe == true, "cooldown-kind GCD should use showGC
 assert(cooldownGCD.calls.drawEdge == false, "GCD swipe should not draw recharge edge")
 assert(cooldownGCD.calls.color[1] == 0.1, "cooldown-kind GCD should use cooldown swipe color")
 assert(cooldownGCD.calls.color[4] == 0.4, "cooldown-kind GCD should preserve cooldown swipe alpha")
+
+local buffClassColor = NewCooldownSpy()
+ns._OwnedSwipe.ApplyToIcon({
+    Cooldown = buffClassColor,
+    _spellEntry = {
+        kind = "aura",
+        viewerType = "buff",
+        spellID = 54321,
+    },
+}, {
+    showBuffIconSwipe = true,
+    overlayColorMode = "class",
+    showBuffEdge = true,
+})
+assert(buffClassColor.calls.color[1] == 0.12
+    and buffClassColor.calls.color[2] == 0.34
+    and buffClassColor.calls.color[3] == 0.56,
+    "buff icon aura swipe should use the configured class color")
 
 local originalResolveAuraActiveState = ns.CDMResolvers.ResolveAuraActiveState
 local authoritativeGCDSettings = {

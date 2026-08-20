@@ -110,6 +110,14 @@ assert(rendererSource:find("updateCooldownOnly = function(trustIsOnGCD)", 1, tru
     "runtime refresh adapter must accept the trusted GCD flag")
 assert(rendererSource:find("CDMIcons:UpdateCooldownOnly(trustIsOnGCD == true, true)", 1, true),
     "runtime refresh adapter must preserve the trusted GCD flag")
+assert(rendererSource:find("pendingCooldownTrustIsOnGCD", 1, true),
+    "coalesced cooldown refreshes must retain the payload-less trusted GCD state")
+assert(rendererSource:find("icon._gcdOnlySuppressed = resolvedState.cooldownInfoOnGCD == true or nil", 1, true),
+    "trusted hidden GCD resolves must retain a marker for delayed untrusted polls")
+assert(rendererSource:find("icon, entry, _cBaseID, true, trustIsOnGCD", 1, true),
+    "custom aura pre-resolution must preserve the trusted GCD flag")
+assert(rendererSource:find('SetResolveCallerTag("iconPlaced") end\n    UpdateIconCooldown(icon, true)', 1, true),
+    "container placement refreshes must treat the current GCD field as trusted")
 
 ns.CDMIcons = {
     OnFactoryIconCreated = function(icon, entry)

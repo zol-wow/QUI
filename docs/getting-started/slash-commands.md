@@ -31,19 +31,6 @@ These are the commands most players actually use. Type them into the WoW chat wi
 | `/qui perf` | Toggle the performance monitor overlay. |
 | `/qui debug` | Enable debug mode. Debug output persists for one reload, then turns off automatically. |
 
-## Azta'rec Helper
-
-| Command | Description |
-|---------|-------------|
-| `/azt` | Toggle the movable Azta'rec safe-quadrant recorder. |
-| `/azt STAR`, `/azt CIRCLE`, `/azt DIAMOND`, `/azt TRIANGLE` | Show the room map and add that world marker to the sequence. Numeric aliases `1`–`4` also work. |
-| `/azt reset` | Clear the recorded sequence. |
-| `/azt lock` or `/azt unlock` | Lock or unlock the recorder position. |
-
-Before the pull, place Star at the top, Circle at the right, Diamond at the bottom, and Triangle at the left of the arena circle to match the four marker icons on the map. The map sections can also be pressed by macros such as `/click QUI_AztaRec_STAR` after the recorder is shown.
-
-The recorder automatically appears when you enter Azta'rec's Nemesis lair and hides after you leave it.
-
 ## Bags Commands
 
 These commands work when the Bags module is enabled.

@@ -40,8 +40,6 @@ function CreateFrame()
     return frame
 end
 
-local targetAuraDuration = { token = "target-aura-duration" }
-
 local ns = {
     Helpers = {
         IsSecretValue = function() return false end,
@@ -54,39 +52,6 @@ local ns = {
         IsRuntimeEnabled = function() return true end,
     },
     CDMSources = {
-        QueryAuraFilteredOutByInstanceID = function(unit, auraInstanceID, filter)
-            if unit == "target"
-                and auraInstanceID == 9052
-                and filter == "HELPFUL|PLAYER" then
-                return false
-            end
-            return true
-        end,
-        QueryAuraDuration = function(unit, auraInstanceID)
-            if unit == "target" and auraInstanceID == 9052 then
-                return targetAuraDuration
-            end
-        end,
-        QueryAuraDataByAuraInstanceID = function(unit, auraInstanceID)
-            if unit == "target" and auraInstanceID == 9052 then
-                return {
-                    spellId = 51052,
-                    auraInstanceID = 9052,
-                    isHelpful = true,
-                    isFromPlayerOrPlayerPet = true,
-                }
-            end
-        end,
-        QueryUnitAuraBySpellID = function()
-            return nil
-        end,
-        QueryUnitAuras = function()
-            unitAuraScanCalls = unitAuraScanCalls + 1
-            error("GetUnitAuras must not run while auras are secret")
-        end,
-        AreAurasSecret = function()
-            return aurasSecret
-        end,
     },
     CDMIcons = {
         HandleRuntimeRefresh = noop,
@@ -134,8 +99,8 @@ assert(state.auraUnit == "target",
     "target aura capture should preserve the target unit")
 assert(state.auraInstanceID == 9052,
     "target aura capture should preserve the auraInstanceID")
-assert(state.durObj == targetAuraDuration,
-    "target aura capture should forward the target aura DurationObject")
+assert(state.durObj == nil,
+    "target aura capture must not query a DurationObject through C_UnitAuras")
 
 auraFrame.script(auraFrame, "UNIT_AURA", "target", {
     isFullUpdate = false,
@@ -156,9 +121,8 @@ state = ns.CDMAuraRuntime.ResolveState({
 assert(state.isActive ~= true,
     "target removedAuraInstanceIDs should evict target aura capture")
 
--- Aura restriction is broader than combat lockdown. Both the direct
--- GetUnitAuras scan and AuraUtil fallback are RequiresUnitAuraAccess paths and
--- must be skipped when C_Secrets.ShouldAurasBeSecret() is true.
+-- Aura restriction is broader than combat lockdown; captured payloads remain
+-- the only target presence source.
 inCombat = false
 aurasSecret = true
 AuraUtil = {
@@ -177,7 +141,6 @@ local ok, err = pcall(ns.CDMAuraRuntime.ResolveState, {
     viewerType = "buff",
 })
 assert(ok, "secret target aura fallback must not throw: " .. tostring(err))
-assert(unitAuraScanCalls == 0,
-    "secret target aura fallback must not call QueryUnitAuras")
+assert(unitAuraScanCalls == 0, "target fallback must not scan aura indexes")
 
 print("OK: cdm_spelldata_target_aura_capture_test")

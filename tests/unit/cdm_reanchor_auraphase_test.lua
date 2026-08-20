@@ -73,6 +73,9 @@ do
     inst:Hook(frame)
     assert(hooked["SetSwipeColor"] == true, "G13: still installs the SetSwipeColor hook")
     assert(hooked["SetDrawEdge"] == true, "G13: Hook must also install a SetDrawEdge hook")
+    cd.SetDrawSwipe = function() end
+    inst:Hook({ GetCooldownFrame = function() return cd end })
+    assert(hooked["SetDrawSwipe"] == true, "G13: Hook must also install a SetDrawSwipe hook")
     assert(hooked["RefreshSpellCooldownInfo"] == nil,
         "G13: still NEVER hooks RefreshSpellCooldownInfo (secret-value taint)")
 end
@@ -96,6 +99,25 @@ do
     assert(calls == 2, "G13: guard clears after each call so later re-asserts fire")
     inst:OnDrawEdge(f, nil)
     assert(calls == 2, "G13: nil cooldown frame must be a no-op")
+end
+
+do
+    local calls = 0
+    local inst
+    local deps = {
+        reassertSwipe = function(f, cdw, key, show)
+            calls = calls + 1
+            assert(key == "essential" and show == false, "SetDrawSwipe forwards key and native state")
+            inst:OnDrawSwipe(f, cdw, show)
+        end,
+    }
+    inst = M.New(deps)
+    local f, cdw = {}, {}
+    inst._keyByFrame[f] = "essential"
+    inst:OnDrawSwipe(f, cdw, false)
+    assert(calls == 1, "OnDrawSwipe must guard re-entry")
+    inst:OnDrawSwipe(f, cdw, true)
+    assert(calls == 2, "OnDrawSwipe guard must clear after each call")
 end
 
 -- Native CDM timing and desaturation setters are untainted-only. QUI leaves

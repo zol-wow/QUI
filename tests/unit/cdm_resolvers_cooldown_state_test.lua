@@ -21,7 +21,6 @@ local overrideCooldownDur = { token = "override-cooldown-dur" }
 local chargeDur = { token = "charge-dur" }
 local gcdDur = { token = "gcd-dur" }
 local gcdDurationIgnoringGCD = { token = "gcd-dur-ignore-gcd" }
-local itemAuraDur = { token = "item-aura-dur" }
 local secretItemStart = { token = "secret-item-start" }
 local secretItemDuration = { token = "secret-item-duration" }
 local secretCooldownStart = { token = "secret-cooldown-start" }
@@ -79,14 +78,9 @@ C_DurationUtil = {
 
 local itemAuraActive = true
 local itemCooldownActive = false
-local itemAuraDurationObjectAvailable = true
 local itemRuntimeAuraInstanceActive = false
-local itemRuntimeAuraDataAvailable = false
-local itemRuntimeAuraDataExpiration = 165
-local itemRuntimeAuraDataDuration = 45
 local itemAuraScannedDuration = 30
 local itemAuraScannedExpiration = 140
-local directAuraQueriesAvailable = true
 local capturedCooldownAuraActive = false
 local itemSlotCooldownActive = false
 local slotCooldownEnabled = true
@@ -94,6 +88,7 @@ local slotCooldownStart = 11418.804
 local slotCooldownDuration = 90
 local itemUseSpellCooldownActive = false
 local itemUseSpellCooldownDur = { token = "item-use-spell-cooldown-dur" }
+local gcdSpellActive = false
 local chargeQueryCounts = {}
 
 
@@ -167,6 +162,9 @@ local ns = {
             return nil
         end,
         QuerySpellCooldown = function(spellID)
+            if spellID == 61304 then
+                return { isActive = gcdSpellActive }
+            end
             if spellID == 50001 then
                 return { isActive = true, isOnGCD = false }
             end
@@ -387,67 +385,6 @@ local ns = {
                     expiration = itemAuraScannedExpiration,
                     name = "Related Item Aura",
                 }
-            end
-            return nil
-        end,
-        QueryCooldownAuraBySpellID = function(spellID)
-            if spellID == 91001 then
-                return 92001
-            end
-            return nil
-        end,
-        QueryUnitAuraBySpellID = function(unit, spellID)
-            if directAuraQueriesAvailable
-               and unit == "player" and spellID == 92001 and itemAuraActive then
-                return { auraInstanceID = 93001, spellId = 92001 }
-            end
-            return nil
-        end,
-        QueryPlayerAuraBySpellID = function(spellID)
-            if directAuraQueriesAvailable and spellID == 92001 and itemAuraActive then
-                return { auraInstanceID = 93001, spellId = 92001 }
-            end
-            return nil
-        end,
-        QueryAuraDataBySpellID = function(unit, spellID, filter)
-            if directAuraQueriesAvailable
-               and unit == "player" and spellID == 92001 and itemAuraActive then
-                return { auraInstanceID = 93001, spellId = 92001 }
-            end
-            return nil
-        end,
-        QueryAuraDuration = function(unit, auraInstanceID)
-            if unit == "player"
-               and auraInstanceID == 93001
-               and itemAuraActive
-               and itemAuraDurationObjectAvailable then
-                return itemAuraDur
-            end
-            if unit == "player"
-               and auraInstanceID == 94001
-               and itemRuntimeAuraInstanceActive
-               and itemAuraDurationObjectAvailable then
-                return itemAuraDur
-            end
-            return nil
-        end,
-        QueryAuraDataByAuraInstanceID = function(unit, auraInstanceID)
-            if unit == "player"
-               and auraInstanceID == 94001
-               and itemRuntimeAuraInstanceActive
-               and itemRuntimeAuraDataAvailable then
-                return {
-                    auraInstanceID = auraInstanceID,
-                    expirationTime = itemRuntimeAuraDataExpiration,
-                    duration = itemRuntimeAuraDataDuration,
-                }
-            end
-            -- After the mirror→resolver refactor, the resolver derives aura
-            -- mode by verifying mirror-stamped auraInstanceID values against
-            -- live aura data. Recognize the test's mirror aura instances so
-            -- mirror states with auraInstanceID set resolve as aura mode.
-            if unit == "player" and auraInstanceID and auraInstanceID >= 9000 and auraInstanceID < 10000 then
-                return { auraInstanceID = auraInstanceID, isFromPlayerOrPlayerPet = true }
             end
             return nil
         end,
@@ -747,6 +684,7 @@ state = resolve({
 assert(state.mode ~= "gcd-only" and state.isOnCooldown == false,
     "trusted GCD refreshes must honor disabled GCD swipe visibility")
 
+gcdSpellActive = true
 state = resolveUntrusted({
     owner = { _resolvedCooldownMode = "gcd-only" },
     entry = cooldownEntry(70001),
@@ -759,6 +697,31 @@ assert(state.mode == "gcd-only",
     "untrusted refresh must preserve an active trusted GCD-only state")
 assert(state.isOnCooldown == false,
     "preserved GCD-only state must remain excluded from cooldown-only filtering")
+
+state = resolveUntrusted({
+    owner = { _gcdOnlySuppressed = true },
+    entry = cooldownEntry(70001),
+    runtimeSpellID = 70001,
+    containerKey = "essential",
+    useBuffSwipe = false,
+    showGCDSwipe = false,
+})
+assert(state.mode == "gcd-only",
+    "hidden trusted GCD state must remain GCD-only during an untrusted refresh")
+assert(state.isOnCooldown == false,
+    "hidden trusted GCD state must remain excluded from cooldown-only filtering")
+
+gcdSpellActive = false
+state = resolveUntrusted({
+    owner = { _gcdOnlySuppressed = true },
+    entry = cooldownEntry(70001),
+    runtimeSpellID = 70001,
+    containerKey = "essential",
+    useBuffSwipe = false,
+    showGCDSwipe = false,
+})
+assert(state.mode == "cooldown",
+    "hidden GCD marker must not suppress a real cooldown after the GCD ends")
 
 state = resolve({
     entry = cooldownEntry(70002),
@@ -807,16 +770,15 @@ assert(state.mode == "aura", "item entry should use scanned related aura while t
 assert(state.active == true, "item related aura should mark the cooldown state active")
 assert(state.auraResolved == true, "item related aura should publish auraResolved for icon state stamping")
 assert(state.auraActive == true, "item related aura should publish auraActive for icon state stamping")
-assert(state.auraInstanceID == 93001,
-    "item related aura should stamp the aura instance used for its DurationObject")
+assert(state.auraInstanceID == nil,
+    "item related aura must not obtain an aura instance through C_UnitAuras")
 assert(state.auraUnit == "player",
     "item related aura should stamp the unit used for its DurationObject")
-assert(state.durObj == itemAuraDur, "item related aura should carry the aura DurationObject")
+assert(state.durObj == nil, "item related aura must use scanner timing, not an aura DurationObject")
 assert(state.resolvedAuraSpellID == 92001, "item related aura should publish the buff spell ID")
 assert(state.isOnCooldown == false, "item related aura should not be treated as a real cooldown")
 
 inCombat = true
-directAuraQueriesAvailable = false
 capturedCooldownAuraActive = true
 state = resolve({
     entry = {
@@ -835,18 +797,17 @@ state = resolve({
 
 assert(state.mode == "aura",
     "item entry should use captured player aura mapped from item use spell in combat")
-assert(state.durObj == itemAuraDur,
-    "captured cooldown-aura mapping should carry the aura DurationObject")
+assert(state.durObj == nil,
+    "captured cooldown-aura mapping must not query an aura DurationObject")
 assert(state.auraResolved == true,
     "captured cooldown-aura mapping should publish auraResolved for icon state stamping")
 assert(state.auraActive == true,
     "captured cooldown-aura mapping should publish auraActive for icon state stamping")
 assert(state.auraUnit == "player", "captured cooldown-aura mapping should keep the player unit")
-assert(state.auraInstanceID == 93001,
-    "captured cooldown-aura mapping should stamp the captured aura instance")
+assert(state.auraInstanceID == nil,
+    "captured cooldown-aura mapping must not stamp a direct aura instance")
 
 inCombat = false
-directAuraQueriesAvailable = true
 capturedCooldownAuraActive = false
 
 itemAuraActive = false
@@ -868,15 +829,13 @@ state = resolve({
 })
 
 assert(state.mode == "aura", "item entry should use runtime aura instance captured from UNIT_AURA")
-assert(state.durObj == itemAuraDur, "runtime aura instance should carry the aura DurationObject")
+assert(state.durObj == nil, "runtime aura instance must not query an aura DurationObject")
 assert(state.auraResolved == true, "runtime aura instance should publish auraResolved for icon state stamping")
 assert(state.auraActive == true, "runtime aura instance should publish auraActive for icon state stamping")
 assert(state.auraInstanceID == 94001, "runtime aura instance should publish auraInstanceID")
 
 itemAuraActive = false
 itemRuntimeAuraInstanceActive = true
-itemRuntimeAuraDataAvailable = true
-itemAuraDurationObjectAvailable = false
 itemCooldownActive = true
 state = resolve({
     entry = {
@@ -893,20 +852,13 @@ state = resolve({
     showGCDSwipe = true,
 })
 
-assert(state.mode == "aura", "runtime aura instance should fall back to clean AuraData timing")
-assert(state.durObj == nil, "clean AuraData fallback should not invent a DurationObject")
-assert(state.auraResolved == true, "clean AuraData fallback should publish auraResolved for icon state stamping")
-assert(state.auraActive == true, "clean AuraData fallback should publish auraActive for icon state stamping")
-assert(state.numericCooldownActive == true, "clean AuraData fallback should publish numeric timing")
-assert(state.start == 120 and state.duration == 45,
-    "clean AuraData fallback should carry start and duration")
-assert(state.isOnCooldown == false,
-    "clean AuraData fallback should suppress the underlying item cooldown")
+assert(state.mode == "aura", "scanner presence should still resolve the active item aura")
+assert(state.durObj == nil, "removed AuraData fallback must not invent a DurationObject")
+assert(state.start == nil and state.duration == nil,
+    "removed AuraData fallback must not publish direct aura timing")
 
 itemAuraActive = true
 itemRuntimeAuraInstanceActive = false
-itemRuntimeAuraDataAvailable = false
-itemAuraDurationObjectAvailable = false
 itemCooldownActive = false
 state = resolve({
     entry = {
@@ -932,7 +884,6 @@ assert(state.start == 110 and state.duration == 30, "scanner numeric aura fallba
 
 itemAuraActive = true
 itemRuntimeAuraInstanceActive = false
-itemAuraDurationObjectAvailable = false
 itemAuraScannedDuration = nil
 itemAuraScannedExpiration = nil
 itemCooldownActive = true
@@ -970,7 +921,6 @@ assert(#createdDurationObjects == 0,
     "durationless item aura should not create an item cooldown DurationObject")
 
 itemAuraActive = false
-itemAuraDurationObjectAvailable = true
 itemAuraScannedDuration = 30
 itemAuraScannedExpiration = 140
 itemCooldownActive = true

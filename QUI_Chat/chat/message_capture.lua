@@ -451,6 +451,7 @@ local function OnFallbackAddMessage(_, msg, r, g, b)
     if IsSecret(r) or IsSecret(g) or IsSecret(b) then r, g, b = 1, 1, 1 end
 
     local trace = _G.debugstack and _G.debugstack(3, 8, 0) or ""
+    if IsSecret(trace) or type(trace) ~= "string" then trace = "" end
     if trace:find("ChatFrame_OnEvent", 1, true)
         or trace:find("MessageEventHandler", 1, true)
         or trace:find("AddOns/" .. ADDON_NAME .. "/chat/history", 1, true) then

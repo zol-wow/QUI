@@ -101,8 +101,9 @@ local function IsInitialReanchorDone(key)
     return initialReanchorDoneByKey[key] == true
 end
 
-local function RefreshReanchoredBuiltin(boot, key, allowCachedBatch)
+local function RefreshReanchoredBuiltin(boot, key, allowCachedBatch, requestedKeys)
     if not (boot and boot.RefreshBuiltin) then return nil end
+    local refreshKeys = requestedKeys or REANCHOR_KEYS
     local result
     if boot.RefreshBuiltins then
         local counts
@@ -110,18 +111,26 @@ local function RefreshReanchoredBuiltin(boot, key, allowCachedBatch)
             and refreshAllReanchorBatchCounts then
             counts = refreshAllReanchorBatchCounts
         else
-            counts = boot:RefreshBuiltins(REANCHOR_KEYS) or {}
+            counts = boot:RefreshBuiltins(refreshKeys) or {}
             if refreshAllReanchorBatchActive then
                 refreshAllReanchorBatchCounts = counts
             end
         end
         result = counts[key] or 0
     else
-        result = boot:RefreshBuiltin(key)
+        if requestedKeys then
+            for i = 1, #refreshKeys do
+                local refreshKey = refreshKeys[i]
+                local count = boot:RefreshBuiltin(refreshKey)
+                if refreshKey == key then result = count end
+            end
+        else
+            result = boot:RefreshBuiltin(key)
+        end
     end
     if not IsCooldownViewerReady or IsCooldownViewerReady() then
-        if boot.RefreshBuiltins then
-            for i = 1, #REANCHOR_KEYS do MarkInitialReanchorDone(REANCHOR_KEYS[i]) end
+        if boot.RefreshBuiltins or requestedKeys then
+            for i = 1, #refreshKeys do MarkInitialReanchorDone(refreshKeys[i]) end
         else
             MarkInitialReanchorDone(key)
         end
@@ -2306,6 +2315,10 @@ local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
     end
 
     if ns._cdmBoot and (trackerKey == "essential" or trackerKey == "utility") then
+        if runtimeVisibilityRelayout then
+            applying[trackerKey] = false
+            return
+        end
         RefreshReanchoredBuiltin(ns._cdmBoot, trackerKey, true)
         applying[trackerKey] = false
 
@@ -3149,16 +3162,19 @@ function ownedEngine:BootstrapReanchorRuntime()
             local scheduleActiveState = ns.CDMReanchorHooks.CreateActiveStateScheduler(CreateFrame)
             local hk = ns.CDMReanchorHooks.New({
                 refresh = function(key) return RefreshReanchoredBuiltin(boot, key) end,
-                refreshMany = function()
-                    return RefreshReanchoredBuiltin(boot, "essential")
+                refreshMany = function(keys)
+                    return RefreshReanchoredBuiltin(boot, "essential", false, keys)
                 end,
                 keys = REANCHOR_KEYS,
                 schedule = function(fn) C_Timer.After(0.05, fn) end,
                 scheduleActiveState = scheduleActiveState,
+                shouldTrackActiveState = function(key) return key == "buff" end,
+                shouldTrackCooldownID = function(key) return key == "buff" end,
+                ignoreIndexReasons = { refresh_layout = true },
                 immediateRefreshLayoutKeys = { buff = true },
                 immediateAcquireKeys = { buff = true },
                 blank = BlankReanchoredNativeItemFrame,
-                blankKeys = { buff = true, essential = true, utility = true },
+                blankKeys = { buff = true },
                 isClaimed = function(frame)
                     local bridge = boot.bridge
                     return (bridge and bridge.IsClaimed and bridge:IsClaimed(frame)) or false
@@ -3375,24 +3391,6 @@ function ownedEngine:Initialize()
     inInitSafeWindow = false
     ns._inInitSafeWindow = previousInitSafeWindow
 
-    C_Timer.After(1.0, function()
-        if not InCombatLockdown() then
-            RefreshAll()
-        end
-    end)
-
-    C_Timer.After(3.0, function()
-        if initialized and not InCombatLockdown() then
-            RefreshAll()
-        end
-    end)
-
-    C_Timer.After(6.0, function()
-        if initialized and not InCombatLockdown() then
-            RefreshAll()
-        end
-    end)
-
     local function DrainPendingLoadoutSwitch(cacheConfigID)
         pendingLoadoutRefresh = false
         loadoutTrackingToken = loadoutTrackingToken + 1
@@ -3460,7 +3458,7 @@ function ownedEngine:Initialize()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
             local isLogin, isReload = arg1, arg2
-            ownedEngine:RefreshReanchorRuntimeHooks((not isReload) and not InCombatLockdown())
+            ownedEngine:RefreshReanchorRuntimeHooks(false)
             if isReload then
                 local pewPreviousInitSafeWindow = ns._inInitSafeWindow
                 inInitSafeWindow = true
@@ -3483,16 +3481,19 @@ function ownedEngine:Initialize()
                         end
                     end
                     ResolveInitialLoadoutSlot()
+                    local needsRefresh = false
                     if not InCombatLockdown() and LiveContainerOwnedByOtherCharacter() then
                         local specID = GetCurrentSpecID()
                         if specID and specID ~= 0 then
                             specTrackingRetryToken = specTrackingRetryToken + 1
-                            LoadOrSnapshotSpecProfile(specID, 1, specTrackingRetryToken)
+                            needsRefresh = LoadOrSnapshotSpecProfile(specID, 1, specTrackingRetryToken)
                         end
                     end
                     if not InCombatLockdown() and ns.CDMSpellData then
-                        ns.CDMSpellData:CheckAllDormantSpells()
+                        needsRefresh = ns.CDMSpellData:CheckAllDormantSpells() or needsRefresh
                         ns.CDMSpellData:ReconcileAllContainers()
+                    end
+                    if needsRefresh then
                         RefreshAll()
                     end
                 end)
@@ -4005,15 +4006,10 @@ _G.QUI_DebugCDM.BuffState = function()
         if ok and type(list) == "table" then curated = list end
     end
     say("curated:", #curated)
-    local query = ns.CDMSources and ns.CDMSources.QueryPlayerAuraBySpellID
     for i = 1, #curated do
         local e = curated[i]
         local sid = e.overrideSpellID or e.spellID or e.id
         local live = false
-        if query and type(sid) == "number" then
-            local ok, aura = pcall(query, sid)
-            live = (ok and aura ~= nil) and true or false
-        end
         say(("  entry %d: id=%s spellID=%s auraLive=%s"):format(
             i, tostring(e.id), tostring(sid), tostring(live)))
     end

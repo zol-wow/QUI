@@ -124,9 +124,8 @@ local seen = {}
 for _, u in ipairs(invalidateCalls) do
     seen[u] = (seen[u] or 0) + 1
 end
-assert(seen.player == 1 and seen.pet == 1 and seen.target == 1,
-    "T1: secret unit must invalidate exactly the three registered units (player/pet/target), got: "
-    .. "player=" .. tostring(seen.player) .. " pet=" .. tostring(seen.pet) .. " target=" .. tostring(seen.target))
+assert(next(seen) == nil,
+    "T1: secret unit must not call the removed aura memo invalidation bridge")
 
 local rseen = {}
 for _, u in ipairs(refreshCalls) do
@@ -145,8 +144,8 @@ local ok2, err2 = pcall(function()
     auraFrame.script(auraFrame, "UNIT_AURA", "player", SecretSentinel.MakeSecretSentinel())
 end)
 assert(ok2, "T2: whole-secret updateInfo on a readable unit must not throw: " .. tostring(err2))
-assert(#invalidateCalls == 1 and invalidateCalls[1] == "player",
-    "T2: only the readable unit is invalidated (no unit fan-out needed here)")
+assert(#invalidateCalls == 0,
+    "T2: readable unit must not call the removed aura memo invalidation bridge")
 assert(#refreshCalls == 1 and refreshCalls[1] == "player",
     "T2: consumers notified once for the readable unit")
 
@@ -159,7 +158,7 @@ local ok3, err3 = pcall(function()
     auraFrame.script(auraFrame, "UNIT_AURA", "target", { isFullUpdate = true })
 end)
 assert(ok3, "T3: plain payload must still dispatch cleanly: " .. tostring(err3))
-assert(#invalidateCalls == 1 and invalidateCalls[1] == "target", "T3: plain payload invalidates only its own unit")
+assert(#invalidateCalls == 0, "T3: plain payload must not call the removed aura memo bridge")
 assert(#refreshCalls == 1 and refreshCalls[1] == "target", "T3: plain payload notifies only its own unit")
 
 ---------------------------------------------------------------------------
@@ -241,8 +240,8 @@ local ok6, err6 = pcall(function()
     })
 end)
 assert(ok6, "T6: per-field secret isFullUpdate must not throw: " .. tostring(err6))
-assert(#invalidateCalls == 1 and invalidateCalls[1] == "pet",
-    "T6: per-field secret isFullUpdate invalidates only its own unit")
+assert(#invalidateCalls == 0,
+    "T6: per-field secret isFullUpdate must not call the removed aura memo bridge")
 assert(#refreshCalls == 1 and refreshCalls[1] == "pet",
     "T6: per-field secret isFullUpdate notifies consumers once for its own unit")
 assert(probedValues[secretFull6] == true,

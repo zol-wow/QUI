@@ -137,8 +137,6 @@ local function _StyleStackText(frame, rowConfig, baseFont, outline)
         if fs.SetAlpha then fs:SetAlpha(0) end
         return
     end
-    if holder and holder.SetAlpha then holder:SetAlpha(1) end
-    if fs.SetAlpha then fs:SetAlpha(1) end
     local font = baseFont
     local LSM = ns.LSM
     if LSM and rowConfig.stackFont and rowConfig.stackFont ~= "" then
@@ -739,24 +737,26 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
     end
 
     local function entryAuraIsPresent(entry)
-        if type(entry) ~= "table" then return false end
-        local query = Sources and Sources.QueryPlayerAuraBySpellID
-        if not query then return false end
-        local function present(id)
-            if type(id) ~= "number" or _issecretvalue(id) then return false end
-            local ok, aura = pcall(query, id)
-            return (ok and not _issecretvalue(aura) and aura ~= nil) or false
+        if type(entry) ~= "table" or not (SpellData and SpellData.GetCapturedAuraForLookup) then
+            return false
         end
-        if present(entry.overrideSpellID) or present(entry.spellID) or present(entry.id) then
-            return true
+        local ids = {}
+        for _, id in ipairs({ entry.overrideSpellID, entry.spellID, entry.id }) do
+            if type(id) == "number" and not _issecretvalue(id) then
+                ids[#ids + 1] = id
+            end
         end
         local linked = entry.linkedSpellIDs
         if type(linked) == "table" then
             for i = 1, #linked do
-                if present(linked[i]) then return true end
+                if type(linked[i]) == "number" and not _issecretvalue(linked[i]) then
+                    ids[#ids + 1] = linked[i]
+                end
             end
         end
-        return false
+        return SpellData.GetCapturedAuraForLookup(
+            ids, entry.name, { "player", "pet" }, false,
+            { player = "HELPFUL", pet = "HELPFUL" }) ~= nil
     end
 
     local function rowConfigForEntry(entry, containerKey)

@@ -285,7 +285,6 @@ modules\qol\trade_mail_log.lua
 modules\qol\focus_marker.lua
 modules\qol\healer_mana.lua
 modules\qol\death_alert.lua
-modules\qol\aztarec_helper.lua
 modules\qol\friends_decor.lua
 modules\qol\audio_device.lua
 modules\qol\extended_ignore.lua

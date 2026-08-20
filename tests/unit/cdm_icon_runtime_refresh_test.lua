@@ -245,11 +245,12 @@ local controller = module.Create({
     refreshCustomCooldownAuraOverlays = function()
         customOverlayRefreshes = customOverlayRefreshes + 1
     end,
-    scheduleUpdate = function(fast, mode, reason)
+    scheduleUpdate = function(fast, mode, reason, trustIsOnGCD)
         schedules[#schedules + 1] = {
             fast = fast,
             mode = mode,
             reason = reason,
+            trustIsOnGCD = trustIsOnGCD,
         }
     end,
     requestStackTextUpdate = function()
@@ -438,12 +439,14 @@ assert(next(runtimeUpdated) == nil, "nil-spellID refresh should not run synchron
 assert(#batches == 0, "nil-spellID refresh should not open a runtime batch")
 assert(#schedules == schedulesBeforeNilRefresh + 1
         and schedules[#schedules].mode == "cooldown"
-        and schedules[#schedules].reason == "refresh_all",
+        and schedules[#schedules].reason == "refresh_all"
+        and schedules[#schedules].trustIsOnGCD == true,
     "nil-spellID refresh must schedule the coalesced refresh-all cooldown pass: the API doc says a nil value means ALL cooldowns update")
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", secretSpellID, nil, "refresh")
 assert(#schedules == schedulesBeforeNilRefresh + 2
         and schedules[#schedules].mode == "cooldown"
-        and schedules[#schedules].reason == "refresh_all",
+        and schedules[#schedules].reason == "refresh_all"
+        and schedules[#schedules].trustIsOnGCD ~= true,
     "secret-spellID refresh must schedule the refresh-all pass, never silently drop the event")
 assert(next(runtimeUpdated) == nil, "secret-spellID refresh should not run synchronous icon updates")
 spellIcon._lastResolvedMode = nil
@@ -780,6 +783,16 @@ reset(runtimeUpdated)
 reset(visibilityUpdated)
 reset(stackWriteStates)
 inCombat = true
+spellIcon._showingGCDSwipe = true
+local framesBeforeGCDUsable = #createdFrames
+controller:Handle("SPELL_UPDATE_USABLE")
+assert(applied.spell == nil, "GCD usability refresh must not call applyResolvedCooldown")
+assert(visibilityUpdated.spell == 1, "active GCD usability refresh should update visibility immediately in combat")
+assert(#createdFrames == framesBeforeGCDUsable,
+    "active GCD usability refresh should bypass the combat coalescing frame")
+spellIcon._showingGCDSwipe = nil
+reset(applied)
+reset(visibilityUpdated)
 controller:Handle("SPELL_UPDATE_USABLE")
 controller:Handle("SPELL_UPDATE_USABLE")
 assert(next(applied) == nil, "combat usability refresh should defer until the queue drains")

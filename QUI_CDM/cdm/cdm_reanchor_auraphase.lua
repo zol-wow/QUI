@@ -13,6 +13,8 @@ function CDMReanchorAuraPhase.New(deps)
         _reentry = setmetatable({}, { __mode = "k" }),
         _edgeHooked = setmetatable({}, { __mode = "k" }),
         _edgeReentry = setmetatable({}, { __mode = "k" }),
+        _drawSwipeHooked = setmetatable({}, { __mode = "k" }),
+        _drawSwipeReentry = setmetatable({}, { __mode = "k" }),
         _keyByFrame = setmetatable({}, { __mode = "k" }),
     }, InstanceMT)
 end
@@ -31,6 +33,16 @@ function CDMReanchorAuraPhase:OnDrawEdge(frame, cd)
     local deps = self._deps
     if deps.reassertEdge then ns.SafeCall("bulkhead", deps.reassertEdge, frame, cd, self._keyByFrame[frame]) end
     self._edgeReentry[cd] = false
+end
+
+function CDMReanchorAuraPhase:OnDrawSwipe(frame, cd, show)
+    if not cd or self._drawSwipeReentry[cd] then return end
+    self._drawSwipeReentry[cd] = true
+    local deps = self._deps
+    if deps.reassertSwipe then
+        ns.SafeCall("bulkhead", deps.reassertSwipe, frame, cd, self._keyByFrame[frame], show)
+    end
+    self._drawSwipeReentry[cd] = false
 end
 
 function CDMReanchorAuraPhase:Hook(frame, containerKey)
@@ -53,6 +65,13 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey)
         local function edgeWork() this:OnDrawEdge(frame, cd) end
         hooksec(cd, "SetDrawEdge", function()
             securecall(edgeWork)
+        end)
+    end
+    if cd and type(cd.SetDrawSwipe) == "function" and not self._drawSwipeHooked[cd] then
+        self._drawSwipeHooked[cd] = true
+        local function swipeWork(show) this:OnDrawSwipe(frame, cd, show) end
+        hooksec(cd, "SetDrawSwipe", function(_, show)
+            securecall(swipeWork, show)
         end)
     end
 end
