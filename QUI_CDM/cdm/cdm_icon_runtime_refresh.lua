@@ -549,12 +549,18 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
-    function controller:ApplySpellID(eventSpellID, eventBaseSpellID, trustIsOnGCD)
+    function controller:ApplySpellID(eventSpellID, eventBaseSpellID, trustIsOnGCD,
+        eventCategory, eventItemID)
         local spellIDs = controller.applySpellIDScratch
         wipe(spellIDs)
         local hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventSpellID)
         hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventBaseSpellID) or hasSpellIDs
+        hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventCategory) or hasSpellIDs
+        hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventItemID) or hasSpellIDs
         if not hasSpellIDs then return false end
+
+        local normalizedCategory = normalizeSpellIdentifier(callbacks, eventCategory)
+        local normalizedItemID = normalizeSpellIdentifier(callbacks, eventItemID)
 
         local batchStarted = false
         local refreshed = false
@@ -565,6 +571,11 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
                 if entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs) then
+                    if normalizedCategory and normalizedItemID
+                        and entry and entry.type == "consumable"
+                        and spellIdentifierSetHas(callbacks, spellIDs, entry.id) then
+                        entry.itemID = normalizedItemID
+                    end
                     if not batchStarted then
                         editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "spellID")
                         batchStarted = true
@@ -1174,7 +1185,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         return controller:HandleFrameEvent(event, arg1, arg2, arg3, arg4, frame) -- @secret-safe: HandleFrameEvent probes isSecretValue(arg1) before the unit compare and normalizes arg3 through the secret-probing normalizeSpellIdentifier (round-13 hand-audit)
     end
 
-    function controller:HandleCooldownChanged(_, spellID, baseSpellID, kind, category, startRecoveryCategory)
+    function controller:HandleCooldownChanged(_, spellID, baseSpellID, kind, category, startRecoveryCategory, itemID)
         if not isRuntimeEnabled(callbacks) then return end
         if kind == "scanner_item" then
             controller:ApplyItemScope()
@@ -1189,15 +1200,25 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 and callbacks.updateCooldownOnly then
                 local comparableSpellID = normalizeSpellIdentifier(callbacks, spellID) ~= nil
                 if comparableSpellID then
-                    controller:ApplySpellID(spellID, baseSpellID, true)
+                    controller:ApplySpellID(spellID, baseSpellID, true, category, itemID)
                 end
                 callbacks.updateCooldownOnly(true, true)
                 return
             end
-            local comparableSpellID = normalizeSpellIdentifier(callbacks, spellID) ~= nil
-            if comparableSpellID then
-                controller:ApplySpellID(spellID, baseSpellID, true)
-            elseif callbacks.scheduleUpdate then
+            local normalizedCategory = normalizeSpellIdentifier(callbacks, category)
+            local normalizedItemID = normalizeSpellIdentifier(callbacks, itemID)
+            local categoryOpaque = category ~= nil and normalizedCategory == nil
+            local itemOpaque = itemID ~= nil and normalizedItemID == nil
+            if categoryOpaque or itemOpaque then
+                if callbacks.scheduleUpdate then
+                    if runtimeRefreshStats then runtimeRefreshStats.refreshAllCooldownFallbacks = runtimeRefreshStats.refreshAllCooldownFallbacks + 1 end
+                    callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all")
+                end
+                return
+            end
+            local refreshed = controller:ApplySpellID(
+                spellID, baseSpellID, true, normalizedCategory, normalizedItemID)
+            if not refreshed and callbacks.scheduleUpdate then
                 if runtimeRefreshStats then runtimeRefreshStats.refreshAllCooldownFallbacks = runtimeRefreshStats.refreshAllCooldownFallbacks + 1 end
                 callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all")
             end

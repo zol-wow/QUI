@@ -111,9 +111,15 @@ local customCooldownIcon = makeIcon("customCooldown", {
     viewerType = "custom",
     _isCustomEntry = true,
 })
+local consumableIcon = makeIcon("consumable", {
+    id = 808,
+    kind = "cooldown",
+    type = "consumable",
+    viewerType = "essential",
+})
 
 local iconPools = {
-    essential = { spellIcon, otherSpellIcon, itemIcon, mirrorAuraIcon, idleIcon, customCooldownIcon },
+    essential = { spellIcon, otherSpellIcon, itemIcon, mirrorAuraIcon, idleIcon, customCooldownIcon, consumableIcon },
     buff = { auraIcon },
 }
 
@@ -398,6 +404,15 @@ reset(auraApplied)
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 303, nil, "refresh", nil, 133)
 assert(auraApplied.aura == 1,
     "global-recovery refreshes must update matching aura-backed icons")
+reset(runtimeUpdated)
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 999999, nil, "refresh", 808, nil, 909)
+assert(runtimeUpdated.consumable == 1 and consumableIcon._spellEntry.itemID == 909,
+    "cooldown category and item payloads must refresh category-backed entries")
+local schedulesBeforeOpaquePayload = #schedules
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 999999, nil, "refresh", secretRecoveryCategory, nil, 909)
+assert(#schedules == schedulesBeforeOpaquePayload + 1
+        and schedules[#schedules].reason == "refresh_all",
+    "opaque cooldown categories must use the safe broad refresh fallback")
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 101, nil, "refresh", nil, secretRecoveryCategory)
 assert(trustedBroadCooldownRefreshes == 3 and forcedBroadCooldownRefreshes == 3,
     "opaque recovery categories must take the trusted broad refresh path: "
