@@ -38,5 +38,10 @@ local mrbSource = mrbFile:read("*a")
 mrbFile:close()
 check("missing raid buffs does not schedule a second roster refresh",
     mrbSource:find("C_Timer.After(0.25, RefreshAll)", 1, true) == nil)
+local rosterHandlerStart = assert(mrbSource:find('elseif event == "GROUP_ROSTER_UPDATE" then', 1, true))
+local rosterHandlerEnd = assert(mrbSource:find('elseif event == "COOLDOWN_VIEWER_DATA_LOADED"', rosterHandlerStart, true))
+local rosterHandler = mrbSource:sub(rosterHandlerStart, rosterHandlerEnd)
+check("missing raid buffs refreshes group-dependent indicators",
+    rosterHandler:find("RefreshAll()", 1, true) ~= nil)
 
 print("PASS groupframes_roster_aura_refresh_test")
