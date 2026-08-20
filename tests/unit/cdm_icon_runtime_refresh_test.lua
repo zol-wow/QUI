@@ -391,6 +391,10 @@ assert(trustedBroadCooldownRefreshes == 1,
     "GCD-category SPELL_UPDATE_COOLDOWN events must request one trusted broad refresh")
 assert(forcedBroadCooldownRefreshes == 1,
     "GCD-category SPELL_UPDATE_COOLDOWN events must resolve idle icons")
+reset(auraApplied)
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 303, nil, "refresh", nil, 133)
+assert(auraApplied.aura == 1,
+    "global-recovery refreshes must update matching aura-backed icons")
 
 reset(applied)
 reset(runtimeUpdated)
@@ -678,22 +682,20 @@ reset(runtimeUpdated)
 reset(stackWriteStates)
 local schedulesBeforeCastStart = #schedules
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 101, nil, "cast_start")
-assert(#schedules == schedulesBeforeCastStart + 1
-    and schedules[#schedules].reason == "cast_start",
-    "cast start should schedule a broad cooldown refresh for GCD visibility")
-assert(next(runtimeUpdated) == nil,
-    "cast start broad refresh should replace the targeted spell path")
+assert(#schedules == schedulesBeforeCastStart,
+    "readable cast start should stay on the targeted spell path")
+assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == nil,
+    "readable cast start should update only the matching spell icon")
 
 reset(applied)
 reset(runtimeUpdated)
 reset(stackWriteStates)
 local schedulesBeforeSpellcastStop = #schedules
 controller:Handle("UNIT_SPELLCAST_STOP", "player", "cast-guid", 101)
-assert(#schedules == schedulesBeforeSpellcastStop + 1
-    and schedules[#schedules].reason == "unit_spellcast",
-    "player spellcast stop should schedule a broad cooldown refresh for GCD visibility")
-assert(next(runtimeUpdated) == nil,
-    "player spellcast stop broad refresh should replace the targeted spell path")
+assert(#schedules == schedulesBeforeSpellcastStop,
+    "readable player spellcast stop should stay on the targeted spell path")
+assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == nil,
+    "readable player spellcast stop should update only the matching spell icon")
 
 reset(applied)
 reset(runtimeUpdated)
@@ -713,11 +715,10 @@ reset(runtimeUpdated)
 reset(stackWriteStates)
 local schedulesBeforeSecretUnit = #schedules
 controller:Handle("UNIT_SPELLCAST_STOP", secretUnit, "cast-guid", 101)
-assert(#schedules == schedulesBeforeSecretUnit + 1
-    and schedules[#schedules].reason == "unit_spellcast",
-    "secret unit spellcast stop should schedule a broad cooldown refresh")
-assert(next(runtimeUpdated) == nil,
-    "secret unit spellcast stop broad refresh should replace the targeted spell path")
+assert(#schedules == schedulesBeforeSecretUnit,
+    "secret unit token with a readable spell ID should stay on the targeted spell path")
+assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == nil,
+    "secret unit token should still update only the matching spell icon")
 
 reset(applied)
 reset(runtimeUpdated)
@@ -741,14 +742,13 @@ controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 101, nil, "cast_succeed
 assert(recentCasts[1] == 101, "cast succeeded should record the player cast")
 assert(highlighterCasts[1] == 101, "cast succeeded should still notify the highlighter")
 assert(applied.spell == nil,
-    "cast succeeded should not run a synchronous broad cooldown refresh")
-assert(next(runtimeUpdated) == nil and next(visibilityUpdated) == nil
-    and next(blingSynced) == nil,
-    "cast succeeded should defer the broad refresh to the scheduler")
+    "cast succeeded should not run the stackless cooldown-only path")
+assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == nil
+    and visibilityUpdated.spell == 1 and blingSynced.spell == 1,
+    "readable cast succeeded should update only the matching spell icon")
 assert(stackRequested == true, "cast succeeded should request a delayed stack text refresh")
-assert(#schedules == schedulesBeforeCastSucceeded + 1
-    and schedules[#schedules].reason == "cast_succeeded",
-    "cast succeeded should schedule a broad cooldown refresh for GCD visibility")
+assert(#schedules == schedulesBeforeCastSucceeded,
+    "readable cast succeeded should stay on the targeted spell path")
 
 reset(applied)
 reset(runtimeUpdated)

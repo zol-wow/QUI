@@ -1057,11 +1057,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             if isPlayerUnit then
                 if normalizeSpellIdentifier(callbacks, arg3) ~= nil then
                     if runtimeRefreshStats then runtimeRefreshStats.unitSpellcastCooldownSkips = runtimeRefreshStats.unitSpellcastCooldownSkips + 1 end
-                    if callbacks.scheduleUpdate then
-                        callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "unit_spellcast")
-                    else
-                        controller:QueueResolvedCooldownForSpellID(arg3, nil) -- @secret-safe: reached only when normalizeSpellIdentifier(callbacks, arg3) ~= nil, and that helper probes isSecretValue and returns nil for secrets — arg3 proven readable here
-                    end
+                    controller:QueueResolvedCooldownForSpellID(arg3, nil) -- @secret-safe: reached only when normalizeSpellIdentifier(callbacks, arg3) ~= nil, and that helper probes isSecretValue and returns nil for secrets — arg3 proven readable here
                 elseif callbacks.scheduleUpdate then
                     if runtimeRefreshStats then runtimeRefreshStats.unitSpellcastCooldownFallbacks = runtimeRefreshStats.unitSpellcastCooldownFallbacks + 1 end
                     callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "unit_spellcast")
@@ -1186,6 +1182,10 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         elseif kind == "refresh" then
             if IsGlobalRecoveryCategory(startRecoveryCategory)
                 and callbacks.updateCooldownOnly then
+                local comparableSpellID = normalizeSpellIdentifier(callbacks, spellID) ~= nil
+                if comparableSpellID then
+                    controller:ApplySpellID(spellID, baseSpellID, true)
+                end
                 callbacks.updateCooldownOnly(true, true)
                 return
             end
@@ -1199,11 +1199,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         elseif kind == "cast_start" then
             if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
                 if runtimeRefreshStats then runtimeRefreshStats.castStartCooldownSkips = runtimeRefreshStats.castStartCooldownSkips + 1 end
-                if callbacks.scheduleUpdate then
-                    callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "cast_start")
-                else
-                    controller:QueueResolvedCooldownForSpellID(spellID, baseSpellID)
-                end
+                controller:QueueResolvedCooldownForSpellID(spellID, baseSpellID)
             elseif callbacks.scheduleUpdate then
                 if runtimeRefreshStats then runtimeRefreshStats.castStartCooldownFallbacks = runtimeRefreshStats.castStartCooldownFallbacks + 1 end
                 callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "cast_start")
@@ -1214,10 +1210,10 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             end
             controller:InvalidateGCDOnlyBindings()
             controller:InvalidateSpellCooldownBinding(spellID)
-            if callbacks.scheduleUpdate then
-                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "cast_succeeded")
-            else
+            if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
                 controller:ApplySpellID(spellID, nil, false)
+            elseif callbacks.scheduleUpdate then
+                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "cast_succeeded")
             end
             if callbacks.requestStackTextUpdate then
                 callbacks.requestStackTextUpdate()
