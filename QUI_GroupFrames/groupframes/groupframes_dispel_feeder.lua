@@ -29,7 +29,11 @@ local STYLE_ICON = (DISPEL_STYLES and DISPEL_STYLES.Icon) or 2
 -- aura_slots' PARK_FILTER).
 local PARK_FILTER = { maxDuration = 0 }
 
-local BY_ME_FILTER = "HARMFUL|RAID_PLAYER_DISPELLABLE"
+-- RAID on harmful auras means "the player can dispel" (AuraUtil.AuraFilters),
+-- matching ClassifyDispellable's HARMFUL|RAID probe and the PLAYER_DISPELLABLE
+-- scope's promise. RAID_PLAYER_DISPELLABLE is broader — "someone in the
+-- player's raid can dispel" — and would light non-actionable overlays.
+local BY_ME_FILTER = "HARMFUL|RAID"
 local ALL_TYPED_FILTER = "HARMFUL"
 local ALL_TYPED_CF = {
     includeDispelTypes = {

@@ -112,7 +112,9 @@ local ns = { QUI_GroupFrameChrome = { LEVELS = { DISPEL = 8 } } }
 local F = assert(loadfile("QUI_GroupFrames/groupframes/groupframes_dispel_feeder.lua"))("QUI_GroupFrames", ns)
 check("module publishes ns.QUI_GFDispelFeeder", ns.QUI_GFDispelFeeder == F and type(F.Sync) == "function")
 
-local BY_ME = "HARMFUL|RAID_PLAYER_DISPELLABLE"
+-- HARMFUL|RAID = harmful auras the PLAYER can dispel (AuraUtil.AuraFilters);
+-- RAID_PLAYER_DISPELLABLE would match anything anyone in the raid can dispel.
+local BY_ME = "HARMFUL|RAID"
 
 local function isParked(cf)
     return type(cf) == "table" and cf.maxDuration == 0 and next(cf, next(cf)) == nil
