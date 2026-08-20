@@ -39,7 +39,7 @@ end
 
 function CDMReanchorAuraPhase:OnDrawSwipe(frame, cd, show)
     if not cd or self._drawSwipeReentry[cd] then return end
-    if _issecretvalue and _issecretvalue(show) then show = nil end
+    if _issecretvalue and _issecretvalue(show) then return end
     self._drawSwipeReentry[cd] = true
     local deps = self._deps
     if deps.reassertSwipe then
