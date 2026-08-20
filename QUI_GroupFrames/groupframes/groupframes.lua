@@ -1674,6 +1674,14 @@ end
 
 local function UpdateDispelOverlay(frame)
     if not frame or not frame.dispelOverlay then return end
+    -- Live frames with an active dispel feeder render the overlay through
+    -- secure engine slots (see groupframes_dispel_feeder.lua); the cache-fed
+    -- legacy art below stays hidden. Preview fakes never get a feeder and
+    -- keep using this path.
+    if frame._quiDispelFeederActive then
+        _dispel.HideVisuals(frame)
+        return
+    end
     local unit = QUI_GF.GetFrameUnit(frame)
     if not unit then
         _dispel.HideVisuals(frame)

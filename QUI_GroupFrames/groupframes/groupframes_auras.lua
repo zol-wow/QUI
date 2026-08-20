@@ -1312,6 +1312,18 @@ local function ApplyElementPass(frame, allowCreate)
         end,
         onIncomplete = QueueContainerCombatWork,
     })
+
+    -- Dispel overlay / cleanse glow ride secure feeder slots (engine-driven
+    -- presence + dispel-type colors) so they keep working while the Lua aura
+    -- cache is frozen by ShouldAurasBeSecret in instanced combat.
+    local Feeder = ns.QUI_GFDispelFeeder
+    if Feeder then
+        local vdb = GetVisualDBForFrame(frame)
+        if not Feeder.Sync(frame, unit, allowCreate == true, vdb and vdb.healer) then
+            QueueContainerCombatWork(frame)
+        end
+    end
+
     QUI_GFA.ApplyRangeGate(frame)
 end
 
