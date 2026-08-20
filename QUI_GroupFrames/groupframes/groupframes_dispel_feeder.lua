@@ -10,10 +10,15 @@ local ADDON_NAME, ns = ...
 -- Lua ever observing the aura's dispel type.
 --
 -- Slot buttons carry DenyTaintedAccessWhenAurasAreSecret: writes into the
--- slot subtree are refused while auras are secret, and no script handler may
--- exist anywhere in it or the engine refuses SetShown with secret presence.
--- Consequently ALL art creation/styling happens out of secrecy (Sync reports
--- incomplete otherwise and the caller requeues), and the art is scriptless.
+-- slot subtree are refused while auras are secret, and no addon script
+-- handler may exist anywhere in it or the engine refuses SetShown with
+-- secret presence. Consequently ALL art creation/styling happens out of
+-- secrecy (Sync reports incomplete otherwise and the caller requeues), and
+-- the art is scriptless. CustomAuraButtonTemplate has no visual regions of
+-- its own, so the slots are NOT alpha-muted (unlike aura_slots' pooled
+-- healthTint feeders, which must smother leftover art from other display
+-- styles) — the art inherits the group frame's alpha and follows
+-- out-of-range/offline fading exactly like the legacy overlay did.
 local F = {}
 ns.QUI_GFDispelFeeder = F
 
@@ -80,11 +85,10 @@ local function PixelSize(frame)
     return 1
 end
 
--- Scriptless slot hygiene, mirroring aura_slots' StyleFeederSlot: alpha 0
--- mutes the CustomAuraButton template art, the attached textures opt out of
--- parent alpha so they stay visible.
-local function MuteSlot(slot)
-    slot:SetAlpha(0)
+-- Scriptless slot hygiene. No alpha muting: the template carries no visual
+-- regions, and an untouched slot alpha lets the attached art inherit the
+-- group frame's fading (out of range, offline) like the legacy overlay.
+local function PrepareSlot(slot)
     slot:SetSize(1, 1)
     if slot.EnableMouse then slot:EnableMouse(false) end
     if slot.SetMouseClickEnabled then slot:SetMouseClickEnabled(false) end
@@ -94,7 +98,6 @@ local function EnsureArtTexture(slot, art, key, layer)
     local tex = art[key]
     if not tex then
         tex = slot:CreateTexture(nil, layer)
-        if tex.SetIgnoreParentAlpha then tex:SetIgnoreParentAlpha(true) end
         if tex.DisablePixelSnap then tex:DisablePixelSnap() end
         art[key] = tex
     end
@@ -111,7 +114,7 @@ local BORDER_ANCHORS = {
 -- Build/refresh the overlay art inside the visual slot and (re)bind it to the
 -- engine's dispel-type tinting. Must only run while auras are not secret.
 local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
-    MuteSlot(slot)
+    PrepareSlot(slot)
     local art = slot._quiDispelArt
     if not art then
         art = {}
@@ -187,19 +190,17 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
 end
 
 local function StyleGlowSlot(slot, host, glowCfg)
-    MuteSlot(slot)
+    PrepareSlot(slot)
     local art = slot._quiDispelArt
     if not art then
         art = {}
         slot._quiDispelArt = art
     end
-    local tex = art.glow
-    if not tex then
-        tex = slot:CreateTexture(nil, "OVERLAY")
-        if tex.SetIgnoreParentAlpha then tex:SetIgnoreParentAlpha(true) end
+    local isNew = art.glow == nil
+    local tex = EnsureArtTexture(slot, art, "glow", "OVERLAY")
+    if isNew then
         tex:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
         if tex.SetBlendMode then tex:SetBlendMode("ADD") end
-        art.glow = tex
     end
     tex:ClearAllPoints()
     tex:SetPoint("TOPLEFT", host, "TOPLEFT", -4, 4)
@@ -229,7 +230,7 @@ local function EnsureSlot(state, container, key, filter, cf)
     end
     local frame = container:AddAuraSlot(key, filter, {
         candidateFilters = cf or nil,
-        initializeFrame = MuteSlot,
+        initializeFrame = PrepareSlot,
     })
     if not frame then return false end
     state.slots[key] = { frame = frame, filter = filter, parked = (cf == PARK_FILTER) }

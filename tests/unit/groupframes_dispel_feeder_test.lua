@@ -147,8 +147,15 @@ check("glow slot exists but is parked when cleanse glow is off",
 check("frame flagged feeder-active for the legacy path gate", frame._quiDispelFeederActive == true)
 
 local visual = c and c._slots.visual
-check("visual slot muted (alpha 0, 1x1, mouse off)",
-    visual and visual._alpha == 0 and visual._w == 1 and visual._mouse == false)
+-- CustomAuraButtonTemplate carries no visual regions, so the slot must NOT be
+-- alpha-muted: the art inherits the group frame's out-of-range/offline fading.
+check("visual slot prepared (1x1, mouse off, alpha untouched)",
+    visual and visual._alpha == nil and visual._w == 1 and visual._mouse == false)
+local inheritsAlpha = true
+for _, reg in ipairs(visual and visual._dispelRegs or {}) do
+    if reg.texture._ignoreParentAlpha then inheritsAlpha = false end
+end
+check("art textures inherit parent alpha for frame-level fading", inheritsAlpha)
 
 -- Art bindings: 4 borders + fill share PreserveAsset + the color map; no icon.
 local borderRegs, iconRegs = 0, 0
