@@ -173,6 +173,35 @@ state = ns.CDMAuraRuntime.ResolveState({
 assert(state.isActive ~= true,
     "target aura capture must reject a readable aura owned by another player")
 
+inCombat = false
+auraFrame.script(auraFrame, "UNIT_AURA", "player", {
+    isFullUpdate = false,
+    addedAuras = {
+        {
+            spellId = 51055,
+            name = "Readable Player Aura",
+            auraInstanceID = 9055,
+            isHelpful = true,
+            applications = 3,
+            duration = 12,
+        },
+    },
+})
+state = ns.CDMAuraRuntime.ResolveState({
+    spellID = 51055,
+    entrySpellID = 51055,
+    entryID = 51055,
+    entryName = "Readable Player Aura",
+    entryKind = "aura",
+    entryIsAura = true,
+    entryType = "aura",
+    viewerType = "buff",
+})
+assert(state.isActive == true and state.hasExpirationTime == true,
+    "captured readable AuraData retains duration state")
+assert(state.count and state.count.value == 3,
+    "captured readable AuraData retains applications for stack resolution")
+
 -- Aura restriction is broader than combat lockdown; captured payloads remain
 -- the only target presence source.
 inCombat = false

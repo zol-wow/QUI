@@ -116,6 +116,39 @@ function G.FilterStringUsable(unit, filterString)
     return ok
 end
 
+function G.CollectReadableAuras(unit)
+    if G.AurasAreSecret and G.AurasAreSecret() then return nil end
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetUnitAuraInstanceIDs
+        and unitAuras.GetAuraDataByAuraInstanceID) then
+        return nil
+    end
+    local filters = unit == "target"
+        and { "HELPFUL|PLAYER", "HARMFUL|PLAYER" }
+        or { "HELPFUL", "HARMFUL" }
+    local result, seen = {}, {}
+    for _, filter in ipairs(filters) do
+        local ok, instanceIDs = ns.SafeCall(
+            "secret-probe", unitAuras.GetUnitAuraInstanceIDs, unit, filter)
+        if not ok or type(instanceIDs) ~= "table"
+            or (issecretvalue and issecretvalue(instanceIDs)) then
+            return nil
+        end
+        for _, instanceID in ipairs(instanceIDs) do
+            if instanceID and not (issecretvalue and issecretvalue(instanceID))
+                and not seen[instanceID] then
+                seen[instanceID] = true
+                local dataOK, auraData = ns.SafeCall(
+                    "secret-probe", unitAuras.GetAuraDataByAuraInstanceID,
+                    unit, instanceID)
+                if not dataOK then return nil end
+                if auraData then result[#result + 1] = { auraData, filter } end
+            end
+        end
+    end
+    return result
+end
+
 function G.ElementGroups(unit, element, profile, cancelEligible)
     if not ResolveE() then return {} end
     local base = element.auraType or "HELPFUL"
