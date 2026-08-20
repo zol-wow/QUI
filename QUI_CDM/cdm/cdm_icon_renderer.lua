@@ -864,7 +864,7 @@ end
 
 local _iconCooldownStateContextOptions = {}
 
-local function BuildIconCooldownStateContext(icon, entry, runtimeSpellID, useBuffSwipe, skipAuraPhase, totemSlot)
+local function BuildIconCooldownStateContext(icon, entry, runtimeSpellID, useBuffSwipe, skipAuraPhase, totemSlot, trustIsOnGCD)
     local builder = Resolvers and Resolvers.BuildCooldownStateContext
     if not builder then return nil end
 
@@ -874,6 +874,7 @@ local function BuildIconCooldownStateContext(icon, entry, runtimeSpellID, useBuf
     options.useBuffSwipe = useBuffSwipe
     options.skipAuraPhase = skipAuraPhase == true
     options.showGCDSwipe = IsGCDSwipeEnabled()
+    options.trustIsOnGCD = trustIsOnGCD == true
     options.lastChargeRuntimeSpellID = icon and icon._lastChargeRuntimeSpellID
     return builder(icon, entry, runtimeSpellID, options)
 end
@@ -886,7 +887,7 @@ function _resolverRuntimePolicy.ResolvedAuraStateIsActive(state)
     return state.isActive == true
 end
 
-function _resolverRuntimePolicy.ResolveResolvedStateForIcon(icon, entry, runtimeSpellID, useBuffSwipe, skipAuraPhase)
+function _resolverRuntimePolicy.ResolveResolvedStateForIcon(icon, entry, runtimeSpellID, useBuffSwipe, skipAuraPhase, trustIsOnGCD)
     if not (Resolvers.ResolveCooldownState and icon and entry) then
         return nil
     end
@@ -897,14 +898,15 @@ function _resolverRuntimePolicy.ResolveResolvedStateForIcon(icon, entry, runtime
     end
 
     local context = BuildIconCooldownStateContext(
-        icon, entry, runtimeSpellID, useBuffSwipe, skipAuraPhase, totemSlot)
+        icon, entry, runtimeSpellID, useBuffSwipe, skipAuraPhase, totemSlot, trustIsOnGCD)
     if not context then return nil end
 
     return Resolvers.ResolveCooldownState(context)
 end
 
-function _resolverRuntimePolicy.ResolveAuraFactsForIcon(icon, entry, runtimeSpellID, useBuffSwipe)
-    local state = _resolverRuntimePolicy.ResolveResolvedStateForIcon(icon, entry, runtimeSpellID, useBuffSwipe, false)
+function _resolverRuntimePolicy.ResolveAuraFactsForIcon(icon, entry, runtimeSpellID, useBuffSwipe, trustIsOnGCD)
+    local state = _resolverRuntimePolicy.ResolveResolvedStateForIcon(
+        icon, entry, runtimeSpellID, useBuffSwipe, false, trustIsOnGCD)
     if not state then return nil end
     if state.auraResolved == true or state.mode == "aura" or state.auraActive ~= nil then
         return state
@@ -956,13 +958,14 @@ function _resolverRuntimePolicy.StoreIconRuntimeState(icon, mode, sourceID, spel
 end
 
 -- with verified non-secret numeric item timing. SetCooldownFromDurationObject
-ApplyResolvedCooldown = function(icon, preResolvedState)
+ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
     local addonCD = icon and icon.Cooldown
     if not addonCD then return false end
 
     local entry = icon._spellEntry
     local useBuffSwipe = _resolverRuntimePolicy.ShouldUseBuffSwipeForIcon(icon, entry)
     local skipAuraPhase = _resolverRuntimePolicy.ShouldSkipAuraPhaseForCooldownIcon(icon, entry)
+    trustIsOnGCD = trustIsOnGCD == true
     local measure = measureFn
     local stateContext
     local resolvedState = preResolvedState
@@ -973,10 +976,10 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
             stateContext = measure(
                 "CDM_applyBuildContext",
                 BuildIconCooldownStateContext,
-                icon, entry, icon._runtimeSpellID, useBuffSwipe, skipAuraPhase)
+                icon, entry, icon._runtimeSpellID, useBuffSwipe, skipAuraPhase, nil, trustIsOnGCD)
         else
             stateContext = BuildIconCooldownStateContext(
-                icon, entry, icon._runtimeSpellID, useBuffSwipe, skipAuraPhase)
+                icon, entry, icon._runtimeSpellID, useBuffSwipe, skipAuraPhase, nil, trustIsOnGCD)
         end
         if not stateContext then return false end
 
@@ -1002,10 +1005,10 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
                 aliasContext = measure(
                     "CDM_applyBuildContext",
                     BuildIconCooldownStateContext,
-                    icon, entry, aliasID, useBuffSwipe, skipAuraPhase)
+                    icon, entry, aliasID, useBuffSwipe, skipAuraPhase, nil, trustIsOnGCD)
             else
                 aliasContext = BuildIconCooldownStateContext(
-                    icon, entry, aliasID, useBuffSwipe, skipAuraPhase)
+                    icon, entry, aliasID, useBuffSwipe, skipAuraPhase, nil, trustIsOnGCD)
             end
             local aliasState
             if aliasContext and measure then
@@ -2424,7 +2427,7 @@ local function ClearItemIconInactive(icon, entry, itemID)
         nil)
 end
 
-local function UpdateIconCooldownOwned(icon)
+local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
     if not icon or not icon._spellEntry then return end
 
     local entry = icon._spellEntry
@@ -2432,7 +2435,7 @@ local function UpdateIconCooldownOwned(icon)
     local auraCountAppliedThisTick = false
     local preResolvedCooldownState = nil
 
-    local _runtimeSid = entry.spellID or entry.overrideSpellID or entry.id
+    local _runtimeSid = entry._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
     if _runtimeSid and not IsAuraEntry(entry) then
         local ovId = QueryOverrideSpell(_runtimeSid)
         if ovId then _runtimeSid = ovId end
@@ -2455,7 +2458,9 @@ local function UpdateIconCooldownOwned(icon)
                 return
             end
 
-            local r = _resolverRuntimePolicy.ResolveAuraFactsForIcon(icon, entry, auraSpellID, true)
+            local r = _resolverRuntimePolicy.ResolveAuraFactsForIcon(
+                icon, entry, auraSpellID, true,
+                trustIsOnGCD)
             if not r then
                 if entry.type == "item" or entry.type == "trinket" or entry.type == "slot" then
                     local _auraNilItemID
@@ -2704,7 +2709,7 @@ local function UpdateIconCooldownOwned(icon)
         end
     end
 
-    local resolvedApplied = ApplyResolvedCooldown(icon, preResolvedCooldownState) == true
+    local resolvedApplied = ApplyResolvedCooldown(icon, preResolvedCooldownState, trustIsOnGCD) == true
     local resolvedState = ns.CDMRuntimeStore and ns.CDMRuntimeStore.GetFrameState
         and ns.CDMRuntimeStore.GetFrameState(icon) or nil
     local startTime = resolvedState and resolvedState.start
@@ -3006,9 +3011,9 @@ local function UpdateIconCooldownOwned(icon)
     end
 end
 
-UpdateIconCooldown = function(icon)
+UpdateIconCooldown = function(icon, trustIsOnGCD)
     if icon and icon._spellEntry and icon._spellEntry._useManagedAura then return end
-    return UpdateIconCooldownOwned(icon)
+    return UpdateIconCooldownOwned(icon, trustIsOnGCD)
 end
 
 local function IsCustomBarEntryUsableOnCurrentClass(entry, viewerType)
@@ -3869,8 +3874,9 @@ local function RefreshAllIcon(icon, context)
     end
 end
 
-local function UpdateCooldownOnlyIcon(icon, entry)
-    if ns._cdmPollSkipIdle ~= false
+local function UpdateCooldownOnlyIcon(icon, entry, context)
+    if context and context.forceResolveIdle ~= true
+        and ns._cdmPollSkipIdle ~= false
         and icon._resolvedCooldownMode == "inactive"
         and icon._hasCooldownActive ~= true
         and entry
@@ -3880,7 +3886,7 @@ local function UpdateCooldownOnlyIcon(icon, entry)
         return
     end
     if durationBindingStats then durationBindingStats.pollIdleResolved = durationBindingStats.pollIdleResolved + 1 end
-    UpdateIconCooldown(icon)
+    UpdateIconCooldown(icon, context and context.trustIsOnGCD == true)
 end
 
 local function CreateIconRefreshWalker()
@@ -3937,7 +3943,7 @@ function CDMIcons:UpdateAllCooldowns()
     DrainLayoutDirty()
 end
 
-function CDMIcons:UpdateCooldownOnly()
+function CDMIcons:UpdateCooldownOnly(trustIsOnGCD, forceResolveIdle)
     local editMode, ncdm, ncdmContainers, inCombat = PrepareCooldownUpdateBatch()
     local allowStackTextWrites = ConsumeStackTextWriteRequest()
     SetRefreshBatchStackTextWrites(allowStackTextWrites)
@@ -3948,6 +3954,8 @@ function CDMIcons:UpdateCooldownOnly()
         ncdm = ncdm,
         ncdmContainers = ncdmContainers,
         inCombat = inCombat,
+        trustIsOnGCD = trustIsOnGCD == true,
+        forceResolveIdle = forceResolveIdle == true,
     }
     if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("cooldownOnly") end
     local walker = GetIconRefreshWalker()
@@ -3960,7 +3968,7 @@ function CDMIcons:UpdateCooldownOnly()
                 if entry then
                     local containerDB, cType = ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
                     if cType ~= "aura" and cType ~= "auraBar" then
-                        UpdateCooldownOnlyIcon(icon, entry)
+                        UpdateCooldownOnlyIcon(icon, entry, context)
                         UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
                     end
                 end
@@ -4020,7 +4028,7 @@ function CDMIcons:UpdateRuntimeForType(viewerType)
             if entry then
                 local containerDB, cType = ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
                 if cType ~= "aura" and cType ~= "auraBar" then
-                    UpdateCooldownOnlyIcon(icon, entry)
+                        UpdateCooldownOnlyIcon(icon, entry, context)
                     UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
                 end
             end
@@ -4048,8 +4056,24 @@ function CDMIcons.OnIconRowConfigApplied(icon, rowConfig)
     ConfigureIcon(icon, rowConfig)
 end
 
+local CDM_UPDATE_COOLDOWN = "cooldown"
+local CDM_UPDATE_FULL = "full"
+local updateScheduler
+local ScheduleCDMUpdate
+local pendingCooldownForceResolveIdle = false
+
+local function BindCooldownDoneRefresh(icon)
+    local cooldown = icon and icon.Cooldown
+    if not cooldown or not cooldown.SetScript or icon._quiCooldownDoneBound then return end
+    cooldown:SetScript("OnCooldownDone", function()
+        ScheduleCDMUpdate(true, CDM_UPDATE_COOLDOWN, "cooldown_done")
+    end)
+    icon._quiCooldownDoneBound = true
+end
+
 function CDMIcons.OnFactoryIconCreated(icon, entry)
     if not icon then return end
+    BindCooldownDoneRefresh(icon)
     UpdateIconProfessionQuality(icon)
 end
 
@@ -4232,10 +4256,6 @@ cdEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 cdEventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
 cdEventFrame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 
-local CDM_UPDATE_COOLDOWN = "cooldown"
-local CDM_UPDATE_FULL = "full"
-local updateScheduler
-
 local function CreateIconUpdateScheduler()
     local module = ns.CDMIconUpdateScheduler
     if not (module and module.Create) then return nil end
@@ -4259,7 +4279,9 @@ local function CreateIconUpdateScheduler()
             CDMIcons:UpdateAllCooldowns()
         end,
         updateCooldownOnly = function()
-            CDMIcons:UpdateCooldownOnly()
+            local forceResolveIdle = pendingCooldownForceResolveIdle
+            pendingCooldownForceResolveIdle = false
+            CDMIcons:UpdateCooldownOnly(false, forceResolveIdle)
         end,
         getBars = function()
             return ns.CDMBars
@@ -4285,7 +4307,10 @@ local function NoteFullUpdateSchedule(reason)
     end
 end
 
-local function ScheduleCDMUpdate(fast, mode, reason)
+ScheduleCDMUpdate = function(fast, mode, reason)
+    if mode == CDM_UPDATE_COOLDOWN then
+        pendingCooldownForceResolveIdle = true
+    end
     if mode == CDM_UPDATE_FULL then
         NoteFullUpdateSchedule(reason)
     end
@@ -4447,6 +4472,9 @@ do
         setStackTextWrites = SetRefreshBatchStackTextWrites,
         applyResolvedCooldown = ApplyResolvedCooldown,
         updateIconCooldown = UpdateIconCooldown,
+        updateCooldownOnly = function(trustIsOnGCD)
+            CDMIcons:UpdateCooldownOnly(trustIsOnGCD == true, true)
+        end,
         applyAuraScopedResolvedCooldown = function(icon, entry, editMode, ncdm, ncdmContainers, inCombat)
             return _resolverRuntimePolicy.ApplyAuraScopedResolvedCooldown(
                 icon, entry, editMode, ncdm, ncdmContainers, inCombat)
@@ -4565,9 +4593,10 @@ function CDMIcons.HandleRuntimeRefresh(event, arg1, arg2, arg3, arg4)
     return _resolverRuntimePolicy.HandleRuntimeRefresh(event, arg1, arg2, arg3, arg4)
 end
 
-local function OnCDMCooldownChanged(_, spellID, baseSpellID, kind)
+local function OnCDMCooldownChanged(_, spellID, baseSpellID, kind, category, startRecoveryCategory, itemID)
     if runtimeRefresh then
-        return runtimeRefresh:HandleCooldownChanged(_, spellID, baseSpellID, kind)
+        return runtimeRefresh:HandleCooldownChanged(
+            _, spellID, baseSpellID, kind, category, startRecoveryCategory, itemID)
     end
 end
 

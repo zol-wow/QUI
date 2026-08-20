@@ -94,6 +94,12 @@ event = assert(published[#published], "SPELL_UPDATE_CHARGES should still publish
 assert(event[1] == "CDM:CHARGES_CHANGED" and event[2] == 55092,
     "SPELL_UPDATE_CHARGES compatibility should be preserved")
 
+runtimeFrame.OnEvent(runtimeFrame, "SPELL_UPDATE_COOLDOWN", 90010, 90011, 12, 133, 90012)
+event = assert(published[#published], "SPELL_UPDATE_COOLDOWN should publish a cooldown change")
+assert(event[1] == "CDM:COOLDOWN_CHANGED" and event[2] == 90010 and event[3] == 90011
+        and event[4] == "refresh" and event[5] == 12 and event[6] == 133 and event[7] == 90012,
+    "SPELL_UPDATE_COOLDOWN should preserve category and start-recovery payloads")
+
 ---------------------------------------------------------------------------
 -- UNIT_SPELLCAST_SUCCEEDED (Wave 2b task2b-A)
 ---------------------------------------------------------------------------

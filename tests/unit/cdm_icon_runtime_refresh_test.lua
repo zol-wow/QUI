@@ -7,6 +7,12 @@ local function noop() end
 local inCombat = false
 local createdFrames = {}
 
+Constants = {
+    SpellCooldownConsts = {
+        GLOBAL_RECOVERY_CATEGORY = 133,
+    },
+}
+
 function InCombatLockdown() return inCombat end
 
 function wipe(tbl)
@@ -45,6 +51,7 @@ end
 
 local secretSpellID = { token = "secret" }
 local secretUnit = { token = "secret-unit" }
+local secretRecoveryCategory = { token = "secret-category" }
 
 local function makeIcon(name, entry)
     return {
@@ -104,9 +111,15 @@ local customCooldownIcon = makeIcon("customCooldown", {
     viewerType = "custom",
     _isCustomEntry = true,
 })
+local consumableIcon = makeIcon("consumable", {
+    id = 808,
+    kind = "cooldown",
+    type = "consumable",
+    viewerType = "essential",
+})
 
 local iconPools = {
-    essential = { spellIcon, otherSpellIcon, itemIcon, mirrorAuraIcon, idleIcon, customCooldownIcon },
+    essential = { spellIcon, otherSpellIcon, itemIcon, mirrorAuraIcon, idleIcon, customCooldownIcon, consumableIcon },
     buff = { auraIcon },
 }
 
@@ -135,6 +148,9 @@ local stableClears = 0
 local spellCacheInvalidations = {}
 local barAuraRefreshMarks = {}
 local customOverlayRefreshes = 0
+local trustedCooldownUpdates = {}
+local trustedBroadCooldownRefreshes = 0
+local forcedBroadCooldownRefreshes = 0
 -- Names the isDefinitivelySelfAuraIcon stub reports as PROVABLE player
 -- self-auras. Populated by the target-scope test.
 local selfAuraNames = {}
@@ -147,7 +163,9 @@ local module = assert(ns.CDMIconRuntimeRefresh, "runtime refresh module should b
 local controller = module.Create({
     isRuntimeEnabled = function() return true end,
     getIconPools = function() return iconPools end,
-    isSecretValue = function(value) return value == secretSpellID or value == secretUnit end,
+    isSecretValue = function(value)
+        return value == secretSpellID or value == secretUnit or value == secretRecoveryCategory
+    end,
     gcdSpellID = 61304,
     prepareBatch = function()
         return false, {}, {}, false
@@ -164,8 +182,17 @@ local controller = module.Create({
     applyResolvedCooldown = function(icon)
         applied[icon.name] = count(applied, icon.name) + 1
     end,
-    updateIconCooldown = function(icon)
+    updateIconCooldown = function(icon, trustIsOnGCD)
         runtimeUpdated[icon.name] = count(runtimeUpdated, icon.name) + 1
+        trustedCooldownUpdates[icon.name] = trustIsOnGCD == true
+    end,
+    updateCooldownOnly = function(trustIsOnGCD, forceResolveIdle)
+        if trustIsOnGCD == true then
+            trustedBroadCooldownRefreshes = trustedBroadCooldownRefreshes + 1
+        end
+        if forceResolveIdle == true then
+            forcedBroadCooldownRefreshes = forcedBroadCooldownRefreshes + 1
+        end
     end,
     applyAuraScopedResolvedCooldown = function(icon)
         auraApplied[icon.name] = count(auraApplied, icon.name) + 1
@@ -350,6 +377,7 @@ assert(#stackWriteStates == 2 and stackWriteStates[1] == true and stackWriteStat
 reset(applied)
 reset(runtimeUpdated)
 reset(visibilityUpdated)
+reset(trustedCooldownUpdates)
 reset(batches)
 endedBatches = 0
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 999999, nil, "refresh")
@@ -364,6 +392,34 @@ assert(applied.spell == nil, "matched per-spell cooldown refresh should not use 
 assert(visibilityUpdated.spell == 1, "matched per-spell cooldown refresh should update matching visibility")
 assert(stackWriteStates[1] == true and stackWriteStates[2] == false,
     "matched per-spell cooldown refresh should enable stack text writes around the full update")
+assert(trustedCooldownUpdates.spell == true,
+    "SPELL_UPDATE_COOLDOWN refreshes must mark isOnGCD as trusted")
+
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 101, nil, "refresh", nil, 133)
+assert(trustedBroadCooldownRefreshes == 1,
+    "GCD-category SPELL_UPDATE_COOLDOWN events must request one trusted broad refresh")
+assert(forcedBroadCooldownRefreshes == 1,
+    "GCD-category SPELL_UPDATE_COOLDOWN events must resolve idle icons")
+reset(auraApplied)
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 303, nil, "refresh", nil, 133)
+assert(auraApplied.aura == 1,
+    "global-recovery refreshes must update matching aura-backed icons")
+reset(runtimeUpdated)
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 999999, 999998, "refresh", 808, nil, 909)
+assert(runtimeUpdated.consumable == 1
+        and consumableIcon._spellEntry.itemID == 909
+        and consumableIcon._spellEntry._runtimeSpellID == 999999
+        and consumableIcon._spellEntry._runtimeBaseSpellID == 999998,
+    "cooldown category and item payloads must refresh category-backed entries")
+local schedulesBeforeOpaquePayload = #schedules
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 999999, nil, "refresh", secretRecoveryCategory, nil, 909)
+assert(#schedules == schedulesBeforeOpaquePayload + 1
+        and schedules[#schedules].reason == "refresh_all",
+    "opaque cooldown categories must use the safe broad refresh fallback")
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 101, nil, "refresh", nil, secretRecoveryCategory)
+assert(trustedBroadCooldownRefreshes == 3 and forcedBroadCooldownRefreshes == 3,
+    "opaque recovery categories must take the trusted broad refresh path: "
+    .. trustedBroadCooldownRefreshes .. "/" .. forcedBroadCooldownRefreshes)
 
 reset(applied)
 reset(runtimeUpdated)
@@ -652,11 +708,9 @@ reset(stackWriteStates)
 local schedulesBeforeCastStart = #schedules
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 101, nil, "cast_start")
 assert(#schedules == schedulesBeforeCastStart,
-    "cast start with a spell ID should stay on the targeted spell path")
-assert(runtimeUpdated.spell == 1, "cast start should update the matching spell icon")
-assert(runtimeUpdated.otherSpell == nil, "cast start should not update unrelated spell icons")
-assert(stackWriteStates[1] == true and stackWriteStates[2] == false,
-    "cast start targeted refresh should enable stack text writes")
+    "readable cast start should stay on the targeted spell path")
+assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == nil,
+    "readable cast start should update only the matching spell icon")
 
 reset(applied)
 reset(runtimeUpdated)
@@ -664,9 +718,9 @@ reset(stackWriteStates)
 local schedulesBeforeSpellcastStop = #schedules
 controller:Handle("UNIT_SPELLCAST_STOP", "player", "cast-guid", 101)
 assert(#schedules == schedulesBeforeSpellcastStop,
-    "player spellcast stop with a spell ID should stay on the targeted spell path")
-assert(runtimeUpdated.spell == 1, "player spellcast stop should update the matching spell icon")
-assert(runtimeUpdated.otherSpell == nil, "player spellcast stop should not update unrelated spell icons")
+    "readable player spellcast stop should stay on the targeted spell path")
+assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == nil,
+    "readable player spellcast stop should update only the matching spell icon")
 
 reset(applied)
 reset(runtimeUpdated)
@@ -687,9 +741,9 @@ reset(stackWriteStates)
 local schedulesBeforeSecretUnit = #schedules
 controller:Handle("UNIT_SPELLCAST_STOP", secretUnit, "cast-guid", 101)
 assert(#schedules == schedulesBeforeSecretUnit,
-    "secret unit spellcast stop with a spell ID should stay on the targeted spell path")
-assert(runtimeUpdated.spell == 1, "secret unit spellcast stop should still update the matching spell icon")
-assert(runtimeUpdated.otherSpell == nil, "secret unit spellcast stop should not update unrelated spell icons")
+    "secret unit token with a readable spell ID should stay on the targeted spell path")
+assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == nil,
+    "secret unit token should still update only the matching spell icon")
 
 reset(applied)
 reset(runtimeUpdated)
@@ -712,23 +766,14 @@ local schedulesBeforeCastSucceeded = #schedules
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 101, nil, "cast_succeeded")
 assert(recentCasts[1] == 101, "cast succeeded should record the player cast")
 assert(highlighterCasts[1] == 101, "cast succeeded should still notify the highlighter")
--- Design shift: cast_succeeded no longer runs a broad applyResolvedCooldown
--- sweep over every spell icon. UNIT_SPELLCAST_SUCCEEDED carries the spellID,
--- so the targeted updateIconCooldown via ApplySpellID is sufficient and
--- avoids ~3 MB/sec of churn during sustained combat.
 assert(applied.spell == nil,
-    "cast succeeded should NOT run a broad applyResolvedCooldown sweep")
-assert(runtimeUpdated.spell == 1,
-    "cast succeeded should run the targeted updateIconCooldown for the cast spell")
-assert(visibilityUpdated.spell == 1,
-    "cast succeeded should update visibility for the cast spell (folded into ApplySpellID)")
-assert(blingSynced.spell == 1,
-    "cast succeeded should sync bling for the cast spell (folded into ApplySpellID)")
-assert(stackWriteStates[1] == true and stackWriteStates[2] == false,
-    "cast succeeded targeted refresh should enable stack text writes")
+    "cast succeeded should not run the stackless cooldown-only path")
+assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == nil
+    and visibilityUpdated.spell == 1 and blingSynced.spell == 1,
+    "readable cast succeeded should update only the matching spell icon")
 assert(stackRequested == true, "cast succeeded should request a delayed stack text refresh")
 assert(#schedules == schedulesBeforeCastSucceeded,
-    "cast succeeded should not schedule a redundant broad cooldown refresh")
+    "readable cast succeeded should stay on the targeted spell path")
 
 reset(applied)
 reset(runtimeUpdated)

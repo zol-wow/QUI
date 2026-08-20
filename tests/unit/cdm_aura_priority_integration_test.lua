@@ -163,6 +163,7 @@ local function resolveState(e, spellID, category)
         containerKey = category or e.viewerType,
         useBuffSwipe = true,
         showGCDSwipe = true,
+        trustIsOnGCD = true,
     })
 end
 
