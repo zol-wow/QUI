@@ -2435,7 +2435,7 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
     local auraCountAppliedThisTick = false
     local preResolvedCooldownState = nil
 
-    local _runtimeSid = entry.spellID or entry.overrideSpellID or entry.id
+    local _runtimeSid = entry._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
     if _runtimeSid and not IsAuraEntry(entry) then
         local ovId = QueryOverrideSpell(_runtimeSid)
         if ovId then _runtimeSid = ovId end

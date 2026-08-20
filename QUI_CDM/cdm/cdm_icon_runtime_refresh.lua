@@ -571,10 +571,13 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
                 if entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs) then
-                    if normalizedCategory and normalizedItemID
-                        and entry and entry.type == "consumable"
-                        and spellIdentifierSetHas(callbacks, spellIDs, entry.id) then
+                    local entryCategory = normalizeSpellIdentifier(callbacks, entry and entry.id)
+                    if normalizedCategory and entryCategory == normalizedCategory
+                        and entry and entry.type == "consumable" then
                         entry.itemID = normalizedItemID
+                        entry._runtimeSpellID = normalizeSpellIdentifier(callbacks, eventSpellID)
+                            or normalizeSpellIdentifier(callbacks, eventBaseSpellID)
+                        entry._runtimeBaseSpellID = normalizeSpellIdentifier(callbacks, eventBaseSpellID)
                     end
                     if not batchStarted then
                         editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "spellID")

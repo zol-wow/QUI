@@ -221,7 +221,8 @@ local QueryChargeDuration = RuntimeQueries.QueryChargeDuration
 local QueryOverrideSpell  = RuntimeQueries.QueryOverrideSpell
 
 local function IsItemLikeEntry(entry)
-    return entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot")
+    return entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot"
+        or (entry.type == "consumable" and entry.itemID ~= nil))
 end
 
 local function QueryItemUseSpellID(itemID)
@@ -265,6 +266,8 @@ local function ResolveItemCooldownIdentity(entry)
             itemID = Sources.QueryInventoryItemID("player", slotID)
         end
         itemID = itemID or entry.itemID
+    elseif entry.type == "consumable" then
+        itemID = entry.itemID
     elseif entry.type == "macro" then
         local resolvedID, resolvedType = CDMResolvers.ResolveMacro(entry)
         if resolvedType == "item" then

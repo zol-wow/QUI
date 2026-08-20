@@ -405,8 +405,11 @@ controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 303, nil, "refresh", ni
 assert(auraApplied.aura == 1,
     "global-recovery refreshes must update matching aura-backed icons")
 reset(runtimeUpdated)
-controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 999999, nil, "refresh", 808, nil, 909)
-assert(runtimeUpdated.consumable == 1 and consumableIcon._spellEntry.itemID == 909,
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 999999, 999998, "refresh", 808, nil, 909)
+assert(runtimeUpdated.consumable == 1
+        and consumableIcon._spellEntry.itemID == 909
+        and consumableIcon._spellEntry._runtimeSpellID == 999999
+        and consumableIcon._spellEntry._runtimeBaseSpellID == 999998,
     "cooldown category and item payloads must refresh category-backed entries")
 local schedulesBeforeOpaquePayload = #schedules
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 999999, nil, "refresh", secretRecoveryCategory, nil, 909)
