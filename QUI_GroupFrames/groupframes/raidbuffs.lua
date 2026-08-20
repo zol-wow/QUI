@@ -968,14 +968,18 @@ UpdateDisplay = function()
     local isVertical = (growDir == "UP" or growDir == "DOWN" or growDir == "CENTER_V")
     local totalSize = (#missing * iconSize) + ((#missing - 1) * iconSpacing)
     local position = settings.position
-    local positionKey = position and table.concat({
-        position.point or "", position.relPoint or "", position.x or 0, position.y or 0,
-    }, ":") or ""
-    local layoutKey = table.concat({
-        #missing, iconSize, iconSpacing, growDir, settings.hideLabelBar and 1 or 0,
-        settings.labelFontSize or 12, positionKey,
-    }, "|")
-    local layoutChanged = layoutKey ~= lastLayoutKey
+    local layoutChanged = false
+    local layoutKey
+    if not inCombat then
+        local positionKey = position and table.concat({
+            position.point or "", position.relPoint or "", position.x or 0, position.y or 0,
+        }, ":") or ""
+        layoutKey = table.concat({
+            #missing, iconSize, iconSpacing, growDir, settings.hideLabelBar and 1 or 0,
+            settings.labelFontSize or 12, positionKey,
+        }, "|")
+        layoutChanged = layoutKey ~= lastLayoutKey
+    end
 
     if #buffIcons < #missing then
         for i = #buffIcons + 1, #missing do

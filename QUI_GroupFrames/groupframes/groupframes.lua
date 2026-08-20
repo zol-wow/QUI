@@ -4752,7 +4752,7 @@ function QUI_GF:RefreshAllFrames(_reason)
         local auraScanned = false
         for i = 1, #list do
             local frame = list[i]
-            if frame and frame:IsShown() and (not rosterRefresh or frame._quiRosterAuraDirty) then
+            if frame and frame:IsShown() then
                 if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
                 if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
                 if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
@@ -4765,9 +4765,9 @@ function QUI_GF:RefreshAllFrames(_reason)
                 end
                 UpdateFrame(frame)
 
-                if auraCacheAvailable then
+                if auraDirty and auraCacheAvailable then
                     GFA:RenderFrame(frame)
-                elseif not auraCacheAvailable and auraDirty and GFA and GFA.RefreshFrame then
+                elseif auraDirty and not auraCacheAvailable and GFA and GFA.RefreshFrame then
                     GFA:RefreshFrame(frame)
                 end
                 if not rosterRefresh and GFA and GFA.UpdateStripContainers then

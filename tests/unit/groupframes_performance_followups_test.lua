@@ -21,8 +21,10 @@ assert(groupframes:find("not _state.unitEventRegistered[unit]", 1, true),
 
 local raidbuffs = read("QUI_GroupFrames/groupframes/raidbuffs.lua")
 assert(raidbuffs:find("local lastLayoutKey", 1, true), "raid buffs should cache layout state")
-assert(raidbuffs:find("local layoutChanged = layoutKey ~= lastLayoutKey", 1, true),
+assert(raidbuffs:find("layoutChanged = layoutKey ~= lastLayoutKey", 1, true),
     "raid buffs should detect layout changes")
+assert(raidbuffs:find("if not inCombat then\n        local positionKey", 1, true),
+    "raid buffs should avoid layout-key allocations in combat")
 assert(raidbuffs:find("if not inCombat and layoutChanged then", 1, true),
     "raid buff icons should only re-anchor after layout changes")
 

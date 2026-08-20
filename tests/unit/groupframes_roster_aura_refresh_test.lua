@@ -17,10 +17,12 @@ check("roster refresh has a distinct path", refresh:find("local rosterRefresh = 
 check("roster refresh skips aura layout invalidation", refresh:find("if not rosterRefresh and GFA and GFA.InvalidateLayout", 1, true) ~= nil)
 check("roster aura work is dirty-gated", refresh:find("local auraDirty = not rosterRefresh or frame._quiRosterAuraDirty", 1, true) ~= nil)
 check("aura scans require dirty frames", refresh:find("local auraCacheRender = auraCacheAvailable and auraDirty", 1, true) ~= nil)
-check("roster refresh only visits dirty frames",
-    refresh:find("if frame and frame:IsShown() and (not rosterRefresh or frame._quiRosterAuraDirty) then", 1, true) ~= nil)
+check("roster refresh visits every shown frame",
+    refresh:find("if frame and frame:IsShown() then", 1, true) ~= nil)
+check("roster aura rendering remains dirty-gated",
+    refresh:find("if auraDirty and auraCacheAvailable then", 1, true) ~= nil)
 check("roster refresh renders cached aura elements for dirty frames",
-    refresh:find("if auraCacheAvailable then\n                    GFA:RenderFrame(frame)", 1, true) ~= nil)
+    refresh:find("if auraDirty and auraCacheAvailable then\n                    GFA:RenderFrame(frame)", 1, true) ~= nil)
 check("roster refresh does not rebuild assigned aura strips twice",
     refresh:find("if not rosterRefresh and GFA and GFA.UpdateStripContainers then", 1, true) ~= nil)
 check("roster dirty state is cleared after refresh", refresh:find("frame._quiRosterAuraDirty = nil", 1, true) ~= nil)
