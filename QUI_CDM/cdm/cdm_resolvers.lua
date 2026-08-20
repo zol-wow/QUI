@@ -141,7 +141,7 @@ _runtimeFrame:SetScript("OnEvent", function(_, evt, arg1, arg2, arg3, arg4, arg5
     end
 
     if evt == "SPELL_UPDATE_COOLDOWN" then
-        publish("CDM:COOLDOWN_CHANGED", arg1, arg2, "refresh")
+        publish("CDM:COOLDOWN_CHANGED", arg1, arg2, "refresh", arg3, arg4, arg5)
     elseif evt == "SPELL_UPDATE_CHARGES" or evt == "SPELL_UPDATE_USES" then
         publish("CDM:CHARGES_CHANGED", arg1, arg2)
     elseif evt == "UNIT_SPELLCAST_START" then
@@ -436,7 +436,8 @@ local function GetCooldownInfoBoolean(info, key)
     return DecodePotentialSecretBoolean(value)
 end
 
-local function GetCurrentIsOnGCD(info)
+local function GetCurrentIsOnGCD(info, trustField)
+    if trustField ~= true then return nil end
     return GetCooldownInfoBoolean(info, "isOnGCD")
 end
 
@@ -1032,6 +1033,7 @@ local function ClearCooldownStateContext(context)
     context.useBuffSwipe = nil
     context.skipAuraPhase = nil
     context.showGCDSwipe = nil
+    context.trustIsOnGCD = nil
     context.lastChargeRuntimeSpellID = nil
 end
 
@@ -1072,6 +1074,7 @@ function CDMResolvers.BuildCooldownStateContext(owner, entry, runtimeSpellID, op
     context.useBuffSwipe = options and options.useBuffSwipe
     context.skipAuraPhase = options and options.skipAuraPhase == true
     context.showGCDSwipe = options and options.showGCDSwipe == true
+    context.trustIsOnGCD = options and options.trustIsOnGCD == true
     context.lastChargeRuntimeSpellID = options and options.lastChargeRuntimeSpellID
     return context
 end
@@ -1898,10 +1901,14 @@ local function ResolveCooldownStateCore(context)
         return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
     end
 
+    local trustIsOnGCD = context.trustIsOnGCD == true
     local gcdCdInfo = QueryCooldown(sid)
-    local currentOnGCD = GetCurrentIsOnGCD(gcdCdInfo)
+    local currentOnGCD = GetCurrentIsOnGCD(gcdCdInfo, trustIsOnGCD)
+    local preserveGCDOnly = not trustIsOnGCD
+        and context.owner
+        and context.owner._resolvedCooldownMode == "gcd-only"
     local gcdDurObj
-    if currentOnGCD == true and context.showGCDSwipe == true then
+    if trustIsOnGCD and currentOnGCD == true then
         gcdDurObj = QueryGCDDurationObject(sid)
     end
     MemAuditProfilerMark("CDM_rsGCDProbe")
@@ -1924,12 +1931,24 @@ local function ResolveCooldownStateCore(context)
     do
         local cdInfo = gcdCdInfo or QueryCooldown(sid)
         local cdInfoActive = IsCooldownInfoActive(cdInfo)
-        if cdInfoActive ~= false then
-            local cdInfoOnGCD = GetCurrentIsOnGCD(cdInfo)
+        local cdInfoOnGCD = GetCurrentIsOnGCD(cdInfo, trustIsOnGCD)
+        if cdInfoActive == true or (cdInfoActive == nil and cdInfoOnGCD ~= true) then
             local durObj = QueryDuration(sid)
             state.cooldownInfoActive = cdInfoActive
             state.cooldownInfoOnGCD = cdInfoOnGCD
-            if durObj then
+            if preserveGCDOnly then
+                local gcdDur = QueryGCDDurationObject(sid)
+                if gcdDur then
+                    state.mode = "gcd-only"
+                    SetCooldownStateActivity(state, true)
+                    state.durObj = gcdDur
+                    state.sourceID = sid
+                    state.spellID = sid
+                    MemAuditProfilerMark("CDM_rsPreserveGCD")
+                    return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
+                end
+            end
+            if durObj and cdInfoOnGCD ~= true then
                 state.mode = "cooldown"
                 SetCooldownStateActivity(state, true)
                 state.durObj = durObj

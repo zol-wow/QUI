@@ -20,11 +20,13 @@ local cooldownDur = { token = "cooldown-dur" }
 local overrideCooldownDur = { token = "override-cooldown-dur" }
 local chargeDur = { token = "charge-dur" }
 local gcdDur = { token = "gcd-dur" }
+local gcdDurationIgnoringGCD = { token = "gcd-dur-ignore-gcd" }
 local itemAuraDur = { token = "item-aura-dur" }
 local secretItemStart = { token = "secret-item-start" }
 local secretItemDuration = { token = "secret-item-duration" }
 local secretCooldownStart = { token = "secret-cooldown-start" }
 local secretCooldownDuration = { token = "secret-cooldown-duration" }
+local secretCooldownActive = { token = "secret-cooldown-active" }
 local secretChargeZero = { token = "secret-current-charges", value = 0 }
 local secretChargeOne = { token = "secret-current-charges", value = 1 }
 local secretChargeUnknown = { token = "secret-current-charges", value = "unknown" }
@@ -42,6 +44,7 @@ function issecretvalue(value)
         or value == secretItemDuration
         or value == secretCooldownStart
         or value == secretCooldownDuration
+        or value == secretCooldownActive
 end
 
 Enum = { LuaCurveType = { Step = "Step" } }
@@ -239,10 +242,13 @@ local ns = {
             if spellID == 70002 then
                 return {
                     isActive = true,
-                    isOnGCD = true,
+                    isOnGCD = false,
                     startTime = secretCooldownStart,
                     duration = secretCooldownDuration,
                 }
+            end
+            if spellID == 70003 then
+                return { isActive = secretCooldownActive, isOnGCD = true }
             end
             if spellID == 91004 and itemUseSpellCooldownActive then
                 return { isActive = true, isOnGCD = false }
@@ -250,11 +256,14 @@ local ns = {
             return nil
         end,
         QuerySpellCooldownDuration = function(spellID, ignoreGCD)
-            if spellID == 70001 and ignoreGCD == false then
-                return gcdDur
+            if spellID == 70001 then
+                return ignoreGCD == true and gcdDurationIgnoringGCD or gcdDur
             end
             if spellID == 70002 then
                 return ignoreGCD == true and cooldownDur or gcdDur
+            end
+            if spellID == 70003 then
+                return gcdDur
             end
             -- 60011: a GCD duration is available (a GCD swipe would otherwise be
             -- drawn) so the test proves the active recharge wins over it.
@@ -501,7 +510,14 @@ loadChunk("QUI_CDM/cdm/cdm_runtime_queries.lua", "cdm_runtime_queries.lua")("QUI
 loadChunk("QUI_CDM/cdm/cdm_resolvers.lua", "cdm_resolvers.lua")("QUI", ns)
 
 local resolvers = assert(ns.CDMResolvers, "CDMResolvers should be exported")
-local resolve = assert(resolvers.ResolveCooldownState, "ResolveCooldownState should be exported")
+local resolveState = assert(resolvers.ResolveCooldownState, "ResolveCooldownState should be exported")
+local function resolveUntrusted(context)
+    return resolveState(context)
+end
+local function resolve(context)
+    context.trustIsOnGCD = true
+    return resolveState(context)
+end
 
 local function storeResolvedRuntimeState(icon, resolvedState)
     icon._cdmRuntimeState = {
@@ -513,10 +529,8 @@ local function storeResolvedRuntimeState(icon, resolvedState)
     }
 end
 
--- isOnGCD is now read directly off cdInfo (NeverSecret) by the resolver, so a
--- spell's GCD state comes from the cdInfo QuerySpellCooldown returns rather than
--- a primed trusted-GCD snapshot. The mocked source for the GCD spell below
--- already reports isOnGCD=true, so this is a no-op kept only to document intent.
+-- These resolver calls model the SPELL_UPDATE_COOLDOWN event path, which is the
+-- only path allowed to trust SpellCooldownInfo.isOnGCD.
 local function setGCDState() end
 
 local function cooldownEntry(spellID)
@@ -723,6 +737,19 @@ assert(state.gcdOnly == true, "GCD-only state should publish gcdOnly")
 assert(state.isGCDOnly == true, "GCD-only state should publish isGCDOnly")
 assert(state.isRealCooldownMode == false, "GCD-only state should not publish real cooldown mode")
 
+state = resolveUntrusted({
+    owner = { _resolvedCooldownMode = "gcd-only" },
+    entry = cooldownEntry(70001),
+    runtimeSpellID = 70001,
+    containerKey = "essential",
+    useBuffSwipe = false,
+    showGCDSwipe = true,
+})
+assert(state.mode == "gcd-only",
+    "untrusted refresh must preserve an active trusted GCD-only state")
+assert(state.isOnCooldown == false,
+    "preserved GCD-only state must remain excluded from cooldown-only filtering")
+
 state = resolve({
     entry = cooldownEntry(70002),
     runtimeSpellID = 70002,
@@ -731,10 +758,21 @@ state = resolve({
     showGCDSwipe = true,
 })
 
-assert(state.mode == "cooldown", "a real ignore-GCD duration should outrank isOnGCD")
+assert(state.mode == "cooldown", "a real cooldown with isOnGCD=false should resolve as cooldown")
 assert(state.durObj == cooldownDur, "real cooldown should bind its ignore-GCD DurationObject")
 assert(state.cooldownInfo == nil, "resolved state must not retain SpellCooldownInfo")
 assert(state.start == nil and state.duration == nil, "secret cooldown timing must not enter resolved state")
+state = resolve({
+    entry = cooldownEntry(70003),
+    runtimeSpellID = 70003,
+    containerKey = "essential",
+    useBuffSwipe = false,
+    showGCDSwipe = true,
+})
+assert(state.mode == "gcd-only",
+    "unknown active state on GCD must not become a real cooldown")
+assert(state.isOnCooldown == false,
+    "GCD-only state must not pass show-only-on-cooldown filtering")
 local secretField, wasSecret = resolvers.GetCooldownInfoField({ startTime = secretCooldownStart }, "startTime")
 assert(secretField == nil and wasSecret == true, "secret cooldown fields must be discarded at read time")
 

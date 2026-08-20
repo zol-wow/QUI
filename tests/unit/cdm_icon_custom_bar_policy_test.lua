@@ -197,6 +197,17 @@ assert(visible.renderVisible == true,
 assert(visible.isUsable == true,
     "known spells on cooldown should be considered usable for custom-bar visibility")
 
+cooldownStates[101] = {
+    gcdOnly = true,
+    isOnCooldown = true,
+    rechargeActive = true,
+    hasCharges = false,
+    hasChargesRemaining = false,
+}
+visible = policy:ComputeVisibility(icon, icon._spellEntry, trackerSettings.custom, 123)
+assert(visible.layoutVisible == false,
+    "GCD-only activity should not pass show-only-on-cooldown visibility")
+
 knownSpells[102] = false
 cooldownStates[102] = { isOnCooldown = false }
 local unusable = policy:ResolveUsability({ type = "spell", id = 102, spellID = 102 }, trackerSettings.custom, cooldownStates[102])

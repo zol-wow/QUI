@@ -170,7 +170,7 @@ assert(shouldPlace({}, {}, {}, false) == false,
 
 local updateSource = sliceBetween(
     icons,
-    "UpdateIconCooldown = function(icon)",
+    "UpdateIconCooldown = function(icon, trustIsOnGCD)",
     "local function IsCustomBarEntryUsableOnCurrentClass(entry, viewerType)")
 updateSource = updateSource:gsub("^UpdateIconCooldown =", "return", 1)
 local ownedUpdates = 0

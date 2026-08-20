@@ -911,7 +911,8 @@ function CDMIconVisibilityPolicy.Create(callbacks)
             local cooldownState = callbacks.resolveCooldownActivityState
                 and callbacks.resolveCooldownActivityState(icon, entry, containerDB)
                 or {}
-            local effectiveOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
+            local effectiveOnCD = cooldownState.gcdOnly ~= true
+                and (cooldownState.isOnCooldown or cooldownState.rechargeActive)
 
             if containerDB.showOnlyOnCooldown and not effectiveOnCD then
                 return true
@@ -1729,7 +1730,8 @@ function CDMIconCustomBarPolicy.Create(callbacks)
 
         if layoutVisible then
             if mode == "onCooldown" then
-                layoutVisible = cooldown.isOnCooldown or cooldown.rechargeActive
+                layoutVisible = cooldown.gcdOnly ~= true
+                    and (cooldown.isOnCooldown or cooldown.rechargeActive)
             elseif mode == "active" then
                 layoutVisible = isActive
             elseif mode == "offCooldown" then
