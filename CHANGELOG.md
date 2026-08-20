@@ -4,6 +4,26 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.1-beta6 - 2026-08-20
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Action-bar ping, combat tooltip, Objective Tracker, roster, and Raid Buffs
+refresh fixes.
+
+### Fixed
+
+- **Action-bar pings preserve sender formatting.** Ping messages now render the
+  sender and role text through Blizzard's expected chat format.
+- **Roster-driven group-frame state stays current.** Roster changes refresh
+  missing Raid Buffs, click-cast state, targeted spells, and aura displays
+  without stale indicators or unnecessary combat allocations.
+- **Combat tooltip content remains safely scoped.** Custom tooltip content is
+  kept out of combat while visual skinning continues to refresh.
+- **Objective Tracker and UI-hider updates recover after roster changes.**
+  Widget pools and hidden-frame state now catch up when the relevant UI changes.
+
 ## v5.2.1-beta5 - 2026-08-19
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
