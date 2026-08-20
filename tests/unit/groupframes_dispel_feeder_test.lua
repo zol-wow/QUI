@@ -203,6 +203,20 @@ check("glow art styled with the configured color",
 check("still no script handlers after restyle", scriptInstalls == 0)
 
 ----------------------------------------------------------------------------
+-- (2b) Life gate: dead/ghost/nonexistent units wear no dispel visuals
+----------------------------------------------------------------------------
+check("container shown while configured and alive", c._shown == true)
+F.SetLifeGate(frame, false)
+check("life gate hides the container on a dead unit", c._shown == false)
+complete = F.Sync(frame, "party1", true, settings)
+check("re-sync while dead keeps the container hidden",
+    complete == true and c._shown == false)
+F.SetLifeGate(frame, true)
+check("life gate re-shows the container after resurrection", c._shown == true)
+F.SetLifeGate(MakeHostFrame(), false)
+check("life gate on a frame without a feeder is a safe no-op", true)
+
+----------------------------------------------------------------------------
 -- (3) Feature fully off: park everything, disable the container
 ----------------------------------------------------------------------------
 settings.dispelOverlay.enabled = false
@@ -214,6 +228,9 @@ check("visual slot parked when the feature is off", isParked(c._cf.visual))
 check("glow slot parked when the feature is off", isParked(c._cf.glow))
 check("container disabled and hidden when the feature is off",
     c._enabled == false and c._shown == false)
+F.SetLifeGate(frame, false)
+F.SetLifeGate(frame, true)
+check("life gate cannot re-show a config-disabled container", c._shown == false)
 check("legacy gate stays armed while a feeder exists", frame._quiDispelFeederActive == true)
 
 ----------------------------------------------------------------------------

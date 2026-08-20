@@ -772,6 +772,8 @@ local function UpdateHealth(frame)
     local unit = QUI_GF.GetFrameUnit(frame)
     if not unit then return end
 
+    local Feeder = ns.QUI_GFDispelFeeder
+
     if not UnitExists(unit) then
         if frame.healthBar then frame.healthBar:SetValue(0) end
         local Render = ns.QUI_GroupFrameAuraRender
@@ -779,12 +781,19 @@ local function UpdateHealth(frame)
             Render:SyncHealthBarTint(frame, 0, false)
         end
         if frame.healthText then frame.healthText:SetText("") end
+        if Feeder and Feeder.SetLifeGate then Feeder.SetLifeGate(frame, false) end
         return
     end
 
     UpdateDarkModeVisuals(frame)
 
     local isConnected, isDeadOrGhost, isGhost = GetUnitLifeState(unit)
+
+    -- Legacy dispel-overlay parity: dead/ghost units wear no dispel visuals.
+    -- Aura presence itself stays engine-driven inside the feeder slots.
+    if Feeder and Feeder.SetLifeGate then
+        Feeder.SetLifeGate(frame, not isDeadOrGhost)
+    end
 
     if frame.healthBar then
         local healthPct = 0

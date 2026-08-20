@@ -236,6 +236,30 @@ local function EnsureSlot(state, container, key, filter, cf)
     return true
 end
 
+-- Container visibility = configured AND alive. Aura presence stays fully
+-- engine-driven inside the slots; this only mirrors the legacy rule that a
+-- nonexistent or dead/ghost unit wears no dispel visuals. Show/Hide touch the
+-- QUI-owned container, not the slot subtree, so they are safe under secrecy.
+local function ApplyShown(state)
+    if state.configShown and state.alive ~= false then
+        state.container:Show()
+    else
+        state.container:Hide()
+    end
+end
+
+-- Life-state gate, driven from the health/connection update path in
+-- groupframes.lua (UpdateHealth), which already normalizes secret unit flags
+-- fail-open toward alive.
+function F.SetLifeGate(frame, alive)
+    local state = frame and frame._quiDispelFeeder
+    if not state then return end
+    alive = alive == true
+    if state.alive == alive then return end
+    state.alive = alive
+    ApplyShown(state)
+end
+
 -- Synchronize the feeder with the current healer settings. Returns true when
 -- fully applied; false means structural or styling work is still pending and
 -- the caller must requeue (QueueRegenWork polls until out of combat/secrecy).
@@ -260,7 +284,7 @@ function F.Sync(frame, unit, allowCreate, healerSettings)
         if not container then return false end
         container:SetSize(1, 1)
         container:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-        state = { container = container, slots = {} }
+        state = { container = container, slots = {}, alive = true }
         frame._quiDispelFeeder = state
     end
 
@@ -272,7 +296,8 @@ function F.Sync(frame, unit, allowCreate, healerSettings)
         SetSlotFilters(state, container, "visual", BY_ME_FILTER, PARK_FILTER)
         SetSlotFilters(state, container, "glow", BY_ME_FILTER, PARK_FILTER)
         container:SetEnabled(false)
-        container:Hide()
+        state.configShown = false
+        ApplyShown(state)
         frame._quiDispelFeederActive = true
         return true
     end
@@ -324,7 +349,8 @@ function F.Sync(frame, unit, allowCreate, healerSettings)
     end
 
     container:SetEnabled(true)
-    container:Show()
+    state.configShown = true
+    ApplyShown(state)
     frame._quiDispelFeederActive = true
     return complete
 end
