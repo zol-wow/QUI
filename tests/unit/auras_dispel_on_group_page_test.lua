@@ -46,7 +46,7 @@ local order = {}
 for id in tile:gmatch('id = "(auras%a+)"') do
     order[#order + 1] = id
 end
-local EXPECTED = { "aurasWizard", "aurasGroup", "aurasUnit", "aurasActionBar", "aurasNameplate", "aurasDisplays" }
+local EXPECTED = { "aurasWizard", "aurasGroup", "aurasUnit", "aurasActionBar", "aurasNameplate", "aurasDisplays", "aurasIncoming" }
 local orderOk = #order == #EXPECTED
 if orderOk then
     for i, id in ipairs(EXPECTED) do
