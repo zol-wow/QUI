@@ -35,9 +35,12 @@ local PARK_FILTER = { maxDuration = 0 }
 -- player's raid can dispel" — and would light non-actionable overlays.
 local BY_ME_FILTER = "HARMFUL|RAID"
 local ALL_TYPED_FILTER = "HARMFUL"
+-- Enrage rides along like the legacy _dispel.ReadableType did (it renders in
+-- the Bleed color via the map alias below).
 local ALL_TYPED_CF = {
     includeDispelTypes = {
         Magic = true, Curse = true, Disease = true, Poison = true, Bleed = true,
+        Enrage = true,
     },
 }
 

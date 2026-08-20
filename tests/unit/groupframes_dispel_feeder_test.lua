@@ -182,11 +182,11 @@ complete = F.Sync(frame, "party1", true, settings)
 check("re-sync completes", complete == true)
 check("ALL_TYPED swaps the visual filter to bare HARMFUL", c._filters.visual == "HARMFUL")
 local cf = c._cf.visual
-check("ALL_TYPED includes the five dispel types",
+check("ALL_TYPED includes the five dispel types plus Enrage",
     type(cf) == "table" and type(cf.includeDispelTypes) == "table"
         and cf.includeDispelTypes.Magic and cf.includeDispelTypes.Curse
         and cf.includeDispelTypes.Disease and cf.includeDispelTypes.Poison
-        and cf.includeDispelTypes.Bleed)
+        and cf.includeDispelTypes.Bleed and cf.includeDispelTypes.Enrage)
 check("glow slot unparks when cleanse glow turns on", c._cf.glow == nil)
 
 iconRegs = 0
