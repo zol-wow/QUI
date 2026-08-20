@@ -68,10 +68,8 @@ end
 
 local function PixelSize(frame)
     local QUICore = ns.Addon
-    if QUICore and QUICore.GetPixelSize then
-        local ok, px = pcall(QUICore.GetPixelSize, QUICore, frame)
-        if ok and type(px) == "number" and px > 0 then return px end
-    end
+    local px = QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(frame)
+    if type(px) == "number" and px > 0 then return px end
     return 1
 end
 
