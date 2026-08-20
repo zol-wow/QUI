@@ -18,7 +18,10 @@ end
 local UPDATE_COOLDOWN = "cooldown"
 local UPDATE_FULL = "full"
 
-local function IsGlobalRecoveryCategory(category)
+local function IsGlobalRecoveryCategory(category, isSecretValue)
+    if isSecretValue and isSecretValue(category) then
+        return false, true
+    end
     local spellCooldownConsts = _G.Constants and _G.Constants.SpellCooldownConsts
     return spellCooldownConsts
         and category == spellCooldownConsts.GLOBAL_RECOVERY_CATEGORY
@@ -1180,7 +1183,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         elseif kind == "scanner_spell" then
             controller:ApplySpellScope()
         elseif kind == "refresh" then
-            if IsGlobalRecoveryCategory(startRecoveryCategory)
+            local isGlobalRecovery, isOpaqueCategory = IsGlobalRecoveryCategory(
+                startRecoveryCategory, callbacks.isSecretValue)
+            if (isGlobalRecovery or isOpaqueCategory)
                 and callbacks.updateCooldownOnly then
                 local comparableSpellID = normalizeSpellIdentifier(callbacks, spellID) ~= nil
                 if comparableSpellID then

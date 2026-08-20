@@ -51,6 +51,7 @@ end
 
 local secretSpellID = { token = "secret" }
 local secretUnit = { token = "secret-unit" }
+local secretRecoveryCategory = { token = "secret-category" }
 
 local function makeIcon(name, entry)
     return {
@@ -156,7 +157,9 @@ local module = assert(ns.CDMIconRuntimeRefresh, "runtime refresh module should b
 local controller = module.Create({
     isRuntimeEnabled = function() return true end,
     getIconPools = function() return iconPools end,
-    isSecretValue = function(value) return value == secretSpellID or value == secretUnit end,
+    isSecretValue = function(value)
+        return value == secretSpellID or value == secretUnit or value == secretRecoveryCategory
+    end,
     gcdSpellID = 61304,
     prepareBatch = function()
         return false, {}, {}, false
@@ -395,6 +398,10 @@ reset(auraApplied)
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 303, nil, "refresh", nil, 133)
 assert(auraApplied.aura == 1,
     "global-recovery refreshes must update matching aura-backed icons")
+controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 101, nil, "refresh", nil, secretRecoveryCategory)
+assert(trustedBroadCooldownRefreshes == 3 and forcedBroadCooldownRefreshes == 3,
+    "opaque recovery categories must take the trusted broad refresh path: "
+    .. trustedBroadCooldownRefreshes .. "/" .. forcedBroadCooldownRefreshes)
 
 reset(applied)
 reset(runtimeUpdated)
