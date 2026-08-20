@@ -805,6 +805,9 @@ function InstallSecureActionFlagRefresh(btn)
         local action = self:GetAttribute("action")
         local gseButton = self:GetAttribute("gse-button")
         local pressAndHold = false
+        local actionType = action and GetActionInfo(action)
+
+        self:SetAttribute("ping-receiver", actionType and true or nil)
 
         if gseButton then
             -- When useOnKeyDown=true, the press fires the click → forwards to the

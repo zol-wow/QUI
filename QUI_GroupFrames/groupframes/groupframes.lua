@@ -66,6 +66,7 @@ local _state = {
     raidRosterSortCache = {},
     unitEventRegistrationEnabled = false,
     unitEventFrames = {},
+    unitEventRegistered = {},
     rangeListenerFrames = {},
     healAbsorbThrottle = {},
     healthThrottle = {},
@@ -2009,8 +2010,9 @@ local function CollectHeaderUnits(header)
 end
 
 local function RebuildUnitFrameMap()
-    if _state.UnregisterAllUnitEventFrames then
-        _state.UnregisterAllUnitEventFrames()
+    local previousUnits = {}
+    for unit in pairs(QUI_GF.unitFrameMap) do
+        previousUnits[unit] = true
     end
     wipe(QUI_GF.unitFrameMap)
 
@@ -2028,7 +2030,7 @@ local function RebuildUnitFrameMap()
     CollectHeaderUnits(QUI_GF.spotlightHeader)
 
     if _state.RefreshUnitEventRegistrations then
-        _state.RefreshUnitEventRegistrations()
+        _state.RefreshUnitEventRegistrations(previousUnits)
     end
 end
 
@@ -3625,7 +3627,7 @@ _state.EnsureCombatVisibleRoots = function()
     end
 end
 
-local function UpdateHeaderVisibility()
+local function UpdateHeaderVisibility(skipDeferredRefresh)
     if InCombatLockdown() and not _state.inInitSafeWindow then
         _state.EnsureCombatVisibleRoots()
         _pending.visibilityUpdate = true
@@ -3705,10 +3707,11 @@ local function UpdateHeaderVisibility()
         if IsInRaid() then
             QUI_GF.spotlightContainer:Show()
             if QUI_GF.spotlightHeader then QUI_GF.spotlightHeader:Show() end
+            local refreshReason = skipDeferredRefresh and "roster" or nil
             C_Timer.After(0.2, function()
                 if InitSpotlightChildren(QUI_GF.spotlightHeader) > 0 then
                     RebuildUnitFrameMap()
-                    QUI_GF:RefreshAllFrames()
+                    QUI_GF:RefreshAllFrames(refreshReason)
                 end
             end)
         else
@@ -3724,10 +3727,15 @@ local function UpdateHeaderVisibility()
         end
     end
 
+    if skipDeferredRefresh then
+        ApplyChildFrameLayout()
+    end
     UpdateHeaderSizes()
     UpdateAnchorFrames()
 
     _pending.initSafe = false
+
+    if skipDeferredRefresh then return end
 
     C_Timer.After(0, function()
         ApplyChildFrameLayout()
@@ -4152,7 +4160,7 @@ local function GRU_DeferredWork()
     wipe(healPredThrottle)
     local GFA = ns.QUI_GroupFrameAuras
     if GFA and GFA.PruneAuraCache then GFA.PruneAuraCache() end
-    UpdateFrameScaling(true)
+    UpdateHeaderSizes()
     QUI_GF:RefreshAllFrames("roster")
     StartRangeCheck()
     local PartyTargets = ns.QUI_GroupFramePartyTargets
@@ -4161,9 +4169,8 @@ end
 
 gruCoalesceFrame:SetScript("OnUpdate", function(self)
     self:Hide()
-    UpdateHeaderVisibility()
-    UpdateFrameScaling(true)
-    UpdateHeaderSizes()
+    UpdateHeaderVisibility(true)
+    UpdateFrameScaling()
     UpdateSelectiveEvents()
     if not _state.gruDeferredPending then
         _state.gruDeferredPending = true
@@ -4562,6 +4569,7 @@ function _state.RegisterUnitEventsForUnit(unit)
         _state.rangeListenerFrames[unit] = rangeListener
     end
     rangeListener:RegisterUnitEvent("UNIT_IN_RANGE_UPDATE", unit)
+    _state.unitEventRegistered[unit] = true
 end
 
 function _state.UnregisterUnitEventsForUnit(unit)
@@ -4570,6 +4578,7 @@ function _state.UnregisterUnitEventsForUnit(unit)
     if rangeListener then
         rangeListener:UnregisterEvent("UNIT_IN_RANGE_UPDATE")
     end
+    _state.unitEventRegistered[unit] = nil
     if not frame then return end
 
     for i = 1, #_state.unitEventList do
@@ -4583,7 +4592,7 @@ function _state.UnregisterAllUnitEventFrames()
     end
 end
 
-function _state.RefreshUnitEventRegistrations()
+function _state.RefreshUnitEventRegistrations(previousUnits)
     if not _state.unitEventRegistrationEnabled then return end
 
     for unit in pairs(_state.unitEventFrames) do
@@ -4592,7 +4601,9 @@ function _state.RefreshUnitEventRegistrations()
         end
     end
     for unit in pairs(QUI_GF.unitFrameMap) do
-        _state.RegisterUnitEventsForUnit(unit)
+        if not previousUnits or not previousUnits[unit] or not _state.unitEventRegistered[unit] then
+            _state.RegisterUnitEventsForUnit(unit)
+        end
     end
 end
 
@@ -4754,12 +4765,12 @@ function QUI_GF:RefreshAllFrames(_reason)
                 end
                 UpdateFrame(frame)
 
-                if auraCacheAvailable then
+                if auraDirty and auraCacheAvailable then
                     GFA:RenderFrame(frame)
-                elseif not auraCacheAvailable and auraDirty and GFA and GFA.RefreshFrame then
+                elseif auraDirty and not auraCacheAvailable and GFA and GFA.RefreshFrame then
                     GFA:RefreshFrame(frame)
                 end
-                if GFA and GFA.UpdateStripContainers then
+                if not rosterRefresh and GFA and GFA.UpdateStripContainers then
                     GFA.UpdateStripContainers(frame)
                 end
                 if rosterRefresh then

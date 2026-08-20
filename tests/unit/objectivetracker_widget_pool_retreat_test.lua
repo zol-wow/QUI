@@ -26,6 +26,9 @@ assert(src:find("local function IsWidgetPoolBlock", 1, true),
 assert(src:find("ScenarioObjectiveTracker = true", 1, true)
     and src:find("UIWidgetObjectiveTracker = true", 1, true),
     "objectivetracker.lua must list both widget-pool trackers")
+assert(not src:find('"ZONE_CHANGED_NEW_AREA"', 1, true)
+    and not src:find('"ZONE_CHANGED_INDOORS"', 1, true),
+    "ObjectiveTracker must use Blizzard's zone-driven dirty update instead of scheduling a duplicate layout pass")
 
 local heightChunk = table.concat({
     "local _G, Helpers = ...",
