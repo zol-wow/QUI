@@ -3314,6 +3314,20 @@ local defaults = {
             currencyShowWeekly = true,
         },
 
+        incomingCasts = {
+            enabled = false,
+            iconSize = 40,
+            maxIcons = 5,
+            spacing = 4,
+            growDirection = "CENTER",
+            showSwipe = true,
+            reverseSwipe = true,
+            showCooldownText = false,
+            borderSize = 1,
+            borderColorSource = "inherit",
+            borderColor = { 0, 0, 0, 1 },
+        },
+
         cooldownSwipe = {
             showBuffSwipe = false,
             showCooldownIconAuraPhase = true,
@@ -4262,6 +4276,13 @@ local defaults = {
             preyTracker = {
                 point = "CENTER", parent = "screen", relative = "TOP",
                 offsetX = 0, offsetY = -250,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = true,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            incomingCasts = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -180,
                 sizeStable = true, autoWidth = false, autoHeight = false,
                 hideWithParent = false, keepInPlace = true,
                 widthAdjust = 0, heightAdjust = 0,

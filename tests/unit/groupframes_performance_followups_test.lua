@@ -29,11 +29,11 @@ assert(raidbuffs:find("if not inCombat and layoutChanged then", 1, true),
     "raid buff icons should only re-anchor after layout changes")
 
 local targeted = read("QUI_GroupFrames/groupframes/groupframes_targeted_spells.lua")
-local rosterStart = assert(targeted:find("local function HandleRosterChanged()", 1, true))
-local rosterEnd = assert(targeted:find("local function HandleWorldChanged", rosterStart, true))
+local rosterStart = assert(targeted:find("local function HandleContextChanged()", 1, true))
+local rosterEnd = assert(targeted:find("local eventFrame = CreateFrame", rosterStart, true))
 local roster = targeted:sub(rosterStart, rosterEnd)
 assert(not roster:find("IndexRoster()", 1, true), "targeted roster handling should not index twice")
-assert(roster:find("ClearAllCasts()", 1, true), "targeted roster handling should clear stale casts")
+assert(roster:find("ClearAllMarkers()", 1, true), "targeted roster handling should clear stale markers")
 assert(roster:find("RefreshRuntimeState()", 1, true), "targeted roster handling should refresh runtime state")
 
 local clickcast = read("QUI_GroupFrames/groupframes/groupframes_clickcast.lua")
