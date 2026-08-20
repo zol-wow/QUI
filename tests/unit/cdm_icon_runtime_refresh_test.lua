@@ -143,6 +143,7 @@ local barAuraRefreshMarks = {}
 local customOverlayRefreshes = 0
 local trustedCooldownUpdates = {}
 local trustedBroadCooldownRefreshes = 0
+local forcedBroadCooldownRefreshes = 0
 -- Names the isDefinitivelySelfAuraIcon stub reports as PROVABLE player
 -- self-auras. Populated by the target-scope test.
 local selfAuraNames = {}
@@ -176,9 +177,12 @@ local controller = module.Create({
         runtimeUpdated[icon.name] = count(runtimeUpdated, icon.name) + 1
         trustedCooldownUpdates[icon.name] = trustIsOnGCD == true
     end,
-    updateCooldownOnly = function(trustIsOnGCD)
+    updateCooldownOnly = function(trustIsOnGCD, forceResolveIdle)
         if trustIsOnGCD == true then
             trustedBroadCooldownRefreshes = trustedBroadCooldownRefreshes + 1
+        end
+        if forceResolveIdle == true then
+            forcedBroadCooldownRefreshes = forcedBroadCooldownRefreshes + 1
         end
     end,
     applyAuraScopedResolvedCooldown = function(icon)
@@ -385,6 +389,8 @@ assert(trustedCooldownUpdates.spell == true,
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 101, nil, "refresh", nil, 133)
 assert(trustedBroadCooldownRefreshes == 1,
     "GCD-category SPELL_UPDATE_COOLDOWN events must request one trusted broad refresh")
+assert(forcedBroadCooldownRefreshes == 1,
+    "GCD-category SPELL_UPDATE_COOLDOWN events must resolve idle icons")
 
 reset(applied)
 reset(runtimeUpdated)

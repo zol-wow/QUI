@@ -3875,7 +3875,8 @@ local function RefreshAllIcon(icon, context)
 end
 
 local function UpdateCooldownOnlyIcon(icon, entry, context)
-    if ns._cdmPollSkipIdle ~= false
+    if context and context.forceResolveIdle ~= true
+        and ns._cdmPollSkipIdle ~= false
         and icon._resolvedCooldownMode == "inactive"
         and icon._hasCooldownActive ~= true
         and entry
@@ -3942,7 +3943,7 @@ function CDMIcons:UpdateAllCooldowns()
     DrainLayoutDirty()
 end
 
-function CDMIcons:UpdateCooldownOnly(trustIsOnGCD)
+function CDMIcons:UpdateCooldownOnly(trustIsOnGCD, forceResolveIdle)
     local editMode, ncdm, ncdmContainers, inCombat = PrepareCooldownUpdateBatch()
     local allowStackTextWrites = ConsumeStackTextWriteRequest()
     SetRefreshBatchStackTextWrites(allowStackTextWrites)
@@ -3954,6 +3955,7 @@ function CDMIcons:UpdateCooldownOnly(trustIsOnGCD)
         ncdmContainers = ncdmContainers,
         inCombat = inCombat,
         trustIsOnGCD = trustIsOnGCD == true,
+        forceResolveIdle = forceResolveIdle == true,
     }
     if Resolvers and Resolvers.SetResolveCallerTag then Resolvers.SetResolveCallerTag("cooldownOnly") end
     local walker = GetIconRefreshWalker()
@@ -4054,11 +4056,17 @@ function CDMIcons.OnIconRowConfigApplied(icon, rowConfig)
     ConfigureIcon(icon, rowConfig)
 end
 
+local CDM_UPDATE_COOLDOWN = "cooldown"
+local CDM_UPDATE_FULL = "full"
+local updateScheduler
+local ScheduleCDMUpdate
+local pendingCooldownForceResolveIdle = false
+
 local function BindCooldownDoneRefresh(icon)
     local cooldown = icon and icon.Cooldown
     if not cooldown or not cooldown.SetScript or icon._quiCooldownDoneBound then return end
     cooldown:SetScript("OnCooldownDone", function()
-        CDMIcons:UpdateCooldownOnly()
+        ScheduleCDMUpdate(true, CDM_UPDATE_COOLDOWN, "cooldown_done")
     end)
     icon._quiCooldownDoneBound = true
 end
@@ -4248,10 +4256,6 @@ cdEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 cdEventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
 cdEventFrame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 
-local CDM_UPDATE_COOLDOWN = "cooldown"
-local CDM_UPDATE_FULL = "full"
-local updateScheduler
-
 local function CreateIconUpdateScheduler()
     local module = ns.CDMIconUpdateScheduler
     if not (module and module.Create) then return nil end
@@ -4274,8 +4278,10 @@ local function CreateIconUpdateScheduler()
         updateAllCooldowns = function()
             CDMIcons:UpdateAllCooldowns()
         end,
-        updateCooldownOnly = function(trustIsOnGCD)
-            CDMIcons:UpdateCooldownOnly(trustIsOnGCD == true)
+        updateCooldownOnly = function()
+            local forceResolveIdle = pendingCooldownForceResolveIdle
+            pendingCooldownForceResolveIdle = false
+            CDMIcons:UpdateCooldownOnly(false, forceResolveIdle)
         end,
         getBars = function()
             return ns.CDMBars
@@ -4301,7 +4307,10 @@ local function NoteFullUpdateSchedule(reason)
     end
 end
 
-local function ScheduleCDMUpdate(fast, mode, reason)
+ScheduleCDMUpdate = function(fast, mode, reason)
+    if mode == CDM_UPDATE_COOLDOWN then
+        pendingCooldownForceResolveIdle = true
+    end
     if mode == CDM_UPDATE_FULL then
         NoteFullUpdateSchedule(reason)
     end
@@ -4464,7 +4473,7 @@ do
         applyResolvedCooldown = ApplyResolvedCooldown,
         updateIconCooldown = UpdateIconCooldown,
         updateCooldownOnly = function(trustIsOnGCD)
-            CDMIcons:UpdateCooldownOnly(trustIsOnGCD == true)
+            CDMIcons:UpdateCooldownOnly(trustIsOnGCD == true, true)
         end,
         applyAuraScopedResolvedCooldown = function(icon, entry, editMode, ncdm, ncdmContainers, inCombat)
             return _resolverRuntimePolicy.ApplyAuraScopedResolvedCooldown(

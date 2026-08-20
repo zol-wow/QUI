@@ -1186,7 +1186,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         elseif kind == "refresh" then
             if IsGlobalRecoveryCategory(startRecoveryCategory)
                 and callbacks.updateCooldownOnly then
-                callbacks.updateCooldownOnly(true)
+                callbacks.updateCooldownOnly(true, true)
                 return
             end
             local comparableSpellID = normalizeSpellIdentifier(callbacks, spellID) ~= nil
