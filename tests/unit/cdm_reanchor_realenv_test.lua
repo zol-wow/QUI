@@ -1253,6 +1253,32 @@ do
         assert(not logFind(stackFs, "SetFontObject"), "hidden stack text is not restyled")
     end
 
+    do
+        local stackAlpha, holderAlpha = 0.65, 0.75
+        local stackFs = {
+            GetObjectType = function() return "FontString" end,
+            GetAlpha = function() return stackAlpha end,
+            SetAlpha = function(_, value) stackAlpha = value end,
+        }
+        local holder = {
+            Current = stackFs,
+            GetAlpha = function() return holderAlpha end,
+            SetAlpha = function(_, value) holderAlpha = value end,
+        }
+        local frame = {
+            ChargeCount = holder,
+            Cooldown = {},
+            SetAlpha = function() end,
+            CreateTexture = function() return setmetatable({}, { __index = function() return function() end end }) end,
+        }
+        styleEnv.applyChrome(frame, { borderSize = 0, hideStackText = true })
+        assert(stackAlpha == 0 and holderAlpha == 0,
+            "hideStackText suppresses both native stack alpha values")
+        styleEnv.applyChrome(frame, { borderSize = 0, hideStackText = false })
+        assert(stackAlpha == 0.65 and holderAlpha == 0.75,
+            "disabling hideStackText restores only alpha values suppressed by QUI")
+    end
+
     -- hideDurationText suppresses the countdown re-anchor (numbers are hidden
     -- natively via SetHideCountdownNumbers; no anchor writes needed)
     do

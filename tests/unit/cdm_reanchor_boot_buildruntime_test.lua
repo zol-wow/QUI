@@ -1,6 +1,15 @@
 -- tests/unit/cdm_reanchor_boot_buildruntime_test.lua
 -- Run: lua tests/unit/cdm_reanchor_boot_buildruntime_test.lua
 local ns = {}
+local secretGCD = {}
+local probedSecretGCD = false
+_G.issecretvalue = function(value)
+    if value == secretGCD then
+        probedSecretGCD = true
+        return true
+    end
+    return false
+end
 -- Task 45f: cdm_reanchor*.lua route discarded-result pcall guards through
 -- ns.SafeCall. Additive stub (T1d/T1e precedent) — bare pcall passthrough.
 ns.SafeCall = function(_policy, fn, ...) return pcall(fn, ...) end
@@ -181,6 +190,11 @@ assert(capturedAuraDeps and type(capturedAuraDeps.reassertEdge) == "function",
     "G13: auraPhase receives a reassertEdge dep")
 assert(type(capturedAuraDeps.reassertColor) == "function",
     "auraPhase still receives reassertColor")
+assert(type(capturedAuraDeps.reassertSwipe) == "function",
+    "auraPhase receives reassertSwipe")
+local cdSecretGCD = { SetDrawSwipe = function() end }
+capturedAuraDeps.reassertSwipe({ isOnGCD = secretGCD }, cdSecretGCD, "essential", true)
+assert(probedSecretGCD, "reassertSwipe probes secret isOnGCD before comparing it")
 local edgeCalls = {}
 local cdEdge = { SetDrawEdge = function(_, v) edgeCalls[#edgeCalls+1] = v end }
 swipeStub.showRechargeEdge = false

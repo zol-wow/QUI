@@ -129,12 +129,51 @@ local function _ResolveStackText(frame)
     return nil, nil
 end
 
+local _stackTextAlpha = setmetatable({}, { __mode = "k" })
+
+local function _ReadAlpha(region)
+    if not (region and region.GetAlpha) then return nil end
+    local ok, alpha = ns.SafeCallMethod("best-effort-style", region, "GetAlpha")
+    if not ok or _issecretvalue(alpha) or type(alpha) ~= "number" then return nil end
+    return alpha
+end
+
+local function _WriteAlpha(region, alpha)
+    if region and region.SetAlpha and type(alpha) == "number" then
+        ns.SafeCallMethod("best-effort-style", region, "SetAlpha", alpha)
+    end
+end
+
+local function _SetStackTextHidden(frame, fs, holder, hidden)
+    local state = _stackTextAlpha[frame]
+    if hidden then
+        if not state then
+            state = {}
+            _stackTextAlpha[frame] = state
+        end
+        if state.fs ~= fs then
+            state.fs = fs
+            state.fsAlpha = _ReadAlpha(fs)
+        end
+        if state.holder ~= holder then
+            state.holder = holder
+            state.holderAlpha = _ReadAlpha(holder)
+        end
+        _WriteAlpha(holder, 0)
+        _WriteAlpha(fs, 0)
+        return
+    end
+    if not state then return end
+    if state.holder == holder then _WriteAlpha(holder, state.holderAlpha) end
+    if state.fs == fs then _WriteAlpha(fs, state.fsAlpha) end
+    _stackTextAlpha[frame] = nil
+end
+
 local function _StyleStackText(frame, rowConfig, baseFont, outline)
     local fs, holder = _ResolveStackText(frame)
     if not fs then return end
+    _SetStackTextHidden(frame, fs, holder, rowConfig.hideStackText == true)
     if rowConfig.hideStackText then
-        if holder and holder.SetAlpha then holder:SetAlpha(0) end
-        if fs.SetAlpha then fs:SetAlpha(0) end
         return
     end
     local font = baseFont

@@ -145,6 +145,7 @@ function CDMReanchorBoot.BuildRuntime(env)
             return
         end
         local gcd = frame and frame.isOnGCD
+        if _issecretvalue(gcd) then gcd = nil end
         if gcd == true then
             if s.showGCDSwipe == true and not show then
                 cd:SetDrawSwipe(true)

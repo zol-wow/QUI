@@ -225,9 +225,14 @@ end
 
 local function TargetAuraMatchesPlayerFilter(auraData, filter)
     if not auraData then return false end
+    local playerFilter = filter or "HARMFUL"
+    if type(playerFilter) == "string"
+        and not playerFilter:find("PLAYER", 1, true) then
+        playerFilter = playerFilter .. "|PLAYER"
+    end
     local instID = GetCleanAuraInstanceID(auraData)
     if instID then
-        local passes = AuraInstancePassesFilter("target", instID, filter or "HARMFUL|PLAYER")
+        local passes = AuraInstancePassesFilter("target", instID, playerFilter)
         if passes ~= nil then return passes end
     end
     return IsStrictOwnedAuraSource(auraData)
@@ -262,9 +267,10 @@ local function ResolveCapturedAuraFilter(unit, ad, instID, explicitFilter)
     return nil
 end
 
-local function CapturePayloadAllowedForUnit(unit, instID, auraFilter)
+local function CapturePayloadAllowedForUnit(unit, auraData, auraFilter)
     if unit ~= "target" then return true end
-    return auraFilter == "HELPFUL" or auraFilter == "HARMFUL"
+    if auraFilter ~= "HELPFUL" and auraFilter ~= "HARMFUL" then return false end
+    return TargetAuraMatchesPlayerFilter(auraData, auraFilter)
 end
 
 local function CapturedAuraMatchesFilter(entry, allowedFiltersByUnit)
@@ -361,7 +367,7 @@ local function CaptureAuraFromPayload(unit, ad, allowCastCorrelation, explicitFi
     end
 
     local auraFilter = ResolveCapturedAuraFilter(unit, ad, instID, explicitFilter)
-    if not CapturePayloadAllowedForUnit(unit, instID, auraFilter) then
+    if not CapturePayloadAllowedForUnit(unit, ad, auraFilter) then
         return
     end
 
@@ -462,8 +468,14 @@ local function ReleaseCapturedAurasByInstanceIDsForUnit(unit, auraInstanceIDs)
     return released
 end
 
-local function RescanCapturedAurasForUnit(unit)
-    ReleaseCapturedAurasForUnit(unit)
+local function RescanCapturedAurasForUnit(unit, updateInfo)
+    if not updateInfo or not updateInfo.addedAuras
+        or (issecretvalue and issecretvalue(updateInfo.addedAuras)) then
+        return
+    end
+    for _, ad in ipairs(updateInfo.addedAuras) do
+        CaptureAuraFromPayload(unit, ad)
+    end
 end
 
 local function NotifyAuraConsumers(unit, updateInfo)
@@ -511,7 +523,7 @@ local function HandleUnitAura(unit, updateInfo)
         updateInfo = nil
     end
     if not updateInfo or updateInfo.isFullUpdate then
-        RescanCapturedAurasForUnit(unit)
+        RescanCapturedAurasForUnit(unit, updateInfo)
         NotifyAuraConsumers(unit, updateInfo)
         return
     end

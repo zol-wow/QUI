@@ -78,6 +78,7 @@ auraFrame.script(auraFrame, "UNIT_AURA", "target", {
             name = "Helpful Zone Aura",
             auraInstanceID = 9052,
             isHelpful = true,
+            isFromPlayerOrPlayerPet = true,
         },
     },
 })
@@ -120,6 +121,57 @@ state = ns.CDMAuraRuntime.ResolveState({
 
 assert(state.isActive ~= true,
     "target removedAuraInstanceIDs should evict target aura capture")
+
+auraFrame.script(auraFrame, "UNIT_AURA", "target", {
+    isFullUpdate = false,
+    addedAuras = {
+        {
+            spellId = 51053,
+            name = "Persistent Zone Aura",
+            auraInstanceID = 9053,
+            isHelpful = true,
+            isFromPlayerOrPlayerPet = true,
+        },
+    },
+})
+auraFrame.script(auraFrame, "UNIT_AURA", "target", { isFullUpdate = true })
+state = ns.CDMAuraRuntime.ResolveState({
+    spellID = 51053,
+    entrySpellID = 51053,
+    entryID = 51053,
+    entryName = "Persistent Zone Aura",
+    entryKind = "aura",
+    entryIsAura = true,
+    entryType = "aura",
+    viewerType = "buff",
+})
+assert(state.isActive == true,
+    "target full updates must retain captured active auras when no safe rescan is available")
+
+auraFrame.script(auraFrame, "UNIT_AURA", "target", {
+    isFullUpdate = false,
+    addedAuras = {
+        {
+            spellId = 51054,
+            name = "Someone Else's Zone Aura",
+            auraInstanceID = 9054,
+            isHelpful = true,
+            isFromPlayerOrPlayerPet = false,
+        },
+    },
+})
+state = ns.CDMAuraRuntime.ResolveState({
+    spellID = 51054,
+    entrySpellID = 51054,
+    entryID = 51054,
+    entryName = "Someone Else's Zone Aura",
+    entryKind = "aura",
+    entryIsAura = true,
+    entryType = "aura",
+    viewerType = "buff",
+})
+assert(state.isActive ~= true,
+    "target aura capture must reject a readable aura owned by another player")
 
 -- Aura restriction is broader than combat lockdown; captured payloads remain
 -- the only target presence source.
