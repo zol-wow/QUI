@@ -542,9 +542,21 @@ local function HandleUnitAura(unit, updateInfo)
         return
     end
     if updateInfo.addedAuras and not (issecretvalue and issecretvalue(updateInfo.addedAuras)) then
-        for _, ad in ipairs(updateInfo.addedAuras) do
-            CaptureAuraFromPayload(unit, ad)
+        local refreshed = false
+        if updateInfo.updatedAuraInstanceIDs
+            and not (issecretvalue and issecretvalue(updateInfo.updatedAuraInstanceIDs))
+            and #updateInfo.updatedAuraInstanceIDs > 0 then
+            refreshed = RescanCapturedAurasForUnit(unit)
         end
+        if not refreshed then
+            for _, ad in ipairs(updateInfo.addedAuras) do
+                CaptureAuraFromPayload(unit, ad)
+            end
+        end
+    elseif updateInfo.updatedAuraInstanceIDs
+        and not (issecretvalue and issecretvalue(updateInfo.updatedAuraInstanceIDs))
+        and #updateInfo.updatedAuraInstanceIDs > 0 then
+        RescanCapturedAurasForUnit(unit)
     end
     if updateInfo.removedAuraInstanceIDs
         and not (issecretvalue and issecretvalue(updateInfo.removedAuraInstanceIDs))
@@ -3151,11 +3163,20 @@ function CDMSpellData:GetActiveAuras(filter)
             player = filter or "HELPFUL",
         }) then
             seen[sid] = true
+            local rawAuraData = GetCapturedAuraData(auraData)
+            local icon = rawAuraData and rawAuraData.icon
+            local duration = rawAuraData and rawAuraData.duration
+            if (issecretvalue and issecretvalue(icon)) or type(icon) ~= "number" then
+                icon = 0
+            end
+            if (issecretvalue and issecretvalue(duration)) or type(duration) ~= "number" then
+                duration = 0
+            end
             result[#result + 1] = {
                 spellID = sid,
                 name = auraData.name or "",
-                icon = 0,
-                duration = 0,
+                icon = icon,
+                duration = duration,
             }
         end
     end

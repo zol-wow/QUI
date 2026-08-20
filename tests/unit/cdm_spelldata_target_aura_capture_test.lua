@@ -7,6 +7,7 @@ local frames = {}
 local inCombat = true
 local aurasSecret = false
 local unitAuraScanCalls = 0
+local currentAuras
 
 function InCombatLockdown() return inCombat end
 function GetTime() return 100 end
@@ -55,6 +56,11 @@ local ns = {
     },
     CDMIcons = {
         HandleRuntimeRefresh = noop,
+    },
+    AuraGlue = {
+        CollectReadableAuras = function()
+            return currentAuras
+        end,
     },
 }
 
@@ -201,6 +207,37 @@ assert(state.isActive == true and state.hasExpirationTime == true,
     "captured readable AuraData retains duration state")
 assert(state.count and state.count.value == 3,
     "captured readable AuraData retains applications for stack resolution")
+
+currentAuras = {
+    { {
+        spellId = 51055,
+        name = "Readable Player Aura",
+        auraInstanceID = 9055,
+        isHelpful = true,
+        applications = 5,
+        duration = 18,
+        icon = 12345,
+    }, "HELPFUL" },
+}
+auraFrame.script(auraFrame, "UNIT_AURA", "player", {
+    isFullUpdate = false,
+    updatedAuraInstanceIDs = { 9055 },
+})
+state = ns.CDMAuraRuntime.ResolveState({
+    spellID = 51055,
+    entrySpellID = 51055,
+    entryID = 51055,
+    entryName = "Readable Player Aura",
+    entryKind = "aura",
+    entryIsAura = true,
+    entryType = "aura",
+    viewerType = "buff",
+})
+assert(state.count and state.count.value == 5,
+    "updatedAuraInstanceIDs must refresh captured applications")
+local active = ns.CDMSpellData:GetActiveAuras("HELPFUL")
+assert(active[1] and active[1].icon == 12345 and active[1].duration == 18,
+    "active aura exports must retain readable icon and duration")
 
 -- Aura restriction is broader than combat lockdown; captured payloads remain
 -- the only target presence source.
