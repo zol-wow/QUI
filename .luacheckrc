@@ -76,6 +76,7 @@ globals = {
     "SLASH_QUISCAN1",
     "SLASH_QUISCAN2",
     "SLASH_QUIKB1",
+    "SLASH_QUIIC1",
     "SLASH_QUILOG1",
     "SLASH_QUI_CDM1",
     "SlashCmdList",

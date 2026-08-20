@@ -46,7 +46,7 @@ return {
     "QUI_GroupFrames/groupframes/groupframes.lua::8",
     "QUI_GroupFrames/groupframes/groupframes_aura_render.lua::6",
     "QUI_GroupFrames/groupframes/groupframes_missing_raid_buffs.lua::25",
-    "QUI_GroupFrames/groupframes/groupframes_targeted_spells.lua::8",
+    "QUI_GroupFrames/groupframes/groupframes_targeted_spells.lua::2",
     "QUI_GroupFrames/groupframes/raidbuffs.lua::9",
     "QUI_GroupFrames/groupframes/settings/click_cast_content.lua::6",
     "QUI_GroupFrames/groupframes/settings/group_frames_preview_driver.lua::1",
