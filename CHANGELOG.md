@@ -4,6 +4,25 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.1-beta5 - 2026-08-19
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager visibility and refresh fixes for global recovery, GCD swipes,
+secret values, and consumable identities.
+
+### Fixed
+
+- **Cooldown completion refreshes stay current without redundant work.** Idle
+  resolution, coalesced completion updates, and targeted cast refreshes now
+  keep visible cooldowns synchronized.
+- **GCD and secret recovery state stays safe.** Disabled GCD swipes remain
+  hidden, recovery categories avoid unreadable values, and global recovery
+  matching remains trusted.
+- **Consumable cooldowns preserve their spell and item identities.** Payloads
+  now carry the identities needed to keep item-backed cooldowns visible.
+
 ## v5.2.1-beta4 - 2026-08-17
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
