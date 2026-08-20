@@ -17,6 +17,7 @@ groupframes\groupframes_party_targets.lua
 groupframes\groupframes_targeted_spells.lua
 groupframes\groupframes_missing_raid_buffs.lua
 groupframes\groupframes_aura_model.lua
+groupframes\groupframes_dispel_feeder.lua
 groupframes\groupframes_auras.lua
 groupframes\groupframes_aura_render.lua
 groupframes\groupframes_clickcast.lua
