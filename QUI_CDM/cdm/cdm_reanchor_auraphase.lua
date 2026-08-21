@@ -17,6 +17,7 @@ function CDMReanchorAuraPhase.New(deps)
         _edgeReentry = setmetatable({}, { __mode = "k" }),
         _drawSwipeHooked = setmetatable({}, { __mode = "k" }),
         _drawSwipeReentry = setmetatable({}, { __mode = "k" }),
+        _nativeAuraDisplayState = setmetatable({}, { __mode = "k" }),
         _keyByFrame = setmetatable({}, { __mode = "k" }),
     }, InstanceMT)
 end
@@ -30,7 +31,9 @@ function CDMReanchorAuraPhase:OnSwipeColor(frame, cd)
 end
 
 function CDMReanchorAuraPhase:OnDrawEdge(frame, cd)
-    if not cd or self._edgeReentry[cd] then return end
+    if not cd then return end
+    self:ObserveNativeAuraDisplayTime(frame, cd)
+    if self._edgeReentry[cd] then return end
     self._edgeReentry[cd] = true
     local deps = self._deps
     if deps.reassertEdge then ns.SafeCall("bulkhead", deps.reassertEdge, frame, cd, self._keyByFrame[frame]) end
@@ -48,11 +51,31 @@ function CDMReanchorAuraPhase:OnDrawSwipe(frame, cd, show)
     self._drawSwipeReentry[cd] = false
 end
 
-function CDMReanchorAuraPhase:OnNativeAuraDisplayTime(frame, show)
+function CDMReanchorAuraPhase:OnNativeAuraDisplayTime(frame, show, cd)
     if _issecretvalue and _issecretvalue(show) then return end
+    cd = cd or (frame and frame.GetCooldownFrame and frame:GetCooldownFrame())
+    self:ObserveNativeAuraDisplayTime(frame, cd, show)
+end
+
+function CDMReanchorAuraPhase:ObserveNativeAuraDisplayTime(frame, cd, show)
+    if not cd then return end
+    local state = show
+    if state == nil then
+        local ok, value = ns.SafeCall("bulkhead", function()
+            return frame and frame.cooldownUseAuraDisplayTime
+        end)
+        if not ok or (_issecretvalue and _issecretvalue(value)) then return end
+        state = value
+    elseif _issecretvalue and _issecretvalue(state) then
+        return
+    end
+    state = state == true
+    local previous = self._nativeAuraDisplayState[cd]
+    self._nativeAuraDisplayState[cd] = state
+    if previous == nil or previous == state then return end
     local request = self._deps.requestAuraPhaseRefresh
     if request then
-        ns.SafeCall("bulkhead", request, frame, self._keyByFrame[frame], show == true)
+        ns.SafeCall("bulkhead", request, frame, self._keyByFrame[frame], state)
     end
 end
 
@@ -64,14 +87,14 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey)
     local this = self
 
     local cd = frame.GetCooldownFrame and frame:GetCooldownFrame()
-    if cd and type(cd.SetUseAuraDisplayTime) == "function"
-        and self._deps.requestAuraPhaseRefresh then
+    if cd and self._deps.requestAuraPhaseRefresh then
         self._nativeAuraDisplayHooked = self._nativeAuraDisplayHooked
             or setmetatable({}, { __mode = "k" })
-        if not self._nativeAuraDisplayHooked[cd] then
+        self:ObserveNativeAuraDisplayTime(frame, cd)
+        if type(cd.SetUseAuraDisplayTime) == "function" and not self._nativeAuraDisplayHooked[cd] then
             self._nativeAuraDisplayHooked[cd] = true
             local function auraDisplayWork(show)
-                this:OnNativeAuraDisplayTime(frame, show)
+                this:OnNativeAuraDisplayTime(frame, show, cd)
             end
             hooksec(cd, "SetUseAuraDisplayTime", function(_, show)
                 securecall(auraDisplayWork, show)

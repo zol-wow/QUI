@@ -89,12 +89,36 @@ do
         end,
     })
     local cd = { SetUseAuraDisplayTime = function() end }
-    local frame = { GetCooldownFrame = function() return cd end }
+    local frame = {
+        cooldownUseAuraDisplayTime = false,
+        GetCooldownFrame = function() return cd end,
+    }
     inst:Hook(frame, "essential")
     hooked(cd, true)
     assert(requested and requested.frame == frame and requested.key == "essential"
         and requested.show == true,
         "native aura-mode changes request a safe reanchor")
+end
+
+do
+    local hooks = {}
+    local requested = {}
+    local inst = M.New({
+        securecall = function(fn, ...) return fn(...) end,
+        hooksecurefunc = function(_, method, fn) hooks[method] = fn end,
+        requestAuraPhaseRefresh = function(_, _, show) requested[#requested + 1] = show end,
+    })
+    local cd = { SetUseAuraDisplayTime = function() end, SetDrawEdge = function() end }
+    local frame = {
+        cooldownUseAuraDisplayTime = true,
+        GetCooldownFrame = function() return cd end,
+    }
+    inst:Hook(frame, "essential")
+    frame.cooldownUseAuraDisplayTime = false
+    hooks.SetDrawEdge(cd, false)
+    hooks.SetDrawEdge(cd, false)
+    assert(#requested == 1 and requested[1] == false,
+        "expired edge refresh requests only once when aura mode changes")
 end
 
 -- G13: OnDrawEdge -> reassertEdge once (re-entry guarded so the reassert's own
