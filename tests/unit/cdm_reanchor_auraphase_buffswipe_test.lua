@@ -207,6 +207,19 @@ do
     assert(#cd.swipes == 0, "charge source preserves Blizzard's native swipe decision")
 end
 
+do
+    swipeStub.showCooldownIconAuraPhase = true
+    swipeStub.showBuffSwipe = true
+    local cd = NewCd()
+    reassertSwipe({ cooldownUseAuraDisplayTime = true }, cd, nil, false)
+    assert(cd.swipes[1] == true, "enabled aura phase restores a hidden native swipe")
+
+    swipeStub.showBuffIconSwipe = true
+    cd = NewCd()
+    reassertSwipe({}, cd, "buff", false)
+    assert(cd.swipes[1] == true, "enabled buff icon swipe restores a hidden native swipe")
+end
+
 ---------------------------------------------------------------------------
 -- 1b) reassertEdge buff routing: rides showBuffIconSwipe/showBuffEdge, not
 --     showRechargeEdge.

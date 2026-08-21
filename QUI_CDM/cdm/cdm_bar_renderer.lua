@@ -723,6 +723,29 @@ local function GetTrackedBarOverrideColor(settings, spellData)
     return nil
 end
 
+local function GetTrackedBarOverrideColorForEntry(settings, entry)
+    local overrides = settings and settings.colorOverrides
+    if type(overrides) ~= "table" or type(entry) ~= "table" then
+        return nil
+    end
+
+    local spellID = entry.overrideSpellID or entry.spellID or entry.id
+    local color = spellID and overrides[spellID]
+    if type(color) == "table" then return color end
+
+    color = entry.overrideSpellID and overrides[entry.overrideSpellID]
+    if type(color) == "table" then return color end
+
+    local baseSpellID = entry.spellID or entry.id
+    color = baseSpellID and overrides[baseSpellID]
+    if type(color) == "table" then return color end
+
+    color = entry.cooldownID and overrides[entry.cooldownID]
+    if type(color) == "table" then return color end
+
+    return nil
+end
+
 local function ColorStateChanged(state, color)
     local r, g, b, a = 0, 0, 0, 0
     if type(color) == "table" then
@@ -1875,7 +1898,7 @@ function CDMBars:LayoutBars(container, settings)
         configChanged = ColorStateChanged(fingerprint.border, settings.borderColor) or configChanged
         configChanged = ColorStateChanged(fingerprint.bar, settings.barColor) or configChanged
         configChanged = ColorStateChanged(fingerprint.override,
-            GetTrackedBarOverrideColor(settings, GetBarSpellData(bar))) or configChanged
+            GetTrackedBarOverrideColorForEntry(settings, bar._spellEntry)) or configChanged
         if configChanged or bar._cfgActive ~= bar._active then
             bar._cfgActive = bar._active
             CDMBars.ConfigureBar(bar, settings, barWidth)

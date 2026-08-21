@@ -142,13 +142,19 @@ function CDMReanchorBoot.BuildRuntime(env)
             return
         end
         if isBuffIconFrameKey(containerKey) then
-            if s.showBuffIconSwipe == false and show then cd:SetDrawSwipe(false) end
+            if s.showBuffIconSwipe == false and show then
+                cd:SetDrawSwipe(false)
+            elseif s.showBuffIconSwipe ~= false and show == false then
+                cd:SetDrawSwipe(true)
+            end
             return
         end
         if frame and frame.cooldownUseAuraDisplayTime == true
             then
             if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
                 if show then cd:SetDrawSwipe(false) end
+            elseif show == false then
+                cd:SetDrawSwipe(true)
             end
             return
         end
