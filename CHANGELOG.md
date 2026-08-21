@@ -4,6 +4,19 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2-beta1 - 2026-08-21
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Opens the 5.2.2 beta line with tracked buff-bar color override fixes.
+
+### Fixed
+
+- **Tracked buff bars respect configured per-spell colors.** Overrides now
+  apply through the live renderer for configured and linked spell identities
+  instead of falling back to class color.
+
 ## v5.2.1 - 2026-08-20
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
