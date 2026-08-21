@@ -193,9 +193,16 @@ function CDMReanchorBoot.BuildRuntime(env)
     end
     local function isNativeCooldownRepairFrame(frame, containerKey, entry)
         if containerKey ~= "essential" and containerKey ~= "utility" then return false end
+        if not runtime or not runtime.IsFrameClaimedByAnyContainer
+            or not runtime:IsFrameClaimedByAnyContainer(frame)
+            or not runtime.GetEntryForFrame
+            or runtime:GetEntryForFrame(frame) ~= entry then
+            return false
+        end
         if entry and (entry.isAura or entry.kind == "aura") then return false end
-        if frame and (frame.viewerFrame == _G.BuffIconCooldownViewer
-            or frame.viewerFrame == _G.BuffBarCooldownViewer) then
+        if frame and ((_G.BuffIconCooldownViewer
+                and frame.viewerFrame == _G.BuffIconCooldownViewer)
+            or (_G.BuffBarCooldownViewer and frame.viewerFrame == _G.BuffBarCooldownViewer)) then
             return false
         end
         return true

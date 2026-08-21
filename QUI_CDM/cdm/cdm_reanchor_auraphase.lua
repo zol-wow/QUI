@@ -68,21 +68,16 @@ function CDMReanchorAuraPhase:OnNativeCooldownPush(frame, cd)
         and deps.isAuraPhaseEnabled() == false) then
         return
     end
-    local ok, show = ns.SafeCall("bulkhead", function()
-        return frame and frame.cooldownUseAuraDisplayTime
-    end)
-    if not ok or (_issecretvalue and _issecretvalue(show)) or show ~= true then return end
+    local show = frame and frame.cooldownUseAuraDisplayTime
+    if (_issecretvalue and _issecretvalue(show)) or show ~= true then return end
     ns.SafeCall("bulkhead", deps.requestAuraPhaseRefresh, frame, self._keyByFrame[frame], true)
 end
 
 function CDMReanchorAuraPhase:IsStaleLinkedAura(frame)
-    local ok, linkedSpellID, auraInstanceID, wasSetFromAura = ns.SafeCall("bulkhead", function()
-        local info = frame and frame.cooldownInfo
-        return info and info.linkedSpellID,
-            frame and frame.auraInstanceID,
-            frame and frame.wasSetFromAura
-    end)
-    if not ok then return false end
+    local info = frame and frame.cooldownInfo
+    local linkedSpellID = info and info.linkedSpellID
+    local auraInstanceID = frame and frame.auraInstanceID
+    local wasSetFromAura = frame and frame.wasSetFromAura
     if (_issecretvalue and _issecretvalue(linkedSpellID))
         or (_issecretvalue and _issecretvalue(auraInstanceID))
         or (_issecretvalue and _issecretvalue(wasSetFromAura)) then

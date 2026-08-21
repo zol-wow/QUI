@@ -202,6 +202,12 @@ assert(type(capturedAuraDeps.isNativeCooldownRepairFrame) == "function",
     "auraPhase receives the native cooldown repair eligibility gate")
 assert(type(capturedAuraDeps.repairStaleLinkedAura) == "function",
     "auraPhase receives the stale linked-aura repair callback")
+assert(facade.runtime:GetEntryForFrame(fMatch) == curatedEntry,
+    "runtime records the claimed native frame")
+assert(capturedAuraDeps.isNativeCooldownRepairFrame(fMatch, "essential", curatedEntry),
+    "claimed native frames remain eligible for stale-link repair")
+assert(not capturedAuraDeps.isNativeCooldownRepairFrame({}, "essential", curatedEntry),
+    "released or unclaimed native frames are excluded from stale-link repair")
 local repairCalls = {}
 ns.CDMSources = {
     QueryOverrideSpell = function(spellID) return spellID + 1 end,
