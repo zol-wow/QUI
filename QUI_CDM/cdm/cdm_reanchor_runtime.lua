@@ -116,6 +116,12 @@ function CDMReanchorRuntime:_ShouldDeferOwnedReleaseInCombat(containerKey)
     return false
 end
 
+function CDMReanchorRuntime:QueuePendingCombatRefresh(containerKey)
+    if not containerKey then return end
+    self._pendingCombatRefresh = self._pendingCombatRefresh or {}
+    self._pendingCombatRefresh[containerKey] = true
+end
+
 function CDMReanchorRuntime:DrainPendingCombatRefresh()
     local pending = self._pendingCombatRefresh
     if not pending then return end

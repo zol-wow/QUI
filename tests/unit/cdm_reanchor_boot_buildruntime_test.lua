@@ -52,6 +52,7 @@ local shellPositioned = false
 local clickSlotPositioned = false
 local clickOverlayCall
 local shellLifecycle = {}
+local canMutate = true
 
 local env = {
     CDMReanchor = ns.CDMReanchor,
@@ -66,7 +67,7 @@ local env = {
     -- true OOC/init-safe-window. Stub always-true so no test behavior changes;
     -- captured below via the CDMReanchorRuntime.New wrapper to prove it threads
     -- through to the runtime deps.
-    canMutate = function() return true end,
+    canMutate = function() return canMutate end,
     getContainer = function() return container end,
     getCurated = function() return { curatedEntry } end,
     getSettings = function() return { row1 = { iconCount = 4, iconSize = 40 } } end,
@@ -254,6 +255,16 @@ assert(type(facade.DrainPendingCombatRefresh) == "function",
     "boot exposes DrainPendingCombatRefresh")
 -- calling it with no deferred keys is a safe no-op
 facade:DrainPendingCombatRefresh()
+
+local pointsBeforeCombatRefresh = #setpoints
+canMutate = false
+capturedAuraDeps.requestAuraPhaseRefresh(nil, "essential")
+assert(#setpoints == pointsBeforeCombatRefresh,
+    "aura-phase refresh queues during combat instead of reanchoring immediately")
+canMutate = true
+facade:DrainPendingCombatRefresh()
+assert(#setpoints > pointsBeforeCombatRefresh,
+    "queued aura-phase refresh drains after combat")
 
 swipeStub.showCooldownIconAuraPhase = false
 local shouldReplace = capturedRuntimeDeps.shouldReplaceNativeAuraPhase

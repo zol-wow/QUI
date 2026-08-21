@@ -189,6 +189,12 @@ function CDMReanchorBoot.BuildRuntime(env)
         securecall = securecallfunction,
         isAuraPhaseEnabled = isAuraPhaseEnabled,
         requestAuraPhaseRefresh = function(_, containerKey)
+            if env.canMutate and not env.canMutate() then
+                if runtime and runtime.QueuePendingCombatRefresh then
+                    runtime:QueuePendingCombatRefresh(containerKey)
+                end
+                return
+            end
             local hooks = ns._cdmReanchorHooks
             if hooks and hooks.MarkDirty then hooks:MarkDirty(containerKey) end
         end,
