@@ -490,6 +490,9 @@ local function RescanCapturedAurasForUnit(unit, updateInfo)
     if not updateInfo or not updateInfo.addedAuras
         or (issecretvalue and issecretvalue(updateInfo.addedAuras)) then
         local glue = ns.AuraGlue
+        if glue and glue.AurasAreSecret and glue.AurasAreSecret() then
+            return false
+        end
         local collect = glue and glue.CollectReadableAuras
         if not collect then return false end
         local released = false
@@ -523,6 +526,9 @@ end
 
 local function RefreshCapturedAurasByInstanceIDs(unit, instanceIDs)
     local glue = ns.AuraGlue
+    if glue and glue.AurasAreSecret and glue.AurasAreSecret() then
+        return false
+    end
     local refresh = glue and glue.ReadAurasByInstanceID
     if not refresh then return false end
     return refresh(unit, instanceIDs, function(auraData, auraInstanceID)
