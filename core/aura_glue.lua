@@ -220,6 +220,27 @@ function G.ReadAuraDurationByInstanceID(unit, auraInstanceID)
     return durationObj
 end
 
+function G.ReadAuraApplicationDisplayCount(unit, auraInstanceID)
+    if G.AurasAreSecret and G.AurasAreSecret() then return false, nil end
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetAuraApplicationDisplayCount) then
+        return false, nil
+    end
+    if issecretvalue and (issecretvalue(unit) or issecretvalue(auraInstanceID)) then
+        return false, nil -- @secret-policy: reject-secret-value
+    end
+    local ok, count = ns.SafeCall(
+        "secret-probe", unitAuras.GetAuraApplicationDisplayCount,
+        unit, auraInstanceID, 2, nil)
+    if not ok or (issecretvalue and issecretvalue(count)) then
+        return false, nil -- @secret-policy: reject-secret-value
+    end
+    if count == nil or count == "" or count == "0" or count == "1" then
+        return false, nil
+    end
+    return true, count
+end
+
 function G.GetCooldownAuraBySpellID(spellID)
     local unitAuras = C_UnitAuras
     if not (unitAuras and unitAuras.GetCooldownAuraBySpellID) then return nil end

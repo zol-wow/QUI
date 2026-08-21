@@ -264,6 +264,20 @@ do
     _G.C_UnitAuras = nil
 end
 
+do
+    _G.C_UnitAuras = {
+        GetAuraApplicationDisplayCount = function(unit, auraInstanceID, minDisplayCount, maxDisplayCount)
+            check("applications: forwards API arguments",
+                unit == "target" and auraInstanceID == 9
+                    and minDisplayCount == 2 and maxDisplayCount == nil)
+            return "*"
+        end,
+    }
+    local got, count = G.ReadAuraApplicationDisplayCount("target", 9)
+    check("applications: returns display count", got == true and count == "*")
+    _G.C_UnitAuras = nil
+end
+
 -- QueueRegenWork restriction boundary (68675): AuraButton children deny
 -- tainted access while auras are secret, so the replay queue must not fire
 -- on regen alone — it re-checks ShouldAurasBeSecret and polls until clear.

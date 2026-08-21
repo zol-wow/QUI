@@ -822,6 +822,11 @@ local function ResolveAuraInstanceDurationState(result, auraUnit, auraInstanceID
 end
 
 local function GetAuraApplications(unit, auraInstanceID)
+    local glue = ns.AuraGlue
+    local readCount = glue and glue.ReadAuraApplicationDisplayCount
+    if readCount then
+        return readCount(unit, auraInstanceID)
+    end
     return false, nil
 end
 
@@ -1603,7 +1608,6 @@ local function ResolveAuraRuntimeStateImpl(params)
         if not appsResolved
             and childAuraInstID
             and not InCombatLockdown()
-            and IsSelfUnit(auraUnit)
             and r.auraData then
             local directApps = GetDisplayableAuraApplications(r.auraData)
             if IsUsableResolvedAuraData(auraUnit, r.auraData) and directApps ~= nil then
