@@ -245,31 +245,6 @@ local function _EnsureBarWidgets(live)
     return w
 end
 
-local function _GetBarOverrideColor(settings, entry)
-    local overrides = settings and settings.colorOverrides
-    if type(overrides) ~= "table" or type(entry) ~= "table" then return nil end
-
-    local function lookup(id)
-        if type(id) ~= "number" or _issecretvalue(id) then return nil end
-        local color = overrides[id]
-        return type(color) == "table" and color or nil
-    end
-
-    local color = lookup(entry.spellID) or lookup(entry.overrideSpellID)
-        or lookup(entry.baseSpellID) or lookup(entry.id)
-        or lookup(entry.linkedSpellID) or lookup(entry.cooldownID)
-    if color then return color end
-
-    local linked = entry.linkedSpellIDs
-    if type(linked) == "table" and not _issecretvalue(linked) then
-        for i = 1, #linked do
-            color = lookup(linked[i])
-            if color then return color end
-        end
-    end
-    return nil
-end
-
 local function _BarReskinWork(live, settings)
     local bar = live.Bar
     if not bar then return end
@@ -304,10 +279,7 @@ local function _BarReskinWork(live, settings)
     if bar.SetStatusBarColor then
         local opacity = settings.barOpacity or 1.0
         local r, g, b
-        local override = _GetBarOverrideColor(settings, w and w.entry)
-        if override then
-            r, g, b = override[1] or 0.2, override[2] or 0.8, override[3] or 0.6
-        elseif settings.useClassColor and UnitClass and RAID_CLASS_COLORS then
+        if settings.useClassColor and UnitClass and RAID_CLASS_COLORS then
             local _, class = UnitClass("player")
             -- @secret-policy: collapse-only — UnitClass can return SECRET on 12.1 PTR7
             if _issecretvalue(class) then class = nil end
