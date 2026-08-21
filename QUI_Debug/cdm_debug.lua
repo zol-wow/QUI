@@ -2215,17 +2215,15 @@ local function CDMItemAuraSnapshot(icon, elapsed)
 
     local auraUnit = (scanned and scanned.auraUnit) or scannerAuraUnit or "player"
     local auraInstanceID = scanned and scanned.auraInstanceID or scannerAuraInstanceID
-    local auraDurObj, auraData
-    if CDMItemAuraHasOpaqueValue(auraInstanceID) and Sources then
-        if Sources.QueryAuraDuration then
-            auraDurObj = Sources.QueryAuraDuration(auraUnit, auraInstanceID)
-        end
-        if Sources.QueryAuraDataByAuraInstanceID then
-            auraData = Sources.QueryAuraDataByAuraInstanceID(auraUnit, auraInstanceID)
-        end
+    local auraData
+    local spellData = ns.CDMSpellData
+    if CDMItemAuraHasOpaqueValue(auraInstanceID) and spellData
+        and spellData.GetCapturedAuraDataByInstanceID then
+        auraData = spellData:GetCapturedAuraDataByInstanceID(auraUnit, auraInstanceID)
     end
 
     local resolvedState = CDMGCDResolveCooldownState(icon)
+    local auraDurObj = resolvedState and resolvedState.durObj
     local cd = icon.Cooldown
 
     local fields = {

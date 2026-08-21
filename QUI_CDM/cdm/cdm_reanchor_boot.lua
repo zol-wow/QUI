@@ -144,6 +144,11 @@ function CDMReanchorBoot.BuildRuntime(env)
             if s.showBuffIconSwipe == false and show then cd:SetDrawSwipe(false) end
             return
         end
+        if frame and frame.cooldownUseAuraDisplayTime == true
+            and not isAuraPhaseEnabled() then
+            if show then cd:SetDrawSwipe(false) end
+            return
+        end
         local gcd = frame and frame.isOnGCD
         if _issecretvalue(gcd) then return end
         if gcd == true then

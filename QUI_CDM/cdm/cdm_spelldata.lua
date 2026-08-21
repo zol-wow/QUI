@@ -3211,6 +3211,15 @@ function CDMSpellData:GetActiveAuras(filter)
     return result
 end
 
+function CDMSpellData:GetCapturedAuraDataByInstanceID(unit, auraInstanceID)
+    if type(unit) ~= "string" or unit == ""
+        or (issecretvalue and issecretvalue(auraInstanceID)) then
+        return nil
+    end
+    local instMap = _capturedAuraByUnitInstanceID[unit]
+    return GetCapturedAuraData(instMap and instMap[auraInstanceID])
+end
+
 function CDMSpellData:GetPassiveAuras()
     local result = {}
     local seen = {}

@@ -185,8 +185,13 @@ do
 end
 
 do
-    swipeStub.showCooldownSwipe = false
     local cd = NewCd()
+    reassertSwipe({ cooldownUseAuraDisplayTime = true }, cd, nil, true)
+    assert(cd.swipes[1] == false,
+        "aura-phase setting hides the native aura swipe when disabled")
+
+    swipeStub.showCooldownSwipe = false
+    cd = NewCd()
     reassertSwipe({}, cd, nil, true)
     assert(cd.swipes[1] == false, "cooldown swipe setting hides Blizzard's native swipe")
 
