@@ -185,9 +185,59 @@ function CDMReanchorBoot.BuildRuntime(env)
             if not hasCharges then cd:SetDrawSwipe(true) end
         end
     end
+    local function cleanSpellID(spellID)
+        if _issecretvalue(spellID) or type(spellID) ~= "number" or spellID <= 0 then
+            return nil
+        end
+        return spellID
+    end
+    local function isNativeCooldownRepairFrame(frame, containerKey, entry)
+        if containerKey ~= "essential" and containerKey ~= "utility" then return false end
+        if entry and (entry.isAura or entry.kind == "aura") then return false end
+        if frame and (frame.viewerFrame == _G.BuffIconCooldownViewer
+            or frame.viewerFrame == _G.BuffBarCooldownViewer) then
+            return false
+        end
+        return true
+    end
+    local function repairStaleLinkedAura(frame, cd, entry)
+        local Sources = ns.CDMSources
+        if not (frame and cd and Sources and Sources.QuerySpellCooldown
+            and Sources.QuerySpellCooldownDuration) then
+            return
+        end
+        local spellID = cleanSpellID(entry and (entry.overrideSpellID
+            or entry.spellID or entry.id))
+        if not spellID then return end
+        local effectiveID = spellID
+        if Sources.QueryOverrideSpell then
+            effectiveID = cleanSpellID(Sources.QueryOverrideSpell(spellID)) or spellID
+        end
+        local cooldown = Sources.QuerySpellCooldown(effectiveID)
+            or (effectiveID ~= spellID and Sources.QuerySpellCooldown(spellID))
+        if not cooldown then return end
+        local active, onGCD = cooldown.isActive, cooldown.isOnGCD
+        if _issecretvalue(active) or _issecretvalue(onGCD)
+            or active ~= true or onGCD ~= false then
+            return
+        end
+        local duration = Sources.QuerySpellCooldownDuration(effectiveID, true)
+        if not duration and effectiveID ~= spellID then
+            duration = Sources.QuerySpellCooldownDuration(spellID, true)
+        end
+        if not duration then return end
+        if cd.SetUseAuraDisplayTime then cd:SetUseAuraDisplayTime(false) end
+        if ns.CDMRenderers and ns.CDMRenderers.ApplyDurationObjectCooldown then
+            ns.CDMRenderers.ApplyDurationObjectCooldown(cd, duration, true, false)
+        elseif cd.SetCooldownFromDurationObject then
+            cd:SetCooldownFromDurationObject(duration, true)
+        end
+    end
     local auraPhase = ns.CDMReanchorAuraPhase and ns.CDMReanchorAuraPhase.New({
         securecall = securecallfunction,
         isAuraPhaseEnabled = isAuraPhaseEnabled,
+        isNativeCooldownRepairFrame = isNativeCooldownRepairFrame,
+        repairStaleLinkedAura = repairStaleLinkedAura,
         requestAuraPhaseRefresh = function(_, containerKey)
             if env.canMutate and not env.canMutate() then
                 if runtime and runtime.QueuePendingCombatRefresh then

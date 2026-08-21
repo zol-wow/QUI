@@ -106,6 +106,106 @@ do
     local inst = M.New({
         securecall = function(fn, ...) return fn(...) end,
         hooksecurefunc = function(_, method, fn) hooks[method] = fn end,
+        isAuraPhaseEnabled = function() return false end,
+        requestAuraPhaseRefresh = function(_, key, show)
+            requested[#requested + 1] = { key = key, show = show }
+        end,
+    })
+    local cd = {
+        SetCooldown = function() end,
+        SetCooldownFromDurationObject = function() end,
+        SetUseAuraDisplayTime = function() end,
+    }
+    local frame = {
+        cooldownUseAuraDisplayTime = true,
+        GetCooldownFrame = function() return cd end,
+    }
+    inst:Hook(frame, "essential")
+    hooks.SetCooldown(cd)
+    hooks.SetCooldownFromDurationObject(cd)
+    assert(#requested == 2 and requested[1].key == "essential"
+        and requested[1].show == true,
+        "disabled aura phase rechecks native cooldown pushes")
+end
+
+do
+    local hooks, textureHooks = {}, {}
+    local repairs = {}
+    local inst
+    local texture = {
+        SetDesaturated = function() end,
+        SetDesaturation = function() end,
+    }
+    local cd = {
+        Clear = function() end,
+        SetUseAuraDisplayTime = function() end,
+        SetCooldownFromDurationObject = function() end,
+    }
+    local frame = {
+        cooldownInfo = { linkedSpellID = 9001 },
+        auraInstanceID = nil,
+        wasSetFromAura = false,
+        Icon = texture,
+        GetCooldownFrame = function() return cd end,
+    }
+    inst = M.New({
+        securecall = function(fn, ...) return fn(...) end,
+        hooksecurefunc = function(obj, method, fn)
+            if obj == texture then textureHooks[method] = fn else hooks[method] = fn end
+        end,
+        isNativeCooldownRepairFrame = function(_, key) return key == "essential" end,
+        repairStaleLinkedAura = function(f, cdw, entry, reason)
+            repairs[#repairs + 1] = { frame = f, cd = cdw, entry = entry, reason = reason }
+            inst:OnNativeRepairDriver(f, cdw, reason)
+        end,
+    })
+    local entry = { spellID = 9001 }
+    inst:Hook(frame, "essential", entry)
+    assert(hooks.Clear and textureHooks.SetDesaturated and textureHooks.SetDesaturation,
+        "stale-link repair hooks native Clear and both desaturation drivers")
+    hooks.Clear(cd)
+    assert(#repairs == 1 and repairs[1].entry == entry and repairs[1].reason == "clear",
+        "stale-link repair runs once and is re-entry guarded")
+    textureHooks.SetDesaturated(texture)
+    textureHooks.SetDesaturation(texture)
+    assert(#repairs == 3, "desaturation drivers recheck stale linked state")
+    frame.auraInstanceID = 12
+    hooks.Clear(cd)
+    assert(#repairs == 3, "active aura instance blocks native cooldown repair")
+    frame.auraInstanceID = nil
+    frame.wasSetFromAura = true
+    textureHooks.SetDesaturated(texture)
+    assert(#repairs == 3, "native aura ownership blocks native cooldown repair")
+end
+
+do
+    local repairs = 0
+    local inst = M.New({
+        isNativeCooldownRepairFrame = function(_, key) return key == "essential" end,
+        repairStaleLinkedAura = function() repairs = repairs + 1 end,
+    })
+    local cd = {}
+    local frame = {
+        cooldownInfo = { linkedSpellID = 9002 },
+        auraInstanceID = nil,
+        wasSetFromAura = false,
+    }
+    inst:Hook(frame, "buff", { spellID = 9002 })
+    assert(inst:IsNativeCooldownRepairFrame(frame, "buff") == false,
+        "buff frames are excluded from stale-link repair")
+    inst:OnNativeRepairDriver(frame, cd, "clear")
+    assert(repairs == 0, "excluded frames never invoke stale-link repair")
+    frame.cooldownInfo.linkedSpellID = nil
+    inst:OnNativeRepairDriver(frame, cd, "clear")
+    assert(repairs == 0, "frames without a linked spell are ignored")
+end
+
+do
+    local hooks = {}
+    local requested = {}
+    local inst = M.New({
+        securecall = function(fn, ...) return fn(...) end,
+        hooksecurefunc = function(_, method, fn) hooks[method] = fn end,
         requestAuraPhaseRefresh = function(_, _, show) requested[#requested + 1] = show end,
     })
     local cd = { SetUseAuraDisplayTime = function() end, SetDrawEdge = function() end }

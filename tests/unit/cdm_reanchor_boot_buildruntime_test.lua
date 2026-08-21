@@ -198,6 +198,53 @@ assert(type(capturedAuraDeps.reassertSwipe) == "function",
     "auraPhase receives reassertSwipe")
 assert(type(capturedAuraDeps.requestAuraPhaseRefresh) == "function",
     "auraPhase receives the safe aura-phase refresh request")
+assert(type(capturedAuraDeps.isNativeCooldownRepairFrame) == "function",
+    "auraPhase receives the native cooldown repair eligibility gate")
+assert(type(capturedAuraDeps.repairStaleLinkedAura) == "function",
+    "auraPhase receives the stale linked-aura repair callback")
+local repairCalls = {}
+ns.CDMSources = {
+    QueryOverrideSpell = function(spellID) return spellID + 1 end,
+    QuerySpellCooldown = function(spellID)
+        repairCalls[#repairCalls + 1] = { "cooldown", spellID }
+        return { isActive = true, isOnGCD = false }
+    end,
+    QuerySpellCooldownDuration = function(spellID, ignoreGCD)
+        repairCalls[#repairCalls + 1] = { "duration", spellID, ignoreGCD }
+        return "duration-object"
+    end,
+}
+local appliedRepair
+ns.CDMRenderers = {
+    ApplyDurationObjectCooldown = function(cd, duration, clearWhenZero, reverse)
+        appliedRepair = { cd = cd, duration = duration,
+            clearWhenZero = clearWhenZero, reverse = reverse }
+    end,
+}
+local repairFrame = { cooldownUseAuraDisplayTime = true }
+local repairCd = { SetUseAuraDisplayTime = function(_, show)
+    repairFrame.cooldownUseAuraDisplayTime = show
+end }
+local repairEntry = { spellID = 700 }
+capturedAuraDeps.repairStaleLinkedAura(repairFrame, repairCd, repairEntry)
+assert(appliedRepair and appliedRepair.cd == repairCd
+    and appliedRepair.duration == "duration-object"
+    and appliedRepair.clearWhenZero == true and appliedRepair.reverse == false,
+    "stale linked-aura repair reuses the duration-object renderer")
+assert(repairCalls[1][1] == "cooldown" and repairCalls[1][2] == 701
+    and repairCalls[2][1] == "duration" and repairCalls[2][2] == 701
+    and repairCalls[2][3] == true,
+    "stale linked-aura repair resolves the effective spell and ignores GCD duration")
+local beforeGCDRepair = #repairCalls
+ns.CDMSources.QuerySpellCooldown = function()
+    return { isActive = true, isOnGCD = true }
+end
+appliedRepair = nil
+capturedAuraDeps.repairStaleLinkedAura(repairFrame, repairCd, repairEntry)
+assert(appliedRepair == nil and #repairCalls == beforeGCDRepair,
+    "GCD cooldowns are excluded from native stale-link repair")
+ns.CDMSources = nil
+ns.CDMRenderers = nil
 swipeStub.showCooldownIconAuraPhase = false
 local nativeAuraFrame = {
     cooldownUseAuraDisplayTime = true,
