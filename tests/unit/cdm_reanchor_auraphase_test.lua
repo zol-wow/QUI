@@ -87,6 +87,7 @@ do
         SetCooldown = function() end,
         SetCooldownFromDurationObject = function() end,
         SetUseAuraDisplayTime = function() end,
+        Clear = function() end,
     }
     inst = M.New({
         securecall = function(fn, ...) return fn(...) end,
@@ -116,8 +117,13 @@ do
     assert(calls == 0, "swipe repaint does not re-arm without a timing push")
     hooked.SetCooldown()
     assert(calls == 1, "native cooldown re-arm is re-entry guarded")
+    local nativeState = inst._nativeAuraState[cd]
+    hooked.Clear(cd)
+    hooked.SetCooldown(cd, 3, 4, 1)
+    assert(inst._nativeAuraState[cd] == nativeState,
+        "native cooldown state table is reused after clear")
     inst:Reassert(frame)
-    assert(calls == 2, "Reassert re-arms the native cooldown once")
+    assert(calls == 3, "Reassert re-arms the native cooldown once")
 end
 
 do

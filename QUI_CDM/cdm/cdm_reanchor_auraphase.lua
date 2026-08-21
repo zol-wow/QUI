@@ -47,7 +47,15 @@ end
 function CDMReanchorAuraPhase:OnNativeCooldownClear(cd)
     if self._nativeRearmReentry[cd] then return end
     self._nativeAuraActive[cd] = false
-    self._nativeAuraState[cd] = nil
+    local state = self._nativeAuraState[cd]
+    if state then
+        state.durationObject = nil
+        state.clearWhenZero = nil
+        state.hasCooldown = nil
+        state.start = nil
+        state.duration = nil
+        state.modRate = nil
+    end
 end
 
 function CDMReanchorAuraPhase:SeedNativeState(frame, cd)
@@ -115,20 +123,23 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey, entry)
     if cd and self._deps.rearmNativeCooldown and not self._nativeRearmHooked[cd] then
         self._nativeRearmHooked[cd] = true
         self:SeedNativeState(frame, cd)
+        local nativeState = self._nativeAuraState[cd]
+        if not nativeState then
+            nativeState = {}
+            self._nativeAuraState[cd] = nativeState
+        end
         local function rearmWork() this:OnNativeCooldownPush(frame, cd) end
         local function auraDisplayWork(show) this:OnNativeAuraDisplayTime(frame, cd, show) end
         local function clearWork() this:OnNativeCooldownClear(cd) end
         if type(cd.SetCooldown) == "function" then
             hooksec(cd, "SetCooldown", function(_, start, duration, modRate)
                 if not this._nativeRearmReentry[cd] then
-                    local state = this._nativeAuraState[cd] or {}
-                    state.durationObject = nil
-                    state.clearWhenZero = nil
-                    state.hasCooldown = true
-                    state.start = start
-                    state.duration = duration
-                    state.modRate = modRate
-                    this._nativeAuraState[cd] = state
+                    nativeState.durationObject = nil
+                    nativeState.clearWhenZero = nil
+                    nativeState.hasCooldown = true
+                    nativeState.start = start
+                    nativeState.duration = duration
+                    nativeState.modRate = modRate
                 end
                 securecall(rearmWork)
             end)
@@ -136,11 +147,9 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey, entry)
         if type(cd.SetCooldownFromDurationObject) == "function" then
             hooksec(cd, "SetCooldownFromDurationObject", function(_, durationObject, clearWhenZero)
                 if not this._nativeRearmReentry[cd] then
-                    local state = this._nativeAuraState[cd] or {}
-                    state.durationObject = durationObject
-                    state.clearWhenZero = clearWhenZero
-                    state.hasCooldown = nil
-                    this._nativeAuraState[cd] = state
+                    nativeState.durationObject = durationObject
+                    nativeState.clearWhenZero = clearWhenZero
+                    nativeState.hasCooldown = nil
                 end
                 securecall(rearmWork)
             end)

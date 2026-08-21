@@ -88,8 +88,10 @@ function CDMReanchorBoot.BuildRuntime(env)
         if isAuraPhaseEnabled() then
             if nativeAuraPhaseDisabled[cd] then
                 nativeAuraPhaseDisabled[cd] = nil
-                ns.SafeCallMethod("best-effort-style", cd, "SetUseAuraDisplayTime", true)
-                if nativeAuraState then
+                local restoreAura = nativeAuraActive == true
+                ns.SafeCallMethod("best-effort-style", cd,
+                    "SetUseAuraDisplayTime", restoreAura)
+                if restoreAura and nativeAuraState then
                     if nativeAuraState.durationObject
                         and cd.SetCooldownFromDurationObject then
                         ns.SafeCallMethod("best-effort-style", cd,

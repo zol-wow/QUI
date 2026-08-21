@@ -273,12 +273,20 @@ swipeStub.showCooldownIconAuraPhase = true
 useAuraCalls = {}
 local nativeAuraState = { durationObject = { aura = true }, clearWhenZero = true }
 restoredNativeDuration = nil
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, false, nativeAuraState)
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true, nativeAuraState)
 assert(#useAuraCalls == 1 and useAuraCalls[1] == true,
     "native aura re-arm restores aura timing when the setting is enabled")
 assert(restoredNativeDuration and restoredNativeDuration.duration == nativeAuraState.durationObject
     and restoredNativeDuration.clearWhenZero == true,
     "native aura re-arm restores the cached aura duration object")
+swipeStub.showCooldownIconAuraPhase = false
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
+swipeStub.showCooldownIconAuraPhase = true
+useAuraCalls = {}
+restoredNativeDuration = nil
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, false, nativeAuraState)
+assert(#useAuraCalls == 1 and useAuraCalls[1] == false and not restoredNativeDuration,
+    "native cooldown mode stays restored after the aura expires")
 swipeStub.showCooldownIconAuraPhase = false
 cooldownDuration = { cooldown = true }
 fMatch.GetCooldownInfo = function() return { hasAura = false } end
