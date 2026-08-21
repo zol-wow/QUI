@@ -58,6 +58,10 @@ function CDMReanchorBoot.BuildRuntime(env)
     local bridge = env.CDMReanchor.New({ sinkAnchor = env.uiParent })
     local wiring = env.CDMReanchorWiring.New({ bridge = bridge, index = env.index })
     local runtime
+    local function frameCanUseAuraForDisplay(frame)
+        local info = bridge:GetFrameCooldownInfo(frame)
+        return info and info.hasAura == true
+    end
     local function swipeSettings()
         return (ns._OwnedSwipe and ns._OwnedSwipe.GetSettings and ns._OwnedSwipe.GetSettings()) or {}
     end
@@ -223,8 +227,12 @@ function CDMReanchorBoot.BuildRuntime(env)
         getCurated = env.getCurated,
         getSettings = env.getSettings,
         getAdditional = MakeGetAdditional(env),
-        shouldReplaceNativeAuraPhase = function()
-            return false
+        shouldReplaceNativeAuraPhase = function(frame, entry, containerKey)
+            if isBuffIconFrameKey(containerKey) or entry and (entry.isAura or entry.kind == "aura") then
+                return false
+            end
+            return entry ~= nil and not isAuraPhaseEnabled()
+                and frameCanUseAuraForDisplay(frame)
         end,
         buildLayout = env.buildLayout,
         buildBuffLayout = env.buildBuffLayout,

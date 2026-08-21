@@ -243,15 +243,26 @@ facade:DrainPendingCombatRefresh()
 
 swipeStub.showCooldownIconAuraPhase = false
 local shouldReplace = capturedRuntimeDeps.shouldReplaceNativeAuraPhase
+local nativeAuraFrame = {
+    cooldownUseAuraDisplayTime = false,
+    GetCooldownInfo = function() return { hasAura = true } end,
+}
 for _, entryType in ipairs({ "item", "slot", "trinket", "consumable", "macro" }) do
-    assert(shouldReplace({}, { type = entryType }, "essential") == false,
-        entryType .. "-backed native frame stays Blizzard-owned")
+    assert(shouldReplace(nativeAuraFrame, { type = entryType }, "essential") == true,
+        entryType .. "-backed native aura frame replaces when disabled")
 end
-assert(shouldReplace({}, { type = "spell" }, "essential") == false,
-    "ordinary spell native frame stays Blizzard-owned")
+assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == true,
+    "ordinary spell native aura frame replaces when disabled")
+assert(shouldReplace({ cooldownUseAuraDisplayTime = true,
+        GetCooldownInfo = function() return { hasAura = false } end },
+        { type = "spell" }, "essential") == false,
+    "native non-aura frame stays native when disabled")
 assert(shouldReplace({}, { type = "item" }, "buff") == false,
     "item-backed BuffIcon entry remains native")
-assert(shouldReplace({}, { type = "spell", kind = "aura" }, "essential") == false,
+assert(shouldReplace(nativeAuraFrame, { type = "spell", kind = "aura" }, "essential") == false,
     "explicit aura entry remains native")
+swipeStub.showCooldownIconAuraPhase = true
+assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == false,
+    "native aura frame stays native when aura phase is enabled")
 
 print("OK: cdm_reanchor_boot_buildruntime_test")
