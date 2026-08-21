@@ -249,7 +249,6 @@ local function _BarReskinWork(live, settings)
     local bar = live.Bar
     if not bar then return end
     settings = settings or {}
-    local w = _EnsureBarWidgets(live)
     local showIcon = not settings.hideIcon
     local iconSize = settings.barHeight or 25
     if live.Icon and live.Icon.Hide then live.Icon:Hide() end
@@ -293,6 +292,7 @@ local function _BarReskinWork(live, settings)
         bar:SetStatusBarColor(r, g, b, opacity)
     end
 
+    local w = _EnsureBarWidgets(live)
     if w then
         if w.bg then
             local bg = settings.bgColor or { 0, 0, 0, 1 }
