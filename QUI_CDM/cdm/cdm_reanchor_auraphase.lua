@@ -50,6 +50,32 @@ function CDMReanchorAuraPhase:OnNativeCooldownClear(cd)
     self._nativeAuraState[cd] = nil
 end
 
+function CDMReanchorAuraPhase:SeedNativeState(frame, cd)
+    if not frame or not cd then return end
+    if self._nativeAuraActive[cd] == nil then
+        local active = frame.cooldownUseAuraDisplayTime
+        if not (_issecretvalue and _issecretvalue(active)) then
+            self._nativeAuraActive[cd] = active == true
+        end
+    end
+    if self._nativeAuraState[cd] then return end
+    local start = frame.cooldownStartTime
+    local duration = frame.cooldownDuration
+    local modRate = frame.cooldownModRate
+    if (_issecretvalue and (_issecretvalue(start) or _issecretvalue(duration)
+        or _issecretvalue(modRate))) then
+        return
+    end
+    if type(start) == "number" and type(duration) == "number" then
+        self._nativeAuraState[cd] = {
+            hasCooldown = true,
+            start = start,
+            duration = duration,
+            modRate = modRate,
+        }
+    end
+end
+
 function CDMReanchorAuraPhase:OnSwipeColor(frame, cd)
     if not cd or self._reentry[cd] then return end
     self._reentry[cd] = true
@@ -88,7 +114,10 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey, entry)
     local cd = frame.GetCooldownFrame and frame:GetCooldownFrame()
     if cd and self._deps.rearmNativeCooldown and not self._nativeRearmHooked[cd] then
         self._nativeRearmHooked[cd] = true
+        self:SeedNativeState(frame, cd)
         local function rearmWork() this:OnNativeCooldownPush(frame, cd) end
+        local function auraDisplayWork(show) this:OnNativeAuraDisplayTime(frame, cd, show) end
+        local function clearWork() this:OnNativeCooldownClear(cd) end
         if type(cd.SetCooldown) == "function" then
             hooksec(cd, "SetCooldown", function(_, start, duration, modRate)
                 if not this._nativeRearmReentry[cd] then
@@ -118,12 +147,12 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey, entry)
         end
         if type(cd.SetUseAuraDisplayTime) == "function" then
             hooksec(cd, "SetUseAuraDisplayTime", function(_, show)
-                securecall(function() this:OnNativeAuraDisplayTime(frame, cd, show) end)
+                securecall(auraDisplayWork, show)
             end)
         end
         if type(cd.Clear) == "function" then
             hooksec(cd, "Clear", function()
-                securecall(function() this:OnNativeCooldownClear(cd) end)
+                securecall(clearWork)
             end)
         end
     end

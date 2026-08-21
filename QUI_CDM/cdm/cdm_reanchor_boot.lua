@@ -77,9 +77,9 @@ function CDMReanchorBoot.BuildRuntime(env)
         return not (s and s.showCooldownIconAuraPhase == false)
     end
     local function frameCanUseAuraForDisplay(frame)
-        local info = bridge:GetFrameCooldownInfo(frame)
-        if info then return info.hasAura == true and isAuraPhaseEnabled() end
-        return frame and frame.cooldownUseAuraDisplayTime == true and isAuraPhaseEnabled()
+        local active = frame and frame.cooldownUseAuraDisplayTime
+        if _issecretvalue(active) then return false end -- @secret-policy: reject-secret-value
+        return active == true and isAuraPhaseEnabled()
     end
     local function rearmNativeCooldown(frame, cd, containerKey, entry, nativeAuraActive, nativeAuraState)
         if not frame or not cd or not entry then return end

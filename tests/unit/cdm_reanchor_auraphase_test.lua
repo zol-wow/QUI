@@ -96,11 +96,22 @@ do
             inst:OnNativeCooldownPush({}, cd)
         end,
     })
-    local frame = { GetCooldownFrame = function() return cd end }
+    local frame = {
+        GetCooldownFrame = function() return cd end,
+        cooldownUseAuraDisplayTime = true,
+        cooldownStartTime = 12,
+        cooldownDuration = 8,
+        cooldownModRate = 1.2,
+    }
     inst:Hook(frame, "essential", { type = "spell", spellID = 1233448 })
     assert(hooked.SetSwipeColor and hooked.SetCooldown
         and hooked.SetCooldownFromDurationObject and hooked.SetUseAuraDisplayTime,
         "native cooldown push hooks installed")
+    assert(inst._nativeAuraActive[cd] == true
+        and inst._nativeAuraState[cd].start == 12
+        and inst._nativeAuraState[cd].duration == 8
+        and inst._nativeAuraState[cd].modRate == 1.2,
+        "initial native aura state is seeded from the item frame")
     hooked.SetSwipeColor()
     assert(calls == 0, "swipe repaint does not re-arm without a timing push")
     hooked.SetCooldown()
