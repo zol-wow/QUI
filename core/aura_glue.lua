@@ -146,11 +146,31 @@ function G.CollectReadableAuras(unit)
                     "secret-probe", unitAuras.GetAuraDataByAuraInstanceID,
                     unit, instanceID)
                 if not dataOK then return nil end
-                if auraData then result[#result + 1] = { auraData, filter } end
+                if auraData and not (issecretvalue and issecretvalue(auraData)) then
+                    result[#result + 1] = { auraData, filter }
+                end
             end
         end
     end
     return result
+end
+
+function G.ReadAurasByInstanceID(unit, instanceIDs, callback)
+    if G.AurasAreSecret and G.AurasAreSecret() then return false end
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetAuraDataByAuraInstanceID)
+        or type(instanceIDs) ~= "table" or type(callback) ~= "function" then
+        return false
+    end
+    for _, instanceID in ipairs(instanceIDs) do
+        if issecretvalue and issecretvalue(instanceID) then return false end -- @secret-policy: report-secret-detected
+        local ok, auraData = ns.SafeCall(
+            "secret-probe", unitAuras.GetAuraDataByAuraInstanceID, unit, instanceID)
+        if not ok then return false end
+        if auraData and issecretvalue and issecretvalue(auraData) then auraData = nil end
+        callback(auraData, instanceID)
+    end
+    return true
 end
 
 function G.GetCooldownAuraBySpellID(spellID)

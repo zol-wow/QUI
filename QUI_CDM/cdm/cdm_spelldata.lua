@@ -469,6 +469,12 @@ local function ReleaseCapturedAurasByInstanceIDsForUnit(unit, auraInstanceIDs)
     return released
 end
 
+local function ReleaseCapturedAuraByInstanceID(unit, auraInstanceID)
+    local instMap = _capturedAuraByUnitInstanceID[unit]
+    local entry = instMap and instMap[auraInstanceID]
+    if entry then ReleaseCapturedEntry(entry) end
+end
+
 local function CollectCurrentAuras(unit)
     local glue = ns.AuraGlue
     return glue and glue.CollectReadableAuras
@@ -490,6 +496,16 @@ local function RescanCapturedAurasForUnit(unit, updateInfo)
         CaptureAuraFromPayload(unit, ad)
     end
     return false
+end
+
+local function RefreshCapturedAurasByInstanceIDs(unit, instanceIDs)
+    local glue = ns.AuraGlue
+    local refresh = glue and glue.ReadAurasByInstanceID
+    if not refresh then return false end
+    return refresh(unit, instanceIDs, function(auraData, auraInstanceID)
+        ReleaseCapturedAuraByInstanceID(unit, auraInstanceID)
+        if auraData then CaptureAuraFromPayload(unit, auraData) end
+    end)
 end
 
 local function NotifyAuraConsumers(unit, updateInfo)
@@ -546,7 +562,7 @@ local function HandleUnitAura(unit, updateInfo)
         if updateInfo.updatedAuraInstanceIDs
             and not (issecretvalue and issecretvalue(updateInfo.updatedAuraInstanceIDs))
             and #updateInfo.updatedAuraInstanceIDs > 0 then
-            refreshed = RescanCapturedAurasForUnit(unit)
+            refreshed = RefreshCapturedAurasByInstanceIDs(unit, updateInfo.updatedAuraInstanceIDs)
         end
         if not refreshed then
             for _, ad in ipairs(updateInfo.addedAuras) do
@@ -556,7 +572,7 @@ local function HandleUnitAura(unit, updateInfo)
     elseif updateInfo.updatedAuraInstanceIDs
         and not (issecretvalue and issecretvalue(updateInfo.updatedAuraInstanceIDs))
         and #updateInfo.updatedAuraInstanceIDs > 0 then
-        RescanCapturedAurasForUnit(unit)
+        RefreshCapturedAurasByInstanceIDs(unit, updateInfo.updatedAuraInstanceIDs)
     end
     if updateInfo.removedAuraInstanceIDs
         and not (issecretvalue and issecretvalue(updateInfo.removedAuraInstanceIDs))

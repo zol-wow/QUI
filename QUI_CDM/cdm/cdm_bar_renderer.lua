@@ -724,11 +724,13 @@ local function GetTrackedBarOverrideColor(settings, spellData)
 end
 
 local function GetColorFingerprint(color)
-    if type(color) ~= "table" then return 0 end
-    return (tonumber(color[1]) or 0)
-        + (tonumber(color[2]) or 0) * 7
-        + (tonumber(color[3]) or 0) * 53
-        + (tonumber(color[4]) or 0) * 131
+    if type(color) ~= "table" then return "0|0|0|0" end
+    return table.concat({
+        tonumber(color[1]) or 0,
+        tonumber(color[2]) or 0,
+        tonumber(color[3]) or 0,
+        tonumber(color[4]) or 0,
+    }, "|")
 end
 
 function CDMBars.ConfigureBar(bar, settings, overrideWidth)
@@ -1841,25 +1843,23 @@ function CDMBars:LayoutBars(container, settings)
     local bcsHash = (bcs == "theme" and 1) or (bcs == "class" and 2)
         or (bcs == "custom" and 3) or 0
     local bc = settings.borderColor
-    local bcHash = 0
-    if type(bc) == "table" then
-        bcHash = (bc[1] or 0) + (bc[2] or 0) * 7 + (bc[3] or 0) * 53 + (bc[4] or 0) * 131
-    end
+    local bcHash = GetColorFingerprint(bc)
     local barColorHash = GetColorFingerprint(settings.barColor)
-    local cfgFingerprint = (settings.barHeight or 0)
-        + (barWidth or 0) * 7
-        + (settings.borderSize or 0) * 97
-        + (settings.textSize or 0) * 1009
-        + ((settings.barOpacity or 1) * 10000)
-        + ((settings.useClassColor and 1 or 0) * 100003)
-        + bcsHash * 1300031
-        + bcHash * 700001
+    local cfgFingerprint = table.concat({
+        settings.barHeight or 0,
+        barWidth or 0,
+        settings.borderSize or 0,
+        settings.textSize or 0,
+        settings.barOpacity or 1,
+        settings.useClassColor and 1 or 0,
+        bcsHash,
+        bcHash,
+    }, "|")
     for _, bar in ipairs(barPool) do
         local overrideColorHash = GetColorFingerprint(
             GetTrackedBarOverrideColor(settings, GetBarSpellData(bar)))
-        local barCfgFingerprint = cfgFingerprint
-            + barColorHash * 17000011
-            + overrideColorHash * 29000017
+        local barCfgFingerprint = cfgFingerprint .. "|" .. barColorHash
+            .. "|" .. overrideColorHash
         if editModeActive then
             bar._active = true
             SetStatusBarValue(bar.StatusBar, 0.65)

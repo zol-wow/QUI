@@ -61,6 +61,12 @@ local ns = {
         CollectReadableAuras = function()
             return currentAuras
         end,
+        ReadAurasByInstanceID = function(_, _, callback)
+            for _, item in ipairs(currentAuras or {}) do
+                callback(item[1], item[1].auraInstanceID)
+            end
+            return true
+        end,
     },
 }
 
