@@ -733,6 +733,28 @@ do
     print("OK: Task 6 — _BarReskinWork zero raw SetFont on native bar.Name/bar.Duration; reskin intact")
 end
 
+do
+    local appliedColor
+    local nativeBar = {
+        SetStatusBarColor = function(_, r, g, b, a) appliedColor = { r, g, b, a } end,
+    }
+    local nativeLive = { Bar = nativeBar }
+    local entry = { spellID = 12345 }
+
+    RE._BarDecorateWork(nativeLive, { _spellEntry = entry }, {
+        useClassColor = true,
+        barOpacity = 0.75,
+        colorOverrides = { [12345] = { 0.1, 0.8, 0.2, 1 } },
+    })
+
+    assert(appliedColor and appliedColor[1] == 0.1
+        and appliedColor[2] == 0.8 and appliedColor[3] == 0.2
+        and appliedColor[4] == 0.75,
+        "Task 7: native bar must apply its per-entry override before class color")
+
+    print("OK: Task 7 — native tracked-bar per-entry color overrides class color")
+end
+
 -- Task A: G2 (SetHideCountdownNumbers), G3 (duration text colour),
 -- G4 (per-(size,outline) font-object cache; distinct names, no collapse).
 -- Field names verified against the owned-icon path:
