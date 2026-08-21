@@ -792,10 +792,8 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
             _auraLookupIDs[i] = nil
         end
         AppendAuraLookupID(entry.overrideSpellID)
-        if entry.overrideSpellID ~= nil then
-            AppendAuraLookupID(entry.spellID)
-            AppendAuraLookupID(entry.id)
-        end
+        AppendAuraLookupID(entry.spellID)
+        AppendAuraLookupID(entry.id)
         local linked = entry.linkedSpellIDs
         if type(linked) == "table" then
             for i = 1, #linked do

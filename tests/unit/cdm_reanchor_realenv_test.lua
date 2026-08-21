@@ -207,8 +207,8 @@ do
 
     local entry = { spellID = 101 }
     presentIDs[101] = true
-    assert(auraEnv.entryAuraIsPresent(entry) == false,
-        "uncaptured player aura must not use a spell getter")
+    assert(auraEnv.entryAuraIsPresent(entry) == true,
+        "captured player aura should use its base spell ID")
     presentIDs[101] = nil
     assert(auraEnv.entryAuraIsPresent(entry) == false, "absent aura -> false")
 

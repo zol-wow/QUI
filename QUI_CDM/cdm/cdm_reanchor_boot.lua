@@ -104,10 +104,11 @@ function CDMReanchorBoot.BuildRuntime(env)
         end
         if frame.cooldownUseAuraDisplayTime == true then
             if not frame.GetCooldownID then return end
-            if swipeSettings().showCooldownSwipe == false then
+            local s = swipeSettings()
+            if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
                 cd:SetSwipeColor(0, 0, 0, 0)
             else
-                local r, g, b, a = modeColor("cooldown")
+                local r, g, b, a = modeColor("aura")
                 cd:SetSwipeColor(r, g, b, a)
             end
         elseif cooldownShown(frame) then
@@ -145,8 +146,10 @@ function CDMReanchorBoot.BuildRuntime(env)
             return
         end
         if frame and frame.cooldownUseAuraDisplayTime == true
-            and not isAuraPhaseEnabled() then
-            if show then cd:SetDrawSwipe(false) end
+            then
+            if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
+                if show then cd:SetDrawSwipe(false) end
+            end
             return
         end
         local gcd = frame and frame.isOnGCD
