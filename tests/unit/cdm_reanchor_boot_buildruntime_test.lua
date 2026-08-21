@@ -243,13 +243,20 @@ facade:DrainPendingCombatRefresh()
 
 swipeStub.showCooldownIconAuraPhase = false
 local shouldReplace = capturedRuntimeDeps.shouldReplaceNativeAuraPhase
-local nativeAuraFrame = { cooldownUseAuraDisplayTime = true }
+local nativeAuraFrame = {
+    cooldownUseAuraDisplayTime = false,
+    GetCooldownInfo = function() return { hasAura = true } end,
+}
 for _, entryType in ipairs({ "item", "slot", "trinket", "consumable", "macro" }) do
     assert(shouldReplace(nativeAuraFrame, { type = entryType }, "essential") == true,
         entryType .. "-backed native aura frame replaces when disabled")
 end
 assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == true,
     "ordinary spell native aura frame replaces when disabled")
+assert(shouldReplace({ cooldownUseAuraDisplayTime = true,
+        GetCooldownInfo = function() return { hasAura = false } end },
+        { type = "spell" }, "essential") == false,
+    "native non-aura frame stays native when disabled")
 assert(shouldReplace({}, { type = "item" }, "buff") == false,
     "item-backed BuffIcon entry remains native")
 assert(shouldReplace(nativeAuraFrame, { type = "spell", kind = "aura" }, "essential") == false,
