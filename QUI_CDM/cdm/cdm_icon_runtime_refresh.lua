@@ -397,15 +397,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                         clearAuraDurationBinding(callbacks, icon)
                     end
                     if controller:ApplyAuraScopedResolvedCooldown(icon, entry, editMode, ncdm, ncdmContainers, inCombatState) then
-                        if includeItems and isItemEntry(entry) then
-                            local containerDB = select(1, resolveContainer(callbacks, entry, ncdm, ncdmContainers))
-                            if callbacks.updateContainerVisibility then
-                                callbacks.updateContainerVisibility(icon, entry, containerDB, editMode, inCombatState)
-                            end
-                            if callbacks.syncCooldownBling then
-                                callbacks.syncCooldownBling(icon)
-                            end
-                        elseif includeCustomCooldowns and isCustomCooldownEntry(entry) then
+                        local auraEntry = isAuraEntry(callbacks, entry)
+                            or entry.kind == "aura" or entry.kind == "auraBar"
+                        if not auraEntry then
                             local containerDB = select(1, resolveContainer(callbacks, entry, ncdm, ncdmContainers))
                             if callbacks.updateContainerVisibility then
                                 callbacks.updateContainerVisibility(icon, entry, containerDB, editMode, inCombatState)

@@ -195,6 +195,8 @@ assert(type(capturedAuraDeps.reassertColor) == "function",
     "auraPhase still receives reassertColor")
 assert(type(capturedAuraDeps.reassertSwipe) == "function",
     "auraPhase receives reassertSwipe")
+assert(type(capturedAuraDeps.requestAuraPhaseRefresh) == "function",
+    "auraPhase receives the safe aura-phase refresh request")
 swipeStub.showCooldownIconAuraPhase = false
 local nativeAuraFrame = {
     cooldownUseAuraDisplayTime = true,

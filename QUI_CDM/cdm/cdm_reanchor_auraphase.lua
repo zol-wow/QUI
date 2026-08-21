@@ -48,6 +48,14 @@ function CDMReanchorAuraPhase:OnDrawSwipe(frame, cd, show)
     self._drawSwipeReentry[cd] = false
 end
 
+function CDMReanchorAuraPhase:OnNativeAuraDisplayTime(frame, show)
+    if _issecretvalue and _issecretvalue(show) then return end
+    local request = self._deps.requestAuraPhaseRefresh
+    if request then
+        ns.SafeCall("bulkhead", request, frame, self._keyByFrame[frame], show == true)
+    end
+end
+
 function CDMReanchorAuraPhase:Hook(frame, containerKey)
     if not frame then return end
     if containerKey ~= nil then self._keyByFrame[frame] = containerKey end
@@ -56,6 +64,20 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey)
     local this = self
 
     local cd = frame.GetCooldownFrame and frame:GetCooldownFrame()
+    if cd and type(cd.SetUseAuraDisplayTime) == "function"
+        and self._deps.requestAuraPhaseRefresh then
+        self._nativeAuraDisplayHooked = self._nativeAuraDisplayHooked
+            or setmetatable({}, { __mode = "k" })
+        if not self._nativeAuraDisplayHooked[cd] then
+            self._nativeAuraDisplayHooked[cd] = true
+            local function auraDisplayWork(show)
+                this:OnNativeAuraDisplayTime(frame, show)
+            end
+            hooksec(cd, "SetUseAuraDisplayTime", function(_, show)
+                securecall(auraDisplayWork, show)
+            end)
+        end
+    end
     if cd and type(cd.SetSwipeColor) == "function" and not self._swipeHooked[cd] then
         self._swipeHooked[cd] = true
         local function colorWork() this:OnSwipeColor(frame, cd) end

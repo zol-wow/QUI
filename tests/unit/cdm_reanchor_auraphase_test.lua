@@ -78,6 +78,25 @@ do
         "G13: still NEVER hooks RefreshSpellCooldownInfo (secret-value taint)")
 end
 
+do
+    local hooked
+    local requested
+    local inst = M.New({
+        securecall = function(fn, ...) return fn(...) end,
+        hooksecurefunc = function(_, method, fn) hooked = fn end,
+        requestAuraPhaseRefresh = function(frame, key, show)
+            requested = { frame = frame, key = key, show = show }
+        end,
+    })
+    local cd = { SetUseAuraDisplayTime = function() end }
+    local frame = { GetCooldownFrame = function() return cd end }
+    inst:Hook(frame, "essential")
+    hooked(cd, true)
+    assert(requested and requested.frame == frame and requested.key == "essential"
+        and requested.show == true,
+        "native aura-mode changes request a safe reanchor")
+end
+
 -- G13: OnDrawEdge -> reassertEdge once (re-entry guarded so the reassert's own
 -- SetDrawEdge(false), which re-fires the hook, cannot recurse); nil cd is a no-op.
 do

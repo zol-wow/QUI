@@ -537,6 +537,8 @@ assert(auraApplied.aura == 1, "full player aura refresh should update aura entri
 assert(auraApplied.item == 1, "full player aura refresh should update item-backed aura/cooldown entries")
 assert(auraApplied.consumable == 1,
     "full player aura refresh should update category consumables")
+assert(visibilityUpdated.consumable == 1 and blingSynced.consumable == 1,
+    "full player aura refresh should update category consumable presentation")
 assert(auraApplied.spell == nil, "full player aura refresh should not touch unrelated spell-only cooldown icons")
 assert(visibilityUpdated.item == 1, "full player aura refresh should update item-backed visibility")
 assert(blingSynced.item == 1, "full player aura refresh should sync item-backed bling")

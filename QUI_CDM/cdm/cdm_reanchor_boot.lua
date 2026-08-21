@@ -188,6 +188,10 @@ function CDMReanchorBoot.BuildRuntime(env)
     local auraPhase = ns.CDMReanchorAuraPhase and ns.CDMReanchorAuraPhase.New({
         securecall = securecallfunction,
         isAuraPhaseEnabled = isAuraPhaseEnabled,
+        requestAuraPhaseRefresh = function(_, containerKey)
+            local hooks = ns._cdmReanchorHooks
+            if hooks and hooks.MarkDirty then hooks:MarkDirty(containerKey) end
+        end,
         reassertColor = reassertColor,
         reassertEdge = reassertEdge,
         reassertSwipe = reassertSwipe,
