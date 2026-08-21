@@ -167,7 +167,6 @@ function G.ReadAurasByInstanceID(unit, instanceIDs, callback)
             "secret-probe", unitAuras.GetAuraDataByAuraInstanceID, unit, instanceID)
         if not ok then return false end
         if issecretvalue and issecretvalue(auraData) then -- @secret-policy: reject-secret-value
-            callback(nil, instanceID)
             return false -- @secret-policy: reject-secret-value
         end
         callback(auraData, instanceID)

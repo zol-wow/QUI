@@ -249,6 +249,21 @@ do
     _G.C_Secrets = nil
 end
 
+do
+    local secretAura = {}
+    local callbackCount = 0
+    _G.issecretvalue = function(value) return value == secretAura end
+    _G.C_UnitAuras = {
+        GetAuraDataByAuraInstanceID = function() return secretAura end,
+    }
+    local ok = G.ReadAurasByInstanceID("player", { 7 }, function()
+        callbackCount = callbackCount + 1
+    end)
+    check("aura read: opaque result does not evict", ok == false and callbackCount == 0)
+    _G.issecretvalue = nil
+    _G.C_UnitAuras = nil
+end
+
 -- QueueRegenWork restriction boundary (68675): AuraButton children deny
 -- tainted access while auras are secret, so the replay queue must not fire
 -- on regen alone — it re-checks ShouldAurasBeSecret and polls until clear.
