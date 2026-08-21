@@ -257,6 +257,14 @@ local beforeExplicitGCDRepair = #repairCalls
 capturedAuraDeps.repairStaleLinkedAura(repairFrame, repairCd, repairEntry)
 assert(appliedRepair == nil and #repairCalls == beforeExplicitGCDRepair,
     "explicit GCD cooldowns are excluded from native stale-link repair")
+ns.CDMSources.QuerySpellCooldown = function()
+    return secretGCD
+end
+appliedRepair = nil
+local beforeSecretRepair = #repairCalls
+capturedAuraDeps.repairStaleLinkedAura(repairFrame, repairCd, repairEntry)
+assert(appliedRepair == nil and #repairCalls == beforeSecretRepair,
+    "secret cooldown results are excluded before field access")
 ns.CDMSources = nil
 ns.CDMRenderers = nil
 swipeStub.showCooldownIconAuraPhase = false

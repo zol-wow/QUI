@@ -221,7 +221,11 @@ function CDMReanchorBoot.BuildRuntime(env)
             effectiveID = cleanSpellID(Sources.QueryOverrideSpell(spellID)) or spellID
         end
         local cooldown = Sources.QuerySpellCooldown(effectiveID)
-            or (effectiveID ~= spellID and Sources.QuerySpellCooldown(spellID))
+        if _issecretvalue(cooldown) then return end
+        if not cooldown and effectiveID ~= spellID then
+            cooldown = Sources.QuerySpellCooldown(spellID)
+            if _issecretvalue(cooldown) then return end
+        end
         if not cooldown then return end
         local active, onGCD = cooldown.isActive, cooldown.isOnGCD
         if _issecretvalue(active) or _issecretvalue(onGCD)
