@@ -138,6 +138,7 @@ end
 local function isItemEntry(entry)
     local entryType = entry and entry.type
     return entryType == "item" or entryType == "trinket" or entryType == "slot"
+        or entryType == "consumable"
 end
 
 local function isCustomCooldownEntry(entry)

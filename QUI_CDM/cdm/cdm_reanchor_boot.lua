@@ -56,12 +56,11 @@ CDMReanchorBoot._MakeGetAdditional = MakeGetAdditional
 
 local function QueryNativeSpellDuration(sources, spellID)
     if not sources or not spellID then return nil end
-    local chargeInfo = sources.QuerySpellCharges and sources.QuerySpellCharges(spellID)
-    local maxCharges = chargeInfo and chargeInfo.maxCharges
-    if not _issecretvalue(maxCharges) and type(maxCharges) == "number"
-        and maxCharges > 1 and sources.QuerySpellChargeDuration then
+    if sources.QuerySpellChargeDuration then
         local duration = sources.QuerySpellChargeDuration(spellID)
-        if duration then return duration end
+        if duration then
+            return duration
+        end
     end
     return sources.QuerySpellCooldownDuration
         and sources.QuerySpellCooldownDuration(spellID, true) or nil

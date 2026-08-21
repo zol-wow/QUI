@@ -506,6 +506,14 @@ assert(auraApplied.customCooldown == nil,
     "unrelated removed auras must not refresh custom cooldown bindings")
 
 reset(auraApplied)
+consumableIcon._auraActive = true
+controller:Handle("UNIT_AURA", "player", {
+    removedAuraInstanceIDs = { 9006 },
+})
+assert(auraApplied.consumable == 1,
+    "removed player auras should refresh category consumables without an aura instance ID")
+
+reset(auraApplied)
 controller:Handle("UNIT_AURA", "target", {
     addedAuras = {
         { auraInstanceID = 9004, spellId = secretSpellID },
@@ -527,6 +535,8 @@ controller:Handle("UNIT_AURA", "player", {
 })
 assert(auraApplied.aura == 1, "full player aura refresh should update aura entries through the scoped path")
 assert(auraApplied.item == 1, "full player aura refresh should update item-backed aura/cooldown entries")
+assert(auraApplied.consumable == 1,
+    "full player aura refresh should update category consumables")
 assert(auraApplied.spell == nil, "full player aura refresh should not touch unrelated spell-only cooldown icons")
 assert(visibilityUpdated.item == 1, "full player aura refresh should update item-backed visibility")
 assert(blingSynced.item == 1, "full player aura refresh should sync item-backed bling")

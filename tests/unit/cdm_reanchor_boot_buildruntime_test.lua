@@ -163,13 +163,9 @@ local swipeStub = { showRechargeEdge = false, showCooldownSwipe = true }
 ns._OwnedSwipe = { GetSettings = function() return swipeStub end }
 local chargeDuration = { charge = true }
 local cooldownDuration = nil
-local maxCharges = 2
 local durationQueries = {}
 ns.CDMSources = {
-    QuerySpellCharges = function(spellID)
-        durationQueries[#durationQueries + 1] = { kind = "charges", spellID = spellID }
-        return { maxCharges = maxCharges }
-    end,
+    QuerySpellCharges = function() error("charge count must not gate duration lookup") end,
     QuerySpellChargeDuration = function(spellID)
         durationQueries[#durationQueries + 1] = { kind = "charge", spellID = spellID }
         return chargeDuration
@@ -238,8 +234,8 @@ local nativeCd = {
 durationQueries = {}
 appliedDuration = nil
 capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
-assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
-    and durationQueries[2].kind == "charge" and durationQueries[2].spellID == 500,
+assert(#durationQueries == 1 and durationQueries[1].kind == "charge"
+    and durationQueries[1].spellID == 500,
     "charge-backed native aura uses the curated spell charge duration")
 assert(#useAuraCalls == 1 and useAuraCalls[1] == false,
     "native aura re-arm disables aura display timing")
@@ -249,18 +245,16 @@ assert(appliedDuration and appliedDuration.cd == nativeCd
     "native aura re-arm applies the opaque duration object")
 chargeDuration = nil
 cooldownDuration = { cooldown = true }
-maxCharges = 1
 durationQueries = {}
 capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
-assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
+assert(#durationQueries == 2 and durationQueries[1].kind == "charge"
     and durationQueries[2].kind == "cooldown" and durationQueries[2].ignoreGCD == true,
     "native aura re-arm falls back to the normal cooldown duration")
 assert(appliedDuration.duration == cooldownDuration,
     "normal cooldown fallback passes its opaque duration object")
-maxCharges = secretGCD
 durationQueries = {}
 capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
-assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
+assert(#durationQueries == 2 and durationQueries[1].kind == "charge"
     and durationQueries[2].kind == "cooldown" and durationQueries[2].ignoreGCD == true,
     "secret charge count falls back to the normal cooldown duration")
 cooldownDuration = nil
