@@ -218,7 +218,7 @@ function CDMReanchorBoot.BuildRuntime(env)
         if not cooldown then return end
         local active, onGCD = cooldown.isActive, cooldown.isOnGCD
         if _issecretvalue(active) or _issecretvalue(onGCD)
-            or active ~= true or onGCD ~= false then
+            or active ~= true or onGCD == true then
             return
         end
         local duration = Sources.QuerySpellCooldownDuration(effectiveID, true)

@@ -184,10 +184,11 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey, entry)
         and self:IsNativeCooldownRepairFrame(frame, containerKey) then
         if type(cd.Clear) == "function" and not self._nativeClearHooked[cd] then
             self._nativeClearHooked[cd] = true
+            local function clearWork()
+                this:OnNativeRepairDriver(frame, cd, "clear")
+            end
             hooksec(cd, "Clear", function()
-                securecall(function()
-                    this:OnNativeRepairDriver(frame, cd, "clear")
-                end)
+                securecall(clearWork)
             end)
         end
         local texture = frame.Icon
@@ -197,19 +198,21 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey, entry)
         if texture and type(texture.SetDesaturated) == "function"
             and not self._nativeDesaturatedHooked[frame] then
             self._nativeDesaturatedHooked[frame] = true
+            local function desaturatedWork()
+                this:OnNativeRepairDriver(frame, cd, "desaturated")
+            end
             hooksec(texture, "SetDesaturated", function()
-                securecall(function()
-                    this:OnNativeRepairDriver(frame, cd, "desaturated")
-                end)
+                securecall(desaturatedWork)
             end)
         end
         if texture and type(texture.SetDesaturation) == "function"
             and not self._nativeDesaturationHooked[frame] then
             self._nativeDesaturationHooked[frame] = true
+            local function desaturationWork()
+                this:OnNativeRepairDriver(frame, cd, "desaturation")
+            end
             hooksec(texture, "SetDesaturation", function()
-                securecall(function()
-                    this:OnNativeRepairDriver(frame, cd, "desaturation")
-                end)
+                securecall(desaturationWork)
             end)
         end
     end

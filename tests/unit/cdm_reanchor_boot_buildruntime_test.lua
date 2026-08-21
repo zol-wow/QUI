@@ -237,12 +237,20 @@ assert(repairCalls[1][1] == "cooldown" and repairCalls[1][2] == 701
     "stale linked-aura repair resolves the effective spell and ignores GCD duration")
 local beforeGCDRepair = #repairCalls
 ns.CDMSources.QuerySpellCooldown = function()
-    return { isActive = true, isOnGCD = true }
+    return { isActive = true, isOnGCD = nil }
 end
 appliedRepair = nil
 capturedAuraDeps.repairStaleLinkedAura(repairFrame, repairCd, repairEntry)
-assert(appliedRepair == nil and #repairCalls == beforeGCDRepair,
-    "GCD cooldowns are excluded from native stale-link repair")
+assert(appliedRepair and #repairCalls == beforeGCDRepair + 1,
+    "unknown GCD state permits active native stale-link repair")
+ns.CDMSources.QuerySpellCooldown = function()
+    return { isActive = true, isOnGCD = true }
+end
+appliedRepair = nil
+local beforeExplicitGCDRepair = #repairCalls
+capturedAuraDeps.repairStaleLinkedAura(repairFrame, repairCd, repairEntry)
+assert(appliedRepair == nil and #repairCalls == beforeExplicitGCDRepair,
+    "explicit GCD cooldowns are excluded from native stale-link repair")
 ns.CDMSources = nil
 ns.CDMRenderers = nil
 swipeStub.showCooldownIconAuraPhase = false
