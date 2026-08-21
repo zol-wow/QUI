@@ -4,6 +4,22 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2-beta2 - 2026-08-21
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager aura timing and runtime safety fixes for the 5.2.2 beta line.
+
+### Fixed
+
+- **Cooldown Manager aura timing follows stable ownership metadata.** Aura-
+  phase display changes now reanchor correctly when tracked aura state changes.
+- **Keystone insertion closes QUI's bag takeover.** The bag takeover state now
+  releases after a keystone is inserted.
+- **Quest auto-acceptance requires a strict boolean result.** Protected or
+  non-boolean values no longer accidentally authorize automatic acceptance.
+
 ## v5.2.2-beta1 - 2026-08-21
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
