@@ -900,6 +900,15 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             return
         end
 
+        for _, pool in pairs(getIconPools(callbacks)) do
+            for _, icon in ipairs(pool) do
+                if icon and icon._showingGCDSwipe == true then
+                    controller:RunUsabilityRefresh()
+                    return
+                end
+            end
+        end
+
         local state = controller.usabilityQueue
         if state.scheduled then return end
         armQueue(state, usabilityQueueOnUpdate)
@@ -1212,10 +1221,15 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             local normalizedItemID = normalizeSpellIdentifier(callbacks, itemID)
             local categoryOpaque = category ~= nil and normalizedCategory == nil
             local itemOpaque = itemID ~= nil and normalizedItemID == nil
+            local payloadlessCooldownRefresh = spellID == nil
+                and baseSpellID == nil
+                and category == nil
+                and startRecoveryCategory == nil
+                and itemID == nil
             if categoryOpaque or itemOpaque then
                 if callbacks.scheduleUpdate then
                     if runtimeRefreshStats then runtimeRefreshStats.refreshAllCooldownFallbacks = runtimeRefreshStats.refreshAllCooldownFallbacks + 1 end
-                    callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all")
+                    callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all", false)
                 end
                 return
             end
@@ -1223,7 +1237,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 spellID, baseSpellID, true, normalizedCategory, normalizedItemID)
             if not refreshed and callbacks.scheduleUpdate then
                 if runtimeRefreshStats then runtimeRefreshStats.refreshAllCooldownFallbacks = runtimeRefreshStats.refreshAllCooldownFallbacks + 1 end
-                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all")
+                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all", payloadlessCooldownRefresh)
             end
         elseif kind == "cast_start" then
             if normalizeSpellIdentifier(callbacks, spellID) ~= nil then

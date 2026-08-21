@@ -124,8 +124,8 @@ do
     local f = assert(io.open("QUI_CDM/cdm/cdm_containers.lua", "rb"))
     local src = f:read("*a"):gsub("\r\n", "\n")
     f:close()
-    assert(src:find("blankKeys = { buff = true, essential = true, utility = true }", 1, true),
-        "cdm_containers must opt essential+utility into acquire blanking")
+    assert(src:find("blankKeys = { buff = true }", 1, true),
+        "cdm_containers must not alpha-blank newly acquired Essential/Utility frames")
     assert(src:find("installGuardKeys = { essential = true, utility = true }", 1, true),
         "cdm_containers must opt essential+utility into early guard install")
     assert(src:find("installGuard = ", 1, true),

@@ -153,8 +153,8 @@ inCombat = false
 fire("PLAYER_REGEN_ENABLED")
 assert(mapRebuilds == 1, "data_loaded drain must rebuild the map once; got " .. mapRebuilds)
 assert(refreshCount == 1, "data_loaded drain must fire the full container refresh once; got " .. refreshCount)
-assert(hookRefreshCount == 1 and lastHookRefreshMarkDirty == true,
-    "data_loaded drain must refresh native re-anchor hooks with markDirty=true; got count="
+assert(hookRefreshCount == 1 and lastHookRefreshMarkDirty == false,
+    "data_loaded drain must install native re-anchor hooks without a duplicate dirty pass; got count="
     .. hookRefreshCount .. " markDirty=" .. tostring(lastHookRefreshMarkDirty))
 
 -- CASE 3: mixed arming (override THEN data_loaded) in combat -> data_loaded wins.
@@ -210,8 +210,8 @@ inCombat = false
 fire("COOLDOWN_VIEWER_DATA_LOADED")
 assert(refreshCount >= 1,
     "OOC data_loaded must still fire the full container refresh; got " .. refreshCount)
-assert(hookRefreshCount >= 1 and lastHookRefreshMarkDirty == true,
-    "OOC data_loaded must refresh native re-anchor hooks with markDirty=true; got count="
+assert(hookRefreshCount >= 1 and lastHookRefreshMarkDirty == false,
+    "OOC data_loaded must refresh native re-anchor hooks with markDirty=false; got count="
     .. hookRefreshCount .. " markDirty=" .. tostring(lastHookRefreshMarkDirty))
 
 print("OK: cdm_spelldata_override_drain_no_refresh_test")

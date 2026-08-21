@@ -15,6 +15,7 @@ local POLICIES = {
     ["best-effort-style"] = true,
     ["bulkhead"] = true,
     ["compat"] = true,
+    ["secret-probe"] = true,
     ["report"] = true,
 }
 

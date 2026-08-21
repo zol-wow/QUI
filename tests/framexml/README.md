@@ -25,19 +25,15 @@ This corpus fills that gap.
 
 ## Source
 
-The canonical vendoring source is the `live` branch of
-[`Gethe/wow-ui-source`](https://github.com/Gethe/wow-ui-source), which
-tracks retail FrameXML within hours of each patch. Pre-release patches
-(e.g. 12.1 before it goes live) ship on the `ptr` branch — swap `--branch
-live` for `--branch ptr` in the refresh command when vendoring those. An online mirror with
-web-grep is also available at
-<https://www.townlong-yak.com/framexml/live/>.
+The canonical vendoring source is [`Gethe/wow-ui-source`](https://github.com/Gethe/wow-ui-source).
+Read each branch's `version.txt` before refreshing: use whichever retail
+branch has the intended patch, rather than assuming `live` or `ptr` is newer.
 
 ## Current snapshot
 
-- **Patch:** 12.1.0.69382 (Midnight 12.1)
+- **Patch:** 12.1.0.69404 (Midnight 12.1)
 - **Source branch:** `live` (Gethe/wow-ui-source)
-- **Vendored on:** 2026-08-17
+- **Vendored on:** 2026-08-20
 
 The exact patch version is recorded in `version.txt` at the root of this
 directory and should always match the snapshot.
@@ -47,21 +43,22 @@ directory and should always match the snapshot.
 When WoW patches, FrameXML files change. To refresh:
 
 ```sh
-# From repo root
-git clone --depth 1 --branch live https://github.com/Gethe/wow-ui-source.git tests/framexml-staging
-rm -rf tests/framexml/Interface tests/framexml/version.txt
-mv tests/framexml-staging/Interface tests/framexml/Interface
-mv tests/framexml-staging/version.txt tests/framexml/version.txt
-rm -rf tests/framexml-staging
+# From repo root; choose the branch after comparing its version.txt values.
+stage_dir=$(mktemp -d /tmp/qui-wow-ui-source.XXXXXX)
+git clone --depth 1 --branch live https://github.com/Gethe/wow-ui-source.git "$stage_dir"
+rsync -a --delete "$stage_dir/Interface/" tests/framexml/Interface/
+rsync -a --delete --exclude='README.md' --exclude='*.toc' \
+  "$stage_dir/Interface/AddOns/Blizzard_APIDocumentationGenerated/" \
+  tests/api-docs/blizzard/
+cp "$stage_dir/version.txt" tests/framexml/version.txt
 ```
 
 After refreshing:
 
 1. Update the **Patch** and **Vendored on** fields in this README.
-2. Verify the diff is sensible (`git diff --stat tests/framexml/` —
-   expect ~hundreds of file changes per patch).
-3. If the API docs at `tests/api-docs/blizzard/` were refreshed at the
-   same time, commit both together with a single patch-version message.
+2. Run `lua tools/test_taint.lua --update-index` and
+   `lua tools/generate_lua_definitions.lua`.
+3. Verify the diff is sensible (`git diff --stat tests/framexml/ tests/api-docs/`).
 4. If the taint analyzer or skinning audit tooling depends on specific
    files (e.g. `AuctionHouseFrame.xml`), spot-check those paths still
    exist after the refresh.

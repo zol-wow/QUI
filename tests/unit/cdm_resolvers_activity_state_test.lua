@@ -57,6 +57,8 @@ local ns = {
                 return { maxCharges = 2, isActive = true }
             elseif spellID == 70003 or spellID == 70004 then
                 return { maxCharges = 2, isActive = secretTrue }
+            elseif spellID == 80001 then
+                return { maxCharges = 1, isActive = false }
             end
             return nil
         end,
@@ -192,13 +194,22 @@ assert(state.isOnCooldown == false, "secret active cooldown should not lock the 
 inCombat = false
 
 local rendererOnlyIcon = {
-    _spellEntry = chargeEntry(80001),
+    _spellEntry = {
+        type = "spell",
+        kind = "cooldown",
+        id = 80001,
+        spellID = 80001,
+        viewerType = "essential",
+        hasCharges = false,
+    },
     _runtimeSpellID = 80001,
     _hasCooldownActive = true,
     _hasRealCooldownActive = true,
     _showingRealCooldownSwipe = true,
 }
 state = resolvers.ResolveCooldownActivityState(rendererOnlyIcon, rendererOnlyIcon._spellEntry)
+assert(state.hasCharges == false,
+    "a maxCharges=1 spell must not be classified as a charge-count spell")
 assert(state.isOnCooldown == false,
     "activity fallback should not classify cooldown state from renderer frame flags")
 assert(state.rechargeActive == false,

@@ -1,9 +1,6 @@
 -- tests/unit/cdm_reanchor_auraphase_restyle_test.lua
 -- Run: lua tests/unit/cdm_reanchor_auraphase_restyle_test.lua
--- Locks the reassertColor contract for showCooldownIconAuraPhase on re-anchored
--- NATIVE frames: setting ON -> aura colour over Blizzard's native aura timing;
--- setting OFF -> leave Blizzard's native aura presentation untouched. Colour
--- honours showCooldownSwipe.
+-- Locks native aura-display timing and QUI cooldown swipe color.
 local ns = {}
 -- Task 45f: cdm_reanchor*.lua route discarded-result pcall guards through
 -- ns.SafeCall. Additive stub (T1d/T1e precedent) — bare pcall passthrough.
@@ -112,19 +109,21 @@ local function NewCd()
 end
 local function lastColor(cd) return cd.colors[#cd.colors] end
 
--- 1) Setting ON + aura phase: aura colour only, NO timing writes.
+-- 1) Native aura timing uses the buff swipe colour, NO timing writes.
 do
     swipeStub.showCooldownIconAuraPhase = true
+    swipeStub.showBuffSwipe = true
     fMatch.cooldownUseAuraDisplayTime = true
     local cd = NewCd()
     reassertColor(fMatch, cd)
     local c = assert(lastColor(cd), "aura phase paints a colour")
-    assert(c[1] > 0.9 and c[2] > 0.7, "setting ON: aura (fallback gold) colour")
+    assert(c[1] == 0.93 and c[2] == 0.77 and c[3] == 0 and c[4] == 0.45,
+        "native aura timing: buff swipe colour")
     assert(#cd.binds == 0 and #cd.auraDisplay == 0 and cd.cleared == 0,
         "setting ON: native aura timing untouched")
 end
 
--- 2) Setting OFF + aura phase: exclude native aura presentation from the setting.
+-- 2) Disabling aura phase hides the native aura presentation.
 do
     swipeStub.showCooldownIconAuraPhase = false
     fMatch.cooldownUseAuraDisplayTime = true
@@ -132,8 +131,11 @@ do
     durQueries = {}
     local cd = NewCd()
     reassertColor(fMatch, cd)
-    assert(#durQueries == 0 and #cd.colors == 0 and #cd.auraDisplay == 0 and #cd.binds == 0 and cd.cleared == 0,
-        "setting OFF: native aura presentation remains untouched")
+    local c = assert(lastColor(cd), "native aura timing paints a hidden colour")
+    assert(c[1] == 0 and c[2] == 0 and c[3] == 0 and c[4] == 0,
+        "setting OFF: native aura timing is hidden")
+    assert(#durQueries == 0 and #cd.auraDisplay == 0 and #cd.binds == 0 and cd.cleared == 0,
+        "setting OFF: native aura timing remains untouched")
 end
 
 -- 3) Setting OFF + cooldown swipe disabled: only the visual colour is hidden.

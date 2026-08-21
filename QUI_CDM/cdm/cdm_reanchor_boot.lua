@@ -103,13 +103,13 @@ function CDMReanchorBoot.BuildRuntime(env)
             return
         end
         if frame.cooldownUseAuraDisplayTime == true then
-            if isAuraPhaseEnabled() then
-                local r, g, b, a = modeColor("aura")
-                cd:SetSwipeColor(r, g, b, a)
-            elseif swipeSettings().showCooldownSwipe == false then
+            if not frame.GetCooldownID then return end
+            local s = swipeSettings()
+            if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
                 cd:SetSwipeColor(0, 0, 0, 0)
             else
-                return
+                local r, g, b, a = modeColor("aura")
+                cd:SetSwipeColor(r, g, b, a)
             end
         elseif cooldownShown(frame) then
             local r, g, b, a = modeColor("cooldown")
@@ -134,11 +134,56 @@ function CDMReanchorBoot.BuildRuntime(env)
         if s.showRechargeEdge then return end
         cd:SetDrawEdge(false)
     end
+    local function reassertSwipe(frame, cd, containerKey, show)
+        if not (cd and cd.SetDrawSwipe) then return end
+        local s = swipeSettings()
+        if effectsHidden(containerKey) then
+            if show then cd:SetDrawSwipe(false) end
+            return
+        end
+        if isBuffIconFrameKey(containerKey) then
+            if s.showBuffIconSwipe == false and show then
+                cd:SetDrawSwipe(false)
+            elseif s.showBuffIconSwipe ~= false and show == false then
+                cd:SetDrawSwipe(true)
+            end
+            return
+        end
+        if frame and frame.cooldownUseAuraDisplayTime == true
+            then
+            if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
+                if show then cd:SetDrawSwipe(false) end
+            elseif show == false then
+                cd:SetDrawSwipe(true)
+            end
+            return
+        end
+        local gcd = frame and frame.isOnGCD
+        if _issecretvalue(gcd) then return end
+        if gcd == true then
+            if s.showGCDSwipe == true and not show then
+                cd:SetDrawSwipe(true)
+            elseif s.showGCDSwipe ~= true and show then
+                cd:SetDrawSwipe(false)
+            end
+            return
+        end
+        if s.showCooldownSwipe == false and show then
+            cd:SetDrawSwipe(false)
+            return
+        end
+        if not show then
+            local hasCharges = type(frame and frame.HasVisualDataSource_Charges) == "function"
+                and frame:HasVisualDataSource_Charges()
+            if not hasCharges then cd:SetDrawSwipe(true) end
+        end
+    end
     local auraPhase = ns.CDMReanchorAuraPhase and ns.CDMReanchorAuraPhase.New({
         securecall = securecallfunction,
         isAuraPhaseEnabled = isAuraPhaseEnabled,
         reassertColor = reassertColor,
         reassertEdge = reassertEdge,
+        reassertSwipe = reassertSwipe,
     })
     local pandemic = ns.CDMReanchorPandemic and ns.CDMReanchorPandemic.New({
         securecall = securecallfunction,
@@ -178,11 +223,8 @@ function CDMReanchorBoot.BuildRuntime(env)
         getCurated = env.getCurated,
         getSettings = env.getSettings,
         getAdditional = MakeGetAdditional(env),
-        shouldReplaceNativeAuraPhase = function(_frame, entry, containerKey)
-            if isBuffIconFrameKey(containerKey) or entry and (entry.isAura or entry.kind == "aura") then
-                return false
-            end
-            return entry ~= nil and not isAuraPhaseEnabled()
+        shouldReplaceNativeAuraPhase = function()
+            return false
         end,
         buildLayout = env.buildLayout,
         buildBuffLayout = env.buildBuffLayout,

@@ -122,16 +122,18 @@ assert(capturedAuraDeps and type(capturedAuraDeps.reassertColor) == "function",
     "BuildRuntime wires reassertColor into the aura-phase owner")
 local reassertColor = capturedAuraDeps.reassertColor
 local reassertEdge = assert(capturedAuraDeps.reassertEdge)
+local reassertSwipe = assert(capturedAuraDeps.reassertSwipe)
 
 -- Recording cooldown-widget stub.
 local function NewCd()
-    local cd = { colors = {}, binds = {}, auraDisplay = {}, edges = {}, cleared = 0 }
+    local cd = { colors = {}, binds = {}, auraDisplay = {}, edges = {}, swipes = {}, cleared = 0 }
     cd.SetSwipeColor = function(_, r, g, b, a) cd.colors[#cd.colors + 1] = { r, g, b, a } end
     cd.SetUseAuraDisplayTime = function(_, v) cd.auraDisplay[#cd.auraDisplay + 1] = v end
     cd.SetCooldownFromDurationObject = function(_, durObj, clearIfZero)
         cd.binds[#cd.binds + 1] = { durObj = durObj, clearIfZero = clearIfZero }
     end
     cd.SetDrawEdge = function(_, v) cd.edges[#cd.edges + 1] = v end
+    cd.SetDrawSwipe = function(_, v) cd.swipes[#cd.swipes + 1] = v end
     cd.Clear = function() cd.cleared = cd.cleared + 1 end
     return cd
 end
@@ -180,6 +182,42 @@ do
     reassertColor({}, cd, nil)
     local c = assert(lastColor(cd))
     assert(c[1] == 0.55 and c[4] == 0.88, "no key: cooldown colour path unchanged")
+end
+
+do
+    local cd = NewCd()
+    reassertSwipe({ cooldownUseAuraDisplayTime = true }, cd, nil, true)
+    assert(cd.swipes[1] == false,
+        "aura-phase setting hides the native aura swipe when disabled")
+
+    swipeStub.showCooldownSwipe = false
+    cd = NewCd()
+    reassertSwipe({}, cd, nil, true)
+    assert(cd.swipes[1] == false, "cooldown swipe setting hides Blizzard's native swipe")
+
+    swipeStub.showCooldownSwipe = true
+    local frame = { HasVisualDataSource_Charges = function() return false end }
+    cd = NewCd()
+    reassertSwipe(frame, cd, nil, false)
+    assert(cd.swipes[1] == true, "non-charge cooldown keeps the configured swipe visible")
+
+    frame.HasVisualDataSource_Charges = function() return true end
+    cd = NewCd()
+    reassertSwipe(frame, cd, nil, false)
+    assert(#cd.swipes == 0, "charge source preserves Blizzard's native swipe decision")
+end
+
+do
+    swipeStub.showCooldownIconAuraPhase = true
+    swipeStub.showBuffSwipe = true
+    local cd = NewCd()
+    reassertSwipe({ cooldownUseAuraDisplayTime = true }, cd, nil, false)
+    assert(cd.swipes[1] == true, "enabled aura phase restores a hidden native swipe")
+
+    swipeStub.showBuffIconSwipe = true
+    cd = NewCd()
+    reassertSwipe({}, cd, "buff", false)
+    assert(cd.swipes[1] == true, "enabled buff icon swipe restores a hidden native swipe")
 end
 
 ---------------------------------------------------------------------------
@@ -260,6 +298,21 @@ assert(#seen == 2 and seen[1].what == "color" and seen[2].what == "edge",
     "Reassert proactively drives colour + edge")
 assert(seen[1].key == "buff" and seen[2].key == "buff",
     "Reassert threads the container key")
+
+do
+    local swipe
+    local inst = AP.New({
+        securecall = function(fn, ...) return fn(...) end,
+        reassertSwipe = function(_, _, _, show) swipe = show end,
+    })
+    local cd = {
+        SetSwipeColor = function() end,
+        SetDrawEdge = function() end,
+        GetDrawSwipe = function() return false end,
+    }
+    inst:Reassert({ GetCooldownFrame = function() return cd end })
+    assert(swipe == false, "Reassert forwards the readable native swipe state")
+end
 
 -- Reassert on a frame with no cooldown widget: harmless no-op.
 seen = {}

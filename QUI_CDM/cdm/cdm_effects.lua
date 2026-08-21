@@ -1333,6 +1333,7 @@ end
 local _, ns = ...
 local Helpers = ns.Helpers
 local Shared = ns.CDMShared
+local _issecretvalue = issecretvalue or function() return false end
 
 local DEFAULTS = {
     showBuffSwipe = true,
@@ -1375,8 +1376,18 @@ end
 
 local function GetClassColor()
     local _, class = UnitClass("player")
-    local classColor = Helpers.GetClassColorTable(class)
-    if classColor then
+    local classColor
+    if C_ClassColor and C_ClassColor.GetClassColor
+        and not _issecretvalue(class) and type(class) == "string" then
+        classColor = C_ClassColor.GetClassColor(class)
+    elseif not _issecretvalue(class) and type(class) == "string" then
+        classColor = Helpers.GetClassColorTable(class)
+    end
+    if type(classColor) ~= "nil" then
+        if type(classColor.GetRGBA) == "function" then
+            local r, g, b = classColor:GetRGBA()
+            return r, g, b, 0.8
+        end
         return classColor.r, classColor.g, classColor.b, 0.8
     end
     return 1, 1, 1, 0.8

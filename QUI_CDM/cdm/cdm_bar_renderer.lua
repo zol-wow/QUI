@@ -723,6 +723,43 @@ local function GetTrackedBarOverrideColor(settings, spellData)
     return nil
 end
 
+local function GetTrackedBarOverrideColorForEntry(settings, entry)
+    local overrides = settings and settings.colorOverrides
+    if type(overrides) ~= "table" or type(entry) ~= "table" then
+        return nil
+    end
+
+    local spellID = entry.overrideSpellID or entry.spellID or entry.id
+    local color = spellID and overrides[spellID]
+    if type(color) == "table" then return color end
+
+    color = entry.overrideSpellID and overrides[entry.overrideSpellID]
+    if type(color) == "table" then return color end
+
+    local baseSpellID = entry.spellID or entry.id
+    color = baseSpellID and overrides[baseSpellID]
+    if type(color) == "table" then return color end
+
+    color = entry.cooldownID and overrides[entry.cooldownID]
+    if type(color) == "table" then return color end
+
+    return nil
+end
+
+local function ColorStateChanged(state, color)
+    local r, g, b, a = 0, 0, 0, 0
+    if type(color) == "table" then
+        r = tonumber(color[1]) or 0
+        g = tonumber(color[2]) or 0
+        b = tonumber(color[3]) or 0
+        a = tonumber(color[4]) or 0
+    end
+    local changed = state[1] ~= r or state[2] ~= g
+        or state[3] ~= b or state[4] ~= a
+    state[1], state[2], state[3], state[4] = r, g, b, a
+    return changed
+end
+
 function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     if not bar then return end
 
@@ -1829,23 +1866,12 @@ function CDMBars:LayoutBars(container, settings)
         or Helpers.IsLayoutModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
     local visibleIndex = 0
-    local bcs = settings.borderColorSource
-    local bcsHash = (bcs == "theme" and 1) or (bcs == "class" and 2)
-        or (bcs == "custom" and 3) or 0
-    local bc = settings.borderColor
-    local bcHash = 0
-    if type(bc) == "table" then
-        bcHash = (bc[1] or 0) + (bc[2] or 0) * 7 + (bc[3] or 0) * 53 + (bc[4] or 0) * 131
-    end
-    local cfgFingerprint = (settings.barHeight or 0)
-        + (barWidth or 0) * 7
-        + (settings.borderSize or 0) * 97
-        + (settings.textSize or 0) * 1009
-        + ((settings.barOpacity or 1) * 10000)
-        + ((settings.useClassColor and 1 or 0) * 100003)
-        + bcsHash * 1300031
-        + bcHash * 700001
     for _, bar in ipairs(barPool) do
+        local fingerprint = bar._cfgFingerprint
+        if not fingerprint then
+            fingerprint = { border = {}, bar = {}, override = {} }
+            bar._cfgFingerprint = fingerprint
+        end
         if editModeActive then
             bar._active = true
             SetStatusBarValue(bar.StatusBar, 0.65)
@@ -1855,8 +1881,25 @@ function CDMBars:LayoutBars(container, settings)
             end
         end
 
-        if bar._cfgFingerprint ~= cfgFingerprint or bar._cfgActive ~= bar._active then
-            bar._cfgFingerprint = cfgFingerprint
+        local configChanged = fingerprint.barHeight ~= (settings.barHeight or 0)
+            or fingerprint.barWidth ~= (barWidth or 0)
+            or fingerprint.borderSize ~= (settings.borderSize or 0)
+            or fingerprint.textSize ~= (settings.textSize or 0)
+            or fingerprint.barOpacity ~= (settings.barOpacity or 1)
+            or fingerprint.useClassColor ~= (settings.useClassColor and 1 or 0)
+            or fingerprint.borderSource ~= settings.borderColorSource
+        fingerprint.barHeight = settings.barHeight or 0
+        fingerprint.barWidth = barWidth or 0
+        fingerprint.borderSize = settings.borderSize or 0
+        fingerprint.textSize = settings.textSize or 0
+        fingerprint.barOpacity = settings.barOpacity or 1
+        fingerprint.useClassColor = settings.useClassColor and 1 or 0
+        fingerprint.borderSource = settings.borderColorSource
+        configChanged = ColorStateChanged(fingerprint.border, settings.borderColor) or configChanged
+        configChanged = ColorStateChanged(fingerprint.bar, settings.barColor) or configChanged
+        configChanged = ColorStateChanged(fingerprint.override,
+            GetTrackedBarOverrideColorForEntry(settings, bar._spellEntry)) or configChanged
+        if configChanged or bar._cfgActive ~= bar._active then
             bar._cfgActive = bar._active
             CDMBars.ConfigureBar(bar, settings, barWidth)
         end

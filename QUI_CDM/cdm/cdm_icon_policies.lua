@@ -210,21 +210,6 @@ function CDMIconStackPolicy.Create(callbacks)
     function controller:GetAuraApplicationsFromData(auraData, unit, source)
         if not auraData then return nil end
 
-        local auraInstanceID = callbacks.getAuraDataInstanceID
-            and callbacks.getAuraDataInstanceID(auraData)
-        local idSecret = issecretvalue(auraInstanceID)
-        if not idSecret and not auraInstanceID then
-            auraInstanceID = auraData.auraInstanceID
-            idSecret = issecretvalue(auraInstanceID)
-        end
-        local sources = Sources()
-        if (idSecret or auraInstanceID) and sources and sources.QueryAuraApplicationDisplayCount then
-            local stacks = sources.QueryAuraApplicationDisplayCount(unit or "player", auraInstanceID, 1, 99)
-            if AuraCountTextHasDisplay(stacks) then
-                return stacks, "display-count"
-            end
-        end
-
         local apps = controller:GetDisplayableAuraApplicationsFromData(auraData)
         if controller:ValueIsPresent(apps) then
             return apps, source
@@ -234,16 +219,6 @@ function CDMIconStackPolicy.Create(callbacks)
     end
 
     function controller:GetAuraApplicationsForInstance(unit, auraInstanceID, source, minApplications)
-        local sources = Sources()
-        if not (unit and auraInstanceID and sources and sources.QueryAuraApplicationDisplayCount) then
-            return nil
-        end
-
-        local stacks = sources.QueryAuraApplicationDisplayCount(unit, auraInstanceID, minApplications or 1, 99)
-        if AuraCountTextHasDisplay(stacks) then
-            return stacks, source or "display-count"
-        end
-
         return nil
     end
 
@@ -291,46 +266,6 @@ function CDMIconStackPolicy.Create(callbacks)
     end
 
     function controller:TryAuraApplicationsBySpellID(auraID, source)
-        if auraID == nil then return nil end
-        local sources = Sources()
-        if not sources then return nil end
-
-        local function queryPlayerAuraData(spellID)
-            if not spellID then return nil end
-            if sources.QueryUnitAuraBySpellID then
-                local auraData = sources.QueryUnitAuraBySpellID("player", spellID)
-                if auraData then return auraData end
-            end
-            if sources.QueryPlayerAuraBySpellID then
-                local auraData = sources.QueryPlayerAuraBySpellID(spellID)
-                if auraData then return auraData end
-            end
-            return nil
-        end
-
-        if sources.QueryCooldownAuraBySpellID then
-            local passiveAuraID = sources.QueryCooldownAuraBySpellID(auraID)
-            if passiveAuraID then
-                local auraData = queryPlayerAuraData(passiveAuraID)
-                if auraData then
-                    local apps, appSource = controller:GetAuraApplicationsFromData(
-                        auraData, "player", (source or "spell") .. "-cooldown-aura")
-                    if controller:ValueIsPresent(apps) then
-                        return apps, appSource
-                    end
-                end
-            end
-        end
-
-        local auraData = queryPlayerAuraData(auraID)
-        if auraData then
-            local apps, appSource = controller:GetAuraApplicationsFromData(
-                auraData, "player", (source or "spell") .. "-player-spell")
-            if controller:ValueIsPresent(apps) then
-                return apps, appSource
-            end
-        end
-
         return nil
     end
 
@@ -436,8 +371,7 @@ function CDMIconStackPolicy.Create(callbacks)
     function controller:GetAuraApplicationsForSpell(spellID, entryOrName, icon)
         local entry = type(entryOrName) == "table" and entryOrName or nil
         local spellName = entry and entry.name or entryOrName
-        local sources = Sources()
-        if controller:ValueIsMissing(spellID) or not sources then
+        if controller:ValueIsMissing(spellID) then
             return nil
         end
 
@@ -479,28 +413,6 @@ function CDMIconStackPolicy.Create(callbacks)
             local linkedApps, linkedSource = controller:TryLinkedAuraApplications(
                 entry and entry.linkedSpellIDs, entry, icon, seenIDs, "entry-linked")
             if controller:ValueIsPresent(linkedApps) then return linkedApps, linkedSource end
-        end
-
-        if not sources.QueryAuraDataBySpellName then
-            return controller:ResolveAuraApplicationsForEntry(spellID, entry, icon)
-        end
-
-        local nameToUse = spellName
-        if nameToUse == nil or nameToUse == "" then
-            nameToUse = callbacks.getCachedSpellName and callbacks.getCachedSpellName(spellID) or nil
-        end
-        if (nameToUse == nil or nameToUse == "") and sources.QuerySpellInfo then
-            local info = sources.QuerySpellInfo(spellID)
-            if info then
-                nameToUse = info.name
-            end
-        end
-        if controller:ValueIsPresent(nameToUse) then
-            local nad = sources.QueryAuraDataBySpellName("player", nameToUse, "HELPFUL")
-            if nad then
-                local apps, source = controller:GetAuraApplicationsFromData(nad, "player", "name-player")
-                if controller:ValueIsPresent(apps) then return apps, source end
-            end
         end
 
         local resolvedApps, resolvedSource = controller:ResolveAuraApplicationsForEntry(spellID, entry, icon)

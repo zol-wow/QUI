@@ -55,5 +55,10 @@ assert(
     loginBranch:find("LoadOrSnapshotSpecProfile", 1, true),
     "the cross-character guard must reconcile via LoadOrSnapshotSpecProfile so the live container is reloaded for the current character"
 )
+assert(
+    loginBranch:find("local needsRefresh = false", 1, true)
+        and loginBranch:find("if needsRefresh then", 1, true),
+    "the login branch must not run an unconditional full refresh when no login state changed"
+)
 
 print("OK: cdm_cross_character_live_container_test")

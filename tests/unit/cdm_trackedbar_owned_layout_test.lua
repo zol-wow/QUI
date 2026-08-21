@@ -46,8 +46,22 @@ assert(containers:find("immediateRefreshLayoutKeys = { trackedBar = true }", 1, 
 assert(containers:find("CooldownViewerSettings.OnShow", 1, true)
     and containers:find("CooldownViewerSettings.OnHide", 1, true),
     "CooldownViewerSettings show/hide must resync native reanchor and trackedBar lifecycle hooks")
-assert(containers:find("C_Timer.After(6.0", 1, true),
-    "cold-login settle cadence must include a late 6s RefreshAll pass")
+local initStart = assert(containers:find("function ownedEngine:Initialize()", 1, true),
+    "owned engine initializer not found")
+local initEnd = assert(containers:find("\n    local function DrainPendingLoadoutSwitch", initStart, true),
+    "owned engine initializer end marker not found")
+local initBody = containers:sub(initStart, initEnd)
+assert(not initBody:find("C_Timer.After(1.0", 1, true)
+    and not initBody:find("C_Timer.After(3.0", 1, true)
+    and not initBody:find("C_Timer.After(6.0", 1, true),
+    "CDM startup must not schedule unconditional full re-anchor passes")
+local pewStart = assert(containers:find('elseif event == "PLAYER_ENTERING_WORLD" then', 1, true),
+    "PLAYER_ENTERING_WORLD handler not found")
+local pewEnd = assert(containers:find('elseif event == "PLAYER_SPECIALIZATION_CHANGED" then', pewStart, true),
+    "PLAYER_ENTERING_WORLD handler end marker not found")
+local pewBody = containers:sub(pewStart, pewEnd)
+assert(pewBody:find("RefreshReanchorRuntimeHooks(false)", 1, true),
+    "PLAYER_ENTERING_WORLD must install native hooks without scheduling a duplicate dirty pass")
 assert(containers:find('local EDIT_LOCK_KEYS = { "essential", "utility", "buff", "trackedBar" }', 1, true),
     "trackedBar must remain Edit Mode locked/suppressed even though it is not re-anchored")
 assert(containers:find("keys = EDIT_LOCK_KEYS,", 1, true),

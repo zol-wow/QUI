@@ -65,7 +65,7 @@ local corrections = 0
 for i = n1 + 1, #setCalls do if setCalls[i].rel == container then corrections = corrections + 1 end end
 assert(corrections == 2, "guard installs at most once per frame (single two-point correction)")
 
--- Task 2: park is retired -> the anchor guard hides an UNCLAIMED re-anchored frame
+-- Task 2: park is retired -> the anchor guard hides a SUNK re-anchored frame
 -- in place via SetAlpha(0) (taint-safe), and NEVER writes strata/level on the live frame.
 do
     local calls = {}
@@ -81,9 +81,9 @@ do
         SetFrameLevel = rec("SetFrameLevel"),
     }
     local b2 = CDMReanchor.New({ raw = raw2, securecall = function(fn, ...) return fn(...) end, hooksecurefunc = hooksecurefunc })
-    b2:GetData(f2).overlayAnchor = nil   -- explicitly unclaimed (no overlay anchor)
+    b2:Sink(f2)
     b2:InstallAnchorGuard(f2)
-    -- Blizzard re-anchors the unclaimed frame to its own grid:
+    -- Blizzard re-anchors the sunk frame to its own grid:
     f2:SetPoint("CENTER", {}, "CENTER", 0, 0)
     local sawAlpha0 = false
     for _, c in ipairs(calls) do
@@ -91,7 +91,24 @@ do
         assert(c[1] ~= "SetFrameStrata", "guard never SetFrameStrata on an unclaimed frame")
         assert(c[1] ~= "SetFrameLevel", "guard never SetFrameLevel on an unclaimed frame")
     end
-    assert(sawAlpha0, "guard SetAlpha(0)s an unclaimed re-anchored frame (park retired)")
+    assert(sawAlpha0, "guard preserves alpha-0 for a sunk re-anchored frame")
+end
+
+do
+    local calls = {}
+    local frame = {}
+    frame.ClearAllPoints = function() end
+    frame.SetPoint = function() end
+    local raw = {
+        ClearAllPoints = function() end,
+        SetPoint = function() end,
+        SetAlpha = function(_, a) calls[#calls + 1] = a end,
+    }
+    local bridge = CDMReanchor.New({ raw = raw, securecall = function(fn, ...) return fn(...) end,
+        hooksecurefunc = hooksecurefunc })
+    bridge:InstallAnchorGuard(frame)
+    frame:SetPoint("CENTER", {}, "CENTER", 0, 0)
+    assert(#calls == 0, "newly acquired native frame is not alpha-hidden before claim")
 end
 
 -- Task 2: Sink no longer touches SetIgnoreParentAlpha (the lift it used to clear is

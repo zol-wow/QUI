@@ -91,6 +91,24 @@ function G.ElementProfile(element, overrides)
 end
 
 local probeVerdict = {}
+local READABLE_SELF_FILTERS = { "HELPFUL", "HARMFUL" }
+local READABLE_TARGET_FILTERS = { "HELPFUL|PLAYER", "HARMFUL|PLAYER" }
+local readableAuraSeen = {}
+local readableAuraData = {}
+local readableAuraFilters = {}
+local readableAuraCount = 0
+
+local function ClearReadableAuraScratch()
+    for i = 1, readableAuraCount do
+        readableAuraData[i] = nil
+        readableAuraFilters[i] = nil
+    end
+    readableAuraCount = 0
+end
+
+local function IsUsableSpellIDKey(spellID)
+    return type(spellID) == "number" and spellID > 0
+end
 
 function G.FilterStringUsable(unit, filterString)
     local AU = _G.AuraUtil
@@ -114,6 +132,122 @@ function G.FilterStringUsable(unit, filterString)
     ok = (pcall(C_UnitAuras.GetUnitAuras, unit, filterString))
     probeVerdict[filterString] = ok
     return ok
+end
+
+function G.CollectReadableAuras(unit, callback)
+    if G.AurasAreSecret and G.AurasAreSecret() then return nil end
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetUnitAuraInstanceIDs
+        and unitAuras.GetAuraDataByAuraInstanceID
+        and type(callback) == "function") then
+        return nil
+    end
+    ClearReadableAuraScratch()
+    for instanceID in pairs(readableAuraSeen) do
+        readableAuraSeen[instanceID] = nil
+    end
+    local filters = unit == "target" and READABLE_TARGET_FILTERS or READABLE_SELF_FILTERS
+    for _, filter in ipairs(filters) do
+        local ok, instanceIDs = ns.SafeCall(
+            "secret-probe", unitAuras.GetUnitAuraInstanceIDs, unit, filter)
+        if not ok or type(instanceIDs) ~= "table"
+            or (issecretvalue and issecretvalue(instanceIDs)) then
+            ClearReadableAuraScratch()
+            return nil
+        end
+        for _, instanceID in ipairs(instanceIDs) do
+            if instanceID and not (issecretvalue and issecretvalue(instanceID))
+                and not readableAuraSeen[instanceID] then
+                readableAuraSeen[instanceID] = true
+                local dataOK, auraData = ns.SafeCall(
+                    "secret-probe", unitAuras.GetAuraDataByAuraInstanceID,
+                    unit, instanceID)
+                if not dataOK then
+                    ClearReadableAuraScratch()
+                    return nil
+                end
+                if issecretvalue and issecretvalue(auraData) then
+                    ClearReadableAuraScratch()
+                    return nil -- @secret-policy: reject-secret-value
+                end
+                if auraData then
+                    readableAuraCount = readableAuraCount + 1
+                    readableAuraData[readableAuraCount] = auraData
+                    readableAuraFilters[readableAuraCount] = filter
+                end
+            end
+        end
+    end
+    for i = 1, readableAuraCount do
+        callback(readableAuraData[i], readableAuraFilters[i])
+    end
+    ClearReadableAuraScratch()
+    return true
+end
+
+function G.ReadAurasByInstanceID(unit, instanceIDs, callback)
+    if G.AurasAreSecret and G.AurasAreSecret() then return false end
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetAuraDataByAuraInstanceID)
+        or type(instanceIDs) ~= "table" or type(callback) ~= "function" then
+        return false
+    end
+    for _, instanceID in ipairs(instanceIDs) do
+        if issecretvalue and issecretvalue(instanceID) then return false end -- @secret-policy: report-secret-detected
+        local ok, auraData = ns.SafeCall(
+            "secret-probe", unitAuras.GetAuraDataByAuraInstanceID, unit, instanceID)
+        if not ok then return false end
+        if issecretvalue and issecretvalue(auraData) then -- @secret-policy: reject-secret-value
+            return false -- @secret-policy: reject-secret-value
+        end
+        callback(auraData, instanceID)
+    end
+    return true
+end
+
+function G.ReadAuraDurationByInstanceID(unit, auraInstanceID)
+    if G.AurasAreSecret and G.AurasAreSecret() then return nil end
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetAuraDuration) then return nil end
+    if issecretvalue and (issecretvalue(unit) or issecretvalue(auraInstanceID)) then
+        return nil -- @secret-policy: reject-secret-value
+    end
+    local ok, durationObj = ns.SafeCall(
+        "secret-probe", unitAuras.GetAuraDuration, unit, auraInstanceID)
+    if not ok or (issecretvalue and issecretvalue(durationObj)) then
+        return nil -- @secret-policy: reject-secret-value
+    end
+    return durationObj
+end
+
+function G.ReadAuraApplicationDisplayCount(unit, auraInstanceID)
+    if G.AurasAreSecret and G.AurasAreSecret() then return false, nil end
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetAuraApplicationDisplayCount) then
+        return false, nil
+    end
+    if issecretvalue and (issecretvalue(unit) or issecretvalue(auraInstanceID)) then
+        return false, nil -- @secret-policy: reject-secret-value
+    end
+    local ok, count = ns.SafeCall(
+        "secret-probe", unitAuras.GetAuraApplicationDisplayCount,
+        unit, auraInstanceID, 2, nil)
+    if not ok or (issecretvalue and issecretvalue(count)) then
+        return false, nil -- @secret-policy: reject-secret-value
+    end
+    if count == nil or count == "" or count == "0" or count == "1" then
+        return false, nil
+    end
+    return true, count
+end
+
+function G.GetCooldownAuraBySpellID(spellID)
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetCooldownAuraBySpellID) then return nil end
+    local ok, auraSpellID = ns.SafeCall(
+        "secret-probe", unitAuras.GetCooldownAuraBySpellID, spellID)
+    if not ok or (issecretvalue and issecretvalue(auraSpellID)) then return nil end
+    return IsUsableSpellIDKey(auraSpellID) and auraSpellID or nil
 end
 
 function G.ElementGroups(unit, element, profile, cancelEligible)

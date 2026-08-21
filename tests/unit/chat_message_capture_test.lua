@@ -622,6 +622,11 @@ local e4; Store.ForEach(function(e) e4 = e end)
 assert(e4.m == "[12:00] addon says hi", "fallback captured + timestamped AddMessage")
 assert(e4.k == "SYSTEM", "fallback entry routed as SYSTEM")
 
+stack = secret
+local beforeSecretTrace = Store.Size()
+hooked.AddMessage(_G.ChatFrame1, "secret trace", 1, 1, 1)
+assert(Store.Size() == beforeSecretTrace + 1, "secret debugstack does not break fallback capture")
+
 -- Fallback hook: event-dispatch traffic skipped (already captured via events)
 local before = Store.Size()
 stack = "[string \"@Interface/AddOns/Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua\"]: in function 'MessageEventHandler'"

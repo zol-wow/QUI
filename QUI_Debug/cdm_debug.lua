@@ -106,6 +106,18 @@ function CDMIcons.EventTraceValue(value)
     return tostring(value)
 end
 
+local function EventTraceCount(value)
+    if DebugIsSecretValue(value) then return nil end
+    if type(value) ~= "table" then return 0 end
+    return #value
+end
+
+local function EventTraceCountText(value)
+    if DebugIsSecretValue(value) then return "<SECRET:" .. type(value) .. ">" end
+    local count = EventTraceCount(value)
+    return count == nil and "<SECRET:table>" or tostring(count)
+end
+
 function CDMIcons.EventTraceSpellIDMatches(targetID, value)
     if DebugIsSecretValue(value) then return false end
     if not targetID or value == nil then return false end
@@ -113,10 +125,12 @@ function CDMIcons.EventTraceSpellIDMatches(targetID, value)
 end
 
 local function EventTraceIDList(ids)
-    if type(ids) ~= "table" or #ids == 0 then return "nil" end
+    local count = EventTraceCount(ids)
+    if count == nil then return EventTraceCountText(ids) end
+    if count == 0 then return "nil" end
     local out = {}
-    for i, id in ipairs(ids) do
-        out[i] = tostring(id)
+    for i = 1, count do
+        out[i] = CDMIcons.EventTraceValue(ids[i])
     end
     return table.concat(out, ",")
 end
@@ -155,10 +169,12 @@ local function EventTraceTargetFilterPass(unit, auraInstanceID, filter)
 end
 
 local function EventTraceAddedAuras(unit, addedAuras)
-    if type(addedAuras) ~= "table" or #addedAuras == 0 then return "nil" end
+    local count = EventTraceCount(addedAuras)
+    if count == nil then return EventTraceCountText(addedAuras) end
+    if count == 0 then return "nil" end
 
     local out = {}
-    local limit = math.min(#addedAuras, 3)
+    local limit = math.min(count, 3)
     for i = 1, limit do
         local auraData = addedAuras[i]
         if type(auraData) == "table" then
@@ -179,8 +195,8 @@ local function EventTraceAddedAuras(unit, addedAuras)
         end
     end
 
-    if #addedAuras > limit then
-        out[#out + 1] = "+" .. tostring(#addedAuras - limit)
+    if count > limit then
+        out[#out + 1] = "+" .. tostring(count - limit)
     end
 
     return "[" .. table.concat(out, " | ") .. "]"
@@ -606,11 +622,12 @@ function CDMIcons.EventTraceAuraInfo(unit, updateInfo)
         unit = nil
     end
     if type(updateInfo) ~= "table" then return "auraInfo=nil" end
-    local added = type(updateInfo.addedAuras) == "table" and #updateInfo.addedAuras or 0
-    local updated = type(updateInfo.updatedAuraInstanceIDs) == "table" and #updateInfo.updatedAuraInstanceIDs or 0
-    local removed = type(updateInfo.removedAuraInstanceIDs) == "table" and #updateInfo.removedAuraInstanceIDs or 0
+    if DebugIsSecretValue(updateInfo) then return "auraInfo=<SECRET:table>" end
+    local added = EventTraceCountText(updateInfo.addedAuras)
+    local updated = EventTraceCountText(updateInfo.updatedAuraInstanceIDs)
+    local removed = EventTraceCountText(updateInfo.removedAuraInstanceIDs)
     return string.format(
-        "aura full=%s added=%d addedAuras=%s updated=%d updatedIDs=%s removed=%d removedIDs=%s",
+        "aura full=%s added=%s addedAuras=%s updated=%s updatedIDs=%s removed=%s removedIDs=%s",
         CDMIcons.EventTraceValue(updateInfo.isFullUpdate),
         added,
         EventTraceAddedAuras(unit, updateInfo.addedAuras),
@@ -1857,6 +1874,291 @@ local function RunCDMDebugFlicker(msg)
     frame:SetScript("OnUpdate", snapshot)
 end
 
+local NATIVE_VIEWERS = {
+    essential = "EssentialCooldownViewer",
+    utility = "UtilityCooldownViewer",
+}
+
+local nativeWatch = {
+    active = false,
+    target = nil,
+    startedAt = 0,
+    stopAt = 0,
+    lastSignature = nil,
+    changes = 0,
+    eventFrame = nil,
+}
+local nativeHookedFrames = setmetatable({}, { __mode = "k" })
+local nativeHookedViewers = setmetatable({}, { __mode = "k" })
+local nativeHookedRuntime = setmetatable({}, { __mode = "k" })
+
+local function NativeSafeCall(object, method, ...)
+    if not object or type(object[method]) ~= "function" then return nil end
+    local ok, value = ns.SafeCallMethod("best-effort-style", object, method, ...)
+    if ok then return value end
+    return nil
+end
+
+local function NativeTextState(holder)
+    if not holder then return "nil" end
+    local current = holder.Current or holder.Applications or holder
+    local shown = NativeSafeCall(current, "IsShown")
+    local text = NativeSafeCall(current, "GetText")
+    return CDMIcons.EventTraceValue(shown) .. "/" .. CDMIcons.EventTraceValue(text)
+end
+
+local function NativeFrameIDs(frame)
+    local ids = {}
+    for _, method in ipairs({ "GetSpellID", "GetCooldownID", "GetBaseSpellID" }) do
+        local value = NativeSafeCall(frame, method)
+        if value ~= nil and not DebugIsSecretValue(value) then
+            ids[#ids + 1] = value
+        end
+    end
+    return ids
+end
+
+local function NativeFrameMatches(frame, targetText)
+    local targetID = tonumber(targetText:match("^(%d+)$"))
+    local ids = NativeFrameIDs(frame)
+    if targetID then
+        for i = 1, #ids do
+            if ids[i] == targetID then return true end
+        end
+        return false
+    end
+
+    local needle = targetText:lower()
+    local info = frame and frame.cooldownInfo
+    local name = info and info.name
+    if type(name) == "string" and name:lower():find(needle, 1, true) then
+        return true
+    end
+    local entry = ns._cdmBoot and ns._cdmBoot.GetEntryForFrame
+        and ns._cdmBoot:GetEntryForFrame(frame)
+    return type(entry and entry.name) == "string"
+        and entry.name:lower():find(needle, 1, true) ~= nil
+end
+
+local function ForEachNativeFrame(callback)
+    local seen = setmetatable({}, { __mode = "k" })
+    for key, viewerName in pairs(NATIVE_VIEWERS) do
+        local frames = _G.QUI_GetReanchoredCDMFrames
+            and _G.QUI_GetReanchoredCDMFrames(key)
+        if type(frames) == "table" then
+            for i = 1, #frames do
+                local frame = frames[i]
+                if frame and not seen[frame] then
+                    seen[frame] = true
+                    callback(frame, key)
+                end
+            end
+        end
+        local viewer = _G[viewerName]
+        local pool = viewer and viewer.itemFramePool
+        if pool and pool.EnumerateActive then
+            for frame in pool:EnumerateActive() do
+                if frame and not seen[frame] then
+                    seen[frame] = true
+                    callback(frame, key)
+                end
+            end
+        end
+    end
+end
+
+local function FindNativeFrame(targetText)
+    local found, foundKey
+    ForEachNativeFrame(function(frame, key)
+        if not found and NativeFrameMatches(frame, targetText) then
+            found, foundKey = frame, key
+        end
+    end)
+    return found, foundKey
+end
+
+local function NativeFrameSignature(frame)
+    local ids = NativeFrameIDs(frame)
+    local idText = {}
+    for i = 1, #ids do idText[i] = CDMIcons.EventTraceValue(ids[i]) end
+    local entry = ns._cdmBoot and ns._cdmBoot.GetEntryForFrame
+        and ns._cdmBoot:GetEntryForFrame(frame)
+    local bridge = ns._cdmBoot and ns._cdmBoot.bridge
+    local claimed = bridge and bridge.IsClaimed and bridge:IsClaimed(frame)
+    return table.concat({
+        "shown=" .. CDMIcons.EventTraceValue(NativeSafeCall(frame, "IsShown")),
+        "alpha=" .. CDMIcons.EventTraceValue(NativeSafeCall(frame, "GetAlpha")),
+        "ids=" .. table.concat(idText, "/"),
+        "charge=" .. NativeTextState(frame.ChargeCount),
+        "apps=" .. NativeTextState(frame.Applications),
+        "claimed=" .. CDMIcons.EventTraceValue(claimed),
+        "entry=" .. CDMIcons.EventTraceValue(entry and (entry.name or entry.spellID or entry.id)),
+    }, " ")
+end
+
+local function NativeWatchPrint(label, frame, force)
+    if not nativeWatch.active or frame ~= nativeWatch.target then return end
+    local signature = NativeFrameSignature(frame)
+    if not force and signature == nativeWatch.lastSignature then return end
+    nativeWatch.lastSignature = signature
+    nativeWatch.changes = nativeWatch.changes + 1
+    print(string.format("|cff34d399[cdmnative]|r +%.3f %s %s",
+        GetTime() - nativeWatch.startedAt, tostring(label), signature))
+end
+
+local function NativeWatchHookFrame(frame)
+    if not frame or nativeHookedFrames[frame] then return end
+    nativeHookedFrames[frame] = true
+    for _, method in ipairs({
+        "RefreshData", "RefreshCooldownOnly", "OnCooldownIDSet", "SetCooldownID",
+        "ClearCooldownID", "OnActiveStateChanged", "RefreshSpellChargeInfo",
+    }) do
+        local methodName = method
+        if type(frame[methodName]) == "function" then
+            ns.SafeCall("compat", hooksecurefunc, frame, methodName, function()
+                NativeWatchPrint("Blizzard." .. methodName, frame, true)
+            end)
+        end
+    end
+    local charge = frame.ChargeCount
+    local current = charge and charge.Current
+    if current and type(current.SetText) == "function" then
+        ns.SafeCall("compat", hooksecurefunc, current, "SetText", function()
+            NativeWatchPrint("ChargeCount.Current:SetText", frame, true)
+        end)
+    end
+    if charge and type(charge.SetShown) == "function" then
+        ns.SafeCall("compat", hooksecurefunc, charge, "SetShown", function()
+            NativeWatchPrint("ChargeCount:SetShown", frame, true)
+        end)
+    end
+end
+
+local function NativeWatchHookViewer(viewer, key)
+    if not viewer or nativeHookedViewers[viewer] then return end
+    nativeHookedViewers[viewer] = true
+    for _, method in ipairs({ "RefreshLayout", "RefreshData" }) do
+        local methodName = method
+        if type(viewer[methodName]) == "function" then
+            ns.SafeCall("compat", hooksecurefunc, viewer, methodName, function()
+                if nativeWatch.active then
+                    NativeWatchPrint(key .. "." .. methodName, nativeWatch.target, true)
+                end
+            end)
+        end
+    end
+    if type(viewer.OnAcquireItemFrame) == "function" then
+        ns.SafeCall("compat", hooksecurefunc, viewer, "OnAcquireItemFrame", function(_, frame)
+            NativeWatchHookFrame(frame)
+            NativeWatchPrint(key .. ".OnAcquireItemFrame", frame, true)
+        end)
+    end
+end
+
+local function NativeWatchHookRuntime()
+    local runtime = ns._cdmBoot and ns._cdmBoot.runtime
+    if not runtime or nativeHookedRuntime[runtime] then return end
+    nativeHookedRuntime[runtime] = true
+    for _, method in ipairs({ "RefreshContainer", "RefreshContainers" }) do
+        local methodName = method
+        if type(runtime[methodName]) == "function" then
+            ns.SafeCall("compat", hooksecurefunc, runtime, methodName, function(_, key)
+                if nativeWatch.active then
+                    NativeWatchPrint("QUI." .. methodName .. ":" .. tostring(key), nativeWatch.target, true)
+                end
+            end)
+        end
+    end
+end
+
+local function StopNativeWatch(silent)
+    nativeWatch.active = false
+    local frame = nativeWatch.eventFrame
+    if frame then
+        frame:UnregisterAllEvents()
+        frame:SetScript("OnEvent", nil)
+        nativeWatch.eventFrame = nil
+    end
+    StopWatchFrame("native")
+    if not silent then
+        print("|cffffaa00[cdmnative]|r stopped; transitions= " .. tostring(nativeWatch.changes))
+    end
+end
+
+local function RunCDMDebugNative(msg)
+    local text = TrimText(msg)
+    if text == "" or text:lower() == "help" then
+        print("|cff34d399[cdmnative]|r Usage: /cdmdebug native <spellID|name> [seconds]")
+        print("|cff34d399[cdmnative]|r Logs aura events, Blizzard refreshes, native charge text, and QUI reanchors.")
+        return
+    end
+    if text:lower() == "off" or text:lower() == "stop" or text:lower() == "clear" then
+        StopNativeWatch(false)
+        return
+    end
+
+    local targetText, seconds = text:match("^(.-)%s+(%d+%.?%d*)$")
+    targetText = TrimText(targetText or text)
+    seconds = math.min(math.max(tonumber(seconds) or 10, 1), 30)
+    local target, key = FindNativeFrame(targetText)
+    if not target then
+        print("|cffffaa00[cdmnative]|r native frame not found: " .. targetText)
+        return
+    end
+
+    StopNativeWatch(true)
+    nativeWatch.active = true
+    nativeWatch.target = target
+    nativeWatch.startedAt = GetTime()
+    nativeWatch.stopAt = nativeWatch.startedAt + seconds
+    nativeWatch.lastSignature = nil
+    nativeWatch.changes = 0
+    NativeWatchHookFrame(target)
+    NativeWatchHookViewer(_G[NATIVE_VIEWERS[key]], key)
+    NativeWatchHookRuntime()
+    local eventFrame = CreateFrame("Frame")
+    nativeWatch.eventFrame = eventFrame
+    for _, event in ipairs({
+        "PLAYER_TARGET_CHANGED", "PLAYER_SOFT_ENEMY_CHANGED", "PLAYER_SOFT_FRIEND_CHANGED",
+        "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES", "SPELL_UPDATE_USES",
+    }) do
+        eventFrame:RegisterEvent(event)
+    end
+    if eventFrame.RegisterUnitEvent then
+        eventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
+    else
+        eventFrame:RegisterEvent("UNIT_AURA")
+    end
+    eventFrame:SetScript("OnEvent", function(_, event, unit, updateInfo)
+        if not nativeWatch.active then return end
+        local detail = ""
+        if event == "UNIT_AURA" then
+            if type(updateInfo) == "table" and not DebugIsSecretValue(updateInfo) then
+                detail = "full=" .. CDMIcons.EventTraceValue(updateInfo.isFullUpdate)
+                    .. " add=" .. EventTraceCountText(updateInfo.addedAuras)
+                    .. " rem=" .. EventTraceCountText(updateInfo.removedAuraInstanceIDs)
+            else
+                detail = "opaque"
+            end
+        end
+        print(string.format("|cfff59e0b[cdmnative-event]|r +%.3f %s %s %s",
+            GetTime() - nativeWatch.startedAt, event, CDMIcons.EventTraceValue(unit), detail))
+        NativeWatchPrint("after:" .. event, nativeWatch.target, true)
+    end)
+    local watchFrame = AcquireWatchFrame("native")
+    watchFrame:SetScript("OnUpdate", function()
+        if not nativeWatch.active then return end
+        if GetTime() >= nativeWatch.stopAt then
+            StopNativeWatch(false)
+            return
+        end
+        NativeWatchPrint("sample", nativeWatch.target, false)
+    end)
+    print(string.format("|cff34d399[cdmnative]|r watching '%s' (%s) for %.0fs; reproduce the aura flicker now",
+        targetText, key, seconds))
+    NativeWatchPrint("start", target, true)
+end
+
 local function CDMItemAuraStopWatch(silent)
     StopWatchFrame("itemaura")
     if not silent then
@@ -1913,17 +2215,15 @@ local function CDMItemAuraSnapshot(icon, elapsed)
 
     local auraUnit = (scanned and scanned.auraUnit) or scannerAuraUnit or "player"
     local auraInstanceID = scanned and scanned.auraInstanceID or scannerAuraInstanceID
-    local auraDurObj, auraData
-    if CDMItemAuraHasOpaqueValue(auraInstanceID) and Sources then
-        if Sources.QueryAuraDuration then
-            auraDurObj = Sources.QueryAuraDuration(auraUnit, auraInstanceID)
-        end
-        if Sources.QueryAuraDataByAuraInstanceID then
-            auraData = Sources.QueryAuraDataByAuraInstanceID(auraUnit, auraInstanceID)
-        end
+    local auraData
+    local spellData = ns.CDMSpellData
+    if CDMItemAuraHasOpaqueValue(auraInstanceID) and spellData
+        and spellData.GetCapturedAuraDataByInstanceID then
+        auraData = spellData:GetCapturedAuraDataByInstanceID(auraUnit, auraInstanceID)
     end
 
     local resolvedState = CDMGCDResolveCooldownState(icon)
+    local auraDurObj = resolvedState and resolvedState.durObj
     local cd = icon.Cooldown
 
     local fields = {
@@ -3028,6 +3328,7 @@ local function RunCDMDebugSpell(msg)
         print("  /cdmdebug spell <spell name> charge         -> charge-path report")
         print("  /cdmdebug spell <spell name> flicker        -> 5-second transition sampler")
         print("  /cdmdebug spell off                         -> stop spell traces/watchers")
+        print("  /cdmdebug native <spellID|name> [seconds]   -> native frame/aura/charge lifecycle trace")
         return
     end
 
@@ -3037,6 +3338,7 @@ local function RunCDMDebugSpell(msg)
         CDMGCDStopWatch(false)
         CDMItemAuraStopWatch(false)
         StopWatchFrame("flicker")
+        StopNativeWatch(true)
         print("|cffffaa00[cdmflicker]|r sampler stopped.")
         return
     end
@@ -3598,6 +3900,7 @@ local function PrintCDMDebugHelp()
     print("  /cdmdebug probe                           -> resolver parity sweep")
     print("  /cdmdebug mint                            -> native mint/provider taint verdict")
     print("  /cdmdebug borrow <spell> [container]      -> borrow a spare native item frame; off|report")
+    print("  /cdmdebug native <spell> [seconds]         -> native frame/aura/charge lifecycle trace")
     print("  /cdmdebug buff                            -> reanchor BuffIcon pipeline dump")
     print("  /cdmdebug edges [container]               -> icon/border edges in physical pixels")
     print("  direct flag shorthand: /cdmdebug icon on, /cdmdebug taint Sync, /cdmdebug off")
@@ -3629,6 +3932,8 @@ local function RunCDMDebugCommand(msg)
         RunCDMDebugMint()
     elseif lower == "borrow" then
         RunCDMDebugBorrow(rest)
+    elseif lower == "native" then
+        RunCDMDebugNative(rest)
     elseif lower == "buff" then
         RunCDMDebugBuff()
     elseif lower == "edges" then

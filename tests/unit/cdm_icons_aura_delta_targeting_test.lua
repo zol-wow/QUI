@@ -516,16 +516,14 @@ icons.HandleRuntimeRefresh("UNIT_AURA", "player", {
     },
 })
 
-assert(resolveCounts.itemAura == 1,
-    "added player aura should re-resolve matching item icon through item use aura mapping")
-assert(itemAuraIcon._auraActive == true,
-    "added player item aura should stamp active aura metadata on the item icon")
-assert(itemAuraAppliedDuration == itemAuraDur,
-    "added player item aura should bind the aura DurationObject to the item icon")
-assert(itemAuraReverse == true,
-    "added player item aura should use aura/reverse cooldown mode")
-assert(itemAuraApplyCount == 1,
-    "initial item aura apply should bind the aura DurationObject once")
+assert(resolveCounts.itemAura == 0,
+    "player aura deltas must not resolve items through the removed aura mapping getter")
+assert(itemAuraIcon._auraActive ~= true,
+    "removed item aura getter must not stamp active aura metadata")
+assert(itemAuraAppliedDuration == nil,
+    "removed item aura getter must not bind a DurationObject")
+assert(itemAuraApplyCount == 0,
+    "removed item aura getter must not apply an aura duration")
 
 inCombat = true
 icons.HandleRuntimeRefresh("UNIT_AURA", "player", {
@@ -534,8 +532,8 @@ icons.HandleRuntimeRefresh("UNIT_AURA", "player", {
 })
 inCombat = false
 
-assert(itemAuraApplyCount == 2,
-    "combat aura refresh should rebind the DurationObject even when auraInstanceID and durObj identity are unchanged")
+assert(itemAuraApplyCount == 0,
+    "combat aura refresh must not rebind a removed aura DurationObject")
 
 itemAuraActive = true
 itemAuraPublishesInstanceID = false
@@ -554,15 +552,11 @@ icons.HandleRuntimeRefresh("UNIT_AURA", "player", {
 })
 
 assert(resolveCounts.itemAura == 1,
-    "removed player aura should re-resolve active item aura icons even when no auraInstanceID was stamped")
-assert(itemAuraIcon._auraActive == false,
-    "removed player aura should clear stale item aura state")
-assert(itemAuraIcon._resolvedCooldownMode == "item-cooldown",
-    "removed item aura should reveal the underlying item cooldown")
+    "removed player aura should still re-resolve the owning item icon")
 assert(itemAuraAppliedDuration == itemCooldownDur,
-    "removed item aura should bind the item cooldown DurationObject")
+    "removed item aura should reveal the item cooldown DurationObject")
 assert(itemAuraReverse == false,
-    "removed item aura should leave aura/reverse cooldown mode")
+    "removed item aura should leave item-cooldown mode")
 
 resolveCounts.customCooldown = 0
 
