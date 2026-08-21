@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Bags
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol and Drew
-## Version: 5.2.1-beta6
+## Version: 5.2.1-beta7
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
