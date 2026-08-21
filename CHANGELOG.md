@@ -4,6 +4,38 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.1 - 2026-08-20
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+QUI 5.2.1 completes the aura-display and combat-safety work from the beta
+series, with incoming-cast tracking and group-frame dispel improvements.
+
+### Added
+
+- **Incoming casts can be tracked in a dedicated display.** Configure and
+  place incoming-cast bars alongside the rest of the QUI combat HUD.
+
+### Changed
+
+- **Aura displays support configurable row layout.** Set row direction,
+  alignment, and spacing while keeping editor previews matched to runtime.
+- **Cooldown Manager refresh paths do less unnecessary work.** Aura callbacks,
+  lookup paths, and changed-icon updates preserve state with less churn.
+
+### Fixed
+
+- **Cooldown Manager aura and cooldown state stays safe and complete.** Secret-
+  safe stacks, duration objects, metadata, native swipes, and aura-phase
+  styling survive refreshes without exposing protected values.
+- **Combat and roster refreshes stay current.** Action-bar pings, target auras,
+  tracked bars, keybind labels, objective tracking, and UI-hider state recover
+  without stale indicators or unnecessary combat allocations.
+- **Group-frame dispel indicators follow live unit state.** Dispel feeder slots
+  respect unit life state, player-dispellable types, frame alpha, and Enrage
+  coverage.
+
 ## v5.2.1-beta7 - 2026-08-20
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
