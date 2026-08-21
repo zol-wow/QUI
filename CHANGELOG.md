@@ -4,6 +4,27 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2-beta3 - 2026-08-21
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager cross-unit aura refresh and combat-safe reanchor fixes for
+the 5.2.2 beta line.
+
+### Fixed
+
+- **Linked aura refreshes follow self-unit changes.** Cooldown icons now
+  refresh when linked auras appear or change on another self unit, including
+  pet aura deltas and unknown/full refreshes.
+- **Aura-phase reanchors preserve native ownership.** Native cooldown timing
+  stays Blizzard-owned while QUI-owned replacements handle suppressed phases,
+  including expiry and duplicate-update guards.
+- **Combat refreshes defer protected work.** Aura-phase transitions queue
+  reanchors until combat ends instead of mutating protected frames in combat.
+- **Consumable cooldowns refresh consistently.** Linked aura state,
+  visibility, and cooldown bling now update for consumable entries.
+
 ## v5.2.2-beta2 - 2026-08-21
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
