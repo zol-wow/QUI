@@ -161,30 +161,6 @@ local capturedAuraDeps
 ns.CDMReanchorAuraPhase = { New = function(deps) capturedAuraDeps = deps; return { Hook = function() end } end }
 local swipeStub = { showRechargeEdge = false, showCooldownSwipe = true }
 ns._OwnedSwipe = { GetSettings = function() return swipeStub end }
-local chargeDuration = { charge = true }
-local cooldownDuration = nil
-local durationQueries = {}
-ns.CDMSources = {
-    QuerySpellCharges = function() error("charge count must not gate duration lookup") end,
-    QuerySpellChargeDuration = function(spellID)
-        durationQueries[#durationQueries + 1] = { kind = "charge", spellID = spellID }
-        return chargeDuration
-    end,
-    QuerySpellCooldownDuration = function(spellID, ignoreGCD)
-        durationQueries[#durationQueries + 1] = {
-            kind = "cooldown", spellID = spellID, ignoreGCD = ignoreGCD,
-        }
-        return cooldownDuration
-    end,
-}
-local appliedDuration
-ns.CDMRenderers = {
-    ApplyDurationObjectCooldown = function(cd, duration, clearWhenZero, reverse)
-        appliedDuration = { cd = cd, duration = duration,
-            clearWhenZero = clearWhenZero, reverse = reverse }
-    end,
-}
-
 local facade = B.BuildRuntime(env)
 assert(type(facade) == "table" and facade.bridge and facade.wiring and facade.runtime, "facade has bridge/wiring/runtime")
 assert(type(facade.RefreshBuiltin) == "function", "facade:RefreshBuiltin exists")
@@ -219,80 +195,15 @@ assert(type(capturedAuraDeps.reassertColor) == "function",
     "auraPhase still receives reassertColor")
 assert(type(capturedAuraDeps.reassertSwipe) == "function",
     "auraPhase receives reassertSwipe")
-assert(type(capturedAuraDeps.rearmNativeCooldown) == "function",
-    "auraPhase receives native cooldown re-arm")
 swipeStub.showCooldownIconAuraPhase = false
-local useAuraCalls = {}
-local restoredNativeDuration
-local nativeCd = {
-    SetUseAuraDisplayTime = function(_, value) useAuraCalls[#useAuraCalls + 1] = value end,
-    SetCooldownFromDurationObject = function(_, duration, clearWhenZero)
-        restoredNativeDuration = { duration = duration, clearWhenZero = clearWhenZero }
-    end,
-    Clear = function() end,
+local nativeAuraFrame = {
+    cooldownUseAuraDisplayTime = true,
+    GetCooldownInfo = function() return { hasAura = true } end,
 }
-durationQueries = {}
-appliedDuration = nil
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
-assert(#durationQueries == 1 and durationQueries[1].kind == "charge"
-    and durationQueries[1].spellID == 500,
-    "charge-backed native aura uses the curated spell charge duration")
-assert(#useAuraCalls == 1 and useAuraCalls[1] == false,
-    "native aura re-arm disables aura display timing")
-assert(appliedDuration and appliedDuration.cd == nativeCd
-    and appliedDuration.duration == chargeDuration and appliedDuration.clearWhenZero == true
-    and appliedDuration.reverse == false,
-    "native aura re-arm applies the opaque duration object")
-chargeDuration = nil
-cooldownDuration = { cooldown = true }
-durationQueries = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
-assert(#durationQueries == 2 and durationQueries[1].kind == "charge"
-    and durationQueries[2].kind == "cooldown" and durationQueries[2].ignoreGCD == true,
-    "native aura re-arm falls back to the normal cooldown duration")
-assert(appliedDuration.duration == cooldownDuration,
-    "normal cooldown fallback passes its opaque duration object")
-durationQueries = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
-assert(#durationQueries == 2 and durationQueries[1].kind == "charge"
-    and durationQueries[2].kind == "cooldown" and durationQueries[2].ignoreGCD == true,
-    "secret charge count falls back to the normal cooldown duration")
-cooldownDuration = nil
-durationQueries = {}
-useAuraCalls = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
-assert(#durationQueries == 2 and #useAuraCalls == 1 and useAuraCalls[1] == false,
-    "native aura re-arm disables aura timing without a cooldown duration")
+assert(capturedRuntimeDeps.shouldReplaceNativeAuraPhase(nativeAuraFrame,
+        { type = "spell" }, "essential") == true,
+    "disabled aura phase uses a QUI-owned replacement frame")
 swipeStub.showCooldownIconAuraPhase = true
-useAuraCalls = {}
-local nativeAuraState = { durationObject = { aura = true }, clearWhenZero = true }
-restoredNativeDuration = nil
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true, nativeAuraState)
-assert(#useAuraCalls == 1 and useAuraCalls[1] == true,
-    "native aura re-arm restores aura timing when the setting is enabled")
-assert(restoredNativeDuration and restoredNativeDuration.duration == nativeAuraState.durationObject
-    and restoredNativeDuration.clearWhenZero == true,
-    "native aura re-arm restores the cached aura duration object")
-swipeStub.showCooldownIconAuraPhase = false
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
-swipeStub.showCooldownIconAuraPhase = true
-useAuraCalls = {}
-restoredNativeDuration = nil
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, false, nativeAuraState)
-assert(#useAuraCalls == 1 and useAuraCalls[1] == false and not restoredNativeDuration,
-    "native cooldown mode stays restored after the aura expires")
-swipeStub.showCooldownIconAuraPhase = false
-cooldownDuration = { cooldown = true }
-fMatch.GetCooldownInfo = function() return { hasAura = false } end
-durationQueries = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
-assert(appliedDuration.duration == cooldownDuration,
-    "native re-arm does not depend on stable hasAura metadata")
-durationQueries = {}
-useAuraCalls = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, false)
-assert(#durationQueries == 0 and #useAuraCalls == 0,
-    "native re-arm ignores ordinary cooldown frames without aura timing")
 local cdSecretGCD = { SetDrawSwipe = function() end }
 capturedAuraDeps.reassertSwipe({ isOnGCD = secretGCD }, cdSecretGCD, "essential", true)
 assert(probedSecretGCD, "reassertSwipe probes secret isOnGCD before comparing it")
@@ -356,12 +267,12 @@ assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == false,
     "ordinary spell native frame remains native")
 assert(shouldReplace({ cooldownUseAuraDisplayTime = true,
         GetCooldownInfo = function() return { hasAura = false } end },
-        { type = "spell" }, "essential") == false,
-    "native non-aura frame stays native when disabled")
+        { type = "spell" }, "essential") == true,
+    "current native aura phase uses an owned replacement when disabled")
 assert(shouldReplace({ cooldownUseAuraDisplayTime = true,
         GetCooldownInfo = function() return { hasAura = true, flags = 1 } end },
-        { type = "spell" }, "essential") == false,
-    "HideAura metadata keeps the native frame native")
+        { type = "spell" }, "essential") == true,
+    "stable eligibility metadata does not block owned replacement")
 assert(shouldReplace({}, { type = "item" }, "buff") == false,
     "item-backed BuffIcon entry remains native")
 assert(shouldReplace(nativeAuraFrame, { type = "spell", kind = "aura" }, "essential") == false,
