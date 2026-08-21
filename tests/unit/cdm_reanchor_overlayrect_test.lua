@@ -169,7 +169,7 @@ do
 end
 
 ------------------------------------------------------------------------
--- (d) Unclaimed still hides via SetAlpha(0).
+-- (d) Sunk still hides via SetAlpha(0).
 ------------------------------------------------------------------------
 do
     local calls = {}
@@ -178,13 +178,13 @@ do
     local bridge = CDMReanchor.New({ raw = newRaw(alpha), securecall = function(fn, ...) return fn(...) end,
         hooksecurefunc = hooksecurefunc })
 
-    bridge:GetData(frame).overlayAnchor = nil   -- explicitly unclaimed, no rect
+    bridge:Sink(frame)
     bridge:InstallAnchorGuard(frame)
     frame:SetPoint("CENTER", {}, "CENTER", 0, 0)
 
     local sawAlpha0 = false
     for _, a in ipairs(alpha) do if a == 0 then sawAlpha0 = true end end
-    assert(sawAlpha0, "guard SetAlpha(0)s an unclaimed re-anchored frame (rect + legacy both absent)")
+    assert(sawAlpha0, "guard preserves alpha-0 for a sunk re-anchored frame")
 end
 
 print("OK: cdm_reanchor_overlayrect_test")

@@ -32,6 +32,158 @@ local entrySignature = sliceBetween(
 
 assert(entrySignature:find("entry.linkedSpellIDs", 1, true),
     "icon pool signature must include linkedSpellIDs so linked aura aliases rebuild stale icons")
+assert(entrySignature:find("entry.source", 1, true),
+    "icon pool signature must include route provenance")
+
+local customEntryBuilder = sliceBetween(
+    icons,
+    "local function BuildSpellEntryFromCustom(entry, idx, viewerType)",
+    "function CDMIcons.ResolveCustomSpellEntries(viewerType)")
+
+assert(customEntryBuilder:find("IsSelfAuraSpell", 1, true),
+    "custom aura entries must carry Blizzard selfAura routing metadata")
+
+local globals = _G
+local builderEnv = setmetatable({
+    ns = {
+        CDMCustomAuraRuns = {
+            ShouldUseSettings = function(settings, viewerType)
+                return settings.activeGlowEnabled == false and viewerType == "custom"
+            end,
+            HasAuraEntries = function() return true end,
+            ResolveRoute = function(entry)
+                if entry.source ~= "blizzardCDM" then return nil end
+                if entry._selfAura == true then return "SELF_HELPFUL" end
+                if entry._selfAura == false and entry.spellID == 333 then return "HELPFUL" end
+            end,
+        },
+        CDMSpellData = {
+            IsSelfAuraSpell = function(_, spellID)
+                if spellID == 222 then return true end
+                if spellID == 333 then return false end
+            end,
+        },
+    },
+    Sources = {},
+    Shared = {},
+    CDMIcons = {},
+    GetTrackerSettings = function()
+        return {
+            containerType = "customBar",
+            dynamicLayout = true,
+            activeGlowEnabled = false,
+            showOnlyWhenActive = true,
+        }
+    end,
+    GetBuiltinContainerEntryKind = function() return nil end,
+    ResolveMacro = function() return nil end,
+    GetCachedSpellName = function() return nil end,
+}, { __index = globals })
+builderEnv._G = builderEnv
+local builderSource = customEntryBuilder:gsub(
+    "^local function BuildSpellEntryFromCustom", "return function", 1)
+local builderChunk = assert(loadstring(builderSource, "@cdm_icon_renderer.lua#BuildSpellEntryFromCustom"))
+setfenv(builderChunk, builderEnv)
+local builtAura = builderChunk()({
+    id = 222,
+    type = "spell",
+    kind = "aura",
+    name = "Managed Aura",
+    source = "blizzardCDM",
+    linkedSpellIDs = { 333 },
+}, 1, "custom")
+assert(builtAura._useManagedAura == true and builtAura._selfAura == true
+    and builtAura._managedAuraRoute == "SELF_HELPFUL",
+    "eligible custom auras must carry managed and self-aura routing state")
+local builtTargetAura = builderChunk()({
+    id = 333,
+    type = "spell",
+    kind = "aura",
+    name = "Managed Target Aura",
+    source = "blizzardCDM",
+}, 2, "custom")
+assert(builtTargetAura._useManagedAura == true and builtTargetAura._selfAura == false
+    and builtTargetAura._managedAuraRoute == "HELPFUL",
+    "catalogued non-self auras must carry their proven target route")
+local builtManualAura = builderChunk()({
+    id = 555,
+    type = "spell",
+    kind = "aura",
+    name = "Manual Aura",
+}, 3, "custom")
+assert(builtManualAura._useManagedAura == nil
+    and builtManualAura._managedAuraRoute == nil,
+    "uncatalogued custom auras must retain the legacy player-first resolver")
+assert(builtManualAura.source == nil and builtAura.source == "blizzardCDM",
+    "runtime entries must preserve provenance for safe route selection")
+
+local skipSource = sliceBetween(
+    icons,
+    "function _resolverRuntimePolicy.ShouldSkipAuraPhaseForCooldownIcon(icon, entry)",
+    "function _resolverRuntimePolicy.ShouldUseBuffSwipeForIcon")
+skipSource = skipSource:gsub(
+    "^function _resolverRuntimePolicy.ShouldSkipAuraPhaseForCooldownIcon", "return function", 1)
+local skipEnv = setmetatable({
+    IsAuraEntry = function(entry) return entry and entry.kind == "aura" end,
+    _showCooldownIconAuraPhase = false,
+}, { __index = globals })
+local skipChunk = assert(loadstring(skipSource,
+    "@cdm_icon_renderer.lua#ShouldSkipAuraPhaseForCooldownIcon"))
+setfenv(skipChunk, skipEnv)
+local shouldSkipAuraPhase = skipChunk()
+assert(shouldSkipAuraPhase({}, {
+        kind = "cooldown", type = "spell", _isCustomEntry = true,
+    }) == true,
+    "custom spell cooldowns must skip the forbidden Lua aura resolver")
+assert(shouldSkipAuraPhase({}, { kind = "aura" }) == false,
+    "explicit aura entries must retain the native aura resolver path")
+skipEnv._showCooldownIconAuraPhase = true
+assert(shouldSkipAuraPhase({}, {
+        kind = "cooldown", type = "spell", _isCustomEntry = true,
+    }) == false,
+    "custom cooldowns must retain Lua aura resolution until an overlay is positioned")
+assert(shouldSkipAuraPhase({}, {
+        kind = "cooldown", type = "spell", _isCustomEntry = true,
+    }) == false,
+    "custom cooldowns must retain Lua aura resolution for unsupported aura routes")
+assert(shouldSkipAuraPhase({ _customAuraOverlayPrepared = true }, {
+        kind = "cooldown", type = "spell", _isCustomEntry = true,
+    }) == true,
+    "custom cooldowns may skip Lua aura resolution after their native overlay is positioned")
+
+local placeSource = sliceBetween(
+    icons,
+    "function CDMIcons.ShouldContainerLayoutPlaceIcon(icon, entry, containerDB, inCombat)",
+    "function _resolverRuntimePolicy.WakeBuffIconContainer()")
+placeSource = "return function" .. placeSource:sub(
+    #"function CDMIcons.ShouldContainerLayoutPlaceIcon" + 1)
+local placeEnv = setmetatable({
+    visibilityPolicy = { ShouldPlaceLayoutIcon = function() return false end },
+}, { __index = globals })
+local placeChunk = assert(loadstring(placeSource, "@cdm_icon_renderer.lua#ShouldContainerLayoutPlaceIcon"))
+setfenv(placeChunk, placeEnv)
+local shouldPlace = placeChunk()
+assert(shouldPlace({}, { _useManagedAura = true }, {}, false) == true,
+    "managed aura proxies must remain in layout plans")
+assert(shouldPlace({}, {}, {}, false) == false,
+    "ordinary icons must still use the visibility policy")
+
+local updateSource = sliceBetween(
+    icons,
+    "UpdateIconCooldown = function(icon, trustIsOnGCD)",
+    "local function IsCustomBarEntryUsableOnCurrentClass(entry, viewerType)")
+updateSource = updateSource:gsub("^UpdateIconCooldown =", "return", 1)
+local ownedUpdates = 0
+local updateEnv = setmetatable({
+    UpdateIconCooldownOwned = function() ownedUpdates = ownedUpdates + 1 end,
+}, { __index = globals })
+local updateChunk = assert(loadstring(updateSource, "@cdm_icon_renderer.lua#UpdateIconCooldown"))
+setfenv(updateChunk, updateEnv)
+local updateCooldown = updateChunk()
+updateCooldown({ _spellEntry = { _useManagedAura = true } })
+assert(ownedUpdates == 0, "managed aura proxies must skip Lua cooldown resolution")
+updateCooldown({ _spellEntry = builtManualAura })
+assert(ownedUpdates == 1, "manual auras must retain Lua cooldown resolution")
 
 local buffFingerprint = sliceBetween(
     containers,
@@ -48,6 +200,60 @@ local iconListSignature = sliceBetween(
 
 assert(iconListSignature:find("AppendCustomRuntimeEntrySignature", 1, true),
     "custom container signatures must include synthesized runtime entry facts")
+assert(iconListSignature:find("IsSelfAuraSpell", 1, true),
+    "custom container signatures must rebuild when selfAura routing metadata changes")
+
+local buildIconsSource = sliceBetween(
+    icons,
+    "function CDMIcons:BuildIcons(viewerType, container, reuseOnly)",
+    "local visibilityPolicy =")
+buildIconsSource = buildIconsSource:gsub(
+    "^function CDMIcons:BuildIcons%(viewerType, container, reuseOnly%)",
+    "return function(self, viewerType, container, reuseOnly)", 1)
+local poolIcon = { GetParent = function() return nil end }
+local pool = { poolIcon }
+local clearCalls = 0
+local buildIconsEnv = setmetatable({
+    ns = {
+        CDMSpellData = { GetSpellList = function() return {} end },
+        CDMCustomAuraRuns = {
+            ShouldUseSettings = function() return false end,
+            HasAuraEntries = function() return false end,
+        },
+    },
+    Factory = {
+        GetIconPool = function() return pool end,
+        ClearPool = function()
+            clearCalls = clearCalls + 1
+            return {}
+        end,
+        EnsurePool = function() return {} end,
+    },
+    GetTrackerSettings = function() return {} end,
+    BuildIconListSignature = function() return "signature" end,
+    PoolMatchesContainer = function() return true end,
+    IsBuiltinCooldownContainerKey = function() return false end,
+    IsCustomBarContainer = function() return false end,
+    IsAuraEntry = function() return false end,
+    UpdateIconSecureAttributes = function() end,
+    iconPools = {},
+}, { __index = globals })
+local buildIconsChunk = assert(loadstring(buildIconsSource,
+    "@cdm_icon_renderer.lua#BuildIcons"))
+setfenv(buildIconsChunk, buildIconsEnv)
+local buildIcons = buildIconsChunk()
+local buildIconsOwner = { UpdateCooldownsForType = function() end }
+local matchingContainer = {
+    _lastBuildSignature = "signature|layoutRestricted:false",
+    _lastBuildPool = pool,
+}
+assert(buildIcons(buildIconsOwner, "custom", matchingContainer, true) == pool
+    and clearCalls == 0,
+    "reuse-only combat builds must preserve matching icon identities")
+matchingContainer._lastBuildSignature = "stale"
+assert(buildIcons(buildIconsOwner, "custom", matchingContainer, true) == nil
+    and clearCalls == 0,
+    "reuse-only combat builds must reject stale pools before mutation")
 
 local barReuse = sliceBetween(
     bars,

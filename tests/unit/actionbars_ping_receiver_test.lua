@@ -27,6 +27,7 @@ local pingable = readAll(
 local pingDocs = readAll(
     "tests/api-docs/blizzard/PingManagerSecureDocumentation.lua")
 local builder = readAll("QUI_ActionBars/actionbars/actionbars_builder.lua")
+local helpers = readAll("QUI_ActionBars/actionbars/actionbars_helpers.lua")
 local actionbars = readAll("QUI_ActionBars/actionbars/actionbars.lua")
 
 check("Blizzard's supported ActionBarButtonTemplate composes visual and code templates",
@@ -63,6 +64,9 @@ check("QUI does not replace Blizzard's ping identity or action lifecycle",
         and builder:find("btn.GetActionButtonInfo =", 1, true) == nil
         and builder:find("btn.UpdateAction =", 1, true) == nil
         and builder:find("btn.UpdatePressAndHoldAction =", 1, true) == nil)
+check("owned action refresh keeps ping receivers current in combat",
+    helpers:find("local actionType = action and GetActionInfo(action)", 1, true) ~= nil
+        and helpers:find('self:SetAttribute("ping-receiver", actionType and true or nil)', 1, true) ~= nil)
 check("owned buttons route Blizzard's Update through QUI's own painter",
     framexml:find("ActionButton_UpdateCooldown(self);", 1, true) ~= nil
         and builder:find("btn.Update = function(self)", 1, true) ~= nil

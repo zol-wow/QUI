@@ -23,10 +23,7 @@ local function GetSkinBase()
     return ns.SkinBase
 end
 
-local pendingDecorMode = nil
 local pendingStatsPanelRefresh = false
-local pendingCharacterFrameScale = nil
-local pendingPaneLayout = false
 local ScheduleUpdate
 local ApplyCharacterPaneLayout
 
@@ -54,41 +51,9 @@ end
 local charCombatFrame = CreateFrame("Frame")
 charCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 charCombatFrame:SetScript("OnEvent", function()
-    if pendingCharacterFrameScale then
-        if CharacterFrame then CharacterFrame:SetScale(pendingCharacterFrameScale) end
-        pendingCharacterFrameScale = nil
-    end
-
     if not CharacterFrame or not CharacterFrame:IsShown() then
-        pendingDecorMode = nil
         pendingStatsPanelRefresh = false
-        pendingPaneLayout = false
         return
-    end
-
-    if pendingPaneLayout then
-        pendingPaneLayout = false
-        if ApplyCharacterPaneLayout then ApplyCharacterPaneLayout(true) end
-    end
-
-    if pendingDecorMode then
-        local skinHandles = _G.QUI_CharacterFrameSkinning
-        if pendingDecorMode == "other" then
-            if not (skinHandles and skinHandles.SetExtended) then
-                if CharacterFramePortrait then CharacterFramePortrait:Show() end
-                if CharacterFrame.Background then CharacterFrame.Background:Show() end
-                if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Show() end
-                if CharacterFrameBg then CharacterFrameBg:Show() end
-            end
-        elseif pendingDecorMode == "character" then
-            if not (skinHandles and skinHandles.SetExtended) then
-                if CharacterFramePortrait then CharacterFramePortrait:Hide() end
-                if CharacterFrame.Background then CharacterFrame.Background:Hide() end
-                if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Hide() end
-                if CharacterFrameBg then CharacterFrameBg:Hide() end
-            end
-        end
-        pendingDecorMode = nil
     end
 
     if pendingStatsPanelRefresh then
@@ -101,10 +66,6 @@ end)
 
 local function SetCharacterFrameScale(scale)
     if not CharacterFrame then return end
-    if InCombatLockdown() then
-        pendingCharacterFrameScale = scale
-        return
-    end
     CharacterFrame:SetScale(scale)
 end
 
@@ -1337,11 +1298,6 @@ local function IsSkinningHandlingBackground()
 end
 
 local function HideBlizzardDecorations()
-    if InCombatLockdown() then
-        pendingPaneLayout = true
-        return
-    end
-
     local settings = GetSettings()
 
     if CharacterFrame.TopTileStreaks then CharacterFrame.TopTileStreaks:Hide() end
@@ -1599,11 +1555,6 @@ local RIGHT_COLUMN_SLOTS = {
 }
 
 local function RepositionSlots()
-    if InCombatLockdown() then
-        pendingPaneLayout = true
-        return
-    end
-
     local settings = GetSettings()
     if not CharacterFrameBg then return end
 
@@ -1798,24 +1749,16 @@ ApplyCharacterPaneLayout = function(force)
 
     if layoutApplied and not force then return end
 
-    local inCombat = InCombatLockdown()
-    if inCombat then
-        pendingPaneLayout = true
-    else
-        HideBlizzardDecorations()
-    end
-
+    HideBlizzardDecorations()
     CreateCustomBackground()
     SetupTitleArea()
 
-    if not inCombat then
-        RunAfterCharacterPaneLayoutTick(function()
-            RepositionSlots()
-            RefreshEquipmentSlotBorders()
-            PositionModelScene()
-            PositionStatsPanelForLayout()
-        end)
-    end
+    RunAfterCharacterPaneLayoutTick(function()
+        RepositionSlots()
+        RefreshEquipmentSlotBorders()
+        PositionModelScene()
+        PositionStatsPanelForLayout()
+    end)
 
     layoutApplied = true
 end
@@ -3455,14 +3398,10 @@ local function HookCharacterFrame()
             end
         else
             if customBg then customBg:Hide() end
-            if InCombatLockdown() then
-                pendingDecorMode = "other"
-            else
-                if CharacterFramePortrait then CharacterFramePortrait:Show() end
-                if CharacterFrame.Background then CharacterFrame.Background:Show() end
-                if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Show() end
-                if CharacterFrameBg then CharacterFrameBg:Show() end
-            end
+            if CharacterFramePortrait then CharacterFramePortrait:Show() end
+            if CharacterFrame.Background then CharacterFrame.Background:Show() end
+            if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Show() end
+            if CharacterFrameBg then CharacterFrameBg:Show() end
         end
 
         SetCharacterFrameScale(1.0)
@@ -3501,14 +3440,10 @@ local function HookCharacterFrame()
                     end
                 else
                     if customBg then customBg:Show() end
-                    if InCombatLockdown() then
-                        pendingDecorMode = "character"
-                    else
-                        if CharacterFramePortrait then CharacterFramePortrait:Hide() end
-                        if CharacterFrame.Background then CharacterFrame.Background:Hide() end
-                        if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Hide() end
-                        if CharacterFrameBg then CharacterFrameBg:Hide() end
-                    end
+                    if CharacterFramePortrait then CharacterFramePortrait:Hide() end
+                    if CharacterFrame.Background then CharacterFrame.Background:Hide() end
+                    if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Hide() end
+                    if CharacterFrameBg then CharacterFrameBg:Hide() end
                 end
 
                 MaskNativeStatsPane()

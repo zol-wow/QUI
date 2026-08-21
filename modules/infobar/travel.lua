@@ -8,18 +8,6 @@ local ipairs = ipairs
 
 local HEARTHSTONE_ITEM_ID = 6948
 
-local TELEPORT_SPELLS = {
-    { 1254572, "Magisters' Terrace" },
-    { 1254559, "Maisara Caverns" },
-    { 1254563, "Nexus-Point Xenas" },
-    { 1254400, "Windrunner Spire" },
-    { 393273,  "Algeth'ar Academy" },
-    { 1254551, "Seat of the Triumvirate" },
-    { 159898,  "Skyreach" },
-    { 1254557, "Skyreach" },
-    { 1254555, "Pit of Saron" },
-}
-
 local HEARTH_TOYS = {
     54452,
     64488,
@@ -60,6 +48,28 @@ local function GetTravelDB()
     local db = QUICore.db and QUICore.db.profile
     return db and db.infobar
 end
+
+local function GetTeleportEntries()
+    local challengeMode = _G.C_ChallengeMode
+    local dungeonData = ns.DungeonData
+    if not challengeMode or not dungeonData then return {} end
+
+    local maps = challengeMode.GetMapTable and challengeMode.GetMapTable()
+    if type(maps) ~= "table" then return {} end
+
+    local entries, seen = {}, {}
+    for _, mapID in ipairs(maps) do
+        local spellID = dungeonData.GetTeleportSpellID(mapID)
+        if spellID and not seen[spellID] then
+            local name = challengeMode.GetMapUIInfo and challengeMode.GetMapUIInfo(mapID)
+            entries[#entries + 1] = { spellID, name }
+            seen[spellID] = true
+        end
+    end
+    return entries
+end
+
+ns.TravelData = { GetTeleportEntries = GetTeleportEntries }
 
 local function ResolveHearthAction()
     local db = GetTravelDB()
@@ -115,7 +125,7 @@ local function BuildFlyout(frame, slotFrame)
     bg:SetColorTexture(0, 0, 0, 0.9)
 
     local rows = 0
-    for _, entry in ipairs(TELEPORT_SPELLS) do
+    for _, entry in ipairs(GetTeleportEntries()) do
         local spellID, label = entry[1], entry[2]
         if IsSpellKnown(spellID) then
             rows = rows + 1
@@ -175,12 +185,16 @@ local function BuildSecureWidgets(frame, slotFrame, size)
 
     local hearth = CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
     frame._hearth = hearth
-    hearth:SetSize(size, size)
+    hearth:SetSize(slotFrame._quiFixedWidth or size, size)
     hearth:SetPoint("LEFT", frame, "LEFT", 2, 0)
     hearth:RegisterForClicks("AnyUp", "AnyDown")
     hearth:SetAttribute("type", attrType)
     hearth:SetAttribute(attrType, attrValue)
     hearth:SetNormalTexture(icon)
+    local hearthIcon = hearth:GetNormalTexture()
+    hearthIcon:SetSize(size, size)
+    hearthIcon:ClearAllPoints()
+    hearthIcon:SetPoint("LEFT", hearth, "LEFT", 0, 0)
     hearth:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
 
     BuildFlyout(frame, slotFrame)
@@ -252,8 +266,9 @@ Datatexts:Register("travel", {
         if slotFrame._quiOnWidthDirty then slotFrame._quiOnWidthDirty() end
 
         frame:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
+        frame:RegisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
         frame:SetScript("OnEvent", function(self, event)
-            if event == "LEARNED_SPELL_IN_SKILL_LINE" then
+            if event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "CHALLENGE_MODE_MAPS_UPDATE" then
                 self._flyoutDirty = true
             elseif event == "PLAYER_REGEN_ENABLED" then
                 self:UnregisterEvent("PLAYER_REGEN_ENABLED")

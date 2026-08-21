@@ -1268,6 +1268,7 @@ local PROFILE_IMPORT_CATEGORIES = {
             "xpTracker",
             "totemBar",
             "preyTracker",
+            "incomingCasts",
         },
     },
     {

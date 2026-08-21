@@ -201,6 +201,7 @@ local function DefaultCapabilities()
     return {
         elementTypes        = { filterStrip = true, tracked = true, missingRaidBuff = true },
         trackedDisplayTypes = { icon = true, square = true, bar = true, healthTint = true, border = true },
+        iconSizeMax         = 40,
         cancelEligible      = false,
         maxStripElements    = 4,
         allowSpecOverride   = true,
@@ -485,8 +486,9 @@ local function AddPlacementWidgets(ctx, element, includeStrip)
     local row = ctx.AddFormRow
     local add = ctx.AddDetailWidget
     local onChange = ctx.onChange
+    local iconSizeMax = ctx.caps.iconSizeMax or 40
 
-    if includeStrip then
+    if includeStrip and element.mode == "filterStrip" then
         if element.filterMode == "classify" then
             row(ns.L["Max Icons Per Category"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 40, 1, "maxIcons", element, onChange, { deferOnDrag = true }, {
                 description = ns.L["Hard cap on how many icons EACH ticked category shows at once — Classification mode builds one full-size group per category, so this limit applies separately to every one of them. 0 shows all matches in every category."],
@@ -497,21 +499,29 @@ local function AddPlacementWidgets(ctx, element, includeStrip)
             }))
         end
     end
-    row(ns.L["Icon Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
+    row(ns.L["Icon Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, iconSizeMax, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
         description = ns.L["Pixel size of each icon."],
     }))
-    row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
-        description = ns.L["Where on the frame this element is anchored. X/Y Offset below nudges it from this anchor point."],
-    }))
-    if includeStrip then
+    if not ctx.caps.containerLayout then
+        row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
+            description = ns.L["Where on the frame this element is anchored. X/Y Offset below nudges it from this anchor point."],
+        }))
+    end
+    local multiTracked = element.mode ~= "tracked"
+        or not E.TrackedSpellCount
+        or E.TrackedSpellCount(element) > 1
+    if includeStrip and multiTracked then
         row(ns.L["Grow Direction"], GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_GROW_OPTIONS, "growDirection", element, onChange, {
-            description = ns.L["Direction additional icons are added in after the first."],
+            description = ns.L["Direction icons within this row are added in after the first."],
         }))
         row(ns.L["Spacing"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 8, 1, "spacing", element, onChange, { deferOnDrag = true }, {
             description = ns.L["Pixel gap between adjacent icons."],
         }))
         row(ns.L["Icons Per Row"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 10, 1, "iconsPerRow", element, onChange, { deferOnDrag = true }, {
             description = ns.L["Wrap icons onto a new row after this many. 0 keeps them on a single row. Extra rows stack away from the anchored frame edge."],
+        }))
+        row(ns.L["Row Spacing"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 30, 1, "rowSpacing", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Pixel gap between wrapped rows. 0 uses the regular icon spacing. Increase this to make room for duration text below icons."],
         }))
     end
     if ctx.caps.singleStrip then
@@ -522,7 +532,7 @@ local function AddPlacementWidgets(ctx, element, includeStrip)
         hint:SetWordWrap(true)
         hint:SetNonSpaceWrap(true)
         add(hint, 34, true)
-    else
+    elseif not ctx.caps.containerLayout then
         row(ns.L["X Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
             description = ns.L["Horizontal pixel offset from the anchor."],
         }))
@@ -867,39 +877,52 @@ local function AddTrackedSpellListEditor(ctx, element)
     end
     for _, sid in ipairs(element.spells) do mapView[sid] = true end
 
+    local function ResolveTrackedSpellID(spellID)
+        return E.ResolveTrackedSpellID and E.ResolveTrackedSpellID(spellID) or spellID
+    end
+
     AddSpellMapEditor(ctx, mapView,
-        ns.L["Tracked Spells (Browse or enter a Spell ID):"],
+        ns.L["Tracked Spells (add at least one Spell ID):"],
         function()
             local arr = element.spells
+            local normalized = {}
             for i = #arr, 1, -1 do arr[i] = nil end
-            for sid in pairs(mapView) do arr[#arr + 1] = sid end
+            for sid in pairs(mapView) do normalized[ResolveTrackedSpellID(sid)] = true end
+            for sid in pairs(normalized) do arr[#arr + 1] = sid end
             table.sort(arr)
             ctx.onChange()
+            ctx.rebuild()
         end,
         {
             key = ctx.browsePrefix .. "tracked:" .. tostring(element.id),
             title = ns.L["Add Tracked Spells"],
+            resolveAuraSpellIDs = true,
             presets = (SpellList and SpellList.GetDefaultPresets and SpellList.GetDefaultPresets()) or {},
             isSelected = function(spellID)
+                local resolvedID = ResolveTrackedSpellID(spellID)
                 for _, sid in ipairs(element.spells) do
-                    if sid == spellID then return true end
+                    if sid == spellID or sid == resolvedID then return true end
                 end
                 return false
             end,
             onToggle = function(spellID)
+                local resolvedID = ResolveTrackedSpellID(spellID)
                 local arr = element.spells
                 for i = #arr, 1, -1 do
-                    if arr[i] == spellID then
+                    if arr[i] == spellID or arr[i] == resolvedID then
                         table.remove(arr, i)
                         mapView[spellID] = nil
+                        mapView[resolvedID] = nil
                         ctx.NotifyChanged()
+                        ctx.rebuild()
                         return
                     end
                 end
-                arr[#arr + 1] = spellID
+                arr[#arr + 1] = resolvedID
                 table.sort(arr)
-                mapView[spellID] = true
+                mapView[resolvedID] = true
                 ctx.NotifyChanged()
+                ctx.rebuild()
             end,
         })
 end
@@ -1194,6 +1217,8 @@ local function AddTrackedConfig(ctx, element)
     local rebuild = ctx.rebuild
     local caps = ctx.caps
 
+    AddTrackedSpellListEditor(ctx, element)
+
     local displayOptions = BuildTrackedDisplayOptions(caps.trackedDisplayTypes)
     row(ns.L["Display Type"], GUI:CreateFormDropdown(ctx.detailArea, nil, displayOptions, "displayType", element, function()
         ctx.NotifyChanged()
@@ -1224,30 +1249,34 @@ local function AddTrackedConfig(ctx, element)
         row(ns.L["Square Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
             description = ns.L["Pixel size of the colored square."],
         }))
-        row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
-            description = ns.L["Where on the frame the square is anchored."],
-        }))
-        row(ns.L["X Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
-            description = ns.L["Horizontal pixel offset from the anchor."],
-        }))
-        row(ns.L["Y Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
-            description = ns.L["Vertical pixel offset from the anchor."],
-        }))
+        if not caps.containerLayout then
+            row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
+                description = ns.L["Where on the frame the square is anchored."],
+            }))
+            row(ns.L["X Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
+                description = ns.L["Horizontal pixel offset from the anchor."],
+            }))
+            row(ns.L["Y Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
+                description = ns.L["Vertical pixel offset from the anchor."],
+            }))
+        end
         row(ns.L["Square Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
             description = ns.L["Fill color of the colored square."],
         }))
     elseif displayType == "bar" then
         if type(element.color) ~= "table" then element.color = { 0.2, 0.8, 0.2, 1 } end
         if type(element.bar) ~= "table" then element.bar = { thickness = 12, length = 48 } end
-        row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
-            description = ns.L["Where on the frame the bar is anchored."],
-        }))
-        row(ns.L["X Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
-            description = ns.L["Horizontal pixel offset from the anchor."],
-        }))
-        row(ns.L["Y Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
-            description = ns.L["Vertical pixel offset from the anchor."],
-        }))
+        if not caps.containerLayout then
+            row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
+                description = ns.L["Where on the frame the bar is anchored."],
+            }))
+            row(ns.L["X Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
+                description = ns.L["Horizontal pixel offset from the anchor."],
+            }))
+            row(ns.L["Y Offset"], GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
+                description = ns.L["Vertical pixel offset from the anchor."],
+            }))
+        end
         row(ns.L["Orientation"], GUI:CreateFormDropdown(ctx.detailArea, nil, BAR_ORIENTATION_OPTIONS, "orientation", element.bar, onChange, {
             description = ns.L["Whether the bar drains horizontally or vertically as the aura ticks down."],
         }))
@@ -1314,7 +1343,6 @@ local function AddTrackedConfig(ctx, element)
     end
 
     AddRoleGateRow(ctx, element)
-    AddTrackedSpellListEditor(ctx, element)
 end
 
 local function AddMissingRaidBuffConfig(ctx, element)

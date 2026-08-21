@@ -76,6 +76,8 @@ function CDMReanchorHooks.New(deps)
         _isClaimed = deps.isClaimed,
         _installGuard = deps.installGuard,
         _installGuardKeys = deps.installGuardKeys or {},
+        _shouldTrackActiveState = deps.shouldTrackActiveState,
+        _ignoreIndexReasons = deps.ignoreIndexReasons or {},
     }
     return setmetatable(self, InstanceMT)
 end
@@ -216,7 +218,9 @@ function CDMReanchorHooks:InstallGlobalMixinHooks()
     for i = 1, #self._keys do
         local key = self._keys[i]
         local mixin = self:GetMixinForKey(key)
-        if mixin and not self._hookedMixins[mixin] and mixin.OnCooldownIDSet then
+        local trackCooldownID = not self._deps.shouldTrackCooldownID
+            or self._deps.shouldTrackCooldownID(key) ~= false
+        if trackCooldownID and mixin and not self._hookedMixins[mixin] and mixin.OnCooldownIDSet then
             self._hookedMixins[mixin] = true
             local hooks = self
             local function markCooldownIDSet()
@@ -240,15 +244,18 @@ function CDMReanchorHooks:_InstallFrameHooks(frame, key)
     local hooks = self
     local function markDirty() hooks:MarkDirty(key) end
     local function markActiveStateDirty() hooks:MarkActiveStateDirty(key) end
-    if frame.OnActiveStateChanged then
+    local trackActiveState = not self._shouldTrackActiveState or self._shouldTrackActiveState(key) ~= false
+    local trackCooldownID = not self._deps.shouldTrackCooldownID
+        or self._deps.shouldTrackCooldownID(key) ~= false
+    if trackActiveState and frame.OnActiveStateChanged then
         hooksec(frame, "OnActiveStateChanged", function(...) _securecall(markActiveStateDirty, ...) end)
         installed = true
     end
-    if frame.OnCooldownIDSet then
+    if trackCooldownID and frame.OnCooldownIDSet then
         hooksec(frame, "OnCooldownIDSet", function(...) _securecall(markDirty, ...) end)
         installed = true
     end
-    if frame.HookScript then
+    if trackActiveState and frame.HookScript then
         frame:HookScript("OnShow", function(...) _securecall(markActiveStateDirty, ...) end)
         installed = true
     end
@@ -263,6 +270,8 @@ function CDMReanchorHooks:InstallViewerHooks(getViewer)
     for i = 1, #self._keys do
         local key = self._keys[i]
         local viewer = getViewer(key)
+        local trackActiveState = not self._shouldTrackActiveState
+            or self._shouldTrackActiveState(key) ~= false
         if viewer and not self._hooked[viewer] and viewer.RefreshLayout then
             self._hooked[viewer] = true
             local hooks = self
@@ -283,7 +292,7 @@ function CDMReanchorHooks:InstallViewerHooks(getViewer)
                 end
                 hooksec(viewer, "OnAcquireItemFrame", function(...) _securecall(onAcquire, ...) end)
             end
-            if viewer.HookScript then
+            if trackActiveState and viewer.HookScript then
                 viewer:HookScript("OnShow", function(...) _securecall(markDirty, ...) end)
                 viewer:HookScript("OnHide", function(...) _securecall(markDirty, ...) end)
             end
@@ -368,7 +377,8 @@ function CDMReanchorHooks:InstallIndexSubscription(index)
     if self._indexSubscribed then return end
     if not (index and index.Subscribe) then return end
     local hooks = self
-    index.Subscribe("reanchor", function()
+    index.Subscribe("reanchor", function(reason)
+        if hooks._ignoreIndexReasons[reason] then return end
         hooks:MarkAllDirty()
     end, 50)
     self._indexSubscribed = true

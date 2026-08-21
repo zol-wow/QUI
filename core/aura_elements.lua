@@ -23,6 +23,69 @@ local DEFAULT_MISSING_RAID_BUFF_CHECKS = {
     versatility = true, skyfury = true, bronze = true,
 }
 
+local function IsUsableTrackedSpellID(spellID)
+    return type(spellID) == "number" and spellID > 0
+end
+
+function E.ResolveTrackedSpellID(spellID)
+    if not IsUsableTrackedSpellID(spellID) then return spellID end
+
+    local runtime = ns.CDMAuraRuntime
+    if runtime and runtime.ResolveAbilityAuraSpellID then
+        local ok, mapped, remapped
+        if ns.SafeCall then
+            ok, mapped, remapped = ns.SafeCall(
+                "best-effort-style", runtime.ResolveAbilityAuraSpellID, spellID)
+        end
+        if ok and remapped == true and IsUsableTrackedSpellID(mapped) then
+            return mapped
+        end
+    end
+
+    local spellData = ns.CDMSpellData
+    if spellData and spellData.GetAuraIDsForSpell then
+        local ok, auraIDs
+        if ns.SafeCall then
+            ok, auraIDs = ns.SafeCall(
+                "best-effort-style", spellData.GetAuraIDsForSpell, spellData, spellID)
+        end
+        if ok and type(auraIDs) == "table" then
+            for _, auraID in ipairs(auraIDs) do
+                if IsUsableTrackedSpellID(auraID) and auraID ~= spellID then
+                    return auraID
+                end
+            end
+        end
+    end
+
+    return spellID
+end
+
+function E.TrackedSpellCandidates(spellID)
+    local candidates = {}
+    if not IsUsableTrackedSpellID(spellID) then return candidates end
+    candidates[spellID] = true
+
+    local resolved = E.ResolveTrackedSpellID(spellID)
+    if IsUsableTrackedSpellID(resolved) then candidates[resolved] = true end
+
+    local spellData = ns.CDMSpellData
+    if spellData and spellData.GetAuraIDsForSpell then
+        local ok, auraIDs
+        if ns.SafeCall then
+            ok, auraIDs = ns.SafeCall(
+                "best-effort-style", spellData.GetAuraIDsForSpell, spellData, spellID)
+        end
+        if ok and type(auraIDs) == "table" then
+            for _, auraID in ipairs(auraIDs) do
+                if IsUsableTrackedSpellID(auraID) then candidates[auraID] = true end
+            end
+        end
+    end
+
+    return candidates
+end
+
 local BUFF_CLASSIFICATION_MAP = {
     helpful           = { "HELPFUL|RAID", "HELPFUL|RAID_IN_COMBAT" },
     raid              = "HELPFUL|RAID",
@@ -110,10 +173,14 @@ function E.NewFilterStripElement(auraType)
 end
 
 function E.NewTrackedElement(spells, displayType)
+    local normalizedSpells = {}
+    for i, spellID in ipairs(spells or {}) do
+        normalizedSpells[i] = E.ResolveTrackedSpellID(spellID)
+    end
     return {
         id = nextId(), enabled = true, mode = "tracked",
         auraType = "HELPFUL",
-        spells = spells or {}, onlyMine = false, onlyMineSpells = {},
+        spells = normalizedSpells, onlyMine = false, onlyMineSpells = {},
         displayType = displayType or "icon",
         applyToRoles = "all",
         anchor = "TOPLEFT", offsetX = 0, offsetY = 0,
@@ -127,6 +194,16 @@ function E.NewTrackedElement(spells, displayType)
         bar = { thickness = 12, length = 48 },
         border = { thickness = 2 },
     }
+end
+
+function E.TrackedSpellCount(element)
+    local spells = type(element) == "table" and element.spells
+    if type(spells) ~= "table" then return 0 end
+    local count = 0
+    for i = 1, #spells do
+        if type(spells[i]) == "number" then count = count + 1 end
+    end
+    return count
 end
 
 function E.NewMissingRaidBuffElement()
@@ -219,6 +296,18 @@ function E.NormalizeElement(e)
     elseif e.mode == "tracked" then
         if e.auraType == nil then e.auraType = "HELPFUL" end
         if type(e.border) ~= "table" then e.border = { thickness = 2 } end
+        if type(e.spells) == "table" then
+            for i, spellID in ipairs(e.spells) do
+                e.spells[i] = E.ResolveTrackedSpellID(spellID)
+            end
+        end
+        if type(e.onlyMineSpells) == "table" then
+            local normalizedOnlyMine = {}
+            for spellID, value in pairs(e.onlyMineSpells) do
+                normalizedOnlyMine[E.ResolveTrackedSpellID(spellID)] = value
+            end
+            e.onlyMineSpells = normalizedOnlyMine
+        end
     end
     if e.dispelBorderMode ~= "stealable" and e.dispelBorderMode ~= "all" then
         e.dispelBorderMode = "debuffs"

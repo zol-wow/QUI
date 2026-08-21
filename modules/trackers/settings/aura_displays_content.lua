@@ -35,6 +35,19 @@ local UNIT_OPTIONS = {
     { value = "__name", text = ns.L["Specific player..."] },
 }
 
+local DISPLAY_DIRECTION_OPTIONS = {
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "UP", text = ns.L["Up"] },
+    { value = "DOWN", text = ns.L["Down"] },
+}
+
+local DISPLAY_ALIGNMENT_OPTIONS = {
+    { value = "START", text = ns.L["Start"] },
+    { value = "CENTER", text = ns.L["Center"] },
+    { value = "END", text = ns.L["End"] },
+}
+
 ns.QUI_AuraDisplaysOptions = {}
 
 local function Fold(text)
@@ -194,7 +207,10 @@ function ns.QUI_AuraDisplaysOptions._QuickCreate(spec)
     local bucket = display.auras.elements["*"]
     for i = #bucket, 1, -1 do bucket[i] = nil end
     if spec.kind == "tracked" then
-        bucket[1] = E.NewTrackedElement(spec.spellID and { spec.spellID } or {}, "icon")
+        local spellID = spec.spellID
+            and E.ResolveTrackedSpellID and E.ResolveTrackedSpellID(spec.spellID)
+            or spec.spellID
+        bucket[1] = E.NewTrackedElement(spellID and { spellID } or {}, "icon")
     else
         bucket[1] = E.NewFilterStripElement("HELPFUL")
     end
@@ -281,7 +297,8 @@ local function PaintGroupHeaderRow(row, y, node)
     row:ClearAllPoints()
     row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", 0, -y)
     local title = node.group == "" and ns.L["Ungrouped"] or node.group
-    row.label:SetText((node.collapsed and "▸ " or "▾ ") .. title .. " (" .. node.count .. ")")
+    local marker = node.group == "" and "" or (node.collapsed and "> " or "v ")
+    row.label:SetText(marker .. title .. " (" .. node.count .. ")")
     row:SetScript("OnClick", function()
         if node.group ~= "" then
             AD.SetGroupCollapsed(node.group, not node.collapsed)
@@ -692,6 +709,48 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
     end
     L.closeSection(unitCard)
 
+    local layoutCard = L.sectionAt()
+    display.layout = display.layout or {}
+    display.layout.direction = display.layout.direction or "RIGHT"
+    display.layout.alignment = display.layout.alignment or "CENTER"
+    display.layout.spacing = display.layout.spacing or 2
+    local layoutChanged = function()
+        AD.Refresh()
+        SyncPreview()
+    end
+    local directionProxy = {
+        direction = display.layout.direction,
+        _quiTransientOptionsProxy = true,
+    }
+    local directionW = GUI:CreateFormDropdown(layoutCard.frame, nil,
+        DISPLAY_DIRECTION_OPTIONS, "direction", directionProxy, function()
+            display.layout.direction = directionProxy.direction
+            layoutChanged()
+        end, {
+            description = ns.L["How separate aura rows are arranged inside this display. Grow Direction still controls icons within one row."],
+        })
+    local alignmentProxy = {
+        alignment = display.layout.alignment,
+        _quiTransientOptionsProxy = true,
+    }
+    local alignmentW = GUI:CreateFormDropdown(layoutCard.frame, nil,
+        DISPLAY_ALIGNMENT_OPTIONS, "alignment", alignmentProxy, function()
+            display.layout.alignment = alignmentProxy.alignment
+            layoutChanged()
+        end, {
+            description = ns.L["How rows are aligned across the other axis."],
+        })
+    local spacingW = GUI:CreateFormSlider(layoutCard.frame, nil, 0, 8, 1, "spacing",
+        display.layout, layoutChanged, { deferOnDrag = true }, {
+            description = ns.L["Pixel gap between separate aura rows."],
+        })
+    layoutCard.AddRow(
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Row Direction"], directionW),
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Row Alignment"], alignmentW)
+    )
+    layoutCard.AddRow(Shared.BuildSettingRow(layoutCard.frame, ns.L["Row Spacing"], spacingW))
+    L.closeSection(layoutCard)
+
     if AD.UnitPolarityFor(display) == "hostile" and HasHelpfulTrackedElement(display) then
         local wrap = CreateFrame("Frame", nil, host)
         wrap:SetHeight(44)
@@ -748,6 +807,8 @@ function ns.QUI_AuraDisplaysOptions._BuildAurasTab(host, ctx, display)
         capabilities = {
             elementTypes        = { filterStrip = true, tracked = true },
             trackedDisplayTypes = { icon = true, square = true, bar = true },
+            iconSizeMax         = 200,
+            containerLayout     = true,
             allowSpecOverride   = true,
             roleGate            = false,
             cancelEligible      = false,
@@ -964,6 +1025,7 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
         if UI.groupRenameField then UI.groupRenameField:Hide() end
         if UI.quickCreatePopup then UI.quickCreatePopup:Hide() end
     end)
+    pane:HookScript("OnShow", SyncPreview)
 
     local left = CreateFrame("Frame", nil, pane, "BackdropTemplate")
     left:SetPoint("TOPLEFT")

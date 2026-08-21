@@ -190,32 +190,36 @@ end
 do
     local oldSources = ns.CDMSources
     local presentIDs = {}
-    ns.CDMSources = {
-        QueryPlayerAuraBySpellID = function(spellID)
-            if presentIDs[spellID] then return { spellId = spellID } end
-            return nil
+    local oldSpellData = ns.CDMSpellData
+    ns.CDMSpellData = {
+        GetCapturedAuraForLookup = function(ids)
+            for _, id in ipairs(ids) do
+                if presentIDs[id] then return { auraInstanceID = 1, unit = "player" } end
+            end
         end,
     }
-    local auraEnv = RE.BuildEnv({})
+    local auraEnv = RE.BuildEnv({ CDMSpellData = ns.CDMSpellData })
     ns.CDMSources = oldSources
+    ns.CDMSpellData = oldSpellData
 
     assert(type(auraEnv.entryAuraIsPresent) == "function",
         "entryAuraIsPresent exposed on the env for custom owned fallbacks")
 
     local entry = { spellID = 101 }
     presentIDs[101] = true
-    assert(auraEnv.entryAuraIsPresent(entry) == true, "live player aura detected by spellID")
+    assert(auraEnv.entryAuraIsPresent(entry) == true,
+        "captured player aura should use its base spell ID")
     presentIDs[101] = nil
     assert(auraEnv.entryAuraIsPresent(entry) == false, "absent aura -> false")
 
     -- override/linked variants are checked too (aura may live under a variant id)
     presentIDs[202] = true
     assert(auraEnv.entryAuraIsPresent({ spellID = 101, overrideSpellID = 202 }) == true,
-        "overrideSpellID variant counts as the live aura")
+        "captured override aura should use the captured lookup")
     presentIDs[202] = nil
     presentIDs[303] = true
     assert(auraEnv.entryAuraIsPresent({ spellID = 101, linkedSpellIDs = { 303 } }) == true,
-        "linkedSpellIDs variant counts as the live aura")
+        "captured linked aura should use the captured lookup")
     presentIDs[303] = nil
 
     -- frameIsActive is PURE native usability: a stale hidden frame with a live
@@ -421,6 +425,11 @@ do
     -- taint-clean in-game.
     assert(countCalls("SetSwipeTexture") == 2,
         "swipe texture re-asserts every claimed pass")
+    for _, call in ipairs(cdCalls) do
+        if call[1] == "SetSwipeTexture" then
+            assert(call[3] == nil, "swipe texture styling must not overwrite native swipe color")
+        end
+    end
     assert(countCalls("SetDrawBling", false) == 2,
         "bling-off re-asserts every claimed pass")
     assert(countCalls("SetHideCountdownNumbers") == 2,
@@ -1244,6 +1253,32 @@ do
         assert(not logFind(stackFs, "SetFontObject"), "hidden stack text is not restyled")
     end
 
+    do
+        local stackAlpha, holderAlpha = 0.65, 0.75
+        local stackFs = {
+            GetObjectType = function() return "FontString" end,
+            GetAlpha = function() return stackAlpha end,
+            SetAlpha = function(_, value) stackAlpha = value end,
+        }
+        local holder = {
+            Current = stackFs,
+            GetAlpha = function() return holderAlpha end,
+            SetAlpha = function(_, value) holderAlpha = value end,
+        }
+        local frame = {
+            ChargeCount = holder,
+            Cooldown = {},
+            SetAlpha = function() end,
+            CreateTexture = function() return setmetatable({}, { __index = function() return function() end end }) end,
+        }
+        styleEnv.applyChrome(frame, { borderSize = 0, hideStackText = true })
+        assert(stackAlpha == 0 and holderAlpha == 0,
+            "hideStackText suppresses both native stack alpha values")
+        styleEnv.applyChrome(frame, { borderSize = 0, hideStackText = false })
+        assert(stackAlpha == 0.65 and holderAlpha == 0.75,
+            "disabling hideStackText restores only alpha values suppressed by QUI")
+    end
+
     -- hideDurationText suppresses the countdown re-anchor (numbers are hidden
     -- natively via SetHideCountdownNumbers; no anchor writes needed)
     do
@@ -1256,6 +1291,22 @@ do
 
     _G.CreateFont, ns.Helpers = oldCreateFont, oldHelpers
     print("OK: reanchor chrome styles native countdown + stack text per rowConfig")
+end
+
+do
+    local holderAlphaCalls, textAlphaCalls = 0, 0
+    local count = {
+        SetAlpha = function() textAlphaCalls = textAlphaCalls + 1 end,
+    }
+    local frame = {
+        ChargeCount = {
+            Current = count,
+            SetAlpha = function() holderAlphaCalls = holderAlphaCalls + 1 end,
+        },
+    }
+    RE.BuildEnv({}).applyChrome(frame, { borderSize = 0 })
+    assert(holderAlphaCalls == 0 and textAlphaCalls == 0,
+        "native stack styling does not force Blizzard charge visibility")
 end
 
 print("OK: cdm_reanchor_realenv_test")

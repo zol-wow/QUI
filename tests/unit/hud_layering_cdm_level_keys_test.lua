@@ -10,7 +10,8 @@ local containers = readAll("QUI_CDM/cdm/cdm_containers.lua")
 assert(containers:find("CDMContainers_API.HUD_LAYERING = {", 1, true),
     "cdm_containers must define the HUD_LAYERING map from container keys to hudLayering keys and Blizzard viewer names")
 
-local layoutStart = assert(containers:find("local function LayoutContainer(trackerKey)", 1, true),
+local layoutStart = assert(containers:find(
+    "local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)", 1, true),
     "LayoutContainer definition not found")
 local layoutEnd = assert(containers:find("\nRefreshAll = function", layoutStart, true),
     "LayoutContainer end marker not found")

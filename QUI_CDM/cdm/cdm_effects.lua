@@ -290,6 +290,7 @@ local UpdatePandemicGlow
 local HasProcOnUsableOverride
 
 local activeGlowIcons = {}
+local buttonGlowOwners = {}
 
 local spellIdToGlowIcons = {}
 local procOnUsableGlowIcons = {}
@@ -441,7 +442,8 @@ ns._CDM_EnsureGlowBelowSwipe = EnsureGlowBelowSwipe
 local function StartTextureGlow(icon, key, texturePath, color)
     local frame = icon[key]
     if not frame then
-        frame = CreateFrame("Frame", nil, icon)
+        local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+        frame = CreateFrame("Frame", nil, icon, template)
         frame:SetAllPoints(icon)
         icon[key] = frame
 
@@ -530,6 +532,7 @@ local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
 
     elseif glowType == "Button Glow" then
         LCG.ButtonGlow_Start(icon, color, frequency)
+        buttonGlowOwners[icon] = glowKey
         EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
 
     elseif glowType == "Flash" then
@@ -589,7 +592,12 @@ StopGlow = function(icon, glowKey)
     if LCG then
         LCG.PixelGlow_Stop(icon, glowKey)
         LCG.AutoCastGlow_Stop(icon, glowKey)
-        LCG.ButtonGlow_Stop(icon)
+        local buttonGlowOwner = buttonGlowOwners[icon]
+        if buttonGlowOwner == glowKey
+            or (not buttonGlowOwner and glowKey == DEFAULT_GLOW_KEY) then
+            LCG.ButtonGlow_Stop(icon)
+            buttonGlowOwners[icon] = nil
+        end
         LCG.ProcGlow_Stop(icon, glowKey)
     end
     StopTextureGlow(icon, "_QUIFlash" .. glowKey)
@@ -606,7 +614,8 @@ local function EnsurePandemicGlowFrame(icon)
     local frame = icon.PandemicGlow
     if frame then return frame end
 
-    frame = CreateFrame("Frame", nil, icon)
+    local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+    frame = CreateFrame("Frame", nil, icon, template)
     frame:SetAllPoints(icon)
     frame:SetAlpha(0)
 
@@ -1324,6 +1333,7 @@ end
 local _, ns = ...
 local Helpers = ns.Helpers
 local Shared = ns.CDMShared
+local _issecretvalue = issecretvalue or function() return false end
 
 local DEFAULTS = {
     showBuffSwipe = true,
@@ -1366,8 +1376,18 @@ end
 
 local function GetClassColor()
     local _, class = UnitClass("player")
-    local classColor = Helpers.GetClassColorTable(class)
-    if classColor then
+    local classColor
+    if C_ClassColor and C_ClassColor.GetClassColor
+        and not _issecretvalue(class) and type(class) == "string" then
+        classColor = C_ClassColor.GetClassColor(class)
+    elseif not _issecretvalue(class) and type(class) == "string" then
+        classColor = Helpers.GetClassColorTable(class)
+    end
+    if type(classColor) ~= "nil" then
+        if type(classColor.GetRGBA) == "function" then
+            local r, g, b = classColor:GetRGBA()
+            return r, g, b, 0.8
+        end
         return classColor.r, classColor.g, classColor.b, 0.8
     end
     return 1, 1, 1, 0.8

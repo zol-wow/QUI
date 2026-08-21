@@ -210,21 +210,6 @@ function CDMIconStackPolicy.Create(callbacks)
     function controller:GetAuraApplicationsFromData(auraData, unit, source)
         if not auraData then return nil end
 
-        local auraInstanceID = callbacks.getAuraDataInstanceID
-            and callbacks.getAuraDataInstanceID(auraData)
-        local idSecret = issecretvalue(auraInstanceID)
-        if not idSecret and not auraInstanceID then
-            auraInstanceID = auraData.auraInstanceID
-            idSecret = issecretvalue(auraInstanceID)
-        end
-        local sources = Sources()
-        if (idSecret or auraInstanceID) and sources and sources.QueryAuraApplicationDisplayCount then
-            local stacks = sources.QueryAuraApplicationDisplayCount(unit or "player", auraInstanceID, 1, 99)
-            if AuraCountTextHasDisplay(stacks) then
-                return stacks, "display-count"
-            end
-        end
-
         local apps = controller:GetDisplayableAuraApplicationsFromData(auraData)
         if controller:ValueIsPresent(apps) then
             return apps, source
@@ -234,16 +219,6 @@ function CDMIconStackPolicy.Create(callbacks)
     end
 
     function controller:GetAuraApplicationsForInstance(unit, auraInstanceID, source, minApplications)
-        local sources = Sources()
-        if not (unit and auraInstanceID and sources and sources.QueryAuraApplicationDisplayCount) then
-            return nil
-        end
-
-        local stacks = sources.QueryAuraApplicationDisplayCount(unit, auraInstanceID, minApplications or 1, 99)
-        if AuraCountTextHasDisplay(stacks) then
-            return stacks, source or "display-count"
-        end
-
         return nil
     end
 
@@ -291,46 +266,6 @@ function CDMIconStackPolicy.Create(callbacks)
     end
 
     function controller:TryAuraApplicationsBySpellID(auraID, source)
-        if auraID == nil then return nil end
-        local sources = Sources()
-        if not sources then return nil end
-
-        local function queryPlayerAuraData(spellID)
-            if not spellID then return nil end
-            if sources.QueryUnitAuraBySpellID then
-                local auraData = sources.QueryUnitAuraBySpellID("player", spellID)
-                if auraData then return auraData end
-            end
-            if sources.QueryPlayerAuraBySpellID then
-                local auraData = sources.QueryPlayerAuraBySpellID(spellID)
-                if auraData then return auraData end
-            end
-            return nil
-        end
-
-        if sources.QueryCooldownAuraBySpellID then
-            local passiveAuraID = sources.QueryCooldownAuraBySpellID(auraID)
-            if passiveAuraID then
-                local auraData = queryPlayerAuraData(passiveAuraID)
-                if auraData then
-                    local apps, appSource = controller:GetAuraApplicationsFromData(
-                        auraData, "player", (source or "spell") .. "-cooldown-aura")
-                    if controller:ValueIsPresent(apps) then
-                        return apps, appSource
-                    end
-                end
-            end
-        end
-
-        local auraData = queryPlayerAuraData(auraID)
-        if auraData then
-            local apps, appSource = controller:GetAuraApplicationsFromData(
-                auraData, "player", (source or "spell") .. "-player-spell")
-            if controller:ValueIsPresent(apps) then
-                return apps, appSource
-            end
-        end
-
         return nil
     end
 
@@ -436,8 +371,7 @@ function CDMIconStackPolicy.Create(callbacks)
     function controller:GetAuraApplicationsForSpell(spellID, entryOrName, icon)
         local entry = type(entryOrName) == "table" and entryOrName or nil
         local spellName = entry and entry.name or entryOrName
-        local sources = Sources()
-        if controller:ValueIsMissing(spellID) or not sources then
+        if controller:ValueIsMissing(spellID) then
             return nil
         end
 
@@ -479,28 +413,6 @@ function CDMIconStackPolicy.Create(callbacks)
             local linkedApps, linkedSource = controller:TryLinkedAuraApplications(
                 entry and entry.linkedSpellIDs, entry, icon, seenIDs, "entry-linked")
             if controller:ValueIsPresent(linkedApps) then return linkedApps, linkedSource end
-        end
-
-        if not sources.QueryAuraDataBySpellName then
-            return controller:ResolveAuraApplicationsForEntry(spellID, entry, icon)
-        end
-
-        local nameToUse = spellName
-        if nameToUse == nil or nameToUse == "" then
-            nameToUse = callbacks.getCachedSpellName and callbacks.getCachedSpellName(spellID) or nil
-        end
-        if (nameToUse == nil or nameToUse == "") and sources.QuerySpellInfo then
-            local info = sources.QuerySpellInfo(spellID)
-            if info then
-                nameToUse = info.name
-            end
-        end
-        if controller:ValueIsPresent(nameToUse) then
-            local nad = sources.QueryAuraDataBySpellName("player", nameToUse, "HELPFUL")
-            if nad then
-                local apps, source = controller:GetAuraApplicationsFromData(nad, "player", "name-player")
-                if controller:ValueIsPresent(apps) then return apps, source end
-            end
         end
 
         local resolvedApps, resolvedSource = controller:ResolveAuraApplicationsForEntry(spellID, entry, icon)
@@ -911,7 +823,8 @@ function CDMIconVisibilityPolicy.Create(callbacks)
             local cooldownState = callbacks.resolveCooldownActivityState
                 and callbacks.resolveCooldownActivityState(icon, entry, containerDB)
                 or {}
-            local effectiveOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
+            local effectiveOnCD = cooldownState.gcdOnly ~= true
+                and (cooldownState.isOnCooldown or cooldownState.rechargeActive)
 
             if containerDB.showOnlyOnCooldown and not effectiveOnCD then
                 return true
@@ -1001,6 +914,7 @@ function CDMIconVisibilityPolicy.Create(callbacks)
         if not (entry and entry.viewerType) then return end
         if not containerDB or containerDB.dynamicLayout == false then return end
         local previously = icon._lastLayoutFilterHidden
+        icon._lastLayoutFilterHidden = filterHidesNow and true or false
         if previously == nil then return end
         if filterHidesNow ~= previously then
             controller.layoutNeedsRefresh[entry.viewerType] = true
@@ -1728,7 +1642,8 @@ function CDMIconCustomBarPolicy.Create(callbacks)
 
         if layoutVisible then
             if mode == "onCooldown" then
-                layoutVisible = cooldown.isOnCooldown or cooldown.rechargeActive
+                layoutVisible = cooldown.gcdOnly ~= true
+                    and (cooldown.isOnCooldown or cooldown.rechargeActive)
             elseif mode == "active" then
                 layoutVisible = isActive
             elseif mode == "offCooldown" then
@@ -1861,14 +1776,16 @@ function CDMIconCustomBarPolicy.Create(callbacks)
             else
                 icon.Cooldown:SetSwipeColor(0, 0, 0, 0)
             end
-        elseif icon._customBarActive and icon._lastAuraDurObj and containerDB.showAuraSwipe == true
+        elseif (icon._customBarActive or icon._resolvedCooldownMode == "aura")
+            and icon._lastAuraDurObj and containerDB.showAuraSwipe == true
             and ns.CDMRenderers and ns.CDMRenderers.ApplyDurationObjectCooldown then
             icon.Cooldown:SetDrawEdge(false)
             icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
             icon.Cooldown:SetSwipeColor(0, 0, 0, 0.6)
             icon.Cooldown:SetDrawSwipe(true)
             ns.CDMRenderers.ApplyDurationObjectCooldown(icon.Cooldown, icon._lastAuraDurObj, true, false)
-        elseif not icon._customBarActive then
+        elseif not icon._customBarActive
+            and not (cooldownState and cooldownState.isOnCooldown == true) then
             icon.Cooldown:SetDrawSwipe(false)
             icon.Cooldown:SetDrawEdge(false)
             icon.Cooldown:SetSwipeColor(0, 0, 0, 0)

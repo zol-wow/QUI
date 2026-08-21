@@ -346,6 +346,22 @@ before = #h2refresh
 sub.fn("data_loaded")
 assert(#h2refresh == before + 2, "CDMIndex events dirty all managed containers")
 
+local filteredRefreshes = {}
+local filtered = H.New({
+    keys = { "essential", "utility" },
+    refresh = function(key) filteredRefreshes[#filteredRefreshes + 1] = key end,
+    ignoreIndexReasons = { refresh_layout = true },
+})
+local filteredSub
+filtered:InstallIndexSubscription({
+    Subscribe = function(_, fn) filteredSub = fn end,
+})
+filteredSub("refresh_layout")
+assert(#filteredRefreshes == 0, "refresh-layout broker noise does not dirty native containers")
+filteredSub("data_loaded")
+filtered:Flush()
+assert(#filteredRefreshes == 2, "data broker changes still dirty native containers")
+
 -- Buff acquire blanking is reference-style but must wait until the first
 -- successful reanchor pass. Blanking during first-login cold load can hide the
 -- very first aura before QUI has adopted it; after initial reanchor, blanking
@@ -429,6 +445,56 @@ do
     batchHooks:MarkImmediate("buff")
     assert(#batches == 2 and #batches[2] == 1 and batches[2][1] == "buff",
         "immediate paths also enter the batch refresh seam")
+end
+
+do
+    local installs = {}
+    local function hook(owner, method, fn)
+        installs[#installs + 1] = { owner = owner, method = method, fn = fn }
+    end
+    local frame = {
+        OnActiveStateChanged = function() end,
+        OnCooldownIDSet = function() end,
+        HookScript = function() end,
+    }
+    local viewer
+    viewer = {
+        RefreshLayout = function() end,
+        HookScript = function(_, method) installs[#installs + 1] = { owner = viewer, method = method } end,
+        itemFramePool = {
+            EnumerateActive = function()
+                local yielded = false
+                return function()
+                    if yielded then return nil end
+                    yielded = true
+                    return frame
+                end
+            end,
+        },
+    }
+    local mixin = { OnCooldownIDSet = function() end }
+    local gated = H.New({
+        keys = { "essential" },
+        hooksecurefunc = hook,
+        shouldTrackActiveState = function() return false end,
+        shouldTrackCooldownID = function() return false end,
+        getMixinForKey = function() return mixin end,
+    })
+    gated:InstallGlobalMixinHooks()
+    gated:InstallViewerHooks(function() return viewer end)
+    local methods = {}
+    for _, install in ipairs(installs) do
+        if install.owner == frame then methods[install.method] = true end
+    end
+    assert(not methods.OnActiveStateChanged and not methods.OnShow,
+        "always-mode Essential skips active-state reanchor hooks")
+    assert(not methods.OnCooldownIDSet,
+        "native Essential skips cooldown-id reanchor hooks during runtime state churn")
+    for _, install in ipairs(installs) do
+        assert(install.owner ~= mixin, "native Essential skips global cooldown-id hooks")
+        assert(install.method ~= "OnShow" and install.method ~= "OnHide",
+            "native Essential skips viewer visibility hooks during runtime state churn")
+    end
 end
 
 print("OK: cdm_reanchor_hooks_test")

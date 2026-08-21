@@ -240,8 +240,71 @@ local BAR_BUTTON_BINDINGS = {
     { "MultiBarLeftButton(%d+)$", "MULTIACTIONBAR4BUTTON" },
 }
 
+local function QueryBindingKey(bindingName)
+    if type(GetBindingKey) ~= "function" then return nil end
+    return GetBindingKey(bindingName)
+end
+
 local function GetKeybindFromActionButton(button, actionSlot)
     if not button then return nil end
+
+    local buttonName = button:GetName()
+    if buttonName then
+        local key1 = QueryBindingKey("CLICK " .. buttonName .. ":LeftButton")
+        if key1 then
+            return FormatKeybind(key1)
+        end
+
+        for i = 1, #BAR_BUTTON_BINDINGS do
+            local entry = BAR_BUTTON_BINDINGS[i]
+            local num = buttonName:match(entry[1])
+            if num then
+                key1 = QueryBindingKey(entry[2] .. num)
+                if key1 then return FormatKeybind(key1) end
+            end
+        end
+
+        if buttonName:match("^BT4Button(%d+)$") then
+            local num = tonumber(buttonName:match("^BT4Button(%d+)$"))
+            if num then
+                key1 = QueryBindingKey("CLICK " .. buttonName .. ":Keybind")
+                if not key1 then
+                    key1 = QueryBindingKey("CLICK " .. buttonName .. ":LeftButton")
+                end
+                if not key1 then
+                    local bindingName = GetBT4BindingName(num)
+                    if bindingName then
+                        key1 = QueryBindingKey(bindingName)
+                    end
+                end
+                if not key1 and actionSlot then
+                    local bindingName = GetBindingNameFromActionSlot(actionSlot)
+                    if bindingName then
+                        key1 = QueryBindingKey(bindingName)
+                    end
+                end
+                if key1 then return FormatKeybind(key1) end
+            end
+        elseif buttonName:match("^BT4PetButton(%d+)$") then
+            local num = buttonName:match("^BT4PetButton(%d+)$")
+            if num then
+                key1 = QueryBindingKey("CLICK " .. buttonName .. ":LeftButton")
+                if not key1 then
+                    key1 = QueryBindingKey("BONUSACTIONBUTTON" .. num)
+                end
+                if key1 then return FormatKeybind(key1) end
+            end
+        elseif buttonName:match("^BT4StanceButton(%d+)$") then
+            local num = buttonName:match("^BT4StanceButton(%d+)$")
+            if num then
+                key1 = QueryBindingKey("CLICK " .. buttonName .. ":LeftButton")
+                if not key1 then
+                    key1 = QueryBindingKey("SHAPESHIFTBUTTON" .. num)
+                end
+                if key1 then return FormatKeybind(key1) end
+            end
+        end
+    end
 
     if button.HotKey then
         local ok, hotkeyText = pcall(function() return button.HotKey:GetText() end)
@@ -261,65 +324,6 @@ local function GetKeybindFromActionButton(button, actionSlot)
         local ok, hotkey = pcall(function() return button:GetHotkey() end)
         if ok and hotkey and hotkey ~= "" then
             return FormatKeybind(hotkey)
-        end
-    end
-
-    local buttonName = button:GetName()
-    if buttonName then
-        local key1 = GetBindingKey("CLICK " .. buttonName .. ":LeftButton")
-        if key1 then
-            return FormatKeybind(key1)
-        end
-
-        for i = 1, #BAR_BUTTON_BINDINGS do
-            local entry = BAR_BUTTON_BINDINGS[i]
-            local num = buttonName:match(entry[1])
-            if num then
-                key1 = GetBindingKey(entry[2] .. num)
-                if key1 then return FormatKeybind(key1) end
-                return nil
-            end
-        end
-
-        if buttonName:match("^BT4Button(%d+)$") then
-            local num = tonumber(buttonName:match("^BT4Button(%d+)$"))
-            if num then
-                key1 = GetBindingKey("CLICK " .. buttonName .. ":Keybind")
-                if not key1 then
-                    key1 = GetBindingKey("CLICK " .. buttonName .. ":LeftButton")
-                end
-                if not key1 then
-                    local bindingName = GetBT4BindingName(num)
-                    if bindingName then
-                        key1 = GetBindingKey(bindingName)
-                    end
-                end
-                if not key1 and actionSlot then
-                    local bindingName = GetBindingNameFromActionSlot(actionSlot)
-                    if bindingName then
-                        key1 = GetBindingKey(bindingName)
-                    end
-                end
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("^BT4PetButton(%d+)$") then
-            local num = buttonName:match("^BT4PetButton(%d+)$")
-            if num then
-                key1 = GetBindingKey("CLICK " .. buttonName .. ":LeftButton")
-                if not key1 then
-                    key1 = GetBindingKey("BONUSACTIONBUTTON" .. num)
-                end
-                if key1 then return FormatKeybind(key1) end
-            end
-        elseif buttonName:match("^BT4StanceButton(%d+)$") then
-            local num = buttonName:match("^BT4StanceButton(%d+)$")
-            if num then
-                key1 = GetBindingKey("CLICK " .. buttonName .. ":LeftButton")
-                if not key1 then
-                    key1 = GetBindingKey("SHAPESHIFTBUTTON" .. num)
-                end
-                if key1 then return FormatKeybind(key1) end
-            end
         end
     end
 
@@ -1060,6 +1064,9 @@ local function ApplyKeybindToIcon(icon, viewerName)
     if not keybind then
         local iks = iconKeybindState[icon]
         if iks and iks.text then
+            if not spellID and not itemID and not spellName then
+                return
+            end
             if iks.shownText then
                 iks.text:SetText("")
                 iks.shownText = nil
@@ -1098,7 +1105,8 @@ local function ApplyKeybindToIcon(icon, viewerName)
         iks.r, iks.g, iks.b, iks.a = nil, nil, nil, nil
     end
     if not iks.textLayer then
-        local layer = CreateFrame("Frame", nil, textLayerParent)
+        local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+        local layer = CreateFrame("Frame", nil, textLayerParent, template)
         layer:SetAllPoints(textLayerParent)
         iks.textLayer = layer
     end
@@ -1159,6 +1167,8 @@ local function ApplyKeybindToIcon(icon, viewerName)
             iks.text:SetText(keybind)
             iks.shownText = keybind
         end
+        iks.keybind = keybind
+        iks.spellID = spellID or itemID or spellName
         if not iks.text:IsShown() then iks.text:Show() end
     else
         if iks.shownText then
@@ -1317,6 +1327,10 @@ local function ClearStoredKeybinds(viewerName)
             cks.keybind = nil
             cks.spellID = nil
             cks.shownText = nil
+            if cks.text then
+                cks.text:SetText("")
+                cks.text:Hide()
+            end
         end
     end
 end
@@ -1346,24 +1360,33 @@ local function UpdateAllKeybinds()
     end
 end
 
-local updatePending = false
+local updateTimer
+local lastUpdateRequest = 0
 local UPDATE_THROTTLE = 0.5
 
-local function ThrottledUpdate()
-    if updatePending then return end
-    updatePending = true
+local function RunThrottledUpdate()
+    local remaining = UPDATE_THROTTLE - (GetTime() - lastUpdateRequest)
+    if remaining > 0 then
+        updateTimer = C_Timer.NewTimer(remaining, RunThrottledUpdate)
+        return
+    end
 
-    C_Timer.After(UPDATE_THROTTLE, function()
-        updatePending = false
-        if InCombatLockdown() then
-            pendingRebuild = true
-            return
-        end
-        UpdateAllKeybinds()
-    end)
+    updateTimer = nil
+    if InCombatLockdown() then
+        pendingRebuild = true
+        return
+    end
+    UpdateAllKeybinds()
+end
+
+local function ThrottledUpdate()
+    lastUpdateRequest = GetTime()
+    if updateTimer then return end
+    updateTimer = C_Timer.NewTimer(UPDATE_THROTTLE, RunThrottledUpdate)
 end
 
 local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("SPELLS_CHANGED")
@@ -1472,7 +1495,8 @@ local function GetRotationHelperOverlay(icon)
         return iks.overlay
     end
 
-    local overlay = CreateFrame("Frame", nil, icon)
+    local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+    local overlay = CreateFrame("Frame", nil, icon, template)
     overlay:SetAllPoints(icon)
     overlay:SetFrameLevel(icon:GetFrameLevel() + 15)
 

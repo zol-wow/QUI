@@ -99,6 +99,25 @@ loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_factory.lua")("QUI", ns
 local createdIcon, createdEntry
 local acquiredIcon, acquiredEntry, acquiredReused
 local releasedIcon
+local rendererSource = assert(io.open("QUI_CDM/cdm/cdm_icon_renderer.lua", "r")):read("*a")
+assert(rendererSource:find('SetScript("OnCooldownDone"', 1, true),
+    "renderer should bind native cooldown completion")
+assert(rendererSource:find('ScheduleCDMUpdate(true, CDM_UPDATE_COOLDOWN, "cooldown_done")', 1, true),
+    "native cooldown completion should schedule one broad cooldown refresh")
+assert(rendererSource:find("context.forceResolveIdle ~= true", 1, true),
+    "event-driven cooldown refreshes should resolve idle icons")
+assert(rendererSource:find("updateCooldownOnly = function(trustIsOnGCD)", 1, true),
+    "runtime refresh adapter must accept the trusted GCD flag")
+assert(rendererSource:find("CDMIcons:UpdateCooldownOnly(trustIsOnGCD == true, true)", 1, true),
+    "runtime refresh adapter must preserve the trusted GCD flag")
+assert(rendererSource:find("pendingCooldownTrustIsOnGCD", 1, true),
+    "coalesced cooldown refreshes must retain the payload-less trusted GCD state")
+assert(rendererSource:find("icon._gcdOnlySuppressed = resolvedState.cooldownInfoOnGCD == true or nil", 1, true),
+    "trusted hidden GCD resolves must retain a marker for delayed untrusted polls")
+assert(rendererSource:find("icon, entry, _cBaseID, true, trustIsOnGCD", 1, true),
+    "custom aura pre-resolution must preserve the trusted GCD flag")
+assert(rendererSource:find('SetResolveCallerTag("iconPlaced") end\n    UpdateIconCooldown(icon, true)', 1, true),
+    "container placement refreshes must treat the current GCD field as trusted")
 
 ns.CDMIcons = {
     OnFactoryIconCreated = function(icon, entry)

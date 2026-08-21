@@ -35,6 +35,35 @@ do
     check("mrb: mode", m.mode == "missingRaidBuff")
 end
 
+do
+    local oldRuntime, oldSpellData = ns.CDMAuraRuntime, ns.CDMSpellData
+    ns.CDMAuraRuntime = {
+        ResolveAbilityAuraSpellID = function(spellID)
+            if spellID == 100 then return 200, true end
+            return spellID, false
+        end,
+    }
+    ns.CDMSpellData = {
+        GetAuraIDsForSpell = function(_, spellID)
+            if spellID == 100 then return { 200, 300 } end
+            if spellID == 101 then return { 101, 301 } end
+            return nil
+        end,
+    }
+    local tracked = E.NewTrackedElement({ 100 }, "icon")
+    local linkedTracked = E.NewTrackedElement({ 101 }, "icon")
+    local candidates = E.TrackedSpellCandidates(100)
+    check("tracked: new entries store the mapped applied-aura ID", tracked.spells[1] == 200)
+    check("tracked: fallback skips the ability ID in linked aura candidates", linkedTracked.spells[1] == 301)
+    check("tracked: runtime candidates retain ability and linked aura IDs",
+        candidates[100] == true and candidates[200] == true and candidates[300] == true)
+    local legacy = { mode = "tracked", spells = { 100 }, onlyMineSpells = { [100] = true } }
+    E.NormalizeElement(legacy)
+    check("tracked: normalization migrates legacy spell and per-spell gate IDs",
+        legacy.spells[1] == 200 and legacy.onlyMineSpells[200] == true)
+    ns.CDMAuraRuntime, ns.CDMSpellData = oldRuntime, oldSpellData
+end
+
 -- Validate ---------------------------------------------------------------
 do
     check("validate: strip needs polarity", E.Validate({ mode = "filterStrip", auraType = "HELPFUL" }) == true)

@@ -85,55 +85,6 @@ function CDMReanchorBoot.BuildRuntime(env)
     local function isBuffIconFrameKey(key)
         return key == "buff" or key == "buffIcon"
     end
-    local function queryRealCooldownDurObj(frame)
-        local entry = runtime and runtime.GetEntryForFrame and runtime:GetEntryForFrame(frame)
-        if not entry then return nil end
-        local entryType = entry.type
-        if entryType == "item" or entryType == "trinket" or entryType == "slot"
-            or entryType == "macro" then
-            local R = ns.CDMResolvers
-            if R and R.BuildEntryItemDurationObject then
-                return R.BuildEntryItemDurationObject(entry)
-            end
-            return nil
-        end
-        local spellID
-        if entryType == "consumable" then
-            local Index = ns.CDMIndex
-            local indexEntry = Index and Index.GetByCategory and Index.GetByCategory(entry.id)
-            spellID = indexEntry and indexEntry.primarySpellID
-        else
-            spellID = entry.overrideSpellID or entry.spellID or entry.id
-        end
-        if _issecretvalue(spellID) or type(spellID) ~= "number" then return nil end
-        local Sources = ns.CDMSources
-        if not Sources then return nil end
-        local durObj
-        if Sources.QuerySpellCooldownDuration then
-            durObj = Sources.QuerySpellCooldownDuration(spellID, true)
-        end
-        if not durObj and Sources.QuerySpellChargeDuration then
-            durObj = Sources.QuerySpellChargeDuration(spellID)
-        end
-        return durObj
-    end
-    local function restyleAuraPhaseAsCooldown(frame, cd)
-        local durObj = queryRealCooldownDurObj(frame)
-        if cd.SetUseAuraDisplayTime then cd:SetUseAuraDisplayTime(false) end
-        if durObj and cd.SetCooldownFromDurationObject then
-            local clearIfZero = true
-            cd:SetCooldownFromDurationObject(durObj, clearIfZero)
-            if swipeSettings().showCooldownSwipe ~= false then
-                local r, g, b, a = modeColor("cooldown")
-                cd:SetSwipeColor(r, g, b, a)
-            else
-                cd:SetSwipeColor(0, 0, 0, 0)
-            end
-        else
-            if cd.Clear then cd:Clear() end
-            cd:SetSwipeColor(0, 0, 0, 0)
-        end
-    end
     local function reassertColor(frame, cd, containerKey)
         if not (cd and cd.SetSwipeColor) then return end
         if effectsHidden(containerKey) then
@@ -152,29 +103,19 @@ function CDMReanchorBoot.BuildRuntime(env)
             return
         end
         if frame.cooldownUseAuraDisplayTime == true then
-            if isAuraPhaseEnabled() then
+            if not frame.GetCooldownID then return end
+            local s = swipeSettings()
+            if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
+                cd:SetSwipeColor(0, 0, 0, 0)
+            else
                 local r, g, b, a = modeColor("aura")
                 cd:SetSwipeColor(r, g, b, a)
-            else
-                restyleAuraPhaseAsCooldown(frame, cd)
             end
         elseif cooldownShown(frame) then
             local r, g, b, a = modeColor("cooldown")
             cd:SetSwipeColor(r, g, b, a)
         else
             cd:SetSwipeColor(0, 0, 0, 0)
-        end
-    end
-    local function reassertDesat(frame, tex)
-        if not tex then return end
-        if frame.cooldownUseAuraDisplayTime ~= true or isAuraPhaseEnabled() then return end
-        local durObj = queryRealCooldownDurObj(frame)
-        if not durObj then return end
-        local curve = ns._CDM_GetCooldownDesatCurve and ns._CDM_GetCooldownDesatCurve()
-        if curve and durObj.EvaluateRemainingPercent and tex.SetDesaturation then
-            tex:SetDesaturation(durObj:EvaluateRemainingPercent(curve))
-        elseif tex.SetDesaturated then
-            tex:SetDesaturated(true)
         end
     end
     local function reassertEdge(_frame, cd, containerKey)
@@ -193,12 +134,56 @@ function CDMReanchorBoot.BuildRuntime(env)
         if s.showRechargeEdge then return end
         cd:SetDrawEdge(false)
     end
+    local function reassertSwipe(frame, cd, containerKey, show)
+        if not (cd and cd.SetDrawSwipe) then return end
+        local s = swipeSettings()
+        if effectsHidden(containerKey) then
+            if show then cd:SetDrawSwipe(false) end
+            return
+        end
+        if isBuffIconFrameKey(containerKey) then
+            if s.showBuffIconSwipe == false and show then
+                cd:SetDrawSwipe(false)
+            elseif s.showBuffIconSwipe ~= false and show == false then
+                cd:SetDrawSwipe(true)
+            end
+            return
+        end
+        if frame and frame.cooldownUseAuraDisplayTime == true
+            then
+            if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
+                if show then cd:SetDrawSwipe(false) end
+            elseif show == false then
+                cd:SetDrawSwipe(true)
+            end
+            return
+        end
+        local gcd = frame and frame.isOnGCD
+        if _issecretvalue(gcd) then return end
+        if gcd == true then
+            if s.showGCDSwipe == true and not show then
+                cd:SetDrawSwipe(true)
+            elseif s.showGCDSwipe ~= true and show then
+                cd:SetDrawSwipe(false)
+            end
+            return
+        end
+        if s.showCooldownSwipe == false and show then
+            cd:SetDrawSwipe(false)
+            return
+        end
+        if not show then
+            local hasCharges = type(frame and frame.HasVisualDataSource_Charges) == "function"
+                and frame:HasVisualDataSource_Charges()
+            if not hasCharges then cd:SetDrawSwipe(true) end
+        end
+    end
     local auraPhase = ns.CDMReanchorAuraPhase and ns.CDMReanchorAuraPhase.New({
         securecall = securecallfunction,
         isAuraPhaseEnabled = isAuraPhaseEnabled,
         reassertColor = reassertColor,
         reassertEdge = reassertEdge,
-        reassertDesat = reassertDesat,
+        reassertSwipe = reassertSwipe,
     })
     local pandemic = ns.CDMReanchorPandemic and ns.CDMReanchorPandemic.New({
         securecall = securecallfunction,
@@ -238,6 +223,9 @@ function CDMReanchorBoot.BuildRuntime(env)
         getCurated = env.getCurated,
         getSettings = env.getSettings,
         getAdditional = MakeGetAdditional(env),
+        shouldReplaceNativeAuraPhase = function()
+            return false
+        end,
         buildLayout = env.buildLayout,
         buildBuffLayout = env.buildBuffLayout,
         frameIsActive = env.frameIsActive,

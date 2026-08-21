@@ -76,9 +76,8 @@ local BROADSIDE_ICON = 135988
 local BROADSIDE_NAME = "Broadside"
 
 local function newBlzChild(cooldownID, active)
-    return {
+    local child = {
         cooldownID = cooldownID,
-        IsActive = function() return active end,
         Icon = { Icon = { GetTexture = function() return BROADSIDE_ICON end } },
         Bar = {
             GetValue = function() return 12 end,
@@ -87,6 +86,9 @@ local function newBlzChild(cooldownID, active)
             Name = { GetText = function() return BROADSIDE_NAME end },
         },
     }
+    child.active = active
+    child.IsActive = function(self) return self.active end
+    return child
 end
 
 local function newQUIBar(cooldownID, blzChild)
@@ -117,6 +119,17 @@ end
 
 local function tick()
     mirrorFrame.onUpdate(mirrorFrame, 0.02)
+end
+
+local function setUpvalue(fn, target, value)
+    for index = 1, math.huge do
+        local name = debug.getupvalue(fn, index)
+        if not name then return false end
+        if name == target then
+            debug.setupvalue(fn, index, value)
+            return true
+        end
+    end
 end
 
 local function newViewer(...)
@@ -190,8 +203,24 @@ assert(mirrorFrame.shown == false, "ticker must disarm once no owned bar carries
 
 ---------------------------------------------------------------------------
 resetPool()
-local inactiveBlz = newBlzChild(7002, false)
-local inactiveBar = newQUIBar(7002, inactiveBlz)
+local temporarilyUnpairedBar = newQUIBar(7002, nil)
+temporarilyUnpairedBar._active = true
+pool[1] = temporarilyUnpairedBar
+_G.BuffBarCooldownViewer = newViewer()
+ns.CDMResolvers = {
+    BuildCooldownStateContext = function() return {} end,
+    ResolveCooldownState = function()
+        error("a paired bar must not fall back to the base-spell resolver")
+    end,
+}
+bars:UpdateOwnedBarAura(temporarilyUnpairedBar)
+assert(temporarilyUnpairedBar._active == true,
+    "a transient pairing miss must preserve the last native active state")
+
+---------------------------------------------------------------------------
+resetPool()
+local inactiveBlz = newBlzChild(7003, false)
+local inactiveBar = newQUIBar(7003, inactiveBlz)
 pool[1] = inactiveBar
 mirrorFrame:Hide()
 bars:UpdateOwnedBarAura(inactiveBar)
@@ -199,5 +228,20 @@ bars:UpdateOwnedBarAura(inactiveBar)
 assert(inactiveBar._active == false, "an inactive Blizzard child must leave the bar inactive")
 assert(mirrorFrame.shown == true,
     "pairing a bar must arm the ticker regardless of active state -- arming only when active leaves it dark")
+
+local layoutContainer, layoutSettings = {}, {}
+assert(setUpvalue(mirrorFrame.onUpdate, "_lastContainer", layoutContainer))
+assert(setUpvalue(mirrorFrame.onUpdate, "_lastSettings", layoutSettings))
+local layoutCalls = 0
+bars.LayoutBars = function(_, container, settings)
+    assert(container == layoutContainer and settings == layoutSettings)
+    layoutCalls = layoutCalls + 1
+end
+inactiveBlz.active = true
+tick()
+assert(inactiveBar._active == true,
+    "the mirror ticker must recover a paired bar when Blizzard marks it active without another aura refresh")
+assert(layoutCalls == 1,
+    "the mirror ticker must re-layout once when a paired bar's active state changes")
 
 print("OK: cdm_bar_renderer_mirror_ticker_test")

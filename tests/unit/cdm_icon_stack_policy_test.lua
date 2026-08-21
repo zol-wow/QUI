@@ -165,22 +165,13 @@ text, source = policy:ResolveIconStackText(liveAura)
 assert(text == "2", "aura stack should resolve the live Applications count")
 assert(source == "Applications", "live aura fallback should keep the Applications source")
 
-sources.QueryAuraApplicationDisplayCount = function(unit, auraInstanceID, minApplications)
-    auraDisplayQueries[#auraDisplayQueries + 1] = {
-        unit = unit,
-        auraInstanceID = auraInstanceID,
-        minApplications = minApplications,
-    }
-    return "4"
-end
 local apps, appSource = policy:GetAuraApplicationsFromData({
     applications = 1,
     auraInstanceID = 77,
 }, "player", "aura-data")
-assert(apps == "4", "aura data fallback should ask the display-count source")
-assert(appSource == "display-count", "display-count fallback should identify its source")
-assert(auraDisplayQueries[1].minApplications == 1,
-    "display-count should request stacks from 1 (abilities that count from a single application)")
+assert(apps == nil, "single application data should not use a display-count getter")
+assert(appSource == nil, "removed display-count fallback should have no source")
+assert(#auraDisplayQueries == 0, "stack policy must not call the aura display-count API")
 
 local renderedIcon, writes = makeIcon({ kind = "aura", viewerType = "buff" })
 policy:ApplyAuraCountText(renderedIcon, {

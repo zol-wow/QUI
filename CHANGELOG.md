@@ -4,6 +4,162 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.1-beta7 - 2026-08-20
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager aura and cooldown refresh fixes, plus incoming-cast tracking
+and group-frame dispel improvements.
+
+### Added
+
+- **Incoming casts can be tracked in a dedicated display.** Configure and place
+  incoming-cast bars alongside the rest of the QUI combat HUD.
+
+### Fixed
+
+- **Cooldown Manager aura state stays safe and complete.** Secret-safe stacks,
+  duration objects, metadata, native swipes, and aura-phase styling survive
+  refreshes without exposing protected values.
+- **Combat refreshes avoid unnecessary allocations and relayout work.** Aura
+  callbacks, lookup paths, and changed-icon updates now preserve state with less
+  churn.
+- **Group-frame dispel indicators follow live unit state.** Dispel feeder slots
+  respect unit life state, player-dispellable types, frame alpha, and Enrage
+  coverage.
+
+## v5.2.1-beta6 - 2026-08-20
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Action-bar ping, combat tooltip, Objective Tracker, roster, and Raid Buffs
+refresh fixes.
+
+### Fixed
+
+- **Action-bar pings preserve sender formatting.** Ping messages now render the
+  sender and role text through Blizzard's expected chat format.
+- **Roster-driven group-frame state stays current.** Roster changes refresh
+  missing Raid Buffs, click-cast state, targeted spells, and aura displays
+  without stale indicators or unnecessary combat allocations.
+- **Combat tooltip content remains safely scoped.** Custom tooltip content is
+  kept out of combat while visual skinning continues to refresh.
+- **Objective Tracker and UI-hider updates recover after roster changes.**
+  Widget pools and hidden-frame state now catch up when the relevant UI changes.
+
+## v5.2.1-beta5 - 2026-08-19
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager visibility and refresh fixes for global recovery, GCD swipes,
+secret values, and consumable identities.
+
+### Fixed
+
+- **Cooldown completion refreshes stay current without redundant work.** Idle
+  resolution, coalesced completion updates, and targeted cast refreshes now
+  keep visible cooldowns synchronized.
+- **GCD and secret recovery state stays safe.** Disabled GCD swipes remain
+  hidden, recovery categories avoid unreadable values, and global recovery
+  matching remains trusted.
+- **Consumable cooldowns preserve their spell and item identities.** Payloads
+  now carry the identities needed to keep item-backed cooldowns visible.
+
+## v5.2.1-beta4 - 2026-08-17
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Aura display layout and tracked-spell mapping improvements.
+
+### Added
+
+- **Display-level aura row layout controls.** Configure row direction,
+  alignment, and spacing while keeping editor preview geometry matched to the
+  runtime display.
+
+### Fixed
+
+- **Tracked spells preserve linked aura candidates.** Multi-aura mappings now
+  retain every linked aura ID instead of collapsing to one resolved ID.
+- **Aura display bounds follow the configured layout.** Multi-icon rows and
+  upward or downward growth now measure and place elements along the correct
+  axis without overlapping neighboring rows.
+
+## v5.2.1-beta3 - 2026-08-16
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Secret-value safety and combat-layout fixes for Cooldown Manager and the
+character pane.
+
+### Fixed
+
+- **Cooldown Manager rejects secret values at resolver boundaries.** Aura,
+  cooldown, item, slot, and totem paths no longer pass unreadable values into
+  cached state, metadata, or DurationObject construction.
+- **Opaque aura presence remains usable without exposing payloads.** Secret
+  aura results are represented as clean presence metadata and are not memoized.
+- **Character-pane layout updates immediately during combat.** Scale,
+  decorations, equipment slots, model, and stats layout no longer wait for
+  combat to end.
+
+## v5.2.1-beta2 - 2026-08-16
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager custom aura rows now use Blizzard's secure aura containers
+where supported, so mixed cooldown and aura layouts can collapse and refresh
+safely through combat and target changes without losing their configured order
+or styling.
+
+### Fixed
+
+- **Dynamic mixed custom aura rows stay accurate in combat.** Eligible
+  right-growing, single-row bars prepare secure aura runs out of combat, then
+  follow active-only visibility without forbidden combat layout work; order,
+  sizing, spacing, and styling remain intact.
+- **Target auras refresh on friendly and enemy swaps.** Helpful and harmful
+  target routes update unit identity and visibility without leaving stale icons
+  or empty-run spacing.
+- **Existing aura configuration keeps its behavior.** Fixed and manual layouts,
+  clickables, per-spell overrides, glow effects, and unsupported visibility
+  modes keep their existing renderer, while external skins retain their texture
+  crop.
+- **Tracked buff bars and action-bar keybind labels stay current.** Native
+  tracked bars preserve Blizzard state through pairing gaps and live active
+  state changes, while keybinds rebuild after action-slot changes.
+
+## v5.2.1-beta1 - 2026-08-16
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+A combat-safety fix pass for Cooldown Manager and resource bars: Roll the
+Bones bars can reach their live Blizzard variant again, rune and fragmented
+resource displays keep updating, and aura previews match their configured
+size.
+
+### Fixed
+
+- **Roll the Bones buff bars follow the active combat variant.** Tracked bars
+  preserve Blizzard's linked spell family for frame pairing when the live
+  singular variant is unreadable, allowing the native name and icon to reach
+  QUI's existing mirror sinks.
+- **Rune and fragmented resource displays keep updating in combat.** Secret
+  resource values pass directly to the game's display sinks instead of being
+  compared or converted in Lua, while the last readable rune state remains
+  available for layout decisions.
+- **Cooldown Manager avoids secret-state control flow.** Tracked-bar layout and
+  repair paths no longer branch on combat-unreadable UI state.
+- **Aura bar previews match the configured frame size.** Preview geometry now
+  uses the same dimensions as the rendered aura bar.
+
 ## v5.2.0 - 2026-08-16
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and

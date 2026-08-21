@@ -55,6 +55,7 @@ _G.CHAT_MONSTER_EMOTE_GET = "%s "
 _G.CHAT_EMOTE_GET = "%s "
 _G.CHAT_RAID_BOSS_EMOTE_GET = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|t%s "
 _G.CHAT_MONSTER_SAY_GET = "%s says: "
+_G.CHAT_PING_GET = "%s: "
 _G.ChatFrameUtil = {
     GetOutMessageFormatKey = function(typeKey)
         if typeKey == "RAID_BOSS_EMOTE" then
@@ -459,6 +460,17 @@ settings.modifiers.channelShorten.preset = "letter"
 -- name in arg2 that must NOT become a prefix (Blizzard parity).
 eq("system raw", F.BuildEventLine("CHAT_MSG_SYSTEM", { text = "Realm restart", sender = "Ann" }),
     "Realm restart")
+
+eq("ping includes sender", F.BuildEventLine("CHAT_MSG_PING", { text = "Attack", rawSender = "Ann" }),
+    "Ann: Attack")
+
+local formatSourceFile = assert(io.open("QUI_Chat/chat/message_format.lua", "r"))
+local formatSource = formatSourceFile:read("*a")
+formatSourceFile:close()
+assert(formatSource:find("if not IsSecret(sender) and (type(sender) ~= \"string\" or sender == \"\") then", 1, true),
+    "PING sender must probe secret values before comparing them")
+assert(formatSource:find("if type(prefix) == \"nil\" then return nil end", 1, true),
+    "PING prefix must use a nil check before passing secret output onward")
 
 -- BN whisper sender renders plain (a |Hplayer:| link would be a broken target)
 eq("bn whisper", F.BuildEventLine("CHAT_MSG_BN_WHISPER", { text = "yo", sender = "Aria" }),

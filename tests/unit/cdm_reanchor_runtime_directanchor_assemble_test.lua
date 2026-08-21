@@ -77,6 +77,57 @@ do
     assert(#minted == 0, "essential frameless miss must not mint an owned fallback")
 end
 
+do
+    local nativeEntry = {
+        name = "Native cooldown", _assignedRow = 2, linkedSpellIDs = { 12345 },
+    }
+    local nativeFrame = { cooldownUseAuraDisplayTime = true }
+    local ownedIcon = { f = "owned-cooldown" }
+    local sinks, minted = {}, 0
+    local runtime = R.New({
+        bridge = { Sink = function(_, frame) sinks[#sinks + 1] = frame end },
+        wiring = {
+            MatchCuratedToFrames = function()
+                return { { entry = nativeEntry, frame = nativeFrame } }, {}, { [nativeFrame] = true }
+            end,
+        },
+        getCurated = function() return { nativeEntry } end,
+        getAdditional = function() return {} end,
+        shouldReplaceNativeAuraPhase = function(_frame, entry)
+            return type(entry.linkedSpellIDs) == "table" and #entry.linkedSpellIDs > 0
+        end,
+        mintOwned = function() minted = minted + 1; return ownedIcon end,
+    })
+
+    local entries, claimed = runtime:AssembleEntries("essential", {})
+    assert(#entries == 1 and entries[1].frame == ownedIcon and entries[1].reanchored == false,
+        "disabled native aura phase renders the owned cooldown icon")
+    assert(minted == 1 and sinks[1] == nativeFrame and claimed[nativeFrame] == nil,
+        "disabled native aura phase sinks the native aura widget")
+
+    local buffEntry = {
+        name = "Native buff", kind = "aura", linkedSpellIDs = { 12345 },
+    }
+    local buffFrame = { cooldownUseAuraDisplayTime = true }
+    local buffRuntime = R.New({
+        bridge = { Sink = function() error("buff native frame must stay native") end },
+        wiring = {
+            MatchCuratedToFrames = function()
+                return { { entry = buffEntry, frame = buffFrame } }, {}, { [buffFrame] = true }
+            end,
+        },
+        getCurated = function() return { buffEntry } end,
+        getAdditional = function() return {} end,
+        shouldReplaceNativeAuraPhase = function(_frame, entry, key)
+            return key ~= "buff" and entry.kind ~= "aura"
+        end,
+        mintOwned = function() error("buff aura entry must not mint") end,
+    })
+    local buffEntries = buffRuntime:AssembleEntries("buff", {})
+    assert(#buffEntries == 1 and buffEntries[1].reanchored == true,
+        "disabled aura phase leaves dedicated buff icons native")
+end
+
 -- Active-only BuffIcon must not treat a missing native frame as active. Cold login
 -- can classify configured buff entries as frameless before Blizzard creates live
 -- BuffIcon children; those unknown entries stay hidden unless QUI layout mode

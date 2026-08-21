@@ -197,6 +197,13 @@ do
 
     assertContains(src, "content._quiClickCastCleanupHooked",
         "click_cast_content.lua: click-cast hide cleanup hook should guard duplicate registration")
+
+    assertContains(src, "copyCard.AddRow(copyControls)",
+        "click_cast_content.lua: copy controls must share one explicitly-sized card row")
+    assertContains(src, 'applyCopyBtn:SetPoint("LEFT", copyDropdown, "RIGHT", COPY_CONTROL_GAP, 0)',
+        "click_cast_content.lua: Apply Copy must sit directly beside the copy dropdown")
+    assertContains(src, "copyDropdown:SetWidth(COPY_LABEL_WIDTH + COPY_CONTROL_GAP + COPY_DROPDOWN_WIDTH)",
+        "click_cast_content.lua: copy dropdown must keep its wider no-wrap layout")
 end
 
 print("OK: options_chrome_consistency_test")

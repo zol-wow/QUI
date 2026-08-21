@@ -793,7 +793,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 if CM then
                     if cmDB.enabled then CM:ForceRefresh() else CM:DeleteMacros() end
                 end
-            end, { description = ns.L["Auto-generate per-character *_DUI macros for the consumables selected below. Disabling deletes the macros."] })
+            end, { description = ns.L["Auto-generate per-character *_QUI macros for the consumables selected below. Disabling deletes the macros."] })
             s5.AddRow(row(s5.frame, ns.L["Character-specific"], charSpecW), row(s5.frame, ns.L["Enable Consumable Macros"], enableMacrosW))
 
             local mFlaskW = GUI:CreateFormDropdown(s5.frame, nil,

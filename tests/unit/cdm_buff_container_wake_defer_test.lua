@@ -63,4 +63,11 @@ local hiddenController = Policy.Create({
 hiddenController:RequestBuffIconLayoutRefresh()
 assert(hiddenShows == 0, "anchor-hidden buff container never wakes, got " .. hiddenShows)
 
+local dirtyController = Policy.Create({})
+local dirtyIcon = { _lastLayoutFilterHidden = true }
+dirtyController:MarkLayoutDirtyOnFilterFlip(
+    dirtyIcon, { viewerType = "custom" }, { dynamicLayout = true }, false)
+assert(dirtyIcon._lastLayoutFilterHidden == false,
+    "layout flips must publish their new state before the relayout drains")
+
 print("cdm_buff_container_wake_defer_test: PASS")

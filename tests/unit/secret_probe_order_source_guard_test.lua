@@ -131,34 +131,10 @@ end
 do
     local path = "QUI_CDM/cdm/cdm_sources.lua"
     local code = stripLuaNonCode(readFile(path))
-    assertOrderInFunction(code, path, "local function HasOpaqueValue(value)",
-        "WoW_IsSecretValue(value)", "value == nil")
-    assertOrderInFunction(code, path, "local function DropAuraMemoKey(u, key)",
-        "WoW_IsSecretValue(key)", "key == nil")
-
-    -- InvalidateAuraMemoForDelta: each delta array, each walked element, and
-    -- the sweep's cached auraInstanceID probes BEFORE its truth/nil test —
-    -- `x and WoW_IsSecretValue(x)` truth-tests the possibly-secret value first
-    -- and throws (2026-07 external review residual). The helper is exported
-    -- (CDMSources.InvalidateAuraMemoForDelta) and must stay independently
-    -- secret-safe, not lean on cdm_spelldata's caller-side folding.
-    -- `%f[%a]if` (frontier) keeps the bare-`if` absence checks from matching
-    -- the `if` inside the compliant `elseif` forms.
-    for _, arr in ipairs({ "removed", "updated", "added" }) do
-        assert(not code:find("%f[%a]if " .. arr .. " and WoW_IsSecretValue"),
-            path .. ": " .. arr .. " array probe must not hide behind a truth test")
-        assert(code:find("if WoW_IsSecretValue and WoW_IsSecretValue(" .. arr .. ") then", 1, true),
-            path .. ": " .. arr .. " array must be probed unconditionally")
-    end
-    assert(not code:find("%f[%a]if iid ~= nil then")
-        and code:find("elseif iid ~= nil then", 1, true),
-        path .. ": removed/updated element iid must be probed before the nil test")
-    assert(not code:find("%f[%a]if ad then")
-        and code:find("if WoW_IsSecretValue and WoW_IsSecretValue(ad) then", 1, true),
-        path .. ": addedAuras element must be probed before the truth test")
-    assert(not code:find("%f[%a]if iid == nil then")
-        and code:find("elseif iid == nil then", 1, true),
-        path .. ": sweep auraInstanceID must be probed before the nil compare")
+    assert(not code:find("C_UnitAuras", 1, true),
+        path .. ": CDM source layer must not reference the restricted aura namespace")
+    assert(not code:find("DropAuraMemoKey", 1, true),
+        path .. ": deleted aura memo helpers must not return")
 end
 
 ---------------------------------------------------------------------------
@@ -180,8 +156,8 @@ do
         "issecretvalue(apps)", "return apps")
     assertOrderInFunction(code, path, "local function CaptureAuraFromPayload(",
         "issecretvalue(instID)", "not instID")
-    assertOrderInFunction(code, path, "local function NameMatches(auraData)",
-        "issecretvalue(rawName)", "rawName == nil")
+    assert(not code:find("NameMatches", 1, true),
+        path .. ": deleted index-scan name matcher must not return")
     assertOrderInFunction(code, path, "local function SafeCountNumber(value)",
         "IsSecretCountValue(value)", "value == nil")
     assertOrderInFunction(code, path, "local function SetAuraCount(",
@@ -387,22 +363,12 @@ end
 do
     local path = "QUI_CDM/cdm/cdm_spelldata.lua"
     local code = stripLuaNonCode(readFile(path))
-    -- QueryUnitAuras consumers: whole-secret elements pass the global gate —
-    -- every `if auraData and ...` must be probe-dominated.
-    assertOrderInFunction(code, path, "local function ScanOwnedTargetAuraBySpellID(",
-        "issecretvalue(auraData)", "GetCleanAuraSpellID(auraData) == spellID", 1600)
-    -- Second snippet is the CALL form (`and NameMatches`) — the bare name
-    -- would match the helper's definition line above the probe.
-    assertOrderInFunction(code, path, "local function ScanOwnedTargetAuraByName(",
-        "issecretvalue(auraData)", "and NameMatches(auraData)", 2600)
-    -- AuraUtil.ForEachAura is BANNED here: Blizzard's ForEachAuraHelper
-    -- truth-tests each entry itself (`if auraInfo then`) and throws on
-    -- whole-secret auras before any callback probe runs. All scans go
-    -- through the probe-first ForEachReadableAura index iterator.
+    assert(not code:find("C_UnitAuras", 1, true),
+        path .. ": CDM spell data must not scan the restricted aura namespace")
+    assert(not code:find("GetAuraDataByIndex", 1, true),
+        path .. ": direct aura index fallback must remain deleted")
     assert(not code:find("AuraUtil.ForEachAura(", 1, true),
-        path .. ": AuraUtil.ForEachAura is banned — use ForEachReadableAura")
-    assert(code:find("local function ForEachReadableAura(unit, filter, cb)", 1, true),
-        path .. ": probe-first aura iterator must exist")
+        path .. ": CDM must not use an aura index fallback")
 end
 
 do

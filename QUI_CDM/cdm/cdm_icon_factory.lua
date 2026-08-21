@@ -58,6 +58,10 @@ function CDMIconFactory.HideEntryTooltip()
 end
 
 local function AnchorEntryTooltip(owner, tooltipSettings)
+    if owner and owner._quiLayoutRestricted then
+        GameTooltip:SetOwner(UIParent or owner, "ANCHOR_CURSOR")
+        return
+    end
     if tooltipSettings and tooltipSettings.anchorToCursor then
         local anchorTooltip = ns.QUI_AnchorTooltipToCursor
         if anchorTooltip then
@@ -185,12 +189,16 @@ local iconPools = {
 }
 local recyclePool = {}
 local recycleProtectedPool = {}
+local recycleRestrictedPool = {}
+local recycleRestrictedProtectedPool = {}
 local iconCounter = 0
 
 local function SetupDebugInstrumentation()
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_iconRecyclePool", tbl = recyclePool }
     mp[#mp + 1] = { name = "CDM_iconRecycleProtectedPool", tbl = recycleProtectedPool }
+    mp[#mp + 1] = { name = "CDM_iconRecycleRestrictedPool", tbl = recycleRestrictedPool }
+    mp[#mp + 1] = { name = "CDM_iconRecycleRestrictedProtectedPool", tbl = recycleRestrictedProtectedPool }
     mp[#mp + 1] = { name = "CDM_iconPools", fn = function()
         local count, deep = 0, 0
         for _, pool in pairs(iconPools) do
@@ -269,19 +277,26 @@ end
 CDMIconFactory._iconPools   = iconPools
 CDMIconFactory._recyclePool = recyclePool
 CDMIconFactory._recycleProtectedPool = recycleProtectedPool
+CDMIconFactory._recycleRestrictedPool = recycleRestrictedPool
+CDMIconFactory._recycleRestrictedProtectedPool = recycleRestrictedProtectedPool
 
-local function CreateIconBare(parent, spellEntry)
+local function CreateIconBare(parent, spellEntry, layoutRestricted)
     iconCounter = iconCounter + 1
     local frameName = "QUICDMIcon" .. iconCounter
 
-    local icon = CreateFrame("Frame", frameName, parent)
+    local template = layoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+    local icon = CreateFrame("Frame", frameName, parent, template)
+    icon._quiLayoutRestricted = layoutRestricted and true or nil
     local size = DEFAULT_ICON_SIZE
     icon:SetSize(size, size)
 
     icon.Icon = icon:CreateTexture(nil, "ARTWORK")
     icon.Icon:SetAllPoints(icon)
 
-    icon.Cooldown = CreateFrame("Cooldown", frameName .. "Cooldown", icon, "CooldownFrameTemplate")
+    local cooldownTemplate = layoutRestricted
+        and "CooldownFrameTemplate, DisableUntrustedLayoutScriptsTemplate"
+        or "CooldownFrameTemplate"
+    icon.Cooldown = CreateFrame("Cooldown", frameName .. "Cooldown", icon, cooldownTemplate)
     icon.Cooldown:SetAllPoints(icon)
     icon.Cooldown:SetDrawSwipe(true)
     icon.Cooldown:SetHideCountdownNumbers(false)
@@ -291,7 +306,7 @@ local function CreateIconBare(parent, spellEntry)
     icon._drawBlingEnabled = false
     icon.Cooldown:EnableMouse(false)
 
-    icon.TextOverlay = CreateFrame("Frame", nil, icon)
+    icon.TextOverlay = CreateFrame("Frame", nil, icon, template)
     icon.TextOverlay:SetAllPoints(icon)
     icon.TextOverlay:SetFrameLevel(icon.Cooldown:GetFrameLevel() + 2)
     icon.TextOverlay:EnableMouse(false)
@@ -336,8 +351,8 @@ local function CreateIconBare(parent, spellEntry)
     return icon
 end
 
-local function CreateIcon(parent, spellEntry)
-    local icon = CreateIconBare(parent, spellEntry)
+local function CreateIcon(parent, spellEntry, layoutRestricted)
+    local icon = CreateIconBare(parent, spellEntry, layoutRestricted)
 
     if ns.HookFrameForMouseover then
         ns.HookFrameForMouseover(icon)
@@ -362,14 +377,16 @@ local function CreateIcon(parent, spellEntry)
     return icon
 end
 
-function CDMIconFactory:AcquireIcon(parent, spellEntry, clickable)
+function CDMIconFactory:AcquireIcon(parent, spellEntry, clickable, layoutRestricted)
     local icons = GetIcons()
     local icon
+    local plainPool = layoutRestricted and recycleRestrictedPool or recyclePool
+    local protectedPool = layoutRestricted and recycleRestrictedProtectedPool or recycleProtectedPool
     if clickable and ((not InCombatLockdown()) or (ns and ns._inInitSafeWindow)) then
-        icon = table.remove(recycleProtectedPool)
+        icon = table.remove(protectedPool)
     end
     if not icon then
-        icon = table.remove(recyclePool)
+        icon = table.remove(plainPool)
     end
     if icon then
         icon:SetParent(parent)
@@ -441,7 +458,7 @@ function CDMIconFactory:AcquireIcon(parent, spellEntry, clickable)
         if ns._onIconAssigned then ns._onIconAssigned(icon) end
         return icon
     end
-    local newIcon = CreateIcon(parent, spellEntry)
+    local newIcon = CreateIcon(parent, spellEntry, layoutRestricted)
     if icons and icons.OnFactoryIconAcquired then
         icons.OnFactoryIconAcquired(newIcon, spellEntry, false)
     end
@@ -521,7 +538,15 @@ function CDMIconFactory:ReleaseIcon(icon)
     icon.Border:Hide()
     icon._pendingSecureUpdate = nil
 
-    if icon.clickButton ~= nil then
+    if icon._quiLayoutRestricted and icon.clickButton ~= nil then
+        icon:SetParent(UIParent)
+        recycleRestrictedProtectedPool[#recycleRestrictedProtectedPool + 1] = icon
+    elseif icon._quiLayoutRestricted then
+        if #recycleRestrictedPool < MAX_RECYCLE_POOL_SIZE then
+            icon:SetParent(UIParent)
+            recycleRestrictedPool[#recycleRestrictedPool + 1] = icon
+        end
+    elseif icon.clickButton ~= nil then
         icon:SetParent(UIParent)
         recycleProtectedPool[#recycleProtectedPool + 1] = icon
     elseif #recyclePool < MAX_RECYCLE_POOL_SIZE then
@@ -542,7 +567,7 @@ end
 CDMIconFactory.SyncCooldownBling = SyncCooldownBling
 
 function CDMIconFactory.AcquireForPreview(parent, spellEntry)
-    local icon = CreateIconBare(parent, spellEntry)
+    local icon = CreateIconBare(parent, spellEntry, false)
     icon._isPreview = true
     icon:EnableMouse(false)
     return icon

@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Cooldown Manager
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol and Drew
-## Version: 5.2.0
+## Version: 5.2.1-beta7
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
@@ -37,6 +37,7 @@ cdm\cdm_reanchor.lua
 cdm\cdm_reanchor_wiring.lua
 cdm\cdm_placement_planner.lua
 cdm\cdm_managed_aura_mirrors.lua
+cdm\cdm_custom_aura_runs.lua
 cdm\cdm_reanchor_runtime.lua
 cdm\cdm_reanchor_auraphase.lua
 cdm\cdm_reanchor_boot.lua

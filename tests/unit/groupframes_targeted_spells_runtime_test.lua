@@ -163,11 +163,11 @@ local function NewFrame(parent)
     return setmetatable(frame, frameMT)
 end
 
-local eventFrame
+local rootFrames = {}
 function CreateFrame(_, _, parent)
     local frame = NewFrame(parent)
-    if not parent and not eventFrame then
-        eventFrame = frame
+    if not parent then
+        rootFrames[#rootFrames + 1] = frame
     end
     return frame
 end
@@ -302,17 +302,23 @@ local groupFrame = NewFrame(nil)
 groupFrame.healthBar = NewFrame(groupFrame)
 ns.QUI_GroupFrames.unitFrameMap.party1 = { groupFrame }
 
+-- The detection engine is shared (core/incoming_casts.lua); the group module
+-- subscribes to it. Load both against the same ns, as the addon does.
+assert(loadfile("core/incoming_casts.lua"))("QUI", ns)
+assert(ns.IncomingCasts, "incoming casts engine should export its API")
+local engineFrame = assert(rootFrames[1], "engine should create an event frame")
+
 assert(loadfile("QUI_GroupFrames/groupframes/groupframes_targeted_spells.lua"))("QUI", ns)
 assert(ns.QUI_GroupFrameTargetedSpells, "targeted spells module should export its API")
-assert(eventFrame, "targeted spells module should create an event frame")
-assert(eventFrame.events.PLAYER_LOGIN, "module should listen for login activation")
+local moduleFrame = assert(rootFrames[2], "targeted spells module should create an event frame")
+assert(moduleFrame.events.PLAYER_LOGIN, "module should listen for login activation")
 
-eventFrame.scripts.OnEvent(eventFrame, "PLAYER_LOGIN")
-assert(eventFrame.events.NAME_PLATE_UNIT_ADDED, "active module should watch nameplate additions")
-assert(eventFrame.events.UNIT_TARGET, "active module should watch nameplate retargets")
-assert(eventFrame.events.UNIT_SPELLCAST_START, "active module should watch cast starts")
+moduleFrame.scripts.OnEvent(moduleFrame, "PLAYER_LOGIN")
+assert(engineFrame.events.NAME_PLATE_UNIT_ADDED, "active engine should watch nameplate additions")
+assert(engineFrame.events.UNIT_TARGET, "active engine should watch nameplate retargets")
+assert(engineFrame.events.UNIT_SPELLCAST_START, "active engine should watch cast starts")
 
-eventFrame.scripts.OnEvent(eventFrame, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+engineFrame.scripts.OnEvent(engineFrame, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(#timers == 2, "nameplate cast should schedule pickup and verify resolves")
 
 table.sort(timers, function(a, b)
@@ -333,7 +339,7 @@ assert(displayGateCalls > 0, "cast flow should gate through UnitShouldDisplaySpe
 assert(castingDurationCalls > 0, "cast flow should query UnitCastingDuration")
 
 casting = false
-eventFrame.scripts.OnEvent(eventFrame, "UNIT_SPELLCAST_STOP", "nameplate1")
+engineFrame.scripts.OnEvent(engineFrame, "UNIT_SPELLCAST_STOP", "nameplate1")
 assert(rawget(icon, "_targetedCaster") == nil, "stop event should release the caster assignment")
 assert(icon.shown == false, "stop event should hide the targeted spell icon")
 assert(icon._cooldown.shown == false, "stop event should hide the cooldown swipe")

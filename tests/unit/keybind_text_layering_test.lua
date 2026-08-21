@@ -40,6 +40,13 @@ function GetActionText()
     return "UseRank1002"
 end
 
+function GetBindingKey(bindingName)
+    if bindingName == "ACTIONBUTTON1" then
+        return "G"
+    end
+    return nil
+end
+
 function GetMacroInfo(macroIndex)
     if macroIndex == 1 then
         return "UseRank1002", nil, "/use Rank 1002"
@@ -306,7 +313,12 @@ assert(fontStrings[#fontStrings] and fontStrings[#fontStrings].parent == keybind
     "CDM keybind text should be created on the TextOverlay child layer")
 assert(fontStrings[#fontStrings].layer == "OVERLAY",
     "CDM keybind text should remain on the overlay draw layer")
-assert(fontStrings[#fontStrings].text == "F",
-    "CDM item keybind text should resolve through item macros on action buttons")
+assert(fontStrings[#fontStrings].text == "G",
+    "CDM item keybind text should prefer stable bindings over transient button text")
+
+icon._spellEntry = nil
+addon.Keybinds.UpdateViewer("customQuality")
+assert(fontStrings[#fontStrings].text == "G" and fontStrings[#fontStrings]:IsShown(),
+    "CDM keybind text should survive a transient frame-identity read failure")
 
 print("OK: keybind_text_layering_test")

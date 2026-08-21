@@ -2379,7 +2379,6 @@ local function SetupTooltipHook()
 
     AddTrackedTooltipPostCall(Enum.TooltipDataType.Spell, "qol.spellIDPost", function(tooltip, data)
         TooltipDebugCount("qol.spellPost")
-        if InCombatLockdown() then return end
         if not ShouldProcessTooltipIDs(tooltip) then return end
         ns.SafeCall("bulkhead", TryAddSpellIDFromTooltipData, tooltip, data)
     end)
@@ -2412,11 +2411,9 @@ local function SetupTooltipHook()
 
     AddTrackedTooltipPostCall(Enum.TooltipDataType.Item, "qol.itemPost", function(tooltip, data)
         TooltipDebugCount("qol.itemPost")
-        if not InCombatLockdown() then
-            if ShouldProcessTooltipIDs(tooltip) then
-                ns.SafeCall("bulkhead", TryAddItemIDFromTooltipData, tooltip, data)
-                ns.SafeCall("bulkhead", TryAddItemMaxStackSizeFromTooltipData, tooltip, data)
-            end
+        if ShouldProcessTooltipIDs(tooltip) then
+            ns.SafeCall("bulkhead", TryAddItemIDFromTooltipData, tooltip, data)
+            ns.SafeCall("bulkhead", TryAddItemMaxStackSizeFromTooltipData, tooltip, data)
         end
 
         ApplyOwnedTooltipHide(tooltip, "items")

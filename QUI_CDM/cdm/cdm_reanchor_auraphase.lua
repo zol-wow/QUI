@@ -1,5 +1,7 @@
 local _, ns = ...
 
+local _issecretvalue = issecretvalue or function() return false end
+
 local CDMReanchorAuraPhase = {}
 ns.CDMReanchorAuraPhase = CDMReanchorAuraPhase
 
@@ -13,10 +15,8 @@ function CDMReanchorAuraPhase.New(deps)
         _reentry = setmetatable({}, { __mode = "k" }),
         _edgeHooked = setmetatable({}, { __mode = "k" }),
         _edgeReentry = setmetatable({}, { __mode = "k" }),
-        _timingHooked = setmetatable({}, { __mode = "k" }),
-        _timingReentry = setmetatable({}, { __mode = "k" }),
-        _desatHooked = setmetatable({}, { __mode = "k" }),
-        _desatReentry = setmetatable({}, { __mode = "k" }),
+        _drawSwipeHooked = setmetatable({}, { __mode = "k" }),
+        _drawSwipeReentry = setmetatable({}, { __mode = "k" }),
         _keyByFrame = setmetatable({}, { __mode = "k" }),
     }, InstanceMT)
 end
@@ -29,30 +29,23 @@ function CDMReanchorAuraPhase:OnSwipeColor(frame, cd)
     self._reentry[cd] = false
 end
 
-function CDMReanchorAuraPhase:OnCooldownSet(frame, cd)
-    if not cd or self._timingReentry[cd] or self._reentry[cd] then return end
-    self._timingReentry[cd] = true
-    self._reentry[cd] = true
-    local deps = self._deps
-    if deps.reassertColor then ns.SafeCall("bulkhead", deps.reassertColor, frame, cd, self._keyByFrame[frame]) end
-    self._reentry[cd] = false
-    self._timingReentry[cd] = false
-end
-
-function CDMReanchorAuraPhase:OnDesaturated(frame, tex)
-    if not tex or self._desatReentry[tex] then return end
-    self._desatReentry[tex] = true
-    local deps = self._deps
-    if deps.reassertDesat then ns.SafeCall("bulkhead", deps.reassertDesat, frame, tex, self._keyByFrame[frame]) end
-    self._desatReentry[tex] = false
-end
-
 function CDMReanchorAuraPhase:OnDrawEdge(frame, cd)
     if not cd or self._edgeReentry[cd] then return end
     self._edgeReentry[cd] = true
     local deps = self._deps
     if deps.reassertEdge then ns.SafeCall("bulkhead", deps.reassertEdge, frame, cd, self._keyByFrame[frame]) end
     self._edgeReentry[cd] = false
+end
+
+function CDMReanchorAuraPhase:OnDrawSwipe(frame, cd, show)
+    if not cd or self._drawSwipeReentry[cd] then return end
+    if _issecretvalue and _issecretvalue(show) then return end
+    self._drawSwipeReentry[cd] = true
+    local deps = self._deps
+    if deps.reassertSwipe then
+        ns.SafeCall("bulkhead", deps.reassertSwipe, frame, cd, self._keyByFrame[frame], show)
+    end
+    self._drawSwipeReentry[cd] = false
 end
 
 function CDMReanchorAuraPhase:Hook(frame, containerKey)
@@ -70,26 +63,18 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey)
             securecall(colorWork)
         end)
     end
-    if cd and type(cd.SetCooldown) == "function" and not self._timingHooked[cd] then
-        self._timingHooked[cd] = true
-        local function timingWork() this:OnCooldownSet(frame, cd) end
-        hooksec(cd, "SetCooldown", function()
-            securecall(timingWork)
-        end)
-    end
-    local tex = frame.Icon
-    if tex and type(tex.SetDesaturated) == "function" and not self._desatHooked[tex] then
-        self._desatHooked[tex] = true
-        local function desatWork() this:OnDesaturated(frame, tex) end
-        hooksec(tex, "SetDesaturated", function()
-            securecall(desatWork)
-        end)
-    end
     if cd and type(cd.SetDrawEdge) == "function" and not self._edgeHooked[cd] then
         self._edgeHooked[cd] = true
         local function edgeWork() this:OnDrawEdge(frame, cd) end
         hooksec(cd, "SetDrawEdge", function()
             securecall(edgeWork)
+        end)
+    end
+    if cd and type(cd.SetDrawSwipe) == "function" and not self._drawSwipeHooked[cd] then
+        self._drawSwipeHooked[cd] = true
+        local function swipeWork(show) this:OnDrawSwipe(frame, cd, show) end
+        hooksec(cd, "SetDrawSwipe", function(_, show)
+            securecall(swipeWork, show)
         end)
     end
 end
@@ -103,5 +88,11 @@ function CDMReanchorAuraPhase:Reassert(frame)
     securecall(function()
         this:OnSwipeColor(frame, cd)
         this:OnDrawEdge(frame, cd)
+        if type(cd.GetDrawSwipe) == "function" then
+            local ok, show = ns.SafeCallMethod("bulkhead", cd, "GetDrawSwipe")
+            if ok and not (_issecretvalue and _issecretvalue(show)) then
+                this:OnDrawSwipe(frame, cd, show)
+            end
+        end
     end)
 end

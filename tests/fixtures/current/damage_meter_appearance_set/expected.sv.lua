@@ -1767,6 +1767,20 @@ return {
             sizeStable = true,
             widthAdjust = 0
           },
+          incomingCasts = {
+            autoHeight = false,
+            autoWidth = false,
+            heightAdjust = 0,
+            hideWithParent = false,
+            keepInPlace = true,
+            offsetX = 0,
+            offsetY = -180,
+            parent = "screen",
+            point = "CENTER",
+            relative = "CENTER",
+            sizeStable = true,
+            widthAdjust = 0
+          },
           keyTracker = {
             autoHeight = false,
             autoWidth = false,
@@ -2710,6 +2724,24 @@ return {
           totFrame = 3,
           totemBar = 5,
           utility = 5
+        },
+        incomingCasts = {
+          borderColor = {
+            [1] = 0,
+            [2] = 0,
+            [3] = 0,
+            [4] = 1
+          },
+          borderColorSource = "inherit",
+          borderSize = 1,
+          enabled = false,
+          growDirection = "CENTER",
+          iconSize = 40,
+          maxIcons = 5,
+          reverseSwipe = true,
+          showCooldownText = false,
+          showSwipe = true,
+          spacing = 4
         },
         infobar = {
           bgOpacity = 85,

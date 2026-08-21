@@ -33,6 +33,14 @@ do
     zero.maxIcons = 0
     check("profile: maxIcons 0 (unlimited) → 40 cap for the engine", G.ElementProfile(zero).maxIcons == 40)
 
+    local tracked = E.NewTrackedElement({ 101, 102 }, "icon")
+    tracked.maxIcons = 0
+    check("tracked profile: maxIcons follows the spell count",
+        G.ElementProfile(tracked).maxIcons == 2)
+    tracked.maxIcons = 1
+    check("tracked profile: old saved maxIcons cannot truncate spells",
+        G.ElementProfile(tracked).maxIcons == 2)
+
     local o = G.ElementProfile(top, { attachPoint = "BOTTOMLEFT", wrap = "UP", offsetX = 7 })
     check("profile: overrides win", o.attachPoint == "BOTTOMLEFT" and o.wrap == "UP" and o.offsetX == 7)
 end
@@ -221,6 +229,53 @@ do
     _G.C_UnitAuras = nil
     _G.AuraUtil = nil
     _G.C_Secrets = nil
+end
+
+do
+    local durationObject = {}
+    _G.C_Secrets = { ShouldAurasBeSecret = function() return false end }
+    _G.C_UnitAuras = {
+        GetAuraDuration = function(unit, auraInstanceID)
+            check("duration: forwards unit and instance", unit == "player" and auraInstanceID == 7)
+            return durationObject
+        end,
+    }
+    check("duration: returns the sanctioned duration object",
+        G.ReadAuraDurationByInstanceID("player", 7) == durationObject)
+    _G.C_Secrets.ShouldAurasBeSecret = function() return true end
+    check("duration: restriction fails closed",
+        G.ReadAuraDurationByInstanceID("player", 7) == nil)
+    _G.C_UnitAuras = nil
+    _G.C_Secrets = nil
+end
+
+do
+    local secretAura = {}
+    local callbackCount = 0
+    _G.issecretvalue = function(value) return value == secretAura end
+    _G.C_UnitAuras = {
+        GetAuraDataByAuraInstanceID = function() return secretAura end,
+    }
+    local ok = G.ReadAurasByInstanceID("player", { 7 }, function()
+        callbackCount = callbackCount + 1
+    end)
+    check("aura read: opaque result does not evict", ok == false and callbackCount == 0)
+    _G.issecretvalue = nil
+    _G.C_UnitAuras = nil
+end
+
+do
+    _G.C_UnitAuras = {
+        GetAuraApplicationDisplayCount = function(unit, auraInstanceID, minDisplayCount, maxDisplayCount)
+            check("applications: forwards API arguments",
+                unit == "target" and auraInstanceID == 9
+                    and minDisplayCount == 2 and maxDisplayCount == nil)
+            return "*"
+        end,
+    }
+    local got, count = G.ReadAuraApplicationDisplayCount("target", 9)
+    check("applications: returns display count", got == true and count == "*")
+    _G.C_UnitAuras = nil
 end
 
 -- QueueRegenWork restriction boundary (68675): AuraButton children deny

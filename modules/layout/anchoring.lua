@@ -927,6 +927,7 @@ local FRAME_RESOLVERS = {
     missingRaidBuffs = function() return _G["QUI_MissingRaidBuffs"] end,
     mplusTimer = function() return _G["QUI_MPlusTimerFrame"] end,
     preyTracker = function() return _G["QUI_PreyTracker"] end,
+    incomingCasts = function() return _G["QUI_IncomingCasts"] end,
     crosshair = function() return _G["QUI_Crosshair"] end,
     totemBar = function()
         local owned = ns.QUI_TotemBar and ns.QUI_TotemBar.container
@@ -1139,6 +1140,7 @@ local FRAME_ANCHOR_INFO = {
     mplusTimer      = { displayName = "M+ Timer",              category = "QoL",               order = 11 },
     readyCheck      = { displayName = "Ready Check",           category = "QoL",               order = 12 },
     preyTracker     = { displayName = "Prey Tracker",          category = "QoL",               order = 13 },
+    incomingCasts   = { displayName = "Incoming Casts",        category = "QoL",               order = 15 },
     partyFrames     = { displayName = "Party Frames",           category = "Group Frames",      order = 1 },
     raidFrames      = { displayName = "Raid Frames",            category = "Group Frames",      order = 2 },
     minimap         = { displayName = "Minimap",               category = "Display",           order = 1 },

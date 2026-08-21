@@ -41,6 +41,8 @@ C_Timer = {
 
 local glowStarts = 0
 local glowStops = 0
+local buttonGlowStarts = 0
+local buttonGlowStops = 0
 function LibStub()
     return {
         PixelGlow_Start = function()
@@ -50,7 +52,14 @@ function LibStub()
             glowStops = glowStops + 1
         end,
         AutoCastGlow_Stop = noop,
-        ButtonGlow_Stop = noop,
+        ButtonGlow_Start = function(icon)
+            buttonGlowStarts = buttonGlowStarts + 1
+            icon._ButtonGlow = {}
+        end,
+        ButtonGlow_Stop = function(icon)
+            buttonGlowStops = buttonGlowStops + 1
+            icon._ButtonGlow = nil
+        end,
         ProcGlow_Stop = noop,
     }
 end
@@ -187,6 +196,8 @@ local ns = {
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
 loadChunk("QUI_CDM/cdm/cdm_frame_writes.lua", "cdm_effects.lua")("QUI", ns)
 
+local Glows = ns._OwnedGlows
+
 local eventFrame
 for _, frame in ipairs(frames) do
     if frame.events.SPELL_ACTIVATION_OVERLAY_GLOW_SHOW then
@@ -263,5 +274,19 @@ eventFrame.OnEvent(eventFrame, "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", 427453)
 assert(glowStarts == 1,
     "override overlay event should glow the base-owned CDM icon before mirror state catches up")
 eventFrame.OnEvent(eventFrame, "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", 427453)
+
+local buttonIcon = {
+    GetFrameLevel = function() return 1 end,
+    Cooldown = { GetFrameLevel = function() return 1 end },
+}
+buttonGlowStops = 0
+Glows.ApplyGlowWithKey(buttonIcon, { glowType = "Button Glow", color = {1, 1, 1, 1} }, "preview")
+Glows.ApplyGlowWithKey(buttonIcon, { glowType = "Pixel Glow", color = {1, 1, 1, 1} }, "active")
+assert(buttonGlowStarts == 1, "keyed glow replacement should start Button Glow once")
+assert(buttonGlowStops == 0, "stopping another keyed glow must not cancel Button Glow: " .. buttonGlowStops)
+Glows.StopGlowWithKey(buttonIcon, "active")
+assert(buttonGlowStops == 0, "stopping another keyed glow must leave Button Glow running")
+Glows.StopGlowWithKey(buttonIcon, "preview")
+assert(buttonGlowStops == 1, "stopping the Button Glow owner must stop Button Glow")
 
 print("OK: cdm_effects_proc_on_usable_test")

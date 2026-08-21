@@ -7,6 +7,7 @@ local frames = {}
 local inCombat = true
 local aurasSecret = false
 local unitAuraScanCalls = 0
+local currentAuras
 
 function InCombatLockdown() return inCombat end
 function GetTime() return 100 end
@@ -40,8 +41,6 @@ function CreateFrame()
     return frame
 end
 
-local targetAuraDuration = { token = "target-aura-duration" }
-
 local ns = {
     Helpers = {
         IsSecretValue = function() return false end,
@@ -54,42 +53,20 @@ local ns = {
         IsRuntimeEnabled = function() return true end,
     },
     CDMSources = {
-        QueryAuraFilteredOutByInstanceID = function(unit, auraInstanceID, filter)
-            if unit == "target"
-                and auraInstanceID == 9052
-                and filter == "HELPFUL|PLAYER" then
-                return false
-            end
-            return true
-        end,
-        QueryAuraDuration = function(unit, auraInstanceID)
-            if unit == "target" and auraInstanceID == 9052 then
-                return targetAuraDuration
-            end
-        end,
-        QueryAuraDataByAuraInstanceID = function(unit, auraInstanceID)
-            if unit == "target" and auraInstanceID == 9052 then
-                return {
-                    spellId = 51052,
-                    auraInstanceID = 9052,
-                    isHelpful = true,
-                    isFromPlayerOrPlayerPet = true,
-                }
-            end
-        end,
-        QueryUnitAuraBySpellID = function()
-            return nil
-        end,
-        QueryUnitAuras = function()
-            unitAuraScanCalls = unitAuraScanCalls + 1
-            error("GetUnitAuras must not run while auras are secret")
-        end,
-        AreAurasSecret = function()
-            return aurasSecret
-        end,
     },
     CDMIcons = {
         HandleRuntimeRefresh = noop,
+    },
+    AuraGlue = {
+        CollectReadableAuras = function()
+            return currentAuras
+        end,
+        ReadAurasByInstanceID = function(_, _, callback)
+            for _, item in ipairs(currentAuras or {}) do
+                callback(item[1], item[1].auraInstanceID)
+            end
+            return true
+        end,
     },
 }
 
@@ -113,6 +90,7 @@ auraFrame.script(auraFrame, "UNIT_AURA", "target", {
             name = "Helpful Zone Aura",
             auraInstanceID = 9052,
             isHelpful = true,
+            isFromPlayerOrPlayerPet = true,
         },
     },
 })
@@ -134,8 +112,8 @@ assert(state.auraUnit == "target",
     "target aura capture should preserve the target unit")
 assert(state.auraInstanceID == 9052,
     "target aura capture should preserve the auraInstanceID")
-assert(state.durObj == targetAuraDuration,
-    "target aura capture should forward the target aura DurationObject")
+assert(state.durObj == nil,
+    "target aura capture must not query a DurationObject through C_UnitAuras")
 
 auraFrame.script(auraFrame, "UNIT_AURA", "target", {
     isFullUpdate = false,
@@ -156,9 +134,119 @@ state = ns.CDMAuraRuntime.ResolveState({
 assert(state.isActive ~= true,
     "target removedAuraInstanceIDs should evict target aura capture")
 
--- Aura restriction is broader than combat lockdown. Both the direct
--- GetUnitAuras scan and AuraUtil fallback are RequiresUnitAuraAccess paths and
--- must be skipped when C_Secrets.ShouldAurasBeSecret() is true.
+auraFrame.script(auraFrame, "UNIT_AURA", "target", {
+    isFullUpdate = false,
+    addedAuras = {
+        {
+            spellId = 51053,
+            name = "Persistent Zone Aura",
+            auraInstanceID = 9053,
+            isHelpful = true,
+            isFromPlayerOrPlayerPet = true,
+        },
+    },
+})
+auraFrame.script(auraFrame, "UNIT_AURA", "target", { isFullUpdate = true })
+state = ns.CDMAuraRuntime.ResolveState({
+    spellID = 51053,
+    entrySpellID = 51053,
+    entryID = 51053,
+    entryName = "Persistent Zone Aura",
+    entryKind = "aura",
+    entryIsAura = true,
+    entryType = "aura",
+    viewerType = "buff",
+})
+assert(state.isActive == true,
+    "target full updates must retain captured active auras when no safe rescan is available")
+
+auraFrame.script(auraFrame, "UNIT_AURA", "target", {
+    isFullUpdate = false,
+    addedAuras = {
+        {
+            spellId = 51054,
+            name = "Someone Else's Zone Aura",
+            auraInstanceID = 9054,
+            isHelpful = true,
+            isFromPlayerOrPlayerPet = false,
+        },
+    },
+})
+state = ns.CDMAuraRuntime.ResolveState({
+    spellID = 51054,
+    entrySpellID = 51054,
+    entryID = 51054,
+    entryName = "Someone Else's Zone Aura",
+    entryKind = "aura",
+    entryIsAura = true,
+    entryType = "aura",
+    viewerType = "buff",
+})
+assert(state.isActive ~= true,
+    "target aura capture must reject a readable aura owned by another player")
+
+inCombat = false
+auraFrame.script(auraFrame, "UNIT_AURA", "player", {
+    isFullUpdate = false,
+    addedAuras = {
+        {
+            spellId = 51055,
+            name = "Readable Player Aura",
+            auraInstanceID = 9055,
+            isHelpful = true,
+            applications = 3,
+            duration = 12,
+        },
+    },
+})
+state = ns.CDMAuraRuntime.ResolveState({
+    spellID = 51055,
+    entrySpellID = 51055,
+    entryID = 51055,
+    entryName = "Readable Player Aura",
+    entryKind = "aura",
+    entryIsAura = true,
+    entryType = "aura",
+    viewerType = "buff",
+})
+assert(state.isActive == true and state.hasExpirationTime == true,
+    "captured readable AuraData retains duration state")
+assert(state.count and state.count.value == 3,
+    "captured readable AuraData retains applications for stack resolution")
+
+currentAuras = {
+    { {
+        spellId = 51055,
+        name = "Readable Player Aura",
+        auraInstanceID = 9055,
+        isHelpful = true,
+        applications = 5,
+        duration = 18,
+        icon = 12345,
+    }, "HELPFUL" },
+}
+auraFrame.script(auraFrame, "UNIT_AURA", "player", {
+    isFullUpdate = false,
+    updatedAuraInstanceIDs = { 9055 },
+})
+state = ns.CDMAuraRuntime.ResolveState({
+    spellID = 51055,
+    entrySpellID = 51055,
+    entryID = 51055,
+    entryName = "Readable Player Aura",
+    entryKind = "aura",
+    entryIsAura = true,
+    entryType = "aura",
+    viewerType = "buff",
+})
+assert(state.count and state.count.value == 5,
+    "updatedAuraInstanceIDs must refresh captured applications")
+local active = ns.CDMSpellData:GetActiveAuras("HELPFUL")
+assert(active[1] and active[1].icon == 12345 and active[1].duration == 18,
+    "active aura exports must retain readable icon and duration")
+
+-- Aura restriction is broader than combat lockdown; captured payloads remain
+-- the only target presence source.
 inCombat = false
 aurasSecret = true
 AuraUtil = {
@@ -177,7 +265,6 @@ local ok, err = pcall(ns.CDMAuraRuntime.ResolveState, {
     viewerType = "buff",
 })
 assert(ok, "secret target aura fallback must not throw: " .. tostring(err))
-assert(unitAuraScanCalls == 0,
-    "secret target aura fallback must not call QueryUnitAuras")
+assert(unitAuraScanCalls == 0, "target fallback must not scan aura indexes")
 
 print("OK: cdm_spelldata_target_aura_capture_test")
