@@ -1377,7 +1377,8 @@ end
 local function GetClassColor()
     local _, class = UnitClass("player")
     local classColor
-    if C_ClassColor and C_ClassColor.GetClassColor and type(class) ~= "nil" then
+    if C_ClassColor and C_ClassColor.GetClassColor
+        and not _issecretvalue(class) and type(class) == "string" then
         classColor = C_ClassColor.GetClassColor(class)
     elseif not _issecretvalue(class) and type(class) == "string" then
         classColor = Helpers.GetClassColorTable(class)
