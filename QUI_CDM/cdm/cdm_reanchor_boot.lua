@@ -81,7 +81,7 @@ function CDMReanchorBoot.BuildRuntime(env)
         if info then return info.hasAura == true and isAuraPhaseEnabled() end
         return frame and frame.cooldownUseAuraDisplayTime == true and isAuraPhaseEnabled()
     end
-    local function rearmNativeCooldown(frame, cd, containerKey, entry)
+    local function rearmNativeCooldown(frame, cd, containerKey, entry, nativeAuraActive, nativeAuraState)
         if not frame or not cd or not entry then return end
         if containerKey == "buff" or containerKey == "buffIcon"
             or entry.isAura or entry.kind == "aura" then return end
@@ -89,9 +89,22 @@ function CDMReanchorBoot.BuildRuntime(env)
             if nativeAuraPhaseDisabled[cd] then
                 nativeAuraPhaseDisabled[cd] = nil
                 ns.SafeCallMethod("best-effort-style", cd, "SetUseAuraDisplayTime", true)
+                if nativeAuraState then
+                    if nativeAuraState.durationObject
+                        and cd.SetCooldownFromDurationObject then
+                        ns.SafeCallMethod("best-effort-style", cd,
+                            "SetCooldownFromDurationObject", nativeAuraState.durationObject,
+                            nativeAuraState.clearWhenZero)
+                    elseif nativeAuraState.hasCooldown and cd.SetCooldown then
+                        ns.SafeCallMethod("best-effort-style", cd, "SetCooldown",
+                            nativeAuraState.start, nativeAuraState.duration,
+                            nativeAuraState.modRate)
+                    end
+                end
             end
             return
         end
+        if not nativeAuraActive then return end
 
         local duration
         local itemLike = entry.type == "item" or entry.type == "trinket" or entry.type == "slot"

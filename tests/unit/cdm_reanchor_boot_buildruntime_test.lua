@@ -227,13 +227,17 @@ assert(type(capturedAuraDeps.rearmNativeCooldown) == "function",
     "auraPhase receives native cooldown re-arm")
 swipeStub.showCooldownIconAuraPhase = false
 local useAuraCalls = {}
+local restoredNativeDuration
 local nativeCd = {
     SetUseAuraDisplayTime = function(_, value) useAuraCalls[#useAuraCalls + 1] = value end,
+    SetCooldownFromDurationObject = function(_, duration, clearWhenZero)
+        restoredNativeDuration = { duration = duration, clearWhenZero = clearWhenZero }
+    end,
     Clear = function() end,
 }
 durationQueries = {}
 appliedDuration = nil
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
 assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
     and durationQueries[2].kind == "charge" and durationQueries[2].spellID == 500,
     "charge-backed native aura uses the curated spell charge duration")
@@ -247,7 +251,7 @@ chargeDuration = nil
 cooldownDuration = { cooldown = true }
 maxCharges = 1
 durationQueries = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
 assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
     and durationQueries[2].kind == "cooldown" and durationQueries[2].ignoreGCD == true,
     "native aura re-arm falls back to the normal cooldown duration")
@@ -255,28 +259,38 @@ assert(appliedDuration.duration == cooldownDuration,
     "normal cooldown fallback passes its opaque duration object")
 maxCharges = secretGCD
 durationQueries = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
 assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
     and durationQueries[2].kind == "cooldown" and durationQueries[2].ignoreGCD == true,
     "secret charge count falls back to the normal cooldown duration")
 cooldownDuration = nil
 durationQueries = {}
 useAuraCalls = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
 assert(#durationQueries == 2 and #useAuraCalls == 1 and useAuraCalls[1] == false,
     "native aura re-arm disables aura timing without a cooldown duration")
 swipeStub.showCooldownIconAuraPhase = true
 useAuraCalls = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+local nativeAuraState = { durationObject = { aura = true }, clearWhenZero = true }
+restoredNativeDuration = nil
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, false, nativeAuraState)
 assert(#useAuraCalls == 1 and useAuraCalls[1] == true,
     "native aura re-arm restores aura timing when the setting is enabled")
+assert(restoredNativeDuration and restoredNativeDuration.duration == nativeAuraState.durationObject
+    and restoredNativeDuration.clearWhenZero == true,
+    "native aura re-arm restores the cached aura duration object")
 swipeStub.showCooldownIconAuraPhase = false
 cooldownDuration = { cooldown = true }
 fMatch.GetCooldownInfo = function() return { hasAura = false } end
 durationQueries = {}
-capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, true)
 assert(appliedDuration.duration == cooldownDuration,
     "native re-arm does not depend on stable hasAura metadata")
+durationQueries = {}
+useAuraCalls = {}
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry, false)
+assert(#durationQueries == 0 and #useAuraCalls == 0,
+    "native re-arm ignores ordinary cooldown frames without aura timing")
 local cdSecretGCD = { SetDrawSwipe = function() end }
 capturedAuraDeps.reassertSwipe({ isOnGCD = secretGCD }, cdSecretGCD, "essential", true)
 assert(probedSecretGCD, "reassertSwipe probes secret isOnGCD before comparing it")

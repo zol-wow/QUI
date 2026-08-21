@@ -19,6 +19,8 @@ function CDMReanchorAuraPhase.New(deps)
         _drawSwipeReentry = setmetatable({}, { __mode = "k" }),
         _nativeRearmHooked = setmetatable({}, { __mode = "k" }),
         _nativeRearmReentry = setmetatable({}, { __mode = "k" }),
+        _nativeAuraActive = setmetatable({}, { __mode = "k" }),
+        _nativeAuraState = setmetatable({}, { __mode = "k" }),
         _keyByFrame = setmetatable({}, { __mode = "k" }),
         _entryByFrame = setmetatable({}, { __mode = "k" }),
     }, InstanceMT)
@@ -29,8 +31,22 @@ function CDMReanchorAuraPhase:OnNativeCooldownPush(frame, cd)
     local rearm = self._deps.rearmNativeCooldown
     if not rearm then return end
     self._nativeRearmReentry[cd] = true
-    ns.SafeCall("bulkhead", rearm, frame, cd, self._keyByFrame[frame], self._entryByFrame[frame])
+    ns.SafeCall("bulkhead", rearm, frame, cd, self._keyByFrame[frame],
+        self._entryByFrame[frame], self._nativeAuraActive[cd] == true,
+        self._nativeAuraState[cd])
     self._nativeRearmReentry[cd] = false
+end
+
+function CDMReanchorAuraPhase:OnNativeAuraDisplayTime(frame, cd, show)
+    if _issecretvalue and _issecretvalue(show) then return end
+    self._nativeAuraActive[cd] = show == true
+    self:OnNativeCooldownPush(frame, cd)
+end
+
+function CDMReanchorAuraPhase:OnNativeCooldownClear(cd)
+    if self._nativeRearmReentry[cd] then return end
+    self._nativeAuraActive[cd] = false
+    self._nativeAuraState[cd] = nil
 end
 
 function CDMReanchorAuraPhase:OnSwipeColor(frame, cd)
@@ -73,18 +89,40 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey, entry)
         self._nativeRearmHooked[cd] = true
         local function rearmWork() this:OnNativeCooldownPush(frame, cd) end
         if type(cd.SetCooldown) == "function" then
-            hooksec(cd, "SetCooldown", function()
+            hooksec(cd, "SetCooldown", function(_, start, duration, modRate)
+                if not this._nativeRearmReentry[cd] then
+                    local state = this._nativeAuraState[cd] or {}
+                    state.durationObject = nil
+                    state.clearWhenZero = nil
+                    state.hasCooldown = true
+                    state.start = start
+                    state.duration = duration
+                    state.modRate = modRate
+                    this._nativeAuraState[cd] = state
+                end
                 securecall(rearmWork)
             end)
         end
         if type(cd.SetCooldownFromDurationObject) == "function" then
-            hooksec(cd, "SetCooldownFromDurationObject", function()
+            hooksec(cd, "SetCooldownFromDurationObject", function(_, durationObject, clearWhenZero)
+                if not this._nativeRearmReentry[cd] then
+                    local state = this._nativeAuraState[cd] or {}
+                    state.durationObject = durationObject
+                    state.clearWhenZero = clearWhenZero
+                    state.hasCooldown = nil
+                    this._nativeAuraState[cd] = state
+                end
                 securecall(rearmWork)
             end)
         end
         if type(cd.SetUseAuraDisplayTime) == "function" then
-            hooksec(cd, "SetUseAuraDisplayTime", function()
-                securecall(rearmWork)
+            hooksec(cd, "SetUseAuraDisplayTime", function(_, show)
+                securecall(function() this:OnNativeAuraDisplayTime(frame, cd, show) end)
+            end)
+        end
+        if type(cd.Clear) == "function" then
+            hooksec(cd, "Clear", function()
+                securecall(function() this:OnNativeCooldownClear(cd) end)
             end)
         end
     end
