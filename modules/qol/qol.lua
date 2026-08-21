@@ -805,7 +805,7 @@ end
 
 local function OnQuestDetail()
     local settings = GetSettings()
-    if not settings or not settings.autoAcceptQuest then return end
+    if not settings or settings.autoAcceptQuest ~= true then return end
     if ShouldPauseQuest(settings) then return end
 
     AcceptQuest()

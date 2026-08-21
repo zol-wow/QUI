@@ -5,6 +5,16 @@ local NUM_BAG_FRAMES = NUM_BAG_FRAMES or 4
 
 local GetSettings = Helpers.CreateDBGetter("general")
 
+local function CloseBags()
+    local bags = ns.Bags
+    local takeover = bags and bags.Takeover
+    if takeover and takeover.IsActive and takeover.IsActive() then
+        takeover.CloseForFrame()
+    else
+        CloseAllBags()
+    end
+end
+
 local function FindKeystoneInBags()
     for bag = 0, NUM_BAG_FRAMES do
         local slots = C_Container.GetContainerNumSlots(bag)
@@ -32,7 +42,7 @@ local function InsertKeystone()
     if C_Cursor.GetCursorItem() then
         C_ChallengeMode.SlotKeystone()
         if settings.closeBagsOnKeystoneInsert then
-            CloseAllBags()
+            CloseBags()
         end
     end
 end

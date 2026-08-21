@@ -223,8 +223,12 @@ function CDMReanchorBoot.BuildRuntime(env)
         getCurated = env.getCurated,
         getSettings = env.getSettings,
         getAdditional = MakeGetAdditional(env),
-        shouldReplaceNativeAuraPhase = function()
-            return false
+        shouldReplaceNativeAuraPhase = function(frame, entry, containerKey)
+            if isBuffIconFrameKey(containerKey) or entry and (entry.isAura or entry.kind == "aura") then
+                return false
+            end
+            return frame and frame.cooldownUseAuraDisplayTime == true
+                and entry ~= nil and not isAuraPhaseEnabled()
         end,
         buildLayout = env.buildLayout,
         buildBuffLayout = env.buildBuffLayout,
