@@ -305,9 +305,12 @@ local function GetBarSpellData(bar)
     local resolvedSpellID = overrideSpellID or baseSpellID
     if not resolvedSpellID and not entry.name then return nil end
     return {
+        id = entry.id,
         spellID = resolvedSpellID,
         baseSpellID = baseSpellID or resolvedSpellID,
         overrideSpellID = overrideSpellID,
+        linkedSpellID = entry.linkedSpellID,
+        linkedSpellIDs = entry.linkedSpellIDs,
         name = entry.name,
         cooldownID = entry.cooldownID,
     }
@@ -694,56 +697,42 @@ local function WriteDurationTextFromDurationObject(bar, durObj)
     return true
 end
 
-local function GetTrackedBarOverrideColor(settings, spellData)
-    local overrides = settings and settings.colorOverrides
-    if type(overrides) ~= "table" or type(spellData) ~= "table" then
-        return nil
-    end
-
-    local color = spellData.spellID and overrides[spellData.spellID]
-    if type(color) == "table" then
-        return color
-    end
-
-    color = spellData.overrideSpellID and overrides[spellData.overrideSpellID]
-    if type(color) == "table" then
-        return color
-    end
-
-    color = spellData.baseSpellID and overrides[spellData.baseSpellID]
-    if type(color) == "table" then
-        return color
-    end
-
-    color = spellData.cooldownID and overrides[spellData.cooldownID]
-    if type(color) == "table" then
-        return color
-    end
-
-    return nil
-end
-
-local function GetTrackedBarOverrideColorForEntry(settings, entry)
+local function GetTrackedBarOverrideColorFromEntry(settings, entry)
     local overrides = settings and settings.colorOverrides
     if type(overrides) ~= "table" or type(entry) ~= "table" then
         return nil
     end
 
-    local spellID = entry.overrideSpellID or entry.spellID or entry.id
-    local color = spellID and overrides[spellID]
-    if type(color) == "table" then return color end
+    local function lookup(id)
+        if type(id) ~= "number" or (issecretvalue and issecretvalue(id)) then
+            return nil
+        end
+        local color = overrides[id]
+        return type(color) == "table" and color or nil
+    end
 
-    color = entry.overrideSpellID and overrides[entry.overrideSpellID]
-    if type(color) == "table" then return color end
+    local color = lookup(entry.id) or lookup(entry.spellID)
+        or lookup(entry.overrideSpellID) or lookup(entry.baseSpellID)
+        or lookup(entry.linkedSpellID) or lookup(entry.cooldownID)
+    if color then return color end
 
-    local baseSpellID = entry.spellID or entry.id
-    color = baseSpellID and overrides[baseSpellID]
-    if type(color) == "table" then return color end
-
-    color = entry.cooldownID and overrides[entry.cooldownID]
-    if type(color) == "table" then return color end
+    local linked = entry.linkedSpellIDs
+    if type(linked) == "table" and not (issecretvalue and issecretvalue(linked)) then
+        for i = 1, #linked do
+            color = lookup(linked[i])
+            if color then return color end
+        end
+    end
 
     return nil
+end
+
+local function GetTrackedBarOverrideColor(settings, spellData)
+    return GetTrackedBarOverrideColorFromEntry(settings, spellData)
+end
+
+local function GetTrackedBarOverrideColorForEntry(settings, entry)
+    return GetTrackedBarOverrideColorFromEntry(settings, entry)
 end
 
 local function ColorStateChanged(state, color)
