@@ -787,6 +787,15 @@ local function ResolveAuraInstanceDurationState(result, auraUnit, auraInstanceID
         return true, nil
     end
 
+    local glue = ns.AuraGlue
+    local readDuration = glue and glue.ReadAuraDurationByInstanceID
+    if readDuration then
+        local durationObj = readDuration(auraUnit, auraInstanceID)
+        if durationObj then
+            return true, durationObj
+        end
+    end
+
     if InCombatLockdown() then
         result.durationStateUnknown = true
         return true, nil

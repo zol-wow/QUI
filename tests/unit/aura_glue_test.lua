@@ -231,6 +231,24 @@ do
     _G.C_Secrets = nil
 end
 
+do
+    local durationObject = {}
+    _G.C_Secrets = { ShouldAurasBeSecret = function() return false end }
+    _G.C_UnitAuras = {
+        GetAuraDuration = function(unit, auraInstanceID)
+            check("duration: forwards unit and instance", unit == "player" and auraInstanceID == 7)
+            return durationObject
+        end,
+    }
+    check("duration: returns the sanctioned duration object",
+        G.ReadAuraDurationByInstanceID("player", 7) == durationObject)
+    _G.C_Secrets.ShouldAurasBeSecret = function() return true end
+    check("duration: restriction fails closed",
+        G.ReadAuraDurationByInstanceID("player", 7) == nil)
+    _G.C_UnitAuras = nil
+    _G.C_Secrets = nil
+end
+
 -- QueueRegenWork restriction boundary (68675): AuraButton children deny
 -- tainted access while auras are secret, so the replay queue must not fire
 -- on regen alone — it re-checks ShouldAurasBeSecret and polls until clear.

@@ -175,6 +175,21 @@ function G.ReadAurasByInstanceID(unit, instanceIDs, callback)
     return true
 end
 
+function G.ReadAuraDurationByInstanceID(unit, auraInstanceID)
+    if G.AurasAreSecret and G.AurasAreSecret() then return nil end
+    local unitAuras = C_UnitAuras
+    if not (unitAuras and unitAuras.GetAuraDuration) then return nil end
+    if issecretvalue and (issecretvalue(unit) or issecretvalue(auraInstanceID)) then
+        return nil -- @secret-policy: reject-secret-value
+    end
+    local ok, durationObj = ns.SafeCall(
+        "secret-probe", unitAuras.GetAuraDuration, unit, auraInstanceID)
+    if not ok or (issecretvalue and issecretvalue(durationObj)) then
+        return nil -- @secret-policy: reject-secret-value
+    end
+    return durationObj
+end
+
 function G.GetCooldownAuraBySpellID(spellID)
     local unitAuras = C_UnitAuras
     if not (unitAuras and unitAuras.GetCooldownAuraBySpellID) then return nil end
