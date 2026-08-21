@@ -17,8 +17,20 @@ function CDMReanchorAuraPhase.New(deps)
         _edgeReentry = setmetatable({}, { __mode = "k" }),
         _drawSwipeHooked = setmetatable({}, { __mode = "k" }),
         _drawSwipeReentry = setmetatable({}, { __mode = "k" }),
+        _nativeRearmHooked = setmetatable({}, { __mode = "k" }),
+        _nativeRearmReentry = setmetatable({}, { __mode = "k" }),
         _keyByFrame = setmetatable({}, { __mode = "k" }),
+        _entryByFrame = setmetatable({}, { __mode = "k" }),
     }, InstanceMT)
+end
+
+function CDMReanchorAuraPhase:OnNativeCooldownPush(frame, cd)
+    if not cd or self._nativeRearmReentry[cd] then return end
+    local rearm = self._deps.rearmNativeCooldown
+    if not rearm then return end
+    self._nativeRearmReentry[cd] = true
+    ns.SafeCall("bulkhead", rearm, frame, cd, self._keyByFrame[frame], self._entryByFrame[frame])
+    self._nativeRearmReentry[cd] = false
 end
 
 function CDMReanchorAuraPhase:OnSwipeColor(frame, cd)
@@ -48,14 +60,34 @@ function CDMReanchorAuraPhase:OnDrawSwipe(frame, cd, show)
     self._drawSwipeReentry[cd] = false
 end
 
-function CDMReanchorAuraPhase:Hook(frame, containerKey)
+function CDMReanchorAuraPhase:Hook(frame, containerKey, entry)
     if not frame then return end
     if containerKey ~= nil then self._keyByFrame[frame] = containerKey end
+    if entry ~= nil then self._entryByFrame[frame] = entry end
     local hooksec = self._deps.hooksecurefunc or hooksecurefunc
     local securecall = self._deps.securecall or function(fn, ...) return fn(...) end
     local this = self
 
     local cd = frame.GetCooldownFrame and frame:GetCooldownFrame()
+    if cd and self._deps.rearmNativeCooldown and not self._nativeRearmHooked[cd] then
+        self._nativeRearmHooked[cd] = true
+        local function rearmWork() this:OnNativeCooldownPush(frame, cd) end
+        if type(cd.SetCooldown) == "function" then
+            hooksec(cd, "SetCooldown", function()
+                securecall(rearmWork)
+            end)
+        end
+        if type(cd.SetCooldownFromDurationObject) == "function" then
+            hooksec(cd, "SetCooldownFromDurationObject", function()
+                securecall(rearmWork)
+            end)
+        end
+        if type(cd.SetUseAuraDisplayTime) == "function" then
+            hooksec(cd, "SetUseAuraDisplayTime", function()
+                securecall(rearmWork)
+            end)
+        end
+    end
     if cd and type(cd.SetSwipeColor) == "function" and not self._swipeHooked[cd] then
         self._swipeHooked[cd] = true
         local function colorWork() this:OnSwipeColor(frame, cd) end
@@ -79,13 +111,15 @@ function CDMReanchorAuraPhase:Hook(frame, containerKey)
     end
 end
 
-function CDMReanchorAuraPhase:Reassert(frame)
+function CDMReanchorAuraPhase:Reassert(frame, entry)
     if not frame then return end
+    if entry ~= nil then self._entryByFrame[frame] = entry end
     local securecall = self._deps.securecall or function(fn, ...) return fn(...) end
     local cd = frame.GetCooldownFrame and frame:GetCooldownFrame()
     if not cd then return end
     local this = self
     securecall(function()
+        this:OnNativeCooldownPush(frame, cd)
         this:OnSwipeColor(frame, cd)
         this:OnDrawEdge(frame, cd)
         if type(cd.GetDrawSwipe) == "function" then

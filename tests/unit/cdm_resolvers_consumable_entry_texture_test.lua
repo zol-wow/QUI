@@ -70,10 +70,13 @@ assert(healthPot and healthPot.icon == "Interface/ICONS/INV_POTION_54",
 local healthstone = catalog.GetConsumableCategoryMeta(1711)
 assert(healthstone and healthstone.icon == "Interface/ICONS/Warlock_ Healthstone",
     "healthstone icon must match Blizzard's spellCategoryMetadataLookup")
+local demonicHealthstone = catalog.GetConsumableCategoryMeta(2566)
+assert(demonicHealthstone and demonicHealthstone.icon == "Interface/ICONS/Warlock_ Bloodstone",
+    "demonic healthstone icon must match Blizzard's spellCategoryMetadataLookup")
 assert(catalog.GetConsumableCategoryMeta(9999) == nil, "unknown category returns nil")
 
 -- GetEntryTexture routes consumable entries through the category meta.
-for _, catID in ipairs({ 4, 30, 1711 }) do
+for _, catID in ipairs({ 4, 30, 1711, 2566 }) do
     local entry = { type = "consumable", id = catID }
     local tex = resolvers.GetEntryTexture(entry)
     local meta = catalog.GetConsumableCategoryMeta(catID)

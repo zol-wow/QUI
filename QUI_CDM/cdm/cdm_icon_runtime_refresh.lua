@@ -209,6 +209,34 @@ local function endBatch(callbacks)
     end
 end
 
+local function entryHasLinkedSpellIDs(callbacks, icon, entry)
+    local linked = entry and entry.linkedSpellIDs
+    if type(linked) == "table" then
+        for _, linkedID in ipairs(linked) do
+            if linkedID ~= nil then return true end
+        end
+    end
+
+    local getLinkedSpellIDs = callbacks.getLinkedSpellIDsForSpellID
+    if not getLinkedSpellIDs or not entry then return false end
+    local sourceIDs = {}
+    if icon and icon._runtimeSpellID ~= nil then sourceIDs[#sourceIDs + 1] = icon._runtimeSpellID end
+    if entry.overrideSpellID ~= nil then sourceIDs[#sourceIDs + 1] = entry.overrideSpellID end
+    if entry.spellID ~= nil then sourceIDs[#sourceIDs + 1] = entry.spellID end
+    if entry.id ~= nil then sourceIDs[#sourceIDs + 1] = entry.id end
+    for _, sourceID in ipairs(sourceIDs) do
+        if sourceID ~= nil then
+            local linkedIDs = getLinkedSpellIDs(sourceID)
+            if type(linkedIDs) == "table" then
+                for _, linkedID in ipairs(linkedIDs) do
+                    if linkedID ~= nil then return true end
+                end
+            end
+        end
+    end
+    return false
+end
+
 local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs)
     if not hasSpellIDs or not entry then return false end
     if spellIdentifierSetHas(callbacks, spellIDs, icon and icon._runtimeSpellID) then return true end
@@ -220,6 +248,25 @@ local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, 
     if type(linked) == "table" then
         for _, linkedID in ipairs(linked) do
             if spellIdentifierSetHas(callbacks, spellIDs, linkedID) then return true end
+        end
+    end
+
+    local getLinkedSpellIDs = callbacks.getLinkedSpellIDsForSpellID
+    if getLinkedSpellIDs then
+        local sourceIDs = {}
+        if icon and icon._runtimeSpellID ~= nil then sourceIDs[#sourceIDs + 1] = icon._runtimeSpellID end
+        if entry.overrideSpellID ~= nil then sourceIDs[#sourceIDs + 1] = entry.overrideSpellID end
+        if entry.spellID ~= nil then sourceIDs[#sourceIDs + 1] = entry.spellID end
+        if entry.id ~= nil then sourceIDs[#sourceIDs + 1] = entry.id end
+        for _, sourceID in ipairs(sourceIDs) do
+            if sourceID ~= nil then
+                local linkedIDs = getLinkedSpellIDs(sourceID)
+                if type(linkedIDs) == "table" then
+                    for _, linkedID in ipairs(linkedIDs) do
+                        if spellIdentifierSetHas(callbacks, spellIDs, linkedID) then return true end
+                    end
+                end
+            end
         end
     end
     return false
@@ -354,7 +401,8 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                     and (isAuraEntry(callbacks, entry)
                         or icon._auraActive == true
                         or (includeItems and isItemEntry(entry))
-                        or (includeCustomCooldowns and isCustomCooldownEntry(entry)))
+                        or (includeCustomCooldowns and isCustomCooldownEntry(entry))
+                        or (includeCustomCooldowns and entryHasLinkedSpellIDs(callbacks, icon, entry)))
                     and not (skipSelfAuraFn and skipSelfAuraFn(icon)) then
                     if not clearCustomCooldownDurationBinding(callbacks, icon, entry) then
                         clearAuraDurationBinding(callbacks, icon)

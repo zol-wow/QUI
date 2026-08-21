@@ -687,9 +687,9 @@ function CDMReanchorRuntime:RefreshContainer(containerKey, prepared, placementPl
                 self._consumersByFrame[w.liveFrame] = { self._nativePlacementByFrame[w.liveFrame] }
             end
             if deps.auraPhase then
-                deps.auraPhase:Hook(w.liveFrame, containerKey)
+                deps.auraPhase:Hook(w.liveFrame, containerKey, w.src)
                 if deps.auraPhase.Reassert then
-                    deps.auraPhase:Reassert(w.liveFrame)
+                    deps.auraPhase:Reassert(w.liveFrame, w.src)
                 end
             end
             if deps.pandemic then

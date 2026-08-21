@@ -33,7 +33,11 @@ local raw = {
 }
 
 -- a live viewer with two item frames: cd 11 (curated) and cd 99 (not curated)
-local fMatch, fDrop = { GetCooldownID = function() return 11 end }, { GetCooldownID = function() return 99 end }
+local fMatch, fDrop = {
+    GetCooldownID = function() return 11 end,
+    GetCooldownInfo = function() return { hasAura = true } end,
+    HasVisualDataSource_Charges = function() return true end,
+}, { GetCooldownID = function() return 99 end }
 local viewer = { GetItemFrames = function() return { fMatch, fDrop } end }
 local container = { SetSize = function() end }
 
@@ -157,6 +161,33 @@ local capturedAuraDeps
 ns.CDMReanchorAuraPhase = { New = function(deps) capturedAuraDeps = deps; return { Hook = function() end } end }
 local swipeStub = { showRechargeEdge = false, showCooldownSwipe = true }
 ns._OwnedSwipe = { GetSettings = function() return swipeStub end }
+local chargeDuration = { charge = true }
+local cooldownDuration = nil
+local maxCharges = 2
+local durationQueries = {}
+ns.CDMSources = {
+    QuerySpellCharges = function(spellID)
+        durationQueries[#durationQueries + 1] = { kind = "charges", spellID = spellID }
+        return { maxCharges = maxCharges }
+    end,
+    QuerySpellChargeDuration = function(spellID)
+        durationQueries[#durationQueries + 1] = { kind = "charge", spellID = spellID }
+        return chargeDuration
+    end,
+    QuerySpellCooldownDuration = function(spellID, ignoreGCD)
+        durationQueries[#durationQueries + 1] = {
+            kind = "cooldown", spellID = spellID, ignoreGCD = ignoreGCD,
+        }
+        return cooldownDuration
+    end,
+}
+local appliedDuration
+ns.CDMRenderers = {
+    ApplyDurationObjectCooldown = function(cd, duration, clearWhenZero, reverse)
+        appliedDuration = { cd = cd, duration = duration,
+            clearWhenZero = clearWhenZero, reverse = reverse }
+    end,
+}
 
 local facade = B.BuildRuntime(env)
 assert(type(facade) == "table" and facade.bridge and facade.wiring and facade.runtime, "facade has bridge/wiring/runtime")
@@ -192,6 +223,40 @@ assert(type(capturedAuraDeps.reassertColor) == "function",
     "auraPhase still receives reassertColor")
 assert(type(capturedAuraDeps.reassertSwipe) == "function",
     "auraPhase receives reassertSwipe")
+assert(type(capturedAuraDeps.rearmNativeCooldown) == "function",
+    "auraPhase receives native cooldown re-arm")
+swipeStub.showCooldownIconAuraPhase = false
+local useAuraCalls = {}
+local nativeCd = {
+    SetUseAuraDisplayTime = function(_, value) useAuraCalls[#useAuraCalls + 1] = value end,
+}
+durationQueries = {}
+appliedDuration = nil
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
+    and durationQueries[2].kind == "charge" and durationQueries[2].spellID == 500,
+    "charge-backed native aura uses the curated spell charge duration")
+assert(#useAuraCalls == 1 and useAuraCalls[1] == false,
+    "native aura re-arm disables aura display timing")
+assert(appliedDuration and appliedDuration.cd == nativeCd
+    and appliedDuration.duration == chargeDuration and appliedDuration.clearWhenZero == true
+    and appliedDuration.reverse == false,
+    "native aura re-arm applies the opaque duration object")
+chargeDuration = nil
+cooldownDuration = { cooldown = true }
+maxCharges = 1
+durationQueries = {}
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
+    and durationQueries[2].kind == "cooldown" and durationQueries[2].ignoreGCD == true,
+    "native aura re-arm falls back to the normal cooldown duration")
+assert(appliedDuration.duration == cooldownDuration,
+    "normal cooldown fallback passes its opaque duration object")
+fMatch.GetCooldownInfo = function() return { hasAura = false } end
+durationQueries = {}
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+assert(appliedDuration.duration == cooldownDuration,
+    "native re-arm does not depend on stable hasAura metadata")
 local cdSecretGCD = { SetDrawSwipe = function() end }
 capturedAuraDeps.reassertSwipe({ isOnGCD = secretGCD }, cdSecretGCD, "essential", true)
 assert(probedSecretGCD, "reassertSwipe probes secret isOnGCD before comparing it")
@@ -248,15 +313,19 @@ local nativeAuraFrame = {
     GetCooldownInfo = function() return { hasAura = true } end,
 }
 for _, entryType in ipairs({ "item", "slot", "trinket", "consumable", "macro" }) do
-    assert(shouldReplace(nativeAuraFrame, { type = entryType }, "essential") == true,
-        entryType .. "-backed native aura frame replaces when disabled")
+    assert(shouldReplace(nativeAuraFrame, { type = entryType }, "essential") == false,
+        entryType .. "-backed native frame remains native")
 end
-assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == true,
-    "ordinary spell native aura frame replaces when disabled")
+assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == false,
+    "ordinary spell native frame remains native")
 assert(shouldReplace({ cooldownUseAuraDisplayTime = true,
         GetCooldownInfo = function() return { hasAura = false } end },
         { type = "spell" }, "essential") == false,
     "native non-aura frame stays native when disabled")
+assert(shouldReplace({ cooldownUseAuraDisplayTime = true,
+        GetCooldownInfo = function() return { hasAura = true, flags = 1 } end },
+        { type = "spell" }, "essential") == false,
+    "HideAura metadata keeps the native frame native")
 assert(shouldReplace({}, { type = "item" }, "buff") == false,
     "item-backed BuffIcon entry remains native")
 assert(shouldReplace(nativeAuraFrame, { type = "spell", kind = "aura" }, "essential") == false,

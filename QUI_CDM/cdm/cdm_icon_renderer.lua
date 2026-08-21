@@ -992,7 +992,8 @@ ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
     if not resolvedState then return false end
     local entryIsAura = entry and IsAuraEntry(entry)
     local itemEntryForCooldown = entry
-        and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot")
+        and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot"
+            or entry.type == "consumable")
     if resolvedState
        and resolvedState.hasRenderableCooldown ~= true
        and not entryIsAura
@@ -4232,6 +4233,11 @@ local function GetItemIDForEntry(entry)
         and Sources and Sources.QueryInventoryItemID then
         return Sources.QueryInventoryItemID("player", entry.id)
     end
+    if entryType == "consumable" then
+        if entry.itemID then return entry.itemID end
+        return Sources and Sources.QueryLastCategoryCooldownSource
+            and select(2, Sources.QueryLastCategoryCooldownSource(entry.id))
+    end
     return nil
 end
 
@@ -4506,6 +4512,12 @@ do
                 or false
         end,
         getItemIDForEntry = GetItemIDForEntry,
+        getLinkedSpellIDsForSpellID = function(spellID)
+            local spellData = ns.CDMSpellData
+            if spellData and spellData.GetLinkedSpellIDsForSpellID then
+                return spellData.GetLinkedSpellIDsForSpellID(spellID)
+            end
+        end,
         queryItemSpell = function(itemID)
             if Sources and Sources.QueryItemSpell then
                 return Sources.QueryItemSpell(itemID)

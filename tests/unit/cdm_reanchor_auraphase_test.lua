@@ -1,8 +1,6 @@
 -- tests/unit/cdm_reanchor_auraphase_test.lua
 -- Run: lua tests/unit/cdm_reanchor_auraphase_test.lua
 -- Locks the hook contract of the re-anchor swipe colour owner.
--- :Hook installs only taint-safe visual post-hooks (never
--- RefreshSpellCooldownInfo or native timing/desaturation hooks).
 
 local ns = {}
 -- Task 45f: cdm_reanchor_auraphase.lua routes discarded-result pcall guards
@@ -80,6 +78,37 @@ do
         "G13: still NEVER hooks RefreshSpellCooldownInfo (secret-value taint)")
 end
 
+do
+    local calls = 0
+    local hooked = {}
+    local inst
+    local cd = {
+        SetSwipeColor = function() end,
+        SetCooldown = function() end,
+        SetCooldownFromDurationObject = function() end,
+        SetUseAuraDisplayTime = function() end,
+    }
+    inst = M.New({
+        securecall = function(fn, ...) return fn(...) end,
+        hooksecurefunc = function(_, method, fn) hooked[method] = fn end,
+        rearmNativeCooldown = function()
+            calls = calls + 1
+            inst:OnNativeCooldownPush({}, cd)
+        end,
+    })
+    local frame = { GetCooldownFrame = function() return cd end }
+    inst:Hook(frame, "essential", { type = "spell", spellID = 1233448 })
+    assert(hooked.SetSwipeColor and hooked.SetCooldown
+        and hooked.SetCooldownFromDurationObject and hooked.SetUseAuraDisplayTime,
+        "native cooldown push hooks installed")
+    hooked.SetSwipeColor()
+    assert(calls == 0, "swipe repaint does not re-arm without a timing push")
+    hooked.SetCooldown()
+    assert(calls == 1, "native cooldown re-arm is re-entry guarded")
+    inst:Reassert(frame)
+    assert(calls == 2, "Reassert re-arms the native cooldown once")
+end
+
 -- G13: OnDrawEdge -> reassertEdge once (re-entry guarded so the reassert's own
 -- SetDrawEdge(false), which re-fires the hook, cannot recurse); nil cd is a no-op.
 do
@@ -120,8 +149,7 @@ do
     assert(calls == 2, "OnDrawSwipe guard must clear after each call")
 end
 
--- Native CDM timing and desaturation setters are untainted-only. QUI leaves
--- Blizzard's timing and saturation state alone.
+-- Without a native re-arm dependency, timing and desaturation hooks are absent.
 do
     local hooked = {}
     local texHooked = {}
@@ -139,7 +167,7 @@ do
     local frame = { GetCooldownFrame = function() return cd end, Icon = tex }
     inst:Hook(frame)
     assert(hooked["SetCooldown"] == nil,
-        "Hook must not install an untainted-only SetCooldown hook")
+        "without a re-arm dependency, no native timing hook is installed")
     assert(texHooked["SetDesaturated"] == nil,
         "Hook must not install an untainted-only SetDesaturated hook")
     assert(hooked["RefreshSpellCooldownInfo"] == nil,

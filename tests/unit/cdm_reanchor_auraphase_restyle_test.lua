@@ -20,7 +20,11 @@ local raw = {
     SetPoint = function() end,
     SetAlpha = function() end,
 }
-local fMatch = { GetCooldownID = function() return 11 end }
+local fMatchHasAura = true
+local fMatch = {
+    GetCooldownID = function() return 11 end,
+    GetCooldownInfo = function() return { hasAura = fMatchHasAura } end,
+}
 local viewer = { GetItemFrames = function() return { fMatch } end }
 local container = { SetSize = function() end }
 local curatedEntry = { spellID = 500, _assignedRow = 1 }
@@ -131,9 +135,9 @@ do
     durQueries = {}
     local cd = NewCd()
     reassertColor(fMatch, cd)
-    local c = assert(lastColor(cd), "native aura timing paints a hidden colour")
-    assert(c[1] == 0 and c[2] == 0 and c[3] == 0 and c[4] == 0,
-        "setting OFF: native aura timing is hidden")
+    local c = assert(lastColor(cd), "native aura timing uses the cooldown colour")
+    assert(c[1] == 0 and c[2] == 0 and c[3] == 0 and c[4] == 0.8,
+        "setting OFF: native aura timing uses the cooldown colour")
     assert(#durQueries == 0 and #cd.auraDisplay == 0 and #cd.binds == 0 and cd.cleared == 0,
         "setting OFF: native aura timing remains untouched")
 end
@@ -156,12 +160,14 @@ do
     local orphan = { cooldownUseAuraDisplayTime = true }
     local cd = NewCd()
     reassertColor(orphan, cd)
-    assert(cd.cleared == 0 and #cd.colors == 0 and #cd.binds == 0 and #cd.auraDisplay == 0,
-        "no entry: native aura presentation remains untouched")
+    local c = assert(lastColor(cd))
+    assert(c[1] == 0 and c[4] == 0.8 and #cd.binds == 0 and #cd.auraDisplay == 0,
+        "no entry: native cooldown presentation remains native-owned")
 end
 
 -- 5) Non-aura phase: unchanged cooldown-colour path, no timing writes.
 do
+    fMatchHasAura = false
     fMatch.cooldownUseAuraDisplayTime = false
     local cd = NewCd()
     reassertColor(fMatch, cd)

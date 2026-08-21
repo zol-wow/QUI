@@ -28,6 +28,7 @@ local _C_GetSpellCastCount = C_Spell and C_Spell.GetSpellCastCount
 local _C_GetSpellInfo = C_Spell and C_Spell.GetSpellInfo
 local _C_GetSpellName = C_Spell and C_Spell.GetSpellName
 local _C_GetSpellTexture = C_Spell and C_Spell.GetSpellTexture
+local _C_GetLastCategoryCooldownSource = C_Spell and C_Spell.GetLastCategoryCooldownSource
 local _C_IsSpellUsable = C_Spell and C_Spell.IsSpellUsable
 local _C_IsSpellInRange = C_Spell and C_Spell.IsSpellInRange
 local _C_SpellHasRange = C_Spell and C_Spell.SpellHasRange
@@ -47,6 +48,15 @@ end
 function CDMSources.QuerySpellCooldownDuration(spellID, ignoreGCD)
     if not spellID or not _C_GetSpellCooldownDuration then return nil end
     return _C_GetSpellCooldownDuration(spellID, ignoreGCD and true or false)
+end
+
+function CDMSources.QueryLastCategoryCooldownSource(categoryID)
+    if not categoryID or not _C_GetLastCategoryCooldownSource then return nil, nil end
+    local spellID, itemID = _C_GetLastCategoryCooldownSource(categoryID)
+    if issecretvalue and (issecretvalue(spellID) or issecretvalue(itemID)) then
+        return nil, nil
+    end
+    return spellID, itemID
 end
 
 function CDMSources.QueryBaseSpell(spellID)

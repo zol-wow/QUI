@@ -39,6 +39,7 @@ local CONSUMABLE_CATEGORY_META = {
     [4]    = { name = "Combat Potion", icon = "Interface/ICONS/INV_POTION_114" },
     [30]   = { name = "Health Potion", icon = "Interface/ICONS/INV_POTION_54" },
     [1711] = { name = "Healthstone",   icon = "Interface/ICONS/Warlock_ Healthstone" },
+    [2566] = { name = "Demonic Healthstone", icon = "Interface/ICONS/Warlock_ Bloodstone" },
 }
 local BLIZZARD_CDM_ENTRY_SOURCE = "blizzardCDM"
 
