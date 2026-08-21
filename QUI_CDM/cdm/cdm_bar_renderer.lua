@@ -723,14 +723,18 @@ local function GetTrackedBarOverrideColor(settings, spellData)
     return nil
 end
 
-local function GetColorFingerprint(color)
-    if type(color) ~= "table" then return "0|0|0|0" end
-    return table.concat({
-        tonumber(color[1]) or 0,
-        tonumber(color[2]) or 0,
-        tonumber(color[3]) or 0,
-        tonumber(color[4]) or 0,
-    }, "|")
+local function ColorStateChanged(state, color)
+    local r, g, b, a = 0, 0, 0, 0
+    if type(color) == "table" then
+        r = tonumber(color[1]) or 0
+        g = tonumber(color[2]) or 0
+        b = tonumber(color[3]) or 0
+        a = tonumber(color[4]) or 0
+    end
+    local changed = state[1] ~= r or state[2] ~= g
+        or state[3] ~= b or state[4] ~= a
+    state[1], state[2], state[3], state[4] = r, g, b, a
+    return changed
 end
 
 function CDMBars.ConfigureBar(bar, settings, overrideWidth)
@@ -1839,27 +1843,12 @@ function CDMBars:LayoutBars(container, settings)
         or Helpers.IsLayoutModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
     local visibleIndex = 0
-    local bcs = settings.borderColorSource
-    local bcsHash = (bcs == "theme" and 1) or (bcs == "class" and 2)
-        or (bcs == "custom" and 3) or 0
-    local bc = settings.borderColor
-    local bcHash = GetColorFingerprint(bc)
-    local barColorHash = GetColorFingerprint(settings.barColor)
-    local cfgFingerprint = table.concat({
-        settings.barHeight or 0,
-        barWidth or 0,
-        settings.borderSize or 0,
-        settings.textSize or 0,
-        settings.barOpacity or 1,
-        settings.useClassColor and 1 or 0,
-        bcsHash,
-        bcHash,
-    }, "|")
     for _, bar in ipairs(barPool) do
-        local overrideColorHash = GetColorFingerprint(
-            GetTrackedBarOverrideColor(settings, GetBarSpellData(bar)))
-        local barCfgFingerprint = cfgFingerprint .. "|" .. barColorHash
-            .. "|" .. overrideColorHash
+        local fingerprint = bar._cfgFingerprint
+        if not fingerprint then
+            fingerprint = { border = {}, bar = {}, override = {} }
+            bar._cfgFingerprint = fingerprint
+        end
         if editModeActive then
             bar._active = true
             SetStatusBarValue(bar.StatusBar, 0.65)
@@ -1869,8 +1858,25 @@ function CDMBars:LayoutBars(container, settings)
             end
         end
 
-        if bar._cfgFingerprint ~= barCfgFingerprint or bar._cfgActive ~= bar._active then
-            bar._cfgFingerprint = barCfgFingerprint
+        local configChanged = fingerprint.barHeight ~= (settings.barHeight or 0)
+            or fingerprint.barWidth ~= (barWidth or 0)
+            or fingerprint.borderSize ~= (settings.borderSize or 0)
+            or fingerprint.textSize ~= (settings.textSize or 0)
+            or fingerprint.barOpacity ~= (settings.barOpacity or 1)
+            or fingerprint.useClassColor ~= (settings.useClassColor and 1 or 0)
+            or fingerprint.borderSource ~= settings.borderColorSource
+        fingerprint.barHeight = settings.barHeight or 0
+        fingerprint.barWidth = barWidth or 0
+        fingerprint.borderSize = settings.borderSize or 0
+        fingerprint.textSize = settings.textSize or 0
+        fingerprint.barOpacity = settings.barOpacity or 1
+        fingerprint.useClassColor = settings.useClassColor and 1 or 0
+        fingerprint.borderSource = settings.borderColorSource
+        configChanged = ColorStateChanged(fingerprint.border, settings.borderColor) or configChanged
+        configChanged = ColorStateChanged(fingerprint.bar, settings.barColor) or configChanged
+        configChanged = ColorStateChanged(fingerprint.override,
+            GetTrackedBarOverrideColor(settings, GetBarSpellData(bar))) or configChanged
+        if configChanged or bar._cfgActive ~= bar._active then
             bar._cfgActive = bar._active
             CDMBars.ConfigureBar(bar, settings, barWidth)
         end

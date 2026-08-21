@@ -558,16 +558,13 @@ local function HandleUnitAura(unit, updateInfo)
         return
     end
     if updateInfo.addedAuras and not (issecretvalue and issecretvalue(updateInfo.addedAuras)) then
-        local refreshed = false
         if updateInfo.updatedAuraInstanceIDs
             and not (issecretvalue and issecretvalue(updateInfo.updatedAuraInstanceIDs))
             and #updateInfo.updatedAuraInstanceIDs > 0 then
-            refreshed = RefreshCapturedAurasByInstanceIDs(unit, updateInfo.updatedAuraInstanceIDs)
+            RefreshCapturedAurasByInstanceIDs(unit, updateInfo.updatedAuraInstanceIDs)
         end
-        if not refreshed then
-            for _, ad in ipairs(updateInfo.addedAuras) do
-                CaptureAuraFromPayload(unit, ad)
-            end
+        for _, ad in ipairs(updateInfo.addedAuras) do
+            CaptureAuraFromPayload(unit, ad)
         end
     elseif updateInfo.updatedAuraInstanceIDs
         and not (issecretvalue and issecretvalue(updateInfo.updatedAuraInstanceIDs))
