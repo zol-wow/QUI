@@ -5,6 +5,15 @@ ns.CDMReanchorRealEnv = CDMReanchorRealEnv
 
 local _securecall = securecallfunction or function(fn, ...) return fn(...) end
 local _issecretvalue = issecretvalue or function() return false end
+local _auraLookupUnits = { "player", "pet" }
+local _auraLookupFilters = { player = "HELPFUL", pet = "HELPFUL" }
+local _auraLookupIDs = {}
+
+local function AppendAuraLookupID(id)
+    if type(id) == "number" and not _issecretvalue(id) then
+        _auraLookupIDs[#_auraLookupIDs + 1] = id
+    end
+end
 
 local function IsBuffIconKey(key)
     return key == "buff" or key == "buffIcon"
@@ -779,23 +788,23 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         if type(entry) ~= "table" or not (SpellData and SpellData.GetCapturedAuraForLookup) then
             return false
         end
-        local ids = {}
-        for _, id in ipairs({ entry.overrideSpellID, entry.spellID, entry.id }) do
-            if type(id) == "number" and not _issecretvalue(id) then
-                ids[#ids + 1] = id
-            end
+        for i = #_auraLookupIDs, 1, -1 do
+            _auraLookupIDs[i] = nil
+        end
+        AppendAuraLookupID(entry.overrideSpellID)
+        if entry.overrideSpellID ~= nil then
+            AppendAuraLookupID(entry.spellID)
+            AppendAuraLookupID(entry.id)
         end
         local linked = entry.linkedSpellIDs
         if type(linked) == "table" then
             for i = 1, #linked do
-                if type(linked[i]) == "number" and not _issecretvalue(linked[i]) then
-                    ids[#ids + 1] = linked[i]
-                end
+                AppendAuraLookupID(linked[i])
             end
         end
         return SpellData.GetCapturedAuraForLookup(
-            ids, entry.name, { "player", "pet" }, false,
-            { player = "HELPFUL", pet = "HELPFUL" }) ~= nil
+            _auraLookupIDs, entry.name, _auraLookupUnits, false,
+            _auraLookupFilters) ~= nil
     end
 
     local function rowConfigForEntry(entry, containerKey)

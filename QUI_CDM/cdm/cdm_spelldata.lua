@@ -2991,6 +2991,13 @@ function CDMSpellData:HasResolvableAuraForItem(itemID)
     end
 
     if useSpellID then
+        local glue = ns.AuraGlue
+        local resolveCooldownAura = glue and glue.GetCooldownAuraBySpellID
+        local cooldownAuraID = resolveCooldownAura and resolveCooldownAura(useSpellID)
+        if type(cooldownAuraID) == "number" and cooldownAuraID > 0 then
+            return cooldownAuraID
+        end
+
         local auraIDs = CDMSpellData:GetAuraIDsForSpell(useSpellID)
         if auraIDs and type(auraIDs[1]) == "number" and auraIDs[1] > 0 then
             return auraIDs[1]
