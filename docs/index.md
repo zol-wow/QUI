@@ -10,7 +10,7 @@ nav_order: 1
 A modular World of Warcraft UI suite for Midnight 12.1+ that you can install, understand, and tune from one settings experience.
 {: .fs-6 .fw-300 }
 
-**Current Release: 5.2.2-beta2**
+**Current Release: 5.2.2-beta3**
 {: .label .label-purple }
 
 [Get Started](getting-started/){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }

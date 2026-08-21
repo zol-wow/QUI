@@ -8,27 +8,27 @@ nav_order: 5
 
 This page summarizes the user-facing changes since the last mainline release. For every beta entry and technical fix, see the full [CHANGELOG.md](https://github.com/zol-wow/QUI/blob/main/CHANGELOG.md).
 
-## Current Release: 5.2.2-beta2
+## Current Release: 5.2.2-beta3
 
 {: .warning }
 **WoW 12.1 only.** This build targets patch 12.1 (interface 120100) and will not load on the 12.0.x client.
 
-QUI 5.2.2-beta2 continues the 5.2.2 beta line with cooldown-aura timing and
-runtime safety fixes.
+QUI 5.2.2-beta3 continues the 5.2.2 beta line with cross-unit aura refresh
+and combat-safe cooldown reanchor fixes.
 
 {: .important }
 Back up your `WTF` folder before updating. Manual installs must copy every `QUI*` folder from the release zip into `Interface\AddOns\`.
 
-## What's New in 5.2.2-beta2
+## What's New in 5.2.2-beta3
 
 ### Beta fixes
 
-- **Cooldown Manager aura timing** now follows stable tracked-aura ownership
-  metadata when aura-phase display is disabled.
-- **Keystone insertion** closes QUI's bag takeover path after the keystone is
-  inserted.
-- **Quest auto-acceptance** requires the game's strict boolean result before
-  accepting a quest automatically.
+- **Cooldown Manager aura refreshes** now follow linked auras across self units,
+  including pet aura deltas and unknown/full refreshes.
+- **Cooldown Manager reanchors** preserve native timing ownership, avoid
+  duplicate aura-phase refreshes, and defer protected-frame work during combat.
+- **Consumable cooldowns** refresh their linked aura state and presentation
+  consistently with other built-in cooldown entries.
 
 ## What's New in 5.2.1
 
