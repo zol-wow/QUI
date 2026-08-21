@@ -229,6 +229,7 @@ swipeStub.showCooldownIconAuraPhase = false
 local useAuraCalls = {}
 local nativeCd = {
     SetUseAuraDisplayTime = function(_, value) useAuraCalls[#useAuraCalls + 1] = value end,
+    Clear = function() end,
 }
 durationQueries = {}
 appliedDuration = nil
@@ -258,6 +259,19 @@ capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry
 assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
     and durationQueries[2].kind == "cooldown" and durationQueries[2].ignoreGCD == true,
     "secret charge count falls back to the normal cooldown duration")
+cooldownDuration = nil
+durationQueries = {}
+useAuraCalls = {}
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+assert(#durationQueries == 2 and #useAuraCalls == 1 and useAuraCalls[1] == false,
+    "native aura re-arm disables aura timing without a cooldown duration")
+swipeStub.showCooldownIconAuraPhase = true
+useAuraCalls = {}
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+assert(#useAuraCalls == 1 and useAuraCalls[1] == true,
+    "native aura re-arm restores aura timing when the setting is enabled")
+swipeStub.showCooldownIconAuraPhase = false
+cooldownDuration = { cooldown = true }
 fMatch.GetCooldownInfo = function() return { hasAura = false } end
 durationQueries = {}
 capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)

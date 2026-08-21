@@ -71,6 +71,7 @@ function CDMReanchorBoot.BuildRuntime(env)
     local bridge = env.CDMReanchor.New({ sinkAnchor = env.uiParent })
     local wiring = env.CDMReanchorWiring.New({ bridge = bridge, index = env.index })
     local runtime
+    local nativeAuraPhaseDisabled = setmetatable({}, { __mode = "k" })
     local function isAuraPhaseEnabled()
         local s = ns._OwnedSwipe and ns._OwnedSwipe.GetSettings and ns._OwnedSwipe.GetSettings()
         return not (s and s.showCooldownIconAuraPhase == false)
@@ -81,9 +82,16 @@ function CDMReanchorBoot.BuildRuntime(env)
         return frame and frame.cooldownUseAuraDisplayTime == true and isAuraPhaseEnabled()
     end
     local function rearmNativeCooldown(frame, cd, containerKey, entry)
-        if isAuraPhaseEnabled() or not frame or not cd or not entry then return end
+        if not frame or not cd or not entry then return end
         if containerKey == "buff" or containerKey == "buffIcon"
             or entry.isAura or entry.kind == "aura" then return end
+        if isAuraPhaseEnabled() then
+            if nativeAuraPhaseDisabled[cd] then
+                nativeAuraPhaseDisabled[cd] = nil
+                ns.SafeCallMethod("best-effort-style", cd, "SetUseAuraDisplayTime", true)
+            end
+            return
+        end
 
         local duration
         local itemLike = entry.type == "item" or entry.type == "trinket" or entry.type == "slot"
@@ -103,8 +111,12 @@ function CDMReanchorBoot.BuildRuntime(env)
                 end
             end
         end
-        if not duration then return end
         ns.SafeCallMethod("best-effort-style", cd, "SetUseAuraDisplayTime", false)
+        nativeAuraPhaseDisabled[cd] = true
+        if not duration then
+            ns.SafeCallMethod("best-effort-style", cd, "Clear")
+            return
+        end
         local renderers = ns.CDMRenderers
         if renderers and renderers.ApplyDurationObjectCooldown then
             renderers.ApplyDurationObjectCooldown(cd, duration, true, false)
