@@ -109,6 +109,30 @@ do
     assert(calls == 2, "Reassert re-arms the native cooldown once")
 end
 
+do
+    local hooked = {}
+    local inst
+    local cd = {
+        SetCooldown = function() end,
+        SetUseAuraDisplayTime = function() end,
+    }
+    inst = M.New({
+        securecall = function(fn, ...) return fn(...) end,
+        hooksecurefunc = function(_, method, fn) hooked[method] = fn end,
+        rearmNativeCooldown = function() end,
+    })
+    local frame = { GetCooldownFrame = function() return cd end }
+    inst:Hook(frame, "essential", { type = "spell", spellID = 1233448 })
+    hooked.SetUseAuraDisplayTime(cd, true)
+    assert(inst._nativeAuraActive[cd] == true,
+        "native aura timing marks the cooldown as aura-active")
+    inst._nativeRearmReentry[cd] = true
+    hooked.SetUseAuraDisplayTime(cd, false)
+    inst._nativeRearmReentry[cd] = false
+    assert(inst._nativeAuraActive[cd] == true,
+        "addon re-arm does not discard native aura eligibility")
+end
+
 -- G13: OnDrawEdge -> reassertEdge once (re-entry guarded so the reassert's own
 -- SetDrawEdge(false), which re-fires the hook, cannot recurse); nil cd is a no-op.
 do

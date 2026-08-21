@@ -39,6 +39,7 @@ end
 
 function CDMReanchorAuraPhase:OnNativeAuraDisplayTime(frame, cd, show)
     if _issecretvalue and _issecretvalue(show) then return end
+    if self._nativeRearmReentry[cd] and show ~= true then return end
     self._nativeAuraActive[cd] = show == true
     self:OnNativeCooldownPush(frame, cd)
 end
