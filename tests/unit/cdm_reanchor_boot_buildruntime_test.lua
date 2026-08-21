@@ -252,6 +252,12 @@ assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
     "native aura re-arm falls back to the normal cooldown duration")
 assert(appliedDuration.duration == cooldownDuration,
     "normal cooldown fallback passes its opaque duration object")
+maxCharges = secretGCD
+durationQueries = {}
+capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)
+assert(#durationQueries == 2 and durationQueries[1].kind == "charges"
+    and durationQueries[2].kind == "cooldown" and durationQueries[2].ignoreGCD == true,
+    "secret charge count falls back to the normal cooldown duration")
 fMatch.GetCooldownInfo = function() return { hasAura = false } end
 durationQueries = {}
 capturedAuraDeps.rearmNativeCooldown(fMatch, nativeCd, "essential", curatedEntry)

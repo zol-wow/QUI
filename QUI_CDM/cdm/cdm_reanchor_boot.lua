@@ -58,7 +58,8 @@ local function QueryNativeSpellDuration(sources, spellID)
     if not sources or not spellID then return nil end
     local chargeInfo = sources.QuerySpellCharges and sources.QuerySpellCharges(spellID)
     local maxCharges = chargeInfo and chargeInfo.maxCharges
-    if maxCharges and maxCharges > 1 and sources.QuerySpellChargeDuration then
+    if not _issecretvalue(maxCharges) and type(maxCharges) == "number"
+        and maxCharges > 1 and sources.QuerySpellChargeDuration then
         local duration = sources.QuerySpellChargeDuration(spellID)
         if duration then return duration end
     end

@@ -209,6 +209,30 @@ local function endBatch(callbacks)
     end
 end
 
+local function linkedSpellIDsMatch(callbacks, getLinkedSpellIDs, sourceID, spellIDs)
+    if sourceID == nil then return false end
+    local linkedIDs = getLinkedSpellIDs(sourceID)
+    if type(linkedIDs) ~= "table" then return false end
+    for _, linkedID in ipairs(linkedIDs) do
+        if spellIDs then
+            if spellIdentifierSetHas(callbacks, spellIDs, linkedID) then return true end
+        elseif linkedID ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+local function entryLinkedSpellIDsMatch(callbacks, icon, entry, spellIDs)
+    local getLinkedSpellIDs = callbacks.getLinkedSpellIDsForSpellID
+    if not getLinkedSpellIDs or not entry then return false end
+    if linkedSpellIDsMatch(callbacks, getLinkedSpellIDs,
+        icon and icon._runtimeSpellID, spellIDs) then return true end
+    if linkedSpellIDsMatch(callbacks, getLinkedSpellIDs, entry.overrideSpellID, spellIDs) then return true end
+    if linkedSpellIDsMatch(callbacks, getLinkedSpellIDs, entry.spellID, spellIDs) then return true end
+    return linkedSpellIDsMatch(callbacks, getLinkedSpellIDs, entry.id, spellIDs)
+end
+
 local function entryHasLinkedSpellIDs(callbacks, icon, entry)
     local linked = entry and entry.linkedSpellIDs
     if type(linked) == "table" then
@@ -216,25 +240,7 @@ local function entryHasLinkedSpellIDs(callbacks, icon, entry)
             if linkedID ~= nil then return true end
         end
     end
-
-    local getLinkedSpellIDs = callbacks.getLinkedSpellIDsForSpellID
-    if not getLinkedSpellIDs or not entry then return false end
-    local sourceIDs = {}
-    if icon and icon._runtimeSpellID ~= nil then sourceIDs[#sourceIDs + 1] = icon._runtimeSpellID end
-    if entry.overrideSpellID ~= nil then sourceIDs[#sourceIDs + 1] = entry.overrideSpellID end
-    if entry.spellID ~= nil then sourceIDs[#sourceIDs + 1] = entry.spellID end
-    if entry.id ~= nil then sourceIDs[#sourceIDs + 1] = entry.id end
-    for _, sourceID in ipairs(sourceIDs) do
-        if sourceID ~= nil then
-            local linkedIDs = getLinkedSpellIDs(sourceID)
-            if type(linkedIDs) == "table" then
-                for _, linkedID in ipairs(linkedIDs) do
-                    if linkedID ~= nil then return true end
-                end
-            end
-        end
-    end
-    return false
+    return entryLinkedSpellIDsMatch(callbacks, icon, entry)
 end
 
 local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs)
@@ -251,25 +257,7 @@ local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, 
         end
     end
 
-    local getLinkedSpellIDs = callbacks.getLinkedSpellIDsForSpellID
-    if getLinkedSpellIDs then
-        local sourceIDs = {}
-        if icon and icon._runtimeSpellID ~= nil then sourceIDs[#sourceIDs + 1] = icon._runtimeSpellID end
-        if entry.overrideSpellID ~= nil then sourceIDs[#sourceIDs + 1] = entry.overrideSpellID end
-        if entry.spellID ~= nil then sourceIDs[#sourceIDs + 1] = entry.spellID end
-        if entry.id ~= nil then sourceIDs[#sourceIDs + 1] = entry.id end
-        for _, sourceID in ipairs(sourceIDs) do
-            if sourceID ~= nil then
-                local linkedIDs = getLinkedSpellIDs(sourceID)
-                if type(linkedIDs) == "table" then
-                    for _, linkedID in ipairs(linkedIDs) do
-                        if spellIdentifierSetHas(callbacks, spellIDs, linkedID) then return true end
-                    end
-                end
-            end
-        end
-    end
-    return false
+    return entryLinkedSpellIDsMatch(callbacks, icon, entry, spellIDs)
 end
 
 local function itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs)
