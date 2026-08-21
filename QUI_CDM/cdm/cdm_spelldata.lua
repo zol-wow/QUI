@@ -132,6 +132,17 @@ local DEFAULT_CAPTURED_AURA_FILTERS = {
     pet = "HELPFUL",
     target = TARGET_CAPTURED_AURA_FILTERS,
 }
+local SINGLE_AURA_SPELL_ID = {}
+local SINGLE_AURA_UNITS = {
+    player = { "player" },
+    pet = { "pet" },
+    target = { "target" },
+}
+local SINGLE_AURA_FILTERS = {
+    player = { player = "HELPFUL" },
+    pet = { pet = "HELPFUL" },
+    target = { target = TARGET_CAPTURED_AURA_FILTERS },
+}
 
 local function IsUsableTableKey(key)
     if issecretvalue and issecretvalue(key) then return false end -- @secret-policy: reject-secret-ids
@@ -475,19 +486,31 @@ local function ReleaseCapturedAuraByInstanceID(unit, auraInstanceID)
     if entry then ReleaseCapturedEntry(entry) end
 end
 
-local function CollectCurrentAuras(unit)
-    local glue = ns.AuraGlue
-    return glue and glue.CollectReadableAuras
-        and glue.CollectReadableAuras(unit) or nil
-end
-
 local function RescanCapturedAurasForUnit(unit, updateInfo)
     if not updateInfo or not updateInfo.addedAuras
         or (issecretvalue and issecretvalue(updateInfo.addedAuras)) then
-        local current = CollectCurrentAuras(unit)
-        if not current then return false end
+        local glue = ns.AuraGlue
+        local collect = glue and glue.CollectReadableAuras
+        if not collect then return false end
+        local released = false
+        local result = collect(unit, function(auraData, filter)
+            if not released then
+                ReleaseCapturedAurasForUnit(unit)
+                released = true
+            end
+            local auraInstanceID = GetCleanAuraInstanceID(auraData)
+            if auraInstanceID then
+                ReleaseCapturedAuraByInstanceID(unit, auraInstanceID)
+            end
+            CaptureAuraFromPayload(unit, auraData, nil, filter)
+        end)
+        if result == true then
+            if not released then ReleaseCapturedAurasForUnit(unit) end
+            return true
+        end
+        if type(result) ~= "table" then return false end
         ReleaseCapturedAurasForUnit(unit)
-        for _, item in ipairs(current) do
+        for _, item in ipairs(result) do
             CaptureAuraFromPayload(unit, item[1], nil, item[2])
         end
         return true
@@ -649,12 +672,8 @@ local function GetCapturedAuraForLookup(spellIDs, entryName, preferredUnits, all
             end
             local nameMap = _capturedAuraByUnitName[unit]
             if nameMap and type(entryName) == "string" then
-                local nameKey = (function()
-                    if entryName ~= "" then
-                        return entryName:lower()
-                    end
-                    return nil
-                end)()
+                local nameKey
+                if entryName ~= "" then nameKey = entryName:lower() end
                 if IsUsableTableKey(nameKey) then
                     local entry = nameMap[nameKey]
                     if entry and entry.auraInstanceID
@@ -683,12 +702,8 @@ local function GetCapturedAuraForLookup(spellIDs, entryName, preferredUnits, all
         end
     end
     if type(entryName) == "string" then
-        local nameKey = (function()
-            if entryName ~= "" then
-                return entryName:lower()
-            end
-            return nil
-        end)()
+        local nameKey
+        if entryName ~= "" then nameKey = entryName:lower() end
         if IsUsableTableKey(nameKey) then
             local entry = _capturedAuraByName[nameKey]
             if entry and entry.auraInstanceID
@@ -749,20 +764,22 @@ local function LookupCapturedAuraBySpellID(unit, spellID, filter)
     if not unit or not spellID then
         return nil
     end
-    local allowed = {}
-    allowed[unit] = unit == "target"
-        and { HELPFUL = true, HARMFUL = true }
-        or (filter == "HARMFUL" and "HARMFUL" or "HELPFUL")
-    return GetCapturedAuraForLookup({ spellID }, nil, { unit }, false, allowed)
+    SINGLE_AURA_SPELL_ID[1] = spellID
+    local allowed = SINGLE_AURA_FILTERS[unit]
+    if unit ~= "target" then
+        allowed[unit] = filter == "HARMFUL" and "HARMFUL" or "HELPFUL"
+    end
+    return GetCapturedAuraForLookup(SINGLE_AURA_SPELL_ID, nil,
+        SINGLE_AURA_UNITS[unit], false, allowed)
 end
 
 local function QueryCapturedAuraByName(unit, name, filter)
     if not unit or not IsUsableAuraName(name) then return nil end
-    local allowed = {}
-    allowed[unit] = unit == "target"
-        and { HELPFUL = true, HARMFUL = true }
-        or (filter == "HARMFUL" and "HARMFUL" or "HELPFUL")
-    return GetCapturedAuraForLookup(nil, name, { unit }, false, allowed)
+    local allowed = SINGLE_AURA_FILTERS[unit]
+    if unit ~= "target" then
+        allowed[unit] = filter == "HARMFUL" and "HARMFUL" or "HELPFUL"
+    end
+    return GetCapturedAuraForLookup(nil, name, SINGLE_AURA_UNITS[unit], false, allowed)
 end
 
 local function GetCapturedAuraData(entry)
@@ -823,14 +840,15 @@ end
 
 local function ScanOwnedTargetAuraBySpellID(spellID, filter)
     if not IsUsableSpellIDKey(spellID) then return nil end
-    return GetCapturedAuraForLookup({ spellID }, nil, { "target" }, false,
-        { target = { HELPFUL = true, HARMFUL = true } })
+    SINGLE_AURA_SPELL_ID[1] = spellID
+    return GetCapturedAuraForLookup(SINGLE_AURA_SPELL_ID, nil,
+        SINGLE_AURA_UNITS.target, false, SINGLE_AURA_FILTERS.target)
 end
 
 local function ScanOwnedTargetAuraByName(spellName, filter)
     if not IsUsableAuraName(spellName) then return nil end
-    return GetCapturedAuraForLookup(nil, spellName, { "target" }, false,
-        { target = { HELPFUL = true, HARMFUL = true } })
+    return GetCapturedAuraForLookup(nil, spellName, SINGLE_AURA_UNITS.target, false,
+        SINGLE_AURA_FILTERS.target)
 end
 
 local function FindOwnedTargetAuraBySpellID(spellID, filter)
