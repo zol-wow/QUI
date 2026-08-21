@@ -33,7 +33,11 @@ local raw = {
 }
 
 -- a live viewer with two item frames: cd 11 (curated) and cd 99 (not curated)
-local fMatch, fDrop = { GetCooldownID = function() return 11 end }, { GetCooldownID = function() return 99 end }
+local fMatch, fDrop = {
+    GetCooldownID = function() return 11 end,
+    GetCooldownInfo = function() return { hasAura = true } end,
+    HasVisualDataSource_Charges = function() return true end,
+}, { GetCooldownID = function() return 99 end }
 local viewer = { GetItemFrames = function() return { fMatch, fDrop } end }
 local container = { SetSize = function() end }
 
@@ -48,6 +52,7 @@ local shellPositioned = false
 local clickSlotPositioned = false
 local clickOverlayCall
 local shellLifecycle = {}
+local canMutate = true
 
 local env = {
     CDMReanchor = ns.CDMReanchor,
@@ -62,7 +67,7 @@ local env = {
     -- true OOC/init-safe-window. Stub always-true so no test behavior changes;
     -- captured below via the CDMReanchorRuntime.New wrapper to prove it threads
     -- through to the runtime deps.
-    canMutate = function() return true end,
+    canMutate = function() return canMutate end,
     getContainer = function() return container end,
     getCurated = function() return { curatedEntry } end,
     getSettings = function() return { row1 = { iconCount = 4, iconSize = 40 } } end,
@@ -157,7 +162,6 @@ local capturedAuraDeps
 ns.CDMReanchorAuraPhase = { New = function(deps) capturedAuraDeps = deps; return { Hook = function() end } end }
 local swipeStub = { showRechargeEdge = false, showCooldownSwipe = true }
 ns._OwnedSwipe = { GetSettings = function() return swipeStub end }
-
 local facade = B.BuildRuntime(env)
 assert(type(facade) == "table" and facade.bridge and facade.wiring and facade.runtime, "facade has bridge/wiring/runtime")
 assert(type(facade.RefreshBuiltin) == "function", "facade:RefreshBuiltin exists")
@@ -192,6 +196,17 @@ assert(type(capturedAuraDeps.reassertColor) == "function",
     "auraPhase still receives reassertColor")
 assert(type(capturedAuraDeps.reassertSwipe) == "function",
     "auraPhase receives reassertSwipe")
+assert(type(capturedAuraDeps.requestAuraPhaseRefresh) == "function",
+    "auraPhase receives the safe aura-phase refresh request")
+swipeStub.showCooldownIconAuraPhase = false
+local nativeAuraFrame = {
+    cooldownUseAuraDisplayTime = true,
+    GetCooldownInfo = function() return { hasAura = true } end,
+}
+assert(capturedRuntimeDeps.shouldReplaceNativeAuraPhase(nativeAuraFrame,
+        { type = "spell" }, "essential") == true,
+    "disabled aura phase uses a QUI-owned replacement frame")
+swipeStub.showCooldownIconAuraPhase = true
 local cdSecretGCD = { SetDrawSwipe = function() end }
 capturedAuraDeps.reassertSwipe({ isOnGCD = secretGCD }, cdSecretGCD, "essential", true)
 assert(probedSecretGCD, "reassertSwipe probes secret isOnGCD before comparing it")
@@ -241,6 +256,16 @@ assert(type(facade.DrainPendingCombatRefresh) == "function",
 -- calling it with no deferred keys is a safe no-op
 facade:DrainPendingCombatRefresh()
 
+local pointsBeforeCombatRefresh = #setpoints
+canMutate = false
+capturedAuraDeps.requestAuraPhaseRefresh(nil, "essential")
+assert(#setpoints == pointsBeforeCombatRefresh,
+    "aura-phase refresh queues during combat instead of reanchoring immediately")
+canMutate = true
+facade:DrainPendingCombatRefresh()
+assert(#setpoints > pointsBeforeCombatRefresh,
+    "queued aura-phase refresh drains after combat")
+
 swipeStub.showCooldownIconAuraPhase = false
 local shouldReplace = capturedRuntimeDeps.shouldReplaceNativeAuraPhase
 local nativeAuraFrame = {
@@ -248,15 +273,19 @@ local nativeAuraFrame = {
     GetCooldownInfo = function() return { hasAura = true } end,
 }
 for _, entryType in ipairs({ "item", "slot", "trinket", "consumable", "macro" }) do
-    assert(shouldReplace(nativeAuraFrame, { type = entryType }, "essential") == true,
-        entryType .. "-backed native aura frame replaces when disabled")
+    assert(shouldReplace(nativeAuraFrame, { type = entryType }, "essential") == false,
+        entryType .. "-backed native frame remains native")
 end
-assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == true,
-    "ordinary spell native aura frame replaces when disabled")
+assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == false,
+    "ordinary spell native frame remains native")
 assert(shouldReplace({ cooldownUseAuraDisplayTime = true,
         GetCooldownInfo = function() return { hasAura = false } end },
-        { type = "spell" }, "essential") == false,
-    "native non-aura frame stays native when disabled")
+        { type = "spell" }, "essential") == true,
+    "current native aura phase uses an owned replacement when disabled")
+assert(shouldReplace({ cooldownUseAuraDisplayTime = true,
+        GetCooldownInfo = function() return { hasAura = true, flags = 1 } end },
+        { type = "spell" }, "essential") == true,
+    "stable eligibility metadata does not block owned replacement")
 assert(shouldReplace({}, { type = "item" }, "buff") == false,
     "item-backed BuffIcon entry remains native")
 assert(shouldReplace(nativeAuraFrame, { type = "spell", kind = "aura" }, "essential") == false,

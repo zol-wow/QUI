@@ -88,6 +88,7 @@ local slotCooldownStart = 11418.804
 local slotCooldownDuration = 90
 local itemUseSpellCooldownActive = false
 local itemUseSpellCooldownDur = { token = "item-use-spell-cooldown-dur" }
+local healthstoneCooldownActive = true
 local gcdSpellActive = false
 local chargeQueryCounts = {}
 
@@ -359,6 +360,13 @@ local ns = {
             if itemID == 90004 then
                 return "Slot Item Use", 91004
             end
+            if itemID == 90005 then
+                return "Healthstone Use", 91005
+            end
+            return nil, nil
+        end,
+        QueryLastCategoryCooldownSource = function(categoryID)
+            if categoryID == 1711 then return 91005, 90005 end
             return nil, nil
         end,
         QueryInventoryItemID = function(unit, slotID)
@@ -400,6 +408,9 @@ local ns = {
             end
             if itemID == 90004 and itemSlotCooldownActive then
                 return 11418.804, 90, true
+            end
+            if itemID == 90005 and healthstoneCooldownActive then
+                return 300, 60, 1
             end
             return nil, nil, nil
         end,
@@ -1034,6 +1045,29 @@ assert(state.durObj ~= createdDurationObjects[1],
     "a second icon should not reuse another icon's item DurationObject")
 assert(#createdDurationObjects == 2,
     "clean item DurationObject reuse should not be keyed by the shared cooldown entry")
+
+createdDurationObjects = {}
+durationObjectSetCalls = {}
+state = resolve({
+    entry = {
+        type = "consumable",
+        kind = "cooldown",
+        id = 1711,
+        name = "Healthstone",
+        viewerType = "custom",
+    },
+    runtimeSpellID = 1711,
+    containerKey = "custom",
+    useBuffSwipe = true,
+    showGCDSwipe = true,
+})
+
+assert(state.mode == "item-cooldown",
+    "category consumables must resolve their last source item when no event itemID is cached")
+assert(state.spellID == 91005,
+    "category consumables must retain the source spellID from the last cooldown source")
+assert(state.start == 300 and state.duration == 60,
+    "category consumables must use the source item's cooldown timing")
 
 createdDurationObjects = {}
 durationObjectSetCalls = {}

@@ -12,6 +12,12 @@ C_Item = {
         return counts[itemID] or 0
     end,
 }
+C_Spell = {
+    GetLastCategoryCooldownSource = function(categoryID)
+        if categoryID == 1711 then return 6262, 5512 end
+        return nil, nil
+    end,
+}
 
 local ns = {
     ConsumableMacros = {
@@ -38,5 +44,8 @@ assert(sources.QueryBestOwnedItemVariant(1003) == 1003,
 
 assert(sources.QueryBestOwnedItemVariant(2000) == 2000,
     "items outside a known quality family should stay unchanged")
+local sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
+assert(sourceSpellID == 6262 and sourceItemID == 5512,
+    "category cooldown source should return the last spell and item")
 
 print("OK: cdm_sources_item_quality_variant_test")

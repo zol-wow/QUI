@@ -217,7 +217,7 @@ local QueryOverrideSpell  = RuntimeQueries.QueryOverrideSpell
 
 local function IsItemLikeEntry(entry)
     return entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot"
-        or (entry.type == "consumable" and entry.itemID ~= nil))
+        or entry.type == "consumable")
 end
 
 local function QueryItemUseSpellID(itemID)
@@ -251,7 +251,7 @@ end
 local function ResolveItemCooldownIdentity(entry)
     if not entry then return nil, nil, nil, nil end
 
-    local itemID, slotID
+    local itemID, slotID, categorySpellID
     if entry.type == "item" then
         itemID = (Sources and Sources.QueryBestOwnedItemVariant
             and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
@@ -263,6 +263,9 @@ local function ResolveItemCooldownIdentity(entry)
         itemID = itemID or entry.itemID
     elseif entry.type == "consumable" then
         itemID = entry.itemID
+        if not itemID and Sources and Sources.QueryLastCategoryCooldownSource then
+            categorySpellID, itemID = Sources.QueryLastCategoryCooldownSource(entry.id)
+        end
     elseif entry.type == "macro" then
         local resolvedID, resolvedType = CDMResolvers.ResolveMacro(entry)
         if resolvedType == "item" then
@@ -272,7 +275,7 @@ local function ResolveItemCooldownIdentity(entry)
 
     if not itemID then return nil, slotID, nil, nil end
 
-    local itemSpellID = QueryItemUseSpellID(itemID)
+    local itemSpellID = QueryItemUseSpellID(itemID) or categorySpellID
     local keySource = slotID and (tostring(slotID) .. ":" .. tostring(itemID)) or tostring(itemID)
     return itemID, slotID, itemSpellID, keySource
 end

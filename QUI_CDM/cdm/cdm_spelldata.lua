@@ -3720,6 +3720,7 @@ CDMSpellData.IsAuraEntry = IsAuraEntry
 CDMSpellData.GetContainerDB = GetContainerDB
 CDMSpellData.GetEntryListField = GetEntryListField
 CDMSpellData.GetCapturedAuraForLookup = GetCapturedAuraForLookup
+CDMSpellData.GetLinkedSpellIDsForSpellID = GetLinkedSpellIDsForSpellID
 if ns.CDMAuraRuntime then
     if ns.CDMAuraRuntime.SetApplicationsGetter then
         ns.CDMAuraRuntime.SetApplicationsGetter(GetAuraApplications)

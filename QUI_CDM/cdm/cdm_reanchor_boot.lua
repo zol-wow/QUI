@@ -58,9 +58,17 @@ function CDMReanchorBoot.BuildRuntime(env)
     local bridge = env.CDMReanchor.New({ sinkAnchor = env.uiParent })
     local wiring = env.CDMReanchorWiring.New({ bridge = bridge, index = env.index })
     local runtime
+    local function isAuraPhaseEnabled()
+        local s = ns._OwnedSwipe and ns._OwnedSwipe.GetSettings and ns._OwnedSwipe.GetSettings()
+        return not (s and s.showCooldownIconAuraPhase == false)
+    end
+    local function frameIsAuraPhase(frame)
+        local active = frame and frame.cooldownUseAuraDisplayTime
+        if _issecretvalue(active) then return false end -- @secret-policy: reject-secret-value
+        return active == true
+    end
     local function frameCanUseAuraForDisplay(frame)
-        local info = bridge:GetFrameCooldownInfo(frame)
-        return info and info.hasAura == true
+        return frameIsAuraPhase(frame) and isAuraPhaseEnabled()
     end
     local function swipeSettings()
         return (ns._OwnedSwipe and ns._OwnedSwipe.GetSettings and ns._OwnedSwipe.GetSettings()) or {}
@@ -82,10 +90,6 @@ function CDMReanchorBoot.BuildRuntime(env)
         if g == true then return s.showGCDSwipe == true end
         return s.showCooldownSwipe ~= false
     end
-    local function isAuraPhaseEnabled()
-        local s = ns._OwnedSwipe and ns._OwnedSwipe.GetSettings and ns._OwnedSwipe.GetSettings()
-        return not (s and s.showCooldownIconAuraPhase == false)
-    end
     local function isBuffIconFrameKey(key)
         return key == "buff" or key == "buffIcon"
     end
@@ -106,7 +110,7 @@ function CDMReanchorBoot.BuildRuntime(env)
             end
             return
         end
-        if frame.cooldownUseAuraDisplayTime == true then
+        if frameCanUseAuraForDisplay(frame) then
             if not frame.GetCooldownID then return end
             local s = swipeSettings()
             if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
@@ -153,8 +157,7 @@ function CDMReanchorBoot.BuildRuntime(env)
             end
             return
         end
-        if frame and frame.cooldownUseAuraDisplayTime == true
-            then
+        if frameCanUseAuraForDisplay(frame) then
             if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
                 if show then cd:SetDrawSwipe(false) end
             elseif show == false then
@@ -185,6 +188,16 @@ function CDMReanchorBoot.BuildRuntime(env)
     local auraPhase = ns.CDMReanchorAuraPhase and ns.CDMReanchorAuraPhase.New({
         securecall = securecallfunction,
         isAuraPhaseEnabled = isAuraPhaseEnabled,
+        requestAuraPhaseRefresh = function(_, containerKey)
+            if env.canMutate and not env.canMutate() then
+                if runtime and runtime.QueuePendingCombatRefresh then
+                    runtime:QueuePendingCombatRefresh(containerKey)
+                end
+                return
+            end
+            local hooks = ns._cdmReanchorHooks
+            if hooks and hooks.MarkDirty then hooks:MarkDirty(containerKey) end
+        end,
         reassertColor = reassertColor,
         reassertEdge = reassertEdge,
         reassertSwipe = reassertSwipe,
@@ -228,11 +241,11 @@ function CDMReanchorBoot.BuildRuntime(env)
         getSettings = env.getSettings,
         getAdditional = MakeGetAdditional(env),
         shouldReplaceNativeAuraPhase = function(frame, entry, containerKey)
-            if isBuffIconFrameKey(containerKey) or entry and (entry.isAura or entry.kind == "aura") then
+            if containerKey == "buff" or containerKey == "buffIcon"
+                or entry.isAura or entry.kind == "aura" then
                 return false
             end
-            return entry ~= nil and not isAuraPhaseEnabled()
-                and frameCanUseAuraForDisplay(frame)
+            return not isAuraPhaseEnabled() and frameIsAuraPhase(frame)
         end,
         buildLayout = env.buildLayout,
         buildBuffLayout = env.buildBuffLayout,

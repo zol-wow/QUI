@@ -148,7 +148,6 @@ customCooldownIcon._spellEntry = {
     viewerType = "custom",
     type = "spell",
     _isCustomEntry = true,
-    linkedSpellIDs = { 1235391 },
 }
 customCooldownIcon.Cooldown.SetCooldownFromDurationObject = function(_, durObj)
     customCooldownApplyCount = customCooldownApplyCount + 1
@@ -157,6 +156,16 @@ end
 customCooldownIcon.Cooldown.SetReverse = function(_, reverse)
     customCooldownReverse = reverse
 end
+
+local linkedCooldownIcon = makeIcon("linkedCooldown", 1233448)
+linkedCooldownIcon._spellEntry = {
+    id = 1233448,
+    spellID = 1233448,
+    name = "linkedCooldown",
+    kind = "cooldown",
+    viewerType = "essential",
+    type = "spell",
+}
 
 local ns = {
     Helpers = {
@@ -219,6 +228,13 @@ local ns = {
             if spellID == 1236994 then
                 return 555001
             end
+            return nil
+        end,
+    },
+    CDMSpellData = {
+        GetSpellOverride = function() return nil end,
+        GetLinkedSpellIDsForSpellID = function(spellID)
+            if spellID == 1233448 then return { 1235391 } end
             return nil
         end,
     },
@@ -329,7 +345,7 @@ local ns = {
     },
     CDMIconFactory = {
         _iconPools = {
-            essential = { matchingIcon, unrelatedIcon, nonMirrorIcon, itemAuraIcon },
+            essential = { matchingIcon, unrelatedIcon, nonMirrorIcon, itemAuraIcon, linkedCooldownIcon },
             buff = { buffAuraIcon },
             custom = { customAuraIcon, customCooldownIcon },
         },
@@ -378,7 +394,7 @@ do
     end
 end
 assert(loadfile("QUI_CDM/cdm/cdm_icon_renderer.lua"))("QUI", ns)
-ns.CDMIconFactory._iconPools.essential = { matchingIcon, unrelatedIcon, nonMirrorIcon, itemAuraIcon }
+ns.CDMIconFactory._iconPools.essential = { matchingIcon, unrelatedIcon, nonMirrorIcon, itemAuraIcon, linkedCooldownIcon }
 ns.CDMIconFactory._iconPools.buff = { buffAuraIcon }
 ns.CDMIconFactory._iconPools.custom = { customAuraIcon, customCooldownIcon }
 
@@ -562,6 +578,17 @@ resolveCounts.customCooldown = 0
 
 icons.HandleRuntimeRefresh("UNIT_AURA", "pet", {
     isFullUpdate = false,
+    addedAuras = {
+        { spellId = 1235391, auraInstanceID = 902 },
+    },
+})
+
+assert(resolveCounts.customCooldown == 1,
+    "added linked pet aura should re-resolve the originating cooldown icon")
+resolveCounts.customCooldown = 0
+
+icons.HandleRuntimeRefresh("UNIT_AURA", "pet", {
+    isFullUpdate = false,
     removedAuraInstanceIDs = { 901 },
 })
 
@@ -572,6 +599,7 @@ customCooldownAppliedDuration = nil
 customCooldownReverse = nil
 customCooldownApplyCount = 0
 resolveCounts.customCooldown = 0
+resolveCounts.linkedCooldown = 0
 
 icons.HandleRuntimeRefresh("UNIT_AURA", "pet", nil)
 
@@ -581,6 +609,8 @@ assert(customCooldownAppliedDuration == customCooldownDur,
     "unknown/full pet aura refreshes should bind the custom cooldown DurationObject")
 assert(customCooldownReverse == false,
     "unknown/full pet aura refreshes should keep the custom icon on cooldown mode")
+assert(resolveCounts.linkedCooldown == 1,
+    "unknown/full pet aura refreshes should re-resolve linked built-in cooldown icons")
 
 itemAuraActive = true
 itemAuraPublishesInstanceID = true

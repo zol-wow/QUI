@@ -186,9 +186,17 @@ end
 
 do
     local cd = NewCd()
+    reassertSwipe({
+        cooldownUseAuraDisplayTime = {},
+        GetCooldownInfo = function() return { hasAura = true } end,
+    }, cd, nil, true)
+    assert(#cd.swipes == 0,
+        "stable aura metadata keeps the native cooldown swipe when the live aura field is opaque")
+
+    cd = NewCd()
     reassertSwipe({ cooldownUseAuraDisplayTime = true }, cd, nil, true)
-    assert(cd.swipes[1] == false,
-        "aura-phase setting hides the native aura swipe when disabled")
+    assert(#cd.swipes == 0,
+        "aura-phase setting leaves the native cooldown swipe decision untouched")
 
     swipeStub.showCooldownSwipe = false
     cd = NewCd()
@@ -291,7 +299,6 @@ assert(hookedFns.SetCooldown == nil, "native SetCooldown hook is not installed")
 seen = {}
 assert(hookedFns.SetDesaturated == nil, "native SetDesaturated hook is not installed")
 
--- Proactive path: Reassert fires colour + edge with NO Blizzard write at all.
 seen = {}
 ap:Reassert(liveFrame)
 assert(#seen == 2 and seen[1].what == "color" and seen[2].what == "edge",

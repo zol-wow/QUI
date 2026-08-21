@@ -116,6 +116,12 @@ function CDMReanchorRuntime:_ShouldDeferOwnedReleaseInCombat(containerKey)
     return false
 end
 
+function CDMReanchorRuntime:QueuePendingCombatRefresh(containerKey)
+    if not containerKey then return end
+    self._pendingCombatRefresh = self._pendingCombatRefresh or {}
+    self._pendingCombatRefresh[containerKey] = true
+end
+
 function CDMReanchorRuntime:DrainPendingCombatRefresh()
     local pending = self._pendingCombatRefresh
     if not pending then return end
@@ -687,9 +693,9 @@ function CDMReanchorRuntime:RefreshContainer(containerKey, prepared, placementPl
                 self._consumersByFrame[w.liveFrame] = { self._nativePlacementByFrame[w.liveFrame] }
             end
             if deps.auraPhase then
-                deps.auraPhase:Hook(w.liveFrame, containerKey)
+                deps.auraPhase:Hook(w.liveFrame, containerKey, w.src)
                 if deps.auraPhase.Reassert then
-                    deps.auraPhase:Reassert(w.liveFrame)
+                    deps.auraPhase:Reassert(w.liveFrame, w.src)
                 end
             end
             if deps.pandemic then
