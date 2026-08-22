@@ -4,6 +4,27 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2-beta4 - 2026-08-22
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager target-debuff, custom-bar storage, and consumable fixes for
+the 5.2.2 beta line.
+
+### Fixed
+
+- **Target-debuff cooldowns repair stale linked state.** Eligible Essential
+  and Utility entries recover their native cooldown display while preserving
+  Blizzard's timing ownership.
+- **Custom bars keep stable profile storage.** Custom containers migrate to
+  their canonical nested store without overwriting built-in container settings.
+- **Consumable categories resolve owned items consistently.** Cooldowns,
+  counts, usability, range state, tooltips, secure clicks, and debug identity
+  follow the currently owned potion or consumable.
+- **Secret duration values remain comparison-safe.** Consumable and cooldown
+  refreshes avoid unsafe comparisons when the client returns protected values.
+
 ## v5.2.2-beta3 - 2026-08-21
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
