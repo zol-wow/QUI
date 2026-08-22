@@ -346,8 +346,8 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if state.frame then
             state.frame:SetScript("OnUpdate", nil)
             if state.frame.Hide then state.frame:Hide() end
+        end
     end
-end
 
     function controller:AddSpellIdentifierToSet(set, rawID)
         return addSpellIdentifierToSet(callbacks, set, rawID)
