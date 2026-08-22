@@ -308,17 +308,44 @@ function CDMSources.QueryItemCount(itemID, includeBank, includeUses, forceUpdate
     return _C_GetItemCount(itemID, includeBank, includeUses, forceUpdate)
 end
 
+local _bestOwnedConsumableCategoryItems = {}
+
+function CDMSources.InvalidateConsumableCategoryItems()
+    for categoryID in pairs(_bestOwnedConsumableCategoryItems) do
+        _bestOwnedConsumableCategoryItems[categoryID] = nil
+    end
+end
+
 function CDMSources.QueryBestOwnedConsumableCategoryItem(categoryID)
+    local cached = _bestOwnedConsumableCategoryItems[categoryID]
+    if cached ~= nil then return cached or nil end
     local consumables = ns.ConsumableMacros
     local getCandidates = consumables and consumables.GetCategoryItemCandidates
     local candidates = getCandidates and getCandidates(categoryID)
     if type(candidates) ~= "table" then return nil end
+    local countsReadable = true
     for _, itemID in ipairs(candidates) do
         local count = CDMSources.QueryItemCount(itemID, false, false)
         if issecretvalue and issecretvalue(count) then return nil end -- @secret-policy: reject-secret-value
-        if type(count) == "number" and count > 0 then return itemID end
+        if type(count) == "number" then
+            if count > 0 then
+                _bestOwnedConsumableCategoryItems[categoryID] = itemID
+                return itemID
+            end
+        else
+            countsReadable = false
+        end
     end
+    if countsReadable then _bestOwnedConsumableCategoryItems[categoryID] = false end
     return nil
+end
+
+function CDMSources.QueryConsumableCategoryItem(categoryID)
+    local itemID = CDMSources.QueryBestOwnedConsumableCategoryItem(categoryID)
+    if itemID then return itemID end
+    local catalog = ns.CDMCatalog
+    return catalog and catalog.GetConsumableCategoryItemID
+        and catalog.GetConsumableCategoryItemID(categoryID)
 end
 
 function CDMSources.QueryBestOwnedItemVariant(itemID)

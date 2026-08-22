@@ -267,7 +267,7 @@ local function ResolveItemCooldownIdentity(entry)
         end
         local fallbackItemID = ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
             and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id)
-        itemID = itemID or fallbackItemID or entry.itemID
+        itemID = itemID or entry._runtimeItemID or fallbackItemID or entry.itemID
     elseif entry.type == "macro" then
         local resolvedID, resolvedType = CDMResolvers.ResolveMacro(entry)
         if resolvedType == "item" then

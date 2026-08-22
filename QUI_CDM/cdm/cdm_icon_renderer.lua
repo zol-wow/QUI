@@ -402,13 +402,11 @@ local function GetItemIDForEntry(entry)
         return Sources.QueryInventoryItemID("player", entry.id)
     end
     if entryType == "consumable" then
-        local categoryItemID = Sources and Sources.QueryLastCategoryCooldownSource
-            and select(2, Sources.QueryLastCategoryCooldownSource(entry.id))
-        local fallbackItemID = ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
+        local itemID = Sources and Sources.QueryConsumableCategoryItem
+            and Sources.QueryConsumableCategoryItem(entry.id)
+        if itemID then return itemID end
+        return ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
             and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id)
-        return categoryItemID or entry.itemID or fallbackItemID
-            or (Sources and Sources.QueryBestOwnedConsumableCategoryItem
-                and Sources.QueryBestOwnedConsumableCategoryItem(entry.id))
     end
     return nil
 end
@@ -1776,9 +1774,6 @@ UpdateIconSecureAttributes = function(icon, entry, viewerType)
         end
     elseif entry.type == "item" or entry.type == "consumable" then
         local itemID = GetItemIDForEntry(entry)
-        if entry.type == "consumable" and itemID then
-            entry.itemID = itemID
-        end
         local itemName = Sources and Sources.QueryItemNameByID and Sources.QueryItemNameByID(itemID)
         if itemName then
             btn:SetAttribute("type", "item")
@@ -2631,7 +2626,6 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
         end
         if itemID and entry.type == "consumable"
             and icon._lastConsumableSecureItemID ~= itemID then
-            entry.itemID = itemID
             UpdateIconSecureAttributes(icon, entry, entry.viewerType)
         end
         if itemID and stackTextWritesAllowed and Sources and Sources.QueryItemCount then
@@ -4617,6 +4611,11 @@ do
             end
         end,
         invalidateMacroCache = InvalidateMacroCache,
+        invalidateConsumableCategoryItems = function()
+            if Sources and Sources.InvalidateConsumableCategoryItems then
+                Sources.InvalidateConsumableCategoryItems()
+            end
+        end,
         updateIconsForSpellRangeEvent = UpdateIconsForSpellRangeEvent,
         clearTextureCycleCache = function()
             wipe(_textureCycleCache)

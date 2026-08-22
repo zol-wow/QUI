@@ -149,6 +149,7 @@ local stableClears = 0
 local spellCacheInvalidations = {}
 local barAuraRefreshMarks = {}
 local customOverlayRefreshes = 0
+local consumableCategoryInvalidations = 0
 local trustedCooldownUpdates = {}
 local trustedBroadCooldownRefreshes = 0
 local forcedBroadCooldownRefreshes = 0
@@ -219,6 +220,9 @@ local controller = module.Create({
     end,
     getItemIDForEntry = function(entry)
         return entry and entry.itemID
+    end,
+    invalidateConsumableCategoryItems = function()
+        consumableCategoryInvalidations = consumableCategoryInvalidations + 1
     end,
     queryItemSpell = function(itemID)
         if itemID == 404 then return "Item Use", 707 end
@@ -345,6 +349,8 @@ barsDirty = false
 local dirtyRunsBeforeBagUpdate = dirtyBarRuns
 controller:Handle("BAG_UPDATE_DELAYED")
 assert(runtimeUpdated.item == 1, "bag inventory updates should refresh item runtime/texture state")
+assert(consumableCategoryInvalidations == 1,
+    "bag inventory updates should invalidate owned consumable identity")
 assert(runtimeUpdated.spell == nil, "bag inventory updates should stay scoped to item-backed icons")
 assert(applied.item == nil, "bag inventory updates should use the full item runtime path")
 assert(barsDirty == true, "bag inventory updates should mark item-backed bars dirty")
@@ -360,6 +366,8 @@ barsDirty = false
 local dirtyRunsBeforeItemCount = dirtyBarRuns
 controller:Handle("ITEM_COUNT_CHANGED", 404)
 assert(runtimeUpdated.item == 1, "item count changes should refresh item runtime/texture state")
+assert(consumableCategoryInvalidations == 2,
+    "item count changes should invalidate owned consumable identity")
 assert(runtimeUpdated.spell == nil, "item count changes should stay scoped to item-backed icons")
 assert(barsDirty == true, "item count changes should mark item-backed bars dirty")
 assert(dirtyBarRuns == dirtyRunsBeforeItemCount + 1, "item count changes should refresh dirty item-backed bars")
@@ -425,7 +433,8 @@ assert(auraApplied.aura == 1,
 reset(runtimeUpdated)
 controller:HandleCooldownChanged("CDM:COOLDOWN_CHANGED", 999999, 999998, "refresh", 808, nil, 909)
 assert(runtimeUpdated.consumable == 1
-        and consumableIcon._spellEntry.itemID == 909
+        and consumableIcon._spellEntry.itemID == 5512
+        and consumableIcon._spellEntry._runtimeItemID == 909
         and consumableIcon._spellEntry._runtimeSpellID == 999999
         and consumableIcon._spellEntry._runtimeBaseSpellID == 999998,
     "cooldown category and item payloads must refresh category-backed entries")

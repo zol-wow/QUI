@@ -1602,12 +1602,11 @@ function CDMIconCustomBarPolicy.Create(callbacks)
 
         local sources = Sources()
         if entry.type == "consumable" then
-            local itemID = sources and sources.QueryLastCategoryCooldownSource
-                and select(2, sources.QueryLastCategoryCooldownSource(entry.id))
+            local itemID = sources and sources.QueryConsumableCategoryItem
+                and sources.QueryConsumableCategoryItem(entry.id)
             itemID = itemID
                 or (ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
                     and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id))
-                or entry.itemID
             if itemID and sources and sources.QueryItemCount then
                 local count = sources.QueryItemCount(itemID, false, containerDB and containerDB.showItemCharges == true, true)
                 if issecretvalue and issecretvalue(count) then

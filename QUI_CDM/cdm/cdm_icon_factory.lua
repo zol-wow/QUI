@@ -152,12 +152,11 @@ function CDMIconFactory.ShowEntryTooltip(owner, entry, tooltipContext)
         end
         local consumableItemID
         if entry.type == "consumable" then
-            consumableItemID = Sources and Sources.QueryLastCategoryCooldownSource
-                and select(2, Sources.QueryLastCategoryCooldownSource(entry.id))
+            consumableItemID = Sources and Sources.QueryConsumableCategoryItem
+                and Sources.QueryConsumableCategoryItem(entry.id)
             consumableItemID = consumableItemID
                 or (ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
                     and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id))
-                or entry.itemID
         end
         if consumableItemID then
             GameTooltip.SetItemByID(GameTooltip, consumableItemID)

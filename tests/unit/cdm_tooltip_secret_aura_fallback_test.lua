@@ -29,7 +29,10 @@ local ns = {
     },
     CDMSources = {
         QueryLastCategoryCooldownSource = function(categoryID)
-            if categoryID == 1711 then return 6262, 5512 end
+            if categoryID == 1711 then return 6262, 999999 end
+        end,
+        QueryConsumableCategoryItem = function(categoryID)
+            if categoryID == 1711 then return 5512 end
         end,
     },
     CDMResolvers = {

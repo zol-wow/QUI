@@ -608,7 +608,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                     local entryCategory = normalizeSpellIdentifier(callbacks, entry and entry.id)
                     if normalizedCategory and entryCategory == normalizedCategory
                         and entry and entry.type == "consumable" then
-                        entry.itemID = normalizedItemID
+                        entry._runtimeItemID = normalizedItemID
                         entry._runtimeSpellID = normalizeSpellIdentifier(callbacks, eventSpellID)
                             or normalizeSpellIdentifier(callbacks, eventBaseSpellID)
                         entry._runtimeBaseSpellID = normalizeSpellIdentifier(callbacks, eventBaseSpellID)
@@ -1220,6 +1220,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             return
         end
         if event == "BAG_UPDATE_DELAYED" or event == "ITEM_COUNT_CHANGED" then
+            if callbacks.invalidateConsumableCategoryItems then
+                callbacks.invalidateConsumableCategoryItems()
+            end
             controller:QueueItemScopeRefresh({ refreshRuntime = true })
             if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
             if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end

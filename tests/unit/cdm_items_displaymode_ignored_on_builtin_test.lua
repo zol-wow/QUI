@@ -102,6 +102,10 @@ local ns = {
         QuerySpellInRange = function() return true end,
         QueryBestOwnedItemVariant = function(id) return id end,
         QueryBestOwnedConsumableCategoryItem = function() return ownedCategoryItemID end,
+        QueryConsumableCategoryItem = function(categoryID)
+            if categoryID == 1711 then return 5512 end
+            return ownedCategoryItemID
+        end,
         QueryLastCategoryCooldownSource = function() return nil, categorySourceItemID end,
         QueryInventoryItemID = function() return nil end,
         QueryItemNameByID = function(itemID)
@@ -370,9 +374,10 @@ assert(#itemCountQueries == 0,
 assert(iconCase6.StackText.text ~= "0",
     "Case 6: consumables without a resolved item identity must not show a zero item badge")
 
+categorySourceItemID = 245999
 ownedCategoryItemID = 245902
 local iconCase7 = makeItemIcon({
-    id = 4, type = "consumable", kind = "cooldown",
+    id = 4, itemID = 245999, type = "consumable", kind = "cooldown",
     viewerType = "customBar:test",
 })
 local priorPool = ns.CDMIconFactory._iconPools["customBar:test"]
@@ -386,7 +391,7 @@ icons:UpdateCooldownsForType("customBar:test")
 assert(iconCase7.clickButton and iconCase7.clickButton.attributes.item == "item-245902",
     "Case 7: an owned potion must create the initial secure item action")
 
-categorySourceItemID = 245910
+ownedCategoryItemID = 245910
 inCombat = true
 icons:UpdateCooldownsForType("customBar:test")
 assert(iconCase7._pendingSecureUpdate == true

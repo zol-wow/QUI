@@ -124,6 +124,9 @@ local ns = {
             assert(itemID == 5512, "consumable usability should query item 5512")
             return healthstoneItemUsable, false
         end,
+        QueryConsumableCategoryItem = function(categoryID)
+            return categoryID == 1711 and 5512 or nil
+        end,
         QuerySpellCooldown = function()
             return { isActive = currentOnGCD, isOnGCD = currentOnGCD }
         end,

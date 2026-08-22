@@ -6,9 +6,11 @@ local counts = {
     [1002] = 4,
     [1003] = 2,
 }
+local itemCountQueries = 0
 
 C_Item = {
     GetItemCount = function(itemID)
+        itemCountQueries = itemCountQueries + 1
         return counts[itemID] or 0
     end,
     GetItemCooldown = function(itemID)
@@ -32,6 +34,7 @@ local categoryMetadataQueries = 0
 local indexVersion = 1
 C_Spell = {
     GetLastCategoryCooldownSource = function(categoryID)
+        if categoryID == 4 then return 777, 1001 end
         if categoryID == 1711 then
             if categorySourceAvailable then return 6262, 5512 end
             return nil, nil
@@ -63,6 +66,10 @@ local ns = {
         end,
     },
     CDMCatalog = {
+        GetConsumableCategoryItemID = function(categoryID)
+            if categoryID == 1711 then return 5512 end
+            return nil
+        end,
         GetCooldownInfo = function(cooldownID)
             categoryMetadataQueries = categoryMetadataQueries + 1
             if cooldownID == 7001 then
@@ -80,11 +87,21 @@ local sources = assert(ns.CDMSources, "CDMSources should be exported")
 
 assert(sources.QueryBestOwnedConsumableCategoryItem(4) == 1002,
     "category consumables should resolve the first owned item candidate")
+local queriesAfterCategoryScan = itemCountQueries
+assert(sources.QueryConsumableCategoryItem(4) == 1002,
+    "consumable identity should prefer an owned item over the recent category source")
+assert(itemCountQueries == queriesAfterCategoryScan,
+    "unchanged consumable identity should reuse its owned-item cache")
+assert(sources.QueryConsumableCategoryItem(1711) == 5512,
+    "consumable identity should retain static category fallbacks")
 
 assert(sources.QueryBestOwnedItemVariant(1003) == 1002,
     "existing lower-rank item entries should resolve to the best owned variant in the macro order")
 
 counts[1002] = 0
+sources.InvalidateConsumableCategoryItems()
+assert(sources.QueryBestOwnedConsumableCategoryItem(4) == 1003,
+    "invalidating consumable identity should detect a newly preferred owned item")
 assert(sources.QueryBestOwnedItemVariant(1003) == 1003,
     "best-variant resolution should fall back to the configured item when no better variant is owned")
 
