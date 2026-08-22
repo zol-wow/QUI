@@ -754,6 +754,7 @@ function Migrations.PurgeLegacyCustomBarShadowStores(profile)
         end
     end
     for _, key in ipairs(toRemove) do
+        containers[key] = ncdm[key]
         ncdm[key] = nil
     end
     return #toRemove > 0

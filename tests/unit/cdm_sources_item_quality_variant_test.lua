@@ -80,6 +80,19 @@ assert(sources.QueryBestOwnedItemVariant(2000) == 2000,
 local sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
 assert(sourceSpellID == 6262 and sourceItemID == 5512,
     "category cooldown source should return the last spell and item")
+local categorySourceCache
+for index = 1, 20 do
+    local name, value = debug.getupvalue(sources.QueryLastCategoryCooldownSource, index)
+    if not name then break end
+    if name == "_lastCategoryCooldownSources" then
+        categorySourceCache = value
+        break
+    end
+end
+local cachedSource = assert(categorySourceCache and categorySourceCache[1711])
+sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
+assert(categorySourceCache[1711] == cachedSource,
+    "unchanged category cooldown sources should reuse their cache record")
 categorySourceAvailable = false
 sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
 assert(sourceSpellID == 6262 and sourceItemID == 5512,
