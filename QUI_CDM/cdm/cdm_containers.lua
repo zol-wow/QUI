@@ -1323,13 +1323,13 @@ end
 
 function CDMContainers_API:GetContainers()
     local db = GetDB()
-    local ct = db and db.containers
-    if not ct then return {} end
+    if not db then return {} end
+    local ct = db.containers or {}
 
     local result = {}
     for _, key in ipairs(BUILTIN_KEYS) do
-        if ct[key] then
-            result[#result + 1] = { key = key, settings = ct[key] }
+        if db[key] then
+            result[#result + 1] = { key = key, settings = db[key] }
         end
     end
     local customKeys = {}

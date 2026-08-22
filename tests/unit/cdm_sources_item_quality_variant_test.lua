@@ -41,6 +41,10 @@ C_Spell = {
 }
 local ns = {
     ConsumableMacros = {
+        GetCategoryItemCandidates = function(categoryID)
+            if categoryID == 4 then return { 1001, 1002, 1003 } end
+            return nil
+        end,
         GetVariantOrderForItem = function(itemID)
             if itemID == 1001 or itemID == 1002 or itemID == 1003 then
                 return { 1001, 1002, 1003 }
@@ -73,6 +77,9 @@ local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
 loadChunk("QUI_CDM/cdm/cdm_sources.lua", "cdm_sources.lua")("QUI", ns)
 
 local sources = assert(ns.CDMSources, "CDMSources should be exported")
+
+assert(sources.QueryBestOwnedConsumableCategoryItem(4) == 1002,
+    "category consumables should resolve the first owned item candidate")
 
 assert(sources.QueryBestOwnedItemVariant(1003) == 1002,
     "existing lower-rank item entries should resolve to the best owned variant in the macro order")

@@ -23,6 +23,13 @@ assert(loadfile("modules/utility/consumablemacros.lua"))("QUI", ns)
 local CM = assert(ns.ConsumableMacros, "ConsumableMacros should be exported on ns")
 assert(type(CM.GetSelectedItem) == "function", "GetSelectedItem should be a function")
 
+local potionCandidates = assert(CM.GetCategoryItemCandidates(4))
+local healthCandidates = assert(CM.GetCategoryItemCandidates(30))
+assert(potionCandidates[1] == 245902 and healthCandidates[1] == 245918,
+    "potion categories should reuse the ordered macro item definitions")
+assert(CM.GetCategoryItemCandidates(1711) == nil,
+    "categories with static catalog fallbacks should not synthesize candidates")
+
 -- Configured flask family -> first variant itemID + family label.
 local flask = CM.GetSelectedItem("selectedFlask")
 assert(flask and flask.itemID == 245930,

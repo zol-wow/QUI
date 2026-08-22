@@ -308,6 +308,19 @@ function CDMSources.QueryItemCount(itemID, includeBank, includeUses, forceUpdate
     return _C_GetItemCount(itemID, includeBank, includeUses, forceUpdate)
 end
 
+function CDMSources.QueryBestOwnedConsumableCategoryItem(categoryID)
+    local consumables = ns.ConsumableMacros
+    local getCandidates = consumables and consumables.GetCategoryItemCandidates
+    local candidates = getCandidates and getCandidates(categoryID)
+    if type(candidates) ~= "table" then return nil end
+    for _, itemID in ipairs(candidates) do
+        local count = CDMSources.QueryItemCount(itemID, false, false)
+        if issecretvalue and issecretvalue(count) then return nil end -- @secret-policy: reject-secret-value
+        if type(count) == "number" and count > 0 then return itemID end
+    end
+    return nil
+end
+
 function CDMSources.QueryBestOwnedItemVariant(itemID)
     if not itemID then return nil end
     if issecretvalue and issecretvalue(itemID) then return nil end -- @secret-policy: reject-secret-ids

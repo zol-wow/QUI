@@ -1152,6 +1152,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
         if event == "PLAYER_REGEN_ENABLED" then
             controller:DrainDeferredFullRefresh()
+            if callbacks.refreshPendingSecureAttributes then
+                callbacks.refreshPendingSecureAttributes()
+            end
             return
         end
         if event == "UPDATE_MACROS" then

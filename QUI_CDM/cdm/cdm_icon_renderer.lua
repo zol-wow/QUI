@@ -406,7 +406,9 @@ local function GetItemIDForEntry(entry)
             and select(2, Sources.QueryLastCategoryCooldownSource(entry.id))
         local fallbackItemID = ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
             and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id)
-        return categoryItemID or fallbackItemID or entry.itemID
+        return categoryItemID or entry.itemID or fallbackItemID
+            or (Sources and Sources.QueryBestOwnedConsumableCategoryItem
+                and Sources.QueryBestOwnedConsumableCategoryItem(entry.id))
     end
     return nil
 end
@@ -1719,6 +1721,7 @@ UpdateIconSecureAttributes = function(icon, entry, viewerType)
         icon._pendingSecureUpdate = true
         return
     end
+    icon._pendingSecureUpdate = nil
 
     if viewerType == "buff" then
         if icon.clickButton then
@@ -1773,11 +1776,17 @@ UpdateIconSecureAttributes = function(icon, entry, viewerType)
         end
     elseif entry.type == "item" or entry.type == "consumable" then
         local itemID = GetItemIDForEntry(entry)
+        if entry.type == "consumable" and itemID then
+            entry.itemID = itemID
+        end
         local itemName = Sources and Sources.QueryItemNameByID and Sources.QueryItemNameByID(itemID)
         if itemName then
             btn:SetAttribute("type", "item")
             btn:SetAttribute("item", itemName)
             btn:Show()
+            if entry.type == "consumable" then
+                icon._lastConsumableSecureItemID = itemID
+            end
         else
             ClearClickButtonAttributes(btn)
             btn:Hide()
@@ -1805,7 +1814,6 @@ UpdateIconSecureAttributes = function(icon, entry, viewerType)
         end
     end
 
-    icon._pendingSecureUpdate = nil
 end
 
 function CDMIcons.UpdateSecureClickOverlay(icon, entry, viewerType)
@@ -2620,6 +2628,11 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
         local itemID = GetItemIDForEntry(entry)
         if itemID and entry.type == "item" then
             RefreshItemIconVisuals(icon, entry, itemID)
+        end
+        if itemID and entry.type == "consumable"
+            and icon._lastConsumableSecureItemID ~= itemID then
+            entry.itemID = itemID
+            UpdateIconSecureAttributes(icon, entry, entry.viewerType)
         end
         if itemID and stackTextWritesAllowed and Sources and Sources.QueryItemCount then
             local containerDB = GetTrackerSettings(entry.viewerType)
@@ -4637,6 +4650,16 @@ do
         refreshCustomAuraTargets = function(identityChanged)
             if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.RefreshTargets then
                 ns.CDMCustomAuraRuns.RefreshTargets(identityChanged)
+            end
+        end,
+        refreshPendingSecureAttributes = function()
+            for _, pool in pairs(iconPools) do
+                for _, icon in ipairs(pool) do
+                    if icon and icon._pendingSecureUpdate then
+                        local entry = icon._spellEntry
+                        UpdateIconSecureAttributes(icon, entry, entry and entry.viewerType)
+                    end
+                end
             end
         end,
     }
