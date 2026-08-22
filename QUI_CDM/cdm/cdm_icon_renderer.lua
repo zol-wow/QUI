@@ -4285,7 +4285,6 @@ local cdEventFrame = CreateFrame("Frame")
 cdEventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
 cdEventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 cdEventFrame:RegisterEvent("ITEM_COUNT_CHANGED")
-cdEventFrame:RegisterEvent("SPELL_UPDATE_USES")
 cdEventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_SOFT_ENEMY_CHANGED")
@@ -4661,9 +4660,9 @@ local function OnCDMCooldownChanged(_, spellID, baseSpellID, kind, category, sta
     end
 end
 
-local function OnCDMChargesChanged(_, spellID)
+local function OnCDMChargesChanged(_, spellID, baseSpellID)
     if runtimeRefresh then
-        return runtimeRefresh:HandleChargesChanged(_, spellID)
+        return runtimeRefresh:HandleChargesChanged(_, spellID, baseSpellID)
     end
 end
 

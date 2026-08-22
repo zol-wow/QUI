@@ -244,6 +244,8 @@ local function entryHasLinkedSpellIDs(callbacks, icon, entry)
     return entryLinkedSpellIDsMatch(callbacks, icon, entry)
 end
 
+local itemEntryMatchesAuraSpellIdentifierSet
+
 local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs)
     if not hasSpellIDs or not entry then return false end
     if spellIdentifierSetHas(callbacks, spellIDs, icon and icon._runtimeSpellID) then return true end
@@ -258,10 +260,11 @@ local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, 
         end
     end
 
+    if itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs) then return true end
     return entryLinkedSpellIDsMatch(callbacks, icon, entry, spellIDs)
 end
 
-local function itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs)
+itemEntryMatchesAuraSpellIdentifierSet = function(callbacks, entry, spellIDs, hasSpellIDs)
     if not hasSpellIDs or not (entry and callbacks.queryItemSpell) then return false end
     local itemID = callbacks.getItemIDForEntry and callbacks.getItemIDForEntry(entry)
     if normalizeSpellIdentifier(callbacks, itemID) == nil then return false end
@@ -343,8 +346,8 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if state.frame then
             state.frame:SetScript("OnUpdate", nil)
             if state.frame.Hide then state.frame:Hide() end
-        end
     end
+end
 
     function controller:AddSpellIdentifierToSet(set, rawID)
         return addSpellIdentifierToSet(callbacks, set, rawID)
@@ -1219,10 +1222,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
             return
         end
-        if event == "SPELL_UPDATE_USES" then
-            controller:QueueItemScopeRefresh({ refreshRuntime = true })
-            return
-        end
     end
 
     function controller:Handle(event, arg1, arg2, arg3, arg4, frame)
@@ -1304,14 +1303,15 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
-    function controller:HandleChargesChanged(_, spellID)
+    function controller:HandleChargesChanged(_, spellID, baseSpellID)
         if not isRuntimeEnabled(callbacks) then return end
         if callbacks.requestStackTextUpdate then
             callbacks.requestStackTextUpdate()
         end
-        if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
+        if normalizeSpellIdentifier(callbacks, spellID) ~= nil
+            or normalizeSpellIdentifier(callbacks, baseSpellID) ~= nil then
             if runtimeRefreshStats then runtimeRefreshStats.chargeCooldownSkips = runtimeRefreshStats.chargeCooldownSkips + 1 end
-            controller:QueueResolvedCooldownForSpellID(spellID, nil)
+            controller:QueueResolvedCooldownForSpellID(spellID, baseSpellID)
         else
             if callbacks.scheduleUpdate then
                 callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "charges")

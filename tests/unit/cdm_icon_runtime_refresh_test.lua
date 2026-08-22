@@ -113,6 +113,7 @@ local customCooldownIcon = makeIcon("customCooldown", {
 })
 local consumableIcon = makeIcon("consumable", {
     id = 808,
+    itemID = 5512,
     kind = "cooldown",
     type = "consumable",
     viewerType = "essential",
@@ -221,6 +222,7 @@ local controller = module.Create({
     end,
     queryItemSpell = function(itemID)
         if itemID == 404 then return "Item Use", 707 end
+        if itemID == 5512 then return "Healthstone", 196277 end
         return nil
     end,
     queryCooldownAuraBySpellID = function(spellID)
@@ -368,9 +370,12 @@ reset(applied)
 reset(runtimeUpdated)
 reset(visibilityUpdated)
 wipe(stackWriteStates)
-controller:Handle("SPELL_UPDATE_USES", 196277)
-assert(runtimeUpdated.item == 1 and runtimeUpdated.consumable == 1,
-    "spell use-count changes should refresh item and category-consumable counts")
+controller:Handle("SPELL_UPDATE_USES", 196277, 196277)
+assert(next(runtimeUpdated) == nil,
+    "spell use-count events should refresh through the resolver bus only")
+controller:HandleChargesChanged("CDM:CHARGES_CHANGED", nil, 196277)
+assert(runtimeUpdated.item == nil and runtimeUpdated.consumable == 1,
+    "spell use-count changes should refresh only the associated category consumable")
 assert(runtimeUpdated.spell == nil,
     "spell use-count changes should stay scoped to item-backed icons")
 assert(#stackWriteStates == 2 and stackWriteStates[1] == true and stackWriteStates[2] == false,
