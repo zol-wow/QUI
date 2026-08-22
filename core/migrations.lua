@@ -7,7 +7,7 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 local _currentGlobalDB     = nil
 local _currentProfileKey   = nil
 
-local CURRENT_SCHEMA_VERSION = 61
+local CURRENT_SCHEMA_VERSION = 62
 
 local MIN_SUPPORTED_SCHEMA = 47
 
@@ -737,6 +737,26 @@ function Migrations.PurgeOrphanContainerSatellites(profile)
     end
 
     return true
+end
+
+function Migrations.PurgeLegacyCustomBarShadowStores(profile)
+    local ncdm = profile and profile.ncdm
+    local containers = ncdm and ncdm.containers
+    if type(ncdm) ~= "table" or type(containers) ~= "table" then return false end
+
+    local toRemove = {}
+    for key in pairs(ncdm) do
+        if type(key) == "string"
+            and (key:find("^custom_") or key:find("^customBar_"))
+            and type(containers[key]) == "table"
+        then
+            toRemove[#toRemove + 1] = key
+        end
+    end
+    for _, key in ipairs(toRemove) do
+        ncdm[key] = nil
+    end
+    return #toRemove > 0
 end
 
 local CUSTOM_TRACKER_ANCHOR_PREFIX = "customTracker:"
@@ -1613,6 +1633,8 @@ function Migrations.RunOnProfile(profile)
         end
 
         Migrations.FoldDefensiveIndicatorIntoElements(profile)
+
+        Migrations.PurgeLegacyCustomBarShadowStores(profile)
 
         Migrations.PurgeOrphanContainerSatellites(profile)
     end

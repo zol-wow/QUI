@@ -420,7 +420,10 @@ local function ResolveTrackerDB(containerKey)
         return nil
     end
 
-    return ncdm[containerKey] or (ncdm.containers and ncdm.containers[containerKey]) or nil
+    if IsBuiltIn(containerKey) then
+        return ncdm[containerKey]
+    end
+    return ncdm.containers and ncdm.containers[containerKey] or nil
 end
 
 local function RefreshKeybinds()

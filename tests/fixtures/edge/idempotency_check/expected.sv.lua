@@ -8367,7 +8367,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 61,
+        _schemaVersion = 62,
         cdm = {
           engine = "owned"
         },

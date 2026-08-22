@@ -189,4 +189,18 @@ assert(#specList == 2, "record must fold into the current spec list")
 assert(specList[1].id == QUELL, "record returns to its saved slot in the spec list")
 assert(next(specBarDB.dormantSpells) == nil, "specSpecific shelf must be emptied")
 
+specBarDB.entries = { { type = "consumable", id = 1711, kind = "cooldown" } }
+local beforeLegacyMerge = #specList
+local activeSpecEntries = ns.CDMSpellData:GetSpecEntries("spec_bar")
+assert(#activeSpecEntries == beforeLegacyMerge + 1,
+    "legacy shared entries must merge into an existing spec list")
+assert(activeSpecEntries[#activeSpecEntries].id == 1711,
+    "legacy category entry must reach the renderer's active spec list")
+assert(#specBarDB.entries == 0, "legacy shared entries must be drained after migration")
+
+specList[#specList + 1] = { type = "spell", id = 6201, kind = "cooldown" }
+local preservedEntries = ns.CDMSpellData:GetSpecEntries("spec_bar")
+assert(preservedEntries[#preservedEntries].id == 6201,
+    "Create Healthstone spell 6201 must remain a valid independent entry")
+
 print("OK: cdm_spelldata_dormant_foldback_test")

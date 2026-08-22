@@ -34,6 +34,21 @@ local _C_IsSpellInRange = C_Spell and C_Spell.IsSpellInRange
 local _C_SpellHasRange = C_Spell and C_Spell.SpellHasRange
 local _C_FindSpellBookSlotForSpell = C_SpellBook and C_SpellBook.FindSpellBookSlotForSpell
 local _C_GetNumSpellBookSkillLines = C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines
+local _lastCategoryCooldownSources = {}
+
+local function QueryCategoryMetadataSpellID(categoryID)
+    if not categoryID then return nil end
+    local index = ns.CDMIndex
+    local record = index and index.GetByCategory and index.GetByCategory(categoryID)
+    local cooldownID = record and record.cooldownID
+    if cooldownID == nil then return nil end
+    local catalog = ns.CDMCatalog
+    local info = catalog and catalog.GetCooldownInfo and catalog.GetCooldownInfo(cooldownID)
+    if type(info) ~= "table" then return nil end
+    local spellID = info.overrideSpellID or info.spellID
+    if WoW_IsSecretValue and WoW_IsSecretValue(spellID) then return nil end -- @secret-policy: reject-secret-ids
+    return type(spellID) == "number" and spellID or nil
+end
 
 function CDMSources.QuerySpellCharges(spellID)
     if not spellID or not _C_GetSpellCharges then return nil, false end
@@ -52,9 +67,19 @@ end
 
 function CDMSources.QueryLastCategoryCooldownSource(categoryID)
     if not categoryID or not _C_GetLastCategoryCooldownSource then return nil, nil end
+    local cached = _lastCategoryCooldownSources[categoryID]
     local spellID, itemID = _C_GetLastCategoryCooldownSource(categoryID)
     if issecretvalue and (issecretvalue(spellID) or issecretvalue(itemID)) then
-        return nil, nil
+        return cached and cached.spellID or QueryCategoryMetadataSpellID(categoryID),
+            cached and cached.itemID or nil
+    end
+    if spellID == nil then
+        spellID = QueryCategoryMetadataSpellID(categoryID)
+    end
+    if spellID ~= nil and itemID ~= nil then
+        _lastCategoryCooldownSources[categoryID] = { spellID = spellID, itemID = itemID }
+    elseif cached then
+        return cached.spellID, cached.itemID
     end
     return spellID, itemID
 end
@@ -179,6 +204,7 @@ local _C_GetItemIconByID = C_Item and C_Item.GetItemIconByID
 local _C_GetItemNameByID = C_Item and C_Item.GetItemNameByID
 local _C_GetItemSpell = C_Item and C_Item.GetItemSpell
 local _C_GetItemQualityByID = C_Item and C_Item.GetItemQualityByID
+local _C_IsUsableItem = C_Item and C_Item.IsUsableItem
 
 function CDMSources.QueryItemInfoInstant(itemID)
     if not itemID or not _C_GetItemInfoInstant then return nil end
@@ -203,6 +229,11 @@ end
 function CDMSources.QueryItemQualityByID(itemID)
     if not itemID or not _C_GetItemQualityByID then return nil end
     return _C_GetItemQualityByID(itemID)
+end
+
+function CDMSources.QueryItemUsable(itemID)
+    if not itemID or not _C_IsUsableItem then return nil, nil end
+    return _C_IsUsableItem(itemID)
 end
 
 function CDMSources.QueryItemProfessionQualityInfo(itemInfo)
@@ -284,10 +315,20 @@ function CDMSources.QueryBestOwnedItemVariant(itemID)
 end
 
 local _C_GetItemCooldown = C_Item and C_Item.GetItemCooldown
+local _C_Container_GetItemCooldown = C_Container and C_Container.GetItemCooldown
 
 function CDMSources.QueryItemCooldown(itemID)
-    if not itemID or not _C_GetItemCooldown then return nil end
-    return _C_GetItemCooldown(itemID)
+    if not itemID then return nil end
+    if _C_Container_GetItemCooldown then
+        local startTime, duration, enabled = _C_Container_GetItemCooldown(itemID)
+        if type(startTime) ~= "nil" or type(duration) ~= "nil" or type(enabled) ~= "nil" then
+            return startTime, duration, enabled
+        end
+    end
+    if _C_GetItemCooldown then
+        return _C_GetItemCooldown(itemID)
+    end
+    return nil
 end
 
 local function QueryScannerActive(scanner, spellID, itemID)

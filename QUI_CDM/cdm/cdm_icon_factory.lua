@@ -150,7 +150,18 @@ function CDMIconFactory.ShowEntryTooltip(owner, entry, tooltipContext)
         if not sid and ns.CDMSpellData and ns.CDMSpellData.ResolveDisplaySpellID then
             sid = ns.CDMSpellData:ResolveDisplaySpellID(entry)
         end
-        if sid then
+        local consumableItemID
+        if entry.type == "consumable" then
+            consumableItemID = Sources and Sources.QueryLastCategoryCooldownSource
+                and select(2, Sources.QueryLastCategoryCooldownSource(entry.id))
+            consumableItemID = consumableItemID
+                or (ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
+                    and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id))
+                or entry.itemID
+        end
+        if consumableItemID then
+            GameTooltip.SetItemByID(GameTooltip, consumableItemID)
+        elseif sid then
             if entry.type == "trinket" or entry.type == "slot" then
                 local itemID = entry.itemID
                 if not itemID and Sources and Sources.QueryInventoryItemID then

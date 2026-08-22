@@ -11,19 +11,52 @@ C_Item = {
     GetItemCount = function(itemID)
         return counts[itemID] or 0
     end,
+    GetItemCooldown = function(itemID)
+        return 400, 30, itemID == 5512 and 1 or 0
+    end,
 }
+local itemCooldownQueries = {}
+local containerCooldownAvailable = true
+C_Container = {
+    GetItemCooldown = function(itemID)
+        itemCooldownQueries[#itemCooldownQueries + 1] = itemID
+        if containerCooldownAvailable then
+            return 300, 60, 1
+        end
+    end,
+}
+local categorySourceAvailable = true
+local categoryMetadataAvailable = true
 C_Spell = {
     GetLastCategoryCooldownSource = function(categoryID)
-        if categoryID == 1711 then return 6262, 5512 end
+        if categoryID == 1711 then
+            if categorySourceAvailable then return 6262, 5512 end
+            return nil, nil
+        end
         return nil, nil
     end,
 }
-
 local ns = {
     ConsumableMacros = {
         GetVariantOrderForItem = function(itemID)
             if itemID == 1001 or itemID == 1002 or itemID == 1003 then
                 return { 1001, 1002, 1003 }
+            end
+            return nil
+        end,
+    },
+    CDMIndex = {
+        GetByCategory = function(categoryID)
+            if categoryID == 1711 and categoryMetadataAvailable then
+                return { cooldownID = 7001 }
+            end
+            return nil
+        end,
+    },
+    CDMCatalog = {
+        GetCooldownInfo = function(cooldownID)
+            if cooldownID == 7001 then
+                return { spellID = 6262, spellCategoryID = 1711 }
             end
             return nil
         end,
@@ -47,5 +80,18 @@ assert(sources.QueryBestOwnedItemVariant(2000) == 2000,
 local sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
 assert(sourceSpellID == 6262 and sourceItemID == 5512,
     "category cooldown source should return the last spell and item")
+categorySourceAvailable = false
+sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
+assert(sourceSpellID == 6262 and sourceItemID == 5512,
+    "category cooldown source should retain the last readable pair when combat values are opaque")
+categoryMetadataAvailable = false
+local startTime, duration, enabled = sources.QueryItemCooldown(5512)
+assert(startTime == 300 and duration == 60 and enabled == 1
+        and itemCooldownQueries[1] == 5512,
+    "item cooldowns should use C_Container's direct item-ID API")
+containerCooldownAvailable = false
+startTime, duration, enabled = sources.QueryItemCooldown(5512)
+assert(startTime == 400 and duration == 30 and enabled == 1,
+    "item cooldowns should fall back to C_Item when C_Container returns no tuple")
 
 print("OK: cdm_sources_item_quality_variant_test")

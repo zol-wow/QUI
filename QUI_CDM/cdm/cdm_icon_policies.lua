@@ -587,6 +587,7 @@ local _, ns = ...
 
 local CDMIconItemVisualPolicy = {}
 ns.CDMIconItemVisualPolicy = CDMIconItemVisualPolicy
+local Shared = ns.CDMShared
 
 local PROFESSION_QUALITY_DRAW_LAYER = "ARTWORK"
 local PROFESSION_QUALITY_DRAW_SUBLEVEL = 1
@@ -677,8 +678,11 @@ function CDMIconItemVisualPolicy.Create(callbacks)
 
         local ncdm = getNCDM()
         local viewerType = entry.viewerType
-        local containerDB = ncdm and viewerType
-            and (ncdm[viewerType] or (ncdm.containers and ncdm.containers[viewerType]))
+        local containerDB = Shared and Shared.GetContainerDB
+            and Shared.GetContainerDB(viewerType)
+        if not containerDB and ncdm and ncdm.containers then
+            containerDB = ncdm.containers[viewerType]
+        end
         if containerDB and containerDB.showProfessionQuality == false then
             controller:ClearProfessionQuality(icon)
             return
@@ -1040,9 +1044,9 @@ function CDMIconRangePolicy.Create(callbacks)
         return nil
     end
 
-    local function queryReadableSpellUsable(spellID)
-        if not spellID or not callbacks.querySpellUsable then return true, false end
-        local usable, noMana = callbacks.querySpellUsable(spellID)
+    local function queryReadableUsable(query, id)
+        if not id or not query then return true, false end
+        local usable, noMana = query(id)
         local noManaBool = type(noMana) == "boolean" and noMana or false
         if type(usable) == "boolean" and usable == false then return false, noManaBool end
         if type(usable) == "boolean" and usable == true then return true, noManaBool end
@@ -1150,10 +1154,22 @@ function CDMIconRangePolicy.Create(callbacks)
         end
 
         if newVisualState == "normal" and usabilityEnabled and not cooldownVisualPriority then
-            local isUsable = controller.usableCycleCache[spellID]
+            local usabilityID = spellID
+            local usabilityQuery = callbacks.querySpellUsable
+            local usabilityCacheKey = spellID
+            if entry.type == "consumable" and callbacks.queryItemUsable and callbacks.getItemIDForEntry then
+                local itemID = callbacks.getItemIDForEntry(entry)
+                if itemID then
+                    usabilityID = itemID
+                    usabilityQuery = callbacks.queryItemUsable
+                    usabilityCacheKey = "item:" .. tostring(itemID)
+                end
+            end
+
+            local isUsable = controller.usableCycleCache[usabilityCacheKey]
             if isUsable == nil then
-                isUsable = queryReadableSpellUsable(spellID)
-                controller.usableCycleCache[spellID] = isUsable
+                isUsable = queryReadableUsable(usabilityQuery, usabilityID)
+                controller.usableCycleCache[usabilityCacheKey] = isUsable
             end
             if not isUsable then
                 local chargeState = callbacks.resolveCooldownActivityState
@@ -1583,7 +1599,24 @@ function CDMIconCustomBarPolicy.Create(callbacks)
         end
 
         local sources = Sources()
-        if entry.type == "item" then
+        if entry.type == "consumable" then
+            local itemID = sources and sources.QueryLastCategoryCooldownSource
+                and select(2, sources.QueryLastCategoryCooldownSource(entry.id))
+            itemID = itemID
+                or (ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
+                    and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id))
+                or entry.itemID
+            if itemID and sources and sources.QueryItemCount then
+                local count = sources.QueryItemCount(itemID, false, containerDB and containerDB.showItemCharges == true, true)
+                if issecretvalue and issecretvalue(count) then
+                    return true -- @secret-policy: opaque-value-present
+                end
+                if type(count) == "number" then
+                    return count > 0
+                end
+            end
+            return true
+        elseif entry.type == "item" then
             local itemID = ResolveEntryItemID(entry)
             if sources and sources.QueryItemInfoInstant and Enum and Enum.ItemClass then
                 local instantItemID, instantItemType, instantItemSubType, instantEquipLoc, instantIcon, classID =

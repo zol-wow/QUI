@@ -68,7 +68,6 @@ local itemCdDurObj = {
         return ITEM_DESAT_FROM_CURVE
     end,
 }
-
 local curveAddPoints = {}
 C_CurveUtil = {
     CreateCurve = function()
@@ -238,11 +237,16 @@ local function makeIcon()
         function() return desatBool end
 end
 
-local function makeItemIcon()
+local function makeItemIcon(entryID, entryType)
     local desatAmount, desatBool
+    local durationCalls, lastClearWhenZero = 0, nil
     local icon = {
         Cooldown = {
-            SetCooldownFromDurationObject = noop,
+            SetCooldownFromDurationObject = function(_, value, clearWhenZero)
+                durationCalls = durationCalls + 1
+                lastClearWhenZero = clearWhenZero
+                assert(value ~= nil)
+            end,
             SetReverse = noop,
             SetSwipeTexture = noop,
             Clear = noop,
@@ -254,17 +258,19 @@ local function makeItemIcon()
         },
         PandemicGlow = { SetAlpha = noop },
         _spellEntry = {
-            id = ITEM_ID,
-            itemID = ITEM_ID,
+            id = entryID or ITEM_ID,
+            itemID = entryID or ITEM_ID,
             kind = "cooldown",
-            type = "item",
+            type = entryType or "item",
             viewerType = "essential",
             name = "Test Item",
         },
     }
     return icon,
         function() return desatAmount end,
-        function() return desatBool end
+        function() return desatBool end,
+        function() return durationCalls end,
+        function() return lastClearWhenZero end
 end
 
 -- Case 1: real CD rolling -> saturation is curve-driven off the real-CD-only
@@ -330,11 +336,13 @@ do
         return nil
     end
 
-    local icon, getAmount = makeItemIcon()
+    local icon, getAmount, _, _, getClearWhenZero = makeItemIcon()
     local applied = ns.CDMIcons.ApplyResolvedCooldown(icon)
     assert(applied == true, "case3: item cooldown should report an applied cooldown")
     assert(getAmount() == ITEM_DESAT_FROM_CURVE,
         "case3: item cooldown saturation must be driven by the item DurationObject curve")
+    assert(getClearWhenZero() == true,
+        "ordinary item duration objects should retain clear-when-zero behavior")
 end
 
 print("OK cdm_icons_realcd_desat_curve_test")

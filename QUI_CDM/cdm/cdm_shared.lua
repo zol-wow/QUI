@@ -227,10 +227,14 @@ function CDMShared.GetContainerDB(containerKey)
     if not ncdm or type(containerKey) ~= "string" or containerKey == "" then
         return nil
     end
-    if ncdm[containerKey] then
+    if not CDMShared.IsBuiltinContainerKey(containerKey)
+        and ncdm.containers and ncdm.containers[containerKey] then
+        return ncdm.containers[containerKey]
+    end
+    if CDMShared.IsBuiltinContainerKey(containerKey) and ncdm[containerKey] then
         return ncdm[containerKey]
     end
-    return ncdm.containers and ncdm.containers[containerKey] or nil
+    return nil
 end
 
 function CDMShared.GetContainerType(containerKey, containerDB)

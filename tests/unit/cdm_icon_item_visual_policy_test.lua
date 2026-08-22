@@ -6,10 +6,10 @@ local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
 loadChunk("QUI_CDM/cdm/cdm_icon_policies.lua", "cdm_icon_item_visual_policy.lua")("QUI", ns)
 local module = assert(ns.CDMIconItemVisualPolicy, "item visual policy module should be exported")
 
-local ncdm = {
-    variantItem = {},
-    slot = {},
-}
+local ncdm = { containers = {} }
+local variantItem = {}
+ncdm.containers.variantItem = variantItem
+ncdm.containers.slot = {}
 local bestOwnedItemID = 1001
 local secureUpdates = {}
 
@@ -142,7 +142,7 @@ assert(slotTextureWrites[#slotTextureWrites] == "slot-texture",
 assert(slotOverlay.atlas == "slot-atlas",
     "slot visual refresh should update the inventory item quality overlay")
 
-ncdm.variantItem.showProfessionQuality = false
+variantItem.showProfessionQuality = false
 controller:UpdateProfessionQuality(itemIcon)
 assert(overlayState.shown == false,
     "profession quality overlay should hide when the container disables it")

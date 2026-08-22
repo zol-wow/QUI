@@ -221,13 +221,11 @@ GetContainerDB = function(containerKey)
 
     local ncdm = GetNcdmDB()
     if not ncdm then return nil end
-    if ncdm[containerKey] then
+    if Shared and ((Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(containerKey))
+        or (Shared.GetBuiltinContainerEntryKind and Shared.GetBuiltinContainerEntryKind(containerKey))) then
         return ncdm[containerKey]
     end
-    if ncdm.containers and ncdm.containers[containerKey] then
-        return ncdm.containers[containerKey]
-    end
-    return nil
+    return ncdm.containers and ncdm.containers[containerKey] or nil
 end
 
 local function GetCDMSpellData()

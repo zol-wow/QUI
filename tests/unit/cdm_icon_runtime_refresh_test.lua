@@ -368,6 +368,18 @@ reset(applied)
 reset(runtimeUpdated)
 reset(visibilityUpdated)
 wipe(stackWriteStates)
+controller:Handle("SPELL_UPDATE_USES", 196277)
+assert(runtimeUpdated.item == 1 and runtimeUpdated.consumable == 1,
+    "spell use-count changes should refresh item and category-consumable counts")
+assert(runtimeUpdated.spell == nil,
+    "spell use-count changes should stay scoped to item-backed icons")
+assert(#stackWriteStates == 2 and stackWriteStates[1] == true and stackWriteStates[2] == false,
+    "spell use-count changes must enable then disable item-count writes")
+
+reset(applied)
+reset(runtimeUpdated)
+reset(visibilityUpdated)
+wipe(stackWriteStates)
 controller:Handle("PLAYER_EQUIPMENT_CHANGED", 13)
 assert(runtimeUpdated.item == 1, "equipment change should refresh item runtime/texture state")
 assert(runtimeUpdated.spell == nil, "equipment change should stay scoped to item-backed icons")

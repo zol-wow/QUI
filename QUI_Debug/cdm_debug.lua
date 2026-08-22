@@ -71,15 +71,24 @@ local function EventTraceGetItemUseSpellID(itemID)
 end
 
 local function EventTraceIsItemLikeEntry(entry)
-    return entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot")
+    return entry and (entry.type == "item" or entry.type == "trinket"
+        or entry.type == "slot" or entry.type == "consumable")
 end
 
 local function EventTraceResolveItemCooldownIdentity(entry)
     if not entry then return nil, nil, nil, nil end
 
-    local itemID, slotID
+    local itemID, slotID, categorySpellID
     if entry.type == "item" then
         itemID = entry.id
+    elseif entry.type == "consumable" then
+        if Sources and Sources.QueryLastCategoryCooldownSource then
+            categorySpellID, itemID = Sources.QueryLastCategoryCooldownSource(entry.id)
+        end
+        itemID = itemID
+            or (ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
+                and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id))
+            or entry.itemID
     elseif entry.type == "trinket" or entry.type == "slot" then
         slotID = entry.id
         if Sources and Sources.QueryInventoryItemID then
@@ -95,7 +104,7 @@ local function EventTraceResolveItemCooldownIdentity(entry)
 
     if not itemID then return nil, slotID, nil, nil end
 
-    local itemSpellID = EventTraceGetItemUseSpellID(itemID)
+    local itemSpellID = categorySpellID or EventTraceGetItemUseSpellID(itemID)
     local keySource = slotID and (tostring(slotID) .. ":" .. tostring(itemID)) or tostring(itemID)
     return itemID, slotID, itemSpellID, keySource
 end
@@ -209,6 +218,14 @@ local function EventTraceEntryMatches(targetID, entry)
     if CDMIcons.EventTraceSpellIDMatches(targetID, entry.spellID) then return true end
     if CDMIcons.EventTraceSpellIDMatches(targetID, entry.id) then return true end
     if CDMIcons.EventTraceSpellIDMatches(targetID, entry.itemID) then return true end
+    if entry.type == "consumable"
+        and Sources and Sources.QueryLastCategoryCooldownSource then
+        local sourceSpellID, sourceItemID = Sources.QueryLastCategoryCooldownSource(entry.id)
+        if CDMIcons.EventTraceSpellIDMatches(targetID, sourceSpellID)
+            or CDMIcons.EventTraceSpellIDMatches(targetID, sourceItemID) then
+            return true
+        end
+    end
     if type(entry.linkedSpellIDs) == "table" then
         for _, linkedID in ipairs(entry.linkedSpellIDs) do
             if CDMIcons.EventTraceSpellIDMatches(targetID, linkedID) then return true end
@@ -256,9 +273,7 @@ local function EventTraceHasItemOrSlotCooldownIconForTarget(targetID)
         for _, icon in ipairs(pool) do
             if CDMIcons.EventTraceIconMatches(icon, targetID) then
                 local entry = icon._spellEntry
-                if entry and (entry.type == "item"
-                              or entry.type == "trinket"
-                              or entry.type == "slot"
+                if entry and (EventTraceIsItemLikeEntry(entry)
                               or entry.kind == "item-cooldown"
                               or entry.itemID) then
                     return true
@@ -520,6 +535,9 @@ function CDMIcons.EventTraceIconWriteState(icon)
         end
     end
 
+    local stackText = icon.StackText and icon.StackText.GetText
+        and icon.StackText.GetText(icon.StackText)
+
     local probeNumeric = ProbeNumeric
     local cdStart, cdDur = "nil", "nil"
     if baseSid and Sources and Sources.QuerySpellCooldown then
@@ -552,7 +570,7 @@ function CDMIcons.EventTraceIconWriteState(icon)
         tostring(icon._activeAuraSpellID),
         qChg, qDur, qChgO, qDurO,
         cdStart, cdDur,
-        CDMIcons.EventTraceValue(icon.stackText),
+        CDMIcons.EventTraceValue(stackText),
         tostring(icon._stackTextSource),
         eMaxCharges)
 end
@@ -562,7 +580,23 @@ function CDMIcons.EventTraceAPISummary(spellID)
     local chargeActive, currentCharges, maxCharges = nil, nil, nil
     local usable, resourceBlocked = nil, nil
     local itemStart, itemDuration, itemEnabled = nil, nil, nil
-    local itemSpellID = EventTraceGetItemUseSpellID(spellID)
+    local itemID, itemSpellID, matchedConsumable
+    for _, pool in pairs(iconPools) do
+        for _, icon in ipairs(pool) do
+            local entry = icon and icon._spellEntry
+            if entry and entry.type == "consumable"
+                and CDMIcons.EventTraceIconMatches(icon, spellID) then
+                matchedConsumable = true
+                itemID, _, itemSpellID = EventTraceResolveItemCooldownIdentity(entry)
+                break
+            end
+        end
+        if matchedConsumable then break end
+    end
+    if not matchedConsumable then
+        itemID = spellID
+        itemSpellID = EventTraceGetItemUseSpellID(itemID)
+    end
     local itemSpellCdActive, itemSpellCdOnGCD = nil, nil
 
     if Sources and Sources.QuerySpellCooldown then
@@ -571,7 +605,7 @@ function CDMIcons.EventTraceAPISummary(spellID)
             cdActive = EventTraceCooldownInfoField(cdInfo, "isActive")
             cdOnGCD = cdInfo.isOnGCD
         end
-        if itemSpellID then
+        if itemSpellID and itemSpellID ~= spellID then
             local itemSpellCdInfo = Sources.QuerySpellCooldown(itemSpellID)
             if itemSpellCdInfo then
                 itemSpellCdActive = EventTraceCooldownInfoField(itemSpellCdInfo, "isActive")
@@ -593,14 +627,14 @@ function CDMIcons.EventTraceAPISummary(spellID)
         resourceBlocked = isResourceBlocked
     end
     if Sources and Sources.QueryItemCooldown then
-        local startTime, duration, enabled = Sources.QueryItemCooldown(spellID)
+        local startTime, duration, enabled = Sources.QueryItemCooldown(itemID)
         itemStart = startTime
         itemDuration = duration
         itemEnabled = enabled
     end
 
     return string.format(
-        "api cdActive=%s isOnGCD=%s charges=%s/%s chargeActive=%s usable=%s resourceBlocked=%s itemCd=%s/%s/%s itemSpell=%s itemSpellCd=%s/%s",
+        "api cdActive=%s isOnGCD=%s charges=%s/%s chargeActive=%s usable=%s resourceBlocked=%s itemID=%s itemCd=%s/%s/%s itemSpell=%s itemSpellCd=%s/%s",
         CDMIcons.EventTraceValue(cdActive),
         CDMIcons.EventTraceValue(cdOnGCD),
         CDMIcons.EventTraceValue(currentCharges),
@@ -608,6 +642,7 @@ function CDMIcons.EventTraceAPISummary(spellID)
         CDMIcons.EventTraceValue(chargeActive),
         CDMIcons.EventTraceValue(usable),
         CDMIcons.EventTraceValue(resourceBlocked),
+        CDMIcons.EventTraceValue(itemID),
         CDMIcons.EventTraceValue(itemStart),
         CDMIcons.EventTraceValue(itemDuration),
         CDMIcons.EventTraceValue(itemEnabled),
@@ -1373,6 +1408,17 @@ local function CDMGCDFirstID(...)
     return nil
 end
 
+local function CDMGCDResolveProbeSpellID(icon, entry)
+    local _, _, itemSpellID = EventTraceResolveItemCooldownIdentity(entry)
+    return CDMGCDFirstID(
+        entry and entry.type == "consumable" and itemSpellID or nil,
+        icon and icon._runtimeSpellID,
+        entry and entry.overrideSpellID,
+        entry and entry.spellID,
+        entry and entry.id,
+        entry and entry.itemID)
+end
+
 local function CDMGCDCall(owner, methodName)
     if not (owner and owner[methodName]) then
         return "n/a"
@@ -1410,10 +1456,7 @@ local function CDMGCDIconMatches(icon, needle, targetID)
     if not entry then return false end
     if targetID then
         if CDMGCDIDMatches(icon._runtimeSpellID, targetID)
-            or CDMGCDIDMatches(entry.overrideSpellID, targetID)
-            or CDMGCDIDMatches(entry.spellID, targetID)
-            or CDMGCDIDMatches(entry.id, targetID)
-            or CDMGCDIDMatches(entry.itemID, targetID) then
+            or EventTraceEntryMatches(targetID, entry) then
             return true
         end
 
@@ -1507,12 +1550,7 @@ local function CDMGCDPrintWatchSample(elapsed, needle, targetID)
             if CDMGCDIconMatches(icon, needle, targetID) then
                 matches = matches + 1
                 local entry = icon._spellEntry
-                local sid = CDMGCDFirstID(
-                    icon._runtimeSpellID,
-                    entry.overrideSpellID,
-                    entry.spellID,
-                    entry.id,
-                    entry.itemID)
+                local sid = CDMGCDResolveProbeSpellID(icon, entry)
                 local cdInfo = sid and Sources and Sources.QuerySpellCooldown
                     and Sources.QuerySpellCooldown(sid)
                 local cdActive = cdInfo and EventTraceCooldownInfoField(cdInfo, "isActive")
@@ -1635,12 +1673,7 @@ local function RunCDMDebugGCD(msg)
             if CDMGCDIconMatches(icon, needle, targetID) then
                 matches = matches + 1
                 local entry = icon._spellEntry
-                local sid = CDMGCDFirstID(
-                    icon._runtimeSpellID,
-                    entry.overrideSpellID,
-                    entry.spellID,
-                    entry.id,
-                    entry.itemID)
+                local sid = CDMGCDResolveProbeSpellID(icon, entry)
                 local cdInfo = sid and Sources and Sources.QuerySpellCooldown
                     and Sources.QuerySpellCooldown(sid)
                 local cdActive = cdInfo and EventTraceCooldownInfoField(cdInfo, "isActive")
@@ -1659,11 +1692,16 @@ local function RunCDMDebugGCD(msg)
                 if sid and Sources and Sources.QuerySpellUsable then
                     usable, resourceBlocked = Sources.QuerySpellUsable(sid)
                 end
+                local itemID = select(1, EventTraceResolveItemCooldownIdentity(entry))
+                local itemUsable = itemID and Sources and Sources.QueryItemUsable
+                    and Sources.QueryItemUsable(itemID)
                 local resolvedState = CDMGCDResolveCooldownState(icon)
                 local durObj = resolvedState and resolvedState.durObj
                 local mode = resolvedState and resolvedState.mode
                 local sourceID = resolvedState and resolvedState.sourceID
                 local cd = icon.Cooldown
+                local containerDB = ns.CDMShared and ns.CDMShared.GetContainerDB
+                    and ns.CDMShared.GetContainerDB(entry.viewerType)
 
                 print(string.format(
                     "|cff34d399[cdmgcd]|r #%d %s sid=%s viewer=%s kind=%s type=%s shown=%s",
@@ -1675,11 +1713,13 @@ local function RunCDMDebugGCD(msg)
                     CDMGCDValue(entry.type),
                     CDMGCDCall(icon, "IsShown")))
                 print(string.format(
-                    "|cff34d399[cdmgcd]|r api isActive=%s isOnGCD=%s usable=%s resourceBlocked=%s gcdDur=%s realDur=%s chargeDur=%s chargeActive=%s maxCharges=%s",
+                    "|cff34d399[cdmgcd]|r api isActive=%s isOnGCD=%s usable=%s resourceBlocked=%s itemID=%s itemUsable=%s gcdDur=%s realDur=%s chargeDur=%s chargeActive=%s maxCharges=%s",
                     CDMGCDValue(cdActive),
                     CDMGCDValue(cdOnGCD),
                     CDMGCDValue(usable),
                     CDMGCDValue(resourceBlocked),
+                    CDMGCDValue(itemID),
+                    CDMGCDValue(itemUsable),
                     CDMGCDValue(gcdDur),
                     CDMGCDValue(realDur),
                     CDMGCDValue(chargeDur),
@@ -1693,12 +1733,16 @@ local function RunCDMDebugGCD(msg)
                     tostring(icon._resolvedCooldownMode),
                     tostring(icon._lastDurObjKey)))
                 print(string.format(
-                    "|cff34d399[cdmgcd]|r icon showingGCD=%s showingReal=%s hasReal=%s hasCooldown=%s aura=%s",
+                    "|cff34d399[cdmgcd]|r icon showingGCD=%s showingReal=%s hasReal=%s hasCooldown=%s aura=%s usabilitySetting=%s visualState=%s usabilityTinted=%s rangeTinted=%s",
                     tostring(icon._showingGCDSwipe),
                     tostring(icon._showingRealCooldownSwipe),
                     tostring(icon._hasRealCooldownActive),
                     tostring(icon._hasCooldownActive),
-                    tostring(icon._auraActive)))
+                    tostring(icon._auraActive),
+                    CDMGCDValue(containerDB and containerDB.usabilityIndicator),
+                    tostring(icon._lastVisualState),
+                    tostring(icon._usabilityTinted),
+                    tostring(icon._rangeTinted)))
                 print(string.format(
                     "|cff34d399[cdmgcd]|r cooldown drawSwipe=%s intendedDrawSwipe=%s drawEdge=%s intendedDrawEdge=%s color=%s",
                     CDMGCDCall(cd, "GetDrawSwipe"),
@@ -3238,12 +3282,7 @@ local function FindDebugTargetID(target)
             local entry = icon and icon._spellEntry
             local name = entry and entry.name
             if type(name) == "string" and name:lower():find(needle, 1, true) then
-                return CDMGCDFirstID(
-                    icon._runtimeSpellID,
-                    entry.overrideSpellID,
-                    entry.spellID,
-                    entry.id,
-                    entry.itemID)
+                return CDMGCDResolveProbeSpellID(icon, entry)
             end
         end
     end

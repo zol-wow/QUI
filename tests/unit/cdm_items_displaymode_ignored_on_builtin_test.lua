@@ -38,6 +38,7 @@ C_Timer = {
 
 -- Per-item scanned-aura table.  Tests overwrite this table before each case.
 local scannedAuras = {}
+local itemCountQueries = {}
 
 local ns = {
     Helpers = {
@@ -69,7 +70,7 @@ local ns = {
             elseif key == "essential" then
                 return { containerType = "essential" }
             elseif key == "customBar:test" then
-                return { containerType = "customBar" }
+                return { containerType = "customBar", showItemCharges = true }
             end
             return nil
         end,
@@ -91,7 +92,16 @@ local ns = {
         QuerySpellInRange = function() return true end,
         QueryBestOwnedItemVariant = function(id) return id end,
         QueryInventoryItemID = function() return nil end,
-        QueryItemCount = function() return 1 end,
+        QueryItemIconByID = function(itemID) return "item-texture:" .. tostring(itemID) end,
+        QueryItemCount = function(itemID, includeBank, includeUses, forceUpdate)
+            itemCountQueries[#itemCountQueries + 1] = {
+                itemID = itemID,
+                includeBank = includeBank,
+                includeUses = includeUses,
+                forceUpdate = forceUpdate,
+            }
+            return itemID == 5512 and includeUses and 3 or 1
+        end,
         QueryItemInfoInstant = function() return nil end,
         QueryItemSpell = function() return nil, nil end,
         QueryCooldownAuraBySpellID = function() return nil end,
@@ -205,6 +215,7 @@ local icons = assert(ns.CDMIcons, "CDMIcons should be exported")
 
 -- Helper: create a minimal icon suitable for UpdateCooldownsForType.
 local function makeItemIcon(entry)
+    local textureWrites = {}
     local icon = {
         _spellEntry = entry,
         Cooldown = {
@@ -220,10 +231,10 @@ local function makeItemIcon(entry)
         Icon = {
             SetDesaturated = noop,
             SetVertexColor = noop,
-            SetTexture = noop,
+            SetTexture = function(_, value) textureWrites[#textureWrites + 1] = value end,
         },
         StackText = {
-            SetText = noop,
+            SetText = function(self, value) self.text = value end,
             Hide = noop,
             Show = noop,
             SetTextColor = noop,
@@ -235,6 +246,7 @@ local function makeItemIcon(entry)
     function icon:Show() self._shown = true end
     function icon:Hide() self._shown = false end
     function icon:SetAlpha(v) self._alpha = v end
+    icon._textureWrites = textureWrites
     return icon
 end
 
@@ -317,5 +329,30 @@ runUpdateForIcon(iconCase4, "essential")
 assert(getMode(iconCase4) == "item-cooldown",
     "Case 4: stray displayMode=auraOnly on built-in essential must be ignored, "
     .. "mode should remain 'item-cooldown' (got " .. tostring(getMode(iconCase4)) .. ")")
+
+itemCountQueries = {}
+local iconCase5 = makeItemIcon({
+    id = 1711, itemID = 5512, type = "consumable", kind = "cooldown",
+    viewerType = "customBar:test",
+})
+runUpdateForIcon(iconCase5, "customBar:test")
+assert(iconCase5.StackText.text == "3",
+    "Case 5: category consumable must show item 5512's remaining uses")
+assert(itemCountQueries[1] and itemCountQueries[1].itemID == 5512
+        and itemCountQueries[1].includeUses == true,
+    "Case 5: category consumable count must query item 5512 with uses enabled")
+assert(#iconCase5._textureWrites == 0,
+    "Case 5: category consumables must retain their fixed catalog texture")
+
+itemCountQueries = {}
+local iconCase6 = makeItemIcon({
+    id = 4, type = "consumable", kind = "cooldown",
+    viewerType = "customBar:test",
+})
+runUpdateForIcon(iconCase6, "customBar:test")
+assert(#itemCountQueries == 0,
+    "Case 6: consumables without a resolved item identity must not query a nil item count")
+assert(iconCase6.StackText.text ~= "0",
+    "Case 6: consumables without a resolved item identity must not show a zero item badge")
 
 print("PASS: cdm_items_displaymode_ignored_on_builtin_test")

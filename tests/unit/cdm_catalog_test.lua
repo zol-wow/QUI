@@ -21,6 +21,9 @@ local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
 local chunk = loadChunk("QUI_CDM/cdm/cdm_catalog.lua", "cdm_catalog.lua")
 chunk("QUI", ns)
 
+assert(ns.CDMCatalog.GetConsumableCategoryItemID(1711) == 5512,
+    "Healthstone category should expose Blizzard's tooltip item fallback")
+
 ns.CDMSources = {
     QuerySpellInfo = function(spellID)
         if spellID == 12345 then

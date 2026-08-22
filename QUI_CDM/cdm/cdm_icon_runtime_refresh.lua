@@ -1219,6 +1219,10 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
             return
         end
+        if event == "SPELL_UPDATE_USES" then
+            controller:QueueItemScopeRefresh({ refreshRuntime = true })
+            return
+        end
     end
 
     function controller:Handle(event, arg1, arg2, arg3, arg4, frame)
