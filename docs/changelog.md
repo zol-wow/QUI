@@ -8,27 +8,27 @@ nav_order: 5
 
 This page summarizes the user-facing changes since the last mainline release. For every beta entry and technical fix, see the full [CHANGELOG.md](https://github.com/zol-wow/QUI/blob/main/CHANGELOG.md).
 
-## Current Release: 5.2.2-beta3
+## Current Release: 5.2.2-beta4
 
 {: .warning }
 **WoW 12.1 only.** This build targets patch 12.1 (interface 120100) and will not load on the 12.0.x client.
 
-QUI 5.2.2-beta3 continues the 5.2.2 beta line with cross-unit aura refresh
-and combat-safe cooldown reanchor fixes.
+QUI 5.2.2-beta4 continues the 5.2.2 beta line with Cooldown Manager target
+debuff, custom-bar storage, and consumable fixes.
 
 {: .important }
 Back up your `WTF` folder before updating. Manual installs must copy every `QUI*` folder from the release zip into `Interface\AddOns\`.
 
-## What's New in 5.2.2-beta3
+## What's New in 5.2.2-beta4
 
 ### Beta fixes
 
-- **Cooldown Manager aura refreshes** now follow linked auras across self units,
-  including pet aura deltas and unknown/full refreshes.
-- **Cooldown Manager reanchors** preserve native timing ownership, avoid
-  duplicate aura-phase refreshes, and defer protected-frame work during combat.
-- **Consumable cooldowns** refresh their linked aura state and presentation
-  consistently with other built-in cooldown entries.
+- **Target-debuff cooldowns** repair stale linked state while preserving
+  Blizzard's native cooldown ownership.
+- **Custom Cooldown Manager bars** use canonical profile storage without
+  overwriting built-in container settings during migration.
+- **Consumable categories** consistently resolve owned items for cooldowns,
+  counts, usability, tooltips, and secure clicks.
 
 ## What's New in 5.2.1
 
