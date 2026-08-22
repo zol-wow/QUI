@@ -153,13 +153,11 @@ local function GetTrackerSettings(trackerKey)
 
     local db = GetDB()
     if not db then return nil end
-    if db[trackerKey] then
+    if Shared and ((Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(trackerKey))
+        or (Shared.GetBuiltinContainerEntryKind and Shared.GetBuiltinContainerEntryKind(trackerKey))) then
         return db[trackerKey]
     end
-    if db.containers and db.containers[trackerKey] then
-        return db.containers[trackerKey]
-    end
-    return nil
+    return db.containers and db.containers[trackerKey] or nil
 end
 
 local function IsHUDAnchoredToCDM()
@@ -1325,13 +1323,13 @@ end
 
 function CDMContainers_API:GetContainers()
     local db = GetDB()
-    local ct = db and db.containers
-    if not ct then return {} end
+    if not db then return {} end
+    local ct = db.containers or {}
 
     local result = {}
     for _, key in ipairs(BUILTIN_KEYS) do
-        if ct[key] then
-            result[#result + 1] = { key = key, settings = ct[key] }
+        if db[key] then
+            result[#result + 1] = { key = key, settings = db[key] }
         end
     end
     local customKeys = {}
@@ -1350,10 +1348,11 @@ end
 function CDMContainers_API:GetContainerSettings(key)
     local db = GetDB()
     if not db then return nil end
-    if db.containers and db.containers[key] then
-        return db.containers[key]
+    if Shared and ((Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(key))
+        or (Shared.GetBuiltinContainerEntryKind and Shared.GetBuiltinContainerEntryKind(key))) then
+        return db[key]
     end
-    return db[key] or nil
+    return db.containers and db.containers[key] or nil
 end
 
 function CDMContainers_API:GetContainersByType(containerType)
@@ -1388,7 +1387,6 @@ function CDMContainers_API:CreateContainer(name, containerType)
 
     db.containers[key] = settings
 
-    db[key] = settings
 
     local frameName = "QUI_CDM_" .. key
     local frame = RegisterContainerFrame(key, CreateContainer(frameName))

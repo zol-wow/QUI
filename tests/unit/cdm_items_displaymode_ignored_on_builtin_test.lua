@@ -16,19 +16,26 @@ local BuildCooldownStateContext = dofile("tests/helpers/cdm_context_builder_stub
 
 local function noop() end
 local _now = 1000.0
+local inCombat = false
 
-function InCombatLockdown() return false end
+function InCombatLockdown() return inCombat end
 function GetTime() return _now end
 function wipe(tbl)
     for k in pairs(tbl) do tbl[k] = nil end
 end
 function CreateFrame()
-    return {
-        RegisterEvent = noop,
-        RegisterUnitEvent = noop,
-        UnregisterAllEvents = noop,
-        SetScript = noop,
-    }
+    local frame = { attributes = {}, scripts = {} }
+    frame.RegisterEvent = noop
+    frame.RegisterUnitEvent = noop
+    frame.UnregisterAllEvents = noop
+    frame.SetAllPoints = noop
+    frame.RegisterForClicks = noop
+    frame.EnableMouse = noop
+    frame.SetScript = function(self, name, callback) self.scripts[name] = callback end
+    frame.SetAttribute = function(self, name, value) self.attributes[name] = value end
+    frame.Show = function(self) self.shown = true end
+    frame.Hide = function(self) self.shown = false end
+    return frame
 end
 
 C_Timer = {
@@ -38,6 +45,10 @@ C_Timer = {
 
 -- Per-item scanned-aura table.  Tests overwrite this table before each case.
 local scannedAuras = {}
+local itemCountQueries = {}
+local categorySourceItemID
+local ownedCategoryItemID
+local itemNamesAvailable = true
 
 local ns = {
     Helpers = {
@@ -69,7 +80,7 @@ local ns = {
             elseif key == "essential" then
                 return { containerType = "essential" }
             elseif key == "customBar:test" then
-                return { containerType = "customBar" }
+                return { containerType = "customBar", showItemCharges = true, clickableIcons = true }
             end
             return nil
         end,
@@ -90,8 +101,26 @@ local ns = {
         QuerySpellHasRange = function() return false end,
         QuerySpellInRange = function() return true end,
         QueryBestOwnedItemVariant = function(id) return id end,
+        QueryBestOwnedConsumableCategoryItem = function() return ownedCategoryItemID end,
+        QueryConsumableCategoryItem = function(categoryID)
+            if categoryID == 1711 then return 5512 end
+            return ownedCategoryItemID
+        end,
+        QueryLastCategoryCooldownSource = function() return nil, categorySourceItemID end,
         QueryInventoryItemID = function() return nil end,
-        QueryItemCount = function() return 1 end,
+        QueryItemNameByID = function(itemID)
+            return itemNamesAvailable and itemID and ("item-" .. tostring(itemID))
+        end,
+        QueryItemIconByID = function(itemID) return "item-texture:" .. tostring(itemID) end,
+        QueryItemCount = function(itemID, includeBank, includeUses, forceUpdate)
+            itemCountQueries[#itemCountQueries + 1] = {
+                itemID = itemID,
+                includeBank = includeBank,
+                includeUses = includeUses,
+                forceUpdate = forceUpdate,
+            }
+            return itemID == 5512 and includeUses and 3 or 1
+        end,
         QueryItemInfoInstant = function() return nil end,
         QueryItemSpell = function() return nil, nil end,
         QueryCooldownAuraBySpellID = function() return nil end,
@@ -205,6 +234,7 @@ local icons = assert(ns.CDMIcons, "CDMIcons should be exported")
 
 -- Helper: create a minimal icon suitable for UpdateCooldownsForType.
 local function makeItemIcon(entry)
+    local textureWrites = {}
     local icon = {
         _spellEntry = entry,
         Cooldown = {
@@ -220,10 +250,10 @@ local function makeItemIcon(entry)
         Icon = {
             SetDesaturated = noop,
             SetVertexColor = noop,
-            SetTexture = noop,
+            SetTexture = function(_, value) textureWrites[#textureWrites + 1] = value end,
         },
         StackText = {
-            SetText = noop,
+            SetText = function(self, value) self.text = value end,
             Hide = noop,
             Show = noop,
             SetTextColor = noop,
@@ -235,6 +265,7 @@ local function makeItemIcon(entry)
     function icon:Show() self._shown = true end
     function icon:Hide() self._shown = false end
     function icon:SetAlpha(v) self._alpha = v end
+    icon._textureWrites = textureWrites
     return icon
 end
 
@@ -317,5 +348,60 @@ runUpdateForIcon(iconCase4, "essential")
 assert(getMode(iconCase4) == "item-cooldown",
     "Case 4: stray displayMode=auraOnly on built-in essential must be ignored, "
     .. "mode should remain 'item-cooldown' (got " .. tostring(getMode(iconCase4)) .. ")")
+
+itemCountQueries = {}
+local iconCase5 = makeItemIcon({
+    id = 1711, itemID = 5512, type = "consumable", kind = "cooldown",
+    viewerType = "customBar:test",
+})
+runUpdateForIcon(iconCase5, "customBar:test")
+assert(iconCase5.StackText.text == "3",
+    "Case 5: category consumable must show item 5512's remaining uses")
+assert(itemCountQueries[1] and itemCountQueries[1].itemID == 5512
+        and itemCountQueries[1].includeUses == true,
+    "Case 5: category consumable count must query item 5512 with uses enabled")
+assert(#iconCase5._textureWrites == 0,
+    "Case 5: category consumables must retain their fixed catalog texture")
+
+itemCountQueries = {}
+local iconCase6 = makeItemIcon({
+    id = 4, type = "consumable", kind = "cooldown",
+    viewerType = "customBar:test",
+})
+runUpdateForIcon(iconCase6, "customBar:test")
+assert(#itemCountQueries == 0,
+    "Case 6: consumables without a resolved item identity must not query a nil item count")
+assert(iconCase6.StackText.text ~= "0",
+    "Case 6: consumables without a resolved item identity must not show a zero item badge")
+
+categorySourceItemID = 245999
+ownedCategoryItemID = 245902
+local iconCase7 = makeItemIcon({
+    id = 4, itemID = 245999, type = "consumable", kind = "cooldown",
+    viewerType = "customBar:test",
+})
+local priorPool = ns.CDMIconFactory._iconPools["customBar:test"]
+ns.CDMIconFactory._iconPools["customBar:test"] = { iconCase7 }
+itemNamesAvailable = false
+icons:UpdateCooldownsForType("customBar:test")
+assert(iconCase7._lastConsumableSecureItemID == nil,
+    "Case 7: an unavailable item name must leave the secure action eligible for retry")
+itemNamesAvailable = true
+icons:UpdateCooldownsForType("customBar:test")
+assert(iconCase7.clickButton and iconCase7.clickButton.attributes.item == "item-245902",
+    "Case 7: an owned potion must create the initial secure item action")
+
+ownedCategoryItemID = 245910
+inCombat = true
+icons:UpdateCooldownsForType("customBar:test")
+assert(iconCase7._pendingSecureUpdate == true
+        and iconCase7.clickButton.attributes.item == "item-245902",
+    "Case 7: a combat item-source change must defer its secure action update")
+inCombat = false
+icons.HandleRuntimeRefresh("PLAYER_REGEN_ENABLED")
+assert(iconCase7._pendingSecureUpdate == nil
+        and iconCase7.clickButton.attributes.item == "item-245910",
+    "Case 7: combat end must apply the deferred consumable secure action")
+ns.CDMIconFactory._iconPools["customBar:test"] = priorPool
 
 print("PASS: cdm_items_displaymode_ignored_on_builtin_test")

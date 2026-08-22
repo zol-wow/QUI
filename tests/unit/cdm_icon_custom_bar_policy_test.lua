@@ -258,6 +258,12 @@ end
 assert(policy:ResolveUsability({ type = "item", id = 201 }, trackerSettings.custom, nil) == true,
     "secret item counts should be treated as usable instead of compared in Lua")
 
+sources.QueryLastCategoryCooldownSource = function() return 777, 301 end
+sources.QueryConsumableCategoryItem = function() return 302 end
+sources.QueryItemCount = function(itemID) return itemID == 302 and 1 or 0 end
+assert(policy:ResolveUsability({ type = "consumable", id = 4, itemID = 301 }, trackerSettings.custom, nil) == true,
+    "consumable usability should follow the owned item instead of a depleted recent source")
+
 sources.QueryItemSpell = function(itemID)
     if itemID == 301 then return "Item Spell", 777 end
     if itemID == 302 then return "Item Spell", 778 end

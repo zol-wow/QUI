@@ -25,7 +25,7 @@ return {
     {
         name = "schema migrated to current version",
         assert = function(sv, ctx)
-            return sv.QUI_DB.profiles.Default._schemaVersion == 61
+            return sv.QUI_DB.profiles.Default._schemaVersion == 62
         end,
     },
 }

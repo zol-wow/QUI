@@ -27,7 +27,14 @@ local ns = {
         GetGeneralFont = function() return "Fonts\\FRIZQT__.TTF" end,
         GetGeneralFontOutline = function() return "" end,
     },
-    CDMSources = {},
+    CDMSources = {
+        QueryLastCategoryCooldownSource = function(categoryID)
+            if categoryID == 1711 then return 6262, 999999 end
+        end,
+        QueryConsumableCategoryItem = function(categoryID)
+            if categoryID == 1711 then return 5512 end
+        end,
+    },
     CDMResolvers = {
         GetEntryTexture = function() return 134400 end,
         GetSpellTexture = function() return 134400 end,
@@ -47,6 +54,7 @@ GameTooltip = {
         self.anchor = anchor
     end,
     SetSpellByID = function(self, spellID) self.spellID = spellID end,
+    SetItemByID = function(self, itemID) self.itemID = itemID end,
     SetUnitAuraByAuraInstanceID = function(self, unit, auraInstanceID, filter)
         auraTooltipCalls = auraTooltipCalls + 1
         if issecretvalue(auraInstanceID) or issecretvalue(unit) or self._auraIsSecret then
@@ -66,7 +74,7 @@ local Factory = assert(ns.CDMIconFactory, "factory module must export CDMIconFac
 
 local function resetTooltip()
     GameTooltip.owner, GameTooltip.anchor = nil, nil
-    GameTooltip.spellID, GameTooltip.auraInstanceID = nil, nil
+    GameTooltip.spellID, GameTooltip.itemID, GameTooltip.auraInstanceID = nil, nil, nil
     GameTooltip.shown, GameTooltip._auraIsSecret = false, false
 end
 
@@ -104,6 +112,14 @@ assert(Factory.ShowEntryTooltip(liveOwner, { spellID = 777 }, "cdm") == true,
     "readable aura tooltip still shows")
 assert(GameTooltip.auraInstanceID == 42, "readable aura uses the aura-instance tooltip path")
 assert(GameTooltip.spellID == nil, "no spell fallback when the aura tooltip succeeded")
+
+-- Case D: consumable categories use the actual item for their tooltip.
+resetTooltip()
+local consumableOwner = { _runtimeSpellID = 6262 }
+assert(Factory.ShowEntryTooltip(consumableOwner, { type = "consumable", id = 1711 }, "cdm") == true,
+    "consumable tooltip shows")
+assert(GameTooltip.itemID == 5512 and GameTooltip.spellID == nil,
+    "consumable tooltip uses the Healthstone item")
 
 SecretSentinel.RestoreSecretStub(restoreSecret)
 print("OK: cdm_tooltip_secret_aura_fallback_test")

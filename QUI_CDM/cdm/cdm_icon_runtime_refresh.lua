@@ -244,6 +244,8 @@ local function entryHasLinkedSpellIDs(callbacks, icon, entry)
     return entryLinkedSpellIDsMatch(callbacks, icon, entry)
 end
 
+local itemEntryMatchesAuraSpellIdentifierSet
+
 local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs)
     if not hasSpellIDs or not entry then return false end
     if spellIdentifierSetHas(callbacks, spellIDs, icon and icon._runtimeSpellID) then return true end
@@ -258,10 +260,11 @@ local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, 
         end
     end
 
+    if itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs) then return true end
     return entryLinkedSpellIDsMatch(callbacks, icon, entry, spellIDs)
 end
 
-local function itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs)
+itemEntryMatchesAuraSpellIdentifierSet = function(callbacks, entry, spellIDs, hasSpellIDs)
     if not hasSpellIDs or not (entry and callbacks.queryItemSpell) then return false end
     local itemID = callbacks.getItemIDForEntry and callbacks.getItemIDForEntry(entry)
     if normalizeSpellIdentifier(callbacks, itemID) == nil then return false end
@@ -605,7 +608,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                     local entryCategory = normalizeSpellIdentifier(callbacks, entry and entry.id)
                     if normalizedCategory and entryCategory == normalizedCategory
                         and entry and entry.type == "consumable" then
-                        entry.itemID = normalizedItemID
+                        entry._runtimeItemID = normalizedItemID
                         entry._runtimeSpellID = normalizeSpellIdentifier(callbacks, eventSpellID)
                             or normalizeSpellIdentifier(callbacks, eventBaseSpellID)
                         entry._runtimeBaseSpellID = normalizeSpellIdentifier(callbacks, eventBaseSpellID)
@@ -1149,6 +1152,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
         if event == "PLAYER_REGEN_ENABLED" then
             controller:DrainDeferredFullRefresh()
+            if callbacks.refreshPendingSecureAttributes then
+                callbacks.refreshPendingSecureAttributes()
+            end
             return
         end
         if event == "UPDATE_MACROS" then
@@ -1214,6 +1220,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             return
         end
         if event == "BAG_UPDATE_DELAYED" or event == "ITEM_COUNT_CHANGED" then
+            if callbacks.invalidateConsumableCategoryItems then
+                callbacks.invalidateConsumableCategoryItems()
+            end
             controller:QueueItemScopeRefresh({ refreshRuntime = true })
             if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
             if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
@@ -1300,14 +1309,15 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
-    function controller:HandleChargesChanged(_, spellID)
+    function controller:HandleChargesChanged(_, spellID, baseSpellID)
         if not isRuntimeEnabled(callbacks) then return end
         if callbacks.requestStackTextUpdate then
             callbacks.requestStackTextUpdate()
         end
-        if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
+        if normalizeSpellIdentifier(callbacks, spellID) ~= nil
+            or normalizeSpellIdentifier(callbacks, baseSpellID) ~= nil then
             if runtimeRefreshStats then runtimeRefreshStats.chargeCooldownSkips = runtimeRefreshStats.chargeCooldownSkips + 1 end
-            controller:QueueResolvedCooldownForSpellID(spellID, nil)
+            controller:QueueResolvedCooldownForSpellID(spellID, baseSpellID)
         else
             if callbacks.scheduleUpdate then
                 callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "charges")

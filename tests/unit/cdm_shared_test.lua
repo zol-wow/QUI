@@ -45,6 +45,20 @@ assert(Shared.GetContainerDB("essential") == core.db.profile.ncdm.essential, "bu
 assert(Shared.GetContainerDB("custom") == core.db.profile.ncdm.containers.custom, "custom container lookup failed")
 assert(Shared.GetContainerDB("missing") == nil, "missing container should return nil")
 
+core.db.profile.ncdm.containers.essential = { enabled = false }
+assert(Shared.GetContainerDB("essential") == core.db.profile.ncdm.essential,
+    "built-in containers must ignore the nested compatibility copy")
+
+local staleCustom = { containerType = "customBar", entries = { { type = "spell", id = 6201 } } }
+local liveCustom = { containerType = "customBar", entries = { { type = "consumable", id = 1711 } } }
+core.db.profile.ncdm.staleCustom = staleCustom
+core.db.profile.ncdm.containers.staleCustom = liveCustom
+assert(Shared.GetContainerDB("staleCustom") == liveCustom,
+    "custom containers must prefer the canonical containers store")
+core.db.profile.ncdm.orphanCustom = staleCustom
+assert(Shared.GetContainerDB("orphanCustom") == nil,
+    "custom containers must not fall back to the legacy top-level store")
+
 assert(Shared.IsSafeNumeric(12.5) == true, "number should be safe numeric")
 assert(Shared.IsSafeNumeric("__secret__") == false, "secret should not be safe numeric")
 assert(Shared.IsSafeNumeric("12") == false, "string should not be safe numeric")

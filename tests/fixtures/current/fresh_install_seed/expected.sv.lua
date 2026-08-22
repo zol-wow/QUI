@@ -8368,7 +8368,7 @@ return {
       Default = {
         _defaultsVersion = 3,
         _needsLateAbImport = true,
-        _schemaVersion = 61,
+        _schemaVersion = 62,
         actionBars = {
           bars = {
             bags = {

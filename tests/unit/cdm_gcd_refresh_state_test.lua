@@ -10,6 +10,7 @@ local subscriptions = {}
 local currentOnGCD = false
 local gcdQueryable = false
 local gcdDuration = { token = "gcd-duration" }
+local healthstoneItemUsable = true
 
 function InCombatLockdown() return false end
 function GetTime() return 100 end
@@ -114,10 +115,17 @@ local ns = {
     },
     CDMSources = {
         QuerySpellUsable = function(spellID)
-            if spellID == 11111 then
+            if spellID == 11111 or spellID == 6262 then
                 return false, false
             end
             return true, false
+        end,
+        QueryItemUsable = function(itemID)
+            assert(itemID == 5512, "consumable usability should query item 5512")
+            return healthstoneItemUsable, false
+        end,
+        QueryConsumableCategoryItem = function(categoryID)
+            return categoryID == 1711 and 5512 or nil
         end,
         QuerySpellCooldown = function()
             return { isActive = currentOnGCD, isOnGCD = currentOnGCD }
@@ -203,8 +211,15 @@ factory:EnsurePool("essential")
 local pool = factory:GetIconPool("essential")
 local first = makeIcon(11111)
 local second = makeIcon(22222)
+local healthstone = makeIcon(1711)
+healthstone._spellEntry.type = "consumable"
+healthstone._spellEntry.spellID = nil
+healthstone._spellEntry.overrideSpellID = nil
+healthstone._spellEntry.itemID = 5512
+healthstone._runtimeSpellID = 6262
 pool[#pool + 1] = first
 pool[#pool + 1] = second
+pool[#pool + 1] = healthstone
 
 -- _showingGCDSwipe is the icon-local GCD render lock. (The former _isOnGCD
 -- icon field is gone: isOnGCD is now read directly off cdInfo by the resolver,
@@ -233,6 +248,18 @@ assert(first._usabilityTinted == true, "SPELL_UPDATE_USABLE should immediately a
 local firstColor = first.vertexColors[#first.vertexColors]
 assert(firstColor and firstColor[1] == 0.4 and firstColor[2] == 0.4 and firstColor[3] == 0.4 and firstColor[4] == 1,
     "SPELL_UPDATE_USABLE should darken unusable icons without waiting for the range poll")
+assert(healthstone._usabilityTinted == nil,
+    "an item-usable Healthstone should not inherit runtime spell 6262's unusable state")
+
+healthstoneItemUsable = false
+icons.HandleRuntimeRefresh("SPELL_UPDATE_USABLE")
+
+assert(healthstone._usabilityTinted == true,
+    "an unusable Healthstone item should darken its category icon")
+local healthstoneColor = healthstone.vertexColors[#healthstone.vertexColors]
+assert(healthstoneColor and healthstoneColor[1] == 0.4 and healthstoneColor[2] == 0.4
+        and healthstoneColor[3] == 0.4 and healthstoneColor[4] == 1,
+    "an unusable Healthstone item should darken the category item icon")
 
 currentOnGCD = true
 gcdQueryable = true
