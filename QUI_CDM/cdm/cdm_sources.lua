@@ -35,19 +35,34 @@ local _C_SpellHasRange = C_Spell and C_Spell.SpellHasRange
 local _C_FindSpellBookSlotForSpell = C_SpellBook and C_SpellBook.FindSpellBookSlotForSpell
 local _C_GetNumSpellBookSkillLines = C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines
 local _lastCategoryCooldownSources = {}
+local _categoryMetadataSpellIDs = {}
+local _categoryMetadataIndexVersion
 
 local function QueryCategoryMetadataSpellID(categoryID)
     if not categoryID then return nil end
     local index = ns.CDMIndex
+    local indexVersion = index and index.Version and index.Version()
+    if _categoryMetadataIndexVersion ~= indexVersion then
+        _categoryMetadataSpellIDs = {}
+        _categoryMetadataIndexVersion = indexVersion
+    end
+    local cached = _categoryMetadataSpellIDs[categoryID]
+    if cached ~= nil then return cached or nil end
     local record = index and index.GetByCategory and index.GetByCategory(categoryID)
     local cooldownID = record and record.cooldownID
-    if cooldownID == nil then return nil end
     local catalog = ns.CDMCatalog
-    local info = catalog and catalog.GetCooldownInfo and catalog.GetCooldownInfo(cooldownID)
-    if type(info) ~= "table" then return nil end
-    local spellID = info.overrideSpellID or info.spellID
-    if WoW_IsSecretValue and WoW_IsSecretValue(spellID) then return nil end -- @secret-policy: reject-secret-ids
-    return type(spellID) == "number" and spellID or nil
+    local info = cooldownID ~= nil and catalog and catalog.GetCooldownInfo
+        and catalog.GetCooldownInfo(cooldownID)
+    local spellID = type(info) == "table" and (info.overrideSpellID or info.spellID) or nil
+    if WoW_IsSecretValue and WoW_IsSecretValue(spellID) then spellID = nil end -- @secret-policy: reject-secret-ids
+    if type(spellID) ~= "number" then spellID = nil end
+    indexVersion = index and index.Version and index.Version()
+    if _categoryMetadataIndexVersion ~= indexVersion then
+        _categoryMetadataSpellIDs = {}
+        _categoryMetadataIndexVersion = indexVersion
+    end
+    _categoryMetadataSpellIDs[categoryID] = spellID or false
+    return spellID
 end
 
 function CDMSources.QuerySpellCharges(spellID)

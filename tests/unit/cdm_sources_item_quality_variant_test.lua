@@ -27,6 +27,9 @@ C_Container = {
 }
 local categorySourceAvailable = true
 local categoryMetadataAvailable = true
+local categoryIndexQueries = 0
+local categoryMetadataQueries = 0
+local indexVersion = 1
 C_Spell = {
     GetLastCategoryCooldownSource = function(categoryID)
         if categoryID == 1711 then
@@ -46,7 +49,9 @@ local ns = {
         end,
     },
     CDMIndex = {
+        Version = function() return indexVersion end,
         GetByCategory = function(categoryID)
+            categoryIndexQueries = categoryIndexQueries + 1
             if categoryID == 1711 and categoryMetadataAvailable then
                 return { cooldownID = 7001 }
             end
@@ -55,6 +60,7 @@ local ns = {
     },
     CDMCatalog = {
         GetCooldownInfo = function(cooldownID)
+            categoryMetadataQueries = categoryMetadataQueries + 1
             if cooldownID == 7001 then
                 return { spellID = 6262, spellCategoryID = 1711 }
             end
@@ -97,7 +103,17 @@ categorySourceAvailable = false
 sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
 assert(sourceSpellID == 6262 and sourceItemID == 5512,
     "category cooldown source should retain the last readable pair when combat values are opaque")
+sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
+assert(categoryMetadataQueries == 1,
+    "unchanged category metadata should be queried once")
+indexVersion = indexVersion + 1
 categoryMetadataAvailable = false
+sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
+assert(sourceSpellID == 6262 and sourceItemID == 5512 and categoryIndexQueries == 2,
+    "category metadata cache should invalidate with the CDM index")
+sourceSpellID, sourceItemID = sources.QueryLastCategoryCooldownSource(1711)
+assert(categoryIndexQueries == 2,
+    "missing category metadata should be cached until the CDM index changes")
 local startTime, duration, enabled = sources.QueryItemCooldown(5512)
 assert(startTime == 300 and duration == 60 and enabled == 1
         and itemCooldownQueries[1] == 5512,

@@ -1025,6 +1025,7 @@ function CDMIconRangePolicy.Create(callbacks)
         rangeCycleCache = {},
         hasRangeCycleCache = {},
         usableCycleCache = {},
+        itemUsableCycleCache = {},
         enabledRangeSpellChecks = {},
         desiredRangeSpellChecks = {},
         stackTextWritesForBatch = false,
@@ -1156,20 +1157,20 @@ function CDMIconRangePolicy.Create(callbacks)
         if newVisualState == "normal" and usabilityEnabled and not cooldownVisualPriority then
             local usabilityID = spellID
             local usabilityQuery = callbacks.querySpellUsable
-            local usabilityCacheKey = spellID
+            local usabilityCache = controller.usableCycleCache
             if entry.type == "consumable" and callbacks.queryItemUsable and callbacks.getItemIDForEntry then
                 local itemID = callbacks.getItemIDForEntry(entry)
                 if itemID then
                     usabilityID = itemID
                     usabilityQuery = callbacks.queryItemUsable
-                    usabilityCacheKey = "item:" .. tostring(itemID)
+                    usabilityCache = controller.itemUsableCycleCache
                 end
             end
 
-            local isUsable = controller.usableCycleCache[usabilityCacheKey]
+            local isUsable = usabilityCache[usabilityID]
             if isUsable == nil then
                 isUsable = queryReadableUsable(usabilityQuery, usabilityID)
-                controller.usableCycleCache[usabilityCacheKey] = isUsable
+                usabilityCache[usabilityID] = isUsable
             end
             if not isUsable then
                 local chargeState = callbacks.resolveCooldownActivityState
@@ -1250,6 +1251,7 @@ function CDMIconRangePolicy.Create(callbacks)
         wipe(controller.rangeCycleCache)
         wipe(controller.hasRangeCycleCache)
         wipe(controller.usableCycleCache)
+        wipe(controller.itemUsableCycleCache)
     end
 
     function controller:UpdateIconRangesForUsabilityEvent(iconPools)
