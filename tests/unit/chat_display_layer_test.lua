@@ -584,17 +584,21 @@ ns.QUI_LayoutMode = nil
 -- options-open RefreshAll). Refresh must defer geometry while restricted and
 -- re-apply once on PLAYER_REGEN_ENABLED.
 do
-    local inCombat = false
-    _G.InCombatLockdown = function() return inCombat end
+    local lockdown = false
+    local physicalCombat = false
+    _G.InCombatLockdown = function() return lockdown end
+    _G.UnitAffectingCombat = function(unit)
+        return unit == "player" and physicalCombat
+    end
 
     -- Model the live-game block: geometry writes on a restricted frame in
     -- combat throw, so a regression fails loudly instead of recording.
     local function armRestricted(cont)
-        cont.IsAnchoringRestricted = function() return inCombat end
+        cont.IsAnchoringRestricted = function() return physicalCombat end
         for _, m in ipairs({ "SetSize", "SetPoint", "ClearAllPoints" }) do
             local real = cont[m]
             cont[m] = function(self, ...)
-                if inCombat then
+                if physicalCombat then
                     error("ADDON_ACTION_BLOCKED: " .. m .. " on anchor-restricted frame in combat", 2)
                 end
                 return real(self, ...)
@@ -608,7 +612,14 @@ do
     local before = cw.w
     settings.customDisplay.windows[1].width = 555
 
-    inCombat = true
+    physicalCombat = true
+    _G.UnitAffectingCombat = function() return false end
+    local appearanceOK, appearanceError = pcall(Display.RefreshAppearance)
+    assert(appearanceOK, "appearance refresh must not write restricted geometry: " .. tostring(appearanceError))
+    assert(cw.w == before, "appearance refresh changed restricted geometry")
+    _G.UnitAffectingCombat = function(unit)
+        return unit == "player" and physicalCombat
+    end
     local ok, err = pcall(Display.Refresh)
     assert(ok, "Refresh in combat with a restricted container must not write geometry: " .. tostring(err))
     assert(cw.w == before, "geometry deferred while restricted, got " .. tostring(cw.w))
@@ -620,7 +631,7 @@ do
     end
     assert(watcher, "combat-deferred geometry needs a PLAYER_REGEN_ENABLED watcher")
 
-    inCombat = false
+    physicalCombat = false
     watcher.scripts.OnEvent(watcher, "PLAYER_REGEN_ENABLED")
     assert(c1.w == 555, "deferred geometry applied at combat end, got " .. tostring(c1.w))
 

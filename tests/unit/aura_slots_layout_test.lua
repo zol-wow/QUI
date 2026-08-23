@@ -16,7 +16,12 @@ local ns = env.LoadCore()  -- real ns.AuraGlue.ElementProfile + ns.AuraElements
 -- forbidden inbound setters that don't exist on a plain stub) — stub it,
 -- same boundary aura_slots.lua itself draws (Deps() only needs it truthy).
 ns.Addon = ns.Addon or {}
-ns.Addon.AuraSkin = { WireButton = function() end }
+ns.Addon.AuraSkin = {
+    WireButton = function() end,
+    StyleIconArt = function(frame, profile)
+        frame._styledProfile = profile
+    end,
+}
 
 local S = assert(loadfile("core/aura_slots.lua"))("QUI", ns)
 
@@ -66,6 +71,58 @@ local function MakeContainer()
     return c
 end
 
+local function MakeInactiveHost()
+    return {
+        _frames = {},
+        _frameLevel = 1,
+        GetFrameLevel = function(self) return self._frameLevel end,
+    }
+end
+
+local oldCreateFrame = _G.CreateFrame
+_G.CreateFrame = function(kind, name, parent, ...)
+    if kind ~= "Frame" or not (parent and parent._frames) then
+        return oldCreateFrame(kind, name, parent, ...)
+    end
+    local frame = {
+        _parent = parent,
+        _textures = {},
+        SetSize = function(self, width, height) self._width = width; self._height = height end,
+        ClearAllPoints = function() end,
+        SetPoint = function(self, point, relativeTo, relativePoint, dx, dy)
+            self._lastSetPoint = { point = point, relativeTo = relativeTo,
+                relativePoint = relativePoint, dx = dx, dy = dy }
+        end,
+        SetAlpha = function(self, value) self._alpha = value end,
+        SetShown = function(self, value) self._shown = value end,
+        SetFrameLevel = function(self, value) self._frameLevel = value end,
+    }
+    frame.CreateTexture = function(self)
+        local texture = {
+            SetSize = function(t, width, height) t._width = width; t._height = height end,
+            ClearAllPoints = function() end,
+            SetPoint = function(t, point, relativeTo, relativePoint, dx, dy)
+                t._lastSetPoint = { point = point, relativeTo = relativeTo,
+                    relativePoint = relativePoint, dx = dx, dy = dy }
+            end,
+            SetDesaturated = function(t, value) t._desaturated = value end,
+            SetAlpha = function(t, value) t._alpha = value end,
+            SetTexture = function(t, value) t._texture = value end,
+            SetShown = function(t, value) t._shown = value end,
+            SetAllPoints = function(t, target) t._allPoints = target end,
+            SetTexCoord = function(t, ...) t._texCoord = { ... } end,
+            SetColorTexture = function(t, ...) t._color = { ... } end,
+            DisablePixelSnap = function() end,
+            Show = function(t) t._shown = true end,
+            Hide = function(t) t._shown = false end,
+        }
+        self._textures[#self._textures + 1] = texture
+        return texture
+    end
+    parent._frames[#parent._frames + 1] = frame
+    return frame
+end
+
 ----------------------------------------------------------------------------
 -- Test A: tracked capacity follows the spell list — an old saved maxIcons
 -- value cannot truncate the five tracked spells.
@@ -102,6 +159,39 @@ do
     check("tracked capacity: slot 1 filter is a live per-spell filter",
         container._filterCalls["t1"] and container._filterCalls["t1"].includeSpellIDs ~= nil
         and container._filterCalls["t1"].maxDuration == nil)
+end
+
+
+do
+    local oldSpell = _G.C_Spell
+    _G.C_Spell = { GetSpellTexture = function(spellID) return spellID + 1000 end }
+    local element = {
+        spells = { 801 }, enabled = true, displayType = "icon",
+        auraType = "HELPFUL", anchor = "TOPLEFT", growDirection = "RIGHT",
+    }
+    local container = MakeContainer()
+    local host = MakeInactiveHost()
+    S.Sync(container, element, true)
+    local complete = S.SyncInactiveIcons(host, element, true, true)
+    local frame = host._frames[1]
+    local texture = frame and frame.Icon
+    check("inactive icon: reconciliation completes", complete == true)
+    check("inactive icon: host owns one separate visual", #host._frames == 1)
+    check("inactive icon: visual uses only the QUI-owned geometry host",
+        frame and frame._lastSetPoint.relativeTo == host
+            and frame._lastSetPoint.relativeTo ~= container._quiSlots[1].frame)
+    check("inactive icon: active icon art styling is reused",
+        frame and frame._styledProfile ~= nil and frame._quiBorder ~= nil)
+    check("inactive icon: texture is desaturated and visual is dimmed",
+        texture and texture._desaturated == true and frame._alpha == 0.4)
+    check("inactive icon: configured spell texture is shown",
+        texture and texture._texture == 1801 and frame._shown == true)
+    S.SyncInactiveIcons(host, element, true, false)
+    check("inactive icon: active-only mode hides the placeholder", frame._shown == false)
+    S.SyncInactiveIcons(host, element, true, true)
+    S.HideInactiveIcons(host)
+    check("inactive icon: explicit cleanup hides the placeholder", frame._shown == false)
+    _G.C_Spell = oldSpell
 end
 
 do

@@ -33,6 +33,9 @@ if #bucket ~= 1 then fail("quick-create must seed exactly ONE element, got " .. 
 if bucket[1].mode ~= "tracked" or bucket[1].spells[1] ~= 348 then
     fail("seeded element must track the given spell")
 end
+if bucket[1].iconSize ~= 100 then
+    fail("new tracked Aura Display icons must default to 100px")
+end
 if type(bucket[1].id) ~= "string" and type(bucket[1].id) ~= "number" then
     fail("seeded element must carry a minted id")
 end

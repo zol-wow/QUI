@@ -67,6 +67,19 @@ function CDMReanchorBoot.BuildRuntime(env)
         if _issecretvalue(active) then return false end -- @secret-policy: reject-secret-value
         return active == true
     end
+    local function frameMayUseAuraForDisplay(frame, entry)
+        if frameIsAuraPhase(frame) then return true end
+        if entry.type ~= nil and entry.type ~= "spell" then return false end
+        local okInfo, info = ns.SafeCallMethodIfPresent(
+            "bulkhead", frame, "GetCooldownInfo")
+        if okInfo ~= true or _issecretvalue(info) or type(info) ~= "table" then
+            return false
+        end
+        local ok, eligible = ns.SafeCallMethodIfPresent(
+            "bulkhead", frame, "CanUseAuraForDisplay")
+        if ok ~= true or _issecretvalue(eligible) then return false end
+        return eligible == true
+    end
     local function frameCanUseAuraForDisplay(frame)
         return frameIsAuraPhase(frame) and isAuraPhaseEnabled()
     end
@@ -306,7 +319,7 @@ function CDMReanchorBoot.BuildRuntime(env)
                 or entry.isAura or entry.kind == "aura" then
                 return false
             end
-            return not isAuraPhaseEnabled() and frameIsAuraPhase(frame)
+            return not isAuraPhaseEnabled() and frameMayUseAuraForDisplay(frame, entry)
         end,
         buildLayout = env.buildLayout,
         buildBuffLayout = env.buildBuffLayout,

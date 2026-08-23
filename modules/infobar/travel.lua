@@ -278,7 +278,7 @@ Datatexts:Register("travel", {
             end
         end)
 
-        if InCombatLockdown() then
+        if InCombatLockdown() and not ns._inInitSafeWindow then
             frame:RegisterEvent("PLAYER_REGEN_ENABLED")
         else
             BuildSecureWidgets(frame, slotFrame, size)

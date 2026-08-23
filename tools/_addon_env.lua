@@ -250,6 +250,7 @@ local function LoadCore()
     LoadAddonFile("core/defaults.lua",       "QUI", SHARED_NS)
     LoadAddonFile("core/migrations.lua",     "QUI", SHARED_NS)
     LoadAddonFile("core/compatibility.lua", "QUI", SHARED_NS)
+    LoadAddonFile("core/settings/pins.lua", "QUI", SHARED_NS)
     LoadAddonFile("core/profile_io.lua",    "QUI", SHARED_NS)
 
     CORE_LOADED = true
@@ -305,6 +306,9 @@ local function BuildHarness(opts)
     if not opts.noSeed and type(ns.ApplyNewProfileSeed) == "function" then
         db.RegisterCallback(ns.Addon, "OnNewProfile", function(_, newDB)
             ns.ApplyNewProfileSeed(newDB.profile)
+            if ns.Migrations and ns.Migrations.RunOnProfile then
+                ns.Migrations.RunOnProfile(newDB.profile)
+            end
         end)
     end
 

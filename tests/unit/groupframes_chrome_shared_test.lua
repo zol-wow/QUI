@@ -37,9 +37,11 @@ local function NewRegion()
     function r:SetAlpha(a) self.alpha = a end
     function r:SetShown(v) self.shown = v and true or false end
     function r:SetFont() end
-    function r:SetText(t) self.text = t end
-    function r:SetJustifyH() end
-    function r:SetJustifyV() end
+    function r:SetText(t) self.text = t; self.textWrites = (self.textWrites or 0) + 1 end
+    function r:GetText() return self.text end
+    function r:SetJustifyH(value) self.justifyH = value end
+    function r:GetJustifyH() return self.justifyH end
+    function r:SetJustifyV(value) self.justifyV = value end
     function r:SetTextColor(...) self.textColor = { ... } end
     function r:SetWordWrap() end
     function r:Show() self.shown = true end
@@ -211,6 +213,22 @@ check("re-apply reuses the existing children (no frame leak)",
     and frame.dispelTypeIcons.Bleed == before.bleed
     and frameCount == created)
 
+VDB.name.nameAnchor = "TOPRIGHT"
+VDB.name.nameJustify = "CENTER"
+frame.nameText:SetText("Tankthor")
+local textWrites = frame.nameText.textWrites
+Chrome.AnchorBottomPadded(frame, VDB, frame._bottomPad)
+check("shared refresh reapplies name anchor and independent justification",
+    frame.nameText.points[1].p == "TOP"
+    and frame.nameText.points[2].p == "TOPRIGHT"
+    and frame.nameText.justifyH == "CENTER"
+    and frame.nameText.justifyV == "TOP"
+    and frame.nameText.text == "Tankthor")
+check("changed justification rebinds unchanged text for immediate rendering",
+    frame.nameText.textWrites == textWrites + 2)
+VDB.name.nameAnchor = "BOTTOMLEFT"
+VDB.name.nameJustify = nil
+
 -- Vertical fill flips orientation + is reported back.
 local vFrame = NewFrame("Button", nil, nil)
 local vGeo = Chrome.Apply(vFrame, {
@@ -315,6 +333,8 @@ check("no dimensions table = live defaults (200x40, not the old preview 150x80)"
 local live = readAll("QUI_GroupFrames/groupframes/groupframes.lua")
 check("runtime DecorateGroupFrame calls the shared builder with its state table",
     live:find("Chrome.Apply(frame, vdb, GetFrameState(frame))", 1, true) ~= nil)
+check("runtime name refresh reapplies shared text layout",
+    live:find("Chrome.AnchorBottomPadded(frame, GetVisualDB(isRaid), frame._bottomPad)", 1, true) ~= nil)
 check("runtime keeps no private copy of the builder's helpers",
     live:find("local function ApplyOverlayBar", 1, true) == nil
     and live:find("local function GetCachedBackdrop", 1, true) == nil
@@ -356,6 +376,14 @@ local auraRender = readAll("QUI_GroupFrames/groupframes/groupframes_aura_render.
 local auraContainers = readAll("QUI_GroupFrames/groupframes/groupframes_auras.lua")
 local targeted = readAll("QUI_GroupFrames/groupframes/groupframes_targeted_spells.lua")
 local editMode = readAll("QUI_GroupFrames/groupframes/groupframes_editmode.lua")
+check("party/raid test preview honors independent name justification",
+    editMode:find("nameText:SetJustifyH(nameSettings and nameSettings.nameJustify or nameAnchorInfo.justify)", 1, true) ~= nil
+    and editMode:find("nameText:SetJustifyH(nameAnchorInfo.justify)", 1, true) == nil)
+check("raid test preview uses raid settings even at five frames",
+    editMode:find('local isRaid = contextMode == "raid"', 1, true) ~= nil
+    and editMode:find("local isRaid = totalCount > 5", 1, true) == nil
+    and editMode:find("healthPct, previewType)", 1, true) ~= nil
+    and editMode:find('data.hp, "raid")', 1, true) ~= nil)
 check("runtime and both previews use the shared dispel-type icon helpers",
     live:find("Chrome.ShowDispelTypeIcon(frame, visualType)", 1, true) ~= nil
     and prev:find("C.ShowDispelTypeIcon(f, dispelType)", 1, true) ~= nil

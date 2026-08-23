@@ -1,7 +1,7 @@
 -- luacheck: read globals ColorManager ITEM_QUALITY_COLORS SplitGuildBankItem
 -- luacheck: read globals HandleModifiedItemClick GetGuildBankItemLink IsModifiedClick CursorHasItem
 -- luacheck: read globals GetGuildBankItemInfo StackSplitFrame DepositGuildBankMoney
--- luacheck: read globals AutoStoreGuildBankItem PickupGuildBankItem SetItemButtonTexture
+-- luacheck: read globals AutoStoreGuildBankItem PickupGuildBankItem DropCursorMoney SetItemButtonTexture
 -- luacheck: read globals SetItemButtonCount SetItemButtonDesaturated
 -- luacheck: read globals SetItemButtonOverlay ClearItemButtonOverlay
 -- luacheck: read globals C_AuctionHouse ItemButtonUtil ItemLocation
@@ -261,6 +261,9 @@ function ItemButtons.CreateGuildLive(parent)
         local cursorType, money = GetCursorInfo()
         if cursorType == "money" then
             DepositGuildBankMoney(money)
+            ClearCursor()
+        elseif cursorType == "guildbankmoney" then
+            DropCursorMoney()
             ClearCursor()
         elseif mouseButton == "RightButton" then
             AutoStoreGuildBankItem(self._tab, self._slot)

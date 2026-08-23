@@ -48,6 +48,12 @@ local DISPLAY_ALIGNMENT_OPTIONS = {
     { value = "END", text = ns.L["End"] },
 }
 
+local VISIBILITY_OPTIONS = {
+    { value = "active", text = ns.L["Active Only"] },
+    { value = "instance", text = ns.L["Show In Instance"] },
+    { value = "always", text = ns.L["Always"] },
+}
+
 ns.QUI_AuraDisplaysOptions = {}
 
 local function Fold(text)
@@ -211,6 +217,7 @@ function ns.QUI_AuraDisplaysOptions._QuickCreate(spec)
             and E.ResolveTrackedSpellID and E.ResolveTrackedSpellID(spec.spellID)
             or spec.spellID
         bucket[1] = E.NewTrackedElement(spellID and { spellID } or {}, "icon")
+        bucket[1].iconSize = 100
     else
         bucket[1] = E.NewFilterStripElement("HELPFUL")
     end
@@ -700,7 +707,15 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
             if ctx and ctx.RebuildDetail then ctx.RebuildDetail() end
         end,
         { description = ns.L["Which unit this display watches. Co-Tank follows the first other tank in your group."] })
-    unitCard.AddRow(Shared.BuildSettingRow(unitCard.frame, ns.L["Unit"], unitW))
+    display.visibility = display.visibility or "active"
+    local visibilityW = GUI:CreateFormDropdown(unitCard.frame, nil, VISIBILITY_OPTIONS,
+        "visibility", display, function() AD.Refresh() end, {
+            description = ns.L["Controls when inactive aura icons remain visible and desaturated. Active Only hides them; Show In Instance keeps them visible in dungeons and raids; Always keeps them visible everywhere."],
+        })
+    unitCard.AddRow(
+        Shared.BuildSettingRow(unitCard.frame, ns.L["Unit"], unitW),
+        Shared.BuildSettingRow(unitCard.frame, ns.L["Visibility"], visibilityW)
+    )
     if display.unitMode == "name" then
         local nameField = GUI:CreateFormEditBox(unitCard.frame, nil, "unit", display, function()
             AD.Refresh()
@@ -1013,9 +1028,39 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
 
     if selectedID and not AD.GetDisplay(selectedID) then selectedID = nil end
 
+    local topOffset = 0
+    local profileCopy = ns.QUI_ProfileCopyOptions
+    if profileCopy
+        and type(profileCopy.CreateCard) == "function"
+        and type(profileCopy.HasSourceProfile) == "function"
+        and profileCopy.HasSourceProfile()
+    then
+        local copyHeader = Shared.CreateAccentDotLabel(content, ns.L["Copy Settings"], 0)
+        copyHeader:ClearAllPoints()
+        copyHeader:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, 0)
+        copyHeader:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, 0)
+
+        local copyHost = CreateFrame("Frame", nil, content)
+        copyHost:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -22)
+        copyHost:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -22)
+        local controller = profileCopy.CreateCard(copyHost, {
+            fixedCategoryID = "auraDisplays",
+            fixedCategoryLabel = ns.L["Aura Displays"],
+            onCopied = function()
+                if UI.lastPreviewID then AD.HidePreviewFor(UI.lastPreviewID) end
+                UI.lastPreviewID = nil
+                selectedID = nil
+                if UI.RebuildList then UI.RebuildList() end
+                if UI.RebuildDetail then UI.RebuildDetail() end
+            end,
+        })
+        copyHost:SetHeight(controller.frame:GetHeight())
+        topOffset = 22 + controller.frame:GetHeight() + 14
+    end
+
     local pane = CreateFrame("Frame", nil, content)
-    pane:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, 0)
-    pane:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, 0)
+    pane:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -topOffset)
+    pane:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -topOffset)
     pane:SetHeight(PAGE_H)
     pane:SetScript("OnHide", function()
         if UI.lastPreviewID then
@@ -1039,6 +1084,6 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
     BuildLeftPane(left)
     BuildRightPane(right, ctx)
 
-    content:SetHeight(PAGE_H)
-    return PAGE_H
+    content:SetHeight(PAGE_H + topOffset)
+    return PAGE_H + topOffset
 end

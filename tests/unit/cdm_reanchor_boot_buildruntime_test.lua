@@ -339,14 +339,35 @@ swipeStub.showCooldownIconAuraPhase = false
 local shouldReplace = capturedRuntimeDeps.shouldReplaceNativeAuraPhase
 local nativeAuraFrame = {
     cooldownUseAuraDisplayTime = false,
+    CanUseAuraForDisplay = function() return true end,
     GetCooldownInfo = function() return { hasAura = true } end,
 }
 for _, entryType in ipairs({ "item", "slot", "trinket", "consumable", "macro" }) do
     assert(shouldReplace(nativeAuraFrame, { type = entryType }, "essential") == false,
         entryType .. "-backed native frame remains native")
 end
-assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == false,
-    "ordinary spell native frame remains native")
+assert(shouldReplace(nativeAuraFrame, { type = "spell" }, "essential") == true,
+    "aura-capable spell frame is pre-replaced before its aura activates")
+assert(shouldReplace({ cooldownUseAuraDisplayTime = false,
+        CanUseAuraForDisplay = function() return false end,
+        GetCooldownInfo = function() return { hasAura = true } end },
+        { type = "spell" }, "essential") == false,
+    "spell frame that cannot use aura display remains native")
+assert(shouldReplace({ cooldownUseAuraDisplayTime = false,
+        CanUseAuraForDisplay = function() return true end,
+        GetCooldownInfo = function() return { hasAura = false } end },
+        { type = "spell" }, "essential") == true,
+    "Blizzard-eligible spell frame does not depend on hasAura metadata")
+assert(shouldReplace({ cooldownUseAuraDisplayTime = false,
+        CanUseAuraForDisplay = function() return true end,
+        GetCooldownInfo = function() return nil end },
+        { type = "spell" }, "essential") == false,
+    "spell frame without cooldown metadata remains native")
+assert(shouldReplace({ cooldownUseAuraDisplayTime = false,
+        CanUseAuraForDisplay = function() return secretGCD end,
+        GetCooldownInfo = function() return { hasAura = true } end },
+        { type = "spell" }, "essential") == false,
+    "secret aura-display eligibility remains native")
 assert(shouldReplace({ cooldownUseAuraDisplayTime = true,
         GetCooldownInfo = function() return { hasAura = false } end },
         { type = "spell" }, "essential") == true,

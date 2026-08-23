@@ -221,14 +221,14 @@ end
 -- <<< QUI_TEST_EXTRACT ApplyOverlayBar
 
 local ANCHOR_MAP = {
-    LEFT       = { point = "LEFT",       leftPoint = "LEFT",       rightPoint = "RIGHT",        justify = "LEFT",   justifyV = "MIDDLE" },
-    RIGHT      = { point = "RIGHT",      leftPoint = "LEFT",       rightPoint = "RIGHT",        justify = "RIGHT",  justifyV = "MIDDLE" },
+    LEFT       = { point = "LEFT",       leftPoint = "LEFT",       rightPoint = "CENTER",       justify = "LEFT",   justifyV = "MIDDLE" },
+    RIGHT      = { point = "RIGHT",       leftPoint = "CENTER",     rightPoint = "RIGHT",        justify = "RIGHT",  justifyV = "MIDDLE" },
     CENTER     = { point = "CENTER",     leftPoint = "LEFT",       rightPoint = "RIGHT",        justify = "CENTER", justifyV = "MIDDLE" },
-    TOPLEFT    = { point = "TOPLEFT",    leftPoint = "TOPLEFT",    rightPoint = "TOPRIGHT",     justify = "LEFT",   justifyV = "TOP" },
-    TOPRIGHT   = { point = "TOPRIGHT",   leftPoint = "TOPLEFT",    rightPoint = "TOPRIGHT",     justify = "RIGHT",  justifyV = "TOP" },
+    TOPLEFT    = { point = "TOPLEFT",    leftPoint = "TOPLEFT",    rightPoint = "TOP",          justify = "LEFT",   justifyV = "TOP" },
+    TOPRIGHT   = { point = "TOPRIGHT",   leftPoint = "TOP",        rightPoint = "TOPRIGHT",     justify = "RIGHT",  justifyV = "TOP" },
     TOP        = { point = "TOP",        leftPoint = "TOPLEFT",    rightPoint = "TOPRIGHT",     justify = "CENTER", justifyV = "TOP" },
-    BOTTOMLEFT = { point = "BOTTOMLEFT", leftPoint = "BOTTOMLEFT", rightPoint = "BOTTOMRIGHT",  justify = "LEFT",   justifyV = "BOTTOM" },
-    BOTTOMRIGHT= { point = "BOTTOMRIGHT",leftPoint = "BOTTOMLEFT", rightPoint = "BOTTOMRIGHT",  justify = "RIGHT",  justifyV = "BOTTOM" },
+    BOTTOMLEFT = { point = "BOTTOMLEFT", leftPoint = "BOTTOMLEFT", rightPoint = "BOTTOM",       justify = "LEFT",   justifyV = "BOTTOM" },
+    BOTTOMRIGHT= { point = "BOTTOMRIGHT", leftPoint = "BOTTOM",     rightPoint = "BOTTOMRIGHT",  justify = "RIGHT",  justifyV = "BOTTOM" },
     BOTTOM     = { point = "BOTTOM",     leftPoint = "BOTTOMLEFT", rightPoint = "BOTTOMRIGHT",  justify = "CENTER", justifyV = "BOTTOM" },
 }
 
@@ -288,23 +288,45 @@ local function AnchorText(frame, region, anchorName, offX, offY, bottomPad)
     region:SetPoint(a.rightPoint, frame, a.rightPoint, -padX, offY + pad)
 end
 
+local function SetTextJustification(region, horizontal, vertical)
+    if not region or not region.SetJustifyH or not region.SetJustifyV then return end
+    local changed = region.GetJustifyH and region:GetJustifyH() ~= horizontal
+    region:SetJustifyH(horizontal)
+    region:SetJustifyV(vertical)
+    if changed and region.GetText and region.SetText then
+        local text = region:GetText()
+        region:SetText("")
+        region:SetText(text)
+    end
+end
+
 local function AnchorBottomPadded(frame, vdb, bottomPad)
     if not frame then return end
     vdb = vdb or {}
     bottomPad = bottomPad or frame._bottomPad or 0
 
     local nameSettings = vdb.name
-    AnchorText(frame, frame.nameText, nameSettings and nameSettings.nameAnchor or "LEFT",
+    local nameAnchor = GetTextAnchorInfo(nameSettings and nameSettings.nameAnchor or "LEFT")
+    AnchorText(frame, frame.nameText, nameAnchor.point,
         nameSettings and nameSettings.nameOffsetX or 4,
         nameSettings and nameSettings.nameOffsetY or 0, bottomPad)
-    AnchorText(frame, frame.levelText, nameSettings and nameSettings.levelAnchor or "RIGHT",
+    SetTextJustification(frame.nameText,
+        nameSettings and nameSettings.nameJustify or nameAnchor.justify, nameAnchor.justifyV)
+
+    local levelAnchor = GetTextAnchorInfo(nameSettings and nameSettings.levelAnchor or "RIGHT")
+    AnchorText(frame, frame.levelText, levelAnchor.point,
         nameSettings and nameSettings.levelOffsetX or -4,
         nameSettings and nameSettings.levelOffsetY or 0, bottomPad)
+    SetTextJustification(frame.levelText,
+        nameSettings and nameSettings.levelJustify or levelAnchor.justify, levelAnchor.justifyV)
 
     local healthSettings = vdb.health
-    AnchorText(frame, frame.healthText, healthSettings and healthSettings.healthAnchor or "RIGHT",
+    local healthAnchor = GetTextAnchorInfo(healthSettings and healthSettings.healthAnchor or "RIGHT")
+    AnchorText(frame, frame.healthText, healthAnchor.point,
         healthSettings and healthSettings.healthOffsetX or -4,
         healthSettings and healthSettings.healthOffsetY or 0, bottomPad)
+    SetTextJustification(frame.healthText,
+        healthSettings and healthSettings.healthJustify or healthAnchor.justify, healthAnchor.justifyV)
 
     local indDB = vdb.indicators or {}
     for _, spec in ipairs(INDICATOR_ANCHORS) do
@@ -542,14 +564,8 @@ function Chrome.Apply(frame, vdb, state)
         local fontOutline = FontOutline(general)
         local nameSettings = vdb.name
         local nameFontSize = nameSettings and nameSettings.nameFontSize or 12
-        local nameAnchor = GetTextAnchorInfo(nameSettings and nameSettings.nameAnchor or "LEFT")
-        local nameOffsetX = nameSettings and nameSettings.nameOffsetX or 4
-        local nameOffsetY = nameSettings and nameSettings.nameOffsetY or 0
         local nameText = frame.nameText or textFrame:CreateFontString(nil, "OVERLAY")
         Helpers.ApplyFontWithFallback(nameText, fontPath, nameFontSize, fontOutline)
-        local nameJustify = nameSettings and nameSettings.nameJustify or nameAnchor.justify
-        nameText:SetJustifyH(nameJustify)
-        nameText:SetJustifyV(nameAnchor.justifyV)
         nameText:SetTextColor(1, 1, 1, 1)
         nameText:SetWordWrap(false)
         frame.nameText = nameText
@@ -560,9 +576,6 @@ function Chrome.Apply(frame, vdb, state)
             levelFontPath = LSM:Fetch("font", nameSettings.levelFont, true) or fontPath
         end
         Helpers.ApplyFontWithFallback(levelText, levelFontPath, nameSettings and nameSettings.levelFontSize or nameFontSize, fontOutline)
-        local levelAnchor = GetTextAnchorInfo(nameSettings and nameSettings.levelAnchor or "RIGHT")
-        levelText:SetJustifyH(nameSettings and nameSettings.levelJustify or levelAnchor.justify)
-        levelText:SetJustifyV(levelAnchor.justifyV)
         levelText:SetTextColor(1, 1, 1, 1)
         levelText:SetWordWrap(false)
         if nameSettings and nameSettings.showLevel == true then
@@ -574,7 +587,6 @@ function Chrome.Apply(frame, vdb, state)
 
         local healthSettings = vdb.health
         local healthFontSize = healthSettings and healthSettings.healthFontSize or 12
-        local healthAnchor = GetTextAnchorInfo(healthSettings and healthSettings.healthAnchor or "RIGHT")
 
         local healthText = frame.healthText or textFrame:CreateFontString(nil, "OVERLAY")
         if Helpers and Helpers.ApplyFontWithFallback then
@@ -582,9 +594,6 @@ function Chrome.Apply(frame, vdb, state)
         else
             healthText:SetFont(fontPath, healthFontSize, fontOutline)
         end
-        local healthJustify = healthSettings and healthSettings.healthJustify or healthAnchor.justify
-        healthText:SetJustifyH(healthJustify)
-        healthText:SetJustifyV(healthAnchor.justifyV)
         healthText:SetTextColor(1, 1, 1, 1)
         healthText:SetWordWrap(false)
         frame.healthText = healthText

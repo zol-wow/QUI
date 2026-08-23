@@ -368,6 +368,19 @@ local function ParkSlot(container, slot)
     container:SetAuraSlotCandidateFilters(slot.key, PARK_FILTER)
 end
 
+local function HideInactiveIcon(slot)
+    local frame = slot and slot.inactiveFrame
+    if frame then frame:SetShown(false) end
+end
+
+local function ResolveInactiveIcon(spellID)
+    if C_Spell and C_Spell.GetSpellTexture then
+        local icon = C_Spell.GetSpellTexture(spellID)
+        if icon then return icon end
+    end
+    return 134400
+end
+
 -- Feeder elements sync ONE slot with the UNION of their spell IDs instead of
 -- a slot per spell: the tint is a presence signal, and two translucent covers
 -- drawn at once composite darker (DandersFrames measured 25% -> 44% -> 58%
@@ -565,6 +578,70 @@ function S.Sync(container, element, allowCreate, profileOverrides)
         ParkSlot(container, pool[i])
     end
     return complete
+end
+
+function S.SyncInactiveIcons(container, element, allowCreate, shown)
+    local pool = container._quiInactiveIcons
+    if not pool then
+        if not allowCreate then return shown ~= true end
+        pool = {}
+        container._quiInactiveIcons = pool
+    end
+    local spells = element.enabled ~= false
+        and (element.displayType == nil or element.displayType == "icon")
+        and element.spells or nil
+    local complete = true
+    local want = 0
+    if type(spells) == "table" then
+        local profile = ns.AuraGlue.ElementProfile(element)
+        local total = 0
+        for i = 1, #spells do
+            if type(spells[i]) == "number" then total = total + 1 end
+        end
+        for i = 1, #spells do
+            local spellID = spells[i]
+            if type(spellID) == "number" then
+                want = want + 1
+                local slot = pool[want]
+                local frame = slot and slot.inactiveFrame
+                if not frame and allowCreate and not AurasAreSecret() then
+                    slot = slot or {}
+                    frame = CreateFrame("Frame", nil, container)
+                    frame:SetFrameLevel(container:GetFrameLevel())
+                    local border = frame:CreateTexture(nil, "BACKGROUND")
+                    border:SetAllPoints(frame)
+                    local icon = frame:CreateTexture(nil, "ARTWORK")
+                    frame.Icon = icon
+                    frame._quiBorder = border
+                    icon:SetDesaturated(true)
+                    frame:SetAlpha(0.4)
+                    slot.inactiveFrame = frame
+                    pool[want] = slot
+                end
+                if frame then
+                    local icon = frame.Icon
+                    frame:SetSize(profile.iconSize, profile.iconSize)
+                    AuraSkin.StyleIconArt(frame, profile)
+                    AnchorSlot(frame, container, element, want, total)
+                    if slot.inactiveSpellID ~= spellID then
+                        icon:SetTexture(ResolveInactiveIcon(spellID))
+                        slot.inactiveSpellID = spellID
+                    end
+                    frame:SetShown(shown == true)
+                else
+                    complete = false
+                end
+            end
+        end
+    end
+    for i = want + 1, #pool do HideInactiveIcon(pool[i]) end
+    return complete
+end
+
+function S.HideInactiveIcons(container)
+    local pool = container and container._quiInactiveIcons
+    if not pool then return end
+    for i = 1, #pool do HideInactiveIcon(pool[i]) end
 end
 
 function S.Park(container)

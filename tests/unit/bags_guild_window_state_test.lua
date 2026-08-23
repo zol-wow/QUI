@@ -33,6 +33,7 @@ local chunk = assert(loadfile("QUI_Bags/bags/views/guild_window.lua"))
 chunk("QUI", ns)
 local GuildWindow = ns.Bags.GuildWindow
 assert(type(GuildWindow.BuildTabList) == "function", "BuildTabList must be exported")
+assert(type(GuildWindow.CanWithdrawMoney) == "function", "CanWithdrawMoney must be exported")
 
 -- Test 1: empty cache → empty list (nil record and empty tables alike)
 assert(#GuildWindow.BuildTabList(nil, nil) == 0, "nil record must yield an empty list")
@@ -139,5 +140,40 @@ assert(GuildWindow.FindTabForItem(frec, 777) == 3, "tab containing the item")
 assert(GuildWindow.FindTabForItem(frec, 555) == 1, "lowest matching tab index")
 assert(GuildWindow.FindTabForItem(frec, 999) == nil, "absent item → nil")
 assert(GuildWindow.FindTabForItem(nil, 777) == nil, "nil record → nil")
+
+assert(GuildWindow.CanWithdrawMoney(10000, -1, true, false),
+    "unlimited withdrawal must be available when the guild has money")
+assert(GuildWindow.CanWithdrawMoney(10000, 5000, true, false),
+    "a positive finite allowance must be available")
+assert(not GuildWindow.CanWithdrawMoney(0, -1, true, false),
+    "an empty guild bank must disable withdrawal")
+assert(not GuildWindow.CanWithdrawMoney(10000, 0, true, false),
+    "a zero allowance must disable withdrawal")
+assert(not GuildWindow.CanWithdrawMoney(10000, -1, false, false),
+    "missing permission must disable withdrawal")
+assert(not GuildWindow.CanWithdrawMoney(10000, -1, true, true),
+    "combat must disable withdrawal")
+assert(not GuildWindow.CanWithdrawMoney(10000, -2, true, false),
+    "unexpected negative allowances must disable withdrawal")
+
+local guildFile = assert(io.open("QUI_Bags/bags/views/guild_window.lua", "rb"))
+local guildSource = guildFile:read("*a")
+guildFile:close()
+assert(guildSource:find('"GUILDBANK_DEPOSIT"', 1, true)
+    and guildSource:find('"GUILDBANK_WITHDRAW"', 1, true),
+    "guild money buttons must route through Blizzard's denomination-aware dialogs")
+assert(not guildSource:find("Bags.Chassis.ShowMoneyPopup", 1, true)
+    and not guildSource:find("QUI_GUILDBANK_MONEY", 1, true),
+    "QUI must not retain its whole-gold guild money callback")
+assert(guildSource:find('StaticPopup_Hide("GUILDBANK_DEPOSIT")', 1, true)
+    and guildSource:find('StaticPopup_Hide("GUILDBANK_WITHDRAW")', 1, true),
+    "guild money dialogs must close with QUI's guild window")
+
+local itemFile = assert(io.open("QUI_Bags/bags/views/item_buttons.lua", "rb"))
+local itemSource = itemFile:read("*a")
+itemFile:close()
+assert(itemSource:find('elseif cursorType == "guildbankmoney" then', 1, true)
+    and itemSource:find("DropCursorMoney()", 1, true),
+    "guild item buttons must complete cursor-money withdrawals")
 
 print("OK: bags_guild_window_state_test")

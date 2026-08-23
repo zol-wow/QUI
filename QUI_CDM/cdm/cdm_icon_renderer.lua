@@ -606,6 +606,13 @@ local function IsCustomBarSettingsNow(settings)
 end
 
 local function ChargeSpellShouldStaySaturated(icon, entry)
+    local nativeFrame = icon and icon._blizzCooldown
+    if nativeFrame and type(nativeFrame.HasVisualDataSource_Charges) == "function" then
+        local active = nativeFrame:HasVisualDataSource_Charges()
+        if not (issecretvalue and issecretvalue(active)) and type(active) == "boolean" then
+            return active
+        end
+    end
     local sid = icon and icon._runtimeSpellID
     if not sid and entry then
         sid = entry.spellID or entry.overrideSpellID or entry.id

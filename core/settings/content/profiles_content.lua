@@ -15,6 +15,195 @@ local GetCore = Helpers.GetCore
 
 local SECTION_GAP = 14
 
+local ProfileCopyOptions = ns.QUI_ProfileCopyOptions or {}
+ns.QUI_ProfileCopyOptions = ProfileCopyOptions
+
+local function CollectStaticCategoryOptions(categories, options, parentLabel)
+    for _, category in ipairs(categories or {}) do
+        if not category.dynamic then
+            local label = parentLabel and (parentLabel .. " / " .. category.label) or category.label
+            options[#options + 1] = { value = category.id, text = label }
+            CollectStaticCategoryOptions(category.children, options, label)
+        end
+    end
+end
+
+function ProfileCopyOptions.GetCategoryOptions()
+    local core = GetCore()
+    local options = {}
+    CollectStaticCategoryOptions(core and core.GetProfileExportCategories and core:GetProfileExportCategories(), options)
+    return options
+end
+
+function ProfileCopyOptions.HasSourceProfile()
+    local core = GetCore()
+    local dbRef = core and core.db
+    if not dbRef then return false end
+    local activeProfile = dbRef:GetCurrentProfile()
+    for _, name in ipairs(dbRef:GetProfiles()) do
+        if name ~= activeProfile then return true end
+    end
+    return false
+end
+
+function ProfileCopyOptions.CreateCard(parent, opts)
+    if not ProfileCopyOptions.HasSourceProfile() then return nil end
+    opts = opts or {}
+    local card = Shared.CreateSettingsCardGroup(parent, opts.yOffset or 0)
+    local sourceState = { selected = "" }
+    local categoryOptions = ProfileCopyOptions.GetCategoryOptions()
+    local categoryState = { selected = opts.fixedCategoryID or (categoryOptions[1] and categoryOptions[1].value) or "" }
+    local categoryLabels = {}
+    for _, option in ipairs(categoryOptions) do categoryLabels[option.value] = option.text end
+    local pinButton
+    local copyButton
+
+    local sourceDropdown = GUI:CreateFormDropdown(card.frame, nil, {}, "selected", sourceState, nil, {
+        description = ns.L["Profile to copy settings from. The active profile is excluded."],
+    })
+
+    local function RefreshPinState()
+        if not pinButton then return end
+        local core = GetCore()
+        local pinnedSource = core and core.GetProfileFeatureSource
+            and core:GetProfileFeatureSource(opts.fixedCategoryID) or nil
+        local label = pinnedSource and ns.L["Unpin"] or ns.L["Pin to Current Profile"]
+        pinButton._buttonText = label
+        if pinButton.text then pinButton.text:SetText(label) end
+        if copyButton then
+            copyButton._enabled = not pinnedSource
+            if pinnedSource and type(copyButton.Disable) == "function" then
+                copyButton:Disable()
+            elseif not pinnedSource and type(copyButton.Enable) == "function" then
+                copyButton:Enable()
+            end
+        end
+    end
+
+    local function RefreshSources()
+        local core = GetCore()
+        local dbRef = core and core.db
+        local activeProfile = dbRef and dbRef:GetCurrentProfile() or ""
+        local pinnedSource = core and core.GetProfileFeatureSource and opts.fixedCategoryID
+            and core:GetProfileFeatureSource(opts.fixedCategoryID) or nil
+        local options = {}
+        local selectedAvailable = false
+        local pinnedAvailable = false
+        if dbRef then
+            for _, name in ipairs(dbRef:GetProfiles()) do
+                if name ~= activeProfile then
+                    options[#options + 1] = { value = name, text = name }
+                    if name == sourceState.selected then selectedAvailable = true end
+                    if name == pinnedSource then pinnedAvailable = true end
+                end
+            end
+        end
+        sourceDropdown.SetOptions(options)
+        local selected = (pinnedAvailable and pinnedSource)
+            or (selectedAvailable and sourceState.selected)
+            or (options[1] and options[1].value) or ""
+        sourceState.selected = selected
+        sourceDropdown:SetValue(selected, true)
+        RefreshPinState()
+    end
+
+    card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Source Profile"], sourceDropdown))
+
+    local categoryDropdown
+    if not opts.fixedCategoryID then
+        categoryDropdown = GUI:CreateFormDropdown(card.frame, nil, categoryOptions, "selected", categoryState, nil, {
+            description = ns.L["Feature settings to replace in the current profile."],
+        })
+        card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Feature Settings"], categoryDropdown))
+    end
+
+    copyButton = GUI:CreateButton(card.frame, ns.L["Copy Settings"], 120, 22, function()
+        local sourceName = sourceState.selected
+        local categoryID = opts.fixedCategoryID or categoryState.selected
+        if sourceName == "" or categoryID == "" then return end
+        local categoryLabel = opts.fixedCategoryLabel or categoryLabels[categoryID] or categoryID
+        GUI:ShowConfirmation({
+            title = ns.L["Copy Feature Settings?"],
+            message = string.format(ns.L["Copy %s settings from profile '%s'?"], categoryLabel, sourceName),
+            warningText = ns.L["This replaces the selected settings in the current profile and cannot be undone."],
+            acceptText = ns.L["Copy Settings"],
+            cancelText = ns.L["Cancel"],
+            isDestructive = true,
+            onAccept = function()
+                local core = GetCore()
+                if not core or type(core.CopyProfileSelection) ~= "function" then return end
+                local ok = core:CopyProfileSelection(sourceName, { categoryID })
+                if ok then
+                    print("|cff60A5FAQUI:|r " .. ns.L["Settings copied."])
+                    if opts.onCopied then opts.onCopied(sourceName, categoryID) end
+                else
+                    print("|cffff0000QUI:|r " .. ns.L["Failed to copy settings."])
+                end
+            end,
+        })
+    end)
+    local pinCell
+    if opts.fixedCategoryID == "groupFrames" or opts.fixedCategoryID == "auraDisplays" then
+        pinButton = GUI:CreateButton(card.frame, ns.L["Pin to Current Profile"], 160, 22, function()
+            local core = GetCore()
+            if not core then return end
+            local pinnedSource = core.GetProfileFeatureSource
+                and core:GetProfileFeatureSource(opts.fixedCategoryID) or nil
+            if pinnedSource then
+                if core.UnpinProfileSelection then
+                    core:UnpinProfileSelection(opts.fixedCategoryID)
+                    RefreshSources()
+                end
+                return
+            end
+
+            local sourceName = sourceState.selected
+            if sourceName == "" or not core.PinProfileSelection then return end
+            local categoryLabel = opts.fixedCategoryLabel or categoryLabels[opts.fixedCategoryID] or opts.fixedCategoryID
+            GUI:ShowConfirmation({
+                title = ns.L["Copy Feature Settings?"],
+                message = string.format(ns.L["Copy %s settings from profile '%s'?"], categoryLabel, sourceName),
+                warningText = ns.L["This replaces the selected settings in the current profile and cannot be undone."],
+                acceptText = ns.L["Pin to Current Profile"],
+                cancelText = ns.L["Cancel"],
+                isDestructive = true,
+                onAccept = function()
+                    local currentCore = GetCore()
+                    if not currentCore then return end
+                    local ok = currentCore:PinProfileSelection(sourceName, opts.fixedCategoryID)
+                    if ok then
+                        if opts.onCopied then opts.onCopied(sourceName, opts.fixedCategoryID) end
+                        RefreshSources()
+                    end
+                end,
+            })
+        end)
+        GUI:SetTooltipInfo(
+            pinButton,
+            ns.L["Pinned settings stay synced with the source profile. Edits made here update the source when you switch profiles, reload, or unpin."],
+            ns.L["Pinned Settings"]
+        )
+        pinCell = Shared.BuildSettingRow(
+            card.frame,
+            ns.L["Pinned Settings"],
+            pinButton
+        )
+    end
+
+    card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Current Profile"], copyButton), pinCell)
+    card.Finalize()
+    card.frame:SetScript("OnShow", RefreshSources)
+    RefreshSources()
+
+    return {
+        frame = card.frame,
+        sourceDropdown = sourceDropdown,
+        categoryDropdown = categoryDropdown,
+        pinButton = pinButton,
+        RefreshSources = RefreshSources,
+    }
+end
+
 local function BuildSpecProfilesContent(content)
     local PAD = PADDING
     local y = -10
@@ -30,6 +219,7 @@ local function BuildSpecProfilesContent(content)
     local profileDropdowns_withPresets = {}
     local profileDropdowns_filtered = {}
     local currentProfileName
+    local featureCopyCard
 
     local presetsByName = {}
     for _, preset in ipairs(QUI._presetProfiles or {}) do
@@ -79,6 +269,7 @@ local function BuildSpecProfilesContent(content)
         for _, dd in ipairs(profileDropdowns_filtered) do
             if dd.SetOptions then dd.SetOptions(filtered) end
         end
+        if featureCopyCard then featureCopyCard.RefreshSources() end
     end
 
     local function RefreshProfileDisplay()
@@ -127,7 +318,11 @@ local function BuildSpecProfilesContent(content)
             warningText = ns.L["This cannot be undone."], acceptText = ns.L["Reset"], cancelText = ns.L["Cancel"], isDestructive = true,
             onAccept = function()
                 local core = GetCore(); local dbRef = core and core.db
-                if dbRef then dbRef:ResetProfile(); print("|cff60A5FAQUI:|r " .. ns.L["Profile reset. Please /reload."]) end
+                if dbRef then
+                    if core.SyncProfileFeatureSources then core:SyncProfileFeatureSources() end
+                    dbRef:ResetProfile()
+                    print("|cff60A5FAQUI:|r " .. ns.L["Profile reset. Please /reload."])
+                end
             end,
         })
     end)
@@ -242,6 +437,7 @@ local function BuildSpecProfilesContent(content)
     local copyDropdown = GUI:CreateFormDropdown(manageCard.frame, nil, GetProfileList(), "selected", copyWrapper, function(value)
         local core = GetCore(); local dbRef = core and core.db
         if dbRef and value and value ~= "" then
+            if core.SyncProfileFeatureSources then core:SyncProfileFeatureSources() end
             dbRef:CopyProfile(value)
             print("|cff60A5FAQUI:|r " .. ns.L["Copied settings from: "] .. value)
             copyWrapper.selected = ""
@@ -312,6 +508,12 @@ local function BuildSpecProfilesContent(content)
     if profileDropdown.SetValue then profileDropdown:SetValue(initProfile, true) end
 
     y = y - manageCard.frame:GetHeight() - SECTION_GAP
+
+    if ProfileCopyOptions.HasSourceProfile() then
+        Shared.CreateAccentDotLabel(content, ns.L["Copy Feature Settings"], y); y = y - 22
+        featureCopyCard = ProfileCopyOptions.CreateCard(content, { yOffset = y })
+        y = y - featureCopyCard.frame:GetHeight() - SECTION_GAP
+    end
 
     Shared.CreateAccentDotLabel(content, ns.L["Spec Auto-Switch"], y); y = y - 22
 

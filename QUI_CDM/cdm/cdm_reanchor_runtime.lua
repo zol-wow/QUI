@@ -289,6 +289,7 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
             else
                 local icon = deps.mintOwned and deps.mintOwned(e, containerKey) or nil
                 if icon then
+                    icon._blizzCooldown = m.frame
                     diag.mirrored = diag.mirrored + 1
                     diag.minted = diag.minted + 1
                     self:_TrackMintedOwned(containerKey, icon)
@@ -323,6 +324,7 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
             end
             local icon = deps.mintOwned and deps.mintOwned(e, containerKey) or nil
             if icon then
+                icon._blizzCooldown = m.frame
                 diag.minted = diag.minted + 1
                 self:_TrackMintedOwned(containerKey, icon)
                 entries[#entries + 1] = {

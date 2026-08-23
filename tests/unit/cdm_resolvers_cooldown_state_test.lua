@@ -290,9 +290,10 @@ local ns = {
                     return chargeDur
                 end
                 if spellID == 60001 or spellID == 60002 or spellID == 60003
-                    or spellID == 60004 or spellID == 60005 or spellID == 60006 then
+                    or spellID == 60004 or spellID == 60006 then
                     return chargeDur
                 end
+                if spellID == 60005 then return cooldownDur end
                 -- Talent-override case: both spellIDs return a DurationObject
                 -- but they carry different timing. C_Spell.GetSpellCooldownDuration
                 -- on the registered base (50334) returns a DurObj whose
@@ -587,19 +588,25 @@ assert(state.isOnCooldown == true,
 assert(state.durObj == chargeDur,
     "active cooldown with a secret charge count should carry the recharge DurationObject")
 
+inCombat = true
 state = resolve({
+    owner = {
+        _blizzCooldown = {
+            HasVisualDataSource_Charges = function() return true end,
+        },
+    },
     entry = {
         type = "spell",
         kind = "cooldown",
         id = 60005,
         spellID = 60005,
         viewerType = "essential",
-        hasCharges = true,
     },
     runtimeSpellID = 60005,
     containerKey = "essential",
     useBuffSwipe = false,
 })
+inCombat = false
 
 assert(state.mode == "cooldown", "active cooldown with one secret charge should resolve as cooldown")
 assert(state.isOnCooldown == true,
