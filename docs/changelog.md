@@ -8,34 +8,34 @@ nav_order: 5
 
 This page summarizes the user-facing changes since the last mainline release. For every beta entry and technical fix, see the full [CHANGELOG.md](https://github.com/zol-wow/QUI/blob/main/CHANGELOG.md).
 
-## Current Release: 5.2.2-beta5
+## Current Release: 5.2.2-beta6
 
 {: .warning }
 **WoW 12.1 only.** This build targets patch 12.1 (interface 120100) and will not load on the 12.0.x client.
 
-QUI 5.2.2-beta5 continues the 5.2.2 beta line with profile sharing, aura-display
-visibility controls, and safer combat reloads.
+QUI 5.2.2-beta6 continues the 5.2.2 beta line with combat UI additions,
+search-routing fixes, and complete localization coverage.
 
 {: .important }
 Back up your `WTF` folder before updating. Manual installs must copy every `QUI*` folder from the release zip into `Interface\AddOns\`.
 
-## What's New in 5.2.2-beta5
+## What's New in 5.2.2-beta6
 
-### Profiles and aura displays
+### Combat UI
 
-- **Feature settings can be shared across profiles** for Aura Displays and
-  Group / Raid Frames without replacing click-cast bindings.
-- **Tracked aura displays can keep inactive icons visible** with active-only,
-  instance-only, or always-visible placeholder modes.
+- **Group-frame click-casting supports items** alongside spell bindings.
+- **Tracked nameplate debuffs can tint health bars** with configurable color and
+  opacity.
+- **Damage Meter tooltips show player item level** from the shared inspection
+  cache.
+- **Totem Bar buttons can be resized** with a new Button Size setting.
 
 ### Beta fixes
 
-- **Combat reloads preserve protected UI ownership** across Cooldown Manager,
-  Chat, Info Bar, Minimap, and Travel startup paths.
-- **Cooldown charge and aura-phase state follows Blizzard's live sources**
-  while QUI preserves native ownership.
-- **Bank, guild-bank, and group-frame controls refresh safely** through native
-  protected flows and live layout state.
+- **Stopped boss castbars stay hidden** after their boss frame disappears.
+- **Settings search opens the intended Group Frames, Nameplates, and Action Bars
+  subpages.**
+- **All ten translated locale overlays cover the current settings surface.**
 
 ## What's New in 5.2.1
 

@@ -4,6 +4,37 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2-beta6 - 2026-08-23
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Combat UI additions, search-routing fixes, and completed locale coverage for
+the 5.2.2 beta line.
+
+### Added
+
+- **Group-frame click-casting supports items.** Drag an item into a binding and
+  trigger it with a mouse button, keyboard key, or mouse wheel.
+- **Tracked nameplate debuffs can tint health bars.** Configure the color and
+  opacity applied while a tracked aura is active.
+- **Damage Meter tooltips show player item level.** Hovered player rows use the
+  shared inspection cache and refresh when asynchronous inspection completes.
+- **Totem Bar buttons can be resized.** A new Button Size setting updates the
+  bar layout.
+
+### Changed
+
+- **Translations cover previously missing UI text.** All ten non-English locale
+  overlays now include the previously untranslated settings and interface text.
+
+### Fixed
+
+- **Stopped boss castbars stay hidden.** HUD visibility refreshes no longer
+  reveal a castbar after its boss frame disappears.
+- **Settings search opens the intended destination.** Group Frames, Nameplates,
+  and Action Bars results now resolve to their correct subpages.
+
 ## v5.2.2-beta5 - 2026-08-23
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
