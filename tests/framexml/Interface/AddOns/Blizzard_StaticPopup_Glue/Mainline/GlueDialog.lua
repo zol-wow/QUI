@@ -1,1 +1,0 @@
-GlueDialogBackgroundTop = "UI-DiamondDialogBox-Border";

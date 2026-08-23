@@ -1,0 +1,6 @@
+[submodule "tests"]
+	path = tests
+	url = https://github.com/zol-wow/QUI-tests.git
+[submodule "docs"]
+	path = docs
+	url = https://github.com/zol-wow/QUI-docs.git

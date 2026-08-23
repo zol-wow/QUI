@@ -33,6 +33,7 @@ jobs:
         with:
           ref: alpha
           fetch-depth: 0
+          submodules: true
           persist-credentials: false
 
       - name: Record base revision
@@ -175,6 +176,7 @@ jobs:
             exit 0
           fi
           test -n "$(git status --porcelain)"
+          test -z "$(git -C tests status --porcelain)"
           git diff --cached --quiet
           test -z "$(git ls-files --others --exclude-standard)"
           forbidden=""
