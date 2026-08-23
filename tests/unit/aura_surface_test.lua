@@ -7,13 +7,15 @@ local function noop() end
 local created = 0
 local nilContainer = false
 CreateFrame = function(kind, _name, parent)
-    if kind ~= "AuraContainer" then return nil end
+    if kind ~= "AuraContainer" and kind ~= "Frame" then return nil end
     if nilContainer then return nil end
-    created = created + 1
+    if kind == "AuraContainer" then created = created + 1 end
     local c = {
         _parent = parent, _shown = false, _enabled = nil, _unit = nil,
-        _points = {}, _index = created,
+        _points = {}, _index = created, _frameLevel = kind == "AuraContainer" and 5 or 0,
         SetSize = noop, ClearAllPoints = noop,
+        GetFrameLevel = function(self) return self._frameLevel end,
+        SetFrameLevel = function(self, level) self._frameLevel = level end,
         SetPoint = function(self, ...) self._points[#self._points + 1] = { ... } end,
         SetUnit = function(self, u) self._unit = u end,
         SetEnabled = function(self, v) self._enabled = v end,
@@ -24,7 +26,7 @@ CreateFrame = function(kind, _name, parent)
 end
 
 local ns = {}
-local configureCalls, syncCalls, parkCalls = {}, {}, {}
+local configureCalls, syncCalls, inactiveCalls, parkCalls = {}, {}, {}, {}
 local nextConfigureResult, nextSyncResult = true, true
 
 ns.AuraGlue = {
@@ -47,6 +49,14 @@ ns.AuraSlots = {
         }
         return nextSyncResult
     end,
+    SyncInactiveIcons = function(container, element, allowCreate, shown)
+        inactiveCalls[#inactiveCalls + 1] = {
+            container = container, element = element,
+            allowCreate = allowCreate, shown = shown,
+        }
+        return true
+    end,
+    HideInactiveIcons = noop,
     Park = function(container) parkCalls[#parkCalls + 1] = container end,
 }
 
@@ -143,6 +153,18 @@ local marker = { over = true }
 S.ApplyElementPass(overrideHost, { tracked }, BaseOpts({ profileOverrides = marker }))
 if syncCalls[#syncCalls].overrides ~= marker then
     fail("profileOverrides must be forwarded to AuraSlots.Sync")
+end
+
+local inactiveHost = NewHost()
+S.ApplyElementPass(inactiveHost, { tracked }, BaseOpts({ showInactive = true }))
+local inactiveCall = inactiveCalls[#inactiveCalls]
+if not inactiveCall or inactiveCall.container._parent ~= inactiveHost
+    or inactiveCall.container == inactiveHost._quiAuraContainers[1]
+    or inactiveCall.element ~= tracked or inactiveCall.shown ~= true then
+    fail("showInactive must reconcile host-owned inactive tracked icons")
+end
+if inactiveCall.container:GetFrameLevel() >= inactiveHost._quiAuraContainers[1]:GetFrameLevel() then
+    fail("inactive tracked icons must stay below the native AuraContainer")
 end
 
 if S.ApplyElementPass(nil, {}, BaseOpts()) ~= false then fail("nil host must return false") end

@@ -881,6 +881,7 @@ _G.QUI = {
         sv = {
             profiles = {
                 Default = {},
+                Source = {},
             },
         },
     },
@@ -923,7 +924,7 @@ _G.QUI = {
         db = {
             profile = profile_db,
             GetProfiles = function()
-                return { "Default" }
+                return { "Default", "Source" }
             end,
             GetCurrentProfile = function()
                 return "Default"

@@ -13,6 +13,12 @@ local DISPLAY_LAYOUT_DEFAULTS = {
     spacing = 2,
 }
 
+local NON_GAMEPLAY_INSTANCE_TYPES = {
+    none = true,
+    neighborhood = true,
+    interior = true,
+}
+
 AD.ANCHOR_PREFIX = "auraDisplay_"
 
 local function Helpers()
@@ -69,6 +75,7 @@ function AD.NewDisplay(name, group)
         name = (type(name) == "string" and name ~= "") and name or id,
         group = group,
         enabled = true,
+        visibility = "active",
         unitMode = "token",
         unit = "player",
         layout = {
@@ -450,6 +457,14 @@ function AD.DisplayActive(display)
     return AD.ResolveUnit(display) ~= nil
 end
 
+function AD.ShouldShowInactiveIcons(display)
+    local visibility = type(display) == "table" and display.visibility or "active"
+    if visibility == "always" then return true end
+    if visibility ~= "instance" then return false end
+    local _, instanceType = GetInstanceInfo()
+    return instanceType ~= nil and not NON_GAMEPLAY_INSTANCE_TYPES[instanceType]
+end
+
 local E, AuraGlue, AuraSurface, AuraSkin
 
 local function ResolveDeps()
@@ -750,6 +765,7 @@ ApplyDisplay = function(display, allowCreate)
         anchorContainer = function(container, anchorHost, element)
             AnchorElementContainer(container, anchorHost, element, layout.placements[element])
         end,
+        showInactive = AD.ShouldShowInactiveIcons(display),
         skip = skipElement,
         onIncomplete = function() RequeueDisplay(display) end,
     })
@@ -953,6 +969,7 @@ end
 
 local WATCHED_EVENTS = {
     "PLAYER_ENTERING_WORLD",
+    "ZONE_CHANGED_NEW_AREA",
     "GROUP_ROSTER_UPDATE",
     "PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_ROLES_ASSIGNED",

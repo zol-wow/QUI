@@ -988,6 +988,7 @@ local function UpdateName(frame)
 
     local isRaid = frame._isRaid
     local nameSettings = GetNameSettings(isRaid)
+    Chrome.AnchorBottomPadded(frame, GetVisualDB(isRaid), frame._bottomPad)
     if nameSettings and nameSettings.showName == false then
         frame.nameText:SetText("")
         return

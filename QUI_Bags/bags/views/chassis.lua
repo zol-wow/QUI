@@ -72,8 +72,8 @@ function Chassis.MakeScheduleRefresh(getWin, refresh)
     end
 end
 
-function Chassis.CreatePanelButton(parent, withLabel)
-    local btn = CreateFrame("Button", nil, parent)
+function Chassis.CreatePanelButton(parent, withLabel, template)
+    local btn = CreateFrame("Button", nil, parent, template)
     local bg = btn:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture("Interface\\Buttons\\WHITE8x8")

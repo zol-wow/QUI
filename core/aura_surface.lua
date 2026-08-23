@@ -4,11 +4,11 @@ ns.AuraSurface = S
 _G.QUI = _G.QUI or {}
 _G.QUI.AuraSurface = S
 
-local function EnsurePool(host)
-    local pool = host._quiAuraContainers
+local function EnsurePool(host, key)
+    local pool = host[key]
     if not pool then
         pool = {}
-        host._quiAuraContainers = pool
+        host[key] = pool
     end
     return pool
 end
@@ -27,7 +27,9 @@ function S.ApplyElementPass(host, elements, opts)
     local AuraSlots = ns.AuraSlots
     if not (AuraGlue and AuraSlots) then return false end
 
-    local pool = EnsurePool(host)
+    local pool = EnsurePool(host, "_quiAuraContainers")
+    local inactivePool = opts.showInactive ~= nil
+        and EnsurePool(host, "_quiAuraInactiveContainers") or nil
     local allowCreate = opts.allowCreate == true
     local cancelEligible = opts.cancelEligible == true
     local incomplete = false
@@ -56,7 +58,9 @@ function S.ApplyElementPass(host, elements, opts)
             container:SetUnit(unit)
             local profile = opts.profileFor(element)
             opts.anchorContainer(container, host, element, profile)
-            if opts.skip and opts.skip(element) then
+            local skipped = opts.skip and opts.skip(element)
+            if skipped then
+                if element.mode == "tracked" then AuraSlots.Park(container) end
                 container:SetEnabled(false)
                 container:Hide()
             elseif element.mode == "tracked" then
@@ -77,6 +81,34 @@ function S.ApplyElementPass(host, elements, opts)
                 container:SetEnabled(true)
                 container:Show()
             end
+
+            if inactivePool then
+                local inactiveContainer = inactivePool[i]
+                local inactiveEligible = element.mode == "tracked"
+                    and (element.displayType == nil or element.displayType == "icon")
+                local wantInactive = inactiveEligible and not skipped and opts.showInactive == true
+                if wantInactive and not inactiveContainer then
+                    if allowCreate and CreateFrame then
+                        inactiveContainer = CreateFrame("Frame", nil, host)
+                        inactiveContainer:SetSize(1, 1)
+                        inactiveContainer:SetFrameLevel(math.max(0, container:GetFrameLevel() - 1))
+                        inactivePool[i] = inactiveContainer
+                    else
+                        incomplete = true
+                    end
+                end
+                if inactiveContainer then
+                    opts.anchorContainer(inactiveContainer, host, element, profile)
+                    if inactiveEligible then
+                        if not AuraSlots.SyncInactiveIcons(inactiveContainer, element,
+                            allowCreate, wantInactive) then
+                            incomplete = true
+                        end
+                    else
+                        AuraSlots.HideInactiveIcons(inactiveContainer)
+                    end
+                end
+            end
         end
     end
 
@@ -88,6 +120,11 @@ function S.ApplyElementPass(host, elements, opts)
         AuraSlots.Park(container)
         container:SetEnabled(false)
         container:Hide()
+    end
+    if inactivePool then
+        for i = #elements + 1, #inactivePool do
+            AuraSlots.HideInactiveIcons(inactivePool[i])
+        end
     end
 
     if incomplete and opts.onIncomplete then

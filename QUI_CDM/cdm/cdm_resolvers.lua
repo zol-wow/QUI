@@ -1631,7 +1631,14 @@ local function ResolveCooldownStateCore(context)
 
     local entryMayHaveCharges = entry
         and (entry.hasCharges == true or entry.charges == true)
-    if currentOnGCD == true and HasActiveChargeRecharge(sid, entryMayHaveCharges) then
+    if not entryMayHaveCharges then
+        local nativeFrame = context.owner and context.owner._blizzCooldown
+        if nativeFrame and type(nativeFrame.HasVisualDataSource_Charges) == "function" then
+            local active = nativeFrame:HasVisualDataSource_Charges()
+            entryMayHaveCharges = not ResolverIsSecretValue(active) and active == true
+        end
+    end
+    if HasActiveChargeRecharge(sid, entryMayHaveCharges) then
         local chargeDur = QueryChargeDuration(sid)
         if type(chargeDur) ~= "nil" then
             state.mode = "cooldown"
@@ -1698,19 +1705,6 @@ local function ResolveCooldownStateCore(context)
         state.cooldownInfoOnGCD = currentOnGCD
         MemAuditProfilerMark("CDM_rsReturnGCDCached")
         return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
-    end
-
-    if HasActiveChargeRecharge(sid, entryMayHaveCharges) then
-        local chargeDur = QueryChargeDuration(sid)
-        if type(chargeDur) ~= "nil" then
-            state.mode = "cooldown"
-            SetCooldownStateActivity(state, true)
-            state.durObj = chargeDur
-            state.sourceID = sid
-            state.spellID = sid
-            MemAuditProfilerMark("CDM_rsReturnChargeRecharge")
-            return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
-        end
     end
 
     state.mode = "inactive"

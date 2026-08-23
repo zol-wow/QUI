@@ -174,6 +174,20 @@ assert(BankWindow.FindTabForItem(frec, fwb, 555) == 12,
 assert(BankWindow.FindTabForItem(frec, fwb, 999) == nil, "absent item → nil")
 assert(BankWindow.FindTabForItem(nil, nil, 777) == nil, "nil records → nil")
 
+local sourceFile = assert(io.open("QUI_Bags/bags/views/bank_window.lua", "rb"))
+local source = sourceFile:read("*a")
+sourceFile:close()
+assert(not source:find("C_Bank.PurchaseBankTab", 1, true),
+    "addon code must not call the protected bank-tab purchase API")
+assert(source:find('"BankPanelPurchaseButtonScriptTemplate"', 1, true)
+    and source:find('btn:SetAttribute("overrideBankType", entry.bankType)', 1, true),
+    "bank-tab purchases must use Blizzard's addon purchase-button template")
+local chassisFile = assert(io.open("QUI_Bags/bags/views/chassis.lua", "rb"))
+local chassisSource = chassisFile:read("*a")
+chassisFile:close()
+assert(chassisSource:find('CreateFrame("Button", nil, parent, template)', 1, true),
+    "panel buttons must pass the Blizzard template through to CreateFrame")
+
 -- Test 11: BuildTabList active bank-type filter. Character view keeps only
 -- char tabs/marker; warband view keeps only warband tabs/marker.
 list = BankWindow.BuildTabList(rec, warband,

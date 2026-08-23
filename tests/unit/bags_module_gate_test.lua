@@ -84,6 +84,7 @@ ns.Bags.BankWindow = {
 local guildWindowHides = 0
 local guildWindowShown = false
 local guildLogUpdates = 0
+local guildCombatRefreshes = 0
 local guildShows = {}
 ns.Bags.GuildWindow = {
     Hide            = function()
@@ -94,6 +95,7 @@ ns.Bags.GuildWindow = {
     ShowLive        = function() guildShows[#guildShows + 1] = "live" end,
     ShowCached      = function(key) guildShows[#guildShows + 1] = "cached:" .. tostring(key) end,
     OnLogUpdate     = function() guildLogUpdates = guildLogUpdates + 1 end,
+    Refresh         = function() guildCombatRefreshes = guildCombatRefreshes + 1 end,
     OnProfileChanged = function() end,
 }
 local guildTakeoverLog = {}
@@ -185,7 +187,7 @@ assert(registered["BANKFRAME_OPENED"] and registered["BANKFRAME_CLOSED"]
        and registered["PLAYER_INTERACTION_MANAGER_FRAME_HIDE"]
        and registered["ITEM_LOCK_CHANGED"] and registered["BAG_UPDATE_COOLDOWN"]
        and registered["EQUIPMENT_SETS_CHANGED"]
-       and registered["PLAYER_REGEN_DISABLED"]
+       and registered["PLAYER_REGEN_DISABLED"] and registered["PLAYER_REGEN_ENABLED"]
        and registered["GUILDBANKFRAME_OPENED"] and registered["GUILDBANKFRAME_CLOSED"]
        and registered["GUILDBANKLOG_UPDATE"] and registered["ADDON_LOADED"],
        "UI events missing after first-frame flush")
@@ -307,10 +309,15 @@ local sortCombats, transferCombats, junkCombats = 0, 0, 0
 ns.Bags.SortExecutor = { OnCombat = function() sortCombats = sortCombats + 1 end }
 ns.Bags.Transfers    = { OnCombat = function() transferCombats = transferCombats + 1 end }
 ns.Bags.Junk         = { OnCombat = function() junkCombats = junkCombats + 1 end }
+guildWindowShown = true
 scripts.OnEvent(frame, "PLAYER_REGEN_DISABLED")
+scripts.OnEvent(frame, "PLAYER_REGEN_ENABLED")
 assert(sortCombats == 1, "PLAYER_REGEN_DISABLED must route to SortExecutor.OnCombat()")
 assert(transferCombats == 1, "PLAYER_REGEN_DISABLED must route to Transfers.OnCombat()")
 assert(junkCombats == 1, "PLAYER_REGEN_DISABLED must route to Junk.OnCombat()")
+assert(guildCombatRefreshes == 2,
+       "combat transitions must refresh shown guild money controls")
+guildWindowShown = false
 ns.Bags.SortExecutor, ns.Bags.Transfers, ns.Bags.Junk = nil, nil, nil
 
 -- Test 9: refresh while already enabled + active (profile switch between two
@@ -403,6 +410,7 @@ assert(not registered["BANKFRAME_OPENED"] and not registered["BANKFRAME_CLOSED"]
        and not registered["PLAYER_INTERACTION_MANAGER_FRAME_SHOW"]
        and not registered["ITEM_LOCK_CHANGED"] and not registered["BAG_UPDATE_COOLDOWN"]
        and not registered["EQUIPMENT_SETS_CHANGED"] and not registered["PLAYER_REGEN_DISABLED"]
+       and not registered["PLAYER_REGEN_ENABLED"]
        and not registered["GUILDBANKFRAME_OPENED"] and not registered["GUILDBANKFRAME_CLOSED"]
        and not registered["GUILDBANKLOG_UPDATE"] and not registered["ADDON_LOADED"],
        "all UI events must unregister when disabled")

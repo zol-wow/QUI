@@ -46,6 +46,31 @@ assert(claimed[fMatch] == true, "claimedFrames passed through from match")
 assert(#shellCalls == 0, "mintShell is not called for matched native entries")
 assert(mintCalls[1] == eFrameless and mintCalls[2] == eAdd, "mintOwned called for frameless then additional, not for matched")
 
+do
+    local native = { f = "charge-source" }
+    local entry = { name = "Survival Instincts", type = "spell" }
+    local owned = {}
+    local rt = R.New({
+        bridge = { Sink = function() end },
+        wiring = {
+            MatchCuratedToFrames = function()
+                return { { entry = entry, frame = native } }, {}, { [native] = true }
+            end,
+        },
+        getCurated = function() return { entry } end,
+        getAdditional = function() return {} end,
+        shouldReplaceNativeAuraPhase = function() return true end,
+        mintOwned = function() return owned end,
+    })
+    local replaced, replacedClaims = rt:AssembleEntries("essential", {})
+    assert(#replaced == 1 and replaced[1].frame == owned,
+        "native aura-phase replacement should mint one owned icon")
+    assert(owned._blizzCooldown == native,
+        "owned replacement should retain Blizzard's charge-state source")
+    assert(replacedClaims[native] == nil,
+        "replaced native frame should no longer be claimed for layout")
+end
+
 -- Curated order is the composer order. A frameless/manual entry between two
 -- native matches must stay in that saved slot instead of being pushed after
 -- all matched Blizzard frames.

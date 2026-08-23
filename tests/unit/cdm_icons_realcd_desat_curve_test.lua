@@ -10,10 +10,6 @@
 -- dark seconds after the real cooldown ended). The curve binding is re-sampled
 -- C-side every frame: dark while the real CD rolls, bright the instant it hits
 -- zero, with the secret value never read in Lua.
---
--- The charge carve-out (C_Spell.GetSpellCooldown().isActive == false while a
--- charge is banked) and the desaturateOnCooldown gate must still suppress the
--- curve drive and keep the icon saturated.
 
 local BuildCooldownStateContext = dofile("tests/helpers/cdm_context_builder_stub.lua")
 
@@ -285,11 +281,6 @@ do
     assert(#curveAddPoints > 0, "case1: a desaturation step curve must be built")
 end
 
--- Case 2: the charge carve-out must suppress the curve drive and keep the icon
--- saturated via SetDesaturated(false). The live carve-out keeps a multi-charge
--- spell bright while a charge is banked: C_Spell.GetSpellCooldown().isActive ==
--- false is the secret-safe "1+ charge available" signal (currentCharges itself
--- is secret in combat and cannot be compared in Lua).
 do
     curveAddPoints = {}
     local realCdQueried = false
@@ -299,14 +290,12 @@ do
         if spellID == THRASH then return realCdDurObj end
         return nil
     end
-    -- Charge banked: the recharge is rolling but reported as NOT an active
-    -- cooldown (isActive == false), so the spell is still castable.
     ns.CDMSources.QuerySpellCooldown = function(spellID)
         if spellID == THRASH then
             return {
                 startTime = GetTime(),
                 duration = 6,
-                isActive = false,
+                isActive = true,
                 isOnGCD = false,
             }
         end
@@ -315,6 +304,9 @@ do
 
     local icon, getAmount, getBool = makeIcon()
     icon._spellEntry.hasCharges = true
+    icon._blizzCooldown = {
+        HasVisualDataSource_Charges = function() return true end,
+    }
     local applied = ns.CDMIcons.ApplyResolvedCooldown(icon)
     assert(applied == true, "case2: charge spell should report an applied cooldown")
     assert(getAmount() ~= DESAT_FROM_CURVE,
@@ -323,6 +315,19 @@ do
         "case2: charge spell with banked charges must stay saturated via SetDesaturated(false)")
     assert(realCdQueried == false,
         "case2: the real-CD duration must not even be queried when the charge carve-out keeps the icon saturated")
+
+    realCdQueried = false
+    local depletedIcon, depletedAmount = makeIcon()
+    depletedIcon._spellEntry.hasCharges = true
+    depletedIcon._blizzCooldown = {
+        HasVisualDataSource_Charges = function() return false end,
+    }
+    applied = ns.CDMIcons.ApplyResolvedCooldown(depletedIcon)
+    assert(applied == true, "case2: depleted charge spell should retain its cooldown")
+    assert(depletedAmount() == DESAT_FROM_CURVE,
+        "case2: depleted charge spell should retain cooldown desaturation")
+    assert(realCdQueried == true,
+        "case2: depleted charge spell should evaluate its real cooldown duration")
 end
 
 -- Case 3: item-cooldown phase must drive saturation from the item cooldown

@@ -3077,7 +3077,7 @@ function ownedEngine:RefreshReanchorRuntimeHooks(markDirty)
     if not (wiring and wiring.GetViewerForKey) then return false end
     if not IsCooldownViewerReady() then
         QueueReanchorHooksWhenCooldownViewerReady(markDirty)
-        return false
+        if not ns._cdmCombatReloadGrace then return false end
     end
 
     local function getViewer(key)
@@ -3177,15 +3177,22 @@ function ownedEngine:BootstrapReanchorRuntime()
                     local bridge = boot.bridge
                     return (bridge and bridge.IsClaimed and bridge:IsClaimed(frame)) or false
                 end,
-                installGuard = function(frame)
+                installGuard = function(frame, key)
                     local bridge = boot.bridge
                     if bridge and bridge.InstallAnchorGuard then
                         bridge:InstallAnchorGuard(frame)
+                        if ns._cdmCombatReloadGrace and (key == "essential" or key == "utility")
+                            and (not bridge.IsClaimed or not bridge:IsClaimed(frame))
+                            and bridge.Sink then
+                            bridge:Sink(frame)
+                        end
                     end
                 end,
                 installGuardKeys = { essential = true, utility = true },
                 isInitWindow = function() return ns._inInitSafeWindow == true end,
-                isInitialReanchorDone = IsInitialReanchorDone,
+                isInitialReanchorDone = function(key)
+                    return ns._cdmCombatReloadGrace or IsInitialReanchorDone(key)
+                end,
             })
             ns._cdmReanchorHooks = hk
 
@@ -3254,6 +3261,8 @@ function ownedEngine:Initialize()
         return
     end
 
+    ns._cdmCombatReloadGrace = type(_G.UnitAffectingCombat) == "function"
+        and _G.UnitAffectingCombat("player") == true
     inInitSafeWindow = true
     local previousInitSafeWindow = ns._inInitSafeWindow
     ns._inInitSafeWindow = true
@@ -3456,6 +3465,7 @@ function ownedEngine:Initialize()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
             local isLogin, isReload = arg1, arg2
+            C_Timer.After(0, function() ns._cdmCombatReloadGrace = false end)
             ownedEngine:RefreshReanchorRuntimeHooks(false)
             if isReload then
                 local pewPreviousInitSafeWindow = ns._inInitSafeWindow

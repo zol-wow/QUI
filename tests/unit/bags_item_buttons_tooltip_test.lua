@@ -152,4 +152,20 @@ assert(newItemHidden, "hover must hide NewItemTexture immediately")
 assert(flashStopped and glowStopped, "hover must stop both new-item animations")
 _G.CreateFrame = prevCreateFrame
 
+local droppedMoney, clearedCursor, depositedMoney, pickedUpItem = 0, 0, 0, 0
+_G.HandleModifiedItemClick = function() return false end
+_G.GetGuildBankItemLink = function() return nil end
+_G.IsModifiedClick = function() return false end
+_G.GetCursorInfo = function() return "guildbankmoney", 123 end
+_G.DropCursorMoney = function() droppedMoney = droppedMoney + 1 end
+_G.ClearCursor = function() clearedCursor = clearedCursor + 1 end
+_G.DepositGuildBankMoney = function() depositedMoney = depositedMoney + 1 end
+_G.PickupGuildBankItem = function() pickedUpItem = pickedUpItem + 1 end
+local guildButton = ItemButtons.CreateGuildLive({})
+guildButton._scripts.OnClick(guildButton, "LeftButton")
+assert(droppedMoney == 1 and clearedCursor == 1,
+    "guild-bank money on the cursor must be dropped and cleared")
+assert(depositedMoney == 0 and pickedUpItem == 0,
+    "guild-bank cursor money must not fall through to deposit or item pickup")
+
 print("OK: bags_item_buttons_tooltip_test")

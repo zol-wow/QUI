@@ -4365,6 +4365,10 @@ local defaults = {
             _updatedAt = 0,
             entries = {},
         },
+        profileFeaturePins = {
+            _version = 1,
+            profiles = {},
+        },
         mailContacts = {},
         spellScanner = {
             spells = {},

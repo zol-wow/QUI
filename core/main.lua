@@ -124,6 +124,9 @@ function QUICore:SeedNewProfile(event, db, profileKey)
     if ns.ApplyNewProfileSeed then
         ns.ApplyNewProfileSeed(db.profile)
     end
+    if ns.Migrations and ns.Migrations.RunOnProfile then
+        ns.Migrations.RunOnProfile(db.profile)
+    end
 end
 
 function QUICore:OnInitialize()
@@ -163,6 +166,14 @@ function QUICore:OnInitialize()
 
     if LibDualSpec then
         LibDualSpec:EnhanceDatabase(self.db, ADDON_NAME)
+    end
+
+    local pins = ns.Settings and ns.Settings.Pins
+    if pins and type(pins.ApplyProfileFeaturePins) == "function" then
+        pins:ApplyProfileFeaturePins(self.db)
+        if type(pins.ApplyAllForDB) == "function" then
+            pins:ApplyAllForDB(self.db)
+        end
     end
 
     RunAfterFirstFrame(function()
@@ -268,6 +279,13 @@ function QUICore:OnProfileChanged(event, db, profileKey)
 
     if ns.Migrations and ns.Migrations.RunLate then
         ns.Migrations.RunLate(self.db)
+    end
+
+    if pins and type(pins.ApplyProfileFeaturePins) == "function" then
+        pins:ApplyProfileFeaturePins(self.db)
+        if type(pins.ApplyAllForDB) == "function" then
+            pins:ApplyAllForDB(self.db)
+        end
     end
 
     if self.CleanupFontRegistry then
@@ -527,6 +545,14 @@ function QUICore:OnEnable()
 
     if ns.AddonLoader and ns.AddonLoader.LoadEnabledLODModulesEager then
         ns.AddonLoader:LoadEnabledLODModulesEager()
+    end
+
+    if self.Minimap and self.Minimap.InitializeOnce then
+        self.Minimap:InitializeOnce()
+    end
+
+    if self.InfoBar and self.InfoBar.ApplyAll then
+        self.InfoBar:ApplyAll()
     end
 
     ApplyFrameOverrides()

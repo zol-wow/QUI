@@ -38,6 +38,9 @@ if a.id ~= "d1" then fail("first display id must be d1, got " .. tostring(a.id))
 if a.unitMode ~= "token" or a.unit ~= "player" then
     fail("new display must default to the player token")
 end
+if a.visibility ~= "active" then
+    fail("new display must default to active-only visibility")
+end
 if a.layout.direction ~= "RIGHT" or a.layout.alignment ~= "CENTER"
     or a.layout.spacing ~= 2 then
     fail("new display must default to a centered rightward row layout")
@@ -450,6 +453,26 @@ end
 
 local open = { load = { classes = {}, specs = {}, roles = {}, encounters = {} } }
 if not AD.PassesLoad(open) then fail("empty load conditions must pass") end
+
+if AD.ShouldShowInactiveIcons({}) then
+    fail("missing visibility must preserve active-only behavior for existing displays")
+end
+if not AD.ShouldShowInactiveIcons({ visibility = "always" }) then
+    fail("always visibility must show inactive icons")
+end
+local instanceType = "none"
+_G.GetInstanceInfo = function() return nil, instanceType end
+if AD.ShouldShowInactiveIcons({ visibility = "instance" }) then
+    fail("instance visibility must stay active-only in the open world")
+end
+instanceType = "party"
+if not AD.ShouldShowInactiveIcons({ visibility = "instance" }) then
+    fail("instance visibility must show inactive icons in dungeons")
+end
+instanceType = "interior"
+if AD.ShouldShowInactiveIcons({ visibility = "instance" }) then
+    fail("instance visibility must exclude housing interiors like CDM visibility")
+end
 
 if not AD.PassesLoad({ load = { classes = { DRUID = true } } }) then
     fail("a matching class must pass")

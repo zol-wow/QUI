@@ -28,6 +28,8 @@ check("creation gated on InCombatLockdown (AddAuraSlot creates a forbidden frame
     src:find("InCombatLockdown()", 1, true) ~= nil)
 check("slot frames wired through AuraSkin.WireButton",
     src:find("AuraSkin.WireButton(", 1, true) ~= nil)
+check("inactive icons reuse the active icon crop and border styling",
+    src:find("AuraSkin.StyleIconArt(frame, profile)", 1, true) ~= nil)
 check("onlyMine routed to isFromPlayerOrPlayerPet",
     src:find("isFromPlayerOrPlayerPet", 1, true) ~= nil)
 check("per-spell include map drives the slot filter",

@@ -350,14 +350,14 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
     end
 end
 
-local function CreateTestFrame(parent, index, totalCount, classToken, name, role, healthPct)
+local function CreateTestFrame(parent, index, totalCount, classToken, name, role, healthPct, contextMode)
     local db = GetDB()
     if not db then return nil end
 
     local GF = ns.QUI_GroupFrames
     if not GF then return nil end
 
-    local isRaid = totalCount > 5
+    local isRaid = contextMode == "raid"
     local vdb = isRaid and (db.raid or db) or (db.party or db)
 
     local mode
@@ -482,7 +482,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         Helpers.ApplyFontWithFallback(nameText, fontPath, nameSettings and nameSettings.nameFontSize or 12, fontOutline)
         nameText:SetPoint(nameAnchorInfo.leftPoint, frame, nameAnchorInfo.leftPoint, namePadX, nameOffsetY)
         nameText:SetPoint(nameAnchorInfo.rightPoint, frame, nameAnchorInfo.rightPoint, -namePadX, nameOffsetY)
-        nameText:SetJustifyH(nameAnchorInfo.justify)
+        nameText:SetJustifyH(nameSettings and nameSettings.nameJustify or nameAnchorInfo.justify)
         nameText:SetJustifyV(nameAnchorInfo.justifyV)
         nameText:SetWordWrap(false)
 
@@ -491,6 +491,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         if maxLen > 0 and #displayName > maxLen then
             displayName = displayName:sub(1, maxLen)
         end
+        nameText:SetText("")
         nameText:SetText(displayName)
 
         if nameSettings and nameSettings.nameTextUseClassColor then
@@ -907,7 +908,7 @@ function QUI_GFEM:EnableTestMode(previewType)
             end
             local healthPct = GetFakeHealthPct(index)
 
-            local testFrame = CreateTestFrame(container, index, count, classToken, name, role, healthPct)
+            local testFrame = CreateTestFrame(container, index, count, classToken, name, role, healthPct, previewType)
             if testFrame then
                 local col = g - 1
                 local row = i - 1
@@ -1731,7 +1732,7 @@ function QUI_GFEM:CreateSpotlightHeader()
     if totalCount > 0 then
         local horizontal = (grow == "LEFT" or grow == "RIGHT")
         for i, data in ipairs(previewData) do
-            local testFrame = CreateTestFrame(spotlightContainer, 1000 + i, totalCount, data.class, data.name, data.role, data.hp)
+            local testFrame = CreateTestFrame(spotlightContainer, 1000 + i, totalCount, data.class, data.name, data.role, data.hp, "raid")
             if testFrame then
                 testFrame:SetSize(w, h)
                 testFrame:ClearAllPoints()

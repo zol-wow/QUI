@@ -27,6 +27,7 @@ ns.QUI.Chat.DisplayLayer = {
     Hide = function() calls[#calls + 1] = "display:hide" end,
     Rebuild = function() calls[#calls + 1] = "display:rebuild" end,
     Refresh = function() calls[#calls + 1] = "display:refresh" end,
+    RefreshAppearance = function() calls[#calls + 1] = "display:appearance" end,
     IsCreated = function() return created end,
 }
 ns.QUI.Chat.TabManager = {
@@ -113,7 +114,8 @@ settings.enabled = true
 calls = {}
 registered.def.refresh()
 local joined2 = table.concat(calls, ",")
-assert(joined2:find("display:refresh"), "skin refresh re-themes the display, got: " .. joined2)
+assert(joined2:find("display:appearance"), "skin refresh re-themes without geometry, got: " .. joined2)
+assert(not joined2:find("display:refresh"), "skin refresh must not run saved geometry, got: " .. joined2)
 assert(joined2:find("tabs:rebuild"), "skin refresh triggers tab rebuild, got: " .. joined2)
 
 settings.enabled = false

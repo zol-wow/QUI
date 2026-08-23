@@ -55,6 +55,40 @@ check("infobar.enabled default true",
     profile.infobar and profile.infobar.enabled == true,
     "infobar.enabled must default to true — infobar ships inside core")
 
+local mainFile = assert(io.open("core/main.lua", "rb"))
+local mainSource = mainFile:read("*a")
+mainFile:close()
+local safeStart = assert(mainSource:find("ns._inInitSafeWindow = true", 1, true))
+local minimapInit = mainSource:find("self.Minimap:InitializeOnce()", safeStart, true)
+local infobarInit = mainSource:find("self.InfoBar:ApplyAll()", safeStart, true)
+local safeEnd = assert(mainSource:find("ns._inInitSafeWindow = false", safeStart, true))
+check("minimap initializes inside the core safe window",
+    minimapInit and minimapInit < safeEnd,
+    "QUICore:OnEnable must initialize Minimap before closing the safe window")
+check("infobar initializes inside the core safe window",
+    infobarInit and infobarInit < safeEnd,
+    "QUICore:OnEnable must initialize Info Bar before closing the safe window")
+local infobarFile = assert(io.open("modules/infobar/infobar.lua", "rb"))
+local infobarSource = infobarFile:read("*a")
+infobarFile:close()
+local _, safeInfobarGuards = infobarSource:gsub(
+    "if InCombatLockdown%(%) and not ns%._inInitSafeWindow then", "")
+check("infobar permits its protected build inside the core safe window",
+    safeInfobarGuards >= 2,
+    "InfoBar:ApplyAll and ReflowAll must defer combat outside, but not inside, the safe window")
+local travelFile = assert(io.open("modules/infobar/travel.lua", "rb"))
+local travelSource = travelFile:read("*a")
+travelFile:close()
+check("travel permits secure widget creation inside the core safe window",
+    travelSource:find("if InCombatLockdown() and not ns._inInitSafeWindow then", 1, true),
+    "Travel must build secure widgets during the safe window")
+local minimapFile = assert(io.open("modules/minimap/minimap.lua", "rb"))
+local minimapSource = minimapFile:read("*a")
+minimapFile:close()
+check("minimap self ADDON_LOADED does not preempt core initialization",
+    not minimapSource:find("if arg1 == ADDON_NAME then", 1, true),
+    "Minimap must initialize from QUICore:OnEnable after saved variables are ready")
+
 check("alts block exists",
     type(profile.alts) == "table",
     "profile.alts must be a table")

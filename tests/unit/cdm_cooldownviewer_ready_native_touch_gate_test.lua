@@ -44,7 +44,7 @@ assert(install:find("_IsCooldownViewerReady()", 1, true),
 local containers = read("QUI_CDM/cdm/cdm_containers.lua")
 local readyQueue = slice(containers,
     "local function QueueReanchorHooksWhenCooldownViewerReady(markDirty)",
-    "-- Task C / G8")
+    "local _reanchorGlowOverlays")
 assert(readyQueue:find("reanchorHooksReadyMarkDirty or canMarkDirty", 1, true),
     "COOLDOWN_VIEWER_DATA_LOADED hook retry must request an out-of-combat initial re-claim")
 
@@ -54,7 +54,13 @@ local refreshHooks = slice(containers,
 assert(refreshHooks:find("IsCooldownViewerReady()", 1, true),
     "native re-anchor hook install must check CooldownViewer readiness")
 assert(refreshHooks:find("QueueReanchorHooksWhenCooldownViewerReady(markDirty)", 1, true),
-    "native re-anchor hook install must wait for COOLDOWN_VIEWER_DATA_LOADED before viewer hooks")
+    "native re-anchor hook install must retain the data-ready retry")
+local queuePos = assert(refreshHooks:find("QueueReanchorHooksWhenCooldownViewerReady(markDirty)", 1, true))
+local gracePos = assert(refreshHooks:find("if not ns._cdmCombatReloadGrace then return false end", 1, true),
+    "only combat /reload may install viewer guards before data readiness")
+local installPos = assert(refreshHooks:find("hk:InstallViewerHooks(getViewer)", 1, true))
+assert(queuePos < gracePos and gracePos < installPos,
+    "combat /reload must install viewer guards synchronously before Blizzard's PEW rebuild")
 assert(refreshHooks:find("InstallGlobalMixinHooks", 1, true),
     "native re-anchor hook install must include global CooldownViewer item mixin hooks")
 
@@ -69,6 +75,32 @@ assert(bootstrapHooks:find("blankKeys = { buff = true }", 1, true),
     "Essential/Utility acquire blanking must stay disabled to avoid native pool flicker")
 assert(bootstrapHooks:find("blankKeys = { trackedBar = true }", 1, true),
     "tracked buff-bar acquire blanking must be explicitly enabled")
+assert(bootstrapHooks:find("bridge:Sink(frame)", 1, true),
+    "combat /reload acquire guards must sink newly rebuilt Essential/Utility frames")
+assert(bootstrapHooks:find("ns._cdmCombatReloadGrace or IsInitialReanchorDone(key)", 1, true),
+    "combat /reload must guard post-load pool acquires before the first data-ready reanchor")
+
+local guardBody = assert(bootstrapHooks:match(
+    "installGuard = function%(frame, key%)%s*(.-)%s*end,%s*installGuardKeys"),
+    "combat /reload acquire guard callback must be extractable")
+local loadSource = loadstring or load
+local installGuard = assert(loadSource(
+    "return function(ns, boot, frame, key)\n" .. guardBody .. "\nend"))()
+local guarded, sunk = {}, {}
+local frame = {}
+installGuard({ _cdmCombatReloadGrace = true }, { bridge = {
+    InstallAnchorGuard = function(_, value) guarded[#guarded + 1] = value end,
+    IsClaimed = function() return false end,
+    Sink = function(_, value) sunk[#sunk + 1] = value end,
+} }, frame, "essential")
+assert(guarded[1] == frame and sunk[1] == frame,
+    "combat /reload acquire must install the guard and sink the new Essential frame")
+
+local initialize = slice(containers,
+    "function ownedEngine:Initialize()",
+    "local function DrainPendingLoadoutSwitch")
+assert(initialize:find('UnitAffectingCombat("player")', 1, true),
+    "combat /reload must latch physical combat before ForceLoadCDM")
 
 local getViewerFrame = slice(containers,
     "function CDMProvider:GetViewerFrame(key)",

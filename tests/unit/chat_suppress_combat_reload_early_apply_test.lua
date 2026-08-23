@@ -1,19 +1,5 @@
 -- tests/unit/chat_suppress_combat_reload_early_apply_test.lua
 -- Run: lua tests/unit/chat_suppress_combat_reload_early_apply_test.lua
---
--- REGRESSION: combat /reload left the Blizzard chat window visible beside the
--- QUI display until combat ended. Suppress.Apply() deferred the FIRST
--- suppression to PLAYER_ENTERING_WORLD + C_Timer.After(0), which runs AFTER the
--- load-time protected grace (ADDON_LOADED->PEW) has closed while still in
--- combat, so SuppressAll's SetParent reparents of the Blizzard chat frames were
--- silently blocked. Fix: when loading under combat lockdown, apply
--- synchronously inside the ADDON_LOADED handler (still in the grace) so the
--- reparents land immediately; the PEW path stays armed but is latched to a
--- no-op.
---
--- This test asserts the SYNCHRONOUS-apply path. The companion
--- chat_blizzard_suppress_test.lua (no InCombatLockdown defined) covers the
--- normal non-combat load that still defers to PEW.
 
 local function makeBlizzFrame(name, parent)
     local f = { name = name, parent = parent }
@@ -100,8 +86,8 @@ end
 local afterCalls = {}
 _G.C_Timer = { After = function(_, fn) afterCalls[#afterCalls + 1] = fn end }
 
--- THE combat-/reload condition: lockdown active at load time.
-_G.InCombatLockdown = function() return true end
+_G.InCombatLockdown = function() return false end
+_G.UnitAffectingCombat = function(unit) return unit == "player" end
 
 local settings = { enabled = true, customDisplay = {} }
 local ns = {

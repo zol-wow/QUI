@@ -515,6 +515,17 @@ local function RenderGeneralCopySettingsSection(sectionHost, ctx)
         descHeight = math.max(18, math.ceil(description:GetStringHeight() or 18))
     end
 
+    local function RefreshCopiedSettings()
+        local surface = ns.QUI_GroupFramesSettingsSurface
+        if surface and type(surface.InvalidateTabBodies) == "function" then
+            surface.InvalidateTabBodies()
+        end
+
+        RefreshGroupFrames(groupFrames.contextMode)
+        NotifyProvider("partyFrames", true)
+        NotifyProvider("raidFrames", true)
+    end
+
     local copyButton = gui:CreateButton(
         sectionHost,
         string.format(ns.L["Copy All: %1$s -> %2$s"], groupFrames.sourceLabel, groupFrames.targetLabel),
@@ -543,21 +554,30 @@ local function RenderGeneralCopySettingsSection(sectionHost, ctx)
                         dst.name.showLevel = false
                     end
 
-                    local surface = ns.QUI_GroupFramesSettingsSurface
-                    if surface and type(surface.InvalidateTabBodies) == "function" then
-                        surface.InvalidateTabBodies()
-                    end
-
-                    RefreshGroupFrames(groupFrames.contextMode)
-                    NotifyProvider("partyFrames", true)
-                    NotifyProvider("raidFrames", true)
+                    RefreshCopiedSettings()
                 end,
             })
         end
     )
     copyButton:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -(HEADER_GAP + descHeight + 10))
 
-    return HEADER_GAP + descHeight + 10 + 28 + 8
+    local height = HEADER_GAP + descHeight + 10 + 28
+    local profileCopy = ns.QUI_ProfileCopyOptions
+    if profileCopy
+        and type(profileCopy.CreateCard) == "function"
+        and type(profileCopy.HasSourceProfile) == "function"
+        and profileCopy.HasSourceProfile()
+    then
+        local controller = profileCopy.CreateCard(sectionHost, {
+            yOffset = -(height + 12),
+            fixedCategoryID = "groupFrames",
+            fixedCategoryLabel = ns.L["Group / Raid Frames"],
+            onCopied = RefreshCopiedSettings,
+        })
+        height = height + 12 + controller.frame:GetHeight()
+    end
+
+    return height + 8
 end
 
 local function RenderAppearanceSection(sectionHost, ctx)
@@ -2915,7 +2935,7 @@ local GENERAL_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesGeneralTab"
     { id = "enable", minHeight = 42, render = RenderGeneralEnableSection },
     { id = "rangepet", minHeight = 140, render = RenderRangePetSection },
     { id = "healer", minHeight = 140, render = RenderHealerSection },
-    { id = "copySettings", minHeight = 88, render = RenderGeneralCopySettingsSection },
+    { id = "copySettings", minHeight = 164, render = RenderGeneralCopySettingsSection },
 })
 
 local GENERAL_PARTY_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesGeneralPartyTab", {
@@ -2923,7 +2943,7 @@ local GENERAL_PARTY_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesGener
     { id = "rangepet", minHeight = 140, render = RenderRangePetSection },
     { id = "partyTargets", minHeight = 200, render = RenderPartyTargetsSection },
     { id = "healer", minHeight = 140, render = RenderHealerSection },
-    { id = "copySettings", minHeight = 88, render = RenderGeneralCopySettingsSection },
+    { id = "copySettings", minHeight = 164, render = RenderGeneralCopySettingsSection },
 })
 
 local APPEARANCE_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesAppearanceTab", {
