@@ -1,1 +1,0 @@
-tests/taint/fixtures/branch/truthiness/input.lua:2:1 [advisory] <truthiness>: tainted value used as a branch condition without guard or C-side decode (source: <tainted-local>)

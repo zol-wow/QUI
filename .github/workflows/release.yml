@@ -65,6 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: true
       - uses: leafo/gh-actions-lua@6919171ccf181b826f44b9bca76307b577217377 # v13
         with:
           luaVersion: "5.1"
