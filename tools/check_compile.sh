@@ -42,7 +42,15 @@ while IFS= read -r f; do
     echo "  ${out#*: }"
     fail=1
   fi
-done < <(git ls-files --cached --others --exclude-standard '*.lua' | grep -viE '^libs/|^Libs/|^tests/framexml/|^tests/api-docs/|^\.luarocks/')
+done < <(
+  {
+    git ls-files --cached --others --exclude-standard '*.lua'
+    if [ -d tests ] && git -C tests rev-parse --git-dir >/dev/null 2>&1; then
+      git -C tests ls-files --cached --others --exclude-standard '*.lua' \
+        | sed 's#^#tests/#'
+    fi
+  } | grep -viE '^libs/|^Libs/|^tests/framexml/|^tests/api-docs/|^\.luarocks/'
+)
 
 libcount=0
 while IFS= read -r f; do

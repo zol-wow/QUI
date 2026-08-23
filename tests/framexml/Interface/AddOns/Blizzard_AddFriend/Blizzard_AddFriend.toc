@@ -1,8 +1,0 @@
-## Title: Blizzard_AddFriend
-## DefaultState: enabled
-## Dependencies: Blizzard_AccessibilityTemplates
-## AllowLoad: Both
-## AllowLoadGameType: mainline
-
-AddFriendTemplates.lua
-AddFriendTemplates.xml

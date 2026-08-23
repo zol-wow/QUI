@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: true
       - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
@@ -37,6 +39,8 @@ jobs:
     needs: self-test
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: true
       - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
@@ -44,7 +48,7 @@ jobs:
         run: lua tools/test_taint.lua --update-index
       - name: Verify no diff
         run: |
-          if ! git diff --exit-code tests/api-docs/api-index.lua; then
+          if ! git -C tests diff --exit-code -- api-docs/api-index.lua; then
             echo "::error::api-index.lua is out of sync with the vendored corpus."
             echo "::error::Run 'lua tools/test_taint.lua --update-index' locally and commit."
             exit 1
@@ -89,6 +93,8 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: true
       - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
