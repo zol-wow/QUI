@@ -4180,6 +4180,9 @@ function CDMIcons.OnFactoryIconReleased(icon)
         ns.CDMRuntimeStore.ClearFrame(icon)
     end
     UnmirrorBlizzCooldown(icon)
+    if ns._OwnedGlows and ns._OwnedGlows.StopGlow then
+        ns._OwnedGlows.StopGlow(icon)
+    end
     if ns._OwnedGlows and ns._OwnedGlows.ClearPandemicState then
         ns._OwnedGlows.ClearPandemicState(icon)
     end
