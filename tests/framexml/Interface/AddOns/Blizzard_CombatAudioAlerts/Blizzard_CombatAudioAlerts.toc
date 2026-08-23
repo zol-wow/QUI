@@ -1,9 +1,0 @@
-## Title: Blizzard_CombatAudioAlerts
-## Author: Blizzard Entertainment
-## DefaultState: enabled
-## Dependencies: Blizzard_SettingsDefinitions_Frame, Blizzard_UnitFrame
-## AllowLoad: game
-## AllowAddOnTableAccess: 1
-
-Blizzard_CombatAudioAlertManager.lua
-Blizzard_CombatAudioAlertManager.xml

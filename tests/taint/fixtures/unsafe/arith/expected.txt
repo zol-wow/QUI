@@ -1,1 +1,0 @@
-tests/taint/fixtures/unsafe/arith/input.lua:2:1 [advisory] <arith>: tainted value used in <arith> without guard or unwrap (source: <tainted-local>)

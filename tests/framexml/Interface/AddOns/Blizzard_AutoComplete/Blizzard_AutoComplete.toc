@@ -1,5 +1,0 @@
-## Title: Blizzard_AutoComplete
-## AllowLoad: both
-## Dep: Blizzard_Fonts_Shared
-AutoComplete.lua
-AutoComplete.xml

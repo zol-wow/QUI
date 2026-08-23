@@ -1,7 +1,0 @@
-## Title: Blizzard Spell Diminish UI
-## AllowLoad: game
-## AllowLoadGameType: mainline
-## Dependencies: Blizzard_SharedXML
-
-Blizzard_SpellDiminishUITemplates.lua
-Blizzard_SpellDiminishUITemplates.xml
