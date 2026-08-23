@@ -8,27 +8,34 @@ nav_order: 5
 
 This page summarizes the user-facing changes since the last mainline release. For every beta entry and technical fix, see the full [CHANGELOG.md](https://github.com/zol-wow/QUI/blob/main/CHANGELOG.md).
 
-## Current Release: 5.2.2-beta4
+## Current Release: 5.2.2-beta5
 
 {: .warning }
 **WoW 12.1 only.** This build targets patch 12.1 (interface 120100) and will not load on the 12.0.x client.
 
-QUI 5.2.2-beta4 continues the 5.2.2 beta line with Cooldown Manager target
-debuff, custom-bar storage, and consumable fixes.
+QUI 5.2.2-beta5 continues the 5.2.2 beta line with profile sharing, aura-display
+visibility controls, and safer combat reloads.
 
 {: .important }
 Back up your `WTF` folder before updating. Manual installs must copy every `QUI*` folder from the release zip into `Interface\AddOns\`.
 
-## What's New in 5.2.2-beta4
+## What's New in 5.2.2-beta5
+
+### Profiles and aura displays
+
+- **Feature settings can be shared across profiles** for Aura Displays and
+  Group / Raid Frames without replacing click-cast bindings.
+- **Tracked aura displays can keep inactive icons visible** with active-only,
+  instance-only, or always-visible placeholder modes.
 
 ### Beta fixes
 
-- **Target-debuff cooldowns** repair stale linked state while preserving
-  Blizzard's native cooldown ownership.
-- **Custom Cooldown Manager bars** use canonical profile storage without
-  overwriting built-in container settings during migration.
-- **Consumable categories** consistently resolve owned items for cooldowns,
-  counts, usability, tooltips, and secure clicks.
+- **Combat reloads preserve protected UI ownership** across Cooldown Manager,
+  Chat, Info Bar, Minimap, and Travel startup paths.
+- **Cooldown charge and aura-phase state follows Blizzard's live sources**
+  while QUI preserves native ownership.
+- **Bank, guild-bank, and group-frame controls refresh safely** through native
+  protected flows and live layout state.
 
 ## What's New in 5.2.1
 

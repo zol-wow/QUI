@@ -4,6 +4,35 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2-beta5 - 2026-08-23
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Profile sharing, aura-display visibility, and combat-reload hardening for the
+5.2.2 beta line.
+
+### Added
+
+- **Feature settings can be shared across profiles.** Aura Displays and Group /
+  Raid Frames can copy settings and anchors from another profile or stay pinned
+  to a source profile without replacing click-cast bindings.
+- **Tracked aura displays can keep inactive icons visible.** Choose active-only,
+  instance-only, or always-visible placeholders with desaturated icon styling.
+
+### Fixed
+
+- **Combat reloads preserve protected UI ownership.** Cooldown Manager, Chat,
+  Info Bar, Minimap, and Travel initialize or refresh through their safe startup
+  paths without blocked geometry or stale native frames.
+- **Cooldown charge and aura-phase state follows Blizzard's live sources.** Owned
+  icons retain native charge metadata and suppress eligible inactive aura phases.
+- **Bank and guild-bank controls use native protected flows.** Tab purchases,
+  guild-money dialogs, combat state, cursor deposits, and item tooltips stay in
+  sync with Blizzard's bank APIs.
+- **Group-frame names refresh their live layout.** Anchor, justification, bottom
+  padding, and party/raid preview context update without requiring a reload.
+
 ## v5.2.2-beta4 - 2026-08-22
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
