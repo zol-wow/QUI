@@ -18,8 +18,15 @@ local function noop() end
 
 local function NewRegion(parent)
     return { _parent = parent, _shown = true,
-        SetParent = noop, SetAllPoints = noop, SetPoint = noop, ClearAllPoints = noop,
-        SetSize = noop, SetColorTexture = noop, SetTexture = noop, SetAlpha = noop,
+        SetParent = noop,
+        SetAllPoints = function(self, target) self._allPoints = target end,
+        SetPoint = noop, ClearAllPoints = noop,
+        SetSize = noop, SetColorTexture = noop,
+        SetTexture = function(self, value) self._texture = value end,
+        GetTexture = function(self) return self._texture end,
+        SetVertexColor = function(self, ...) self._vertexColor = { ... } end,
+        SetAlpha = function(self, value) self._alpha = value end,
+        SetIgnoreParentAlpha = function(self, value) self._ignoreParentAlpha = value end,
         Show = function(self) self._shown = true end,
         Hide = function(self) self._shown = false end,
         SetText = noop, SetFont = noop, SetTextColor = noop, SetJustifyH = noop }
@@ -30,7 +37,12 @@ local function NewFrame(parent)
     f.SetScript = function(self, k, h) self._scripts[k] = h end
     f.GetScript = function(self, k) return self._scripts[k] end
     f.RegisterEvent = noop; f.RegisterUnitEvent = noop; f.UnregisterAllEvents = noop
-    f.EnableMouse = noop; f.SetFrameLevel = noop; f.GetFrameLevel = function() return 1 end
+    f.EnableMouse = noop
+    f.SetFrameLevel = function(self, value) self._frameLevel = value end
+    f.GetFrameLevel = function(self) return self._frameLevel or 1 end
+    f.SetFrameStrata = function(self, value) self._frameStrata = value end
+    f.GetFrameStrata = function(self) return self._frameStrata or "MEDIUM" end
+    f.GetParent = function(self) return self._parent end
     f.IsShown = function(self) return self._shown end
     f.CreateTexture = function(self) return NewRegion(self) end
     f.CreateFontString = function(self) return NewRegion(self) end
@@ -89,6 +101,9 @@ local NPAuras = NP.Auras
 local function NewPlate()
     local plate = NewFrame(UIParent)
     plate.healthBar = NewFrame(plate)
+    local fill = NewRegion(plate.healthBar)
+    fill._texture = "nameplate-health-texture"
+    plate.healthBar.GetStatusBarTexture = function() return fill end
     plate.npType = "enemyNPC"
     return plate
 end
@@ -169,6 +184,42 @@ if anchored[4] ~= 0 then
 end
 if anchored[5] ~= 20 then
     fail("container 1 Y offset must be element.offsetY (20), got " .. tostring(anchored[5]))
+end
+
+do
+    local oldElements, oldSeeded = auraSettings.elements, auraSettings.elementsSeeded
+    local element = {
+        id = "tint", enabled = true, mode = "tracked", auraType = "HARMFUL",
+        spells = { 12345 }, onlyMine = true, displayType = "healthTint",
+        color = { 0.8, 0.1, 0.2, 0.4 },
+    }
+    auraSettings.elements = { ["*"] = { element } }
+    auraSettings.elementsSeeded = true
+    local tintPlate = NewPlate()
+    tintPlate.unit = "nameplate3"
+    NPAuras.ApplyAppearance(tintPlate)
+    local container = tintPlate._quiAuraContainers and tintPlate._quiAuraContainers[1]
+    if not container or type(container._quiFeederAttach) ~= "function" then
+        fail("healthTint container must receive a nameplate-local feeder handler")
+    end
+    local slot = NewFrame(container)
+    container._quiFeederAttach(slot, element)
+    local cover = slot._quiFeederTint
+    if not cover then fail("healthTint feeder must create passive cover art") end
+    if cover._allPoints ~= tintPlate.healthBar:GetStatusBarTexture() then
+        fail("healthTint cover must follow the real health fill")
+    end
+    if cover._texture ~= "nameplate-health-texture" then
+        fail("healthTint cover must reuse the health fill texture")
+    end
+    if not cover._vertexColor or cover._vertexColor[1] ~= 0.8
+        or cover._vertexColor[2] ~= 0.1 or cover._vertexColor[3] ~= 0.2
+        or cover._alpha ~= 0.4 then
+        fail("healthTint cover must apply the configured color and alpha")
+    end
+    container._quiFeederDetach(slot)
+    if cover._shown ~= false then fail("retiring healthTint must hide its cover") end
+    auraSettings.elements, auraSettings.elementsSeeded = oldElements, oldSeeded
 end
 
 NPAuras.Clear(plate)

@@ -1,6 +1,6 @@
 -- tests/unit/unitframes_castbar_icon_size_test.lua
 -- Run: lua tests/unit/unitframes_castbar_icon_size_test.lua
--- luacheck: globals GetTime CreateFrame InCombatLockdown UnitCastingInfo UnitChannelInfo UnitClass UnitGUID UIParent RAID_CLASS_COLORS C_Timer EventRegistry
+-- luacheck: globals GetTime CreateFrame InCombatLockdown UnitCastingInfo UnitChannelInfo UnitClass UnitGUID UnitExists UIParent RAID_CLASS_COLORS C_Timer EventRegistry
 
 local function noop() end
 
@@ -236,15 +236,17 @@ end
 
 local now = 100
 local activeCast = false
+local bossExists = true
+local inCombat = false
 function GetTime() return now end
 function CreateFrame(frameType, name, parent)
     local frame = newRegion(frameType, parent)
     frame.name = name
     return frame
 end
-function InCombatLockdown() return false end
+function InCombatLockdown() return inCombat end
 function UnitCastingInfo(unit)
-    if unit == "player" and activeCast then
+    if (unit == "player" or unit == "boss1") and activeCast then
         return "Frostbolt", "Frostbolt", 135846, (now - 0.2) * 1000, (now + 2.8) * 1000, false, "CastGUID", false, 116, nil, 0
     end
     return nil
@@ -252,6 +254,7 @@ end
 function UnitChannelInfo() return nil end
 function UnitClass() return "Player", "MAGE" end
 function UnitGUID() return "Player-0000-00000001" end
+function UnitExists(unit) return unit ~= "boss1" or bossExists end
 
 UIParent = newRegion("Frame")
 RAID_CLASS_COLORS = { MAGE = { r = 0.25, g = 0.78, b = 0.92 } }
@@ -299,6 +302,9 @@ function ns.Addon:SetPixelPerfectHeight(frame, height) frame:SetHeight(math.floo
 function ns.Addon:SetPixelPerfectPoint(frame, point, relativeTo, relativePoint, x, y)
     frame:SetPoint(point, relativeTo, relativePoint, x, y)
 end
+function ns.Addon:SetSnappedPoint(frame, point, relativeTo, relativePoint, x, y)
+    frame:SetPoint(point, relativeTo, relativePoint, x, y)
+end
 function ns.Addon:ApplyPixelSnapping() end
 function ns.Addon:ApplyFont(fontString, _, size, path, outline)
     fontString:SetFont(path, size, outline)
@@ -331,6 +337,7 @@ local settings = {
         },
     },
 }
+settings.boss = { castbar = settings.player.castbar }
 
 ns.QUI_Castbar:SetHelpers({
     GetUnitSettings = function(unit) return settings[unit] end,
@@ -383,5 +390,33 @@ assert(scaledCastbar.icon:GetWidth() == 40, "castbar icon size should remain in 
 local topLeftPoint = scaledCastbar.statusBar.points[1]
 assert(topLeftPoint and topLeftPoint[1] == "TOPLEFT", "scaled castbar should anchor statusbar after the icon")
 assert(topLeftPoint[4] == 40.5, "statusbar offset should use the same coordinate-sized icon width plus a one-pixel border")
+
+pixelScale = 1
+activeCast = true
+bossExists = true
+inCombat = false
+local bossFrame = newRegion("Frame", UIParent)
+bossFrame:SetSize(220, 40)
+local bossCastbar = assert(ns.QUI_Castbar:CreateBossCastbar(bossFrame, "boss1", 1))
+bossCastbar:Cast(true)
+assert(bossCastbar:IsVisible(), "test setup should show the active boss castbar")
+
+inCombat = true
+bossExists = false
+bossCastbar.bossOnUpdate(bossCastbar, 0.02)
+assert(not bossCastbar:IsVisible(), "boss despawn should hide its castbar during combat")
+
+local hudFile = assert(io.open("QUI_CDM/cdm/hud_visibility.lua", "rb"))
+local hudSource = hudFile:read("*a")
+hudFile:close()
+local applyStart = assert(hudSource:find("local function ApplyUnitframeVisibilityAlpha", 1, true))
+local applyEnd = assert(hudSource:find("local function ApplyUnitframeListAlpha", applyStart, true))
+local loadChunk = loadstring or load
+local applyUnitframeVisibilityAlpha = assert(loadChunk(
+    hudSource:sub(applyStart, applyEnd - 1) .. "\nreturn ApplyUnitframeVisibilityAlpha"
+))()
+applyUnitframeVisibilityAlpha(bossCastbar, 1)
+assert(not bossCastbar:IsVisible(),
+    "HUD visibility refresh must not restore a stopped boss castbar after its frame disappears")
 
 print("OK: unitframes_castbar_icon_size_test")

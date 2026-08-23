@@ -1241,9 +1241,11 @@ local function AddTrackedConfig(ctx, element)
         row(ns.L["Tint Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
             description = ns.L["Color tint applied across the health bar while the aura is active."],
         }))
-        row(ns.L["Tint Animation"], GUI:CreateFormDropdown(ctx.detailArea, nil, HEALTH_TINT_ANIMATION_OPTIONS, "animation", element.healthTint, onChange, {
-            description = ns.L["How the health-bar tint appears when the aura is detected."],
-        }))
+        if caps.healthTintAnimation ~= false then
+            row(ns.L["Tint Animation"], GUI:CreateFormDropdown(ctx.detailArea, nil, HEALTH_TINT_ANIMATION_OPTIONS, "animation", element.healthTint, onChange, {
+                description = ns.L["How the health-bar tint appears when the aura is detected."],
+            }))
+        end
     elseif displayType == "square" then
         if type(element.color) ~= "table" then element.color = { 0.2, 0.8, 0.2, 1 } end
         row(ns.L["Square Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {

@@ -194,6 +194,39 @@ assert(proxy.attributes["macrotext1"]:find("Regrowth", 1, true),
 assert(not proxy.attributes["macrotext1"]:find("Rejuvenation", 1, true),
     "BUG: stale Rejuvenation macro should be gone from proxy after the binding change")
 
+assert(GFCC:RemoveBinding(1))
+assert(GFCC:AddBinding({ button = "LeftButton", modifiers = "", actionType = "item",
+    item = "Emergency Soul Link", itemID = 123456 }))
+assert(GFCC:AddBinding({ key = "F", modifiers = "", actionType = "item",
+    item = "Emergency Soul Link", itemID = 123456 }))
+assert(GFCC:AddBinding({ button = "ScrollUp", modifiers = "", actionType = "item",
+    item = "Emergency Soul Link", itemID = 123456 }))
+
+proxyName = child:GetAttribute("clickcast-proxyname")
+proxy = assert(_G[proxyName], "proxy must still be in _G after item bindings")
+assert(proxy.attributes["type1"] == "item" and proxy.attributes["item1"] == "item:123456",
+    "mouse item bindings must publish native secure item attributes")
+assert(proxy.attributes["type-keyf"] == "item" and proxy.attributes["item-keyf"] == "item:123456",
+    "keyboard item bindings must publish native secure item attributes")
+assert(proxy.attributes["type-keymousewheelup"] == "item"
+    and proxy.attributes["item-keymousewheelup"] == "item:123456",
+    "scroll item bindings must publish native secure item attributes")
+
+assert(GFCC:RemoveBinding(3))
+assert(GFCC:RemoveBinding(2))
+assert(GFCC:RemoveBinding(1))
+assert(GFCC:AddBinding({ button = "LeftButton", modifiers = "", actionType = "spell",
+    spell = "Regrowth", spellID = 8936 }))
+proxyName = child:GetAttribute("clickcast-proxyname")
+proxy = assert(_G[proxyName], "proxy must still be in _G after replacing item bindings")
+assert(proxy.attributes["type1"] == "macro" and proxy.attributes["item1"] == nil,
+    "replacing an item with a spell must clear the stale mouse item attribute")
+assert(proxy.attributes["type-keyf"] == nil and proxy.attributes["item-keyf"] == nil,
+    "removing a keyboard item binding must clear its secure item attributes")
+assert(proxy.attributes["type-keymousewheelup"] == nil
+    and proxy.attributes["item-keymousewheelup"] == nil,
+    "removing a scroll item binding must clear its secure item attributes")
+
 -- ---- 4. copy between shared, spec, and loadout binding sets --------------
 local cc = _G.QUI.db.char.clickCast
 local loadoutBinding = {

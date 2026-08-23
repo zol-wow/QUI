@@ -60,15 +60,20 @@ local EXPECTED_RAID_MARKERS = {
     ["Pull Countdown Seconds"] = { dbPath = "profile.raidMarkersBar.leaderStrip", dbKey = "pullSeconds" },
 }
 
-test("raid markers bar settings keep their db paths", function()
+local EXPECTED_TOTEM = {
+    ["Grow Direction"] = { dbPath = "profile.totemBar", dbKey = "growDirection" },
+    ["Button Size"] = { dbPath = "profile.totemBar", dbKey = "iconSize", min = 20, max = 300 },
+}
+
+local function checkSettings(featureId, expectedSettings)
     local byLabel = {}
-    for _, entry in ipairs(byFeature.actionBarsRaidMarkersBar or {}) do
+    for _, entry in ipairs(byFeature[featureId] or {}) do
         byLabel[entry.label] = entry
     end
-    for label, expected in pairs(EXPECTED_RAID_MARKERS) do
+    for label, expected in pairs(expectedSettings) do
         local entry = byLabel[label]
         if not entry then
-            fail(("no actionBarsRaidMarkersBar row for label %q"):format(label))
+            fail(("no %s row for label %q"):format(featureId, label))
         end
         local descriptor = entry.widgetDescriptor
         if type(descriptor) ~= "table" then
@@ -80,7 +85,21 @@ test("raid markers bar settings keep their db paths", function()
         if descriptor.dbKey ~= expected.dbKey then
             fail(("row %q: dbKey %s, expected %s"):format(label, tostring(descriptor.dbKey), expected.dbKey))
         end
+        if expected.min and descriptor.min ~= expected.min then
+            fail(("row %q: min %s, expected %s"):format(label, tostring(descriptor.min), expected.min))
+        end
+        if expected.max and descriptor.max ~= expected.max then
+            fail(("row %q: max %s, expected %s"):format(label, tostring(descriptor.max), expected.max))
+        end
     end
+end
+
+test("totem bar settings keep their db paths", function()
+    checkSettings("actionBarsTotemBar", EXPECTED_TOTEM)
+end)
+
+test("raid markers bar settings keep their db paths", function()
+    checkSettings("actionBarsRaidMarkersBar", EXPECTED_RAID_MARKERS)
 end)
 
 test("both special buttons have rows on the Extra & Zone page", function()

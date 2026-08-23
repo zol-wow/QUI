@@ -95,7 +95,7 @@ local TAB_SEARCH_CONTEXTS = {
 }
 local GROUP_FRAMES_SEARCH_TILE_ID = "group_frames"
 local GROUP_FRAMES_SEARCH_FEATURE_ID = "groupFramesPage"
-local GROUP_FRAMES_SEARCH_SUB_PAGE_INDEX = 2
+local GROUP_FRAMES_SEARCH_SUB_PAGE_INDEX = 1
 local VISUAL_DB_KEYS = {
     general = true, layout = true, health = true, power = true, name = true,
     absorbs = true, healAbsorbs = true, healPrediction = true, indicators = true,
@@ -1403,7 +1403,7 @@ local function RenderHealthSection(sectionHost, ctx)
     end
 
     local DRAW_ORDER_LIST = {
-        { value = 1, text = ns.L["Back"] },
+        { value = 1, text = ns.L["Behind"] },
         { value = 2, text = ns.L["Middle"] },
         { value = 3, text = ns.L["Front"] },
     }

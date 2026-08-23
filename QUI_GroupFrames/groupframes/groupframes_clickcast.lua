@@ -50,6 +50,10 @@ local function BuildPlainMouseoverCastMacro(spell)
     return "/cast [@mouseover] " .. spell
 end
 
+local function GetItemAttributeValue(binding)
+    return binding.itemID and "item:" .. binding.itemID or binding.item
+end
+
 local function ButtonAttrName(attr, suffix)
     return attr .. (tonumber(suffix) and "" or "-") .. suffix
 end
@@ -444,6 +448,9 @@ local function SetFrameKeyAttributes(proxy, frame)
                 proxy:SetAttribute("type-" .. vBtn, "macro")
                 proxy:SetAttribute("macrotext-" .. vBtn, binding.macro)
             end
+        elseif actionType == "item" then
+            proxy:SetAttribute("type-" .. vBtn, "item")
+            proxy:SetAttribute("item-" .. vBtn, GetItemAttributeValue(binding))
         elseif actionType == "target" then
             local tProxy = GetTargetProxy(frame)
             if tProxy then
@@ -473,6 +480,7 @@ local function ClearFrameKeyAttributes(proxy)
         local vBtn = GetVirtualButtonName(binding)
         proxy:SetAttribute("type-" .. vBtn, nil)
         proxy:SetAttribute("macrotext-" .. vBtn, nil)
+        proxy:SetAttribute("item-" .. vBtn, nil)
         proxy:SetAttribute("clickbutton-" .. vBtn, nil)
         proxy:SetAttribute(ButtonAttrName("helpbutton", vBtn), nil)
         proxy:SetAttribute(ButtonAttrName("harmbutton", vBtn), nil)
@@ -551,7 +559,12 @@ local function ResolveBindings()
 
     for _, binding in ipairs(bindings) do
         local actionType = binding.actionType or "spell"
-        local hasAction = binding.spell or binding.macro or actionType ~= "spell"
+        local hasAction
+        if actionType == "item" then
+            hasAction = binding.itemID or binding.item
+        else
+            hasAction = binding.spell or binding.macro or actionType ~= "spell"
+        end
         local spellName = (actionType == "spell") and ResolveSpellName(binding) or binding.spell
 
         if binding.key and hasAction then
@@ -560,6 +573,8 @@ local function ResolveBindings()
                 modifiers = binding.modifiers or "",
                 spell = spellName,
                 macro = binding.macro,
+                item = binding.item,
+                itemID = binding.itemID,
                 actionType = actionType,
                 friend = binding.friend,
                 enemy = binding.enemy,
@@ -572,6 +587,8 @@ local function ResolveBindings()
                     modifiers = binding.modifiers or "",
                     spell = spellName,
                     macro = binding.macro,
+                    item = binding.item,
+                    itemID = binding.itemID,
                     actionType = actionType,
                     friend = binding.friend,
                     enemy = binding.enemy,
@@ -582,6 +599,8 @@ local function ResolveBindings()
                     modifiers = binding.modifiers or "",
                     spell = spellName,
                     macro = binding.macro,
+                    item = binding.item,
+                    itemID = binding.itemID,
                     actionType = actionType,
                     friend = binding.friend,
                     enemy = binding.enemy,
@@ -657,7 +676,10 @@ local function ApplyKeyboardAttrsToProxy(proxy, frame)
             end
         else
             local actionType2 = b.actionType or "spell"
-            if actionType2 == "spell" and b.friend then
+            if actionType2 == "item" then
+                proxy:SetAttribute("type-" .. vBtn, "item")
+                proxy:SetAttribute("item-" .. vBtn, GetItemAttributeValue(b))
+            elseif actionType2 == "spell" and b.friend then
                 local remapped = "friend" .. vBtn
                 proxy:SetAttribute(ButtonAttrName("helpbutton", vBtn), remapped)
                 proxy:SetAttribute("type-" .. remapped, "macro")
@@ -715,6 +737,7 @@ local function ClearKeyboardAttrsFromProxy(proxy)
     for vBtn in pairs(oldVBtns) do
         proxy:SetAttribute("type-" .. vBtn, nil)
         proxy:SetAttribute("macrotext-" .. vBtn, nil)
+        proxy:SetAttribute("item-" .. vBtn, nil)
         proxy:SetAttribute("unit-" .. vBtn, nil)
         proxy:SetAttribute("clickbutton-" .. vBtn, nil)
         proxy:SetAttribute(ButtonAttrName("helpbutton", vBtn), nil)
@@ -847,6 +870,9 @@ local function SetupFrameClickCast(frame)
                 RecordCastAttr(proxy, prefix .. "type" .. btnNum, "macro")
                 RecordCastAttr(proxy, prefix .. "macrotext" .. btnNum, binding.macro)
             end
+        elseif actionType == "item" then
+            RecordCastAttr(proxy, prefix .. "type" .. btnNum, "item")
+            RecordCastAttr(proxy, prefix .. "item" .. btnNum, GetItemAttributeValue(binding))
         elseif actionType == "target" then
             if prefix == "" and btnNum == "1" then
                 RecordCastAttr(proxy, prefix .. "type" .. btnNum, "target")
@@ -925,7 +951,7 @@ local function SetupFrameClickCast(frame)
                     local modLabel = MODIFIER_LABELS[binding.modifiers or ""] or ""
                     local buttonLabel = BUTTON_NAMES[binding.button] or binding.button
                     local at = binding.actionType or "spell"
-                    local spellLabel = PING_LABELS[at] or binding.spell or at or "?"
+                    local spellLabel = PING_LABELS[at] or binding.spell or binding.item or at or "?"
                     GameTooltip:AddDoubleLine(
                         modLabel .. buttonLabel,
                         spellLabel,
@@ -937,7 +963,7 @@ local function SetupFrameClickCast(frame)
                         local modLabel = MODIFIER_LABELS[binding.modifiers or ""] or ""
                         local keyLabel = KEY_DISPLAY_NAMES[binding.key] or binding.key or "?"
                         local at = binding.actionType or "spell"
-                        local spellLabel = PING_LABELS[at] or binding.spell or at or "?"
+                        local spellLabel = PING_LABELS[at] or binding.spell or binding.item or at or "?"
                         GameTooltip:AddDoubleLine(
                             modLabel .. keyLabel,
                             spellLabel,

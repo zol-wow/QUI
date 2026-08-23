@@ -116,7 +116,8 @@ local function StyleFeederSlot(frame, element)
     frame:SetSize(1, 1)
     if frame.EnableMouse then frame:EnableMouse(false) end
     if frame.SetMouseClickEnabled then frame:SetMouseClickEnabled(false) end
-    local attach = ns.AuraFeederAttach
+    local container = frame.GetParent and frame:GetParent()
+    local attach = (container and container._quiFeederAttach) or ns.AuraFeederAttach
     if attach then attach(frame, element) end
     return true
 end
@@ -124,7 +125,8 @@ end
 local function RetireFeederSlot(frame)
     if not frame._quiFeederActive then return end
     frame._quiFeederActive = false
-    local detach = ns.AuraFeederDetach
+    local container = frame.GetParent and frame:GetParent()
+    local detach = (container and container._quiFeederDetach) or ns.AuraFeederDetach
     if detach then detach(frame, frame._quiFeederElement) end
     frame._quiFeederElement = nil
     frame:SetAlpha(1)
