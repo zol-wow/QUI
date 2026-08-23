@@ -1256,10 +1256,11 @@ local function RenderAuraRowsSection(sectionHost, ctx)
     local height = AurasEditor.RenderAuras(editorHost, auras, "*", RefreshNameplates, {
         capabilities = {
             elementTypes        = { filterStrip = true, tracked = true },
-            trackedDisplayTypes = { icon = true, square = true, bar = true },
+            trackedDisplayTypes = { icon = true, square = true, bar = true, healthTint = true },
             unitPolarity        = "hostile",
             durationDecimals    = true,
             roleGate            = false,
+            healthTintAnimation = false,
             allowSpecOverride   = false,
             defaultBucketFn     = NP.DefaultNameplateBucket,
         },

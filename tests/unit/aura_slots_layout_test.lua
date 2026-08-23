@@ -35,10 +35,14 @@ end
 -- non-bar, non-square, radial-swipe (default) element ever get invoked.
 -- _setPointCount distinguishes birth-time (initializeFrame) anchoring from
 -- the post-birth pass: restricted creation must anchor exactly once (birth).
-local function MakeFrame()
+local function MakeFrame(parent)
     return {
+        _parent = parent,
         _setPointCount = 0,
         SetSize = function() end,
+        SetAlpha = function(self, value) self._alpha = value end,
+        EnableMouse = function() end,
+        GetParent = function(self) return self._parent end,
         ClearAllPoints = function() end,
         Icon = { SetAlpha = function() end },
         SetPoint = function(self, point, relativeTo, relativePoint, dx, dy)
@@ -62,7 +66,7 @@ local function MakeContainer()
     c.AddAuraSlot = function(self, key, base, opts)
         c._createdKeys[#c._createdKeys + 1] = key
         c._birthFilters[key] = opts and opts.candidateFilters
-        local frame = MakeFrame()
+        local frame = MakeFrame(c)
         if opts and type(opts.initializeFrame) == "function" then
             opts.initializeFrame(frame)
         end
@@ -520,6 +524,31 @@ do
     _G.UnitCanAssist = nil
     _G.UnitIsVisible = nil
     _G.UnitPhaseReason = nil
+end
+
+do
+    local localAttach, localDetach, globalAttach, globalDetach = 0, 0, 0, 0
+    local oldAttach, oldDetach = ns.AuraFeederAttach, ns.AuraFeederDetach
+    ns.AuraFeederAttach = function() globalAttach = globalAttach + 1 end
+    ns.AuraFeederDetach = function() globalDetach = globalDetach + 1 end
+    local container = MakeContainer()
+    container._quiFeederAttach = function() localAttach = localAttach + 1 end
+    container._quiFeederDetach = function() localDetach = localDetach + 1 end
+    local tint = {
+        spells = { 801 }, enabled = true, auraType = "HARMFUL", onlyMine = true,
+        displayType = "healthTint", anchor = "TOPLEFT", growDirection = "RIGHT",
+    }
+    S.Sync(container, tint, true)
+    check("feeder dispatch: container-local attach wins over the global surface handler",
+        localAttach > 0 and globalAttach == 0)
+    local icon = {
+        spells = { 801 }, enabled = true, auraType = "HARMFUL", onlyMine = true,
+        displayType = "icon", anchor = "TOPLEFT", growDirection = "RIGHT",
+    }
+    S.Sync(container, icon, true)
+    check("feeder dispatch: container-local detach wins over the global surface handler",
+        localDetach == 1 and globalDetach == 0)
+    ns.AuraFeederAttach, ns.AuraFeederDetach = oldAttach, oldDetach
 end
 
 if failures > 0 then error(failures .. " failure(s) in aura_slots_layout_test") end
