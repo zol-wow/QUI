@@ -1,7 +1,0 @@
-## Author: Blizzard Entertainment
-## Title: Blizzard RPE Turn Strafe Keybinds
-## AllowLoadGameType: standard
-## LoadOnDemand: 0
-
-Blizzard_RPE_TurnStrafe.lua
-Blizzard_RPE_TurnStrafe.xml

@@ -1,5 +1,0 @@
-## Title: Blizzard_ClientSceneVisManager
-## AllowLoadGameType: mainline
-## Dep: Blizzard_UIModes
-Blizzard_ClientSceneVisManager.lua
-Blizzard_ClientSceneVisManager.xml

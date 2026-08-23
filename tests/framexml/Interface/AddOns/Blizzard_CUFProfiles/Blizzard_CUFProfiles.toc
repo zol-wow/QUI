@@ -1,3 +1,0 @@
-## Title: Blizzard_CUFProfiles
-## Dependencies: Blizzard_UnitFrame
-Blizzard_CompactUnitFrameProfiles.lua [AllowLoadEnvironment Global]

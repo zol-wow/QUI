@@ -1,7 +1,0 @@
-## Title: Blizzard Plunderstorm
-## Author: Blizzard Entertainment
-## DefaultState: enabled
-## Dependencies: Blizzard_ProjectConstants
-## AllowLoad: Game
-## AllowLoadGameType: plunderstorm
-GameModeConstants.lua
