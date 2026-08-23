@@ -1,2 +1,0 @@
-GameEvent.InitEvents();
-GameEvent.RegisterHardcoreEvents();

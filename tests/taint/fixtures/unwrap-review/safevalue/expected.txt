@@ -1,1 +1,0 @@
-tests/taint/fixtures/unwrap-review/safevalue/input.lua:2:1 [review] <unwrap>: unwrap call site — consider piping to a C-side sink instead (source: Helpers.SafeValue)

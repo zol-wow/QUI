@@ -1,8 +1,0 @@
-## Title: Blizzard_ClassTrial
-## AllowLoadGameType: standard
-## Dep: Blizzard_SharedXML
-## Dep: Blizzard_ClassTrialSecure
-## Dep: Blizzard_Minimap
-## Dep: Blizzard_StaticPopup_Game
-Blizzard_ClassTrial.lua
-Blizzard_ClassTrial.xml
