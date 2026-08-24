@@ -4,6 +4,46 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2 - 2026-08-24
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+QUI 5.2.2 expands profile sharing, combat feedback, and group tools while
+hardening Cooldown Manager, protected UI, and native event handling.
+
+### Added
+
+- **Feature settings can be shared across profiles.** Aura Displays and Group /
+  Raid Frames can copy or pin settings without replacing click-cast bindings.
+- **Tracked aura displays can keep inactive icons visible.** Choose active-only,
+  instance-only, or always-visible placeholders with desaturated styling.
+- **Group-frame click-casting supports items.** Bind items to mouse buttons,
+  keyboard keys, or the mouse wheel.
+- **Group tools expose more actionable state.** Debuff gradients show
+  non-dispellable types, and raid releases can require Ctrl after a safety delay.
+- **Combat modules gain focused controls.** Cooldown Manager pressed effects,
+  Totem Bar sizing, and Damage Meter item-level tooltips are configurable.
+
+### Changed
+
+- **Action Bar range and usability colors follow native state events.** Updates
+  stay current through slot and paging changes without disabling shared events.
+- **Translations cover the complete settings surface.** All ten non-English
+  locale overlays include the previously missing interface text.
+
+### Fixed
+
+- **Cooldown Manager follows Blizzard's live cooldown sources.** Consumables,
+  charges, aura phases, item counts, cast highlights, and partial source updates
+  remain correct through combat, pooling, and remapping.
+- **Protected UI paths remain safe and current.** The Lust Timer, castbars, bank
+  controls, and combat-reload startup avoid restricted mutations and stale state.
+- **Group-frame visuals refresh consistently.** Names, range fades, life-state
+  colors, debuff indicators, and hidden aura buttons track their live state.
+- **Inactive tracked buff bars hide after Layout Mode exits.** Preview state no
+  longer leaves inactive owned bars visible.
+
 ## v5.2.2-beta9 - 2026-08-24
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
