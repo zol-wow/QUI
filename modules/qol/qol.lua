@@ -839,10 +839,12 @@ local function GetReleaseOverlay(frame, button)
     return overlay
 end
 
-local function SetOverlayLabel(overlay, text)
-    if overlay.lastLabel ~= text then
-        overlay.lastLabel = text
-        overlay.label:SetText(text)
+-- value may be a countdown integer or a string; comparing before SetText
+-- keeps the per-frame OnUpdate path free of string conversions/allocations.
+local function SetOverlayLabel(overlay, value)
+    if overlay.lastLabel ~= value then
+        overlay.lastLabel = value
+        overlay.label:SetText(value)
     end
 end
 
@@ -891,7 +893,7 @@ local function EnforceReleaseBlock(frame)
         overlay:Show()
     end
     if remaining > 0 then
-        SetOverlayLabel(overlay, tostring(math.ceil(remaining)))
+        SetOverlayLabel(overlay, math.ceil(remaining))
     else
         SetOverlayLabel(overlay, ns.L["Hold Ctrl"])
     end
