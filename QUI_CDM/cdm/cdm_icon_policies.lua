@@ -320,7 +320,11 @@ function CDMIconStackPolicy.Create(callbacks)
         if controller:ValueIsMissing(spellCount) then return nil end
 
         if issecretvalue(spellCount) then
-            return spellCount, "spell-cast-count"
+            local displayText = spellCount
+            if C_StringUtil and C_StringUtil.TruncateWhenZero then
+                displayText = C_StringUtil.TruncateWhenZero(spellCount)
+            end
+            return displayText, "spell-cast-count"
         end
 
         if type(spellCount) ~= "number" then return nil end
@@ -457,7 +461,7 @@ function CDMIconStackPolicy.Create(callbacks)
         local svDB = callbacks.getChargeMetadataDB and callbacks.getChargeMetadataDB() or nil
         local maxC = svDB and svDB[sid]
         if not maxC or maxC <= 1 then
-            return nil, nil
+            return controller:GetSpellCountForEntry(sid, entry, icon)
         end
 
         local text
