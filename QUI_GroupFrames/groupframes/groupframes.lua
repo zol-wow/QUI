@@ -223,6 +223,7 @@ local _dispel = {
         [9] = "Bleed", [11] = "Bleed",
     },
     colorCurves = {},
+    gradientCurves = {},
     iconCurves = {},
     cachedColors = {},
     auraBorderCurves = {},
@@ -254,6 +255,29 @@ local function GetDispelColorCurve(isRaid, opacity)
         end
     end
     _dispel.colorCurves[key] = curve
+    return curve
+end
+
+-- Like GetDispelColorCurve but at full alpha: the awareness gradient's
+-- strength is the texture's own alpha ramp times gradientOpacity, so the
+-- curve only supplies the type color. Lives on _dispel rather than a local:
+-- this chunk is at Lua's 200-local ceiling.
+function _dispel.GetGradientCurve(isRaid)
+    local key = DispelContextKey(isRaid)
+    if _dispel.gradientCurves[key] then return _dispel.gradientCurves[key] end
+    if not C_CurveUtil or not C_CurveUtil.CreateColorCurve then return nil end
+    local colors = GetDispelColors(isRaid)
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
+    curve:AddPoint(0, CreateColor(0, 0, 0, 0))
+    for _, enumVal in ipairs(_dispel.allEnums) do
+        local typeName = _dispel.enumNames[enumVal]
+        local c = typeName and colors[typeName]
+        if c then
+            curve:AddPoint(enumVal, CreateColor(c[1], c[2], c[3], 1))
+        end
+    end
+    _dispel.gradientCurves[key] = curve
     return curve
 end
 
@@ -508,6 +532,7 @@ end
 InvalidateDispelColors = function()
     _dispel.cachedColors = {}
     _dispel.colorCurves = {}
+    _dispel.gradientCurves = {}
     _dispel.auraBorderCurves = {}
 end
 
@@ -838,17 +863,23 @@ local function UpdateHealth(frame)
 
         if statusKey ~= frame._lastStatusKey then
             frame._lastStatusKey = statusKey
+            local state = GetFrameState(frame)
             if statusKey == 1 then
                 frame.statusText:SetText(ns.L["OFFLINE"])
                 frame.statusText:SetTextColor(COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3])
                 frame.statusText:Show()
+                state.lifeFaded = true
             elseif statusKey == 2 or statusKey == 3 then
                 frame.statusText:SetText(statusKey == 3 and ns.L["GHOST"] or ns.L["DEAD"])
                 frame.statusText:SetTextColor(COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3])
                 frame.statusText:Show()
+                state.lifeFaded = true
                 frame:SetAlpha(0.65)
             else
                 frame.statusText:Hide()
+                if state.lifeFaded then
+                    _state.ReleaseLifeFade(frame, unit)
+                end
             end
         end
     end
@@ -988,6 +1019,7 @@ local function UpdateName(frame)
 
     local isRaid = frame._isRaid
     local nameSettings = GetNameSettings(isRaid)
+    Chrome.AnchorBottomPadded(frame, GetVisualDB(isRaid), frame._bottomPad)
     if nameSettings and nameSettings.showName == false then
         frame.nameText:SetText("")
         return
@@ -1508,16 +1540,18 @@ local function UpdateConnection(frame)
     if not unit then return end
 
     local isConnected, isDead = GetUnitLifeState(unit)
+    local state = GetFrameState(frame)
 
     if not isConnected and UnitExists(unit) then
+        state.lifeFaded = true
         frame:SetAlpha(0.5)
     elseif isDead then
+        state.lifeFaded = true
         frame:SetAlpha(0.65)
-    else
-        local state = GetFrameState(frame)
-        if state.outOfRange == nil then
-            frame:SetAlpha(1)
-        end
+    elseif state.lifeFaded then
+        _state.ReleaseLifeFade(frame, unit)
+    elseif state.outOfRange == nil then
+        frame:SetAlpha(1)
     end
 end
 
@@ -1603,7 +1637,7 @@ function _dispel.ReadableType(auraData)
     return _dispel.enumNames[dispelEnum]
 end
 
-function _dispel.SelectCachedAura(cache, unit, orderKey, setKey)
+function _dispel.SelectCachedAura(cache, unit, orderKey, setKey, excludeSet)
     local order = cache and cache[orderKey]
     local set = cache and cache[setKey]
     if not order or not set then return nil, nil end
@@ -1615,7 +1649,7 @@ function _dispel.SelectCachedAura(cache, unit, orderKey, setKey)
     end
     for i = 1, #order do
         local instID = order[i]
-        if instID and set[instID] then
+        if instID and set[instID] and not (excludeSet and excludeSet[instID]) then
             local stillLive = true
             if GetAuraByInstanceID and not IsSecretValue(instID) then
                 local live = GetAuraByInstanceID(unit, instID) -- @secret-safe: the AurasAreSecret gate above disables this access while restricted
@@ -1681,6 +1715,48 @@ function _dispel.HideVisuals(frame)
 end
 -- <<< QUI_TEST_EXTRACT DispelTypeIconRuntime
 
+-- BY_ME_PLUS_TYPED awareness gradient (legacy/preview path): tint the chrome
+-- gradient ramp + flat base with the typed debuff's color, laid out along
+-- the health fill direction. Returns whether the gradient ended up shown.
+function _dispel.UpdateGradient(frame, unit, dispelCfg, typedInstID, typedType)
+    local overlay = frame.dispelOverlay
+    local tex = overlay and overlay.gradient
+    if not tex then return false end
+    if not typedInstID then
+        tex:Hide()
+        return false
+    end
+
+    Chrome.LayoutDispelGradient(tex,
+        dispelCfg and dispelCfg.gradientStartOpacity,
+        dispelCfg and dispelCfg.gradientEndOpacity,
+        frame._isVerticalFill)
+
+    if C_UnitAuras.GetAuraDispelTypeColor then
+        local curve = _dispel.GetGradientCurve(frame._isRaid)
+        if curve then
+            local cOk, color = pcall(C_UnitAuras.GetAuraDispelTypeColor,
+                unit, typedInstID, curve)
+            if cOk then
+                if IsSecretValue(color) then color = nil end
+                if color then
+                    tex:SetVertexColor(color:GetRGBA())
+                    tex:Show()
+                    return true
+                end
+            end
+        end
+    end
+
+    local colors = GetDispelColors(frame._isRaid)
+    local c = (typedType and colors and colors[typedType])
+        or (colors and colors.Magic)
+        or _state.defaultColors.dispelFallback
+    tex:SetVertexColor(c[1], c[2], c[3], 1)
+    tex:Show()
+    return true
+end
+
 local function UpdateDispelOverlay(frame)
     if not frame or not frame.dispelOverlay then return end
     -- Live frames with an active dispel feeder render the overlay through
@@ -1721,7 +1797,9 @@ local function UpdateDispelOverlay(frame)
     )
 
     local visualInstID, visualType
-    if dispelCfg and dispelCfg.scope == "ALL_TYPED" then
+    local typedInstID, typedType
+    local scope = dispelCfg and dispelCfg.scope
+    if scope == "ALL_TYPED" then
         visualInstID, visualType = _dispel.SelectCachedAura(
             cache, unit, "typedDebuffOrder", "typedDebuffs"
         )
@@ -1729,24 +1807,43 @@ local function UpdateDispelOverlay(frame)
         visualInstID, visualType = _dispel.SelectCachedAura(
             cache, unit, "playerDispellableOrder", "playerDispellable"
         )
+        if scope == "BY_ME_PLUS_TYPED" then
+            -- Awareness only: auras the player could dispel already carry the
+            -- actionable overlay, so they never feed the gradient.
+            typedInstID, typedType = _dispel.SelectCachedAura(
+                cache, unit, "typedDebuffOrder", "typedDebuffs",
+                cache and cache.playerDispellable
+            )
+        end
     end
 
     local glowFrame = frame.cleanseGlow
     if glowFrame then
         if glowOn and playerInstID then
-            local gc = glowCfg and glowCfg.color
-            glowFrame.tex:SetVertexColor((gc and gc[1]) or 0.1, (gc and gc[2]) or 1.0, (gc and gc[3]) or 0.1, (gc and gc[4]) or 1.0)
+            Chrome.SetCleanseGlowColor(glowFrame.art, glowCfg and glowCfg.color)
             glowFrame:Show()
         else
             glowFrame:Hide()
         end
     end
 
+    local gradientShown = _dispel.UpdateGradient(frame, unit, dispelCfg,
+        borderOn and typedInstID or nil, typedType)
+
     if not visualInstID then
-        frame.dispelOverlay:Hide()
+        -- BY_ME_PLUS_TYPED: a typed-but-not-actionable debuff shows only the
+        -- awareness gradient, so the overlay frame must stay up with the
+        -- border art suppressed.
+        if gradientShown then
+            Chrome.SetDispelBordersShown(frame.dispelOverlay, false)
+            frame.dispelOverlay:Show()
+        else
+            frame.dispelOverlay:Hide()
+        end
         Chrome.HideDispelTypeIcons(frame)
         return
     end
+    Chrome.SetDispelBordersShown(frame.dispelOverlay, true)
 
     if iconOn then
         local shown = visualType and Chrome.ShowDispelTypeIcon(frame, visualType)
@@ -3940,6 +4037,9 @@ local _range = {
     resSpell = nil,
     cache = {},
     cacheTime = {},
+    -- Unit tokens that are the player, resolved at roster-rebuild time so the
+    -- in-combat range tick never depends on a possibly-secret UnitIsUnit.
+    selfUnits = {},
 }
 
 local function ResolveRangeSpells()
@@ -4021,6 +4121,7 @@ function _state.SweepTrackedSlotAssist()
 end
 
 local function CheckUnitRange(unit)
+    if _range.selfUnits[unit] then return true end
     local isSelf = UnitIsUnit(unit, "player")
     if IsSecretValue(isSelf) then isSelf = nil end -- @secret-policy: reject-secret-value
     if isSelf then return true end
@@ -4096,6 +4197,23 @@ end
 
 QUI_GF.CheckUnitRange = CheckUnitRange
 
+-- Called when a frame leaves the dead/offline fade (rez, reconnect). The range
+-- system only writes alpha on cached-answer transitions, so hand alpha back to
+-- it explicitly: restore full alpha now, then forget the unit's cached answer
+-- so the next tick re-applies the real range fade (<=1s) for every frame
+-- showing this unit.
+function _state.ReleaseLifeFade(frame, unit)
+    local state = GetFrameState(frame)
+    state.lifeFaded = nil
+    state.outOfRange = nil
+    state.inRange = nil
+    if unit then
+        _range.cache[unit] = nil
+        _range.cacheTime[unit] = nil
+    end
+    frame:SetAlpha(1)
+end
+
 local function ApplyRangeAlpha(frame, inRange, outAlpha)
     if frame.SetAlphaFromBoolean then
         frame:SetAlphaFromBoolean(inRange, 1, outAlpha)
@@ -4134,7 +4252,10 @@ local function DoRangeCheck()
                         if rangeChanged or state.outOfRange == nil then
                             state.outOfRange = true
                             state.inRange = inRange
-                            ApplyRangeAlpha(frame, inRange, outAlpha)
+                            -- Dead/offline fade owns alpha until ReleaseLifeFade
+                            if not state.lifeFaded then
+                                ApplyRangeAlpha(frame, inRange, outAlpha)
+                            end
                         end
                     end
                 end
@@ -4160,9 +4281,24 @@ end
 local function GRU_DeferredWork()
     _state.gruDeferredPending = false
     RebuildUnitFrameMap()
+    local playerGUID = UnitGUID("player")
+    if IsSecretValue(playerGUID) then playerGUID = nil end
+    wipe(_range.selfUnits)
     for unit, list in pairs(QUI_GF.unitFrameMap) do
         local guid = UnitGUID(unit)
         if IsSecretValue(guid) then guid = nil end
+        if guid and playerGUID then
+            if guid == playerGUID then
+                _range.selfUnits[unit] = true
+            end
+        else
+            -- @secret-policy: collapse-only — secret identity just skips the fast path
+            local isSelf = UnitIsUnit(unit, "player")
+            if IsSecretValue(isSelf) then isSelf = nil end
+            if isSelf then
+                _range.selfUnits[unit] = true
+            end
+        end
         for i = 1, #list do
             _state.unitGuidCache[list[i]] = guid
         end
@@ -4548,7 +4684,10 @@ function _state.HandleRangeUpdate(unit)
                 local state = GetFrameState(frame)
                 state.outOfRange = true
                 state.inRange = inRange
-                ApplyRangeAlpha(frame, inRange, outAlpha)
+                -- Dead/offline fade owns alpha until ReleaseLifeFade
+                if not state.lifeFaded then
+                    ApplyRangeAlpha(frame, inRange, outAlpha)
+                end
             end
         end
     end

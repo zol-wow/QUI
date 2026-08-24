@@ -19,16 +19,11 @@ local accessCounter = 0
 local activeRequest = nil
 local activeTimeout = nil
 local queuedRequest = nil
-local refreshCallback = nil
+local refreshCallbacks = {}
 local suppressedGUIDs = {}
 
 local function GetInspectFrame()
     return _G.InspectFrame
-end
-
-local function IsTooltipPlayerItemLevelEnabled()
-    local tooltipSettings = Helpers.GetModuleDB and Helpers.GetModuleDB("tooltip")
-    return tooltipSettings and tooltipSettings.enabled and tooltipSettings.showPlayerItemLevel
 end
 
 local function IsSafeGUID(guid)
@@ -173,6 +168,24 @@ local function ResolveLiveUnit(guid, preferredUnit)
 
     if preferredUnit and IsUnitGUIDMatch(preferredUnit, guid) then
         return preferredUnit
+    end
+
+    if IsUnitGUIDMatch("player", guid) then
+        return "player"
+    end
+
+    for i = 1, 4 do
+        local unit = "party" .. i
+        if IsUnitGUIDMatch(unit, guid) then
+            return unit
+        end
+    end
+
+    for i = 1, 40 do
+        local unit = "raid" .. i
+        if IsUnitGUIDMatch(unit, guid) then
+            return unit
+        end
     end
 
     local tooltipUnit = ResolveTooltipUnit(GameTooltip)
@@ -382,11 +395,12 @@ do
 end
 
 function TooltipInspect:RegisterRefreshCallback(callback)
-    refreshCallback = callback
+    if type(callback) ~= "function" then return false end
+    refreshCallbacks[#refreshCallbacks + 1] = callback
+    return true
 end
 
 function TooltipInspect:GetCachedPlayerData(unit)
-    if not IsTooltipPlayerItemLevelEnabled() then return nil end
     if not unit or not UnitExists(unit) then return nil end
 
     local guid = UnitGUID(unit)
@@ -412,6 +426,22 @@ function TooltipInspect:GetCachedPlayerData(unit)
     return GetCacheEntry(guid)
 end
 
+function TooltipInspect:GetPlayerDataByGUID(guid)
+    if not IsSafeGUID(guid) or IsGUIDSuppressed(guid) then return nil end
+
+    local playerData = GetCacheEntry(guid)
+    if playerData then return playerData end
+
+    local unit = ResolveLiveUnit(guid)
+    if not unit then return nil end
+
+    playerData = self:GetCachedPlayerData(unit)
+    if not playerData then
+        self:QueueInspect(unit)
+    end
+    return playerData
+end
+
 local function SafeCanInspect(unit)
     local ok, canInspect = pcall(function()
         return CanInspect(unit)
@@ -420,7 +450,6 @@ local function SafeCanInspect(unit)
 end
 
 function TooltipInspect:QueueInspect(unit)
-    if not IsTooltipPlayerItemLevelEnabled() then return false end
     if not unit or not UnitExists(unit) or InCombatLockdown() then return false end
     if not UnitIsPlayer(unit) then return false end
     if Helpers.SafeValue(UnitIsUnit(unit, "player")) then return false end
@@ -472,7 +501,6 @@ ProcessQueuedRequest = function()
         if not unit or not IsSafeGUID(guid) then return end
         if not IsUnitGUIDMatch(unit, guid) then return end
         if InCombatLockdown() then return end
-        if not IsTooltipPlayerItemLevelEnabled() then return end
 
         local inspectFrame = GetInspectFrame()
         if inspectFrame and inspectFrame:IsShown() then return end
@@ -505,11 +533,6 @@ eventFrame:SetScript("OnEvent", function(_, event, guid)
         return
     end
 
-    if not IsTooltipPlayerItemLevelEnabled() then
-        FinalizeRequest(guid)
-        return
-    end
-
     local preferredUnit = activeRequest and IsSafeGUID(activeRequest.guid) and Helpers.SafeCompare(activeRequest.guid, guid) == true and activeRequest.unit or nil
     local unit = ResolveLiveUnit(guid, preferredUnit)
     if unit then
@@ -520,8 +543,8 @@ eventFrame:SetScript("OnEvent", function(_, event, guid)
         local playerData = BuildPlayerData(unit, itemLevel, true)
         if playerData then
             StoreCacheEntry(guid, playerData)
-            if refreshCallback then
-                refreshCallback(guid, playerData)
+            for _, callback in ipairs(refreshCallbacks) do
+                ns.SafeCall("best-effort-style", callback, guid, playerData)
             end
         end
     end

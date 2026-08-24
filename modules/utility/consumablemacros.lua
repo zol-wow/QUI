@@ -363,6 +363,28 @@ for _, slot in ipairs(MACRO_SLOTS) do
     DEFS_BY_DBKEY[slot.dbKey] = slot.defs
 end
 
+local CATEGORY_ITEM_SOURCES = {
+    [4] = { defs = POTION_DEFS, options = ConsumableMacros.POTION_OPTIONS },
+    [30] = { defs = HEALTH_DEFS, options = ConsumableMacros.HEALTH_OPTIONS },
+}
+local categoryItemCandidates = {}
+
+function ConsumableMacros.GetCategoryItemCandidates(categoryID)
+    local cached = categoryItemCandidates[categoryID]
+    if cached then return cached end
+    local source = CATEGORY_ITEM_SOURCES[categoryID]
+    if not source then return nil end
+    local result = {}
+    for _, option in ipairs(source.options) do
+        local def = source.defs[option.value]
+        for _, variant in ipairs(def and def.variants or {}) do
+            result[#result + 1] = variant.itemID
+        end
+    end
+    categoryItemCandidates[categoryID] = result
+    return result
+end
+
 function ConsumableMacros.GetSelectedItem(dbKey)
     local db = GetDB and GetDB()
     if not db then return nil end

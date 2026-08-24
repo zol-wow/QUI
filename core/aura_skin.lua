@@ -24,7 +24,7 @@ local function ScheduleRestrictedRestyle(container)
     if not After then return end
     _restrictedPollArmed = true
     local function tick()
-        if AurasAreSecret() then
+        if AurasAreSecret() or (InCombatLockdown and InCombatLockdown()) then
             After(0.5, tick)
             return
         end
@@ -200,6 +200,48 @@ local function ApplyIconSkinOwnership(button, profile)
     end
 end
 
+function AuraSkin.StyleIconArt(button, profile)
+    profile = profile or {}
+    local icon = button.Icon
+    local showBorder = profile.showBorder ~= false
+    if not button._quiBridged and icon then
+        local zoom = profile.zoom or 0
+        local left = 0.08 + zoom
+        local right = 0.92 - zoom
+        local top = 0.08 + zoom
+        local bottom = 0.92 - zoom
+        local aspect = profile.aspectRatioCrop or 1
+        if aspect > 1 then
+            local offset = (1 - (1 / aspect)) * (bottom - top) / 2
+            top = top + offset
+            bottom = bottom - offset
+        end
+        if icon.SetTexCoord then icon:SetTexCoord(left, right, top, bottom) end
+        local inset = showBorder and (profile.borderSize or 1) or 0
+        if inset < 0 then inset = 0 end
+        if icon.ClearAllPoints then icon:ClearAllPoints() end
+        icon:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
+        icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
+    end
+
+    local border = button._quiBorder
+    if not border then return end
+    if button._quiBridged or not showBorder then
+        if border.Hide then border:Hide() end
+        return
+    end
+    local color = profile.borderColor
+    local r, g, b, a
+    if type(color) == "table" then
+        r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4]
+    else
+        r, g, b, a = AuraTheme.BorderColor()
+    end
+    border:SetColorTexture(r, g, b, a or 1)
+    if border.DisablePixelSnap then border:DisablePixelSnap() end
+    if border.Show then border:Show() end
+end
+
 local durationFormatters = {}
 local function DurationFormatter(decimals, hideUnit)
     local key = (decimals and "d" or "-") .. (hideUnit and "u" or "-")
@@ -278,35 +320,8 @@ local function styleButton(button, profile)
     end
 
     ApplyIconSkinOwnership(button, profile)
-
-    local zoom = profile.zoom or 0
-    local left = 0.08 + zoom
-    local right = 0.92 - zoom
-    local top = 0.08 + zoom
-    local bottom = 0.92 - zoom
-    local aspect = profile.aspectRatioCrop or 1
-    if aspect > 1 then
-        local offset = (1 - (1 / aspect)) * (bottom - top) / 2
-        top = top + offset
-        bottom = bottom - offset
-    end
     button:SetAlpha(profile.opacity or 1)
-    if not button._quiBridged and button.Icon and button.Icon.SetTexCoord then
-        button.Icon:SetTexCoord(left, right, top, bottom)
-    end
-
-    -- Border thickness is the gap between the button edge and the inset icon;
-    -- external skins own the icon geometry, so leave it alone when bridged.
-    local showBorder = profile.showBorder ~= false
-    if not button._quiBridged and button.Icon then
-        local inset = 0
-        if showBorder then
-            inset = profile.borderSize or 1
-            if inset < 0 then inset = 0 end
-        end
-        button.Icon:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
-        button.Icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
-    end
+    AuraSkin.StyleIconArt(button, profile)
 
     local dispel = button._quiDispel
     if dispel and button.ClearDispelTypeTextures and button.AddDispelTypeTexture then
@@ -364,23 +379,6 @@ local function styleButton(button, profile)
             if pandemic.SetAlpha then pandemic:SetAlpha(c[4] or 1) end
         elseif pandemic.SetAlpha then
             pandemic:SetAlpha(0)
-        end
-    end
-
-    local border = button._quiBorder
-    if border then
-        if not showBorder then
-            if border.Hide then border:Hide() end
-        else
-            local bc = profile.borderColor
-            local r, g, b, a
-            if type(bc) == "table" then
-                r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4]
-            else
-                r, g, b, a = AuraTheme.BorderColor()
-            end
-            border:SetColorTexture(r, g, b, a or 1)
-            if border.DisablePixelSnap then border:DisablePixelSnap() end
         end
     end
 
@@ -506,6 +504,21 @@ local function GroupLayout(L, g)
     return t
 end
 
+local function ApplyLatchedMouseMotion(container, button)
+    local mouseMotion = container._quiRangeGateMouseEnabled
+    if mouseMotion == nil then return end
+    if AurasAreSecret() or (InCombatLockdown and InCombatLockdown()) then
+        ScheduleRestrictedRestyle(container)
+        return
+    end
+    if button.SetMouseMotionEnabled and button.SetMouseClickEnabled then
+        button:SetMouseMotionEnabled(mouseMotion)
+        button:SetMouseClickEnabled(mouseMotion)
+    elseif button.EnableMouse then
+        button:EnableMouse(mouseMotion)
+    end
+end
+
 local function MakeInitializer(container, _groupDesc)
     return function(button)
         buildButtonArt(button)
@@ -513,6 +526,7 @@ local function MakeInitializer(container, _groupDesc)
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
+        ApplyLatchedMouseMotion(container, button)
         local reg = container._quiButtons
         if not reg then
             reg = {}
@@ -620,6 +634,7 @@ function AuraSkin.Configure(container, profile, groups)
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
+        ApplyLatchedMouseMotion(container, button)
     end)
 end
 
@@ -634,6 +649,7 @@ function AuraSkin.Restyle(container, profile)
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
+        ApplyLatchedMouseMotion(container, button)
     end)
 end
 

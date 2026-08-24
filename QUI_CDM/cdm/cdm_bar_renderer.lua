@@ -305,9 +305,12 @@ local function GetBarSpellData(bar)
     local resolvedSpellID = overrideSpellID or baseSpellID
     if not resolvedSpellID and not entry.name then return nil end
     return {
+        id = entry.id,
         spellID = resolvedSpellID,
         baseSpellID = baseSpellID or resolvedSpellID,
         overrideSpellID = overrideSpellID,
+        linkedSpellID = entry.linkedSpellID,
+        linkedSpellIDs = entry.linkedSpellIDs,
         name = entry.name,
         cooldownID = entry.cooldownID,
     }
@@ -694,56 +697,42 @@ local function WriteDurationTextFromDurationObject(bar, durObj)
     return true
 end
 
-local function GetTrackedBarOverrideColor(settings, spellData)
-    local overrides = settings and settings.colorOverrides
-    if type(overrides) ~= "table" or type(spellData) ~= "table" then
-        return nil
-    end
-
-    local color = spellData.spellID and overrides[spellData.spellID]
-    if type(color) == "table" then
-        return color
-    end
-
-    color = spellData.overrideSpellID and overrides[spellData.overrideSpellID]
-    if type(color) == "table" then
-        return color
-    end
-
-    color = spellData.baseSpellID and overrides[spellData.baseSpellID]
-    if type(color) == "table" then
-        return color
-    end
-
-    color = spellData.cooldownID and overrides[spellData.cooldownID]
-    if type(color) == "table" then
-        return color
-    end
-
-    return nil
-end
-
-local function GetTrackedBarOverrideColorForEntry(settings, entry)
+local function GetTrackedBarOverrideColorFromEntry(settings, entry)
     local overrides = settings and settings.colorOverrides
     if type(overrides) ~= "table" or type(entry) ~= "table" then
         return nil
     end
 
-    local spellID = entry.overrideSpellID or entry.spellID or entry.id
-    local color = spellID and overrides[spellID]
-    if type(color) == "table" then return color end
+    local function lookup(id)
+        if type(id) ~= "number" or (issecretvalue and issecretvalue(id)) then
+            return nil
+        end
+        local color = overrides[id]
+        return type(color) == "table" and color or nil
+    end
 
-    color = entry.overrideSpellID and overrides[entry.overrideSpellID]
-    if type(color) == "table" then return color end
+    local color = lookup(entry.id) or lookup(entry.spellID)
+        or lookup(entry.overrideSpellID) or lookup(entry.baseSpellID)
+        or lookup(entry.linkedSpellID) or lookup(entry.cooldownID)
+    if color then return color end
 
-    local baseSpellID = entry.spellID or entry.id
-    color = baseSpellID and overrides[baseSpellID]
-    if type(color) == "table" then return color end
-
-    color = entry.cooldownID and overrides[entry.cooldownID]
-    if type(color) == "table" then return color end
+    local linked = entry.linkedSpellIDs
+    if type(linked) == "table" and not (issecretvalue and issecretvalue(linked)) then
+        for i = 1, #linked do
+            color = lookup(linked[i])
+            if color then return color end
+        end
+    end
 
     return nil
+end
+
+local function GetTrackedBarOverrideColor(settings, spellData)
+    return GetTrackedBarOverrideColorFromEntry(settings, spellData)
+end
+
+local function GetTrackedBarOverrideColorForEntry(settings, entry)
+    return GetTrackedBarOverrideColorFromEntry(settings, entry)
 end
 
 local function ColorStateChanged(state, color)
@@ -760,7 +749,7 @@ local function ColorStateChanged(state, color)
     return changed
 end
 
-function CDMBars.ConfigureBar(bar, settings, overrideWidth)
+function CDMBars.ConfigureBar(bar, settings, overrideWidth, activeOverride)
     if not bar then return end
 
     bar._borderSettings = settings
@@ -793,7 +782,8 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     local iconPosition = settings.iconPosition or "top"
     local showTextOnVertical = settings.showTextOnVertical or false
 
-    local isActive = bar._active
+    local isActive = activeOverride
+    if isActive == nil then isActive = bar._active end
     local spellData = GetBarSpellData(bar)
     local overrideColor = GetTrackedBarOverrideColor(settings, spellData)
 
@@ -1873,7 +1863,6 @@ function CDMBars:LayoutBars(container, settings)
             bar._cfgFingerprint = fingerprint
         end
         if editModeActive then
-            bar._active = true
             SetStatusBarValue(bar.StatusBar, 0.65)
             DisableBarDurationBinding(bar)
             if bar.DurationText then
@@ -1888,6 +1877,7 @@ function CDMBars:LayoutBars(container, settings)
             or fingerprint.barOpacity ~= (settings.barOpacity or 1)
             or fingerprint.useClassColor ~= (settings.useClassColor and 1 or 0)
             or fingerprint.borderSource ~= settings.borderColorSource
+        local displayActive = editModeActive or bar._active
         fingerprint.barHeight = settings.barHeight or 0
         fingerprint.barWidth = barWidth or 0
         fingerprint.borderSize = settings.borderSize or 0
@@ -1899,9 +1889,9 @@ function CDMBars:LayoutBars(container, settings)
         configChanged = ColorStateChanged(fingerprint.bar, settings.barColor) or configChanged
         configChanged = ColorStateChanged(fingerprint.override,
             GetTrackedBarOverrideColorForEntry(settings, bar._spellEntry)) or configChanged
-        if configChanged or bar._cfgActive ~= bar._active then
-            bar._cfgActive = bar._active
-            CDMBars.ConfigureBar(bar, settings, barWidth)
+        if configChanged or bar._cfgActive ~= displayActive then
+            bar._cfgActive = displayActive
+            CDMBars.ConfigureBar(bar, settings, barWidth, displayActive)
         end
 
         if bar._lastFrameLevel ~= frameLevel then

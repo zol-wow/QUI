@@ -78,7 +78,7 @@ if ns.Registry then
             if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
             local Display = ns.QUI.Chat.DisplayLayer
             if not (Display and Display.IsCreated and Display.IsCreated()) then return end
-            if Display.Refresh then Display.Refresh() end
+            if Display.RefreshAppearance then Display.RefreshAppearance() end
             local TabUI = ns.QUI.Chat.TabUI
             if TabUI and TabUI.Rebuild then TabUI.Rebuild() end
             local Scrollbar = ns.QUI.Chat.Scrollbar

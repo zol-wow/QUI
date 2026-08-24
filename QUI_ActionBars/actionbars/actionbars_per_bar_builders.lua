@@ -145,11 +145,14 @@ do
                 end
             end
 
-            CreateCollapsible(content, ns.L["Layout"], FORM_ROW + 8, function(body)
+            CreateCollapsible(content, ns.L["Layout"], 2 * FORM_ROW + 8, function(body)
                 local sy = -4
-                P(GUI:CreateFormDropdown(body, ns.L["Grow Direction"],
+                sy = P(GUI:CreateFormDropdown(body, ns.L["Grow Direction"],
                     totemBarGrowOptions, "growDirection", totemDB, RefreshTotemBar,
                     { description = ns.L["Direction the totem bar grows as additional totems are summoned."] }), body, sy)
+                P(GUI:CreateFormSlider(body, ns.L["Button Size"],
+                    20, 300, 1, "iconSize", totemDB, RefreshTotemBar, { deferOnDrag = true },
+                    { description = ns.L["Square size of each button in pixels."] }), body, sy)
             end, sections, relayout)
 
             U.BuildPositionCollapsible(content, "totemBar", nil, sections, relayout)

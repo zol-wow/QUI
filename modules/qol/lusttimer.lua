@@ -13,9 +13,6 @@ local function CJKFont(fs, p, s, f)
     end
 end
 
-local C_UnitAuras = C_UnitAuras
-local issecretvalue = issecretvalue
-
 local LUST_SPELLS = {
     [2825]   = true,
     [32182]  = true,
@@ -24,53 +21,25 @@ local LUST_SPELLS = {
     [390386] = true,
     [466904] = true,
 }
-local SATED_SPELLS = {
-    [57723]  = true,
-    [57724]  = true,
-    [80354]  = true,
-    [264689] = true,
-    [390435] = true,
-}
-
-local STATUS_BAR_INTERPOLATION_IMMEDIATE = 0
-local STATUS_BAR_TIMER_REMAINING = 1
 
 local State = {
     frame = nil,
+    container = nil,
+    slot = nil,
+    preview = nil,
     isPreviewMode = false,
-    activeInstanceID = nil,
 }
 
 local GetSettings = Helpers.CreateDBGetter("lustTimer")
 
--- entirely C-side (SetTimerDuration / SetCooldownFromDurationObject), so no
-local function BindDuration(bar, count, instanceID)
-    if not bar or not instanceID then return false end
-    if not (C_UnitAuras and C_UnitAuras.GetAuraDuration) then return false end
-    local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, "player", instanceID)
-    if not ok or not durObj then return false end
+local function BuildTimerSurface(frame, bindDuration)
+    local border = frame:CreateTexture(nil, "BACKGROUND", nil, -2)
+    border:SetAllPoints(frame)
+    frame.border = border
 
-    local appliedBar = ns.SafeCallMethod("sink-forward", bar, "SetTimerDuration", durObj,
-        STATUS_BAR_INTERPOLATION_IMMEDIATE, STATUS_BAR_TIMER_REMAINING)
-    ns.SafeCallMethodIfPresent("sink-forward", count, "SetCooldownFromDurationObject", durObj)
-    return appliedBar and true or false
-end
-
-local function CreateTimerFrame()
-    if State.frame then return end
-
-    local frame = CreateFrame("Frame", "QUI_LustTimer", UIParent, "BackdropTemplate")
-    frame:SetPoint("CENTER", UIParent, "CENTER", 0, -120)
-    frame:SetSize(160, 22)
-    frame:SetFrameStrata("HIGH")
-    frame:SetFrameLevel(50)
-
-    frame:SetBackdrop(UIKit.GetBackdropInfo(nil, nil, frame))
-    local bgr, bgg, bgb = 0, 0, 0
-    if Helpers and Helpers.GetSkinBgColor then bgr, bgg, bgb = Helpers.GetSkinBgColor() end
-    frame:SetBackdropColor(bgr, bgg, bgb, 0.6)
-    UIKit.CreateBorderLines(frame)
-    UIKit.UpdateBorderLines(frame, 1, 0, 0, 0, 1)
+    local backdrop = frame:CreateTexture(nil, "BACKGROUND")
+    backdrop:SetAllPoints(frame)
+    frame.backdrop = backdrop
 
     local bar = CreateFrame("StatusBar", nil, frame)
     bar:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
@@ -95,27 +64,51 @@ local function CreateTimerFrame()
     label:SetText(ns.L and ns.L["Lust"] or "Lust")
     frame.label = label
 
-    frame:Hide()
-    State.frame = frame
+    if bindDuration then
+        frame:SetDurationBar(bar, {
+            direction = Enum.StatusBarTimerDirection.RemainingTime,
+            interpolation = Enum.StatusBarInterpolation.Immediate,
+        })
+        frame:SetDurationCooldown(count)
+    end
 end
 
-local function UpdateAppearance()
-    if not State.frame then CreateTimerFrame() end
-    local settings = GetSettings()
-    if not settings then return end
-    local frame = State.frame
+local function CreateTimerFrame()
+    if State.frame then return end
 
-    local width = settings.width or 160
-    local height = settings.height or 22
-    frame:SetSize(width, height)
+    local frame = CreateFrame("Frame", "QUI_LustTimer", UIParent)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, -120)
+    frame:SetSize(160, 22)
+    frame:SetFrameStrata("HIGH")
+    frame:SetFrameLevel(50)
 
-    local xOffset = settings.xOffset or 0
-    local yOffset = settings.yOffset or -120
-    if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("lustTimer")) then
-        frame:ClearAllPoints()
-        frame:SetPoint("CENTER", UIParent, "CENTER", xOffset, yOffset)
-    end
+    local container = CreateFrame("AuraContainer", nil, frame, "CustomAuraContainerTemplate")
+    container:SetAllPoints(frame)
+    container:Hide()
+    container:SetUnit("player")
+    local slot = container:AddAuraSlot("lust", "HELPFUL", {
+        candidateFilters = { includeSpellIDs = LUST_SPELLS },
+        initializeFrame = function(button)
+            button:SetAllPoints(button:GetParent())
+            BuildTimerSurface(button, true)
+        end,
+    })
 
+    local preview = CreateFrame("Frame", nil, frame)
+    preview:SetAllPoints(frame)
+    preview:SetFrameLevel(frame:GetFrameLevel() + 3)
+    BuildTimerSurface(preview, false)
+    preview.bar:SetValue(0.66)
+    preview:Hide()
+
+    frame:Hide()
+    State.frame = frame
+    State.container = container
+    State.slot = slot
+    State.preview = preview
+end
+
+local function UpdateSurfaceAppearance(frame, settings)
     local texturePath = (ns.LSM and ns.LSM.Fetch and ns.LSM:Fetch("statusbar", settings.barTexture or "Solid"))
         or "Interface\\Buttons\\WHITE8x8"
     frame.bar:SetStatusBarTexture(texturePath)
@@ -133,112 +126,58 @@ local function UpdateAppearance()
     local borderSize = settings.borderSize or 1
     local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
     local bgColor = settings.backdropColor or { 0, 0, 0, 0.6 }
-    frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
-    UIKit.CreateBorderLines(frame)
-    UIKit.UpdateBorderLines(frame, borderSize, bR, bG, bB, bA, settings.hideBorder)
-end
-
-local function ShowFor(instanceID)
-    local settings = GetSettings()
-    if not settings or not settings.enabled then return end
-    if State.isPreviewMode then return end
-    CreateTimerFrame()
-    UpdateAppearance()
-    State.activeInstanceID = instanceID
-    if not BindDuration(State.frame.bar, State.frame.count, instanceID) then
-        if State.frame.count then State.frame.count:Clear() end
-        State.frame.bar:SetMinMaxValues(0, 1)
-        State.frame.bar:SetValue(1)
-    end
-    State.frame:Show()
-end
-
-local function HideTimer()
-    State.activeInstanceID = nil
-    if State.frame and not State.isPreviewMode then
-        if State.frame.count then State.frame.count:Clear() end
-        State.frame:Hide()
-    end
-end
-
-local function ScanForLust()
-    if not (C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID) then return end
-    for spellID in pairs(LUST_SPELLS) do
-        local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-        aura = Helpers.SafeValue(aura)
-        if ok and aura and aura.auraInstanceID then
-            ShowFor(aura.auraInstanceID)
-            return
-        end
-    end
-
-    if State.activeInstanceID then
-        local restricted = C_Secrets and C_Secrets.ShouldAurasBeSecret
-            and C_Secrets.ShouldAurasBeSecret()
-        if not restricted then
-            HideTimer()
-        end
-    end
-end
-
-local function OnPlayerAura(_, info)
-    local settings = GetSettings()
-    if not settings or not settings.enabled then return end
-
-    if info == nil then
-        ScanForLust()
-        return
-    end
-
-    if info.removedAuraInstanceIDs and State.activeInstanceID then
-        for _, instID in ipairs(info.removedAuraInstanceIDs) do
-            if instID == State.activeInstanceID then
-                HideTimer()
-                break
-            end
-        end
-    end
-
-    if info.addedAuras then
-        for _, data in ipairs(info.addedAuras) do
-            local sid = data and data.spellId
-            local secret = issecretvalue and issecretvalue(sid)
-            if sid and not secret and LUST_SPELLS[sid] and not SATED_SPELLS[sid] then
-                ShowFor(data.auraInstanceID)
-                break
-            end
-        end
+    local bgAlpha = settings.showBackdrop == false and 0 or (bgColor[4] or 0.6)
+    local inset = settings.hideBorder and 0 or UIKit.Pixels(borderSize, frame)
+    frame.border:SetColorTexture(bR, bG, bB, bA)
+    frame.border:SetShown(inset > 0)
+    frame.backdrop:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgAlpha)
+    frame.backdrop:ClearAllPoints()
+    frame.bar:ClearAllPoints()
+    if inset > 0 then
+        frame.backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
+        frame.backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
+        frame.bar:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
+        frame.bar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
+    else
+        frame.backdrop:SetAllPoints(frame)
+        frame.bar:SetAllPoints(frame)
     end
 end
 
 local function RefreshLustTimer()
+    CreateTimerFrame()
     local settings = GetSettings()
-    if (not settings or not settings.enabled) and not State.isPreviewMode then
-        HideTimer()
-        return
+    if not settings then return end
+
+    local frame = State.frame
+    frame:SetSize(settings.width or 160, settings.height or 22)
+    if not (_G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("lustTimer")) then
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", UIParent, "CENTER", settings.xOffset or 0, settings.yOffset or -120)
     end
-    UpdateAppearance()
-    if settings and settings.enabled and not State.isPreviewMode then
-        ScanForLust()
+
+    local restricted = C_Secrets and C_Secrets.ShouldAurasBeSecret
+        and C_Secrets.ShouldAurasBeSecret()
+    if restricted then
+        if ns.AuraGlue and ns.AuraGlue.QueueRegenWork then
+            ns.AuraGlue.QueueRegenWork(frame, RefreshLustTimer)
+        end
+    else
+        UpdateSurfaceAppearance(State.slot, settings)
     end
+    UpdateSurfaceAppearance(State.preview, settings)
+
+    local live = settings.enabled == true and not State.isPreviewMode
+    State.preview:SetShown(State.isPreviewMode)
+    State.container:SetEnabled(live)
+    State.container:SetShown(live)
+    frame:SetShown(live or State.isPreviewMode)
 end
 
 local function TogglePreview(enable)
     CreateTimerFrame()
-    if not State.frame then return end
-    State.isPreviewMode = enable
-    if enable then
-        UpdateAppearance()
-        State.frame.bar:SetMinMaxValues(0, 1)
-        State.frame.bar:SetValue(0.66)
-        if State.frame.count then State.frame.count:Clear() end
-        State.frame:Show()
-    else
-        local settings = GetSettings()
-        if not (settings and settings.enabled and State.activeInstanceID) then
-            State.frame:Hide()
-        end
-    end
+    State.isPreviewMode = enable == true
+    RefreshLustTimer()
 end
 
 local function IsPreviewMode()
@@ -247,21 +186,9 @@ end
 
 if ns.WhenLoggedIn then
     ns.WhenLoggedIn(function()
-        CreateTimerFrame()
-        if ns.AuraEvents and ns.AuraEvents.Subscribe then
-            ns.AuraEvents:Subscribe("player", OnPlayerAura)
-        end
         RefreshLustTimer()
     end)
 end
-
-local regenFrame = CreateFrame("Frame")
-regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-regenFrame:SetScript("OnEvent", function()
-    if State.activeInstanceID and not State.isPreviewMode then
-        ScanForLust()
-    end
-end)
 
 _G.QUI_RefreshLustTimer = RefreshLustTimer
 _G.QUI_ToggleLustTimerPreview = TogglePreview

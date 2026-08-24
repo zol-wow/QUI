@@ -1103,6 +1103,8 @@ local function AttachRowVisuals(row, barH)
     row.Value:SetText("")
 end
 
+local activeHoverRow
+
 function Window:_AttachRowVisuals(row)
     local windowID = self.windowID
     local barH = ResolveAppearance(windowID, "barHeight") or 18
@@ -1123,6 +1125,7 @@ function Window:_AttachRowVisuals(row)
         if GameTooltip:IsForbidden() then return end
 
         local src = rowSelf._source
+        activeHoverRow = rowSelf
 
         GameTooltip:SetOwner(rowSelf, "ANCHOR_BOTTOM")
         GameTooltip:ClearLines()
@@ -1143,6 +1146,11 @@ function Window:_AttachRowVisuals(row)
 
         if src.classFilename then
             GameTooltip:AddLine(src.classFilename, 0.7, 0.7, 0.7)
+        end
+
+        local addPlayerItemLevel = ns.QUI_AddPlayerItemLevelByGUIDToTooltip
+        if addPlayerItemLevel then
+            addPlayerItemLevel(GameTooltip, src.sourceGUID, true, true)
         end
 
         local totalLabel, rateLabel = TooltipLabelsForType(rowSelf._damageMeterType or 0)
@@ -1180,9 +1188,24 @@ function Window:_AttachRowVisuals(row)
 
         GameTooltip:Show()
     end)
-    row:SetScript("OnLeave", function()
+    row:SetScript("OnLeave", function(rowSelf)
+        if activeHoverRow == rowSelf then activeHoverRow = nil end
         if GameTooltip:IsForbidden() then return end
         GameTooltip:Hide()
+    end)
+end
+
+if ns.TooltipInspect and ns.TooltipInspect.RegisterRefreshCallback then
+    ns.TooltipInspect:RegisterRefreshCallback(function(guid)
+        local row = activeHoverRow
+        local source = row and row._source
+        if not source or not GameTooltip:IsShown() then return end
+        if Helpers.SafeCompare(source.sourceGUID, guid) ~= true then return end
+
+        local addPlayerItemLevel = ns.QUI_AddPlayerItemLevelByGUIDToTooltip
+        if addPlayerItemLevel then
+            addPlayerItemLevel(GameTooltip, guid, false)
+        end
     end)
 end
 

@@ -217,7 +217,7 @@ local QueryOverrideSpell  = RuntimeQueries.QueryOverrideSpell
 
 local function IsItemLikeEntry(entry)
     return entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot"
-        or (entry.type == "consumable" and entry.itemID ~= nil))
+        or entry.type == "consumable")
 end
 
 local function QueryItemUseSpellID(itemID)
@@ -251,7 +251,7 @@ end
 local function ResolveItemCooldownIdentity(entry)
     if not entry then return nil, nil, nil, nil end
 
-    local itemID, slotID
+    local itemID, slotID, categorySpellID
     if entry.type == "item" then
         itemID = (Sources and Sources.QueryBestOwnedItemVariant
             and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
@@ -262,7 +262,12 @@ local function ResolveItemCooldownIdentity(entry)
         end
         itemID = itemID or entry.itemID
     elseif entry.type == "consumable" then
-        itemID = entry.itemID
+        if Sources and Sources.QueryLastCategoryCooldownSource then
+            categorySpellID, itemID = Sources.QueryLastCategoryCooldownSource(entry.id)
+        end
+        local fallbackItemID = ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
+            and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id)
+        itemID = itemID or entry._runtimeItemID or fallbackItemID or entry.itemID
     elseif entry.type == "macro" then
         local resolvedID, resolvedType = CDMResolvers.ResolveMacro(entry)
         if resolvedType == "item" then
@@ -272,7 +277,7 @@ local function ResolveItemCooldownIdentity(entry)
 
     if not itemID then return nil, slotID, nil, nil end
 
-    local itemSpellID = QueryItemUseSpellID(itemID)
+    local itemSpellID = categorySpellID or QueryItemUseSpellID(itemID)
     local keySource = slotID and (tostring(slotID) .. ":" .. tostring(itemID)) or tostring(itemID)
     return itemID, slotID, itemSpellID, keySource
 end
@@ -444,7 +449,7 @@ local function QueryGCDDurationObject(spellID)
     if spellID then
         durObj = QueryGCDDuration(spellID)
     end
-    if not durObj and spellID ~= GCD_SPELL_ID then
+    if type(durObj) == "nil" and spellID ~= GCD_SPELL_ID then
         durObj = QueryGCDDuration(GCD_SPELL_ID)
     end
     return durObj
@@ -899,7 +904,7 @@ local function BuildDurationObjectFromStart(startTime, duration)
     if not (C_DurationUtil and C_DurationUtil.CreateDuration) then return nil end
 
     local okCreate, durObj = pcall(C_DurationUtil.CreateDuration)
-    if not okCreate or not durObj or not durObj.SetTimeFromStart then
+    if not okCreate or type(durObj) == "nil" or not durObj.SetTimeFromStart then
         return nil
     end
 
@@ -944,8 +949,8 @@ local function GetIconItemDurationObject(icon, sourceID, startTime, duration)
         return nil
     end
 
-    local durObj = state.durObj or icon._lastDurObj
-    if durObj then
+    local durObj = type(state.durObj) ~= "nil" and state.durObj or icon._lastDurObj
+    if type(durObj) ~= "nil" then
         if resolverStats then resolverStats.itemDurationIconReuses = resolverStats.itemDurationIconReuses + 1 end
         return durObj
     end
@@ -955,7 +960,7 @@ end
 local function BuildIconItemDurationObject(icon, keySource, startTime, duration)
     local sourceID = BuildItemDurationSourceID(icon, keySource)
     local durObj = GetIconItemDurationObject(icon, sourceID, startTime, duration)
-    if durObj then
+    if type(durObj) ~= "nil" then
         return durObj, sourceID
     end
     return BuildDurationObjectFromStart(startTime, duration), sourceID
@@ -1068,7 +1073,7 @@ local function ResolveItemDurationObjectForIcon(icon, entry)
         local cdInfoActive = cdInfo and IsCooldownInfoActive(cdInfo)
         if cdInfoActive ~= false and GetCurrentIsOnGCD(cdInfo) ~= true then
             local durObj = QueryDuration(itemSpellID)
-            if durObj then
+            if type(durObj) ~= "nil" then
                 return durObj, "item-cooldown",
                     "spell:" .. tostring(itemSpellID) .. ":" .. tostring(keySource),
                     nil, nil, itemSpellID
@@ -1110,7 +1115,7 @@ end
 function CDMResolvers.BuildEntryItemDurationObject(entry)
     local durObj, mode, _, startTime, duration = ResolveItemDurationObjectForIcon(nil, entry)
     if mode ~= "item-cooldown" then return nil end
-    if durObj then return durObj end
+    if type(durObj) ~= "nil" then return durObj end
     return BuildDurationObjectFromStart(startTime, duration)
 end
 
@@ -1569,7 +1574,8 @@ local function ResolveCooldownStateCore(context)
         end
     end
 
-    if itemID and not context.skipAuraPhase
+    if itemID and not (entry.type == "consumable" and entry.kind == "cooldown")
+       and not context.skipAuraPhase
        and ResolveItemAuraForContext(state, context, entry, itemID, itemSpellID) then
         MemAuditProfilerMark("CDM_rsReturnItemAura")
         return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
@@ -1625,9 +1631,16 @@ local function ResolveCooldownStateCore(context)
 
     local entryMayHaveCharges = entry
         and (entry.hasCharges == true or entry.charges == true)
-    if currentOnGCD == true and HasActiveChargeRecharge(sid, entryMayHaveCharges) then
+    if not entryMayHaveCharges then
+        local nativeFrame = context.owner and context.owner._blizzCooldown
+        if nativeFrame and type(nativeFrame.HasVisualDataSource_Charges) == "function" then
+            local active = nativeFrame:HasVisualDataSource_Charges()
+            entryMayHaveCharges = not ResolverIsSecretValue(active) and active == true
+        end
+    end
+    if HasActiveChargeRecharge(sid, entryMayHaveCharges) then
         local chargeDur = QueryChargeDuration(sid)
-        if chargeDur then
+        if type(chargeDur) ~= "nil" then
             state.mode = "cooldown"
             SetCooldownStateActivity(state, true)
             state.durObj = chargeDur
@@ -1648,7 +1661,7 @@ local function ResolveCooldownStateCore(context)
             state.cooldownInfoOnGCD = cdInfoOnGCD
             if preserveGCDOnly then
                 local gcdDur = QueryGCDDurationObject(sid)
-                if gcdDur then
+                if type(gcdDur) ~= "nil" then
                     state.mode = "gcd-only"
                     SetCooldownStateActivity(state, true)
                     state.durObj = gcdDur
@@ -1658,7 +1671,7 @@ local function ResolveCooldownStateCore(context)
                     return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
                 end
             end
-            if durObj and cdInfoOnGCD ~= true then
+            if type(durObj) ~= "nil" and cdInfoOnGCD ~= true then
                 state.mode = "cooldown"
                 SetCooldownStateActivity(state, true)
                 state.durObj = durObj
@@ -1669,7 +1682,7 @@ local function ResolveCooldownStateCore(context)
             end
             if cdInfoOnGCD == true and context.showGCDSwipe == true then
                 local gcdDur = QueryGCDDurationObject(sid)
-                if gcdDur then
+                if type(gcdDur) ~= "nil" then
                     state.mode = "gcd-only"
                     SetCooldownStateActivity(state, true)
                     state.durObj = gcdDur
@@ -1683,7 +1696,7 @@ local function ResolveCooldownStateCore(context)
     end
     MemAuditProfilerMark("CDM_rsLiveCDProbe")
 
-    if gcdDurObj then
+    if type(gcdDurObj) ~= "nil" then
         state.mode = "gcd-only"
         SetCooldownStateActivity(state, true)
         state.durObj = gcdDurObj
@@ -1692,19 +1705,6 @@ local function ResolveCooldownStateCore(context)
         state.cooldownInfoOnGCD = currentOnGCD
         MemAuditProfilerMark("CDM_rsReturnGCDCached")
         return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
-    end
-
-    if HasActiveChargeRecharge(sid, entryMayHaveCharges) then
-        local chargeDur = QueryChargeDuration(sid)
-        if chargeDur then
-            state.mode = "cooldown"
-            SetCooldownStateActivity(state, true)
-            state.durObj = chargeDur
-            state.sourceID = sid
-            state.spellID = sid
-            MemAuditProfilerMark("CDM_rsReturnChargeRecharge")
-            return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
-        end
     end
 
     state.mode = "inactive"

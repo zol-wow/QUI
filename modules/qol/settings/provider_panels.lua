@@ -210,7 +210,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         L.headerAt(ns.L["General"])
         local s1 = L.sectionAt()
         local enabledW = GUI:CreateFormCheckbox(s1.frame, nil, "enabled", lt, Refresh,
-            { description = ns.L["Show a bar + countdown for an active Bloodlust/Heroism-family buff on you. Detected when the buff is applied out of combat (the usual pre-pull case)."] })
+            { description = ns.L["Bar + countdown for an active Bloodlust/Heroism-family buff on you."] })
         local widthW = GUI:CreateFormSlider(s1.frame, nil, 60, 400, 1, "width", lt, Refresh,
             { description = ns.L["Pixel width of the lust timer bar."] })
         s1.AddRow(row(s1.frame, ns.L["Enabled"], enabledW), row(s1.frame, ns.L["Width"], widthW))
