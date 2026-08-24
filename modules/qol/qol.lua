@@ -801,10 +801,10 @@ end
 
 local RELEASE_GUARD_SECONDS = 3
 
-local releaseBlockedPopups = setmetatable({}, { __mode = "k" })
 local releaseBlockHooked = setmetatable({}, { __mode = "k" })
 local releaseUnlockTime = setmetatable({}, { __mode = "k" })
 local releaseButtonCache = setmetatable({}, { __mode = "kv" })
+local releaseOverlays = setmetatable({}, { __mode = "k" })
 
 local function GetReleaseButton(frame)
     local button = releaseButtonCache[frame]
@@ -819,6 +819,33 @@ local function GetReleaseButton(frame)
     return button
 end
 
+local function GetReleaseOverlay(frame, button)
+    local overlay = releaseOverlays[frame]
+    if overlay then return overlay end
+
+    overlay = CreateFrame("Frame", nil, button)
+    overlay:SetAllPoints(button)
+    overlay:EnableMouse(true)
+    overlay:Hide()
+
+    local cover = overlay:CreateTexture(nil, "OVERLAY")
+    cover:SetAllPoints(overlay)
+    cover:SetColorTexture(0, 0, 0, 0.65)
+
+    overlay.label = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    overlay.label:SetPoint("CENTER")
+
+    releaseOverlays[frame] = overlay
+    return overlay
+end
+
+local function SetOverlayLabel(overlay, text)
+    if overlay.lastLabel ~= text then
+        overlay.lastLabel = text
+        overlay.label:SetText(text)
+    end
+end
+
 local function IsReleaseGuardActive()
     local settings = GetSettings()
     if not settings or not settings.blockReleaseInRaid then return false end
@@ -829,23 +856,20 @@ end
 -- Runs as an OnUpdate post-hook, i.e. after Blizzard's DEATH OnUpdate has
 -- already set the button's enabled state and text for its own restrictions
 -- (falling, encounter suppression, no-release auras) this same frame. The
--- guard therefore never enables the button and never touches it while a
--- native restriction has it disabled; releasing the lock just lets
--- Blizzard's next per-frame pass restore its own state and text.
+-- guard never touches the button itself — toggling its enabled state or text
+-- would trip Blizzard's per-frame transition detection, which blanks the
+-- dialog's timer text and resizes it. Instead a click-swallowing overlay sits
+-- on top of the button while the guard holds.
 local function EnforceReleaseBlock(frame)
     local button = GetReleaseButton(frame)
     if not button then return end
 
-    if not IsReleaseGuardActive() then
-        releaseBlockedPopups[frame] = nil
-        return
-    end
+    local overlay = releaseOverlays[frame]
 
-    if not button:IsEnabled() then
-        -- Blizzard's per-frame pass would have re-enabled the button unless a
-        -- native restriction is holding it disabled — its state and text are
-        -- authoritative; stand back until release becomes possible.
-        releaseBlockedPopups[frame] = nil
+    if not IsReleaseGuardActive() or not button:IsEnabled() then
+        -- Off, not a raid, or Blizzard holds the button disabled natively —
+        -- its state and text are authoritative; stand back.
+        if overlay then overlay:Hide() end
         return
     end
 
@@ -857,17 +881,19 @@ local function EnforceReleaseBlock(frame)
 
     local remaining = unlockAt - GetTime()
     if remaining <= 0 and IsControlKeyDown() then
-        releaseBlockedPopups[frame] = nil
+        if overlay then overlay:Hide() end
         return
     end
 
-    releaseBlockedPopups[frame] = true
-    button:Disable()
-    local baseText = button:GetText() or ""
+    overlay = overlay or GetReleaseOverlay(frame, button)
+    if not overlay:IsShown() then
+        overlay:SetFrameLevel(button:GetFrameLevel() + 10)
+        overlay:Show()
+    end
     if remaining > 0 then
-        button:SetText(string.format("%s (%d)", baseText, math.ceil(remaining)))
+        SetOverlayLabel(overlay, tostring(math.ceil(remaining)))
     else
-        button:SetText(baseText .. " (Ctrl)")
+        SetOverlayLabel(overlay, ns.L["Hold Ctrl"])
     end
 end
 
@@ -883,8 +909,10 @@ local function HookDeathPopups()
                     end
                 end)
                 frame:HookScript("OnHide", function(self)
-                    releaseBlockedPopups[self] = nil
                     releaseUnlockTime[self] = nil
+                    if releaseOverlays[self] then
+                        releaseOverlays[self]:Hide()
+                    end
                 end)
             end
             releaseUnlockTime[frame] = nil
