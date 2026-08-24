@@ -804,7 +804,6 @@ local RELEASE_GUARD_SECONDS = 3
 local releaseBlockedPopups = setmetatable({}, { __mode = "k" })
 local releaseBlockHooked = setmetatable({}, { __mode = "k" })
 local releaseUnlockTime = setmetatable({}, { __mode = "k" })
-local releaseOrigText = setmetatable({}, { __mode = "k" })
 local releaseButtonCache = setmetatable({}, { __mode = "kv" })
 
 local function GetReleaseButton(frame)
@@ -820,14 +819,6 @@ local function GetReleaseButton(frame)
     return button
 end
 
-local function IsReleaseSuppressedByEncounter()
-    if C_InstanceEncounter and C_InstanceEncounter.IsEncounterSuppressingRelease then
-        return C_InstanceEncounter.IsEncounterSuppressingRelease() and true or false
-    end
-    local legacy = _G.IsEncounterSuppressingRelease
-    return (legacy and legacy()) and true or false
-end
-
 local function IsReleaseGuardActive()
     local settings = GetSettings()
     if not settings or not settings.blockReleaseInRaid then return false end
@@ -835,37 +826,26 @@ local function IsReleaseGuardActive()
     return (inInstance and instanceType == "raid") and true or false
 end
 
-local function SetReleaseButtonLocked(frame, button, locked, text)
-    if releaseOrigText[frame] == nil then
-        releaseOrigText[frame] = button:GetText() or ""
-    end
-
-    if locked then
-        if button:IsEnabled() then
-            button:Disable()
-        end
-        releaseBlockedPopups[frame] = true
-        button:SetText(text)
-    else
-        button:SetText(releaseOrigText[frame])
-        if releaseBlockedPopups[frame] then
-            -- Blizzard's DEATH OnUpdate normally re-enables the button each
-            -- frame; this is a fallback for builds where it only reacts to
-            -- transitions.
-            releaseBlockedPopups[frame] = nil
-            if not IsReleaseSuppressedByEncounter() then
-                button:Enable()
-            end
-        end
-    end
-end
-
+-- Runs as an OnUpdate post-hook, i.e. after Blizzard's DEATH OnUpdate has
+-- already set the button's enabled state and text for its own restrictions
+-- (falling, encounter suppression, no-release auras) this same frame. The
+-- guard therefore never enables the button and never touches it while a
+-- native restriction has it disabled; releasing the lock just lets
+-- Blizzard's next per-frame pass restore its own state and text.
 local function EnforceReleaseBlock(frame)
     local button = GetReleaseButton(frame)
     if not button then return end
 
     if not IsReleaseGuardActive() then
-        SetReleaseButtonLocked(frame, button, false)
+        releaseBlockedPopups[frame] = nil
+        return
+    end
+
+    if not button:IsEnabled() then
+        -- Blizzard's per-frame pass would have re-enabled the button unless a
+        -- native restriction is holding it disabled — its state and text are
+        -- authoritative; stand back until release becomes possible.
+        releaseBlockedPopups[frame] = nil
         return
     end
 
@@ -875,15 +855,19 @@ local function EnforceReleaseBlock(frame)
         releaseUnlockTime[frame] = unlockAt
     end
 
-    local origText = releaseOrigText[frame] or button:GetText() or ""
     local remaining = unlockAt - GetTime()
+    if remaining <= 0 and IsControlKeyDown() then
+        releaseBlockedPopups[frame] = nil
+        return
+    end
+
+    releaseBlockedPopups[frame] = true
+    button:Disable()
+    local baseText = button:GetText() or ""
     if remaining > 0 then
-        SetReleaseButtonLocked(frame, button, true,
-            string.format("%s (%d)", origText, math.ceil(remaining)))
-    elseif IsControlKeyDown() then
-        SetReleaseButtonLocked(frame, button, false)
+        button:SetText(string.format("%s (%d)", baseText, math.ceil(remaining)))
     else
-        SetReleaseButtonLocked(frame, button, true, origText .. " (Ctrl)")
+        button:SetText(baseText .. " (Ctrl)")
     end
 end
 
@@ -901,11 +885,9 @@ local function HookDeathPopups()
                 frame:HookScript("OnHide", function(self)
                     releaseBlockedPopups[self] = nil
                     releaseUnlockTime[self] = nil
-                    releaseOrigText[self] = nil
                 end)
             end
             releaseUnlockTime[frame] = nil
-            releaseOrigText[frame] = nil
             EnforceReleaseBlock(frame)
         end
     end
