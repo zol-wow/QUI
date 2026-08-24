@@ -136,9 +136,14 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
     }
     if colorMap then borderOpts.customDispelColorMap = colorMap end
 
+    -- The engine owns registered dispel-type textures from AddDispelTypeTexture
+    -- onward and rewrites their alpha when it shows them, so SetAlpha cannot
+    -- carry the configured opacity (in-game confirmed: the fill rendered fully
+    -- opaque regardless of fillOpacity). Opacity rides the asset alpha of the
+    -- solid color texture instead, which STYLE_PRESERVE_ASSET keeps intact.
     for edge, points in pairs(BORDER_ANCHORS) do
         local tex = EnsureArtTexture(slot, art, edge, "BORDER")
-        tex:SetColorTexture(1, 1, 1, 1)
+        tex:SetColorTexture(1, 1, 1, borderOn and opacity or 0)
         tex:ClearAllPoints()
         for i = 1, #points do
             tex:SetPoint(points[i][1], host, points[i][2], 0, 0)
@@ -148,7 +153,7 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
         else
             tex:SetWidth(borderSize)
         end
-        tex:SetAlpha(borderOn and opacity or 0)
+        tex:SetAlpha(1)
         if slot.AddDispelTypeTexture then
             slot:AddDispelTypeTexture(tex, borderOpts)
         end
@@ -156,10 +161,10 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
     end
 
     local fill = EnsureArtTexture(slot, art, "fill", "BACKGROUND")
-    fill:SetColorTexture(1, 1, 1, 1)
+    fill:SetColorTexture(1, 1, 1, borderOn and fillOpacity or 0)
     fill:ClearAllPoints()
     fill:SetAllPoints(host)
-    fill:SetAlpha(borderOn and fillOpacity or 0)
+    fill:SetAlpha(1)
     if slot.AddDispelTypeTexture then
         slot:AddDispelTypeTexture(fill, borderOpts)
     end
@@ -174,7 +179,11 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
             tonumber(dispelCfg and dispelCfg.iconOffsetX) or 0,
             tonumber(dispelCfg and dispelCfg.iconOffsetY) or 0)
         icon:SetSize(size, size)
-        icon:SetAlpha(tonumber(dispelCfg and dispelCfg.iconOpacity) or 1)
+        -- STYLE_ICON swaps the asset, so opacity cannot ride the asset alpha
+        -- like the border/fill; vertex alpha is the next-best carrier the
+        -- engine's alpha rewrite leaves alone.
+        icon:SetAlpha(1)
+        icon:SetVertexColor(1, 1, 1, tonumber(dispelCfg and dispelCfg.iconOpacity) or 1)
         if slot.AddDispelTypeTexture then
             slot:AddDispelTypeTexture(icon, {
                 style = STYLE_ICON,
