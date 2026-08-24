@@ -418,6 +418,83 @@ function Chrome.ApplyDispelIconLayout(frame, settings)
     end
 end
 
+-- Cleanse glow: four gradient strips hugging the host's border, peaking just
+-- outside the edge and fading to nothing a few pixels inward. Replaces the
+-- old stretched UI-ActionButton-Border ring, whose soft falloff landed in the
+-- middle of wide frames. parent and host differ on the secure feeder path
+-- (art parents into the engine slot but anchors to the group frame).
+local GLOW_EXTEND = 4
+local GLOW_DEPTH = 10
+
+-- SetGradient's min/max corners are bottom/top (VERTICAL) or left/right
+-- (HORIZONTAL); edgeFirst marks strips whose outer edge sits at the min side.
+local GLOW_STRIPS = {
+    glowTop    = { "VERTICAL",   false },
+    glowBottom = { "VERTICAL",   true },
+    glowLeft   = { "HORIZONTAL", true },
+    glowRight  = { "HORIZONTAL", false },
+}
+
+local function PaintGlowStrip(tex, orientation, edgeFirst, r, g, b, a)
+    if tex.SetGradient and CreateColor then
+        local edge = CreateColor(r, g, b, a)
+        local fade = CreateColor(r, g, b, 0)
+        local ok
+        if edgeFirst then
+            ok = pcall(tex.SetGradient, tex, orientation, edge, fade)
+        else
+            ok = pcall(tex.SetGradient, tex, orientation, fade, edge)
+        end
+        if ok then return end
+    end
+    tex:SetVertexColor(r, g, b, a * 0.5)
+end
+
+function Chrome.SetCleanseGlowColor(art, color)
+    if type(art) ~= "table" then return end
+    local r = (color and color[1]) or 0.1
+    local g = (color and color[2]) or 1.0
+    local b = (color and color[3]) or 0.1
+    local a = (color and color[4]) or 1.0
+    for key, spec in pairs(GLOW_STRIPS) do
+        local tex = art[key]
+        if tex then PaintGlowStrip(tex, spec[1], spec[2], r, g, b, a) end
+    end
+end
+
+function Chrome.StyleCleanseGlowArt(parent, art, host, color)
+    local e, d = GLOW_EXTEND, GLOW_DEPTH
+    for key in pairs(GLOW_STRIPS) do
+        local tex = art[key]
+        if not tex then
+            tex = parent:CreateTexture(nil, "OVERLAY")
+            tex:SetColorTexture(1, 1, 1, 1)
+            tex:SetBlendMode("ADD")
+            if tex.DisablePixelSnap then tex:DisablePixelSnap() end
+            art[key] = tex
+        end
+        tex:ClearAllPoints()
+    end
+    art.glowTop:SetPoint("TOPLEFT", host, "TOPLEFT", -e, e)
+    art.glowTop:SetPoint("TOPRIGHT", host, "TOPRIGHT", e, e)
+    art.glowTop:SetHeight(d)
+    art.glowBottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", -e, -e)
+    art.glowBottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", e, -e)
+    art.glowBottom:SetHeight(d)
+    -- Side strips fill the span between the horizontal ones: additive blend
+    -- would double-brighten any corner overlap.
+    art.glowLeft:SetPoint("TOPLEFT", host, "TOPLEFT", -e, e - d)
+    art.glowLeft:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", -e, d - e)
+    art.glowLeft:SetWidth(d)
+    art.glowRight:SetPoint("TOPRIGHT", host, "TOPRIGHT", e, e - d)
+    art.glowRight:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", e, d - e)
+    art.glowRight:SetWidth(d)
+    Chrome.SetCleanseGlowColor(art, color)
+    for key in pairs(GLOW_STRIPS) do
+        art[key]:Show()
+    end
+end
+
 function Chrome.Apply(frame, vdb, state)
     if not frame then return end
     vdb = vdb or {}
@@ -769,14 +846,13 @@ function Chrome.Apply(frame, vdb, state)
         cleanseGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", -4, 4)
         cleanseGlow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 4, -4)
         cleanseGlow:SetFrameLevel(frame:GetFrameLevel() + LEVELS.CLEANSE)
-        local glowTex = cleanseGlow.tex
-        if not glowTex then
-            glowTex = cleanseGlow:CreateTexture(nil, "OVERLAY")
-            glowTex:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-            glowTex:SetBlendMode("ADD")
-            cleanseGlow.tex = glowTex
+        local glowArt = cleanseGlow.art
+        if not glowArt then
+            glowArt = {}
+            cleanseGlow.art = glowArt
         end
-        glowTex:SetAllPoints(cleanseGlow)
+        Chrome.StyleCleanseGlowArt(cleanseGlow, glowArt, frame,
+            healerDB and healerDB.cleanseGlow and healerDB.cleanseGlow.color)
         cleanseGlow:Hide()
         frame.cleanseGlow = cleanseGlow
 

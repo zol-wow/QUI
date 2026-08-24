@@ -259,6 +259,8 @@ local function StyleGradientSlot(slot, host, dispelCfg, verticalFill)
     tex:Show()
 end
 
+-- Glow art is the shared border-hugging gradient (scriptless textures only,
+-- so it satisfies the slot-subtree constraint above).
 local function StyleGlowSlot(slot, host, glowCfg)
     PrepareSlot(slot)
     local art = slot._quiDispelArt
@@ -266,18 +268,10 @@ local function StyleGlowSlot(slot, host, glowCfg)
         art = {}
         slot._quiDispelArt = art
     end
-    local isNew = art.glow == nil
-    local tex = EnsureArtTexture(slot, art, "glow", "OVERLAY")
-    if isNew then
-        tex:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-        if tex.SetBlendMode then tex:SetBlendMode("ADD") end
+    local GFChrome = ns.QUI_GroupFrameChrome
+    if GFChrome and GFChrome.StyleCleanseGlowArt then
+        GFChrome.StyleCleanseGlowArt(slot, art, host, glowCfg and glowCfg.color)
     end
-    tex:ClearAllPoints()
-    tex:SetPoint("TOPLEFT", host, "TOPLEFT", -4, 4)
-    tex:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 4, -4)
-    local c = glowCfg and glowCfg.color
-    tex:SetVertexColor((c and c[1]) or 0.1, (c and c[2]) or 1.0, (c and c[3]) or 0.1, (c and c[4]) or 1.0)
-    tex:Show()
 end
 
 local function SetSlotFilters(state, container, key, filter, cf)

@@ -680,9 +680,9 @@ local function ApplyCleanseGlow(f, healer, hasDispellable)
         glow:Hide()
         return
     end
-    local c = cfg.color or { 0.1, 1.0, 0.1, 1 }
-    if glow.tex then
-        glow.tex:SetVertexColor(c[1] or 0.1, c[2] or 1, c[3] or 0.1, c[4] or 1)
+    local C = GetChrome()
+    if C and C.SetCleanseGlowColor then
+        C.SetCleanseGlowColor(glow.art, cfg.color)
     end
     glow:Show()
 end

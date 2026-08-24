@@ -1817,8 +1817,7 @@ local function UpdateDispelOverlay(frame)
     local glowFrame = frame.cleanseGlow
     if glowFrame then
         if glowOn and playerInstID then
-            local gc = glowCfg and glowCfg.color
-            glowFrame.tex:SetVertexColor((gc and gc[1]) or 0.1, (gc and gc[2]) or 1.0, (gc and gc[3]) or 0.1, (gc and gc[4]) or 1.0)
+            Chrome.SetCleanseGlowColor(glowFrame.art, glowCfg and glowCfg.color)
             glowFrame:Show()
         else
             glowFrame:Hide()
