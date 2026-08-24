@@ -23,10 +23,10 @@ else
 end
 
 local function ClearButtonTint(state)
-    if state.tinted then
-        if state.tintOverlay then state.tintOverlay:Hide() end
-        state.tinted = nil
-    end
+    if state.tintOverlay then state.tintOverlay:Hide() end
+    state.tinted = nil
+    state._fhTint = nil
+    state._fadeTint = nil
 end
 
 function GetTintOverlay(button)
@@ -54,7 +54,7 @@ function UpdateButtonUsability(button, settings, inRange, rangeKnown)
         return
     end
 
-    if state.fadeHidden or state.hiddenEmpty then
+    if state.hiddenEmpty then
         return
     end
 
@@ -86,6 +86,10 @@ function UpdateButtonUsability(button, settings, inRange, rangeKnown)
         end
     end
 
+    if not newTint then
+        ClearButtonTint(state)
+        return
+    end
     if state.tinted == newTint then return end
 
     if newTint == "range" then
@@ -112,9 +116,6 @@ function UpdateButtonUsability(button, settings, inRange, rangeKnown)
             overlay:Show()
         end
         state.tinted = "unusable"
-    else
-        if state.tintOverlay then state.tintOverlay:Hide() end
-        state.tinted = nil
     end
 end
 
