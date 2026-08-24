@@ -466,7 +466,9 @@ local function BuildAutomation(L, generalDB)
     }
     local releaseW = GUI:CreateFormDropdown(s.frame, nil, releaseOptions, "autoRelease", generalDB, nil,
         { description = ns.L["Automatically release your spirit after you die. Never triggers in dungeons or raids, where a battle resurrection matters."] })
-    s.AddRow(row(s.frame, ns.L["Auto Release Spirit"], releaseW))
+    local blockReleaseW = GUI:CreateFormCheckbox(s.frame, nil, "blockReleaseInRaid", generalDB, nil,
+        { description = ns.L["Guard the Release Spirit button while you are dead in a raid: it locks during a 3-second countdown and afterwards only works while Ctrl is held, so you don't release before a battle resurrection."] })
+    s.AddRow(row(s.frame, ns.L["Auto Release Spirit"], releaseW), row(s.frame, ns.L["Block Release in Raids"], blockReleaseW))
 
     local audioOptions = (ns.GetAudioDeviceOptions and ns.GetAudioDeviceOptions())
         or { { value = "", text = ns.L["Off (don't lock)"] } }
