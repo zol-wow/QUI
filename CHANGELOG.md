@@ -4,6 +4,36 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2-beta9 - 2026-08-24
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Group-frame awareness, raid-release protection, and combat-feedback fixes for
+the 5.2.2 beta line.
+
+### Added
+
+- **Raid releases can require Ctrl after a three-second safety delay.** Enable
+  Block Release in Raids to reduce accidental releases before a battle rez.
+- **Group frames can show non-dispellable debuff types as health gradients.**
+  Actionable dispels retain the full overlay and cleanse-ready glow.
+- **Cooldown Manager icon containers have configurable pressed effects.** Choose
+  Off, Blizzard Default, or QUI independently for each icon container.
+
+### Fixed
+
+- **Group-frame range fading preserves life-state visuals.** Dead, offline, and
+  other state fades no longer get replaced by the range result, and invisible
+  aura buttons no longer intercept mouse input.
+- **Action Bar range and usability colors follow native state events.** Button
+  tinting stays current through paging, stance, and combat transitions.
+- **Cooldown Manager feedback follows the active icon and action.** Cast
+  highlights and held-press effects work across reanchored, pooled, and remapped
+  icons without carrying stale state between abilities.
+- **Inactive tracked buff bars hide after Layout Mode exits.** Preview state no
+  longer keeps an inactive owned bar visible.
+
 ## v5.2.2-beta8 - 2026-08-24
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
