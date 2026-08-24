@@ -51,6 +51,47 @@ local ALL_TYPED_CF = {
 
 local DISPEL_TYPES = { "Magic", "Curse", "Disease", "Poison", "Bleed" }
 
+-- Ally-targeted debuff-removal spells by the type they remove. The gradient
+-- slot is awareness-only, so types the player could act on are excluded —
+-- those auras already light the actionable overlay via the BY_ME slot, and
+-- the candidate-filter API has no per-aura "player can dispel this" probe
+-- (RAID exists only as an aura-query filter token). Enemy-targeted removal
+-- (Soothe, purges) is irrelevant on group frames and Enrage therefore never
+-- excludes.
+local DISPEL_CAPABILITY_SPELLS = {
+    Magic = { 527, 32375, 4987, 77130, 88423, 115450, 360823 },
+    Curse = { 475, 2782, 51886, 77130, 88423, 374251 },
+    Disease = { 527, 4987, 115450, 213634, 213644, 218164, 374251 },
+    Poison = { 2782, 4987, 88423, 115450, 213644, 218164, 360823, 365585,
+        374251, 383013 },
+    Bleed = { 374251 },
+}
+
+local GRADIENT_CF = {
+    includeDispelTypes = ALL_TYPED_CF.includeDispelTypes,
+    excludeDispelTypes = nil, -- filled per update by BuildGradientCF
+}
+
+-- Capability shifts only on out-of-combat respecs, and SetSlotFilters
+-- re-applies (and the engine securecopies) the table every update, so a
+-- fresh probe here is both cheap and always current.
+local function BuildGradientCF()
+    local excludes
+    if IsPlayerSpell then
+        for typeName, spells in pairs(DISPEL_CAPABILITY_SPELLS) do
+            for i = 1, #spells do
+                if IsPlayerSpell(spells[i]) then
+                    excludes = excludes or {}
+                    excludes[typeName] = true
+                    break
+                end
+            end
+        end
+    end
+    GRADIENT_CF.excludeDispelTypes = excludes
+    return GRADIENT_CF
+end
+
 -- White alpha ramp (opaque bottom -> transparent top) the engine tints with
 -- the dispel-type color for the BY_ME_PLUS_TYPED awareness gradient.
 local Helpers = ns.Helpers
@@ -398,7 +439,7 @@ function F.Sync(frame, unit, allowCreate, healerSettings, fillDirection)
     if wantGradient or state.slots.typed then
         local typedFilter, typedCF = BY_ME_FILTER, PARK_FILTER
         if wantGradient then
-            typedFilter, typedCF = ALL_TYPED_FILTER, ALL_TYPED_CF
+            typedFilter, typedCF = ALL_TYPED_FILTER, BuildGradientCF()
         end
         if not EnsureSlot(state, container, "typed", typedFilter, typedCF) then
             complete = false

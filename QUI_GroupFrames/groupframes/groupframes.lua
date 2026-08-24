@@ -1637,7 +1637,7 @@ function _dispel.ReadableType(auraData)
     return _dispel.enumNames[dispelEnum]
 end
 
-function _dispel.SelectCachedAura(cache, unit, orderKey, setKey)
+function _dispel.SelectCachedAura(cache, unit, orderKey, setKey, excludeSet)
     local order = cache and cache[orderKey]
     local set = cache and cache[setKey]
     if not order or not set then return nil, nil end
@@ -1649,7 +1649,7 @@ function _dispel.SelectCachedAura(cache, unit, orderKey, setKey)
     end
     for i = 1, #order do
         local instID = order[i]
-        if instID and set[instID] then
+        if instID and set[instID] and not (excludeSet and excludeSet[instID]) then
             local stillLive = true
             if GetAuraByInstanceID and not IsSecretValue(instID) then
                 local live = GetAuraByInstanceID(unit, instID) -- @secret-safe: the AurasAreSecret gate above disables this access while restricted
@@ -1808,8 +1808,11 @@ local function UpdateDispelOverlay(frame)
             cache, unit, "playerDispellableOrder", "playerDispellable"
         )
         if scope == "BY_ME_PLUS_TYPED" then
+            -- Awareness only: auras the player could dispel already carry the
+            -- actionable overlay, so they never feed the gradient.
             typedInstID, typedType = _dispel.SelectCachedAura(
-                cache, unit, "typedDebuffOrder", "typedDebuffs"
+                cache, unit, "typedDebuffOrder", "typedDebuffs",
+                cache and cache.playerDispellable
             )
         end
     end
