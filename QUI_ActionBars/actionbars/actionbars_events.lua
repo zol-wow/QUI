@@ -214,6 +214,9 @@ abSlotFrame:SetScript("OnUpdate", function(self)
         end
     end
     wipe(abDirtySlots)
+    if ActionBarsOwned.RefreshUsabilityButtons then
+        ActionBarsOwned.RefreshUsabilityButtons()
+    end
     if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
     if SyncOwnedFlyoutInfoToHandler then
         SyncOwnedFlyoutInfoToHandler()
@@ -227,7 +230,6 @@ function ScheduleSlotUpdate(slot)
     if not slot or slot < 1 then return end
     if GetTime() - _lastPagingTime < 0.5 then
         ScheduleABVisualUpdate(false, true)
-        return
     end
     abDirtySlots[slot] = true
     abSlotFrame:Show()
@@ -281,6 +283,9 @@ function OnOwnedEvent(self, event, ...)
                 ActionBarsOwned.UpdateCooldown(btn)
                 ActionBarsOwned.UpdateOverlayGlow(btn)
             end
+        end
+        if ActionBarsOwned.RefreshUsabilityButtons then
+            ActionBarsOwned.RefreshUsabilityButtons()
         end
         ScheduleABVisualUpdate(false, true)
         if not InCombatLockdown() then

@@ -843,6 +843,7 @@ local defaults = {
                 dormantSpells = {},
                 spellOverrides = {},
                 iconDisplayMode = "always",
+                pressedEffect = "qui",
                 containerType = "cooldown",
                 greyOutInactive = false,
                 greyOutInactiveBuffs = false,
@@ -929,6 +930,7 @@ local defaults = {
                 dormantSpells = {},
                 spellOverrides = {},
                 iconDisplayMode = "always",
+                pressedEffect = "qui",
                 containerType = "cooldown",
                 greyOutInactive = false,
                 greyOutInactiveBuffs = false,
@@ -968,6 +970,7 @@ local defaults = {
                 dormantSpells = {},
                 spellOverrides = {},
                 iconDisplayMode = "active",
+                pressedEffect = "qui",
                 containerType = "aura",
             },
             trackedBar = {
@@ -1059,6 +1062,7 @@ local defaults = {
                     dormantSpells = {},
                     spellOverrides = {},
                     iconDisplayMode = "always",
+                    pressedEffect = "qui",
                 },
                 utility = {
                     name = "Utility",
@@ -1106,6 +1110,7 @@ local defaults = {
                     dormantSpells = {},
                     spellOverrides = {},
                     iconDisplayMode = "always",
+                    pressedEffect = "qui",
                 },
                 buff = {
                     name = "Buff Icons",
@@ -1138,6 +1143,7 @@ local defaults = {
                     dormantSpells = {},
                     spellOverrides = {},
                     iconDisplayMode = "active",
+                    pressedEffect = "qui",
                 },
                 trackedBar = {
                     name = "Buff Bars",

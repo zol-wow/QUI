@@ -219,6 +219,12 @@ local GLOW_TYPE_OPTIONS = {
     { value = "Proc Glow", text = ns.L["Proc Glow"] },
 }
 
+local PRESSED_EFFECT_OPTIONS = {
+    { value = "off", text = ns.L["Off"] },
+    { value = "blizzard", text = ns.L["Blizzard Default"] },
+    { value = "qui", text = ns.L["QUI"] },
+}
+
 local DISPLAY_MODE_OPTIONS = {
     { value = "always", text = ns.L["Always"] },
     { value = "active", text = ns.L["Active Only"] },
@@ -494,6 +500,13 @@ end
 local function RefreshHighlighter()
     if _G.QUI_RefreshCooldownHighlighter then
         _G.QUI_RefreshCooldownHighlighter()
+    end
+    PokePreview()
+end
+
+local function RefreshPressedEffect()
+    if ns.QUI_RefreshCDMPressedEffect then
+        ns.QUI_RefreshCDMPressedEffect()
     end
     PokePreview()
 end
@@ -1841,6 +1854,30 @@ local function RenderPerSpecSection(sectionHost, ctx)
     return builder.Height()
 end
 
+local function RenderPressedEffectSection(builder, gui, optionsAPI, containerKey)
+    local pressedDB = ResolveTrackerDB(containerKey)
+    local pressedShape = ns.CDMShared and ns.CDMShared.GetContainerShape
+        and ns.CDMShared.GetContainerShape(containerKey, pressedDB) or "icon"
+    if type(pressedDB) ~= "table" or pressedShape ~= "icon" then return end
+
+    if pressedDB.pressedEffect == true then
+        pressedDB.pressedEffect = "qui"
+    elseif pressedDB.pressedEffect == false then
+        pressedDB.pressedEffect = "off"
+    elseif pressedDB.pressedEffect == nil then
+        pressedDB.pressedEffect = "qui"
+    end
+
+    builder.Header(ns.L["Pressed Effect"])
+    local pressedCard = builder.Card()
+    local pressedDropdown = gui:CreateFormDropdown(pressedCard.frame, nil, PRESSED_EFFECT_OPTIONS, "pressedEffect", pressedDB, RefreshPressedEffect, {
+        description = ns.L["Visual response when a button is pressed. Blizzard Default replays the stock animation; QUI swaps in a subtle overlay; Off disables both."],
+    })
+    pressedCard.AddRow(optionsAPI.BuildSettingRow(pressedCard.frame, ns.L["Pressed Effect"], pressedDropdown))
+    builder.CloseCard(pressedCard)
+    builder.Spacer(10)
+end
+
 local function RenderEffectsSection(sectionHost, ctx)
     local containerKey = ResolveContainerKey(ctx)
     local containerType = ResolveContainerType(containerKey)
@@ -1928,6 +1965,8 @@ local function RenderEffectsSection(sectionHost, ctx)
         )
         UpdateOverlayColorState()
         builder.CloseCard(card)
+        builder.Spacer(10)
+        RenderPressedEffectSection(builder, gui, optionsAPI, containerKey)
         return builder.Height()
     end
 
@@ -2245,6 +2284,8 @@ local function RenderEffectsSection(sectionHost, ctx)
             builder.Spacer(10)
         end
     end
+
+    RenderPressedEffectSection(builder, gui, optionsAPI, containerKey)
 
     builder.Header(ns.L["Cast Highlighter"])
     local highlighterCard = builder.Card()

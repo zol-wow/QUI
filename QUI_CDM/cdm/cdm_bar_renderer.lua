@@ -749,7 +749,7 @@ local function ColorStateChanged(state, color)
     return changed
 end
 
-function CDMBars.ConfigureBar(bar, settings, overrideWidth)
+function CDMBars.ConfigureBar(bar, settings, overrideWidth, activeOverride)
     if not bar then return end
 
     bar._borderSettings = settings
@@ -782,7 +782,8 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     local iconPosition = settings.iconPosition or "top"
     local showTextOnVertical = settings.showTextOnVertical or false
 
-    local isActive = bar._active
+    local isActive = activeOverride
+    if isActive == nil then isActive = bar._active end
     local spellData = GetBarSpellData(bar)
     local overrideColor = GetTrackedBarOverrideColor(settings, spellData)
 
@@ -1862,7 +1863,6 @@ function CDMBars:LayoutBars(container, settings)
             bar._cfgFingerprint = fingerprint
         end
         if editModeActive then
-            bar._active = true
             SetStatusBarValue(bar.StatusBar, 0.65)
             DisableBarDurationBinding(bar)
             if bar.DurationText then
@@ -1877,6 +1877,7 @@ function CDMBars:LayoutBars(container, settings)
             or fingerprint.barOpacity ~= (settings.barOpacity or 1)
             or fingerprint.useClassColor ~= (settings.useClassColor and 1 or 0)
             or fingerprint.borderSource ~= settings.borderColorSource
+        local displayActive = editModeActive or bar._active
         fingerprint.barHeight = settings.barHeight or 0
         fingerprint.barWidth = barWidth or 0
         fingerprint.borderSize = settings.borderSize or 0
@@ -1888,9 +1889,9 @@ function CDMBars:LayoutBars(container, settings)
         configChanged = ColorStateChanged(fingerprint.bar, settings.barColor) or configChanged
         configChanged = ColorStateChanged(fingerprint.override,
             GetTrackedBarOverrideColorForEntry(settings, bar._spellEntry)) or configChanged
-        if configChanged or bar._cfgActive ~= bar._active then
-            bar._cfgActive = bar._active
-            CDMBars.ConfigureBar(bar, settings, barWidth)
+        if configChanged or bar._cfgActive ~= displayActive then
+            bar._cfgActive = displayActive
+            CDMBars.ConfigureBar(bar, settings, barWidth, displayActive)
         end
 
         if bar._lastFrameLevel ~= frameLevel then
