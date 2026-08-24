@@ -598,6 +598,7 @@ function OnOwnedEvent(self, event, ...)
 
     elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
         ScheduleABVisualUpdate()
+        ScheduleUsabilityUpdate()
 
     elseif event == "PET_BATTLE_OPENING_START" then
         if not InCombatLockdown() then
