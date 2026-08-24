@@ -698,6 +698,23 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
                     local dc = palette[sampleType] or { 0.26, 0.54, 1, 0.8 }
                     local opacity = dsp.opacity or 0.8
                     ns.SkinBase.ApplyPixelBackdrop(dispel, dsp.borderSize or 3, true, false, { dc[1], dc[2], dc[3], opacity }, { dc[1], dc[2], dc[3], dsp.fillOpacity or 0.18 })
+                    if dsp.scope == "BY_ME_PLUS_TYPED" then
+                        -- Sample the awareness gradient in a non-actionable
+                        -- type's color (Bleed) under the actionable border.
+                        local ChromeGF = ns.QUI_GroupFrameChrome
+                        local gc = palette.Bleed or { 0.8, 0, 0, 1 }
+                        local grad = RecycledTexture(dispel, "BACKGROUND", 1)
+                        grad:SetTexture(ChromeGF and ChromeGF.DISPEL_GRADIENT_TEXTURE)
+                        grad:SetPoint("TOPLEFT", dispel, "TOPLEFT", 0, 0)
+                        grad:SetPoint("BOTTOMRIGHT", dispel, "BOTTOMRIGHT", 0, 0)
+                        grad:SetVertexColor(gc[1], gc[2], gc[3], 1)
+                        if ChromeGF and ChromeGF.LayoutDispelGradient then
+                            local health = vdb.health
+                            ChromeGF.LayoutDispelGradient(grad,
+                                dsp.gradientStartOpacity, dsp.gradientEndOpacity,
+                                (health and health.healthFillDirection) == "VERTICAL")
+                        end
+                    end
                 end
                 local Chrome = ns.QUI_GroupFrameChrome
                 if dsp.showIcon == true and Chrome and Chrome.ApplyDispelIconLayout then

@@ -747,6 +747,18 @@ function Chrome.Apply(frame, vdb, state)
         dispelFill:SetVertexColor(0, 0, 0, 0)
         dispelOverlay._fillOpacity = dispelSettings and dispelSettings.fillOpacity or 0
 
+        -- Awareness gradient for the BY_ME_PLUS_TYPED scope (above the flat
+        -- fill, below the border bars). Both endpoints ride the asset's alpha
+        -- via LayoutDispelGradient; consumers tint, lay out, and show it.
+        local dispelGradient = dispelOverlay.gradient
+        if not dispelGradient then
+            dispelGradient = dispelOverlay:CreateTexture(nil, "BACKGROUND", nil, 1)
+            dispelGradient:SetTexture(Chrome.DISPEL_GRADIENT_TEXTURE)
+            dispelOverlay.gradient = dispelGradient
+        end
+        dispelGradient:SetAllPoints(dispelOverlay)
+        dispelGradient:Hide()
+
         dispelOverlay:Hide()
         frame.dispelOverlay = dispelOverlay
 
@@ -864,6 +876,47 @@ end
 
 local DISPEL_BORDER_KEYS = { "borderTop", "borderBottom", "borderLeft", "borderRight" }
 Chrome.DISPEL_BORDER_KEYS = DISPEL_BORDER_KEYS
+
+-- White alpha ramp (opaque bottom -> transparent top) tinted per dispel type
+-- for the BY_ME_PLUS_TYPED awareness gradient.
+Chrome.DISPEL_GRADIENT_TEXTURE = ((ns.Helpers and ns.Helpers.AssetPath)
+    or "Interface\\AddOns\\QUI\\assets\\") .. "dispel_gradient.tga"
+
+-- Geometry + alpha for the awareness gradient. Opacity rides the ASSET's
+-- per-pixel alpha via a texcoord sub-range: the ramp asset's alpha equals its
+-- v coordinate, so sampling v across [endOpacity, startOpacity] renders a fade
+-- between exactly those two opacities. That matters because the aura engine
+-- owns registered dispel-type textures -- it rewrites SetAlpha when it shows
+-- them and overwrites vertex color from an RGB-only color map on every aura
+-- update -- so asset alpha is the only carrier that survives. Endpoints may be
+-- inverted (end > start); WoW samples a flipped texcoord range natively, and
+-- equal endpoints degenerate to a flat fill at that opacity. Color is applied
+-- by the caller (engine tint, color curve, or plain rgb).
+function Chrome.LayoutDispelGradient(tex, startOpacity, endOpacity, verticalFill)
+    if not tex then return end
+    local s = tonumber(startOpacity) or 1
+    local e = tonumber(endOpacity) or 0
+    if s < 0 then s = 0 elseif s > 1 then s = 1 end
+    if e < 0 then e = 0 elseif e > 1 then e = 1 end
+    if verticalFill then
+        -- Fill origin is the bottom edge.
+        tex:SetTexCoord(0, 1, e, s)
+    else
+        -- Rotate 90 degrees: fill origin is the left edge.
+        tex:SetTexCoord(0, s, 1, s, 0, e, 1, e)
+    end
+end
+
+-- Border/fill visibility toggle so the gradient can show alone when only a
+-- non-actionable typed debuff is present (BY_ME_PLUS_TYPED scope).
+function Chrome.SetDispelBordersShown(overlay, shown)
+    if not overlay then return end
+    for _, key in ipairs(DISPEL_BORDER_KEYS) do
+        local border = overlay[key]
+        if border then border:SetShown(shown) end
+    end
+    if overlay.fill then overlay.fill:SetShown(shown) end
+end
 
 function Chrome.SetDispelBorderColor(overlay, r, g, b, a)
     if not overlay then return end

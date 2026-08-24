@@ -68,6 +68,7 @@ local NINE_POINT_OPTIONS = ns.QUI_SettingsLayoutShared.BuildNinePointAnchorOptio
 local DISPEL_SCOPE_OPTIONS = {
     { value = "PLAYER_DISPELLABLE", text = ns.L["Dispellable by Me"] },
     { value = "ALL_TYPED", text = ns.L["All Typed Debuffs"] },
+    { value = "BY_ME_PLUS_TYPED", text = ns.L["Mine + Others as Gradient"] },
 }
 local TEXT_JUSTIFY_OPTIONS = {
     { value = "LEFT", text = ns.L["Left"] },
@@ -2068,6 +2069,12 @@ local function EnsureDispelColors(dispel)
     if ns.QUI_GroupFrameIconLayout and ns.QUI_GroupFrameIconLayout.SeedDispelColors then
         ns.QUI_GroupFrameIconLayout.SeedDispelColors(dispel.colors)
     end
+    if type(dispel.gradientStartOpacity) ~= "number" then
+        dispel.gradientStartOpacity = 1
+    end
+    if type(dispel.gradientEndOpacity) ~= "number" then
+        dispel.gradientEndOpacity = 0
+    end
 end
 
 local function RenderDispelOverlaySection(sectionHost, ctx)
@@ -2101,7 +2108,7 @@ local function RenderDispelOverlaySection(sectionHost, ctx)
     builder.Description(string.format(ns.L["Dispel border and type-icon alerts for %1$s group frames."], groupFrames.sourceLabel))
 
     local dispelCard = builder.Card()
-    local borderRows, iconRows = {}, {}
+    local borderRows, iconRows, gradientRows = {}, {}, {}
     local scopeRow
     local function UpdateDispelRows()
         local borderAlpha = dispel.enabled ~= false and 1.0 or 0.4
@@ -2114,6 +2121,11 @@ local function RenderDispelOverlaySection(sectionHost, ctx)
         end
         if scopeRow then
             scopeRow:SetAlpha((dispel.enabled ~= false or dispel.showIcon == true) and 1.0 or 0.4)
+        end
+        local gradientAlpha = (dispel.enabled ~= false and dispel.scope == "BY_ME_PLUS_TYPED")
+            and 1.0 or 0.4
+        for _, row in ipairs(gradientRows) do
+            row:SetAlpha(gradientAlpha)
         end
     end
 
@@ -2134,8 +2146,11 @@ local function RenderDispelOverlaySection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Show Dispel Type Icon"], iconEnableCheckbox)
     )
 
-    local scopeDropdown = gui:CreateFormDropdown(dispelCard.frame, nil, DISPEL_SCOPE_OPTIONS, "scope", dispel, refresh, {
-        description = ns.L["Dispellable by Me shows actionable dispels. All Typed Debuffs also shows awareness-only types such as Bleed and Enrage. Cleanse-Ready Glow always remains actionable-only."],
+    local scopeDropdown = gui:CreateFormDropdown(dispelCard.frame, nil, DISPEL_SCOPE_OPTIONS, "scope", dispel, function()
+        refresh()
+        UpdateDispelRows()
+    end, {
+        description = ns.L["Dispellable by Me shows actionable dispels. All Typed Debuffs also shows awareness-only types such as Bleed and Enrage. Mine + Others as Gradient keeps the full overlay for your dispels and adds a fading color gradient along the health fill for types you cannot dispel. Cleanse-Ready Glow always remains actionable-only."],
     })
     scopeRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Show For"], scopeDropdown)
     local iconSizeSlider = gui:CreateFormSlider(dispelCard.frame, nil, 8, 64, 1, "iconSize", dispel, refresh, { deferOnDrag = true }, {
@@ -2190,6 +2205,18 @@ local function RenderDispelOverlaySection(sectionHost, ctx)
     local iconYRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Icon Y Offset"], iconYSlider)
     iconRows[#iconRows + 1] = iconYRow
     dispelCard.AddRow(iconYRow)
+
+    local gradientStartSlider = gui:CreateFormSlider(dispelCard.frame, nil, 0, 1, 0.05, "gradientStartOpacity", dispel, refresh, { deferOnDrag = true }, {
+        description = ns.L["Opacity of the awareness gradient at the health bar's fill origin (bottom or left). Mine + Others as Gradient only."],
+    })
+    local gradientStartRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Gradient Start Opacity"], gradientStartSlider)
+    gradientRows[#gradientRows + 1] = gradientStartRow
+    local gradientEndSlider = gui:CreateFormSlider(dispelCard.frame, nil, 0, 1, 0.05, "gradientEndOpacity", dispel, refresh, { deferOnDrag = true }, {
+        description = ns.L["Opacity of the awareness gradient at the far end of the health bar (top or right). Mine + Others as Gradient only."],
+    })
+    local gradientEndRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Gradient End Opacity"], gradientEndSlider)
+    gradientRows[#gradientRows + 1] = gradientEndRow
+    dispelCard.AddRow(gradientStartRow, gradientEndRow)
 
     local magicColorPicker = gui:CreateFormColorPicker(dispelCard.frame, nil, "Magic", dispel.colors, refresh, nil, {
         description = ns.L["Color used when the active dispellable debuff is of Magic type."],

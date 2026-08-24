@@ -642,6 +642,24 @@ local function ApplyDispelOverlay(f, healer, dispelType)
         local colors = cfg.colors or seed
         local c = colors[dispelType] or seed[dispelType] or DefaultColor("dispelFallback")
         C.SetDispelBorderColor(ov, c[1], c[2], c[3], tonumber(cfg.opacity) or 1)
+        if C.SetDispelBordersShown then C.SetDispelBordersShown(ov, true) end
+        -- BY_ME_PLUS_TYPED sample: actionable border in dispelType plus the
+        -- awareness gradient in a non-actionable type's color (Bleed).
+        local grad = ov.gradient
+        if grad then
+            if cfg.scope == "BY_ME_PLUS_TYPED" then
+                local gc = colors.Bleed or seed.Bleed or c
+                if C.LayoutDispelGradient then
+                    C.LayoutDispelGradient(grad,
+                        cfg.gradientStartOpacity, cfg.gradientEndOpacity,
+                        f._isVerticalFill)
+                end
+                grad:SetVertexColor(gc[1], gc[2], gc[3], 1)
+                grad:Show()
+            else
+                grad:Hide()
+            end
+        end
         ov:Show()
     else
         ov:Hide()

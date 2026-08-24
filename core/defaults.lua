@@ -2928,6 +2928,7 @@ local defaults = {
                     dispelOverlay = {
                         enabled = true, scope = "PLAYER_DISPELLABLE",
                         opacity = 0.8, fillOpacity = 0.18, borderSize = 3,
+                        gradientStartOpacity = 1, gradientEndOpacity = 0,
                         showIcon = false, iconSize = 20, iconOpacity = 1,
                         iconAnchor = "TOPRIGHT", iconOffsetX = 0, iconOffsetY = 0,
                         colors = {
@@ -3085,6 +3086,7 @@ local defaults = {
                     dispelOverlay = {
                         enabled = true, scope = "PLAYER_DISPELLABLE",
                         opacity = 0.8, fillOpacity = 0.18, borderSize = 3,
+                        gradientStartOpacity = 1, gradientEndOpacity = 0,
                         showIcon = false, iconSize = 20, iconOpacity = 1,
                         iconAnchor = "TOPRIGHT", iconOffsetX = 0, iconOffsetY = 0,
                         colors = {

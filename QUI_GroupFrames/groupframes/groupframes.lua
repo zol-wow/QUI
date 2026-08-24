@@ -223,6 +223,7 @@ local _dispel = {
         [9] = "Bleed", [11] = "Bleed",
     },
     colorCurves = {},
+    gradientCurves = {},
     iconCurves = {},
     cachedColors = {},
     auraBorderCurves = {},
@@ -254,6 +255,29 @@ local function GetDispelColorCurve(isRaid, opacity)
         end
     end
     _dispel.colorCurves[key] = curve
+    return curve
+end
+
+-- Like GetDispelColorCurve but at full alpha: the awareness gradient's
+-- strength is the texture's own alpha ramp times gradientOpacity, so the
+-- curve only supplies the type color. Lives on _dispel rather than a local:
+-- this chunk is at Lua's 200-local ceiling.
+function _dispel.GetGradientCurve(isRaid)
+    local key = DispelContextKey(isRaid)
+    if _dispel.gradientCurves[key] then return _dispel.gradientCurves[key] end
+    if not C_CurveUtil or not C_CurveUtil.CreateColorCurve then return nil end
+    local colors = GetDispelColors(isRaid)
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
+    curve:AddPoint(0, CreateColor(0, 0, 0, 0))
+    for _, enumVal in ipairs(_dispel.allEnums) do
+        local typeName = _dispel.enumNames[enumVal]
+        local c = typeName and colors[typeName]
+        if c then
+            curve:AddPoint(enumVal, CreateColor(c[1], c[2], c[3], 1))
+        end
+    end
+    _dispel.gradientCurves[key] = curve
     return curve
 end
 
@@ -508,6 +532,7 @@ end
 InvalidateDispelColors = function()
     _dispel.cachedColors = {}
     _dispel.colorCurves = {}
+    _dispel.gradientCurves = {}
     _dispel.auraBorderCurves = {}
 end
 
@@ -1690,6 +1715,48 @@ function _dispel.HideVisuals(frame)
 end
 -- <<< QUI_TEST_EXTRACT DispelTypeIconRuntime
 
+-- BY_ME_PLUS_TYPED awareness gradient (legacy/preview path): tint the chrome
+-- gradient ramp + flat base with the typed debuff's color, laid out along
+-- the health fill direction. Returns whether the gradient ended up shown.
+function _dispel.UpdateGradient(frame, unit, dispelCfg, typedInstID, typedType)
+    local overlay = frame.dispelOverlay
+    local tex = overlay and overlay.gradient
+    if not tex then return false end
+    if not typedInstID then
+        tex:Hide()
+        return false
+    end
+
+    Chrome.LayoutDispelGradient(tex,
+        dispelCfg and dispelCfg.gradientStartOpacity,
+        dispelCfg and dispelCfg.gradientEndOpacity,
+        frame._isVerticalFill)
+
+    if C_UnitAuras.GetAuraDispelTypeColor then
+        local curve = _dispel.GetGradientCurve(frame._isRaid)
+        if curve then
+            local cOk, color = pcall(C_UnitAuras.GetAuraDispelTypeColor,
+                unit, typedInstID, curve)
+            if cOk then
+                if IsSecretValue(color) then color = nil end
+                if color then
+                    tex:SetVertexColor(color:GetRGBA())
+                    tex:Show()
+                    return true
+                end
+            end
+        end
+    end
+
+    local colors = GetDispelColors(frame._isRaid)
+    local c = (typedType and colors and colors[typedType])
+        or (colors and colors.Magic)
+        or _state.defaultColors.dispelFallback
+    tex:SetVertexColor(c[1], c[2], c[3], 1)
+    tex:Show()
+    return true
+end
+
 local function UpdateDispelOverlay(frame)
     if not frame or not frame.dispelOverlay then return end
     -- Live frames with an active dispel feeder render the overlay through
@@ -1730,7 +1797,9 @@ local function UpdateDispelOverlay(frame)
     )
 
     local visualInstID, visualType
-    if dispelCfg and dispelCfg.scope == "ALL_TYPED" then
+    local typedInstID, typedType
+    local scope = dispelCfg and dispelCfg.scope
+    if scope == "ALL_TYPED" then
         visualInstID, visualType = _dispel.SelectCachedAura(
             cache, unit, "typedDebuffOrder", "typedDebuffs"
         )
@@ -1738,6 +1807,11 @@ local function UpdateDispelOverlay(frame)
         visualInstID, visualType = _dispel.SelectCachedAura(
             cache, unit, "playerDispellableOrder", "playerDispellable"
         )
+        if scope == "BY_ME_PLUS_TYPED" then
+            typedInstID, typedType = _dispel.SelectCachedAura(
+                cache, unit, "typedDebuffOrder", "typedDebuffs"
+            )
+        end
     end
 
     local glowFrame = frame.cleanseGlow
@@ -1751,11 +1825,23 @@ local function UpdateDispelOverlay(frame)
         end
     end
 
+    local gradientShown = _dispel.UpdateGradient(frame, unit, dispelCfg,
+        borderOn and typedInstID or nil, typedType)
+
     if not visualInstID then
-        frame.dispelOverlay:Hide()
+        -- BY_ME_PLUS_TYPED: a typed-but-not-actionable debuff shows only the
+        -- awareness gradient, so the overlay frame must stay up with the
+        -- border art suppressed.
+        if gradientShown then
+            Chrome.SetDispelBordersShown(frame.dispelOverlay, false)
+            frame.dispelOverlay:Show()
+        else
+            frame.dispelOverlay:Hide()
+        end
         Chrome.HideDispelTypeIcons(frame)
         return
     end
+    Chrome.SetDispelBordersShown(frame.dispelOverlay, true)
 
     if iconOn then
         local shown = visualType and Chrome.ShowDispelTypeIcon(frame, visualType)
