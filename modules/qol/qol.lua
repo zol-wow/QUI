@@ -805,6 +805,28 @@ local releaseBlockedPopups = setmetatable({}, { __mode = "k" })
 local releaseBlockHooked = setmetatable({}, { __mode = "k" })
 local releaseUnlockTime = setmetatable({}, { __mode = "k" })
 local releaseOrigText = setmetatable({}, { __mode = "k" })
+local releaseButtonCache = setmetatable({}, { __mode = "kv" })
+
+local function GetReleaseButton(frame)
+    local button = releaseButtonCache[frame]
+    if button then return button end
+
+    local name = frame.GetName and frame:GetName()
+    button = (frame.GetButton1 and frame:GetButton1())
+        or (frame.GetButton and frame:GetButton(1))
+        or frame.button1
+        or (name and _G[name .. "Button1"])
+    releaseButtonCache[frame] = button
+    return button
+end
+
+local function IsReleaseSuppressedByEncounter()
+    if C_InstanceEncounter and C_InstanceEncounter.IsEncounterSuppressingRelease then
+        return C_InstanceEncounter.IsEncounterSuppressingRelease() and true or false
+    end
+    local legacy = _G.IsEncounterSuppressingRelease
+    return (legacy and legacy()) and true or false
+end
 
 local function IsReleaseGuardActive()
     local settings = GetSettings()
@@ -831,7 +853,7 @@ local function SetReleaseButtonLocked(frame, button, locked, text)
             -- frame; this is a fallback for builds where it only reacts to
             -- transitions.
             releaseBlockedPopups[frame] = nil
-            if not (IsEncounterSuppressingRelease and IsEncounterSuppressingRelease()) then
+            if not IsReleaseSuppressedByEncounter() then
                 button:Enable()
             end
         end
@@ -839,8 +861,7 @@ local function SetReleaseButtonLocked(frame, button, locked, text)
 end
 
 local function EnforceReleaseBlock(frame)
-    local name = frame.GetName and frame:GetName()
-    local button = frame.button1 or (name and _G[name .. "Button1"])
+    local button = GetReleaseButton(frame)
     if not button then return end
 
     if not IsReleaseGuardActive() then
