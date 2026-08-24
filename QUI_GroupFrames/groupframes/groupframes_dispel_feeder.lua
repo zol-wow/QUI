@@ -51,6 +51,28 @@ local ALL_TYPED_CF = {
 
 local DISPEL_TYPES = { "Magic", "Curse", "Disease", "Poison", "Bleed" }
 
+-- One awareness slot per dispel type: the engine hands each slot a single
+-- aura, so a shared slot would let an actionable Magic debuff crowd out a
+-- concurrent non-actionable Bleed. The candidate-filter API has no per-aura
+-- "player can dispel this" probe (RAID exists only as an aura-query filter
+-- token), so an actionable aura also paints its type's gradient — under the
+-- full overlay of the same color, where the extra signal stays truthful.
+-- Bleed and Enrage share a slot; they alias to one color via the map below.
+local GRADIENT_SLOTS = {
+    { key = "typedMagic", cf = { includeDispelTypes = { Magic = true } } },
+    { key = "typedCurse", cf = { includeDispelTypes = { Curse = true } } },
+    { key = "typedDisease", cf = { includeDispelTypes = { Disease = true } } },
+    { key = "typedPoison", cf = { includeDispelTypes = { Poison = true } } },
+    { key = "typedBleed",
+        cf = { includeDispelTypes = { Bleed = true, Enrage = true } } },
+}
+
+-- White alpha ramp (opaque bottom -> transparent top) the engine tints with
+-- the dispel-type color for the BY_ME_PLUS_TYPED awareness gradient.
+local Helpers = ns.Helpers
+local GRADIENT_TEXTURE = ((Helpers and Helpers.AssetPath)
+    or "Interface\\AddOns\\QUI\\assets\\") .. "dispel_gradient.tga"
+
 local function AurasAreSecret()
     return C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()
 end
@@ -136,9 +158,14 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
     }
     if colorMap then borderOpts.customDispelColorMap = colorMap end
 
+    -- The engine owns registered dispel-type textures from AddDispelTypeTexture
+    -- onward and rewrites their alpha when it shows them, so SetAlpha cannot
+    -- carry the configured opacity (in-game confirmed: the fill rendered fully
+    -- opaque regardless of fillOpacity). Opacity rides the asset alpha of the
+    -- solid color texture instead, which STYLE_PRESERVE_ASSET keeps intact.
     for edge, points in pairs(BORDER_ANCHORS) do
         local tex = EnsureArtTexture(slot, art, edge, "BORDER")
-        tex:SetColorTexture(1, 1, 1, 1)
+        tex:SetColorTexture(1, 1, 1, borderOn and opacity or 0)
         tex:ClearAllPoints()
         for i = 1, #points do
             tex:SetPoint(points[i][1], host, points[i][2], 0, 0)
@@ -148,7 +175,7 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
         else
             tex:SetWidth(borderSize)
         end
-        tex:SetAlpha(borderOn and opacity or 0)
+        tex:SetAlpha(1)
         if slot.AddDispelTypeTexture then
             slot:AddDispelTypeTexture(tex, borderOpts)
         end
@@ -156,10 +183,10 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
     end
 
     local fill = EnsureArtTexture(slot, art, "fill", "BACKGROUND")
-    fill:SetColorTexture(1, 1, 1, 1)
+    fill:SetColorTexture(1, 1, 1, borderOn and fillOpacity or 0)
     fill:ClearAllPoints()
     fill:SetAllPoints(host)
-    fill:SetAlpha(borderOn and fillOpacity or 0)
+    fill:SetAlpha(1)
     if slot.AddDispelTypeTexture then
         slot:AddDispelTypeTexture(fill, borderOpts)
     end
@@ -174,6 +201,10 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
             tonumber(dispelCfg and dispelCfg.iconOffsetX) or 0,
             tonumber(dispelCfg and dispelCfg.iconOffsetY) or 0)
         icon:SetSize(size, size)
+        -- STYLE_ICON swaps the asset, so opacity cannot ride the asset alpha
+        -- like the border/fill. Vertex alpha is no carrier either: the
+        -- STYLE_ICON update resets vertex color to opaque white on every aura
+        -- refresh. SetAlpha is the one channel that path never touches.
         icon:SetAlpha(tonumber(dispelCfg and dispelCfg.iconOpacity) or 1)
         if slot.AddDispelTypeTexture then
             slot:AddDispelTypeTexture(icon, {
@@ -189,6 +220,63 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
     end
 end
 
+-- Awareness gradient for the BY_ME_PLUS_TYPED scope: any typed debuff paints
+-- a fill that runs from gradientStartOpacity at the health bar's fill origin
+-- to gradientEndOpacity at the far end, so types the player cannot dispel
+-- stay visible without lighting the actionable border.
+--
+-- Both endpoints ride the ASSET's per-pixel alpha, sampled through a texcoord
+-- sub-range (the ramp asset's alpha equals its v coordinate, so sampling
+-- v across [end, start] fades between exactly those opacities). Nothing else
+-- survives here: the engine owns a registered dispel-type texture and
+-- rewrites SetAlpha when it shows it, while its RGB-only customDispelColorMap
+-- overwrites vertex color on every aura update. Mirrors the contract of
+-- Chrome.LayoutDispelGradient, kept local so slot styling stays chrome-free.
+local function StyleGradientSlot(slot, host, dispelCfg, verticalFill)
+    PrepareSlot(slot)
+    local art = slot._quiDispelArt
+    if not art then
+        art = {}
+        slot._quiDispelArt = art
+    end
+
+    local colorMap = F.BuildColorMap(dispelCfg and dispelCfg.colors)
+
+    if slot.ClearDispelTypeTextures then slot:ClearDispelTypeTextures() end
+
+    local opts = {
+        style = STYLE_PRESERVE_ASSET,
+        showWhenHarmful = true,
+        showWhenHelpful = false,
+        showWithoutDispelType = true,
+    }
+    if colorMap then opts.customDispelColorMap = colorMap end
+
+    local s = tonumber(dispelCfg and dispelCfg.gradientStartOpacity) or 1
+    local e = tonumber(dispelCfg and dispelCfg.gradientEndOpacity) or 0
+    if s < 0 then s = 0 elseif s > 1 then s = 1 end
+    if e < 0 then e = 0 elseif e > 1 then e = 1 end
+
+    local tex = EnsureArtTexture(slot, art, "gradient", "BACKGROUND")
+    tex:SetTexture(GRADIENT_TEXTURE)
+    tex:ClearAllPoints()
+    tex:SetAllPoints(host)
+    if verticalFill then
+        -- Fill origin is the bottom edge.
+        tex:SetTexCoord(0, 1, e, s)
+    else
+        -- Rotate 90 degrees: fill origin is the left edge.
+        tex:SetTexCoord(0, s, 1, s, 0, e, 1, e)
+    end
+    tex:SetAlpha(1)
+    if slot.AddDispelTypeTexture then
+        slot:AddDispelTypeTexture(tex, opts)
+    end
+    tex:Show()
+end
+
+-- Glow art is the shared border-hugging gradient (scriptless textures only,
+-- so it satisfies the slot-subtree constraint above).
 local function StyleGlowSlot(slot, host, glowCfg)
     PrepareSlot(slot)
     local art = slot._quiDispelArt
@@ -196,18 +284,10 @@ local function StyleGlowSlot(slot, host, glowCfg)
         art = {}
         slot._quiDispelArt = art
     end
-    local isNew = art.glow == nil
-    local tex = EnsureArtTexture(slot, art, "glow", "OVERLAY")
-    if isNew then
-        tex:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-        if tex.SetBlendMode then tex:SetBlendMode("ADD") end
+    local GFChrome = ns.QUI_GroupFrameChrome
+    if GFChrome and GFChrome.StyleCleanseGlowArt then
+        GFChrome.StyleCleanseGlowArt(slot, art, host, glowCfg and glowCfg.color)
     end
-    tex:ClearAllPoints()
-    tex:SetPoint("TOPLEFT", host, "TOPLEFT", -4, 4)
-    tex:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 4, -4)
-    local c = glowCfg and glowCfg.color
-    tex:SetVertexColor((c and c[1]) or 0.1, (c and c[2]) or 1.0, (c and c[3]) or 0.1, (c and c[4]) or 1.0)
-    tex:Show()
 end
 
 local function SetSlotFilters(state, container, key, filter, cf)
@@ -261,10 +341,12 @@ function F.SetLifeGate(frame, alive)
     ApplyShown(state)
 end
 
--- Synchronize the feeder with the current healer settings. Returns true when
--- fully applied; false means structural or styling work is still pending and
--- the caller must requeue (QueueRegenWork polls until out of combat/secrecy).
-function F.Sync(frame, unit, allowCreate, healerSettings)
+-- Synchronize the feeder with the current healer settings. fillDirection is
+-- the health bar's healthFillDirection ("HORIZONTAL"/"VERTICAL"), which
+-- orients the BY_ME_PLUS_TYPED awareness gradient. Returns true when fully
+-- applied; false means structural or styling work is still pending and the
+-- caller must requeue (QueueRegenWork polls until out of combat/secrecy).
+function F.Sync(frame, unit, allowCreate, healerSettings, fillDirection)
     if not frame or type(unit) ~= "string" then return true end
 
     local dispelCfg = healerSettings and healerSettings.dispelOverlay
@@ -295,6 +377,10 @@ function F.Sync(frame, unit, allowCreate, healerSettings)
     if not anyOn then
         -- Feature off: park everything and let the (hidden) legacy path rest.
         SetSlotFilters(state, container, "visual", BY_ME_FILTER, PARK_FILTER)
+        for i = 1, #GRADIENT_SLOTS do
+            SetSlotFilters(state, container, GRADIENT_SLOTS[i].key,
+                BY_ME_FILTER, PARK_FILTER)
+        end
         SetSlotFilters(state, container, "glow", BY_ME_FILTER, PARK_FILTER)
         container:SetEnabled(false)
         state.configShown = false
@@ -305,13 +391,17 @@ function F.Sync(frame, unit, allowCreate, healerSettings)
 
     local complete = true
 
+    local scope = dispelCfg and dispelCfg.scope
     local visualFilter, visualCF
-    if dispelCfg and dispelCfg.scope == "ALL_TYPED" then
+    if scope == "ALL_TYPED" then
         visualFilter, visualCF = ALL_TYPED_FILTER, ALL_TYPED_CF
     else
+        -- BY_ME_PLUS_TYPED keeps the actionable border/icon on the by-me
+        -- filter; the broader typed presence rides the gradient slot below.
         visualFilter, visualCF = BY_ME_FILTER, nil
     end
     local wantVisual = borderOn or iconOn
+    local wantGradient = borderOn and scope == "BY_ME_PLUS_TYPED"
 
     -- Explicit branches: a live slot's candidate-filter set may legitimately
     -- be nil, so `wanted and cf or PARK_FILTER` would park it by accident.
@@ -321,6 +411,20 @@ function F.Sync(frame, unit, allowCreate, healerSettings)
     end
     if not EnsureSlot(state, container, "visual", slotFilter, slotCF) then
         complete = false
+    end
+    -- Typed slots are created lazily: most profiles never use the gradient
+    -- scope and slots are add-only, so don't spend five on every frame.
+    for i = 1, #GRADIENT_SLOTS do
+        local spec = GRADIENT_SLOTS[i]
+        if wantGradient or state.slots[spec.key] then
+            local typedFilter, typedCF = BY_ME_FILTER, PARK_FILTER
+            if wantGradient then
+                typedFilter, typedCF = ALL_TYPED_FILTER, spec.cf
+            end
+            if not EnsureSlot(state, container, spec.key, typedFilter, typedCF) then
+                complete = false
+            end
+        end
     end
     local glowSlotCF
     if not glowOn then glowSlotCF = PARK_FILTER end
@@ -336,6 +440,15 @@ function F.Sync(frame, unit, allowCreate, healerSettings)
         local visualSlot = state.slots.visual
         if wantVisual and visualSlot and visualSlot.frame then
             StyleVisualSlot(visualSlot.frame, frame, dispelCfg, borderOn, iconOn)
+        end
+        if wantGradient then
+            for i = 1, #GRADIENT_SLOTS do
+                local typedSlot = state.slots[GRADIENT_SLOTS[i].key]
+                if typedSlot and typedSlot.frame then
+                    StyleGradientSlot(typedSlot.frame, frame, dispelCfg,
+                        fillDirection == "VERTICAL")
+                end
+            end
         end
         local glowSlot = state.slots.glow
         if glowOn and glowSlot and glowSlot.frame then

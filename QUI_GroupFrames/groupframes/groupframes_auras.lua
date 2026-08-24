@@ -1319,7 +1319,9 @@ local function ApplyElementPass(frame, allowCreate)
     local Feeder = ns.QUI_GFDispelFeeder
     if Feeder then
         local vdb = GetVisualDBForFrame(frame)
-        if not Feeder.Sync(frame, unit, allowCreate == true, vdb and vdb.healer) then
+        local health = vdb and vdb.health
+        if not Feeder.Sync(frame, unit, allowCreate == true, vdb and vdb.healer,
+                health and health.healthFillDirection) then
             QueueContainerCombatWork(frame)
         end
     end

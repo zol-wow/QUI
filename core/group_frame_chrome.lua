@@ -418,6 +418,83 @@ function Chrome.ApplyDispelIconLayout(frame, settings)
     end
 end
 
+-- Cleanse glow: four gradient strips hugging the host's border, peaking just
+-- outside the edge and fading to nothing a few pixels inward. Replaces the
+-- old stretched UI-ActionButton-Border ring, whose soft falloff landed in the
+-- middle of wide frames. parent and host differ on the secure feeder path
+-- (art parents into the engine slot but anchors to the group frame).
+local GLOW_EXTEND = 4
+local GLOW_DEPTH = 10
+
+-- SetGradient's min/max corners are bottom/top (VERTICAL) or left/right
+-- (HORIZONTAL); edgeFirst marks strips whose outer edge sits at the min side.
+local GLOW_STRIPS = {
+    glowTop    = { "VERTICAL",   false },
+    glowBottom = { "VERTICAL",   true },
+    glowLeft   = { "HORIZONTAL", true },
+    glowRight  = { "HORIZONTAL", false },
+}
+
+local function PaintGlowStrip(tex, orientation, edgeFirst, r, g, b, a)
+    if tex.SetGradient and CreateColor then
+        local edge = CreateColor(r, g, b, a)
+        local fade = CreateColor(r, g, b, 0)
+        local ok
+        if edgeFirst then
+            ok = pcall(tex.SetGradient, tex, orientation, edge, fade)
+        else
+            ok = pcall(tex.SetGradient, tex, orientation, fade, edge)
+        end
+        if ok then return end
+    end
+    tex:SetVertexColor(r, g, b, a * 0.5)
+end
+
+function Chrome.SetCleanseGlowColor(art, color)
+    if type(art) ~= "table" then return end
+    local r = (color and color[1]) or 0.1
+    local g = (color and color[2]) or 1.0
+    local b = (color and color[3]) or 0.1
+    local a = (color and color[4]) or 1.0
+    for key, spec in pairs(GLOW_STRIPS) do
+        local tex = art[key]
+        if tex then PaintGlowStrip(tex, spec[1], spec[2], r, g, b, a) end
+    end
+end
+
+function Chrome.StyleCleanseGlowArt(parent, art, host, color)
+    local e, d = GLOW_EXTEND, GLOW_DEPTH
+    for key in pairs(GLOW_STRIPS) do
+        local tex = art[key]
+        if not tex then
+            tex = parent:CreateTexture(nil, "OVERLAY")
+            tex:SetColorTexture(1, 1, 1, 1)
+            tex:SetBlendMode("ADD")
+            if tex.DisablePixelSnap then tex:DisablePixelSnap() end
+            art[key] = tex
+        end
+        tex:ClearAllPoints()
+    end
+    art.glowTop:SetPoint("TOPLEFT", host, "TOPLEFT", -e, e)
+    art.glowTop:SetPoint("TOPRIGHT", host, "TOPRIGHT", e, e)
+    art.glowTop:SetHeight(d)
+    art.glowBottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", -e, -e)
+    art.glowBottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", e, -e)
+    art.glowBottom:SetHeight(d)
+    -- Side strips fill the span between the horizontal ones: additive blend
+    -- would double-brighten any corner overlap.
+    art.glowLeft:SetPoint("TOPLEFT", host, "TOPLEFT", -e, e - d)
+    art.glowLeft:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", -e, d - e)
+    art.glowLeft:SetWidth(d)
+    art.glowRight:SetPoint("TOPRIGHT", host, "TOPRIGHT", e, e - d)
+    art.glowRight:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", e, d - e)
+    art.glowRight:SetWidth(d)
+    Chrome.SetCleanseGlowColor(art, color)
+    for key in pairs(GLOW_STRIPS) do
+        art[key]:Show()
+    end
+end
+
 function Chrome.Apply(frame, vdb, state)
     if not frame then return end
     vdb = vdb or {}
@@ -747,6 +824,18 @@ function Chrome.Apply(frame, vdb, state)
         dispelFill:SetVertexColor(0, 0, 0, 0)
         dispelOverlay._fillOpacity = dispelSettings and dispelSettings.fillOpacity or 0
 
+        -- Awareness gradient for the BY_ME_PLUS_TYPED scope (above the flat
+        -- fill, below the border bars). Both endpoints ride the asset's alpha
+        -- via LayoutDispelGradient; consumers tint, lay out, and show it.
+        local dispelGradient = dispelOverlay.gradient
+        if not dispelGradient then
+            dispelGradient = dispelOverlay:CreateTexture(nil, "BACKGROUND", nil, 1)
+            dispelGradient:SetTexture(Chrome.DISPEL_GRADIENT_TEXTURE)
+            dispelOverlay.gradient = dispelGradient
+        end
+        dispelGradient:SetAllPoints(dispelOverlay)
+        dispelGradient:Hide()
+
         dispelOverlay:Hide()
         frame.dispelOverlay = dispelOverlay
 
@@ -757,14 +846,13 @@ function Chrome.Apply(frame, vdb, state)
         cleanseGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", -4, 4)
         cleanseGlow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 4, -4)
         cleanseGlow:SetFrameLevel(frame:GetFrameLevel() + LEVELS.CLEANSE)
-        local glowTex = cleanseGlow.tex
-        if not glowTex then
-            glowTex = cleanseGlow:CreateTexture(nil, "OVERLAY")
-            glowTex:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-            glowTex:SetBlendMode("ADD")
-            cleanseGlow.tex = glowTex
+        local glowArt = cleanseGlow.art
+        if not glowArt then
+            glowArt = {}
+            cleanseGlow.art = glowArt
         end
-        glowTex:SetAllPoints(cleanseGlow)
+        Chrome.StyleCleanseGlowArt(cleanseGlow, glowArt, frame,
+            healerDB and healerDB.cleanseGlow and healerDB.cleanseGlow.color)
         cleanseGlow:Hide()
         frame.cleanseGlow = cleanseGlow
 
@@ -864,6 +952,47 @@ end
 
 local DISPEL_BORDER_KEYS = { "borderTop", "borderBottom", "borderLeft", "borderRight" }
 Chrome.DISPEL_BORDER_KEYS = DISPEL_BORDER_KEYS
+
+-- White alpha ramp (opaque bottom -> transparent top) tinted per dispel type
+-- for the BY_ME_PLUS_TYPED awareness gradient.
+Chrome.DISPEL_GRADIENT_TEXTURE = ((ns.Helpers and ns.Helpers.AssetPath)
+    or "Interface\\AddOns\\QUI\\assets\\") .. "dispel_gradient.tga"
+
+-- Geometry + alpha for the awareness gradient. Opacity rides the ASSET's
+-- per-pixel alpha via a texcoord sub-range: the ramp asset's alpha equals its
+-- v coordinate, so sampling v across [endOpacity, startOpacity] renders a fade
+-- between exactly those two opacities. That matters because the aura engine
+-- owns registered dispel-type textures -- it rewrites SetAlpha when it shows
+-- them and overwrites vertex color from an RGB-only color map on every aura
+-- update -- so asset alpha is the only carrier that survives. Endpoints may be
+-- inverted (end > start); WoW samples a flipped texcoord range natively, and
+-- equal endpoints degenerate to a flat fill at that opacity. Color is applied
+-- by the caller (engine tint, color curve, or plain rgb).
+function Chrome.LayoutDispelGradient(tex, startOpacity, endOpacity, verticalFill)
+    if not tex then return end
+    local s = tonumber(startOpacity) or 1
+    local e = tonumber(endOpacity) or 0
+    if s < 0 then s = 0 elseif s > 1 then s = 1 end
+    if e < 0 then e = 0 elseif e > 1 then e = 1 end
+    if verticalFill then
+        -- Fill origin is the bottom edge.
+        tex:SetTexCoord(0, 1, e, s)
+    else
+        -- Rotate 90 degrees: fill origin is the left edge.
+        tex:SetTexCoord(0, s, 1, s, 0, e, 1, e)
+    end
+end
+
+-- Border/fill visibility toggle so the gradient can show alone when only a
+-- non-actionable typed debuff is present (BY_ME_PLUS_TYPED scope).
+function Chrome.SetDispelBordersShown(overlay, shown)
+    if not overlay then return end
+    for _, key in ipairs(DISPEL_BORDER_KEYS) do
+        local border = overlay[key]
+        if border then border:SetShown(shown) end
+    end
+    if overlay.fill then overlay.fill:SetShown(shown) end
+end
 
 function Chrome.SetDispelBorderColor(overlay, r, g, b, a)
     if not overlay then return end
