@@ -429,6 +429,7 @@ local PROFILE_QOL_GENERAL_KEYS = {
     "autoDeclineDuel",
     "autoDeclinePetBattle",
     "autoRelease",
+    "blockReleaseInRaid",
     "audioOutputDevice",
     "autoUnwrapCollections",
     "autoConfirmSocketReplace",

@@ -799,6 +799,97 @@ local function OnPlayerDead()
     end)
 end
 
+local RELEASE_GUARD_SECONDS = 3
+
+local releaseBlockedPopups = setmetatable({}, { __mode = "k" })
+local releaseBlockHooked = setmetatable({}, { __mode = "k" })
+local releaseUnlockTime = setmetatable({}, { __mode = "k" })
+local releaseOrigText = setmetatable({}, { __mode = "k" })
+
+local function IsReleaseGuardActive()
+    local settings = GetSettings()
+    if not settings or not settings.blockReleaseInRaid then return false end
+    local inInstance, instanceType = IsInInstance()
+    return (inInstance and instanceType == "raid") and true or false
+end
+
+local function SetReleaseButtonLocked(frame, button, locked, text)
+    if releaseOrigText[frame] == nil then
+        releaseOrigText[frame] = button:GetText() or ""
+    end
+
+    if locked then
+        if button:IsEnabled() then
+            button:Disable()
+        end
+        releaseBlockedPopups[frame] = true
+        button:SetText(text)
+    else
+        button:SetText(releaseOrigText[frame])
+        if releaseBlockedPopups[frame] then
+            -- Blizzard's DEATH OnUpdate normally re-enables the button each
+            -- frame; this is a fallback for builds where it only reacts to
+            -- transitions.
+            releaseBlockedPopups[frame] = nil
+            if not (IsEncounterSuppressingRelease and IsEncounterSuppressingRelease()) then
+                button:Enable()
+            end
+        end
+    end
+end
+
+local function EnforceReleaseBlock(frame)
+    local name = frame.GetName and frame:GetName()
+    local button = frame.button1 or (name and _G[name .. "Button1"])
+    if not button then return end
+
+    if not IsReleaseGuardActive() then
+        SetReleaseButtonLocked(frame, button, false)
+        return
+    end
+
+    local unlockAt = releaseUnlockTime[frame]
+    if not unlockAt then
+        unlockAt = GetTime() + RELEASE_GUARD_SECONDS
+        releaseUnlockTime[frame] = unlockAt
+    end
+
+    local origText = releaseOrigText[frame] or button:GetText() or ""
+    local remaining = unlockAt - GetTime()
+    if remaining > 0 then
+        SetReleaseButtonLocked(frame, button, true,
+            string.format("%s (%d)", origText, math.ceil(remaining)))
+    elseif IsControlKeyDown() then
+        SetReleaseButtonLocked(frame, button, false)
+    else
+        SetReleaseButtonLocked(frame, button, true, origText .. " (Ctrl)")
+    end
+end
+
+local function HookDeathPopups()
+    for i = 1, GetMaxStaticPopupDialogs() do
+        local frame = _G["StaticPopup" .. i]
+        if frame and frame.which == "DEATH" then
+            if not releaseBlockHooked[frame] then
+                releaseBlockHooked[frame] = true
+                frame:HookScript("OnUpdate", function(self)
+                    if self.which == "DEATH" then
+                        EnforceReleaseBlock(self)
+                    end
+                end)
+                frame:HookScript("OnHide", function(self)
+                    releaseBlockedPopups[self] = nil
+                    releaseUnlockTime[self] = nil
+                    releaseOrigText[self] = nil
+                end)
+            end
+            releaseUnlockTime[frame] = nil
+            releaseOrigText[frame] = nil
+            EnforceReleaseBlock(frame)
+        end
+    end
+end
+
 local function ShouldPauseQuest(settings)
     return settings.questHoldShift and IsShiftKeyDown()
 end
@@ -1097,6 +1188,10 @@ local function AutoConfirmPopup(which)
 end
 
 hooksecurefunc("StaticPopup_Show", function(which)
+    if which == "DEATH" then
+        HookDeathPopups()
+    end
+
     C_Timer.After(0, function()
         if ShouldBlockStaticPopup(which) then
             HideStaticPopupByWhich(which)

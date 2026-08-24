@@ -280,6 +280,7 @@ local defaults = {
             autoDeclineDuel = false,
             autoDeclinePetBattle = false,
             autoRelease = "off",
+            blockReleaseInRaid = false,
             audioOutputDevice = "",
             autoUnwrapCollections = false,
             autoConfirmSocketReplace = false,
