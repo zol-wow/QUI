@@ -4,6 +4,23 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2-beta8 - 2026-08-24
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Combat-safe Lust Timer, castbar anchoring, and Cooldown Manager count fixes for
+the 5.2.2 beta line.
+
+### Fixed
+
+- **The Lust Timer follows Blizzard's live aura state.** Its countdown and
+  visibility stay current when Lust is applied or expires during combat.
+- **Target and boss castbars avoid protected unit-frame anchors.** Configured
+  position and width are preserved without inheriting restricted geometry.
+- **Owned cooldown icons show spell cast and use counts.** Resource counts such
+  as Vengeance Soul Fragments display through secret-safe native sinks.
+
 ## v5.2.2-beta7 - 2026-08-23
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
