@@ -24,7 +24,7 @@ local function ScheduleRestrictedRestyle(container)
     if not After then return end
     _restrictedPollArmed = true
     local function tick()
-        if AurasAreSecret() then
+        if AurasAreSecret() or (InCombatLockdown and InCombatLockdown()) then
             After(0.5, tick)
             return
         end
@@ -504,6 +504,21 @@ local function GroupLayout(L, g)
     return t
 end
 
+local function ApplyLatchedMouseMotion(container, button)
+    local mouseMotion = container._quiRangeGateMouseEnabled
+    if mouseMotion == nil then return end
+    if AurasAreSecret() or (InCombatLockdown and InCombatLockdown()) then
+        ScheduleRestrictedRestyle(container)
+        return
+    end
+    if button.SetMouseMotionEnabled and button.SetMouseClickEnabled then
+        button:SetMouseMotionEnabled(mouseMotion)
+        button:SetMouseClickEnabled(mouseMotion)
+    elseif button.EnableMouse then
+        button:EnableMouse(mouseMotion)
+    end
+end
+
 local function MakeInitializer(container, _groupDesc)
     return function(button)
         buildButtonArt(button)
@@ -511,6 +526,7 @@ local function MakeInitializer(container, _groupDesc)
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
+        ApplyLatchedMouseMotion(container, button)
         local reg = container._quiButtons
         if not reg then
             reg = {}
@@ -618,6 +634,7 @@ function AuraSkin.Configure(container, profile, groups)
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
+        ApplyLatchedMouseMotion(container, button)
     end)
 end
 
@@ -632,6 +649,7 @@ function AuraSkin.Restyle(container, profile)
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
+        ApplyLatchedMouseMotion(container, button)
     end)
 end
 

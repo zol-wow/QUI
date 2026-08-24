@@ -31,6 +31,10 @@ local CACHE_UPDATE_INTERVAL = 1.0
 
 local cachedActionButtons = {}
 local actionButtonsCached = false
+local pressedSpellCandidates = setmetatable({}, { __mode = "k" })
+local pressedButtonsHooked = setmetatable({}, { __mode = "k" })
+local pressedCandidatesByAction = {}
+local pressedCandidateSetsBySpellID = {}
 
 local function CompatGlobalName(...)
     return string.char(...)
@@ -84,6 +88,26 @@ local function IsAnyKeybindFeatureEnabled()
     end
 
     local ncdm = core.db.profile.ncdm
+    if ncdm and ncdm.enabled ~= false then
+        local function Enabled(settings)
+            return type(settings) == "table"
+                and settings.enabled ~= false
+                and settings.pressedEffect ~= "off"
+        end
+        if Enabled(ncdm.essential) or Enabled(ncdm.utility) or Enabled(ncdm.buff) then
+            return true
+        end
+        local shared = QUI.CDMShared
+        for key, settings in pairs(ncdm.containers or {}) do
+            local isBuiltin = shared and shared.IsBuiltinContainerKey
+                and shared.IsBuiltinContainerKey(key)
+            local shape = shared and shared.GetContainerShape
+                and shared.GetContainerShape(key, settings) or settings.shape or "icon"
+            if not isBuiltin and shape == "icon" and Enabled(settings) then
+                return true
+            end
+        end
+    end
     local ct = ncdm and ncdm.containers
     if ct then
         for _, settings in pairs(ct) do
@@ -102,6 +126,96 @@ end
 local Helpers = QUI.Helpers
 local GetGeneralFont = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
+
+local function DispatchPressedButtonState(button, down)
+    local highlighter = QUI._OwnedHighlighter
+    if highlighter and highlighter.OnActionButtonState then
+        highlighter.OnActionButtonState(button, pressedSpellCandidates[button], down)
+    end
+end
+
+local function HookPressedButton(button)
+    if pressedButtonsHooked[button] then return end
+    pressedButtonsHooked[button] = true
+    if button.HookScript then
+        button:HookScript("OnClick", function(self, _, down)
+            if type(issecretvalue) == "function" and issecretvalue(down) then
+                return -- @secret-policy: reject-secret-input-state
+            end
+            DispatchPressedButtonState(self, down == true)
+        end)
+    end
+    if hooksecurefunc and type(button.SetButtonState) == "function" then
+        hooksecurefunc(button, "SetButtonState", function(self, state)
+            if type(issecretvalue) == "function" and issecretvalue(state) then
+                return -- @secret-policy: reject-secret-input-state
+            end
+            DispatchPressedButtonState(self, state == "PUSHED")
+        end)
+    end
+end
+
+local function GetPressedCandidateSet(spellID)
+    if type(issecretvalue) == "function" and issecretvalue(spellID) then
+        return nil -- @secret-policy: reject-secret-ids
+    end
+    if type(spellID) == "number" and spellID > 0 then
+        local candidates = pressedCandidateSetsBySpellID[spellID]
+        if not candidates then
+            candidates = { [spellID] = true }
+            pressedCandidateSetsBySpellID[spellID] = candidates
+        end
+        return candidates
+    end
+end
+
+local function GetPressedSpellIDForAction(action)
+    if type(issecretvalue) == "function" and issecretvalue(action) then
+        return nil -- @secret-policy: reject-secret-ids
+    end
+    if type(action) ~= "number" or action < 1 then return nil end
+    local actionType, id, subType = GetActionInfo(action)
+    if type(issecretvalue) == "function"
+        and (issecretvalue(actionType) or issecretvalue(id) or issecretvalue(subType)) then
+        return nil -- @secret-policy: reject-secret-ids
+    end
+    if actionType == "spell" then return id end
+    if actionType ~= "macro" then return nil end
+    if subType == "spell" then return id end
+    if GetMacroSpell then return GetMacroSpell(id) end
+end
+
+local function GetPressedButtonAction(button)
+    local action = button.action or button._state_action
+    if not action and type(button.GetAttribute) == "function" then
+        local ok, value = QUI.SafeCall("best-effort-style", button.GetAttribute, button, "action")
+        if ok then action = value end
+    end
+    if not action and type(button.GetAction) == "function" then
+        local ok, first, second = QUI.SafeCall("best-effort-style", button.GetAction, button)
+        if ok then action = first == "action" and second or first end
+    end
+    if type(issecretvalue) == "function" and issecretvalue(action) then
+        return nil -- @secret-policy: reject-secret-ids
+    end
+    if type(action) ~= "number" or action < 1 then return nil end
+    return action
+end
+
+local function RebuildPressedCandidatesByAction()
+    wipe(pressedCandidatesByAction)
+    for action = 1, 180 do
+        local candidates = GetPressedCandidateSet(GetPressedSpellIDForAction(action))
+        if candidates then pressedCandidatesByAction[action] = candidates end
+    end
+end
+
+local function ClearPressedSpellCandidates()
+    for button in pairs(pressedSpellCandidates) do
+        DispatchPressedButtonState(button, false)
+    end
+    wipe(pressedSpellCandidates)
+end
 
 local function GetViewerSettings(viewerName)
     local QUICore = _G.QUI and _G.QUI.QUICore
@@ -480,24 +594,16 @@ end
 local function ProcessActionButton(button)
     if not button then return end
 
-    local buttonName = button:GetName()
-    local action
+    pressedSpellCandidates[button] = nil
+    local action = GetPressedButtonAction(button)
+    if not action then return end
 
-    if buttonName and buttonName:match("^" .. COMPAT_ACTION_PREFIX_A) then
-        action = button._state_action
-        if not action and button.GetAction then
-            local actionType, actionSlot = button:GetAction()
-            if actionType == "action" then
-                action = actionSlot
-            end
-        end
-    else
-        action = button.action or (button.GetAction and button:GetAction())
+    local actionType, id, subType = GetActionInfo(action)
+    if type(issecretvalue) == "function"
+        and (issecretvalue(actionType) or issecretvalue(id) or issecretvalue(subType)) then
+        return -- @secret-policy: reject-secret-ids
     end
-
-    if not action or action == 0 then return end
-
-    local actionType, id = GetActionInfo(action)
+    pressedSpellCandidates[button] = pressedCandidatesByAction[action]
     local keybind = nil
 
     if actionType == "spell" and id then
@@ -600,6 +706,15 @@ local function ProcessActionButton(button)
                 end
             end
         end
+    end
+end
+
+local function ProcessCachedActionButton(button)
+    HookPressedButton(button)
+    ProcessActionButton(button)
+    local highlighter = QUI._OwnedHighlighter
+    if highlighter and highlighter.PrepareActionButton then
+        highlighter.PrepareActionButton(button)
     end
 end
 
@@ -789,8 +904,9 @@ local function RebuildCache()
         end
     end
 
+    RebuildPressedCandidatesByAction()
     for _, button in ipairs(cachedActionButtons) do
-        QUI.SafeCall("best-effort-style", ProcessActionButton, button)
+        QUI.SafeCall("best-effort-style", ProcessCachedActionButton, button)
     end
 
     lastCacheUpdate = GetTime()
@@ -1386,10 +1502,43 @@ local function ThrottledUpdate()
 end
 
 local eventFrame = CreateFrame("Frame")
+local pressedRemapEvents = {
+    ACTIONBAR_PAGE_CHANGED = true,
+    UPDATE_BONUS_ACTIONBAR = true,
+    UPDATE_SHAPESHIFT_FORM = true,
+    UPDATE_SHAPESHIFT_FORMS = true,
+    UPDATE_STEALTH = true,
+    UPDATE_VEHICLE_ACTIONBAR = true,
+    UPDATE_OVERRIDE_ACTIONBAR = true,
+    UPDATE_POSSESS_BAR = true,
+    UPDATE_MULTI_CAST_ACTIONBAR = true,
+}
+
+local function RemapPressedSpellCandidates()
+    for _, button in ipairs(cachedActionButtons) do
+        local action = GetPressedButtonAction(button)
+        local candidates = action and pressedCandidatesByAction[action] or nil
+        if pressedSpellCandidates[button] ~= candidates then
+            DispatchPressedButtonState(button, false)
+            pressedSpellCandidates[button] = candidates
+        end
+    end
+end
+
 eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
+eventFrame:RegisterEvent("UPDATE_MACROS")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("SPELLS_CHANGED")
+eventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
+eventFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
+eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
+eventFrame:RegisterEvent("UPDATE_STEALTH")
+eventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
+eventFrame:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR")
+eventFrame:RegisterEvent("UPDATE_POSSESS_BAR")
+eventFrame:RegisterEvent("UPDATE_MULTI_CAST_ACTIONBAR")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(self, event)
@@ -1405,6 +1554,7 @@ eventFrame:SetScript("OnEvent", function(self, event)
     end
 
     if event == "PLAYER_ENTERING_WORLD" then
+        ClearPressedSpellCandidates()
         C_Timer.After(0.5, function()
             if not IsAnyKeybindFeatureEnabled() then return end
             actionButtonsCached = false
@@ -1419,6 +1569,9 @@ eventFrame:SetScript("OnEvent", function(self, event)
         ClearAllStoredKeybinds()
     end
 
+    if InCombatLockdown() and pressedRemapEvents[event] then
+        RemapPressedSpellCandidates()
+    end
     ThrottledUpdate()
 end)
 

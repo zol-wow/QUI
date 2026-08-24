@@ -1237,6 +1237,7 @@ local function GetDefaultsByContainerType(containerType)
             dormantSpells = {},
             spellOverrides = {},
             iconDisplayMode = "always",
+            pressedEffect = "qui",
             showKeybinds = false,
             keybindTextSize = 12,
             keybindTextColor = { 1, 0.82, 0, 1 },

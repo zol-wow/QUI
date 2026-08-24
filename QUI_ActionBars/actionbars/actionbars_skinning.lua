@@ -795,4 +795,7 @@ usabilityState = {
     rangePollingActive = false,
     updatePending = false,
     lastScanTime = 0,
+    buttonsBySlot = {},
+    buttonsBySlotPool = {},
+    rangeSlots = {},
 }

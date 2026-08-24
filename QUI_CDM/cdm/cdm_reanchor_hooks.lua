@@ -236,6 +236,10 @@ end
 function CDMReanchorHooks:_InstallFrameHooks(frame, key)
     if not frame then return end
     self:MaybeInstallAnchorGuard(key, frame)
+    local highlighter = key ~= "trackedBar" and ns._OwnedHighlighter
+    if highlighter and highlighter.PrepareReanchoredFrame then
+        highlighter.PrepareReanchoredFrame(frame, key)
+    end
     if self._hookedFrames[frame] then return end
     local hooksec = self._deps.hooksecurefunc or hooksecurefunc
     if not hooksec then return end
@@ -315,6 +319,10 @@ function CDMReanchorHooks:InstallViewerHooks(getViewer)
                         local procGlow = ns._cdmReanchorProcGlow
                         if procGlow and procGlow.OnRelease then
                             procGlow:OnRelease(itemFrame)
+                        end
+                        local highlighter = ns._OwnedHighlighter
+                        if highlighter and highlighter.OnReanchoredFrameRelease then
+                            highlighter.OnReanchoredFrameRelease(itemFrame)
                         end
                     end
                     hooksec(pool, "Release", function(...) _securecall(onPoolRelease, ...) end)

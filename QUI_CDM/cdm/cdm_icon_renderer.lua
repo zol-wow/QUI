@@ -4149,6 +4149,8 @@ end
 
 function CDMIcons.OnFactoryIconAcquired(icon, entry, reused)
     if not icon then return end
+    local highlighter = ns._OwnedHighlighter
+    if highlighter and highlighter.PrepareIcon then highlighter.PrepareIcon(icon) end
     if reused then
         CancelCooldownExpiryRefresh(icon)
         _resolverRuntimePolicy.StopCustomBarActiveGlow(icon)
@@ -4188,6 +4190,9 @@ function CDMIcons.OnFactoryIconReleased(icon)
     end
     if ns._OwnedGlows and ns._OwnedGlows.StopGrowPop then
         ns._OwnedGlows.StopGrowPop(icon)
+    end
+    if ns._OwnedHighlighter and ns._OwnedHighlighter.OnIconRelease then
+        ns._OwnedHighlighter.OnIconRelease(icon)
     end
     if _G.QUI_ClearKeybindIconState then
         _G.QUI_ClearKeybindIconState(icon)
@@ -4425,6 +4430,12 @@ function _resolverRuntimePolicy.ApplyAuraScopedResolvedCooldown(icon, entry, edi
 end
 
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5)
+    if event == "PLAYER_REGEN_ENABLED" then
+        local highlighter = ns._OwnedHighlighter
+        if highlighter and highlighter.DrainPreparedTargets then
+            highlighter.DrainPreparedTargets()
+        end
+    end
     local profileStart = _resolverRuntimePolicy.eventProfilingActive and debugprofilestop and debugprofilestop()
     CDMIcons.EventTracePrint("frame-pre", event, arg1, arg2, arg3, arg4, arg5)
     _resolverRuntimePolicy.HandleRuntimeRefresh(event, arg1, arg2, arg3, arg4, self)

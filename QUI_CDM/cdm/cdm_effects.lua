@@ -427,10 +427,11 @@ local function GetViewerSettings(viewerType)
 end
 
 local function EnsureGlowBelowSwipe(icon, glowFrame)
-    if not glowFrame or not icon or not icon.Cooldown then return end
+    local cooldown = icon and (icon.Cooldown or icon._quiHighlightCooldown)
+    if not glowFrame or not cooldown then return end
     if not (glowFrame.SetFrameLevel and glowFrame.GetFrameLevel) then return end
 
-    local cdLevel = icon.Cooldown:GetFrameLevel()
+    local cdLevel = cooldown:GetFrameLevel()
     local targetLevel = cdLevel - 1
     if targetLevel < 0 then targetLevel = 0 end
     if glowFrame:GetFrameLevel() ~= targetLevel then
@@ -1162,30 +1163,299 @@ local activeHighlights = {}
 local GLOW_KEY = "_QUIHighlighter"
 
 local VIEWER_TYPES = GetBuiltinIconContainerKeys()
+local reanchorHighlightTargets = setmetatable({}, { __mode = "k" })
+local iconHighlightTargets = setmetatable({}, { __mode = "k" })
+local pressedTextures = setmetatable({}, { __mode = "k" })
+local pressedHideKeys = setmetatable({}, { __mode = "k" })
+local pressedTargetsByButton = setmetatable({}, { __mode = "k" })
+local pressedTargetCounts = setmetatable({}, { __mode = "k" })
+local pendingPressedFrames = setmetatable({}, { __mode = "k" })
+local pendingPressedIcons = setmetatable({}, { __mode = "k" })
+local GetEffectsSettings = Helpers.CreateDBGetter("cooldownEffects")
+local PUSHED_TEXTURE = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[iconskin\Pushed]]
+local PUSHED_ATLAS = "UI-HUD-ActionBar-IconFrame-Down"
 
-local function FindIconBySpellID(castSpellID)
-    if not castSpellID then return nil end
+local function EntryMatchesCast(entry, castSpellID)
+    if not entry then return false end
+    local spellID = entry.spellID
+    local entryID = entry.id
+    local overrideSpellID = entry.overrideSpellID
+    if _issecretvalue(spellID) then spellID = nil end
+    if _issecretvalue(entryID) then entryID = nil end
+    if _issecretvalue(overrideSpellID) then overrideSpellID = nil end
+    local baseID = spellID or entryID
+    if baseID == castSpellID then return true end
+    if overrideSpellID == castSpellID then return true end
+    if baseID and Sources and Sources.QueryOverrideSpell then
+        local overrideID = Sources.QueryOverrideSpell(baseID)
+        if not _issecretvalue(overrideID) and overrideID == castSpellID then return true end
+    end
+    return false
+end
 
-    local IconFactory = ns.CDMIconFactory
-    if not IconFactory or not IconFactory.GetIconPool then return nil end
+local function GetReanchorHighlightTarget(frame)
+    local target = reanchorHighlightTargets[frame]
+    if target then return target end
+    local ensureOverlay = ns._CDMEnsureReanchorGlowOverlay
+    local parent = ensureOverlay and ensureOverlay(frame)
+    if not parent then return nil end
+    target = CreateFrame("Frame", nil, parent)
+    target._quiHighlightCooldown = frame.Cooldown
+    target:SetAllPoints(parent)
+    reanchorHighlightTargets[frame] = target
+    return target
+end
 
-    for _, viewerType in ipairs(VIEWER_TYPES) do
-        local pool = IconFactory:GetIconPool(viewerType)
-        for _, icon in ipairs(pool) do
-            if icon and icon._spellEntry and icon:IsShown() then
-                local entry = icon._spellEntry
-                local baseID = entry.spellID or entry.id
-                if baseID == castSpellID then return icon end
-                if entry.overrideSpellID and entry.overrideSpellID == castSpellID then return icon end
-                if baseID and Sources and Sources.QueryOverrideSpell then
-                    local overrideID = Sources.QueryOverrideSpell(baseID)
-                    if overrideID and overrideID == castSpellID then return icon end
+local function GetIconHighlightTarget(icon)
+    local target = iconHighlightTargets[icon]
+    if target then return target end
+    if not icon then return nil end
+    local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+    target = CreateFrame("Frame", nil, icon, template)
+    target._quiLayoutRestricted = icon._quiLayoutRestricted and true or nil
+    target._quiHighlightCooldown = icon.Cooldown
+    target:SetAllPoints(icon)
+    iconHighlightTargets[icon] = target
+    return target
+end
+
+local scanSpellID
+local scanCallback
+local scanContext
+local scanCachedOnly
+local scanStopped
+
+local function VisitFactoryIcon(icon)
+    if scanStopped or not icon or not icon._spellEntry or not icon:IsShown()
+        or not EntryMatchesCast(icon._spellEntry, scanSpellID) then return end
+    local target
+    if scanCachedOnly then
+        target = iconHighlightTargets[icon]
+    else
+        target = GetIconHighlightTarget(icon)
+    end
+    if target and scanCallback(target, icon._spellEntry.viewerType, scanContext) then
+        scanStopped = true
+    end
+end
+
+local function ForEachIconBySpellID(castSpellID, callback, context, cachedOnly)
+    if _issecretvalue(castSpellID) or not castSpellID then return nil end
+    if InCombatLockdown and InCombatLockdown() then cachedOnly = true end
+
+    local getFrames = _G.QUI_GetReanchoredCDMFrames
+    local getEntry = _G.QUI_ResolveCDMFrameEntry
+    if getFrames and getEntry then
+        for _, viewerType in ipairs(VIEWER_TYPES) do
+            local frames = getFrames(viewerType)
+            if frames then
+                for _, frame in ipairs(frames) do
+                    if frame and frame.IsShown and frame:IsShown()
+                        and EntryMatchesCast(getEntry(frame), castSpellID) then
+                        local target
+                        if cachedOnly then
+                            target = reanchorHighlightTargets[frame]
+                        else
+                            target = GetReanchorHighlightTarget(frame)
+                        end
+                        if target and callback(target, viewerType, context) then return true end
+                    end
                 end
             end
         end
     end
 
-    return nil
+    local IconFactory = ns.CDMIconFactory
+    if IconFactory and IconFactory.ForEachIcon then
+        scanSpellID = castSpellID
+        scanCallback = callback
+        scanContext = context
+        scanCachedOnly = cachedOnly
+        scanStopped = false
+        IconFactory:ForEachIcon(VisitFactoryIcon)
+        local stopped = scanStopped
+        scanSpellID = nil
+        scanCallback = nil
+        scanContext = nil
+        scanCachedOnly = nil
+        scanStopped = nil
+        return stopped
+    end
+
+    return false
+end
+
+local foundIcon
+local function CaptureFirstIcon(target)
+    foundIcon = target
+    return true
+end
+
+local function FindIconBySpellID(castSpellID)
+    foundIcon = nil
+    ForEachIconBySpellID(castSpellID, CaptureFirstIcon)
+    local found = foundIcon
+    foundIcon = nil
+    return found
+end
+
+local function GetPressedMode(viewerType)
+    local container = Shared and Shared.GetContainerDB and Shared.GetContainerDB(viewerType)
+    local mode = container and container.pressedEffect
+    if mode == true then mode = "qui" end
+    if mode == false then mode = "off" end
+    return mode or "qui"
+end
+
+local function GetPressedHideKey(viewerType)
+    if viewerType == "essential" then
+        return "hideEssential"
+    elseif viewerType == "utility" then
+        return "hideUtility"
+    elseif viewerType then
+        return "hide_" .. viewerType
+    end
+end
+
+local function IsPressedEffectHidden(target)
+    local key = pressedHideKeys[target]
+    local settings = key and GetEffectsSettings()
+    return settings and settings[key] == true
+end
+
+local function GetPressedTexture(target)
+    local texture = pressedTextures[target]
+    if texture then return texture end
+    if not target or not target.CreateTexture then return nil end
+    texture = target:CreateTexture(nil, "ARTWORK", nil, 7)
+    texture:Hide()
+    pressedTextures[target] = texture
+    return texture
+end
+
+local function ApplyPressedTexture(texture, target, mode)
+    texture:SetAtlas(nil)
+    texture:SetTexture(nil)
+    texture:SetTexCoord(0, 1, 0, 1)
+    texture:ClearAllPoints()
+    if mode == "blizzard" then
+        texture:SetAtlas(PUSHED_ATLAS)
+        texture:SetPoint("TOPLEFT", target, "TOPLEFT")
+        texture:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 4, -4)
+    else
+        texture:SetTexture(PUSHED_TEXTURE)
+        texture:SetAllPoints(target)
+    end
+end
+
+local function PrepareActionButton(button)
+    if not button or pressedTargetsByButton[button]
+        or (InCombatLockdown and InCombatLockdown()) then return end
+    pressedTargetsByButton[button] = {}
+end
+
+local function PrepareReanchoredFrame(frame, viewerType)
+    if not frame then return end
+    if InCombatLockdown and InCombatLockdown() then
+        pendingPressedFrames[frame] = viewerType or true
+        local target = reanchorHighlightTargets[frame]
+        if target then pressedHideKeys[target] = nil end
+        return
+    end
+    pendingPressedFrames[frame] = nil
+    local target = GetReanchorHighlightTarget(frame)
+    if target then
+        pressedHideKeys[target] = GetPressedHideKey(viewerType)
+        GetPressedTexture(target)
+    end
+end
+
+local function PrepareIcon(icon)
+    if not icon then return end
+    if InCombatLockdown and InCombatLockdown() then
+        pendingPressedIcons[icon] = true
+        local target = iconHighlightTargets[icon]
+        if target then pressedHideKeys[target] = nil end
+        return
+    end
+    pendingPressedIcons[icon] = nil
+    local target = GetIconHighlightTarget(icon)
+    if target then
+        pressedHideKeys[target] = GetPressedHideKey(icon._spellEntry and icon._spellEntry.viewerType)
+        GetPressedTexture(target)
+    end
+end
+
+local function DrainPreparedTargets()
+    if InCombatLockdown and InCombatLockdown() then return end
+    for frame, viewerType in pairs(pendingPressedFrames) do
+        PrepareReanchoredFrame(frame, viewerType ~= true and viewerType or nil)
+    end
+    for icon in pairs(pendingPressedIcons) do PrepareIcon(icon) end
+end
+
+local function ReleasePressedButton(button)
+    local targets = pressedTargetsByButton[button]
+    if not targets then return end
+    for target in pairs(targets) do
+        local count = pressedTargetCounts[target] or 1
+        if count > 1 then
+            pressedTargetCounts[target] = count - 1
+        else
+            pressedTargetCounts[target] = nil
+            local texture = pressedTextures[target]
+            if texture then texture:Hide() end
+        end
+    end
+    wipe(targets)
+end
+
+local function ClearPressedTarget(target)
+    local texture = pressedTextures[target]
+    if texture then texture:Hide() end
+    pressedTargetCounts[target] = nil
+    for button, activeTargets in pairs(pressedTargetsByButton) do
+        if activeTargets[target] then
+            activeTargets[target] = nil
+        end
+    end
+end
+
+local function ClearPressedEffects()
+    for button in pairs(pressedTargetsByButton) do
+        ReleasePressedButton(button)
+    end
+end
+
+local function ActivatePressedTarget(target, viewerType, activeTargets)
+    if not pressedHideKeys[target] then return false end
+    local mode = GetPressedMode(viewerType)
+    if mode == "off" or IsPressedEffectHidden(target)
+        or activeTargets[target] then return false end
+    local texture = pressedTextures[target]
+    if not texture then return false end
+    ApplyPressedTexture(texture, target, mode)
+    activeTargets[target] = true
+    pressedTargetCounts[target] = (pressedTargetCounts[target] or 0) + 1
+    texture:Show()
+    return false
+end
+
+local function OnActionButtonState(button, spellIDs, down)
+    if _issecretvalue(button) or _issecretvalue(spellIDs)
+        or _issecretvalue(down) or not button then return end
+    if not down then
+        ReleasePressedButton(button)
+        return
+    end
+    local activeTargets = pressedTargetsByButton[button]
+    if not IsCDMRuntimeEnabled() or not activeTargets or next(activeTargets)
+        or type(spellIDs) ~= "table" then return end
+    for spellID in pairs(spellIDs) do
+        if not _issecretvalue(spellID) then
+            ForEachIconBySpellID(spellID, ActivatePressedTarget, activeTargets, true)
+        end
+    end
 end
 
 local function StopAllGlows(icon)
@@ -1252,11 +1522,9 @@ local function ApplyHighlight(icon)
         LCG.AutoCastGlow_Start(icon, color, lines, frequency, scale, 0, 0, GLOW_KEY)
         EnsureGlowBelowSwipe(icon, icon["_AutoCastGlow" .. GLOW_KEY])
     elseif glowType == "Button Glow" then
-        if not icon["_ButtonGlow"] then
-            LCG.ButtonGlow_Start(icon, color, frequency)
-            icon[GLOW_KEY] = true
-            EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
-        end
+        LCG.ButtonGlow_Start(icon, color, frequency)
+        icon[GLOW_KEY] = true
+        EnsureGlowBelowSwipe(icon, icon["_ButtonGlow"])
 
     elseif glowType == "Flash" then
         EnsureGlowBelowSwipe(icon, StartTextureGlow(icon, "_QUIFlashHL", FLASH_TEXTURE, color))
@@ -1302,11 +1570,38 @@ end
 
 local function DisableRuntime()
     ClearHighlights()
+    ClearPressedEffects()
+end
+
+local function ReleaseHighlightTarget(target)
+    if not target then return end
+    pressedHideKeys[target] = nil
+    ClearPressedTarget(target)
+    local timer = activeHighlights[target]
+    if timer and timer.Cancel then timer:Cancel() end
+    RemoveHighlight(target)
+end
+
+local function OnReanchoredFrameRelease(frame)
+    if frame then pendingPressedFrames[frame] = nil end
+    ReleaseHighlightTarget(frame and reanchorHighlightTargets[frame])
+end
+
+local function OnIconRelease(icon)
+    if icon then pendingPressedIcons[icon] = nil end
+    ReleaseHighlightTarget(icon and iconHighlightTargets[icon])
 end
 
 ns._OwnedHighlighter = {
     DisableRuntime = DisableRuntime,
     OnPlayerCastSucceeded = OnPlayerCastSucceeded,
+    OnReanchoredFrameRelease = OnReanchoredFrameRelease,
+    OnIconRelease = OnIconRelease,
+    OnActionButtonState = OnActionButtonState,
+    PrepareActionButton = PrepareActionButton,
+    PrepareReanchoredFrame = PrepareReanchoredFrame,
+    PrepareIcon = PrepareIcon,
+    DrainPreparedTargets = DrainPreparedTargets,
 }
 
 _G.QUI_RefreshCooldownHighlighter = function()
@@ -1321,9 +1616,24 @@ _G.QUI_RefreshCooldownHighlighter = function()
     end
 end
 
+local function RefreshPressedEffects()
+    ClearPressedEffects()
+    if ns.Keybinds and ns.Keybinds.RebuildCache then
+        ns.Keybinds.RebuildCache()
+    end
+end
+
+ns.QUI_RefreshCDMPressedEffect = RefreshPressedEffects
+
 if ns.Registry then
     ns.Registry:Register("cooldownHighlighter", {
         refresh = _G.QUI_RefreshCooldownHighlighter,
+        priority = 10,
+        group = "cooldowns",
+        importCategories = { "cdm" },
+    })
+    ns.Registry:Register("cdmPressedEffect", {
+        refresh = RefreshPressedEffects,
         priority = 10,
         group = "cooldowns",
         importCategories = { "cdm" },
