@@ -186,10 +186,10 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
             tonumber(dispelCfg and dispelCfg.iconOffsetY) or 0)
         icon:SetSize(size, size)
         -- STYLE_ICON swaps the asset, so opacity cannot ride the asset alpha
-        -- like the border/fill; vertex alpha is the next-best carrier the
-        -- engine's alpha rewrite leaves alone.
-        icon:SetAlpha(1)
-        icon:SetVertexColor(1, 1, 1, tonumber(dispelCfg and dispelCfg.iconOpacity) or 1)
+        -- like the border/fill. Vertex alpha is no carrier either: the
+        -- STYLE_ICON update resets vertex color to opaque white on every aura
+        -- refresh. SetAlpha is the one channel that path never touches.
+        icon:SetAlpha(tonumber(dispelCfg and dispelCfg.iconOpacity) or 1)
         if slot.AddDispelTypeTexture then
             slot:AddDispelTypeTexture(icon, {
                 style = STYLE_ICON,
