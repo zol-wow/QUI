@@ -1874,8 +1874,9 @@ local function AnchorOrPin(key, frame, pt, parentFrame, relPt, x, y)
     if parentFrame and parentFrame._quiHostMover then
         parentFrame = parentFrame._quiHostMover
     end
-    if IsDynamicSizeAnchorKey(key) and ParentRestricts(parentFrame)
-        and not FrameSelfRestricts(frame)
+    if ParentRestricts(parentFrame)
+        and (CASTBAR_ANCHOR_KEYS[key]
+            or (IsDynamicSizeAnchorKey(key) and not FrameSelfRestricts(frame)))
     then
         ns.Helpers.PinFrameToTargetAbsolute(frame, pt, parentFrame, relPt, x, y)
         return
