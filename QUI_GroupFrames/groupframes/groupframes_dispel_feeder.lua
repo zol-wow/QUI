@@ -51,46 +51,21 @@ local ALL_TYPED_CF = {
 
 local DISPEL_TYPES = { "Magic", "Curse", "Disease", "Poison", "Bleed" }
 
--- Ally-targeted debuff-removal spells by the type they remove. The gradient
--- slot is awareness-only, so types the player could act on are excluded —
--- those auras already light the actionable overlay via the BY_ME slot, and
--- the candidate-filter API has no per-aura "player can dispel this" probe
--- (RAID exists only as an aura-query filter token). Enemy-targeted removal
--- (Soothe, purges) is irrelevant on group frames and Enrage therefore never
--- excludes.
-local DISPEL_CAPABILITY_SPELLS = {
-    Magic = { 527, 32375, 4987, 77130, 88423, 115450, 360823 },
-    Curse = { 475, 2782, 51886, 77130, 88423, 374251 },
-    Disease = { 527, 4987, 115450, 213634, 213644, 218164, 374251 },
-    Poison = { 2782, 4987, 88423, 115450, 213644, 218164, 360823, 365585,
-        374251, 383013 },
-    Bleed = { 374251 },
+-- One awareness slot per dispel type: the engine hands each slot a single
+-- aura, so a shared slot would let an actionable Magic debuff crowd out a
+-- concurrent non-actionable Bleed. The candidate-filter API has no per-aura
+-- "player can dispel this" probe (RAID exists only as an aura-query filter
+-- token), so an actionable aura also paints its type's gradient — under the
+-- full overlay of the same color, where the extra signal stays truthful.
+-- Bleed and Enrage share a slot; they alias to one color via the map below.
+local GRADIENT_SLOTS = {
+    { key = "typedMagic", cf = { includeDispelTypes = { Magic = true } } },
+    { key = "typedCurse", cf = { includeDispelTypes = { Curse = true } } },
+    { key = "typedDisease", cf = { includeDispelTypes = { Disease = true } } },
+    { key = "typedPoison", cf = { includeDispelTypes = { Poison = true } } },
+    { key = "typedBleed",
+        cf = { includeDispelTypes = { Bleed = true, Enrage = true } } },
 }
-
-local GRADIENT_CF = {
-    includeDispelTypes = ALL_TYPED_CF.includeDispelTypes,
-    excludeDispelTypes = nil, -- filled per update by BuildGradientCF
-}
-
--- Capability shifts only on out-of-combat respecs, and SetSlotFilters
--- re-applies (and the engine securecopies) the table every update, so a
--- fresh probe here is both cheap and always current.
-local function BuildGradientCF()
-    local excludes
-    if IsPlayerSpell then
-        for typeName, spells in pairs(DISPEL_CAPABILITY_SPELLS) do
-            for i = 1, #spells do
-                if IsPlayerSpell(spells[i]) then
-                    excludes = excludes or {}
-                    excludes[typeName] = true
-                    break
-                end
-            end
-        end
-    end
-    GRADIENT_CF.excludeDispelTypes = excludes
-    return GRADIENT_CF
-end
 
 -- White alpha ramp (opaque bottom -> transparent top) the engine tints with
 -- the dispel-type color for the BY_ME_PLUS_TYPED awareness gradient.
@@ -402,7 +377,10 @@ function F.Sync(frame, unit, allowCreate, healerSettings, fillDirection)
     if not anyOn then
         -- Feature off: park everything and let the (hidden) legacy path rest.
         SetSlotFilters(state, container, "visual", BY_ME_FILTER, PARK_FILTER)
-        SetSlotFilters(state, container, "typed", BY_ME_FILTER, PARK_FILTER)
+        for i = 1, #GRADIENT_SLOTS do
+            SetSlotFilters(state, container, GRADIENT_SLOTS[i].key,
+                BY_ME_FILTER, PARK_FILTER)
+        end
         SetSlotFilters(state, container, "glow", BY_ME_FILTER, PARK_FILTER)
         container:SetEnabled(false)
         state.configShown = false
@@ -434,15 +412,18 @@ function F.Sync(frame, unit, allowCreate, healerSettings, fillDirection)
     if not EnsureSlot(state, container, "visual", slotFilter, slotCF) then
         complete = false
     end
-    -- The typed slot is created lazily: most profiles never use the gradient
-    -- scope and slots are add-only, so don't spend one on every frame.
-    if wantGradient or state.slots.typed then
-        local typedFilter, typedCF = BY_ME_FILTER, PARK_FILTER
-        if wantGradient then
-            typedFilter, typedCF = ALL_TYPED_FILTER, BuildGradientCF()
-        end
-        if not EnsureSlot(state, container, "typed", typedFilter, typedCF) then
-            complete = false
+    -- Typed slots are created lazily: most profiles never use the gradient
+    -- scope and slots are add-only, so don't spend five on every frame.
+    for i = 1, #GRADIENT_SLOTS do
+        local spec = GRADIENT_SLOTS[i]
+        if wantGradient or state.slots[spec.key] then
+            local typedFilter, typedCF = BY_ME_FILTER, PARK_FILTER
+            if wantGradient then
+                typedFilter, typedCF = ALL_TYPED_FILTER, spec.cf
+            end
+            if not EnsureSlot(state, container, spec.key, typedFilter, typedCF) then
+                complete = false
+            end
         end
     end
     local glowSlotCF
@@ -460,10 +441,14 @@ function F.Sync(frame, unit, allowCreate, healerSettings, fillDirection)
         if wantVisual and visualSlot and visualSlot.frame then
             StyleVisualSlot(visualSlot.frame, frame, dispelCfg, borderOn, iconOn)
         end
-        local typedSlot = state.slots.typed
-        if wantGradient and typedSlot and typedSlot.frame then
-            StyleGradientSlot(typedSlot.frame, frame, dispelCfg,
-                fillDirection == "VERTICAL")
+        if wantGradient then
+            for i = 1, #GRADIENT_SLOTS do
+                local typedSlot = state.slots[GRADIENT_SLOTS[i].key]
+                if typedSlot and typedSlot.frame then
+                    StyleGradientSlot(typedSlot.frame, frame, dispelCfg,
+                        fillDirection == "VERTICAL")
+                end
+            end
         end
         local glowSlot = state.slots.glow
         if glowOn and glowSlot and glowSlot.frame then
