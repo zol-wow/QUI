@@ -838,17 +838,23 @@ local function UpdateHealth(frame)
 
         if statusKey ~= frame._lastStatusKey then
             frame._lastStatusKey = statusKey
+            local state = GetFrameState(frame)
             if statusKey == 1 then
                 frame.statusText:SetText(ns.L["OFFLINE"])
                 frame.statusText:SetTextColor(COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3])
                 frame.statusText:Show()
+                state.lifeFaded = true
             elseif statusKey == 2 or statusKey == 3 then
                 frame.statusText:SetText(statusKey == 3 and ns.L["GHOST"] or ns.L["DEAD"])
                 frame.statusText:SetTextColor(COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3])
                 frame.statusText:Show()
+                state.lifeFaded = true
                 frame:SetAlpha(0.65)
             else
                 frame.statusText:Hide()
+                if state.lifeFaded then
+                    _state.ReleaseLifeFade(frame, unit)
+                end
             end
         end
     end
@@ -1509,16 +1515,18 @@ local function UpdateConnection(frame)
     if not unit then return end
 
     local isConnected, isDead = GetUnitLifeState(unit)
+    local state = GetFrameState(frame)
 
     if not isConnected and UnitExists(unit) then
+        state.lifeFaded = true
         frame:SetAlpha(0.5)
     elseif isDead then
+        state.lifeFaded = true
         frame:SetAlpha(0.65)
-    else
-        local state = GetFrameState(frame)
-        if state.outOfRange == nil then
-            frame:SetAlpha(1)
-        end
+    elseif state.lifeFaded then
+        _state.ReleaseLifeFade(frame, unit)
+    elseif state.outOfRange == nil then
+        frame:SetAlpha(1)
     end
 end
 
@@ -3941,6 +3949,9 @@ local _range = {
     resSpell = nil,
     cache = {},
     cacheTime = {},
+    -- Unit tokens that are the player, resolved at roster-rebuild time so the
+    -- in-combat range tick never depends on a possibly-secret UnitIsUnit.
+    selfUnits = {},
 }
 
 local function ResolveRangeSpells()
@@ -4022,6 +4033,7 @@ function _state.SweepTrackedSlotAssist()
 end
 
 local function CheckUnitRange(unit)
+    if _range.selfUnits[unit] then return true end
     local isSelf = UnitIsUnit(unit, "player")
     if IsSecretValue(isSelf) then isSelf = nil end -- @secret-policy: reject-secret-value
     if isSelf then return true end
@@ -4097,6 +4109,23 @@ end
 
 QUI_GF.CheckUnitRange = CheckUnitRange
 
+-- Called when a frame leaves the dead/offline fade (rez, reconnect). The range
+-- system only writes alpha on cached-answer transitions, so hand alpha back to
+-- it explicitly: restore full alpha now, then forget the unit's cached answer
+-- so the next tick re-applies the real range fade (<=1s) for every frame
+-- showing this unit.
+function _state.ReleaseLifeFade(frame, unit)
+    local state = GetFrameState(frame)
+    state.lifeFaded = nil
+    state.outOfRange = nil
+    state.inRange = nil
+    if unit then
+        _range.cache[unit] = nil
+        _range.cacheTime[unit] = nil
+    end
+    frame:SetAlpha(1)
+end
+
 local function ApplyRangeAlpha(frame, inRange, outAlpha)
     if frame.SetAlphaFromBoolean then
         frame:SetAlphaFromBoolean(inRange, 1, outAlpha)
@@ -4135,7 +4164,10 @@ local function DoRangeCheck()
                         if rangeChanged or state.outOfRange == nil then
                             state.outOfRange = true
                             state.inRange = inRange
-                            ApplyRangeAlpha(frame, inRange, outAlpha)
+                            -- Dead/offline fade owns alpha until ReleaseLifeFade
+                            if not state.lifeFaded then
+                                ApplyRangeAlpha(frame, inRange, outAlpha)
+                            end
                         end
                     end
                 end
@@ -4161,9 +4193,24 @@ end
 local function GRU_DeferredWork()
     _state.gruDeferredPending = false
     RebuildUnitFrameMap()
+    local playerGUID = UnitGUID("player")
+    if IsSecretValue(playerGUID) then playerGUID = nil end
+    wipe(_range.selfUnits)
     for unit, list in pairs(QUI_GF.unitFrameMap) do
         local guid = UnitGUID(unit)
         if IsSecretValue(guid) then guid = nil end
+        if guid and playerGUID then
+            if guid == playerGUID then
+                _range.selfUnits[unit] = true
+            end
+        else
+            -- @secret-policy: collapse-only — secret identity just skips the fast path
+            local isSelf = UnitIsUnit(unit, "player")
+            if IsSecretValue(isSelf) then isSelf = nil end
+            if isSelf then
+                _range.selfUnits[unit] = true
+            end
+        end
         for i = 1, #list do
             _state.unitGuidCache[list[i]] = guid
         end
@@ -4549,7 +4596,10 @@ function _state.HandleRangeUpdate(unit)
                 local state = GetFrameState(frame)
                 state.outOfRange = true
                 state.inRange = inRange
-                ApplyRangeAlpha(frame, inRange, outAlpha)
+                -- Dead/offline fade owns alpha until ReleaseLifeFade
+                if not state.lifeFaded then
+                    ApplyRangeAlpha(frame, inRange, outAlpha)
+                end
             end
         end
     end
