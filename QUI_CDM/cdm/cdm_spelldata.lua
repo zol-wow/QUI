@@ -1706,13 +1706,11 @@ local function GetContainerDB(containerKey)
 
     local ncdm = GetNcdmDB()
     if not ncdm then return nil end
-    if ncdm[containerKey] then
+    if Shared and ((Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(containerKey))
+        or (Shared.GetBuiltinContainerEntryKind and Shared.GetBuiltinContainerEntryKind(containerKey))) then
         return ncdm[containerKey]
     end
-    if ncdm.containers and ncdm.containers[containerKey] then
-        return ncdm.containers[containerKey]
-    end
-    return nil
+    return ncdm.containers and ncdm.containers[containerKey] or nil
 end
 
 local function NormalizeOwnedEntry(entry)
@@ -2779,16 +2777,11 @@ function CDMSpellData:CheckAllDormantSpells()
 end
 
 function CDMSpellData:GetSpecEntries(containerKey, specKey)
-    local list = GetSpecEntryList(containerKey, specKey, false)
-    if type(list) == "table" then
-        return list
-    end
-
     local db = GetContainerDB(containerKey)
     if type(db) == "table" and db.specSpecific then
-        return MoveLegacySpecEntriesToPerSpecStorage(containerKey, db)
+        MoveLegacySpecEntriesToPerSpecStorage(containerKey, db)
     end
-    return list
+    return GetSpecEntryList(containerKey, specKey, false)
 end
 
 function CDMSpellData:OnSpecSpecificToggled(containerKey)
@@ -3720,6 +3713,7 @@ CDMSpellData.IsAuraEntry = IsAuraEntry
 CDMSpellData.GetContainerDB = GetContainerDB
 CDMSpellData.GetEntryListField = GetEntryListField
 CDMSpellData.GetCapturedAuraForLookup = GetCapturedAuraForLookup
+CDMSpellData.GetLinkedSpellIDsForSpellID = GetLinkedSpellIDsForSpellID
 if ns.CDMAuraRuntime then
     if ns.CDMAuraRuntime.SetApplicationsGetter then
         ns.CDMAuraRuntime.SetApplicationsGetter(GetAuraApplications)

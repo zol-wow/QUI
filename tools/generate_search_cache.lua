@@ -881,6 +881,7 @@ _G.QUI = {
         sv = {
             profiles = {
                 Default = {},
+                Source = {},
             },
         },
     },
@@ -923,7 +924,7 @@ _G.QUI = {
         db = {
             profile = profile_db,
             GetProfiles = function()
-                return { "Default" }
+                return { "Default", "Source" }
             end,
             GetCurrentProfile = function()
                 return "Default"
@@ -2087,7 +2088,7 @@ local function capture_group_frames_settings_tabs()
                         subTabIndex = tab.subTabIndex,
                         subTabName = tab.label,
                         tileId = "group_frames",
-                        subPageIndex = 2,
+                        subPageIndex = 1,
                         featureId = "groupFramesPage",
                         providerKey = group_context.providerKey,
                         category = "frames",
@@ -2194,7 +2195,7 @@ local function capture_group_frames_auras_elements()
                     subTabIndex = 12,
                     subTabName = "Auras",
                     tileId = "group_frames",
-                    subPageIndex = 2,
+                    subPageIndex = 1,
                     featureId = "groupFramesPage",
                     providerKey = "partyFrames",
                     category = "frames",
@@ -2317,7 +2318,7 @@ local function capture_nameplates_settings_tab_variant(schema, tab, typeKey)
     GUI:ClearSearchContext()
     local ok, err = xpcall(function()
         GUI:SetSearchContext({
-            tabIndex = 21,
+            tabIndex = 22,
             tabName = "Nameplates",
             subTabIndex = tab.subTabIndex,
             subTabName = tab.label,
@@ -2372,7 +2373,7 @@ end
 -- label gets indexed that a real Nameplates user could never reach.
 local NAMEPLATES_AURA_ELEMENT_SEARCH_CONTEXTS = {
     {
-        tabIndex = 21, tabName = "Nameplates", subTabIndex = 2, subTabName = "Auras",
+        tabIndex = 22, tabName = "Nameplates", subTabIndex = 2, subTabName = "Auras",
         tileId = "nameplates", subPageIndex = 1, featureId = "nameplatesPage",
         category = "frames", surfaceTabKey = "auras",
     },
@@ -2412,15 +2413,17 @@ local function capture_nameplates_auras_elements()
             { label = "tracked:icon", element = tracked("icon") },
             { label = "tracked:bar", element = tracked("bar") },
             { label = "tracked:square", element = tracked("square") },
+            { label = "tracked:healthTint", element = tracked("healthTint") },
         }
     end
 
     local NAMEPLATES_AURA_ELEMENT_CAPS = {
         elementTypes        = { filterStrip = true, tracked = true },
-        trackedDisplayTypes = { icon = true, square = true, bar = true },
+        trackedDisplayTypes = { icon = true, square = true, bar = true, healthTint = true },
         unitPolarity        = "hostile",
         durationDecimals    = true,
         roleGate            = false,
+        healthTintAnimation = false,
         allowSpecOverride   = false,
     }
 
@@ -2734,19 +2737,24 @@ local function capture_action_bar_per_bar_settings()
         end
     end
 
-    register_manual_static_setting({
-        tabIndex = 8,
-        tabName = "Action Bars",
-        subTabIndex = 5,
-        subTabName = "Totem Bar",
-        sectionName = ns.L["Layout"],
-        tileId = "action_bars",
-        subPageIndex = 3,
-        featureId = "actionBarsTotemBar",
-        providerKey = "totemBar",
-        category = "frames",
-        keywords = { "Grow Direction", "Totem Bar", "Action Bars" },
-    }, ns.L["Grow Direction"], "dropdown", "profile.totemBar", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
+    local function capture_totem_bar_setting(label, widget_type, db_key, extra)
+        register_manual_static_setting({
+            tabIndex = 8,
+            tabName = "Action Bars",
+            subTabIndex = 5,
+            subTabName = "Totem Bar",
+            sectionName = ns.L["Layout"],
+            tileId = "action_bars",
+            subPageIndex = 3,
+            featureId = "actionBarsTotemBar",
+            providerKey = "totemBar",
+            category = "frames",
+            keywords = { label, "Totem Bar", "Action Bars" },
+        }, label, widget_type, "profile.totemBar", db_key, extra)
+    end
+
+    capture_totem_bar_setting(ns.L["Grow Direction"], "dropdown", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
+    capture_totem_bar_setting(ns.L["Button Size"], "slider", "iconSize", { min = 20, max = 300, step = 1 })
 
     local function capture_raid_markers_bar_setting(section, label, widget_type, db_path, db_key, extra)
         register_manual_static_setting({
@@ -3143,9 +3151,9 @@ local function clear_non_plain_arrays_before_route_seed()
     if type(GUI.StaticNavigationRegistry) ~= "table" or getmetatable(GUI.StaticNavigationRegistry) ~= nil then
         GUI.StaticNavigationRegistry = {}
     end
-    GUI.StaticSettingsRegistry = trim_plain_array(GUI.StaticSettingsRegistry, 4000)
+    GUI.StaticSettingsRegistry = trim_plain_array(GUI.StaticSettingsRegistry, 5000)
     GUI.StaticNavigationRegistry = trim_plain_array(GUI.StaticNavigationRegistry, 2000)
-    GUI.StaticSettingsRegistry = filter_registry_entries(GUI.StaticSettingsRegistry, 4000)
+    GUI.StaticSettingsRegistry = filter_registry_entries(GUI.StaticSettingsRegistry, 5000)
     GUI.StaticNavigationRegistry = filter_registry_entries(GUI.StaticNavigationRegistry, 2000)
 
     if type(frame._tiles) ~= "table" or getmetatable(frame._tiles) ~= nil then

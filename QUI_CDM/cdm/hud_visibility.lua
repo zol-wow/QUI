@@ -646,6 +646,7 @@ local function ApplyUnitframeVisibilityAlpha(frame, alpha)
             frame:SetAlpha(0)
             return
         end
+        return
     end
 
     frame:SetAlpha(alpha)

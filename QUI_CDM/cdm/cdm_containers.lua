@@ -153,13 +153,11 @@ local function GetTrackerSettings(trackerKey)
 
     local db = GetDB()
     if not db then return nil end
-    if db[trackerKey] then
+    if Shared and ((Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(trackerKey))
+        or (Shared.GetBuiltinContainerEntryKind and Shared.GetBuiltinContainerEntryKind(trackerKey))) then
         return db[trackerKey]
     end
-    if db.containers and db.containers[trackerKey] then
-        return db.containers[trackerKey]
-    end
-    return nil
+    return db.containers and db.containers[trackerKey] or nil
 end
 
 local function IsHUDAnchoredToCDM()
@@ -1239,6 +1237,7 @@ local function GetDefaultsByContainerType(containerType)
             dormantSpells = {},
             spellOverrides = {},
             iconDisplayMode = "always",
+            pressedEffect = "qui",
             showKeybinds = false,
             keybindTextSize = 12,
             keybindTextColor = { 1, 0.82, 0, 1 },
@@ -1325,13 +1324,13 @@ end
 
 function CDMContainers_API:GetContainers()
     local db = GetDB()
-    local ct = db and db.containers
-    if not ct then return {} end
+    if not db then return {} end
+    local ct = db.containers or {}
 
     local result = {}
     for _, key in ipairs(BUILTIN_KEYS) do
-        if ct[key] then
-            result[#result + 1] = { key = key, settings = ct[key] }
+        if db[key] then
+            result[#result + 1] = { key = key, settings = db[key] }
         end
     end
     local customKeys = {}
@@ -1350,10 +1349,11 @@ end
 function CDMContainers_API:GetContainerSettings(key)
     local db = GetDB()
     if not db then return nil end
-    if db.containers and db.containers[key] then
-        return db.containers[key]
+    if Shared and ((Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(key))
+        or (Shared.GetBuiltinContainerEntryKind and Shared.GetBuiltinContainerEntryKind(key))) then
+        return db[key]
     end
-    return db[key] or nil
+    return db.containers and db.containers[key] or nil
 end
 
 function CDMContainers_API:GetContainersByType(containerType)
@@ -1388,7 +1388,6 @@ function CDMContainers_API:CreateContainer(name, containerType)
 
     db.containers[key] = settings
 
-    db[key] = settings
 
     local frameName = "QUI_CDM_" .. key
     local frame = RegisterContainerFrame(key, CreateContainer(frameName))
@@ -3079,7 +3078,7 @@ function ownedEngine:RefreshReanchorRuntimeHooks(markDirty)
     if not (wiring and wiring.GetViewerForKey) then return false end
     if not IsCooldownViewerReady() then
         QueueReanchorHooksWhenCooldownViewerReady(markDirty)
-        return false
+        if not ns._cdmCombatReloadGrace then return false end
     end
 
     local function getViewer(key)
@@ -3179,15 +3178,22 @@ function ownedEngine:BootstrapReanchorRuntime()
                     local bridge = boot.bridge
                     return (bridge and bridge.IsClaimed and bridge:IsClaimed(frame)) or false
                 end,
-                installGuard = function(frame)
+                installGuard = function(frame, key)
                     local bridge = boot.bridge
                     if bridge and bridge.InstallAnchorGuard then
                         bridge:InstallAnchorGuard(frame)
+                        if ns._cdmCombatReloadGrace and (key == "essential" or key == "utility")
+                            and (not bridge.IsClaimed or not bridge:IsClaimed(frame))
+                            and bridge.Sink then
+                            bridge:Sink(frame)
+                        end
                     end
                 end,
                 installGuardKeys = { essential = true, utility = true },
                 isInitWindow = function() return ns._inInitSafeWindow == true end,
-                isInitialReanchorDone = IsInitialReanchorDone,
+                isInitialReanchorDone = function(key)
+                    return ns._cdmCombatReloadGrace or IsInitialReanchorDone(key)
+                end,
             })
             ns._cdmReanchorHooks = hk
 
@@ -3256,6 +3262,8 @@ function ownedEngine:Initialize()
         return
     end
 
+    ns._cdmCombatReloadGrace = type(_G.UnitAffectingCombat) == "function"
+        and _G.UnitAffectingCombat("player") == true
     inInitSafeWindow = true
     local previousInitSafeWindow = ns._inInitSafeWindow
     ns._inInitSafeWindow = true
@@ -3458,6 +3466,7 @@ function ownedEngine:Initialize()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
             local isLogin, isReload = arg1, arg2
+            C_Timer.After(0, function() ns._cdmCombatReloadGrace = false end)
             ownedEngine:RefreshReanchorRuntimeHooks(false)
             if isReload then
                 local pewPreviousInitSafeWindow = ns._inInitSafeWindow

@@ -280,6 +280,7 @@ local defaults = {
             autoDeclineDuel = false,
             autoDeclinePetBattle = false,
             autoRelease = "off",
+            blockReleaseInRaid = false,
             audioOutputDevice = "",
             autoUnwrapCollections = false,
             autoConfirmSocketReplace = false,
@@ -842,6 +843,7 @@ local defaults = {
                 dormantSpells = {},
                 spellOverrides = {},
                 iconDisplayMode = "always",
+                pressedEffect = "qui",
                 containerType = "cooldown",
                 greyOutInactive = false,
                 greyOutInactiveBuffs = false,
@@ -928,6 +930,7 @@ local defaults = {
                 dormantSpells = {},
                 spellOverrides = {},
                 iconDisplayMode = "always",
+                pressedEffect = "qui",
                 containerType = "cooldown",
                 greyOutInactive = false,
                 greyOutInactiveBuffs = false,
@@ -967,6 +970,7 @@ local defaults = {
                 dormantSpells = {},
                 spellOverrides = {},
                 iconDisplayMode = "active",
+                pressedEffect = "qui",
                 containerType = "aura",
             },
             trackedBar = {
@@ -1058,6 +1062,7 @@ local defaults = {
                     dormantSpells = {},
                     spellOverrides = {},
                     iconDisplayMode = "always",
+                    pressedEffect = "qui",
                 },
                 utility = {
                     name = "Utility",
@@ -1105,6 +1110,7 @@ local defaults = {
                     dormantSpells = {},
                     spellOverrides = {},
                     iconDisplayMode = "always",
+                    pressedEffect = "qui",
                 },
                 buff = {
                     name = "Buff Icons",
@@ -1137,6 +1143,7 @@ local defaults = {
                     dormantSpells = {},
                     spellOverrides = {},
                     iconDisplayMode = "active",
+                    pressedEffect = "qui",
                 },
                 trackedBar = {
                     name = "Buff Bars",
@@ -2927,6 +2934,7 @@ local defaults = {
                     dispelOverlay = {
                         enabled = true, scope = "PLAYER_DISPELLABLE",
                         opacity = 0.8, fillOpacity = 0.18, borderSize = 3,
+                        gradientStartOpacity = 1, gradientEndOpacity = 0,
                         showIcon = false, iconSize = 20, iconOpacity = 1,
                         iconAnchor = "TOPRIGHT", iconOffsetX = 0, iconOffsetY = 0,
                         colors = {
@@ -3084,6 +3092,7 @@ local defaults = {
                     dispelOverlay = {
                         enabled = true, scope = "PLAYER_DISPELLABLE",
                         opacity = 0.8, fillOpacity = 0.18, borderSize = 3,
+                        gradientStartOpacity = 1, gradientEndOpacity = 0,
                         showIcon = false, iconSize = 20, iconOpacity = 1,
                         iconAnchor = "TOPRIGHT", iconOffsetX = 0, iconOffsetY = 0,
                         colors = {
@@ -4364,6 +4373,10 @@ local defaults = {
             _version = 1,
             _updatedAt = 0,
             entries = {},
+        },
+        profileFeaturePins = {
+            _version = 1,
+            profiles = {},
         },
         mailContacts = {},
         spellScanner = {

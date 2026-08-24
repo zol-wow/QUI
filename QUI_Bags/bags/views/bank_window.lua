@@ -32,6 +32,7 @@ local selectedByBankType = {
 }
 local focusItemID = nil
 local tabButtons = {}
+local purchaseTabButton
 local liveHolders = {}
 local liveButtons = {}
 local cachedButtons = {}
@@ -190,27 +191,6 @@ local function StartSortSelectedTab()
     Bags.SortExecutor.Start(SortScopeForBankType(activeBankType), nil, { tabID = tabID })
 end
 
-local function ShowPurchasePopup(bankType)
-    local data = C_Bank.FetchNextPurchasableBankTabData(bankType)
-    if not data then return end
-    local cost = GetMoneyString and GetMoneyString(data.tabCost, true)
-        or tostring(data.tabCost)
-    StaticPopupDialogs["QUI_BANK_BUY_TAB"] = {
-        text = (data.purchasePromptTitle or "") .. "\n"
-            .. (data.purchasePromptBody or "") .. "\n\n" .. cost,
-        button1 = ACCEPT,
-        button2 = CANCEL,
-        OnAccept = function()
-            C_Bank.PurchaseBankTab(bankType)
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-    StaticPopup_Show("QUI_BANK_BUY_TAB")
-end
-
 function BankWindow.TabSettingsArgs(tab, text)
     local icon = tab.icon or QUESTION_MARK_ICON or "Interface\\Icons\\INV_Misc_QuestionMark"
     return text, icon, tab.depositFlags or 0
@@ -321,36 +301,37 @@ local function ApplyTabHover(bagID)
     sweep(cachedButtons)
 end
 
-local function CreateTabButton()
-    local btn = Bags.Chassis.CreatePanelButton(win._tabStrip, true)
-    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+local function CreateTabButton(purchase)
+    local template = purchase and "BankPanelPurchaseButtonScriptTemplate" or nil
+    local btn = Bags.Chassis.CreatePanelButton(win._tabStrip, true, template)
+    if purchase then
+        btn:RegisterForClicks("LeftButtonUp")
+    else
+        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    end
     UIKit.CreateBorderLines(btn)
-    btn:SetScript("OnClick", function(self, mouseButton)
-        local entry = self._entry
-        if not entry then return end
-        if entry.purchase then
-            if mouseButton == "LeftButton" then
-                ShowPurchasePopup(entry.bankType)
+    if not purchase then
+        btn:SetScript("OnClick", function(self, mouseButton)
+            local entry = self._entry
+            if not entry then return end
+            if entry.all then
+                if mouseButton == "LeftButton" then
+                    activeBankType = entry.bankType or activeBankType
+                    SetSelectedBagID("all")
+                    BankWindow.Refresh()
+                end
+                return
             end
-            return
-        end
-        if entry.all then
-            if mouseButton == "LeftButton" then
-                activeBankType = entry.bankType or activeBankType
-                SetSelectedBagID("all")
-                BankWindow.Refresh()
+            if mouseButton == "RightButton" then
+                if liveMode then ShowTabSettingsMenu(self, entry) end
+                return
             end
-            return
-        end
-        if mouseButton == "RightButton" then
-            if liveMode then ShowTabSettingsMenu(self, entry) end
-            return
-        end
-        activeBankType = entry.bankType or activeBankType
-        SetSelectedBagID(entry.bagID)
-        ApplyTabHover(nil)
-        BankWindow.Refresh()
-    end)
+            activeBankType = entry.bankType or activeBankType
+            SetSelectedBagID(entry.bagID)
+            ApplyTabHover(nil)
+            BankWindow.Refresh()
+        end)
+    end
     btn:SetScript("OnEnter", function(self)
         local entry = self._entry
         local tip = entry and (entry.purchase and ns.L["Purchase bank tab"]
@@ -539,14 +520,22 @@ end
 
 local function RenderTabStrip(tabs)
     for _, btn in ipairs(tabButtons) do btn:Hide() end
+    if purchaseTabButton then purchaseTabButton:Hide() end
     local sr, sg, sb = Helpers.GetSkinColors()
     local selectedBagID = GetSelectedBagID()
     local x = 0
     for i, entry in ipairs(tabs) do
-        local btn = tabButtons[i]
-        if not btn then
-            btn = CreateTabButton()
-            tabButtons[i] = btn
+        local btn
+        if entry.purchase then
+            purchaseTabButton = purchaseTabButton or CreateTabButton(true)
+            btn = purchaseTabButton
+            btn:SetAttribute("overrideBankType", entry.bankType)
+        else
+            btn = tabButtons[i]
+            if not btn then
+                btn = CreateTabButton(false)
+                tabButtons[i] = btn
+            end
         end
         btn._entry = entry
         local label = "+"

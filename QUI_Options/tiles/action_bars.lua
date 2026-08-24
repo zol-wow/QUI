@@ -40,6 +40,7 @@ function V2.Register(frame)
                 id = "perBar",
                 name = ns.L["Per-Bar"],
                 featureId = "actionBarsPerBar",
+                navRoutes = { { tabIndex = 8, subTabIndex = 3 } },
                 searchContext = {
                     tabIndex = 8,
                     tabName = ns.L["Action Bars"],

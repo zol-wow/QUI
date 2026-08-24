@@ -881,6 +881,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     local ACTION_TYPE_OPTIONS = {
         { value = "spell",        text = ns.L["Spell"] },
+        { value = "item",         text = ns.L["Item"] },
         { value = "macro",        text = ns.L["Macro"] },
         { value = "target",       text = ns.L["Target Unit"] },
         { value = "focus",        text = ns.L["Set Focus"] },
@@ -1113,7 +1114,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     Shared.CreateAccentDotLabel(addContainer, ns.L["Add Binding"], 0)
     local ay = -30
 
-    local dropZone = CreateClickCastButton(addContainer, ns.L["Drop a spell or macro here"], 1, 68, nil, "primary")
+    local dropPrompt = ns.L["Drop Spell or Item Here"] .. " / " .. ns.L["Macro"]
+    local dropZone = CreateClickCastButton(addContainer, dropPrompt, 1, 68, nil, "primary")
     dropZone:RegisterForClicks("LeftButtonUp")
     SetHeightPx(dropZone, 68)
     dropZone:SetPoint("TOPLEFT", 0, ay)
@@ -1127,7 +1129,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         dropLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
     end
 
-    local addState = { bindingType = "mouse", button = "LeftButton", key = nil, modifiers = "", actionType = "spell", spellName = "", macroText = "", targetFilter = "any" }
+    local addState = { bindingType = "mouse", button = "LeftButton", key = nil, modifiers = "", actionType = "spell", spellName = "", itemName = nil, itemID = nil, macroText = "", targetFilter = "any" }
     local spellInput, macroInput, actionDrop
     local spellInputContainer, macroInputContainer
     local mouseButtonContainer, keyCaptureContainer
@@ -1150,12 +1152,15 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 if overrideID and overrideID ~= spellID then spellID = overrideID end
                 local name = C_Spell.GetSpellName(spellID)
                 if name then
+                    addState.itemName = nil
+                    addState.itemID = nil
                     addState.spellName = name
                     addState.actionType = "spell"
                     if spellInput then spellInput:SetText(name) end
                     if actionDrop then actionDrop.SetValue("spell", true) end
                     if spellInputContainer then spellInputContainer:Show() end
                     if macroInputContainer then macroInputContainer:Hide() end
+                    if dropLabel then dropLabel:SetText(dropPrompt) end
                 end
             end
             ClearCursor()
@@ -1165,6 +1170,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
             if macroIndex then
                 local name, _, body = GetMacroInfo(macroIndex)
                 if body then
+                    addState.itemName = nil
+                    addState.itemID = nil
                     addState.actionType = "macro"
                     addState.macroText = body
                     addState.spellName = name or ns.L["Macro"]
@@ -1172,7 +1179,23 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                     if actionDrop then actionDrop.SetValue("macro", true) end
                     if macroInputContainer then macroInputContainer:Show() end
                     if spellInputContainer then spellInputContainer:Hide() end
+                    if dropLabel then dropLabel:SetText(dropPrompt) end
                 end
+            end
+            ClearCursor()
+            return true
+        elseif cursorType == "item" then
+            local itemID = id1
+            if itemID then
+                local itemName = C_Item.GetItemInfo(itemID)
+                addState.actionType = "item"
+                addState.itemID = itemID
+                addState.itemName = itemName
+                if actionDrop then actionDrop.SetValue("item", true) end
+                if spellInputContainer then spellInputContainer:Hide() end
+                if macroInputContainer then macroInputContainer:Hide() end
+                if targetFilterRow then targetFilterRow:Hide() end
+                if dropLabel then dropLabel:SetText(itemName or ns.L["Item"]) end
             end
             ClearCursor()
             return true
@@ -1568,6 +1591,10 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
             newBinding.spellID = baseID
             local rootName = C_Spell.GetSpellName(baseID)
             newBinding.spell = rootName or C_Spell.GetSpellName(spellID) or name
+        elseif actionType == "item" then
+            if not addState.itemID then print("|cFFFF5555[QUI]|r " .. ns.L["Item"] .. ns.L[" unavailable."]) return end
+            newBinding.itemID = addState.itemID
+            newBinding.item = addState.itemName or C_Item.GetItemInfo(addState.itemID) or ns.L["Item"]
         elseif actionType == "macro" then
             local text = addState.macroText
             if not text or text == "" then print("|cFFFF5555[QUI]|r " .. ns.L["Enter macro text."]) return end
@@ -1586,12 +1613,15 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         local ok, err = GFCC:AddBinding(newBinding)
         if not ok then print("|cFFFF5555[QUI]|r " .. (err or ns.L["Failed to add binding."])) return end
         addState.spellName = ""
+        addState.itemName = nil
+        addState.itemID = nil
         addState.macroText = ""
         addState.key = nil
         addState.targetFilter = "any"
         if targetFilterDrop and targetFilterDrop.SetValue then targetFilterDrop.SetValue("any", true) end
         spellInput:SetText("")
         macroInput:SetText("")
+        if dropLabel then dropLabel:SetText(dropPrompt) end
         keyCaptureBtn:SetText(ns.L["Click to bind a key"])
         if keyCaptureText then keyCaptureText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1) end
         RefreshBindingList()
@@ -1675,6 +1705,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 if type(actionType) ~= "string" then actionType = "spell" end
                 local spellName = binding.spell
                 if type(spellName) ~= "string" then spellName = nil end
+                local itemName = binding.item
+                if type(itemName) ~= "string" then itemName = nil end
                 local resolvedSpellID = binding.spellID
                 if resolvedSpellID and actionType == "spell" then
                     local currentName = C_Spell.GetSpellName(resolvedSpellID)
@@ -1683,7 +1715,17 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 local row = AcquireBindingRow(i)
                 row.bindingIndex = i
                 local iconTex = row.iconTex
-                if actionType == "spell" and spellName then
+                if actionType == "item" then
+                    local itemInfo = binding.itemID or itemName
+                    local itemTexture
+                    if itemInfo then
+                        local itemData = { C_Item.GetItemInfo(itemInfo) }
+                        local currentName = itemData[1]
+                        itemTexture = itemData[10]
+                        if currentName then itemName = currentName end
+                    end
+                    iconTex:SetTexture(itemTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
+                elseif actionType == "spell" and spellName then
                     local lookupID = resolvedSpellID or C_Spell.GetSpellIDForSpellIdentifier(spellName)
                     if lookupID then
                         local info = C_Spell.GetSpellInfo(lookupID)
@@ -1698,7 +1740,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 local triggerLabel = binding.key or (buttonNames[binding.button] or binding.button)
                 row.comboText:SetText(modLabel .. triggerLabel)
                 row.comboText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-                local displayName = spellName or actionType
+                local displayName = itemName or spellName or actionType
                 if actionType == "macro" then displayName = ns.L["Macro"]
                 elseif actionType == "menu" then displayName = ns.L["Unit Menu"]
                 elseif PING_DISPLAY_NAMES[actionType] then displayName = PING_DISPLAY_NAMES[actionType] end

@@ -42,13 +42,10 @@ local function GetCDMDB(cdmKey)
 
     local ncdm = GetNcdmDB()
     if not ncdm then return nil end
-    if ncdm[dbKey] then
+    if Shared and Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(dbKey) then
         return ncdm[dbKey]
     end
-    if ncdm.containers and ncdm.containers[dbKey] then
-        return ncdm.containers[dbKey]
-    end
-    return nil
+    return ncdm.containers and ncdm.containers[dbKey] or nil
 end
 
 local function RefreshCDM()

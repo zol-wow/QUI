@@ -311,7 +311,7 @@ end
 
 function InfoBar:ReflowAll()
     if not bar then return end
-    if InCombatLockdown() then
+    if InCombatLockdown() and not ns._inInitSafeWindow then
         reflowPendingCombat = true
         return
     end
@@ -379,7 +379,7 @@ function InfoBar:ApplyAll()
 
     SeedDefaultZones(db)
 
-    if InCombatLockdown() then
+    if InCombatLockdown() and not ns._inInitSafeWindow then
         applyPendingCombat = true
         return
     end

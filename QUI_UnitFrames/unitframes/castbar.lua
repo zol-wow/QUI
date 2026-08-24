@@ -521,6 +521,24 @@ local function ApplyCastColor(statusBar, notInterruptible, customColor, notInter
     end
 end
 
+local function PinCastbarToRestrictedTarget(anchorFrame, target, offsetX, offsetY, widthAdjustment)
+    if not target or not nsHelpers.FrameMutationRestricted or not nsHelpers.PinFrameToTargetAbsolute then
+        return false
+    end
+    if not nsHelpers.FrameMutationRestricted(target) then return false end
+
+    if widthAdjustment ~= nil then
+        local targetWidth = SafeToNumber(target:GetWidth())
+        if targetWidth and targetWidth > 0 then
+            anchorFrame:SetWidth(QUICore:PixelRound(targetWidth + (2 * widthAdjustment), anchorFrame))
+        end
+    end
+
+    return nsHelpers.PinFrameToTargetAbsolute(
+        anchorFrame, "TOP", target, "BOTTOM", offsetX, offsetY
+    ) == true
+end
+
 local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, barHeight)
     local anchor = castSettings.anchor or "none"
 
@@ -539,8 +557,10 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
             if (vs and vs.layoutDir) ~= "VERTICAL" then
                 bottomRowYOffset = QUICore:PixelRound((vs and vs.bottomRowYOffset) or 0, anchorFrame)
             end
-            anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
-            anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
+            if not PinCastbarToRestrictedTarget(anchorFrame, viewer, offsetX, offsetY + bottomRowYOffset, widthAdj) then
+                anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
+                anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
+            end
         else
             if unitFrame then
                 anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX, offsetY)
@@ -553,8 +573,10 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
         local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
         local widthAdj = QUICore:PixelRound(castSettings.widthAdjustment or 0, anchorFrame)
         if unitFrame then
-            anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX - widthAdj, offsetY)
-            anchorFrame:SetPoint("TOPRIGHT", unitFrame, "BOTTOMRIGHT", offsetX + widthAdj, offsetY)
+            if not PinCastbarToRestrictedTarget(anchorFrame, unitFrame, offsetX, offsetY, widthAdj) then
+                anchorFrame:SetPoint("TOPLEFT", unitFrame, "BOTTOMLEFT", offsetX - widthAdj, offsetY)
+                anchorFrame:SetPoint("TOPRIGHT", unitFrame, "BOTTOMRIGHT", offsetX + widthAdj, offsetY)
+            end
         else
             anchorFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
         end
@@ -2815,7 +2837,9 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     local borderSize = QUICore:Pixels(castSettings.borderSize or 1, anchorFrame)
     anchorFrame:SetSize(castWidth, barHeight)
 
-    QUICore:SetSnappedPoint(anchorFrame, "TOP", unitFrame, "BOTTOM", castSettings.offsetX or 0, castSettings.offsetY or -25)
+    if not PinCastbarToRestrictedTarget(anchorFrame, unitFrame, castSettings.offsetX or 0, castSettings.offsetY or -25) then
+        QUICore:SetSnappedPoint(anchorFrame, "TOP", unitFrame, "BOTTOM", castSettings.offsetX or 0, castSettings.offsetY or -25)
+    end
 
     local ir, ig, ib, ia = GetBorderColor(castSettings, "icon")
     UIKit.CreateIcon(anchorFrame, CoordinateSizeToPhysicalPixels(iconSize, anchorFrame), castSettings.iconBorderSize or 1, ir, ig, ib, ia)

@@ -38,12 +38,18 @@ local ALL_RENDERED_CATEGORIES = { 0, 1, 2, 3, 5, 6, 7, 8 }
 local CONSUMABLE_CATEGORY_META = {
     [4]    = { name = "Combat Potion", icon = "Interface/ICONS/INV_POTION_114" },
     [30]   = { name = "Health Potion", icon = "Interface/ICONS/INV_POTION_54" },
-    [1711] = { name = "Healthstone",   icon = "Interface/ICONS/Warlock_ Healthstone" },
+    [1711] = { name = "Healthstone",   icon = "Interface/ICONS/Warlock_ Healthstone", tooltipItemIDFallback = 5512 },
+    [2566] = { name = "Demonic Healthstone", icon = "Interface/ICONS/Warlock_ Bloodstone", tooltipItemIDFallback = 224464 },
 }
 local BLIZZARD_CDM_ENTRY_SOURCE = "blizzardCDM"
 
 function CDMCatalog.GetConsumableCategoryMeta(catID)
     return CONSUMABLE_CATEGORY_META[catID]
+end
+
+function CDMCatalog.GetConsumableCategoryItemID(catID)
+    local meta = CONSUMABLE_CATEGORY_META[catID]
+    return meta and meta.tooltipItemIDFallback
 end
 
 function CDMCatalog.IsUsableID(id)

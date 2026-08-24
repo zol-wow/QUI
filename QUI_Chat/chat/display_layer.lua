@@ -100,7 +100,8 @@ local function EnsureRegenWatcher()
 end
 
 local function GeometryBlockedInCombat(win)
-    if not (type(_G.InCombatLockdown) == "function" and _G.InCombatLockdown()) then
+    if not ((type(_G.InCombatLockdown) == "function" and _G.InCombatLockdown())
+        or (type(_G.UnitAffectingCombat) == "function" and _G.UnitAffectingCombat("player"))) then
         return false
     end
     if ns._inInitSafeWindow then return false end
@@ -585,6 +586,13 @@ function Display.Refresh()
         ApplyTheme(windows[i])
     end
     SyncChatWindowMovers()
+end
+
+function Display.RefreshAppearance()
+    if not windows[1] then return end
+    for i = 1, #windows do
+        ApplyTheme(windows[i])
+    end
 end
 
 function Display.Show()

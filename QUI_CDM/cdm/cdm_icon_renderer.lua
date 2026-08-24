@@ -131,7 +131,7 @@ function _resolverRuntimePolicy.ApplyDurationObjectCooldown(cd, durObj, clearWhe
         return ns.CDMRenderers.ApplyDurationObjectCooldown(cd, durObj, clearWhenZero, reverse)
     end
 
-    if not cd or not durObj or not cd.SetCooldownFromDurationObject then
+    if not cd or type(durObj) == "nil" or not cd.SetCooldownFromDurationObject then
         return false
     end
 
@@ -390,6 +390,27 @@ local function QueryItemVisualTexture(itemID)
     return nil
 end
 
+local function GetItemIDForEntry(entry)
+    if not entry then return nil end
+    local entryType = entry.type
+    if entryType == "item" then
+        return (Sources and Sources.QueryBestOwnedItemVariant
+            and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
+    end
+    if (entryType == "trinket" or entryType == "slot")
+        and Sources and Sources.QueryInventoryItemID then
+        return Sources.QueryInventoryItemID("player", entry.id)
+    end
+    if entryType == "consumable" then
+        local itemID = Sources and Sources.QueryConsumableCategoryItem
+            and Sources.QueryConsumableCategoryItem(entry.id)
+        if itemID then return itemID end
+        return ns.CDMCatalog and ns.CDMCatalog.GetConsumableCategoryItemID
+            and ns.CDMCatalog.GetConsumableCategoryItemID(entry.id)
+    end
+    return nil
+end
+
 function _resolverRuntimePolicy.MarkGCDSwipe(icon)
     if cooldownPolicy then
         cooldownPolicy:MarkGCDSwipe(icon)
@@ -571,7 +592,13 @@ local function ResolveTrackerSettingsNow(viewerType)
     end
     local db = GetDB and GetDB()
     if not db or not viewerType then return nil end
-    return db[viewerType] or (db.containers and db.containers[viewerType]) or nil
+    if (Shared and Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(viewerType))
+        or (Shared and Shared.GetBuiltinContainerEntryKind
+            and Shared.GetBuiltinContainerEntryKind(viewerType) ~= nil)
+        or GetBuiltinContainerType(viewerType) then
+        return db[viewerType]
+    end
+    return db.containers and db.containers[viewerType] or nil
 end
 
 local function IsCustomBarSettingsNow(settings)
@@ -579,6 +606,13 @@ local function IsCustomBarSettingsNow(settings)
 end
 
 local function ChargeSpellShouldStaySaturated(icon, entry)
+    local nativeFrame = icon and icon._blizzCooldown
+    if nativeFrame and type(nativeFrame.HasVisualDataSource_Charges) == "function" then
+        local active = nativeFrame:HasVisualDataSource_Charges()
+        if not (issecretvalue and issecretvalue(active)) and type(active) == "boolean" then
+            return active
+        end
+    end
     local sid = icon and icon._runtimeSpellID
     if not sid and entry then
         sid = entry.spellID or entry.overrideSpellID or entry.id
@@ -661,12 +695,19 @@ local function ApplyCooldownDesaturation(icon, entry, settings, resolvedMode, re
         return
     end
 
-    local realCdDur = resolvedMode == "item-cooldown" and resolvedDurObj or nil
-    if not realCdDur and resolvedSpellID and Sources and Sources.QuerySpellCooldownDuration then
+    local realCdDur
+    if resolvedMode == "item-cooldown" then
+        if type(resolvedDurObj) ~= "nil" then
+            realCdDur = resolvedDurObj
+        end
+    elseif type(resolvedSpellID) ~= "nil"
+        and Sources and Sources.QuerySpellCooldownDuration then
         realCdDur = Sources.QuerySpellCooldownDuration(resolvedSpellID, true)
     end
-    local curve = realCdDur and GetCooldownDesatCurve()
-    if realCdDur and curve and realCdDur.EvaluateRemainingPercent
+    local curve = GetCooldownDesatCurve()
+    if type(realCdDur) ~= "nil"
+        and type(curve) ~= "nil"
+        and realCdDur.EvaluateRemainingPercent
         and icon.Icon.SetDesaturation then
         icon.Icon:SetDesaturation(realCdDur:EvaluateRemainingPercent(curve))
         return
@@ -992,7 +1033,8 @@ ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
     if not resolvedState then return false end
     local entryIsAura = entry and IsAuraEntry(entry)
     local itemEntryForCooldown = entry
-        and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot")
+        and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot"
+            or entry.type == "consumable")
     if resolvedState
        and resolvedState.hasRenderableCooldown ~= true
        and not entryIsAura
@@ -1190,14 +1232,15 @@ ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
     icon._lastResolvedSpellID = sid or resolvedSpellID
 
     local applied
-    if durObj then
+    if type(durObj) ~= "nil" then
         if measure then
             applied = measure(
                 "CDM_applyCooldownFrame",
                 _resolverRuntimePolicy.ApplyDurationObjectCooldown,
                 addonCD, durObj, true, mode == "aura")
         else
-            applied = _resolverRuntimePolicy.ApplyDurationObjectCooldown(addonCD, durObj, true, mode == "aura")
+            applied = _resolverRuntimePolicy.ApplyDurationObjectCooldown(
+                addonCD, durObj, true, mode == "aura")
         end
     elseif hasNumericCooldown then
         if ns.CDMRenderers and ns.CDMRenderers.ApplyNumericCooldown then
@@ -1683,6 +1726,7 @@ UpdateIconSecureAttributes = function(icon, entry, viewerType)
         icon._pendingSecureUpdate = true
         return
     end
+    icon._pendingSecureUpdate = nil
 
     if viewerType == "buff" then
         if icon.clickButton then
@@ -1735,14 +1779,16 @@ UpdateIconSecureAttributes = function(icon, entry, viewerType)
             ClearClickButtonAttributes(btn)
             btn:Hide()
         end
-    elseif entry.type == "item" then
-        local itemID = (Sources and Sources.QueryBestOwnedItemVariant
-            and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
+    elseif entry.type == "item" or entry.type == "consumable" then
+        local itemID = GetItemIDForEntry(entry)
         local itemName = Sources and Sources.QueryItemNameByID and Sources.QueryItemNameByID(itemID)
         if itemName then
             btn:SetAttribute("type", "item")
             btn:SetAttribute("item", itemName)
             btn:Show()
+            if entry.type == "consumable" then
+                icon._lastConsumableSecureItemID = itemID
+            end
         else
             ClearClickButtonAttributes(btn)
             btn:Hide()
@@ -1770,7 +1816,6 @@ UpdateIconSecureAttributes = function(icon, entry, viewerType)
         end
     end
 
-    icon._pendingSecureUpdate = nil
 end
 
 function CDMIcons.UpdateSecureClickOverlay(icon, entry, viewerType)
@@ -2226,7 +2271,12 @@ function GetTrackerSettings(viewerType)
 
     local db = GetDB()
     if not db or not viewerType then return nil end
-    if db[viewerType] then return db[viewerType] end
+    if (Shared and Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(viewerType))
+        or (Shared and Shared.GetBuiltinContainerEntryKind
+            and Shared.GetBuiltinContainerEntryKind(viewerType) ~= nil)
+        or GetBuiltinContainerType(viewerType) then
+        return db[viewerType]
+    end
     return db.containers and db.containers[viewerType] or nil
 end
 
@@ -2576,11 +2626,16 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
         if stackTextWritesAllowed then
             _resolverRuntimePolicy.HideIconStackText(icon, "slot-clear")
         end
-    elseif entry.type == "item" then
-        local itemID = (Sources and Sources.QueryBestOwnedItemVariant
-            and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
-        RefreshItemIconVisuals(icon, entry, itemID)
-        if stackTextWritesAllowed and Sources and Sources.QueryItemCount then
+    elseif entry.type == "item" or entry.type == "consumable" then
+        local itemID = GetItemIDForEntry(entry)
+        if itemID and entry.type == "item" then
+            RefreshItemIconVisuals(icon, entry, itemID)
+        end
+        if itemID and entry.type == "consumable"
+            and icon._lastConsumableSecureItemID ~= itemID then
+            UpdateIconSecureAttributes(icon, entry, entry.viewerType)
+        end
+        if itemID and stackTextWritesAllowed and Sources and Sources.QueryItemCount then
             local containerDB = GetTrackerSettings(entry.viewerType)
             local includeUses = containerDB and containerDB.showItemCharges == true
             local count = Sources.QueryItemCount(itemID, false, includeUses, true)
@@ -2617,6 +2672,8 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
             else
                 _resolverRuntimePolicy.ShowIconStackText(icon, "0", containerDB, "item-count-fallback")
             end
+        elseif stackTextWritesAllowed then
+            _resolverRuntimePolicy.HideIconStackText(icon, "item-count-missing-item")
         end
     else
         local _chargedAuraActive = false
@@ -2731,7 +2788,7 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
             "mode=", tostring(resolvedMode),
             "start=", tostring(startTime),
             "duration=", tostring(duration),
-            "durObj=", durObj and "yes" or "no",
+            "durObj=", type(durObj) ~= "nil" and "yes" or "no",
             "active=", tostring(resolvedActive),
             "hasCharges=", tostring(runtimeHasCharges),
             "entryHasCharges=", tostring(entry.hasCharges),
@@ -2764,7 +2821,7 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
                 "real=", tostring(realCooldownActive),
                 "gcdOnly=", tostring(resolvedMode == "gcd-only"),
                 "resolvedActive=", tostring(resolvedActive),
-                "durObj=", durObj and "yes" or "no")
+                "durObj=", type(durObj) ~= "nil" and "yes" or "no")
         end
 
         local prevGCD = icon._wasShowingGCDSwipe or false
@@ -2985,7 +3042,8 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
             elseif not InCombatLockdown() then
                 _resolverRuntimePolicy.HideIconStackText(icon, "item-aura-stack-nil")
             end
-        elseif stackTextWritesAllowed and not _chargeCountForwarded and entry.type ~= "item" then
+        elseif stackTextWritesAllowed and not _chargeCountForwarded
+            and entry.type ~= "item" and entry.type ~= "consumable" then
             local stackVal = GetAuraApplicationsForSpell(_runtimeSid, entry, icon)
             if _resolverRuntimePolicy.ValueIsPresent(stackVal) then
                 local displayText
@@ -3041,7 +3099,8 @@ end
 
 local function BuildSpellEntryFromCustom(entry, idx, viewerType)
     if type(entry) ~= "table" or entry.id == nil then return nil end
-    local isSpellType = (entry.type ~= "item" and entry.type ~= "trinket" and entry.type ~= "slot")
+    local isSpellType = (entry.type ~= "item" and entry.type ~= "trinket"
+        and entry.type ~= "slot" and entry.type ~= "consumable")
     local kind = entry.kind
     if not (kind == "aura" or kind == "cooldown") then
         if not isSpellType then
@@ -3569,10 +3628,17 @@ local function ApplyIconVisibility(icon, shouldShow, dynamicLayout)
     end
 end
 
+local function GetRuntimeContainerDB(containerKey, ncdm, ncdmContainers)
+    if ncdm and GetBuiltinContainerType(containerKey) then
+        return ncdm[containerKey]
+    end
+    return ncdmContainers and ncdmContainers[containerKey] or nil
+end
+
 local function ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
     if not entry then return nil, "cooldown" end
 
-    local containerDB = ncdm and (ncdm[entry.viewerType] or (ncdmContainers and ncdmContainers[entry.viewerType]))
+    local containerDB = GetRuntimeContainerDB(entry.viewerType, ncdm, ncdmContainers)
     local cType = containerDB and containerDB.containerType
     if not cType then
         local vt = entry.viewerType
@@ -3797,8 +3863,7 @@ local function RefreshAllIcon(icon, context)
     local isHiddenOverride = spellOvr and spellOvr.hidden
 
     if entry then
-        local containerDB = ncdm
-            and (ncdm[entry.viewerType] or (ncdmContainers and ncdmContainers[entry.viewerType]))
+        local containerDB = GetRuntimeContainerDB(entry.viewerType, ncdm, ncdmContainers)
 
         UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
 
@@ -4084,6 +4149,8 @@ end
 
 function CDMIcons.OnFactoryIconAcquired(icon, entry, reused)
     if not icon then return end
+    local highlighter = ns._OwnedHighlighter
+    if highlighter and highlighter.PrepareIcon then highlighter.PrepareIcon(icon) end
     if reused then
         CancelCooldownExpiryRefresh(icon)
         _resolverRuntimePolicy.StopCustomBarActiveGlow(icon)
@@ -4115,11 +4182,17 @@ function CDMIcons.OnFactoryIconReleased(icon)
         ns.CDMRuntimeStore.ClearFrame(icon)
     end
     UnmirrorBlizzCooldown(icon)
+    if ns._OwnedGlows and ns._OwnedGlows.StopGlow then
+        ns._OwnedGlows.StopGlow(icon)
+    end
     if ns._OwnedGlows and ns._OwnedGlows.ClearPandemicState then
         ns._OwnedGlows.ClearPandemicState(icon)
     end
     if ns._OwnedGlows and ns._OwnedGlows.StopGrowPop then
         ns._OwnedGlows.StopGrowPop(icon)
+    end
+    if ns._OwnedHighlighter and ns._OwnedHighlighter.OnIconRelease then
+        ns._OwnedHighlighter.OnIconRelease(icon)
     end
     if _G.QUI_ClearKeybindIconState then
         _G.QUI_ClearKeybindIconState(icon)
@@ -4151,8 +4224,13 @@ function CustomCDM:UpdateAllCooldowns() CDMIcons:UpdateAllCooldowns() end
 local rangePolicy = ns.CDMIconRangePolicy and ns.CDMIconRangePolicy.Create({
     getDB = GetDB,
     resolveSettings = function(viewerType, cachedDB)
-        return (cachedDB and (cachedDB[viewerType] or (cachedDB.containers and cachedDB.containers[viewerType])))
-            or GetTrackerSettings(viewerType)
+        if cachedDB and GetBuiltinContainerType(viewerType) then
+            return cachedDB[viewerType]
+        end
+        if cachedDB and cachedDB.containers then
+            return cachedDB.containers[viewerType]
+        end
+        return GetTrackerSettings(viewerType)
     end,
     querySpellInRange = function(spellID, unit)
         return Sources and Sources.QuerySpellInRange and Sources.QuerySpellInRange(spellID, unit)
@@ -4160,6 +4238,10 @@ local rangePolicy = ns.CDMIconRangePolicy and ns.CDMIconRangePolicy.Create({
     querySpellUsable = function(spellID)
         return Sources and Sources.QuerySpellUsable and Sources.QuerySpellUsable(spellID)
     end,
+    queryItemUsable = function(itemID)
+        return Sources and Sources.QueryItemUsable and Sources.QueryItemUsable(itemID)
+    end,
+    getItemIDForEntry = GetItemIDForEntry,
     querySpellHasRange = function(spellID)
         return Sources and Sources.QuerySpellHasRange and Sources.QuerySpellHasRange(spellID)
     end,
@@ -4219,20 +4301,6 @@ local function UpdateIconsForSpellRangeEvent(spellIdentifier, isInRange, checksR
     if rangePolicy then
         rangePolicy:UpdateIconsForSpellRangeEvent(iconPools, spellIdentifier, isInRange, checksRange)
     end
-end
-
-local function GetItemIDForEntry(entry)
-    if not entry then return nil end
-    local entryType = entry.type
-    if entryType == "item" then
-        return (Sources and Sources.QueryBestOwnedItemVariant
-            and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
-    end
-    if (entryType == "trinket" or entryType == "slot")
-        and Sources and Sources.QueryInventoryItemID then
-        return Sources.QueryInventoryItemID("player", entry.id)
-    end
-    return nil
 end
 
 local cdEventFrame = CreateFrame("Frame")
@@ -4362,6 +4430,12 @@ function _resolverRuntimePolicy.ApplyAuraScopedResolvedCooldown(icon, entry, edi
 end
 
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5)
+    if event == "PLAYER_REGEN_ENABLED" then
+        local highlighter = ns._OwnedHighlighter
+        if highlighter and highlighter.DrainPreparedTargets then
+            highlighter.DrainPreparedTargets()
+        end
+    end
     local profileStart = _resolverRuntimePolicy.eventProfilingActive and debugprofilestop and debugprofilestop()
     CDMIcons.EventTracePrint("frame-pre", event, arg1, arg2, arg3, arg4, arg5)
     _resolverRuntimePolicy.HandleRuntimeRefresh(event, arg1, arg2, arg3, arg4, self)
@@ -4506,6 +4580,12 @@ do
                 or false
         end,
         getItemIDForEntry = GetItemIDForEntry,
+        getLinkedSpellIDsForSpellID = function(spellID)
+            local spellData = ns.CDMSpellData
+            if spellData and spellData.GetLinkedSpellIDsForSpellID then
+                return spellData.GetLinkedSpellIDsForSpellID(spellID)
+            end
+        end,
         queryItemSpell = function(itemID)
             if Sources and Sources.QueryItemSpell then
                 return Sources.QueryItemSpell(itemID)
@@ -4552,6 +4632,11 @@ do
             end
         end,
         invalidateMacroCache = InvalidateMacroCache,
+        invalidateConsumableCategoryItems = function()
+            if Sources and Sources.InvalidateConsumableCategoryItems then
+                Sources.InvalidateConsumableCategoryItems()
+            end
+        end,
         updateIconsForSpellRangeEvent = UpdateIconsForSpellRangeEvent,
         clearTextureCycleCache = function()
             wipe(_textureCycleCache)
@@ -4587,6 +4672,16 @@ do
                 ns.CDMCustomAuraRuns.RefreshTargets(identityChanged)
             end
         end,
+        refreshPendingSecureAttributes = function()
+            for _, pool in pairs(iconPools) do
+                for _, icon in ipairs(pool) do
+                    if icon and icon._pendingSecureUpdate then
+                        local entry = icon._spellEntry
+                        UpdateIconSecureAttributes(icon, entry, entry and entry.viewerType)
+                    end
+                end
+            end
+        end,
     }
     runtimeRefresh = ns.CDMIconRuntimeRefresh and ns.CDMIconRuntimeRefresh.Create(callbacks)
 
@@ -4608,9 +4703,9 @@ local function OnCDMCooldownChanged(_, spellID, baseSpellID, kind, category, sta
     end
 end
 
-local function OnCDMChargesChanged(_, spellID)
+local function OnCDMChargesChanged(_, spellID, baseSpellID)
     if runtimeRefresh then
-        return runtimeRefresh:HandleChargesChanged(_, spellID)
+        return runtimeRefresh:HandleChargesChanged(_, spellID, baseSpellID)
     end
 end
 

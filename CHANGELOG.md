@@ -4,6 +4,197 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.2-beta9 - 2026-08-24
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Group-frame awareness, raid-release protection, and combat-feedback fixes for
+the 5.2.2 beta line.
+
+### Added
+
+- **Raid releases can require Ctrl after a three-second safety delay.** Enable
+  Block Release in Raids to reduce accidental releases before a battle rez.
+- **Group frames can show non-dispellable debuff types as health gradients.**
+  Actionable dispels retain the full overlay and cleanse-ready glow.
+- **Cooldown Manager icon containers have configurable pressed effects.** Choose
+  Off, Blizzard Default, or QUI independently for each icon container.
+
+### Fixed
+
+- **Group-frame range fading preserves life-state visuals.** Dead, offline, and
+  other state fades no longer get replaced by the range result, and invisible
+  aura buttons no longer intercept mouse input.
+- **Action Bar range and usability colors follow native state events.** Button
+  tinting stays current through paging, stance, and combat transitions.
+- **Cooldown Manager feedback follows the active icon and action.** Cast
+  highlights and held-press effects work across reanchored, pooled, and remapped
+  icons without carrying stale state between abilities.
+- **Inactive tracked buff bars hide after Layout Mode exits.** Preview state no
+  longer keeps an inactive owned bar visible.
+
+## v5.2.2-beta8 - 2026-08-24
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Combat-safe Lust Timer, castbar anchoring, and Cooldown Manager count fixes for
+the 5.2.2 beta line.
+
+### Fixed
+
+- **The Lust Timer follows Blizzard's live aura state.** Its countdown and
+  visibility stay current when Lust is applied or expires during combat.
+- **Target and boss castbars avoid protected unit-frame anchors.** Configured
+  position and width are preserved without inheriting restricted geometry.
+- **Owned cooldown icons show spell cast and use counts.** Resource counts such
+  as Vengeance Soul Fragments display through secret-safe native sinks.
+
+## v5.2.2-beta7 - 2026-08-23
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager proc-glow cleanup for the 5.2.2 beta line.
+
+### Fixed
+
+- **Cooldown Manager proc glows stop when icons are released.** Blizzard pool
+  releases and QUI factory cleanup now stop owned glow state, preventing stale
+  animations from carrying into recycled icon frames.
+
+## v5.2.2-beta6 - 2026-08-23
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Combat UI additions, search-routing fixes, and completed locale coverage for
+the 5.2.2 beta line.
+
+### Added
+
+- **Group-frame click-casting supports items.** Drag an item into a binding and
+  trigger it with a mouse button, keyboard key, or mouse wheel.
+- **Tracked nameplate debuffs can tint health bars.** Configure the color and
+  opacity applied while a tracked aura is active.
+- **Damage Meter tooltips show player item level.** Hovered player rows use the
+  shared inspection cache and refresh when asynchronous inspection completes.
+- **Totem Bar buttons can be resized.** A new Button Size setting updates the
+  bar layout.
+
+### Changed
+
+- **Translations cover previously missing UI text.** All ten non-English locale
+  overlays now include the previously untranslated settings and interface text.
+
+### Fixed
+
+- **Stopped boss castbars stay hidden.** HUD visibility refreshes no longer
+  reveal a castbar after its boss frame disappears.
+- **Settings search opens the intended destination.** Group Frames, Nameplates,
+  and Action Bars results now resolve to their correct subpages.
+
+## v5.2.2-beta5 - 2026-08-23
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Profile sharing, aura-display visibility, and combat-reload hardening for the
+5.2.2 beta line.
+
+### Added
+
+- **Feature settings can be shared across profiles.** Aura Displays and Group /
+  Raid Frames can copy settings and anchors from another profile or stay pinned
+  to a source profile without replacing click-cast bindings.
+- **Tracked aura displays can keep inactive icons visible.** Choose active-only,
+  instance-only, or always-visible placeholders with desaturated icon styling.
+
+### Fixed
+
+- **Combat reloads preserve protected UI ownership.** Cooldown Manager, Chat,
+  Info Bar, Minimap, and Travel initialize or refresh through their safe startup
+  paths without blocked geometry or stale native frames.
+- **Cooldown charge and aura-phase state follows Blizzard's live sources.** Owned
+  icons retain native charge metadata and suppress eligible inactive aura phases.
+- **Bank and guild-bank controls use native protected flows.** Tab purchases,
+  guild-money dialogs, combat state, cursor deposits, and item tooltips stay in
+  sync with Blizzard's bank APIs.
+- **Group-frame names refresh their live layout.** Anchor, justification, bottom
+  padding, and party/raid preview context update without requiring a reload.
+
+## v5.2.2-beta4 - 2026-08-22
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager target-debuff, custom-bar storage, and consumable fixes for
+the 5.2.2 beta line.
+
+### Fixed
+
+- **Target-debuff cooldowns repair stale linked state.** Eligible Essential
+  and Utility entries recover their native cooldown display while preserving
+  Blizzard's timing ownership.
+- **Custom bars keep stable profile storage.** Custom containers migrate to
+  their canonical nested store without overwriting built-in container settings.
+- **Consumable categories resolve owned items consistently.** Cooldowns,
+  counts, usability, range state, tooltips, secure clicks, and debug identity
+  follow the currently owned potion or consumable.
+- **Secret duration values remain comparison-safe.** Consumable and cooldown
+  refreshes avoid unsafe comparisons when the client returns protected values.
+
+## v5.2.2-beta3 - 2026-08-21
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager cross-unit aura refresh and combat-safe reanchor fixes for
+the 5.2.2 beta line.
+
+### Fixed
+
+- **Linked aura refreshes follow self-unit changes.** Cooldown icons now
+  refresh when linked auras appear or change on another self unit, including
+  pet aura deltas and unknown/full refreshes.
+- **Aura-phase reanchors preserve native ownership.** Native cooldown timing
+  stays Blizzard-owned while QUI-owned replacements handle suppressed phases,
+  including expiry and duplicate-update guards.
+- **Combat refreshes defer protected work.** Aura-phase transitions queue
+  reanchors until combat ends instead of mutating protected frames in combat.
+- **Consumable cooldowns refresh consistently.** Linked aura state,
+  visibility, and cooldown bling now update for consumable entries.
+
+## v5.2.2-beta2 - 2026-08-21
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager aura timing and runtime safety fixes for the 5.2.2 beta line.
+
+### Fixed
+
+- **Cooldown Manager aura timing follows stable ownership metadata.** Aura-
+  phase display changes now reanchor correctly when tracked aura state changes.
+- **Keystone insertion closes QUI's bag takeover.** The bag takeover state now
+  releases after a keystone is inserted.
+- **Quest auto-acceptance requires a strict boolean result.** Protected or
+  non-boolean values no longer accidentally authorize automatic acceptance.
+
+## v5.2.2-beta1 - 2026-08-21
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Opens the 5.2.2 beta line with tracked buff-bar color override fixes.
+
+### Fixed
+
+- **Tracked buff bars respect configured per-spell colors.** Overrides now
+  apply through the live renderer for configured and linked spell identities
+  instead of falling back to class color.
+
 ## v5.2.1 - 2026-08-20
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
