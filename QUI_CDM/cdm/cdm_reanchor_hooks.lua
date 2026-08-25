@@ -72,7 +72,6 @@ function CDMReanchorHooks.New(deps)
         _getMixinForKey = deps.getMixinForKey,
         _blankKeys = deps.blankKeys or {},
         _immediateRefreshLayoutKeys = deps.immediateRefreshLayoutKeys or deps.immediateKeys or {},
-        _immediateAcquireKeys = deps.immediateAcquireKeys or {},
         _isClaimed = deps.isClaimed,
         _installGuard = deps.installGuard,
         _installGuardKeys = deps.installGuardKeys or {},
@@ -110,14 +109,6 @@ function CDMReanchorHooks:MarkImmediate(key)
         self._refreshMany({ key })
     elseif self._refresh then
         self._refresh(key)
-    end
-end
-
-function CDMReanchorHooks:MarkAcquire(key)
-    if self._immediateAcquireKeys[key] then
-        self:MarkImmediate(key)
-    else
-        self:MarkDirty(key)
     end
 end
 
@@ -292,7 +283,7 @@ function CDMReanchorHooks:InstallViewerHooks(getViewer)
                 local function onAcquire(_, itemFrame)
                     hooks:_InstallFrameHooks(itemFrame, key)
                     hooks:MaybeBlankOnAcquire(key, itemFrame)
-                    hooks:MarkAcquire(key)
+                    hooks:MarkDirty(key)
                 end
                 hooksec(viewer, "OnAcquireItemFrame", function(...) _securecall(onAcquire, ...) end)
             end
@@ -311,7 +302,7 @@ function CDMReanchorHooks:InstallViewerHooks(getViewer)
                     EnumerateViewerFrames(viewer, function(frame)
                         hooks:_InstallFrameHooks(frame, key)
                     end)
-                    hooks:MarkAcquire(key)
+                    hooks:MarkDirty(key)
                 end
                 hooksec(pool, "Acquire", function(...) _securecall(onPoolAcquire, ...) end)
                 if pool.Release then
