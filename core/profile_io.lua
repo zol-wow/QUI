@@ -2500,8 +2500,31 @@ function QUICore:PinProfileSelection(sourceProfileName, categoryID)
     return true, ("Pinned selected settings to profile '%s'."):format(sourceName)
 end
 
+function QUICore:PinCurrentProfileSelection(categoryID)
+    if not SettingsPins:IsProfileFeatureSupported(categoryID) then
+        return false, "Only Aura Displays and Group / Raid Frames can use profile pins."
+    end
+
+    local db = self.db
+    local currentName = db and db.GetCurrentProfile and db:GetCurrentProfile() or nil
+    if type(currentName) ~= "string" or currentName == "" then
+        return false, "No profile loaded."
+    end
+
+    SettingsPins:SyncProfileFeatureSources(db, categoryID)
+    local specID = ns.Helpers and ns.Helpers.GetCurrentSpecID and ns.Helpers.GetCurrentSpecID() or nil
+    local pinned, pinError = SettingsPins:SetGlobalProfileFeatureSource(currentName, categoryID, db, specID)
+    if not pinned then
+        return false, pinError
+    end
+    return true, ("Pinned selected settings from profile '%s' across all profiles."):format(currentName)
+end
+
 function QUICore:UnpinProfileSelection(categoryID)
     SettingsPins:SyncProfileFeatureSources(self.db, categoryID)
+    if SettingsPins:GetGlobalProfileFeatureSource(categoryID, self.db) then
+        return SettingsPins:ClearGlobalProfileFeatureSource(categoryID, self.db)
+    end
     return SettingsPins:ClearProfileFeatureSource(categoryID, self.db)
 end
 
