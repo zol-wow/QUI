@@ -2434,7 +2434,7 @@ function QUICore:CopyProfileSelection(sourceProfileName, categoryIDs, skipPinned
         for _, categoryID in ipairs(categoryIDs) do
             local category = PROFILE_IMPORT_CATEGORY_BY_ID[categoryID]
             local pinCategoryID = category and category.profileFeaturePinID
-            if pinCategoryID and SettingsPins:GetProfileFeatureSource(pinCategoryID, db) then
+            if pinCategoryID and SettingsPins:GetEffectiveProfileFeatureSource(pinCategoryID, db) then
                 return false, "Unpin this feature before copying its settings."
             end
         end
@@ -2464,6 +2464,31 @@ end
 
 function QUICore:GetProfileFeatureSource(categoryID)
     return SettingsPins:GetProfileFeatureSource(categoryID, self.db)
+end
+
+function QUICore:GetGlobalProfileFeatureSource(categoryID)
+    return SettingsPins:GetGlobalProfileFeatureSource(categoryID, self.db)
+end
+
+function QUICore:IsProfileFeaturePinOptedOut(categoryID)
+    return SettingsPins:IsProfileFeaturePinOptedOut(categoryID, self.db)
+end
+
+function QUICore:SetProfileFeaturePinOptOut(categoryID, optedOut)
+    local changed, changeError = SettingsPins:SetProfileFeaturePinOptOut(categoryID, optedOut, self.db)
+    if not changed then
+        return false, changeError
+    end
+    if optedOut then
+        return true, "The current profile now uses its own settings."
+    end
+
+    if not SettingsPins:ApplyProfileFeaturePins(self.db, { categoryID }) then
+        SettingsPins:SetProfileFeaturePinOptOut(categoryID, true, self.db)
+        return false, "Could not apply the pinned settings."
+    end
+    SettingsPins:ApplyAllForDB(self.db)
+    return true, "The current profile now uses the pinned settings."
 end
 
 function QUICore:SyncProfileFeatureSources(categoryID)

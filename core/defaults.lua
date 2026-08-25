@@ -4375,9 +4375,10 @@ local defaults = {
             entries = {},
         },
         profileFeaturePins = {
-            _version = 2,
+            _version = 3,
             profiles = {},
             sources = {},
+            optOuts = {},
         },
         mailContacts = {},
         spellScanner = {
