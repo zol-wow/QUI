@@ -79,7 +79,7 @@ hardening Cooldown Manager, protected UI, and native event handling.
   keyboard keys, or the mouse wheel.
 - **Group tools expose more actionable state.** Debuff gradients show
   non-dispellable types, and raid releases can require Ctrl after a safety delay.
-- **Combat modules gain focused controls.** Cooldown Manager pressed effects,
+- **Combat modules gain focused controls.** Cooldown Manager cooldown-icon pressed effects,
   Totem Bar sizing, and Damage Meter item-level tooltips are configurable.
 
 ### Changed
@@ -115,8 +115,8 @@ the 5.2.2 beta line.
   Block Release in Raids to reduce accidental releases before a battle rez.
 - **Group frames can show non-dispellable debuff types as health gradients.**
   Actionable dispels retain the full overlay and cleanse-ready glow.
-- **Cooldown Manager icon containers have configurable pressed effects.** Choose
-  Off, Blizzard Default, or QUI independently for each icon container.
+- **Cooldown Manager cooldown icon containers have configurable pressed effects.**
+  Choose Off, Blizzard Default, or QUI independently for each container.
 
 ### Fixed
 

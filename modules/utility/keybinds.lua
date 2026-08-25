@@ -94,7 +94,7 @@ local function IsAnyKeybindFeatureEnabled()
                 and settings.enabled ~= false
                 and settings.pressedEffect ~= "off"
         end
-        if Enabled(ncdm.essential) or Enabled(ncdm.utility) or Enabled(ncdm.buff) then
+        if Enabled(ncdm.essential) or Enabled(ncdm.utility) then
             return true
         end
         local shared = QUI.CDMShared

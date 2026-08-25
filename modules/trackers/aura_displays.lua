@@ -821,6 +821,10 @@ function AD.RegisterLayoutElement(display)
         getFrame = function()
             return hosts[id]
         end,
+        getSize = function()
+            local host = hosts[id]
+            return host and host._naturalW, host and host._naturalH
+        end,
     })
     if _G.QUI_RegisterFrameResolver then
         _G.QUI_RegisterFrameResolver(AD.ANCHOR_PREFIX .. id, {
