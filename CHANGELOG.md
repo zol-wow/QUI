@@ -4,6 +4,19 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta2 - 2026-08-25
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Action Bar autohide tint fixes for the 5.2.3 beta line.
+
+### Fixed
+
+- **Action Bar range and usability colors respect autohide state.** Reloading
+  while a bar is fully hidden or partially faded no longer reveals those colors
+  early, and the saved tint returns only when the bar is fully shown.
+
 ## v5.2.3-beta1 - 2026-08-24
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
