@@ -17,7 +17,7 @@ local tostring = tostring
 local type = type
 
 local PIN_STORE_VERSION = 1
-local PROFILE_FEATURE_PIN_VERSION = 2
+local PROFILE_FEATURE_PIN_VERSION = 3
 local STALE_MISS_LIMIT = 3
 
 local PROFILE_FEATURE_CATEGORIES = {
@@ -497,6 +497,7 @@ local function GetProfileFeatureStore(db, create)
             _version = PROFILE_FEATURE_PIN_VERSION,
             profiles = {},
             sources = {},
+            optOuts = {},
         }
         globalDB.profileFeaturePins = store
     end
@@ -509,6 +510,9 @@ local function GetProfileFeatureStore(db, create)
     end
     if type(store.sources) ~= "table" then
         store.sources = {}
+    end
+    if type(store.optOuts) ~= "table" then
+        store.optOuts = {}
     end
     return store
 end
@@ -544,6 +548,22 @@ local function GetGlobalProfileFeatureEntry(store, categoryID)
         return nil, nil
     end
     return source, type(entry.specID) == "number" and entry.specID or nil
+end
+
+local function IsProfileFeaturePinOptedOut(store, profileName, categoryID)
+    local profileOptOuts = store and store.optOuts and store.optOuts[profileName] or nil
+    return type(profileOptOuts) == "table" and profileOptOuts[categoryID] == true
+end
+
+local function ClearProfileFeaturePinOptOuts(store, categoryID)
+    for profileName, profileOptOuts in pairs(store and store.optOuts or {}) do
+        if type(profileOptOuts) == "table" then
+            profileOptOuts[categoryID] = nil
+            if next(profileOptOuts) == nil then
+                store.optOuts[profileName] = nil
+            end
+        end
+    end
 end
 
 local function MaterializeProfileDefaults(target, defaults)
@@ -763,6 +783,13 @@ function Pins:SetGlobalProfileFeatureSource(sourceProfile, categoryID, db, sourc
         profile = sourceProfile,
         specID = type(sourceSpecID) == "number" and sourceSpecID or nil,
     }
+    local sourceOptOuts = store.optOuts[sourceProfile]
+    if type(sourceOptOuts) == "table" then
+        sourceOptOuts[categoryID] = nil
+        if next(sourceOptOuts) == nil then
+            store.optOuts[sourceProfile] = nil
+        end
+    end
     self._profileFeatureSpecID = type(sourceSpecID) == "number" and sourceSpecID or GetCurrentSpecID()
     for targetProfile, profilePins in pairs(store.profiles) do
         if type(profilePins) == "table" then
@@ -781,7 +808,75 @@ function Pins:ClearGlobalProfileFeatureSource(categoryID, db)
         return false, "Profile feature pin not found."
     end
     store.sources[categoryID] = nil
+    ClearProfileFeaturePinOptOuts(store, categoryID)
     return true
+end
+
+function Pins:IsProfileFeaturePinOptedOut(categoryID, db, targetProfile)
+    db = db or GetCurrentDB()
+    targetProfile = targetProfile or self:GetCurrentProfileName(db)
+    local store = GetProfileFeatureStore(db, false)
+    local sourceProfile = GetGlobalProfileFeatureEntry(store, categoryID)
+    return sourceProfile ~= nil and targetProfile ~= sourceProfile
+        and IsProfileFeaturePinOptedOut(store, targetProfile, categoryID)
+end
+
+function Pins:SetProfileFeaturePinOptOut(categoryID, optedOut, db, targetProfile)
+    db = db or GetCurrentDB()
+    targetProfile = targetProfile or self:GetCurrentProfileName(db)
+    if not PROFILE_FEATURE_CATEGORIES[categoryID] then
+        return false, "Unsupported profile feature."
+    end
+    if type(targetProfile) ~= "string" or targetProfile == "" then
+        return false, "No profile loaded."
+    end
+
+    local store = GetProfileFeatureStore(db, false)
+    local sourceProfile = GetGlobalProfileFeatureEntry(store, categoryID)
+    if not sourceProfile then
+        return false, "Profile feature pin not found."
+    end
+    if targetProfile == sourceProfile then
+        return false, "The source profile cannot ignore its own pin."
+    end
+
+    if optedOut and targetProfile == self:GetCurrentProfileName(db) then
+        self:SyncProfileFeatureSources(db, categoryID)
+    end
+
+    if optedOut then
+        local profileOptOuts = store.optOuts[targetProfile]
+        if type(profileOptOuts) ~= "table" then
+            profileOptOuts = {}
+            store.optOuts[targetProfile] = profileOptOuts
+        end
+        profileOptOuts[categoryID] = true
+    else
+        local profileOptOuts = store.optOuts[targetProfile]
+        if type(profileOptOuts) == "table" then
+            profileOptOuts[categoryID] = nil
+            if next(profileOptOuts) == nil then
+                store.optOuts[targetProfile] = nil
+            end
+        end
+    end
+    return true
+end
+
+function Pins:GetEffectiveProfileFeatureSource(categoryID, db, targetProfile)
+    db = db or GetCurrentDB()
+    targetProfile = targetProfile or self:GetCurrentProfileName(db)
+    local store = GetProfileFeatureStore(db, false)
+    local globalSource = GetGlobalProfileFeatureEntry(store, categoryID)
+    if globalSource then
+        if targetProfile ~= globalSource and IsProfileFeaturePinOptedOut(store, targetProfile, categoryID) then
+            return nil
+        end
+        return globalSource
+    end
+    local profilePins = store and store.profiles[targetProfile] or nil
+    local source = type(profilePins) == "table" and profilePins[categoryID] or nil
+    return type(source) == "string" and source ~= "" and source or nil
 end
 
 function Pins:GetProfileFeatureSource(categoryID, db, targetProfile)
@@ -884,7 +979,10 @@ function Pins:SyncProfileFeatureSources(db, categoryID, activeSpecID)
             local sourceName = globalSource or (type(profilePins) == "table" and profilePins[pinnedCategoryID])
             local sourceProfile = type(profiles) == "table" and type(sourceName) == "string"
                 and rawget(profiles, sourceName) or nil
-            if (categoryID == nil or categoryID == pinnedCategoryID) and type(sourceProfile) == "table" then
+            local optedOut = globalSource and targetProfile ~= globalSource
+                and IsProfileFeaturePinOptedOut(store, targetProfile, pinnedCategoryID)
+            if (categoryID == nil or categoryID == pinnedCategoryID)
+                and type(sourceProfile) == "table" and not optedOut then
                 if globalSource and targetProfile == globalSource then
                     CopyProfileFeatureSpecBuckets(
                         sourceProfile,
@@ -941,13 +1039,15 @@ function Pins:ApplyProfileFeaturePins(db, categories)
     for _, categoryID in ipairs({ "groupFrames", "auraDisplays" }) do
         local globalSource, globalSpecID = GetGlobalProfileFeatureEntry(store, categoryID)
         local sourceName = globalSource or (type(profilePins) == "table" and profilePins[categoryID])
+        local optedOut = globalSource and targetProfile ~= globalSource
+            and IsProfileFeaturePinOptedOut(store, targetProfile, categoryID)
         if globalSource and targetProfile == globalSource then
             if (not allowed or allowed[categoryID]) and type(currentSpecID) == "number"
                 and type(globalSpecID) == "number" and currentSpecID ~= globalSpecID then
                 CopyProfileFeatureSpecBuckets(db.profile, db.profile, categoryID, currentSpecID, globalSpecID)
                 changed = true
             end
-        elseif type(sourceName) == "string" and sourceName ~= ""
+        elseif not optedOut and type(sourceName) == "string" and sourceName ~= ""
             and (not allowed or allowed[categoryID]) then
             local sourceSnapshot = self:BuildInactiveProfileSnapshot(db, sourceName)
             if sourceSnapshot then
@@ -982,13 +1082,17 @@ function Pins:HandleProfileFeatureSpecChanged(db)
     local categories = {}
     for _, categoryID in ipairs({ "groupFrames", "auraDisplays" }) do
         local sourceProfile, sourceSpecID = GetGlobalProfileFeatureEntry(store, categoryID)
-        if sourceProfile == currentProfile and type(sourceSpecID) == "number" then
-            CopyProfileFeatureSpecBuckets(db.profile, db.profile, categoryID, sourceSpecID, previousSpecID)
-        elseif sourceProfile then
-            self:SyncProfileFeatureSources(db, categoryID, previousSpecID)
-        end
-        if sourceProfile then
-            categories[#categories + 1] = categoryID
+        local optedOut = sourceProfile and currentProfile ~= sourceProfile
+            and IsProfileFeaturePinOptedOut(store, currentProfile, categoryID)
+        if not optedOut then
+            if sourceProfile == currentProfile and type(sourceSpecID) == "number" then
+                CopyProfileFeatureSpecBuckets(db.profile, db.profile, categoryID, sourceSpecID, previousSpecID)
+            elseif sourceProfile then
+                self:SyncProfileFeatureSources(db, categoryID, previousSpecID)
+            end
+            if sourceProfile then
+                categories[#categories + 1] = categoryID
+            end
         end
     end
     if #categories == 0 or not self:ApplyProfileFeaturePins(db, categories) then
@@ -1406,10 +1510,13 @@ function Pins:DropProfile(profileName, db)
         return
     end
 
+    store.optOuts[profileName] = nil
+
     for categoryID in pairs(PROFILE_FEATURE_CATEGORIES) do
         local sourceProfile = GetGlobalProfileFeatureEntry(store, categoryID)
         if sourceProfile == profileName then
             store.sources[categoryID] = nil
+            ClearProfileFeaturePinOptOuts(store, categoryID)
         end
     end
 
