@@ -18935,9 +18935,11 @@ function UnitBattlePetSpeciesID(unit, ...) end
 function UnitBattlePetType(unit, ...) end
 ---@param unit? any
 ---@param target? any
+---@param canAssistImmunePC? boolean
+---@param canAssistUninteractable? boolean
 ---@param ... any
 ---@return boolean result
-function UnitCanAssist(unit, target, ...) end
+function UnitCanAssist(unit, target, canAssistImmunePC, canAssistUninteractable, ...) end
 ---@param unit? any
 ---@param target? any
 ---@param ... any
@@ -19373,6 +19375,11 @@ function UnitIsPVPSanctuary(unit, ...) end
 ---@param ... any
 ---@return boolean result
 function UnitIsPlayer(unit, partyIndex, ...) end
+--- Returns true for 'player', 'pet', 'vehicle', or any of 'partyn', 'partypetn', 'raidn', 'raidpetn'
+---@param unit? any
+---@param ... any
+---@return boolean result
+function UnitIsPlayerControlledOrGroupMember(unit, ...) end
 ---@param unit? any
 ---@param ... any
 ---@return boolean result
