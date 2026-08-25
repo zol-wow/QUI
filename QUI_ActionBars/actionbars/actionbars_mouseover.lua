@@ -49,6 +49,10 @@ function SetBarAlpha(barKey, alpha)
         elseif state.fadeHidden then
             FadeShowTextures(state, button)
         end
+        if not hidden and alpha >= 1 and state._fadeTint and state.tintOverlay then
+            state.tintOverlay:Show()
+            state._fadeTint = nil
+        end
     end
 
     local barFrame = GetBarFrame(barKey)
