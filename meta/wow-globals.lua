@@ -764,6 +764,7 @@ StaticPopup_FindVisible = nil ---@type any
 StaticPopup_Hide = nil ---@type any
 StaticPopup_OnClick = nil ---@type any
 StaticPopup_Show = nil ---@type any
+StaticPopup_Visible = nil ---@type any
 StatusTrackingBarInfo = nil ---@type any
 StatusTrackingBarManager = nil ---@type any
 StopDrag = nil ---@type any

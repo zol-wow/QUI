@@ -1,6 +1,6 @@
 -- luacheck: read globals MAX_GUILDBANK_TABS QueryGuildBankLog QueryGuildBankTab GetGuildBankTabCost
 -- luacheck: read globals ACCEPT CANCEL BuyGuildBankTab SetGuildBankTabInfo StaticPopup_OnClick
--- luacheck: read globals CanWithdrawGuildBankMoney InCombatLockdown StaticPopup_Hide StaticPopup_Visible
+-- luacheck: read globals CanWithdrawGuildBankMoney InCombatLockdown StaticPopup_Hide
 -- luacheck: read globals UNKNOWN NORMAL_FONT_COLOR_CODE GUILD_BANK_LOG_TIME RecentTimeDate
 -- luacheck: read globals GetNumGuildBankTransactions GetGuildBankTransaction
 -- luacheck: read globals GUILDBANK_DEPOSIT_FORMAT GUILDBANK_WITHDRAW_FORMAT GetGuildBankTabInfo
