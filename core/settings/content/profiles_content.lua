@@ -47,8 +47,9 @@ function ProfileCopyOptions.HasSourceProfile()
 end
 
 function ProfileCopyOptions.CreateCard(parent, opts)
-    if not ProfileCopyOptions.HasSourceProfile() then return nil end
     opts = opts or {}
+    local supportsPin = opts.fixedCategoryID == "groupFrames" or opts.fixedCategoryID == "auraDisplays"
+    if not supportsPin and not ProfileCopyOptions.HasSourceProfile() then return nil end
     local card = Shared.CreateSettingsCardGroup(parent, opts.yOffset or 0)
     local sourceState = { selected = "" }
     local categoryOptions = ProfileCopyOptions.GetCategoryOptions()
@@ -67,14 +68,21 @@ function ProfileCopyOptions.CreateCard(parent, opts)
         local core = GetCore()
         local pinnedSource = core and core.GetProfileFeatureSource
             and core:GetProfileFeatureSource(opts.fixedCategoryID) or nil
-        local label = pinnedSource and ns.L["Unpin"] or ns.L["Pin to Current Profile"]
+        local label = pinnedSource and ns.L["Unpin"] or ns.L["Pin across all profiles"]
         pinButton._buttonText = label
         if pinButton.text then pinButton.text:SetText(label) end
+        if pinnedSource then
+            pinButton._quiTooltipTitle = ns.L["Pinned globally"]
+            pinButton._quiTooltipDescription = ns.L["Click to unpin. Edits affect all profiles."]
+        else
+            pinButton._quiTooltipTitle = ns.L["Pin across all profiles"]
+            pinButton._quiTooltipDescription = ns.L["Capture the current value and keep it across profile switches."]
+        end
         if copyButton then
-            copyButton._enabled = not pinnedSource
-            if pinnedSource and type(copyButton.Disable) == "function" then
+            copyButton._enabled = not pinnedSource and sourceState.selected ~= ""
+            if not copyButton._enabled and type(copyButton.Disable) == "function" then
                 copyButton:Disable()
-            elseif not pinnedSource and type(copyButton.Enable) == "function" then
+            elseif type(copyButton.Enable) == "function" then
                 copyButton:Enable()
             end
         end
@@ -84,23 +92,18 @@ function ProfileCopyOptions.CreateCard(parent, opts)
         local core = GetCore()
         local dbRef = core and core.db
         local activeProfile = dbRef and dbRef:GetCurrentProfile() or ""
-        local pinnedSource = core and core.GetProfileFeatureSource and opts.fixedCategoryID
-            and core:GetProfileFeatureSource(opts.fixedCategoryID) or nil
         local options = {}
         local selectedAvailable = false
-        local pinnedAvailable = false
         if dbRef then
             for _, name in ipairs(dbRef:GetProfiles()) do
                 if name ~= activeProfile then
                     options[#options + 1] = { value = name, text = name }
                     if name == sourceState.selected then selectedAvailable = true end
-                    if name == pinnedSource then pinnedAvailable = true end
                 end
             end
         end
         sourceDropdown.SetOptions(options)
-        local selected = (pinnedAvailable and pinnedSource)
-            or (selectedAvailable and sourceState.selected)
+        local selected = (selectedAvailable and sourceState.selected)
             or (options[1] and options[1].value) or ""
         sourceState.selected = selected
         sourceDropdown:SetValue(selected, true)
@@ -143,8 +146,8 @@ function ProfileCopyOptions.CreateCard(parent, opts)
         })
     end)
     local pinCell
-    if opts.fixedCategoryID == "groupFrames" or opts.fixedCategoryID == "auraDisplays" then
-        pinButton = GUI:CreateButton(card.frame, ns.L["Pin to Current Profile"], 160, 22, function()
+    if supportsPin then
+        pinButton = GUI:CreateButton(card.frame, ns.L["Pin across all profiles"], 160, 22, function()
             local core = GetCore()
             if not core then return end
             local pinnedSource = core.GetProfileFeatureSource
@@ -157,31 +160,17 @@ function ProfileCopyOptions.CreateCard(parent, opts)
                 return
             end
 
-            local sourceName = sourceState.selected
-            if sourceName == "" or not core.PinProfileSelection then return end
-            local categoryLabel = opts.fixedCategoryLabel or categoryLabels[opts.fixedCategoryID] or opts.fixedCategoryID
-            GUI:ShowConfirmation({
-                title = ns.L["Copy Feature Settings?"],
-                message = string.format(ns.L["Copy %s settings from profile '%s'?"], categoryLabel, sourceName),
-                warningText = ns.L["This replaces the selected settings in the current profile and cannot be undone."],
-                acceptText = ns.L["Pin to Current Profile"],
-                cancelText = ns.L["Cancel"],
-                isDestructive = true,
-                onAccept = function()
-                    local currentCore = GetCore()
-                    if not currentCore then return end
-                    local ok = currentCore:PinProfileSelection(sourceName, opts.fixedCategoryID)
-                    if ok then
-                        if opts.onCopied then opts.onCopied(sourceName, opts.fixedCategoryID) end
-                        RefreshSources()
-                    end
-                end,
-            })
+            if not core.PinCurrentProfileSelection then return end
+            local ok = core:PinCurrentProfileSelection(opts.fixedCategoryID)
+            if ok then
+                if opts.onCopied then opts.onCopied(nil, opts.fixedCategoryID) end
+                RefreshSources()
+            end
         end)
         GUI:SetTooltipInfo(
             pinButton,
-            ns.L["Pinned settings stay synced with the source profile. Edits made here update the source when you switch profiles, reload, or unpin."],
-            ns.L["Pinned Settings"]
+            ns.L["Capture the current value and keep it across profile switches."],
+            ns.L["Pin across all profiles"]
         )
         pinCell = Shared.BuildSettingRow(
             card.frame,
