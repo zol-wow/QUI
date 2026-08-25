@@ -13,66 +13,6 @@ local RESOURCE_BAR_HEIGHT = 40
 local pendingOverrideSkin = false
 local pendingOverridePostUpdate = false
 local overrideActionBarLifecycleHooked = false
-local microMenuHome
-
-local function MicroMenuDockedInOverrideBar()
-    local menu = _G.MicroMenu
-    local bar = _G.OverrideActionBar
-    if not (menu and bar and menu.GetParent) then return false end
-    local parent = menu:GetParent()
-    local guard = 0
-    while guard < 8 do
-        if issecretvalue and issecretvalue(parent) then return false end -- @secret-policy: reject-secret-value
-        if not parent then return false end
-        if parent == bar then return true end
-        parent = parent.GetParent and parent:GetParent()
-        guard = guard + 1
-    end
-    return false
-end
-
-local function CacheMicroMenuHome()
-    local menu = _G.MicroMenu
-    if not menu then return end
-    if MicroMenuDockedInOverrideBar() then return end
-    local stride, isStacked, isHorizontal = menu.stride, menu.isStacked, menu.isHorizontal
-    local goingRight, goingUp = menu.layoutFramesGoingRight, menu.layoutFramesGoingUp
-    if issecretvalue and (issecretvalue(stride) or issecretvalue(isStacked)
-        or issecretvalue(isHorizontal) or issecretvalue(goingRight) or issecretvalue(goingUp)) then
-        return
-    end
-    microMenuHome = {
-        stride = stride,
-        isStacked = isStacked,
-        isHorizontal = isHorizontal,
-        goingRight = goingRight,
-        goingUp = goingUp,
-    }
-end
-
-local function ReclaimMicroMenuFromOverrideBar()
-    if type(InCombatLockdown) == "function" and InCombatLockdown() then return end
-    local menu = _G.MicroMenu
-    local container = _G.MicroMenuContainer
-    if not (menu and container) then return end
-    CacheMicroMenuHome()
-    if not MicroMenuDockedInOverrideBar() then return end
-    menu:SetParent(container)
-    if menu.ClearOverrideScale then menu:ClearOverrideScale() end
-    local home = microMenuHome
-    if home then
-        menu.stride = home.stride or menu.numButtons
-        menu.isStacked = home.isStacked
-        menu.isHorizontal = home.isHorizontal
-        menu.layoutFramesGoingRight = home.goingRight
-        menu.layoutFramesGoingUp = home.goingUp
-    else
-        menu.stride = menu.numButtons
-        menu.isStacked = false
-    end
-    if menu.Layout then menu:Layout() end
-    if container.Layout then container:Layout() end
-end
 
 local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
     if not button then return end
@@ -272,14 +212,11 @@ local function SkinOverrideActionBar()
     end
 
     SkinBase.MarkSkinned(bar)
-
-    C_Timer.After(0, ReclaimMicroMenuFromOverrideBar)
 end
 
 local function RunOverrideActionBarPostUpdate()
     pendingOverridePostUpdate = false
     SkinOverrideActionBar()
-    ReclaimMicroMenuFromOverrideBar()
 end
 
 local function DeferOverrideActionBarPostUpdate()
@@ -353,11 +290,10 @@ end
 local function HandleBarStateChange()
     local bar = _G.OverrideActionBar
     if not bar then return end
-    EnsureOverrideActionBarLifecycleHook(bar)
-    CacheMicroMenuHome()
 
     local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
     if not settings or not settings.skinOverrideActionBar then return end
+    EnsureOverrideActionBarLifecycleHook(bar)
 
     if not bar:IsShown() then return end
 
