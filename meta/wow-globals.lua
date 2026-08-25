@@ -677,6 +677,7 @@ SELL_ALL_JUNK_ITEMS_EXCLUDE_FLAG = nil ---@type any
 SHAMAN_TOTEM_PRIORITIES = nil ---@type any
 SLASH_QUICLEARSCAN1 = nil ---@type any
 SLASH_QUIDATAPANELS1 = nil ---@type any
+SLASH_QUIIC1 = nil ---@type any
 SLASH_QUIIMPLUSTIMER1 = nil ---@type any
 SLASH_QUIKB1 = nil ---@type any
 SLASH_QUILOG1 = nil ---@type any
