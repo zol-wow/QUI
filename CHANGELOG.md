@@ -4,6 +4,24 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta3 - 2026-08-25
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Blizzard UI ownership and combat-safe Group Frame aura updates for the 5.2.3
+beta line.
+
+### Fixed
+
+- **Group Frame aura layering waits until combat ends.** Aura containers no
+  longer read protected frame state while combat restrictions are active.
+- **Micro Menu ownership survives temporary Blizzard UI transitions.** Override
+  Action Bars, Pet Battles, and other external owners keep control until they
+  release the native menu.
+- **The Info Bar Shop button follows Blizzard's guarded toggle path.** Opening
+  the Shop closes other panels and respects Kiosk and frame-toggle restrictions.
+
 ## v5.2.3-beta2 - 2026-08-25
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
