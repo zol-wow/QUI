@@ -4,6 +4,23 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta5 - 2026-08-26
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Objective Tracker taint containment and OPie compatibility fixes for the 5.2.3
+beta line.
+
+### Fixed
+
+- **Scenario Objective Tracker layouts stay on Blizzard's native aura path.**
+  QUI no longer hooks module layout updates that could taint restricted aura
+  reads.
+- **OPie macro editing no longer throws errors during QUI keybind scans.** QUI
+  skips editor widgets instead of treating any `GetAction` method as an action
+  button.
+
 ## v5.2.3-beta4 - 2026-08-25
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
