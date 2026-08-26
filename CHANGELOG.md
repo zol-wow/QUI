@@ -4,6 +4,28 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta4 - 2026-08-25
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Settings layout and focused combat UI corrections for the 5.2.3 beta line.
+
+### Changed
+
+- **Cooldown Manager pressed effects apply only to cooldown icon containers.**
+  Buff icons no longer expose or receive the effect.
+
+### Fixed
+
+- **Expanding Group Frame aura settings keeps every following control in
+  place.** Targeted Spells, Dispel settings, and guidance text remain stacked
+  once below the growing aura list.
+- **Inactive Aura Display movers remain usable in Layout Mode.** Empty displays
+  retain their saved size instead of collapsing.
+- **Override Action Bar skinning leaves Micro Menu layout state to Blizzard.**
+  Temporary bar transitions no longer risk protected layout changes.
+
 ## v5.2.3-beta3 - 2026-08-25
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
