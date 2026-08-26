@@ -875,10 +875,6 @@ local function SkinObjectiveTracker()
                 hooksecurefunc(tracker, "SetCollapsed", DeferredScheduleBackdropUpdate)
             end
 
-            if tracker.LayoutContents then
-                hooksecurefunc(tracker, "LayoutContents", DeferredScheduleBackdropUpdate)
-            end
-
             if tracker.AddBlock and not SkinBase.GetFrameData(tracker, "addBlockHooked") then
                 hooksecurefunc(tracker, "AddBlock", function(trackerSelf, block)
                     C_Timer.After(0, function()
