@@ -4,6 +4,19 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta8 - 2026-08-27
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager swipe synchronization for the 5.2.3 beta line.
+
+### Fixed
+
+- **Cooldown Manager cooldown swipes no longer disappear early.** Ordinary
+  abilities, charge recharges, item cooldowns, and GCD-only swipes stay
+  synchronized when Blizzard refreshes their timing.
+
 ## v5.2.3-beta7 - 2026-08-27
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
