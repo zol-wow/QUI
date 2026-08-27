@@ -4,6 +4,29 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta6 - 2026-08-27
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Objective Tracker, Cooldown Manager, and castbar lifecycle fixes for the 5.2.3
+beta line.
+
+### Fixed
+
+- **Objective Tracker sizing transitions cleanly through Scenarios and
+  Delves.** Blizzard's native dimensions return during Scenario content, then
+  QUI's configured maximum width and height resume afterward.
+- **Objective Tracker styling better respects Blizzard-owned content.** Safer
+  refresh paths keep collapse, mover geometry, icons, bars, and backdrops in
+  sync without full content scans during combat.
+- **Closing or disabling QUI's Mythic+ timer restores Blizzard's Scenario
+  tracker** when QUI originally hid it, including combat transitions.
+- **Manual castbar widths remain authoritative when Auto-Width is disabled.**
+  Anchored castbars and their settings previews use the configured width.
+- **QUI no longer force-loads Blizzard's Cooldown Viewer.** Blizzard retains
+  ownership of its loading lifecycle and later settings callbacks.
+
 ## v5.2.3-beta5 - 2026-08-26
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
