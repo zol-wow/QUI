@@ -546,7 +546,7 @@ local defaults = {
 
         alts = {
             enabled = true,
-            window = { point = "CENTER", x = 0, y = 0, width = 920, height = 540 },
+            window = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0, width = 920, height = 540 },
             columns = {
                 ilvl = true, gold = true, played = true, rested = true,
                 zone = true, lastSeen = true, professions = true,
