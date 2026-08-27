@@ -74,35 +74,101 @@ local function Fold(text)
     return string.lower(text)
 end
 
-function ns.QUI_AuraDisplaysOptions.BuildListModel(displays, searchText, isCollapsed)
+-- Nested list model. `tree.children[""]` names the root groups and
+-- `tree.children[name]` each group's ordered child groups; groups render as a
+-- tree with their displays, then an Ungrouped section. While searching, a
+-- display matches on its own name or any ancestor group's name, collapse is
+-- ignored, and empty branches are pruned.
+function ns.QUI_AuraDisplaysOptions.BuildListModel(displays, searchText, isCollapsed, tree)
     local search = (type(searchText) == "string" and searchText ~= "") and Fold(searchText) or nil
-    local groups, order = {}, {}
+    local children = (type(tree) == "table" and type(tree.children) == "table")
+        and tree.children or {}
+
+    local buckets, ungrouped = {}, {}
     for i = 1, #displays do
         local display = displays[i]
-        local key = display.group or ""
-        local matches = not search
-            or Fold(display.name or ""):find(search, 1, true) ~= nil
-            or Fold(key):find(search, 1, true) ~= nil
-        if matches then
-            local bucket = groups[key]
+        local key = display.group
+        if type(key) == "string" and key ~= "" then
+            local bucket = buckets[key]
             if not bucket then
                 bucket = {}
-                groups[key] = bucket
-                order[#order + 1] = key
+                buckets[key] = bucket
             end
             bucket[#bucket + 1] = display
+        else
+            ungrouped[#ungrouped + 1] = display
         end
     end
+
     local model = {}
-    for i = 1, #order do
-        local key = order[i]
-        local bucket = groups[key]
-        local collapsed = not search and isCollapsed(key) or false
-        model[#model + 1] = { kind = "header", group = key, count = #bucket, collapsed = collapsed }
-        if not collapsed then
+    local visited = {}
+
+    local function AddGroup(name, depth, ancestorMatch)
+        if visited[name] then return 0 end
+        visited[name] = true
+        local groupMatch = ancestorMatch
+            or (search and Fold(name):find(search, 1, true) ~= nil)
+        local headerIndex = #model + 1
+        model[headerIndex] = { kind = "header", group = name, depth = depth }
+        local collapsed = not search and isCollapsed(name) or false
+        model[headerIndex].collapsed = collapsed
+
+        local count = 0
+        local bucket = buckets[name]
+        if bucket then
             for j = 1, #bucket do
-                model[#model + 1] = { kind = "display", display = bucket[j] }
+                local display = bucket[j]
+                local matches = not search or groupMatch
+                    or Fold(display.name or ""):find(search, 1, true) ~= nil
+                if matches then
+                    count = count + 1
+                    if not collapsed then
+                        model[#model + 1] = { kind = "display", display = display, depth = depth + 1 }
+                    end
+                end
             end
+        end
+
+        local childNames = children[name]
+        if childNames then
+            for j = 1, #childNames do
+                if collapsed then
+                    -- Children stay hidden but still contribute to the count.
+                    local before = #model
+                    count = count + AddGroup(childNames[j], depth + 1, groupMatch)
+                    for k = #model, before + 1, -1 do model[k] = nil end
+                else
+                    count = count + AddGroup(childNames[j], depth + 1, groupMatch)
+                end
+            end
+        end
+
+        model[headerIndex].count = count
+        if search and count == 0 and not groupMatch then
+            -- Prune the empty branch: nothing under it matched.
+            for k = #model, headerIndex, -1 do model[k] = nil end
+            return 0
+        end
+        return count
+    end
+
+    local roots = children[""] or {}
+    for i = 1, #roots do
+        AddGroup(roots[i], 0, false)
+    end
+
+    local ungroupedShown = {}
+    for i = 1, #ungrouped do
+        local display = ungrouped[i]
+        local matches = not search
+            or Fold(display.name or ""):find(search, 1, true) ~= nil
+        if matches then ungroupedShown[#ungroupedShown + 1] = display end
+    end
+    if #ungroupedShown > 0 then
+        model[#model + 1] = { kind = "header", group = "", depth = 0,
+            count = #ungroupedShown, collapsed = false }
+        for i = 1, #ungroupedShown do
+            model[#model + 1] = { kind = "display", display = ungroupedShown[i], depth = 1 }
         end
     end
     return model
@@ -331,6 +397,62 @@ do
     end
 end
 
+local ShowExportDialog
+do
+    local dialog, editBox
+    ShowExportDialog = function(text)
+        if not dialog then
+            dialog = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+            dialog:SetSize(460, 110)
+            dialog:SetPoint("CENTER")
+            dialog:SetFrameStrata("TOOLTIP")
+            dialog:SetMovable(true)
+            dialog:EnableMouse(true)
+            dialog:RegisterForDrag("LeftButton")
+            dialog:SetScript("OnDragStart", dialog.StartMoving)
+            dialog:SetScript("OnDragStop", dialog.StopMovingOrSizing)
+            dialog:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            dialog:SetBackdropColor(0.06, 0.06, 0.06, 0.97)
+            dialog:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+
+            local titleLabel = GUI:CreateLabel(dialog, ns.L["Export String"], 13)
+            titleLabel:SetPoint("TOP", 0, -10)
+            local hint = GUI:CreateLabel(dialog,
+                ns.L["Press Ctrl+C to copy, then Escape to close."], 10, C.textMuted)
+            hint:SetPoint("TOP", titleLabel, "BOTTOM", 0, -4)
+
+            local box
+            box, editBox = GUI:CreateInlineEditBox(dialog, {
+                width = 430,
+                onEscapePressed = function(self)
+                    self:ClearFocus()
+                    dialog:Hide()
+                end,
+            })
+            box:SetPoint("TOP", hint, "BOTTOM", 0, -8)
+            -- Read-only: any edit snaps back to the exported string.
+            editBox:SetScript("OnTextChanged", function(self, userInput)
+                if userInput and dialog._exportText then
+                    self:SetText(dialog._exportText)
+                    self:HighlightText()
+                end
+            end)
+
+            local closeBtn = GUI:CreateButton(dialog, ns.L["Close"], 90, 22, function()
+                dialog:Hide()
+            end)
+            closeBtn:SetPoint("BOTTOM", 0, 10)
+            UI.exportDialog = dialog
+        end
+        dialog._exportText = text
+        editBox:SetText(text)
+        dialog:Show()
+        editBox:SetFocus()
+        editBox:HighlightText()
+    end
+end
+
 local function AcquireHeaderRow(parent, index)
     local row = UI.headerRows[index]
     if not row then
@@ -365,9 +487,25 @@ local function AcquireHeaderRow(parent, index)
     return row
 end
 
+local TREE_INDENT = 12
+
+-- Depth-first list of every group record, parents before children, so
+-- dropdowns show the tree in path order.
+local function AllGroupNames(out, parent)
+    out = out or {}
+    local children = AD.GroupChildren(parent)
+    for i = 1, #children do
+        out[#out + 1] = children[i]
+        AllGroupNames(out, children[i])
+    end
+    return out
+end
+
 local function PaintGroupHeaderRow(row, y, node)
+    local indent = (node.depth or 0) * TREE_INDENT
     row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", 0, -y)
+    row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", indent, -y)
+    row:SetWidth(math.max(LIST_W - 20 - indent, 80))
     local title = node.group == "" and ns.L["Ungrouped"] or node.group
     row.label:SetText(title .. " (" .. node.count .. ")")
     row.collapse:SetText(node.collapsed and ">" or "v")
@@ -484,9 +622,11 @@ local function AcquireDisplayRow(parent, index)
     return row
 end
 
-local function PaintDisplayRow(row, y, display)
+local function PaintDisplayRow(row, y, display, depth)
+    local indent = math.max((depth or 1) - 1, 0) * TREE_INDENT
     row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", 0, -y)
+    row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", indent, -y)
+    row:SetWidth(math.max(LIST_W - 20 - indent, 80))
     if display.id == selectedID then
         local ar, ag, ab = AccentRGB()
         row:SetBackdropColor(ar * 0.3, ag * 0.3, ab * 0.3, 0.9)
@@ -675,6 +815,15 @@ BuildLeftPane = function(left)
                     AD.Refresh()
                     SelectDisplay(display.id)
                 end,
+                onImported = function(summary)
+                    AD.Refresh()
+                    if UI.RebuildList then UI.RebuildList() end
+                    if summary and summary.rootKind == "display" and summary.rootID then
+                        SelectDisplay(summary.rootID)
+                    elseif summary and summary.rootKind == "group" and summary.rootName then
+                        SelectGroup(summary.rootName)
+                    end
+                end,
             })
         else
             ShowQuickCreatePopup()
@@ -689,8 +838,22 @@ BuildLeftPane = function(left)
     scroll:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", -18, 0)
 
     UI.RebuildList = function()
+        -- Materialize records for any group a display references by name only
+        -- (legacy data, "New group..." commits) so the tree can render it.
+        local displays = AD.OrderedDisplays()
+        for i = 1, #displays do
+            local g = displays[i].group
+            if type(g) == "string" and g ~= "" then AD.GetGroup(g, true) end
+        end
+        local children = {}
+        local function FillChildren(parent)
+            local list = AD.GroupChildren(parent)
+            children[parent or ""] = list
+            for i = 1, #list do FillChildren(list[i]) end
+        end
+        FillChildren(nil)
         local model = ns.QUI_AuraDisplaysOptions.BuildListModel(
-            AD.OrderedDisplays(), searchText, AD.GroupCollapsed)
+            AD.OrderedDisplays(), searchText, AD.GroupCollapsed, { children = children })
         local headerIdx, displayIdx, y = 0, 0, 0
         for i = 1, #model do
             local node = model[i]
@@ -699,7 +862,7 @@ BuildLeftPane = function(left)
                 y = y + PaintGroupHeaderRow(AcquireHeaderRow(listContent, headerIdx), y, node)
             else
                 displayIdx = displayIdx + 1
-                y = y + PaintDisplayRow(AcquireDisplayRow(listContent, displayIdx), y, node.display)
+                y = y + PaintDisplayRow(AcquireDisplayRow(listContent, displayIdx), y, node.display, node.depth)
             end
         end
         for i = headerIdx + 1, #UI.headerRows do UI.headerRows[i]:Hide() end
@@ -721,14 +884,8 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
     end, nil, { description = ns.L["The name shown in this list and in Layout Mode."] })
 
     local groupOptions = { { value = "", text = ns.L["No group"] } }
-    local seen = {}
-    local displays = AD.OrderedDisplays()
-    for i = 1, #displays do
-        local g = displays[i].group
-        if type(g) == "string" and g ~= "" and not seen[g] then
-            seen[g] = true
-            groupOptions[#groupOptions + 1] = { value = g, text = g }
-        end
+    for _, name in ipairs(AllGroupNames()) do
+        groupOptions[#groupOptions + 1] = { value = name, text = AD.GroupPathLabel(name) }
     end
     groupOptions[#groupOptions + 1] = { value = "__new", text = ns.L["New group..."] }
 
@@ -747,6 +904,7 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
                 self:ClearFocus()
                 if type(text) == "string" and text ~= "" then
                     display.group = text
+                    AD.GetGroup(text, true)
                     AD.Refresh()
                     if UI.RebuildList then UI.RebuildList() end
                 end
@@ -912,6 +1070,53 @@ function ns.QUI_AuraDisplaysOptions._BuildGroupTab(host, ctx, groupName)
     generalCard.AddRow(
         Shared.BuildSettingRow(generalCard.frame, ns.L["Name"], nameW),
         Shared.BuildSettingRow(generalCard.frame, ns.L["Enabled"], enabledW)
+    )
+
+    local parentOptions = { { value = "", text = ns.L["No parent (root group)"] } }
+    for _, name in ipairs(AllGroupNames()) do
+        if name ~= groupName and not AD.GroupIsAncestor(groupName, name) then
+            parentOptions[#parentOptions + 1] = { value = name, text = AD.GroupPathLabel(name) }
+        end
+    end
+    local parentProxy = { parentChoice = AD.GroupParent(groupName) or "",
+        _quiTransientOptionsProxy = true }
+    local parentW = GUI:CreateFormDropdown(generalCard.frame, nil, parentOptions,
+        "parentChoice", parentProxy, function()
+            local choice = parentProxy.parentChoice
+            local ok, reason = AD.SetGroupParent(groupName,
+                choice ~= "" and choice or nil)
+            if not ok and UIErrorsFrame then
+                local message = reason == "depth"
+                    and ns.L["Groups can only be nested a few levels deep."]
+                    or ns.L["A group cannot be nested inside itself or its children."]
+                UIErrorsFrame:AddMessage(message, 1.0, 0.3, 0.3, 1.0)
+                parentProxy.parentChoice = AD.GroupParent(groupName) or ""
+            end
+            AD.Refresh()
+            if UI.RebuildList then UI.RebuildList() end
+            if ctx and ctx.RebuildDetail then ctx.RebuildDetail() end
+        end, {
+            description = ns.L["Nest this group inside another group. Nested groups flow as blocks in the parent's layout; only root groups have Layout Mode movers."],
+        })
+
+    local orderRow = CreateFrame("Frame", nil, generalCard.frame)
+    orderRow:SetHeight(24)
+    local function MoveGroup(delta)
+        if AD.MoveGroupWithinParent(groupName, delta) then
+            AD.Refresh()
+            if UI.RebuildList then UI.RebuildList() end
+        end
+    end
+    local upBtn = GUI:CreateButton(orderRow, ns.L["Move Up"], 80, 22,
+        function() MoveGroup(-1) end)
+    upBtn:SetPoint("LEFT", 0, 0)
+    local downBtn = GUI:CreateButton(orderRow, ns.L["Move Down"], 80, 22,
+        function() MoveGroup(1) end)
+    downBtn:SetPoint("LEFT", upBtn, "RIGHT", 6, 0)
+
+    generalCard.AddRow(
+        Shared.BuildSettingRow(generalCard.frame, ns.L["Parent Group"], parentW),
+        Shared.BuildSettingRow(generalCard.frame, ns.L["Sibling Order"], orderRow)
     )
     L.closeSection(generalCard)
 
@@ -1223,6 +1428,23 @@ BuildRightPane = function(right, ctx)
     end)
     dupBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -4, 0)
 
+    local exportBtn = GUI:CreateButton(header, ns.L["Export"], 70, 22, function()
+        local Share = ns.QUI_AuraDisplayShare
+        if not Share then return end
+        local str, err
+        if selectedID then
+            str, err = Share.ExportDisplayString(selectedID)
+        elseif selectedGroup then
+            str, err = Share.ExportGroupString(selectedGroup)
+        end
+        if str then
+            ShowExportDialog(str)
+        elseif err and UIErrorsFrame then
+            UIErrorsFrame:AddMessage(err, 1.0, 0.3, 0.3, 1.0)
+        end
+    end)
+    exportBtn:SetPoint("RIGHT", dupBtn, "LEFT", -4, 0)
+
     local previewBtn
     local function PaintPreviewButton()
         previewBtn:SetText(previewEnabled and ns.L["Preview: On"] or ns.L["Preview: Off"])
@@ -1232,7 +1454,7 @@ BuildRightPane = function(right, ctx)
         PaintPreviewButton()
         SyncPreview()
     end)
-    previewBtn:SetPoint("RIGHT", dupBtn, "LEFT", -4, 0)
+    previewBtn:SetPoint("RIGHT", exportBtn, "LEFT", -4, 0)
     PaintPreviewButton()
     title:SetPoint("RIGHT", previewBtn, "LEFT", -8, 0)
 
@@ -1275,7 +1497,7 @@ BuildRightPane = function(right, ctx)
         end
         local display = selectedID and AD.GetDisplay(selectedID)
         local groupName = selectedGroup
-        if groupName and #AD.GroupMembers(groupName) == 0 then
+        if groupName and not AD.GetGroup(groupName, false) then
             selectedGroup = nil
             groupName = nil
         end
@@ -1287,6 +1509,7 @@ BuildRightPane = function(right, ctx)
         title:SetText(groupName or (display and (display.name or display.id) or ""))
         deleteBtn:SetShown(display ~= nil or groupName ~= nil)
         dupBtn:SetShown(display ~= nil)
+        exportBtn:SetShown(display ~= nil or groupName ~= nil)
         previewBtn:SetShown(display ~= nil or groupName ~= nil)
         if paint then
             paint(groupName and GROUP_TABS or TABS, activeDetailTab, function(key)
@@ -1377,6 +1600,7 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
         end
         if UI.groupRenameField then UI.groupRenameField:Hide() end
         if UI.quickCreatePopup then UI.quickCreatePopup:Hide() end
+        if UI.exportDialog then UI.exportDialog:Hide() end
         local Create = ns.QUI_AuraDisplaysCreate
         if Create and type(Create.HideDialog) == "function" then Create.HideDialog() end
     end)

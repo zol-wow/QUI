@@ -264,6 +264,149 @@ function AD.GroupMembers(groupName)
     return out
 end
 
+-- Nested groups: `group.parent` names another group; parent pointers form the
+-- tree. Every walk carries a visited set — SetGroupParent refuses cycles, but
+-- imported or hand-edited saved variables must never hang the client.
+local MAX_GROUP_DEPTH = 6
+
+local function ParentKeyOf(store, key)
+    local group = store and store.groups[key]
+    if type(group) ~= "table" then return nil end
+    return GroupKey(group.parent)
+end
+
+function AD.GroupParent(groupName)
+    local store = Store()
+    local key = GroupKey(groupName)
+    if not store or key == nil then return nil end
+    return ParentKeyOf(store, key)
+end
+
+local function GroupDepth(store, key)
+    local depth, seen, current = 0, {}, key
+    while current and not seen[current] do
+        seen[current] = true
+        depth = depth + 1
+        current = ParentKeyOf(store, current)
+    end
+    return depth
+end
+
+-- True when `ancestorName` appears strictly above `groupName` in the tree.
+function AD.GroupIsAncestor(ancestorName, groupName)
+    local store = Store()
+    local ancestor, key = GroupKey(ancestorName), GroupKey(groupName)
+    if not store or ancestor == nil or key == nil or ancestor == key then return false end
+    local seen, current = {}, ParentKeyOf(store, key)
+    while current and not seen[current] do
+        if current == ancestor then return true end
+        seen[current] = true
+        current = ParentKeyOf(store, current)
+    end
+    return false
+end
+
+function AD.RootGroupName(groupName)
+    local store = Store()
+    local key = GroupKey(groupName)
+    if not store or key == nil then return nil end
+    local seen, current = {}, key
+    while true do
+        seen[current] = true
+        local parent = ParentKeyOf(store, current)
+        if not parent or seen[parent] then return current end
+        current = parent
+    end
+end
+
+function AD.SetGroupParent(groupName, parentName)
+    local store = Store()
+    local key = GroupKey(groupName)
+    if not store or key == nil then return false, "invalid" end
+    local group = EnsureGroup(store, key)
+    local parent = GroupKey(parentName)
+    if parent == nil then
+        group.parent = nil
+        return true
+    end
+    if parent == key or AD.GroupIsAncestor(key, parent) then
+        return false, "cycle"
+    end
+    EnsureGroup(store, parent)
+    if GroupDepth(store, parent) >= MAX_GROUP_DEPTH then
+        return false, "depth"
+    end
+    group.parent = parent
+    return true
+end
+
+-- Child groups of `parentName` (nil for root groups), in layout order.
+function AD.GroupChildren(parentName)
+    local store = Store()
+    local out = {}
+    if not store then return out end
+    local parent = GroupKey(parentName)
+    for name, group in pairs(store.groups) do
+        if type(group) == "table" and name ~= parent
+            and GroupKey(group.parent) == parent then
+            out[#out + 1] = name
+        end
+    end
+    table.sort(out, function(a, b)
+        local sa = tonumber(store.groups[a].sort) or math.huge
+        local sb = tonumber(store.groups[b].sort) or math.huge
+        if sa ~= sb then return sa < sb end
+        return a < b
+    end)
+    return out
+end
+
+function AD.MoveGroupWithinParent(groupName, delta)
+    local store = Store()
+    local key = GroupKey(groupName)
+    if not store or key == nil or type(delta) ~= "number" or delta == 0 then return false end
+    local siblings = AD.GroupChildren(ParentKeyOf(store, key))
+    local pos
+    for i = 1, #siblings do
+        store.groups[siblings[i]].sort = i
+        if siblings[i] == key then pos = i end
+    end
+    if not pos then return false end
+    local target = pos + delta
+    if target < 1 or target > #siblings then return false end
+    store.groups[siblings[pos]].sort, store.groups[siblings[target]].sort = target, pos
+    return true
+end
+
+-- All displays in the group's subtree, own members first, then child groups.
+function AD.GroupTreeDisplays(groupName, out, visited)
+    out = out or {}
+    visited = visited or {}
+    local key = GroupKey(groupName)
+    if key == nil or visited[key] then return out end
+    visited[key] = true
+    local members = AD.GroupMembers(key)
+    for i = 1, #members do out[#out + 1] = members[i] end
+    local children = AD.GroupChildren(key)
+    for i = 1, #children do
+        AD.GroupTreeDisplays(children[i], out, visited)
+    end
+    return out
+end
+
+function AD.GroupPathLabel(groupName)
+    local store = Store()
+    local key = GroupKey(groupName)
+    if not store or key == nil then return groupName end
+    local parts, seen, current = {}, {}, key
+    while current and not seen[current] do
+        seen[current] = true
+        table.insert(parts, 1, current)
+        current = ParentKeyOf(store, current)
+    end
+    return table.concat(parts, " > ")
+end
+
 local function GroupNameTaken(store, key)
     if store.groups[key] then return true end
     for _, display in pairs(store.displays) do
@@ -277,8 +420,16 @@ function AD.GroupEnabled(groupName)
     if key == nil then return true end
     local store = Store()
     if not store then return true end
-    local group = store.groups[key]
-    return not (group and group.enabled == false)
+    -- A disabled ancestor disables the whole subtree.
+    local seen, current = {}, key
+    while current and not seen[current] do
+        seen[current] = true
+        local group = store.groups[current]
+        if type(group) ~= "table" then return true end
+        if group.enabled == false then return false end
+        current = GroupKey(group.parent)
+    end
+    return true
 end
 
 function AD.SetGroupEnabled(groupName, enabled)
@@ -312,9 +463,17 @@ function AD.DeleteGroup(groupName)
     local group = store.groups[key]
     local anchorKey = type(group) == "table" and type(group.id) == "string"
         and (AD.GROUP_ANCHOR_PREFIX .. group.id) or nil
+    local parentKey = type(group) == "table" and GroupKey(group.parent) or nil
     store.groups[key] = nil
+    -- Members and child groups are promoted to the deleted group's parent
+    -- rather than dropped to the root.
     for _, display in pairs(store.displays) do
-        if display.group == key then display.group = nil end
+        if display.group == key then display.group = parentKey end
+    end
+    for _, other in pairs(store.groups) do
+        if type(other) == "table" and GroupKey(other.parent) == key then
+            other.parent = parentKey
+        end
     end
     local H = Helpers()
     local profile = H and type(H.GetProfile) == "function" and H.GetProfile() or nil
@@ -338,6 +497,11 @@ function AD.RenameGroup(oldName, newName)
     store.groups[to] = NormalizeGroup(store, group or {})
     for _, display in pairs(store.displays) do
         if display.group == from then display.group = to end
+    end
+    for _, other in pairs(store.groups) do
+        if type(other) == "table" and GroupKey(other.parent) == from then
+            other.parent = to
+        end
     end
     return true
 end
@@ -795,9 +959,31 @@ function AD.PreviewAuraSound(soundName)
     return ns.SafeCall("best-effort-style", PlaySoundFile, sound, "Master")
 end
 
+-- True when `groupName` sits on the previewed group's chain — the previewed
+-- group itself, one of its ancestors (they must render to show it), or one of
+-- its descendants (previewing a group previews its whole subtree).
+local function GroupPreviewRelated(groupName)
+    if not singlePreviewGroup then return false end
+    if groupName == singlePreviewGroup then return true end
+    return AD.GroupIsAncestor(groupName, singlePreviewGroup)
+        or AD.GroupIsAncestor(singlePreviewGroup, groupName)
+end
+
+local function GroupUnderPreview(groupName)
+    if not singlePreviewGroup then return false end
+    return groupName == singlePreviewGroup
+        or AD.GroupIsAncestor(singlePreviewGroup, groupName)
+end
+
+local function DisplayUnderGroupPreview(id)
+    if not singlePreviewGroup then return false end
+    local display = AD.GetDisplay(id)
+    return display ~= nil and GroupUnderPreview(GroupKey(display.group))
+end
+
 local function ApplyHostVisibilityAlpha(id, host, forceVisible)
     local alpha = 0
-    if previewActive or id == singlePreviewID then
+    if previewActive or id == singlePreviewID or DisplayUnderGroupPreview(id) then
         alpha = 1
     elseif host._quiAuraDisplayActive then
         alpha = forceVisible and 1 or visibilityAlpha
@@ -1074,7 +1260,8 @@ end
 ApplyDisplay = function(display, allowCreate)
     if previewActive then return end
     if display.id == singlePreviewID then return end
-    if singlePreviewGroup and display.group == singlePreviewGroup then return end
+    -- Previewing a group freezes its whole subtree, nested groups included.
+    if GroupUnderPreview(GroupKey(display.group)) then return end
     if not ResolveDeps() then return end
     local host = EnsureHost(display.id)
     if not host then
@@ -1168,7 +1355,7 @@ function AD.ReflowGroups(displays)
         return false
     end
 
-    local buckets, order = {}, {}
+    local buckets = {}
     for i = 1, #displays do
         local display = displays[i]
         local key = GroupKey(display.group)
@@ -1177,27 +1364,65 @@ function AD.ReflowGroups(displays)
             if not bucket then
                 bucket = {}
                 buckets[key] = bucket
-                order[#order + 1] = key
             end
             bucket[#bucket + 1] = display
+        end
+    end
+
+    -- A group participates in layout when its subtree holds at least one
+    -- display; mark every ancestor of a display-bearing group.
+    local store = Store()
+    local groupsWithContent = {}
+    for key in pairs(buckets) do
+        local seen, current = {}, key
+        while current and not seen[current] do
+            seen[current] = true
+            groupsWithContent[current] = true
+            local g = store and store.groups[current]
+            current = type(g) == "table" and GroupKey(g.parent) or nil
         end
     end
 
     local seenGroupIDs = {}
     local H = Helpers()
     local layoutActive = H and type(H.IsLayoutModeActive) == "function" and H.IsLayoutModeActive()
-    for i = 1, #order do
-        local groupName = order[i]
+    local visited = {}
+
+    -- Post-order reflow: children are laid out first so their scaled extents
+    -- can flow as blocks inside the parent's layout. Returns the host, its
+    -- effective (scaled) extent in parent coordinates, and whether it shows.
+    local function ReflowGroup(groupName)
+        if visited[groupName] then return nil end
+        visited[groupName] = true
         local group = AD.GetGroup(groupName, true)
         local groupHost = group and EnsureGroupHost(group)
-        if groupHost then
-            seenGroupIDs[group.id] = true
-            local memberSpecs = {}
-            local groupDisplays = buckets[groupName]
+        if not groupHost then return nil end
+        seenGroupIDs[group.id] = true
+
+        local memberSpecs = {}
+        local children = AD.GroupChildren(groupName)
+        for j = 1, #children do
+            local childName = children[j]
+            if groupsWithContent[childName] then
+                local childHost, childW, childH, childShown = ReflowGroup(childName)
+                if childHost and childShown then
+                    memberSpecs[#memberSpecs + 1] = {
+                        groupName = childName,
+                        host = childHost,
+                        isGroup = true,
+                        width = childW,
+                        height = childH,
+                    }
+                end
+            end
+        end
+
+        local groupDisplays = buckets[groupName]
+        if groupDisplays then
             for j = 1, #groupDisplays do
                 local display = groupDisplays[j]
                 local host = hosts[display.id]
-                local forcePreview = previewActive or singlePreviewGroup == groupName
+                local forcePreview = previewActive or GroupUnderPreview(groupName)
                     or singlePreviewID == display.id
                 if host and (forcePreview or AD.DisplayActive(display)) then
                     memberSpecs[#memberSpecs + 1] = {
@@ -1211,33 +1436,51 @@ function AD.ReflowGroups(displays)
                     host:Hide()
                 end
             end
+        end
 
-            local width, height, placements = AD.ComputeGroupLayout(group, memberSpecs)
-            groupHost._naturalW, groupHost._naturalH = width, height
-            groupHost:SetSize(width, height)
-            groupHost:SetScale(PositiveNumber(group.scale, GROUP_DEFAULTS.scale))
-            for j = 1, #placements do
-                local placement = placements[j]
-                local host = placement.member.host
-                if host:GetParent() ~= groupHost then host:SetParent(groupHost) end
+        local width, height, placements = AD.ComputeGroupLayout(group, memberSpecs)
+        local scale = PositiveNumber(group.scale, GROUP_DEFAULTS.scale)
+        groupHost._naturalW, groupHost._naturalH = width, height
+        groupHost:SetSize(width, height)
+        groupHost:SetScale(scale)
+        for j = 1, #placements do
+            local placement = placements[j]
+            local host = placement.member.host
+            if host:GetParent() ~= groupHost then host:SetParent(groupHost) end
+            if not placement.member.isGroup then
+                -- Child group hosts keep their own scale/size (already set by
+                -- their reflow); only plain display hosts are normalized.
                 host:SetScale(1)
                 host:SetSize(placement.width, placement.height)
-                host:ClearAllPoints()
-                host:SetPoint("CENTER", groupHost, "TOPLEFT", placement.x, placement.y)
-                host:Show()
             end
+            host:ClearAllPoints()
+            host:SetPoint("CENTER", groupHost, "TOPLEFT", placement.x, placement.y)
+            host:Show()
+        end
 
+        local isRoot = ParentKeyOf(store, groupName) == nil
+        local shown = #placements > 0
+            and (previewActive or GroupPreviewRelated(groupName) or group.enabled ~= false)
+        if isRoot then
             local anchorKey = AD.GROUP_ANCHOR_PREFIX .. group.id
-            local showGroup = #placements > 0
-                and (previewActive or singlePreviewGroup == groupName or group.enabled ~= false)
-                and (layoutActive or not GameplayHidden(anchorKey))
+            local showGroup = shown and (layoutActive or not GameplayHidden(anchorKey))
             if showGroup then groupHost:Show() else groupHost:Hide() end
+            if groupHost:GetParent() ~= UIParent then groupHost:SetParent(UIParent) end
             if not layoutActive and _G.QUI_ApplyFrameAnchor then
                 _G.QUI_ApplyFrameAnchor(anchorKey)
             end
             if _G.QUI_LayoutModeSyncHandle then
                 _G.QUI_LayoutModeSyncHandle(anchorKey)
             end
+        else
+            if shown then groupHost:Show() else groupHost:Hide() end
+        end
+        return groupHost, width * scale, height * scale, shown
+    end
+
+    for key in pairs(groupsWithContent) do
+        if ParentKeyOf(store, key) == nil then
+            ReflowGroup(key)
         end
     end
 
@@ -1304,7 +1547,8 @@ function AD.RegisterGroupLayoutElement(groupName, group)
         isOwned = true,
         isEnabled = function()
             local current = AD.GetGroup(groupName, false)
-            return current ~= nil and current.enabled ~= false and #AD.GroupMembers(groupName) > 0
+            return current ~= nil and current.enabled ~= false
+                and #AD.GroupTreeDisplays(groupName) > 0
         end,
         setEnabled = function(value)
             AD.SetGroupEnabled(groupName, value)
@@ -1395,8 +1639,10 @@ function AD.Refresh()
                     registered[display.id] = nil
                     AD.UnregisterLayoutElement(display.id, true)
                 end
-                local group = AD.GetGroup(groupName, true)
-                if group then seenGroups[group.id] = { name = groupName, group = group } end
+                -- Only root groups own movers; nested groups flow inside them.
+                local rootName = AD.RootGroupName(groupName) or groupName
+                local group = AD.GetGroup(rootName, true)
+                if group then seenGroups[group.id] = { name = rootName, group = group } end
             else
                 local stamp = tostring(display.name or display.id)
                     .. (hosts[display.id] and "+" or "-")
@@ -1427,7 +1673,9 @@ function AD.Refresh()
     for groupID in pairs(registeredGroups) do
         if not seenGroups[groupID] then
             registeredGroups[groupID] = nil
-            AD.UnregisterGroupLayoutElement({ id = groupID })
+            -- Keep the host: a group that stops being a root (nested under a
+            -- parent) loses its mover but its frame still flows as a block.
+            AD.UnregisterGroupLayoutElement({ id = groupID }, true)
         end
     end
     watchingDynamicUnits = dynamic
@@ -1535,7 +1783,7 @@ function AD.ShowPreviewForGroup(groupName)
     end
     singlePreviewGroup = key
     local shown = false
-    local displays = AD.GroupMembers(key)
+    local displays = AD.GroupTreeDisplays(key)
     for i = 1, #displays do
         if ShowPreviewForDisplay(displays[i]) then shown = true end
     end
@@ -1552,7 +1800,7 @@ function AD.HidePreviewForGroup(groupName)
     singlePreviewGroup = nil
     local Preview = ns.AuraPreview
     if Preview and type(Preview.Hide) == "function" then
-        local displays = AD.GroupMembers(key)
+        local displays = AD.GroupTreeDisplays(key)
         for i = 1, #displays do
             local host = hosts[displays[i].id]
             if host then Preview.Hide(host) end

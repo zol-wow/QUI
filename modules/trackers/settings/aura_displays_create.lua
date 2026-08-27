@@ -566,6 +566,60 @@ local function BuildCustomTab(content)
     PaintKind()
 end
 
+-- Import tab -----------------------------------------------------------------
+
+local function BuildImportTab(content)
+    local hint = GUI:CreateLabel(content,
+        ns.L["Paste an aura display export string. Groups import with their whole subtree; duplicate names are renamed automatically."],
+        10, C.textMuted)
+    hint:SetPoint("TOPLEFT", 2, 0)
+    hint:SetPoint("TOPRIGHT", -2, 0)
+    hint:SetJustifyH("LEFT")
+    hint:SetWordWrap(true)
+    hint:SetHeight(26)
+
+    local boxFrame = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    boxFrame:SetPoint("TOPLEFT", 2, -32)
+    boxFrame:SetPoint("TOPRIGHT", -2, -32)
+    boxFrame:SetHeight(180)
+    boxFrame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    boxFrame:SetBackdropColor(0.04, 0.04, 0.05, 1)
+    boxFrame:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+
+    local edit = CreateFrame("EditBox", nil, boxFrame)
+    edit:SetMultiLine(true)
+    edit:SetAutoFocus(false)
+    edit:SetFontObject("GameFontHighlightSmall")
+    edit:SetPoint("TOPLEFT", 6, -6)
+    edit:SetPoint("BOTTOMRIGHT", -6, 6)
+    edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    boxFrame:SetScript("OnMouseDown", function() edit:SetFocus() end)
+
+    local status = GUI:CreateLabel(content, "", 10, C.textMuted)
+    status:SetPoint("TOPLEFT", boxFrame, "BOTTOMLEFT", 0, -8)
+    status:SetPoint("RIGHT", content, "RIGHT", -2, 0)
+    status:SetJustifyH("LEFT")
+    status:SetWordWrap(true)
+
+    local importBtn = GUI:CreateButton(content, ns.L["Import"], 100, 24, function()
+        local Share = ns.QUI_AuraDisplayShare
+        if not (Share and Share.ImportString) then return end
+        local summary, err = Share.ImportString(edit:GetText())
+        if not summary then
+            status:SetText("|cFFE06C6C" .. (err or ns.L["Import failed."]) .. "|r")
+            return
+        end
+        if dialog then dialog:Hide() end
+        if type(callbacks.onImported) == "function" then
+            callbacks.onImported(summary)
+        end
+    end, "primary")
+    importBtn:SetPoint("TOPLEFT", boxFrame, "BOTTOMLEFT", 0, -34)
+
+    edit:SetFocus()
+end
+
 -- Dialog shell ---------------------------------------------------------------
 
 local function EnsureDialog()
@@ -592,6 +646,7 @@ local function EnsureDialog()
         { key = "templates", label = ns.L["Templates"] },
         { key = "guided", label = ns.L["Guided"] },
         { key = "custom", label = ns.L["Custom"] },
+        { key = "import", label = ns.L["Import"] },
     }
     dialog.tabs = {}
     local x = 15
@@ -682,6 +737,8 @@ Rebuild = function()
         BuildTemplatesTab(content)
     elseif state.tab == "guided" then
         WIZARD_STEPS[state.wizardStep](content)
+    elseif state.tab == "import" then
+        BuildImportTab(content)
     else
         BuildCustomTab(content)
     end
@@ -689,6 +746,7 @@ end
 
 function Create.ShowDialog(opts)
     callbacks.onCreated = opts and opts.onCreated or nil
+    callbacks.onImported = opts and opts.onImported or nil
     ResetState()
     EnsureDialog()
     Rebuild()
