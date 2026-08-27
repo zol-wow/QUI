@@ -890,7 +890,12 @@ local function DurationBindingMatches(icon, mode, sourceID, durObj)
     if mode == "aura" then
         return durObj == icon._lastDurObj
     end
-    return true
+
+    local getEpoch = RuntimeQueries and RuntimeQueries.GetActiveBatchEpoch
+    local epoch = getEpoch and getEpoch()
+    return epoch ~= nil
+        and icon._lastDurationBindingEpoch == epoch
+        and durObj == icon._lastDurObj
 end
 
 local function GetDurationBindingKey(icon, mode, sourceID)
@@ -1262,6 +1267,12 @@ ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
         icon._lastResolvedSpellID = nil
         CancelCooldownExpiryRefresh(icon)
         return false
+    end
+
+    if mode ~= "aura" and RuntimeQueries and RuntimeQueries.GetActiveBatchEpoch then
+        icon._lastDurationBindingEpoch = RuntimeQueries.GetActiveBatchEpoch()
+    else
+        icon._lastDurationBindingEpoch = nil
     end
 
     if shouldScheduleExpiry then
