@@ -109,30 +109,52 @@ local defaultState = {
 
 MPlusTimer.state = ns.Helpers.DeepCopy(defaultState)
 
-local pendingObjectiveTrackerHide = false
-local objectiveTrackerHideDeferral
+local scenarioTrackerHiddenByTimer = false
+local pendingObjectiveTrackerSuppressed
+local objectiveTrackerSuppressionDeferral
 
-local function HideScenarioObjectiveTracker()
+local function SetScenarioObjectiveTrackerSuppressed(suppressed)
     if not ScenarioObjectiveTracker then
         return
     end
     if InCombatLockdown and InCombatLockdown() then
-        if pendingObjectiveTrackerHide then
-            return
-        end
-        pendingObjectiveTrackerHide = true
-        if not objectiveTrackerHideDeferral then
-            objectiveTrackerHideDeferral = CreateFrame("Frame")
-            objectiveTrackerHideDeferral:SetScript("OnEvent", function(self)
+        pendingObjectiveTrackerSuppressed = suppressed
+        if not objectiveTrackerSuppressionDeferral then
+            objectiveTrackerSuppressionDeferral = CreateFrame("Frame")
+            objectiveTrackerSuppressionDeferral:SetScript("OnEvent", function(self)
                 self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                pendingObjectiveTrackerHide = false
-                HideScenarioObjectiveTracker()
+                local shouldSuppress = pendingObjectiveTrackerSuppressed
+                pendingObjectiveTrackerSuppressed = nil
+                SetScenarioObjectiveTrackerSuppressed(shouldSuppress)
             end)
         end
-        objectiveTrackerHideDeferral:RegisterEvent("PLAYER_REGEN_ENABLED")
+        objectiveTrackerSuppressionDeferral:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
-    ScenarioObjectiveTracker:Hide()
+    pendingObjectiveTrackerSuppressed = nil
+    if objectiveTrackerSuppressionDeferral then
+        objectiveTrackerSuppressionDeferral:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    end
+    if suppressed then
+        if scenarioTrackerHiddenByTimer then
+            return
+        end
+        local shown = ScenarioObjectiveTracker:IsShown()
+        if ns.Helpers.IsSecretValue(shown) or not shown then
+            return
+        end
+        ScenarioObjectiveTracker:Hide()
+        scenarioTrackerHiddenByTimer = true
+    elseif scenarioTrackerHiddenByTimer then
+        scenarioTrackerHiddenByTimer = false
+        local displayable = ScenarioObjectiveTracker:IsDisplayable()
+        local container = ScenarioObjectiveTracker.parentContainer
+        local collapsed = container and container:IsCollapsed()
+        if not ns.Helpers.IsSecretValue(displayable) and displayable
+            and container and not ns.Helpers.IsSecretValue(collapsed) and not collapsed then
+            ScenarioObjectiveTracker:Show()
+        end
+    end
 end
 
 local DEFAULTS = {
@@ -1532,7 +1554,7 @@ function MPlusTimer:Show()
         _G.QUI_ApplyMPlusTimerSkin()
     end
 
-    HideScenarioObjectiveTracker()
+    SetScenarioObjectiveTrackerSuppressed(true)
 end
 
 function MPlusTimer:Hide()
@@ -1540,10 +1562,7 @@ function MPlusTimer:Hide()
         self.frames.root:Hide()
     end
     self:StopTimerLoop()
-
-    if ScenarioObjectiveTracker and ObjectiveTrackerFrame and not InCombatLockdown() then
-        ObjectiveTrackerFrame:Update()
-    end
+    SetScenarioObjectiveTrackerSuppressed(false)
 end
 
 function MPlusTimer:EnableDemoMode()

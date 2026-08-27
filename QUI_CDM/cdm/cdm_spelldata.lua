@@ -1676,18 +1676,6 @@ if ns.CDMAuraRuntime and ns.CDMAuraRuntime.SetResolver then
     ns.CDMAuraRuntime.SetResolver(ResolveAuraRuntimeStateImpl)
 end
 
-local function ForceLoadCDM()
-    if InCombatLockdown() and not ns._inInitSafeWindow then return end
-    local viewerAddon = ns.CDMCooldownViewerAddon
-    if viewerAddon and viewerAddon.Load then
-        viewerAddon.Load()
-    elseif C_AddOns and C_AddOns.LoadAddOn then
-        C_AddOns.LoadAddOn("Blizzard_CooldownViewer")
-    elseif LoadAddOn then
-        LoadAddOn("Blizzard_CooldownViewer")
-    end
-end
-
 local function GetNcdmDB()
     if Shared and Shared.GetNcdmDB then
         local ncdm = Shared.GetNcdmDB()
@@ -3533,7 +3521,6 @@ function CDMSpellData:Initialize()
 
     RegisterAuraCaptureFrame()
 
-    ForceLoadCDM()
     C_Timer.After(0.5, function()
         if not IsCDMRuntimeEnabled() then return end
         RegisterEditModeCallbacks()
@@ -3660,17 +3647,6 @@ function CDMSpellData:Initialize()
                         and not ns._cdmColdLoadActive then
                         RunReconcileSequence()
                     end
-                end
-            end)
-            C_Timer.After(1.0, function()
-                if not IsCDMRuntimeEnabled() then return end
-                if not initialized then
-                    ForceLoadCDM()
-                    C_Timer.After(0.5, function()
-                        if not IsCDMRuntimeEnabled() then return end
-                        RegisterEditModeCallbacks()
-                        initialized = true
-                    end)
                 end
             end)
         end
