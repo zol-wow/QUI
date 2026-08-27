@@ -4,6 +4,24 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta7 - 2026-08-27
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Alts table readability and persistent window resizing for the 5.2.3 beta line.
+
+### Added
+
+- **The Alts window can be resized from its bottom-right corner.** Its size and
+  position persist across reloads, and an active move or resize stops cleanly
+  when combat begins.
+
+### Changed
+
+- **Weeklies now has localized column headers**, and both Weeklies and
+  Currencies size their left-aligned columns to their longest rendered text.
+
 ## v5.2.3-beta6 - 2026-08-27
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
