@@ -657,6 +657,8 @@ local function MirrorHolderSize(key)
     state.holder:SetSize(w, h)
 end
 
+ns.SyncManagedHolderSize = MirrorHolderSize
+
 local function ReanchorFrameToHolder(key)
     local state = managedReparentState[key]
     if not state or not state.holder or not state.frame then return end
@@ -718,7 +720,7 @@ local function InstallManagedReparent(def)
 
     ReanchorFrameToHolder(def.key)
 
-    if frame.HookScript and not state.sizeHooked then
+    if def.key ~= "objectiveTracker" and frame.HookScript and not state.sizeHooked then
         state.sizeHooked = true
         frame:HookScript("OnSizeChanged", function()
             MirrorHolderSize(def.key)
@@ -979,6 +981,7 @@ local FRAME_RESOLVERS = {
     minimap = function() return _G["QUI_MinimapAnchor"] or _G["Minimap"] end,
     datatextPanel = function() return _G["QUI_DatatextPanel"] end,
     objectiveTracker = function()
+        MirrorHolderSize("objectiveTracker")
         local state = managedReparentState["objectiveTracker"]
         return state and state.holder or nil
     end,
@@ -1749,7 +1752,7 @@ local function GetCastbarConfiguredWidth(key)
     if not unitKey then return nil end
     local db = QUICore and QUICore.db
     if not db then return nil end
-    local unitSettings = db.profile and db.profile.unitframes and db.profile.unitframes[unitKey]
+    local unitSettings = db.profile and db.profile.quiUnitFrames and db.profile.quiUnitFrames[unitKey]
     local castSettings = unitSettings and unitSettings.castbar
     local w = castSettings and castSettings.width
     return (type(w) == "number" and w > 0) and w or nil
@@ -1816,7 +1819,7 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
                 DebouncedReapplyOverrides()
             end)
         end
-    elseif settings.autoWidth and CASTBAR_ANCHOR_KEYS[key] then
+    elseif CASTBAR_ANCHOR_KEYS[key] then
         local fallbackWidth = GetCastbarConfiguredWidth(key)
         if fallbackWidth then
             ns.SafeCallMethod("best-effort-style", frame, "SetWidth", fallbackWidth)
