@@ -169,6 +169,7 @@ local DEFAULTS = {
     forcesBarEnabled = true,
     forcesDisplayMode = "bar",
     forcesPosition = "after_timer",
+    forcesTextFormat = "both",
     forcesTextAlign = "LEFT",
     forcesLabel = ns.L["Forces"],
     forcesFont = "Poppins",
@@ -1302,7 +1303,15 @@ function MPlusTimer:RenderAffixIcons()
 end
 
 function MPlusTimer:WriteForcesText(fs)
-    fs:SetFormattedText("%.2f%%", self.state.forcesQuantity)
+    local format = GetSettings().forcesTextFormat or "both"
+    local hasCount = type(self.state.forcesCount) == "number" and type(self.state.forcesTotal) == "number"
+    if format == "count" and hasCount then
+        fs:SetFormattedText("%s/%s", self.state.forcesCount, self.state.forcesTotal)
+    elseif format == "both" and hasCount then
+        fs:SetFormattedText("%.2f%% (%s/%s)", self.state.forcesQuantity, self.state.forcesCount, self.state.forcesTotal)
+    else
+        fs:SetFormattedText("%.2f%%", self.state.forcesQuantity)
+    end
 end
 
 function MPlusTimer:RenderForces()
@@ -1496,8 +1505,10 @@ function MPlusTimer:SetDeathCount(count, timeLost)
     self:RenderDeaths()
 end
 
-function MPlusTimer:SetForces(quantity)
+function MPlusTimer:SetForces(quantity, count, total)
     if type(quantity) ~= "nil" then self.state.forcesQuantity = quantity end
+    self.state.forcesCount = count
+    self.state.forcesTotal = total
     self:RenderForces()
 end
 
@@ -1565,7 +1576,7 @@ function MPlusTimer:EnableDemoMode()
     self:SetTimeLimit(32 * 60)
     self:SetKeyDetails(11, {"Tyrannical", "Storming", "Fortified"}, {9, 124, 10}, 1, "Jade Serpent")
     self:SetDeathCount(3, 15)
-    self:SetForces(68.51)
+    self:SetForces(68.51, 198, 289)
 
     self:SetObjectives({
         { name = "Wise Mari", time = 328 },
@@ -1726,7 +1737,12 @@ function MPlusTimer:UpdateForces()
     local info = C_ScenarioInfo.GetCriteriaInfo(idx)
     if type(info) ~= "table" then return end
 
-    self:SetForces(info.quantity)
+    local quantityString = info.quantityString
+    local count
+    if type(quantityString) == "string" and not (issecretvalue and issecretvalue(quantityString)) then
+        count = tonumber(quantityString:match("%d+"))
+    end
+    self:SetForces(info.quantity, count, info.totalQuantity)
 end
 -- <<< QUI_TEST_EXTRACT mplus_objectives_secret
 
