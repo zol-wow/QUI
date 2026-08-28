@@ -1809,7 +1809,6 @@ function CDMIconCustomBarPolicy.Create(callbacks)
             icon.Cooldown:SetDrawSwipe(showRecharge)
             icon.Cooldown:SetDrawEdge(false)
             if showRecharge then
-                icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
                 icon.Cooldown:SetSwipeColor(0, 0, 0, 0.6)
             else
                 icon.Cooldown:SetSwipeColor(0, 0, 0, 0)
@@ -1818,7 +1817,6 @@ function CDMIconCustomBarPolicy.Create(callbacks)
             and icon._lastAuraDurObj and containerDB.showAuraSwipe == true
             and ns.CDMRenderers and ns.CDMRenderers.ApplyDurationObjectCooldown then
             icon.Cooldown:SetDrawEdge(false)
-            icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
             icon.Cooldown:SetSwipeColor(0, 0, 0, 0.6)
             icon.Cooldown:SetDrawSwipe(true)
             ns.CDMRenderers.ApplyDurationObjectCooldown(icon.Cooldown, icon._lastAuraDurObj, true, false)
