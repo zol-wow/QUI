@@ -111,7 +111,13 @@ local function StyleLineIcon(line)
     local atlas = icon:GetAtlas()
     if Helpers.IsSecretValue(atlas) then return end
     if type(atlas) ~= "string" then return end
-    atlas = atlas:lower()
+    local normalizedAtlas = SkinBase.GetFrameData(icon, "qLineIconAtlasNormalized")
+    if SkinBase.GetFrameData(icon, "qLineIconAtlasSource") ~= atlas then
+        normalizedAtlas = atlas:lower()
+        SkinBase.SetFrameData(icon, "qLineIconAtlasSource", atlas)
+        SkinBase.SetFrameData(icon, "qLineIconAtlasNormalized", normalizedAtlas)
+    end
+    atlas = normalizedAtlas
 
     local color
     if atlas:find("check", 1, true) then
@@ -138,16 +144,6 @@ local function StyleLineIcon(line)
     icon:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, alpha)
 end
 -- <<< QUI_TEST_EXTRACT line_icon_style
-
-local QueueLineIconStyle = CreateDeferredStyleQueue(StyleLineIcon)
-
-local function HookAnimLineState()
-    local mixin = _G.ObjectiveTrackerAnimLineMixin
-    if mixin and mixin.SetState and not SkinBase.GetFrameData(mixin, "qSetStateHooked") then
-        SkinBase.SetFrameData(mixin, "qSetStateHooked", true)
-        hooksecurefunc(mixin, "SetState", QueueLineIconStyle)
-    end
-end
 
 local CUSTOM_BAR_FILL_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 
@@ -336,22 +332,6 @@ local function StyleExistingProgressBars()
     end
 end
 
-local QueueProgressBarStyle = CreateDeferredStyleQueue(StyleTrackerProgressBar)
-
-local function HookProgressBarMixins()
-    local pbMixins = {
-        { mixin = _G.ObjectiveTrackerProgressBarMixin, method = "SetPercent" },
-        { mixin = _G.BonusObjectiveTrackerProgressBarMixin, method = "SetValue" },
-    }
-    for _, pm in ipairs(pbMixins) do
-        if pm.mixin and type(pm.mixin[pm.method]) == "function"
-            and not SkinBase.GetFrameData(pm.mixin, "qCustomBarHooked") then
-            SkinBase.SetFrameData(pm.mixin, "qCustomBarHooked", true)
-            hooksecurefunc(pm.mixin, pm.method, QueueProgressBarStyle)
-        end
-    end
-end
-
 local function SkinTrackerHeader(header)
     if not header then return end
 
@@ -386,63 +366,92 @@ local function IsScenarioActive()
     return type(scenarioInfo) ~= "nil"
 end
 
-local function ApplyMaxWidth(settings)
-    local TrackerFrame = _G.ObjectiveTrackerFrame
-    if not TrackerFrame then return end
+-- <<< QUI_TEST_EXTRACT tracker_max_width
+local blizzardTrackerWidths = setmetatable({}, { __mode = "k" })
 
-    local maxWidth
-    if IsScenarioActive() then
-        maxWidth = 260
-    else
-        maxWidth = settings and settings.objectiveTrackerWidth or 260
+local function SetTrackerWidth(frame, width)
+    if not frame or not width then return false end
+    local currentWidth = frame.GetWidth and Helpers.SafeNumberOrNil(frame:GetWidth())
+    if not currentWidth then return false end
+    if currentWidth ~= width then
+        frame:SetWidth(width)
     end
-    TrackerFrame:SetWidth(maxWidth)
+    return true
+end
 
-    if TrackerFrame.Header then
-        TrackerFrame.Header:SetWidth(maxWidth)
-        local minBtn = TrackerFrame.Header.MinimizeButton
-        if minBtn then
-            minBtn:ClearAllPoints()
-            minBtn:SetPoint("RIGHT", TrackerFrame.Header, "RIGHT", 0, 0)
-            minBtn:SetSize(16, 16)
-            if not SkinBase.GetFrameData(minBtn, "highlightSet") and minBtn:GetHighlightTexture() then
-                minBtn:GetHighlightTexture():SetAtlas("ui-questtrackerbutton-yellow-highlight")
-                SkinBase.SetFrameData(minBtn, "highlightSet", true)
-            end
-        end
-
-        if TrackerFrame.Header.SetCollapsed and not SkinBase.GetFrameData(TrackerFrame.Header, "setCollapsedHooked") then
-            hooksecurefunc(TrackerFrame.Header, "SetCollapsed", function(self, collapsed)
-                C_Timer.After(0, function()
-                    UpdateMinimizeButtonAtlas(self.MinimizeButton, collapsed)
-                end)
-            end)
-            SkinBase.SetFrameData(TrackerFrame.Header, "setCollapsedHooked", true)
-
-            local isCollapsed = false
-            if type(TrackerFrame.IsCollapsed) == "function" then
-                isCollapsed = TrackerFrame:IsCollapsed()
-            end
-            UpdateMinimizeButtonAtlas(minBtn, isCollapsed)
-        end
+local function ApplyTrackedWidth(frame, width)
+    if not frame then return true end
+    if not blizzardTrackerWidths[frame] then
+        blizzardTrackerWidths[frame] = frame.GetWidth and Helpers.SafeNumberOrNil(frame:GetWidth())
     end
+    return SetTrackerWidth(frame, width or blizzardTrackerWidths[frame])
+end
 
+local function ApplyAllTrackerWidths(TrackerFrame, width)
+    local complete = ApplyTrackedWidth(TrackerFrame, width)
+    complete = ApplyTrackedWidth(TrackerFrame.Header, width) and complete
     for _, trackerName in ipairs(trackerModules) do
         local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
         if tracker then
-            tracker:SetWidth(maxWidth)
-            if tracker.Header then
-                tracker.Header:SetWidth(maxWidth)
-            end
+            complete = ApplyTrackedWidth(tracker, width) and complete
+            complete = ApplyTrackedWidth(tracker.Header, width) and complete
         end
+    end
+    return complete
+end
+
+local function RestoreBlizzardTrackerWidths()
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return false end
+    return ApplyAllTrackerWidths(TrackerFrame)
+end
+
+local function ApplyMaxWidth(settings)
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return false end
+
+    local maxWidth = settings and settings.objectiveTrackerWidth or 260
+    ApplyAllTrackerWidths(TrackerFrame, maxWidth)
+    return true
+end
+-- <<< QUI_TEST_EXTRACT tracker_max_width
+
+local ScheduleBackdropUpdate
+
+local function SkinMasterHeader(trackerFrame)
+    local header = trackerFrame and trackerFrame.Header
+    if not header then return end
+
+    SkinTrackerHeader(header)
+
+    local minBtn = header.MinimizeButton
+    if minBtn then
+        minBtn:ClearAllPoints()
+        minBtn:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+        minBtn:SetSize(16, 16)
+        if not SkinBase.GetFrameData(minBtn, "highlightSet") and minBtn:GetHighlightTexture() then
+            minBtn:GetHighlightTexture():SetAtlas("ui-questtrackerbutton-yellow-highlight")
+            SkinBase.SetFrameData(minBtn, "highlightSet", true)
+        end
+    end
+
+    if header.SetCollapsed and not SkinBase.GetFrameData(header, "setCollapsedHooked") then
+        hooksecurefunc(header, "SetCollapsed", function(self, collapsed)
+            C_Timer.After(0, function()
+                UpdateMinimizeButtonAtlas(self.MinimizeButton, collapsed)
+                ScheduleBackdropUpdate()
+            end)
+        end)
+        SkinBase.SetFrameData(header, "setCollapsedHooked", true)
+
+        local isCollapsed = false
+        if type(trackerFrame.IsCollapsed) == "function" then
+            isCollapsed = trackerFrame:IsCollapsed()
+        end
+        UpdateMinimizeButtonAtlas(minBtn, isCollapsed)
     end
 end
 
--- ObjectiveTrackerContainerMixin passes its own frame height to every module
--- as the available layout height. The backdrop cap below is only decorative;
--- constraining this frame is what makes Blizzard truncate overflowing rows.
--- Keep this separate from Edit Mode's saved height field: that state belongs
--- to Blizzard and can be restored independently by Edit Mode.
 -- <<< QUI_TEST_EXTRACT tracker_max_height
 local blizzardTrackerHeight = nil
 
@@ -455,17 +464,39 @@ local function CaptureBlizzardTrackerHeight(trackerFrame)
     end
 end
 
-local function ApplyTrackerMaxHeight(settings)
+local function RestoreBlizzardTrackerHeight()
     local TrackerFrame = _G.ObjectiveTrackerFrame
-    if not TrackerFrame then return end
+    if not TrackerFrame then return false end
 
     if not blizzardTrackerHeight then
         CaptureBlizzardTrackerHeight(TrackerFrame)
     end
-    if not blizzardTrackerHeight then return end
+    if not blizzardTrackerHeight then return false end
+
+    local currentHeight = Helpers.SafeNumberOrNil(TrackerFrame:GetHeight())
+    if not currentHeight then return false end
+    if currentHeight ~= blizzardTrackerHeight then
+        TrackerFrame:SetHeight(blizzardTrackerHeight)
+    end
+    return true
+end
+
+local function ApplyTrackerMaxHeight(settings)
+    local TrackerFrame = _G.ObjectiveTrackerFrame
+    if not TrackerFrame then return false end
+
+    if not blizzardTrackerHeight then
+        CaptureBlizzardTrackerHeight(TrackerFrame)
+    end
+    if not blizzardTrackerHeight then return false end
 
     local maxHeight = settings and settings.objectiveTrackerHeight or 600
-    TrackerFrame:SetHeight(math.min(maxHeight, blizzardTrackerHeight))
+    local targetHeight = math.min(maxHeight, blizzardTrackerHeight)
+    local currentHeight = Helpers.SafeNumberOrNil(TrackerFrame:GetHeight())
+    if currentHeight ~= targetHeight then
+        TrackerFrame:SetHeight(targetHeight)
+    end
+    return true
 end
 -- <<< QUI_TEST_EXTRACT tracker_max_height
 
@@ -572,43 +603,46 @@ local function HidePOIButtonGlows()
     end
 end
 
-local function EnforceSize()
-    local TrackerFrame = _G.ObjectiveTrackerFrame
-    if not TrackerFrame then return end
+local RefreshTrackerContent
+local scenarioDimensionsRestored = false
 
-    local settings = GetSettings()
-    if not settings or not settings.skinObjectiveTracker then return end
+local function ApplyLayoutSettingsSafely(settings)
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
         pendingProtectedLayoutUpdate = true
-    else
-        ApplyTrackerMaxHeight(settings)
+        return false
     end
 
-    local maxWidth
     if IsScenarioActive() then
-        maxWidth = 260
-    else
-        maxWidth = settings.objectiveTrackerWidth or 260
-    end
-
-    TrackerFrame:SetWidth(maxWidth)
-    if TrackerFrame.Header then
-        TrackerFrame.Header:SetWidth(maxWidth)
-    end
-    for _, trackerName in ipairs(trackerModules) do
-        local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
-        if tracker then
-            tracker:SetWidth(maxWidth)
-            if tracker.Header then
-                tracker.Header:SetWidth(maxWidth)
-            end
+        if not scenarioDimensionsRestored then
+            local heightRestored = RestoreBlizzardTrackerHeight()
+            local widthsRestored = RestoreBlizzardTrackerWidths()
+            scenarioDimensionsRestored = heightRestored and widthsRestored
         end
+        return false
     end
+    scenarioDimensionsRestored = false
+
+    local heightApplied = ApplyTrackerMaxHeight(settings)
+    local widthApplied = ApplyMaxWidth(settings)
+    return heightApplied or widthApplied
+end
+
+local function EnforceSize()
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker then return end
+    ApplyLayoutSettingsSafely(settings)
 end
 
 local function RunObjectiveTrackerPostLayoutUpdate()
     pendingBackdropUpdate = false
     EnforceSize()
+    if ns.SyncManagedHolderSize then
+        ns.SyncManagedHolderSize("objectiveTracker")
+    end
+    local inCombat = type(InCombatLockdown) == "function" and InCombatLockdown()
+    if RefreshTrackerContent and not inCombat then
+        RefreshTrackerContent()
+    end
     UpdateBackdropAnchors()
     HidePOIButtonGlows()
     StyleExistingProgressBars()
@@ -617,11 +651,10 @@ end
 local function DeferObjectiveTrackerPostLayoutUpdate()
     if pendingBackdropUpdate then return end
     pendingBackdropUpdate = true
-    -- FrameXML DirtiableMixin:MarkDirty uses RunNextFrame, and our hooks are
     C_Timer.After(0, RunObjectiveTrackerPostLayoutUpdate)
 end
 
-local function ScheduleBackdropUpdate()
+ScheduleBackdropUpdate = function()
     DeferObjectiveTrackerPostLayoutUpdate()
 end
 
@@ -634,8 +667,7 @@ protectedLayoutEventFrame:SetScript("OnEvent", function()
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker then return end
 
-    ApplyTrackerMaxHeight(settings)
-    ApplyMaxWidth(settings)
+    ApplyLayoutSettingsSafely(settings)
     ScheduleBackdropUpdate()
 end)
 
@@ -647,17 +679,6 @@ if ns.DebugRegister then
     ns.DebugRegister(SetupDebugInstrumentation)
 else
     SetupDebugInstrumentation()
-end
-
-local function ApplyLayoutSettingsSafely(settings)
-    if type(InCombatLockdown) == "function" and InCombatLockdown() then
-        pendingProtectedLayoutUpdate = true
-        return false
-    end
-
-    ApplyTrackerMaxHeight(settings)
-    ApplyMaxWidth(settings)
-    return true
 end
 
 local function ResolveBackdropOpacity(bga)
@@ -678,23 +699,6 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
     if not trackerFrame then return end
 
     SkinBase.KillNineSlice(trackerFrame.NineSlice)
-
-    if trackerFrame.SetBackgroundAlpha and not SkinBase.GetFrameData(trackerFrame, "backgroundHooked") then
-        hooksecurefunc(trackerFrame, "SetBackgroundAlpha", function(self, alpha)
-            C_Timer.After(0, function()
-                if self.NineSlice then
-                    self.NineSlice:Hide()
-                    self.NineSlice:SetAlpha(0)
-                end
-                local bd = SkinBase.GetFrameData(self, "backdrop")
-                if bd then
-                    local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
-                    SkinBase.SetBackdropColors(bd, nil, { currBgR, currBgG, currBgB, alpha })
-                end
-            end)
-        end)
-        SkinBase.SetFrameData(trackerFrame, "backgroundHooked", true)
-    end
 
     local opacity = ResolveBackdropOpacity(bga)
 
@@ -752,59 +756,18 @@ local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, modu
     end
 end
 
-local function HookLineCreation()
+RefreshTrackerContent = function()
     local settings = GetSettings()
-    if not settings then return end
+    if not settings or not settings.skinObjectiveTracker then return end
 
-    local textFontSize = settings.objectiveTrackerTextFontSize or 0
-    if textFontSize <= 0 then return end
-
-    local fontPath = GetFontPath()
-
-    if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.AddObjective and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked") then
-        hooksecurefunc(ObjectiveTrackerBlockMixin, "AddObjective", function(self, objectiveKey)
-            local block = self
-            if IsWidgetPoolBlock(block) then return end
-            EnsureBlockHighlightHook(block)
-            if issecretvalue and issecretvalue(objectiveKey) then return end -- @secret-policy: reject-secret-value (cannot index usedLines with a secret key)
-            C_Timer.After(0, function()
-                local line = block.usedLines and block.usedLines[objectiveKey]
-                if line then
-                    local currentSettings = GetSettings()
-                    local currentTextSize = currentSettings and currentSettings.objectiveTrackerTextFontSize or 0
-                    local currentTextColor = currentSettings and currentSettings.objectiveTrackerTextColor
-                    if currentTextSize > 0 then
-                        StyleLine(line, GetFontPath(), currentTextSize, currentTextColor, true)
-                    end
-                end
-            end)
-        end)
-        SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "addObjectiveHooked", true)
-    end
-
-    if ObjectiveTrackerBlockMixin and ObjectiveTrackerBlockMixin.SetHeader and not SkinBase.GetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked") then
-        hooksecurefunc(ObjectiveTrackerBlockMixin, "SetHeader", function(self)
-            local block = self
-            if IsWidgetPoolBlock(block) then return end
-            EnsureBlockHighlightHook(block)
-            C_Timer.After(0, function()
-                local currentSettings = GetSettings()
-                local currentTitleSize = currentSettings and currentSettings.objectiveTrackerTitleFontSize or 0
-                local currentTitleColor = currentSettings and currentSettings.objectiveTrackerTitleColor
-                if currentTitleSize > 0 and block.HeaderText then
-                    local curFont, curSize, curFlags = block.HeaderText:GetFont()
-                    local targetFont = GetFontPath()
-                    local targetFlags = GetFontFlags()
-                    if curFont ~= targetFont or curSize ~= currentTitleSize or curFlags ~= targetFlags then
-                        CJKFont(block.HeaderText, targetFont, currentTitleSize, targetFlags)
-                    end
-                    SafeSetTextColor(block.HeaderText, currentTitleColor)
-                end
-            end)
-        end)
-        SkinBase.SetFrameData(ObjectiveTrackerBlockMixin, "setHeaderHooked", true)
-    end
-
+    ApplyFontStyles(
+        settings.objectiveTrackerModuleFontSize or 12,
+        settings.objectiveTrackerTitleFontSize or 10,
+        settings.objectiveTrackerTextFontSize or 10,
+        settings.objectiveTrackerModuleColor,
+        settings.objectiveTrackerTitleColor,
+        settings.objectiveTrackerTextColor
+    )
 end
 
 local function SkinObjectiveTracker()
@@ -827,23 +790,10 @@ local function SkinObjectiveTracker()
     ApplyLayoutSettingsSafely(settings)
 
     ApplyQUIBackdrop(TrackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-
-    local moduleFontSize = settings.objectiveTrackerModuleFontSize or 12
-    local titleFontSize = settings.objectiveTrackerTitleFontSize or 10
-    local textFontSize = settings.objectiveTrackerTextFontSize or 10
-    local moduleColor = settings.objectiveTrackerModuleColor
-    local titleColor = settings.objectiveTrackerTitleColor
-    local textColor = settings.objectiveTrackerTextColor
-    ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
-
-    HookLineCreation()
-    HookAnimLineState()
-    HookProgressBarMixins()
+    RefreshTrackerContent()
     StyleExistingProgressBars()
 
-    if TrackerFrame.Header then
-        SkinTrackerHeader(TrackerFrame.Header)
-    end
+    SkinMasterHeader(TrackerFrame)
 
     for _, trackerName in ipairs(trackerModules) do
         local tracker = _G[trackerName]
@@ -854,18 +804,8 @@ local function SkinObjectiveTracker()
 
     local DeferredScheduleBackdropUpdate = DeferObjectiveTrackerPostLayoutUpdate
 
-    if TrackerFrame.Update and not SkinBase.GetFrameData(TrackerFrame, "updateHooked") then
-        hooksecurefunc(TrackerFrame, "Update", DeferredScheduleBackdropUpdate)
-        SkinBase.SetFrameData(TrackerFrame, "updateHooked", true)
-    end
-
-    if TrackerFrame.SetCollapsed and not SkinBase.GetFrameData(TrackerFrame, "collapseHooked") then
-        hooksecurefunc(TrackerFrame, "SetCollapsed", DeferredScheduleBackdropUpdate)
-        SkinBase.SetFrameData(TrackerFrame, "collapseHooked", true)
-    end
-
     for _, trackerName in ipairs(trackerModules) do
-        local tracker = _G[trackerName]
+        local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
         if tracker and not SkinBase.GetFrameData(tracker, "collapseHooked") then
             if tracker.Header and tracker.Header.MinimizeButton then
                 tracker.Header.MinimizeButton:HookScript("OnClick", DeferredScheduleBackdropUpdate)
@@ -873,10 +813,6 @@ local function SkinObjectiveTracker()
 
             if tracker.SetCollapsed then
                 hooksecurefunc(tracker, "SetCollapsed", DeferredScheduleBackdropUpdate)
-            end
-
-            if tracker.LayoutContents then
-                hooksecurefunc(tracker, "LayoutContents", DeferredScheduleBackdropUpdate)
             end
 
             if tracker.AddBlock and not SkinBase.GetFrameData(tracker, "addBlockHooked") then
@@ -890,16 +826,6 @@ local function SkinObjectiveTracker()
 
             SkinBase.SetFrameData(tracker, "collapseHooked", true)
         end
-    end
-
-    if not SkinBase.GetFrameData(TrackerFrame, "sizeChangedHooked") then
-        TrackerFrame:HookScript("OnSizeChanged", function()
-            C_Timer.After(0, function()
-                EnforceSize()
-                UpdateBackdropAnchors()
-            end)
-        end)
-        SkinBase.SetFrameData(TrackerFrame, "sizeChangedHooked", true)
     end
 
     local manager = _G.ObjectiveTrackerManager
@@ -947,18 +873,7 @@ local function RefreshObjectiveTracker()
     end
 
     UpdateBackdropAnchors()
-
-    local moduleFontSize = settings.objectiveTrackerModuleFontSize or 12
-    local titleFontSize = settings.objectiveTrackerTitleFontSize or 10
-    local textFontSize = settings.objectiveTrackerTextFontSize or 10
-    local moduleColor = settings.objectiveTrackerModuleColor
-    local titleColor = settings.objectiveTrackerTitleColor
-    local textColor = settings.objectiveTrackerTextColor
-    ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
-
-    HookLineCreation()
-    HookAnimLineState()
-    HookProgressBarMixins()
+    RefreshTrackerContent()
     StyleExistingProgressBars()
 
     TrackerFrame:EnableMouse(not settings.objectiveTrackerClickThrough)
@@ -976,6 +891,8 @@ if ns.Registry then
 end
 
 local trackingEvents = {
+    "PLAYER_ENTERING_WORLD",
+    "ZONE_CHANGED_NEW_AREA",
     "CONTENT_TRACKING_UPDATE",
     "TRACKED_ACHIEVEMENT_UPDATE",
     "TRACKED_ACHIEVEMENT_LIST_CHANGED",
@@ -1011,18 +928,8 @@ local frame = CreateFrame("Frame")
 frame:SetScript("OnEvent", function(self, event)
     if event == "SUPER_TRACKING_CHANGED" then
         C_Timer.After(0.01, HidePOIButtonGlows)
-        ScheduleBackdropUpdate()
-    elseif event == "SCENARIO_UPDATE" or event == "SCENARIO_COMPLETED" then
-        C_Timer.After(0.2, function()
-            local settings = GetSettings()
-            if settings and settings.skinObjectiveTracker then
-                ApplyLayoutSettingsSafely(settings)
-            end
-        end)
-        ScheduleBackdropUpdate()
-    else
-        ScheduleBackdropUpdate()
     end
+    ScheduleBackdropUpdate()
 end)
 
 if ns.WhenLoggedIn then

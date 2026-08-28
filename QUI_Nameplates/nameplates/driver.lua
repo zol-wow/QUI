@@ -403,6 +403,8 @@ function ClearUnit(plate)
     plate.npLastMaxHP = nil
     plate.npLastAbsorbMax = nil
     plate.npAbsorbHidden = nil
+    if plate.absorbBar then plate.absorbBar:Hide() end
+    if plate.npAbsorbText then plate.npAbsorbText:Hide() end
     if plate.healPredictBar then plate.healPredictBar:Hide() end
     if plate.powerBar then plate.powerBar:Hide() end
     plate.npLastR, plate.npLastG, plate.npLastB = nil, nil, nil

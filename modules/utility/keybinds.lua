@@ -94,7 +94,7 @@ local function IsAnyKeybindFeatureEnabled()
                 and settings.enabled ~= false
                 and settings.pressedEffect ~= "off"
         end
-        if Enabled(ncdm.essential) or Enabled(ncdm.utility) or Enabled(ncdm.buff) then
+        if Enabled(ncdm.essential) or Enabled(ncdm.utility) then
             return true
         end
         local shared = QUI.CDMShared
@@ -719,6 +719,8 @@ local function ProcessCachedActionButton(button)
 end
 
 local function LooksLikeActionButton(frame)
+    local objectType = frame:GetObjectType()
+    if objectType ~= "Button" and objectType ~= "CheckButton" then return false end
     if frame.action then return true end
     return type(frame.GetAction) == "function"
 end

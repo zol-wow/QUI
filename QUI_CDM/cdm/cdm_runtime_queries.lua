@@ -124,6 +124,12 @@ function CDMRuntimeQueries.ResetRuntimeQueryBatch()
     AdvanceRuntimeQueryEpoch()
 end
 
+function CDMRuntimeQueries.GetActiveBatchEpoch()
+    if runtimeQueryBatchDepth > 0 then
+        return runtimeQueryEpoch
+    end
+end
+
 local batchSharedCache = {
     cooldown = {},
     charge = {},

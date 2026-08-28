@@ -168,6 +168,15 @@ local function BuildHUDVisibilityTab(tabContent)
         function() if _G.QUI_RefreshCustomTrackersMouseover then _G.QUI_RefreshCustomTrackersMouseover() end end
     )
 
+    if not db.auraDisplays then db.auraDisplays = {} end
+    if not db.auraDisplays.hudVisibility then db.auraDisplays.hudVisibility = {} end
+    BuildVisibilitySection(
+        ns.L["Aura Displays"],
+        db.auraDisplays.hudVisibility,
+        function() if ns.RefreshAuraDisplaysVisibility then ns.RefreshAuraDisplaysVisibility() end end,
+        function() if ns.RefreshAuraDisplaysMouseover then ns.RefreshAuraDisplaysMouseover() end end
+    )
+
     if not db.actionBarsVisibility then db.actionBarsVisibility = {} end
     BuildVisibilitySection(
         ns.L["Action Bars Visibility"],

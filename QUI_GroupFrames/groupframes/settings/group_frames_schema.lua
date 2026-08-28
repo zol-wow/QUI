@@ -566,8 +566,6 @@ local function RenderGeneralCopySettingsSection(sectionHost, ctx)
     local profileCopy = ns.QUI_ProfileCopyOptions
     if profileCopy
         and type(profileCopy.CreateCard) == "function"
-        and type(profileCopy.HasSourceProfile) == "function"
-        and profileCopy.HasSourceProfile()
     then
         local controller = profileCopy.CreateCard(sectionHost, {
             yOffset = -(height + 12),

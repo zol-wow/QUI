@@ -546,7 +546,7 @@ local defaults = {
 
         alts = {
             enabled = true,
-            window = { point = "CENTER", x = 0, y = 0, width = 920, height = 540 },
+            window = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0, width = 920, height = 540 },
             columns = {
                 ilvl = true, gold = true, played = true, rested = true,
                 zone = true, lastSeen = true, professions = true,
@@ -970,7 +970,6 @@ local defaults = {
                 dormantSpells = {},
                 spellOverrides = {},
                 iconDisplayMode = "active",
-                pressedEffect = "qui",
                 containerType = "aura",
             },
             trackedBar = {
@@ -1143,7 +1142,6 @@ local defaults = {
                     dormantSpells = {},
                     spellOverrides = {},
                     iconDisplayMode = "active",
-                    pressedEffect = "qui",
                 },
                 trackedBar = {
                     name = "Buff Bars",
@@ -3756,7 +3754,25 @@ local defaults = {
             },
         },
 
-        auraDisplays = { enabled = true },
+        auraDisplays = {
+            enabled = true,
+            hudVisibility = {
+                showAlways = true,
+                showWhenTargetExists = false,
+                showInCombat = false,
+                showInGroup = false,
+                showInInstance = false,
+                showOnMouseover = false,
+                showWhenMounted = false,
+                fadeDuration = 0.2,
+                fadeOutAlpha = 0,
+                hideWhenMounted = false,
+                hideWhenInVehicle = false,
+                hideWhenFlying = false,
+                hideWhenSkyriding = false,
+                dontHideInDungeonsRaids = false,
+            },
+        },
 
         totemBar = {
             enabled = false,
@@ -4375,8 +4391,10 @@ local defaults = {
             entries = {},
         },
         profileFeaturePins = {
-            _version = 1,
+            _version = 3,
             profiles = {},
+            sources = {},
+            optOuts = {},
         },
         mailContacts = {},
         spellScanner = {

@@ -1965,8 +1965,6 @@ local function RenderEffectsSection(sectionHost, ctx)
         )
         UpdateOverlayColorState()
         builder.CloseCard(card)
-        builder.Spacer(10)
-        RenderPressedEffectSection(builder, gui, optionsAPI, containerKey)
         return builder.Height()
     end
 

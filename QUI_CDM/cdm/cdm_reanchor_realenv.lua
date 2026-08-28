@@ -208,8 +208,6 @@ local function _DecorateWork(decorator, live, shell, rowConfig)
     return decorator:Decorate(live, rowConfig)
 end
 
-local _barHooked = setmetatable({}, { __mode = "k" })
-
 local _barWidgets = setmetatable({}, { __mode = "k" })
 
 local function _ResolveBarIconTexture(live, entry)
@@ -373,31 +371,6 @@ CDMReanchorRealEnv._DecorateWork    = _DecorateWork
 CDMReanchorRealEnv._BarDecorateWork = _BarDecorateWork
 CDMReanchorRealEnv._BarReskinWork   = _BarReskinWork
 
-local function _InstallBarReskinHooks(live, getSettingsFn, key)
-    if _barHooked[live] or not hooksecurefunc then return end
-    _barHooked[live] = true
-    local function reapply()
-        _BarReskinWork(live, getSettingsFn and getSettingsFn(key) or nil)
-    end
-    if live.SetBarContent then hooksecurefunc(live, "SetBarContent", function() _securecall(reapply) end) end
-    if live.SetBarWidth then hooksecurefunc(live, "SetBarWidth", function() _securecall(reapply) end) end
-    local function hideOnShow(region)
-        if region and region.Show then
-            hooksecurefunc(region, "Show", function(self)
-                _securecall(function()
-                    if self.Hide then self:Hide() end
-                    if self.SetAlpha then self:SetAlpha(0) end
-                end)
-            end)
-        end
-    end
-    if live.Bar then
-        hideOnShow(live.Bar.Pip)
-        hideOnShow(live.Bar.BarBG)
-    end
-    hideOnShow(live.DebuffBorder)
-end
-
 function CDMReanchorRealEnv.BuildEnv(ctx)
     ctx = ctx or {}
     local Containers = ctx.CDMContainers or ns.CDMContainers
@@ -503,7 +476,6 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
     local decorate = function(live, shell, rowConfig, key)
         if key == "trackedBar" then
             _securecall(_BarDecorateWork, live, shell, ctx.getSettings and ctx.getSettings(key) or nil)
-            _InstallBarReskinHooks(live, ctx.getSettings, key)
             return true
         end
         if decorator then

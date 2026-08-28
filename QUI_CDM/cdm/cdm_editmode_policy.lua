@@ -39,6 +39,38 @@ end
 
 local _applied = false
 
+local function RequireReload()
+    local function reloadUI()
+        if _G.ReloadUI then _G.ReloadUI() end
+    end
+    local function showPopup()
+        if not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then
+            reloadUI()
+            return
+        end
+        _G.StaticPopupDialogs["QUI_CDM_EDITMODE_RELOAD"] = {
+            text = "QUI has updated your Cooldown Manager Edit Mode settings"
+                .. " (viewers must be Always visible with Hide When Inactive on"
+                .. " for cooldown tracking to work).\n\nA UI reload is required"
+                .. " to apply them.",
+            button1 = "Reload UI",
+            OnAccept = reloadUI,
+            timeout = 0,
+            whileDead = 1,
+            hideOnEscape = false,
+            preferredIndex = 3,
+        }
+        if not _G.StaticPopup_Show("QUI_CDM_EDITMODE_RELOAD") then
+            reloadUI()
+        end
+    end
+    if _G.C_Timer and _G.C_Timer.After then
+        _G.C_Timer.After(0, showPopup)
+    else
+        showPopup()
+    end
+end
+
 function CDMEditModePolicy.Enforce()
     if _applied then return end
     if _G.QUI_IsCDMMasterEnabled and not _G.QUI_IsCDMMasterEnabled() then return end
@@ -122,23 +154,7 @@ function CDMEditModePolicy.Enforce()
 
     C_EditMode.SaveLayouts(layoutInfo)
     if db then db.cdmEditModeSavePending = true end
-
-    if not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then return end
-
-    _G.StaticPopupDialogs["QUI_CDM_EDITMODE_RELOAD"] = {
-        text = "QUI has updated your Cooldown Manager Edit Mode settings"
-            .. " (viewers must be Always visible with Hide When Inactive on"
-            .. " for cooldown tracking to work).\n\nA UI reload is required"
-            .. " to apply them.",
-        button1 = "Reload UI",
-        OnAccept = function()
-            if _G.ReloadUI then _G.ReloadUI() end
-        end,
-        timeout = 0,
-        whileDead = 1,
-        preferredIndex = 3,
-    }
-    _G.StaticPopup_Show("QUI_CDM_EDITMODE_RELOAD")
+    RequireReload()
 end
 
 local enforceFrame = CreateFrame("Frame")

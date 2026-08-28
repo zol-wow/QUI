@@ -349,7 +349,12 @@ function NPHealth.UpdateAbsorbs(plate)
         return
     end
 
-    if plate.npAbsorbHidden then
+    -- npAbsorbHidden is tri-state: nil means unknown (fresh build or recycled
+    -- plate), so anything but a confirmed-shown state must call Show(). Under
+    -- 12.1 combat restrictions the amount stays secret, the readable-zero hide
+    -- path never runs, and a nil flag would otherwise pin the bar hidden for
+    -- the whole fight.
+    if plate.npAbsorbHidden ~= false then
         plate.npAbsorbHidden = false
         absorbBar:Show()
     end

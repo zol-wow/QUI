@@ -88,19 +88,19 @@ function CDMSources.QueryLastCategoryCooldownSource(categoryID)
         return cached and cached.spellID or QueryCategoryMetadataSpellID(categoryID),
             cached and cached.itemID or nil
     end
-    if spellID == nil and itemID == nil then
-        return cached and cached.spellID or QueryCategoryMetadataSpellID(categoryID),
-            cached and cached.itemID or nil
-    end
     if spellID == nil then
         spellID = QueryCategoryMetadataSpellID(categoryID)
     end
-    if not cached then
-        cached = {}
-        _lastCategoryCooldownSources[categoryID] = cached
+    if spellID ~= nil and itemID ~= nil then
+        if not cached then
+            cached = {}
+            _lastCategoryCooldownSources[categoryID] = cached
+        end
+        if cached.spellID ~= spellID then cached.spellID = spellID end
+        if cached.itemID ~= itemID then cached.itemID = itemID end
+    elseif cached then
+        return cached.spellID, cached.itemID
     end
-    cached.spellID = spellID
-    cached.itemID = itemID
     return spellID, itemID
 end
 

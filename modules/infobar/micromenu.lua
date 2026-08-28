@@ -7,7 +7,6 @@ local max = math.max
 local ipairs = ipairs
 
 local PlayerSpellsUtil = _G.PlayerSpellsUtil
-local ToggleStoreUI = _G.ToggleStoreUI
 local ToggleProfessionsBook = _G.ToggleProfessionsBook
 local ToggleQuestLog = _G.ToggleQuestLog
 local ToggleEncounterJournal = _G.ToggleEncounterJournal
@@ -59,10 +58,6 @@ local BUTTONS = {
             local u = _G.HousingFramesUtil
             if u and u.ToggleHousingDashboard then u.ToggleHousingDashboard() end
         end,
-    },
-    {
-        key = "shop", label = ns.L["Shop"], atlas = "Shop",
-        onClick = function() ToggleStoreUI() end,
     },
     {
         key = "help", label = ns.L["Support"], atlas = "GameMenu",

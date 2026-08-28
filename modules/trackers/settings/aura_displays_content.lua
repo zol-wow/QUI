@@ -1032,8 +1032,6 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
     local profileCopy = ns.QUI_ProfileCopyOptions
     if profileCopy
         and type(profileCopy.CreateCard) == "function"
-        and type(profileCopy.HasSourceProfile) == "function"
-        and profileCopy.HasSourceProfile()
     then
         local copyHeader = Shared.CreateAccentDotLabel(content, ns.L["Copy Settings"], 0)
         copyHeader:ClearAllPoints()
