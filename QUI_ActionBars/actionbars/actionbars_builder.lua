@@ -758,14 +758,6 @@ function BuildBar(barKey)
         end
     end
 
-    if not ActionBarsOwned.slotMap then ActionBarsOwned.slotMap = {} end
-    for _, btn in ipairs(buttons) do
-        local slot = GetSafeActionSlot(btn)
-        if slot then
-            ActionBarsOwned.slotMap[slot] = { button = btn, barKey = barKey }
-        end
-    end
-
     if barKey ~= "pet" and barKey ~= "stance" and barKey ~= "microbar" and barKey ~= "bags" then
         for _, btn in ipairs(buttons) do
             SetupStandardOwnedButtonRuntime(container, btn)
