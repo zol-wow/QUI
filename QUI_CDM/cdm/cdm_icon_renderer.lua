@@ -425,9 +425,6 @@ end
 
 local function ReapplySwipeStyle(cd, icon)
     if not cd then return end
-    if cd.SetSwipeTexture then
-        cd.SetSwipeTexture(cd, "Interface\\Buttons\\WHITE8X8")
-    end
     local CooldownSwipe = ns._OwnedSwipe or (QUI and QUI.CooldownSwipe)
     if CooldownSwipe and CooldownSwipe.ApplyToIcon then
         CooldownSwipe.ApplyToIcon(icon)

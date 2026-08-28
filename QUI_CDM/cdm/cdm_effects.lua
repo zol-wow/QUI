@@ -1862,8 +1862,10 @@ local function ApplySwipeToIcon(icon, settings)
         if not cd then return end
         cd._quiIntendedDrawSwipe = showSwipe and true or false
         cd._quiIntendedDrawEdge  = showEdge and true or false
-        cd._quiIntendedSwipeTexture = FULL_FRAME_SWIPE_TEXTURE
-        cd.SetSwipeTexture(cd, FULL_FRAME_SWIPE_TEXTURE)
+        if cd._quiIntendedSwipeTexture ~= FULL_FRAME_SWIPE_TEXTURE then
+            cd._quiIntendedSwipeTexture = FULL_FRAME_SWIPE_TEXTURE
+            cd.SetSwipeTexture(cd, FULL_FRAME_SWIPE_TEXTURE)
+        end
         cd.SetDrawSwipe(cd, showSwipe and true or false)
         cd.SetDrawEdge(cd, showEdge and true or false)
 
