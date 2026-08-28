@@ -413,6 +413,7 @@ local function ApplySettingOverrides(p)
     if type(p.minimap) ~= "table" then p.minimap = {} end
     if type(p.minimap.buttonDrawer) ~= "table" then p.minimap.buttonDrawer = {} end
     p.minimap.buttonDrawer.toggleIcon = "qui"
+    if type(p.mplusTimer) == "table" then p.mplusTimer.forcesTextFormat = nil end
 end
 ApplySettingOverrides(profile)
 

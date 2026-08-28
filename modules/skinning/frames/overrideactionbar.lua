@@ -88,13 +88,6 @@ local function HideBlizzardElements(bar)
         bar.pitchFrame:SetAlpha(0)
     end
 
-    if bar.leaveFrame then
-        bar.leaveFrame:SetAlpha(0)
-        if bar.LeaveButton then
-            bar.LeaveButton:Show()
-        end
-    end
-
     if bar.xpBar then
         bar.xpBar:SetAlpha(0)
     end
