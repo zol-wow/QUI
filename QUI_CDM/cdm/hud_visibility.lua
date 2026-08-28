@@ -4,6 +4,7 @@ local QUICore = ns.Addon
 
 local UpdateCDMVisibility
 local UpdateCustomTrackersVisibility
+local UpdateAuraDisplaysVisibility
 local UpdateUnitframesVisibility
 local UpdateActionBarsVisibility
 local UpdateChatVisibility
@@ -149,7 +150,7 @@ end
 local function ShouldHideForLocationRules(vis, includeVehicle)
     local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
     if ignoreHideRules then return false end
-    if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
+    if vis.hideWhenMounted and Helpers.IsPlayerMounted() then return true end
     if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return true end
     if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return true end
     if includeVehicle and vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return true end
@@ -203,10 +204,9 @@ function VisibilityController:ShouldBeVisible()
 
     if self.forceVisible and self.forceVisible() then return true end
 
-    if vis.showAlways then
-        if ShouldHideForLocationRules(vis, self.includeVehicle) then return false end
-        return true
-    end
+    if ShouldHideForLocationRules(vis, self.includeVehicle) then return false end
+
+    if vis.showAlways then return true end
 
     if vis.showWhenTargetExists and UnitExists("target") then return true end
     if vis.showInCombat and UnitAffectingCombat("player") then return true end
@@ -214,8 +214,6 @@ function VisibilityController:ShouldBeVisible()
     if vis.showInInstance and IsPlayerInInstance() then return true end
     if vis.showOnMouseover and self.mouseOver then return true end
     if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
-
-    if ShouldHideForLocationRules(vis, self.includeVehicle) then return false end
 
     return false
 end
@@ -562,6 +560,89 @@ local function SetupCustomTrackersMouseoverDetector()
     end
 
     CustomTrackersVisibility:EnsureDetector()
+end
+
+local function GetAuraDisplaysVisibilitySettings()
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    local auraDisplays = profile and profile.auraDisplays
+    return auraDisplays and auraDisplays.hudVisibility or nil
+end
+
+local function GetAuraDisplayFrames()
+    local auraDisplays = ns.QUI_AuraDisplays
+    if auraDisplays and type(auraDisplays.GetVisibilityFrames) == "function" then
+        return auraDisplays.GetVisibilityFrames()
+    end
+    return {}
+end
+
+local function IsAuraDisplayMouseOver()
+    local auraDisplays = ns.QUI_AuraDisplays
+    if auraDisplays and type(auraDisplays.IsVisibilityFrameMouseOver) == "function" then
+        return auraDisplays.IsVisibilityFrameMouseOver()
+    end
+    return false
+end
+
+local function GetAuraDisplaysAlpha()
+    local auraDisplays = ns.QUI_AuraDisplays
+    if auraDisplays and type(auraDisplays.GetVisibilityAlpha) == "function" then
+        return auraDisplays.GetVisibilityAlpha()
+    end
+    return 1
+end
+
+local function ApplyAuraDisplaysAlpha(_, alpha)
+    local auraDisplays = ns.QUI_AuraDisplays
+    if auraDisplays and type(auraDisplays.SetVisibilityAlpha) == "function" then
+        auraDisplays.SetVisibilityAlpha(alpha)
+    end
+end
+
+local AuraDisplaysVisibility = CreateVisibilityController({
+    getSettings = GetAuraDisplaysVisibilitySettings,
+    getFrames = GetAuraDisplayFrames,
+    getAlpha = GetAuraDisplaysAlpha,
+    applyAlpha = ApplyAuraDisplaysAlpha,
+    includeVehicle = true,
+    update = function() UpdateAuraDisplaysVisibility() end,
+})
+
+UpdateAuraDisplaysVisibility = function()
+    local targetAlpha
+    if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
+        targetAlpha = 1
+    else
+        local vis = GetAuraDisplaysVisibilitySettings()
+        targetAlpha = AuraDisplaysVisibility:ShouldBeVisible() and 1 or (vis and vis.fadeOutAlpha or 0)
+    end
+
+    local frames = GetAuraDisplayFrames()
+    if #frames == 0 then
+        AuraDisplaysVisibility:StopFade()
+        ApplyAuraDisplaysAlpha(frames, targetAlpha)
+        return
+    end
+    AuraDisplaysVisibility:StartFade(targetAlpha, frames)
+end
+
+local function SetupAuraDisplaysMouseoverDetector()
+    AuraDisplaysVisibility:ResetMouseover()
+    if not AuraDisplaysVisibility:MouseoverEnabled() then return end
+
+    local detector = AuraDisplaysVisibility:EnsureDetector()
+    local pollElapsed = 0
+    detector:SetScript("OnUpdate", function(_, elapsed)
+        pollElapsed = pollElapsed + elapsed
+        if pollElapsed < 0.1 then return end
+        pollElapsed = 0
+
+        local mouseOver = IsAuraDisplayMouseOver()
+        if mouseOver ~= AuraDisplaysVisibility.mouseOver then
+            AuraDisplaysVisibility.mouseOver = mouseOver
+            UpdateAuraDisplaysVisibility()
+        end
+    end)
 end
 
 local function IsUnitframesCombatLocked()
@@ -963,6 +1044,7 @@ visCoalesceFrame:SetScript("OnUpdate", function(self)
     self:Hide()
     UpdateCDMVisibility()
     UpdateCustomTrackersVisibility()
+    UpdateAuraDisplaysVisibility()
     UpdateUnitframesVisibility()
     UpdateActionBarsVisibility()
     UpdateChatVisibility()
@@ -1003,12 +1085,14 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         _pendingSetupTimer = C_Timer.NewTimer(2.0, function()
             _pendingSetupTimer = nil
             SetupCDMMouseoverDetector()
-                SetupCustomTrackersMouseoverDetector()
+            SetupCustomTrackersMouseoverDetector()
+            SetupAuraDisplaysMouseoverDetector()
             SetupUnitframesMouseoverDetector()
             SetupActionBarsMouseoverDetector()
             SetupChatMouseoverDetector()
             UpdateCDMVisibility()
             UpdateCustomTrackersVisibility()
+            UpdateAuraDisplaysVisibility()
         end)
     end
 
@@ -1025,9 +1109,11 @@ ns.RefreshCDMVisibilityInstant = function()
     SnapCDMFadeToTarget()
 end
 _G.QUI_RefreshCustomTrackersVisibility = UpdateCustomTrackersVisibility
+ns.RefreshAuraDisplaysVisibility = UpdateAuraDisplaysVisibility
 _G.QUI_RefreshUnitframesVisibility = UpdateUnitframesVisibility
 _G.QUI_RefreshCDMMouseover = SetupCDMMouseoverDetector
 _G.QUI_RefreshCustomTrackersMouseover = SetupCustomTrackersMouseoverDetector
+ns.RefreshAuraDisplaysMouseover = SetupAuraDisplaysMouseoverDetector
 _G.QUI_RefreshUnitframesMouseover = SetupUnitframesMouseoverDetector
 _G.QUI_ShouldCDMBeVisible = function() return CDMVisibility:ShouldBeVisible() end
 _G.QUI_ShouldCustomTrackersBeVisible = function() return CustomTrackersVisibility:ShouldBeVisible() end
@@ -1050,6 +1136,15 @@ if ns.Registry then
         group = "cooldowns",
         importCategories = { "customTrackers" },
     })
+    ns.Registry:Register("auraDisplaysVisibility", {
+        refresh = function()
+            SetupAuraDisplaysMouseoverDetector()
+            UpdateAuraDisplaysVisibility()
+        end,
+        priority = 10,
+        group = "ui",
+        importCategories = { "auraDisplays" },
+    })
 end
 
 ns.HookFrameForMouseover = function(frame)
@@ -1069,6 +1164,7 @@ end
 local function RefreshAllVisibility()
     UpdateCDMVisibility()
     UpdateCustomTrackersVisibility()
+    UpdateAuraDisplaysVisibility()
     UpdateUnitframesVisibility()
     UpdateActionBarsVisibility()
     UpdateChatVisibility()
