@@ -4,6 +4,20 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta10 - 2026-08-28
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Action Bar proc-glow lifecycle corrections for the 5.2.3 beta line.
+
+### Fixed
+
+- **Action Bar proc glows update immediately when their current action
+  changes.** Paging, special bars, flyouts, duplicate slots, hidden-bar reveals,
+  and Rotation Assist coexistence no longer wait for a later refresh or leave
+  stale highlights.
+
 ## v5.2.3-beta9 - 2026-08-28
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
