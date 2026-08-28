@@ -668,7 +668,6 @@ local defaults = {
             forcesBarEnabled = true,
             forcesDisplayMode = "bar",
             forcesPosition = "after_timer",
-            forcesTextFormat = "both",
             forcesTextAlign = "LEFT",
             forcesLabel = "Forces",
             forcesFont = "Poppins",

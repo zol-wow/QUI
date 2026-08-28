@@ -192,7 +192,6 @@ do
                 forcesBarEnabled = true,
                 forcesDisplayMode = "bar",
                 forcesPosition = "after_timer",
-                forcesTextFormat = "both",
                 forcesTextAlign = "LEFT",
                 forcesFont = "Poppins",
                 forcesFontSize = 11,
@@ -230,19 +229,7 @@ do
             local fbPosW = GUI:CreateFormDropdown(sFB.frame, nil, posOpts, "forcesPosition", mpDB, RefreshLayout,
                 { description = ns.L["Where the forces bar / text is inserted relative to the timer bars and objective rows."] })
 
-            local formatOpts = {
-                { text = ns.L["Count (123/273)"], value = "count" },
-                { text = ns.L["Percentage (45.32%)"], value = "percentage" },
-                { text = ns.L["Both"], value = "both" },
-            }
-            local fbFmtW = GUI:CreateFormDropdown(sFB.frame, nil, formatOpts, "forcesTextFormat", mpDB, function()
-                local MPlusTimer = _G.QUI_MPlusTimer
-                if MPlusTimer and MPlusTimer.RenderForces then MPlusTimer:RenderForces() end
-            end, { description = ns.L["How forces progress is formatted: running count, percent, or both."] })
-            sFB.AddRow(
-                row(sFB.frame, ns.L["Position"], fbPosW),
-                row(sFB.frame, ns.L["Text Format"], fbFmtW)
-            )
+            sFB.AddRow(row(sFB.frame, ns.L["Position"], fbPosW))
 
             local fbAlignW = GUI:CreateFormDropdown(sFB.frame, nil, objAlignOpts, "forcesTextAlign", mpDB, RefreshLayout,
                 { description = ns.L["Horizontal alignment of the forces text when Display Mode is Text Only."] })

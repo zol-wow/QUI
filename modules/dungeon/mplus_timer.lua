@@ -96,8 +96,6 @@ local defaultState = {
     deathCount = 0,
     deathTimeLost = 0,
     forcesQuantity = 0,
-    forcesTotal = 0,
-    forcesQuantityString = "",
     pullPercent = 0,
     objectivesList = {},
     objectivesByIndex = {},
@@ -171,7 +169,6 @@ local DEFAULTS = {
     forcesBarEnabled = true,
     forcesDisplayMode = "bar",
     forcesPosition = "after_timer",
-    forcesTextFormat = "both",
     forcesTextAlign = "LEFT",
     forcesLabel = ns.L["Forces"],
     forcesFont = "Poppins",
@@ -1305,15 +1302,7 @@ function MPlusTimer:RenderAffixIcons()
 end
 
 function MPlusTimer:WriteForcesText(fs)
-    local settings = GetSettings()
-    local format = settings.forcesTextFormat or "both"
-    if format == "count" then
-        fs:SetFormattedText("%s", self.state.forcesQuantityString)
-    elseif format == "percentage" then
-        fs:SetFormattedText("%.2f%%", self.state.forcesQuantity)
-    else
-        fs:SetFormattedText("%.2f%% (%s)", self.state.forcesQuantity, self.state.forcesQuantityString)
-    end
+    fs:SetFormattedText("%.2f%%", self.state.forcesQuantity)
 end
 
 function MPlusTimer:RenderForces()
@@ -1507,10 +1496,8 @@ function MPlusTimer:SetDeathCount(count, timeLost)
     self:RenderDeaths()
 end
 
-function MPlusTimer:SetForces(quantity, total, quantityString)
+function MPlusTimer:SetForces(quantity)
     if type(quantity) ~= "nil" then self.state.forcesQuantity = quantity end
-    if type(total) ~= "nil" then self.state.forcesTotal = total end
-    if type(quantityString) ~= "nil" then self.state.forcesQuantityString = quantityString end
     self:RenderForces()
 end
 
@@ -1578,7 +1565,7 @@ function MPlusTimer:EnableDemoMode()
     self:SetTimeLimit(32 * 60)
     self:SetKeyDetails(11, {"Tyrannical", "Storming", "Fortified"}, {9, 124, 10}, 1, "Jade Serpent")
     self:SetDeathCount(3, 15)
-    self:SetForces(68.51, 289, "198/289")
+    self:SetForces(68.51)
 
     self:SetObjectives({
         { name = "Wise Mari", time = 328 },
@@ -1739,7 +1726,7 @@ function MPlusTimer:UpdateForces()
     local info = C_ScenarioInfo.GetCriteriaInfo(idx)
     if type(info) ~= "table" then return end
 
-    self:SetForces(info.quantity, info.totalQuantity, info.quantityString)
+    self:SetForces(info.quantity)
 end
 -- <<< QUI_TEST_EXTRACT mplus_objectives_secret
 
