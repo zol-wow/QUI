@@ -3754,7 +3754,25 @@ local defaults = {
             },
         },
 
-        auraDisplays = { enabled = true },
+        auraDisplays = {
+            enabled = true,
+            hudVisibility = {
+                showAlways = true,
+                showWhenTargetExists = false,
+                showInCombat = false,
+                showInGroup = false,
+                showInInstance = false,
+                showOnMouseover = false,
+                showWhenMounted = false,
+                fadeDuration = 0.2,
+                fadeOutAlpha = 0,
+                hideWhenMounted = false,
+                hideWhenInVehicle = false,
+                hideWhenFlying = false,
+                hideWhenSkyriding = false,
+                dontHideInDungeonsRaids = false,
+            },
+        },
 
         totemBar = {
             enabled = false,

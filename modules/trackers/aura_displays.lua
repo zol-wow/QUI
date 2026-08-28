@@ -497,9 +497,56 @@ local hosts = {}
 local registered = {}
 local eventFrame
 local watchingDynamicUnits = false
+local visibilityAlpha = 1
+local previewActive = false
+local singlePreviewID
+local IsSecretValue = issecretvalue
+
+local function ApplyHostVisibilityAlpha(id, host, forceVisible)
+    local alpha = 0
+    if previewActive or id == singlePreviewID then
+        alpha = 1
+    elseif host._quiAuraDisplayActive then
+        alpha = forceVisible and 1 or visibilityAlpha
+    end
+    host:SetAlpha(alpha)
+end
 
 function AD.HostFor(id)
     return hosts[id]
+end
+
+function AD.GetVisibilityFrames()
+    local frames = {}
+    for _, host in pairs(hosts) do
+        if host._quiAuraDisplayActive then
+            frames[#frames + 1] = host
+        end
+    end
+    return frames
+end
+
+function AD.IsVisibilityFrameMouseOver()
+    for _, host in pairs(hosts) do
+        if host._quiAuraDisplayActive then
+            local mouseOver = host:IsMouseOver()
+            if not (IsSecretValue and IsSecretValue(mouseOver)) and mouseOver then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function AD.GetVisibilityAlpha()
+    return visibilityAlpha
+end
+
+function AD.SetVisibilityAlpha(alpha)
+    visibilityAlpha = alpha
+    for id, host in pairs(hosts) do
+        ApplyHostVisibilityAlpha(id, host)
+    end
 end
 
 local function EnsureHost(id)
@@ -530,6 +577,7 @@ end
 
 local function ParkOrphanHost(host)
     DisableHostContainers(host)
+    host._quiAuraDisplayActive = false
     host:Hide()
 end
 
@@ -694,9 +742,6 @@ end
 
 local EMPTY = {}
 
-local previewActive = false
-local singlePreviewID
-
 local ApplyDisplay
 
 local function GameplayHidden(id)
@@ -773,8 +818,9 @@ ApplyDisplay = function(display, allowCreate)
     local H = Helpers()
     local layoutActive = H and type(H.IsLayoutModeActive) == "function" and H.IsLayoutModeActive()
 
+    host._quiAuraDisplayActive = unit ~= nil
+    ApplyHostVisibilityAlpha(display.id, host, layoutActive)
     if unit then
-        host:SetAlpha(1)
         if layoutActive or not GameplayHidden(display.id) then
             host:Show()
         else
@@ -785,8 +831,6 @@ ApplyDisplay = function(display, allowCreate)
                 lm._gameplayHidden[AD.ANCHOR_PREFIX .. display.id] = true
             end
         end
-    else
-        host:SetAlpha(0)
     end
 
     if not layoutActive and _G.QUI_ApplyFrameAnchor then
@@ -886,6 +930,9 @@ function AD.Refresh()
         end
     end
     watchingDynamicUnits = dynamic
+    if ns.RefreshAuraDisplaysVisibility then
+        ns.RefreshAuraDisplaysVisibility()
+    end
 end
 
 local function ShowPreviewForDisplay(display)
