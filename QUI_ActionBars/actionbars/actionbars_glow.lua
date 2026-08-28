@@ -45,175 +45,125 @@ local function ActionBarGlowOpts(overrideColor)
 end
 
 function GetButtonSpellId(button)
-    local action = GetSafeActionSlot(button)
+    local action = GetSafeActionSlot(button, true)
     if not action then return nil end
     if not HasAction(action) then return nil end
 
     local ok, actionType, id, subType = ns.SafeCall("best-effort-style", GetActionInfo, action)
     if not ok then return nil end
+    actionType = Helpers.SafeValue(actionType, nil)
+    id = Helpers.SafeValue(id, nil)
+    subType = Helpers.SafeValue(subType, nil)
 
     if actionType == "spell" then
-        return id
+        return type(id) == "number" and id or nil
     elseif actionType == "macro" then
         if subType == "spell" then
-            return id
+            return type(id) == "number" and id or nil
         end
-        if GetMacroSpell then
+        if GetMacroSpell and type(id) == "number" then
             local macroOk, spellId = ns.SafeCall("best-effort-style", GetMacroSpell, id)
-            if macroOk and spellId then return spellId end
+            spellId = macroOk and Helpers.SafeValue(spellId, nil) or nil
+            if type(spellId) == "number" then return spellId end
         end
     end
     return nil
 end
 
-function ForEachSpellCandidate(spellId, callback)
-    if not spellId or not callback then return end
-    spellId = Helpers.SafeValue(spellId, nil)
-    if not spellId then return end
-
-    callback(spellId)
-
-    if C_Spell and C_Spell.GetOverrideSpell then
-        local ok, overrideId = ns.SafeCall("best-effort-style", C_Spell.GetOverrideSpell, spellId)
-        overrideId = ok and Helpers.SafeValue(overrideId, nil) or nil
-        if ok and overrideId and overrideId ~= spellId then
-            callback(overrideId)
-        end
-    end
-end
-
 function ButtonFlyoutContainsSpell(button, spellId)
-    local action = GetSafeActionSlot(button)
+    spellId = Helpers.SafeValue(spellId, nil)
+    if type(spellId) ~= "number" then return false end
+    local action = GetSafeActionSlot(button, true)
     if not action then return false end
     local ok, actionType, id = ns.SafeCall("best-effort-style", GetActionInfo, action)
-    if not ok or actionType ~= "flyout" then return false end
-    if FlyoutHasSpell then
+    actionType = ok and Helpers.SafeValue(actionType, nil) or nil
+    id = ok and Helpers.SafeValue(id, nil) or nil
+    if actionType ~= "flyout" or type(id) ~= "number" then return false end
+    if type(FlyoutHasSpell) == "function" then
         local fok, has = ns.SafeCall("best-effort-style", FlyoutHasSpell, id, spellId)
-        if fok and has then return true end
+        has = fok and Helpers.SafeValue(has, false) or false
+        if has then return true end
     end
     return false
 end
 
-spellIdToButtons = {}
-flyoutButtons = {}
-spellIdButtonListPool = {}
-spellIdMapDirty = true
-local spellIdMapStats
-local function SetupDebugInstrumentation()
-    spellIdMapStats = { rebuilds = 0, dirtyMarks = 0, ensures = 0 }
-    local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "AB_spellIdToButtons", tbl = spellIdToButtons }
-    mp[#mp + 1] = { name = "AB_flyoutButtons",    tbl = flyoutButtons }
-    mp[#mp + 1] = { name = "AB_spellIdListPool",  tbl = spellIdButtonListPool }
-    mp[#mp + 1] = { name = "AB_spellIdMapRebuilds", counter = true, fn = function() return spellIdMapStats.rebuilds end }
-    mp[#mp + 1] = { name = "AB_spellIdMapDirtyMarks", counter = true, fn = function() return spellIdMapStats.dirtyMarks end }
-end
-if ns.DebugRegister then
-    ns.DebugRegister(SetupDebugInstrumentation)
-else
-    SetupDebugInstrumentation()
-end
-
-function AcquireSpellButtonList()
-    return table.remove(spellIdButtonListPool) or {}
-end
-
-function ClearSpellIdMap()
-    for _, list in pairs(spellIdToButtons) do
-        wipe(list)
-        if #spellIdButtonListPool < 160 then
-            spellIdButtonListPool[#spellIdButtonListPool + 1] = list
-        end
-    end
-    wipe(spellIdToButtons)
-end
-
-function RebuildSpellIdMap()
-    ClearSpellIdMap()
-    wipe(flyoutButtons)
+local function ForEachStandardButton(callback)
     for _, barKey in ipairs(STANDARD_BAR_KEYS) do
         local btns = ActionBarsOwned.nativeButtons[barKey]
         if btns then
             for _, btn in ipairs(btns) do
-                if not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey) then
-                    local spellId = GetButtonSpellId(btn)
-                    if spellId then
-                        ForEachSpellCandidate(spellId, function(candidateId)
-                            local list = spellIdToButtons[candidateId]
-                            if not list then
-                                list = AcquireSpellButtonList()
-                                spellIdToButtons[candidateId] = list
-                            end
-                            list[#list + 1] = btn
-                        end)
-                    else
-                        local action = GetSafeActionSlot(btn)
-                        if action and HasAction(action) then
-                            local ok, actionType = ns.SafeCall("best-effort-style", GetActionInfo, action)
-                            if ok and actionType == "flyout" then
-                                flyoutButtons[#flyoutButtons + 1] = btn
-                            end
-                        end
-                    end
-                end
+                callback(btn, barKey)
             end
         end
     end
-    spellIdMapDirty = false
-    if spellIdMapStats then spellIdMapStats.rebuilds = spellIdMapStats.rebuilds + 1 end
 end
 
-MarkSpellIdMapDirty = function()
-    if not spellIdMapDirty then
-        if spellIdMapStats then spellIdMapStats.dirtyMarks = spellIdMapStats.dirtyMarks + 1 end
+local function IsSpellOverlayed(spellId)
+    local query = C_SpellActivationOverlay and C_SpellActivationOverlay.IsSpellOverlayed
+        or _G.IsSpellOverlayed
+    if not query or type(spellId) ~= "number" then return false end
+    local ok, result = ns.SafeCall("best-effort-style", query, spellId)
+    result = ok and Helpers.SafeValue(result, false) or false
+    return result and true or false
+end
+
+local function IsButtonFlyoutOverlayed(button, ignoredSpellId)
+    local action = GetSafeActionSlot(button, true)
+    if not action then return false end
+    local ok, actionType, flyoutId = ns.SafeCall("best-effort-style", GetActionInfo, action)
+    actionType = ok and Helpers.SafeValue(actionType, nil) or nil
+    flyoutId = ok and Helpers.SafeValue(flyoutId, nil) or nil
+    if actionType ~= "flyout" or type(flyoutId) ~= "number" then return false end
+
+    local infoOk, _, _, numSlots = ns.SafeCall("best-effort-style", GetFlyoutInfo, flyoutId)
+    numSlots = infoOk and Helpers.SafeValue(numSlots, nil) or nil
+    if type(numSlots) ~= "number" then return false end
+
+    for slot = 1, numSlots do
+        local slotOk, baseId, overrideId = ns.SafeCall("best-effort-style", GetFlyoutSlotInfo, flyoutId, slot)
+        baseId = slotOk and Helpers.SafeValue(baseId, nil) or nil
+        overrideId = slotOk and Helpers.SafeValue(overrideId, nil) or nil
+        local currentId = type(overrideId) == "number" and overrideId or baseId
+        if type(currentId) == "number"
+            and (not ignoredSpellId or currentId ~= ignoredSpellId)
+            and IsSpellOverlayed(currentId) then
+            return true
+        end
     end
-    spellIdMapDirty = true
+    return false
 end
 
-function EnsureSpellIdMap()
-    if spellIdMapStats then spellIdMapStats.ensures = spellIdMapStats.ensures + 1 end
-    if spellIdMapDirty then
-        RebuildSpellIdMap()
+local function RefreshActionButtonGlow(button)
+    local IconGlow = ns.IconGlow
+    if not IconGlow then return end
+    local state = GetFrameState(button)
+    if state.quiAssistedHighlight then
+        IconGlow.Start(button, ActionBarGlowOpts(ASSISTED_HIGHLIGHT_COLOR))
+    elseif state.quiProcGlow then
+        IconGlow.Start(button, ActionBarGlowOpts(nil))
+    else
+        IconGlow.Stop(button)
     end
 end
 
 function ShowActionButtonGlow(button)
-    local IconGlow = ns.IconGlow
-    if not IconGlow then return end
     local state = GetFrameState(button)
-    if state.quiProcGlow then return end
     state.quiProcGlow = true
-    IconGlow.Start(button, ActionBarGlowOpts(nil))
+    RefreshActionButtonGlow(button)
 end
 
 function HideActionButtonGlow(button)
-    local IconGlow = ns.IconGlow
-    if not IconGlow then return end
     local state = GetFrameState(button)
     if not state.quiProcGlow then return end
     state.quiProcGlow = false
-    IconGlow.Stop(button)
+    RefreshActionButtonGlow(button)
 end
 
 function ActionBarsOwned.UpdateOverlayGlow(button)
     local spellId = GetButtonSpellId(button)
-    if spellId then
-        local IsSpellOverlayed = C_SpellActivationOverlay and C_SpellActivationOverlay.IsSpellOverlayed
-            or _G.IsSpellOverlayed
-        if IsSpellOverlayed then
-            local overlayed = false
-            ForEachSpellCandidate(spellId, function(candidateId)
-                if overlayed then return end
-                local ok, result = ns.SafeCall("best-effort-style", IsSpellOverlayed, candidateId)
-                if ok and result then
-                    overlayed = true
-                end
-            end)
-            if overlayed then
-                ShowActionButtonGlow(button)
-                return
-            end
-        end
+    if (spellId and IsSpellOverlayed(spellId)) or IsButtonFlyoutOverlayed(button) then
+        ShowActionButtonGlow(button)
+        return
     end
     HideActionButtonGlow(button)
 end
@@ -358,34 +308,36 @@ function UpdateAllAssistedCombatRotation()
     if not ok or not spellID then return end
     local slots = C_ActionBar.FindSpellActionButtons(spellID)
     if not slots then return end
-    local slotMap = ActionBarsOwned.slotMap
-    if not slotMap then return end
     for _, slot in ipairs(slots) do
-        local entry = slotMap[slot]
-        if entry and entry.button then
-            UpdateAssistedCombatRotationFrame(entry.button)
-            if _assistRotationButton then return end
+        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+            local buttons = ActionBarsOwned.nativeButtons[barKey]
+            if buttons then
+                for _, button in ipairs(buttons) do
+                    if GetSafeActionSlot(button) == slot then
+                        UpdateAssistedCombatRotationFrame(button)
+                        if _assistRotationButton then return end
+                    end
+                end
+            end
         end
     end
 end
 
 assistedHighlightButtons = {}
 _assistHighlightScratch = {}
+_assistSlotScratch = {}
 ASSISTED_HIGHLIGHT_COLOR = { 0.2, 0.82, 0.6, 1 }
 
 function SetAssistedHighlightShown(button, show)
-    local IconGlow = ns.IconGlow
-    if not IconGlow then return end
     local state = GetFrameState(button)
     if show then
         if state.quiAssistedHighlight then return end
         state.quiAssistedHighlight = true
-        IconGlow.Start(button, ActionBarGlowOpts(ASSISTED_HIGHLIGHT_COLOR))
     else
         if not state.quiAssistedHighlight then return end
         state.quiAssistedHighlight = false
-        IconGlow.Stop(button)
     end
+    RefreshActionButtonGlow(button)
 end
 
 UpdateAllAssistedHighlights = function()
@@ -407,17 +359,27 @@ UpdateAllAssistedHighlights = function()
     local matchButtons = _assistHighlightScratch
     wipe(matchButtons)
     if nextSpellID then
-        local slots = C_ActionBar.FindSpellActionButtons(nextSpellID)
+        local okSlots, slots = ns.SafeCall("best-effort-style", C_ActionBar.FindSpellActionButtons, nextSpellID)
+        slots = okSlots and slots or nil
         if slots then
-            local slotMap = ActionBarsOwned.slotMap
-            if slotMap then
-                for _, slot in ipairs(slots) do
-                    local entry = slotMap[slot]
-                    if entry and entry.button then
-                        matchButtons[entry.button] = true
+            local slotSet = _assistSlotScratch
+            wipe(slotSet)
+            for _, slot in ipairs(slots) do
+                slot = Helpers.SafeValue(slot, nil)
+                if type(slot) == "number" then slotSet[slot] = true end
+            end
+            for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+                local buttons = ActionBarsOwned.nativeButtons[barKey]
+                if buttons then
+                    for _, button in ipairs(buttons) do
+                        local slot = GetSafeActionSlot(button)
+                        if slot and slotSet[slot] then
+                            matchButtons[button] = true
+                        end
                     end
                 end
             end
+            wipe(slotSet)
         end
     end
 
@@ -437,85 +399,43 @@ UpdateAllAssistedHighlights = function()
 end
 
 function ActionBarsOwned.UpdateAllOverlayGlows()
-    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-        local btns = ActionBarsOwned.nativeButtons[barKey]
-        if btns then
-            for _, btn in ipairs(btns) do
-                if not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey) then
-                    ActionBarsOwned.UpdateOverlayGlow(btn)
-                end
-            end
-        end
-    end
-end
-
-spellGlowVisited = {}
-function ForEachButtonForSpellGlow(spellId, callback)
-    if not spellId or not callback then return false end
-    EnsureSpellIdMap()
-
-    local matched = false
-    local visited = spellGlowVisited
-    wipe(visited)
-    local slotMap = ActionBarsOwned.slotMap
-
-    local function VisitButton(button)
-        if button and not visited[button] then
-            visited[button] = true
-            matched = true
-            callback(button)
-        end
-    end
-
-    ForEachSpellCandidate(spellId, function(candidateId)
-        local btns = spellIdToButtons[candidateId]
-        if btns then
-            for _, btn in ipairs(btns) do
-                VisitButton(btn)
-            end
-        end
-
-        for _, btn in ipairs(flyoutButtons) do
-            if ButtonFlyoutContainsSpell(btn, candidateId) then
-                VisitButton(btn)
-            end
-        end
-
-        if C_ActionBar and C_ActionBar.FindSpellActionButtons and slotMap then
-            local ok, slots = ns.SafeCall("best-effort-style", C_ActionBar.FindSpellActionButtons, candidateId)
-            if ok and slots then
-                for _, slot in ipairs(slots) do
-                    local entry = slotMap[slot]
-                    if entry and entry.button then
-                        VisitButton(entry.button)
-                    end
-                end
-            end
-        end
-    end)
-
-    wipe(visited)
-    return matched
+    ForEachStandardButton(ActionBarsOwned.UpdateOverlayGlow)
 end
 
 function ActionBarsOwned.OnSpellActivationGlowShow(spellId)
-    if not spellId then return end
-    if not ForEachButtonForSpellGlow(spellId, ShowActionButtonGlow) then
+    spellId = Helpers.SafeValue(spellId, nil)
+    if type(spellId) ~= "number" then
         ActionBarsOwned.UpdateAllOverlayGlows()
+        return
     end
+    ForEachStandardButton(function(button)
+        if GetButtonSpellId(button) == spellId or ButtonFlyoutContainsSpell(button, spellId) then
+            ShowActionButtonGlow(button)
+        end
+    end)
 end
 
 function ActionBarsOwned.OnSpellActivationGlowHide(spellId)
-    if not spellId then return end
-    if not ForEachButtonForSpellGlow(spellId, HideActionButtonGlow) then
+    spellId = Helpers.SafeValue(spellId, nil)
+    if type(spellId) ~= "number" then
         ActionBarsOwned.UpdateAllOverlayGlows()
+        return
     end
+    ForEachStandardButton(function(button)
+        if GetButtonSpellId(button) == spellId then
+            HideActionButtonGlow(button)
+        elseif ButtonFlyoutContainsSpell(button, spellId) then
+            if IsButtonFlyoutOverlayed(button, spellId) then
+                ShowActionButtonGlow(button)
+            else
+                HideActionButtonGlow(button)
+            end
+        elseif GetFrameState(button).quiProcGlow then
+            ActionBarsOwned.UpdateOverlayGlow(button)
+        end
+    end)
 end
 
-ActionBarsOwned.RebuildSpellIdMap = RebuildSpellIdMap
-ActionBarsOwned.MarkSpellIdMapDirty = MarkSpellIdMapDirty
-ActionBarsOwned.EnsureSpellIdMap = EnsureSpellIdMap
-ActionBarsOwned.GetSpellIdMapStats = function() return spellIdMapStats end
 ActionBarsOwned.UpdateAllSpellHighlights = UpdateAllSpellHighlights
 ActionBarsOwned.ShowActionButtonGlow = ShowActionButtonGlow
 ActionBarsOwned.HideActionButtonGlow = HideActionButtonGlow
@@ -600,7 +520,6 @@ function ActionBarsOwned.UpdateAllButtonVisuals()
         end
     end
 
-    if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
 end
 
 function ActionBarsOwned.ForceFullVisualRescan()
@@ -608,5 +527,4 @@ function ActionBarsOwned.ForceFullVisualRescan()
     if ResetAllChargeCapabilityCaches then
         ResetAllChargeCapabilityCaches()
     end
-    if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
 end

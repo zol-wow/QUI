@@ -503,6 +503,7 @@ function SkinBar(barKey)
             button:HookScript("OnShow", function(self)
                 local st = GetFrameState(self)
                 ActionBarsOwned.SuppressButtonProcVisuals(self)
+                ActionBarsOwned.UpdateOverlayGlow(self)
                 local key = GetBarKeyFromButton(self)
                 local fadeState = key and ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[key]
                 local hideEmptyEnabled = GetGlobalSettings() and GetGlobalSettings().hideEmptySlots
