@@ -1119,6 +1119,10 @@ function M.functions.createHooks(root, entry)
 		end
 	end
 
+	local function raiseShownFrame(frame)
+		if not InCombatLockdown() and frame.Raise then frame:Raise() end
+	end
+
 	if panel.secureFrame then
 		local function savedPositionDrifted(f)
 			if c.dragging or c.applyingLayout then return false end
@@ -1155,6 +1159,7 @@ function M.functions.createHooks(root, entry)
 				reconcileOpenPositionOnShow(panel, root)
 				if not c.blizzardAnchors then rememberAnchors(root) end
 				M.functions.applyFrameSettings(root, panel)
+				raiseShownFrame(root)
 				reassertTicks = 5
 			elseif becameHidden then
 				clearOpenPosition(panel, root)
@@ -1194,6 +1199,7 @@ function M.functions.createHooks(root, entry)
 			else
 				M.functions.applyFrameSettings(self, panel)
 			end
+			raiseShownFrame(self)
 		end)
 
 		if not panel.skipOnHide then
