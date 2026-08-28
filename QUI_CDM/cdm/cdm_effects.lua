@@ -1308,7 +1308,9 @@ local function GetPressedMode(viewerType)
 end
 
 local function GetPressedHideKey(viewerType)
-    if viewerType == "essential" then
+    if viewerType == "buff" then
+        return nil
+    elseif viewerType == "essential" then
         return "hideEssential"
     elseif viewerType == "utility" then
         return "hideUtility"
@@ -1365,8 +1367,9 @@ local function PrepareReanchoredFrame(frame, viewerType)
     pendingPressedFrames[frame] = nil
     local target = GetReanchorHighlightTarget(frame)
     if target then
-        pressedHideKeys[target] = GetPressedHideKey(viewerType)
-        GetPressedTexture(target)
+        local hideKey = GetPressedHideKey(viewerType)
+        pressedHideKeys[target] = hideKey
+        if hideKey then GetPressedTexture(target) end
     end
 end
 
@@ -1381,8 +1384,9 @@ local function PrepareIcon(icon)
     pendingPressedIcons[icon] = nil
     local target = GetIconHighlightTarget(icon)
     if target then
-        pressedHideKeys[target] = GetPressedHideKey(icon._spellEntry and icon._spellEntry.viewerType)
-        GetPressedTexture(target)
+        local hideKey = GetPressedHideKey(icon._spellEntry and icon._spellEntry.viewerType)
+        pressedHideKeys[target] = hideKey
+        if hideKey then GetPressedTexture(target) end
     end
 end
 
@@ -1858,8 +1862,10 @@ local function ApplySwipeToIcon(icon, settings)
         if not cd then return end
         cd._quiIntendedDrawSwipe = showSwipe and true or false
         cd._quiIntendedDrawEdge  = showEdge and true or false
-        cd._quiIntendedSwipeTexture = FULL_FRAME_SWIPE_TEXTURE
-        cd.SetSwipeTexture(cd, FULL_FRAME_SWIPE_TEXTURE)
+        if cd._quiIntendedSwipeTexture ~= FULL_FRAME_SWIPE_TEXTURE then
+            cd._quiIntendedSwipeTexture = FULL_FRAME_SWIPE_TEXTURE
+            cd.SetSwipeTexture(cd, FULL_FRAME_SWIPE_TEXTURE)
+        end
         cd.SetDrawSwipe(cd, showSwipe and true or false)
         cd.SetDrawEdge(cd, showEdge and true or false)
 

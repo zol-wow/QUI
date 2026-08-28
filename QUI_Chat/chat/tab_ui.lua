@@ -1,5 +1,6 @@
 local ADDON_NAME, ns = ... -- luacheck: ignore ADDON_NAME
 local Helpers = ns.Helpers
+local UIKit = ns.UIKit
 
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
     "QUI Chat: tab_ui.lua loaded before chat.lua. Check chat.xml — chat.lua must precede tab_ui.lua.")
@@ -31,8 +32,7 @@ local function GetInstance(windowID)
             visibleFirst = nil,
             visibleLast = nil,
             hasOverflow = false,
-            scrollLeftBtn = nil,
-            scrollRightBtn = nil,
+            overflowBtn = nil,
             bar = nil,
         }
         instances[windowID] = inst
@@ -393,6 +393,14 @@ local function ThemeText()
     return accent, dim
 end
 
+local function UpdateCloseButton(btn)
+    local show = btn.close and type(btn.frameID) == "string"
+        and btn.frameID:sub(1, 5) == "conv:"
+        and (btn._active or btn._quiHovered)
+    if btn.close and btn.close.SetShown then btn.close:SetShown(show and true or false) end
+    if btn.badge and btn.badge.SetShown then btn.badge:SetShown(not show) end
+end
+
 local function StyleButton(btn, active)
     btn._active = active
     PaintTabChrome(btn, active)
@@ -405,6 +413,7 @@ local function StyleButton(btn, active)
     if btn.underline then
         btn.underline:SetShown(active and true or false)
     end
+    UpdateCloseButton(btn)
 end
 
 local function UpdateBadge(inst, btn)
@@ -432,17 +441,17 @@ local function NormalizeFrameID(frameID)
 end
 
 local LayoutInstance
+local ShowOverflowMenu
 
-local SCROLL_CONTROL_WIDTH = 24
+local OVERFLOW_CONTROL_WIDTH = 24
 
-local function EnsureScrollControl(inst, side)
-    local key = (side == "left") and "scrollLeftBtn" or "scrollRightBtn"
-    local btn = inst[key]
+local function EnsureOverflowButton(inst)
+    local btn = inst.overflowBtn
     if btn then return btn end
 
     btn = CreateFrame("Button", nil, inst.bar)
     btn:SetHeight(BAR_HEIGHT)
-    btn:SetWidth(SCROLL_CONTROL_WIDTH)
+    btn:SetWidth(OVERFLOW_CONTROL_WIDTH)
     btn:EnableMouse(true)
     btn.label = btn:CreateFontString(nil, "OVERLAY")
     ApplyTabFont(btn.label, 11)
@@ -451,35 +460,31 @@ local function EnsureScrollControl(inst, side)
     btn.underline:SetHeight(1)
     btn.underline:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 1, 0)
     btn.underline:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -1, 0)
-    btn.label:SetText(side == "left" and "<" or ">")
-    btn._quiTabW = SCROLL_CONTROL_WIDTH
+    btn.label:SetText("»")
+    btn._quiTabW = OVERFLOW_CONTROL_WIDTH
     btn:RegisterForClicks("LeftButtonUp")
-    btn:SetScript("OnClick", function()
-        local delta = (side == "left") and -1 or 1
-        if inst.ScrollTabs then inst.ScrollTabs(delta) end
-    end)
-    inst[key] = btn
+    btn:SetScript("OnClick", function() ShowOverflowMenu(inst) end)
+    inst.overflowBtn = btn
     return btn
 end
 
-local function HiddenState(inst, fromIndex, toIndex)
+local function RestyleOverflowButton(inst)
+    local btn = inst.overflowBtn
+    if not (btn and inst.hasOverflow and btn:IsShown()) then return end
     local activeHidden, unreadHidden = false, false
-    for i = fromIndex, toIndex do
-        local btn = inst.buttons[i]
-        local fid = btn and btn.frameID
-        if fid then
-            if fid == inst.activeID then activeHidden = true end
-            local u = inst.unread[fid]
-            if u and u > 0 then unreadHidden = true end
+    for i = 1, #inst.buttons do
+        if i < inst.visibleFirst or i > inst.visibleLast then
+            local fid = inst.buttons[i].frameID
+            if fid then
+                if fid == inst.activeID then activeHidden = true end
+                local u = inst.unread[fid]
+                if u and u > 0 then unreadHidden = true end
+            end
         end
     end
-    return activeHidden, unreadHidden
-end
-
-local function PaintScrollControl(btn, activeHidden, unreadHidden, enabled)
     PaintTabChrome(btn, activeHidden)
     local accent, dim = ThemeText()
-    local c = (activeHidden or unreadHidden or enabled) and accent or dim
+    local c = (activeHidden or unreadHidden) and accent or dim
     if btn.label and btn.label.SetTextColor then
         btn.label:SetTextColor(c[1], c[2], c[3])
     end
@@ -489,15 +494,6 @@ local function PaintScrollControl(btn, activeHidden, unreadHidden, enabled)
         end
         btn.underline:SetShown(activeHidden and true or false)
     end
-end
-
-local function RestyleScrollControls(inst)
-    if not (inst.scrollLeftBtn and inst.scrollRightBtn) then return end
-    if not (inst.hasOverflow and inst.visibleFirst and inst.visibleLast) then return end
-    local leftActive, leftUnread = HiddenState(inst, 1, inst.visibleFirst - 1)
-    local rightActive, rightUnread = HiddenState(inst, inst.visibleLast + 1, #inst.buttons)
-    PaintScrollControl(inst.scrollLeftBtn, leftActive, leftUnread, inst.scrollOffset > 0)
-    PaintScrollControl(inst.scrollRightBtn, rightActive, rightUnread, inst.visibleLast < #inst.buttons)
 end
 
 local function ClampScrollOffset(inst, maxOffset)
@@ -542,8 +538,7 @@ LayoutInstance = function(inst)
     for i = 1, n do total = total + (buttons[i]._quiTabW or 0) + PAD_X end
 
     local overflow = avail and total > avail and n > 1
-    local left = EnsureScrollControl(inst, "left")
-    local right = EnsureScrollControl(inst, "right")
+    local more = EnsureOverflowButton(inst)
 
     if not overflow then
         inst.scrollOffset = 0
@@ -559,12 +554,11 @@ LayoutInstance = function(inst)
             x = x + (btn._quiTabW or 0) + PAD_X
             btn:Show()
         end
-        left:Hide()
-        right:Hide()
+        more:Hide()
         return
     end
 
-    local middleWidth = math.max(1, avail - (SCROLL_CONTROL_WIDTH * 2) - (PAD_X * 2))
+    local middleWidth = math.max(1, avail - OVERFLOW_CONTROL_WIDTH - PAD_X)
     ClampScrollOffset(inst, ComputeMaxOffset(buttons, middleWidth))
     local first = inst.scrollOffset + 1
     local last = FitVisibleRange(buttons, first, middleWidth)
@@ -573,14 +567,7 @@ LayoutInstance = function(inst)
     inst.hasOverflow = true
     inst.firstHidden = (first > 1) and 1 or ((last < n) and (last + 1) or nil)
 
-    left:ClearAllPoints()
-    left:SetPoint("BOTTOMLEFT", inst.bar, "BOTTOMLEFT", 0, 0)
-    left:Show()
-    right:ClearAllPoints()
-    right:SetPoint("BOTTOMRIGHT", inst.bar, "BOTTOMRIGHT", 0, 0)
-    right:Show()
-
-    local x = SCROLL_CONTROL_WIDTH + PAD_X
+    local x = 0
     for i = 1, n do
         local btn = buttons[i]
         btn:ClearAllPoints()
@@ -593,7 +580,11 @@ LayoutInstance = function(inst)
         end
     end
 
-    RestyleScrollControls(inst)
+    more:ClearAllPoints()
+    more:SetPoint("BOTTOMLEFT", inst.bar, "BOTTOMLEFT",
+        math.min(x, math.max(0, avail - OVERFLOW_CONTROL_WIDTH)), 0)
+    more:Show()
+    RestyleOverflowButton(inst)
 end
 
 local RebuildInstance
@@ -682,7 +673,7 @@ local function ActivateFrameID(inst, frameID, userInitiated)
         StyleButton(inst.buttons[i], inst.buttons[i].frameID == inst.activeID)
     end
     EnsureFrameIDVisible(inst, frameID)
-    RestyleScrollControls(inst)
+    RestyleOverflowButton(inst)
     return true
 end
 
@@ -771,6 +762,73 @@ local function OpenChatSettings(subPageIndex)
     end)
 end
 
+local function CloseConversation(inst, frameID)
+    if type(frameID) ~= "string" or frameID:sub(1, 5) ~= "conv:" then return false end
+    local Conv = ns.QUI.Chat.ConversationManager
+    if not (Conv and Conv.Close) then return false end
+
+    local fallbackID
+    if inst.activeID == frameID then
+        for i = 1, #inst.buttons do
+            if inst.buttons[i].frameID == frameID then
+                local fallback = inst.buttons[i + 1] or inst.buttons[i - 1]
+                fallbackID = fallback and fallback.frameID
+                break
+            end
+        end
+    end
+
+    for _, current in pairs(instances) do
+        current.preserveViewportOnce = true
+        current.viewportAnchors = {}
+        for i = current.visibleFirst or 1, current.visibleLast or 0 do
+            local button = current.buttons[i]
+            current.viewportAnchors[#current.viewportAnchors + 1] = button and button.frameID
+        end
+    end
+    inst.closeFallbackID = fallbackID
+    Conv.Close(frameID:sub(6))
+    for _, current in pairs(instances) do
+        current.preserveViewportOnce = nil
+        current.viewportAnchors = nil
+    end
+    inst.closeFallbackID = nil
+    return true
+end
+
+ShowOverflowMenu = function(inst)
+    if not (_G.MenuUtil and _G.MenuUtil.CreateContextMenu) then return end
+    if not (inst.hasOverflow and inst.overflowBtn) then return end
+    _G.MenuUtil.CreateContextMenu(inst.overflowBtn, function(_, rootDescription)
+        for i = 1, #inst.buttons do
+            local btn = inst.buttons[i]
+            local fid = btn.frameID
+            if fid then
+                local text = type(btn._quiTabLabel) == "string" and btn._quiTabLabel or "?"
+                local tint = btn.labelColor
+                if tint and type(tint[1]) == "number" and not IsSecret(tint[1])
+                    and type(tint[2]) == "number" and not IsSecret(tint[2])
+                    and type(tint[3]) == "number" and not IsSecret(tint[3]) then
+                    text = string.format("|cff%02x%02x%02x%s|r",
+                        math.floor(tint[1] * 255 + 0.5),
+                        math.floor(tint[2] * 255 + 0.5),
+                        math.floor(tint[3] * 255 + 0.5), text)
+                end
+                local unread = inst.unread[fid]
+                if unread and unread > 0 then
+                    text = text .. " (" .. (unread > 99 and "99+" or tostring(unread)) .. ")"
+                end
+                rootDescription:CreateRadio(text,
+                    function() return inst.activeID == fid end,
+                    function() ActivateFrameID(inst, fid, true) end)
+            end
+        end
+        if rootDescription.SetScrollMode then
+            rootDescription:SetScrollMode(BAR_HEIGHT * 18)
+        end
+    end)
+end
+
 local function ShowTabContextMenu(inst, btn)
     if not (_G.MenuUtil and _G.MenuUtil.CreateContextMenu) then return end
     _G.MenuUtil.CreateContextMenu(btn, function(owner, rootDescription)
@@ -787,11 +845,9 @@ local function ShowTabContextMenu(inst, btn)
             end
         end
         if type(btn.frameID) == "string" then
+            local fid = btn.frameID
             rootDescription:CreateButton(ns.L["Close conversation"], function()
-                local fid = btn.frameID
-                if type(fid) ~= "string" then return end
-                local Conv = ns.QUI.Chat.ConversationManager
-                if Conv and Conv.Close then Conv.Close(fid:sub(6)) end
+                CloseConversation(inst, fid)
             end)
             return
         end
@@ -839,12 +895,7 @@ local function OnTabClick(self, mouseButton)
         return
     end
     if mouseButton == "MiddleButton" then
-        if type(self.frameID) == "string" then
-            local Conv = ns.QUI.Chat.ConversationManager
-            if Conv and Conv.Close then
-                Conv.Close(self.frameID:sub(6))
-            end
-        end
+        CloseConversation(inst, self.frameID)
         return
     end
     ActivateFrameID(inst, self.frameID, true)
@@ -872,17 +923,63 @@ local function CreateButton(inst)
     if btn.badge.SetJustifyH then
         btn.badge:SetJustifyH("RIGHT")
     end
+    if UIKit and UIKit.CreateCloseButton then
+        btn.close = UIKit.CreateCloseButton(btn, {
+            size = 14,
+            lineLen = 6,
+            lineWidth = 1,
+            point = "RIGHT",
+            x = -3,
+            onClick = function() CloseConversation(inst, btn.frameID) end,
+        })
+        btn.close:RegisterForClicks("LeftButtonUp")
+        btn.close:HookScript("OnEnter", function(self)
+            btn._quiHovered = true
+            UpdateCloseButton(btn)
+            if _G.GameTooltip then
+                _G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                _G.GameTooltip:SetText(ns.L["Close conversation"])
+                _G.GameTooltip:Show()
+            end
+        end)
+        btn.close:HookScript("OnLeave", function()
+            if _G.GameTooltip then _G.GameTooltip:Hide() end
+            if not (btn.IsMouseOver and btn:IsMouseOver()) then
+                btn._quiHovered = false
+                UpdateCloseButton(btn)
+            end
+        end)
+    end
     btn:SetScript("OnClick", OnTabClick)
+    btn:SetScript("OnEnter", function(self)
+        self._quiHovered = true
+        UpdateCloseButton(self)
+    end)
+    btn:SetScript("OnLeave", function(self)
+        if self.close and self.close.IsMouseOver and self.close:IsMouseOver() then return end
+        self._quiHovered = false
+        UpdateCloseButton(self)
+    end)
     btn:RegisterForDrag("LeftButton")
     btn:RegisterForClicks("LeftButtonUp", "MiddleButtonUp", "RightButtonUp")
     btn:SetScript("OnDragStart", OnTabDragStart)
     btn:SetScript("OnDragStop", OnTabDragStop)
-    btn:SetScript("OnHide", OnTabDragAbort)
+    btn:SetScript("OnHide", function(self)
+        OnTabDragAbort(self)
+        self._quiHovered = false
+        UpdateCloseButton(self)
+    end)
     return btn
 end
 
 RebuildInstance = function(inst)
     if not inst.bar then return end
+    local preserveViewport = inst.preserveViewportOnce
+    local viewportAnchors = inst.viewportAnchors
+    local closeFallbackID = inst.closeFallbackID
+    inst.preserveViewportOnce = nil
+    inst.viewportAnchors = nil
+    inst.closeFallbackID = nil
 
     for i = #inst.buttons, 1, -1 do
         inst.buttons[i]:Hide()
@@ -901,6 +998,7 @@ RebuildInstance = function(inst)
         btn.filter = filter
         btn.labelColor = labelColor
         btn._inst = inst
+        btn._quiHovered = false
         btn.label:SetText(label)
         btn._quiTabLabel = type(label) == "string" and label or nil
         local sw = btn.label.GetStringWidth and btn.label:GetStringWidth()
@@ -950,6 +1048,20 @@ RebuildInstance = function(inst)
         end
     end
 
+    if preserveViewport and viewportAnchors then
+        local anchored
+        for a = 1, #viewportAnchors do
+            for i = 1, #inst.buttons do
+                if inst.buttons[i].frameID == viewportAnchors[a] then
+                    inst.scrollOffset = i - 1
+                    anchored = true
+                    break
+                end
+            end
+            if anchored then break end
+        end
+    end
+
     LayoutInstance(inst)
 
     local live = {}
@@ -969,7 +1081,16 @@ RebuildInstance = function(inst)
     end
     local TabManager = ns.QUI.Chat.TabManager
     if not activeLive then
-        local first = inst.buttons[1]
+        local first
+        if closeFallbackID then
+            for i = 1, #inst.buttons do
+                if inst.buttons[i].frameID == closeFallbackID then
+                    first = inst.buttons[i]
+                    break
+                end
+            end
+        end
+        first = first or inst.buttons[1]
         inst.activeCustomSig = nil
         if first then
             ActivateFrameID(inst, first.frameID, false)
@@ -991,10 +1112,10 @@ RebuildInstance = function(inst)
             TabManager.SetActiveTab(inst.windowID, t)
         end
     end
-    if inst.activeID then
+    if inst.activeID and not preserveViewport then
         EnsureFrameIDVisible(inst, inst.activeID)
     end
-    RestyleScrollControls(inst)
+    RestyleOverflowButton(inst)
 end
 
 function TabUI.Rebuild()
@@ -1090,7 +1211,7 @@ function TabUI.EnsureAttached()
                                 changed = true
                             end
                         end
-                        if changed then RestyleScrollControls(inst) end
+                        if changed then RestyleOverflowButton(inst) end
                     end
                 end
             end)

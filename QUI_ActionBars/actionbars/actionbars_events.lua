@@ -179,35 +179,37 @@ _lastPagingTime = 0
 
 abSlotFrame:SetScript("OnUpdate", function(self)
     self:Hide()
-    local slotMap = ActionBarsOwned.slotMap
     local inCombat = InCombatLockdown()
-    for slot in pairs(abDirtySlots) do
-        if slotMap then
-            local entry = slotMap[slot]
-            if entry then
-                local btn, barKey = entry.button, entry.barKey
-                if ResetButtonChargeCapabilityCache then
-                    ResetButtonChargeCapabilityCache(btn)
-                end
-                ns.SafeCall("best-effort-style", ActionBarsOwned.SafeUpdate, btn)
-                ActionBarsOwned.UpdateCooldown(btn)
-                ActionBarsOwned.UpdateOverlayGlow(btn)
-                if not inCombat then
-                    local cont = ActionBarsOwned.containers and ActionBarsOwned.containers[barKey]
-                    local refreshRef = btn.GetAttribute and btn:GetAttribute("qui-refresh-ref")
-                    if cont and refreshRef then
-                        cont:SetAttribute("qui-refresh-target", refreshRef)
-                        cont:SetAttribute("qui-refresh-target", nil)
+    local refreshAll = abDirtySlots[0]
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+        local buttons = ActionBarsOwned.nativeButtons[barKey]
+        if buttons then
+            for _, btn in ipairs(buttons) do
+                local slot = GetSafeActionSlot(btn)
+                if refreshAll or (slot and abDirtySlots[slot]) then
+                    if ResetButtonChargeCapabilityCache then
+                        ResetButtonChargeCapabilityCache(btn)
                     end
-                end
-                if not inCombat then
-                    local settings = GetEffectiveSettings(barKey)
-                    if settings then
-                        local st = GetFrameState(btn)
-                        st.sk_sz = nil
-                        SkinButton(btn, settings)
-                        UpdateButtonText(btn, settings)
-                        UpdateEmptySlotVisibility(btn, settings)
+                    ns.SafeCall("best-effort-style", ActionBarsOwned.SafeUpdate, btn)
+                    ActionBarsOwned.UpdateCooldown(btn)
+                    ActionBarsOwned.UpdateOverlayGlow(btn)
+                    if not inCombat then
+                        local cont = ActionBarsOwned.containers and ActionBarsOwned.containers[barKey]
+                        local refreshRef = btn.GetAttribute and btn:GetAttribute("qui-refresh-ref")
+                        if cont and refreshRef then
+                            cont:SetAttribute("qui-refresh-target", refreshRef)
+                            cont:SetAttribute("qui-refresh-target", nil)
+                        end
+                    end
+                    if not inCombat then
+                        local settings = GetEffectiveSettings(barKey)
+                        if settings then
+                            local st = GetFrameState(btn)
+                            st.sk_sz = nil
+                            SkinButton(btn, settings)
+                            UpdateButtonText(btn, settings)
+                            UpdateEmptySlotVisibility(btn, settings)
+                        end
                     end
                 end
             end
@@ -217,7 +219,6 @@ abSlotFrame:SetScript("OnUpdate", function(self)
     if ActionBarsOwned.RefreshUsabilityButtons then
         ActionBarsOwned.RefreshUsabilityButtons()
     end
-    if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
     if SyncOwnedFlyoutInfoToHandler then
         SyncOwnedFlyoutInfoToHandler()
     end
@@ -227,7 +228,8 @@ abSlotFrame:SetScript("OnUpdate", function(self)
 end)
 
 function ScheduleSlotUpdate(slot)
-    if not slot or slot < 1 then return end
+    slot = Helpers.SafeValue(slot, nil)
+    if type(slot) ~= "number" or slot < 0 then return end
     if GetTime() - _lastPagingTime < 0.5 then
         ScheduleABVisualUpdate(false, true)
     end
@@ -244,6 +246,9 @@ function OnOwnedEvent(self, event, ...)
 
     elseif event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR"
+        or event == "UPDATE_OVERRIDE_ACTIONBAR"
+        or event == "UPDATE_POSSESS_BAR"
+        or event == "UPDATE_VEHICLE_ACTIONBAR"
         or event == "UPDATE_SHAPESHIFT_FORM"
         or event == "UPDATE_SHAPESHIFT_FORMS"
         or event == "UPDATE_STEALTH" then
@@ -253,25 +258,7 @@ function OnOwnedEvent(self, event, ...)
             HideOwnedFlyout()
         end
         local buttons = ActionBarsOwned.nativeButtons["bar1"]
-        local slotMap = ActionBarsOwned.slotMap
-        if slotMap then
-            for slot, entry in pairs(slotMap) do
-                if entry.barKey == "bar1" then
-                    slotMap[slot] = nil
-                end
-            end
-            if buttons then
-                for _, btn in ipairs(buttons) do
-                    local action = GetSafeActionSlot(btn)
-                    if action then
-                        slotMap[action] = { button = btn, barKey = "bar1" }
-                        if ResetButtonChargeCapabilityCache then
-                            ResetButtonChargeCapabilityCache(btn)
-                        end
-                    end
-                end
-            end
-        end
+        ScheduleSlotUpdate(0)
         local settings = GetEffectiveSettings("bar1")
         if buttons and settings then
             for _, btn in ipairs(buttons) do
@@ -301,6 +288,8 @@ function OnOwnedEvent(self, event, ...)
     elseif event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" then
         local unit = ...
         if unit == "player" then
+            _lastPagingTime = GetTime()
+            ScheduleSlotUpdate(0)
             ApplyBar1OverrideBindings()
             if event == "UNIT_EXITED_VEHICLE" then
                 C_Timer.After(0.2, function()
@@ -331,6 +320,7 @@ function OnOwnedEvent(self, event, ...)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         ScheduleABVisualUpdate(false, true)
+        ScheduleSlotUpdate(0)
         FlushPendingPingAttributes()
         FinishBlockedOverrideBarExit()
         if ActionBarsOwned.pendingExtraButtonInit then
@@ -548,7 +538,6 @@ function OnOwnedEvent(self, event, ...)
         ActionBarsOwned.UpdateAllAssistedCombatRotation()
         UpdateAllAssistedHighlights()
         RefreshAllEmptySlotVisibility()
-        if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
         if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
 
     elseif event == "PLAYER_ENTER_COMBAT" or event == "PLAYER_LEAVE_COMBAT" then
@@ -568,6 +557,7 @@ function OnOwnedEvent(self, event, ...)
 
     elseif event == "SPELL_FLYOUT_UPDATE" then
         RefreshAllFlyouts()
+        ActionBarsOwned.UpdateAllOverlayGlows()
 
     elseif event == "SPELL_UPDATE_USABLE" then
         ScheduleUsabilityUpdate()
@@ -579,12 +569,6 @@ function OnOwnedEvent(self, event, ...)
     elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
         local spellId = ...
         ActionBarsOwned.OnSpellActivationGlowHide(spellId)
-
-    elseif event == "UPDATE_VEHICLE_ACTIONBAR" then
-        ScheduleABVisualUpdate(true)
-        ScheduleABCooldownUpdate()
-        ActionBarsOwned.UpdateAllOverlayGlows()
-        ApplyBar1OverrideBindings()
 
     elseif event == "UPDATE_EXTRA_ACTIONBAR" then
         RefreshExtraButtons()

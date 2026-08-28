@@ -3171,7 +3171,6 @@ function ownedEngine:BootstrapReanchorRuntime()
                 shouldTrackCooldownID = function(key) return key == "buff" end,
                 ignoreIndexReasons = { refresh_layout = true },
                 immediateRefreshLayoutKeys = { buff = true },
-                immediateAcquireKeys = { buff = true },
                 blank = BlankReanchoredNativeItemFrame,
                 blankKeys = { buff = true },
                 isClaimed = function(frame)
@@ -3209,7 +3208,6 @@ function ownedEngine:BootstrapReanchorRuntime()
                 schedule = function(fn) C_Timer.After(0.05, fn) end,
                 scheduleActiveState = scheduleActiveState,
                 immediateRefreshLayoutKeys = { trackedBar = true },
-                immediateAcquireKeys = { trackedBar = true },
                 blank = BlankReanchoredNativeItemFrame,
                 blankKeys = { trackedBar = true },
                 isInitWindow = function() return ns._inInitSafeWindow == true end,

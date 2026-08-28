@@ -96,8 +96,6 @@ local defaultState = {
     deathCount = 0,
     deathTimeLost = 0,
     forcesQuantity = 0,
-    forcesTotal = 0,
-    forcesQuantityString = "",
     pullPercent = 0,
     objectivesList = {},
     objectivesByIndex = {},
@@ -109,30 +107,52 @@ local defaultState = {
 
 MPlusTimer.state = ns.Helpers.DeepCopy(defaultState)
 
-local pendingObjectiveTrackerHide = false
-local objectiveTrackerHideDeferral
+local scenarioTrackerHiddenByTimer = false
+local pendingObjectiveTrackerSuppressed
+local objectiveTrackerSuppressionDeferral
 
-local function HideScenarioObjectiveTracker()
+local function SetScenarioObjectiveTrackerSuppressed(suppressed)
     if not ScenarioObjectiveTracker then
         return
     end
     if InCombatLockdown and InCombatLockdown() then
-        if pendingObjectiveTrackerHide then
-            return
-        end
-        pendingObjectiveTrackerHide = true
-        if not objectiveTrackerHideDeferral then
-            objectiveTrackerHideDeferral = CreateFrame("Frame")
-            objectiveTrackerHideDeferral:SetScript("OnEvent", function(self)
+        pendingObjectiveTrackerSuppressed = suppressed
+        if not objectiveTrackerSuppressionDeferral then
+            objectiveTrackerSuppressionDeferral = CreateFrame("Frame")
+            objectiveTrackerSuppressionDeferral:SetScript("OnEvent", function(self)
                 self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                pendingObjectiveTrackerHide = false
-                HideScenarioObjectiveTracker()
+                local shouldSuppress = pendingObjectiveTrackerSuppressed
+                pendingObjectiveTrackerSuppressed = nil
+                SetScenarioObjectiveTrackerSuppressed(shouldSuppress)
             end)
         end
-        objectiveTrackerHideDeferral:RegisterEvent("PLAYER_REGEN_ENABLED")
+        objectiveTrackerSuppressionDeferral:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
-    ScenarioObjectiveTracker:Hide()
+    pendingObjectiveTrackerSuppressed = nil
+    if objectiveTrackerSuppressionDeferral then
+        objectiveTrackerSuppressionDeferral:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    end
+    if suppressed then
+        if scenarioTrackerHiddenByTimer then
+            return
+        end
+        local shown = ScenarioObjectiveTracker:IsShown()
+        if ns.Helpers.IsSecretValue(shown) or not shown then
+            return
+        end
+        ScenarioObjectiveTracker:Hide()
+        scenarioTrackerHiddenByTimer = true
+    elseif scenarioTrackerHiddenByTimer then
+        scenarioTrackerHiddenByTimer = false
+        local displayable = ScenarioObjectiveTracker:IsDisplayable()
+        local container = ScenarioObjectiveTracker.parentContainer
+        local collapsed = container and container:IsCollapsed()
+        if not ns.Helpers.IsSecretValue(displayable) and displayable
+            and container and not ns.Helpers.IsSecretValue(collapsed) and not collapsed then
+            ScenarioObjectiveTracker:Show()
+        end
+    end
 end
 
 local DEFAULTS = {
@@ -1283,14 +1303,14 @@ function MPlusTimer:RenderAffixIcons()
 end
 
 function MPlusTimer:WriteForcesText(fs)
-    local settings = GetSettings()
-    local format = settings.forcesTextFormat or "both"
-    if format == "count" then
-        fs:SetFormattedText("%s", self.state.forcesQuantityString)
-    elseif format == "percentage" then
-        fs:SetFormattedText("%.2f%%", self.state.forcesQuantity)
+    local format = GetSettings().forcesTextFormat or "both"
+    local hasCount = type(self.state.forcesCount) == "number" and type(self.state.forcesTotal) == "number"
+    if format == "count" and hasCount then
+        fs:SetFormattedText("%s/%s", self.state.forcesCount, self.state.forcesTotal)
+    elseif format == "both" and hasCount then
+        fs:SetFormattedText("%.2f%% (%s/%s)", self.state.forcesQuantity, self.state.forcesCount, self.state.forcesTotal)
     else
-        fs:SetFormattedText("%.2f%% (%s)", self.state.forcesQuantity, self.state.forcesQuantityString)
+        fs:SetFormattedText("%.2f%%", self.state.forcesQuantity)
     end
 end
 
@@ -1485,10 +1505,10 @@ function MPlusTimer:SetDeathCount(count, timeLost)
     self:RenderDeaths()
 end
 
-function MPlusTimer:SetForces(quantity, total, quantityString)
+function MPlusTimer:SetForces(quantity, count, total)
     if type(quantity) ~= "nil" then self.state.forcesQuantity = quantity end
-    if type(total) ~= "nil" then self.state.forcesTotal = total end
-    if type(quantityString) ~= "nil" then self.state.forcesQuantityString = quantityString end
+    self.state.forcesCount = count
+    self.state.forcesTotal = total
     self:RenderForces()
 end
 
@@ -1532,7 +1552,7 @@ function MPlusTimer:Show()
         _G.QUI_ApplyMPlusTimerSkin()
     end
 
-    HideScenarioObjectiveTracker()
+    SetScenarioObjectiveTrackerSuppressed(true)
 end
 
 function MPlusTimer:Hide()
@@ -1540,10 +1560,7 @@ function MPlusTimer:Hide()
         self.frames.root:Hide()
     end
     self:StopTimerLoop()
-
-    if ScenarioObjectiveTracker and ObjectiveTrackerFrame and not InCombatLockdown() then
-        ObjectiveTrackerFrame:Update()
-    end
+    SetScenarioObjectiveTrackerSuppressed(false)
 end
 
 function MPlusTimer:EnableDemoMode()
@@ -1559,7 +1576,7 @@ function MPlusTimer:EnableDemoMode()
     self:SetTimeLimit(32 * 60)
     self:SetKeyDetails(11, {"Tyrannical", "Storming", "Fortified"}, {9, 124, 10}, 1, "Jade Serpent")
     self:SetDeathCount(3, 15)
-    self:SetForces(68.51, 289, "198/289")
+    self:SetForces(68.51, 198, 289)
 
     self:SetObjectives({
         { name = "Wise Mari", time = 328 },
@@ -1720,7 +1737,12 @@ function MPlusTimer:UpdateForces()
     local info = C_ScenarioInfo.GetCriteriaInfo(idx)
     if type(info) ~= "table" then return end
 
-    self:SetForces(info.quantity, info.totalQuantity, info.quantityString)
+    local quantityString = info.quantityString
+    local count
+    if type(quantityString) == "string" and not (issecretvalue and issecretvalue(quantityString)) then
+        count = tonumber(quantityString:match("%d+"))
+    end
+    self:SetForces(info.quantity, count, info.totalQuantity)
 end
 -- <<< QUI_TEST_EXTRACT mplus_objectives_secret
 

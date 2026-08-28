@@ -1337,15 +1337,12 @@ local function ApplyElementPass(frame, allowCreate)
             AnchorElementContainer(container, host, element)
         end,
         onContainerReady = function(container, host)
+            if InCombatLockdown() then return false end
             local desiredLevel = host:GetFrameLevel() + CHROME_LEVELS.AURA_HOST
             local desiredStrata = host.healthBar and host.healthBar:GetFrameStrata()
-            if not InCombatLockdown() then
-                if desiredStrata then container:SetFrameStrata(desiredStrata) end
-                container:SetFrameLevel(desiredLevel)
-                return true
-            end
-            return container:GetFrameLevel() == desiredLevel
-                and (not desiredStrata or container:GetFrameStrata() == desiredStrata)
+            if desiredStrata then container:SetFrameStrata(desiredStrata) end
+            container:SetFrameLevel(desiredLevel)
+            return true
         end,
         onIncomplete = QueueContainerCombatWork,
     })

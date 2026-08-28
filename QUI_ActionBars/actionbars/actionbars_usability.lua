@@ -92,30 +92,41 @@ function UpdateButtonUsability(button, settings, inRange, rangeKnown)
     end
     if state.tinted == newTint then return end
 
+    local overlay = GetTintOverlay(button)
     if newTint == "range" then
-        local overlay = GetTintOverlay(button)
         if overlay then
             local c = settings.rangeColor
             overlay:SetColorTexture(c and c[1] or 0.8, c and c[2] or 0.1, c and c[3] or 0.1, c and c[4] or 1)
-            overlay:Show()
         end
         state.tinted = "range"
     elseif newTint == "mana" then
-        local overlay = GetTintOverlay(button)
         if overlay then
             local c = settings.manaColor
             overlay:SetColorTexture(c and c[1] or 0.5, c and c[2] or 0.5, c and c[3] or 1.0, c and c[4] or 1)
-            overlay:Show()
         end
         state.tinted = "mana"
     elseif newTint == "unusable" then
-        local overlay = GetTintOverlay(button)
         if overlay then
             local c = settings.usabilityColor
             overlay:SetColorTexture(c and c[1] or 0.4, c and c[2] or 0.4, c and c[3] or 0.4, c and c[4] or 1)
-            overlay:Show()
         end
         state.tinted = "unusable"
+    end
+
+    if not overlay then return end
+    if state.fadeHidden then
+        overlay:Hide()
+        state._fhTint = true
+        return
+    end
+
+    local barKey = GetBarKeyFromButton(button)
+    local barFadeState = barKey and ActionBarsOwned.fadeState[barKey]
+    if barFadeState and barFadeState.currentAlpha < 1 then
+        overlay:Hide()
+        state._fadeTint = true
+    else
+        overlay:Show()
     end
 end
 
@@ -201,6 +212,12 @@ function RefreshUsabilityButtons()
     local enableRangeCheck = C_ActionBar and C_ActionBar.EnableActionRangeCheck
 
     if type(enableRangeCheck) == "function" then
+        for slot in pairs(rangeSlots) do
+            if not settings or not settings.rangeIndicator or not buttonsBySlot[slot] then
+                local ok = ns.SafeCall("best-effort-style", enableRangeCheck, slot, false)
+                if ok then rangeSlots[slot] = nil end
+            end
+        end
         if settings and settings.rangeIndicator then
             for slot in pairs(buttonsBySlot) do
                 if not rangeSlots[slot] then

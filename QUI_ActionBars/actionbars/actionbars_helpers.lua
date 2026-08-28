@@ -9,10 +9,25 @@ env.SetChunkEnv(1, env)
 GetDB = Helpers.CreateDBGetter("actionBars")
 
 local _lastPlainActionSlot = setmetatable({}, { __mode = "k" })
-function GetSafeActionSlot(button)
+function GetSafeActionSlot(button, requireCurrent)
     if not button or not button.GetAttribute then return nil end
     local action = button:GetAttribute("action")
     if Helpers.IsSecretValue(action) then
+        local index = button._quiButtonIndex
+        if type(index) == "number" then
+            local barKey = button._quiBarKey
+            local offset = BAR_ACTION_OFFSETS[barKey]
+            if offset then return offset + index end
+            if barKey == "bar1" then
+                local container = ActionBarsOwned.containers and ActionBarsOwned.containers.bar1
+                local page = container and container.GetAttribute and container:GetAttribute("qui-action-page")
+                if not Helpers.IsSecretValue(page) then
+                    page = tonumber(page)
+                    if page and page >= 1 then return ((page - 1) * 12) + index end
+                end
+            end
+        end
+        if requireCurrent then return nil end -- @secret-policy: reject-secret-value
         return _lastPlainActionSlot[button] -- @secret-policy: last-readable-slot-fallback
     end
     if type(action) ~= "number" or action < 1 then return nil end

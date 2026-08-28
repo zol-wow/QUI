@@ -178,9 +178,6 @@ function SuppressButtonProcVisuals(button)
         SuppressProcVisualFrame(button.OverlayGlow)
     end)
 
-    ns.SafeCall("best-effort-style", function()
-        SuppressProcVisualFrame(button._ButtonGlow)
-    end)
 end
 
 UpdateButtonProfessionQuality = function(button, settings)

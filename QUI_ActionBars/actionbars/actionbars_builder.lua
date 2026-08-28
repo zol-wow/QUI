@@ -444,8 +444,16 @@ function BuildBar(barKey)
             HideManagedBlizzardBarFrame(barFrame, true)
         end
 
-        local origLayout = MicroMenu and MicroMenu.Layout
-        if MicroMenu then MicroMenu.Layout = function() end end
+        local microMenuParent = MicroMenu and MicroMenu:GetParent()
+        if microMenuParent and microMenuParent ~= UIParent and microMenuParent ~= MicroMenuContainer then
+            if not ActionBarsOwned.nativeButtons.microbar then
+                ActionBarsOwned.pendingMicroBuild = true
+            end
+            return
+        end
+        if microMenuParent == MicroMenuContainer then
+            MicroMenu:SetParent(UIParent)
+        end
 
         ActionBarsOwned._microAnchors = {}
         for i, name in ipairs(MICRO_BUTTON_NAMES) do
@@ -463,8 +471,6 @@ function BuildBar(barKey)
             helpBtn:SetParent(container)
         end
 
-        if MicroMenu and origLayout then MicroMenu.Layout = origLayout end
-
         local barDB = GetBarSettings("microbar")
         if barDB and barDB.clickthrough then
             for _, btn in ipairs(buttons) do
@@ -479,10 +485,6 @@ function BuildBar(barKey)
             local function ReclaimMicroButtons()
                 if not ActionBarsOwned.initialized then return end
                 if ActionBarsOwned._microOwnedByUI then return end
-
-                if MicroMenu then
-                    MicroMenu.oldGridSettings = nil
-                end
 
                 local btns = ActionBarsOwned.nativeButtons["microbar"]
                 local cont = ActionBarsOwned.containers["microbar"]
@@ -749,6 +751,9 @@ function BuildBar(barKey)
     end
 
     ActionBarsOwned.nativeButtons[barKey] = buttons
+    if barKey == "microbar" then
+        ActionBarsOwned.pendingMicroBuild = nil
+    end
     if barKey ~= "pet" and barKey ~= "stance" and barKey ~= "microbar" and barKey ~= "bags" then
         FinalizeStandardOwnedActionButtons(container, barKey, buttons)
         if EnsureOwnedFlyoutFrame then
@@ -756,14 +761,6 @@ function BuildBar(barKey)
             if flyoutHandler then
                 container:SetFrameRef("qui-flyout-handler", flyoutHandler)
             end
-        end
-    end
-
-    if not ActionBarsOwned.slotMap then ActionBarsOwned.slotMap = {} end
-    for _, btn in ipairs(buttons) do
-        local slot = GetSafeActionSlot(btn)
-        if slot then
-            ActionBarsOwned.slotMap[slot] = { button = btn, barKey = barKey }
         end
     end
 

@@ -4,6 +4,201 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta10 - 2026-08-28
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Action Bar proc-glow lifecycle corrections for the 5.2.3 beta line.
+
+### Fixed
+
+- **Action Bar proc glows update immediately when their current action
+  changes.** Paging, special bars, flyouts, duplicate slots, hidden-bar reveals,
+  and Rotation Assist coexistence no longer wait for a later refresh or leave
+  stale highlights.
+
+## v5.2.3-beta9 - 2026-08-28
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Aura Display visibility plus Bags, Chat, and Blizzard panel interaction
+improvements for the 5.2.3 beta line.
+
+### Added
+
+- **Aura Displays now have their own HUD Visibility controls.** Configure
+  combat, target, group, instance, mouseover, mounted, vehicle, flight, fade,
+  and hidden-opacity rules without revealing inactive displays.
+- **QUI Bags currency tooltips can show tracked totals for every character.**
+  Character-specific currencies list saved per-character amounts and a combined
+  total, while account-wide currencies show one live Warband total.
+
+### Changed
+
+- **Overflowing QUI Chat tabs are directly selectable.** The overflow menu
+  lists every saved and conversation tab with unread counts, and selecting a
+  hidden tab scrolls it into view.
+- **Whisper conversation tabs are easier to close.** Active and hovered
+  conversations expose a close button, and closing the active conversation
+  selects the nearest remaining tab.
+
+### Fixed
+
+- **Moved Blizzard panels open above overlapping panels.** Newly shown
+  supported panels raise to the front outside combat.
+
+## v5.2.3-beta8 - 2026-08-27
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Cooldown Manager swipe synchronization for the 5.2.3 beta line.
+
+### Fixed
+
+- **Cooldown Manager cooldown swipes no longer disappear early.** Ordinary
+  abilities, charge recharges, item cooldowns, and GCD-only swipes stay
+  synchronized when Blizzard refreshes their timing.
+
+## v5.2.3-beta7 - 2026-08-27
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Alts table readability and persistent window resizing for the 5.2.3 beta line.
+
+### Added
+
+- **The Alts window can be resized from its bottom-right corner.** Its size and
+  position persist across reloads, and an active move or resize stops cleanly
+  when combat begins.
+
+### Changed
+
+- **Weeklies now has localized column headers**, and both Weeklies and
+  Currencies size their left-aligned columns to their longest rendered text.
+
+## v5.2.3-beta6 - 2026-08-27
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Objective Tracker, Cooldown Manager, and castbar lifecycle fixes for the 5.2.3
+beta line.
+
+### Fixed
+
+- **Objective Tracker sizing transitions cleanly through Scenarios and
+  Delves.** Blizzard's native dimensions return during Scenario content, then
+  QUI's configured maximum width and height resume afterward.
+- **Objective Tracker styling better respects Blizzard-owned content.** Safer
+  refresh paths keep collapse, mover geometry, icons, bars, and backdrops in
+  sync without full content scans during combat.
+- **Closing or disabling QUI's Mythic+ timer restores Blizzard's Scenario
+  tracker** when QUI originally hid it, including combat transitions.
+- **Manual castbar widths remain authoritative when Auto-Width is disabled.**
+  Anchored castbars and their settings previews use the configured width.
+- **QUI no longer force-loads Blizzard's Cooldown Viewer.** Blizzard retains
+  ownership of its loading lifecycle and later settings callbacks.
+
+## v5.2.3-beta5 - 2026-08-26
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Objective Tracker taint containment and OPie compatibility fixes for the 5.2.3
+beta line.
+
+### Fixed
+
+- **Scenario Objective Tracker layouts stay on Blizzard's native aura path.**
+  QUI no longer hooks module layout updates that could taint restricted aura
+  reads.
+- **OPie macro editing no longer throws errors during QUI keybind scans.** QUI
+  skips editor widgets instead of treating any `GetAction` method as an action
+  button.
+
+## v5.2.3-beta4 - 2026-08-25
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Settings layout and focused combat UI corrections for the 5.2.3 beta line.
+
+### Changed
+
+- **Cooldown Manager pressed effects apply only to cooldown icon containers.**
+  Buff icons no longer expose or receive the effect.
+
+### Fixed
+
+- **Expanding Group Frame aura settings keeps every following control in
+  place.** Targeted Spells, Dispel settings, and guidance text remain stacked
+  once below the growing aura list.
+- **Inactive Aura Display movers remain usable in Layout Mode.** Empty displays
+  retain their saved size instead of collapsing.
+- **Override Action Bar skinning leaves Micro Menu layout state to Blizzard.**
+  Temporary bar transitions no longer risk protected layout changes.
+
+## v5.2.3-beta3 - 2026-08-25
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Blizzard UI ownership and combat-safe Group Frame aura updates for the 5.2.3
+beta line.
+
+### Fixed
+
+- **Group Frame aura layering waits until combat ends.** Aura containers no
+  longer read protected frame state while combat restrictions are active.
+- **Micro Menu ownership survives temporary Blizzard UI transitions.** Override
+  Action Bars, Pet Battles, and other external owners keep control until they
+  release the native menu.
+- **The Info Bar Shop button follows Blizzard's guarded toggle path.** Opening
+  the Shop closes other panels and respects Kiosk and frame-toggle restrictions.
+
+## v5.2.3-beta2 - 2026-08-25
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Action Bar autohide tint fixes for the 5.2.3 beta line.
+
+### Fixed
+
+- **Action Bar range and usability colors respect autohide state.** Reloading
+  while a bar is fully hidden or partially faded no longer reveals those colors
+  early, and the saved tint returns only when the bar is fully shown.
+
+## v5.2.3-beta1 - 2026-08-24
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Opens the 5.2.3 beta line with account-wide feature pins, automatic runtime
+refreshes, and Cooldown Manager taint containment.
+
+### Added
+
+- **Aura Display and Group / Raid Frame settings can be pinned across every
+  profile.** The current profile supplies the shared settings, while individual
+  profiles can Ignore or Apply the pin without changing the source.
+
+### Fixed
+
+- **Action Bar range and usability tints clear when their live condition
+  ends.** Buttons repaint after mount and display changes and no longer retain
+  stale range or unusable overlays.
+- **Druid Resource Bars follow automatic form changes.** Fluid Form transitions
+  rebuild the active resource and reveal Cat Form combo points.
+- **Cooldown Manager Edit Mode corrections no longer leave native viewers
+  running in a tainted session.** QUI requires a reload after saving the
+  corrected layout and defers pooled-frame reclaims until Blizzard finishes
+  acquisition.
+
 ## v5.2.2 - 2026-08-24
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
@@ -22,7 +217,7 @@ hardening Cooldown Manager, protected UI, and native event handling.
   keyboard keys, or the mouse wheel.
 - **Group tools expose more actionable state.** Debuff gradients show
   non-dispellable types, and raid releases can require Ctrl after a safety delay.
-- **Combat modules gain focused controls.** Cooldown Manager pressed effects,
+- **Combat modules gain focused controls.** Cooldown Manager cooldown-icon pressed effects,
   Totem Bar sizing, and Damage Meter item-level tooltips are configurable.
 
 ### Changed
@@ -58,8 +253,8 @@ the 5.2.2 beta line.
   Block Release in Raids to reduce accidental releases before a battle rez.
 - **Group frames can show non-dispellable debuff types as health gradients.**
   Actionable dispels retain the full overlay and cleanse-ready glow.
-- **Cooldown Manager icon containers have configurable pressed effects.** Choose
-  Off, Blizzard Default, or QUI independently for each icon container.
+- **Cooldown Manager cooldown icon containers have configurable pressed effects.**
+  Choose Off, Blizzard Default, or QUI independently for each container.
 
 ### Fixed
 
