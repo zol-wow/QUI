@@ -4,6 +4,37 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.2.3-beta9 - 2026-08-28
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Aura Display visibility plus Bags, Chat, and Blizzard panel interaction
+improvements for the 5.2.3 beta line.
+
+### Added
+
+- **Aura Displays now have their own HUD Visibility controls.** Configure
+  combat, target, group, instance, mouseover, mounted, vehicle, flight, fade,
+  and hidden-opacity rules without revealing inactive displays.
+- **QUI Bags currency tooltips can show tracked totals for every character.**
+  Character-specific currencies list saved per-character amounts and a combined
+  total, while account-wide currencies show one live Warband total.
+
+### Changed
+
+- **Overflowing QUI Chat tabs are directly selectable.** The overflow menu
+  lists every saved and conversation tab with unread counts, and selecting a
+  hidden tab scrolls it into view.
+- **Whisper conversation tabs are easier to close.** Active and hovered
+  conversations expose a close button, and closing the active conversation
+  selects the nearest remaining tab.
+
+### Fixed
+
+- **Moved Blizzard panels open above overlapping panels.** Newly shown
+  supported panels raise to the front outside combat.
+
 ## v5.2.3-beta8 - 2026-08-27
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
