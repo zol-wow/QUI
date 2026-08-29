@@ -105,7 +105,7 @@ local function SetInspectFrameBgExtended(extended)
 end
 
 local function SkinInspectFrameTabs()
-    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("InspectFrame", 3), InspectFrame, { font = true })
+    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("InspectFrame", 3), InspectFrame, { font = true, resizeToText = true })
 end
 
 local function SkinInspectButtons()

@@ -1186,7 +1186,7 @@ end
 ns.QUI_Options.HasFeature = HasRegisteredFeature
 
 local function ShowUnavailableFeaturePage(body, label)
-    local text = body:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local text = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     text:SetPoint("TOPLEFT", 20, -20)
     text:SetText((label or "Settings") .. " unavailable.")
 end

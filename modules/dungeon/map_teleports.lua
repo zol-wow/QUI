@@ -93,7 +93,7 @@ local function Build()
         btn.cooldown = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
         btn.cooldown:SetAllPoints(btn.icon)
 
-        btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         btn.label:SetPoint("LEFT", btn.icon, "RIGHT", 4, 0)
         btn.label:SetText(entry.short or "?")
 

@@ -206,7 +206,7 @@ local function CreateBlizzardSettingsPanel()
     local panel = CreateFrame("Frame", "QUI_BlizzardSettingsPanel")
     panel.name = "QUI"
 
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("QUI")
 

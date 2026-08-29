@@ -236,7 +236,7 @@ local function Builder(parent)
     for i, label in ipairs(COLUMN_LABELS) do
         local header = MakeFS(frame, 11)
         header:SetText(label)
-        header:SetTextColor(1, 0.82, 0)
+        header:SetTextColor(1, 1, 1)
         header:SetJustifyH("LEFT")
         headers[i] = header
     end

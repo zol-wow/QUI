@@ -67,35 +67,19 @@ PetWarningFrame.text:SetPoint("RIGHT", PetWarningFrame, "RIGHT", -30, 0)
 PetWarningFrame.text:SetTextColor(1, 0.3, 0.3, 1)
 PetWarningFrame.text:SetText(ns.L["NO PET!"])
 
-PetWarningFrame.closeBtn = CreateFrame("Button", nil, PetWarningFrame)
-PetWarningFrame.closeBtn:SetSize(20, 20)
-PetWarningFrame.closeBtn:SetPoint("RIGHT", PetWarningFrame, "RIGHT", -8, 0)
-
-PetWarningFrame.closeBtn.bg = PetWarningFrame.closeBtn:CreateTexture(nil, "BACKGROUND")
-PetWarningFrame.closeBtn.bg:SetAllPoints()
-PetWarningFrame.closeBtn.bg:SetColorTexture(0.3, 0.3, 0.3, 0.8)
-
-PetWarningFrame.closeBtn.text = PetWarningFrame.closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-PetWarningFrame.closeBtn.text:SetPoint("CENTER")
-PetWarningFrame.closeBtn.text:SetText(ns.L["X"])
-PetWarningFrame.closeBtn.text:SetTextColor(0.8, 0.8, 0.8, 1)
-
-PetWarningFrame.closeBtn:SetScript("OnEnter", function(self)
-    self.bg:SetColorTexture(0.5, 0.2, 0.2, 0.9)
-    self.text:SetTextColor(1, 1, 1, 1)
-end)
-PetWarningFrame.closeBtn:SetScript("OnLeave", function(self)
-    self.bg:SetColorTexture(0.3, 0.3, 0.3, 0.8)
-    self.text:SetTextColor(0.8, 0.8, 0.8, 1)
-end)
-PetWarningFrame.closeBtn:SetScript("OnClick", function()
-    PetWarningFrame.dismissedThisFight = true
-    PetWarningFrame:Hide()
-    if LCG then
-        LCG.PixelGlow_Stop(PetWarningFrame, "_QUIPetWarning")
-        PetWarningFrame.glowActive = false
-    end
-end)
+PetWarningFrame.closeBtn = SkinBase.CreateCloseButton(PetWarningFrame, {
+    size = 20,
+    point = "RIGHT",
+    x = -8,
+    onClick = function()
+        PetWarningFrame.dismissedThisFight = true
+        PetWarningFrame:Hide()
+        if LCG then
+            LCG.PixelGlow_Stop(PetWarningFrame, "_QUIPetWarning")
+            PetWarningFrame.glowActive = false
+        end
+    end,
+})
 
 PetWarningFrame.dismissedThisFight = false
 

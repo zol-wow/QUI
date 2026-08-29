@@ -1,7 +1,7 @@
 -- luacheck: read globals MAX_GUILDBANK_TABS QueryGuildBankLog QueryGuildBankTab GetGuildBankTabCost
 -- luacheck: read globals ACCEPT CANCEL BuyGuildBankTab SetGuildBankTabInfo StaticPopup_OnClick
 -- luacheck: read globals CanWithdrawGuildBankMoney InCombatLockdown StaticPopup_Hide
--- luacheck: read globals UNKNOWN NORMAL_FONT_COLOR_CODE GUILD_BANK_LOG_TIME RecentTimeDate
+-- luacheck: read globals UNKNOWN HIGHLIGHT_FONT_COLOR_CODE GUILD_BANK_LOG_TIME RecentTimeDate
 -- luacheck: read globals GetNumGuildBankTransactions GetGuildBankTransaction
 -- luacheck: read globals GUILDBANK_DEPOSIT_FORMAT GUILDBANK_WITHDRAW_FORMAT GetGuildBankTabInfo
 -- luacheck: read globals GUILDBANK_MOVE_FORMAT GUILDBANK_LOG_QUANTITY
@@ -191,7 +191,7 @@ end
 
 local function ColorName(name)
     name = name or UNKNOWN or "Unknown"
-    return (NORMAL_FONT_COLOR_CODE or "|cffffd200") .. name
+    return (HIGHLIGHT_FONT_COLOR_CODE or "|cffffffff") .. name
         .. (FONT_COLOR_CODE_CLOSE or "|r")
 end
 

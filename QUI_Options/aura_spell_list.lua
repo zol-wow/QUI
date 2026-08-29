@@ -222,17 +222,13 @@ local function EnsureBrowsePopup()
     title:SetTextColor(accent[1], accent[2], accent[3], 1)
     popup._title = title
 
-    local closeBtn = CreateFrame("Button", nil, popup)
-    closeBtn:SetSize(20, 20)
-    closeBtn:SetPoint("TOPRIGHT", -6, -6)
-    local closeText = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    closeText:SetPoint("CENTER")
-    closeText:SetText("X")
-    BrowseFont(closeText, fontPath, 11, "")
-    closeText:SetTextColor(muted[1], muted[2], muted[3], 1)
-    closeBtn:SetScript("OnEnter", function() closeText:SetTextColor(1, 0.4, 0.4, 1) end)
-    closeBtn:SetScript("OnLeave", function() closeText:SetTextColor(muted[1], muted[2], muted[3], 1) end)
-    closeBtn:SetScript("OnClick", function() popup:Hide() end)
+    SkinBase.CreateCloseButton(popup, {
+        size = 20,
+        point = "TOPRIGHT",
+        x = -6,
+        y = -6,
+        onClick = function() popup:Hide() end,
+    })
 
     local searchBg = CreateFrame("Frame", nil, popup, "BackdropTemplate")
     searchBg:SetPoint("TOPLEFT", 8, -28)

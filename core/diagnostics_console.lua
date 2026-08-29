@@ -86,7 +86,7 @@ local function showCopyPopup(text)
         popup:SetScript("OnDragStart", popup.StartMoving)
         popup:SetScript("OnDragStop",  popup.StopMovingOrSizing)
 
-        local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local title = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         title:SetPoint("TOP", 0, -10)
         title:SetText(ns.L["Diagnostic Output — Ctrl+A then Ctrl+C"])
 
