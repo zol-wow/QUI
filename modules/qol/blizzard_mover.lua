@@ -1123,6 +1123,22 @@ function M.functions.createHooks(root, entry)
 		if not InCombatLockdown() and frame.Raise then frame:Raise() end
 	end
 
+	local openAllMail = panel.id == "MailFrame" and _G.OpenAllMail
+	if openAllMail and openAllMail.HookScript then
+		local function raiseActiveMailFrame()
+			if panelIsActive(panel) then raiseShownFrame(root) end
+		end
+		openAllMail:HookScript("OnClick", function()
+			if RunNextFrame then
+				RunNextFrame(raiseActiveMailFrame)
+			elseif C_Timer and C_Timer.After then
+				C_Timer.After(0, raiseActiveMailFrame)
+			else
+				raiseActiveMailFrame()
+			end
+		end)
+	end
+
 	if panel.secureFrame then
 		local function savedPositionDrifted(f)
 			if c.dragging or c.applyingLayout then return false end
