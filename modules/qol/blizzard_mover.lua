@@ -1125,13 +1125,16 @@ function M.functions.createHooks(root, entry)
 
 	local openAllMail = panel.id == "MailFrame" and _G.OpenAllMail
 	if openAllMail and openAllMail.HookScript then
+		local function raiseActiveMailFrame()
+			if panelIsActive(panel) then raiseShownFrame(root) end
+		end
 		openAllMail:HookScript("OnClick", function()
 			if RunNextFrame then
-				RunNextFrame(function() raiseShownFrame(root) end)
+				RunNextFrame(raiseActiveMailFrame)
 			elseif C_Timer and C_Timer.After then
-				C_Timer.After(0, function() raiseShownFrame(root) end)
+				C_Timer.After(0, raiseActiveMailFrame)
 			else
-				raiseShownFrame(root)
+				raiseActiveMailFrame()
 			end
 		end)
 	end
