@@ -990,16 +990,7 @@ end
 
 function UIKit.CreateCloseButton(parent, opts)
     opts = opts or {}
-    local gui = QUI and QUI.GUI
-    local C = (gui and gui.Colors) or BUTTON_FALLBACK_COLORS
     local size = opts.size or 22
-    local lineLen = opts.lineLen or 10
-    local lineWidth = opts.lineWidth or 1.5
-
-    local function borderRGBA()
-        local b = C.border or { 1, 1, 1, 0.06 }
-        return b[1], b[2], b[3], b[4] or 1
-    end
 
     local close = CreateFrame("Button", nil, parent)
     close:SetSize(size, size)
@@ -1007,36 +998,8 @@ function UIKit.CreateCloseButton(parent, opts)
         close:SetPoint(opts.point, opts.relativeTo or parent, opts.relativePoint or opts.point, opts.x or 0, opts.y or 0)
     end
 
-    close._bg = UIKit.CreateBackground(close, 0.08, 0.08, 0.08, 0.6)
-    UIKit.CreateBorderLines(close)
-    UIKit.UpdateBorderLines(close, 1, borderRGBA())
-
-    local xLine1 = close:CreateTexture(nil, "OVERLAY")
-    xLine1:SetSize(lineLen, lineWidth)
-    xLine1:SetPoint("CENTER")
-    ApplyColorTexture(xLine1, 1, 1, 1, 0.8)
-    xLine1:SetRotation(math.rad(45))
-    local xLine2 = close:CreateTexture(nil, "OVERLAY")
-    xLine2:SetSize(lineLen, lineWidth)
-    xLine2:SetPoint("CENTER")
-    ApplyColorTexture(xLine2, 1, 1, 1, 0.8)
-    xLine2:SetRotation(math.rad(-45))
-    close._xLine1, close._xLine2 = xLine1, xLine2
-
     if opts.onClick then close:SetScript("OnClick", opts.onClick) end
-    close:SetScript("OnEnter", function(self)
-        local ar, ag, ab = UIKit.GetAccentColor()
-        UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 1)
-        self._bg:SetVertexColor(ar, ag, ab, 0.15)
-        ApplyColorTexture(xLine1, ar, ag, ab, 1)
-        ApplyColorTexture(xLine2, ar, ag, ab, 1)
-    end)
-    close:SetScript("OnLeave", function(self)
-        UIKit.UpdateBorderLines(self, 1, borderRGBA())
-        self._bg:SetVertexColor(0.08, 0.08, 0.08, 0.6)
-        ApplyColorTexture(xLine1, 1, 1, 1, 0.8)
-        ApplyColorTexture(xLine2, 1, 1, 1, 0.8)
-    end)
+    UIKit.SkinCloseButton(close, opts)
 
     return close
 end
@@ -1541,56 +1504,7 @@ local function HideButtonTextures(button)
 end
 
 function SkinBase.SkinChromeCloseButton(button, opts)
-    if not button then return end
-    opts = opts or {}
-    local key = opts.stateKey or "chromeCloseButton"
-    HideButtonTextures(button)
-
-    local palette = SkinBase.GetChromePalette(opts)
-    local border = SkinBase.GetFrameData(button, key .. "Border")
-    if not border then
-        border = CreateFrame("Frame", nil, button, "BackdropTemplate")
-        border:EnableMouse(false)
-        SkinBase.SetFrameData(button, key .. "Border", border)
-    end
-    SkinBase.SetInsetPixelPoints(border, button, opts.insetPixels or 2)
-    border:SetFrameLevel(math.max(button:GetFrameLevel() - 1, 1))
-    SkinBase.ApplyChromeBackdrop(border, {
-        palette = palette,
-        withBackground = true,
-        withInsets = true,
-        borderColor = palette.border,
-        bgColor = palette.bg,
-    })
-
-    local label = SkinBase.GetFrameData(button, key .. "Label")
-    if not label then
-        label = button:CreateFontString(nil, "OVERLAY")
-        label:SetPoint("CENTER", button, "CENTER", 0, 0)
-        if label.SetDrawLayer then
-            label:SetDrawLayer("OVERLAY", 7)
-        end
-        SkinBase.SetFrameData(button, key .. "Label", label)
-    end
-    CJKFont(label, opts.font or STANDARD_TEXT_FONT, opts.fontSize or 14, opts.fontFlags or "OUTLINE")
-    label:SetText(opts.label or "\195\151")
-    local textColor = ResolveChromeColor(opts.textColor, { 1, 1, 1, 1 }, 1)
-    label:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
-
-    if SkinBase.GetFrameData(button, key .. "Hooked") then return end
-    button:HookScript("OnEnter", function(self)
-        local bd = SkinBase.GetFrameData(self, key .. "Border")
-        if not bd then return end
-        local hoverPalette = SkinBase.GetChromePalette(opts)
-        SkinBase.SetBackdropColors(bd, hoverPalette.accent, nil)
-    end)
-    button:HookScript("OnLeave", function(self)
-        local bd = SkinBase.GetFrameData(self, key .. "Border")
-        if not bd then return end
-        local restPalette = SkinBase.GetChromePalette(opts)
-        SkinBase.SetBackdropColors(bd, restPalette.border, nil)
-    end)
-    SkinBase.SetFrameData(button, key .. "Hooked", true)
+    return SkinBase.SkinCloseButton(button, opts)
 end
 
 local function TooltipTextHasPrintfPlaceholder(text)
@@ -2021,36 +1935,40 @@ function SkinBase.HidePortraitFrameChrome(frame)
     end
 end
 
-function SkinBase.SkinCloseButton(closeButton)
-    if not closeButton or SkinBase.GetFrameData(closeButton, "closeStyled") then
-        return
-    end
+function SkinBase.SkinCloseButton(closeButton, opts)
+    if not closeButton then return end
+    opts = opts or {}
 
     HideButtonTextures(closeButton)
+    SkinBase.SetFrameData(closeButton, "closeOptions", opts)
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
-    SkinBase.CreateBackdrop(closeButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    local label = SkinBase.GetFrameData(closeButton, "closeLabel")
+    if not label then
+        label = closeButton:CreateFontString(nil, "OVERLAY")
+        label:SetPoint("CENTER")
+        SkinBase.SetFrameData(closeButton, "closeLabel", label)
+        closeButton.text = label
+    end
+    CJKFont(label, opts.font or Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, opts.fontSize or 12,
+        opts.fontFlags or Helpers.GetGeneralFontOutline() or "OUTLINE")
+    label:SetText(opts.label or "X")
+    local textColor = ResolveChromeColor(opts.textColor, { 1, 1, 1, 0.8 }, 0.8)
+    label:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
 
-    local label = closeButton:CreateFontString(nil, "OVERLAY")
-    label:SetPoint("CENTER")
-    label:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-    label:SetText("\195\151")
-    label:SetTextColor(1, 1, 1, 1)
-    SkinBase.SetFrameData(closeButton, "closeLabel", label)
+    if SkinBase.GetFrameData(closeButton, "closeStyled") then return end
 
     closeButton:HookScript("OnEnter", function(self)
-        local bd = SkinBase.GetBackdrop(self)
-        if bd then
-            local r, g, b, a = SkinBase.GetSkinColors()
-            SkinBase.SetBackdropColors(bd, { math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a }, nil)
-        end
+        local current = SkinBase.GetFrameData(self, "closeOptions") or {}
+        local ar, ag, ab = UIKit.GetAccentColor()
+        local accent = ResolveChromeColor(current.accentColor, { ar, ag, ab, 1 }, 1)
+        local closeLabel = SkinBase.GetFrameData(self, "closeLabel")
+        if closeLabel then closeLabel:SetTextColor(accent[1], accent[2], accent[3], accent[4]) end
     end)
     closeButton:HookScript("OnLeave", function(self)
-        local bd = SkinBase.GetBackdrop(self)
-        if bd then
-            local r, g, b, a = SkinBase.GetSkinColors()
-            SkinBase.SetBackdropColors(bd, { r, g, b, a }, nil)
-        end
+        local current = SkinBase.GetFrameData(self, "closeOptions") or {}
+        local color = ResolveChromeColor(current.textColor, { 1, 1, 1, 0.8 }, 0.8)
+        local closeLabel = SkinBase.GetFrameData(self, "closeLabel")
+        if closeLabel then closeLabel:SetTextColor(color[1], color[2], color[3], color[4]) end
     end)
 
     SkinBase.SetFrameData(closeButton, "closeStyled", true)
@@ -2127,6 +2045,7 @@ local PANEL_TAB_TEXTURES = {
     "LeftDisabled", "MiddleDisabled", "RightDisabled",
 }
 
+local NORMAL_TEXT_COLOR = { 1, 1, 1, 1 }
 local DISABLED_TEXT_COLOR = { 0.5, 0.5, 0.5, 1 }
 local buttonFontObjects = {}
 local buttonFontObjCount = 0
@@ -2156,7 +2075,7 @@ local function GetButtonFontObject(size, color)
     if type(color) == "table" then
         obj:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
     else
-        obj:SetTextColor(0.95, 0.95, 0.95, 1)
+        obj:SetTextColor(1, 1, 1, 1)
     end
     return obj
 end
@@ -2194,6 +2113,11 @@ SkinBase.ApplyTabFontObjects = SkinBase.ApplyButtonFontObjects
 local function ReapplyTabFont(tab)
     if not SkinBase.GetFrameData(tab, "skinTabFont") then return end
     SkinBase.ApplyTabFontObjects(tab)
+    if SkinBase.GetFrameData(tab, "skinTabResizeToText") and tab.OnShow then
+        tab:OnShow()
+    elseif tab.UpdateTabWidth then
+        tab:UpdateTabWidth()
+    end
 end
 
 local function ReassertTabSkin(tab)
@@ -2201,7 +2125,7 @@ local function ReassertTabSkin(tab)
     SkinBase.ClampAllTextures(tab)
     local hl = tab.GetHighlightTexture and tab:GetHighlightTexture()
     if hl then SkinBase.ClampTextureHidden(hl) end
-    ReapplyTabFont(tab)
+    SkinBase.RefreshTabSelected(tab, SkinBase.GetFrameData(tab, "skinTabOwner"))
 end
 
 local panelTabHooked = false
@@ -2213,6 +2137,9 @@ local function HookPanelTabSkin()
     end
     if PanelTemplates_DeselectTab then
         hooksecurefunc("PanelTemplates_DeselectTab", function(tab) ReassertTabSkin(tab) end)
+    end
+    if _G.PanelTemplates_SetDisabledTabState then
+        hooksecurefunc("PanelTemplates_SetDisabledTabState", function(tab) ReassertTabSkin(tab) end)
     end
 end
 
@@ -2232,10 +2159,6 @@ function SkinBase.SkinTabButton(tab, opts)
     SkinBase.ClampTextureHidden(highlight)
     SkinBase.SetFrameData(tab, "qTabArtClamped", true)
 
-    if tab.SetTabSelected and not SkinBase.GetFrameData(tab, "qTabStateHooked") then
-        hooksecurefunc(tab, "SetTabSelected", function(self) ReassertTabSkin(self) end)
-        SkinBase.SetFrameData(tab, "qTabStateHooked", true)
-    end
     HookPanelTabSkin()
 
     local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
@@ -2247,6 +2170,7 @@ function SkinBase.SkinTabButton(tab, opts)
 
     if opts.font ~= false then
         SkinBase.SetFrameData(tab, "skinTabFont", true)
+        if opts.resizeToText then SkinBase.SetFrameData(tab, "skinTabResizeToText", true) end
         ReapplyTabFont(tab)
     end
 
@@ -2256,18 +2180,18 @@ function SkinBase.SkinTabButton(tab, opts)
 end
 
 local function IsTabSelected(tab, owner)
+    if tab.isDisabled then return false end
     if tab.IsSelected and tab:IsSelected() then return true end
+    if tab.isSelected then return true end
     if owner then
         local tabSystem = owner.TabSystem
         if tabSystem and tabSystem.GetSelectedTab and tab.tabID then
             if tab.tabID == tabSystem:GetSelectedTab() then return true end
         end
-        if PanelTemplates_GetSelectedTab and tab.GetID then
-            local selected = PanelTemplates_GetSelectedTab(owner)
-            if selected and tab:GetID() == selected then return true end
-        end
-        if owner.selectedTab and tab.GetID and tab:GetID() == owner.selectedTab then
-            return true
+        local selected = (PanelTemplates_GetSelectedTab and PanelTemplates_GetSelectedTab(owner)) or owner.selectedTab
+        if selected then
+            if owner.Tabs and owner.Tabs[selected] == tab then return true end
+            if tab.GetID and tab:GetID() == selected then return true end
         end
     end
     if tab.SelectedTexture and tab.SelectedTexture.IsShown and tab.SelectedTexture:IsShown() then
@@ -2345,12 +2269,18 @@ end
 function SkinBase.SkinTab(tab, owner, opts)
     if not tab then return end
     opts = opts or {}
+    SkinBase.SetFrameData(tab, "skinTabOwner", owner)
     SkinBase.SkinTabButton(tab, opts)
+    if tab.SetTabSelected and not SkinBase.GetFrameData(tab, "qTabStateHooked") then
+        hooksecurefunc(tab, "SetTabSelected", ReassertTabSkin)
+        SkinBase.SetFrameData(tab, "qTabStateHooked", true)
+    end
     if opts.hover and not SkinBase.GetFrameData(tab, "qTabHoverHooked") then
         tab:HookScript("OnEnter", TabHoverEnter)
         tab:HookScript("OnLeave", function(self) SkinBase.RefreshTabSelected(self, owner) end)
         SkinBase.SetFrameData(tab, "qTabHoverHooked", true)
     end
+    SkinBase.RefreshTabSelected(tab, owner)
 end
 
 function SkinBase.CollectNumberedTabs(prefix, count)
@@ -2561,7 +2491,7 @@ function SkinBase.SkinFontString(fontString, opts)
         if type(c) == "table" then
             fontString:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
         else
-            fontString:SetTextColor(0.95, 0.95, 0.95, 1)
+            fontString:SetTextColor(1, 1, 1, 1)
         end
     end
 end
@@ -2783,10 +2713,11 @@ function SkinBase.SkinButton(button, opts)
     SkinBase.SetFrameData(button, "skinKind", "button")
     SkinBase.SetFrameData(button, "bgBoost", boost)
     if opts.font ~= false then
+        local fontColor = opts.fontColor or NORMAL_TEXT_COLOR
         SkinBase.SetFrameData(button, "skinFont", true)
-        SkinBase.SetFrameData(button, "skinFontColor", opts.fontColor)
+        SkinBase.SetFrameData(button, "skinFontColor", fontColor)
         SkinBase.SetFrameData(button, "skinFontDisabledColor", opts.disabledFontColor or DISABLED_TEXT_COLOR)
-        SkinBase.ApplyButtonFontObjects(button, { color = opts.fontColor, disabledColor = opts.disabledFontColor or DISABLED_TEXT_COLOR })
+        SkinBase.ApplyButtonFontObjects(button, { color = fontColor, disabledColor = opts.disabledFontColor or DISABLED_TEXT_COLOR })
     end
     if opts.hover ~= false then AttachHover(button) end
     HookButtonVisualState(button)
@@ -2938,8 +2869,11 @@ function SkinBase.SkinCheckBox(check, opts)
         if checked.SetDrawLayer then checked:SetDrawLayer("OVERLAY", 7) end
     end
     local disabledChecked = check.GetDisabledCheckedTexture and check:GetDisabledCheckedTexture()
-    if disabledChecked and disabledChecked.SetVertexColor and ar then
-        disabledChecked:SetVertexColor(ar * 0.5, ag * 0.5, ab * 0.5, 1)
+    if disabledChecked then
+        if disabledChecked.SetVertexColor and ar then
+            disabledChecked:SetVertexColor(ar * 0.5, ag * 0.5, ab * 0.5, 1)
+        end
+        if disabledChecked.SetDrawLayer then disabledChecked:SetDrawLayer("OVERLAY", 7) end
     end
 
     SkinBase.MarkStyled(check)
@@ -3017,7 +2951,7 @@ function SkinBase.RefreshCategorySelected(button)
     else
         bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], (sc[4] or 1) * 0.5)
         bd:SetBackdropColor(r, g, b, 0.7)
-        SetFontStringColor(label, SkinBase.GetFrameData(button, "categoryTextColor") or { 0.95, 0.95, 0.95, 1 })
+        SetFontStringColor(label, SkinBase.GetFrameData(button, "categoryTextColor") or { 1, 1, 1, 1 })
     end
 end
 
@@ -3050,6 +2984,10 @@ function SkinBase.SkinDropdown(dropdown, opts)
     local boost = opts.bgBoost or BG_BOOST_BUTTON
 
     if opts.noStrip then
+    elseif opts.skinArrow then
+        SkinBase.StripTextures(dropdown)
+        SuppressButtonArt(dropdown)
+        SkinBase.ClampTextureHidden(dropdown.Arrow)
     elseif opts.keepArrow then
         if dropdown.NineSlice then dropdown.NineSlice:SetAlpha(0) end
         if dropdown.NormalTexture then dropdown.NormalTexture:SetAlpha(0) end
@@ -3076,6 +3014,20 @@ function SkinBase.SkinDropdown(dropdown, opts)
     SkinBase.SetFrameData(dropdown, "bgColor", { bgr, bgg, bgb })
     SkinBase.SetFrameData(dropdown, "skinKind", "dropdown")
     SkinBase.SetFrameData(dropdown, "bgBoost", boost)
+    if opts.skinArrow and not SkinBase.GetFrameData(dropdown, "dropdownCaret") then
+        local arrow = dropdown.Arrow
+        local caret = UIKit.CreateChevronCaret(dropdown, {
+            point = arrow and "CENTER" or "RIGHT",
+            relativeTo = arrow or dropdown,
+            relativePoint = arrow and "CENTER" or "RIGHT",
+            xPixels = arrow and 0 or -8,
+            sizePixels = 10,
+            lineWidthPixels = 6,
+            expanded = true,
+            a = 0.8,
+        })
+        SkinBase.SetFrameData(dropdown, "dropdownCaret", caret)
+    end
     SkinBase.LockDropdownText(dropdown, 2)
     if opts.hover ~= false then AttachHover(dropdown) end
     SkinBase.MarkStyled(dropdown)
@@ -3168,7 +3120,7 @@ function SkinBase.SkinWindow(frame, opts)
         SkinBase.SkinCloseButton(frame.CloseButton)
     end
     if opts.tabs then
-        SkinBase.SkinTabGroup(opts.tabs, opts.tabOwner or frame)
+        SkinBase.SkinTabGroup(opts.tabs, opts.tabOwner or frame, { resizeToText = true })
     end
 
     if not opts.noButtonFonts then

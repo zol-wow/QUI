@@ -41,7 +41,7 @@ local function SkinAuctionHouseTabs()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame or not AuctionHouseFrame.Tabs then return end
 
-    SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true })
+    SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true, resizeToText = true })
 
     local tabs = AuctionHouseFrame.Tabs
     if tabs[1] then
@@ -76,22 +76,14 @@ local function FontAuctionHouseExtraTabs()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame then return end
 
-    if AuctionHouseFrame.Tabs then
-        for _, tab in ipairs(AuctionHouseFrame.Tabs) do
-            if tab and not SkinBase.GetFrameData(tab, "qAHTabFonted") then
-                SkinBase.ApplyButtonFontObjects(tab)
-                SkinBase.SetFrameData(tab, "qAHTabFonted", true)
-            end
-        end
-    end
-
     if not (AuctionHouseFrame.IsShown and AuctionHouseFrame:IsShown()) then return end
     if not AuctionHouseFrame.GetChildren then return end
     local children = { AuctionHouseFrame:GetChildren() }
     for i = 1, #children do
         local obj = children[i]
         if not (issecretvalue and issecretvalue(obj)) -- @secret-policy: reject-secret-value (hierarchy-secret child is never a skinnable tab)
-            and type(obj) == "table" and not SkinBase.GetFrameData(obj, "qAHTabFonted") then
+            and type(obj) == "table" and not SkinBase.IsStyled(obj)
+            and not SkinBase.GetFrameData(obj, "qAHTabFonted") then
             local ok, isTab = pcall(function()
                 return obj.IsObjectType and obj:IsObjectType("Button")
                     and obj.GetFontString and obj:GetFontString()
@@ -109,7 +101,7 @@ end
 local function SkinAuctionHouseAuctionsTabs(auctionsFrame)
     if not auctionsFrame then return end
     local tabs = { auctionsFrame.AuctionsTab, auctionsFrame.BidsTab }
-    SkinBase.SkinTabGroup(tabs, auctionsFrame, { font = true })
+    SkinBase.SkinTabGroup(tabs, auctionsFrame, { font = true, resizeToText = true })
 end
 
 local function LockDurationDropdownText(dropdown)

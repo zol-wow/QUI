@@ -873,7 +873,7 @@ local function CreateMainFrame()
     if Helpers and Helpers.GetSkinBgColor then lblBgR, lblBgG, lblBgB = Helpers.GetSkinBgColor() end
     ns.SkinBase.ApplyPixelBackdrop(mainFrame.labelBar, 1, true, true, nil, { lblBgR, lblBgG, lblBgB, 0.95 }, nil, nil, 1)
 
-    mainFrame.labelBar.text = mainFrame.labelBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    mainFrame.labelBar.text = mainFrame.labelBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     mainFrame.labelBar.text:SetPoint("CENTER", 0, 0)
     CJKFont(mainFrame.labelBar.text, Helpers.GetGeneralFont(), 10, Helpers.GetGeneralFontOutline())
     mainFrame.labelBar.text:SetText(ns.L["Raid Buffs"])

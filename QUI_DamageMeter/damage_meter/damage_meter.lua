@@ -2308,24 +2308,23 @@ function Breakdown.New(parentWindow)
     header:SetHeight(headerH)
     self.header = header
 
-    self.TitleLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    self.TitleLabel = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.TitleLabel:SetPoint("LEFT", header, "LEFT", 6, 0)
     self.TitleLabel:SetText("")
 
-    local closeBtn = CreateFrame("Button", nil, header)
-    closeBtn:SetSize(headerH - 6, headerH - 6)
-    closeBtn:SetPoint("RIGHT", header, "RIGHT", -2, 0)
-    local closeTex = closeBtn:CreateTexture(nil, "ARTWORK")
-    closeTex:SetAllPoints(closeBtn)
-    closeTex:SetTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
-    closeBtn:SetScript("OnClick", function() self:Close() end)
+    local closeBtn = SkinBase.CreateCloseButton(header, {
+        size = headerH - 6,
+        point = "RIGHT",
+        x = -2,
+        onClick = function() self:Close() end,
+    })
     self.CloseButton = closeBtn
 
     for i = 1, BREAKDOWN_POOL_SIZE do
         self.rows[i] = self:_BuildRow(i)
     end
 
-    self.TargetsLabel = self.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    self.TargetsLabel = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.TargetsLabel:SetJustifyH("LEFT")
     self.TargetsLabel:SetHeight(TARGETS_LABEL_H)
     self.TargetsLabel:SetText("")

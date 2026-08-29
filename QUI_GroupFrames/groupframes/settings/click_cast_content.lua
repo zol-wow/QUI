@@ -639,11 +639,13 @@ local function EnsureBrowsePopup()
     CJKFont(browseTitle, GUI.FONT_PATH, 12, "")
     browseTitle:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
-    local browseCloseBtn = CreateClickCastButton(browsePopup, "X", 20, 20, function() browsePopup:Hide() end)
-    browseCloseBtn:SetPoint("TOPRIGHT", -6, -6)
-    if browseCloseBtn.text then
-        CJKFont(browseCloseBtn.text, GUI.FONT_PATH, 11, "")
-    end
+    UIKit.CreateCloseButton(browsePopup, {
+        size = 20,
+        point = "TOPRIGHT",
+        x = -6,
+        y = -6,
+        onClick = function() browsePopup:Hide() end,
+    })
 
     local browseSearchBg = CreateFrame("Frame", nil, browsePopup, "BackdropTemplate")
     browseSearchBg:SetPoint("TOPLEFT", 8, -28)

@@ -157,8 +157,7 @@ local function StyleThemedButton(button, variant)
 end
 
 local function CreateCloseButton(parent, onClick)
-    local button = CreateThemedButton(parent, "x", 22, 22, onClick, "ghost")
-    return button
+    return UIKit.CreateCloseButton(parent, { size = 22, onClick = onClick })
 end
 
 local function GetScrollBar(scrollFrame)
@@ -278,7 +277,6 @@ local function RefreshPopupAccent(popup)
     end
     StyleThemedButton(popup.selectAllButton, "primary")
     StyleThemedButton(popup.closeButton, "ghost")
-    StyleThemedButton(popup.cornerCloseButton, "ghost")
     StyleResizeButton(popup.resizeButton)
 end
 
@@ -327,7 +325,6 @@ local function CreateCopyPopup()
     local closeBtn = CreateCloseButton(urlPopup, function() urlPopup:Hide() end)
     closeBtn:SetPoint("TOPRIGHT", -6, -6)
     urlPopup.cornerCloseButton = closeBtn
-    StyleThemedButton(closeBtn, "ghost")
 
     if not tContains(UISpecialFrames, "QUI_ChatCopyPopup") then
         tinsert(UISpecialFrames, "QUI_ChatCopyPopup")
@@ -598,7 +595,6 @@ local function CreateChatCopyFrame()
     local closeBtn = CreateCloseButton(chatCopyFrame, function() chatCopyFrame:Hide() end)
     closeBtn:SetPoint("TOPRIGHT", -6, -6)
     chatCopyFrame.cornerCloseButton = closeBtn
-    StyleThemedButton(closeBtn, "ghost")
 
     local selectAllBtn = CreateThemedButton(chatCopyFrame, "Select All", 100, 24, function()
         editBox:SetFocus()

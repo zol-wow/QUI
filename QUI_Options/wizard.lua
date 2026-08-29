@@ -2,6 +2,7 @@ local ADDON_NAME, ns = ...
 local QUI = QUI
 local L = ns.L
 local Helpers = ns.Helpers
+local UIKit = ns.UIKit
 
 local Wizard = { applied = {} }
 ns.QUI_SetupWizard = Wizard
@@ -428,10 +429,13 @@ local function EnsureFrame()
     frame.progress = GUI:CreateLabel(frame, "", 12, C.text)
     frame.progress:SetPoint("TOPRIGHT", -44, -18)
 
-    local closeBtn = GUI:CreateButton(frame, "X", 22, 22, function()
-        Wizard:Hide()
-    end)
-    closeBtn:SetPoint("TOPRIGHT", -12, -12)
+    UIKit.CreateCloseButton(frame, {
+        size = 22,
+        point = "TOPRIGHT",
+        x = -12,
+        y = -12,
+        onClick = function() Wizard:Hide() end,
+    })
 
     bodyHost = CreateFrame("Frame", nil, frame)
     bodyHost:SetPoint("TOPLEFT", 20, -48)

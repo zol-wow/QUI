@@ -1,4 +1,4 @@
--- luacheck: globals PagedContentFrameBaseMixin MonthlyActivitiesFrameMixin
+-- luacheck: globals PagedContentFrameBaseMixin MonthlyActivitiesFrameMixin TalentFrameBaseMixin
 
 local addonName, ns = ...
 
@@ -13,6 +13,8 @@ local function IsSettingEnabled(key)
 end
 
 local RefreshBackdropColors = SkinBase.RefreshFrameBackdropColors
+local WHITE_TEXT_STYLE = { color = { 1, 1, 1, 1 } }
+local BLACK_TEXT_STYLE = { color = { 0, 0, 0, 1 } }
 
 local function GetSpellBookFrame(frame)
     return frame and (frame.SpellBookFrame or _G.SpellBookFrame)
@@ -29,10 +31,63 @@ local function SkinSpellRows(frame)
     end
 end
 
+local function SkinTalentSpendText(button)
+    if not button then return end
+    if type(button.ApplyVisualState) == "function"
+        and not SkinBase.GetFrameData(button, "qTalentSpendTextHooked") then
+        SkinBase.SetFrameData(button, "qTalentSpendTextHooked", true)
+        hooksecurefunc(button, "ApplyVisualState", SkinTalentSpendText)
+    end
+    if button.SpendText then
+        SkinBase.SkinFontString(button.SpendText, WHITE_TEXT_STYLE)
+    end
+    for _, shadow in ipairs(button.spendTextShadows or {}) do
+        SkinBase.SkinFontString(shadow, BLACK_TEXT_STYLE)
+    end
+end
+
+local function SkinTalentSpendTexts(frame)
+    local talentsFrame = frame and frame.TalentsFrame
+    if not talentsFrame or not talentsFrame.EnumerateAllTalentButtons then return end
+    for button in talentsFrame:EnumerateAllTalentButtons() do
+        SkinTalentSpendText(button)
+    end
+    local displayPool = talentsFrame.talentDisplayFramePool
+    if displayPool and displayPool.EnumerateActive then
+        for display in displayPool:EnumerateActive() do
+            SkinTalentSpendText(display)
+        end
+    end
+end
+
+local function HookTalentSpendTextUpdates(frame)
+    local talentsFrame = frame and frame.TalentsFrame
+    if not talentsFrame or not talentsFrame.RegisterCallback
+        or SkinBase.GetFrameData(talentsFrame, "qTalentSpendTextCallback") then return end
+    local event = TalentFrameBaseMixin and TalentFrameBaseMixin.Event
+        and TalentFrameBaseMixin.Event.TalentButtonAcquired
+    if not event then return end
+    talentsFrame:RegisterCallback(event, function(_, button)
+        SkinTalentSpendText(button)
+    end, frame)
+    if type(talentsFrame.AcquireTalentDisplayFrame) == "function" then
+        hooksecurefunc(talentsFrame, "AcquireTalentDisplayFrame", function(self)
+            local displayPool = self.talentDisplayFramePool
+            if not displayPool or not displayPool.EnumerateActive then return end
+            for display in displayPool:EnumerateActive() do
+                SkinTalentSpendText(display)
+            end
+        end)
+    end
+    SkinBase.SetFrameData(talentsFrame, "qTalentSpendTextCallback", true)
+end
+
 local function SkinPlayerSpellsText(frame)
     if not frame or not IsSettingEnabled("skinSpellBook") then return end
+    HookTalentSpendTextUpdates(frame)
     SkinBase.SkinFrameText(frame, { recurse = true, chrome = true })
     SkinSpellRows(frame)
+    SkinTalentSpendTexts(frame)
 end
 
 local function SchedulePlayerSpellsText(frame)
@@ -493,7 +548,7 @@ local function SkinCollections()
         local tab = _G["CollectionsJournalTab" .. i]
         if tab then tabs[#tabs + 1] = tab end
     end
-    SkinBase.SkinTabGroup(tabs, frame)
+    SkinBase.SkinTabGroup(tabs, frame, { resizeToText = true })
     HookCollectionsText(frame)
     SkinBase.MarkSkinned(frame)
 end

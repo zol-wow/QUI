@@ -220,16 +220,15 @@ function Chassis.CreateWindow(opts)
     win._title:SetPoint("LEFT", PAD, 0)
     win._title:SetText(opts.title or "")
 
-    local close = CreateFrame("Button", nil, header)
-    close:SetSize(HEADER_H - 8, HEADER_H - 8)
-    close:SetPoint("RIGHT", -6, 0)
-    win._closeText = close:CreateFontString(nil, "ARTWORK")
-    win._closeText:SetPoint("CENTER", 0, 0)
-    CJKFont(win._closeText, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
-    win._closeText:SetText("X")
-    close:SetScript("OnClick", function()
-        if opts.onUserClose then opts.onUserClose() else win:Hide() end
-    end)
+    local close = UIKit.CreateCloseButton(header, {
+        size = HEADER_H - 8,
+        point = "RIGHT",
+        x = -6,
+        onClick = function()
+            if opts.onUserClose then opts.onUserClose() else win:Hide() end
+        end,
+    })
+    win._closeText = close.text
     win._close = close
 
     local search = CreateFrame("EditBox", nil, header)

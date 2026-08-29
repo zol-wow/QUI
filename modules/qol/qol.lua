@@ -1316,6 +1316,7 @@ local function SetupCraftingOrderFilter()
         if not settings or not settings.craftingOrderExpansionFilter then return end
         if not filterDropdown.filters then return end
         filterDropdown.filters[Enum.AuctionHouseFilter.CurrentExpansionOnly] = true
+        filterDropdown:ValidateResetState()
     end
 
     browseOrders:HookScript("OnShow", function() C_Timer.After(0, applyFilter) end)

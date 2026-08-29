@@ -16,7 +16,7 @@ function CreateEditOverlay(container, barKey)
     overlay:SetFrameStrata("HIGH")
     overlay:Hide()
 
-    local text = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local text = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     text:SetPoint("CENTER")
     local displayName = barKey:gsub("bar", "Bar ")
     text:SetText(displayName)

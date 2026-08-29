@@ -3073,7 +3073,7 @@ local function CreateSidePopup(globalName, titleText)
         insets = { left = 8, right = 8, top = 8, bottom = 8 }
     })
 
-    local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local title = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     title:SetPoint("TOP", 0, -15)
     title:SetText(titleText)
     popup.title = title
