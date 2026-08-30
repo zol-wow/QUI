@@ -1261,6 +1261,12 @@ local function UpdateRoleIcon(frame)
     end
 
     local role = UnitGroupRolesAssigned(unit)
+    -- @secret-policy: collapse-only — a secret role cannot index the
+    -- toggle/atlas tables (indexing with a secret key hard-errors).
+    if IsSecretValue(role) then
+        frame.roleIcon:Hide()
+        return
+    end
     local toggleKey = ROLE_TOGGLE_KEY[role]
     if toggleKey and indSettings[toggleKey] == false then
         frame.roleIcon:Hide()
@@ -1294,6 +1300,9 @@ local function UpdateReadyCheck(frame)
     end
 
     local status = GetReadyCheckStatus(unit)
+    -- @secret-policy: collapse-only — the texture choice needs a readable
+    -- status string; keep the current icon state rather than erroring.
+    if IsSecretValue(status) then return end
     if status then
         if status == "waiting" then
             local isAFK = UnitIsAFK(unit)
@@ -1321,6 +1330,15 @@ local function UpdateResurrection(frame)
     end
 
     local hasRes = UnitHasIncomingResurrection(unit)
+    if IsSecretValue(hasRes) then
+        -- @secret-policy: sink-passthrough — the secret res flag feeds
+        -- SetShown; a sink failure hides. (An unguarded truth-test here
+        -- would abort the whole UpdateFrame chain for the frame.)
+        if not pcall(frame.resIcon.SetShown, frame.resIcon, hasRes) then
+            frame.resIcon:Hide()
+        end
+        return
+    end
     if hasRes then
         frame.resIcon:Show()
     else
@@ -1408,14 +1426,31 @@ local function UpdateSummonPending(frame)
     local showSummon = false
     if C_IncomingSummon and C_IncomingSummon.HasIncomingSummon and C_IncomingSummon.IncomingSummonStatus then
         local okHas, hasSummon = pcall(C_IncomingSummon.HasIncomingSummon, unit)
+        if okHas and IsSecretValue(hasSummon) then
+            -- @secret-policy: sink-passthrough — the secret flag feeds
+            -- SetShown (textures have no script handlers). The pending/
+            -- accepted refinement needs a readable status, so the icon may
+            -- linger until the summon resolves; a sink failure hides.
+            if not pcall(frame.summonIcon.SetShown, frame.summonIcon, hasSummon) then
+                frame.summonIcon:Hide()
+            end
+            return
+        end
         local okStatus, status = pcall(C_IncomingSummon.IncomingSummonStatus, unit)
-        if okHas and okStatus and not IsSecretValue(hasSummon) and not IsSecretValue(status) and hasSummon == true then
+        if okHas and okStatus and not IsSecretValue(status) and hasSummon == true then
             local pendingStatus = Enum and Enum.SummonStatus and Enum.SummonStatus.Pending or 1
             showSummon = status == pendingStatus
         end
     elseif C_IncomingSummon and C_IncomingSummon.HasIncomingSummon then
         local ok, hasSummon = pcall(C_IncomingSummon.HasIncomingSummon, unit)
-        if ok and not IsSecretValue(hasSummon) then
+        if ok and IsSecretValue(hasSummon) then
+            -- @secret-policy: sink-passthrough — see above
+            if not pcall(frame.summonIcon.SetShown, frame.summonIcon, hasSummon) then
+                frame.summonIcon:Hide()
+            end
+            return
+        end
+        if ok then
             showSummon = hasSummon == true
         end
     end
@@ -1471,7 +1506,16 @@ local function UpdateTargetMarker(frame)
 
     local index = GetRaidTargetIndex(unit)
     if IsSecretValue(index) then
-        frame.targetMarker:Hide()
+        -- @secret-policy: sink-passthrough — 12.1 returns secret marker
+        -- indexes for raid-group units (unmarked units still read as plain
+        -- nil), and SetRaidTargetIconTexture accepts the secret. Hand it
+        -- through instead of collapsing to hidden; only a sink failure hides.
+        frame.targetMarker:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+        if pcall(SetRaidTargetIconTexture, frame.targetMarker, index) then
+            frame.targetMarker:Show()
+        else
+            frame.targetMarker:Hide()
+        end
         return
     end
     if index then
@@ -1496,8 +1540,17 @@ local function UpdateLeaderIcon(frame)
 
     local isLeader = UnitIsGroupLeader(unit)
     local isAssistant = UnitIsGroupAssistant(unit)
+    if IsSecretValue(isLeader) then
+        -- @secret-policy: sink-passthrough — the secret leader flag feeds
+        -- SetShown; assistant dimming needs readable flags and is skipped.
+        frame.leaderIcon:SetAtlas("groupfinder-icon-leader")
+        frame.leaderIcon:SetAlpha(1)
+        if not pcall(frame.leaderIcon.SetShown, frame.leaderIcon, isLeader) then
+            frame.leaderIcon:Hide()
+        end
+        return
+    end
     -- @secret-policy: collapse-only — hidden icon fallback
-    if IsSecretValue(isLeader) then isLeader = nil end
     if IsSecretValue(isAssistant) then isAssistant = nil end
     if isLeader then
         frame.leaderIcon:SetAtlas("groupfinder-icon-leader")
@@ -4590,10 +4643,18 @@ local function OnEvent(self, event, arg1, ...)
         else
             for unit, list in pairs(QUI_GF.unitFrameMap) do
                 local marker = GetRaidTargetIndex(unit)
-                local safeMarker = Helpers.SafeValue(marker, 0)
-                if safeMarker ~= _state.cachedMarkers[unit] then
-                    _state.cachedMarkers[unit] = safeMarker
+                if IsSecretValue(marker) then
+                    -- Secret index: can't diff against the cache — always
+                    -- repaint, and keep the cache unset so a later readable
+                    -- value is never suppressed.
+                    _state.cachedMarkers[unit] = nil
                     for i = 1, #list do UpdateTargetMarker(list[i]) end
+                else
+                    local safeMarker = marker or 0
+                    if safeMarker ~= _state.cachedMarkers[unit] then
+                        _state.cachedMarkers[unit] = safeMarker
+                        for i = 1, #list do UpdateTargetMarker(list[i]) end
+                    end
                 end
             end
         end
@@ -4613,6 +4674,24 @@ local function OnEvent(self, event, arg1, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         wipe(_range.cache)
         wipe(_range.cacheTime)
+
+        -- Combat-end true-up: indicator reads that were secret during combat
+        -- have no change event to repaint them once they become readable, so
+        -- re-run the indicator updaters from plain post-combat values.
+        wipe(_state.cachedMarkers)
+        for _, list in pairs(QUI_GF.unitFrameMap) do
+            for i = 1, #list do
+                local frame = list[i]
+                if frame and frame:IsShown() then
+                    UpdateTargetMarker(frame)
+                    UpdateSummonPending(frame)
+                    UpdateLeaderIcon(frame)
+                    UpdatePhaseIcon(frame)
+                    UpdateResurrection(frame)
+                    UpdateReadyCheck(frame)
+                end
+            end
+        end
 
         if _pending.refreshSettings then
             _pending.refreshSettings = false
