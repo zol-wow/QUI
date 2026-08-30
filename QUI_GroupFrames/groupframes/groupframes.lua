@@ -1428,15 +1428,23 @@ local function UpdateSummonPending(frame)
         local okHas, hasSummon = pcall(C_IncomingSummon.HasIncomingSummon, unit)
         if okHas and IsSecretValue(hasSummon) then
             -- @secret-policy: sink-passthrough — the secret flag feeds
-            -- SetShown (textures have no script handlers). The pending/
-            -- accepted refinement needs a readable status, so the icon may
-            -- linger until the summon resolves; a sink failure hides.
+            -- SetShown (textures have no script handlers). The Pending vs
+            -- Accepted/Declined refinement needs a readable status, so the
+            -- icon can over-display for a resolved summon until
+            -- HasIncomingSummon clears; a sink failure hides.
             if not pcall(frame.summonIcon.SetShown, frame.summonIcon, hasSummon) then
                 frame.summonIcon:Hide()
             end
             return
         end
         local okStatus, status = pcall(C_IncomingSummon.IncomingSummonStatus, unit)
+        if okHas and okStatus and hasSummon == true and IsSecretValue(status) then
+            -- Summon known active but status unreadable: show rather than
+            -- blank, accepting the same over-display trade-off as above.
+            -- @secret-policy: sink-passthrough
+            frame.summonIcon:Show()
+            return
+        end
         if okHas and okStatus and not IsSecretValue(status) and hasSummon == true then
             local pendingStatus = Enum and Enum.SummonStatus and Enum.SummonStatus.Pending or 1
             showSummon = status == pendingStatus
