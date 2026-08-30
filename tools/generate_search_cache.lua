@@ -844,6 +844,7 @@ _G.C_Timer = {
 _G.QUI_SEARCH_HARVEST = true
 
 local profile_db = make_auto_table()
+profile_db.damageMeter.native.windows[1] = {}
 profile_db.general.showOptionTooltips = true
 profile_db.quiGroupFrames = {
     testMode = {},

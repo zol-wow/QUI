@@ -25,6 +25,35 @@ local FORM_ROW = 32
 
 local NATIVE_DM_SUBPAGE_INDEX = 7
 
+local TYPE_NAMES = {
+    [0] = ns.L["Damage Done"],
+    [1] = ns.L["DPS"],
+    [2] = ns.L["Healing Done"],
+    [3] = ns.L["HPS"],
+    [4] = ns.L["Absorbs"],
+    [5] = ns.L["Interrupts"],
+    [6] = ns.L["Dispels"],
+    [7] = ns.L["Damage Taken"],
+    [8] = ns.L["Avoidable Damage Taken"],
+    [9] = ns.L["Deaths"],
+    [10] = ns.L["Enemy Damage Taken"],
+}
+
+local MYTHIC_START_TYPE_OPTIONS = {
+    { value = false, text = ns.L["Off"] },
+    { value = 0, text = TYPE_NAMES[0] },
+    { value = 1, text = TYPE_NAMES[1] },
+    { value = 2, text = TYPE_NAMES[2] },
+    { value = 3, text = TYPE_NAMES[3] },
+    { value = 4, text = TYPE_NAMES[4] },
+    { value = 5, text = TYPE_NAMES[5] },
+    { value = 6, text = TYPE_NAMES[6] },
+    { value = 7, text = TYPE_NAMES[7] },
+    { value = 8, text = TYPE_NAMES[8] },
+    { value = 9, text = TYPE_NAMES[9] },
+    { value = 10, text = TYPE_NAMES[10] },
+}
+
 local function GetMod()
     return ns.QUI_DamageMeter or _G.QUI_DamageMeter
 end
@@ -291,6 +320,11 @@ BuildNativeDamageMeterTab = function(tabContent)
             visibility = "always",
             refreshRateCombat = 0.5,
             refreshRateIdle = 2.0,
+            showHoverTooltip = true,
+            hoverTooltipScale = 100,
+            showAllBreakdownSpells = true,
+            showSpellTooltips = true,
+            breakdownAnchor = "row",
             autoResetOnChallengeStart = true,
             autoSwapChallengeSessions = false,
         }
@@ -311,6 +345,9 @@ BuildNativeDamageMeterTab = function(tabContent)
 
     local L = MakeLayout(tabContent)
     local native = db.damageMeter.native
+    if native.hoverTooltipScale == nil then native.hoverTooltipScale = 100 end
+    if native.showAllBreakdownSpells == nil then native.showAllBreakdownSpells = true end
+    if native.showSpellTooltips == nil then native.showSpellTooltips = true end
     if native.autoResetOnChallengeStart == nil then native.autoResetOnChallengeStart = true end
     if native.autoSwapChallengeSessions == nil then native.autoSwapChallengeSessions = false end
     local app = native.appearance.global
@@ -346,6 +383,35 @@ BuildNativeDamageMeterTab = function(tabContent)
     sEdit.AddRow(row(sEdit.frame, ns.L["Editing"], editW))
     L.closeSection(sEdit)
 
+    if isPerWindow or _G.QUI_SEARCH_HARVEST then
+        local windowState = native.windows and native.windows[isPerWindow and editingWindowID or 1]
+        if windowState then
+            if not _G.QUI_SEARCH_HARVEST
+                and rawget(windowState, "autoSwapChallengeSessions") == nil then
+                windowState.autoSwapChallengeSessions = native.autoSwapChallengeSessions == true
+            end
+            L.headerAt(ns.L["Window Behavior"])
+            local sWindow = L.sectionAt()
+            local autoCurrentW = GUI:CreateFormCheckbox(sWindow.frame, nil, "autoCurrentOnCombat", windowState, ApplyNative,
+                { description = ns.L["When entering combat, switch this window from a previous segment to Current. Overall is left unchanged."] })
+            local syncW = GUI:CreateFormCheckbox(sWindow.frame, nil, "syncSegments", windowState, ApplyNative,
+                { description = ns.L["Selecting a segment in this window also switches every other window with segment sync enabled."] })
+            sWindow.AddRow(row(sWindow.frame, ns.L["Auto Current on Combat"], autoCurrentW), row(sWindow.frame, ns.L["Sync Segment Selection"], syncW))
+
+            local autoSwapW = GUI:CreateFormCheckbox(sWindow.frame, nil, "autoSwapChallengeSessions", windowState, ApplyNative,
+                { description = ns.L["Switch this window from Overall to Current when a Mythic+ key starts, then back to Overall when it completes."] })
+            local hideTimerW = GUI:CreateFormCheckbox(sWindow.frame, nil, "hideTimer", windowState, ApplyNative,
+                { description = ns.L["Hide the session timer in this window's header."] })
+            sWindow.AddRow(row(sWindow.frame, ns.L["Auto Swap Current/Overall"], autoSwapW), row(sWindow.frame, ns.L["Hide Timer"], hideTimerW))
+
+            local mythicTypeW = GUI:CreateFormDropdown(sWindow.frame, nil, MYTHIC_START_TYPE_OPTIONS,
+                "mythicStartDMType", windowState, ApplyNative,
+                { description = ns.L["Switch this window to the selected meter type when a Mythic+ key starts. Off leaves its type unchanged."] })
+            sWindow.AddRow(row(sWindow.frame, ns.L["Default Meter Type on M+ Start"], mythicTypeW))
+            L.closeSection(sWindow)
+        end
+    end
+
     L.headerAt(ns.L["Behavior"])
     local sBeh = L.sectionAt()
 
@@ -363,18 +429,26 @@ BuildNativeDamageMeterTab = function(tabContent)
     local refIW = GUI:CreateFormSlider(sBeh.frame, nil, 0.5, 5.0, 0.1, "refreshRateIdle", native, ApplyNative,
         { description = ns.L["How often (seconds) the meter refreshes outside combat (0.5-5.0)."] })
     local hoverW = GUI:CreateFormCheckbox(sBeh.frame, nil, "showHoverTooltip", native, ApplyNative,
-        { description = ns.L["Show a tooltip with class color, total, per-second, and percent when hovering a row."] })
+        { description = ns.L["Show a fresh spell and target breakdown when hovering a row. Restricted combat rows use a summary tooltip instead."] })
     sBeh.AddRow(row(sBeh.frame, ns.L["Refresh Rate (Idle)"], refIW), row(sBeh.frame, ns.L["Show Hover Tooltip"], hoverW))
+
+    local hoverScaleW = GUI:CreateFormSlider(sBeh.frame, nil, 50, 150, 5, "hoverTooltipScale", native, ApplyNative,
+        { description = ns.L["Scale of the row-hover breakdown, as a percentage (50-150)."] })
+    local allHoverSpellsW = GUI:CreateFormCheckbox(sBeh.frame, nil, "showAllBreakdownSpells", native, ApplyNative,
+        { description = ns.L["Show up to 15 spells in row-hover breakdowns. Turn off for the compact 8-spell limit."] })
+    sBeh.AddRow(row(sBeh.frame, ns.L["Hover Tooltip Scale (%)"], hoverScaleW), row(sBeh.frame, ns.L["Show All Hover Spells"], allHoverSpellsW))
 
     local pinW = GUI:CreateFormCheckbox(sBeh.frame, nil, "showPinnedSelf", native, ApplyNative,
         { description = ns.L["If the local player isn't in the visible top-N, show them at the bottom anyway."] })
     local breakdownAnchorOptions = {
-        { value = "row",    text = ns.L["Next to row (default)"] },
+        { value = "row",    text = ns.L["Above hovered row (default)"] },
         { value = "center", text = ns.L["Center of screen"] },
+        { value = "left",   text = ns.L["Left of meter"] },
+        { value = "right",  text = ns.L["Right of meter"] },
     }
     local breakW = GUI:CreateFormDropdown(sBeh.frame, nil, breakdownAnchorOptions, "breakdownAnchor", native, ApplyNative,
-        { description = ns.L["Where the per-source spell breakdown popup appears when you click a row."] })
-    sBeh.AddRow(row(sBeh.frame, ns.L["Show Pinned Self"], pinW), row(sBeh.frame, ns.L["Breakdown Popup Position"], breakW))
+        { description = ns.L["Where the rich row-hover breakdown appears."] })
+    sBeh.AddRow(row(sBeh.frame, ns.L["Show Pinned Self"], pinW), row(sBeh.frame, ns.L["Breakdown Preview Position"], breakW))
 
     local absorbW = GUI:CreateFormCheckbox(sBeh.frame, nil, "combineAbsorbsIntoHealing", native, ApplyNative,
         { description = ns.L["When ON (default), Healing Done / HPS sum each source's healing AND absorb shields. Turn off for pure HealingDone (matching Blizzard's stock meter)."] })
@@ -382,11 +456,13 @@ BuildNativeDamageMeterTab = function(tabContent)
         { description = ns.L["When ON (default), hide realm names: show \"Name\" instead of \"Name-Realm\" for cross-realm players on rows, tooltips, and the breakdown popup."] })
     sBeh.AddRow(row(sBeh.frame, ns.L["Include Absorbs in Healing"], absorbW), row(sBeh.frame, ns.L["Hide Realm Names"], shortNameW))
 
+    local spellTooltipW = GUI:CreateFormCheckbox(sBeh.frame, nil, "showSpellTooltips", native, ApplyNative,
+        { description = ns.L["Show Blizzard's native spell tooltip when hovering a spell row in a breakdown."] })
+    sBeh.AddRow(row(sBeh.frame, ns.L["Show Spell Tooltips"], spellTooltipW))
+
     local autoResetW = GUI:CreateFormCheckbox(sBeh.frame, nil, "autoResetOnChallengeStart", native, ApplyNative,
         { description = ns.L["When ON (default), clear all damage-meter sessions when a Mythic+ key starts so Overall begins at zero for that run."] })
-    local autoSwapW = GUI:CreateFormCheckbox(sBeh.frame, nil, "autoSwapChallengeSessions", native, ApplyNative,
-        { description = ns.L["When ON, windows showing Overall switch to Current when a key starts, then Current switches back to Overall when the key completes."] })
-    sBeh.AddRow(row(sBeh.frame, ns.L["Auto Reset on Key Start"], autoResetW), row(sBeh.frame, ns.L["Auto Swap Current/Overall"], autoSwapW))
+    sBeh.AddRow(row(sBeh.frame, ns.L["Auto Reset on Key Start"], autoResetW))
 
     local numberFormatOptions = {
         { value = "minimal",  text = ns.L["Minimal (1K / 2M)"] },
@@ -589,10 +665,6 @@ BuildNativeDamageMeterTab = function(tabContent)
     if pending then sCol.AddRow(pending) end
     L.closeSection(sCol)
 
-    local TYPE_NAMES = {
-        [0] = ns.L["Damage Done"], [1] = ns.L["Healing Done"], [2] = ns.L["Damage Taken"],
-        [3] = ns.L["Interrupts"],  [4] = ns.L["Dispels"],      [5] = ns.L["Deaths"],
-    }
     local SESSION_NAMES = { [0] = ns.L["Overall"], [1] = ns.L["Current"], [2] = ns.L["Expired"] }
 
     local function CountWindows()

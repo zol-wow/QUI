@@ -193,7 +193,10 @@ local function SkinLegacyFriendsContents(frame)
             _G.RaidInfoCancelButton or raidInfo.CancelButton)
     end
 
-    for i = 1, 40 do SkinSocialRow(_G["RaidGroupButton" .. i], 2) end
+    for i = 1, 40 do
+        local row = _G["RaidGroupButton" .. i]
+        if row then SkinBase.LockPooledRowText(row, 2) end
+    end
 end
 
 local function SkinFriends()
