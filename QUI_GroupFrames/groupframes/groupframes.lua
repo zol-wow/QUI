@@ -4644,9 +4644,10 @@ local function OnEvent(self, event, arg1, ...)
             for unit, list in pairs(QUI_GF.unitFrameMap) do
                 local marker = GetRaidTargetIndex(unit)
                 if IsSecretValue(marker) then
-                    -- Secret index: can't diff against the cache — always
-                    -- repaint, and keep the cache unset so a later readable
-                    -- value is never suppressed.
+                    -- A secret index can't be diffed against the cache:
+                    -- always repaint, and keep the cache unset so a later
+                    -- readable value is never suppressed.
+                    -- @secret-policy: reject-secret-cache
                     _state.cachedMarkers[unit] = nil
                     for i = 1, #list do UpdateTargetMarker(list[i]) end
                 else
