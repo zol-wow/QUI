@@ -12,3 +12,4 @@
 bootstrap.lua
 # == modules/damage_meter/damage_meter.xml ==
 damage_meter\damage_meter.lua
+damage_meter\breakout.lua
