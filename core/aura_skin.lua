@@ -120,16 +120,6 @@ local function buildButtonArt(button)
         button:AddPandemicRegion(pandemic)
     end
 
-    local symbol = button:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
-    symbol:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
-    button._quiSymbol = symbol
-    if button.SetDispelTypeText then
-        button:SetDispelTypeText(symbol, {
-            showWhenHarmful = true,
-            showWhenHelpful = false,
-        })
-    end
-
     local cd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     cd:SetAllPoints(button)
     cd:SetHideCountdownNumbers(true)
@@ -142,12 +132,32 @@ local function buildButtonArt(button)
     fill:Hide()
     button._quiDurationBar = fill
 
-    local durText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    -- The cooldown swipe and the duration bar are child FRAMES, which always
+    -- draw above regions on the button itself — so the texts live on their
+    -- own overlay frame stacked higher, or the swipe covers them.
+    local textOverlay = CreateFrame("Frame", nil, button)
+    textOverlay:SetAllPoints(button)
+    if textOverlay.SetFrameLevel and cd.GetFrameLevel and fill.GetFrameLevel then
+        textOverlay:SetFrameLevel(math.max(cd:GetFrameLevel(), fill:GetFrameLevel()) + 1)
+    end
+    button._quiTextOverlay = textOverlay
+
+    local symbol = textOverlay:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+    symbol:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
+    button._quiSymbol = symbol
+    if button.SetDispelTypeText then
+        button:SetDispelTypeText(symbol, {
+            showWhenHarmful = true,
+            showWhenHelpful = false,
+        })
+    end
+
+    local durText = textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     durText:SetPoint("CENTER", button, "CENTER", 0, 0)
     button._quiDuration = durText
     if button.SetDurationText then button:SetDurationText(durText, {}) end
 
-    local count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    local count = textOverlay:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
     count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
     button._quiCount = count
     if button.SetApplicationCount then button:SetApplicationCount(count, {}) end

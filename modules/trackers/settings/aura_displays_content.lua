@@ -1218,6 +1218,7 @@ function ns.QUI_AuraDisplaysOptions._BuildAurasTab(host, ctx, display)
             defaultBucketFn     = AD.DefaultBucket,
             simpleMode          = true,
             summaryUnit         = UnitLabelFor(display),
+            durationDecimals    = true,
         },
         onLayoutChanged = function(newHeight)
             if type(newHeight) == "number" and ctx and ctx.ResizeTab then
