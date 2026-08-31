@@ -387,6 +387,36 @@ local function AcquireBrowseSpellRow(index)
     return row
 end
 
+local BROWSE_SECTION_LIMIT = 12
+local BROWSE_TOTAL_LIMIT = 300
+
+-- The dynamic catalog (active auras, spellbook, talents, seen recorder) leads;
+-- the caller's curated presets follow. Earlier sections win the per-id dedupe.
+local function EffectiveBrowseSections(opts)
+    local sections = {}
+    if not (opts and opts.skipCatalog) then
+        local Catalog = ns.QUI_AuraSpellCatalog
+        if Catalog and type(Catalog.BuildSections) == "function" then
+            for _, section in ipairs(Catalog.BuildSections()) do
+                sections[#sections + 1] = section
+            end
+        end
+    end
+    for _, preset in ipairs((opts and opts.presets) or {}) do
+        sections[#sections + 1] = preset
+    end
+    return sections
+end
+
+local function BrowseBadge(harmful)
+    if harmful == true then
+        return "  |cFFE06C6C" .. ns.L["debuff"] .. "|r"
+    elseif harmful == false then
+        return "  |cFF7AC37A" .. ns.L["buff"] .. "|r"
+    end
+    return ""
+end
+
 RebuildBrowseRows = function(filter)
     local popup = browse.popup
     if not popup then return end
@@ -397,13 +427,17 @@ RebuildBrowseRows = function(filter)
     local accent = popup._accent
     local text = popup._text
     local lower = (type(filter) == "string" and filter ~= "" and ns.Helpers.FoldUTF8(filter)) or nil
-    local headerIndex, spellIndex = 0, 0
-    local y = 0
-    local seen = {}
 
-    for _, preset in ipairs((opts and opts.presets) or {}) do
-        local headerPlaced = false
-        for _, spell in ipairs(preset.spells or {}) do
+    -- Pass 1: match spells into a section model. Without a search, sections
+    -- are capped so the popup opens fast; matched-but-hidden entries become a
+    -- "+ N more" hint. With a search, everything matching shows (bounded).
+    local model = {}
+    local seen = {}
+    local total = 0
+    for _, section in ipairs(EffectiveBrowseSections(opts)) do
+        local rows = {}
+        local more = 0
+        for _, spell in ipairs(section.spells or {}) do
             local id = spell.id or spell.spellID
             if id and not seen[id] then
                 local name = spell.name or GetSpellName(id) or (ns.L["Spell"] .. " " .. tostring(id))
@@ -412,40 +446,91 @@ RebuildBrowseRows = function(filter)
                     or ns.Helpers.FoldUTF8(name):find(lower, 1, true)
                     or tostring(id):find(lower, 1, true)
                     or tostring(displayID):find(lower, 1, true) then
-                    seen[id] = true
-                    if not headerPlaced then
-                        headerPlaced = true
-                        headerIndex = headerIndex + 1
-                        local header = AcquireBrowseHeader(headerIndex)
-                        header:SetHeight(BROWSE_ROW_H)
-                        header:SetPoint("TOPLEFT", 0, y)
-                        header:SetPoint("RIGHT", popup._scrollChild, "RIGHT", 0, 0)
-                        header.text:SetText(preset.name or "")
-                        y = y - BROWSE_ROW_H
-                    end
-                    spellIndex = spellIndex + 1
-                    local row = AcquireBrowseSpellRow(spellIndex)
-                    row:SetHeight(BROWSE_ROW_H)
-                    row:SetPoint("TOPLEFT", 0, y)
-                    row:SetPoint("RIGHT", popup._scrollChild, "RIGHT", 0, 0)
-                    row.spellId = id
-                    row.icon:SetTexture(spell.icon or GetSpellIcon(id))
-                    local idLabel = tostring(id)
-                    if displayID ~= id then
-                        idLabel = idLabel .. " -> " .. ns.L["Aura"] .. " " .. tostring(displayID)
-                    end
-                    row.text:SetText(name .. "  |cFF888888(" .. idLabel .. ")|r")
-                    local selected = opts and type(opts.isSelected) == "function" and opts.isSelected(id)
-                    if selected then
-                        row.bg:SetColorTexture(accent[1], accent[2], accent[3], 0.12)
-                        row.text:SetTextColor(accent[1], accent[2], accent[3], 1)
+                    if (not lower and #rows >= BROWSE_SECTION_LIMIT)
+                        or total >= BROWSE_TOTAL_LIMIT then
+                        more = more + 1
                     else
-                        row.bg:SetColorTexture(1, 1, 1, 0)
-                        row.text:SetTextColor(text[1], text[2], text[3], 1)
+                        seen[id] = true
+                        total = total + 1
+                        rows[#rows + 1] = {
+                            id = id,
+                            name = name,
+                            icon = spell.icon,
+                            harmful = spell.harmful,
+                            displayID = displayID,
+                        }
                     end
-                    y = y - BROWSE_ROW_H
                 end
             end
+        end
+        if #rows > 0 then
+            model[#model + 1] = { name = section.name, rows = rows, more = more }
+        end
+    end
+
+    -- Nothing matched: the client can still resolve exact names of loaded
+    -- spells the sections don't carry.
+    if total == 0 and lower then
+        local Catalog = ns.QUI_AuraSpellCatalog
+        local match = Catalog and type(Catalog.ExactNameMatch) == "function"
+            and Catalog.ExactNameMatch(filter)
+        if match then
+            total = 1
+            model[1] = { name = ns.L["Name Match"], rows = { {
+                id = match.id,
+                name = match.name,
+                icon = match.icon,
+                displayID = BrowseDisplaySpellID(match.id, opts),
+            } }, more = 0 }
+        end
+    end
+
+    -- Pass 2: render.
+    local headerIndex, spellIndex = 0, 0
+    local y = 0
+    for _, section in ipairs(model) do
+        headerIndex = headerIndex + 1
+        local header = AcquireBrowseHeader(headerIndex)
+        header:SetHeight(BROWSE_ROW_H)
+        header:SetPoint("TOPLEFT", 0, y)
+        header:SetPoint("RIGHT", popup._scrollChild, "RIGHT", 0, 0)
+        header.text:SetText(section.name or "")
+        y = y - BROWSE_ROW_H
+
+        for _, entry in ipairs(section.rows) do
+            spellIndex = spellIndex + 1
+            local row = AcquireBrowseSpellRow(spellIndex)
+            row:SetHeight(BROWSE_ROW_H)
+            row:SetPoint("TOPLEFT", 0, y)
+            row:SetPoint("RIGHT", popup._scrollChild, "RIGHT", 0, 0)
+            row.spellId = entry.id
+            row.icon:SetTexture(entry.icon or GetSpellIcon(entry.id))
+            local idLabel = tostring(entry.id)
+            if entry.displayID ~= entry.id then
+                idLabel = idLabel .. " -> " .. ns.L["Aura"] .. " " .. tostring(entry.displayID)
+            end
+            row.text:SetText(entry.name .. "  |cFF888888(" .. idLabel .. ")|r"
+                .. BrowseBadge(entry.harmful))
+            local selected = opts and type(opts.isSelected) == "function" and opts.isSelected(entry.id)
+            if selected then
+                row.bg:SetColorTexture(accent[1], accent[2], accent[3], 0.12)
+                row.text:SetTextColor(accent[1], accent[2], accent[3], 1)
+            else
+                row.bg:SetColorTexture(1, 1, 1, 0)
+                row.text:SetTextColor(text[1], text[2], text[3], 1)
+            end
+            y = y - BROWSE_ROW_H
+        end
+
+        if section.more > 0 then
+            headerIndex = headerIndex + 1
+            local hint = AcquireBrowseHeader(headerIndex)
+            hint:SetHeight(BROWSE_ROW_H)
+            hint:SetPoint("TOPLEFT", 0, y)
+            hint:SetPoint("RIGHT", popup._scrollChild, "RIGHT", 0, 0)
+            hint.text:SetText("|cFF888888"
+                .. string.format(ns.L["+ %d more - type to search"], section.more) .. "|r")
+            y = y - BROWSE_ROW_H
         end
     end
 
@@ -472,6 +557,11 @@ function SpellList.ToggleBrowsePopup(key, opts)
     browse.key = key
     browse.opts = opts
     browse.dirty = false
+    -- Fresh open: rebuild the dynamic catalog so Active Auras reflects now.
+    local Catalog = ns.QUI_AuraSpellCatalog
+    if Catalog and type(Catalog.InvalidateCache) == "function" then
+        Catalog.InvalidateCache()
+    end
     popup._title:SetText((opts and opts.title) or ns.L["Browse Spells"])
     popup._search:SetText("")
     popup._placeholder:Show()
