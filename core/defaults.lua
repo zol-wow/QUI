@@ -568,6 +568,12 @@ local defaults = {
                 showAllBreakdownSpells = true,
                 showSpellTooltips    = true,
                 breakdownAnchor      = "row",
+                breakoutLayout       = {
+                    leftWidth = 220,
+                    middleWidth = 500,
+                    playersHeight = 360,
+                    spellsHeight = 390,
+                },
                 combineAbsorbsIntoHealing = true,
                 shortenNames = true,
                 autoResetOnChallengeStart = true,

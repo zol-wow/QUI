@@ -325,6 +325,12 @@ BuildNativeDamageMeterTab = function(tabContent)
             showAllBreakdownSpells = true,
             showSpellTooltips = true,
             breakdownAnchor = "row",
+            breakoutLayout = {
+                leftWidth = 220,
+                middleWidth = 500,
+                playersHeight = 360,
+                spellsHeight = 390,
+            },
             autoResetOnChallengeStart = true,
             autoSwapChallengeSessions = false,
         }
@@ -348,6 +354,11 @@ BuildNativeDamageMeterTab = function(tabContent)
     if native.hoverTooltipScale == nil then native.hoverTooltipScale = 100 end
     if native.showAllBreakdownSpells == nil then native.showAllBreakdownSpells = true end
     if native.showSpellTooltips == nil then native.showSpellTooltips = true end
+    if type(native.breakoutLayout) ~= "table" then native.breakoutLayout = {} end
+    if type(native.breakoutLayout.leftWidth) ~= "number" then native.breakoutLayout.leftWidth = 220 end
+    if type(native.breakoutLayout.middleWidth) ~= "number" then native.breakoutLayout.middleWidth = 500 end
+    if type(native.breakoutLayout.playersHeight) ~= "number" then native.breakoutLayout.playersHeight = 360 end
+    if type(native.breakoutLayout.spellsHeight) ~= "number" then native.breakoutLayout.spellsHeight = 390 end
     if native.autoResetOnChallengeStart == nil then native.autoResetOnChallengeStart = true end
     if native.autoSwapChallengeSessions == nil then native.autoSwapChallengeSessions = false end
     local app = native.appearance.global
