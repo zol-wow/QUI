@@ -115,7 +115,20 @@ local function ScanUnitFilter(unit, filter, harmful, record, out, seen)
     end
 end
 
+-- Aura data can be secret even OUT of combat (M+ dungeons, raid restriction);
+-- calling the aura APIs then is a hard error, not a secret return value, so
+-- every scan checks the engine gate first.
+local function AurasReadable()
+    if InCombatLockdown and InCombatLockdown() then return false end
+    local glue = ns.AuraGlue
+    if glue and type(glue.AurasAreSecret) == "function" and glue.AurasAreSecret() then
+        return false
+    end
+    return true
+end
+
 local function ScanUnit(unit, record, out, seen)
+    if not AurasReadable() then return end
     if type(UnitExists) == "function" then
         local ok, exists = ns.SafeCall("best-effort-style", UnitExists, unit)
         if not ok or IsSecret(exists) or not exists then return end
@@ -129,7 +142,7 @@ end
 local lastScan = {}
 
 local function RecordUnit(unit)
-    if InCombatLockdown and InCombatLockdown() then return end
+    if not AurasReadable() then return end
     local now = type(GetTime) == "function" and GetTime() or 0
     if lastScan[unit] and now - lastScan[unit] < SCAN_THROTTLE then return end
     lastScan[unit] = now
