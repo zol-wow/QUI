@@ -4,6 +4,93 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3-beta1 - 2026-08-31
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Opens the 5.3 beta line with a modern Damage Meter detail workspace, broader
+Blizzard-frame styling, and focused combat UI corrections.
+
+### Added
+
+- **Damage Meter rows open a reusable five-pane detail workspace** for spells,
+  targets, attackers, and death recaps while row-hover details remain
+  independent and interactive.
+- **Historical sessions and individual Damage Meter windows have richer
+  controls**, with persisted pane sizes and safer combat and Mythic+ state
+  selection.
+- **Initiative Tasks use QUI's Objective Tracker styling** and refresh with
+  Blizzard's native tracking events.
+
+### Changed
+
+- **Unrestricted Blizzard frames remain movable during combat**, while secure
+  and proxy-owned frames continue to wait until combat ends.
+- **Shared frame styling is more consistent** across Social, talents, Crafting
+  Orders, tabs, text, and close controls.
+
+### Fixed
+
+- **Group Frame summon indicators handle secret status values safely** and
+  refresh when combat ends.
+- **Mail's Open All action keeps the Mail window above overlapping moved
+  panels.**
+
+## v5.2.3 - 2026-08-28
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+QUI 5.2.3 expands shared HUD visibility, cross-profile controls, and utility
+windows while hardening Action Bars, Cooldown Manager, Objective Tracker, and
+Blizzard-owned UI transitions.
+
+### Added
+
+- **Aura Displays and Group / Raid Frames can be pinned across every profile.**
+  Individual destination profiles can Ignore the shared source for local edits
+  and Apply it again later.
+- **Aura Displays have dedicated HUD Visibility controls** for combat, target,
+  group, instance, mouseover, mounted, vehicle, flight, opacity, and fade rules.
+- **The Alts window is resizable**, preserves its position and dimensions, and
+  stops active moves or resizes cleanly when combat begins.
+- **Currency tooltips show saved per-character balances**, while account-wide
+  currencies show one live Warband total.
+
+### Changed
+
+- **Overflowing QUI Chat tabs open a direct picker**, and conversation tabs
+  have close buttons with predictable adjacent-tab selection.
+- **Mythic+ enemy forces follow the selected Count, Percentage, or Both
+  format**, including current and required counts alongside percentage.
+- **Moved Blizzard panels rise above overlapping panels** after QUI restores
+  their saved positions.
+- **The custom Info Bar Micro Menu no longer duplicates Blizzard's Shop
+  button.** Blizzard's native Micro Menu remains the supported Shop path.
+
+### Fixed
+
+- **Action Bar proc glows track the current action immediately** through paging,
+  special bars, flyouts, duplicate slots, hidden-bar reveals, and Rotation
+  Assist ownership changes.
+- **Action Bar range and usability tints respect live and autohide state**, and
+  deferred Micro Menu cold starts complete after Blizzard releases temporary
+  ownership.
+- **Cooldown Manager swipes remain synchronized without full-overlay flashes**
+  across ordinary cooldowns, charge recharges, item cooldowns, and GCD-only
+  refreshes.
+- **Objective Tracker and Mythic+ transitions preserve Blizzard's Scenario
+  ownership**, restore the native tracker when QUI's timer closes, and retain
+  configured castbar widths.
+- **Protected UI updates stay in their native lifecycle.** Cooldown Viewer is no
+  longer force-loaded, Group Frame aura layering waits for combat to end, and
+  OPie editor widgets are excluded from action-button scans.
+- **Freshly shown nameplates initialize absorb bars immediately**, and resource
+  bars rebuild automatically after Fluid Form changes.
+- **Blizzard's vehicle exit button remains available when leaving is allowed**
+  while QUI continues to skin the surrounding override bar.
+
 ## v5.2.3-beta10 - 2026-08-28
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
