@@ -64,7 +64,7 @@ local function PruneSeen(db)
     end
 end
 
-function Catalog.RecordAura(spellID, name, icon, harmful)
+function Catalog.RecordAura(spellID, name, icon, harmful, unit)
     spellID = CleanNumber(spellID)
     name = CleanString(name)
     if not spellID or not name then return false end
@@ -78,6 +78,13 @@ function Catalog.RecordAura(spellID, name, icon, harmful)
     entry.name = name
     entry.icon = CleanNumber(icon) or entry.icon
     if harmful ~= nil then entry.harmful = harmful and true or false end
+    -- Where it was last seen sharpens the variant badges; "on you" beats any
+    -- other unit, so a player-observed stamp is never downgraded.
+    if type(unit) == "string" and not IsSecret(unit) then
+        if unit == "player" or entry.unit ~= "player" then
+            entry.unit = unit
+        end
+    end
     entry.t = Now()
     PruneSeen(db)
     return true
@@ -92,7 +99,7 @@ local function ScanUnitFilter(unit, filter, harmful, record, out, seen)
         local name = CleanString(aura.name)
         if spellID and name then
             if record then
-                Catalog.RecordAura(spellID, name, aura.icon, harmful)
+                Catalog.RecordAura(spellID, name, aura.icon, harmful, unit)
             end
             if out and not seen[spellID] then
                 seen[spellID] = true
@@ -101,6 +108,7 @@ local function ScanUnitFilter(unit, filter, harmful, record, out, seen)
                     name = name,
                     icon = CleanNumber(aura.icon),
                     harmful = harmful,
+                    unit = unit,
                 }
             end
         end
@@ -276,6 +284,8 @@ local function BuildSeenSection()
                 name = entry.name,
                 icon = entry.icon,
                 harmful = entry.harmful,
+                unit = entry.unit,
+                seenT = entry.t,
             }
         end
     end
@@ -295,23 +305,66 @@ function Catalog.BuildSections()
     local sections = {}
     local active = BuildActiveSection()
     if #active > 0 then
-        sections[#sections + 1] = { name = ns.L["Active Auras"], spells = active }
+        sections[#sections + 1] = { key = "active", name = ns.L["Active Auras"], spells = active }
     end
     local spellbook = BuildSpellbookSection()
     if #spellbook > 0 then
-        sections[#sections + 1] = { name = ns.L["My Spellbook"], spells = spellbook }
+        sections[#sections + 1] = { key = "spellbook", name = ns.L["My Spellbook"], spells = spellbook }
     end
     local talents = BuildTalentSection()
     if #talents > 0 then
-        sections[#sections + 1] = { name = ns.L["Talents"], spells = talents }
+        sections[#sections + 1] = { key = "talents", name = ns.L["Talents"], spells = talents }
     end
     local seenSection = BuildSeenSection()
     if #seenSection > 0 then
-        sections[#sections + 1] = { name = ns.L["Recently Seen"], spells = seenSection }
+        sections[#sections + 1] = { key = "seen", name = ns.L["Recently Seen"], spells = seenSection }
     end
     cachedSections = sections
     cachedAt = now
     return sections
+end
+
+-- Variant disambiguation ------------------------------------------------------
+-- One aura name can map to several live spell IDs (talent entry, cast spell,
+-- the aura it applies, rank twins). The popup merges every source a spell ID
+-- appears in, then ranks: for aura tracking, an ID observed AS an aura is
+-- almost always the right pick, and "on you, right now" is the strongest
+-- evidence there is.
+
+function Catalog.MergeVariantSource(merged, sectionKey, spell)
+    merged.sources = merged.sources or {}
+    local key = sectionKey or "preset"
+    merged.sources[key] = true
+    if key == "active" then
+        if spell.unit == "player" or merged.activeUnit == nil then
+            merged.activeUnit = spell.unit or merged.activeUnit
+        end
+    elseif key == "seen" then
+        merged.seenUnit = spell.unit or merged.seenUnit
+        merged.seenT = spell.seenT or merged.seenT
+    end
+    if merged.harmful == nil then merged.harmful = spell.harmful end
+    return merged
+end
+
+function Catalog.VariantScore(merged)
+    local sources = merged.sources or {}
+    if sources.active then
+        return merged.activeUnit == "player" and 5 or 4
+    end
+    if sources.seen then return 3 end
+    if sources.spellbook then return 2 end
+    if sources.talents then return 1 end
+    return 0
+end
+
+function Catalog.CompareVariants(a, b)
+    local sa, sb = Catalog.VariantScore(a), Catalog.VariantScore(b)
+    if sa ~= sb then return sa > sb end
+    local ta = tonumber(a.seenT) or 0
+    local tb = tonumber(b.seenT) or 0
+    if ta ~= tb then return ta > tb end
+    return a.id < b.id
 end
 
 function Catalog.InvalidateCache()

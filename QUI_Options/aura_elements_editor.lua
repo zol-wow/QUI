@@ -843,6 +843,7 @@ local function AddSpellMapEditor(ctx, map, headerText, onMutate, browseCfg)
         local browseOpts = {
             title = browseCfg.title or headerText,
             presets = browseCfg.presets or {},
+            multiAdd = true,
             isSelected = browseCfg.isSelected or function(spellID)
                 return map[spellID] == true
             end,
