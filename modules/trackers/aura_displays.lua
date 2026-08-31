@@ -1059,6 +1059,245 @@ local function EnsureGroupHost(group)
     return host
 end
 
+-- Preview editing -------------------------------------------------------------
+-- While a display or group is being edited in the options panel (single
+-- preview active), its on-screen preview is directly draggable and group
+-- hosts show a bounding box, so positioning doesn't require a trip to Layout
+-- Mode. Dragging always moves the ROOT entity — a nested display or child
+-- group has no anchor of its own; its root group does.
+
+local function PreviewAccent()
+    local colors = QUI and QUI.GUI and QUI.GUI.Colors
+    local accent = colors and colors.accent
+    if type(accent) == "table" then
+        return accent[1] or 0.2, accent[2] or 0.6, accent[3] or 1
+    end
+    return 0.2, 0.6, 1
+end
+
+local function UpdateGroupBox(host, groupName, mode)
+    if not host then return end
+    local box = host._quiPreviewBox
+    if not mode then
+        if box then
+            for i = 1, 4 do box[i]:Hide() end
+            box.label:Hide()
+        end
+        return
+    end
+    if not box then
+        if type(host.CreateTexture) ~= "function"
+            or type(host.CreateFontString) ~= "function" then
+            return
+        end
+        box = {}
+        for i = 1, 4 do
+            box[i] = host:CreateTexture(nil, "OVERLAY")
+        end
+        box[1]:SetPoint("TOPLEFT", 0, 0)
+        box[1]:SetPoint("TOPRIGHT", 0, 0)
+        box[1]:SetHeight(1)
+        box[2]:SetPoint("BOTTOMLEFT", 0, 0)
+        box[2]:SetPoint("BOTTOMRIGHT", 0, 0)
+        box[2]:SetHeight(1)
+        box[3]:SetPoint("TOPLEFT", 0, 0)
+        box[3]:SetPoint("BOTTOMLEFT", 0, 0)
+        box[3]:SetWidth(1)
+        box[4]:SetPoint("TOPRIGHT", 0, 0)
+        box[4]:SetPoint("BOTTOMRIGHT", 0, 0)
+        box[4]:SetWidth(1)
+        box.label = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        box.label:SetPoint("BOTTOMLEFT", host, "TOPLEFT", 0, 2)
+        host._quiPreviewBox = box
+    end
+    local r, g, b = PreviewAccent()
+    local alpha = mode == "selected" and 0.9 or 0.4
+    for i = 1, 4 do
+        box[i]:SetColorTexture(r, g, b, alpha)
+        box[i]:Show()
+    end
+    box.label:SetText(groupName)
+    box.label:SetTextColor(r, g, b, alpha)
+    box.label:Show()
+end
+
+local function PreviewBoxMode(groupName)
+    if previewActive then return nil end -- Layout Mode draws its own movers
+    if singlePreviewGroup then
+        if not GroupPreviewRelated(groupName) then return nil end
+        return groupName == singlePreviewGroup and "selected" or "related"
+    end
+    if singlePreviewID then
+        local display = AD.GetDisplay(singlePreviewID)
+        local dg = display and GroupKey(display.group)
+        if dg and (groupName == dg or AD.GroupIsAncestor(groupName, dg)) then
+            return "related"
+        end
+    end
+    return nil
+end
+
+local dragOverlay
+local dragTarget
+
+local function ResolveDragTarget(kind, value)
+    if kind == "display" then
+        local display = AD.GetDisplay(value)
+        if not display then return nil end
+        local groupName = GroupKey(display.group)
+        if not groupName then
+            return hosts[display.id], AD.ANCHOR_PREFIX .. display.id
+        end
+        local rootName = AD.RootGroupName(groupName) or groupName
+        local group = AD.GetGroup(rootName, false)
+        return group and groupHosts[group.id],
+            group and (AD.GROUP_ANCHOR_PREFIX .. group.id)
+    end
+    local rootName = AD.RootGroupName(value) or GroupKey(value)
+    local group = rootName and AD.GetGroup(rootName, false)
+    return group and groupHosts[group.id],
+        group and (AD.GROUP_ANCHOR_PREFIX .. group.id)
+end
+
+local function SafeCoord(value)
+    if IsSecretValue and IsSecretValue(value) then return nil end
+    return tonumber(value)
+end
+
+-- Writes the dragged host's center back as a CENTER/CENTER screen anchor,
+-- the same record shape Layout Mode commits, then reapplies it.
+function AD.CommitPreviewDragPosition()
+    local target = dragTarget
+    if not target or not target.host then return false end
+    local host = target.host
+    local hx, hy = host:GetCenter()
+    local ux, uy = UIParent:GetCenter()
+    local hs = type(host.GetEffectiveScale) == "function" and host:GetEffectiveScale() or 1
+    local us = type(UIParent.GetEffectiveScale) == "function" and UIParent:GetEffectiveScale() or 1
+    hx, hy = SafeCoord(hx), SafeCoord(hy)
+    ux, uy = SafeCoord(ux), SafeCoord(uy)
+    hs, us = SafeCoord(hs) or 1, SafeCoord(us) or 1
+    if not (hx and hy and ux and uy) then
+        if _G.QUI_ApplyFrameAnchor then _G.QUI_ApplyFrameAnchor(target.key) end
+        return false
+    end
+    local H = Helpers()
+    local profile = H and type(H.GetProfile) == "function" and H.GetProfile() or nil
+    if not profile then return false end
+    profile.frameAnchoring = profile.frameAnchoring or {}
+    local record = profile.frameAnchoring[target.key]
+    if type(record) ~= "table" then
+        record = {}
+        profile.frameAnchoring[target.key] = record
+    end
+    record.point = "CENTER"
+    record.relative = "CENTER"
+    record.offsetX = hx * hs / us - ux
+    record.offsetY = hy * hs / us - uy
+    if record.sizeStable == nil then record.sizeStable = true end
+    if _G.QUI_ApplyFrameAnchor then _G.QUI_ApplyFrameAnchor(target.key) end
+    if _G.QUI_LayoutModeSyncHandle then _G.QUI_LayoutModeSyncHandle(target.key) end
+    return true
+end
+
+local function EnsureDragOverlay()
+    if dragOverlay then return dragOverlay end
+    local overlay = CreateFrame("Frame", nil, UIParent)
+    if type(overlay.EnableMouse) == "function" then overlay:EnableMouse(true) end
+    if type(overlay.RegisterForDrag) == "function" then overlay:RegisterForDrag("LeftButton") end
+    local border
+    if type(overlay.CreateTexture) == "function" then
+        border = {}
+        for i = 1, 4 do border[i] = overlay:CreateTexture(nil, "OVERLAY") end
+        border[1]:SetPoint("TOPLEFT", -1, 1)
+        border[1]:SetPoint("TOPRIGHT", 1, 1)
+        border[1]:SetHeight(1)
+        border[2]:SetPoint("BOTTOMLEFT", -1, -1)
+        border[2]:SetPoint("BOTTOMRIGHT", 1, -1)
+        border[2]:SetHeight(1)
+        border[3]:SetPoint("TOPLEFT", -1, 1)
+        border[3]:SetPoint("BOTTOMLEFT", -1, -1)
+        border[3]:SetWidth(1)
+        border[4]:SetPoint("TOPRIGHT", 1, 1)
+        border[4]:SetPoint("BOTTOMRIGHT", 1, -1)
+        border[4]:SetWidth(1)
+        overlay._quiBorder = border
+    end
+    overlay:SetScript("OnDragStart", function()
+        local target = dragTarget
+        if not target or (InCombatLockdown and InCombatLockdown()) then return end
+        if type(target.host.SetMovable) == "function" then target.host:SetMovable(true) end
+        if type(target.host.StartMoving) == "function" then
+            target.host:StartMoving()
+            target.dragging = true
+        end
+    end)
+    overlay:SetScript("OnDragStop", function()
+        local target = dragTarget
+        if not target or not target.dragging then return end
+        target.dragging = nil
+        if type(target.host.StopMovingOrSizing) == "function" then
+            target.host:StopMovingOrSizing()
+        end
+        AD.CommitPreviewDragPosition()
+        AD.Refresh()
+    end)
+    overlay:SetScript("OnEnter", function(self)
+        if _G.GameTooltip then
+            _G.GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            _G.GameTooltip:AddLine(ns.L["Drag to move. Fine-tune in Layout Mode."], 1, 0.82, 0)
+            _G.GameTooltip:Show()
+        end
+    end)
+    overlay:SetScript("OnLeave", function()
+        if _G.GameTooltip then _G.GameTooltip:Hide() end
+    end)
+    dragOverlay = overlay
+    return overlay
+end
+
+function AD.EnablePreviewDrag(kind, value)
+    local host, key = ResolveDragTarget(kind, value)
+    if not host or not key then
+        AD.DisablePreviewDrag()
+        return false
+    end
+    local overlay = EnsureDragOverlay()
+    dragTarget = { host = host, key = key }
+    overlay:SetParent(host)
+    overlay:ClearAllPoints()
+    overlay:SetAllPoints(host)
+    if type(overlay.SetFrameLevel) == "function" and type(host.GetFrameLevel) == "function" then
+        overlay:SetFrameLevel((host:GetFrameLevel() or 0) + 10)
+    end
+    local r, g, b = PreviewAccent()
+    if overlay._quiBorder then
+        for i = 1, 4 do
+            overlay._quiBorder[i]:SetColorTexture(r, g, b, 0.8)
+        end
+    end
+    overlay:Show()
+    return true
+end
+
+function AD.DisablePreviewDrag()
+    if dragTarget and dragTarget.dragging then
+        if type(dragTarget.host.StopMovingOrSizing) == "function" then
+            dragTarget.host:StopMovingOrSizing()
+        end
+    end
+    dragTarget = nil
+    if dragOverlay then
+        dragOverlay:Hide()
+        dragOverlay:SetParent(UIParent)
+        dragOverlay:ClearAllPoints()
+    end
+end
+
+function AD.PreviewDragTarget()
+    return dragTarget and dragTarget.key or nil
+end
+
 local function DisableHostContainers(host)
     local pool = host._quiAuraContainers
     if pool then
@@ -1475,6 +1714,7 @@ function AD.ReflowGroups(displays)
         else
             if shown then groupHost:Show() else groupHost:Hide() end
         end
+        UpdateGroupBox(groupHost, groupName, PreviewBoxMode(groupName))
         return groupHost, width * scale, height * scale, shown
     end
 
@@ -1766,6 +2006,7 @@ function AD.HidePreviewFor(id)
     if previewActive then return end
     if singlePreviewID ~= id then return end
     singlePreviewID = nil
+    AD.DisablePreviewDrag()
     local Preview = ns.AuraPreview
     local host = hosts[id]
     if Preview and type(Preview.Hide) == "function" and host then
@@ -1798,6 +2039,7 @@ function AD.HidePreviewForGroup(groupName)
     local key = GroupKey(groupName)
     if previewActive or singlePreviewGroup ~= key then return end
     singlePreviewGroup = nil
+    AD.DisablePreviewDrag()
     local Preview = ns.AuraPreview
     if Preview and type(Preview.Hide) == "function" then
         local displays = AD.GroupTreeDisplays(key)

@@ -273,9 +273,17 @@ local function SyncPreview()
     if wantedID then
         AD.ShowPreviewFor(wantedID)
         UI.lastPreviewID = wantedID
+        if type(AD.EnablePreviewDrag) == "function" then
+            AD.EnablePreviewDrag("display", wantedID)
+        end
     elseif wantedGroup and type(AD.ShowPreviewForGroup) == "function" then
         AD.ShowPreviewForGroup(wantedGroup)
         UI.lastPreviewGroup = wantedGroup
+        if type(AD.EnablePreviewDrag) == "function" then
+            AD.EnablePreviewDrag("group", wantedGroup)
+        end
+    elseif type(AD.DisablePreviewDrag) == "function" then
+        AD.DisablePreviewDrag()
     end
 end
 
@@ -1602,6 +1610,7 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
         if UI.groupRenameField then UI.groupRenameField:Hide() end
         if UI.quickCreatePopup then UI.quickCreatePopup:Hide() end
         if UI.exportDialog then UI.exportDialog:Hide() end
+        if type(AD.DisablePreviewDrag) == "function" then AD.DisablePreviewDrag() end
         local Create = ns.QUI_AuraDisplaysCreate
         if Create and type(Create.HideDialog) == "function" then Create.HideDialog() end
     end)
