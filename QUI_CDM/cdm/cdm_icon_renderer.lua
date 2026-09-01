@@ -3152,6 +3152,7 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         _isCustomEntry = true,
         _sourceSpecID = entry._sourceSpecID,
         source = entry.source,
+        quiAlerts = entry.quiAlerts,
         linkedSpellID = entry.linkedSpellID,
         linkedSpellIDs = entry.linkedSpellIDs,
         _selfAura = selfAura,
@@ -3182,6 +3183,7 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         end
     end
     local managedAuraRoute = isAuraEntry
+        and not (ns.CDMAlerts and ns.CDMAlerts.HasEnabled and ns.CDMAlerts.HasEnabled(spellEntry))
         and auraRuns
         and auraRuns.ShouldUseSettings(settings, viewerType)
         and auraRuns.ResolveRoute

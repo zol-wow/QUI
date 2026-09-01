@@ -1905,6 +1905,7 @@ local function ResolveOwnedEntry(entry, containerKey, index)
         type = entry.type,
         id = entry.id,
         source = entry.source,
+        quiAlerts = entry.quiAlerts,
     }
 
     if entry.type == "spell" then
@@ -2592,6 +2593,9 @@ local function CloneEntry(entry)
     if type(entry) ~= "table" then return entry end
     local out = {}
     for k, v in pairs(entry) do out[k] = v end
+    if type(entry.quiAlerts) == "table" then
+        out.quiAlerts = CopyTable(entry.quiAlerts)
+    end
     return out
 end
 

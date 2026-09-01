@@ -54,6 +54,17 @@ local VISIBILITY_OPTIONS = {
     { value = "always", text = ns.L["Always"] },
 }
 
+local BUILTIN_ALERT_SOUND = "Sound\\Interface\\RaidWarning.ogg"
+
+local function AlertSoundOptions()
+    local options = Shared.GetSoundList()
+    for i = 1, #options do
+        if options[i].value == BUILTIN_ALERT_SOUND then return options end
+    end
+    options[#options + 1] = { value = BUILTIN_ALERT_SOUND, text = ns.L["Raid Warning"] }
+    return options
+end
+
 ns.QUI_AuraDisplaysOptions = {}
 
 local function Fold(text)
@@ -840,6 +851,83 @@ function ns.QUI_AuraDisplaysOptions._BuildAurasTab(host, ctx, display)
     return total + warnHeight
 end
 
+local function CreateAuraSoundControl(parent, sounds, key, onChange)
+    local control = CreateFrame("Frame", nil, parent)
+    control:SetSize(240, 24)
+    local dropdown = GUI:CreateFormDropdown(control, nil, AlertSoundOptions(), key, sounds, onChange, {
+        description = ns.L["Blizzard plays this sound when the aura event occurs. None disables this event."],
+    })
+    dropdown:SetPoint("LEFT", control, "LEFT", 0, 0)
+    dropdown:SetPoint("RIGHT", control, "RIGHT", -48, 0)
+    local preview = GUI:CreateButton(control, ns.L["Test"], 44, 22, function()
+        AD.PreviewAuraSound(sounds[key])
+    end)
+    preview:SetPoint("RIGHT", control, "RIGHT", 0, 0)
+    return control
+end
+
+function ns.QUI_AuraDisplaysOptions._BuildAlertsTab(host, ctx, display)
+    local mode = display.unitMode or "token"
+    if mode ~= "token" or AD.STATIC_TOKENS[display.unit] == nil then
+        local L = ns.QUI_SettingsLayoutShared.MakeLayout(host)
+        L.intro(ns.L["Blizzard aura sounds require a fixed unit token. Choose Player, Target, Focus, Party, Raid, Boss, Arena, Pet, or Mouseover in General. Co-Tank and Specific Player cannot be registered safely because their unit token changes."])
+        return L.finish()
+    end
+    if AD.HasEncounterLoadConditions(display) then
+        local L = ns.QUI_SettingsLayoutShared.MakeLayout(host)
+        L.intro(ns.L["Encounter load conditions cannot control Blizzard native aura sound registrations safely because encounters begin in combat. Remove the Encounter condition to configure sounds for this display."])
+        return L.finish()
+    end
+
+    E.EnsureSeeded(display.auras, AD.DefaultBucket)
+    local W = ns.QUI_AuraWizard
+    local specID = W and type(W.PlayerSpecID) == "function" and W.PlayerSpecID() or nil
+    local elements = E.ActiveElementsForSpec(display.auras, specID)
+    local L = ns.QUI_SettingsLayoutShared.MakeLayout(host)
+    local found = false
+
+    for _, element in ipairs(elements) do
+        if element.mode == "tracked" and type(element.spells) == "table" then
+            for _, spellID in ipairs(element.spells) do
+                if type(spellID) == "number" then
+                    found = true
+                    local spellName = C_Spell and C_Spell.GetSpellName
+                        and C_Spell.GetSpellName(spellID) or tostring(spellID)
+                    L.headerAt(spellName or tostring(spellID))
+                    if E.EffectiveOnlyMine(element, spellID) then
+                        L.intro(ns.L["This aura uses Only My Cast. Blizzard's native sound API cannot filter by caster, so sounds stay off for this spell until Only My Cast is disabled in the Auras tab."])
+                    else
+                        element.auraSounds = element.auraSounds or {}
+                        local sounds = element.auraSounds[spellID]
+                        if type(sounds) ~= "table" then
+                            sounds = {
+                                added = "None",
+                                applicationsIncreased = "None",
+                                removed = "None",
+                            }
+                            element.auraSounds[spellID] = sounds
+                        end
+                        local changed = function() AD.Refresh() end
+                        local card = L.sectionAt()
+                        card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Aura Applied"],
+                            CreateAuraSoundControl(card.frame, sounds, "added", changed)))
+                        card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Stacks Increased"],
+                            CreateAuraSoundControl(card.frame, sounds, "applicationsIncreased", changed)))
+                        card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Aura Removed"],
+                            CreateAuraSoundControl(card.frame, sounds, "removed", changed)))
+                        L.closeSection(card)
+                    end
+                end
+            end
+        end
+    end
+
+    if not found then
+        L.intro(ns.L["Add a tracked spell in the Auras tab to configure native aura sounds."])
+    end
+    return L.finish()
+end
+
 function ns.QUI_AuraDisplaysOptions._BuildLoadTab(host, ctx, display)
     EnsureLoad(display)
     local P = ns.QUI_AuraDisplayPickers
@@ -967,11 +1055,13 @@ BuildRightPane = function(right, ctx)
     local TABS = {
         { key = "general", label = ns.L["General"] },
         { key = "auras", label = ns.L["Auras"] },
+        { key = "alerts", label = ns.L["Alerts"] },
         { key = "load", label = ns.L["Load Conditions"] },
     }
     local BUILDERS = {
         general = ns.QUI_AuraDisplaysOptions._BuildGeneralTab,
         auras = ns.QUI_AuraDisplaysOptions._BuildAurasTab,
+        alerts = ns.QUI_AuraDisplaysOptions._BuildAlertsTab,
         load = ns.QUI_AuraDisplaysOptions._BuildLoadTab,
     }
 

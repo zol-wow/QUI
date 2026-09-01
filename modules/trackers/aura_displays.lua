@@ -443,10 +443,15 @@ function AD.PassesLoad(display)
         local role = PlayerRoleToken()
         if not role or load.roles[role] ~= true then return false end
     end
-    if not SetIsEmpty(load.encounters) then
+    if AD.HasEncounterLoadConditions(display) then
         if not activeEncounter or load.encounters[activeEncounter] ~= true then return false end
     end
     return true
+end
+
+function AD.HasEncounterLoadConditions(display)
+    local load = type(display) == "table" and display.load or nil
+    return type(load) == "table" and not SetIsEmpty(load.encounters)
 end
 
 function AD.DisplayActive(display)
@@ -495,12 +500,118 @@ end
 
 local hosts = {}
 local registered = {}
+local auraSoundRegistrations = {}
 local eventFrame
 local watchingDynamicUnits = false
 local visibilityAlpha = 1
 local previewActive = false
 local singlePreviewID
 local IsSecretValue = issecretvalue
+
+local AURA_SOUND_TRIGGERS = {
+    added = Enum and Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Added or 0,
+    applicationsIncreased = Enum and Enum.UnitAuraSoundTrigger
+        and Enum.UnitAuraSoundTrigger.ApplicationsIncreased or 1,
+    removed = Enum and Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Removed or 2,
+}
+
+local function ResolveAuraSound(soundName)
+    if type(soundName) ~= "string" or soundName == "" or soundName == "None" then return nil end
+    local sound = ns.LSM and ns.LSM:Fetch("sound", soundName, true) or soundName
+    if type(sound) ~= "string" and type(sound) ~= "number" then return nil end
+    return sound
+end
+
+local function RemoveAuraSoundRegistration(record)
+    if not (record and record.id and C_UnitAuras and C_UnitAuras.RemoveAuraSound) then return end
+    ns.SafeCall("best-effort-style", C_UnitAuras.RemoveAuraSound, record.id)
+end
+
+local function ReconcileAuraSounds(store)
+    if not (C_UnitAuras and C_UnitAuras.AddAuraSound and C_UnitAuras.RemoveAuraSound) then return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    if C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret() then return end
+    E = E or ns.AuraElements
+    if not E then return end
+
+    local desired = {}
+    if store and store.enabled ~= false then
+        local specID = PlayerSpecID()
+        for _, display in ipairs(AD.OrderedDisplays()) do
+            local unitMode = display.unitMode or "token"
+            local unitToken = display.unit
+            if display.enabled ~= false and AD.GroupEnabled(display.group) and AD.PassesLoad(display)
+                and not AD.HasEncounterLoadConditions(display)
+                and type(display.auras) == "table" and display.auras.enabled ~= false
+                and unitMode == "token" and type(unitToken) == "string"
+                and STATIC_TOKENS[unitToken] ~= nil then
+                E.EnsureSeeded(display.auras, AD.DefaultBucket)
+                local elements = E.ActiveElementsForSpec(display.auras, specID)
+                for _, element in ipairs(elements) do
+                    if element.mode == "tracked" and type(element.spells) == "table"
+                        and type(element.auraSounds) == "table" then
+                        for _, spellID in ipairs(element.spells) do
+                            local sounds = element.auraSounds[spellID]
+                            if type(spellID) == "number" and type(sounds) == "table"
+                                and not E.EffectiveOnlyMine(element, spellID) then
+                                for eventKey, trigger in pairs(AURA_SOUND_TRIGGERS) do
+                                    local sound = ResolveAuraSound(sounds[eventKey])
+                                    if sound then
+                                        local key = table.concat({ display.id, element.id or "", spellID, eventKey }, ":")
+                                        desired[key] = {
+                                            trigger = trigger,
+                                            unitToken = unitToken,
+                                            spellID = spellID,
+                                            sound = sound,
+                                            signature = table.concat({ unitToken, spellID, eventKey, tostring(sound) }, ":"),
+                                        }
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    for key, record in pairs(auraSoundRegistrations) do
+        local nextRecord = desired[key]
+        if not nextRecord or nextRecord.signature ~= record.signature then
+            RemoveAuraSoundRegistration(record)
+            auraSoundRegistrations[key] = nil
+        end
+    end
+
+    for key, record in pairs(desired) do
+        if not auraSoundRegistrations[key] then
+            local soundInfo = {
+                unitToken = record.unitToken,
+                spellID = record.spellID,
+                outputChannel = "Master",
+            }
+            if type(record.sound) == "number" then
+                soundInfo.soundFileID = record.sound
+            else
+                soundInfo.soundFileName = record.sound
+            end
+            local ok, id = ns.SafeCall("best-effort-style",
+                C_UnitAuras.AddAuraSound, record.trigger, soundInfo)
+            if ok and id then
+                record.id = id
+                auraSoundRegistrations[key] = record
+            end
+        end
+    end
+end
+
+AD._ReconcileAuraSounds = ReconcileAuraSounds
+
+function AD.PreviewAuraSound(soundName)
+    local sound = ResolveAuraSound(soundName)
+    if not sound or type(PlaySoundFile) ~= "function" then return false end
+    return ns.SafeCall("best-effort-style", PlaySoundFile, sound, "Master")
+end
 
 local function ApplyHostVisibilityAlpha(id, host, forceVisible)
     local alpha = 0
@@ -897,8 +1008,9 @@ end
 
 function AD.Refresh()
     if not ResolveDeps() then return end
-    if previewActive then return end
     local store = Store()
+    ReconcileAuraSounds(store)
+    if previewActive then return end
     local seen = {}
     local dynamic = false
     if store and store.enabled ~= false then
@@ -1020,6 +1132,7 @@ end
 
 local WATCHED_EVENTS = {
     "PLAYER_ENTERING_WORLD",
+    "PLAYER_REGEN_ENABLED",
     "ZONE_CHANGED_NEW_AREA",
     "GROUP_ROSTER_UPDATE",
     "PLAYER_SPECIALIZATION_CHANGED",

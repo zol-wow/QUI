@@ -1612,6 +1612,10 @@ function CDMBars:UpdateOwnedBarAura(bar)
     StoreBarRuntimeState(bar, r.mode or (r.isActive and "aura" or "inactive"), r.isActive, {
         durObj = r.durObj,
         auraUnit = r.auraUnit,
+        isOnCooldown = r.isOnCooldown == true,
+        rechargeActive = r.rechargeActive == true,
+        hasCharges = r.hasCharges == true,
+        hasChargesRemaining = r.hasChargesRemaining == true,
         countShown = count and count.shown == true,
         countValue = count and count.value or nil,
         countSource = count and count.source or nil,

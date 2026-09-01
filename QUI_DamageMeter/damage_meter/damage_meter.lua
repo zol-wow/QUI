@@ -753,6 +753,8 @@ local function PivotPlayerTargets(perEnemy)
             if not bucket then bucket = {}; map[p.name] = bucket end
             bucket[#bucket + 1] = {
                 name = e.enemyName,
+                sourceGUID = e.sourceGUID,
+                sourceCreatureID = e.sourceCreatureID,
                 totalAmount = p.totalAmount,
                 amountPerSecond = p.amountPerSecond,
             }
@@ -785,6 +787,22 @@ local function FetchSourceSpells(sessionType, meterType, sourceGUID, sourceCreat
     return TableOrEmpty(src.combatSpells)
 end
 
+local function FilterSpellsByUnit(combatSpells, unitName, isSecret)
+    local filtered = {}
+    if unitName == nil or (isSecret and isSecret(unitName)) then return filtered end
+    for _, spell in ipairs(combatSpells or {}) do
+        if isSecret and isSecret(spell) then spell = nil end
+        local details = spell and spell.combatSpellDetails
+        if isSecret and isSecret(details) then details = nil end
+        local name = details and details.unitName
+        if name ~= nil and not (isSecret and isSecret(name)) and name == unitName then
+            filtered[#filtered + 1] = spell
+        end
+    end
+    return filtered
+end
+Data._FilterSpellsByUnit = FilterSpellsByUnit
+
 local function EnemyDamageTakenType()
     local T = Enum and Enum.DamageMeterType
     return T and T.EnemyDamageTaken
@@ -811,6 +829,8 @@ function Data:GetPlayerTargetsMap(sessionType, sessionID)
     for _, enemy in ipairs(enemyView.sources or {}) do
         perEnemy[#perEnemy + 1] = {
             enemyName = enemy.name,
+            sourceGUID = enemy.sourceGUID,
+            sourceCreatureID = enemy.sourceCreatureID,
             players   = AggregateSpellsByUnit(
                 FetchSourceSpells(sessionType, eType, enemy.sourceGUID, enemy.sourceCreatureID, sessionID),
                 IsSecret),
@@ -827,6 +847,34 @@ function Data:GetPlayerTargets(sessionType, playerName, sessionID)
     if IsSecret and IsSecret(playerName) then return {} end -- @secret-policy: empty-table-degrade
     if playerName == nil then return {} end
     return self:GetPlayerTargetsMap(sessionType, sessionID)[playerName] or {}
+end
+
+function Data:GetPlayerTargetBreakdown(sessionType, playerName, targetGUID, targetCreatureID,
+    sessionID, reuse, limit)
+    local eType = EnemyDamageTakenType()
+    if not eType then return ResetBreakdownView(reuse) end
+    local isSecret = Helpers and Helpers.IsSecretValue
+    if playerName == nil or (isSecret and isSecret(playerName)) then
+        return ResetBreakdownView(reuse)
+    end
+    if isSecret and isSecret(targetGUID) then targetGUID = nil end
+    if isSecret and isSecret(targetCreatureID) then targetCreatureID = nil end
+    if targetGUID == nil and targetCreatureID == nil then return ResetBreakdownView(reuse) end
+    local rawSpells = FetchSourceSpells(
+        sessionType, eType, targetGUID, targetCreatureID, sessionID)
+    local view = reuse or {}
+    view.spells = NormalizeSpells(
+        FilterSpellsByUnit(rawSpells, playerName, isSecret), view.spells, limit)
+    view.maxAmount = 0
+    view.totalAmount = 0
+    for _, spell in ipairs(view.spells) do
+        local amount = spell.totalAmount
+        if not (isSecret and isSecret(amount)) and type(amount) == "number" then
+            view.totalAmount = view.totalAmount + amount
+            view.maxAmount = math.max(view.maxAmount, amount)
+        end
+    end
+    return view
 end
 
 function Data:GetCombinedHealingView(sessionType, sessionID)
@@ -1358,6 +1406,97 @@ end
 QUI_DamageMeter.AttachRowVisuals = AttachRowVisuals
 
 local activeHoverRow
+local activeHoverPreview
+
+function Window:_ShowPlayerRowHover(rowSelf, withPreview)
+    local s2 = GetSettings()
+    if not (s2 and s2.showHoverTooltip) then return end
+    if not rowSelf._source then return end
+    local src = rowSelf._source
+    activeHoverPreview = nil
+    if withPreview and self:PreviewBreakdown(src, rowSelf) then
+        activeHoverRow = rowSelf
+        activeHoverPreview = self._breakdown
+        return
+    end
+    if GameTooltip:IsForbidden() then return end
+    activeHoverRow = rowSelf
+    local inCombat = Data._inCombat or (InCombatLockdown and InCombatLockdown()) or false
+    local sourceGUID, sourceCreatureID = Data:ResolveSourceSelector(
+        src, self.sessionType, self.sessionID, inCombat)
+
+    GameTooltip:SetOwner(rowSelf, "ANCHOR_BOTTOM")
+    GameTooltip:ClearLines()
+
+    local IsSecret = Helpers and Helpers.IsSecretValue
+
+    local cr, cg, cb = 1, 1, 1
+    if src.classFilename and RAID_CLASS_COLORS and RAID_CLASS_COLORS[src.classFilename] then
+        local cc = Helpers.GetClassColorTable(src.classFilename)
+        cr, cg, cb = cc.r, cc.g, cc.b
+    end
+    local headerName = ShortenName(src.name)
+    if IsSecret and IsSecret(headerName) then
+        headerName = "???" -- @secret-policy: placeholder-when-secret
+    end
+    GameTooltip:AddLine(headerName or "?", cr, cg, cb)
+
+    if src.classFilename then
+        GameTooltip:AddLine(src.classFilename, 0.7, 0.7, 0.7)
+    end
+
+    local addPlayerItemLevel = ns.QUI_AddPlayerItemLevelByGUIDToTooltip
+    if addPlayerItemLevel then
+        addPlayerItemLevel(GameTooltip, sourceGUID, true, true)
+    end
+
+    local totalLabel, rateLabel = TooltipLabelsForType(rowSelf._damageMeterType or 0)
+    local totalSecret = IsSecret and IsSecret(src.totalAmount)
+    if totalSecret then
+        GameTooltip:AddDoubleLine(totalLabel .. ":", "???", 1, 1, 1, 1, 1, 1) -- @secret-policy: placeholder-when-secret
+    else
+        local amt = FormatNumber(src.totalAmount, "complete")
+        if amt ~= "" then
+            GameTooltip:AddDoubleLine(totalLabel .. ":", amt, 1, 1, 1, 1, 1, 1)
+        end
+    end
+
+    local ps = src.amountPerSecond
+    local psSecret = IsSecret and IsSecret(ps)
+    if psSecret then
+        GameTooltip:AddDoubleLine((rateLabel or ns.L["Per Second"]) .. ":", "???", 1, 1, 1, 1, 1, 1) -- @secret-policy: placeholder-when-secret
+    elseif ps and ps ~= 0 then
+        GameTooltip:AddDoubleLine((rateLabel or ns.L["Per Second"]) .. ":", FormatNumber(ps, "compact"), 1, 1, 1, 1, 1, 1)
+    end
+
+    local total = src.totalAmount
+    local maxSec   = IsSecret and IsSecret(rowSelf._maxAmount)
+    local totalSec = IsSecret and IsSecret(total)
+    if not (maxSec or totalSec) and total ~= nil
+        and rowSelf._maxAmount and rowSelf._maxAmount > 0 then
+        local pct = (total / rowSelf._maxAmount) * 100
+        GameTooltip:AddDoubleLine(ns.L["% of Top:"], string.format("%.1f%%", pct), 1, 1, 1, 1, 1, 1)
+    end
+
+    local hasSelector = sourceGUID ~= nil or sourceCreatureID ~= nil
+    if not CanOpenDetailInCombat(src, rowSelf._damageMeterType, DEATHS_TYPE,
+        inCombat, IsSecretValue, hasSelector) then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(ns.L["Spell breakdown is hidden during combat"], 0.7, 0.7, 0.7)
+    end
+
+    GameTooltip:Show()
+end
+
+function Window:_HidePlayerRowHover(rowSelf, withPreview)
+    if withPreview then self:ClosePreview(rowSelf) end
+    if activeHoverRow == rowSelf then
+        activeHoverRow = nil
+        activeHoverPreview = nil
+    end
+    if GameTooltip:IsForbidden() then return end
+    if not GameTooltip.GetOwner or GameTooltip:GetOwner() == rowSelf then GameTooltip:Hide() end
+end
 
 function Window:_AttachRowVisuals(row)
     local windowID = self.windowID
@@ -1378,90 +1517,21 @@ function Window:_AttachRowVisuals(row)
         self:OpenBreakdown(rowSelf._source, rowSelf)
     end)
     row:SetScript("OnEnter", function(rowSelf)
-        local s2 = GetSettings()
-        if not (s2 and s2.showHoverTooltip) then return end
-        if not rowSelf._source then return end
-        local src = rowSelf._source
-        if self:PreviewBreakdown(src, rowSelf) then return end
-        if GameTooltip:IsForbidden() then return end
-        activeHoverRow = rowSelf
-
-        GameTooltip:SetOwner(rowSelf, "ANCHOR_BOTTOM")
-        GameTooltip:ClearLines()
-
-        -- plain placeholder. -- @secret-policy: placeholder-when-secret
-        local IsSecret = Helpers and Helpers.IsSecretValue
-
-        local cr, cg, cb = 1, 1, 1
-        if src.classFilename and RAID_CLASS_COLORS and RAID_CLASS_COLORS[src.classFilename] then
-            local cc = Helpers.GetClassColorTable(src.classFilename)
-            cr, cg, cb = cc.r, cc.g, cc.b
-        end
-        local headerName = ShortenName(src.name)
-        if IsSecret and IsSecret(headerName) then
-            headerName = "???" -- @secret-policy: placeholder-when-secret
-        end
-        GameTooltip:AddLine(headerName or "?", cr, cg, cb)
-
-        if src.classFilename then
-            GameTooltip:AddLine(src.classFilename, 0.7, 0.7, 0.7)
-        end
-
-        local addPlayerItemLevel = ns.QUI_AddPlayerItemLevelByGUIDToTooltip
-        if addPlayerItemLevel then
-            addPlayerItemLevel(GameTooltip, src.sourceGUID, true, true)
-        end
-
-        local totalLabel, rateLabel = TooltipLabelsForType(rowSelf._damageMeterType or 0)
-        local totalSecret = IsSecret and IsSecret(src.totalAmount)
-        if totalSecret then
-            GameTooltip:AddDoubleLine(totalLabel .. ":", "???", 1, 1, 1, 1, 1, 1) -- @secret-policy: placeholder-when-secret
-        else
-            local amt = FormatNumber(src.totalAmount, "complete")
-            if amt ~= "" then
-                GameTooltip:AddDoubleLine(totalLabel .. ":", amt, 1, 1, 1, 1, 1, 1)
-            end
-        end
-
-        local ps = src.amountPerSecond
-        local psSecret = IsSecret and IsSecret(ps)
-        if psSecret then
-            GameTooltip:AddDoubleLine((rateLabel or ns.L["Per Second"]) .. ":", "???", 1, 1, 1, 1, 1, 1) -- @secret-policy: placeholder-when-secret
-        elseif ps and ps ~= 0 then
-            GameTooltip:AddDoubleLine((rateLabel or ns.L["Per Second"]) .. ":", FormatNumber(ps, "compact"), 1, 1, 1, 1, 1, 1)
-        end
-
-        local total = src.totalAmount
-        local maxSec   = IsSecret and IsSecret(rowSelf._maxAmount)
-        local totalSec = IsSecret and IsSecret(total)
-        if not (maxSec or totalSec) and total ~= nil
-            and rowSelf._maxAmount and rowSelf._maxAmount > 0 then
-            local pct = (total / rowSelf._maxAmount) * 100
-            GameTooltip:AddDoubleLine(ns.L["% of Top:"], string.format("%.1f%%", pct), 1, 1, 1, 1, 1, 1)
-        end
-
-        local inCombat = Data._inCombat or (InCombatLockdown and InCombatLockdown()) or false
-        local sourceGUID, sourceCreatureID = Data:ResolveSourceSelector(
-            src, self.sessionType, self.sessionID, inCombat)
-        local hasSelector = sourceGUID ~= nil or sourceCreatureID ~= nil
-        if not CanOpenDetailInCombat(src, rowSelf._damageMeterType, DEATHS_TYPE,
-            inCombat, IsSecretValue, hasSelector) then
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(ns.L["Spell breakdown is hidden during combat"], 0.7, 0.7, 0.7)
-        end
-
-        GameTooltip:Show()
+        self:_ShowPlayerRowHover(rowSelf, true)
     end)
     row:SetScript("OnLeave", function(rowSelf)
-        self:ClosePreview(rowSelf)
-        if activeHoverRow == rowSelf then activeHoverRow = nil end
-        if GameTooltip:IsForbidden() then return end
-        if not GameTooltip.GetOwner or GameTooltip:GetOwner() == rowSelf then GameTooltip:Hide() end
+        self:_HidePlayerRowHover(rowSelf, true)
     end)
 end
 
 if ns.TooltipInspect and ns.TooltipInspect.RegisterRefreshCallback then
     ns.TooltipInspect:RegisterRefreshCallback(function(guid)
+        local preview = activeHoverPreview
+        if preview and preview.frame and preview.frame:IsShown()
+            and Helpers.SafeCompare(preview.sourceGUID, guid) == true then
+            preview:_UpdateTitle()
+        end
+
         local row = activeHoverRow
         local source = row and row._source
         if not source or not GameTooltip:IsShown() then return end
@@ -2776,7 +2846,15 @@ function Breakdown.New(parentWindow)
 
     self.TitleLabel = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.TitleLabel:SetPoint("LEFT", header, "LEFT", 6, 0)
+    self.TitleLabel:SetPoint("RIGHT", header, "RIGHT", -72, 0)
+    self.TitleLabel:SetJustifyH("LEFT")
     self.TitleLabel:SetText("")
+
+    self.ItemLevelLabel = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.ItemLevelLabel:SetPoint("RIGHT", header, "RIGHT", -6, 0)
+    self.ItemLevelLabel:SetJustifyH("RIGHT")
+    self.ItemLevelLabel:SetTextColor(0.75, 0.75, 0.75)
+    self.ItemLevelLabel:SetText("")
 
     self.scrollFrame = CreateFrame("ScrollFrame", nil, frame)
     self.scrollFrame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
@@ -2991,6 +3069,7 @@ end
 
 function Breakdown:_SetTargetRow(row, target, maxAmount)
     ApplyRowBackgroundVisibility(row, self.parentWindowID)
+    row._target = target
 
     if target.specIconID and target.specIconID ~= 0 then
         row.Icon:SetTexture(target.specIconID)
@@ -3044,6 +3123,27 @@ function Breakdown:_SetTargetRow(row, target, maxAmount)
     end
 end
 
+function Breakdown:_UpdateTitle()
+    local label = LabelForType(self.parentWindow.damageMeterType)
+    local titleName = ShortenName(self.source.name)
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(titleName) then
+        self.TitleLabel:SetFormattedText("%s by %s", label, titleName) -- @secret-policy: sink-passthrough
+    else
+        self.TitleLabel:SetText(label .. " by " .. (titleName or "?"))
+    end
+
+    local itemLevel
+    local inspect = self.isPreview and ns.TooltipInspect
+    if inspect and inspect.GetPlayerDataByGUID and self.sourceGUID ~= nil
+        and not IsSecretValue(self.sourceGUID) then
+        local playerData = inspect:GetPlayerDataByGUID(self.sourceGUID)
+        local value = playerData and playerData.itemLevel
+        if not IsSecretValue(value) then itemLevel = tonumber(value) end
+    end
+    self.ItemLevelLabel:SetText(itemLevel and string.format(
+        "%s %.1f", _G.ITEM_LEVEL_ABBR or "iLvl", itemLevel) or "")
+end
+
 function Breakdown:_ResolveTargets(meterType)
     local T = Enum and Enum.DamageMeterType
     if not (T and self.source) then return nil, nil end
@@ -3065,13 +3165,7 @@ function Breakdown:Refresh()
     local sessionID = self.parentWindow.sessionID
     local damageMeterType = self.parentWindow.damageMeterType
 
-    local label = LabelForType(damageMeterType)
-    local titleName = ShortenName(self.source.name)
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(titleName) then
-        self.TitleLabel:SetFormattedText("%s by %s", label, titleName) -- @secret-policy: sink-passthrough
-    else
-        self.TitleLabel:SetText(label .. " by " .. (titleName or "?"))
-    end
+    self:_UpdateTitle()
 
     local visibleCount = 0
     local targetCount = 0

@@ -1219,6 +1219,42 @@ end
 
 local overridePanel = nil
 local HideOverridePanel
+local ShowOverridePanel
+
+local BUILTIN_ALERT_SOUND = "Sound\\Interface\\RaidWarning.ogg"
+local ALERT_MODE_OPTIONS = {
+    { value = "sound", text = ns.L["Sound"] },
+    { value = "tts", text = ns.L["Text to Speech"] },
+}
+local COOLDOWN_ALERT_EVENT_OPTIONS = {
+    { value = "available", text = ns.L["Available"] },
+    { value = "onCooldown", text = ns.L["On Cooldown"] },
+    { value = "auraApplied", text = ns.L["Aura Applied"] },
+    { value = "auraRemoved", text = ns.L["Aura Removed"] },
+}
+local AURA_ALERT_EVENT_OPTIONS = {
+    { value = "auraApplied", text = ns.L["Aura Applied"] },
+    { value = "auraRemoved", text = ns.L["Aura Removed"] },
+}
+
+local function GetAlertSoundOptions()
+    local options = ns.QUI_Options and ns.QUI_Options.GetSoundList
+        and ns.QUI_Options.GetSoundList() or { { value = "None", text = ns.L["None"] } }
+    local hasBuiltin = false
+    for i = 1, #options do
+        if options[i].value == BUILTIN_ALERT_SOUND then hasBuiltin = true break end
+    end
+    if not hasBuiltin then
+        options[#options + 1] = { value = BUILTIN_ALERT_SOUND, text = ns.L["Raid Warning"] }
+    end
+    local kits = ns.CDMAlerts and ns.CDMAlerts.GetSoundKitOptions
+        and ns.CDMAlerts.GetSoundKitOptions() or {}
+    if #kits > 0 then
+        options[#options + 1] = { isHeader = true, text = ns.L["Blizzard Sounds"] }
+        for i = 1, #kits do options[#options + 1] = kits[i] end
+    end
+    return options
+end
 
 local function BuildOverridePanel(parent)
     if overridePanel then return overridePanel end
@@ -1269,6 +1305,7 @@ local function EnsureOverrideState()
         barColorToggleDB = {},
         sizeDB = {},
         auraOnlyDB = {},
+        alertDB = { event = "available" },
     }
     local defaultTrueOverrides = {
         glowEnabled = true,
@@ -1308,6 +1345,30 @@ local function EnsureOverrideState()
     end
     ovUI = ui
     return ui
+end
+
+local function LoadAlertEditor(ui, eventKey)
+    local entry = ui.state.entry
+    local config = entry and entry.quiAlerts and entry.quiAlerts[eventKey]
+    ui.alertDB.event = eventKey
+    ui.alertDB.enabled = type(config) == "table" and config.enabled == true or false
+    ui.alertDB.mode = type(config) == "table" and config.mode or "sound"
+    ui.alertDB.sound = type(config) == "table" and config.sound or BUILTIN_ALERT_SOUND
+    ui.alertDB.text = type(config) == "table" and config.text or ""
+end
+
+local function SaveAlertEditor(ui)
+    local entry = ui.state.entry
+    local eventKey = ui.alertDB.event
+    if not (entry and eventKey) then return end
+    entry.quiAlerts = entry.quiAlerts or {}
+    entry.quiAlerts[eventKey] = {
+        enabled = ui.alertDB.enabled == true,
+        mode = ui.alertDB.mode == "tts" and "tts" or "sound",
+        sound = ui.alertDB.sound or BUILTIN_ALERT_SOUND,
+        text = ui.alertDB.text or "",
+    }
+    NotifyComposerEntriesChanged(false)
 end
 
 local function GetOverrideWidget(GUI, key)
@@ -1384,13 +1445,47 @@ local function GetOverrideWidget(GUI, key)
             end
             ui.onChange()
         end, { description = ns.L["Show only while the buff is active. Hides the cooldown phase entirely."] })
+    elseif key == "alertEvent" then
+        widget = GUI:CreateFormDropdown(overridePanel, ns.L["Event"],
+            COOLDOWN_ALERT_EVENT_OPTIONS, "event", ui.alertDB, function()
+                LoadAlertEditor(ui, ui.alertDB.event)
+                ShowOverridePanel(ui.state.parentRow, ui.state.containerKey,
+                    ui.state.entry, ui.state.entryIndex)
+            end, { description = ns.L["Choose the state change that triggers this alert."] })
+    elseif key == "alertEnabled" then
+        widget = GUI:CreateFormCheckbox(overridePanel, ns.L["Enabled"], "enabled",
+            ui.alertDB, function() SaveAlertEditor(ui) end,
+            { description = ns.L["Enable the selected alert event for this entry."] })
+    elseif key == "alertMode" then
+        widget = GUI:CreateFormDropdown(overridePanel, ns.L["Alert Type"], ALERT_MODE_OPTIONS,
+            "mode", ui.alertDB, function()
+                SaveAlertEditor(ui)
+                ShowOverridePanel(ui.state.parentRow, ui.state.containerKey,
+                    ui.state.entry, ui.state.entryIndex)
+            end, { description = ns.L["Play a sound or speak custom text with the game text-to-speech voice."] })
+    elseif key == "alertSound" then
+        widget = GUI:CreateFormDropdown(overridePanel, ns.L["Sound"], GetAlertSoundOptions(),
+            "sound", ui.alertDB, function() SaveAlertEditor(ui) end,
+            { description = ns.L["Sound played for this event. Blizzard sounds use the native Cooldown Manager catalog; shared-media sounds use their audio file."] },
+            { searchable = true, collapsible = true })
+    elseif key == "alertText" then
+        widget = GUI:CreateFormEditBox(overridePanel, ns.L["Spoken Text"], "text",
+            ui.alertDB, function() SaveAlertEditor(ui) end,
+            { maxLetters = 160, live = false },
+            { description = ns.L["Text spoken for this event. Leave blank to announce the ability name and event."] })
+    elseif key == "alertPreview" then
+        widget = GUI:CreateButton(overridePanel, ns.L["Test Alert"], 110, 22, function()
+            if ns.CDMAlerts and ns.CDMAlerts.Preview then
+                ns.CDMAlerts.Preview(ui.alertDB, ui.state.entry, ui.alertDB.event)
+            end
+        end)
     end
 
     ui.widgets[key] = widget
     return widget
 end
 
-local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
+ShowOverridePanel = function(parentRow, containerKey, entry, entryIndex)
     if not overridePanel or not entry then return end
 
     local GUI = QUI and QUI.GUI
@@ -1410,6 +1505,8 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
     ui.state.spellID = spellID
     ui.state.entry = entry
     ui.state.containerDB = GetContainerDB(containerKey)
+    ui.state.parentRow = parentRow
+    ui.state.entryIndex = entryIndex
 
     local overrides = spellData:GetSpellOverride(containerKey, spellID) or {}
     ui.glowColorDB.glowColor = overrides.glowColor or { ACCENT_R, ACCENT_G, ACCENT_B, 1 }
@@ -1504,11 +1601,47 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
         end
     end
 
+    local alertHeader = ui.alertHeader
+    if not alertHeader then
+        alertHeader = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(alertHeader, { fontOnly = true }) end
+        alertHeader:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        ui.alertHeader = alertHeader
+    end
+    alertHeader:ClearAllPoints()
+    alertHeader:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, sy + 2)
+    alertHeader:SetText(ns.L["Alerts"])
+    alertHeader:Show()
+    sy = sy - 22
+
+    local alertOptions = (entry.kind == "aura" or GetContainerImpliedKind(containerKey) == "aura")
+        and AURA_ALERT_EVENT_OPTIONS or COOLDOWN_ALERT_EVENT_OPTIONS
+    local selectedEvent = ui.alertDB.event
+    local eventValid = false
+    for i = 1, #alertOptions do
+        if alertOptions[i].value == selectedEvent then eventValid = true break end
+    end
+    if not eventValid then selectedEvent = alertOptions[1].value end
+    LoadAlertEditor(ui, selectedEvent)
+    local eventWidget = GetOverrideWidget(GUI, "alertEvent")
+    if eventWidget.SetOptions then eventWidget:SetOptions(alertOptions) end
+    PlaceWidget(eventWidget)
+    PlaceWidget(GetOverrideWidget(GUI, "alertEnabled"))
+    PlaceWidget(GetOverrideWidget(GUI, "alertMode"))
+    if ui.alertDB.mode == "tts" then
+        PlaceWidget(GetOverrideWidget(GUI, "alertText"))
+    else
+        local soundWidget = GetOverrideWidget(GUI, "alertSound")
+        if soundWidget.SetOptions then soundWidget:SetOptions(GetAlertSoundOptions()) end
+        PlaceWidget(soundWidget)
+    end
+    PlaceWidget(GetOverrideWidget(GUI, "alertPreview"))
+
     local totalHeight = math_abs(sy) + 32
     overridePanel:SetHeight(totalHeight)
 
     overridePanel:ClearAllPoints()
-    overridePanel:SetWidth(270)
+    overridePanel:SetWidth(360)
     overridePanel:SetClampedToScreen(true)
 
     local uiScale = UIParent:GetEffectiveScale()

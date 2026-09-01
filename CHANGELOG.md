@@ -14,6 +14,10 @@ Blizzard-frame styling, and focused combat UI corrections.
 
 ### Added
 
+- **Aura Displays can play Blizzard-native sounds** when an aura is applied,
+  gains stacks, or is removed.
+- **Cooldown Manager entries have QUI-owned sound and text-to-speech alerts**
+  for cooldown and aura state changes, with searchable sounds and previews.
 - **Damage Meter rows open a reusable five-pane detail workspace** for spells,
   targets, attackers, and death recaps while row-hover details remain
   independent and interactive.
@@ -32,6 +36,10 @@ Blizzard-frame styling, and focused combat UI corrections.
 
 ### Fixed
 
+- **Cooldown Manager no longer writes Blizzard's Edit Mode layouts during
+  login.** Layout mismatches are detected without mutation and corrected through
+  guided Edit Mode steps, preventing protected aura-map and cooldown-cache
+  errors.
 - **Group Frame summon indicators handle secret status values safely** and
   refresh when combat ends.
 - **Mail's Open All action keeps the Mail window above overlapping moved

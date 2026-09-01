@@ -1071,7 +1071,6 @@ local function AddPlayerItemLevelByGUIDToTooltip(tooltip, guid, skipShow, reset)
     local inspect = TooltipInspect or ns.TooltipInspect
     if not inspect or not inspect.GetPlayerDataByGUID or not tooltip then return false end
     if Helpers.IsSecretValue(guid) or guid == nil then return false end -- @secret-policy: reject-secret-ids
-    if InCombatLockdown() then return false end
     if reset then tooltipPlayerItemLevelGUID[tooltip] = nil end
 
     local playerData = inspect:GetPlayerDataByGUID(guid)

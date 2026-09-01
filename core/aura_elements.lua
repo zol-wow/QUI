@@ -296,9 +296,13 @@ function E.NormalizeElement(e)
     elseif e.mode == "tracked" then
         if e.auraType == nil then e.auraType = "HELPFUL" end
         if type(e.border) ~= "table" then e.border = { thickness = 2 } end
+        local trackedSpellIDs = {}
         if type(e.spells) == "table" then
             for i, spellID in ipairs(e.spells) do
                 e.spells[i] = E.ResolveTrackedSpellID(spellID)
+                if type(e.spells[i]) == "number" then
+                    trackedSpellIDs[e.spells[i]] = true
+                end
             end
         end
         if type(e.onlyMineSpells) == "table" then
@@ -307,6 +311,16 @@ function E.NormalizeElement(e)
                 normalizedOnlyMine[E.ResolveTrackedSpellID(spellID)] = value
             end
             e.onlyMineSpells = normalizedOnlyMine
+        end
+        if type(e.auraSounds) == "table" then
+            local normalizedAuraSounds = {}
+            for spellID, sounds in pairs(e.auraSounds) do
+                local resolvedID = E.ResolveTrackedSpellID(tonumber(spellID) or spellID)
+                if trackedSpellIDs[resolvedID] and type(sounds) == "table" then
+                    normalizedAuraSounds[resolvedID] = sounds
+                end
+            end
+            e.auraSounds = next(normalizedAuraSounds) and normalizedAuraSounds or nil
         end
     end
     if e.dispelBorderMode ~= "stealable" and e.dispelBorderMode ~= "all" then
