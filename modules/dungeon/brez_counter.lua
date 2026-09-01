@@ -231,7 +231,8 @@ local function UpdateDisplay()
         return
     end
 
-    if settings.hideWhenUnavailable and BrezState.isInRelevantContent and not frame:IsShown() then
+    if settings.hideWhenUnavailable and BrezState.isInRelevantContent and not frame:IsShown()
+        and not (_G.QUI_IsFrameHiddenByAnchor and _G.QUI_IsFrameHiddenByAnchor("brezCounter")) then
         frame:Show()
     end
 
