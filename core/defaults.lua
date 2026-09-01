@@ -3342,6 +3342,7 @@ local defaults = {
             maxIcons = 5,
             spacing = 4,
             growDirection = "CENTER",
+            collapseGaps = true,
             showSwipe = true,
             reverseSwipe = true,
             showCooldownText = false,

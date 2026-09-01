@@ -8948,6 +8948,9 @@ function C_LFGInfo.IsGroupFinderEnabled(...) end
 ---@return boolean result
 function C_LFGInfo.IsInLFGFollowerDungeon(...) end
 ---@param ... any
+---@return boolean result
+function C_LFGInfo.IsInMatchmadeRaidWithoutRoleRequirements(...) end
+---@param ... any
 ---@return boolean enabled
 function C_LFGInfo.IsLFDEnabled(...) end
 ---@param dungeonID? number
