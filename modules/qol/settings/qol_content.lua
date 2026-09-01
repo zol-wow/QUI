@@ -447,6 +447,22 @@ local function BuildAutomation(L, generalDB)
         { description = ns.L["Sound played with the death alert. None = silent."] })
     s.AddRow(row(s.frame, ns.L["Group Death Alert"], daEnableW), row(s.frame, ns.L["Death Alert Sound"], daSoundW))
 
+    local daBlowW = GUI:CreateFormCheckbox(s.frame, nil, "showKillingBlow", da, RefreshDA,
+        { description = ns.L["Name what killed them, e.g. 'Zol died to Heavy Slam!'. Read from Blizzard's death recap data; the alert stays plain when no recap is available."] })
+    local daKillerW = GUI:CreateFormCheckbox(s.frame, nil, "showKiller", da, RefreshDA,
+        { description = ns.L["Also name the attacker, e.g. 'Zol died to Heavy Slam from Ingra Maloch!'."] })
+    s.AddRow(row(s.frame, ns.L["Show Killing Blow"], daBlowW), row(s.frame, ns.L["Show Attacker"], daKillerW))
+
+    local daClassColorW = GUI:CreateFormCheckbox(s.frame, nil, "classColorName", da, RefreshDA,
+        { description = ns.L["Color the dead player's name by their class."] })
+    local daInstanceW = GUI:CreateFormCheckbox(s.frame, nil, "instanceOnly", da, RefreshDA,
+        { description = ns.L["Only alert inside dungeons and raids."] })
+    s.AddRow(row(s.frame, ns.L["Class-Colored Name"], daClassColorW), row(s.frame, ns.L["Instances Only"], daInstanceW))
+
+    local daDurationW = GUI:CreateFormSlider(s.frame, nil, 1, 10, 0.5, "duration", da, RefreshDA,
+        { description = ns.L["How long the death alert stays on screen, in seconds."] })
+    s.AddRow(row(s.frame, ns.L["Alert Duration (sec)"], daDurationW))
+
     local ahW = GUI:CreateFormCheckbox(s.frame, nil, "auctionHouseExpansionFilter", generalDB, nil,
         { description = ns.L["Automatically toggle the current expansion filter when you open the Auction House so you only see modern items."] })
     local coW = GUI:CreateFormCheckbox(s.frame, nil, "craftingOrderExpansionFilter", generalDB, nil,

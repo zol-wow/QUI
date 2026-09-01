@@ -129,7 +129,7 @@ read_globals = {
     "C_PartyInfo", "C_Spell", "C_Timer", "C_UnitAuras", "C_TooltipInfo",
     "C_NamePlate", "C_NamePlateManager", "C_ItemCallbacks", "C_Secrets",
     "C_ChallengeMode", "C_ClassTalents", "C_Container", "C_CooldownViewer",
-    "C_CurveUtil", "C_DurationUtil", "C_Item", "C_ScenarioInfo",
+    "C_CurveUtil", "C_DamageMeter", "C_DeathRecap", "C_DurationUtil", "C_Item", "C_ScenarioInfo",
     "C_SpellActivationOverlay",
     "C_SpellBook", "C_StringUtil", "C_TradeSkillUI", "C_Traits", "C_Widget",
 

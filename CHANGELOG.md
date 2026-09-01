@@ -14,6 +14,10 @@ Blizzard-frame styling, and focused combat UI corrections.
 
 ### Added
 
+- **The Group Death Alert can name the killing blow** — "Zol died to Heavy
+  Slam!" — with an optional attacker name, class-colored names, an
+  instances-only mode, and an on-screen duration slider. Reads Blizzard's
+  death recap data, so it works where the combat log is restricted.
 - **Aura Displays can play Blizzard-native sounds** when an aura is applied,
   gains stacks, or is removed.
 - **Cooldown Manager entries have QUI-owned sound and text-to-speech alerts**
