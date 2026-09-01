@@ -147,16 +147,60 @@ local function UnitClassToken(unit)
     return classToken
 end
 
+-- Ledger of deaths this module itself observed. Recap identity cannot be
+-- established from the meter entries in combat (sourceGUID/name may be
+-- secret), so the ledger is what prevents cross-player theft: while another
+-- unclaimed death of the same (or unknown) class is pending, no recap is
+-- attributed at all — its recap could be the one on record.
+local PENDING_DEATH_TTL = 10
+local pendingDeaths = {}
+
+local function RecordPendingDeath(unit, serial)
+    pendingDeaths[#pendingDeaths + 1] = {
+        class = UnitClassToken(unit) or false,
+        serial = serial,
+        time = GetTime(),
+        claimed = false,
+    }
+end
+
+local function ClaimPendingDeath(serial)
+    for i = 1, #pendingDeaths do
+        if pendingDeaths[i].serial == serial then
+            pendingDeaths[i].claimed = true
+        end
+    end
+end
+
+local function HasCompetingPendingDeath(classToken, serial)
+    local now = GetTime()
+    for i = #pendingDeaths, 1, -1 do
+        if now - pendingDeaths[i].time > PENDING_DEATH_TTL then
+            table.remove(pendingDeaths, i)
+        end
+    end
+    for i = 1, #pendingDeaths do
+        local death = pendingDeaths[i]
+        if death.serial ~= serial and not death.claimed
+            and (death.class == false or death.class == classToken) then
+            return true
+        end
+    end
+    return false
+end
+
 -- A recap is attributed to the alerted unit only when it is novel, its
 -- NeverSecret classFilename matches the unit's class, it is not stale by the
--- recap's own death time, and it is the ONLY candidate satisfying all that.
--- A sole novel recap is never taken on novelty alone: it may belong to an
--- earlier death whose chain was superseded before its recap arrived.
+-- recap's own death time, no competing pending death could own it, and it is
+-- the ONLY candidate satisfying all that. A sole novel recap is never taken
+-- on novelty alone: it may belong to an earlier death whose chain was
+-- superseded before its recap arrived.
 local RECAP_MAX_AGE = 5
 
-local function FindNewRecapID(unit)
+local function FindNewRecapID(unit, serial)
     local classToken = UnitClassToken(unit)
     if not classToken then return nil end
+    if HasCompetingPendingDeath(classToken, serial) then return nil end
     local match, ambiguous
     ForEachDeathSource(function(recapID, src, age)
         if knownRecapIDs[recapID] then return end
@@ -256,7 +300,7 @@ local function TryEnrich(unit, who, serial, attempt)
         return
     end
 
-    local recapID = FindNewRecapID(unit)
+    local recapID = FindNewRecapID(unit, serial)
     if recapID then
         local blow = GetKillingBlowEvent(recapID)
         local blowName, killerName
@@ -266,6 +310,7 @@ local function TryEnrich(unit, who, serial, attempt)
         if blowName then
             if not cfg.showKiller then killerName = nil end
             alertText:SetText(ComposeText(who, blowName, killerName))
+            ClaimPendingDeath(serial)
             RetireObservedRecapIDs()
             return
         end
@@ -290,6 +335,7 @@ local function ShowAlert(unit)
     alertFrame:Show()
     PlayAlertSound()
     if cfg and cfg.showKillingBlow then
+        RecordPendingDeath(unit, alertSerial)
         TryEnrich(unit, who, alertSerial, 0)
     end
 end
@@ -315,6 +361,7 @@ end
 local function RebuildRoster()
     wipe(tracked)
     wipe(deadState)
+    wipe(pendingDeaths)
     if not Enabled() then return end
     local cfg = Cfg()
     if cfg and cfg.showKillingBlow then
