@@ -287,7 +287,7 @@ PAGES = {
                 if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
                 MarkApplied(L["Feature toggles adjusted"])
             end), body, sy)
-            sy = AddText(body, L["QUI's cooldown tracking built on Blizzard's Cooldown Manager. Blizzard's viewer setting syncs automatically."], sy, 11)
+            sy = AddText(body, L["QUI's cooldown tracking uses Blizzard's Cooldown Manager. If the viewer layout needs changes, QUI shows the required Edit Mode steps without editing Blizzard's layout."], sy, 11)
 
             profile.actionBars = profile.actionBars or {}
             profile.actionBars.fade = profile.actionBars.fade or {}

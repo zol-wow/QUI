@@ -31,9 +31,32 @@ local function IsManagedAuraIcon(icon)
     return entry and entry._useManagedAura == true and entry._managedAuraRoute ~= nil
 end
 
+local function EntryListHasAlerts(entries)
+    if type(entries) ~= "table" then return false end
+    for _, entry in pairs(entries) do
+        if ns.CDMAlerts and ns.CDMAlerts.HasEnabled and ns.CDMAlerts.HasEnabled(entry) then
+            return true
+        end
+    end
+    return false
+end
+
+local function SettingsHaveAlerts(settings, viewerType)
+    if EntryListHasAlerts(settings and settings.entries) then return true end
+    local globalDB = ns.Addon and ns.Addon.db and ns.Addon.db.global
+    local root = globalDB and globalDB.ncdm and globalDB.ncdm.specTrackerSpells
+    local bySpec = root and root[viewerType]
+    if type(bySpec) ~= "table" then return false end
+    for _, entries in pairs(bySpec) do
+        if EntryListHasAlerts(entries) then return true end
+    end
+    return false
+end
+
 function Runs.ShouldUseSettings(settings, viewerType)
     if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
     if type(viewerType) ~= "string" or viewerType == "" then return false end
+    if SettingsHaveAlerts(settings, viewerType) then return false end
     if settings.dynamicLayout ~= true then return false end
     if settings.clickableIcons == true then return false end
     if settings.activeGlowEnabled ~= false then return false end

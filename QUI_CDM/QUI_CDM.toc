@@ -16,6 +16,7 @@ cdm\cdm_catalog.lua
 cdm\hud_visibility.lua
 cdm\cdm_scheduler.lua
 cdm\cdm_sources.lua
+cdm\cdm_alerts.lua
 cdm\cdm_runtime_store.lua
 cdm\cdm_runtime_queries.lua
 cdm\cdm_resolvers.lua

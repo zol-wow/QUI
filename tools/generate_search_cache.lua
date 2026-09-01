@@ -1590,7 +1590,8 @@ local function register_manual_static_setting(context, label, widget_type, db_pa
         surfaceUnitKey = context.surfaceUnitKey,
         surfaceTypeKey = resolve_surface_type_key(descriptor, context),
         widgetDescriptor = descriptor,
-        keywords = context.keywords,
+        keywords = extra and extra.keywords or context.keywords,
+        description = extra and extra.description or nil,
     })
 end
 
@@ -2516,7 +2517,8 @@ local function capture_aura_displays_elements()
     end
 
     if type(Page) == "table" and type(Page._BuildGeneralTab) == "function"
-        and type(Page._BuildLoadTab) == "function" then
+        and type(Page._BuildLoadTab) == "function"
+        and type(Page._BuildAlertsTab) == "function" then
         for _, unit in ipairs({ "player", "target" }) do
             local display = {
                 id = "d1",
@@ -2533,6 +2535,18 @@ local function capture_aura_displays_elements()
             render("load:" .. unit, function(host)
                 Page._BuildLoadTab(host, nil, display)
             end)
+            local tracked = E.NewTrackedElement({ 12345 }, "icon")
+            display.auras = { enabled = true, elements = { ["*"] = { tracked } } }
+            render("alerts:" .. unit, function(host)
+                Page._BuildAlertsTab(host, nil, display)
+            end)
+        end
+        local alertDescription = "Blizzard plays this sound when the aura event occurs. None disables this event."
+        for _, label in ipairs({ "Aura Applied", "Stacks Increased", "Aura Removed" }) do
+            register_manual_static_setting(AURA_DISPLAYS_SEARCH_CONTEXT, label, "dropdown", nil, nil, {
+                keywords = { "Alerts", "Aura Displays", "sound" },
+                description = alertDescription,
+            })
         end
     end
 

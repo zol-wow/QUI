@@ -326,6 +326,8 @@ BuildNativeDamageMeterTab = function(tabContent)
             showSpellTooltips = true,
             breakdownAnchor = "row",
             breakoutLayout = {
+                width = 1100,
+                height = 640,
                 leftWidth = 220,
                 middleWidth = 500,
                 playersHeight = 360,
@@ -355,6 +357,8 @@ BuildNativeDamageMeterTab = function(tabContent)
     if native.showAllBreakdownSpells == nil then native.showAllBreakdownSpells = true end
     if native.showSpellTooltips == nil then native.showSpellTooltips = true end
     if type(native.breakoutLayout) ~= "table" then native.breakoutLayout = {} end
+    if type(native.breakoutLayout.width) ~= "number" then native.breakoutLayout.width = 1100 end
+    if type(native.breakoutLayout.height) ~= "number" then native.breakoutLayout.height = 640 end
     if type(native.breakoutLayout.leftWidth) ~= "number" then native.breakoutLayout.leftWidth = 220 end
     if type(native.breakoutLayout.middleWidth) ~= "number" then native.breakoutLayout.middleWidth = 500 end
     if type(native.breakoutLayout.playersHeight) ~= "number" then native.breakoutLayout.playersHeight = 360 end

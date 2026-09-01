@@ -10,8 +10,10 @@ local Breakout = {}
 Breakout.__index = Breakout
 DM.Breakout = Breakout
 
-local WIDTH = 1100
-local HEIGHT = 640
+local DEFAULT_WIDTH = 1100
+local DEFAULT_HEIGHT = 640
+local MIN_WIDTH = 780
+local MIN_HEIGHT = 420
 local HEADER_H = 28
 local PAD = 8
 local GAP = 6
@@ -26,6 +28,8 @@ local MIN_MIDDLE_W = 320
 local MIN_RIGHT_W = 260
 local MIN_TOP_H = 140
 local DEFAULT_LAYOUT = {
+    width = DEFAULT_WIDTH,
+    height = DEFAULT_HEIGHT,
     leftWidth = 220,
     middleWidth = 500,
     playersHeight = 360,
@@ -68,6 +72,7 @@ local function SetSectionEmpty(section, text)
         section.rows[i]._source = nil
         section.rows[i]._segment = nil
         section.rows[i]._spellID = nil
+        section.rows[i]._target = nil
     end
     section.content:SetHeight(1)
     section.scroll:SetVerticalScroll(0)
@@ -82,6 +87,7 @@ local function ShowSectionRows(section, count, rowHeight, rowGap)
         section.rows[i]._source = nil
         section.rows[i]._segment = nil
         section.rows[i]._spellID = nil
+        section.rows[i]._target = nil
     end
     local contentHeight = count > 0 and count * rowHeight + (count - 1) * rowGap or 1
     section.content:SetHeight(math.max(1, contentHeight))
@@ -107,6 +113,16 @@ local function SameSource(left, right)
     local leftGUID = ReadableGUID(left)
     local rightGUID = ReadableGUID(right)
     return leftGUID ~= nil and rightGUID ~= nil and leftGUID == rightGUID
+end
+
+local function SameTarget(left, right)
+    if not (left and right) then return false end
+    local leftGUID = ReadableGUID(left)
+    local rightGUID = ReadableGUID(right)
+    if leftGUID ~= nil or rightGUID ~= nil then return leftGUID ~= nil and leftGUID == rightGUID end
+    local leftID = left.sourceCreatureID
+    local rightID = right.sourceCreatureID
+    return not IsSecret(leftID) and leftID ~= nil and leftID == rightID
 end
 
 local function FindMatchingSource(selected, sources, fallbackToFirst)
@@ -238,7 +254,14 @@ function Breakout:_CreateSection(key, title, rowCount)
         row:SetScript("OnClick", function(rowSelf, button)
             self:_OnRowClick(section, rowSelf, button)
         end)
-        if key == "spells" or key == "comparison" then
+        if key == "players" then
+            row:SetScript("OnEnter", function(rowSelf)
+                self.sourceRenderer:_ShowPlayerRowHover(rowSelf, false)
+            end)
+            row:SetScript("OnLeave", function(rowSelf)
+                self.sourceRenderer:_HidePlayerRowHover(rowSelf, false)
+            end)
+        elseif key == "spells" or key == "comparison" then
             row:SetScript("OnEnter", function(rowSelf) self:_ShowSpellTooltip(rowSelf) end)
             row:SetScript("OnLeave", function(rowSelf)
                 if GameTooltip and not GameTooltip:IsForbidden()
@@ -256,8 +279,8 @@ end
 
 function Breakout:_ClampLayout()
     local layout = self.layout
-    local contentWidth = WIDTH - PAD * 2
-    local contentHeight = HEIGHT - HEADER_H - PAD * 2
+    local contentWidth = self.frame:GetWidth() - PAD * 2
+    local contentHeight = self.frame:GetHeight() - HEADER_H - PAD * 2
     layout.leftWidth = Clamp(layout.leftWidth, MIN_LEFT_W,
         contentWidth - GAP * 2 - MIN_MIDDLE_W - MIN_RIGHT_W)
     layout.middleWidth = Clamp(layout.middleWidth, MIN_MIDDLE_W,
@@ -269,11 +292,12 @@ end
 function Breakout:_LayoutSections()
     self:_ClampLayout()
     local layout = self.layout
-    local contentHeight = HEIGHT - HEADER_H - PAD * 2
+    local width = self.frame:GetWidth()
+    local contentHeight = self.frame:GetHeight() - HEADER_H - PAD * 2
     local leftX = PAD
     local middleX = leftX + layout.leftWidth + GAP
     local rightX = middleX + layout.middleWidth + GAP
-    local rightWidth = WIDTH - PAD - rightX
+    local rightWidth = width - PAD - rightX
     local topY = -(HEADER_H + PAD)
 
     local players = self.sections.players.frame
@@ -329,7 +353,7 @@ function Breakout:_UpdateSplitter(kind)
     if not (left and bottom) then return end
     local x = cursorX / scale - left
     local y = cursorY / scale - bottom
-    local contentTop = HEIGHT - HEADER_H - PAD
+    local contentTop = self.frame:GetHeight() - HEADER_H - PAD
     if kind == "left" then
         self.layout.leftWidth = x - PAD
     elseif kind == "middle" then
@@ -368,12 +392,18 @@ function Breakout:_SetRendererContext()
     context.sessionID = self.sessionID
     self.sourceRenderer.windowID = context.windowID
     self.sourceRenderer.damageMeterType = self.damageMeterType
+    self.sourceRenderer.sessionType = self.sessionType
+    self.sourceRenderer.sessionID = self.sessionID
     self.detailRenderer.parentWindow = context
     self.detailRenderer.parentWindowID = context.windowID
 end
 
 function Breakout:_ResolveSelectedSource(view)
-    self.source = FindMatchingSource(self.source, view.sources)
+    local previousSource = self.source
+    self.source = FindMatchingSource(previousSource, view.sources)
+    if previousSource and not SameSource(previousSource, self.source) then
+        self.selectedTarget = nil
+    end
     local inCombat = IsCombatDataRestricted()
     self.sourceGUID, self.sourceCreatureID, self.selectorKind =
         Data:ResolveSourceSelector(self.source, self.sessionType, self.sessionID, inCombat)
@@ -496,6 +526,7 @@ end
 
 function Breakout:_RefreshSpells()
     local section = self.sections.spells
+    section.title:SetText(ns.L["Spells"])
     local rowHeight, rowGap = self:_RowMetrics()
     local T = Enum and Enum.DamageMeterType
     local deathsType = T and T.Deaths
@@ -544,8 +575,23 @@ function Breakout:_RefreshSpells()
         return
     end
 
-    local view = self:_GetBreakdownView(self.sourceGUID, self.sourceCreatureID,
-        self.sessionID, reusableSpellView, SPELL_ROWS)
+    local view
+    if self.selectedTarget then
+        local targetName = self.selectedTarget.name
+        if IsSecret(targetName) or type(targetName) ~= "string" then
+            targetName = ns.L["Targets"]
+        else
+            targetName = DM.ShortenName(targetName)
+        end
+        section.title:SetText(ns.L["Spells"] .. ": " .. targetName)
+        view = Data:GetPlayerTargetBreakdown(
+            self.sessionType, self.source and self.source.name,
+            self.selectedTarget.sourceGUID, self.selectedTarget.sourceCreatureID,
+            self.sessionID, reusableSpellView, SPELL_ROWS)
+    else
+        view = self:_GetBreakdownView(self.sourceGUID, self.sourceCreatureID,
+            self.sessionID, reusableSpellView, SPELL_ROWS)
+    end
     self.currentSpellView = view
     local count = math.min(#(view.spells or {}), #section.rows)
     if count == 0 then SetSectionEmpty(section); return end
@@ -564,6 +610,7 @@ function Breakout:_RefreshTargets()
     local T = Enum and Enum.DamageMeterType
     if self.restricted or IsCombatDataRestricted() or not T
         or self.damageMeterType == T.Deaths or self.damageMeterType == T.EnemyDamageTaken then
+        self.selectedTarget = nil
         SetSectionEmpty(section, self.restricted and ns.L["Breakdown unavailable during combat"] or nil)
         return
     end
@@ -573,12 +620,25 @@ function Breakout:_RefreshTargets()
         targets = Data:GetPlayerTargets(self.sessionType, self.source and self.source.name, self.sessionID)
     end
     local count = math.min(#(targets or {}), #section.rows)
-    if count == 0 then SetSectionEmpty(section); return end
+    if count == 0 then
+        self.selectedTarget = nil
+        SetSectionEmpty(section)
+        return
+    end
+    if self.selectedTarget then
+        local selected
+        for i = 1, count do
+            local target = targets[i]
+            if SameTarget(self.selectedTarget, target) then selected = target; break end
+        end
+        self.selectedTarget = selected
+    end
     local maxAmount = targets[1].totalAmount
     for i = 1, count do
         local row = section.rows[i]
         row.Icon:Show()
         self.detailRenderer:_SetTargetRow(row, targets[i], maxAmount)
+        row.Bar:SetAlpha((not self.selectedTarget or SameTarget(self.selectedTarget, targets[i])) and 1 or 0.72)
         row:Show()
     end
     ShowSectionRows(section, count, rowHeight, rowGap)
@@ -624,7 +684,7 @@ function Breakout:_RefreshComparison()
     local section = self.sections.comparison
     local rowHeight, rowGap = self:_RowMetrics()
     local view = self.currentSpellView
-    if self.restricted or not view or not view.spells or #view.spells == 0 then
+    if self.selectedTarget or self.restricted or not view or not view.spells or #view.spells == 0 then
         section.title:SetText(ns.L["Comparison"])
         SetSectionEmpty(section, self.restricted and ns.L["Breakdown unavailable during combat"] or nil)
         return
@@ -681,12 +741,21 @@ function Breakout:_OnRowClick(section, row, button)
     if button == "RightButton" then self:Close(); return end
     if section.key == "players" and row._source then
         self.source = row._source
+        self.selectedTarget = nil
         self:Refresh()
     elseif section.key == "segments" and row._segment then
         local segment = row._segment
         self.sessionType = segment.sessionType
         self.sessionID = segment.sessionID
         self.sessionLabel = segment.sessionID and segment.label or nil
+        self.selectedTarget = nil
+        self:Refresh()
+    elseif section.key == "targets" and row._target then
+        if SameTarget(self.selectedTarget, row._target) then
+            self.selectedTarget = nil
+        else
+            self.selectedTarget = row._target
+        end
         self:Refresh()
     end
 end
@@ -701,6 +770,7 @@ function Breakout:_OpenTypeMenu()
                 function() return self.damageMeterType == value end,
                 function()
                     self.damageMeterType = value
+                    self.selectedTarget = nil
                     self:Refresh()
                 end)
         end
@@ -719,6 +789,7 @@ function Breakout:_ClearContext()
     self.damageMeterType = nil
     self.restricted = nil
     self.currentSpellView = nil
+    self.selectedTarget = nil
 end
 
 function Breakout:Open(ownerWindow, source, sourceGUID, sourceCreatureID, restricted)
@@ -732,7 +803,9 @@ function Breakout:Open(ownerWindow, source, sourceGUID, sourceCreatureID, restri
     self.sessionID = ownerWindow.sessionID
     self.sessionLabel = ownerWindow.sessionLabel
     self.damageMeterType = ownerWindow.damageMeterType
+    self.selectedTarget = nil
     self.layout = GetLayout()
+    self.frame:SetSize(self.layout.width, self.layout.height)
     self:_LayoutSections()
     self.frame:Show()
     self:Refresh()
@@ -750,6 +823,7 @@ function Breakout:Refresh()
     local rowHeight, rowGap = self:_RowMetrics()
     if self.layout ~= layout or self._layoutRowHeight ~= rowHeight or self._layoutRowGap ~= rowGap then
         self.layout = layout
+        self.frame:SetSize(layout.width, layout.height)
         self:_LayoutSections()
     end
 
@@ -776,8 +850,8 @@ function Breakout:Refresh()
     self.TypeButton:SetText(DM.LabelForType(self.damageMeterType))
     self:_RefreshPlayers(view)
     self:_RefreshSegments()
-    self:_RefreshSpells()
     self:_RefreshTargets()
+    self:_RefreshSpells()
     self:_RefreshComparison()
     return true
 end
@@ -805,18 +879,37 @@ function Breakout.New()
     self:_CacheSegmentEntries()
 
     local frame = CreateFrame("Frame", "QUI_DamageMeterBreakout", UIParent)
-    frame:SetSize(WIDTH, HEIGHT)
+    frame:SetSize(self.layout.width, self.layout.height)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     frame:SetFrameStrata("HIGH")
     frame:SetToplevel(true)
     frame:SetMovable(true)
+    frame:SetResizable(true)
+    if frame.SetResizeBounds then
+        frame:SetResizeBounds(MIN_WIDTH, MIN_HEIGHT)
+    elseif frame.SetMinResize then
+        frame:SetMinResize(MIN_WIDTH, MIN_HEIGHT)
+    end
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     if frame.SetDontSavePosition then frame:SetDontSavePosition(true) end
     frame:SetScript("OnMouseDown", function(_, button)
         if button == "RightButton" then self:Close() end
     end)
-    frame:SetScript("OnHide", function() self:_ClearContext() end)
+    local interaction
+    local function FinishInteraction()
+        if not interaction then return end
+        interaction = nil
+        frame:StopMovingOrSizing()
+    end
+    frame:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_REGEN_DISABLED" then FinishInteraction() end
+    end)
+    frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    frame:SetScript("OnHide", function()
+        FinishInteraction()
+        self:_ClearContext()
+    end)
     frame:Hide()
     self.frame = frame
 
@@ -834,8 +927,14 @@ function Breakout.New()
     header:SetHeight(HEADER_H)
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
-    header:SetScript("OnDragStart", function() frame:StartMoving() end)
-    header:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+    header:SetScript("OnDragStart", function()
+        if interaction or IsCombatDataRestricted() then return end
+        frame:StartMoving()
+        interaction = "move"
+    end)
+    header:SetScript("OnDragStop", function()
+        if interaction == "move" then FinishInteraction() end
+    end)
     self.header = header
 
     local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -862,6 +961,28 @@ function Breakout.New()
         })
     end
 
+    local resize = CreateFrame("Button", nil, frame)
+    resize:SetSize(16, 16)
+    resize:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
+    resize:SetFrameLevel(frame:GetFrameLevel() + 10)
+    resize:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    resize:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    resize:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    resize:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" or interaction or IsCombatDataRestricted() then return end
+        local left, top = frame:GetLeft(), frame:GetTop()
+        if left and top then
+            frame:ClearAllPoints()
+            frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+        end
+        frame:StartSizing("BOTTOMRIGHT")
+        interaction = "resize"
+    end)
+    resize:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" and interaction == "resize" then FinishInteraction() end
+    end)
+    self.resize = resize
+
     self:_CreateSection("players", ns.L["Players"], PLAYER_ROWS)
     self:_CreateSection("segments", ns.L["Segments"], SEGMENT_ROWS)
     self:_CreateSection("spells", ns.L["Spells"], SPELL_ROWS)
@@ -872,6 +993,12 @@ function Breakout.New()
     self:_CreateSplitter("players")
     self:_CreateSplitter("spells")
     self:_LayoutSections()
+    frame:SetScript("OnSizeChanged", function(_, width, height)
+        if not (width and height and self.sections.players) then return end
+        self.layout.width = math.floor(width + 0.5)
+        self.layout.height = math.floor(height + 0.5)
+        self:_LayoutSections()
+    end)
 
     local specialFrames = _G.UISpecialFrames
     if type(specialFrames) == "table" then
