@@ -295,6 +295,11 @@ local defaults = {
                 fontSize = 24,
                 offsetX = 0,
                 offsetY = 220,
+                showKillingBlow = true,
+                showKiller = false,
+                classColorName = true,
+                instanceOnly = false,
+                duration = 3,
             },
             healerMana = {
                 enabled = false,
