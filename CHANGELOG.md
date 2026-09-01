@@ -4,13 +4,13 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## v5.3-beta1 - 2026-08-31
+## v5.3-beta2 - 2026-09-01
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
 > will not load on the 12.0.x client.
 
-Opens the 5.3 beta line with a modern Damage Meter detail workspace, broader
-Blizzard-frame styling, and focused combat UI corrections.
+Alert customization, tighter combat HUD layouts, and detail-view refinements
+for the 5.3 beta line.
 
 ### Added
 
@@ -22,6 +22,36 @@ Blizzard-frame styling, and focused combat UI corrections.
   gains stacks, or is removed.
 - **Cooldown Manager entries have QUI-owned sound and text-to-speech alerts**
   for cooldown and aura state changes, with searchable sounds and previews.
+- **The Battle Res Counter can hide without charge information**, removing its
+  unavailable icon between supported encounters and in unsupported content.
+
+### Changed
+
+- **Incoming Casts can collapse readable hidden icons** so visible casts pack
+  together while restricted targets retain fixed-width gaps.
+- **The Damage Meter detail workspace is resizable and remembers its size.**
+  Target rows drill down to their spells, and player hover details refresh item
+  levels.
+
+### Fixed
+
+- **Cooldown Manager no longer writes Blizzard's Edit Mode layouts during
+  login.** Layout mismatches are detected without mutation and corrected through
+  guided Edit Mode steps, preventing protected aura-map and cooldown-cache
+  errors.
+- **QUI Chat preserves literal player messages**, including apostrophes and
+  percent tokens, instead of treating chat bodies as format templates.
+
+## v5.3-beta1 - 2026-08-31
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Opens the 5.3 beta line with a modern Damage Meter detail workspace, broader
+Blizzard-frame styling, and focused combat UI corrections.
+
+### Added
+
 - **Damage Meter rows open a reusable five-pane detail workspace** for spells,
   targets, attackers, and death recaps while row-hover details remain
   independent and interactive.
@@ -40,10 +70,6 @@ Blizzard-frame styling, and focused combat UI corrections.
 
 ### Fixed
 
-- **Cooldown Manager no longer writes Blizzard's Edit Mode layouts during
-  login.** Layout mismatches are detected without mutation and corrected through
-  guided Edit Mode steps, preventing protected aura-map and cooldown-cache
-  errors.
 - **Group Frame summon indicators handle secret status values safely** and
   refresh when combat ends.
 - **Mail's Open All action keeps the Mail window above overlapping moved
