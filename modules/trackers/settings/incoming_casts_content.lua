@@ -98,6 +98,10 @@ function ns.QUI_IncomingCastsOptions.BuildIncomingCastsContent(content)
         row(sIco.frame, ns.L["Growth Direction"], icoGrowW)
     )
 
+    local icoCollapseW = GUI:CreateFormCheckbox(sIco.frame, nil, "collapseGaps", db, RefreshPreview,
+        { description = ns.L["Shrink hidden icons when target information is readable so visible casts pack together. Restricted target data keeps fixed-width gaps."] })
+    sIco.AddRow(row(sIco.frame, ns.L["Collapse Hidden Icons"], icoCollapseW))
+
     local icoSwipeW = GUI:CreateFormCheckbox(sIco.frame, nil, "showSwipe", db, RefreshPreview,
         { description = ns.L["Darken the icon with a cooldown swipe that tracks the remaining cast time."] })
     local icoReverseW = GUI:CreateFormCheckbox(sIco.frame, nil, "reverseSwipe", db, RefreshPreview,
