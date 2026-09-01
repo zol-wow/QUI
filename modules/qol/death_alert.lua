@@ -87,6 +87,14 @@ local function ForEachDeathSource(callback)
     local T = Enum and Enum.DamageMeterType
     if not (S and S.Current and T and T.Deaths) then return end
     for _, sessionType in ipairs({ S.Current, S.Overall }) do
+        local duration
+        if C_DamageMeter.GetSessionDurationSeconds then
+            local okD, d = ns.SafeCall("best-effort-style",
+                C_DamageMeter.GetSessionDurationSeconds, sessionType)
+            if okD and not Helpers.IsSecretValue(d) and type(d) == "number" then
+                duration = d
+            end
+        end
         local ok, session = ns.SafeCall("best-effort-style",
             C_DamageMeter.GetCombatSessionFromType, sessionType, T.Deaths)
         if ok and not Helpers.IsSecretValue(session) and type(session) == "table" then
@@ -100,7 +108,13 @@ local function ForEachDeathSource(callback)
                             or type(recapID) ~= "number" or recapID <= 0 then
                             recapID = nil -- @secret-policy: reject-secret-ids
                         end
-                        if recapID and callback(recapID, src) then return end
+                        local age
+                        local deathTime = src.deathTimeSeconds
+                        if duration and not Helpers.IsSecretValue(deathTime)
+                            and type(deathTime) == "number" then
+                            age = duration - deathTime
+                        end
+                        if recapID and callback(recapID, src, age) then return end
                     end
                 end
             end
@@ -133,30 +147,31 @@ local function UnitClassToken(unit)
     return classToken
 end
 
+-- A recap is attributed to the alerted unit only when it is novel, its
+-- NeverSecret classFilename matches the unit's class, it is not stale by the
+-- recap's own death time, and it is the ONLY candidate satisfying all that.
+-- A sole novel recap is never taken on novelty alone: it may belong to an
+-- earlier death whose chain was superseded before its recap arrived.
+local RECAP_MAX_AGE = 5
+
 local function FindNewRecapID(unit)
-    local newIDs, newClasses, count = {}, {}, 0
-    ForEachDeathSource(function(recapID, src)
-        if not knownRecapIDs[recapID] and not newClasses[recapID] then
-            local class = src.classFilename
-            if Helpers.IsSecretValue(class) or type(class) ~= "string" then class = false end
-            count = count + 1
-            newIDs[count] = recapID
-            newClasses[recapID] = class
-        end
-    end)
-    if count == 1 then return newIDs[1] end
-    if count == 0 then return nil end
-    -- Several deaths landed since the baseline: attribute only if exactly one
-    -- new recap matches this unit's class (classFilename is NeverSecret).
     local classToken = UnitClassToken(unit)
     if not classToken then return nil end
-    local match
-    for i = 1, count do
-        if newClasses[newIDs[i]] == classToken then
-            if match then return nil end
-            match = newIDs[i]
+    local match, ambiguous
+    ForEachDeathSource(function(recapID, src, age)
+        if knownRecapIDs[recapID] then return end
+        if age and age > RECAP_MAX_AGE then
+            -- Predates this death; retire it so it stops surfacing as novel.
+            knownRecapIDs[recapID] = true
+            return
         end
-    end
+        local class = src.classFilename
+        if Helpers.IsSecretValue(class) or type(class) ~= "string" then return end
+        if class ~= classToken then return end
+        if match and match ~= recapID then ambiguous = true end
+        match = recapID
+    end)
+    if ambiguous then return nil end
     return match
 end
 
