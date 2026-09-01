@@ -268,7 +268,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         local timerFontW = GUI:CreateFormSlider(s1.frame, nil, 8, 24, 1, "timerFontSize", bz, Refresh,
             { description = ns.L["Font size of the recharge timer shown below the charge count."] })
-        s1.AddRow(row(s1.frame, ns.L["Timer Font Size"], timerFontW))
+        local hideUnavailW = GUI:CreateFormCheckbox(s1.frame, nil, "hideWhenUnavailable", bz, Refresh,
+            { description = ns.L["Only show the counter while battle-rez charge information is available (active Mythic+ run or raid boss encounter). Hides the greyed-out icon in Mythic 0, open world, and between raid pulls."] })
+        s1.AddRow(row(s1.frame, ns.L["Timer Font Size"], timerFontW), row(s1.frame, ns.L["Hide Without Charge Info"], hideUnavailW))
         L.closeSection(s1)
 
         L.headerAt(ns.L["Colors"])
