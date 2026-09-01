@@ -110,11 +110,19 @@ end
 
 local knownRecapIDs = {}
 
-local function SnapshotKnownRecapIDs()
-    wipe(knownRecapIDs)
+-- Every recap on record becomes ineligible for future attribution. Called at
+-- the end of each enrichment chain so recaps that were observed but never
+-- displayed (simultaneous deaths, unreadable events, ambiguous class matches)
+-- cannot contaminate a later death's novelty scan.
+local function RetireObservedRecapIDs()
     ForEachDeathSource(function(recapID)
         knownRecapIDs[recapID] = true
     end)
+end
+
+local function SnapshotKnownRecapIDs()
+    wipe(knownRecapIDs)
+    RetireObservedRecapIDs()
 end
 
 local function UnitClassToken(unit)
@@ -224,10 +232,14 @@ local function DisplayName(unit)
 end
 
 local function TryEnrich(unit, who, serial, attempt)
+    -- A newer death owns the alert now; its chain will retire leftovers.
     if serial ~= alertSerial then return end
-    if not (alertFrame and alertFrame:IsShown()) then return end
     local cfg = Cfg()
     if not (cfg and cfg.showKillingBlow) then return end
+    if not (alertFrame and alertFrame:IsShown()) then
+        RetireObservedRecapIDs()
+        return
+    end
 
     local recapID = FindNewRecapID(unit)
     if recapID then
@@ -237,9 +249,9 @@ local function TryEnrich(unit, who, serial, attempt)
             blowName, killerName = DescribeKillingBlow(blow)
         end
         if blowName then
-            knownRecapIDs[recapID] = true
             if not cfg.showKiller then killerName = nil end
             alertText:SetText(ComposeText(who, blowName, killerName))
+            RetireObservedRecapIDs()
             return
         end
     end
@@ -247,6 +259,8 @@ local function TryEnrich(unit, who, serial, attempt)
     local delay = RECAP_RETRY_DELAYS[attempt + 1]
     if delay then
         C_Timer.After(delay, function() TryEnrich(unit, who, serial, attempt + 1) end)
+    else
+        RetireObservedRecapIDs()
     end
 end
 
