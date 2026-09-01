@@ -9,7 +9,6 @@ local RECAP_RETRY_DELAYS = { 0.3, 1.0 }
 local alertFrame, alertText
 local deadState = {}
 local tracked = {}
-local lastRecapByUnit = {}
 local hideTimer = 0
 local alertSerial = 0
 
@@ -74,35 +73,83 @@ local function PlayAlertSound()
 end
 
 -- Killing-blow lookup: CLEU is gutted for addons in 12.x, but the native
--- damage meter records a per-source deathRecapID (NeverSecret, readable in
--- combat) that keys C_DeathRecap. Everything here degrades to nil and the
--- alert stays "Name died!".
-local function ReadDeathRecapID(unit)
-    if not (C_DamageMeter and C_DamageMeter.GetCombatSessionSourceFromType) then return nil end
+-- damage meter's Deaths session lists a deathRecapID per combatSources entry
+-- (NeverSecret, readable in combat) that keys C_DeathRecap. Everything here
+-- degrades to nil and the alert stays "Name died!".
+--
+-- Identity is by recapID novelty, not GUID: sourceGUID/name on the entries
+-- can be secret in combat and must never be compared, while deathRecapID and
+-- classFilename are NeverSecret. knownRecapIDs is the baseline of recaps that
+-- predate the death being announced.
+local function ForEachDeathSource(callback)
+    if not (C_DamageMeter and C_DamageMeter.GetCombatSessionFromType) then return end
     local S = Enum and Enum.DamageMeterSessionType
     local T = Enum and Enum.DamageMeterType
-    if not (S and S.Current and T and T.Deaths) then return nil end
-
-    local guid
-    local okGUID, rawGUID = ns.SafeCall("best-effort-style", UnitGUID, unit)
-    if okGUID then guid = rawGUID end
-    -- A secret GUID is fine: SecretArguments is AllowedWhenUntainted on the
-    -- session-source getters. Only bail on a readable nil.
-    if not Helpers.IsSecretValue(guid) and guid == nil then return nil end
-
-    local function query(sessionType)
-        local ok, src = ns.SafeCall("best-effort-style",
-            C_DamageMeter.GetCombatSessionSourceFromType, sessionType, T.Deaths, guid)
-        if not ok or Helpers.IsSecretValue(src) or type(src) ~= "table" then
-            return nil -- @secret-policy: defer-until-readable — retry timers may still enrich
+    if not (S and S.Current and T and T.Deaths) then return end
+    for _, sessionType in ipairs({ S.Current, S.Overall }) do
+        local ok, session = ns.SafeCall("best-effort-style",
+            C_DamageMeter.GetCombatSessionFromType, sessionType, T.Deaths)
+        if ok and not Helpers.IsSecretValue(session) and type(session) == "table" then
+            local sources = session.combatSources
+            if not Helpers.IsSecretValue(sources) and type(sources) == "table" then
+                for i = 1, #sources do
+                    local src = sources[i]
+                    if not Helpers.IsSecretValue(src) and type(src) == "table" then
+                        local recapID = src.deathRecapID
+                        if Helpers.IsSecretValue(recapID)
+                            or type(recapID) ~= "number" or recapID <= 0 then
+                            recapID = nil -- @secret-policy: reject-secret-ids
+                        end
+                        if recapID and callback(recapID, src) then return end
+                    end
+                end
+            end
         end
-        local recapID = src.deathRecapID
-        if Helpers.IsSecretValue(recapID) or type(recapID) ~= "number" or recapID <= 0 then
-            return nil -- @secret-policy: reject-secret-ids
-        end
-        return recapID
     end
-    return query(S.Current) or query(S.Overall)
+end
+
+local knownRecapIDs = {}
+
+local function SnapshotKnownRecapIDs()
+    wipe(knownRecapIDs)
+    ForEachDeathSource(function(recapID)
+        knownRecapIDs[recapID] = true
+    end)
+end
+
+local function UnitClassToken(unit)
+    local ok, _, classToken = ns.SafeCall("best-effort-style", UnitClass, unit)
+    if not ok or Helpers.IsSecretValue(classToken) or type(classToken) ~= "string" then
+        return nil -- @secret-policy: defer-until-readable
+    end
+    return classToken
+end
+
+local function FindNewRecapID(unit)
+    local newIDs, newClasses, count = {}, {}, 0
+    ForEachDeathSource(function(recapID, src)
+        if not knownRecapIDs[recapID] and not newClasses[recapID] then
+            local class = src.classFilename
+            if Helpers.IsSecretValue(class) or type(class) ~= "string" then class = false end
+            count = count + 1
+            newIDs[count] = recapID
+            newClasses[recapID] = class
+        end
+    end)
+    if count == 1 then return newIDs[1] end
+    if count == 0 then return nil end
+    -- Several deaths landed since the baseline: attribute only if exactly one
+    -- new recap matches this unit's class (classFilename is NeverSecret).
+    local classToken = UnitClassToken(unit)
+    if not classToken then return nil end
+    local match
+    for i = 1, count do
+        if newClasses[newIDs[i]] == classToken then
+            if match then return nil end
+            match = newIDs[i]
+        end
+    end
+    return match
 end
 
 local function GetKillingBlowEvent(recapID)
@@ -182,17 +229,15 @@ local function TryEnrich(unit, who, serial, attempt)
     local cfg = Cfg()
     if not (cfg and cfg.showKillingBlow) then return end
 
-    local recapID = ReadDeathRecapID(unit)
-    -- A recapID equal to the last one seen for this unit belongs to an
-    -- earlier death whose recap the meter still reports; wait for the new one.
-    if recapID and recapID ~= lastRecapByUnit[unit] then
+    local recapID = FindNewRecapID(unit)
+    if recapID then
         local blow = GetKillingBlowEvent(recapID)
         local blowName, killerName
         if blow then
             blowName, killerName = DescribeKillingBlow(blow)
         end
         if blowName then
-            lastRecapByUnit[unit] = recapID
+            knownRecapIDs[recapID] = true
             if not cfg.showKiller then killerName = nil end
             alertText:SetText(ComposeText(who, blowName, killerName))
             return
@@ -241,9 +286,13 @@ end
 local function RebuildRoster()
     wipe(tracked)
     wipe(deadState)
-    wipe(lastRecapByUnit)
     if not Enabled() then return end
     local cfg = Cfg()
+    if cfg and cfg.showKillingBlow then
+        -- Baseline: any recap already on record predates tracking and must
+        -- not be announced as the cause of a later death.
+        SnapshotKnownRecapIDs()
+    end
     local units = {}
     if IsInRaid() then
         for i = 1, GetNumGroupMembers() do units[#units + 1] = "raid" .. i end
@@ -255,11 +304,6 @@ local function RebuildRoster()
             tracked[unit] = true
             local okDead, dead = pcall(UnitIsDeadOrGhost, unit)
             deadState[unit] = (okDead and not Helpers.IsSecretValue(dead) and dead) and true or false
-            if cfg and cfg.showKillingBlow then
-                -- Baseline: any recap already on record predates tracking and
-                -- must not be announced as the cause of a later death.
-                lastRecapByUnit[unit] = ReadDeathRecapID(unit)
-            end
         end
     end
 end
