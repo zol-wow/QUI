@@ -221,11 +221,18 @@ local function UpdateDisplay()
 
     local chargeInfo = C_Spell.GetSpellCharges(REBIRTH_SPELL_ID)
     if not chargeInfo then -- @secret-safe: SpellChargeInfo container is a plain table-or-nil (MayReturnNothing); fields are probed/sunk below
+        if settings.hideWhenUnavailable then
+            frame:Hide()
+        end
         frame.chargeText:SetText("?")
         frame.timerText:SetText("")
         frame.icon:SetDesaturated(true)
         _lastDesaturated = true
         return
+    end
+
+    if settings.hideWhenUnavailable and BrezState.isInRelevantContent and not frame:IsShown() then
+        frame:Show()
     end
 
     pcall(frame.chargeText.SetFormattedText, frame.chargeText, "%d", chargeInfo.currentCharges)
@@ -378,7 +385,13 @@ local function ShowFrame()
         CreateBrezFrame()
     end
     UpdateAppearance()
-    BrezState.frame:Show()
+    local settings = GetSettings()
+    if settings and settings.hideWhenUnavailable and not BrezState.isPreviewMode
+        and not C_Spell.GetSpellCharges(REBIRTH_SPELL_ID) then -- @secret-safe: plain table-or-nil container check
+        BrezState.frame:Hide()
+    else
+        BrezState.frame:Show()
+    end
     StartTicker()
 end
 
@@ -444,9 +457,7 @@ local function TogglePreview(enable)
     else
         local settings = GetSettings()
         if settings and settings.enabled and BrezState.isInRelevantContent then
-            UpdateAppearance()
-            BrezState.frame:Show()
-            StartTicker()
+            ShowFrame()
         else
             HideFrame()
         end

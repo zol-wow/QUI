@@ -3185,6 +3185,7 @@ local defaults = {
 
         brzCounter = {
             enabled = true,
+            hideWhenUnavailable = false,
             width = 50,
             height = 50,
             fontSize = 14,
