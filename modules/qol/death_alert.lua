@@ -44,6 +44,12 @@ local function EnsureFrame()
         hideTimer = hideTimer - elapsed
         if hideTimer <= 0 then self:Hide() end
     end)
+    -- The frame is created lazily, so the startup anchor pass could not have
+    -- resolved it; pull in any saved Layout Mode anchor now (mplus_timer.lua
+    -- does the same).
+    if _G.QUI_ApplyFrameAnchor then
+        _G.QUI_ApplyFrameAnchor("deathAlert")
+    end
 end
 
 local function ApplyPosition()
