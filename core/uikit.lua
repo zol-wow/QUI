@@ -460,6 +460,475 @@ function UIKit.AnimateValue(owner, key, options)
     driver:SetScript("OnUpdate", animationDriverOnUpdate)
 end
 
+-- ---------------------------------------------------------------------------
+-- Smooth scroll + scrollbar
+-- ---------------------------------------------------------------------------
+-- One controller per ScrollFrame. Wheel notches accumulate on a shared target
+-- and an OnUpdate driver eases the offset toward it
+-- (cur += (target - cur) * min(1, SPEED * elapsed)); inside SNAP of the target
+-- it lands exactly and the driver hides. Interim writes round toward the
+-- target on the physical pixel grid so the final frames approach
+-- monotonically (no bounce), and the resting target is pixel-snapped so
+-- content is crisp at rest. Programmatic jumps (ScrollTo) share the same
+-- target, so section chips and the wheel never fight over the offset.
+-- Drag / click-to-jump on the scrollbar cancel the easing and write directly.
+local SMOOTH_SCROLL_SPEED = 12   -- 1/s lerp rate, roughly an 83 ms time constant
+local SMOOTH_SCROLL_SNAP = 0.3   -- scroll units: land exactly inside this band
+local DEFAULT_SCROLL_THUMB = { 1, 1, 1, 0.27 }
+local DEFAULT_SCROLL_TRACK = { 1, 1, 1, 0.02 }
+local smoothScrollState = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
+local scrollBarRegistry = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
+local scrollBarAccentHooked = false
+
+local function SafeNumber(value, fallback)
+    if Helpers and Helpers.SafeToNumber then
+        return Helpers.SafeToNumber(value, fallback or 0)
+    end
+    return tonumber(value) or fallback or 0
+end
+
+local function ScrollPixelSize(frame)
+    local px = SafeNumber(GetPixelSize(frame), 1)
+    if px <= 0 then return 1 end
+    return px
+end
+
+-- Range/offset reads go through SafeCall: GetVerticalScrollRange can throw on
+-- a forbidden frame and either value can come back secret, and a controller
+-- must never abort mid-tick.
+local function ReadScrollRange(scrollFrame, getRange)
+    local ok, range
+    if getRange then
+        ok, range = ns.SafeCall("secret-probe", getRange, scrollFrame)
+    else
+        ok, range = ns.SafeCallMethod("secret-probe", scrollFrame, "GetVerticalScrollRange")
+    end
+    if not ok then return 0 end
+    range = SafeNumber(range, 0)
+    if range < 0 then return 0 end
+    return range
+end
+
+local function ReadScrollOffset(scrollFrame)
+    local ok, cur = ns.SafeCallMethod("secret-probe", scrollFrame, "GetVerticalScroll")
+    if not ok then return 0 end
+    return SafeNumber(cur, 0)
+end
+
+local SmoothScroll = {}
+SmoothScroll.__index = SmoothScroll
+
+-- Range snapped DOWN to the pixel grid so a pixel-snapped target can never sit
+-- above the reachable maximum.
+function SmoothScroll:PixelRange()
+    local px = ScrollPixelSize(self.frame)
+    return floor(ReadScrollRange(self.frame, self.getRange) / px) * px, px
+end
+
+function SmoothScroll:Write(value, settled)
+    self.lastWrite = value
+    self.frame:SetVerticalScroll(value)
+    local listeners = self.listeners
+    for i = 1, #listeners do
+        ns.SafeCall("bulkhead", listeners[i], self.frame, value, settled)
+    end
+end
+
+function SmoothScroll:Cancel()
+    self.target = nil
+    self.active = false
+    self.lastWrite = nil
+    self.driver:Hide()
+end
+
+function SmoothScroll:IsAnimating()
+    return self.active
+end
+
+-- In-flight target while animating, else the settled offset. Synchronous
+-- readers that used to poll GetVerticalScroll after a wheel event read this.
+function SmoothScroll:GetTarget()
+    return self.target or ReadScrollOffset(self.frame)
+end
+
+function SmoothScroll:GetOffset()
+    return ReadScrollOffset(self.frame)
+end
+
+function SmoothScroll:ScrollTo(value, instant)
+    local range, px = self:PixelRange()
+    value = floor(SafeNumber(value, 0) / px + 0.5) * px
+    if value > range then value = range end
+    if value < 0 then value = 0 end
+    if instant then
+        self:Cancel()
+        self:Write(value, true)
+        return value
+    end
+    self.target = value
+    if not self.active then
+        self.active = true
+        self.lastWrite = nil   -- fresh start: the first tick reads the live offset
+        self.driver:Show()
+    end
+    return value
+end
+
+function SmoothScroll:ScrollBy(delta, instant)
+    return self:ScrollTo(self:GetTarget() + SafeNumber(delta, 0), instant)
+end
+
+function SmoothScroll:OnWheel(delta)
+    delta = SafeNumber(delta, 0)
+    if delta == 0 then return end
+    if ReadScrollRange(self.frame, self.getRange) <= 0 then return end
+    local value = self:GetTarget() - delta * self.step
+    local snap = self.snap
+    if snap and snap > 0 then
+        value = floor(value / snap + 0.5) * snap
+    end
+    self:ScrollTo(value, false)
+end
+
+function SmoothScroll:Tick(elapsed)
+    local target = self.target
+    if not target then
+        self:Cancel()
+        return
+    end
+    local range, px = self:PixelRange()
+    if target > range then target = range end
+    if target < 0 then target = 0 end
+    self.target = target
+    local cur = ReadScrollOffset(self.frame)
+    -- Someone else moved the frame since our last write (a template
+    -- scrollbar drag, a direct SetVerticalScroll): they own the offset now.
+    local lastWrite = self.lastWrite
+    if lastWrite and (cur - lastWrite > SMOOTH_SCROLL_SNAP or lastWrite - cur > SMOOTH_SCROLL_SNAP) then
+        self:Cancel()
+        return
+    end
+    local diff = target - cur
+    if diff > -SMOOTH_SCROLL_SNAP and diff < SMOOTH_SCROLL_SNAP then
+        self:Land(target)
+        return
+    end
+    local rate = SMOOTH_SCROLL_SPEED * SafeNumber(elapsed, 0)
+    if rate > 1 then rate = 1 end
+    local nxt = cur + diff * rate
+    if diff > 0 then
+        nxt = math.ceil(nxt / px) * px
+        if nxt > target then nxt = target end
+    else
+        nxt = floor(nxt / px) * px
+        if nxt < target then nxt = target end
+    end
+    if nxt == cur then nxt = target end
+    if nxt == target then
+        self:Land(target)
+        return
+    end
+    self:Write(nxt, false)
+end
+
+-- Final write while still flagged animating (OnVerticalScroll hooks can tell
+-- a settle from a foreign write), then stop unless a listener re-targeted.
+function SmoothScroll:Land(target)
+    self:Write(target, true)
+    if self.target == target then self:Cancel() end
+end
+
+-- Content changed: keep an in-flight target inside the new range, or pull a
+-- settled offset back in if the content shrank underneath it.
+function SmoothScroll:Refresh()
+    local range = self:PixelRange()
+    if self.target then
+        if self.target > range then self.target = range end
+        return
+    end
+    if ReadScrollOffset(self.frame) > range then
+        self:ScrollTo(range, true)
+    end
+end
+
+function SmoothScroll:AddListener(fn)
+    if type(fn) ~= "function" then return end
+    local listeners = self.listeners
+    for i = 1, #listeners do
+        if listeners[i] == fn then return end
+    end
+    listeners[#listeners + 1] = fn
+end
+
+function SmoothScroll:RemoveListener(fn)
+    local listeners = self.listeners
+    for i = #listeners, 1, -1 do
+        if listeners[i] == fn then table.remove(listeners, i) end
+    end
+end
+
+function SmoothScroll:Configure(opts)
+    if type(opts) ~= "table" then return end
+    if opts.step then self.step = SafeNumber(opts.step, self.step) end
+    if opts.snap ~= nil then self.snap = opts.snap end
+    if opts.getRange ~= nil then self.getRange = opts.getRange end
+    if opts.onPosition then self:AddListener(opts.onPosition) end
+end
+
+function UIKit.GetSmoothScroll(scrollFrame)
+    return scrollFrame and smoothScrollState[scrollFrame] or nil
+end
+
+-- opts: step (scroll units per wheel notch, default 60), snap (round wheel
+-- targets to this grid, e.g. one sidebar tile), getRange(scrollFrame) (custom
+-- range for frames whose native range lies, e.g. multi-line EditBox children),
+-- onPosition(scrollFrame, offset, settled) (fires on every write).
+-- Attach AFTER any SetScript("OnScrollRangeChanged"/"OnHide") on the frame:
+-- the controller hooks those and a later SetScript would drop the hooks.
+function UIKit.AttachSmoothScroll(scrollFrame, opts)
+    if not scrollFrame then return nil end
+    local existing = smoothScrollState[scrollFrame]
+    if existing then
+        existing:Configure(opts)
+        return existing
+    end
+    opts = opts or {}
+    local ctl = setmetatable({
+        frame = scrollFrame,
+        step = SafeNumber(opts.step, 60),
+        snap = opts.snap,
+        getRange = opts.getRange,
+        listeners = {},
+        target = nil,
+        active = false,
+    }, SmoothScroll)
+    if type(opts.onPosition) == "function" then
+        ctl.listeners[1] = opts.onPosition
+    end
+
+    -- Child of the scroll frame: a hidden parent stops the OnUpdate for free,
+    -- and the OnHide hook below drops the stale target so a re-show does not
+    -- resume an old animation.
+    local driver = CreateFrame("Frame", nil, scrollFrame)
+    driver:Hide()
+    driver:SetScript("OnUpdate", function(_, elapsed) ctl:Tick(elapsed) end)
+    ctl.driver = driver
+
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(_, delta) ctl:OnWheel(delta) end)
+    scrollFrame:HookScript("OnHide", function() ctl:Cancel() end)
+    scrollFrame:HookScript("OnScrollRangeChanged", function() ctl:Refresh() end)
+
+    smoothScrollState[scrollFrame] = ctl
+    return ctl
+end
+
+local function EnsureScrollBarAccentHook()
+    if scrollBarAccentHooked then return end
+    local gui = QUI and QUI.GUI
+    if not (gui and gui.OnAccentChanged) then return end
+    scrollBarAccentHooked = true
+    gui:OnAccentChanged(function()
+        for bar in pairs(scrollBarRegistry) do
+            bar:Retint()
+        end
+    end)
+end
+
+-- Thin scrollbar: 4 px track (scrollTrack), proportional thumb (scrollThumb,
+-- min 30 px), 16 px invisible hit button centred on the track for drag and
+-- click-to-jump (both cancel easing), hidden while content fits, no arrows.
+-- opts: parent (default scrollFrame), anchor (default scrollFrame), offsetX
+-- (track right edge vs anchor right edge), insetTop/insetBottom, width,
+-- hitWidth, minThumb, getRange (mirror the controller's), frameLevel.
+-- Attach AFTER the frame's own SetScript("OnSizeChanged"/"OnVerticalScroll").
+function UIKit.CreateScrollBar(scrollFrame, opts)
+    if not scrollFrame then return nil end
+    opts = opts or {}
+    local parent = opts.parent or scrollFrame
+    local anchor = opts.anchor or scrollFrame
+    local width = opts.width or 4
+    local hitWidth = opts.hitWidth or 16
+    local minThumb = opts.minThumb or 30
+    local offsetX = opts.offsetX or 0
+    local insetTop = opts.insetTop or 0
+    local insetBottom = opts.insetBottom or 0
+    local getRange = opts.getRange
+    local baseLevel = opts.frameLevel or (SafeNumber(parent:GetFrameLevel(), 0) + 5)
+
+    local track = CreateFrame("Frame", nil, parent)
+    track:SetWidth(width)
+    track:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", offsetX, -insetTop)
+    track:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", offsetX, insetBottom)
+    track:SetFrameLevel(baseLevel)
+    track:Hide()
+
+    local trackBg = track:CreateTexture(nil, "BACKGROUND")
+    trackBg:SetAllPoints()
+
+    local thumb = CreateFrame("Frame", nil, track)
+    thumb:SetWidth(width)
+    thumb:SetHeight(minThumb)
+    thumb:SetPoint("TOP", track, "TOP", 0, 0)
+    thumb:SetFrameLevel(baseLevel + 1)
+
+    local thumbTex = thumb:CreateTexture(nil, "ARTWORK")
+    thumbTex:SetAllPoints()
+
+    local hit = CreateFrame("Button", nil, parent)
+    hit:SetWidth(hitWidth)
+    local hitOffset = offsetX + (hitWidth - width) / 2
+    hit:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", hitOffset, -insetTop)
+    hit:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", hitOffset, insetBottom)
+    hit:SetFrameLevel(baseLevel + 2)
+    hit:EnableMouse(true)
+    -- Own the drag so a movable popup underneath does not StartMoving.
+    hit:RegisterForDrag("LeftButton")
+    hit:SetScript("OnDragStart", function() end)
+    hit:SetScript("OnDragStop", function() end)
+    hit:Hide()
+
+    local bar = {
+        scrollFrame = scrollFrame,
+        track = track,
+        thumb = thumb,
+        hit = hit,
+        trackTexture = trackBg,
+        thumbTexture = thumbTex,
+    }
+    local dragging = false
+    local dragStartY, dragStartScroll = 0, 0
+
+    local function Range()
+        return ReadScrollRange(scrollFrame, getRange)
+    end
+
+    function bar:Retint()
+        local C = QUI and QUI.GUI and QUI.GUI.Colors
+        local th = (C and C.scrollThumb) or DEFAULT_SCROLL_THUMB
+        local tr = (C and C.scrollTrack) or DEFAULT_SCROLL_TRACK
+        ApplyColorTexture(thumbTex, th[1], th[2], th[3], th[4] or DEFAULT_SCROLL_THUMB[4])
+        ApplyColorTexture(trackBg, tr[1], tr[2], tr[3], tr[4] or DEFAULT_SCROLL_TRACK[4])
+    end
+
+    function bar:IsDragging()
+        return dragging
+    end
+
+    -- Returns true when the bar is showing (content overflows).
+    function bar:Update()
+        local range = Range()
+        local visH = SafeNumber(scrollFrame:GetHeight(), 0)
+        if range <= 0 or visH <= 0 then
+            track:Hide()
+            hit:Hide()
+            return false
+        end
+        track:Show()
+        hit:Show()
+        local trackH = SafeNumber(track:GetHeight(), 0)
+        if trackH <= 0 then return true end
+        local px = ScrollPixelSize(track)
+        local thumbH = max(minThumb, trackH * visH / (visH + range))
+        if thumbH > trackH then thumbH = trackH end
+        thumbH = floor(thumbH / px + 0.5) * px
+        local ratio = ReadScrollOffset(scrollFrame) / range
+        if ratio < 0 then ratio = 0 elseif ratio > 1 then ratio = 1 end
+        local offset = floor(ratio * (trackH - thumbH) / px + 0.5) * px
+        thumb:SetHeight(thumbH)
+        thumb:ClearAllPoints()
+        thumb:SetPoint("TOP", track, "TOP", 0, -offset)
+        return true
+    end
+
+    local function CursorY()
+        local _, y = GetCursorPosition()
+        local scale = SafeNumber(track:GetEffectiveScale(), 1)
+        if scale <= 0 then scale = 1 end
+        return SafeNumber(y, 0) / scale
+    end
+
+    -- Direct write: cancels easing, snaps, clamps, refreshes the thumb.
+    local function WriteDirect(value)
+        local ctl = smoothScrollState[scrollFrame]
+        if ctl then
+            ctl:ScrollTo(value, true)
+        else
+            local range = Range()
+            if value > range then value = range end
+            if value < 0 then value = 0 end
+            scrollFrame:SetVerticalScroll(value)
+        end
+        bar:Update()
+    end
+
+    local function StopDrag()
+        if not dragging then return end
+        dragging = false
+        hit:SetScript("OnUpdate", nil)
+    end
+
+    local function DragTick()
+        if not IsMouseButtonDown("LeftButton") then
+            StopDrag()
+            return
+        end
+        local range = Range()
+        local travel = SafeNumber(track:GetHeight(), 0) - SafeNumber(thumb:GetHeight(), 0)
+        if range <= 0 or travel <= 0 then return end
+        local dy = dragStartY - CursorY()
+        WriteDirect(dragStartScroll + (dy / travel) * range)
+    end
+
+    local function StartDrag(fromScroll)
+        dragging = true
+        dragStartY = CursorY()
+        dragStartScroll = fromScroll
+        hit:SetScript("OnUpdate", DragTick)
+    end
+
+    hit:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" then return end
+        local range = Range()
+        if range <= 0 then return end
+        local ctl = smoothScrollState[scrollFrame]
+        if ctl then ctl:Cancel() end
+        local cy = CursorY()
+        local thumbTop = SafeNumber(thumb:GetTop(), nil)
+        local thumbBottom = SafeNumber(thumb:GetBottom(), nil)
+        if thumbTop and thumbBottom and cy <= thumbTop and cy >= thumbBottom then
+            StartDrag(ReadScrollOffset(scrollFrame))
+            return
+        end
+        -- Click-to-jump: centre the thumb under the cursor, then keep dragging.
+        local trackTop = SafeNumber(track:GetTop(), 0)
+        local trackH = SafeNumber(track:GetHeight(), 0)
+        local thumbH = SafeNumber(thumb:GetHeight(), 0)
+        local travel = trackH - thumbH
+        if travel <= 0 then return end
+        local frac = (trackTop - cy - thumbH / 2) / travel
+        if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+        WriteDirect(frac * range)
+        StartDrag(ReadScrollOffset(scrollFrame))
+    end)
+    hit:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then StopDrag() end
+    end)
+    hit:SetScript("OnHide", StopDrag)
+
+    local function Refresh() bar:Update() end
+    scrollFrame:HookScript("OnVerticalScroll", Refresh)
+    scrollFrame:HookScript("OnScrollRangeChanged", Refresh)
+    scrollFrame:HookScript("OnSizeChanged", Refresh)
+    scrollFrame:HookScript("OnShow", Refresh)
+
+    bar:Retint()
+    scrollBarRegistry[bar] = true
+    EnsureScrollBarAccentHook()
+    bar:Update()
+    return bar
+end
+
 function UIKit.DisablePixelSnap(obj)
     if not obj then return end
     if obj.SetSnapToPixelGrid then obj:SetSnapToPixelGrid(false) end
@@ -706,6 +1175,9 @@ function UIKit.CreateAccentCheckbox(parent, options)
     local checkbox = CreateFrame("Button", nil, parent)
     accentCheckboxState[checkbox] = { sizePixels = size }
     UIKit.SetSizePx(checkbox, size, size)
+    -- Disabled keeps its hit target (reason tooltip); clicks are swallowed
+    -- by the engine's disabled state, never by EnableMouse(false).
+    if checkbox.SetMotionScriptsWhileDisabled then checkbox:SetMotionScriptsWhileDisabled(true) end
 
     checkbox.bg = UIKit.CreateBackground(checkbox)
     UIKit.CreateBorderLines(checkbox)
@@ -718,7 +1190,12 @@ function UIKit.CreateAccentCheckbox(parent, options)
     checkbox.mark = mark
 
     local hovered = false
+    local enabled = true
+    local disabledReason = nil
     local function UpdateVisual()
+        -- Disabled mutes the CONTROL only (.30); the owning row handles its
+        -- label / description separately, never the whole row's alpha.
+        if checkbox.SetAlpha then checkbox:SetAlpha(enabled and 1 or 0.3) end
         if checked then
             checkbox.bg:SetVertexColor(accent[1], accent[2], accent[3], 1)
             if hovered then
@@ -766,7 +1243,28 @@ function UIKit.CreateAccentCheckbox(parent, options)
         UpdateVisual()
     end
 
+    local nativeEnable, nativeDisable = checkbox.Enable, checkbox.Disable
+    function checkbox:SetEnabled(val, reason)
+        enabled = val and true or false
+        disabledReason = (not enabled) and reason or nil
+        if enabled then
+            if nativeEnable then nativeEnable(self) end
+        else
+            if nativeDisable then nativeDisable(self) end
+        end
+        UpdateVisual()
+    end
+
+    function checkbox:GetDisabledReason()
+        if enabled then return nil end
+        local reason = disabledReason
+        if type(reason) == "function" then reason = reason(self) end
+        if type(reason) == "string" and reason ~= "" then return reason end
+        return nil
+    end
+
     checkbox:SetScript("OnClick", function(self)
+        if not enabled then return end
         self:Toggle()
     end)
     checkbox:SetScript("OnEnter", function(self)
@@ -774,6 +1272,29 @@ function UIKit.CreateAccentCheckbox(parent, options)
     end)
     checkbox:SetScript("OnLeave", function(self)
         self:SetHovered(false)
+    end)
+    -- Native Enable()/Disable() re-sync the state model.
+    checkbox:HookScript("OnEnable", function()
+        enabled = true
+        UpdateVisual()
+    end)
+    checkbox:HookScript("OnDisable", function()
+        enabled = false
+        UpdateVisual()
+    end)
+    local reasonShown = false
+    checkbox:HookScript("OnEnter", function(self)
+        if enabled then return end
+        local reason = self:GetDisabledReason()
+        if reason then
+            reasonShown = UIKit.ShowTooltipOption(self, reason, options) and true or false
+        end
+    end)
+    checkbox:HookScript("OnLeave", function(self)
+        if reasonShown then
+            reasonShown = false
+            UIKit.HideTooltipOption(self)
+        end
     end)
 
     checkbox:SetChecked(checked, true)
@@ -868,13 +1389,119 @@ local BUTTON_FALLBACK_COLORS = {
     textDim = { 1, 1, 1, 0.6 },
 }
 
+-- CreateButton state palette: GUI.Colors tokens when the theme is loaded,
+-- literal ladder otherwise (headless / theme-less callers).
+local BUTTON_STATE_FALLBACK = {
+    disabled = { 1, 1, 1, 0.30 },
+    disabledBg = { 1, 1, 1, 0.04 },
+}
+local BUTTON_DESTRUCTIVE_RGB = { 0.85, 0.30, 0.30, 1 }
+local function ButtonToken(key, fallback)
+    local C = _G.QUI and _G.QUI.GUI and _G.QUI.GUI.Colors
+    local c = C and C[key]
+    if type(c) == "table" and c[1] then return c end
+    return fallback
+end
+
+-- Live CreateButton instances (weak): one accent listener re-tints every
+-- primary / selected button instead of one listener per button (the options
+-- panel rebuilds its buttons on every refresh).
+local buttonStateRegistry = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
+local buttonAccentHooked = false
+local function EnsureButtonAccentHook()
+    if buttonAccentHooked then return end
+    local gui = _G.QUI and _G.QUI.GUI
+    if not (gui and gui.OnAccentChanged) then return end
+    buttonAccentHooked = true
+    gui:OnAccentChanged(function()
+        for button in pairs(buttonStateRegistry) do
+            if button.RefreshVisualState then button.RefreshVisualState() end
+        end
+    end)
+end
+
+-- Tooltip option shared by CreateButton / CreateCloseButton / CreateIconButton.
+-- `opts.tooltip` is a string, a { title = , text = } table, or a function
+-- `fn(tip, frame)` that returns a string and/or calls tip:AddLine/SetText.
+-- The options-owned fade service (QUI.GUI.Tooltip; QUI_Options is LoD so it
+-- may not exist yet) is used when the frame lives under the options panel or
+-- opts.serviceTooltip is set; otherwise GameTooltip (the function then
+-- receives GameTooltip as `tip`). opts.nativeTooltip forces GameTooltip.
+-- opts.legacyTooltipFn keeps the CreateIconButton contract `fn(frame)` that
+-- writes GameTooltip itself.
+local function ResolveTooltipService(frame, opts)
+    if opts.nativeTooltip then return nil end
+    local gui = QUI and QUI.GUI
+    local svc = gui and gui.Tooltip
+    if not svc or type(svc.Show) ~= "function" then return nil end
+    if opts.serviceTooltip then return svc end
+    if svc.IsPanelAnchor and svc:IsPanelAnchor(frame) then return svc end
+    return nil
+end
+
+function UIKit.ShowTooltipOption(frame, tooltip, opts)
+    opts = opts or {}
+    if tooltip == nil or not frame then return false end
+    local legacyFn = type(tooltip) == "function" and opts.legacyTooltipFn
+    local svc = (not legacyFn) and ResolveTooltipService(frame, opts) or nil
+    if svc then
+        local title, body = opts.tooltipTitle, tooltip
+        if type(tooltip) == "table" then
+            title, body = tooltip.title or title, tooltip.text
+        end
+        return svc:Show(frame, body, { title = title, anchor = opts.tooltipAnchor })
+    end
+    if not GameTooltip then return false end
+    GameTooltip:SetOwner(frame, opts.tooltipAnchor or "ANCHOR_RIGHT")
+    if legacyFn then
+        tooltip(frame)
+    elseif type(tooltip) == "function" then
+        local text = tooltip(GameTooltip, frame)
+        if type(text) == "string" and text ~= "" then GameTooltip:AddLine(text, 1, 1, 1, true) end
+    elseif type(tooltip) == "table" then
+        if tooltip.title then
+            local ar, ag, ab = UIKit.GetAccentColor()
+            GameTooltip:SetText(tooltip.title, ar, ag, ab, 1)
+            if tooltip.text then GameTooltip:AddLine(tooltip.text, 1, 1, 1, true) end
+        elseif tooltip.text then
+            GameTooltip:SetText(tooltip.text, 1, 1, 1, 1, true)
+        end
+    else
+        GameTooltip:SetText(tostring(tooltip), 1, 1, 1, 1, true)
+    end
+    GameTooltip:Show()
+    return true
+end
+
+function UIKit.HideTooltipOption(frame)
+    local gui = QUI and QUI.GUI
+    local svc = gui and gui.Tooltip
+    if svc and type(svc.IsOwned) == "function" and svc:IsOwned(frame) then
+        svc:Hide(false, frame)
+        return
+    end
+    if GameTooltip and (not GameTooltip.IsOwned or GameTooltip:IsOwned(frame)) then
+        GameTooltip:Hide()
+    end
+end
+
+function UIKit.AttachTooltipOption(frame, opts)
+    if not frame or not opts or opts.tooltip == nil then return end
+    if type(frame.HookScript) ~= "function" then return end
+    frame:HookScript("OnEnter", function(self)
+        UIKit.ShowTooltipOption(self, opts.tooltip, opts)
+    end)
+    frame:HookScript("OnLeave", function(self)
+        UIKit.HideTooltipOption(self)
+    end)
+end
+
 function UIKit.CreateButton(parent, opts)
     opts = opts or {}
     local gui = QUI and QUI.GUI
     local C = (gui and gui.Colors) or BUTTON_FALLBACK_COLORS
     local override = opts.colors
     local textColor = (override and override.text) or C.text or BUTTON_FALLBACK_COLORS.text
-    local textDim = (override and override.textDim) or C.textDim or BUTTON_FALLBACK_COLORS.textDim
     local function accentRGB()
         local a = override and override.accent
         if type(a) == "function" then
@@ -886,13 +1513,15 @@ function UIKit.CreateButton(parent, opts)
         end
         return UIKit.GetAccentColor()
     end
-    local variant = opts.variant or "ghost"
-
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(opts.width or 120, opts.height or 22)
+    -- Disabled keeps its hit target: OnEnter/OnLeave still fire (reason
+    -- tooltip) while the engine swallows OnClick.
+    if button.SetMotionScriptsWhileDisabled then button:SetMotionScriptsWhileDisabled(true) end
 
     UIKit.CreateBorderLines(button)
 
+    -- State fill (hover wash / pressed / disabledBg / selectedWash).
     local hoverBg = button:CreateTexture(nil, "BACKGROUND")
     hoverBg:SetAllPoints(button)
     hoverBg:SetColorTexture(1, 1, 1, 0.06)
@@ -904,17 +1533,84 @@ function UIKit.CreateButton(parent, opts)
     btnText:SetText(opts.text or "Button")
     button.text = btnText
 
-    local function ApplyButtonVariant(btn, variantName)
-        if variantName == "primary" then
-            local ar, ag, ab = accentRGB()
-            UIKit.UpdateBorderLines(btn, 1, ar, ag, ab, 0.5)
-            if btn.text then btn.text:SetTextColor(ar, ag, ab, 1) end
-        else
-            UIKit.UpdateBorderLines(btn, 1, 1, 1, 1, 0.2)
-            if btn.text then btn.text:SetTextColor(textDim[1], textDim[2], textDim[3], 1) end
+    -- Visual state model: scripts only mutate `state`, RefreshVisualState is
+    -- the single place that maps state -> border / fill / text. Palette:
+    -- white text by alpha (idle .85, hover/pressed/selected 1, disabled
+    -- `disabled` .30); ghost fill white .06 hover (+.04 pressed); primary
+    -- accent border + accent fill; destructive same shape in red; selected
+    -- `selectedWash` fill + accent border; disabled `disabledBg` fill and
+    -- border alpha halved.
+    local state = {
+        enabled = true,
+        hovered = false,
+        pressed = false,
+        selected = false,
+        variant = opts.variant or "ghost",
+        reason = nil,
+        borderOverride = nil,
+    }
+    button.state = state
+
+    local function VariantRGB(variantName)
+        if variantName == "destructive" then
+            local d = ButtonToken("destructive", BUTTON_DESTRUCTIVE_RGB)
+            return d[1], d[2], d[3]
         end
+        return accentRGB()
     end
-    ApplyButtonVariant(button, variant)
+
+    local function RefreshVisualState()
+        local s = state
+        local variant = s.variant
+        local border, fill, text
+        if not s.enabled then
+            text = ButtonToken("disabled", BUTTON_STATE_FALLBACK.disabled)
+            fill = ButtonToken("disabledBg", BUTTON_STATE_FALLBACK.disabledBg)
+            if variant == "primary" or variant == "destructive" then
+                local r, g, b = VariantRGB(variant)
+                border = { r, g, b, 0.25 }
+            elseif s.borderOverride then
+                local o = s.borderOverride
+                border = { o[1], o[2], o[3], (o[4] or 1) * 0.5 }
+            else
+                border = { 1, 1, 1, 0.10 }
+            end
+        elseif variant == "primary" or variant == "destructive" then
+            local r, g, b = VariantRGB(variant)
+            border = { r, g, b, (s.hovered or s.selected) and 1 or 0.5 }
+            local fa = s.hovered and 0.20 or 0.12
+            if s.pressed then fa = fa + 0.04 end
+            fill = { r, g, b, fa }
+            text = { textColor[1], textColor[2], textColor[3], 1 }
+        elseif s.selected then
+            local ar, ag, ab = accentRGB()
+            local wash = ButtonToken("selectedWash", nil)
+            fill = { ar, ag, ab, (wash and wash[4]) or 0.10 }
+            if s.pressed then fill[4] = fill[4] + 0.04 end
+            border = { ar, ag, ab, s.hovered and 1 or 0.8 }
+            text = { textColor[1], textColor[2], textColor[3], 1 }
+        else
+            text = { textColor[1], textColor[2], textColor[3], s.hovered and 1 or 0.85 }
+            local fa = s.hovered and 0.06 or 0
+            if s.pressed then fa = fa + 0.04 end
+            fill = { 1, 1, 1, fa }
+            border = s.borderOverride or { 1, 1, 1, s.hovered and 0.35 or 0.2 }
+        end
+
+        UIKit.UpdateBorderLines(button, 1, border[1], border[2], border[3], border[4] or 1, false)
+        hoverBg:SetAlpha(1)
+        if (fill[4] or 0) > 0 then
+            hoverBg:SetColorTexture(fill[1], fill[2], fill[3], fill[4])
+            hoverBg:Show()
+        else
+            hoverBg:Hide()
+        end
+        btnText:SetTextColor(text[1], text[2], text[3], text[4] or 1)
+        btnText:SetPoint("CENTER", 0, (s.enabled and s.pressed) and -1 or 0)
+    end
+    button.RefreshVisualState = RefreshVisualState
+    buttonStateRegistry[button] = true
+    EnsureButtonAccentHook()
 
     local f, _, flags = button.text:GetFont()
     local fontPath = f
@@ -929,33 +1625,52 @@ function UIKit.CreateButton(parent, opts)
         button:SetWidth((button.text:GetStringWidth() or 0) + 24)
     end
 
-    button:SetScript("OnEnter", function(self)
-        if variant == "primary" then
-            local ar, ag, ab = accentRGB()
-            UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 1)
-            self._hoverBg:SetColorTexture(ar, ag, ab, 0.08)
-        else
-            if self.text then self.text:SetTextColor(textColor[1], textColor[2], textColor[3], 1) end
-            self._hoverBg:SetColorTexture(1, 1, 1, 0.06)
+    button:SetScript("OnEnter", function()
+        state.hovered = true
+        RefreshVisualState()
+    end)
+    button:SetScript("OnLeave", function()
+        state.hovered = false
+        state.pressed = false
+        RefreshVisualState()
+    end)
+    button:SetScript("OnMouseDown", function()
+        if state.enabled then state.pressed = true end
+        RefreshVisualState()
+    end)
+    button:SetScript("OnMouseUp", function()
+        state.pressed = false
+        RefreshVisualState()
+    end)
+    -- Native Enable()/Disable() (and anything else that flips the engine
+    -- state) re-syncs through the engine scripts.
+    button:HookScript("OnEnable", function()
+        state.enabled = true
+        RefreshVisualState()
+    end)
+    button:HookScript("OnDisable", function()
+        state.enabled = false
+        RefreshVisualState()
+    end)
+    button:HookScript("OnShow", RefreshVisualState)
+    UIKit.AttachTooltipOption(button, opts)
+
+    -- Disabled reason: shown on hover through the same tooltip routing as
+    -- opts.tooltip (GUI.Tooltip under the options panel, else GameTooltip).
+    -- Hooked after AttachTooltipOption so the reason wins while disabled.
+    local reasonShown = false
+    button:HookScript("OnEnter", function(self)
+        if state.enabled then return end
+        local reason = self:GetDisabledReason()
+        if reason then
+            reasonShown = UIKit.ShowTooltipOption(self, reason, opts) and true or false
         end
-        self._hoverBg:Show()
     end)
-    button:SetScript("OnLeave", function(self)
-        if variant == "primary" then
-            local ar, ag, ab = accentRGB()
-            UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 0.5)
-        else
-            if self.text then self.text:SetTextColor(textDim[1], textDim[2], textDim[3], 1) end
+    button:HookScript("OnLeave", function(self)
+        if reasonShown then
+            reasonShown = false
+            UIKit.HideTooltipOption(self)
         end
-        self._hoverBg:Hide()
-    end)
-    button:SetScript("OnMouseDown", function(self)
-        if self.text then self.text:SetPoint("CENTER", 0, -1) end
-        self._hoverBg:SetAlpha(1.4)
-    end)
-    button:SetScript("OnMouseUp", function(self)
-        if self.text then self.text:SetPoint("CENTER", 0, 0) end
-        self._hoverBg:SetAlpha(1)
     end)
 
     if opts.onClick then
@@ -966,11 +1681,55 @@ function UIKit.CreateButton(parent, opts)
         btnText:SetText(newText)
     end
 
+    -- Ghost-only custom border (e.g. a danger tint); survives state refreshes
+    -- and is halved with the rest of the border when disabled.
     function button:SetBorderColor(r, g, b, a)
-        UIKit.UpdateBorderLines(self, 1, r, g, b, a or 1, false)
+        state.borderOverride = { r or 1, g or 1, b or 1, a or 1 }
+        RefreshVisualState()
     end
 
     button.SetFieldBorderColor = button.SetBorderColor
+
+    local nativeEnable, nativeDisable = button.Enable, button.Disable
+    function button:SetEnabled(enabled, reason)
+        enabled = enabled and true or false
+        state.reason = (not enabled) and reason or nil
+        state.enabled = enabled
+        if enabled then
+            if nativeEnable then nativeEnable(self) end
+        else
+            if nativeDisable then nativeDisable(self) end
+        end
+        RefreshVisualState()
+    end
+
+    function button:GetDisabledReason()
+        if state.enabled then return nil end
+        local reason = state.reason
+        if type(reason) == "function" then reason = reason(self) end
+        if type(reason) == "string" and reason ~= "" then return reason end
+        return nil
+    end
+
+    function button:SetSelected(selected)
+        state.selected = selected and true or false
+        RefreshVisualState()
+    end
+
+    function button:IsSelected()
+        return state.selected
+    end
+
+    function button:SetVariant(name)
+        state.variant = name or "ghost"
+        RefreshVisualState()
+    end
+
+    function button:GetVariant()
+        return state.variant
+    end
+
+    RefreshVisualState()
 
     return button
 end
@@ -1000,6 +1759,7 @@ function UIKit.CreateCloseButton(parent, opts)
 
     if opts.onClick then close:SetScript("OnClick", opts.onClick) end
     UIKit.SkinCloseButton(close, opts)
+    UIKit.AttachTooltipOption(close, opts)
 
     return close
 end
@@ -1036,12 +1796,16 @@ function UIKit.CreateIconButton(parent, opts)
         end
     end
 
+    -- Function tips keep the legacy `fn(self)` contract (they write GameTooltip
+    -- themselves); string/table tips ride the options tooltip service when the
+    -- button lives under the options panel (see UIKit.ShowTooltipOption).
+    local tooltipOpts = opts
+    if type(opts.tooltip) == "function" and opts.legacyTooltipFn == nil then
+        tooltipOpts = setmetatable({ legacyTooltipFn = true }, { __index = opts })
+    end
     local function showTooltip(self)
-        local tip = opts.tooltip
-        if not tip then return end
-        GameTooltip:SetOwner(self, opts.tooltipAnchor or "ANCHOR_RIGHT")
-        if type(tip) == "function" then tip(self) else GameTooltip:SetText(tip) end
-        GameTooltip:Show()
+        if opts.tooltip == nil then return end
+        UIKit.ShowTooltipOption(self, opts.tooltip, tooltipOpts)
     end
 
     btn:SetScript("OnEnter", function(self)
@@ -1051,7 +1815,7 @@ function UIKit.CreateIconButton(parent, opts)
     end)
     btn:SetScript("OnLeave", function(self)
         if brighten and self.icon then self.icon:SetVertexColor(idle, idle, idle, 1) end
-        GameTooltip:Hide()
+        if opts.tooltip ~= nil then UIKit.HideTooltipOption(self) end
         if opts.onLeave then opts.onLeave(self) end
     end)
     if brighten then
@@ -1090,6 +1854,13 @@ function UIKit.CreateTabButton(parent, opts)
         local c = (C and C[field]) or fallback
         return c[1], c[2], c[3]
     end
+    -- Tab text ladder (core/theme.lua): tabNormal .55 / tabHover .85 / tabSelectedText 1.
+    local function tabText(field, fallbackAlpha)
+        local C = (QUI and QUI.GUI and QUI.GUI.Colors) or nil
+        local c = C and C[field]
+        if c then return c[1], c[2], c[3], c[4] or 1 end
+        return 1, 1, 1, fallbackAlpha
+    end
 
     function btn:SetActive(active)
         self._active = active and true or false
@@ -1097,13 +1868,13 @@ function UIKit.CreateTabButton(parent, opts)
         if self._active then
             self:SetBackdropColor(ar * 0.15, ag * 0.15, ab * 0.15, 1)
             self:SetBackdropBorderColor(ar, ag, ab, 0.8)
-            self._label:SetTextColor(ar, ag, ab, 1)
+            self._label:SetTextColor(tabText("tabSelectedText", 1))
         else
             local br, bgc, bb = chrome("bg", { 0.1, 0.1, 0.1, 1 })
             local dr, dg, db = chrome("border", { 1, 1, 1, 0.1 })
             self:SetBackdropColor(br, bgc, bb, 1)
             self:SetBackdropBorderColor(dr, dg, db, 1)
-            self._label:SetTextColor(0.6, 0.6, 0.6, 1)
+            self._label:SetTextColor(tabText("tabNormal", 0.55))
         end
     end
 
@@ -1111,12 +1882,14 @@ function UIKit.CreateTabButton(parent, opts)
         if not self._active then
             local ar, ag, ab = UIKit.GetAccentColor()
             self:SetBackdropBorderColor(ar * 0.7, ag * 0.7, ab * 0.7, 1)
+            self._label:SetTextColor(tabText("tabHover", 0.85))
         end
     end)
     btn:SetScript("OnLeave", function(self)
         if not self._active then
             local dr, dg, db = chrome("border", { 1, 1, 1, 0.1 })
             self:SetBackdropBorderColor(dr, dg, db, 1)
+            self._label:SetTextColor(tabText("tabNormal", 0.55))
         end
     end)
     if opts.onClick then btn:SetScript("OnClick", opts.onClick) end
@@ -1410,6 +2183,24 @@ function SkinBase.GetSkinColors(moduleSettings, prefix)
     local sr, sg, sb, sa = Helpers.GetSkinBorderColor(moduleSettings, prefix)
     local bgr, bgg, bgb, bga = Helpers.GetSkinBgColorWithOverride(moduleSettings, prefix)
     return sr, sg, sb, sa, bgr, bgg, bgb, bga
+end
+
+-- The skin BORDER colour as a TEXT colour, luminance-floored. A custom black
+-- border or "hide skin borders" (alpha 0) turned every border-coloured label
+-- black / invisible. Returns border RGB at alpha 1 only when the border is
+-- opaque enough (a >= 0.5) and bright enough (relative luminance >= 0.35);
+-- otherwise white. Always returns alpha 1: text never inherits border alpha.
+local TEXT_ACCENT_MIN_ALPHA = 0.5
+local TEXT_ACCENT_MIN_LUMINANCE = 0.35
+function SkinBase.GetSkinTextAccent(moduleSettings, prefix)
+    local r, g, b, a = Helpers.GetSkinBorderColor(moduleSettings, prefix)
+    r, g, b = tonumber(r) or 1, tonumber(g) or 1, tonumber(b) or 1
+    a = tonumber(a) or 1
+    local luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    if a >= TEXT_ACCENT_MIN_ALPHA and luminance >= TEXT_ACCENT_MIN_LUMINANCE then
+        return r, g, b, 1
+    end
+    return 1, 1, 1, 1
 end
 
 function SkinBase.GetSkinBarColor(moduleSettings, prefix)
@@ -2046,7 +2837,15 @@ local PANEL_TAB_TEXTURES = {
 }
 
 local NORMAL_TEXT_COLOR = { 1, 1, 1, 1 }
-local DISABLED_TEXT_COLOR = { 0.5, 0.5, 0.5, 1 }
+-- Disabled label colour: the `disabled` palette rung (white .30) when the
+-- theme is loaded, else the legacy grey so skinning stays independent of it.
+local DISABLED_TEXT_COLOR_FALLBACK = { 0.5, 0.5, 0.5, 1 }
+local function DisabledTextColor()
+    local C = _G.QUI and _G.QUI.GUI and _G.QUI.GUI.Colors
+    local c = C and C.disabled
+    if type(c) == "table" and c[1] then return c end
+    return DISABLED_TEXT_COLOR_FALLBACK
+end
 local buttonFontObjects = {}
 local buttonFontObjCount = 0
 local function ColorKey(c)
@@ -2080,39 +2879,99 @@ local function GetButtonFontObject(size, color)
     return obj
 end
 
+local function IsGlobalFontGateOn()
+    local core = GetCore()
+    return (core and core.db and core.db.profile and core.db.profile.general
+        and core.db.profile.general.applyGlobalFontToBlizzard) and true or false
+end
+
+local function ButtonLabel(button)
+    return button.Text or (button.GetFontString and button:GetFontString())
+end
+
+-- UNGATED state colours: enabled -> color (white), disabled -> disabledColor
+-- (grey). This is the part of the button contract that must hold regardless
+-- of the `applyGlobalFontToBlizzard` typography preference — coupling the two
+-- left buttons in Blizzard's gold/dark-grey font objects on a dark QUI
+-- backdrop whenever the gate was off ("enabled button looks disabled").
+function SkinBase.ApplyButtonStateColors(button, color, disabledColor)
+    if not button then return end
+    local fs = ButtonLabel(button)
+    if not fs or not fs.SetTextColor then return end
+    local c
+    if button.IsEnabled and not button:IsEnabled() then
+        c = disabledColor or DisabledTextColor()
+    else
+        c = color or NORMAL_TEXT_COLOR
+    end
+    if type(c) ~= "table" then c = NORMAL_TEXT_COLOR end
+    fs:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+end
+
+-- GATED font face + font objects. Installs QUI font objects for the normal /
+-- highlight / disabled button states when the global-font preference is on.
+-- The disabled object never falls back to the normal colour: a button
+-- rendered through its DisabledFontObject must look disabled unless the
+-- caller says otherwise (tabs pass an explicit disabledColor).
+-- State colours are then applied ungated when a colour was requested.
 function SkinBase.ApplyButtonFontObjects(button, opts)
     if not button then return end
-    local core = GetCore()
-    if not (core and core.db and core.db.profile and core.db.profile.general
-            and core.db.profile.general.applyGlobalFontToBlizzard) then
-        return
-    end
     opts = opts or {}
-    local fs = button.Text or (button.GetFontString and button:GetFontString())
-    local size = opts.size
-    if not size and fs and fs.GetFont then
-        local _, s = fs:GetFont()
-        if type(s) == "number" and s > 0 then size = s end
-    end
-    local normalObj = GetButtonFontObject(size, opts.color)
-    if normalObj then
-        if button.SetNormalFontObject then button:SetNormalFontObject(normalObj) end
-        if button.SetHighlightFontObject then button:SetHighlightFontObject(normalObj) end
-        if button.SetDisabledFontObject then
-            local disObj = GetButtonFontObject(size, opts.disabledColor or opts.color)
-            button:SetDisabledFontObject(disObj or normalObj)
+    local fs = ButtonLabel(button)
+    if IsGlobalFontGateOn() then
+        local size = opts.size
+        if not size and fs and fs.GetFont then
+            local _, s = fs:GetFont()
+            if type(s) == "number" and s > 0 then size = s end
+        end
+        local normalObj = GetButtonFontObject(size, opts.color)
+        if normalObj then
+            if button.SetNormalFontObject then button:SetNormalFontObject(normalObj) end
+            if button.SetHighlightFontObject then
+                local hlObj = opts.highlightColor and GetButtonFontObject(size, opts.highlightColor)
+                button:SetHighlightFontObject(hlObj or normalObj)
+            end
+            if button.SetDisabledFontObject then
+                local disObj = GetButtonFontObject(size, opts.disabledColor or DisabledTextColor())
+                button:SetDisabledFontObject(disObj or normalObj)
+            end
+        end
+        if fs then
+            SkinBase.SkinFontString(fs, { fontOnly = true })
         end
     end
-    if fs then
-        SkinBase.SkinFontString(fs, type(opts.color) == "table" and { color = opts.color } or { fontOnly = true })
+    if opts.color or opts.disabledColor then
+        SkinBase.ApplyButtonStateColors(button, opts.color, opts.disabledColor)
     end
 end
 
 SkinBase.ApplyTabFontObjects = SkinBase.ApplyButtonFontObjects
 
-local function ReapplyTabFont(tab)
+-- Tab palette (white text, states by alpha). Sourced from GUI.Colors when the
+-- options theme is loaded so both surfaces share one ladder; literal fallback
+-- keeps skinning independent of the LOD options addon.
+local TAB_TEXT_FALLBACK = {
+    tabSelectedText = { 1, 1, 1, 1 },
+    tabNormal = { 1, 1, 1, 0.55 },
+    tabHover = { 1, 1, 1, 0.85 },
+    disabled = { 1, 1, 1, 0.30 },
+}
+local function TabTextColor(key)
+    local C = _G.QUI and _G.QUI.GUI and _G.QUI.GUI.Colors
+    local c = C and C[key]
+    if type(c) == "table" and c[1] then return c end
+    return TAB_TEXT_FALLBACK[key]
+end
+-- "destructive" variant tint (SkinButton / SkinCategoryButton / SkinTabGroup).
+local SKIN_DESTRUCTIVE_RGB = { 0.85, 0.30, 0.30 }
+
+-- `fontOpts` carries the state colour so the installed font OBJECTS agree with
+-- the label: PanelTemplates renders the SELECTED tab through its
+-- DisabledFontObject (tab:Disable()), so a grey disabled object would greyed
+-- out exactly the active tab.
+local function ReapplyTabFont(tab, fontOpts)
     if not SkinBase.GetFrameData(tab, "skinTabFont") then return end
-    SkinBase.ApplyTabFontObjects(tab)
+    SkinBase.ApplyTabFontObjects(tab, fontOpts)
     if SkinBase.GetFrameData(tab, "skinTabResizeToText") and tab.OnShow then
         tab:OnShow()
     elseif tab.UpdateTabWidth then
@@ -2179,8 +3038,10 @@ function SkinBase.SkinTabButton(tab, opts)
     SkinBase.MarkStyled(tab)
 end
 
+-- Selection signals are evaluated FIRST; `isDisabled` only demotes a tab that
+-- no signal claims. PanelTemplates disables the selected tab, so checking the
+-- disabled flag first greyed out the active tab of every skinned window.
 local function IsTabSelected(tab, owner)
-    if tab.isDisabled then return false end
     if tab.IsSelected and tab:IsSelected() then return true end
     if tab.isSelected then return true end
     if owner then
@@ -2200,15 +3061,44 @@ local function IsTabSelected(tab, owner)
     return false
 end
 
+-- 1-physical-px accent underline along the bottom edge of the tab, shown only
+-- while selected. Anchored inside the backdrop border; pixel-snapped through
+-- SetPixelPoint (scale-refresh registered) and Pixels().
+local function EnsureTabUnderline(tab, bd)
+    local underline = SkinBase.GetFrameData(tab, "tabUnderline")
+    if underline then return underline end
+    if not tab.CreateTexture then return nil end
+    underline = tab:CreateTexture(nil, "OVERLAY")
+    SkinBase.SetPixelPoint(underline, "BOTTOMLEFT", bd, "BOTTOMLEFT", 1, 1)
+    SkinBase.SetPixelPoint(underline, "BOTTOMRIGHT", bd, "BOTTOMRIGHT", -1, 1)
+    SkinBase.SetFrameData(tab, "tabUnderline", underline)
+    return underline
+end
+
+local function TabAccentColor(sc)
+    local ar, ag, ab
+    if Helpers.GetSkinAccentColor then ar, ag, ab = Helpers.GetSkinAccentColor() end
+    if type(ar) ~= "number" then ar, ag, ab = sc[1], sc[2], sc[3] end
+    return ar or 1, ag or 1, ab or 1
+end
+
 function SkinBase.RefreshTabSelected(tab, owner)
-    ReapplyTabFont(tab)
+    local selected = IsTabSelected(tab, owner)
+    local textColor
+    if selected then
+        textColor = SkinBase.GetFrameData(tab, "tabSelectedTextColor") or TabTextColor("tabSelectedText")
+    elseif tab.isDisabled or (tab.IsEnabled and not tab:IsEnabled()) then
+        textColor = SkinBase.GetFrameData(tab, "tabDisabledTextColor") or TabTextColor("disabled")
+    else
+        textColor = TabTextColor("tabNormal")
+    end
+    ReapplyTabFont(tab, { color = textColor, disabledColor = textColor, highlightColor = TabTextColor("tabHover") })
 
     local bd = SkinBase.GetBackdrop(tab)
     local sc = SkinBase.GetFrameData(tab, "skinColor")
     local bg = SkinBase.GetFrameData(tab, "bgColor")
     if not bd or not sc or not bg then return end
 
-    local selected = IsTabSelected(tab, owner)
     local borderColor, bgColor
     if selected then
         borderColor = { sc[1], sc[2], sc[3], sc[4] }
@@ -2222,11 +3112,22 @@ function SkinBase.RefreshTabSelected(tab, owner)
     if SkinBase.GetFrameData(tab, "skinTabFont") then
         local tabText = tab.Text or (tab.GetFontString and tab:GetFontString())
         if tabText and tabText.SetTextColor then
-            if selected then
-                tabText:SetTextColor(0.9, 0.9, 0.9, 1)
-            else
-                tabText:SetTextColor(0.55, 0.55, 0.55, 1)
+            tabText:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+        end
+    end
+
+    local underline = EnsureTabUnderline(tab, bd)
+    if underline then
+        if selected then
+            local ar, ag, ab = TabAccentColor(sc)
+            if SkinBase.GetFrameData(tab, "tabVariant") == "destructive" then
+                ar, ag, ab = SKIN_DESTRUCTIVE_RGB[1], SKIN_DESTRUCTIVE_RGB[2], SKIN_DESTRUCTIVE_RGB[3]
             end
+            underline:SetColorTexture(ar, ag, ab, 1)
+            underline:SetHeight(Pixels(1, tab))
+            underline:Show()
+        else
+            underline:Hide()
         end
     end
 end
@@ -2240,6 +3141,17 @@ local function TabHoverEnter(self)
             math.min(sc[2] * HOVER_BRIGHTEN, 1),
             math.min(sc[3] * HOVER_BRIGHTEN, 1),
             sc[4])
+    end
+    -- Hover rung (white .85) for unselected, enabled tabs only; the selected
+    -- tab stays at 1.0 and a disabled tab keeps its .30.
+    if SkinBase.GetFrameData(self, "skinTabFont")
+        and not IsTabSelected(self, SkinBase.GetFrameData(self, "skinTabOwner"))
+        and not self.isDisabled and not (self.IsEnabled and not self:IsEnabled()) then
+        local tabText = self.Text or (self.GetFontString and self:GetFontString())
+        local hover = TabTextColor("tabHover")
+        if tabText and tabText.SetTextColor then
+            tabText:SetTextColor(hover[1], hover[2], hover[3], hover[4] or 1)
+        end
     end
 end
 
@@ -2256,12 +3168,18 @@ local function RegisterOwnerTabRefresh(owner, refreshAll)
     end
     local tabSystem = owner.TabSystem
     if tabSystem and tabSystem.SetTab and not SkinBase.GetFrameData(tabSystem, "qTabSysHooked") then
-        hooksecurefunc(tabSystem, "SetTab", function()
+        local function deferredRefresh()
             C_Timer.After(0, function()
                 local fn = ownerTabRefreshers[owner]
                 if fn then fn() end
             end)
-        end)
+        end
+        hooksecurefunc(tabSystem, "SetTab", deferredRefresh)
+        -- TabSystemOwner:SetTab may bypass TabSystem:SetTab and call
+        -- SetTabVisuallySelected directly (TabSystemOwner.lua:100).
+        if tabSystem.SetTabVisuallySelected then
+            hooksecurefunc(tabSystem, "SetTabVisuallySelected", deferredRefresh)
+        end
         SkinBase.SetFrameData(tabSystem, "qTabSysHooked", true)
     end
 end
@@ -2270,6 +3188,11 @@ function SkinBase.SkinTab(tab, owner, opts)
     if not tab then return end
     opts = opts or {}
     SkinBase.SetFrameData(tab, "skinTabOwner", owner)
+    -- Runtime vocabulary (SkinTabGroup opts): selectedTextColor,
+    -- disabledTextColor, variant ("primary" | "destructive" underline).
+    if opts.selectedTextColor ~= nil then SkinBase.SetFrameData(tab, "tabSelectedTextColor", opts.selectedTextColor) end
+    if opts.disabledTextColor ~= nil then SkinBase.SetFrameData(tab, "tabDisabledTextColor", opts.disabledTextColor) end
+    if opts.variant ~= nil then SkinBase.SetFrameData(tab, "tabVariant", opts.variant) end
     SkinBase.SkinTabButton(tab, opts)
     if tab.SetTabSelected and not SkinBase.GetFrameData(tab, "qTabStateHooked") then
         hooksecurefunc(tab, "SetTabSelected", ReassertTabSkin)
@@ -2664,24 +3587,80 @@ local function SuppressButtonArt(button)
     if disabled then disabled:SetAlpha(0) end
 end
 
+-- Runtime skin vocabulary shared by SkinButton / SkinCategoryButton /
+-- SkinTabGroup: `variant` ("primary" -> accent border, "destructive" -> red
+-- border), `selectedTextColor`, `disabledTextColor`.
+local function SkinVariantRGB(variant, sc)
+    if variant == "destructive" then
+        return SKIN_DESTRUCTIVE_RGB[1], SKIN_DESTRUCTIVE_RGB[2], SKIN_DESTRUCTIVE_RGB[3]
+    elseif variant == "primary" then
+        return TabAccentColor(sc or { 1, 1, 1, 1 })
+    end
+    return nil
+end
+
+local function IsSkinButtonSelected(button)
+    local flag = SkinBase.GetFrameData(button, "skinSelected")
+    if flag ~= nil then return flag and true or false end
+    if button.IsSelected and button:IsSelected() then return true end
+    return button.isSelected and true or false
+end
+
+-- Variant border: re-tints the backdrop border and the stored `skinColor`
+-- (which the hover brighten reads) so the tint survives OnEnter/OnLeave.
+-- Applied on skin, on theme refresh and on SetButtonVariant — never from the
+-- per-hover refresh, which would undo the hover brighten.
+local function ApplyButtonVariantBorder(button)
+    local variant = SkinBase.GetFrameData(button, "skinVariant")
+    local bd = SkinBase.GetBackdrop(button)
+    local sc = SkinBase.GetFrameData(button, "skinColor")
+    if not variant or not bd or not sc then return end
+    local r, g, b = SkinVariantRGB(variant, sc)
+    if not r then return end
+    local color = { r, g, b, sc[4] or 1 }
+    SkinBase.SetFrameData(button, "skinColor", color)
+    SkinBase.SetBackdropColors(bd, color, nil)
+end
+
+function SkinBase.SetButtonVariant(button, variant)
+    if not button then return end
+    SkinBase.SetFrameData(button, "skinVariant", variant)
+    if not variant then
+        local sr, sg, sb, sa = SkinBase.GetSkinColors()
+        local bd = SkinBase.GetBackdrop(button)
+        SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
+        if bd then SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, nil) end
+        return
+    end
+    ApplyButtonVariantBorder(button)
+end
+
+function SkinBase.SetButtonSelected(button, selected)
+    if not button then return end
+    SkinBase.SetFrameData(button, "skinSelected", selected and true or false)
+    SkinBase.RefreshButtonVisualState(button)
+end
+
 function SkinBase.RefreshButtonVisualState(button)
     if not button then return end
     SuppressButtonArt(button)
 
     if not SkinBase.GetFrameData(button, "skinFont") then return end
 
-    local color = SkinBase.GetFrameData(button, "skinFontColor")
-    local disabledColor = SkinBase.GetFrameData(button, "skinFontDisabledColor") or DISABLED_TEXT_COLOR
-    SkinBase.ApplyButtonFontObjects(button, { color = color, disabledColor = disabledColor })
-
-    if button.IsEnabled and not button:IsEnabled() then
-        SetFontStringColor(GetLabelFontString(button), disabledColor)
-    else
-        SetFontStringColor(GetLabelFontString(button), color)
+    local color = SkinBase.GetFrameData(button, "skinFontColor") or NORMAL_TEXT_COLOR
+    if IsSkinButtonSelected(button) then
+        color = SkinBase.GetFrameData(button, "skinSelectedTextColor") or NORMAL_TEXT_COLOR
     end
+    local disabledColor = SkinBase.GetFrameData(button, "skinFontDisabledColor") or DisabledTextColor()
+    -- Font face/objects are gated on the typography preference inside
+    -- ApplyButtonFontObjects; the state colours below are always applied.
+    SkinBase.ApplyButtonFontObjects(button, { color = color, disabledColor = disabledColor })
+    SkinBase.ApplyButtonStateColors(button, color, disabledColor)
 end
 
-local BUTTON_STATE_SCRIPTS = { "OnShow", "OnEnable", "OnDisable", "OnMouseDown", "OnMouseUp" }
+-- OnEnter/OnLeave: the engine swaps to the Highlight font object on hover and
+-- back on leave, re-applying that object's colour; re-assert ours after both.
+local BUTTON_STATE_SCRIPTS = { "OnShow", "OnEnable", "OnDisable", "OnMouseDown", "OnMouseUp", "OnEnter", "OnLeave" }
 
 local function HookButtonVisualState(button)
     if not button or not button.HookScript or SkinBase.GetFrameData(button, "qButtonVisualStateHooked") then return end
@@ -2712,12 +3691,21 @@ function SkinBase.SkinButton(button, opts)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(button, "skinKind", "button")
     SkinBase.SetFrameData(button, "bgBoost", boost)
+    if opts.variant then
+        SkinBase.SetFrameData(button, "skinVariant", opts.variant)
+        ApplyButtonVariantBorder(button)
+    end
+    if opts.isSelected ~= nil then
+        SkinBase.SetFrameData(button, "skinSelected", opts.isSelected and true or false)
+    end
     if opts.font ~= false then
         local fontColor = opts.fontColor or NORMAL_TEXT_COLOR
+        local disabledColor = opts.disabledTextColor or opts.disabledFontColor or DisabledTextColor()
         SkinBase.SetFrameData(button, "skinFont", true)
         SkinBase.SetFrameData(button, "skinFontColor", fontColor)
-        SkinBase.SetFrameData(button, "skinFontDisabledColor", opts.disabledFontColor or DISABLED_TEXT_COLOR)
-        SkinBase.ApplyButtonFontObjects(button, { color = fontColor, disabledColor = opts.disabledFontColor or DISABLED_TEXT_COLOR })
+        SkinBase.SetFrameData(button, "skinSelectedTextColor", opts.selectedTextColor)
+        SkinBase.SetFrameData(button, "skinFontDisabledColor", disabledColor)
+        SkinBase.ApplyButtonFontObjects(button, { color = fontColor, disabledColor = disabledColor })
     end
     if opts.hover ~= false then AttachHover(button) end
     HookButtonVisualState(button)
@@ -2918,13 +3906,21 @@ function SkinBase.SkinTrimScrollBar(scrollBar, opts)
 
     local thumb = scrollBar.ThumbTexture or (scrollBar.GetThumbTexture and scrollBar:GetThumbTexture()) or scrollBar.Thumb
     if thumb then
-        local r, g, b
+        -- Thumb colour is the shared scrollThumb role (accent @ .6), never the
+        -- skin bar/border colour (invisible with dark or hidden borders).
+        local r, g, b, a
         if opts.color then
-            r, g, b = opts.color[1], opts.color[2], opts.color[3]
+            r, g, b, a = opts.color[1], opts.color[2], opts.color[3], opts.color[4]
         else
-            r, g, b = SkinBase.GetSkinBarColor()
+            local gui = QUI and QUI.GUI
+            local role = gui and gui.Colors and gui.Colors.scrollThumb
+            if role then
+                r, g, b, a = role[1], role[2], role[3], role[4]
+            else
+                r, g, b, a = 1, 1, 1, 0.27
+            end
         end
-        thumb:SetColorTexture(r or 0.5, g or 0.5, b or 0.5, opts.alpha or 0.78)
+        thumb:SetColorTexture(r or 1, g or 1, b or 1, opts.alpha or a or 0.6)
         UIKit.DisablePixelSnap(thumb)
         thumb:SetWidth((opts.width or 8) * SkinBase.GetPixelSize(scrollBar, 1))
     end
@@ -2935,19 +3931,67 @@ function SkinBase.SkinTrimScrollBar(scrollBar, opts)
     if downBtn then downBtn:SetAlpha(0); downBtn:SetSize(1, 1) end
 end
 
+-- Category selection resolver. SelectedTexture visibility alone missed
+-- lists that track selection on the button (isSelected / selected /
+-- IsSelected()), on the owning list (selectedID / GetSelected()), or that
+-- only the caller can decide (opts.isSelected callback).
+local function CategoryButtonID(button)
+    if button.categoryID ~= nil then return button.categoryID end
+    if button.id ~= nil then return button.id end
+    if button.GetID then return button:GetID() end
+    return nil
+end
+
+local function IsCategorySelected(button)
+    local probe = SkinBase.GetFrameData(button, "categoryIsSelected")
+    if type(probe) == "function" then
+        local result = probe(button)
+        if result ~= nil then return result and true or false end
+    end
+    if type(button.IsSelected) == "function" and button:IsSelected() then return true end
+    if button.isSelected or button.selected then return true end
+    if button.SelectedTexture and button.SelectedTexture.IsShown and button.SelectedTexture:IsShown() then
+        return true
+    end
+    local owner = SkinBase.GetFrameData(button, "categoryOwner")
+        or (button.GetParent and button:GetParent())
+    if type(owner) == "table" then
+        if type(owner.GetSelected) == "function" then
+            local sel = owner:GetSelected()
+            if sel ~= nil then
+                if sel == button then return true end
+                local id = CategoryButtonID(button)
+                if id ~= nil and sel == id then return true end
+            end
+        end
+        if owner.selectedID ~= nil then
+            local id = CategoryButtonID(button)
+            if id ~= nil and owner.selectedID == id then return true end
+        end
+    end
+    return false
+end
+
 function SkinBase.RefreshCategorySelected(button)
     local bd = SkinBase.GetBackdrop(button)
     local sc = SkinBase.GetFrameData(button, "skinColor")
     if not bd or not sc then return end
-    local selected = button.SelectedTexture and button.SelectedTexture:IsShown()
+    local selected = IsCategorySelected(button)
     local label = button.Label or GetLabelFontString(button)
     local data = pixelBackdropData[bd]
     if data then data.borderColor, data.bgColor = nil, nil end
     local r, g, b, a = SkinBase.GetDepthColor("ROW")
     if selected then
-        bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
+        local vr, vg, vb = SkinVariantRGB(SkinBase.GetFrameData(button, "categoryVariant"), sc)
+        bd:SetBackdropBorderColor(vr or sc[1], vg or sc[2], vb or sc[3], sc[4])
         bd:SetBackdropColor(r, g, b, a)
-        SetFontStringColor(label, SkinBase.GetFrameData(button, "categorySelectedTextColor") or sc)
+        -- Border colour is not a text colour: luminance-floored accent.
+        local selectedText = SkinBase.GetFrameData(button, "categorySelectedTextColor")
+        if not selectedText then
+            local tr, tg, tb, ta = SkinBase.GetSkinTextAccent()
+            selectedText = { tr, tg, tb, ta }
+        end
+        SetFontStringColor(label, selectedText)
     else
         bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], (sc[4] or 1) * 0.5)
         bd:SetBackdropColor(r, g, b, 0.7)
@@ -2969,8 +4013,11 @@ function SkinBase.SkinCategoryButton(button, opts)
     SkinBase.SetFrameData(button, "skinKind", "category")
     SkinBase.SetFrameData(button, "categorySelectedTextColor", opts.selectedTextColor)
     SkinBase.SetFrameData(button, "categoryTextColor", opts.textColor)
+    SkinBase.SetFrameData(button, "categoryIsSelected", opts.isSelected)
+    SkinBase.SetFrameData(button, "categoryOwner", opts.owner)
+    SkinBase.SetFrameData(button, "categoryVariant", opts.variant)
     if opts.font ~= false then
-        SkinBase.ApplyButtonFontObjects(button, { disabledColor = DISABLED_TEXT_COLOR })
+        SkinBase.ApplyButtonFontObjects(button, { disabledColor = opts.disabledTextColor or DisabledTextColor() })
     end
     SkinBase.RefreshCategorySelected(button)
     AttachHoverWithRestore(button, SkinBase.RefreshCategorySelected)
@@ -3068,6 +4115,8 @@ function SkinBase.RefreshWidget(frame)
         SkinBase.SetFrameData(frame, "skinColor", { sr, sg, sb, sa })
         if kind == "dropdown" then
             SkinBase.SetFrameData(frame, "bgColor", { bgr, bgg, bgb })
+        else
+            ApplyButtonVariantBorder(frame)
         end
     elseif kind == "editbox" then
         SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
@@ -3090,7 +4139,7 @@ function SkinBase.RefreshWidget(frame)
         if kind == "editbox" then
             SkinBase.SkinFontString(frame, { color = color })
         else
-            local disabledColor = SkinBase.GetFrameData(frame, "skinFontDisabledColor") or DISABLED_TEXT_COLOR
+            local disabledColor = SkinBase.GetFrameData(frame, "skinFontDisabledColor") or DisabledTextColor()
             SkinBase.ApplyButtonFontObjects(frame, { color = color, disabledColor = disabledColor })
         end
     end

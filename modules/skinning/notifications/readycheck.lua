@@ -289,7 +289,7 @@ local function SkinReadyCheckFrame()
         SkinBase.SetFrameData(frame, "title", title)
     end
     SkinBase.GetFrameData(frame, "title"):SetText(ns.L["Ready Check"])
-    SkinBase.GetFrameData(frame, "title"):SetTextColor(sr, sg, sb, 1)
+    SkinBase.GetFrameData(frame, "title"):SetTextColor(SkinBase.GetSkinTextAccent(settings, "readyCheck"))
 
     hooksecurefunc(frame, "Show", function(self)
         C_Timer.After(0, function()
@@ -314,7 +314,7 @@ local function RefreshReadyCheckColors()
 
     local title = SkinBase.GetFrameData(frame, "title")
     if title then
-        title:SetTextColor(sr, sg, sb, 1)
+        title:SetTextColor(SkinBase.GetSkinTextAccent(settings, "readyCheck"))
     end
 
     RefreshButtonColors(_G.ReadyCheckFrameYesButton, sr, sg, sb, bgr, bgg, bgb, bga)

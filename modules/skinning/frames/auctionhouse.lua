@@ -5,6 +5,7 @@ if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
 local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
 local AH_CATEGORY_TEXT_COLOR = { 0.72, 0.78, 0.85, 1 }
+local AH_CATEGORY_SELECTED_TEXT_COLOR = { 1, 1, 1, 1 }
 
 local function IsEnabled()
     local core = GetCore()
@@ -359,11 +360,19 @@ local function SkinCategoriesList()
     SkinBase.StripTextures(categoriesList)
     if categoriesList.NineSlice then categoriesList.NineSlice:Hide() end
 
+    -- Idle rows use the muted AH colour; the selected row must read as
+    -- selected (white), not be overwritten back to idle after every rebind.
+    -- Blizzard's AuctionHouseFilterButton_SetUp resets the normal font
+    -- object on each rebind, so the font FACE is reapplied (colour-free) and
+    -- RefreshCategorySelected owns the state colour.
     local function StyleCategoryRow(button)
-        SkinBase.SkinCategoryButton(button)
+        SkinBase.SkinCategoryButton(button, {
+            textColor = AH_CATEGORY_TEXT_COLOR,
+            selectedTextColor = AH_CATEGORY_SELECTED_TEXT_COLOR,
+        })
         SuppressCategoryTextures(button)
+        SkinBase.ApplyButtonFontObjects(button)
         SkinBase.RefreshCategorySelected(button)
-        SkinBase.ApplyButtonFontObjects(button, { color = AH_CATEGORY_TEXT_COLOR })
     end
     local function RefreshCategoryButtons(self)
         SkinBase.ForEachScrollBoxFrame(self, StyleCategoryRow)

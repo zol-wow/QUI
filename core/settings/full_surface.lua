@@ -15,6 +15,19 @@ local function ResolveCurrentThemeAccent()
     return 0.2, 0.83, 0.6
 end
 
+-- Palette role lookup with a literal fallback for harnesses that never load
+-- core/theme.lua. Returns r, g, b, a.
+local function ThemeRole(name, fallback)
+    local gui = _G.QUI and _G.QUI.GUI
+    local role = gui and gui.Colors and gui.Colors[name] or fallback
+    return role[1] or 1, role[2] or 1, role[3] or 1, role[4] or 1
+end
+
+local TAB_NORMAL_FALLBACK = { 1, 1, 1, 0.55 }
+local TAB_HOVER_FALLBACK = { 1, 1, 1, 0.85 }
+local TAB_SELECTED_TEXT_FALLBACK = { 1, 1, 1, 1 }
+local STRIP_RULE_FALLBACK = { 1, 1, 1, 0.1 }
+
 local function ResolveAccent(options)
     local accent = type(options) == "table" and options.accent or nil
     if type(accent) == "function" then
@@ -932,7 +945,7 @@ function FullSurface.CreateTabStrip(parent, options)
     underline:SetPoint("BOTTOMLEFT", 0, 0)
     underline:SetPoint("BOTTOMRIGHT", 0, 0)
     underline:SetHeight(1)
-    underline:SetColorTexture(0.22, 0.22, 0.22, 1)
+    underline:SetColorTexture(ThemeRole("borderStrong", STRIP_RULE_FALLBACK))
 
     local buttons = {}
 
@@ -960,6 +973,17 @@ function FullSurface.CreateTabStrip(parent, options)
         activeBar:Hide()
         button._activeBar = activeBar
 
+        button:SetScript("OnEnter", function(self)
+            if not self._tabActive then
+                self._label:SetTextColor(ThemeRole("tabHover", TAB_HOVER_FALLBACK))
+            end
+        end)
+        button:SetScript("OnLeave", function(self)
+            if not self._tabActive then
+                self._label:SetTextColor(ThemeRole("tabNormal", TAB_NORMAL_FALLBACK))
+            end
+        end)
+
         buttons[index] = button
         return button
     end
@@ -976,11 +1000,13 @@ function FullSurface.CreateTabStrip(parent, options)
 
         if button._tabKey == activeKey then
             local accentR, accentG, accentB = ResolveAccent(options)
+            button._tabActive = true
             button._activeBar:SetColorTexture(accentR, accentG, accentB, 1)
-            button._label:SetTextColor(1, 1, 1, 1)
+            button._label:SetTextColor(ThemeRole("tabSelectedText", TAB_SELECTED_TEXT_FALLBACK))
             button._activeBar:Show()
         else
-            button._label:SetTextColor(0.6, 0.6, 0.6, 1)
+            button._tabActive = false
+            button._label:SetTextColor(ThemeRole("tabNormal", TAB_NORMAL_FALLBACK))
             button._activeBar:Hide()
         end
 

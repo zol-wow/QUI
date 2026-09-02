@@ -158,6 +158,7 @@ local function should_load_script(path)
     end
 
     if path == "core/utils.lua"
+        or path == "core/theme.lua"
         or path == "core/infobar_shared.lua"
         or path == "core/settings_layout_shared.lua"
         or path == "core/border_registry.lua"
@@ -886,41 +887,9 @@ _G.QUI = {
             },
         },
     },
-    GUI = {
-        Colors = {
-            bg = { 0.051, 0.067, 0.09, 0.97 },
-            bgLight = { 0.094, 0.11, 0.14, 1 },
-            bgDark = { 0.03, 0.04, 0.06, 1 },
-            bgContent = { 1, 1, 1, 0.02 },
-            bgSidebar = { 0, 0, 0, 0.25 },
-            bgFooter = { 0, 0, 0, 0.15 },
-            accent = { 0.204, 0.827, 0.6, 1 },
-            accentLight = { 0.431, 0.906, 0.718, 1 },
-            accentDark = { 0.1, 0.5, 0.35, 1 },
-            accentHover = { 0.3, 0.9, 0.65, 1 },
-            accentFaint = { 0.204, 0.827, 0.6, 0.07 },
-            accentGlow = { 0.204, 0.827, 0.6, 0.06 },
-            tabSelected = { 0.204, 0.827, 0.6, 1 },
-            tabSelectedText = { 1, 1, 1, 1 },
-            tabNormal = { 1, 1, 1, 0.55 },
-            tabHover = { 1, 1, 1, 0.85 },
-            text = { 1, 1, 1, 1 },
-            textBright = { 1, 1, 1, 1 },
-            textMuted = { 1, 1, 1, 0.45 },
-            textDim = { 1, 1, 1, 0.6 },
-            sectionLabel = { 1, 1, 1, 0.42 },
-            border = { 1, 1, 1, 0.06 },
-            borderStrong = { 1, 1, 1, 0.1 },
-            borderAccent = { 0.204, 0.827, 0.6, 1 },
-            sectionHeader = { 0.431, 0.906, 0.718, 1 },
-            sliderTrack = { 1, 1, 1, 0.12 },
-            sliderThumb = { 1, 1, 1, 1 },
-            sliderThumbBorder = { 0, 0, 0, 0.2 },
-            toggleOff = { 1, 1, 1, 0.12 },
-            toggleThumb = { 1, 1, 1, 1 },
-            warning = { 0.961, 0.620, 0.043, 1 },
-        },
-    },
+    -- Palette comes from core/theme.lua (loaded by should_load_script before
+    -- framework.lua); theme.lua fills QUI.GUI.Colors when it is absent.
+    GUI = {},
     QUICore = {
         db = {
             profile = profile_db,

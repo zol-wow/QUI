@@ -377,7 +377,7 @@ local function RenderUnavailableLabel(sectionHost, text)
     label:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", -10, -10)
     label:SetJustifyH("LEFT")
     label:SetText(text)
-    label:SetTextColor(0.6, 0.6, 0.6, 1)
+    label:SetTextColor(1, 1, 1, 0.6)
     return 60
 end
 
@@ -541,7 +541,7 @@ local function RenderInfoMessage(sectionHost, ctx, tabKey, text)
     label:SetJustifyH("LEFT")
     label:SetJustifyV("TOP")
     label:SetText(text)
-    label:SetTextColor(0.75, 0.75, 0.75, 1)
+    label:SetTextColor(1, 1, 1, 0.75)
 
     local height = label.GetStringHeight and label:GetStringHeight() or 0
     if type(height) ~= "number" or height <= 0 then

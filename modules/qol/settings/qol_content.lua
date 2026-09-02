@@ -112,12 +112,9 @@ local function BuildUIScale(L, db)
     for i, btn in ipairs(buttons) do
         local data = tooltipData[i]
         btn:HookScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:AddLine(data.title, 1, 1, 1)
-            GameTooltip:AddLine(data.desc, 0.8, 0.8, 0.8, true)
-            GameTooltip:Show()
+            GUI.Tooltip:Show(self, data.desc, { title = data.title, anchor = "TOP" })
         end)
-        btn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+        btn:HookScript("OnLeave", function(self) GUI.Tooltip:Hide(false, self) end)
     end
 
     local presetSummary = GUI:CreateLabel(presetBlock, ns.L["Hover any preset for details. 1440p+ is Quazii's personal setting."], 11, C.textMuted)

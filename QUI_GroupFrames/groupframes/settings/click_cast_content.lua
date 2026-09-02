@@ -672,7 +672,7 @@ local function EnsureBrowsePopup()
     browseSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
     local SCROLLBAR_WIDTH = 4
-    local SCROLL_STEP = 24
+    local SCROLL_STEP = 45
 
     local browseScroll = CreateFrame("ScrollFrame", nil, browsePopup)
     browseScroll:SetPoint("TOPLEFT", 8, -58)
@@ -683,53 +683,33 @@ local function EnsureBrowsePopup()
     browseScrollChild:SetHeight(1)
     browseScroll:SetScrollChild(browseScrollChild)
 
-    local browseScrollBar = CreateFrame("Frame", nil, browsePopup)
-    browseScrollBar:SetWidth(SCROLLBAR_WIDTH)
-    browseScrollBar:SetPoint("TOPRIGHT", browsePopup, "TOPRIGHT", -8, -58)
-    browseScrollBar:SetPoint("BOTTOMRIGHT", browsePopup, "BOTTOMRIGHT", -8, 8)
-    browseScrollBar:Hide()
-
-    local browseThumb = browseScrollBar:CreateTexture(nil, "OVERLAY")
-    browseThumb:SetWidth(SCROLLBAR_WIDTH)
-    browseThumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
-
-    local function UpdateBrowseThumb()
-        local contentH = browseScrollChild:GetHeight()
-        local frameH = browseScroll:GetHeight()
-        if contentH <= frameH or frameH <= 0 then
-            browseScrollBar:Hide()
-            return
-        end
-        browseScrollBar:Show()
-        local trackH = browseScrollBar:GetHeight()
-        if trackH <= 0 then return end
-        local thumbH = math.max(20, (frameH / contentH) * trackH)
-        browseThumb:SetHeight(thumbH)
-        local scrollMax = contentH - frameH
-        local okScroll, scrollCur = pcall(browseScroll.GetVerticalScroll, browseScroll)
-        scrollCur = (okScroll and scrollCur) or 0
-        local ratio = (scrollMax > 0) and (scrollCur / scrollMax) or 0
-        local yOff = -ratio * (trackH - thumbH)
-        browseThumb:ClearAllPoints()
-        browseThumb:SetPoint("TOP", browseScrollBar, "TOP", 0, yOff)
+    -- Rows are laid out synchronously into browseScrollChild; measure overflow
+    -- from it rather than the native range, which lags a layout pass behind.
+    local function BrowseRange()
+        return math.max(0, (browseScrollChild:GetHeight() or 0) - (browseScroll:GetHeight() or 0))
     end
-
-    browseScroll:EnableMouseWheel(true)
-    browseScroll:SetScript("OnMouseWheel", function(self, delta)
-        local okCur, currentScroll = pcall(self.GetVerticalScroll, self)
-        if not okCur then return end
-        local contentH = browseScrollChild:GetHeight()
-        local frameH = self:GetHeight()
-        local maxScroll = math.max(0, contentH - frameH)
-        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
-        self:SetVerticalScroll(newScroll)
-        UpdateBrowseThumb()
-    end)
-    browseScroll:SetScript("OnScrollRangeChanged", function() UpdateBrowseThumb() end)
 
     browseScroll:SetScript("OnSizeChanged", function(self, w)
         browseScrollChild:SetWidth(w or 296)
     end)
+
+    local uikit = ns.UIKit or UIKit
+    local browseScrollBar = uikit.CreateScrollBar(browseScroll, {
+        parent = browsePopup,
+        anchor = browsePopup,
+        offsetX = -8,
+        insetTop = 58,
+        insetBottom = 8,
+        width = SCROLLBAR_WIDTH,
+        getRange = BrowseRange,
+    })
+    local browseScrollCtl = uikit.AttachSmoothScroll(browseScroll, {
+        step = SCROLL_STEP,
+        getRange = BrowseRange,
+    })
+    local function UpdateBrowseThumb()
+        browseScrollBar:Update()
+    end
 
     local BROWSE_ROW_H = 24
     local browseRows = {}
@@ -847,7 +827,7 @@ local function EnsureBrowsePopup()
         end
 
         browseScrollChild:SetHeight(math.max(1, math.abs(by)))
-        browseScroll:SetVerticalScroll(0)
+        browseScrollCtl:ScrollTo(0, true)
         C_Timer.After(0, UpdateBrowseThumb)
     end
 

@@ -136,7 +136,7 @@ local DEBUFF_BLACKLIST_PRESETS = {
 }
 
 local BROWSE_ROW_H = 24
-local BROWSE_SCROLL_STEP = 24
+local BROWSE_SCROLL_STEP = 45
 
 local browse = {
     popup = nil,
@@ -268,50 +268,30 @@ local function EnsureBrowsePopup()
     scroll:SetScrollChild(scrollChild)
     popup._scrollChild = scrollChild
 
-    local scrollBar = CreateFrame("Frame", nil, popup)
-    scrollBar:SetWidth(SCROLLBAR_WIDTH)
-    scrollBar:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -8, -58)
-    scrollBar:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -8, 8)
-    scrollBar:Hide()
-
-    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
-    thumb:SetWidth(SCROLLBAR_WIDTH)
-    thumb:SetColorTexture(accent[1], accent[2], accent[3], 0.5)
-
-    local function UpdateThumb()
-        local contentH = scrollChild:GetHeight()
-        local frameH = scroll:GetHeight()
-        if contentH <= frameH or frameH <= 0 then
-            scrollBar:Hide()
-            return
-        end
-        scrollBar:Show()
-        local trackH = scrollBar:GetHeight()
-        if trackH <= 0 then return end
-        local thumbH = math.max(20, (frameH / contentH) * trackH)
-        thumb:SetHeight(thumbH)
-        local scrollMax = contentH - frameH
-        local okScroll, scrollCur = pcall(scroll.GetVerticalScroll, scroll)
-        scrollCur = (okScroll and scrollCur) or 0
-        local ratio = (scrollMax > 0) and (scrollCur / scrollMax) or 0
-        thumb:ClearAllPoints()
-        thumb:SetPoint("TOP", scrollBar, "TOP", 0, -ratio * (trackH - thumbH))
+    -- Rows are laid out synchronously into scrollChild; measure overflow from
+    -- it rather than the native range, which lags a layout pass behind.
+    local function BrowseRange()
+        return math.max(0, (scrollChild:GetHeight() or 0) - (scroll:GetHeight() or 0))
     end
-    popup._updateThumb = UpdateThumb
 
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local okCur, currentScroll = pcall(self.GetVerticalScroll, self)
-        if not okCur then return end
-        local maxScroll = math.max(0, scrollChild:GetHeight() - self:GetHeight())
-        self:SetVerticalScroll(
-            math.max(0, math.min(currentScroll - (delta * BROWSE_SCROLL_STEP), maxScroll)))
-        UpdateThumb()
-    end)
-    scroll:SetScript("OnScrollRangeChanged", UpdateThumb)
     scroll:SetScript("OnSizeChanged", function(_, w)
         scrollChild:SetWidth(w or 296)
     end)
+
+    local scrollBar = ns.UIKit.CreateScrollBar(scroll, {
+        parent = popup,
+        anchor = popup,
+        offsetX = -8,
+        insetTop = 58,
+        insetBottom = 8,
+        width = SCROLLBAR_WIDTH,
+        getRange = BrowseRange,
+    })
+    popup._updateThumb = function() scrollBar:Update() end
+    popup._scrollCtl = ns.UIKit.AttachSmoothScroll(scroll, {
+        step = BROWSE_SCROLL_STEP,
+        getRange = BrowseRange,
+    })
 
     local empty = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     empty:SetPoint("TOPLEFT", 4, -4)
@@ -472,10 +452,8 @@ RebuildBrowseRows = function(filter)
     popup._empty:SetShown(spellIndex == 0)
     popup._scrollChild:SetHeight(math.max(1, math.abs(y)))
 
-    local scroll = popup._scroll
-    local okCur, cur = pcall(scroll.GetVerticalScroll, scroll)
-    local maxScroll = math.max(0, popup._scrollChild:GetHeight() - scroll:GetHeight())
-    scroll:SetVerticalScroll(math.min((okCur and cur) or 0, maxScroll))
+    -- Shorter result set: pull the offset (or in-flight target) back in range.
+    if popup._scrollCtl then popup._scrollCtl:Refresh() end
     if popup._updateThumb then
         C_Timer.After(0, popup._updateThumb)
     end
@@ -497,7 +475,11 @@ function SpellList.ToggleBrowsePopup(key, opts)
     popup._title:SetText((opts and opts.title) or ns.L["Browse Spells"])
     popup._search:SetText("")
     popup._placeholder:Show()
-    popup._scroll:SetVerticalScroll(0)
+    if popup._scrollCtl then
+        popup._scrollCtl:ScrollTo(0, true)
+    else
+        popup._scroll:SetVerticalScroll(0)
+    end
     RebuildBrowseRows(nil)
     popup:Show()
     popup:Raise()

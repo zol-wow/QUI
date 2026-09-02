@@ -766,7 +766,7 @@ local function AddSpellMapEditor(ctx, map, headerText, onMutate, browseCfg)
         local inputLabel = manualRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         inputLabel:SetPoint("LEFT", inputBox, "RIGHT", 4, 0)
         inputLabel:SetText(ns.L["Spell ID"])
-        inputLabel:SetTextColor(0.5, 0.5, 0.5)
+        inputLabel:SetTextColor(1, 1, 1, 0.6)
 
         local addManualButton = CreateFrame("Button", nil, manualRow, "BackdropTemplate")
         addManualButton:SetSize(40, 20)
@@ -2041,7 +2041,9 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
         row.delete = GUI:CreateButton(row, ns.L["Delete"], 56, 18)
         row.delete:SetPoint("RIGHT", row, "RIGHT", -6, 0)
 
-        row.badge = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        -- Live content: GameFontDisableSmall reads as "disabled"; white .55 body.
+        row.badge = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        row.badge:SetTextColor(1, 1, 1, 0.55)
         row.badge:SetJustifyH("RIGHT")
         row.badge:SetPoint("RIGHT", row.delete, "LEFT", -8, 0)
         row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
@@ -2091,15 +2093,15 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
             ctx.AddFilterStrip()
         end)
         addStripButton:HookScript("OnEnter", function(self)
-            if self._atCap and GameTooltip then
-                GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                GameTooltip:SetFrameStrata("TOOLTIP")
-                GameTooltip:AddLine(ns.L["Maximum filter strips reached for these frames."], 1, 0.82, 0)
-                GameTooltip:Show()
+            if self._atCap then
+                QUI.GUI.Tooltip:Show(self, ns.L["Maximum filter strips reached for these frames."], {
+                    anchor = "TOP",
+                    color = { 1, 0.82, 0 },
+                })
             end
         end)
-        addStripButton:HookScript("OnLeave", function()
-            if GameTooltip then GameTooltip:Hide() end
+        addStripButton:HookScript("OnLeave", function(self)
+            QUI.GUI.Tooltip:Hide(false, self)
         end)
     end
     if addMissingBuffButton then

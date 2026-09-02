@@ -421,7 +421,10 @@ local function StyleShoppingCompareHeader(header, sr, sg, sb, sa, bgr, bgg, bgb,
     end
 
     if header.Label and header.Label.SetTextColor then
-        header.Label:SetTextColor(sr, sg, sb, 1)
+        -- Border colour is not a text colour (black / hidden borders).
+        local tr, tg, tb = 1, 1, 1
+        if SkinBase.GetSkinTextAccent then tr, tg, tb = SkinBase.GetSkinTextAccent() end
+        header.Label:SetTextColor(tr, tg, tb, 1)
     end
 end
 

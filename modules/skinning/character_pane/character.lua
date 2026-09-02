@@ -139,8 +139,6 @@ local GEM_COLORS = {
     Meta = { 0.8, 0.8, 0.8, 1 },
     Prismatic = { 1, 1, 1, 1 },
     Hydraulic = { 0.2, 0.8, 0.8, 1 },
-    Cogwheel = { 0.7, 0.7, 0.7, 1 },
-    Domination = { 0.6, 0.2, 0.8, 1 },
     Tinker = { 0.4, 0.8, 0.4, 1 },
     Primordial = { 0.4, 0.6, 0.8, 1 },
 }
@@ -288,19 +286,17 @@ local function GetCharacterBgColor()
     return color[1], color[2], color[3], color[4] or 0.95
 end
 
+-- Chrome owner (modules/skinning/frames/character_chrome.lua). Every shell /
+-- close / popout / settings-flyout write goes through it so the four
+-- skinCharacterFrame x character.enabled combinations share one look.
+local function GetChrome()
+    return ns.CharacterChrome
+end
+
 local function StyleCloseButton(button)
-    local skinBase = GetSkinBase()
-    if skinBase and skinBase.SkinChromeCloseButton then
-        skinBase.SkinChromeCloseButton(button, {
-            stateKey = "characterPaneClose",
-            font = GetGlobalFont(),
-            fontFlags = "OUTLINE",
-            textColor = C.text,
-            borderColor = function() local r, g, b = GetCharacterBorderColor(); return r, g, b, 1 end,
-            accentColor = function() local r, g, b = GetCharacterAccentColor(); return r, g, b, 1 end,
-            bgColor = function() return GetCharacterBgColor() end,
-            insetPixels = 2,
-        })
+    local chrome = GetChrome()
+    if button and chrome and chrome.StyleCloseButton then
+        chrome.StyleCloseButton(button)
     end
 end
 
@@ -1293,6 +1289,8 @@ local function RefreshEquipmentSlotBorders()
 end
 
 local function IsSkinningHandlingBackground()
+    local chrome = GetChrome()
+    if chrome and chrome.OwnsShell then return chrome.OwnsShell() end
     local skinningAPI = _G.QUI_CharacterFrameSkinning
     return skinningAPI and skinningAPI.IsEnabled and skinningAPI.IsEnabled()
 end
@@ -1503,30 +1501,19 @@ end
 local function CreateCustomBackground()
     local settings = GetSettings()
 
-    local skinningAPI = _G.QUI_CharacterFrameSkinning
-    if skinningAPI and skinningAPI.IsEnabled and skinningAPI.IsEnabled() then
-        if skinningAPI.SetExtended then
+    -- Both shells (skin-owned and the enhancement fallback) come from the
+    -- chrome owner; the fallback keeps a local handle so tab transitions can
+    -- hide/show it without re-resolving ownership.
+    local chrome = GetChrome()
+    if IsSkinningHandlingBackground() then
+        local skinningAPI = _G.QUI_CharacterFrameSkinning
+        if skinningAPI and skinningAPI.SetExtended then
             skinningAPI.SetExtended(true)
+        elseif chrome and chrome.SetExtended then
+            chrome.SetExtended(true)
         end
-    else
-        local sr, sg, sb, sa = GetCharacterBorderColor()
-        local bgr, bgg, bgb, bga = GetCharacterBgColor()
-
-        if not customBg then
-            customBg = CreateFrame("Frame", "QUI_CharacterFrameBg_CharPane", CharacterFrame, "BackdropTemplate")
-            customBg:SetFrameStrata("BACKGROUND")
-            customBg:SetFrameLevel(0)
-            customBg:EnableMouse(false)
-        end
-        ApplyOnePixelBorder(customBg, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
-
-        local PANEL_HEIGHT_EXTENSION = 50
-        local PANEL_WIDTH_EXTENSION = 55
-        customBg:ClearAllPoints()
-        customBg:SetPoint("TOPLEFT", CharacterFrame, "TOPLEFT", 0, 0)
-        customBg:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT", PANEL_WIDTH_EXTENSION, -PANEL_HEIGHT_EXTENSION)
-
-        customBg:Show()
+    elseif chrome and chrome.EnsureShell then
+        customBg = chrome.EnsureShell({ extended = true })
     end
 
     local BASE_SCALE = 1.30
@@ -1795,18 +1782,18 @@ CreateStatsPanel = function(parent, unit)
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
     scrollFrame:SetPoint("TOPLEFT", 5, -5)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -5, 5)
-    scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local current = self:GetVerticalScroll() or 0
-        local maxScroll = self:GetVerticalScrollRange() or 0
-        local new = math.max(0, math.min(maxScroll, current - delta * 20))
-        self:SetVerticalScroll(new)
-    end)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -9, 5)
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
     scrollChild:SetSize(130, 1)
     scrollFrame:SetScrollChild(scrollChild)
+
+    -- Shared scroll contract (eased wheel + thin proportional bar) from the
+    -- chrome owner; the stats panel used to jump 20 px with no visible bar.
+    local chrome = GetChrome()
+    if chrome and chrome.AttachScroll then
+        panel.scroll = chrome.AttachScroll(scrollFrame, { parent = panel, anchor = scrollFrame, offsetX = 5 })
+    end
 
     panel.scrollFrame = scrollFrame
     panel.scrollChild = scrollChild
@@ -2940,20 +2927,35 @@ local function UpdateStatsPanel(panel, unit)
     end
 end
 
-local function GetILvlColor(ilvl)
-    if ilvl >= 285 then
-        return 1, 0.5, 0
-    elseif ilvl >= 275 then
-        return 0.64, 0.21, 0.93
-    elseif ilvl >= 265 then
-        return 0, 0.44, 0.87
-    elseif ilvl >= 255 then
-        return 0, 1, 0
-    elseif ilvl >= 245 then
-        return 1, 1, 1
-    else
+-- Item-level colour. Fixed brackets (245/255/.../285) pinned every 12.x
+-- item level at the top colour, so the tint is derived from the unit's own
+-- gear instead: the rounded average equipped quality mapped through
+-- C_Item.GetItemQualityColor (the same policy inspect.lua already used for
+-- its overall colour). Unreadable qualities fall back to white.
+local function GetAverageEquippedQuality(unit)
+    unit = unit or "player"
+    local total, count = 0, 0
+    for _, slotInfo in ipairs(EQUIPMENT_SLOTS) do
+        local quality = GetSlotItemQuality(unit, slotInfo.id)
+        if type(quality) == "number" and quality >= 1 then
+            total = total + quality
+            count = count + 1
+        end
+    end
+    if count == 0 then return nil end
+    return math.floor((total / count) + 0.5)
+end
+
+local function GetILvlColor(ilvl, unit)
+    if type(ilvl) ~= "number" or ilvl <= 0 then
         return 0.62, 0.62, 0.62
     end
+    local quality = GetAverageEquippedQuality(unit)
+    if not quality then return 1, 1, 1 end
+    quality = math.max(1, math.min(quality, 7))
+    local r, g, b = C_Item.GetItemQualityColor(quality)
+    if Helpers.IsSecretValue(r) or type(r) ~= "number" then return 1, 1, 1 end
+    return r, g, b
 end
 
 local function UpdateILvlDisplay()
@@ -3051,36 +3053,12 @@ ScheduleUpdate = function()
     end)
 end
 
+-- Side popouts are built by the chrome owner with QUI chrome from the start
+-- (no Blizzard dialog textures that a second module then has to restyle).
 local function CreateSidePopup(globalName, titleText)
-    local PANEL_WIDTH_EXTENSION = 55
-    local popup = CreateFrame("Frame", globalName, UIParent, "BackdropTemplate")
-    popup:SetSize(205, 400)
-    popup:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", PANEL_WIDTH_EXTENSION + 10, 0)
-    popup:SetFrameStrata("DIALOG")
-    popup:EnableMouse(true)
-    popup:SetMovable(true)
-    popup:RegisterForDrag("LeftButton")
-    popup:SetScript("OnDragStart", popup.StartMoving)
-    popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
-    popup:Hide()
-
-    popup:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true,
-        tileSize = 32,
-        edgeSize = 32,
-        insets = { left = 8, right = 8, top = 8, bottom = 8 }
-    })
-
-    local title = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    title:SetPoint("TOP", 0, -15)
-    title:SetText(titleText)
-    popup.title = title
-
-    _G[globalName] = popup
-
-    return popup
+    local chrome = GetChrome()
+    if not (chrome and chrome.CreatePopout) then return nil end
+    return chrome.CreatePopout(titleText, { name = globalName })
 end
 
 local function CreateEquipMgrPopup()
@@ -3488,144 +3466,31 @@ local function HookCharacterFrame()
         return
     end
 
-    if not (frameState[CharacterFrame] or EMPTY).gearBtn then
-        gearBtn = CreateFrame("Button", "QUI_CharacterSettingsBtn", CharacterFrame, "BackdropTemplate")
-        QUICore:SetPixelPerfectSize(gearBtn, 118, 20)
-        QUICore:SetPixelPerfectPoint(gearBtn, "TOPRIGHT", CharacterFrame, "TOPRIGHT", 6, -6)
-        local br, bg, bb = GetCharacterBorderColor()
-        ApplyOnePixelBorder(gearBtn, true, { br, bg, bb, 1 }, { 0.1, 0.1, 0.1, 0.8 })
-        gearBtn:SetFrameStrata("HIGH")
-        gearBtn:SetFrameLevel(100)
-
-        local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
-        gearIcon:SetSize(14, 14)
-        gearIcon:SetPoint("LEFT", gearBtn, "LEFT", 5, 0)
-        gearIcon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
-
-        local gearLabel = gearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        gearLabel:SetPoint("LEFT", gearIcon, "RIGHT", 4, 0)
-        gearLabel:SetPoint("RIGHT", gearBtn, "RIGHT", -6, 0)
-        gearLabel:SetJustifyH("LEFT")
-        CJKFont(gearLabel, GeneralFontFace(), 12, "")
-        gearLabel:SetText(ns.L["Settings"])
-        gearLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-        gearBtn:SetScript("OnEnter", function(self)
-            local r, g, b = GetCharacterAccentColor()
-            SetOnePixelBorderColors(self, { r, g, b, 1 })
-        end)
-        gearBtn:SetScript("OnLeave", function(self)
-            local r, g, b = GetCharacterBorderColor()
-            SetOnePixelBorderColors(self, { r, g, b, 1 })
-        end)
-
-        GetState(CharacterFrame).gearBtn = gearBtn
-
-        settingsPanel = CreateFrame("Frame", "QUI_CharSettingsPanel", CharacterFrame, "BackdropTemplate")
-        settingsPanel:SetSize(450, 600)
-        settingsPanel:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 53, 0)
-        ApplyOnePixelBorder(settingsPanel, true, { C.border[1], C.border[2], C.border[3], 1 }, { 0.051, 0.067, 0.09, 0.97 })
-        settingsPanel:SetFrameStrata("DIALOG")
-        settingsPanel:SetFrameLevel(200)
-        settingsPanel:EnableMouse(true)
-        settingsPanel:Hide()
-        GetState(CharacterFrame).settingsPanel = settingsPanel
-
-        local panelContentBg = settingsPanel:CreateTexture(nil, "BACKGROUND", nil, 1)
-        SetInsetPixelPoints(panelContentBg, settingsPanel, 1)
-        panelContentBg:SetColorTexture(1, 1, 1, 0.02)
-
-        local panelGlow = settingsPanel:CreateTexture(nil, "BACKGROUND", nil, 2)
-        SetInsetPixelPoints(panelGlow, settingsPanel, 1)
-        panelGlow:SetTexture("Interface\\BUTTONS\\WHITE8x8")
-        local function ApplyPanelGlow()
-            local gr, gg, gb = GetCharacterAccentColor()
-            if panelGlow.SetGradient and CreateColor then
-                local ok = pcall(function()
-                    panelGlow:SetGradient("HORIZONTAL",
-                        CreateColor(gr, gg, gb, 0.06),
-                        CreateColor(gr, gg, gb, 0))
-                end)
-                if not ok then
-                    panelGlow:SetColorTexture(gr, gg, gb, 0.04)
-                end
-            else
-                panelGlow:SetColorTexture(gr, gg, gb, 0.04)
-            end
-        end
-        ApplyPanelGlow()
-        GetState(settingsPanel).accentGlow = panelGlow
-        settingsPanel:HookScript("OnShow", ApplyPanelGlow)
-
-        local title = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        title:SetPoint("TOP", settingsPanel, "TOP", 0, -8)
-        CJKFont(title, GeneralFontFace(), 14, "")
-        title:SetText(ns.L["QUI Character Panel"])
-        title:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-
-        local closeBtn = CreateFrame("Button", nil, settingsPanel, "UIPanelCloseButton")
-        closeBtn:SetPoint("TOPRIGHT", -3, -3)
-        closeBtn:SetScript("OnClick", function() settingsPanel:Hide() end)
-        StyleCloseButton(closeBtn)
-
-        local scrollFrame = CreateFrame("ScrollFrame", nil, settingsPanel)
-        scrollFrame:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 5, -28)
-        scrollFrame:SetPoint("BOTTOMRIGHT", settingsPanel, "BOTTOMRIGHT", -5, 40)
-        scrollFrame:EnableMouseWheel(true)
-        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-            local current = self:GetVerticalScroll() or 0
-            local maxScroll = self:GetVerticalScrollRange() or 0
-            local new = math.max(0, math.min(maxScroll, current - delta * 30))
-            self:SetVerticalScroll(new)
-        end)
-
-        local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-        scrollChild:SetWidth(440)
-        scrollChild:SetHeight(1)
-        scrollFrame:SetScrollChild(scrollChild)
-
-        local panelContentBuilt = false
-        local function BuildPanelContent()
-            if panelContentBuilt then return true end
-
-            local GUI = _G.QUI and _G.QUI.GUI
-            if GUI and type(GUI.EnsureWidgetAPI) == "function" then
-                GUI = GUI:EnsureWidgetAPI()
-            end
-            if not (GUI and type(GUI.HasWidgetAPI) == "function" and GUI:HasWidgetAPI()) then
-                return false
-            end
-
-            panelContentBuilt = true
+    -- Settings flyout: the chrome owner builds trigger, panel, close and
+    -- scroll (same builder as the Inspect flyout); this module only supplies
+    -- the title and the content provider.
+    local chrome = GetChrome()
+    if not (frameState[CharacterFrame] or EMPTY).gearBtn and chrome and chrome.CreateSettingsFlyout then
+        local flyout = chrome.CreateSettingsFlyout(CharacterFrame, {
+            title = ns.L["QUI Character Panel"],
+            name = "QUI_CharSettingsPanel",
+            triggerName = "QUI_CharacterSettingsBtn",
+            triggerPoint = { "TOPRIGHT", CharacterFrame, "TOPRIGHT", 6, -6 },
+            extension = chrome.CONFIG and chrome.CONFIG.PANEL_WIDTH_EXTENSION or 55,
+            provider = function(ctx)
+            local GUI = ctx.GUI
+            local scrollChild = ctx.scrollChild
+            local PlaceRow, ResetRows, PAD = ctx.PlaceRow, ctx.ResetRows, ctx.PAD
+            local y = ctx.y
 
             local settings = GetSettings()
             local charDB = settings
-
-        local PAD = 8
-        local FORM_ROW = 28
-        local y = -5
 
         local function RefreshAll()
             if _G.QUI_RefreshCharacterPanelFonts then
                 _G.QUI_RefreshCharacterPanelFonts()
             end
             ScheduleUpdate()
-        end
-
-        local _rowIdx = 0
-        local function ResetRows() _rowIdx = 0 end
-        local function PlaceRow(widget, currentY)
-            widget:SetPoint("TOPLEFT", PAD, currentY)
-            widget:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
-            _rowIdx = _rowIdx + 1
-            if (_rowIdx % 2) == 0 then
-                local rowBg = scrollChild:CreateTexture(nil, "BACKGROUND")
-                rowBg:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", PAD, currentY)
-                rowBg:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
-                rowBg:SetHeight(FORM_ROW)
-                rowBg:SetColorTexture(1, 1, 1, 0.02)
-            end
-            return currentY - FORM_ROW
         end
 
         local widgetRefs = {}
@@ -3659,7 +3524,7 @@ local function HookCharacterFrame()
                 { description = ns.L["Background color applied to the character panel. Shared with the global skinning background so character and inspect panels match."] })
             y = PlaceRow(bgColorPicker, y)
 
-            settingsPanel:HookScript("OnShow", function()
+            ctx.HookShow(function()
                 if bgColorPicker and bgColorPicker.swatch and generalDB and generalDB.skinBgColor then
                     local col = generalDB.skinBgColor
                     bgColorPicker.swatch:SetBackdropColor(col[1], col[2], col[3], col[4] or 1)
@@ -3799,9 +3664,7 @@ local function HookCharacterFrame()
 
         y = y - 10
 
-        scrollChild:SetHeight(math.abs(y) + 20)
-
-        local resetBtn = GUI:CreateButton(settingsPanel, ns.L["Reset"], 80, 24, function()
+        local resetBtn = GUI:CreateButton(ctx.panel, ns.L["Reset"], 80, 24, function()
             charDB.panelScale = 1.0
             charDB.showItemName = true
             charDB.showItemLevel = true
@@ -3824,24 +3687,20 @@ local function HookCharacterFrame()
 
             RefreshAll()
 
-            settingsPanel:Hide()
-            RunAfterCharacterPaneLayoutTick(function()
-                settingsPanel:Show()
-            end)
+            ctx.Reopen()
         end)
-        resetBtn:SetPoint("BOTTOM", settingsPanel, "BOTTOM", 0, 10)
+        resetBtn:SetPoint("BOTTOM", ctx.panel, "BOTTOM", 0, 10)
 
-            return true
+            return y
+            end,
+        })
+
+        if flyout then
+            gearBtn = flyout.trigger
+            settingsPanel = flyout.panel
+            GetState(CharacterFrame).gearBtn = gearBtn
+            GetState(CharacterFrame).settingsPanel = settingsPanel
         end
-
-        gearBtn:SetScript("OnClick", function()
-            if settingsPanel:IsShown() then
-                settingsPanel:Hide()
-                return
-            end
-            BuildPanelContent()
-            settingsPanel:Show()
-        end)
     end
 
     CharacterFrame:HookScript("OnHide", function()
