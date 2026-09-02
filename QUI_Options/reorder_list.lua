@@ -30,7 +30,7 @@ function ReorderList.Build(parent, y, spec)
     hintFs:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 4, -4)
     hintFs:SetPoint("RIGHT", listFrame, "RIGHT", -4, 0)
     hintFs:SetJustifyH("LEFT")
-    hintFs:SetTextColor(0.6, 0.6, 0.6, 0.8)
+    hintFs:SetTextColor(1, 1, 1, 0.48)
     hintFs:SetText(#items > 0 and (spec.hintText or "") or (spec.emptyText or ""))
 
     local extents = {}
@@ -139,9 +139,9 @@ function ReorderList.Build(parent, y, spec)
             local text, dimmed = spec.getLabel(item, idx)
             nameFs:SetText(text)
             if dimmed then
-                nameFs:SetTextColor(0.6, 0.6, 0.6, 1)
+                nameFs:SetTextColor(1, 1, 1, 0.6)
             else
-                nameFs:SetTextColor(0.9, 0.9, 0.9, 1)
+                nameFs:SetTextColor(1, 1, 1, 0.9)
             end
         end
 

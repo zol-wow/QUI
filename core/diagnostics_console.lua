@@ -129,7 +129,7 @@ function Console.CreateOutputPanel(parent)
     local caption = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     caption:SetPoint("LEFT", 4, 0)
     caption:SetText(ns.L["Diagnostic Output"])
-    caption:SetTextColor(0.65, 0.65, 0.65, 1)
+    caption:SetTextColor(1, 1, 1, 0.65)
 
     local QUI = _G.QUI
     local GUI = QUI and QUI.GUI

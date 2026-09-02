@@ -630,7 +630,7 @@ function Chrome.Apply(frame, vdb, state)
         statusText:SetPoint("CENTER", frame, "CENTER", 0, 0)
         statusText:SetJustifyH("CENTER")
         statusText:SetJustifyV("MIDDLE")
-        statusText:SetTextColor(0.9, 0.9, 0.9, 1)
+        statusText:SetTextColor(1, 1, 1, 0.9)
         statusText:Hide()
         frame.statusText = statusText
 

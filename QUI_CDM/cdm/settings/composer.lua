@@ -554,7 +554,7 @@ local function CreateSmallButton(parent, text, width, height)
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(label, { fontOnly = true }) end
     label:SetPoint("CENTER")
     label:SetText(text or "")
-    label:SetTextColor(0.9, 0.9, 0.9, 1)
+    label:SetTextColor(1, 1, 1, 0.9)
     btn._label = label
     btn:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
@@ -785,7 +785,7 @@ local function BuildPreviewSection(parent, autoHeightOptions)
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOPLEFT", 8, -6)
     title:SetText(ns.L["Live Preview"])
-    title:SetTextColor(0.6, 0.6, 0.6, 1)
+    title:SetTextColor(1, 1, 1, 0.6)
 
     local gridArea = CreateFrame("Frame", nil, container)
     gridArea:SetPoint("TOPLEFT", 8, -24)
@@ -1698,7 +1698,7 @@ local function BuildEntryListSection(parent)
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOPLEFT", 8, -6)
     title:SetText(ns.L["Spell List"])
-    title:SetTextColor(0.6, 0.6, 0.6, 1)
+    title:SetTextColor(1, 1, 1, 0.6)
 
     searchBox = CreateSearchBox(container, 200, ns.L["Filter spells..."])
     searchBox:SetPoint("TOPRIGHT", container, "TOPRIGHT", -8, -4)
@@ -2788,7 +2788,7 @@ local function BuildAddSection(parent)
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOPLEFT", 8, -6)
     title:SetText(ns.L["Add Entries"])
-    title:SetTextColor(0.6, 0.6, 0.6, 1)
+    title:SetTextColor(1, 1, 1, 0.6)
 
     local tabBar = CreateFrame("Frame", nil, container)
     tabBar:SetHeight(TAB_HEIGHT)
@@ -3327,7 +3327,7 @@ RefreshAddList = function()
             if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(hint, { fontOnly = true }) end
             hint:SetJustifyH("LEFT")
             hint:SetJustifyV("TOP")
-            hint:SetTextColor(0.55, 0.55, 0.55, 1)
+            hint:SetTextColor(1, 1, 1, 0.55)
             addListContent._emptyHint = hint
         end
         hint:ClearAllPoints()
@@ -3469,7 +3469,7 @@ local function ShowNewContainerPopup(onCreated)
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(nameLabel, { fontOnly = true }) end
     nameLabel:SetPoint("TOPLEFT", 12, -36)
     nameLabel:SetText(ns.L["Name:"])
-    nameLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+    nameLabel:SetTextColor(1, 1, 1, 0.7)
 
     local nameBox = CreateFrame("EditBox", nil, popup, "BackdropTemplate")
     nameBox:SetSize(260, 22)
@@ -3489,7 +3489,7 @@ local function ShowNewContainerPopup(onCreated)
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(typeLabel, { fontOnly = true }) end
     typeLabel:SetPoint("TOPLEFT", 12, -82)
     typeLabel:SetText(ns.L["Type:"])
-    typeLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+    typeLabel:SetTextColor(1, 1, 1, 0.7)
 
     local TYPE_OPTIONS = {
         { value = "cooldown", text = ns.L["Custom Icons"] },
@@ -3507,7 +3507,7 @@ local function ShowNewContainerPopup(onCreated)
             else
                 local _r, _g, _b = GetChromeBorder()
                 btn:SetBackdropBorderColor(_r, _g, _b, 1)
-                btn._label:SetTextColor(0.6, 0.6, 0.6, 1)
+                btn._label:SetTextColor(1, 1, 1, 0.6)
             end
         end
     end
@@ -3622,7 +3622,7 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(renameText, { fontOnly = true }) end
     renameText:SetPoint("LEFT", 8, 0)
     renameText:SetText(ns.L["Rename"])
-    renameText:SetTextColor(0.8, 0.8, 0.8, 1)
+    renameText:SetTextColor(1, 1, 1, 0.8)
     renameBtn:SetScript("OnClick", function()
         menu:Hide()
         local key = menu._containerKey
@@ -3660,7 +3660,7 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
         renameText:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
     end)
     renameBtn:SetScript("OnLeave", function(self)
-        renameText:SetTextColor(0.8, 0.8, 0.8, 1)
+        renameText:SetTextColor(1, 1, 1, 0.8)
     end)
 
     local deleteBtn = CreateFrame("Button", nil, menu)
@@ -3749,7 +3749,7 @@ BuildContainerTabs = function()
             local _ctBR, _ctBG, _ctBB = GetChromeBgSubpanel()
             local _ctBdR, _ctBdG, _ctBdB = GetChromeBorder()
             SetSimpleBackdrop(btn, _ctBR, _ctBG, _ctBB, 1, _ctBdR, _ctBdG, _ctBdB, 1)
-            btn._label:SetTextColor(0.6, 0.6, 0.6, 1)
+            btn._label:SetTextColor(1, 1, 1, 0.6)
         end
 
         local key = containerKey
