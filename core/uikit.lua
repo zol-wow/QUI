@@ -460,6 +460,475 @@ function UIKit.AnimateValue(owner, key, options)
     driver:SetScript("OnUpdate", animationDriverOnUpdate)
 end
 
+-- ---------------------------------------------------------------------------
+-- Smooth scroll + scrollbar
+-- ---------------------------------------------------------------------------
+-- One controller per ScrollFrame. Wheel notches accumulate on a shared target
+-- and an OnUpdate driver eases the offset toward it
+-- (cur += (target - cur) * min(1, SPEED * elapsed)); inside SNAP of the target
+-- it lands exactly and the driver hides. Interim writes round toward the
+-- target on the physical pixel grid so the final frames approach
+-- monotonically (no bounce), and the resting target is pixel-snapped so
+-- content is crisp at rest. Programmatic jumps (ScrollTo) share the same
+-- target, so section chips and the wheel never fight over the offset.
+-- Drag / click-to-jump on the scrollbar cancel the easing and write directly.
+local SMOOTH_SCROLL_SPEED = 12   -- 1/s lerp rate, roughly an 83 ms time constant
+local SMOOTH_SCROLL_SNAP = 0.3   -- scroll units: land exactly inside this band
+local DEFAULT_SCROLL_THUMB = { 1, 1, 1, 0.27 }
+local DEFAULT_SCROLL_TRACK = { 1, 1, 1, 0.02 }
+local smoothScrollState = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
+local scrollBarRegistry = (Helpers and Helpers.CreateStateTable and Helpers.CreateStateTable()) or setmetatable({}, { __mode = "k" })
+local scrollBarAccentHooked = false
+
+local function SafeNumber(value, fallback)
+    if Helpers and Helpers.SafeToNumber then
+        return Helpers.SafeToNumber(value, fallback or 0)
+    end
+    return tonumber(value) or fallback or 0
+end
+
+local function ScrollPixelSize(frame)
+    local px = SafeNumber(GetPixelSize(frame), 1)
+    if px <= 0 then return 1 end
+    return px
+end
+
+-- Range/offset reads go through SafeCall: GetVerticalScrollRange can throw on
+-- a forbidden frame and either value can come back secret, and a controller
+-- must never abort mid-tick.
+local function ReadScrollRange(scrollFrame, getRange)
+    local ok, range
+    if getRange then
+        ok, range = ns.SafeCall("secret-probe", getRange, scrollFrame)
+    else
+        ok, range = ns.SafeCallMethod("secret-probe", scrollFrame, "GetVerticalScrollRange")
+    end
+    if not ok then return 0 end
+    range = SafeNumber(range, 0)
+    if range < 0 then return 0 end
+    return range
+end
+
+local function ReadScrollOffset(scrollFrame)
+    local ok, cur = ns.SafeCallMethod("secret-probe", scrollFrame, "GetVerticalScroll")
+    if not ok then return 0 end
+    return SafeNumber(cur, 0)
+end
+
+local SmoothScroll = {}
+SmoothScroll.__index = SmoothScroll
+
+-- Range snapped DOWN to the pixel grid so a pixel-snapped target can never sit
+-- above the reachable maximum.
+function SmoothScroll:PixelRange()
+    local px = ScrollPixelSize(self.frame)
+    return floor(ReadScrollRange(self.frame, self.getRange) / px) * px, px
+end
+
+function SmoothScroll:Write(value, settled)
+    self.lastWrite = value
+    self.frame:SetVerticalScroll(value)
+    local listeners = self.listeners
+    for i = 1, #listeners do
+        ns.SafeCall("bulkhead", listeners[i], self.frame, value, settled)
+    end
+end
+
+function SmoothScroll:Cancel()
+    self.target = nil
+    self.active = false
+    self.lastWrite = nil
+    self.driver:Hide()
+end
+
+function SmoothScroll:IsAnimating()
+    return self.active
+end
+
+-- In-flight target while animating, else the settled offset. Synchronous
+-- readers that used to poll GetVerticalScroll after a wheel event read this.
+function SmoothScroll:GetTarget()
+    return self.target or ReadScrollOffset(self.frame)
+end
+
+function SmoothScroll:GetOffset()
+    return ReadScrollOffset(self.frame)
+end
+
+function SmoothScroll:ScrollTo(value, instant)
+    local range, px = self:PixelRange()
+    value = floor(SafeNumber(value, 0) / px + 0.5) * px
+    if value > range then value = range end
+    if value < 0 then value = 0 end
+    if instant then
+        self:Cancel()
+        self:Write(value, true)
+        return value
+    end
+    self.target = value
+    if not self.active then
+        self.active = true
+        self.lastWrite = nil   -- fresh start: the first tick reads the live offset
+        self.driver:Show()
+    end
+    return value
+end
+
+function SmoothScroll:ScrollBy(delta, instant)
+    return self:ScrollTo(self:GetTarget() + SafeNumber(delta, 0), instant)
+end
+
+function SmoothScroll:OnWheel(delta)
+    delta = SafeNumber(delta, 0)
+    if delta == 0 then return end
+    if ReadScrollRange(self.frame, self.getRange) <= 0 then return end
+    local value = self:GetTarget() - delta * self.step
+    local snap = self.snap
+    if snap and snap > 0 then
+        value = floor(value / snap + 0.5) * snap
+    end
+    self:ScrollTo(value, false)
+end
+
+function SmoothScroll:Tick(elapsed)
+    local target = self.target
+    if not target then
+        self:Cancel()
+        return
+    end
+    local range, px = self:PixelRange()
+    if target > range then target = range end
+    if target < 0 then target = 0 end
+    self.target = target
+    local cur = ReadScrollOffset(self.frame)
+    -- Someone else moved the frame since our last write (a template
+    -- scrollbar drag, a direct SetVerticalScroll): they own the offset now.
+    local lastWrite = self.lastWrite
+    if lastWrite and (cur - lastWrite > SMOOTH_SCROLL_SNAP or lastWrite - cur > SMOOTH_SCROLL_SNAP) then
+        self:Cancel()
+        return
+    end
+    local diff = target - cur
+    if diff > -SMOOTH_SCROLL_SNAP and diff < SMOOTH_SCROLL_SNAP then
+        self:Land(target)
+        return
+    end
+    local rate = SMOOTH_SCROLL_SPEED * SafeNumber(elapsed, 0)
+    if rate > 1 then rate = 1 end
+    local nxt = cur + diff * rate
+    if diff > 0 then
+        nxt = math.ceil(nxt / px) * px
+        if nxt > target then nxt = target end
+    else
+        nxt = floor(nxt / px) * px
+        if nxt < target then nxt = target end
+    end
+    if nxt == cur then nxt = target end
+    if nxt == target then
+        self:Land(target)
+        return
+    end
+    self:Write(nxt, false)
+end
+
+-- Final write while still flagged animating (OnVerticalScroll hooks can tell
+-- a settle from a foreign write), then stop unless a listener re-targeted.
+function SmoothScroll:Land(target)
+    self:Write(target, true)
+    if self.target == target then self:Cancel() end
+end
+
+-- Content changed: keep an in-flight target inside the new range, or pull a
+-- settled offset back in if the content shrank underneath it.
+function SmoothScroll:Refresh()
+    local range = self:PixelRange()
+    if self.target then
+        if self.target > range then self.target = range end
+        return
+    end
+    if ReadScrollOffset(self.frame) > range then
+        self:ScrollTo(range, true)
+    end
+end
+
+function SmoothScroll:AddListener(fn)
+    if type(fn) ~= "function" then return end
+    local listeners = self.listeners
+    for i = 1, #listeners do
+        if listeners[i] == fn then return end
+    end
+    listeners[#listeners + 1] = fn
+end
+
+function SmoothScroll:RemoveListener(fn)
+    local listeners = self.listeners
+    for i = #listeners, 1, -1 do
+        if listeners[i] == fn then table.remove(listeners, i) end
+    end
+end
+
+function SmoothScroll:Configure(opts)
+    if type(opts) ~= "table" then return end
+    if opts.step then self.step = SafeNumber(opts.step, self.step) end
+    if opts.snap ~= nil then self.snap = opts.snap end
+    if opts.getRange ~= nil then self.getRange = opts.getRange end
+    if opts.onPosition then self:AddListener(opts.onPosition) end
+end
+
+function UIKit.GetSmoothScroll(scrollFrame)
+    return scrollFrame and smoothScrollState[scrollFrame] or nil
+end
+
+-- opts: step (scroll units per wheel notch, default 60), snap (round wheel
+-- targets to this grid, e.g. one sidebar tile), getRange(scrollFrame) (custom
+-- range for frames whose native range lies, e.g. multi-line EditBox children),
+-- onPosition(scrollFrame, offset, settled) (fires on every write).
+-- Attach AFTER any SetScript("OnScrollRangeChanged"/"OnHide") on the frame:
+-- the controller hooks those and a later SetScript would drop the hooks.
+function UIKit.AttachSmoothScroll(scrollFrame, opts)
+    if not scrollFrame then return nil end
+    local existing = smoothScrollState[scrollFrame]
+    if existing then
+        existing:Configure(opts)
+        return existing
+    end
+    opts = opts or {}
+    local ctl = setmetatable({
+        frame = scrollFrame,
+        step = SafeNumber(opts.step, 60),
+        snap = opts.snap,
+        getRange = opts.getRange,
+        listeners = {},
+        target = nil,
+        active = false,
+    }, SmoothScroll)
+    if type(opts.onPosition) == "function" then
+        ctl.listeners[1] = opts.onPosition
+    end
+
+    -- Child of the scroll frame: a hidden parent stops the OnUpdate for free,
+    -- and the OnHide hook below drops the stale target so a re-show does not
+    -- resume an old animation.
+    local driver = CreateFrame("Frame", nil, scrollFrame)
+    driver:Hide()
+    driver:SetScript("OnUpdate", function(_, elapsed) ctl:Tick(elapsed) end)
+    ctl.driver = driver
+
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(_, delta) ctl:OnWheel(delta) end)
+    scrollFrame:HookScript("OnHide", function() ctl:Cancel() end)
+    scrollFrame:HookScript("OnScrollRangeChanged", function() ctl:Refresh() end)
+
+    smoothScrollState[scrollFrame] = ctl
+    return ctl
+end
+
+local function EnsureScrollBarAccentHook()
+    if scrollBarAccentHooked then return end
+    local gui = QUI and QUI.GUI
+    if not (gui and gui.OnAccentChanged) then return end
+    scrollBarAccentHooked = true
+    gui:OnAccentChanged(function()
+        for bar in pairs(scrollBarRegistry) do
+            bar:Retint()
+        end
+    end)
+end
+
+-- Thin scrollbar: 4 px track (scrollTrack), proportional thumb (scrollThumb,
+-- min 30 px), 16 px invisible hit button centred on the track for drag and
+-- click-to-jump (both cancel easing), hidden while content fits, no arrows.
+-- opts: parent (default scrollFrame), anchor (default scrollFrame), offsetX
+-- (track right edge vs anchor right edge), insetTop/insetBottom, width,
+-- hitWidth, minThumb, getRange (mirror the controller's), frameLevel.
+-- Attach AFTER the frame's own SetScript("OnSizeChanged"/"OnVerticalScroll").
+function UIKit.CreateScrollBar(scrollFrame, opts)
+    if not scrollFrame then return nil end
+    opts = opts or {}
+    local parent = opts.parent or scrollFrame
+    local anchor = opts.anchor or scrollFrame
+    local width = opts.width or 4
+    local hitWidth = opts.hitWidth or 16
+    local minThumb = opts.minThumb or 30
+    local offsetX = opts.offsetX or 0
+    local insetTop = opts.insetTop or 0
+    local insetBottom = opts.insetBottom or 0
+    local getRange = opts.getRange
+    local baseLevel = opts.frameLevel or (SafeNumber(parent:GetFrameLevel(), 0) + 5)
+
+    local track = CreateFrame("Frame", nil, parent)
+    track:SetWidth(width)
+    track:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", offsetX, -insetTop)
+    track:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", offsetX, insetBottom)
+    track:SetFrameLevel(baseLevel)
+    track:Hide()
+
+    local trackBg = track:CreateTexture(nil, "BACKGROUND")
+    trackBg:SetAllPoints()
+
+    local thumb = CreateFrame("Frame", nil, track)
+    thumb:SetWidth(width)
+    thumb:SetHeight(minThumb)
+    thumb:SetPoint("TOP", track, "TOP", 0, 0)
+    thumb:SetFrameLevel(baseLevel + 1)
+
+    local thumbTex = thumb:CreateTexture(nil, "ARTWORK")
+    thumbTex:SetAllPoints()
+
+    local hit = CreateFrame("Button", nil, parent)
+    hit:SetWidth(hitWidth)
+    local hitOffset = offsetX + (hitWidth - width) / 2
+    hit:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", hitOffset, -insetTop)
+    hit:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", hitOffset, insetBottom)
+    hit:SetFrameLevel(baseLevel + 2)
+    hit:EnableMouse(true)
+    -- Own the drag so a movable popup underneath does not StartMoving.
+    hit:RegisterForDrag("LeftButton")
+    hit:SetScript("OnDragStart", function() end)
+    hit:SetScript("OnDragStop", function() end)
+    hit:Hide()
+
+    local bar = {
+        scrollFrame = scrollFrame,
+        track = track,
+        thumb = thumb,
+        hit = hit,
+        trackTexture = trackBg,
+        thumbTexture = thumbTex,
+    }
+    local dragging = false
+    local dragStartY, dragStartScroll = 0, 0
+
+    local function Range()
+        return ReadScrollRange(scrollFrame, getRange)
+    end
+
+    function bar:Retint()
+        local C = QUI and QUI.GUI and QUI.GUI.Colors
+        local th = (C and C.scrollThumb) or DEFAULT_SCROLL_THUMB
+        local tr = (C and C.scrollTrack) or DEFAULT_SCROLL_TRACK
+        ApplyColorTexture(thumbTex, th[1], th[2], th[3], th[4] or DEFAULT_SCROLL_THUMB[4])
+        ApplyColorTexture(trackBg, tr[1], tr[2], tr[3], tr[4] or DEFAULT_SCROLL_TRACK[4])
+    end
+
+    function bar:IsDragging()
+        return dragging
+    end
+
+    -- Returns true when the bar is showing (content overflows).
+    function bar:Update()
+        local range = Range()
+        local visH = SafeNumber(scrollFrame:GetHeight(), 0)
+        if range <= 0 or visH <= 0 then
+            track:Hide()
+            hit:Hide()
+            return false
+        end
+        track:Show()
+        hit:Show()
+        local trackH = SafeNumber(track:GetHeight(), 0)
+        if trackH <= 0 then return true end
+        local px = ScrollPixelSize(track)
+        local thumbH = max(minThumb, trackH * visH / (visH + range))
+        if thumbH > trackH then thumbH = trackH end
+        thumbH = floor(thumbH / px + 0.5) * px
+        local ratio = ReadScrollOffset(scrollFrame) / range
+        if ratio < 0 then ratio = 0 elseif ratio > 1 then ratio = 1 end
+        local offset = floor(ratio * (trackH - thumbH) / px + 0.5) * px
+        thumb:SetHeight(thumbH)
+        thumb:ClearAllPoints()
+        thumb:SetPoint("TOP", track, "TOP", 0, -offset)
+        return true
+    end
+
+    local function CursorY()
+        local _, y = GetCursorPosition()
+        local scale = SafeNumber(track:GetEffectiveScale(), 1)
+        if scale <= 0 then scale = 1 end
+        return SafeNumber(y, 0) / scale
+    end
+
+    -- Direct write: cancels easing, snaps, clamps, refreshes the thumb.
+    local function WriteDirect(value)
+        local ctl = smoothScrollState[scrollFrame]
+        if ctl then
+            ctl:ScrollTo(value, true)
+        else
+            local range = Range()
+            if value > range then value = range end
+            if value < 0 then value = 0 end
+            scrollFrame:SetVerticalScroll(value)
+        end
+        bar:Update()
+    end
+
+    local function StopDrag()
+        if not dragging then return end
+        dragging = false
+        hit:SetScript("OnUpdate", nil)
+    end
+
+    local function DragTick()
+        if not IsMouseButtonDown("LeftButton") then
+            StopDrag()
+            return
+        end
+        local range = Range()
+        local travel = SafeNumber(track:GetHeight(), 0) - SafeNumber(thumb:GetHeight(), 0)
+        if range <= 0 or travel <= 0 then return end
+        local dy = dragStartY - CursorY()
+        WriteDirect(dragStartScroll + (dy / travel) * range)
+    end
+
+    local function StartDrag(fromScroll)
+        dragging = true
+        dragStartY = CursorY()
+        dragStartScroll = fromScroll
+        hit:SetScript("OnUpdate", DragTick)
+    end
+
+    hit:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" then return end
+        local range = Range()
+        if range <= 0 then return end
+        local ctl = smoothScrollState[scrollFrame]
+        if ctl then ctl:Cancel() end
+        local cy = CursorY()
+        local thumbTop = SafeNumber(thumb:GetTop(), nil)
+        local thumbBottom = SafeNumber(thumb:GetBottom(), nil)
+        if thumbTop and thumbBottom and cy <= thumbTop and cy >= thumbBottom then
+            StartDrag(ReadScrollOffset(scrollFrame))
+            return
+        end
+        -- Click-to-jump: centre the thumb under the cursor, then keep dragging.
+        local trackTop = SafeNumber(track:GetTop(), 0)
+        local trackH = SafeNumber(track:GetHeight(), 0)
+        local thumbH = SafeNumber(thumb:GetHeight(), 0)
+        local travel = trackH - thumbH
+        if travel <= 0 then return end
+        local frac = (trackTop - cy - thumbH / 2) / travel
+        if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+        WriteDirect(frac * range)
+        StartDrag(ReadScrollOffset(scrollFrame))
+    end)
+    hit:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then StopDrag() end
+    end)
+    hit:SetScript("OnHide", StopDrag)
+
+    local function Refresh() bar:Update() end
+    scrollFrame:HookScript("OnVerticalScroll", Refresh)
+    scrollFrame:HookScript("OnScrollRangeChanged", Refresh)
+    scrollFrame:HookScript("OnSizeChanged", Refresh)
+    scrollFrame:HookScript("OnShow", Refresh)
+
+    bar:Retint()
+    scrollBarRegistry[bar] = true
+    EnsureScrollBarAccentHook()
+    bar:Update()
+    return bar
+end
+
 function UIKit.DisablePixelSnap(obj)
     if not obj then return end
     if obj.SetSnapToPixelGrid then obj:SetSnapToPixelGrid(false) end
@@ -868,6 +1337,82 @@ local BUTTON_FALLBACK_COLORS = {
     textDim = { 1, 1, 1, 0.6 },
 }
 
+-- Tooltip option shared by CreateButton / CreateCloseButton / CreateIconButton.
+-- `opts.tooltip` is a string, a { title = , text = } table, or a function
+-- `fn(tip, frame)` that returns a string and/or calls tip:AddLine/SetText.
+-- The options-owned fade service (QUI.GUI.Tooltip; QUI_Options is LoD so it
+-- may not exist yet) is used when the frame lives under the options panel or
+-- opts.serviceTooltip is set; otherwise GameTooltip (the function then
+-- receives GameTooltip as `tip`). opts.nativeTooltip forces GameTooltip.
+-- opts.legacyTooltipFn keeps the CreateIconButton contract `fn(frame)` that
+-- writes GameTooltip itself.
+local function ResolveTooltipService(frame, opts)
+    if opts.nativeTooltip then return nil end
+    local gui = QUI and QUI.GUI
+    local svc = gui and gui.Tooltip
+    if not svc or type(svc.Show) ~= "function" then return nil end
+    if opts.serviceTooltip then return svc end
+    if svc.IsPanelAnchor and svc:IsPanelAnchor(frame) then return svc end
+    return nil
+end
+
+function UIKit.ShowTooltipOption(frame, tooltip, opts)
+    opts = opts or {}
+    if tooltip == nil or not frame then return false end
+    local legacyFn = type(tooltip) == "function" and opts.legacyTooltipFn
+    local svc = (not legacyFn) and ResolveTooltipService(frame, opts) or nil
+    if svc then
+        local title, body = opts.tooltipTitle, tooltip
+        if type(tooltip) == "table" then
+            title, body = tooltip.title or title, tooltip.text
+        end
+        return svc:Show(frame, body, { title = title, anchor = opts.tooltipAnchor })
+    end
+    if not GameTooltip then return false end
+    GameTooltip:SetOwner(frame, opts.tooltipAnchor or "ANCHOR_RIGHT")
+    if legacyFn then
+        tooltip(frame)
+    elseif type(tooltip) == "function" then
+        local text = tooltip(GameTooltip, frame)
+        if type(text) == "string" and text ~= "" then GameTooltip:AddLine(text, 1, 1, 1, true) end
+    elseif type(tooltip) == "table" then
+        if tooltip.title then
+            local ar, ag, ab = UIKit.GetAccentColor()
+            GameTooltip:SetText(tooltip.title, ar, ag, ab, 1)
+            if tooltip.text then GameTooltip:AddLine(tooltip.text, 1, 1, 1, true) end
+        elseif tooltip.text then
+            GameTooltip:SetText(tooltip.text, 1, 1, 1, 1, true)
+        end
+    else
+        GameTooltip:SetText(tostring(tooltip), 1, 1, 1, 1, true)
+    end
+    GameTooltip:Show()
+    return true
+end
+
+function UIKit.HideTooltipOption(frame)
+    local gui = QUI and QUI.GUI
+    local svc = gui and gui.Tooltip
+    if svc and type(svc.IsOwned) == "function" and svc:IsOwned(frame) then
+        svc:Hide(false, frame)
+        return
+    end
+    if GameTooltip and (not GameTooltip.IsOwned or GameTooltip:IsOwned(frame)) then
+        GameTooltip:Hide()
+    end
+end
+
+function UIKit.AttachTooltipOption(frame, opts)
+    if not frame or not opts or opts.tooltip == nil then return end
+    if type(frame.HookScript) ~= "function" then return end
+    frame:HookScript("OnEnter", function(self)
+        UIKit.ShowTooltipOption(self, opts.tooltip, opts)
+    end)
+    frame:HookScript("OnLeave", function(self)
+        UIKit.HideTooltipOption(self)
+    end)
+end
+
 function UIKit.CreateButton(parent, opts)
     opts = opts or {}
     local gui = QUI and QUI.GUI
@@ -957,6 +1502,7 @@ function UIKit.CreateButton(parent, opts)
         if self.text then self.text:SetPoint("CENTER", 0, 0) end
         self._hoverBg:SetAlpha(1)
     end)
+    UIKit.AttachTooltipOption(button, opts)
 
     if opts.onClick then
         button:SetScript("OnClick", opts.onClick)
@@ -1000,6 +1546,7 @@ function UIKit.CreateCloseButton(parent, opts)
 
     if opts.onClick then close:SetScript("OnClick", opts.onClick) end
     UIKit.SkinCloseButton(close, opts)
+    UIKit.AttachTooltipOption(close, opts)
 
     return close
 end
@@ -1036,12 +1583,16 @@ function UIKit.CreateIconButton(parent, opts)
         end
     end
 
+    -- Function tips keep the legacy `fn(self)` contract (they write GameTooltip
+    -- themselves); string/table tips ride the options tooltip service when the
+    -- button lives under the options panel (see UIKit.ShowTooltipOption).
+    local tooltipOpts = opts
+    if type(opts.tooltip) == "function" and opts.legacyTooltipFn == nil then
+        tooltipOpts = setmetatable({ legacyTooltipFn = true }, { __index = opts })
+    end
     local function showTooltip(self)
-        local tip = opts.tooltip
-        if not tip then return end
-        GameTooltip:SetOwner(self, opts.tooltipAnchor or "ANCHOR_RIGHT")
-        if type(tip) == "function" then tip(self) else GameTooltip:SetText(tip) end
-        GameTooltip:Show()
+        if opts.tooltip == nil then return end
+        UIKit.ShowTooltipOption(self, opts.tooltip, tooltipOpts)
     end
 
     btn:SetScript("OnEnter", function(self)
@@ -1051,7 +1602,7 @@ function UIKit.CreateIconButton(parent, opts)
     end)
     btn:SetScript("OnLeave", function(self)
         if brighten and self.icon then self.icon:SetVertexColor(idle, idle, idle, 1) end
-        GameTooltip:Hide()
+        if opts.tooltip ~= nil then UIKit.HideTooltipOption(self) end
         if opts.onLeave then opts.onLeave(self) end
     end)
     if brighten then

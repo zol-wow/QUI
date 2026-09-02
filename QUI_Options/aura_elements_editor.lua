@@ -2093,15 +2093,15 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
             ctx.AddFilterStrip()
         end)
         addStripButton:HookScript("OnEnter", function(self)
-            if self._atCap and GameTooltip then
-                GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                GameTooltip:SetFrameStrata("TOOLTIP")
-                GameTooltip:AddLine(ns.L["Maximum filter strips reached for these frames."], 1, 0.82, 0)
-                GameTooltip:Show()
+            if self._atCap then
+                QUI.GUI.Tooltip:Show(self, ns.L["Maximum filter strips reached for these frames."], {
+                    anchor = "TOP",
+                    color = { 1, 0.82, 0 },
+                })
             end
         end)
-        addStripButton:HookScript("OnLeave", function()
-            if GameTooltip then GameTooltip:Hide() end
+        addStripButton:HookScript("OnLeave", function(self)
+            QUI.GUI.Tooltip:Hide(false, self)
         end)
     end
     if addMissingBuffButton then

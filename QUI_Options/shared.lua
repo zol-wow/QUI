@@ -29,28 +29,24 @@ local function GetSafeVerticalScroll(scrollFrame)
 end
 ns.GetSafeVerticalScroll = GetSafeVerticalScroll
 
-function ns.ApplyScrollWheel(scrollFrame)
-    scrollFrame:EnableMouseWheel(true)
-
-    if not scrollFrame._quiScrollGuard then
-        scrollFrame._quiScrollGuard = true
-        local rawSet = scrollFrame.SetVerticalScroll
-        scrollFrame.SetVerticalScroll = function(self, value)
-            local okCur, cur = pcall(self.GetVerticalScroll, self)
-            if okCur and type(cur) == "number" and type(value) == "number"
-                and math.abs(value - cur) < 0.5 then
-                return
-            end
-            return rawSet(self, value)
-        end
+-- Wheel input eases through the shared UIKit controller (target accumulation,
+-- pixel-snapped landing, drag cancellation). Returns the controller so callers
+-- can ScrollTo()/Cancel() against the same target the wheel uses. `opts`
+-- overrides the default 60-unit step (see UIKit.AttachSmoothScroll).
+function ns.ApplyScrollWheel(scrollFrame, opts)
+    local kit = UIKit or ns.UIKit
+    if kit and kit.AttachSmoothScroll then
+        return kit.AttachSmoothScroll(scrollFrame, opts or { step = SCROLL_STEP })
     end
-
+    -- No UIKit (never in-game; keeps headless harnesses that stub it out alive).
+    scrollFrame:EnableMouseWheel(true)
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local currentScroll = GetSafeVerticalScroll(self)
         local maxScroll = GetSafeVerticalScrollRange(self)
         local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
         self:SetVerticalScroll(newScroll)
     end)
+    return nil
 end
 
 function ns.PrintImportFeedback(ok, message, showReloadHint)

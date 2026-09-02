@@ -165,11 +165,9 @@ function P.BuildClassPicker(parent, width, get, set)
             Paint()
         end)
         btn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(entry.className)
-            GameTooltip:Show()
+            GUI.Tooltip:Show(self, entry.className, { anchor = "TOP" })
         end)
-        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        btn:SetScript("OnLeave", function(self) GUI.Tooltip:Hide(false, self) end)
         x = x + SIZE + GAP
     end
     frame:SetSize(width, SIZE)

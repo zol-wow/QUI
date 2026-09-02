@@ -243,33 +243,34 @@ local function GetBindingFromFrame(frame)
     return widget and widget._quiPinBinding or nil
 end
 
-local function ShouldShowTooltips()
-    local db = _G.QUI and _G.QUI.db and _G.QUI.db.profile
-    return not (db and db.general and db.general.showOptionTooltips == false)
+-- Options tooltip service (QUI_Options/framework.lua GUI.Tooltip). It owns the
+-- general.showOptionTooltips gate, so no private re-implementation here.
+local function GetTooltipService()
+    local gui = _G.QUI and _G.QUI.GUI
+    return gui and gui.Tooltip or nil
 end
 
 local function ShowPinButtonTooltip(button)
-    if not button or not GameTooltip or not ShouldShowTooltips() then
+    local svc = GetTooltipService()
+    if not button or not svc then
         return
     end
 
-    local binding = GetBindingFromFrame(button)
-    local path = GetBindingPath(binding)
-    local entry = path and Pins:GetEntry(path) or nil
-    local accent = GetAccentColor()
-
-    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-    if entry and entry.disabled then
-        GameTooltip:SetText(ns.L["Remove stale pin"], accent[1], accent[2], accent[3], 1)
-        GameTooltip:AddLine(ns.L["This path no longer resolves. Click to remove it."], 1, 1, 1, true)
-    elseif entry then
-        GameTooltip:SetText(ns.L["Pinned globally"], accent[1], accent[2], accent[3], 1)
-        GameTooltip:AddLine(ns.L["Click to unpin. Edits affect all profiles."], 1, 1, 1, true)
-    else
-        GameTooltip:SetText(ns.L["Pin across all profiles"], accent[1], accent[2], accent[3], 1)
-        GameTooltip:AddLine(ns.L["Capture the current value and keep it across profile switches."], 1, 1, 1, true)
-    end
-    GameTooltip:Show()
+    svc:Show(button, function(tip)
+        local binding = GetBindingFromFrame(button)
+        local path = GetBindingPath(binding)
+        local entry = path and Pins:GetEntry(path) or nil
+        if entry and entry.disabled then
+            tip:AddTitle(ns.L["Remove stale pin"])
+            tip:AddLine(ns.L["This path no longer resolves. Click to remove it."])
+        elseif entry then
+            tip:AddTitle(ns.L["Pinned globally"])
+            tip:AddLine(ns.L["Click to unpin. Edits affect all profiles."])
+        else
+            tip:AddTitle(ns.L["Pin across all profiles"])
+            tip:AddLine(ns.L["Capture the current value and keep it across profile switches."])
+        end
+    end, { anchor = "TOP" })
 end
 
 local function AttachPinnedTooltip(target, widget)
@@ -279,7 +280,7 @@ local function AttachPinnedTooltip(target, widget)
 
     target._quiPinWidget = widget
     target._quiTooltipAugment = function(self, tooltip)
-        if not tooltip or not ShouldShowTooltips() then
+        if not tooltip then
             return
         end
 
@@ -304,7 +305,8 @@ local function AttachPinnedTooltip(target, widget)
 
     target._quiPinsTooltipHooked = true
     target:HookScript("OnEnter", function(self)
-        if not GameTooltip or not ShouldShowTooltips() then
+        local svc = GetTooltipService()
+        if not svc then
             return
         end
 
@@ -315,21 +317,18 @@ local function AttachPinnedTooltip(target, widget)
             return
         end
 
-        local accent = GetAccentColor()
-        if not GameTooltip:IsOwned(self) then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(binding and binding.label or ns.L["Pinned setting"], accent[1], accent[2], accent[3], 1)
-        end
-
-        if type(self._quiTooltipAugment) == "function" then
-            self._quiTooltipAugment(self, GameTooltip)
-        end
-        GameTooltip:Show()
+        svc:Show(self, function(tip)
+            tip:AddTitle(binding and binding.label or ns.L["Pinned setting"])
+            if type(self._quiTooltipAugment) == "function" then
+                self._quiTooltipAugment(self, tip)
+            end
+        end, { anchor = "TOP" })
     end)
 
     target:HookScript("OnLeave", function(self)
-        if GameTooltip and GameTooltip:IsOwned(self) then
-            GameTooltip:Hide()
+        local svc = GetTooltipService()
+        if svc then
+            svc:Hide(false, self)
         end
     end)
 end
@@ -556,8 +555,9 @@ local function EnsurePinButton(widget, host, interactive)
 
         button:SetScript("OnLeave", function(self)
             self._quiHovered = false
-            if GameTooltip and GameTooltip:IsOwned(self) then
-                GameTooltip:Hide()
+            local svc = GetTooltipService()
+            if svc then
+                svc:Hide(false, self)
             end
             if self._quiPinWidget and type(Pins.RefreshWidgetChrome) == "function" then
                 Pins:RefreshWidgetChrome(self._quiPinWidget)

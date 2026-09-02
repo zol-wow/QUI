@@ -68,35 +68,412 @@ function GUI:SetTooltipInfo(frame, description, label)
 end
 
 function GUI:GetTooltipTitleColor()
-    local accent = self.Colors and self.Colors.accent or C.accent
+    local colors = self.Colors or C
+    local accent = colors.accentText or colors.accent or C.accent
     return accent[1] or 1, accent[2] or 1, accent[3] or 1, accent[4] or 1
 end
 
+-- BEGIN GUI.Tooltip service
+-- Options-owned tooltip: one lazily created frame on the TOOLTIP strata,
+-- styled from GUI.Colors (independent of the game-world tooltip.skinTooltips
+-- skin), two persistent AnimationGroups (fade-in 0->1 eased OUT, fade-out
+-- current-alpha->0 eased IN), one anchor policy, one gate
+-- (general.showOptionTooltips). Port of the EllesmereUI
+-- ShowWidgetTooltip/HideWidgetTooltip recipe.
+--
+--   GUI.Tooltip:Show(anchor, textOrFn, opts) -> boolean
+--     textOrFn: string, or function(tip, anchor) that may return a string
+--               and/or call tip:SetText / tip:AddLine / tip:AddTitle
+--               (GameTooltip-shaped so `_quiTooltipAugment` keeps working).
+--               Runs inside ns.SafeCall("bulkhead"); an error suppresses
+--               the tooltip (combat / secret-value safety).
+--     opts: title, anchor ("TOP" default | "BELOW" | "LEFT" | "RIGHT" |
+--           "CURSOR"; GameTooltip ANCHOR_* names accepted), maxWidth,
+--           scale (defaults to the options panel scale for panel anchors),
+--           color ({r,g,b,a} for a plain string body).
+--   GUI.Tooltip:Hide(instant, owner)  -- owner-guarded when owner is given
+--   GUI.Tooltip:IsEnabled() / :IsShown() / :IsOwned(frame) / :GetOwner()
+--   GUI.Tooltip:IsPanelAnchor(frame)  -- frame lives under GUI.MainFrame
+--   GUI.Tooltip:Retint()              -- also runs from GUI:OnAccentChanged
+local Tooltip = GUI.Tooltip or {}
+GUI.Tooltip = Tooltip
+
+local TIP_MAX_WIDTH  = 260
+local TIP_PAD        = 8
+local TIP_LINE_GAP   = 2
+local TIP_FADE       = 0.25
+local TIP_GAP        = 4
+local TIP_TITLE_SIZE = 12
+local TIP_BODY_SIZE  = 11
+local TIP_MIN_INNER  = 24
+
+-- point on tooltip, point on anchor, x, y. (Flat assignments: the
+-- options_lod_theme_core palette scan treats any indented `KEY = {` between
+-- the GUI.Colors literal and the next `\n}` as a colour role.)
+local TIP_ANCHOR_PRESETS = {}
+TIP_ANCHOR_PRESETS.TOP   = { "BOTTOM", "TOP",    0,  TIP_GAP }
+TIP_ANCHOR_PRESETS.BELOW = { "TOP",    "BOTTOM", 0, -TIP_GAP }
+TIP_ANCHOR_PRESETS.LEFT  = { "RIGHT",  "LEFT",  -TIP_GAP, 0 }
+TIP_ANCHOR_PRESETS.RIGHT = { "LEFT",   "RIGHT",  TIP_GAP, 0 }
+local TIP_ANCHOR_ALIASES = {
+    ANCHOR_TOP = "TOP", ANCHOR_TOPLEFT = "TOP", ANCHOR_TOPRIGHT = "TOP",
+    ANCHOR_BOTTOM = "BELOW", ANCHOR_BOTTOMLEFT = "BELOW", ANCHOR_BOTTOMRIGHT = "BELOW",
+    ANCHOR_LEFT = "LEFT", ANCHOR_RIGHT = "RIGHT", ANCHOR_CURSOR = "CURSOR",
+    BOTTOM = "BELOW",
+}
+
+local function TipIsSecret(value)
+    local H = ns.Helpers
+    if H and H.IsSecretValue then return H.IsSecretValue(value) end
+    return issecretvalue and issecretvalue(value) or false
+end
+
+-- Number or fallback; secret values (12.x combat geometry) collapse to fallback.
+local function TipNumber(value, fallback)
+    if TipIsSecret(value) then return fallback end
+    if type(value) ~= "number" then return fallback end
+    return value
+end
+
+local function TipResolvePreset(name)
+    if type(name) ~= "string" then return "TOP" end
+    local upper = name:upper()
+    if TIP_ANCHOR_ALIASES[upper] then return TIP_ANCHOR_ALIASES[upper] end
+    if upper == "CURSOR" or TIP_ANCHOR_PRESETS[upper] then return upper end
+    return "TOP"
+end
+
+-- GameTooltip-shaped line collector handed to content functions.
+local function TipNewBuilder()
+    local builder = { _lines = {} }
+    function builder:Clear() self._lines = {} end
+    function builder:AddLine(text, r, g, b, wrap)
+        if type(text) ~= "string" or text == "" then return end
+        local lines = self._lines
+        lines[#lines + 1] = { text = text, r = r, g = g, b = b, wrap = wrap }
+    end
+    function builder:SetText(text, r, g, b, a, wrap)
+        if type(text) ~= "string" or text == "" then return end
+        local lines = self._lines
+        lines[#lines + 1] = { text = text, r = r, g = g, b = b, a = a, wrap = wrap }
+    end
+    function builder:AddTitle(text)
+        if type(text) ~= "string" or text == "" then return end
+        local lines = self._lines
+        lines[#lines + 1] = { text = text, title = true }
+    end
+    function builder:AddDoubleLine(left, right, lr, lg, lb, rr, rg, rb)
+        local text = tostring(left or "")
+        if right ~= nil then text = text .. "  " .. tostring(right) end
+        self:AddLine(text, lr or rr, lg or rg, lb or rb)
+    end
+    return builder
+end
+
+function Tooltip:IsEnabled()
+    local db = QUI and QUI.db and QUI.db.profile
+    return not (db and db.general and db.general.showOptionTooltips == false)
+end
+
+function Tooltip:IsPanelAnchor(frame)
+    local panel = GUI.MainFrame
+    if not panel or not frame then return false end
+    local node, depth = frame, 0
+    while node and depth < 40 do
+        if node == panel then return true end
+        node = type(node.GetParent) == "function" and node:GetParent() or nil
+        depth = depth + 1
+    end
+    return false
+end
+
+local function TipPanelScale(anchor)
+    local panel = GUI.MainFrame
+    if panel and Tooltip:IsPanelAnchor(anchor) then
+        local s = TipNumber(panel:GetScale(), 1)
+        if s > 0 then return s end
+    end
+    return 1
+end
+
+function Tooltip:Retint()
+    local tip = self._frame
+    if not tip then return end
+    local bg = C.bg or { 0.05, 0.07, 0.09, 0.97 }
+    tip._bg:SetColorTexture(bg[1], bg[2], bg[3], bg[4] or 0.97)
+    local border = C.borderStrong or C.border or { 1, 1, 1, 0.1 }
+    local UIKit = ns.UIKit
+    if UIKit and UIKit.UpdateBorderLines then
+        UIKit.UpdateBorderLines(tip, 1, border[1], border[2], border[3], border[4] or 0.1)
+    end
+    local accentText = C.accentText or C.accent or { 1, 1, 1, 1 }
+    for _, fs in ipairs(tip._fontStrings) do
+        if fs._quiTipTitle then
+            fs:SetTextColor(accentText[1], accentText[2], accentText[3], accentText[4] or 1)
+        end
+    end
+end
+
+local function TipEnsureFrame()
+    local tip = Tooltip._frame
+    if tip then return tip end
+    tip = CreateFrame("Frame", "QUI_OptionsTooltip", UIParent)
+    tip:SetFrameStrata("TOOLTIP")
+    tip:SetFrameLevel(200)
+    tip:EnableMouse(false)
+    tip:SetSize(TIP_MAX_WIDTH, 24)
+    tip:SetAlpha(0)
+    tip:Hide()
+
+    local bg = tip:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    tip._bg = bg
+    local UIKit = ns.UIKit
+    if UIKit and UIKit.CreateBorderLines then UIKit.CreateBorderLines(tip) end
+    tip._fontStrings = {}
+
+    tip._fadeIn = tip:CreateAnimationGroup()
+    local fadeIn = tip._fadeIn:CreateAnimation("Alpha")
+    fadeIn:SetFromAlpha(0)
+    fadeIn:SetToAlpha(1)
+    fadeIn:SetDuration(TIP_FADE)
+    fadeIn:SetSmoothing("OUT")
+    tip._fadeIn:SetScript("OnFinished", function() tip:SetAlpha(1) end)
+
+    tip._fadeOut = tip:CreateAnimationGroup()
+    local fadeOut = tip._fadeOut:CreateAnimation("Alpha")
+    fadeOut:SetFromAlpha(1)
+    fadeOut:SetToAlpha(0)
+    fadeOut:SetDuration(TIP_FADE)
+    fadeOut:SetSmoothing("IN")
+    tip._fadeOutAnim = fadeOut
+    tip._fadeOut:SetScript("OnFinished", function()
+        tip:Hide()
+        tip:SetAlpha(0)
+        tip:SetScale(1)
+        Tooltip._owner = nil
+    end)
+
+    Tooltip._frame = tip
+    Tooltip:Retint()
+    if GUI.OnAccentChanged then
+        GUI:OnAccentChanged(function() Tooltip:Retint() end)
+    end
+    return tip
+end
+
+function Tooltip:GetFrame()
+    return TipEnsureFrame()
+end
+
+local function TipAcquireFontString(tip, index)
+    local fs = tip._fontStrings[index]
+    if not fs then
+        fs = tip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        fs:SetJustifyH("LEFT")
+        fs:SetJustifyV("TOP")
+        fs:SetWordWrap(true)
+        tip._fontStrings[index] = fs
+    end
+    return fs
+end
+
+local function TipApplyFont(fs, isTitle)
+    local path = (GUI.GetFontPath and GUI:GetFontPath()) or "Fonts\\FRIZQT__.TTF"
+    local size = isTitle and TIP_TITLE_SIZE or TIP_BODY_SIZE
+    local H = ns.Helpers
+    if H and H.ApplyFontWithFallback then
+        H.ApplyFontWithFallback(fs, path, size, "")
+    else
+        fs:SetFont(path, size, "")
+    end
+end
+
+-- Two-pass layout: natural single-line widths pick the tooltip width (capped at
+-- maxWidth), then lines wrap to that width and stack. Runs on a shown frame so
+-- GetStringHeight is valid; secret geometry falls back to fixed sizes.
+local function TipLayout(tip, lines, maxWidth)
+    local innerMax = math.max(TIP_MIN_INNER, (maxWidth or TIP_MAX_WIDTH) - TIP_PAD * 2)
+    local accentText = C.accentText or C.accent or { 1, 1, 1, 1 }
+    local body = C.text or { 1, 1, 1, 1 }
+    local natural = 0
+    for i, line in ipairs(lines) do
+        local fs = TipAcquireFontString(tip, i)
+        fs._quiTipTitle = line.title or nil
+        TipApplyFont(fs, line.title)
+        if line.title then
+            fs:SetTextColor(accentText[1], accentText[2], accentText[3], accentText[4] or 1)
+        elseif line.r then
+            fs:SetTextColor(line.r, line.g or line.r, line.b or line.r, line.a or 1)
+        else
+            fs:SetTextColor(body[1], body[2], body[3], 0.85)
+        end
+        fs:SetWidth(0)
+        fs:SetText(line.text)
+        fs:Show()
+        local w = TipNumber(fs:GetStringWidth(), innerMax)
+        if w > natural then natural = w end
+    end
+    for i = #lines + 1, #tip._fontStrings do
+        tip._fontStrings[i]:SetText("")
+        tip._fontStrings[i]:Hide()
+    end
+
+    local inner = math.min(math.ceil(natural), innerMax)
+    if inner < TIP_MIN_INNER then inner = TIP_MIN_INNER end
+    local y = -TIP_PAD
+    for i, line in ipairs(lines) do
+        local fs = tip._fontStrings[i]
+        fs:SetWordWrap(line.wrap ~= false)
+        fs:SetWidth(inner)
+        fs:ClearAllPoints()
+        fs:SetPoint("TOPLEFT", tip, "TOPLEFT", TIP_PAD, y)
+        local fallbackH = (line.title and TIP_TITLE_SIZE or TIP_BODY_SIZE) + 3
+        local h = TipNumber(fs:GetStringHeight(), fallbackH)
+        y = y - h - (i < #lines and TIP_LINE_GAP or 0)
+    end
+    tip:SetSize(inner + TIP_PAD * 2, math.ceil(-y + TIP_PAD))
+end
+
+local function TipAnchor(tip, anchor, preset)
+    tip:ClearAllPoints()
+    if preset == "CURSOR" then
+        local es = TipNumber(tip:GetEffectiveScale(), 1)
+        if es <= 0 then es = 1 end
+        local cx, cy = GetCursorPosition()
+        cx, cy = TipNumber(cx, 0), TipNumber(cy, 0)
+        tip:SetPoint("BOTTOM", UIParent, "BOTTOMLEFT", cx / es, cy / es + TIP_GAP)
+        return
+    end
+    local p = TIP_ANCHOR_PRESETS[preset] or TIP_ANCHOR_PRESETS.TOP
+    tip:SetPoint(p[1], anchor, p[2], p[3], p[4])
+end
+
+local function TipClampToScreen(tip)
+    local scale = TipNumber(tip:GetEffectiveScale(), nil)
+    if not scale or scale <= 0 then return end
+    local left = TipNumber(tip:GetLeft(), nil)
+    local right = TipNumber(tip:GetRight(), nil)
+    local top = TipNumber(tip:GetTop(), nil)
+    local bottom = TipNumber(tip:GetBottom(), nil)
+    if not (left and right and top and bottom) then return end
+    local uiScale = TipNumber(UIParent:GetEffectiveScale(), 1)
+    local screenW = TipNumber(GetScreenWidth(), 0) * uiScale / scale
+    local screenH = TipNumber(GetScreenHeight(), 0) * uiScale / scale
+    local dx, dy = 0, 0
+    if left < 0 then dx = -left elseif right > screenW then dx = screenW - right end
+    if bottom < 0 then dy = -bottom elseif top > screenH then dy = screenH - top end
+    if dx == 0 and dy == 0 then return end
+    local point, rel, relPoint, px, py = tip:GetPoint(1)
+    if not point then return end
+    px, py = TipNumber(px, 0), TipNumber(py, 0)
+    tip:ClearAllPoints()
+    tip:SetPoint(point, rel, relPoint, px + dx, py + dy)
+end
+
+function Tooltip:Show(anchor, content, opts)
+    if not anchor then return false end
+    if not self:IsEnabled() then return false end
+    opts = opts or {}
+    local tip = TipEnsureFrame()
+    -- Kill a pending fade-out (its OnFinished would hide us) and any fade-in.
+    tip._fadeOut:Stop()
+    tip._fadeIn:Stop()
+
+    local builder = self._builder
+    if not builder then
+        builder = TipNewBuilder()
+        self._builder = builder
+    end
+    builder:Clear()
+    if opts.title then builder:AddTitle(opts.title) end
+    local body = content
+    if type(content) == "function" then
+        local ok, ret = ns.SafeCall("bulkhead", content, builder, anchor)
+        if not ok then
+            self:Hide(true)
+            return false
+        end
+        body = ret
+    end
+    if type(body) == "string" and body ~= "" then
+        local c = opts.color
+        if c then builder:AddLine(body, c[1], c[2], c[3]) else builder:AddLine(body) end
+    end
+    local lines = builder._lines
+    if #lines == 0 then
+        self:Hide(true)
+        return false
+    end
+
+    self._owner = anchor
+    tip:SetScale(opts.scale or TipPanelScale(anchor))
+    TipAnchor(tip, anchor, TipResolvePreset(opts.anchor))
+    tip:SetAlpha(0)
+    tip:Show()
+    TipLayout(tip, lines, opts.maxWidth)
+    TipClampToScreen(tip)
+    tip._fadeIn:Play()
+    return true
+end
+
+function Tooltip:Hide(instant, owner)
+    local tip = self._frame
+    if not tip then return end
+    if owner ~= nil and self._owner ~= owner then return end
+    self._owner = nil
+    if not tip:IsShown() then return end
+    tip._fadeIn:Stop()
+    if instant then
+        tip._fadeOut:Stop()
+        tip:Hide()
+        tip:SetAlpha(0)
+        tip:SetScale(1)
+        return
+    end
+    if tip._fadeOut:IsPlaying() then return end
+    -- Leaving mid-fade-in continues smoothly from the current alpha.
+    tip._fadeOutAnim:SetFromAlpha(TipNumber(tip:GetAlpha(), 1))
+    tip._fadeOut:Play()
+end
+
+function Tooltip:IsShown()
+    local tip = self._frame
+    return tip ~= nil and tip:IsShown() and true or false
+end
+
+function Tooltip:GetOwner()
+    return self._owner
+end
+
+function Tooltip:IsOwned(frame)
+    return frame ~= nil and self._owner == frame and self:IsShown()
+end
+-- END GUI.Tooltip service
+
+-- Adoption point for option rows: metadata (`_quiTooltipDescription`,
+-- `_quiTooltipLabel`, `_quiHasBaseTooltip`, `_quiTooltipAugment`) is read by
+-- shared.lua ResolveTooltipInfo, pins_ui and profiles_content; keep it.
 function GUI:AttachTooltip(frame, description, label)
     if not GUI:SetTooltipInfo(frame, description, label) then return end
     if type(frame.HookScript) ~= "function" then return end
     if type(frame.EnableMouse) == "function" then frame:EnableMouse(true) end
     frame._quiHasBaseTooltip = true
     frame:HookScript("OnEnter", function(self)
-        local db = _G.QUI and _G.QUI.db and _G.QUI.db.profile
-        if db and db.general and db.general.showOptionTooltips == false then return end
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if type(label) == "string" and label ~= "" then
-            GameTooltip:SetText(label, GUI:GetTooltipTitleColor())
-            GameTooltip:AddLine(description, 1, 1, 1, true)
-        else
-            GameTooltip:SetText(description, 1, 1, 1, 1, true)
-        end
-        if type(self._quiTooltipAugment) == "function" then
-            ns.SafeCallMethod("bulkhead", self, "_quiTooltipAugment", GameTooltip)
-        end
-        GameTooltip:Show()
+        local desc = self._quiTooltipDescription
+        if type(desc) ~= "string" or desc == "" then desc = description end
+        local title = self._quiTooltipLabel
+        if type(title) ~= "string" or title == "" then title = label end
+        if type(title) ~= "string" or title == "" then title = nil end
+        GUI.Tooltip:Show(self, function(tip)
+            tip:AddLine(desc)
+            if type(self._quiTooltipAugment) == "function" then
+                ns.SafeCallMethod("bulkhead", self, "_quiTooltipAugment", tip)
+            end
+        end, { title = title })
     end)
     frame:HookScript("OnLeave", function(self)
-        if GameTooltip and (not GameTooltip.IsOwned or GameTooltip:IsOwned(self)) then
-            GameTooltip:Hide()
-        end
+        GUI.Tooltip:Hide(false, self)
     end)
 end
 
@@ -1050,6 +1427,19 @@ function GUI.RegisterSectionEntry(tabIndex, subTabIndex, title, frame, contentPa
     }
 end
 
+-- Programmatic jumps go through the frame's smooth-scroll controller when it
+-- has one: an in-flight wheel/chip easing would otherwise overwrite a direct
+-- SetVerticalScroll on its next tick, and the next wheel notch must build on
+-- the jumped-to offset.
+local function JumpScrollTo(scroll, offset)
+    local ctl = UIKit.GetSmoothScroll and UIKit.GetSmoothScroll(scroll)
+    if ctl then
+        ctl:ScrollTo(offset, true)
+    else
+        scroll:SetVerticalScroll(offset)
+    end
+end
+
 function GUI:ScrollToRegisteredSection(tabIndex, subTabIndex, sectionName, opts)
     local entry = GetRegisteredSection(tabIndex, subTabIndex, sectionName)
     if not entry or not entry.frame then return false end
@@ -1060,7 +1450,7 @@ function GUI:ScrollToRegisteredSection(tabIndex, subTabIndex, sectionName, opts)
         local scrollTop = scroll:GetTop()
         if sectionTop and scrollTop then
             local offset = math.max(0, (scrollTop - sectionTop) + 10)
-            scroll:SetVerticalScroll(offset)
+            JumpScrollTo(scroll, offset)
         end
     end
 
@@ -1243,13 +1633,14 @@ function GUI:CreateLabel(parent, text, size, color, anchor, x, y)
     return label
 end
 
-function GUI:CreateButton(parent, text, width, height, onClick, variant)
+function GUI:CreateButton(parent, text, width, height, onClick, variant, tooltip)
     return ns.UIKit.CreateButton(parent, {
         text = text,
         width = width,
         height = height,
         onClick = onClick,
         variant = variant,
+        tooltip = tooltip,
     })
 end
 
@@ -1639,7 +2030,8 @@ local CHEVRON_TEXT_ALPHA = 0.7
 
 local DROPDOWN_MAX_VISIBLE_ITEMS = 10
 local DROPDOWN_ITEM_HEIGHT = 22
-local DROPDOWN_SCROLLBAR_WIDTH = 6
+local DROPDOWN_SCROLLBAR_WIDTH = 4
+local DROPDOWN_SCROLL_STEP = 40
 
 local function PositionDropdownMenu(menuFrame, dropdown, menuHeight)
     menuFrame:ClearAllPoints()
@@ -1684,9 +2076,20 @@ local function RetintSharedMenu(menu)
     for _, f in ipairs(menu._buttonPool or {}) do
         TintSharedMenuButton(f)
     end
-    local thumb = menu.scrollBar and menu.scrollBar.thumb
-    if thumb then
-        thumb:SetColorTexture(C.scrollThumb[1], C.scrollThumb[2], C.scrollThumb[3], C.scrollThumb[4])
+    if menu.scrollBar and menu.scrollBar.Retint then
+        menu.scrollBar:Retint()
+    end
+end
+
+-- The shared menu's scroll offset is reset whenever a new owner takes it or
+-- the search filter changes; the reset must go through the controller so an
+-- easing still in flight from the previous list cannot drag it back.
+local function ResetSharedMenuScroll(menu)
+    local ctl = UIKit.GetSmoothScroll and UIKit.GetSmoothScroll(menu.scrollFrame)
+    if ctl then
+        ctl:ScrollTo(0, true)
+    else
+        menu.scrollFrame:SetVerticalScroll(0)
     end
 end
 
@@ -1699,52 +2102,29 @@ local function CreateDropdownScrollBody(menuFrame)
     scrollContent:SetWidth(200)
     scrollFrame:SetScrollChild(scrollContent)
 
-    local scrollBar = CreateFrame("Frame", nil, menuFrame)
-    scrollBar:SetWidth(DROPDOWN_SCROLLBAR_WIDTH)
-    scrollBar:SetPoint("TOPRIGHT", menuFrame, "TOPRIGHT", -1, -2)
-    scrollBar:SetPoint("BOTTOMRIGHT", menuFrame, "BOTTOMRIGHT", -1, 2)
-    scrollBar:Hide()
-
-    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
-    thumb:SetWidth(DROPDOWN_SCROLLBAR_WIDTH)
-    thumb:SetColorTexture(C.scrollThumb[1], C.scrollThumb[2], C.scrollThumb[3], C.scrollThumb[4])
-    scrollBar.thumb = thumb
-
-    local function UpdateThumb()
-        local contentH = scrollContent:GetHeight()
-        local frameH = scrollFrame:GetHeight()
-        if contentH <= frameH or frameH <= 0 then
-            scrollBar:Hide()
-            return
-        end
-        scrollBar:Show()
-        local trackH = scrollBar:GetHeight()
-        if trackH <= 0 then return end
-        local thumbH = math.max(20, (frameH / contentH) * trackH)
-        thumb:SetHeight(thumbH)
-        local scrollMax = contentH - frameH
-        local okScroll, scrollCur = pcall(scrollFrame.GetVerticalScroll, scrollFrame)
-        scrollCur = (okScroll and scrollCur) or 0
-        local ratio = (scrollMax > 0) and (scrollCur / scrollMax) or 0
-        local yOff = -ratio * (trackH - thumbH)
-        thumb:ClearAllPoints()
-        thumb:SetPoint("TOP", scrollBar, "TOP", 0, yOff)
+    -- Overflow is measured from the list container, not the native range: the
+    -- builder resizes the container synchronously and the native range only
+    -- catches up on the next layout pass.
+    local function GetMenuRange()
+        local contentH = scrollContent:GetHeight() or 0
+        local frameH = scrollFrame:GetHeight() or 0
+        return math.max(0, contentH - frameH)
     end
 
-    local SCROLL_STEP = 22
-    scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local okCur, currentScroll = pcall(self.GetVerticalScroll, self)
-        if not okCur then return end
-        local contentH = scrollContent:GetHeight()
-        local frameH = self:GetHeight()
-        local maxScroll = math.max(0, contentH - frameH)
-        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
-        self:SetVerticalScroll(newScroll)
-        UpdateThumb()
-    end)
+    local scrollBar = UIKit.CreateScrollBar(scrollFrame, {
+        parent = menuFrame,
+        anchor = menuFrame,
+        offsetX = -2,
+        insetTop = 2,
+        insetBottom = 2,
+        width = DROPDOWN_SCROLLBAR_WIDTH,
+        getRange = GetMenuRange,
+    })
+    UIKit.AttachSmoothScroll(scrollFrame, { step = DROPDOWN_SCROLL_STEP, getRange = GetMenuRange })
 
-    scrollFrame:SetScript("OnScrollRangeChanged", function() UpdateThumb() end)
+    local function UpdateThumb()
+        scrollBar:Update()
+    end
 
     return scrollFrame, scrollContent, scrollBar, UpdateThumb
 end
@@ -1779,8 +2159,8 @@ local function GetSharedDropdownMenu()
     menu.scrollBar = scrollBar
     menu.updateThumb = updateThumb
     menu.UpdateScrollInset = function()
-        if scrollBar:IsShown() then
-            scrollFrame:SetPoint("BOTTOMRIGHT", -(DROPDOWN_SCROLLBAR_WIDTH + 2), 0)
+        if scrollBar.track:IsShown() then
+            scrollFrame:SetPoint("BOTTOMRIGHT", -(DROPDOWN_SCROLLBAR_WIDTH + 4), 0)
         else
             scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
         end
@@ -1864,6 +2244,11 @@ local function GetSharedDropdownMenu()
             frame.__checkElapsed = 0
 
             if searchBox:IsShown() and searchBox:HasFocus() then
+                closeTimer = 0
+                return
+            end
+            -- A scrollbar drag routinely leaves the menu bounds; not a dismiss.
+            if scrollBar:IsDragging() then
                 closeTimer = 0
                 return
             end
@@ -1960,7 +2345,7 @@ local function AcquireSharedMenuFor(menu, container, dropdown, searchable, build
     menu._ownerBuildMenu = buildMenu
     -- The menu is shared across every form dropdown: a scroll offset left by a
     -- long list would push a short list entirely out of the clipped viewport.
-    menu.scrollFrame:SetVerticalScroll(0)
+    ResetSharedMenuScroll(menu)
     if searchable then
         menu.searchContainer:Show()
         menu.scrollFrame:SetPoint("TOPLEFT", 0, -DROPDOWN_SEARCH_BOX_HEIGHT)
@@ -1973,7 +2358,7 @@ local function AcquireSharedMenuFor(menu, container, dropdown, searchable, build
         menu.searchContainer:Hide()
         menu.scrollFrame:SetPoint("TOPLEFT", 0, 0)
     end
-    menu.scrollBar.thumb:SetColorTexture(C.scrollThumb[1], C.scrollThumb[2], C.scrollThumb[3], C.scrollThumb[4])
+    if menu.scrollBar.Retint then menu.scrollBar:Retint() end
 end
 
 local FORM_ROW_HEIGHT = 28
@@ -2975,7 +3360,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         local mutedColor = C.textMuted or {0.6, 0.6, 0.6}
 
         if isFiltering then
-            menu.scrollFrame:SetVerticalScroll(0)
+            ResetSharedMenuScroll(menu)
         end
 
         for i, opt in ipairs(container.options) do
@@ -3421,13 +3806,14 @@ function GUI:CreateScrollableTextBox(parent, height, text, options)
         editBox:SetWidth(w)
     end)
 
-    scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local current = self:GetVerticalScroll()
-        local maxScroll = math.max(0, editBox:GetHeight() - self:GetHeight())
-        local newScroll = math.min(maxScroll, math.max(0, current - delta * 20))
-        self:SetVerticalScroll(newScroll)
-    end)
+    -- A multi-line EditBox child under-reports the native scroll range; the
+    -- box's own height is the truth.
+    UIKit.AttachSmoothScroll(scrollFrame, {
+        step = 40,
+        getRange = function(self)
+            return math.max(0, (editBox:GetHeight() or 0) - (self:GetHeight() or 0))
+        end,
+    })
 
     container.editBox = editBox
     container.scrollFrame = scrollFrame
@@ -5494,18 +5880,17 @@ function GUI:CreateMainFrame()
     end)
 
     resizeHandle:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-        GameTooltip:SetText(ns.L["Drag to resize"], 1, 1, 1)
-        GameTooltip:Show()
+        GUI.Tooltip:Show(self, ns.L["Drag to resize"], { anchor = "TOP" })
     end)
 
     resizeHandle:SetScript("OnLeave", function(self)
-        GameTooltip:Hide()
+        GUI.Tooltip:Hide(false, self)
     end)
 
     frame.resizeHandle = resizeHandle
 
     frame:SetScript("OnHide", function()
+        GUI.Tooltip:Hide(true)
         local gfem = ns and ns.QUI_GroupFrameEditMode
         if gfem then
             if gfem:IsEditMode() then gfem:DisableEditMode() end
@@ -5703,6 +6088,7 @@ local SIDEBAR_TILE_GAP = 2
 local SIDEBAR_TOOLS_RESERVE = 96
 local SIDEBAR_BOTTOM_GAP = 6
 local SIDEBAR_SCROLLBAR_WIDTH = 4
+local SIDEBAR_SCROLL_STEP = 45
 
 local function SidebarScrollOffset(scroll)
     local getter = ns.GetSafeVerticalScroll
@@ -5747,54 +6133,41 @@ local function EnsureSidebarScroll(frame)
     child:SetHeight(1)
     scroll:SetScrollChild(child)
 
-    local scrollBar = CreateFrame("Frame", nil, sidebar)
-    scrollBar:SetWidth(SIDEBAR_SCROLLBAR_WIDTH)
-    scrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -1, 0)
-    scrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -1, 0)
-    scrollBar:Hide()
+    local function SidebarRange()
+        return math.max(0, (child:GetHeight() or 0) - (scroll:GetHeight() or 0))
+    end
 
-    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
-    thumb:SetWidth(SIDEBAR_SCROLLBAR_WIDTH)
-    thumb:SetColorTexture(C.scrollThumb[1], C.scrollThumb[2], C.scrollThumb[3], C.scrollThumb[4])
+    local scrollBar, scrollCtl
 
     local function UpdateThumb()
-        local contentH = child:GetHeight()
-        local frameH = scroll:GetHeight()
-        if contentH <= frameH or frameH <= 0 then
-            scrollBar:Hide()
-            return
-        end
-        scrollBar:Show()
-        local trackH = scrollBar:GetHeight()
-        if trackH <= 0 then return end
-        local thumbH = math.max(20, (frameH / contentH) * trackH)
-        thumb:SetHeight(thumbH)
-        local scrollMax = contentH - frameH
-        local scrollCur = SidebarScrollOffset(scroll)
-        local ratio = (scrollMax > 0) and (scrollCur / scrollMax) or 0
-        thumb:ClearAllPoints()
-        thumb:SetPoint("TOP", scrollBar, "TOP", 0, -ratio * (trackH - thumbH))
+        if scrollBar then scrollBar:Update() end
     end
 
     local function ClampScroll()
-        local maxScroll = math.max(0, child:GetHeight() - scroll:GetHeight())
-        scroll:SetVerticalScroll(math.max(0, math.min(SidebarScrollOffset(scroll), maxScroll)))
+        if scrollCtl then scrollCtl:Refresh() end
         UpdateThumb()
     end
 
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local currentScroll = SidebarScrollOffset(self)
-        local maxScroll = math.max(0, child:GetHeight() - self:GetHeight())
-        self:SetVerticalScroll(
-            math.max(0, math.min(currentScroll - (delta * (SIDEBAR_TILE_HEIGHT + SIDEBAR_TILE_GAP)), maxScroll)))
-        UpdateThumb()
-    end)
-    scroll:SetScript("OnScrollRangeChanged", UpdateThumb)
+    -- Own OnSizeChanged goes on before the bar/controller hook the frame.
     scroll:SetScript("OnSizeChanged", function(self, w)
         child:SetWidth(w or GUI.SIDEBAR_WIDTH)
         ClampScroll()
     end)
+
+    scrollBar = UIKit.CreateScrollBar(scroll, {
+        parent = sidebar,
+        anchor = scroll,
+        offsetX = -1,
+        width = SIDEBAR_SCROLLBAR_WIDTH,
+        getRange = SidebarRange,
+    })
+    -- Wheel targets land on the tile grid so a notch never leaves a tile half
+    -- clipped at the top of the viewport.
+    scrollCtl = UIKit.AttachSmoothScroll(scroll, {
+        step = SIDEBAR_SCROLL_STEP,
+        snap = SIDEBAR_TILE_HEIGHT + SIDEBAR_TILE_GAP,
+        getRange = SidebarRange,
+    })
 
     frame._sidebarScroll = scroll
     frame._sidebarScrollChild = child
@@ -5816,7 +6189,10 @@ local function EnsureSidebarTileVisible(frame, tile)
     local tileBottom = tileTop + SIDEBAR_TILE_HEIGHT
     local maxScroll = math.max(0, frame._sidebarScrollChild:GetHeight() - viewportH)
 
-    local cur = SidebarScrollOffset(scroll)
+    -- Measure against the in-flight target so a tile selected mid-easing is
+    -- judged by where the list is going, not where it happens to be.
+    local ctl = UIKit.GetSmoothScroll and UIKit.GetSmoothScroll(scroll)
+    local cur = ctl and ctl:GetTarget() or SidebarScrollOffset(scroll)
 
     local target = cur
     if tileTop < cur then
@@ -5826,7 +6202,11 @@ local function EnsureSidebarTileVisible(frame, tile)
     end
 
     target = math.max(0, math.min(target, maxScroll))
-    scroll:SetVerticalScroll(target)
+    if ctl then
+        ctl:ScrollTo(target, true)
+    else
+        scroll:SetVerticalScroll(target)
+    end
     if frame._sidebarUpdateThumb then frame._sidebarUpdateThumb() end
 end
 
@@ -6302,6 +6682,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
     frame._tiles = frame._tiles or {}
     local tile = frame._tiles[index]
     if not tile then return end
+    GUI.Tooltip:Hide(true)
 
     if not (opts and opts.searchEntry) and frame._searchBox and frame._searchBox.editBox then
         local box = frame._searchBox.editBox
@@ -6374,7 +6755,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
                         local sectionTop = target.GetTop and target:GetTop() or nil
                         if bodyTop and sectionTop and scroll.SetVerticalScroll then
                             local offset = math.max(0, bodyTop - sectionTop)
-                            scroll:SetVerticalScroll(offset)
+                            JumpScrollTo(scroll, offset)
                             scrolledToSection = true
                         end
                     end
@@ -6397,7 +6778,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
                         local widgetTop = target.GetTop and target:GetTop() or nil
                         if bodyTop and widgetTop and scroll.SetVerticalScroll then
                             local offset = math.max(0, bodyTop - widgetTop - 50)
-                            scroll:SetVerticalScroll(offset)
+                            JumpScrollTo(scroll, offset)
                         end
                     end
                 end
@@ -6602,6 +6983,7 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     select = function(i)
         currentIndex = i
         tile._activeSubPageIndex = i
+        GUI.Tooltip:Hide(true)
         for j, t in ipairs(tabs) do
             if j == i then
                 t.label:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
@@ -6705,7 +7087,6 @@ function GUI:RenderSectionNav(scrollFrame, body, sections, options)
     local STRIP_PAD_TOP = 4
     local STRIP_PAD_BOTTOM = 4
     local ACTIVE_THRESHOLD = 12
-    local TWEEN_DURATION = 0.12
 
     local stripParent = scrollFrame:GetParent()
     local strip = CreateFrame("Frame", nil, stripParent)
@@ -6816,33 +7197,46 @@ function GUI:RenderSectionNav(scrollFrame, body, sections, options)
         table.sort(anchors, function(a, b) return a.offset < b.offset end)
     end
 
-    local activeTicker = nil
-    local tweenSuppressionUntil = 0
+    -- Chip clicks and the wheel share one easing target (UIKit controller
+    -- attached by ns.ApplyScrollWheel), so a notch during a chip scroll builds
+    -- on the chip's destination instead of fighting it.
+    local scrollCtl = (UIKit.GetSmoothScroll and UIKit.GetSmoothScroll(scrollFrame))
+        or (ns.ApplyScrollWheel and ns.ApplyScrollWheel(scrollFrame))
+    local chipTarget = nil   -- non-nil while a chip-initiated scroll is in flight
+
+    local function highlightForOffset(scrollOffset)
+        if #anchors == 0 then return end
+        local foundIdx = nil
+        for _, a in ipairs(anchors) do
+            if a.offset <= scrollOffset + ACTIVE_THRESHOLD then
+                foundIdx = a.idx
+            else
+                break
+            end
+        end
+        if foundIdx then setActive(foundIdx) end
+    end
+
+    -- Settle listener: a chip scroll keeps the clicked chip lit while in
+    -- flight; if the wheel moved the target elsewhere before landing, the
+    -- highlight follows the offset the frame actually settled on.
+    local function onScrollWrite(_, offset, settled)
+        if not settled or chipTarget == nil then return end
+        local landedOnChip = math.abs(offset - chipTarget) < 1
+        chipTarget = nil
+        if not landedOnChip then highlightForOffset(offset) end
+    end
+    if scrollCtl then scrollCtl:AddListener(onScrollWrite) end
 
     local function smoothScrollTo(target)
-        local current = scrollFrame:GetVerticalScroll() or 0
+        if scrollCtl then
+            chipTarget = scrollCtl:ScrollTo(target)
+            return
+        end
         local maxScroll = scrollFrame:GetVerticalScrollRange() or 0
         if target < 0 then target = 0 end
         if target > maxScroll then target = maxScroll end
-        local distance = target - current
-        if math.abs(distance) < 1 then
-            scrollFrame:SetVerticalScroll(target)
-            return
-        end
-        if activeTicker then activeTicker:Cancel() end
-        local startTime = GetTime()
-        tweenSuppressionUntil = startTime + TWEEN_DURATION + 0.05
-        activeTicker = C_Timer.NewTicker(0.016, function(ticker)
-            local t = (GetTime() - startTime) / TWEEN_DURATION
-            if t >= 1 then
-                scrollFrame:SetVerticalScroll(target)
-                ticker:Cancel()
-                activeTicker = nil
-                return
-            end
-            local eased = 1 - (1 - t) ^ 3
-            scrollFrame:SetVerticalScroll(current + distance * eased)
-        end)
+        scrollFrame:SetVerticalScroll(target)
     end
 
     for i, chip in ipairs(chips) do
@@ -6859,17 +7253,12 @@ function GUI:RenderSectionNav(scrollFrame, body, sections, options)
     end
 
     scrollFrame:HookScript("OnVerticalScroll", function(_, scrollOffset)
-        if GetTime() < tweenSuppressionUntil then return end
-        if #anchors == 0 then return end
-        local foundIdx = nil
-        for _, a in ipairs(anchors) do
-            if a.offset <= scrollOffset + ACTIVE_THRESHOLD then
-                foundIdx = a.idx
-            else
-                break
-            end
+        if chipTarget ~= nil then
+            if scrollCtl and scrollCtl:IsAnimating() then return end
+            -- Easing was cancelled (drag, hide): follow the offset again.
+            chipTarget = nil
         end
-        if foundIdx then setActive(foundIdx) end
+        highlightForOffset(scrollOffset)
     end)
 
     body:HookScript("OnSizeChanged", function()
@@ -6889,9 +7278,10 @@ function GUI:RenderSectionNav(scrollFrame, body, sections, options)
         refreshOffsets = refreshOffsets,
         relayoutChips = relayoutChips,
         destroy = function()
-            if activeTicker then
-                activeTicker:Cancel()
-                activeTicker = nil
+            if scrollCtl then
+                scrollCtl:RemoveListener(onScrollWrite)
+                if chipTarget ~= nil then scrollCtl:Cancel() end
+                chipTarget = nil
             end
             scrollFrame:ClearAllPoints()
             scrollFrame:SetPoint("TOPLEFT", stripParent, "TOPLEFT", 5, -5)

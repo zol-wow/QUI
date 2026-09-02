@@ -631,6 +631,8 @@ local function CreateSearchBox(parent, width, placeholder)
     return box
 end
 
+local LIST_SCROLL_STEP = 45
+
 local function CreateScrollArea(parent, width, height)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent)
     scrollFrame:SetSize(width, height)
@@ -646,59 +648,36 @@ local function CreateScrollArea(parent, width, height)
         end
     end)
 
-    local track = CreateFrame("Frame", nil, parent)
-    track:SetWidth(4)
-    track:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", 0, 0)
-    track:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 0, 0)
-
-    local trackBg = track:CreateTexture(nil, "BACKGROUND")
-    trackBg:SetAllPoints()
-    trackBg:SetColorTexture(0.15, 0.15, 0.15, 0.4)
-
-    local thumb = track:CreateTexture(nil, "OVERLAY")
-    thumb:SetWidth(4)
-    thumb:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.5)
-    thumb:SetPoint("TOP", track, "TOP", 0, 0)
-    thumb:SetHeight(20)
-
-    local scrollPos = 0
-    local maxScroll = 0
-
-    local function UpdateScroll()
-        local contentH = content:GetHeight()
-        local frameH = scrollFrame:GetHeight()
-        maxScroll = math_max(0, contentH - frameH)
-        if scrollPos > maxScroll then scrollPos = maxScroll end
-        if scrollPos < 0 then scrollPos = 0 end
-        scrollFrame:SetVerticalScroll(scrollPos)
-
-        if maxScroll <= 0 then
-            track:Hide()
-        else
-            track:Show()
-            local trackH = track:GetHeight()
-            local ratio = frameH / contentH
-            local thumbH = math_max(16, trackH * ratio)
-            thumb:SetHeight(thumbH)
-            local travel = trackH - thumbH
-            local offset = (scrollPos / maxScroll) * travel
-            thumb:ClearAllPoints()
-            thumb:SetPoint("TOP", track, "TOP", 0, -offset)
-        end
+    -- Rows are laid out synchronously into `content`; measure overflow from it
+    -- rather than the native range, which lags a layout pass behind.
+    local function ListRange()
+        return math_max(0, (content:GetHeight() or 0) - (scrollFrame:GetHeight() or 0))
     end
 
-    scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        scrollPos = scrollPos - (delta * 30)
-        UpdateScroll()
-    end)
+    local UIKit = ns.UIKit
+    local scrollBar = UIKit.CreateScrollBar(scrollFrame, {
+        parent = parent,
+        anchor = scrollFrame,
+        getRange = ListRange,
+    })
+    local scrollCtl = UIKit.AttachSmoothScroll(scrollFrame, {
+        step = LIST_SCROLL_STEP,
+        getRange = ListRange,
+    })
+
+    -- Called after every list rebuild: re-clamp (content may have shrunk) and
+    -- re-fit the thumb.
+    local function UpdateScroll()
+        scrollCtl:Refresh()
+        scrollBar:Update()
+    end
 
     content._updateScroll = UpdateScroll
     scrollFrame._content = content
-    scrollFrame._thumb = thumb
+    scrollFrame._scrollBar = scrollBar
     scrollFrame._resetScroll = function()
-        scrollPos = 0
-        UpdateScroll()
+        scrollCtl:ScrollTo(0, true)
+        scrollBar:Update()
     end
     return scrollFrame, content
 end
@@ -1863,42 +1842,40 @@ local function GetOrCreateEntryCell(index)
         else
             self:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.8)
         end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetFrameStrata("TOOLTIP")
-        GameTooltip:SetFrameLevel(250)
-        local name = GetEntryName(self._entry)
-        GameTooltip:AddLine(name, 1, 1, 1)
-        local entryID = type(self._entry) == "table"
-            and (tonumber(self._entry.id) or tonumber(self._entry.spellID))
-            or nil
-        if entryID then
-            GameTooltip:AddLine(ns.L["ID: "] .. tostring(entryID), 0.5, 0.5, 0.5)
-        end
-        if type(self._entry) == "table" and self._entry._legacySpellbookSlot ~= nil then
-            GameTooltip:AddLine(ns.L["Legacy data — may need review"], 0.95, 0.6, 0.2)
-        end
-        if self._isUnknownToPlayer then
-            GameTooltip:AddLine(ns.L["Dormant — not learned on this character"], 0.9, 0.6, 0.2)
-            GameTooltip:AddLine(ns.L["Hidden on the bar; kept in your list"], 0.5, 0.5, 0.5)
-        elseif not IsEntryRegisteredInBlizzCDM(self._entry) then
-            GameTooltip:AddLine(ns.L["Not added to /cdm"], 0.95, 0.6, 0.2)
-        end
-        local entry = self._entry
-        local srcSpec = type(entry) == "table"
-            and (entry._sourceSpecID or tonumber(entry._renderSpecKey))
-            or nil
-        if type(srcSpec) == "number" and GetSpecializationInfoByID then
-            local _, specName, _, _, _, classToken = GetSpecializationInfoByID(srcSpec)
-            if specName then
-                local label = classToken and ("%s %s"):format(specName, classToken) or specName
-                GameTooltip:AddLine((ns.L["Source: %s"]):format(label), 0.6, 0.85, 1)
+        QUI.GUI.Tooltip:Show(self, function(tip)
+            local name = GetEntryName(self._entry)
+            tip:AddLine(name, 1, 1, 1)
+            local entryID = type(self._entry) == "table"
+                and (tonumber(self._entry.id) or tonumber(self._entry.spellID))
+                or nil
+            if entryID then
+                tip:AddLine(ns.L["ID: "] .. tostring(entryID), 0.5, 0.5, 0.5)
             end
-        end
-        if self._dragTooltipText then
-            GameTooltip:AddLine(self._dragTooltipText, 0.5, 0.5, 0.5)
-        end
-        GameTooltip:AddLine(ns.L["Right-click for options"], 0.5, 0.5, 0.5)
-        GameTooltip:Show()
+            if type(self._entry) == "table" and self._entry._legacySpellbookSlot ~= nil then
+                tip:AddLine(ns.L["Legacy data — may need review"], 0.95, 0.6, 0.2)
+            end
+            if self._isUnknownToPlayer then
+                tip:AddLine(ns.L["Dormant — not learned on this character"], 0.9, 0.6, 0.2)
+                tip:AddLine(ns.L["Hidden on the bar; kept in your list"], 0.5, 0.5, 0.5)
+            elseif not IsEntryRegisteredInBlizzCDM(self._entry) then
+                tip:AddLine(ns.L["Not added to /cdm"], 0.95, 0.6, 0.2)
+            end
+            local entry = self._entry
+            local srcSpec = type(entry) == "table"
+                and (entry._sourceSpecID or tonumber(entry._renderSpecKey))
+                or nil
+            if type(srcSpec) == "number" and GetSpecializationInfoByID then
+                local _, specName, _, _, _, classToken = GetSpecializationInfoByID(srcSpec)
+                if specName then
+                    local label = classToken and ("%s %s"):format(specName, classToken) or specName
+                    tip:AddLine((ns.L["Source: %s"]):format(label), 0.6, 0.85, 1)
+                end
+            end
+            if self._dragTooltipText then
+                tip:AddLine(self._dragTooltipText, 0.5, 0.5, 0.5)
+            end
+            tip:AddLine(ns.L["Right-click for options"], 0.5, 0.5, 0.5)
+        end, { anchor = "RIGHT" })
     end)
     cell:SetScript("OnLeave", function(self)
         if dragState.active then return end
@@ -1908,7 +1885,7 @@ local function GetOrCreateEntryCell(index)
             local _r, _g, _b = GetChromeBorder()
             self:SetBackdropBorderColor(_r, _g, _b, 0.5)
         end
-        GameTooltip:Hide()
+        QUI.GUI.Tooltip:Hide(false, self)
     end)
 
     entryCells[index] = cell
@@ -2101,7 +2078,7 @@ StopDrag = function()
         end
     end
 
-    GameTooltip:Hide()
+    QUI.GUI.Tooltip:Hide(true)
 
     if dropIndicator then dropIndicator:Hide() end
 
@@ -2870,42 +2847,40 @@ local function GetOrCreateAddCell(index)
         else
             self:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.8)
         end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetFrameStrata("TOOLTIP")
-        GameTooltip:SetFrameLevel(250)
-        local name = self._sourceEntry.name or ""
-        GameTooltip:AddLine(name, 1, 1, 1)
-        local sid = self._sourceEntry.spellID or self._sourceEntry._entryID or ""
-        if sid ~= "" then
-            GameTooltip:AddLine(ns.L["ID: "] .. tostring(sid), 0.5, 0.5, 0.5)
-        end
-        if self._isUnlearned then
-            GameTooltip:AddLine(ns.L["Not Learned"], 0.9, 0.6, 0.2)
-        end
-        if self._isMissingFromCDM then
-            GameTooltip:AddLine(ns.L["Not added to /cdm"], 0.95, 0.6, 0.2)
-        end
-        if self._isOwned then
-            GameTooltip:AddLine(ns.L["Already added"], 0.6, 0.6, 0.6)
-        else
-            GameTooltip:AddLine(ns.L["Right-click to add"], 0.5, 0.5, 0.5)
-        end
-        local itemIDForHint
-        if self._sourceEntry
-            and self._sourceEntry._entryType == "item"
-            and type(self._sourceEntry._entryID) == "number" then
-            itemIDForHint = self._sourceEntry._entryID
-        end
-        if itemIDForHint then
-            local spellData = GetCDMSpellData()
-            if spellData and spellData.HasResolvableAuraForItem
-                and not spellData:HasResolvableAuraForItem(itemIDForHint) then
-                GameTooltip:AddLine(
-                    ns.L["No known aura yet — will appear on first use."],
-                    0.55, 0.55, 0.55, true)
+        QUI.GUI.Tooltip:Show(self, function(tip)
+            local name = self._sourceEntry.name or ""
+            tip:AddLine(name, 1, 1, 1)
+            local sid = self._sourceEntry.spellID or self._sourceEntry._entryID or ""
+            if sid ~= "" then
+                tip:AddLine(ns.L["ID: "] .. tostring(sid), 0.5, 0.5, 0.5)
             end
-        end
-        GameTooltip:Show()
+            if self._isUnlearned then
+                tip:AddLine(ns.L["Not Learned"], 0.9, 0.6, 0.2)
+            end
+            if self._isMissingFromCDM then
+                tip:AddLine(ns.L["Not added to /cdm"], 0.95, 0.6, 0.2)
+            end
+            if self._isOwned then
+                tip:AddLine(ns.L["Already added"], 0.6, 0.6, 0.6)
+            else
+                tip:AddLine(ns.L["Right-click to add"], 0.5, 0.5, 0.5)
+            end
+            local itemIDForHint
+            if self._sourceEntry
+                and self._sourceEntry._entryType == "item"
+                and type(self._sourceEntry._entryID) == "number" then
+                itemIDForHint = self._sourceEntry._entryID
+            end
+            if itemIDForHint then
+                local spellData = GetCDMSpellData()
+                if spellData and spellData.HasResolvableAuraForItem
+                    and not spellData:HasResolvableAuraForItem(itemIDForHint) then
+                    tip:AddLine(
+                        ns.L["No known aura yet — will appear on first use."],
+                        0.55, 0.55, 0.55, true)
+                end
+            end
+        end, { anchor = "RIGHT" })
     end)
     cell:SetScript("OnLeave", function(self)
         local primaryRed = self._isMissingFromCDM
@@ -2917,7 +2892,7 @@ local function GetOrCreateAddCell(index)
             local _r, _g, _b = GetChromeBorder()
             self:SetBackdropBorderColor(_r, _g, _b, 0.5)
         end
-        GameTooltip:Hide()
+        QUI.GUI.Tooltip:Hide(false, self)
     end)
 
     addCells[index] = cell
@@ -3888,17 +3863,15 @@ local function BuildFooter(parent)
     end)
     resetBtn:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(0.9, 0.6, 0.2, 1)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetFrameStrata("TOOLTIP")
-        GameTooltip:SetFrameLevel(250)
-        GameTooltip:SetText(ns.L["Reset Spell List"], 1, 1, 1)
-        GameTooltip:AddLine(ns.L["Clears all customizations and re-snapshots spells from Blizzard's CDM data."], 0.7, 0.7, 0.7, true)
-        GameTooltip:Show()
+        QUI.GUI.Tooltip:Show(self, function(tip)
+            tip:SetText(ns.L["Reset Spell List"], 1, 1, 1)
+            tip:AddLine(ns.L["Clears all customizations and re-snapshots spells from Blizzard's CDM data."], 0.7, 0.7, 0.7, true)
+        end, { anchor = "TOP" })
     end)
     resetBtn:SetScript("OnLeave", function(self)
         local _r, _g, _b = GetChromeBorder()
         self:SetBackdropBorderColor(_r, _g, _b, 1)
-        GameTooltip:Hide()
+        QUI.GUI.Tooltip:Hide(false, self)
     end)
 
     parent._footer = footer
@@ -3942,7 +3915,11 @@ local function BuildComposerLayout(host)
         scrollBar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 2, -2)
         scrollBar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 2, 2)
         local thumb = scrollBar:GetThumbTexture()
-        if thumb then thumb:SetColorTexture(0.35, 0.45, 0.5, 0.8) end
+        if thumb then
+            local colors = QUI and QUI.GUI and QUI.GUI.Colors
+            local tc = (colors and colors.scrollThumb) or { 1, 1, 1, 0.27 }
+            thumb:SetColorTexture(tc[1], tc[2], tc[3], tc[4] or 0.6)
+        end
         local up = scrollBar.ScrollUpButton or scrollBar.Back
         local down = scrollBar.ScrollDownButton or scrollBar.Forward
         if up then up:Hide(); up:SetAlpha(0) end
