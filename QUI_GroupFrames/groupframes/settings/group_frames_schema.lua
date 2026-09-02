@@ -20,7 +20,7 @@ ns.QUI_GroupFramesSettingsSchema = GroupFramesSchema
 local FORM_ROW = 32
 local HEADER_GAP = 26
 local SECTION_BOTTOM_PAD = 10
-local DESCRIPTION_TEXT_COLOR = { 0.5, 0.5, 0.5, 1 }
+local DESCRIPTION_TEXT_COLOR = { 1, 1, 1, 0.6 }  -- white + alpha (palette textDim)
 local LAYOUT_OPTIONS = {
     { value = "VERTICAL", text = ns.L["Vertical (columns)"] },
     { value = "HORIZONTAL", text = ns.L["Horizontal (rows)"] },
