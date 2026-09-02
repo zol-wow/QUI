@@ -20,7 +20,7 @@ local MAX_TREE_NODES = 60000
 
 local GROUP_FIELDS = {
     "enabled", "growDirection", "alignment", "spacing", "scale",
-    "itemWidth", "itemHeight", "sort",
+    "itemWidth", "itemHeight", "sort", "dynamicLayout",
 }
 
 local DISPLAY_FIELDS = {

@@ -1172,6 +1172,11 @@ function ns.QUI_AuraDisplaysOptions._BuildGroupTab(host, ctx, groupName)
         Shared.BuildSettingRow(layoutCard.frame, ns.L["Item Width"], widthW),
         Shared.BuildSettingRow(layoutCard.frame, ns.L["Item Height"], heightW)
     )
+    local dynamicW = GUI:CreateFormCheckbox(layoutCard.frame, nil, "dynamicLayout", group, AD.Refresh, {
+        description = ns.L["Pack this group's displays together so the gaps left by inactive auras close up. Applies to displays whose only element is a tracked icon list watching the same unit; other displays keep their reserved positions after the packed block. Packing pauses while previewing and in Layout Mode."],
+        keywords = { "dynamic", "collapse", "compact", "pack" },
+    })
+    layoutCard.AddRow(Shared.BuildSettingRow(layoutCard.frame, ns.L["Dynamic Layout (Collapse Hidden)"], dynamicW))
     L.closeSection(layoutCard)
 
     L.finish()
@@ -1219,6 +1224,7 @@ function ns.QUI_AuraDisplaysOptions._BuildAurasTab(host, ctx, display)
             trackedDisplayTypes = { icon = true, square = true, bar = true },
             iconSizeMax         = 200,
             containerLayout     = true,
+            dynamicTrackedLayout = true,
             allowSpecOverride   = true,
             roleGate            = false,
             cancelEligible      = false,

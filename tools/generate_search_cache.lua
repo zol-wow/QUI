@@ -2456,6 +2456,7 @@ local function capture_aura_displays_elements()
         return {
             elementTypes        = { filterStrip = true, tracked = true },
             trackedDisplayTypes = { icon = true, square = true, bar = true },
+            dynamicTrackedLayout = true,
             allowSpecOverride   = true,
             roleGate            = false,
             cancelEligible      = false,

@@ -202,6 +202,7 @@ local GROUP_DEFAULTS = {
     scale = 1,
     itemWidth = 0,
     itemHeight = 0,
+    dynamicLayout = false,
 }
 
 local function HighestGroupID(store)
@@ -1026,6 +1027,12 @@ function AD.SetVisibilityAlpha(alpha)
     for id, host in pairs(hosts) do
         ApplyHostVisibilityAlpha(id, host)
     end
+    for _, groupHost in pairs(groupHosts) do
+        local container = groupHost._quiPackContainer
+        if container and not container._quiPackParked then
+            container:SetAlpha(previewActive and 1 or alpha)
+        end
+    end
 end
 
 function AD.GroupHostFor(groupName)
@@ -1581,6 +1588,167 @@ ApplyDisplay = function(display, allowCreate)
     end
 end
 
+-- Packed groups ---------------------------------------------------------------
+-- A group with dynamicLayout renders its single-list icon displays through ONE
+-- shared aura container on the group host: one single-frame Blizzard aura
+-- group per tracked spell (ns.AuraSlots.DynamicGroups), styled with that
+-- display's profile. Blizzard's flow layout skips empty groups, so the icons
+-- pack together as auras come and go — Lua never reads aura presence. Members
+-- that cannot pack (other units, strips, bars, multi-element displays) keep
+-- their reserved positions after the packed block. Packing is suspended while
+-- previewing or in Layout Mode so every display can be seen and dragged.
+local PACK_FLOW = {
+    RIGHT    = { grow = "RIGHT", vertical = false },
+    LEFT     = { grow = "LEFT",  vertical = false },
+    DOWN     = { grow = "DOWN",  vertical = true },
+    UP       = { grow = "UP",    vertical = true },
+    CENTER_H = { grow = "RIGHT", vertical = false, centered = true },
+    CENTER_V = { grow = "DOWN",  vertical = true,  centered = true },
+}
+
+local function PackableElement(display, specID)
+    if not E or not AD.DisplayActive(display) then return nil end
+    if type(display.auras) ~= "table" then return nil end
+    local elements = E.ActiveElementsForSpec(display.auras, specID)
+    local found
+    for i = 1, #elements do
+        local element = elements[i]
+        if RenderableElement(element) then
+            if found then return nil end
+            found = element
+        end
+    end
+    if not found or found.mode ~= "tracked" then return nil end
+    if found.displayType ~= nil and found.displayType ~= "icon" then return nil end
+    return found
+end
+
+local function EnsurePackContainer(groupHost)
+    local container = groupHost._quiPackContainer
+    if container then return container end
+    if InCombatLockdown() or type(CreateFrame) ~= "function" then return nil end
+    container = CreateFrame("AuraContainer", nil, groupHost, "CustomAuraContainerTemplate")
+    if not container then return nil end
+    container:SetSize(1, 1)
+    groupHost._quiPackContainer = container
+    return container
+end
+
+local function ParkPackContainer(container)
+    if not container or container._quiPackParked or not AuraGlue then return end
+    AuraGlue.RunConfigPass(container, container._quiProfile or {}, {}, not InCombatLockdown())
+    container:SetEnabled(false)
+    container:Hide()
+    container._quiPackParked = true
+end
+
+local function BuildPack(groupHost, group, groupDisplays)
+    local Slots = ns.AuraSlots
+    if not (E and AuraGlue and Slots and type(Slots.DynamicGroups) == "function") then
+        return nil
+    end
+    local H = Helpers()
+    local specID = H and type(H.GetCurrentSpecID) == "function" and H.GetCurrentSpecID() or nil
+    local flow = PACK_FLOW[group.growDirection] or PACK_FLOW.RIGHT
+    local spacing = NonNegativeNumber(group.spacing, GROUP_DEFAULTS.spacing)
+    local alignment = group.alignment or GROUP_DEFAULTS.alignment
+    local members, byID, unit = {}, {}, nil
+    local primary, cross, count = 0, 1, 0
+    for j = 1, #groupDisplays do
+        local display = groupDisplays[j]
+        local element = hosts[display.id] and PackableElement(display, specID)
+        local memberUnit = element and AD.ResolveUnit(display)
+        if element and memberUnit and (unit == nil or unit == memberUnit)
+            and not (type(Slots.LivePolarityMismatch) == "function"
+                and Slots.LivePolarityMismatch(memberUnit, element.auraType or "HELPFUL")) then
+            unit = memberUnit
+            local profile = DisplayElementProfile(element)
+            local n = E.TrackedSpellCount(element)
+            local size = PositiveNumber(profile.iconSize, 1)
+            members[#members + 1] = { display = display, element = element, profile = profile }
+            byID[display.id] = true
+            if count > 0 then primary = primary + spacing end
+            primary = primary + n * size + (n - 1) * NonNegativeNumber(profile.spacing, 0)
+            cross = math.max(cross, size)
+            count = count + n
+        end
+    end
+    if #members == 0 then return nil end
+    local container = EnsurePackContainer(groupHost)
+    if not container then return nil end
+    container:SetUnit(unit)
+    local groups = {}
+    for m = 1, #members do
+        local member = members[m]
+        local memberGroups = Slots.DynamicGroups(container, member.element, member.profile)
+        for g = 1, #memberGroups do
+            local desc = memberGroups[g]
+            desc.key = "p" .. tostring(member.display.id) .. "_" .. tostring(desc.key)
+            desc.profile = member.profile
+            desc.elementWidth = member.profile.iconSize
+            desc.elementHeight = member.profile.iconSize
+            -- The gap between displays is the group's spacing; gaps inside a
+            -- multi-spell display keep that element's own spacing.
+            if g == 1 then desc.groupSpacing = spacing end
+            groups[#groups + 1] = desc
+        end
+    end
+    local containerProfile = {
+        iconSize = cross, spacing = spacing, rowSpacing = 0, maxPerRow = 0,
+        maxIcons = math.max(count, 1), grow = flow.grow, anchor = "TOPLEFT",
+        wrap = (not flow.vertical and alignment == "END") and "UP" or "DOWN",
+        crossEnd = (flow.vertical and alignment == "END") or nil,
+    }
+    AuraGlue.RunConfigPass(container, containerProfile, groups, not InCombatLockdown())
+    container._quiPackParked = nil
+    container:SetEnabled(true)
+    container:SetAlpha(visibilityAlpha)
+    container:Show()
+    local spec = { host = container, isPacked = true, flow = flow }
+    if flow.vertical then
+        spec.width, spec.height = cross, math.max(primary, 1)
+    else
+        spec.width, spec.height = math.max(primary, 1), cross
+    end
+    return { byID = byID, spec = spec, unit = unit, members = members }
+end
+
+-- The engine sizes the container to its live contents, so anchoring the
+-- container's leading edge (or center, for centered growth) to the block
+-- reserved in the group layout makes the remaining icons pack toward it.
+local function AnchorPackedBlock(container, groupHost, placement, group)
+    local flow = placement.member.flow or PACK_FLOW.RIGHT
+    local alignment = group.alignment or GROUP_DEFAULTS.alignment
+    local w, h = placement.width, placement.height
+    local x, y = placement.x, placement.y
+    local point, ox, oy
+    if flow.centered then
+        point, ox, oy = "CENTER", x, y
+    elseif flow.vertical then
+        local v = flow.grow == "UP" and "BOTTOM" or "TOP"
+        oy = v == "TOP" and (y + h / 2) or (y - h / 2)
+        if alignment == "START" then
+            point, ox = v .. "LEFT", x - w / 2
+        elseif alignment == "END" then
+            point, ox = v .. "RIGHT", x + w / 2
+        else
+            point, ox = v, x
+        end
+    else
+        local hz = flow.grow == "LEFT" and "RIGHT" or "LEFT"
+        ox = hz == "LEFT" and (x - w / 2) or (x + w / 2)
+        if alignment == "START" then
+            point, oy = "TOP" .. hz, y + h / 2
+        elseif alignment == "END" then
+            point, oy = "BOTTOM" .. hz, y - h / 2
+        else
+            point, oy = hz, y
+        end
+    end
+    container:ClearAllPoints()
+    container:SetPoint(point, groupHost, "TOPLEFT", ox, oy)
+end
+
 local function QueueGroupReflow()
     if AuraGlue and type(AuraGlue.QueueRegenWork) == "function" then
         AuraGlue.QueueRegenWork("auraDisplayGroups", function() AD.Refresh() end)
@@ -1657,13 +1825,25 @@ function AD.ReflowGroups(displays)
         end
 
         local groupDisplays = buckets[groupName]
+        local packAllowed = group.dynamicLayout == true and not previewActive
+            and not layoutActive and not GroupPreviewRelated(groupName)
+        local pack = (packAllowed and groupDisplays) and BuildPack(groupHost, group, groupDisplays) or nil
+        if not pack and groupHost._quiPackContainer then
+            ParkPackContainer(groupHost._quiPackContainer)
+        end
         if groupDisplays then
             for j = 1, #groupDisplays do
                 local display = groupDisplays[j]
                 local host = hosts[display.id]
                 local forcePreview = previewActive or GroupUnderPreview(groupName)
                     or singlePreviewID == display.id
-                if host and (forcePreview or AD.DisplayActive(display)) then
+                if pack and pack.byID[display.id] then
+                    if not pack.placed then
+                        pack.placed = true
+                        memberSpecs[#memberSpecs + 1] = pack.spec
+                    end
+                    if host then host:Hide() end
+                elseif host and (forcePreview or AD.DisplayActive(display)) then
                     memberSpecs[#memberSpecs + 1] = {
                         id = display.id,
                         display = display,
@@ -1686,14 +1866,18 @@ function AD.ReflowGroups(displays)
             local placement = placements[j]
             local host = placement.member.host
             if host:GetParent() ~= groupHost then host:SetParent(groupHost) end
-            if not placement.member.isGroup then
-                -- Child group hosts keep their own scale/size (already set by
-                -- their reflow); only plain display hosts are normalized.
-                host:SetScale(1)
-                host:SetSize(placement.width, placement.height)
+            if placement.member.isPacked then
+                AnchorPackedBlock(host, groupHost, placement, group)
+            else
+                if not placement.member.isGroup then
+                    -- Child group hosts keep their own scale/size (already set by
+                    -- their reflow); only plain display hosts are normalized.
+                    host:SetScale(1)
+                    host:SetSize(placement.width, placement.height)
+                end
+                host:ClearAllPoints()
+                host:SetPoint("CENTER", groupHost, "TOPLEFT", placement.x, placement.y)
             end
-            host:ClearAllPoints()
-            host:SetPoint("CENTER", groupHost, "TOPLEFT", placement.x, placement.y)
             host:Show()
         end
 

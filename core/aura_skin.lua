@@ -64,6 +64,7 @@ local function ResolveLayout(profile)
         anchor    = profile.anchor or "TOPLEFT",
         attachPoint = profile.attachPoint or profile.anchor or "TOPLEFT",
         wrap = profile.wrap,
+        crossEnd = profile.crossEnd,
     }
 end
 
@@ -467,7 +468,14 @@ local function FlowFor(L)
     local column = (grow == "UP" or grow == "DOWN")
     local left = (grow == "LEFT")
     local up
-    if column then up = (grow == "UP") else up = (L.wrap == "UP") end
+    if column then
+        up = (grow == "UP")
+        -- Vertical flows anchor their cross axis on the left unless the
+        -- profile asks for the far edge (packed group blocks aligned END).
+        if L.crossEnd ~= nil then left = (L.crossEnd == true) end
+    else
+        up = (L.wrap == "UP")
+    end
     local anchor = (up and "BOTTOM" or "TOP") .. (left and "RIGHT" or "LEFT")
     return anchor, left, up, column
 end
@@ -503,7 +511,7 @@ local function GroupLayout(L, g)
         elementSpacing = g and g.elementSpacing or L.spacing,
         lineSpacing    = L.rowSpacing,
         elementWidth   = g and g.elementWidth or L.iconWidth,
-        elementHeight  = L.iconHeight,
+        elementHeight  = g and g.elementHeight or L.iconHeight,
     }
     if g and type(g._quiOrder) == "number" then
         t.layoutIndex = g._quiOrder
@@ -529,10 +537,18 @@ local function ApplyLatchedMouseMotion(container, button)
     end
 end
 
-local function MakeInitializer(container, _groupDesc)
+-- A group may carry its own style profile (packed aura-display groups mix
+-- displays with different icon sizes in one container); it is looked up by
+-- key at style time so later Configure passes can swap it without rebirth.
+local function GroupProfile(container, key)
+    local byKey = key ~= nil and container._quiGroupProfiles or nil
+    return (byKey and byKey[key]) or container._quiProfile or {}
+end
+
+local function MakeInitializer(container, _groupDesc, key)
     return function(button)
         buildButtonArt(button)
-        styleButton(button, container._quiProfile or {})
+        styleButton(button, GroupProfile(container, key))
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
@@ -561,7 +577,7 @@ local function EachTrackedButton(container, fn)
                     local button = container:GetAuraGroupFrame(key, i)
                     if button then
                         seen[button] = true
-                        fn(button)
+                        fn(button, key)
                     end
                 end
             end
@@ -592,6 +608,11 @@ function AuraSkin.Configure(container, profile, groups)
         registered = {}
         container._quiGroups = registered
     end
+    local groupProfiles = container._quiGroupProfiles
+    if not groupProfiles then
+        groupProfiles = {}
+        container._quiGroupProfiles = groupProfiles
+    end
     local wanted = {}
     local E = ResolveAuraElements()
     local canMutateFilter = container.SetAuraGroupFilterString ~= nil
@@ -604,6 +625,7 @@ function AuraSkin.Configure(container, profile, groups)
         local filter = (E and E.CanonicalizeFilterString) and E.CanonicalizeFilterString(g.filter) or g.filter
         local key = canMutateFilter and gkey or (gkey .. "|" .. filter)
         wanted[key] = true
+        groupProfiles[key] = g.profile
         local maxCount   = g.maxFrameCount or L.maxIcons
         local sortMethod = g.sortMethod or AuraContainerSortMethod.Default
         local sortDir    = g.sortDirection or AuraContainerSortDirection.Normal
@@ -622,7 +644,7 @@ function AuraSkin.Configure(container, profile, groups)
                 sortMethod       = sortMethod,
                 sortDirection    = sortDir,
                 candidateFilters = g.candidateFilters,
-                initializeFrame  = MakeInitializer(container, g),
+                initializeFrame  = MakeInitializer(container, g, key),
                 layout           = GroupLayout(L, g),
             })
             registered[key] = filter
@@ -631,6 +653,7 @@ function AuraSkin.Configure(container, profile, groups)
     for key in pairs(registered) do
         if not wanted[key] then
             container:SetAuraGroupMaxFrameCount(key, 0)
+            groupProfiles[key] = nil
         end
     end
     ApplyContainerLayout(container, L)
@@ -639,8 +662,8 @@ function AuraSkin.Configure(container, profile, groups)
         ScheduleRestrictedRestyle(container)
         return
     end
-    EachTrackedButton(container, function(button)
-        styleButton(button, profile)
+    EachTrackedButton(container, function(button, key)
+        styleButton(button, GroupProfile(container, key))
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
@@ -654,8 +677,8 @@ function AuraSkin.Restyle(container, profile)
         ScheduleRestrictedRestyle(container)
         return
     end
-    EachTrackedButton(container, function(button)
-        styleButton(button, profile)
+    EachTrackedButton(container, function(button, key)
+        styleButton(button, GroupProfile(container, key))
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end

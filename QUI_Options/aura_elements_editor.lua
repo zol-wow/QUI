@@ -526,6 +526,13 @@ local function AddPlacementWidgets(ctx, element, includeStrip, skip)
         or not E.TrackedSpellCount
         or E.TrackedSpellCount(element) > 1
     if includeStrip and multiTracked then
+        if ctx.caps.dynamicTrackedLayout and element.mode == "tracked"
+            and (element.displayType == nil or element.displayType == "icon") then
+            row(ns.L["Dynamic Layout (Collapse Hidden)"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "dynamicLayout", element, onChange, {
+                description = ns.L["Pack active icons together so the gaps left by inactive auras close up. Turn off to reserve every spell a fixed position. Inactive placeholder icons are not shown while this is on."],
+                keywords = { "dynamic", "collapse", "compact", "pack" },
+            }))
+        end
         row(ns.L["Grow Direction"], GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_GROW_OPTIONS, "growDirection", element, onChange, {
             description = ns.L["Direction icons within this row are added in after the first."],
         }))
