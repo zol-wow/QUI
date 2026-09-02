@@ -46,19 +46,22 @@ local function RefreshCachedColors()
 end
 GUI.RefreshCachedColors = RefreshCachedColors
 
-local function ApplyToggleVisual(t, isOn, isHovered)
-    local hoverBoost = isHovered and 0.06 or 0
-    if isOn then
-        t.track:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], math.min(1, C.accent[4] + hoverBoost))
-        t.knob:ClearAllPoints()
-        t.knob:SetPoint("RIGHT", t, "RIGHT", -2, 0)
-    else
-        t.track:SetColorTexture(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], math.min(1, C.toggleOff[4] + hoverBoost))
-        t.knob:ClearAllPoints()
-        t.knob:SetPoint("LEFT", t, "LEFT", 2, 0)
+-- Disabled form widgets mute the CONTROL (.30) and the LABEL (.45) separately;
+-- the description keeps its idle alpha and the row is never SetAlpha'd as a
+-- whole (R7: the pill toggle used to dim the entire row to .4).
+-- BEGIN widget disabled mute
+local WIDGET_DISABLED_CONTROL_ALPHA = 0.3
+local WIDGET_DISABLED_LABEL_ALPHA = 0.45
+local function ApplyWidgetDisabledMute(control, label, enabled)
+    if control and control.SetAlpha then
+        control:SetAlpha(enabled and 1 or WIDGET_DISABLED_CONTROL_ALPHA)
     end
-    if t._knobMask then t._knobMask:SetAllPoints(t.knob) end
+    if label and label.SetTextColor then
+        label:SetTextColor(C.text[1], C.text[2], C.text[3], enabled and (C.text[4] or 1) or WIDGET_DISABLED_LABEL_ALPHA)
+    end
 end
+GUI.ApplyWidgetDisabledMute = ApplyWidgetDisabledMute
+-- END widget disabled mute
 
 function GUI:SetTooltipInfo(frame, description, label)
     if not frame or type(description) ~= "string" or description == "" then return false end
@@ -2372,6 +2375,31 @@ local function AttachFormWidgetTooltip(container, control, description, label)
     end
 end
 
+-- BEGIN pill toggle
+-- Pill toggle visual as a function of progress p in [0,1] (0 = off, 1 = on):
+-- knob x lerps LEFT+2 -> RIGHT-2 (from the toggle's live width so scale
+-- refreshes stay honest) and the track colour lerps toggleOff -> accent.
+-- Progress-based so an animation can be retargeted mid-flight without a snap.
+local PILL_TOGGLE_ANIM = 0.09
+local PILL_KNOB_PAD = 2
+local function Lerp(a, b, p) return a + (b - a) * p end
+local function ApplyToggleProgress(t, p, isHovered)
+    p = math.max(0, math.min(1, p or 0))
+    local hoverBoost = isHovered and 0.06 or 0
+    local off, on = C.toggleOff, C.accent
+    t.track:SetColorTexture(
+        Lerp(off[1], on[1], p), Lerp(off[2], on[2], p), Lerp(off[3], on[3], p),
+        math.min(1, Lerp(off[4] or 1, on[4] or 1, p) + hoverBoost))
+    local width = (t.GetWidth and t:GetWidth()) or 0
+    if not width or width <= 0 then width = 26 end
+    local knobW = (t.knob.GetWidth and t.knob:GetWidth()) or 10
+    if not knobW or knobW <= 0 then knobW = 10 end
+    local x = Lerp(PILL_KNOB_PAD, width - PILL_KNOB_PAD - knobW, p)
+    t.knob:ClearAllPoints()
+    t.knob:SetPoint("LEFT", t, "LEFT", x, 0)
+    if t._knobMask then t._knobMask:SetAllPoints(t.knob) end
+end
+
 local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registryInfo, invert)
     if parent._hasContent ~= nil then parent._hasContent = true end
     local container = CreateFrame("Frame", nil, parent)
@@ -2438,14 +2466,41 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
     end
 
     local isHovered = false
+    local progress = GetValue() and 1 or 0
+    local UIKit = ns.UIKit
 
-    local function SetToggleVisual(t, isOn)
-        ApplyToggleVisual(t, isOn, isHovered)
+    local function Paint()
+        ApplyToggleProgress(toggle, progress, isHovered)
     end
 
-    local function UpdateVisual(isOn)
-        SetToggleVisual(toggle, isOn and true or false)
+    -- Animate toward `target` from the CURRENT progress: a click while a
+    -- transition is in flight retargets (reverses) from where the knob is,
+    -- never snaps. Duration scales with the remaining distance so the knob
+    -- speed is constant. `instant` (initial paint, scale refresh, external
+    -- Refresh) writes the endpoint directly.
+    local function UpdateVisual(isOn, instant)
+        local target = isOn and 1 or 0
+        if instant or not (UIKit and UIKit.AnimateValue) then
+            if UIKit and UIKit.CancelValueAnimation then UIKit.CancelValueAnimation(toggle, "pill") end
+            progress = target
+            Paint()
+            return
+        end
+        if progress == target then
+            Paint()
+            return
+        end
+        UIKit.AnimateValue(toggle, "pill", {
+            fromValue = progress,
+            toValue = target,
+            duration = PILL_TOGGLE_ANIM * math.abs(target - progress),
+            onUpdate = function(_, value)
+                progress = value
+                Paint()
+            end,
+        })
     end
+    container.GetToggleProgress = function() return progress end
 
     local function SetValue(isOn, skipCallback)
         isOn = isOn and true or false
@@ -2468,14 +2523,14 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
     container.SetValue = BindWidgetMethod(container, SetValue)
     container.UpdateVisual = UpdateVisual
 
-    container.Refresh = function() UpdateVisual(GetValue()) end
+    container.Refresh = function() UpdateVisual(GetValue(), true) end
 
     RegisterWidgetInstance(container, dbTable, dbKey)
     MaybeBindPinnedWidget(container, "checkbox", label, dbKey, dbTable, toggle, registryInfo)
 
     local initialOn = GetValue() and true or false
     container.checked = initialOn
-    UpdateVisual(initialOn)
+    UpdateVisual(initialOn, true)
 
     if ns.UIKit and ns.UIKit.RegisterScaleRefresh then
         local scaleKey = invert and "formToggleInvertedScale" or "formToggleScale"
@@ -2484,24 +2539,59 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
             toggle:ClearAllPoints()
             toggle:SetPoint("LEFT", container, "LEFT", toggleLeftOffset, 0)
             knob:SetSize(10, 10)
-            UpdateVisual(GetValue())
+            UpdateVisual(GetValue(), true)
         end)
     end
 
-    toggle:SetScript("OnClick", function() SetValue(not GetValue()) end)
+    -- Disabled keeps the hit target: the engine swallows OnClick while
+    -- OnEnter/OnLeave still fire for the reason tooltip.
+    if toggle.SetMotionScriptsWhileDisabled then toggle:SetMotionScriptsWhileDisabled(true) end
+    container.isEnabled = true
 
+    toggle:SetScript("OnClick", function()
+        if container.isEnabled == false then return end
+        SetValue(not GetValue())
+    end)
+
+    local reasonShown = false
     toggle:SetScript("OnEnter", function()
         isHovered = true
-        SetToggleVisual(toggle, GetValue() and true or false)
+        Paint()
+        if container.isEnabled == false then
+            local reason = container:GetDisabledReason()
+            if reason and GUI.Tooltip then
+                reasonShown = GUI.Tooltip:Show(toggle, reason, { title = label }) and true or false
+            end
+        end
     end)
     toggle:SetScript("OnLeave", function()
         isHovered = false
-        SetToggleVisual(toggle, GetValue() and true or false)
+        Paint()
+        if reasonShown then
+            reasonShown = false
+            if GUI.Tooltip then GUI.Tooltip:Hide(false, toggle) end
+        end
     end)
 
-    container.SetEnabled = function(self, enabled)
-        toggle:EnableMouse(enabled)
-        container:SetAlpha(enabled and 1 or 0.4)
+    -- SetEnabled(enabled, reason): control .30, label .45, description (row-
+    -- owned) untouched. `reason` (string or function) surfaces on hover.
+    container.SetEnabled = function(self, enabled, reason)
+        enabled = enabled and true or false
+        self.isEnabled = enabled
+        self._disabledReason = (not enabled) and reason or nil
+        if enabled then
+            if toggle.Enable then toggle:Enable() end
+        else
+            if toggle.Disable then toggle:Disable() end
+        end
+        ApplyWidgetDisabledMute(toggle, text, enabled)
+    end
+    container.GetDisabledReason = function(self)
+        if self.isEnabled ~= false then return nil end
+        local reason = self._disabledReason
+        if type(reason) == "function" then reason = reason(self) end
+        if type(reason) == "string" and reason ~= "" then return reason end
+        return nil
     end
 
     if not GUI:HasGeneratedSearchCache() then
@@ -2526,6 +2616,7 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
     AttachFormWidgetTooltip(container, toggle, tooltipDescription, label)
     return container
 end
+-- END pill toggle
 
 function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryInfo)
     return BuildPillToggle(parent, label, dbKey, dbTable, onChange, registryInfo, false)
@@ -2535,10 +2626,14 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange, r
     return BuildPillToggle(parent, label, dbKey, dbTable, onChange, registryInfo, true)
 end
 
+-- DEPRECATED name: renders the PILL toggle (kept so the ~700 existing call
+-- sites keep their rendering). New code: GUI:CreateFormToggle for the pill,
+-- GUI:CreateFormSquareCheckbox for the square accent checkbox.
 function GUI:CreateFormCheckbox(parent, label, dbKey, dbTable, onChange, registryInfo)
     return GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryInfo)
 end
 
+-- BEGIN square checkbox
 function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange, registryInfo)
     if parent._hasContent ~= nil then parent._hasContent = true end
     local container = CreateFrame("Frame", nil, parent)
@@ -2601,9 +2696,30 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange,
 
     SetValue(GetValue(), true)
 
+    -- SetEnabled(enabled, reason): the square control owns its own .30 mute
+    -- and reason tooltip; the label goes to .45; the row is never SetAlpha'd.
+    container.isEnabled = true
+    container.SetEnabled = function(self, enabled, reason)
+        enabled = enabled and true or false
+        self.isEnabled = enabled
+        self._disabledReason = (not enabled) and reason or nil
+        box:SetEnabled(enabled, reason)
+        ApplyWidgetDisabledMute(nil, text, enabled)
+    end
+    container.GetDisabledReason = function(self)
+        if self.isEnabled ~= false then return nil end
+        return box.GetDisabledReason and box:GetDisabledReason() or nil
+    end
+
     local tooltipDescription = registryInfo and registryInfo.description or nil
     AttachFormWidgetTooltip(container, box, tooltipDescription, label)
     return container
+end
+-- END square checkbox
+
+-- Honest name for the square accent checkbox (CreateFormCheckboxOriginal).
+function GUI:CreateFormSquareCheckbox(parent, label, dbKey, dbTable, onChange, registryInfo)
+    return GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange, registryInfo)
 end
 
 function GUI:CreateFormCheckboxInverted(parent, label, dbKey, dbTable, onChange, registryInfo)
@@ -2797,12 +2913,12 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
         end
     end)
 
-    container.SetEnabled = function(self, enabled)
+    container.SetEnabled = function(self, enabled, reason)
         self.isEnabled = enabled and true or false
+        self._disabledReason = (not self.isEnabled) and reason or nil
         editBox:SetEnabled(enabled)
         editBox:EnableMouse(enabled)
-        field:SetAlpha(enabled and 1 or 0.6)
-        self:SetAlpha(enabled and 1 or 0.6)
+        ApplyWidgetDisabledMute(field, self.label, self.isEnabled)
         if not enabled then
             editBox:ClearFocus()
         end
@@ -3186,7 +3302,8 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         editBox:SetCursorPosition(0)
     end
 
-    container.SetEnabled = function(self, enabled)
+    container.SetEnabled = function(self, enabled, reason)
+        enabled = enabled and true or false
         slider:EnableMouse(enabled)
         editBox:EnableMouse(enabled)
         editBox:SetEnabled(enabled)
@@ -3194,8 +3311,12 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         nudgePlus:EnableMouse(enabled)
 
         container.isEnabled = enabled
+        container._disabledReason = (not enabled) and reason or nil
 
-        container:SetAlpha(enabled and 1 or 0.4)
+        ApplyWidgetDisabledMute(slider, self.label, enabled)
+        ApplyWidgetDisabledMute(editBox, nil, enabled)
+        ApplyWidgetDisabledMute(nudgeMinus, nil, enabled)
+        ApplyWidgetDisabledMute(nudgePlus, nil, enabled)
     end
 
     container.isEnabled = true
@@ -3583,10 +3704,14 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
 
     SetValue(GetValue(), true)
 
-    container.SetEnabled = function(self, enabled)
+    container.SetEnabled = function(self, enabled, reason)
+        enabled = enabled and true or false
         dropdown:EnableMouse(enabled)
         container.isEnabled = enabled
-        container:SetAlpha(enabled and 1 or 0.4)
+        container._disabledReason = (not enabled) and reason or nil
+        -- `text` (not container.label): pins_ui keys its compact-label
+        -- layout on widget.label, which dropdowns never exposed.
+        ApplyWidgetDisabledMute(dropdown, text, enabled)
     end
     container.isEnabled = true
 
@@ -3745,9 +3870,12 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     swatch:HookScript("OnEnter", function() SetSwatchBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
     swatch:HookScript("OnLeave", function() SetSwatchBorderColor(1, 1, 1, 0.35) end)
 
-    container.SetEnabled = function(self, enabled)
+    container.SetEnabled = function(self, enabled, reason)
+        enabled = enabled and true or false
         swatch:EnableMouse(enabled)
-        container:SetAlpha(enabled and 1 or 0.4)
+        container.isEnabled = enabled
+        container._disabledReason = (not enabled) and reason or nil
+        ApplyWidgetDisabledMute(swatch, self.label, enabled)
     end
 
     local effectiveDescription = (registryInfo and registryInfo.description)

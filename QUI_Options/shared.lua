@@ -905,6 +905,7 @@ local function CreatePreviewArea(parent, yOffset, height)
 end
 ns.QUI_Options.CreatePreviewArea = CreatePreviewArea
 
+-- BEGIN setting row state
 local function ResolveTooltipInfo(frame, depth)
     if not frame or (depth or 0) > 6 then
         return nil, nil
@@ -933,13 +934,17 @@ local function ResolveTooltipInfo(frame, depth)
     return nil, nil
 end
 
-local function SetSettingControlEnabled(control, enabled)
+-- Forwards `reason` to widgets that speak SetEnabled(enabled, reason)
+-- (CreateButton, accent checkbox, every framework form widget). Widgets
+-- without SetEnabled fall back to the control-only mute (.30) — the row
+-- itself is never SetAlpha'd.
+local function SetSettingControlEnabled(control, enabled, reason)
     if not control then
         return
     end
 
     if type(control.SetEnabled) == "function" then
-        control:SetEnabled(enabled and true or false)
+        control:SetEnabled(enabled and true or false, reason)
         return
     end
 
@@ -947,16 +952,23 @@ local function SetSettingControlEnabled(control, enabled)
         control:EnableMouse(enabled and true or false)
     end
     if type(control.SetAlpha) == "function" then
-        control:SetAlpha(enabled and 1 or 0.4)
+        control:SetAlpha(enabled and 1 or 0.3)
     end
 end
 
-local function SetSettingRowEnabled(row, enabled)
+-- Row state: label .45 when disabled, description keeps its idle alpha,
+-- control muted by its own SetEnabled. `reason` (string or function) falls
+-- back to the row's disabledReason / disabledReasonFn (BuildSettingRow opts)
+-- and surfaces through the control's hover tooltip while disabled.
+local function SetSettingRowEnabled(row, enabled, reason)
     if not row then
         return
     end
 
     enabled = enabled and true or false
+    if reason == nil then
+        reason = row._disabledReasonFn or row._disabledReason
+    end
 
     local label = row._label
     if label and row._labelColor then
@@ -967,15 +979,19 @@ local function SetSettingRowEnabled(row, enabled)
     local desc = row._desc
     if desc and row._descColor then
         local c = row._descColor
-        desc:SetTextColor(c[1], c[2], c[3], enabled and c[4] or 0.35)
+        desc:SetTextColor(c[1], c[2], c[3], c[4])
     end
 
-    SetSettingControlEnabled(row._widget, enabled)
+    SetSettingControlEnabled(row._widget, enabled, reason)
     row._enabled = enabled
+    row._disabledReasonActive = (not enabled) and reason or nil
 end
 ns.QUI_Options.SetSettingRowEnabled = SetSettingRowEnabled
 
-local function BuildSettingRow(parent, labelText, widget, desc)
+-- opts (optional): disabledReason (string) / disabledReasonFn (function
+-- returning a string) shown by the control's tooltip while the row is
+-- disabled through row:SetEnabled(false).
+local function BuildSettingRow(parent, labelText, widget, desc, opts)
     local C = QUI.GUI and QUI.GUI.Colors or {}
     local textCol = C.text or {1, 1, 1, 1}
     local mutedCol = C.textMuted or {1, 1, 1, 0.45}
@@ -1029,11 +1045,23 @@ local function BuildSettingRow(parent, labelText, widget, desc)
     end
 
     cell._widgetLabel = labelText
+    if type(opts) == "table" then
+        cell._disabledReason = opts.disabledReason
+        cell._disabledReasonFn = opts.disabledReasonFn
+    end
     cell.SetEnabled = SetSettingRowEnabled
+    cell.GetDisabledReason = function(self)
+        if self._enabled ~= false then return nil end
+        local reason = self._disabledReasonActive
+        if type(reason) == "function" then reason = reason(self) end
+        if type(reason) == "string" and reason ~= "" then return reason end
+        return nil
+    end
     return cell
 end
 
 ns.QUI_Options.BuildSettingRow = BuildSettingRow
+-- END setting row state
 
 local function MergeOptions(base, extra)
     local merged = {}
