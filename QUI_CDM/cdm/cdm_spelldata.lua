@@ -8,67 +8,7 @@ local function IsCDMRuntimeEnabled()
     return not Shared or Shared.IsRuntimeEnabled()
 end
 
-local cooldownViewerCVarFrame = CreateFrame("Frame")
-cooldownViewerCVarFrame.dataEverLoaded = false
-cooldownViewerCVarFrame:RegisterEvent("VARIABLES_LOADED")
-cooldownViewerCVarFrame:RegisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
-
-local function IsCooldownViewerCVarEnabled()
-    if GetCVarBool then
-        local value = GetCVarBool("cooldownViewerEnabled")
-        if value ~= nil then
-            return value and true or false
-        end
-    end
-
-    if GetCVar then
-        local value = GetCVar("cooldownViewerEnabled")
-        return tostring(value) == "1"
-    end
-
-    return nil
-end
-
-local function SyncCooldownViewerCVarToMasterToggle()
-    local target = 1
-    local current = IsCooldownViewerCVarEnabled()
-    if current ~= nil and ((target == 0 and current == false) or (target == 1 and current == true)) then
-        return true
-    end
-
-    local dataLoaded = cooldownViewerCVarFrame.dataEverLoaded
-    if not dataLoaded then
-        local catalog = ns.CDMCatalog
-        if catalog and catalog.IsCooldownViewerReady and catalog.IsCooldownViewerReady() then
-            cooldownViewerCVarFrame.dataEverLoaded = true
-            dataLoaded = true
-        end
-    end
-    if dataLoaded then
-        return false
-    end
-
-    if SetCVar then
-        SetCVar("cooldownViewerEnabled", target)
-    end
-
-    return true
-end
-
-cooldownViewerCVarFrame:SetScript("OnEvent", function(self, event)
-    if event == "COOLDOWN_VIEWER_DATA_LOADED" then
-        self.dataEverLoaded = true
-        self:UnregisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
-        return
-    end
-    if event == "VARIABLES_LOADED" then
-        self:UnregisterEvent("VARIABLES_LOADED")
-        SyncCooldownViewerCVarToMasterToggle()
-    end
-end)
-
 local CDMSpellData = {}
-CDMSpellData.SyncCooldownViewerCVar = SyncCooldownViewerCVarToMasterToggle
 
 CDMSpellData._cdmCooldownLearnedPreferred = {}
 
@@ -649,7 +589,6 @@ RegisterAuraCaptureFrame()
 
 function CDMSpellData:DisableRuntime()
     initialized = false
-    cooldownViewerCVarFrame:UnregisterAllEvents()
     auraCaptureFrame:UnregisterAllEvents()
     auraCaptureFrame:SetScript("OnEvent", nil)
     if runtimeEventFrame then
