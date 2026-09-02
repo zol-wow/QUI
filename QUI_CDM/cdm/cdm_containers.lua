@@ -3207,7 +3207,6 @@ function ownedEngine:BootstrapReanchorRuntime()
                 hooksecurefunc = hooksecurefunc,
                 schedule = function(fn) C_Timer.After(0.05, fn) end,
                 scheduleActiveState = scheduleActiveState,
-                immediateRefreshLayoutKeys = { trackedBar = true },
                 blank = BlankReanchoredNativeItemFrame,
                 blankKeys = { trackedBar = true },
                 isInitWindow = function() return ns._inInitSafeWindow == true end,

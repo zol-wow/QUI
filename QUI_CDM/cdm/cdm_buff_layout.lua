@@ -937,15 +937,15 @@ LayoutBuffBars = function()
 
     isBarLayoutRunning = true
     local settings = GetTrackedBarSettings()
+    if ns.CDMBlizzardBuffBarSuppressor then
+        ns.CDMBlizzardBuffBarSuppressor:Apply(settings)
+    end
     if not IsCooldownViewerReady() then
         QueueTrackedBarLayoutWhenReady()
         isBarLayoutRunning = false
         return
     end
     if not settings.enabled then
-        if ns.CDMBlizzardBuffBarSuppressor then
-            ns.CDMBlizzardBuffBarSuppressor:Apply(settings)
-        end
         isBarLayoutRunning = false
         return
     end
@@ -982,10 +982,6 @@ LayoutBuffBars = function()
     if CDMBars then
         local runtimeEntries = GetTrackedBarRuntimeEntries()
         CDMBars:Refresh(viewer, settings, resolvedBarWidth, "trackedBar", runtimeEntries)
-    end
-
-    if ns.CDMBlizzardBuffBarSuppressor then
-        ns.CDMBlizzardBuffBarSuppressor:Apply(settings)
     end
 
     isBarLayoutRunning = false

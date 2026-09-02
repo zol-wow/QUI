@@ -5,6 +5,7 @@ local Suppressor = {
     _states = setmetatable({}, { __mode = "k" }),
     _pendingSuppress = setmetatable({}, { __mode = "k" }),
     _pendingNative = false,
+    _pendingFlushScheduled = false,
     _dataRetryRegistered = false,
 }
 ns.CDMBlizzardBuffBarSuppressor = Suppressor
@@ -97,6 +98,20 @@ local function InstallParkHooks(frame, state)
     if frame.SetParent then hooksecurefunc(frame, "SetParent", QueueRepark) end
 end
 
+local function PrimeHiddenFrame(frame)
+    local state = Suppressor._states[frame]
+    if not state then
+        state = {}
+        Suppressor._states[frame] = state
+    end
+    state.restorePending = nil
+    state.restoring = nil
+    state.hidden = true
+    InstallParkHooks(frame, state)
+    if frame.SetAlpha then frame:SetAlpha(0) end
+    return state
+end
+
 local function DisableMouse(frame)
     if frame.EnableMouse then frame:EnableMouse(false) end
     if frame.EnableMouseMotion then frame:EnableMouseMotion(false) end
@@ -125,25 +140,16 @@ function Suppressor:Suppress(frame)
         self:QueueSuppress()
         return false
     end
+
+    local state = PrimeHiddenFrame(frame)
     if not IsCooldownViewerReady() then
         self:QueueSuppress(frame)
         return false
     end
 
-    local state = self._states[frame]
-    if not state then
-        state = {}
-        self._states[frame] = state
-    end
     if not state.originalPoints and not state.parked then
         state.originalPoints = CapturePoints(frame)
     end
-    state.restorePending = nil
-    state.restoring = nil
-    state.hidden = true
-    InstallParkHooks(frame, state)
-
-    if frame.SetAlpha then frame:SetAlpha(0) end
 
     if not InCombat() then
         DisableMouse(frame)
@@ -171,7 +177,6 @@ function Suppressor:Restore(frame)
     frame = frame or GetNativeBuffBar()
     if not frame then return false end
     self._pendingSuppress[frame] = nil
-    if not IsCooldownViewerReady() then return false end
 
     local state = self._states[frame]
     if state and state.hidden then state.restoring = true end
@@ -234,6 +239,27 @@ function Suppressor:FlushPendingSuppress()
     end
 end
 
+function Suppressor:SchedulePendingSuppressFlush()
+    if self._pendingNative then
+        local frame = GetNativeBuffBar()
+        if frame then PrimeHiddenFrame(frame) end
+    end
+    if self._pendingFlushScheduled then return end
+    self._pendingFlushScheduled = true
+
+    local function Flush()
+        self._pendingFlushScheduled = false
+        self:FlushPendingSuppress()
+        self:CheckParkIntegrity()
+    end
+    local timer = _G.C_Timer
+    if timer and timer.After then
+        timer.After(0, Flush)
+    else
+        Flush()
+    end
+end
+
 function Suppressor:CheckParkIntegrity(frame)
     frame = frame or GetNativeBuffBar()
     if not frame then return false end
@@ -256,13 +282,15 @@ if CreateFrame then
         if event == "PLAYER_REGEN_ENABLED" then
             Suppressor:FlushPendingRestore()
         elseif event == "COOLDOWN_VIEWER_DATA_LOADED" then
-            Suppressor:FlushPendingSuppress()
+            Suppressor:SchedulePendingSuppressFlush()
+            return
         elseif event == "ADDON_LOADED" then
             local viewerAddon = ns.CDMCooldownViewerAddon
             local isViewerAddon = viewerAddon and viewerAddon.IsViewerAddon
                 and viewerAddon.IsViewerAddon(arg1)
             if not isViewerAddon and arg1 ~= "Blizzard_CooldownViewer" then return end
-            Suppressor:FlushPendingSuppress()
+            Suppressor:SchedulePendingSuppressFlush()
+            return
         end
         Suppressor:CheckParkIntegrity()
     end)
