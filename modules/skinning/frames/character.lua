@@ -32,6 +32,13 @@ local titleHighlights = Helpers.CreateStateTable()
 
 local GetSkinColors = Helpers.CreateSkinColorGetter("characterFrame")
 
+-- Border colour as TEXT colour, luminance-floored (black / hidden borders
+-- otherwise turn headers and popup titles black or invisible).
+local function GetTextAccent()
+    local profile = Helpers.GetProfile and Helpers.GetProfile()
+    return SkinBase.GetSkinTextAccent(profile and profile.general, "characterFrame")
+end
+
 local GetFontPath = Helpers.GetGeneralFont
 
 local function ApplyPixelBackdrop(frame, borderPixels, withBackground, withInsets, borderColor, bgColor)
@@ -141,7 +148,7 @@ end
 local function SkinEntryHeader(child, fontPath, sr, sg, sb)
     if child.Name then
         CJKFont(child.Name, fontPath, 13, "")
-        child.Name:SetTextColor(sr, sg, sb, 1)
+        child.Name:SetTextColor(GetTextAccent())
     end
 
     if child.Left then child.Left:SetAlpha(0) end
@@ -396,7 +403,7 @@ local function RefreshCharacterFrameColors()
         SkinBase.ForEachScrollBoxFrame(ReputationFrame.ScrollBox, function(child)
             if not skinnedEntries[child] then return end
             if child.Right and child.Name then
-                child.Name:SetTextColor(sr, sg, sb, 1)
+                child.Name:SetTextColor(GetTextAccent())
             end
             local ReputationBar = child.Content and child.Content.ReputationBar
             local repBd = ReputationBar and SkinBase.GetFrameData(ReputationBar, "backdrop")
@@ -410,7 +417,7 @@ local function RefreshCharacterFrameColors()
         SkinBase.ForEachScrollBoxFrame(TokenFrame.ScrollBox, function(child)
             if not skinnedEntries[child] then return end
             if child.Right and child.Name then
-                child.Name:SetTextColor(sr, sg, sb, 1)
+                child.Name:SetTextColor(GetTextAccent())
             end
             local CurrencyIcon = child.Content and child.Content.CurrencyIcon
             if CurrencyIcon and iconBorders[CurrencyIcon] then
@@ -508,7 +515,7 @@ local function SkinEquipmentManager()
 
     if popup.title then
         CJKFont(popup.title, fontPath, 12, "")
-        popup.title:SetTextColor(sr, sg, sb, 1)
+        popup.title:SetTextColor(GetTextAccent())
     end
 
     local pane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
@@ -546,7 +553,7 @@ RefreshEquipmentManagerColors = function()
 
     SetPixelBackdropColors(popup, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     if popup.title then
-        popup.title:SetTextColor(sr, sg, sb, 1)
+        popup.title:SetTextColor(GetTextAccent())
     end
 
     local pane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
@@ -589,7 +596,7 @@ local function SkinTitleEntry(button)
     end
 
     if button.Check then
-        button.Check:SetVertexColor(sr, sg, sb, 1)
+        button.Check:SetVertexColor(GetTextAccent())
     end
 
     if button.SelectedBar then
@@ -628,7 +635,7 @@ local function SkinTitleManagerPane()
 
         if popup.title then
             CJKFont(popup.title, fontPath, 14, "")
-            popup.title:SetTextColor(sr, sg, sb, 1)
+            popup.title:SetTextColor(GetTextAccent())
         end
 
         skinnedEntries[popup] = true
@@ -670,7 +677,7 @@ RefreshTitlePaneColors = function()
     if popup and skinnedEntries[popup] then
         SetPixelBackdropColors(popup, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
         if popup.title then
-            popup.title:SetTextColor(sr, sg, sb, 1)
+            popup.title:SetTextColor(GetTextAccent())
         end
     end
 
@@ -681,7 +688,7 @@ RefreshTitlePaneColors = function()
         SkinBase.ForEachScrollBoxFrame(pane.ScrollBox, function(button)
             if not skinnedEntries[button] then return end
             if button.Check then
-                button.Check:SetVertexColor(sr, sg, sb, 1)
+                button.Check:SetVertexColor(GetTextAccent())
             end
             if button.SelectedBar then
                 button.SelectedBar:SetColorTexture(sr, sg, sb, 0.3)

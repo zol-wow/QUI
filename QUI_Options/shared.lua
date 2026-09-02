@@ -248,7 +248,8 @@ local function CreateScrollableContent(parent)
 
         local thumb = scrollBar:GetThumbTexture()
         if thumb then
-            thumb:SetColorTexture(0.35, 0.45, 0.5, 0.8)
+            local st = (GUI and GUI.Colors and GUI.Colors.scrollThumb) or { 1, 1, 1, 0.27 }
+            thumb:SetColorTexture(st[1], st[2], st[3], st[4])
         end
 
         local scrollUp = scrollBar.ScrollUpButton or scrollBar.Back
@@ -1517,7 +1518,8 @@ BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
 
             local text = titleRow:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
             text:SetPoint("LEFT", dot, "RIGHT", 10, 0)
-            text:SetTextColor(1, 1, 1, 0.95)
+            local textCol = C.text or { 1, 1, 1, 1 }
+            text:SetTextColor(textCol[1], textCol[2], textCol[3], textCol[4] or 1)
             text:SetText(label)
 
             local underline = titleRow:CreateTexture(nil, "ARTWORK")

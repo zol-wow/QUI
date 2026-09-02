@@ -1090,6 +1090,13 @@ function UIKit.CreateTabButton(parent, opts)
         local c = (C and C[field]) or fallback
         return c[1], c[2], c[3]
     end
+    -- Tab text ladder (core/theme.lua): tabNormal .55 / tabHover .85 / tabSelectedText 1.
+    local function tabText(field, fallbackAlpha)
+        local C = (QUI and QUI.GUI and QUI.GUI.Colors) or nil
+        local c = C and C[field]
+        if c then return c[1], c[2], c[3], c[4] or 1 end
+        return 1, 1, 1, fallbackAlpha
+    end
 
     function btn:SetActive(active)
         self._active = active and true or false
@@ -1097,13 +1104,13 @@ function UIKit.CreateTabButton(parent, opts)
         if self._active then
             self:SetBackdropColor(ar * 0.15, ag * 0.15, ab * 0.15, 1)
             self:SetBackdropBorderColor(ar, ag, ab, 0.8)
-            self._label:SetTextColor(ar, ag, ab, 1)
+            self._label:SetTextColor(tabText("tabSelectedText", 1))
         else
             local br, bgc, bb = chrome("bg", { 0.1, 0.1, 0.1, 1 })
             local dr, dg, db = chrome("border", { 1, 1, 1, 0.1 })
             self:SetBackdropColor(br, bgc, bb, 1)
             self:SetBackdropBorderColor(dr, dg, db, 1)
-            self._label:SetTextColor(0.6, 0.6, 0.6, 1)
+            self._label:SetTextColor(tabText("tabNormal", 0.55))
         end
     end
 
@@ -1111,12 +1118,14 @@ function UIKit.CreateTabButton(parent, opts)
         if not self._active then
             local ar, ag, ab = UIKit.GetAccentColor()
             self:SetBackdropBorderColor(ar * 0.7, ag * 0.7, ab * 0.7, 1)
+            self._label:SetTextColor(tabText("tabHover", 0.85))
         end
     end)
     btn:SetScript("OnLeave", function(self)
         if not self._active then
             local dr, dg, db = chrome("border", { 1, 1, 1, 0.1 })
             self:SetBackdropBorderColor(dr, dg, db, 1)
+            self._label:SetTextColor(tabText("tabNormal", 0.55))
         end
     end)
     if opts.onClick then btn:SetScript("OnClick", opts.onClick) end
@@ -1410,6 +1419,24 @@ function SkinBase.GetSkinColors(moduleSettings, prefix)
     local sr, sg, sb, sa = Helpers.GetSkinBorderColor(moduleSettings, prefix)
     local bgr, bgg, bgb, bga = Helpers.GetSkinBgColorWithOverride(moduleSettings, prefix)
     return sr, sg, sb, sa, bgr, bgg, bgb, bga
+end
+
+-- The skin BORDER colour as a TEXT colour, luminance-floored. A custom black
+-- border or "hide skin borders" (alpha 0) turned every border-coloured label
+-- black / invisible. Returns border RGB at alpha 1 only when the border is
+-- opaque enough (a >= 0.5) and bright enough (relative luminance >= 0.35);
+-- otherwise white. Always returns alpha 1: text never inherits border alpha.
+local TEXT_ACCENT_MIN_ALPHA = 0.5
+local TEXT_ACCENT_MIN_LUMINANCE = 0.35
+function SkinBase.GetSkinTextAccent(moduleSettings, prefix)
+    local r, g, b, a = Helpers.GetSkinBorderColor(moduleSettings, prefix)
+    r, g, b = tonumber(r) or 1, tonumber(g) or 1, tonumber(b) or 1
+    a = tonumber(a) or 1
+    local luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    if a >= TEXT_ACCENT_MIN_ALPHA and luminance >= TEXT_ACCENT_MIN_LUMINANCE then
+        return r, g, b, 1
+    end
+    return 1, 1, 1, 1
 end
 
 function SkinBase.GetSkinBarColor(moduleSettings, prefix)
@@ -2080,39 +2107,97 @@ local function GetButtonFontObject(size, color)
     return obj
 end
 
+local function IsGlobalFontGateOn()
+    local core = GetCore()
+    return (core and core.db and core.db.profile and core.db.profile.general
+        and core.db.profile.general.applyGlobalFontToBlizzard) and true or false
+end
+
+local function ButtonLabel(button)
+    return button.Text or (button.GetFontString and button:GetFontString())
+end
+
+-- UNGATED state colours: enabled -> color (white), disabled -> disabledColor
+-- (grey). This is the part of the button contract that must hold regardless
+-- of the `applyGlobalFontToBlizzard` typography preference — coupling the two
+-- left buttons in Blizzard's gold/dark-grey font objects on a dark QUI
+-- backdrop whenever the gate was off ("enabled button looks disabled").
+function SkinBase.ApplyButtonStateColors(button, color, disabledColor)
+    if not button then return end
+    local fs = ButtonLabel(button)
+    if not fs or not fs.SetTextColor then return end
+    local c
+    if button.IsEnabled and not button:IsEnabled() then
+        c = disabledColor or DISABLED_TEXT_COLOR
+    else
+        c = color or NORMAL_TEXT_COLOR
+    end
+    if type(c) ~= "table" then c = NORMAL_TEXT_COLOR end
+    fs:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+end
+
+-- GATED font face + font objects. Installs QUI font objects for the normal /
+-- highlight / disabled button states when the global-font preference is on.
+-- The disabled object never falls back to the normal colour: a button
+-- rendered through its DisabledFontObject must look disabled unless the
+-- caller says otherwise (tabs pass an explicit disabledColor).
+-- State colours are then applied ungated when a colour was requested.
 function SkinBase.ApplyButtonFontObjects(button, opts)
     if not button then return end
-    local core = GetCore()
-    if not (core and core.db and core.db.profile and core.db.profile.general
-            and core.db.profile.general.applyGlobalFontToBlizzard) then
-        return
-    end
     opts = opts or {}
-    local fs = button.Text or (button.GetFontString and button:GetFontString())
-    local size = opts.size
-    if not size and fs and fs.GetFont then
-        local _, s = fs:GetFont()
-        if type(s) == "number" and s > 0 then size = s end
-    end
-    local normalObj = GetButtonFontObject(size, opts.color)
-    if normalObj then
-        if button.SetNormalFontObject then button:SetNormalFontObject(normalObj) end
-        if button.SetHighlightFontObject then button:SetHighlightFontObject(normalObj) end
-        if button.SetDisabledFontObject then
-            local disObj = GetButtonFontObject(size, opts.disabledColor or opts.color)
-            button:SetDisabledFontObject(disObj or normalObj)
+    local fs = ButtonLabel(button)
+    if IsGlobalFontGateOn() then
+        local size = opts.size
+        if not size and fs and fs.GetFont then
+            local _, s = fs:GetFont()
+            if type(s) == "number" and s > 0 then size = s end
+        end
+        local normalObj = GetButtonFontObject(size, opts.color)
+        if normalObj then
+            if button.SetNormalFontObject then button:SetNormalFontObject(normalObj) end
+            if button.SetHighlightFontObject then
+                local hlObj = opts.highlightColor and GetButtonFontObject(size, opts.highlightColor)
+                button:SetHighlightFontObject(hlObj or normalObj)
+            end
+            if button.SetDisabledFontObject then
+                local disObj = GetButtonFontObject(size, opts.disabledColor or DISABLED_TEXT_COLOR)
+                button:SetDisabledFontObject(disObj or normalObj)
+            end
+        end
+        if fs then
+            SkinBase.SkinFontString(fs, { fontOnly = true })
         end
     end
-    if fs then
-        SkinBase.SkinFontString(fs, type(opts.color) == "table" and { color = opts.color } or { fontOnly = true })
+    if opts.color or opts.disabledColor then
+        SkinBase.ApplyButtonStateColors(button, opts.color, opts.disabledColor)
     end
 end
 
 SkinBase.ApplyTabFontObjects = SkinBase.ApplyButtonFontObjects
 
-local function ReapplyTabFont(tab)
+-- Tab palette (white text, states by alpha). Sourced from GUI.Colors when the
+-- options theme is loaded so both surfaces share one ladder; literal fallback
+-- keeps skinning independent of the LOD options addon.
+local TAB_TEXT_FALLBACK = {
+    tabSelectedText = { 1, 1, 1, 1 },
+    tabNormal = { 1, 1, 1, 0.55 },
+    tabHover = { 1, 1, 1, 0.85 },
+    disabled = { 1, 1, 1, 0.30 },
+}
+local function TabTextColor(key)
+    local C = _G.QUI and _G.QUI.GUI and _G.QUI.GUI.Colors
+    local c = C and C[key]
+    if type(c) == "table" and c[1] then return c end
+    return TAB_TEXT_FALLBACK[key]
+end
+
+-- `fontOpts` carries the state colour so the installed font OBJECTS agree with
+-- the label: PanelTemplates renders the SELECTED tab through its
+-- DisabledFontObject (tab:Disable()), so a grey disabled object would greyed
+-- out exactly the active tab.
+local function ReapplyTabFont(tab, fontOpts)
     if not SkinBase.GetFrameData(tab, "skinTabFont") then return end
-    SkinBase.ApplyTabFontObjects(tab)
+    SkinBase.ApplyTabFontObjects(tab, fontOpts)
     if SkinBase.GetFrameData(tab, "skinTabResizeToText") and tab.OnShow then
         tab:OnShow()
     elseif tab.UpdateTabWidth then
@@ -2179,8 +2264,10 @@ function SkinBase.SkinTabButton(tab, opts)
     SkinBase.MarkStyled(tab)
 end
 
+-- Selection signals are evaluated FIRST; `isDisabled` only demotes a tab that
+-- no signal claims. PanelTemplates disables the selected tab, so checking the
+-- disabled flag first greyed out the active tab of every skinned window.
 local function IsTabSelected(tab, owner)
-    if tab.isDisabled then return false end
     if tab.IsSelected and tab:IsSelected() then return true end
     if tab.isSelected then return true end
     if owner then
@@ -2200,15 +2287,44 @@ local function IsTabSelected(tab, owner)
     return false
 end
 
+-- 1-physical-px accent underline along the bottom edge of the tab, shown only
+-- while selected. Anchored inside the backdrop border; pixel-snapped through
+-- SetPixelPoint (scale-refresh registered) and Pixels().
+local function EnsureTabUnderline(tab, bd)
+    local underline = SkinBase.GetFrameData(tab, "tabUnderline")
+    if underline then return underline end
+    if not tab.CreateTexture then return nil end
+    underline = tab:CreateTexture(nil, "OVERLAY")
+    SkinBase.SetPixelPoint(underline, "BOTTOMLEFT", bd, "BOTTOMLEFT", 1, 1)
+    SkinBase.SetPixelPoint(underline, "BOTTOMRIGHT", bd, "BOTTOMRIGHT", -1, 1)
+    SkinBase.SetFrameData(tab, "tabUnderline", underline)
+    return underline
+end
+
+local function TabAccentColor(sc)
+    local ar, ag, ab
+    if Helpers.GetSkinAccentColor then ar, ag, ab = Helpers.GetSkinAccentColor() end
+    if type(ar) ~= "number" then ar, ag, ab = sc[1], sc[2], sc[3] end
+    return ar or 1, ag or 1, ab or 1
+end
+
 function SkinBase.RefreshTabSelected(tab, owner)
-    ReapplyTabFont(tab)
+    local selected = IsTabSelected(tab, owner)
+    local textColor
+    if selected then
+        textColor = TabTextColor("tabSelectedText")
+    elseif tab.isDisabled or (tab.IsEnabled and not tab:IsEnabled()) then
+        textColor = TabTextColor("disabled")
+    else
+        textColor = TabTextColor("tabNormal")
+    end
+    ReapplyTabFont(tab, { color = textColor, disabledColor = textColor, highlightColor = TabTextColor("tabHover") })
 
     local bd = SkinBase.GetBackdrop(tab)
     local sc = SkinBase.GetFrameData(tab, "skinColor")
     local bg = SkinBase.GetFrameData(tab, "bgColor")
     if not bd or not sc or not bg then return end
 
-    local selected = IsTabSelected(tab, owner)
     local borderColor, bgColor
     if selected then
         borderColor = { sc[1], sc[2], sc[3], sc[4] }
@@ -2222,11 +2338,19 @@ function SkinBase.RefreshTabSelected(tab, owner)
     if SkinBase.GetFrameData(tab, "skinTabFont") then
         local tabText = tab.Text or (tab.GetFontString and tab:GetFontString())
         if tabText and tabText.SetTextColor then
-            if selected then
-                tabText:SetTextColor(0.9, 0.9, 0.9, 1)
-            else
-                tabText:SetTextColor(0.55, 0.55, 0.55, 1)
-            end
+            tabText:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+        end
+    end
+
+    local underline = EnsureTabUnderline(tab, bd)
+    if underline then
+        if selected then
+            local ar, ag, ab = TabAccentColor(sc)
+            underline:SetColorTexture(ar, ag, ab, 1)
+            underline:SetHeight(Pixels(1, tab))
+            underline:Show()
+        else
+            underline:Hide()
         end
     end
 end
@@ -2240,6 +2364,17 @@ local function TabHoverEnter(self)
             math.min(sc[2] * HOVER_BRIGHTEN, 1),
             math.min(sc[3] * HOVER_BRIGHTEN, 1),
             sc[4])
+    end
+    -- Hover rung (white .85) for unselected, enabled tabs only; the selected
+    -- tab stays at 1.0 and a disabled tab keeps its .30.
+    if SkinBase.GetFrameData(self, "skinTabFont")
+        and not IsTabSelected(self, SkinBase.GetFrameData(self, "skinTabOwner"))
+        and not self.isDisabled and not (self.IsEnabled and not self:IsEnabled()) then
+        local tabText = self.Text or (self.GetFontString and self:GetFontString())
+        local hover = TabTextColor("tabHover")
+        if tabText and tabText.SetTextColor then
+            tabText:SetTextColor(hover[1], hover[2], hover[3], hover[4] or 1)
+        end
     end
 end
 
@@ -2256,12 +2391,18 @@ local function RegisterOwnerTabRefresh(owner, refreshAll)
     end
     local tabSystem = owner.TabSystem
     if tabSystem and tabSystem.SetTab and not SkinBase.GetFrameData(tabSystem, "qTabSysHooked") then
-        hooksecurefunc(tabSystem, "SetTab", function()
+        local function deferredRefresh()
             C_Timer.After(0, function()
                 local fn = ownerTabRefreshers[owner]
                 if fn then fn() end
             end)
-        end)
+        end
+        hooksecurefunc(tabSystem, "SetTab", deferredRefresh)
+        -- TabSystemOwner:SetTab may bypass TabSystem:SetTab and call
+        -- SetTabVisuallySelected directly (TabSystemOwner.lua:100).
+        if tabSystem.SetTabVisuallySelected then
+            hooksecurefunc(tabSystem, "SetTabVisuallySelected", deferredRefresh)
+        end
         SkinBase.SetFrameData(tabSystem, "qTabSysHooked", true)
     end
 end
@@ -2670,18 +2811,17 @@ function SkinBase.RefreshButtonVisualState(button)
 
     if not SkinBase.GetFrameData(button, "skinFont") then return end
 
-    local color = SkinBase.GetFrameData(button, "skinFontColor")
+    local color = SkinBase.GetFrameData(button, "skinFontColor") or NORMAL_TEXT_COLOR
     local disabledColor = SkinBase.GetFrameData(button, "skinFontDisabledColor") or DISABLED_TEXT_COLOR
+    -- Font face/objects are gated on the typography preference inside
+    -- ApplyButtonFontObjects; the state colours below are always applied.
     SkinBase.ApplyButtonFontObjects(button, { color = color, disabledColor = disabledColor })
-
-    if button.IsEnabled and not button:IsEnabled() then
-        SetFontStringColor(GetLabelFontString(button), disabledColor)
-    else
-        SetFontStringColor(GetLabelFontString(button), color)
-    end
+    SkinBase.ApplyButtonStateColors(button, color, disabledColor)
 end
 
-local BUTTON_STATE_SCRIPTS = { "OnShow", "OnEnable", "OnDisable", "OnMouseDown", "OnMouseUp" }
+-- OnEnter/OnLeave: the engine swaps to the Highlight font object on hover and
+-- back on leave, re-applying that object's colour; re-assert ours after both.
+local BUTTON_STATE_SCRIPTS = { "OnShow", "OnEnable", "OnDisable", "OnMouseDown", "OnMouseUp", "OnEnter", "OnLeave" }
 
 local function HookButtonVisualState(button)
     if not button or not button.HookScript or SkinBase.GetFrameData(button, "qButtonVisualStateHooked") then return end
@@ -2918,13 +3058,21 @@ function SkinBase.SkinTrimScrollBar(scrollBar, opts)
 
     local thumb = scrollBar.ThumbTexture or (scrollBar.GetThumbTexture and scrollBar:GetThumbTexture()) or scrollBar.Thumb
     if thumb then
-        local r, g, b
+        -- Thumb colour is the shared scrollThumb role (accent @ .6), never the
+        -- skin bar/border colour (invisible with dark or hidden borders).
+        local r, g, b, a
         if opts.color then
-            r, g, b = opts.color[1], opts.color[2], opts.color[3]
+            r, g, b, a = opts.color[1], opts.color[2], opts.color[3], opts.color[4]
         else
-            r, g, b = SkinBase.GetSkinBarColor()
+            local gui = QUI and QUI.GUI
+            local role = gui and gui.Colors and gui.Colors.scrollThumb
+            if role then
+                r, g, b, a = role[1], role[2], role[3], role[4]
+            else
+                r, g, b, a = 1, 1, 1, 0.27
+            end
         end
-        thumb:SetColorTexture(r or 0.5, g or 0.5, b or 0.5, opts.alpha or 0.78)
+        thumb:SetColorTexture(r or 1, g or 1, b or 1, opts.alpha or a or 0.6)
         UIKit.DisablePixelSnap(thumb)
         thumb:SetWidth((opts.width or 8) * SkinBase.GetPixelSize(scrollBar, 1))
     end
@@ -2935,11 +3083,52 @@ function SkinBase.SkinTrimScrollBar(scrollBar, opts)
     if downBtn then downBtn:SetAlpha(0); downBtn:SetSize(1, 1) end
 end
 
+-- Category selection resolver. SelectedTexture visibility alone missed
+-- lists that track selection on the button (isSelected / selected /
+-- IsSelected()), on the owning list (selectedID / GetSelected()), or that
+-- only the caller can decide (opts.isSelected callback).
+local function CategoryButtonID(button)
+    if button.categoryID ~= nil then return button.categoryID end
+    if button.id ~= nil then return button.id end
+    if button.GetID then return button:GetID() end
+    return nil
+end
+
+local function IsCategorySelected(button)
+    local probe = SkinBase.GetFrameData(button, "categoryIsSelected")
+    if type(probe) == "function" then
+        local result = probe(button)
+        if result ~= nil then return result and true or false end
+    end
+    if type(button.IsSelected) == "function" and button:IsSelected() then return true end
+    if button.isSelected or button.selected then return true end
+    if button.SelectedTexture and button.SelectedTexture.IsShown and button.SelectedTexture:IsShown() then
+        return true
+    end
+    local owner = SkinBase.GetFrameData(button, "categoryOwner")
+        or (button.GetParent and button:GetParent())
+    if type(owner) == "table" then
+        if type(owner.GetSelected) == "function" then
+            local sel = owner:GetSelected()
+            if sel ~= nil then
+                if sel == button then return true end
+                local id = CategoryButtonID(button)
+                if id ~= nil and sel == id then return true end
+            end
+        end
+        if owner.selectedID ~= nil then
+            local id = CategoryButtonID(button)
+            if id ~= nil and owner.selectedID == id then return true end
+        end
+    end
+    return false
+end
+
 function SkinBase.RefreshCategorySelected(button)
     local bd = SkinBase.GetBackdrop(button)
     local sc = SkinBase.GetFrameData(button, "skinColor")
     if not bd or not sc then return end
-    local selected = button.SelectedTexture and button.SelectedTexture:IsShown()
+    local selected = IsCategorySelected(button)
     local label = button.Label or GetLabelFontString(button)
     local data = pixelBackdropData[bd]
     if data then data.borderColor, data.bgColor = nil, nil end
@@ -2947,7 +3136,13 @@ function SkinBase.RefreshCategorySelected(button)
     if selected then
         bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
         bd:SetBackdropColor(r, g, b, a)
-        SetFontStringColor(label, SkinBase.GetFrameData(button, "categorySelectedTextColor") or sc)
+        -- Border colour is not a text colour: luminance-floored accent.
+        local selectedText = SkinBase.GetFrameData(button, "categorySelectedTextColor")
+        if not selectedText then
+            local tr, tg, tb, ta = SkinBase.GetSkinTextAccent()
+            selectedText = { tr, tg, tb, ta }
+        end
+        SetFontStringColor(label, selectedText)
     else
         bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], (sc[4] or 1) * 0.5)
         bd:SetBackdropColor(r, g, b, 0.7)
@@ -2969,6 +3164,8 @@ function SkinBase.SkinCategoryButton(button, opts)
     SkinBase.SetFrameData(button, "skinKind", "category")
     SkinBase.SetFrameData(button, "categorySelectedTextColor", opts.selectedTextColor)
     SkinBase.SetFrameData(button, "categoryTextColor", opts.textColor)
+    SkinBase.SetFrameData(button, "categoryIsSelected", opts.isSelected)
+    SkinBase.SetFrameData(button, "categoryOwner", opts.owner)
     if opts.font ~= false then
         SkinBase.ApplyButtonFontObjects(button, { disabledColor = DISABLED_TEXT_COLOR })
     end

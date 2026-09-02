@@ -8,47 +8,11 @@ local LSM = LibStub("LibSharedMedia-3.0")
 QUI.GUI = QUI.GUI or {}
 local GUI = QUI.GUI
 
-GUI.Colors = GUI.Colors or {
-    bg = {0.051, 0.067, 0.09, 0.97},
-    bgLight = {0.094, 0.11, 0.14, 1},
-    bgDark = {0.03, 0.04, 0.06, 1},
-    bgContent = {1, 1, 1, 0.02},
-    bgSidebar = {0, 0, 0, 0.25},
-    bgFooter = {0, 0, 0, 0.15},
-
-    accent = {0.204, 0.827, 0.6, 1},
-    accentLight = {0.431, 0.906, 0.718, 1},
-    accentDark = {0.1, 0.5, 0.35, 1},
-    accentHover = {0.3, 0.9, 0.65, 1},
-    accentFaint = {0.204, 0.827, 0.6, 0.07},
-    accentGlow = {0.204, 0.827, 0.6, 0.06},
-
-    tabSelected = {0.204, 0.827, 0.6, 1},
-    tabSelectedText = {1, 1, 1, 1},
-    tabNormal = {1, 1, 1, 0.55},
-    tabHover = {1, 1, 1, 0.85},
-
-    text = {1, 1, 1, 1},
-    textBright = {1, 1, 1, 1},
-    textMuted = {1, 1, 1, 0.45},
-    textDim = {1, 1, 1, 0.6},
-    sectionLabel = {1, 1, 1, 0.42},
-
-    border = {1, 1, 1, 0.06},
-    borderStrong = {1, 1, 1, 0.1},
-    borderAccent = {0.204, 0.827, 0.6, 1},
-
-    sectionHeader = {0.431, 0.906, 0.718, 1},
-
-    sliderTrack = {1, 1, 1, 0.12},
-    sliderThumb = {1, 1, 1, 1},
-    sliderThumbBorder = {0, 0, 0, 0.2},
-
-    toggleOff = {1, 1, 1, 0.12},
-    toggleThumb = {1, 1, 1, 1},
-
-    warning = {0.961, 0.620, 0.043, 1},
-}
+-- Palette owner: core/theme.lua (root addon, QUI.toc; this LoD addon requires
+-- QUI so it is always loaded first). Headless harnesses load core/theme.lua
+-- before this file too (tools/generate_search_cache.lua). The `or {}` keeps the
+-- merge contract (options_lod_theme_core_test); no role is defined here.
+GUI.Colors = GUI.Colors or {}
 
 GUI.DIALOG_BUTTON_BG = { 0.15, 0.15, 0.15, 1 }
 GUI.CHECKBOX_BG      = { 0.1, 0.1, 0.1, 1 }
@@ -57,7 +21,7 @@ GUI.GRID_BG          = { 0.1, 0.1, 0.1, 1 }
 GUI.BORDER_INACTIVE  = { 0.3, 0.3, 0.3, 1 }
 GUI.BORDER_SWATCH    = { 0.4, 0.4, 0.4, 1 }
 GUI.ERROR_TEXT       = { 0.9, 0.3, 0.3, 1 }
-GUI.DESCRIPTION_TEXT = { 0.5, 0.5, 0.5, 1 }
+GUI.DESCRIPTION_TEXT = GUI.Colors.textDim or { 1, 1, 1, 0.6 }
 
 local C = GUI.Colors
 
@@ -68,6 +32,7 @@ local C_text_r, C_text_g, C_text_b, C_text_a = C.text[1], C.text[2], C.text[3], 
 local C_border_r, C_border_g, C_border_b, C_border_a = C.border[1], C.border[2], C.border[3], C.border[4]
 local C_tabHover_r, C_tabHover_g, C_tabHover_b, C_tabHover_a = C.tabHover[1], C.tabHover[2], C.tabHover[3], C.tabHover[4]
 local C_tabNormal_r, C_tabNormal_g, C_tabNormal_b, C_tabNormal_a = C.tabNormal[1], C.tabNormal[2], C.tabNormal[3], C.tabNormal[4]
+local C_accentText_r, C_accentText_g, C_accentText_b, C_accentText_a = C.accentText[1], C.accentText[2], C.accentText[3], C.accentText[4]
 
 local function RefreshCachedColors()
     C_accent_r, C_accent_g, C_accent_b, C_accent_a = C.accent[1], C.accent[2], C.accent[3], C.accent[4]
@@ -77,6 +42,7 @@ local function RefreshCachedColors()
     C_border_r, C_border_g, C_border_b, C_border_a = C.border[1], C.border[2], C.border[3], C.border[4]
     C_tabHover_r, C_tabHover_g, C_tabHover_b, C_tabHover_a = C.tabHover[1], C.tabHover[2], C.tabHover[3], C.tabHover[4]
     C_tabNormal_r, C_tabNormal_g, C_tabNormal_b, C_tabNormal_a = C.tabNormal[1], C.tabNormal[2], C.tabNormal[3], C.tabNormal[4]
+    C_accentText_r, C_accentText_g, C_accentText_b, C_accentText_a = C.accentText[1], C.accentText[2], C.accentText[3], C.accentText[4]
 end
 GUI.RefreshCachedColors = RefreshCachedColors
 
@@ -134,25 +100,8 @@ function GUI:AttachTooltip(frame, description, label)
     end)
 end
 
-function GUI:ApplyAccentColor(r, g, b)
-    local function lerp(a, b, t) return a + (b - a) * t end
-    C.accent[1], C.accent[2], C.accent[3], C.accent[4] = r, g, b, 1
-    C.accentFaint[1], C.accentFaint[2], C.accentFaint[3] = r, g, b
-    C.accentGlow[1], C.accentGlow[2], C.accentGlow[3] = r, g, b
-    C.accentLight[1] = lerp(r, 1, 0.3)
-    C.accentLight[2] = lerp(g, 1, 0.3)
-    C.accentLight[3] = lerp(b, 1, 0.3)
-    C.accentLight[4] = 1
-    C.accentDark[1], C.accentDark[2], C.accentDark[3], C.accentDark[4] = r * 0.5, g * 0.5, b * 0.5, 1
-    C.accentHover[1] = lerp(r, 1, 0.15)
-    C.accentHover[2] = lerp(g, 1, 0.15)
-    C.accentHover[3] = lerp(b, 1, 0.15)
-    C.accentHover[4] = 1
-    C.tabSelected[1], C.tabSelected[2], C.tabSelected[3] = r, g, b
-    C.borderAccent[1], C.borderAccent[2], C.borderAccent[3] = r, g, b
-    C.sectionHeader[1], C.sectionHeader[2], C.sectionHeader[3] = C.accentLight[1], C.accentLight[2], C.accentLight[3]
-    RefreshCachedColors()
-end
+-- GUI:ApplyAccentColor lives in core/theme.lua (single palette owner); it
+-- recomputes every derived role and calls GUI:RefreshCachedColors() above.
 
 GUI.ThemePresets = GUI.ThemePresets or {
     { name = "Sky Blue",     color = {0.376, 0.647, 0.980} },
@@ -1714,6 +1663,33 @@ local function PositionDropdownMenu(menuFrame, dropdown, menuHeight)
     end
 end
 
+-- Dropdown pool fills come from the live palette so a custom accent tints
+-- them: selected = selectedWash hue @ .12, hover = white @ .08 (contract:
+-- selected rows carry a faint accent wash + 2 px accent bar; hover stays
+-- neutral). Re-applied via GUI:OnAccentChanged (see RetintSharedMenu).
+local DROPDOWN_SELECTED_WASH_ALPHA = 0.12
+local DROPDOWN_HOVER_ALPHA = 0.08
+
+local function TintSharedMenuButton(f)
+    local wash = C.selectedWash or C.accent
+    f._selectedBg:SetColorTexture(wash[1], wash[2], wash[3], DROPDOWN_SELECTED_WASH_ALPHA)
+    f._hoverBg:SetColorTexture(1, 1, 1, DROPDOWN_HOVER_ALPHA)
+    if f._selectedBar then
+        f._selectedBar:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+    end
+end
+
+local function RetintSharedMenu(menu)
+    if not menu then return end
+    for _, f in ipairs(menu._buttonPool or {}) do
+        TintSharedMenuButton(f)
+    end
+    local thumb = menu.scrollBar and menu.scrollBar.thumb
+    if thumb then
+        thumb:SetColorTexture(C.scrollThumb[1], C.scrollThumb[2], C.scrollThumb[3], C.scrollThumb[4])
+    end
+end
+
 local function CreateDropdownScrollBody(menuFrame)
     local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame)
     scrollFrame:SetPoint("TOPLEFT", 0, 0)
@@ -1731,7 +1707,7 @@ local function CreateDropdownScrollBody(menuFrame)
 
     local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
     thumb:SetWidth(DROPDOWN_SCROLLBAR_WIDTH)
-    thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
+    thumb:SetColorTexture(C.scrollThumb[1], C.scrollThumb[2], C.scrollThumb[3], C.scrollThumb[4])
     scrollBar.thumb = thumb
 
     local function UpdateThumb()
@@ -1916,6 +1892,11 @@ local function GetSharedDropdownMenu()
     end)
 
     sharedDropdownMenu = menu
+    -- The menu is UIParent-parented and outlives GUI:RefreshAccentColor's
+    -- panel rebuild, so it re-tints from the live tokens on accent change.
+    if GUI.OnAccentChanged then
+        GUI:OnAccentChanged(function() RetintSharedMenu(menu) end)
+    end
     return menu
 end
 
@@ -1954,17 +1935,16 @@ local function AcquireSharedMenuButton(menu)
         f = CreateFrame("Button", nil, menu.scrollContent)
         f._selectedBg = f:CreateTexture(nil, "BACKGROUND")
         f._selectedBg:SetAllPoints(f)
-        f._selectedBg:SetColorTexture(0.204, 0.827, 0.6, 0.04)
         f._selectedBg:Hide()
         f._hoverBg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
         f._hoverBg:SetAllPoints(f)
-        f._hoverBg:SetColorTexture(0.204, 0.827, 0.6, 0.08)
         f._hoverBg:Hide()
         f._selectedBar = f:CreateTexture(nil, "OVERLAY")
         f._selectedBar:SetWidth(2)
         f._selectedBar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
         f._selectedBar:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
         f._selectedBar:Hide()
+        TintSharedMenuButton(f)
         f._btnText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         f._btnText:SetPoint("LEFT", 8, 0)
         menu._buttonPool[menu._buttonIdx] = f
@@ -1993,7 +1973,7 @@ local function AcquireSharedMenuFor(menu, container, dropdown, searchable, build
         menu.searchContainer:Hide()
         menu.scrollFrame:SetPoint("TOPLEFT", 0, 0)
     end
-    menu.scrollBar.thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
+    menu.scrollBar.thumb:SetColorTexture(C.scrollThumb[1], C.scrollThumb[2], C.scrollThumb[3], C.scrollThumb[4])
 end
 
 local FORM_ROW_HEIGHT = 28
@@ -3113,7 +3093,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                         btn._selectedBg:Show()
                         btn._selectedBar:SetColorTexture(C_accent_r, C_accent_g, C_accent_b, 1)
                         btn._selectedBar:Show()
-                        btn._btnText:SetTextColor(C_accent_r, C_accent_g, C_accent_b, 1)
+                        btn._btnText:SetTextColor(C.tabSelectedText[1], C.tabSelectedText[2], C.tabSelectedText[3], C.tabSelectedText[4])
                     else
                         btn._selectedBg:Hide()
                         btn._selectedBar:Hide()
@@ -5599,6 +5579,8 @@ function GUI:RefreshAccentColor()
     if wasShown and self.MainFrame then
         self.MainFrame:Show()
     end
+
+    if self.NotifyAccentChanged then self:NotifyAccentChanged() end
 end
 
 local function StyleScrollBar(scrollFrame)
@@ -5611,7 +5593,7 @@ local function StyleScrollBar(scrollFrame)
 
     local thumb = scrollBar.ThumbTexture or scrollBar:GetThumbTexture()
     if thumb then
-        thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.7)
+        thumb:SetColorTexture(C.scrollThumb[1], C.scrollThumb[2], C.scrollThumb[3], C.scrollThumb[4])
         thumb:SetSize(8, 40)
     end
 
@@ -5773,7 +5755,7 @@ local function EnsureSidebarScroll(frame)
 
     local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
     thumb:SetWidth(SIDEBAR_SCROLLBAR_WIDTH)
-    thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
+    thumb:SetColorTexture(C.scrollThumb[1], C.scrollThumb[2], C.scrollThumb[3], C.scrollThumb[4])
 
     local function UpdateThumb()
         local contentH = child:GetHeight()
@@ -6713,6 +6695,9 @@ function GUI:RenderSectionNav(scrollFrame, body, sections, options)
 
     local C = self.Colors or {}
     local accent = C.accent or { 0.204, 0.827, 0.6, 1 }
+    local tabNormal = C.tabNormal or { 1, 1, 1, 0.55 }
+    local tabHover = C.tabHover or { 1, 1, 1, 0.85 }
+    local tabSelectedText = C.tabSelectedText or { 1, 1, 1, 1 }
     local CHIP_HEIGHT = 22
     local CHIP_PAD_X = 10
     local CHIP_GAP_X = 8
@@ -6734,11 +6719,11 @@ function GUI:RenderSectionNav(scrollFrame, body, sections, options)
     local function setActive(idx)
         if idx == activeIdx then return end
         if activeIdx and chips[activeIdx] then
-            chips[activeIdx].label:SetTextColor(0.7, 0.7, 0.7, 1)
+            chips[activeIdx].label:SetTextColor(tabNormal[1], tabNormal[2], tabNormal[3], tabNormal[4])
             chips[activeIdx].underline:Hide()
         end
         if idx and chips[idx] then
-            chips[idx].label:SetTextColor(accent[1], accent[2], accent[3], 1)
+            chips[idx].label:SetTextColor(tabSelectedText[1], tabSelectedText[2], tabSelectedText[3], tabSelectedText[4])
             chips[idx].underline:Show()
         end
         activeIdx = idx
@@ -6758,7 +6743,7 @@ function GUI:RenderSectionNav(scrollFrame, body, sections, options)
         local f, _, fl = label:GetFont()
         ns.Helpers.ApplyFontWithFallback(label, f or (ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(self:GetFontPath())) or f, 11, fl or "")
         label:SetPoint("LEFT", CHIP_PAD_X, 0)
-        label:SetTextColor(0.7, 0.7, 0.7, 1)
+        label:SetTextColor(tabNormal[1], tabNormal[2], tabNormal[3], tabNormal[4])
         chip.label = label
 
         local underline = chip:CreateTexture(nil, "OVERLAY")
@@ -6772,8 +6757,18 @@ function GUI:RenderSectionNav(scrollFrame, body, sections, options)
         local labelW = label:GetStringWidth()
         chip:SetWidth(labelW + CHIP_PAD_X * 2)
 
-        chip:SetScript("OnEnter", function() hover:Show() end)
-        chip:SetScript("OnLeave", function() hover:Hide() end)
+        chip:SetScript("OnEnter", function()
+            hover:Show()
+            if activeIdx ~= i then
+                label:SetTextColor(tabHover[1], tabHover[2], tabHover[3], tabHover[4])
+            end
+        end)
+        chip:SetScript("OnLeave", function()
+            hover:Hide()
+            if activeIdx ~= i then
+                label:SetTextColor(tabNormal[1], tabNormal[2], tabNormal[3], tabNormal[4])
+            end
+        end)
 
         chips[i] = chip
     end

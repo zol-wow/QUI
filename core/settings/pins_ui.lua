@@ -863,6 +863,7 @@ local function CreateValuePreview(parent, width)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(width or 132, 18)
     local valueText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    valueText:SetTextColor(1, 1, 1, 1) -- GameFontNormal is gold; palette is white text
     valueText:SetJustifyH("LEFT")
     frame.valueText = valueText
     return frame

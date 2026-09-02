@@ -189,7 +189,7 @@ _G.QUI_InspectFrameSkinning = api
 _G.QUI_RefreshInspectColors = RefreshInspectFrameColors
 
 if ns.Registry then
-    ns.Registry:Register("skinInspect", {
+    ns.Registry:Register("skinInspectFrame", {
         refresh = _G.QUI_RefreshInspectColors,
         priority = 80,
         group = "skinning",

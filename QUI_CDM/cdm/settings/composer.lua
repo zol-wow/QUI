@@ -602,7 +602,7 @@ local function CreateSearchBox(parent, width, placeholder)
     local ph = box:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(ph, { fontOnly = true }) end
     ph:SetPoint("LEFT", 6, 0)
-    ph:SetTextColor(0.4, 0.4, 0.4, 1)
+    ph:SetTextColor(1, 1, 1, 0.45)
     ph:SetText(placeholder or ns.L["Search..."])
     box._placeholder = ph
 
@@ -1587,10 +1587,10 @@ ShowOverridePanel = function(parentRow, containerKey, entry, entryIndex)
             and not spellData:HasResolvableAuraForItem(itemID) then
             local hint = ui.hint
             if not hint then
-                hint = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+                hint = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                 hint:SetJustifyH("LEFT")
                 hint:SetText(ns.L["Aura will be detected the first time you use this item."])
-                hint:SetTextColor(0.55, 0.55, 0.55, 1)
+                hint:SetTextColor(1, 1, 1, 0.55)
                 ui.hint = hint
             end
             hint:ClearAllPoints()
@@ -2521,7 +2521,7 @@ RefreshEntryList = function()
         hdr._label:SetText(label)
         hdr._rowNum = rowNum or nil
         if isEmpty then
-            hdr._label:SetTextColor(0.4, 0.4, 0.4, 1)
+            hdr._label:SetTextColor(1, 1, 1, 0.55)
         else
             hdr._label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
         end
@@ -2650,7 +2650,7 @@ RefreshEntryList = function()
                 local _eHdrR, _eHdrG, _eHdrB = GetChromeBgPanel()
                 hdr:SetBackdropColor(_eHdrR, _eHdrG, _eHdrB, 0.3)
                 hdr._label:SetText("  " .. ns.L["(empty — drag or right-click icons to move between rows)"])
-                hdr._label:SetTextColor(0.35, 0.35, 0.35, 1)
+                hdr._label:SetTextColor(1, 1, 1, 0.45)
                 hdr._rowNum = rowNum
                 hdr:Show()
                 sy = sy - 18
