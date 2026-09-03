@@ -134,6 +134,7 @@ aura_elements_editor.lua
 ..\QUI\modules\trackers\settings\atonement_counter.lua
 ..\QUI\modules\trackers\settings\prey_tracker_content.lua
 ..\QUI\modules\trackers\settings\aura_displays_pickers.lua
+..\QUI\modules\trackers\settings\aura_displays_create.lua
 ..\QUI\modules\trackers\settings\aura_displays_content.lua
 ..\QUI\modules\trackers\settings\incoming_casts_content.lua
 ..\QUI\modules\ui\settings\blizzard_mover_content.lua

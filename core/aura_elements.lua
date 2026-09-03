@@ -18,6 +18,71 @@ local function deepCopyTable(v)
 end
 
 local DISPLAY_TYPES = { icon = true, square = true, bar = true, healthTint = true, border = true }
+local ANCHOR_POINTS = {
+    TOPLEFT = true, TOP = true, TOPRIGHT = true,
+    LEFT = true, CENTER = true, RIGHT = true,
+    BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true,
+}
+local GROW_DIRECTIONS = { LEFT = true, RIGHT = true, CENTER = true, UP = true, DOWN = true }
+local TABLE_FIELDS = {
+    "auraSounds", "bar", "blacklist", "border", "borderColor", "buffChecks",
+    "classifications", "color", "dispelAssets", "dispelColors", "duration",
+    "filterFlags", "onlyMineSpells", "pandemicGlow", "spells", "stack", "whitelist",
+}
+local NUMBER_FIELDS = {
+    "borderSize", "iconSize", "iconsPerRow", "maxDurationSec", "maxIcons",
+    "offsetX", "offsetY", "rowSpacing", "spacing", "tooltipAnchorX", "tooltipAnchorY",
+}
+
+local function IsFiniteNumber(value)
+    return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
+
+local function ValidColor(value)
+    if value == nil then return true end
+    if type(value) ~= "table" then return false end
+    for i = 1, 4 do
+        if value[i] ~= nil and not IsFiniteNumber(value[i]) then return false end
+    end
+    for _, key in ipairs({ "r", "g", "b", "a" }) do
+        if value[key] ~= nil and not IsFiniteNumber(value[key]) then return false end
+    end
+    return true
+end
+
+local function ValidTextConfig(config)
+    if config == nil then return true end
+    if type(config) ~= "table" then return false end
+    if config.anchor ~= nil and not ANCHOR_POINTS[config.anchor] then return false end
+    if config.font ~= nil and type(config.font) ~= "string" then return false end
+    for _, key in ipairs({ "fontSize", "offsetX", "offsetY" }) do
+        if config[key] ~= nil and not IsFiniteNumber(config[key]) then return false end
+    end
+    return ValidColor(config.color) and ValidColor(config.pandemicColor)
+end
+
+local function ValidColorMap(value)
+    if value == nil then return true end
+    if type(value) ~= "table" then return false end
+    for key, color in pairs(value) do
+        if type(key) ~= "string" or type(color) ~= "table" or not ValidColor(color) then
+            return false
+        end
+    end
+    return true
+end
+
+local function ValidAssetMap(value)
+    if value == nil then return true end
+    if type(value) ~= "table" then return false end
+    for key, asset in pairs(value) do
+        local assetType = type(asset) == "table" and type(asset.asset)
+        if type(key) ~= "string" or (assetType ~= "string" and assetType ~= "number") then
+            return false
+        end
+    end
+    return true
+end
 local DEFAULT_MISSING_RAID_BUFF_CHECKS = {
     intellect = true, stamina = true, attackPower = true,
     versatility = true, skyfury = true, bronze = true,
@@ -185,6 +250,7 @@ function E.NewTrackedElement(spells, displayType)
         applyToRoles = "all",
         anchor = "TOPLEFT", offsetX = 0, offsetY = 0,
         growDirection = "RIGHT", spacing = 2, iconSize = 16, iconsPerRow = 0,
+        dynamicLayout = false,
         hideSwipe = false, reverseSwipe = false,
         swipeStyle = "radial",
         duration = { show = false, fontSize = 9, anchor = "CENTER", offsetX = 0, offsetY = 0,
@@ -225,11 +291,55 @@ end
 
 function E.Validate(e)
     if type(e) ~= "table" then return false end
+    if e.id ~= nil and type(e.id) ~= "string" then return false end
+    for i = 1, #TABLE_FIELDS do
+        local value = e[TABLE_FIELDS[i]]
+        if value ~= nil and type(value) ~= "table" then return false end
+    end
+    for i = 1, #NUMBER_FIELDS do
+        local value = e[NUMBER_FIELDS[i]]
+        if value ~= nil and not IsFiniteNumber(value) then return false end
+    end
+    if e.anchor ~= nil and not ANCHOR_POINTS[e.anchor] then return false end
+    if e.growDirection ~= nil and not GROW_DIRECTIONS[e.growDirection] then return false end
+    if not ValidColor(e.color) or not ValidColor(e.borderColor)
+        or not ValidColor(e.swipeColor)
+        or not ValidTextConfig(e.duration) or not ValidTextConfig(e.stack)
+        or not ValidColorMap(e.dispelColors) or not ValidAssetMap(e.dispelAssets) then
+        return false
+    end
+    if e.swipeStyle ~= nil and type(e.swipeStyle) ~= "string" then return false end
+    if e.swipeTexture ~= nil and type(e.swipeTexture) ~= "string" then return false end
+    if e.tooltipAnchor ~= nil and type(e.tooltipAnchor) ~= "string" then return false end
+    if e.pandemicGlow ~= nil and (type(e.pandemicGlow) ~= "table"
+        or not ValidColor(e.pandemicGlow.color)) then
+        return false
+    end
+    if e.bar then
+        for _, key in ipairs({ "borderSize", "length", "thickness" }) do
+            if e.bar[key] ~= nil and not IsFiniteNumber(e.bar[key]) then return false end
+        end
+        if e.bar.orientation ~= nil and e.bar.orientation ~= "HORIZONTAL"
+            and e.bar.orientation ~= "VERTICAL" then
+            return false
+        end
+        if not ValidColor(e.bar.backgroundColor) or not ValidColor(e.bar.borderColor)
+            or not ValidColor(e.bar.lowTimeColor) then
+            return false
+        end
+    end
     if e.mode == "filterStrip" then
         return e.auraType == "HELPFUL" or e.auraType == "HARMFUL"
     elseif e.mode == "tracked" then
+        if e.auraType ~= nil and e.auraType ~= "HELPFUL" and e.auraType ~= "HARMFUL" then
+            return false
+        end
         if not DISPLAY_TYPES[e.displayType] then return false end
-        return type(e.spells) == "table" and #e.spells > 0
+        if type(e.spells) ~= "table" or #e.spells == 0 then return false end
+        for i = 1, #e.spells do
+            if not IsFiniteNumber(e.spells[i]) or e.spells[i] <= 0 then return false end
+        end
+        return true
     elseif e.mode == "missingRaidBuff" then
         return true
     end
@@ -295,6 +405,7 @@ function E.NormalizeElement(e)
         if e.filterMode == "classification" then e.filterMode = "classify" end
     elseif e.mode == "tracked" then
         if e.auraType == nil then e.auraType = "HELPFUL" end
+        if e.dynamicLayout ~= true then e.dynamicLayout = false end
         if type(e.border) ~= "table" then e.border = { thickness = 2 } end
         local trackedSpellIDs = {}
         if type(e.spells) == "table" then
