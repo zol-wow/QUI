@@ -161,7 +161,6 @@ local Roster = {
     race = {},
     sex = {},
     candidates = {},
-    lastIndexedAt = 0,
 }
 
 local function ClearRosterIndex()
@@ -211,8 +210,6 @@ local function IndexRoster()
             end
         end
     end
-
-    Roster.lastIndexedAt = GetTime()
 end
 
 local function LoadClassCandidates(classToken)
@@ -271,10 +268,6 @@ local function UnitFromCasterTarget(caster)
     end
 
     local candidates = LoadClassCandidates(classToken)
-    if #candidates == 0 and GetTime() - Roster.lastIndexedAt > 1 then
-        IndexRoster()
-        candidates = LoadClassCandidates(classToken)
-    end
     if #candidates == 0 then
         return nil
     end
