@@ -120,7 +120,7 @@ function FilterPopup.Attach(opts)
                 r._label:SetPoint("LEFT", r, "LEFT", 4, 0)
                 r._label:SetPoint("RIGHT", r, "RIGHT", -4, 0)
                 r._label:SetText(row.label)
-                r._label:SetTextColor(1, 0.82, 0)
+                r._label:SetTextColor(1, 1, 1)
             else
                 r._id = row.id
                 r._cb:Show()

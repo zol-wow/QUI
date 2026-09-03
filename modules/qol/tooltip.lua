@@ -1017,21 +1017,8 @@ local function AddTooltipInfoLine(tooltip, label, value, labelR, labelG, labelB,
     return true
 end
 
-local function AddPlayerItemLevelToTooltip(tooltip, unit, skipShow)
-    TooltipDebugCount("qol.itemLevelAttempt")
-    if not TooltipInspect or not unit or not tooltip then return false end
-    if InCombatLockdown() then return false end
-
-    local playerData = TooltipInspect:GetCachedPlayerData(unit)
-    if not playerData or not playerData.itemLevel then
-        if not InCombatLockdown() then
-            TooltipDebugCount("qol.itemLevelQueued")
-            TooltipInspect:QueueInspect(unit)
-        end
-        return false
-    end
-
-    local guid = UnitGUID(unit)
+local function AddPlayerItemLevelDataToTooltip(tooltip, guid, playerData, skipShow)
+    if not tooltip or not playerData or not playerData.itemLevel then return false end
     if Helpers.IsSecretValue(guid) then return false end -- @secret-policy: reject-secret-ids
     if tooltipPlayerItemLevelGUID[tooltip] == guid then
         TooltipDebugCount("qol.itemLevelDuplicate")
@@ -1063,6 +1050,35 @@ local function AddPlayerItemLevelToTooltip(tooltip, unit, skipShow)
 
     return true
 end
+
+local function AddPlayerItemLevelToTooltip(tooltip, unit, skipShow)
+    TooltipDebugCount("qol.itemLevelAttempt")
+    if not TooltipInspect or not unit or not tooltip then return false end
+    if InCombatLockdown() then return false end
+
+    local playerData = TooltipInspect:GetCachedPlayerData(unit)
+    if not playerData or not playerData.itemLevel then
+        TooltipDebugCount("qol.itemLevelQueued")
+        TooltipInspect:QueueInspect(unit)
+        return false
+    end
+
+    return AddPlayerItemLevelDataToTooltip(tooltip, UnitGUID(unit), playerData, skipShow)
+end
+
+local function AddPlayerItemLevelByGUIDToTooltip(tooltip, guid, skipShow, reset)
+    TooltipDebugCount("qol.itemLevelAttempt")
+    local inspect = TooltipInspect or ns.TooltipInspect
+    if not inspect or not inspect.GetPlayerDataByGUID or not tooltip then return false end
+    if Helpers.IsSecretValue(guid) or guid == nil then return false end -- @secret-policy: reject-secret-ids
+    if reset then tooltipPlayerItemLevelGUID[tooltip] = nil end
+
+    local playerData = inspect:GetPlayerDataByGUID(guid)
+    if not playerData then return false end
+    return AddPlayerItemLevelDataToTooltip(tooltip, guid, playerData, skipShow)
+end
+
+ns.QUI_AddPlayerItemLevelByGUIDToTooltip = AddPlayerItemLevelByGUIDToTooltip
 
 local function IsSettingEnabled(settings, key, defaultValue)
     if not settings then
@@ -2379,7 +2395,6 @@ local function SetupTooltipHook()
 
     AddTrackedTooltipPostCall(Enum.TooltipDataType.Spell, "qol.spellIDPost", function(tooltip, data)
         TooltipDebugCount("qol.spellPost")
-        if InCombatLockdown() then return end
         if not ShouldProcessTooltipIDs(tooltip) then return end
         ns.SafeCall("bulkhead", TryAddSpellIDFromTooltipData, tooltip, data)
     end)
@@ -2412,11 +2427,9 @@ local function SetupTooltipHook()
 
     AddTrackedTooltipPostCall(Enum.TooltipDataType.Item, "qol.itemPost", function(tooltip, data)
         TooltipDebugCount("qol.itemPost")
-        if not InCombatLockdown() then
-            if ShouldProcessTooltipIDs(tooltip) then
-                ns.SafeCall("bulkhead", TryAddItemIDFromTooltipData, tooltip, data)
-                ns.SafeCall("bulkhead", TryAddItemMaxStackSizeFromTooltipData, tooltip, data)
-            end
+        if ShouldProcessTooltipIDs(tooltip) then
+            ns.SafeCall("bulkhead", TryAddItemIDFromTooltipData, tooltip, data)
+            ns.SafeCall("bulkhead", TryAddItemMaxStackSizeFromTooltipData, tooltip, data)
         end
 
         ApplyOwnedTooltipHide(tooltip, "items")

@@ -3,6 +3,8 @@ local QUICore = ns.Addon
 
 local AceSerializer = LibStub("AceSerializer-3.0", true)
 local LibDeflate    = LibStub("LibDeflate", true)
+local SettingsPins = ns.Settings and ns.Settings.Pins
+local ProfileFeatureCategories = SettingsPins and SettingsPins.ProfileFeatureCategories or {}
 
 local MAX_IMPORT_DEPTH = 20
 local MAX_IMPORT_NODES = 50000
@@ -427,6 +429,7 @@ local PROFILE_QOL_GENERAL_KEYS = {
     "autoDeclineDuel",
     "autoDeclinePetBattle",
     "autoRelease",
+    "blockReleaseInRaid",
     "audioOutputDevice",
     "autoUnwrapCollections",
     "autoConfirmSocketReplace",
@@ -1047,13 +1050,16 @@ local PROFILE_IMPORT_CATEGORIES = {
     },
     {
         id = "groupFrames",
+        profileFeaturePinID = "groupFrames",
         label = "Group / Raid Frames",
         description = "Party, raid, click-cast, and raid buff settings.",
         recommended = true,
-        topLevelKeys = { "quiGroupFrames", "raidBuffs" },
+        topLevelKeys = ProfileFeatureCategories.groupFrames.topLevelKeys,
+        frameAnchorKeys = ProfileFeatureCategories.groupFrames.frameAnchorKeys,
         children = {
             {
                 id = "groupFramesGeneral",
+                profileFeaturePinID = "groupFrames",
                 label = "General",
                 description = "Shared group frame options and global toggles.",
                 topLevelKeys = { "raidBuffs" },
@@ -1064,8 +1070,22 @@ local PROFILE_IMPORT_CATEGORIES = {
                     "quiGroupFrames.raidSelfFirst",
                 },
             },
-            { id = "groupFramesParty", label = "Party", description = "Party frame designer settings.", paths = { "quiGroupFrames.party" } },
-            { id = "groupFramesRaid", label = "Raid", description = "Raid frame designer settings.", paths = { "quiGroupFrames.raid" } },
+            {
+                id = "groupFramesParty",
+                profileFeaturePinID = "groupFrames",
+                label = "Party",
+                description = "Party frame designer settings.",
+                paths = { "quiGroupFrames.party" },
+                frameAnchorKeys = { "partyFrames" },
+            },
+            {
+                id = "groupFramesRaid",
+                profileFeaturePinID = "groupFrames",
+                label = "Raid",
+                description = "Raid frame designer settings.",
+                paths = { "quiGroupFrames.raid" },
+                frameAnchorKeys = { "raidFrames", "spotlightFrames" },
+            },
         },
     },
     {
@@ -1247,10 +1267,12 @@ local PROFILE_IMPORT_CATEGORIES = {
     },
     {
         id = "auraDisplays",
+        profileFeaturePinID = "auraDisplays",
         label = "Aura Displays",
         description = "Your custom on-screen aura frames and their filters.",
         recommended = true,
-        topLevelKeys = { "auraDisplays" },
+        topLevelKeys = ProfileFeatureCategories.auraDisplays.topLevelKeys,
+        frameAnchorPrefix = ProfileFeatureCategories.auraDisplays.frameAnchorPrefix,
     },
     {
         id = "trackersTimers",
@@ -1268,6 +1290,7 @@ local PROFILE_IMPORT_CATEGORIES = {
             "xpTracker",
             "totemBar",
             "preyTracker",
+            "incomingCasts",
         },
     },
     {
@@ -1938,6 +1961,7 @@ local function ApplyFullProfilePayload(core, importedProfile)
 
     local bundledGlobals = importedProfile[PROFILE_EXPORT_GLOBALS_KEY]
 
+    SettingsPins:SyncProfileFeatureSources(core.db)
     for key in pairs(profile) do
         profile[key] = nil
     end
@@ -1991,6 +2015,20 @@ local function NormalizeOptionalProfileName(name)
     return name
 end
 
+local function ValidateProfileCopyCategories(categoryIDs)
+    if type(categoryIDs) ~= "table" or #categoryIDs == 0 then
+        return false, "Select at least one category to copy."
+    end
+
+    for _, categoryID in ipairs(categoryIDs) do
+        if type(categoryID) ~= "string" or not PROFILE_IMPORT_CATEGORY_BY_ID[categoryID] then
+            return false, ("Unknown profile settings category '%s'."):format(tostring(categoryID))
+        end
+    end
+
+    return true
+end
+
 local function PrepareImportTargetProfile(core, requestedProfileName)
     local db = core and core.db
     if not db or not db.profile then
@@ -2026,7 +2064,7 @@ local function RunImportFullProfile(core, importedProfile, targetProfileName)
     return importOK, message
 end
 
-local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs, targetProfileName)
+local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs, targetProfileName, copyFeatureAnchors, skipPinnedSync)
     local selectionOK, selectionData = CollectSelectedProfileCategories(selectedCategoryIDs, payloadOrErr)
     if not selectionOK then
         return false, "Select at least one category to import."
@@ -2047,6 +2085,9 @@ local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs
         return false, "No profile loaded."
     end
 
+    if not skipPinnedSync then
+        SettingsPins:SyncProfileFeatureSources(core.db)
+    end
     local previousProfile = CloneValue(profile)
 
     for _, category in ipairs(selectedSpecs) do
@@ -2133,6 +2174,12 @@ local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs
         RestorePathList(profile, previousProfile, PROFILE_LAYOUT_PATHS)
         RestoreCustomTrackerLayout(profile, previousProfile)
         RestoreDatatextPanelLayout(profile, previousProfile)
+    end
+
+    if copyFeatureAnchors then
+        for _, category in ipairs(selectedSpecs) do
+            SettingsPins:CopyProfileFeatureAnchors(profile, payloadOrErr, category)
+        end
     end
 
     local pins = ns.Settings and ns.Settings.Pins
@@ -2360,6 +2407,150 @@ function QUICore:ImportProfileSelectionFromValidatedPayload(payload, selectedCat
     end
 
     return RunImportProfileSelection(self, payload, selectedCategoryIDs, targetProfileName)
+end
+
+function QUICore:CopyProfileSelection(sourceProfileName, categoryIDs, skipPinnedSync)
+    local db = self.db
+    if not db or type(db.profile) ~= "table" then
+        return false, "No profile loaded."
+    end
+
+    local sourceName = NormalizeOptionalProfileName(sourceProfileName)
+    if not sourceName then
+        return false, "Choose a source profile."
+    end
+
+    local currentName = db.GetCurrentProfile and db:GetCurrentProfile() or "Default"
+    if sourceName == currentName then
+        return false, "Choose a profile other than the current profile."
+    end
+
+    local categoriesOK, categoryError = ValidateProfileCopyCategories(categoryIDs)
+    if not categoriesOK then
+        return false, categoryError
+    end
+
+    if not skipPinnedSync then
+        for _, categoryID in ipairs(categoryIDs) do
+            local category = PROFILE_IMPORT_CATEGORY_BY_ID[categoryID]
+            local pinCategoryID = category and category.profileFeaturePinID
+            if pinCategoryID and SettingsPins:GetEffectiveProfileFeatureSource(pinCategoryID, db) then
+                return false, "Unpin this feature before copying its settings."
+            end
+        end
+    end
+
+    local sourceProfile = SettingsPins:BuildInactiveProfileSnapshot(db, sourceName)
+    if not sourceProfile then
+        return false, ("No profile named '%s'."):format(sourceName)
+    end
+
+    for _, categoryID in ipairs(categoryIDs) do
+        if categoryID == "groupFrames" and type(sourceProfile.quiGroupFrames) == "table" then
+            local targetGroupFrames = db.profile.quiGroupFrames
+            local targetClickCast = type(targetGroupFrames) == "table" and rawget(targetGroupFrames, "clickCast") or nil
+            sourceProfile.quiGroupFrames.clickCast = CloneValue(targetClickCast)
+            break
+        end
+    end
+
+    local copied, copyError = RunImportProfileSelection(self, sourceProfile, categoryIDs, nil, true, skipPinnedSync)
+    if not copied then
+        return false, copyError
+    end
+
+    return true, ("Copied selected settings from profile '%s'."):format(sourceName)
+end
+
+function QUICore:GetProfileFeatureSource(categoryID)
+    return SettingsPins:GetProfileFeatureSource(categoryID, self.db)
+end
+
+function QUICore:GetGlobalProfileFeatureSource(categoryID)
+    return SettingsPins:GetGlobalProfileFeatureSource(categoryID, self.db)
+end
+
+function QUICore:IsProfileFeaturePinOptedOut(categoryID)
+    return SettingsPins:IsProfileFeaturePinOptedOut(categoryID, self.db)
+end
+
+function QUICore:SetProfileFeaturePinOptOut(categoryID, optedOut)
+    local changed, changeError = SettingsPins:SetProfileFeaturePinOptOut(categoryID, optedOut, self.db)
+    if not changed then
+        return false, changeError
+    end
+    if optedOut then
+        return true, "The current profile now uses its own settings."
+    end
+
+    if not SettingsPins:ApplyProfileFeaturePins(self.db, { categoryID }) then
+        SettingsPins:SetProfileFeaturePinOptOut(categoryID, true, self.db)
+        return false, "Could not apply the pinned settings."
+    end
+    SettingsPins:ApplyAllForDB(self.db)
+    return true, "The current profile now uses the pinned settings."
+end
+
+function QUICore:SyncProfileFeatureSources(categoryID)
+    return SettingsPins:SyncProfileFeatureSources(self.db, categoryID)
+end
+
+function QUICore:PinProfileSelection(sourceProfileName, categoryID)
+    if not SettingsPins:IsProfileFeatureSupported(categoryID) then
+        return false, "Only Aura Displays and Group / Raid Frames can use profile pins."
+    end
+
+    local sourceName = NormalizeOptionalProfileName(sourceProfileName)
+    if not sourceName then
+        return false, "Choose a source profile."
+    end
+
+    SettingsPins:SyncProfileFeatureSources(self.db, categoryID)
+    local previousSource = SettingsPins:GetProfileFeatureSource(categoryID, self.db)
+    local pinned, pinError = SettingsPins:SetProfileFeatureSource(sourceName, categoryID, self.db)
+    if not pinned then
+        return false, pinError
+    end
+
+    local copied, copyError = self:CopyProfileSelection(sourceName, { categoryID }, true)
+    if not copied then
+        if previousSource then
+            SettingsPins:SetProfileFeatureSource(previousSource, categoryID, self.db)
+        else
+            SettingsPins:ClearProfileFeatureSource(categoryID, self.db)
+        end
+        return false, copyError
+    end
+
+    return true, ("Pinned selected settings to profile '%s'."):format(sourceName)
+end
+
+function QUICore:PinCurrentProfileSelection(categoryID)
+    if not SettingsPins:IsProfileFeatureSupported(categoryID) then
+        return false, "Only Aura Displays and Group / Raid Frames can use profile pins."
+    end
+
+    local db = self.db
+    local currentName = db and db.GetCurrentProfile and db:GetCurrentProfile() or nil
+    if type(currentName) ~= "string" or currentName == "" then
+        return false, "No profile loaded."
+    end
+
+    SettingsPins:SyncProfileFeatureSources(db, categoryID)
+    local specID = ns.Helpers and ns.Helpers.GetCurrentSpecID and ns.Helpers.GetCurrentSpecID() or nil
+    local pinned, pinError = SettingsPins:SetGlobalProfileFeatureSource(currentName, categoryID, db, specID)
+    if not pinned then
+        return false, pinError
+    end
+    return true, ("Pinned selected settings from profile '%s' across all profiles."):format(currentName)
+end
+
+function QUICore:UnpinProfileSelection(categoryID)
+    SettingsPins:SyncProfileFeatureSources(self.db, categoryID)
+    if SettingsPins:GetGlobalProfileFeatureSource(categoryID, self.db) then
+        return SettingsPins:ClearGlobalProfileFeatureSource(categoryID, self.db)
+    end
+    return SettingsPins:ClearProfileFeatureSource(categoryID, self.db)
 end
 
 function QUICore:ExportProfileSelectionToString(selectedCategoryIDs)

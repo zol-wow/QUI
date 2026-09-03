@@ -16,7 +16,7 @@ function CreateEditOverlay(container, barKey)
     overlay:SetFrameStrata("HIGH")
     overlay:Hide()
 
-    local text = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local text = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     text:SetPoint("CENTER")
     local displayName = barKey:gsub("bar", "Bar ")
     text:SetText(displayName)
@@ -175,6 +175,7 @@ function SetupBar1Paging(container)
     if bar1PagingInitialized then return end
     bar1PagingInitialized = true
 
+    container:Execute([[self:SetAttribute("qui-action-page", 1)]])
     container:SetAttribute("_onstate-page", [[
         local page = newstate
         if page == "override" then
@@ -201,6 +202,7 @@ function SetupBar1Paging(container)
             end
         end
         page = tonumber(page) or 1
+        self:SetAttribute("qui-action-page", page)
         local offset = (page - 1) * 12
         control:ChildUpdate("offset", offset)
     ]])

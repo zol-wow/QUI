@@ -16,6 +16,7 @@ local Window = {}
 Alts.Window = Window
 
 local HEADER_H, SIDEBAR_W, TAB_H, TAB_GAP, PAD = 32, 120, 26, 2, 10
+local MIN_W, MIN_H = 900, 300
 
 local win
 local tabs = {}
@@ -130,6 +131,28 @@ local function SelectTab(id)
     end
 end
 
+local function RefreshActiveView()
+    if not (win and win:IsShown()) then return end
+    for _, t in ipairs(tabs) do
+        if t.id == activeTab and t.view and t.view.Refresh then t.view.Refresh() end
+    end
+end
+
+local function SaveGeometry(includeSize)
+    local s = Settings()
+    if not s then return end
+    local point, _, relativePoint, x, y = win:GetPoint()
+    if point then
+        local core = Helpers.GetCore()
+        if core and core.PixelRound then x, y = core:PixelRound(x), core:PixelRound(y) end
+        s.point, s.relativePoint, s.x, s.y = point, relativePoint or point, x, y
+    end
+    if includeSize then
+        s.width = math.floor((win:GetWidth() or MIN_W) + 0.5)
+        s.height = math.floor((win:GetHeight() or MIN_H) + 0.5)
+    end
+end
+
 local function BuildSidebarTabs()
     local fontPath = Helpers.GetGeneralFont() or STANDARD_TEXT_FONT
     local outline = Helpers.GetGeneralFontOutline() or "OUTLINE"
@@ -183,17 +206,35 @@ end
 
 local function Build()
     local cfg = Settings()
+    local interaction
     win = CreateFrame("Frame", "QUI_AltsWindow", UIParent)
     win:SetSize((cfg and cfg.width) or 920, (cfg and cfg.height) or 540)
-    win:SetPoint((cfg and cfg.point) or "CENTER", UIParent, (cfg and cfg.point) or "CENTER",
+    win:SetPoint((cfg and cfg.point) or "CENTER", UIParent,
+        (cfg and (cfg.relativePoint or cfg.point)) or "CENTER",
         (cfg and cfg.x) or 0, (cfg and cfg.y) or 0)
     win:SetFrameStrata("HIGH")
     win:SetToplevel(true)
     win:SetMovable(true)
+    win:SetResizable(true)
+    win:SetResizeBounds(MIN_W, MIN_H)
     win:EnableMouse(true)
     win:SetClampedToScreen(true)
     if win.SetDontSavePosition then win:SetDontSavePosition(true) end
     win:Hide()
+
+    local function FinishInteraction()
+        if not interaction then return end
+        local active = interaction
+        interaction = nil
+        win:StopMovingOrSizing()
+        SaveGeometry(active == "resize")
+        if active == "resize" then RefreshActiveView() end
+    end
+
+    win:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_REGEN_DISABLED" then FinishInteraction() end
+    end)
+    win:RegisterEvent("PLAYER_REGEN_DISABLED")
 
     win._bg = win:CreateTexture(nil, "BACKGROUND")
     win._bg:SetAllPoints()
@@ -207,15 +248,14 @@ local function Build()
     header:SetHeight(HEADER_H)
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
-    header:SetScript("OnDragStart", function() win:StartMoving() end)
+    header:SetScript("OnDragStart", function()
+        if InCombatLockdown and InCombatLockdown() then return end
+        win:StartMoving()
+        interaction = "move"
+    end)
     header:SetScript("OnDragStop", function()
-        win:StopMovingOrSizing()
-        local point, _, _, x, y = win:GetPoint()
-        if not point then return end
-        local core = Helpers.GetCore()
-        if core and core.PixelRound then x, y = core:PixelRound(x), core:PixelRound(y) end
-        local s = Settings()
-        if s then s.point, s.x, s.y = point, x, y end
+        if interaction ~= "move" then return end
+        FinishInteraction()
     end)
     win._header = header
 
@@ -271,6 +311,30 @@ local function Build()
     win._body:SetPoint("TOPLEFT", 8, -8)
     win._body:SetPoint("BOTTOMRIGHT", -8, 8)
 
+    local resize = CreateFrame("Button", nil, win)
+    resize:SetSize(16, 16)
+    resize:SetPoint("BOTTOMRIGHT", -4, 4)
+    resize:SetFrameLevel(win:GetFrameLevel() + 10)
+    resize:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    resize:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    resize:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    resize:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" or interaction then return end
+        if InCombatLockdown and InCombatLockdown() then return end
+        local left, top = win:GetLeft(), win:GetTop()
+        if left and top then
+            win:ClearAllPoints()
+            win:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+        end
+        win:StartSizing("BOTTOMRIGHT")
+        interaction = "resize"
+    end)
+    resize:SetScript("OnMouseUp", function(_, button)
+        if button ~= "LeftButton" or interaction ~= "resize" then return end
+        FinishInteraction()
+    end)
+    win._resize = resize
+
     BuildSidebarTabs()
     for _, t in ipairs(tabs) do
         t.view = t.builder(win._body)
@@ -279,7 +343,7 @@ local function Build()
     end
 
     win:SetScript("OnHide", function()
-        win:StopMovingOrSizing()
+        if interaction then FinishInteraction() end
     end)
 
     Reskin()
@@ -309,10 +373,7 @@ function Window.Toggle()
 end
 
 function Window.RefreshActive()
-    if not (win and win:IsShown()) then return end
-    for _, t in ipairs(tabs) do
-        if t.id == activeTab and t.view and t.view.Refresh then t.view.Refresh() end
-    end
+    RefreshActiveView()
 end
 
 if ns.Registry then
@@ -331,6 +392,8 @@ function Window.OnProfileChanged()
     local cfg = Settings()
     if not cfg then return end
     win:ClearAllPoints()
-    win:SetPoint(cfg.point or "CENTER", UIParent, cfg.point or "CENTER", cfg.x or 0, cfg.y or 0)
+    win:SetPoint(cfg.point or "CENTER", UIParent, cfg.relativePoint or cfg.point or "CENTER",
+        cfg.x or 0, cfg.y or 0)
     win:SetSize(cfg.width or 920, cfg.height or 540)
+    RefreshActiveView()
 end

@@ -17,6 +17,12 @@ local function FormatString(fmt, ...)
     return formatted
 end
 
+local function FormatPrefixedMessage(fmt, msg, ...)
+    local prefix = FormatString(fmt, ...)
+    if prefix == nil then return nil end
+    return FormatString("%s%s", prefix, msg)
+end
+
 local function IsFromDiscord(discordInfo)
     if IsSecret(discordInfo) or type(discordInfo) ~= "table" then return false end
     local userID = discordInfo.userID
@@ -407,7 +413,7 @@ end
 local RAW_TYPES = {
     SYSTEM = true, SKILL = true, CURRENCY = true, MONEY = true,
     OPENING = true, TRADESKILLS = true, PET_INFO = true, TARGETICONS = true,
-    BN_WHISPER_PLAYER_OFFLINE = true, LOOT = true, PING = true,
+    BN_WHISPER_PLAYER_OFFLINE = true, LOOT = true,
 }
 
 local function IsRawType(typeKey)
@@ -491,14 +497,6 @@ local function PFlag(flags, zoneID, chNum)
     end
     local gs = _G["CHAT_FLAG_" .. flags]
     return type(gs) == "string" and gs or ""
-end
-
-local function EscapeFormatTokens(msg)
-    if _G.C_StringUtil and _G.C_StringUtil.EscapeLuaFormatString then
-        local ok, escaped = ns.SafeCall("chain-next", _G.C_StringUtil.EscapeLuaFormatString, msg)
-        if ok and type(escaped) == "string" then return escaped end
-    end
-    return (msg:gsub("%%", "%%%%"))
 end
 
 local function CanExpandExpressions(chatGroup)
@@ -656,6 +654,16 @@ local function OutFormat(typeKey)
     return fmt
 end
 
+local function FormatPingLine(p)
+    local sender = p.rawSender
+    if not IsSecret(sender) and (type(sender) ~= "string" or sender == "") then
+        return p.text
+    end
+    local prefix = FormatString(GetOutMessageFormatKey("PING"), sender)
+    if type(prefix) == "nil" then return nil end
+    return FormatString("%s%s", prefix, p.text)
+end
+
 local function BracketedPlayerLink(name, shown)
     return ("|Hplayer:%s|h[%s]|h"):format(name, shown)
 end
@@ -741,9 +749,6 @@ local function FormatNormalLine(event, typeKey, p)
     end
 
     local msg = text
-    if showLink then
-        msg = EscapeFormatTokens(msg)
-    end
     msg = ExpandIconExpressions(msg, p.suppressIcons, chatGroup)
     msg = CollapseSpaces(msg)
     if p.isFromDiscord then
@@ -791,17 +796,21 @@ local function FormatNormalLine(event, typeKey, p)
     local fmt = OutFormat(typeKey)
     if usingDifferentLanguage then
         local languageHeader = ("[%s] "):format(p.language)
-        if showLink and sender ~= "" and playerLink then
-            outMsg = FormatString(fmt .. languageHeader .. msg, pflag .. playerLink)
-        else
+        if not showLink then
             outMsg = FormatString(fmt .. languageHeader .. msg, pflag .. sender)
+        elseif sender ~= "" and playerLink then
+            outMsg = FormatPrefixedMessage(fmt, languageHeader .. msg, pflag .. playerLink)
+        else
+            outMsg = FormatPrefixedMessage(fmt, languageHeader .. msg, pflag .. sender)
         end
     else
         if not showLink or sender == "" or not playerLink then
             if typeKey == "TEXT_EMOTE" then
                 outMsg = msg
-            else
+            elseif not showLink then
                 outMsg = FormatString(fmt .. msg, pflag .. sender, sender)
+            else
+                outMsg = FormatPrefixedMessage(fmt, msg, pflag .. sender, sender)
             end
         else
             if typeKey == "TEXT_EMOTE" then
@@ -809,9 +818,9 @@ local function FormatNormalLine(event, typeKey, p)
             elseif typeKey == "GUILD_ITEM_LOOTED" then
                 outMsg = (msg:gsub("%$s", ("|Hplayer:%s|h%s|h"):format(sender, linkDisplayText)))
             elseif typeKey == "GUILD_DISCORD" and p.isFromDiscord then
-                outMsg = FormatString(fmt .. msg, pflag .. " " .. playerLink)
+                outMsg = FormatPrefixedMessage(fmt, msg, pflag .. " " .. playerLink)
             else
-                outMsg = FormatString(fmt .. msg, pflag .. playerLink)
+                outMsg = FormatPrefixedMessage(fmt, msg, pflag .. playerLink)
             end
         end
     end
@@ -969,6 +978,9 @@ function Format.BuildEventLine(event, p)
     local typeKey = Format.EventToTypeKey(event)
     if not typeKey then return nil end
 
+    if typeKey == "PING" then
+        return FormatPingLine(p)
+    end
     if IsRawType(typeKey) then
         return text
     end
@@ -1000,6 +1012,8 @@ function Format.WrapSecretEventLine(event, p)
                 .. (BuildPlayerLink(typeKey, ChatCategory(typeKey), p, p.decorated or p.sender) or p.sender)
         end
         prefix = string.format(GetOutMessageFormatKey(typeKey), who)
+    elseif typeKey == "PING" then
+        return FormatPingLine(p)
     elseif IsRawType(typeKey) or typeKey == "TEXT_EMOTE" then
         return text
     else

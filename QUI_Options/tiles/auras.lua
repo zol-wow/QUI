@@ -112,6 +112,22 @@ function ns.QUI_AurasTile.Register(frame)
                     subTabName = ns.L["Aura Displays"],
                 },
             },
+            {
+                id = "aurasIncoming",
+                name = ns.L["Incoming Casts"],
+                featureId = "incomingCastsPage",
+                navRoutes = { { tabIndex = 21, subTabIndex = 7 } },
+                searchAliases = {
+                    ns.L["Incoming Casts"], ns.L["Casts targeting me"],
+                    ns.L["Targeted spells"], ns.L["Enemy casts on me"],
+                },
+                searchContext = {
+                    tabIndex = 21,
+                    tabName = ns.L["Auras"],
+                    subTabIndex = 7,
+                    subTabName = ns.L["Incoming Casts"],
+                },
+            },
         },
     })
 end

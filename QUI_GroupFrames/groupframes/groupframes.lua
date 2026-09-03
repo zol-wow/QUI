@@ -66,6 +66,7 @@ local _state = {
     raidRosterSortCache = {},
     unitEventRegistrationEnabled = false,
     unitEventFrames = {},
+    unitEventRegistered = {},
     rangeListenerFrames = {},
     healAbsorbThrottle = {},
     healthThrottle = {},
@@ -127,6 +128,10 @@ local function AddFrameToMap(unit, frame)
         if _state.RegisterUnitEventsForUnit then
             _state.RegisterUnitEventsForUnit(unit)
         end
+    end
+    local targetedSpells = ns.QUI_GroupFrameTargetedSpells
+    if targetedSpells and targetedSpells.PrepareFrame then
+        targetedSpells:PrepareFrame(frame, #QUI_GF.unitFrameMap[unit])
     end
 end
 
@@ -222,6 +227,7 @@ local _dispel = {
         [9] = "Bleed", [11] = "Bleed",
     },
     colorCurves = {},
+    gradientCurves = {},
     iconCurves = {},
     cachedColors = {},
     auraBorderCurves = {},
@@ -253,6 +259,29 @@ local function GetDispelColorCurve(isRaid, opacity)
         end
     end
     _dispel.colorCurves[key] = curve
+    return curve
+end
+
+-- Like GetDispelColorCurve but at full alpha: the awareness gradient's
+-- strength is the texture's own alpha ramp times gradientOpacity, so the
+-- curve only supplies the type color. Lives on _dispel rather than a local:
+-- this chunk is at Lua's 200-local ceiling.
+function _dispel.GetGradientCurve(isRaid)
+    local key = DispelContextKey(isRaid)
+    if _dispel.gradientCurves[key] then return _dispel.gradientCurves[key] end
+    if not C_CurveUtil or not C_CurveUtil.CreateColorCurve then return nil end
+    local colors = GetDispelColors(isRaid)
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
+    curve:AddPoint(0, CreateColor(0, 0, 0, 0))
+    for _, enumVal in ipairs(_dispel.allEnums) do
+        local typeName = _dispel.enumNames[enumVal]
+        local c = typeName and colors[typeName]
+        if c then
+            curve:AddPoint(enumVal, CreateColor(c[1], c[2], c[3], 1))
+        end
+    end
+    _dispel.gradientCurves[key] = curve
     return curve
 end
 
@@ -507,6 +536,7 @@ end
 InvalidateDispelColors = function()
     _dispel.cachedColors = {}
     _dispel.colorCurves = {}
+    _dispel.gradientCurves = {}
     _dispel.auraBorderCurves = {}
 end
 
@@ -771,6 +801,8 @@ local function UpdateHealth(frame)
     local unit = QUI_GF.GetFrameUnit(frame)
     if not unit then return end
 
+    local Feeder = ns.QUI_GFDispelFeeder
+
     if not UnitExists(unit) then
         if frame.healthBar then frame.healthBar:SetValue(0) end
         local Render = ns.QUI_GroupFrameAuraRender
@@ -778,12 +810,19 @@ local function UpdateHealth(frame)
             Render:SyncHealthBarTint(frame, 0, false)
         end
         if frame.healthText then frame.healthText:SetText("") end
+        if Feeder and Feeder.SetLifeGate then Feeder.SetLifeGate(frame, false) end
         return
     end
 
     UpdateDarkModeVisuals(frame)
 
     local isConnected, isDeadOrGhost, isGhost = GetUnitLifeState(unit)
+
+    -- Legacy dispel-overlay parity: dead/ghost units wear no dispel visuals.
+    -- Aura presence itself stays engine-driven inside the feeder slots.
+    if Feeder and Feeder.SetLifeGate then
+        Feeder.SetLifeGate(frame, not isDeadOrGhost)
+    end
 
     if frame.healthBar then
         local healthPct = 0
@@ -828,17 +867,23 @@ local function UpdateHealth(frame)
 
         if statusKey ~= frame._lastStatusKey then
             frame._lastStatusKey = statusKey
+            local state = GetFrameState(frame)
             if statusKey == 1 then
                 frame.statusText:SetText(ns.L["OFFLINE"])
                 frame.statusText:SetTextColor(COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3])
                 frame.statusText:Show()
+                state.lifeFaded = true
             elseif statusKey == 2 or statusKey == 3 then
                 frame.statusText:SetText(statusKey == 3 and ns.L["GHOST"] or ns.L["DEAD"])
                 frame.statusText:SetTextColor(COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3])
                 frame.statusText:Show()
+                state.lifeFaded = true
                 frame:SetAlpha(0.65)
             else
                 frame.statusText:Hide()
+                if state.lifeFaded then
+                    _state.ReleaseLifeFade(frame, unit)
+                end
             end
         end
     end
@@ -978,6 +1023,7 @@ local function UpdateName(frame)
 
     local isRaid = frame._isRaid
     local nameSettings = GetNameSettings(isRaid)
+    Chrome.AnchorBottomPadded(frame, GetVisualDB(isRaid), frame._bottomPad)
     if nameSettings and nameSettings.showName == false then
         frame.nameText:SetText("")
         return
@@ -1219,6 +1265,12 @@ local function UpdateRoleIcon(frame)
     end
 
     local role = UnitGroupRolesAssigned(unit)
+    -- @secret-policy: collapse-only — a secret role cannot index the
+    -- toggle/atlas tables (indexing with a secret key hard-errors).
+    if IsSecretValue(role) then
+        frame.roleIcon:Hide()
+        return
+    end
     local toggleKey = ROLE_TOGGLE_KEY[role]
     if toggleKey and indSettings[toggleKey] == false then
         frame.roleIcon:Hide()
@@ -1252,6 +1304,9 @@ local function UpdateReadyCheck(frame)
     end
 
     local status = GetReadyCheckStatus(unit)
+    -- @secret-policy: collapse-only — the texture choice needs a readable
+    -- status string; keep the current icon state rather than erroring.
+    if IsSecretValue(status) then return end
     if status then
         if status == "waiting" then
             local isAFK = UnitIsAFK(unit)
@@ -1279,6 +1334,15 @@ local function UpdateResurrection(frame)
     end
 
     local hasRes = UnitHasIncomingResurrection(unit)
+    if IsSecretValue(hasRes) then
+        -- @secret-policy: sink-passthrough — the secret res flag feeds
+        -- SetShown; a sink failure hides. (An unguarded truth-test here
+        -- would abort the whole UpdateFrame chain for the frame.)
+        if not pcall(frame.resIcon.SetShown, frame.resIcon, hasRes) then
+            frame.resIcon:Hide()
+        end
+        return
+    end
     if hasRes then
         frame.resIcon:Show()
     else
@@ -1366,14 +1430,39 @@ local function UpdateSummonPending(frame)
     local showSummon = false
     if C_IncomingSummon and C_IncomingSummon.HasIncomingSummon and C_IncomingSummon.IncomingSummonStatus then
         local okHas, hasSummon = pcall(C_IncomingSummon.HasIncomingSummon, unit)
+        if okHas and IsSecretValue(hasSummon) then
+            -- @secret-policy: sink-passthrough — the secret flag feeds
+            -- SetShown (textures have no script handlers). The Pending vs
+            -- Accepted/Declined refinement needs a readable status, so the
+            -- icon can over-display for a resolved summon until
+            -- HasIncomingSummon clears; a sink failure hides.
+            if not pcall(frame.summonIcon.SetShown, frame.summonIcon, hasSummon) then
+                frame.summonIcon:Hide()
+            end
+            return
+        end
         local okStatus, status = pcall(C_IncomingSummon.IncomingSummonStatus, unit)
-        if okHas and okStatus and not IsSecretValue(hasSummon) and not IsSecretValue(status) and hasSummon == true then
+        if okHas and okStatus and hasSummon == true and IsSecretValue(status) then
+            -- Summon known active but status unreadable: show rather than
+            -- blank, accepting the same over-display trade-off as above.
+            -- @secret-policy: sink-passthrough
+            frame.summonIcon:Show()
+            return
+        end
+        if okHas and okStatus and not IsSecretValue(status) and hasSummon == true then
             local pendingStatus = Enum and Enum.SummonStatus and Enum.SummonStatus.Pending or 1
             showSummon = status == pendingStatus
         end
     elseif C_IncomingSummon and C_IncomingSummon.HasIncomingSummon then
         local ok, hasSummon = pcall(C_IncomingSummon.HasIncomingSummon, unit)
-        if ok and not IsSecretValue(hasSummon) then
+        if ok and IsSecretValue(hasSummon) then
+            -- @secret-policy: sink-passthrough — see above
+            if not pcall(frame.summonIcon.SetShown, frame.summonIcon, hasSummon) then
+                frame.summonIcon:Hide()
+            end
+            return
+        end
+        if ok then
             showSummon = hasSummon == true
         end
     end
@@ -1429,7 +1518,16 @@ local function UpdateTargetMarker(frame)
 
     local index = GetRaidTargetIndex(unit)
     if IsSecretValue(index) then
-        frame.targetMarker:Hide()
+        -- @secret-policy: sink-passthrough — 12.1 returns secret marker
+        -- indexes for raid-group units (unmarked units still read as plain
+        -- nil), and SetRaidTargetIconTexture accepts the secret. Hand it
+        -- through instead of collapsing to hidden; only a sink failure hides.
+        frame.targetMarker:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+        if pcall(SetRaidTargetIconTexture, frame.targetMarker, index) then
+            frame.targetMarker:Show()
+        else
+            frame.targetMarker:Hide()
+        end
         return
     end
     if index then
@@ -1454,8 +1552,17 @@ local function UpdateLeaderIcon(frame)
 
     local isLeader = UnitIsGroupLeader(unit)
     local isAssistant = UnitIsGroupAssistant(unit)
+    if IsSecretValue(isLeader) then
+        -- @secret-policy: sink-passthrough — the secret leader flag feeds
+        -- SetShown; assistant dimming needs readable flags and is skipped.
+        frame.leaderIcon:SetAtlas("groupfinder-icon-leader")
+        frame.leaderIcon:SetAlpha(1)
+        if not pcall(frame.leaderIcon.SetShown, frame.leaderIcon, isLeader) then
+            frame.leaderIcon:Hide()
+        end
+        return
+    end
     -- @secret-policy: collapse-only — hidden icon fallback
-    if IsSecretValue(isLeader) then isLeader = nil end
     if IsSecretValue(isAssistant) then isAssistant = nil end
     if isLeader then
         frame.leaderIcon:SetAtlas("groupfinder-icon-leader")
@@ -1498,16 +1605,18 @@ local function UpdateConnection(frame)
     if not unit then return end
 
     local isConnected, isDead = GetUnitLifeState(unit)
+    local state = GetFrameState(frame)
 
     if not isConnected and UnitExists(unit) then
+        state.lifeFaded = true
         frame:SetAlpha(0.5)
     elseif isDead then
+        state.lifeFaded = true
         frame:SetAlpha(0.65)
-    else
-        local state = GetFrameState(frame)
-        if state.outOfRange == nil then
-            frame:SetAlpha(1)
-        end
+    elseif state.lifeFaded then
+        _state.ReleaseLifeFade(frame, unit)
+    elseif state.outOfRange == nil then
+        frame:SetAlpha(1)
     end
 end
 
@@ -1593,7 +1702,7 @@ function _dispel.ReadableType(auraData)
     return _dispel.enumNames[dispelEnum]
 end
 
-function _dispel.SelectCachedAura(cache, unit, orderKey, setKey)
+function _dispel.SelectCachedAura(cache, unit, orderKey, setKey, excludeSet)
     local order = cache and cache[orderKey]
     local set = cache and cache[setKey]
     if not order or not set then return nil, nil end
@@ -1605,7 +1714,7 @@ function _dispel.SelectCachedAura(cache, unit, orderKey, setKey)
     end
     for i = 1, #order do
         local instID = order[i]
-        if instID and set[instID] then
+        if instID and set[instID] and not (excludeSet and excludeSet[instID]) then
             local stillLive = true
             if GetAuraByInstanceID and not IsSecretValue(instID) then
                 local live = GetAuraByInstanceID(unit, instID) -- @secret-safe: the AurasAreSecret gate above disables this access while restricted
@@ -1671,8 +1780,58 @@ function _dispel.HideVisuals(frame)
 end
 -- <<< QUI_TEST_EXTRACT DispelTypeIconRuntime
 
+-- BY_ME_PLUS_TYPED awareness gradient (legacy/preview path): tint the chrome
+-- gradient ramp + flat base with the typed debuff's color, laid out along
+-- the health fill direction. Returns whether the gradient ended up shown.
+function _dispel.UpdateGradient(frame, unit, dispelCfg, typedInstID, typedType)
+    local overlay = frame.dispelOverlay
+    local tex = overlay and overlay.gradient
+    if not tex then return false end
+    if not typedInstID then
+        tex:Hide()
+        return false
+    end
+
+    Chrome.LayoutDispelGradient(tex,
+        dispelCfg and dispelCfg.gradientStartOpacity,
+        dispelCfg and dispelCfg.gradientEndOpacity,
+        frame._isVerticalFill)
+
+    if C_UnitAuras.GetAuraDispelTypeColor then
+        local curve = _dispel.GetGradientCurve(frame._isRaid)
+        if curve then
+            local cOk, color = pcall(C_UnitAuras.GetAuraDispelTypeColor,
+                unit, typedInstID, curve)
+            if cOk then
+                if IsSecretValue(color) then color = nil end
+                if color then
+                    tex:SetVertexColor(color:GetRGBA())
+                    tex:Show()
+                    return true
+                end
+            end
+        end
+    end
+
+    local colors = GetDispelColors(frame._isRaid)
+    local c = (typedType and colors and colors[typedType])
+        or (colors and colors.Magic)
+        or _state.defaultColors.dispelFallback
+    tex:SetVertexColor(c[1], c[2], c[3], 1)
+    tex:Show()
+    return true
+end
+
 local function UpdateDispelOverlay(frame)
     if not frame or not frame.dispelOverlay then return end
+    -- Live frames with an active dispel feeder render the overlay through
+    -- secure engine slots (see groupframes_dispel_feeder.lua); the cache-fed
+    -- legacy art below stays hidden. Preview fakes never get a feeder and
+    -- keep using this path.
+    if frame._quiDispelFeederActive then
+        _dispel.HideVisuals(frame)
+        return
+    end
     local unit = QUI_GF.GetFrameUnit(frame)
     if not unit then
         _dispel.HideVisuals(frame)
@@ -1703,7 +1862,9 @@ local function UpdateDispelOverlay(frame)
     )
 
     local visualInstID, visualType
-    if dispelCfg and dispelCfg.scope == "ALL_TYPED" then
+    local typedInstID, typedType
+    local scope = dispelCfg and dispelCfg.scope
+    if scope == "ALL_TYPED" then
         visualInstID, visualType = _dispel.SelectCachedAura(
             cache, unit, "typedDebuffOrder", "typedDebuffs"
         )
@@ -1711,24 +1872,43 @@ local function UpdateDispelOverlay(frame)
         visualInstID, visualType = _dispel.SelectCachedAura(
             cache, unit, "playerDispellableOrder", "playerDispellable"
         )
+        if scope == "BY_ME_PLUS_TYPED" then
+            -- Awareness only: auras the player could dispel already carry the
+            -- actionable overlay, so they never feed the gradient.
+            typedInstID, typedType = _dispel.SelectCachedAura(
+                cache, unit, "typedDebuffOrder", "typedDebuffs",
+                cache and cache.playerDispellable
+            )
+        end
     end
 
     local glowFrame = frame.cleanseGlow
     if glowFrame then
         if glowOn and playerInstID then
-            local gc = glowCfg and glowCfg.color
-            glowFrame.tex:SetVertexColor((gc and gc[1]) or 0.1, (gc and gc[2]) or 1.0, (gc and gc[3]) or 0.1, (gc and gc[4]) or 1.0)
+            Chrome.SetCleanseGlowColor(glowFrame.art, glowCfg and glowCfg.color)
             glowFrame:Show()
         else
             glowFrame:Hide()
         end
     end
 
+    local gradientShown = _dispel.UpdateGradient(frame, unit, dispelCfg,
+        borderOn and typedInstID or nil, typedType)
+
     if not visualInstID then
-        frame.dispelOverlay:Hide()
+        -- BY_ME_PLUS_TYPED: a typed-but-not-actionable debuff shows only the
+        -- awareness gradient, so the overlay frame must stay up with the
+        -- border art suppressed.
+        if gradientShown then
+            Chrome.SetDispelBordersShown(frame.dispelOverlay, false)
+            frame.dispelOverlay:Show()
+        else
+            frame.dispelOverlay:Hide()
+        end
         Chrome.HideDispelTypeIcons(frame)
         return
     end
+    Chrome.SetDispelBordersShown(frame.dispelOverlay, true)
 
     if iconOn then
         local shown = visualType and Chrome.ShowDispelTypeIcon(frame, visualType)
@@ -1946,12 +2126,14 @@ local function DecorateGroupFrame(frame)
 
             if oldGuid and newGuid and oldGuid == newGuid then return end
 
+            self._quiRosterAuraDirty = true
             UpdateFrame(self)
         end)
     end
 
     local currentUnit = frame:GetAttribute("unit")
     if currentUnit then
+        frame._quiRosterAuraDirty = true
         QUI_GF.SetFrameUnit(frame, currentUnit)
         AddFrameToMap(currentUnit, frame)
         local GFADecorate = ns.QUI_GroupFrameAuras
@@ -2007,8 +2189,9 @@ local function CollectHeaderUnits(header)
 end
 
 local function RebuildUnitFrameMap()
-    if _state.UnregisterAllUnitEventFrames then
-        _state.UnregisterAllUnitEventFrames()
+    local previousUnits = {}
+    for unit in pairs(QUI_GF.unitFrameMap) do
+        previousUnits[unit] = true
     end
     wipe(QUI_GF.unitFrameMap)
 
@@ -2026,7 +2209,7 @@ local function RebuildUnitFrameMap()
     CollectHeaderUnits(QUI_GF.spotlightHeader)
 
     if _state.RefreshUnitEventRegistrations then
-        _state.RefreshUnitEventRegistrations()
+        _state.RefreshUnitEventRegistrations(previousUnits)
     end
 end
 
@@ -3623,7 +3806,7 @@ _state.EnsureCombatVisibleRoots = function()
     end
 end
 
-local function UpdateHeaderVisibility()
+local function UpdateHeaderVisibility(skipDeferredRefresh)
     if InCombatLockdown() and not _state.inInitSafeWindow then
         _state.EnsureCombatVisibleRoots()
         _pending.visibilityUpdate = true
@@ -3703,10 +3886,11 @@ local function UpdateHeaderVisibility()
         if IsInRaid() then
             QUI_GF.spotlightContainer:Show()
             if QUI_GF.spotlightHeader then QUI_GF.spotlightHeader:Show() end
+            local refreshReason = skipDeferredRefresh and "roster" or nil
             C_Timer.After(0.2, function()
                 if InitSpotlightChildren(QUI_GF.spotlightHeader) > 0 then
                     RebuildUnitFrameMap()
-                    QUI_GF:RefreshAllFrames()
+                    QUI_GF:RefreshAllFrames(refreshReason)
                 end
             end)
         else
@@ -3722,10 +3906,15 @@ local function UpdateHeaderVisibility()
         end
     end
 
+    if skipDeferredRefresh then
+        ApplyChildFrameLayout()
+    end
     UpdateHeaderSizes()
     UpdateAnchorFrames()
 
     _pending.initSafe = false
+
+    if skipDeferredRefresh then return end
 
     C_Timer.After(0, function()
         ApplyChildFrameLayout()
@@ -3913,6 +4102,9 @@ local _range = {
     resSpell = nil,
     cache = {},
     cacheTime = {},
+    -- Unit tokens that are the player, resolved at roster-rebuild time so the
+    -- in-combat range tick never depends on a possibly-secret UnitIsUnit.
+    selfUnits = {},
 }
 
 local function ResolveRangeSpells()
@@ -3994,6 +4186,7 @@ function _state.SweepTrackedSlotAssist()
 end
 
 local function CheckUnitRange(unit)
+    if _range.selfUnits[unit] then return true end
     local isSelf = UnitIsUnit(unit, "player")
     if IsSecretValue(isSelf) then isSelf = nil end -- @secret-policy: reject-secret-value
     if isSelf then return true end
@@ -4069,6 +4262,23 @@ end
 
 QUI_GF.CheckUnitRange = CheckUnitRange
 
+-- Called when a frame leaves the dead/offline fade (rez, reconnect). The range
+-- system only writes alpha on cached-answer transitions, so hand alpha back to
+-- it explicitly: restore full alpha now, then forget the unit's cached answer
+-- so the next tick re-applies the real range fade (<=1s) for every frame
+-- showing this unit.
+function _state.ReleaseLifeFade(frame, unit)
+    local state = GetFrameState(frame)
+    state.lifeFaded = nil
+    state.outOfRange = nil
+    state.inRange = nil
+    if unit then
+        _range.cache[unit] = nil
+        _range.cacheTime[unit] = nil
+    end
+    frame:SetAlpha(1)
+end
+
 local function ApplyRangeAlpha(frame, inRange, outAlpha)
     if frame.SetAlphaFromBoolean then
         frame:SetAlphaFromBoolean(inRange, 1, outAlpha)
@@ -4107,7 +4317,10 @@ local function DoRangeCheck()
                         if rangeChanged or state.outOfRange == nil then
                             state.outOfRange = true
                             state.inRange = inRange
-                            ApplyRangeAlpha(frame, inRange, outAlpha)
+                            -- Dead/offline fade owns alpha until ReleaseLifeFade
+                            if not state.lifeFaded then
+                                ApplyRangeAlpha(frame, inRange, outAlpha)
+                            end
                         end
                     end
                 end
@@ -4133,9 +4346,24 @@ end
 local function GRU_DeferredWork()
     _state.gruDeferredPending = false
     RebuildUnitFrameMap()
+    local playerGUID = UnitGUID("player")
+    if IsSecretValue(playerGUID) then playerGUID = nil end
+    wipe(_range.selfUnits)
     for unit, list in pairs(QUI_GF.unitFrameMap) do
         local guid = UnitGUID(unit)
         if IsSecretValue(guid) then guid = nil end
+        if guid and playerGUID then
+            if guid == playerGUID then
+                _range.selfUnits[unit] = true
+            end
+        else
+            -- @secret-policy: collapse-only — secret identity just skips the fast path
+            local isSelf = UnitIsUnit(unit, "player")
+            if IsSecretValue(isSelf) then isSelf = nil end
+            if isSelf then
+                _range.selfUnits[unit] = true
+            end
+        end
         for i = 1, #list do
             _state.unitGuidCache[list[i]] = guid
         end
@@ -4150,7 +4378,7 @@ local function GRU_DeferredWork()
     wipe(healPredThrottle)
     local GFA = ns.QUI_GroupFrameAuras
     if GFA and GFA.PruneAuraCache then GFA.PruneAuraCache() end
-    UpdateFrameScaling(true)
+    UpdateHeaderSizes()
     QUI_GF:RefreshAllFrames("roster")
     StartRangeCheck()
     local PartyTargets = ns.QUI_GroupFramePartyTargets
@@ -4159,9 +4387,8 @@ end
 
 gruCoalesceFrame:SetScript("OnUpdate", function(self)
     self:Hide()
-    UpdateHeaderVisibility()
-    UpdateFrameScaling(true)
-    UpdateHeaderSizes()
+    UpdateHeaderVisibility(true)
+    UpdateFrameScaling()
     UpdateSelectiveEvents()
     if not _state.gruDeferredPending then
         _state.gruDeferredPending = true
@@ -4428,10 +4655,19 @@ local function OnEvent(self, event, arg1, ...)
         else
             for unit, list in pairs(QUI_GF.unitFrameMap) do
                 local marker = GetRaidTargetIndex(unit)
-                local safeMarker = Helpers.SafeValue(marker, 0)
-                if safeMarker ~= _state.cachedMarkers[unit] then
-                    _state.cachedMarkers[unit] = safeMarker
+                if IsSecretValue(marker) then
+                    -- A secret index can't be diffed against the cache:
+                    -- always repaint, and keep the cache unset so a later
+                    -- readable value is never suppressed.
+                    -- @secret-policy: reject-secret-cache
+                    _state.cachedMarkers[unit] = nil
                     for i = 1, #list do UpdateTargetMarker(list[i]) end
+                else
+                    local safeMarker = marker or 0
+                    if safeMarker ~= _state.cachedMarkers[unit] then
+                        _state.cachedMarkers[unit] = safeMarker
+                        for i = 1, #list do UpdateTargetMarker(list[i]) end
+                    end
                 end
             end
         end
@@ -4451,6 +4687,24 @@ local function OnEvent(self, event, arg1, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         wipe(_range.cache)
         wipe(_range.cacheTime)
+
+        -- Combat-end true-up: indicator reads that were secret during combat
+        -- have no change event to repaint them once they become readable, so
+        -- re-run the indicator updaters from plain post-combat values.
+        wipe(_state.cachedMarkers)
+        for _, list in pairs(QUI_GF.unitFrameMap) do
+            for i = 1, #list do
+                local frame = list[i]
+                if frame and frame:IsShown() then
+                    UpdateTargetMarker(frame)
+                    UpdateSummonPending(frame)
+                    UpdateLeaderIcon(frame)
+                    UpdatePhaseIcon(frame)
+                    UpdateResurrection(frame)
+                    UpdateReadyCheck(frame)
+                end
+            end
+        end
 
         if _pending.refreshSettings then
             _pending.refreshSettings = false
@@ -4522,7 +4776,10 @@ function _state.HandleRangeUpdate(unit)
                 local state = GetFrameState(frame)
                 state.outOfRange = true
                 state.inRange = inRange
-                ApplyRangeAlpha(frame, inRange, outAlpha)
+                -- Dead/offline fade owns alpha until ReleaseLifeFade
+                if not state.lifeFaded then
+                    ApplyRangeAlpha(frame, inRange, outAlpha)
+                end
             end
         end
     end
@@ -4560,6 +4817,7 @@ function _state.RegisterUnitEventsForUnit(unit)
         _state.rangeListenerFrames[unit] = rangeListener
     end
     rangeListener:RegisterUnitEvent("UNIT_IN_RANGE_UPDATE", unit)
+    _state.unitEventRegistered[unit] = true
 end
 
 function _state.UnregisterUnitEventsForUnit(unit)
@@ -4568,6 +4826,7 @@ function _state.UnregisterUnitEventsForUnit(unit)
     if rangeListener then
         rangeListener:UnregisterEvent("UNIT_IN_RANGE_UPDATE")
     end
+    _state.unitEventRegistered[unit] = nil
     if not frame then return end
 
     for i = 1, #_state.unitEventList do
@@ -4581,7 +4840,7 @@ function _state.UnregisterAllUnitEventFrames()
     end
 end
 
-function _state.RefreshUnitEventRegistrations()
+function _state.RefreshUnitEventRegistrations(previousUnits)
     if not _state.unitEventRegistrationEnabled then return end
 
     for unit in pairs(_state.unitEventFrames) do
@@ -4590,7 +4849,9 @@ function _state.RefreshUnitEventRegistrations()
         end
     end
     for unit in pairs(QUI_GF.unitFrameMap) do
-        _state.RegisterUnitEventsForUnit(unit)
+        if not previousUnits or not previousUnits[unit] or not _state.unitEventRegistered[unit] then
+            _state.RegisterUnitEventsForUnit(unit)
+        end
     end
 end
 
@@ -4731,7 +4992,8 @@ end
 
 function QUI_GF:RefreshAllFrames(_reason)
     local GFA = ns.QUI_GroupFrameAuras
-    if GFA and GFA.InvalidateLayout then GFA:InvalidateLayout() end
+    local rosterRefresh = _reason == "roster"
+    if not rosterRefresh and GFA and GFA.InvalidateLayout then GFA:InvalidateLayout() end
     local auraCacheAvailable = GFA and GFA.ScanUnitAuras and GFA.RenderFrame
 
     for unit, list in pairs(self.unitFrameMap) do
@@ -4742,7 +5004,8 @@ function QUI_GF:RefreshAllFrames(_reason)
                 if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
                 if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
                 if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
-                local auraCacheRender = auraCacheAvailable
+                local auraDirty = not rosterRefresh or frame._quiRosterAuraDirty
+                local auraCacheRender = auraCacheAvailable and auraDirty
                     and (not GFA.HasActiveConsumersForFrame or GFA:HasActiveConsumersForFrame(frame))
                 if auraCacheRender and not auraScanned then
                     GFA.ScanUnitAuras(unit)
@@ -4750,13 +5013,16 @@ function QUI_GF:RefreshAllFrames(_reason)
                 end
                 UpdateFrame(frame)
 
-                if auraCacheAvailable then
+                if auraDirty and auraCacheAvailable then
                     GFA:RenderFrame(frame)
-                elseif GFA and GFA.RefreshFrame then
+                elseif auraDirty and not auraCacheAvailable and GFA and GFA.RefreshFrame then
                     GFA:RefreshFrame(frame)
                 end
-                if GFA and GFA.UpdateStripContainers then
+                if not rosterRefresh and GFA and GFA.UpdateStripContainers then
                     GFA.UpdateStripContainers(frame)
+                end
+                if rosterRefresh then
+                    frame._quiRosterAuraDirty = nil
                 end
             end
         end

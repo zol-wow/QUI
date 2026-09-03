@@ -174,12 +174,8 @@ LayoutNativeButtons = function(barKey)
 
     local isVertical = (orientation == "vertical")
 
-    local oldVisibleCount = ActionBarsOwned._visibleButtonCounts[barKey]
     local numVisible = math.min(iconCount, #buttons)
     ActionBarsOwned._visibleButtonCounts[barKey] = numVisible
-    if oldVisibleCount ~= numVisible and MarkSpellIdMapDirty then
-        MarkSpellIdMapDirty()
-    end
     if numVisible == 0 then
         for _, btn in ipairs(buttons) do
             ActionBarsOwned._activeButtons[btn] = nil

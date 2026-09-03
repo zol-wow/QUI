@@ -4,23 +4,15 @@ local GroupFrames = ns.QUI_GroupFrames
 if not GroupFrames then return end
 
 local CreateFrame = CreateFrame
-local C_NamePlate = C_NamePlate
-local C_Timer = C_Timer
 local GetTime = GetTime
+local InCombatLockdown = InCombatLockdown
 local IsInGroup = IsInGroup
 local IsInRaid = IsInRaid
-local UnitCanAttack = UnitCanAttack
-local UnitCastingDuration = UnitCastingDuration
-local UnitCastingInfo = UnitCastingInfo
-local UnitChannelDuration = UnitChannelDuration
-local UnitChannelInfo = UnitChannelInfo
 local UnitClass = UnitClass
 local UnitExists = UnitExists
 local UnitGroupRolesAssigned = UnitGroupRolesAssigned
 local UnitRace = UnitRace
 local UnitSex = UnitSex
-local UnitShouldDisplaySpellTargetName = UnitShouldDisplaySpellTargetName
-local ipairs = ipairs
 local math_floor = math.floor
 local pairs = pairs
 local pcall = pcall
@@ -36,12 +28,6 @@ local TargetedSpells = ns.QUI_GroupFrameTargetedSpells or {}
 ns.QUI_GroupFrameTargetedSpells = TargetedSpells
 local CHROME_LEVELS = (ns.QUI_GroupFrameChrome and ns.QUI_GroupFrameChrome.LEVELS)
     or { TARGETED = 14 }
-
-local TIMING = {
-    firstRead = 0.10,
-    verifyRead = 0.15,
-    targetChangeRead = 0.05,
-}
 
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
@@ -175,7 +161,6 @@ local Roster = {
     race = {},
     sex = {},
     candidates = {},
-    lastIndexedAt = 0,
 }
 
 local function ClearRosterIndex()
@@ -225,8 +210,6 @@ local function IndexRoster()
             end
         end
     end
-
-    Roster.lastIndexedAt = GetTime()
 end
 
 local function LoadClassCandidates(classToken)
@@ -285,10 +268,6 @@ local function UnitFromCasterTarget(caster)
     end
 
     local candidates = LoadClassCandidates(classToken)
-    if #candidates == 0 and GetTime() - Roster.lastIndexedAt > 1 then
-        IndexRoster()
-        candidates = LoadClassCandidates(classToken)
-    end
     if #candidates == 0 then
         return nil
     end
@@ -310,7 +289,18 @@ local function UnitFromCasterTarget(caster)
     return candidates[1]
 end
 
+local MAX_NAMEPLATE_CASTERS = 150
 local markerPools = setmetatable({}, { __mode = "k" })
+local markerListsByCaster = {}
+local activeByCaster = {}
+local markerListCapacity = 0
+local poolGrowthPending = false
+
+for i = 1, MAX_NAMEPLATE_CASTERS do
+    local caster = "nameplate" .. i
+    markerListsByCaster[caster] = { count = 0, unit = false }
+    activeByCaster[caster] = false
+end
 
 local function MarkerSize(isRaid)
     return ClampNumber(Option(isRaid, "iconSize"), OPTION_DEFAULTS.iconSize, 4, 96)
@@ -345,6 +335,7 @@ end
 local function NewMarker(frame, isRaid)
     local marker = CreateFrame("Frame", nil, frame)
     marker._quiTargetedRaid = isRaid and true or false
+    marker._targetedCaster = false
     marker:Hide()
 
     local texture = marker:CreateTexture(nil, "ARTWORK")
@@ -382,22 +373,76 @@ local function MarkerPool(frame, isRaid)
     return pool
 end
 
-local function AcquireMarker(frame, isRaid)
-    local pool = MarkerPool(frame, isRaid)
-
-    for i = 1, #pool do
-        if not pool[i]._targetedCaster then
-            return pool[i]
+local function EnsureMarkerListCapacity(capacity)
+    if capacity <= markerListCapacity then
+        return
+    end
+    for _, markers in pairs(markerListsByCaster) do
+        for i = markerListCapacity + 1, capacity do
+            markers[i] = false
         end
     end
+    markerListCapacity = capacity
+end
 
-    if #pool >= MarkerLimit(isRaid) then
-        return nil
+local function PrepareFrame(frame, frameCopies)
+    if not frame then
+        return
+    end
+    if InCombatLockdown() then
+        poolGrowthPending = true
+        return
     end
 
-    local marker = NewMarker(frame, isRaid)
-    pool[#pool + 1] = marker
-    return marker
+    EnsureMarkerListCapacity(frameCopies or 1)
+    local isRaid = frame._isRaid and true or false
+    local pool = MarkerPool(frame, isRaid)
+    local limit = MarkerLimit(isRaid)
+    for i = #pool + 1, limit do
+        pool[i] = NewMarker(frame, isRaid)
+    end
+end
+
+local function PrepareMarkerPools()
+    if InCombatLockdown() then
+        poolGrowthPending = true
+        return
+    end
+
+    poolGrowthPending = false
+    for _, frameList in pairs(GroupFrames.unitFrameMap or {}) do
+        for i = 1, #frameList do
+            PrepareFrame(frameList[i], #frameList)
+        end
+    end
+end
+
+local function AcquireMarker(frame, isRaid)
+    local pool = markerPools[frame]
+    if not pool then
+        if InCombatLockdown() then
+            poolGrowthPending = true
+            return nil
+        end
+        pool = MarkerPool(frame, isRaid)
+    end
+
+    local limit = MarkerLimit(isRaid)
+    for i = 1, limit do
+        local marker = pool[i]
+        if not marker then
+            if InCombatLockdown() then
+                poolGrowthPending = true
+                return nil
+            end
+            marker = NewMarker(frame, isRaid)
+            pool[i] = marker
+        end
+        if not marker._targetedCaster then
+            return marker
+        end
+    end
+    return nil
 end
 
 local function PlaceFirstMarker(marker, host, point, x, y)
@@ -524,120 +569,39 @@ local function StartCooldown(cooldown, durationObject, startMS, endMS)
     end
 end
 
-local eventFrame = CreateFrame("Frame")
-local activeByCaster = {}
-local serialByCaster = {}
-local watchedCaster = {}
-local plateUnits = {}
-local relayoutFrames = {}
-local clearQueue = {}
-local running = false
+-- Detection (nameplate tracking, cast events, delayed target reads, secret
+-- handling) lives in the shared ns.IncomingCasts engine. This module only
+-- resolves which group member a cast is aimed at and renders the markers.
+local SUBSCRIBER_KEY = "groupFrameTargetedSpells"
 
-local function NextSerial(caster)
-    local serial = (serialByCaster[caster] or 0) + 1
-    serialByCaster[caster] = serial
-    return serial
-end
-
-local function ReadCast(caster)
-    local ok, spellName, _, texture, startMS, endMS = pcall(UnitCastingInfo, caster)
-    if ok then
-        if IsSecretValue(spellName) then
-            return spellName, texture, false, nil, nil, "secret"
-        end
-        if spellName ~= nil then
-            if IsSecretValue(startMS) or IsSecretValue(endMS) then
-                return spellName, texture, false, nil, nil, "secret"
-            end
-            return spellName, texture, false, startMS, endMS, "plain"
-        end
-    end
-
-    ok, spellName, _, texture, startMS, endMS = pcall(UnitChannelInfo, caster)
-    if ok then
-        if IsSecretValue(spellName) then
-            return spellName, texture, true, nil, nil, "secret"
-        end
-        if spellName ~= nil then
-            if IsSecretValue(startMS) or IsSecretValue(endMS) then
-                return spellName, texture, true, nil, nil, "secret"
-            end
-            return spellName, texture, true, startMS, endMS, "plain"
-        end
-    end
-
-    return nil
-end
-
-local function ReadDuration(caster, isChannel)
-    local reader = isChannel and UnitChannelDuration or UnitCastingDuration
-    if not reader then
-        return nil
-    end
-    local ok, durationObject = pcall(reader, caster)
-    if ok then
-        return durationObject
-    end
-    return nil
-end
-
-local function SpellTargetIsDisplayable(caster)
-    if not UnitShouldDisplaySpellTargetName then
-        return true
-    end
-
-    local ok, display = pcall(UnitShouldDisplaySpellTargetName, caster)
-    if ok and not IsSecretValue(display) and display == false then
-        return false
-    end
-    return true
-end
+local subscribed = false
 
 local function HideMarkerSet(markers)
     if not markers then
         return
     end
 
-    wipe(relayoutFrames)
-    for i = 1, #markers do
+    for i = 1, markers.count do
         local marker = markers[i]
-        marker._targetedCaster = nil
+        local frame = marker:GetParent()
+        marker._targetedCaster = false
         marker:Hide()
         StopCooldown(marker._cooldown)
-        relayoutFrames[marker:GetParent()] = true
-    end
-
-    for frame in pairs(relayoutFrames) do
+        markers[i] = false
         LayoutFrameMarkers(frame)
     end
-    wipe(relayoutFrames)
+
+    markers.count = 0
+    markers.unit = false
 end
 
-local function ClearCaster(caster)
-    NextSerial(caster)
-    watchedCaster[caster] = nil
-
-    local markers = activeByCaster[caster]
-    if markers then
-        activeByCaster[caster] = nil
-        HideMarkerSet(markers)
+local function ClearAllMarkers()
+    for caster, markers in pairs(activeByCaster) do
+        if markers then
+            activeByCaster[caster] = false
+            HideMarkerSet(markers)
+        end
     end
-end
-
-local function ClearAllCasts()
-    wipe(clearQueue)
-    for caster in pairs(activeByCaster) do
-        clearQueue[#clearQueue + 1] = caster
-    end
-    for caster in pairs(watchedCaster) do
-        clearQueue[#clearQueue + 1] = caster
-    end
-
-    for i = 1, #clearQueue do
-        ClearCaster(clearQueue[i])
-    end
-    wipe(clearQueue)
-    wipe(watchedCaster)
 end
 
 local function ShowCastOnUnit(caster, unit, texture, durationObject, startMS, endMS)
@@ -646,17 +610,39 @@ local function ShowCastOnUnit(caster, unit, texture, durationObject, startMS, en
         return
     end
 
-    local markers
+    local markers = markerListsByCaster[caster]
+    if not markers then
+        if InCombatLockdown() then
+            poolGrowthPending = true
+            return
+        end
+        markers = { count = 0, unit = false }
+        markerListsByCaster[caster] = markers
+        for i = 1, markerListCapacity do
+            markers[i] = false
+        end
+    end
+
+    local markerCount = 0
     for i = 1, #frameList do
         local frame = frameList[i]
         if frame and frame:IsShown() then
+            if markerCount >= markerListCapacity then
+                if InCombatLockdown() then
+                    poolGrowthPending = true
+                    break
+                end
+                EnsureMarkerListCapacity(markerCount + 1)
+            end
             local isRaid = frame._isRaid and true or false
             local marker = AcquireMarker(frame, isRaid)
             if marker then
                 marker._targetedCaster = caster
                 ApplyMarkerStyle(marker)
 
-                if texture == nil then
+                if IsSecretValue(texture) then
+                    marker._texture:SetTexture(texture) -- @secret-policy: sink-forward — never compare a secret texture
+                elseif texture == nil then
                     marker._texture:SetTexture(FALLBACK_ICON)
                 else
                     marker._texture:SetTexture(texture)
@@ -666,125 +652,42 @@ local function ShowCastOnUnit(caster, unit, texture, durationObject, startMS, en
                 marker:Show()
                 LayoutFrameMarkers(frame)
 
-                if not markers then
-                    markers = {}
-                end
-                markers[#markers + 1] = marker
+                markerCount = markerCount + 1
+                markers[markerCount] = marker
             end
         end
     end
 
-    if markers then
+    markers.count = markerCount
+    if markerCount > 0 then
         markers.unit = unit
         activeByCaster[caster] = markers
     end
 end
 
-local function ResolveCastTarget(caster, expectedSerial)
-    if serialByCaster[caster] ~= expectedSerial then
-        return
-    end
-
-    local spellName, texture, isChannel, startMS, endMS, evidence = ReadCast(caster)
-    if evidence == nil then
-        return
-    end
-    if not SpellTargetIsDisplayable(caster) then
-        return
-    end
-
-    local unit = UnitFromCasterTarget(caster)
-    if not unit then
-        return
-    end
-
+local function OnCastShow(caster, unit, cast)
     local current = activeByCaster[caster]
-    if current and current.unit == unit then
-        return
-    end
-
     if current then
-        activeByCaster[caster] = nil
+        activeByCaster[caster] = false
         HideMarkerSet(current)
     end
-
-    local durationObject
-    if evidence == "secret" then
-        if not watchedCaster[caster] then
-            return
-        end
-        durationObject = ReadDuration(caster, false)
-        if IsSecretValue(durationObject) then
-        elseif durationObject == nil then
-            durationObject = ReadDuration(caster, true)
-        end
-    else
-        durationObject = ReadDuration(caster, isChannel)
-    end
-    ShowCastOnUnit(caster, unit, texture, durationObject, startMS, endMS)
+    ShowCastOnUnit(caster, unit, cast.texture, cast.durationObj, cast.startMS, cast.endMS)
 end
 
-local function QueueResolve(caster, serial, delay)
-    C_Timer.After(delay, function()
-        ResolveCastTarget(caster, serial)
-    end)
-end
-
-local function BeginCastWatch(caster)
-    ClearCaster(caster)
-
-    local ok, hostile = pcall(UnitCanAttack, "player", caster)
-    if ok and not IsSecretValue(hostile) and hostile ~= true then
-        return
-    end
-    if not SpellTargetIsDisplayable(caster) then
-        return
-    end
-
-    watchedCaster[caster] = true
-    local serial = serialByCaster[caster] or 0
-    QueueResolve(caster, serial, TIMING.firstRead)
-    QueueResolve(caster, serial, TIMING.firstRead + TIMING.verifyRead)
-end
-
-local function RecheckCasterTarget(caster)
-    if not watchedCaster[caster] then
-        return
-    end
-
-    local serial = NextSerial(caster)
-    QueueResolve(caster, serial, TIMING.targetChangeRead)
-    QueueResolve(caster, serial, TIMING.targetChangeRead + TIMING.verifyRead)
-end
-
-local function AdoptLiveCast(unit)
-    local _, _, _, _, _, evidence = ReadCast(unit)
-    if evidence == "plain" then
-        BeginCastWatch(unit)
+local function OnCastHide(caster)
+    local markers = activeByCaster[caster]
+    if markers then
+        activeByCaster[caster] = false
+        HideMarkerSet(markers)
     end
 end
 
-local START_EVENTS = {
-    UNIT_SPELLCAST_START = true,
-    UNIT_SPELLCAST_CHANNEL_START = true,
-}
-
-local FINISH_EVENTS = {
-    UNIT_SPELLCAST_STOP = true,
-    UNIT_SPELLCAST_CHANNEL_STOP = true,
-    UNIT_SPELLCAST_INTERRUPTED = true,
-}
-
-local WATCHED_EVENTS = {
-    "NAME_PLATE_UNIT_ADDED",
-    "NAME_PLATE_UNIT_REMOVED",
-    "UNIT_TARGET",
-    "UNIT_SPELLCAST_INTERRUPTED",
-    "UNIT_SPELLCAST_STOP",
-    "UNIT_SPELLCAST_CHANNEL_STOP",
-    "UNIT_SPELLCAST_START",
-    "UNIT_SPELLCAST_CHANNEL_START",
-}
+local function ResolveGroupTarget(caster)
+    -- The narrowing cascade cannot distinguish "not a group member" from
+    -- "unreadable", so it never returns false; markers persist until the cast
+    -- ends or the target resolves to a different member.
+    return UnitFromCasterTarget(caster)
+end
 
 local function FeatureShouldRun()
     local db = GetGroupDB()
@@ -799,57 +702,40 @@ local function FeatureShouldRun()
     return Option(isRaid, "enabled") ~= false
 end
 
-local function SeedVisibleNameplates()
-    if not C_NamePlate or not C_NamePlate.GetNamePlates then
-        return
-    end
-
-    local ok, plates = pcall(C_NamePlate.GetNamePlates)
-    if not ok or type(plates) ~= "table" then
-        return
-    end
-
-    for i = 1, #plates do
-        local unit = plates[i] and plates[i].namePlateUnitToken
-        if unit and not plateUnits[unit] then
-            plateUnits[unit] = true
-            AdoptLiveCast(unit)
-        end
-    end
-end
-
-local function SetWatchedEvents(enabled)
-    for i = 1, #WATCHED_EVENTS do
-        if enabled then
-            eventFrame:RegisterEvent(WATCHED_EVENTS[i])
-        else
-            eventFrame:UnregisterEvent(WATCHED_EVENTS[i])
-        end
-    end
-end
-
 local function RefreshRuntimeState()
-    local shouldRun = FeatureShouldRun()
+    local IncomingCasts = ns.IncomingCasts
+    if not IncomingCasts then
+        return
+    end
 
-    if shouldRun and not running then
-        SetWatchedEvents(true)
-        running = true
+    local shouldRun = FeatureShouldRun()
+    if shouldRun then
+        PrepareMarkerPools()
+    end
+    if shouldRun and not subscribed then
         IndexRoster()
-        SeedVisibleNameplates()
-    elseif not shouldRun and running then
-        SetWatchedEvents(false)
-        running = false
-        ClearAllCasts()
-        wipe(plateUnits)
+        subscribed = IncomingCasts.Subscribe(SUBSCRIBER_KEY, {
+            resolveTarget = ResolveGroupTarget,
+            onShow = OnCastShow,
+            onHide = OnCastHide,
+        }) == true
+        if subscribed then
+            -- pick up casts already in flight when the engine was running
+            -- for another subscriber before this one joined
+            IncomingCasts.ResetSubscriber(SUBSCRIBER_KEY)
+        end
+    elseif not shouldRun and subscribed then
+        IncomingCasts.Unsubscribe(SUBSCRIBER_KEY)
+        subscribed = false
+        ClearAllMarkers()
     elseif shouldRun then
         IndexRoster()
-        SeedVisibleNameplates()
     end
 end
 
 function TargetedSpells:ApplySettings()
     RefreshRuntimeState()
-    if not running then
+    if not subscribed then
         return
     end
 
@@ -867,62 +753,39 @@ function TargetedSpells:ApplySettings()
     end
 end
 
-local function HandleNameplateAdded(unit)
-    plateUnits[unit] = true
-    AdoptLiveCast(unit)
-end
-
-local function HandleNameplateRemoved(unit)
-    plateUnits[unit] = nil
-    ClearCaster(unit)
-end
-
-local function HandleRosterChanged()
-    IndexRoster()
-    ClearAllCasts()
-    RefreshRuntimeState()
-end
-
-local function HandleWorldChanged()
-    ClearAllCasts()
-    wipe(plateUnits)
-    RefreshRuntimeState()
-    if running then
-        SeedVisibleNameplates()
+function TargetedSpells:PrepareFrame(frame, frameCopies)
+    if subscribed then
+        PrepareFrame(frame, frameCopies)
     end
 end
 
-local BASE_EVENTS = {
-    PLAYER_LOGIN = RefreshRuntimeState,
-    GROUP_ROSTER_UPDATE = HandleRosterChanged,
-    PLAYER_ROLES_ASSIGNED = HandleRosterChanged,
-    PLAYER_ENTERING_WORLD = HandleWorldChanged,
-    PLAYER_REGEN_ENABLED = ClearAllCasts,
-    NAME_PLATE_UNIT_ADDED = HandleNameplateAdded,
-    NAME_PLATE_UNIT_REMOVED = HandleNameplateRemoved,
-}
+-- Roster shape, roles, and world changes invalidate both the class-bucket
+-- index and any marker-to-frame mapping; markers rebuild from the engine's
+-- in-flight casts via ResetSubscriber.
+local function HandleContextChanged()
+    ClearAllMarkers()
+    RefreshRuntimeState()
+    if subscribed and ns.IncomingCasts then
+        ns.IncomingCasts.ResetSubscriber(SUBSCRIBER_KEY)
+    end
+end
 
+local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PLAYER_ROLES_ASSIGNED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-eventFrame:SetScript("OnEvent", function(_, event, unit)
-    local baseHandler = BASE_EVENTS[event]
-    if baseHandler then
-        baseHandler(unit)
+eventFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if poolGrowthPending then
+            if FeatureShouldRun() then
+                PrepareMarkerPools()
+            else
+                poolGrowthPending = false
+            end
+        end
         return
     end
-
-    if not plateUnits[unit] then
-        return
-    end
-
-    if START_EVENTS[event] then
-        BeginCastWatch(unit)
-    elseif FINISH_EVENTS[event] then
-        ClearCaster(unit)
-    elseif event == "UNIT_TARGET" then
-        RecheckCasterTarget(unit)
-    end
+    HandleContextChanged()
 end)

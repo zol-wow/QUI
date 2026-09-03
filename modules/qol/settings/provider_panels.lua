@@ -210,7 +210,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         L.headerAt(ns.L["General"])
         local s1 = L.sectionAt()
         local enabledW = GUI:CreateFormCheckbox(s1.frame, nil, "enabled", lt, Refresh,
-            { description = ns.L["Show a bar + countdown for an active Bloodlust/Heroism-family buff on you. Detected when the buff is applied out of combat (the usual pre-pull case)."] })
+            { description = ns.L["Bar + countdown for an active Bloodlust/Heroism-family buff on you."] })
         local widthW = GUI:CreateFormSlider(s1.frame, nil, 60, 400, 1, "width", lt, Refresh,
             { description = ns.L["Pixel width of the lust timer bar."] })
         s1.AddRow(row(s1.frame, ns.L["Enabled"], enabledW), row(s1.frame, ns.L["Width"], widthW))
@@ -268,7 +268,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         local timerFontW = GUI:CreateFormSlider(s1.frame, nil, 8, 24, 1, "timerFontSize", bz, Refresh,
             { description = ns.L["Font size of the recharge timer shown below the charge count."] })
-        s1.AddRow(row(s1.frame, ns.L["Timer Font Size"], timerFontW))
+        local hideUnavailW = GUI:CreateFormCheckbox(s1.frame, nil, "hideWhenUnavailable", bz, Refresh,
+            { description = ns.L["Only show the counter while battle-rez charge information is available (active Mythic+ run or raid boss encounter). Hides the greyed-out icon in Mythic 0, open world, and between raid pulls."] })
+        s1.AddRow(row(s1.frame, ns.L["Timer Font Size"], timerFontW), row(s1.frame, ns.L["Hide Without Charge Info"], hideUnavailW))
         L.closeSection(s1)
 
         L.headerAt(ns.L["Colors"])
@@ -793,7 +795,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 if CM then
                     if cmDB.enabled then CM:ForceRefresh() else CM:DeleteMacros() end
                 end
-            end, { description = ns.L["Auto-generate per-character *_DUI macros for the consumables selected below. Disabling deletes the macros."] })
+            end, { description = ns.L["Auto-generate per-character *_QUI macros for the consumables selected below. Disabling deletes the macros."] })
             s5.AddRow(row(s5.frame, ns.L["Character-specific"], charSpecW), row(s5.frame, ns.L["Enable Consumable Macros"], enableMacrosW))
 
             local mFlaskW = GUI:CreateFormDropdown(s5.frame, nil,

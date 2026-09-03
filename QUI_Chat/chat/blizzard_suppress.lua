@@ -481,7 +481,8 @@ function Suppress.Apply()
             end
         end)
     end
-    if type(_G.InCombatLockdown) == "function" and _G.InCombatLockdown() then
+    if (type(_G.InCombatLockdown) == "function" and _G.InCombatLockdown())
+        or (type(_G.UnitAffectingCombat) == "function" and _G.UnitAffectingCombat("player")) then
         pendingApply = false
         graceApply = true
         ApplyNow()

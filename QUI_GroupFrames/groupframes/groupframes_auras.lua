@@ -1200,6 +1200,7 @@ local function ResolveAuraDeps()
 end
 
 local ApplyStripContainers
+local QueueContainerCombatWork
 
 -- Blizzard's BIG_DEFENSIVE / EXTERNAL_DEFENSIVE filters fail open on
 -- distance-obfuscated aura data: for out-of-range units the engine matches
@@ -1215,6 +1216,27 @@ local function ElementNeedsRangeGate(element)
         and (c.bigDefensive == true or c.externalDefensive == true)
 end
 
+local function SetRangeGateMouse(container, enabled, rememberWhenRestricted)
+    if AurasAreSecret() then
+        if rememberWhenRestricted then container._quiRangeGateMouseEnabled = enabled end
+        return false
+    end
+    container._quiRangeGateMouseEnabled = enabled
+    if InCombatLockdown and InCombatLockdown() then return false end
+    local buttons = container._quiButtons
+    if not buttons then return true end
+    for i = 1, #buttons do
+        local button = buttons[i]
+        if button and button.SetMouseMotionEnabled and button.SetMouseClickEnabled then
+            button:SetMouseMotionEnabled(enabled)
+            button:SetMouseClickEnabled(enabled)
+        elseif button and button.EnableMouse then
+            button:EnableMouse(enabled)
+        end
+    end
+    return true
+end
+
 function QUI_GFA.ApplyRangeGate(frame, inRange)
     local pool = frame and frame._quiAuraContainers
     if not pool then return end
@@ -1224,9 +1246,13 @@ function QUI_GFA.ApplyRangeGate(frame, inRange)
         if not (unit and GF and GF.CheckUnitRange) then return end
         inRange = GF.CheckUnitRange(unit)
     end
+    local mouseEnabled = false
+    if not IsSecretValue(inRange) then mouseEnabled = inRange ~= false end
+    local replay
     for i = 1, #pool do
         local container = pool[i]
         if container and container._quiRangeGated then
+            if not SetRangeGateMouse(container, mouseEnabled) then replay = true end
             if container.SetAlphaFromBoolean then
                 container:SetAlphaFromBoolean(inRange, 1, 0)
             elseif not IsSecretValue(inRange) then
@@ -1234,15 +1260,18 @@ function QUI_GFA.ApplyRangeGate(frame, inRange)
             end
         end
     end
+    if replay and QueueContainerCombatWork then QueueContainerCombatWork(frame) end
 end
 -- <<< QUI_TEST_EXTRACT range_gate
 
-local function QueueContainerCombatWork(frame)
+local function ReplayContainerCombatWork(frame)
+    if ApplyStripContainers then ApplyStripContainers(frame) end
+end
+
+QueueContainerCombatWork = function(frame)
     AuraGlue = AuraGlue or ns.AuraGlue
     if not AuraGlue then return end
-    AuraGlue.QueueRegenWork(frame, function(f)
-        if ApplyStripContainers then ApplyStripContainers(f) end
-    end)
+    AuraGlue.QueueRegenWork(frame, ReplayContainerCombatWork)
 end
 
 local _activeElems = {}
@@ -1292,26 +1321,45 @@ local function ApplyElementPass(frame, allowCreate)
         cancelEligible = false,
         profileOverrides = profileOverrides,
         profileFor = function(element)
-            return AuraGlue.ElementProfile(element, profileOverrides)
+            local profile = AuraGlue.ElementProfile(element, profileOverrides)
+            if ElementNeedsRangeGate(element) then profile.tooltipHideInCombat = true end
+            return profile
         end,
         anchorContainer = function(container, host, element)
             local gated = ElementNeedsRangeGate(element)
             if container._quiRangeGated and not gated then
                 container:SetAlpha(1)
+                if not SetRangeGateMouse(container, true, true) then
+                    QueueContainerCombatWork(host)
+                end
             end
             container._quiRangeGated = gated
             AnchorElementContainer(container, host, element)
         end,
         onContainerReady = function(container, host)
+            if InCombatLockdown() then return false end
             local desiredLevel = host:GetFrameLevel() + CHROME_LEVELS.AURA_HOST
-            if not InCombatLockdown() then
-                container:SetFrameLevel(desiredLevel)
-                return true
-            end
-            return container:GetFrameLevel() == desiredLevel
+            local desiredStrata = host.healthBar and host.healthBar:GetFrameStrata()
+            if desiredStrata then container:SetFrameStrata(desiredStrata) end
+            container:SetFrameLevel(desiredLevel)
+            return true
         end,
         onIncomplete = QueueContainerCombatWork,
     })
+
+    -- Dispel overlay / cleanse glow ride secure feeder slots (engine-driven
+    -- presence + dispel-type colors) so they keep working while the Lua aura
+    -- cache is frozen by ShouldAurasBeSecret in instanced combat.
+    local Feeder = ns.QUI_GFDispelFeeder
+    if Feeder then
+        local vdb = GetVisualDBForFrame(frame)
+        local health = vdb and vdb.health
+        if not Feeder.Sync(frame, unit, allowCreate == true, vdb and vdb.healer,
+                health and health.healthFillDirection) then
+            QueueContainerCombatWork(frame)
+        end
+    end
+
     QUI_GFA.ApplyRangeGate(frame)
 end
 

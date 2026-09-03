@@ -8,6 +8,17 @@ local SkinBase = ns.SkinBase
 
 local FONT_SIZE = 12
 
+-- Text ladder from the shared palette (core/theme.lua): rest = tabHover (white
+-- .85), hover = text (white 1), disabled = disabled (white .30).
+local function ThemeRole(name, fallback)
+    local gui = _G.QUI and _G.QUI.GUI
+    local role = gui and gui.Colors and gui.Colors[name] or fallback
+    return role[1], role[2], role[3], role[4] or 1
+end
+local BUTTON_REST_FALLBACK = { 1, 1, 1, 0.85 }
+local BUTTON_DISABLED_FALLBACK = { 1, 1, 1, 0.30 }
+local BUTTON_HOVER_FALLBACK = { 1, 1, 1, 1 }
+
 local menuCallbacks = Helpers.CreateStateTable()
 
 local function Defer(fn)
@@ -153,9 +164,9 @@ local function RefreshButtonState(button)
     local text = button.GetFontString and button:GetFontString()
     if text then
         if enabled then
-            text:SetTextColor(0.9, 0.9, 0.9, 1)
+            text:SetTextColor(ThemeRole("tabHover", BUTTON_REST_FALLBACK))
         else
-            text:SetTextColor(0.45, 0.45, 0.45, 1)
+            text:SetTextColor(ThemeRole("disabled", BUTTON_DISABLED_FALLBACK))
         end
     end
 end
@@ -192,7 +203,7 @@ local function StyleButton(button, prefix)
             local border = SkinBase.GetFrameData(self, "systemPopupBorder")
             if bd then SkinBase.SetBackdropColors(bd, border, hoverBg) end
             local text = self:GetFontString()
-            if text and (not self.IsEnabled or self:IsEnabled()) then text:SetTextColor(1, 1, 1, 1) end
+            if text and (not self.IsEnabled or self:IsEnabled()) then text:SetTextColor(ThemeRole("text", BUTTON_HOVER_FALLBACK)) end
         end)
         button:HookScript("OnLeave", RefreshButtonState)
         button:HookScript("OnEnable", RefreshButtonState)

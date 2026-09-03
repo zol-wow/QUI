@@ -124,6 +124,12 @@ function CDMRuntimeQueries.ResetRuntimeQueryBatch()
     AdvanceRuntimeQueryEpoch()
 end
 
+function CDMRuntimeQueries.GetActiveBatchEpoch()
+    if runtimeQueryBatchDepth > 0 then
+        return runtimeQueryEpoch
+    end
+end
+
 local batchSharedCache = {
     cooldown = {},
     charge = {},
@@ -205,6 +211,9 @@ function CDMRuntimeQueries.QueryCooldown(spellID, owner)
     local info
     if Sources and Sources.QuerySpellCooldown then
         info = Sources.QuerySpellCooldown(spellID)
+    end
+    if IsSecretValue(info) then
+        info = nil
     end
     return StoreRuntimeCache("cooldown", owner, spellID, info, "cooldownSource")
 end

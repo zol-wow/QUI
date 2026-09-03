@@ -3,48 +3,9 @@ local ADDON_NAME, ns = ...
 QUI.GUI = QUI.GUI or {}
 local GUI = QUI.GUI
 
-GUI.Colors = GUI.Colors or {
-    bg = {0.051, 0.067, 0.09, 0.97},
-    bgLight = {0.094, 0.11, 0.14, 1},
-    bgDark = {0.03, 0.04, 0.06, 1},
-    bgContent = {1, 1, 1, 0.02},
-    bgSidebar = {0, 0, 0, 0.25},
-    bgFooter = {0, 0, 0, 0.15},
-
-    accent = {0.204, 0.827, 0.6, 1},
-    accentLight = {0.431, 0.906, 0.718, 1},
-    accentDark = {0.1, 0.5, 0.35, 1},
-    accentHover = {0.3, 0.9, 0.65, 1},
-    accentFaint = {0.204, 0.827, 0.6, 0.07},
-    accentGlow = {0.204, 0.827, 0.6, 0.06},
-
-    tabSelected = {0.204, 0.827, 0.6, 1},
-    tabSelectedText = {1, 1, 1, 1},
-    tabNormal = {1, 1, 1, 0.55},
-    tabHover = {1, 1, 1, 0.85},
-
-    text = {1, 1, 1, 1},
-    textBright = {1, 1, 1, 1},
-    textMuted = {1, 1, 1, 0.45},
-    textDim = {1, 1, 1, 0.6},
-    sectionLabel = {1, 1, 1, 0.42},
-
-    border = {1, 1, 1, 0.06},
-    borderStrong = {1, 1, 1, 0.1},
-    borderAccent = {0.204, 0.827, 0.6, 1},
-
-    sectionHeader = {0.431, 0.906, 0.718, 1},
-
-    sliderTrack = {1, 1, 1, 0.12},
-    sliderThumb = {1, 1, 1, 1},
-    sliderThumbBorder = {0, 0, 0, 0.2},
-
-    toggleOff = {1, 1, 1, 0.12},
-    toggleThumb = {1, 1, 1, 1},
-
-    warning = {0.961, 0.620, 0.043, 1},
-}
-
+-- Palette owner: core/theme.lua (QUI.toc loads it before this file). Every
+-- role (bg*, accent*, tab*, text*, state ladder, scroll*) lives there.
+assert(GUI.Colors, "core/theme.lua must load before core/gui_shell.lua (QUI.toc order)")
 local C = GUI.Colors
 
 function GUI:GetFontPath()

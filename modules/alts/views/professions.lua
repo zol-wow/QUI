@@ -62,12 +62,12 @@ local function Builder(parent)
     hdrName:SetPoint("TOPLEFT", frame, "TOPLEFT", CELL_PAD, 0)
     hdrName:SetWidth(NAME_W - CELL_PAD * 2)
     hdrName:SetText(ns.L["Character"])
-    hdrName:SetTextColor(1, 0.82, 0)
+    hdrName:SetTextColor(1, 1, 1)
 
     local hdrProf = MakeFS(frame, 11)
     hdrProf:SetPoint("TOPLEFT", frame, "TOPLEFT", NAME_W + CELL_PAD, 0)
     hdrProf:SetText(ns.L["Professions"])
-    hdrProf:SetTextColor(1, 0.82, 0)
+    hdrProf:SetTextColor(1, 1, 1)
 
     local function GetRow(i)
         local r = rowPool[i]

@@ -799,13 +799,137 @@ local function OnPlayerDead()
     end)
 end
 
+local RELEASE_GUARD_SECONDS = 3
+
+local releaseBlockHooked = setmetatable({}, { __mode = "k" })
+local releaseUnlockTime = setmetatable({}, { __mode = "k" })
+local releaseButtonCache = setmetatable({}, { __mode = "kv" })
+local releaseOverlays = setmetatable({}, { __mode = "k" })
+
+local function GetReleaseButton(frame)
+    local button = releaseButtonCache[frame]
+    if button then return button end
+
+    local name = frame.GetName and frame:GetName()
+    button = (frame.GetButton1 and frame:GetButton1())
+        or (frame.GetButton and frame:GetButton(1))
+        or frame.button1
+        or (name and _G[name .. "Button1"])
+    releaseButtonCache[frame] = button
+    return button
+end
+
+local function GetReleaseOverlay(frame, button)
+    local overlay = releaseOverlays[frame]
+    if overlay then return overlay end
+
+    overlay = CreateFrame("Frame", nil, button)
+    overlay:SetAllPoints(button)
+    overlay:EnableMouse(true)
+    overlay:Hide()
+
+    local cover = overlay:CreateTexture(nil, "OVERLAY")
+    cover:SetAllPoints(overlay)
+    cover:SetColorTexture(0, 0, 0, 0.65)
+
+    overlay.label = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    overlay.label:SetPoint("CENTER")
+
+    releaseOverlays[frame] = overlay
+    return overlay
+end
+
+-- value may be a countdown integer or a string; comparing before SetText
+-- keeps the per-frame OnUpdate path free of string conversions/allocations.
+local function SetOverlayLabel(overlay, value)
+    if overlay.lastLabel ~= value then
+        overlay.lastLabel = value
+        overlay.label:SetText(value)
+    end
+end
+
+local function IsReleaseGuardActive()
+    local settings = GetSettings()
+    if not settings or not settings.blockReleaseInRaid then return false end
+    local inInstance, instanceType = IsInInstance()
+    return (inInstance and instanceType == "raid") and true or false
+end
+
+-- Runs as an OnUpdate post-hook, i.e. after Blizzard's DEATH OnUpdate has
+-- already set the button's enabled state and text for its own restrictions
+-- (falling, encounter suppression, no-release auras) this same frame. The
+-- guard never touches the button itself — toggling its enabled state or text
+-- would trip Blizzard's per-frame transition detection, which blanks the
+-- dialog's timer text and resizes it. Instead a click-swallowing overlay sits
+-- on top of the button while the guard holds.
+local function EnforceReleaseBlock(frame)
+    local button = GetReleaseButton(frame)
+    if not button then return end
+
+    local overlay = releaseOverlays[frame]
+
+    if not IsReleaseGuardActive() or not button:IsEnabled() then
+        -- Off, not a raid, or Blizzard holds the button disabled natively —
+        -- its state and text are authoritative; stand back.
+        if overlay then overlay:Hide() end
+        return
+    end
+
+    local unlockAt = releaseUnlockTime[frame]
+    if not unlockAt then
+        unlockAt = GetTime() + RELEASE_GUARD_SECONDS
+        releaseUnlockTime[frame] = unlockAt
+    end
+
+    local remaining = unlockAt - GetTime()
+    if remaining <= 0 and IsControlKeyDown() then
+        if overlay then overlay:Hide() end
+        return
+    end
+
+    overlay = overlay or GetReleaseOverlay(frame, button)
+    if not overlay:IsShown() then
+        overlay:SetFrameLevel(button:GetFrameLevel() + 10)
+        overlay:Show()
+    end
+    if remaining > 0 then
+        SetOverlayLabel(overlay, math.ceil(remaining))
+    else
+        SetOverlayLabel(overlay, ns.L["Hold Ctrl"])
+    end
+end
+
+local function HookDeathPopups()
+    for i = 1, GetMaxStaticPopupDialogs() do
+        local frame = _G["StaticPopup" .. i]
+        if frame and frame.which == "DEATH" then
+            if not releaseBlockHooked[frame] then
+                releaseBlockHooked[frame] = true
+                frame:HookScript("OnUpdate", function(self)
+                    if self.which == "DEATH" then
+                        EnforceReleaseBlock(self)
+                    end
+                end)
+                frame:HookScript("OnHide", function(self)
+                    releaseUnlockTime[self] = nil
+                    if releaseOverlays[self] then
+                        releaseOverlays[self]:Hide()
+                    end
+                end)
+            end
+            releaseUnlockTime[frame] = nil
+            EnforceReleaseBlock(frame)
+        end
+    end
+end
+
 local function ShouldPauseQuest(settings)
     return settings.questHoldShift and IsShiftKeyDown()
 end
 
 local function OnQuestDetail()
     local settings = GetSettings()
-    if not settings or not settings.autoAcceptQuest then return end
+    if not settings or settings.autoAcceptQuest ~= true then return end
     if ShouldPauseQuest(settings) then return end
 
     AcceptQuest()
@@ -1097,6 +1221,10 @@ local function AutoConfirmPopup(which)
 end
 
 hooksecurefunc("StaticPopup_Show", function(which)
+    if which == "DEATH" then
+        HookDeathPopups()
+    end
+
     C_Timer.After(0, function()
         if ShouldBlockStaticPopup(which) then
             HideStaticPopupByWhich(which)
@@ -1188,6 +1316,7 @@ local function SetupCraftingOrderFilter()
         if not settings or not settings.craftingOrderExpansionFilter then return end
         if not filterDropdown.filters then return end
         filterDropdown.filters[Enum.AuctionHouseFilter.CurrentExpansionOnly] = true
+        filterDropdown:ValidateResetState()
     end
 
     browseOrders:HookScript("OnShow", function() C_Timer.After(0, applyFilter) end)

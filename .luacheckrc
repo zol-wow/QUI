@@ -76,6 +76,7 @@ globals = {
     "SLASH_QUISCAN1",
     "SLASH_QUISCAN2",
     "SLASH_QUIKB1",
+    "SLASH_QUIIC1",
     "SLASH_QUILOG1",
     "SLASH_QUI_CDM1",
     "SlashCmdList",
@@ -128,7 +129,7 @@ read_globals = {
     "C_PartyInfo", "C_Spell", "C_Timer", "C_UnitAuras", "C_TooltipInfo",
     "C_NamePlate", "C_NamePlateManager", "C_ItemCallbacks", "C_Secrets",
     "C_ChallengeMode", "C_ClassTalents", "C_Container", "C_CooldownViewer",
-    "C_CurveUtil", "C_DurationUtil", "C_Item", "C_ScenarioInfo",
+    "C_CurveUtil", "C_DamageMeter", "C_DeathRecap", "C_DurationUtil", "C_Item", "C_ScenarioInfo",
     "C_SpellActivationOverlay",
     "C_SpellBook", "C_StringUtil", "C_TradeSkillUI", "C_Traits", "C_Widget",
 
@@ -241,7 +242,7 @@ STAT_HASTE_TOOLTIP STAT_HEALTH_PET_TOOLTIP STAT_HEALTH_TOOLTIP STAT_LIFESTEAL ST
 STAT_SPELLPOWER STAT_SPELLPOWER_TOOLTIP STAT_TOOLTIP_BONUS_AP STAT_TOOLTIP_BONUS_AP_SP STAT_VERSATILITY STAT_VERSATILITY_TOOLTIP SaveBindings ScenarioAlertSystem
 ScenarioObjectiveTracker ScrollUtil SecureCmdOptionParse SecureHandlerWrapScript SetActionUIButton SetBinding SetBindingClick SetChatColorNameByClass
 SetItemRef SetLargeGuildTabardTextures SetLootSpecialization SetModifiedClick SetOverrideBindingClick SetRaidTargetIconTexture SharedTooltip_SetBackdropStyle SkillLineSpecsUnlockedAlertSystem
-SpellbookMicroButton StaticPopup_FindVisible StaticPopup_Hide StatusTrackingBarInfo StatusTrackingBarManager StopSound StoreMicroButton_OnClick SuppressProcVisualFrame
+SpellbookMicroButton StaticPopup_FindVisible StaticPopup_Hide StaticPopup_Visible StatusTrackingBarInfo StatusTrackingBarManager StopSound StoreMicroButton_OnClick SuppressProcVisualFrame
 TALENTS TIMEMANAGER_TICKER_12HOUR TIMEMANAGER_TICKER_24HOUR TIMEMANAGER_TOOLTIP_LOCALTIME TIMEMANAGER_TOOLTIP_REALMTIME TIMEMANAGER_TOOLTIP_TITLE TRANSMOGRIFY TalentFrameUtil
 TalentLoadoutManagerAPI TalentMicroButton TargetFrame TargetFrameToT TimeManagerClockButton TimeManagerClockTicker TimeManagerFrame TimeManager_Toggle
 ToggleAchievementFrame ToggleAllBags ToggleCalendar ToggleChannelFrame ToggleCharacter ToggleCollectionsJournal ToggleDropDownMenu ToggleEncounterJournal

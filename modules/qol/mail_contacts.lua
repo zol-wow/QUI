@@ -133,7 +133,7 @@ local function EnsurePanel()
     local bg = panel:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0.05, 0.05, 0.05, 0.9)
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 6, -5)
     title:SetText(ns.L["Contacts"])
     rows = {}

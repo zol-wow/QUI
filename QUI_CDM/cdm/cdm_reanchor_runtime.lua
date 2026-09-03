@@ -116,6 +116,12 @@ function CDMReanchorRuntime:_ShouldDeferOwnedReleaseInCombat(containerKey)
     return false
 end
 
+function CDMReanchorRuntime:QueuePendingCombatRefresh(containerKey)
+    if not containerKey then return end
+    self._pendingCombatRefresh = self._pendingCombatRefresh or {}
+    self._pendingCombatRefresh[containerKey] = true
+end
+
 function CDMReanchorRuntime:DrainPendingCombatRefresh()
     local pending = self._pendingCombatRefresh
     if not pending then return end
@@ -283,6 +289,7 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
             else
                 local icon = deps.mintOwned and deps.mintOwned(e, containerKey) or nil
                 if icon then
+                    icon._blizzCooldown = m.frame
                     diag.mirrored = diag.mirrored + 1
                     diag.minted = diag.minted + 1
                     self:_TrackMintedOwned(containerKey, icon)
@@ -302,6 +309,30 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
                 else
                     diag.mintFailed = diag.mintFailed + 1
                 end
+            end
+        elseif m and deps.shouldReplaceNativeAuraPhase
+            and deps.shouldReplaceNativeAuraPhase(m.frame, e, containerKey) then
+            claimedFrames[m.frame] = nil
+            local nativePlacement = self._nativePlacementByFrame[m.frame]
+            if not nativePlacement or nativePlacement.containerKey == containerKey then
+                self._entryByFrame[m.frame] = nil
+                self._nativePlacementByFrame[m.frame] = nil
+                self._consumersByFrame[m.frame] = nil
+            end
+            if self._bridge and self._bridge.Sink then
+                self._bridge:Sink(m.frame)
+            end
+            local icon = deps.mintOwned and deps.mintOwned(e, containerKey) or nil
+            if icon then
+                icon._blizzCooldown = m.frame
+                diag.minted = diag.minted + 1
+                self:_TrackMintedOwned(containerKey, icon)
+                entries[#entries + 1] = {
+                    src = e, frame = icon, reanchored = false,
+                    _assignedRow = e._assignedRow,
+                }
+            else
+                diag.mintFailed = diag.mintFailed + 1
             end
         elseif m then
             local hiddenPreview = editing and IsBuffIconKey(containerKey)
@@ -664,9 +695,9 @@ function CDMReanchorRuntime:RefreshContainer(containerKey, prepared, placementPl
                 self._consumersByFrame[w.liveFrame] = { self._nativePlacementByFrame[w.liveFrame] }
             end
             if deps.auraPhase then
-                deps.auraPhase:Hook(w.liveFrame, containerKey)
+                deps.auraPhase:Hook(w.liveFrame, containerKey, w.src)
                 if deps.auraPhase.Reassert then
-                    deps.auraPhase:Reassert(w.liveFrame)
+                    deps.auraPhase:Reassert(w.liveFrame, w.src)
                 end
             end
             if deps.pandemic then

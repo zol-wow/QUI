@@ -15,7 +15,7 @@ function ModelKit.RenderUnavailable(host, label, suffix)
     message:SetPoint("TOPLEFT", 20, -20)
     message:SetText((label or ns.L["Settings"]) .. (suffix or ns.L[" unavailable."]))
     if message.SetTextColor then
-        message:SetTextColor(0.6, 0.6, 0.6, 1)
+        message:SetTextColor(1, 1, 1, 0.6)
     end
 end
 

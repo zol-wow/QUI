@@ -391,6 +391,9 @@ local function IsInternalEmbeddedItemRoot(root, tooltip)
 end
 
 local function IsInternalEmbeddedItemTooltipFrame(tooltip)
+    if tooltip == EmbeddedItemTooltip then
+        return true
+    end
     if IsInternalEmbeddedItemRoot(GameTooltip and GameTooltip.ItemTooltip, tooltip) then
         return true
     end
@@ -418,7 +421,10 @@ local function StyleShoppingCompareHeader(header, sr, sg, sb, sa, bgr, bgg, bgb,
     end
 
     if header.Label and header.Label.SetTextColor then
-        header.Label:SetTextColor(sr, sg, sb, 1)
+        -- Border colour is not a text colour (black / hidden borders).
+        local tr, tg, tb = 1, 1, 1
+        if SkinBase.GetSkinTextAccent then tr, tg, tb = SkinBase.GetSkinTextAccent() end
+        header.Label:SetTextColor(tr, tg, tb, 1)
     end
 end
 
@@ -856,27 +862,6 @@ local function SetupBackdropStyleHooks()
         end)
     end
 
-    if EmbeddedItemTooltip then
-        hooksecurefunc(EmbeddedItemTooltip, "Show", function(self)
-            if not IsEnabled() then return end
-            if IsEmbedded(self) then
-                if HasActiveMoneyFrame(GameTooltip) then return end
-                HideNineSlice(self)
-                if self.SetBackdrop then SafeCall("best-effort-style", self.SetBackdrop, self, nil) end
-                local sf = styleFrames[self]
-                if sf then sf:Hide() end
-            else
-                OnTooltipShow(self)
-            end
-        end)
-        if IsEnabled() then
-            HideNineSlice(EmbeddedItemTooltip)
-            if EmbeddedItemTooltip.SetBackdrop then
-                SafeCall("best-effort-style", EmbeddedItemTooltip.SetBackdrop, EmbeddedItemTooltip, nil)
-            end
-        end
-    end
-
 end
 
 local function SetupPostProcessor()
@@ -967,12 +952,6 @@ local function RefreshAllColors()
         if not (tooltip.IsForbidden and tooltip:IsForbidden())
             and tooltip.IsShown and tooltip:IsShown() then
             StyleTooltip(tooltip)
-        end
-    end
-    if EmbeddedItemTooltip and IsEnabled() and IsEmbedded(EmbeddedItemTooltip) then
-        HideNineSlice(EmbeddedItemTooltip)
-        if EmbeddedItemTooltip.SetBackdrop then
-            SafeCall("best-effort-style", EmbeddedItemTooltip.SetBackdrop, EmbeddedItemTooltip, nil)
         end
     end
     ApplyAuraTooltipStyle()

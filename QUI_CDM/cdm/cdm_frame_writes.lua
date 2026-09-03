@@ -7,7 +7,7 @@ ns.CDMRenderers = CDMRenderers
 local issecretvalue = issecretvalue
 
 function CDMRenderers.ApplyDurationObjectCooldown(cd, durObj, clearWhenZero, reverse)
-    if not cd or not durObj or not cd.SetCooldownFromDurationObject then
+    if not cd or type(durObj) == "nil" or not cd.SetCooldownFromDurationObject then
         return false
     end
 
@@ -86,7 +86,7 @@ local STATUS_BAR_INTERPOLATION_IMMEDIATE = 0
 local STATUS_BAR_TIMER_REMAINING = 1
 
 function CDMRenderers.SetStatusBarTimerDuration(statusBar, durObj, direction)
-    if not statusBar or not durObj or not statusBar.SetTimerDuration then
+    if not statusBar or type(durObj) == "nil" or not statusBar.SetTimerDuration then
         return false
     end
     local ok = pcall(

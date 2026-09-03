@@ -3660,9 +3660,7 @@ eventFrame:RegisterEvent("VARIABLES_LOADED")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
-        if arg1 == ADDON_NAME then
-            Minimap_Module:InitializeOnce()
-        elseif arg1 == "Blizzard_QueueStatusFrame" then
+        if arg1 == "Blizzard_QueueStatusFrame" then
             local settings = GetSettings()
             if settings then
                 UpdateDungeonEyePosition()

@@ -657,6 +657,8 @@ local function MirrorHolderSize(key)
     state.holder:SetSize(w, h)
 end
 
+ns.SyncManagedHolderSize = MirrorHolderSize
+
 local function ReanchorFrameToHolder(key)
     local state = managedReparentState[key]
     if not state or not state.holder or not state.frame then return end
@@ -718,7 +720,7 @@ local function InstallManagedReparent(def)
 
     ReanchorFrameToHolder(def.key)
 
-    if frame.HookScript and not state.sizeHooked then
+    if def.key ~= "objectiveTracker" and frame.HookScript and not state.sizeHooked then
         state.sizeHooked = true
         frame:HookScript("OnSizeChanged", function()
             MirrorHolderSize(def.key)
@@ -927,6 +929,7 @@ local FRAME_RESOLVERS = {
     missingRaidBuffs = function() return _G["QUI_MissingRaidBuffs"] end,
     mplusTimer = function() return _G["QUI_MPlusTimerFrame"] end,
     preyTracker = function() return _G["QUI_PreyTracker"] end,
+    incomingCasts = function() return _G["QUI_IncomingCasts"] end,
     crosshair = function() return _G["QUI_Crosshair"] end,
     totemBar = function()
         local owned = ns.QUI_TotemBar and ns.QUI_TotemBar.container
@@ -978,6 +981,7 @@ local FRAME_RESOLVERS = {
     minimap = function() return _G["QUI_MinimapAnchor"] or _G["Minimap"] end,
     datatextPanel = function() return _G["QUI_DatatextPanel"] end,
     objectiveTracker = function()
+        MirrorHolderSize("objectiveTracker")
         local state = managedReparentState["objectiveTracker"]
         return state and state.holder or nil
     end,
@@ -1139,6 +1143,7 @@ local FRAME_ANCHOR_INFO = {
     mplusTimer      = { displayName = "M+ Timer",              category = "QoL",               order = 11 },
     readyCheck      = { displayName = "Ready Check",           category = "QoL",               order = 12 },
     preyTracker     = { displayName = "Prey Tracker",          category = "QoL",               order = 13 },
+    incomingCasts   = { displayName = "Incoming Casts",        category = "QoL",               order = 15 },
     partyFrames     = { displayName = "Party Frames",           category = "Group Frames",      order = 1 },
     raidFrames      = { displayName = "Raid Frames",            category = "Group Frames",      order = 2 },
     minimap         = { displayName = "Minimap",               category = "Display",           order = 1 },
@@ -1747,7 +1752,7 @@ local function GetCastbarConfiguredWidth(key)
     if not unitKey then return nil end
     local db = QUICore and QUICore.db
     if not db then return nil end
-    local unitSettings = db.profile and db.profile.unitframes and db.profile.unitframes[unitKey]
+    local unitSettings = db.profile and db.profile.quiUnitFrames and db.profile.quiUnitFrames[unitKey]
     local castSettings = unitSettings and unitSettings.castbar
     local w = castSettings and castSettings.width
     return (type(w) == "number" and w > 0) and w or nil
@@ -1814,7 +1819,7 @@ local function ApplyAutoSizing(frame, settings, parentFrame, key)
                 DebouncedReapplyOverrides()
             end)
         end
-    elseif settings.autoWidth and CASTBAR_ANCHOR_KEYS[key] then
+    elseif CASTBAR_ANCHOR_KEYS[key] then
         local fallbackWidth = GetCastbarConfiguredWidth(key)
         if fallbackWidth then
             ns.SafeCallMethod("best-effort-style", frame, "SetWidth", fallbackWidth)
@@ -1872,8 +1877,9 @@ local function AnchorOrPin(key, frame, pt, parentFrame, relPt, x, y)
     if parentFrame and parentFrame._quiHostMover then
         parentFrame = parentFrame._quiHostMover
     end
-    if IsDynamicSizeAnchorKey(key) and ParentRestricts(parentFrame)
-        and not FrameSelfRestricts(frame)
+    if ParentRestricts(parentFrame)
+        and (CASTBAR_ANCHOR_KEYS[key]
+            or (IsDynamicSizeAnchorKey(key) and not FrameSelfRestricts(frame)))
     then
         ns.Helpers.PinFrameToTargetAbsolute(frame, pt, parentFrame, relPt, x, y)
         return

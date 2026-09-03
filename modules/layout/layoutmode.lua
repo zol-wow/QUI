@@ -3205,6 +3205,14 @@ do
                 previewOff = function() if _G.QUI_TogglePreyTrackerPreview then _G.QUI_TogglePreyTrackerPreview(false) end end,
             },
             {
+                key = "incomingCasts", label = ns.L["Incoming Casts"], group = ns.L["QoL"], order = 9.2,
+                frame = "QUI_IncomingCasts",
+                dbKey = "incomingCasts", enabledField = "enabled",
+                refresh = function() local ic = ns.QUI_IncomingCasts; if ic then ic.Refresh() end end,
+                previewOn  = function() local ic = ns.QUI_IncomingCasts; if ic and ic.EnablePreview then ic.EnablePreview() end end,
+                previewOff = function() local ic = ns.QUI_IncomingCasts; if ic and ic.DisablePreview then ic.DisablePreview() end end,
+            },
+            {
                 key = "readyCheck", label = ns.L["Ready Check"], group = ns.L["Instance"], order = 4,
                 frame = nil,
                 blizzFrame = "ReadyCheckFrame",
@@ -3345,7 +3353,9 @@ do
                             })
                         end
                     end
-                    if info.refresh and _G[info.refresh] then
+                    if type(info.refresh) == "function" then
+                        info.refresh()
+                    elseif info.refresh and _G[info.refresh] then
                         _G[info.refresh]()
                     end
                 end,

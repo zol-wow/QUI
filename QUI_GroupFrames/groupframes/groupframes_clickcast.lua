@@ -1,5 +1,6 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
+local DeepCopy = ns.Helpers.DeepCopy
 
 local function GetDB()
     return _G.QUI and _G.QUI.db and _G.QUI.db.char or nil
@@ -47,6 +48,10 @@ end
 
 local function BuildPlainMouseoverCastMacro(spell)
     return "/cast [@mouseover] " .. spell
+end
+
+local function GetItemAttributeValue(binding)
+    return binding.itemID and "item:" .. binding.itemID or binding.item
 end
 
 local function ButtonAttrName(attr, suffix)
@@ -443,6 +448,9 @@ local function SetFrameKeyAttributes(proxy, frame)
                 proxy:SetAttribute("type-" .. vBtn, "macro")
                 proxy:SetAttribute("macrotext-" .. vBtn, binding.macro)
             end
+        elseif actionType == "item" then
+            proxy:SetAttribute("type-" .. vBtn, "item")
+            proxy:SetAttribute("item-" .. vBtn, GetItemAttributeValue(binding))
         elseif actionType == "target" then
             local tProxy = GetTargetProxy(frame)
             if tProxy then
@@ -472,6 +480,7 @@ local function ClearFrameKeyAttributes(proxy)
         local vBtn = GetVirtualButtonName(binding)
         proxy:SetAttribute("type-" .. vBtn, nil)
         proxy:SetAttribute("macrotext-" .. vBtn, nil)
+        proxy:SetAttribute("item-" .. vBtn, nil)
         proxy:SetAttribute("clickbutton-" .. vBtn, nil)
         proxy:SetAttribute(ButtonAttrName("helpbutton", vBtn), nil)
         proxy:SetAttribute(ButtonAttrName("harmbutton", vBtn), nil)
@@ -550,7 +559,12 @@ local function ResolveBindings()
 
     for _, binding in ipairs(bindings) do
         local actionType = binding.actionType or "spell"
-        local hasAction = binding.spell or binding.macro or actionType ~= "spell"
+        local hasAction
+        if actionType == "item" then
+            hasAction = binding.itemID or binding.item
+        else
+            hasAction = binding.spell or binding.macro or actionType ~= "spell"
+        end
         local spellName = (actionType == "spell") and ResolveSpellName(binding) or binding.spell
 
         if binding.key and hasAction then
@@ -559,6 +573,8 @@ local function ResolveBindings()
                 modifiers = binding.modifiers or "",
                 spell = spellName,
                 macro = binding.macro,
+                item = binding.item,
+                itemID = binding.itemID,
                 actionType = actionType,
                 friend = binding.friend,
                 enemy = binding.enemy,
@@ -571,6 +587,8 @@ local function ResolveBindings()
                     modifiers = binding.modifiers or "",
                     spell = spellName,
                     macro = binding.macro,
+                    item = binding.item,
+                    itemID = binding.itemID,
                     actionType = actionType,
                     friend = binding.friend,
                     enemy = binding.enemy,
@@ -581,6 +599,8 @@ local function ResolveBindings()
                     modifiers = binding.modifiers or "",
                     spell = spellName,
                     macro = binding.macro,
+                    item = binding.item,
+                    itemID = binding.itemID,
                     actionType = actionType,
                     friend = binding.friend,
                     enemy = binding.enemy,
@@ -656,7 +676,10 @@ local function ApplyKeyboardAttrsToProxy(proxy, frame)
             end
         else
             local actionType2 = b.actionType or "spell"
-            if actionType2 == "spell" and b.friend then
+            if actionType2 == "item" then
+                proxy:SetAttribute("type-" .. vBtn, "item")
+                proxy:SetAttribute("item-" .. vBtn, GetItemAttributeValue(b))
+            elseif actionType2 == "spell" and b.friend then
                 local remapped = "friend" .. vBtn
                 proxy:SetAttribute(ButtonAttrName("helpbutton", vBtn), remapped)
                 proxy:SetAttribute("type-" .. remapped, "macro")
@@ -714,6 +737,7 @@ local function ClearKeyboardAttrsFromProxy(proxy)
     for vBtn in pairs(oldVBtns) do
         proxy:SetAttribute("type-" .. vBtn, nil)
         proxy:SetAttribute("macrotext-" .. vBtn, nil)
+        proxy:SetAttribute("item-" .. vBtn, nil)
         proxy:SetAttribute("unit-" .. vBtn, nil)
         proxy:SetAttribute("clickbutton-" .. vBtn, nil)
         proxy:SetAttribute(ButtonAttrName("helpbutton", vBtn), nil)
@@ -846,6 +870,9 @@ local function SetupFrameClickCast(frame)
                 RecordCastAttr(proxy, prefix .. "type" .. btnNum, "macro")
                 RecordCastAttr(proxy, prefix .. "macrotext" .. btnNum, binding.macro)
             end
+        elseif actionType == "item" then
+            RecordCastAttr(proxy, prefix .. "type" .. btnNum, "item")
+            RecordCastAttr(proxy, prefix .. "item" .. btnNum, GetItemAttributeValue(binding))
         elseif actionType == "target" then
             if prefix == "" and btnNum == "1" then
                 RecordCastAttr(proxy, prefix .. "type" .. btnNum, "target")
@@ -924,7 +951,7 @@ local function SetupFrameClickCast(frame)
                     local modLabel = MODIFIER_LABELS[binding.modifiers or ""] or ""
                     local buttonLabel = BUTTON_NAMES[binding.button] or binding.button
                     local at = binding.actionType or "spell"
-                    local spellLabel = PING_LABELS[at] or binding.spell or at or "?"
+                    local spellLabel = PING_LABELS[at] or binding.spell or binding.item or at or "?"
                     GameTooltip:AddDoubleLine(
                         modLabel .. buttonLabel,
                         spellLabel,
@@ -936,7 +963,7 @@ local function SetupFrameClickCast(frame)
                         local modLabel = MODIFIER_LABELS[binding.modifiers or ""] or ""
                         local keyLabel = KEY_DISPLAY_NAMES[binding.key] or binding.key or "?"
                         local at = binding.actionType or "spell"
-                        local spellLabel = PING_LABELS[at] or binding.spell or at or "?"
+                        local spellLabel = PING_LABELS[at] or binding.spell or binding.item or at or "?"
                         GameTooltip:AddDoubleLine(
                             modLabel .. keyLabel,
                             spellLabel,
@@ -1152,6 +1179,128 @@ function QUI_GFCC:GetEditableBindings()
     return cc.bindings
 end
 
+local function GetEditableBindingSetID(cc)
+    if cc.perSpec then
+        local specID = GetCurrentSpecID()
+        if specID then
+            if cc.perLoadout then
+                local configID = GetStableLoadoutID()
+                if configID then
+                    return "loadout:" .. specID .. ":" .. configID
+                end
+            end
+            return "spec:" .. specID
+        end
+    end
+
+    return "shared"
+end
+
+local function GetBindingSetByID(cc, setID)
+    if setID == "shared" then
+        return cc.bindings
+    end
+
+    local specID = type(setID) == "string" and setID:match("^spec:(%d+)$")
+    if specID then
+        specID = tonumber(specID)
+        return cc.specBindings and cc.specBindings[specID]
+    end
+
+    local loadoutSpecID, configID
+    if type(setID) == "string" then
+        loadoutSpecID, configID = setID:match("^loadout:(%d+):(%d+)$")
+    end
+    if loadoutSpecID and configID then
+        loadoutSpecID = tonumber(loadoutSpecID)
+        configID = tonumber(configID)
+        local specLoadouts = cc.loadoutBindings and cc.loadoutBindings[loadoutSpecID]
+        return specLoadouts and specLoadouts[configID]
+    end
+
+    return nil
+end
+
+local function SortedNumericKeys(source)
+    local keys = {}
+    if type(source) ~= "table" then return keys end
+
+    for key in pairs(source) do
+        if type(key) == "number" then
+            keys[#keys + 1] = key
+        end
+    end
+    table.sort(keys)
+    return keys
+end
+
+function QUI_GFCC:GetEditableBindingSetID()
+    local db = GetDB()
+    local cc = db and db.clickCast
+    return cc and GetEditableBindingSetID(cc) or nil
+end
+
+function QUI_GFCC:GetBindingSetSources()
+    local db = GetDB()
+    local cc = db and db.clickCast
+    if not cc then return {} end
+
+    local activeID = GetEditableBindingSetID(cc)
+    local sources = {}
+    local function AddSource(id, scope, bindings, specID, configID)
+        if type(bindings) ~= "table" or #bindings == 0 then return end
+        sources[#sources + 1] = {
+            id = id,
+            scope = scope,
+            specID = specID,
+            configID = configID,
+            count = #bindings,
+            isActive = id == activeID,
+        }
+    end
+
+    AddSource("shared", "shared", cc.bindings)
+
+    for _, specID in ipairs(SortedNumericKeys(cc.specBindings)) do
+        AddSource("spec:" .. specID, "spec", cc.specBindings[specID], specID)
+    end
+
+    for _, specID in ipairs(SortedNumericKeys(cc.loadoutBindings)) do
+        local loadouts = cc.loadoutBindings[specID]
+        for _, configID in ipairs(SortedNumericKeys(loadouts)) do
+            AddSource("loadout:" .. specID .. ":" .. configID,
+                "loadout", loadouts[configID], specID, configID)
+        end
+    end
+
+    return sources
+end
+
+function QUI_GFCC:CopyBindingsFrom(sourceID)
+    local db = GetDB()
+    local cc = db and db.clickCast
+    if not cc then return false, "Click-cast settings unavailable" end
+
+    local source = GetBindingSetByID(cc, sourceID)
+    if type(source) ~= "table" then return false, "Binding set not found" end
+
+    local target = self:GetEditableBindings()
+    if source == target then return false, "Cannot copy a binding set onto itself" end
+
+    local copied = DeepCopy(source)
+    wipe(target)
+    for index, binding in ipairs(copied) do
+        target[index] = binding
+    end
+
+    if not InCombatLockdown() then
+        self:RefreshBindings()
+    else
+        self.pendingRefresh = true
+    end
+    return true, #target
+end
+
 function QUI_GFCC:AddBinding(binding)
     if not binding then return false, "No binding specified" end
     if not binding.button and not binding.key then return false, "No button or key specified" end
@@ -1240,8 +1389,6 @@ local function RunRootSpellMigration()
 
     cc.rootSpellMigrationDone = true
 end
-
-local DeepCopy = ns.Helpers.DeepCopy
 
 function MigrateProfileClickCastToChar()
     local QUI = _G.QUI
@@ -1401,7 +1548,6 @@ eventFrame:SetScript("OnEvent", function(self, event)
             rosterDebounceTimer = nil
             if not InCombatLockdown() then
                 QUI_GFCC:RegisterAllFrames()
-                QUI_GFCC:RegisterUnitFrames()
             else
                 QUI_GFCC.pendingRefresh = true
             end

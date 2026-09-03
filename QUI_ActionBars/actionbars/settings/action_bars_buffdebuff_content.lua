@@ -148,7 +148,7 @@ end
 local function BuildBuffDebuffTab(tabContent)
     local settings = GetBuffBordersSettings()
     if not settings then
-        local label = tabContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local label = tabContent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         label:SetPoint("TOPLEFT", 15, -15)
         label:SetPoint("RIGHT", tabContent, "RIGHT", -15, 0)
         label:SetJustifyH("LEFT")

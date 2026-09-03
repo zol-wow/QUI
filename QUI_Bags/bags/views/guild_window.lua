@@ -1,7 +1,7 @@
 -- luacheck: read globals MAX_GUILDBANK_TABS QueryGuildBankLog QueryGuildBankTab GetGuildBankTabCost
 -- luacheck: read globals ACCEPT CANCEL BuyGuildBankTab SetGuildBankTabInfo StaticPopup_OnClick
--- luacheck: read globals DepositGuildBankMoney CanWithdrawGuildBankMoney WithdrawGuildBankMoney
--- luacheck: read globals UNKNOWN NORMAL_FONT_COLOR_CODE GUILD_BANK_LOG_TIME RecentTimeDate
+-- luacheck: read globals CanWithdrawGuildBankMoney InCombatLockdown StaticPopup_Hide
+-- luacheck: read globals UNKNOWN HIGHLIGHT_FONT_COLOR_CODE GUILD_BANK_LOG_TIME RecentTimeDate
 -- luacheck: read globals GetNumGuildBankTransactions GetGuildBankTransaction
 -- luacheck: read globals GUILDBANK_DEPOSIT_FORMAT GUILDBANK_WITHDRAW_FORMAT GetGuildBankTabInfo
 -- luacheck: read globals GUILDBANK_MOVE_FORMAT GUILDBANK_LOG_QUANTITY
@@ -168,21 +168,30 @@ local function ShowRenamePopup(entry)
     StaticPopup_Show("QUI_GUILDBANK_RENAME_TAB")
 end
 
+local function HideMoneyPopups()
+    StaticPopup_Hide("GUILDBANK_DEPOSIT")
+    StaticPopup_Hide("GUILDBANK_WITHDRAW")
+end
+
 local function ShowMoneyPopup(kind)
-    Bags.Chassis.ShowMoneyPopup("QUI_GUILDBANK_MONEY", kind, function(depositing, amount)
-        if depositing then
-            DepositGuildBankMoney(amount)
-        else
-            if CanWithdrawGuildBankMoney() then
-                WithdrawGuildBankMoney(amount)
-            end
-        end
-    end)
+    if InCombatLockdown() then return end
+    local key = kind == "deposit" and "GUILDBANK_DEPOSIT" or "GUILDBANK_WITHDRAW"
+    StaticPopup_Hide(kind == "deposit" and "GUILDBANK_WITHDRAW" or "GUILDBANK_DEPOSIT")
+    if StaticPopup_Visible(key) then
+        StaticPopup_Hide(key)
+    else
+        StaticPopup_Show(key)
+    end
+end
+
+function GuildWindow.CanWithdrawMoney(bankMoney, withdrawLimit, permitted, inCombat)
+    return not inCombat and permitted and bankMoney > 0
+        and (withdrawLimit == -1 or withdrawLimit > 0)
 end
 
 local function ColorName(name)
     name = name or UNKNOWN or "Unknown"
-    return (NORMAL_FONT_COLOR_CODE or "|cffffd200") .. name
+    return (HIGHLIGHT_FONT_COLOR_CODE or "|cffffffff") .. name
         .. (FONT_COLOR_CODE_CLOSE or "|r")
 end
 
@@ -410,6 +419,7 @@ local function EnsureWindow()
         onClose = function(w)
             w:SetScript("OnUpdate", nil)
             w._updateScheduled = false
+            HideMoneyPopups()
             if Bags.GuildTakeover and Bags.GuildTakeover.IsLive() then
                 Bags.GuildTakeover.UserClosedWindow()
             end
@@ -589,6 +599,7 @@ end
 
 local function RenderFooter()
     if not liveMode then
+        HideMoneyPopups()
         win._guildMoney:Hide()
         win._withdrawLimit:Hide()
         win._depositBtn:Hide()
@@ -597,6 +608,7 @@ local function RenderFooter()
         return
     end
     local money = GetGuildBankMoney()
+    local limit = GetGuildBankWithdrawMoney()
     if GetMoneyString then
         win._guildMoney:SetText(GetMoneyString(money, true))
     else
@@ -606,7 +618,6 @@ local function RenderFooter()
     if selectedTab == "all" then
         win._withdrawLimit:Hide()
     else
-        local limit = GetGuildBankWithdrawMoney()
         if limit == -1 then
             win._withdrawLimit:SetText(ns.L["Limit: none"])
         elseif GetMoneyString then
@@ -616,6 +627,15 @@ local function RenderFooter()
         end
         win._withdrawLimit:Show()
     end
+    local inCombat = InCombatLockdown()
+    if inCombat then HideMoneyPopups() end
+    local canDeposit = not inCombat
+    local canWithdraw = GuildWindow.CanWithdrawMoney(
+        money, limit, CanWithdrawGuildBankMoney(), inCombat)
+    win._depositBtn:SetEnabled(canDeposit)
+    win._depositBtn:SetAlpha(canDeposit and 1 or 0.5)
+    win._withdrawBtn:SetEnabled(canWithdraw)
+    win._withdrawBtn:SetAlpha(canWithdraw and 1 or 0.5)
     win._depositBtn:Show()
     win._withdrawBtn:Show()
     win._logsBtn._label:SetText(bodyMode == "log" and ns.L["Items"] or ns.L["Logs"])

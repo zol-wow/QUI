@@ -7,13 +7,31 @@ local max = math.max
 local ipairs = ipairs
 
 local PlayerSpellsUtil = _G.PlayerSpellsUtil
-local ToggleStoreUI = _G.ToggleStoreUI
 local ToggleProfessionsBook = _G.ToggleProfessionsBook
 local ToggleQuestLog = _G.ToggleQuestLog
 local ToggleEncounterJournal = _G.ToggleEncounterJournal
 local C_Texture = _G.C_Texture
 
 local ATLAS_PREFIX = "UI-HUD-MicroMenu-"
+
+local function ToggleStore()
+    local kiosk = _G.Kiosk
+    if _G.DISALLOW_FRAME_TOGGLING or (kiosk and kiosk.IsEnabled()) then return end
+
+    local useCatalogShop = _G.C_CatalogShop and _G.C_CatalogShop.IsShop2Enabled()
+    local frame = useCatalogShop and _G.CatalogShopFrame or _G.StoreFrame
+    if not frame then return end
+
+    local shown = frame:GetAttribute("isshown")
+    if not shown then
+        local glue = _G.C_Glue
+        if not (glue and glue.IsOnGlueScreen()) then
+            _G.securecall("CloseAllWindows")
+        end
+        frame:SetAttribute("contextkey", "StoreMicroButton")
+    end
+    frame:SetAttribute("action", shown and "Hide" or "Show")
+end
 
 local BUTTONS = {
     {
@@ -62,7 +80,7 @@ local BUTTONS = {
     },
     {
         key = "shop", label = ns.L["Shop"], atlas = "Shop",
-        onClick = function() ToggleStoreUI() end,
+        onClick = ToggleStore,
     },
     {
         key = "help", label = ns.L["Support"], atlas = "GameMenu",

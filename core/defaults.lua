@@ -280,6 +280,7 @@ local defaults = {
             autoDeclineDuel = false,
             autoDeclinePetBattle = false,
             autoRelease = "off",
+            blockReleaseInRaid = false,
             audioOutputDevice = "",
             autoUnwrapCollections = false,
             autoConfirmSocketReplace = false,
@@ -294,6 +295,11 @@ local defaults = {
                 fontSize = 24,
                 offsetX = 0,
                 offsetY = 220,
+                showKillingBlow = true,
+                showKiller = false,
+                classColorName = true,
+                instanceOnly = false,
+                duration = 3,
             },
             healerMana = {
                 enabled = false,
@@ -545,7 +551,7 @@ local defaults = {
 
         alts = {
             enabled = true,
-            window = { point = "CENTER", x = 0, y = 0, width = 920, height = 540 },
+            window = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0, width = 920, height = 540 },
             columns = {
                 ilvl = true, gold = true, played = true, rested = true,
                 zone = true, lastSeen = true, professions = true,
@@ -563,7 +569,18 @@ local defaults = {
                 refreshRateIdle      = 2.0,
                 showPinnedSelf       = true,
                 showHoverTooltip     = true,
+                hoverTooltipScale    = 100,
+                showAllBreakdownSpells = true,
+                showSpellTooltips    = true,
                 breakdownAnchor      = "row",
+                breakoutLayout       = {
+                    width = 1100,
+                    height = 640,
+                    leftWidth = 220,
+                    middleWidth = 500,
+                    playersHeight = 360,
+                    spellsHeight = 390,
+                },
                 combineAbsorbsIntoHealing = true,
                 shortenNames = true,
                 autoResetOnChallengeStart = true,
@@ -611,6 +628,10 @@ local defaults = {
                         size            = { w = 240, h = 180 },
                         hidden          = false,
                         name            = "",
+                        autoCurrentOnCombat = false,
+                        syncSegments    = false,
+                        mythicStartDMType = false,
+                        hideTimer       = false,
                     },
                 },
                 windowCount   = 1,
@@ -842,6 +863,7 @@ local defaults = {
                 dormantSpells = {},
                 spellOverrides = {},
                 iconDisplayMode = "always",
+                pressedEffect = "qui",
                 containerType = "cooldown",
                 greyOutInactive = false,
                 greyOutInactiveBuffs = false,
@@ -928,6 +950,7 @@ local defaults = {
                 dormantSpells = {},
                 spellOverrides = {},
                 iconDisplayMode = "always",
+                pressedEffect = "qui",
                 containerType = "cooldown",
                 greyOutInactive = false,
                 greyOutInactiveBuffs = false,
@@ -1058,6 +1081,7 @@ local defaults = {
                     dormantSpells = {},
                     spellOverrides = {},
                     iconDisplayMode = "always",
+                    pressedEffect = "qui",
                 },
                 utility = {
                     name = "Utility",
@@ -1105,6 +1129,7 @@ local defaults = {
                     dormantSpells = {},
                     spellOverrides = {},
                     iconDisplayMode = "always",
+                    pressedEffect = "qui",
                 },
                 buff = {
                     name = "Buff Icons",
@@ -2927,6 +2952,7 @@ local defaults = {
                     dispelOverlay = {
                         enabled = true, scope = "PLAYER_DISPELLABLE",
                         opacity = 0.8, fillOpacity = 0.18, borderSize = 3,
+                        gradientStartOpacity = 1, gradientEndOpacity = 0,
                         showIcon = false, iconSize = 20, iconOpacity = 1,
                         iconAnchor = "TOPRIGHT", iconOffsetX = 0, iconOffsetY = 0,
                         colors = {
@@ -3084,6 +3110,7 @@ local defaults = {
                     dispelOverlay = {
                         enabled = true, scope = "PLAYER_DISPELLABLE",
                         opacity = 0.8, fillOpacity = 0.18, borderSize = 3,
+                        gradientStartOpacity = 1, gradientEndOpacity = 0,
                         showIcon = false, iconSize = 20, iconOpacity = 1,
                         iconAnchor = "TOPRIGHT", iconOffsetX = 0, iconOffsetY = 0,
                         colors = {
@@ -3163,6 +3190,7 @@ local defaults = {
 
         brzCounter = {
             enabled = true,
+            hideWhenUnavailable = false,
             width = 50,
             height = 50,
             fontSize = 14,
@@ -3312,6 +3340,21 @@ local defaults = {
             currencyEnabled = true,
             currencyShowSession = true,
             currencyShowWeekly = true,
+        },
+
+        incomingCasts = {
+            enabled = false,
+            iconSize = 40,
+            maxIcons = 5,
+            spacing = 4,
+            growDirection = "CENTER",
+            collapseGaps = true,
+            showSwipe = true,
+            reverseSwipe = true,
+            showCooldownText = false,
+            borderSize = 1,
+            borderColorSource = "inherit",
+            borderColor = { 0, 0, 0, 1 },
         },
 
         cooldownSwipe = {
@@ -3733,7 +3776,25 @@ local defaults = {
             },
         },
 
-        auraDisplays = { enabled = true },
+        auraDisplays = {
+            enabled = true,
+            hudVisibility = {
+                showAlways = true,
+                showWhenTargetExists = false,
+                showInCombat = false,
+                showInGroup = false,
+                showInInstance = false,
+                showOnMouseover = false,
+                showWhenMounted = false,
+                fadeDuration = 0.2,
+                fadeOutAlpha = 0,
+                hideWhenMounted = false,
+                hideWhenInVehicle = false,
+                hideWhenFlying = false,
+                hideWhenSkyriding = false,
+                dontHideInDungeonsRaids = false,
+            },
+        },
 
         totemBar = {
             enabled = false,
@@ -4266,6 +4327,13 @@ local defaults = {
                 hideWithParent = false, keepInPlace = true,
                 widthAdjust = 0, heightAdjust = 0,
             },
+            incomingCasts = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -180,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = true,
+                widthAdjust = 0, heightAdjust = 0,
+            },
             readyCheck = {
                 point = "CENTER", parent = "screen", relative = "CENTER",
                 offsetX = 0, offsetY = 0,
@@ -4343,6 +4411,12 @@ local defaults = {
             _version = 1,
             _updatedAt = 0,
             entries = {},
+        },
+        profileFeaturePins = {
+            _version = 3,
+            profiles = {},
+            sources = {},
+            optOuts = {},
         },
         mailContacts = {},
         spellScanner = {

@@ -6,7 +6,7 @@ https://www.wowace.com/projects/libbuttonglow-1-0
 -- luacheck: globals CreateFromMixins ObjectPoolMixin CreateTexturePool CreateFramePool
 
 local MAJOR_VERSION = "LibCustomGlow-1.0"
-local MINOR_VERSION = 25
+local MINOR_VERSION = 26
 if not LibStub then error(MAJOR_VERSION .. " requires LibStub.") end
 local lib, oldversion = LibStub:NewLibrary(MAJOR_VERSION, MINOR_VERSION)
 if not lib then return end
@@ -120,13 +120,22 @@ local FramePoolResetter = function(framePool,frame)
     frame:ClearAllPoints()
 end
 local GlowFramePool = CreateFramePool("Frame",GlowParent,nil,FramePoolResetter)
+local RestrictedGlowFramePool = CreateFramePool(
+    "Frame", GlowParent, "DisableUntrustedLayoutScriptsTemplate", FramePoolResetter)
 lib.GlowFramePool = GlowFramePool
+lib.RestrictedGlowFramePool = RestrictedGlowFramePool
+
+local function ReleaseGlowFrame(frame)
+    (frame._quiGlowFramePool or GlowFramePool):Release(frame)
+end
 
 local function addFrameAndTex(r,color,name,key,N,xOffset,yOffset,texture,texCoord,desaturated,frameLevel)
     key = key or ""
 	frameLevel = frameLevel or 8
     if not r[name..key] then
-        r[name..key] = GlowFramePool:Acquire()
+        local pool = r._quiLayoutRestricted and RestrictedGlowFramePool or GlowFramePool
+        r[name..key] = pool:Acquire()
+        r[name..key]._quiGlowFramePool = pool
         r[name..key]:SetParent(r)
         r[name..key].name = name..key
     end
@@ -353,7 +362,7 @@ function lib.PixelGlow_Stop(r,key)
     if not r["_PixelGlow"..key] then
         return false
     else
-        GlowFramePool:Release(r["_PixelGlow"..key])
+        ReleaseGlowFrame(r["_PixelGlow"..key])
     end
 end
 
@@ -450,7 +459,7 @@ function lib.AutoCastGlow_Stop(r,key)
     if not r["_AutoCastGlow"..key] then
         return false
     else
-        GlowFramePool:Release(r["_AutoCastGlow"..key])
+        ReleaseGlowFrame(r["_AutoCastGlow"..key])
     end
 end
 
@@ -469,7 +478,14 @@ local function ButtonGlowResetter(framePool,frame)
     frame:ClearAllPoints()
 end
 local ButtonGlowPool = CreateFramePool("Frame",GlowParent,nil,ButtonGlowResetter)
+local RestrictedButtonGlowPool = CreateFramePool(
+    "Frame", GlowParent, "DisableUntrustedLayoutScriptsTemplate", ButtonGlowResetter)
 lib.ButtonGlowPool = ButtonGlowPool
+lib.RestrictedButtonGlowPool = RestrictedButtonGlowPool
+
+local function ReleaseButtonGlow(frame)
+    (frame._quiGlowFramePool or ButtonGlowPool):Release(frame)
+end
 
 local function CreateScaleAnim(group, target, order, duration, x, y, delay)
     local scale = group:CreateAnimation("Scale")
@@ -541,7 +557,7 @@ end
 local function bgHide(self)
     if self.animOut:IsPlaying() then
         self.animOut:Stop()
-        ButtonGlowPool:Release(self)
+        ReleaseButtonGlow(self)
     end
 end
 
@@ -625,7 +641,7 @@ local function configureButtonGlow(f,alpha)
     CreateAlphaAnim(f.animOut, "ants",          1, 0.2, alpha, 0, nil, false)
     CreateAlphaAnim(f.animOut, "outerGlowOver", 2, 0.2, alpha, 0, nil, false)
     CreateAlphaAnim(f.animOut, "outerGlow",     2, 0.2, alpha, 0, nil, false)
-    f.animOut:SetScript("OnFinished", function(self) ButtonGlowPool:Release(self:GetParent())  end)
+    f.animOut:SetScript("OnFinished", function(self) ReleaseButtonGlow(self:GetParent()) end)
 
     f:SetScript("OnHide", bgHide)
 end
@@ -706,7 +722,9 @@ function lib.ButtonGlow_Start(r,color,frequency,frameLevel)
         end
         f.throttle = throttle
     else
-        local f, new = ButtonGlowPool:Acquire()
+        local pool = r._quiLayoutRestricted and RestrictedButtonGlowPool or ButtonGlowPool
+        local f, new = pool:Acquire()
+        f._quiGlowFramePool = pool
         if new then
             configureButtonGlow(f,color and color[4] or 1)
         else
@@ -754,11 +772,11 @@ function lib.ButtonGlow_Stop(r)
             -- Do nothing the animOut finishing will release
         elseif r._ButtonGlow.animIn:IsPlaying() then
             r._ButtonGlow.animIn:Stop()
-            ButtonGlowPool:Release(r._ButtonGlow)
+            ReleaseButtonGlow(r._ButtonGlow)
         elseif r:IsVisible() then
             r._ButtonGlow.animOut:Play()
         else
-            ButtonGlowPool:Release(r._ButtonGlow)
+            ReleaseButtonGlow(r._ButtonGlow)
         end
     end
 end
@@ -782,7 +800,14 @@ local function ProcGlowResetter(framePool, frame)
 end
 
 local ProcGlowPool = CreateFramePool("Frame", GlowParent, nil, ProcGlowResetter)
+local RestrictedProcGlowPool = CreateFramePool(
+    "Frame", GlowParent, "DisableUntrustedLayoutScriptsTemplate", ProcGlowResetter)
 lib.ProcGlowPool = ProcGlowPool
+lib.RestrictedProcGlowPool = RestrictedProcGlowPool
+
+local function ReleaseProcGlow(frame)
+    (frame._quiGlowFramePool or ProcGlowPool):Release(frame)
+end
 
 local function InitProcGlow(f)
     f.ProcStart = f:CreateTexture(nil, "ARTWORK")
@@ -924,7 +949,9 @@ function lib.ProcGlow_Start(r, options)
     if r[key] then
         f = r[key]
     else
-        f, new = ProcGlowPool:Acquire()
+        local pool = r._quiLayoutRestricted and RestrictedProcGlowPool or ProcGlowPool
+        f, new = pool:Acquire()
+        f._quiGlowFramePool = pool
         if new then
             InitProcGlow(f)
         end
@@ -947,7 +974,7 @@ function lib.ProcGlow_Stop(r, key)
     key = key or ""
     local f = r["_ProcGlow" .. key]
     if f then
-        ProcGlowPool:Release(f)
+        ReleaseProcGlow(f)
     end
 end
 

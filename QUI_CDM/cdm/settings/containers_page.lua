@@ -219,6 +219,12 @@ local GLOW_TYPE_OPTIONS = {
     { value = "Proc Glow", text = ns.L["Proc Glow"] },
 }
 
+local PRESSED_EFFECT_OPTIONS = {
+    { value = "off", text = ns.L["Off"] },
+    { value = "blizzard", text = ns.L["Blizzard Default"] },
+    { value = "qui", text = ns.L["QUI"] },
+}
+
 local DISPLAY_MODE_OPTIONS = {
     { value = "always", text = ns.L["Always"] },
     { value = "active", text = ns.L["Active Only"] },
@@ -371,7 +377,7 @@ local function RenderUnavailableLabel(sectionHost, text)
     label:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", -10, -10)
     label:SetJustifyH("LEFT")
     label:SetText(text)
-    label:SetTextColor(0.6, 0.6, 0.6, 1)
+    label:SetTextColor(1, 1, 1, 0.6)
     return 60
 end
 
@@ -420,7 +426,10 @@ local function ResolveTrackerDB(containerKey)
         return nil
     end
 
-    return ncdm[containerKey] or (ncdm.containers and ncdm.containers[containerKey]) or nil
+    if IsBuiltIn(containerKey) then
+        return ncdm[containerKey]
+    end
+    return ncdm.containers and ncdm.containers[containerKey] or nil
 end
 
 local function RefreshKeybinds()
@@ -459,6 +468,16 @@ local function RefreshSwipe()
     PokePreview()
 end
 
+local function RefreshCooldownIconAuraPhase()
+    RefreshSwipe()
+    if _G.QUI_RefreshNCDM then
+        _G.QUI_RefreshNCDM(true)
+    end
+    if ns.QUI_RefreshCDMReanchor then
+        ns.QUI_RefreshCDMReanchor()
+    end
+end
+
 local function RefreshCooldownEffects()
     if _G.QUI_RefreshCooldownEffects then
         _G.QUI_RefreshCooldownEffects()
@@ -466,16 +485,28 @@ local function RefreshCooldownEffects()
     PokePreview()
 end
 
-local function RefreshGlows()
+local function RefreshGlows(containerKey)
+    if containerKey then
+        RefreshContainer(containerKey)
+    end
     if _G.QUI_RefreshCustomGlows then
         _G.QUI_RefreshCustomGlows()
     end
-    PokePreview()
+    if not containerKey then
+        PokePreview()
+    end
 end
 
 local function RefreshHighlighter()
     if _G.QUI_RefreshCooldownHighlighter then
         _G.QUI_RefreshCooldownHighlighter()
+    end
+    PokePreview()
+end
+
+local function RefreshPressedEffect()
+    if ns.QUI_RefreshCDMPressedEffect then
+        ns.QUI_RefreshCDMPressedEffect()
     end
     PokePreview()
 end
@@ -510,7 +541,7 @@ local function RenderInfoMessage(sectionHost, ctx, tabKey, text)
     label:SetJustifyH("LEFT")
     label:SetJustifyV("TOP")
     label:SetText(text)
-    label:SetTextColor(0.75, 0.75, 0.75, 1)
+    label:SetTextColor(1, 1, 1, 0.75)
 
     local height = label.GetStringHeight and label:GetStringHeight() or 0
     if type(height) ~= "number" or height <= 0 then
@@ -1823,6 +1854,30 @@ local function RenderPerSpecSection(sectionHost, ctx)
     return builder.Height()
 end
 
+local function RenderPressedEffectSection(builder, gui, optionsAPI, containerKey)
+    local pressedDB = ResolveTrackerDB(containerKey)
+    local pressedShape = ns.CDMShared and ns.CDMShared.GetContainerShape
+        and ns.CDMShared.GetContainerShape(containerKey, pressedDB) or "icon"
+    if type(pressedDB) ~= "table" or pressedShape ~= "icon" then return end
+
+    if pressedDB.pressedEffect == true then
+        pressedDB.pressedEffect = "qui"
+    elseif pressedDB.pressedEffect == false then
+        pressedDB.pressedEffect = "off"
+    elseif pressedDB.pressedEffect == nil then
+        pressedDB.pressedEffect = "qui"
+    end
+
+    builder.Header(ns.L["Pressed Effect"])
+    local pressedCard = builder.Card()
+    local pressedDropdown = gui:CreateFormDropdown(pressedCard.frame, nil, PRESSED_EFFECT_OPTIONS, "pressedEffect", pressedDB, RefreshPressedEffect, {
+        description = ns.L["Visual response when a button is pressed. Blizzard Default replays the stock animation; QUI swaps in a subtle overlay; Off disables both."],
+    })
+    pressedCard.AddRow(optionsAPI.BuildSettingRow(pressedCard.frame, ns.L["Pressed Effect"], pressedDropdown))
+    builder.CloseCard(pressedCard)
+    builder.Spacer(10)
+end
+
 local function RenderEffectsSection(sectionHost, ctx)
     local containerKey = ResolveContainerKey(ctx)
     local containerType = ResolveContainerType(containerKey)
@@ -1939,7 +1994,7 @@ local function RenderEffectsSection(sectionHost, ctx)
     local buffSwipeCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showBuffSwipe", effectsCtx.swipeDB, RefreshSwipe, {
         description = ns.L["Play a swipe animation on buff/debuff icons to represent remaining duration."],
     })
-    local cooldownIconAuraPhaseCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showCooldownIconAuraPhase", effectsCtx.swipeDB, RefreshSwipe, {
+    local cooldownIconAuraPhaseCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showCooldownIconAuraPhase", effectsCtx.swipeDB, RefreshCooldownIconAuraPhase, {
         description = ns.L["Let cooldown icons show their linked buff/debuff phase before switching to recharge or cooldown."],
     })
     local rechargeEdgeCheckbox = gui:CreateFormCheckbox(swipeCard.frame, nil, "showRechargeEdge", effectsCtx.swipeDB, RefreshSwipe, {
@@ -2030,6 +2085,9 @@ local function RenderEffectsSection(sectionHost, ctx)
     local glowXOffsetKey = effectsCtx.glowPrefix .. "XOffset"
     local glowYOffsetKey = effectsCtx.glowPrefix .. "YOffset"
     local glowWidgets = {}
+    local function RefreshGlowEligibility()
+        RefreshGlows(containerKey)
+    end
     local function UpdateGlowWidgetStates()
         local enabled = effectsCtx.glowDB[glowEnabledKey] ~= false
         local glowType = effectsCtx.glowDB[glowTypeKey] or "Pixel Glow"
@@ -2049,15 +2107,15 @@ local function RenderEffectsSection(sectionHost, ctx)
         if glowWidgets.yOffsetRow then glowWidgets.yOffsetRow:SetEnabled(enabled and not isButton and not isTexture) end
     end
     local glowEnableCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, glowEnabledKey, effectsCtx.glowDB, function()
-        RefreshGlows()
+        RefreshGlowEligibility()
         UpdateGlowWidgetStates()
     end, {
         description = ns.L["Override the Blizzard proc glow with QUI's custom glow style for icons in this container."],
     })
-    local pandemicDebuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicDebuffKey, effectsCtx.glowDB, RefreshGlows, {
+    local pandemicDebuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicDebuffKey, effectsCtx.glowDB, RefreshGlowEligibility, {
         description = ns.L["Emit the custom glow during the pandemic refresh window (last ~30% remaining) of harmful auras like DoTs and debuffs."],
     })
-    local pandemicBuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicBuffKey, effectsCtx.glowDB, RefreshGlows, {
+    local pandemicBuffCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicBuffKey, effectsCtx.glowDB, RefreshGlowEligibility, {
         description = ns.L["Emit the custom glow during the pandemic refresh window (last ~30% remaining) of helpful auras like HoTs and self-buffs."],
     })
     glowWidgets.pandemicDebuffRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Pandemic Glow — Debuffs/DoTs"], pandemicDebuffCheckbox)
@@ -2224,6 +2282,8 @@ local function RenderEffectsSection(sectionHost, ctx)
             builder.Spacer(10)
         end
     end
+
+    RenderPressedEffectSection(builder, gui, optionsAPI, containerKey)
 
     builder.Header(ns.L["Cast Highlighter"])
     local highlighterCard = builder.Card()
