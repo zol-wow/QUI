@@ -253,7 +253,9 @@ function CDMReanchorBoot.BuildRuntime(env)
         if cd.SetUseAuraDisplayTime then cd:SetUseAuraDisplayTime(false) end
         if ns.CDMRenderers and ns.CDMRenderers.ApplyDurationObjectCooldown then
             ns.CDMRenderers.ApplyDurationObjectCooldown(cd, duration, true, false)
-        elseif cd.SetCooldownFromDurationObject then
+        elseif cd.SetCooldownFromDurationObject
+            and (not ns.Helpers or not ns.Helpers.CanMutateCooldown
+                or ns.Helpers.CanMutateCooldown(cd)) then
             cd:SetCooldownFromDurationObject(duration, true)
         end
     end

@@ -861,7 +861,7 @@ local function UpdateAbilityIcon()
 
     local cooldownApplied = ApplyCooldownFromSpell(abilityIconCooldown, WHIRLING_SURGE_SPELL_ID)
     if not cooldownApplied then
-        abilityIconCooldown:Clear()
+        Helpers.ClearCooldown(abilityIconCooldown)
     end
 
     abilityIcon:Show()

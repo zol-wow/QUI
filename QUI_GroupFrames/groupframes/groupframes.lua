@@ -4687,6 +4687,10 @@ local function OnEvent(self, event, arg1, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         wipe(_range.cache)
         wipe(_range.cacheTime)
+        local AuraRender = ns.QUI_GroupFrameAuraRender
+        if AuraRender and AuraRender.FlushDeferredCooldowns then
+            AuraRender.FlushDeferredCooldowns()
+        end
 
         -- Combat-end true-up: indicator reads that were secret during combat
         -- have no change event to repaint them once they become readable, so

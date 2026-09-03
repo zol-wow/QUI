@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120105
 ## Title: |cFF30D1FFQUI|r Logger (dev)
 ## Notes: Dev-only event stream recorder. Not for release.
 ## Author: Zol and Drew

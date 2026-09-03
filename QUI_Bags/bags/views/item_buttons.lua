@@ -353,7 +353,11 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
         local r, g, b = GetQualityColor(entry.quality or 1)
         ApplyIconOverlay(button, entry)
         local start, duration, enable = C_Container.GetContainerItemCooldown(button:GetBagID(), button:GetID())
-        CooldownFrame_Set(button.Cooldown, start, duration, enable)
+        if not Helpers.CanMutateCooldown or Helpers.CanMutateCooldown(button.Cooldown) then
+            CooldownFrame_Set(button.Cooldown, start, duration, enable)
+        else
+            Bags.cooldownRefreshPending = true
+        end
         local live = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
         local junkCfg = GetSettings().behavior.junk
         local isJunk = (Bags.Junk and live

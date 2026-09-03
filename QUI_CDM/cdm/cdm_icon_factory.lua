@@ -22,6 +22,10 @@ local GetGeneralFont        = Helpers.GetGeneralFont
 local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 local GetEntryTexture       = Resolvers.GetEntryTexture
 local GetSpellTexture       = Resolvers.GetSpellTexture
+local ClearCooldown         = Helpers.ClearCooldown or function(cd)
+    if cd and cd.Clear then cd:Clear(); return true end
+    return false
+end
 
 local InCombatLockdown = InCombatLockdown
 local CreateFrame      = CreateFrame
@@ -457,7 +461,7 @@ function CDMIconFactory:AcquireIcon(parent, spellEntry, clickable, layoutRestric
         end
 
         if icon.Cooldown then
-            icon.Cooldown:Clear()
+            ClearCooldown(icon.Cooldown)
         end
         icon.StackText:SetText("")
         icon.StackText:Hide()
@@ -541,7 +545,7 @@ function CDMIconFactory:ReleaseIcon(icon)
         icon.Icon:SetDesaturated(false)
     end
     if icon.Cooldown then
-        icon.Cooldown:Clear()
+        ClearCooldown(icon.Cooldown)
     end
     icon.StackText:SetText("")
     icon.StackText:Hide()
@@ -586,7 +590,7 @@ end
 function CDMIconFactory.ReleaseForPreview(icon)
     if not icon or not icon._isPreview then return end
     icon:Hide()
-    if icon.Cooldown then icon.Cooldown:Clear() end
+    if icon.Cooldown then ClearCooldown(icon.Cooldown) end
     if icon.StackText then
         icon.StackText:SetText("")
         icon.StackText:Hide()
