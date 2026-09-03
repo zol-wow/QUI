@@ -83,7 +83,9 @@ function CDMReanchor:InstallAnchorGuard(frame)
     local function reassert(f, _point, relativeTo)
         local d = bridge._frameData[f]
         if not d or not d.overlayAnchor then
-            bridge._raw.SetAlpha(f, 0)
+            if d and d.sunk then
+                bridge._raw.SetAlpha(f, 0)
+            end
             return
         end
         local raw = bridge._raw

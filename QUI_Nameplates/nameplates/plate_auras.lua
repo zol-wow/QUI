@@ -28,6 +28,36 @@ local function GetAuraSkin()
     return _G.QUI and _G.QUI.AuraSkin
 end
 
+local function AttachFeederTint(slotFrame, element)
+    local container = slotFrame and slotFrame.GetParent and slotFrame:GetParent()
+    local plate = container and container.GetParent and container:GetParent()
+    local healthBar = plate and plate.healthBar
+    local fill = healthBar and healthBar.GetStatusBarTexture and healthBar:GetStatusBarTexture()
+    if not fill then return end
+
+    local cover = slotFrame._quiFeederTint
+    if not cover then
+        cover = slotFrame:CreateTexture(nil, "OVERLAY")
+        if cover.SetIgnoreParentAlpha then cover:SetIgnoreParentAlpha(true) end
+        slotFrame._quiFeederTint = cover
+    end
+
+    cover:ClearAllPoints()
+    cover:SetAllPoints(fill)
+    cover:SetTexture((fill.GetTexture and fill:GetTexture()) or "Interface\\Buttons\\WHITE8x8")
+    local color = element.color or { 1, 1, 1, 1 }
+    cover:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, 1)
+    cover:SetAlpha(color[4] or 1)
+    cover:Show()
+    slotFrame:SetFrameStrata(healthBar:GetFrameStrata())
+    slotFrame:SetFrameLevel((healthBar:GetFrameLevel() or 1) + 1)
+end
+
+local function DetachFeederTint(slotFrame)
+    local cover = slotFrame and slotFrame._quiFeederTint
+    if cover then cover:Hide() end
+end
+
 function NPAuras.DefaultNameplateBucket()
     local E = GetAuraElements()
     if not (E and E.NewFilterStripElement) then return {} end
@@ -117,6 +147,10 @@ ApplyElementPass = function(plate, allowCreate)
         cancelEligible = false,
         profileFor = function(element)
             return AuraGlue.ElementProfile(element)
+        end,
+        onContainerReady = function(container)
+            container._quiFeederAttach = AttachFeederTint
+            container._quiFeederDetach = DetachFeederTint
         end,
         anchorContainer = function(container, host, element, profile)
             container:ClearAllPoints()

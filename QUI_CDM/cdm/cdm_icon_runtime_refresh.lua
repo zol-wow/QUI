@@ -18,6 +18,15 @@ end
 local UPDATE_COOLDOWN = "cooldown"
 local UPDATE_FULL = "full"
 
+local function IsGlobalRecoveryCategory(category, isSecretValue)
+    if isSecretValue and isSecretValue(category) then
+        return false, true
+    end
+    local spellCooldownConsts = _G.Constants and _G.Constants.SpellCooldownConsts
+    return spellCooldownConsts
+        and category == spellCooldownConsts.GLOBAL_RECOVERY_CATEGORY
+end
+
 local runtimeRefreshStats
 local measureFn
 
@@ -129,6 +138,11 @@ end
 local function isItemEntry(entry)
     local entryType = entry and entry.type
     return entryType == "item" or entryType == "trinket" or entryType == "slot"
+        or entryType == "consumable"
+end
+
+local function isCustomCooldownEntry(entry)
+    return entry and entry._isCustomEntry == true and entry.kind == "cooldown"
 end
 
 local function resolveContainer(callbacks, entry, ncdm, ncdmContainers)
@@ -176,11 +190,61 @@ local function clearAuraDurationBinding(callbacks, icon)
     return true
 end
 
+local function clearCustomCooldownDurationBinding(callbacks, icon, entry)
+    if not isCustomCooldownEntry(entry) then return false end
+    if callbacks.clearDurationBinding then
+        callbacks.clearDurationBinding(icon)
+    else
+        icon._lastDurObjKey = nil
+        icon._lastDurObj = nil
+        icon._lastResolvedMode = nil
+        icon._lastResolvedSourceID = nil
+        icon._lastResolvedSpellID = nil
+    end
+    return true
+end
+
 local function endBatch(callbacks)
     if callbacks.endBatch then
         callbacks.endBatch()
     end
 end
+
+local function linkedSpellIDsMatch(callbacks, getLinkedSpellIDs, sourceID, spellIDs)
+    if sourceID == nil then return false end
+    local linkedIDs = getLinkedSpellIDs(sourceID)
+    if type(linkedIDs) ~= "table" then return false end
+    for _, linkedID in ipairs(linkedIDs) do
+        if spellIDs then
+            if spellIdentifierSetHas(callbacks, spellIDs, linkedID) then return true end
+        elseif linkedID ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+local function entryLinkedSpellIDsMatch(callbacks, icon, entry, spellIDs)
+    local getLinkedSpellIDs = callbacks.getLinkedSpellIDsForSpellID
+    if not getLinkedSpellIDs or not entry then return false end
+    if linkedSpellIDsMatch(callbacks, getLinkedSpellIDs,
+        icon and icon._runtimeSpellID, spellIDs) then return true end
+    if linkedSpellIDsMatch(callbacks, getLinkedSpellIDs, entry.overrideSpellID, spellIDs) then return true end
+    if linkedSpellIDsMatch(callbacks, getLinkedSpellIDs, entry.spellID, spellIDs) then return true end
+    return linkedSpellIDsMatch(callbacks, getLinkedSpellIDs, entry.id, spellIDs)
+end
+
+local function entryHasLinkedSpellIDs(callbacks, icon, entry)
+    local linked = entry and entry.linkedSpellIDs
+    if type(linked) == "table" then
+        for _, linkedID in ipairs(linked) do
+            if linkedID ~= nil then return true end
+        end
+    end
+    return entryLinkedSpellIDsMatch(callbacks, icon, entry)
+end
+
+local itemEntryMatchesAuraSpellIdentifierSet
 
 local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs)
     if not hasSpellIDs or not entry then return false end
@@ -195,10 +259,12 @@ local function entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, 
             if spellIdentifierSetHas(callbacks, spellIDs, linkedID) then return true end
         end
     end
-    return false
+
+    if itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs) then return true end
+    return entryLinkedSpellIDsMatch(callbacks, icon, entry, spellIDs)
 end
 
-local function itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs)
+itemEntryMatchesAuraSpellIdentifierSet = function(callbacks, entry, spellIDs, hasSpellIDs)
     if not hasSpellIDs or not (entry and callbacks.queryItemSpell) then return false end
     local itemID = callbacks.getItemIDForEntry and callbacks.getItemIDForEntry(entry)
     if normalizeSpellIdentifier(callbacks, itemID) == nil then return false end
@@ -313,6 +379,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     function controller:ApplyAuraScope(options)
         options = options or {}
         local includeItems = options.includeItems == true
+        local includeCustomCooldowns = options.includeCustomCooldowns == true
         local skipSelfAuraFn = options.skipSelfAuraIcons == true
             and callbacks.isDefinitivelySelfAuraIcon
             or nil
@@ -325,11 +392,17 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 if entry
                     and (isAuraEntry(callbacks, entry)
                         or icon._auraActive == true
-                        or (includeItems and isItemEntry(entry)))
+                        or (includeItems and isItemEntry(entry))
+                        or (includeCustomCooldowns and isCustomCooldownEntry(entry))
+                        or (includeCustomCooldowns and entryHasLinkedSpellIDs(callbacks, icon, entry)))
                     and not (skipSelfAuraFn and skipSelfAuraFn(icon)) then
-                    clearAuraDurationBinding(callbacks, icon)
+                    if not clearCustomCooldownDurationBinding(callbacks, icon, entry) then
+                        clearAuraDurationBinding(callbacks, icon)
+                    end
                     if controller:ApplyAuraScopedResolvedCooldown(icon, entry, editMode, ncdm, ncdmContainers, inCombatState) then
-                        if includeItems and isItemEntry(entry) then
+                        local auraEntry = isAuraEntry(callbacks, entry)
+                            or entry.kind == "aura" or entry.kind == "auraBar"
+                        if not auraEntry then
                             local containerDB = select(1, resolveContainer(callbacks, entry, ncdm, ncdmContainers))
                             if callbacks.updateContainerVisibility then
                                 callbacks.updateContainerVisibility(icon, entry, containerDB, editMode, inCombatState)
@@ -510,12 +583,18 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
-    function controller:ApplySpellID(eventSpellID, eventBaseSpellID)
+    function controller:ApplySpellID(eventSpellID, eventBaseSpellID, trustIsOnGCD,
+        eventCategory, eventItemID)
         local spellIDs = controller.applySpellIDScratch
         wipe(spellIDs)
         local hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventSpellID)
         hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventBaseSpellID) or hasSpellIDs
+        hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventCategory) or hasSpellIDs
+        hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventItemID) or hasSpellIDs
         if not hasSpellIDs then return false end
+
+        local normalizedCategory = normalizeSpellIdentifier(callbacks, eventCategory)
+        local normalizedItemID = normalizeSpellIdentifier(callbacks, eventItemID)
 
         local batchStarted = false
         local refreshed = false
@@ -526,6 +605,14 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
                 if entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs) then
+                    local entryCategory = normalizeSpellIdentifier(callbacks, entry and entry.id)
+                    if normalizedCategory and entryCategory == normalizedCategory
+                        and entry and entry.type == "consumable" then
+                        entry._runtimeItemID = normalizedItemID
+                        entry._runtimeSpellID = normalizeSpellIdentifier(callbacks, eventSpellID)
+                            or normalizeSpellIdentifier(callbacks, eventBaseSpellID)
+                        entry._runtimeBaseSpellID = normalizeSpellIdentifier(callbacks, eventBaseSpellID)
+                    end
                     if not batchStarted then
                         editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "spellID")
                         batchStarted = true
@@ -539,9 +626,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                                 setStackTextWrites(callbacks, true)
                                 stackTextWritesEnabled = true
                             end
-                            callbacks.updateIconCooldown(icon)
+                            callbacks.updateIconCooldown(icon, trustIsOnGCD == true)
                         elseif callbacks.applyResolvedCooldown then
-                            callbacks.applyResolvedCooldown(icon)
+                            callbacks.applyResolvedCooldown(icon, nil, trustIsOnGCD == true)
                         end
                         if callbacks.updateContainerVisibility then
                             callbacks.updateContainerVisibility(icon, entry, containerDB, editMode, inCombatState)
@@ -661,7 +748,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                         editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "auraDelta")
                         batchStarted = true
                     end
-                    clearAuraDurationBinding(callbacks, icon)
+                    if not clearCustomCooldownDurationBinding(callbacks, icon, entry) then
+                        clearAuraDurationBinding(callbacks, icon)
+                    end
                     if controller:ApplyAuraScopedResolvedCooldown(icon, entry, editMode, ncdm, ncdmContainers, inCombatState) then
                         refreshed = refreshed + 1
                     end
@@ -806,7 +895,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
     function controller:QueueResolvedCooldownForSpellID(eventSpellID, eventBaseSpellID)
         if not inCombat() then
-            controller:ApplySpellID(eventSpellID, eventBaseSpellID)
+            controller:ApplySpellID(eventSpellID, eventBaseSpellID, false)
             return
         end
 
@@ -843,6 +932,15 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if not inCombat() then
             controller:RunUsabilityRefresh()
             return
+        end
+
+        for _, pool in pairs(getIconPools(callbacks)) do
+            for _, icon in ipairs(pool) do
+                if icon and icon._showingGCDSwipe == true then
+                    controller:RunUsabilityRefresh()
+                    return
+                end
+            end
         end
 
         local state = controller.usabilityQueue
@@ -952,6 +1050,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if callbacks.chargeDebug then
             callbacks.chargeDebug(nil, "EVENT", event, "target-scope-refresh")
         end
+        if callbacks.refreshCustomAuraTargets then
+            callbacks.refreshCustomAuraTargets(event ~= "UNIT_FACTION")
+        end
         if callbacks.updateAllIconRanges then
             setResolveCallerTag("rangeTarget")
             callbacks.updateAllIconRanges()
@@ -976,7 +1077,11 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
         if not updateInfo or updateInfo.isFullUpdate then
             if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
-            controller:ApplyAuraScope({ includeItems = unit == "player", skipSelfAuraIcons = unit == "target" })
+            controller:ApplyAuraScope({
+                includeItems = unit == "player",
+                includeCustomCooldowns = isSelfAuraUnit(unit),
+                skipSelfAuraIcons = unit == "target",
+            })
             if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
         else
             local refreshed = controller:ApplyAuraInstances(unit, updateInfo) or 0
@@ -1024,7 +1129,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             controller:ApplyTargetScope(event)
             return
         end
-        if event == "PLAYER_SOFT_ENEMY_CHANGED" then
+        if event == "PLAYER_SOFT_ENEMY_CHANGED"
+            or event == "PLAYER_SOFT_FRIEND_CHANGED"
+            or event == "UNIT_FACTION" then
             controller:ApplyTargetScope(event)
             return
         end
@@ -1045,6 +1152,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
         if event == "PLAYER_REGEN_ENABLED" then
             controller:DrainDeferredFullRefresh()
+            if callbacks.refreshPendingSecureAttributes then
+                callbacks.refreshPendingSecureAttributes()
+            end
             return
         end
         if event == "UPDATE_MACROS" then
@@ -1110,6 +1220,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             return
         end
         if event == "BAG_UPDATE_DELAYED" or event == "ITEM_COUNT_CHANGED" then
+            if callbacks.invalidateConsumableCategoryItems then
+                callbacks.invalidateConsumableCategoryItems()
+            end
             controller:QueueItemScopeRefresh({ refreshRuntime = true })
             if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
             if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
@@ -1124,7 +1237,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         return controller:HandleFrameEvent(event, arg1, arg2, arg3, arg4, frame) -- @secret-safe: HandleFrameEvent probes isSecretValue(arg1) before the unit compare and normalizes arg3 through the secret-probing normalizeSpellIdentifier (round-13 hand-audit)
     end
 
-    function controller:HandleCooldownChanged(_, spellID, baseSpellID, kind)
+    function controller:HandleCooldownChanged(_, spellID, baseSpellID, kind, category, startRecoveryCategory, itemID)
         if not isRuntimeEnabled(callbacks) then return end
         if kind == "scanner_item" then
             controller:ApplyItemScope()
@@ -1133,12 +1246,38 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         elseif kind == "scanner_spell" then
             controller:ApplySpellScope()
         elseif kind == "refresh" then
-            local comparableSpellID = normalizeSpellIdentifier(callbacks, spellID) ~= nil
-            if comparableSpellID then
-                controller:ApplySpellID(spellID, baseSpellID)
-            elseif callbacks.scheduleUpdate then
+            local isGlobalRecovery, isOpaqueCategory = IsGlobalRecoveryCategory(
+                startRecoveryCategory, callbacks.isSecretValue)
+            if (isGlobalRecovery or isOpaqueCategory)
+                and callbacks.updateCooldownOnly then
+                local comparableSpellID = normalizeSpellIdentifier(callbacks, spellID) ~= nil
+                if comparableSpellID then
+                    controller:ApplySpellID(spellID, baseSpellID, true, category, itemID)
+                end
+                callbacks.updateCooldownOnly(true, true)
+                return
+            end
+            local normalizedCategory = normalizeSpellIdentifier(callbacks, category)
+            local normalizedItemID = normalizeSpellIdentifier(callbacks, itemID)
+            local categoryOpaque = category ~= nil and normalizedCategory == nil
+            local itemOpaque = itemID ~= nil and normalizedItemID == nil
+            local payloadlessCooldownRefresh = spellID == nil
+                and baseSpellID == nil
+                and category == nil
+                and startRecoveryCategory == nil
+                and itemID == nil
+            if categoryOpaque or itemOpaque then
+                if callbacks.scheduleUpdate then
+                    if runtimeRefreshStats then runtimeRefreshStats.refreshAllCooldownFallbacks = runtimeRefreshStats.refreshAllCooldownFallbacks + 1 end
+                    callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all", false)
+                end
+                return
+            end
+            local refreshed = controller:ApplySpellID(
+                spellID, baseSpellID, true, normalizedCategory, normalizedItemID)
+            if not refreshed and callbacks.scheduleUpdate then
                 if runtimeRefreshStats then runtimeRefreshStats.refreshAllCooldownFallbacks = runtimeRefreshStats.refreshAllCooldownFallbacks + 1 end
-                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all")
+                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "refresh_all", payloadlessCooldownRefresh)
             end
         elseif kind == "cast_start" then
             if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
@@ -1154,7 +1293,11 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             end
             controller:InvalidateGCDOnlyBindings()
             controller:InvalidateSpellCooldownBinding(spellID)
-            controller:ApplySpellID(spellID, nil)
+            if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
+                controller:ApplySpellID(spellID, nil, false)
+            elseif callbacks.scheduleUpdate then
+                callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "cast_succeeded")
+            end
             if callbacks.requestStackTextUpdate then
                 callbacks.requestStackTextUpdate()
             end
@@ -1166,14 +1309,15 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
-    function controller:HandleChargesChanged(_, spellID)
+    function controller:HandleChargesChanged(_, spellID, baseSpellID)
         if not isRuntimeEnabled(callbacks) then return end
         if callbacks.requestStackTextUpdate then
             callbacks.requestStackTextUpdate()
         end
-        if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
+        if normalizeSpellIdentifier(callbacks, spellID) ~= nil
+            or normalizeSpellIdentifier(callbacks, baseSpellID) ~= nil then
             if runtimeRefreshStats then runtimeRefreshStats.chargeCooldownSkips = runtimeRefreshStats.chargeCooldownSkips + 1 end
-            controller:QueueResolvedCooldownForSpellID(spellID, nil)
+            controller:QueueResolvedCooldownForSpellID(spellID, baseSpellID)
         else
             if callbacks.scheduleUpdate then
                 callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "charges")

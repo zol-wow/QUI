@@ -186,7 +186,7 @@ end
 _G.QUI_RefreshKeystoneColors = RefreshKeystoneColors
 
 if ns.Registry then
-    ns.Registry:Register("skinKeystone", {
+    ns.Registry:Register("skinKeystoneFrame", {
         refresh = _G.QUI_RefreshKeystoneColors,
         priority = 80,
         group = "skinning",

@@ -133,7 +133,6 @@ env.__declared.ResetButtonChargeCapabilityCache = true
 env.__declared.ResetAllChargeCapabilityCaches = true
 env.__declared.FlushChargeCapabilityVerdicts = true
 env.__declared.IsButtonInsideVisibleLayout = true
-env.__declared.MarkSpellIdMapDirty = true
 env.__declared.ScheduleUsabilityUpdate = true
 
 ActionBarsOwned.mirrorButtons = ActionBarsOwned.nativeButtons

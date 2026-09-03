@@ -101,8 +101,9 @@ local function IsInitialReanchorDone(key)
     return initialReanchorDoneByKey[key] == true
 end
 
-local function RefreshReanchoredBuiltin(boot, key, allowCachedBatch)
+local function RefreshReanchoredBuiltin(boot, key, allowCachedBatch, requestedKeys)
     if not (boot and boot.RefreshBuiltin) then return nil end
+    local refreshKeys = requestedKeys or REANCHOR_KEYS
     local result
     if boot.RefreshBuiltins then
         local counts
@@ -110,18 +111,26 @@ local function RefreshReanchoredBuiltin(boot, key, allowCachedBatch)
             and refreshAllReanchorBatchCounts then
             counts = refreshAllReanchorBatchCounts
         else
-            counts = boot:RefreshBuiltins(REANCHOR_KEYS) or {}
+            counts = boot:RefreshBuiltins(refreshKeys) or {}
             if refreshAllReanchorBatchActive then
                 refreshAllReanchorBatchCounts = counts
             end
         end
         result = counts[key] or 0
     else
-        result = boot:RefreshBuiltin(key)
+        if requestedKeys then
+            for i = 1, #refreshKeys do
+                local refreshKey = refreshKeys[i]
+                local count = boot:RefreshBuiltin(refreshKey)
+                if refreshKey == key then result = count end
+            end
+        else
+            result = boot:RefreshBuiltin(key)
+        end
     end
     if not IsCooldownViewerReady or IsCooldownViewerReady() then
-        if boot.RefreshBuiltins then
-            for i = 1, #REANCHOR_KEYS do MarkInitialReanchorDone(REANCHOR_KEYS[i]) end
+        if boot.RefreshBuiltins or requestedKeys then
+            for i = 1, #refreshKeys do MarkInitialReanchorDone(refreshKeys[i]) end
         else
             MarkInitialReanchorDone(key)
         end
@@ -144,13 +153,11 @@ local function GetTrackerSettings(trackerKey)
 
     local db = GetDB()
     if not db then return nil end
-    if db[trackerKey] then
+    if Shared and ((Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(trackerKey))
+        or (Shared.GetBuiltinContainerEntryKind and Shared.GetBuiltinContainerEntryKind(trackerKey))) then
         return db[trackerKey]
     end
-    if db.containers and db.containers[trackerKey] then
-        return db.containers[trackerKey]
-    end
-    return nil
+    return db.containers and db.containers[trackerKey] or nil
 end
 
 local function IsHUDAnchoredToCDM()
@@ -1139,10 +1146,36 @@ local function IsBarShape(viewerType)
     return GetContainerShape(viewerType) == "bar"
 end
 
-local function ShouldDeferContainerLayoutInCombat(trackerKey, settings)
-    if not InCombatLockdown() or inInitSafeWindow then
+local function ShouldDeferContainerLayoutInCombat(trackerKey, settings, runtimeVisibilityRelayout)
+    if not InCombatLockdown() then
         return false
     end
+
+    local auraRuns = ns.CDMCustomAuraRuns
+    local owner = containers[trackerKey]
+    local hasActiveOverlays = auraRuns and auraRuns.HasAuraOverlays
+        and auraRuns.HasAuraOverlays(owner)
+    if hasActiveOverlays then return true end
+    local hasPreparedOverlays = auraRuns and auraRuns.HasPreparedAuraOverlays
+        and auraRuns.HasPreparedAuraOverlays(owner)
+    if hasPreparedOverlays then return true end
+    local hasActiveRuns = auraRuns and auraRuns.HasActiveRuns
+        and auraRuns.HasActiveRuns(owner)
+    if hasActiveRuns then
+        local pool = ns.CDMIconFactory and ns.CDMIconFactory.GetIconPool
+            and ns.CDMIconFactory:GetIconPool(trackerKey)
+        if runtimeVisibilityRelayout
+            and auraRuns.CanRelayoutInCombat
+            and auraRuns.CanRelayoutInCombat(owner, settings, pool) then
+            return false
+        end
+        return true
+    end
+    local usesAuraRuns = auraRuns and auraRuns.ShouldUseSettings(settings, trackerKey)
+        and auraRuns.HasAuraEntries(settings, trackerKey)
+    if usesAuraRuns then return true end
+
+    if inInitSafeWindow then return false end
 
     if trackerKey == "essential" or trackerKey == "utility" then
         return true
@@ -1204,6 +1237,7 @@ local function GetDefaultsByContainerType(containerType)
             dormantSpells = {},
             spellOverrides = {},
             iconDisplayMode = "always",
+            pressedEffect = "qui",
             showKeybinds = false,
             keybindTextSize = 12,
             keybindTextColor = { 1, 0.82, 0, 1 },
@@ -1290,13 +1324,13 @@ end
 
 function CDMContainers_API:GetContainers()
     local db = GetDB()
-    local ct = db and db.containers
-    if not ct then return {} end
+    if not db then return {} end
+    local ct = db.containers or {}
 
     local result = {}
     for _, key in ipairs(BUILTIN_KEYS) do
-        if ct[key] then
-            result[#result + 1] = { key = key, settings = ct[key] }
+        if db[key] then
+            result[#result + 1] = { key = key, settings = db[key] }
         end
     end
     local customKeys = {}
@@ -1315,10 +1349,11 @@ end
 function CDMContainers_API:GetContainerSettings(key)
     local db = GetDB()
     if not db then return nil end
-    if db.containers and db.containers[key] then
-        return db.containers[key]
+    if Shared and ((Shared.IsBuiltinContainerKey and Shared.IsBuiltinContainerKey(key))
+        or (Shared.GetBuiltinContainerEntryKind and Shared.GetBuiltinContainerEntryKind(key))) then
+        return db[key]
     end
-    return db[key] or nil
+    return db.containers and db.containers[key] or nil
 end
 
 function CDMContainers_API:GetContainersByType(containerType)
@@ -1353,7 +1388,6 @@ function CDMContainers_API:CreateContainer(name, containerType)
 
     db.containers[key] = settings
 
-    db[key] = settings
 
     local frameName = "QUI_CDM_" .. key
     local frame = RegisterContainerFrame(key, CreateContainer(frameName))
@@ -2110,7 +2144,7 @@ CDMContainers_API.HUD_LAYERING = {
     },
 }
 
-local function LayoutContainer(trackerKey)
+local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
     if not IsCDMRuntimeEnabled() then
         return
     end
@@ -2125,8 +2159,12 @@ local function LayoutContainer(trackerKey)
     end
 
     local settings = GetTrackerSettings(trackerKey)
-    if ShouldDeferContainerLayoutInCombat(trackerKey, settings) then
+    if ShouldDeferContainerLayoutInCombat(trackerKey, settings, runtimeVisibilityRelayout) then
         specTrackingPendingRefresh = true
+        if not runtimeVisibilityRelayout and ns.CDMCustomAuraRuns
+            and ns.CDMCustomAuraRuns.InvalidatePreparedCombatRelayout then
+            ns.CDMCustomAuraRuns.InvalidatePreparedCombatRelayout(container)
+        end
         return
     end
 
@@ -2147,6 +2185,30 @@ local function LayoutContainer(trackerKey)
         return
     end
     applying[trackerKey] = true
+
+    if runtimeVisibilityRelayout and InCombatLockdown() then
+        local auraRuns = ns.CDMCustomAuraRuns
+        local pool = ns.CDMIconFactory and ns.CDMIconFactory.GetIconPool
+            and ns.CDMIconFactory:GetIconPool(trackerKey)
+        local metrics = auraRuns and auraRuns.RelayoutPreparedInCombat
+            and auraRuns.RelayoutPreparedInCombat(container, settings, pool)
+        local vs = viewerState[container]
+        if not (metrics and vs) then
+            specTrackingPendingRefresh = true
+            applying[trackerKey] = false
+            return
+        end
+        local maxRowWidth, proxyTotalHeight = ApplyViewerMetrics(vs, metrics, trackerKey)
+        if maxRowWidth > 0 and proxyTotalHeight > 0 then
+            if QUICore and QUICore.PixelRound then
+                maxRowWidth = QUICore:PixelRound(maxRowWidth, container)
+                proxyTotalHeight = QUICore:PixelRound(proxyTotalHeight, container)
+            end
+            container:SetSize(maxRowWidth, proxyTotalHeight)
+        end
+        applying[trackerKey] = false
+        return true
+    end
 
     local anchorHidden = false
     if _G.QUI_IsFrameHiddenByAnchor then
@@ -2252,6 +2314,10 @@ local function LayoutContainer(trackerKey)
     end
 
     if ns._cdmBoot and (trackerKey == "essential" or trackerKey == "utility") then
+        if runtimeVisibilityRelayout then
+            applying[trackerKey] = false
+            return
+        end
         RefreshReanchoredBuiltin(ns._cdmBoot, trackerKey, true)
         applying[trackerKey] = false
 
@@ -2284,8 +2350,23 @@ local function LayoutContainer(trackerKey)
         return
     end
 
-    local allIcons = ns.CDMIcons:BuildIcons(trackerKey, container)
+    local reuseOnly = runtimeVisibilityRelayout and InCombatLockdown()
+    local allIcons = ns.CDMIcons:BuildIcons(trackerKey, container, reuseOnly)
+    if not allIcons then
+        specTrackingPendingRefresh = true
+        applying[trackerKey] = false
+        return
+    end
     local totalCapacity = CDMLayout and CDMLayout.GetTotalIconCapacity and CDMLayout.GetTotalIconCapacity(settings) or 0
+    local auraRuns = ns.CDMCustomAuraRuns
+    if not InCombatLockdown() and auraRuns and auraRuns.ShouldUseSettings(settings, trackerKey)
+        and auraRuns.HasAuraEntries(settings, trackerKey)
+        and ns.CDMIcons.OnIconRowConfigApplied and CDMLayout.BuildRows then
+        local rowConfig = CDMLayout.BuildRows(settings)[1]
+        for i = 1, math.min(#allIcons, totalCapacity) do
+            ns.CDMIcons.OnIconRowConfigApplied(allIcons[i], rowConfig)
+        end
+    end
 
     local displayMode = settings.iconDisplayMode or "always"
     local effectiveDisplayMode = displayMode
@@ -2357,22 +2438,20 @@ local function LayoutContainer(trackerKey)
         end
     end
 
-    if #iconsToLayout == 0 then
-        applying[trackerKey] = false
-        return
-    end
-
     local minWidthEnabled, minWidth = GetHUDMinWidth()
     local applyHUDMinWidth = minWidthEnabled
         and (trackerKey == "essential" or trackerKey == "utility")
         and IsHUDAnchoredToCDM()
 
-    local layoutPlan = CDMLayout and CDMLayout.BuildIconLayout
+    local layoutPlan = #iconsToLayout > 0 and CDMLayout and CDMLayout.BuildIconLayout
         and CDMLayout.BuildIconLayout(settings, iconsToLayout, {
             applyHUDMinWidth = applyHUDMinWidth,
             minWidth = minWidth,
         })
     if not layoutPlan or not layoutPlan.metrics or #layoutPlan.placements == 0 then
+        if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.Apply then
+            ns.CDMCustomAuraRuns.Apply(container, nil, nil, nil, InCombatLockdown(), trackerKey)
+        end
         applying[trackerKey] = false
         return
     end
@@ -2400,6 +2479,11 @@ local function LayoutContainer(trackerKey)
         icon:Show()
 
         ns.CDMIcons.OnContainerIconPlaced(icon, rowConfig)
+    end
+
+    if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.Apply then
+        ns.CDMCustomAuraRuns.Apply(container, settings, layoutPlan, allIcons,
+            InCombatLockdown(), trackerKey)
     end
 
     local maxRowWidth, proxyTotalHeight = ApplyViewerMetrics(vs, layoutPlan.metrics, trackerKey)
@@ -2691,13 +2775,14 @@ _G.QUI_OnSpellDataChanged = function()
     end
 end
 
-_G.QUI_ForceLayoutContainer = function(containerKey)
+_G.QUI_ForceLayoutContainer = function(containerKey, runtimeVisibilityRelayout)
     if not containerKey or not initialized then return end
     if not IsCDMRuntimeEnabled() then return end
     _forceLayoutKey = containerKey
-    LayoutContainer(containerKey)
+    local didPreparedCombatRelayout = LayoutContainer(containerKey, runtimeVisibilityRelayout)
     _forceLayoutKey = nil
-    if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
+    if not didPreparedCombatRelayout
+        and ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
         ns.CDMIcons:UpdateAllCooldowns()
     end
     local container = containers[containerKey]
@@ -2803,7 +2888,6 @@ _G.QUI_OnEditModeEnterCDM = function()
             local tbSettings = db and db.trackedBar
             if tbSettings then
                 ns.CDMBars:Refresh(containers.trackedBar, tbSettings, tbSettings.barWidth)
-                ns.CDMBars:ForceAllActive()
                 ns.CDMBars:LayoutBars(containers.trackedBar, tbSettings)
             end
         end
@@ -2994,7 +3078,7 @@ function ownedEngine:RefreshReanchorRuntimeHooks(markDirty)
     if not (wiring and wiring.GetViewerForKey) then return false end
     if not IsCooldownViewerReady() then
         QueueReanchorHooksWhenCooldownViewerReady(markDirty)
-        return false
+        if not ns._cdmCombatReloadGrace then return false end
     end
 
     local function getViewer(key)
@@ -3077,29 +3161,38 @@ function ownedEngine:BootstrapReanchorRuntime()
             local scheduleActiveState = ns.CDMReanchorHooks.CreateActiveStateScheduler(CreateFrame)
             local hk = ns.CDMReanchorHooks.New({
                 refresh = function(key) return RefreshReanchoredBuiltin(boot, key) end,
-                refreshMany = function()
-                    return RefreshReanchoredBuiltin(boot, "essential")
+                refreshMany = function(keys)
+                    return RefreshReanchoredBuiltin(boot, "essential", false, keys)
                 end,
                 keys = REANCHOR_KEYS,
                 schedule = function(fn) C_Timer.After(0.05, fn) end,
                 scheduleActiveState = scheduleActiveState,
+                shouldTrackActiveState = function(key) return key == "buff" end,
+                shouldTrackCooldownID = function(key) return key == "buff" end,
+                ignoreIndexReasons = { refresh_layout = true },
                 immediateRefreshLayoutKeys = { buff = true },
-                immediateAcquireKeys = { buff = true },
                 blank = BlankReanchoredNativeItemFrame,
-                blankKeys = { buff = true, essential = true, utility = true },
+                blankKeys = { buff = true },
                 isClaimed = function(frame)
                     local bridge = boot.bridge
                     return (bridge and bridge.IsClaimed and bridge:IsClaimed(frame)) or false
                 end,
-                installGuard = function(frame)
+                installGuard = function(frame, key)
                     local bridge = boot.bridge
                     if bridge and bridge.InstallAnchorGuard then
                         bridge:InstallAnchorGuard(frame)
+                        if ns._cdmCombatReloadGrace and (key == "essential" or key == "utility")
+                            and (not bridge.IsClaimed or not bridge:IsClaimed(frame))
+                            and bridge.Sink then
+                            bridge:Sink(frame)
+                        end
                     end
                 end,
                 installGuardKeys = { essential = true, utility = true },
                 isInitWindow = function() return ns._inInitSafeWindow == true end,
-                isInitialReanchorDone = IsInitialReanchorDone,
+                isInitialReanchorDone = function(key)
+                    return ns._cdmCombatReloadGrace or IsInitialReanchorDone(key)
+                end,
             })
             ns._cdmReanchorHooks = hk
 
@@ -3114,8 +3207,6 @@ function ownedEngine:BootstrapReanchorRuntime()
                 hooksecurefunc = hooksecurefunc,
                 schedule = function(fn) C_Timer.After(0.05, fn) end,
                 scheduleActiveState = scheduleActiveState,
-                immediateRefreshLayoutKeys = { trackedBar = true },
-                immediateAcquireKeys = { trackedBar = true },
                 blank = BlankReanchoredNativeItemFrame,
                 blankKeys = { trackedBar = true },
                 isInitWindow = function() return ns._inInitSafeWindow == true end,
@@ -3168,6 +3259,8 @@ function ownedEngine:Initialize()
         return
     end
 
+    ns._cdmCombatReloadGrace = type(_G.UnitAffectingCombat) == "function"
+        and _G.UnitAffectingCombat("player") == true
     inInitSafeWindow = true
     local previousInitSafeWindow = ns._inInitSafeWindow
     ns._inInitSafeWindow = true
@@ -3180,6 +3273,9 @@ function ownedEngine:Initialize()
         QUI.CooldownSwipe = ns._OwnedSwipe
         _G.QUI_RefreshCooldownSwipe = ns._OwnedSwipe.Apply
         _G.QUI_RefreshCooldownEffects = ns._OwnedSwipe.Apply
+        ns.QUI_RefreshCDMReanchor = function()
+            RefreshAll()
+        end
     end
 
     if ns.Registry then
@@ -3300,24 +3396,6 @@ function ownedEngine:Initialize()
     inInitSafeWindow = false
     ns._inInitSafeWindow = previousInitSafeWindow
 
-    C_Timer.After(1.0, function()
-        if not InCombatLockdown() then
-            RefreshAll()
-        end
-    end)
-
-    C_Timer.After(3.0, function()
-        if initialized and not InCombatLockdown() then
-            RefreshAll()
-        end
-    end)
-
-    C_Timer.After(6.0, function()
-        if initialized and not InCombatLockdown() then
-            RefreshAll()
-        end
-    end)
-
     local function DrainPendingLoadoutSwitch(cacheConfigID)
         pendingLoadoutRefresh = false
         loadoutTrackingToken = loadoutTrackingToken + 1
@@ -3385,7 +3463,8 @@ function ownedEngine:Initialize()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
             local isLogin, isReload = arg1, arg2
-            ownedEngine:RefreshReanchorRuntimeHooks((not isReload) and not InCombatLockdown())
+            C_Timer.After(0, function() ns._cdmCombatReloadGrace = false end)
+            ownedEngine:RefreshReanchorRuntimeHooks(false)
             if isReload then
                 local pewPreviousInitSafeWindow = ns._inInitSafeWindow
                 inInitSafeWindow = true
@@ -3408,16 +3487,19 @@ function ownedEngine:Initialize()
                         end
                     end
                     ResolveInitialLoadoutSlot()
+                    local needsRefresh = false
                     if not InCombatLockdown() and LiveContainerOwnedByOtherCharacter() then
                         local specID = GetCurrentSpecID()
                         if specID and specID ~= 0 then
                             specTrackingRetryToken = specTrackingRetryToken + 1
-                            LoadOrSnapshotSpecProfile(specID, 1, specTrackingRetryToken)
+                            needsRefresh = LoadOrSnapshotSpecProfile(specID, 1, specTrackingRetryToken)
                         end
                     end
                     if not InCombatLockdown() and ns.CDMSpellData then
-                        ns.CDMSpellData:CheckAllDormantSpells()
+                        needsRefresh = ns.CDMSpellData:CheckAllDormantSpells() or needsRefresh
                         ns.CDMSpellData:ReconcileAllContainers()
+                    end
+                    if needsRefresh then
                         RefreshAll()
                     end
                 end)
@@ -3930,15 +4012,10 @@ _G.QUI_DebugCDM.BuffState = function()
         if ok and type(list) == "table" then curated = list end
     end
     say("curated:", #curated)
-    local query = ns.CDMSources and ns.CDMSources.QueryPlayerAuraBySpellID
     for i = 1, #curated do
         local e = curated[i]
         local sid = e.overrideSpellID or e.spellID or e.id
         local live = false
-        if query and type(sid) == "number" then
-            local ok, aura = pcall(query, sid)
-            live = (ok and aura ~= nil) and true or false
-        end
         say(("  entry %d: id=%s spellID=%s auraLive=%s"):format(
             i, tostring(e.id), tostring(sid), tostring(live)))
     end

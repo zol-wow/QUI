@@ -13,9 +13,8 @@ local UIKit = ns.UIKit
 local CurrenciesView = {}
 Alts.CurrenciesView = CurrenciesView
 
-local ROW_H, FOOTER_H = 22, 22
+local ROW_H, TOP_H, FOOTER_H = 22, 28, 22
 local CELL_PAD = 6
-local NAME_W = 280
 local ICON_SIZE = 16
 
 local function CommaNumber(n)
@@ -55,6 +54,22 @@ function CurrenciesView.BuildDisplayRows(characters, names, filter)
     return rows
 end
 
+function CurrenciesView.ValueText(qty, info)
+    local text = CurrenciesView.FormatQuantity(qty, info and info.max)
+    if info and info.account then text = text .. " (account)" end
+    return text
+end
+
+function CurrenciesView.ColumnWidths(rows, measure)
+    local nameWidth, valueWidth = 0, 0
+    for _, row in ipairs(rows or {}) do
+        nameWidth = math.max(nameWidth, measure(row.label or "") or 0)
+        valueWidth = math.max(valueWidth, measure(row.valueText or "") or 0)
+    end
+    return math.ceil(nameWidth) + CELL_PAD * 2 + ICON_SIZE + 6,
+        math.ceil(valueWidth) + CELL_PAD * 2
+end
+
 local function Builder(parent)
     local Store = ns.Storage and ns.Storage.Store
     local Bus   = ns.Storage and ns.Storage.Bus
@@ -67,6 +82,8 @@ local function Builder(parent)
     local rows        = {}
     local rowPool     = {}
     local selectedKey = nil
+    local nameWidth   = CELL_PAD * 2 + ICON_SIZE + 6
+    local valueWidth  = CELL_PAD * 2
 
     local cachedChars = {}
     local liveInfo = {}
@@ -92,7 +109,7 @@ local function Builder(parent)
 
     local function VisibleRows()
         local h = frame:GetHeight() or 0
-        local usable = h - FOOTER_H
+        local usable = h - TOP_H - FOOTER_H
         if usable < ROW_H then return 1 end
         return math.max(1, math.floor(usable / ROW_H))
     end
@@ -100,6 +117,16 @@ local function Builder(parent)
     local footer = MakeFS(frame, 11)
     footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", CELL_PAD, 4)
     footer:SetTextColor(0.8, 0.8, 0.8)
+
+    local measure = MakeFS(frame, 11)
+    measure:Hide()
+    local function Measure(text)
+        measure:SetText(text or "")
+        if measure.GetUnboundedStringWidth then
+            return measure:GetUnboundedStringWidth() or 0
+        end
+        return measure:GetStringWidth() or 0
+    end
 
     local selector = CreateFrame("Button", nil, frame)
     selector:SetHeight(22)
@@ -237,7 +264,9 @@ local function Builder(parent)
         r._icon:SetPoint("LEFT", r, "LEFT", CELL_PAD, 0)
         r._name  = MakeFS(r, 11)
         r._name:SetPoint("LEFT", r, "LEFT", CELL_PAD + ICON_SIZE + 6, 0)
+        r._name:SetJustifyH("LEFT")
         r._value = MakeFS(r, 11)
+        r._value:SetJustifyH("LEFT")
         r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         r:SetScript("OnClick", function(self, button)
             if button ~= "RightButton" then return end
@@ -260,8 +289,7 @@ local function Builder(parent)
         if offset > maxOff then offset = maxOff end
         if offset < 0 then offset = 0 end
 
-        local topY = -28
-        local selRec = selectedKey and cachedChars[selectedKey]
+        local topY = -TOP_H
 
         for i = 1, visible do
             local r   = GetRow(i)
@@ -275,7 +303,7 @@ local function Builder(parent)
                 r:Hide()
             else
                 r._row = row
-                local info = ResolveInfo(row.currencyID)
+                local info = row.info
                 if info and info.icon then
                     r._icon:SetTexture(info.icon)
                     r._icon:Show()
@@ -283,18 +311,15 @@ local function Builder(parent)
                     r._icon:Hide()
                 end
 
-                r._name:SetWidth(NAME_W - CELL_PAD - ICON_SIZE - 6)
+                r._name:SetWidth(math.max(1, nameWidth - CELL_PAD * 2 - ICON_SIZE - 6))
                 r._name:SetText(row.label)
                 r._name:SetTextColor(0.9, 0.9, 0.9)
 
-                local qty = selRec and selRec.currencies
-                    and selRec.currencies[row.currencyID]
-                local text = CurrenciesView.FormatQuantity(qty, info and info.max)
-                if info and info.account then text = text .. " (account)" end
+                local qty = row.quantity
                 r._value:ClearAllPoints()
-                r._value:SetPoint("LEFT", r, "LEFT", NAME_W + CELL_PAD, 0)
-                r._value:SetWidth(math.max(1, (frame:GetWidth() or 0) - NAME_W - CELL_PAD * 2 - Shared.SCROLLBAR_RESERVE))
-                r._value:SetText(text)
+                r._value:SetPoint("LEFT", r, "LEFT", nameWidth + CELL_PAD, 0)
+                r._value:SetWidth(math.max(1, valueWidth - CELL_PAD * 2))
+                r._value:SetText(row.valueText)
                 if qty == nil then
                     r._value:SetTextColor(0.5, 0.5, 0.5)
                 else
@@ -350,6 +375,13 @@ local function Builder(parent)
         end
         local filter = (Alts.GetSettings and Alts.GetSettings() or {}).currencyFilter
         rows = CurrenciesView.BuildDisplayRows(cachedChars, names, filter)
+        local selRec = selectedKey and cachedChars[selectedKey]
+        for _, row in ipairs(rows) do
+            row.info = ResolveInfo(row.currencyID)
+            row.quantity = selRec and selRec.currencies and selRec.currencies[row.currencyID]
+            row.valueText = CurrenciesView.ValueText(row.quantity, row.info)
+        end
+        nameWidth, valueWidth = CurrenciesView.ColumnWidths(rows, Measure)
 
         UpdateSelectorLabel()
         RenderRows()

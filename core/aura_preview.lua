@@ -184,9 +184,12 @@ local function LayoutElement(host, pool, poolCursor, element, resolve, opts)
     local count
     if element.mode == "tracked" then
         local spells = element.spells
-        local n = (type(spells) == "table") and #spells or 0
-        local cap = element.maxIcons
-        count = (cap and cap > 0 and cap < n) and cap or n
+        count = 0
+        if type(spells) == "table" then
+            for i = 1, #spells do
+                if type(spells[i]) == "number" then count = count + 1 end
+            end
+        end
     else
         count = p.maxIcons
     end
@@ -208,13 +211,22 @@ local function LayoutElement(host, pool, poolCursor, element, resolve, opts)
     local displayType = (element.mode == "tracked") and element.displayType or nil
     local isBar = (displayType == "bar")
     local isSwatch = isBar or (displayType == "square")
-    local barVertical = isBar and element.bar and element.bar.orientation == "VERTICAL"
-    local barLong = isBar and ((element.bar and element.bar.length) or 48) or size
-    local barThick = isBar and ((element.bar and element.bar.thickness) or 12) or size
+    local bar = isBar and element.bar
+    local barVertical = bar and bar.orientation == "VERTICAL"
+    local barLong = isBar and ((bar and bar.length) or 48) or size
+    local barThick = isBar and ((bar and bar.thickness) or 12) or size
+    if bar and bar.matchFrameSize == true then
+        if barVertical then
+            barLong = ns.Helpers.SafeToNumber(host:GetHeight(), barLong)
+        else
+            barLong = ns.Helpers.SafeToNumber(host:GetWidth(), barLong)
+        end
+    end
     local w = barVertical and barThick or barLong
     local h = barVertical and barLong or barThick
+    local rowGap = (p.rowSpacing and p.rowSpacing > 0) and p.rowSpacing or gap
     local stepX = w + gap
-    local stepY = h + gap
+    local stepY = h + (column and gap or rowGap)
     local color = element.color
 
     for i = 1, count do

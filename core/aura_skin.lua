@@ -24,7 +24,7 @@ local function ScheduleRestrictedRestyle(container)
     if not After then return end
     _restrictedPollArmed = true
     local function tick()
-        if AurasAreSecret() then
+        if AurasAreSecret() or (InCombatLockdown and InCombatLockdown()) then
             After(0.5, tick)
             return
         end
@@ -52,7 +52,11 @@ local function ResolveLayout(profile)
     return {
         maxIcons  = m.maxIcons,
         iconSize  = m.iconSize,
+        iconWidth = profile.iconWidth or m.iconSize,
+        iconHeight = profile.iconHeight or m.iconSize,
         spacing   = m.spacing,
+        rowSpacing = (profile.rowSpacing and profile.rowSpacing > 0)
+            and profile.rowSpacing or m.spacing,
         grow      = m.grow,
         maxPerRow = profile.maxPerRow or 0,
         offsetX   = profile.offsetX or 0,
@@ -196,6 +200,48 @@ local function ApplyIconSkinOwnership(button, profile)
     end
 end
 
+function AuraSkin.StyleIconArt(button, profile)
+    profile = profile or {}
+    local icon = button.Icon
+    local showBorder = profile.showBorder ~= false
+    if not button._quiBridged and icon then
+        local zoom = profile.zoom or 0
+        local left = 0.08 + zoom
+        local right = 0.92 - zoom
+        local top = 0.08 + zoom
+        local bottom = 0.92 - zoom
+        local aspect = profile.aspectRatioCrop or 1
+        if aspect > 1 then
+            local offset = (1 - (1 / aspect)) * (bottom - top) / 2
+            top = top + offset
+            bottom = bottom - offset
+        end
+        if icon.SetTexCoord then icon:SetTexCoord(left, right, top, bottom) end
+        local inset = showBorder and (profile.borderSize or 1) or 0
+        if inset < 0 then inset = 0 end
+        if icon.ClearAllPoints then icon:ClearAllPoints() end
+        icon:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
+        icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
+    end
+
+    local border = button._quiBorder
+    if not border then return end
+    if button._quiBridged or not showBorder then
+        if border.Hide then border:Hide() end
+        return
+    end
+    local color = profile.borderColor
+    local r, g, b, a
+    if type(color) == "table" then
+        r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4]
+    else
+        r, g, b, a = AuraTheme.BorderColor()
+    end
+    border:SetColorTexture(r, g, b, a or 1)
+    if border.DisablePixelSnap then border:DisablePixelSnap() end
+    if border.Show then border:Show() end
+end
+
 local durationFormatters = {}
 local function DurationFormatter(decimals, hideUnit)
     local key = (decimals and "d" or "-") .. (hideUnit and "u" or "-")
@@ -249,7 +295,9 @@ local Helpers = ns.Helpers
 local function styleButton(button, profile)
     local size = profile.iconSize or 22
     if size <= 0 then size = 22 end
-    button:SetSize(size, size)
+    local width = profile.iconWidth or size
+    local height = profile.iconHeight or size
+    button:SetSize(width, height)
 
     if button.SetTooltipAnchorPoint then
         if profile.tooltipAnchor then
@@ -272,19 +320,8 @@ local function styleButton(button, profile)
     end
 
     ApplyIconSkinOwnership(button, profile)
-
-    -- Border thickness is the gap between the button edge and the inset icon;
-    -- external skins own the icon geometry, so leave it alone when bridged.
-    local showBorder = profile.showBorder ~= false
-    if not button._quiBridged and button.Icon then
-        local inset = 0
-        if showBorder then
-            inset = profile.borderSize or 1
-            if inset < 0 then inset = 0 end
-        end
-        button.Icon:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
-        button.Icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
-    end
+    button:SetAlpha(profile.opacity or 1)
+    AuraSkin.StyleIconArt(button, profile)
 
     local dispel = button._quiDispel
     if dispel and button.ClearDispelTypeTextures and button.AddDispelTypeTexture then
@@ -345,30 +382,14 @@ local function styleButton(button, profile)
         end
     end
 
-    local border = button._quiBorder
-    if border then
-        if not showBorder then
-            if border.Hide then border:Hide() end
-        else
-            local bc = profile.borderColor
-            local r, g, b, a
-            if type(bc) == "table" then
-                r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4]
-            else
-                r, g, b, a = AuraTheme.BorderColor()
-            end
-            border:SetColorTexture(r, g, b, a or 1)
-            if border.DisablePixelSnap then border:DisablePixelSnap() end
-        end
-    end
-
     local fontPath = (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont())
     local fontFlags = (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or "OUTLINE"
     local function styleText(fs, cfg, fallbackSize, defAnchor, defX, defY)
         if not fs then return end
         local size = (cfg and cfg.fontSize) or fallbackSize or 11
         if size <= 0 then size = 11 end
-        if fontPath then fs:SetFont(fontPath, size, fontFlags) end
+        local font = (cfg and cfg.font) or fontPath
+        if font then fs:SetFont(font, size, fontFlags) end
         fs:ClearAllPoints()
         fs:SetPoint((cfg and cfg.anchor) or defAnchor, button, (cfg and cfg.anchor) or defAnchor,
             (cfg and cfg.offsetX) or defX, (cfg and cfg.offsetY) or defY)
@@ -386,8 +407,10 @@ local function styleButton(button, profile)
 
     local cd = button._quiCooldown
     local wantsLinear = profile.swipeStyle == "horizontal" or profile.swipeStyle == "vertical"
-    if wantsLinear and button.SetDurationBar then
+    if wantsLinear and button.SetDurationBar and profile.hideSwipe ~= true then
         if cd and cd.SetDrawSwipe then cd:SetDrawSwipe(false) end
+        if cd and cd.SetDrawEdge then cd:SetDrawEdge(false) end
+        if cd and cd.SetDrawBling then cd:SetDrawBling(false) end
         local fill = button._quiDurationBar
         if not fill and InCombatLockdown() then
             return
@@ -408,7 +431,21 @@ local function styleButton(button, profile)
     else
         if button._quiDurationBar then button._quiDurationBar:Hide() end
         if cd then
-            cd:SetDrawSwipe(profile.hideSwipe ~= true)
+            if cd.SetSwipeTexture and profile.swipeTexture then
+                cd:SetSwipeTexture(profile.swipeTexture)
+            end
+            local showSwipe = profile.hideSwipe ~= true
+            cd:SetDrawSwipe(showSwipe)
+            if cd.SetDrawEdge then
+                cd:SetDrawEdge(showSwipe and profile.showEdge ~= false)
+            end
+            if cd.SetDrawBling then
+                cd:SetDrawBling(showSwipe)
+            end
+            if profile.swipeColor and cd.SetSwipeColor then
+                local c = profile.swipeColor
+                cd:SetSwipeColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+            end
             cd:SetReverse(profile.reverseSwipe == true)
             cd:SetHideCountdownNumbers(true)
         end
@@ -453,15 +490,33 @@ end
 
 local function GroupLayout(L, g)
     local t = {
-        elementSpacing = L.spacing,
-        lineSpacing    = L.spacing,
-        elementWidth   = L.iconSize,
-        elementHeight  = L.iconSize,
+        elementSpacing = g and g.elementSpacing or L.spacing,
+        lineSpacing    = L.rowSpacing,
+        elementWidth   = g and g.elementWidth or L.iconWidth,
+        elementHeight  = L.iconHeight,
     }
     if g and type(g._quiOrder) == "number" then
         t.layoutIndex = g._quiOrder
     end
+    if g and type(g.groupSpacing) == "number" then
+        t.groupSpacing = g.groupSpacing
+    end
     return t
+end
+
+local function ApplyLatchedMouseMotion(container, button)
+    local mouseMotion = container._quiRangeGateMouseEnabled
+    if mouseMotion == nil then return end
+    if AurasAreSecret() or (InCombatLockdown and InCombatLockdown()) then
+        ScheduleRestrictedRestyle(container)
+        return
+    end
+    if button.SetMouseMotionEnabled and button.SetMouseClickEnabled then
+        button:SetMouseMotionEnabled(mouseMotion)
+        button:SetMouseClickEnabled(mouseMotion)
+    elseif button.EnableMouse then
+        button:EnableMouse(mouseMotion)
+    end
 end
 
 local function MakeInitializer(container, _groupDesc)
@@ -471,6 +526,7 @@ local function MakeInitializer(container, _groupDesc)
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
+        ApplyLatchedMouseMotion(container, button)
         local reg = container._quiButtons
         if not reg then
             reg = {}
@@ -578,6 +634,7 @@ function AuraSkin.Configure(container, profile, groups)
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
+        ApplyLatchedMouseMotion(container, button)
     end)
 end
 
@@ -592,6 +649,7 @@ function AuraSkin.Restyle(container, profile)
         if button.SetCancelAuraButtons then
             button:SetCancelAuraButtons(container._quiCancelButtons)
         end
+        ApplyLatchedMouseMotion(container, button)
     end)
 end
 
@@ -606,7 +664,7 @@ function AuraSkin.ConfigureEnchantments(container, profile)
     container:SetItemEnchantmentLayout({
         placement      = placement.BeforeAuraGroups,
         elementSpacing = L.spacing,
-        lineSpacing    = L.spacing,
+        lineSpacing    = L.rowSpacing,
         elementWidth   = L.iconSize,
         elementHeight  = L.iconSize,
     })

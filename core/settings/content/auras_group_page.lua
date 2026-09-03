@@ -108,11 +108,9 @@ local function BuildAurasGroupContent(host, ctx, section)
         end
     end
 
-    y = y + (tonumber(h) or (editorHost.GetHeight and editorHost:GetHeight()) or 1) + 16
-
     local dispelHost = CreateFrame("Frame", nil, host)
-    dispelHost:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
-    dispelHost:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+    dispelHost:SetPoint("TOPLEFT", editorHost, "BOTTOMLEFT", 0, -16)
+    dispelHost:SetPoint("TOPRIGHT", editorHost, "BOTTOMRIGHT", 0, -16)
     dispelHost:SetHeight(1)
     local dispelHeight = 1
     if GF and type(GF.RenderDispelTab) == "function" then
@@ -122,15 +120,27 @@ local function BuildAurasGroupContent(host, ctx, section)
             dispelHeight = GF.RenderDispelTab(dispelHost, contextMode) or 1
         end
     end
-    y = y + (tonumber(dispelHeight) or (dispelHost.GetHeight and dispelHost:GetHeight()) or 1) + 16
-
     local hintHost = CreateFrame("Frame", nil, host)
-    hintHost:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
-    hintHost:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+    hintHost:SetPoint("TOPLEFT", dispelHost, "BOTTOMLEFT", 0, -16)
+    hintHost:SetPoint("TOPRIGHT", dispelHost, "BOTTOMRIGHT", 0, -16)
     hintHost:SetHeight(1)
     local hintHeight = BuildDispelHintBlock(hintHost, 0)
     hintHost:SetHeight(hintHeight)
-    y = y + hintHeight
+
+    local function ResizePage()
+        local editorHeight = (editorHost.GetHeight and editorHost:GetHeight()) or tonumber(h) or 1
+        local currentDispelHeight = (dispelHost.GetHeight and dispelHost:GetHeight()) or tonumber(dispelHeight) or 1
+        local total = y + editorHeight + 16 + currentDispelHeight + 16 + hintHeight
+        host:SetHeight(total)
+        local mountedHeight = ctx and ctx.runtime and ctx.runtime.sectionHeights
+            and ctx.runtime.sectionHeights[section.id]
+        if type(mountedHeight) == "number" and type(ctx.ResizeSection) == "function" then
+            ctx:ResizeSection(section.id, total)
+        end
+        return total
+    end
+    editorHost:HookScript("OnSizeChanged", ResizePage)
+    dispelHost:HookScript("OnSizeChanged", ResizePage)
 
     local previewHost = (ctx and ctx.host) or host
     if GFSurface and type(GFSurface.ShowPreviewOn) == "function" then
@@ -140,9 +150,7 @@ local function BuildAurasGroupContent(host, ctx, section)
         end)
     end
 
-    host:SetHeight(y)
-
-    return y
+    return ResizePage()
 end
 
 Registry:RegisterFeature(Schema.Feature({

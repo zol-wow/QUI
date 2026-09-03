@@ -5,6 +5,7 @@ if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
 local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
 local AH_CATEGORY_TEXT_COLOR = { 0.72, 0.78, 0.85, 1 }
+local AH_CATEGORY_SELECTED_TEXT_COLOR = { 1, 1, 1, 1 }
 
 local function IsEnabled()
     local core = GetCore()
@@ -41,7 +42,7 @@ local function SkinAuctionHouseTabs()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame or not AuctionHouseFrame.Tabs then return end
 
-    SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true })
+    SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true, resizeToText = true })
 
     local tabs = AuctionHouseFrame.Tabs
     if tabs[1] then
@@ -76,22 +77,14 @@ local function FontAuctionHouseExtraTabs()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame then return end
 
-    if AuctionHouseFrame.Tabs then
-        for _, tab in ipairs(AuctionHouseFrame.Tabs) do
-            if tab and not SkinBase.GetFrameData(tab, "qAHTabFonted") then
-                SkinBase.ApplyButtonFontObjects(tab)
-                SkinBase.SetFrameData(tab, "qAHTabFonted", true)
-            end
-        end
-    end
-
     if not (AuctionHouseFrame.IsShown and AuctionHouseFrame:IsShown()) then return end
     if not AuctionHouseFrame.GetChildren then return end
     local children = { AuctionHouseFrame:GetChildren() }
     for i = 1, #children do
         local obj = children[i]
         if not (issecretvalue and issecretvalue(obj)) -- @secret-policy: reject-secret-value (hierarchy-secret child is never a skinnable tab)
-            and type(obj) == "table" and not SkinBase.GetFrameData(obj, "qAHTabFonted") then
+            and type(obj) == "table" and not SkinBase.IsStyled(obj)
+            and not SkinBase.GetFrameData(obj, "qAHTabFonted") then
             local ok, isTab = pcall(function()
                 return obj.IsObjectType and obj:IsObjectType("Button")
                     and obj.GetFontString and obj:GetFontString()
@@ -109,7 +102,7 @@ end
 local function SkinAuctionHouseAuctionsTabs(auctionsFrame)
     if not auctionsFrame then return end
     local tabs = { auctionsFrame.AuctionsTab, auctionsFrame.BidsTab }
-    SkinBase.SkinTabGroup(tabs, auctionsFrame, { font = true })
+    SkinBase.SkinTabGroup(tabs, auctionsFrame, { font = true, resizeToText = true })
 end
 
 local function LockDurationDropdownText(dropdown)
@@ -367,11 +360,19 @@ local function SkinCategoriesList()
     SkinBase.StripTextures(categoriesList)
     if categoriesList.NineSlice then categoriesList.NineSlice:Hide() end
 
+    -- Idle rows use the muted AH colour; the selected row must read as
+    -- selected (white), not be overwritten back to idle after every rebind.
+    -- Blizzard's AuctionHouseFilterButton_SetUp resets the normal font
+    -- object on each rebind, so the font FACE is reapplied (colour-free) and
+    -- RefreshCategorySelected owns the state colour.
     local function StyleCategoryRow(button)
-        SkinBase.SkinCategoryButton(button)
+        SkinBase.SkinCategoryButton(button, {
+            textColor = AH_CATEGORY_TEXT_COLOR,
+            selectedTextColor = AH_CATEGORY_SELECTED_TEXT_COLOR,
+        })
         SuppressCategoryTextures(button)
+        SkinBase.ApplyButtonFontObjects(button)
         SkinBase.RefreshCategorySelected(button)
-        SkinBase.ApplyButtonFontObjects(button, { color = AH_CATEGORY_TEXT_COLOR })
     end
     local function RefreshCategoryButtons(self)
         SkinBase.ForEachScrollBoxFrame(self, StyleCategoryRow)

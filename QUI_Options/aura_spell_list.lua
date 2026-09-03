@@ -136,7 +136,7 @@ local DEBUFF_BLACKLIST_PRESETS = {
 }
 
 local BROWSE_ROW_H = 24
-local BROWSE_SCROLL_STEP = 24
+local BROWSE_SCROLL_STEP = 45
 
 local browse = {
     popup = nil,
@@ -162,6 +162,17 @@ local function GetSpellIcon(spellId)
         end
     end
     return 134400
+end
+
+local function BrowseDisplaySpellID(spellId, opts)
+    if not (opts and opts.resolveAuraSpellIDs) then
+        return spellId
+    end
+    local elements = ns.AuraElements
+    if elements and elements.ResolveTrackedSpellID then
+        return elements.ResolveTrackedSpellID(spellId)
+    end
+    return spellId
 end
 
 local RebuildBrowseRows
@@ -211,17 +222,13 @@ local function EnsureBrowsePopup()
     title:SetTextColor(accent[1], accent[2], accent[3], 1)
     popup._title = title
 
-    local closeBtn = CreateFrame("Button", nil, popup)
-    closeBtn:SetSize(20, 20)
-    closeBtn:SetPoint("TOPRIGHT", -6, -6)
-    local closeText = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    closeText:SetPoint("CENTER")
-    closeText:SetText("X")
-    BrowseFont(closeText, fontPath, 11, "")
-    closeText:SetTextColor(muted[1], muted[2], muted[3], 1)
-    closeBtn:SetScript("OnEnter", function() closeText:SetTextColor(1, 0.4, 0.4, 1) end)
-    closeBtn:SetScript("OnLeave", function() closeText:SetTextColor(muted[1], muted[2], muted[3], 1) end)
-    closeBtn:SetScript("OnClick", function() popup:Hide() end)
+    SkinBase.CreateCloseButton(popup, {
+        size = 20,
+        point = "TOPRIGHT",
+        x = -6,
+        y = -6,
+        onClick = function() popup:Hide() end,
+    })
 
     local searchBg = CreateFrame("Frame", nil, popup, "BackdropTemplate")
     searchBg:SetPoint("TOPLEFT", 8, -28)
@@ -261,50 +268,30 @@ local function EnsureBrowsePopup()
     scroll:SetScrollChild(scrollChild)
     popup._scrollChild = scrollChild
 
-    local scrollBar = CreateFrame("Frame", nil, popup)
-    scrollBar:SetWidth(SCROLLBAR_WIDTH)
-    scrollBar:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -8, -58)
-    scrollBar:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -8, 8)
-    scrollBar:Hide()
-
-    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
-    thumb:SetWidth(SCROLLBAR_WIDTH)
-    thumb:SetColorTexture(accent[1], accent[2], accent[3], 0.5)
-
-    local function UpdateThumb()
-        local contentH = scrollChild:GetHeight()
-        local frameH = scroll:GetHeight()
-        if contentH <= frameH or frameH <= 0 then
-            scrollBar:Hide()
-            return
-        end
-        scrollBar:Show()
-        local trackH = scrollBar:GetHeight()
-        if trackH <= 0 then return end
-        local thumbH = math.max(20, (frameH / contentH) * trackH)
-        thumb:SetHeight(thumbH)
-        local scrollMax = contentH - frameH
-        local okScroll, scrollCur = pcall(scroll.GetVerticalScroll, scroll)
-        scrollCur = (okScroll and scrollCur) or 0
-        local ratio = (scrollMax > 0) and (scrollCur / scrollMax) or 0
-        thumb:ClearAllPoints()
-        thumb:SetPoint("TOP", scrollBar, "TOP", 0, -ratio * (trackH - thumbH))
+    -- Rows are laid out synchronously into scrollChild; measure overflow from
+    -- it rather than the native range, which lags a layout pass behind.
+    local function BrowseRange()
+        return math.max(0, (scrollChild:GetHeight() or 0) - (scroll:GetHeight() or 0))
     end
-    popup._updateThumb = UpdateThumb
 
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local okCur, currentScroll = pcall(self.GetVerticalScroll, self)
-        if not okCur then return end
-        local maxScroll = math.max(0, scrollChild:GetHeight() - self:GetHeight())
-        self:SetVerticalScroll(
-            math.max(0, math.min(currentScroll - (delta * BROWSE_SCROLL_STEP), maxScroll)))
-        UpdateThumb()
-    end)
-    scroll:SetScript("OnScrollRangeChanged", UpdateThumb)
     scroll:SetScript("OnSizeChanged", function(_, w)
         scrollChild:SetWidth(w or 296)
     end)
+
+    local scrollBar = ns.UIKit.CreateScrollBar(scroll, {
+        parent = popup,
+        anchor = popup,
+        offsetX = -8,
+        insetTop = 58,
+        insetBottom = 8,
+        width = SCROLLBAR_WIDTH,
+        getRange = BrowseRange,
+    })
+    popup._updateThumb = function() scrollBar:Update() end
+    popup._scrollCtl = ns.UIKit.AttachSmoothScroll(scroll, {
+        step = BROWSE_SCROLL_STEP,
+        getRange = BrowseRange,
+    })
 
     local empty = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     empty:SetPoint("TOPLEFT", 4, -4)
@@ -420,9 +407,11 @@ RebuildBrowseRows = function(filter)
             local id = spell.id or spell.spellID
             if id and not seen[id] then
                 local name = spell.name or GetSpellName(id) or (ns.L["Spell"] .. " " .. tostring(id))
+                local displayID = BrowseDisplaySpellID(id, opts)
                 if not lower
                     or ns.Helpers.FoldUTF8(name):find(lower, 1, true)
-                    or tostring(id):find(lower, 1, true) then
+                    or tostring(id):find(lower, 1, true)
+                    or tostring(displayID):find(lower, 1, true) then
                     seen[id] = true
                     if not headerPlaced then
                         headerPlaced = true
@@ -441,7 +430,11 @@ RebuildBrowseRows = function(filter)
                     row:SetPoint("RIGHT", popup._scrollChild, "RIGHT", 0, 0)
                     row.spellId = id
                     row.icon:SetTexture(spell.icon or GetSpellIcon(id))
-                    row.text:SetText(name .. "  |cFF888888(" .. tostring(id) .. ")|r")
+                    local idLabel = tostring(id)
+                    if displayID ~= id then
+                        idLabel = idLabel .. " -> " .. ns.L["Aura"] .. " " .. tostring(displayID)
+                    end
+                    row.text:SetText(name .. "  |cFF888888(" .. idLabel .. ")|r")
                     local selected = opts and type(opts.isSelected) == "function" and opts.isSelected(id)
                     if selected then
                         row.bg:SetColorTexture(accent[1], accent[2], accent[3], 0.12)
@@ -459,10 +452,8 @@ RebuildBrowseRows = function(filter)
     popup._empty:SetShown(spellIndex == 0)
     popup._scrollChild:SetHeight(math.max(1, math.abs(y)))
 
-    local scroll = popup._scroll
-    local okCur, cur = pcall(scroll.GetVerticalScroll, scroll)
-    local maxScroll = math.max(0, popup._scrollChild:GetHeight() - scroll:GetHeight())
-    scroll:SetVerticalScroll(math.min((okCur and cur) or 0, maxScroll))
+    -- Shorter result set: pull the offset (or in-flight target) back in range.
+    if popup._scrollCtl then popup._scrollCtl:Refresh() end
     if popup._updateThumb then
         C_Timer.After(0, popup._updateThumb)
     end
@@ -484,7 +475,11 @@ function SpellList.ToggleBrowsePopup(key, opts)
     popup._title:SetText((opts and opts.title) or ns.L["Browse Spells"])
     popup._search:SetText("")
     popup._placeholder:Show()
-    popup._scroll:SetVerticalScroll(0)
+    if popup._scrollCtl then
+        popup._scrollCtl:ScrollTo(0, true)
+    else
+        popup._scroll:SetVerticalScroll(0)
+    end
     RebuildBrowseRows(nil)
     popup:Show()
     popup:Raise()

@@ -968,8 +968,6 @@ local function RefreshMock()
         if unitDB.castbar and unitDB.castbar.enabled then
             mock._castbarMock:ClearAllPoints()
             mock._castbarMock:SetPoint("TOP", mock, "BOTTOM", 0, -8 * scale)
-            mock._castbarMock:SetWidth(w)
-            mock._castbarMock._barInnerW = w
         end
     end
 

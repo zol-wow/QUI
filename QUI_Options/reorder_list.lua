@@ -30,7 +30,7 @@ function ReorderList.Build(parent, y, spec)
     hintFs:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 4, -4)
     hintFs:SetPoint("RIGHT", listFrame, "RIGHT", -4, 0)
     hintFs:SetJustifyH("LEFT")
-    hintFs:SetTextColor(0.6, 0.6, 0.6, 0.8)
+    hintFs:SetTextColor(1, 1, 1, 0.48)
     hintFs:SetText(#items > 0 and (spec.hintText or "") or (spec.emptyText or ""))
 
     local extents = {}
@@ -93,12 +93,10 @@ function ReorderList.Build(parent, y, spec)
             btn:GetFontString():SetTextColor(accR, accG, accB, 1)
             btn:SetScript("OnEnter", function(self)
                 hoverBg:Show()
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetText(tip, 1, 1, 1)
-                GameTooltip:Show()
+                QUI.GUI.Tooltip:Show(self, tip, { anchor = "TOP" })
             end)
-            btn:SetScript("OnLeave", function()
-                GameTooltip:Hide()
+            btn:SetScript("OnLeave", function(self)
+                QUI.GUI.Tooltip:Hide(false, self)
                 if not r:IsMouseOver() then hoverBg:Hide() end
             end)
             if spec.onControl then spec.onControl(btn) end
@@ -141,9 +139,9 @@ function ReorderList.Build(parent, y, spec)
             local text, dimmed = spec.getLabel(item, idx)
             nameFs:SetText(text)
             if dimmed then
-                nameFs:SetTextColor(0.6, 0.6, 0.6, 1)
+                nameFs:SetTextColor(1, 1, 1, 0.6)
             else
-                nameFs:SetTextColor(0.9, 0.9, 0.9, 1)
+                nameFs:SetTextColor(1, 1, 1, 0.9)
             end
         end
 
@@ -190,21 +188,20 @@ function ReorderList.Build(parent, y, spec)
         r:SetScript("OnEnter", function(self)
             hoverBg:Show()
             if spec.getTooltip then
-                local title, body = spec.getTooltip(item, idx)
-                if title then
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetText(title, accR, accG, accB)
-                    if body then GameTooltip:AddLine(body, 1, 1, 1, true) end
-                    GameTooltip:Show()
-                end
+                QUI.GUI.Tooltip:Show(self, function(tip)
+                    local title, body = spec.getTooltip(item, idx)
+                    if not title then return end
+                    tip:AddTitle(title)
+                    if body then tip:AddLine(body) end
+                end, { anchor = "TOP" })
             end
         end)
         r:SetScript("OnLeave", function(self)
-            GameTooltip:Hide()
+            QUI.GUI.Tooltip:Hide(false, self)
             if not self:IsMouseOver() then hoverBg:Hide() end
         end)
         r:SetScript("OnDragStart", function(self)
-            GameTooltip:Hide()
+            QUI.GUI.Tooltip:Hide(true)
             dragged = true
             self:SetAlpha(0.4)
             dropLine:Show()

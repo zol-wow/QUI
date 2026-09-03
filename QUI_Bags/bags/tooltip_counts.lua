@@ -107,19 +107,45 @@ local function GetOwnerInfo(ownerKey)
     }
 end
 
-local function OnTooltipSetItem(tooltip, data)
+function TooltipCounts.BuildCurrencyLines(currencyID)
+    local lines = {}
+    if type(currencyID) ~= "number" then return lines end
+    if type(issecretvalue) == "function" and issecretvalue(currencyID) then return lines end
+    if not (C_CurrencyInfo and type(C_CurrencyInfo.GetCurrencyInfo) == "function") then return lines end
+    local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+    if not info then return lines end
+    if info.isAccountWide then
+        lines[1] = ns.L["Warband (account-wide)"] .. ": " .. (info.quantity or 0)
+        return lines
+    end
+    local Store = Storage and Storage.Store
+    if not (Store and Store.ListCharacters and Store.GetCharacter) then return lines end
+    local counts = {}
+    for _, ownerKey in ipairs(Store.ListCharacters()) do
+        local rec = Store.GetCharacter(ownerKey)
+        local quantity = rec and rec.currencies and rec.currencies[currencyID]
+        if quantity and quantity > 0 then
+            counts[ownerKey] = { currency = quantity }
+        end
+    end
+    return TooltipCounts.BuildCountLines(counts, function(ownerKey)
+        local owner = GetOwnerInfo(ownerKey)
+        owner.plainTotal = true
+        return owner
+    end)
+end
+
+local function ShouldShowCounts(tooltip)
     if tooltip ~= GameTooltip and tooltip ~= ItemRefTooltip then return end
     if not (Bags.IsActive and Bags.IsActive()) then return end
     local settings = GetSettings()
     local mode = settings and settings.behavior and settings.behavior.tooltipCounts
     if mode == "off" then return end
     if mode == "modifier" and not IsShiftKeyDown() then return end
-    local itemID = data and data.id
-    if type(itemID) ~= "number" then return end
-    if type(issecretvalue) == "function" and issecretvalue(itemID) then return end
-    local counts = Storage.Summaries.GetCounts(itemID)
-    if next(counts) == nil then return end
-    local lines = TooltipCounts.BuildCountLines(counts, GetOwnerInfo)
+    return true
+end
+
+local function AddCountLines(tooltip, lines)
     if #lines == 0 then return end
     tooltip:AddLine(" ")
     for i = 1, #lines do
@@ -127,7 +153,27 @@ local function OnTooltipSetItem(tooltip, data)
     end
 end
 
+local function OnTooltipSetItem(tooltip, data)
+    if not ShouldShowCounts(tooltip) then return end
+    local itemID = data and data.id
+    if type(itemID) ~= "number" then return end
+    if type(issecretvalue) == "function" and issecretvalue(itemID) then return end
+    local counts = Storage.Summaries.GetCounts(itemID)
+    if next(counts) == nil then return end
+    AddCountLines(tooltip, TooltipCounts.BuildCountLines(counts, GetOwnerInfo))
+end
+
+local function OnTooltipSetCurrency(tooltip, data)
+    if not ShouldShowCounts(tooltip) then return end
+    AddCountLines(tooltip, TooltipCounts.BuildCurrencyLines(data and data.id))
+end
+
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall
     and Enum and Enum.TooltipDataType then
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, OnTooltipSetItem)
+    if Enum.TooltipDataType.Item then
+        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, OnTooltipSetItem)
+    end
+    if Enum.TooltipDataType.Currency then
+        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Currency, OnTooltipSetCurrency)
+    end
 end

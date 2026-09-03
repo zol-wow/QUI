@@ -112,12 +112,9 @@ local function BuildUIScale(L, db)
     for i, btn in ipairs(buttons) do
         local data = tooltipData[i]
         btn:HookScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:AddLine(data.title, 1, 1, 1)
-            GameTooltip:AddLine(data.desc, 0.8, 0.8, 0.8, true)
-            GameTooltip:Show()
+            GUI.Tooltip:Show(self, data.desc, { title = data.title, anchor = "TOP" })
         end)
-        btn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+        btn:HookScript("OnLeave", function(self) GUI.Tooltip:Hide(false, self) end)
     end
 
     local presetSummary = GUI:CreateLabel(presetBlock, ns.L["Hover any preset for details. 1440p+ is Quazii's personal setting."], 11, C.textMuted)
@@ -404,7 +401,7 @@ local function BuildAutomation(L, generalDB)
         if ns.RefreshFocusMarker then ns.RefreshFocusMarker() end
     end
     local fmEnableW = GUI:CreateFormCheckbox(s.frame, nil, "enabled", fm, RefreshFM,
-        { description = ns.L["One press sets your focus AND puts a raid marker on it (hostile living mouseover first, else your target). Keeps a character macro named 'FocusMarker_DUI' in sync — drag it to a bar or keybind it. Updates apply out of combat."] })
+        { description = ns.L["One press sets your focus AND puts a raid marker on it (hostile living mouseover first, else your target). Keeps a character macro named 'FocusMarker_QUI' in sync — drag it to a bar or keybind it. Updates apply out of combat."] })
     local markerOptions = {
         { value = 1, text = ns.L["Star"] },
         { value = 2, text = ns.L["Circle"] },
@@ -422,7 +419,7 @@ local function BuildAutomation(L, generalDB)
     local fmMouseoverW = GUI:CreateFormCheckbox(s.frame, nil, "useMouseover", fm, RefreshFM,
         { description = ns.L["Prefer the hostile living unit under your mouse; fall back to your current target."] })
     local fmMacroW = GUI:CreateFormCheckbox(s.frame, nil, "writeMacro", fm, RefreshFM,
-        { description = ns.L["Create/update the 'FocusMarker_DUI' character macro automatically."] })
+        { description = ns.L["Create/update the 'FocusMarker_QUI' character macro automatically."] })
     s.AddRow(row(s.frame, ns.L["Use Mouseover"], fmMouseoverW), row(s.frame, ns.L["Maintain Macro"], fmMacroW))
 
     if type(generalDB.healerMana) ~= "table" then generalDB.healerMana = {} end
@@ -447,6 +444,22 @@ local function BuildAutomation(L, generalDB)
         { description = ns.L["Sound played with the death alert. None = silent."] })
     s.AddRow(row(s.frame, ns.L["Group Death Alert"], daEnableW), row(s.frame, ns.L["Death Alert Sound"], daSoundW))
 
+    local daBlowW = GUI:CreateFormCheckbox(s.frame, nil, "showKillingBlow", da, RefreshDA,
+        { description = ns.L["Name what killed them, e.g. 'Zol died to Heavy Slam!'. Read from Blizzard's death recap data; the alert stays plain when no recap is available."] })
+    local daKillerW = GUI:CreateFormCheckbox(s.frame, nil, "showKiller", da, RefreshDA,
+        { description = ns.L["Also name the attacker, e.g. 'Zol died to Heavy Slam from Ingra Maloch!'."] })
+    s.AddRow(row(s.frame, ns.L["Show Killing Blow"], daBlowW), row(s.frame, ns.L["Show Attacker"], daKillerW))
+
+    local daClassColorW = GUI:CreateFormCheckbox(s.frame, nil, "classColorName", da, RefreshDA,
+        { description = ns.L["Color the dead player's name by their class."] })
+    local daInstanceW = GUI:CreateFormCheckbox(s.frame, nil, "instanceOnly", da, RefreshDA,
+        { description = ns.L["Only alert inside dungeons and raids."] })
+    s.AddRow(row(s.frame, ns.L["Class-Colored Name"], daClassColorW), row(s.frame, ns.L["Dungeons & Raids Only"], daInstanceW))
+
+    local daDurationW = GUI:CreateFormSlider(s.frame, nil, 1, 10, 0.5, "duration", da, RefreshDA,
+        { description = ns.L["How long the death alert stays on screen, in seconds."] })
+    s.AddRow(row(s.frame, ns.L["Alert Duration (sec)"], daDurationW))
+
     local ahW = GUI:CreateFormCheckbox(s.frame, nil, "auctionHouseExpansionFilter", generalDB, nil,
         { description = ns.L["Automatically toggle the current expansion filter when you open the Auction House so you only see modern items."] })
     local coW = GUI:CreateFormCheckbox(s.frame, nil, "craftingOrderExpansionFilter", generalDB, nil,
@@ -466,7 +479,9 @@ local function BuildAutomation(L, generalDB)
     }
     local releaseW = GUI:CreateFormDropdown(s.frame, nil, releaseOptions, "autoRelease", generalDB, nil,
         { description = ns.L["Automatically release your spirit after you die. Never triggers in dungeons or raids, where a battle resurrection matters."] })
-    s.AddRow(row(s.frame, ns.L["Auto Release Spirit"], releaseW))
+    local blockReleaseW = GUI:CreateFormCheckbox(s.frame, nil, "blockReleaseInRaid", generalDB, nil,
+        { description = ns.L["Guard the Release Spirit button while you are dead in a raid: it locks during a 3-second countdown and afterwards only works while Ctrl is held, so you don't release before a battle resurrection."] })
+    s.AddRow(row(s.frame, ns.L["Auto Release Spirit"], releaseW), row(s.frame, ns.L["Block Release in Raids"], blockReleaseW))
 
     local audioOptions = (ns.GetAudioDeviceOptions and ns.GetAudioDeviceOptions())
         or { { value = "", text = ns.L["Off (don't lock)"] } }
@@ -769,29 +784,29 @@ local function BuildConsumableMacros(L, generalDB)
     local weaponOpts = ns.ConsumableMacros and ns.ConsumableMacros.WEAPON_OPTIONS or { { value = "none", text = ns.L["None"] } }
 
     local flaskW = GUI:CreateFormDropdown(s2.frame, nil, flaskOpts, "selectedFlask", cmDB, Refresh,
-        { description = ns.L["Flask family the Flask_DUI macro should prefer. The macro always picks the highest-quality variant in your bags."] })
+        { description = ns.L["Flask family the Flask_QUI macro should prefer. The macro always picks the highest-quality variant in your bags."] })
     local potW = GUI:CreateFormDropdown(s2.frame, nil, potionOpts, "selectedPotion", cmDB, Refresh,
-        { description = ns.L["Combat utility potion (e.g., stat/tempered potions) used by the Pot_DUI macro."] })
+        { description = ns.L["Combat utility potion (e.g., stat/tempered potions) used by the Pot_QUI macro."] })
     s2.AddRow(row(s2.frame, ns.L["Flask Type"], flaskW), row(s2.frame, ns.L["Potion Type"], potW))
 
     local healthW = GUI:CreateFormDropdown(s2.frame, nil, healthOpts, "selectedHealth", cmDB, Refresh,
-        { description = ns.L["Healing potion family used by the Health_DUI macro."] })
+        { description = ns.L["Healing potion family used by the Health_QUI macro."] })
     local hsW = GUI:CreateFormDropdown(s2.frame, nil, hsOpts, "selectedHealthstone", cmDB, Refresh,
-        { description = ns.L["Healthstone variant used by the Stone_DUI macro."] })
+        { description = ns.L["Healthstone variant used by the Stone_QUI macro."] })
     s2.AddRow(row(s2.frame, ns.L["Health Potion"], healthW), row(s2.frame, ns.L["Healthstone"], hsW))
 
     local augW = GUI:CreateFormDropdown(s2.frame, nil, augOpts, "selectedAugment", cmDB, Refresh,
-        { description = ns.L["Augment rune family used by the Rune_DUI macro."] })
+        { description = ns.L["Augment rune family used by the Rune_QUI macro."] })
     local vantusW = GUI:CreateFormDropdown(s2.frame, nil, vantusOpts, "selectedVantus", cmDB, Refresh,
-        { description = ns.L["Vantus rune the Vantus_DUI macro should use — useful for raid boss attempt buffs."] })
+        { description = ns.L["Vantus rune the Vantus_QUI macro should use — useful for raid boss attempt buffs."] })
     s2.AddRow(row(s2.frame, ns.L["Augment Rune"], augW), row(s2.frame, ns.L["Vantus Rune"], vantusW))
 
     local weaponW = GUI:CreateFormDropdown(s2.frame, nil, weaponOpts, "selectedWeapon", cmDB, Refresh,
-        { description = ns.L["Weapon oil, stone, or enchant consumable used by the Weapon_DUI macro."] })
+        { description = ns.L["Weapon oil, stone, or enchant consumable used by the Weapon_QUI macro."] })
     s2.AddRow(row(s2.frame, ns.L["Weapon Consumable"], weaponW))
     L.closeSection(s2)
 
-    L.intro(ns.L["Creates per-character macros: Flask_DUI, Pot_DUI, Health_DUI, Stone_DUI, Rune_DUI, Vantus_DUI, Weapon_DUI. Drag them to your action bars."])
+    L.intro(ns.L["Creates per-character macros: Flask_QUI, Pot_QUI, Health_QUI, Stone_QUI, Rune_QUI, Vantus_QUI, Weapon_QUI. Drag them to your action bars."])
 end
 
 local function BuildTargetDistance(L, db)

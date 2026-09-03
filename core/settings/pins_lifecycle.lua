@@ -22,6 +22,12 @@ function Lifecycle:OnProfileDeleted(event, db, profileName)
     end
 end
 
+function Lifecycle:SyncProfileFeatures(event, db)
+    if Pins and type(Pins.SyncProfileFeatureSources) == "function" then
+        Pins:SyncProfileFeatureSources(db)
+    end
+end
+
 local function RegisterCallbacks(core)
     local db = core and core.db
     if not db or type(db.RegisterCallback) ~= "function" or Pins._lifecycleRegistered then
@@ -30,6 +36,8 @@ local function RegisterCallbacks(core)
 
     db.RegisterCallback(Lifecycle, "OnNewProfile", "OnNewProfile")
     db.RegisterCallback(Lifecycle, "OnProfileDeleted", "OnProfileDeleted")
+    db.RegisterCallback(Lifecycle, "OnProfileShutdown", "SyncProfileFeatures")
+    db.RegisterCallback(Lifecycle, "OnDatabaseShutdown", "SyncProfileFeatures")
     Pins._lifecycleRegistered = true
 end
 

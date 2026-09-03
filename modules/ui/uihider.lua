@@ -200,18 +200,21 @@ local function ApplyHideSettings()
 
     if ObjectiveTrackerFrame then
         local shouldHide = ShouldHideObjectiveTracker(settings)
+        local otState = hookedSecureFrames[ObjectiveTrackerFrame]
+        if not otState then otState = {}; hookedSecureFrames[ObjectiveTrackerFrame] = otState end
 
         if shouldHide then
             if InCombatLockdown() then
                 pendingObjectiveTrackerHide = true
             else
-                ObjectiveTrackerFrame:Hide()
-                ObjectiveTrackerFrame:EnableMouse(false)
+                if not otState.objectiveTrackerHidden then
+                    ObjectiveTrackerFrame:Hide()
+                    ObjectiveTrackerFrame:EnableMouse(false)
+                    otState.objectiveTrackerHidden = true
+                end
                 pendingObjectiveTrackerHide = false
             end
 
-            local otState = hookedSecureFrames[ObjectiveTrackerFrame]
-            if not otState then otState = {}; hookedSecureFrames[ObjectiveTrackerFrame] = otState end
             if not otState.showHooked then
                 otState.showHooked = true
                 hooksecurefunc(ObjectiveTrackerFrame, "Show", function(self)
@@ -235,6 +238,7 @@ local function ApplyHideSettings()
 
                                 self:Hide()
                                 self:EnableMouse(false)
+                                otState.objectiveTrackerHidden = true
                                 pendingObjectiveTrackerHide = false
                             end
                         end
@@ -243,10 +247,11 @@ local function ApplyHideSettings()
             end
         else
             pendingObjectiveTrackerHide = false
-            if not InCombatLockdown() then
+            if not InCombatLockdown() and otState.objectiveTrackerHidden then
                 ObjectiveTrackerFrame:SetAlpha(1)
                 ObjectiveTrackerFrame:Show()
                 ObjectiveTrackerFrame:EnableMouse(true)
+                otState.objectiveTrackerHidden = false
             end
         end
     end

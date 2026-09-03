@@ -80,7 +80,9 @@ local function IdentityFilterEnforceable(container, base)
 end
 
 local function SlotCandidateFilters(element, spellID)
-    local cf = { includeSpellIDs = { [spellID] = true } }
+    local includeSpellIDs = E.TrackedSpellCandidates
+        and E.TrackedSpellCandidates(spellID) or { [spellID] = true }
+    local cf = { includeSpellIDs = includeSpellIDs }
     if E.EffectiveOnlyMine(element, spellID) then
         cf.isFromPlayerOrPlayerPet = true
     end
@@ -114,7 +116,8 @@ local function StyleFeederSlot(frame, element)
     frame:SetSize(1, 1)
     if frame.EnableMouse then frame:EnableMouse(false) end
     if frame.SetMouseClickEnabled then frame:SetMouseClickEnabled(false) end
-    local attach = ns.AuraFeederAttach
+    local container = frame.GetParent and frame:GetParent()
+    local attach = (container and container._quiFeederAttach) or ns.AuraFeederAttach
     if attach then attach(frame, element) end
     return true
 end
@@ -122,7 +125,8 @@ end
 local function RetireFeederSlot(frame)
     if not frame._quiFeederActive then return end
     frame._quiFeederActive = false
-    local detach = ns.AuraFeederDetach
+    local container = frame.GetParent and frame:GetParent()
+    local detach = (container and container._quiFeederDetach) or ns.AuraFeederDetach
     if detach then detach(frame, frame._quiFeederElement) end
     frame._quiFeederElement = nil
     frame:SetAlpha(1)
@@ -345,13 +349,15 @@ local function AnchorSlot(frame, container, element, index, total)
         dx = (col - (rowN - 1) / 2) * (w + profile.spacing)
     end
     if rowI > 0 then
+        local rowGap = (profile.rowSpacing and profile.rowSpacing > 0)
+            and profile.rowSpacing or profile.spacing
         local vert = (grow == "UP" or grow == "DOWN")
         if vert then
             local anchorRight = tostring(profile.anchor or ""):find("RIGHT", 1, true)
-            dx = dx + (anchorRight and -1 or 1) * rowI * (w + profile.spacing)
+            dx = dx + (anchorRight and -1 or 1) * rowI * (w + rowGap)
         else
             local anchorTop = tostring(profile.anchor or ""):find("TOP", 1, true)
-            dy = dy + (anchorTop and -1 or 1) * rowI * (h + profile.spacing)
+            dy = dy + (anchorTop and -1 or 1) * rowI * (h + rowGap)
         end
     end
     frame:ClearAllPoints()
@@ -362,6 +368,19 @@ local function ParkSlot(container, slot)
     if slot.parked then return end
     slot.parked = true
     container:SetAuraSlotCandidateFilters(slot.key, PARK_FILTER)
+end
+
+local function HideInactiveIcon(slot)
+    local frame = slot and slot.inactiveFrame
+    if frame then frame:SetShown(false) end
+end
+
+local function ResolveInactiveIcon(spellID)
+    if C_Spell and C_Spell.GetSpellTexture then
+        local icon = C_Spell.GetSpellTexture(spellID)
+        if icon then return icon end
+    end
+    return 134400
 end
 
 -- Feeder elements sync ONE slot with the UNION of their spell IDs instead of
@@ -376,7 +395,9 @@ local function FeederSpellMap(element)
         local sid = spells[i]
         if type(sid) == "number" then
             map = map or {}
-            map[sid] = true
+            local candidates = E.TrackedSpellCandidates
+                and E.TrackedSpellCandidates(sid) or { [sid] = true }
+            for candidateID in pairs(candidates) do map[candidateID] = true end
             n = n + 1
         end
     end
@@ -507,8 +528,6 @@ function S.Sync(container, element, allowCreate, profileOverrides)
         for i = 1, #spells do
             if type(spells[i]) == "number" then total = total + 1 end
         end
-        local cap = element.maxIcons
-        if cap and cap > 0 and cap < total then total = cap end
         for i = 1, #spells do
             if want >= total then break end
             local spellID = spells[i]
@@ -561,6 +580,70 @@ function S.Sync(container, element, allowCreate, profileOverrides)
         ParkSlot(container, pool[i])
     end
     return complete
+end
+
+function S.SyncInactiveIcons(container, element, allowCreate, shown)
+    local pool = container._quiInactiveIcons
+    if not pool then
+        if not allowCreate then return shown ~= true end
+        pool = {}
+        container._quiInactiveIcons = pool
+    end
+    local spells = element.enabled ~= false
+        and (element.displayType == nil or element.displayType == "icon")
+        and element.spells or nil
+    local complete = true
+    local want = 0
+    if type(spells) == "table" then
+        local profile = ns.AuraGlue.ElementProfile(element)
+        local total = 0
+        for i = 1, #spells do
+            if type(spells[i]) == "number" then total = total + 1 end
+        end
+        for i = 1, #spells do
+            local spellID = spells[i]
+            if type(spellID) == "number" then
+                want = want + 1
+                local slot = pool[want]
+                local frame = slot and slot.inactiveFrame
+                if not frame and allowCreate and not AurasAreSecret() then
+                    slot = slot or {}
+                    frame = CreateFrame("Frame", nil, container)
+                    frame:SetFrameLevel(container:GetFrameLevel())
+                    local border = frame:CreateTexture(nil, "BACKGROUND")
+                    border:SetAllPoints(frame)
+                    local icon = frame:CreateTexture(nil, "ARTWORK")
+                    frame.Icon = icon
+                    frame._quiBorder = border
+                    icon:SetDesaturated(true)
+                    frame:SetAlpha(0.4)
+                    slot.inactiveFrame = frame
+                    pool[want] = slot
+                end
+                if frame then
+                    local icon = frame.Icon
+                    frame:SetSize(profile.iconSize, profile.iconSize)
+                    AuraSkin.StyleIconArt(frame, profile)
+                    AnchorSlot(frame, container, element, want, total)
+                    if slot.inactiveSpellID ~= spellID then
+                        icon:SetTexture(ResolveInactiveIcon(spellID))
+                        slot.inactiveSpellID = spellID
+                    end
+                    frame:SetShown(shown == true)
+                else
+                    complete = false
+                end
+            end
+        end
+    end
+    for i = want + 1, #pool do HideInactiveIcon(pool[i]) end
+    return complete
+end
+
+function S.HideInactiveIcons(container)
+    local pool = container and container._quiInactiveIcons
+    if not pool then return end
+    for i = 1, #pool do HideInactiveIcon(pool[i]) end
 end
 
 function S.Park(container)

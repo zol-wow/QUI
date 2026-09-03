@@ -35,6 +35,36 @@ local UNIT_OPTIONS = {
     { value = "__name", text = ns.L["Specific player..."] },
 }
 
+local DISPLAY_DIRECTION_OPTIONS = {
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "UP", text = ns.L["Up"] },
+    { value = "DOWN", text = ns.L["Down"] },
+}
+
+local DISPLAY_ALIGNMENT_OPTIONS = {
+    { value = "START", text = ns.L["Start"] },
+    { value = "CENTER", text = ns.L["Center"] },
+    { value = "END", text = ns.L["End"] },
+}
+
+local VISIBILITY_OPTIONS = {
+    { value = "active", text = ns.L["Active Only"] },
+    { value = "instance", text = ns.L["Show In Instance"] },
+    { value = "always", text = ns.L["Always"] },
+}
+
+local BUILTIN_ALERT_SOUND = "Sound\\Interface\\RaidWarning.ogg"
+
+local function AlertSoundOptions()
+    local options = Shared.GetSoundList()
+    for i = 1, #options do
+        if options[i].value == BUILTIN_ALERT_SOUND then return options end
+    end
+    options[#options + 1] = { value = BUILTIN_ALERT_SOUND, text = ns.L["Raid Warning"] }
+    return options
+end
+
 ns.QUI_AuraDisplaysOptions = {}
 
 local function Fold(text)
@@ -194,7 +224,11 @@ function ns.QUI_AuraDisplaysOptions._QuickCreate(spec)
     local bucket = display.auras.elements["*"]
     for i = #bucket, 1, -1 do bucket[i] = nil end
     if spec.kind == "tracked" then
-        bucket[1] = E.NewTrackedElement(spec.spellID and { spec.spellID } or {}, "icon")
+        local spellID = spec.spellID
+            and E.ResolveTrackedSpellID and E.ResolveTrackedSpellID(spec.spellID)
+            or spec.spellID
+        bucket[1] = E.NewTrackedElement(spellID and { spellID } or {}, "icon")
+        bucket[1].iconSize = 100
     else
         bucket[1] = E.NewFilterStripElement("HELPFUL")
     end
@@ -281,7 +315,8 @@ local function PaintGroupHeaderRow(row, y, node)
     row:ClearAllPoints()
     row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", 0, -y)
     local title = node.group == "" and ns.L["Ungrouped"] or node.group
-    row.label:SetText((node.collapsed and "▸ " or "▾ ") .. title .. " (" .. node.count .. ")")
+    local marker = node.group == "" and "" or (node.collapsed and "> " or "v ")
+    row.label:SetText(marker .. title .. " (" .. node.count .. ")")
     row:SetScript("OnClick", function()
         if node.group ~= "" then
             AD.SetGroupCollapsed(node.group, not node.collapsed)
@@ -683,7 +718,15 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
             if ctx and ctx.RebuildDetail then ctx.RebuildDetail() end
         end,
         { description = ns.L["Which unit this display watches. Co-Tank follows the first other tank in your group."] })
-    unitCard.AddRow(Shared.BuildSettingRow(unitCard.frame, ns.L["Unit"], unitW))
+    display.visibility = display.visibility or "active"
+    local visibilityW = GUI:CreateFormDropdown(unitCard.frame, nil, VISIBILITY_OPTIONS,
+        "visibility", display, function() AD.Refresh() end, {
+            description = ns.L["Controls when inactive aura icons remain visible and desaturated. Active Only hides them; Show In Instance keeps them visible in dungeons and raids; Always keeps them visible everywhere."],
+        })
+    unitCard.AddRow(
+        Shared.BuildSettingRow(unitCard.frame, ns.L["Unit"], unitW),
+        Shared.BuildSettingRow(unitCard.frame, ns.L["Visibility"], visibilityW)
+    )
     if display.unitMode == "name" then
         local nameField = GUI:CreateFormEditBox(unitCard.frame, nil, "unit", display, function()
             AD.Refresh()
@@ -691,6 +734,48 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
         unitCard.AddRow(Shared.BuildSettingRow(unitCard.frame, ns.L["Player Name"], nameField))
     end
     L.closeSection(unitCard)
+
+    local layoutCard = L.sectionAt()
+    display.layout = display.layout or {}
+    display.layout.direction = display.layout.direction or "RIGHT"
+    display.layout.alignment = display.layout.alignment or "CENTER"
+    display.layout.spacing = display.layout.spacing or 2
+    local layoutChanged = function()
+        AD.Refresh()
+        SyncPreview()
+    end
+    local directionProxy = {
+        direction = display.layout.direction,
+        _quiTransientOptionsProxy = true,
+    }
+    local directionW = GUI:CreateFormDropdown(layoutCard.frame, nil,
+        DISPLAY_DIRECTION_OPTIONS, "direction", directionProxy, function()
+            display.layout.direction = directionProxy.direction
+            layoutChanged()
+        end, {
+            description = ns.L["How separate aura rows are arranged inside this display. Grow Direction still controls icons within one row."],
+        })
+    local alignmentProxy = {
+        alignment = display.layout.alignment,
+        _quiTransientOptionsProxy = true,
+    }
+    local alignmentW = GUI:CreateFormDropdown(layoutCard.frame, nil,
+        DISPLAY_ALIGNMENT_OPTIONS, "alignment", alignmentProxy, function()
+            display.layout.alignment = alignmentProxy.alignment
+            layoutChanged()
+        end, {
+            description = ns.L["How rows are aligned across the other axis."],
+        })
+    local spacingW = GUI:CreateFormSlider(layoutCard.frame, nil, 0, 8, 1, "spacing",
+        display.layout, layoutChanged, { deferOnDrag = true }, {
+            description = ns.L["Pixel gap between separate aura rows."],
+        })
+    layoutCard.AddRow(
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Row Direction"], directionW),
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Row Alignment"], alignmentW)
+    )
+    layoutCard.AddRow(Shared.BuildSettingRow(layoutCard.frame, ns.L["Row Spacing"], spacingW))
+    L.closeSection(layoutCard)
 
     if AD.UnitPolarityFor(display) == "hostile" and HasHelpfulTrackedElement(display) then
         local wrap = CreateFrame("Frame", nil, host)
@@ -748,6 +833,8 @@ function ns.QUI_AuraDisplaysOptions._BuildAurasTab(host, ctx, display)
         capabilities = {
             elementTypes        = { filterStrip = true, tracked = true },
             trackedDisplayTypes = { icon = true, square = true, bar = true },
+            iconSizeMax         = 200,
+            containerLayout     = true,
             allowSpecOverride   = true,
             roleGate            = false,
             cancelEligible      = false,
@@ -762,6 +849,83 @@ function ns.QUI_AuraDisplaysOptions._BuildAurasTab(host, ctx, display)
     })
     local total = (type(height) == "number" and height > 0) and height or (editorHost:GetHeight() or 1)
     return total + warnHeight
+end
+
+local function CreateAuraSoundControl(parent, sounds, key, onChange)
+    local control = CreateFrame("Frame", nil, parent)
+    control:SetSize(240, 24)
+    local dropdown = GUI:CreateFormDropdown(control, nil, AlertSoundOptions(), key, sounds, onChange, {
+        description = ns.L["Blizzard plays this sound when the aura event occurs. None disables this event."],
+    })
+    dropdown:SetPoint("LEFT", control, "LEFT", 0, 0)
+    dropdown:SetPoint("RIGHT", control, "RIGHT", -48, 0)
+    local preview = GUI:CreateButton(control, ns.L["Test"], 44, 22, function()
+        AD.PreviewAuraSound(sounds[key])
+    end)
+    preview:SetPoint("RIGHT", control, "RIGHT", 0, 0)
+    return control
+end
+
+function ns.QUI_AuraDisplaysOptions._BuildAlertsTab(host, ctx, display)
+    local mode = display.unitMode or "token"
+    if mode ~= "token" or AD.STATIC_TOKENS[display.unit] == nil then
+        local L = ns.QUI_SettingsLayoutShared.MakeLayout(host)
+        L.intro(ns.L["Blizzard aura sounds require a fixed unit token. Choose Player, Target, Focus, Party, Raid, Boss, Arena, Pet, or Mouseover in General. Co-Tank and Specific Player cannot be registered safely because their unit token changes."])
+        return L.finish()
+    end
+    if AD.HasEncounterLoadConditions(display) then
+        local L = ns.QUI_SettingsLayoutShared.MakeLayout(host)
+        L.intro(ns.L["Encounter load conditions cannot control Blizzard native aura sound registrations safely because encounters begin in combat. Remove the Encounter condition to configure sounds for this display."])
+        return L.finish()
+    end
+
+    E.EnsureSeeded(display.auras, AD.DefaultBucket)
+    local W = ns.QUI_AuraWizard
+    local specID = W and type(W.PlayerSpecID) == "function" and W.PlayerSpecID() or nil
+    local elements = E.ActiveElementsForSpec(display.auras, specID)
+    local L = ns.QUI_SettingsLayoutShared.MakeLayout(host)
+    local found = false
+
+    for _, element in ipairs(elements) do
+        if element.mode == "tracked" and type(element.spells) == "table" then
+            for _, spellID in ipairs(element.spells) do
+                if type(spellID) == "number" then
+                    found = true
+                    local spellName = C_Spell and C_Spell.GetSpellName
+                        and C_Spell.GetSpellName(spellID) or tostring(spellID)
+                    L.headerAt(spellName or tostring(spellID))
+                    if E.EffectiveOnlyMine(element, spellID) then
+                        L.intro(ns.L["This aura uses Only My Cast. Blizzard's native sound API cannot filter by caster, so sounds stay off for this spell until Only My Cast is disabled in the Auras tab."])
+                    else
+                        element.auraSounds = element.auraSounds or {}
+                        local sounds = element.auraSounds[spellID]
+                        if type(sounds) ~= "table" then
+                            sounds = {
+                                added = "None",
+                                applicationsIncreased = "None",
+                                removed = "None",
+                            }
+                            element.auraSounds[spellID] = sounds
+                        end
+                        local changed = function() AD.Refresh() end
+                        local card = L.sectionAt()
+                        card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Aura Applied"],
+                            CreateAuraSoundControl(card.frame, sounds, "added", changed)))
+                        card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Stacks Increased"],
+                            CreateAuraSoundControl(card.frame, sounds, "applicationsIncreased", changed)))
+                        card.AddRow(Shared.BuildSettingRow(card.frame, ns.L["Aura Removed"],
+                            CreateAuraSoundControl(card.frame, sounds, "removed", changed)))
+                        L.closeSection(card)
+                    end
+                end
+            end
+        end
+    end
+
+    if not found then
+        L.intro(ns.L["Add a tracked spell in the Auras tab to configure native aura sounds."])
+    end
+    return L.finish()
 end
 
 function ns.QUI_AuraDisplaysOptions._BuildLoadTab(host, ctx, display)
@@ -891,11 +1055,13 @@ BuildRightPane = function(right, ctx)
     local TABS = {
         { key = "general", label = ns.L["General"] },
         { key = "auras", label = ns.L["Auras"] },
+        { key = "alerts", label = ns.L["Alerts"] },
         { key = "load", label = ns.L["Load Conditions"] },
     }
     local BUILDERS = {
         general = ns.QUI_AuraDisplaysOptions._BuildGeneralTab,
         auras = ns.QUI_AuraDisplaysOptions._BuildAurasTab,
+        alerts = ns.QUI_AuraDisplaysOptions._BuildAlertsTab,
         load = ns.QUI_AuraDisplaysOptions._BuildLoadTab,
     }
 
@@ -952,9 +1118,37 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
 
     if selectedID and not AD.GetDisplay(selectedID) then selectedID = nil end
 
+    local topOffset = 0
+    local profileCopy = ns.QUI_ProfileCopyOptions
+    if profileCopy
+        and type(profileCopy.CreateCard) == "function"
+    then
+        local copyHeader = Shared.CreateAccentDotLabel(content, ns.L["Copy Settings"], 0)
+        copyHeader:ClearAllPoints()
+        copyHeader:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, 0)
+        copyHeader:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, 0)
+
+        local copyHost = CreateFrame("Frame", nil, content)
+        copyHost:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -22)
+        copyHost:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -22)
+        local controller = profileCopy.CreateCard(copyHost, {
+            fixedCategoryID = "auraDisplays",
+            fixedCategoryLabel = ns.L["Aura Displays"],
+            onCopied = function()
+                if UI.lastPreviewID then AD.HidePreviewFor(UI.lastPreviewID) end
+                UI.lastPreviewID = nil
+                selectedID = nil
+                if UI.RebuildList then UI.RebuildList() end
+                if UI.RebuildDetail then UI.RebuildDetail() end
+            end,
+        })
+        copyHost:SetHeight(controller.frame:GetHeight())
+        topOffset = 22 + controller.frame:GetHeight() + 14
+    end
+
     local pane = CreateFrame("Frame", nil, content)
-    pane:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, 0)
-    pane:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, 0)
+    pane:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -topOffset)
+    pane:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -topOffset)
     pane:SetHeight(PAGE_H)
     pane:SetScript("OnHide", function()
         if UI.lastPreviewID then
@@ -964,6 +1158,7 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
         if UI.groupRenameField then UI.groupRenameField:Hide() end
         if UI.quickCreatePopup then UI.quickCreatePopup:Hide() end
     end)
+    pane:HookScript("OnShow", SyncPreview)
 
     local left = CreateFrame("Frame", nil, pane, "BackdropTemplate")
     left:SetPoint("TOPLEFT")
@@ -977,6 +1172,6 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
     BuildLeftPane(left)
     BuildRightPane(right, ctx)
 
-    content:SetHeight(PAGE_H)
-    return PAGE_H
+    content:SetHeight(PAGE_H + topOffset)
+    return PAGE_H + topOffset
 end

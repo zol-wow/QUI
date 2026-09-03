@@ -21,6 +21,10 @@ local CreateScrollableContent = Shared.CreateScrollableContent
 
 local FORM_ROW = 32
 local PAD = 10
+local COPY_LABEL_WIDTH = 72
+local COPY_DROPDOWN_WIDTH = 420
+local COPY_CONTROL_GAP = 12
+local BINDINGS_SECTION_GAP = 22
 local UIKit = ns.UIKit
 
 local spellCache = {}
@@ -635,11 +639,13 @@ local function EnsureBrowsePopup()
     CJKFont(browseTitle, GUI.FONT_PATH, 12, "")
     browseTitle:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 
-    local browseCloseBtn = CreateClickCastButton(browsePopup, "X", 20, 20, function() browsePopup:Hide() end)
-    browseCloseBtn:SetPoint("TOPRIGHT", -6, -6)
-    if browseCloseBtn.text then
-        CJKFont(browseCloseBtn.text, GUI.FONT_PATH, 11, "")
-    end
+    UIKit.CreateCloseButton(browsePopup, {
+        size = 20,
+        point = "TOPRIGHT",
+        x = -6,
+        y = -6,
+        onClick = function() browsePopup:Hide() end,
+    })
 
     local browseSearchBg = CreateFrame("Frame", nil, browsePopup, "BackdropTemplate")
     browseSearchBg:SetPoint("TOPLEFT", 8, -28)
@@ -666,7 +672,7 @@ local function EnsureBrowsePopup()
     browseSearch:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
     local SCROLLBAR_WIDTH = 4
-    local SCROLL_STEP = 24
+    local SCROLL_STEP = 45
 
     local browseScroll = CreateFrame("ScrollFrame", nil, browsePopup)
     browseScroll:SetPoint("TOPLEFT", 8, -58)
@@ -677,53 +683,33 @@ local function EnsureBrowsePopup()
     browseScrollChild:SetHeight(1)
     browseScroll:SetScrollChild(browseScrollChild)
 
-    local browseScrollBar = CreateFrame("Frame", nil, browsePopup)
-    browseScrollBar:SetWidth(SCROLLBAR_WIDTH)
-    browseScrollBar:SetPoint("TOPRIGHT", browsePopup, "TOPRIGHT", -8, -58)
-    browseScrollBar:SetPoint("BOTTOMRIGHT", browsePopup, "BOTTOMRIGHT", -8, 8)
-    browseScrollBar:Hide()
-
-    local browseThumb = browseScrollBar:CreateTexture(nil, "OVERLAY")
-    browseThumb:SetWidth(SCROLLBAR_WIDTH)
-    browseThumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
-
-    local function UpdateBrowseThumb()
-        local contentH = browseScrollChild:GetHeight()
-        local frameH = browseScroll:GetHeight()
-        if contentH <= frameH or frameH <= 0 then
-            browseScrollBar:Hide()
-            return
-        end
-        browseScrollBar:Show()
-        local trackH = browseScrollBar:GetHeight()
-        if trackH <= 0 then return end
-        local thumbH = math.max(20, (frameH / contentH) * trackH)
-        browseThumb:SetHeight(thumbH)
-        local scrollMax = contentH - frameH
-        local okScroll, scrollCur = pcall(browseScroll.GetVerticalScroll, browseScroll)
-        scrollCur = (okScroll and scrollCur) or 0
-        local ratio = (scrollMax > 0) and (scrollCur / scrollMax) or 0
-        local yOff = -ratio * (trackH - thumbH)
-        browseThumb:ClearAllPoints()
-        browseThumb:SetPoint("TOP", browseScrollBar, "TOP", 0, yOff)
+    -- Rows are laid out synchronously into browseScrollChild; measure overflow
+    -- from it rather than the native range, which lags a layout pass behind.
+    local function BrowseRange()
+        return math.max(0, (browseScrollChild:GetHeight() or 0) - (browseScroll:GetHeight() or 0))
     end
-
-    browseScroll:EnableMouseWheel(true)
-    browseScroll:SetScript("OnMouseWheel", function(self, delta)
-        local okCur, currentScroll = pcall(self.GetVerticalScroll, self)
-        if not okCur then return end
-        local contentH = browseScrollChild:GetHeight()
-        local frameH = self:GetHeight()
-        local maxScroll = math.max(0, contentH - frameH)
-        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
-        self:SetVerticalScroll(newScroll)
-        UpdateBrowseThumb()
-    end)
-    browseScroll:SetScript("OnScrollRangeChanged", function() UpdateBrowseThumb() end)
 
     browseScroll:SetScript("OnSizeChanged", function(self, w)
         browseScrollChild:SetWidth(w or 296)
     end)
+
+    local uikit = ns.UIKit or UIKit
+    local browseScrollBar = uikit.CreateScrollBar(browseScroll, {
+        parent = browsePopup,
+        anchor = browsePopup,
+        offsetX = -8,
+        insetTop = 58,
+        insetBottom = 8,
+        width = SCROLLBAR_WIDTH,
+        getRange = BrowseRange,
+    })
+    local browseScrollCtl = uikit.AttachSmoothScroll(browseScroll, {
+        step = SCROLL_STEP,
+        getRange = BrowseRange,
+    })
+    local function UpdateBrowseThumb()
+        browseScrollBar:Update()
+    end
 
     local BROWSE_ROW_H = 24
     local browseRows = {}
@@ -841,7 +827,7 @@ local function EnsureBrowsePopup()
         end
 
         browseScrollChild:SetHeight(math.max(1, math.abs(by)))
-        browseScroll:SetVerticalScroll(0)
+        browseScrollCtl:ScrollTo(0, true)
         C_Timer.After(0, UpdateBrowseThumb)
     end
 
@@ -877,6 +863,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     local ACTION_TYPE_OPTIONS = {
         { value = "spell",        text = ns.L["Spell"] },
+        { value = "item",         text = ns.L["Item"] },
         { value = "macro",        text = ns.L["Macro"] },
         { value = "target",       text = ns.L["Target Unit"] },
         { value = "focus",        text = ns.L["Set Focus"] },
@@ -938,6 +925,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     L.placeCustom(bindingsBlock, 100)
 
     local by = 0
+    local RefreshBindingList
 
     local specLabel = GUI:CreateLabel(bindingsBlock, "", 11, C.accent)
     specLabel:SetPoint("TOPLEFT", 0, by)
@@ -988,14 +976,116 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     UpdateSpecLabel()
     if specLabel:IsShown() then by = by - 20 end
 
+    local function GetSpecName(specID)
+        if GetSpecializationInfoByID then
+            local _, specName = GetSpecializationInfoByID(specID)
+            if specName and specName ~= "" then return specName end
+        end
+        return ns.L["Spec"] .. " " .. tostring(specID)
+    end
+
+    local function GetLoadoutName(specID, configID, specName)
+        local configInfo = C_Traits and C_Traits.GetConfigInfo and C_Traits.GetConfigInfo(configID)
+        local customName = configInfo and configInfo.name
+        if customName and customName ~= "" and customName ~= specName then
+            return customName
+        end
+
+        local configIDs = C_ClassTalents and C_ClassTalents.GetConfigIDsBySpecID
+            and C_ClassTalents.GetConfigIDsBySpecID(specID)
+        if configIDs then
+            for index, savedConfigID in ipairs(configIDs) do
+                if savedConfigID == configID then
+                    return ns.L["Loadout"] .. " " .. index
+                end
+            end
+        end
+
+        return ns.L["Loadout"] .. " " .. tostring(configID)
+    end
+
+    local function GetBindingSetLabel(source)
+        if source.scope == "shared" then
+            return ns.L["Shared"]
+        end
+
+        local specName = GetSpecName(source.specID)
+        if source.scope == "spec" then
+            return specName .. " (" .. ns.L["Spec"] .. ")"
+        end
+
+        return specName .. ": " .. GetLoadoutName(source.specID, source.configID, specName)
+    end
+
+    Shared.CreateAccentDotLabel(bindingsBlock, ns.L["Copy Settings"], by); by = by - 30
+
+    local copySelector = { selected = nil }
+    local copyCard = Shared.CreateSettingsCardGroup(bindingsBlock, by)
+    local copyControls = CreateFrame("Frame", nil, copyCard.frame)
+    copyControls:SetHeight(FORM_ROW)
+
+    local copyDropdown = GUI:CreateFormDropdown(copyControls, ns.L["Copy From"], {}, "selected", copySelector)
+    copyDropdown:ClearAllPoints()
+    copyDropdown:SetPoint("LEFT", copyControls, "LEFT", 0, 0)
+    copyDropdown:SetWidth(COPY_LABEL_WIDTH + COPY_CONTROL_GAP + COPY_DROPDOWN_WIDTH)
+    if copyDropdown.dropdown then
+        copyDropdown.dropdown:ClearAllPoints()
+        copyDropdown.dropdown:SetPoint("LEFT", copyDropdown, "LEFT", COPY_LABEL_WIDTH + COPY_CONTROL_GAP, 0)
+        copyDropdown.dropdown:SetPoint("RIGHT", copyDropdown, "RIGHT", 0, 0)
+    end
+
+    local applyCopyBtn = GUI:CreateButton(copyControls, ns.L["Apply Copy"], 100, 24, function()
+        if not copySelector.selected or copySelector.selected == "" then return end
+        local ok = GFCC:CopyBindingsFrom(copySelector.selected)
+        if ok and RefreshBindingList then RefreshBindingList() end
+    end)
+    applyCopyBtn:SetPoint("LEFT", copyDropdown, "RIGHT", COPY_CONTROL_GAP, 0)
+
+    copyCard.AddRow(copyControls)
+    copyCard.Finalize()
+    by = by - copyCard.frame:GetHeight() - BINDINGS_SECTION_GAP
+
+    local function UpdateCopyControls()
+        local activeID = GFCC:GetEditableBindingSetID()
+        local options = {}
+        for _, source in ipairs(GFCC:GetBindingSetSources()) do
+            if source.id ~= activeID then
+                options[#options + 1] = {
+                    value = source.id,
+                    text = GetBindingSetLabel(source),
+                }
+            end
+        end
+
+        local hasSources = #options > 0
+        if not hasSources then
+            options[1] = { value = "", text = ns.L["None"] }
+        end
+
+        local selectionFound = false
+        for _, option in ipairs(options) do
+            if option.value == copySelector.selected then
+                selectionFound = true
+                break
+            end
+        end
+        if not selectionFound then
+            copySelector.selected = options[1].value
+        end
+
+        copyDropdown:SetOptions(options)
+        copyDropdown:SetValue(copySelector.selected, true)
+        copyDropdown:SetEnabled(hasSources)
+        applyCopyBtn:SetEnabled(hasSources)
+        applyCopyBtn:SetAlpha(hasSources and 1 or 0.4)
+    end
+
     Shared.CreateAccentDotLabel(bindingsBlock, ns.L["Current Bindings"], by); by = by - 30
 
     local bindingListFrame = CreateFrame("Frame", nil, bindingsBlock)
     bindingListFrame:SetPoint("TOPLEFT", 0, by)
     bindingListFrame:SetSize(400, 20)
     local listTopOffset = math.abs(by)
-
-    local RefreshBindingList
 
     local addContainer = CreateFrame("Frame", nil, bindingsBlock)
     addContainer:SetPoint("TOPLEFT", bindingListFrame, "BOTTOMLEFT", 0, -10)
@@ -1006,7 +1096,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     Shared.CreateAccentDotLabel(addContainer, ns.L["Add Binding"], 0)
     local ay = -30
 
-    local dropZone = CreateClickCastButton(addContainer, ns.L["Drop a spell or macro here"], 1, 68, nil, "primary")
+    local dropPrompt = ns.L["Drop Spell or Item Here"] .. " / " .. ns.L["Macro"]
+    local dropZone = CreateClickCastButton(addContainer, dropPrompt, 1, 68, nil, "primary")
     dropZone:RegisterForClicks("LeftButtonUp")
     SetHeightPx(dropZone, 68)
     dropZone:SetPoint("TOPLEFT", 0, ay)
@@ -1020,7 +1111,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         dropLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
     end
 
-    local addState = { bindingType = "mouse", button = "LeftButton", key = nil, modifiers = "", actionType = "spell", spellName = "", macroText = "", targetFilter = "any" }
+    local addState = { bindingType = "mouse", button = "LeftButton", key = nil, modifiers = "", actionType = "spell", spellName = "", itemName = nil, itemID = nil, macroText = "", targetFilter = "any" }
     local spellInput, macroInput, actionDrop
     local spellInputContainer, macroInputContainer
     local mouseButtonContainer, keyCaptureContainer
@@ -1043,12 +1134,15 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 if overrideID and overrideID ~= spellID then spellID = overrideID end
                 local name = C_Spell.GetSpellName(spellID)
                 if name then
+                    addState.itemName = nil
+                    addState.itemID = nil
                     addState.spellName = name
                     addState.actionType = "spell"
                     if spellInput then spellInput:SetText(name) end
                     if actionDrop then actionDrop.SetValue("spell", true) end
                     if spellInputContainer then spellInputContainer:Show() end
                     if macroInputContainer then macroInputContainer:Hide() end
+                    if dropLabel then dropLabel:SetText(dropPrompt) end
                 end
             end
             ClearCursor()
@@ -1058,6 +1152,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
             if macroIndex then
                 local name, _, body = GetMacroInfo(macroIndex)
                 if body then
+                    addState.itemName = nil
+                    addState.itemID = nil
                     addState.actionType = "macro"
                     addState.macroText = body
                     addState.spellName = name or ns.L["Macro"]
@@ -1065,7 +1161,23 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                     if actionDrop then actionDrop.SetValue("macro", true) end
                     if macroInputContainer then macroInputContainer:Show() end
                     if spellInputContainer then spellInputContainer:Hide() end
+                    if dropLabel then dropLabel:SetText(dropPrompt) end
                 end
+            end
+            ClearCursor()
+            return true
+        elseif cursorType == "item" then
+            local itemID = id1
+            if itemID then
+                local itemName = C_Item.GetItemInfo(itemID)
+                addState.actionType = "item"
+                addState.itemID = itemID
+                addState.itemName = itemName
+                if actionDrop then actionDrop.SetValue("item", true) end
+                if spellInputContainer then spellInputContainer:Hide() end
+                if macroInputContainer then macroInputContainer:Hide() end
+                if targetFilterRow then targetFilterRow:Hide() end
+                if dropLabel then dropLabel:SetText(itemName or ns.L["Item"]) end
             end
             ClearCursor()
             return true
@@ -1461,6 +1573,10 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
             newBinding.spellID = baseID
             local rootName = C_Spell.GetSpellName(baseID)
             newBinding.spell = rootName or C_Spell.GetSpellName(spellID) or name
+        elseif actionType == "item" then
+            if not addState.itemID then print("|cFFFF5555[QUI]|r " .. ns.L["Item"] .. ns.L[" unavailable."]) return end
+            newBinding.itemID = addState.itemID
+            newBinding.item = addState.itemName or C_Item.GetItemInfo(addState.itemID) or ns.L["Item"]
         elseif actionType == "macro" then
             local text = addState.macroText
             if not text or text == "" then print("|cFFFF5555[QUI]|r " .. ns.L["Enter macro text."]) return end
@@ -1479,12 +1595,15 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         local ok, err = GFCC:AddBinding(newBinding)
         if not ok then print("|cFFFF5555[QUI]|r " .. (err or ns.L["Failed to add binding."])) return end
         addState.spellName = ""
+        addState.itemName = nil
+        addState.itemID = nil
         addState.macroText = ""
         addState.key = nil
         addState.targetFilter = "any"
         if targetFilterDrop and targetFilterDrop.SetValue then targetFilterDrop.SetValue("any", true) end
         spellInput:SetText("")
         macroInput:SetText("")
+        if dropLabel then dropLabel:SetText(dropPrompt) end
         keyCaptureBtn:SetText(ns.L["Click to bind a key"])
         if keyCaptureText then keyCaptureText:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1) end
         RefreshBindingList()
@@ -1544,6 +1663,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     RefreshBindingList = function()
         UpdateSpecLabel()
+        UpdateCopyControls()
         local buttonNames = GFCC:GetButtonNames()
         local modLabels  = GFCC:GetModifierLabels()
         local bindings   = GFCC:GetEditableBindings()
@@ -1567,6 +1687,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 if type(actionType) ~= "string" then actionType = "spell" end
                 local spellName = binding.spell
                 if type(spellName) ~= "string" then spellName = nil end
+                local itemName = binding.item
+                if type(itemName) ~= "string" then itemName = nil end
                 local resolvedSpellID = binding.spellID
                 if resolvedSpellID and actionType == "spell" then
                     local currentName = C_Spell.GetSpellName(resolvedSpellID)
@@ -1575,7 +1697,17 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 local row = AcquireBindingRow(i)
                 row.bindingIndex = i
                 local iconTex = row.iconTex
-                if actionType == "spell" and spellName then
+                if actionType == "item" then
+                    local itemInfo = binding.itemID or itemName
+                    local itemTexture
+                    if itemInfo then
+                        local itemData = { C_Item.GetItemInfo(itemInfo) }
+                        local currentName = itemData[1]
+                        itemTexture = itemData[10]
+                        if currentName then itemName = currentName end
+                    end
+                    iconTex:SetTexture(itemTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
+                elseif actionType == "spell" and spellName then
                     local lookupID = resolvedSpellID or C_Spell.GetSpellIDForSpellIdentifier(spellName)
                     if lookupID then
                         local info = C_Spell.GetSpellInfo(lookupID)
@@ -1590,7 +1722,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 local triggerLabel = binding.key or (buttonNames[binding.button] or binding.button)
                 row.comboText:SetText(modLabel .. triggerLabel)
                 row.comboText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-                local displayName = spellName or actionType
+                local displayName = itemName or spellName or actionType
                 if actionType == "macro" then displayName = ns.L["Macro"]
                 elseif actionType == "menu" then displayName = ns.L["Unit Menu"]
                 elseif PING_DISPLAY_NAMES[actionType] then displayName = PING_DISPLAY_NAMES[actionType] end

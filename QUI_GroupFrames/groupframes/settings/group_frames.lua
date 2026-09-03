@@ -77,15 +77,10 @@ SurfaceFeatures:Register({
     moverKey = "partyFrames",
     lookupKeys = { "partyFrames", "raidFrames", "spotlightFrames" },
     layoutPositionOnly = true,
-    lookupRoutes = {
-        partyFrames = { subPageIndex = 2 },
-        raidFrames = { subPageIndex = 3 },
-        spotlightFrames = { subPageIndex = 3 },
-    },
     category = "frames",
     nav = {
         tileId = "group_frames",
-        subPageIndex = 2,
+        subPageIndex = 1,
     },
     render = {
         layout = RenderLayoutRoute,

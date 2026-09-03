@@ -13,13 +13,16 @@ local RD = Alts.RosterData
 local WeekliesView = {}
 Alts.WeekliesView = WeekliesView
 
-local ROW_H, FOOTER_H = 22, 22
+local ROW_H, HDR_H, FOOTER_H = 22, 20, 22
 local CELL_PAD = 6
 local LOCKOUT_INDENT = 24
 
-local NAME_W    = 160
-local RATING_W  = 60
-local KEYSTONE_W = 180
+local COLUMN_LABELS = {
+    ns.L["Character"],
+    ns.L["M+ Rating"],
+    ns.L["Mythic+ Keystone"],
+    ns.L["Great Vault"],
+}
 
 local VAULT_TYPE_LABEL = {
     [1] = "Raid",
@@ -165,6 +168,35 @@ function WeekliesView.BuildDisplayRows(characters)
     return rows
 end
 
+function WeekliesView.CellTexts(row)
+    if not (row and row.kind == "char") then return nil end
+    local w = row.weeklies
+    local rating = w and w.mplusRating
+    return {
+        row.name or row.key or "?",
+        rating and rating > 0 and string.format("%d", rating) or "—",
+        WeekliesView.KeystoneText(w),
+        WeekliesView.VaultSummary(w),
+    }
+end
+
+function WeekliesView.ColumnWidths(rows, measure)
+    local widths = {}
+    for i, label in ipairs(COLUMN_LABELS) do
+        widths[i] = math.ceil(measure(label) or 0) + CELL_PAD * 2
+    end
+    for _, row in ipairs(rows or {}) do
+        local texts = row.cellTexts or WeekliesView.CellTexts(row)
+        row.cellTexts = texts
+        if texts then
+            for i, text in ipairs(texts) do
+                widths[i] = math.max(widths[i], math.ceil(measure(text) or 0) + CELL_PAD * 2)
+            end
+        end
+    end
+    return widths
+end
+
 local function Builder(parent)
     local Store = ns.Storage and ns.Storage.Store
     local Bus   = ns.Storage and ns.Storage.Bus
@@ -177,10 +209,11 @@ local function Builder(parent)
     local rows    = {}
     local rowPool = {}
     local charCount = 0
+    local colWidths = {}
 
     local function VisibleRows()
         local h = frame:GetHeight() or 0
-        local usable = h - FOOTER_H
+        local usable = h - HDR_H - FOOTER_H
         if usable < ROW_H then return 1 end
         return math.max(1, math.floor(usable / ROW_H))
     end
@@ -188,6 +221,35 @@ local function Builder(parent)
     local footer = MakeFS(frame, 11)
     footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", CELL_PAD, 4)
     footer:SetTextColor(0.8, 0.8, 0.8)
+
+    local measure = MakeFS(frame, 11)
+    measure:Hide()
+    local function Measure(text)
+        measure:SetText(text or "")
+        if measure.GetUnboundedStringWidth then
+            return measure:GetUnboundedStringWidth() or 0
+        end
+        return measure:GetStringWidth() or 0
+    end
+
+    local headers = {}
+    for i, label in ipairs(COLUMN_LABELS) do
+        local header = MakeFS(frame, 11)
+        header:SetText(label)
+        header:SetTextColor(1, 1, 1)
+        header:SetJustifyH("LEFT")
+        headers[i] = header
+    end
+
+    local function LayoutHeaders()
+        local x = 0
+        for i, header in ipairs(headers) do
+            header:ClearAllPoints()
+            header:SetPoint("TOPLEFT", frame, "TOPLEFT", x + CELL_PAD, 0)
+            header:SetWidth(math.max(1, colWidths[i] - CELL_PAD * 2))
+            x = x + colWidths[i]
+        end
+    end
 
     local function GetRow(i)
         local r = rowPool[i]
@@ -198,6 +260,11 @@ local function Builder(parent)
         r._keystone = MakeFS(r, 11)
         r._vault   = MakeFS(r, 11)
         r._lockout = MakeFS(r, 11)
+        r._name:SetJustifyH("LEFT")
+        r._rating:SetJustifyH("LEFT")
+        r._keystone:SetJustifyH("LEFT")
+        r._vault:SetJustifyH("LEFT")
+        r._lockout:SetJustifyH("LEFT")
         rowPool[i] = r
         return r
     end
@@ -212,46 +279,41 @@ local function Builder(parent)
             local r   = GetRow(i)
             local row = rows[offset + i]
             r:ClearAllPoints()
-            r:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, -(i - 1) * ROW_H)
-            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Shared.SCROLLBAR_RESERVE, -(i - 1) * ROW_H)
+            r:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, -HDR_H - (i - 1) * ROW_H)
+            r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Shared.SCROLLBAR_RESERVE, -HDR_H - (i - 1) * ROW_H)
 
             if not row then
                 r._row = nil
                 r:Hide()
             elseif row.kind == "char" then
                 r._row = row
+                local texts = row.cellTexts
                 r._name:ClearAllPoints()
                 r._name:SetPoint("LEFT", r, "LEFT", CELL_PAD, 0)
-                r._name:SetWidth(NAME_W - CELL_PAD * 2)
-                r._name:SetText(row.name or row.key or "?")
+                r._name:SetWidth(math.max(1, colWidths[1] - CELL_PAD * 2))
+                r._name:SetText(texts[1])
                 local cr, cg, cb = ClassColor(row.class)
                 r._name:SetTextColor(cr, cg, cb)
                 r._name:Show()
 
-                local w = row.weeklies
-                local rating = w and w.mplusRating
                 r._rating:ClearAllPoints()
-                r._rating:SetPoint("LEFT", r, "LEFT", NAME_W + CELL_PAD, 0)
-                r._rating:SetWidth(RATING_W - CELL_PAD * 2)
-                if rating and rating > 0 then
-                    r._rating:SetText(string.format("%d", rating))
-                else
-                    r._rating:SetText("—")
-                end
+                r._rating:SetPoint("LEFT", r, "LEFT", colWidths[1] + CELL_PAD, 0)
+                r._rating:SetWidth(math.max(1, colWidths[2] - CELL_PAD * 2))
+                r._rating:SetText(texts[2])
                 r._rating:SetTextColor(0.9, 0.9, 0.9)
                 r._rating:Show()
 
                 r._keystone:ClearAllPoints()
-                r._keystone:SetPoint("LEFT", r, "LEFT", NAME_W + RATING_W + CELL_PAD, 0)
-                r._keystone:SetWidth(KEYSTONE_W - CELL_PAD * 2)
-                r._keystone:SetText(WeekliesView.KeystoneText(w))
+                r._keystone:SetPoint("LEFT", r, "LEFT", colWidths[1] + colWidths[2] + CELL_PAD, 0)
+                r._keystone:SetWidth(math.max(1, colWidths[3] - CELL_PAD * 2))
+                r._keystone:SetText(texts[3])
                 r._keystone:SetTextColor(0.9, 0.9, 0.9)
                 r._keystone:Show()
 
                 r._vault:ClearAllPoints()
-                r._vault:SetPoint("LEFT", r, "LEFT", NAME_W + RATING_W + KEYSTONE_W + CELL_PAD, 0)
-                r._vault:SetPoint("RIGHT", r, "RIGHT", -CELL_PAD, 0)
-                r._vault:SetText(WeekliesView.VaultSummary(w))
+                r._vault:SetPoint("LEFT", r, "LEFT", colWidths[1] + colWidths[2] + colWidths[3] + CELL_PAD, 0)
+                r._vault:SetWidth(math.max(1, colWidths[4] - CELL_PAD * 2))
+                r._vault:SetText(texts[4])
                 r._vault:SetTextColor(0.9, 0.9, 0.9)
                 r._vault:Show()
 
@@ -297,7 +359,9 @@ local function Builder(parent)
         end
 
         rows = WeekliesView.BuildDisplayRows(chars)
+        colWidths = WeekliesView.ColumnWidths(rows, Measure)
 
+        LayoutHeaders()
         RenderRows()
         footer:SetText(string.format("%d characters", charCount))
     end
@@ -306,7 +370,7 @@ local function Builder(parent)
         orientation = "vertical",
         onScroll = function(n) offset = n; RenderRows() end,
     })
-    scrollbar.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, 0)
+    scrollbar.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -HDR_H)
     scrollbar.track:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, FOOTER_H)
 
     frame:EnableMouseWheel(true)
@@ -327,6 +391,9 @@ local function Builder(parent)
         Bus.Subscribe("CharacterChanged", OnBus)
         Bus.Subscribe("CharacterDeleted", OnBus)
     end
+
+    colWidths = WeekliesView.ColumnWidths({}, Measure)
+    LayoutHeaders()
 
     return view
 end

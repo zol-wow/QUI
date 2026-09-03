@@ -23,10 +23,10 @@ else
 end
 
 local function ClearButtonTint(state)
-    if state.tinted then
-        if state.tintOverlay then state.tintOverlay:Hide() end
-        state.tinted = nil
-    end
+    if state.tintOverlay then state.tintOverlay:Hide() end
+    state.tinted = nil
+    state._fhTint = nil
+    state._fadeTint = nil
 end
 
 function GetTintOverlay(button)
@@ -44,17 +44,17 @@ function GetTintOverlay(button)
     return state.tintOverlay
 end
 
-function UpdateButtonUsability(button, settings)
+function UpdateButtonUsability(button, settings, inRange, rangeKnown)
     if not settings then return end
     local state = GetFrameState(button)
     local action = GetSafeActionSlot(button)
 
-    if state.fadeHidden or state.hiddenEmpty then
+    if not action or not SafeHasAction(action) then
+        ClearButtonTint(state)
         return
     end
 
-    if not action or not SafeHasAction(action) then
-        ClearButtonTint(state)
+    if state.hiddenEmpty then
         return
     end
 
@@ -66,8 +66,13 @@ function UpdateButtonUsability(button, settings)
     local newTint = nil
 
     if settings.rangeIndicator then
-        local inRange = SafeIsActionInRange(action)
-        if inRange == false then
+        local rangeState
+        if rangeKnown then
+            rangeState = inRange
+        else
+            rangeState = SafeIsActionInRange(action)
+        end
+        if rangeState == false then
             newTint = "range"
         end
     end
@@ -81,35 +86,47 @@ function UpdateButtonUsability(button, settings)
         end
     end
 
+    if not newTint then
+        ClearButtonTint(state)
+        return
+    end
     if state.tinted == newTint then return end
 
+    local overlay = GetTintOverlay(button)
     if newTint == "range" then
-        local overlay = GetTintOverlay(button)
         if overlay then
             local c = settings.rangeColor
             overlay:SetColorTexture(c and c[1] or 0.8, c and c[2] or 0.1, c and c[3] or 0.1, c and c[4] or 1)
-            overlay:Show()
         end
         state.tinted = "range"
     elseif newTint == "mana" then
-        local overlay = GetTintOverlay(button)
         if overlay then
             local c = settings.manaColor
             overlay:SetColorTexture(c and c[1] or 0.5, c and c[2] or 0.5, c and c[3] or 1.0, c and c[4] or 1)
-            overlay:Show()
         end
         state.tinted = "mana"
     elseif newTint == "unusable" then
-        local overlay = GetTintOverlay(button)
         if overlay then
             local c = settings.usabilityColor
             overlay:SetColorTexture(c and c[1] or 0.4, c and c[2] or 0.4, c and c[3] or 0.4, c and c[4] or 1)
-            overlay:Show()
         end
         state.tinted = "unusable"
+    end
+
+    if not overlay then return end
+    if state.fadeHidden then
+        overlay:Hide()
+        state._fhTint = true
+        return
+    end
+
+    local barKey = GetBarKeyFromButton(button)
+    local barFadeState = barKey and ActionBarsOwned.fadeState[barKey]
+    if barFadeState and barFadeState.currentAlpha < 1 then
+        overlay:Hide()
+        state._fadeTint = true
     else
-        if state.tintOverlay then state.tintOverlay:Hide() end
-        state.tinted = nil
+        overlay:Show()
     end
 end
 
@@ -155,6 +172,65 @@ end
 
 ActionBarsOwned.UpdateAllButtonUsability = UpdateAllButtonUsability
 
+function RefreshUsabilityButtons()
+    local settings = GetGlobalSettings()
+    local enabled = settings and (settings.rangeIndicator or settings.usabilityIndicator)
+    local buttonsBySlot = usabilityState.buttonsBySlot
+    local buttonsBySlotPool = usabilityState.buttonsBySlotPool
+    for _, buttons in pairs(buttonsBySlot) do
+        wipe(buttons)
+        buttonsBySlotPool[#buttonsBySlotPool + 1] = buttons
+    end
+    wipe(buttonsBySlot)
+
+    if enabled then
+        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+            local barButtons = ActionBarsOwned.nativeButtons[barKey]
+            if barButtons then
+                for _, button in ipairs(barButtons) do
+                    UpdateButtonUsability(button, settings)
+                    if (not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(button, barKey))
+                        and (not button.IsVisible or button:IsVisible()) then
+                        local action = GetSafeActionSlot(button)
+                        if action and SafeHasAction(action) then
+                            local buttons = buttonsBySlot[action]
+                            if not buttons then
+                                local poolIndex = #buttonsBySlotPool
+                                buttons = buttonsBySlotPool[poolIndex] or {}
+                                buttonsBySlotPool[poolIndex] = nil
+                                buttonsBySlot[action] = buttons
+                            end
+                            buttons[button] = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local rangeSlots = usabilityState.rangeSlots
+    local enableRangeCheck = C_ActionBar and C_ActionBar.EnableActionRangeCheck
+
+    if type(enableRangeCheck) == "function" then
+        for slot in pairs(rangeSlots) do
+            if not settings or not settings.rangeIndicator or not buttonsBySlot[slot] then
+                local ok = ns.SafeCall("best-effort-style", enableRangeCheck, slot, false)
+                if ok then rangeSlots[slot] = nil end
+            end
+        end
+        if settings and settings.rangeIndicator then
+            for slot in pairs(buttonsBySlot) do
+                if not rangeSlots[slot] then
+                    local ok = ns.SafeCall("best-effort-style", enableRangeCheck, slot, true)
+                    if ok then rangeSlots[slot] = true end
+                end
+            end
+        end
+    end
+end
+
+ActionBarsOwned.RefreshUsabilityButtons = RefreshUsabilityButtons
+
 env.__declared.usabilityUpdateFrame = true
 function GetUsabilityScheduleDelay()
     local delay = usabilityState.EVENT_DEBOUNCE
@@ -199,7 +275,34 @@ function EnsureUsabilityUpdateFrame()
 end
 
 function UsabilityCheckFrameOnEvent(self, event, ...)
-    if event == "PLAYER_REGEN_DISABLED" then
+    if event == "ACTION_RANGE_CHECK_UPDATE" then
+        local slot, inRange, checksRange = ...
+        local settings = GetGlobalSettings()
+        local buttons = usabilityState.buttonsBySlot and usabilityState.buttonsBySlot[slot]
+        if settings and settings.rangeIndicator and buttons then
+            local rangeState
+            if checksRange then rangeState = inRange end
+            for button in pairs(buttons) do
+                UpdateButtonUsability(button, settings, rangeState, true)
+            end
+        end
+        return
+    elseif event == "ACTION_USABLE_CHANGED" then
+        local changes = ...
+        local settings = GetGlobalSettings()
+        if settings and settings.usabilityIndicator and type(changes) == "table" then
+            for _, change in ipairs(changes) do
+                local buttons = change.slot and usabilityState.buttonsBySlot
+                    and usabilityState.buttonsBySlot[change.slot]
+                if buttons then
+                    for button in pairs(buttons) do
+                        UpdateButtonUsability(button, settings)
+                    end
+                end
+            end
+        end
+        return
+    elseif event == "PLAYER_REGEN_DISABLED" then
         usabilityState.inCombat = true
         self.elapsed = 0
         return
@@ -263,12 +366,24 @@ function UpdateUsabilityPolling()
         checkFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
         checkFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
 
+        if rangeEnabled then
+            checkFrame:RegisterEvent("ACTION_RANGE_CHECK_UPDATE")
+        else
+            checkFrame:UnregisterEvent("ACTION_RANGE_CHECK_UPDATE")
+        end
+        if usabilityEnabled then
+            checkFrame:RegisterEvent("ACTION_USABLE_CHANGED")
+        else
+            checkFrame:UnregisterEvent("ACTION_USABLE_CHANGED")
+        end
+
         checkFrame:SetScript("OnEvent", UsabilityCheckFrameOnEvent)
 
-        ScheduleUsabilityUpdate()
+        RefreshUsabilityButtons()
     else
         checkFrame:UnregisterAllEvents()
         checkFrame:SetScript("OnEvent", nil)
+        RefreshUsabilityButtons()
     end
 
     if rangeEnabled then

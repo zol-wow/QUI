@@ -329,13 +329,13 @@ ConsumableMacros.WEAPON_OPTIONS = {
 }
 
 local MACRO_SLOTS = {
-    { dbKey = "selectedFlask",   macroName = "Flask_DUI",  defs = FLASK_DEFS,  label = "Flask" },
-    { dbKey = "selectedPotion",  macroName = "Pot_DUI",    defs = POTION_DEFS, label = "Potion" },
-    { dbKey = "selectedHealth",       macroName = "Health_DUI", defs = HEALTH_DEFS,       label = "Health Potion" },
-    { dbKey = "selectedHealthstone", macroName = "Stone_DUI",  defs = HEALTHSTONE_DEFS, label = "Healthstone" },
-    { dbKey = "selectedAugment",     macroName = "Rune_DUI",   defs = AUGMENT_DEFS,     label = "Augment Rune" },
-    { dbKey = "selectedVantus",      macroName = "Vantus_DUI", defs = VANTUS_DEFS,      label = "Vantus Rune" },
-    { dbKey = "selectedWeapon",      macroName = "Weapon_DUI", defs = WEAPON_DEFS,      label = "Weapon" },
+    { dbKey = "selectedFlask",       macroName = "Flask_QUI",  legacyMacroName = "Flask_DUI",  defs = FLASK_DEFS,  label = "Flask" },
+    { dbKey = "selectedPotion",      macroName = "Pot_QUI",    legacyMacroName = "Pot_DUI",    defs = POTION_DEFS, label = "Potion" },
+    { dbKey = "selectedHealth",      macroName = "Health_QUI", legacyMacroName = "Health_DUI", defs = HEALTH_DEFS, label = "Health Potion" },
+    { dbKey = "selectedHealthstone", macroName = "Stone_QUI",  legacyMacroName = "Stone_DUI",  defs = HEALTHSTONE_DEFS, label = "Healthstone" },
+    { dbKey = "selectedAugment",     macroName = "Rune_QUI",   legacyMacroName = "Rune_DUI",   defs = AUGMENT_DEFS, label = "Augment Rune" },
+    { dbKey = "selectedVantus",      macroName = "Vantus_QUI", legacyMacroName = "Vantus_DUI", defs = VANTUS_DEFS, label = "Vantus Rune" },
+    { dbKey = "selectedWeapon",      macroName = "Weapon_QUI", legacyMacroName = "Weapon_DUI", defs = WEAPON_DEFS, label = "Weapon" },
 }
 
 local MACRO_ICON = 134400
@@ -361,6 +361,28 @@ local GetDB = Helpers.GetConsumableMacrosDB
 local DEFS_BY_DBKEY = {}
 for _, slot in ipairs(MACRO_SLOTS) do
     DEFS_BY_DBKEY[slot.dbKey] = slot.defs
+end
+
+local CATEGORY_ITEM_SOURCES = {
+    [4] = { defs = POTION_DEFS, options = ConsumableMacros.POTION_OPTIONS },
+    [30] = { defs = HEALTH_DEFS, options = ConsumableMacros.HEALTH_OPTIONS },
+}
+local categoryItemCandidates = {}
+
+function ConsumableMacros.GetCategoryItemCandidates(categoryID)
+    local cached = categoryItemCandidates[categoryID]
+    if cached then return cached end
+    local source = CATEGORY_ITEM_SOURCES[categoryID]
+    if not source then return nil end
+    local result = {}
+    for _, option in ipairs(source.options) do
+        local def = source.defs[option.value]
+        for _, variant in ipairs(def and def.variants or {}) do
+            result[#result + 1] = variant.itemID
+        end
+    end
+    categoryItemCandidates[categoryID] = result
+    return result
 end
 
 function ConsumableMacros.GetSelectedItem(dbKey)
@@ -402,10 +424,17 @@ local function BuildMacroBody(typeKey, defs)
     return table.concat(lines, "\n"), bestID
 end
 
-local function EnsureMacro(macroName, body)
+local function EnsureMacro(macroName, legacyMacroName, body)
     if not body then return false end
 
     local index = GetMacroIndexByName(macroName)
+    if index == 0 and legacyMacroName then
+        local legacyIndex = GetMacroIndexByName(legacyMacroName)
+        if legacyIndex and legacyIndex > 0 then
+            EditMacro(legacyIndex, macroName, nil, body)
+            return true
+        end
+    end
     if index == 0 then
         local numGlobal, numChar = GetNumMacros()
         local cap = GetCharacterMacroCap()
@@ -427,6 +456,13 @@ local function EnsureMacro(macroName, body)
     return true
 end
 
+local function DeleteMacroByName(name)
+    local index = name and GetMacroIndexByName(name)
+    if index and index > 0 then
+        DeleteMacro(index)
+    end
+end
+
 local function NotifyChange(macroType, newBestID, oldBestID)
     local db = GetDB()
     if not db or not db.chatNotifications then return end
@@ -446,10 +482,8 @@ end
 function ConsumableMacros:DeleteMacros()
     if InCombatLockdown() then return end
     for _, slot in ipairs(MACRO_SLOTS) do
-        local index = GetMacroIndexByName(slot.macroName)
-        if index and index > 0 then
-            DeleteMacro(index)
-        end
+        DeleteMacroByName(slot.macroName)
+        DeleteMacroByName(slot.legacyMacroName)
     end
     wipe(lastBody)
     wipe(lastBest)
@@ -469,17 +503,15 @@ function ConsumableMacros:UpdateMacros()
         local body, bestID = BuildMacroBody(db[slot.dbKey], slot.defs)
         if body then
             if body ~= lastBody[slot.macroName] then
-                if EnsureMacro(slot.macroName, body) then
+                if EnsureMacro(slot.macroName, slot.legacyMacroName, body) then
                     NotifyChange(slot.label, bestID, lastBest[slot.macroName])
                 end
                 lastBody[slot.macroName] = body
                 lastBest[slot.macroName] = bestID
             end
         else
-            local index = GetMacroIndexByName(slot.macroName)
-            if index and index > 0 then
-                DeleteMacro(index)
-            end
+            DeleteMacroByName(slot.macroName)
+            DeleteMacroByName(slot.legacyMacroName)
             lastBody[slot.macroName] = nil
             lastBest[slot.macroName] = nil
         end

@@ -6,7 +6,7 @@
 ## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
 ## Notes: Comprehensive UI customization addon
 ## Author: Zol and Drew
-## Version: 5.2.0
+## Version: 5.3-beta2
 ## Category: User Interface
 ## SavedVariables: QUIDB, QUI_StorageDB
 ## LoadSavedVariablesFirst: 1
@@ -109,6 +109,7 @@ core\icon_glow.lua
 core\diagnostics_console.lua
 core\dumpspell.lua
 core\cast_engine.lua
+core\incoming_casts.lua
 core\aura_events.lua
 core\registry.lua
 core\modules.lua
@@ -201,6 +202,9 @@ modules\integrations\abilitytimeline.lua
 #    login and build their window on first open. The former QUI_UI bootstrap
 #    namespace-proxy is intentionally OMITTED: these files now share the main
 #    addon's ns directly (it IS QUI._ns), so a proxy would self-reference. ==
+# character_chrome is the single chrome owner both character modules consult;
+# it must precede character_pane\character.lua and frames\character.lua.
+modules\skinning\frames\character_chrome.lua
 modules\skinning\character_pane\character.lua
 modules\skinning\character_pane\inspect.lua
 modules\skinning\base.lua
@@ -253,6 +257,7 @@ modules\combat\combattext.lua
 modules\trackers\spellscanner.lua
 modules\trackers\preytracker.lua
 modules\trackers\aura_displays.lua
+modules\trackers\incoming_casts.lua
 modules\trackers\atonement_counter.lua
 modules\qol\qol.lua
 modules\qol\blizzard_mover.lua

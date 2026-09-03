@@ -629,6 +629,26 @@ local function AssertHiddenTexture(ctx, label, texture)
     })
 end
 
+local function LabelFontString(frame)
+    if not frame then return nil end
+    if frame.GetFontString then
+        local ok, fs = ns.SafeCallMethod("report", frame, "GetFontString")
+        if ok and fs then return fs end
+    end
+    return frame.Text or frame.Label
+end
+
+local function TextColor(fontString)
+    if not fontString or not fontString.GetTextColor then return nil end
+    local ok, r, g, b, a = ns.SafeCallMethod("report", fontString, "GetTextColor")
+    if not ok or type(r) ~= "number" then return nil end
+    return r, g, b, a
+end
+
+local function IsWhiteish(r, g, b, a)
+    return r and r >= 0.95 and g >= 0.95 and b >= 0.95 and (a or 1) >= 0.99
+end
+
 local function CheckQuantityInput(ctx, label, quantityInput)
     ctx:Step(label .. " quantity input", function()
         if not ctx:Assert(quantityInput ~= nil, label .. " QuantityInput is missing") then
@@ -679,6 +699,22 @@ local function InspectCategoryRows(ctx, categoriesList)
                 local ok, highlight = ns.SafeCallMethod("report", row, "GetHighlightTexture")
                 if ok then
                     AssertHiddenTexture(ctx, "category row highlight", highlight)
+                end
+            end
+            -- R2: the selected row must read as selected (bright text), and an
+            -- idle row must not be painted with the selected colour.
+            local label = LabelFontString(row)
+            local r, g, b, a = TextColor(label)
+            if r then
+                local okSel, selected = ns.SafeCall("report", function()
+                    return row.SelectedTexture and row.SelectedTexture:IsShown()
+                end)
+                if okSel and selected then
+                    ctx:Assert(r >= 0.9 and g >= 0.9 and b >= 0.9 and a >= 0.99,
+                        "selected category row text is not bright",
+                        { r = r, g = g, b = b, a = a })
+                else
+                    ctx:Assert(a > 0.2, "category row text is (nearly) invisible", { r = r, g = g, b = b, a = a })
                 end
             end
         end)
@@ -752,6 +788,86 @@ UISmoke.RegisterSuite("auctionhouse", function(ctx)
     return true
 end, {
     description = "Auction House frame skinning smoke checks",
+})
+
+-- R3: SkinButton-skinned buttons must keep a white label through
+-- Disable() -> Enable() with the global-font gate OFF as well as ON. Probes
+-- the first available skinned candidate from currently loaded frames.
+local BUTTON_STATE_CANDIDATES = {
+    function() local f = _G.AuctionHouseFrame; return f and f.SearchBar and f.SearchBar.SearchButton, "AuctionHouseFrame.SearchBar.SearchButton" end,
+    function() local f = _G.AuctionHouseFrame; return f and f.ItemSellFrame and f.ItemSellFrame.PostButton, "AuctionHouseFrame.ItemSellFrame.PostButton" end,
+    function() local f = _G.AuctionHouseFrame; return f and f.CommoditiesSellFrame and f.CommoditiesSellFrame.PostButton, "AuctionHouseFrame.CommoditiesSellFrame.PostButton" end,
+    function() local p = _G.PaperDollFrame; p = p and p.EquipmentManagerPane; return p and p.EquipSet, "PaperDollFrame.EquipmentManagerPane.EquipSet" end,
+    function() return _G.MerchantFrame and _G.MerchantFrame.BuybackButton, "MerchantFrame.BuybackButton" end,
+    function() return _G.MailFrame and _G.SendMailMailButton, "SendMailMailButton" end,
+}
+
+local function FindSkinnedButton()
+    for _, probe in ipairs(BUTTON_STATE_CANDIDATES) do
+        local ok, button, name = ns.SafeCall("report", probe)
+        if ok and button and SkinField(button, "skinKind") == "button" and SkinField(button, "skinFont") then
+            return button, name
+        end
+    end
+    return nil
+end
+
+local function GetGeneralSettings()
+    local core = ns.Helpers and ns.Helpers.GetCore and ns.Helpers.GetCore()
+    return core and core.db and core.db.profile and core.db.profile.general
+end
+
+local function CheckButtonStateRoundTrip(ctx, button, name, gateValue)
+    local skin = ns.SkinBase
+    local label = LabelFontString(button)
+    if not label then
+        ctx:Skip(name .. " has no label font string", DescribeFrame(button))
+        return
+    end
+    local wasEnabled = button:IsEnabled()
+    local tag = name .. " (applyGlobalFontToBlizzard=" .. tostring(gateValue) .. ")"
+
+    ns.SafeCall("report", skin.RefreshButtonVisualState, button)
+    if wasEnabled then
+        ctx:Assert(IsWhiteish(TextColor(label)), tag .. " enabled label is not white", { color = { TextColor(label) } })
+    end
+
+    ns.SafeCallMethod("report", button, "Disable")
+    local dr, dg, db, da = TextColor(label)
+    ctx:Assert(dr and not IsWhiteish(dr, dg, db, da), tag .. " disabled label still reads as enabled", { r = dr, g = dg, b = db, a = da })
+
+    ns.SafeCallMethod("report", button, "Enable")
+    ctx:Assert(IsWhiteish(TextColor(label)), tag .. " label did not return to white after Enable()", { color = { TextColor(label) } })
+
+    if not wasEnabled then
+        ns.SafeCallMethod("report", button, "Disable")
+    end
+end
+
+UISmoke.RegisterSuite("buttons", function(ctx)
+    local button, name = FindSkinnedButton()
+    ctx:Step("skinned button available", function()
+        if not button then
+            ctx:Skip("no SkinButton-skinned candidate is loaded (open the Auction House, Merchant, or Mail window)")
+        end
+    end)
+    if not button then return end
+
+    local general = GetGeneralSettings()
+    local originalGate = general and general.applyGlobalFontToBlizzard
+    local gates = general and { false, true } or { originalGate }
+    for _, gateValue in ipairs(gates) do
+        ctx:Step("button state round-trip gate=" .. tostring(gateValue), function()
+            if general then general.applyGlobalFontToBlizzard = gateValue end
+            CheckButtonStateRoundTrip(ctx, button, name, gateValue)
+        end)
+    end
+    if general then
+        general.applyGlobalFontToBlizzard = originalGate
+        ns.SafeCall("report", ns.SkinBase.RefreshButtonVisualState, button)
+    end
+end, {
+    description = "Skinned button enabled/disabled label contrast (both font-gate values)",
 })
 
 ns.UISmoke = UISmoke

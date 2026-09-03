@@ -3,7 +3,7 @@
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Configuration UI for QUI
 ## Author: Zol and Drew
-## Version: 5.2.0
+## Version: 5.3-beta2
 ## Category: User Interface
 ## Group: QUI
 ## RequiredDeps: QUI
@@ -135,6 +135,7 @@ aura_elements_editor.lua
 ..\QUI\modules\trackers\settings\prey_tracker_content.lua
 ..\QUI\modules\trackers\settings\aura_displays_pickers.lua
 ..\QUI\modules\trackers\settings\aura_displays_content.lua
+..\QUI\modules\trackers\settings\incoming_casts_content.lua
 ..\QUI\modules\ui\settings\blizzard_mover_content.lua
 ..\QUI\modules\ui\settings\crosshair_content.lua
 ..\QUI\modules\ui\settings\hud_visibility_content.lua

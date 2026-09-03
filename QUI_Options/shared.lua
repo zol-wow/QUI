@@ -29,28 +29,24 @@ local function GetSafeVerticalScroll(scrollFrame)
 end
 ns.GetSafeVerticalScroll = GetSafeVerticalScroll
 
-function ns.ApplyScrollWheel(scrollFrame)
-    scrollFrame:EnableMouseWheel(true)
-
-    if not scrollFrame._quiScrollGuard then
-        scrollFrame._quiScrollGuard = true
-        local rawSet = scrollFrame.SetVerticalScroll
-        scrollFrame.SetVerticalScroll = function(self, value)
-            local okCur, cur = pcall(self.GetVerticalScroll, self)
-            if okCur and type(cur) == "number" and type(value) == "number"
-                and math.abs(value - cur) < 0.5 then
-                return
-            end
-            return rawSet(self, value)
-        end
+-- Wheel input eases through the shared UIKit controller (target accumulation,
+-- pixel-snapped landing, drag cancellation). Returns the controller so callers
+-- can ScrollTo()/Cancel() against the same target the wheel uses. `opts`
+-- overrides the default 60-unit step (see UIKit.AttachSmoothScroll).
+function ns.ApplyScrollWheel(scrollFrame, opts)
+    local kit = UIKit or ns.UIKit
+    if kit and kit.AttachSmoothScroll then
+        return kit.AttachSmoothScroll(scrollFrame, opts or { step = SCROLL_STEP })
     end
-
+    -- No UIKit (never in-game; keeps headless harnesses that stub it out alive).
+    scrollFrame:EnableMouseWheel(true)
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local currentScroll = GetSafeVerticalScroll(self)
         local maxScroll = GetSafeVerticalScrollRange(self)
         local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
         self:SetVerticalScroll(newScroll)
     end)
+    return nil
 end
 
 function ns.PrintImportFeedback(ok, message, showReloadHint)
@@ -248,7 +244,8 @@ local function CreateScrollableContent(parent)
 
         local thumb = scrollBar:GetThumbTexture()
         if thumb then
-            thumb:SetColorTexture(0.35, 0.45, 0.5, 0.8)
+            local st = (GUI and GUI.Colors and GUI.Colors.scrollThumb) or { 1, 1, 1, 0.27 }
+            thumb:SetColorTexture(st[1], st[2], st[3], st[4])
         end
 
         local scrollUp = scrollBar.ScrollUpButton or scrollBar.Back
@@ -908,6 +905,7 @@ local function CreatePreviewArea(parent, yOffset, height)
 end
 ns.QUI_Options.CreatePreviewArea = CreatePreviewArea
 
+-- BEGIN setting row state
 local function ResolveTooltipInfo(frame, depth)
     if not frame or (depth or 0) > 6 then
         return nil, nil
@@ -936,13 +934,17 @@ local function ResolveTooltipInfo(frame, depth)
     return nil, nil
 end
 
-local function SetSettingControlEnabled(control, enabled)
+-- Forwards `reason` to widgets that speak SetEnabled(enabled, reason)
+-- (CreateButton, accent checkbox, every framework form widget). Widgets
+-- without SetEnabled fall back to the control-only mute (.30) — the row
+-- itself is never SetAlpha'd.
+local function SetSettingControlEnabled(control, enabled, reason)
     if not control then
         return
     end
 
     if type(control.SetEnabled) == "function" then
-        control:SetEnabled(enabled and true or false)
+        control:SetEnabled(enabled and true or false, reason)
         return
     end
 
@@ -950,16 +952,23 @@ local function SetSettingControlEnabled(control, enabled)
         control:EnableMouse(enabled and true or false)
     end
     if type(control.SetAlpha) == "function" then
-        control:SetAlpha(enabled and 1 or 0.4)
+        control:SetAlpha(enabled and 1 or 0.3)
     end
 end
 
-local function SetSettingRowEnabled(row, enabled)
+-- Row state: label .45 when disabled, description keeps its idle alpha,
+-- control muted by its own SetEnabled. `reason` (string or function) falls
+-- back to the row's disabledReason / disabledReasonFn (BuildSettingRow opts)
+-- and surfaces through the control's hover tooltip while disabled.
+local function SetSettingRowEnabled(row, enabled, reason)
     if not row then
         return
     end
 
     enabled = enabled and true or false
+    if reason == nil then
+        reason = row._disabledReasonFn or row._disabledReason
+    end
 
     local label = row._label
     if label and row._labelColor then
@@ -970,15 +979,19 @@ local function SetSettingRowEnabled(row, enabled)
     local desc = row._desc
     if desc and row._descColor then
         local c = row._descColor
-        desc:SetTextColor(c[1], c[2], c[3], enabled and c[4] or 0.35)
+        desc:SetTextColor(c[1], c[2], c[3], c[4])
     end
 
-    SetSettingControlEnabled(row._widget, enabled)
+    SetSettingControlEnabled(row._widget, enabled, reason)
     row._enabled = enabled
+    row._disabledReasonActive = (not enabled) and reason or nil
 end
 ns.QUI_Options.SetSettingRowEnabled = SetSettingRowEnabled
 
-local function BuildSettingRow(parent, labelText, widget, desc)
+-- opts (optional): disabledReason (string) / disabledReasonFn (function
+-- returning a string) shown by the control's tooltip while the row is
+-- disabled through row:SetEnabled(false).
+local function BuildSettingRow(parent, labelText, widget, desc, opts)
     local C = QUI.GUI and QUI.GUI.Colors or {}
     local textCol = C.text or {1, 1, 1, 1}
     local mutedCol = C.textMuted or {1, 1, 1, 0.45}
@@ -1032,11 +1045,23 @@ local function BuildSettingRow(parent, labelText, widget, desc)
     end
 
     cell._widgetLabel = labelText
+    if type(opts) == "table" then
+        cell._disabledReason = opts.disabledReason
+        cell._disabledReasonFn = opts.disabledReasonFn
+    end
     cell.SetEnabled = SetSettingRowEnabled
+    cell.GetDisabledReason = function(self)
+        if self._enabled ~= false then return nil end
+        local reason = self._disabledReasonActive
+        if type(reason) == "function" then reason = reason(self) end
+        if type(reason) == "string" and reason ~= "" then return reason end
+        return nil
+    end
     return cell
 end
 
 ns.QUI_Options.BuildSettingRow = BuildSettingRow
+-- END setting row state
 
 local function MergeOptions(base, extra)
     local merged = {}
@@ -1186,7 +1211,7 @@ end
 ns.QUI_Options.HasFeature = HasRegisteredFeature
 
 local function ShowUnavailableFeaturePage(body, label)
-    local text = body:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local text = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     text:SetPoint("TOPLEFT", 20, -20)
     text:SetText((label or "Settings") .. " unavailable.")
 end
@@ -1517,7 +1542,8 @@ BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
 
             local text = titleRow:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
             text:SetPoint("LEFT", dot, "RIGHT", 10, 0)
-            text:SetTextColor(1, 1, 1, 0.95)
+            local textCol = C.text or { 1, 1, 1, 1 }
+            text:SetTextColor(textCol[1], textCol[2], textCol[3], textCol[4] or 1)
             text:SetText(label)
 
             local underline = titleRow:CreateTexture(nil, "ARTWORK")

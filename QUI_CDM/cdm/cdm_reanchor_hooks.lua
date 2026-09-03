@@ -72,10 +72,11 @@ function CDMReanchorHooks.New(deps)
         _getMixinForKey = deps.getMixinForKey,
         _blankKeys = deps.blankKeys or {},
         _immediateRefreshLayoutKeys = deps.immediateRefreshLayoutKeys or deps.immediateKeys or {},
-        _immediateAcquireKeys = deps.immediateAcquireKeys or {},
         _isClaimed = deps.isClaimed,
         _installGuard = deps.installGuard,
         _installGuardKeys = deps.installGuardKeys or {},
+        _shouldTrackActiveState = deps.shouldTrackActiveState,
+        _ignoreIndexReasons = deps.ignoreIndexReasons or {},
     }
     return setmetatable(self, InstanceMT)
 end
@@ -108,14 +109,6 @@ function CDMReanchorHooks:MarkImmediate(key)
         self._refreshMany({ key })
     elseif self._refresh then
         self._refresh(key)
-    end
-end
-
-function CDMReanchorHooks:MarkAcquire(key)
-    if self._immediateAcquireKeys[key] then
-        self:MarkImmediate(key)
-    else
-        self:MarkDirty(key)
     end
 end
 
@@ -216,7 +209,9 @@ function CDMReanchorHooks:InstallGlobalMixinHooks()
     for i = 1, #self._keys do
         local key = self._keys[i]
         local mixin = self:GetMixinForKey(key)
-        if mixin and not self._hookedMixins[mixin] and mixin.OnCooldownIDSet then
+        local trackCooldownID = not self._deps.shouldTrackCooldownID
+            or self._deps.shouldTrackCooldownID(key) ~= false
+        if trackCooldownID and mixin and not self._hookedMixins[mixin] and mixin.OnCooldownIDSet then
             self._hookedMixins[mixin] = true
             local hooks = self
             local function markCooldownIDSet()
@@ -232,6 +227,10 @@ end
 function CDMReanchorHooks:_InstallFrameHooks(frame, key)
     if not frame then return end
     self:MaybeInstallAnchorGuard(key, frame)
+    local highlighter = key ~= "trackedBar" and ns._OwnedHighlighter
+    if highlighter and highlighter.PrepareReanchoredFrame then
+        highlighter.PrepareReanchoredFrame(frame, key)
+    end
     if self._hookedFrames[frame] then return end
     local hooksec = self._deps.hooksecurefunc or hooksecurefunc
     if not hooksec then return end
@@ -240,15 +239,18 @@ function CDMReanchorHooks:_InstallFrameHooks(frame, key)
     local hooks = self
     local function markDirty() hooks:MarkDirty(key) end
     local function markActiveStateDirty() hooks:MarkActiveStateDirty(key) end
-    if frame.OnActiveStateChanged then
+    local trackActiveState = not self._shouldTrackActiveState or self._shouldTrackActiveState(key) ~= false
+    local trackCooldownID = not self._deps.shouldTrackCooldownID
+        or self._deps.shouldTrackCooldownID(key) ~= false
+    if trackActiveState and frame.OnActiveStateChanged then
         hooksec(frame, "OnActiveStateChanged", function(...) _securecall(markActiveStateDirty, ...) end)
         installed = true
     end
-    if frame.OnCooldownIDSet then
+    if trackCooldownID and frame.OnCooldownIDSet then
         hooksec(frame, "OnCooldownIDSet", function(...) _securecall(markDirty, ...) end)
         installed = true
     end
-    if frame.HookScript then
+    if trackActiveState and frame.HookScript then
         frame:HookScript("OnShow", function(...) _securecall(markActiveStateDirty, ...) end)
         installed = true
     end
@@ -263,6 +265,8 @@ function CDMReanchorHooks:InstallViewerHooks(getViewer)
     for i = 1, #self._keys do
         local key = self._keys[i]
         local viewer = getViewer(key)
+        local trackActiveState = not self._shouldTrackActiveState
+            or self._shouldTrackActiveState(key) ~= false
         if viewer and not self._hooked[viewer] and viewer.RefreshLayout then
             self._hooked[viewer] = true
             local hooks = self
@@ -279,11 +283,11 @@ function CDMReanchorHooks:InstallViewerHooks(getViewer)
                 local function onAcquire(_, itemFrame)
                     hooks:_InstallFrameHooks(itemFrame, key)
                     hooks:MaybeBlankOnAcquire(key, itemFrame)
-                    hooks:MarkAcquire(key)
+                    hooks:MarkDirty(key)
                 end
                 hooksec(viewer, "OnAcquireItemFrame", function(...) _securecall(onAcquire, ...) end)
             end
-            if viewer.HookScript then
+            if trackActiveState and viewer.HookScript then
                 viewer:HookScript("OnShow", function(...) _securecall(markDirty, ...) end)
                 viewer:HookScript("OnHide", function(...) _securecall(markDirty, ...) end)
             end
@@ -298,9 +302,22 @@ function CDMReanchorHooks:InstallViewerHooks(getViewer)
                     EnumerateViewerFrames(viewer, function(frame)
                         hooks:_InstallFrameHooks(frame, key)
                     end)
-                    hooks:MarkAcquire(key)
+                    hooks:MarkDirty(key)
                 end
                 hooksec(pool, "Acquire", function(...) _securecall(onPoolAcquire, ...) end)
+                if pool.Release then
+                    local function onPoolRelease(_, itemFrame)
+                        local procGlow = ns._cdmReanchorProcGlow
+                        if procGlow and procGlow.OnRelease then
+                            procGlow:OnRelease(itemFrame)
+                        end
+                        local highlighter = ns._OwnedHighlighter
+                        if highlighter and highlighter.OnReanchoredFrameRelease then
+                            highlighter.OnReanchoredFrameRelease(itemFrame)
+                        end
+                    end
+                    hooksec(pool, "Release", function(...) _securecall(onPoolRelease, ...) end)
+                end
             end
             EnumerateViewerFrames(viewer, function(frame)
                 self:_InstallFrameHooks(frame, key)
@@ -368,7 +385,8 @@ function CDMReanchorHooks:InstallIndexSubscription(index)
     if self._indexSubscribed then return end
     if not (index and index.Subscribe) then return end
     local hooks = self
-    index.Subscribe("reanchor", function()
+    index.Subscribe("reanchor", function(reason)
+        if hooks._ignoreIndexReasons[reason] then return end
         hooks:MarkAllDirty()
     end, 50)
     self._indexSubscribed = true
@@ -450,6 +468,11 @@ function CDMReanchorProcGlow:OnClaim(frame, entry)
     if current ~= nil and current ~= ProcGlowLatchKey(entry) then
         self:_StopFor(frame)
     end
+end
+
+function CDMReanchorProcGlow:OnRelease(frame)
+    if not frame or self._active[frame] == nil then return end
+    self:_StopFor(frame)
 end
 
 function CDMReanchorProcGlow:Install(manager)

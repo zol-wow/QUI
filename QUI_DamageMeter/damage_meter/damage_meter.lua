@@ -1,4 +1,4 @@
--- luacheck: globals CreateFrame C_DamageMeter UIParent RAID_CLASS_COLORS CLASS_ICON_TCOORDS _G SetCVar InCombatLockdown C_StringUtil GetTime Enum MenuUtil GameTooltip SlashCmdList GetTimePreciseSec C_Spell C_Timer AbbreviateNumbers BreakUpLargeNumbers CreateAbbreviateConfig Ambiguate
+-- luacheck: globals CreateFrame C_DamageMeter C_DeathRecap UIParent RAID_CLASS_COLORS CLASS_ICON_TCOORDS _G SetCVar InCombatLockdown C_StringUtil GetTime Enum MenuUtil GameTooltip SlashCmdList GetTimePreciseSec C_Spell C_Timer AbbreviateNumbers BreakUpLargeNumbers CreateAbbreviateConfig Ambiguate UnitGUID OpenDeathRecapUI UnitAffectingCombat IsInGroup IsInRaid GetNumGroupMembers
 local _, ns = ...
 
 local Helpers = ns.Helpers
@@ -115,6 +115,7 @@ Data._dirty = {}
 Data._allDirty = false
 Data._inCombat = false
 Data._clearRuntimeSessions = false
+Data._sourceGUIDBySelector = {}
 
 local HasCachedViewKey
 
@@ -150,6 +151,37 @@ Data._combatStartTime = nil
 Data._combatEndTime   = nil
 Data._combatFrozen    = 0
 Data._currentDurPin   = 0
+Data._inEncounter     = false
+
+local PARTY_UNITS = {}
+local RAID_UNITS = {}
+local GROUP_UNIT_TOKENS = { player = true }
+for i = 1, 4 do
+    local unit = "party" .. i
+    PARTY_UNITS[i] = unit
+    GROUP_UNIT_TOKENS[unit] = true
+end
+for i = 1, 40 do
+    local unit = "raid" .. i
+    RAID_UNITS[i] = unit
+    GROUP_UNIT_TOKENS[unit] = true
+end
+
+local function IsGroupInCombat()
+    if not UnitAffectingCombat then return Data._inCombat end
+    if UnitAffectingCombat("player") then return true end
+    if not (IsInGroup and IsInGroup()) then return false end
+    local inRaid = IsInRaid and IsInRaid() or false
+    local count = GetNumGroupMembers and GetNumGroupMembers() or 0
+    if not inRaid then count = math.max(0, count - 1) end
+    local units = inRaid and RAID_UNITS or PARTY_UNITS
+    count = math.min(count, #units)
+    for i = 1, count do
+        if UnitAffectingCombat(units[i]) then return true end
+    end
+    return false
+end
+QUI_DamageMeter.IsGroupInCombat = IsGroupInCombat
 
 local function GetCombatElapsed()
     if Data._combatStartTime then
@@ -172,6 +204,54 @@ function Data:ResetCombatClock()
     end
     self._combatFrozen = 0
     self._currentDurPin = 0
+end
+
+function Data:BeginCombat(resetClock)
+    local wasInCombat = self._inCombat
+    if not wasInCombat then self:ClearLiveSourceGUIDCache() end
+    self._inCombat = true
+    if resetClock or not wasInCombat or not self._combatStartTime then
+        self._combatStartTime = GetTime()
+        self._combatEndTime   = nil
+        self._combatFrozen    = 0
+        self._currentDurPin   = 0
+    end
+    self:WakeTicker()
+    if (not wasInCombat or resetClock) and self._onCombatStart then
+        self:_onCombatStart()
+    end
+    if self._onChange then self:_onChange() end
+end
+
+function Data:EndCombat()
+    if not self._inCombat then return end
+    self._inCombat = false
+    self._combatEndTime = GetTime()
+    self._combatFrozen = (self._combatStartTime and (self._combatEndTime - self._combatStartTime)) or 0
+    if C_Timer and C_Timer.After then C_Timer.After(0.5, MarkAllDirty) end
+    if self._onChange then self:_onChange() end
+end
+
+local groupCombatScanQueued = false
+
+local function RefreshGroupCombatState()
+    groupCombatScanQueued = false
+    local groupInCombat = IsGroupInCombat()
+    if groupInCombat and not Data._inCombat then
+        Data:BeginCombat(false)
+    elseif not groupInCombat and Data._inCombat and not Data._inEncounter then
+        Data:EndCombat()
+    end
+end
+
+local function QueueGroupCombatScan()
+    if groupCombatScanQueued then return end
+    groupCombatScanQueued = true
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, RefreshGroupCombatState)
+    else
+        RefreshGroupCombatState()
+    end
 end
 
 local function ResolveCurrentViewDuration(inCombat, apiDuration, pinnedDuration, combatElapsed, isSecret)
@@ -198,12 +278,17 @@ Data._eventFrame:RegisterEvent("DAMAGE_METER_CURRENT_SESSION_UPDATED")
 Data._eventFrame:RegisterEvent("DAMAGE_METER_RESET")
 Data._eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 Data._eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-Data._eventFrame:SetScript("OnEvent", function(_, event, arg1, _arg2)
+Data._eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+Data._eventFrame:RegisterEvent("UNIT_FLAGS")
+Data._eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+Data._eventFrame:RegisterEvent("ENCOUNTER_START")
+Data._eventFrame:RegisterEvent("ENCOUNTER_END")
+Data._eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "DAMAGE_METER_COMBAT_SESSION_UPDATED" then
         for sessionType = 0, 2 do
             MarkDirty(sessionType, arg1)
         end
-        local sessionID = _arg2
+        local sessionID = arg2
         if sessionID ~= nil then
             local key = QUI_DamageMeter.SessionKey(nil, sessionID)
             if HasCachedViewKey(key, arg1) then
@@ -215,22 +300,38 @@ Data._eventFrame:SetScript("OnEvent", function(_, event, arg1, _arg2)
     elseif event == "DAMAGE_METER_RESET" then
         Data._clearRuntimeSessions = true
         Data:ResetCombatClock()
+        Data:ClearSourceGUIDCache()
         MarkAllDirty()
-    elseif event == "PLAYER_REGEN_DISABLED" then
-        Data._inCombat = true
-        Data._combatStartTime = GetTime()
-        Data._combatEndTime   = nil
-        Data._currentDurPin   = 0
-        Data:WakeTicker()
-        if Data._onChange then Data:_onChange() end
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        Data._inCombat = false
-        Data._combatEndTime   = GetTime()
-        Data._combatFrozen    = (Data._combatStartTime and (Data._combatEndTime - Data._combatStartTime)) or 0
+    elseif event == "ENCOUNTER_START" then
+        Data._inEncounter = true
+        Data:BeginCombat(true)
+    elseif event == "ENCOUNTER_END" then
+        Data._inEncounter = false
         if C_Timer and C_Timer.After then
-            C_Timer.After(0.5, MarkAllDirty)
+            C_Timer.After(0.5, RefreshGroupCombatState)
+        else
+            RefreshGroupCombatState()
         end
-        if Data._onChange then Data:_onChange() end
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        Data:BeginCombat(false)
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if not Data._inEncounter and not IsGroupInCombat() then
+            Data:EndCombat()
+        end
+    elseif event == "UNIT_FLAGS" then
+        if not GROUP_UNIT_TOKENS[arg1] then return end
+        QueueGroupCombatScan()
+    elseif event == "GROUP_ROSTER_UPDATE" then
+        Data:ClearSourceGUIDCache()
+        QueueGroupCombatScan()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        Data:ClearSourceGUIDCache()
+        if IsGroupInCombat() then
+            Data:BeginCombat(false)
+        else
+            Data:EndCombat()
+            MarkAllDirty()
+        end
     end
 end)
 
@@ -287,6 +388,7 @@ end
 Data._NormalizeSources = NormalizeSources
 
 Data._cache = {}
+Data._combinedHealingViews = {}
 Data._generation = 0
 
 local function SessionKey(sessionType, sessionID)
@@ -296,6 +398,80 @@ local function SessionKey(sessionType, sessionID)
     return "type:" .. tostring(sessionType)
 end
 QUI_DamageMeter.SessionKey = SessionKey
+
+local function IsSecretValue(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
+
+function Data:ClearSourceGUIDCache()
+    self._sourceGUIDBySelector = {}
+end
+
+function Data:ClearLiveSourceGUIDCache()
+    for selectorKey in pairs(self._sourceGUIDBySelector) do
+        if type(selectorKey) == "string" and selectorKey:match("^type:") then
+            self._sourceGUIDBySelector[selectorKey] = nil
+        end
+    end
+end
+
+function Data:_CacheSourceGUIDs(selectorKey, sources)
+    if self._inCombat then return end
+    local bySpec = self._sourceGUIDBySelector[selectorKey]
+    if not bySpec then
+        bySpec = {}
+        self._sourceGUIDBySelector[selectorKey] = bySpec
+    end
+    for _, source in ipairs(sources or {}) do
+        local specIconID = source.specIconID
+        local sourceGUID = source.sourceGUID
+        if type(specIconID) == "number" and specIconID > 0
+            and not IsSecretValue(sourceGUID) and type(sourceGUID) == "string"
+            and sourceGUID:match("^Player%-") then
+            local cached = bySpec[specIconID]
+            if cached == nil then
+                bySpec[specIconID] = sourceGUID
+            elseif cached ~= sourceGUID then
+                bySpec[specIconID] = false
+            end
+        end
+    end
+end
+
+function Data:ResolveSourceSelector(source, sessionType, sessionID, inCombat)
+    if type(source) ~= "table" then return nil, nil, "missing" end
+
+    local sourceGUID = source.sourceGUID
+    if not IsSecretValue(sourceGUID) and type(sourceGUID) == "string" and sourceGUID ~= "" then
+        return sourceGUID, nil, "direct"
+    end
+
+    local sourceCreatureID = source.sourceCreatureID
+    if not IsSecretValue(sourceCreatureID) and type(sourceCreatureID) == "number" then
+        return nil, sourceCreatureID, "direct"
+    end
+
+    if inCombat then
+        local specIconID = source.specIconID
+        if not IsSecretValue(specIconID) and type(specIconID) == "number" and specIconID > 0 then
+            local bySpec = self._sourceGUIDBySelector[SessionKey(sessionType, sessionID)]
+            local cachedGUID = bySpec and bySpec[specIconID]
+            if type(cachedGUID) == "string" then
+                return cachedGUID, nil, "cache"
+            end
+        end
+    end
+
+    local isLocalPlayer = source.isLocalPlayer
+    if not IsSecretValue(isLocalPlayer) and isLocalPlayer == true and UnitGUID then
+        local playerGUID = Helpers.SafeValue(UnitGUID("player"), nil)
+        if type(playerGUID) == "string" and playerGUID ~= "" then
+            return playerGUID, nil, "local"
+        end
+    end
+
+    return nil, nil, "restricted"
+end
 
 local function TableOrEmpty(v)
     if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(v) then
@@ -372,6 +548,9 @@ local function FetchView(sessionType, damageMeterType, sessionID)
     end
 
     local sources = NormalizeSources(TableOrEmpty(session.combatSources))
+    if not Data._inCombat then
+        Data:_CacheSourceGUIDs(SessionKey(sessionType, sessionID), sources)
+    end
 
     local S = Enum and Enum.DamageMeterSessionType
     local duration
@@ -434,13 +613,11 @@ end
 
 function Data:ClearCachedViews()
     self._cache = {}
+    self._combinedHealingViews = {}
     self._dirty = {}
 end
 
 local _spellInfoCache = {}
-local function IsSecretValue(value)
-    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
-end
 
 local function IsIndexableSpellID(spellID)
     if IsSecretValue(spellID) then return false end -- @secret-policy: reject-secret-ids
@@ -457,8 +634,8 @@ local function ResolveSpellInfo(spellID)
     return info
 end
 
-local function NormalizeSpells(rawSpells)
-    local out = {}
+local function NormalizeSpells(rawSpells, out, limit)
+    out = out or {}
     local n = 0
     for i = 1, #rawSpells do
         local spell = rawSpells[i]
@@ -473,55 +650,66 @@ local function NormalizeSpells(rawSpells)
             if not IsSecretValue(name) and name == nil then
                 name = spell.creatureName
             end
-            out[n] = {
-                rank             = n,
-                spellID          = spell.spellID,
-                name             = name,
-                iconID           = info and info.iconID,
-                totalAmount      = spell.totalAmount,
-                amountPerSecond  = spell.amountPerSecond,
-                hitCount         = spell.hitCount,
-                critCount        = spell.critCount,
-                criticalAmount   = spell.criticalAmount,
-            }
+            local normalized = out[n] or {}
+            normalized.rank = n
+            normalized.spellID = spell.spellID
+            normalized.name = name
+            normalized.iconID = info and info.iconID
+            normalized.totalAmount = spell.totalAmount
+            normalized.amountPerSecond = spell.amountPerSecond
+            normalized.hitCount = spell.hitCount
+            normalized.critCount = spell.critCount
+            normalized.criticalAmount = spell.criticalAmount
+            out[n] = normalized
+            if type(limit) == "number" and n >= limit then break end
         end
     end
+    for i = #out, n + 1, -1 do out[i] = nil end
     return out
 end
 Data._NormalizeSpells = NormalizeSpells
 
-function Data:GetBreakdownView(sessionType, damageMeterType, sourceGUID, sourceCreatureID, sessionID)
+local function ResetBreakdownView(view)
+    view = view or {}
+    view.spells = NormalizeSpells({}, view.spells)
+    view.maxAmount = 0
+    view.totalAmount = 0
+    return view
+end
+
+function Data:GetBreakdownView(sessionType, damageMeterType, sourceGUID, sourceCreatureID,
+    sessionID, reuse, limit)
     if not C_DamageMeter then
-        return { spells = {}, maxAmount = 0, totalAmount = 0 }
+        return ResetBreakdownView(reuse)
     end
     local ok, src
     if sessionID ~= nil then
         if not C_DamageMeter.GetCombatSessionSourceFromID then
-            return { spells = {}, maxAmount = 0, totalAmount = 0 }
+            return ResetBreakdownView(reuse)
         end
         ok, src = pcall(C_DamageMeter.GetCombatSessionSourceFromID,
             sessionID, damageMeterType, sourceGUID, sourceCreatureID)
     else
         if not C_DamageMeter.GetCombatSessionSourceFromType then
-            return { spells = {}, maxAmount = 0, totalAmount = 0 }
+            return ResetBreakdownView(reuse)
         end
         ok, src = pcall(C_DamageMeter.GetCombatSessionSourceFromType,
             sessionType, damageMeterType, sourceGUID, sourceCreatureID)
     end
     if not ok then
-        return { spells = {}, maxAmount = 0, totalAmount = 0 }
+        return ResetBreakdownView(reuse)
     end
     if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(src) then
-        return { spells = {}, maxAmount = 0, totalAmount = 0 } -- @secret-policy: empty-table-degrade
+        return ResetBreakdownView(reuse) -- @secret-policy: empty-table-degrade
     end
     if type(src) ~= "table" then
-        return { spells = {}, maxAmount = 0, totalAmount = 0 }
+        return ResetBreakdownView(reuse)
     end
-    return {
-        spells      = NormalizeSpells(TableOrEmpty(src.combatSpells)),
-        maxAmount   = AmountOrDefault(src.maxAmount, 0),
-        totalAmount = AmountOrDefault(src.totalAmount, 0),
-    }
+    local view = reuse or {}
+    view.spells = NormalizeSpells(TableOrEmpty(src.combatSpells), view.spells, limit)
+    view.maxAmount = AmountOrDefault(src.maxAmount, 0)
+    view.totalAmount = AmountOrDefault(src.totalAmount, 0)
+    return view
 end
 
 local function AggregateSpellsByUnit(combatSpells, isSecret)
@@ -532,19 +720,24 @@ local function AggregateSpellsByUnit(combatSpells, isSecret)
         if isSecret and isSecret(det) then det = nil end -- @secret-policy: reject-secret-value
         local name = det and det.unitName
         local amt  = spell and spell.totalAmount
+        local perSecond = spell and spell.amountPerSecond
         local nameSecret = isSecret and isSecret(name)
         local amtSecret  = isSecret and isSecret(amt)
+        local perSecondSecret = isSecret and isSecret(perSecond)
         local nameOk = not nameSecret and name ~= nil
         local amtOk  = not amtSecret and amt ~= nil
         if nameOk and amtOk then
             local e = byName[name]
             if not e then
                 e = { name = name, classFilename = det.unitClassFilename,
-                      specIconID = det.specIconID, totalAmount = 0 }
+                      specIconID = det.specIconID, totalAmount = 0, amountPerSecond = 0 }
                 byName[name] = e
                 list[#list + 1] = e
             end
             e.totalAmount = e.totalAmount + amt
+            if not perSecondSecret and type(perSecond) == "number" then
+                e.amountPerSecond = e.amountPerSecond + perSecond
+            end
         end
     end
     table.sort(list, function(a, b) return a.totalAmount > b.totalAmount end)
@@ -558,7 +751,13 @@ local function PivotPlayerTargets(perEnemy)
         for _, p in ipairs(e.players or {}) do
             local bucket = map[p.name]
             if not bucket then bucket = {}; map[p.name] = bucket end
-            bucket[#bucket + 1] = { name = e.enemyName, totalAmount = p.totalAmount }
+            bucket[#bucket + 1] = {
+                name = e.enemyName,
+                sourceGUID = e.sourceGUID,
+                sourceCreatureID = e.sourceCreatureID,
+                totalAmount = p.totalAmount,
+                amountPerSecond = p.amountPerSecond,
+            }
         end
     end
     for _, list in pairs(map) do
@@ -588,6 +787,22 @@ local function FetchSourceSpells(sessionType, meterType, sourceGUID, sourceCreat
     return TableOrEmpty(src.combatSpells)
 end
 
+local function FilterSpellsByUnit(combatSpells, unitName, isSecret)
+    local filtered = {}
+    if unitName == nil or (isSecret and isSecret(unitName)) then return filtered end
+    for _, spell in ipairs(combatSpells or {}) do
+        if isSecret and isSecret(spell) then spell = nil end
+        local details = spell and spell.combatSpellDetails
+        if isSecret and isSecret(details) then details = nil end
+        local name = details and details.unitName
+        if name ~= nil and not (isSecret and isSecret(name)) and name == unitName then
+            filtered[#filtered + 1] = spell
+        end
+    end
+    return filtered
+end
+Data._FilterSpellsByUnit = FilterSpellsByUnit
+
 local function EnemyDamageTakenType()
     local T = Enum and Enum.DamageMeterType
     return T and T.EnemyDamageTaken
@@ -614,6 +829,8 @@ function Data:GetPlayerTargetsMap(sessionType, sessionID)
     for _, enemy in ipairs(enemyView.sources or {}) do
         perEnemy[#perEnemy + 1] = {
             enemyName = enemy.name,
+            sourceGUID = enemy.sourceGUID,
+            sourceCreatureID = enemy.sourceCreatureID,
             players   = AggregateSpellsByUnit(
                 FetchSourceSpells(sessionType, eType, enemy.sourceGUID, enemy.sourceCreatureID, sessionID),
                 IsSecret),
@@ -632,6 +849,34 @@ function Data:GetPlayerTargets(sessionType, playerName, sessionID)
     return self:GetPlayerTargetsMap(sessionType, sessionID)[playerName] or {}
 end
 
+function Data:GetPlayerTargetBreakdown(sessionType, playerName, targetGUID, targetCreatureID,
+    sessionID, reuse, limit)
+    local eType = EnemyDamageTakenType()
+    if not eType then return ResetBreakdownView(reuse) end
+    local isSecret = Helpers and Helpers.IsSecretValue
+    if playerName == nil or (isSecret and isSecret(playerName)) then
+        return ResetBreakdownView(reuse)
+    end
+    if isSecret and isSecret(targetGUID) then targetGUID = nil end
+    if isSecret and isSecret(targetCreatureID) then targetCreatureID = nil end
+    if targetGUID == nil and targetCreatureID == nil then return ResetBreakdownView(reuse) end
+    local rawSpells = FetchSourceSpells(
+        sessionType, eType, targetGUID, targetCreatureID, sessionID)
+    local view = reuse or {}
+    view.spells = NormalizeSpells(
+        FilterSpellsByUnit(rawSpells, playerName, isSecret), view.spells, limit)
+    view.maxAmount = 0
+    view.totalAmount = 0
+    for _, spell in ipairs(view.spells) do
+        local amount = spell.totalAmount
+        if not (isSecret and isSecret(amount)) and type(amount) == "number" then
+            view.totalAmount = view.totalAmount + amount
+            view.maxAmount = math.max(view.maxAmount, amount)
+        end
+    end
+    return view
+end
+
 function Data:GetCombinedHealingView(sessionType, sessionID)
     local T = Enum and Enum.DamageMeterType
     local hType = T and T.HealingDone
@@ -643,6 +888,13 @@ function Data:GetCombinedHealingView(sessionType, sessionID)
     local aView = self:GetView(sessionType, aType, sessionID)
     if not (aView and aView.sources and #aView.sources > 0) then
         return hView
+    end
+
+    local selectorKey = SessionKey(sessionType, sessionID)
+    local cached = self._combinedHealingViews[selectorKey]
+    if cached and cached.healingGeneration == hView.generation
+        and cached.absorbGeneration == aView.generation then
+        return cached.view
     end
 
     local IsSecret = Helpers and Helpers.IsSecretValue
@@ -677,36 +929,50 @@ function Data:GetCombinedHealingView(sessionType, sessionID)
     end
     SortByDescSafe(merged, function(s) return s.totalAmount end, IsSecret)
     local maxAmount = RankAndMaxAmount(merged, IsSecret)
-    return {
+    local view = {
         duration    = hView.duration,
         maxAmount   = maxAmount,
         totalAmount = SafeNumOrZero(hView.totalAmount, IsSecret) + SafeNumOrZero(aView.totalAmount, IsSecret),
         sources     = merged,
         generation  = math.max(hView.generation or 0, aView.generation or 0),
     }
+    self._combinedHealingViews[selectorKey] = {
+        healingGeneration = hView.generation,
+        absorbGeneration = aView.generation,
+        view = view,
+    }
+    return view
 end
 
-function Data:GetCombinedHealingBreakdown(sessionType, sourceGUID, sourceCreatureID, sessionID)
+function Data:GetCombinedHealingBreakdown(sessionType, sourceGUID, sourceCreatureID, sessionID, reuse, limit)
     local T = Enum and Enum.DamageMeterType
     local hType = T and T.HealingDone
     local aType = T and T.Absorbs
     if not (hType and aType) then
-        return self:GetBreakdownView(sessionType, hType or 2, sourceGUID, sourceCreatureID, sessionID)
+        return self:GetBreakdownView(sessionType, hType or 2,
+            sourceGUID, sourceCreatureID, sessionID, reuse, limit)
     end
-    local hView = self:GetBreakdownView(sessionType, hType, sourceGUID, sourceCreatureID, sessionID)
-    local aView = self:GetBreakdownView(sessionType, aType, sourceGUID, sourceCreatureID, sessionID)
-    if not (aView and aView.spells and #aView.spells > 0) then
-        return hView
-    end
+    reuse = reuse or {}
+    local hView = self:GetBreakdownView(sessionType, hType,
+        sourceGUID, sourceCreatureID, sessionID, reuse._healing)
+    local aView = self:GetBreakdownView(sessionType, aType,
+        sourceGUID, sourceCreatureID, sessionID, reuse._absorbs)
+    reuse._healing = hView
+    reuse._absorbs = aView
     local IsSecret = Helpers and Helpers.IsSecretValue
-    local merged, bySpell = {}, {}
-    for i, sp in ipairs(hView.spells or {}) do
-        local copy = {}
+    local merged = reuse._mergedSpells or {}
+    local bySpell = reuse._bySpell or {}
+    for key in pairs(bySpell) do bySpell[key] = nil end
+    local count = 0
+    for _, sp in ipairs(hView.spells or {}) do
+        count = count + 1
+        local copy = merged[count] or {}
+        for key in pairs(copy) do copy[key] = nil end
         for k, v in pairs(sp) do copy[k] = v end
-        merged[i] = copy
+        merged[count] = copy
         if IsIndexableSpellID(sp.spellID) then bySpell[sp.spellID] = copy end
     end
-    for _, sp in ipairs(aView.spells) do
+    for _, sp in ipairs(aView.spells or {}) do
         local existing = IsIndexableSpellID(sp.spellID) and bySpell[sp.spellID] or nil
         if existing then
             local totSecret = IsSecret and (IsSecret(existing.totalAmount) or IsSecret(sp.totalAmount))
@@ -714,19 +980,28 @@ function Data:GetCombinedHealingBreakdown(sessionType, sourceGUID, sourceCreatur
                 existing.totalAmount = existing.totalAmount + sp.totalAmount
             end
         else
-            local copy = {}
+            count = count + 1
+            local copy = merged[count] or {}
+            for key in pairs(copy) do copy[key] = nil end
             for k, v in pairs(sp) do copy[k] = v end
-            table.insert(merged, copy)
+            merged[count] = copy
             if IsIndexableSpellID(sp.spellID) then bySpell[sp.spellID] = copy end
         end
     end
+    for i = #merged, count + 1, -1 do merged[i] = nil end
     SortByDescSafe(merged, function(s) return s.totalAmount end, IsSecret)
     local maxAmount = RankAndMaxAmount(merged, IsSecret)
-    return {
-        spells      = merged,
-        maxAmount   = maxAmount,
-        totalAmount = SafeNumOrZero(hView.totalAmount, IsSecret) + SafeNumOrZero(aView.totalAmount, IsSecret),
-    }
+    local spells = reuse.spells or {}
+    local visibleCount = math.min(#merged, type(limit) == "number" and limit or #merged)
+    for i = 1, visibleCount do spells[i] = merged[i] end
+    for i = #spells, visibleCount + 1, -1 do spells[i] = nil end
+    reuse._mergedSpells = merged
+    reuse.spells = spells
+    reuse._bySpell = bySpell
+    reuse.maxAmount = maxAmount
+    reuse.totalAmount = SafeNumOrZero(hView.totalAmount, IsSecret)
+        + SafeNumOrZero(aView.totalAmount, IsSecret)
+    return reuse
 end
 
 local function IsHealingType(meterType)
@@ -741,24 +1016,37 @@ local function FormatDuration(seconds)
     return Helpers.FormatMMSS(seconds)
 end
 
-local function BuildPreviousSessionLabel(availableSession)
+local function BuildPreviousSessionLabel(availableSession, separateDuration)
     availableSession = availableSession or {}
     local name = availableSession.name
+    if IsSecretValue(name) then name = nil end
     if type(name) == "string" then
         name = name:gsub("^%s*%(!%)%s*", "")
     end
     if not name or name == "" then
         local sessionID = availableSession.sessionID
+        if IsSecretValue(sessionID) then sessionID = nil end
         name = sessionID and ("Combat " .. tostring(sessionID)) or "Combat"
     end
 
     local durationText = FormatDuration(availableSession.durationSeconds)
+    if separateDuration then return name, durationText end
     if durationText ~= "" then
         return name .. " [" .. durationText .. "]"
     end
     return name
 end
 QUI_DamageMeter.BuildPreviousSessionLabel = BuildPreviousSessionLabel
+
+local function TakeTrailingSessions(sessions, limit)
+    local result = {}
+    if type(sessions) ~= "table" then return result end
+    limit = math.max(0, math.floor(tonumber(limit) or 20))
+    local first = math.max(1, #sessions - limit + 1)
+    for i = first, #sessions do result[#result + 1] = sessions[i] end
+    return result
+end
+QUI_DamageMeter.TakeTrailingSessions = TakeTrailingSessions
 
 local _formatOpts = {
     compact = { config = CreateAbbreviateConfig({
@@ -824,6 +1112,7 @@ QUI_DamageMeter.BuildValueText = BuildValueText
 
 local Window = {}
 Window.__index = Window
+QUI_DamageMeter.Window = Window
 
 local Breakdown
 
@@ -856,6 +1145,7 @@ end
 local function LabelForType(damageMeterType)
     return TYPE_LABELS[damageMeterType] or (ns.L["Type "] .. tostring(damageMeterType))
 end
+QUI_DamageMeter.LabelForType = LabelForType
 
 local function TooltipLabelsForType(meterType)
     local T = Enum and Enum.DamageMeterType
@@ -887,6 +1177,7 @@ local function LabelForSession(sessionType)
     if sessionType == 2 then return ns.L["Expired"] end
     return ns.L["Session "] .. tostring(sessionType)
 end
+QUI_DamageMeter.LabelForSession = LabelForSession
 
 local PER_SECOND_TYPES = {}
 do
@@ -902,6 +1193,15 @@ local function IsPerSecondType(meterType)
 end
 
 local DEATHS_TYPE = Enum and Enum.DamageMeterType and Enum.DamageMeterType.Deaths
+
+local function CanOpenDetailInCombat(source, meterType, deathsType, inCombat, isSecret, hasSelector)
+    if not inCombat then return true end
+    if deathsType ~= nil and meterType == deathsType then return true end
+    local isLocalPlayer = source and source.isLocalPlayer
+    if isSecret and isSecret(isLocalPlayer) then return false end
+    return isLocalPlayer == true or hasSelector == true
+end
+QUI_DamageMeter.CanOpenDetailInCombat = CanOpenDetailInCombat
 
 local function ComputeBarFill(meterType, source, fillMax, deathsType, isSecret)
     if deathsType ~= nil and meterType == deathsType then
@@ -954,6 +1254,7 @@ local function GetAccentColor()
     end
     return 0.376, 0.647, 0.980, 1
 end
+QUI_DamageMeter.GetAccentColor = GetAccentColor
 
 local function CopyColor(color)
     if type(color) ~= "table" then return nil end
@@ -1102,6 +1403,100 @@ local function AttachRowVisuals(row, barH)
     row.Value:SetJustifyH("RIGHT")
     row.Value:SetText("")
 end
+QUI_DamageMeter.AttachRowVisuals = AttachRowVisuals
+
+local activeHoverRow
+local activeHoverPreview
+
+function Window:_ShowPlayerRowHover(rowSelf, withPreview)
+    local s2 = GetSettings()
+    if not (s2 and s2.showHoverTooltip) then return end
+    if not rowSelf._source then return end
+    local src = rowSelf._source
+    activeHoverPreview = nil
+    if withPreview and self:PreviewBreakdown(src, rowSelf) then
+        activeHoverRow = rowSelf
+        activeHoverPreview = self._breakdown
+        return
+    end
+    if GameTooltip:IsForbidden() then return end
+    activeHoverRow = rowSelf
+    local inCombat = Data._inCombat or (InCombatLockdown and InCombatLockdown()) or false
+    local sourceGUID, sourceCreatureID = Data:ResolveSourceSelector(
+        src, self.sessionType, self.sessionID, inCombat)
+
+    GameTooltip:SetOwner(rowSelf, "ANCHOR_BOTTOM")
+    GameTooltip:ClearLines()
+
+    local IsSecret = Helpers and Helpers.IsSecretValue
+
+    local cr, cg, cb = 1, 1, 1
+    if src.classFilename and RAID_CLASS_COLORS and RAID_CLASS_COLORS[src.classFilename] then
+        local cc = Helpers.GetClassColorTable(src.classFilename)
+        cr, cg, cb = cc.r, cc.g, cc.b
+    end
+    local headerName = ShortenName(src.name)
+    if IsSecret and IsSecret(headerName) then
+        headerName = "???" -- @secret-policy: placeholder-when-secret
+    end
+    GameTooltip:AddLine(headerName or "?", cr, cg, cb)
+
+    if src.classFilename then
+        GameTooltip:AddLine(src.classFilename, 0.7, 0.7, 0.7)
+    end
+
+    local addPlayerItemLevel = ns.QUI_AddPlayerItemLevelByGUIDToTooltip
+    if addPlayerItemLevel then
+        addPlayerItemLevel(GameTooltip, sourceGUID, true, true)
+    end
+
+    local totalLabel, rateLabel = TooltipLabelsForType(rowSelf._damageMeterType or 0)
+    local totalSecret = IsSecret and IsSecret(src.totalAmount)
+    if totalSecret then
+        GameTooltip:AddDoubleLine(totalLabel .. ":", "???", 1, 1, 1, 1, 1, 1) -- @secret-policy: placeholder-when-secret
+    else
+        local amt = FormatNumber(src.totalAmount, "complete")
+        if amt ~= "" then
+            GameTooltip:AddDoubleLine(totalLabel .. ":", amt, 1, 1, 1, 1, 1, 1)
+        end
+    end
+
+    local ps = src.amountPerSecond
+    local psSecret = IsSecret and IsSecret(ps)
+    if psSecret then
+        GameTooltip:AddDoubleLine((rateLabel or ns.L["Per Second"]) .. ":", "???", 1, 1, 1, 1, 1, 1) -- @secret-policy: placeholder-when-secret
+    elseif ps and ps ~= 0 then
+        GameTooltip:AddDoubleLine((rateLabel or ns.L["Per Second"]) .. ":", FormatNumber(ps, "compact"), 1, 1, 1, 1, 1, 1)
+    end
+
+    local total = src.totalAmount
+    local maxSec   = IsSecret and IsSecret(rowSelf._maxAmount)
+    local totalSec = IsSecret and IsSecret(total)
+    if not (maxSec or totalSec) and total ~= nil
+        and rowSelf._maxAmount and rowSelf._maxAmount > 0 then
+        local pct = (total / rowSelf._maxAmount) * 100
+        GameTooltip:AddDoubleLine(ns.L["% of Top:"], string.format("%.1f%%", pct), 1, 1, 1, 1, 1, 1)
+    end
+
+    local hasSelector = sourceGUID ~= nil or sourceCreatureID ~= nil
+    if not CanOpenDetailInCombat(src, rowSelf._damageMeterType, DEATHS_TYPE,
+        inCombat, IsSecretValue, hasSelector) then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(ns.L["Spell breakdown is hidden during combat"], 0.7, 0.7, 0.7)
+    end
+
+    GameTooltip:Show()
+end
+
+function Window:_HidePlayerRowHover(rowSelf, withPreview)
+    if withPreview then self:ClosePreview(rowSelf) end
+    if activeHoverRow == rowSelf then
+        activeHoverRow = nil
+        activeHoverPreview = nil
+    end
+    if GameTooltip:IsForbidden() then return end
+    if not GameTooltip.GetOwner or GameTooltip:GetOwner() == rowSelf then GameTooltip:Hide() end
+end
 
 function Window:_AttachRowVisuals(row)
     local windowID = self.windowID
@@ -1110,79 +1505,43 @@ function Window:_AttachRowVisuals(row)
     AttachRowVisuals(row, barH)
 
     row:EnableMouse(true)
-    row:RegisterForClicks("AnyUp")
-    row:SetScript("OnClick", function(rowSelf)
+    if row.RegisterForClicks then row:RegisterForClicks("AnyUp") end
+    row:SetScript("OnClick", function(rowSelf, button)
         if not rowSelf._source then return end
-        if InCombatLockdown and InCombatLockdown() then return end
+        if button == "RightButton" then
+            if self._breakdown and self._breakdown.Close then self._breakdown:Close() end
+            local manager = QUI_DamageMeter.WindowManager
+            if manager and manager.CloseBreakout then manager:CloseBreakout() end
+            return
+        end
         self:OpenBreakdown(rowSelf._source, rowSelf)
     end)
     row:SetScript("OnEnter", function(rowSelf)
-        local s2 = GetSettings()
-        if not (s2 and s2.showHoverTooltip) then return end
-        if not rowSelf._source then return end
-        if GameTooltip:IsForbidden() then return end
-
-        local src = rowSelf._source
-
-        GameTooltip:SetOwner(rowSelf, "ANCHOR_BOTTOM")
-        GameTooltip:ClearLines()
-
-        -- plain placeholder. -- @secret-policy: placeholder-when-secret
-        local IsSecret = Helpers and Helpers.IsSecretValue
-
-        local cr, cg, cb = 1, 1, 1
-        if src.classFilename and RAID_CLASS_COLORS and RAID_CLASS_COLORS[src.classFilename] then
-            local cc = Helpers.GetClassColorTable(src.classFilename)
-            cr, cg, cb = cc.r, cc.g, cc.b
-        end
-        local headerName = ShortenName(src.name)
-        if IsSecret and IsSecret(headerName) then
-            headerName = "???" -- @secret-policy: placeholder-when-secret
-        end
-        GameTooltip:AddLine(headerName or "?", cr, cg, cb)
-
-        if src.classFilename then
-            GameTooltip:AddLine(src.classFilename, 0.7, 0.7, 0.7)
-        end
-
-        local totalLabel, rateLabel = TooltipLabelsForType(rowSelf._damageMeterType or 0)
-        local totalSecret = IsSecret and IsSecret(src.totalAmount)
-        if totalSecret then
-            GameTooltip:AddDoubleLine(totalLabel .. ":", "???", 1, 1, 1, 1, 1, 1) -- @secret-policy: placeholder-when-secret
-        else
-            local amt = FormatNumber(src.totalAmount, "complete")
-            if amt ~= "" then
-                GameTooltip:AddDoubleLine(totalLabel .. ":", amt, 1, 1, 1, 1, 1, 1)
-            end
-        end
-
-        local ps = src.amountPerSecond
-        local psSecret = IsSecret and IsSecret(ps)
-        if psSecret then
-            GameTooltip:AddDoubleLine((rateLabel or ns.L["Per Second"]) .. ":", "???", 1, 1, 1, 1, 1, 1) -- @secret-policy: placeholder-when-secret
-        elseif ps and ps ~= 0 then
-            GameTooltip:AddDoubleLine((rateLabel or ns.L["Per Second"]) .. ":", FormatNumber(ps, "compact"), 1, 1, 1, 1, 1, 1)
-        end
-
-        local total = src.totalAmount
-        local maxSec   = IsSecret and IsSecret(rowSelf._maxAmount)
-        local totalSec = IsSecret and IsSecret(total)
-        if not (maxSec or totalSec) and total ~= nil
-            and rowSelf._maxAmount and rowSelf._maxAmount > 0 then
-            local pct = (total / rowSelf._maxAmount) * 100
-            GameTooltip:AddDoubleLine(ns.L["% of Top:"], string.format("%.1f%%", pct), 1, 1, 1, 1, 1, 1)
-        end
-
-        if InCombatLockdown and InCombatLockdown() then
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(ns.L["Spell breakdown is hidden during combat"], 0.7, 0.7, 0.7)
-        end
-
-        GameTooltip:Show()
+        self:_ShowPlayerRowHover(rowSelf, true)
     end)
-    row:SetScript("OnLeave", function()
-        if GameTooltip:IsForbidden() then return end
-        GameTooltip:Hide()
+    row:SetScript("OnLeave", function(rowSelf)
+        self:_HidePlayerRowHover(rowSelf, true)
+    end)
+end
+
+if ns.TooltipInspect and ns.TooltipInspect.RegisterRefreshCallback then
+    ns.TooltipInspect:RegisterRefreshCallback(function(guid)
+        local preview = activeHoverPreview
+        if preview and preview.frame and preview.frame:IsShown()
+            and Helpers.SafeCompare(preview.sourceGUID, guid) == true then
+            preview:_UpdateTitle()
+        end
+
+        local row = activeHoverRow
+        local source = row and row._source
+        if not source or not GameTooltip:IsShown() then return end
+        if GameTooltip.GetOwner and GameTooltip:GetOwner() ~= row then return end
+        if Helpers.SafeCompare(source.sourceGUID, guid) ~= true then return end
+
+        local addPlayerItemLevel = ns.QUI_AddPlayerItemLevelByGUIDToTooltip
+        if addPlayerItemLevel then
+            addPlayerItemLevel(GameTooltip, guid, false)
+        end
     end)
 end
 
@@ -1334,9 +1693,10 @@ end
 
 function Window:_ApplyHeader()
     if not self.frame or not self.TypeLabel then return end
-    local sessionLabel = self.sessionID ~= nil and ns.L["Previous"] or LabelForSession(self.sessionType)
-    self.TypeLabel:SetText(LabelForType(self.damageMeterType)
-        .. " | " .. sessionLabel)
+    local sessionLabel = self.sessionID ~= nil and (self.sessionLabel or ns.L["Previous"])
+        or LabelForSession(self.sessionType)
+    self.TypeLabel:SetText(LabelForType(self.damageMeterType))
+    if self.SegmentButton then self.SegmentButton:SetText(sessionLabel) end
 end
 
 function Window:_ResolveBorderColor()
@@ -1426,6 +1786,9 @@ function Window:_ApplyFonts()
         local path, size, outline = ResolveFontSlot(slot)
         if self.TypeLabel    then applyFont(self.TypeLabel, path, size, outline)    end
         if self.SessionTimer then applyFont(self.SessionTimer, path, size, outline) end
+        if self.SegmentButton and self.SegmentButton.text then
+            applyFont(self.SegmentButton.text, path, size, outline)
+        end
     end
 
     if not self.rows then return end
@@ -1462,6 +1825,7 @@ do
         end
     end
 end
+QUI_DamageMeter.MeterTypes = METER_TYPES
 
 local function PrepareSourcesForRender(view)
     local sources = view.sources
@@ -1471,74 +1835,117 @@ local function PrepareSourcesForRender(view)
     return sources, fillMax
 end
 
+function Window:SetDamageMeterType(damageMeterType)
+    local s = GetSettings()
+    local windowState = s and s.windows and s.windows[self.windowID]
+    if not windowState then return end
+    self.damageMeterType = damageMeterType
+    windowState.damageMeterType = damageMeterType
+    self._lastGeneration = -1
+    if self._breakdown and self._breakdown.Close then self._breakdown:Close() end
+    QUI_DamageMeter.WindowManager:RefreshAll()
+end
+
+function Window:_SelectSession(sessionType, sessionID, sessionLabel)
+    local manager = QUI_DamageMeter.WindowManager
+    if manager and manager.ApplySessionSelection then
+        manager:ApplySessionSelection(self, sessionType, sessionID, sessionLabel)
+    end
+end
+
+function Window:_PopulateSessionMenu(root)
+    root:CreateTitle(ns.L["Session"])
+    local S = Enum and Enum.DamageMeterSessionType
+    local currentSession = (S and S.Current) or 1
+    local overallSession = (S and S.Overall) or 0
+
+    local sessions
+    if C_DamageMeter and C_DamageMeter.GetAvailableCombatSessions then
+        local ok, availableSessions = ns.SafeCall("best-effort-style", C_DamageMeter.GetAvailableCombatSessions)
+        if ok and type(availableSessions) == "table" then
+            sessions = availableSessions
+        end
+    end
+
+    sessions = TakeTrailingSessions(sessions, 20)
+    if #sessions == 0 then
+        local none = root:CreateButton(ns.L["No previous sessions"], function() end)
+        none:SetEnabled(false)
+    else
+        for _, availableSession in ipairs(sessions) do
+            local sessionID = availableSession.sessionID
+            local sessionLabel = BuildPreviousSessionLabel(availableSession)
+            root:CreateRadio(sessionLabel,
+                function() return self.sessionID == sessionID end,
+                function() self:_SelectSession(nil, sessionID, sessionLabel) end)
+        end
+    end
+    root:CreateDivider()
+    root:CreateRadio(ns.L["Current"],
+        function() return self.sessionID == nil and self.sessionType == currentSession end,
+        function() self:_SelectSession(currentSession, nil) end)
+    root:CreateRadio(ns.L["Overall"],
+        function() return self.sessionID == nil and self.sessionType == overallSession end,
+        function() self:_SelectSession(overallSession, nil) end)
+end
+
+function Window:_OpenSessionMenu()
+    if not MenuUtil or not MenuUtil.CreateContextMenu then return end
+    MenuUtil.CreateContextMenu(self.SegmentButton or self.header or self.frame, function(_, root)
+        self:_PopulateSessionMenu(root)
+    end)
+end
+
+local function ResolveWindowAutoSwap(windowState, settings)
+    local value = rawget(windowState, "autoSwapChallengeSessions")
+    if value == nil then value = settings and settings.autoSwapChallengeSessions end
+    return value == true
+end
+
 function Window:_OpenConfigMenu()
     if not MenuUtil or not MenuUtil.CreateContextMenu then return end
     local s = GetSettings()
     local windowState = s and s.windows and s.windows[self.windowID]
     if not windowState then return end
 
-    local owner = self.header or self.frame
-    local function SelectSession(sessionType, sessionID)
-        if sessionID ~= nil then
-            self.sessionType = nil
-        else
-            self.sessionType = sessionType
-        end
-        self.sessionID = sessionID
-        if sessionID == nil and sessionType ~= nil then
-            windowState.sessionType = sessionType
-        end
-        self._lastGeneration = -1
-        if self._breakdown and self._breakdown.Close then
-            self._breakdown:Close()
-        end
-        QUI_DamageMeter.WindowManager:RefreshAll()
-    end
-
-    MenuUtil.CreateContextMenu(owner, function(_, root)
+    MenuUtil.CreateContextMenu(self.header or self.frame, function(_, root)
         root:CreateTitle(ns.L["Meter Type"])
         for _, t in ipairs(METER_TYPES) do
             local typeVal = t
             root:CreateRadio(LabelForType(typeVal),
                 function() return self.damageMeterType == typeVal end,
-                function()
-                    self.damageMeterType = typeVal
-                    windowState.damageMeterType = typeVal
-                    QUI_DamageMeter.WindowManager:RefreshAll()
-                end)
+                function() self:SetDamageMeterType(typeVal) end)
         end
         root:CreateDivider()
-        root:CreateTitle(ns.L["Session"])
-        local S = Enum and Enum.DamageMeterSessionType
-        local currentSession = (S and S.Current) or 1
-        local overallSession = (S and S.Overall) or 0
-
-        root:CreateRadio(ns.L["Current"],
-            function() return self.sessionID == nil and self.sessionType == currentSession end,
-            function() SelectSession(currentSession, nil) end)
-
-        root:CreateRadio(ns.L["Overall"],
-            function() return self.sessionID == nil and self.sessionType == overallSession end,
-            function() SelectSession(overallSession, nil) end)
-
-        local previousMenu = root:CreateButton(ns.L["Previous"])
-        local sessions
-        if C_DamageMeter and C_DamageMeter.GetAvailableCombatSessions then
-            local ok, availableSessions = ns.SafeCall("best-effort-style", C_DamageMeter.GetAvailableCombatSessions)
-            if ok and type(availableSessions) == "table" then
-                sessions = availableSessions
-            end
-        end
-
-        if not sessions or #sessions == 0 then
-            local none = previousMenu:CreateButton(ns.L["No previous sessions"], function() end)
-            none:SetEnabled(false)
-        else
-            for _, availableSession in ipairs(sessions) do
-                local sessionID = availableSession.sessionID
-                previousMenu:CreateButton(BuildPreviousSessionLabel(availableSession),
-                    function() SelectSession(nil, sessionID) end)
-            end
+        self:_PopulateSessionMenu(root)
+        root:CreateDivider()
+        root:CreateTitle(ns.L["Window Behavior"])
+        root:CreateCheckbox(ns.L["Hide Timer"],
+            function() return windowState.hideTimer == true end,
+            function()
+                windowState.hideTimer = not windowState.hideTimer
+                self.SessionTimer:SetShown(not windowState.hideTimer)
+            end)
+        root:CreateCheckbox(ns.L["Auto Swap Current/Overall"],
+            function() return ResolveWindowAutoSwap(windowState, s) end,
+            function()
+                windowState.autoSwapChallengeSessions = not ResolveWindowAutoSwap(windowState, s)
+            end)
+        root:CreateCheckbox(ns.L["Auto Current on Combat"],
+            function() return windowState.autoCurrentOnCombat == true end,
+            function() windowState.autoCurrentOnCombat = not windowState.autoCurrentOnCombat end)
+        root:CreateCheckbox(ns.L["Sync Segment Selection"],
+            function() return windowState.syncSegments == true end,
+            function() windowState.syncSegments = not windowState.syncSegments end)
+        local mythicDefault = root:CreateButton(ns.L["Default on M+ Start"])
+        mythicDefault:CreateRadio(ns.L["Off"],
+            function() return not windowState.mythicStartDMType end,
+            function() windowState.mythicStartDMType = false end)
+        for _, t in ipairs(METER_TYPES) do
+            local typeVal = t
+            mythicDefault:CreateRadio(LabelForType(typeVal),
+                function() return windowState.mythicStartDMType == typeVal end,
+                function() windowState.mythicStartDMType = typeVal end)
         end
         root:CreateDivider()
         root:CreateTitle(ns.L["Data"])
@@ -1547,6 +1954,7 @@ function Window:_OpenConfigMenu()
                 C_DamageMeter.ResetAllCombatSessions()
                 Data:ResetCombatClock()
                 Data:ClearCachedViews()
+                Data:ClearSourceGUIDCache()
                 if QUI_DamageMeter.WindowManager.ClearRuntimeSessionIDs then
                     QUI_DamageMeter.WindowManager:ClearRuntimeSessionIDs()
                 end
@@ -1575,6 +1983,10 @@ function Window:_UpdateScrollThumb()
     local scrollFrame   = self.scrollFrame
     local scrollContent = self.scrollContent
     if not (scrollBar and scrollFrame and scrollContent) then return end
+    if self._bodyHidden then
+        scrollBar:Hide()
+        return
+    end
 
     local contentH = scrollContent:GetHeight()
     local viewH    = scrollFrame:GetHeight()
@@ -1602,12 +2014,26 @@ function Window:_UpdateScrollThumb()
     scrollBar.thumb:SetPoint("TOP", scrollBar, "TOP", 0, yOff)
 end
 
+function Window:_SetBodyShown(shown)
+    self._bodyHidden = not shown
+    if self.scrollFrame then self.scrollFrame:SetShown(shown) end
+    if not shown then
+        if self.scrollBar then self.scrollBar:Hide() end
+        if self.stickyRow then self.stickyRow:Hide() end
+        if self.stickySeparator then self.stickySeparator:Hide() end
+        return
+    end
+    self:_UpdateStickyVisibility()
+    self:_UpdateScrollThumb()
+end
+
 function Window:_UpdateStickyVisibility()
     local sources = self._renderSources
     local sticky  = self.stickyRow
     local sep     = self.stickySeparator
     local sf      = self.scrollFrame
     if not (sticky and sep and sf) then return end
+    if self._bodyHidden then return end
 
     local function setHidden()
         if sticky:IsShown() then sticky:Hide() end
@@ -1693,6 +2119,7 @@ function Window:Refresh()
 
     local s = GetSettings()
     local ws = s and s.windows and s.windows[self.windowID]
+    if self.SessionTimer then self.SessionTimer:SetShown(not (ws and ws.hideTimer)) end
     local visibility = s and s.visibility
     if (ws and ws.hidden)
         or visibility == "hidden"
@@ -2014,6 +2441,11 @@ function Window.New(windowID)
             damageMeterType = 0, sessionType = 1,
             size     = { w = 240, h = 180 },
             hidden = false,
+            autoCurrentOnCombat = false,
+            syncSegments = false,
+            autoSwapChallengeSessions = false,
+            mythicStartDMType = false,
+            hideTimer = false,
         }
     end
 
@@ -2071,10 +2503,21 @@ function Window.New(windowID)
     typeLabel:SetText(ns.L["Damage Done"])
     self.TypeLabel = typeLabel
 
+    self.SegmentButton = SkinBase.CreateButton(header, {
+        text = ns.L["Current"],
+        width = 58,
+        height = headerH - 4,
+        onClick = function() self:_OpenSessionMenu() end,
+    })
+    self.SegmentButton:SetPoint("RIGHT", header, "RIGHT", -2, 0)
+
     local sessionTimer = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sessionTimer:SetPoint("RIGHT", header, "RIGHT", -6, 0)
+    sessionTimer:SetPoint("RIGHT", self.SegmentButton, "LEFT", -4, 0)
     sessionTimer:SetText("")
+    sessionTimer:SetShown(not windowState.hideTimer)
     self.SessionTimer = sessionTimer
+    typeLabel:SetPoint("RIGHT", sessionTimer, "LEFT", -4, 0)
+    typeLabel:SetWordWrap(false)
 
     local closeBtn = CreateFrame("Button", nil, header)
     closeBtn:SetSize(headerH - 6, headerH - 6)
@@ -2083,7 +2526,7 @@ function Window.New(windowID)
     self.CloseButton = closeBtn
 
     header:EnableMouse(true)
-    header:RegisterForClicks("RightButtonUp")
+    if header.RegisterForClicks then header:RegisterForClicks("RightButtonUp") end
     header:SetScript("OnClick", function(_, button)
         if button == "RightButton" then self:_OpenConfigMenu() end
     end)
@@ -2159,6 +2602,7 @@ function Window.New(windowID)
     self.stickySeparator = separator
 
     self:_EnsureRowPool()
+    self._breakdown = Breakdown.New(self)
 
     RegisterWithLayoutMode(self)
 
@@ -2168,30 +2612,111 @@ end
 function Window:Hide() if self.frame then self.frame:Hide() end end
 function Window:Show() if self.frame then self.frame:Show() end end
 function Window:Destroy()
+    local manager = QUI_DamageMeter.WindowManager
+    if manager and manager.CloseBreakoutForOwner then manager:CloseBreakoutForOwner(self) end
+    if self._breakdown and self._breakdown.Destroy then self._breakdown:Destroy() end
     if self.frame then self.frame:Hide(); self.frame:SetParent(nil) end
-    if self._breakdown and self._breakdown.Close then self._breakdown:Close() end
     self.frame, self.backdrop, self.header, self.rows = nil, nil, nil, {}
 end
 
-function Window:OpenBreakdown(source, anchorRow)
-    if not self._breakdown then
-        self._breakdown = Breakdown.New(self)
+function Window:OpenBreakdown(source, anchorRow, isPreview)
+    if not source then return false end
+    isPreview = isPreview == true
+    local inCombat = Data._inCombat or (InCombatLockdown and InCombatLockdown()) or false
+    local isDeathRecap = DEATHS_TYPE ~= nil and self.damageMeterType == DEATHS_TYPE
+    local deathRecapID = source.deathRecapID
+    if isDeathRecap and (IsSecretValue(deathRecapID)
+        or type(deathRecapID) ~= "number" or deathRecapID <= 0) then return false end
+
+    local sourceGUID, sourceCreatureID
+    if isDeathRecap then
+        sourceGUID = nil
+        sourceCreatureID = nil
+    else
+        sourceGUID, sourceCreatureID = Data:ResolveSourceSelector(
+            source, self.sessionType, self.sessionID, inCombat)
     end
-    self._breakdown:Open(source, anchorRow)
+    local restricted = not isDeathRecap and sourceGUID == nil and sourceCreatureID == nil
+    local opened
+    if isPreview then
+        if not self._breakdown then return false end
+        opened = self._breakdown:Open(source, anchorRow, sourceGUID, sourceCreatureID, true, restricted)
+    else
+        local manager = QUI_DamageMeter.WindowManager
+        opened = manager and manager.OpenBreakout
+            and manager:OpenBreakout(self, source, sourceGUID, sourceCreatureID, restricted) or false
+    end
+    if not opened and isDeathRecap and not isPreview and type(OpenDeathRecapUI) == "function" then
+        OpenDeathRecapUI(deathRecapID)
+    end
+    return opened
+end
+
+function Window:PreviewBreakdown(source, anchorRow)
+    return self:OpenBreakdown(source, anchorRow, true)
+end
+
+function Window:ClosePreview(anchorRow)
+    local breakdown = self._breakdown
+    if not (breakdown and breakdown.isPreview and breakdown.anchorRow == anchorRow) then return end
+    local function CloseIfOutside()
+        if self._breakdown ~= breakdown or not breakdown.isPreview
+            or breakdown.anchorRow ~= anchorRow then return end
+        local anchorHovered = anchorRow and anchorRow.IsMouseOver and anchorRow:IsMouseOver()
+        local frame = breakdown.frame
+        local previewHovered = frame and frame.IsMouseOver and frame:IsMouseOver()
+        if not anchorHovered and not previewHovered then breakdown:Close() end
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.1, CloseIfOutside)
+    else
+        CloseIfOutside()
+    end
 end
 
 function Window:RefreshBreakdown()
-    if self._breakdown and self._breakdown:IsOpen() then
-        self._breakdown:Refresh()
-    end
 end
 
 Breakdown = {}
 Breakdown.__index = Breakdown
 QUI_DamageMeter.Breakdown = Breakdown
-local BREAKDOWN_POOL_SIZE = 25
+local BREAKDOWN_POOL_SIZE = 40
+local PREVIEW_SPELL_LIMIT = 15
+local PREVIEW_COMPACT_LIMIT = 8
+local PREVIEW_TARGET_LIMIT = 3
+local BREAKDOWN_MAX_HEIGHT = 420
 local TARGET_POOL_SIZE    = 10
 local TARGETS_LABEL_H     = 16
+
+local function GetPreviewSpellLimit()
+    local s = GetSettings()
+    return s and s.showAllBreakdownSpells == false and PREVIEW_COMPACT_LIMIT or PREVIEW_SPELL_LIMIT
+end
+QUI_DamageMeter.GetPreviewSpellLimit = GetPreviewSpellLimit
+
+local function GetDeathRecapRows(recapID)
+    if not (C_DeathRecap and C_DeathRecap.GetRecapEvents) then return {}, 1 end
+    local ok, rawEvents = ns.SafeCall("best-effort-style", C_DeathRecap.GetRecapEvents, recapID)
+    if not ok or IsSecretValue(rawEvents) or type(rawEvents) ~= "table" then return {}, 1 end
+
+    local maxHealth = 1
+    if C_DeathRecap.GetRecapMaxHealth then
+        local healthOK, health = ns.SafeCall("best-effort-style", C_DeathRecap.GetRecapMaxHealth, recapID)
+        if healthOK and (IsSecretValue(health) or type(health) ~= "nil") then maxHealth = health end
+    end
+    if not IsSecretValue(maxHealth)
+        and (type(maxHealth) ~= "number" or maxHealth <= 0) then maxHealth = 1 end
+
+    local events = {}
+    for i = #rawEvents, 1, -1 do
+        local event = rawEvents[i]
+        if not IsSecretValue(event) and type(event) == "table" then
+            events[#events + 1] = event
+        end
+    end
+    return events, maxHealth
+end
+QUI_DamageMeter.GetDeathRecapRows = GetDeathRecapRows
 
 local function AnchorBreakdownTo(popup, row, anchorMode)
     popup.frame:ClearAllPoints()
@@ -2199,32 +2724,54 @@ local function AnchorBreakdownTo(popup, row, anchorMode)
         popup.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
         return
     end
-    local rowR, _ = row:GetRight(), row:GetTop()
-    local uiW = UIParent:GetWidth() or 1280
-    local popupW = popup.frame:GetWidth()
-    if rowR and (rowR + popupW + 6) > uiW then
-        popup.frame:SetPoint("TOPRIGHT", row, "TOPLEFT", -4, 0)
-    else
-        popup.frame:SetPoint("TOPLEFT", row, "TOPRIGHT", 4, 0)
+    local parentFrame = popup.parentWindow and popup.parentWindow.frame
+    if anchorMode == "left" and parentFrame then
+        popup.frame:SetPoint("TOPRIGHT", parentFrame, "TOPLEFT", -6, 0)
+        return
+    elseif anchorMode == "right" and parentFrame then
+        popup.frame:SetPoint("TOPLEFT", parentFrame, "TOPRIGHT", 6, 0)
+        return
     end
+    popup.frame:SetPoint("BOTTOMRIGHT", row, "TOPRIGHT", 0, 0)
 end
 
 function Breakdown:_BuildRow(index)
     local barH = ResolveAppearance(self.parentWindowID, "barHeight") or 18
     local barGap = ResolveAppearance(self.parentWindowID, "barSpacing") or 2
-    local headerH = ResolveAppearance(self.parentWindowID, "headerHeight") or 22
 
-    local row = CreateFrame("Frame", nil, self.frame)
+    local row = CreateFrame("Button", nil, self.scrollContent)
     row:SetHeight(barH)
-    row:SetPoint("LEFT",  self.frame, "LEFT",  0, 0)
-    row:SetPoint("RIGHT", self.frame, "RIGHT", 0, 0)
+    row:SetPoint("LEFT",  self.scrollContent, "LEFT",  0, 0)
+    row:SetPoint("RIGHT", self.scrollContent, "RIGHT", 0, 0)
     if index == 1 then
-        row:SetPoint("TOP", self.frame, "TOP", 0, -headerH)
+        row:SetPoint("TOP", self.scrollContent, "TOP", 0, 0)
     else
         row:SetPoint("TOP", self.rows[index - 1], "BOTTOM", 0, -barGap)
     end
 
     AttachRowVisuals(row, barH)
+    row:EnableMouse(true)
+    if row.RegisterForClicks then row:RegisterForClicks("AnyUp") end
+    row:SetScript("OnClick", function()
+        if not self.isPreview then self:Close() end
+    end)
+    row:SetScript("OnEnter", function(rowSelf)
+        local s = GetSettings()
+        if s and s.showSpellTooltips == false then return end
+        local spellID = rowSelf._spellID
+        if IsSecretValue(spellID) or type(spellID) ~= "number" or spellID <= 0 then return end
+        local info = ResolveSpellInfo(spellID)
+        if not info or IsSecretValue(info.name) or GameTooltip:IsForbidden() then return end
+        GameTooltip:SetOwner(rowSelf, "ANCHOR_LEFT")
+        GameTooltip:SetSpellByID(spellID)
+        GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function(rowSelf)
+        if not GameTooltip:IsForbidden()
+            and (not GameTooltip.GetOwner or GameTooltip:GetOwner() == rowSelf) then
+            GameTooltip:Hide()
+        end
+    end)
     row:Hide()
     return row
 end
@@ -2233,10 +2780,10 @@ function Breakdown:_BuildTargetRow(index)
     local barH = ResolveAppearance(self.parentWindowID, "barHeight") or 18
     local barGap = ResolveAppearance(self.parentWindowID, "barSpacing") or 2
 
-    local row = CreateFrame("Frame", nil, self.frame)
+    local row = CreateFrame("Button", nil, self.scrollContent)
     row:SetHeight(barH)
-    row:SetPoint("LEFT",  self.frame, "LEFT",  0, 0)
-    row:SetPoint("RIGHT", self.frame, "RIGHT", 0, 0)
+    row:SetPoint("LEFT",  self.scrollContent, "LEFT",  0, 0)
+    row:SetPoint("RIGHT", self.scrollContent, "RIGHT", 0, 0)
     if index == 1 then
         row:SetPoint("TOP", self.TargetsLabel, "BOTTOM", 0, -barGap)
     else
@@ -2244,6 +2791,11 @@ function Breakdown:_BuildTargetRow(index)
     end
 
     AttachRowVisuals(row, barH)
+    row:EnableMouse(true)
+    if row.RegisterForClicks then row:RegisterForClicks("AnyUp") end
+    row:SetScript("OnClick", function()
+        if not self.isPreview then self:Close() end
+    end)
     row:Hide()
     return row
 end
@@ -2257,10 +2809,17 @@ function Breakdown.New(parentWindow)
         _lastGeneration = -1,
     }, Breakdown)
 
-    local frame = CreateFrame("Frame", "QUI_DamageMeterBreakdown" .. parentWindow.windowID, UIParent)
+    local frame = CreateFrame("Frame", nil, UIParent)
     frame:SetSize(240, 180)
     frame:SetFrameStrata("HIGH")
     frame:SetClampedToScreen(true)
+    frame:EnableMouse(true)
+    frame:SetScript("OnMouseDown", function()
+        if not self.isPreview then self:Close() end
+    end)
+    frame:SetScript("OnLeave", function()
+        if self.isPreview then self.parentWindow:ClosePreview(self.anchorRow) end
+    end)
     frame:Hide()
     self.frame = frame
 
@@ -2285,52 +2844,80 @@ function Breakdown.New(parentWindow)
     header:SetHeight(headerH)
     self.header = header
 
-    self.TitleLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    self.TitleLabel = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.TitleLabel:SetPoint("LEFT", header, "LEFT", 6, 0)
+    self.TitleLabel:SetPoint("RIGHT", header, "RIGHT", -72, 0)
+    self.TitleLabel:SetJustifyH("LEFT")
     self.TitleLabel:SetText("")
 
-    local closeBtn = CreateFrame("Button", nil, header)
-    closeBtn:SetSize(headerH - 6, headerH - 6)
-    closeBtn:SetPoint("RIGHT", header, "RIGHT", -2, 0)
-    local closeTex = closeBtn:CreateTexture(nil, "ARTWORK")
-    closeTex:SetAllPoints(closeBtn)
-    closeTex:SetTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
-    closeBtn:SetScript("OnClick", function() self:Close() end)
-    self.CloseButton = closeBtn
+    self.ItemLevelLabel = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.ItemLevelLabel:SetPoint("RIGHT", header, "RIGHT", -6, 0)
+    self.ItemLevelLabel:SetJustifyH("RIGHT")
+    self.ItemLevelLabel:SetTextColor(0.75, 0.75, 0.75)
+    self.ItemLevelLabel:SetText("")
+
+    self.scrollFrame = CreateFrame("ScrollFrame", nil, frame)
+    self.scrollFrame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+    self.scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    self.scrollFrame:EnableMouseWheel(true)
+
+    self.scrollContent = CreateFrame("Frame", nil, self.scrollFrame)
+    self.scrollContent:SetSize(frame:GetWidth(), 1)
+    self.scrollFrame:SetScrollChild(self.scrollContent)
+    self.scrollFrame:SetScript("OnSizeChanged", function(_, width)
+        if width and width > 0 then self.scrollContent:SetWidth(width) end
+        self:_UpdateScrollRange()
+    end)
+    self.scrollFrame:SetScript("OnMouseWheel", function(scrollFrame, delta)
+        local barH = ResolveAppearance(self.parentWindowID, "barHeight") or 18
+        local barGap = ResolveAppearance(self.parentWindowID, "barSpacing") or 2
+        local current = scrollFrame:GetVerticalScroll() or 0
+        local nextOffset = math.max(0, math.min(self._maxScroll or 0,
+            current - delta * (barH + barGap) * 2))
+        scrollFrame:SetVerticalScroll(nextOffset)
+    end)
 
     for i = 1, BREAKDOWN_POOL_SIZE do
         self.rows[i] = self:_BuildRow(i)
     end
 
-    self.TargetsLabel = self.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    self.TargetsLabel = self.scrollContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.TargetsLabel:SetJustifyH("LEFT")
     self.TargetsLabel:SetHeight(TARGETS_LABEL_H)
     self.TargetsLabel:SetText("")
     self.TargetsLabel:Hide()
+    self.EmptyLabel = self.scrollContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.EmptyLabel:SetPoint("TOP", self.scrollContent, "TOP", 0, -14)
+    self.EmptyLabel:SetText(ns.L["No death recap available"])
+    self.EmptyLabel:Hide()
     self.targetRows = {}
     for i = 1, TARGET_POOL_SIZE do
         self.targetRows[i] = self:_BuildTargetRow(i)
     end
 
-    self._dismissFrame = CreateFrame("Frame")
-    self._dismissFrame:SetScript("OnEvent", function(_, _event, button)
-        if button ~= "LeftButton" and button ~= "RightButton" then return end
-        if not self.frame:IsShown() then return end
-        if frame:IsMouseOver() then return end
-        self:Close()
-    end)
-
     return self
 end
 
-function Breakdown:_SetSpellRow(row, spell, maxAmount)
-    ApplyRowBackgroundVisibility(row, self.parentWindowID)
+function Breakdown:_UpdateScrollRange()
+    local contentH = self.scrollContent:GetHeight() or 0
+    local viewH = self.scrollFrame:GetHeight() or 0
+    self._maxScroll = math.max(0, contentH - math.max(0, viewH))
+    local scrollOffset = self.scrollFrame:GetVerticalScroll() or 0
+    if scrollOffset > self._maxScroll then self.scrollFrame:SetVerticalScroll(self._maxScroll) end
+end
 
-    if spell.iconID and spell.iconID ~= 0 then
+function Breakdown:_SetSpellRow(row, spell, maxAmount, totalAmount)
+    ApplyRowBackgroundVisibility(row, self.parentWindowID)
+    row._spellID = spell.spellID
+
+    if IsSecretValue(spell.spellID) and C_Spell and C_Spell.GetSpellTexture then
+        row.Icon:SetTexture((C_Spell.GetSpellTexture(spell.spellID)))
+    elseif spell.iconID and spell.iconID ~= 0 then
         row.Icon:SetTexture(spell.iconID)
     else
         row.Icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
     end
+    row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
     local spellName = spell.name
     if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(spellName) then
@@ -2338,10 +2925,16 @@ function Breakdown:_SetSpellRow(row, spell, maxAmount)
     else
         row.Name:SetText((spell.rank or 0) .. ". " .. (spellName or "?"))
     end
-    local numberFormat = ResolveAppearance(self.parentWindowID, "numberFormat") or "compact"
-    row.Value:SetText(FormatNumber(spell.totalAmount, numberFormat))
-
     local IsSecret = Helpers and Helpers.IsSecretValue
+    local numberFormat = ResolveAppearance(self.parentWindowID, "numberFormat") or "compact"
+    local valueText = FormatNumber(spell.totalAmount, numberFormat)
+    if not (IsSecret and (IsSecret(spell.totalAmount) or IsSecret(totalAmount)))
+        and type(spell.totalAmount) == "number" and type(totalAmount) == "number"
+        and totalAmount > 0 then
+        valueText = string.format("%s  %.1f%%", valueText, spell.totalAmount / totalAmount * 100)
+    end
+    row.Value:SetText(valueText)
+
     local fillMin, fillMaxValue, fillValue = ComputeBarFill(nil, spell, maxAmount, nil, IsSecret)
     row.Bar:SetMinMaxValues(fillMin, fillMaxValue)
     row.Bar:SetValue(fillValue)
@@ -2356,8 +2949,127 @@ function Breakdown:_SetSpellRow(row, spell, maxAmount)
     end
 end
 
+local ENVIRONMENTAL_DEATH_ICONS = {
+    DROWNING = "Interface\\Icons\\spell_shadow_demonbreath",
+    FALLING = "Interface\\Icons\\ability_rogue_quickrecovery",
+    FIRE = "Interface\\Icons\\spell_fire_fire",
+    LAVA = "Interface\\Icons\\spell_fire_fire",
+    SLIME = "Interface\\Icons\\inv_misc_slime_01",
+    FATIGUE = "Interface\\Icons\\ability_creature_cursed_05",
+}
+local DEFAULT_ENVIRONMENTAL_DEATH_ICON = "Interface\\Icons\\ability_creature_cursed_05"
+
+local function ResolveDeathEventInfo(event)
+    local eventType = event.event
+    if not IsSecretValue(eventType) and eventType == "SWING_DAMAGE" then
+        local spellID = 88163
+        local iconID = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID)
+        return spellID, _G.ACTION_SWING or "Melee", iconID
+    end
+    if not IsSecretValue(eventType) and eventType == "ENVIRONMENTAL_DAMAGE" then
+        local environmentalType = event.environmentalType
+        if IsSecretValue(environmentalType) or type(environmentalType) ~= "string" then
+            return nil, "Environmental", DEFAULT_ENVIRONMENTAL_DEATH_ICON
+        end
+        environmentalType = string.upper(environmentalType)
+        return nil, _G["ACTION_ENVIRONMENTAL_DAMAGE_" .. environmentalType] or environmentalType,
+            ENVIRONMENTAL_DEATH_ICONS[environmentalType] or DEFAULT_ENVIRONMENTAL_DEATH_ICON
+    end
+    return event.spellId, event.spellName
+end
+
+function Breakdown:_SetDeathRow(row, event, maxHealth, deathTime)
+    ApplyRowBackgroundVisibility(row, self.parentWindowID)
+
+    local spellID, spellName, iconID = ResolveDeathEventInfo(event)
+    row._spellID = spellID
+    local info
+    if not iconID then
+        if IsSecretValue(spellID) and C_Spell and C_Spell.GetSpellTexture then
+            iconID = C_Spell.GetSpellTexture(spellID)
+        elseif type(spellID) == "number" and spellID > 0 then
+            info = ResolveSpellInfo(spellID)
+            iconID = info and info.iconID
+        end
+    end
+    row.Icon:SetTexture(iconID or "Interface\\Icons\\INV_Misc_QuestionMark")
+    row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    local eventType = event.event
+    local eventTypeSecret = IsSecretValue(eventType)
+    local isHeal = false
+    if not eventTypeSecret then
+        isHeal = eventType == "SPELL_HEAL" or eventType == "SPELL_PERIODIC_HEAL"
+    end
+
+    if not IsSecretValue(spellName)
+        and (type(spellName) ~= "string" or spellName == "") then
+        if isHeal then
+            spellName = "Heal"
+        else
+            spellName = (info and info.name) or "Unknown"
+        end
+    end
+
+    local timestamp = event.timestamp
+    local timeBeforeDeath
+    if not IsSecretValue(timestamp) and not IsSecretValue(deathTime)
+        and type(timestamp) == "number" and type(deathTime) == "number" then
+        timeBeforeDeath = deathTime - timestamp
+    end
+    if timeBeforeDeath ~= nil then
+        row.Name:SetFormattedText("-%.1fs %s", timeBeforeDeath, spellName)
+    else
+        row.Name:SetFormattedText("%s", spellName)
+    end
+
+    local currentHP = event.currentHP
+    if not IsSecretValue(currentHP) and type(currentHP) ~= "number" then currentHP = 0 end
+    local hpPercent
+    if not IsSecretValue(currentHP) and not IsSecretValue(maxHealth)
+        and type(currentHP) == "number" and type(maxHealth) == "number" and maxHealth > 0 then
+        hpPercent = math.max(0, math.min(1, currentHP / maxHealth))
+    end
+    if hpPercent ~= nil then
+        row.Bar:SetMinMaxValues(0, 1)
+        row.Bar:SetValue(hpPercent)
+    else
+        row.Bar:SetMinMaxValues(0, maxHealth)
+        row.Bar:SetValue(currentHP)
+    end
+
+    local amount = event.amount
+    if not IsSecretValue(amount) and type(amount) ~= "number" then amount = 0 end
+    local numberFormat = ResolveAppearance(self.parentWindowID, "numberFormat") or "compact"
+    local amountText = FormatNumber(amount, numberFormat)
+    if IsSecretValue(amount) then
+        if hpPercent ~= nil then
+            row.Value:SetFormattedText("%s (%.0f%%)", amountText, hpPercent * 100)
+        else
+            row.Value:SetText(amountText)
+        end
+    else
+        amountText = (isHeal and "+" or "-") .. FormatNumber(math.abs(amount), numberFormat)
+        local overkill = event.overkill
+        if not isHeal and not IsSecretValue(overkill)
+            and type(overkill) == "number" and overkill > 0 then
+            amountText = amountText .. " (" .. FormatNumber(overkill, numberFormat) .. " overkill)"
+        end
+        if hpPercent ~= nil then amountText = amountText .. string.format(" (%.0f%%)", hpPercent * 100) end
+        row.Value:SetText(amountText)
+    end
+
+    local alpha = ResolveAppearance(self.parentWindowID, "barFillAlpha") or 1
+    if isHeal then
+        row.Bar:SetStatusBarColor(0.10, 0.50, 0.10, alpha)
+    else
+        row.Bar:SetStatusBarColor(0.60, 0.08, 0.08, alpha)
+    end
+end
+
 function Breakdown:_SetTargetRow(row, target, maxAmount)
     ApplyRowBackgroundVisibility(row, self.parentWindowID)
+    row._target = target
 
     if target.specIconID and target.specIconID ~= 0 then
         row.Icon:SetTexture(target.specIconID)
@@ -2382,7 +3094,17 @@ function Breakdown:_SetTargetRow(row, target, maxAmount)
         row.Name:SetText(targetName or "?")
     end
     local numberFormat = ResolveAppearance(self.parentWindowID, "numberFormat") or "compact"
-    row.Value:SetText(FormatNumber(target.totalAmount, numberFormat))
+    local primaryVal, secondaryVal
+    if IsPerSecondType(self.parentWindow.damageMeterType) then
+        primaryVal, secondaryVal = target.amountPerSecond, target.totalAmount
+    else
+        primaryVal, secondaryVal = target.totalAmount, target.amountPerSecond
+    end
+    if ResolveAppearance(self.parentWindowID, "showSecondaryValue") == false then
+        secondaryVal = nil
+    end
+    row.Value:SetText(BuildValueText(primaryVal, secondaryVal, numberFormat,
+        Helpers and Helpers.IsSecretValue, FormatNumber))
 
     local fillMin, fillMaxValue, fillValue = ComputeBarFill(nil, target, maxAmount, nil, IsSecret)
     row.Bar:SetMinMaxValues(fillMin, fillMaxValue)
@@ -2401,37 +3123,8 @@ function Breakdown:_SetTargetRow(row, target, maxAmount)
     end
 end
 
-function Breakdown:_ResolveTargets(meterType)
-    local T = Enum and Enum.DamageMeterType
-    if not (T and self.source) then return nil, nil end
-    local st = self.parentWindow.sessionType
-    local sid = self.parentWindow.sessionID
-    if meterType == T.EnemyDamageTaken then
-        return Data:GetEnemyAttackers(st, self.source.sourceGUID, self.source.sourceCreatureID, sid), ns.L["Attacked By"]
-    elseif meterType == T.DamageDone or meterType == T.Dps then
-        return Data:GetPlayerTargets(st, self.source.name, sid), ns.L["Targets"]
-    end
-    return nil, nil
-end
-
-function Breakdown:Refresh()
-    if not self.source or not self.frame:IsShown() then return end
-    local _t0 = Perf.enabled and PerfNow() or 0
-    local sessionType   = self.parentWindow.sessionType
-    local sessionID = self.parentWindow.sessionID
-    local damageMeterType = self.parentWindow.damageMeterType
-    local view
-    local s_combo = GetSettings()
-    if IsHealingType(damageMeterType)
-        and s_combo and s_combo.combineAbsorbsIntoHealing then
-        view = Data:GetCombinedHealingBreakdown(sessionType,
-            self.source.sourceGUID, self.source.sourceCreatureID, sessionID)
-    else
-        view = Data:GetBreakdownView(sessionType, damageMeterType,
-            self.source.sourceGUID, self.source.sourceCreatureID, sessionID)
-    end
-
-    local label = LabelForType(damageMeterType)
+function Breakdown:_UpdateTitle()
+    local label = LabelForType(self.parentWindow.damageMeterType)
     local titleName = ShortenName(self.source.name)
     if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(titleName) then
         self.TitleLabel:SetFormattedText("%s by %s", label, titleName) -- @secret-policy: sink-passthrough
@@ -2439,73 +3132,217 @@ function Breakdown:Refresh()
         self.TitleLabel:SetText(label .. " by " .. (titleName or "?"))
     end
 
-    local visibleCount = math.min(#view.spells, BREAKDOWN_POOL_SIZE)
-    for i = 1, visibleCount do
-        self:_SetSpellRow(self.rows[i], view.spells[i], view.maxAmount)
-        self.rows[i]:Show()
+    local itemLevel
+    local inspect = self.isPreview and ns.TooltipInspect
+    if inspect and inspect.GetPlayerDataByGUID and self.sourceGUID ~= nil
+        and not IsSecretValue(self.sourceGUID) then
+        local playerData = inspect:GetPlayerDataByGUID(self.sourceGUID)
+        local value = playerData and playerData.itemLevel
+        if not IsSecretValue(value) then itemLevel = tonumber(value) end
     end
-    for i = visibleCount + 1, #self.rows do
-        self.rows[i]:Hide()
-    end
+    self.ItemLevelLabel:SetText(itemLevel and string.format(
+        "%s %.1f", _G.ITEM_LEVEL_ABBR or "iLvl", itemLevel) or "")
+end
 
+function Breakdown:_ResolveTargets(meterType)
+    local T = Enum and Enum.DamageMeterType
+    if not (T and self.source) then return nil, nil end
+    if InCombatLockdown and InCombatLockdown() then return nil, nil end
+    local st = self.parentWindow.sessionType
+    local sid = self.parentWindow.sessionID
+    if meterType == T.EnemyDamageTaken then
+        return Data:GetEnemyAttackers(st, self.sourceGUID, self.sourceCreatureID, sid), ns.L["Attacked By"]
+    elseif meterType == T.DamageDone or meterType == T.Dps then
+        return Data:GetPlayerTargets(st, self.source.name, sid), ns.L["Targets"]
+    end
+    return nil, nil
+end
+
+function Breakdown:Refresh()
+    if not self.source or not self.frame:IsShown() then return false end
+    local _t0 = Perf.enabled and PerfNow() or 0
+    local sessionType   = self.parentWindow.sessionType
+    local sessionID = self.parentWindow.sessionID
+    local damageMeterType = self.parentWindow.damageMeterType
+
+    self:_UpdateTitle()
+
+    local visibleCount = 0
+    local targetCount = 0
     local barH    = ResolveAppearance(self.parentWindowID, "barHeight") or 18
     local barGap  = ResolveAppearance(self.parentWindowID, "barSpacing") or 2
     local headerH = ResolveAppearance(self.parentWindowID, "headerHeight") or 22
+    local isDeathRecap = DEATHS_TYPE ~= nil and damageMeterType == DEATHS_TYPE
+    local enemyType = EnemyDamageTakenType()
+    local isEnemyAttackers = enemyType ~= nil and damageMeterType == enemyType
+    local primaryLimit = self.isPreview and GetPreviewSpellLimit() or BREAKDOWN_POOL_SIZE
+    self.EmptyLabel:Hide()
 
-    local targets, targetsLabel = self:_ResolveTargets(damageMeterType)
-    local targetCount = 0
-    if targets and #targets > 0 and targetsLabel then
-        targetCount = math.min(#targets, TARGET_POOL_SIZE)
+    if self.restricted then
+        self.EmptyLabel:SetText(ns.L["Breakdown unavailable during combat"])
+        self.EmptyLabel:Show()
+        self.scrollContent:SetHeight(40)
+        for i = 1, #self.rows do self.rows[i]:Hide() end
+        self.TargetsLabel:Hide()
+        for i = 1, #self.targetRows do self.targetRows[i]:Hide() end
+        if self.isPreview then self.frame:SetHeight(headerH + 40) end
+        self:_UpdateScrollRange()
+        return true
     end
-    if targetCount > 0 then
-        self.TargetsLabel:ClearAllPoints()
-        if visibleCount > 0 then
-            self.TargetsLabel:SetPoint("TOPLEFT", self.rows[visibleCount], "BOTTOMLEFT", 6, -barGap)
-        else
-            self.TargetsLabel:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 6, -headerH)
+
+    if isDeathRecap then
+        local events, maxHealth = GetDeathRecapRows(self.source.deathRecapID)
+        visibleCount = math.min(#events, primaryLimit)
+        local deathEvent = events[#events]
+        local deathTime = deathEvent and deathEvent.timestamp
+        local firstEvent = self.isPreview and math.max(1, #events - visibleCount + 1) or 1
+        for i = 1, visibleCount do
+            self:_SetDeathRow(self.rows[i], events[firstEvent + i - 1], maxHealth, deathTime)
+            self.rows[i]:Show()
         end
-        self.TargetsLabel:SetText(targetsLabel)
-        self.TargetsLabel:Show()
-        local tMax = targets[1].totalAmount
-        for i = 1, targetCount do
-            self:_SetTargetRow(self.targetRows[i], targets[i], tMax)
-            self.targetRows[i]:Show()
+    elseif isEnemyAttackers then
+        local attackers = Data:GetEnemyAttackers(sessionType,
+            self.sourceGUID, self.sourceCreatureID, sessionID)
+        visibleCount = math.min(#attackers, primaryLimit)
+        local maxAmount = visibleCount > 0 and attackers[1].totalAmount or 1
+        for i = 1, visibleCount do
+            self.rows[i]._spellID = nil
+            self:_SetTargetRow(self.rows[i], attackers[i], maxAmount)
+            self.rows[i]:Show()
         end
-        for i = targetCount + 1, #self.targetRows do self.targetRows[i]:Hide() end
     else
+        local view
+        local s_combo = GetSettings()
+        if IsHealingType(damageMeterType)
+            and s_combo and s_combo.combineAbsorbsIntoHealing then
+            view = Data:GetCombinedHealingBreakdown(sessionType,
+                self.sourceGUID, self.sourceCreatureID, sessionID)
+        else
+            view = Data:GetBreakdownView(sessionType, damageMeterType,
+                self.sourceGUID, self.sourceCreatureID, sessionID)
+        end
+
+        visibleCount = math.min(#view.spells, primaryLimit)
+        for i = 1, visibleCount do
+            self:_SetSpellRow(self.rows[i], view.spells[i], view.maxAmount, view.totalAmount)
+            self.rows[i]:Show()
+        end
+
+        local targets, targetsLabel = self:_ResolveTargets(damageMeterType)
+        if targets and #targets > 0 and targetsLabel then
+            local targetLimit = self.isPreview and PREVIEW_TARGET_LIMIT
+                or math.min(TARGET_POOL_SIZE, math.max(0, BREAKDOWN_POOL_SIZE - visibleCount))
+            targetCount = math.min(#targets, targetLimit)
+        end
+        if targetCount > 0 then
+            self.TargetsLabel:ClearAllPoints()
+            if visibleCount > 0 then
+                self.TargetsLabel:SetPoint("TOPLEFT", self.rows[visibleCount], "BOTTOMLEFT", 6, -barGap)
+            else
+                self.TargetsLabel:SetPoint("TOPLEFT", self.scrollContent, "TOPLEFT", 6, 0)
+            end
+            self.TargetsLabel:SetText(targetsLabel)
+            self.TargetsLabel:Show()
+            local tMax = targets[1].totalAmount
+            for i = 1, targetCount do
+                self:_SetTargetRow(self.targetRows[i], targets[i], tMax)
+                self.targetRows[i]:Show()
+            end
+            for i = targetCount + 1, #self.targetRows do self.targetRows[i]:Hide() end
+        end
+    end
+    for i = visibleCount + 1, #self.rows do
+        self.rows[i]._spellID = nil
+        self.rows[i]:Hide()
+    end
+
+    if isDeathRecap or isEnemyAttackers or targetCount == 0 then
         self.TargetsLabel:Hide()
         for i = 1, #self.targetRows do self.targetRows[i]:Hide() end
     end
 
-    local spellBlock  = visibleCount > 0 and (visibleCount * barH + (visibleCount - 1) * barGap) or 0
+    local emptyDeathPreview = isDeathRecap and self.isPreview and visibleCount == 0
+    if emptyDeathPreview then self.EmptyLabel:Show() end
+    local spellBlock  = visibleCount > 0 and (visibleCount * barH + (visibleCount - 1) * barGap)
+        or (emptyDeathPreview and 40 or 0)
     local targetBlock = targetCount > 0
         and (TARGETS_LABEL_H + barGap + targetCount * barH + (targetCount - 1) * barGap) or 0
-    local totalH = headerH
+    local contentH = 0
     if visibleCount > 0 and targetCount > 0 then
-        totalH = headerH + spellBlock + barGap + targetBlock + barGap
-    elseif visibleCount > 0 then
-        totalH = headerH + spellBlock + barGap
+        contentH = spellBlock + barGap + targetBlock + barGap
+    elseif visibleCount > 0 or emptyDeathPreview then
+        contentH = spellBlock + barGap
     elseif targetCount > 0 then
-        totalH = headerH + targetBlock + barGap
+        contentH = targetBlock + barGap
     end
-    self.frame:SetHeight(totalH)
+    self.scrollContent:SetHeight(math.max(1, contentH))
+    if self.isPreview then
+        local totalH = math.min(headerH + contentH, BREAKDOWN_MAX_HEIGHT)
+        self.frame:SetHeight(math.max(headerH, totalH))
+    end
+    self:_UpdateScrollRange()
 
     if Perf.enabled then Perf:Record("breakdown", PerfNow() - _t0) end
+    return visibleCount > 0 or targetCount > 0 or emptyDeathPreview
 end
 
-function Breakdown:Open(source, anchorRow)
+function Breakdown:Open(source, anchorRow, sourceGUID, sourceCreatureID, isPreview, restricted)
     self.source = source
-    local anchorMode = (GetSettings() and GetSettings().breakdownAnchor) or "row"
+    self.sourceGUID = sourceGUID
+    self.sourceCreatureID = sourceCreatureID
+    self.isPreview = isPreview == true
+    self.restricted = restricted == true
+    self.anchorRow = anchorRow
+    self.scrollFrame:SetVerticalScroll(0)
+    local settings = GetSettings()
+    local anchorMode = (settings and settings.breakdownAnchor) or "row"
+    local scale = math.max(0.5, math.min(1.5,
+        (tonumber(settings and settings.hoverTooltipScale) or 100) / 100))
+    self.frame:SetScale(scale)
+    self.header:Show()
+    self.backdropTex:Show()
+    self.scrollFrame:ClearAllPoints()
+    self.scrollFrame:SetPoint("TOPLEFT", self.header, "BOTTOMLEFT", 0, 0)
+    self.scrollFrame:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", 0, 0)
+    self.frame:SetParent(UIParent)
+    self.frame:SetFrameStrata("HIGH")
+    self.frame:SetWidth(240)
     AnchorBreakdownTo(self, anchorRow, anchorMode)
     self.frame:Show()
-    self:Refresh()
-    self._dismissFrame:RegisterEvent("GLOBAL_MOUSE_DOWN")
+    local hasContent = self:Refresh()
+    local isDeathRecap = DEATHS_TYPE ~= nil
+        and self.parentWindow.damageMeterType == DEATHS_TYPE
+    if not hasContent and (self.isPreview or isDeathRecap) then
+        self:Close()
+        return false
+    end
+    return true
 end
 
 function Breakdown:Close()
+    local owner = GameTooltip.GetOwner and GameTooltip:GetOwner()
+    if owner then
+        for i = 1, #self.rows do
+            if owner == self.rows[i] then
+                if not GameTooltip:IsForbidden() then GameTooltip:Hide() end
+                break
+            end
+        end
+    end
     self.frame:Hide()
     self.source = nil
-    self._dismissFrame:UnregisterAllEvents()
+    self.sourceGUID = nil
+    self.sourceCreatureID = nil
+    self.isPreview = nil
+    self.restricted = nil
+    self.anchorRow = nil
+    self._maxScroll = 0
+end
+
+function Breakdown:Destroy()
+    self:Close()
+    self.frame:SetParent(nil)
+    self.frame = nil
 end
 
 function Breakdown:IsOpen()
@@ -2528,6 +3365,54 @@ function WindowManager:Enumerate(fn)
     end
 end
 
+local function ApplySessionToWindow(window, windowState, sessionType, sessionID, sessionLabel)
+    if sessionID ~= nil then
+        window.sessionType = nil
+    else
+        window.sessionType = sessionType
+        windowState.sessionType = sessionType
+    end
+    window.sessionID = sessionID
+    window.sessionLabel = sessionID ~= nil and sessionLabel or nil
+    window._lastGeneration = -1
+    if window._breakdown and window._breakdown.Close then window._breakdown:Close() end
+end
+
+function WindowManager:ApplySessionSelection(window, sessionType, sessionID, sessionLabel)
+    local s = GetSettings()
+    local windows = s and s.windows
+    local windowState = windows and window and windows[window.windowID]
+    if not windowState then return end
+    if windowState.syncSegments then
+        self:Enumerate(function(windowID, candidate)
+            local candidateState = windows[windowID]
+            if candidateState and candidateState.syncSegments then
+                ApplySessionToWindow(candidate, candidateState, sessionType, sessionID, sessionLabel)
+            end
+        end)
+    else
+        ApplySessionToWindow(window, windowState, sessionType, sessionID, sessionLabel)
+    end
+    self:RefreshAll()
+end
+
+function WindowManager:AutoCurrentOnCombat()
+    local s = GetSettings()
+    local windows = s and s.windows
+    if not windows then return end
+    local S = Enum and Enum.DamageMeterSessionType
+    local currentSession = (S and S.Current) or 1
+    local changed = false
+    self:Enumerate(function(windowID, window)
+        local windowState = windows[windowID]
+        if window.sessionID ~= nil and windowState and windowState.autoCurrentOnCombat then
+            ApplySessionToWindow(window, windowState, currentSession, nil)
+            changed = true
+        end
+    end)
+    if changed then self:RefreshAll() end
+end
+
 function WindowManager:Spawn(windowID)
     if self.windows[windowID] then return self.windows[windowID] end
     if not Window.New then return nil end
@@ -2540,6 +3425,7 @@ end
 function WindowManager:Despawn(windowID)
     local instance = self.windows[windowID]
     if not instance then return end
+    if self.CloseBreakoutForOwner then self:CloseBreakoutForOwner(instance) end
     if instance.Hide then instance:Hide() end
     if instance.Destroy then instance:Destroy() end
     self.windows[windowID] = nil
@@ -2558,6 +3444,7 @@ function WindowManager:Despawn(windowID)
 end
 
 function WindowManager:DespawnAll()
+    if self.CloseBreakout then self:CloseBreakout() end
     local ids = {}
     for windowID in pairs(self.windows) do
         ids[#ids + 1] = windowID
@@ -2570,6 +3457,7 @@ end
 function WindowManager:ClearRuntimeSessionIDs()
     QUI_DamageMeter.BumpAppearanceRevision()
     local s = GetSettings()
+    if self.CloseBreakout then self:CloseBreakout() end
     self:Enumerate(function(_windowID, w)
         if w then
             w.sessionID = nil
@@ -2610,6 +3498,11 @@ function WindowManager:SpawnNew()
         size            = { w = 240, h = 180 },
         hidden          = false,
         name            = "",
+        autoCurrentOnCombat = false,
+        syncSegments = false,
+        autoSwapChallengeSessions = false,
+        mythicStartDMType = false,
+        hideTimer = false,
     }
     s.windowCount = (s.windowCount or 0) + 1
 
@@ -2673,6 +3566,7 @@ function WindowManager:RefreshAll()
             if w.Refresh then w:Refresh() end
         end
     end
+    if self.RefreshBreakout then self:RefreshBreakout() end
 end
 
 local function ResetAllDamageMeterSessions()
@@ -2680,6 +3574,7 @@ local function ResetAllDamageMeterSessions()
     C_DamageMeter.ResetAllCombatSessions()
     Data:ResetCombatClock()
     Data:ClearCachedViews()
+    Data:ClearSourceGUIDCache()
     if WindowManager.ClearRuntimeSessionIDs then
         WindowManager:ClearRuntimeSessionIDs()
     end
@@ -2695,44 +3590,58 @@ function WindowManager:ApplyChallengeModeStart()
         ResetAllDamageMeterSessions()
     end
 
-    if not s.autoSwapChallengeSessions then return end
     local S = Enum and Enum.DamageMeterSessionType
     local currentSession = (S and S.Current) or 1
     local overallSession = (S and S.Overall) or 0
+    local changed = false
 
     self:Enumerate(function(_windowID, w)
-        if w and w.sessionID == nil and w.sessionType == overallSession then
-            local windowState = s.windows and s.windows[w.windowID]
+        local windowState = w and s.windows and s.windows[w.windowID]
+        if not windowState then return end
+        local autoSwap = ResolveWindowAutoSwap(windowState, s)
+        if autoSwap and w.sessionID == nil and w.sessionType == overallSession then
             w.sessionType = currentSession
-            if windowState then windowState.sessionType = currentSession end
+            windowState.sessionType = currentSession
             w._lastGeneration = -1
             if w._breakdown and w._breakdown.Close then
                 w._breakdown:Close()
             end
+            changed = true
+        end
+        if windowState.mythicStartDMType then
+            w.damageMeterType = windowState.mythicStartDMType
+            windowState.damageMeterType = windowState.mythicStartDMType
+            w._lastGeneration = -1
+            if w._breakdown and w._breakdown.Close then w._breakdown:Close() end
+            changed = true
         end
     end)
-    self:RefreshAll()
+    if changed then self:RefreshAll() end
 end
 
 function WindowManager:ApplyChallengeModeCompleted()
     local s = GetSettings()
-    if not (s and s.autoSwapChallengeSessions) then return end
+    if not s then return end
     local S = Enum and Enum.DamageMeterSessionType
     local currentSession = (S and S.Current) or 1
     local overallSession = (S and S.Overall) or 0
+    local changed = false
 
     self:Enumerate(function(_windowID, w)
-        if w and w.sessionID == nil and w.sessionType == currentSession then
-            local windowState = s.windows and s.windows[w.windowID]
+        local windowState = w and s.windows and s.windows[w.windowID]
+        if not windowState then return end
+        local autoSwap = ResolveWindowAutoSwap(windowState, s)
+        if autoSwap and w.sessionID == nil and w.sessionType == currentSession then
             w.sessionType = overallSession
-            if windowState then windowState.sessionType = overallSession end
+            windowState.sessionType = overallSession
             w._lastGeneration = -1
             if w._breakdown and w._breakdown.Close then
                 w._breakdown:Close()
             end
+            changed = true
         end
     end)
-    self:RefreshAll()
+    if changed then self:RefreshAll() end
 end
 
 function WindowManager:ApplyChallengeModeReset()
@@ -2762,6 +3671,11 @@ Data._onChange = function(self)
     WindowManager:Enumerate(function(_id, w)
         if w.Refresh then w:Refresh() end
     end)
+    if WindowManager.RefreshBreakout then WindowManager:RefreshBreakout() end
+end
+
+Data._onCombatStart = function()
+    WindowManager:AutoCurrentOnCombat()
 end
 
 local pendingCombatWrites = {}

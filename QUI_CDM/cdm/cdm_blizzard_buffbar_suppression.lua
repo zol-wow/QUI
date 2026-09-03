@@ -4,6 +4,8 @@ local unpackValue = table.unpack or unpack
 local Suppressor = {
     _states = setmetatable({}, { __mode = "k" }),
     _pendingSuppress = setmetatable({}, { __mode = "k" }),
+    _pendingNative = false,
+    _pendingFlushScheduled = false,
     _dataRetryRegistered = false,
 }
 ns.CDMBlizzardBuffBarSuppressor = Suppressor
@@ -52,13 +54,62 @@ local function RestorePoints(frame, points)
     end
 end
 
-local function ParkOffscreen(frame)
+local function ParkOffscreen(frame, state)
     if not (frame and frame.ClearAllPoints and frame.SetPoint and _G.UIParent) then
         return false
     end
+    state.parkGuard = true
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", _G.UIParent, "BOTTOMLEFT", 0, -10000)
+    state.parkGuard = nil
     return true
+end
+
+local function IsParked(frame)
+    if not (frame and frame.GetNumPoints and frame.GetPoint) then return false end
+    if (frame:GetNumPoints() or 0) < 1 then return false end
+    local point, relativeTo, relativePoint, _, y = frame:GetPoint(1)
+    return point == "TOPLEFT"
+        and (relativeTo == _G.UIParent or relativeTo == nil)
+        and relativePoint == "BOTTOMLEFT"
+        and type(y) == "number"
+        and y < -9990
+end
+
+local function InstallParkHooks(frame, state)
+    if state.parkHooked or not hooksecurefunc then return end
+    local timer = _G.C_Timer
+    if not (timer and timer.After) then return end
+
+    local function QueueRepark()
+        if not state.hidden or state.parkGuard or state.restoring or state.parkQueued then return end
+        state.parkQueued = true
+        timer.After(0, function()
+            state.parkQueued = nil
+            if state.hidden and not state.restoring then
+                Suppressor:Suppress(frame)
+            end
+        end)
+    end
+
+    state.parkHooked = true
+    if frame.SetPoint then hooksecurefunc(frame, "SetPoint", QueueRepark) end
+    if frame.SetAllPoints then hooksecurefunc(frame, "SetAllPoints", QueueRepark) end
+    if frame.SetParent then hooksecurefunc(frame, "SetParent", QueueRepark) end
+end
+
+local function PrimeHiddenFrame(frame)
+    local state = Suppressor._states[frame]
+    if not state then
+        state = {}
+        Suppressor._states[frame] = state
+    end
+    state.restorePending = nil
+    state.restoring = nil
+    state.hidden = true
+    InstallParkHooks(frame, state)
+    if frame.SetAlpha then frame:SetAlpha(0) end
+    return state
 end
 
 local function DisableMouse(frame)
@@ -85,27 +136,24 @@ end
 
 function Suppressor:Suppress(frame)
     frame = frame or GetNativeBuffBar()
-    if not frame then return false end
+    if not frame then
+        self:QueueSuppress()
+        return false
+    end
+
+    local state = PrimeHiddenFrame(frame)
     if not IsCooldownViewerReady() then
         self:QueueSuppress(frame)
         return false
     end
 
-    local state = self._states[frame]
-    if not state then
-        state = {}
-        self._states[frame] = state
-    end
     if not state.originalPoints and not state.parked then
         state.originalPoints = CapturePoints(frame)
     end
-    state.hidden = true
-
-    if frame.SetAlpha then frame:SetAlpha(0) end
 
     if not InCombat() then
         DisableMouse(frame)
-        state.parked = ParkOffscreen(frame)
+        state.parked = ParkOffscreen(frame, state)
         state.parkPending = nil
     else
         state.parkPending = true
@@ -118,16 +166,20 @@ function Suppressor:QueueSuppress(frame)
     frame = frame or GetNativeBuffBar()
     if frame then
         self._pendingSuppress[frame] = true
+    else
+        self._pendingNative = true
     end
     self:_EnsureDataRetry()
 end
 
 function Suppressor:Restore(frame)
+    self._pendingNative = false
     frame = frame or GetNativeBuffBar()
     if not frame then return false end
-    if not IsCooldownViewerReady() then return false end
+    self._pendingSuppress[frame] = nil
 
     local state = self._states[frame]
+    if state and state.hidden then state.restoring = true end
     if frame.SetAlpha then frame:SetAlpha(1) end
 
     if state and state.hidden and not InCombat() then
@@ -137,7 +189,8 @@ function Suppressor:Restore(frame)
         state.parked = nil
         state.parkPending = nil
         state.hidden = false
-    elseif state and InCombat() then
+        state.restoring = nil
+    elseif state and state.hidden and InCombat() then
         state.restorePending = true
     end
 
@@ -156,14 +209,16 @@ function Suppressor:FlushPendingRestore()
     for frame, state in pairs(self._states) do
         if state.restorePending then
             state.restorePending = nil
+            state.restoring = true
             if state.parked or state.parkPending then
                 RestorePoints(frame, state.originalPoints)
             end
             state.parked = nil
             state.parkPending = nil
             state.hidden = false
+            state.restoring = nil
         elseif state.hidden and state.parkPending then
-            state.parked = ParkOffscreen(frame)
+            state.parked = ParkOffscreen(frame, state)
             state.parkPending = nil
         end
     end
@@ -171,22 +226,73 @@ end
 
 function Suppressor:FlushPendingSuppress()
     if not IsCooldownViewerReady() then return end
+    if self._pendingNative then
+        local frame = GetNativeBuffBar()
+        if frame then
+            self._pendingNative = false
+            self:Suppress(frame)
+        end
+    end
     for frame in pairs(self._pendingSuppress) do
         self._pendingSuppress[frame] = nil
         self:Suppress(frame)
     end
 end
 
+function Suppressor:SchedulePendingSuppressFlush()
+    if self._pendingNative then
+        local frame = GetNativeBuffBar()
+        if frame then PrimeHiddenFrame(frame) end
+    end
+    if self._pendingFlushScheduled then return end
+    self._pendingFlushScheduled = true
+
+    local function Flush()
+        self._pendingFlushScheduled = false
+        self:FlushPendingSuppress()
+        self:CheckParkIntegrity()
+    end
+    local timer = _G.C_Timer
+    if timer and timer.After then
+        timer.After(0, Flush)
+    else
+        Flush()
+    end
+end
+
+function Suppressor:CheckParkIntegrity(frame)
+    frame = frame or GetNativeBuffBar()
+    if not frame then return false end
+    local state = self._states[frame]
+    if not state or not state.hidden or state.restoring or state.parkQueued then return false end
+    if IsParked(frame) then return true end
+    return self:Suppress(frame)
+end
+
 local eventFrame
 if CreateFrame then
     eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("ADDON_LOADED")
+    eventFrame:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    eventFrame:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    eventFrame:SetScript("OnEvent", function(_, event)
+    eventFrame:RegisterEvent("UI_SCALE_CHANGED")
+    eventFrame:SetScript("OnEvent", function(_, event, arg1)
         if event == "PLAYER_REGEN_ENABLED" then
             Suppressor:FlushPendingRestore()
         elseif event == "COOLDOWN_VIEWER_DATA_LOADED" then
-            Suppressor:FlushPendingSuppress()
+            Suppressor:SchedulePendingSuppressFlush()
+            return
+        elseif event == "ADDON_LOADED" then
+            local viewerAddon = ns.CDMCooldownViewerAddon
+            local isViewerAddon = viewerAddon and viewerAddon.IsViewerAddon
+                and viewerAddon.IsViewerAddon(arg1)
+            if not isViewerAddon and arg1 ~= "Blizzard_CooldownViewer" then return end
+            Suppressor:SchedulePendingSuppressFlush()
+            return
         end
+        Suppressor:CheckParkIntegrity()
     end)
 end
 

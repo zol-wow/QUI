@@ -49,6 +49,10 @@ function SetBarAlpha(barKey, alpha)
         elseif state.fadeHidden then
             FadeShowTextures(state, button)
         end
+        if not hidden and alpha >= 1 and state._fadeTint and state.tintOverlay then
+            state.tintOverlay:Show()
+            state._fadeTint = nil
+        end
     end
 
     local barFrame = GetBarFrame(barKey)
@@ -499,6 +503,7 @@ function SkinBar(barKey)
             button:HookScript("OnShow", function(self)
                 local st = GetFrameState(self)
                 ActionBarsOwned.SuppressButtonProcVisuals(self)
+                ActionBarsOwned.UpdateOverlayGlow(self)
                 local key = GetBarKeyFromButton(self)
                 local fadeState = key and ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[key]
                 local hideEmptyEnabled = GetGlobalSettings() and GetGlobalSettings().hideEmptySlots

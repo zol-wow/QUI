@@ -159,6 +159,11 @@ local function panelIsActive(panel)
 	return row and row.enabled ~= false
 end
 
+local function combatMutationRestricted(frame, panel)
+	return InCombatLockdown()
+		and ((panel and panel.proxyParent) or Helpers.FrameMutationRestricted(frame))
+end
+
 function M.functions.RegisterGroup(id, label, opts)
 	if not id or id == "" then return nil end
 	local g = R.groups[id]
@@ -506,7 +511,7 @@ local function applyInteractionBaseline(f, panel, active, usedOverlay)
 	local c = ctx(f)
 	local base = c.wasInteractive
 	if not base then return end
-	if InCombatLockdown() and f.IsProtected and f:IsProtected() then return end
+	if combatMutationRestricted(f, panel) then return end
 	if active then
 		if f.SetMovable then f:SetMovable(true) end
 		if f.SetClampedToScreen and not panel.proxyParent then f:SetClampedToScreen(true) end
@@ -527,7 +532,7 @@ local function applyLeafInteraction(f, active)
 	local c = ctx(f)
 	local base = c.wasInteractive
 	if not base then return end
-	if InCombatLockdown() and f.IsProtected and f:IsProtected() then return end
+	if combatMutationRestricted(f) then return end
 	if active then
 		if f.EnableMouse then f:EnableMouse(true) end
 		return
@@ -592,7 +597,7 @@ function M.functions.applyFrameSettings(f, entry)
 	local hasPos = saved and saved.point and saved.x ~= nil and saved.y ~= nil
 	local sc = storedScaleValue(row)
 	if not hasPos and not sc then return end
-	if InCombatLockdown() and (f:IsProtected() or panel.proxyParent) then
+	if combatMutationRestricted(f, panel) then
 		M.functions.deferApply(f, panel)
 		return
 	end
@@ -730,7 +735,7 @@ local function installPlayerChoiceLayoutGuard(f)
 
 	f:HookScript("OnHide", function(self)
 		if not playerChoiceMoverOn() then return end
-		if InCombatLockdown() and self:IsProtected() then return end
+		if combatMutationRestricted(self) then return end
 		local cx = ctx(self)
 		cx.applyingLayout = true
 		self:ClearAllPoints()
@@ -759,10 +764,17 @@ function M.functions.createHooks(root, entry)
 	if not panel then return end
 
 	local c = ctx(root)
-	if c.hooksInstalled then return end
+	if c.hooksInstalled then
+		if c.refreshDynamicSurfaces then c.refreshDynamicSurfaces() end
+		return
+	end
+	if (InCombatLockdown() and panel.secureFrame) or combatMutationRestricted(root, panel) then
+		M.variables.combatQueue[root] = panel
+		return
+	end
 
 	local dp = panel.defaultPoint
-	if dp and dp.point and not (InCombatLockdown() and root.IsProtected and root:IsProtected()) then
+	if dp and dp.point then
 		root:ClearAllPoints()
 		root:SetPoint(dp.point, UIParent, dp.point, dp.x or 0, dp.y or 0)
 	end
@@ -770,17 +782,17 @@ function M.functions.createHooks(root, entry)
 	rememberAnchors(root)
 	rememberInteraction(root)
 
-	if InCombatLockdown() then
-		M.variables.combatQueue[root] = panel
-		return
-	end
-
 	c.panel = panel
 	c.hooksInstalled = true
 	M.variables.combatQueue[root] = nil
 
 	local partners = {}
 	local stripAnchors = {}
+	local function restrictedSurface(surface)
+		if not combatMutationRestricted(surface) then return false end
+		M.variables.combatQueue[root] = panel
+		return true
+	end
 
 	local function readMouseHandlerState(widget, method)
 		if not (widget and widget[method]) then return false end
@@ -812,7 +824,7 @@ function M.functions.createHooks(root, entry)
 		if btn and btn ~= "LeftButton" then return end
 		if not panelIsActive(panel) then return end
 		if not moveModifierHeld() then return end
-		if InCombatLockdown() and root:IsProtected() then return end
+		if combatMutationRestricted(root, panel) then return end
 		if hasInteractiveFocusInFront(trigger) then return end
 		c.dragging = true
 		root:StartMoving()
@@ -821,7 +833,7 @@ function M.functions.createHooks(root, entry)
 	local function endDrag(_, btn)
 		if btn and btn ~= "LeftButton" then return end
 		if not panelIsActive(panel) then return end
-		if InCombatLockdown() and root:IsProtected() then return end
+		if combatMutationRestricted(root, panel) then return end
 		if not c.dragging then return end
 		root:StopMovingOrSizing()
 		c.dragging = false
@@ -832,7 +844,7 @@ function M.functions.createHooks(root, entry)
 	local function pushScale(next)
 		local row = storageRowForPanel(panel)
 		if row then row.scale = next end
-		if InCombatLockdown() and root:IsProtected() then
+		if combatMutationRestricted(root, panel) then
 			M.functions.deferApply(root, panel)
 			return
 		end
@@ -922,22 +934,24 @@ function M.functions.createHooks(root, entry)
 		hookResetClick(root)
 	end
 
+	local refreshScalePaths
 	if panel.scalePaths and not avoidRootHooks then
 		local function wireScalePath(p)
 			local w = objectFromDottedPath(p)
-			if w then
+			if w and not restrictedSurface(w) then
 				pinScaleTree(w)
 				hookResetClick(w)
 			end
 		end
-		for _, p in ipairs(panel.scalePaths) do wireScalePath(p) end
-		root:HookScript("OnShow", function()
+		refreshScalePaths = function()
 			for _, p in ipairs(panel.scalePaths) do wireScalePath(p) end
-		end)
+		end
+		refreshScalePaths()
+		root:HookScript("OnShow", refreshScalePaths)
 	end
 
 	local function makeDragStrip(anchor)
-		if not anchor then return nil end
+		if not anchor or restrictedSurface(anchor) then return nil end
 		stripAnchors[anchor] = true
 		local strip
 		local ok = ns.SafeCall("chain-next", function()
@@ -974,6 +988,7 @@ function M.functions.createHooks(root, entry)
 	local function wireDirectDrag(surface)
 		if not surface or leafHas(surface, "directDrag") then return end
 		if surface.IsForbidden and surface:IsForbidden() then return end
+		if restrictedSurface(surface) then return end
 		leafMark(surface, "directDrag")
 		rememberInteraction(surface)
 		if surface ~= root then partners[surface] = true end
@@ -1021,13 +1036,21 @@ function M.functions.createHooks(root, entry)
 					local a = objectFromDottedPath(p)
 					if a then wireDirectDrag(a) end
 				end
-				for _, p in ipairs(panel.handles) do wireHandlePath(p) end
+				refreshDynamicHandles = function()
+					for _, p in ipairs(panel.handles) do wireHandlePath(p) end
+				end
+				refreshDynamicHandles()
 				if not avoidRootHooks then
-					root:HookScript("OnShow", function()
-						for _, p in ipairs(panel.handles) do wireHandlePath(p) end
-					end)
+					root:HookScript("OnShow", refreshDynamicHandles)
 				end
 			end
+		end
+	end
+
+	if refreshScalePaths or refreshDynamicHandles then
+		c.refreshDynamicSurfaces = function()
+			if refreshScalePaths then refreshScalePaths() end
+			if refreshDynamicHandles then refreshDynamicHandles() end
 		end
 	end
 
@@ -1075,7 +1098,7 @@ function M.functions.createHooks(root, entry)
 		local hasPos = saved and saved.point and saved.x ~= nil and saved.y ~= nil
 		local sc = storedScaleValue(row)
 		if not hasPos and not sc then return end
-		if InCombatLockdown() and (self:IsProtected() or panel.proxyParent) then
+		if combatMutationRestricted(self, panel) then
 			M.functions.deferApply(self, panel)
 			return
 		end
@@ -1119,6 +1142,26 @@ function M.functions.createHooks(root, entry)
 		end
 	end
 
+	local function raiseShownFrame(frame)
+		if not InCombatLockdown() and frame.Raise then frame:Raise() end
+	end
+
+	local openAllMail = panel.id == "MailFrame" and _G.OpenAllMail
+	if openAllMail and openAllMail.HookScript then
+		local function raiseActiveMailFrame()
+			if panelIsActive(panel) then raiseShownFrame(root) end
+		end
+		openAllMail:HookScript("OnClick", function()
+			if RunNextFrame then
+				RunNextFrame(raiseActiveMailFrame)
+			elseif C_Timer and C_Timer.After then
+				C_Timer.After(0, raiseActiveMailFrame)
+			else
+				raiseActiveMailFrame()
+			end
+		end)
+	end
+
 	if panel.secureFrame then
 		local function savedPositionDrifted(f)
 			if c.dragging or c.applyingLayout then return false end
@@ -1155,6 +1198,7 @@ function M.functions.createHooks(root, entry)
 				reconcileOpenPositionOnShow(panel, root)
 				if not c.blizzardAnchors then rememberAnchors(root) end
 				M.functions.applyFrameSettings(root, panel)
+				raiseShownFrame(root)
 				reassertTicks = 5
 			elseif becameHidden then
 				clearOpenPosition(panel, root)
@@ -1162,7 +1206,7 @@ function M.functions.createHooks(root, entry)
 					and (db.positionPersistence or "reset") == "close"
 					and panelIsActive(panel)
 					and not c.dragging and not c.applyingLayout
-					and not (InCombatLockdown() and root:IsProtected())
+					and not combatMutationRestricted(root, panel)
 					and c.blizzardAnchors then
 					c.applyingLayout = true
 					restoreAnchors(root)
@@ -1194,6 +1238,7 @@ function M.functions.createHooks(root, entry)
 			else
 				M.functions.applyFrameSettings(self, panel)
 			end
+			raiseShownFrame(self)
 		end)
 
 		if not panel.skipOnHide then
@@ -1202,7 +1247,7 @@ function M.functions.createHooks(root, entry)
 				if (db.positionPersistence or "reset") ~= "close" then return end
 				if not panelIsActive(panel) then return end
 				if c.dragging or c.applyingLayout then return end
-				if InCombatLockdown() and self:IsProtected() then return end
+				if combatMutationRestricted(self, panel) then return end
 				if not c.blizzardAnchors then return end
 				c.applyingLayout = true
 				restoreAnchors(self)
@@ -1220,6 +1265,7 @@ function M.functions.createHooks(root, entry)
 
 	function c.refresh()
 		local on = panelIsActive(panel)
+		if on and c.refreshDynamicSurfaces then c.refreshDynamicSurfaces() end
 		if not panel.disableMove then
 			applyInteractionBaseline(root, panel, on, useStripOverlay)
 			for surf in pairs(partners) do

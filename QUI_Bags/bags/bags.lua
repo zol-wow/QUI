@@ -25,6 +25,7 @@ local UI_EVENTS = {
     "SKILL_LINES_CHANGED",
     "PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_REGEN_DISABLED",
+    "PLAYER_REGEN_ENABLED",
     "GUILDBANKFRAME_OPENED",
     "GUILDBANKFRAME_CLOSED",
     "GUILDBANKLOG_UPDATE",
@@ -116,6 +117,9 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         if Bags.SortExecutor then Bags.SortExecutor.OnCombat() end
         if Bags.Transfers then Bags.Transfers.OnCombat() end
         if Bags.Junk and Bags.Junk.OnCombat then Bags.Junk.OnCombat() end
+        if Bags.GuildWindow.IsShown() then Bags.GuildWindow.Refresh() end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if Bags.GuildWindow.IsShown() then Bags.GuildWindow.Refresh() end
     elseif event == "GUILDBANKFRAME_OPENED" then
         Bags.GuildTakeover.OnOpened()
     elseif event == "GUILDBANKFRAME_CLOSED" then

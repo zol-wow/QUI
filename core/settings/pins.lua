@@ -17,7 +17,21 @@ local tostring = tostring
 local type = type
 
 local PIN_STORE_VERSION = 1
+local PROFILE_FEATURE_PIN_VERSION = 3
 local STALE_MISS_LIMIT = 3
+
+local PROFILE_FEATURE_CATEGORIES = {
+    auraDisplays = {
+        topLevelKeys = { "auraDisplays" },
+        frameAnchorPrefix = "auraDisplay_",
+    },
+    groupFrames = {
+        topLevelKeys = { "quiGroupFrames", "raidBuffs" },
+        frameAnchorKeys = { "partyFrames", "raidFrames", "spotlightFrames", "missingRaidBuffs" },
+    },
+}
+
+Pins.ProfileFeatureCategories = PROFILE_FEATURE_CATEGORIES
 
 Pins._subscribers = Pins._subscribers or {}
 Pins._subscriptionSeq = Pins._subscriptionSeq or 0
@@ -459,6 +473,131 @@ local function GetStore(db, create)
     return NormalizeStore(store)
 end
 
+local function GetProfileFeatureStore(db, create)
+    db = db or GetCurrentDB()
+    if not db then
+        return nil
+    end
+
+    local globalDB = db.global
+    if type(globalDB) ~= "table" then
+        if not create then
+            return nil
+        end
+        globalDB = {}
+        db.global = globalDB
+    end
+
+    local store = globalDB.profileFeaturePins
+    if type(store) ~= "table" then
+        if not create then
+            return nil
+        end
+        store = {
+            _version = PROFILE_FEATURE_PIN_VERSION,
+            profiles = {},
+            sources = {},
+            optOuts = {},
+        }
+        globalDB.profileFeaturePins = store
+    end
+
+    if type(store._version) ~= "number" or store._version < PROFILE_FEATURE_PIN_VERSION then
+        store._version = PROFILE_FEATURE_PIN_VERSION
+    end
+    if type(store.profiles) ~= "table" then
+        store.profiles = {}
+    end
+    if type(store.sources) ~= "table" then
+        store.sources = {}
+    end
+    if type(store.optOuts) ~= "table" then
+        store.optOuts = {}
+    end
+    return store
+end
+
+local function GetStoredProfiles(db)
+    if not db then
+        return nil
+    end
+    if type(db.profiles) == "table" then
+        return db.profiles
+    end
+    return db.sv and db.sv.profiles or nil
+end
+
+local function GetCurrentSpecID()
+    local helpers = ns.Helpers
+    if helpers and type(helpers.GetCurrentSpecID) == "function" then
+        return helpers.GetCurrentSpecID()
+    end
+    return nil
+end
+
+local function GetGlobalProfileFeatureEntry(store, categoryID)
+    local entry = store and store.sources and store.sources[categoryID] or nil
+    if type(entry) == "string" and entry ~= "" then
+        return entry, nil
+    end
+    if type(entry) ~= "table" then
+        return nil, nil
+    end
+    local source = entry.profile
+    if type(source) ~= "string" or source == "" then
+        return nil, nil
+    end
+    return source, type(entry.specID) == "number" and entry.specID or nil
+end
+
+local function IsProfileFeaturePinOptedOut(store, profileName, categoryID)
+    local profileOptOuts = store and store.optOuts and store.optOuts[profileName] or nil
+    return type(profileOptOuts) == "table" and profileOptOuts[categoryID] == true
+end
+
+local function ClearProfileFeaturePinOptOuts(store, categoryID)
+    for profileName, profileOptOuts in pairs(store and store.optOuts or {}) do
+        if type(profileOptOuts) == "table" then
+            profileOptOuts[categoryID] = nil
+            if next(profileOptOuts) == nil then
+                store.optOuts[profileName] = nil
+            end
+        end
+    end
+end
+
+local function MaterializeProfileDefaults(target, defaults)
+    if type(target) ~= "table" or type(defaults) ~= "table" then
+        return
+    end
+
+    for key, defaultValue in pairs(defaults) do
+        if key == "*" or key == "**" then
+            if type(defaultValue) == "table" then
+                for targetKey, targetValue in pairs(target) do
+                    if rawget(defaults, targetKey) == nil and type(targetValue) == "table" then
+                        MaterializeProfileDefaults(targetValue, defaultValue)
+                    end
+                end
+            end
+        elseif type(defaultValue) == "table" then
+            local targetValue = rawget(target, key)
+            if targetValue == nil then
+                targetValue = {}
+                target[key] = targetValue
+            end
+            if type(targetValue) == "table" then
+                MaterializeProfileDefaults(targetValue, defaultValue)
+                if type(defaults["**"]) == "table" then
+                    MaterializeProfileDefaults(targetValue, defaults["**"])
+                end
+            end
+        elseif rawget(target, key) == nil then
+            target[key] = defaultValue
+        end
+    end
+end
+
 local function TouchStore(store)
     if type(store) ~= "table" then
         return
@@ -478,6 +617,500 @@ end
 
 function Pins:GetStore(db, create)
     return GetStore(db, create)
+end
+
+function Pins:IsProfileFeatureSupported(categoryID)
+    return PROFILE_FEATURE_CATEGORIES[categoryID] ~= nil
+end
+
+function Pins:BuildInactiveProfileSnapshot(db, profileName)
+    local profiles = GetStoredProfiles(db)
+    local storedProfile = type(profiles) == "table" and rawget(profiles, profileName) or nil
+    if type(storedProfile) ~= "table" then
+        return nil
+    end
+
+    local snapshot = CloneValue(storedProfile)
+    local defaults = db and db.defaults and db.defaults.profile
+    MaterializeProfileDefaults(snapshot, defaults)
+    return snapshot
+end
+
+function Pins:CopyProfileFeatureAnchors(targetProfile, sourceProfile, category)
+    local keys = category and category.frameAnchorKeys
+    local prefix = category and category.frameAnchorPrefix
+    if type(targetProfile) ~= "table" or type(sourceProfile) ~= "table"
+        or (type(keys) ~= "table" and type(prefix) ~= "string") then
+        return false
+    end
+
+    local targetAnchors = targetProfile.frameAnchoring
+    local sourceAnchors = sourceProfile.frameAnchoring
+    if type(targetAnchors) ~= "table" then
+        targetAnchors = {}
+        targetProfile.frameAnchoring = targetAnchors
+    end
+
+    if type(keys) == "table" then
+        for _, key in ipairs(keys) do
+            targetAnchors[key] = type(sourceAnchors) == "table" and CloneValue(sourceAnchors[key]) or nil
+        end
+    end
+
+    if type(prefix) == "string" then
+        for key in pairs(targetAnchors) do
+            if type(key) == "string" and key:sub(1, #prefix) == prefix then
+                targetAnchors[key] = nil
+            end
+        end
+        if type(sourceAnchors) == "table" then
+            for key, value in pairs(sourceAnchors) do
+                if type(key) == "string" and key:sub(1, #prefix) == prefix then
+                    targetAnchors[key] = CloneValue(value)
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+local function CopyAuraSpecBucket(targetAuras, sourceAuras, targetSpecID, sourceSpecID)
+    if type(targetAuras) ~= "table" or type(sourceAuras) ~= "table"
+        or type(targetSpecID) ~= "number" or type(sourceSpecID) ~= "number"
+        or targetSpecID == sourceSpecID then
+        return
+    end
+
+    local sourceElements = sourceAuras.elements
+    local targetElements = targetAuras.elements
+    if type(sourceElements) ~= "table" or type(targetElements) ~= "table" then
+        return
+    end
+
+    local bucket = sourceElements[sourceSpecID] or sourceElements["*"]
+    if type(bucket) == "table" then
+        targetElements[targetSpecID] = CloneValue(bucket)
+    end
+end
+
+local function CopyProfileFeatureSpecBuckets(targetProfile, sourceProfile, categoryID, targetSpecID, sourceSpecID)
+    if type(targetSpecID) ~= "number" or type(sourceSpecID) ~= "number" then
+        return
+    end
+
+    if categoryID == "auraDisplays" then
+        local targetDisplays = targetProfile.auraDisplays and targetProfile.auraDisplays.displays
+        local sourceDisplays = sourceProfile.auraDisplays and sourceProfile.auraDisplays.displays
+        if type(targetDisplays) ~= "table" or type(sourceDisplays) ~= "table" then
+            return
+        end
+        for key, sourceDisplay in pairs(sourceDisplays) do
+            local targetDisplay = targetDisplays[key]
+            if type(targetDisplay) == "table" and type(sourceDisplay) == "table" then
+                CopyAuraSpecBucket(targetDisplay.auras, sourceDisplay.auras, targetSpecID, sourceSpecID)
+            end
+        end
+        return
+    end
+
+    if categoryID == "groupFrames" then
+        local targetGroup = targetProfile.quiGroupFrames
+        local sourceGroup = sourceProfile.quiGroupFrames
+        if type(targetGroup) ~= "table" or type(sourceGroup) ~= "table" then
+            return
+        end
+        for _, frameType in ipairs({ "party", "raid" }) do
+            local targetFrame = targetGroup[frameType]
+            local sourceFrame = sourceGroup[frameType]
+            if type(targetFrame) == "table" and type(sourceFrame) == "table" then
+                CopyAuraSpecBucket(targetFrame.auras, sourceFrame.auras, targetSpecID, sourceSpecID)
+            end
+        end
+    end
+end
+
+function Pins:CopyProfileFeatureCategory(targetProfile, sourceProfile, categoryID, targetSpecID, sourceSpecID)
+    local category = PROFILE_FEATURE_CATEGORIES[categoryID]
+    if type(targetProfile) ~= "table" or type(sourceProfile) ~= "table" or not category then
+        return false, "Unsupported profile feature."
+    end
+
+    local targetClickCast
+    if categoryID == "groupFrames" and type(targetProfile.quiGroupFrames) == "table" then
+        targetClickCast = CloneValue(rawget(targetProfile.quiGroupFrames, "clickCast"))
+    end
+
+    for _, key in ipairs(category.topLevelKeys) do
+        targetProfile[key] = CloneValue(sourceProfile[key])
+    end
+
+    if categoryID == "groupFrames" then
+        if targetClickCast ~= nil and type(targetProfile.quiGroupFrames) ~= "table" then
+            targetProfile.quiGroupFrames = {}
+        end
+        if type(targetProfile.quiGroupFrames) == "table" then
+            targetProfile.quiGroupFrames.clickCast = targetClickCast
+        end
+    end
+
+    CopyProfileFeatureSpecBuckets(targetProfile, sourceProfile, categoryID, targetSpecID, sourceSpecID)
+    self:CopyProfileFeatureAnchors(targetProfile, sourceProfile, category)
+    return true
+end
+
+function Pins:GetGlobalProfileFeatureSource(categoryID, db)
+    local store = GetProfileFeatureStore(db or GetCurrentDB(), false)
+    return GetGlobalProfileFeatureEntry(store, categoryID)
+end
+
+function Pins:SetGlobalProfileFeatureSource(sourceProfile, categoryID, db, sourceSpecID)
+    db = db or GetCurrentDB()
+    if not PROFILE_FEATURE_CATEGORIES[categoryID] then
+        return false, "Unsupported profile feature."
+    end
+    if type(sourceProfile) ~= "string" or sourceProfile == "" then
+        return false, "Choose a source profile."
+    end
+
+    local profiles = GetStoredProfiles(db)
+    if type(profiles) ~= "table" or type(rawget(profiles, sourceProfile)) ~= "table" then
+        return false, ("No profile named '%s'."):format(sourceProfile)
+    end
+
+    local store = GetProfileFeatureStore(db, true)
+    store.sources[categoryID] = {
+        profile = sourceProfile,
+        specID = type(sourceSpecID) == "number" and sourceSpecID or nil,
+    }
+    local sourceOptOuts = store.optOuts[sourceProfile]
+    if type(sourceOptOuts) == "table" then
+        sourceOptOuts[categoryID] = nil
+        if next(sourceOptOuts) == nil then
+            store.optOuts[sourceProfile] = nil
+        end
+    end
+    self._profileFeatureSpecID = type(sourceSpecID) == "number" and sourceSpecID or GetCurrentSpecID()
+    for targetProfile, profilePins in pairs(store.profiles) do
+        if type(profilePins) == "table" then
+            profilePins[categoryID] = nil
+            if next(profilePins) == nil then
+                store.profiles[targetProfile] = nil
+            end
+        end
+    end
+    return true
+end
+
+function Pins:ClearGlobalProfileFeatureSource(categoryID, db)
+    local store = GetProfileFeatureStore(db or GetCurrentDB(), false)
+    if not store or not store.sources or store.sources[categoryID] == nil then
+        return false, "Profile feature pin not found."
+    end
+    store.sources[categoryID] = nil
+    ClearProfileFeaturePinOptOuts(store, categoryID)
+    return true
+end
+
+function Pins:IsProfileFeaturePinOptedOut(categoryID, db, targetProfile)
+    db = db or GetCurrentDB()
+    targetProfile = targetProfile or self:GetCurrentProfileName(db)
+    local store = GetProfileFeatureStore(db, false)
+    local sourceProfile = GetGlobalProfileFeatureEntry(store, categoryID)
+    return sourceProfile ~= nil and targetProfile ~= sourceProfile
+        and IsProfileFeaturePinOptedOut(store, targetProfile, categoryID)
+end
+
+function Pins:SetProfileFeaturePinOptOut(categoryID, optedOut, db, targetProfile)
+    db = db or GetCurrentDB()
+    targetProfile = targetProfile or self:GetCurrentProfileName(db)
+    if not PROFILE_FEATURE_CATEGORIES[categoryID] then
+        return false, "Unsupported profile feature."
+    end
+    if type(targetProfile) ~= "string" or targetProfile == "" then
+        return false, "No profile loaded."
+    end
+
+    local store = GetProfileFeatureStore(db, false)
+    local sourceProfile = GetGlobalProfileFeatureEntry(store, categoryID)
+    if not sourceProfile then
+        return false, "Profile feature pin not found."
+    end
+    if targetProfile == sourceProfile then
+        return false, "The source profile cannot ignore its own pin."
+    end
+
+    if optedOut and targetProfile == self:GetCurrentProfileName(db) then
+        self:SyncProfileFeatureSources(db, categoryID)
+    end
+
+    if optedOut then
+        local profileOptOuts = store.optOuts[targetProfile]
+        if type(profileOptOuts) ~= "table" then
+            profileOptOuts = {}
+            store.optOuts[targetProfile] = profileOptOuts
+        end
+        profileOptOuts[categoryID] = true
+    else
+        local profileOptOuts = store.optOuts[targetProfile]
+        if type(profileOptOuts) == "table" then
+            profileOptOuts[categoryID] = nil
+            if next(profileOptOuts) == nil then
+                store.optOuts[targetProfile] = nil
+            end
+        end
+    end
+    return true
+end
+
+function Pins:GetEffectiveProfileFeatureSource(categoryID, db, targetProfile)
+    db = db or GetCurrentDB()
+    targetProfile = targetProfile or self:GetCurrentProfileName(db)
+    local store = GetProfileFeatureStore(db, false)
+    local globalSource = GetGlobalProfileFeatureEntry(store, categoryID)
+    if globalSource then
+        if targetProfile ~= globalSource and IsProfileFeaturePinOptedOut(store, targetProfile, categoryID) then
+            return nil
+        end
+        return globalSource
+    end
+    local profilePins = store and store.profiles[targetProfile] or nil
+    local source = type(profilePins) == "table" and profilePins[categoryID] or nil
+    return type(source) == "string" and source ~= "" and source or nil
+end
+
+function Pins:GetProfileFeatureSource(categoryID, db, targetProfile)
+    db = db or GetCurrentDB()
+    targetProfile = targetProfile or self:GetCurrentProfileName(db)
+    local store = GetProfileFeatureStore(db, false)
+    local globalSource = GetGlobalProfileFeatureEntry(store, categoryID)
+    if globalSource then
+        return globalSource
+    end
+    local profilePins = store and store.profiles[targetProfile] or nil
+    local source = type(profilePins) == "table" and profilePins[categoryID] or nil
+    return type(source) == "string" and source ~= "" and source or nil
+end
+
+function Pins:SetProfileFeatureSource(sourceProfile, categoryID, db, targetProfile)
+    db = db or GetCurrentDB()
+    targetProfile = targetProfile or self:GetCurrentProfileName(db)
+    if not PROFILE_FEATURE_CATEGORIES[categoryID] then
+        return false, "Unsupported profile feature."
+    end
+    if type(targetProfile) ~= "string" or targetProfile == ""
+        or type(sourceProfile) ~= "string" or sourceProfile == "" then
+        return false, "Choose a source profile."
+    end
+    if targetProfile == sourceProfile then
+        return false, "Choose a profile other than the current profile."
+    end
+
+    local profiles = GetStoredProfiles(db)
+    if type(profiles) ~= "table" or type(rawget(profiles, sourceProfile)) ~= "table" then
+        return false, ("No profile named '%s'."):format(sourceProfile)
+    end
+    if type(rawget(profiles, targetProfile)) ~= "table" then
+        return false, ("No profile named '%s'."):format(targetProfile)
+    end
+
+    local existingStore = GetProfileFeatureStore(db, false)
+    if GetGlobalProfileFeatureEntry(existingStore, categoryID) then
+        return false, "Unpin this feature across all profiles first."
+    end
+    local sourcePins = existingStore and existingStore.profiles[sourceProfile] or nil
+    if type(sourcePins) == "table" and sourcePins[categoryID] then
+        return false, "Choose a source profile that is not pinned for this feature."
+    end
+    for _, profilePins in pairs(existingStore and existingStore.profiles or {}) do
+        if type(profilePins) == "table" and profilePins[categoryID] == targetProfile then
+            return false, "This profile is already a pinned source for this feature."
+        end
+    end
+
+    local store = GetProfileFeatureStore(db, true)
+    local profilePins = store.profiles[targetProfile]
+    if type(profilePins) ~= "table" then
+        profilePins = {}
+        store.profiles[targetProfile] = profilePins
+    end
+    profilePins[categoryID] = sourceProfile
+    return true
+end
+
+function Pins:ClearProfileFeatureSource(categoryID, db, targetProfile)
+    db = db or GetCurrentDB()
+    targetProfile = targetProfile or self:GetCurrentProfileName(db)
+    local store = GetProfileFeatureStore(db, false)
+    local profilePins = store and store.profiles[targetProfile] or nil
+    if type(profilePins) ~= "table" or profilePins[categoryID] == nil then
+        return false, "Profile feature pin not found."
+    end
+
+    profilePins[categoryID] = nil
+    if next(profilePins) == nil then
+        store.profiles[targetProfile] = nil
+    end
+    return true
+end
+
+function Pins:SyncProfileFeatureSources(db, categoryID, activeSpecID)
+    db = db or GetCurrentDB()
+    local targetProfile = self:GetCurrentProfileName(db)
+    local store = GetProfileFeatureStore(db, false)
+    local profilePins = store and store.profiles[targetProfile] or nil
+    if not db or type(db.profile) ~= "table" or not store
+        or (categoryID ~= nil and not PROFILE_FEATURE_CATEGORIES[categoryID]) then
+        return false
+    end
+
+    local defaults = db.defaults
+    local canStripDefaults = defaults and type(db.RegisterDefaults) == "function"
+    if canStripDefaults then
+        db:RegisterDefaults(nil)
+    end
+
+    local ok, changed = ns.SafeCall("bulkhead", function()
+        local profiles = GetStoredProfiles(db)
+        local currentSpecID = activeSpecID or self._profileFeatureSpecID or GetCurrentSpecID()
+        local didChange = false
+        for _, pinnedCategoryID in ipairs({ "groupFrames", "auraDisplays" }) do
+            local globalSource, globalSpecID = GetGlobalProfileFeatureEntry(store, pinnedCategoryID)
+            local sourceName = globalSource or (type(profilePins) == "table" and profilePins[pinnedCategoryID])
+            local sourceProfile = type(profiles) == "table" and type(sourceName) == "string"
+                and rawget(profiles, sourceName) or nil
+            local optedOut = globalSource and targetProfile ~= globalSource
+                and IsProfileFeaturePinOptedOut(store, targetProfile, pinnedCategoryID)
+            if (categoryID == nil or categoryID == pinnedCategoryID)
+                and type(sourceProfile) == "table" and not optedOut then
+                if globalSource and targetProfile == globalSource then
+                    CopyProfileFeatureSpecBuckets(
+                        sourceProfile,
+                        db.profile,
+                        pinnedCategoryID,
+                        globalSpecID,
+                        currentSpecID
+                    )
+                else
+                    self:CopyProfileFeatureCategory(
+                        sourceProfile,
+                        db.profile,
+                        pinnedCategoryID,
+                        globalSpecID,
+                        globalSource and currentSpecID or nil
+                    )
+                end
+                didChange = true
+            end
+        end
+        return didChange
+    end)
+
+    if canStripDefaults then
+        db:RegisterDefaults(defaults)
+    end
+    return ok and changed or false
+end
+
+function Pins:ApplyProfileFeaturePins(db, categories)
+    db = db or GetCurrentDB()
+    local targetProfile = self:GetCurrentProfileName(db)
+    local store = GetProfileFeatureStore(db, false)
+    local profilePins = store and store.profiles[targetProfile] or nil
+    if not db or type(db.profile) ~= "table" or not store then
+        return false
+    end
+
+    local allowed
+    if type(categories) == "table" then
+        allowed = {}
+        for _, category in ipairs(categories) do
+            if type(category) == "table" and type(category.id) == "string" then
+                allowed[category.id] = true
+            elseif type(category) == "string" then
+                allowed[category] = true
+            end
+        end
+    end
+
+    local changed = false
+    local currentSpecID = GetCurrentSpecID()
+    self._profileFeatureSpecID = currentSpecID
+    for _, categoryID in ipairs({ "groupFrames", "auraDisplays" }) do
+        local globalSource, globalSpecID = GetGlobalProfileFeatureEntry(store, categoryID)
+        local sourceName = globalSource or (type(profilePins) == "table" and profilePins[categoryID])
+        local optedOut = globalSource and targetProfile ~= globalSource
+            and IsProfileFeaturePinOptedOut(store, targetProfile, categoryID)
+        if globalSource and targetProfile == globalSource then
+            if (not allowed or allowed[categoryID]) and type(currentSpecID) == "number"
+                and type(globalSpecID) == "number" and currentSpecID ~= globalSpecID then
+                CopyProfileFeatureSpecBuckets(db.profile, db.profile, categoryID, currentSpecID, globalSpecID)
+                changed = true
+            end
+        elseif not optedOut and type(sourceName) == "string" and sourceName ~= ""
+            and (not allowed or allowed[categoryID]) then
+            local sourceSnapshot = self:BuildInactiveProfileSnapshot(db, sourceName)
+            if sourceSnapshot then
+                self:CopyProfileFeatureCategory(
+                    db.profile,
+                    sourceSnapshot,
+                    categoryID,
+                    globalSource and currentSpecID or nil,
+                    globalSpecID
+                )
+                changed = true
+            else
+                DebugLog("Profile feature pin source unavailable:", tostring(sourceName), tostring(categoryID))
+            end
+        end
+    end
+    return changed
+end
+
+function Pins:HandleProfileFeatureSpecChanged(db)
+    db = db or GetCurrentDB()
+    local currentSpecID = GetCurrentSpecID()
+    local previousSpecID = self._profileFeatureSpecID
+    self._profileFeatureSpecID = currentSpecID
+    if type(previousSpecID) ~= "number" or type(currentSpecID) ~= "number"
+        or previousSpecID == currentSpecID or not db or type(db.profile) ~= "table" then
+        return false
+    end
+
+    local store = GetProfileFeatureStore(db, false)
+    local currentProfile = self:GetCurrentProfileName(db)
+    local categories = {}
+    for _, categoryID in ipairs({ "groupFrames", "auraDisplays" }) do
+        local sourceProfile, sourceSpecID = GetGlobalProfileFeatureEntry(store, categoryID)
+        local optedOut = sourceProfile and currentProfile ~= sourceProfile
+            and IsProfileFeaturePinOptedOut(store, currentProfile, categoryID)
+        if not optedOut then
+            if sourceProfile == currentProfile and type(sourceSpecID) == "number" then
+                CopyProfileFeatureSpecBuckets(db.profile, db.profile, categoryID, sourceSpecID, previousSpecID)
+            elseif sourceProfile then
+                self:SyncProfileFeatureSources(db, categoryID, previousSpecID)
+            end
+            if sourceProfile then
+                categories[#categories + 1] = categoryID
+            end
+        end
+    end
+    if #categories == 0 or not self:ApplyProfileFeaturePins(db, categories) then
+        return false
+    end
+
+    local function Refresh()
+        local registry = ns.Registry
+        if registry and type(registry.RefreshByCategories) == "function" then
+            registry:RefreshByCategories(categories)
+        end
+    end
+    if C_Timer and type(C_Timer.After) == "function" then
+        C_Timer.After(0, Refresh)
+    else
+        Refresh()
+    end
+    return true
 end
 
 function Pins:InvalidatePathCache()
@@ -525,6 +1158,10 @@ function Pins:IsPathPinnable(path, kind, value)
     end
 
     if segments[1] == "frameAnchoring" then
+        return false
+    end
+
+    if segments[1] == "auraDisplays" and segments[2] == "displays" then
         return false
     end
 
@@ -867,6 +1504,35 @@ end
 
 function Pins:DropProfile(profileName, db)
     self:ClearProfileShadow(profileName, nil, db)
+
+    local store = GetProfileFeatureStore(db, false)
+    if not store or type(store.profiles) ~= "table" then
+        return
+    end
+
+    store.optOuts[profileName] = nil
+
+    for categoryID in pairs(PROFILE_FEATURE_CATEGORIES) do
+        local sourceProfile = GetGlobalProfileFeatureEntry(store, categoryID)
+        if sourceProfile == profileName then
+            store.sources[categoryID] = nil
+            ClearProfileFeaturePinOptOuts(store, categoryID)
+        end
+    end
+
+    store.profiles[profileName] = nil
+    for targetProfile, profilePins in pairs(store.profiles) do
+        if type(profilePins) == "table" then
+            for categoryID, sourceProfile in pairs(profilePins) do
+                if sourceProfile == profileName then
+                    profilePins[categoryID] = nil
+                end
+            end
+            if next(profilePins) == nil then
+                store.profiles[targetProfile] = nil
+            end
+        end
+    end
 end
 
 function Pins:Snapshot(profileName, sourceProfile, specificPath, db)
@@ -1314,6 +1980,7 @@ end
 
 function Pins:HandleSelectiveImport(db, categories)
     db = db or GetCurrentDB()
+    self:ApplyProfileFeaturePins(db, categories)
     local store = GetStore(db, false)
     local currentProfile = self:GetCurrentProfileName(db)
     if not store or type(categories) ~= "table" or not currentProfile or type(db.profile) ~= "table" then
@@ -1347,6 +2014,7 @@ end
 
 function Pins:HandleFullImportSnapshot(db, importedProfile)
     db = db or GetCurrentDB()
+    self:ApplyProfileFeaturePins(db)
     local store = GetStore(db, false)
     local currentProfile = self:GetCurrentProfileName(db)
     if not store or not currentProfile or type(importedProfile) ~= "table" then

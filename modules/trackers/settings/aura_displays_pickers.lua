@@ -165,11 +165,9 @@ function P.BuildClassPicker(parent, width, get, set)
             Paint()
         end)
         btn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(entry.className)
-            GameTooltip:Show()
+            GUI.Tooltip:Show(self, entry.className, { anchor = "TOP" })
         end)
-        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        btn:SetScript("OnLeave", function(self) GUI.Tooltip:Hide(false, self) end)
         x = x + SIZE + GAP
     end
     frame:SetSize(width, SIZE)
@@ -193,7 +191,7 @@ function P.BuildSpecPicker(parent, width, get, set, expanded, onToggleExpand)
         for _, on in pairs(get()) do
             if on then selected = selected + 1 end
         end
-        headerLabel:SetText((expanded and "▾ " or "▸ ") .. ns.L["Specs"]
+        headerLabel:SetText((expanded and "v " or "> ") .. ns.L["Specs"]
             .. (selected > 0 and (" (" .. selected .. ")") or ""))
     end
     RefreshHeaderLabel()
