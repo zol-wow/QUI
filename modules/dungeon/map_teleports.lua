@@ -10,6 +10,7 @@ local PAD = 6
 local panel
 local buttons = {}
 local built = false
+local cooldownRefreshPending = false
 
 local function Enabled()
     local s = GetSettings()
@@ -19,14 +20,17 @@ end
 local function UpdateCooldowns()
     if not panel or not panel:IsShown() then return end
     if not (C_Spell and C_Spell.GetSpellCooldownDuration) then return end
+    cooldownRefreshPending = false
     for _, btn in ipairs(buttons) do
         if btn.spellID and btn.cooldown then
             local dur = C_Spell.GetSpellCooldownDuration(btn.spellID)
+            local updated
             if dur then
-                btn.cooldown:SetCooldownFromDurationObject(dur)
+                updated = Helpers.ApplyCooldownFromStart(btn.cooldown, dur)
             else
-                btn.cooldown:Clear()
+                updated = Helpers.ClearCooldown(btn.cooldown)
             end
+            if updated == false then cooldownRefreshPending = true end
         end
     end
 end
@@ -141,8 +145,9 @@ end
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
-frame:SetScript("OnEvent", function()
-    UpdateCooldowns()
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+frame:SetScript("OnEvent", function(_, event)
+    if event ~= "PLAYER_REGEN_ENABLED" or cooldownRefreshPending then UpdateCooldowns() end
 end)
 
 if ns.WhenLoggedIn then

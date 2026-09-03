@@ -67,6 +67,37 @@ local function SafeToNumber(v, fallback)
     return tonumber(v) or fallback or 0
 end
 
+local cooldownRefreshPending = false
+local function CanMutateCooldown(cooldown)
+    local H = ns.Helpers
+    if not H or not H.CanMutateCooldown or H.CanMutateCooldown(cooldown) then
+        if cooldown and cooldown._quiCooldownMutationDeferred then
+            cooldown._quiCooldownMutationDeferred = nil
+            cooldown:SetAlpha(1)
+        end
+        return true
+    end
+    cooldownRefreshPending = true
+    cooldown._quiCooldownMutationDeferred = true
+    cooldown:SetAlpha(0)
+    return false
+end
+
+local function ClearCooldown(cooldown)
+    local H = ns.Helpers
+    if H and H.ClearCooldown then return H.ClearCooldown(cooldown) end
+    if cooldown and cooldown.Clear then cooldown:Clear(); return true end
+    return false
+end
+
+function R.FlushDeferredCooldowns()
+    if not cooldownRefreshPending then return false end
+    cooldownRefreshPending = false
+    local Auras = ns.QUI_GroupFrameAuras
+    if Auras and Auras.RefreshAll then Auras:RefreshAll() end
+    return true
+end
+
 local function GetSkinBorderColor()
     local H = ns.Helpers
     if H and H.GetSkinBorderColor then return H.GetSkinBorderColor() end
@@ -432,7 +463,9 @@ local function ReleaseIconFrame(item)
     item:Hide()
     item:ClearAllPoints()
     if item.cooldown then
-        item.cooldown:Clear()
+        if CanMutateCooldown(item.cooldown) then
+            ClearCooldown(item.cooldown)
+        end
         ns.SafeCallMethodIfPresent("sink-forward", item.cooldown, "SetHideCountdownNumbers", true)
     end
     if item.icon then
@@ -764,15 +797,15 @@ local function ApplyIconData(icon, unit, element, auraData, cfgGen, br, bg, bb, 
         if dur and expTime then
             -- ApplyCooldownFromAura prefers SetCooldownFromDurationObject
             local H = ns.Helpers
-            if H and H.ApplyCooldownFromAura then
+            if CanMutateCooldown(cd) and H and H.ApplyCooldownFromAura then
                 H.ApplyCooldownFromAura(cd, unit, auraData.auraInstanceID, expTime, dur,
                     nil, auraData.timeMod)
             end
             ApplyLinearSwipe(icon._swipeBar, unit, element, auraData)
-        else
-            cd:Clear()
-            if icon._swipeBar then icon._swipeBar:Hide() end
+        elseif CanMutateCooldown(cd) then
+            ClearCooldown(cd)
         end
+        if not (dur and expTime) and icon._swipeBar then icon._swipeBar:Hide() end
     end
 
     icon:SetAlpha(1)
@@ -954,8 +987,10 @@ function R.RenderSquare(self, frame, element, matches)
     local color = element.color or DEFAULT_SQUARE_COLOR
     if icon.icon then icon.icon:Hide() end
     if icon.cooldown then
-        icon.cooldown:Hide()
-        icon.cooldown:Clear()
+        if CanMutateCooldown(icon.cooldown) then
+            icon.cooldown:Hide()
+            ClearCooldown(icon.cooldown)
+        end
     end
     if icon._swipeBar then icon._swipeBar:Hide() end
     if icon.solidColor then
@@ -1150,7 +1185,7 @@ function R.RefreshUpdatedIcons(self, frames, nFrames, unit, updatedAuraInstanceI
                             if hit then
                                 local dObj = GetDuration(unit, instID) -- @secret-safe: caller-gated — the fast-update (1910) and mixed-delta (cacheUpdated) paths both bail behind AurasAreSecret before reseating
                                 local cd = icon.cooldown
-                                if cd and dObj then
+                                if cd and dObj and CanMutateCooldown(cd) then
                                     ns.SafeCallMethodIfPresent("sink-forward", cd, "SetCooldownFromDurationObject", dObj, true)
                                 end
                                 local sb = icon._swipeBar

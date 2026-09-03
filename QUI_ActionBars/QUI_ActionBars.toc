@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120105
 ## Title: |cFF30D1FFQUI|r Action Bars
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol and Drew

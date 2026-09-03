@@ -139,6 +139,7 @@ function _resolverRuntimePolicy.ApplyDurationObjectCooldown(cd, durObj, clearWhe
         clearWhenZero = true
     end
 
+    if Helpers.CanMutateCooldown and not Helpers.CanMutateCooldown(cd) then return false end
     cd.SetCooldownFromDurationObject(cd, durObj, clearWhenZero)
     if reverse ~= nil and cd.SetReverse then
         cd.SetReverse(cd, reverse and true or false)
@@ -1170,7 +1171,7 @@ ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
                 if addonCD.SetReverse then
                     addonCD.SetReverse(addonCD, false)
                 end
-                addonCD:Clear()
+                if Helpers.ClearCooldown then Helpers.ClearCooldown(addonCD) else addonCD:Clear() end
             end
             _resolverRuntimePolicy.ClearGCDSwipe(icon)
             icon._showingRealCooldownSwipe = nil
@@ -1188,7 +1189,7 @@ ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
                 if addonCD.SetReverse then
                     addonCD.SetReverse(addonCD, false)
                 end
-                addonCD:Clear()
+                if Helpers.ClearCooldown then Helpers.ClearCooldown(addonCD) else addonCD:Clear() end
             end
         end
         _resolverRuntimePolicy.ClearGCDSwipe(icon)

@@ -162,6 +162,25 @@ function Helpers.FrameMutationRestricted(frame)
     return false
 end
 
+function Helpers.CanMutateCooldown(frame)
+    if not frame then return false end
+    if not InCombatLockdown or not InCombatLockdown() then return true end
+    if frame.CanChangeProtectedState then
+        local ok, canChange = pcall(frame.CanChangeProtectedState, frame)
+        if not ok or Helpers.IsSecretValue(canChange) then return false end
+        return canChange == true
+    end
+    if not frame.IsProtected then return true end
+    local ok, protected = pcall(frame.IsProtected, frame)
+    if not ok or Helpers.IsSecretValue(protected) then return false end
+    return protected ~= true
+end
+
+function Helpers.ClearCooldown(frame)
+    if not Helpers.CanMutateCooldown(frame) or not frame.Clear then return false end
+    return ns.SafeCallMethod("best-effort-style", frame, "Clear")
+end
+
 local function ProbeIsShown(frame)
     return frame.IsShown
 end
@@ -1480,7 +1499,7 @@ function Helpers.IsCooldownActive(start, duration, isActive)
 end
 
 function Helpers.ApplyCooldownFromStart(cooldownFrame, durationObj, startTime, duration, modRate, reverse)
-    if not cooldownFrame then
+    if not Helpers.CanMutateCooldown(cooldownFrame) then
         return false
     end
 
@@ -1575,7 +1594,7 @@ local function ApplyCooldownFromExpiration(cooldownFrame, expirationTime, durati
 end
 
 function Helpers.ApplyCooldownFromAura(cooldownFrame, unit, auraInstanceID, expirationTime, duration, reverse, modRate)
-    if not cooldownFrame then
+    if not Helpers.CanMutateCooldown(cooldownFrame) then
         return false
     end
 
@@ -1595,9 +1614,7 @@ function Helpers.ApplyCooldownFromAura(cooldownFrame, unit, auraInstanceID, expi
         return true
     end
 
-    if cooldownFrame.Clear then
-        cooldownFrame:Clear()
-    end
+    Helpers.ClearCooldown(cooldownFrame)
     return false
 end
 

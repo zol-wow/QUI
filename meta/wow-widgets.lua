@@ -177,8 +177,15 @@ function __WowWidget:CanUpdateFontString(...) end
 ---@param ... any
 ---@return boolean wrap
 function __WowWidget:CanWordWrap(...) end
+--- Cancels all scheduled signals.
+---@param ... any
+function __WowWidget:CancelAllSignals(...) end
 ---@param ... any
 function __WowWidget:CancelOpenCheckout(...) end
+--- Cancels the scheduled signal for the specified key, if one exists.
+---@param key? number
+---@param ... any
+function __WowWidget:CancelSignal(key, ...) end
 ---@param ... any
 function __WowWidget:Clear(...) end
 --- Clears the anchor points that determine where the mouse interacts with the nameplate.
@@ -262,6 +269,13 @@ function __WowWidget:CloseCheckout(...) end
 ---@param ... any
 ---@return boolean collapsesLayout
 function __WowWidget:CollapsesLayout(...) end
+--- Compares two UTF-8 strings using the options specified on a collator.
+---@param left? string
+---@param right? string
+---@param strength? any
+---@param ... any
+---@return number result
+function __WowWidget:CompareStrings(left, right, strength, ...) end
 --- Returns a new copy of this formatter.
 ---@param ... any
 ---@return any copy
@@ -481,38 +495,86 @@ function __WowWidget:EvaluateUnpacked(x, ...) end
 function __WowWidget:ExecuteAttribute(attributeName, arguments, ...) end
 ---@param ... any
 function __WowWidget:FinalizeUnits(...) end
+--- Opens a break iterator for locating text boundaries in the context locale.
+---@param text? string
+---@param breakType? any
+---@param ... any
+---@return table byteOffsets
+function __WowWidget:FindBreaks(text, breakType, ...) end
 ---@param x? number
 ---@param y? number
 ---@param ... any
 ---@return number characterIndex
 ---@return boolean inside
 function __WowWidget:FindCharacterIndexAtCoordinate(x, y, ...) end
+--- Creates a string search iterator using a collator and returns every match position.
+---@param text? string
+---@param pattern? string
+---@param strength? any
+---@param ... any
+---@return table byteOffsets
+function __WowWidget:FindStringMatches(text, pattern, strength, ...) end
 ---@param ... any
 function __WowWidget:Finish(...) end
 ---@param ... any
 function __WowWidget:Flush(...) end
+--- Case-folds the characters in a string; case-folding is locale-independent and not context-sensitive.
+---@param text? string
+---@param ... any
+---@return string result
+function __WowWidget:FoldCase(text, ...) end
 --- Formats a number of seconds and returns the resulting string.
 ---@param seconds? any
 ---@param abbreviation? any
 ---@param ... any
 ---@return string formattedSeconds
 function __WowWidget:Format(seconds, abbreviation, ...) end
+--- Formats a double as a localized currency value using the provided ISO 4217 currency code.
+---@param number? number
+---@param currencyCode? string
+---@param ... any
+---@return string result
+function __WowWidget:FormatCurrency(number, currencyCode, ...) end
+--- Formats Unix time as localized date text using locale date patterns, symbols, style, and optional time zone.
+---@param unixTimeSeconds? number
+---@param style? any
+---@param timeZone? string
+---@param ... any
+---@return string result
+function __WowWidget:FormatDate(unixTimeSeconds, style, timeZone, ...) end
+--- Formats Unix time as localized date and time text using locale patterns, symbols, styles, and optional time zone.
+---@param unixTimeSeconds? number
+---@param dateStyle? any
+---@param timeStyle? any
+---@param timeZone? string
+---@param ... any
+---@return string result
+function __WowWidget:FormatDateTime(unixTimeSeconds, dateStyle, timeStyle, timeZone, ...) end
 --- Formats the elapsed duration of this object to a string.
 ---@param formatter? any
 ---@param modifier? any
 ---@param ... any
 ---@return string formatted
 function __WowWidget:FormatElapsedDuration(formatter, modifier, ...) end
+--- Formats a double with locale number formatting using locale symbols, grouping, and the selected non-currency style.
 ---@param number? number
+---@param style? any
 ---@param ... any
----@return string formatted
-function __WowWidget:FormatNumber(number, ...) end
+---@return string result
+function __WowWidget:FormatNumber(number, style, ...) end
 --- Formats the remaining duration of this object to a string.
 ---@param formatter? any
 ---@param modifier? any
 ---@param ... any
 ---@return string formatted
 function __WowWidget:FormatRemainingDuration(formatter, modifier, ...) end
+--- Formats Unix time as localized time text using locale time patterns, symbols, style, and optional time zone.
+---@param unixTimeSeconds? number
+---@param style? any
+---@param timeZone? string
+---@param ... any
+---@return string result
+function __WowWidget:FormatTime(unixTimeSeconds, style, timeZone, ...) end
 --- Formats the total duration of this object to a string.
 ---@param formatter? any
 ---@param modifier? any
@@ -756,6 +818,12 @@ function __WowWidget:GetCountdownFormatter(...) end
 ---@param ... any
 ---@return any seconds
 function __WowWidget:GetCountdownMillisecondsThreshold(...) end
+--- Returns the display name for a currency in the context locale.
+---@param currencyCode? string
+---@param style? any
+---@param ... any
+---@return string result
+function __WowWidget:GetCurrencyName(currencyCode, style, ...) end
 --- Returns the base amount of unit health.
 ---@param ... any
 ---@return number currentHealth
@@ -813,6 +881,11 @@ function __WowWidget:GetDisabledTexture(...) end
 ---@param ... any
 ---@return number displayID
 function __WowWidget:GetDisplayInfo(...) end
+--- Gets a display name suitable for the specified locale.
+---@param displayLocale? string
+---@param ... any
+---@return string result
+function __WowWidget:GetDisplayName(displayLocale, ...) end
 ---@param ... any
 ---@return string displayText
 function __WowWidget:GetDisplayText(...) end
@@ -1166,6 +1239,10 @@ function __WowWidget:GetLightType(...) end
 ---@param ... any
 ---@return number lineHeight
 function __WowWidget:GetLineHeight(...) end
+--- Gets the locale used by this locale context.
+---@param ... any
+---@return string result
+function __WowWidget:GetLocale(...) end
 ---@param ... any
 ---@return string loopState
 function __WowWidget:GetLoopState(...) end
@@ -1307,6 +1384,11 @@ function __WowWidget:GetMouseOverUnits(...) end
 ---@param ... any
 ---@return string name
 function __WowWidget:GetName(...) end
+--- Returns the next key due to signal along with its scheduled time.
+---@param ... any
+---@return number key
+---@return any time
+function __WowWidget:GetNextSignal(...) end
 ---@param ... any
 ---@return any font
 function __WowWidget:GetNormalFontObject(...) end
@@ -1540,6 +1622,9 @@ function __WowWidget:GetRotatesTexture(...) end
 ---@param ... any
 ---@return number rotationRadians
 function __WowWidget:GetRotation(...) end
+---@param ... any
+---@return boolean enabled
+function __WowWidget:GetRoundLayoutToNearestPixel(...) end
 --- Returns how fractional seconds are rounded when not displaying milliseconds.
 ---@param ... any
 ---@return any rounding
@@ -1601,6 +1686,15 @@ function __WowWidget:GetShadowOffset(...) end
 ---@param ... any
 ---@return boolean sheathed
 function __WowWidget:GetSheathed(...) end
+--- Returns the number of keys currently scheduled to signal.
+---@param ... any
+---@return any count
+function __WowWidget:GetSignalCount(...) end
+--- Returns the absolute time at which the specified key is scheduled to signal.
+---@param key? number
+---@param ... any
+---@return any time
+function __WowWidget:GetSignalTime(key, ...) end
 ---@param ignoreRect? boolean
 ---@param ... any
 ---@return number width
@@ -1615,6 +1709,12 @@ function __WowWidget:GetSmoothScaling(...) end
 ---@param ... any
 ---@return any weights
 function __WowWidget:GetSmoothing(...) end
+--- Transforms a string into a collation sort key.
+---@param text? string
+---@param strength? any
+---@param ... any
+---@return string result
+function __WowWidget:GetSortKey(text, strength, ...) end
 ---@param ... any
 ---@return any sortType
 function __WowWidget:GetSortType(...) end
@@ -1959,6 +2059,11 @@ function __WowWidget:HasSecretAspect(aspect, ...) end
 ---@param ... any
 ---@return boolean hasSecretValues
 function __WowWidget:HasSecretValues(...) end
+--- Returns whether the specified key is currently scheduled to signal.
+---@param key? number
+---@param ... any
+---@return boolean hasSignal
+function __WowWidget:HasSignal(key, ...) end
 --- Returns true once the duration has reached its start time.
 ---@param modifier? any
 ---@param ... any
@@ -2285,6 +2390,11 @@ function __WowWidget:IsVisible(...) end
 ---@param ... any
 ---@return boolean isZero
 function __WowWidget:IsZero(...) end
+--- Counts character break boundaries in UTF-8 text.
+---@param text? string
+---@param ... any
+---@return number result
+function __WowWidget:Length(text, ...) end
 ---@param ... any
 function __WowWidget:LockHighlight(...) end
 ---@param ... any
@@ -2313,6 +2423,17 @@ function __WowWidget:OpenExternalLink(...) end
 ---@param index? number
 ---@param ... any
 function __WowWidget:OpenTicket(index, ...) end
+--- Parses an entire localized currency string into a double amount and ISO 4217 currency code.
+---@param text? string
+---@param ... any
+---@return any result
+function __WowWidget:ParseCurrency(text, ...) end
+--- Parses an entire localized number string into a double using the selected non-currency number formatter.
+---@param text? string
+---@param style? any
+---@param ... any
+---@return number result
+function __WowWidget:ParseNumber(text, style, ...) end
 ---@param ... any
 function __WowWidget:Pause(...) end
 ---@param locationX? number
@@ -2438,6 +2559,12 @@ function __WowWidget:RunSearch(...) end
 function __WowWidget:Save(...) end
 ---@param ... any
 function __WowWidget:Select(...) end
+--- Returns the keyword of the first plural rule that applies to a number.
+---@param number? number
+---@param pluralType? any
+---@param ... any
+---@return string result
+function __WowWidget:SelectPlural(number, pluralType, ...) end
 ---@param data? table
 ---@param ... any
 function __WowWidget:SetAbbreviateNumberData(data, ...) end
@@ -3218,6 +3345,11 @@ function __WowWidget:SetLightType(lightType, ...) end
 ---@param visible? boolean
 ---@param ... any
 function __WowWidget:SetLightVisible(visible, ...) end
+--- Sets the locale used by this locale context.
+---@param locale? string
+---@param ... any
+---@return boolean success
+function __WowWidget:SetLocale(locale, ...) end
 ---@param loopType? any
 ---@param ... any
 function __WowWidget:SetLooping(loopType, ...) end
@@ -3575,6 +3707,9 @@ function __WowWidget:SetRotatesTexture(rotatesTexture, ...) end
 ---@param animate? boolean
 ---@param ... any
 function __WowWidget:SetRotation(radians, animate, ...) end
+---@param enabled? boolean
+---@param ... any
+function __WowWidget:SetRoundLayoutToNearestPixel(enabled, ...) end
 --- Sets how fractional seconds are rounded when not displaying milliseconds.
 ---@param rounding? any
 ---@param ... any
@@ -4027,6 +4162,16 @@ function __WowWidget:SetZoom(zoomLevel, ...) end
 function __WowWidget:ShouldButtonPassThrough(button, ...) end
 ---@param ... any
 function __WowWidget:Show(...) end
+--- Schedules the specified key to signal after a delay from the current time, replacing any existing schedule for that key.
+---@param key? number
+---@param secondsFromNow? any
+---@param ... any
+function __WowWidget:SignalAfter(key, secondsFromNow, ...) end
+--- Schedules the specified key to signal at an absolute time, replacing any existing schedule for that key.
+---@param key? number
+---@param time? any
+---@param ... any
+function __WowWidget:SignalAt(key, time, ...) end
 ---@param movieID? number
 ---@param looping? boolean
 ---@param ... any
@@ -4086,6 +4231,21 @@ function __WowWidget:TakeSnapshot(...) end
 ---@param ... any
 ---@return boolean success
 function __WowWidget:TestPrintToFile(snapshotID, filename, ...) end
+--- Lowercases the characters in a string; casing is locale-dependent and context-sensitive.
+---@param text? string
+---@param ... any
+---@return string result
+function __WowWidget:ToLower(text, ...) end
+--- Titlecases a string using titlecase positions determined by the default Unicode algorithm.
+---@param text? string
+---@param ... any
+---@return string result
+function __WowWidget:ToTitle(text, ...) end
+--- Uppercases the characters in a string; casing is locale-dependent and context-sensitive.
+---@param text? string
+---@param ... any
+---@return string result
+function __WowWidget:ToUpper(text, ...) end
 ---@param ... any
 function __WowWidget:ToggleAllowedIndoors(...) end
 ---@param ... any
@@ -4112,6 +4272,11 @@ function __WowWidget:ToggleUncollected(...) end
 ---@param ... any
 ---@return any modelPosition
 function __WowWidget:TransformCameraSpaceToModelSpace(cameraPosition, ...) end
+--- Applies a locale transform to the context locale and returns the transformed locale string.
+---@param transform? any
+---@param ... any
+---@return string result
+function __WowWidget:TransformLocale(transform, ...) end
 ---@param linkOrItemModifiedAppearanceID? any
 ---@param handSlotName? string
 ---@param spellEnchantID? number

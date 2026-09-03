@@ -281,7 +281,7 @@ local function UpdateGCDCooldown()
         return
     end
 
-    cd:Clear()
+    QUI.Helpers.ClearCooldown(cd)
 end
 
 local _isAvailable = nil

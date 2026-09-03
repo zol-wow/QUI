@@ -400,7 +400,7 @@ jobs:
           CHANGELOG=$(cat release_notes.txt)
 
           # Resolve the CurseForge game-version ID for the client build the
-          # TOC actually declares (## Interface: 120100 -> "12.1.0"), so the
+          # TOC actually declares (## Interface: 120105 -> "12.1.5"), so the
           # upload never silently advertises a stale patch. If the lookup
           # fails (CF is flaky — never block a release on it), fall back to
           # gameVersionNames with the SAME TOC-derived name: the Upload API

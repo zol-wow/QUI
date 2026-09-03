@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120105
 ## Title: |cFF30D1FFQUI|r Options
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Configuration UI for QUI

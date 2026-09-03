@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120105
 ## Title: |cFF30D1FFQUI (Midnight)|r
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## AddonCompartmentFunc: QUI_CompartmentClick

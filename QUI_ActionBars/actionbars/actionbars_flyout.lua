@@ -19,6 +19,19 @@ env.__declared.ownedFlyout = true
 ownedFlyoutButtons = {}
 env.__declared.lastOwnedFlyoutSyncPayload = true
 
+local function CanMutateOwnedCooldown(cooldown)
+    if not Helpers.CanMutateCooldown or Helpers.CanMutateCooldown(cooldown) then return true end
+    ActionBarsOwned.pendingCooldownRefresh = true
+    return false
+end
+
+local function ClearOwnedCooldown(cooldown)
+    if not CanMutateOwnedCooldown(cooldown) then return false end
+    if Helpers.ClearCooldown then return Helpers.ClearCooldown(cooldown) end
+    cooldown:Clear()
+    return true
+end
+
 function GetOwnedFlyoutSettings(parentButton)
     local barKey = GetBarKeyFromButton(parentButton)
     if barKey then
@@ -67,8 +80,8 @@ function UpdateOwnedFlyoutButtonCooldown(button)
 
     local spellID = button._quiFlyoutSpellID
     if not spellID or not C_Spell or not C_Spell.GetSpellCooldownDuration then
-        cooldown:Clear()
-        if button.chargeCooldown then button.chargeCooldown:Clear() end
+        ClearOwnedCooldown(cooldown)
+        if button.chargeCooldown then ClearOwnedCooldown(button.chargeCooldown) end
         return
     end
 
@@ -83,13 +96,15 @@ function UpdateOwnedFlyoutButtonCooldown(button)
 
     if showNormal then
         local ok, durObj = ns.SafeCall("best-effort-style", C_Spell.GetSpellCooldownDuration, spellID, true)
-        if ok and durObj then
-            cooldown:SetCooldownFromDurationObject(durObj)
-        else
-            cooldown:Clear()
+        if CanMutateOwnedCooldown(cooldown) then
+            if ok and durObj then
+                cooldown:SetCooldownFromDurationObject(durObj)
+            else
+                ClearOwnedCooldown(cooldown)
+            end
         end
     else
-        cooldown:Clear()
+        ClearOwnedCooldown(cooldown)
     end
 
     if showCharge and C_Spell.GetSpellChargeDuration then
@@ -102,13 +117,15 @@ function UpdateOwnedFlyoutButtonCooldown(button)
             button.chargeCooldown = cd
         end
         local ok, durObj = ns.SafeCall("best-effort-style", C_Spell.GetSpellChargeDuration, spellID)
-        if ok and durObj then
-            button.chargeCooldown:SetCooldownFromDurationObject(durObj)
-        else
-            button.chargeCooldown:Clear()
+        if CanMutateOwnedCooldown(button.chargeCooldown) then
+            if ok and durObj then
+                button.chargeCooldown:SetCooldownFromDurationObject(durObj)
+            else
+                ClearOwnedCooldown(button.chargeCooldown)
+            end
         end
     elseif button.chargeCooldown then
-        button.chargeCooldown:Clear()
+        ClearOwnedCooldown(button.chargeCooldown)
     end
 end
 
@@ -125,8 +142,8 @@ end
 function ClearOwnedFlyoutButtonCooldown(button)
     if not button then return end
     local cooldown = button.cooldown or button.Cooldown
-    if cooldown then cooldown:Clear() end
-    if button.chargeCooldown then button.chargeCooldown:Clear() end
+    if cooldown then ClearOwnedCooldown(cooldown) end
+    if button.chargeCooldown then ClearOwnedCooldown(button.chargeCooldown) end
 end
 
 EnsureOwnedFlyoutFrame = function()
