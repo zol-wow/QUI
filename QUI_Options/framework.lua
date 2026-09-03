@@ -81,8 +81,7 @@ end
 -- styled from GUI.Colors (independent of the game-world tooltip.skinTooltips
 -- skin), two persistent AnimationGroups (fade-in 0->1 eased OUT, fade-out
 -- current-alpha->0 eased IN), one anchor policy, one gate
--- (general.showOptionTooltips). Port of the EllesmereUI
--- ShowWidgetTooltip/HideWidgetTooltip recipe.
+-- (general.showOptionTooltips).
 --
 --   GUI.Tooltip:Show(anchor, textOrFn, opts) -> boolean
 --     textOrFn: string, or function(tip, anchor) that may return a string
