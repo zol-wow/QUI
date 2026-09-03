@@ -4,6 +4,35 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha1 - 2026-09-03
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets PTR build 12.1.5.69594
+> (interface 120105) and will not load on the live 12.1 client.
+
+Opens the 5.5 PTR alpha line with 12.1.5 API compatibility and protected-frame
+hardening.
+
+### Changed
+
+- **QUI now targets the WoW 12.1.5 PTR**, including refreshed Blizzard API and
+  FrameXML corpora plus regenerated LuaLS and taint metadata.
+- **Protected cooldown updates use each receiver's native mutation verdict.**
+  Unprotected addon cooldowns continue updating during combat, while protected
+  receivers defer and repaint when combat ends.
+- **Settings and Blizzard-frame chrome use a unified higher-contrast visual
+  treatment**, including clearer controls, smoother scrolling, and shared
+  Character panel styling.
+
+### Fixed
+
+- **Action Bars, Group Frames, Bags, and world-map teleports recover deferred
+  cooldowns after combat** instead of leaving missing or stale swipes.
+- **Incoming targeted-cast markers avoid combat allocations**, preserve active
+  casts across combat exit, and repaint protected cooldowns when legal.
+- **Cooldown Manager leaves the native viewer enable state to Blizzard** and
+  suppresses native buff bars before data readiness, avoiding tainted callbacks
+  and startup flicker.
+
 ## v5.3-beta2 - 2026-09-01
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
