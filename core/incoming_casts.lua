@@ -3,7 +3,7 @@ local Helpers = ns.Helpers
 
 local CreateFrame = CreateFrame
 local C_NamePlate = C_NamePlate
-local C_Timer = C_Timer
+local GetTime = GetTime
 local UnitCanAttack = UnitCanAttack
 local UnitCastingDuration = UnitCastingDuration
 local UnitCastingInfo = UnitCastingInfo
@@ -61,6 +61,9 @@ local watchedCaster = {}
 local serialByCaster = {}
 local castRecords = {}
 local clearQueue = {}
+local resolveFirstAt = {}
+local resolveSecondAt = {}
+local resolveSerial = {}
 local running = false
 
 local eventFrame = CreateFrame("Frame")
@@ -173,7 +176,17 @@ local function NotifyHide(caster)
     end
 end
 
+local function CancelResolve(caster)
+    resolveFirstAt[caster] = nil
+    resolveSecondAt[caster] = nil
+    resolveSerial[caster] = nil
+    if not next(resolveSerial) then
+        eventFrame:SetScript("OnUpdate", nil)
+    end
+end
+
 local function ClearCaster(caster)
+    CancelResolve(caster)
     NextSerial(caster)
     watchedCaster[caster] = nil
     NotifyHide(caster)
@@ -195,6 +208,10 @@ local function ClearAllCasts()
     end
     wipe(clearQueue)
     wipe(watchedCaster)
+    wipe(resolveFirstAt)
+    wipe(resolveSecondAt)
+    wipe(resolveSerial)
+    eventFrame:SetScript("OnUpdate", nil)
 end
 
 local function ResolveCaster(caster, expectedSerial)
@@ -298,10 +315,33 @@ local function ResolveCaster(caster, expectedSerial)
     end
 end
 
-local function QueueResolve(caster, serial, delay)
-    C_Timer.After(delay, function()
-        ResolveCaster(caster, serial)
-    end)
+local function ProcessResolveQueue()
+    local now = GetTime()
+    for caster, serial in pairs(resolveSerial) do
+        local firstAt = resolveFirstAt[caster]
+        if firstAt and now >= firstAt then
+            resolveFirstAt[caster] = nil
+            ResolveCaster(caster, serial)
+        end
+
+        local secondAt = resolveSecondAt[caster]
+        if resolveSerial[caster] == serial and secondAt and now >= secondAt then
+            resolveSecondAt[caster] = nil
+            resolveSerial[caster] = nil
+            ResolveCaster(caster, serial)
+        end
+    end
+    if not next(resolveSerial) then
+        eventFrame:SetScript("OnUpdate", nil)
+    end
+end
+
+local function QueueResolves(caster, serial, firstDelay)
+    local now = GetTime()
+    resolveSerial[caster] = serial
+    resolveFirstAt[caster] = now + firstDelay
+    resolveSecondAt[caster] = now + firstDelay + TIMING.verifyRead
+    eventFrame:SetScript("OnUpdate", ProcessResolveQueue)
 end
 
 local function BeginCastWatch(caster)
@@ -318,8 +358,7 @@ local function BeginCastWatch(caster)
     DebugPrint("watch ", caster)
     watchedCaster[caster] = true
     local serial = serialByCaster[caster] or 0
-    QueueResolve(caster, serial, TIMING.firstRead)
-    QueueResolve(caster, serial, TIMING.firstRead + TIMING.verifyRead)
+    QueueResolves(caster, serial, TIMING.firstRead)
 end
 
 local function RecheckCasterTarget(caster)
@@ -328,8 +367,7 @@ local function RecheckCasterTarget(caster)
     end
 
     local serial = NextSerial(caster)
-    QueueResolve(caster, serial, TIMING.targetChangeRead)
-    QueueResolve(caster, serial, TIMING.targetChangeRead + TIMING.verifyRead)
+    QueueResolves(caster, serial, TIMING.targetChangeRead)
 end
 
 local function AdoptLiveCast(unit)

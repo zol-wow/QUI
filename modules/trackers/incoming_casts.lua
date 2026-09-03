@@ -18,6 +18,7 @@ local IsSecretValue = Helpers.IsSecretValue
 local SUBSCRIBER_KEY = "personalIncomingCasts"
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local PREVIEW_ICON = 136048 -- Lightning Bolt
+local MAX_NAMEPLATE_CASTERS = 150
 
 local DEFAULTS = {
     enabled = false,
@@ -97,16 +98,13 @@ host:SetSize(DEFAULTS.iconSize, DEFAULTS.iconSize)
 host:SetPoint("CENTER", UIParent, "CENTER", 0, -180)
 
 -- Visibility is secret (alpha-sunk), so Lua can never tell which icons are
--- showing — capping slots at the user's maxIcons would let invisible casts
--- aimed at other players exhaust the pool and silently suppress a cast aimed
--- at us. Slots therefore grow uncapped, one per concurrently tracked cast;
--- the pool is naturally bounded by the client's visible-nameplate limit and
--- never shrinks, so growth is a one-time cost. maxIcons governs the reserved
--- layout extent and the preview; overflow slots extend past it.
+-- showing. Reserve the full Blizzard nameplate token range out of combat;
+-- maxIcons governs only the layout extent and preview count.
 local icons = {}
 local activeByCaster = {}
 local previewActive = false
 local subscribed = false
+local deferredPoolGrowth = 0
 local debugShows = 0
 local debugHides = 0
 
@@ -179,6 +177,10 @@ local function AcquireIcon()
         if not icons[i]._inUse then
             return icons[i]
         end
+    end
+    if InCombatLockdown() then
+        deferredPoolGrowth = deferredPoolGrowth + 1
+        return nil
     end
     local icon = NewIcon()
     icon._slot = #icons + 1
@@ -392,6 +394,9 @@ local function OnCastShow(caster, _, cast)
     local icon = activeByCaster[caster]
     if not icon then
         icon = AcquireIcon()
+        if not icon then
+            return
+        end
         icon._inUse = true
         activeByCaster[caster] = icon
     end
@@ -445,13 +450,16 @@ local function UpdateSubscription()
     end
 end
 
--- Keep the common case allocation-free in combat: the first maxIcons slots
--- are built ahead of time; only overflow slots are still created lazily.
 local function EnsurePool()
     if InCombatLockdown() then
         return
     end
-    for i = 1, MaxIcons() do
+    local target = #icons + deferredPoolGrowth
+    if target < MAX_NAMEPLATE_CASTERS then
+        target = MAX_NAMEPLATE_CASTERS
+    end
+    deferredPoolGrowth = 0
+    for i = 1, target do
         if not icons[i] then
             local icon = NewIcon()
             icon._slot = i
@@ -527,8 +535,13 @@ end
 -- in-flight casts via ResetSubscriber).
 local previewGuard = CreateFrame("Frame")
 previewGuard:RegisterEvent("PLAYER_REGEN_DISABLED")
-previewGuard:SetScript("OnEvent", function()
-    if previewActive then
+previewGuard:RegisterEvent("PLAYER_REGEN_ENABLED")
+previewGuard:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if subscribed then
+            EnsurePool()
+        end
+    elseif previewActive then
         DisablePreview()
     end
 end)
