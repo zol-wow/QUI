@@ -473,6 +473,10 @@ local WATCHED_EVENTS = {
     "PLAYER_REGEN_ENABLED",
 }
 
+for i = 1, #WATCHED_EVENTS do
+    stats.events[WATCHED_EVENTS[i]] = 0
+end
+
 local function SetRunning(enabled)
     if enabled == running then
         return
@@ -627,7 +631,9 @@ function IncomingCasts.DebugDump(out)
 
     local eventBits = {}
     for event, count in pairs(stats.events) do
-        eventBits[#eventBits + 1] = event .. "=" .. count
+        if count > 0 then
+            eventBits[#eventBits + 1] = event .. "=" .. count
+        end
     end
     out(prefix .. "plate events: " .. (#eventBits > 0 and table.concat(eventBits, " ") or "none")
         .. "  untracked-unit events: " .. stats.eventsUntracked)

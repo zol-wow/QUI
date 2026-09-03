@@ -108,6 +108,10 @@ local deferredPoolGrowth = 0
 local debugShows = 0
 local debugHides = 0
 
+for i = 1, MAX_NAMEPLATE_CASTERS do
+    activeByCaster["nameplate" .. i] = false
+end
+
 local function ApplyIconStyle(icon)
     local size = IconSize()
     icon:SetSize(size, size)
@@ -144,6 +148,7 @@ end
 
 local function NewIcon()
     local icon = CreateFrame("Frame", nil, host)
+    icon._inUse = false
     icon:Hide()
 
     local texture = icon:CreateTexture(nil, "ARTWORK")
@@ -325,7 +330,7 @@ local function LayoutIcons()
 end
 
 local function ReleaseIcon(icon)
-    icon._inUse = nil
+    icon._inUse = false
     icon:Hide()
     icon:SetAlpha(1)
     ResetIconScale(icon)
@@ -334,8 +339,10 @@ end
 
 local function ClearActive()
     for caster, icon in pairs(activeByCaster) do
-        activeByCaster[caster] = nil
-        ReleaseIcon(icon)
+        if icon then
+            activeByCaster[caster] = false
+            ReleaseIcon(icon)
+        end
     end
 end
 
@@ -419,7 +426,7 @@ local function OnCastHide(caster)
     if not icon then
         return
     end
-    activeByCaster[caster] = nil
+    activeByCaster[caster] = false
     ReleaseIcon(icon)
     debugHides = debugHides + 1
 end
@@ -481,7 +488,9 @@ local function Refresh()
     end
     LayoutIcons()
     for caster, icon in pairs(activeByCaster) do
-        ApplyTargetVisibility(icon, caster)
+        if icon then
+            ApplyTargetVisibility(icon, caster)
+        end
     end
 end
 
@@ -588,8 +597,10 @@ SlashCmdList["QUIIC"] = function(msg)
         .. " preview=" .. tostring(previewActive)
         .. " engineLoaded=" .. tostring(IC ~= nil))
     local activeIcons = 0
-    for _ in pairs(activeByCaster) do
-        activeIcons = activeIcons + 1
+    for _, icon in pairs(activeByCaster) do
+        if icon then
+            activeIcons = activeIcons + 1
+        end
     end
     print(prefix .. "display: activeIcons=" .. activeIcons
         .. " shows=" .. debugShows .. " hides=" .. debugHides
