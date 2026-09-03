@@ -129,6 +129,10 @@ local function AddFrameToMap(unit, frame)
             _state.RegisterUnitEventsForUnit(unit)
         end
     end
+    local targetedSpells = ns.QUI_GroupFrameTargetedSpells
+    if targetedSpells and targetedSpells.PrepareFrame then
+        targetedSpells:PrepareFrame(frame, #QUI_GF.unitFrameMap[unit])
+    end
 end
 
 local function RemoveFrameFromMap(unit, frame)

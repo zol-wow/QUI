@@ -5,6 +5,7 @@ if not GroupFrames then return end
 
 local CreateFrame = CreateFrame
 local GetTime = GetTime
+local InCombatLockdown = InCombatLockdown
 local IsInGroup = IsInGroup
 local IsInRaid = IsInRaid
 local UnitClass = UnitClass
@@ -160,7 +161,6 @@ local Roster = {
     race = {},
     sex = {},
     candidates = {},
-    lastIndexedAt = 0,
 }
 
 local function ClearRosterIndex()
@@ -210,8 +210,6 @@ local function IndexRoster()
             end
         end
     end
-
-    Roster.lastIndexedAt = GetTime()
 end
 
 local function LoadClassCandidates(classToken)
@@ -270,10 +268,6 @@ local function UnitFromCasterTarget(caster)
     end
 
     local candidates = LoadClassCandidates(classToken)
-    if #candidates == 0 and GetTime() - Roster.lastIndexedAt > 1 then
-        IndexRoster()
-        candidates = LoadClassCandidates(classToken)
-    end
     if #candidates == 0 then
         return nil
     end
@@ -295,7 +289,18 @@ local function UnitFromCasterTarget(caster)
     return candidates[1]
 end
 
+local MAX_NAMEPLATE_CASTERS = 150
 local markerPools = setmetatable({}, { __mode = "k" })
+local markerListsByCaster = {}
+local activeByCaster = {}
+local markerListCapacity = 0
+local poolGrowthPending = false
+
+for i = 1, MAX_NAMEPLATE_CASTERS do
+    local caster = "nameplate" .. i
+    markerListsByCaster[caster] = { count = 0, unit = false }
+    activeByCaster[caster] = false
+end
 
 local function MarkerSize(isRaid)
     return ClampNumber(Option(isRaid, "iconSize"), OPTION_DEFAULTS.iconSize, 4, 96)
@@ -330,6 +335,7 @@ end
 local function NewMarker(frame, isRaid)
     local marker = CreateFrame("Frame", nil, frame)
     marker._quiTargetedRaid = isRaid and true or false
+    marker._targetedCaster = false
     marker:Hide()
 
     local texture = marker:CreateTexture(nil, "ARTWORK")
@@ -367,22 +373,76 @@ local function MarkerPool(frame, isRaid)
     return pool
 end
 
-local function AcquireMarker(frame, isRaid)
-    local pool = MarkerPool(frame, isRaid)
-
-    for i = 1, #pool do
-        if not pool[i]._targetedCaster then
-            return pool[i]
+local function EnsureMarkerListCapacity(capacity)
+    if capacity <= markerListCapacity then
+        return
+    end
+    for _, markers in pairs(markerListsByCaster) do
+        for i = markerListCapacity + 1, capacity do
+            markers[i] = false
         end
     end
+    markerListCapacity = capacity
+end
 
-    if #pool >= MarkerLimit(isRaid) then
-        return nil
+local function PrepareFrame(frame, frameCopies)
+    if not frame then
+        return
+    end
+    if InCombatLockdown() then
+        poolGrowthPending = true
+        return
     end
 
-    local marker = NewMarker(frame, isRaid)
-    pool[#pool + 1] = marker
-    return marker
+    EnsureMarkerListCapacity(frameCopies or 1)
+    local isRaid = frame._isRaid and true or false
+    local pool = MarkerPool(frame, isRaid)
+    local limit = MarkerLimit(isRaid)
+    for i = #pool + 1, limit do
+        pool[i] = NewMarker(frame, isRaid)
+    end
+end
+
+local function PrepareMarkerPools()
+    if InCombatLockdown() then
+        poolGrowthPending = true
+        return
+    end
+
+    poolGrowthPending = false
+    for _, frameList in pairs(GroupFrames.unitFrameMap or {}) do
+        for i = 1, #frameList do
+            PrepareFrame(frameList[i], #frameList)
+        end
+    end
+end
+
+local function AcquireMarker(frame, isRaid)
+    local pool = markerPools[frame]
+    if not pool then
+        if InCombatLockdown() then
+            poolGrowthPending = true
+            return nil
+        end
+        pool = MarkerPool(frame, isRaid)
+    end
+
+    local limit = MarkerLimit(isRaid)
+    for i = 1, limit do
+        local marker = pool[i]
+        if not marker then
+            if InCombatLockdown() then
+                poolGrowthPending = true
+                return nil
+            end
+            marker = NewMarker(frame, isRaid)
+            pool[i] = marker
+        end
+        if not marker._targetedCaster then
+            return marker
+        end
+    end
+    return nil
 end
 
 local function PlaceFirstMarker(marker, host, point, x, y)
@@ -514,8 +574,6 @@ end
 -- resolves which group member a cast is aimed at and renders the markers.
 local SUBSCRIBER_KEY = "groupFrameTargetedSpells"
 
-local activeByCaster = {}
-local relayoutFrames = {}
 local subscribed = false
 
 local function HideMarkerSet(markers)
@@ -523,25 +581,26 @@ local function HideMarkerSet(markers)
         return
     end
 
-    wipe(relayoutFrames)
-    for i = 1, #markers do
+    for i = 1, markers.count do
         local marker = markers[i]
-        marker._targetedCaster = nil
+        local frame = marker:GetParent()
+        marker._targetedCaster = false
         marker:Hide()
         StopCooldown(marker._cooldown)
-        relayoutFrames[marker:GetParent()] = true
-    end
-
-    for frame in pairs(relayoutFrames) do
+        markers[i] = false
         LayoutFrameMarkers(frame)
     end
-    wipe(relayoutFrames)
+
+    markers.count = 0
+    markers.unit = false
 end
 
 local function ClearAllMarkers()
     for caster, markers in pairs(activeByCaster) do
-        activeByCaster[caster] = nil
-        HideMarkerSet(markers)
+        if markers then
+            activeByCaster[caster] = false
+            HideMarkerSet(markers)
+        end
     end
 end
 
@@ -551,10 +610,30 @@ local function ShowCastOnUnit(caster, unit, texture, durationObject, startMS, en
         return
     end
 
-    local markers
+    local markers = markerListsByCaster[caster]
+    if not markers then
+        if InCombatLockdown() then
+            poolGrowthPending = true
+            return
+        end
+        markers = { count = 0, unit = false }
+        markerListsByCaster[caster] = markers
+        for i = 1, markerListCapacity do
+            markers[i] = false
+        end
+    end
+
+    local markerCount = 0
     for i = 1, #frameList do
         local frame = frameList[i]
         if frame and frame:IsShown() then
+            if markerCount >= markerListCapacity then
+                if InCombatLockdown() then
+                    poolGrowthPending = true
+                    break
+                end
+                EnsureMarkerListCapacity(markerCount + 1)
+            end
             local isRaid = frame._isRaid and true or false
             local marker = AcquireMarker(frame, isRaid)
             if marker then
@@ -573,15 +652,14 @@ local function ShowCastOnUnit(caster, unit, texture, durationObject, startMS, en
                 marker:Show()
                 LayoutFrameMarkers(frame)
 
-                if not markers then
-                    markers = {}
-                end
-                markers[#markers + 1] = marker
+                markerCount = markerCount + 1
+                markers[markerCount] = marker
             end
         end
     end
 
-    if markers then
+    markers.count = markerCount
+    if markerCount > 0 then
         markers.unit = unit
         activeByCaster[caster] = markers
     end
@@ -590,7 +668,7 @@ end
 local function OnCastShow(caster, unit, cast)
     local current = activeByCaster[caster]
     if current then
-        activeByCaster[caster] = nil
+        activeByCaster[caster] = false
         HideMarkerSet(current)
     end
     ShowCastOnUnit(caster, unit, cast.texture, cast.durationObj, cast.startMS, cast.endMS)
@@ -599,7 +677,7 @@ end
 local function OnCastHide(caster)
     local markers = activeByCaster[caster]
     if markers then
-        activeByCaster[caster] = nil
+        activeByCaster[caster] = false
         HideMarkerSet(markers)
     end
 end
@@ -631,6 +709,9 @@ local function RefreshRuntimeState()
     end
 
     local shouldRun = FeatureShouldRun()
+    if shouldRun then
+        PrepareMarkerPools()
+    end
     if shouldRun and not subscribed then
         IndexRoster()
         subscribed = IncomingCasts.Subscribe(SUBSCRIBER_KEY, {
@@ -672,6 +753,12 @@ function TargetedSpells:ApplySettings()
     end
 end
 
+function TargetedSpells:PrepareFrame(frame, frameCopies)
+    if subscribed then
+        PrepareFrame(frame, frameCopies)
+    end
+end
+
 -- Roster shape, roles, and world changes invalidate both the class-bucket
 -- index and any marker-to-frame mapping; markers rebuild from the engine's
 -- in-flight casts via ResetSubscriber.
@@ -688,4 +775,17 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PLAYER_ROLES_ASSIGNED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:SetScript("OnEvent", HandleContextChanged)
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if poolGrowthPending then
+            if FeatureShouldRun() then
+                PrepareMarkerPools()
+            else
+                poolGrowthPending = false
+            end
+        end
+        return
+    end
+    HandleContextChanged()
+end)
