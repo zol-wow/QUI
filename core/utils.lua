@@ -162,6 +162,20 @@ function Helpers.FrameMutationRestricted(frame)
     return false
 end
 
+function Helpers.CanMutateCooldown(frame)
+    if not frame then return false end
+    if not InCombatLockdown or not InCombatLockdown() then return true end
+    if frame.CanChangeProtectedState then
+        local ok, canChange = pcall(frame.CanChangeProtectedState, frame)
+        if not ok or Helpers.IsSecretValue(canChange) then return false end
+        return canChange == true
+    end
+    if not frame.IsProtected then return true end
+    local ok, protected = pcall(frame.IsProtected, frame)
+    if not ok or Helpers.IsSecretValue(protected) then return false end
+    return protected ~= true
+end
+
 local function ProbeIsShown(frame)
     return frame.IsShown
 end

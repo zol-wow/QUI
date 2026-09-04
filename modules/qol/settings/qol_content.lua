@@ -354,6 +354,15 @@ local function BuildAutomation(L, generalDB)
         { description = ns.L["Automatically accept incoming party/raid invites from the chosen set of senders."] })
     s.AddRow(row(s.frame, ns.L["Fast Auto Loot"], fastLootW), row(s.frame, ns.L["Auto Accept Party Invites"], inviteW))
 
+    local summonOptions = {
+        { value = "off", text = ns.L["Off"] },
+        { value = "always", text = ns.L["Always"] },
+        { value = "outOfCombat", text = ns.L["Out of Combat"] },
+    }
+    local summonW = GUI:CreateFormDropdown(s.frame, nil, summonOptions, "autoAcceptSummons", generalDB, nil,
+        { description = ns.L["Automatically accept incoming player summons without requiring a click."] })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Summons"], summonW))
+
     local roleW = GUI:CreateFormCheckbox(s.frame, nil, "autoRoleAccept", generalDB, nil,
         { description = ns.L["Automatically confirm role checks in LFG using the role you already had selected."] })
     local questW = GUI:CreateFormCheckbox(s.frame, nil, "autoAcceptQuest", generalDB, nil,

@@ -267,6 +267,7 @@ local defaults = {
             autoRepair = "personal",
             autoRoleAccept = true,
             autoAcceptInvites = "all",
+            autoAcceptSummons = "off",
             autoAcceptQuest = true,
             autoTurnInQuest = true,
             questHoldShift = true,
