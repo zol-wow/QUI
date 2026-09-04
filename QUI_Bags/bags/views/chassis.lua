@@ -1,3 +1,4 @@
+-- luacheck: read globals MoneyInputFrame_GetCopper MoneyInputFrame_ResetMoney
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 local UIKit = ns.UIKit
@@ -89,31 +90,24 @@ end
 
 function Chassis.ShowMoneyPopup(key, kind, onAccept)
     local depositing = (kind == "deposit")
+    local function submit(dialog)
+        local amount = MoneyInputFrame_GetCopper(dialog.MoneyInputFrame)
+        if amount > 0 then onAccept(depositing, amount) end
+    end
+    StaticPopup_Hide(key)
     StaticPopupDialogs[key] = {
         text = depositing and ns.L["Deposit gold:"] or ns.L["Withdraw gold:"],
         button1 = ACCEPT,
         button2 = CANCEL,
-        hasEditBox = true,
-        maxLetters = 10,
-        OnShow = function(self)
-            local box = self.editBox or self.EditBox
-            if box then box:SetText("") end
-        end,
-        OnAccept = function(self)
-            local box = self.editBox or self.EditBox
-            local text = box and box:GetText() or ""
-            if not text:match("^%d+$") then return end
-            local gold = tonumber(text)
-            if not gold then return end
-            gold = math.floor(gold)
-            if gold <= 0 then return end
-            onAccept(depositing, gold * 10000)
+        hasMoneyInputFrame = true,
+        OnAccept = submit,
+        OnHide = function(self)
+            MoneyInputFrame_ResetMoney(self.MoneyInputFrame)
         end,
         EditBoxOnEnterPressed = function(box)
-            StaticPopup_OnClick(box:GetParent(), 1)
-        end,
-        EditBoxOnEscapePressed = function(box)
-            box:GetParent():Hide()
+            local dialog = box:GetParent():GetParent()
+            submit(dialog)
+            dialog:Hide()
         end,
         timeout = 0,
         whileDead = true,
