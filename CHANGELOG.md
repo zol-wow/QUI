@@ -4,6 +4,36 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3-beta3 - 2026-09-04
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Settings and Character-window polish plus targeted Bags, Incoming Casts, and
+Cooldown Manager fixes for the 5.3 beta line.
+
+### Changed
+
+- **QUI settings have clearer contrast and more consistent interaction states.**
+  Tooltips fade smoothly, scrolling is animated, and buttons, checkboxes,
+  dropdowns, tabs, and disabled controls share consistent visual feedback.
+- **The Character window skin now covers its full chrome**, including the
+  shell, bottom tabs, equipment and title popouts, and Reputation and Currency
+  panes. Character and Inspect settings flyouts now share the same styling and
+  scrolling behavior.
+
+### Fixed
+
+- **Bank and guild-bank money dialogs accept exact gold, silver, and copper**
+  and close cleanly with their bank window.
+- **Guild-bank item transfers work from the displayed tab**, including the
+  combined All view, and continue working after closing and reopening the bank.
+- **Incoming Casts and group-frame targeted-spell markers remain reliable
+  through combat transitions** without creating new UI elements during combat.
+- **Cooldown Manager leaves Blizzard's native viewer setting under Blizzard's
+  control.** Replaced native buff bars hide during early loading and restore
+  correctly when suppression is disabled.
+
 ## v5.3-beta2 - 2026-09-01
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
