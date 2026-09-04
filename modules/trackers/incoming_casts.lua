@@ -53,7 +53,7 @@ end
 local function ClampedOption(key, minValue, maxValue)
     local n = tonumber(Option(key))
     if not n then
-        return DEFAULTS[key]
+        return tonumber(DEFAULTS[key]) or minValue
     end
     if n < minValue then
         n = minValue
