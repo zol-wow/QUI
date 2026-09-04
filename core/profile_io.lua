@@ -417,6 +417,7 @@ local PROFILE_QOL_GENERAL_KEYS = {
     "autoRepair",
     "autoRoleAccept",
     "autoAcceptInvites",
+    "autoAcceptSummons",
     "autoAcceptQuest",
     "autoTurnInQuest",
     "questHoldShift",
