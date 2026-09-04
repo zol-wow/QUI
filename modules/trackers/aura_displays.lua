@@ -1486,6 +1486,7 @@ end
 local EMPTY = {}
 
 local ApplyDisplay
+local QueueGroupReflow
 
 local function GameplayHidden(anchorKey)
     local H = Helpers()
@@ -1567,7 +1568,22 @@ ApplyDisplay = function(display, allowCreate)
     host._quiAuraDisplayActive = unit ~= nil
     ApplyHostVisibilityAlpha(display.id, host, layoutActive)
     if unit then
-        if grouped or layoutActive or not GameplayHidden(AD.ANCHOR_PREFIX .. display.id) then
+        if grouped then
+            -- The group reflow owns where (and whether) a grouped host shows.
+            -- A host it has not placed yet still sits at its birth spot —
+            -- screen center, parented to UIParent — and one it packed into
+            -- the shared container must stay hidden. Refreshes land mid-
+            -- combat, when the reflow is deferred, so showing here would
+            -- paint a stray copy until combat ends.
+            if host._quiGroupPlaced and not host._quiGroupPacked then
+                host:Show()
+            else
+                host:Hide()
+                if InCombatLockdown() or AuraGlue.AurasAreSecret() then
+                    QueueGroupReflow()
+                end
+            end
+        elseif layoutActive or not GameplayHidden(AD.ANCHOR_PREFIX .. display.id) then
             host:Show()
         else
             host:Hide()
@@ -1580,6 +1596,7 @@ ApplyDisplay = function(display, allowCreate)
     end
 
     if not grouped and not layoutActive then
+        host._quiGroupPlaced, host._quiGroupPacked = nil, nil
         if host:GetParent() ~= UIParent then host:SetParent(UIParent) end
         host:SetScale(1)
         if _G.QUI_ApplyFrameAnchor then
@@ -1749,7 +1766,7 @@ local function AnchorPackedBlock(container, groupHost, placement, group)
     container:SetPoint(point, groupHost, "TOPLEFT", ox, oy)
 end
 
-local function QueueGroupReflow()
+QueueGroupReflow = function()
     if AuraGlue and type(AuraGlue.QueueRegenWork) == "function" then
         AuraGlue.QueueRegenWork("auraDisplayGroups", function() AD.Refresh() end)
     end
@@ -1842,7 +1859,10 @@ function AD.ReflowGroups(displays)
                         pack.placed = true
                         memberSpecs[#memberSpecs + 1] = pack.spec
                     end
-                    if host then host:Hide() end
+                    if host then
+                        host._quiGroupPacked = true
+                        host:Hide()
+                    end
                 elseif host and (forcePreview or AD.DisplayActive(display)) then
                     memberSpecs[#memberSpecs + 1] = {
                         id = display.id,
@@ -1852,6 +1872,7 @@ function AD.ReflowGroups(displays)
                         height = host._naturalH or host:GetHeight() or 1,
                     }
                 elseif host then
+                    host._quiGroupPlaced = nil
                     host:Hide()
                 end
             end
@@ -1874,6 +1895,7 @@ function AD.ReflowGroups(displays)
                     -- their reflow); only plain display hosts are normalized.
                     host:SetScale(1)
                     host:SetSize(placement.width, placement.height)
+                    host._quiGroupPlaced, host._quiGroupPacked = true, nil
                 end
                 host:ClearAllPoints()
                 host:SetPoint("CENTER", groupHost, "TOPLEFT", placement.x, placement.y)
