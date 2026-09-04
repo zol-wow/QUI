@@ -2,6 +2,7 @@
 -- luacheck: read globals HandleModifiedItemClick GetGuildBankItemLink IsModifiedClick CursorHasItem
 -- luacheck: read globals GetGuildBankItemInfo StackSplitFrame DepositGuildBankMoney
 -- luacheck: read globals AutoStoreGuildBankItem PickupGuildBankItem DropCursorMoney SetItemButtonTexture
+-- luacheck: read globals GetCurrentGuildBankTab SetCurrentGuildBankTab
 -- luacheck: read globals SetItemButtonCount SetItemButtonDesaturated
 -- luacheck: read globals SetItemButtonOverlay ClearItemButtonOverlay
 -- luacheck: read globals C_AuctionHouse ItemButtonUtil ItemLocation
@@ -225,6 +226,12 @@ function ItemButtons.DressCached(button, entry, searchResult)
     ItemButtons.SetSearchDim(button, searchResult)
 end
 
+local function ActivateGuildTab(button)
+    if button._tab and button._tab ~= GetCurrentGuildBankTab() then
+        SetCurrentGuildBankTab(button._tab)
+    end
+end
+
 function ItemButtons.CreateGuildLive(parent)
     local button = CreateFrame("Button", nil, parent)
     ItemButtons.AddSlotBackground(button)
@@ -249,6 +256,7 @@ function ItemButtons.CreateGuildLive(parent)
         if HandleModifiedItemClick(GetGuildBankItemLink(self._tab, self._slot)) then
             return
         end
+        ActivateGuildTab(self)
         if IsModifiedClick("SPLITSTACK") then
             if not CursorHasItem() then
                 local _, count, locked = GetGuildBankItemInfo(self._tab, self._slot)
@@ -272,9 +280,11 @@ function ItemButtons.CreateGuildLive(parent)
         end
     end)
     button:SetScript("OnDragStart", function(self)
+        ActivateGuildTab(self)
         PickupGuildBankItem(self._tab, self._slot)
     end)
     button:SetScript("OnReceiveDrag", function(self)
+        ActivateGuildTab(self)
         PickupGuildBankItem(self._tab, self._slot)
     end)
     button:SetScript("OnEnter", function(self)

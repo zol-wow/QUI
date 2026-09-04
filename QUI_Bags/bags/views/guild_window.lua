@@ -1,6 +1,7 @@
 -- luacheck: read globals MAX_GUILDBANK_TABS QueryGuildBankLog QueryGuildBankTab GetGuildBankTabCost
 -- luacheck: read globals ACCEPT CANCEL BuyGuildBankTab SetGuildBankTabInfo StaticPopup_OnClick
--- luacheck: read globals CanWithdrawGuildBankMoney InCombatLockdown StaticPopup_Hide
+-- luacheck: read globals DepositGuildBankMoney CanWithdrawGuildBankMoney WithdrawGuildBankMoney
+-- luacheck: read globals InCombatLockdown StaticPopup_Hide
 -- luacheck: read globals UNKNOWN HIGHLIGHT_FONT_COLOR_CODE GUILD_BANK_LOG_TIME RecentTimeDate
 -- luacheck: read globals GetNumGuildBankTransactions GetGuildBankTransaction
 -- luacheck: read globals GUILDBANK_DEPOSIT_FORMAT GUILDBANK_WITHDRAW_FORMAT GetGuildBankTabInfo
@@ -169,19 +170,18 @@ local function ShowRenamePopup(entry)
 end
 
 local function HideMoneyPopups()
-    StaticPopup_Hide("GUILDBANK_DEPOSIT")
-    StaticPopup_Hide("GUILDBANK_WITHDRAW")
+    StaticPopup_Hide("QUI_GUILDBANK_MONEY")
 end
 
 local function ShowMoneyPopup(kind)
     if InCombatLockdown() then return end
-    local key = kind == "deposit" and "GUILDBANK_DEPOSIT" or "GUILDBANK_WITHDRAW"
-    StaticPopup_Hide(kind == "deposit" and "GUILDBANK_WITHDRAW" or "GUILDBANK_DEPOSIT")
-    if StaticPopup_Visible(key) then
-        StaticPopup_Hide(key)
-    else
-        StaticPopup_Show(key)
-    end
+    Bags.Chassis.ShowMoneyPopup("QUI_GUILDBANK_MONEY", kind, function(depositing, amount)
+        if depositing then
+            DepositGuildBankMoney(amount)
+        elseif CanWithdrawGuildBankMoney() then
+            WithdrawGuildBankMoney(amount)
+        end
+    end)
 end
 
 function GuildWindow.CanWithdrawMoney(bankMoney, withdrawLimit, permitted, inCombat)
