@@ -361,29 +361,27 @@ local function BuildAutomation(L, generalDB)
     }
     local summonW = GUI:CreateFormDropdown(s.frame, nil, summonOptions, "autoAcceptSummons", generalDB, nil,
         { description = ns.L["Automatically accept incoming player summons without requiring a click."] })
-    s.AddRow(row(s.frame, ns.L["Auto Accept Summons"], summonW))
-
     local roleW = GUI:CreateFormCheckbox(s.frame, nil, "autoRoleAccept", generalDB, nil,
         { description = ns.L["Automatically confirm role checks in LFG using the role you already had selected."] })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Summons"], summonW), row(s.frame, ns.L["Auto Accept Role Check"], roleW))
+
     local questW = GUI:CreateFormCheckbox(s.frame, nil, "autoAcceptQuest", generalDB, nil,
         { description = ns.L["Automatically accept quests from NPCs without requiring a click."] })
-    s.AddRow(row(s.frame, ns.L["Auto Accept Role Check"], roleW), row(s.frame, ns.L["Auto Accept Quests"], questW))
-
     local turnInW = GUI:CreateFormCheckbox(s.frame, nil, "autoTurnInQuest", generalDB, nil,
         { description = ns.L["Automatically hand in completed quests and pick the only available reward when applicable."] })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Quests"], questW), row(s.frame, ns.L["Auto Turn-In Quests"], turnInW))
+
     local gossipW = GUI:CreateFormCheckbox(s.frame, nil, "autoSelectGossip", generalDB, nil,
         { description = ns.L["When an NPC gossip has a single option, pick it automatically so you skip the popup."] })
-    s.AddRow(row(s.frame, ns.L["Auto Turn-In Quests"], turnInW), row(s.frame, ns.L["Auto Select Single Gossip Option"], gossipW))
-
     local pauseW = GUI:CreateFormCheckbox(s.frame, nil, "questHoldShift", generalDB, nil,
         { description = ns.L["Hold Shift while interacting to temporarily disable the quest and gossip automations above."] })
+    s.AddRow(row(s.frame, ns.L["Auto Select Single Gossip Option"], gossipW), row(s.frame, ns.L["Hold Shift to Pause Quest/Gossip Automation"], pauseW))
+
     local keyW = GUI:CreateFormCheckbox(s.frame, nil, "autoInsertKey", generalDB, nil,
         { description = ns.L["Automatically place your Mythic+ keystone into the font of power when you open the keystone window."] })
-    s.AddRow(row(s.frame, ns.L["Hold Shift to Pause Quest/Gossip Automation"], pauseW), row(s.frame, ns.L["Auto Insert M+ Keys"], keyW))
-
     local closeBagsKeyW = GUI:CreateFormCheckbox(s.frame, nil, "closeBagsOnKeystoneInsert", generalDB, nil,
         { description = ns.L["Close your bags after the keystone is auto-inserted. Requires Auto Insert M+ Keys."] })
-    s.AddRow(row(s.frame, ns.L["Close Bags After Inserting Key"], closeBagsKeyW))
+    s.AddRow(row(s.frame, ns.L["Auto Insert M+ Keys"], keyW), row(s.frame, ns.L["Close Bags After Inserting Key"], closeBagsKeyW))
 
     local logMW = GUI:CreateFormCheckbox(s.frame, nil, "autoCombatLog", generalDB, function()
         if _G.QUI_RefreshAutoCombatLogging then _G.QUI_RefreshAutoCombatLogging() end
@@ -395,14 +393,10 @@ local function BuildAutomation(L, generalDB)
 
     local telW = GUI:CreateFormCheckbox(s.frame, nil, "mplusTeleportEnabled", generalDB, nil,
         { description = ns.L["Allow clicking on a dungeon icon in the Mythic+ UI to cast its teleport spell if you have it."] })
-    local delW = GUI:CreateFormCheckbox(s.frame, nil, "autoDeleteConfirm", generalDB, nil,
-        { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
-    s.AddRow(row(s.frame, ns.L["Click-to-Teleport on M+ Tab"], telW), row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW))
-
     local mapTelW = GUI:CreateFormCheckbox(s.frame, nil, "worldMapTeleports", generalDB, function()
         if ns.RefreshWorldMapTeleports then ns.RefreshWorldMapTeleports() end
     end, { description = ns.L["Show a panel of this season's M+ dungeon teleports on the world map. Unlearned teleports show desaturated. Panel builds out of combat."] })
-    s.AddRow(row(s.frame, ns.L["World Map Teleport Panel"], mapTelW))
+    s.AddRow(row(s.frame, ns.L["Click-to-Teleport on M+ Tab"], telW), row(s.frame, ns.L["World Map Teleport Panel"], mapTelW))
 
     if type(generalDB.focusMarker) ~= "table" then generalDB.focusMarker = {} end
     local fm = generalDB.focusMarker
@@ -467,7 +461,12 @@ local function BuildAutomation(L, generalDB)
 
     local daDurationW = GUI:CreateFormSlider(s.frame, nil, 1, 10, 0.5, "duration", da, RefreshDA,
         { description = ns.L["How long the death alert stays on screen, in seconds."] })
-    s.AddRow(row(s.frame, ns.L["Alert Duration (sec)"], daDurationW))
+    local audioOptions = (ns.GetAudioDeviceOptions and ns.GetAudioDeviceOptions())
+        or { { value = "", text = ns.L["Off (don't lock)"] } }
+    local audioW = GUI:CreateFormDropdown(s.frame, nil, audioOptions, "audioOutputDevice", generalDB, function()
+        if ns.ApplyPreferredAudioDevice then ns.ApplyPreferredAudioDevice() end
+    end, { description = ns.L["Lock the game's audio output to a specific device. When your system switches devices (e.g. plugging in headphones), QUI forces it back. Off leaves Blizzard's default behavior."] })
+    s.AddRow(row(s.frame, ns.L["Alert Duration (sec)"], daDurationW), row(s.frame, ns.L["Lock Audio Output Device"], audioW))
 
     local ahW = GUI:CreateFormCheckbox(s.frame, nil, "auctionHouseExpansionFilter", generalDB, nil,
         { description = ns.L["Automatically toggle the current expansion filter when you open the Auction House so you only see modern items."] })
@@ -491,13 +490,6 @@ local function BuildAutomation(L, generalDB)
     local blockReleaseW = GUI:CreateFormCheckbox(s.frame, nil, "blockReleaseInRaid", generalDB, nil,
         { description = ns.L["Guard the Release Spirit button while you are dead in a raid: it locks during a 3-second countdown and afterwards only works while Ctrl is held, so you don't release before a battle resurrection."] })
     s.AddRow(row(s.frame, ns.L["Auto Release Spirit"], releaseW), row(s.frame, ns.L["Block Release in Raids"], blockReleaseW))
-
-    local audioOptions = (ns.GetAudioDeviceOptions and ns.GetAudioDeviceOptions())
-        or { { value = "", text = ns.L["Off (don't lock)"] } }
-    local audioW = GUI:CreateFormDropdown(s.frame, nil, audioOptions, "audioOutputDevice", generalDB, function()
-        if ns.ApplyPreferredAudioDevice then ns.ApplyPreferredAudioDevice() end
-    end, { description = ns.L["Lock the game's audio output to a specific device. When your system switches devices (e.g. plugging in headphones), QUI forces it back. Off leaves Blizzard's default behavior."] })
-    s.AddRow(row(s.frame, ns.L["Lock Audio Output Device"], audioW))
 
     local unwrapW = GUI:CreateFormCheckbox(s.frame, nil, "autoUnwrapCollections", generalDB, function()
         if ns.RefreshCollectionFanfare then ns.RefreshCollectionFanfare() end
@@ -540,6 +532,10 @@ local function BuildAutomation(L, generalDB)
     local tmlRecvW = GUI:CreateFormCheckbox(s.frame, nil, "logReceivedMail", tml, nil,
         { description = ns.L["Log mail you open in your inbox (sender, subject, gold, COD, attachments)."] })
     s.AddRow(row(s.frame, ns.L["Log Sent Mail"], tmlSentW), row(s.frame, ns.L["Log Received Mail"], tmlRecvW))
+
+    local delW = GUI:CreateFormCheckbox(s.frame, nil, "autoDeleteConfirm", generalDB, nil,
+        { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
+    s.AddRow(row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW), CreateFrame("Frame", nil, s.frame))
     L.closeSection(s)
 end
 
