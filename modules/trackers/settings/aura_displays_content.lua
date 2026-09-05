@@ -1570,7 +1570,7 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
     end
 
     if selectedID and not AD.GetDisplay(selectedID) then selectedID = nil end
-    if selectedGroup and #AD.GroupMembers(selectedGroup) == 0 then selectedGroup = nil end
+    if selectedGroup and not AD.GetGroup(selectedGroup, false) then selectedGroup = nil end
 
     local topOffset = 0
     local profileCopy = ns.QUI_ProfileCopyOptions

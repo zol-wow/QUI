@@ -1273,7 +1273,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         description = "Your custom on-screen aura frames and their filters.",
         recommended = true,
         topLevelKeys = ProfileFeatureCategories.auraDisplays.topLevelKeys,
-        frameAnchorPrefix = ProfileFeatureCategories.auraDisplays.frameAnchorPrefix,
+        frameAnchorPrefixes = ProfileFeatureCategories.auraDisplays.frameAnchorPrefixes,
     },
     {
         id = "trackersTimers",

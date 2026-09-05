@@ -1768,9 +1768,13 @@ local function AnchorPackedBlock(container, groupHost, placement, group)
     container:SetPoint(point, groupHost, "TOPLEFT", ox, oy)
 end
 
+-- One stable callback: combat refreshes queue this repeatedly under the same
+-- key, so a fresh closure per call would only be allocation churn.
+local function RefreshAfterRegen() AD.Refresh() end
+
 QueueGroupReflow = function()
     if AuraGlue and type(AuraGlue.QueueRegenWork) == "function" then
-        AuraGlue.QueueRegenWork("auraDisplayGroups", function() AD.Refresh() end)
+        AuraGlue.QueueRegenWork("auraDisplayGroups", RefreshAfterRegen)
     end
 end
 

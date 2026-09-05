@@ -224,23 +224,48 @@ function Share.ValidatePayload(payload)
         local kind = payload.root.kind
         if kind ~= "display" and kind ~= "group" then return false end
     end
+    -- Group names double as identities (parents and display membership refer
+    -- to them), so they must be unique within the payload.
+    local groupByName = {}
     for i = 1, #payload.groups do
         local entry = payload.groups[i]
         if type(entry) ~= "table" or not ValidName(entry.name) then return false end
+        if groupByName[entry.name] then return false end
+        groupByName[entry.name] = entry
         if not OptionalString(entry.parent) or not OptionalTable(entry.anchor) then
             return false
         end
         if not FieldsWellTyped(entry, GROUP_FIELD_TYPES) then return false end
     end
+    -- Every parent must be a declared group, never the group itself, and the
+    -- parent chain must terminate (no cycles).
+    for i = 1, #payload.groups do
+        local entry = payload.groups[i]
+        local seen, current = {}, entry
+        while current.parent ~= nil do
+            local parent = groupByName[current.parent]
+            if not parent or parent == current or seen[parent] then return false end
+            seen[parent] = true
+            current = parent
+        end
+    end
+    local displayNames = {}
     for i = 1, #payload.displays do
         local entry = payload.displays[i]
         if type(entry) ~= "table" or not ValidName(entry.name) then return false end
+        displayNames[entry.name] = true
         if not OptionalString(entry.group) or not OptionalTable(entry.anchor)
             or not OptionalTable(entry.layout) or not OptionalTable(entry.load)
             or not OptionalTable(entry.auras) then
             return false
         end
+        if entry.group ~= nil and not groupByName[entry.group] then return false end
         if not FieldsWellTyped(entry, DISPLAY_FIELD_TYPES) then return false end
+    end
+    if payload.root ~= nil then
+        local root = payload.root
+        if root.kind == "group" and not groupByName[root.name] then return false end
+        if root.kind == "display" and not displayNames[root.name] then return false end
     end
     return true
 end
