@@ -410,6 +410,19 @@ local function CastOnTargetChange(castbar)
     end
 end
 
+local function CastOnSpellcastEvent(castbar, spellID, isEmpowerEvent)
+    local check = _G.C_RestrictedActions and _G.C_RestrictedActions.CheckAllowProtectedFunctions
+    if check and not check(castbar, true) then
+        C_Timer.After(0, function()
+            if not castbar._quiDestroyed then
+                castbar:Cast(spellID, isEmpowerEvent, true)
+            end
+        end)
+        return
+    end
+    castbar:Cast(spellID, isEmpowerEvent, true)
+end
+
 local function CreateStatusBar(anchorFrame)
     local statusBar = CreateFrame("StatusBar", nil, anchorFrame)
     statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
@@ -527,16 +540,26 @@ local function PinCastbarToRestrictedTarget(anchorFrame, target, offsetX, offset
     end
     if not nsHelpers.FrameMutationRestricted(target) then return false end
 
-    if widthAdjustment ~= nil then
-        local targetWidth = SafeToNumber(target:GetWidth())
-        if targetWidth and targetWidth > 0 then
-            anchorFrame:SetWidth(QUICore:PixelRound(targetWidth + (2 * widthAdjustment), anchorFrame))
+    local function pin()
+        if widthAdjustment ~= nil then
+            local targetWidth = SafeToNumber(target:GetWidth())
+            if targetWidth and targetWidth > 0 then
+                anchorFrame:SetWidth(QUICore:PixelRound(targetWidth + (2 * widthAdjustment), anchorFrame))
+            end
         end
+
+        return nsHelpers.PinFrameToTargetAbsolute(
+            anchorFrame, "TOP", target, "BOTTOM", offsetX, offsetY
+        ) == true
     end
 
-    return nsHelpers.PinFrameToTargetAbsolute(
-        anchorFrame, "TOP", target, "BOTTOM", offsetX, offsetY
-    ) == true
+    if not pin() then
+        anchorFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+        C_Timer.After(0, function()
+            if not anchorFrame._quiDestroyed then pin() end
+        end)
+    end
+    return true
 end
 
 local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, barHeight)
@@ -2668,8 +2691,8 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         PLAYER_FOCUS_CHANGED = function(self) CastOnTargetChange(self) end,
         UNIT_TARGET = function(self) CastOnTargetChange(self) end,
 
-        UNIT_SPELLCAST_START = function(self, spellID) self:Cast(spellID, false, true) end,
-        UNIT_SPELLCAST_CHANNEL_START = function(self, spellID) self:Cast(spellID, false, true) end,
+        UNIT_SPELLCAST_START = function(self, spellID) CastOnSpellcastEvent(self, spellID, false) end,
+        UNIT_SPELLCAST_CHANNEL_START = function(self, spellID) CastOnSpellcastEvent(self, spellID, false) end,
 
         UNIT_SPELLCAST_STOP = function(self, spellID)
             local active, readable = ReadCastActivity(self.unit)
@@ -2762,10 +2785,10 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             end
         end
         eventHandlers.UNIT_SPELLCAST_EMPOWER_START = function(self, spellID)
-            self:Cast(spellID, true, true)
+            CastOnSpellcastEvent(self, spellID, true)
         end
         eventHandlers.UNIT_SPELLCAST_EMPOWER_UPDATE = function(self, spellID)
-            self:Cast(spellID, true, true)
+            CastOnSpellcastEvent(self, spellID, true)
         end
         eventHandlers.UNIT_SPELLCAST_EMPOWER_STOP = function(self, spellID)
             local active, readable = ReadCastActivity(self.unit)
@@ -2979,6 +3002,14 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     anchorFrame.bossOnUpdate = BossCastBar_OnUpdate
 
     function anchorFrame:Cast(fromCastStart)
+        local check = _G.C_RestrictedActions and _G.C_RestrictedActions.CheckAllowProtectedFunctions
+        if check and not check(self, true) then
+            C_Timer.After(0, function()
+                if not self._quiDestroyed then self:Cast(fromCastStart) end
+            end)
+            return
+        end
+
         local spellName, text, texture, startTimeMS, endTimeMS, notInterruptible, unitSpellID, isChanneled, _, durationObj, hasSecretTiming, castKnown = GetCastInfo(self, self.unit, fromCastStart)
 
         local canShowCast = false
