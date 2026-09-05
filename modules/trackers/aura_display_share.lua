@@ -336,17 +336,32 @@ local function ValidRecord(record, types, enums, ranges)
 end
 
 
+-- Colours arrive either as {r, g, b, a} arrays or keyed {r=, g=, b=, a=}
+-- records (dispel colours); every channel present must be a finite 0..1.
+local COLOR_KEYS = { 1, 2, 3, 4, "r", "g", "b", "a" }
 local function ValidColor(color)
     if color == nil then return true end
     if type(color) ~= "table" then return false end
-    for i = 1, 4 do
-        local channel = color[i]
+    for i = 1, #COLOR_KEYS do
+        local channel = color[COLOR_KEYS[i]]
         if channel ~= nil and (not FiniteNumber(channel) or channel < 0 or channel > 1) then
             return false
         end
     end
     return true
 end
+
+local function ValidColorMap(map)
+    if map == nil then return true end
+    if type(map) ~= "table" then return false end
+    for key, color in pairs(map) do
+        if type(key) ~= "string" or not ValidColor(color) then return false end
+    end
+    return true
+end
+
+local PANDEMIC_FIELD_TYPES = { color = "table" }
+local HEALTH_TINT_FIELD_TYPES = { animation = "string" }
 
 local function ValidElement(element)
     if type(element) ~= "table" or not ELEMENT_MODES[element.mode] then return false end
@@ -364,7 +379,14 @@ local function ValidElement(element)
         or not ValidRecord(element.border, BORDER_FIELD_TYPES, nil, BORDER_FIELD_RANGES)
         or not ValidColor(element.color) or not ValidColor(element.borderColor)
         or not ValidColor(element.duration and element.duration.color)
-        or not ValidColor(element.stack and element.stack.color) then
+        or not ValidColor(element.stack and element.stack.color)
+        or not ValidRecord(element.pandemicGlow, PANDEMIC_FIELD_TYPES)
+        or not ValidColor(element.pandemicGlow and element.pandemicGlow.color)
+        or not ValidColorMap(element.dispelColors)
+        or not ValidRecord(element.healthTint, HEALTH_TINT_FIELD_TYPES)
+        or not ValidColor(element.bar and element.bar.backgroundColor)
+        or not ValidColor(element.bar and element.bar.borderColor)
+        or not ValidColor(element.bar and element.bar.lowTimeColor) then
         return false
     end
     -- The element model's own validator has the final say (e.g. a tracked

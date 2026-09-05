@@ -546,15 +546,34 @@ local WIZARD_STEPS = {
 
 -- Custom tab -----------------------------------------------------------------
 
+-- A tracked custom display needs a resolved spell (an empty tracked list is
+-- invalid and renders nothing); "Specific player..." needs a name.
+local function CustomCanCreate()
+    local cs = state.custom
+    if cs.kind == "tracked" and type(cs.spellID) ~= "number" then return false end
+    if cs.unitChoice == "__name"
+        and not (type(cs.unitName) == "string" and cs.unitName:match("%S")) then
+        return false
+    end
+    return true
+end
+
 local function BuildCustomTab(content)
     local cs = state.custom
-    local trackedBtn, stripBtn, browseBtn, spellInput
+    local trackedBtn, stripBtn, browseBtn, spellInput, createBtn
+
+    local function UpdateCreateState()
+        if createBtn and type(createBtn.SetEnabled) == "function" then
+            createBtn:SetEnabled(CustomCanCreate())
+        end
+    end
 
     local function PaintKind()
         trackedBtn:SetAlpha(cs.kind == "tracked" and 1 or 0.5)
         stripBtn:SetAlpha(cs.kind == "filterStrip" and 1 or 0.5)
         spellInput:SetShown(cs.kind == "tracked")
         if browseBtn then browseBtn:SetShown(cs.kind == "tracked") end
+        UpdateCreateState()
     end
 
     trackedBtn = GUI:CreateButton(content, ns.L["Track spells"], 130, 22, function()
@@ -577,8 +596,11 @@ local function BuildCustomTab(content)
             dialog._customNameEdit:SetText(spellName)
             cs.name = spellName
         end
+        UpdateCreateState()
     end)
     spellInput:SetPoint("TOPLEFT", 2, -30)
+    -- Rebuilt tabs (unit changes) must show the spell the state still holds.
+    if cs.spellID then spellInput.editBox:SetText(tostring(cs.spellID)) end
 
     if SpellList and SpellList.ToggleBrowsePopup then
         browseBtn = GUI:CreateButton(content, ns.L["Browse"], 64, 22, function()
@@ -623,17 +645,18 @@ local function BuildCustomTab(content)
         unitNameBox, unitNameEdit = GUI:CreateInlineEditBox(content, { width = 270 })
         unitNameBox:SetPoint("TOPLEFT", 2, -198)
         unitNameEdit:SetText(cs.unitName or "")
+        unitNameEdit:SetScript("OnTextChanged", function(self, userInput)
+            if userInput then cs.unitName = self:GetText() end
+            UpdateCreateState()
+        end)
         createY = 240
     end
 
-    local createBtn = GUI:CreateButton(content, ns.L["Create"], 100, 24, function()
+    createBtn = GUI:CreateButton(content, ns.L["Create"], 100, 24, function()
         local Page = ns.QUI_AuraDisplaysOptions
         if not (Page and type(Page._QuickCreate) == "function") then return end
         if unitNameEdit then cs.unitName = unitNameEdit:GetText() end
-        if cs.unitChoice == "__name"
-            and not (type(cs.unitName) == "string" and cs.unitName:match("%S")) then
-            return
-        end
+        if not CustomCanCreate() then return end
         Finish(Page._QuickCreate({
             kind = cs.kind,
             name = nameEdit:GetText(),
