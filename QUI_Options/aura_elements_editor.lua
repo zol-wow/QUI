@@ -480,28 +480,43 @@ local function MakeSectionHeader(ctx, element, sectionKey, labelText)
     ctx.BeginDetailSection(header, FORM_ROW, sectionKey)
 end
 
-local function AddPlacementWidgets(ctx, element, includeStrip)
+local function AddMaxIconsRow(ctx, element)
+    local GUI = ctx.GUI
+    local row = ctx.AddFormRow
+    local onChange = ctx.onChange
+    if element.filterMode == "classify" then
+        row(ns.L["Max Icons Per Category"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 40, 1, "maxIcons", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Hard cap on how many icons EACH ticked category shows at once — Classification mode builds one full-size group per category, so this limit applies separately to every one of them. 0 shows all matches in every category."],
+        }))
+    else
+        row(ns.L["Max Icons"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 40, 1, "maxIcons", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Hard cap on how many icons this element displays at once. 0 shows all matches."],
+        }))
+    end
+end
+
+local function AddIconSizeRow(ctx, element)
+    local iconSizeMax = ctx.caps.iconSizeMax or 40
+    ctx.AddFormRow(ns.L["Icon Size"], ctx.GUI:CreateFormSlider(ctx.detailArea, nil, 4, iconSizeMax, 1, "iconSize", element, ctx.onChange, { deferOnDrag = true }, {
+        description = ns.L["Pixel size of each icon."],
+    }))
+end
+
+local function AddPlacementWidgets(ctx, element, includeStrip, skip)
     local GUI = ctx.GUI
     local C = ctx.C
     local row = ctx.AddFormRow
     local add = ctx.AddDetailWidget
     local onChange = ctx.onChange
-    local iconSizeMax = ctx.caps.iconSizeMax or 40
 
     if includeStrip and element.mode == "filterStrip" then
-        if element.filterMode == "classify" then
-            row(ns.L["Max Icons Per Category"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 40, 1, "maxIcons", element, onChange, { deferOnDrag = true }, {
-                description = ns.L["Hard cap on how many icons EACH ticked category shows at once — Classification mode builds one full-size group per category, so this limit applies separately to every one of them. 0 shows all matches in every category."],
-            }))
-        else
-            row(ns.L["Max Icons"], GUI:CreateFormSlider(ctx.detailArea, nil, 0, 40, 1, "maxIcons", element, onChange, { deferOnDrag = true }, {
-                description = ns.L["Hard cap on how many icons this element displays at once. 0 shows all matches."],
-            }))
+        if not (skip and skip.maxIcons) then
+            AddMaxIconsRow(ctx, element)
         end
     end
-    row(ns.L["Icon Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, iconSizeMax, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
-        description = ns.L["Pixel size of each icon."],
-    }))
+    if not (skip and skip.iconSize) then
+        AddIconSizeRow(ctx, element)
+    end
     if not ctx.caps.containerLayout then
         row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
             description = ns.L["Where on the frame this element is anchored. X/Y Offset below nudges it from this anchor point."],
@@ -511,6 +526,13 @@ local function AddPlacementWidgets(ctx, element, includeStrip)
         or not E.TrackedSpellCount
         or E.TrackedSpellCount(element) > 1
     if includeStrip and multiTracked then
+        if ctx.caps.dynamicTrackedLayout and element.mode == "tracked"
+            and (element.displayType == nil or element.displayType == "icon") then
+            row(ns.L["Dynamic Layout (Collapse Hidden)"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "dynamicLayout", element, onChange, {
+                description = ns.L["Pack active icons together so the gaps left by inactive auras close up. Turn off to reserve every spell a fixed position. Inactive placeholder icons are not shown while this is on."],
+                keywords = { "dynamic", "collapse", "compact", "pack" },
+            }))
+        end
         row(ns.L["Grow Direction"], GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_GROW_OPTIONS, "growDirection", element, onChange, {
             description = ns.L["Direction icons within this row are added in after the first."],
         }))
@@ -828,6 +850,7 @@ local function AddSpellMapEditor(ctx, map, headerText, onMutate, browseCfg)
         local browseOpts = {
             title = browseCfg.title or headerText,
             presets = browseCfg.presets or {},
+            multiAdd = true,
             isSelected = browseCfg.isSelected or function(spellID)
                 return map[spellID] == true
             end,
@@ -938,6 +961,37 @@ local function AddRoleGateRow(ctx, element)
         }))
 end
 
+local function AddAuraTypeRow(ctx, element)
+    ctx.AddFormRow(ns.L["Aura Type"], ctx.GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_TYPE_OPTIONS, "auraType", element, function()
+        ctx.NotifyChanged()
+        ctx.rebuild()
+    end, {
+        description = ns.L["Whether this strip shows helpful buffs or harmful debuffs."],
+    }))
+end
+
+local function AddWhatToShowRow(ctx, element)
+    local state = sectionState(element)
+    local derived = state.manualCustom and "custom" or EffectiveWhatToShow(element)
+    local whatToShowProxy = { whatToShow = derived, _quiTransientOptionsProxy = true }
+    ctx.AddFormRow(ns.L["What to Show"], ctx.GUI:CreateFormDropdown(ctx.detailArea, nil,
+        WhatToShowOptions(element.auraType), "whatToShow", whatToShowProxy, function()
+            local key = whatToShowProxy.whatToShow
+            if key == "custom" then
+                state.manualCustom = true
+                ctx.SetDetailSectionExpanded("advanced", true)
+                return
+            end
+            state.manualCustom = false
+            E.ApplyWhatToShow(element, key)
+            ctx.NotifyChanged()
+            ctx.rebuild()
+        end, {
+            description = ns.L["Pick what this strip shows in plain terms. QUI writes the underlying filters. Choose Custom… (or edit Appearance & Advanced) for full control."],
+            keywords = { "what to show", "intent", "dispellable", "defensives", "boss", "important" },
+        }))
+end
+
 local function AddFilterStripConfig(ctx, element)
     local GUI = ctx.GUI
     local C = ctx.C
@@ -946,47 +1000,38 @@ local function AddFilterStripConfig(ctx, element)
     local onChange = ctx.onChange
     local rebuild = ctx.rebuild
     local caps = ctx.caps
-    local state = sectionState(element)
+    local simple = caps.simpleMode == true
 
     if caps.fixedAuraType then
         element.auraType = caps.fixedAuraType
     end
 
-    MakeSectionHeader(ctx, element, "basics", ns.L["Basics"])
-    do
+    -- Simple Mode hoists the strip's identity — what it shows and how big —
+    -- above the disclosure sections; the sections keep everything else.
+    if simple then
         if not caps.fixedAuraType then
-            row(ns.L["Aura Type"], GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_TYPE_OPTIONS, "auraType", element, function()
-                ctx.NotifyChanged()
-                rebuild()
-            end, {
-                description = ns.L["Whether this strip shows helpful buffs or harmful debuffs."],
-            }))
+            AddAuraTypeRow(ctx, element)
+        end
+        AddWhatToShowRow(ctx, element)
+        AddMaxIconsRow(ctx, element)
+        AddIconSizeRow(ctx, element)
+    end
+
+    MakeSectionHeader(ctx, element, "basics", simple and ns.L["Placement"] or ns.L["Basics"])
+    do
+        if not simple and not caps.fixedAuraType then
+            AddAuraTypeRow(ctx, element)
         end
 
-        AddPlacementWidgets(ctx, element, true)
+        AddPlacementWidgets(ctx, element, true,
+            simple and { maxIcons = true, iconSize = true } or nil)
     end
 
     MakeSectionHeader(ctx, element, "filters", ns.L["Filters"])
     do
-        local derived = state.manualCustom and "custom" or EffectiveWhatToShow(element)
-
-        local whatToShowProxy = { whatToShow = derived, _quiTransientOptionsProxy = true }
-        row(ns.L["What to Show"], GUI:CreateFormDropdown(ctx.detailArea, nil,
-            WhatToShowOptions(element.auraType), "whatToShow", whatToShowProxy, function()
-                local key = whatToShowProxy.whatToShow
-                if key == "custom" then
-                    state.manualCustom = true
-                    ctx.SetDetailSectionExpanded("advanced", true)
-                    return
-                end
-                state.manualCustom = false
-                E.ApplyWhatToShow(element, key)
-                ctx.NotifyChanged()
-                rebuild()
-            end, {
-                description = ns.L["Pick what this strip shows in plain terms. QUI writes the underlying filters. Choose Custom… (or edit Appearance & Advanced) for full control."],
-                keywords = { "what to show", "intent", "dispellable", "defensives", "boss", "important" },
-            }))
+        if not simple then
+            AddWhatToShowRow(ctx, element)
+        end
         row(ns.L["Nameplate Auras Only"], GUI:CreateFormCheckbox(ctx.detailArea, nil,
             "nameplateOnly", element, onChange, {
                 description = ns.L["Only show auras Blizzard flags for nameplate display. Combines with everything above."],
@@ -1210,29 +1255,12 @@ local function AddFilterStripConfig(ctx, element)
     end
 end
 
-local function AddTrackedConfig(ctx, element)
+local function AddTrackedTypeConfig(ctx, element, skip)
     local GUI = ctx.GUI
     local row = ctx.AddFormRow
     local onChange = ctx.onChange
     local rebuild = ctx.rebuild
     local caps = ctx.caps
-
-    AddTrackedSpellListEditor(ctx, element)
-
-    local displayOptions = BuildTrackedDisplayOptions(caps.trackedDisplayTypes)
-    row(ns.L["Display Type"], GUI:CreateFormDropdown(ctx.detailArea, nil, displayOptions, "displayType", element, function()
-        ctx.NotifyChanged()
-        rebuild()
-    end, {
-        description = ns.L["How this tracked aura displays: an icon strip, a colored square, a duration bar, or a health-bar tint."],
-    }))
-    row(ns.L["Aura Type"], GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_TYPE_OPTIONS, "auraType", element, onChange, {
-        description = ns.L["Whether this tracked aura is a helpful buff or a harmful debuff."],
-    }))
-    row(ns.L["Only My Cast"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "onlyMine", element, onChange, {
-        description = ns.L["Only track this aura when you applied it."],
-        keywords = { "Only Mine", "mine only" },
-    }))
 
     local displayType = element.displayType or "icon"
     if displayType == "healthTint" then
@@ -1248,9 +1276,11 @@ local function AddTrackedConfig(ctx, element)
         end
     elseif displayType == "square" then
         if type(element.color) ~= "table" then element.color = { 0.2, 0.8, 0.2, 1 } end
-        row(ns.L["Square Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
-            description = ns.L["Pixel size of the colored square."],
-        }))
+        if not (skip and skip.iconSize) then
+            row(ns.L["Square Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
+                description = ns.L["Pixel size of the colored square."],
+            }))
+        end
         if not caps.containerLayout then
             row(ns.L["Anchor"], GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
                 description = ns.L["Where on the frame the square is anchored."],
@@ -1262,9 +1292,11 @@ local function AddTrackedConfig(ctx, element)
                 description = ns.L["Vertical pixel offset from the anchor."],
             }))
         end
-        row(ns.L["Square Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
-            description = ns.L["Fill color of the colored square."],
-        }))
+        if not (skip and skip.color) then
+            row(ns.L["Square Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
+                description = ns.L["Fill color of the colored square."],
+            }))
+        end
     elseif displayType == "bar" then
         if type(element.color) ~= "table" then element.color = { 0.2, 0.8, 0.2, 1 } end
         if type(element.bar) ~= "table" then element.bar = { thickness = 12, length = 48 } end
@@ -1282,18 +1314,22 @@ local function AddTrackedConfig(ctx, element)
         row(ns.L["Orientation"], GUI:CreateFormDropdown(ctx.detailArea, nil, BAR_ORIENTATION_OPTIONS, "orientation", element.bar, onChange, {
             description = ns.L["Whether the bar drains horizontally or vertically as the aura ticks down."],
         }))
-        row(ns.L["Bar Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
-            description = ns.L["Fill color of the bar while the aura is active."],
-        }))
+        if not (skip and skip.color) then
+            row(ns.L["Bar Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
+                description = ns.L["Fill color of the bar while the aura is active."],
+            }))
+        end
         row(ns.L["Background Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "backgroundColor", element.bar, onChange, nil, {
             description = ns.L["Color drawn behind the bar fill."],
         }))
         row(ns.L["Thickness"], GUI:CreateFormSlider(ctx.detailArea, nil, 1, 40, 1, "thickness", element.bar, onChange, { deferOnDrag = true }, {
             description = ns.L["Pixel thickness of the bar."],
         }))
-        row(ns.L["Length"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 200, 1, "length", element.bar, onChange, { deferOnDrag = true }, {
-            description = ns.L["Pixel length of the bar."],
-        }))
+        if not (skip and skip.length) then
+            row(ns.L["Length"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 200, 1, "length", element.bar, onChange, { deferOnDrag = true }, {
+                description = ns.L["Pixel length of the bar."],
+            }))
+        end
         row(ns.L["Match Frame Width / Height"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "matchFrameSize", element.bar, onChange, {
             description = ns.L["Stretch the bar to match the frame size."],
         }))
@@ -1337,13 +1373,91 @@ local function AddTrackedConfig(ctx, element)
             description = ns.L["Pixel thickness of the border outline."],
         }))
     else
-        AddPlacementWidgets(ctx, element, true)
+        AddPlacementWidgets(ctx, element, true, skip)
         AddSwipeWidgets(ctx, element)
         AddTextRegionWidgets(ctx, element, "duration", ns.L["Duration Text"])
         AddTextRegionWidgets(ctx, element, "stack", ns.L["Stack Text"])
         AddDispelTooltipWidgets(ctx, element)
     end
+end
 
+-- What Simple Mode keeps in view per display type; everything else folds into
+-- the Appearance & Placement section.
+local SIMPLE_TRACKED_HOISTS = {
+    icon   = { iconSize = true },
+    square = { iconSize = true, color = true },
+    bar    = { color = true, length = true },
+}
+
+local function AddTrackedEssentialRows(ctx, element)
+    local GUI = ctx.GUI
+    local row = ctx.AddFormRow
+    local onChange = ctx.onChange
+    local displayType = element.displayType or "icon"
+
+    if displayType == "icon" then
+        AddIconSizeRow(ctx, element)
+    elseif displayType == "square" then
+        if type(element.color) ~= "table" then element.color = { 0.2, 0.8, 0.2, 1 } end
+        row(ns.L["Square Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
+            description = ns.L["Pixel size of the colored square."],
+        }))
+        row(ns.L["Square Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
+            description = ns.L["Fill color of the colored square."],
+        }))
+    elseif displayType == "bar" then
+        if type(element.color) ~= "table" then element.color = { 0.2, 0.8, 0.2, 1 } end
+        if type(element.bar) ~= "table" then element.bar = { thickness = 12, length = 48 } end
+        row(ns.L["Bar Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
+            description = ns.L["Fill color of the bar while the aura is active."],
+        }))
+        row(ns.L["Length"], GUI:CreateFormSlider(ctx.detailArea, nil, 4, 200, 1, "length", element.bar, onChange, { deferOnDrag = true }, {
+            description = ns.L["Pixel length of the bar."],
+        }))
+    end
+end
+
+local function AddTrackedConfig(ctx, element)
+    local GUI = ctx.GUI
+    local row = ctx.AddFormRow
+    local onChange = ctx.onChange
+    local rebuild = ctx.rebuild
+    local caps = ctx.caps
+    local simple = caps.simpleMode == true
+
+    AddTrackedSpellListEditor(ctx, element)
+
+    local displayOptions = BuildTrackedDisplayOptions(caps.trackedDisplayTypes)
+    row(ns.L["Display Type"], GUI:CreateFormDropdown(ctx.detailArea, nil, displayOptions, "displayType", element, function()
+        ctx.NotifyChanged()
+        rebuild()
+    end, {
+        description = ns.L["How this tracked aura displays: an icon strip, a colored square, a duration bar, or a health-bar tint."],
+    }))
+    row(ns.L["Aura Type"], GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_TYPE_OPTIONS, "auraType", element, onChange, {
+        description = ns.L["Whether this tracked aura is a helpful buff or a harmful debuff."],
+    }))
+    row(ns.L["Only My Cast"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "onlyMine", element, onChange, {
+        description = ns.L["Only track this aura when you applied it."],
+        keywords = { "Only Mine", "mine only" },
+    }))
+
+    if simple then
+        -- Essentials stay in view: the spells being tracked (hoisted above)
+        -- plus size/color. The old 30-row wall folds into one collapsed section.
+        AddTrackedEssentialRows(ctx, element)
+        AddRoleGateRow(ctx, element)
+        local displayType = element.displayType or "icon"
+        if displayType == "icon" or displayType == "square" or displayType == "bar" then
+            MakeSectionHeader(ctx, element, "appearance", ns.L["Appearance & Placement"])
+            AddTrackedTypeConfig(ctx, element, SIMPLE_TRACKED_HOISTS[displayType])
+        else
+            AddTrackedTypeConfig(ctx, element, nil)
+        end
+        return
+    end
+
+    AddTrackedTypeConfig(ctx, element, nil)
     AddRoleGateRow(ctx, element)
 end
 
@@ -1591,6 +1705,31 @@ local function RenderDetail(ctx, element)
         RelayoutDetail()
         if ctx.RelayoutList then
             ctx.RelayoutList()
+        end
+    end
+
+    -- Simple Mode: a plain-language readback of the element's real settings,
+    -- pinned above the form so the controls below stay learnable.
+    ctx.RefreshSummary = nil
+    if ctx.caps.simpleMode then
+        local summary = ctx._summaryLabel
+        if not summary then
+            summary = detailArea:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            CJKFont(summary, ctx.GUI.FONT_PATH or [[Interface\AddOns\QUI\assets\Quazii.ttf]], 11, "")
+            summary:SetJustifyH("LEFT")
+            summary:SetWordWrap(true)
+            summary:SetNonSpaceWrap(true)
+            local mc = ctx.C.textMuted or { 1, 1, 1, 0.6 }
+            summary:SetTextColor(mc[1], mc[2], mc[3], mc[4] or 0.6)
+            ctx._summaryLabel = summary
+        end
+        local T = ns.QUI_AuraDisplayTemplates
+        if T and type(T.BuildElementSummary) == "function" then
+            ctx.RefreshSummary = function()
+                summary:SetText(T.BuildElementSummary(element, ctx.caps.summaryUnit))
+            end
+            ctx.RefreshSummary()
+            ctx.AddDetailWidget(summary, 26, true)
         end
     end
 
@@ -1930,6 +2069,7 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
     ctx.NotifyChanged = NotifyChanged
     ctx.onChange = function()
         NotifyChanged()
+        if ctx.RefreshSummary then ctx.RefreshSummary() end
     end
 
     local rebuilding = false

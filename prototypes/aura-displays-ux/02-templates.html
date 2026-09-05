@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QUI · Aura Displays UX — Approach 2/5: Template Gallery</title>
+<style>
+  :root{
+    --bg:#0a0c10; --surface:#12151c; --panel:#1a1e28; --inset:#141822;
+    --border:#2a3040; --text:#e6e9f0; --muted:#8b93a7;
+    --gold:#e8c15a; --ok:#7ac37a; --bad:#e06c6c; --info:#6cb2e0;
+    --monk:#00FF98; --mage:#3FC7EB; --warrior:#C69B6D; --priest:#FFFFFF;
+    --druid:#FF7C0A; --dk:#C41E3A;
+    --r:8px;
+    --mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:15px; line-height:1.5; overflow:hidden;
+  }
+  a{color:var(--info)}
+
+  /* ---------- deck chrome ---------- */
+  .caption{
+    position:fixed; top:14px; left:18px; z-index:50;
+    font-size:12px; color:var(--muted); letter-spacing:.02em;
+  }
+  .caption b{color:var(--text); font-weight:600}
+
+  .slide{display:none; position:absolute; inset:0; overflow:auto; padding:48px 24px 84px}
+  .slide.active{display:block}
+  .wrap{
+    max-width:1140px; margin:0 auto; background:var(--surface);
+    border:1px solid var(--border); border-radius:var(--r);
+    padding:34px 44px 38px; min-height:calc(100vh - 140px);
+  }
+  .kicker{font-size:12px; color:var(--gold); text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px}
+  h1{font-size:44px; line-height:1.12; font-weight:700; letter-spacing:-.01em}
+  h2{font-size:28px; line-height:1.2; font-weight:700; margin-bottom:6px}
+  h3{font-size:15px; font-weight:600}
+  .lede{color:var(--muted); font-size:17px; max-width:62ch; margin-top:10px}
+  .sub{color:var(--muted); font-size:14px; margin-bottom:20px}
+  .muted{color:var(--muted)}
+  .small{font-size:13px}
+  .mono{font-family:var(--mono); font-size:.92em}
+  .hint{font-size:12px; color:var(--gold); opacity:.85; margin-top:8px}
+  .cols{display:flex; gap:28px; align-items:flex-start}
+  .cols > *{flex:1; min-width:0}
+
+  /* nav cluster bottom-right */
+  .navcluster{position:fixed; right:18px; bottom:16px; z-index:60; display:flex; align-items:center; gap:12px}
+  .dots{display:flex; gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--border);border:0;cursor:pointer;padding:0}
+  .dot.on{background:var(--gold)}
+  .navbtn{
+    background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; width:30px; height:30px; cursor:pointer; font-size:14px;
+  }
+  .navbtn:hover{border-color:var(--gold)}
+
+  /* harness pill bottom-center */
+  .harness{
+    position:fixed; left:50%; bottom:14px; transform:translateX(-50%); z-index:70;
+    display:flex; align-items:center; gap:10px;
+    background:#05070a; border:1px solid var(--gold); border-radius:999px;
+    padding:7px 16px; font-size:12px; font-family:var(--mono);
+    box-shadow:0 6px 24px rgba(0,0,0,.7), 0 0 0 3px rgba(232,193,90,.08);
+    white-space:nowrap;
+  }
+  .harness a{color:var(--gold); text-decoration:none}
+  .harness a:hover{text-decoration:underline}
+  .harness .hsep{color:#3a4152}
+  .harness .hlabel{color:#9aa3b8}
+
+  /* ---------- shared mock-UI primitives ---------- */
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:var(--r)}
+  .inset{background:var(--inset); border:1px solid var(--border); border-radius:6px}
+  .btn{
+    display:inline-block; background:var(--inset); color:var(--text);
+    border:1px solid var(--border); border-radius:6px; padding:6px 14px;
+    font-size:13px; cursor:pointer; font-family:inherit;
+  }
+  .btn:hover{border-color:var(--muted)}
+  .btn.gold{background:var(--gold); color:#1a1405; border-color:var(--gold); font-weight:600}
+  .btn.gold:hover{filter:brightness(1.08)}
+  .btn.sm{padding:3px 10px; font-size:12px}
+  .badge{
+    display:inline-block; font-size:10px; font-weight:700; letter-spacing:.08em;
+    padding:1px 7px; border-radius:4px; vertical-align:1px;
+  }
+  .badge.tracked{background:rgba(108,178,224,.15); color:var(--info); border:1px solid rgba(108,178,224,.4)}
+  .badge.strip{background:rgba(232,193,90,.12); color:var(--gold); border:1px solid rgba(232,193,90,.4)}
+  .tag{display:inline-block; font-size:11px; color:var(--muted); background:var(--inset); border:1px solid var(--border); border-radius:4px; padding:1px 7px}
+
+  .field{margin-bottom:10px}
+  .field label{display:block; font-size:11px; color:var(--muted); margin-bottom:3px}
+  .tb{background:var(--inset); border:1px solid var(--border); border-radius:5px; color:var(--text); padding:5px 9px; font-size:13px; font-family:inherit; width:100%}
+  .tb:focus{outline:none; border-color:var(--gold)}
+  .dd{position:relative; background:var(--inset); border:1px solid var(--border); border-radius:5px; padding:5px 9px; font-size:13px; color:var(--text)}
+  .dd::after{content:"▾"; position:absolute; right:9px; color:var(--muted)}
+
+  /* fake spell icons */
+  .pv{display:flex; gap:5px; align-items:center}
+  .ic{position:relative; width:26px; height:26px; border-radius:4px; border:1px solid #3a4152; flex:none}
+  .ic .d{position:absolute; right:1px; bottom:0; font-size:9px; font-weight:700; color:#fff; text-shadow:0 1px 2px #000}
+  .ic.big{width:40px; height:40px; border-radius:6px}
+  .ic.big .d{font-size:12px}
+  .ic.dim{opacity:.32; filter:grayscale(.7)}
+  .ic-green{background:linear-gradient(135deg,#0f5c3d,#00c078)}
+  .ic-teal{background:linear-gradient(135deg,#0e4d4a,#28a396)}
+  .ic-blue{background:linear-gradient(135deg,#1d3a63,#3f8fd6)}
+  .ic-red{background:linear-gradient(135deg,#5c1b1b,#c74444)}
+  .ic-goldy{background:linear-gradient(135deg,#6b501a,#e0b23e)}
+  .ic-purple{background:linear-gradient(135deg,#3d2a5c,#8a63c9)}
+  .ic-steel{background:linear-gradient(135deg,#3a3f4d,#7a8296)}
+  .ic-brown{background:linear-gradient(135deg,#4d3517,#a3702e)}
+  .ic.glow{box-shadow:0 0 10px 3px rgba(232,193,90,.75), inset 0 0 4px rgba(255,255,255,.35); border-color:var(--gold)}
+  .ic.b-magic{border-color:var(--info); border-width:2px}
+  .ic.b-curse{border-color:#9482c9; border-width:2px}
+  .ic.b-disease{border-color:#96602d; border-width:2px}
+  .ic.b-boss{border-color:var(--bad); border-width:2px}
+  .pvbar{width:110px; height:9px; background:#0d1016; border:1px solid #3a4152; border-radius:3px; overflow:hidden; flex:none}
+  .pvbar i{display:block; height:100%}
+  .pvhp{width:70px}
+
+  /* ---------- template gallery ---------- */
+  .gal-head{display:flex; align-items:center; gap:14px; margin-bottom:12px}
+  .gal-head h3{font-size:16px}
+  .search{flex:1; max-width:260px}
+  .chips{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:14px}
+  .chip{
+    background:var(--inset); border:1px solid var(--border); border-radius:999px;
+    color:var(--muted); font-size:12px; padding:4px 12px; cursor:pointer; font-family:inherit;
+  }
+  .chip:hover{color:var(--text)}
+  .chip.on{background:rgba(232,193,90,.14); border-color:var(--gold); color:var(--gold); font-weight:600}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(238px,1fr)); gap:12px}
+  .card{
+    background:var(--inset); border:1px solid var(--border); border-left-width:3px;
+    border-radius:var(--r); padding:12px 14px; cursor:pointer; text-align:left;
+    font-family:inherit; color:var(--text); transition:transform .08s, border-color .08s;
+  }
+  .card:hover{transform:translateY(-2px); border-color:var(--gold); border-left-color:inherit}
+  .card .cpv{height:52px; display:flex; align-items:center; margin-bottom:8px}
+  .card .ct{font-size:13.5px; font-weight:600; margin-bottom:2px}
+  .card .cs{font-size:12px; color:var(--muted); margin-bottom:7px; min-height:34px}
+  .card .cm{font-size:11px; color:var(--muted); display:flex; justify-content:space-between; align-items:center}
+  .card.blank{border-style:dashed; border-left-width:1px}
+  .card.blank .cpv{justify-content:center; color:var(--muted); font-size:26px}
+  .empty{color:var(--muted); font-size:13px; padding:24px 6px}
+
+  /* 9-zone picker */
+  .zones{display:grid; grid-template-columns:repeat(3,34px); gap:4px}
+  .zone{width:34px;height:24px;background:var(--inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:0}
+  .zone.on{background:rgba(232,193,90,.25); border-color:var(--gold)}
+
+  /* toast */
+  .toast{
+    display:flex; align-items:center; gap:10px;
+    background:rgba(122,195,122,.1); border:1px solid rgba(122,195,122,.45);
+    border-radius:6px; padding:9px 14px; font-size:13px;
+  }
+  .toast .tick{color:var(--ok); font-weight:700}
+
+  /* master/detail mock */
+  .md{display:flex; min-height:300px}
+  .md-list{width:250px; border-right:1px solid var(--border); padding:10px}
+  .md-detail{flex:1; padding:14px 18px}
+  .grp{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin:10px 4px 5px}
+  .row{
+    display:flex; justify-content:space-between; align-items:center; gap:8px;
+    padding:6px 9px; border-radius:5px; cursor:pointer; font-size:13px; position:relative;
+  }
+  .row:hover{background:rgba(255,255,255,.04)}
+  .row.sel{background:rgba(232,193,90,.12); outline:1px solid rgba(232,193,90,.4)}
+  .tabs{display:flex; gap:2px; border-bottom:1px solid var(--border); margin:10px 0 14px}
+  .tab{padding:6px 14px; font-size:13px; color:var(--muted); border:1px solid transparent; border-bottom:0; border-radius:6px 6px 0 0}
+  .tab.on{color:var(--text); background:var(--inset); border-color:var(--border)}
+
+  /* misc layout helpers */
+  .checklist{list-style:none}
+  .checklist li{padding:7px 0 7px 26px; position:relative; font-size:14px}
+  .checklist li::before{position:absolute; left:0; font-weight:700}
+  .checklist.good li::before{content:"✓"; color:var(--ok)}
+  .checklist.badl li::before{content:"✗"; color:var(--bad)}
+  .checklist.dash li::before{content:"—"; color:var(--muted)}
+  .numlist{list-style:none; counter-reset:n}
+  .numlist li{counter-increment:n; padding:8px 0 8px 34px; position:relative; font-size:14px}
+  .numlist li::before{
+    content:counter(n); position:absolute; left:0; top:7px;
+    width:22px; height:22px; border-radius:50%; background:var(--inset);
+    border:1px solid var(--gold); color:var(--gold); font-size:12px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .code{
+    font-family:var(--mono); font-size:12.5px; line-height:1.55;
+    background:var(--inset); border:1px solid var(--border); border-radius:6px;
+    padding:14px 16px; white-space:pre; overflow-x:auto; color:#c9d1e3;
+  }
+  .code .c{color:#5d667c}
+  .code .k{color:var(--gold)}
+  .code .s{color:var(--ok)}
+  .statbig{font-size:34px; font-weight:700; color:var(--gold); line-height:1.1}
+  .statlbl{font-size:12.5px; color:var(--muted); margin-top:2px}
+  .divider{border:0; border-top:1px solid var(--border); margin:18px 0}
+  .pop{
+    position:absolute; z-index:20; top:calc(100% + 6px); right:0; width:290px;
+    background:var(--panel); border:1px solid var(--gold); border-radius:var(--r);
+    padding:12px 14px; box-shadow:0 10px 30px rgba(0,0,0,.6); text-align:left; cursor:default;
+  }
+  .sharestr{
+    font-family:var(--mono); font-size:11px; color:var(--info); background:var(--inset);
+    border:1px solid var(--border); border-radius:5px; padding:7px 9px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:8px 0;
+  }
+  .callout{background:var(--inset); border-left:3px solid var(--gold); border-radius:0 6px 6px 0; padding:10px 14px; font-size:13.5px; margin-top:14px}
+</style>
+</head>
+<body>
+
+<div class="caption"><b>QUI</b> · Aura Displays UX — Approach 2/5: Template Gallery</div>
+
+<!-- ============ SLIDE 1 · TITLE ============ -->
+<section class="slide">
+  <div class="wrap" style="display:flex;flex-direction:column;justify-content:center">
+    <div class="kicker">Approach 2 of 5 · Template Gallery / Starter Packs</div>
+    <h1>Ship content,<br>not blank forms.</h1>
+    <p class="lede" style="margin-top:16px">
+      "New Display" opens a gallery of curated, spec-aware starter templates — single displays
+      and whole groups — each installed pre-configured with one click, then tweaked in the
+      normal editor. The feature demos itself.
+    </p>
+    <div class="pv" style="margin-top:34px; gap:14px">
+      <span class="ic big ic-green"><span class="d">18</span></span>
+      <span class="ic big ic-teal"><span class="d">12</span></span>
+      <span class="ic big ic-goldy glow"></span>
+      <span class="ic big ic-red b-boss"><span class="d">7</span></span>
+      <span class="pvbar" style="width:180px;height:14px"><i style="width:64%;background:var(--warrior)"></i></span>
+    </div>
+    <p class="muted small" style="margin-top:30px">← / → to navigate · mockups are clickable</p>
+  </div>
+</section>
+
+<!-- ============ SLIDE 2 · PROBLEM ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">The problem today</div>
+    <h2>Every new display starts at zero — and zero is expensive</h2>
+    <p class="sub">Auras → Aura Displays (sub-tab 6) is powerful, but its entire onboarding is a small popup followed by a wall of raw controls.</p>
+    <div class="cols">
+      <div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px">
+          <div><div class="statbig">35–40</div><div class="statlbl">controls fronting a <em>minimal</em> new display</div></div>
+          <div><div class="statbig">80–120</div><div class="statlbl">widgets for a two-element display, across 3 tabs</div></div>
+          <div><div class="statbig">~46</div><div class="statlbl">form rows on a filter strip (70+ fully enabled)</div></div>
+          <div><div class="statbig">0</div><div class="statlbl">templates. 0 per-display import/export.</div></div>
+        </div>
+        <ul class="checklist badl">
+          <li>Quick-create bug: new displays land with <b>16px icons, duration text off</b> — a good defaults bucket (<span class="mono">AD.DefaultBucket</span>, 32px / 12pt) exists in code but is discarded.</li>
+          <li>Groups are organization-only; the Browse-spells popup hides the only "presets" that exist.</li>
+          <li>Result lands at screen center; positioning means a trip through Layout Mode.</li>
+        </ul>
+        <div class="callout">Late WeakAuras shipped built-in class/spec templates. That's the bar players expect from a tracker in 2026.</div>
+      </div>
+      <div style="flex:0 0 380px">
+        <div class="panel" style="width:300px; height:240px; margin:0 auto; padding:12px 14px; display:flex; flex-direction:column">
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px">
+            <b style="font-size:13px">New Display</b><span class="muted" style="cursor:default">✕</span>
+          </div>
+          <div style="display:flex; gap:4px; margin-bottom:10px">
+            <span class="btn sm" style="border-color:var(--gold); color:var(--gold)">Track spells</span>
+            <span class="btn sm">Filter strip</span>
+          </div>
+          <div class="field"><label>Spell ID(s)</label>
+            <div style="display:flex; gap:6px"><input class="tb mono" value="115151" readonly><span class="btn sm">Browse</span></div>
+          </div>
+          <div class="field"><label>Name</label><input class="tb" placeholder="New Display" readonly></div>
+          <div class="field"><label>Unit</label><div class="dd">Player</div></div>
+          <div style="margin-top:auto; text-align:right"><span class="btn gold sm">Create</span></div>
+        </div>
+        <p class="muted small" style="text-align:center; margin-top:10px">Today's entire onboarding: a 300×240 popup.<br>Then General / Auras / Load Conditions — raw.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 3 · CORE IDEA ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">The core idea</div>
+    <h2>Nobody should start from a blank display</h2>
+    <p class="sub">Replace the popup as the front door. "New Display" opens a gallery; the blank form becomes the last card, not the first experience.</p>
+    <ol class="numlist" style="max-width:66ch">
+      <li><b>Gallery first.</b> Curated starter templates — single displays <em>and</em> whole groups — with live-looking previews. You pick an outcome, not a form.</li>
+      <li><b>Spec-aware.</b> Templates are tagged by class / spec / role. A Mistweaver sees Mistweaver things first, under a "For you" chip.</li>
+      <li><b>Installed, not explained.</b> One click writes a real display (or group) through the existing store, pre-sized, pre-filtered, pre-positioned. Then you tweak it in the normal editor — same tabs, same everything.</li>
+      <li><b>Escape hatch preserved.</b> "Blank Display" is always the final card and opens today's popup unchanged.</li>
+    </ol>
+    <div class="panel" style="margin-top:22px; padding:16px 20px; display:flex; align-items:center; gap:14px; font-size:13.5px; max-width:820px">
+      <span class="btn sm">New Display</span><span class="muted">→</span>
+      <span class="inset" style="padding:5px 12px">Gallery</span><span class="muted">→</span>
+      <span class="inset" style="padding:5px 12px">Pick a card</span><span class="muted">→</span>
+      <span class="inset" style="padding:5px 12px">Confirm + position</span><span class="muted">→</span>
+      <span style="color:var(--ok)">Editable displays on screen</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 4 · GALLERY BROWSE ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Walkthrough 1/4 · The gallery</div>
+    <h2>What "New Display" opens now</h2>
+    <p class="sub">Eight curated cards to start; your spec's picks lead. Every preview is the actual output, not marketing art.</p>
+    <div class="panel" style="padding:16px 18px">
+      <div class="gal-head">
+        <h3>New Display</h3>
+        <input class="tb search" id="g1search" placeholder="Search templates…">
+        <span class="muted small" style="margin-left:auto">Auras → Aura Displays</span>
+      </div>
+      <div class="chips" id="g1chips"></div>
+      <div class="grid" id="g1grid"></div>
+      <div class="empty" id="g1empty" style="display:none">No templates match — try "All", or start from a Blank Display.</div>
+      <div id="g1note" style="display:none" class="callout">"Blank Display" opens today's 300×240 popup, unchanged. Power users lose nothing.</div>
+    </div>
+    <div class="hint">↳ click to try it — chips filter, search narrows, any card opens its detail sheet (next slide)</div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 5 · GALLERY ANNOTATED ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Walkthrough 2/4 · Filtering &amp; the card</div>
+    <h2>Cards teach the feature while you browse</h2>
+    <div class="cols" style="margin-top:14px">
+      <div style="flex:1.5">
+        <div class="panel" style="padding:14px 16px">
+          <div class="gal-head">
+            <h3 style="font-size:14px">New Display</h3>
+            <input class="tb search" id="g2search" placeholder="Try typing “dispel”…">
+          </div>
+          <div class="chips" id="g2chips"></div>
+          <div class="grid" id="g2grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))"></div>
+          <div class="empty" id="g2empty" style="display:none">No templates match.</div>
+        </div>
+        <div class="hint">↳ click the "Tank" chip, or search "dispel"</div>
+      </div>
+      <div>
+        <ol class="numlist">
+          <li><b>"For you" is the default chip</b> — reads your class/spec (here: Mistweaver Monk) and shows tagged matches first.</li>
+          <li><b>Live-looking preview</b> drawn from the template's real settings — icon size, duration text, bar style. What you see is what installs.</li>
+          <li><b>Meta row</b> is honest about scope: "1 display · 2 elements" vs "Group · 3 displays". Class-color edge signals who it's for.</li>
+          <li><b>One-liners sell capability</b>: "Dispellable by me", unit <b>Co-Tank</b>, "Boss debuffs" — filters most users never discover in a 46-row form get advertised as products.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 6 · DETAIL SHEET ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Walkthrough 3/4 · The detail sheet</div>
+    <h2>Confirm what you're getting, place it, done</h2>
+    <p class="sub">Clicking a card opens one sheet: bigger preview, exact contents, a position picker. No tabs, no 40 controls.</p>
+    <div class="panel" style="padding:18px 22px; max-width:900px">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px">
+        <h3 style="font-size:17px">Tank Defensives</h3>
+        <span class="muted small">Group · 3 displays · 6 elements · <span class="tag">Tank</span></span>
+      </div>
+      <div class="inset" style="padding:18px; margin:10px 0 14px; display:flex; flex-direction:column; gap:10px; align-items:center">
+        <div class="pv" style="gap:8px">
+          <span class="ic big ic-steel"><span class="d">30</span></span>
+          <span class="ic big ic-brown"><span class="d">8</span></span>
+          <span class="ic big ic-red dim"></span>
+          <span class="ic big ic-goldy dim"></span>
+        </div>
+        <span class="pvbar" style="width:220px;height:16px"><i style="width:72%;background:var(--warrior)"></i></span>
+        <div class="pv"><span class="ic ic-blue b-magic"><span class="d">6</span></span><span class="ic ic-green"><span class="d">10</span></span></div>
+      </div>
+      <div class="cols">
+        <div style="flex:1.6">
+          <h3 style="margin-bottom:6px">What's inside</h3>
+          <div class="inset" style="padding:4px 12px; font-size:13px">
+            <div style="padding:8px 0; border-bottom:1px solid var(--border)">
+              <b>Defensive cooldowns</b> <span class="badge tracked">TRACKED</span><br>
+              <span class="muted small">Unit: Player · Icon 32px · duration text on · glow when active</span>
+            </div>
+            <div style="padding:8px 0; border-bottom:1px solid var(--border)">
+              <b>Active mitigation</b> <span class="badge tracked">TRACKED</span><br>
+              <span class="muted small">Unit: Player · Bar 220×16 · spark + timer</span>
+            </div>
+            <div style="padding:8px 0">
+              <b>Externals on me</b> <span class="badge strip">STRIP</span><br>
+              <span class="muted small">Unit: Player · What to Show: Defensives · Only while active</span>
+            </div>
+          </div>
+          <p class="muted small" style="margin-top:8px">Load Conditions preset: Roles → Tank. Change it later like any display.</p>
+        </div>
+        <div>
+          <h3 style="margin-bottom:6px">Where?</h3>
+          <div class="zones" id="zones"></div>
+          <p class="muted small" style="margin-top:6px">Position: <b id="zonelbl" style="color:var(--text)">Bottom Center</b></p>
+          <div style="margin-top:16px">
+            <button class="btn gold" id="addbtn">Add to my displays</button>
+          </div>
+          <div class="toast" id="addtoast" style="display:none; margin-top:12px">
+            <span class="tick">✓</span>
+            <span>Group "Tank Defensives" created — 3 displays at <span id="toastzone">Bottom Center</span>.
+            <a href="#" id="seeresult">See result →</a></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="hint">↳ click to try it — pick a zone, then "Add to my displays"</div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 7 · INSTALLED ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Walkthrough 4/4 · Installed</div>
+    <h2>The result is just… normal displays</h2>
+    <p class="sub">The template wrote a real Group with real Displays through the existing store. Nothing is special-cased; rename, retune, or delete anything.</p>
+    <div class="toast" style="max-width:640px; margin-bottom:12px">
+      <span class="tick">✓</span>
+      <span>Added <b>Tank Defensives</b> — 3 displays, positioned Bottom Center. Edit anytime under Auras → Aura Displays.</span>
+    </div>
+    <div class="panel md" style="max-width:900px">
+      <div class="md-list">
+        <div class="grp">Tank Defensives</div>
+        <div class="row sel" data-name="Defensive cooldowns" data-el="2 elements · TRACKED"><span>Defensive cooldowns</span><span class="badge tracked">TRACKED</span></div>
+        <div class="row" data-name="Active mitigation" data-el="1 element · TRACKED"><span>Active mitigation</span><span class="badge tracked">TRACKED</span></div>
+        <div class="row" data-name="Externals on me" data-el="1 element · STRIP"><span>Externals on me</span><span class="badge strip">STRIP</span></div>
+        <div class="grp">Ungrouped</div>
+        <div class="row" data-name="My Procs" data-el="3 elements · TRACKED"><span>My Procs</span><span class="badge tracked">TRACKED</span></div>
+        <div style="padding:12px 6px"><span class="btn sm">New Display</span></div>
+      </div>
+      <div class="md-detail">
+        <h3 id="detname" style="font-size:16px">Defensive cooldowns</h3>
+        <p class="muted small" id="detel">2 elements · TRACKED</p>
+        <div class="tabs">
+          <span class="tab on">General</span><span class="tab">Auras</span><span class="tab">Load Conditions</span>
+        </div>
+        <div style="max-width:340px">
+          <div class="field"><label>Name</label><input class="tb" id="detnamefield" value="Defensive cooldowns" readonly></div>
+          <div class="field"><label>Group</label><div class="dd">Tank Defensives</div></div>
+          <div class="field"><label>Unit</label><div class="dd">Player</div></div>
+        </div>
+        <p class="muted small" style="margin-top:10px">Icon 32px · duration text <b style="color:var(--ok)">on</b> — templates carry the good defaults the quick-create bug throws away.</p>
+      </div>
+    </div>
+    <div class="hint">↳ click to try it — select displays in the left list</div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 8 · ANATOMY + FOR YOU ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Under the hood</div>
+    <h2>A template is a saved display wearing tags</h2>
+    <p class="sub">Same data format as any serialized display/group, plus a placement hint and targeting tags. No new schema, no parallel editor.</p>
+    <div class="cols">
+      <div style="flex:1.2">
+<div class="code">["tank-defensives"] = {
+  name      = <span class="s">"Tank Defensives"</span>,
+  tags      = { role = <span class="s">"TANK"</span> },   <span class="c">-- or class = "MONK",</span>
+                              <span class="c">-- specID = 270 …</span>
+  placement = <span class="s">"BOTTOM_CENTER"</span>,     <span class="c">-- hint, not a lock</span>
+  payload   = { <span class="c">--[[ serialized group + displays;
+                 the same shape profile export
+                 already writes for "Aura Displays" ]]</span> },
+}</div>
+        <p class="muted small" style="margin-top:8px">Install = deserialize payload → existing <span class="mono">NewDisplay</span> / group CRUD → apply placement. Templates can't drift from the editor because they <em>are</em> editor data.</p>
+      </div>
+      <div>
+        <h3 style="margin-bottom:8px">"For you" ranking</h3>
+        <ul class="checklist dash" style="margin-bottom:14px">
+          <li><b>1.</b> Exact spec match (specID)</li>
+          <li><b>2.</b> Class match</li>
+          <li><b>3.</b> Role match (from current spec)</li>
+          <li><b>4.</b> Generic / untagged</li>
+        </ul>
+        <div class="panel" style="padding:12px 14px">
+          <div style="display:flex; gap:6px; margin-bottom:10px">
+            <button class="btn sm" id="specA" style="border-color:var(--monk); color:var(--monk)">Mistweaver Monk</button>
+            <button class="btn sm" id="specB">Protection Warrior</button>
+          </div>
+          <ol id="rankA" style="font-size:13px; padding-left:20px; line-height:1.9">
+            <li>Renewing Mist — HoT tracker <span class="tag">spec</span></li>
+            <li>Dispel Helper <span class="tag">role: Healer</span></li>
+            <li>Boss Debuffs on Me <span class="tag">generic</span></li>
+            <li>My Procs <span class="tag">generic</span></li>
+          </ol>
+          <ol id="rankB" style="display:none; font-size:13px; padding-left:20px; line-height:1.9">
+            <li>Tank Defensives Bar <span class="tag">role: Tank</span></li>
+            <li>Co-Tank Watchdog <span class="tag">role: Tank</span></li>
+            <li>Boss Debuffs on Me <span class="tag">generic</span></li>
+            <li>My Procs <span class="tag">generic</span></li>
+          </ol>
+          <div class="hint">↳ click to try it — switch specs, watch the gallery reorder</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 9 · SHARE STRINGS ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">The free win</div>
+    <h2>Serialized templates ⇒ per-display share strings</h2>
+    <p class="sub">Today only whole-profile export includes Aura Displays. Because a template is a serialized display, the same plumbing gives sharing for free — and opens the door to community templates.</p>
+    <div class="cols">
+      <div>
+        <h3 style="margin-bottom:8px">Share any display</h3>
+        <div class="panel" style="padding:10px 12px; position:relative; overflow:visible">
+          <div class="row sel" style="cursor:default">
+            <span>Renewing Mist <span class="badge tracked">TRACKED</span></span>
+            <button class="btn sm" id="sharebtn">Share</button>
+            <div class="pop" id="sharepop" style="display:none">
+              <b class="small">Share "Renewing Mist"</b>
+              <div class="sharestr">!QUI:AD1:npWqXeTr9kM2vB4cRfLuA8dJs0…gz==</div>
+              <div style="display:flex; gap:8px; align-items:center">
+                <button class="btn sm gold" id="copybtn">Copy</button>
+                <span class="muted" style="font-size:11px">1 display · 2 elements · v1</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="callout" style="margin-top:14px">
+          <b>Save as template</b> also lands here: right-click any display → "Save as template" → it appears in the gallery under a <b>"Mine"</b> chip. Your own setups become one-click starters on alts.
+        </div>
+      </div>
+      <div>
+        <h3 style="margin-bottom:8px">Import in the gallery</h3>
+        <div class="panel" style="padding:14px 16px">
+          <div class="field"><label>Import string</label>
+            <input class="tb mono" id="importbox" placeholder="Paste a !QUI:AD1: string…">
+          </div>
+          <button class="btn sm" id="importbtn">Import</button>
+          <div id="importresult" style="display:none; margin-top:12px">
+            <div class="card" style="border-left-color:var(--monk); cursor:default; max-width:260px">
+              <div class="cpv"><span class="pv"><span class="ic ic-green"><span class="d">18</span></span><span class="ic ic-teal"><span class="d">12</span></span><span class="ic ic-green dim"></span></span></div>
+              <div class="ct">Renewing Mist — HoT tracker</div>
+              <div class="cs">From string · 1 display · 2 elements</div>
+              <div class="cm"><span>by a friend</span><span class="btn sm gold">Add</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="hint">↳ click to try it — Share, Copy, then Import on the right</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 10 · TRADEOFFS ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Honest ledger</div>
+    <h2>What this fixes — and what it doesn't</h2>
+    <div class="cols" style="margin-top:18px">
+      <div>
+        <h3 style="color:var(--ok); margin-bottom:8px">Fixes</h3>
+        <ul class="checklist good">
+          <li><b>Instant value.</b> A working, well-placed display in ~10 seconds instead of a blank form and 35–40 controls.</li>
+          <li><b>Discoverability.</b> Cards advertise what the feature <em>can</em> do — Co-Tank unit, "Dispellable by me", boss-debuff strips — capabilities currently buried in dropdowns.</li>
+          <li><b>Kills the bad-defaults bug in practice.</b> Templates carry 32px icons and duration text on; nobody ships 16px accidents.</li>
+          <li><b>Per-display import/export falls out for free</b>, plus a path to community content and cross-alt reuse.</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="color:var(--bad); margin-bottom:8px">Doesn't fix</h3>
+        <ul class="checklist badl">
+          <li><b>Curation is an ongoing commitment.</b> Every patch, every spec rework, someone must review the table. This is content work, not code work.</li>
+          <li><b>Templates rot.</b> Renamed/removed spells make a curated card feel broken — worse than no card.</li>
+          <li><b>The editor is untouched.</b> The moment you tweak, you're back in the 80–120-widget, 3-tab reality. Templates soften the start, not the middle.</li>
+          <li><b>Coverage gaps read as neglect.</b> A spec with zero "For you" cards feels like a second-class citizen.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 11 · IMPLEMENTATION ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Implementation notes</div>
+    <h2>Mostly plumbing that already exists</h2>
+    <ol class="numlist" style="max-width:72ch; margin-top:10px">
+      <li><b>Data model: none new.</b> Template = serialized display/group + placement hint + tags. Install path is the existing store CRUD (<span class="mono">NewDisplay</span>, group create/assign) — templates land as ordinary saved displays.</li>
+      <li><b>Serialization: scoped-down profile export.</b> <span class="mono">profile_io</span> already serializes the "Aura Displays" category for whole-profile strings; per-display/per-group strings are the same routine on a narrower table, plus a <span class="mono">!QUI:AD1:</span> envelope with a version byte.</li>
+      <li><b>Gallery UI: one new panel.</b> Cards render from a static curated Lua table; previews are lightweight mock renders (icon/bar chrome), not live aura data — cheap and deterministic.</li>
+      <li><b>The real cost is the curated table.</b> Budget it: start with ~3 generic templates per role + 2 per class (~45 cards), tagged, reviewed once per major patch. "Mine" + import strings absorb the long tail so curation never has to be complete.</li>
+      <li><b>Escape hatch: zero migration risk.</b> The Blank Display card calls today's popup verbatim; existing displays and profiles are untouched.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ SLIDE 12 · VERDICT ============ -->
+<section class="slide">
+  <div class="wrap" style="display:flex;flex-direction:column;justify-content:center">
+    <div class="kicker">Verdict</div>
+    <h1 style="font-size:36px; max-width:20ch">Steal this if you want the feature to sell itself in 10 seconds.</h1>
+    <div class="cols" style="margin-top:30px; max-width:900px">
+      <div class="panel" style="padding:16px 20px">
+        <h3 style="color:var(--gold)">Effort</h3>
+        <p class="small muted" style="margin-top:4px">Medium. UI panel + serialization envelope are days; the curated table is the ongoing line item.</p>
+      </div>
+      <div class="panel" style="padding:16px 20px">
+        <h3 style="color:var(--ok)">Payoff</h3>
+        <p class="small muted" style="margin-top:4px">Highest day-one impact of the five approaches: first-run experience goes from blank form to working HUD.</p>
+      </div>
+      <div class="panel" style="padding:16px 20px">
+        <h3 style="color:var(--bad)">Risk</h3>
+        <p class="small muted" style="margin-top:4px">Content maintenance. Mitigate with a small generic core + "Mine" + community strings.</p>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:26px; font-size:14px">Pairs well with Approach 1 (wizard) as the card→confirm step, and Approach 3 (simple mode) for the after-install editing story.</p>
+  </div>
+</section>
+
+<!-- deck nav -->
+<div class="navcluster">
+  <div class="dots" id="dots"></div>
+  <button class="navbtn" id="prev" aria-label="Previous slide">‹</button>
+  <button class="navbtn" id="next" aria-label="Next slide">›</button>
+</div>
+
+<!-- prototype harness pill -->
+<div class="harness">
+  <a href="01-wizard.html">‹ 01</a>
+  <span class="hsep">·</span>
+  <span class="hlabel">Approach 2/5 — Template Gallery</span>
+  <span class="hsep">·</span>
+  <a href="03-simple-mode.html">03 ›</a>
+  <span class="hsep">|</span>
+  <a href="index.html">☰ all</a>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- deck navigation ---------- */
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var dotsEl = document.getElementById("dots");
+  var cur = 0;
+  slides.forEach(function(_, i){
+    var d = document.createElement("button");
+    d.className = "dot"; d.setAttribute("aria-label", "Slide " + (i+1));
+    d.addEventListener("click", function(){ go(i); });
+    dotsEl.appendChild(d);
+  });
+  var dots = Array.prototype.slice.call(dotsEl.children);
+  function go(n){
+    cur = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function(s, i){ s.classList.toggle("active", i === cur); });
+    dots.forEach(function(d, i){ d.classList.toggle("on", i === cur); });
+    slides[cur].scrollTop = 0;
+  }
+  document.getElementById("prev").addEventListener("click", function(){ go(cur - 1); });
+  document.getElementById("next").addEventListener("click", function(){ go(cur + 1); });
+  document.addEventListener("keydown", function(e){
+    var t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (e.key === "ArrowRight") { go(cur + 1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { go(cur - 1); e.preventDefault(); }
+  });
+  go(0);
+  var DETAIL_SLIDE = 5, RESULT_SLIDE = 6; /* 0-based */
+
+  /* ---------- template data ---------- */
+  function ic(cls, d){ return '<span class="ic ' + cls + '">' + (d ? '<span class="d">' + d + '</span>' : '') + '</span>'; }
+  var TEMPLATES = [
+    { id:"rm", title:"Renewing Mist — HoT tracker", edge:"var(--monk)",
+      sub:"Your Renewing + Enveloping Mist on Player, icons with duration.",
+      meta:"1 display · 2 elements", kind:"TRACKED", tags:["foryou","healing"],
+      pv:'<span class="pv">'+ic("ic-green","18")+ic("ic-teal","12")+ic("ic-green dim","")+'</span>' },
+    { id:"tank", title:"Tank Defensives Bar", edge:"var(--warrior)",
+      sub:"Defensive cooldowns as icons, active mitigation as a bar.",
+      meta:"Group · 3 displays", kind:"GROUP", tags:["tank","defensives"],
+      pv:'<span class="pv">'+ic("ic-steel","30")+ic("ic-brown","8")+'<span class="pvbar"><i style="width:70%;background:var(--warrior)"></i></span></span>' },
+    { id:"dispel", title:"Dispel Helper", edge:"var(--priest)",
+      sub:"Strip: What to Show → Dispellable by me. Lights up only when you can act.",
+      meta:"1 display · 1 element", kind:"STRIP", tags:["foryou","healing","dispel"],
+      pv:'<span class="pv">'+ic("ic-blue b-magic","6")+ic("ic-purple b-curse","14")+ic("ic-brown b-disease","9")+'</span>' },
+    { id:"boss", title:"Boss Debuffs on Me", edge:"var(--bad)",
+      sub:"Strip: Boss debuffs on Player, big and impossible to miss.",
+      meta:"1 display · 1 element", kind:"STRIP", tags:["foryou","utility"],
+      pv:'<span class="pv">'+ic("ic-red b-boss big","7")+ic("ic-purple b-boss big","3")+'</span>' },
+    { id:"procs", title:"My Procs", edge:"var(--gold)",
+      sub:"Big glowing icons at screen center when something lights up.",
+      meta:"1 display · 3 elements", kind:"TRACKED", tags:["foryou","utility"],
+      pv:'<span class="pv">'+ic("ic-goldy glow big","")+ic("ic-teal dim","")+'</span>' },
+    { id:"cotank", title:"Co-Tank Watchdog", edge:"var(--dk)",
+      sub:"Unit: Co-Tank — their defensives and health, in your corner of the screen.",
+      meta:"1 display · 2 elements", kind:"TRACKED", tags:["tank","defensives"],
+      pv:'<span class="pv">'+ic("ic-steel","12")+'<span class="pvbar pvhp"><i style="width:55%;background:var(--ok)"></i></span></span>' },
+    { id:"pvpcc", title:"PvP: CC on Me", edge:"var(--mage)",
+      sub:"Strip: Crowd control on Player, with countdown — know when you're free.",
+      meta:"1 display · 1 element", kind:"STRIP", tags:["pvp"],
+      pv:'<span class="pv">'+ic("ic-purple b-magic big","4.2")+'<span class="muted" style="font-size:11px">Stunned</span></span>' },
+    { id:"blank", title:"Blank Display", edge:"var(--border)",
+      sub:"Start from scratch — today's popup, unchanged.",
+      meta:"The escape hatch", kind:"", tags:["blank"], blank:true, pv:"+" }
+  ];
+  var CHIPS = [
+    { key:"foryou", label:"For you · Mistweaver Monk" },
+    { key:"all", label:"All" },
+    { key:"defensives", label:"Defensives" },
+    { key:"healing", label:"Healing" },
+    { key:"tank", label:"Tank" },
+    { key:"pvp", label:"PvP" },
+    { key:"dispel", label:"Dispel" },
+    { key:"utility", label:"Utility" }
+  ];
+
+  /* ---------- gallery renderer (two instances) ---------- */
+  function gallery(opts){
+    var chipsEl = document.getElementById(opts.chips);
+    var gridEl = document.getElementById(opts.grid);
+    var emptyEl = document.getElementById(opts.empty);
+    var searchEl = opts.search ? document.getElementById(opts.search) : null;
+    var state = { chip: opts.defaultChip || "foryou", q: "" };
+
+    CHIPS.forEach(function(c){
+      var b = document.createElement("button");
+      b.className = "chip"; b.textContent = c.label;
+      b.addEventListener("click", function(){ state.chip = c.key; render(); });
+      b.dataset.key = c.key;
+      chipsEl.appendChild(b);
+    });
+    if (searchEl) searchEl.addEventListener("input", function(){ state.q = searchEl.value.toLowerCase(); render(); });
+
+    function matches(t){
+      if (state.q) {
+        return (t.title + " " + t.sub).toLowerCase().indexOf(state.q) !== -1;
+      }
+      if (t.blank) return true; /* escape hatch always visible when not searching */
+      if (state.chip === "all") return true;
+      return t.tags.indexOf(state.chip) !== -1;
+    }
+    function render(){
+      Array.prototype.forEach.call(chipsEl.children, function(b){
+        b.classList.toggle("on", b.dataset.key === state.chip && !state.q);
+      });
+      gridEl.innerHTML = "";
+      var shown = TEMPLATES.filter(matches);
+      shown.forEach(function(t){
+        var card = document.createElement("button");
+        card.className = "card" + (t.blank ? " blank" : "");
+        card.style.borderLeftColor = t.blank ? "" : t.edge;
+        card.innerHTML =
+          '<div class="cpv">' + t.pv + '</div>' +
+          '<div class="ct">' + t.title + '</div>' +
+          '<div class="cs">' + t.sub + '</div>' +
+          '<div class="cm"><span>' + t.meta + '</span>' +
+          (t.kind ? '<span class="badge ' + (t.kind === "STRIP" ? "strip" : "tracked") + '">' + t.kind + '</span>' : '') +
+          '</div>';
+        card.addEventListener("click", function(){ opts.onCard(t); });
+        gridEl.appendChild(card);
+      });
+      emptyEl.style.display = shown.length ? "none" : "block";
+    }
+    render();
+  }
+
+  var g1note = document.getElementById("g1note");
+  gallery({
+    chips:"g1chips", grid:"g1grid", empty:"g1empty", search:"g1search",
+    defaultChip:"foryou",
+    onCard:function(t){
+      if (t.blank) { g1note.style.display = "block"; }
+      else { go(DETAIL_SLIDE); }
+    }
+  });
+  gallery({
+    chips:"g2chips", grid:"g2grid", empty:"g2empty", search:"g2search",
+    defaultChip:"foryou",
+    onCard:function(t){ if (!t.blank) go(DETAIL_SLIDE); }
+  });
+
+  /* ---------- slide 6: 9-zone picker + add ---------- */
+  var ZONES = ["Top Left","Top Center","Top Right","Center Left","Center","Center Right","Bottom Left","Bottom Center","Bottom Right"];
+  var zonesEl = document.getElementById("zones");
+  var zoneLbl = document.getElementById("zonelbl");
+  var toastZone = document.getElementById("toastzone");
+  ZONES.forEach(function(name, i){
+    var z = document.createElement("button");
+    z.className = "zone" + (i === 7 ? " on" : "");
+    z.title = name;
+    z.addEventListener("click", function(){
+      Array.prototype.forEach.call(zonesEl.children, function(c){ c.classList.remove("on"); });
+      z.classList.add("on");
+      zoneLbl.textContent = name;
+      toastZone.textContent = name;
+    });
+    zonesEl.appendChild(z);
+  });
+  var addBtn = document.getElementById("addbtn");
+  addBtn.addEventListener("click", function(){
+    addBtn.textContent = "Added ✓";
+    addBtn.classList.remove("gold");
+    addBtn.style.borderColor = "var(--ok)";
+    addBtn.style.color = "var(--ok)";
+    document.getElementById("addtoast").style.display = "flex";
+  });
+  document.getElementById("seeresult").addEventListener("click", function(e){
+    e.preventDefault(); go(RESULT_SLIDE);
+  });
+
+  /* ---------- slide 7: master/detail row selection ---------- */
+  var rows = document.querySelectorAll(".md-list .row");
+  var detName = document.getElementById("detname");
+  var detEl = document.getElementById("detel");
+  var detField = document.getElementById("detnamefield");
+  Array.prototype.forEach.call(rows, function(r){
+    r.addEventListener("click", function(){
+      Array.prototype.forEach.call(rows, function(x){ x.classList.remove("sel"); });
+      r.classList.add("sel");
+      detName.textContent = r.dataset.name;
+      detEl.textContent = r.dataset.el;
+      detField.value = r.dataset.name;
+    });
+  });
+
+  /* ---------- slide 8: spec switcher ---------- */
+  var specA = document.getElementById("specA"), specB = document.getElementById("specB");
+  var rankA = document.getElementById("rankA"), rankB = document.getElementById("rankB");
+  specA.addEventListener("click", function(){
+    rankA.style.display = "block"; rankB.style.display = "none";
+    specA.style.borderColor = "var(--monk)"; specA.style.color = "var(--monk)";
+    specB.style.borderColor = ""; specB.style.color = "";
+  });
+  specB.addEventListener("click", function(){
+    rankA.style.display = "none"; rankB.style.display = "block";
+    specB.style.borderColor = "var(--warrior)"; specB.style.color = "var(--warrior)";
+    specA.style.borderColor = ""; specA.style.color = "";
+  });
+
+  /* ---------- slide 9: share + import ---------- */
+  var sharePop = document.getElementById("sharepop");
+  document.getElementById("sharebtn").addEventListener("click", function(e){
+    e.stopPropagation();
+    sharePop.style.display = sharePop.style.display === "none" ? "block" : "none";
+  });
+  sharePop.addEventListener("click", function(e){ e.stopPropagation(); });
+  var copyBtn = document.getElementById("copybtn");
+  copyBtn.addEventListener("click", function(){
+    try { navigator.clipboard.writeText("!QUI:AD1:npWqXeTr9kM2vB4cRfLuA8dJs0gz=="); } catch(_) {}
+    copyBtn.textContent = "Copied ✓";
+    setTimeout(function(){ copyBtn.textContent = "Copy"; }, 1600);
+  });
+  document.getElementById("importbtn").addEventListener("click", function(){
+    var box = document.getElementById("importbox");
+    if (!box.value) box.value = "!QUI:AD1:npWqXeTr9kM2vB4cRfLuA8dJs0gz==";
+    document.getElementById("importresult").style.display = "block";
+  });
+})();
+</script>
+</body>
+</html>
