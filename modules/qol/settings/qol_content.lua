@@ -1248,7 +1248,9 @@ local generalSectionFeatures = {
     { id = "extendedIgnore",    category = "qol",        nav = { tileId = "qol", subPageIndex = 12 }, sectionKey = "extendedIgnore",   sectionTitle = "Extended Ignore",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 12, subTabName = "Extended Ignore" } },
     { id = "eventSounds",       category = "qol",        nav = { tileId = "qol", subPageIndex = 13 }, sectionKey = "eventSounds",      sectionTitle = "Event Sounds",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 13, subTabName = "Event Sounds" } },
     { id = "soundMute",         category = "qol",        nav = { tileId = "qol", subPageIndex = 14 }, sectionKey = "soundMute",        sectionTitle = "Sound Mute",                       searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 14, subTabName = "Sound Mute" } },
-    { id = "notifications",     category = "qol",        nav = { tileId = "qol", subPageIndex = 15 }, sectionKey = "notifications",    sectionTitle = "Group Death Alerts",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 15, subTabName = "Notifications" } },
+    { id = "notifications",     category = "qol",        nav = { tileId = "qol", subPageIndex = 15 }, sectionKey = "notifications",    sectionTitle = "Group Death Alerts",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 15, subTabName = "Notifications" },
+      -- Legacy pin route: death alert settings lived under Automation; "general.deathAlert.*" pin paths resolve here.
+      lookupKeys = { "deathAlert" } },
     { id = "uiScale",           category = "appearance", nav = { tileId = "appearance", subPageIndex = 1 }, sectionKey = "uiScale",   sectionTitle = "UI Scale",                         searchContext = { tabIndex = 10, tabName = "Appearance",      subTabIndex = 3, subTabName = "UI Scale" } },
     { id = "defaultFonts",      category = "appearance", nav = { tileId = "appearance", subPageIndex = 2 }, sectionKey = "defaultFonts", sectionTitle = "Default Font Settings",         searchContext = { tabIndex = 10, tabName = "Appearance",      subTabIndex = 4, subTabName = "Fonts" } },
 }
@@ -1262,6 +1264,7 @@ if Registry and Schema
         Registry:RegisterFeature(Schema.Feature({
             id = featureSpec.id,
             moverKey = featureSpec.moverKey or featureSpec.id,
+            lookupKeys = featureSpec.lookupKeys,
             category = featureSpec.category,
             nav = featureSpec.nav,
             getDB = GetGeneralDB,
