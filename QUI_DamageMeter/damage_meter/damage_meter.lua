@@ -647,6 +647,9 @@ local function NormalizeSpells(rawSpells, out, limit)
             n = n + 1
             local info = ResolveSpellInfo(spell.spellID)
             local name = info and info.name
+            if IsSecretValue(spell.spellID) and C_Spell and C_Spell.GetSpellName then
+                name = C_Spell.GetSpellName(spell.spellID)
+            end
             if not IsSecretValue(name) and name == nil then
                 name = spell.creatureName
             end
@@ -877,6 +880,17 @@ function Data:GetPlayerTargetBreakdown(sessionType, playerName, targetGUID, targ
     return view
 end
 
+local function CanCombineHealingView(view, IsSecret)
+    if IsSecret and IsSecret(view.totalAmount) then return false end -- @secret-policy: reject-restricted-healing-merge
+    for _, source in ipairs(view.sources or {}) do
+        if IsSecret and (IsSecret(source.sourceGUID) or IsSecret(source.totalAmount)
+            or IsSecret(source.amountPerSecond)) then return false end
+        if source.sourceGUID == nil or type(source.totalAmount) ~= "number"
+            or type(source.amountPerSecond) ~= "number" then return false end
+    end
+    return true
+end
+
 function Data:GetCombinedHealingView(sessionType, sessionID)
     local T = Enum and Enum.DamageMeterType
     local hType = T and T.HealingDone
@@ -898,6 +912,15 @@ function Data:GetCombinedHealingView(sessionType, sessionID)
     end
 
     local IsSecret = Helpers and Helpers.IsSecretValue
+    if not (CanCombineHealingView(hView, IsSecret) and CanCombineHealingView(aView, IsSecret)) then
+        self._combinedHealingViews[selectorKey] = {
+            healingGeneration = hView.generation,
+            absorbGeneration = aView.generation,
+            view = hView,
+        }
+        return hView
+    end
+
     local merged, byGuid = {}, {}
     local function isIndexableKey(v)
         if IsSecret and IsSecret(v) then return false end -- @secret-policy: reject-secret-ids
@@ -2147,10 +2170,11 @@ function Window:Refresh()
     else
         view = Data:GetView(self.sessionType, self.damageMeterType, self.sessionID)
     end
-    if view.generation == self._lastGeneration then
+    if view == self._lastView and view.generation == self._lastGeneration then
         self:_BindVisibleRows()
         return
     end
+    self._lastView = view
     self._lastGeneration = view.generation
 
     local d = view.duration
