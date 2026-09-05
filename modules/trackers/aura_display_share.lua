@@ -181,6 +181,70 @@ local function ValidName(name)
     return type(name) == "string" and name ~= "" and #name <= MAX_NAME_LENGTH
 end
 
+-- Expected Lua types for the scalar fields Import copies verbatim. Anything
+-- listed here with the wrong type marks the payload malformed; unlisted
+-- fields are only bounded by ValidateTree (plain data, capped size).
+local GROUP_FIELD_TYPES = {
+    enabled = "boolean", growDirection = "string", alignment = "string",
+    spacing = "number", scale = "number", itemWidth = "number", itemHeight = "number",
+    dynamicLayout = "boolean",
+}
+local DISPLAY_FIELD_TYPES = {
+    enabled = "boolean", unitMode = "string", unit = "string", visibility = "string",
+}
+
+local function FieldsWellTyped(entry, types)
+    for field, expected in pairs(types) do
+        local value = entry[field]
+        if value ~= nil and type(value) ~= expected then return false end
+    end
+    return true
+end
+
+local function OptionalTable(value)
+    return value == nil or type(value) == "table"
+end
+
+local function OptionalString(value)
+    return value == nil or type(value) == "string"
+end
+
+-- Shape check for a deserialized payload: every group and display entry must
+-- be a table carrying a valid name and well-typed fields, and the root marker
+-- (if any) must name a known kind. Decode runs this before handing the
+-- payload to Import, so corrupted or hand-edited strings surface as the
+-- advertised "malformed" error instead of a Lua error in the import button.
+function Share.ValidatePayload(payload)
+    if type(payload) ~= "table" then return false end
+    if type(payload.groups) ~= "table" or type(payload.displays) ~= "table" then
+        return false
+    end
+    if payload.root ~= nil then
+        if type(payload.root) ~= "table" then return false end
+        local kind = payload.root.kind
+        if kind ~= "display" and kind ~= "group" then return false end
+    end
+    for i = 1, #payload.groups do
+        local entry = payload.groups[i]
+        if type(entry) ~= "table" or not ValidName(entry.name) then return false end
+        if not OptionalString(entry.parent) or not OptionalTable(entry.anchor) then
+            return false
+        end
+        if not FieldsWellTyped(entry, GROUP_FIELD_TYPES) then return false end
+    end
+    for i = 1, #payload.displays do
+        local entry = payload.displays[i]
+        if type(entry) ~= "table" or not ValidName(entry.name) then return false end
+        if not OptionalString(entry.group) or not OptionalTable(entry.anchor)
+            or not OptionalTable(entry.layout) or not OptionalTable(entry.load)
+            or not OptionalTable(entry.auras) then
+            return false
+        end
+        if not FieldsWellTyped(entry, DISPLAY_FIELD_TYPES) then return false end
+    end
+    return true
+end
+
 function Share.Decode(str)
     local AceSerializer, LibDeflate = Libs()
     if not AceSerializer or not LibDeflate then
@@ -218,15 +282,8 @@ function Share.Decode(str)
     if not ValidateTree(payload, 0, MAX_TREE_NODES) then
         return false, nil, "Malformed aura display string."
     end
-    for i = 1, #payload.groups do
-        if not ValidName(payload.groups[i].name) then
-            return false, nil, "Malformed aura display string."
-        end
-    end
-    for i = 1, #payload.displays do
-        if not ValidName(payload.displays[i].name) then
-            return false, nil, "Malformed aura display string."
-        end
+    if not Share.ValidatePayload(payload) then
+        return false, nil, "Malformed aura display string."
     end
     return true, payload
 end
@@ -261,6 +318,9 @@ end
 -- Recreates the payload's groups and displays. Duplicate group or display
 -- names get " 2"-style suffixes, WeakAuras-style. Returns a summary table.
 function Share.Import(payload)
+    if not Share.ValidatePayload(payload) then
+        return nil, "Malformed aura display string."
+    end
     local ad = AD()
     local store = ad and ad.Store and ad.Store()
     if not store then return nil, "Aura displays are not available." end
