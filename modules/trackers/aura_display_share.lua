@@ -192,7 +192,7 @@ end
 local GROUP_FIELD_TYPES = {
     enabled = "boolean", growDirection = "string", alignment = "string",
     spacing = "number", scale = "number", itemWidth = "number", itemHeight = "number",
-    dynamicLayout = "boolean",
+    dynamicLayout = "boolean", sort = "number",
 }
 local DISPLAY_FIELD_TYPES = {
     enabled = "boolean", unitMode = "string", unit = "string", visibility = "string",
@@ -262,6 +262,7 @@ end
 -- refresh of the imported display.
 local GROUP_FIELD_RANGES = {
     spacing = { -100, 1000 }, scale = { 0.05, 10 }, itemWidth = { 0, 4000 }, itemHeight = { 0, 4000 },
+    sort = { -1000000, 1000000 },
 }
 local ANCHOR_FIELD_RANGES = { offsetX = { -10000, 10000 }, offsetY = { -10000, 10000 } }
 local LAYOUT_FIELD_RANGES = { spacing = { -100, 1000 } }

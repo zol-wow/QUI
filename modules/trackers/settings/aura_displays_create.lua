@@ -122,9 +122,12 @@ end
 local function SpecDisplayName()
     local H = ns.Helpers
     local specID = H and type(H.GetCurrentSpecID) == "function" and H.GetCurrentSpecID() or nil
-    if specID and C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfoByID then
-        local ok, _, name = ns.SafeCall("best-effort-style",
-            C_SpecializationInfo.GetSpecializationInfoByID, specID)
+    -- 12.1 FrameXML exposes the global; the namespaced form is preferred if a
+    -- later client adds it (the deprecated globals are CVar-gated).
+    local lookup = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfoByID)
+        or GetSpecializationInfoByID
+    if specID and type(lookup) == "function" then
+        local ok, _, name = ns.SafeCall("best-effort-style", lookup, specID)
         if ok and type(name) == "string" and name ~= "" then return name end
     end
     return nil
